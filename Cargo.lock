@@ -19,6 +19,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sofel-font"
+version = "0.0.0"
+dependencies = [
+ "sofel-read",
+]
+
+[[package]]
 name = "sofel-geom"
 version = "0.0.0"
 
