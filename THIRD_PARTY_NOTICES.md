@@ -14,6 +14,7 @@ sofel ports algorithms and arithmetic from FreeType 2.15.0 (commit `37515cf56ba3
 | Crate | Ported from |
 |---|---|
 | `sofel-geom` | `src/base/ftcalc.c`, `include/freetype/internal/ftcalc.h`, `src/base/fttrigon.c`, `src/base/ftoutln.c` |
+| `sofel-outline` | `src/truetype/ttgload.c`, `src/truetype/ttpload.c`, `src/base/ftoutln.c` |
 
 The FreeType License follows.
 

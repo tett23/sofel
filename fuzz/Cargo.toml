@@ -11,6 +11,9 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4.13"
 sofel-read = { path = "../crates/sofel-read" }
+sofel-font = { path = "../crates/sofel-font" }
+sofel-geom = { path = "../crates/sofel-geom" }
+sofel-outline = { path = "../crates/sofel-outline" }
 
 # Not part of the main workspace (ADR 0007).
 [workspace]
@@ -33,6 +36,13 @@ bench = false
 [[bin]]
 name = "font"
 path = "fuzz_targets/font.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "outline"
+path = "fuzz_targets/outline.rs"
 test = false
 doc = false
 bench = false

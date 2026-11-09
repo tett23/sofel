@@ -138,6 +138,30 @@ pub enum Kind {
         declared: u32,
         available: u32,
     },
+    /// A `loca` entry is below the one before it.
+    LocaNotSorted {
+        index: u32,
+    },
+    /// A simple glyph with 0xFFF or more contours (FreeType rejects it).
+    TooManyContours {
+        glyph: u32,
+        found: u32,
+    },
+    /// A contour end point not above the previous one.
+    EndPointsNotSorted {
+        glyph: u32,
+        contour: u32,
+    },
+    /// A flag repeat count that runs past the last point.
+    FlagRepeatOverrun {
+        glyph: u32,
+    },
+    /// A component glyph id not below numGlyphs.
+    ComponentGlyphOutOfRange {
+        glyph: u32,
+        component: u32,
+        found: u32,
+    },
 }
 
 impl Kind {
@@ -156,7 +180,12 @@ impl Kind {
             | RangeOffsetFfff { .. }
             | GroupsNotSorted { .. }
             | CodepointOutOfRange { .. }
-            | SelectorsNotSorted { .. } => Severity::Error,
+            | SelectorsNotSorted { .. }
+            | LocaNotSorted { .. }
+            | TooManyContours { .. }
+            | EndPointsNotSorted { .. }
+            | FlagRepeatOverrun { .. }
+            | ComponentGlyphOutOfRange { .. } => Severity::Error,
             RecordsNotSorted { .. }
             | DuplicateTable { .. }
             | ChecksumMismatch { .. }
@@ -207,6 +236,11 @@ impl Kind {
             SubHeaderRangeInvalid { .. } => "sub_header_range_invalid",
             Is32Mismatch { .. } => "is32_mismatch",
             LengthMismatch { .. } => "length_mismatch",
+            LocaNotSorted { .. } => "loca_not_sorted",
+            TooManyContours { .. } => "too_many_contours",
+            EndPointsNotSorted { .. } => "end_points_not_sorted",
+            FlagRepeatOverrun { .. } => "flag_repeat_overrun",
+            ComponentGlyphOutOfRange { .. } => "component_glyph_out_of_range",
         }
     }
 
@@ -278,6 +312,25 @@ impl Kind {
             } => {
                 f("declared", Uint(declared));
                 f("available", Uint(available));
+            }
+            LocaNotSorted { index } => f("index", Uint(index)),
+            TooManyContours { glyph, found } => {
+                f("glyph", Uint(glyph));
+                f("found", Uint(found));
+            }
+            EndPointsNotSorted { glyph, contour } => {
+                f("glyph", Uint(glyph));
+                f("contour", Uint(contour));
+            }
+            FlagRepeatOverrun { glyph } => f("glyph", Uint(glyph)),
+            ComponentGlyphOutOfRange {
+                glyph,
+                component,
+                found,
+            } => {
+                f("glyph", Uint(glyph));
+                f("component", Uint(component));
+                f("found", Uint(found));
             }
         }
     }
@@ -386,6 +439,27 @@ impl fmt::Display for Kind {
                     "length is {declared}, but {available} bytes are available"
                 )
             }
+            LocaNotSorted { index } => {
+                write!(f, "loca entry {index} is below the one before it")
+            }
+            TooManyContours { glyph, found } => {
+                write!(f, "glyph {glyph} has {found} contours (0xFFF or more)")
+            }
+            EndPointsNotSorted { glyph, contour } => write!(
+                f,
+                "end point of contour {contour} of glyph {glyph} is not above the previous one"
+            ),
+            FlagRepeatOverrun { glyph } => {
+                write!(f, "a flag repeat of glyph {glyph} runs past its last point")
+            }
+            ComponentGlyphOutOfRange {
+                glyph,
+                component,
+                found,
+            } => write!(
+                f,
+                "component {component} of glyph {glyph} refers to glyph {found}, not below numGlyphs"
+            ),
         }
     }
 }

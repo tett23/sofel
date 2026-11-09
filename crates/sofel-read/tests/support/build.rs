@@ -561,3 +561,287 @@ pub fn sample_tables_with_glyf() -> Vec<(&'static [u8; 4], Vec<u8>)> {
     tables.sort_by_key(|(t, _)| **t);
     tables
 }
+
+// ---------------------------------------------------------------- glyf
+
+/// A point of a simple glyph, in absolute font units.
+#[derive(Clone, Copy, Debug)]
+pub enum Pt {
+    On(i16, i16),
+    Off(i16, i16),
+    /// An off-curve point with the cubic flag 0x80.
+    Cubic(i16, i16),
+}
+
+impl Pt {
+    fn xy(self) -> (i16, i16) {
+        match self {
+            Pt::On(x, y) | Pt::Off(x, y) | Pt::Cubic(x, y) => (x, y),
+        }
+    }
+}
+
+pub const ON_CURVE: u8 = 0x01;
+pub const X_SHORT: u8 = 0x02;
+pub const Y_SHORT: u8 = 0x04;
+pub const REPEAT: u8 = 0x08;
+pub const X_SAME_OR_POSITIVE: u8 = 0x10;
+pub const Y_SAME_OR_POSITIVE: u8 = 0x20;
+pub const OVERLAP_SIMPLE: u8 = 0x40;
+pub const CUBIC: u8 = 0x80;
+
+fn bbox(points: &[(i16, i16)]) -> [i16; 4] {
+    if points.is_empty() {
+        return [0; 4];
+    }
+    let xs = points.iter().map(|p| p.0);
+    let ys = points.iter().map(|p| p.1);
+    [
+        xs.clone().min().unwrap(),
+        ys.clone().min().unwrap(),
+        xs.max().unwrap(),
+        ys.max().unwrap(),
+    ]
+}
+
+/// A simple glyph. Flags use the short forms where they fit and the
+/// repeat flag for runs of equal flags.
+pub fn simple_glyph(contours: &[&[Pt]], overlap: bool, instructions: &[u8]) -> Vec<u8> {
+    let points: Vec<Pt> = contours.iter().flat_map(|c| c.iter().copied()).collect();
+    let xy: Vec<(i16, i16)> = points.iter().map(|p| p.xy()).collect();
+    let b = bbox(&xy);
+    let mut out = Buf::new()
+        .i16(contours.len() as i16)
+        .i16(b[0])
+        .i16(b[1])
+        .i16(b[2])
+        .i16(b[3]);
+    let mut end = 0i32;
+    for c in contours {
+        end += c.len() as i32;
+        out = out.u16((end - 1) as u16);
+    }
+    out = out.u16(instructions.len() as u16).bytes(instructions);
+    let (mut flags, mut xs, mut ys) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut px, mut py) = (0i32, 0i32);
+    for (i, p) in points.iter().enumerate() {
+        let (x, y) = p.xy();
+        let (dx, dy) = (x as i32 - px, y as i32 - py);
+        (px, py) = (x as i32, y as i32);
+        let mut f = match p {
+            Pt::On(..) => ON_CURVE,
+            Pt::Off(..) => 0,
+            Pt::Cubic(..) => CUBIC,
+        };
+        if i == 0 && overlap {
+            f |= OVERLAP_SIMPLE;
+        }
+        if dx == 0 {
+            f |= X_SAME_OR_POSITIVE;
+        } else if dx.abs() <= 255 {
+            f |= X_SHORT | if dx > 0 { X_SAME_OR_POSITIVE } else { 0 };
+            xs.push(dx.unsigned_abs() as u8);
+        } else {
+            xs.extend_from_slice(&(dx as i16).to_be_bytes());
+        }
+        if dy == 0 {
+            f |= Y_SAME_OR_POSITIVE;
+        } else if dy.abs() <= 255 {
+            f |= Y_SHORT | if dy > 0 { Y_SAME_OR_POSITIVE } else { 0 };
+            ys.push(dy.unsigned_abs() as u8);
+        } else {
+            ys.extend_from_slice(&(dy as i16).to_be_bytes());
+        }
+        flags.push(f);
+    }
+    // Run-length encode equal flags.
+    let mut encoded = Vec::new();
+    let mut i = 0;
+    while i < flags.len() {
+        let mut run = 1;
+        while i + run < flags.len() && flags[i + run] == flags[i] && run < 256 {
+            run += 1;
+        }
+        if run > 1 {
+            encoded.push(flags[i] | REPEAT);
+            encoded.push((run - 1) as u8);
+        } else {
+            encoded.push(flags[i]);
+        }
+        i += run;
+    }
+    out.bytes(&encoded).bytes(&xs).bytes(&ys).done()
+}
+
+pub const ARG_1_AND_2_ARE_WORDS: u16 = 0x0001;
+pub const ARGS_ARE_XY_VALUES: u16 = 0x0002;
+pub const ROUND_XY_TO_GRID: u16 = 0x0004;
+pub const WE_HAVE_A_SCALE: u16 = 0x0008;
+pub const MORE_COMPONENTS: u16 = 0x0020;
+pub const WE_HAVE_AN_X_AND_Y_SCALE: u16 = 0x0040;
+pub const WE_HAVE_A_TWO_BY_TWO: u16 = 0x0080;
+pub const USE_MY_METRICS: u16 = 0x0200;
+pub const OVERLAP_COMPOUND: u16 = 0x0400;
+pub const SCALED_COMPONENT_OFFSET: u16 = 0x0800;
+pub const GID_IS_24_BIT: u16 = 0x2000;
+
+#[derive(Clone, Copy, Debug)]
+pub enum Args {
+    /// Offsets; words when they do not fit in i8.
+    Xy(i16, i16),
+    /// Point numbers; words when they do not fit in u8.
+    Points(u16, u16),
+}
+
+/// The transform, as F2Dot14 raw values in stored order.
+#[derive(Clone, Copy, Debug)]
+pub enum Xf {
+    None,
+    Scale(i16),
+    XyScale(i16, i16),
+    /// xx, yx, xy, yy (the order in the font).
+    TwoByTwo(i16, i16, i16, i16),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Comp {
+    pub glyph: u32,
+    pub args: Args,
+    pub xf: Xf,
+    /// Extra flags, e.g. SCALED_COMPONENT_OFFSET or OVERLAP_COMPOUND.
+    pub flags: u16,
+}
+
+pub fn comp(glyph: u32, args: Args) -> Comp {
+    Comp {
+        glyph,
+        args,
+        xf: Xf::None,
+        flags: 0,
+    }
+}
+
+/// A composite glyph. With `wide_ids`, glyph ids are written as uint24
+/// with GID_IS_24_BIT.
+pub fn composite_glyph(comps: &[Comp], b: [i16; 4], wide_ids: bool) -> Vec<u8> {
+    let mut out = Buf::new().i16(-1).i16(b[0]).i16(b[1]).i16(b[2]).i16(b[3]);
+    for (i, c) in comps.iter().enumerate() {
+        let mut f = c.flags;
+        if i + 1 < comps.len() {
+            f |= MORE_COMPONENTS;
+        }
+        let words = match c.args {
+            Args::Xy(a, b) => {
+                f |= ARGS_ARE_XY_VALUES;
+                !(i8::try_from(a).is_ok() && i8::try_from(b).is_ok())
+            }
+            Args::Points(a, b) => !(u8::try_from(a).is_ok() && u8::try_from(b).is_ok()),
+        };
+        if words {
+            f |= ARG_1_AND_2_ARE_WORDS;
+        }
+        f |= match c.xf {
+            Xf::None => 0,
+            Xf::Scale(_) => WE_HAVE_A_SCALE,
+            Xf::XyScale(..) => WE_HAVE_AN_X_AND_Y_SCALE,
+            Xf::TwoByTwo(..) => WE_HAVE_A_TWO_BY_TWO,
+        };
+        if wide_ids {
+            f |= GID_IS_24_BIT;
+        }
+        out = out.u16(f);
+        out = if wide_ids {
+            out.u24(c.glyph)
+        } else {
+            out.u16(c.glyph as u16)
+        };
+        out = match (c.args, words) {
+            (Args::Xy(a, b), true) => out.i16(a).i16(b),
+            (Args::Xy(a, b), false) => out.u8(a as i8 as u8).u8(b as i8 as u8),
+            (Args::Points(a, b), true) => out.u16(a).u16(b),
+            (Args::Points(a, b), false) => out.u8(a as u8).u8(b as u8),
+        };
+        out = match c.xf {
+            Xf::None => out,
+            Xf::Scale(s) => out.i16(s),
+            Xf::XyScale(x, y) => out.i16(x).i16(y),
+            Xf::TwoByTwo(a, b, c2, d) => out.i16(a).i16(b).i16(c2).i16(d),
+        };
+    }
+    out.done()
+}
+
+/// glyf and loca tables for `glyphs`. Short loca pads each glyph to an
+/// even length.
+pub fn glyf_loca(glyphs: &[Vec<u8>], long: bool) -> (Vec<u8>, Vec<u8>) {
+    let mut glyf = Vec::new();
+    let mut loca = Buf::new();
+    for g in glyphs {
+        loca = if long {
+            loca.u32(glyf.len() as u32)
+        } else {
+            loca.u16((glyf.len() / 2) as u16)
+        };
+        glyf.extend_from_slice(g);
+        if !long && glyf.len() % 2 == 1 {
+            glyf.push(0);
+        }
+    }
+    loca = if long {
+        loca.u32(glyf.len() as u32)
+    } else {
+        loca.u16((glyf.len() / 2) as u16)
+    };
+    (glyf, loca.done())
+}
+
+/// A font with the given glyphs: head (with the loca format), maxp,
+/// hhea and hmtx (advance 1000, lsb = the glyph's xMin, so that FreeType
+/// does not shift outlines), a small cmap, and glyf/loca, or GLYF/LOCA
+/// with `extended`.
+pub fn glyph_font(glyphs: &[Vec<u8>], long: bool, extended: bool) -> Vec<u8> {
+    let n = glyphs.len() as u16;
+    let (glyf, loca) = glyf_loca(glyphs, long);
+    let metrics: Vec<(u16, i16)> = glyphs
+        .iter()
+        .map(|g| {
+            (
+                1000,
+                if g.len() >= 4 {
+                    i16::from_be_bytes([g[2], g[3]])
+                } else {
+                    0
+                },
+            )
+        })
+        .collect();
+    let mut tables: Vec<(&'static [u8; 4], Vec<u8>)> = vec![
+        (
+            b"cmap",
+            cmap(&[(
+                3,
+                1,
+                cmap4(&[seg(0x41, 0x41, 1 - 0x41), seg(0xFFFF, 0xFFFF, 1)]),
+            )]),
+        ),
+        (
+            b"head",
+            head(HeadSpec {
+                index_to_loc_format: if long { 1 } else { 0 },
+                ..Default::default()
+            }),
+        ),
+        (b"hhea", hhea(n)),
+        (b"hmtx", hmtx(&metrics, &[])),
+        (b"maxp", maxp05(n)),
+    ];
+    if extended {
+        tables.push((b"GLYF", glyf));
+        tables.push((b"LOCA", loca));
+    } else {
+        tables.push((b"glyf", glyf));
+        tables.push((b"loca", loca));
+    }
+    tables.sort_by_key(|(t, _)| **t);
+    sfnt(&tables)
+}

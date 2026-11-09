@@ -1,8 +1,8 @@
 [workspace]
 resolver = "3"
-members = ["crates/sofel-geom", "crates/sofel-read", "crates/sofel-font", "crates/sofel-cli", "crates/sofel-conformance"]
+members = ["crates/sofel-geom", "crates/sofel-read", "crates/sofel-font", "crates/sofel-outline", "crates/sofel-cli", "crates/sofel-conformance"]
 # sofel-conformance needs fetched test data and ft-dump (ADR 0005, ADR 0008).
-default-members = ["crates/sofel-geom", "crates/sofel-read", "crates/sofel-font", "crates/sofel-cli"]
+default-members = ["crates/sofel-geom", "crates/sofel-read", "crates/sofel-font", "crates/sofel-outline", "crates/sofel-cli"]
 exclude = ["fuzz"]
 
 [workspace.package]

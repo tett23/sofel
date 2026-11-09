@@ -14,7 +14,9 @@ name = "sofel-conformance"
 version = "0.0.0"
 dependencies = [
  "sofel-cli",
+ "sofel-font",
  "sofel-geom",
+ "sofel-outline",
  "sofel-read",
 ]
 
@@ -28,6 +30,14 @@ dependencies = [
 [[package]]
 name = "sofel-geom"
 version = "0.0.0"
+
+[[package]]
+name = "sofel-outline"
+version = "0.0.0"
+dependencies = [
+ "sofel-font",
+ "sofel-geom",
+]
 
 [[package]]
 name = "sofel-read"

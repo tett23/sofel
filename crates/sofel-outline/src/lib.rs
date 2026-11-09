@@ -1,0 +1,514 @@
+//! Glyph outlines from `glyf` and `GLYF`, the same as FreeType's without
+//! hinting (ADR 0011).
+//!
+//! Ported from FreeType 2.15.0 (commit 37515cf56ba3349656049edbed89ffc6f6466f2d):
+//! `src/truetype/ttgload.c` (`load_truetype_glyph`,
+//! `TT_Process_Simple_Glyph`, `TT_Process_Composite_Component`),
+//! `src/truetype/ttpload.c` (`tt_face_get_location`, `tt_face_load_loca`)
+//! and `src/base/ftoutln.c` (`FT_Outline_Decompose`,
+//! `FT_Outline_Get_CBox`). Copyright (C) 1996-2026 by David Turner,
+//! Robert Wilhelm, and Werner Lemberg. Used under the FreeType License
+//! (FTL); see THIRD_PARTY_NOTICES.md.
+//!
+//! Not done here (ADR 0011): hinting, variations, phantom points. In
+//! particular, FreeType shifts the final outline by the scaled
+//! `xMin - leftSideBearing` (phantom point 1); this crate does not.
+
+#![no_std]
+#![forbid(unsafe_code)]
+
+extern crate alloc;
+
+use alloc::vec::Vec;
+use core::fmt;
+
+use sofel_font::Font;
+use sofel_font::read::glyf::{self, Component, Glyph, SCALED_COMPONENT_OFFSET};
+use sofel_font::read::loca::{self, Loca};
+use sofel_font::read::{GlyphId, Tag};
+use sofel_geom::{Fixed, Matrix, Pen, Point, div_fix, mul_fix, transform, vector_length};
+
+/// How to scale font units.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Scale {
+    /// Keep font units (`FT_LOAD_NO_SCALE`).
+    Unscaled,
+    /// Multiply x and y by these 16.16 factors, giving 26.6 coordinates.
+    Scaled { x: Fixed, y: Fixed },
+}
+
+impl Scale {
+    /// The scale `FT_Set_Pixel_Sizes` sets: `FT_DivFix(ppem << 6, unitsPerEm)`.
+    pub fn pixels(font: &Font<'_>, x_ppem: u16, y_ppem: u16) -> Scale {
+        let upem = i32::from(font.units_per_em());
+        let s = |ppem: u16| Fixed(div_fix(i32::from(ppem).saturating_mul(64), upem));
+        Scale::Scaled {
+            x: s(x_ppem),
+            y: s(y_ppem),
+        }
+    }
+}
+
+/// The smallest box holding every point, off-curve ones included
+/// (`FT_Outline_Get_CBox`); all zero for an empty outline.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct CBox {
+    pub x_min: i32,
+    pub y_min: i32,
+    pub x_max: i32,
+    pub y_max: i32,
+}
+
+/// What [`draw`] found besides the commands.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct OutlineInfo {
+    /// FreeType's `FT_OUTLINE_OVERLAP`: a simple glyph whose first point
+    /// has OVERLAP_SIMPLE, or a first component with OVERLAP_COMPOUND.
+    pub overlap: bool,
+    pub cbox: CBox,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum OutlineError {
+    /// The glyph id is not below the glyph count.
+    InvalidGlyphIndex,
+    /// The font has no glyf and loca (or GLYF and LOCA), or its loca
+    /// format is unknown.
+    NoGlyphData,
+    /// A glyph's data is broken, or the points cannot form contours.
+    InvalidOutline,
+    /// A composite glyph is broken, recursive, or too deep.
+    InvalidComposite,
+}
+
+impl fmt::Display for OutlineError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            OutlineError::InvalidGlyphIndex => "glyph id out of range",
+            OutlineError::NoGlyphData => "no glyf and loca tables",
+            OutlineError::InvalidOutline => "invalid outline",
+            OutlineError::InvalidComposite => "invalid composite glyph",
+        })
+    }
+}
+
+impl core::error::Error for OutlineError {}
+
+/// The work area of [`draw`]. Keep one and reuse it across glyphs.
+#[derive(Clone, Debug, Default)]
+pub struct Scratch {
+    points: Vec<Point>,
+    /// FreeType's tags: bit 0 on-curve, bit 1 cubic.
+    tags: Vec<u8>,
+    /// The index of the last point of each contour.
+    ends: Vec<usize>,
+    components: Vec<Component>,
+    /// Glyph ids of the composites being loaded, for cycle detection.
+    stack: Vec<u32>,
+}
+
+const TAG_ON: u8 = 1;
+const TAG_CUBIC: u8 = 2;
+/// FreeType fails composites nested deeper than this.
+const MAX_RECURSION: usize = 100;
+
+struct Context<'a> {
+    glyf: &'a [u8],
+    loca: Loca<'a>,
+    num_glyphs: u32,
+    extended: bool,
+    scale: Scale,
+}
+
+impl Context<'_> {
+    /// `tt_face_get_location`: the byte range of a glyph.
+    fn location(&self, glyph: u32) -> (usize, usize) {
+        let len = self.glyf.len();
+        let n = self.loca.num_locations();
+        let g = usize::try_from(glyph).unwrap_or(usize::MAX);
+        let (pos1, pos2) = if g < n {
+            let p1 = self.loca.offset(g).unwrap_or(0) as usize;
+            let p2 = self
+                .loca
+                .offset(g.saturating_add(1))
+                .map_or(p1, |o| o as usize);
+            (p1, p2)
+        } else {
+            (0, 0)
+        };
+        if pos1 > len {
+            return (0, 0);
+        }
+        let pos2 = if pos2 > len {
+            if g.saturating_add(2) == n {
+                len
+            } else {
+                return (0, 0);
+            }
+        } else {
+            pos2
+        };
+        if pos2 >= pos1 {
+            (pos1, pos2.saturating_sub(pos1))
+        } else {
+            (pos1, len.saturating_sub(pos1))
+        }
+    }
+
+    fn scale_point(&self, x: i32, y: i32) -> Point {
+        match self.scale {
+            Scale::Unscaled => Point { x, y },
+            Scale::Scaled { x: sx, y: sy } => Point {
+                x: mul_fix(x, sx.0),
+                y: mul_fix(y, sy.0),
+            },
+        }
+    }
+}
+
+/// Draws `glyph` into `pen` as FreeType's `FT_Load_Glyph` with
+/// `FT_LOAD_NO_HINTING` (and `FT_LOAD_NO_SCALE` for
+/// [`Scale::Unscaled`]) followed by `FT_Outline_Decompose` would. On an
+/// error, the commands sent so far stay sent.
+pub fn draw(
+    font: &Font<'_>,
+    glyph: GlyphId,
+    scale: Scale,
+    scratch: &mut Scratch,
+    pen: &mut impl Pen,
+) -> Result<OutlineInfo, OutlineError> {
+    let extended = font.table(glyf::TAG_WIDE).is_some();
+    let (glyf_tag, loca_tag): (Tag, Tag) = if extended {
+        (glyf::TAG_WIDE, loca::TAG_WIDE)
+    } else {
+        (glyf::TAG, loca::TAG)
+    };
+    let loca_data = font.table(loca_tag).ok_or(OutlineError::NoGlyphData)?;
+    let loca = Loca::new(loca_data, font.head().index_to_loc_format())
+        .map_err(|_| OutlineError::NoGlyphData)?;
+    let ctx = Context {
+        glyf: font.table(glyf_tag).unwrap_or(&[]),
+        loca,
+        num_glyphs: font.num_glyphs(),
+        extended,
+        scale,
+    };
+    if glyph.0 >= ctx.num_glyphs {
+        return Err(OutlineError::InvalidGlyphIndex);
+    }
+    scratch.points.clear();
+    scratch.tags.clear();
+    scratch.ends.clear();
+    scratch.components.clear();
+    scratch.stack.clear();
+    let mut overlap = false;
+    load(&ctx, scratch, glyph.0, 0, &mut overlap)?;
+    let cbox = control_box(&scratch.points);
+    decompose(&scratch.points, &scratch.tags, &scratch.ends, pen)?;
+    Ok(OutlineInfo { overlap, cbox })
+}
+
+fn control_box(points: &[Point]) -> CBox {
+    let Some(first) = points.first() else {
+        return CBox::default();
+    };
+    points.iter().fold(
+        CBox {
+            x_min: first.x,
+            y_min: first.y,
+            x_max: first.x,
+            y_max: first.y,
+        },
+        |b, p| CBox {
+            x_min: b.x_min.min(p.x),
+            y_min: b.y_min.min(p.y),
+            x_max: b.x_max.max(p.x),
+            y_max: b.y_max.max(p.y),
+        },
+    )
+}
+
+/// `load_truetype_glyph` without hinting, variations and metrics.
+fn load(
+    ctx: &Context<'_>,
+    s: &mut Scratch,
+    glyph: u32,
+    depth: usize,
+    overlap: &mut bool,
+) -> Result<(), OutlineError> {
+    if depth > MAX_RECURSION {
+        return Err(OutlineError::InvalidComposite);
+    }
+    let (offset, len) = ctx.location(glyph);
+    if len == 0 {
+        return Ok(());
+    }
+    let data = ctx
+        .glyf
+        .get(offset..offset.saturating_add(len))
+        .ok_or(OutlineError::InvalidOutline)?;
+    let g = Glyph::new(data).map_err(|_| OutlineError::InvalidOutline)?;
+    let n = g.number_of_contours();
+    if n == 0 {
+        return Ok(());
+    }
+    if n > 0 {
+        load_simple(ctx, s, &g, overlap)
+    } else {
+        load_composite(ctx, s, &g, glyph, depth, overlap)
+    }
+}
+
+fn load_simple(
+    ctx: &Context<'_>,
+    s: &mut Scratch,
+    g: &Glyph<'_>,
+    overlap: &mut bool,
+) -> Result<(), OutlineError> {
+    let simple = g.simple().map_err(|_| OutlineError::InvalidOutline)?;
+    let base = s.points.len();
+    for p in simple.points(ctx.extended) {
+        s.points.push(ctx.scale_point(p.x, p.y));
+        s.tags
+            .push(if p.on_curve { TAG_ON } else { 0 } | if p.cubic { TAG_CUBIC } else { 0 });
+    }
+    if s.points.len().saturating_sub(base) != simple.num_points() as usize {
+        return Err(OutlineError::InvalidOutline);
+    }
+    s.ends.extend(
+        simple
+            .end_points()
+            .map(|e| base.saturating_add(usize::from(e))),
+    );
+    if simple.overlap() {
+        *overlap = true;
+    }
+    Ok(())
+}
+
+fn load_composite(
+    ctx: &Context<'_>,
+    s: &mut Scratch,
+    g: &Glyph<'_>,
+    glyph: u32,
+    depth: usize,
+    overlap: &mut bool,
+) -> Result<(), OutlineError> {
+    if s.stack.contains(&glyph) {
+        return Err(OutlineError::InvalidComposite);
+    }
+    // Read all records first, as FreeType does.
+    let first_component = s.components.len();
+    for c in g.components(ctx.extended) {
+        let c = c.map_err(|_| OutlineError::InvalidComposite)?;
+        if c.glyph.0 >= ctx.num_glyphs {
+            return Err(OutlineError::InvalidComposite);
+        }
+        s.components.push(c);
+    }
+    let end_component = s.components.len();
+    if depth == 0
+        && s.components
+            .get(first_component)
+            .is_some_and(|c| c.flags & glyf::OVERLAP_COMPOUND != 0)
+    {
+        *overlap = true;
+    }
+    s.stack.push(glyph);
+    let start_point = s.points.len();
+    for i in first_component..end_component {
+        let Some(c) = s.components.get(i).copied() else {
+            break;
+        };
+        let base = s.points.len();
+        load(ctx, s, c.glyph.0, depth.saturating_add(1), overlap)?;
+        if s.points.len() == base {
+            continue;
+        }
+        place_component(ctx, s, &c, start_point, base)?;
+    }
+    s.stack.pop();
+    s.components.truncate(first_component);
+    Ok(())
+}
+
+/// `TT_Process_Composite_Component` without hinting.
+fn place_component(
+    ctx: &Context<'_>,
+    s: &mut Scratch,
+    c: &Component,
+    start_point: usize,
+    base: usize,
+) -> Result<(), OutlineError> {
+    let fixed = |v: i16| Fixed(i32::from(v).saturating_mul(4));
+    let m = Matrix {
+        xx: fixed(c.xx),
+        xy: fixed(c.xy),
+        yx: fixed(c.yx),
+        yy: fixed(c.yy),
+    };
+    let points = s
+        .points
+        .get_mut(base..)
+        .ok_or(OutlineError::InvalidComposite)?;
+    if c.has_scale() {
+        for p in points.iter_mut() {
+            *p = transform(*p, &m);
+        }
+    }
+    let (x, y) = if !c.args_are_xy() {
+        let k = usize::try_from(c.arg1)
+            .unwrap_or(usize::MAX)
+            .saturating_add(start_point);
+        let l = usize::try_from(c.arg2)
+            .unwrap_or(usize::MAX)
+            .saturating_add(base);
+        if k >= base || l >= s.points.len() {
+            return Err(OutlineError::InvalidComposite);
+        }
+        let (Some(p1), Some(p2)) = (s.points.get(k), s.points.get(l)) else {
+            return Err(OutlineError::InvalidComposite);
+        };
+        (p1.x.saturating_sub(p2.x), p1.y.saturating_sub(p2.y))
+    } else {
+        let (mut x, mut y) = (c.arg1, c.arg2);
+        if x == 0 && y == 0 {
+            return Ok(());
+        }
+        if c.has_scale() && c.flags & SCALED_COMPONENT_OFFSET != 0 {
+            x = mul_fix(x, vector_length(m.xx.0, m.xy.0));
+            y = mul_fix(y, vector_length(m.yy.0, m.yx.0));
+        }
+        if let Scale::Scaled { x: sx, y: sy } = ctx.scale {
+            x = mul_fix(x, sx.0);
+            y = mul_fix(y, sy.0);
+        }
+        (x, y)
+    };
+    if x != 0 || y != 0 {
+        for p in s.points.get_mut(base..).into_iter().flatten() {
+            p.x = p.x.saturating_add(x);
+            p.y = p.y.saturating_add(y);
+        }
+    }
+    Ok(())
+}
+
+fn mid(a: Point, b: Point) -> Point {
+    // C's `/ 2` truncates toward zero; so does Rust's on i64.
+    let h = |u: i32, v: i32| {
+        i32::try_from((i64::from(u).saturating_add(i64::from(v))) / 2).unwrap_or(0)
+    };
+    Point {
+        x: h(a.x, b.x),
+        y: h(a.y, b.y),
+    }
+}
+
+/// `FT_Outline_Decompose` with shift 0 and delta 0, plus `close` at the
+/// end of each contour. `point` mirrors FreeType's pointer: the index of
+/// the last point consumed, which starts one before `first` when the
+/// contour starts off the curve.
+fn decompose(
+    points: &[Point],
+    tags: &[u8],
+    ends: &[usize],
+    pen: &mut impl Pen,
+) -> Result<(), OutlineError> {
+    let invalid = OutlineError::InvalidOutline;
+    let at = |i: i64| usize::try_from(i).ok();
+    let pt = |i: i64| at(i).and_then(|i| points.get(i)).copied().ok_or(invalid);
+    let tg = |i: i64| {
+        at(i)
+            .and_then(|i| tags.get(i))
+            .map(|t| t & 3)
+            .ok_or(invalid)
+    };
+    let mut last: i64 = -1;
+    for &end in ends {
+        let first = last.saturating_add(1);
+        last = i64::try_from(end).map_err(|_| invalid)?;
+        if last < first {
+            return Err(invalid);
+        }
+        let mut limit = last;
+        let mut v_start = pt(first)?;
+        let v_last = pt(last)?;
+        let mut point = first;
+        let tag = tg(first)?;
+        if tag != TAG_ON {
+            let last_tag = tg(last)?;
+            if last_tag == TAG_ON {
+                v_start = v_last;
+                limit = limit.saturating_sub(1);
+            } else {
+                if last_tag != tag {
+                    return Err(invalid);
+                }
+                v_start = mid(v_start, v_last);
+            }
+            point = point.saturating_sub(1);
+        }
+        pen.move_to(v_start);
+        let mut closed = false;
+        'contour: while point < limit {
+            point = point.saturating_add(1);
+            match tg(point)? {
+                TAG_ON => pen.line_to(pt(point)?),
+                0 => {
+                    let mut v_control = pt(point)?;
+                    loop {
+                        if point < limit {
+                            point = point.saturating_add(1);
+                            let vec = pt(point)?;
+                            let t = tg(point)?;
+                            if t == TAG_ON {
+                                pen.quad_to(v_control, vec);
+                                continue 'contour;
+                            }
+                            if t != 0 {
+                                return Err(invalid);
+                            }
+                            pen.quad_to(v_control, mid(v_control, vec));
+                            v_control = vec;
+                        } else {
+                            pen.quad_to(v_control, v_start);
+                            closed = true;
+                            break 'contour;
+                        }
+                    }
+                }
+                _ => {
+                    if point.saturating_add(1) > limit || tg(point.saturating_add(1))? != TAG_CUBIC
+                    {
+                        return Err(invalid);
+                    }
+                    point = point.saturating_add(2);
+                    let vec1 = pt(point.saturating_sub(2))?;
+                    let vec2 = pt(point.saturating_sub(1))?;
+                    if point <= limit {
+                        let t = tg(point)?;
+                        let vec = match t {
+                            TAG_CUBIC => mid(vec2, pt(point)?),
+                            TAG_ON => pt(point)?,
+                            _ => return Err(invalid),
+                        };
+                        pen.cubic_to(vec1, vec2, vec);
+                        if t == TAG_CUBIC {
+                            point = point.saturating_sub(1);
+                        }
+                    } else {
+                        pen.cubic_to(vec1, vec2, v_start);
+                        closed = true;
+                        break 'contour;
+                    }
+                }
+            }
+        }
+        if !closed {
+            pen.line_to(v_start);
+        }
+        pen.close();
+    }
+    Ok(())
+}

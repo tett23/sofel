@@ -1,6 +1,6 @@
 # ADR 0011: glyfの輪郭（`sofel-read` のglyfとloca、`sofel-outline`）
 
-ステータス: 採択（未実装）
+ステータス: 採択
 
 ## 文脈
 

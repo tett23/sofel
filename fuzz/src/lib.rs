@@ -108,3 +108,23 @@ fn check_sfnt(s: &Sfnt<'_>) {
         let _ = r.data(s.file());
     }
 }
+
+/// A whole font file: every glyph's outline (up to 256 glyphs), unscaled
+/// and at 16 pixels (ADR 0011). Must not panic.
+pub fn check_outline(data: &[u8]) {
+    let Ok(font) = sofel_font::Font::new(data, 0) else { return };
+    let mut scratch = sofel_outline::Scratch::default();
+    let scales = [sofel_outline::Scale::Unscaled, sofel_outline::Scale::pixels(&font, 16, 16)];
+    for g in 0..font.num_glyphs().min(256) {
+        for scale in scales {
+            let mut n = 0usize;
+            let _ = sofel_outline::draw(
+                &font,
+                GlyphId(g),
+                scale,
+                &mut scratch,
+                &mut sofel_geom::FnPen(|_| n = n.wrapping_add(1)),
+            );
+        }
+    }
+}
