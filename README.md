@@ -26,4 +26,4 @@ git config core.hooksPath .githooks
 
 ## License
 
-MIT（[ADR 0002](docs/adr/0002-license-and-reuse.md)）。
+MIT（[LICENSE](LICENSE)、[ADR 0002](docs/adr/0002-license-and-reuse.md)）。流用したコードの著作権表示は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) に載せる。
