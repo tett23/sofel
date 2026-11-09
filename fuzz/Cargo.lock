@@ -82,6 +82,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
+name = "sofel-font"
+version = "0.0.0"
+dependencies = [
+ "sofel-read",
+]
+
+[[package]]
+name = "sofel-geom"
+version = "0.0.0"
+
+[[package]]
+name = "sofel-outline"
+version = "0.0.0"
+dependencies = [
+ "sofel-font",
+ "sofel-geom",
+]
+
+[[package]]
 name = "sofel-read"
 version = "0.0.0"
 
@@ -90,5 +109,8 @@ name = "sofel-read-fuzz"
 version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
+ "sofel-font",
+ "sofel-geom",
+ "sofel-outline",
  "sofel-read",
 ]

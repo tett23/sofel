@@ -73,7 +73,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 基本の型は `Tag`、`GlyphId`（`u32`。24bitのグリフIDを扱う）、`Fixed`、`F2Dot14`、`LongDateTime` とし、生の値だけを持つ（[ADR 0007](adr/0007-sfnt-read-foundation.md)）。
 - 表のビューは、作るときにヘッダと配列の範囲を一度だけ検査する。作れないほど壊れていれば `Err(ReadError)` を返す。作れたビューの読み取りは、範囲外の入力に `None` を返し、既定の値で埋めない。既定の値の方針は `sofel-font` で決める。
 - どの入力でもpanicしない。clippyの `indexing_slicing`、`arithmetic_side_effects` などを拒否にして強制し、ファジングで確かめる。
-- 読める形式と表：sfnt（`0x00010000`、`OTTO`、`true`、`typ1`）、TTC/OTC、head、maxp、MAXP、hhea、HHEA、hmtx、HMTX、cmap（フォーマット0、2、4、6、8、10、12、13、14、15）。
+- 読める形式と表：sfnt（`0x00010000`、`OTTO`、`true`、`typ1`）、TTC/OTC、head、maxp、MAXP、hhea、HHEA、hmtx、HMTX、cmap（フォーマット0、2、4、6、8、10、12、13、14、15）、loca、LOCA、glyf、GLYF（[ADR 0011](adr/0011-glyf-outlines.md)）。glyfの検証器は、各グリフをlocaの項目から次の項目までとして読み、locaの壊れた箇所はlocaの検証器が報告する。
 - 検証器は各表の `validate(data, report)` で、`Diagnostic`（タグ、オフセット、重大度、種類）を1つずつ渡す。重大度は `Error`（ビューを作れない、または読み取りの結果が仕様の意図と異なる）と `Warning`（仕様に反するが読み取りに影響しない）とする。`Error` の無い表は、ビューを作れ、範囲内の読み取りが `None` を返さない。
 
 ## 固定小数点と `Pen`（`sofel-geom`）
@@ -93,6 +93,8 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - glyfと `GLYF` の単純なグリフと合成グリフの輪郭を、ヒンティングをせずに、FreeTypeと同じ座標で `Pen` に渡す（[ADR 0011](adr/0011-glyf-outlines.md)）。`GLYF` があれば `GLYF` と `LOCA` を使い、そのときだけフラグ0x80を三次曲線、0x2000を24bitの成分のグリフIDとして扱う。
 - 倍率は `FT_Set_Pixel_Sizes` と同じく `div_fix(ppem << 6, unitsPerEm)` で、点は `mul_fix` で拡大縮小し、丸めない。locaの解釈と合成の位置の計算はFreeTypeに合わせる。
 - 作業領域（`Scratch`）は呼び出し側が持つ。
+- 幻の点は計算しない（[ADR 0011](adr/0011-glyf-outlines.md)）。FreeTypeは最後に輪郭を `pp1.x`（`xMin` − 左のサイドベアリングを拡大縮小した値）だけ横に動かすが、sofelは動かさない。そのため、左のサイドベアリングが `xMin` と異なるグリフでは、FreeTypeと座標が異なる。
+- HarfBuzz 15.1.0のテストのフォントのglyfを持つフェイスで、22万3925項目（拡大縮小なし、16画素、48画素）を比べ、期待する失敗は243項目である。うち234項目は上の `pp1.x` の平行移動、9項目はCFFとglyfの両方を持つ `OTTO` のフォント（FreeTypeはCFFを描く）による。
 
 ## ラスタライズ（`sofel-raster`）
 

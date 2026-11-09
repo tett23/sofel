@@ -3,9 +3,10 @@
 
 use crate::be::{self, to_u32, to_usize};
 use crate::hhea::Hhea;
+use crate::loca::Loca;
 use crate::maxp::Maxp;
 use crate::sfnt::{Collection, Sfnt, TableRecord};
-use crate::{CountWidth, Diagnostic, Kind, Tag, cmap, head, hhea, hmtx, maxp};
+use crate::{CountWidth, Diagnostic, Kind, Tag, cmap, glyf, head, hhea, hmtx, loca, maxp};
 
 /// The pseudo tag of diagnostics about the table directory.
 pub const DIRECTORY: Tag = Tag::new(b"sfnt");
@@ -139,5 +140,24 @@ pub fn sfnt(sfnt: &Sfnt<'_>, report: &mut dyn FnMut(Diagnostic)) {
     }
     if let Some(d) = table(sfnt, cmap::TAG) {
         cmap::validate(d, glyphs_wide.or(glyphs_narrow), report);
+    }
+    // GLYF and LOCA replace glyf and loca when GLYF is present (ADR 0011).
+    let extended = table(sfnt, glyf::TAG_WIDE).is_some();
+    let (glyf_tag, loca_tag) = if extended {
+        (glyf::TAG_WIDE, loca::TAG_WIDE)
+    } else {
+        (glyf::TAG, loca::TAG)
+    };
+    let format = table(sfnt, head::TAG)
+        .and_then(|d| head::Head::new(d).ok())
+        .map(|h| h.index_to_loc_format());
+    let glyphs = glyphs_wide.or(glyphs_narrow);
+    if let (Some(g), Some(l), Some(format), Some(n)) =
+        (table(sfnt, glyf_tag), table(sfnt, loca_tag), format, glyphs)
+    {
+        loca::validate(l, format, n, g.len(), loca_tag, report);
+        if let Ok(lv) = Loca::new(l, format) {
+            glyf::validate(g, &lv, n, extended, glyf_tag, report);
+        }
     }
 }

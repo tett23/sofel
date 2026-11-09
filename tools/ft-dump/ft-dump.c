@@ -49,6 +49,26 @@
  *   mul_div A B C   -> FT_MulDiv(A, B, C)
  *   length X Y      -> FT_Vector_Length of (X, Y)
  *
+ * Usage: ft-dump --outline SIZE FILE
+ *
+ * Writes the outline of every glyph (ADR 0011), loaded with
+ * FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP, plus FT_LOAD_NO_SCALE when SIZE
+ * is `unscaled`; otherwise SIZE is a pixel size for FT_Set_Pixel_Sizes.
+ * For each face:
+ *
+ *   face <i>
+ *   error <code>                        (the face cannot be opened)
+ *   num_glyphs <n>
+ *   glyph <g>
+ *   M x y | L x y | Q cx cy x y | C c1x c1y c2x c2y x y | Z
+ *                                       (FT_Outline_Decompose; Z ends a
+ *                                       contour)
+ *   error <code>                        (loading or decomposing failed;
+ *                                       nothing else follows for the glyph)
+ *   overlap <0|1>                       (FT_OUTLINE_OVERLAP)
+ *   cbox <xMin> <yMin> <xMax> <yMax>    (FT_Outline_Get_CBox)
+ *   end
+ *
  * Exit status: 0 on success, 1 when FreeType cannot be initialized or
  * the file cannot be opened at all, 2 on wrong usage.
  */
@@ -62,6 +82,127 @@
 #include FT_TRUETYPE_TABLES_H
 #include FT_ADVANCES_H
 #include FT_TRIGONOMETRY_H
+#include FT_OUTLINE_H
+
+static int contour_open;
+
+static void end_contour(void)
+{
+  if (contour_open)
+    printf("Z\n");
+  contour_open = 0;
+}
+
+static int move_to(const FT_Vector *to, void *user)
+{
+  (void)user;
+  end_contour();
+  contour_open = 1;
+  printf("M %ld %ld\n", (long)to->x, (long)to->y);
+  return 0;
+}
+
+static int line_to(const FT_Vector *to, void *user)
+{
+  (void)user;
+  printf("L %ld %ld\n", (long)to->x, (long)to->y);
+  return 0;
+}
+
+static int conic_to(const FT_Vector *c, const FT_Vector *to, void *user)
+{
+  (void)user;
+  printf("Q %ld %ld %ld %ld\n", (long)c->x, (long)c->y, (long)to->x, (long)to->y);
+  return 0;
+}
+
+static int cubic_to(const FT_Vector *c1, const FT_Vector *c2,
+                    const FT_Vector *to, void *user)
+{
+  (void)user;
+  printf("C %ld %ld %ld %ld %ld %ld\n", (long)c1->x, (long)c1->y,
+         (long)c2->x, (long)c2->y, (long)to->x, (long)to->y);
+  return 0;
+}
+
+static const FT_Outline_Funcs outline_funcs = {
+  move_to, line_to, conic_to, cubic_to, 0, 0
+};
+
+static void dump_outlines(FT_Face face, int unscaled, int ppem)
+{
+  FT_Int32 flags = FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP;
+  FT_Long g;
+
+  if (unscaled)
+    flags |= FT_LOAD_NO_SCALE;
+  else if (FT_Set_Pixel_Sizes(face, 0, (FT_UInt)ppem) != 0) {
+    printf("error size\n");
+    return;
+  }
+  for (g = 0; g < face->num_glyphs; g++) {
+    FT_Error error;
+    FT_BBox cbox;
+
+    printf("glyph %ld\n", (long)g);
+    error = FT_Load_Glyph(face, (FT_UInt)g, flags);
+    if (error == 0 && face->glyph->format != FT_GLYPH_FORMAT_OUTLINE)
+      error = -1;
+    if (error != 0) {
+      printf("error %d\n", (int)error);
+      continue;
+    }
+    contour_open = 0;
+    error = FT_Outline_Decompose(&face->glyph->outline, &outline_funcs, NULL);
+    if (error != 0) {
+      printf("error %d\n", (int)error);
+      continue;
+    }
+    end_contour();
+    FT_Outline_Get_CBox(&face->glyph->outline, &cbox);
+    printf("overlap %d\n", (face->glyph->outline.flags & FT_OUTLINE_OVERLAP) ? 1 : 0);
+    printf("cbox %ld %ld %ld %ld\n", (long)cbox.xMin, (long)cbox.yMin,
+           (long)cbox.xMax, (long)cbox.yMax);
+  }
+}
+
+static int outlines(const char *size, const char *path)
+{
+  FT_Library library;
+  FT_Face face;
+  FT_Long num_faces, i;
+  int unscaled = strcmp(size, "unscaled") == 0;
+  int ppem = atoi(size);
+
+  if (!unscaled && ppem <= 0) {
+    fprintf(stderr, "ft-dump: bad size %s\n", size);
+    return 2;
+  }
+  if (FT_Init_FreeType(&library) != 0)
+    return 1;
+  if (FT_New_Face(library, path, -1, &face) != 0) {
+    FT_Done_FreeType(library);
+    return 1;
+  }
+  num_faces = face->num_faces;
+  FT_Done_Face(face);
+  for (i = 0; i < num_faces; i++) {
+    FT_Error error;
+
+    printf("face %ld\n", (long)i);
+    error = FT_New_Face(library, path, i, &face);
+    if (error != 0) {
+      printf("error %d\nend\n", (int)error);
+      continue;
+    }
+    printf("num_glyphs %ld\n", (long)face->num_glyphs);
+    dump_outlines(face, unscaled, ppem);
+    printf("end\n");
+    FT_Done_Face(face);
+  }
+  FT_Done_FreeType(library);
+  return 0;
+}
 
 static int calc(void)
 {
@@ -195,6 +336,8 @@ int main(int argc, char **argv)
 
   if (argc == 2 && strcmp(argv[1], "--calc") == 0)
     return calc();
+  if (argc == 4 && strcmp(argv[1], "--outline") == 0)
+    return outlines(argv[2], argv[3]);
   if (argc != 2) {
     fprintf(stderr, "usage: ft-dump FILE | ft-dump --calc\n");
     return 2;

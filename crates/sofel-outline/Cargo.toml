@@ -1,0 +1,15 @@
+[package]
+name = "sofel-outline"
+description = "Glyph outlines, the same as FreeType's without hinting (ADR 0011)"
+version.workspace = true
+edition.workspace = true
+license = "MIT AND FTL"
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+sofel-font = { path = "../sofel-font" }
+sofel-geom = { path = "../sofel-geom" }
+
+[lints]
+workspace = true

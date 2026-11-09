@@ -11,6 +11,8 @@ publish = false
 [dependencies]
 sofel-read = { path = "../sofel-read" }
 sofel-geom = { path = "../sofel-geom" }
+sofel-font = { path = "../sofel-font" }
+sofel-outline = { path = "../sofel-outline" }
 sofel-cli = { path = "../sofel-cli" }
 
 [lints]

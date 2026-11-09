@@ -21,7 +21,7 @@ use sofel_read::hmtx::Hmtx;
 use sofel_read::maxp::Maxp;
 use sofel_read::sfnt::Sfnt;
 use sofel_read::{
-    CountWidth, Diagnostic, GlyphId, Severity, cmap, head, hhea, hmtx, maxp, validate,
+    CountWidth, Diagnostic, GlyphId, Severity, cmap, glyf, head, hhea, hmtx, maxp, validate,
 };
 
 struct XorShift(u64);
@@ -206,6 +206,65 @@ fn whole_font_never_panics() {
         let d = mutate(&mut rng, &base);
         if let Ok(s) = Sfnt::new(&d) {
             validate::sfnt(&s, &mut |_| {});
+        }
+    }
+}
+
+#[test]
+fn glyf_invariants() {
+    use sofel_read::glyf::Glyph;
+    use sofel_read::loca::Loca;
+    let square = simple_glyph(
+        &[&[
+            Pt::On(0, 0),
+            Pt::Off(0, 700),
+            Pt::On(500, 700),
+            Pt::On(500, 0),
+        ]],
+        false,
+        &[],
+    );
+    let comp = composite_glyph(
+        &[
+            comp(1, Args::Xy(-3, 400)),
+            Comp {
+                glyph: 1,
+                args: Args::Points(1, 2),
+                xf: Xf::TwoByTwo(1, 2, 3, 4),
+                flags: 0,
+            },
+        ],
+        [0; 4],
+        false,
+    );
+    let glyphs = vec![square.clone(), comp];
+    let (glyf_base, loca) = glyf_loca(&glyphs, true);
+    let lv = Loca::new(&loca, 1).unwrap();
+    let mut rng = XorShift(0x5151_5151_5151_5151);
+    for _ in 0..ROUNDS * 4 {
+        let g = mutate(&mut rng, &glyf_base);
+        let error = has_error(|r| glyf::validate(&g, &lv, 2, false, glyf::TAG, r));
+        if error {
+            continue;
+        }
+        for i in 0..2 {
+            let (s, e) = (
+                lv.offset(i).unwrap() as usize,
+                lv.offset(i + 1).unwrap() as usize,
+            );
+            let Some(bytes) = g.get(s..e.min(g.len())) else {
+                continue;
+            };
+            if e > g.len() || bytes.is_empty() {
+                continue;
+            }
+            let glyph = Glyph::new(bytes).unwrap();
+            if glyph.number_of_contours() > 0 {
+                let simple = glyph.simple().unwrap();
+                assert_eq!(simple.points(false).count() as u32, simple.num_points());
+            } else if glyph.number_of_contours() < 0 {
+                assert!(glyph.components(false).all(|c| c.is_ok()));
+            }
         }
     }
 }

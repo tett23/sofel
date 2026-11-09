@@ -14,4 +14,6 @@
 pub mod compare;
 pub mod dump;
 pub mod expect;
+pub mod fonts;
+pub mod outline;
 pub mod paths;
