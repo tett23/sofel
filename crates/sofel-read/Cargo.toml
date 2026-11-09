@@ -1,0 +1,11 @@
+[package]
+name = "sofel-read"
+description = "Zero-copy, allocation-free readers and validators for sfnt font tables"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
