@@ -10,6 +10,7 @@ publish = false
 
 [dependencies]
 sofel-read = { path = "../sofel-read" }
+sofel-geom = { path = "../sofel-geom" }
 sofel-cli = { path = "../sofel-cli" }
 
 [lints]

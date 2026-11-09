@@ -17,6 +17,7 @@ WOFFとWOFF2、Type1やBDFなどの古い形式、AAT、絵文字（COLR、埋�
 
 | クレート | 役割 |
 |---|---|
+| [`sofel-geom`](crates/sofel-geom) | FreeTypeと同じ結果を返す固定小数点の演算と、輪郭を受け渡す `Pen` |
 | [`sofel-read`](crates/sofel-read) | sfntの表の読み取りと検証。コピーも確保もせず、どの入力でもpanicしない |
 | [`sofel-cli`](crates/sofel-cli) | 小さな道具。いまは `sofel-validate` だけ |
 | [`sofel-conformance`](crates/sofel-conformance) | FreeTypeとの突き合わせのテスト（`cargo test` では走らない） |
@@ -62,8 +63,8 @@ cargo test --release -p sofel-conformance
 wasmでは、`wasm32-unknown-unknown` へのビルドと、`wasm32-wasip1` での単体テストを確かめる（[ADR 0004](docs/adr/0004-wasm-and-no-std.md)）。単体テストには [wasmtime](https://wasmtime.dev/) が要る。
 
 ```sh
-cargo build --release --target wasm32-unknown-unknown -p sofel-read
-CARGO_TARGET_WASM32_WASIP1_RUNNER=wasmtime cargo test --target wasm32-wasip1 -p sofel-read
+cargo build --release --target wasm32-unknown-unknown -p sofel-read -p sofel-geom
+CARGO_TARGET_WASM32_WASIP1_RUNNER=wasmtime cargo test --target wasm32-wasip1 -p sofel-read -p sofel-geom
 ```
 
 ファジングには、nightlyのツールチェーンと [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) が要る。対象は `cmap`、`metrics`、`font`。
@@ -76,3 +77,7 @@ cargo +nightly fuzz run cmap -- -max_total_time=60
 ## License
 
 MIT（[LICENSE](LICENSE)、[ADR 0002](docs/adr/0002-license-and-reuse.md)）。流用したコードの著作権表示は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) に載せる。
+
+FreeTypeの計算を移植した部分を含むクレート（`sofel-geom` など）は、FreeType License（FTL）にも従う（`MIT AND FTL`）。FTLの求めにより、次の文を載せる。
+
+> Portions of this software are copyright © 2026 The FreeType Project (https://freetype.org). All rights reserved.

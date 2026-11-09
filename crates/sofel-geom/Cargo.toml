@@ -1,0 +1,11 @@
+[package]
+name = "sofel-geom"
+description = "Fixed-point arithmetic matching FreeType, and the Pen that carries outlines"
+version.workspace = true
+edition.workspace = true
+license = "MIT AND FTL"
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true

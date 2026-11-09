@@ -39,17 +39,54 @@
  *         max_component_elements max_component_depth
  *         (all but version and num_glyphs only for version 1.0)
  *
+ * Usage: ft-dump --calc
+ *
+ * Reads lines from standard input and writes FreeType's result for each
+ * (ADR 0009). Arguments and results are decimal:
+ *
+ *   mul_fix A B     -> FT_MulFix(A, B)
+ *   div_fix A B     -> FT_DivFix(A, B)
+ *   mul_div A B C   -> FT_MulDiv(A, B, C)
+ *   length X Y      -> FT_Vector_Length of (X, Y)
+ *
  * Exit status: 0 on success, 1 when FreeType cannot be initialized or
  * the file cannot be opened at all, 2 on wrong usage.
  */
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include FT_TRUETYPE_TABLES_H
 #include FT_ADVANCES_H
+#include FT_TRIGONOMETRY_H
+
+static int calc(void)
+{
+  char op[32];
+  long a, b, c;
+
+  while (scanf("%31s", op) == 1) {
+    if (strcmp(op, "mul_fix") == 0 && scanf("%ld %ld", &a, &b) == 2)
+      printf("%ld\n", (long)FT_MulFix(a, b));
+    else if (strcmp(op, "div_fix") == 0 && scanf("%ld %ld", &a, &b) == 2)
+      printf("%ld\n", (long)FT_DivFix(a, b));
+    else if (strcmp(op, "mul_div") == 0 && scanf("%ld %ld %ld", &a, &b, &c) == 3)
+      printf("%ld\n", (long)FT_MulDiv(a, b, c));
+    else if (strcmp(op, "length") == 0 && scanf("%ld %ld", &a, &b) == 2) {
+      FT_Vector v;
+      v.x = a;
+      v.y = b;
+      printf("%ld\n", (long)FT_Vector_Length(&v));
+    } else {
+      fprintf(stderr, "ft-dump: bad --calc input at %s\n", op);
+      return 2;
+    }
+  }
+  return 0;
+}
 
 static unsigned long u32(FT_ULong v) { return (unsigned long)(v & 0xFFFFFFFFUL); }
 
@@ -156,8 +193,10 @@ int main(int argc, char **argv)
   FT_Long num_faces, i;
   FT_Error error;
 
+  if (argc == 2 && strcmp(argv[1], "--calc") == 0)
+    return calc();
   if (argc != 2) {
-    fprintf(stderr, "usage: ft-dump FILE\n");
+    fprintf(stderr, "usage: ft-dump FILE | ft-dump --calc\n");
     return 2;
   }
   if (FT_Init_FreeType(&library) != 0) {
