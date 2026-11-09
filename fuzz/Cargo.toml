@@ -1,0 +1,38 @@
+[package]
+name = "sofel-read-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4.13"
+sofel-read = { path = "../crates/sofel-read" }
+
+# Not part of the main workspace (ADR 0007).
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "cmap"
+path = "fuzz_targets/cmap.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "metrics"
+path = "fuzz_targets/metrics.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "font"
+path = "fuzz_targets/font.rs"
+test = false
+doc = false
+bench = false
