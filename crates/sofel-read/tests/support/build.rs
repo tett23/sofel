@@ -550,3 +550,14 @@ pub fn sample_tables() -> Vec<(&'static [u8; 4], Vec<u8>)> {
         (b"maxp", maxp05(num_glyphs)),
     ]
 }
+
+/// `sample_tables()` plus an empty `glyf` and a short-format `loca` in
+/// which every glyph is empty, so that FreeType's TrueType driver accepts
+/// the font (it needs both tables).
+pub fn sample_tables_with_glyf() -> Vec<(&'static [u8; 4], Vec<u8>)> {
+    let mut tables = sample_tables();
+    tables.push((b"glyf", Vec::new()));
+    tables.push((b"loca", vec![0u8; 2 * 29]));
+    tables.sort_by_key(|(t, _)| **t);
+    tables
+}

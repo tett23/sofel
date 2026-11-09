@@ -3,5 +3,20 @@
 version = 4
 
 [[package]]
+name = "sofel-cli"
+version = "0.0.0"
+dependencies = [
+ "sofel-read",
+]
+
+[[package]]
+name = "sofel-conformance"
+version = "0.0.0"
+dependencies = [
+ "sofel-cli",
+ "sofel-read",
+]
+
+[[package]]
 name = "sofel-read"
 version = "0.0.0"

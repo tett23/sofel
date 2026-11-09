@@ -33,8 +33,47 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
       - run: cargo fmt --check
-      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test
+      # docs/adr/0003, docs/adr/0008
+      - name: Check crate dependencies
+        run: sh scripts/check-deps.sh
+      # docs/adr/0008
+      - name: Test scripts
+        run: sh scripts/run-tests.sh
+
+  # docs/adr/0005, docs/adr/0008
+  conformance:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-conformance-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+      - id: testdata
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/testdata
+          key: ${{ runner.os }}-testdata-${{ hashFiles('testdata.lock') }}
+      # With a cache hit, the offline mode fails if the cache is incomplete.
+      - name: Fetch test data
+        env:
+          SOFEL_TESTDATA_OFFLINE: ${{ steps.testdata.outputs.cache-hit == 'true' && '1' || '0' }}
+        run: sh scripts/fetch-testdata.sh
+      - name: Build ft-dump
+        run: sh tools/ft-dump/build.sh
+      - name: Compare with FreeType
+        run: cargo test --release -p sofel-conformance -- --nocapture
 
   # docs/adr/0004, docs/adr/0007
   wasm:

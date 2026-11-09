@@ -296,3 +296,25 @@ fn whole_font_validation_uses_context() {
         "{got:?}"
     );
 }
+
+#[test]
+fn single_subtables() {
+    let data = cmap(&[
+        (3, 1, cmap4(&[seg(0x41, 0x42, 0), seg(0xFFFF, 0xFFFF, 1)])),
+        (3, 10, cmap12_13(12, &[(0x50, 0x40, 1)])),
+    ]);
+    let c = sofel_read::cmap::Cmap::new(&data).unwrap();
+    let offsets: Vec<u32> = c.records().map(|r| r.offset).collect();
+    let ok = collect(|r| cmap::validate_subtable(&data, offsets[0], None, r));
+    assert!(ok.is_empty(), "{ok:?}");
+    let bad = collect(|r| cmap::validate_subtable(&data, offsets[1], None, r));
+    assert_eq!(
+        ids(&bad),
+        vec![("start_after_end", Severity::Error, offsets[1] + 16)]
+    );
+    let out = collect(|r| cmap::validate_subtable(&data, 0, None, r));
+    assert_eq!(
+        ids(&out),
+        vec![("offset_out_of_bounds", Severity::Error, 0)]
+    );
+}

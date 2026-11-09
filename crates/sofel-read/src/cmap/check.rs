@@ -111,6 +111,35 @@ pub fn validate(data: &[u8], num_glyphs: Option<u32>, report: &mut dyn FnMut(Dia
     }
 }
 
+/// Validates only the subtable at `offset` in the `cmap` table `data`,
+/// as [`validate`] does for each encoding record. An offset that is 0 or
+/// leaves less than 2 bytes is reported at offset 0.
+pub fn validate_subtable(
+    data: &[u8],
+    offset: u32,
+    num_glyphs: Option<u32>,
+    report: &mut dyn FnMut(Diagnostic),
+) {
+    let budget = data.len().saturating_mul(4).saturating_add(1024);
+    let mut v = V {
+        report,
+        num_glyphs,
+        budget,
+    };
+    let off = to_usize(offset);
+    if off == 0 || off > data.len().saturating_sub(2) {
+        return v.emit(
+            0,
+            Kind::OffsetOutOfBounds {
+                offset,
+                length: 2,
+                available: to_u32(data.len()),
+            },
+        );
+    }
+    subtable(&mut v, data, off);
+}
+
 fn subtable(v: &mut V<'_>, cmap: &[u8], off: usize) {
     let Some(sub) = be::tail_at(cmap, off) else {
         return;

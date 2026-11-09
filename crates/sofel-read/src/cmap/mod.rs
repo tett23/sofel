@@ -13,7 +13,7 @@ mod formats;
 use crate::be::{self, to_usize};
 use crate::{GlyphId, ReadError, Tag};
 
-pub use check::validate;
+pub use check::{validate, validate_subtable};
 use formats::{Format0, Format2, Format4, Format6, Format8, Format10, Groups, Uvs};
 
 pub const TAG: Tag = Tag::new(b"cmap");
