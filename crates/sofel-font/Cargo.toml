@@ -1,0 +1,14 @@
+[package]
+name = "sofel-font"
+description = "One font, read once: glyph count, character mapping and metrics policies (ADR 0010)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+sofel-read = { path = "../sofel-read" }
+
+[lints]
+workspace = true
