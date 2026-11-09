@@ -18,6 +18,19 @@ WOFFとWOFF2、Type1やBDFなどの古い形式、AAT、絵文字（COLR、埋�
 | クレート | 役割 |
 |---|---|
 | [`sofel-read`](crates/sofel-read) | sfntの表の読み取りと検証。コピーも確保もせず、どの入力でもpanicしない |
+| [`sofel-cli`](crates/sofel-cli) | 小さな道具。いまは `sofel-validate` だけ |
+| [`sofel-conformance`](crates/sofel-conformance) | FreeTypeとの突き合わせのテスト（`cargo test` では走らない） |
+
+### `sofel-validate`
+
+sfntとTTC/OTCの各表を検証する（[ADR 0008](docs/adr/0008-validate-command-and-freetype-comparison.md)）。誤りを1件1行で出し、`--json` ではJSON Linesで出す。
+
+```sh
+cargo run --release --bin sofel-validate -- font.ttf
+cargo run --release --bin sofel-validate -- --json font.ttf
+```
+
+終了コードは、`Error` が無ければ0、あれば1、使い方の誤りか読めないファイルがあれば2。出力の形とJSONのキーは `sofel-validate --help` で示す。
 
 ## 開発
 
@@ -33,7 +46,17 @@ git config core.hooksPath .githooks
 
 ```sh
 cargo test
-cargo clippy --all-targets -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
+sh scripts/check-deps.sh   # クレートの依存が ADR 0003 の表に沿うか（jq が要る）
+sh scripts/run-tests.sh    # シェルのスクリプトのテスト
+```
+
+FreeTypeとの突き合わせ（[ADR 0005](docs/adr/0005-conformance-tests.md)、[0008](docs/adr/0008-validate-command-and-freetype-comparison.md)）には、固定したコミットのHarfBuzzとFreeTypeの取得と、`ft-dump` のビルド（Cのコンパイラが要る）が要る。期待する失敗は `conformance/expected-failures-freetype.txt` に理由を添えて書く。
+
+```sh
+sh scripts/fetch-testdata.sh
+sh tools/ft-dump/build.sh
+cargo test --release -p sofel-conformance
 ```
 
 wasmでは、`wasm32-unknown-unknown` へのビルドと、`wasm32-wasip1` での単体テストを確かめる（[ADR 0004](docs/adr/0004-wasm-and-no-std.md)）。単体テストには [wasmtime](https://wasmtime.dev/) が要る。

@@ -1,0 +1,37 @@
+# The allowed dependencies of each crate: the table of ADR 0003.
+# <crate> <dependency>, or <crate> * for any.
+
+# Crates that do not depend on fonts
+sofel-png sofel-inflate
+sofel-svg sofel-inflate
+sofel-svg sofel-geom
+sofel-raster sofel-geom
+sofel-gpu sofel-geom
+sofel-vector sofel-geom
+
+# Crates that read font formats: no dependencies
+# (sofel-read, sofel-type1, sofel-pfr, sofel-bitmapfont)
+
+# Crates that handle fonts
+sofel-woff sofel-inflate
+sofel-woff sofel-brotli
+sofel-font sofel-read
+sofel-font sofel-type1
+sofel-font sofel-pfr
+sofel-font sofel-bitmapfont
+sofel-font sofel-geom
+sofel-shape sofel-font
+sofel-outline sofel-font
+sofel-outline sofel-geom
+sofel-bitmap sofel-font
+sofel-bitmap sofel-png
+sofel-color sofel-outline
+sofel-color sofel-bitmap
+sofel-color sofel-svg
+sofel-write sofel-read
+sofel-subset sofel-font
+sofel-subset sofel-write
+sofel-cli *
+
+# Test crate (ADR 0005, ADR 0008)
+sofel-conformance *

@@ -1,0 +1,4 @@
+# Items of the FreeType comparison that are expected to fail (ADR 0005,
+# ADR 0008), one identifier per line: <font>#<face>:<item>.
+# Give the reason after the identifier as a comment: `<id>  # <reason>`.
+# Remove an entry when it passes; the test fails until you do.

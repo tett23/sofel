@@ -1,0 +1,16 @@
+[package]
+name = "sofel-conformance"
+description = "Conformance tests of sofel against HarfBuzz and FreeType (ADR 0005, ADR 0008)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+sofel-read = { path = "../sofel-read" }
+sofel-cli = { path = "../sofel-cli" }
+
+[lints]
+workspace = true

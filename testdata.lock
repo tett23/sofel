@@ -1,0 +1,4 @@
+# Test data fetched by scripts/fetch-testdata.sh (ADR 0005, ADR 0008).
+# <name> <url> <commit>
+harfbuzz https://github.com/harfbuzz/harfbuzz 3df40d9b98d6b32f0e4288d4ecfbb158ddb3a372
+freetype https://github.com/freetype/freetype 37515cf56ba3349656049edbed89ffc6f6466f2d

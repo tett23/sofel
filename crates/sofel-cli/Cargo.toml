@@ -1,0 +1,18 @@
+[package]
+name = "sofel-cli"
+description = "Small command-line tools built on sofel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+sofel-read = { path = "../sofel-read" }
+
+[[bin]]
+name = "sofel-validate"
+path = "src/bin/sofel-validate.rs"
+
+[lints]
+workspace = true
