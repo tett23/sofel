@@ -1,6 +1,6 @@
 # ADR 0005: HarfBuzzとFreeTypeの出力を正しさの基準にする
 
-ステータス: 採択（未実装）
+ステータス: 採択（未実装）→`ft-dump` の確かめ方は[ADR 0008](0008-validate-command-and-freetype-comparison.md)
 
 ## 文脈
 
