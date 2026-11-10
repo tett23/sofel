@@ -14,6 +14,7 @@ sofel-read = { path = "../crates/sofel-read" }
 sofel-font = { path = "../crates/sofel-font" }
 sofel-geom = { path = "../crates/sofel-geom" }
 sofel-outline = { path = "../crates/sofel-outline" }
+sofel-raster = { path = "../crates/sofel-raster" }
 
 # Not part of the main workspace (ADR 0007).
 [workspace]

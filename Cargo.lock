@@ -6,6 +6,9 @@ version = 4
 name = "sofel-cli"
 version = "0.0.0"
 dependencies = [
+ "sofel-font",
+ "sofel-outline",
+ "sofel-raster",
  "sofel-read",
 ]
 
@@ -17,6 +20,7 @@ dependencies = [
  "sofel-font",
  "sofel-geom",
  "sofel-outline",
+ "sofel-raster",
  "sofel-read",
 ]
 
@@ -36,6 +40,13 @@ name = "sofel-outline"
 version = "0.0.0"
 dependencies = [
  "sofel-font",
+ "sofel-geom",
+]
+
+[[package]]
+name = "sofel-raster"
+version = "0.0.0"
+dependencies = [
  "sofel-geom",
 ]
 

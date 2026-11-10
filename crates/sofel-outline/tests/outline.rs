@@ -485,3 +485,33 @@ fn scratch_is_reused() {
     .unwrap();
     assert_eq!(a, b);
 }
+
+#[test]
+fn decompose_moves_points_before_finding_implied_ones() {
+    // Two off-curve points whose sum is odd and negative: -1 / 2 is 0
+    // (toward zero), but after moving by 64, 127 / 2 is 63, i.e. -1.
+    let font = one(simple_glyph(
+        &[&[Pt::On(-10, 0), Pt::Off(-1, 5), Pt::Off(0, 5), Pt::On(10, 0)]],
+        false,
+        &[],
+    ));
+    let f = Font::new(&font, 0).unwrap();
+    let mut scratch = Scratch::default();
+    sofel_outline::load(&f, GlyphId(1), Scale::Unscaled, &mut scratch).unwrap();
+    let mut plain = Vec::new();
+    scratch
+        .decompose(p(0, 0), 1, &mut FnPen(|c| plain.push(c)))
+        .unwrap();
+    assert_eq!(plain[1], Q(p(-1, 5), p(0, 5)));
+    let mut moved = Vec::new();
+    scratch
+        .decompose(p(64, 0), 1, &mut FnPen(|c| moved.push(c)))
+        .unwrap();
+    assert_eq!(moved[1], Q(p(63, 5), p(63, 5)));
+    // Multiplying first leaves no remainder.
+    let mut times4 = Vec::new();
+    scratch
+        .decompose(p(0, 0), 4, &mut FnPen(|c| times4.push(c)))
+        .unwrap();
+    assert_eq!(times4[1], Q(p(-4, 20), p(-2, 20)));
+}

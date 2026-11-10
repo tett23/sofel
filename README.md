@@ -21,8 +21,17 @@ WOFFとWOFF2、Type1やBDFなどの古い形式、AAT、絵文字（COLR、埋�
 | [`sofel-read`](crates/sofel-read) | sfntの表の読み取りと検証。コピーも確保もせず、どの入力でもpanicしない |
 | [`sofel-font`](crates/sofel-font) | フォントを一度だけ読み、グリフの数、文字からグリフへの対応、送り幅をHarfBuzzの方針で返す |
 | [`sofel-outline`](crates/sofel-outline) | glyfとGLYFの輪郭を、ヒンティングなしでFreeTypeと同じ座標で `Pen` に渡す |
-| [`sofel-cli`](crates/sofel-cli) | 小さな道具。いまは `sofel-validate` だけ |
+| [`sofel-raster`](crates/sofel-raster) | FreeTypeのsmoothのラスタライザと同じ計算で、8bitのアンチエイリアスの画像を作る |
+| [`sofel-cli`](crates/sofel-cli) | 小さな道具（`sofel-validate`、`sofel-render`） |
 | [`sofel-conformance`](crates/sofel-conformance) | FreeTypeとの突き合わせのテスト（`cargo test` では走らない） |
+
+### `sofel-render`
+
+1グリフをヒンティングなしで描き、PGM（P5、白地に黒）を標準出力に書く（[ADR 0012](docs/adr/0012-antialiased-rasterizer.md)）。FreeTypeの `FT_Render_Glyph` と同じ画像になる。
+
+```sh
+cargo run --release --bin sofel-render -- --ppem 48 --char U+0041 font.ttf > a.pgm
+```
 
 ### `sofel-validate`
 
@@ -65,8 +74,8 @@ cargo test --release -p sofel-conformance
 wasmでは、`wasm32-unknown-unknown` へのビルドと、`wasm32-wasip1` での単体テストを確かめる（[ADR 0004](docs/adr/0004-wasm-and-no-std.md)）。単体テストには [wasmtime](https://wasmtime.dev/) が要る。
 
 ```sh
-cargo build --release --target wasm32-unknown-unknown -p sofel-read -p sofel-geom -p sofel-font -p sofel-outline
-CARGO_TARGET_WASM32_WASIP1_RUNNER=wasmtime cargo test --target wasm32-wasip1 -p sofel-read -p sofel-geom -p sofel-font -p sofel-outline
+cargo build --release --target wasm32-unknown-unknown -p sofel-read -p sofel-geom -p sofel-font -p sofel-outline -p sofel-raster
+CARGO_TARGET_WASM32_WASIP1_RUNNER=wasmtime cargo test --target wasm32-wasip1 -p sofel-read -p sofel-geom -p sofel-font -p sofel-outline -p sofel-raster
 ```
 
 ファジングには、nightlyのツールチェーンと [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) が要る。対象は `cmap`、`metrics`、`font`。

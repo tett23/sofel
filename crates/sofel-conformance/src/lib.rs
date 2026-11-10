@@ -17,3 +17,4 @@ pub mod expect;
 pub mod fonts;
 pub mod outline;
 pub mod paths;
+pub mod raster;

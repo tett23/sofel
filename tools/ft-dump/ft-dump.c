@@ -69,6 +69,20 @@
  *   cbox <xMin> <yMin> <xMax> <yMax>    (FT_Outline_Get_CBox)
  *   end
  *
+ * Usage: ft-dump --raster PPEM FILE
+ *
+ * Renders every glyph (ADR 0012): FT_Set_Pixel_Sizes(PPEM), FT_Load_Glyph
+ * with FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP, FT_Render_Glyph with
+ * FT_RENDER_MODE_NORMAL. For each face, `face`, `error` and `num_glyphs`
+ * as above, then for each glyph:
+ *
+ *   glyph <g>
+ *   error <code>                        (loading or rendering failed)
+ *   bitmap <left> <top> <width> <rows>
+ *   <row as hex, two digits per pixel>  (one line per row, top first;
+ *                                       none when width or rows is 0)
+ *   end
+ *
  * Exit status: 0 on success, 1 when FreeType cannot be initialized or
  * the file cannot be opened at all, 2 on wrong usage.
  */
@@ -166,7 +180,41 @@ static void dump_outlines(FT_Face face, int unscaled, int ppem)
   }
 }
 
-static int outlines(const char *size, const char *path)
+static void dump_rasters(FT_Face face, int ppem)
+{
+  FT_Long g;
+
+  if (FT_Set_Pixel_Sizes(face, 0, (FT_UInt)ppem) != 0) {
+    printf("error size\n");
+    return;
+  }
+  for (g = 0; g < face->num_glyphs; g++) {
+    FT_Error error;
+    FT_Bitmap *b;
+    unsigned int r, c;
+
+    printf("glyph %ld\n", (long)g);
+    error = FT_Load_Glyph(face, (FT_UInt)g, FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP);
+    if (error == 0)
+      error = FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
+    if (error != 0) {
+      printf("error %d\n", (int)error);
+      continue;
+    }
+    b = &face->glyph->bitmap;
+    printf("bitmap %d %d %u %u\n", face->glyph->bitmap_left, face->glyph->bitmap_top,
+           b->width, b->rows);
+    for (r = 0; r < b->rows; r++) {
+      const unsigned char *row = b->buffer + (long)r * b->pitch;
+      for (c = 0; c < b->width; c++)
+        printf("%02x", row[c]);
+      if (b->width)
+        printf("\n");
+    }
+  }
+}
+
+static int outlines(const char *size, const char *path, int raster)
 {
   FT_Library library;
   FT_Face face;
@@ -174,7 +222,7 @@ static int outlines(const char *size, const char *path)
   int unscaled = strcmp(size, "unscaled") == 0;
   int ppem = atoi(size);
 
-  if (!unscaled && ppem <= 0) {
+  if ((raster && unscaled) || (!unscaled && ppem <= 0)) {
     fprintf(stderr, "ft-dump: bad size %s\n", size);
     return 2;
   }
@@ -196,7 +244,10 @@ static int outlines(const char *size, const char *path)
       continue;
     }
     printf("num_glyphs %ld\n", (long)face->num_glyphs);
-    dump_outlines(face, unscaled, ppem);
+    if (raster)
+      dump_rasters(face, ppem);
+    else
+      dump_outlines(face, unscaled, ppem);
     printf("end\n");
     FT_Done_Face(face);
   }
@@ -337,7 +388,9 @@ int main(int argc, char **argv)
   if (argc == 2 && strcmp(argv[1], "--calc") == 0)
     return calc();
   if (argc == 4 && strcmp(argv[1], "--outline") == 0)
-    return outlines(argv[2], argv[3]);
+    return outlines(argv[2], argv[3], 0);
+  if (argc == 4 && strcmp(argv[1], "--raster") == 0)
+    return outlines(argv[2], argv[3], 1);
   if (argc != 2) {
     fprintf(stderr, "usage: ft-dump FILE | ft-dump --calc\n");
     return 2;
