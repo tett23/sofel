@@ -9,10 +9,12 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "sofel.h"
 #include "fixture.h"
+#include "fixture_shape.h"
 
 #if !defined(__wasi__)
 #include <pthread.h>
@@ -797,6 +799,7 @@ static void test_validate(void) {
 #if !defined(__wasi__)
 struct worker {
   const sofel_font_t *font;
+  const sofel_shape_plan_t *plan;
   int bad;
 };
 
@@ -804,21 +807,37 @@ static void *work(void *arg) {
   struct worker *w = arg;
   sofel_outline_scratch_t *scratch = sofel_outline_scratch_create();
   sofel_rasterizer_t *raster = sofel_rasterizer_create();
+  sofel_buffer_t *buffer = sofel_buffer_create();
+  uint32_t gids[2];
   int round;
-  for (round = 0; round < 20; round++) w->bad += run_queries(w->font, scratch, raster);
+  for (round = 0; round < 20; round++) {
+    w->bad += run_queries(w->font, scratch, raster);
+    /* A plan shared between threads, a buffer per thread (ADR 0020). */
+    sofel_buffer_clear(buffer);
+    sofel_buffer_add_utf8(buffer, "AB", 2, 0, 2);
+    w->bad += sofel_shape(w->font, NULL, w->plan, buffer) != SOFEL_OK ||
+              sofel_buffer_glyphs(buffer, gids, NULL, NULL, NULL, 2) != 2 || gids[0] != 1 ||
+              gids[1] != 2;
+  }
+  sofel_buffer_destroy(buffer);
   sofel_rasterizer_destroy(raster);
   sofel_outline_scratch_destroy(scratch);
   return NULL;
 }
 
-/* One font queried from several threads at once gives the results of
- * one thread. */
+/* One font and one shaping plan used from several threads at once give
+ * the results of one thread. */
 static void test_threads(const sofel_font_t *font) {
   pthread_t threads[THREADS];
   struct worker workers[THREADS];
+  sofel_segment_t seg = {SOFEL_DIRECTION_LTR, SOFEL_TAG('L', 'a', 't', 'n'), NULL};
+  int32_t e = 12345;
+  sofel_shape_plan_t *plan = sofel_shape_plan_create(font, &seg, NULL, 0, &e);
   int i;
+  CHECK(e == SOFEL_OK);
   for (i = 0; i < THREADS; i++) {
     workers[i].font = font;
+    workers[i].plan = plan;
     workers[i].bad = 0;
     CHECK(pthread_create(&threads[i], NULL, work, &workers[i]) == 0);
   }
@@ -826,6 +845,7 @@ static void test_threads(const sofel_font_t *font) {
     CHECK(pthread_join(threads[i], NULL) == 0);
     CHECK(workers[i].bad == 0);
   }
+  sofel_shape_plan_destroy(plan);
 }
 #endif
 
@@ -1345,6 +1365,626 @@ static void test_color(void) {
   sofel_font_destroy(font);
 }
 
+/* ------------------------------------------------------------ shaping */
+
+/* The shaping functions of sofel.h (ADR 0020) against their declared
+ * types, as check_declarations does for the others. */
+static void check_shape_declarations(void) {
+  int32_t (*direction_from_string)(const char *, size_t) = sofel_direction_from_string;
+  const char *(*direction_to_string)(int32_t) = sofel_direction_to_string;
+  int32_t (*script_from_string)(const char *, size_t, uint32_t *) = sofel_script_from_string;
+  int32_t (*script_direction)(uint32_t) = sofel_script_horizontal_direction;
+  sofel_language_t *(*language_create)(const char *, size_t, int32_t *) = sofel_language_create;
+  void (*language_destroy)(sofel_language_t *) = sofel_language_destroy;
+  int32_t (*language_string)(const sofel_language_t *, const char **, size_t *) =
+      sofel_language_string;
+  int32_t (*tags_from)(uint32_t, const sofel_language_t *, uint32_t *, size_t *, uint32_t *,
+                       size_t *) = sofel_ot_tags_from_script_and_language;
+  int32_t (*tags_to)(uint32_t, uint32_t, uint32_t *, sofel_language_t **) =
+      sofel_ot_tags_to_script_and_language;
+  uint32_t (*tag_to_script)(uint32_t) = sofel_ot_tag_to_script;
+  int32_t (*tag_to_language)(uint32_t, sofel_language_t **) = sofel_ot_tag_to_language;
+  int32_t (*feature_parse)(const char *, size_t, sofel_feature_t *) = sofel_feature_parse;
+  int32_t (*feature_format)(const sofel_feature_t *, char *, size_t, size_t *) =
+      sofel_feature_format;
+  int32_t (*segment_guess)(const char *, size_t, const sofel_segment_t *,
+                           const sofel_language_t *, sofel_segment_t *) = sofel_segment_guess;
+  sofel_shape_plan_t *(*plan_create)(const sofel_font_t *, const sofel_segment_t *,
+                                     const sofel_feature_t *, size_t, int32_t *) =
+      sofel_shape_plan_create;
+  void (*plan_destroy)(sofel_shape_plan_t *) = sofel_shape_plan_destroy;
+  int32_t (*plan_shaper)(const sofel_shape_plan_t *, int32_t *) = sofel_shape_plan_shaper;
+  sofel_buffer_t *(*buffer_create)(void) = sofel_buffer_create;
+  sofel_buffer_t *(*buffer_similar)(const sofel_buffer_t *, int32_t *) =
+      sofel_buffer_create_similar;
+  void (*buffer_destroy)(sofel_buffer_t *) = sofel_buffer_destroy;
+  int32_t (*buffer_clear)(sofel_buffer_t *) = sofel_buffer_clear;
+  int32_t (*buffer_length)(const sofel_buffer_t *, size_t *) = sofel_buffer_length;
+  int32_t (*buffer_add)(sofel_buffer_t *, uint32_t, uint32_t) = sofel_buffer_add;
+  int32_t (*add_utf8)(sofel_buffer_t *, const char *, size_t, size_t, size_t) =
+      sofel_buffer_add_utf8;
+  int32_t (*add_utf16)(sofel_buffer_t *, const uint16_t *, size_t, size_t, size_t) =
+      sofel_buffer_add_utf16;
+  int32_t (*add_utf32)(sofel_buffer_t *, const uint32_t *, size_t, size_t, size_t) =
+      sofel_buffer_add_utf32;
+  int32_t (*add_codepoints)(sofel_buffer_t *, const uint32_t *, size_t, size_t, size_t) =
+      sofel_buffer_add_codepoints;
+  int32_t (*add_latin1)(sofel_buffer_t *, const uint8_t *, size_t, size_t, size_t) =
+      sofel_buffer_add_latin1;
+  int32_t (*append)(sofel_buffer_t *, const sofel_buffer_t *, size_t, size_t) =
+      sofel_buffer_append;
+  int32_t (*number_clusters)(sofel_buffer_t *) = sofel_buffer_number_clusters;
+  int32_t (*codepoints)(const sofel_buffer_t *, uint32_t *, uint32_t *, size_t, size_t *) =
+      sofel_buffer_codepoints;
+  int32_t (*context)(const sofel_buffer_t *, int32_t, uint32_t[5], size_t *) =
+      sofel_buffer_context;
+  int32_t (*get_flags)(const sofel_buffer_t *, uint32_t *) = sofel_buffer_get_flags;
+  int32_t (*set_flags)(sofel_buffer_t *, uint32_t) = sofel_buffer_set_flags;
+  int32_t (*get_level)(const sofel_buffer_t *, int32_t *) = sofel_buffer_get_cluster_level;
+  int32_t (*set_level)(sofel_buffer_t *, int32_t) = sofel_buffer_set_cluster_level;
+  int32_t (*get_replacement)(const sofel_buffer_t *, uint32_t *) =
+      sofel_buffer_get_replacement_codepoint;
+  int32_t (*set_replacement)(sofel_buffer_t *, uint32_t) = sofel_buffer_set_replacement_codepoint;
+  int32_t (*get_invisible)(const sofel_buffer_t *, uint32_t *) = sofel_buffer_get_invisible_glyph;
+  int32_t (*set_invisible)(sofel_buffer_t *, uint32_t) = sofel_buffer_set_invisible_glyph;
+  int32_t (*get_not_found)(const sofel_buffer_t *, uint32_t *) = sofel_buffer_get_not_found_glyph;
+  int32_t (*set_not_found)(sofel_buffer_t *, uint32_t) = sofel_buffer_set_not_found_glyph;
+  int32_t (*get_vs)(const sofel_buffer_t *, uint32_t *) =
+      sofel_buffer_get_not_found_variation_selector_glyph;
+  int32_t (*set_vs)(sofel_buffer_t *, uint32_t) =
+      sofel_buffer_set_not_found_variation_selector_glyph;
+  int32_t (*get_random)(const sofel_buffer_t *, uint32_t *) = sofel_buffer_get_random_state;
+  int32_t (*set_random)(sofel_buffer_t *, uint32_t) = sofel_buffer_set_random_state;
+  int32_t (*shape)(const sofel_font_t *, const sofel_scale_t *, const sofel_shape_plan_t *,
+                   sofel_buffer_t *) = sofel_shape;
+  int32_t (*shape_fallback)(const sofel_font_t *, const sofel_scale_t *, const sofel_segment_t *,
+                            sofel_buffer_t *) = sofel_shape_fallback;
+  int64_t (*buffer_glyphs)(const sofel_buffer_t *, uint32_t *, uint32_t *, uint32_t *, int32_t *,
+                           size_t) = sofel_buffer_glyphs;
+  int32_t (*buffer_direction)(const sofel_buffer_t *, int32_t *) = sofel_buffer_direction;
+  int32_t (*normalize)(sofel_buffer_t *) = sofel_buffer_normalize_glyphs;
+  int32_t (*diff)(const sofel_buffer_t *, const sofel_buffer_t *, uint32_t, uint32_t,
+                  uint32_t *) = sofel_buffer_diff;
+  uint32_t (*format_from)(const char *, size_t) = sofel_serialize_format_from_string;
+  const char *(*format_to)(uint32_t) = sofel_serialize_format_to_string;
+  int32_t (*serialize)(const sofel_buffer_t *, size_t, size_t, char *, size_t, size_t *, size_t *,
+                       const sofel_font_t *, const sofel_scale_t *, uint32_t, uint32_t) =
+      sofel_buffer_serialize;
+  int32_t (*deserialize_glyphs)(sofel_buffer_t *, const char *, size_t, size_t *,
+                                const sofel_font_t *, const sofel_glyph_names_t *, int32_t,
+                                uint32_t) = sofel_buffer_deserialize_glyphs;
+  int32_t (*deserialize_unicode)(sofel_buffer_t *, const char *, size_t, size_t *, uint32_t) =
+      sofel_buffer_deserialize_unicode;
+  int32_t (*glyph_to_string)(const sofel_font_t *, uint32_t, char *, size_t, size_t *) =
+      sofel_font_glyph_to_string;
+  int32_t (*glyph_from_string)(const sofel_font_t *, const sofel_glyph_names_t *, const char *,
+                               size_t, uint32_t *) = sofel_font_glyph_from_string;
+  int32_t (*nominal_raw)(const sofel_font_t *, uint32_t, uint32_t *) =
+      sofel_font_nominal_glyph_raw;
+  int32_t (*variation_raw)(const sofel_font_t *, uint32_t, uint32_t, uint32_t *) =
+      sofel_font_variation_glyph_raw;
+  uint8_t (*mcc)(uint32_t) = sofel_unicode_modified_combining_class;
+  uint8_t (*ignorable)(uint32_t) = sofel_unicode_is_default_ignorable;
+  uint8_t (*vs)(uint32_t) = sofel_unicode_is_variation_selector;
+  uint8_t (*ri)(uint32_t) = sofel_unicode_is_regional_indicator;
+  uint8_t (*space)(uint32_t) = sofel_unicode_space_fallback_type;
+  uint32_t (*vertical)(uint32_t) = sofel_unicode_vertical_char_for;
+  const void *all[] = {
+      (const void *)direction_from_string, (const void *)direction_to_string,
+      (const void *)script_from_string, (const void *)script_direction,
+      (const void *)language_create, (const void *)language_destroy,
+      (const void *)language_string, (const void *)tags_from, (const void *)tags_to,
+      (const void *)tag_to_script, (const void *)tag_to_language, (const void *)feature_parse,
+      (const void *)feature_format, (const void *)segment_guess, (const void *)plan_create,
+      (const void *)plan_destroy, (const void *)plan_shaper, (const void *)buffer_create,
+      (const void *)buffer_similar, (const void *)buffer_destroy, (const void *)buffer_clear,
+      (const void *)buffer_length, (const void *)buffer_add, (const void *)add_utf8,
+      (const void *)add_utf16, (const void *)add_utf32, (const void *)add_codepoints,
+      (const void *)add_latin1, (const void *)append, (const void *)number_clusters,
+      (const void *)codepoints, (const void *)context, (const void *)get_flags,
+      (const void *)set_flags, (const void *)get_level, (const void *)set_level,
+      (const void *)get_replacement, (const void *)set_replacement, (const void *)get_invisible,
+      (const void *)set_invisible, (const void *)get_not_found, (const void *)set_not_found,
+      (const void *)get_vs, (const void *)set_vs, (const void *)get_random,
+      (const void *)set_random, (const void *)shape, (const void *)shape_fallback,
+      (const void *)buffer_glyphs, (const void *)buffer_direction, (const void *)normalize,
+      (const void *)diff, (const void *)format_from, (const void *)format_to,
+      (const void *)serialize, (const void *)deserialize_glyphs,
+      (const void *)deserialize_unicode, (const void *)glyph_to_string,
+      (const void *)glyph_from_string, (const void *)nominal_raw, (const void *)variation_raw,
+      (const void *)mcc, (const void *)ignorable, (const void *)vs, (const void *)ri,
+      (const void *)space, (const void *)vertical,
+  };
+  size_t i;
+  for (i = 0; i < COUNT(all); i++) CHECK(all[i] != NULL);
+}
+
+static int same_string(const char *s, size_t len, const char *expected) {
+  return s != NULL && len == strlen(expected) && memcmp(s, expected, len) == 0;
+}
+
+/* Directions, scripts, languages, OpenType tags, features, and
+ * HarfBuzz's own character properties. */
+static void test_shape_values(void) {
+  uint32_t script = 7, tags[4], ltags[4];
+  size_t n = 7, ln = 7;
+  int32_t e = 12345;
+  const char *s = NULL;
+  char text[32];
+  sofel_language_t *ja, *en, *l = NULL;
+  sofel_feature_t f;
+
+  CHECK(sofel_direction_from_string("RTL", 3) == SOFEL_DIRECTION_RTL);
+  CHECK(sofel_direction_from_string("ttb", 3) == SOFEL_DIRECTION_TTB);
+  CHECK(sofel_direction_from_string("x", 1) == 0);
+  CHECK(sofel_direction_from_string(NULL, 0) == 0);
+  CHECK(strcmp(sofel_direction_to_string(SOFEL_DIRECTION_BTT), "btt") == 0);
+  CHECK(sofel_direction_to_string(0) == NULL);
+  CHECK(SOFEL_DIRECTION_IS_VALID(SOFEL_DIRECTION_LTR) && !SOFEL_DIRECTION_IS_VALID(0));
+  CHECK(SOFEL_DIRECTION_IS_HORIZONTAL(SOFEL_DIRECTION_RTL));
+  CHECK(SOFEL_DIRECTION_IS_VERTICAL(SOFEL_DIRECTION_BTT));
+  CHECK(SOFEL_DIRECTION_IS_FORWARD(SOFEL_DIRECTION_TTB));
+  CHECK(SOFEL_DIRECTION_IS_BACKWARD(SOFEL_DIRECTION_RTL));
+  CHECK(SOFEL_DIRECTION_REVERSE(SOFEL_DIRECTION_LTR) == SOFEL_DIRECTION_RTL);
+  CHECK(SOFEL_DIRECTION_REVERSE(SOFEL_DIRECTION_BTT) == SOFEL_DIRECTION_TTB);
+
+  CHECK(sofel_script_from_string("arab", 4, &script) == SOFEL_OK);
+  CHECK(script == SOFEL_TAG('A', 'r', 'a', 'b'));
+  CHECK(sofel_script_from_string("Latin", 5, &script) == SOFEL_OK);
+  CHECK(script == SOFEL_TAG('L', 'a', 't', 'i'));
+  CHECK(sofel_script_from_string("ab", 2, &script) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_script_from_string(NULL, 4, &script) == SOFEL_ERROR_NULL);
+  CHECK(script == SOFEL_TAG('L', 'a', 't', 'i'));
+  CHECK(sofel_script_horizontal_direction(SOFEL_TAG('A', 'r', 'a', 'b')) == SOFEL_DIRECTION_RTL);
+  CHECK(sofel_script_horizontal_direction(SOFEL_TAG('L', 'a', 't', 'n')) == SOFEL_DIRECTION_LTR);
+  CHECK(sofel_script_horizontal_direction(SOFEL_TAG('R', 'u', 'n', 'r')) == 0);
+  CHECK(sofel_script_horizontal_direction(0) == SOFEL_DIRECTION_LTR);
+
+  ja = sofel_language_create("ja_JP.UTF-8", 11, &e);
+  CHECK(e == SOFEL_OK && ja != NULL);
+  CHECK(sofel_language_string(ja, &s, &n) == SOFEL_OK && same_string(s, n, "ja-jp"));
+  CHECK(sofel_language_create("", 0, &e) == NULL && e == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_language_create(NULL, 2, &e) == NULL && e == SOFEL_ERROR_NULL);
+  CHECK(sofel_language_create("en", 2, NULL) == NULL);
+  en = sofel_language_create("en", 2, &e);
+
+  n = 4;
+  ln = 4;
+  CHECK(sofel_ot_tags_from_script_and_language(SOFEL_TAG('H', 'a', 'n', 'i'), ja, tags, &n,
+                                               ltags, &ln) == SOFEL_OK);
+  CHECK(n == 1 && tags[0] == SOFEL_TAG('h', 'a', 'n', 'i'));
+  CHECK(ln == 1 && ltags[0] == SOFEL_TAG('J', 'A', 'N', ' '));
+  n = 0;
+  ln = SOFEL_OT_MAX_TAGS_PER_LANGUAGE;
+  CHECK(sofel_ot_tags_from_script_and_language(0, en, NULL, &n, ltags, &ln) == SOFEL_OK);
+  CHECK(n == 0 && ln == 1 && ltags[0] == SOFEL_TAG('E', 'N', 'G', ' '));
+  ln = 0;
+  CHECK(sofel_ot_tags_from_script_and_language(1, NULL, NULL, &n, NULL, &ln) ==
+        SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_ot_tags_from_script_and_language(0, NULL, NULL, NULL, NULL, &ln) ==
+        SOFEL_ERROR_NULL);
+  CHECK(sofel_ot_tags_to_script_and_language(SOFEL_TAG('l', 'a', 't', 'n'),
+                                             SOFEL_TAG('E', 'N', 'G', ' '), &script,
+                                             &l) == SOFEL_OK);
+  CHECK(script == SOFEL_TAG('L', 'a', 't', 'n'));
+  CHECK(sofel_language_string(l, &s, &n) == SOFEL_OK && same_string(s, n, "en"));
+  sofel_language_destroy(l);
+  CHECK(sofel_ot_tags_to_script_and_language(SOFEL_OT_TAG_DEFAULT_SCRIPT, 0, &script, &l) ==
+        SOFEL_OK);
+  CHECK(script == 0 && l == NULL);
+  CHECK(sofel_ot_tag_to_script(SOFEL_TAG('k', 'a', 'n', 'a')) == SOFEL_TAG('K', 'a', 'n', 'a'));
+  CHECK(sofel_ot_tag_to_script(SOFEL_OT_TAG_DEFAULT_SCRIPT) == 0);
+  CHECK(sofel_ot_tag_to_language(SOFEL_TAG('J', 'A', 'N', ' '), &l) == SOFEL_OK);
+  CHECK(sofel_language_string(l, &s, &n) == SOFEL_OK && same_string(s, n, "ja"));
+  sofel_language_destroy(l);
+  CHECK(sofel_ot_tag_to_language(SOFEL_OT_TAG_DEFAULT_LANGUAGE, &l) == SOFEL_OK && l == NULL);
+  CHECK(sofel_ot_tag_to_language(0, NULL) == SOFEL_ERROR_NULL);
+  sofel_language_destroy(NULL);
+
+  CHECK(sofel_feature_parse("kern[3:5]=2", 11, &f) == SOFEL_OK);
+  CHECK(f.tag == SOFEL_TAG('k', 'e', 'r', 'n') && f.value == 2 && f.start == 3 && f.end == 5);
+  CHECK(sofel_feature_format(&f, text, sizeof text, &n) == SOFEL_OK);
+  CHECK(n == 11 && strcmp(text, "kern[3:5]=2") == 0);
+  CHECK(sofel_feature_parse("-liga", 5, &f) == SOFEL_OK);
+  CHECK(f.value == 0 && f.start == SOFEL_FEATURE_GLOBAL_START && f.end == SOFEL_FEATURE_GLOBAL_END);
+  memset(text, 'x', sizeof text);
+  CHECK(sofel_feature_format(&f, text, 5, &n) == SOFEL_ERROR_BUFFER_TOO_SMALL);
+  CHECK(n == 5 && text[0] == 'x');
+  CHECK(sofel_feature_format(&f, text, 6, &n) == SOFEL_OK && strcmp(text, "-liga") == 0);
+  CHECK(sofel_feature_parse("kern=", 5, &f) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_feature_parse("kern", 4, NULL) == SOFEL_ERROR_NULL);
+  CHECK(sofel_feature_format(NULL, text, sizeof text, &n) == SOFEL_ERROR_NULL);
+
+  CHECK(sofel_unicode_modified_combining_class(0x0F39) == 127);
+  CHECK(sofel_unicode_modified_combining_class(0x0301) == 230);
+  CHECK(sofel_unicode_is_default_ignorable(0x200B) == 1);
+  CHECK(sofel_unicode_is_default_ignorable(0x115F) == 0);
+  CHECK(sofel_unicode_is_variation_selector(0xFE0F) == 1);
+  CHECK(sofel_unicode_is_variation_selector(0x180B) == 0);
+  CHECK(sofel_unicode_is_regional_indicator(0x1F1E6) == 1);
+  CHECK(sofel_unicode_space_fallback_type(0x2003) == SOFEL_SPACE_EM);
+  CHECK(sofel_unicode_space_fallback_type(0x0020) == SOFEL_SPACE_SPACE);
+  CHECK(sofel_unicode_space_fallback_type(0x0041) == SOFEL_SPACE_NOT_SPACE);
+  CHECK(sofel_unicode_vertical_char_for(0x3001) == 0xFE11);
+  CHECK(sofel_unicode_vertical_char_for(0x0041) == 0x0041);
+
+  sofel_language_destroy(en);
+  sofel_language_destroy(ja);
+}
+
+/* Segment properties, buffers of characters, their settings, and their
+ * serialization. */
+static void test_shape_buffers(void) {
+  sofel_buffer_t *b = sofel_buffer_create(), *c;
+  sofel_segment_t in = {0, 0, NULL}, out;
+  sofel_language_t *ja;
+  int32_t e = 12345, level = 7;
+  uint32_t cps[16], cls[16], ctx[5], u32 = 7, flags = 7;
+  const uint16_t utf16[] = {0x61, 0xD800, 0x62};
+  const uint32_t utf32[] = {0x61, 0xD800, 0x110000};
+  const uint8_t latin1[] = {0x41, 0xE9};
+  size_t n = 7, consumed = 7, count = 7;
+  char text[64];
+
+  ja = sofel_language_create("ja", 2, &e);
+  CHECK(sofel_segment_guess("12 abc", 6, &in, NULL, &out) == SOFEL_OK);
+  CHECK(out.direction == SOFEL_DIRECTION_LTR && out.script == SOFEL_TAG('L', 'a', 't', 'n'));
+  CHECK(out.language == NULL);
+  CHECK(sofel_segment_guess("\330\247", 2, &in, ja, &out) == SOFEL_OK);
+  CHECK(out.direction == SOFEL_DIRECTION_RTL && out.script == SOFEL_TAG('A', 'r', 'a', 'b'));
+  CHECK(out.language == ja);
+  in.direction = SOFEL_DIRECTION_TTB;
+  CHECK(sofel_segment_guess("123", 3, &in, NULL, &out) == SOFEL_OK);
+  CHECK(out.direction == SOFEL_DIRECTION_TTB && out.script == 0);
+  in.script = 1;
+  CHECK(sofel_segment_guess("123", 3, &in, NULL, &out) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_segment_guess("123", 3, NULL, NULL, &out) == SOFEL_ERROR_NULL);
+
+  CHECK(b != NULL);
+  CHECK(sofel_buffer_add_utf8(b, "a\377b", 3, 0, SIZE_MAX) == SOFEL_OK);
+  CHECK(sofel_buffer_codepoints(b, cps, cls, 8, &n) == SOFEL_OK && n == 3);
+  CHECK(cps[0] == 0x61 && cps[1] == 0xFFFD && cps[2] == 0x62);
+  CHECK(cls[0] == 0 && cls[1] == 1 && cls[2] == 2);
+  cps[0] = 7;
+  CHECK(sofel_buffer_codepoints(b, cps, NULL, 2, &n) == SOFEL_ERROR_BUFFER_TOO_SMALL);
+  CHECK(n == 3 && cps[0] == 7);
+  CHECK(sofel_buffer_clear(b) == SOFEL_OK);
+  CHECK(sofel_buffer_add_utf16(b, utf16, 3, 0, SIZE_MAX) == SOFEL_OK);
+  CHECK(sofel_buffer_add_utf32(b, utf32, 3, 0, SIZE_MAX) == SOFEL_OK);
+  CHECK(sofel_buffer_add_codepoints(b, utf32, 3, 1, 1) == SOFEL_OK);
+  CHECK(sofel_buffer_add_latin1(b, latin1, 2, 0, SIZE_MAX) == SOFEL_OK);
+  CHECK(sofel_buffer_add(b, 0x1F600, 99) == SOFEL_OK);
+  CHECK(sofel_buffer_codepoints(b, cps, cls, 16, &n) == SOFEL_OK && n == 10);
+  CHECK(cps[0] == 0x61 && cps[1] == 0xFFFD && cps[2] == 0x62 && cps[4] == 0xFFFD);
+  CHECK(cps[5] == 0xFFFD && cps[6] == 0xD800 && cps[7] == 0x41 && cps[8] == 0xE9);
+  CHECK(cps[9] == 0x1F600 && cls[1] == 1 && cls[6] == 1 && cls[8] == 1 && cls[9] == 99);
+  CHECK(sofel_buffer_length(b, &n) == SOFEL_OK && n == 10);
+  CHECK(sofel_buffer_number_clusters(b) == SOFEL_OK);
+  CHECK(sofel_buffer_codepoints(b, NULL, cls, 10, &n) == SOFEL_OK && cls[9] == 9);
+  CHECK(sofel_buffer_add_utf8(b, NULL, 1, 0, 1) == SOFEL_ERROR_NULL);
+
+  /* Context: the characters around the item. */
+  CHECK(sofel_buffer_clear(b) == SOFEL_OK);
+  CHECK(sofel_buffer_add_utf8(b, "xyzabcd", 7, 3, 2) == SOFEL_OK);
+  CHECK(sofel_buffer_context(b, 0, ctx, &n) == SOFEL_OK && n == 3);
+  CHECK(ctx[0] == 'z' && ctx[1] == 'y' && ctx[2] == 'x');
+  CHECK(sofel_buffer_context(b, 1, ctx, &n) == SOFEL_OK && n == 2);
+  CHECK(ctx[0] == 'c' && ctx[1] == 'd');
+  CHECK(sofel_buffer_context(b, 2, ctx, &n) == SOFEL_ERROR_INVALID_ARGUMENT);
+
+  /* Settings, kept by sofel_buffer_create_similar and sofel_buffer_clear. */
+  CHECK(sofel_buffer_set_flags(b, SOFEL_BUFFER_FLAG_BOT | SOFEL_BUFFER_FLAG_EOT) == SOFEL_OK);
+  CHECK(sofel_buffer_set_cluster_level(b, SOFEL_CLUSTER_LEVEL_CHARACTERS) == SOFEL_OK);
+  CHECK(sofel_buffer_set_cluster_level(b, 4) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_buffer_set_replacement_codepoint(b, 0x3F) == SOFEL_OK);
+  CHECK(sofel_buffer_set_invisible_glyph(b, 3) == SOFEL_OK);
+  CHECK(sofel_buffer_set_not_found_glyph(b, 4) == SOFEL_OK);
+  CHECK(sofel_buffer_set_not_found_variation_selector_glyph(b, 5) == SOFEL_OK);
+  CHECK(sofel_buffer_set_random_state(b, 6) == SOFEL_OK);
+  c = sofel_buffer_create_similar(b, &e);
+  CHECK(e == SOFEL_OK && c != NULL);
+  CHECK(sofel_buffer_get_flags(c, &flags) == SOFEL_OK && flags == 3);
+  CHECK(sofel_buffer_get_cluster_level(c, &level) == SOFEL_OK &&
+        level == SOFEL_CLUSTER_LEVEL_CHARACTERS);
+  CHECK(sofel_buffer_get_replacement_codepoint(c, &u32) == SOFEL_OK && u32 == 0x3F);
+  CHECK(sofel_buffer_get_invisible_glyph(c, &u32) == SOFEL_OK && u32 == 3);
+  CHECK(sofel_buffer_get_not_found_glyph(c, &u32) == SOFEL_OK && u32 == 4);
+  CHECK(sofel_buffer_get_not_found_variation_selector_glyph(c, &u32) == SOFEL_OK && u32 == 5);
+  CHECK(sofel_buffer_get_random_state(c, &u32) == SOFEL_OK && u32 == 1);
+  CHECK(sofel_buffer_get_random_state(b, &u32) == SOFEL_OK && u32 == 6);
+  CHECK(sofel_buffer_set_not_found_variation_selector_glyph(c, UINT32_MAX) == SOFEL_OK);
+  CHECK(sofel_buffer_get_not_found_variation_selector_glyph(c, &u32) == SOFEL_OK &&
+        u32 == UINT32_MAX);
+  CHECK(sofel_buffer_clear(b) == SOFEL_OK);
+  CHECK(sofel_buffer_get_flags(b, &flags) == SOFEL_OK && flags == 3);
+  CHECK(sofel_buffer_get_random_state(b, &u32) == SOFEL_OK && u32 == 1);
+
+  /* Append the middle of another buffer, with its context. */
+  CHECK(sofel_buffer_add_utf8(c, "pqrst", 5, 0, SIZE_MAX) == SOFEL_OK);
+  CHECK(sofel_buffer_append(b, c, 1, 3) == SOFEL_OK);
+  CHECK(sofel_buffer_codepoints(b, cps, cls, 8, &n) == SOFEL_OK && n == 2);
+  CHECK(cps[0] == 'q' && cps[1] == 'r' && cls[0] == 1);
+  CHECK(sofel_buffer_context(b, 0, ctx, &n) == SOFEL_OK && n == 1 && ctx[0] == 'p');
+  CHECK(sofel_buffer_append(b, b, 0, 1) == SOFEL_ERROR_INVALID_ARGUMENT);
+
+  /* Characters serialized and read back. */
+  CHECK(sofel_buffer_clear(c) == SOFEL_OK);
+  CHECK(sofel_serialize_format_from_string("TEXTS", 5) == SOFEL_SERIALIZE_FORMAT_TEXT);
+  CHECK(sofel_serialize_format_from_string("json", 4) == SOFEL_SERIALIZE_FORMAT_JSON);
+  CHECK(sofel_serialize_format_from_string("xml", 3) == 0);
+  CHECK(strcmp(sofel_serialize_format_to_string(SOFEL_SERIALIZE_FORMAT_JSON), "json") == 0);
+  CHECK(sofel_serialize_format_to_string(0) == NULL);
+  CHECK(sofel_buffer_serialize(c, 0, SIZE_MAX, text, sizeof text, &consumed, &count, NULL, NULL,
+                               SOFEL_SERIALIZE_FORMAT_TEXT, 0) == SOFEL_OK);
+  CHECK(consumed == 2 && count == 0 && strcmp(text, "!!") == 0);
+  CHECK(sofel_buffer_serialize(b, 0, SIZE_MAX, text, sizeof text, &consumed, &count, NULL, NULL,
+                               SOFEL_SERIALIZE_FORMAT_TEXT, 0) == SOFEL_OK);
+  CHECK(count == 2 && strcmp(text, "<U+0071=1|U+0072=2>") == 0 && consumed == strlen(text));
+  CHECK(sofel_buffer_serialize(b, 0, SIZE_MAX, text, sizeof text, &consumed, &count, NULL, NULL,
+                               SOFEL_SERIALIZE_FORMAT_JSON, 0) == SOFEL_OK);
+  CHECK(strcmp(text, "[{\"u\":113,\"cl\":1},{\"u\":114,\"cl\":2}]") == 0);
+  CHECK(sofel_buffer_serialize(b, 0, SIZE_MAX, text, 12, &consumed, &count, NULL, NULL,
+                               SOFEL_SERIALIZE_FORMAT_TEXT, 0) == SOFEL_OK);
+  CHECK(count == 1 && strcmp(text, "<U+0071=1") == 0);
+  CHECK(sofel_buffer_serialize(b, 0, SIZE_MAX, text, sizeof text, &consumed, &count, NULL, NULL,
+                               1, 0) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_buffer_deserialize_unicode(c, "<U+0071=1|U+0072=2>", 19, &consumed,
+                                         SOFEL_SERIALIZE_FORMAT_TEXT) == SOFEL_OK);
+  CHECK(consumed == 19);
+  CHECK(sofel_buffer_diff(c, b, UINT32_MAX, 0, &flags) == SOFEL_OK &&
+        flags == SOFEL_DIFF_FLAG_EQUAL);
+  CHECK(sofel_buffer_deserialize_unicode(c, "x", 1, &consumed, SOFEL_SERIALIZE_FORMAT_TEXT) ==
+        SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(consumed == 0);
+  /* An item cut short at the end is not read. */
+  CHECK(sofel_buffer_deserialize_unicode(c, "<U+0073=3|U+0074", 16, &consumed,
+                                         SOFEL_SERIALIZE_FORMAT_TEXT) == SOFEL_OK);
+  CHECK(consumed == 16);
+  CHECK(sofel_buffer_length(c, &n) == SOFEL_OK && n == 3);
+  CHECK(sofel_buffer_diff(c, b, UINT32_MAX, 0, &flags) == SOFEL_OK &&
+        flags == SOFEL_DIFF_FLAG_LENGTH_MISMATCH);
+
+  sofel_buffer_destroy(c);
+  sofel_buffer_destroy(b);
+  sofel_buffer_destroy(NULL);
+  sofel_language_destroy(ja);
+}
+
+/* Glyphs read from their serialization, written back and compared. */
+static void test_shape_glyph_buffers(const sofel_font_t *font) {
+  static const char glyphs_text[] = "[gid1=0+500|gid2=1@10,20+0]";
+  sofel_buffer_t *b = sofel_buffer_create(), *u = sofel_buffer_create();
+  sofel_glyph_names_t *names;
+  uint32_t gids[4], cls[4], fl[4], flags = 7, g = 7;
+  int32_t pos[16], dir = 0, e = 12345;
+  size_t consumed = 7, count = 7, n = 7;
+  char text[64];
+
+  CHECK(sofel_buffer_deserialize_glyphs(b, glyphs_text, strlen(glyphs_text), &consumed, NULL,
+                                        NULL, SOFEL_DIRECTION_RTL,
+                                        SOFEL_SERIALIZE_FORMAT_TEXT) == SOFEL_OK);
+  CHECK(consumed == strlen(glyphs_text));
+  CHECK(sofel_buffer_glyphs(b, gids, cls, fl, pos, 4) == 2);
+  CHECK(gids[0] == 1 && gids[1] == 2 && cls[0] == 0 && cls[1] == 1 && fl[0] == 0);
+  CHECK(pos[0] == 500 && pos[1] == 0 && pos[4] == 0 && pos[6] == 10 && pos[7] == 20);
+  CHECK(sofel_buffer_direction(b, &dir) == SOFEL_OK && dir == SOFEL_DIRECTION_RTL);
+  CHECK(sofel_buffer_serialize(b, 0, SIZE_MAX, text, sizeof text, &consumed, &count, NULL, NULL,
+                               SOFEL_SERIALIZE_FORMAT_TEXT, 0) == SOFEL_OK);
+  CHECK(count == 2 && strcmp(text, glyphs_text) == 0);
+  CHECK(sofel_buffer_serialize(b, 1, 2, text, sizeof text, &consumed, &count, NULL, NULL,
+                               SOFEL_SERIALIZE_FORMAT_TEXT,
+                               SOFEL_SERIALIZE_FLAG_NO_POSITIONS) == SOFEL_OK);
+  CHECK(count == 1 && strcmp(text, "|gid2=1]") == 0);
+  CHECK(sofel_buffer_serialize(b, 0, SIZE_MAX, text, 0, &consumed, &count, NULL, NULL,
+                               SOFEL_SERIALIZE_FORMAT_TEXT, 0) == SOFEL_OK);
+  CHECK(count == 0 && consumed == 0);
+  CHECK(sofel_buffer_normalize_glyphs(b) == SOFEL_OK);
+  CHECK(sofel_buffer_add(b, 0x41, 0) == SOFEL_ERROR_BUFFER_CONTENT);
+  CHECK(sofel_buffer_set_flags(b, 0) == SOFEL_ERROR_BUFFER_CONTENT);
+  CHECK(sofel_buffer_create_similar(b, &e) == NULL && e == SOFEL_ERROR_BUFFER_CONTENT);
+
+  /* A second copy compares equal; characters compare as another kind. */
+  CHECK(sofel_buffer_deserialize_glyphs(u, glyphs_text, strlen(glyphs_text), &consumed, NULL,
+                                        NULL, SOFEL_DIRECTION_RTL,
+                                        SOFEL_SERIALIZE_FORMAT_TEXT) == SOFEL_OK);
+  CHECK(sofel_buffer_diff(u, b, UINT32_MAX, 0, &flags) == SOFEL_OK &&
+        flags == SOFEL_DIFF_FLAG_EQUAL);
+  CHECK(sofel_buffer_deserialize_glyphs(u, "[gid0=2+100]", 12, &consumed, NULL, NULL,
+                                        SOFEL_DIRECTION_RTL,
+                                        SOFEL_SERIALIZE_FORMAT_TEXT) == SOFEL_OK);
+  CHECK(sofel_buffer_length(u, &n) == SOFEL_OK && n == 3);
+  CHECK(sofel_buffer_diff(b, u, 2, 0, &flags) == SOFEL_OK &&
+        flags == (SOFEL_DIFF_FLAG_LENGTH_MISMATCH | SOFEL_DIFF_FLAG_NOTDEF_PRESENT |
+                  SOFEL_DIFF_FLAG_DOTTED_CIRCLE_PRESENT));
+  CHECK(sofel_buffer_clear(u) == SOFEL_OK);
+  CHECK(sofel_buffer_diff(u, b, UINT32_MAX, 0, &flags) == SOFEL_OK &&
+        flags == SOFEL_DIFF_FLAG_LENGTH_MISMATCH);
+  CHECK(sofel_buffer_add(u, 0x41, 0) == SOFEL_OK);
+  CHECK(sofel_buffer_diff(u, b, UINT32_MAX, 0, &flags) == SOFEL_OK &&
+        flags == SOFEL_DIFF_FLAG_CONTENT_TYPE_MISMATCH);
+  CHECK(sofel_buffer_glyphs(u, gids, NULL, NULL, NULL, 4) == SOFEL_ERROR_BUFFER_CONTENT);
+  CHECK(sofel_buffer_glyphs(NULL, gids, NULL, NULL, NULL, 4) == SOFEL_ERROR_NULL);
+  CHECK(sofel_buffer_deserialize_glyphs(u, "[gid1]", 6, &consumed, NULL, NULL,
+                                        SOFEL_DIRECTION_LTR, SOFEL_SERIALIZE_FORMAT_TEXT) ==
+        SOFEL_ERROR_BUFFER_CONTENT);
+  CHECK(sofel_buffer_deserialize_glyphs(b, "[gid1=x]", 8, &consumed, NULL, NULL,
+                                        SOFEL_DIRECTION_LTR, SOFEL_SERIALIZE_FORMAT_TEXT) ==
+        SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_buffer_deserialize_glyphs(b, "[gid1]", 6, &consumed, NULL, NULL, 0,
+                                        SOFEL_SERIALIZE_FORMAT_TEXT) ==
+        SOFEL_ERROR_INVALID_ARGUMENT);
+
+  /* Glyph strings: names of the font, ids, and uni<hex> through the cmap. */
+  CHECK(sofel_font_glyph_to_string(NULL, 5, text, sizeof text, &n) == SOFEL_OK);
+  CHECK(n == 4 && strcmp(text, "gid5") == 0);
+  CHECK(sofel_font_glyph_to_string(NULL, 5, text, 4, &n) == SOFEL_ERROR_BUFFER_TOO_SMALL);
+  CHECK(sofel_font_glyph_from_string(NULL, NULL, "gid7", 4, &g) == SOFEL_OK && g == 7);
+  CHECK(sofel_font_glyph_from_string(NULL, NULL, "12", 2, &g) == SOFEL_OK && g == 12);
+  CHECK(sofel_font_glyph_from_string(font, NULL, "uni0042", 7, &g) == SOFEL_OK && g == 2);
+  CHECK(sofel_font_glyph_from_string(NULL, NULL, "uni0042", 7, &g) == SOFEL_ERROR_NOT_FOUND);
+  names = sofel_glyph_names_create(font, &e);
+  if (names != NULL) {
+    CHECK(sofel_font_glyph_from_string(font, names, "foo", 3, &g) == SOFEL_ERROR_NOT_FOUND);
+    sofel_glyph_names_destroy(names);
+  }
+  CHECK(sofel_font_nominal_glyph_raw(font, 0x41, &g) == SOFEL_OK && g == 1);
+  CHECK(sofel_font_nominal_glyph_raw(font, 0x5A, &g) == SOFEL_ERROR_NOT_FOUND);
+  CHECK(sofel_font_variation_glyph_raw(font, 0x41, 0xFE00, &g) == SOFEL_OK && g == 3);
+
+  sofel_buffer_destroy(u);
+  sofel_buffer_destroy(b);
+}
+
+/* Shaping the fixture font, which has no layout tables: plans, the
+ * buffer's two kinds of content, and the fallback shaper. */
+static void test_shape_fixture_font(const sofel_font_t *font) {
+  sofel_buffer_t *b = sofel_buffer_create();
+  sofel_segment_t seg = {SOFEL_DIRECTION_LTR, 0, NULL}, guessed;
+  sofel_shape_plan_t *plan;
+  sofel_feature_t f = {SOFEL_TAG('k', 'e', 'r', 'n'), 0, SOFEL_FEATURE_GLOBAL_START,
+                       SOFEL_FEATURE_GLOBAL_END};
+  uint32_t gids[4] = {7, 7, 7, 7};
+  int32_t pos[16], shaper = -1, e = 12345;
+  size_t n = 7;
+
+  CHECK(sofel_buffer_add_utf8(b, "AB", 2, 0, 2) == SOFEL_OK);
+  CHECK(sofel_segment_guess("AB", 2, &seg, NULL, &guessed) == SOFEL_OK);
+  plan = sofel_shape_plan_create(font, &guessed, &f, 1, &e);
+  CHECK(e == SOFEL_OK && plan != NULL);
+  CHECK(sofel_shape_plan_shaper(plan, &shaper) == SOFEL_OK && shaper == SOFEL_SHAPER_DEFAULT);
+  CHECK(sofel_shape(font, NULL, plan, b) == SOFEL_OK);
+  CHECK(sofel_buffer_glyphs(b, gids, NULL, NULL, pos, 4) == 2);
+  CHECK(gids[0] == 1 && gids[1] == 2 && pos[0] == advances[1] && pos[4] == advances[2]);
+  CHECK(sofel_shape(font, NULL, plan, b) == SOFEL_ERROR_BUFFER_CONTENT);
+  CHECK(sofel_buffer_clear(b) == SOFEL_OK);
+  CHECK(sofel_buffer_length(b, &n) == SOFEL_OK && n == 0);
+  CHECK(sofel_buffer_add_utf8(b, "BA", 2, 0, 2) == SOFEL_OK);
+  seg.direction = SOFEL_DIRECTION_RTL;
+  CHECK(sofel_shape_fallback(font, NULL, &seg, b) == SOFEL_OK);
+  CHECK(sofel_buffer_glyphs(b, gids, NULL, NULL, pos, 4) == 2);
+  CHECK(gids[0] == 1 && gids[1] == 2 && pos[0] == advances[1]);
+  CHECK(sofel_shape(NULL, NULL, plan, b) == SOFEL_ERROR_NULL);
+  sofel_shape_plan_destroy(plan);
+
+  seg.direction = 0;
+  CHECK(sofel_shape_plan_create(font, &seg, NULL, 0, &e) == NULL &&
+        e == SOFEL_ERROR_INVALID_ARGUMENT);
+  seg.direction = SOFEL_DIRECTION_RTL;
+  seg.script = SOFEL_TAG('A', 'r', 'a', 'b');
+  plan = sofel_shape_plan_create(font, &seg, NULL, 0, &e);
+  CHECK(sofel_shape_plan_shaper(plan, &shaper) == SOFEL_OK && shaper == SOFEL_SHAPER_ARABIC);
+  sofel_shape_plan_destroy(plan);
+  CHECK(sofel_shape_plan_create(NULL, &seg, NULL, 0, &e) == NULL && e == SOFEL_ERROR_NULL);
+  sofel_shape_plan_destroy(NULL);
+  sofel_buffer_destroy(b);
+}
+
+/* Golem's golem_font_shape (modules/golem-font/cbits/golem/golem_font.c)
+ * with sofel in place of HarfBuzz: UTF-8 text, LTR or TTB, the script
+ * and language as strings, comma-separated features. Returns the glyph
+ * count, or -(count) - 1 when the arrays of max_glyphs are too small. */
+static int golem_shape(const sofel_font_t *f, const char *utf8, int len, const char *script,
+                       const char *lang, int vertical, const char *features,
+                       uint32_t *out_gids, uint32_t *out_clusters, uint32_t *out_flags,
+                       int32_t *out_pos, int max_glyphs) {
+  sofel_buffer_t *buf = sofel_buffer_create();
+  sofel_segment_t in = {vertical ? SOFEL_DIRECTION_TTB : SOFEL_DIRECTION_LTR, 0, NULL}, props;
+  sofel_language_t *language = NULL;
+  sofel_shape_plan_t *plan;
+  sofel_feature_t feats[32];
+  size_t nfeat = 0;
+  int32_t e = 0;
+  int64_t count;
+  sofel_buffer_add_utf8(buf, utf8, (size_t)len, 0, (size_t)len);
+  if (script && *script) sofel_script_from_string(script, strlen(script), &in.script);
+  if (lang && *lang) in.language = language = sofel_language_create(lang, strlen(lang), &e);
+  sofel_segment_guess(utf8, (size_t)len, &in, NULL, &props);
+  if (features && *features) {
+    const char *p = features;
+    while (*p && nfeat < 32) {
+      const char *end = strchr(p, ',');
+      size_t n = end ? (size_t)(end - p) : strlen(p);
+      if (sofel_feature_parse(p, n, &feats[nfeat]) == SOFEL_OK) nfeat++;
+      if (!end) break;
+      p = end + 1;
+    }
+  }
+  plan = sofel_shape_plan_create(f, &props, feats, nfeat, &e);
+  CHECK(e == SOFEL_OK);
+  CHECK(sofel_shape(f, NULL, plan, buf) == SOFEL_OK);
+  count = sofel_buffer_glyphs(buf, out_gids, out_clusters, out_flags, out_pos,
+                              (size_t)max_glyphs);
+  sofel_shape_plan_destroy(plan);
+  sofel_language_destroy(language);
+  sofel_buffer_destroy(buf);
+  if (count > max_glyphs) return -(int)count - 1;
+  return (int)count;
+}
+
+/* The bytes of a file of the test data (scripts/fetch-testdata.sh) in
+ * $SOFEL_TESTDATA, or NULL. */
+static uint8_t *read_testdata(const char *path, size_t *len) {
+  const char *dir = getenv("SOFEL_TESTDATA");
+  char full[1024];
+  FILE *fp;
+  uint8_t *data = NULL;
+  long size;
+  if (dir == NULL || (size_t)snprintf(full, sizeof full, "%s/%s", dir, path) >= sizeof full)
+    return NULL;
+  fp = fopen(full, "rb");
+  if (fp == NULL) return NULL;
+  if (fseek(fp, 0, SEEK_END) == 0 && (size = ftell(fp)) > 0 && fseek(fp, 0, SEEK_SET) == 0 &&
+      (data = malloc((size_t)size)) != NULL) {
+    *len = fread(data, 1, (size_t)size, fp);
+    if (*len != (size_t)size) {
+      free(data);
+      data = NULL;
+    }
+  }
+  fclose(fp);
+  return data;
+}
+
+/* The shaping cases of fixture_shape.h, called as Golem calls HarfBuzz,
+ * on real fonts of the test data; skipped without the test data unless
+ * SOFEL_REQUIRE_TESTDATA is set. */
+static void test_golem_shape(void) {
+  size_t i, j;
+  for (i = 0; i < COUNT(shape_cases); i++) {
+    const struct shape_case *c = &shape_cases[i];
+    uint32_t gids[16], clusters[16], flags[16];
+    int32_t pos[64];
+    size_t len = 0;
+    int32_t e = 12345;
+    int n;
+    uint8_t *data = read_testdata(c->font, &len);
+    sofel_font_t *font;
+    if (data == NULL) {
+      fprintf(stderr, "%s: no test data; shaping skipped\n", c->font);
+      CHECK(getenv("SOFEL_REQUIRE_TESTDATA") == NULL);
+      return;
+    }
+    font = sofel_font_create(data, len, 0, &e);
+    CHECK(e == SOFEL_OK);
+    /* The needed count when the arrays are too small, with nothing written. */
+    gids[0] = 12345;
+    n = golem_shape(font, c->text, (int)c->text_len, c->script, c->language, c->vertical,
+                    c->features, gids, clusters, flags, pos, 1);
+    CHECK(n == -(int)c->n - 1 && gids[0] == 12345);
+    n = golem_shape(font, c->text, (int)c->text_len, c->script, c->language, c->vertical,
+                    c->features, gids, clusters, flags, pos, 16);
+    CHECK(n == (int)c->n);
+    for (j = 0; j < c->n && n == (int)c->n; j++) {
+      CHECK(gids[j] == c->glyphs[j]);
+      CHECK(clusters[j] == c->clusters[j]);
+      CHECK(flags[j] == c->flags[j]);
+      CHECK(memcmp(&pos[4 * j], &c->positions[4 * j], 4 * sizeof(int32_t)) == 0);
+    }
+    sofel_font_destroy(font);
+    free(data);
+  }
+}
+
 int main(void) {
   int32_t e = 12345;
   sofel_font_t *font;
@@ -1352,6 +1992,7 @@ int main(void) {
   sofel_rasterizer_t *raster;
 
   check_declarations();
+  check_shape_declarations();
   test_version_and_errors();
   test_geometry();
   test_unicode();
@@ -1378,6 +2019,11 @@ int main(void) {
   test_cff();
   test_cff_info();
   test_color();
+  test_shape_values();
+  test_shape_buffers();
+  test_shape_glyph_buffers(font);
+  test_shape_fixture_font(font);
+  test_golem_shape();
 #if !defined(__wasi__)
   test_threads(font);
 #endif

@@ -14,6 +14,7 @@
 #![allow(clippy::too_many_arguments)]
 
 mod color;
+mod shape;
 
 use core::ffi::{c_char, c_void};
 use core::fmt::Write as _;
@@ -64,6 +65,8 @@ pub const ERROR_BUFFER_TOO_SMALL: i32 = -11;
 pub const ERROR_INVALID_ARGUMENT: i32 = -12;
 /// `SOFEL_ERROR_INVALID_CFF`.
 pub const ERROR_INVALID_CFF: i32 = -13;
+/// `SOFEL_ERROR_BUFFER_CONTENT`.
+pub const ERROR_BUFFER_CONTENT: i32 = -14;
 
 /// `sofel_font_t`: a font over data the caller keeps alive, with
 /// HarfBuzz's CFF and CFF2 accelerators for its glyph boxes (ADR 0021)
@@ -223,6 +226,7 @@ fn error_text(error: i32) -> &'static core::ffi::CStr {
         ERROR_BUFFER_TOO_SMALL => c"buffer too small",
         ERROR_INVALID_ARGUMENT => c"invalid argument",
         ERROR_INVALID_CFF => c"invalid CFF table or no CFF",
+        ERROR_BUFFER_CONTENT => c"the buffer holds glyphs or characters where the other is needed",
         _ => c"unknown error",
     }
 }
@@ -489,6 +493,43 @@ pub unsafe extern "C" fn sofel_font_variation_glyph(
     let (font, glyph) = unsafe { (font_ref(font), w(glyph)) };
     status(find(font, glyph, |f| {
         f.variation_glyph(codepoint, selector).map(|g| g.0)
+    }))
+}
+
+/// `sofel_font_nominal_glyph_raw`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `glyph` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_nominal_glyph_raw(
+    font: *const SofelFont,
+    codepoint: u32,
+    glyph: *mut u32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, glyph) = unsafe { (font_ref(font), w(glyph)) };
+    status(find(font, glyph, |f| {
+        f.nominal_glyph_raw(codepoint).map(|g| g.0)
+    }))
+}
+
+/// `sofel_font_variation_glyph_raw`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `glyph` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_variation_glyph_raw(
+    font: *const SofelFont,
+    codepoint: u32,
+    selector: u32,
+    glyph: *mut u32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, glyph) = unsafe { (font_ref(font), w(glyph)) };
+    status(find(font, glyph, |f| {
+        f.variation_glyph_raw(codepoint, selector).map(|g| g.0)
     }))
 }
 

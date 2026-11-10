@@ -12,8 +12,10 @@
 #            and run with wasmtime; check that linking needs neither the
 #            exception-handling setjmp library nor libc++/libc++abi
 #
-# Environment: CC (default cc), WASMTIME (default wasmtime).
-# Needs cargo, nm and a C compiler.
+# Environment: CC (default cc), WASMTIME (default wasmtime),
+# SOFEL_TESTDATA (default target/testdata: the fonts of the shaping tests
+# of ADR 0020, which are skipped without them unless
+# SOFEL_REQUIRE_TESTDATA is set). Needs cargo, nm and a C compiler.
 
 set -eu
 
@@ -22,6 +24,7 @@ mode=${1:-native}
 crate=$root/crates/sofel-capi
 header=$crate/include/sofel.h
 tests=$crate/tests/c
+testdata=${SOFEL_TESTDATA:-$root/target/testdata}
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/sofel.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 
@@ -56,7 +59,7 @@ run_native() {
   # shellcheck disable=SC2086 # word splitting is intended
   ${CC:-cc} $cflags -g -O1 $sanitize -o "$tmp/test" "$tests/test.c" "$lib" \
     $(cat "$tmp/libs") -lpthread
-  "$tmp/test"
+  SOFEL_TESTDATA=$testdata "$tmp/test"
 }
 
 check_symbols() {
@@ -95,7 +98,14 @@ run_wasm() {
   fi
   # shellcheck disable=SC2086 # word splitting is intended
   $cc $cflags -O2 -o "$tmp/test.wasm" "$tests/test.c" "$lib"
-  ${WASMTIME:-wasmtime} run "$tmp/test.wasm"
+  set --
+  if [ -d "$testdata" ]; then
+    set -- --dir "$testdata::/testdata" --env SOFEL_TESTDATA=/testdata
+  fi
+  if [ -n "${SOFEL_REQUIRE_TESTDATA:-}" ]; then
+    set -- "$@" --env SOFEL_REQUIRE_TESTDATA=1
+  fi
+  ${WASMTIME:-wasmtime} run "$@" "$tmp/test.wasm"
 }
 
 case $mode in

@@ -91,6 +91,9 @@ uint32_t sofel_version(void);
 #define SOFEL_ERROR_INVALID_ARGUMENT (-12)
 /* The font has no CFF or CFF2 table FreeType can open (ADR 0021). */
 #define SOFEL_ERROR_INVALID_CFF (-13)
+/* The buffer holds glyphs where characters are needed, or characters
+ * where glyphs are needed (ADR 0020). */
+#define SOFEL_ERROR_BUFFER_CONTENT (-14)
 
 /*
  * A short English description of an error number, as a static
@@ -241,6 +244,21 @@ int32_t sofel_font_nominal_glyph(const sofel_font_t *font, uint32_t codepoint,
  */
 int32_t sofel_font_variation_glyph(const sofel_font_t *font, uint32_t codepoint,
                                    uint32_t selector, uint32_t *glyph);
+
+/*
+ * The glyphs of sofel_font_nominal_glyph and sofel_font_variation_glyph
+ * as shaping looks them up (ADR 0020): every glyph id the cmap gives,
+ * ids not below the glyph count included, and nothing from subtables of
+ * formats 2 and 8, which HarfBuzz does not look up.
+ *
+ * Rust: sofel_font::Font::nominal_glyph_raw, sofel_font::Font::variation_glyph_raw
+ * HarfBuzz: hb_font_get_nominal_glyph, hb_font_get_variation_glyph (with the ot font functions)
+ * FreeType: none
+ */
+int32_t sofel_font_nominal_glyph_raw(const sofel_font_t *font, uint32_t codepoint,
+                                     uint32_t *glyph);
+int32_t sofel_font_variation_glyph_raw(const sofel_font_t *font, uint32_t codepoint,
+                                       uint32_t selector, uint32_t *glyph);
 
 /*
  * The horizontal advance of a glyph in font units, as HarfBuzz gives it
@@ -1804,6 +1822,704 @@ typedef void (*sofel_sweep_tile_func_t)(void *user, float a0, sofel_color_t c0, 
 int32_t sofel_sweep_gradient_tiles(sofel_color_stop_t *stops, size_t n, uint32_t extend,
                                    float start, float end, sofel_sweep_tile_func_t emit,
                                    void *user);
+
+/* ------------------------------------------------------------ shaping */
+
+/*
+ * Text shaping as HarfBuzz's OpenType shaper does it (ADR 0020). The
+ * calls go: sofel_buffer_create, sofel_buffer_add_utf8 (or another
+ * sofel_buffer_add_*), sofel_segment_guess, sofel_shape_plan_create
+ * (once per font, segment and features; keep it), sofel_shape, and
+ * sofel_buffer_glyphs. sofel_buffer_clear makes the buffer ready for the
+ * next text, keeping its memory and settings.
+ *
+ * A buffer holds either characters (after sofel_buffer_create,
+ * sofel_buffer_clear and the sofel_buffer_add_* functions) or glyphs
+ * (after sofel_shape and sofel_buffer_deserialize_glyphs). A function
+ * given the other kind returns SOFEL_ERROR_BUFFER_CONTENT.
+ *
+ * Plans are immutable and may be shared between threads; a buffer is
+ * used by one thread at a time.
+ */
+
+/* Text directions: the values of hb_direction_t. 0 is "not known". */
+#define SOFEL_DIRECTION_LTR 4
+#define SOFEL_DIRECTION_RTL 5
+#define SOFEL_DIRECTION_TTB 6
+#define SOFEL_DIRECTION_BTT 7
+
+/*
+ * Tests of a text direction, as HarfBuzz's HB_DIRECTION_* macros.
+ *
+ * Rust: sofel_shape::Direction::is_horizontal, sofel_shape::Direction::is_vertical, sofel_shape::Direction::is_forward, sofel_shape::Direction::is_backward, sofel_shape::Direction::reverse
+ * HarfBuzz: HB_DIRECTION_IS_HORIZONTAL, HB_DIRECTION_IS_VERTICAL, HB_DIRECTION_IS_FORWARD, HB_DIRECTION_IS_BACKWARD, HB_DIRECTION_REVERSE
+ * FreeType: none
+ */
+#define SOFEL_DIRECTION_IS_VALID(d) ((((uint32_t)(d)) & ~3u) == 4)
+#define SOFEL_DIRECTION_IS_HORIZONTAL(d) ((((uint32_t)(d)) & ~1u) == 4)
+#define SOFEL_DIRECTION_IS_VERTICAL(d) ((((uint32_t)(d)) & ~1u) == 6)
+#define SOFEL_DIRECTION_IS_FORWARD(d) ((((uint32_t)(d)) & ~2u) == 4)
+#define SOFEL_DIRECTION_IS_BACKWARD(d) ((((uint32_t)(d)) & ~2u) == 5)
+#define SOFEL_DIRECTION_REVERSE(d) ((int32_t)(((uint32_t)(d)) ^ 1u))
+
+/*
+ * The direction a string names by its first letter, `l`, `r`, `t` or
+ * `b` in either case; 0 for anything else.
+ *
+ * Rust: sofel_shape::Direction::from_bytes
+ * HarfBuzz: hb_direction_from_string
+ * FreeType: none
+ */
+int32_t sofel_direction_from_string(const char *str, size_t len);
+
+/*
+ * "ltr", "rtl", "ttb" or "btt", as a static NUL-terminated string; NULL
+ * for other values.
+ *
+ * Rust: sofel_shape::Direction::as_str
+ * HarfBuzz: hb_direction_to_string
+ * FreeType: none
+ */
+const char *sofel_direction_to_string(int32_t direction);
+
+/*
+ * The script of a string, in the form of sofel_unicode_script: its
+ * first four bytes (up to a NUL byte), padded with spaces, read as
+ * sofel_script_from_iso15924 reads a tag. SOFEL_ERROR_INVALID_ARGUMENT
+ * when they are not four letters.
+ *
+ * Rust: sofel_unicode::Script::from_iso15924
+ * HarfBuzz: hb_script_from_string
+ * FreeType: none
+ */
+int32_t sofel_script_from_string(const char *str, size_t len, uint32_t *script);
+
+/*
+ * The direction a script is written in horizontally: SOFEL_DIRECTION_RTL
+ * for the right-to-left scripts, 0 for the scripts written both ways
+ * (Old Hungarian, Old Italic, Runic, Tifinagh), SOFEL_DIRECTION_LTR for
+ * the others, unknown ones and 0 included.
+ *
+ * Rust: sofel_shape::script_horizontal_direction
+ * HarfBuzz: hb_script_get_horizontal_direction
+ * FreeType: none
+ */
+int32_t sofel_script_horizontal_direction(uint32_t script);
+
+/* A BCP 47 language tag, normalized. Immutable. */
+typedef struct sofel_language_t sofel_language_t;
+
+/*
+ * The language of `len` bytes: cut to 63 bytes, ASCII letters
+ * lowercased, `_` turned into `-`, and cut at the first byte that is
+ * not a letter, digit, `-` or `_`. NULL on failure, with the reason in
+ * *error: SOFEL_ERROR_INVALID_ARGUMENT for empty text or text that
+ * starts with a NUL byte. Destroy it with sofel_language_destroy.
+ *
+ * Rust: sofel_shape::Language::new
+ * HarfBuzz: hb_language_from_string
+ * FreeType: none
+ */
+sofel_language_t *sofel_language_create(const char *str, size_t len, int32_t *error);
+
+/*
+ * Frees a language. NULL does nothing.
+ *
+ * Rust: none
+ * HarfBuzz: none
+ * FreeType: none
+ */
+void sofel_language_destroy(sofel_language_t *language);
+
+/*
+ * The normalized tag, not NUL-terminated, valid while the language
+ * lives.
+ *
+ * Rust: sofel_shape::Language::as_str
+ * HarfBuzz: hb_language_to_string
+ * FreeType: none
+ */
+int32_t sofel_language_string(const sofel_language_t *language, const char **str, size_t *len);
+
+/* The OpenType tags HarfBuzz's shaper asks for. */
+#define SOFEL_OT_MAX_TAGS_PER_SCRIPT 3
+#define SOFEL_OT_MAX_TAGS_PER_LANGUAGE 3
+#define SOFEL_OT_TAG_DEFAULT_SCRIPT SOFEL_TAG('D', 'F', 'L', 'T')
+#define SOFEL_OT_TAG_DEFAULT_LANGUAGE SOFEL_TAG('d', 'f', 'l', 't')
+
+/*
+ * The OpenType script and language system tags of a script (0 for none)
+ * and a language (NULL for none), best first. *script_count and
+ * *language_count hold the capacities of the arrays on entry and the
+ * numbers written on return; an array may be NULL when its capacity is
+ * 0. The shaper asks for SOFEL_OT_MAX_TAGS_PER_SCRIPT and
+ * SOFEL_OT_MAX_TAGS_PER_LANGUAGE. SOFEL_ERROR_INVALID_ARGUMENT for a
+ * script that is not four letters.
+ *
+ * Rust: sofel_shape::ot_tags_from_script_and_language, sofel_shape::ot_tags_from_script_and_language_max
+ * HarfBuzz: hb_ot_tags_from_script_and_language
+ * FreeType: none
+ */
+int32_t sofel_ot_tags_from_script_and_language(uint32_t script, const sofel_language_t *language,
+                                               uint32_t *script_tags, size_t *script_count,
+                                               uint32_t *language_tags, size_t *language_count);
+
+/*
+ * The script and language of an OpenType script tag and language
+ * system tag (0 for `dflt`). *script is 0 for none; *language is a new
+ * language to destroy with sofel_language_destroy, or NULL for none.
+ *
+ * Rust: sofel_shape::ot_tags_to_script_and_language
+ * HarfBuzz: hb_ot_tags_to_script_and_language
+ * FreeType: none
+ */
+int32_t sofel_ot_tags_to_script_and_language(uint32_t script_tag, uint32_t language_tag,
+                                             uint32_t *script, sofel_language_t **language);
+
+/*
+ * The script of an OpenType script tag; 0 for `DFLT`, 'Zzzz' for a tag
+ * of no script.
+ *
+ * Rust: sofel_shape::ot_tag_to_script
+ * HarfBuzz: hb_ot_tag_to_script
+ * FreeType: none
+ */
+uint32_t sofel_ot_tag_to_script(uint32_t tag);
+
+/*
+ * The language of an OpenType language system tag: a new language to
+ * destroy with sofel_language_destroy, or NULL for `dflt`.
+ *
+ * Rust: sofel_shape::ot_tag_to_language
+ * HarfBuzz: hb_ot_tag_to_language
+ * FreeType: none
+ */
+int32_t sofel_ot_tag_to_language(uint32_t tag, sofel_language_t **language);
+
+/* A feature setting for the clusters start..end (hb_feature_t). */
+typedef struct sofel_feature_t {
+  uint32_t tag;
+  uint32_t value; /* 0 disables, 1 enables, higher values pick alternates */
+  uint32_t start;
+  uint32_t end;
+} sofel_feature_t;
+
+/* The range of a feature that applies everywhere. */
+#define SOFEL_FEATURE_GLOBAL_START 0u
+#define SOFEL_FEATURE_GLOBAL_END UINT32_MAX
+
+/*
+ * A feature from its string: an optional `+` or `-`, the tag, an
+ * optional range of clusters (`[3:5]`), and an optional value (`=2`,
+ * ` on`), as HarfBuzz reads it. SOFEL_ERROR_INVALID_ARGUMENT when it
+ * does not parse.
+ *
+ * Rust: sofel_shape::Feature::parse
+ * HarfBuzz: hb_feature_from_string
+ * FreeType: none
+ */
+int32_t sofel_feature_parse(const char *str, size_t len, sofel_feature_t *feature);
+
+/*
+ * The string of a feature, as HarfBuzz writes it, NUL-terminated into
+ * `buffer` of `size` bytes; *len is its length without the NUL. When
+ * `size` is not larger than *len, nothing is written and the result is
+ * SOFEL_ERROR_BUFFER_TOO_SMALL.
+ *
+ * Rust: sofel_shape::Feature::format, sofel_shape::Feature::write
+ * HarfBuzz: hb_feature_to_string
+ * FreeType: none
+ */
+int32_t sofel_feature_format(const sofel_feature_t *feature, char *buffer, size_t size,
+                             size_t *len);
+
+/*
+ * The properties of a run of text: the direction (SOFEL_DIRECTION_*),
+ * the script (in the form of sofel_unicode_script) and the language;
+ * 0, 0 and NULL when not known.
+ */
+typedef struct sofel_segment_t {
+  int32_t direction;
+  uint32_t script;
+  const sofel_language_t *language;
+} sofel_segment_t;
+
+/*
+ * Fills in what `in` does not know from `len` bytes of UTF-8 text:
+ * the script from the first character whose script is not Common,
+ * Inherited or Unknown; the direction from the script (left to right
+ * when the script has none); the language from default_language (NULL
+ * for none). The process locale is not read. out->language is
+ * in->language or default_language, which must outlive its use.
+ *
+ * Rust: sofel_shape::SegmentProperties::guess
+ * HarfBuzz: hb_buffer_guess_segment_properties
+ * FreeType: none
+ */
+int32_t sofel_segment_guess(const char *utf8, size_t len, const sofel_segment_t *in,
+                            const sofel_language_t *default_language, sofel_segment_t *out);
+
+/* The shapers a plan picks (hb_ot_shaper_categorize). */
+#define SOFEL_SHAPER_DEFAULT 0
+#define SOFEL_SHAPER_ARABIC 1
+#define SOFEL_SHAPER_HANGUL 2
+#define SOFEL_SHAPER_HEBREW 3
+#define SOFEL_SHAPER_INDIC 4
+#define SOFEL_SHAPER_KHMER 5
+#define SOFEL_SHAPER_MYANMAR 6
+#define SOFEL_SHAPER_MYANMAR_ZAWGYI 7
+#define SOFEL_SHAPER_THAI 8
+#define SOFEL_SHAPER_USE 9
+
+/* What to do for a font, segment and features. Immutable; the font must
+ * outlive it. */
+typedef struct sofel_shape_plan_t sofel_shape_plan_t;
+
+/*
+ * A plan for `font`, the segment (whose direction must be known) and
+ * `n` features (`features` may be NULL when `n` is 0). NULL on failure,
+ * with the reason in *error. Destroy it with sofel_shape_plan_destroy.
+ *
+ * Rust: sofel_shape::ShapePlan::new
+ * HarfBuzz: hb_shape_plan_create_cached
+ * FreeType: none
+ */
+sofel_shape_plan_t *sofel_shape_plan_create(const sofel_font_t *font,
+                                            const sofel_segment_t *segment,
+                                            const sofel_feature_t *features, size_t n,
+                                            int32_t *error);
+
+/*
+ * Frees a plan. NULL does nothing.
+ *
+ * Rust: none
+ * HarfBuzz: hb_shape_plan_destroy
+ * FreeType: none
+ */
+void sofel_shape_plan_destroy(sofel_shape_plan_t *plan);
+
+/*
+ * The shaper the plan uses, SOFEL_SHAPER_*.
+ *
+ * Rust: sofel_shape::ShapePlan::shaper
+ * HarfBuzz: hb_shape_plan_get_shaper (always "ot"; the script shaper is internal)
+ * FreeType: none
+ */
+int32_t sofel_shape_plan_shaper(const sofel_shape_plan_t *plan, int32_t *shaper);
+
+/* Buffer flags (hb_buffer_flags_t). */
+#define SOFEL_BUFFER_FLAG_DEFAULT 0x0u
+#define SOFEL_BUFFER_FLAG_BOT 0x1u
+#define SOFEL_BUFFER_FLAG_EOT 0x2u
+#define SOFEL_BUFFER_FLAG_PRESERVE_DEFAULT_IGNORABLES 0x4u
+#define SOFEL_BUFFER_FLAG_REMOVE_DEFAULT_IGNORABLES 0x8u
+#define SOFEL_BUFFER_FLAG_DO_NOT_INSERT_DOTTED_CIRCLE 0x10u
+#define SOFEL_BUFFER_FLAG_PRODUCE_UNSAFE_TO_CONCAT 0x40u
+#define SOFEL_BUFFER_FLAG_PRODUCE_SAFE_TO_INSERT_TATWEEL 0x80u
+
+/* Cluster levels (hb_buffer_cluster_level_t). */
+#define SOFEL_CLUSTER_LEVEL_MONOTONE_GRAPHEMES 0
+#define SOFEL_CLUSTER_LEVEL_MONOTONE_CHARACTERS 1
+#define SOFEL_CLUSTER_LEVEL_CHARACTERS 2
+#define SOFEL_CLUSTER_LEVEL_GRAPHEMES 3
+
+/* Glyph flags (hb_glyph_flags_t). */
+#define SOFEL_GLYPH_FLAG_UNSAFE_TO_BREAK 0x1u
+#define SOFEL_GLYPH_FLAG_UNSAFE_TO_CONCAT 0x2u
+#define SOFEL_GLYPH_FLAG_SAFE_TO_INSERT_TATWEEL 0x4u
+
+/* Text to shape, then its glyphs. Owned by one thread at a time. */
+typedef struct sofel_buffer_t sofel_buffer_t;
+
+/*
+ * An empty buffer of characters with the default settings; NULL only
+ * when memory runs out. Destroy it with sofel_buffer_destroy.
+ *
+ * Rust: sofel_shape::UnicodeBuffer::new
+ * HarfBuzz: hb_buffer_create
+ * FreeType: none
+ */
+sofel_buffer_t *sofel_buffer_create(void);
+
+/*
+ * An empty buffer of characters with the settings of `buffer`, which
+ * holds characters; NULL on failure, with the reason in *error.
+ *
+ * Rust: sofel_shape::UnicodeBuffer::similar
+ * HarfBuzz: hb_buffer_create_similar
+ * FreeType: none
+ */
+sofel_buffer_t *sofel_buffer_create_similar(const sofel_buffer_t *buffer, int32_t *error);
+
+/*
+ * Frees a buffer. NULL does nothing.
+ *
+ * Rust: none
+ * HarfBuzz: hb_buffer_destroy
+ * FreeType: none
+ */
+void sofel_buffer_destroy(sofel_buffer_t *buffer);
+
+/*
+ * Empties the buffer and makes it hold characters, keeping the settings
+ * and the memory. The random state goes back to 1.
+ *
+ * Rust: sofel_shape::UnicodeBuffer::clear, sofel_shape::GlyphBuffer::into_unicode
+ * HarfBuzz: hb_buffer_clear_contents
+ * FreeType: none
+ */
+int32_t sofel_buffer_clear(sofel_buffer_t *buffer);
+
+/*
+ * The number of characters or glyphs.
+ *
+ * Rust: sofel_shape::UnicodeBuffer::len, sofel_shape::GlyphBuffer::len
+ * HarfBuzz: hb_buffer_get_length
+ * FreeType: none
+ */
+int32_t sofel_buffer_length(const sofel_buffer_t *buffer, size_t *len);
+
+/*
+ * Adds one character with a cluster value.
+ *
+ * Rust: sofel_shape::UnicodeBuffer::push
+ * HarfBuzz: hb_buffer_add
+ * FreeType: none
+ */
+int32_t sofel_buffer_add(sofel_buffer_t *buffer, uint32_t codepoint, uint32_t cluster);
+
+/*
+ * Adds the characters of text[item_offset..item_offset + item_len] (the
+ * text has `len` code units; both are clamped to it, so SIZE_MAX takes
+ * the rest), with their positions in the text as cluster values. Up to
+ * five characters before the item become the pre-context when the
+ * buffer is empty, and up to five after it the post-context. Ill-formed
+ * text becomes the replacement character: each byte of UTF-8, lone
+ * surrogates of UTF-16, and surrogates and values past U+10FFFF of
+ * UTF-32. The _codepoints form adds the values as they are, and the
+ * _latin1 form one character per byte.
+ *
+ * Rust: sofel_shape::UnicodeBuffer::push_utf8, sofel_shape::UnicodeBuffer::push_utf16, sofel_shape::UnicodeBuffer::push_utf32, sofel_shape::UnicodeBuffer::push_codepoints, sofel_shape::UnicodeBuffer::push_latin1
+ * HarfBuzz: hb_buffer_add_utf8, hb_buffer_add_utf16, hb_buffer_add_utf32, hb_buffer_add_codepoints, hb_buffer_add_latin1
+ * FreeType: none
+ */
+int32_t sofel_buffer_add_utf8(sofel_buffer_t *buffer, const char *text, size_t len,
+                              size_t item_offset, size_t item_len);
+int32_t sofel_buffer_add_utf16(sofel_buffer_t *buffer, const uint16_t *text, size_t len,
+                               size_t item_offset, size_t item_len);
+int32_t sofel_buffer_add_utf32(sofel_buffer_t *buffer, const uint32_t *text, size_t len,
+                               size_t item_offset, size_t item_len);
+int32_t sofel_buffer_add_codepoints(sofel_buffer_t *buffer, const uint32_t *text, size_t len,
+                                    size_t item_offset, size_t item_len);
+int32_t sofel_buffer_add_latin1(sofel_buffer_t *buffer, const uint8_t *text, size_t len,
+                                size_t item_offset, size_t item_len);
+
+/*
+ * Adds the characters start..end of `source` (clamped to it) with their
+ * cluster values; their context comes from `source` as for
+ * sofel_buffer_add_utf8.
+ *
+ * Rust: sofel_shape::UnicodeBuffer::append
+ * HarfBuzz: hb_buffer_append
+ * FreeType: none
+ */
+int32_t sofel_buffer_append(sofel_buffer_t *buffer, const sofel_buffer_t *source, size_t start,
+                            size_t end);
+
+/*
+ * Sets the cluster value of every character to its index.
+ *
+ * Rust: sofel_shape::UnicodeBuffer::number_clusters
+ * HarfBuzz: none (hb-shape without --utf8-clusters)
+ * FreeType: none
+ */
+int32_t sofel_buffer_number_clusters(sofel_buffer_t *buffer);
+
+/*
+ * The characters and their cluster values, written to the arrays of
+ * `capacity` elements (either may be NULL); *len is the number of
+ * characters. SOFEL_ERROR_BUFFER_TOO_SMALL when `capacity` is smaller.
+ *
+ * Rust: sofel_shape::UnicodeBuffer::codepoints, sofel_shape::UnicodeBuffer::clusters
+ * HarfBuzz: hb_buffer_get_glyph_infos
+ * FreeType: none
+ */
+int32_t sofel_buffer_codepoints(const sofel_buffer_t *buffer, uint32_t *codepoints,
+                                uint32_t *clusters, size_t capacity, size_t *len);
+
+/*
+ * The pre-context (side 0) or post-context (side 1), nearest character
+ * first: up to five characters, their number in *len.
+ *
+ * Rust: sofel_shape::UnicodeBuffer::pre_context, sofel_shape::UnicodeBuffer::post_context
+ * HarfBuzz: none (hb_buffer_t::context)
+ * FreeType: none
+ */
+int32_t sofel_buffer_context(const sofel_buffer_t *buffer, int32_t side, uint32_t context[5],
+                             size_t *len);
+
+/*
+ * The settings of a buffer of characters, and their setters: the flags
+ * (SOFEL_BUFFER_FLAG_*), the cluster level (SOFEL_CLUSTER_LEVEL_*), the
+ * replacement character for ill-formed text (U+FFFD), the glyph for
+ * default-ignorable characters (0, the font's space glyph), the glyph
+ * for characters the font does not have (0), the glyph for variation
+ * selectors the font has no variant for (UINT32_MAX for none: they are
+ * then default-ignorable), and the state of the random numbers of the
+ * `rand` feature (1).
+ *
+ * Rust: sofel_shape::UnicodeBuffer::flags, sofel_shape::UnicodeBuffer::set_flags, sofel_shape::UnicodeBuffer::cluster_level, sofel_shape::UnicodeBuffer::set_cluster_level, sofel_shape::UnicodeBuffer::replacement_codepoint, sofel_shape::UnicodeBuffer::set_replacement_codepoint, sofel_shape::UnicodeBuffer::invisible_glyph, sofel_shape::UnicodeBuffer::set_invisible_glyph, sofel_shape::UnicodeBuffer::not_found_glyph, sofel_shape::UnicodeBuffer::set_not_found_glyph, sofel_shape::UnicodeBuffer::not_found_variation_selector_glyph, sofel_shape::UnicodeBuffer::set_not_found_variation_selector_glyph, sofel_shape::UnicodeBuffer::random_state, sofel_shape::UnicodeBuffer::set_random_state
+ * HarfBuzz: hb_buffer_get_flags, hb_buffer_set_flags, and the others of the same names
+ * FreeType: none
+ */
+int32_t sofel_buffer_get_flags(const sofel_buffer_t *buffer, uint32_t *flags);
+int32_t sofel_buffer_set_flags(sofel_buffer_t *buffer, uint32_t flags);
+int32_t sofel_buffer_get_cluster_level(const sofel_buffer_t *buffer, int32_t *level);
+int32_t sofel_buffer_set_cluster_level(sofel_buffer_t *buffer, int32_t level);
+int32_t sofel_buffer_get_replacement_codepoint(const sofel_buffer_t *buffer, uint32_t *codepoint);
+int32_t sofel_buffer_set_replacement_codepoint(sofel_buffer_t *buffer, uint32_t codepoint);
+int32_t sofel_buffer_get_invisible_glyph(const sofel_buffer_t *buffer, uint32_t *glyph);
+int32_t sofel_buffer_set_invisible_glyph(sofel_buffer_t *buffer, uint32_t glyph);
+int32_t sofel_buffer_get_not_found_glyph(const sofel_buffer_t *buffer, uint32_t *glyph);
+int32_t sofel_buffer_set_not_found_glyph(sofel_buffer_t *buffer, uint32_t glyph);
+int32_t sofel_buffer_get_not_found_variation_selector_glyph(const sofel_buffer_t *buffer,
+                                                            uint32_t *glyph);
+int32_t sofel_buffer_set_not_found_variation_selector_glyph(sofel_buffer_t *buffer,
+                                                            uint32_t glyph);
+int32_t sofel_buffer_get_random_state(const sofel_buffer_t *buffer, uint32_t *state);
+int32_t sofel_buffer_set_random_state(sofel_buffer_t *buffer, uint32_t state);
+
+/*
+ * Shapes the characters of `buffer` with `font` (the font of the plan)
+ * at `scale` (NULL for the font's unscaled default, positions in font
+ * units; no pixel size, so Device tables are not applied) as `plan`
+ * says; the buffer then holds the glyphs, in visual order. The plan's
+ * direction and script are used. Glyph boxes for fallback mark
+ * positioning and vertical origins come from the best source the font
+ * has, as HarfBuzz's ot functions take them (sbix, CBDT, COLR, glyf,
+ * CFF, CFF2).
+ *
+ * Rust: sofel_shape::shape, sofel_shape::shape_with_extents, sofel_shape::Scale::unscaled
+ * HarfBuzz: hb_shape_plan_execute
+ * FreeType: none
+ */
+int32_t sofel_shape(const sofel_font_t *font, const sofel_scale_t *scale,
+                    const sofel_shape_plan_t *plan, sofel_buffer_t *buffer);
+
+/*
+ * Shapes as HarfBuzz's `fallback` shaper: the cmap glyph and advance of
+ * every character, without layout tables. The segment's direction must
+ * be known.
+ *
+ * Rust: sofel_shape::shape_fallback
+ * HarfBuzz: hb_shape_full with the shaper list {"fallback"}
+ * FreeType: none
+ */
+int32_t sofel_shape_fallback(const sofel_font_t *font, const sofel_scale_t *scale,
+                             const sofel_segment_t *segment, sofel_buffer_t *buffer);
+
+/*
+ * The glyphs of a shaped buffer: glyph ids, cluster values, glyph flags
+ * (SOFEL_GLYPH_FLAG_*) and four positions per glyph (x_advance,
+ * y_advance, x_offset, y_offset), written to the arrays of `capacity`
+ * glyphs, any of which may be NULL. Returns the number of glyphs; when
+ * it is larger than `capacity`, nothing is written and the caller calls
+ * again with arrays that large. A negative SOFEL_ERROR_* on failure.
+ *
+ * Rust: sofel_shape::GlyphBuffer::glyph_infos, sofel_shape::GlyphBuffer::glyph_positions
+ * HarfBuzz: hb_buffer_get_glyph_infos, hb_buffer_get_glyph_positions
+ * FreeType: none
+ */
+int64_t sofel_buffer_glyphs(const sofel_buffer_t *buffer, uint32_t *glyphs, uint32_t *clusters,
+                            uint32_t *flags, int32_t *positions, size_t capacity);
+
+/*
+ * The direction the glyphs were shaped in.
+ *
+ * Rust: sofel_shape::GlyphBuffer::direction
+ * HarfBuzz: hb_buffer_get_direction
+ * FreeType: none
+ */
+int32_t sofel_buffer_direction(const sofel_buffer_t *buffer, int32_t *direction);
+
+/*
+ * Reorders the glyphs of each cluster into a canonical order and moves
+ * the cluster's advance onto one glyph.
+ *
+ * Rust: sofel_shape::GlyphBuffer::normalize_glyphs
+ * HarfBuzz: hb_buffer_normalize_glyphs
+ * FreeType: none
+ */
+int32_t sofel_buffer_normalize_glyphs(sofel_buffer_t *buffer);
+
+/* How two buffers differ (hb_buffer_diff_flags_t). */
+#define SOFEL_DIFF_FLAG_EQUAL 0x0u
+#define SOFEL_DIFF_FLAG_CONTENT_TYPE_MISMATCH 0x1u
+#define SOFEL_DIFF_FLAG_LENGTH_MISMATCH 0x2u
+#define SOFEL_DIFF_FLAG_NOTDEF_PRESENT 0x4u
+#define SOFEL_DIFF_FLAG_DOTTED_CIRCLE_PRESENT 0x8u
+#define SOFEL_DIFF_FLAG_CODEPOINT_MISMATCH 0x10u
+#define SOFEL_DIFF_FLAG_CLUSTER_MISMATCH 0x20u
+#define SOFEL_DIFF_FLAG_GLYPH_FLAGS_MISMATCH 0x40u
+#define SOFEL_DIFF_FLAG_POSITION_MISMATCH 0x80u
+
+/*
+ * Compares `buffer` with `reference` as hb_buffer_diff does: the kinds
+ * of content, the lengths, which special glyphs the reference has
+ * (dottedcircle_glyph is the glyph of U+25CC; UINT32_MAX for none), and
+ * item by item the glyphs or characters, cluster values, flags and
+ * positions (differences up to position_fuzz allowed).
+ *
+ * Rust: sofel_shape::diff, sofel_shape::diff_unicode
+ * HarfBuzz: hb_buffer_diff
+ * FreeType: none
+ */
+int32_t sofel_buffer_diff(const sofel_buffer_t *buffer, const sofel_buffer_t *reference,
+                          uint32_t dottedcircle_glyph, uint32_t position_fuzz, uint32_t *flags);
+
+/* Serialization formats (hb_buffer_serialize_format_t). */
+#define SOFEL_SERIALIZE_FORMAT_TEXT SOFEL_TAG('T', 'E', 'X', 'T')
+#define SOFEL_SERIALIZE_FORMAT_JSON SOFEL_TAG('J', 'S', 'O', 'N')
+
+/* What to write (hb_buffer_serialize_flags_t). */
+#define SOFEL_SERIALIZE_FLAG_DEFAULT 0x0u
+#define SOFEL_SERIALIZE_FLAG_NO_CLUSTERS 0x1u
+#define SOFEL_SERIALIZE_FLAG_NO_POSITIONS 0x2u
+#define SOFEL_SERIALIZE_FLAG_NO_GLYPH_NAMES 0x4u
+#define SOFEL_SERIALIZE_FLAG_GLYPH_EXTENTS 0x8u
+#define SOFEL_SERIALIZE_FLAG_GLYPH_FLAGS 0x10u
+#define SOFEL_SERIALIZE_FLAG_NO_ADVANCES 0x20u
+
+/*
+ * The format a name gives (its first four bytes in any case: "text",
+ * "json"); 0 for others.
+ *
+ * Rust: sofel_shape::SerializeFormat::from_name
+ * HarfBuzz: hb_buffer_serialize_format_from_string
+ * FreeType: none
+ */
+uint32_t sofel_serialize_format_from_string(const char *str, size_t len);
+
+/*
+ * "text" or "json", as a static NUL-terminated string; NULL for other
+ * values.
+ *
+ * Rust: sofel_shape::SerializeFormat::name
+ * HarfBuzz: hb_buffer_serialize_format_to_string
+ * FreeType: none
+ */
+const char *sofel_serialize_format_to_string(uint32_t format);
+
+/*
+ * Writes the items start..end of `buffer` as hb_buffer_serialize does:
+ * glyphs as `[name=cluster@dx,dy+ax,ay|...]` (or JSON), characters as
+ * `<U+0041=0|...>`, and `!!` (or `[]`) for an empty buffer of
+ * characters. Items are written NUL-terminated into `out` of `size`
+ * bytes while they fit; *consumed is the number of bytes written
+ * without the NUL and *count the number of items, so that the caller
+ * continues from start + *count. Glyph names come from `font` (NULL for
+ * `gid<n>`), glyph boxes from `font` at `scale` (NULL for unscaled).
+ * SOFEL_ERROR_INVALID_ARGUMENT for an unknown format.
+ *
+ * Rust: sofel_shape::serialize_glyphs, sofel_shape::serialize_glyphs_range, sofel_shape::serialize_unicode, sofel_shape::serialize_unicode_range, sofel_shape::serialize_invalid
+ * HarfBuzz: hb_buffer_serialize
+ * FreeType: none
+ */
+int32_t sofel_buffer_serialize(const sofel_buffer_t *buffer, size_t start, size_t end, char *out,
+                               size_t size, size_t *consumed, size_t *count,
+                               const sofel_font_t *font, const sofel_scale_t *scale,
+                               uint32_t format, uint32_t flags);
+
+/*
+ * Reads glyphs written by sofel_buffer_serialize and appends them to
+ * `buffer`, which holds glyphs or is an empty buffer of characters (it
+ * then holds glyphs in `direction`, with the default settings). Glyph
+ * names are looked up in `names` (NULL for none) and `uni<hex>` in the
+ * cmap of `font` (NULL for none); numbers and `gid<n>` are glyph ids.
+ * *consumed is the number of bytes read, also on failure; the items
+ * read before a failure are kept. SOFEL_ERROR_INVALID_ARGUMENT when the
+ * text does not read to its end, is empty, or the format or direction
+ * is unknown.
+ *
+ * Rust: sofel_shape::deserialize_glyphs, sofel_shape::GlyphBuffer::from_parts
+ * HarfBuzz: hb_buffer_deserialize_glyphs
+ * FreeType: none
+ */
+int32_t sofel_buffer_deserialize_glyphs(sofel_buffer_t *buffer, const char *text, size_t len,
+                                        size_t *consumed, const sofel_font_t *font,
+                                        const sofel_glyph_names_t *names, int32_t direction,
+                                        uint32_t format);
+
+/*
+ * Reads characters written by sofel_buffer_serialize and appends them
+ * to a buffer of characters, as sofel_buffer_deserialize_glyphs.
+ *
+ * Rust: sofel_shape::deserialize_unicode
+ * HarfBuzz: hb_buffer_deserialize_unicode
+ * FreeType: none
+ */
+int32_t sofel_buffer_deserialize_unicode(sofel_buffer_t *buffer, const char *text, size_t len,
+                                         size_t *consumed, uint32_t format);
+
+/*
+ * The string of a glyph as serialization writes it: its name (from
+ * `font`, NULL for none) cut to 127 bytes, or `gid<n>`; NUL-terminated
+ * into `buffer` of `size` bytes as sofel_feature_format.
+ *
+ * Rust: sofel_shape::glyph_to_string
+ * HarfBuzz: hb_font_glyph_to_string
+ * FreeType: none
+ */
+int32_t sofel_font_glyph_to_string(const sofel_font_t *font, uint32_t glyph, char *buffer,
+                                   size_t size, size_t *len);
+
+/*
+ * The glyph of a string as deserialization reads it: a glyph name (from
+ * `names`, NULL for none), a glyph id in decimal, `gid<n>`, or
+ * `uni<hex>` mapped through the cmap of `font` (NULL for none).
+ * SOFEL_ERROR_NOT_FOUND when it names no glyph.
+ *
+ * Rust: sofel_shape::glyph_from_string
+ * HarfBuzz: hb_font_glyph_from_string
+ * FreeType: none
+ */
+int32_t sofel_font_glyph_from_string(const sofel_font_t *font, const sofel_glyph_names_t *names,
+                                     const char *str, size_t len, uint32_t *glyph);
+
+/* The fallback width classes of space characters
+ * (hb_unicode_funcs_t::space_t). */
+#define SOFEL_SPACE_NOT_SPACE 0
+#define SOFEL_SPACE_EM 1
+#define SOFEL_SPACE_EM_2 2
+#define SOFEL_SPACE_EM_3 3
+#define SOFEL_SPACE_EM_4 4
+#define SOFEL_SPACE_EM_5 5
+#define SOFEL_SPACE_EM_6 6
+#define SOFEL_SPACE_EM_16 16
+#define SOFEL_SPACE_4_EM_18 17
+#define SOFEL_SPACE_SPACE 18
+#define SOFEL_SPACE_FIGURE 19
+#define SOFEL_SPACE_PUNCTUATION 20
+#define SOFEL_SPACE_NARROW 21
+
+/*
+ * HarfBuzz's own character properties for shaping: the combining class
+ * marks are reordered by; whether a character is default-ignorable (as
+ * HarfBuzz hides them), a variation selector matched with the character
+ * before, or a regional indicator; the fallback width class of a space
+ * (SOFEL_SPACE_*); and the vertical presentation form used without a
+ * `vert` feature (the character itself when there is none).
+ *
+ * Rust: sofel_shape::unicode::modified_combining_class, sofel_shape::unicode::is_default_ignorable, sofel_shape::unicode::is_variation_selector, sofel_shape::unicode::is_regional_indicator, sofel_shape::unicode::space_fallback_type, sofel_shape::unicode::vertical_char_for
+ * HarfBuzz: hb_unicode_funcs_t::modified_combining_class, is_default_ignorable, is_variation_selector, _hb_codepoint_is_regional_indicator, space_fallback_type, vertical_char_for (internal)
+ * FreeType: none
+ */
+uint8_t sofel_unicode_modified_combining_class(uint32_t codepoint);
+uint8_t sofel_unicode_is_default_ignorable(uint32_t codepoint);
+uint8_t sofel_unicode_is_variation_selector(uint32_t codepoint);
+uint8_t sofel_unicode_is_regional_indicator(uint32_t codepoint);
+uint8_t sofel_unicode_space_fallback_type(uint32_t codepoint);
+uint32_t sofel_unicode_vertical_char_for(uint32_t codepoint);
 
 #ifdef __cplusplus
 }
