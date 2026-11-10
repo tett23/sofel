@@ -4,7 +4,7 @@
 
 各項は、何が残っているか、どこに由来するか、何があれば進められるかの順に書く。節と項は、ほかの項が依存するものを先に置いた。確認できなかった事項には「未確認」と書いた。
 
-[ADR 0027](adr/0027-variable-fonts.md)（可変フォント）、[ADR 0028](adr/0028-ptem-is-not-opsz.md)（`--font-ptem` は `opsz` を決めない）、[ADR 0029](adr/0029-variation-deltas.md)（変化量の扱い）は、利用者のレビューを経て採択（未実装）になった。[ADR 0029](adr/0029-variation-deltas.md) の調査の記録は、手元の `target/handoff/variation-deltas-research.md` にある（コミットしていない）。
+[ADR 0027](adr/0027-variable-fonts.md)（可変フォント）、[ADR 0029](adr/0029-variation-deltas.md)（変化量の扱い）は、利用者のレビューを経て採択（未実装）になった。[ADR 0028](adr/0028-ptem-is-not-opsz.md) の `--font-ptem` の分類訂正は実装済みである。[ADR 0029](adr/0029-variation-deltas.md) の調査の記録は、手元の `target/handoff/variation-deltas-research.md` にある（コミットしていない）。
 
 ## 未実装の ADR
 
