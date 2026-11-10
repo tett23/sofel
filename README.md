@@ -14,6 +14,7 @@ WOFFとWOFF2、Type1やBDFなどの古い形式、AAT、絵文字（COLR、埋�
 `sofel-read` は、sfntの目録、TTC/OTC、head、maxp/MAXP、hhea/HHEA、hmtx/HMTX、cmap（フォーマット0〜15）を読み、各表の検証器を持つ（[ADR 0007](docs/adr/0007-sfnt-read-foundation.md)）。
 範囲と実装の順序は [ADR 0001](docs/adr/0001-project-goal-and-scope.md)、クレートの構成は [ADR 0003](docs/adr/0003-crate-layers.md) を参照。
 仕様は [docs/specifications.md](docs/specifications.md) にまとめる。
+FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/) に記録する（最新は [2段階目](docs/benchmarks/2026-11-10-stage2.md)）。
 
 | クレート | 役割 |
 |---|---|
@@ -76,6 +77,16 @@ wasmでは、`wasm32-unknown-unknown` へのビルドと、`wasm32-wasip1` で�
 ```sh
 cargo build --release --target wasm32-unknown-unknown -p sofel-read -p sofel-geom -p sofel-font -p sofel-outline -p sofel-raster
 CARGO_TARGET_WASM32_WASIP1_RUNNER=wasmtime cargo test --target wasm32-wasip1 -p sofel-read -p sofel-geom -p sofel-font -p sofel-outline -p sofel-raster
+```
+
+性能の計測（[ADR 0013](docs/adr/0013-benchmark-harness.md)）は、ワークスペースの外の `bench/` で行う。テストのデータの取得のあと、FreeTypeとHarfBuzzを静的ライブラリにビルドする（C++のコンパイラが要る。wasmでは `bench/fetch-wasi-sdk.sh` がwasi-sdkを取得する）。`--once` は各項目を1回だけ走らせ、結果の照合だけを行う。記録は `docs/benchmarks/` に置く。
+
+```sh
+sh bench/build-c.sh
+cargo run --release --manifest-path bench/Cargo.toml            # Markdownの表を書く
+sh bench/build-c.sh wasm32-wasip1
+cargo build --release --manifest-path bench/Cargo.toml --target wasm32-wasip1
+wasmtime run -W exceptions=y --dir target/testdata bench/target/wasm32-wasip1/release/sofel-bench.wasm
 ```
 
 ファジングには、nightlyのツールチェーンと [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) が要る。対象は `cmap`、`metrics`、`font`。
