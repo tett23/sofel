@@ -49,6 +49,7 @@ mod cff;
 mod float;
 mod ft;
 mod glyf_data;
+mod hb_cff;
 mod layout;
 mod metrics;
 mod name_language;
@@ -57,6 +58,7 @@ mod tables;
 
 pub use cff::{Cff, CffError, CffMatrix, CidError, PsFontInfo, Ros, Subfont, fs_type};
 pub use ft::FtFaceMetrics;
+pub use hb_cff::{HbCff1, HbCff2};
 pub use layout::Direction;
 pub use metrics::{FontExtents, GlyphExtents, HbScale, MetricsTag};
 pub use names::{GlyphNames, Language, NameEntry, NameLength, Names, SfntName};
