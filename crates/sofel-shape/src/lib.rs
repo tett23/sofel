@@ -28,11 +28,15 @@ mod font;
 mod glyph;
 mod language;
 mod layout;
+#[allow(dead_code)] // Used by the shapers of ADR 0024 as they land.
+mod machine;
 mod normalize;
 mod plan;
 mod props;
 mod scale;
 mod shape;
+mod shapers;
+mod tables;
 mod tag;
 pub mod unicode;
 mod utf;

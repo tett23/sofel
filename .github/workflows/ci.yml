@@ -111,6 +111,15 @@ jobs:
         run: |
           cargo run --release --manifest-path tools/gen-ot-tag/Cargo.toml
           git diff --exit-code
+      # docs/adr/0024: the generated syllable machines are those committed.
+      - name: Test the syllable machine generator
+        run: |
+          cargo fmt --check --manifest-path tools/gen-machine/Cargo.toml
+          cargo test --release --manifest-path tools/gen-machine/Cargo.toml
+      - name: Regenerate the syllable machines
+        run: |
+          cargo run --release --manifest-path tools/gen-machine/Cargo.toml
+          git diff --exit-code
       - name: Build ft-dump
         run: sh tools/ft-dump/build.sh
       # docs/adr/0016
