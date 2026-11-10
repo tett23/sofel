@@ -9,8 +9,9 @@
 作業2のうち、座標の正規化と [ADR 0029](adr/0029-variation-deltas.md) と [ADR 0030](adr/0030-variation-evaluation-corrections.md) のItemVariationStoreの評価の核も実装した。
 C ABIには位置の作成、座標の取得、Variationの文字列変換を実装した。
 軸と名前つきインスタンスの問い合わせ、FreeTypeが名前を持つときの合成既定インスタンス、位置ごとのPostScript名と対応するC ABIは実装した。
-次はFreeTypeが必要なnameレコードを持たないときの末尾スタイルの扱いを決め、座標によって値を変える処理とCLIから位置を指定する機能を実装する。
-メトリクス、基準線、輪郭、シェーピング、塗りの既存C ABI関数には位置の引数を追加済みだが、その位置による値の変更は残っている。
+HVARとVVARの送り幅、VORGとVVARの縦原点、MVARのフォント全体のメトリクス、FreeTypeの縦送り幅には座標を適用した。
+次はgvarの幻の点による送り幅と箱、BASEのVariationIndex、輪郭、シェーピング、塗りの変化量とCLIから位置を指定する機能を実装する。
+FreeTypeが必要なnameレコードを持たないときの末尾スタイルの扱いは未決定である。
 FeatureVariationsの条件評価の単独ファジングは、評価を実装する作業5に残す。
 
 ## 未実装の ADR
