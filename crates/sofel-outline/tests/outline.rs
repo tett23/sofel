@@ -515,3 +515,199 @@ fn decompose_moves_points_before_finding_implied_ones() {
         .unwrap();
     assert_eq!(times4[1], Q(p(-4, 20), p(-2, 20)));
 }
+
+// Phantom point 1 (ADR 0018).
+
+/// A font with `glyphs` and the given `hhea` count and `hmtx` bytes, or
+/// neither.
+fn metrics_font(glyphs: &[Vec<u8>], metrics: Option<(u16, Vec<u8>)>) -> Vec<u8> {
+    let (glyf, loca) = glyf_loca(glyphs, true);
+    let mut tables: Vec<(&'static [u8; 4], Vec<u8>)> = vec![
+        (
+            b"head",
+            head(HeadSpec {
+                index_to_loc_format: 1,
+                ..Default::default()
+            }),
+        ),
+        (b"maxp", maxp05(glyphs.len() as u16)),
+        (b"glyf", glyf),
+        (b"loca", loca),
+    ];
+    if let Some((n, data)) = metrics {
+        tables.push((b"hhea", hhea(n)));
+        tables.push((b"hmtx", data));
+    }
+    tables.sort_by_key(|(t, _)| **t);
+    sfnt(&tables)
+}
+
+/// A triangle whose xMin is 100.
+fn tri100() -> Vec<u8> {
+    simple_glyph(
+        &[&[Pt::On(100, 0), Pt::On(200, 0), Pt::On(100, 200)]],
+        false,
+        &[],
+    )
+}
+
+fn info(font: &[u8], glyph: u32, scale: impl Fn(&Font) -> Scale) -> (Vec<Point>, CBox) {
+    let (log, r) = run(font, glyph, scale);
+    (moves(&log), r.unwrap().cbox)
+}
+
+#[test]
+fn no_shift_when_lsb_is_x_min() {
+    let font = metrics_font(
+        &[Vec::new(), tri100()],
+        Some((2, hmtx(&[(500, 0), (500, 100)], &[]))),
+    );
+    let (m, cbox) = info(&font, 1, |_| Scale::Unscaled);
+    assert_eq!(&m[..3], &[p(100, 0), p(200, 0), p(100, 200)]);
+    assert_eq!(cbox.x_min, 100);
+}
+
+#[test]
+fn shift_by_x_min_minus_lsb() {
+    // pp1.x = 100 - 30 = 70.
+    let font = metrics_font(
+        &[Vec::new(), tri100()],
+        Some((2, hmtx(&[(500, 0), (500, 30)], &[]))),
+    );
+    let (m, cbox) = info(&font, 1, |_| Scale::Unscaled);
+    assert_eq!(&m[..3], &[p(30, 0), p(130, 0), p(30, 200)]);
+    assert_eq!(
+        cbox,
+        CBox {
+            x_min: 30,
+            y_min: 0,
+            x_max: 130,
+            y_max: 200
+        }
+    );
+    // 48 pixels: the points and pp1.x are scaled with mul_fix, not rounded.
+    let s = div_fix(48 * 64, 1000);
+    let (m, cbox) = info(&font, 1, |f| Scale::pixels(f, 48, 48));
+    let sx = |x: i32| mul_fix(x, s) - mul_fix(70, s);
+    assert_eq!(
+        &m[..3],
+        &[p(sx(100), 0), p(sx(200), 0), p(sx(100), mul_fix(200, s))]
+    );
+    assert_eq!(cbox.x_min, sx(100));
+    assert_eq!(cbox.x_max, sx(200));
+    // A negative lsb shifts right.
+    let font = metrics_font(
+        &[Vec::new(), tri100()],
+        Some((2, hmtx(&[(500, 0), (500, -20)], &[]))),
+    );
+    assert_eq!(info(&font, 1, |_| Scale::Unscaled).1.x_min, -20);
+}
+
+#[test]
+fn lsb_is_read_like_freetype() {
+    let glyphs = [Vec::new(), tri100(), tri100()];
+    let x_min = |metrics| {
+        info(&metrics_font(&glyphs, metrics), 2, |_| Scale::Unscaled)
+            .1
+            .x_min
+    };
+    // Beyond numberOfHMetrics: from the leftSideBearings array.
+    assert_eq!(x_min(Some((1, hmtx(&[(500, 0)], &[7, 40])))), 40);
+    // The array is cut short: 0.
+    assert_eq!(x_min(Some((1, hmtx(&[(500, 0)], &[7])))), 0);
+    // A long metric cut short: 0.
+    let mut h = hmtx(&[(500, 0), (500, 0), (500, 40)], &[]);
+    h.truncate(10);
+    assert_eq!(x_min(Some((3, h))), 0);
+    // numberOfHMetrics is 0: 0.
+    assert_eq!(x_min(Some((0, hmtx(&[], &[40, 40, 40])))), 0);
+    // No hhea and hmtx: 0.
+    assert_eq!(x_min(None), 0);
+}
+
+#[test]
+fn composites_use_their_own_phantom_points() {
+    let glyphs = |flags: u16, x_min: i16, lsb: i16| {
+        // Glyph 1 has pp1.x = 100 - 60 = 40; glyph 2 (the composite) has
+        // pp1.x = x_min - lsb.
+        let c = Comp {
+            flags,
+            ..comp(1, Args::Xy(10, 0))
+        };
+        metrics_font(
+            &[
+                Vec::new(),
+                tri100(),
+                composite_glyph(&[c], [x_min, 0, 210, 200], false),
+            ],
+            Some((3, hmtx(&[(500, 0), (500, 60), (500, lsb)], &[]))),
+        )
+    };
+    // Without USE_MY_METRICS: the composite's own header and lsb.
+    let (m, _) = info(&glyphs(0, 110, 100), 2, |_| Scale::Unscaled);
+    assert_eq!(m[0], p(100, 0));
+    let (m, _) = info(&glyphs(0, 110, 110), 2, |_| Scale::Unscaled);
+    assert_eq!(m[0], p(110, 0));
+    // With USE_MY_METRICS: the component's pp1.x (40), whatever the
+    // composite says, and not moved by the component's offset.
+    let (m, _) = info(&glyphs(USE_MY_METRICS, 110, 110), 2, |_| Scale::Unscaled);
+    assert_eq!(m[0], p(70, 0));
+    let s = div_fix(48 * 64, 1000);
+    let (m, _) = info(&glyphs(USE_MY_METRICS, 110, 110), 2, |f| {
+        Scale::pixels(f, 48, 48)
+    });
+    assert_eq!(m[0].x, mul_fix(100, s) + mul_fix(10, s) - mul_fix(40, s));
+}
+
+#[test]
+fn use_my_metrics_in_nested_composites_and_empty_components() {
+    let my = |glyph| Comp {
+        flags: USE_MY_METRICS,
+        ..comp(glyph, Args::Xy(0, 0))
+    };
+    let font = metrics_font(
+        &[
+            Vec::new(),
+            tri100(),
+            // 2: takes glyph 1's pp1.x = 100 - 60 = 40.
+            composite_glyph(&[my(1)], [100, 0, 200, 200], false),
+            // 3: plain component 2: its own pp1.x = 100 - 100 = 0.
+            composite_glyph(&[comp(2, Args::Xy(0, 0))], [100, 0, 200, 200], false),
+            // 4: USE_MY_METRICS on 2, which took 1's: 40.
+            composite_glyph(&[my(2)], [100, 0, 200, 200], false),
+            // 5: USE_MY_METRICS on the empty glyph 0 (lsb 15): pp1.x = 0 - 15,
+            // and then the triangle.
+            composite_glyph(&[my(0), comp(1, Args::Xy(0, 0))], [100, 0, 200, 200], false),
+        ],
+        Some((
+            6,
+            hmtx(
+                &[
+                    (500, 15),
+                    (500, 60),
+                    (500, 0),
+                    (500, 100),
+                    (500, 0),
+                    (500, 100),
+                ],
+                &[],
+            ),
+        )),
+    );
+    let x = |g| info(&font, g, |_| Scale::Unscaled).0[0].x;
+    assert_eq!(x(2), 60);
+    assert_eq!(x(3), 100);
+    assert_eq!(x(4), 60);
+    assert_eq!(x(5), 115);
+}
+
+#[test]
+fn empty_glyphs_do_not_move() {
+    let font = metrics_font(
+        &[Vec::new(), tri100()],
+        Some((2, hmtx(&[(500, 40), (500, 30)], &[]))),
+    );
+    let (log, r) = run(&font, 0, |_| Scale::Unscaled);
+    assert!(log.is_empty());
+    assert_eq!(r.unwrap().cbox, CBox::default());
+}
