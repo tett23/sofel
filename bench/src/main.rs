@@ -37,6 +37,24 @@ const FONTS: [(&str, &str); 5] = [
     ),
 ];
 
+/// One file for each role in ADR 0031's fixed extra corpus. `--once`
+/// checks bounded cmap and advance samples against both references.
+const EXTRA_FONTS: [(&str, &str); 13] = [
+    ("extra/arabic", "extra-fonts/fonts/arabic.ttf"),
+    ("extra/devanagari", "extra-fonts/fonts/devanagari.ttf"),
+    ("extra/khmer", "extra-fonts/fonts/khmer.ttf"),
+    ("extra/myanmar", "extra-fonts/fonts/myanmar.ttf"),
+    ("extra/balinese", "extra-fonts/fonts/balinese.ttf"),
+    ("extra/hebrew", "extra-fonts/fonts/hebrew.ttf"),
+    ("extra/source-serif", "extra-fonts/fonts/source-serif.otf"),
+    ("extra/stix-math", "extra-fonts/fonts/stix-math.otf"),
+    ("extra/source-han", "extra-fonts/fonts/source-han.ttc"),
+    ("extra/amstelvar", "extra-fonts/fonts/amstelvar.ttf"),
+    ("extra/color-cff", "extra-fonts/fonts/color-cff.otf"),
+    ("extra/color-sbix", "extra-fonts/fonts/color-sbix.ttf"),
+    ("extra/color-svg", "extra-fonts/fonts/color-svg.ttf"),
+];
+
 /// The CFF and CFF2 fonts of HarfBuzz's perf/benchmark-font.cc (the
 /// CFF2 one at its default instance) and a CID-keyed Japanese font
 /// (ADR 0021).
@@ -202,6 +220,56 @@ fn time(once: bool, body: Body<'_>) -> Option<Stats> {
             body,
             &Config::default(),
         ))
+    }
+}
+
+fn extra_items(b: &mut Bench, testdata: &std::path::Path) {
+    const CHARS: [u32; 10] = [
+        0x41, 0x627, 0x915, 0x1780, 0x1000, 0x1b05, 0x5b57, 0x2211, 0x5d0, 0x1f600,
+    ];
+    for (name, path) in EXTRA_FONTS {
+        if !b.wanted(name, "cmap") && !b.wanted(name, "advance") {
+            continue;
+        }
+        let path = testdata.join(path);
+        let bytes = std::fs::read(&path)
+            .unwrap_or_else(|e| panic!("{}: {e}; run scripts/fetch-fonts.sh", path.display()));
+        let font = Font::new(&bytes, 0).expect("sofel opens the extra font");
+        let ft = FtFace::open(&bytes).expect("FreeType opens the extra font");
+        let hb = HbFont::open(&bytes).expect("HarfBuzz opens the extra font");
+        hb.set_ppem(0);
+        let n = font.num_glyphs().min(128);
+        b.item(
+            name,
+            "cmap".into(),
+            &mut || {
+                CHARS
+                    .iter()
+                    .map(|&c| u64::from(font.nominal_glyph(c).map_or(0, |g| g.0)))
+                    .sum()
+            },
+            Some((
+                &mut || CHARS.iter().map(|&c| u64::from(ft.char_index(c))).sum(),
+                Compare::Yes,
+            )),
+            Some((
+                &mut || CHARS.iter().map(|&c| u64::from(hb.nominal_glyph(c))).sum(),
+                Compare::Yes,
+            )),
+        );
+        b.item(
+            name,
+            "advance".into(),
+            &mut || (0..n).map(|g| u64::from(font.advance(GlyphId(g)))).sum(),
+            Some((
+                &mut || (0..n).map(|g| wrap(ft.advance(g))).sum(),
+                Compare::Yes,
+            )),
+            Some((
+                &mut || (0..n).map(|g| wrap(hb.advance(g))).sum(),
+                Compare::Yes,
+            )),
+        );
     }
 }
 
@@ -943,6 +1011,7 @@ fn main() {
         checks: Vec::new(),
     };
     unicode_properties(&mut b, &a.testdata);
+    extra_items(&mut b, &a.testdata);
     cff_items(&mut b, &a.testdata);
     color_items(&mut b, &a.testdata);
     ebdt_items(&mut b);

@@ -4,7 +4,7 @@
 決定の経緯は各ADRを参照。
 可変フォントの [ADR 0027](adr/0027-variable-fonts.md)、変化量の評価の [ADR 0029](adr/0029-variation-deltas.md) と、その修正の [ADR 0030](adr/0030-variation-evaluation-corrections.md) は採択（未実装）である。`--font-ptem` の分類訂正は [ADR 0028](adr/0028-ptem-is-not-opsz.md) に従って実装済みである。
 ただし、[ADR 0027](adr/0027-variable-fonts.md) の表の読み取りと検証器は実装済みである。
-追加フォントの検証は [ADR 0031](adr/0031-diverse-font-corpus.md)、文書だけの変更でCIを省く方針は [ADR 0032](adr/0032-documentation-only-ci.md) と、用途とパターンによる判定の [ADR 0034](adr/0034-ci-document-input-classification.md) で採択しており、いずれも未実装である。
+追加フォントの検証は [ADR 0031](adr/0031-diverse-font-corpus.md) に従って実装した。文書だけの変更でCIを省く方針は [ADR 0032](adr/0032-documentation-only-ci.md) と、用途とパターンによる判定の [ADR 0034](adr/0034-ci-document-input-classification.md) で採択しており、未実装である。
 以下の実装済みの機能の記述は、各実装の PR で更新する。
 
 ## 目的
@@ -356,7 +356,10 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 ## 正しさの検査
 
-- テストのフォントと期待値は同梱せず、`testdata.lock` に書いたコミットのHarfBuzz（15.1.0）とFreeType（2.15.0）を `scripts/fetch-testdata.sh` で取得して使う（[ADR 0002](adr/0002-license-and-reuse.md)、[0005](adr/0005-conformance-tests.md)）。
+- 追加フォントの集合は [ADR 0031](adr/0031-diverse-font-corpus.md) の13ファイル、57フェイスと既存の可変COLRフォントで構成する。`fonts.lock` は取得ファイルとライセンスをHTTPS URL、SHA-256、バイト数、保存先で固定し、`conformance/fonts.tsv` はフォントとライセンスと対象機能を結ぶ。`scripts/fetch-fonts.sh` は保存済みのファイルも再検証し、欠落とハッシュ不一致を失敗にする。フォントのバイナリをリポジトリに含めず、著作権表示とライセンス全文を `THIRD_PARTY_NOTICES.md` に記録する。
+- 追加フォントの各フェイスでは表の読み取り、検証器、全Unicodeスカラー値の既定座標のnominal glyph ID、最大128グリフの横・縦メトリクスとFreeTypeの非ヒンティング輪郭・advanceを照合する。サンプル集合にはグリフ0と末尾と登録した全座標のシェーピング出力を必ず入れ、[ADR 0031](adr/0031-diverse-font-corpus.md) の等間隔の式で補う。HarfBuzzのメトリクスとFreeTypeの輪郭・advanceは別々の参照値と比較する。
+- 追加フォントのシェーピング入力は `conformance/font-cases.tsv` にコードポイント、script、language、direction、feature、座標を固定する。HarfBuzzの結果を `conformance/font-case-hb.tsv` に固定し、未実装の機能による失敗を `conformance/expected-failures-extra-fonts.txt` にケースIDと理由で記す。予期しない成功も失敗にする。nativeでは固定版のFreeTypeとHarfBuzzを実行して参照テキストを照合し、wasmでは同じケースIDと固定テキストで結果を検査する。
+- 既存のテスト集合のフォント本体は同梱せず、`testdata.lock` に書いたコミットのHarfBuzz（15.1.0）とFreeType（2.15.0）を `scripts/fetch-testdata.sh` で取得して使う（[ADR 0002](adr/0002-license-and-reuse.md)、[0005](adr/0005-conformance-tests.md)）。
 - シェーピング（AATを含む）は、HarfBuzzの `test/shape/data/*/tests/*.tests` の期待値と比べる（[ADR 0020](adr/0020-shaping-foundation.md)、`tests/harfbuzz_shape.rs`）。
   - `in-house`、`aots`、`text-rendering-tests` のすべての行を、`run-tests.py` と同じく `<フォント> --unicodes <文字> <オプション> --shaper=<シェーパー>` で `sofel_cli::shape` に渡し、期待値が `*` でなければ `--verify --unsafe-to-concat --safe-to-insert-tatweel` を加える。結果が期待値と違い `gid` を含むときは、両方を `--glyphs --no-glyph-names` で読みなおしてグリフIDで比べる。`@shapers=` と行の `--shaper=` の指示でシェーパーを選び（既定は `ot`）、sofelに無いシェーパーの行は走らせずに失敗とする。`@font-funcs=` と `@face-loader=` は無視する。システムのフォントを絶対パスで指す行は飛ばし、HarfBuzz自身が走らせない（失敗する）ファイル（`text-rendering-tests/DISABLED`。`CMAP-3.tests` はMacの非Unicodeのcmapで、HarfBuzzもASCIIしか引かない）は除く。
   - 項目は `<スイート>/<ファイル>:<行>` で、`ot` 以外のシェーパーには `@<シェーパー>` を付ける。期待する失敗は `conformance/expected-failures.txt` に、[ADR 0020](adr/0020-shaping-foundation.md)の分類をちょうど1つコメントに書く：`shaper:<名前>`（[ADR 0024](adr/0024-complex-shapers.md) の未実装のシェーパー）、`variations`、`aat`（AATと古い `kern` 表、`--font-ptem` による `trak`）、`synthetic`、`cff`、`color`、`out-of-scope:<名前>`。テストは分類が行に合うこと（`shaper:` は計画のシェーパー、`out-of-scope:` は行のシェーパー、`synthetic` はオプション、`variations` は `--variations` または `--named-instance` か `fvar`（`--font-ptem` 単独は含めない）、`aat`、`cff`、`color` はフォントの表）を確かめる。[ADR 0020](adr/0020-shaping-foundation.md)の分類に当てはまらない2行は、決定を待つ分類 `dfont`（Macのリソースの形式のフォント。[ADR 0007](adr/0007-sfnt-read-foundation.md) で後回し）と `sanitize`（HarfBuzzのsanitizerがGSUB全体を拒むフォント。sofelの検証器が `Error` を報告することを確かめる）とする。

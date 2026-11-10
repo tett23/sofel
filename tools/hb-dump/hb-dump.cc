@@ -65,6 +65,18 @@
  *                                code point up to U+10FFFF it maps)
  *   end
  *
+ * Mode --sampled-metrics FONT PLAN (ADR 0031): PLAN contains one
+ * `<face-index> <glyph-id>` pair per line, at most 128 sorted glyphs per
+ * face. Writes the --metrics lines at the units-per-em scale only, for
+ * those glyphs. The `glyph` line retains its actual glyph ID.
+ * Mode --cmap-digest (ADR 0031): for each face, a 64-bit FNV-1a digest
+ * of the nominal glyph ID as four little-endian bytes for every Unicode
+ * scalar value in ascending order. Unmapped scalars contribute glyph 0.
+ * Mode --corpus-shape FONT FACE HEX-CODEPOINTS SCRIPT LANGUAGE DIRECTION
+ * FEATURES VARIATIONS (ADR 0031): one shaping case with explicit buffer
+ * properties, feature settings and design coordinates. Use `-` for no
+ * feature or variation setting. The output is --shape's glyph text.
+ *
  * Mode --baselines (ADR 0017): for each face index i,
  *
  *   face <i>
@@ -448,7 +460,8 @@ static void print_tag (hb_tag_t t)
   printf ("%s", s);
 }
 
-static void dump_scale (hb_font_t *font, unsigned num_glyphs, int x, int y)
+static void dump_scale (hb_font_t *font, unsigned num_glyphs, int x, int y,
+			const unsigned *selected = nullptr, unsigned selected_count = 0)
 {
   hb_font_set_scale (font, x, y);
   printf ("scale %d %d\n", x, y);
@@ -470,8 +483,9 @@ static void dump_scale (hb_font_t *font, unsigned num_glyphs, int x, int y)
     printf (" %d %d %d\n", found ? 1 : 0, v, fallback);
   }
 
-  for (unsigned g = 0; g < num_glyphs; g++)
+  for (unsigned n = 0; n < (selected ? selected_count : num_glyphs); n++)
   {
+    unsigned g = selected ? selected[n] : n;
     hb_position_t ox = 0, oy = 0;
     hb_glyph_extents_t ext = {0, 0, 0, 0};
     hb_position_t ha = hb_font_get_glyph_h_advance (font, g);
@@ -506,6 +520,45 @@ static int dump_metrics (hb_blob_t *blob)
       dump_scale (font, num_glyphs, scales[s][0], scales[s][1]);
     printf ("end\n");
 
+    hb_font_destroy (font);
+    hb_face_destroy (face);
+  }
+  return 0;
+}
+
+static int dump_sampled_metrics (hb_blob_t *blob, const char *plan)
+{
+  unsigned faces = hb_face_count (blob);
+  if (!faces) faces = 1;
+  for (unsigned i = 0; i < faces; i++)
+  {
+    FILE *fp = fopen (plan, "r");
+    if (!fp) { fprintf (stderr, "hb-dump: cannot read %s\n", plan); return 1; }
+    hb_face_t *face = hb_face_create (blob, i);
+    hb_font_t *font = hb_font_create (face);
+    unsigned num_glyphs = hb_face_get_glyph_count (face);
+    unsigned selected[128], count = 0, face_index = 0, glyph = 0;
+    int scanned = 0;
+    while ((scanned = fscanf (fp, "%u %u", &face_index, &glyph)) == 2)
+    {
+      if (face_index >= faces || glyph >= num_glyphs ||
+	  (face_index == i && (count == 128 || (count && selected[count - 1] >= glyph))))
+      {
+	fprintf (stderr, "hb-dump: invalid sampled glyph %u %u\n", face_index, glyph);
+	fclose (fp); hb_font_destroy (font); hb_face_destroy (face); return 1;
+      }
+      if (face_index == i) selected[count++] = glyph;
+    }
+    fclose (fp);
+    if (scanned != EOF || (num_glyphs && !count))
+    {
+      fprintf (stderr, "hb-dump: invalid or empty plan for face %u\n", i);
+      hb_font_destroy (font); hb_face_destroy (face); return 1;
+    }
+    int upem = (int) hb_face_get_upem (face);
+    printf ("face %u\nnum_glyphs %u\nupem %d\n", i, num_glyphs, upem);
+    dump_scale (font, num_glyphs, upem, upem, selected, count);
+    printf ("end\n");
     hb_font_destroy (font);
     hb_face_destroy (face);
   }
@@ -612,6 +665,33 @@ static int dump_cmap (hb_blob_t *blob)
 	printf ("map %u %u\n", c, g);
     }
     printf ("end\n");
+    hb_font_destroy (font);
+    hb_face_destroy (face);
+  }
+  return 0;
+}
+
+static int dump_cmap_digest (hb_blob_t *blob)
+{
+  unsigned count = hb_face_count (blob);
+  if (!count) count = 1;
+  for (unsigned i = 0; i < count; i++)
+  {
+    hb_face_t *face = hb_face_create (blob, i);
+    hb_font_t *font = hb_font_create (face);
+    uint64_t hash = UINT64_C (14695981039346656037);
+    for (hb_codepoint_t c = 0; c <= 0x10FFFFu; c++)
+    {
+      if (c >= 0xD800u && c <= 0xDFFFu) continue;
+      hb_codepoint_t g = 0;
+      hb_font_get_nominal_glyph (font, c, &g);
+      for (unsigned b = 0; b < 4; b++)
+      {
+	hash ^= (g >> (b * 8)) & 0xFFu;
+	hash *= UINT64_C (1099511628211);
+      }
+    }
+    printf ("face %u cmap %016llx\n", i, (unsigned long long) hash);
     hb_font_destroy (font);
     hb_face_destroy (face);
   }
@@ -2114,6 +2194,69 @@ static int dump_shape (int argc, char **argv)
   return 0;
 }
 
+static int dump_corpus_shape (int argc, char **argv)
+{
+  hb_blob_t *blob = hb_blob_create_from_file_or_fail (argv[2]);
+  if (!blob) { fprintf (stderr, "hb-dump: cannot read %s\n", argv[2]); return 1; }
+  unsigned face_index = (unsigned) strtoul (argv[3], nullptr, 10);
+  unsigned faces = hb_face_count (blob);
+  if (!faces) faces = 1;
+  if (face_index >= faces) { hb_blob_destroy (blob); return 2; }
+  hb_face_t *face = hb_face_create (blob, face_index);
+  hb_font_t *font = hb_font_create (face);
+  if (strcmp (argv[9], "-") != 0)
+  {
+    std::vector<hb_variation_t> variations;
+    std::string coordinates (argv[9]);
+    size_t begin = 0;
+    while (begin < coordinates.size ())
+    {
+      size_t end = coordinates.find (',', begin);
+      if (end == std::string::npos) end = coordinates.size ();
+      hb_variation_t variation;
+      if (!hb_variation_from_string (coordinates.data () + begin, (int) (end - begin), &variation))
+      {
+	hb_font_destroy (font); hb_face_destroy (face); hb_blob_destroy (blob); return 2;
+      }
+      variations.push_back (variation);
+      begin = end + 1;
+    }
+    hb_font_set_variations (font, variations.data (), (unsigned) variations.size ());
+  }
+  std::vector<hb_feature_t> features;
+  if (strcmp (argv[8], "-") != 0) parse_feature_list (argv[8], &features);
+  hb_buffer_t *buffer = hb_buffer_create ();
+  std::vector<hb_codepoint_t> points;
+  std::string hex (argv[4]);
+  size_t begin = 0;
+  while (begin < hex.size ())
+  {
+    size_t end = hex.find (',', begin);
+    if (end == std::string::npos) end = hex.size ();
+    std::string part = hex.substr (begin, end - begin);
+    char *tail = nullptr;
+    unsigned long value = strtoul (part.c_str (), &tail, 16);
+    if (!tail || *tail || value > 0x10FFFFu || (value >= 0xD800u && value <= 0xDFFFu))
+    {
+      hb_buffer_destroy (buffer); hb_font_destroy (font); hb_face_destroy (face);
+      hb_blob_destroy (blob); return 2;
+    }
+    points.push_back ((hb_codepoint_t) value);
+    begin = end + 1;
+  }
+  hb_buffer_add_utf32 (buffer, points.data (), (int) points.size (), 0, (int) points.size ());
+  hb_buffer_set_script (buffer, hb_script_from_string (argv[5], -1));
+  hb_buffer_set_language (buffer, hb_language_from_string (argv[6], -1));
+  hb_buffer_set_direction (buffer, hb_direction_from_string (argv[7], -1));
+  hb_shape (font, buffer, features.data (), (unsigned) features.size ());
+  print_shaped (buffer, font);
+  hb_buffer_destroy (buffer);
+  hb_font_destroy (font);
+  hb_face_destroy (face);
+  hb_blob_destroy (blob);
+  return 0;
+}
+
 /* The pseudo-random numbers of --shape-random: the C standard's example
  * LCG, the high 15 bits of the state. */
 static unsigned random_next (uint32_t *state)
@@ -2883,6 +3026,7 @@ struct args_mode_t
 
 static const args_mode_t args_modes[] = {
   {"--shape", 6, dump_shape},
+  {"--corpus-shape", 10, dump_corpus_shape},
   {"--shape-random", 5, dump_shape_random},
   {"--syllables", 6, dump_syllables},
 };
@@ -2913,6 +3057,7 @@ static const dump_mode_t modes[] = {
   {"--metrics", dump_metrics},
   {"--names", dump_names},
   {"--cmap", dump_cmap},
+  {"--cmap-digest", dump_cmap_digest},
   {"--baselines", dump_baselines},
   {"--vowel-constraints", dump_vowel_constraints},
   {"--layout-map", dump_layout_map},
@@ -2932,6 +3077,7 @@ struct two_file_mode_t
 static const two_file_mode_t two_file_modes[] = {
   {"--serialize", dump_serialize},
   {"--deserialize", dump_deserialize},
+  {"--sampled-metrics", dump_sampled_metrics},
 };
 
 int main (int argc, char **argv)

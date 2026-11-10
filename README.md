@@ -17,8 +17,8 @@ WOFFとWOFF2、Type1やBDFなどの古い形式、AAT、絵文字（COLR、埋�
 範囲と実装の順序は [ADR 0001](docs/adr/0001-project-goal-and-scope.md)、クレートの構成は [ADR 0003](docs/adr/0003-crate-layers.md) を参照。
 仕様は [docs/specifications.md](docs/specifications.md) にまとめる。
 可変フォントの座標と問い合わせは [ADR 0027](docs/adr/0027-variable-fonts.md)、評価の修正は [ADR 0030](docs/adr/0030-variation-evaluation-corrections.md) で採択している。表の読み取り以降の実装はこれから行う。
-追加フォントの検証は [ADR 0031](docs/adr/0031-diverse-font-corpus.md)、文書だけの変更でCIを省く方針は [ADR 0032](docs/adr/0032-documentation-only-ci.md) と、用途とパターンによる判定の [ADR 0034](docs/adr/0034-ci-document-input-classification.md) で採択しており、いずれも未実装である。
-FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/) に記録する（最新は [2段階目](docs/benchmarks/2026-11-10-stage2.md)、[CFFとCFF2](docs/benchmarks/2026-11-10-cff.md)、[charsetの索引](docs/benchmarks/2026-11-10-cff-charset-index.md)、[COLRv0の画像](docs/benchmarks/2026-11-10-colrv0-raster.md)、[シェーピング](docs/benchmarks/2026-11-10-shaping.md)、[サブセット化](docs/benchmarks/2026-11-10-subset.md)、[前処理つきのサブセット化](docs/benchmarks/2026-11-10-subset-prepared.md)）。
+ライセンスと取得元を固定した追加フォントの検証は [ADR 0031](docs/adr/0031-diverse-font-corpus.md) に従う。文書だけの変更でCIを省く方針は [ADR 0032](docs/adr/0032-documentation-only-ci.md) と、用途とパターンによる判定の [ADR 0034](docs/adr/0034-ci-document-input-classification.md) で採択しており、未実装である。
+FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/) に記録する（最新は [追加フォント](docs/benchmarks/2026-11-11-extra-fonts.md)、[2段階目](docs/benchmarks/2026-11-10-stage2.md)、[CFFとCFF2](docs/benchmarks/2026-11-10-cff.md)、[charsetの索引](docs/benchmarks/2026-11-10-cff-charset-index.md)、[COLRv0の画像](docs/benchmarks/2026-11-10-colrv0-raster.md)、[シェーピング](docs/benchmarks/2026-11-10-shaping.md)、[サブセット化](docs/benchmarks/2026-11-10-subset.md)、[前処理つきのサブセット化](docs/benchmarks/2026-11-10-subset-prepared.md)）。
 ライブラリの使い方は [docs/api.md](docs/api.md) にまとめる（各項目の説明はrustdoc）。
 
 | クレート | 役割 |
@@ -119,6 +119,17 @@ sh scripts/check-capi.sh       # ライブラリの公開の関数がすべてC 
 
 FreeTypeとの突き合わせ（[ADR 0005](docs/adr/0005-conformance-tests.md)、[0008](docs/adr/0008-validate-command-and-freetype-comparison.md)）には、固定したコミットのHarfBuzzとFreeTypeの取得と、`ft-dump` のビルド（Cのコンパイラが要る）が要る。Vertical_Orientationの照合には、`scripts/fetch-ucd.sh` で取得したUCDのファイルが要る。HarfBuzzとのメトリクスとUnicodeの文字の性質の突き合わせ（[ADR 0016](docs/adr/0016-font-and-vertical-metrics.md)、[ADR 0019](docs/adr/0019-unicode-character-data.md)）、丸めの突き合わせ（[ADR 0026](docs/adr/0026-harfbuzz-rounding.md)）には、HarfBuzzの `src/harfbuzz.cc` を取りこんだ `hb-dump` のビルド（C++のコンパイラが要る）が要る。期待する失敗は `conformance/expected-failures-freetype.txt`、`conformance/expected-failures-otvalid.txt`（[ADR 0020](docs/adr/0020-shaping-foundation.md) のotvalidとの照合）、`conformance/expected-failures-harfbuzz.txt` と `conformance/expected-failures-serialize.txt`（[ADR 0020](docs/adr/0020-shaping-foundation.md) の直列化の照合）に理由を添えて書く。
 シェーピングの適合テスト（HarfBuzzの `test/shape` のすべての行と、`hb-dump --shape`、`--shape-random`、`--layout-map` との突き合わせ。[ADR 0020](docs/adr/0020-shaping-foundation.md)）の期待する失敗は、`conformance/expected-failures.txt`、`expected-failures-shape-pairs.txt`、`expected-failures-shape-random.txt`、`expected-failures-layout-map.txt` に、分類（`shaper:<名前>`、`variations`、`aat`、`synthetic`、`cff`、`color`、`out-of-scope:<名前>`）を1つずつ添えて書く。テストは分類がフォントと計画に合うことも確かめる。`--font-ptem` 単独の `trak` は `aat` とし、`variations` に含めない（[ADR 0028](docs/adr/0028-ptem-is-not-opsz.md)）。`SOFEL_SHAPE_VERBOSE=1` で違いを、`SOFEL_SHAPE_SUGGEST=1` で一覧に無い失敗の分類の候補を出す。
+
+追加フォントの適合テスト（[ADR 0031](docs/adr/0031-diverse-font-corpus.md)）は、OFL 1.1またはApache-2.0の13ファイルを固定し、TTCを含む57フェイスを調べる。バイナリはリポジトリに含めず、`fonts.lock` のSHA-256とバイト数で取得する。各フォントの取得元、著作権表示とライセンス全文は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) に記録する。`conformance/fonts.tsv` はファイル、ライセンス、検証する機能を結び、`conformance/font-cases.tsv` はシェーピングの入力と座標を固定する。機能がまだ実装されていないケースの理由は `conformance/expected-failures-extra-fonts.txt` にケースIDごとに記す。
+
+```sh
+sh scripts/fetch-fonts.sh
+SOFEL_FONTS_OFFLINE=1 sh scripts/fetch-fonts.sh  # キャッシュとライセンスを再検証する
+cargo test --release -p sofel-conformance --test extra_registry --test extra_structure --test extra_cmap --test extra_metrics --test extra_outline --test extra_shape
+```
+
+追加テストの固定した参照値は、固定版のFreeTypeとHarfBuzzから生成したテキストである。nativeでは `ft-dump` と `hb-dump` をビルドして参照値を再生成し、wasmでは同じテキストと照合する。フォントやライセンスが一つでも欠ければテストは失敗する。
+
 サブセット化の適合テスト（HarfBuzzの `test/subset` の1123件。[ADR 0022](docs/adr/0022-subsetting.md)）の期待する失敗は、`conformance/expected-failures-subset.txt` に理由（`stage:<段階>`、`deferred:instance`、`deferred:iup`、HarfBuzzの `meson.build` が外していて期待するファイルの無い組の `upstream:disabled`）を添えて書く。各組は `run-tests.py` と同じく前処理の有無で2回走らせ、前処理を使う回の識別子の末尾には `+prepared` を付ける（期待する失敗の理由は前処理の無い回と同じ）。再配置は、固定の種から作ったオブジェクトのグラフ（任意のグラフと、分割や拡張への昇格が要るGSUBとGPOSの表）を `hb-dump --repack` と突き合わせ、出力のバイト列（長さとハッシュ）か失敗の別が一致することを確かめる（`harfbuzz_repack`）。期待する出力の無い組（全フォントでのGolemの使い方とその前処理つき、グリフ名での指定、`repack_tests`）は `hb-dump --subset` の出力と比べ（`harfbuzz_subset_hb`）、期待する失敗は `conformance/expected-failures-subset-hb.txt` に書く。`harfbuzz_subset` は `hb-dump` も `ft-dump` も要らず、`wasm32-wasip1` でも走る。
 
 ```sh
