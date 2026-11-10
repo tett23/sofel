@@ -3,8 +3,10 @@
 この文書は、採択したADRから、現在の仕様をまとめる。
 決定の経緯は各ADRを参照。
 可変フォントの [ADR 0027](adr/0027-variable-fonts.md)、変化量の評価の [ADR 0029](adr/0029-variation-deltas.md) と、その修正の [ADR 0030](adr/0030-variation-evaluation-corrections.md) は採択（未実装）である。`--font-ptem` の分類訂正は [ADR 0028](adr/0028-ptem-is-not-opsz.md) に従って実装済みである。
-ただし、[ADR 0027](adr/0027-variable-fonts.md) の表の読み取りと検証器は実装済みである。`sofel-font::var` には、設計座標と正規化座標からの位置の構築、avar版1・版2の写像、[ADR 0029](adr/0029-variation-deltas.md) と [ADR 0030](adr/0030-variation-evaluation-corrections.md) に従うItemVariationStoreの差分の評価の核を実装している。FreeTypeが合成する既定の名前つきインスタンス、位置によってメトリクス・輪郭・シェーピングを変える問い合わせと、そのCLI・C ABIは未実装である。
-追加フォントの検証は [ADR 0031](adr/0031-diverse-font-corpus.md)、文書だけの変更でCIを省く方針は [ADR 0032](adr/0032-documentation-only-ci.md) と、用途とパターンによる判定の [ADR 0034](adr/0034-ci-document-input-classification.md) で採択しており、いずれも未実装である.
+ただし、[ADR 0027](adr/0027-variable-fonts.md) の表の読み取りと検証器は実装済みである。
+`sofel-font::var` には、設計座標と正規化座標からの位置の構築、avar版1と版2の写像、[ADR 0029](adr/0029-variation-deltas.md) と [ADR 0030](adr/0030-variation-evaluation-corrections.md) に従うItemVariationStoreの差分の評価の核を実装している。
+FreeTypeが合成する既定の名前つきインスタンス、位置によってメトリクス、輪郭、シェーピングを変える問い合わせと、そのCLIとC ABIは未実装である。
+追加フォントの検証は [ADR 0031](adr/0031-diverse-font-corpus.md)、文書だけの変更でCIを省く方針は [ADR 0032](adr/0032-documentation-only-ci.md) と、用途とパターンによる判定の [ADR 0034](adr/0034-ci-document-input-classification.md) で採択しており、いずれも未実装である。
 以下の実装済みの機能の記述は、各実装の PR で更新する。
 
 ## 目的
