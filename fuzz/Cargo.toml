@@ -47,3 +47,31 @@ path = "fuzz_targets/outline.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "os2"
+path = "fuzz_targets/os2.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "name"
+path = "fuzz_targets/name.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vorg"
+path = "fuzz_targets/vorg.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "post"
+path = "fuzz_targets/post.rs"
+test = false
+doc = false
+bench = false

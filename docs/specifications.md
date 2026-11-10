@@ -75,7 +75,8 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 基本の型は `Tag`、`GlyphId`（`u32`。24bitのグリフIDを扱う）、`Fixed`、`F2Dot14`、`LongDateTime` とし、生の値だけを持つ（[ADR 0007](adr/0007-sfnt-read-foundation.md)）。
 - 表のビューは、作るときにヘッダと配列の範囲を一度だけ検査する。作れないほど壊れていれば `Err(ReadError)` を返す。作れたビューの読み取りは、範囲外の入力に `None` を返し、既定の値で埋めない。既定の値の方針は `sofel-font` で決める。
 - どの入力でもpanicしない。clippyの `indexing_slicing`、`arithmetic_side_effects` などを拒否にして強制し、ファジングで確かめる。
-- 読める形式と表：sfnt（`0x00010000`、`OTTO`、`true`、`typ1`）、TTC/OTC、head、maxp、MAXP、hhea、HHEA、hmtx、HMTX、cmap（フォーマット0、2、4、6、8、10、12、13、14、15）、loca、LOCA、glyf、GLYF（[ADR 0011](adr/0011-glyf-outlines.md)）。glyfの検証器は、各グリフをlocaの項目から次の項目までとして読み、locaの壊れた箇所はlocaの検証器が報告する。
+- 読める形式と表：sfnt（`0x00010000`、`OTTO`、`true`、`typ1`）、TTC/OTC、head、maxp、MAXP、hhea、HHEA、hmtx、HMTX、cmap（フォーマット0、2、4、6、8、10、12、13、14、15）、loca、LOCA、glyf、GLYF（[ADR 0011](adr/0011-glyf-outlines.md)）、OS/2（版0〜5。版5を超える版は版5の欄まで）、name（形式0と1）、post（版1、2、2.5、3、4とMacの標準の258の名前）、vhea、VHEA、vmtx、VMTX（hheaとhmtxのビューを表の名前だけ変えて使う）、VORG（版1と2）（[ADR 0016](adr/0016-font-and-vertical-metrics.md)）。glyfの検証器は、各グリフをlocaの項目から次の項目までとして読み、locaの壊れた箇所はlocaの検証器が報告する。
+- [ADR 0016](adr/0016-font-and-vertical-metrics.md) の表の検証器は、OS/2の版と長さの不一致、`usWeightClass` が1〜1000の外、`fsSelection` でREGULARとITALICかBOLDが同時、`usFirstCharIndex` > `usLastCharIndex`、nameの領域の外の文字列と言語タグ、記録の並び（プラットフォーム、エンコーディング、言語、名前ID）の乱れ、UTF-16BE（プラットフォーム0と3）の奇数長、postの版2の領域を越える文字列と範囲外の名前の番号、廃止の版2.5、VORGのグリフIDの昇順の乱れと重複とグリフの数以上のIDを報告する。nameの文字列が表の外にある記録は、ビューでは `None` を返す（[ADR 0016](adr/0016-font-and-vertical-metrics.md)）。
 - 検証器は各表の `validate(data, report)` で、`Diagnostic`（タグ、オフセット、重大度、種類）を1つずつ渡す。重大度は `Error`（ビューを作れない、または読み取りの結果が仕様の意図と異なる）と `Warning`（仕様に反するが読み取りに影響しない）とする。`Error` の無い表は、ビューを作れ、範囲内の読み取りが `None` を返さない。
 
 ## 固定小数点と `Pen`（`sofel-geom`）

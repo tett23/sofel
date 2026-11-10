@@ -268,3 +268,63 @@ fn glyf_invariants() {
         }
     }
 }
+
+#[test]
+fn metrics_table_invariants() {
+    use sofel_read::name::Name;
+    use sofel_read::os2::Os2;
+    use sofel_read::post::Post;
+    use sofel_read::vorg::Vorg;
+    use sofel_read::{name, os2, post, vorg};
+    let mut rng = XorShift(0x0BAD_C0DE_1234_5678);
+    let base_os2 = os2(Os2Spec {
+        version: 5,
+        ..Default::default()
+    });
+    let ps = utf16be("Sofel-Regular");
+    let records: Vec<NameRec<'_>> = vec![(1, 0, 0, 6, b"Sofel"), (3, 1, 0x409, 6, &ps)];
+    let base_names = [name(0, &records, &[]), name(1, &records, &[b"en"])];
+    let base_post = post2(&[0, 258, 259, 3], &["alpha", "beta"]);
+    let base_vorg = [
+        vorg(1, 880, &[(1, 1), (3, 2)]),
+        vorg(2, 880, &[(1, 1), (3, 2)]),
+    ];
+    for _ in 0..ROUNDS {
+        let d = mutate(&mut rng, &base_os2);
+        if !has_error(|r| os2::validate(&d, r)) {
+            Os2::new(&d).unwrap();
+        }
+        for base in &base_names {
+            let d = mutate(&mut rng, base);
+            if !has_error(|r| name::validate(&d, r)) {
+                let n = Name::new(&d).unwrap();
+                for r in n.records() {
+                    assert!(n.string(&r).is_some(), "{d:02x?}");
+                }
+                for i in 0..usize::from(n.lang_tag_count()) {
+                    assert!(n.lang_tag_string(&n.lang_tag(i).unwrap()).is_some());
+                }
+            }
+        }
+        let d = mutate(&mut rng, &base_post);
+        if !has_error(|r| post::validate(&d, r)) {
+            let p = Post::new(&d).unwrap();
+            let stored = p.names().count();
+            for g in 0..u32::from(p.num_glyphs().unwrap_or(0)) {
+                if let Some(i) = p.glyph_name_index(GlyphId(g)) {
+                    assert!(i < 258 || usize::from(i - 258) < stored, "{d:02x?}");
+                }
+            }
+        }
+        for base in &base_vorg {
+            let d = mutate(&mut rng, base);
+            if !has_error(|r| vorg::validate(&d, Some(5), r)) {
+                let v = Vorg::new(&d).unwrap();
+                for i in 0..v.num_records() {
+                    let (g, y) = v.record(i).unwrap();
+                    assert_eq!(v.lookup(g), Some(y), "{d:02x?}");
+                }
+            }
+        }
+    }
+}
