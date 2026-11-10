@@ -1,6 +1,9 @@
 #!/bin/bash
 # ADR 0032 and ADR 0034: classify a Git event using the base-side rules.
 set -euo pipefail
+LC_ALL=C
+export LC_ALL
+shopt -u extglob
 cd "${CI_REPO_DIR:-$(dirname "$0")/..}"
 result() {
   printf 'docs_only=%s\n' "$1"
@@ -56,9 +59,10 @@ while IFS= read -r -d '' path; do
   if [[ $path == ci/documentation-only.rules ]]; then result false 'rules changed'; exit 0; fi
   document=false input=false
   for ((i=0; i<${#patterns[@]}; i++)); do
-    if [[ $path == ${patterns[i]} ]]; then
-      if [[ ${kinds[i]} == input ]]; then input=true; else document=true; fi
-    fi
+    case "$path" in
+      ${patterns[i]})
+        if [[ ${kinds[i]} == input ]]; then input=true; else document=true; fi ;;
+    esac
   done
   if [[ $document != true || $input == true ]]; then result false "input or unknown: $path"; exit 0; fi
 done <"$tmp/paths"

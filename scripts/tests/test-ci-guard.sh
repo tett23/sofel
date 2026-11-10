@@ -19,6 +19,18 @@ printf '# ADR 0001: Test\n\nステータス: 採択\n' >docs/adr/0001-test.md
 git add . && git -c core.hooksPath=/dev/null commit -qm status
 check || { echo 'I05: ADR status update rejected' >&2; exit 1; }
 git reset -q --hard "$base"
+printf 'body change\n' >>docs/adr/0001-test.md
+git add . && git -c core.hooksPath=/dev/null commit -qm adr-body
+if check; then echo 'I05: changed ADR body accepted' >&2; exit 1; fi
+git reset -q --hard "$base"
+git rm -q docs/adr/0001-test.md
+git -c core.hooksPath=/dev/null commit -qm adr-delete
+if check; then echo 'I05: deleted ADR accepted' >&2; exit 1; fi
+git reset -q --hard "$base"
+git mv docs/adr/0001-test.md docs/adr/0001-moved.md
+git -c core.hooksPath=/dev/null commit -qm adr-move
+if check; then echo 'I05: moved ADR accepted' >&2; exit 1; fi
+git reset -q --hard "$base"
 printf 'new\n' >docs/audit/two.md
 git add . && git -c core.hooksPath=/dev/null commit -qm add
 check || { echo 'I05: new record rejected' >&2; exit 1; }

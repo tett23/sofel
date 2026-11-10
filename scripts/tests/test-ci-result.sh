@@ -1,5 +1,6 @@
-#!/bin/bash
+#!/bin/sh
 # ADR 0032 I04/I06 and ADR 0034 I04.
+[ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"
 set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
 run() { bash "$root/scripts/ci-result.sh"; }

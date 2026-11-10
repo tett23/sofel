@@ -4,7 +4,8 @@
 決定の経緯は各ADRを参照。
 可変フォントの [ADR 0027](adr/0027-variable-fonts.md)、変化量の評価の [ADR 0029](adr/0029-variation-deltas.md) と、その修正の [ADR 0030](adr/0030-variation-evaluation-corrections.md) は採択（未実装）である。`--font-ptem` の分類訂正は [ADR 0028](adr/0028-ptem-is-not-opsz.md) に従って実装済みである。
 ただし、[ADR 0027](adr/0027-variable-fonts.md) の表の読み取りと検証器は実装済みである。
-追加フォントの検証は [ADR 0031](adr/0031-diverse-font-corpus.md) で採択しており、未実装である。文書だけの変更でCIを省く方針は [ADR 0032](adr/0032-documentation-only-ci.md) と [ADR 0034](adr/0034-ci-document-input-classification.md) に従って実装している。
+追加フォントの検証は [ADR 0031](adr/0031-diverse-font-corpus.md) で採択しており、未実装である。
+文書だけの変更でCIを省く方針は [ADR 0032](adr/0032-documentation-only-ci.md) と [ADR 0034](adr/0034-ci-document-input-classification.md) に従って実装している。
 以下の実装済みの機能の記述は、各実装の PR で更新する。
 
 ## 目的
@@ -404,7 +405,12 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   - `hb-dump --serialize FONT TEXTFILE` は、`conformance/serialize-text.txt` の各行をHarfBuzzで形にした生の結果（グリフ、クラスタ、マスク、送り幅、ずれ）と、その直列化をテキストとJSONの全64の指定の組で書き、それぞれをHarfBuzzで読みなおした結果（成否、終わりの位置、項目）を書く。続けて `test/api/test-buffer.c` の読み込みの入力とそのすべての接頭辞を読んだ結果を書く。`hb-dump --deserialize FONT CORPUS` は、与えた文字列の集まりを読んだ結果を書く。テストは生の結果を `GlyphInfo` と `GlyphPosition` に読み（sofelのシェーパーに依らない）、sofelで書いてバイトごとに比べ、すべての文字列をsofelで読んで比べる。集まりは、書き出した文字列の接頭辞、1バイトを除いたものと区切りの文字を各位置に挿したもの、手で書いた例である。フォントは、postの名前を持つglyf（adwaita）、名前の無いglyf（Roboto）、CFF（SourceSansPro）、マークの位置を持つglyf（OpenSans、NotoNastaliqUrdu）とする（`tests/harfbuzz_serialize.rs`）。項目は `<フォント>:<種類>` で、期待する失敗は `conformance/expected-failures-serialize.txt` に書く。
 - 適合テストは `cargo test -p sofel-conformance` で走らせる。期待する失敗の一覧に無い失敗と、一覧にあるテストの成功は、ともにテストの失敗とする。
 
-CI の文書だけの変更は、比較起点の `ci/documentation-only.rules` で判定する（[ADR 0032](adr/0032-documentation-only-ci.md)、[ADR 0034](adr/0034-ci-document-input-classification.md)）。`document` にだけ一致するパスの変更では、Rust、適合テスト、wasm、fuzz、ベンチマーク、C ABI の六つのビルドとテストのジョブを省く。`input` に一致するパス、未知のパス、規則の変更では、六つとも実行する。文書だけでも `adr` は変更禁止の ADR・監査・計測記録と文書を検査し、`ci-result` は判定と保護の成功、および六つのジョブの結果を確認する。文書をプログラムの入力にする変更には `input` 規則を追加する。
+CI の文書だけの変更は、比較起点の `ci/documentation-only.rules` で判定する（[ADR 0032](adr/0032-documentation-only-ci.md)、[ADR 0034](adr/0034-ci-document-input-classification.md)）。
+`document` にだけ一致するパスの変更では、Rust、適合テスト、wasm、fuzz、ベンチマーク、C ABI の六つのビルドとテストのジョブを省く。
+`input` に一致するパス、未知のパス、規則の変更では、六つとも実行する。
+文書だけでも `adr` は変更禁止の ADR、監査、計測記録と文書を検査する。
+`ci-result` は判定と保護の成功、および六つのジョブの結果を確認する。
+文書をプログラムの入力にする変更には `input` 規則を追加する。
 
 ## 性能の計測
 
