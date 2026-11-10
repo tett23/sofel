@@ -739,7 +739,7 @@ int32_t sofel_font_glyph_name(const sofel_font_t *font, uint32_t glyph, const ui
 /*
  * The name of a glyph as FreeType gives it for sfnt fonts.
  *
- * Rust: sofel_font::Font::ft_glyph_name, sofel_font::GlyphNames::ft_glyph_name
+ * Rust: sofel_font::Font::ft_glyph_name, sofel_font::Cff::ft_glyph_name_with, sofel_font::GlyphNames::ft_glyph_name
  * HarfBuzz: none
  * FreeType: FT_Get_Glyph_Name
  */
@@ -912,8 +912,10 @@ int32_t sofel_font_is_cid_keyed(const sofel_font_t *font, int32_t *out);
  * The CID of a glyph (the charset value). SOFEL_ERROR_INVALID_ARGUMENT
  * when the font is not CID-keyed or the glyph id is not below the
  * CharStrings count; *cid is 0 then, as in FreeType.
+ * The font looks CIDs up in an index of the charset it builds at
+ * creation (ADR 0025).
  *
- * Rust: sofel_font::Cff::cid
+ * Rust: sofel_font::Cff::cid, sofel_font::Cff::cid_with
  * HarfBuzz: none
  * FreeType: FT_Get_CID_From_Glyph_Index
  */

@@ -110,7 +110,9 @@ impl<'a> Charset<'a> {
 
     /// The SID of `glyph` (in CID-keyed fonts, its CID): 0 for glyph 0,
     /// `None` for glyphs not below the glyph count. Formats 1 and 2 take
-    /// time in proportion to the ranges before the glyph.
+    /// time in proportion to the glyphs before `glyph`; to look up many
+    /// glyphs, build a [`CharsetIndex`] with [`Charset::index_into`]
+    /// (one pass over the ranges) and use [`CharsetIndex::sid`].
     pub fn sid(&self, glyph: u32) -> Option<u16> {
         if glyph >= self.num_glyphs {
             return None;
@@ -133,6 +135,60 @@ impl<'a> Charset<'a> {
             at: 0,
             first: 0,
             left: 0,
+        }
+    }
+
+    /// The number of ranges of a format 1 or 2 charset: those FreeType
+    /// reads to cover the glyph count (ranges after them are not
+    /// counted). 0 for format 0 and the predefined charsets, which need
+    /// no index. The length [`Charset::index_into`] needs.
+    pub fn num_ranges(&self) -> usize {
+        match self.kind {
+            Kind::Predefined(_) | Kind::Format0(_) => 0,
+            Kind::Format1(b) => b.len() / 3,
+            Kind::Format2(b) => b.len() / 4,
+        }
+    }
+
+    /// An index for looking up many glyphs (ADR 0025): writes the first
+    /// glyph id of each range to `starts` and returns a view borrowing
+    /// it. Nothing is allocated; reading the ranges once is the cost.
+    ///
+    /// When `starts` is shorter than [`Charset::num_ranges`], nothing is
+    /// written and the needed length is returned (`Err`). Extra words
+    /// are left as they are. Charsets without ranges take any array,
+    /// also an empty one.
+    pub fn index_into<'b>(&self, starts: &'b mut [u32]) -> Result<CharsetIndex<'b>, usize>
+    where
+        'a: 'b,
+    {
+        let r = self.num_ranges();
+        let Some(starts) = starts.get_mut(..r) else {
+            return Err(r);
+        };
+        if let Some((b, size, wide)) = self.ranges() {
+            let mut j = 1u32;
+            for (k, slot) in starts.iter_mut().enumerate() {
+                *slot = j;
+                let at = k.saturating_mul(size);
+                let first = be::u16_at(b, at).unwrap_or(0);
+                let left = trim(first, range_left(b, at, wide).unwrap_or(0));
+                j = j.saturating_add(left.saturating_add(1));
+            }
+        }
+        Ok(CharsetIndex {
+            charset: *self,
+            starts,
+        })
+    }
+
+    /// The range bytes, the size of a range and whether its count is
+    /// 16-bit, for formats 1 and 2.
+    fn ranges(&self) -> Option<(&'a [u8], usize, bool)> {
+        match self.kind {
+            Kind::Format1(b) => Some((b, 3, false)),
+            Kind::Format2(b) => Some((b, 4, true)),
+            Kind::Predefined(_) | Kind::Format0(_) => None,
         }
     }
 
@@ -218,5 +274,71 @@ impl Iterator for Sids<'_> {
                 sid
             }
         }
+    }
+}
+
+/// A charset with the first glyph id of each of its ranges, for fast
+/// lookups (ADR 0025); built by [`Charset::index_into`] over an array
+/// the caller holds. Its answers always equal the [`Charset`] ones.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct CharsetIndex<'a> {
+    charset: Charset<'a>,
+    /// The first glyph of each range, ascending.
+    starts: &'a [u32],
+}
+
+impl<'a> CharsetIndex<'a> {
+    /// The charset the index was built from.
+    pub fn charset(&self) -> Charset<'a> {
+        self.charset
+    }
+
+    /// [`Charset::sid`]: for formats 1 and 2, a binary search over the
+    /// first glyphs of the ranges, then the range's first SID plus the
+    /// glyph's place in the range (ranges cut at 0xFFFF as FreeType cuts
+    /// them). Format 0 and the predefined charsets are read directly.
+    pub fn sid(&self, glyph: u32) -> Option<u16> {
+        let c = &self.charset;
+        let Some((b, size, _)) = c.ranges() else {
+            return c.sid(glyph);
+        };
+        if glyph >= c.num_glyphs {
+            return None;
+        }
+        if glyph == 0 {
+            return Some(0);
+        }
+        let k = self
+            .starts
+            .partition_point(|&s| s <= glyph)
+            .checked_sub(1)?;
+        let start = *self.starts.get(k)?;
+        let first = be::u16_at(b, k.saturating_mul(size))?;
+        let sid = u32::from(first).checked_add(glyph.checked_sub(start)?)?;
+        u16::try_from(sid).ok()
+    }
+
+    /// [`Charset::glyph`]: the first glyph whose SID is `sid`. For formats
+    /// 1 and 2 the ranges are searched in order, in time in proportion to
+    /// their number.
+    pub fn glyph(&self, sid: u16) -> Option<u32> {
+        let c = &self.charset;
+        let Some((b, size, wide)) = c.ranges() else {
+            return c.glyph(sid);
+        };
+        if c.num_glyphs == 0 {
+            return None;
+        }
+        if sid == 0 {
+            return Some(0);
+        }
+        self.starts.iter().enumerate().find_map(|(k, &start)| {
+            let at = k.saturating_mul(size);
+            let first = be::u16_at(b, at)?;
+            let left = trim(first, range_left(b, at, wide)?);
+            let offset = u32::from(sid.checked_sub(first)?);
+            let glyph = start.checked_add(offset)?;
+            (offset <= left && glyph < c.num_glyphs).then_some(glyph)
+        })
     }
 }

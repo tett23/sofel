@@ -28,7 +28,7 @@ pub mod hb;
 mod index;
 
 pub use blend::FtBlend;
-pub use charset::Charset;
+pub use charset::{Charset, CharsetIndex};
 pub use check::{validate, validate2};
 pub use data::{
     EXPERT_CHARSET, EXPERT_ENCODING, EXPERT_SUBSET_CHARSET, ISO_ADOBE_CHARSET, STANDARD_ENCODING,

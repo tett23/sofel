@@ -332,3 +332,84 @@ fn matrices_and_subfonts() {
     let s = open(&b).unwrap().subfont(GlyphId(1)).unwrap();
     assert_eq!(s.matrix.units_per_em, 500);
 }
+
+/// Every charset query with a `CharsetIndex` (ADR 0025) equals the one
+/// without it, for every glyph and name.
+fn assert_index_agrees(c: &Cff<'_>) {
+    let charset = c.charset().unwrap();
+    let mut starts = vec![0u32; charset.num_ranges()];
+    let ix = charset.index_into(&mut starts).unwrap();
+    let n = c.num_glyphs();
+    for g in (0..n + 2).map(GlyphId) {
+        assert_eq!(c.cid_with(&ix, g), c.cid(g), "{g:?}");
+        assert_eq!(c.charset_name_with(&ix, g), c.charset_name(g), "{g:?}");
+        assert_eq!(c.ft_glyph_name_with(&ix, g), c.ft_glyph_name(g), "{g:?}");
+    }
+    let mut a = vec![0u32; n as usize];
+    let mut b = vec![0u32; n as usize];
+    let plain = c.build_name_index(&mut a).map(<[u32]>::to_vec);
+    let with = c.build_name_index_with(&ix, &mut b).map(<[u32]>::to_vec);
+    assert_eq!(plain, with);
+    if let Some(idx) = plain {
+        let mut names: Vec<Vec<u8>> = (0..n)
+            .filter_map(|g| c.charset_name(GlyphId(g)).map(<[u8]>::to_vec))
+            .collect();
+        names.extend([b"".to_vec(), b"none".to_vec(), b"zzz".to_vec()]);
+        for name in names {
+            assert_eq!(
+                c.glyph_from_name_with(&ix, &idx, &name),
+                c.glyph_from_name(&idx, &name),
+                "{name:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn charset_index_agrees() {
+    // Format 0.
+    assert_index_agrees(&open(&font(&cff1(&named()))).unwrap());
+    // Format 1 with several ranges, a repeated name and SIDs past the
+    // strings.
+    let mut spec = named();
+    spec.charstrings = vec![charstring(&[Op(14)]); 20];
+    spec.charset = Some(vec![1, 0, 34, 4, 1, 135, 1, 0, 34, 0, 1, 244, 10]);
+    let b = font(&cff1(&spec));
+    let c = open(&b).unwrap();
+    assert_eq!(c.charset().unwrap().num_ranges(), 4);
+    assert_eq!(c.charset_name(GlyphId(7)), Some(&b"Copyright X"[..]));
+    assert_index_agrees(&c);
+    // Predefined (ISOAdobe).
+    let mut spec = named();
+    spec.charset = None;
+    assert_index_agrees(&open(&font(&cff1(&spec))).unwrap());
+    // CID-keyed, format 2.
+    let mut spec = cid_spec();
+    spec.charstrings = vec![charstring(&[Op(14)]); 9];
+    spec.charset = Some(vec![2, 0, 100, 0, 3, 0, 200, 0, 1, 1, 0, 0, 2]);
+    spec.cid.as_mut().unwrap().fd_select = vec![0; 10];
+    let b = font(&cff1(&spec));
+    let c = open(&b).unwrap();
+    assert_eq!(c.cid(GlyphId(8)), Ok(257));
+    assert_index_agrees(&c);
+}
+
+#[test]
+fn name_index_over_many_ranges() {
+    // Many glyphs over many ranges, names repeated (ADR 0025): equal
+    // names sort by glyph id.
+    let mut spec = named();
+    spec.charstrings = vec![charstring(&[Op(14)]); 3000];
+    spec.charset = Some(
+        vec![1, 0, 34, 255, 0, 1, 255, 0, 34, 255, 1, 135, 255]
+            .into_iter()
+            .chain([1u8, 0, 1, 255].repeat(8))
+            .collect(),
+    );
+    let b = font(&cff1(&spec));
+    let c = open(&b).unwrap();
+    let mut buf = vec![0u32; 3000];
+    let idx = c.build_name_index(&mut buf).unwrap().to_vec();
+    assert_eq!(c.glyph_from_name(&idx, b"A"), Some(GlyphId(1)));
+    assert_index_agrees(&c);
+}

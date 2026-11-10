@@ -254,25 +254,50 @@ fn cff_items(b: &mut Bench, testdata: &std::path::Path) {
         hb.set_ppem(0);
         let cff = sofel_font::Cff::new(&font).expect("sofel opens the CFF");
         if cff.is_cid_keyed() {
+            // ADR 0025: lookups through the charset index, which the
+            // "open (FreeType)" item builds; and without it, the cost of
+            // a caller that looks glyphs up once each.
+            let charset = cff.charset().expect("a CFF charset");
+            let mut starts = vec![0u32; charset.num_ranges()];
+            let index = charset.index_into(&mut starts).expect("long enough");
+            let mut ft_cids = || (0..n).map(|g| wrap(ft.cid(g))).fold(0, u64::wrapping_add);
             b.item(
                 name,
                 "cid".into(),
                 &mut || {
                     (0..n)
+                        .map(|g| cff.cid_with(&index, GlyphId(g)).map_or(u64::MAX, u64::from))
+                        .fold(0, u64::wrapping_add)
+                },
+                Some((&mut ft_cids, Compare::Yes)),
+                None,
+            );
+            b.item(
+                name,
+                "cid (no index)".into(),
+                &mut || {
+                    (0..n)
                         .map(|g| cff.cid(GlyphId(g)).map_or(u64::MAX, u64::from))
                         .fold(0, u64::wrapping_add)
                 },
-                Some((
-                    &mut || (0..n).map(|g| wrap(ft.cid(g))).fold(0, u64::wrapping_add),
-                    Compare::Yes,
-                )),
+                Some((&mut ft_cids, Compare::Yes)),
                 None,
             );
         }
+        // Opening includes building the charset index (ADR 0025) with
+        // its array, as FreeType's cff_charset_load builds its SID array.
         b.item(
             name,
             "open (FreeType)".into(),
-            &mut || u64::from(sofel_font::Cff::new(&font).map_or(0, |c| c.num_glyphs())),
+            &mut || {
+                sofel_font::Cff::new(&font).map_or(0, |c| {
+                    if let Some(cs) = c.charset() {
+                        let mut starts = vec![0u32; cs.num_ranges()];
+                        std::hint::black_box(cs.index_into(&mut starts).ok());
+                    }
+                    u64::from(c.num_glyphs())
+                })
+            },
             Some((
                 &mut || FtFace::open(&bytes).map_or(0, |f| u64::from(f.num_glyphs())),
                 Compare::Yes,
