@@ -33,7 +33,12 @@ use crate::unicode;
 /// `glyf` table ([`Font::glyf_extents`]).
 ///
 /// The buffer's direction and script are the plan's.
-pub fn shape(font: &Font<'_>, scale: &Scale, plan: &ShapePlan<'_>, buffer: UnicodeBuffer) -> GlyphBuffer {
+pub fn shape(
+    font: &Font<'_>,
+    scale: &Scale,
+    plan: &ShapePlan<'_>,
+    buffer: UnicodeBuffer,
+) -> GlyphBuffer {
     shape_with_extents(font, scale, plan, buffer, &|g| font.glyf_extents(g))
 }
 
@@ -155,7 +160,8 @@ fn set_unicode_props_all(buffer: &mut Buffer, global_mask: Mask) {
         } else if info.is_zwj() {
             set_continuation(&mut buffer.info[i], &mut flags);
             let next = i.wrapping_add(1);
-            if next < count && sofel_unicode::is_extended_pictographic(buffer.info[next].codepoint) {
+            if next < count && sofel_unicode::is_extended_pictographic(buffer.info[next].codepoint)
+            {
                 i = next;
                 let info = &mut buffer.info[i];
                 info.mask = global_mask;
@@ -174,7 +180,9 @@ fn set_unicode_props_all(buffer: &mut Buffer, global_mask: Mask) {
 
 /// `hb_insert_dotted_circle`.
 fn insert_dotted_circle(buffer: &mut Buffer, font: &ShapeFont<'_, '_>) {
-    if buffer.flags.contains(BufferFlags::DO_NOT_INSERT_DOTTED_CIRCLE)
+    if buffer
+        .flags
+        .contains(BufferFlags::DO_NOT_INSERT_DOTTED_CIRCLE)
         || !buffer.flags.contains(BufferFlags::BOT)
         || buffer.context_len[0] != 0
         || !buffer.info[0].is_unicode_mark()
@@ -248,7 +256,12 @@ fn ensure_native_direction(buffer: &mut Buffer) {
 }
 
 /// `hb_ot_rotate_chars`.
-fn rotate_chars(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_>, buffer: &mut Buffer, target: Direction) {
+fn rotate_chars(
+    plan: &ShapePlan<'_>,
+    font: &ShapeFont<'_, '_>,
+    buffer: &mut Buffer,
+    target: Direction,
+) {
     if target.is_backward() {
         let rtlm_mask = plan.rtlm_mask;
         for info in buffer.infos_mut() {
@@ -276,9 +289,15 @@ fn setup_masks_fraction(plan: &ShapePlan<'_>, buffer: &mut Buffer) {
         return;
     }
     let (pre_mask, post_mask) = if buffer.direction.is_forward() {
-        (plan.numr_mask | plan.frac_mask, plan.frac_mask | plan.dnom_mask)
+        (
+            plan.numr_mask | plan.frac_mask,
+            plan.frac_mask | plan.dnom_mask,
+        )
     } else {
-        (plan.frac_mask | plan.dnom_mask, plan.numr_mask | plan.frac_mask)
+        (
+            plan.frac_mask | plan.dnom_mask,
+            plan.numr_mask | plan.frac_mask,
+        )
     };
     let count = buffer.len;
     let mut i = 0usize;
@@ -287,7 +306,8 @@ fn setup_masks_fraction(plan: &ShapePlan<'_>, buffer: &mut Buffer) {
             i = i.wrapping_add(1);
             continue;
         }
-        let is_digit = |b: &Buffer, k: usize| b.info[k].general_category() == GeneralCategory::DecimalNumber;
+        let is_digit =
+            |b: &Buffer, k: usize| b.info[k].general_category() == GeneralCategory::DecimalNumber;
         let mut start = i;
         while start > 0 && is_digit(buffer, start.wrapping_sub(1)) {
             start = start.wrapping_sub(1);
@@ -346,7 +366,12 @@ fn synthesize_glyph_classes(buffer: &mut Buffer) {
 }
 
 /// `hb_ot_substitute_pre`.
-fn substitute_pre(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_>, buffer: &mut Buffer, target: Direction) {
+fn substitute_pre(
+    plan: &ShapePlan<'_>,
+    font: &ShapeFont<'_, '_>,
+    buffer: &mut Buffer,
+    target: Direction,
+) {
     // hb_ot_substitute_default
     rotate_chars(plan, font, buffer, target);
     normalize(plan, buffer, font);
@@ -396,11 +421,16 @@ fn deal_with_variation_selectors(buffer: &mut Buffer) {
 /// `hb_ot_hide_default_ignorables`.
 fn hide_default_ignorables(buffer: &mut Buffer, font: &ShapeFont<'_, '_>) {
     if buffer.scratch_flags & scratch::HAS_DEFAULT_IGNORABLES == 0
-        || buffer.flags.contains(BufferFlags::PRESERVE_DEFAULT_IGNORABLES)
+        || buffer
+            .flags
+            .contains(BufferFlags::PRESERVE_DEFAULT_IGNORABLES)
     {
         return;
     }
-    if !buffer.flags.contains(BufferFlags::REMOVE_DEFAULT_IGNORABLES) {
+    if !buffer
+        .flags
+        .contains(BufferFlags::REMOVE_DEFAULT_IGNORABLES)
+    {
         let invisible = if buffer.invisible != 0 {
             Some(buffer.invisible)
         } else {
@@ -445,8 +475,12 @@ fn zero_mark_widths_by_gdef(buffer: &mut Buffer, adjust: bool) {
 /// `hb_ot_zero_width_default_ignorables`.
 fn zero_width_default_ignorables(buffer: &mut Buffer) {
     if buffer.scratch_flags & scratch::HAS_DEFAULT_IGNORABLES == 0
-        || buffer.flags.contains(BufferFlags::PRESERVE_DEFAULT_IGNORABLES)
-        || buffer.flags.contains(BufferFlags::REMOVE_DEFAULT_IGNORABLES)
+        || buffer
+            .flags
+            .contains(BufferFlags::PRESERVE_DEFAULT_IGNORABLES)
+        || buffer
+            .flags
+            .contains(BufferFlags::REMOVE_DEFAULT_IGNORABLES)
     {
         return;
     }
@@ -518,7 +552,9 @@ fn propagate_flags(buffer: &mut Buffer) {
     if !buffer.flags.contains(BufferFlags::PRODUCE_UNSAFE_TO_CONCAT) {
         and_mask &= !GlyphFlags::UNSAFE_TO_CONCAT.0;
     }
-    let tatweel = buffer.flags.contains(BufferFlags::PRODUCE_SAFE_TO_INSERT_TATWEEL);
+    let tatweel = buffer
+        .flags
+        .contains(BufferFlags::PRODUCE_SAFE_TO_INSERT_TATWEEL);
     for (start, end) in buffer.groups(|a, b| a.cluster == b.cluster) {
         let infos = buffer.info.range_mut(start, end);
         let mut mask = infos.iter().fold(0, |m, i| m | i.mask) & defined;

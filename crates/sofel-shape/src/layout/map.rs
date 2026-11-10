@@ -317,7 +317,8 @@ impl<'l, 'a> MapBuilder<'l, 'a> {
 
         // Sort features and merge duplicates.
         if !self.is_simple {
-            self.feature_infos.sort_by(|a, b| a.tag.cmp(&b.tag).then(a.seq.cmp(&b.seq)));
+            self.feature_infos
+                .sort_by(|a, b| a.tag.cmp(&b.tag).then(a.seq.cmp(&b.seq)));
         }
         let mut merged: Vec<FeatureInfo> = Vec::with_capacity(self.feature_infos.len());
         for f in &self.feature_infos {
@@ -380,8 +381,8 @@ impl<'l, 'a> MapBuilder<'l, 'a> {
             let (shift, mask) = if global_one {
                 (global_bit_shift, global_bit_mask)
             } else {
-                let mask = (1u32 << next_bit.saturating_add(bits_needed))
-                    .wrapping_sub(1u32 << next_bit);
+                let mask =
+                    (1u32 << next_bit.saturating_add(bits_needed)).wrapping_sub(1u32 << next_bit);
                 (next_bit, mask)
             };
             if !global_one {

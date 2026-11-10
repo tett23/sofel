@@ -46,11 +46,7 @@ struct Item {
     flags: u32,
 }
 
-fn diff_items(
-    a: &[Item],
-    reference: &[Item],
-    dottedcircle: u32,
-) -> DiffFlags {
+fn diff_items(a: &[Item], reference: &[Item], dottedcircle: u32) -> DiffFlags {
     let contains = dottedcircle != u32::MAX;
     let mut r = 0u32;
     let mark = |r: &mut u32, g: u32| {
@@ -110,7 +106,8 @@ pub fn diff(
     if a.len() != b.len() || a.is_empty() {
         return r;
     }
-    let far = |x: i32, y: i32| (i64::from(x) - i64::from(y)).unsigned_abs() > u64::from(position_fuzz);
+    let far =
+        |x: i32, y: i32| (i64::from(x) - i64::from(y)).unsigned_abs() > u64::from(position_fuzz);
     if buffer
         .glyph_positions()
         .iter()

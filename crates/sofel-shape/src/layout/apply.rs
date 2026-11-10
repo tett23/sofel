@@ -232,12 +232,15 @@ impl<'p, 'a, 'b, 'f, 'g> ApplyContext<'p, 'a, 'b, 'f, 'g> {
 
     /// `random_number`: HarfBuzz's `minstd_rand`.
     pub(crate) fn random_number(&mut self) -> u32 {
-        let s = u64::from(self.buffer.random_state)
+        // `uint32_t * int` wraps at 32 bits before the remainder.
+        let s = self
+            .buffer
+            .random_state
             .wrapping_mul(48271)
             .checked_rem(2_147_483_647)
             .unwrap_or(0);
-        self.buffer.random_state = u32::try_from(s).unwrap_or(0);
-        self.buffer.random_state
+        self.buffer.random_state = s;
+        s
     }
 
     /// `match_properties_mark`.
@@ -495,7 +498,11 @@ impl<'p, 'a, 'b, 'f, 'g> ApplyContext<'p, 'a, 'b, 'f, 'g> {
 /// `hb_ot_layout_lookup_accelerator_t::apply`: the subtables of lookup
 /// `index` in order, the first that applies winning; each is tried only
 /// when its digest may have the current glyph, except the only one.
-pub(crate) fn accel_apply(c: &mut ApplyContext<'_, '_, '_, '_, '_>, index: usize, _use_cache: bool) -> bool {
+pub(crate) fn accel_apply(
+    c: &mut ApplyContext<'_, '_, '_, '_, '_>,
+    index: usize,
+    _use_cache: bool,
+) -> bool {
     let plan = c.plan;
     if c.table == GSUB {
         let Some(accel) = plan.layout.gsub.lookup(index) else {
@@ -744,7 +751,10 @@ pub(crate) fn apply_lookup(
         if idx >= count {
             continue;
         }
-        let orig_len = c.buffer.backtrack_len().wrapping_add(c.buffer.lookahead_len());
+        let orig_len = c
+            .buffer
+            .backtrack_len()
+            .wrapping_add(c.buffer.lookahead_len());
         let pos = c.match_position(idx);
         if pos >= orig_len {
             continue;
@@ -758,7 +768,10 @@ pub(crate) fn apply_lookup(
         if !c.recurse(record.lookup_index) {
             continue;
         }
-        let new_len = c.buffer.backtrack_len().wrapping_add(c.buffer.lookahead_len());
+        let new_len = c
+            .buffer
+            .backtrack_len()
+            .wrapping_add(c.buffer.lookahead_len());
         let mut delta = to_i(new_len).wrapping_sub(to_i(orig_len));
         if delta == 0 {
             continue;
@@ -776,7 +789,8 @@ pub(crate) fn apply_lookup(
                 break;
             }
             if c.match_positions.len() < to_u(count_i.wrapping_add(delta)) {
-                c.match_positions.resize(to_u(count_i.wrapping_add(delta)), 0);
+                c.match_positions
+                    .resize(to_u(count_i.wrapping_add(delta)), 0);
             }
         } else {
             delta = delta.max(next.wrapping_sub(count_i));
@@ -880,8 +894,17 @@ fn context_apply_lookup<'a>(
 }
 
 /// `Rule::apply`.
-fn rule_apply<'a>(c: &mut ApplyContext<'_, 'a, '_, '_, '_>, r: &Rule<'a>, m: RuleMatch<'a>) -> bool {
-    context_apply_lookup(c, r.input.len().wrapping_add(1), m.input(r.input), r.lookups)
+fn rule_apply<'a>(
+    c: &mut ApplyContext<'_, 'a, '_, '_, '_>,
+    r: &Rule<'a>,
+    m: RuleMatch<'a>,
+) -> bool {
+    context_apply_lookup(
+        c,
+        r.input.len().wrapping_add(1),
+        m.input(r.input),
+        r.lookups,
+    )
 }
 
 /// The skippy iterator's first two glyphs for the rule set fast path:
@@ -964,7 +987,8 @@ fn rule_set_apply<'a>(
     let mut i = 0usize;
     while i < rules.len() {
         let Some(r) = rules.get(i) else { break };
-        let first_ok = r.input.is_empty() || r.input.get(0).is_some_and(|v| m.input_value(&first, v));
+        let first_ok =
+            r.input.is_empty() || r.input.get(0).is_some_and(|v| m.input_value(&first, v));
         if first_ok {
             let second_ok = match &second {
                 None => true,
@@ -1004,7 +1028,10 @@ fn rule_set_apply<'a>(
 }
 
 /// `ContextFormat1`..`ContextFormat5` and the coverage formats 3 and 6.
-pub(crate) fn apply_context<'a>(c: &mut ApplyContext<'_, 'a, '_, '_, '_>, s: &SequenceContext<'a>) -> bool {
+pub(crate) fn apply_context<'a>(
+    c: &mut ApplyContext<'_, 'a, '_, '_, '_>,
+    s: &SequenceContext<'a>,
+) -> bool {
     let glyph = GlyphId(c.buffer.cur(0).codepoint);
     match s {
         SequenceContext::Glyphs {
@@ -1014,7 +1041,12 @@ pub(crate) fn apply_context<'a>(c: &mut ApplyContext<'_, 'a, '_, '_, '_>, s: &Se
             let Some(index) = coverage.get(glyph) else {
                 return false;
             };
-            rule_set_apply(c, rule_sets, usize::try_from(index).unwrap_or(usize::MAX), RuleMatch::Glyphs)
+            rule_set_apply(
+                c,
+                rule_sets,
+                usize::try_from(index).unwrap_or(usize::MAX),
+                RuleMatch::Glyphs,
+            )
         }
         SequenceContext::Classes {
             coverage,
@@ -1030,14 +1062,24 @@ pub(crate) fn apply_context<'a>(c: &mut ApplyContext<'_, 'a, '_, '_, '_>, s: &Se
                 input: *class_def,
                 lookahead: *class_def,
             };
-            rule_set_apply(c, rule_sets, usize::try_from(class).unwrap_or(usize::MAX), m)
+            rule_set_apply(
+                c,
+                rule_sets,
+                usize::try_from(class).unwrap_or(usize::MAX),
+                m,
+            )
         }
         SequenceContext::Coverages { coverages, lookups } => {
             let first = coverages.get(0).ok().flatten();
             if first.and_then(|f| f.get(glyph)).is_none() {
                 return false;
             }
-            context_apply_lookup(c, coverages.len(), MatchFn::Coverage(*coverages, 1), *lookups)
+            context_apply_lookup(
+                c,
+                coverages.len(),
+                MatchFn::Coverage(*coverages, 1),
+                *lookups,
+            )
         }
     }
 }
@@ -1056,18 +1098,16 @@ fn chain_context_apply_lookup<'a>(
     let idx = c.buffer.idx;
     let mut end_index = idx;
     let matched = match match_input(c, input.0, input.1) {
-        Ok((match_end, _)) => {
-            match match_lookahead(c, lookahead.0, lookahead.1, match_end) {
-                Ok(e) => {
-                    end_index = e;
-                    Some(match_end)
-                }
-                Err(e) => {
-                    end_index = e;
-                    None
-                }
+        Ok((match_end, _)) => match match_lookahead(c, lookahead.0, lookahead.1, match_end) {
+            Ok(e) => {
+                end_index = e;
+                Some(match_end)
             }
-        }
+            Err(e) => {
+                end_index = e;
+                None
+            }
+        },
         Err(_) => None,
     };
     let Some(match_end) = matched else {
@@ -1082,7 +1122,8 @@ fn chain_context_apply_lookup<'a>(
             return false;
         }
     };
-    c.buffer.unsafe_to_break_from_outbuffer(start_index, end_index);
+    c.buffer
+        .unsafe_to_break_from_outbuffer(start_index, end_index);
     apply_lookup(c, input.0, records, match_end);
     true
 }
@@ -1151,7 +1192,10 @@ fn chain_rule_set_apply<'a>(
         let first_ok = if len_p1 > 1 {
             r.input.get(0).is_some_and(|v| m.input_value(&first, v))
         } else {
-            r.lookahead.is_empty() || r.lookahead.get(0).is_some_and(|v| m.lookahead_value(&first, v))
+            r.lookahead.is_empty()
+                || r.lookahead
+                    .get(0)
+                    .is_some_and(|v| m.lookahead_value(&first, v))
         };
         if first_ok {
             let second_ok = match &second {
@@ -1214,7 +1258,12 @@ pub(crate) fn apply_chain_context<'a>(
             let Some(index) = coverage.get(glyph) else {
                 return false;
             };
-            chain_rule_set_apply(c, rule_sets, usize::try_from(index).unwrap_or(usize::MAX), RuleMatch::Glyphs)
+            chain_rule_set_apply(
+                c,
+                rule_sets,
+                usize::try_from(index).unwrap_or(usize::MAX),
+                RuleMatch::Glyphs,
+            )
         }
         ChainedSequenceContext::Classes {
             coverage,
@@ -1232,7 +1281,12 @@ pub(crate) fn apply_chain_context<'a>(
                 input: *input_class_def,
                 lookahead: *lookahead_class_def,
             };
-            chain_rule_set_apply(c, rule_sets, usize::try_from(class).unwrap_or(usize::MAX), m)
+            chain_rule_set_apply(
+                c,
+                rule_sets,
+                usize::try_from(class).unwrap_or(usize::MAX),
+                m,
+            )
         }
         ChainedSequenceContext::Coverages {
             backtrack,
@@ -1327,7 +1381,10 @@ fn apply_string(c: &mut ApplyContext<'_, '_, '_, '_, '_>, index: usize) -> bool 
             .lookup(index)
             .map_or((0, false), |l| (l.props, l.reverse))
     } else {
-        plan.layout.gpos.lookup(index).map_or((0, false), |l| (l.props, false))
+        plan.layout
+            .gpos
+            .lookup(index)
+            .map_or((0, false), |l| (l.props, false))
     };
     c.set_lookup_props(props);
     if !reverse {

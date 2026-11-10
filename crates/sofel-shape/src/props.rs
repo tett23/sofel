@@ -51,9 +51,10 @@ impl SegmentProperties {
         default_language: Option<Language>,
     ) -> ResolvedProperties {
         let script = self.script.or_else(|| {
-            buffer.codepoints().map(sofel_unicode::script).find(|&s| {
-                s != Script::COMMON && s != Script::INHERITED && s != Script::UNKNOWN
-            })
+            buffer
+                .codepoints()
+                .map(sofel_unicode::script)
+                .find(|&s| s != Script::COMMON && s != Script::INHERITED && s != Script::UNKNOWN)
         });
         let direction = self
             .direction
@@ -76,11 +77,11 @@ pub fn script_horizontal_direction(script: Option<Script>) -> Option<Direction> 
         return Some(Direction::Ltr);
     };
     match &script.tag() {
-        b"Arab" | b"Hebr" | b"Syrc" | b"Thaa" | b"Cprt" | b"Khar" | b"Phnx" | b"Nkoo"
-        | b"Lydi" | b"Avst" | b"Armi" | b"Phli" | b"Prti" | b"Sarb" | b"Orkh" | b"Samr"
-        | b"Mand" | b"Merc" | b"Mero" | b"Mani" | b"Mend" | b"Nbat" | b"Narb" | b"Palm"
-        | b"Phlp" | b"Hatr" | b"Adlm" | b"Rohg" | b"Sogo" | b"Sogd" | b"Elym" | b"Chrs"
-        | b"Yezi" | b"Ougr" | b"Gara" | b"Sidt" => Some(Direction::Rtl),
+        b"Arab" | b"Hebr" | b"Syrc" | b"Thaa" | b"Cprt" | b"Khar" | b"Phnx" | b"Nkoo" | b"Lydi"
+        | b"Avst" | b"Armi" | b"Phli" | b"Prti" | b"Sarb" | b"Orkh" | b"Samr" | b"Mand"
+        | b"Merc" | b"Mero" | b"Mani" | b"Mend" | b"Nbat" | b"Narb" | b"Palm" | b"Phlp"
+        | b"Hatr" | b"Adlm" | b"Rohg" | b"Sogo" | b"Sogd" | b"Elym" | b"Chrs" | b"Yezi"
+        | b"Ougr" | b"Gara" | b"Sidt" => Some(Direction::Rtl),
         b"Hung" | b"Ital" | b"Runr" | b"Tfng" => None,
         _ => Some(Direction::Ltr),
     }

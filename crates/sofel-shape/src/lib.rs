@@ -25,17 +25,17 @@ mod direction;
 mod fallback;
 mod feature;
 mod font;
+mod glyph;
+mod language;
 mod layout;
 mod normalize;
 mod plan;
 mod props;
 mod scale;
 mod shape;
+mod tag;
 pub mod unicode;
 mod utf;
-mod glyph;
-mod language;
-mod tag;
 #[rustfmt::skip]
 mod tag_table;
 mod serialize;
@@ -46,18 +46,18 @@ pub use buffer::{
 };
 pub use diff::{DiffFlags, diff, diff_unicode};
 pub use direction::Direction;
-pub use plan::{LayoutSelection, ShapePlan, Shaper, layout_selection};
-pub use props::{ResolvedProperties, SegmentProperties, script_horizontal_direction};
-pub use scale::Scale;
-pub use shape::{shape, shape_fallback, shape_with_extents};
 pub use feature::Feature;
 pub use glyph::{GlyphFlags, GlyphInfo, GlyphPosition};
 pub use language::Language;
+pub use plan::{LayoutSelection, ShapePlan, Shaper, layout_selection};
+pub use props::{ResolvedProperties, SegmentProperties, script_horizontal_direction};
+pub use scale::Scale;
 pub use serialize::{
     DeserializeError, EmptyFont, SerializeFlags, SerializeFont, SerializeFormat,
     deserialize_glyphs, deserialize_unicode, glyph_from_string, glyph_to_string, serialize_glyphs,
     serialize_glyphs_range, serialize_invalid, serialize_unicode, serialize_unicode_range,
 };
+pub use shape::{shape, shape_fallback, shape_with_extents};
 pub use sofel_unicode::Script;
 pub use tag::{
     MAX_TAGS_PER_LANGUAGE, MAX_TAGS_PER_SCRIPT, OT_TAG_DEFAULT_LANGUAGE, OT_TAG_DEFAULT_SCRIPT,

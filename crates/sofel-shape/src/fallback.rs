@@ -135,7 +135,9 @@ fn position_mark(
         DOUBLE_BELOW | DOUBLE_ABOVE if direction == Direction::Rtl => {
             clamp(bx - i64::from(mark.width / 2) - mx)
         }
-        ATTACHED_BELOW_LEFT | BELOW_LEFT | ABOVE_LEFT => base.x_bearing.saturating_sub(mark.x_bearing),
+        ATTACHED_BELOW_LEFT | BELOW_LEFT | ABOVE_LEFT => {
+            base.x_bearing.saturating_sub(mark.x_bearing)
+        }
         ATTACHED_ABOVE_RIGHT | BELOW_RIGHT | ABOVE_RIGHT => clamp(bx + bw - mw - mx),
         _ => centered(),
     };
@@ -190,7 +192,9 @@ fn position_around_base(
         zero_mark_advances(buffer, base.wrapping_add(1), end, adjust);
         return;
     };
-    base_extents.y_bearing = base_extents.y_bearing.saturating_add(buffer.pos[base].y_offset);
+    base_extents.y_bearing = base_extents
+        .y_bearing
+        .saturating_add(buffer.pos[base].y_offset);
     base_extents.x_bearing = 0;
     base_extents.width = font.h_advance(base_info.codepoint);
     let lig_id = base_info.lig_id();
@@ -235,10 +239,8 @@ fn position_around_base(
                     };
                     component_extents.x_bearing =
                         clamp(x + (k * w).checked_div(num_lig_components).unwrap_or(0));
-                    component_extents.width = i32::try_from(
-                        w.checked_div(num_lig_components).unwrap_or(0),
-                    )
-                    .unwrap_or(0);
+                    component_extents.width =
+                        i32::try_from(w.checked_div(num_lig_components).unwrap_or(0)).unwrap_or(0);
                 }
             }
             if last_combining_class != u16::from(class) {
@@ -371,7 +373,9 @@ pub(crate) fn fallback_spaces(font: &ShapeFont<'_, '_>, buffer: &mut Buffer) {
                 }
             }
             SpaceFallback::Figure => {
-                if let Some(g) = (u32::from(b'0')..=u32::from(b'9')).find_map(|u| font.nominal_glyph(u)) {
+                if let Some(g) =
+                    (u32::from(b'0')..=u32::from(b'9')).find_map(|u| font.nominal_glyph(u))
+                {
                     let (h, v) = advance_of(g);
                     if let Some(h) = h {
                         p.x_advance = h;

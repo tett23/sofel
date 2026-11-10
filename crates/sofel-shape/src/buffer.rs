@@ -1301,7 +1301,11 @@ impl Buffer {
     }
 
     /// `group_end`.
-    pub(crate) fn group_end(&self, mut start: usize, group: impl Fn(&Info, &Info) -> bool) -> usize {
+    pub(crate) fn group_end(
+        &self,
+        mut start: usize,
+        group: impl Fn(&Info, &Info) -> bool,
+    ) -> usize {
         start = start.wrapping_add(1);
         while start < self.len && group(&self.info[start.wrapping_sub(1)], &self.info[start]) {
             start = start.wrapping_add(1);
@@ -1399,13 +1403,23 @@ impl Buffer {
         }
         let a = self.array(out);
         if self.cluster_level == ClusterLevel::Characters {
-            return a.range(start, end).iter().fold(cluster, |c, i| c.min(i.cluster));
+            return a
+                .range(start, end)
+                .iter()
+                .fold(cluster, |c, i| c.min(i.cluster));
         }
         cluster.min(a[start].cluster.min(a[end.wrapping_sub(1)].cluster))
     }
 
     /// `_infos_set_glyph_flags`.
-    fn infos_set_glyph_flags(&mut self, out: bool, start: usize, end: usize, cluster: u32, mask: Mask) {
+    fn infos_set_glyph_flags(
+        &mut self,
+        out: bool,
+        start: usize,
+        end: usize,
+        cluster: u32,
+        mask: Mask,
+    ) {
         if start >= end {
             return;
         }
@@ -1464,11 +1478,20 @@ impl Buffer {
 
     /// `safe_to_insert_tatweel`.
     pub(crate) fn safe_to_insert_tatweel(&mut self, start: usize, end: usize) {
-        if !self.flags.contains(BufferFlags::PRODUCE_SAFE_TO_INSERT_TATWEEL) {
+        if !self
+            .flags
+            .contains(BufferFlags::PRODUCE_SAFE_TO_INSERT_TATWEEL)
+        {
             self.unsafe_to_break(start, end);
             return;
         }
-        self.set_glyph_flags(GlyphFlags::SAFE_TO_INSERT_TATWEEL.0, start, Some(end), true, false);
+        self.set_glyph_flags(
+            GlyphFlags::SAFE_TO_INSERT_TATWEEL.0,
+            start,
+            Some(end),
+            true,
+            false,
+        );
     }
 
     /// `unsafe_to_concat`.
@@ -1476,7 +1499,13 @@ impl Buffer {
         if !self.flags.contains(BufferFlags::PRODUCE_UNSAFE_TO_CONCAT) {
             return;
         }
-        self.set_glyph_flags(GlyphFlags::UNSAFE_TO_CONCAT.0, start, Some(end), false, false);
+        self.set_glyph_flags(
+            GlyphFlags::UNSAFE_TO_CONCAT.0,
+            start,
+            Some(end),
+            false,
+            false,
+        );
     }
 
     /// `unsafe_to_break_from_outbuffer`.
@@ -1495,7 +1524,13 @@ impl Buffer {
         if !self.flags.contains(BufferFlags::PRODUCE_UNSAFE_TO_CONCAT) {
             return;
         }
-        self.set_glyph_flags(GlyphFlags::UNSAFE_TO_CONCAT.0, start, Some(end), false, true);
+        self.set_glyph_flags(
+            GlyphFlags::UNSAFE_TO_CONCAT.0,
+            start,
+            Some(end),
+            false,
+            true,
+        );
     }
 
     /// `_hb_next_syllable`.
@@ -1582,15 +1617,13 @@ impl UnicodeBuffer {
     }
     /// The pre-context, nearest character first.
     pub fn pre_context(&self) -> &[u32] {
-        self.buf
-            .context[0]
+        self.buf.context[0]
             .get(..self.buf.context_len[0])
             .unwrap_or_default()
     }
     /// The post-context, nearest character first.
     pub fn post_context(&self) -> &[u32] {
-        self.buf
-            .context[1]
+        self.buf.context[1]
             .get(..self.buf.context_len[1])
             .unwrap_or_default()
     }
@@ -1625,7 +1658,8 @@ impl UnicodeBuffer {
     /// Adds code points as they are (`hb_buffer_add_codepoints`), as
     /// [`Self::push_utf32`] without the replacement.
     pub fn push_codepoints(&mut self, text: &[u32], item_offset: usize, item_len: Option<usize>) {
-        self.buf.add_utf::<utf::Codepoints>(text, item_offset, item_len);
+        self.buf
+            .add_utf::<utf::Codepoints>(text, item_offset, item_len);
     }
     /// Adds Latin-1 text (`hb_buffer_add_latin1`), each byte one
     /// character.
@@ -1825,12 +1859,17 @@ fn normalize_cluster(infos: &mut [GlyphInfo], pos: &mut [GlyphPosition], backwar
 /// moving the positions along.
 fn stable_sort(infos: &mut [GlyphInfo], pos: &mut [GlyphPosition]) {
     let cmp = |a: &GlyphInfo, b: &GlyphInfo| {
-        i32::from_ne_bytes(b.glyph.to_ne_bytes()).wrapping_sub(i32::from_ne_bytes(a.glyph.to_ne_bytes()))
+        i32::from_ne_bytes(b.glyph.to_ne_bytes())
+            .wrapping_sub(i32::from_ne_bytes(a.glyph.to_ne_bytes()))
     };
     for i in 1..infos.len() {
         let Some(&item) = infos.get(i) else { break };
         let mut j = i;
-        while j > 0 && infos.get(j.wrapping_sub(1)).is_some_and(|p| cmp(p, &item) > 0) {
+        while j > 0
+            && infos
+                .get(j.wrapping_sub(1))
+                .is_some_and(|p| cmp(p, &item) > 0)
+        {
             j = j.wrapping_sub(1);
         }
         if i == j {

@@ -6,7 +6,9 @@
 //! THIRD_PARTY_NOTICES.md.
 
 use sofel_font::read::GlyphId;
-use sofel_font::read::gpos::{Anchor, AnchorMatrix, AnchorResult, MarkArray, PosSubtable, ValueRecord};
+use sofel_font::read::gpos::{
+    Anchor, AnchorMatrix, AnchorResult, MarkArray, PosSubtable, ValueRecord,
+};
 use sofel_font::read::{ReadError, layout::lookup_flag};
 
 use super::apply::{ApplyContext, Match, Which, apply_chain_context, apply_context};
@@ -252,7 +254,8 @@ pub(crate) fn apply<'a>(c: &mut ApplyContext<'_, 'a, '_, '_, '_>, s: &PosSubtabl
             };
             let prev_glyph = GlyphId(c.buffer.info[i].codepoint);
             let Some(exit) = record(prev_glyph).and_then(|(_, exit)| anchor(exit)) else {
-                c.buffer.unsafe_to_concat_from_outbuffer(i, idx.wrapping_add(1));
+                c.buffer
+                    .unsafe_to_concat_from_outbuffer(i, idx.wrapping_add(1));
                 return false;
             };
             apply_cursive(c, exit, entry, i);
@@ -285,7 +288,8 @@ pub(crate) fn apply<'a>(c: &mut ApplyContext<'_, 'a, '_, '_, '_>, s: &PosSubtabl
             };
             let Some(base_index) = base_coverage.get(GlyphId(c.buffer.info[idx].codepoint)) else {
                 let cur = c.buffer.idx;
-                c.buffer.unsafe_to_concat_from_outbuffer(idx, cur.wrapping_add(1));
+                c.buffer
+                    .unsafe_to_concat_from_outbuffer(idx, cur.wrapping_add(1));
                 return false;
             };
             mark_array_apply(c, marks, mark_index, base_index, bases, *class_count, idx)
@@ -311,7 +315,8 @@ pub(crate) fn apply<'a>(c: &mut ApplyContext<'_, 'a, '_, '_, '_>, s: &PosSubtabl
             let cur = c.buffer.idx;
             let Some(lig_index) = ligature_coverage.get(GlyphId(c.buffer.info[idx].codepoint))
             else {
-                c.buffer.unsafe_to_concat_from_outbuffer(idx, cur.wrapping_add(1));
+                c.buffer
+                    .unsafe_to_concat_from_outbuffer(idx, cur.wrapping_add(1));
                 return false;
             };
             let attach = usize::try_from(lig_index)
@@ -320,7 +325,8 @@ pub(crate) fn apply<'a>(c: &mut ApplyContext<'_, 'a, '_, '_, '_>, s: &PosSubtabl
                 .unwrap_or(AnchorMatrix::empty());
             let comp_count = attach.rows();
             if comp_count == 0 {
-                c.buffer.unsafe_to_concat_from_outbuffer(idx, cur.wrapping_add(1));
+                c.buffer
+                    .unsafe_to_concat_from_outbuffer(idx, cur.wrapping_add(1));
                 return false;
             }
             let lig_id = c.buffer.info[idx].lig_id();
@@ -358,7 +364,8 @@ pub(crate) fn apply<'a>(c: &mut ApplyContext<'_, 'a, '_, '_, '_>, s: &PosSubtabl
             };
             let prev = c.buffer.info[j];
             if !prev.is_mark() {
-                c.buffer.unsafe_to_concat_from_outbuffer(j, idx.wrapping_add(1));
+                c.buffer
+                    .unsafe_to_concat_from_outbuffer(j, idx.wrapping_add(1));
                 return false;
             }
             let cur = *c.buffer.cur(0);
@@ -370,11 +377,13 @@ pub(crate) fn apply<'a>(c: &mut ApplyContext<'_, 'a, '_, '_, '_>, s: &PosSubtabl
                 (id1 > 0 && comp1 == 0) || (id2 > 0 && comp2 == 0)
             };
             if !good {
-                c.buffer.unsafe_to_concat_from_outbuffer(j, idx.wrapping_add(1));
+                c.buffer
+                    .unsafe_to_concat_from_outbuffer(j, idx.wrapping_add(1));
                 return false;
             }
             let Some(mark2_index) = mark2_coverage.get(GlyphId(prev.codepoint)) else {
-                c.buffer.unsafe_to_concat_from_outbuffer(j, idx.wrapping_add(1));
+                c.buffer
+                    .unsafe_to_concat_from_outbuffer(j, idx.wrapping_add(1));
                 return false;
             };
             mark_array_apply(c, marks, mark1_index, mark2_index, mark2s, *class_count, j)
@@ -414,7 +423,8 @@ fn find_base(
     match c.last_base {
         Some(b) => Some(b),
         None => {
-            c.buffer.unsafe_to_concat_from_outbuffer(0, idx.wrapping_add(1));
+            c.buffer
+                .unsafe_to_concat_from_outbuffer(0, idx.wrapping_add(1));
             None
         }
     }
@@ -460,14 +470,12 @@ fn mark_array_apply(
     class_count: u16,
     glyph_pos: usize,
 ) -> bool {
-    let (mark_class, mark_anchor) = match usize::try_from(mark_index)
-        .ok()
-        .and_then(|i| marks.get(i))
-    {
-        // A Null anchor (format 0) is (0, 0).
-        Some((class, a)) => (class, anchor(a).or(Some(AnchorRef::Unknown))),
-        None => (0, Some(AnchorRef::Unknown)),
-    };
+    let (mark_class, mark_anchor) =
+        match usize::try_from(mark_index).ok().and_then(|i| marks.get(i)) {
+            // A Null anchor (format 0) is (0, 0).
+            Some((class, a)) => (class, anchor(a).or(Some(AnchorRef::Unknown))),
+            None => (0, Some(AnchorRef::Unknown)),
+        };
     let row = usize::try_from(row).unwrap_or(usize::MAX);
     if row >= anchors.rows() || mark_class >= class_count {
         return false;
@@ -502,7 +510,9 @@ fn resolve_cross_offset(pos: &[Pos], glyph_pos: usize, direction: Direction) -> 
         let parent = isize::try_from(g)
             .unwrap_or(0)
             .wrapping_add(isize::from(p.attach_chain));
-        let Ok(parent) = usize::try_from(parent) else { break };
+        let Ok(parent) = usize::try_from(parent) else {
+            break;
+        };
         if parent >= len {
             break;
         }
@@ -568,7 +578,9 @@ fn reverse_cursive_minor_offset(
     if let Some(p) = pos.get_mut(i) {
         p.attach_chain = 0;
     }
-    let j = isize::try_from(i).unwrap_or(0).wrapping_add(isize::from(chain));
+    let j = isize::try_from(i)
+        .unwrap_or(0)
+        .wrapping_add(isize::from(chain));
     let Ok(j) = usize::try_from(j) else { return };
     if j >= pos.len() || j == new_parent {
         return;
@@ -694,7 +706,9 @@ fn propagate_attachment_offsets(pos: &mut [Pos], i: usize, direction: Direction,
     let Some(p) = pos.get_mut(i) else { return };
     let (chain, ty) = (p.attach_chain, p.attach_type);
     p.attach_chain = 0;
-    let j = isize::try_from(i).unwrap_or(0).wrapping_add(isize::from(chain));
+    let j = isize::try_from(i)
+        .unwrap_or(0)
+        .wrapping_add(isize::from(chain));
     let Ok(j) = usize::try_from(j) else { return };
     if j >= pos.len() || nesting == 0 {
         return;
@@ -715,9 +729,7 @@ fn propagate_attachment_offsets(pos: &mut [Pos], i: usize, direction: Direction,
         }
         return;
     }
-    let (mut x, mut y) = pos
-        .get(i)
-        .map_or((0, 0), |p| (p.x_offset, p.y_offset));
+    let (mut x, mut y) = pos.get(i).map_or((0, 0), |p| (p.x_offset, p.y_offset));
     if horizontal {
         x = x.saturating_add(pj.x_offset);
     } else {

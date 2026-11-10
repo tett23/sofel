@@ -231,7 +231,9 @@ pub fn vertical_char_for(cp: u32) -> u32 {
 pub(crate) fn is_mark_category(gc: GeneralCategory) -> bool {
     matches!(
         gc,
-        GeneralCategory::SpacingMark | GeneralCategory::EnclosingMark | GeneralCategory::NonspacingMark
+        GeneralCategory::SpacingMark
+            | GeneralCategory::EnclosingMark
+            | GeneralCategory::NonspacingMark
     )
 }
 

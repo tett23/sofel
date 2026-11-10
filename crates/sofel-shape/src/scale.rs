@@ -5,8 +5,8 @@
 //! `src/hb-ot-layout-common.hh` (`HintingDevice::get_delta`), MIT; see
 //! THIRD_PARTY_NOTICES.md.
 
-use sofel_font::{Font, HbScale};
 use sofel_font::read::device::Device;
+use sofel_font::{Font, HbScale};
 
 /// The scale and pixel size of a font for shaping.
 #[derive(Clone, Copy, PartialEq, Debug)]

@@ -441,7 +441,8 @@ impl<'a> ShapePlan<'a> {
     /// The lookups of `GSUB` (table 0) or `GPOS` (table 1) per stage, in
     /// application order: `(lookup index, mask)` lists.
     pub fn stage_lookups(&self, table: usize) -> Vec<Vec<(u16, u32)>> {
-        let (Some(stages), Some(lookups)) = (self.map.stages.get(table), self.map.lookups.get(table))
+        let (Some(stages), Some(lookups)) =
+            (self.map.stages.get(table), self.map.lookups.get(table))
         else {
             return Vec::new();
         };

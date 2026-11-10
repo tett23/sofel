@@ -119,7 +119,9 @@ impl<'a> Gdef<'a> {
     /// exist.
     pub(crate) fn sanitize_lookup_props(&self, props: u32) -> u32 {
         let flag = u32::from(lookup_flag::USE_MARK_FILTERING_SET);
-        if props & flag != 0 && usize::try_from(props >> 16).unwrap_or(usize::MAX) >= self.mark_set_count {
+        if props & flag != 0
+            && usize::try_from(props >> 16).unwrap_or(usize::MAX) >= self.mark_set_count
+        {
             props & !flag
         } else {
             props
@@ -196,9 +198,8 @@ fn pos_coverage<'a>(s: &PosSubtable<'a>) -> Coverage<'a> {
         | PosSubtable::PairGlyphs { coverage, .. }
         | PosSubtable::PairClasses { coverage, .. }
         | PosSubtable::Cursive { coverage, .. } => *coverage,
-        PosSubtable::MarkBase { mark_coverage, .. } | PosSubtable::MarkLig { mark_coverage, .. } => {
-            *mark_coverage
-        }
+        PosSubtable::MarkBase { mark_coverage, .. }
+        | PosSubtable::MarkLig { mark_coverage, .. } => *mark_coverage,
         PosSubtable::MarkMark { mark1_coverage, .. } => *mark1_coverage,
         PosSubtable::Context(c) => context_coverage(c),
         PosSubtable::ChainContext(c) => chain_coverage(c),
@@ -298,7 +299,10 @@ impl<'a, S> Table<'a, S> {
     /// `hb_ot_layout_table_select_script`: whether one of `tags` was
     /// found, the script index and the chosen tag.
     pub(crate) fn select_script(&self, tags: &[Tag]) -> (bool, Option<usize>, Option<Tag>) {
-        if let Some((i, t)) = tags.iter().find_map(|&t| self.find_script(t).map(|i| (i, t))) {
+        if let Some((i, t)) = tags
+            .iter()
+            .find_map(|&t| self.find_script(t).map(|i| (i, t)))
+        {
             return (true, Some(i), Some(t));
         }
         for t in [DFLT, DFLT_LANG, LATN] {
@@ -312,8 +316,7 @@ impl<'a, S> Table<'a, S> {
     /// `hb_ot_layout_script_select_language`: the language system
     /// index; `None` for the default one.
     pub(crate) fn select_language(&self, script: Option<usize>, tags: &[Tag]) -> Option<usize> {
-        let s = script
-            .and_then(|i| self.scripts.and_then(|l| l.script(i).ok().flatten()))?;
+        let s = script.and_then(|i| self.scripts.and_then(|l| l.script(i).ok().flatten()))?;
         tags.iter()
             .chain(core::iter::once(&DFLT_LANG))
             .find_map(|&t| s.find_lang_sys(t))
@@ -394,7 +397,9 @@ impl<'a, S> Table<'a, S> {
         else {
             return Vec::new();
         };
-        (0..f.num_lookups()).filter_map(|i| f.lookup_index(i)).collect()
+        (0..f.num_lookups())
+            .filter_map(|i| f.lookup_index(i))
+            .collect()
     }
 
     /// The accelerator of lookup `index`.

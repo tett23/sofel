@@ -93,7 +93,12 @@ fn next_char(buffer: &mut Buffer, glyph: u32) {
 }
 
 /// `decompose`: the number of characters output.
-fn decompose(c: &NormalizeContext<'_, '_, '_>, buffer: &mut Buffer, shortest: bool, ab: u32) -> usize {
+fn decompose(
+    c: &NormalizeContext<'_, '_, '_>,
+    buffer: &mut Buffer,
+    shortest: bool,
+    ab: u32,
+) -> usize {
     let Some((a, b)) = c.decompose(ab) else {
         return 0;
     };
@@ -134,7 +139,11 @@ fn decompose(c: &NormalizeContext<'_, '_, '_>, buffer: &mut Buffer, shortest: bo
 }
 
 /// `decompose_current_character`.
-fn decompose_current_character(c: &NormalizeContext<'_, '_, '_>, buffer: &mut Buffer, shortest: bool) {
+fn decompose_current_character(
+    c: &NormalizeContext<'_, '_, '_>,
+    buffer: &mut Buffer,
+    shortest: bool,
+) {
     let u = buffer.cur(0).codepoint;
     let not_found = buffer.not_found;
     let mut glyph = 0u32;
@@ -188,7 +197,11 @@ fn set_glyph(buffer: &mut Buffer, font: &ShapeFont<'_, '_>) {
 }
 
 /// `handle_variation_selector_cluster`.
-fn handle_variation_selector_cluster(c: &NormalizeContext<'_, '_, '_>, buffer: &mut Buffer, end: usize) {
+fn handle_variation_selector_cluster(
+    c: &NormalizeContext<'_, '_, '_>,
+    buffer: &mut Buffer,
+    end: usize,
+) {
     let font = c.font;
     while buffer.idx < end.wrapping_sub(1) && buffer.successful {
         if unicode::is_variation_selector(buffer.cur(1).codepoint) {
@@ -232,8 +245,8 @@ fn decompose_multi_char_cluster(
     end: usize,
     short_circuit: bool,
 ) {
-    let has_vs = (buffer.idx..end)
-        .any(|i| unicode::is_variation_selector(buffer.info[i].codepoint));
+    let has_vs =
+        (buffer.idx..end).any(|i| unicode::is_variation_selector(buffer.info[i].codepoint));
     if has_vs {
         handle_variation_selector_cluster(c, buffer, end);
         return;
@@ -338,7 +351,8 @@ pub(crate) fn normalize(plan: &ShapePlan<'_>, buffer: &mut Buffer, font: &ShapeF
         while i.wrapping_add(1) < count {
             let next_cc = buffer.info[i.wrapping_add(1)].modified_combining_class();
             if buffer.info[i].codepoint == 0x034F
-                && (next_cc == 0 || buffer.info[i.wrapping_sub(1)].modified_combining_class() <= next_cc)
+                && (next_cc == 0
+                    || buffer.info[i.wrapping_sub(1)].modified_combining_class() <= next_cc)
             {
                 buffer.info[i].unhide();
             }
@@ -351,7 +365,8 @@ pub(crate) fn normalize(plan: &ShapePlan<'_>, buffer: &mut Buffer, font: &ShapeF
         && buffer.successful
         && matches!(
             mode,
-            NormalizationMode::ComposedDiacritics | NormalizationMode::ComposedDiacriticsNoShortCircuit
+            NormalizationMode::ComposedDiacritics
+                | NormalizationMode::ComposedDiacriticsNoShortCircuit
         )
     {
         buffer.clear_output();
