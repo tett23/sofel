@@ -11,6 +11,13 @@
 # --preprocess differs from its output without it (sofel gives the
 # latter both times; ADR 0022 does not match HarfBuzz on malformed
 # tables).
+hb-dump/glyphs/AdobeVFPrototype.otf  # stage:var
+hb-dump/glyphs/COLRv1-alpha.ttf  # stage:var
+hb-dump/glyphs/Comfortaa-Regular-new.ttf  # stage:var
+hb-dump/glyphs/Fraunces.ttf  # stage:var
+hb-dump/glyphs/ImplicitHVAR.ttf  # stage:var
+hb-dump/glyphs/MPLUS1-Variable.ttf  # stage:var
+hb-dump/glyphs/RobotoFlex-Variable.ttf  # stage:var
 hb-dump/golem/32bit_var_store.otf:keep  # stage:var
 hb-dump/golem/32bit_var_store.otf:keep+prepared  # stage:var
 hb-dump/golem/32bit_var_store.otf:pin  # stage:cff2-pin

@@ -14,6 +14,10 @@
 //! - `hb-dump/golem/<font>:keep+prepared` and `:pin+prepared`: the same
 //!   with `--preprocess` (`hb_subset_preprocess` in HarfBuzz,
 //!   `sofel_subset::Prepared` in sofel).
+//! - `hb-dump/glyphs/<font>`: glyphs by name (`--glyphs`, ADR 0022 stage
+//!   12) on every font with glyph names: up to 24 named glyphs spread
+//!   over the font, `gid1` and `uni0041`, then the second name's glyph
+//!   removed by id and added back by name, with `--retain-gids`.
 //! - `hb-dump/repack/<tests file>`: the repacking tests of
 //!   `test/subset/data/repack_tests/` with `run-repack-tests.py`'s
 //!   arguments.
@@ -61,6 +65,39 @@ fn harfbuzz(exe: &Path, args: &[String], out: &Path) -> Result<Vec<u8>, String> 
     std::fs::read(out).map_err(|e| e.to_string())
 }
 
+/// The `--glyphs` arguments of `hb-dump/glyphs/<font>`, or `None` for a
+/// font with fewer than two named glyphs.
+fn glyph_name_args(path: &Path, font: &Font<'_>) -> Option<Vec<String>> {
+    let mut buf = vec![0u32; font.glyph_names_len()];
+    let names = font.glyph_names(&mut buf)?;
+    let n = font.num_glyphs();
+    let step = (n / 24).max(1) as usize;
+    let named: Vec<(u32, String)> = (1..n)
+        .step_by(step)
+        .filter_map(|g| {
+            let s = names.glyph_name(sofel_read::GlyphId(g))?;
+            let s = std::str::from_utf8(s).ok()?;
+            // Names with the option's separators cannot be given.
+            (!s.is_empty() && !s.contains([' ', ',']) && s.is_ascii()).then(|| (g, s.to_string()))
+        })
+        .collect();
+    let [(_, _), (second_gid, second), ..] = named.as_slice() else {
+        return None;
+    };
+    let mut list: Vec<String> = named.iter().map(|(_, s)| s.clone()).collect();
+    list.push("gid1".to_string());
+    if font.nominal_glyph_raw(0x41).is_some() {
+        list.push("uni0041".to_string());
+    }
+    Some(vec![
+        format!("--font-file={}", path.display()),
+        format!("--glyphs={}", list.join(",")),
+        format!("--gids-={second_gid}"),
+        format!("--glyphs+={second}"),
+        "--retain-gids".to_string(),
+    ])
+}
+
 /// Whether sofel and HarfBuzz agree, with the details when not.
 fn compare(ours: &Result<Vec<u8>, String>, theirs: &Result<Vec<u8>, String>) -> Option<String> {
     match (ours, theirs) {
@@ -99,6 +136,12 @@ fn subsetting_agrees_with_harfbuzz() {
             ),
             Err(_) => (vec![1], false),
         };
+        if let Some(args) = Font::new(&bytes, 0)
+            .ok()
+            .and_then(|font| glyph_name_args(&path, &font))
+        {
+            cases.push((format!("hb-dump/glyphs/{name}"), args));
+        }
         for pin in [false, true].into_iter().filter(|&p| !p || variable) {
             let kind = if pin { "pin" } else { "keep" };
             let args = subset::golem_args(&path, &glyphs, pin);
