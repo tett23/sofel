@@ -1,6 +1,6 @@
 # ADR 0016: フォント全体のメトリクスと縦書きのメトリクス（OS/2、name、post、vhea、vmtx、VORG、グリフの箱、拡大縮小）
 
-ステータス: 採択
+ステータス: 採択→`roundf` と `x_mult` の写し方は [ADR 0026](0026-harfbuzz-rounding.md)
 
 ## 文脈
 

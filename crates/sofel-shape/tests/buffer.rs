@@ -2,7 +2,14 @@
 //! examples of HarfBuzz's `test/api/test-buffer.c` and the rules of
 //! `src/hb-utf.hh`.
 
-#![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::arithmetic_side_effects,
+    clippy::cast_possible_truncation,
+    clippy::bool_assert_comparison
+)]
 
 use sofel_shape::{
     BufferFlags, ClusterLevel, DiffFlags, Direction, GlyphBuffer, GlyphFlags, GlyphInfo,

@@ -14,7 +14,7 @@ cargo doc --no-deps -p sofel-geom -p sofel-unicode -p sofel-read -p sofel-font -
 
 | クレート | 役割 | 依存 |
 |---|---|---|
-| `sofel-geom` | 固定小数点の演算（`FT_MulFix` などと同じ結果）と、輪郭を受け渡す `Pen` | なし |
+| `sofel-geom` | 固定小数点の演算（`FT_MulFix` などと同じ結果）と、輪郭を受け渡す `Pen`、HarfBuzzの丸めを写す浮動小数点の補助（`float`） | なし |
 | `sofel-unicode` | Unicode 18.0.0の文字の性質。HarfBuzzの既定のUnicodeの関数と同じ値を返す | なし |
 | `sofel-read` | sfntの表の読み取りと検証。コピーも確保もしない | なし |
 | `sofel-font` | フォントを一度だけ読み、グリフの数、文字からグリフへの対応、送り幅を返す | `sofel-read`、`sofel-geom` |
@@ -108,6 +108,7 @@ let (extents, from_base) = font.layout_font_extents(Direction::Horizontal, Tag::
 ```
 
 - CFFとCFF2（[ADR 0021](adr/0021-cff-outlines.md)）：`Cff::new(&font)` は、FreeTypeがフェイスを開けるときだけ成功する。一度作って持ち続ける。`is_cid_keyed`、`cid(gid)`、`ros()`（`FT_Get_CID_*`）、`charset_name`、`build_name_index` と `glyph_from_name`、`ft_glyph_name`、`ft_glyph_from_name`、`ps_font_info()`（`FT_Get_PS_Font_Info`）、`ps_fs_type()`、`top_dict()`、`font_dict(fd)`、`private_dict(fd)`（PDFの `StemV` などに使う生の値）を持つ。`Font::is_cff`、`is_cff2` は表の有無だけを見る。
+- CFFのcharsetの索引（[ADR 0025](adr/0025-cff-charset-index.md)）：`cid`、`charset_name`、`ft_glyph_name` などは、索引が無いとcharsetの範囲を毎回前から読む。全グリフのように繰り返し引くときは、索引を一度作って `_with` の版に渡す。`let cs = cff.charset()?; let mut starts = vec![0u32; cs.num_ranges()]; let index = cs.index_into(&mut starts).ok()?;` のあと `cff.cid_with(&index, gid)`、`charset_name_with`、`ft_glyph_name_with`、`build_name_index_with`、`glyph_from_name_with` を使う。結果は索引の無い版と同じ。作る費用は範囲の数の配列を1回読むことで、配列は呼び出し側が持つ（`sofel-font` は確保しない）。1回だけ引くなら索引は要らない。C ABIでは `sofel_font_t` が内部に持つので、何もしなくてよい。
 - グリフ名はHarfBuzzと同じく、postに無ければCFFのcharsetから引く（CIDキーのフォントには無い。[ADR 0021](adr/0021-cff-outlines.md)）。名前から引く索引は呼び出し側が持つ。`let mut buf = vec![0u32; font.glyph_names_len()]; let names = font.glyph_names(&mut buf)?;` で作り、`names.glyph_from_name(b"A")` で引く。CFFの名前が同じグリフが複数あれば、グリフIDの小さいものを返す。`glyph_name` は呼び出しごとに `HbCff1` を作るので、繰り返し引くときは作っておいた値を `glyph_name_with(g, cff)` に渡す。名前の文字列は呼び出し側の配列に書く（`name_utf8` など）か、フォントのデータを借りて返す（`glyph_name`、`sfnt_name`）。
 - 下の層が要るときは `sofel_font::read`（`sofel-read` の再公開）と `Font::sfnt()`、`Font::head()` を使う。
 
@@ -247,6 +248,20 @@ fn single(gsub_table: &[u8], glyph: GlyphId) -> Option<u32> {
 
 - 型：`F26Dot6`、`Fixed`（16.16）、`F2Dot14`、`Point`（`i32` の `x`、`y`）、`Matrix`。
 - 結果が `i32` に収まらないときは飽和させる（FreeTypeは未定義の動作になる箇所）。
+
+### HarfBuzzの丸め（`sofel_geom::float`）
+
+HarfBuzzの値を写すときの浮動小数点の補助（[ADR 0026](adr/0026-harfbuzz-rounding.md)）。どれも `f32` と `f64` の四則演算だけで書き、FMAを使わない。
+
+| sofel | HarfBuzz、C |
+|---|---|
+| `hb_roundf(v: f64) -> f64` | HarfBuzzの `roundf`（`_hb_roundf (double)`、`floor (x + .5)`） |
+| `hb_roundf32(v: f32) -> f64` | HarfBuzzの `roundf`（`_hb_roundf (float)`、`floor ((double) x + .5)`） |
+| `floor`、`floorf`、`ceilf`、`truncf` | Cの同じ名前の関数 |
+| `hb_clamp_to_i32(v: f64) -> i32` | `hb_clamp_to<int> (double)` |
+| `f32_to_i64`、`i64_to_f32`、`i32_to_f32` | Cの `(int64_t)`、`(float)` の変換 |
+
+- HarfBuzzの `roundf` はCの `roundf` ではない。半分の値は負でも正の無限大の側へ丸まる（`hb_roundf(-2.5)` は −2.0、Cの `roundf` は −3.0）。一般の丸めには使わない。
 
 ## Unicodeの文字の性質（`sofel-unicode`）
 

@@ -3,7 +3,14 @@
 //! ignorables, mark widths, fallback positioning and spaces, the
 //! unsafe-to-break flags, GSUB and GPOS, scaling and Device tables.
 
-#![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::arithmetic_side_effects,
+    clippy::cast_possible_truncation,
+    clippy::bool_assert_comparison
+)]
 
 mod support;
 

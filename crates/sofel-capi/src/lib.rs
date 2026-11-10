@@ -18,6 +18,7 @@ use core::fmt::Write as _;
 use std::ffi::CString;
 
 use sofel_cli::glyph::RenderError;
+use sofel_font::read::cff::{CharsetIndex, Version};
 use sofel_font::read::os2::Os2;
 use sofel_font::read::sfnt::FontFile;
 use sofel_font::read::{DetailValue, Diagnostic, GlyphId, Severity, Tag, validate};
@@ -63,8 +64,9 @@ pub const ERROR_INVALID_ARGUMENT: i32 = -12;
 pub const ERROR_INVALID_CFF: i32 = -13;
 
 /// `sofel_font_t`: a font over data the caller keeps alive, with
-/// HarfBuzz's CFF and CFF2 accelerators for its glyph boxes (ADR 0021),
-/// built once at creation (a broken CFF only leaves them out).
+/// HarfBuzz's CFF and CFF2 accelerators for its glyph boxes (ADR 0021)
+/// and the index of the CFF charset (ADR 0025), built once at creation
+/// (a broken CFF only leaves them out).
 pub struct SofelFont {
     font: Font<'static>,
     /// The outline format, the opened CFF and HarfBuzz's glyph boxes
@@ -72,6 +74,21 @@ pub struct SofelFont {
     outlines: Outlines<'static>,
     /// FreeType's CFF view, when FreeType can open the face as CFF.
     cff: Option<Cff<'static>>,
+    /// The index of the CFF charset (ADR 0025), over `starts`; `None`
+    /// once the font is being dropped.
+    charset: Option<CharsetIndex<'static>>,
+    /// The array `charset` borrows, from `Box::into_raw`; freed in
+    /// `Drop` after `charset` is cleared.
+    starts: *mut [u32],
+}
+
+impl Drop for SofelFont {
+    fn drop(&mut self) {
+        self.charset = None;
+        // SAFETY: `starts` came from Box::into_raw in font_create, is
+        // freed only here, and nothing borrows it any more.
+        drop(unsafe { Box::from_raw(self.starts) });
+    }
 }
 
 /// `sofel_outline_scratch_t`.
@@ -310,10 +327,20 @@ fn font_create(data: Option<&'static [u8]>, index: u32) -> Result<SofelFont, i32
     let font = Font::new(some(data)?, index).map_err(font_error)?;
     let outlines = Outlines::new(&font);
     let cff = outlines.cff().copied();
+    let ranges = cff.and_then(|c| c.charset()).map_or(0, |c| c.num_ranges());
+    let starts = Box::into_raw(vec![0u32; ranges].into_boxed_slice());
+    // SAFETY: `starts` is a fresh allocation; the index borrowing it lives
+    // in the font, which frees the array only after dropping the index.
+    let array: &'static mut [u32] = unsafe { &mut *starts };
+    let charset = cff
+        .and_then(|c| c.charset())
+        .and_then(|c| c.index_into(array).ok());
     Ok(SofelFont {
         font,
         outlines,
         cff,
+        charset,
+        starts,
     })
 }
 
@@ -1515,8 +1542,17 @@ pub unsafe extern "C" fn sofel_font_ft_glyph_name(
     len: *mut usize,
 ) -> i32 {
     // SAFETY: the caller's conditions.
-    let (font, name, len) = unsafe { (font_ref(font), w(name), w(len)) };
-    status(some(font).and_then(|f| glyph_name_out(f.ft_glyph_name(GlyphId(glyph)), name, len)))
+    let (font, name, len) = unsafe { (sofel_ref(font), w(name), w(len)) };
+    status(some(font).and_then(|f| glyph_name_out(ft_glyph_name(f, GlyphId(glyph)), name, len)))
+}
+
+/// `Font::ft_glyph_name`, through the charset index for faces FreeType
+/// opens as CFF (version 1), where it reads the charset (ADR 0025).
+fn ft_glyph_name(f: &SofelFont, glyph: GlyphId) -> Option<&'static [u8]> {
+    match (&f.cff, &f.charset) {
+        (Some(c), Some(ix)) if c.version() == Version::Cff => c.ft_glyph_name_with(ix, glyph),
+        _ => f.font.ft_glyph_name(glyph),
+    }
 }
 
 /// `sofel_glyph_names_create`.
@@ -1732,7 +1768,14 @@ pub unsafe extern "C" fn sofel_font_cid(font: *const SofelFont, glyph: u32, cid:
     status((|| {
         let cid = some(cid)?;
         *cid = 0;
-        *cid = cff_of(font)?.cid(GlyphId(glyph)).map_err(cid_error)?;
+        let f = some(font)?;
+        let c = cff_of(font)?;
+        let g = GlyphId(glyph);
+        *cid = match &f.charset {
+            Some(ix) => c.cid_with(ix, g),
+            None => c.cid(g),
+        }
+        .map_err(cid_error)?;
         Ok(())
     })())
 }

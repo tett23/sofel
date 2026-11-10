@@ -218,6 +218,15 @@
  *
  * --deserialize FONT CORPUS: the `corpus` block above for every line of
  * CORPUS, a string written as above without the `=`.
+ * --roundf (ADR 0026): reads lines from stdin, each `f <bits>` (a
+ * `float`, eight hex digits of its bits) or `d <bits>` (a `double`,
+ * sixteen hex digits), and writes for each the sixteen hex digits of the
+ * bits of HarfBuzz's `roundf` of the value (the macro of hb-algs.hh,
+ * `_hb_roundf`, whose result is a `double`).
+ *
+ * --mult (ADR 0026): reads lines `<upem> <scale>` from stdin and writes
+ * for each the `x_mult` of an hb_font_t of a face with that upem after
+ * hb_font_set_scale (font, scale, scale), in decimal.
  *
  * Exit status: 0 on success, 1 when the file cannot be read, 2 on wrong
  * usage.
@@ -1486,6 +1495,51 @@ static int dump_deserialize (hb_blob_t *blob, const char *corpus_path)
   hb_face_destroy (face);
   return 0;
 }
+static int dump_roundf ()
+{
+  char kind;
+  unsigned long long bits;
+  while (scanf (" %c %llx", &kind, &bits) == 2)
+  {
+    double r;
+    if (kind == 'f')
+    {
+      uint32_t b = (uint32_t) bits;
+      float v;
+      memcpy (&v, &b, sizeof (v));
+      r = roundf (v);
+    }
+    else
+    {
+      uint64_t b = bits;
+      double v;
+      memcpy (&v, &b, sizeof (v));
+      r = roundf (v);
+    }
+    uint64_t out;
+    memcpy (&out, &r, sizeof (out));
+    printf ("%016llx\n", (unsigned long long) out);
+  }
+  return 0;
+}
+
+static int dump_mult ()
+{
+  unsigned upem;
+  int scale;
+  while (scanf ("%u %d", &upem, &scale) == 2)
+  {
+    hb_face_t *face = hb_face_builder_create ();
+    hb_face_set_upem (face, upem);
+    hb_font_t *font = hb_font_create (face);
+    hb_font_set_scale (font, scale, scale);
+    printf ("%lld\n", (long long) font->x_mult);
+    hb_font_destroy (font);
+    hb_face_destroy (face);
+  }
+  return 0;
+}
+
 /* The modes that read no file. */
 struct fileless_mode_t
 {
@@ -1498,6 +1552,8 @@ static const fileless_mode_t fileless_modes[] = {
   {"--arabic-pua", dump_arabic_pua},
   {"--ot-tags", dump_ot_tags},
   {"--features", dump_features},
+  {"--roundf", dump_roundf},
+  {"--mult", dump_mult},
 };
 
 struct dump_mode_t

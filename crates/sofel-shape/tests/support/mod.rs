@@ -7,7 +7,8 @@
     clippy::arithmetic_side_effects,
     clippy::cast_possible_truncation,
     clippy::indexing_slicing,
-    clippy::unwrap_used
+    clippy::unwrap_used,
+    clippy::cast_sign_loss
 )]
 
 #[path = "../../../sofel-read/tests/support/build.rs"]

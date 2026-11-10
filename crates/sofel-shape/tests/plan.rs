@@ -3,7 +3,14 @@
 //! they run out), stages and lookup order, and the global search for
 //! `vert`.
 
-#![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::arithmetic_side_effects,
+    clippy::cast_possible_truncation,
+    clippy::bool_assert_comparison
+)]
 
 mod support;
 

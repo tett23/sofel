@@ -18,37 +18,12 @@ pub(crate) struct ShapeFont<'f, 'a> {
     extents: &'f dyn Fn(GlyphId) -> Option<GlyphExtents>,
 }
 
-/// `(float) v` for an `i32`.
-#[allow(clippy::cast_precision_loss)]
-pub(crate) fn i32_to_f32(v: i32) -> f32 {
-    v as f32
-}
-
-/// C's `floor` for `f64`.
-fn floor(v: f64) -> f64 {
-    if v.is_nan() || v.abs() >= 4_503_599_627_370_496.0 {
-        return v;
-    }
-    // |v| < 2^52: exact.
-    #[allow(clippy::cast_possible_truncation)]
-    let i = v as i64;
-    #[allow(clippy::cast_precision_loss)]
-    let t = i as f64;
-    if t > v { t - 1.0 } else { t }
-}
+pub(crate) use sofel_geom::float::i32_to_f32;
 
 /// HarfBuzz's `roundf` (`floor ((double) v + .5)`) cast to
 /// `hb_position_t`, clamped.
 pub(crate) fn round_to_i32(v: f32) -> i32 {
-    let r = floor(f64::from(v) + 0.5);
-    if r.is_nan() {
-        return 0;
-    }
-    let c = r.clamp(f64::from(i32::MIN), f64::from(i32::MAX));
-    // Clamped to the i32 range.
-    #[allow(clippy::cast_possible_truncation)]
-    let i = c as i32;
-    i
+    sofel_geom::float::hb_clamp_to_i32(sofel_geom::float::hb_roundf32(v))
 }
 
 impl<'f, 'a> ShapeFont<'f, 'a> {

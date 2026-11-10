@@ -388,6 +388,31 @@ pub fn check_cff(input: &[u8]) {
         if let Some(idx) = built {
             let _ = c.glyph_from_name(&idx, b".notdef");
         }
+        // The charset index (ADR 0025) gives the charset's own answers.
+        if let Some(charset) = c.charset() {
+            let mut starts = vec![0u32; charset.num_ranges()];
+            let index = charset
+                .index_into(&mut starts)
+                .expect("num_ranges words suffice");
+            // Charset::sid(g) is the g-th of Charset::sids; walking those
+            // keeps the check linear.
+            let n = charset.num_glyphs();
+            let mut walked = 0u32;
+            for (g, sid) in (0u32..).zip(charset.sids()) {
+                assert_eq!(index.sid(g), Some(sid));
+                walked = g + 1;
+            }
+            assert_eq!(walked, n);
+            assert_eq!(index.sid(n), None);
+            for g in [1, n / 2, n.saturating_sub(1)] {
+                assert_eq!(index.sid(g), charset.sid(g));
+            }
+            for g in 0..c.num_glyphs().min(256) {
+                let g = GlyphId(g);
+                assert_eq!(c.cid_with(&index, g), c.cid(g));
+                assert_eq!(c.ft_glyph_name_with(&index, g), c.ft_glyph_name(g));
+            }
+        }
     }
     draw_all(&font);
 }
