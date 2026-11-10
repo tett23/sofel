@@ -21,7 +21,7 @@ use sofel_cli::glyph::RenderError;
 use sofel_font::read::os2::Os2;
 use sofel_font::read::sfnt::FontFile;
 use sofel_font::read::{DetailValue, Diagnostic, GlyphId, Severity, Tag, validate};
-use sofel_font::{Font, FontError, GlyphExtents, HbScale, MetricsTag};
+use sofel_font::{Direction, Font, FontError, GlyphExtents, HbScale, MetricsTag};
 use sofel_geom::{Fixed, Matrix, Pen, Point};
 use sofel_outline::{HbExtents, OutlineError, OutlineInfo, Scale, Scratch};
 use sofel_raster::{Bitmap, FillRule, PixelBox, RasterError, Rasterizer, RenderOptions};
@@ -1080,6 +1080,183 @@ pub unsafe extern "C" fn sofel_scale_metrics_position_with_fallback(
     // SAFETY: the caller's conditions.
     let (scale, font, position) = unsafe { (r(scale), sofel_ref(font), w(position)) };
     status(some(scale).and_then(|s| metrics_position(Some(s), font, tag, true, position)))
+}
+
+// ----------------------------------------------------------- baselines
+
+/// `SOFEL_DIRECTION_*` to [`Direction`].
+fn direction(d: i32) -> Result<Direction, i32> {
+    match d {
+        0 => Ok(Direction::Horizontal),
+        1 => Ok(Direction::Vertical),
+        _ => Err(ERROR_INVALID_ARGUMENT),
+    }
+}
+
+fn baseline(
+    scale: Option<&SofelScale>,
+    font: Option<&SofelFont>,
+    tag: u32,
+    dir: i32,
+    script: u32,
+    fallback: bool,
+    coord: Option<&mut i32>,
+) -> Status {
+    let (sf, coord) = (some(font)?, some(coord)?);
+    let font = &sf.font;
+    let (tag, dir, script) = (Tag::from_u32(tag), direction(dir)?, Tag::from_u32(script));
+    let s = scale_of(scale, font);
+    *coord = if fallback {
+        s.baseline_with_fallback(font, tag, dir, script, glyph_box(sf))
+    } else {
+        s.baseline(font, tag, dir, script).ok_or(ERROR_NOT_FOUND)?
+    };
+    Ok(())
+}
+
+/// `sofel_font_baseline`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `coord` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_baseline(
+    font: *const SofelFont,
+    tag: u32,
+    direction: i32,
+    script: u32,
+    coord: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, coord) = unsafe { (sofel_ref(font), w(coord)) };
+    status(baseline(None, font, tag, direction, script, false, coord))
+}
+
+/// `sofel_font_baseline_with_fallback`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `coord` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_baseline_with_fallback(
+    font: *const SofelFont,
+    tag: u32,
+    direction: i32,
+    script: u32,
+    coord: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, coord) = unsafe { (sofel_ref(font), w(coord)) };
+    status(baseline(None, font, tag, direction, script, true, coord))
+}
+
+/// `sofel_scale_baseline`.
+///
+/// # Safety
+///
+/// `scale` is NULL or a live scale; `font` is NULL or a live font;
+/// `coord` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_scale_baseline(
+    scale: *const SofelScale,
+    font: *const SofelFont,
+    tag: u32,
+    direction: i32,
+    script: u32,
+    coord: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (scale, font, coord) = unsafe { (r(scale), sofel_ref(font), w(coord)) };
+    status(some(scale).and_then(|s| baseline(Some(s), font, tag, direction, script, false, coord)))
+}
+
+/// `sofel_scale_baseline_with_fallback`.
+///
+/// # Safety
+///
+/// `scale` is NULL or a live scale; `font` is NULL or a live font;
+/// `coord` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_scale_baseline_with_fallback(
+    scale: *const SofelScale,
+    font: *const SofelFont,
+    tag: u32,
+    direction: i32,
+    script: u32,
+    coord: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (scale, font, coord) = unsafe { (r(scale), sofel_ref(font), w(coord)) };
+    status(some(scale).and_then(|s| baseline(Some(s), font, tag, direction, script, true, coord)))
+}
+
+fn layout_font_extents(
+    scale: Option<&SofelScale>,
+    font: Option<&Font<'static>>,
+    dir: i32,
+    script: u32,
+    language: u32,
+    extents: Option<&mut [i32; 3]>,
+    found: Option<&mut i32>,
+) -> Status {
+    let (font, extents, found) = (some(font)?, some(extents)?, some(found)?);
+    let dir = direction(dir)?;
+    let (e, f) = scale_of(scale, font).layout_font_extents(
+        font,
+        dir,
+        Tag::from_u32(script),
+        Tag::from_u32(language),
+    );
+    *extents = extents3(e);
+    *found = i32::from(f);
+    Ok(())
+}
+
+/// `sofel_font_layout_font_extents`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `extents` is NULL or writable for 3
+/// integers; `found` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_layout_font_extents(
+    font: *const SofelFont,
+    direction: i32,
+    script: u32,
+    language: u32,
+    extents: *mut i32,
+    found: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, extents, found) = unsafe { (font_ref(font), ints::<3>(extents), w(found)) };
+    status(layout_font_extents(
+        None, font, direction, script, language, extents, found,
+    ))
+}
+
+/// `sofel_scale_layout_font_extents`.
+///
+/// # Safety
+///
+/// `scale` is NULL or a live scale; `font` is NULL or a live font;
+/// `extents` is NULL or writable for 3 integers; `found` is NULL or
+/// writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_scale_layout_font_extents(
+    scale: *const SofelScale,
+    font: *const SofelFont,
+    direction: i32,
+    script: u32,
+    language: u32,
+    extents: *mut i32,
+    found: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (scale, font, extents, found) =
+        unsafe { (r(scale), font_ref(font), ints::<3>(extents), w(found)) };
+    status(some(scale).and_then(|s| {
+        layout_font_extents(Some(s), font, direction, script, language, extents, found)
+    }))
 }
 
 // --------------------------------------------------------------- names

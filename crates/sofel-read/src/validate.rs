@@ -7,8 +7,8 @@ use crate::loca::Loca;
 use crate::maxp::Maxp;
 use crate::sfnt::{Collection, Sfnt, TableRecord};
 use crate::{
-    CountWidth, Diagnostic, Kind, Tag, cff, cmap, glyf, head, hhea, hmtx, loca, maxp, name, os2,
-    post, vhea, vmtx, vorg,
+    CountWidth, Diagnostic, Kind, Tag, base, cff, cmap, glyf, head, hhea, hmtx, loca, maxp, name,
+    os2, post, vhea, vmtx, vorg,
 };
 
 /// The pseudo tag of diagnostics about the table directory.
@@ -171,6 +171,9 @@ pub fn sfnt(sfnt: &Sfnt<'_>, report: &mut dyn FnMut(Diagnostic)) {
     if let Some(d) = table(sfnt, cff::TAG2) {
         let axes = table(sfnt, Tag::new(b"fvar")).and_then(|f| be::u16_at(f, 8));
         cff::validate2(d, glyphs_wide.or(glyphs_narrow), axes, report);
+    }
+    if let Some(d) = table(sfnt, base::TAG) {
+        base::validate(d, report);
     }
     // GLYF and LOCA replace glyf and loca when GLYF is present (ADR 0011).
     let extended = table(sfnt, glyf::TAG_WIDE).is_some();

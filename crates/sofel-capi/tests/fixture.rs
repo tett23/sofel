@@ -23,7 +23,7 @@ use std::fmt::Write as _;
 use build::*;
 use sofel_font::read::sfnt::FontFile;
 use sofel_font::read::{DetailValue, GlyphId, Severity, Tag, validate};
-use sofel_font::{Font, FontError, GlyphExtents, HbScale, MetricsTag};
+use sofel_font::{Direction, Font, FontError, GlyphExtents, HbScale, MetricsTag};
 use sofel_geom::{Command, Fixed, FnPen, Matrix, Pen, Point};
 use sofel_outline::{HbExtents, OutlineError, Scale, Scratch, draw, load};
 use sofel_raster::{FillRule, RasterError, Rasterizer, RenderOptions, pixel_box};
@@ -169,8 +169,8 @@ fn invalid_tables() -> Vec<(&'static [u8; 4], Vec<u8>)> {
 }
 
 /// `font_tables()` with OS/2, vhea, vmtx and post, for the metrics
-/// (ADR 0016). No VORG, so that the vertical origin comes from glyf's
-/// phantom points.
+/// (ADR 0016), and BASE (ADR 0017). No VORG, so that the vertical origin
+/// comes from glyf's phantom points.
 fn metrics_tables() -> Vec<(&'static [u8; 4], Vec<u8>)> {
     let n = glyphs().len() as u16;
     let long: Vec<(u16, i16)> = (0..n).map(|g| (1000 + 7 * g, 30 + g as i16)).collect();
@@ -190,8 +190,96 @@ fn metrics_tables() -> Vec<(&'static [u8; 4], Vec<u8>)> {
         (3, 1, 0x409, 6, &ps),
     ];
     tables.push((b"name", name(0, &records, &[])));
+    let h = AxisSpec {
+        tags: Some(vec![*b"hang", *b"ideo", *b"romn"]),
+        scripts: Some(vec![
+            (
+                *b"DFLT",
+                Some(ScriptSpec {
+                    values: Some((2, vec![None, Some(Coord::F1(-120)), Some(Coord::F1(0))])),
+                    ..Default::default()
+                }),
+            ),
+            (
+                *b"latn",
+                Some(ScriptSpec {
+                    values: Some((
+                        2,
+                        vec![Some(Coord::F2(650, 1, 0)), None, Some(Coord::F1(5))],
+                    )),
+                    default_min_max: Some(MinMaxSpec {
+                        min: Some(Coord::F1(-300)),
+                        max: Some(Coord::F1(1100)),
+                        features: vec![],
+                    }),
+                    lang_sys: vec![(
+                        *b"ENG ",
+                        Some(MinMaxSpec {
+                            min: None,
+                            max: Some(Coord::F1(1200)),
+                            features: vec![],
+                        }),
+                    )],
+                }),
+            ),
+        ]),
+    };
+    let v = simple_axis(b"DFLT", &[(*b"idtp", 450)]);
+    tables.push((b"BASE", base(Some(&h), Some(&v))));
     tables.sort_by_key(|(t, _)| **t);
     tables
+}
+
+/// The baseline cases of ADR 0017 at one scale.
+fn baseline_cases(out: &mut String, prefix: &str, font: &Font<'_>, scale: HbScale) {
+    let extents = HbExtents::new(font);
+    let boxes = |g: GlyphId| extents.glyph_extents(g);
+    let dirs = [(0, Direction::Horizontal), (1, Direction::Vertical)];
+    let scripts = [*b"hani", *b"latn", *b"deva", *b"DFLT"];
+    let mut rows = Vec::new();
+    let mut ext_rows = Vec::new();
+    for (d, dir) in dirs {
+        for script in scripts {
+            let script = Tag(script);
+            for tag in sofel_font::baseline::ALL {
+                let (s, val) = match scale.baseline(font, tag, dir, script) {
+                    Some(v) => (OK, v),
+                    None => (NOT_FOUND, 0),
+                };
+                let fb = scale.baseline_with_fallback(font, tag, dir, script, boxes);
+                rows.push(format!(
+                    "{{{d}, 0x{:08x}u, 0x{:08x}u, {s}, {val}, {fb}}}",
+                    script.to_u32(),
+                    tag.to_u32()
+                ));
+            }
+            for lang in [*b"dflt", *b"ENG "] {
+                let lang = Tag(lang);
+                let (e, found) = scale.layout_font_extents(font, dir, script, lang);
+                ext_rows.push(format!(
+                    "{{{d}, 0x{:08x}u, 0x{:08x}u, {}, {{{}, {}, {}}}}}",
+                    script.to_u32(),
+                    lang.to_u32(),
+                    i32::from(found),
+                    e.ascender,
+                    e.descender,
+                    e.line_gap
+                ));
+            }
+        }
+    }
+    writeln!(
+        out,
+        "static const struct baseline_case {prefix}_baselines[] = {{{}}};",
+        rows.join(", ")
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "static const struct layout_extents_case {prefix}_layout_extents[] = {{{}}};",
+        ext_rows.join(", ")
+    )
+    .unwrap();
 }
 
 /// The name cases of ADR 0016.
@@ -638,6 +726,10 @@ fn generate() -> String {
          struct vglyph_case { uint32_t glyph; int32_t h_advance; int32_t v_advance; int32_t origin[2];\n\
          \x20 int32_t extents_status; int32_t extents[4]; };\n\
          struct metric_case { uint32_t tag; int32_t status; int32_t value; int32_t fallback; };\n\
+         struct baseline_case { int32_t direction; uint32_t script; uint32_t tag; int32_t status;\n\
+         \x20 int32_t value; int32_t fallback; };\n\
+         struct layout_extents_case { int32_t direction; uint32_t script; uint32_t language;\n\
+         \x20 int32_t found; int32_t extents[3]; };\n\
          struct os2_case { int32_t field; int32_t status; int64_t value; };\n\
          struct name_case { uint16_t id; const char *lang; size_t cap; size_t n[6];\n\
          \x20 uint8_t utf8[16]; uint16_t utf16[16]; uint32_t utf32[16]; };\n\
@@ -1037,9 +1129,11 @@ fn generate() -> String {
     )
     .unwrap();
     metrics_cases(&mut out, "unscaled", &mfont, HbScale::unscaled(&mfont));
+    baseline_cases(&mut out, "unscaled", &mfont, HbScale::unscaled(&mfont));
     name_cases(&mut out, &mfont);
     let scale = HbScale::for_font(&mfont, 768, -1536);
     metrics_cases(&mut out, "scaled", &mfont, scale);
+    baseline_cases(&mut out, "scaled", &mfont, scale);
     let ems: Vec<String> = [-1000, -3, 0, 3, 501, 1000]
         .iter()
         .map(|&v| format!("{{{v}, {}, {}}}", scale.em_scale_x(v), scale.em_scale_y(v)))

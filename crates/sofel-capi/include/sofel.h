@@ -550,6 +550,88 @@ int32_t sofel_scale_metrics_position_with_fallback(const sofel_scale_t *scale,
                                                    const sofel_font_t *font, uint32_t tag,
                                                    int32_t *position);
 
+/* ---------------------------------------------------------- baselines */
+
+/* Text directions for the baseline queries (ADR 0017). */
+#define SOFEL_DIRECTION_HORIZONTAL 0
+#define SOFEL_DIRECTION_VERTICAL 1
+
+/* The baseline tags of hb_ot_layout_baseline_tag_t. */
+#define SOFEL_BASELINE_ROMAN SOFEL_TAG('r', 'o', 'm', 'n')
+#define SOFEL_BASELINE_HANGING SOFEL_TAG('h', 'a', 'n', 'g')
+#define SOFEL_BASELINE_IDEO_FACE_BOTTOM_OR_LEFT SOFEL_TAG('i', 'c', 'f', 'b')
+#define SOFEL_BASELINE_IDEO_FACE_TOP_OR_RIGHT SOFEL_TAG('i', 'c', 'f', 't')
+#define SOFEL_BASELINE_IDEO_FACE_CENTRAL SOFEL_TAG('I', 'c', 'f', 'c')
+#define SOFEL_BASELINE_IDEO_EMBOX_BOTTOM_OR_LEFT SOFEL_TAG('i', 'd', 'e', 'o')
+#define SOFEL_BASELINE_IDEO_EMBOX_TOP_OR_RIGHT SOFEL_TAG('i', 'd', 't', 'p')
+#define SOFEL_BASELINE_IDEO_EMBOX_CENTRAL SOFEL_TAG('I', 'd', 'c', 'e')
+#define SOFEL_BASELINE_MATH SOFEL_TAG('m', 'a', 't', 'h')
+
+/*
+ * A baseline (a SOFEL_BASELINE_* tag) from BASE, for a direction
+ * (SOFEL_DIRECTION_*) and an OpenType script tag (the BaseScript of
+ * `script`, else of DFLT). SOFEL_ERROR_NOT_FOUND when the font does not
+ * have it; SOFEL_ERROR_INVALID_ARGUMENT for an unknown direction.
+ *
+ * Rust: sofel_font::Font::baseline
+ * HarfBuzz: hb_ot_layout_get_baseline
+ * FreeType: none
+ */
+int32_t sofel_font_baseline(const sofel_font_t *font, uint32_t tag, int32_t direction,
+                            uint32_t script, int32_t *coord);
+
+/*
+ * Like sofel_font_baseline, synthesized when the font does not have it.
+ * The em box center for Han in horizontal text, for example, is
+ * sofel_font_baseline_with_fallback (font, SOFEL_BASELINE_IDEO_EMBOX_CENTRAL,
+ * SOFEL_DIRECTION_HORIZONTAL, SOFEL_TAG('h', 'a', 'n', 'i'), &coord).
+ *
+ * Rust: sofel_font::Font::baseline_with_fallback
+ * HarfBuzz: hb_ot_layout_get_baseline_with_fallback
+ * FreeType: none
+ */
+int32_t sofel_font_baseline_with_fallback(const sofel_font_t *font, uint32_t tag,
+                                          int32_t direction, uint32_t script, int32_t *coord);
+
+/*
+ * The ascender, descender and line gap (0) of a script and language
+ * system tag from BASE's MinMax tables in extents[0..2], with *found 1;
+ * without them, the font's extents for the direction with *found 0.
+ *
+ * Rust: sofel_font::Font::layout_font_extents
+ * HarfBuzz: hb_ot_layout_get_font_extents
+ * FreeType: none
+ */
+int32_t sofel_font_layout_font_extents(const sofel_font_t *font, int32_t direction,
+                                       uint32_t script, uint32_t language, int32_t extents[3],
+                                       int32_t *found);
+
+/*
+ * Rust: sofel_font::HbScale::baseline
+ * HarfBuzz: hb_ot_layout_get_baseline
+ * FreeType: none
+ */
+int32_t sofel_scale_baseline(const sofel_scale_t *scale, const sofel_font_t *font,
+                             uint32_t tag, int32_t direction, uint32_t script, int32_t *coord);
+
+/*
+ * Rust: sofel_font::HbScale::baseline_with_fallback
+ * HarfBuzz: hb_ot_layout_get_baseline_with_fallback
+ * FreeType: none
+ */
+int32_t sofel_scale_baseline_with_fallback(const sofel_scale_t *scale, const sofel_font_t *font,
+                                           uint32_t tag, int32_t direction, uint32_t script,
+                                           int32_t *coord);
+
+/*
+ * Rust: sofel_font::HbScale::layout_font_extents
+ * HarfBuzz: hb_ot_layout_get_font_extents
+ * FreeType: none
+ */
+int32_t sofel_scale_layout_font_extents(const sofel_scale_t *scale, const sofel_font_t *font,
+                                        int32_t direction, uint32_t script, uint32_t language,
+                                        int32_t extents[3], int32_t *found);
+
 /* -------------------------------------------------------------- names */
 
 /*

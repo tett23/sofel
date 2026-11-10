@@ -64,6 +64,8 @@ let advance: u16 = font.advance(gid.unwrap_or(GlyphId(0))); // フォントの�
 | `Font::v_origin(g, extents)` | `hb_font_get_glyph_v_origin` |
 | `Font::glyf_extents(g)` | `hb_font_get_glyph_extents`（glyfだけ。CFFとCFF2は `sofel_outline::HbExtents`） |
 | `Font::metrics_position(tag)`、`Font::metrics_position_with_fallback(tag, extents)` | `hb_ot_metrics_get_position`、`hb_ot_metrics_get_position_with_fallback` |
+| `Font::baseline(tag, direction, script)`、`Font::baseline_with_fallback(tag, direction, script, extents)` | `hb_ot_layout_get_baseline`、`hb_ot_layout_get_baseline_with_fallback` |
+| `Font::layout_font_extents(direction, script, language)` | `hb_ot_layout_get_font_extents` |
 | `Font::os2()`、`Font::fs_type()` | `FT_Get_Sfnt_Table(FT_SFNT_OS2)`、`FT_Get_FSType_Flags` |
 | `HbScale::for_font(font, x, y)` | `hb_font_set_scale` |
 | `Font::names()`、`Font::name_utf8(id, lang, out)` など | `hb_ot_name_list_names`、`hb_ot_name_get_utf8` など |
@@ -87,6 +89,22 @@ let (x, y) = font.v_origin(GlyphId(1), |g| extents.glyph_extents(g));
 let scale = HbScale::for_font(&font, 12 * 64, 12 * 64);
 let advance = scale.v_advance(&font, GlyphId(1));
 let x_height = scale.metrics_position(&font, MetricsTag::XHeight);
+```
+
+- 基準線（[ADR 0017](adr/0017-base-baselines.md)）は、`Direction`（横と縦）と、OpenTypeの文字体系のタグと、`sofel_font::baseline` の定数（`baseline::IDEO_EMBOX_CENTRAL` など）で引く。`baseline_with_fallback` は、BASEに無い基準線をHarfBuzzと同じく合成する。`math` と `hang` の代わりの値はグリフの箱を使うので、`v_origin` と同じく箱を求める関数を渡す。
+
+```rust
+use sofel_font::{Direction, baseline};
+use sofel_font::read::Tag;
+
+// 仮想ボディの中心（横書き、漢字）。
+let center = font.baseline_with_fallback(
+    baseline::IDEO_EMBOX_CENTRAL,
+    Direction::Horizontal,
+    Tag::new(b"hani"),
+    |g| font.glyf_extents(g),
+);
+let (extents, from_base) = font.layout_font_extents(Direction::Horizontal, Tag::new(b"latn"), Tag::new(b"dflt"));
 ```
 
 - グリフ名はHarfBuzzと同じく、postに無ければCFFのcharsetから引く（CIDキーのフォントには無い。[ADR 0021](adr/0021-cff-outlines.md)）。名前から引く索引は呼び出し側が持つ。`let mut buf = vec![0u32; font.glyph_names_len()]; let names = font.glyph_names(&mut buf)?;` で作り、`names.glyph_from_name(b"A")` で引く。CFFの名前が同じグリフが複数あれば、グリフIDの小さいものを返す。`glyph_name` は呼び出しごとに `HbCff1` を作るので、繰り返し引くときは作っておいた値を `glyph_name_with(g, cff)` に渡す。名前の文字列は呼び出し側の配列に書く（`name_utf8` など）か、フォントのデータを借りて返す（`glyph_name`、`sfnt_name`）。
@@ -182,7 +200,7 @@ match FontFile::new(&data)? {
 ```
 
 - 検証器は確保をせず、`Diagnostic`（表、オフセット、重大度、種類）をコールバックに渡す。`Kind::details` で種類ごとの値を取り出せる。`sofel-validate` コマンドの出力はこれを並べたもの。
-- 表ごとのモジュール：`head`、`maxp`、`hhea`、`hmtx`、`cmap`、`loca`、`glyf`、`os2`、`name`、`post`、`vhea`、`vmtx`、`vorg`。それぞれにビューの型と `validate` 関数がある。大きい番号の版（`MAXP`、`HHEA`、`HMTX`、`VHEA`、`VMTX`、`GLYF`、`LOCA`）は `CountWidth` や `TAG_WIDE` で扱う。
+- 表ごとのモジュール：`head`、`maxp`、`hhea`、`hmtx`、`cmap`、`loca`、`glyf`、`os2`、`name`、`post`、`vhea`、`vmtx`、`vorg`、`base`。`device` はBASEなどが共有するDeviceの表の見出しのビュー。`base` のオフセットをたどる関数は、空のオフセットに `Ok(None)` を、読めない先に `Err` を返す。それぞれにビューの型と `validate` 関数がある。大きい番号の版（`MAXP`、`HHEA`、`HMTX`、`VHEA`、`VMTX`、`GLYF`、`LOCA`）は `CountWidth` や `TAG_WIDE` で扱う。
 - `vhea` と `vmtx` のビューは `hhea` と `hmtx` のビューそのもの（`Vhea`、`Vmtx` は別名）で、`ascender` は縦のアセンダ、`advance` は縦の送り幅、`left_side_bearing` は上のサイドベアリングを返す。
 - OS/2の版より後の欄（例えば版1の `s_cap_height`）は `None` を返す。nameの文字列が表の外にある記録は `Name::string` が `None` を返す。postの `MAC_GLYPH_NAMES` はMacの標準の258の名前。
 - `be` は、範囲を確かめるビッグエンディアンの読み取りの関数。
@@ -270,6 +288,7 @@ sofel_font_destroy(font);
 | `sofel_font_table` | `Font::table` | `hb_face_reference_table`／`FT_Load_Sfnt_Table` |
 | `sofel_font_h_extents`、`sofel_font_v_extents`、`sofel_font_v_advance`、`sofel_font_v_origin`、`sofel_font_glyph_extents` | `Font::h_extents` など | `hb_font_get_extents_for_direction`、`hb_font_get_glyph_v_advance`、`hb_font_get_glyph_v_origin`、`hb_font_get_glyph_extents` |
 | `sofel_font_metrics_position`、`sofel_font_metrics_position_with_fallback` | `Font::metrics_position` など | `hb_ot_metrics_get_position` など |
+| `sofel_font_baseline`、`sofel_font_baseline_with_fallback`、`sofel_font_layout_font_extents` | `Font::baseline` など | `hb_ot_layout_get_baseline`、`hb_ot_layout_get_baseline_with_fallback`、`hb_ot_layout_get_font_extents` |
 | `sofel_font_os2_field`、`sofel_font_fs_type` | `Font::os2`、`Font::fs_type` | `FT_Get_Sfnt_Table`、`FT_Get_FSType_Flags` |
 | `sofel_scale_*` | `HbScale` | `hb_font_set_scale` のあとの各関数 |
 | `sofel_font_name_*`、`sofel_font_sfnt_name*`、`sofel_font_postscript_name` | `Font::names` など | `hb_ot_name_*`、`FT_Get_Sfnt_Name`、`FT_Get_Postscript_Name` |

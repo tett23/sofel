@@ -1514,3 +1514,192 @@ pub fn otto_font(num_glyphs: u16, extra: Vec<(&'static [u8; 4], Vec<u8>)>) -> Ve
     tables.sort_by(|a, b| a.0.cmp(b.0));
     sfnt_with_version(u32::from_be_bytes(*b"OTTO"), &tables)
 }
+
+// ---------------------------------------------------------------- BASE
+
+/// A BaseCoord table (ADR 0017).
+#[derive(Clone, Debug)]
+pub enum Coord {
+    /// Format 1: a coordinate.
+    F1(i16),
+    /// Format 2: a coordinate, a 16-bit reference glyph and a point.
+    F2(i16, u16, u16),
+    /// Format 3: a coordinate and a Device table (its bytes).
+    F3(i16, Option<Vec<u8>>),
+    /// Format 4: a coordinate, a 24-bit reference glyph and a point.
+    F4(i16, u32, u16),
+    /// Bytes as given.
+    Raw(Vec<u8>),
+}
+
+/// A MinMax table: minimum, maximum and FeatMinMax records.
+#[derive(Clone, Debug, Default)]
+pub struct MinMaxSpec {
+    pub min: Option<Coord>,
+    pub max: Option<Coord>,
+    pub features: Vec<([u8; 4], Option<Coord>, Option<Coord>)>,
+}
+
+/// A BaseScript table: BaseValues (default index and coordinates), the
+/// default MinMax and BaseLangSys records.
+#[derive(Clone, Debug, Default)]
+pub struct ScriptSpec {
+    pub values: Option<(u16, Vec<Option<Coord>>)>,
+    pub default_min_max: Option<MinMaxSpec>,
+    pub lang_sys: Vec<([u8; 4], Option<MinMaxSpec>)>,
+}
+
+/// An Axis table: the BaseTagList and the BaseScriptList.
+#[derive(Clone, Debug, Default)]
+pub struct AxisSpec {
+    pub tags: Option<Vec<[u8; 4]>>,
+    pub scripts: Option<Vec<([u8; 4], Option<ScriptSpec>)>>,
+}
+
+/// `header` followed by the given children; the 16-bit offset of each
+/// (from the start of `header`) is written at its position, 0 for
+/// `None`.
+fn with_children(mut header: Vec<u8>, children: Vec<(usize, Option<Vec<u8>>)>) -> Vec<u8> {
+    let mut tail = Vec::new();
+    for (pos, child) in children {
+        let off = match child {
+            Some(c) => {
+                let off = header.len() + tail.len();
+                tail.extend_from_slice(&c);
+                off as u16
+            }
+            None => 0,
+        };
+        header[pos..pos + 2].copy_from_slice(&off.to_be_bytes());
+    }
+    header.extend_from_slice(&tail);
+    header
+}
+
+/// A Device table with delta format 1 to 3 and the given packed words,
+/// or a VariationIndex table (format 0x8000) with `(outer, inner)` as
+/// `(start, end)`.
+pub fn device(start: u16, end: u16, format: u16, words: &[u16]) -> Vec<u8> {
+    let mut b = Buf::new().u16(start).u16(end).u16(format);
+    for w in words {
+        b = b.u16(*w);
+    }
+    b.done()
+}
+
+pub fn base_coord(c: &Coord) -> Vec<u8> {
+    match c {
+        Coord::F1(v) => Buf::new().u16(1).i16(*v).done(),
+        Coord::F2(v, g, p) => Buf::new().u16(2).i16(*v).u16(*g).u16(*p).done(),
+        Coord::F3(v, d) => with_children(
+            Buf::new().u16(3).i16(*v).u16(0).done(),
+            vec![(4, d.clone())],
+        ),
+        Coord::F4(v, g, p) => Buf::new().u16(4).i16(*v).u24(*g).u16(*p).done(),
+        Coord::Raw(b) => b.clone(),
+    }
+}
+
+pub fn min_max(m: &MinMaxSpec) -> Vec<u8> {
+    let mut b = Buf::new().u16(0).u16(0).u16(m.features.len() as u16);
+    for (t, _, _) in &m.features {
+        b = b.tag(t).u16(0).u16(0);
+    }
+    let mut children = vec![
+        (0, m.min.as_ref().map(base_coord)),
+        (2, m.max.as_ref().map(base_coord)),
+    ];
+    for (i, (_, min, max)) in m.features.iter().enumerate() {
+        children.push((6 + 8 * i + 4, min.as_ref().map(base_coord)));
+        children.push((6 + 8 * i + 6, max.as_ref().map(base_coord)));
+    }
+    with_children(b.done(), children)
+}
+
+pub fn base_script(s: &ScriptSpec) -> Vec<u8> {
+    let mut b = Buf::new().u16(0).u16(0).u16(s.lang_sys.len() as u16);
+    for (t, _) in &s.lang_sys {
+        b = b.tag(t).u16(0);
+    }
+    let values = s.values.as_ref().map(|(default, coords)| {
+        let mut v = Buf::new().u16(*default).u16(coords.len() as u16);
+        for _ in coords {
+            v = v.u16(0);
+        }
+        let children = coords
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (4 + 2 * i, c.as_ref().map(base_coord)))
+            .collect();
+        with_children(v.done(), children)
+    });
+    let mut children = vec![(0, values), (2, s.default_min_max.as_ref().map(min_max))];
+    for (i, (_, m)) in s.lang_sys.iter().enumerate() {
+        children.push((6 + 6 * i + 4, m.as_ref().map(min_max)));
+    }
+    with_children(b.done(), children)
+}
+
+pub fn base_axis(a: &AxisSpec) -> Vec<u8> {
+    let tags = a.tags.as_ref().map(|tags| {
+        let mut b = Buf::new().u16(tags.len() as u16);
+        for t in tags {
+            b = b.tag(t);
+        }
+        b.done()
+    });
+    let scripts = a.scripts.as_ref().map(|scripts| {
+        let mut b = Buf::new().u16(scripts.len() as u16);
+        for (t, _) in scripts {
+            b = b.tag(t).u16(0);
+        }
+        let children = scripts
+            .iter()
+            .enumerate()
+            .map(|(i, (_, s))| (2 + 6 * i + 4, s.as_ref().map(base_script)))
+            .collect();
+        with_children(b.done(), children)
+    });
+    with_children(
+        Buf::new().u16(0).u16(0).done(),
+        vec![(0, tags), (2, scripts)],
+    )
+}
+
+/// A BASE table, version 1.0.
+pub fn base(h: Option<&AxisSpec>, v: Option<&AxisSpec>) -> Vec<u8> {
+    with_children(
+        Buf::new().u32(0x0001_0000).u16(0).u16(0).done(),
+        vec![(4, h.map(base_axis)), (6, v.map(base_axis))],
+    )
+}
+
+/// A BASE table, version 1.1, with an ItemVariationStore (its bytes)
+/// placed after the axes, or a null offset.
+pub fn base11(h: Option<&AxisSpec>, v: Option<&AxisSpec>, store: Option<&[u8]>) -> Vec<u8> {
+    let mut t = with_children(
+        Buf::new().u32(0x0001_0001).u16(0).u16(0).u32(0).done(),
+        vec![(4, h.map(base_axis)), (6, v.map(base_axis))],
+    );
+    if let Some(s) = store {
+        let off = t.len() as u32;
+        t[8..12].copy_from_slice(&off.to_be_bytes());
+        t.extend_from_slice(s);
+    }
+    t
+}
+
+/// An axis with one script whose BaseValues has a format 1 coordinate
+/// for each `(tag, value)`.
+pub fn simple_axis(script: &[u8; 4], values: &[([u8; 4], i16)]) -> AxisSpec {
+    AxisSpec {
+        tags: Some(values.iter().map(|(t, _)| *t).collect()),
+        scripts: Some(vec![(
+            *script,
+            Some(ScriptSpec {
+                values: Some((0, values.iter().map(|(_, v)| Some(Coord::F1(*v))).collect())),
+                ..Default::default()
+            }),
+        )]),
+    }
+}

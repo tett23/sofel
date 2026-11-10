@@ -115,6 +115,7 @@ fn agrees_with_harfbuzz() {
                 }
             }
         }
+        items.extend(baseline_items(path, &id, &bytes));
         let Some(text) = hb_dump_mode("--names", path) else {
             continue;
         };
@@ -126,6 +127,18 @@ fn agrees_with_harfbuzz() {
             let ours = hb::sofel_names(&font, face);
             items.extend(hb::compare_names(&id, face, &ours));
         }
+    }
+
+    let base_fonts = fonts::harfbuzz_base_fonts(&testdata);
+    assert!(
+        base_fonts.len() >= 3,
+        "found only {} BASE fonts",
+        base_fonts.len()
+    );
+    for path in &base_fonts {
+        let id = fonts::id(path, &testdata);
+        let bytes = std::fs::read(path).unwrap();
+        items.extend(baseline_items(path, &id, &bytes));
     }
 
     let mut kinds: BTreeMap<String, (usize, usize)> = BTreeMap::new();
@@ -154,6 +167,196 @@ fn agrees_with_harfbuzz() {
         }
         let failed = items.iter().filter(|i| !i.ok).count();
         panic!("{msg}\n{} items, {failed} failed", items.len());
+    }
+}
+
+/// The items of `hb-dump --baselines` for every face of a font
+/// (ADR 0017).
+fn baseline_items(path: &Path, id: &str, bytes: &[u8]) -> Vec<Item> {
+    let Some(text) = hb_dump_mode("--baselines", path) else {
+        return Vec::new();
+    };
+    let faces = hb::parse_baselines(&text).unwrap_or_else(|e| panic!("{id}: {e}"));
+    faces
+        .iter()
+        .filter_map(|face| {
+            let font = Font::new(bytes, face.index).ok()?;
+            Some(hb::compare_baselines(
+                id,
+                face,
+                &hb::sofel_baselines(&font, face),
+            ))
+        })
+        .flatten()
+        .collect()
+}
+
+fn tag(t: &[u8; 4]) -> u32 {
+    u32::from_be_bytes(*t)
+}
+
+#[test]
+fn hb_dump_writes_known_baselines() {
+    // sample_tables: upem 1000, hhea 800/-200/90, no OS/2, glyphs for
+    // A..Z only (no glyph boxes).
+    let h = AxisSpec {
+        tags: Some(vec![*b"ideo", *b"romn"]),
+        scripts: Some(vec![
+            (
+                *b"DFLT",
+                Some(ScriptSpec {
+                    values: Some((1, vec![Some(Coord::F1(-120)), Some(Coord::F1(0))])),
+                    ..Default::default()
+                }),
+            ),
+            (
+                *b"latn",
+                Some(ScriptSpec {
+                    default_min_max: Some(MinMaxSpec {
+                        min: Some(Coord::F1(-300)),
+                        max: Some(Coord::F1(1100)),
+                        features: vec![],
+                    }),
+                    lang_sys: vec![(
+                        *b"ENG ",
+                        Some(MinMaxSpec {
+                            min: None,
+                            max: Some(Coord::F1(1200)),
+                            features: vec![],
+                        }),
+                    )],
+                    ..Default::default()
+                }),
+            ),
+        ]),
+    };
+    let mut tables = sample_tables();
+    tables.push((b"BASE", base(Some(&h), None)));
+    tables.sort_by_key(|(t, _)| **t);
+    let path = temp_font("baselines", &sfnt(&tables));
+    let text = hb_dump_mode("--baselines", &path).unwrap();
+    std::fs::remove_file(&path).ok();
+    let faces = hb::parse_baselines(&text).unwrap();
+    assert_eq!(faces.len(), 1);
+    let f = &faces[0];
+    assert_eq!(f.upem, 1000);
+    assert_eq!(f.scales.len(), 6);
+    let em = &f.scales[0];
+    let b = |d: char, s: &[u8; 4], t: &[u8; 4]| {
+        *em.baselines
+            .iter()
+            .find(|x| x.0 == d && x.1 == tag(s) && x.2 == tag(t))
+            .unwrap()
+    };
+    let (h, v) = ('h', 'v');
+    assert_eq!(
+        b(h, b"hani", b"ideo"),
+        (h, tag(b"hani"), tag(b"ideo"), true, -120, -120)
+    );
+    assert_eq!(
+        b(h, b"hani", b"idtp"),
+        (h, tag(b"hani"), tag(b"idtp"), false, 0, 880)
+    );
+    assert_eq!(
+        b(h, b"hani", b"Idce"),
+        (h, tag(b"hani"), tag(b"Idce"), false, 0, 380)
+    );
+    assert_eq!(
+        b(h, b"latn", b"romn"),
+        (h, tag(b"latn"), tag(b"romn"), false, 0, 0)
+    );
+    assert_eq!(
+        b(h, b"deva", b"hang"),
+        (h, tag(b"deva"), tag(b"hang"), false, 0, 600)
+    );
+    assert_eq!(
+        b(v, b"hani", b"Idce"),
+        (v, tag(b"hani"), tag(b"Idce"), false, 0, 0)
+    );
+    let e = |s: &[u8; 4], l: &[u8; 4]| {
+        *em.extents
+            .iter()
+            .find(|x| x.0 == 'h' && x.1 == tag(s) && x.2 == tag(l))
+            .unwrap()
+    };
+    assert_eq!(
+        e(b"latn", b"dflt"),
+        ('h', tag(b"latn"), tag(b"dflt"), true, [1100, -300, 0])
+    );
+    assert_eq!(
+        e(b"latn", b"ENG "),
+        ('h', tag(b"latn"), tag(b"ENG "), true, [1200, 0, 0])
+    );
+    assert_eq!(
+        e(b"hani", b"dflt"),
+        ('h', tag(b"hani"), tag(b"dflt"), false, [800, -200, 90])
+    );
+    // The language system tags of the table are listed.
+    assert!(em.extents.iter().any(|x| x.2 == tag(b"ENG ")));
+}
+
+#[test]
+fn hb_dump_rejects_bases_like_sofel() {
+    // HarfBuzz's sanitizer rejects the whole table for a bad offset and
+    // for running out of its operation budget (64 per byte): 600 script
+    // records sharing one BaseScript with 600 language systems check
+    // 600 * 3600 bytes, more than 64 times the table's ~7 kB.
+    let langs: Vec<([u8; 4], Option<MinMaxSpec>)> = (0..600u32)
+        .map(|i| {
+            let t = (0x4141_4141 + i).to_be_bytes();
+            (t, None)
+        })
+        .collect();
+    let shared = ScriptSpec {
+        values: Some((0, vec![Some(Coord::F1(5))])),
+        lang_sys: langs,
+        ..Default::default()
+    };
+    let few = AxisSpec {
+        tags: Some(vec![*b"romn"]),
+        scripts: Some(vec![(*b"DFLT", Some(shared.clone()))]),
+    };
+    let mut cases = vec![(base(Some(&few), None), true)];
+    let mut bad = base(Some(&few), None);
+    bad[6..8].copy_from_slice(&0xFFF0u16.to_be_bytes());
+    cases.push((bad, false));
+    // Point 600 script records at the first one's BaseScript.
+    let one = base(Some(&few), None);
+    let axis = 8usize;
+    let list = axis + u16::from_be_bytes([one[axis + 2], one[axis + 3]]) as usize;
+    let script = list + u16::from_be_bytes([one[list + 6], one[list + 7]]) as usize;
+    let mut many = one[..list].to_vec();
+    let records = 600usize;
+    let new_script_off = 2 + 6 * records;
+    many.extend_from_slice(&(records as u16).to_be_bytes());
+    for i in 0..records {
+        many.extend_from_slice(&(0x4141_4141u32 + i as u32).to_be_bytes());
+        many.extend_from_slice(&(new_script_off as u16).to_be_bytes());
+    }
+    many.extend_from_slice(&one[script..]);
+    // The BaseScript's own offsets are relative to it, so it moves as is.
+    cases.push((many, false));
+    for (table, kept) in cases {
+        let mut tables = sample_tables();
+        tables.push((b"BASE", table));
+        tables.sort_by_key(|(t, _)| **t);
+        let bytes = sfnt(&tables);
+        let path = temp_font("reject", &bytes);
+        let text = hb_dump_mode("--baselines", &path).unwrap();
+        std::fs::remove_file(&path).ok();
+        let face = &hb::parse_baselines(&text).unwrap()[0];
+        let found = face.scales[0]
+            .baselines
+            .iter()
+            .any(|x| x.2 == tag(b"romn") && x.3);
+        assert_eq!(found, kept);
+        let font = Font::new(&bytes, 0).unwrap();
+        let ours = hb::sofel_baselines(&font, face);
+        assert!(
+            hb::compare_baselines("reject", face, &ours)
+                .iter()
+                .all(|i| i.ok)
+        );
     }
 }
 

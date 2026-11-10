@@ -1,5 +1,5 @@
 # Items of the HarfBuzz comparison that are expected to fail (ADR 0005,
-# ADR 0016), one identifier per line: <font>#<face>:hb:<item>.
+# ADR 0016, ADR 0017), one identifier per line: <font>#<face>:hb:<item>.
 # Give the reason after the identifier as a comment: `<id>  # <reason>`.
 # Remove an entry when it passes; the test fails until you do.
 # sofel gives glyph boxes from glyf, CFF2 and CFF (ADR 0021); the boxes
@@ -17,6 +17,7 @@ harfbuzz/test/shape/data/in-house/fonts/ee39587d13b2afa5499cc79e45780aa79293bbd4
 harfbuzz/test/shape/data/in-house/fonts/ee39587d13b2afa5499cc79e45780aa79293bbd4.ttf#0:hb:v_origin  # color glyph extents (CBDT): ADR 0023 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/fcbaa518d3cce441ed37ae3b1fed6a19e9b54efd.ttf#0:hb:extents  # color glyph extents (sbix): ADR 0023
 harfbuzz/test/shape/data/in-house/fonts/fcbaa518d3cce441ed37ae3b1fed6a19e9b54efd.ttf#0:hb:v_origin  # color glyph extents (sbix): ADR 0023 (the vertical origin is centered on the box)
+harfbuzz/test/subset/data/fonts/BungeeColor-Regular.ttf#0:hb:baseline-fallback  # the math and hang fallbacks use the glyph boxes; color glyph extents (COLR): ADR 0023
 harfbuzz/test/subset/data/fonts/BungeeColor-Regular.ttf#0:hb:extents  # color glyph extents (COLR): ADR 0023
 harfbuzz/test/subset/data/fonts/BungeeColor-Regular.ttf#0:hb:v_origin  # color glyph extents (COLR): ADR 0023 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/Foldit.ttf#0:hb:extents  # color glyph extents (COLR): ADR 0023

@@ -827,6 +827,34 @@ static void check_metrics(const sofel_font_t *font, const sofel_scale_t *scale,
   }
 }
 
+/* The baselines of ADR 0017, unscaled (scale NULL) and scaled. */
+static void check_baselines(const sofel_font_t *font, const sofel_scale_t *scale,
+                            const struct baseline_case *cases, size_t count,
+                            const struct layout_extents_case *ext_cases, size_t ext_count) {
+  size_t i;
+  for (i = 0; i < count; i++) {
+    const struct baseline_case *c = &cases[i];
+    int32_t v = 12345, s;
+    s = scale ? sofel_scale_baseline(scale, font, c->tag, c->direction, c->script, &v)
+              : sofel_font_baseline(font, c->tag, c->direction, c->script, &v);
+    CHECK(s == c->status);
+    CHECK(s != SOFEL_OK || v == c->value);
+    s = scale ? sofel_scale_baseline_with_fallback(scale, font, c->tag, c->direction, c->script,
+                                                   &v)
+              : sofel_font_baseline_with_fallback(font, c->tag, c->direction, c->script, &v);
+    CHECK(s == SOFEL_OK && v == c->fallback);
+  }
+  for (i = 0; i < ext_count; i++) {
+    const struct layout_extents_case *c = &ext_cases[i];
+    int32_t e[3] = {0, 0, 0}, found = 12345, s;
+    s = scale ? sofel_scale_layout_font_extents(scale, font, c->direction, c->script,
+                                                c->language, e, &found)
+              : sofel_font_layout_font_extents(font, c->direction, c->script, c->language, e,
+                                               &found);
+    CHECK(s == SOFEL_OK && found == c->found && memcmp(e, c->extents, sizeof e) == 0);
+  }
+}
+
 static void test_names(const sofel_font_t *font) {
   char buf[128];
   size_t len = 0, written = 0, total = 0, count = 0, i;
@@ -966,6 +994,21 @@ static void test_metrics(void) {
   check_vglyphs(font, NULL, unscaled_glyphs, COUNT(unscaled_glyphs));
   check_metrics(font, NULL, unscaled_metrics, COUNT(unscaled_metrics));
   CHECK(sofel_font_metrics_position(font, 0x6e6f6e65u, &v) == SOFEL_ERROR_INVALID_ARGUMENT);
+  check_baselines(font, NULL, unscaled_baselines, COUNT(unscaled_baselines),
+                  unscaled_layout_extents, COUNT(unscaled_layout_extents));
+  /* Golem's em box center: Idce, horizontal, hani. */
+  CHECK(sofel_font_baseline_with_fallback(font, SOFEL_BASELINE_IDEO_EMBOX_CENTRAL,
+                                          SOFEL_DIRECTION_HORIZONTAL,
+                                          SOFEL_TAG('h', 'a', 'n', 'i'), &v) == SOFEL_OK);
+  CHECK(sofel_font_baseline(font, SOFEL_BASELINE_ROMAN, 2, SOFEL_TAG('l', 'a', 't', 'n'), &v) ==
+        SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_font_baseline(font, SOFEL_BASELINE_MATH, SOFEL_DIRECTION_HORIZONTAL,
+                            SOFEL_TAG('l', 'a', 't', 'n'), &v) == SOFEL_ERROR_NOT_FOUND);
+  CHECK(sofel_font_baseline(font, SOFEL_BASELINE_ROMAN, SOFEL_DIRECTION_HORIZONTAL,
+                            SOFEL_TAG('l', 'a', 't', 'n'), NULL) == SOFEL_ERROR_NULL);
+  CHECK(sofel_font_layout_font_extents(font, SOFEL_DIRECTION_VERTICAL, 0, 0, ext, NULL) ==
+        SOFEL_ERROR_NULL);
+  CHECK(sofel_font_layout_font_extents(font, -1, 0, 0, ext, &v) == SOFEL_ERROR_INVALID_ARGUMENT);
 
   scale = sofel_scale_create(font, SCALE_X, SCALE_Y, &e);
   CHECK(e == SOFEL_OK && scale != NULL);
@@ -976,6 +1019,10 @@ static void test_metrics(void) {
           memcmp(ext, scaled_v_extents, sizeof ext) == 0);
     check_vglyphs(font, scale, scaled_glyphs, COUNT(scaled_glyphs));
     check_metrics(font, scale, scaled_metrics, COUNT(scaled_metrics));
+    check_baselines(font, scale, scaled_baselines, COUNT(scaled_baselines),
+                    scaled_layout_extents, COUNT(scaled_layout_extents));
+    CHECK(sofel_scale_baseline(NULL, font, SOFEL_BASELINE_ROMAN, SOFEL_DIRECTION_HORIZONTAL, 0,
+                               &v) == SOFEL_ERROR_NULL);
     for (i = 0; i < COUNT(em_cases); i++) {
       CHECK(sofel_scale_em_scale_x(scale, em_cases[i].v, &v) == SOFEL_OK && v == em_cases[i].x);
       CHECK(sofel_scale_em_scale_y(scale, em_cases[i].v, &v) == SOFEL_OK && v == em_cases[i].y);
