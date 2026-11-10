@@ -9,12 +9,6 @@
 
 ## 未実装の ADR
 
-### 文書変更のCI
-
-[ADR 0032](adr/0032-documentation-only-ci.md) と [ADR 0034](adr/0034-ci-document-input-classification.md) では、用途を確認した文書をディレクトリやglobで登録し、文書だけの変更のビルドとテストを省く。
-ビルドやテストの入力の除外規則を優先し、文書と変更禁止の記録の検証は常に実行する。
-これらのADRは採択（未実装）である。
-
 ### 変化量の評価の修正案
 
 [ADR 0029](adr/0029-variation-deltas.md) の引き継ぎ調査による修正案を、[ADR 0030](adr/0030-variation-evaluation-corrections.md) にまとめた。
