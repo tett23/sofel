@@ -343,7 +343,8 @@ pub fn fonts(data: &Path) -> Result<Vec<PathBuf>, String> {
 }
 
 /// sofel's output for `hb-subset` arguments (with `--font-file`), parsed
-/// by `sofel_cli::subset`, or why it failed.
+/// by `sofel_cli::subset` (with `--preprocess`, through a `Prepared`
+/// value), or why it failed.
 pub fn run_sofel(args: &[String]) -> Result<Vec<u8>, String> {
     let font_file = args
         .iter()
@@ -353,5 +354,6 @@ pub fn run_sofel(args: &[String]) -> Result<Vec<u8>, String> {
     let bytes = std::fs::read(font_file).map_err(|e| e.to_string())?;
     let font = sofel_font::Font::new(&bytes, 0).map_err(|e| format!("{e:?}"))?;
     let input = sofel_cli::subset::resolve(&opts, &font)?;
-    sofel_subset::subset(&font, &input).map_err(|e| e.to_string())
+    let prepared = sofel_cli::subset::prepare(&opts, &font);
+    sofel_cli::subset::subset_once(&font, &input, prepared.as_ref()).map_err(|e| e.to_string())
 }

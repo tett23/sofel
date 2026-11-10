@@ -71,6 +71,18 @@ unsafe extern "C" {
     ) -> u64;
 
     // Subsetting (ADR 0022).
+    pub fn bhb_subset_face(
+        face: *mut c_void,
+        glyphs: *const c_uint,
+        num_glyphs: c_uint,
+        unicodes: *const c_uint,
+        num_unicodes: c_uint,
+        flags: c_uint,
+        len: *mut c_uint,
+    ) -> u64;
+    pub fn bhb_subset_preprocess(font: *mut c_void) -> *mut c_void;
+    pub fn bhb_face_glyph_count(face: *mut c_void) -> c_uint;
+    pub fn bhb_face_destroy(face: *mut c_void);
     pub fn bhb_subset(
         font: *mut c_void,
         glyphs: *const c_uint,
@@ -253,6 +265,45 @@ impl HbFont {
         // the call returns.
         let v = unsafe { bhb_open_extents(data.as_ptr(), data.len() as c_uint, gid) };
         (v != c_long::MIN).then_some(v as i64)
+    }
+}
+
+/// A face from `hb_subset_preprocess`.
+pub struct HbPreprocessed(*mut c_void);
+
+impl HbPreprocessed {
+    /// `hb_subset_preprocess` of the font's face.
+    pub fn new(font: &HbFont) -> HbPreprocessed {
+        // SAFETY: a valid font; the result is a new face (never NULL).
+        HbPreprocessed(unsafe { bhb_subset_preprocess(font.0) })
+    }
+    pub fn glyph_count(&self) -> u32 {
+        // SAFETY: a valid face.
+        unsafe { bhb_face_glyph_count(self.0) }
+    }
+    /// As [`HbFont::subset`], on the preprocessed face.
+    pub fn subset(&self, glyphs: &[u32], unicodes: &[u32], flags: u32) -> (u64, usize) {
+        let mut len: c_uint = 0;
+        // SAFETY: a valid face; the arrays have the lengths given.
+        let h = unsafe {
+            bhb_subset_face(
+                self.0,
+                glyphs.as_ptr(),
+                glyphs.len() as c_uint,
+                unicodes.as_ptr(),
+                unicodes.len() as c_uint,
+                flags,
+                &mut len,
+            )
+        };
+        (h, len as usize)
+    }
+}
+
+impl Drop for HbPreprocessed {
+    fn drop(&mut self) {
+        // SAFETY: a valid face, dropped once.
+        unsafe { bhb_face_destroy(self.0) };
     }
 }
 

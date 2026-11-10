@@ -254,6 +254,11 @@ impl<'a> HbCff1<'a> {
         self.global_subrs
     }
 
+    /// The CharStrings INDEX (`charStrings`).
+    pub fn char_strings(&self) -> HbIndex<'a> {
+        self.char_strings
+    }
+
     /// The Font DICT of `glyph` (`fdSelect->get_fd`): 0 without FDSelect.
     pub fn fd(&self, glyph: u32) -> u32 {
         self.fd_select.fd(glyph)

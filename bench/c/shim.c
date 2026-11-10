@@ -547,15 +547,15 @@ long bft_sbit(void *face, unsigned gid)
 
 #include <hb-subset.h>
 
-/* hb_subset_or_fail and hb_face_reference_blob on the font's face, with
+/* hb_subset_or_fail and hb_face_reference_blob on a face, with
  * an input made here: the glyphs or the characters given, and the
  * flags. Returns the FNV-1a 64-bit hash of the subset font, with its
  * length in *len; 0 with *len 0 when subsetting fails. */
-unsigned long long bhb_subset(void *font, const unsigned *glyphs, unsigned num_glyphs,
-                              const unsigned *unicodes, unsigned num_unicodes, unsigned flags,
-                              unsigned *len)
+unsigned long long bhb_subset_face(void *face_, const unsigned *glyphs, unsigned num_glyphs,
+                                   const unsigned *unicodes, unsigned num_unicodes,
+                                   unsigned flags, unsigned *len)
 {
-  hb_face_t *face = hb_font_get_face((hb_font_t *)font);
+  hb_face_t *face = (hb_face_t *)face_;
   hb_subset_input_t *input = hb_subset_input_create_or_fail();
   hb_set_t *gs, *us;
   hb_face_t *out;
@@ -586,4 +586,31 @@ unsigned long long bhb_subset(void *font, const unsigned *glyphs, unsigned num_g
   }
   hb_face_destroy(out);
   return h;
+}
+
+/* bhb_subset_face on the font's face. */
+unsigned long long bhb_subset(void *font, const unsigned *glyphs, unsigned num_glyphs,
+                              const unsigned *unicodes, unsigned num_unicodes, unsigned flags,
+                              unsigned *len)
+{
+  return bhb_subset_face(hb_font_get_face((hb_font_t *)font), glyphs, num_glyphs, unicodes,
+                         num_unicodes, flags, len);
+}
+
+/* hb_subset_preprocess of the font's face: a new face, for
+ * bhb_subset_face and bhb_face_destroy. */
+void *bhb_subset_preprocess(void *font)
+{
+  return hb_subset_preprocess(hb_font_get_face((hb_font_t *)font));
+}
+
+/* The glyph count of a face. */
+unsigned bhb_face_glyph_count(void *face)
+{
+  return hb_face_get_glyph_count((hb_face_t *)face);
+}
+
+void bhb_face_destroy(void *face)
+{
+  hb_face_destroy((hb_face_t *)face);
 }

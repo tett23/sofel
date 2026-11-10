@@ -94,7 +94,9 @@ impl Plan {
         }
         if let Some(&tag) = pending.iter().next() {
             // "Table dependencies unable to be satisfied. Subset failed."
-            return Err(SubsetError::Failed { tag: Tag::from_u32(tag) });
+            return Err(SubsetError::Failed {
+                tag: Tag::from_u32(tag),
+            });
         }
         let list: Vec<(Tag, &[u8])> = tables.iter().map(|(t, d)| (*t, d.as_slice())).collect();
         sofel_write::build_sfnt(&list).map_err(|_| SubsetError::Failed { tag: t(b"sfnt") })

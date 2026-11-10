@@ -11,6 +11,9 @@
 //! - `hb-dump/golem/<font>:pin`: the same with every axis pinned to its
 //!   default (`--instance=*=drop`), for the fonts with an `fvar` table
 //!   (HarfBuzz refuses to pin a font without axes).
+//! - `hb-dump/golem/<font>:keep+prepared` and `:pin+prepared`: the same
+//!   with `--preprocess` (`hb_subset_preprocess` in HarfBuzz,
+//!   `sofel_subset::Prepared` in sofel).
 //! - `hb-dump/repack/<tests file>`: the repacking tests of
 //!   `test/subset/data/repack_tests/` with `run-repack-tests.py`'s
 //!   arguments.
@@ -96,14 +99,15 @@ fn subsetting_agrees_with_harfbuzz() {
             ),
             Err(_) => (vec![1], false),
         };
-        cases.push((
-            format!("hb-dump/golem/{name}:keep"),
-            subset::golem_args(&path, &glyphs, false),
-        ));
-        if variable {
+        for pin in [false, true].into_iter().filter(|&p| !p || variable) {
+            let kind = if pin { "pin" } else { "keep" };
+            let args = subset::golem_args(&path, &glyphs, pin);
+            let mut preprocessed = args.clone();
+            preprocessed.push("--preprocess".to_string());
+            cases.push((format!("hb-dump/golem/{name}:{kind}"), args));
             cases.push((
-                format!("hb-dump/golem/{name}:pin"),
-                subset::golem_args(&path, &glyphs, true),
+                format!("hb-dump/golem/{name}:{kind}+prepared"),
+                preprocessed,
             ));
         }
     }

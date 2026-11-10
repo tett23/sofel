@@ -14,6 +14,7 @@ use crate::input::{Flags, Input, SetKind};
 use crate::instance::{self, VarPlan};
 use crate::layout::{self, Gsubgpos, LayoutPlan};
 use crate::limits;
+use crate::prepared::{Accel, Key, Prepared};
 use crate::set::{INVALID, RangeSet};
 use crate::tables::cff::SeacFinder;
 use crate::tables::colr::{self, ColorPlan};
@@ -127,6 +128,8 @@ pub struct Plan {
     /// The glyphs after the MATH closure (`_glyphset_mathed`).
     pub(crate) glyphset_mathed: RangeSet,
     pub(crate) color: ColorPlan,
+    /// The preprocessed data the plan was made with (`accelerator`).
+    pub(crate) prepared: Option<Prepared>,
 }
 
 /// The layout part of the plan (the `gsub_*`, `gpos_*`,
@@ -226,6 +229,35 @@ impl Plan {
     /// budget, and [`SubsetError::Unsupported`] for tables and settings
     /// not subset yet.
     pub fn new(font: &Font<'_>, input: &Input) -> Result<Plan, SubsetError> {
+        Plan::build(font, input, None)
+    }
+
+    /// [`Plan::new`] with the data `prepared` holds for `font`
+    /// (`hb_subset_plan_create_or_fail` on a face from
+    /// `hb_subset_preprocess`): the same plan, made faster, whose
+    /// [`Plan::execute`] also uses `prepared` and gives the same bytes.
+    ///
+    /// # Errors
+    ///
+    /// As [`Plan::new`], and [`SubsetError::InvalidInput`] when
+    /// `prepared` was made from a font with another glyph count or other
+    /// lengths of the cmap, DMAP or CFF table.
+    pub fn with_prepared(
+        font: &Font<'_>,
+        prepared: &Prepared,
+        input: &Input,
+    ) -> Result<Plan, SubsetError> {
+        if prepared.accel().key != Key::of(font) {
+            return Err(SubsetError::InvalidInput);
+        }
+        Plan::build(font, input, Some(prepared))
+    }
+
+    fn build(
+        font: &Font<'_>,
+        input: &Input,
+        prepared: Option<&Prepared>,
+    ) -> Result<Plan, SubsetError> {
         let num_glyphs = font.num_glyphs();
         if num_glyphs == 0 {
             return Err(SubsetError::NoGlyphs);
@@ -307,58 +339,27 @@ impl Plan {
             glyphset_cmaped: RangeSet::new(),
             glyphset_mathed: RangeSet::new(),
             color: ColorPlan::default(),
+            prepared: prepared.cloned(),
         };
 
         // _populate_unicodes_to_retain
-        let mut glyphset_gsub = RangeSet::new();
         let unicodes = unicode_closure(
             input.set(SetKind::Unicodes),
             !flags.has(Flags::NO_BIDI_CLOSURE),
         );
-        let mut list: Vec<(u32, u32)> = Vec::new();
-        if glyphs_in.is_empty() && unicodes.len() < u64::from(num_glyphs) {
-            for cp in unicodes.iter() {
-                if let Some(g) = cmap.nominal_glyph(cp) {
-                    p.codepoint_to_glyph.insert(cp, g);
-                    list.push((cp, g));
-                }
-            }
-        } else {
-            let mut cmap_unicodes = RangeSet::new();
-            let mut mapping = BTreeMap::new();
-            cmap.collect_mapping(&mut cmap_unicodes, &mut mapping);
-            for (a, b) in cmap_unicodes.ranges() {
-                for cp in a..=b {
-                    let gid = mapping.get(&cp).copied().unwrap_or(INVALID);
-                    if !unicodes.contains(cp) && !glyphs_in.contains(gid) {
-                        continue;
-                    }
-                    if gid == INVALID {
-                        continue;
-                    }
-                    p.codepoint_to_glyph.insert(cp, gid);
-                    list.push((cp, gid));
-                }
-            }
-            for (a, b) in glyphs_in.ranges() {
-                if a >= num_glyphs {
-                    break;
-                }
-                glyphset_gsub.add_range(a, b.min(num_glyphs.saturating_sub(1)));
-            }
-        }
-        list.iter().for_each(|&(cp, g)| {
-            p.unicodes.add(cp);
-            glyphset_gsub.add(g);
-        });
-        p.os2_min_cp = p.unicodes.min();
-        p.os2_max_cp = p.unicodes.max();
-        let mut selectors = RangeSet::new();
-        cmap.collect_variation_selectors(&mut selectors);
-        selectors
-            .iter()
-            .filter(|s| unicodes.contains(*s))
-            .for_each(|s| p.unicodes.add(s));
+        let u = populate_unicodes(
+            &cmap,
+            &unicodes,
+            glyphs_in,
+            num_glyphs,
+            prepared.map(Prepared::accel),
+        );
+        let mut glyphset_gsub = u.glyphset_gsub;
+        let list = u.list;
+        p.codepoint_to_glyph = u.codepoint_to_glyph;
+        p.unicodes = u.unicodes;
+        p.os2_min_cp = u.os2_min_cp;
+        p.os2_max_cp = u.os2_max_cp;
 
         // _populate_gids_to_retain
         glyphset_gsub.add(0);
@@ -475,8 +476,9 @@ impl Plan {
             p.glyphset.union(&cur);
         }
         // _add_cff_seac_components: nothing to add when every glyph is
-        // kept already.
+        // kept already, or when the prepared value found no seac.
         if cur.len() != u64::from(num_glyphs)
+            && prepared.is_none_or(|p| p.accel().has_seac)
             && let Some(cff) = SeacFinder::new(font)
         {
             for (base, accent) in cur.iter().filter_map(|g| cff.components(g)) {
@@ -665,9 +667,122 @@ fn fvar_name_ids(fvar: &[u8], names: &mut RangeSet) {
     }
 }
 
+/// What `_populate_unicodes_to_retain` collects.
+pub(crate) struct Unicodes {
+    /// `unicode_to_new_gid_list` (with old glyphs), ascending.
+    pub list: Vec<(u32, u32)>,
+    pub codepoint_to_glyph: BTreeMap<u32, u32>,
+    /// `plan->unicodes`, with the variation selectors.
+    pub unicodes: RangeSet,
+    /// The glyphs of `list` and the requested glyphs below the count.
+    pub glyphset_gsub: RangeSet,
+    pub os2_min_cp: u32,
+    pub os2_max_cp: u32,
+}
+
+/// `_populate_unicodes_to_retain` for the characters `unicodes` (after
+/// `_unicode_closure`) and the requested glyphs `glyphs`, with the
+/// prepared value's map when there is one (`plan->accelerator`).
+pub(crate) fn populate_unicodes(
+    cmap: &CmapAccel<'_>,
+    unicodes: &RangeSet,
+    glyphs: &RangeSet,
+    num_glyphs: u32,
+    accel: Option<&Accel>,
+) -> Unicodes {
+    let mut glyphset_gsub = RangeSet::new();
+    let mut codepoint_to_glyph = BTreeMap::new();
+    let mut list: Vec<(u32, u32)> = Vec::new();
+    let mut fill = |cp: u32, gid: u32, list: &mut Vec<(u32, u32)>| {
+        if gid != INVALID {
+            codepoint_to_glyph.insert(cp, gid);
+            list.push((cp, gid));
+        }
+    };
+    if glyphs.is_empty() && unicodes.len() < u64::from(num_glyphs) {
+        // The direct lookup, for few characters and no glyphs.
+        for cp in unicodes.iter() {
+            let gid = match accel {
+                Some(a) => a.unicode_to_gid.get(&cp).copied(),
+                None => cmap.nominal_glyph(cp),
+            };
+            fill(cp, gid.unwrap_or(INVALID), &mut list);
+        }
+    } else {
+        let mut storage = (RangeSet::new(), BTreeMap::new());
+        let (cmap_unicodes, mapping) = match accel {
+            Some(a) => (&a.unicodes, &a.unicode_to_gid),
+            None => {
+                cmap.collect_mapping(&mut storage.0, &mut storage.1);
+                (&storage.0, &storage.1)
+            }
+        };
+        let get = |cp: u32| mapping.get(&cp).copied().unwrap_or(INVALID);
+        match accel {
+            Some(a)
+                if unicodes.len() < cmap_unicodes.len() && glyphs.len() < cmap_unicodes.len() =>
+            {
+                // The reverse map: the characters of the requested
+                // glyphs, then the requested characters not added yet.
+                for gid in glyphs.iter() {
+                    for &cp in a.gid_to_unicodes.get(&gid).into_iter().flatten() {
+                        fill(cp, gid, &mut list);
+                    }
+                }
+                let added: alloc::collections::BTreeSet<u32> = list.iter().map(|p| p.0).collect();
+                for cp in unicodes.iter().filter(|cp| !added.contains(cp)) {
+                    fill(cp, get(cp), &mut list);
+                }
+                list.sort_unstable();
+            }
+            _ => {
+                // The walk over the mapping.
+                for (a, b) in cmap_unicodes.ranges() {
+                    for cp in a..=b {
+                        let gid = get(cp);
+                        if !unicodes.contains(cp) && !glyphs.contains(gid) {
+                            continue;
+                        }
+                        fill(cp, gid, &mut list);
+                    }
+                }
+            }
+        }
+        // The requested glyphs that the cmap does not map.
+        for (a, b) in glyphs.ranges() {
+            if a >= num_glyphs {
+                break;
+            }
+            glyphset_gsub.add_range(a, b.min(num_glyphs.saturating_sub(1)));
+        }
+    }
+    let mut kept = RangeSet::new();
+    list.iter().for_each(|&(cp, g)| {
+        kept.add(cp);
+        glyphset_gsub.add(g);
+    });
+    let (os2_min_cp, os2_max_cp) = (kept.min(), kept.max());
+    // Variation selectors have no glyph but are kept; the OS/2 range is
+    // taken before they are added.
+    let mut selectors = RangeSet::new();
+    cmap.collect_variation_selectors(&mut selectors);
+    selectors
+        .iter()
+        .filter(|s| unicodes.contains(*s))
+        .for_each(|s| kept.add(s));
+    Unicodes {
+        list,
+        codepoint_to_glyph,
+        unicodes: kept,
+        glyphset_gsub,
+        os2_min_cp,
+        os2_max_cp,
+    }
+}
+
 /// `_unicode_closure`: the characters and, unless disabled or inverted,
 /// their mirrored characters.
-fn unicode_closure(unicodes: &RangeSet, bidi: bool) -> RangeSet {
+pub(crate) fn unicode_closure(unicodes: &RangeSet, bidi: bool) -> RangeSet {
     let mut out = unicodes.clone();
     if !bidi || out.is_inverted() {
         return out;

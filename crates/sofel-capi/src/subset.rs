@@ -7,7 +7,9 @@
 //! HarfBuzz changes an `hb_subset_input_t` in place.
 
 use sofel_font::read::Tag;
-use sofel_subset::{AxisRange, Flags, INVALID, Input, Plan, RangeSet, SetKind, SubsetError};
+use sofel_subset::{
+    AxisRange, Flags, INVALID, Input, Plan, Prepared, RangeSet, SetKind, SubsetError,
+};
 use sofel_write::{Link, Object, Whence, WriteError};
 
 use crate::{
@@ -47,8 +49,10 @@ pub struct SofelSubsetPlan {
     plan: Plan,
 }
 
-/// `sofel_subset_prepared_t`: none can be made yet (ADR 0022 stage 11).
-pub enum SofelSubsetPrepared {}
+/// `sofel_subset_prepared_t`.
+pub struct SofelSubsetPrepared {
+    prepared: Prepared,
+}
 
 /// `sofel_serialize_link_t`.
 #[repr(C)]
@@ -662,14 +666,51 @@ pub unsafe extern "C" fn sofel_subset_axis_range_to_string(
     })())
 }
 
+// ------------------------------------------------------- preprocessing
+
+/// `sofel_subset_prepared_create`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `prepared` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_subset_prepared_create(
+    font: *const SofelFont,
+    prepared: *mut *mut SofelSubsetPrepared,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, prepared) = unsafe { (r(font), w(prepared)) };
+    status((|| {
+        let (font, out) = (some(font)?, some(prepared)?);
+        let p = Prepared::new(&font.font);
+        *out = Box::into_raw(Box::new(SofelSubsetPrepared { prepared: p }));
+        Ok(())
+    })())
+}
+
+/// `sofel_subset_prepared_destroy`.
+///
+/// # Safety
+///
+/// `prepared` is NULL or from `sofel_subset_prepared_create`, not yet
+/// destroyed, that no other thread uses. Plans made with it keep their
+/// own reference to its data and may outlive it.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_subset_prepared_destroy(prepared: *mut SofelSubsetPrepared) {
+    if !prepared.is_null() {
+        // SAFETY: the pointer came from Box::into_raw and is dropped once.
+        drop(unsafe { Box::from_raw(prepared) });
+    }
+}
+
 // ---------------------------------------------------------------- plans
 
 /// `sofel_subset_plan_create`.
 ///
 /// # Safety
 ///
-/// `font` is NULL or a live font; `prepared` is NULL; `input` is NULL or
-/// a live input; `plan` is NULL or writable.
+/// `font` is NULL or a live font; `prepared` is NULL or a live prepared
+/// value; `input` is NULL or a live input; `plan` is NULL or writable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sofel_subset_plan_create(
     font: *const SofelFont,
@@ -678,15 +719,67 @@ pub unsafe extern "C" fn sofel_subset_plan_create(
     plan: *mut *mut SofelSubsetPlan,
 ) -> i32 {
     // SAFETY: the caller's conditions.
-    let (font, input, plan) = unsafe { (r(font), r(input), w(plan)) };
+    let (font, prepared, input, plan) = unsafe { (r(font), r(prepared), r(input), w(plan)) };
     status((|| {
         let (font, input, plan) = (some(font)?, some(input)?, some(plan)?);
-        if !prepared.is_null() {
-            return Err(ERROR_INVALID_ARGUMENT);
+        let p = match prepared {
+            Some(pr) => Plan::with_prepared(&font.font, &pr.prepared, &input.input),
+            None => Plan::new(&font.font, &input.input),
         }
-        let p = Plan::new(&font.font, &input.input).map_err(subset_error)?;
+        .map_err(subset_error)?;
         *plan = Box::into_raw(Box::new(SofelSubsetPlan { plan: p }));
         Ok(())
+    })())
+}
+
+/// A CFF slice for C: the bytes, without copying.
+fn cff_bytes(b: Option<&[u8]>, data: Option<&mut *const u8>, len: Option<&mut usize>) -> Status {
+    let (data, len) = (some(data)?, some(len)?);
+    let b = b.ok_or(ERROR_NOT_FOUND)?;
+    (*data, *len) = (b.as_ptr(), b.len());
+    Ok(())
+}
+
+/// `sofel_subset_cff_charstrings_index`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `data` and `len` are NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_subset_cff_charstrings_index(
+    font: *const SofelFont,
+    data: *mut *const u8,
+    len: *mut usize,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, data, len) = unsafe { (r(font), w(data), w(len)) };
+    status((|| {
+        let font = some(font)?;
+        cff_bytes(sofel_subset::cff_charstrings_index(&font.font), data, len)
+    })())
+}
+
+/// `sofel_subset_cff_charstring_data`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `data` and `len` are NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_subset_cff_charstring_data(
+    font: *const SofelFont,
+    glyph: u32,
+    data: *mut *const u8,
+    len: *mut usize,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, data, len) = unsafe { (r(font), w(data), w(len)) };
+    status((|| {
+        let font = some(font)?;
+        cff_bytes(
+            sofel_subset::cff_charstring_data(&font.font, glyph),
+            data,
+            len,
+        )
     })())
 }
 

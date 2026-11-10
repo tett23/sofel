@@ -14,7 +14,9 @@ use std::io::{BufRead, Read, Write};
 
 use sofel_font::Font;
 use sofel_read::Tag;
-use sofel_subset::{Flags, INVALID, Input, RangeSet, SetKind, SubsetError, axis_range_from_string};
+use sofel_subset::{
+    Flags, INVALID, Input, Plan, Prepared, RangeSet, SetKind, SubsetError, axis_range_from_string,
+};
 
 /// The usage text, printed for `--help`.
 pub const HELP: &str = "\
@@ -136,7 +138,8 @@ pub struct Options {
     pub glyph_names: Vec<String>,
     /// The `--variations` and `--instance` values, in order.
     pub instance: Vec<AxisSpec>,
-    /// `--preprocess` or `--preprocess-face` (no effect on the output).
+    /// `--preprocess` or `--preprocess-face`: subset through a
+    /// [`Prepared`] value of the font (the output is the same).
     pub preprocess: bool,
     /// `--num-iterations` (`-n`), as the unsigned value HarfBuzz stores.
     pub num_iterations: u32,
@@ -1078,6 +1081,29 @@ fn apply_axis_spec(input: Input, spec: &AxisSpec, font: &Font<'_>) -> Result<Inp
     }
 }
 
+/// The [`Prepared`] value of `font` when the options ask for
+/// preprocessing (`--preprocess`; `hb_subset_preprocess`).
+pub fn prepare(options: &Options, font: &Font<'_>) -> Option<Prepared> {
+    options.preprocess.then(|| Prepared::new(font))
+}
+
+/// One subset of `font` (`hb_subset_or_fail`), through `prepared` when
+/// given ([`Plan::with_prepared`]).
+///
+/// # Errors
+///
+/// As [`Plan::new`], [`Plan::with_prepared`] and [`Plan::execute`].
+pub fn subset_once(
+    font: &Font<'_>,
+    input: &Input,
+    prepared: Option<&Prepared>,
+) -> Result<Vec<u8>, SubsetError> {
+    match prepared {
+        Some(p) => Plan::with_prepared(font, p, input)?.execute(font),
+        None => sofel_subset::subset(font, input),
+    }
+}
+
 const PROGRAM: &str = "sofel-subset";
 
 /// How one command line ended.
@@ -1294,8 +1320,10 @@ fn run_one(
         Ok(i) => i,
         Err(msg) => return fail(err, true, 1, &msg),
     };
-    let result =
-        (0..options.num_iterations).fold(None, |_, _| Some(sofel_subset::subset(&font, &input)));
+    let prepared = prepare(&options, &font);
+    let result = (0..options.num_iterations).fold(None, |_, _| {
+        Some(subset_once(&font, &input, prepared.as_ref()))
+    });
     match result {
         Some(Ok(bytes)) => {
             let written = match file.as_mut() {

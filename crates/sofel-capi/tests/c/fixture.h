@@ -605,3 +605,7 @@ static const struct axis_string_case axis_string_cases[] = {
   {"x", -12, {0, 0, 0}},
   {"", -12, {0, 0, 0}},
 };
+#define CFF_CHARSTRINGS_INDEX_LEN 86
+static const uint8_t cff_charstring_1[9] = {
+  0x95, 0x77, 0x15, 0xf7, 0xc0, 0xf9, 0x50, 0x05, 0x0e,
+};

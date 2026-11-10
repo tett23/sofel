@@ -23,7 +23,7 @@ cargo doc --no-deps -p sofel-geom -p sofel-unicode -p sofel-read -p sofel-font -
 | `sofel-bitmap` | 埋め込みビットマップのストライク、その選び方、グリフの画像のデータとメトリクス（[ADR 0023](adr/0023-color-glyphs.md)） | `sofel-font` |
 | `sofel-color` | カラーグリフの塗りの命令、パレット、カラーグリフを含むグリフの箱（[ADR 0023](adr/0023-color-glyphs.md)） | `sofel-outline`、`sofel-bitmap` |
 | `sofel-write` | sfntの組み立て（`build_sfnt`）と、HarfBuzzと同じ詰め方のオブジェクトの直列化（`Serializer`）と再配置（`Packed::repack`、`serialize_objects`。[ADR 0022](adr/0022-subsetting.md)） | `sofel-read` |
-| `sofel-subset` | HarfBuzzの `hb-subset` と同じ出力のサブセット化（`Input`、`Plan`、`subset`。[ADR 0022](adr/0022-subsetting.md)） | `sofel-font`、`sofel-write`、`sofel-unicode`、`sofel-geom` |
+| `sofel-subset` | HarfBuzzの `hb-subset` と同じ出力のサブセット化（`Input`、`Plan`、`subset`、前処理の `Prepared`。[ADR 0022](adr/0022-subsetting.md)） | `sofel-font`、`sofel-write`、`sofel-unicode`、`sofel-geom` |
 | `sofel-raster` | FreeTypeのsmoothのラスタライザと同じ計算で、8bitのアンチエイリアスの画像を作る | `sofel-geom` |
 | `sofel-cli` | 小さな道具（`sofel-validate`、`sofel-render`、`sofel-paint`、`sofel-subset`）と、1グリフを描く `glyph::render` | すべて |
 | `sofel-capi` | C ABI（[ADR 0015](adr/0015-c-abi.md)） | すべて |
@@ -517,6 +517,24 @@ fn default_instance(data: &[u8], text: &str) -> Result<Vec<u8>, SubsetError> {
 }
 ```
 
+同じフォントを何度もサブセット化するときは、`Prepared::new` で一度だけ前処理し（HarfBuzzの `hb_subset_preprocess`）、`Plan::with_prepared` で計画を作る。出力は前処理の無いときと同じで、計画が速くなる（cmapの対応の逆引き、CFFの解析済みのcharstringを使う）。`Prepared` は不変で、複製は安く（中身を共有する）、スレッドの間で共有できる。前処理したフォントと違うフォントに使うと `SubsetError::InvalidInput` になる。`cff_charstrings_index` と `cff_charstring_data` は、`CFF ` の表のCharStrings INDEXと各グリフのcharstringのバイト列を写さずに返す。
+
+```rust
+use sofel_font::Font;
+use sofel_subset::{Input, Plan, Prepared, SetKind, SubsetError};
+
+fn many(font: &Font<'_>, texts: &[&str]) -> Result<Vec<Vec<u8>>, SubsetError> {
+    let prepared = Prepared::new(font);
+    texts
+        .iter()
+        .map(|t| {
+            let input = Input::new().map_set(SetKind::Unicodes, |s| t.chars().for_each(|c| s.add(u32::from(c))));
+            Plan::with_prepared(font, &prepared, &input)?.execute(font)
+        })
+        .collect()
+}
+```
+
 ## Cから使う（`sofel-capi`）
 
 `sofel-capi` は、上のAPIをCの呼び出し規約で公開する（[ADR 0015](adr/0015-c-abi.md)）。
@@ -575,7 +593,9 @@ sofel_font_destroy(font);
 | `sofel_shape`、`sofel_shape_fallback` | `shape_with_extents`、`shape_fallback` | `hb_shape_plan_execute` |
 | `sofel_buffer_serialize`、`sofel_buffer_deserialize_*`、`sofel_buffer_diff` | `serialize_glyphs` など、`diff` | `hb_buffer_serialize`、`hb_buffer_deserialize_*`、`hb_buffer_diff` |
 | `sofel_subset_input_*` | `Input`、`RangeSet` | `hb_subset_input_*`、`hb_set_*` |
+| `sofel_subset_prepared_*` | `Prepared` | `hb_subset_preprocess` |
 | `sofel_subset_plan_*` | `Plan` | `hb_subset_plan_*` |
+| `sofel_subset_cff_charstrings_index`、`sofel_subset_cff_charstring_data` | `cff_charstrings_index`、`cff_charstring_data` | `hb_subset_cff_get_charstrings_index`、`hb_subset_cff_get_charstring_data` |
 | `sofel_subset`、`sofel_bytes_destroy` | `subset` | `hb_subset_or_fail`、`hb_face_reference_blob` |
 | `sofel_serialize_objects` | `sofel_write::serialize_objects` | `hb_subset_serialize_or_fail` |
 

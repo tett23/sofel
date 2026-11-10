@@ -3,7 +3,10 @@
 //! with `run-tests.py`'s arguments, and its output must equal HarfBuzz's
 //! expected file byte for byte (`:bytes`) and pass the validator
 //! (`:validate`; for a CFF font also its `CFF ` table on its own, as
-//! PDF embeds it). Expected failures are listed with their reasons in
+//! PDF embeds it). Each case runs twice, as `run-tests.py` runs it: as
+//! it is and with `--preprocess` (through `sofel_subset::Prepared`, ids
+//! suffixed `+prepared`); both must give the expected file. Expected
+//! failures are listed with their reasons in
 //! `conformance/expected-failures-subset.txt`.
 //!
 //! The repacking tests (`test/subset/data/repack_tests/`) run with
@@ -30,9 +33,14 @@ fn data() -> std::path::PathBuf {
     paths::testdata().join("harfbuzz/test/subset/data")
 }
 
-/// The output of one case, or why it failed.
-fn run(case: &subset::Case) -> Result<Vec<u8>, String> {
-    subset::run_sofel(&case.args()?)
+/// The output of one case, with `--preprocess` when `prepared`, or why
+/// it failed.
+fn run(case: &subset::Case, prepared: bool) -> Result<Vec<u8>, String> {
+    let mut args = case.args()?;
+    if prepared {
+        args.push("--preprocess".to_string());
+    }
+    subset::run_sofel(&args)
 }
 
 fn validate_errors(bytes: &[u8]) -> Vec<String> {
@@ -59,9 +67,16 @@ fn harfbuzz_subset_tests() {
     let cases = subset::all_cases(&data()).unwrap();
     let mut results = Vec::new();
     let mut detail = Vec::new();
-    for case in &cases {
-        let id = case.id();
-        let out = run(case);
+    let runs = cases
+        .iter()
+        .flat_map(|c| [(c, false), (c, true)].into_iter());
+    for (case, prepared) in runs {
+        let id = if prepared {
+            format!("{}+prepared", case.id())
+        } else {
+            case.id()
+        };
+        let out = run(case, prepared);
         let expected = std::fs::read(case.expected(&data()));
         let (bytes_ok, validate_ok) = match (&out, &expected) {
             (Ok(o), Ok(e)) => {

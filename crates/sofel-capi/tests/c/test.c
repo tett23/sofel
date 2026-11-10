@@ -2139,6 +2139,13 @@ static void check_subset_declarations(void) {
       sofel_subset;
   int32_t (*serialize)(uint32_t, const sofel_serialize_object_t *, size_t, sofel_bytes_t *) =
       sofel_serialize_objects;
+  int32_t (*prepared_create)(const sofel_font_t *, sofel_subset_prepared_t **) =
+      sofel_subset_prepared_create;
+  void (*prepared_destroy)(sofel_subset_prepared_t *) = sofel_subset_prepared_destroy;
+  int32_t (*cs_index)(const sofel_font_t *, const uint8_t **, size_t *) =
+      sofel_subset_cff_charstrings_index;
+  int32_t (*cs_data)(const sofel_font_t *, uint32_t, const uint8_t **, size_t *) =
+      sofel_subset_cff_charstring_data;
   const void *all[] = {
       (const void *)bytes_destroy, (const void *)input_create,  (const void *)input_destroy,
       (const void *)keep_everything, (const void *)set_add,     (const void *)set_add_range,
@@ -2152,7 +2159,8 @@ static void check_subset_declarations(void) {
       (const void *)unicode_to_old, (const void *)old_to_news,  (const void *)new_to_olds,
       (const void *)unicode_to_olds, (const void *)subset,      (const void *)serialize,
       (const void *)pin_all,       (const void *)pin_default,   (const void *)pin_location,
-      (const void *)set_axis,
+      (const void *)set_axis,      (const void *)prepared_create, (const void *)prepared_destroy,
+      (const void *)cs_index,      (const void *)cs_data,
   };
   size_t i;
   for (i = 0; i < COUNT(all); i++) CHECK(all[i] != NULL);
@@ -2314,6 +2322,8 @@ static sofel_subset_input_t *plan_input(size_t i) {
  * plan's mappings are the Rust plan's. */
 static void test_subset_plans(const sofel_font_t *font) {
   size_t i;
+  sofel_subset_prepared_t *prepared = NULL;
+  CHECK(sofel_subset_prepared_create(font, &prepared) == SOFEL_OK && prepared != NULL);
   for (i = 0; i < COUNT(subset_cases); i++) {
     const struct subset_case *c = &subset_cases[i];
     sofel_subset_input_t *in = plan_input(i);
@@ -2327,6 +2337,16 @@ static void test_subset_plans(const sofel_font_t *font) {
       continue;
     }
     CHECK(a.len == c->len && fnv(a.data, a.len) == c->fnv);
+    {
+      /* A plan made with the prepared value gives the same bytes. */
+      sofel_subset_plan_t *fast = NULL;
+      sofel_bytes_t f = {NULL, 0};
+      CHECK(sofel_subset_plan_create(font, prepared, in, &fast) == SOFEL_OK && fast != NULL);
+      CHECK(sofel_subset_plan_execute(fast, font, &f) == SOFEL_OK);
+      CHECK(f.len == a.len && memcmp(a.data, f.data, a.len) == 0);
+      sofel_subset_plan_destroy(fast);
+      sofel_bytes_destroy(&f);
+    }
     CHECK(sofel_subset_plan_create(font, NULL, in, &plan) == SOFEL_OK && plan != NULL);
     sofel_subset_input_destroy(in); /* the plan does not borrow the input */
     CHECK(sofel_subset_plan_execute(plan, font, &b) == SOFEL_OK);
@@ -2366,21 +2386,58 @@ static void test_subset_plans(const sofel_font_t *font) {
     sofel_subset_input_t *in = plan_input(1);
     sofel_subset_plan_t *plan = NULL;
     sofel_bytes_t out = {NULL, 0};
-    const sofel_subset_prepared_t *prepared = (const sofel_subset_prepared_t *)&out;
+    sofel_subset_prepared_t *other = NULL;
+    int32_t e = 0;
+    sofel_font_t *cff = sofel_font_create(cff_font_data, sizeof cff_font_data, 0, &e);
     sofel_subset_input_set_flags(in, SOFEL_SUBSET_FLAGS_RETAIN_GIDS);
     CHECK(sofel_subset_plan_create(font, NULL, in, &plan) == SUBSET_INVALID_INPUT &&
           plan == NULL);
     CHECK(sofel_subset(font, in, &out) == SUBSET_INVALID_INPUT && out.data == NULL);
-    /* Errors: NULL, and a prepared value (none can be made yet). */
+    /* Errors: NULL, and a prepared value of another font. */
     CHECK(sofel_subset(NULL, in, &out) == SOFEL_ERROR_NULL);
     CHECK(sofel_subset(font, NULL, &out) == SOFEL_ERROR_NULL);
     CHECK(sofel_subset(font, in, NULL) == SOFEL_ERROR_NULL);
     CHECK(sofel_subset_plan_create(font, NULL, NULL, &plan) == SOFEL_ERROR_NULL);
     CHECK(sofel_subset_plan_create(font, NULL, in, NULL) == SOFEL_ERROR_NULL);
-    CHECK(sofel_subset_plan_create(font, prepared, in, &plan) == SOFEL_ERROR_INVALID_ARGUMENT);
     CHECK(sofel_subset_plan_num_output_glyphs(NULL, NULL) == SOFEL_ERROR_NULL);
+    CHECK(sofel_subset_prepared_create(NULL, &other) == SOFEL_ERROR_NULL && other == NULL);
+    CHECK(sofel_subset_prepared_create(font, NULL) == SOFEL_ERROR_NULL);
+    CHECK(cff != NULL && sofel_subset_prepared_create(cff, &other) == SOFEL_OK);
+    sofel_subset_input_set_flags(in, 0);
+    CHECK(sofel_subset_plan_create(font, other, in, &plan) == SUBSET_INVALID_INPUT &&
+          plan == NULL);
+    sofel_subset_prepared_destroy(other);
+    sofel_subset_prepared_destroy(NULL);
+    sofel_font_destroy(cff);
     sofel_subset_input_destroy(in);
   }
+  sofel_subset_prepared_destroy(prepared);
+}
+
+/* The CFF charstring accessors: the INDEX and glyph 1's charstring point
+ * into the font's data. */
+static void test_subset_cff(const sofel_font_t *font) {
+  int32_t e = 0;
+  const uint8_t *data = NULL, *index = NULL;
+  size_t len = 0, index_len = 0;
+  sofel_font_t *cff = sofel_font_create(cff_font_data, sizeof cff_font_data, 0, &e);
+  CHECK(cff != NULL);
+  if (cff == NULL) return;
+  CHECK(sofel_subset_cff_charstrings_index(cff, &index, &index_len) == SOFEL_OK &&
+        index_len == CFF_CHARSTRINGS_INDEX_LEN && index > cff_font_data &&
+        index + index_len <= cff_font_data + sizeof cff_font_data);
+  CHECK(sofel_subset_cff_charstring_data(cff, 1, &data, &len) == SOFEL_OK &&
+        len == sizeof cff_charstring_1 && memcmp(data, cff_charstring_1, len) == 0 &&
+        data > index && data + len <= index + index_len);
+  len = 7;
+  CHECK(sofel_subset_cff_charstring_data(cff, 100000, &data, &len) == SOFEL_ERROR_NOT_FOUND &&
+        len == 7);
+  CHECK(sofel_subset_cff_charstrings_index(font, &data, &len) == SOFEL_ERROR_NOT_FOUND);
+  CHECK(sofel_subset_cff_charstring_data(font, 0, &data, &len) == SOFEL_ERROR_NOT_FOUND);
+  CHECK(sofel_subset_cff_charstrings_index(NULL, &data, &len) == SOFEL_ERROR_NULL);
+  CHECK(sofel_subset_cff_charstrings_index(cff, NULL, &len) == SOFEL_ERROR_NULL);
+  CHECK(sofel_subset_cff_charstring_data(cff, 1, &data, NULL) == SOFEL_ERROR_NULL);
+  sofel_font_destroy(cff);
 }
 
 /* sofel_serialize_objects: a root with a 16-bit offset to a child, a
@@ -2562,6 +2619,7 @@ int main(void) {
   test_subset_input();
   test_axis_strings();
   test_subset_plans(font);
+  test_subset_cff(font);
   test_serialize_objects();
   test_golem_subset();
   test_subset_axes(font);

@@ -8,16 +8,21 @@
 //! hashes the output (FNV-1a), so that the outputs are compared byte for
 //! byte before timing.
 //!
-//! The items with preprocessing (`Prepared`, `hb_subset_preprocess`) come
-//! with ADR 0022's stage 11.
+//!
+//! The items with preprocessing (stage 11): the same two subsets through
+//! a preprocessed font (`Prepared` and `Plan::with_prepared`; HarfBuzz's
+//! `hb_subset_or_fail` on the face `hb_subset_preprocess` returns), made
+//! once before timing; and the preprocessing itself (`Prepared::new`,
+//! `hb_subset_preprocess`), whose results are not compared (HarfBuzz's is
+//! a subset face, sofel's the accelerator's data).
 
 use std::collections::BTreeSet;
 use std::path::Path;
 
 use sofel_font::Font;
-use sofel_subset::{Flags, Input, SetKind, subset};
+use sofel_subset::{Flags, Input, Plan, Prepared, SetKind, subset};
 
-use crate::ffi::HbFont;
+use crate::ffi::{HbFont, HbPreprocessed};
 use crate::{Bench, Compare};
 
 /// Roboto (glyf), Source Han Sans (CID-keyed CFF) and Noto Nastaliq Urdu
@@ -51,13 +56,29 @@ fn fnv(b: &[u8]) -> u64 {
 /// sofel's subset of the glyphs or characters with the flags, as the
 /// shim's: the hash, 0 on failure.
 fn ours(font: &Font<'_>, glyphs: &[u32], unicodes: &[u32], flags: Flags) -> u64 {
-    let input = Input::new()
+    subset(font, &input(glyphs, unicodes, flags)).map_or(0, |b| fnv(&b))
+}
+
+fn input(glyphs: &[u32], unicodes: &[u32], flags: Flags) -> Input {
+    Input::new()
         .map_set(SetKind::Glyphs, |s| glyphs.iter().for_each(|&g| s.add(g)))
         .map_set(SetKind::Unicodes, |s| {
             unicodes.iter().for_each(|&c| s.add(c))
         })
-        .with_flags(flags);
-    subset(font, &input).map_or(0, |b| fnv(&b))
+        .with_flags(flags)
+}
+
+/// [`ours`] through a prepared value.
+fn ours_prepared(
+    font: &Font<'_>,
+    prepared: &Prepared,
+    glyphs: &[u32],
+    unicodes: &[u32],
+    flags: Flags,
+) -> u64 {
+    Plan::with_prepared(font, prepared, &input(glyphs, unicodes, flags))
+        .and_then(|p| p.execute(font))
+        .map_or(0, |b| fnv(&b))
 }
 
 pub fn subset_items(b: &mut Bench, testdata: &Path) {
@@ -102,6 +123,42 @@ pub fn subset_items(b: &mut Bench, testdata: &Path) {
             Some((
                 &mut || hb.subset(&[], &unicodes, Flags::DEFAULT.0).0,
                 Compare::Yes,
+            )),
+        );
+        let prepared = Prepared::new(&font);
+        let preprocessed = HbPreprocessed::new(&hb);
+        b.item(
+            name,
+            format!("subset prepared ({} glyphs, retain-gids)", glyphs.len()),
+            &mut || ours_prepared(&font, &prepared, &glyphs, &[], Flags::RETAIN_GIDS),
+            None,
+            Some((
+                &mut || preprocessed.subset(&glyphs, &[], Flags::RETAIN_GIDS.0).0,
+                Compare::Yes,
+            )),
+        );
+        b.item(
+            name,
+            format!("subset prepared ({} characters)", unicodes.len()),
+            &mut || ours_prepared(&font, &prepared, &[], &unicodes, Flags::DEFAULT),
+            None,
+            Some((
+                &mut || preprocessed.subset(&[], &unicodes, Flags::DEFAULT.0).0,
+                Compare::Yes,
+            )),
+        );
+        b.item(
+            name,
+            "preprocess".to_string(),
+            &mut || {
+                let p = Prepared::new(&font);
+                core::hint::black_box(&p);
+                u64::from(font.num_glyphs())
+            },
+            None,
+            Some((
+                &mut || u64::from(HbPreprocessed::new(&hb).glyph_count()),
+                Compare::No,
             )),
         );
     }
