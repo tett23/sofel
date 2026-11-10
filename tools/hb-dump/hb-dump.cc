@@ -131,6 +131,51 @@
  *   pua <cp> <simp> <trad>
  *                     (_hb_arabic_pua_simp_map and _hb_arabic_pua_trad_map)
  *
+ * --features (ADR 0020): for every string of the feature string set
+ * (feature_tags and the other tables below: their direct product, then
+ * feature_extras),
+ *
+ *   feature =<string> 1 <tag> <value> <start> <end> =<to_string>
+ *   feature =<string> 0
+ *                     (hb_feature_from_string, then hb_feature_to_string
+ *                     when it parses; <tag> as eight hex digits)
+ *
+ * Strings are written after a `=`, with the bytes 0x21..0x7E other than
+ * `\` as they are and any other byte as `\xHH`.
+ *
+ * Modes with a font and a second file (ADR 0020):
+ *
+ * --serialize FONT TEXTFILE: for every line of TEXTFILE (without its
+ * newline), in a buffer of its UTF-8 with
+ * hb_buffer_guess_segment_properties, shaped with hb_shape and no
+ * features on face 0 at the default scale:
+ *
+ *   line <n> =<text>
+ *   unicode <cp>,<cluster> ...   (the buffer before shaping)
+ *   serialize unicode <format> <flags> =<string>
+ *   deserialize unicode <format> <ok> <end> <len> <cp>,<cluster> ...
+ *                     (for text and json and every flags value 0..63:
+ *                     hb_buffer_serialize as hb-shape calls it, then
+ *                     hb_buffer_deserialize_unicode of that string into
+ *                     a new buffer: the result, end_ptr - buf and the
+ *                     items)
+ *   glyphs <g>,<cluster>,<mask>,<x_advance>,<y_advance>,<x_offset>,<y_offset> ...
+ *                     (the shaped buffer, the mask as it is)
+ *   serialize glyphs <format> <flags> =<string>
+ *   deserialize glyphs <format> <ok> <end> <len> <glyph items> ...
+ *                     (likewise with the font, and
+ *                     hb_buffer_deserialize_glyphs with the font)
+ *
+ * then, for every input of test-buffer.c's serialization tests and every
+ * prefix of it (the lengths 0 to the whole),
+ *
+ *   corpus =<string>
+ *   deserialize glyphs text ..., deserialize glyphs json ...,
+ *   deserialize unicode text ..., deserialize unicode json ...
+ *
+ * --deserialize FONT CORPUS: the `corpus` block above for every line of
+ * CORPUS, a string written as above without the `=`.
+ *
  * Exit status: 0 on success, 1 when the file cannot be read, 2 on wrong
  * usage.
  */
@@ -140,6 +185,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include <string>
 
 static const hb_ot_metrics_tag_t metric_tags[] = {
   HB_OT_METRICS_TAG_HORIZONTAL_ASCENDER,
@@ -680,6 +727,307 @@ static int dump_arabic_pua ()
   return 0;
 }
 
+/* Bytes 0x21..0x7E but `\` as they are, anything else as \xHH, after a
+ * `=`, so that an empty string is `=`. */
+static void print_escaped (const char *s, unsigned len)
+{
+  putchar ('=');
+  for (unsigned i = 0; i < len; i++)
+  {
+    unsigned char c = (unsigned char) s[i];
+    if (c > 0x20 && c < 0x7F && c != '\\')
+      putchar (c);
+    else
+      printf ("\\x%02x", c);
+  }
+}
+
+/* The strings of --features (ADR 0020): the direct product below, then
+ * the extra cases. sofel-conformance builds the same list. */
+static const char *feature_tags[] = {
+  "kern", "aalt", "a", "abc", "abcde", "'liga'", "\"liga\"", "'abc'",
+  "\"abcde\"", "'liga\"",
+};
+static const char *feature_prefixes[] = {"", "+", "-"};
+static const char *feature_ranges[] = {
+  "", "[]", "[:]", "[3]", "[3:]", "[:5]", "[3:5]", "[3", "[x]",
+};
+static const char *feature_values[] = {
+  "", "=0", "=2", " on", " off", " 2", "=", "=on", " xyz", "=-1",
+};
+static const char *feature_spaces[][2] = {
+  {"", ""}, {" ", ""}, {"", " "}, {"\t ", " \n"},
+};
+static const char *feature_extras[] = {
+  "abcd", "abcd=1", "+abcd", "abcd=0", "-abcd", "abcd=2", "+abcd=2",
+  "-abcd=2", "\"abcd\" on", "\"abcd\" off", "\"abcd\" 1", "\"abcd\" 0",
+  "\"abcd\" 2", "abcd[0]", "abcd[1]", "abcd[1]=1", "abcd[1]=2",
+  "abcd[1]=0", "abcd[]", "abcd[:]", "abcd[1:]", "abcd[:1]", "abcd[1:3]",
+  "abcd[1:2]=1", "abcd[1:4]=2", "aalt[3:5]=2",
+  "kern\t", "kern\t=2", "kern[ 3 : 5 ]", "kern[3;5]", "kern[-1]",
+  "kern[-1:]", "kern[4294967295]", "kern[2147483647]", "kern[2147483648]",
+  "kern=2147483647", "kern=2147483648", "kern=-2147483648", "kern=+2",
+  "kern = 2", "kern=0x10", "kern=010", "kern  ON", "kern OfF", "kern onx",
+  "kern=off", "kern=ON", "-+kern", "+-kern", "--kern", "", " ", "=", "[]",
+  "-", "+", "'kern' 'x'", "'ke\"n'", "\"kern'", "kern'", "k=rn", "k[rn",
+  "'k rn'", "'k[rn'", "'k=rn'", "k:rn", "k]rn", "k\trn", "\xc3\xa9t\xc3",
+  "\xc3\xa9t\xc3\xa9", "\xff\xfe", "\v kern \f", "kern[3:5]=2 ",
+  "kern[3:5] =2", "kern [3:5]", "kern[3:5]x", "kern[3:5", "kern[3:5]]",
+  "kern[:]=3", "kern[0:]", "kern[0:1]", "kern[5:3]", "kern[3:3]",
+  "kern==2", "kern=2=3", "kern 2 3", "kern on off", "'kern'on",
+  "'kern'=2", "\"kern\"[1:2]", "''", "\"\"", "'", "\"", "kern'x",
+  "liga=4294967295", "liga=-0", "liga[+3]", "liga[ -2 ]", "liga[3:-1]",
+};
+
+static void dump_feature (const char *s, unsigned len)
+{
+  hb_feature_t f;
+  hb_bool_t ok = hb_feature_from_string (s, (int) len, &f);
+  printf ("feature ");
+  print_escaped (s, len);
+  if (ok)
+  {
+    char buf[128];
+    hb_feature_to_string (&f, buf, sizeof (buf));
+    printf (" 1 %08x %u %u %u ", f.tag, f.value, f.start, f.end);
+    print_escaped (buf, strlen (buf));
+  }
+  else
+    printf (" 0");
+  printf ("\n");
+}
+
+#define ARRAY_COUNT(a) (sizeof (a) / sizeof ((a)[0]))
+
+static int dump_features ()
+{
+  for (unsigned t = 0; t < ARRAY_COUNT (feature_tags); t++)
+    for (unsigned p = 0; p < ARRAY_COUNT (feature_prefixes); p++)
+      for (unsigned r = 0; r < ARRAY_COUNT (feature_ranges); r++)
+	for (unsigned v = 0; v < ARRAY_COUNT (feature_values); v++)
+	  for (unsigned w = 0; w < ARRAY_COUNT (feature_spaces); w++)
+	  {
+	    char s[128];
+	    int n = snprintf (s, sizeof (s), "%s%s%s%s%s%s",
+			      feature_spaces[w][0], feature_prefixes[p],
+			      feature_tags[t], feature_ranges[r],
+			      feature_values[v], feature_spaces[w][1]);
+	    dump_feature (s, (unsigned) n);
+	  }
+  for (unsigned i = 0; i < ARRAY_COUNT (feature_extras); i++)
+    dump_feature (feature_extras[i], strlen (feature_extras[i]));
+  return 0;
+}
+
+/* --serialize and --deserialize (ADR 0020). */
+static const hb_buffer_serialize_format_t serialize_formats[] = {
+  HB_BUFFER_SERIALIZE_FORMAT_TEXT, HB_BUFFER_SERIALIZE_FORMAT_JSON,
+};
+static const char *serialize_format_names[] = {"text", "json"};
+
+static void print_glyph_items (hb_buffer_t *b)
+{
+  unsigned n = hb_buffer_get_length (b);
+  hb_glyph_info_t *info = hb_buffer_get_glyph_infos (b, nullptr);
+  hb_glyph_position_t *pos = hb_buffer_get_glyph_positions (b, nullptr);
+  for (unsigned i = 0; i < n; i++)
+    printf (" %u,%u,%u,%d,%d,%d,%d", info[i].codepoint, info[i].cluster,
+	    info[i].mask, pos[i].x_advance, pos[i].y_advance,
+	    pos[i].x_offset, pos[i].y_offset);
+}
+
+static void print_unicode_items (hb_buffer_t *b)
+{
+  unsigned n = hb_buffer_get_length (b);
+  hb_glyph_info_t *info = hb_buffer_get_glyph_infos (b, nullptr);
+  for (unsigned i = 0; i < n; i++)
+    printf (" %u,%u", info[i].codepoint, info[i].cluster);
+}
+
+/* What hb-shape does (util/shape-format.hh, serialize). */
+static std::string serialize_all (hb_buffer_t *b, hb_font_t *font,
+				  hb_buffer_serialize_format_t format,
+				  hb_buffer_serialize_flags_t flags)
+{
+  std::string out;
+  unsigned n = hb_buffer_get_length (b), start = 0;
+  while (start < n)
+  {
+    char buf[32768];
+    unsigned consumed;
+    start += hb_buffer_serialize (b, start, n, buf, sizeof (buf), &consumed,
+				  font, format, flags);
+    if (!consumed)
+      break;
+    out.append (buf, consumed);
+  }
+  return out;
+}
+
+static void dump_deserialize_glyphs (const char *s, unsigned len, hb_font_t *font,
+				     unsigned f)
+{
+  hb_buffer_t *b = hb_buffer_create ();
+  const char *end = s;
+  hb_bool_t ok = hb_buffer_deserialize_glyphs (b, s, (int) len, &end, font,
+					       serialize_formats[f]);
+  printf ("deserialize glyphs %s %d %u %u", serialize_format_names[f], ok ? 1 : 0,
+	  (unsigned) (end - s), hb_buffer_get_length (b));
+  print_glyph_items (b);
+  printf ("\n");
+  hb_buffer_destroy (b);
+}
+
+static void dump_deserialize_unicode (const char *s, unsigned len, unsigned f)
+{
+  hb_buffer_t *b = hb_buffer_create ();
+  const char *end = s;
+  hb_bool_t ok = hb_buffer_deserialize_unicode (b, s, (int) len, &end,
+						serialize_formats[f]);
+  printf ("deserialize unicode %s %d %u %u", serialize_format_names[f], ok ? 1 : 0,
+	  (unsigned) (end - s), hb_buffer_get_length (b));
+  print_unicode_items (b);
+  printf ("\n");
+  hb_buffer_destroy (b);
+}
+
+static void dump_corpus_entry (const char *s, unsigned len, hb_font_t *font)
+{
+  printf ("corpus ");
+  print_escaped (s, len);
+  printf ("\n");
+  for (unsigned f = 0; f < 2; f++)
+    dump_deserialize_glyphs (s, len, font, f);
+  for (unsigned f = 0; f < 2; f++)
+    dump_deserialize_unicode (s, len, f);
+}
+
+/* The inputs of test_buffer_serialize_deserialize and
+ * test_buffer_deserialize2 in HarfBuzz's test/api/test-buffer.c. */
+static const char *test_buffer_inputs[] = {
+  "<U+0640=0|U+0635=1>",
+  "[{\"u\":1600,\"cl\":0},{\"u\":1589,\"cl\":1}]",
+  "[{\"u\":1600,\"cl\":0},{\"u\":1589,\"cl\":1}",
+  "[{\"u\":1600,\"cl\":0},{\"g\":1589,\"cl\":1}]",
+  "<U+0640=0|uni0635=1>",
+  "<U+0041=0|U+0042=1>", "[1=0@2,3+4,5|2=1+6]",
+  "[{\"u\":65,\"cl\":0},{\"u\":66,\"cl\":1}]",
+  "[{\"g\":1,\"cl\":0,\"dx\":2,\"dy\":3,\"ax\":4,\"ay\":5},{\"g\":2,\"cl\":1}]",
+  "<U+0041=0>", "[icon0=0+10]",
+  "[{\"u\":65}]", "[{\"g\":\"icon0\",\"ax\":10}]",
+  "<U+0041=0|U+0042=?>", "[1=0|2=?]",
+  "[{\"u\":65},?]", "[{\"g\":1},?]",
+  "<U+0041=0|U+0042=4294967296>", "[1=0|2=4294967296]",
+  "[{\"u\":65},{\"u\":4294967296}]",
+  "[{\"g\":1},{\"g\":2,\"ax\":2147483648}]",
+  "", "[1=0]", "[{\"g\":1}]",
+};
+
+static int dump_serialize (hb_blob_t *blob, const char *text_path)
+{
+  FILE *fp = fopen (text_path, "rb");
+  if (!fp)
+  {
+    fprintf (stderr, "hb-dump: cannot read %s\n", text_path);
+    return 1;
+  }
+  hb_face_t *face = hb_face_create (blob, 0);
+  hb_font_t *font = hb_font_create (face);
+  char line[4096];
+  unsigned line_no = 0;
+  while (fgets (line, sizeof (line), fp))
+  {
+    unsigned len = strlen (line);
+    if (len && line[len - 1] == '\n')
+      line[--len] = '\0';
+    printf ("line %u ", line_no++);
+    print_escaped (line, len);
+    printf ("\n");
+    hb_buffer_t *b = hb_buffer_create ();
+    hb_buffer_add_utf8 (b, line, (int) len, 0, (int) len);
+    hb_buffer_guess_segment_properties (b);
+    printf ("unicode");
+    print_unicode_items (b);
+    printf ("\n");
+    for (unsigned f = 0; f < 2; f++)
+      for (unsigned flags = 0; flags < 64; flags++)
+      {
+	std::string s = serialize_all (b, nullptr, serialize_formats[f],
+				       (hb_buffer_serialize_flags_t) flags);
+	printf ("serialize unicode %s %u ", serialize_format_names[f], flags);
+	print_escaped (s.data (), s.size ());
+	printf ("\n");
+	dump_deserialize_unicode (s.data (), s.size (), f);
+      }
+    hb_shape (font, b, nullptr, 0);
+    printf ("glyphs");
+    print_glyph_items (b);
+    printf ("\n");
+    for (unsigned f = 0; f < 2; f++)
+      for (unsigned flags = 0; flags < 64; flags++)
+      {
+	std::string s = serialize_all (b, font, serialize_formats[f],
+				       (hb_buffer_serialize_flags_t) flags);
+	printf ("serialize glyphs %s %u ", serialize_format_names[f], flags);
+	print_escaped (s.data (), s.size ());
+	printf ("\n");
+	dump_deserialize_glyphs (s.data (), s.size (), font, f);
+      }
+    hb_buffer_destroy (b);
+  }
+  fclose (fp);
+  for (unsigned i = 0; i < ARRAY_COUNT (test_buffer_inputs); i++)
+  {
+    const char *s = test_buffer_inputs[i];
+    unsigned len = strlen (s);
+    for (unsigned n = 0; n <= len; n++)
+      dump_corpus_entry (s, n, font);
+  }
+  hb_font_destroy (font);
+  hb_face_destroy (face);
+  return 0;
+}
+
+static int dump_deserialize (hb_blob_t *blob, const char *corpus_path)
+{
+  FILE *fp = fopen (corpus_path, "rb");
+  if (!fp)
+  {
+    fprintf (stderr, "hb-dump: cannot read %s\n", corpus_path);
+    return 1;
+  }
+  hb_face_t *face = hb_face_create (blob, 0);
+  hb_font_t *font = hb_font_create (face);
+  std::string line;
+  int c;
+  while ((c = fgetc (fp)) != EOF)
+  {
+    if (c != '\n')
+    {
+      line.push_back ((char) c);
+      continue;
+    }
+    /* Undo print_escaped (without its `=`). */
+    std::string s;
+    for (unsigned i = 0; i < line.size (); i++)
+    {
+      if (line[i] == '\\' && i + 3 < line.size () && line[i + 1] == 'x')
+      {
+	char hex[3] = {line[i + 2], line[i + 3], '\0'};
+	s.push_back ((char) strtoul (hex, nullptr, 16));
+	i += 3;
+      }
+      else
+	s.push_back (line[i]);
+    }
+    dump_corpus_entry (s.data (), s.size (), font);
+    line.clear ();
+  }
+  fclose (fp);
+  hb_font_destroy (font);
+  hb_face_destroy (face);
+  return 0;
+}
 /* The modes that read no file. */
 struct fileless_mode_t
 {
@@ -690,6 +1038,7 @@ struct fileless_mode_t
 static const fileless_mode_t fileless_modes[] = {
   {"--unicode", dump_unicode},
   {"--arabic-pua", dump_arabic_pua},
+  {"--features", dump_features},
 };
 
 struct dump_mode_t
@@ -706,8 +1055,34 @@ static const dump_mode_t modes[] = {
   {"--vowel-constraints", dump_vowel_constraints},
 };
 
+/* The modes that read a font and a second file. */
+struct two_file_mode_t
+{
+  const char *name;
+  int (*dump) (hb_blob_t *blob, const char *path);
+};
+
+static const two_file_mode_t two_file_modes[] = {
+  {"--serialize", dump_serialize},
+  {"--deserialize", dump_deserialize},
+};
+
 int main (int argc, char **argv)
 {
+  if (argc == 4)
+    for (unsigned i = 0; i < sizeof (two_file_modes) / sizeof (two_file_modes[0]); i++)
+      if (strcmp (argv[1], two_file_modes[i].name) == 0)
+      {
+	hb_blob_t *blob = hb_blob_create_from_file_or_fail (argv[2]);
+	if (!blob)
+	{
+	  fprintf (stderr, "hb-dump: cannot read %s\n", argv[2]);
+	  return 1;
+	}
+	int status = two_file_modes[i].dump (blob, argv[3]);
+	hb_blob_destroy (blob);
+	return status;
+      }
   if (argc == 2)
     for (unsigned i = 0; i < sizeof (fileless_modes) / sizeof (fileless_modes[0]); i++)
       if (strcmp (argv[1], fileless_modes[i].name) == 0)
@@ -728,6 +1103,9 @@ int main (int argc, char **argv)
     fprintf (stderr, "; or hb-dump MODE, MODE one of:");
     for (unsigned i = 0; i < sizeof (fileless_modes) / sizeof (fileless_modes[0]); i++)
       fprintf (stderr, " %s", fileless_modes[i].name);
+    fprintf (stderr, "; or hb-dump MODE FONT FILE, MODE one of:");
+    for (unsigned i = 0; i < sizeof (two_file_modes) / sizeof (two_file_modes[0]); i++)
+      fprintf (stderr, " %s", two_file_modes[i].name);
     fprintf (stderr, "\n");
     return 2;
   }

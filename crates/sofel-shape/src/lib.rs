@@ -22,9 +22,15 @@ mod direction;
 mod feature;
 mod glyph;
 mod language;
+mod serialize;
 
 pub use direction::Direction;
 pub use feature::Feature;
 pub use glyph::{GlyphFlags, GlyphInfo, GlyphPosition};
 pub use language::Language;
+pub use serialize::{
+    DeserializeError, EmptyFont, SerializeFlags, SerializeFont, SerializeFormat,
+    deserialize_glyphs, deserialize_unicode, glyph_from_string, glyph_to_string, serialize_glyphs,
+    serialize_glyphs_range, serialize_invalid, serialize_unicode, serialize_unicode_range,
+};
 pub use sofel_unicode::Script;

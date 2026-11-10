@@ -48,3 +48,20 @@ sofel_outline::cff2_extents The CFF2 step of sofel_outline::HbExtents::glyph_ext
 sofel_outline::HbExtents::cff1 Returns the Rust accelerator that sofel_font_t keeps inside.
 sofel_outline::HbExtents::cff2 Returns the Rust accelerator that sofel_font_t keeps inside.
 sofel_outline::HbExtents::font Returns the font that sofel_font_t is.
+sofel_shape::Feature::parse C ABI comes with ADR 0020 part 3.
+sofel_shape::Feature::format C ABI comes with ADR 0020 part 3.
+sofel_shape::Feature::write Appends to a Rust Vec; C gets the string with the C counterpart of Feature::format (ADR 0020 part 3).
+sofel_shape::serialize_glyphs C ABI comes with ADR 0020 part 3.
+sofel_shape::serialize_glyphs_range C ABI comes with ADR 0020 part 3.
+sofel_shape::serialize_unicode C ABI comes with ADR 0020 part 3.
+sofel_shape::serialize_unicode_range C ABI comes with ADR 0020 part 3.
+sofel_shape::serialize_invalid C ABI comes with ADR 0020 part 3.
+sofel_shape::deserialize_glyphs C ABI comes with ADR 0020 part 3.
+sofel_shape::deserialize_unicode C ABI comes with ADR 0020 part 3.
+sofel_shape::glyph_to_string C ABI comes with ADR 0020 part 3.
+sofel_shape::glyph_from_string C ABI comes with ADR 0020 part 3.
+sofel_shape::SerializeFormat::from_name C ABI comes with ADR 0020 part 3.
+sofel_shape::SerializeFormat::name C ABI comes with ADR 0020 part 3.
+sofel_shape::SerializeFlags::contains A bit test, which C writes as such.
+sofel_shape::SerializeFlags::union A bitwise or, which C writes as such.
+sofel_shape::SerializeFont::* The Rust trait through which serialization asks the font; C passes a sofel font to the C counterparts of the serializers (ADR 0020 part 3).

@@ -273,6 +273,47 @@ assert_eq!(Script::from_iso15924(b"latn").map(Script::tag), Some(*b"Latn"));
 - `vertical_orientation` は、縦書きの文字列を、正立で組む区間（`U`、`Tu`）と、横に組んで90度回す区間（`R`、`Tr`）に分けるのに使う。分割そのものは呼び出し側の仕事である。
 - 版は `UNICODE_VERSION`（`(18, 0, 0)`）。
 
+## 機能の文字列と直列化（`sofel-shape`）
+
+```rust
+use sofel_font::read::Tag;
+use sofel_shape::{
+    EmptyFont, Feature, GlyphInfo, GlyphPosition, SerializeFlags, SerializeFormat,
+    deserialize_glyphs, serialize_glyphs,
+};
+
+let f = Feature::parse(b"aalt[3:5]=2").unwrap();
+assert_eq!((f.tag, f.value, f.start, f.end), (Tag::new(b"aalt"), 2, 3, 5));
+assert_eq!(f.format(), b"aalt[3:5]=2");
+
+let infos = [GlyphInfo { glyph: 1, cluster: 0, ..Default::default() }];
+let positions = [GlyphPosition { x_advance: 500, ..Default::default() }];
+let mut out = Vec::new();
+serialize_glyphs(&infos, Some(&positions), &EmptyFont, SerializeFormat::Text,
+                 SerializeFlags::DEFAULT, &mut out);
+assert_eq!(out, b"[gid1=0+500]");
+
+let (mut back, mut back_positions) = (Vec::new(), Vec::new());
+deserialize_glyphs(&out, SerializeFormat::Text, &EmptyFont, &mut back, &mut back_positions)
+    .unwrap();
+assert_eq!(back, infos);
+```
+
+| sofel | HarfBuzz |
+|---|---|
+| `Feature::parse`、`Feature::format`、`Feature::write` | `hb_feature_from_string`、`hb_feature_to_string` |
+| `serialize_glyphs`、`serialize_glyphs_range` | `hb_buffer_serialize_glyphs`（`size` が `buf_size`） |
+| `serialize_unicode`、`serialize_unicode_range` | `hb_buffer_serialize_unicode` |
+| `serialize_invalid` | 内容の無い空のバッファの `hb_buffer_serialize` |
+| `deserialize_glyphs`、`deserialize_unicode` | `hb_buffer_deserialize_glyphs`、`hb_buffer_deserialize_unicode`（`Err` の `consumed` が `end_ptr`） |
+| `glyph_to_string`、`glyph_from_string` | `hb_font_glyph_to_string`、`hb_font_glyph_from_string` |
+| `SerializeFormat::from_name`、`name` | `hb_buffer_serialize_format_from_string`、`_to_string` |
+| `SerializeFont`、`EmptyFont` | 直列化に渡す `hb_font_t`、`hb_font_get_empty` |
+
+- 書き出しも読み込みもバイト列で行う。グリフ名はバイト列だからである。
+- フォントは `SerializeFont` を実装して渡す。グリフ名と名前からのグリフは `sofel_font::GlyphNames`、グリフの箱は `sofel_outline::HbExtents`、文字からのグリフは `Font::nominal_glyph` から得られる。
+- 読み込みは結果を渡したベクタに追記し、失敗しても、それまでに読んだ項目を残す（HarfBuzzと同じ）。
+
 ## Cから使う（`sofel-capi`）
 
 `sofel-capi` は、上のAPIをCの呼び出し規約で公開する（[ADR 0015](adr/0015-c-abi.md)）。

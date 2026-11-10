@@ -146,6 +146,20 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - HarfBuzz 15.1.0のテストのフォントのglyfを持つフェイスで、22万3925項目（拡大縮小なし、16画素、48画素）を比べ、期待する失敗は9項目である。すべて、CFFとglyfの両方を持つ `OTTO` のフォント（FreeTypeはCFFを描く）による。
 - 同じフォントの単純なグリフ（見出しの `xMin` が点の最小のxと等しい4万9225個）で、拡大縮小なしの `cbox.x_min` が、HarfBuzzのグリフの箱の `x_bearing`（可変フォントの変化なし）と等しいことを確かめている。
 
+## シェーピング（`sofel-shape`）
+
+### 機能の文字列
+
+- `Feature { tag, value, start, end }` を、HarfBuzzの `hb_feature_from_string` と同じ文法で `Feature::parse(&[u8])` が読み、`hb_feature_to_string` と同じ形で `Feature::format`（と、追記する `Feature::write`）が書く（[ADR 0020](adr/0020-shaping-foundation.md)）。`kern`、`+kern`、`-kern`、`kern=0`、`aalt=2`、`kern[3:5]`（`;` でもよい）、`kern[3]`（3..4）、`kern[:5]`、`kern[3:]`、`kern[]`、CSSの `"kern" on` と `'kern' 2` を受け付ける。`end` の既定は `u32::MAX` である。
+- HarfBuzzの癖もそのまま写す。タグは空白、`=`、`[`、引用符（引用符が無ければ0のバイト）でだけ終わるので、`kern\t` は5バイトのタグとして失敗する。引用符のタグはちょうど4バイトとする。短いタグは空白で埋め、書くときに末尾の空白を落とす。数はCの `int` として読み、負の数は折り返す（`kern[-1]` の開始は `u32::MAX`）。`=` の後の値は読めなければ失敗するが、`=` の無い位置の数でも `on`、`off` でもない英字の列は読み飛ばす（`kern xyz` は `kern`）。
+- 書き出しはバイト列で、タグのバイトをそのまま書く。
+
+### 直列化
+
+- `hb-buffer-serialize.cc` と同じ書き出しを、バッファの型によらない関数として置く（[ADR 0020](adr/0020-shaping-foundation.md)）。`serialize_glyphs(_range)` はグリフの列（`GlyphInfo` と、位置を持てば `GlyphPosition`）を、`serialize_unicode(_range)` は文字とクラスタの列を、`SerializeFormat::{Text, Json}` と `SerializeFlags`（HarfBuzzと同じビット）で書く。範囲の関数は、HarfBuzzの `buf_size` と同じく、残りの大きさより短いグリフだけを書いて、書いた数を返す。`[` と `]` は0番目と範囲の最後のグリフに付く。`serialize_invalid` は内容の無い空のバッファの `!!` と `[]` を書く。
+- フォントへの問い合わせは `SerializeFont`（グリフ名、グリフの箱、名前からのグリフ、文字からのグリフ。既定は何も知らない `EmptyFont`、HarfBuzzの `hb_font_get_empty`）にまとめる。名前は `hb_font_glyph_to_string` と同じく127バイトと最初の0のバイトで切り、名前が無ければ `gid<n>` と書く。`glyph_from_string` は名前、10進のグリフID、`gid<n>`、`uni<16進>`（cmap）の順に読む。
+- 読み込み（`deserialize_glyphs`、`deserialize_unicode`）は、HarfBuzzのRagelの文法と同じ言語を受け付ける手書きの解析器で、結果を呼び出し側のベクタに追記する。受け付けない入力でのRagelの機械の振る舞いも写す。アクション（範囲外の数、名前の解決できないグリフ、文字のバッファのグリフ）が失敗すれば、それまでの項目を残し、終わりの位置（`DeserializeError::consumed`、HarfBuzzの `end_ptr`）を最後に項目を足した位置とする。文法に無いバイトではそのバイトの位置で止まる。項目の途中で入力が終われば、その項目を除いて成功とする。テキストの項目は次の項目が始まるときか入力の終わりで足され、JSONの項目は `,` か `]` と、その後の空白のたびに足される。テキストのグリフ名の後の `<` は名前の続きとグリフの箱の始まりの両方であり、HarfBuzzと同じく両方をたどる。
+
 ## ラスタライズ（`sofel-raster`）
 
 - 8bitのアンチエイリアスの画像を、FreeTypeのsmoothのラスタライザと同じ数値の計算で作る（[ADR 0012](adr/0012-antialiased-rasterizer.md)）。セルは帯ごとの密な配列（上限64KiB）に積む。重なりの印のある輪郭は4×4の副標本で描く。FreeTypeとの差は0（完全一致）とする。
@@ -205,6 +219,9 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   - `hb-dump --arabic-pua` は、0x0000〜0xFFFFについて `_hb_arabic_pua_simp_map` と `_hb_arabic_pua_trad_map` を書く。`sofel-font` の生成した表のファイルを適合テストのクレートに取りこんで比べる（項目 `arabic_pua_simp`、`arabic_pua_trad`）。
   - `hb-dump --vowel-constraints FILE` は、HarfBuzzの `src/ms-use/IndicShapingInvalidCluster.txt` の列の1つ目の文字の文字体系ごとに、その文字体系の列に現れる文字の長さ1〜3の全列について、`_hb_preprocess_text_vowel_constraints` の後の文字の列を書く。
   - indicの分類と位置、USEの分類、結合の型、母音の組は、まだ比べない。比べる相手の表は `sofel-shape` に置くもので（[ADR 0020](adr/0020-shaping-foundation.md)、[ADR 0024](adr/0024-complex-shapers.md)）、そのクレートとともに比べる。
+- 機能の文字列と直列化は、`hb-dump` と比べる（[ADR 0020](adr/0020-shaping-foundation.md)）。
+  - `hb-dump --features` は、タグ（4文字、短い、長い、引用符つき）、前置き（なし、`+`、`-`）、範囲（なし、`[]`、`[:]`、`[3]`、`[3:]`、`[:5]`、`[3:5]`、不正）、値（なし、`=0`、`=2`、` on`、` off`、` 2`、不正）、前後の空白の直積と、境目の例を `hb_feature_from_string` で読み、`hb_feature_to_string` で書く。1万900の文字列のすべてで、`Feature::parse` と `Feature::format` が一致することを確かめる（`tests/harfbuzz_features.rs`。期待する失敗の一覧は持たない）。
+  - `hb-dump --serialize FONT TEXTFILE` は、`conformance/serialize-text.txt` の各行をHarfBuzzで形にした生の結果（グリフ、クラスタ、マスク、送り幅、ずれ）と、その直列化をテキストとJSONの全64の指定の組で書き、それぞれをHarfBuzzで読みなおした結果（成否、終わりの位置、項目）を書く。続けて `test/api/test-buffer.c` の読み込みの入力とそのすべての接頭辞を読んだ結果を書く。`hb-dump --deserialize FONT CORPUS` は、与えた文字列の集まりを読んだ結果を書く。テストは生の結果を `GlyphInfo` と `GlyphPosition` に読み（sofelのシェーパーに依らない）、sofelで書いてバイトごとに比べ、すべての文字列をsofelで読んで比べる。集まりは、書き出した文字列の接頭辞、1バイトを除いたものと区切りの文字を各位置に挿したもの、手で書いた例である。フォントは、postの名前を持つglyf（adwaita）、名前の無いglyf（Roboto）、CFF（SourceSansPro）、マークの位置を持つglyf（OpenSans、NotoNastaliqUrdu）とする（`tests/harfbuzz_serialize.rs`）。項目は `<フォント>:<種類>` で、期待する失敗は `conformance/expected-failures-serialize.txt` に書く。
 - 適合テストは `cargo test -p sofel-conformance` で走らせる。期待する失敗の一覧に無い失敗と、一覧にあるテストの成功は、ともにテストの失敗とする。
 
 ## 性能の計測
