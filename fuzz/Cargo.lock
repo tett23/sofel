@@ -101,6 +101,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sofel-raster"
+version = "0.0.0"
+dependencies = [
+ "sofel-geom",
+]
+
+[[package]]
 name = "sofel-read"
 version = "0.0.0"
 
@@ -112,5 +119,6 @@ dependencies = [
  "sofel-font",
  "sofel-geom",
  "sofel-outline",
+ "sofel-raster",
  "sofel-read",
 ]

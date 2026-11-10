@@ -13,6 +13,7 @@ sofel-read = { path = "../sofel-read" }
 sofel-geom = { path = "../sofel-geom" }
 sofel-font = { path = "../sofel-font" }
 sofel-outline = { path = "../sofel-outline" }
+sofel-raster = { path = "../sofel-raster" }
 sofel-cli = { path = "../sofel-cli" }
 
 [lints]

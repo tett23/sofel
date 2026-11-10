@@ -99,6 +99,8 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 ## ラスタライズ（`sofel-raster`）
 
 - 8bitのアンチエイリアスの画像を、FreeTypeのsmoothのラスタライザと同じ数値の計算で作る（[ADR 0012](adr/0012-antialiased-rasterizer.md)）。セルは帯ごとの密な配列（上限64KiB）に積む。重なりの印のある輪郭は4×4の副標本で描く。FreeTypeとの差は0（完全一致）とする。
+- FreeTypeは、輪郭をビットマップの原点へ動かしてから（重なりの印があればさらに4倍してから）命令に変換する。暗黙の曲線上の点（中点の0への切り捨て）はこの順序で決まるので、完全に一致させるには、`sofel_outline::load` で点を読み、`sofel_raster::pixel_box` で箱を求め、`Scratch::decompose` に `PixelBox::shift()` と倍率を渡して命令に変換し、`Rasterizer::render_placed` で描く。この手順は `sofel_cli::glyph::render` にまとめてある。`Rasterizer::render` は、記録した命令をあとから動かすので、中点のある輪郭では1画素の値が1〜2ずれることがある。
+- HarfBuzz 15.1.0のテストのフォントのglyfを持つフェイスで、22万3917項目（12、24、48画素）を比べ、期待する失敗は223項目である。すべて、輪郭が一致しないグリフ（`pp1.x` の平行移動、またはCFFとglyfの両方を持つフォント）のものである。
 
 ## 道具
 

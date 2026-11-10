@@ -168,14 +168,29 @@ impl Context<'_> {
 
 /// Draws `glyph` into `pen` as FreeType's `FT_Load_Glyph` with
 /// `FT_LOAD_NO_HINTING` (and `FT_LOAD_NO_SCALE` for
-/// [`Scale::Unscaled`]) followed by `FT_Outline_Decompose` would. On an
-/// error, the commands sent so far stay sent.
+/// [`Scale::Unscaled`]) followed by `FT_Outline_Decompose` would: [`load`]
+/// and then [`Scratch::decompose`] with no offset. On an error, the
+/// commands sent so far stay sent.
 pub fn draw(
     font: &Font<'_>,
     glyph: GlyphId,
     scale: Scale,
     scratch: &mut Scratch,
     pen: &mut impl Pen,
+) -> Result<OutlineInfo, OutlineError> {
+    let info = load(font, glyph, scale, scratch)?;
+    scratch.decompose(Point::default(), 1, pen)?;
+    Ok(info)
+}
+
+/// Loads the points of `glyph` into `scratch`, as `FT_Load_Glyph` with
+/// `FT_LOAD_NO_HINTING` would, without sending any command. Use
+/// [`Scratch::decompose`] to draw them.
+pub fn load(
+    font: &Font<'_>,
+    glyph: GlyphId,
+    scale: Scale,
+    scratch: &mut Scratch,
 ) -> Result<OutlineInfo, OutlineError> {
     let extended = font.table(glyf::TAG_WIDE).is_some();
     let (glyf_tag, loca_tag): (Tag, Tag) = if extended {
@@ -193,19 +208,52 @@ pub fn draw(
         extended,
         scale,
     };
-    if glyph.0 >= ctx.num_glyphs {
-        return Err(OutlineError::InvalidGlyphIndex);
-    }
     scratch.points.clear();
     scratch.tags.clear();
     scratch.ends.clear();
     scratch.components.clear();
     scratch.stack.clear();
+    if glyph.0 >= ctx.num_glyphs {
+        return Err(OutlineError::InvalidGlyphIndex);
+    }
     let mut overlap = false;
-    load(&ctx, scratch, glyph.0, 0, &mut overlap)?;
-    let cbox = control_box(&scratch.points);
-    decompose(&scratch.points, &scratch.tags, &scratch.ends, pen)?;
-    Ok(OutlineInfo { overlap, cbox })
+    let loaded = load_glyph(&ctx, scratch, glyph.0, 0, &mut overlap);
+    if let Err(e) = loaded {
+        scratch.points.clear();
+        scratch.tags.clear();
+        scratch.ends.clear();
+        return Err(e);
+    }
+    Ok(OutlineInfo {
+        overlap,
+        cbox: control_box(&scratch.points),
+    })
+}
+
+impl Scratch {
+    /// Sends the outline last loaded by [`load`] to `pen`, as
+    /// `FT_Outline_Decompose` would after `FT_Outline_Translate` by
+    /// `offset` and multiplying every point by `multiplier`. FreeType's
+    /// smooth renderer decomposes the outline after moving it to the
+    /// bitmap origin (and, for overlapping outlines, after multiplying it
+    /// by 4); the implied on-curve points, `(a + b) / 2` truncated toward
+    /// zero, depend on that, so renderers that must match FreeType pass
+    /// the same offset and multiplier here.
+    pub fn decompose(
+        &self,
+        offset: Point,
+        multiplier: i32,
+        pen: &mut impl Pen,
+    ) -> Result<(), OutlineError> {
+        decompose(
+            &self.points,
+            &self.tags,
+            &self.ends,
+            offset,
+            multiplier,
+            pen,
+        )
+    }
 }
 
 fn control_box(points: &[Point]) -> CBox {
@@ -229,7 +277,7 @@ fn control_box(points: &[Point]) -> CBox {
 }
 
 /// `load_truetype_glyph` without hinting, variations and metrics.
-fn load(
+fn load_glyph(
     ctx: &Context<'_>,
     s: &mut Scratch,
     glyph: u32,
@@ -321,7 +369,7 @@ fn load_composite(
             break;
         };
         let base = s.points.len();
-        load(ctx, s, c.glyph.0, depth.saturating_add(1), overlap)?;
+        load_glyph(ctx, s, c.glyph.0, depth.saturating_add(1), overlap)?;
         if s.points.len() == base {
             continue;
         }
@@ -413,11 +461,23 @@ fn decompose(
     points: &[Point],
     tags: &[u8],
     ends: &[usize],
+    offset: Point,
+    multiplier: i32,
     pen: &mut impl Pen,
 ) -> Result<(), OutlineError> {
     let invalid = OutlineError::InvalidOutline;
     let at = |i: i64| usize::try_from(i).ok();
-    let pt = |i: i64| at(i).and_then(|i| points.get(i)).copied().ok_or(invalid);
+    let place = |p: Point| Point {
+        x: p.x.saturating_add(offset.x).saturating_mul(multiplier),
+        y: p.y.saturating_add(offset.y).saturating_mul(multiplier),
+    };
+    let pt = |i: i64| {
+        at(i)
+            .and_then(|i| points.get(i))
+            .copied()
+            .map(place)
+            .ok_or(invalid)
+    };
     let tg = |i: i64| {
         at(i)
             .and_then(|i| tags.get(i))

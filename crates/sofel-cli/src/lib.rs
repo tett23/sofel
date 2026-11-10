@@ -2,5 +2,7 @@
 //! `src/bin` is a thin wrapper around a `run` function here, so that the
 //! tools can also be driven from tests.
 
+pub mod glyph;
 pub mod json;
+pub mod render;
 pub mod validate;

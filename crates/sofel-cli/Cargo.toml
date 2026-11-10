@@ -9,10 +9,17 @@ rust-version.workspace = true
 
 [dependencies]
 sofel-read = { path = "../sofel-read" }
+sofel-font = { path = "../sofel-font" }
+sofel-outline = { path = "../sofel-outline" }
+sofel-raster = { path = "../sofel-raster" }
 
 [[bin]]
 name = "sofel-validate"
 path = "src/bin/sofel-validate.rs"
+
+[[bin]]
+name = "sofel-render"
+path = "src/bin/sofel-render.rs"
 
 [lints]
 workspace = true

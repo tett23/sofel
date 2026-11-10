@@ -158,6 +158,11 @@ fn outlines_agree_with_freetype() {
         &expected,
     );
     if !problems.is_empty() {
+        // Every problem, for reviewing or updating the list.
+        let dir = paths::root().join("target/conformance");
+        let _ = std::fs::create_dir_all(&dir);
+        let all: String = expect::report(&problems, LIST);
+        let _ = std::fs::write(dir.join("outline.problems"), all);
         let mut msg = expect::report(&problems[..problems.len().min(200)], LIST);
         for p in problems.iter().take(50) {
             if let expect::Problem::Regressed(id) = p
