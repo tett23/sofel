@@ -188,7 +188,7 @@ fn invalid_inputs() {
 #[test]
 fn pending_tables_are_unsupported_unless_dropped() {
     let mut t = sample_tables();
-    t.push((b"GSUB", vec![0, 1, 0, 0, 0, 0, 0, 0, 0, 0]));
+    t.push((b"MATH", vec![0, 1, 0, 0, 0, 0, 0, 0, 0, 0]));
     t.sort_by_key(|(t, _)| **t);
     let data = sfnt(&t);
     let font = Font::new(&data, 0).unwrap();
@@ -197,12 +197,12 @@ fn pending_tables_are_unsupported_unless_dropped() {
         subset(&font, &input),
         Err(SubsetError::Unsupported { .. })
     ));
-    let dropped = input.map_set(SetKind::DropTables, |s| s.add(Tag::new(b"GSUB").to_u32()));
+    let dropped = input.map_set(SetKind::DropTables, |s| s.add(Tag::new(b"MATH").to_u32()));
     let out = subset(&font, &dropped).unwrap();
     assert!(
         sofel_font::read::sfnt::Sfnt::new(&out)
             .unwrap()
-            .table(Tag::new(b"GSUB"))
+            .table(Tag::new(b"MATH"))
             .is_none()
     );
 }

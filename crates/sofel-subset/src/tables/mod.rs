@@ -1,6 +1,7 @@
 //! Writing the tables (`hb_subset_plan_execute_or_fail` and the tables'
 //! `subset` functions).
 
+mod base;
 pub(crate) mod cmap;
 pub(crate) mod glyf;
 mod hdmx;
@@ -19,6 +20,8 @@ use sofel_write::{Errors, Serializer};
 
 use crate::error::SubsetError;
 use crate::input::Flags;
+use crate::layout::Gsubgpos;
+use crate::layout::common::Sub;
 use crate::plan::Plan;
 
 /// `hb_face_get_upem`.
@@ -107,6 +110,9 @@ impl Plan {
             b"DMAP" => Some(|p, f, _, d, s, out| cmap::subset(p, f, d, true, s, out)),
             b"OS/2" => Some(os2::subset),
             b"post" => Some(post::subset),
+            b"GDEF" => Some(gdef),
+            b"GSUB" | b"GPOS" => Some(gsubgpos),
+            b"BASE" => Some(base::subset),
             b"hhea" | b"HHEA" | b"vhea" | b"VHEA" | b"loca" | b"LOCA" => return Ok(()),
             b"fvar" | b"avar" | b"cvar" | b"MVAR" | b"STAT" if self.axes.is_empty() => {
                 self.passthrough(font, tag, tables);
@@ -154,6 +160,41 @@ impl Plan {
         })?;
         tables.insert(tag, bytes);
         Ok(())
+    }
+}
+
+/// GDEF (`GDEF::subset`).
+fn gdef(
+    p: &Plan,
+    _font: &Font<'_>,
+    tag: Tag,
+    src: &[u8],
+    s: &mut Serializer,
+    _out: &mut Tables,
+) -> Result<bool, SubsetError> {
+    let mut c = Sub::new(p, s, false);
+    let needed = crate::layout::gdef::subset(&mut c, src);
+    match c.unsupported {
+        Some(reason) => Err(SubsetError::Unsupported { tag, reason }),
+        None => Ok(needed),
+    }
+}
+
+/// GSUB and GPOS (`GSUBGPOS::subset`).
+fn gsubgpos(
+    p: &Plan,
+    _font: &Font<'_>,
+    tag: Tag,
+    src: &[u8],
+    s: &mut Serializer,
+    _out: &mut Tables,
+) -> Result<bool, SubsetError> {
+    let gsub = tag == t(b"GSUB");
+    let mut c = Sub::new(p, s, gsub);
+    let needed = c.gsubgpos(Gsubgpos::new(src, gsub));
+    match c.unsupported {
+        Some(reason) => Err(SubsetError::Unsupported { tag, reason }),
+        None => Ok(needed),
     }
 }
 

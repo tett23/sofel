@@ -7,9 +7,11 @@ use alloc::vec::Vec;
 use sofel_font::Font;
 use sofel_font::read::Tag;
 
+use crate::bits::BitSet;
 use crate::cmap_accel::CmapAccel;
 use crate::error::SubsetError;
 use crate::input::{AxisRange, Flags, Input, SetKind};
+use crate::layout::{self, Gsubgpos, LayoutPlan};
 use crate::limits;
 use crate::set::{INVALID, RangeSet};
 use crate::tables::glyf::GlyfAccel;
@@ -17,11 +19,7 @@ use crate::tables::glyf::GlyfAccel;
 /// The tables whose subsetting or closure this version does not write
 /// yet: present and kept, they make [`Plan::new`] return
 /// [`SubsetError::Unsupported`].
-const PENDING: [(&[u8; 4], &str); 21] = [
-    (b"GSUB", "layout subsetting (ADR 0022 stage 3)"),
-    (b"GPOS", "layout subsetting (ADR 0022 stage 3)"),
-    (b"GDEF", "layout subsetting (ADR 0022 stage 3)"),
-    (b"BASE", "BASE subsetting (ADR 0022 stage 3)"),
+const PENDING: [(&[u8; 4], &str); 17] = [
     (b"MATH", "MATH subsetting (ADR 0022 stage 8)"),
     (b"COLR", "color subsetting (ADR 0022 stage 9)"),
     (b"CPAL", "color subsetting (ADR 0022 stage 9)"),
@@ -122,6 +120,73 @@ pub struct Plan {
     pub(crate) os2_max_cp: u32,
     pub(crate) force_long_loca: bool,
     pub(crate) axes: BTreeMap<Tag, AxisRange>,
+    /// The number of glyphs of the source font.
+    pub(crate) source_glyphs: u32,
+    pub(crate) layout: PlanLayout,
+}
+
+/// The layout part of the plan (the `gsub_*`, `gpos_*`,
+/// `_glyphset_gsub`, `glyph_map_gsub` and `used_mark_sets_map` members of
+/// `hb_subset_plan_t`).
+#[derive(Clone, Debug, Default)]
+pub(crate) struct PlanLayout {
+    /// The glyphs after the GSUB closure (`_glyphset_gsub`).
+    pub glyphset_gsub: BitSet,
+    /// Old to new ids of `glyphset_gsub`, [`INVALID`] elsewhere
+    /// (`glyph_map_gsub_flat`).
+    pub gsub_map_flat: Vec<u32>,
+    pub gsub: LayoutPlan,
+    pub gpos: LayoutPlan,
+    /// Old mark glyph set index to new (`used_mark_sets_map`).
+    pub used_mark_sets: BTreeMap<u32, u32>,
+    pub layout_features: RangeSet,
+    pub layout_scripts: RangeSet,
+}
+
+/// The checks of the layout tables this version cannot write yet.
+fn layout_unsupported(
+    font: &Font<'_>,
+    drop: &RangeSet,
+    no_subset: &RangeSet,
+) -> Result<(), SubsetError> {
+    let kept = |t: &[u8; 4]| {
+        let tag = Tag::new(t);
+        font.table(tag)
+            .filter(|_| !drop.contains(tag.to_u32()) && !no_subset.contains(tag.to_u32()))
+    };
+    let any = [b"GSUB", b"GPOS", b"GDEF", b"BASE"]
+        .iter()
+        .any(|t| kept(t).is_some());
+    if any && font.num_glyphs() > 0x1_0000 {
+        return Err(SubsetError::Unsupported {
+            tag: Tag::new(b"GSUB"),
+            reason: "layout tables of fonts with more than 65536 glyphs (ADR 0022 stage 3)",
+        });
+    }
+    for t in [b"GSUB", b"GPOS"] {
+        if kept(t).is_some_and(|d| sofel_font::read::be::u32_at(d, 0).unwrap_or(0) >= 0x0001_0002) {
+            return Err(SubsetError::Unsupported {
+                tag: Tag::new(t),
+                reason: "GSUB and GPOS 1.2 (ADR 0022 stage 3)",
+            });
+        }
+    }
+    if kept(b"GDEF").is_some_and(layout::gdef::has_var_store) {
+        return Err(SubsetError::Unsupported {
+            tag: Tag::new(b"GDEF"),
+            reason: "the GDEF item variation store (ADR 0022 stage 10)",
+        });
+    }
+    if let Some(d) = kept(b"BASE") {
+        let v = sofel_font::read::be::u32_at(d, 0).unwrap_or(0);
+        if v >= 0x0001_0001 && sofel_font::read::be::u32_at(d, 8).unwrap_or(0) != 0 {
+            return Err(SubsetError::Unsupported {
+                tag: Tag::new(b"BASE"),
+                reason: "the BASE item variation store (ADR 0022 stage 10)",
+            });
+        }
+    }
+    Ok(())
 }
 
 impl Plan {
@@ -164,6 +229,8 @@ impl Plan {
             }
         }
 
+        layout_unsupported(font, drop, no_subset)?;
+
         let cmap = CmapAccel::new(font);
         let glyphs_in = input.set(SetKind::Glyphs);
         let mut p = Plan {
@@ -183,6 +250,12 @@ impl Plan {
             os2_max_cp: INVALID,
             force_long_loca: flags.has(Flags::IFTB_REQUIREMENTS),
             axes: input.axes().clone(),
+            source_glyphs: num_glyphs,
+            layout: PlanLayout {
+                layout_features: input.set(SetKind::LayoutFeatures).clone(),
+                layout_scripts: input.set(SetKind::LayoutScripts).clone(),
+                ..PlanLayout::default()
+            },
         };
 
         // _populate_unicodes_to_retain
@@ -239,8 +312,63 @@ impl Plan {
         // _populate_gids_to_retain
         glyphset_gsub.add(0);
         cmap.closure_glyphs(&p.unicodes, &mut glyphset_gsub);
-        glyphset_gsub.truncate(num_glyphs);
-        let cur = glyphset_gsub;
+        let tag_kept = |t: &[u8; 4]| !drop.contains(Tag::new(t).to_u32());
+        if tag_kept(b"MATH") {
+            glyphset_gsub.truncate(num_glyphs);
+        }
+        // layout_populate_gids_to_retain
+        let mut gsub_glyphs = BitSet::from_range_set(&glyphset_gsub);
+        let table =
+            |t: &[u8; 4], gsub: bool| Gsubgpos::new(font.table(Tag::new(t)).unwrap_or(&[]), gsub);
+        let no_closure = flags.has(Flags::NO_LAYOUT_CLOSURE);
+        if tag_kept(b"GSUB") {
+            p.layout.gsub = layout::plan::closure_glyphs_lookups_features(
+                table(b"GSUB", true),
+                num_glyphs,
+                no_closure,
+                &p.layout.layout_features,
+                &p.layout.layout_scripts,
+                &mut gsub_glyphs,
+            );
+        }
+        if tag_kept(b"GPOS") {
+            p.layout.gpos = layout::plan::closure_glyphs_lookups_features(
+                table(b"GPOS", false),
+                num_glyphs,
+                no_closure,
+                &p.layout.layout_features,
+                &p.layout.layout_scripts,
+                &mut gsub_glyphs,
+            );
+        }
+        gsub_glyphs.truncate(num_glyphs);
+        let cur = gsub_glyphs.to_range_set();
+        // _nameid_closure
+        if tag_kept(b"STAT") {
+            stat_name_ids(
+                font.table(Tag::new(b"STAT")).unwrap_or(&[]),
+                &mut p.name_ids,
+            );
+        }
+        fvar_name_ids(
+            font.table(Tag::new(b"fvar")).unwrap_or(&[]),
+            &mut p.name_ids,
+        );
+        if tag_kept(b"GPOS") {
+            layout::plan::collect_name_ids(
+                table(b"GPOS", false),
+                &p.layout.gpos.features,
+                &mut p.name_ids,
+            );
+        }
+        if tag_kept(b"GSUB") {
+            layout::plan::collect_name_ids(
+                table(b"GSUB", true),
+                &p.layout.gsub.features,
+                &mut p.name_ids,
+            );
+        }
+        p.layout.glyphset_gsub = gsub_glyphs;
         let glyf = GlyfAccel::new(font);
         if glyf.has_data() {
             let mut budget: i64 = i64::try_from(glyf.table_len())
@@ -275,10 +403,27 @@ impl Plan {
                 n
             };
         p.glyphs = GlyphMap::new(new_to_old, num_glyphs);
+        // _create_glyph_map_gsub
+        let flat = match p.layout.glyphset_gsub.max() {
+            INVALID => 0,
+            m => m.saturating_add(1) as usize,
+        };
+        let mut gsub_map = alloc::vec![INVALID; flat];
+        for g in p.layout.glyphset_gsub.iter() {
+            if let Some(slot) = gsub_map.get_mut(g as usize) {
+                *slot = p.glyphs.new_gid(g).unwrap_or(INVALID);
+            }
+        }
+        p.layout.gsub_map_flat = gsub_map;
         p.unicode_to_new_gid = list
             .into_iter()
             .map(|(cp, g)| (cp, p.glyphs.new_gid(g).unwrap_or(INVALID)))
             .collect();
+        if tag_kept(b"GDEF")
+            && let Some(gdef) = font.table(Tag::new(b"GDEF"))
+        {
+            p.layout.used_mark_sets = layout::gdef::used_mark_sets(gdef, &p.layout.glyphset_gsub);
+        }
         Ok(p)
     }
 
@@ -330,6 +475,58 @@ impl Plan {
     /// The flags of the input.
     pub fn flags(&self) -> Flags {
         self.flags
+    }
+}
+
+/// `STAT::collect_name_ids` without axis limits: the design axes'
+/// names, the axis values' names and the elided fallback name.
+fn stat_name_ids(stat: &[u8], names: &mut RangeSet) {
+    let d = layout::data::D(stat);
+    let ok = stat.len() >= 20 && d.u16(0) == 1 && d.u16(2) > 0;
+    if !ok {
+        return;
+    }
+    let axes = d.follow(d.u32(8));
+    for i in 0..usize::from(d.u16(6)) {
+        names.add(u32::from(axes.u16(i.saturating_mul(8).saturating_add(4))));
+    }
+    let values = d.follow(d.u32(14));
+    for i in 0..usize::from(d.u16(12)) {
+        let v = values.off16(i.saturating_mul(2));
+        if matches!(v.u16(0), 1..=4) {
+            names.add(u32::from(v.u16(6)));
+        }
+    }
+    names.add(u32::from(d.u16(18)));
+}
+
+/// `fvar::collect_name_ids` without axis limits: the axes' names and
+/// the instances' subfamily and PostScript names.
+fn fvar_name_ids(fvar: &[u8], names: &mut RangeSet) {
+    let d = layout::data::D(fvar);
+    let axis_count = usize::from(d.u16(8));
+    let instance_size = usize::from(d.u16(14));
+    let ok = fvar.len() >= 16
+        && d.u16(0) == 1
+        && d.u16(10) == 20
+        && instance_size >= axis_count.saturating_mul(4).saturating_add(4);
+    if !ok {
+        return;
+    }
+    let axes = d.follow(u32::from(d.u16(4)));
+    for i in 0..axis_count {
+        names.add(u32::from(axes.u16(i.saturating_mul(20).saturating_add(18))));
+    }
+    let instances = axes.at(axis_count.saturating_mul(20));
+    for i in 0..usize::from(d.u16(12)) {
+        let inst = instances.at(i.saturating_mul(instance_size));
+        names.add(u32::from(inst.u16(0)));
+        if instance_size >= axis_count.saturating_mul(4).saturating_add(6) {
+            let ps = inst.u16(axis_count.saturating_mul(4).saturating_add(4));
+            if ps != 0xFFFF {
+                names.add(u32::from(ps));
+            }
+        }
     }
 }
 

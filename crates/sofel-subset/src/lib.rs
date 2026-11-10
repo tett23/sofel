@@ -16,9 +16,11 @@
 extern crate alloc;
 
 mod args;
+mod bits;
 mod cmap_accel;
 mod error;
 mod input;
+mod layout;
 mod limits;
 mod plan;
 mod set;
