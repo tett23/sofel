@@ -25,6 +25,7 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-outline`](crates/sofel-outline) | glyfとGLYFの輪郭を、ヒンティングなしでFreeTypeと同じ座標で `Pen` に渡す |
 | [`sofel-raster`](crates/sofel-raster) | FreeTypeのsmoothのラスタライザと同じ計算で、8bitのアンチエイリアスの画像を作る |
 | [`sofel-cli`](crates/sofel-cli) | 小さな道具（`sofel-validate`、`sofel-render`） |
+| [`sofel-capi`](crates/sofel-capi) | C ABI（ヘッダは [`sofel.h`](crates/sofel-capi/include/sofel.h)、[ADR 0015](docs/adr/0015-c-abi.md)） |
 | [`sofel-conformance`](crates/sofel-conformance) | FreeTypeとの突き合わせのテスト（`cargo test` では走らない） |
 
 ### `sofel-render`
@@ -61,9 +62,19 @@ git config core.hooksPath .githooks
 ```sh
 cargo test
 cargo clippy --workspace --all-targets -- -D warnings
-sh scripts/check-deps.sh   # クレートの依存が ADR 0003 の表に沿うか（jq が要る）
+sh scripts/check-deps.sh   # クレートの依存が ADR 0003 の表に沿い、sofel-capi 以外が unsafe を禁じているか（jq が要る）
 sh scripts/run-tests.sh    # シェルのスクリプトのテスト
-RUSTDOCFLAGS="-D warnings" cargo doc --no-deps -p sofel-geom -p sofel-read -p sofel-font -p sofel-outline -p sofel-raster -p sofel-cli
+RUSTDOCFLAGS="-D warnings" cargo doc --no-deps -p sofel-geom -p sofel-read -p sofel-font -p sofel-outline -p sofel-raster -p sofel-cli -p sofel-capi
+```
+
+C ABI（[ADR 0015](docs/adr/0015-c-abi.md)）のテストには、Cのコンパイラと `nm` と jq が要る。Cのテストの期待値 `crates/sofel-capi/tests/c/fixture.h` はRustのAPIから作り、`cargo test` が最新であることを確かめる（`SOFEL_UPDATE_FIXTURE=1 cargo test -p sofel-capi --test fixture` で書きなおす）。
+
+```sh
+sh scripts/test-capi.sh        # ネイティブで走らせ、公開のシンボルとヘッダの一致も確かめる
+sh scripts/test-capi.sh tsan   # ThreadSanitizer
+sh scripts/test-capi.sh asan   # AddressSanitizer
+sh scripts/test-capi.sh wasm   # wasi-sdk で wasm32-wasip1 にビルドし、wasmtime で走らせる
+sh scripts/check-capi.sh       # ライブラリの公開の関数がすべてC ABIにあるか、除外の理由があるか
 ```
 
 ライブラリのクレートは公開の項目すべてにrustdocを書く（`#![warn(missing_docs)]`）。使い方の手引きは [docs/api.md](docs/api.md)。
@@ -79,7 +90,7 @@ cargo test --release -p sofel-conformance
 wasmでは、`wasm32-unknown-unknown` へのビルドと、`wasm32-wasip1` での単体テストを確かめる（[ADR 0004](docs/adr/0004-wasm-and-no-std.md)）。単体テストには [wasmtime](https://wasmtime.dev/) が要る。
 
 ```sh
-cargo build --release --target wasm32-unknown-unknown -p sofel-read -p sofel-geom -p sofel-font -p sofel-outline -p sofel-raster
+cargo build --release --target wasm32-unknown-unknown -p sofel-read -p sofel-geom -p sofel-font -p sofel-outline -p sofel-raster -p sofel-capi
 CARGO_TARGET_WASM32_WASIP1_RUNNER=wasmtime cargo test --target wasm32-wasip1 -p sofel-read -p sofel-geom -p sofel-font -p sofel-outline -p sofel-raster
 ```
 

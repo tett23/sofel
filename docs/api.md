@@ -20,9 +20,10 @@ cargo doc --no-deps -p sofel-geom -p sofel-read -p sofel-font -p sofel-outline -
 | `sofel-outline` | glyfとGLYFの輪郭を、ヒンティングなしでFreeTypeと同じ座標で `Pen` に渡す | `sofel-font`、`sofel-geom` |
 | `sofel-raster` | FreeTypeのsmoothのラスタライザと同じ計算で、8bitのアンチエイリアスの画像を作る | `sofel-geom` |
 | `sofel-cli` | 小さな道具（`sofel-validate`、`sofel-render`）と、1グリフを描く `glyph::render` | すべて |
+| `sofel-capi` | C ABI（[ADR 0015](adr/0015-c-abi.md)） | すべて |
 
-`sofel-cli` 以外は `no_std`（必要なものは `alloc`）で、`wasm32-unknown-unknown` にビルドできる（[ADR 0004](adr/0004-wasm-and-no-std.md)）。
-`unsafe` は使わない。どの入力でもpanicしない（clippyのlintで添字、検査なしの算術、情報の落ちるキャストを禁じ、ファジングで確かめている）。
+`sofel-cli` と `sofel-capi` 以外は `no_std`（必要なものは `alloc`）で、`wasm32-unknown-unknown` にビルドできる（[ADR 0004](adr/0004-wasm-and-no-std.md)）。
+`unsafe` は使わない（`sofel-capi` を除く）。どの入力でもpanicしない（clippyのlintで添字、検査なしの算術、情報の落ちるキャストを禁じ、ファジングで確かめている）。
 
 ## 共通の約束
 
@@ -167,6 +168,52 @@ match FontFile::new(&data)? {
 
 - 型：`F26Dot6`、`Fixed`（16.16）、`F2Dot14`、`Point`（`i32` の `x`、`y`）、`Matrix`。
 - 結果が `i32` に収まらないときは飽和させる（FreeTypeは未定義の動作になる箇所）。
+
+## Cから使う（`sofel-capi`）
+
+`sofel-capi` は、上のAPIをCの呼び出し規約で公開する（[ADR 0015](adr/0015-c-abi.md)）。
+宣言と約束は [`crates/sofel-capi/include/sofel.h`](../crates/sofel-capi/include/sofel.h) にあり、各関数の説明に、対応するRustの関数とHarfBuzzとFreeTypeの関数を書いている。
+静的ライブラリは `cargo build --release -p sofel-capi` で `target/release/libsofel_capi.a` にできる。リンクに要るシステムのライブラリは `cargo rustc -p sofel-capi --lib --crate-type staticlib -- --print native-static-libs` で分かる。
+
+```c
+#include "sofel.h"
+
+int32_t err;
+sofel_font_t *font = sofel_font_create(data, len, 0, &err); /* data は複製しない */
+uint32_t gid;
+uint16_t advance;
+if (font != NULL && sofel_font_nominal_glyph(font, 'A', &gid) == SOFEL_OK) {
+  sofel_font_h_advance(font, gid, &advance);
+
+  sofel_outline_scratch_t *scratch = sofel_outline_scratch_create(); /* スレッドごとに1つ */
+  sofel_rasterizer_t *raster = sofel_rasterizer_create();
+  uint8_t pixels[4096];
+  size_t n;
+  int32_t box[4]; /* left, top, width, rows */
+  err = sofel_render_glyph(font, gid, 48, scratch, raster, pixels, sizeof pixels, &n, box);
+  /* SOFEL_ERROR_BUFFER_TOO_SMALL なら n バイトの配列で呼びなおす */
+  sofel_rasterizer_destroy(raster);
+  sofel_outline_scratch_destroy(scratch);
+}
+sofel_font_destroy(font);
+```
+
+| sofel（C） | Rust | HarfBuzz／FreeType |
+|---|---|---|
+| `sofel_font_create` | `Font::new` | `hb_face_create`／`FT_New_Memory_Face` |
+| `sofel_font_nominal_glyph`、`sofel_font_variation_glyph` | `Font::nominal_glyph`、`Font::variation_glyph` | `hb_font_get_nominal_glyph`、`hb_font_get_variation_glyph` |
+| `sofel_font_h_advance` | `Font::advance` | `hb_font_get_glyph_h_advance` |
+| `sofel_font_ft_left_side_bearing` | `Font::ft_left_side_bearing` | `FT_Get_Glyph_Metrics` |
+| `sofel_font_table` | `Font::table` | `hb_face_reference_table`／`FT_Load_Sfnt_Table` |
+| `sofel_outline_draw`、`sofel_outline_load`、`sofel_outline_decompose` | `draw`、`load`、`Scratch::decompose` | `FT_Load_Glyph` + `FT_Outline_Decompose` |
+| `sofel_rasterizer_*`、`sofel_pixel_box` | `Rasterizer`、`pixel_box` | `FT_Outline_Render` |
+| `sofel_render_glyph` | `sofel_cli::glyph::render` | `FT_Render_Glyph` |
+| `sofel_validate`、`sofel_diagnostic_*` | `validate::sfnt`、`validate::collection`、`Kind` | なし |
+
+- 誤りうる関数は `int32_t` を返し、`SOFEL_OK`（0）以外は誤り。`sofel_error_string` で英語の説明を引ける。NULLのポインタは `SOFEL_ERROR_NULL` になり、panicもクラッシュもしない。
+- 輪郭は5つの関数ポインタと `void *user` で受け取る。`sofel_rasterizer_move_to` などはその型を持つので、`sofel_outline_decompose` にそのまま渡してラスタライザに記録できる。
+- `sofel-read` の表のビューは公開しない。表のバイト列を `sofel_font_table` で取り出して読む。公開しない関数とその理由は `crates/sofel-capi/unmapped.txt` にある。
+- `wasm32-wasip1` では、同じ静的ライブラリをwasi-sdkのclangでCのプログラムとリンクできる。例外処理の提案もC++の実行時ライブラリも要らない。
 
 ## wasmで使う
 

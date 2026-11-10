@@ -1,0 +1,21 @@
+# Public Rust functions of the library crates that the C ABI does not
+# expose on purpose (ADR 0015). scripts/check-capi.sh fails for a public
+# function that is neither here nor on a "Rust:" line of sofel.h.
+#
+# <path> <reason>; a path ending in `::*` covers everything under it.
+
+sofel_font::Font::sfnt Returns a sofel-read view of the table directory; C reads tables with sofel_font_table.
+sofel_font::Font::head Returns a sofel-read view of head; C reads the table with sofel_font_table.
+sofel_geom::Command::apply Replays a recorded Rust Command into a Rust Pen; C pens receive the commands directly.
+sofel_geom::F26Dot6::from_int A multiplication by 64, which C writes as such.
+sofel_read::be::* Bounds-checked big-endian readers of Rust slices for the table views; C reads bytes directly.
+sofel_read::cmap::* Zero-copy Rust views and per-table validators; C maps characters with sofel_font_nominal_glyph and sofel_font_variation_glyph, reads the bytes with sofel_font_table, and validates with sofel_validate.
+sofel_read::glyf::* Zero-copy Rust views and per-table validators; C gets outlines with sofel_outline_*, the bytes with sofel_font_table, and validates with sofel_validate.
+sofel_read::head::* Zero-copy Rust views and per-table validators; C reads the bytes with sofel_font_table and validates with sofel_validate.
+sofel_read::hhea::* Zero-copy Rust views and per-table validators; C gets advances with sofel_font_h_advance, the bytes with sofel_font_table, and validates with sofel_validate.
+sofel_read::hmtx::* Zero-copy Rust views and per-table validators; C gets advances with sofel_font_h_advance, the bytes with sofel_font_table, and validates with sofel_validate.
+sofel_read::loca::* Zero-copy Rust views and per-table validators; C gets outlines with sofel_outline_*, the bytes with sofel_font_table, and validates with sofel_validate.
+sofel_read::maxp::* Zero-copy Rust views and per-table validators; C gets the glyph count with sofel_font_num_glyphs, the bytes with sofel_font_table, and validates with sofel_validate.
+sofel_read::sfnt::* Views of the table directory and collection header; C opens a font of a collection by index with sofel_font_create and reads tables with sofel_font_table.
+sofel_read::validate::checksum Part of the directory validation that sofel_validate runs.
+sofel_read::validate::directory Part of sofel_read::validate::sfnt, which sofel_validate runs.

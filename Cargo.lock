@@ -3,6 +3,18 @@
 version = 4
 
 [[package]]
+name = "sofel-capi"
+version = "0.0.0"
+dependencies = [
+ "sofel-cli",
+ "sofel-font",
+ "sofel-geom",
+ "sofel-outline",
+ "sofel-raster",
+ "sofel-read",
+]
+
+[[package]]
 name = "sofel-cli"
 version = "0.0.0"
 dependencies = [
