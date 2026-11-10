@@ -83,6 +83,8 @@ pub(crate) enum ShaperData {
     Arabic(crate::shapers::arabic::ArabicPlan),
     /// `indic_shape_plan_t`.
     Indic(crate::shapers::indic::IndicPlan),
+    /// `use_shape_plan_t`.
+    Use(crate::shapers::use_::UsePlan),
 }
 
 /// A hook that runs on the buffer.
@@ -139,6 +141,7 @@ impl Shaper {
             Shaper::Hebrew => &shapers::hebrew::HEBREW,
             Shaper::Indic => &shapers::indic::INDIC,
             Shaper::Thai => &shapers::thai::THAI,
+            Shaper::Use => &shapers::use_::USE,
             _ => &DEFAULT_SHAPER,
         }
     }

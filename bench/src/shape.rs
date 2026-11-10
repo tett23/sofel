@@ -112,7 +112,7 @@ const PAIRS: [Pair; 12] = [
         DUPLOYAN,
         "duployan.txt",
         None,
-        Some("USE"),
+        None,
     ),
     pair("Mplus1p-Regular", MPLUS, "ja-runs.txt", None, None),
     pair(
