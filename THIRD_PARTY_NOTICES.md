@@ -14,6 +14,7 @@ sofel ports algorithms and arithmetic from FreeType 2.15.0 (commit `37515cf56ba3
 | Crate | Ported from |
 |---|---|
 | `sofel-geom` | `src/base/ftcalc.c`, `include/freetype/internal/ftcalc.h`, `src/base/fttrigon.c`, `src/base/ftoutln.c` |
+| `sofel-read` | `src/cff/cffparse.c`, `src/cff/cfftoken.h`, `src/cff/cffload.c` (DICT parsing, INDEX access, charset, encoding, FDSelect, the blend vector and the predefined charsets and encodings), `src/base/ftcalc.c` (64-bit `FT_MulFix`, `FT_DivFix`, `FT_MulDiv`, `FT_RoundFix`, `FT_SqrtFixed`, `FT_Matrix_Check`), and the Adobe engine `src/psaux/psintrp.c`, `src/psaux/pshints.c`, `src/psaux/psstack.c`, `src/psaux/psfont.c`, `src/psaux/psft.c`, `src/psaux/psobjs.c` (`cff_random`), `src/psaux/cffdecode.c` (`cff_lookup_glyph_by_stdcharcode`) ([ADR 0021](docs/adr/0021-cff-outlines.md)); the Adobe files carry the patent license below |
 | `sofel-font` | `src/sfnt/ttmtx.c`, `src/sfnt/sfobjs.c` (the left side bearing for phantom point 1; the `FT_Face` values), `src/sfnt/ttload.c` (`tt_face_load_name`, `tt_face_load_post`), `src/sfnt/sfdriver.c` (the PostScript name, `sfnt_get_name_index`), `src/sfnt/ttpost.c`, `src/truetype/ttgload.c` (`TT_Get_VMetrics`) |
 | `sofel-outline` | `src/truetype/ttgload.c`, `src/truetype/ttpload.c`, `src/base/ftoutln.c` |
 | `sofel-raster` | `src/smooth/ftgrays.c`, `src/smooth/ftsmooth.c`, `src/base/ftobjs.c` |
@@ -192,6 +193,37 @@ Legal Terms
 --- end of FTL.TXT ---
 ```
 
+The files of FreeType's Adobe engine (`src/psaux/ps*.c` and `ps*.h`, Copyright 2007-2014 Adobe Systems Incorporated) add the following patent license to the FTL. Ports of them in sofel carry it as well.
+
+```
+This software, and all works of authorship, whether in source or
+object code form as indicated by the copyright notice(s) included
+herein (collectively, the "Work") is made available, and may only be
+used, modified, and distributed under the FreeType Project License,
+LICENSE.TXT.  Additionally, subject to the terms and conditions of the
+FreeType Project License, each contributor to the Work hereby grants
+to any individual or legal entity exercising permissions granted by
+the FreeType Project License and this section (hereafter, "You" or
+"Your") a perpetual, worldwide, non-exclusive, no-charge,
+royalty-free, irrevocable (except as stated in this section) patent
+license to make, have made, use, offer to sell, sell, import, and
+otherwise transfer the Work, where such license applies only to those
+patent claims licensable by such contributor that are necessarily
+infringed by their contribution(s) alone or by combination of their
+contribution(s) with the Work to which such contribution(s) was
+submitted.  If You institute patent litigation against any entity
+(including a cross-claim or counterclaim in a lawsuit) alleging that
+the Work or a contribution incorporated within the Work constitutes
+direct or contributory patent infringement, then any patent licenses
+granted to You under this License for that Work shall terminate as of
+the date such litigation is filed.
+
+By using, modifying, or distributing the Work you indicate that you
+have read and understood the terms and conditions of the
+FreeType Project License as well as those provided in this section,
+and you accept them fully.
+```
+
 ## HarfBuzz
 
 sofel follows rules of HarfBuzz 15.1.0 (commit `3df40d9b98d6b32f0e4288d4ecfbb158ddb3a372`), which is licensed under the "Old MIT" license.
@@ -200,6 +232,7 @@ sofel follows rules of HarfBuzz 15.1.0 (commit `3df40d9b98d6b32f0e4288d4ecfbb158
 |---|---|
 | `tools/gen-unicode/` | The rules of `src/gen-ucd-table.py` (which decompositions are kept, which pairs compose) and `src/gen-arabic-pua.py` ([ADR 0019](docs/adr/0019-unicode-character-data.md)) |
 | `sofel-unicode` | `src/hb-ucd.cc` (Hangul composition and decomposition), `src/hb-common.cc` (`hb_script_from_iso15924_tag`) |
+| `sofel-read` | `src/cff/data.rs`: the 391 CFF standard strings from `src/hb-ot-cff1-std-str.hh` (Copyright © 2019 Adobe, Inc.) ([ADR 0021](docs/adr/0021-cff-outlines.md)) |
 | `sofel-font` | `src/tables/arabic_pua.rs`, generated from HarfBuzz's `src/ArabicPUASimplified.txt` and `src/ArabicPUATraditional.txt`; `src/names.rs` and `src/name_language.rs` from `src/OT/name/name.hh`, `src/hb-ot-name.cc`, `src/hb-ot-name-language-static.hh`, `src/hb-common.cc`, `src/hb-aat-ltag-table.hh`, `src/hb-utf.hh` and `src/hb-ot-post-table.hh`; `src/metrics.rs` and `src/glyf_data.rs` from `src/hb-ot-font.cc`, `src/hb-ot-metrics.cc`, `src/hb-font.hh`, `src/hb-algs.hh` (`_hb_roundf`, `hb_bsearch`, `hb_qsort_inline`), `src/hb-decycler.hh` and `src/OT/glyf/` ([ADR 0016](docs/adr/0016-font-and-vertical-metrics.md)); `src/layout.rs` and `src/base_sanitize.rs` from `src/hb-ot-layout.cc`, `src/hb-ot-layout-base-table.hh`, `src/hb-ot-layout-common.hh` (`Device`, `ItemVariationStore`), `src/hb-ot-tag.cc` (`hb_ot_tag_to_script`) and `src/hb-sanitize.hh` ([ADR 0017](docs/adr/0017-base-baselines.md)) |
 
 The HarfBuzz license follows.

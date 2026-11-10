@@ -35,6 +35,7 @@
 
 pub mod base;
 pub mod be;
+pub mod cff;
 pub mod cmap;
 pub mod device;
 mod diag;
@@ -43,6 +44,7 @@ pub mod glyf;
 pub mod head;
 pub mod hhea;
 pub mod hmtx;
+pub mod item_variation;
 pub mod loca;
 pub mod maxp;
 pub mod name;
