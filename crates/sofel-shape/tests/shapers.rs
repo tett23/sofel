@@ -211,3 +211,96 @@ fn thai_uses_private_use_glyphs_without_thai_gsub() {
     let out = shape_cps(&data, b"Thai", Direction::Ltr, &[0x0E1B, 0x0E48]);
     assert_eq!(glyphs(&out), [g(&THAI, 0x0E1B), g(&THAI, 0x0E48)]);
 }
+
+// Arabic.
+
+const ARABIC: [u32; 16] = [
+    0x0628, 0xFE8F, 0xFE90, 0xFE91, 0xFE92, 0x0644, 0x0627, 0xFEDF, 0xFE8E, 0xFEFB, 0xFEDD, 0xFE8D,
+    0x0650, 0x0655, 0xE000, 0xE001,
+];
+
+fn shape_arabic(data: &[u8], pre: usize, text: &[u32]) -> GlyphBuffer {
+    let font = Font::new(data, 0).unwrap();
+    let props = ResolvedProperties {
+        direction: Direction::Rtl,
+        script: Script::from_iso15924(b"Arab"),
+        language: None,
+    };
+    let plan = ShapePlan::new(&font, props, &[]);
+    assert_eq!(plan.shaper(), Shaper::Arabic);
+    let mut b = UnicodeBuffer::new();
+    b.push_codepoints(text, pre, Some(text.len() - pre));
+    shape(&font, &Scale::unscaled(&font), &plan, b)
+}
+
+#[test]
+fn arabic_fallback_forms_follow_joining() {
+    // No GSUB: the fallback lookups built from the presentation forms in
+    // the cmap give the joining forms. Right to left, so reversed.
+    let data = font_for(&ARABIC, 300, vec![]);
+    let a = |c| g(&ARABIC, c);
+    let out = shape_arabic(&data, 0, &[0x0628, 0x0628, 0x0628]);
+    assert_eq!(glyphs(&out), [a(0xFE90), a(0xFE92), a(0xFE91)]);
+    let out = shape_arabic(&data, 0, &[0x0628]);
+    assert_eq!(glyphs(&out), [a(0xFE8F)]);
+    // A joining character before the text (the buffer's context) makes
+    // the first one final.
+    let out = shape_arabic(&data, 1, &[0x0628, 0x0628]);
+    assert_eq!(glyphs(&out), [a(0xFE90)]);
+    // LAM ALEF: init and fina forms, then the rlig ligature.
+    let out = shape_arabic(&data, 0, &[0x0644, 0x0627]);
+    assert_eq!(glyphs(&out), [a(0xFEFB)]);
+}
+
+#[test]
+fn arabic_moves_modifier_combining_marks_first() {
+    // BEH KASRA HAMZA-BELOW: the hamza below (220, a UAX #53 modifier)
+    // moves before the kasra.
+    let data = font_for(&ARABIC, 300, vec![]);
+    let a = |c| g(&ARABIC, c);
+    let out = shape_arabic(&data, 0, &[0x0628, 0x0650, 0x0655]);
+    assert_eq!(glyphs(&out), [a(0x0650), a(0x0655), a(0xFE8F)]);
+}
+
+#[test]
+fn arabic_stch_repeats_tiles_to_fill_the_word() {
+    // stch turns ALEF into fixed, repeating, fixed tiles (E000, E001,
+    // E000), 100 wide; the three BEH after it (to its left) are 300 each,
+    // so the repeating tile is repeated to fill 900 - 200: seven times.
+    let (alef, f, r) = (
+        g(&ARABIC, 0x0627) as u16,
+        g(&ARABIC, 0xE000) as u16,
+        g(&ARABIC, 0xE001) as u16,
+    );
+    let gsub = simple_layout(
+        &[b"stch"],
+        vec![lookup(
+            2,
+            0,
+            vec![support::multiple_subst(alef, &[f, r, f])],
+        )],
+    );
+    let mut adv = vec![300u16; ARABIC.len() + 1];
+    adv[f as usize] = 100;
+    adv[r as usize] = 100;
+    let map: Vec<(u32, u16)> = ARABIC
+        .iter()
+        .enumerate()
+        .map(|(i, &c)| (c, i as u16 + 1))
+        .collect();
+    let data = support::font(ARABIC.len() as u16 + 1, &map, &adv, vec![(b"GSUB", gsub)]);
+    let out = shape_arabic(&data, 0, &[0x0627, 0x0628, 0x0628, 0x0628]);
+    let gl = glyphs(&out);
+    assert_eq!(gl.len(), 3 + 2 + 7);
+    assert_eq!(gl.iter().filter(|&&x| x == u32::from(r)).count(), 7);
+    assert_eq!(gl.iter().filter(|&&x| x == u32::from(f)).count(), 2);
+    // The tiles take no advance.
+    let tiles: i32 = out
+        .glyph_infos()
+        .iter()
+        .zip(out.glyph_positions())
+        .filter(|(i, _)| i.glyph == u32::from(f) || i.glyph == u32::from(r))
+        .map(|(_, p)| p.x_advance)
+        .sum();
+    assert_eq!(tiles, 0);
+}

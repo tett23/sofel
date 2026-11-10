@@ -302,6 +302,8 @@ pub(crate) mod mcc {
     pub(crate) const CCC18: u8 = 21;
     /// Meteg.
     pub(crate) const CCC22: u8 = 25;
+    /// Point varika.
+    pub(crate) const CCC26: u8 = 26;
     /// `HB_UNICODE_COMBINING_CLASS_BELOW`.
     pub(crate) const BELOW: u8 = 220;
     /// `HB_UNICODE_COMBINING_CLASS_ABOVE`.

@@ -79,6 +79,8 @@ pub(crate) enum ShaperData {
     None,
     /// `hangul_shape_plan_t`.
     Hangul(crate::shapers::hangul::HangulPlan),
+    /// `arabic_shape_plan_t`.
+    Arabic(crate::shapers::arabic::ArabicPlan),
 }
 
 /// A hook that runs on the buffer.
@@ -94,7 +96,7 @@ pub(crate) type ComposeFn = fn(&NormalizeContext<'_, '_, '_>, u32, u32) -> Optio
 pub(crate) struct ShaperFuncs {
     pub(crate) collect_features: Option<fn(&mut Planner<'_, '_>)>,
     pub(crate) override_features: Option<fn(&mut Planner<'_, '_>)>,
-    pub(crate) data_create: Option<fn(&ShapePlan<'_>) -> ShaperData>,
+    pub(crate) data_create: Option<fn(&ShapePlan<'_>, &Font<'_>) -> ShaperData>,
     pub(crate) preprocess_text: Option<BufferHook>,
     pub(crate) postprocess_glyphs: Option<BufferHook>,
     pub(crate) decompose: Option<DecomposeFn>,
@@ -130,6 +132,7 @@ impl Shaper {
     pub(crate) fn funcs(self) -> &'static ShaperFuncs {
         use crate::shapers;
         match self {
+            Shaper::Arabic => &shapers::arabic::ARABIC,
             Shaper::Hangul => &shapers::hangul::HANGUL,
             Shaper::Hebrew => &shapers::hebrew::HEBREW,
             Shaper::Thai => &shapers::thai::THAI,
@@ -415,7 +418,7 @@ impl<'a> ShapePlan<'a> {
             data: ShaperData::None,
         };
         if let Some(f) = funcs.data_create {
-            plan.data = f(&plan);
+            plan.data = f(&plan, font);
         }
         plan
     }

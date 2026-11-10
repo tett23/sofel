@@ -3,6 +3,8 @@
 //!
 //! [`ShaperFuncs`]: crate::plan::ShaperFuncs
 
+pub(crate) mod arabic;
+pub(crate) mod arabic_fallback;
 pub(crate) mod hangul;
 pub(crate) mod hebrew;
 pub(crate) mod thai;
