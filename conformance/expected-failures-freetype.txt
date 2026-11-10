@@ -2,3 +2,484 @@
 # ADR 0008), one identifier per line: <font>#<face>:<item>.
 # Give the reason after the identifier as a comment: `<id>  # <reason>`.
 # Remove an entry when it passes; the test fails until you do.
+# ADR 0023: the raw COLR and CPAL values (freetype_color.rs), <font>#<face>:cpal and :colr:<glyph>.
+harfbuzz/test/api/fonts/COLRv0.extents.ttf#0:cpal  # FreeType reads the uint32 paletteTypes of CPAL version 1 as uint16 (src/sfnt/ttcpal.c, FT_NEXT_USHORT); sofel reads uint32 as the specification and HarfBuzz do
+harfbuzz/test/api/fonts/bad_colrv1.ttf#0:cpal  # FreeType reads the uint32 paletteTypes of CPAL version 1 as uint16 (src/sfnt/ttcpal.c, FT_NEXT_USHORT); sofel reads uint32 as the specification and HarfBuzz do
+harfbuzz/test/api/fonts/colr-empty-store-sentinel-map.ttf#0:colr:1  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:1  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:2  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:3  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:4  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:5  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:6  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:7  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:8  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:9  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:10  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:11  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:12  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:13  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:14  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:15  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:16  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:17  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:18  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:19  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:20  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:21  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:22  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:23  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:24  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:25  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:26  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:27  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:28  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:29  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:30  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:31  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:32  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:33  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:34  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:35  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:36  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:37  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:38  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:39  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:40  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:41  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:42  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:43  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:44  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:45  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:46  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:47  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:48  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:49  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:50  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:51  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:52  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:53  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:54  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:55  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:56  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:57  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:58  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:59  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:60  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:61  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:62  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:63  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:64  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:65  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:66  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:67  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:68  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:69  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:70  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:71  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/colr-var-overflow.ttf#0:colr:72  # FreeType fails the variable paints and clip boxes whose variation deltas it cannot get (get_deltas_for_var_index_base); sofel reads the default values (ADR 0023)
+harfbuzz/test/api/fonts/cpal-v1.ttf#0:cpal  # FreeType reads the uint32 paletteTypes of CPAL version 1 as uint16 (src/sfnt/ttcpal.c, FT_NEXT_USHORT); sofel reads uint32 as the specification and HarfBuzz do
+harfbuzz/test/api/fonts/test_glyphs-glyf_colr_1.ttf#0:cpal  # FreeType reads the uint32 paletteTypes of CPAL version 1 as uint16 (src/sfnt/ttcpal.c, FT_NEXT_USHORT); sofel reads uint32 as the specification and HarfBuzz do
+harfbuzz/test/api/fonts/test_glyphs-glyf_colr_1_variable.ttf#0:cpal  # FreeType reads the uint32 paletteTypes of CPAL version 1 as uint16 (src/sfnt/ttcpal.c, FT_NEXT_USHORT); sofel reads uint32 as the specification and HarfBuzz do
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:cpal  # FreeType reads the uint32 paletteTypes of CPAL version 1 as uint16 (src/sfnt/ttcpal.c, FT_NEXT_USHORT); sofel reads uint32 as the specification and HarfBuzz do
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:8  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:9  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:10  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:11  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:12  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:13  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:14  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:15  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:16  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:17  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:18  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:19  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:20  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:21  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:22  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:23  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:24  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:25  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:26  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:27  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:28  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:29  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:30  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:31  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:32  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:33  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:34  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:35  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:36  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:37  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:38  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:39  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:40  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:41  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:42  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:43  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:44  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:45  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:46  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:47  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:48  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:49  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:50  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:51  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:52  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:53  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:54  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:55  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:56  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:57  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:58  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:59  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:60  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:61  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:62  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:63  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:64  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:65  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:66  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:67  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:68  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:69  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:70  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:71  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:72  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:73  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:74  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:75  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:76  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:77  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:78  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:79  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:80  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:81  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:82  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:83  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:84  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:85  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:86  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:87  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:88  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:89  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:90  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:91  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:92  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:93  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:94  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:95  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:96  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:97  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:98  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:99  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:100  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:101  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:102  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:108  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:109  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:110  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:111  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:112  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:113  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:114  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:115  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:116  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:117  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:118  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:119  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:120  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:121  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:122  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:123  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:124  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:125  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:126  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:127  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:128  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:129  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:130  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:131  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:132  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:133  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:134  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:135  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:136  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:137  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:138  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:139  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:140  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:141  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:142  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:143  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:144  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:145  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:146  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:147  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:148  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:149  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:150  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:151  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:152  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:153  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:154  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:155  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:156  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:157  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:158  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:159  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:160  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:166  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:167  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:168  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:169  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:177  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:178  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:179  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:180  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:181  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:182  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:183  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:184  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:185  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:186  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:187  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:188  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:189  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:190  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:191  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:192  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:193  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:194  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:195  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:196  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:197  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:198  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:199  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:200  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:201  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:202  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:203  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:204  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:205  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:206  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:207  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:208  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:209  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:210  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:211  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:212  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:213  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:214  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:215  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:216  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:217  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:218  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:219  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/49d296d4b92d7dbe2f354ac70fca3e32cbd4a936#0:colr:220  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5216672087867392#0:colr:7  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5216672087867392#0:colr:8  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5216672087867392#0:colr:9  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5216672087867392#0:colr:10  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5216672087867392#0:colr:11  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5216672087867392#0:colr:12  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:cpal  # FreeType reads the uint32 paletteTypes of CPAL version 1 as uint16 (src/sfnt/ttcpal.c, FT_NEXT_USHORT); sofel reads uint32 as the specification and HarfBuzz do
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:8  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:9  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:10  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:11  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:12  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:13  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:14  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:15  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:16  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:17  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:18  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:19  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:20  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:21  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:22  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:23  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:24  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:25  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:26  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:27  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:28  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:29  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:30  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:31  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:32  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:33  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:34  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:35  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:36  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:37  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:38  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:39  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:40  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:41  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:42  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:43  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:44  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:45  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:46  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:47  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:48  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:49  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:50  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:51  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:52  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:53  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:54  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:55  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:56  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:57  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:58  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:59  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:60  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:61  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:62  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:63  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:64  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:65  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:66  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:67  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:68  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:69  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:70  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:71  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:72  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:73  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:74  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:75  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:76  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:77  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:78  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:79  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:80  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:81  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:82  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:83  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:84  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:85  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:86  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:87  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:88  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:89  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:90  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:91  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:92  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:93  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:94  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:95  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:96  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:97  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:98  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:99  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:100  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:101  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:102  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:108  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:109  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:110  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:111  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:112  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:113  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:114  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:115  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:116  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:117  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:118  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:119  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:120  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:121  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:122  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:123  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:124  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:125  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:126  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:127  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:128  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:129  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:130  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:131  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:132  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:133  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:134  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:135  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:136  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:137  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:138  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:139  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:140  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:141  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:142  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:143  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:144  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:145  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:146  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:147  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:148  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:149  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:150  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:151  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:152  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:153  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:154  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:155  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:156  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:157  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:158  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:159  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:160  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:166  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:167  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:168  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:169  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:177  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:178  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:179  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:180  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:181  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:182  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:183  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:184  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:185  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:186  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:187  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:188  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:189  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:190  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:191  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:192  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:193  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:194  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:195  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:196  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:197  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:198  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:199  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:200  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:201  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:202  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:203  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:204  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:205  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:206  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:207  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:208  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:209  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:210  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:211  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:212  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:213  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:214  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:215  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:216  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:217  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:218  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:219  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-5513551012495360#0:colr:220  # FreeType does not load this COLR (tt_face_load_colr: InvalidTable); sofel reads it
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-6111992183324672#0:cpal  # FreeType reads the uint32 paletteTypes of CPAL version 1 as uint16 (src/sfnt/ttcpal.c, FT_NEXT_USHORT); sofel reads uint32 as the specification and HarfBuzz do
+harfbuzz/test/subset/data/fonts/sixtyfour_subset.ttf#0:cpal  # FreeType reads the uint32 paletteTypes of CPAL version 1 as uint16 (src/sfnt/ttcpal.c, FT_NEXT_USHORT); sofel reads uint32 as the specification and HarfBuzz do

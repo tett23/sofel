@@ -64,6 +64,35 @@ const TEXTS: [&str; 4] = [
     "harfbuzz/perf/texts/ja-runs.txt",
 ];
 
+/// The color fonts of ADR 0023: COLRv0, COLRv1 (glyf and CFF layers
+/// alike), CBDT, sbix and SVG.
+const COLOR_FONTS: [(&str, &str); 6] = [
+    (
+        "TwemojiMozilla.subset",
+        "harfbuzz/test/subset/data/fonts/TwemojiMozilla.subset.ttf",
+    ),
+    (
+        "test_glyphs-glyf_colr_1",
+        "harfbuzz/test/api/fonts/test_glyphs-glyf_colr_1.ttf",
+    ),
+    (
+        "noto_handwriting-glyf_colr_1",
+        "harfbuzz/test/fuzzing/fonts/noto_handwriting-glyf_colr_1.ttf",
+    ),
+    (
+        "NotoColorEmoji.subset",
+        "harfbuzz/test/subset/data/fonts/NotoColorEmoji.subset.ttf",
+    ),
+    (
+        "noto_handwriting-sbix",
+        "harfbuzz/test/fuzzing/fonts/noto_handwriting-sbix.ttf",
+    ),
+    (
+        "chromacheck-svg",
+        "harfbuzz/test/api/fonts/chromacheck-svg.ttf",
+    ),
+];
+
 /// Every text of HarfBuzz's perf/texts/, for the Unicode properties.
 const ALL_TEXTS: &str = "harfbuzz/perf/texts";
 
@@ -509,6 +538,212 @@ fn outline_items(b: &mut Bench, name: &str, font: &Font<'_>, ft: &FtFace, hb: &H
     }
 }
 
+/// A [`sofel_geom::Painter`] that counts the commands and image bytes,
+/// as the shim's HarfBuzz paint functions do (without HarfBuzz's root
+/// and inverse scales).
+#[derive(Default)]
+struct CountPainter(u64);
+
+impl sofel_geom::Painter for CountPainter {
+    fn push_transform(&mut self, _: sofel_geom::Transform) {
+        self.0 += 1;
+    }
+    fn pop_transform(&mut self) {
+        self.0 += 1;
+    }
+    fn push_clip_glyph(&mut self, _: u32) {
+        self.0 += 1;
+    }
+    fn push_clip_rectangle(&mut self, _: sofel_geom::Rect) {
+        self.0 += 1;
+    }
+    fn pop_clip(&mut self) {
+        self.0 += 1;
+    }
+    fn fill(&mut self, _: &sofel_geom::Brush<'_>) {
+        self.0 += 1;
+    }
+    fn fill_glyph(&mut self, _: u32, _: &sofel_geom::Solid) {
+        self.0 += 1;
+    }
+    fn image(&mut self, image: &sofel_geom::Image<'_>) -> bool {
+        self.0 += 1 + image.data.len() as u64;
+        true
+    }
+    fn push_group(&mut self, _: sofel_geom::CompositeMode) {
+        self.0 += 1;
+    }
+    fn pop_group(&mut self, _: sofel_geom::CompositeMode) {
+        self.0 += 1;
+    }
+}
+
+/// The color glyph items of ADR 0023, over every glyph of each font.
+fn color_items(b: &mut Bench, testdata: &std::path::Path) {
+    use sofel_color::{
+        ColorFormat, PaintOptions, Painted, Recording, Scratch, glyph_color_format, layers, paint,
+        paint_recording, svg_document,
+    };
+    for (name, path) in COLOR_FONTS {
+        let Ok(bytes) = std::fs::read(testdata.join(path)) else {
+            eprintln!("{path}: missing; run scripts/fetch-testdata.sh");
+            std::process::exit(1);
+        };
+        let font = Font::new(&bytes, 0).expect("sofel opens the font");
+        let ft = FtFace::open(&bytes).expect("FreeType opens the font");
+        let hb = HbFont::open(&bytes).expect("HarfBuzz opens the font");
+        hb.set_ppem(0);
+        let n = font.num_glyphs();
+        let formats = sofel_color::color_formats(&font);
+        use sofel_color::ColorFormats as F;
+        b.item(
+            name,
+            "glyph color format".into(),
+            &mut || {
+                (0..n)
+                    .map(|g| {
+                        let paint =
+                            u64::from(glyph_color_format(&font, g) == Some(ColorFormat::ColrV1));
+                        paint * 65536 + layers(&font, g).count() as u64
+                    })
+                    .sum()
+            },
+            None,
+            Some((
+                &mut || (0..n).map(|g| wrap(hb.color_format(g))).sum(),
+                Compare::Yes,
+            )),
+        );
+        if formats.has(F::COLR_V0) {
+            b.item(
+                name,
+                "COLRv0 layers".into(),
+                &mut || (0..n).map(|g| layers(&font, g).count() as u64).sum(),
+                Some((
+                    &mut || (0..n).map(|g| wrap(ft.layers(g))).sum(),
+                    Compare::Yes,
+                )),
+                Some((
+                    &mut || (0..n).map(|g| wrap(hb.color_layers(g))).sum(),
+                    Compare::Yes,
+                )),
+            );
+        }
+        let mut scratch = Scratch::default();
+        let mut painter = CountPainter::default();
+        let options = PaintOptions::default();
+        let mut paint_all = |ppem: u16| {
+            let options = PaintOptions { ppem, ..options };
+            (0..n)
+                .map(|g| {
+                    painter.0 = 0;
+                    match paint(&font, g, &options, &mut scratch, &mut painter) {
+                        Painted::None => wrap(-1),
+                        _ => painter.0,
+                    }
+                })
+                .fold(0u64, u64::wrapping_add)
+        };
+        let v1 = formats.has(F::COLR_V1);
+        if formats.has(F::COLR_V0) || v1 {
+            let item = if v1 { "COLRv1 paint" } else { "COLRv0 paint" };
+            // HarfBuzz adds its root and inverse scales to COLRv1 paints:
+            // the counts differ, so COLRv1 is only timed.
+            let cmp = if v1 { Compare::No } else { Compare::Yes };
+            let mut ft_walk = || (0..n).map(|g| wrap(ft.colr_walk(g))).sum();
+            b.item(
+                name,
+                item.into(),
+                &mut || paint_all(0),
+                v1.then_some((&mut ft_walk as Body<'_>, Compare::No)),
+                Some((
+                    &mut || {
+                        (0..n)
+                            .map(|g| wrap(hb.paint(g)))
+                            .fold(0u64, u64::wrapping_add)
+                    },
+                    cmp,
+                )),
+            );
+        }
+        if v1 {
+            let mut scratch = Scratch::default();
+            let mut rec = Recording::new();
+            b.item(
+                name,
+                "COLRv1 recording".into(),
+                &mut || {
+                    (0..n)
+                        .map(|g| {
+                            rec.clear();
+                            paint_recording(&font, g, &options, &mut scratch, &mut rec);
+                            rec.commands().len() as u64
+                        })
+                        .sum()
+                },
+                None,
+                None,
+            );
+        }
+        if formats.has(F::CBDT) || formats.has(F::SBIX) {
+            for ppem in [16u16, 109, 136, 0] {
+                hb.set_bitmap_ppem(u32::from(ppem));
+                b.item(
+                    name,
+                    format!("bitmap data {ppem} ppem"),
+                    &mut || paint_all(ppem),
+                    None,
+                    Some((
+                        &mut || {
+                            (0..n)
+                                .map(|g| wrap(hb.paint(g)))
+                                .fold(0u64, u64::wrapping_add)
+                        },
+                        Compare::Yes,
+                    )),
+                );
+            }
+            hb.set_bitmap_ppem(0);
+        }
+        if formats.has(F::SVG) {
+            b.item(
+                name,
+                "SVG documents".into(),
+                &mut || {
+                    (0..n)
+                        .map(|g| svg_document(&font, g).map_or(0, |d| d.data.len() as u64))
+                        .sum()
+                },
+                None,
+                Some((
+                    &mut || (0..n).map(|g| wrap(hb.svg_len(g))).sum(),
+                    Compare::Yes,
+                )),
+            );
+        }
+        let outlines = Outlines::new(&font);
+        let mut scratch = Scratch::default();
+        b.item(
+            name,
+            "color glyph extents".into(),
+            &mut || {
+                (0..n)
+                    .map(|g| box_sum(sofel_color::glyph_extents(&outlines, g, &mut scratch)))
+                    .fold(0u64, u64::wrapping_add)
+            },
+            None,
+            Some((
+                &mut || {
+                    (0..n)
+                        .map(|g| hb.glyph_extents(g).map_or(wrap(i64::MIN), wrap))
+                        .fold(0u64, u64::wrapping_add)
+                },
+                Compare::Yes,
+            )),
+        );
+    }
+}
+
 fn main() {
     let a = args();
     let text: Vec<u32> = TEXTS
@@ -536,6 +771,7 @@ fn main() {
     };
     unicode_properties(&mut b, &a.testdata);
     cff_items(&mut b, &a.testdata);
+    color_items(&mut b, &a.testdata);
     for (name, path) in FONTS {
         let bytes = match std::fs::read(a.testdata.join(path)) {
             Ok(b) => b,

@@ -135,6 +135,46 @@
  * (FT_PARAM_TAG_RANDOM_SEED), so that the CFF `random` operator starts
  * from the font's initialRandomSeed instead of an address (ADR 0021).
  *
+ * Usage: ft-dump --colr FILE
+ *
+ * The raw COLR and CPAL values (ADR 0023). For each face, `face` and
+ * `error` as above, then:
+ *
+ *   cpal <num_palettes> <num_palette_entries>   (FT_Palette_Data_Get)
+ *   palette <i> <name_id> <flags> <colors>      (the palette's name id
+ *                                       and flags, and FT_Palette_Select's
+ *                                       colors as RRGGBBAA joined by `,`,
+ *                                       `-` for none)
+ *   color_name <c> <name_id>            (palette_entry_name_ids)
+ *   layers <g> <glyph:index,...>        (FT_Get_Color_Glyph_Layer, for
+ *                                       every glyph with layers)
+ *   paint <g> <tree>                    (FT_Get_Color_Glyph_Paint with
+ *                                       FT_COLOR_NO_ROOT_TRANSFORM and
+ *                                       FT_Get_Paint, in pre-order, for every
+ *                                       glyph with a paint; see paint_tree)
+ *   clip <g> <xMin> <yMin> <xMax> <yMax> (FT_Get_Color_Glyph_ClipBox at
+ *                                       FT_Set_Pixel_Sizes (upem): the
+ *                                       box in 26.6, 64 per font unit)
+ *   end
+ *
+ * Usage: ft-dump --sbit FILE
+ *
+ * The strikes and embedded bitmaps (ADR 0023). For each face, `face`
+ * and `error` as above, then:
+ *
+ *   strike <i> <height> <width> <size> <x_ppem> <y_ppem>
+ *                                       (available_sizes)
+ *   then for each strike, after FT_Select_Size (i):
+ *   size <i>
+ *   glyph <g> <error> <left> <top> <width> <rows> <pitch> <pixel_mode>
+ *         <hori_advance> <vert_bearing_x> <vert_bearing_y> <vert_advance>
+ *                                       (FT_Load_Glyph with FT_LOAD_COLOR |
+ *                                       FT_LOAD_BITMAP_METRICS_ONLY, the
+ *                                       slot's bitmap fields and metrics in
+ *                                       26.6; only the error when it fails;
+ *                                       every glyph)
+ *   end
+ *
  * Usage: ft-dump --otvalid FILE
  *
  * Validates GDEF, GSUB and GPOS with FT_OpenType_Validate (ADR 0020).
@@ -168,6 +208,7 @@
 #include FT_TYPE1_TABLES_H
 #include FT_PARAMETER_TAGS_H
 #include FT_OPENTYPE_VALIDATE_H
+#include FT_COLOR_H
 
 static int contour_open;
 
@@ -359,6 +400,186 @@ static void dump_ps_info(FT_Face face)
   }
   printf("\n");
   printf("fs_type_flags %u\n", (unsigned)FT_Get_FSType_Flags(face));
+}
+
+
+/* ADR 0023: the raw COLR paint tree, in pre-order, one token list. */
+static int paint_budget;
+
+static void paint_stops(FT_Face face, FT_ColorLine *line)
+{
+  FT_ColorStop stop;
+  printf(" extend %d", (int)line->extend);
+  while (FT_Get_Colorline_Stops(face, &stop, &line->color_stop_iterator))
+    printf(" stop %ld %u %d", (long)stop.stop_offset,
+           (unsigned)stop.color.palette_index, (int)stop.color.alpha);
+  printf(" .");
+}
+
+static void paint_tree(FT_Face face, FT_OpaquePaint op, int depth)
+{
+  FT_COLR_Paint p;
+  if (depth > 64 || paint_budget-- <= 0) {
+    printf(" ...");
+    return;
+  }
+  if (!FT_Get_Paint(face, op, &p)) {
+    printf(" error");
+    return;
+  }
+  switch (p.format) {
+  case FT_COLR_PAINTFORMAT_COLR_LAYERS: {
+    FT_OpaquePaint layer = {NULL, 0};
+    printf(" layers");
+    while (FT_Get_Paint_Layers(face, &p.u.colr_layers.layer_iterator, &layer))
+      paint_tree(face, layer, depth + 1);
+    printf(" .");
+    break;
+  }
+  case FT_COLR_PAINTFORMAT_SOLID:
+    printf(" solid %u %d", (unsigned)p.u.solid.color.palette_index, (int)p.u.solid.color.alpha);
+    break;
+  case FT_COLR_PAINTFORMAT_LINEAR_GRADIENT:
+    printf(" linear %ld %ld %ld %ld %ld %ld", (long)p.u.linear_gradient.p0.x,
+           (long)p.u.linear_gradient.p0.y, (long)p.u.linear_gradient.p1.x,
+           (long)p.u.linear_gradient.p1.y, (long)p.u.linear_gradient.p2.x,
+           (long)p.u.linear_gradient.p2.y);
+    paint_stops(face, &p.u.linear_gradient.colorline);
+    break;
+  case FT_COLR_PAINTFORMAT_RADIAL_GRADIENT:
+    printf(" radial %ld %ld %ld %ld %ld %ld", (long)p.u.radial_gradient.c0.x,
+           (long)p.u.radial_gradient.c0.y, (long)p.u.radial_gradient.r0,
+           (long)p.u.radial_gradient.c1.x, (long)p.u.radial_gradient.c1.y,
+           (long)p.u.radial_gradient.r1);
+    paint_stops(face, &p.u.radial_gradient.colorline);
+    break;
+  case FT_COLR_PAINTFORMAT_SWEEP_GRADIENT:
+    printf(" sweep %ld %ld %ld %ld", (long)p.u.sweep_gradient.center.x,
+           (long)p.u.sweep_gradient.center.y, (long)p.u.sweep_gradient.start_angle,
+           (long)p.u.sweep_gradient.end_angle);
+    paint_stops(face, &p.u.sweep_gradient.colorline);
+    break;
+  case FT_COLR_PAINTFORMAT_GLYPH:
+    printf(" glyph %u", (unsigned)p.u.glyph.glyphID);
+    paint_tree(face, p.u.glyph.paint, depth + 1);
+    break;
+  case FT_COLR_PAINTFORMAT_COLR_GLYPH:
+    printf(" colr_glyph %u", (unsigned)p.u.colr_glyph.glyphID);
+    break;
+  case FT_COLR_PAINTFORMAT_TRANSFORM:
+    printf(" transform %ld %ld %ld %ld %ld %ld", (long)p.u.transform.affine.xx,
+           (long)p.u.transform.affine.yx, (long)p.u.transform.affine.xy,
+           (long)p.u.transform.affine.yy, (long)p.u.transform.affine.dx,
+           (long)p.u.transform.affine.dy);
+    paint_tree(face, p.u.transform.paint, depth + 1);
+    break;
+  case FT_COLR_PAINTFORMAT_TRANSLATE:
+    printf(" translate %ld %ld", (long)p.u.translate.dx, (long)p.u.translate.dy);
+    paint_tree(face, p.u.translate.paint, depth + 1);
+    break;
+  case FT_COLR_PAINTFORMAT_SCALE:
+    printf(" scale %ld %ld %ld %ld", (long)p.u.scale.scale_x, (long)p.u.scale.scale_y,
+           (long)p.u.scale.center_x, (long)p.u.scale.center_y);
+    paint_tree(face, p.u.scale.paint, depth + 1);
+    break;
+  case FT_COLR_PAINTFORMAT_ROTATE:
+    printf(" rotate %ld %ld %ld", (long)p.u.rotate.angle, (long)p.u.rotate.center_x,
+           (long)p.u.rotate.center_y);
+    paint_tree(face, p.u.rotate.paint, depth + 1);
+    break;
+  case FT_COLR_PAINTFORMAT_SKEW:
+    printf(" skew %ld %ld %ld %ld", (long)p.u.skew.x_skew_angle, (long)p.u.skew.y_skew_angle,
+           (long)p.u.skew.center_x, (long)p.u.skew.center_y);
+    paint_tree(face, p.u.skew.paint, depth + 1);
+    break;
+  case FT_COLR_PAINTFORMAT_COMPOSITE:
+    printf(" composite %d", (int)p.u.composite.composite_mode);
+    paint_tree(face, p.u.composite.source_paint, depth + 1);
+    paint_tree(face, p.u.composite.backdrop_paint, depth + 1);
+    break;
+  default:
+    printf(" format %d", (int)p.format);
+    break;
+  }
+}
+
+static void dump_colr(FT_Face face)
+{
+  FT_Palette_Data pd;
+  FT_Long g;
+  if (FT_Palette_Data_Get(face, &pd) == 0) {
+    FT_UShort i, c;
+    printf("cpal %u %u\n", (unsigned)pd.num_palettes, (unsigned)pd.num_palette_entries);
+    for (i = 0; i < pd.num_palettes; i++) {
+      FT_Color *colors = NULL;
+      printf("palette %u %u %u ", (unsigned)i,
+             pd.palette_name_ids ? (unsigned)pd.palette_name_ids[i] : 0xFFFFu,
+             pd.palette_flags ? (unsigned)pd.palette_flags[i] : 0u);
+      if (FT_Palette_Select(face, i, &colors) != 0 || !colors || !pd.num_palette_entries)
+        printf("-");
+      else
+        for (c = 0; c < pd.num_palette_entries; c++)
+          printf("%s%02x%02x%02x%02x", c ? "," : "", colors[c].red, colors[c].green,
+                 colors[c].blue, colors[c].alpha);
+      printf("\n");
+    }
+    for (i = 0; i < pd.num_palette_entries; i++)
+      printf("color_name %u %u\n", (unsigned)i,
+             pd.palette_entry_name_ids ? (unsigned)pd.palette_entry_name_ids[i] : 0xFFFFu);
+  }
+  FT_Set_Pixel_Sizes(face, face->units_per_EM, face->units_per_EM);
+  for (g = 0; g < face->num_glyphs; g++) {
+    FT_LayerIterator it;
+    FT_UInt lg, li;
+    int first = 1;
+    FT_OpaquePaint op = {NULL, 0};
+    FT_ClipBox box;
+    it.p = NULL;
+    while (FT_Get_Color_Glyph_Layer(face, (FT_UInt)g, &lg, &li, &it)) {
+      if (first) printf("layers %ld ", (long)g);
+      printf("%s%u:%u", first ? "" : ",", lg, li);
+      first = 0;
+    }
+    if (!first) printf("\n");
+    if (FT_Get_Color_Glyph_Paint(face, (FT_UInt)g, FT_COLOR_NO_ROOT_TRANSFORM, &op)) {
+      printf("paint %ld", (long)g);
+      paint_budget = 100000;
+      paint_tree(face, op, 0);
+      printf("\n");
+    }
+    if (FT_Get_Color_Glyph_ClipBox(face, (FT_UInt)g, &box))
+      printf("clip %ld %ld %ld %ld %ld\n", (long)g, (long)box.bottom_left.x,
+             (long)box.bottom_left.y, (long)box.top_right.x, (long)box.top_right.y);
+  }
+}
+
+static void dump_sbit(FT_Face face)
+{
+  FT_Int i;
+  FT_Long g;
+  for (i = 0; i < face->num_fixed_sizes; i++) {
+    FT_Bitmap_Size *b = &face->available_sizes[i];
+    printf("strike %d %d %d %ld %ld %ld\n", i, (int)b->height, (int)b->width, (long)b->size,
+           (long)b->x_ppem, (long)b->y_ppem);
+  }
+  for (i = 0; i < face->num_fixed_sizes; i++) {
+    if (FT_Select_Size(face, i) != 0)
+      continue;
+    printf("size %d\n", i);
+    for (g = 0; g < face->num_glyphs; g++) {
+      FT_GlyphSlot s = face->glyph;
+      FT_Error e = FT_Load_Glyph(face, (FT_UInt)g, FT_LOAD_COLOR | FT_LOAD_BITMAP_METRICS_ONLY);
+      if (e != 0 || s->format != FT_GLYPH_FORMAT_BITMAP) {
+        printf("glyph %ld %d\n", (long)g, e != 0 ? (int)e : -1);
+        continue;
+      }
+      printf("glyph %ld 0 %d %d %u %u %d %d %ld %ld %ld %ld\n", (long)g, s->bitmap_left,
+             s->bitmap_top, s->bitmap.width, s->bitmap.rows, s->bitmap.pitch,
+             (int)s->bitmap.pixel_mode, (long)s->metrics.horiAdvance,
+             (long)s->metrics.vertBearingX, (long)s->metrics.vertBearingY,
+             (long)s->metrics.vertAdvance);
+    }
+  }
 }
 
 static int faces(const char *path, void (*dump)(FT_Face))
@@ -703,10 +924,14 @@ int main(int argc, char **argv)
     return faces(argv[2], dump_cid);
   if (argc == 3 && strcmp(argv[1], "--ps-info") == 0)
     return faces(argv[2], dump_ps_info);
+  if (argc == 3 && strcmp(argv[1], "--colr") == 0)
+    return faces(argv[2], dump_colr);
+  if (argc == 3 && strcmp(argv[1], "--sbit") == 0)
+    return faces(argv[2], dump_sbit);
   if (argc == 3 && strcmp(argv[1], "--otvalid") == 0)
     return otvalid(argv[2]);
   if (argc != 2) {
-    fprintf(stderr, "usage: ft-dump FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --raster PPEM FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --otvalid FILE\n");
+    fprintf(stderr, "usage: ft-dump FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --raster PPEM FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
     return 2;
   }
   if (FT_Init_FreeType(&library) != 0) {

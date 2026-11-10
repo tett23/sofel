@@ -91,3 +91,23 @@ sofel_read::cff::CharsetIndex::glyph The charset index that sofel_font_t keeps i
 sofel_font::Cff::charset_name_with Cff::charset_name with the charset index (ADR 0025); C gets glyph names from sofel_font_ft_glyph_name, which uses the index sofel_font_t keeps.
 sofel_font::Cff::build_name_index_with Cff::build_name_index with the charset index (ADR 0025); C looks glyphs up by name through sofel_glyph_names_create.
 sofel_font::Cff::glyph_from_name_with Cff::glyph_from_name with the charset index (ADR 0025); C looks glyphs up by name through sofel_glyph_names_glyph_from_name.
+sofel_bitmap::cbdt_png Used by sofel_paint_glyph; C gets the PNG of a CBDT glyph from its image command.
+sofel_bitmap::cbdt_png_data HarfBuzz's reference_png; C gets the PNG of a CBDT glyph from its image command of sofel_paint_glyph.
+sofel_bitmap::sbix_png Used by sofel_paint_glyph; C gets the PNG of an sbix glyph from its image command.
+sofel_bitmap::sbix_png_data HarfBuzz's reference_png; C gets the PNG of an sbix glyph from its image command of sofel_paint_glyph.
+sofel_color::base_paint The raw COLR paint graph (ADR 0023); C reads the bytes with sofel_font_table and gets the walked paint with sofel_paint_glyph.
+sofel_color::clip_box The raw COLR paint graph (ADR 0023); C reads the bytes with sofel_font_table and gets the walked paint with sofel_paint_glyph.
+sofel_color::layer_paint The raw COLR paint graph (ADR 0023); C reads the bytes with sofel_font_table and gets the walked paint with sofel_paint_glyph.
+sofel_color::layer_paint_count The raw COLR paint graph (ADR 0023); C reads the bytes with sofel_font_table and gets the walked paint with sofel_paint_glyph.
+sofel_color::PaintRef::* The raw COLR paint graph (ADR 0023); C reads the bytes with sofel_font_table and gets the walked paint with sofel_paint_glyph.
+sofel_geom::Painter::* The Rust receiver of paint commands; C receives them as the array of sofel_paint_glyph.
+sofel_geom::Transform::* Constructors and arithmetic of the Rust transform value; C gets the six numbers in sofel_paint_command_t and composes them itself.
+sofel_geom::Color::new A constructor of the Rust value; C fills sofel_color_t.
+sofel_geom::PointF::new A constructor of the Rust value; C passes floats.
+sofel_geom::CompositeMode::from_u8 The Rust enum of the composite modes; C gets HarfBuzz's numbers in sofel_paint_command_t.mode.
+sofel_read::cbdt::* Zero-copy Rust views and validators of CBDT, EBDT and bdat (ADR 0023); C gets bitmaps with sofel_glyph_bitmap, the bytes with sofel_font_table, and validates with sofel_validate.
+sofel_read::cblc::* Zero-copy Rust views and validators of CBLC, EBLC and bloc (ADR 0023); C gets strikes with sofel_bitmap_strikes, the bytes with sofel_font_table, and validates with sofel_validate.
+sofel_read::colr::* Zero-copy Rust views and validators of COLR (ADR 0023); C paints with sofel_paint_glyph, reads the bytes with sofel_font_table, and validates with sofel_validate.
+sofel_read::cpal::* Zero-copy Rust views and validators of CPAL (ADR 0023); C gets palettes with the sofel_palette_* functions, the bytes with sofel_font_table, and validates with sofel_validate.
+sofel_read::sbix::* Zero-copy Rust views and validators of sbix (ADR 0023); C gets bitmaps with sofel_glyph_bitmap, the bytes with sofel_font_table, and validates with sofel_validate.
+sofel_read::svg::* Zero-copy Rust views and validators of SVG (ADR 0023); C gets documents with sofel_svg_document, the bytes with sofel_font_table, and validates with sofel_validate.

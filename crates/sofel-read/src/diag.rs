@@ -626,6 +626,22 @@ pub enum Kind {
     /// the table allows (HarfBuzz rejects such a table), or found 1000
     /// problems, and stopped.
     WorkLimitExceeded,
+    /// A color index is not below the number of colors: a `CPAL`
+    /// palette that runs past the color records, or a `COLR` palette
+    /// index past `numPaletteEntries` (ADR 0023).
+    ColorIndexOutOfRange {
+        /// The index.
+        index: u32,
+        /// The number of colors.
+        count: u32,
+    },
+    /// A `COLR` layer index is not below the number of layers (ADR 0023).
+    LayerIndexOutOfRange {
+        /// The index.
+        index: u32,
+        /// The number of layers.
+        count: u32,
+    },
 }
 
 impl Kind {
@@ -703,7 +719,8 @@ impl Kind {
             | ExtensionTypeMismatch { .. }
             | NestedExtension
             | EmptyInputSequence
-            | WorkLimitExceeded => Severity::Error,
+            | WorkLimitExceeded
+            | LayerIndexOutOfRange { .. } => Severity::Error,
             RecordsNotSorted { .. }
             | DuplicateTable { .. }
             | ChecksumMismatch { .. }
@@ -733,7 +750,8 @@ impl Kind {
             | UnknownCharStringOperator { .. }
             | DefaultBaselineOutOfRange { .. }
             | ReservedBitsSet { .. }
-            | CoverageDuplicate { .. } => Severity::Warning,
+            | CoverageDuplicate { .. }
+            | ColorIndexOutOfRange { .. } => Severity::Warning,
         }
     }
 
@@ -842,6 +860,8 @@ impl Kind {
             EmptyInputSequence => "empty_input_sequence",
             ReservedBitsSet { .. } => "reserved_bits_set",
             WorkLimitExceeded => "work_limit_exceeded",
+            ColorIndexOutOfRange { .. } => "color_index_out_of_range",
+            LayerIndexOutOfRange { .. } => "layer_index_out_of_range",
         }
     }
 
@@ -900,7 +920,9 @@ impl Kind {
             LookupIndexOutOfRange { index, count }
             | FeatureIndexOutOfRange { index, count }
             | SequenceIndexOutOfRange { index, count }
-            | MarkSetOutOfRange { index, count } => {
+            | MarkSetOutOfRange { index, count }
+            | ColorIndexOutOfRange { index, count }
+            | LayerIndexOutOfRange { index, count } => {
                 f("index", Uint(index));
                 f("count", Uint(count));
             }
@@ -1450,6 +1472,12 @@ impl fmt::Display for Kind {
             NestedExtension => f.write_str("an extension subtable points to an extension"),
             EmptyInputSequence => f.write_str("an input sequence or ligature has no glyphs"),
             ReservedBitsSet { found } => write!(f, "reserved bits are set in {found:#06x}"),
+            ColorIndexOutOfRange { index, count } => {
+                write!(f, "color index {index} is not below the {count} colors")
+            }
+            LayerIndexOutOfRange { index, count } => {
+                write!(f, "layer index {index} is not below the {count} layers")
+            }
             WorkLimitExceeded => {
                 f.write_str("validation stopped: too many offsets for the size of the table, or too many problems")
             }

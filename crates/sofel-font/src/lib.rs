@@ -5,7 +5,8 @@
 //! for characters, and the horizontal metrics. The policies for broken or
 //! missing data follow HarfBuzz 15.1.0, the reference for shaping
 //! (ADR 0005). `sofel-read` is re-exported as [`read`]; other crates use
-//! table views through it instead of reading bytes (ADR 0003).
+//! table views through it instead of reading bytes (ADR 0003). Likewise
+//! `sofel-geom` is re-exported as [`geom`] (ADR 0023).
 //!
 //! [`Font::ft_left_side_bearing`] reads the left side bearing the way
 //! FreeType does for outlines instead (ADR 0018). It is ported from
@@ -41,6 +42,7 @@
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
+pub use sofel_geom as geom;
 pub use sofel_read as read;
 
 mod base_sanitize;

@@ -172,6 +172,21 @@ impl HbScale {
         script: Tag,
         extents: impl Fn(GlyphId) -> Option<GlyphExtents>,
     ) -> i32 {
+        self.baseline_fallback(font, tag, direction, script, &|g| {
+            extents(g).map(|e| self.scale_glyph_extents(e))
+        })
+    }
+
+    /// [`HbScale::baseline_with_fallback`] with boxes that `extents`
+    /// gives at this scale already (ADR 0023).
+    pub fn baseline_with_fallback_scaled(
+        &self,
+        font: &Font<'_>,
+        tag: Tag,
+        direction: Direction,
+        script: Tag,
+        extents: impl Fn(GlyphId) -> Option<GlyphExtents>,
+    ) -> i32 {
         self.baseline_fallback(font, tag, direction, script, &extents)
     }
 
@@ -192,7 +207,7 @@ impl HbScale {
         } else {
             self.x_scale()
         };
-        let glyph_box = |g: GlyphId| extents(g).map(|e| self.scale_glyph_extents(e));
+        let glyph_box = |g: GlyphId| extents(g);
         let again = |t: Tag| self.baseline_fallback(font, t, direction, script, extents);
         let sum = |a: i32, b: i32| i64::from(a).saturating_add(i64::from(b));
         let diff = |a: i32, b: i32| i64::from(a).saturating_sub(i64::from(b));
@@ -204,7 +219,11 @@ impl HbScale {
                 match minus.filter(|_| horizontal).and_then(glyph_box) {
                     Some(e) => e.y_bearing.saturating_add(e.height / 2),
                     None => {
-                        self.metrics_position_with_fallback(font, MetricsTag::XHeight, extents) / 2
+                        self.metrics_position_with_fallback_scaled(
+                            font,
+                            MetricsTag::XHeight,
+                            extents,
+                        ) / 2
                     }
                 }
             }

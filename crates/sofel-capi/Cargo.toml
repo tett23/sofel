@@ -16,6 +16,8 @@ sofel-geom = { path = "../sofel-geom" }
 sofel-font = { path = "../sofel-font" }
 sofel-outline = { path = "../sofel-outline" }
 sofel-raster = { path = "../sofel-raster" }
+sofel-bitmap = { path = "../sofel-bitmap" }
+sofel-color = { path = "../sofel-color" }
 sofel-cli = { path = "../sofel-cli" }
 sofel-unicode = { path = "../sofel-unicode" }
 

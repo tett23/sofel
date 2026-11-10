@@ -16,13 +16,14 @@
 //!   `hb_ot_layout_get_font_extents` for both directions, the scripts
 //!   and languages `hb-dump` lists and every baseline tag.
 //!
-//! sofel's glyph boxes come from glyf, CFF2 and CFF
-//! ([`HbExtents`], ADR 0021); the boxes of color glyphs come with
-//! ADR 0023.
+//! sofel's glyph boxes are `sofel_color`'s (ADR 0023): sbix, CBDT and
+//! COLR, then glyf, CFF2 and CFF (ADR 0021).
 
 use sofel_font::read::{GlyphId, Tag};
 use sofel_font::{Direction, Font, FontExtents, GlyphExtents, HbScale, MetricsTag};
-use sofel_outline::HbExtents;
+use std::cell::RefCell;
+
+use sofel_outline::Outlines;
 
 use crate::compare::Item;
 
@@ -136,8 +137,8 @@ fn ext4(e: GlyphExtents) -> [i32; 4] {
 /// sofel's values for the scales HarfBuzz wrote, glyphs below
 /// `num_glyphs`.
 pub fn sofel_face(font: &Font<'_>, hb: &HbFace) -> HbFace {
-    let extents = HbExtents::new(font);
-    let boxes = |g: GlyphId| extents.glyph_extents(g);
+    let outlines = Outlines::new(font);
+    let scratch = RefCell::new(sofel_color::Scratch::default());
     let scales = hb
         .scales
         .iter()
@@ -147,7 +148,14 @@ pub fn sofel_face(font: &Font<'_>, hb: &HbFace) -> HbFace {
                 .iter()
                 .map(|&t| {
                     let found = scale.metrics_position(font, t);
-                    let fallback = scale.metrics_position_with_fallback(font, t, boxes);
+                    let fallback = scale.metrics_position_with_fallback_scaled(font, t, |g| {
+                        sofel_color::scaled_glyph_extents(
+                            &outlines,
+                            g.0,
+                            &scale,
+                            &mut scratch.borrow_mut(),
+                        )
+                    });
                     let tag = String::from_utf8_lossy(&t.tag().0).into_owned();
                     (tag, found.is_some(), found.unwrap_or(0), fallback)
                 })
@@ -155,13 +163,26 @@ pub fn sofel_face(font: &Font<'_>, hb: &HbFace) -> HbFace {
             let glyphs = (0..hb.num_glyphs)
                 .map(|g| {
                     let g = GlyphId(g);
-                    let (ox, oy) = scale.v_origin(font, g, boxes);
+                    let (ox, oy) = scale.v_origin_scaled(font, g, |g| {
+                        sofel_color::scaled_glyph_extents(
+                            &outlines,
+                            g.0,
+                            &scale,
+                            &mut scratch.borrow_mut(),
+                        )
+                    });
                     (
                         scale.h_advance(font, g),
                         scale.v_advance(font, g),
                         ox,
                         oy,
-                        extents.scaled_glyph_extents(g, &scale).map(ext4),
+                        sofel_color::scaled_glyph_extents(
+                            &outlines,
+                            g.0,
+                            &scale,
+                            &mut scratch.borrow_mut(),
+                        )
+                        .map(ext4),
                     )
                 })
                 .collect();
@@ -684,8 +705,8 @@ fn dir_of(d: char) -> Direction {
 
 /// sofel's values for the calls `hb-dump --baselines` made.
 pub fn sofel_baselines(font: &Font<'_>, hb: &HbBaselines) -> HbBaselines {
-    let extents = HbExtents::new(font);
-    let boxes = |g: GlyphId| extents.glyph_extents(g);
+    let outlines = Outlines::new(font);
+    let scratch = RefCell::new(sofel_color::Scratch::default());
     let scales = hb
         .scales
         .iter()
@@ -698,7 +719,15 @@ pub fn sofel_baselines(font: &Font<'_>, hb: &HbBaselines) -> HbBaselines {
                     let (dir, script_tag, t) =
                         (dir_of(d), Tag::from_u32(script), Tag::from_u32(tag));
                     let found = scale.baseline(font, t, dir, script_tag);
-                    let fallback = scale.baseline_with_fallback(font, t, dir, script_tag, boxes);
+                    let fallback =
+                        scale.baseline_with_fallback_scaled(font, t, dir, script_tag, |g| {
+                            sofel_color::scaled_glyph_extents(
+                                &outlines,
+                                g.0,
+                                &scale,
+                                &mut scratch.borrow_mut(),
+                            )
+                        });
                     (
                         d,
                         script,

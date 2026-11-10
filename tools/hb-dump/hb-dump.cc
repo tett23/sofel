@@ -89,6 +89,53 @@
  *
  * Tags are written as eight hex digits (big-endian), since tags in a
  * font may have spaces or any other bytes.
+ * Mode --paint (ADR 0023), or --paint=SLANT with
+ * hb_font_set_synthetic_slant (font, SLANT): for each face index i,
+ *
+ *   face <i>
+ *   paint <palette> <ppem> <glyph> <n>
+ *                     (hb_font_paint_glyph with HB_COLOR (0, 0, 0, 255)
+ *                     as the foreground, for every palette (palette 0
+ *                     when there are none), every ppem in 0 and the
+ *                     strikes' ppems of CBLC and sbix (set with
+ *                     hb_font_set_ppem), and every glyph; then <n> lines
+ *                     of the text of HarfBuzz's test/api/test-paint.c,
+ *                     whose image line ends with an empty line. An image
+ *                     without extents (SVG) writes `extents -`)
+ *   end
+ *
+ * Mode --color (ADR 0023): for each face index i,
+ *
+ *   face <i>
+ *   has <layers> <paint> <palettes> <svg> <png>
+ *                     (hb_ot_color_has_*)
+ *   palettes <count>  (hb_ot_color_palette_get_count)
+ *   palette <p> <name_id> <flags> <colors>
+ *                     (hb_ot_color_palette_get_name_id, _get_flags and
+ *                     _get_colors: RRGGBBAA hex joined by `,`, `-` for
+ *                     none)
+ *   color_name <c> <name_id>
+ *                     (hb_ot_color_palette_color_get_name_id for every
+ *                     color of palette 0's count)
+ *   glyph <g> <has_paint> <layers> <svg_index> <svg_start> <svg_end>
+ *         <svg_length> <png_length>
+ *                     (hb_ot_color_glyph_has_paint;
+ *                     hb_ot_color_glyph_get_layers as glyph:index joined
+ *                     by `,`, `-` for none;
+ *                     hb_ot_color_glyph_get_svg_document_index and
+ *                     hb_ot_color_get_svg_document_glyph_range, `-` for
+ *                     none; the lengths of hb_ot_color_glyph_reference_svg
+ *                     and hb_ot_color_glyph_reference_png; every glyph)
+ *   end
+ *
+ * Mode --extents (ADR 0023): for each face index i,
+ *
+ *   face <i>
+ *   extents <g> <found> <x_bearing> <y_bearing> <width> <height>
+ *                     (hb_font_get_glyph_extents at the default scale,
+ *                     every glyph; 0 when not found)
+ *   end
+ *
  * Mode --vowel-constraints (ADR 0019); FILE is HarfBuzz's
  * src/ms-use/IndicShapingInvalidCluster.txt, the input of the table:
  *
@@ -150,6 +197,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 
 static const hb_ot_metrics_tag_t metric_tags[] = {
   HB_OT_METRICS_TAG_HORIZONTAL_ASCENDER,
@@ -690,6 +738,328 @@ static int dump_arabic_pua ()
   return 0;
 }
 
+
+/* ADR 0023: color glyphs. */
+
+struct paint_text_t
+{
+  int level;
+  hb_vector_t<char> text;
+  void line (const char *fmt, ...)
+  {
+    char buf[1024];
+    int n = snprintf (buf, sizeof (buf), "%*s", 2 * level, "");
+    va_list ap;
+    va_start (ap, fmt);
+    vsnprintf (buf + n, sizeof (buf) - n, fmt, ap);
+    va_end (ap);
+    for (const char *p = buf; *p; p++) text.push (*p);
+    text.push ('\n');
+  }
+};
+
+static float clean_float (float v) { return v == 0.f ? 0.f : v; }
+
+#define PD ((paint_text_t *) data)
+static void pt_push_transform (hb_paint_funcs_t *, void *data, float xx, float yx, float xy, float yy, float dx, float dy, void *)
+{
+  PD->line ("start transform %.3g %.3g %.3g %.3g %.3g %.3g", clean_float (xx), clean_float (yx),
+	    clean_float (xy), clean_float (yy), clean_float (dx), clean_float (dy));
+  PD->level++;
+}
+static void pt_pop_transform (hb_paint_funcs_t *, void *data, void *) { PD->level--; PD->line ("end transform"); }
+static void pt_fill_glyph (hb_paint_funcs_t *, void *data, hb_codepoint_t g, hb_font_t *, hb_bool_t, hb_color_t c, void *)
+{
+  PD->line ("fill glyph %u solid %d %d %d %d", g, hb_color_get_red (c), hb_color_get_green (c),
+	    hb_color_get_blue (c), hb_color_get_alpha (c));
+}
+static hb_bool_t pt_color_glyph (hb_paint_funcs_t *, void *data, hb_codepoint_t g, hb_font_t *, void *)
+{
+  PD->line ("paint color glyph %u; acting as failed", g);
+  return false;
+}
+static void pt_push_clip_glyph (hb_paint_funcs_t *, void *data, hb_codepoint_t g, hb_font_t *, void *)
+{
+  PD->line ("start clip glyph %u", g);
+  PD->level++;
+}
+static void pt_push_clip_rectangle (hb_paint_funcs_t *, void *data, float a, float b, float c, float d, void *)
+{
+  PD->line ("start clip rectangle %.3g %.3g %.3g %.3g", a, b, c, d);
+  PD->level++;
+}
+static void pt_pop_clip (hb_paint_funcs_t *, void *data, void *) { PD->level--; PD->line ("end clip"); }
+static void pt_color (hb_paint_funcs_t *, void *data, hb_bool_t, hb_color_t c, void *)
+{
+  PD->line ("solid %d %d %d %d", hb_color_get_red (c), hb_color_get_green (c), hb_color_get_blue (c),
+	    hb_color_get_alpha (c));
+}
+static hb_bool_t pt_image (hb_paint_funcs_t *, void *data, hb_blob_t *, unsigned w, unsigned h,
+			   hb_tag_t format, float slant, hb_glyph_extents_t *e, void *)
+{
+  char buf[5] = {0};
+  hb_tag_to_string (format, buf);
+  if (e)
+    PD->line ("image type %s size %u %u slant %.3g extents %d %d %d %d\n", buf, w, h, slant,
+	      e->x_bearing, e->y_bearing, e->width, e->height);
+  else
+    PD->line ("image type %s size %u %u slant %.3g extents -\n", buf, w, h, slant);
+  return true;
+}
+static void pt_stops (paint_text_t *d, hb_paint_extend_t extend, hb_color_stop_t *stops, unsigned len)
+{
+  d->line ("colors %d", extend);
+  d->level++;
+  for (unsigned i = 0; i < len; i++)
+    d->line ("%.3g %d %d %d %d", stops[i].offset, hb_color_get_red (stops[i].color),
+	     hb_color_get_green (stops[i].color), hb_color_get_blue (stops[i].color),
+	     hb_color_get_alpha (stops[i].color));
+  d->level--;
+}
+static void pt_line (paint_text_t *d, hb_color_line_t *cl)
+{
+  unsigned len = hb_color_line_get_color_stops (cl, 0, NULL, NULL);
+  hb_color_stop_t *stops = (hb_color_stop_t *) malloc ((len ? len : 1) * sizeof (hb_color_stop_t));
+  hb_color_line_get_color_stops (cl, 0, &len, stops);
+  pt_stops (d, hb_color_line_get_extend (cl), stops, len);
+  free (stops);
+}
+static void pt_linear (hb_paint_funcs_t *, void *data, hb_color_line_t *cl, float x0, float y0,
+		       float x1, float y1, float x2, float y2, void *)
+{
+  float xx0, yy0, xx1, yy1, mn, mx;
+  hb_paint_reduce_linear_anchors (x0, y0, x1, y1, x2, y2, &xx0, &yy0, &xx1, &yy1);
+  unsigned len = hb_color_line_get_color_stops (cl, 0, NULL, NULL);
+  hb_color_stop_t *stops = (hb_color_stop_t *) malloc ((len ? len : 1) * sizeof (hb_color_stop_t));
+  hb_color_line_get_color_stops (cl, 0, &len, stops);
+  hb_paint_normalize_color_line (stops, len, &mn, &mx);
+  PD->line ("linear gradient");
+  PD->level++;
+  PD->line ("p0 %.3g %.3g", xx0 + mn * (xx1 - xx0), yy0 + mn * (yy1 - yy0));
+  PD->line ("p1 %.3g %.3g", xx0 + mx * (xx1 - xx0), yy0 + mx * (yy1 - yy0));
+  pt_stops (PD, hb_color_line_get_extend (cl), stops, len);
+  PD->level--;
+  free (stops);
+}
+static void pt_radial (hb_paint_funcs_t *, void *data, hb_color_line_t *cl, float x0, float y0,
+		       float r0, float x1, float y1, float r1, void *)
+{
+  PD->line ("radial gradient");
+  PD->level++;
+  PD->line ("p0 %.3g %.3g radius %.3g", x0, y0, r0);
+  PD->line ("p1 %.3g %.3g radius %.3g", x1, y1, r1);
+  pt_line (PD, cl);
+  PD->level--;
+}
+static void pt_sweep (hb_paint_funcs_t *, void *data, hb_color_line_t *cl, float cx, float cy,
+		      float a0, float a1, void *)
+{
+  PD->line ("sweep gradient");
+  PD->level++;
+  PD->line ("center %.3g %.3g", cx, cy);
+  PD->line ("angles %.3g %.3g", a0, a1);
+  pt_line (PD, cl);
+  PD->level--;
+}
+static void pt_push_group (hb_paint_funcs_t *, void *data, void *) { PD->line ("push group"); PD->level++; }
+static void pt_pop_group (hb_paint_funcs_t *, void *data, hb_paint_composite_mode_t m, void *)
+{
+  PD->level--;
+  PD->line ("pop group mode %d", m);
+}
+#undef PD
+
+static hb_paint_funcs_t *paint_text_funcs ()
+{
+  hb_paint_funcs_t *f = hb_paint_funcs_create ();
+  hb_paint_funcs_set_push_transform_func (f, pt_push_transform, NULL, NULL);
+  hb_paint_funcs_set_pop_transform_func (f, pt_pop_transform, NULL, NULL);
+  hb_paint_funcs_set_fill_glyph_func (f, pt_fill_glyph, NULL, NULL);
+  hb_paint_funcs_set_color_glyph_func (f, pt_color_glyph, NULL, NULL);
+  hb_paint_funcs_set_push_clip_glyph_func (f, pt_push_clip_glyph, NULL, NULL);
+  hb_paint_funcs_set_push_clip_rectangle_func (f, pt_push_clip_rectangle, NULL, NULL);
+  hb_paint_funcs_set_pop_clip_func (f, pt_pop_clip, NULL, NULL);
+  hb_paint_funcs_set_push_group_func (f, pt_push_group, NULL, NULL);
+  hb_paint_funcs_set_pop_group_func (f, pt_pop_group, NULL, NULL);
+  hb_paint_funcs_set_color_func (f, pt_color, NULL, NULL);
+  hb_paint_funcs_set_image_func (f, pt_image, NULL, NULL);
+  hb_paint_funcs_set_linear_gradient_func (f, pt_linear, NULL, NULL);
+  hb_paint_funcs_set_radial_gradient_func (f, pt_radial, NULL, NULL);
+  hb_paint_funcs_set_sweep_gradient_func (f, pt_sweep, NULL, NULL);
+  hb_paint_funcs_make_immutable (f);
+  return f;
+}
+
+/* The ppems of the strikes of CBLC (the larger of x and y) and sbix. */
+static void strike_ppems (hb_face_t *face, hb_vector_t<unsigned> *ppems)
+{
+  bool ok = true;
+  hb_blob_t *b = hb_face_reference_table (face, HB_TAG ('C','B','L','C'));
+  unsigned len = 0;
+  const uint8_t *d = (const uint8_t *) hb_blob_get_data (b, &len);
+  if (len >= 8)
+  {
+    unsigned n = be32 (d, len, 4, &ok);
+    for (unsigned i = 0; i < n && 8 + 48 * (i + 1) <= len; i++)
+    {
+      unsigned x = d[8 + 48 * i + 44], y = d[8 + 48 * i + 45];
+      unsigned p = x > y ? x : y;
+      if (!ppems->lfind (p)) ppems->push (p);
+    }
+  }
+  hb_blob_destroy (b);
+  b = hb_face_reference_table (face, HB_TAG ('s','b','i','x'));
+  d = (const uint8_t *) hb_blob_get_data (b, &len);
+  if (len >= 8)
+  {
+    unsigned n = be32 (d, len, 4, &ok);
+    for (unsigned i = 0; i < n && 8 + 4 * (i + 1) <= len; i++)
+    {
+      bool ok2 = true;
+      unsigned off = be32 (d, len, 8 + 4 * i, &ok2);
+      unsigned p = be16 (d, len, off, &ok2);
+      if (ok2 && !ppems->lfind (p)) ppems->push (p);
+    }
+  }
+  hb_blob_destroy (b);
+}
+
+static float paint_slant = 0.f;
+
+static int dump_paint (hb_blob_t *blob)
+{
+  hb_paint_funcs_t *funcs = paint_text_funcs ();
+  unsigned count = hb_face_count (blob);
+  if (!count) count = 1;
+  for (unsigned i = 0; i < count; i++)
+  {
+    hb_face_t *face = hb_face_create (blob, i);
+    hb_font_t *font = hb_font_create (face);
+    hb_font_set_synthetic_slant (font, paint_slant);
+    unsigned num_glyphs = hb_face_get_glyph_count (face);
+    unsigned palettes = hb_ot_color_palette_get_count (face);
+    if (!palettes) palettes = 1;
+    hb_vector_t<unsigned> ppems;
+    ppems.push (0);
+    strike_ppems (face, &ppems);
+    printf ("face %u\n", i);
+    for (unsigned pal = 0; pal < palettes; pal++)
+      for (unsigned pp = 0; pp < ppems.length; pp++)
+      {
+	hb_font_set_ppem (font, ppems[pp], ppems[pp]);
+	for (unsigned g = 0; g < num_glyphs; g++)
+	{
+	  paint_text_t t;
+	  t.level = 0;
+	  hb_font_paint_glyph (font, g, funcs, &t, pal, HB_COLOR (0, 0, 0, 255));
+	  unsigned lines = 0;
+	  for (unsigned k = 0; k < t.text.length; k++) lines += t.text[k] == '\n';
+	  printf ("paint %u %u %u %u\n", pal, ppems[pp], g, lines);
+	  fwrite (t.text.arrayZ, 1, t.text.length, stdout);
+	}
+      }
+    printf ("end\n");
+    hb_font_destroy (font);
+    hb_face_destroy (face);
+  }
+  hb_paint_funcs_destroy (funcs);
+  return 0;
+}
+
+static int dump_color (hb_blob_t *blob)
+{
+  unsigned count = hb_face_count (blob);
+  if (!count) count = 1;
+  for (unsigned i = 0; i < count; i++)
+  {
+    hb_face_t *face = hb_face_create (blob, i);
+    hb_font_t *font = hb_font_create (face);
+    unsigned num_glyphs = hb_face_get_glyph_count (face);
+    printf ("face %u\n", i);
+    printf ("has %d %d %d %d %d\n", hb_ot_color_has_layers (face) ? 1 : 0,
+	    hb_ot_color_has_paint (face) ? 1 : 0, hb_ot_color_has_palettes (face) ? 1 : 0,
+	    hb_ot_color_has_svg (face) ? 1 : 0, hb_ot_color_has_png (face) ? 1 : 0);
+    unsigned palettes = hb_ot_color_palette_get_count (face);
+    printf ("palettes %u\n", palettes);
+    for (unsigned p = 0; p < palettes; p++)
+    {
+      unsigned n = hb_ot_color_palette_get_colors (face, p, 0, NULL, NULL);
+      hb_vector_t<hb_color_t> colors;
+      colors.resize (n);
+      unsigned got = n;
+      hb_ot_color_palette_get_colors (face, p, 0, &got, colors.arrayZ);
+      printf ("palette %u %u %u ", p, hb_ot_color_palette_get_name_id (face, p),
+	      (unsigned) hb_ot_color_palette_get_flags (face, p));
+      if (!got) printf ("-");
+      for (unsigned k = 0; k < got; k++)
+	printf ("%s%02x%02x%02x%02x", k ? "," : "", hb_color_get_red (colors[k]),
+		hb_color_get_green (colors[k]), hb_color_get_blue (colors[k]),
+		hb_color_get_alpha (colors[k]));
+      printf ("\n");
+    }
+    unsigned ncolors = palettes ? hb_ot_color_palette_get_colors (face, 0, 0, NULL, NULL) : 0;
+    for (unsigned c = 0; c < ncolors; c++)
+      printf ("color_name %u %u\n", c, hb_ot_color_palette_color_get_name_id (face, c));
+    for (unsigned g = 0; g < num_glyphs; g++)
+    {
+      printf ("glyph %u %d ", g, hb_ot_color_glyph_has_paint (face, g) ? 1 : 0);
+      unsigned n = hb_ot_color_glyph_get_layers (face, g, 0, NULL, NULL);
+      hb_vector_t<hb_ot_color_layer_t> layers;
+      layers.resize (n);
+      unsigned got = n;
+      hb_ot_color_glyph_get_layers (face, g, 0, &got, layers.arrayZ);
+      if (!got) printf ("-");
+      for (unsigned k = 0; k < got; k++)
+	printf ("%s%u:%u", k ? "," : "", layers[k].glyph, layers[k].color_index);
+      unsigned index = 0;
+      if (hb_ot_color_glyph_get_svg_document_index (face, g, &index))
+      {
+	hb_codepoint_t s = 0, e = 0;
+	if (hb_ot_color_get_svg_document_glyph_range (face, index, &s, &e))
+	  printf (" %u %u %u", index, s, e);
+	else
+	  printf (" %u - -", index);
+      }
+      else
+	printf (" - - -");
+      hb_blob_t *svg = hb_ot_color_glyph_reference_svg (face, g);
+      hb_blob_t *png = hb_ot_color_glyph_reference_png (font, g);
+      printf (" %u %u\n", hb_blob_get_length (svg), hb_blob_get_length (png));
+      hb_blob_destroy (svg);
+      hb_blob_destroy (png);
+    }
+    printf ("end\n");
+    hb_font_destroy (font);
+    hb_face_destroy (face);
+  }
+  return 0;
+}
+
+static int dump_extents (hb_blob_t *blob)
+{
+  unsigned count = hb_face_count (blob);
+  if (!count) count = 1;
+  for (unsigned i = 0; i < count; i++)
+  {
+    hb_face_t *face = hb_face_create (blob, i);
+    hb_font_t *font = hb_font_create (face);
+    unsigned num_glyphs = hb_face_get_glyph_count (face);
+    printf ("face %u\n", i);
+    for (unsigned g = 0; g < num_glyphs; g++)
+    {
+      hb_glyph_extents_t e = {0, 0, 0, 0};
+      hb_bool_t found = hb_font_get_glyph_extents (font, g, &e);
+      if (!found) e.x_bearing = e.y_bearing = e.width = e.height = 0;
+      printf ("extents %u %d %d %d %d %d\n", g, found ? 1 : 0, e.x_bearing, e.y_bearing, e.width,
+	      e.height);
+    }
+    printf ("end\n");
+    hb_font_destroy (font);
+    hb_face_destroy (face);
+  }
+  return 0;
+}
+
 static int dump_roundf ()
 {
   char kind;
@@ -761,6 +1131,9 @@ static const dump_mode_t modes[] = {
   {"--cmap", dump_cmap},
   {"--baselines", dump_baselines},
   {"--vowel-constraints", dump_vowel_constraints},
+  {"--paint", dump_paint},
+  {"--color", dump_color},
+  {"--extents", dump_extents},
 };
 
 int main (int argc, char **argv)
@@ -776,6 +1149,11 @@ int main (int argc, char **argv)
     for (unsigned i = 0; i < sizeof (modes) / sizeof (modes[0]); i++)
       if (strcmp (argv[1], modes[i].name) == 0)
 	mode = &modes[i];
+    if (strncmp (argv[1], "--paint=", 8) == 0)
+    {
+      paint_slant = (float) atof (argv[1] + 8);
+      mode = &modes[5];
+    }
   }
   if (!mode || argc < 2 || argc > 3)
   {

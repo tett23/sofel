@@ -15,6 +15,8 @@ sofel-font = { path = "../sofel-font" }
 sofel-outline = { path = "../sofel-outline" }
 sofel-raster = { path = "../sofel-raster" }
 sofel-cli = { path = "../sofel-cli" }
+sofel-bitmap = { path = "../sofel-bitmap" }
+sofel-color = { path = "../sofel-color" }
 sofel-unicode = { path = "../sofel-unicode" }
 
 [lints]

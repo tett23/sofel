@@ -800,6 +800,16 @@ pub fn glyf_loca(glyphs: &[Vec<u8>], long: bool) -> (Vec<u8>, Vec<u8>) {
 /// does not shift outlines), a small cmap, and glyf/loca, or GLYF/LOCA
 /// with `extended`.
 pub fn glyph_font(glyphs: &[Vec<u8>], long: bool, extended: bool) -> Vec<u8> {
+    glyph_font_with(glyphs, long, extended, Vec::new())
+}
+
+/// [`glyph_font`] with `extra` tables.
+pub fn glyph_font_with(
+    glyphs: &[Vec<u8>],
+    long: bool,
+    extended: bool,
+    extra: Vec<(&'static [u8; 4], Vec<u8>)>,
+) -> Vec<u8> {
     let n = glyphs.len() as u16;
     let (glyf, loca) = glyf_loca(glyphs, long);
     let metrics: Vec<(u16, i16)> = glyphs
@@ -842,6 +852,7 @@ pub fn glyph_font(glyphs: &[Vec<u8>], long: bool, extended: bool) -> Vec<u8> {
         tables.push((b"glyf", glyf));
         tables.push((b"loca", loca));
     }
+    tables.extend(extra);
     tables.sort_by_key(|(t, _)| **t);
     sfnt(&tables)
 }
@@ -1918,4 +1929,303 @@ pub fn simple_layout(lookups: Vec<Vec<u8>>) -> Vec<u8> {
         feature_list(&[(b"test", &indices)]),
         lookup_list(lookups, false),
     )
+}
+
+// ------------------------------------------- color and bitmap (ADR 0023)
+
+/// CPAL with `num_colors` colors per palette. `palettes` are the first
+/// color record indices; `records` the BGRA color records. Version 1
+/// arrays follow when `v1` is given: (flags, palette labels, color
+/// labels), each `None` for a 0 offset.
+pub fn cpal(
+    num_colors: u16,
+    palettes: &[u16],
+    records: &[[u8; 4]],
+    v1: Option<(Option<Vec<u32>>, Option<Vec<u16>>, Option<Vec<u16>>)>,
+) -> Vec<u8> {
+    let header = 12 + 2 * palettes.len() + if v1.is_some() { 12 } else { 0 };
+    let records_at = header;
+    let mut tail = records_at + 4 * records.len();
+    let mut b = Buf::new()
+        .u16(if v1.is_some() { 1 } else { 0 })
+        .u16(num_colors)
+        .u16(palettes.len() as u16)
+        .u16(records.len() as u16)
+        .u32(records_at as u32);
+    for p in palettes {
+        b = b.u16(*p);
+    }
+    let mut extra = Buf::new();
+    if let Some((flags, labels, color_labels)) = &v1 {
+        let mut off = |len: Option<usize>| match len {
+            None => 0u32,
+            Some(n) => {
+                let o = tail;
+                tail += n;
+                o as u32
+            }
+        };
+        let f = off(flags.as_ref().map(|v| v.len() * 4));
+        let l = off(labels.as_ref().map(|v| v.len() * 2));
+        let c = off(color_labels.as_ref().map(|v| v.len() * 2));
+        b = b.u32(f).u32(l).u32(c);
+        for v in flags.iter().flatten() {
+            extra = extra.u32(*v);
+        }
+        for v in labels.iter().flatten() {
+            extra = extra.u16(*v);
+        }
+        for v in color_labels.iter().flatten() {
+            extra = extra.u16(*v);
+        }
+    }
+    for r in records {
+        b = b.bytes(r);
+    }
+    b.bytes(&extra.done()).done()
+}
+
+/// COLR version 0 with `(glyph, first layer, layer count)` base glyph
+/// records and `(glyph, palette index)` layers. With `v1`, a version 1
+/// header whose lists come from `colr_v1_lists` (offsets from the start
+/// of the table are fixed up).
+pub fn colr_v0(base: &[(u16, u16, u16)], layers: &[(u16, u16)]) -> Vec<u8> {
+    let base_at = 14;
+    let layers_at = base_at + 6 * base.len();
+    let mut b = Buf::new()
+        .u16(0)
+        .u16(base.len() as u16)
+        .u32(base_at as u32)
+        .u32(layers_at as u32)
+        .u16(layers.len() as u16);
+    for (g, f, n) in base {
+        b = b.u16(*g).u16(*f).u16(*n);
+    }
+    for (g, p) in layers {
+        b = b.u16(*g).u16(*p);
+    }
+    b.done()
+}
+
+/// COLR version 1: v0 records, then `paints` (raw bytes, each a Paint
+/// table) referenced by the BaseGlyphList `(glyph, paint index)` and the
+/// LayerList (paint indices), and ClipList records `(start, end, clip box
+/// bytes)`. Paint bytes may contain 24-bit offsets relative to
+/// themselves; they are laid out in order, so callers compute those.
+pub fn colr_v1(
+    base: &[(u16, u16, u16)],
+    layers: &[(u16, u16)],
+    paints: &[Vec<u8>],
+    base_paints: &[(u16, usize)],
+    layer_paints: &[usize],
+    clips: &[(u16, u16, Vec<u8>)],
+) -> Vec<u8> {
+    let base_at = 34;
+    let layers_at = base_at + 6 * base.len();
+    let bgl_at = layers_at + 4 * layers.len();
+    let bgl_len = 4 + 6 * base_paints.len();
+    let ll_at = bgl_at + bgl_len;
+    let ll_len = 4 + 4 * layer_paints.len();
+    let clip_at = ll_at + ll_len;
+    let clip_len = 5 + 7 * clips.len();
+    let boxes_len: usize = clips.iter().map(|c| c.2.len()).sum();
+    let paints_at = clip_at + clip_len + boxes_len;
+    let mut paint_offsets = Vec::new();
+    let mut at = paints_at;
+    for p in paints {
+        paint_offsets.push(at);
+        at += p.len();
+    }
+    let mut b = Buf::new()
+        .u16(1)
+        .u16(base.len() as u16)
+        .u32(base_at as u32)
+        .u32(layers_at as u32)
+        .u16(layers.len() as u16)
+        .u32(if base_paints.is_empty() {
+            0
+        } else {
+            bgl_at as u32
+        })
+        .u32(if layer_paints.is_empty() {
+            0
+        } else {
+            ll_at as u32
+        })
+        .u32(if clips.is_empty() { 0 } else { clip_at as u32 })
+        .u32(0)
+        .u32(0);
+    for (g, f, n) in base {
+        b = b.u16(*g).u16(*f).u16(*n);
+    }
+    for (g, p) in layers {
+        b = b.u16(*g).u16(*p);
+    }
+    b = b.u32(base_paints.len() as u32);
+    for (g, p) in base_paints {
+        b = b.u16(*g).u32((paint_offsets[*p] - bgl_at) as u32);
+    }
+    b = b.u32(layer_paints.len() as u32);
+    for p in layer_paints {
+        b = b.u32((paint_offsets[*p] - ll_at) as u32);
+    }
+    b = b.u8(1).u32(clips.len() as u32);
+    let mut box_at = clip_len;
+    for (s, e, bx) in clips {
+        b = b.u16(*s).u16(*e).u24(box_at as u32);
+        box_at += bx.len();
+    }
+    for (_, _, bx) in clips {
+        b = b.bytes(bx);
+    }
+    for p in paints {
+        b = b.bytes(p);
+    }
+    b.done()
+}
+
+/// One strike of a bitmap location table: BitmapSize fields and its
+/// index subtables `(first, last, subtable bytes)`. The subtables'
+/// `imageDataOffset` is written by the caller.
+pub struct SizeSpec {
+    pub ppem_x: u8,
+    pub ppem_y: u8,
+    pub bit_depth: u8,
+    pub hori: [u8; 12],
+    pub vert: [u8; 12],
+    pub start_glyph: u16,
+    pub end_glyph: u16,
+    pub subtables: Vec<(u16, u16, Vec<u8>)>,
+}
+
+impl Default for SizeSpec {
+    fn default() -> Self {
+        SizeSpec {
+            ppem_x: 16,
+            ppem_y: 16,
+            bit_depth: 1,
+            hori: [12, 0xFC, 16, 1, 0, 0, 0, 0, 12, 0xFC, 0, 0],
+            vert: [8, 0xF8, 16, 1, 0, 0, 0, 0, 8, 0xF8, 0, 0],
+            start_glyph: 0,
+            end_glyph: 0,
+            subtables: Vec::new(),
+        }
+    }
+}
+
+/// A CBLC/EBLC/bloc table of `major` version.
+pub fn cblc(major: u16, sizes: &[SizeSpec]) -> Vec<u8> {
+    let mut b = Buf::new().u16(major).u16(0).u32(sizes.len() as u32);
+    let mut at = 8 + 48 * sizes.len();
+    let mut arrays = Buf::new();
+    for s in sizes {
+        let array_len = 8 * s.subtables.len();
+        let tables_len: usize = s.subtables.iter().map(|t| t.2.len()).sum();
+        b = b
+            .u32(at as u32)
+            .u32((array_len + tables_len) as u32)
+            .u32(s.subtables.len() as u32)
+            .u32(0)
+            .bytes(&s.hori)
+            .bytes(&s.vert)
+            .u16(s.start_glyph)
+            .u16(s.end_glyph)
+            .u8(s.ppem_x)
+            .u8(s.ppem_y)
+            .u8(s.bit_depth)
+            .u8(1);
+        let mut sub_at = array_len;
+        for (f, l, t) in &s.subtables {
+            arrays = arrays.u16(*f).u16(*l).u32(sub_at as u32);
+            sub_at += t.len();
+        }
+        for (_, _, t) in &s.subtables {
+            arrays = arrays.bytes(t);
+        }
+        at += array_len + tables_len;
+    }
+    b.bytes(&arrays.done()).done()
+}
+
+/// An IndexSubTable of format 1 or 3 with the given offsets.
+pub fn index_offsets(
+    format: u16,
+    image_format: u16,
+    image_offset: u32,
+    offsets: &[u32],
+) -> Vec<u8> {
+    let mut b = Buf::new().u16(format).u16(image_format).u32(image_offset);
+    for o in offsets {
+        b = if format == 1 {
+            b.u32(*o)
+        } else {
+            b.u16(*o as u16)
+        };
+    }
+    if format == 3 && offsets.len() % 2 == 1 {
+        b = b.u16(0);
+    }
+    b.done()
+}
+
+/// An sbix table: version 1, `flags`, strikes of `(ppem, ppi, glyphs)`
+/// where each glyph is `None` (empty) or `(x, y, tag, data)`.
+pub fn sbix(
+    flags: u16,
+    strikes: &[(u16, u16, Vec<Option<(i16, i16, [u8; 4], Vec<u8>)>>)],
+) -> Vec<u8> {
+    let mut b = Buf::new().u16(1).u16(flags).u32(strikes.len() as u32);
+    let mut at = 8 + 4 * strikes.len();
+    let mut bodies = Buf::new();
+    for (ppem, ppi, glyphs) in strikes {
+        b = b.u32(at as u32);
+        let mut s = Buf::new().u16(*ppem).u16(*ppi);
+        let mut off = 4 + 4 * (glyphs.len() + 1);
+        let mut data = Buf::new();
+        for g in glyphs {
+            s = s.u32(off as u32);
+            if let Some((x, y, t, d)) = g {
+                data = data.i16(*x).i16(*y).tag(t).bytes(d);
+                off += 8 + d.len();
+            }
+        }
+        s = s.u32(off as u32);
+        let strike = s.bytes(&data.done()).done();
+        at += strike.len();
+        bodies = bodies.bytes(&strike);
+    }
+    b.bytes(&bodies.done()).done()
+}
+
+/// The first 29 bytes of a PNG file of `width` × `height`: the signature
+/// and the IHDR chunk header (enough for the readers, which do not
+/// decode).
+pub fn png_header(width: u32, height: u32) -> Vec<u8> {
+    Buf::new()
+        .bytes(b"\x89PNG\r\n\x1a\n")
+        .u32(13)
+        .tag(b"IHDR")
+        .u32(width)
+        .u32(height)
+        .u8(8)
+        .u8(6)
+        .u8(0)
+        .u8(0)
+        .u8(0)
+        .done()
+}
+
+/// An SVG table with documents `(start, end, bytes)`.
+pub fn svg_table(docs: &[(u16, u16, Vec<u8>)]) -> Vec<u8> {
+    let list = 10;
+    let mut b = Buf::new().u16(0).u32(list).u32(0).u16(docs.len() as u16);
+    let mut off = 2 + 12 * docs.len();
+    for (s, e, d) in docs {
+        b = b.u16(*s).u16(*e).u32(off as u32).u32(d.len() as u32);
+        off += d.len();
+    }
+    for (_, _, d) in docs {
+        b = b.bytes(d);
+    }
+    b.done()
 }

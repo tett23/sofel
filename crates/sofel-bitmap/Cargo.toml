@@ -1,0 +1,14 @@
+[package]
+name = "sofel-bitmap"
+description = "Embedded bitmap glyphs: CBLC/CBDT, EBLC/EBDT, bloc/bdat and sbix strikes, metrics and image data (ADR 0023)"
+version.workspace = true
+edition.workspace = true
+license = "MIT AND FTL"
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+sofel-font = { path = "../sofel-font" }
+
+[lints]
+workspace = true
