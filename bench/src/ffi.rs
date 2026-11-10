@@ -36,6 +36,38 @@ unsafe extern "C" {
     pub fn bhb_paint(font: *mut c_void, gid: c_uint) -> c_long;
     pub fn bhb_set_bitmap_ppem(font: *mut c_void, ppem: c_uint);
 
+    // Shaping (ADR 0020).
+    pub fn bhb_buffer_create() -> *mut c_void;
+    pub fn bhb_buffer_destroy(buf: *mut c_void);
+    pub fn bhb_shape_line(
+        font: *mut c_void,
+        buf: *mut c_void,
+        text: *const c_uchar,
+        text_len: c_uint,
+        line_len: c_uint,
+        direction: c_int,
+        glyphs: *mut c_uint,
+        clusters: *mut c_uint,
+        flags: *mut c_uint,
+        positions: *mut c_int,
+        cap: c_uint,
+    ) -> c_long;
+    pub fn bhb_shape_text(
+        font: *mut c_void,
+        buf: *mut c_void,
+        text: *const c_uchar,
+        text_len: c_uint,
+        direction: c_int,
+    ) -> u64;
+    pub fn bhb_first_shape(
+        data: *const c_uchar,
+        len: c_uint,
+        text: *const c_uchar,
+        text_len: c_uint,
+        line_len: c_uint,
+        direction: c_int,
+    ) -> u64;
+
     // HarfBuzz's own Unicode functions (hb-unicode.h), called directly.
     pub fn hb_unicode_funcs_get_default() -> *mut c_void;
     pub fn hb_unicode_general_category(ufuncs: *mut c_void, cp: c_uint) -> c_int;
@@ -188,6 +220,111 @@ impl Drop for HbFont {
     fn drop(&mut self) {
         // SAFETY: a valid font, dropped once.
         unsafe { bhb_close(self.0) };
+    }
+}
+
+/// The glyphs of one shaped line: ids, clusters, flags and four
+/// positions each (x advance, y advance, x offset, y offset).
+#[derive(Clone, Default, PartialEq, Debug)]
+pub struct ShapedLine {
+    pub glyphs: Vec<u32>,
+    pub clusters: Vec<u32>,
+    pub flags: Vec<u32>,
+    pub positions: Vec<i32>,
+}
+
+/// An `hb_buffer_t` for shaping (ADR 0020).
+pub struct HbBuffer(*mut c_void);
+
+impl HbBuffer {
+    pub fn new() -> HbBuffer {
+        // SAFETY: a new buffer, destroyed in Drop.
+        HbBuffer(unsafe { bhb_buffer_create() })
+    }
+
+    /// Shapes `text[..line_len]` with the rest of `text` as its
+    /// post-context, as perf/benchmark-shape.cc shapes a line, with the
+    /// direction (an `hb_direction_t`, 0 for the guessed one).
+    pub fn shape_line(
+        &self,
+        font: &HbFont,
+        text: &[u8],
+        line_len: usize,
+        direction: i32,
+    ) -> ShapedLine {
+        let mut cap = 64usize;
+        loop {
+            let mut l = ShapedLine {
+                glyphs: vec![0; cap],
+                clusters: vec![0; cap],
+                flags: vec![0; cap],
+                positions: vec![0; cap * 4],
+            };
+            // SAFETY: valid font and buffer; the text is valid for its
+            // length; the arrays hold `cap` glyphs.
+            let n = unsafe {
+                bhb_shape_line(
+                    font.0,
+                    self.0,
+                    text.as_ptr(),
+                    text.len() as c_uint,
+                    line_len as c_uint,
+                    direction,
+                    l.glyphs.as_mut_ptr(),
+                    l.clusters.as_mut_ptr(),
+                    l.flags.as_mut_ptr(),
+                    l.positions.as_mut_ptr(),
+                    cap as c_uint,
+                )
+            } as usize;
+            if n <= cap {
+                l.glyphs.truncate(n);
+                l.clusters.truncate(n);
+                l.flags.truncate(n);
+                l.positions.truncate(n * 4);
+                return l;
+            }
+            cap = n;
+        }
+    }
+
+    /// perf/benchmark-shape.cc's loop over the lines of `text`: the sum of
+    /// the checksums of the lines.
+    pub fn shape_text(&self, font: &HbFont, text: &[u8], direction: i32) -> u64 {
+        // SAFETY: valid font and buffer; the text is valid for its length.
+        unsafe {
+            bhb_shape_text(
+                font.0,
+                self.0,
+                text.as_ptr(),
+                text.len() as c_uint,
+                direction,
+            )
+        }
+    }
+}
+
+impl Drop for HbBuffer {
+    fn drop(&mut self) {
+        // SAFETY: a valid buffer, dropped once.
+        unsafe { bhb_buffer_destroy(self.0) };
+    }
+}
+
+/// From the font's bytes to the first line shaped, cold; the line's
+/// checksum.
+pub fn hb_first_shape(data: &[u8], text: &[u8], line_len: usize, direction: i32) -> u64 {
+    // SAFETY: the data and text are valid for their lengths; everything
+    // HarfBuzz makes is destroyed before the call returns.
+    unsafe {
+        bhb_first_shape(
+            data.as_ptr(),
+            data.len() as c_uint,
+            text.as_ptr(),
+            text.len() as c_uint,
+            line_len as c_uint,
+            direction,
+        )
     }
 }
 

@@ -402,3 +402,102 @@ void bhb_set_bitmap_ppem(void *font, unsigned ppem)
 {
   hb_font_set_ppem((hb_font_t *)font, ppem, ppem);
 }
+
+/* --------------------------------------------------- shaping (ADR 0020) */
+
+/* The direction after hb_buffer_guess_segment_properties: 0 keeps the
+ * guessed one, as perf/benchmark-shape.cc without --direction. */
+static void shape_line(hb_font_t *font, hb_buffer_t *buf, const char *text, unsigned text_len,
+                       unsigned line_len, int direction)
+{
+  hb_buffer_clear_contents(buf);
+  hb_buffer_add_utf8(buf, text, (int)text_len, 0, (int)line_len);
+  hb_buffer_guess_segment_properties(buf);
+  /* No language from the process locale (sofel does not read it). */
+  hb_buffer_set_language(buf, HB_LANGUAGE_INVALID);
+  if (direction)
+    hb_buffer_set_direction(buf, (hb_direction_t)direction);
+  hb_shape(font, buf, NULL, 0);
+}
+
+/* The checksum of the glyphs the sofel side computes the same way. */
+static unsigned long long shape_sum(hb_buffer_t *buf)
+{
+  unsigned n = 0, i;
+  hb_glyph_info_t *info = hb_buffer_get_glyph_infos(buf, &n);
+  hb_glyph_position_t *pos = hb_buffer_get_glyph_positions(buf, &n);
+  unsigned long long h = 0;
+  for (i = 0; i < n; i++) {
+    h = h * 31u + info[i].codepoint;
+    h = h * 31u + info[i].cluster;
+    h = h * 31u + (unsigned)hb_glyph_info_get_glyph_flags(&info[i]);
+    h = h * 31u + (unsigned long long)(long long)pos[i].x_advance;
+    h = h * 31u + (unsigned long long)(long long)pos[i].y_advance;
+    h = h * 31u + (unsigned long long)(long long)pos[i].x_offset;
+    h = h * 31u + (unsigned long long)(long long)pos[i].y_offset;
+  }
+  return h;
+}
+
+void *bhb_buffer_create(void) { return hb_buffer_create(); }
+
+void bhb_buffer_destroy(void *buf) { hb_buffer_destroy((hb_buffer_t *)buf); }
+
+/* Shapes the line text[0..line_len] (the rest of the text is its
+ * post-context) and writes up to cap glyphs: ids, clusters, flags and
+ * four positions each. Returns the glyph count. */
+long bhb_shape_line(void *font, void *buf, const char *text, unsigned text_len,
+                    unsigned line_len, int direction, unsigned *glyphs, unsigned *clusters,
+                    unsigned *flags, int *positions, unsigned cap)
+{
+  hb_buffer_t *b = (hb_buffer_t *)buf;
+  unsigned n = 0, i;
+  hb_glyph_info_t *info;
+  hb_glyph_position_t *pos;
+  shape_line((hb_font_t *)font, b, text, text_len, line_len, direction);
+  info = hb_buffer_get_glyph_infos(b, &n);
+  pos = hb_buffer_get_glyph_positions(b, &n);
+  for (i = 0; i < n && i < cap; i++) {
+    glyphs[i] = info[i].codepoint;
+    clusters[i] = info[i].cluster;
+    flags[i] = (unsigned)hb_glyph_info_get_glyph_flags(&info[i]);
+    positions[4 * i] = pos[i].x_advance;
+    positions[4 * i + 1] = pos[i].y_advance;
+    positions[4 * i + 2] = pos[i].x_offset;
+    positions[4 * i + 3] = pos[i].y_offset;
+  }
+  return (long)n;
+}
+
+/* perf/benchmark-shape.cc's shape(): every line ended by '\n', each with
+ * its guessed properties. Returns the checksums of the lines, summed. */
+unsigned long long bhb_shape_text(void *font, void *buf, const char *text, unsigned text_len,
+                                  int direction)
+{
+  const char *end;
+  unsigned long long sum = 0;
+  while ((end = (const char *)memchr(text, '\n', text_len))) {
+    unsigned skip = (unsigned)(end - text) + 1;
+    shape_line((hb_font_t *)font, (hb_buffer_t *)buf, text, text_len, (unsigned)(end - text),
+               direction);
+    sum += shape_sum((hb_buffer_t *)buf);
+    text_len -= skip;
+    text += skip;
+  }
+  return sum;
+}
+
+/* From the font's bytes to the first line shaped, cold: the blob, face,
+ * font and buffer are made and destroyed. Returns the line's checksum. */
+unsigned long long bhb_first_shape(const unsigned char *data, unsigned len, const char *text,
+                                   unsigned text_len, unsigned line_len, int direction)
+{
+  hb_font_t *font = (hb_font_t *)bhb_open(data, len, 0);
+  hb_buffer_t *buf = hb_buffer_create();
+  unsigned long long h;
+  shape_line(font, buf, text, text_len, line_len, direction);
+  h = shape_sum(buf);
+  hb_buffer_destroy(buf);
+  hb_font_destroy(font);
+  return h;
+}
