@@ -7,4 +7,7 @@ pub(crate) mod arabic;
 pub(crate) mod arabic_fallback;
 pub(crate) mod hangul;
 pub(crate) mod hebrew;
+pub(crate) mod indic;
+pub(crate) mod syllabic;
 pub(crate) mod thai;
+pub(crate) mod vowel_constraints;
