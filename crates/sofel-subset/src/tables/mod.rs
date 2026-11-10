@@ -16,6 +16,7 @@ mod name;
 mod os2;
 mod post;
 mod sbix;
+pub(crate) mod stat;
 mod vorg;
 
 use alloc::collections::{BTreeMap, BTreeSet};
@@ -46,11 +47,11 @@ const fn t(b: &[u8; 4]) -> Tag {
 
 impl Plan {
     /// `_should_drop_table`.
-    fn should_drop(&self, tag: Tag) -> bool {
+    pub(crate) fn should_drop(&self, tag: Tag) -> bool {
         if self.drop_tables.contains(tag.to_u32()) {
             return true;
         }
-        let pinned = false;
+        let pinned = self.var.all_axes_pinned();
         match &tag.0 {
             b"cvar" => pinned || self.flags.has(Flags::NO_HINTING),
             b"cvt " | b"fpgm" | b"prep" | b"hdmx" | b"VDMX" => self.flags.has(Flags::NO_HINTING),
@@ -77,13 +78,36 @@ impl Plan {
             .collect();
         let mut tables = Tables::new();
         let mut room = room::initial();
-        // No dependency delays without instancing (`_dependencies_satisfied`).
-        while let Some(&tag) = pending.iter().next() {
-            pending.remove(&tag);
-            room = self.subset_table(font, Tag::from_u32(tag), room, &mut tables)?;
+        // Delay the tables whose dependencies are pending, as
+        // `hb_subset_plan_execute_or_fail` does.
+        let mut changed = true;
+        while changed && !pending.is_empty() {
+            changed = false;
+            for tag in pending.clone() {
+                if !self.dependencies_satisfied(Tag::from_u32(tag), &pending) {
+                    continue;
+                }
+                pending.remove(&tag);
+                changed = true;
+                room = self.subset_table(font, Tag::from_u32(tag), room, &mut tables)?;
+            }
         }
         let list: Vec<(Tag, &[u8])> = tables.iter().map(|(t, d)| (*t, d.as_slice())).collect();
         sofel_write::build_sfnt(&list).map_err(|_| SubsetError::Failed { tag: t(b"sfnt") })
+    }
+
+    /// `_dependencies_satisfied`: with instancing, the metrics tables
+    /// wait for the outlines; GSUB and GPOS wait for GDEF unless every
+    /// axis is pinned.
+    fn dependencies_satisfied(&self, tag: Tag, pending: &BTreeSet<u32>) -> bool {
+        let has = |t: &[u8; 4]| pending.contains(&Tag::new(t).to_u32());
+        match &tag.0 {
+            b"hmtx" | b"vmtx" | b"maxp" | b"HMTX" | b"VMTX" | b"MAXP" | b"OS/2" => {
+                !self.var.instancing() || !(has(b"glyf") || has(b"GLYF"))
+            }
+            b"GPOS" | b"GSUB" => self.var.all_axes_pinned() || !has(b"GDEF"),
+            _ => true,
+        }
     }
 
     fn passthrough(&self, font: &Font<'_>, tag: Tag, tables: &mut Tables) {
@@ -155,16 +179,17 @@ impl Plan {
             // Written by CBLC.
             b"CBDT" => return Ok(room),
             b"hhea" | b"HHEA" | b"vhea" | b"VHEA" | b"loca" | b"LOCA" => return Ok(room),
-            b"fvar" | b"avar" | b"cvar" | b"MVAR" | b"STAT" if self.axes.is_empty() => {
+            b"fvar" | b"avar" | b"cvar" | b"MVAR" | b"STAT" if self.var.user().is_empty() => {
                 self.passthrough(font, tag, tables);
                 return Ok(room);
             }
+            b"STAT" => Some(stat::subset),
             b"head" => {
                 let present = |t: Tag| font.table(t).is_some() && !self.should_drop(t);
                 if present(Tag::new(b"glyf")) || present(Tag::new(b"GLYF")) {
                     return Ok(room);
                 }
-                let bytes = head(font)?;
+                let bytes = head(self, font)?;
                 // `head::subset` embeds the 54 bytes.
                 let room =
                     self.room_after(font, tag, font.table(tag).unwrap_or(&[]), room, bytes.len())?;
@@ -247,8 +272,9 @@ fn finish_table(tag: Tag, s: Serializer, needed: bool) -> Result<Option<Vec<u8>>
     Ok(Some(bytes))
 }
 
-/// head without glyf: copied (`head::subset` embeds the table).
-fn head(font: &Font<'_>) -> Result<Vec<u8>, SubsetError> {
+/// head without glyf (`head::subset`): copied, with the bounds of the
+/// instanced outlines when instancing.
+fn head(plan: &Plan, font: &Font<'_>) -> Result<Vec<u8>, SubsetError> {
     let h = font
         .table(t(b"head"))
         .ok_or(SubsetError::Failed { tag: t(b"head") })?;
@@ -258,7 +284,22 @@ fn head(font: &Font<'_>) -> Result<Vec<u8>, SubsetError> {
     if !ok {
         return Err(SubsetError::Malformed { tag: t(b"head") });
     }
-    Ok(h.get(..54).unwrap_or(h).to_vec())
+    let mut out = h.get(..54).unwrap_or(h).to_vec();
+    if plan.var.instancing() {
+        let m = &plan.var.metrics.head_maxp;
+        for (at, v) in [
+            (36usize, m.x_min),
+            (38, m.y_min),
+            (40, m.x_max),
+            (42, m.y_max),
+        ] {
+            let v = i16::try_from(v).map_err(|_| SubsetError::Failed { tag: t(b"head") })?;
+            if let Some(f) = out.get_mut(at..at.saturating_add(2)) {
+                f.copy_from_slice(&v.to_be_bytes());
+            }
+        }
+    }
+    Ok(out)
 }
 
 #[cfg(test)]

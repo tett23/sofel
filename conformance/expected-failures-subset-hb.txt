@@ -1,95 +1,60 @@
 # Expected failures of the comparisons with hb-dump --subset (ADR 0022,
 # 突き合わせ; crates/sofel-conformance/tests/harfbuzz_subset_hb.rs), each
 # with its reason: stage:<name> for an ADR 0022 stage not implemented yet
-# (stage:pin for pinning every axis, stage 6; stage:var for the tables of
-# variable fonts kept unpinned, stage 10; stage:color, stage 9;
-# stage:math, stage 8).
+# (stage:cff2-pin for pinning the axes of CFF2 fonts, stage 7; stage:var
+# for the tables of variable fonts kept unpinned and the item variation
+# stores, stage 10), deferred:instance for the instancing ADR 0022
+# defers (avar version 2).
 hb-dump/golem/32bit_var_store.otf:keep  # stage:var
-hb-dump/golem/32bit_var_store.otf:pin  # stage:pin
+hb-dump/golem/32bit_var_store.otf:pin  # stage:cff2-pin
 hb-dump/golem/AdobeVFPrototype.otf:keep  # stage:var
-hb-dump/golem/AdobeVFPrototype.otf:pin  # stage:pin
+hb-dump/golem/AdobeVFPrototype.otf:pin  # stage:cff2-pin
 hb-dump/golem/AdobeVFPrototype_vsindex.otf:keep  # stage:var
-hb-dump/golem/AdobeVFPrototype_vsindex.otf:pin  # stage:pin
+hb-dump/golem/AdobeVFPrototype_vsindex.otf:pin  # stage:cff2-pin
 hb-dump/golem/AnekBangla-question-subset.ttf:keep  # stage:var
-hb-dump/golem/AnekBangla-question-subset.ttf:pin  # stage:pin
 hb-dump/golem/AnekBangla-subset.ttf:keep  # stage:var
-hb-dump/golem/AnekBangla-subset.ttf:pin  # stage:pin
-hb-dump/golem/BungeeColor-Regular.ttf:keep  # stage:color
-hb-dump/golem/COLRv1-alpha.ttf:keep  # stage:color
-hb-dump/golem/COLRv1-alpha.ttf:pin  # stage:pin
+hb-dump/golem/COLRv1-alpha.ttf:keep  # stage:var
+hb-dump/golem/COLRv1-alpha.ttf:pin  # stage:var
 hb-dump/golem/Cantarell-VF-ABC.otf:keep  # stage:var
-hb-dump/golem/Cantarell-VF-ABC.otf:pin  # stage:pin
-hb-dump/golem/Caudex-Regular.ttf:keep  # stage:math
+hb-dump/golem/Cantarell-VF-ABC.otf:pin  # stage:cff2-pin
 hb-dump/golem/Comfortaa-Regular-new.ttf:keep  # stage:var
-hb-dump/golem/Comfortaa-Regular-new.ttf:pin  # stage:pin
 hb-dump/golem/FeatureParams-variations.ttf:keep  # stage:var
-hb-dump/golem/FeatureParams-variations.ttf:pin  # stage:pin
-hb-dump/golem/Foldit.ttf:keep  # stage:color
-hb-dump/golem/Foldit.ttf:pin  # stage:pin
+hb-dump/golem/Foldit.ttf:keep  # stage:var
+hb-dump/golem/Foldit.ttf:pin  # stage:var
 hb-dump/golem/Fraunces.ttf:keep  # stage:var
-hb-dump/golem/Fraunces.ttf:pin  # stage:pin
 hb-dump/golem/Handjet.ttf:keep  # stage:var
-hb-dump/golem/Handjet.ttf:pin  # stage:pin
 hb-dump/golem/IUP-large-contour.ttf:keep  # stage:var
-hb-dump/golem/IUP-large-contour.ttf:pin  # stage:pin
 hb-dump/golem/ImplicitHVAR.ttf:keep  # stage:var
-hb-dump/golem/ImplicitHVAR.ttf:pin  # stage:pin
-hb-dump/golem/KalniaGlaze.ttf:keep  # stage:color
-hb-dump/golem/KalniaGlaze.ttf:pin  # stage:pin
+hb-dump/golem/KalniaGlaze.ttf:keep  # stage:var
+hb-dump/golem/KalniaGlaze.ttf:pin  # stage:var
 hb-dump/golem/LayoutFeatureDedup.ttf:keep  # stage:var
-hb-dump/golem/LayoutFeatureDedup.ttf:pin  # stage:pin
 hb-dump/golem/MPLUS1-Variable.ttf:keep  # stage:var
-hb-dump/golem/MPLUS1-Variable.ttf:pin  # stage:pin
 hb-dump/golem/Muli-ABC.ttf:keep  # stage:var
-hb-dump/golem/Muli-ABC.ttf:pin  # stage:pin
-hb-dump/golem/NotoColorEmoji.subset.gap.ttf:keep  # stage:color
-hb-dump/golem/NotoColorEmoji.subset.index_format3.ttf:keep  # stage:color
-hb-dump/golem/NotoColorEmoji.subset.multiple_size_tables.ttf:keep  # stage:color
-hb-dump/golem/NotoColorEmoji.subset.ttf:keep  # stage:color
 hb-dump/golem/NotoSans-VF.abc.ttf:keep  # stage:var
-hb-dump/golem/NotoSans-VF.abc.ttf:pin  # stage:pin
 hb-dump/golem/NotoSansJP-VF.subset.otf:keep  # stage:var
-hb-dump/golem/NotoSansJP-VF.subset.otf:pin  # stage:pin
+hb-dump/golem/NotoSansJP-VF.subset.otf:pin  # stage:cff2-pin
 hb-dump/golem/NotoSansOriya-subset.ttf:keep  # stage:var
-hb-dump/golem/NotoSansOriya-subset.ttf:pin  # stage:pin
 hb-dump/golem/NotoSansOriya-valueformat-subset.ttf:keep  # stage:var
-hb-dump/golem/NotoSansOriya-valueformat-subset.ttf:pin  # stage:pin
 hb-dump/golem/NotoSerifHK-subset.ttf:keep  # stage:var
-hb-dump/golem/NotoSerifHK-subset.ttf:pin  # stage:pin
+hb-dump/golem/NotoSerifHK-subset.ttf:pin  # stage:var
 hb-dump/golem/Recursive-ABC.ttf:keep  # stage:var
-hb-dump/golem/Recursive-ABC.ttf:pin  # stage:pin
 hb-dump/golem/Roboto-Variable.ABC.ttf:keep  # stage:var
-hb-dump/golem/Roboto-Variable.ABC.ttf:pin  # stage:pin
 hb-dump/golem/Roboto-Variable.composite.ttf:keep  # stage:var
-hb-dump/golem/Roboto-Variable.composite.ttf:pin  # stage:pin
 hb-dump/golem/Roboto-Variable.ttf:keep  # stage:var
-hb-dump/golem/Roboto-Variable.ttf:pin  # stage:pin
 hb-dump/golem/RobotoDelta-NullVarStore-VF.ttf:keep  # stage:var
-hb-dump/golem/RobotoDelta-NullVarStore-VF.ttf:pin  # stage:pin
+hb-dump/golem/RobotoDelta-NullVarStore-VF.ttf:pin  # deferred:instance
 hb-dump/golem/RobotoDelta-Roman-VF-subset.ttf:keep  # stage:var
-hb-dump/golem/RobotoDelta-Roman-VF-subset.ttf:pin  # stage:pin
+hb-dump/golem/RobotoDelta-Roman-VF-subset.ttf:pin  # deferred:instance
 hb-dump/golem/RobotoFlex-Variable.ABC.ttf:keep  # stage:var
-hb-dump/golem/RobotoFlex-Variable.ABC.ttf:pin  # stage:pin
 hb-dump/golem/RobotoFlex-Variable.ttf:keep  # stage:var
-hb-dump/golem/RobotoFlex-Variable.ttf:pin  # stage:pin
 hb-dump/golem/RobotoMono.ttf:keep  # stage:var
-hb-dump/golem/RobotoMono.ttf:pin  # stage:pin
-hb-dump/golem/STIXTwoMath-Regular.ttf:keep  # stage:math
 hb-dump/golem/SourceSerif4Variable-Roman-HelloWorld.otf:keep  # stage:var
-hb-dump/golem/SourceSerif4Variable-Roman-HelloWorld.otf:pin  # stage:pin
+hb-dump/golem/SourceSerif4Variable-Roman-HelloWorld.otf:pin  # stage:cff2-pin
 hb-dump/golem/SourceSerif4Variable-Roman_subset.otf:keep  # stage:var
-hb-dump/golem/SourceSerif4Variable-Roman_subset.otf:pin  # stage:pin
+hb-dump/golem/SourceSerif4Variable-Roman_subset.otf:pin  # stage:cff2-pin
 hb-dump/golem/SourceSerifVariable-Roman.ttf:keep  # stage:var
-hb-dump/golem/SourceSerifVariable-Roman.ttf:pin  # stage:pin
-hb-dump/golem/TestCOLRv1.ttf:keep  # stage:color
-hb-dump/golem/TwemojiMozilla.subset.ttf:keep  # stage:color
-hb-dump/golem/colr-table.ttf:keep  # stage:color
 hb-dump/golem/google_symbols_subset_test.ttf:keep  # stage:var
-hb-dump/golem/google_symbols_subset_test.ttf:pin  # stage:pin
 hb-dump/golem/googlesansflex_subset.ttf:keep  # stage:var
-hb-dump/golem/googlesansflex_subset.ttf:pin  # stage:pin
 hb-dump/golem/playwrite_mm.subset.ttf:keep  # stage:var
-hb-dump/golem/playwrite_mm.subset.ttf:pin  # stage:pin
-hb-dump/golem/sbix.ttf:keep  # stage:color
-hb-dump/golem/sixtyfour_subset.ttf:keep  # stage:color
-hb-dump/golem/sixtyfour_subset.ttf:pin  # stage:pin
+hb-dump/golem/sixtyfour_subset.ttf:keep  # stage:var
+hb-dump/golem/sixtyfour_subset.ttf:pin  # stage:var

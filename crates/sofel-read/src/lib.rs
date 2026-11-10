@@ -33,6 +33,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod avar;
 pub mod base;
 pub mod be;
 pub mod cbdt;
@@ -44,6 +45,7 @@ pub mod cpal;
 pub mod device;
 mod diag;
 mod error;
+pub mod fvar;
 pub mod gdef;
 pub mod glyf;
 pub mod gpos;
@@ -62,6 +64,7 @@ pub mod post;
 pub mod sbix;
 mod search;
 pub mod sfnt;
+pub mod stat;
 pub mod svg;
 mod types;
 pub mod validate;

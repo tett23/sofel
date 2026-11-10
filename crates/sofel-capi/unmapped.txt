@@ -9,11 +9,13 @@ sofel_font::Font::head Returns a sofel-read view of head; C reads the table with
 sofel_geom::Command::apply Replays a recorded Rust Command into a Rust Pen; C pens receive the commands directly.
 sofel_geom::F26Dot6::from_int A multiplication by 64, which C writes as such.
 sofel_geom::float::* Floating-point helpers that Rust crates use to copy HarfBuzz's rounding (ADR 0026); C has floor and its own conversions, and gets HarfBuzz's rounded values from the sofel_* functions.
+sofel_read::avar::* Zero-copy Rust views and per-table validators for pinning the axes when subsetting (ADR 0022); C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::base::* Zero-copy Rust views and per-table validators; C gets baselines with sofel_font_baseline and sofel_font_layout_font_extents, reads the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::be::* Bounds-checked big-endian readers of Rust slices for the table views; C reads bytes directly.
 sofel_read::cff::* Zero-copy Rust views, the FreeType DICT parsers, the Type 2 charstring decoder and the CFF validators (ADR 0021); C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::cmap::* Zero-copy Rust views and per-table validators; C maps characters with sofel_font_nominal_glyph and sofel_font_variation_glyph, reads the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::device::* Zero-copy Rust views of Device tables, read through the BASE, GDEF and GPOS views; C reads the bytes with sofel_font_table.
+sofel_read::fvar::* Zero-copy Rust views and per-table validators for pinning the axes when subsetting (ADR 0022); C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::gdef::* Zero-copy Rust views and per-table validators for shaping (ADR 0020); C shapes with the sofel_shape_* functions of ADR 0020, reads the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::gpos::* Zero-copy Rust views and per-table validators for shaping (ADR 0020); C shapes with the sofel_shape_* functions of ADR 0020, reads the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::gsub::* Zero-copy Rust views and per-table validators for shaping (ADR 0020); C shapes with the sofel_shape_* functions of ADR 0020, reads the bytes with sofel_font_table, and validates with sofel_validate.
@@ -114,6 +116,7 @@ sofel_read::cblc::* Zero-copy Rust views and validators of CBLC, EBLC and bloc (
 sofel_read::colr::* Zero-copy Rust views and validators of COLR (ADR 0023); C paints with sofel_paint_glyph, reads the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::cpal::* Zero-copy Rust views and validators of CPAL (ADR 0023); C gets palettes with the sofel_palette_* functions, the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::sbix::* Zero-copy Rust views and validators of sbix (ADR 0023); C gets bitmaps with sofel_glyph_bitmap, the bytes with sofel_font_table, and validates with sofel_validate.
+sofel_read::stat::* Zero-copy Rust views and per-table validators for subsetting with the axes pinned (ADR 0022); C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::svg::* Zero-copy Rust views and validators of SVG (ADR 0023); C gets documents with sofel_svg_document, the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_shape::BufferFlags::contains A bit test, which C writes as such on the SOFEL_BUFFER_FLAG_* values.
 sofel_shape::BufferFlags::union A bitwise or, which C writes as such on the SOFEL_BUFFER_FLAG_* values.
@@ -160,3 +163,7 @@ sofel_subset::RangeSet::max The last member, found with sofel_subset_input_set_n
 sofel_subset::RangeSet::remove_range A loop of sofel_subset_input_set_remove over the members found with sofel_subset_input_set_next (ADR 0022).
 sofel_subset::RangeSet::truncate As sofel_subset::RangeSet::remove_range, for every member from a value on (ADR 0022).
 sofel_subset::RangeSet::union A loop of sofel_subset_input_set_add over the other set's members (ADR 0022).
+sofel_subset::Input::with_all_axes_pinned_to_default Its C function, sofel_subset_input_pin_all_axes_to_default, comes in the next commit (ADR 0022).
+sofel_subset::Input::with_axis_pinned_to_default Its C function, sofel_subset_input_pin_axis_to_default, comes in the next commit (ADR 0022).
+sofel_subset::Input::with_axis_pinned Its C function, sofel_subset_input_pin_axis_location, comes in the next commit (ADR 0022).
+sofel_subset::Input::with_axis_range Its C function, sofel_subset_input_set_axis_range, comes in the next commit (ADR 0022).

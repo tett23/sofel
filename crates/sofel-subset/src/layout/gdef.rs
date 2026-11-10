@@ -64,6 +64,11 @@ fn attach_list(s: &mut Sub<'_, '_>, al: D<'_>) -> bool {
     !new_cov.is_empty()
 }
 
+/// Whether `dev` is a VariationIndex table (`is_variation_device`).
+pub(crate) fn is_variation_device(dev: D<'_>) -> bool {
+    !dev.is_null() && dev.u16(4) == 0x8000
+}
+
 fn caret_value(s: &mut Sub<'_, '_>, c: D<'_>) -> bool {
     match c.u16(0) {
         1 | 2 => {
@@ -73,6 +78,11 @@ fn caret_value(s: &mut Sub<'_, '_>, c: D<'_>) -> bool {
         3 => {
             s.s.extend(c.slice(0, 4));
             let dev = c.off16(4);
+            if s.p.layout.varidx_pinned && is_variation_device(dev) {
+                // Mapped to no variations: downgraded to format 1.
+                s.s.set_u16(0, 1);
+                return true;
+            }
             let at = s.s.u16(0);
             s.serialize_copy(at, 2, dev, |s| {
                 if matches!(dev.u16(4), 1..=3) {
@@ -179,7 +189,8 @@ pub(crate) fn subset(s: &mut Sub<'_, '_>, gdef: &[u8]) -> bool {
     let snapshot2 = s.s.snapshot();
     if version >= 0x0001_0003 {
         s.s.u32(d.u32(14));
-        if d.u32(14) != 0 {
+        // Pinning every axis drops the store (`out->varStore = 0`).
+        if d.u32(14) != 0 && !s.p.var.all_axes_pinned() {
             s.unsupported("the GDEF item variation store (ADR 0022 stage 10)");
             return false;
         }

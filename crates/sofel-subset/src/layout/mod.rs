@@ -49,6 +49,13 @@ pub(crate) struct LayoutPlan {
     /// Script index to the indices of its kept language systems
     /// (`gsub_langsys`).
     pub langsys: BTreeMap<u32, BitSet>,
+    /// Feature index to the offset (from the start of the table) of the
+    /// feature that replaces it, from the FeatureVariations record that
+    /// applies at the pinned location (`gsub_feature_substitutes_map`).
+    pub substitutes: BTreeMap<u32, usize>,
+    /// What this version cannot do with the table's FeatureVariations
+    /// when the axes are pinned.
+    pub unsupported: Option<&'static str>,
 }
 
 /// The kinds of lookup subtables of GSUB and GPOS.

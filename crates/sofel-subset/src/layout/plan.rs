@@ -169,8 +169,74 @@ fn substitutions(fv: D<'_>) -> Vec<Vec<(u32, D<'_>)>> {
         .collect()
 }
 
+/// The FeatureVariations record that applies when every axis is pinned
+/// to its default (`collect_feature_substitutes_with_variations` with
+/// `all_axes_pinned`): the first record whose conditions all hold at the
+/// normalized location 0. Only conditions of format 1 (axis ranges) are
+/// evaluated by this version.
+fn applied_record(fv: D<'_>, axis_count: usize) -> Result<Option<usize>, &'static str> {
+    if fv.is_null() || fv.u16(0) != 1 {
+        return Ok(None);
+    }
+    if fv.u16(2) != 0 {
+        return Err("pinning the axes of FeatureVariations 1.1 (deferred by ADR 0022)");
+    }
+    let n = fv.u32(4) as usize;
+    for i in 0..n {
+        let conditions = fv.off32(8usize.saturating_add(i.saturating_mul(8)));
+        let mut applies = true;
+        for j in 0..usize::from(conditions.u16(0)) {
+            let c = conditions.off32(2usize.saturating_add(j.saturating_mul(4)));
+            if c.u16(0) != 1 {
+                return Err(
+                    "pinning FeatureVariations conditions other than format 1 (deferred by ADR 0022)",
+                );
+            }
+            let axis = usize::from(c.u16(2));
+            let min = c.u16(4).cast_signed();
+            let max = c.u16(6).cast_signed();
+            if axis >= axis_count || min > 0 || max < 0 {
+                applies = false;
+                break;
+            }
+        }
+        if applies {
+            return Ok(Some(i));
+        }
+    }
+    Ok(None)
+}
+
+/// The substitutes of `features` from the record that applies at the
+/// pinned location: feature index to the offset of the substitute.
+fn pinned_substitutes(
+    t: Gsubgpos<'_>,
+    features: &BitSet,
+    axis_count: usize,
+) -> Result<BTreeMap<u32, usize>, &'static str> {
+    let fv = t.feature_variations();
+    let mut out = BTreeMap::new();
+    if let Some(i) = applied_record(fv, axis_count)? {
+        let subs = fv.off32(8usize.saturating_add(i.saturating_mul(8)).saturating_add(4));
+        for j in 0..usize::from(subs.u16(4)) {
+            let rec = 6usize.saturating_add(j.saturating_mul(6));
+            let fi = u32::from(subs.u16(rec));
+            if features.has(fi) {
+                out.insert(fi, t.delta(subs.off32(rec.saturating_add(2))));
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// The axes pinned for a layout plan: `None` without pinning, else the
+/// number of axes of `fvar`.
+pub(crate) type Pinned = Option<usize>;
+
 /// `_closure_glyphs_lookups_features`: what to keep of GSUB or GPOS;
-/// for GSUB also grows `glyphs` by the substitution closure.
+/// for GSUB also grows `glyphs` by the substitution closure. With every
+/// axis pinned to its default, FeatureVariations is evaluated there and
+/// its substitutes replace the features.
 pub(crate) fn closure_glyphs_lookups_features(
     t: Gsubgpos<'_>,
     num_glyphs: u32,
@@ -178,6 +244,7 @@ pub(crate) fn closure_glyphs_lookups_features(
     layout_features: &RangeSet,
     layout_scripts: &RangeSet,
     glyphs: &mut BitSet,
+    pinned: Pinned,
 ) -> LayoutPlan {
     // _collect_layout_indices
     let feature_tags: Vec<u32> = (0..t.feature_count()).map(|i| t.feature_tag(i)).collect();
@@ -216,10 +283,28 @@ pub(crate) fn closure_glyphs_lookups_features(
     }
     let mut feature_indices = c.out;
     let mut lookup_indices = BitSet::new();
+    let (substitutes, unsupported) = match pinned {
+        Some(axes) => match pinned_substitutes(t, &feature_indices, axes) {
+            Ok(m) => (m, None),
+            Err(e) => (BTreeMap::new(), Some(e)),
+        },
+        None => (BTreeMap::new(), None),
+    };
+    // The feature, or its substitute.
+    let feature = |i: u32| {
+        substitutes
+            .get(&i)
+            .map_or_else(|| t.feature(i as usize), |&off| t.d.at(off))
+    };
     for f in feature_indices.iter() {
-        feature_lookups(t.feature(f as usize)).for_each(|l| lookup_indices.add(l));
+        feature_lookups(feature(f)).for_each(|l| lookup_indices.add(l));
     }
-    let subs = substitutions(t.feature_variations());
+    // Pinning drops FeatureVariations: its lookups are not collected.
+    let subs = if pinned.is_some() {
+        Vec::new()
+    } else {
+        substitutions(t.feature_variations())
+    };
     for record in &subs {
         for &(fi, f) in record {
             if feature_indices.has(fi) {
@@ -248,7 +333,7 @@ pub(crate) fn closure_glyphs_lookups_features(
         if tag == u32::from_be_bytes(*b"pref") {
             continue;
         }
-        let f = t.feature(i as usize);
+        let f = feature(i);
         if !feature_params(f, tag).is_null() && tag == u32::from_be_bytes(*b"size") {
             continue;
         }
@@ -278,8 +363,8 @@ pub(crate) fn closure_glyphs_lookups_features(
                 if variable.has(i) || variable.has(other) {
                     continue;
                 }
-                let f = t.feature(i as usize);
-                let of = t.feature(other as usize);
+                let f = feature(i);
+                let of = feature(other);
                 if !equal_params(f, of, tag) {
                     continue;
                 }
@@ -327,6 +412,8 @@ pub(crate) fn closure_glyphs_lookups_features(
         features: features_map,
         features_w_dups: with_dups,
         langsys,
+        substitutes,
+        unsupported,
     }
 }
 
@@ -447,9 +534,11 @@ fn prune_langsys(
 /// (`GSUBGPOS::collect_name_ids`).
 pub(crate) fn collect_name_ids(
     t: Gsubgpos<'_>,
-    features: &BTreeMap<u32, u32>,
+    lp: &LayoutPlan,
+    pinned: bool,
     names: &mut RangeSet,
 ) {
+    let features = &lp.features;
     let add = |f: D<'_>, tag: u32, names: &mut RangeSet| {
         let p = feature_params(f, tag);
         if p.is_null() {
@@ -479,7 +568,14 @@ pub(crate) fn collect_name_ids(
         if !features.contains_key(&n32(i)) {
             continue;
         }
-        add(t.feature(i), t.feature_tag(i), names);
+        let f = lp
+            .substitutes
+            .get(&n32(i))
+            .map_or_else(|| t.feature(i), |&off| t.d.at(off));
+        add(f, t.feature_tag(i), names);
+    }
+    if pinned {
+        return;
     }
     for record in substitutions(t.feature_variations()) {
         for (fi, f) in record {

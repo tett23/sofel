@@ -231,6 +231,7 @@ match FontFile::new(&data)? {
 - `be` は、範囲を確かめるビッグエンディアンの読み取りの関数。
 - `cff` は `CFF ` と `CFF2` の表（[ADR 0021](adr/0021-cff-outlines.md)）：`Cff1`、`Cff2`（ヘッダとINDEXの並び）、`Index`（`get` は厳密に、`ft_element` と `ft_pointer` はFreeTypeの読み方で要素を返す）、`dict`（`DictTokens`、FreeTypeと同じ数の変換をする `Operand`、`TopDict`、`FontDict`、`PrivateDict`。値はFreeTypeが `FT_Long` に持つ64bitの値と型のまま）、`Charset`、`Encoding`、`FdSelect`、`charstring`（`CharStringTokens` と、FreeTypeのAdobe engineをヒンティングなしで移植したType 2 charstringの解読器 `decode`）、`FtBlend`（FreeTypeのCFF2の `blend` の係数）。`cff::validate` と `cff::validate2` が検証器で、`validate::sfnt` は `maxp` のグリフの数と `fvar` の軸の数を渡して呼ぶ。
 - `cff::hb` は、HarfBuzzが `CFF ` と `CFF2` を読む手順（[ADR 0021](adr/0021-cff-outlines.md)）：サニタイザ `Sanitizer`（範囲の確かめと操作の予算）、`HbIndex`、`HbCharset`、`HbFdSelect`（`fd_range` はHarfBuzzの `get_fd_range`）、encodingとCFF2のVariation Storeの確かめ、DICTの解釈器 `interpret_dict` と、DICTの字句を1つずつ読む `dict_token`。`sofel_font::HbCff1` と `HbCff2` がこれで作られ、`sofel-subset` はCFFのサブセット化に使う。
+- `fvar`、`avar`、`stat` は可変フォントの軸の表（[ADR 0022](adr/0022-subsetting.md)）：`Fvar`（軸の `VariationAxis` と名前つきのインスタンス。`find_axis` は最初に当たる軸）、`Avar`（軸ごとの `SegmentMap`。版2は変化量の表のオフセットを持つことだけを確かめる）、`Stat`（デザインの軸と、形式1から4の `AxisValue`。表に収まらない軸の値は `None`）。どれもHarfBuzzのサニタイザが受け付ける形だけを受け付け、`validate::sfnt` は `avar` の軸の数を `fvar` と比べる。
 - `item_variation` はOpenTypeの共通のItem Variation Store（領域の一覧と `ItemVariationData` の領域の番号）のビューと検証器。CFF2の `vstore` が使い、3段階目の可変フォントでHVARなどと共有する。
 - GSUBとGPOS（[ADR 0020](adr/0020-shaping-foundation.md)）は、`LayoutTable::new` から `script_list`、`feature_list`、`lookup_list` をたどり、lookupのサブテーブルを `gsub::subtable(&lookup, i)`（`SubstSubtable`）と `gpos::subtable(&lookup, i)`（`PosSubtable`）で読む。拡張はたどった先の型で返る。HarfBuzzと同じく、`Err` のサブテーブルは何も適用しないものとして扱う。
 
@@ -501,6 +502,20 @@ fn embed(data: &[u8], glyphs: &[u32]) -> Result<Vec<u8>, sofel_subset::SubsetErr
 ```
 
 `Plan::new` で閉包とグリフの対応を求め、`Plan::execute` で表を書く。`subset` はこの2つを続けて呼ぶ。CFFのフォント（名前のキーとCIDのキー）は、HarfBuzzと同じく `CFF ` の表をサブセット化し、出力から取り出した `CFF ` の表はそれだけでCFFとして正しい（PDFの `FontFile3` に入れられる）。まだ書けない表を持つフォントは、その表を `SetKind::DropTables` に入れないかぎり `SubsetError::Unsupported` になる。HarfBuzzが失敗する入力では、sofelも失敗する。例えば、表の出力が元の表の256倍を超えてHarfBuzzの作業領域に入らないときは `SubsetError::Limit` になる。
+
+可変フォントは、`with_all_axes_pinned_to_default` ですべての軸を既定の値に固定すると、HarfBuzzの `hb_subset_input_pin_all_axes_to_default` と同じく既定のインスタンスとして書く（fvarなどの変化量の表を除き、glyfの輪郭と送り幅から計る値を書きなおす）。軸の関数（`with_axis_pinned_to_default`、`with_axis_pinned`、`with_axis_range`）は、フォントに軸が無ければ `None` を返す。既定の値以外への固定と範囲の指定は、`Plan::new` が `SubsetError::Unsupported` を返す。
+
+```rust
+use sofel_font::Font;
+use sofel_subset::{Input, SetKind, SubsetError, subset};
+
+fn default_instance(data: &[u8], text: &str) -> Result<Vec<u8>, SubsetError> {
+    let font = Font::new(data, 0).map_err(|_| SubsetError::NoGlyphs)?;
+    let input = Input::new().map_set(SetKind::Unicodes, |s| text.chars().for_each(|c| s.add(u32::from(c))));
+    let input = input.with_all_axes_pinned_to_default(&font).unwrap_or(input);
+    subset(&font, &input)
+}
+```
 
 ## Cから使う（`sofel-capi`）
 
