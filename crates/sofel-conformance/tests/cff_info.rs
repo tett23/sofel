@@ -2,7 +2,12 @@
 //! on HarfBuzz's test fonts (ADR 0021): `<font>#<face>:cid` and
 //! `<font>#<face>:ps-info`.
 
-#![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::cast_possible_truncation
+)]
 
 use std::path::Path;
 use std::process::Command;
