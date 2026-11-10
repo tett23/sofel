@@ -1,6 +1,7 @@
 //! Writing the tables (`hb_subset_plan_execute_or_fail` and the tables'
 //! `subset` functions).
 
+pub(crate) mod cff;
 pub(crate) mod cmap;
 pub(crate) mod glyf;
 mod hdmx;
@@ -9,6 +10,7 @@ mod maxp;
 mod name;
 mod os2;
 mod post;
+mod vorg;
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
@@ -107,6 +109,8 @@ impl Plan {
             b"DMAP" => Some(|p, f, _, d, s, out| cmap::subset(p, f, d, true, s, out)),
             b"OS/2" => Some(os2::subset),
             b"post" => Some(post::subset),
+            b"CFF " => Some(cff::subset),
+            b"VORG" => Some(vorg::subset),
             b"hhea" | b"HHEA" | b"vhea" | b"VHEA" | b"loca" | b"LOCA" => return Ok(()),
             b"fvar" | b"avar" | b"cvar" | b"MVAR" | b"STAT" if self.axes.is_empty() => {
                 self.passthrough(font, tag, tables);

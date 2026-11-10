@@ -2,7 +2,8 @@
 //! 0022): each case runs through `sofel_cli::subset` and `sofel-subset`
 //! with `run-tests.py`'s arguments, and its output must equal HarfBuzz's
 //! expected file byte for byte (`:bytes`) and pass the validator
-//! (`:validate`). Expected failures are listed with their reasons in
+//! (`:validate`; for a CFF font also its `CFF ` table on its own, as
+//! PDF embeds it). Expected failures are listed with their reasons in
 //! `conformance/expected-failures-subset.txt`.
 
 #![allow(
@@ -37,11 +38,16 @@ fn validate_errors(bytes: &[u8]) -> Vec<String> {
         return vec!["not an sfnt".to_string()];
     };
     let mut errors = Vec::new();
-    validate::sfnt(&s, &mut |d: Diagnostic| {
+    let mut report = |d: Diagnostic| {
         if d.severity == Severity::Error {
             errors.push(format!("{}@{}: {:?}", d.table, d.offset, d.kind));
         }
-    });
+    };
+    validate::sfnt(&s, &mut report);
+    // ADR 0022: the CFF table taken out of the font is valid by itself.
+    if let Some(cff) = s.table(sofel_read::cff::TAG) {
+        sofel_read::cff::validate(cff, None, &mut report);
+    }
     errors
 }
 
