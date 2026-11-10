@@ -4,8 +4,13 @@
 //! HarfBuzz's object order; and the `seac` closure of the plan
 //! (`_add_cff_seac_components`).
 
+mod cff2;
 pub(crate) mod cs;
+mod cs2;
 mod dict;
+mod specialize;
+
+pub(crate) use cff2::{instance_metrics, subset as subset2};
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec;
@@ -53,7 +58,7 @@ struct Acc<'a> {
 
 /// The Private DICT bytes at `offset` with `size` bytes
 /// (`StructAtOffsetOrNull<UnsizedByteStr>`).
-fn private_bytes<'a>(
+pub(super) fn private_bytes<'a>(
     data: &'a [u8],
     sc: &mut Sanitizer,
     offset: i32,
@@ -373,13 +378,16 @@ fn complete(ranges: &mut [(u32, u32)], last_glyph: u32) -> bool {
 }
 
 /// `hb_inc_bimap_t` of the Font DICTs.
-struct FdMap(BTreeMap<u32, u32>);
+pub(super) struct FdMap(BTreeMap<u32, u32>);
 
 impl FdMap {
-    fn has(&self, fd: u32) -> bool {
+    pub(super) fn identity(n: u32) -> FdMap {
+        FdMap((0..n).map(|i| (i, i)).collect())
+    }
+    pub(super) fn has(&self, fd: u32) -> bool {
         self.0.contains_key(&fd)
     }
-    fn get(&self, fd: u32) -> u32 {
+    pub(super) fn get(&self, fd: u32) -> u32 {
         self.0.get(&fd).copied().unwrap_or(INVALID)
     }
 }
@@ -452,14 +460,26 @@ struct CffPlan {
     fontdicts: Vec<(Option<usize>, u32)>,
 }
 
-/// `hb_plan_subset_cff_fdselect`.
-/// The kept Font DICT count, the FDSelect ranges `(fd, first glyph)` and
-/// the Font DICT mapping.
-type FdPlan = (u32, Vec<(u32, u32)>, FdMap);
+/// `hb_plan_subset_cff_fdselect`: the kept Font DICT count, the
+/// FDSelect ranges `(fd, first glyph)`, the Font DICT mapping and the
+/// FDSelect format.
+pub(super) struct FdPlan {
+    pub count: u32,
+    pub ranges: Vec<(u32, u32)>,
+    pub fdmap: FdMap,
+    pub format: u8,
+}
 
-fn plan_fdselect(plan: &Plan, acc: &Acc<'_>) -> Option<FdPlan> {
+/// `hb_plan_subset_cff_fdselect` for the source FDSelect `src` over
+/// `src_num` glyphs and `fd_count` Font DICTs; `None` where HarfBuzz
+/// fails.
+pub(super) fn plan_fdselect(
+    plan: &Plan,
+    src: &HbFdSelect<'_>,
+    src_num: u32,
+    fd_count: u32,
+) -> Option<FdPlan> {
     let n = plan.num_output_glyphs;
-    let src_num = acc.num_glyphs();
     let mut set = BTreeSet::new();
     let mut ranges = Vec::new();
     let mut prev = UNDEF_CODE;
@@ -478,7 +498,7 @@ fn plan_fdselect(plan: &Plan, acc: &Acc<'_>) -> Option<FdPlan> {
             gid
         };
         let (fd, end) = if old < src_num {
-            let (fd, end) = acc.fd_select.fd_range(old);
+            let (fd, end) = src.fd_range(old);
             (fd, end.min(src_num))
         } else {
             (0, INVALID)
@@ -494,19 +514,49 @@ fn plan_fdselect(plan: &Plan, acc: &Acc<'_>) -> Option<FdPlan> {
         gid = gid.wrapping_add(1);
     }
     let count = u32::try_from(set.len()).ok()?;
-    let fdmap = if count == acc.fd_count {
-        FdMap((0..acc.fd_count).map(|i| (i, i)).collect())
+    let fdmap = if count == fd_count {
+        FdMap::identity(fd_count)
     } else {
         FdMap(set.iter().copied().zip(0u32..).collect())
     };
     for r in &mut ranges {
         r.0 = fdmap.get(r.0);
     }
-    if count > 0xFF {
-        // Format 4 needs a format 4 source, which CFF does not have.
-        return None;
+    let format = if count > 0xFF {
+        if src.format() != 4 {
+            return None;
+        }
+        4
+    } else {
+        3
+    };
+    Some(FdPlan {
+        count,
+        ranges,
+        fdmap,
+        format,
+    })
+}
+
+/// `hb_serialize_cff_fdselect` (formats 3 and 4).
+pub(super) fn fdselect(s: &mut Serializer, num_glyphs: u32, format: u8, ranges: &[(u32, u32)]) {
+    s.u8(format);
+    let lo16 = |v: u32| u16::try_from(v & 0xFFFF).unwrap_or(0);
+    if format == 4 {
+        s.u32(u32::try_from(ranges.len()).unwrap_or(u32::MAX));
+        for &(fd, first) in ranges {
+            s.u32(first);
+            s.u16(lo16(fd));
+        }
+        s.u32(num_glyphs);
+    } else {
+        s.u16(lo16(u32::try_from(ranges.len()).unwrap_or(u32::MAX)));
+        for &(fd, first) in ranges {
+            s.u16(lo16(first));
+            s.u8(u8::try_from(fd & 0xFF).unwrap_or(0));
+        }
+        s.u16(lo16(num_glyphs));
     }
-    Some((count, ranges, fdmap))
 }
 
 /// `drop_hints_param_t`.
@@ -779,7 +829,8 @@ fn create(plan: &Plan, acc: &Acc<'_>, tag: Tag) -> Result<CffPlan, SubsetError> 
     }
 
     let (subset_fdcount, fdselect_ranges, fdmap) = if acc.is_cid() {
-        plan_fdselect(plan, acc).ok_or(fail)?
+        let fp = plan_fdselect(plan, &acc.fd_select, acc.num_glyphs(), acc.fd_count).ok_or(fail)?;
+        (fp.count, fp.ranges, fp.fdmap)
     } else {
         (1, Vec::new(), FdMap([(0, 0)].into_iter().collect()))
     };
@@ -1041,12 +1092,28 @@ fn bit_storage(v: u32) -> u32 {
 
 /// `CFFIndex::serialize_header` (16-bit count): the count, the offset
 /// size and the offsets of items of `sizes` bytes.
-fn index_header(s: &mut Serializer, sizes: &[usize], min_off_size: u32) -> bool {
+pub(super) fn index_header(s: &mut Serializer, sizes: &[usize], min_off_size: u32) -> bool {
+    index_header_n(s, sizes, min_off_size, false)
+}
+
+/// `CFFIndex::serialize_header` with a 32-bit count (CFF2) when `wide`.
+pub(super) fn index_header_n(
+    s: &mut Serializer,
+    sizes: &[usize],
+    min_off_size: u32,
+    wide: bool,
+) -> bool {
     let data_size: u64 = sizes.iter().map(|&l| l as u64).sum();
     let data = u32::try_from(data_size).unwrap_or(u32::MAX);
     let off_size = (bit_storage(data.saturating_add(1)).saturating_add(7) / 8).max(min_off_size);
-    let at = s.zeros(2);
-    if !s.check_assign_u16(at, sizes.len() as u64, Errors::ARRAY_OVERFLOW) {
+    let ok = if wide {
+        let at = s.zeros(4);
+        s.check_assign_u32(at, sizes.len() as u64, Errors::ARRAY_OVERFLOW)
+    } else {
+        let at = s.zeros(2);
+        s.check_assign_u16(at, sizes.len() as u64, Errors::ARRAY_OVERFLOW)
+    };
+    if !ok {
         return false;
     }
     if sizes.is_empty() {
@@ -1070,9 +1137,19 @@ fn index_header(s: &mut Serializer, sizes: &[usize], min_off_size: u32) -> bool 
 }
 
 /// `CFFIndex::serialize` of `items`.
-fn index(s: &mut Serializer, items: &[Vec<u8>], min_off_size: u32) -> bool {
+pub(super) fn index(s: &mut Serializer, items: &[Vec<u8>], min_off_size: u32) -> bool {
+    index_n(s, items, min_off_size, false)
+}
+
+/// `CFFIndex::serialize` with a 32-bit count (CFF2) when `wide`.
+pub(super) fn index_n(
+    s: &mut Serializer,
+    items: &[Vec<u8>],
+    min_off_size: u32,
+    wide: bool,
+) -> bool {
     let sizes: Vec<usize> = items.iter().map(Vec::len).collect();
-    if !index_header(s, &sizes, min_off_size) {
+    if !index_header_n(s, &sizes, min_off_size, wide) {
         return false;
     }
     for it in items {
@@ -1081,14 +1158,14 @@ fn index(s: &mut Serializer, items: &[Vec<u8>], min_off_size: u32) -> bool {
     !s.in_error()
 }
 
-fn op_bytes(op: u32) -> Vec<u8> {
+pub(super) fn op_bytes(op: u32) -> Vec<u8> {
     let mut v = Vec::new();
     cs::encode_op(&mut v, op);
     v
 }
 
 /// `UnsizedByteStr::serialize_int2`.
-fn int2(s: &mut Serializer, v: i64) -> bool {
+pub(super) fn int2(s: &mut Serializer, v: i64) -> bool {
     s.u8(28);
     let at = s.zeros(2);
     let fits = (-32768..=32767).contains(&v);
@@ -1097,21 +1174,21 @@ fn int2(s: &mut Serializer, v: i64) -> bool {
 }
 
 /// `Dict::serialize_int2_op`.
-fn int2_op(s: &mut Serializer, op: u32, v: i64) -> bool {
+pub(super) fn int2_op(s: &mut Serializer, op: u32, v: i64) -> bool {
     let ok = int2(s, v);
     s.extend(&op_bytes(op));
     ok && !s.in_error()
 }
 
 /// `Dict::serialize_link4_op`.
-fn link4_op(s: &mut Serializer, op: u32, link: ObjIdx, whence: Whence) {
+pub(super) fn link4_op(s: &mut Serializer, op: u32, link: ObjIdx, whence: Whence) {
     let at = s.extend(&[29, 0, 0, 0, 0]).saturating_add(1);
     s.extend(&op_bytes(op));
     s.add_link(at, 4, true, link, whence, 0);
 }
 
 /// `Dict::serialize_link2_op`.
-fn link2_op(s: &mut Serializer, op: u32, link: ObjIdx) {
+pub(super) fn link2_op(s: &mut Serializer, op: u32, link: ObjIdx) {
     let at = s.extend(&[28, 0, 0]).saturating_add(1);
     s.extend(&op_bytes(op));
     s.add_link(at, 2, true, link, Whence::Head, 0);
@@ -1225,13 +1302,7 @@ fn serialize(s: &mut Serializer, acc: &Acc<'_>, p: &CffPlan) -> bool {
     // FDSelect.
     if acc.is_cid() {
         s.push();
-        s.u8(3);
-        s.u16(u16::try_from(p.fdselect_ranges.len()).unwrap_or(u16::MAX));
-        for &(fd, first) in &p.fdselect_ranges {
-            s.u16(u16::try_from(first & 0xFFFF).unwrap_or(0));
-            s.u8(u8::try_from(fd & 0xFF).unwrap_or(0));
-        }
-        s.u16(u16::try_from(p.num_glyphs & 0xFFFF).unwrap_or(0));
+        fdselect(s, p.num_glyphs, 3, &p.fdselect_ranges);
         info.fd_select = s.pop_pack(true);
     }
 

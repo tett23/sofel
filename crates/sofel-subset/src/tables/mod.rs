@@ -9,7 +9,7 @@ pub(crate) mod colr;
 pub(crate) mod cpal;
 pub(crate) mod glyf;
 mod hdmx;
-mod hmtx;
+pub(crate) mod hmtx;
 pub(crate) mod math;
 mod maxp;
 mod name;
@@ -177,6 +177,7 @@ impl Plan {
             b"BASE" => Some(base::subset),
             b"MATH" => Some(math::subset),
             b"CFF " => Some(cff::subset),
+            b"CFF2" => Some(cff::subset2),
             b"VORG" => Some(vorg::subset),
             b"COLR" => Some(colr::subset),
             b"CPAL" => Some(cpal::subset),

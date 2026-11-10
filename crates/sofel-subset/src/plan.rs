@@ -23,8 +23,7 @@ use crate::tables::glyf::GlyfAccel;
 /// The tables whose subsetting or closure this version does not write
 /// yet: present and kept, they make [`Plan::new`] return
 /// [`SubsetError::Unsupported`].
-const PENDING: [(&[u8; 4], &str); 6] = [
-    (b"CFF2", "CFF2 subsetting (ADR 0022 stages 7 and 10)"),
+const PENDING: [(&[u8; 4], &str); 5] = [
     (b"gvar", "variable font tables (ADR 0022 stage 10)"),
     (b"GVAR", "variable font tables (ADR 0022 stage 10)"),
     (b"HVAR", "variable font tables (ADR 0022 stage 10)"),
@@ -265,6 +264,20 @@ impl Plan {
             }
         }
 
+        // CFF2 is written only as a full instance (stage 7); with its
+        // variations kept it is stage 10.
+        let cff2 = Tag::new(b"CFF2");
+        let full_instance = pinned && !norm.normalized_coords.is_empty();
+        if font.table(cff2).is_some()
+            && !drop.contains(cff2.to_u32())
+            && !no_subset.contains(cff2.to_u32())
+            && !full_instance
+        {
+            return Err(SubsetError::Unsupported {
+                tag: cff2,
+                reason: "CFF2 subsetting without pinning every axis (ADR 0022 stage 10)",
+            });
+        }
         layout_unsupported(font, drop, no_subset, pinned)?;
         let colr_table = font.table(Tag::new(b"COLR"));
         let colr_kept = !drop.contains(Tag::new(b"COLR").to_u32())
@@ -599,6 +612,12 @@ impl Plan {
         if !self.var.instancing() {
             return Ok(());
         }
+        crate::tables::cff::instance_metrics(
+            font,
+            &self.glyphs.new_to_old,
+            &self.var.n.normalized_coords,
+            &mut self.var.metrics,
+        );
         let glyf_tag = crate::tables::glyf::instanced_tag(self, font);
         if let Some(tag) = glyf_tag {
             let (glyphs, metrics) = crate::tables::glyf::instance(

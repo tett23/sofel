@@ -3,7 +3,8 @@
 //! and the values it renumbers, as its operator sets for the Top DICT
 //! (`cff1_top_dict_opset_t`), the Font DICTs (`cff1_font_dict_opset_t`)
 //! and the Private DICTs (`cff1_private_dict_opset_subset_t`) record them
-//! (`src/hb-ot-cff1-table.hh`, `src/hb-cff-interp-dict-common.hh`).
+//! (`src/hb-ot-cff1-table.hh`, `src/hb-cff-interp-dict-common.hh`), and
+//! as the CFF2 operator sets do (`src/hb-ot-cff2-table.hh`).
 
 use alloc::vec::Vec;
 
@@ -20,6 +21,12 @@ pub(crate) enum Kind {
     Top,
     Font,
     Private,
+    /// `cff2_top_dict_opset_t`.
+    Cff2Top,
+    /// `cff2_font_dict_opset_t`.
+    Cff2Font,
+    /// `cff2_private_dict_opset_subset_t`.
+    Cff2Private,
 }
 
 /// One recorded operator: `data[start..end]` holds it and the operands
@@ -60,6 +67,13 @@ pub(crate) const ROS: u32 = 256 + 30;
 pub(crate) const FD_ARRAY: u32 = 256 + 36;
 pub(crate) const FD_SELECT: u32 = 256 + 37;
 pub(crate) const FONT_NAME: u32 = 256 + 38;
+pub(crate) const FONT_MATRIX: u32 = 256 + 7;
+pub(crate) const VSTORE: u32 = 24;
+pub(crate) const VSINDEX: u32 = 22;
+pub(crate) const BLEND: u32 = 23;
+pub(crate) const DEFAULT_WIDTH_X: u32 = 20;
+pub(crate) const NOMINAL_WIDTH_X: u32 = 21;
+pub(crate) const FONT_BBOX: u32 = 5;
 
 /// `name_op_to_index` for the name operators of the Top DICT.
 pub(crate) fn name_index(op: u32) -> Option<usize> {
@@ -148,6 +162,7 @@ pub(crate) fn parse(data: &[u8], kind: Kind) -> Option<Dict> {
     let mut op_start = 0usize;
     let mut last_offset = 0usize;
     let mut off = 0usize;
+    let mut seen_vsindex = false;
     while off < data.len() {
         let (tok, next) = dict_token(data, off)?;
         let start = off;
@@ -221,6 +236,43 @@ pub(crate) fn parse(data: &[u8], kind: Kind) -> Option<Dict> {
                     stack.pop_int();
                 }
             }
+            Kind::Cff2Top => match op {
+                FONT_MATRIX => {
+                    // Recorded twice, the second time without bytes.
+                    d.ops.push(DictOp {
+                        op,
+                        start: op_start,
+                        end: off,
+                        last_arg: 0,
+                    });
+                    op_start = off;
+                }
+                VSTORE | FD_SELECT | CHAR_STRINGS | FD_ARRAY => {
+                    stack.pop_int();
+                }
+                _ => {}
+            },
+            Kind::Cff2Font => {
+                if op == PRIVATE {
+                    stack.pop_uint();
+                    stack.pop_uint();
+                }
+            }
+            Kind::Cff2Private => match op {
+                BLEND => {
+                    record = false;
+                }
+                SUBRS => {
+                    stack.pop_int();
+                }
+                VSINDEX => {
+                    if !seen_vsindex {
+                        stack.pop_uint();
+                    }
+                    seen_vsindex = true;
+                }
+                _ => {}
+            },
         }
         stack.0.clear();
         if stack.1 {
