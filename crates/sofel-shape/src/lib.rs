@@ -18,8 +18,21 @@
 
 extern crate alloc;
 
+mod buffer;
+mod diff;
+mod digest;
 mod direction;
+mod fallback;
 mod feature;
+mod font;
+mod layout;
+mod normalize;
+mod plan;
+mod props;
+mod scale;
+mod shape;
+pub mod unicode;
+mod utf;
 mod glyph;
 mod language;
 mod tag;
@@ -27,7 +40,16 @@ mod tag;
 mod tag_table;
 mod serialize;
 
+pub use buffer::{
+    BufferFlags, ClusterLevel, GlyphBuffer, MAX_LEN_DEFAULT, MAX_LEN_FACTOR, MAX_LEN_MIN,
+    MAX_OPS_DEFAULT, MAX_OPS_FACTOR, MAX_OPS_MIN, REPLACEMENT_CHARACTER, UnicodeBuffer,
+};
+pub use diff::{DiffFlags, diff, diff_unicode};
 pub use direction::Direction;
+pub use plan::{LayoutSelection, ShapePlan, Shaper, layout_selection};
+pub use props::{ResolvedProperties, SegmentProperties, script_horizontal_direction};
+pub use scale::Scale;
+pub use shape::{shape, shape_fallback, shape_with_extents};
 pub use feature::Feature;
 pub use glyph::{GlyphFlags, GlyphInfo, GlyphPosition};
 pub use language::Language;

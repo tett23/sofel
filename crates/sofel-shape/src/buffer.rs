@@ -1040,6 +1040,13 @@ impl Buffer {
         self.digest = d;
     }
 
+    /// `clear_glyph_flags`.
+    pub(crate) fn clear_glyph_flags(&mut self) {
+        for info in self.infos_mut() {
+            info.mask &= !GlyphFlags::DEFINED.0;
+        }
+    }
+
     /// `add_masks`.
     pub(crate) fn add_masks(&mut self, mask: Mask) {
         for info in self.infos_mut() {

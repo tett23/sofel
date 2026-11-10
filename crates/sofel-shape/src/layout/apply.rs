@@ -1057,7 +1057,6 @@ fn chain_context_apply_lookup<'a>(
     let mut end_index = idx;
     let matched = match match_input(c, input.0, input.1) {
         Ok((match_end, _)) => {
-            end_index = match_end;
             match match_lookahead(c, lookahead.0, lookahead.1, match_end) {
                 Ok(e) => {
                     end_index = e;

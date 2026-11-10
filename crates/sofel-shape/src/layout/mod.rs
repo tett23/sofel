@@ -298,7 +298,7 @@ impl<'a, S> Table<'a, S> {
     /// `hb_ot_layout_table_select_script`: whether one of `tags` was
     /// found, the script index and the chosen tag.
     pub(crate) fn select_script(&self, tags: &[Tag]) -> (bool, Option<usize>, Option<Tag>) {
-        if let Some((i, &t)) = tags.iter().find_map(|&t| self.find_script(t).map(|i| (i, &t))) {
+        if let Some((i, t)) = tags.iter().find_map(|&t| self.find_script(t).map(|i| (i, t))) {
             return (true, Some(i), Some(t));
         }
         for t in [DFLT, DFLT_LANG, LATN] {

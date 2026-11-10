@@ -447,10 +447,9 @@ impl<'l, 'a> MapBuilder<'l, 'a> {
                         let mut tail = tail;
                         tail.sort_by_key(|l| l.index);
                         for l in tail {
+                            let can_merge = lookups.len() > last_num_lookups;
                             match lookups.last_mut() {
-                                Some(j)
-                                    if lookups.len() > last_num_lookups && j.index == l.index =>
-                                {
+                                Some(j) if can_merge && j.index == l.index => {
                                     j.mask |= l.mask;
                                     j.auto_zwnj &= l.auto_zwnj;
                                     j.auto_zwj &= l.auto_zwj;
