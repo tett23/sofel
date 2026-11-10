@@ -1199,6 +1199,7 @@ fn generate() -> String {
     // Validation.
     diagnostics(&mut out, "invalid_diagnostics", &invalid_data);
     diagnostics(&mut out, "ttc_diagnostics", &ttc_data);
+    color_cases(&mut out);
     out
 }
 
@@ -1320,4 +1321,130 @@ fn header_version_is_the_crate_version() {
         let line = format!("#define SOFEL_VERSION_{name} {value}\n");
         assert!(header.contains(&line), "sofel.h lacks {line:?}");
     }
+}
+
+/// The color font of the C tests (ADR 0023): glyph 1 a square, glyph 2
+/// COLR version 0 layers (1, palette 1) and (1, foreground), glyph 3 a
+/// version 1 PaintGlyph(1) of a linear gradient, glyph 4 PaintGlyph(1)
+/// of PaintSolid, glyph 5 nothing; CPAL version 1 with two palettes
+/// (the second for dark backgrounds).
+fn color_font() -> Vec<u8> {
+    let square = simple_glyph(
+        &[&[
+            Pt::On(100, 0),
+            Pt::On(100, 700),
+            Pt::On(600, 700),
+            Pt::On(600, 0),
+        ]],
+        false,
+        &[],
+    );
+    let mut glyph1 = Buf::new().u8(10).u24(6).u16(1).done();
+    let line = Buf::new()
+        .u8(2)
+        .u16(2)
+        .i16(0x4000)
+        .u16(1)
+        .i16(0x4000)
+        .i16(0)
+        .u16(0xFFFF)
+        .i16(0x2000)
+        .done();
+    let mut linear = Buf::new()
+        .u8(4)
+        .u24(16)
+        .i16(0)
+        .i16(0)
+        .i16(500)
+        .i16(100)
+        .i16(0)
+        .i16(300)
+        .done();
+    linear.extend(line);
+    glyph1.extend(linear);
+    let mut glyph2 = Buf::new().u8(10).u24(6).u16(1).done();
+    glyph2.extend(Buf::new().u8(2).u16(0).i16(0x3000).done());
+    let colr = colr_v1(
+        &[(2, 0, 2)],
+        &[(1, 1), (1, 0xFFFF)],
+        &[glyph1, glyph2],
+        &[(3, 0), (4, 1)],
+        &[],
+        &[],
+    );
+    let cpal = cpal(
+        2,
+        &[0, 2],
+        &[
+            [0, 0, 255, 255],
+            [0, 255, 0, 200],
+            [255, 0, 0, 255],
+            [9, 8, 7, 6],
+        ],
+        Some((Some(vec![1, 2]), Some(vec![256, 257]), Some(vec![300, 301]))),
+    );
+    let glyphs = vec![
+        Vec::new(),
+        square,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    ];
+    glyph_font_with(
+        &glyphs,
+        false,
+        false,
+        vec![(b"COLR", colr), (b"CPAL", cpal)],
+    )
+}
+
+fn color_cases(out: &mut String) {
+    use sofel_color::{PaintOptions, Palette, Recording, Scratch};
+    let data = color_font();
+    let font = Font::new(&data, 0).unwrap();
+    bytes(out, "color_font", &data);
+    let texts: Vec<String> = (0..6u32)
+        .flat_map(|g| [(g, 0u16), (g, 1)])
+        .map(|(g, palette)| {
+            let mut rec = Recording::new();
+            let options = PaintOptions {
+                palette: Palette::Font(palette),
+                foreground: sofel_geom::Color::new(10, 20, 30, 255),
+                ppem: 0,
+            };
+            let painted =
+                sofel_color::paint_recording(&font, g, &options, &mut Scratch::default(), &mut rec);
+            let mut text = sofel_cli::paint::PaintText::new(false);
+            rec.replay(&mut text);
+            let code = match painted {
+                sofel_color::Painted::None => 0,
+                sofel_color::Painted::ColrV1 => 1,
+                sofel_color::Painted::ColrV0 => 2,
+                _ => 9,
+            };
+            format!("{{{g}, {palette}, {code}, {:?}}}", text.out)
+        })
+        .collect();
+    writeln!(
+        out,
+        "struct paint_case {{ uint32_t glyph; uint16_t palette; int32_t painted; const char *text; }};\n\
+         static const struct paint_case paint_cases[] = {{{}}};",
+        texts.join(", ")
+    )
+    .unwrap();
+    let colors: Vec<String> = (0..2u16)
+        .flat_map(|p| sofel_color::palette_colors(&font, p))
+        .map(|c| format!("{{{}, {}, {}, {}}}", c.r, c.g, c.b, c.a))
+        .collect();
+    writeln!(
+        out,
+        "#define COLOR_PALETTES {}\n#define COLOR_ENTRIES {}\n#define COLOR_FORMATS {}u\n\
+         static const uint8_t color_palette_colors[][4] = {{{}}};",
+        sofel_color::palette_count(&font),
+        sofel_color::palette_entry_count(&font),
+        sofel_color::color_formats(&font).0,
+        colors.join(", ")
+    )
+    .unwrap();
 }

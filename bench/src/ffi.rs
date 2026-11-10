@@ -27,6 +27,15 @@ unsafe extern "C" {
     pub fn bhb_glyph_from_name(font: *mut c_void, name: *const c_uchar, len: c_int) -> c_long;
     pub fn bhb_open_extents(data: *const c_uchar, len: c_uint, gid: c_uint) -> c_long;
 
+    // Color glyphs (ADR 0023).
+    pub fn bft_layers(face: *mut c_void, gid: c_uint) -> c_long;
+    pub fn bft_colr_walk(face: *mut c_void, gid: c_uint) -> c_long;
+    pub fn bhb_color_format(font: *mut c_void, gid: c_uint) -> c_long;
+    pub fn bhb_color_layers(font: *mut c_void, gid: c_uint) -> c_long;
+    pub fn bhb_svg_len(font: *mut c_void, gid: c_uint) -> c_long;
+    pub fn bhb_paint(font: *mut c_void, gid: c_uint) -> c_long;
+    pub fn bhb_set_bitmap_ppem(font: *mut c_void, ppem: c_uint);
+
     // HarfBuzz's own Unicode functions (hb-unicode.h), called directly.
     pub fn hb_unicode_funcs_get_default() -> *mut c_void;
     pub fn hb_unicode_general_category(ufuncs: *mut c_void, cp: c_uint) -> c_int;
@@ -69,6 +78,14 @@ impl FtFace {
         // SAFETY: a valid face.
         unsafe { bft_cid(self.0, gid) as i64 }
     }
+    pub fn layers(&self, gid: u32) -> i64 {
+        // SAFETY: a valid face.
+        unsafe { bft_layers(self.0, gid) as i64 }
+    }
+    pub fn colr_walk(&self, gid: u32) -> i64 {
+        // SAFETY: a valid face.
+        unsafe { bft_colr_walk(self.0, gid) as i64 }
+    }
     pub fn render(&self, gid: u32) -> i64 {
         // SAFETY: a valid face.
         unsafe { bft_render(self.0, gid) as i64 }
@@ -95,6 +112,27 @@ impl HbFont {
     pub fn set_ppem(&self, ppem: u32) {
         // SAFETY: a valid font.
         unsafe { bhb_set_ppem(self.0, ppem) };
+    }
+    pub fn set_bitmap_ppem(&self, ppem: u32) {
+        // SAFETY: a valid font.
+        unsafe { bhb_set_bitmap_ppem(self.0, ppem) };
+    }
+    pub fn color_format(&self, gid: u32) -> i64 {
+        // SAFETY: a valid font.
+        unsafe { bhb_color_format(self.0, gid) as i64 }
+    }
+    pub fn color_layers(&self, gid: u32) -> i64 {
+        // SAFETY: a valid font.
+        unsafe { bhb_color_layers(self.0, gid) as i64 }
+    }
+    pub fn svg_len(&self, gid: u32) -> i64 {
+        // SAFETY: a valid font.
+        unsafe { bhb_svg_len(self.0, gid) as i64 }
+    }
+    /// Paint calls plus image bytes; -1 for glyphs that are not color glyphs.
+    pub fn paint(&self, gid: u32) -> i64 {
+        // SAFETY: a valid font.
+        unsafe { bhb_paint(self.0, gid) as i64 }
     }
     pub fn nominal_glyph(&self, c: u32) -> u32 {
         // SAFETY: a valid font.

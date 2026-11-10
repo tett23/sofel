@@ -13,6 +13,8 @@
 // The functions mirror the C declarations in sofel.h, argument for argument.
 #![allow(clippy::too_many_arguments)]
 
+mod color;
+
 use core::ffi::{c_char, c_void};
 use core::fmt::Write as _;
 use std::ffi::CString;
@@ -671,10 +673,21 @@ fn extents4(e: GlyphExtents) -> [i32; 4] {
     [e.x_bearing, e.y_bearing, e.width, e.height]
 }
 
-/// The box of a glyph for the queries that need one: glyf, CFF2 and CFF
-/// (ADR 0021; the color glyphs of ADR 0023 come later).
-fn glyph_box<'f>(font: &'f SofelFont) -> impl Fn(GlyphId) -> Option<GlyphExtents> + 'f {
-    |g| font.outlines.glyph_extents(g)
+/// The box of a glyph at `scale` for the queries that need one, as
+/// HarfBuzz gives it: sbix, CBDT and COLR, then glyf, CFF2 and CFF
+/// (ADR 0023). The work memory is made for each glyph.
+fn glyph_box<'f>(
+    font: &'f SofelFont,
+    scale: &'f HbScale,
+) -> impl Fn(GlyphId) -> Option<GlyphExtents> + 'f {
+    |g| {
+        sofel_color::scaled_glyph_extents(
+            &font.outlines,
+            g.0,
+            scale,
+            &mut sofel_color::Scratch::default(),
+        )
+    }
 }
 
 /// The scale of a `sofel_scale_t` pointer, or the default scale of the
@@ -763,7 +776,8 @@ pub unsafe extern "C" fn sofel_font_v_origin(
     let (font, origin) = unsafe { (sofel_ref(font), ints::<2>(origin)) };
     status(font.ok_or(ERROR_NULL).and_then(|sf| {
         get(Some(&sf.font), origin, |f| {
-            let (x, y) = f.v_origin(GlyphId(glyph), glyph_box(sf));
+            let s = HbScale::unscaled(f);
+            let (x, y) = s.v_origin_scaled(f, GlyphId(glyph), glyph_box(sf, &s));
             [x, y]
         })
     }))
@@ -785,7 +799,8 @@ pub unsafe extern "C" fn sofel_font_glyph_extents(
     let (font, extents) = unsafe { (sofel_ref(font), ints::<4>(extents)) };
     status(font.ok_or(ERROR_NULL).and_then(|sf| {
         find(Some(&sf.font), extents, |_| {
-            sf.outlines.glyph_extents(GlyphId(glyph)).map(extents4)
+            sofel_color::glyph_extents(&sf.outlines, glyph, &mut sofel_color::Scratch::default())
+                .map(extents4)
         })
     }))
 }
@@ -802,7 +817,7 @@ fn metrics_position(
     let tag = MetricsTag::from_tag(Tag::from_u32(tag)).ok_or(ERROR_INVALID_ARGUMENT)?;
     let s = scale_of(scale, font);
     *position = if fallback {
-        s.metrics_position_with_fallback(font, tag, glyph_box(sf))
+        s.metrics_position_with_fallback_scaled(font, tag, glyph_box(sf, &s))
     } else {
         s.metrics_position(font, tag).ok_or(ERROR_NOT_FOUND)?
     };
@@ -1061,7 +1076,7 @@ pub unsafe extern "C" fn sofel_scale_v_origin(
     // SAFETY: the caller's conditions.
     let (scale, font, origin) = unsafe { (r(scale), sofel_ref(font), ints::<2>(origin)) };
     status(scaled(scale, font, origin, |s, f| {
-        let (x, y) = s.v_origin(&f.font, GlyphId(glyph), glyph_box(f));
+        let (x, y) = s.v_origin_scaled(&f.font, GlyphId(glyph), glyph_box(f, s));
         Some([x, y])
     }))
 }
@@ -1082,10 +1097,13 @@ pub unsafe extern "C" fn sofel_scale_glyph_extents_of(
     // SAFETY: the caller's conditions.
     let (scale, font, extents) = unsafe { (r(scale), sofel_ref(font), ints::<4>(extents)) };
     status(scaled(scale, font, extents, |s, f| {
-        f.outlines
-            .hb_extents()
-            .scaled_glyph_extents(GlyphId(glyph), s)
-            .map(extents4)
+        sofel_color::scaled_glyph_extents(
+            &f.outlines,
+            glyph,
+            s,
+            &mut sofel_color::Scratch::default(),
+        )
+        .map(extents4)
     }))
 }
 
@@ -1150,7 +1168,7 @@ fn baseline(
     let (tag, dir, script) = (Tag::from_u32(tag), direction(dir)?, Tag::from_u32(script));
     let s = scale_of(scale, font);
     *coord = if fallback {
-        s.baseline_with_fallback(font, tag, dir, script, glyph_box(sf))
+        s.baseline_with_fallback_scaled(font, tag, dir, script, glyph_box(sf, &s))
     } else {
         s.baseline(font, tag, dir, script).ok_or(ERROR_NOT_FOUND)?
     };

@@ -31,20 +31,7 @@ pub struct FontExtents {
     pub line_gap: i32,
 }
 
-/// A glyph's box (`hb_glyph_extents_t`): the top-left corner relative to
-/// the glyph origin, the width (positive) and the height (negative for
-/// glyphs that extend downward from the top).
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub struct GlyphExtents {
-    /// Left edge, from the origin.
-    pub x_bearing: i32,
-    /// Top edge, from the origin.
-    pub y_bearing: i32,
-    /// Width.
-    pub width: i32,
-    /// Height; negative when the box extends downward from the top.
-    pub height: i32,
-}
+pub use sofel_geom::GlyphExtents;
 
 /// The font-wide metrics HarfBuzz's `hb_ot_metrics_get_position` knows
 /// (`hb_ot_metrics_tag_t`).
@@ -381,6 +368,20 @@ impl HbScale {
         glyph: GlyphId,
         extents: impl Fn(GlyphId) -> Option<GlyphExtents>,
     ) -> (i32, i32) {
+        self.v_origin_scaled(font, glyph, |g| {
+            extents(g).map(|e| self.scale_glyph_extents(e))
+        })
+    }
+
+    /// [`HbScale::v_origin`] with boxes that `extents` gives at this
+    /// scale already, as HarfBuzz's `hb_font_get_glyph_extents` does for
+    /// color glyphs (ADR 0023).
+    pub fn v_origin_scaled(
+        &self,
+        font: &Font<'_>,
+        glyph: GlyphId,
+        extents: impl Fn(GlyphId) -> Option<GlyphExtents>,
+    ) -> (i32, i32) {
         let x = self.h_advance(font, glyph) / 2;
         if let Some(vorg) = font.vorg {
             return (x, self.em_scalef_y(i32_to_f32(vorg_y(&vorg, glyph))));
@@ -400,13 +401,10 @@ impl HbScale {
         let h = self.h_extents(font);
         let advance = i64::from(h.ascender).saturating_sub(i64::from(h.descender));
         let y = match extents(glyph) {
-            Some(e) => {
-                let e = self.scale_glyph_extents(e);
-                clamp_i32(
-                    i64::from(e.y_bearing)
-                        .saturating_add(advance.saturating_add(i64::from(e.height)) >> 1),
-                )
-            }
+            Some(e) => clamp_i32(
+                i64::from(e.y_bearing)
+                    .saturating_add(advance.saturating_add(i64::from(e.height)) >> 1),
+            ),
             None => h.ascender,
         };
         (x, y)
@@ -504,9 +502,23 @@ impl HbScale {
         tag: MetricsTag,
         extents: impl Fn(GlyphId) -> Option<GlyphExtents>,
     ) -> i32 {
+        self.with_fallback(font, tag, &|g| {
+            extents(g).map(|e| self.scale_glyph_extents(e))
+        })
+    }
+
+    /// [`HbScale::metrics_position_with_fallback`] with boxes that
+    /// `extents` gives at this scale already (ADR 0023).
+    pub fn metrics_position_with_fallback_scaled(
+        &self,
+        font: &Font<'_>,
+        tag: MetricsTag,
+        extents: impl Fn(GlyphId) -> Option<GlyphExtents>,
+    ) -> i32 {
         self.with_fallback(font, tag, &extents)
     }
 
+    /// `extents` gives boxes at this scale.
     fn with_fallback(
         &self,
         font: &Font<'_>,
@@ -520,11 +532,7 @@ impl HbScale {
             return v;
         }
         let (xs, ys) = (i64::from(self.x_scale), i64::from(self.y_scale));
-        let glyph_box = |c: char| {
-            font.nominal_glyph(u32::from(c))
-                .and_then(extents)
-                .map(|e| self.scale_glyph_extents(e))
-        };
+        let glyph_box = |c: char| font.nominal_glyph(u32::from(c)).and_then(extents);
         match tag {
             HorizontalAscender | HorizontalClippingAscent => self.h_extents(font).ascender,
             HorizontalDescender | HorizontalClippingDescent => self.h_extents(font).descender,

@@ -7,6 +7,7 @@
  * computes with the Rust API.
  */
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -120,6 +121,38 @@ static void check_declarations(void) {
       sofel_diagnostic_message;
   int32_t (*diag_details)(const sofel_diagnostic_t *, sofel_detail_func_t, void *) =
       sofel_diagnostic_details;
+  int32_t (*paint_glyph)(const sofel_font_t *, uint32_t, uint16_t, const sofel_color_t *, size_t,
+                         sofel_color_t, uint16_t, sofel_paint_commands_t *) = sofel_paint_glyph;
+  void (*paint_free)(sofel_paint_commands_t *) = sofel_paint_commands_free;
+  int32_t (*palette_count)(const sofel_font_t *, uint16_t *) = sofel_palette_count;
+  int32_t (*palette_entry_count)(const sofel_font_t *, uint16_t *) = sofel_palette_entry_count;
+  int32_t (*palette_name_id)(const sofel_font_t *, uint16_t, uint16_t *) = sofel_palette_name_id;
+  int32_t (*palette_flags)(const sofel_font_t *, uint16_t, uint32_t *) = sofel_palette_flags;
+  int32_t (*palette_color_name_id)(const sofel_font_t *, uint16_t, uint16_t *) =
+      sofel_palette_color_name_id;
+  int32_t (*palette_colors)(const sofel_font_t *, uint16_t, sofel_color_t *, size_t, size_t *) =
+      sofel_palette_colors;
+  int32_t (*find_palette)(const sofel_font_t *, uint32_t, uint16_t *) = sofel_find_palette;
+  int32_t (*color_formats)(const sofel_font_t *, uint32_t *) = sofel_color_formats;
+  int32_t (*glyph_color_format)(const sofel_font_t *, uint32_t, uint32_t *) =
+      sofel_glyph_color_format;
+  int32_t (*color_layers)(const sofel_font_t *, uint32_t, uint32_t *, int32_t *, size_t,
+                          size_t *) = sofel_color_layers;
+  int32_t (*svg_document)(const sofel_font_t *, uint32_t, const uint8_t **, size_t *, uint32_t *,
+                          uint32_t *) = sofel_svg_document;
+  int32_t (*bitmap_strikes)(const sofel_font_t *, sofel_strike_t *, size_t, size_t *) =
+      sofel_bitmap_strikes;
+  int32_t (*choose_strike)(const sofel_font_t *, uint16_t, sofel_strike_t *) = sofel_choose_strike;
+  int32_t (*match_strike)(const sofel_font_t *, uint32_t, uint32_t, sofel_strike_t *) =
+      sofel_match_strike;
+  int32_t (*glyph_bitmap)(const sofel_font_t *, uint32_t, uint32_t, sofel_glyph_bitmap_t *) =
+      sofel_glyph_bitmap;
+  int32_t (*sin_cos)(float, float *, float *) = sofel_sin_cos;
+  float (*tan_f)(float) = sofel_tan;
+  int32_t (*normalize)(sofel_color_stop_t *, size_t, float *, float *) = sofel_normalize_color_line;
+  int32_t (*reduce)(const float *, float *) = sofel_reduce_linear_anchors;
+  int32_t (*tiles)(sofel_color_stop_t *, size_t, uint32_t, float, float, sofel_sweep_tile_func_t,
+                   void *) = sofel_sweep_gradient_tiles;
   const void *all[] = {
       (const void *)version,         (const void *)error_string,
       (const void *)mul_fix,         (const void *)div_fix,
@@ -149,6 +182,14 @@ static void check_declarations(void) {
       (const void *)u_script_from_iso15924, (const void *)u_mirroring,
       (const void *)u_decompose,     (const void *)u_compose,
       (const void *)u_pictographic,  (const void *)u_vertical_orientation,
+      (const void *)paint_glyph, (const void *)paint_free, (const void *)palette_count,
+      (const void *)palette_entry_count, (const void *)palette_name_id,
+      (const void *)palette_flags, (const void *)palette_color_name_id,
+      (const void *)palette_colors, (const void *)find_palette, (const void *)color_formats,
+      (const void *)glyph_color_format, (const void *)color_layers, (const void *)svg_document,
+      (const void *)bitmap_strikes, (const void *)choose_strike, (const void *)match_strike,
+      (const void *)glyph_bitmap, (const void *)sin_cos, (const void *)tan_f,
+      (const void *)normalize, (const void *)reduce, (const void *)tiles,
   };
   size_t i;
   for (i = 0; i < COUNT(all); i++) CHECK(all[i] != NULL);
@@ -1088,6 +1129,222 @@ static void test_metrics(void) {
   sofel_font_destroy(font);
 }
 
+
+/* ------------------------------------------------------- color glyphs */
+
+struct text_buf {
+  char s[8192];
+  size_t len;
+  int level;
+};
+
+static void tline(struct text_buf *t, const char *fmt, ...) {
+  va_list ap;
+  int n = snprintf(t->s + t->len, sizeof(t->s) - t->len, "%*s", 2 * t->level, "");
+  if (n > 0) t->len += (size_t)n;
+  va_start(ap, fmt);
+  n = vsnprintf(t->s + t->len, sizeof(t->s) - t->len, fmt, ap);
+  va_end(ap);
+  if (n > 0) t->len += (size_t)n;
+  if (t->len + 1 < sizeof(t->s)) t->s[t->len++] = '\n';
+  t->s[t->len] = '\0';
+}
+
+static double clean(float v) { return v == 0.0f ? 0.0 : (double)v; }
+
+static void tstops(struct text_buf *t, uint32_t extend, const sofel_color_stop_t *stops, size_t n) {
+  size_t i;
+  tline(t, "colors %u", extend);
+  t->level++;
+  for (i = 0; i < n; i++)
+    tline(t, "%.3g %u %u %u %u", (double)stops[i].offset, stops[i].color.r, stops[i].color.g,
+          stops[i].color.b, stops[i].color.a);
+  t->level--;
+}
+
+/* The text of sofel-paint (HarfBuzz's test-paint.c) for the commands. */
+static void paint_text(const sofel_paint_commands_t *cmds, struct text_buf *t) {
+  size_t i;
+  t->len = 0;
+  t->level = 0;
+  t->s[0] = '\0';
+  for (i = 0; i < cmds->count; i++) {
+    const sofel_paint_command_t *c = &cmds->commands[i];
+    const float *v = c->values;
+    switch (c->kind) {
+    case SOFEL_PAINT_PUSH_TRANSFORM:
+      tline(t, "start transform %.3g %.3g %.3g %.3g %.3g %.3g", clean(v[0]), clean(v[1]),
+            clean(v[2]), clean(v[3]), clean(v[4]), clean(v[5]));
+      t->level++;
+      break;
+    case SOFEL_PAINT_POP_TRANSFORM:
+      t->level--;
+      tline(t, "end transform");
+      break;
+    case SOFEL_PAINT_PUSH_CLIP_GLYPH:
+      tline(t, "start clip glyph %u", c->glyph);
+      t->level++;
+      break;
+    case SOFEL_PAINT_PUSH_CLIP_RECTANGLE:
+      tline(t, "start clip rectangle %.3g %.3g %.3g %.3g", (double)v[0], (double)v[1],
+            (double)v[2], (double)v[3]);
+      t->level++;
+      break;
+    case SOFEL_PAINT_POP_CLIP:
+      t->level--;
+      tline(t, "end clip");
+      break;
+    case SOFEL_PAINT_FILL_SOLID:
+      tline(t, "solid %u %u %u %u", c->color.r, c->color.g, c->color.b, c->color.a);
+      break;
+    case SOFEL_PAINT_FILL_LINEAR: {
+      float axis[4], mn, mx;
+      sofel_color_stop_t stops[16];
+      size_t n = c->n_stops < 16 ? c->n_stops : 16;
+      CHECK(sofel_reduce_linear_anchors(v, axis) == SOFEL_OK);
+      memcpy(stops, c->stops, n * sizeof(stops[0]));
+      CHECK(sofel_normalize_color_line(stops, n, &mn, &mx) == SOFEL_OK);
+      tline(t, "linear gradient");
+      t->level++;
+      tline(t, "p0 %.3g %.3g", (double)(axis[0] + mn * (axis[2] - axis[0])),
+            (double)(axis[1] + mn * (axis[3] - axis[1])));
+      tline(t, "p1 %.3g %.3g", (double)(axis[0] + mx * (axis[2] - axis[0])),
+            (double)(axis[1] + mx * (axis[3] - axis[1])));
+      tstops(t, c->mode, stops, n);
+      t->level--;
+      break;
+    }
+    case SOFEL_PAINT_FILL_RADIAL:
+      tline(t, "radial gradient");
+      t->level++;
+      tline(t, "p0 %.3g %.3g radius %.3g", (double)v[0], (double)v[1], (double)v[2]);
+      tline(t, "p1 %.3g %.3g radius %.3g", (double)v[3], (double)v[4], (double)v[5]);
+      tstops(t, c->mode, c->stops, c->n_stops);
+      t->level--;
+      break;
+    case SOFEL_PAINT_FILL_SWEEP:
+      tline(t, "sweep gradient");
+      t->level++;
+      tline(t, "center %.3g %.3g", (double)v[0], (double)v[1]);
+      tline(t, "angles %.3g %.3g", (double)v[2], (double)v[3]);
+      tstops(t, c->mode, c->stops, c->n_stops);
+      t->level--;
+      break;
+    case SOFEL_PAINT_FILL_GLYPH:
+      tline(t, "fill glyph %u solid %u %u %u %u", c->glyph, c->color.r, c->color.g, c->color.b,
+            c->color.a);
+      break;
+    case SOFEL_PAINT_PUSH_GROUP:
+      tline(t, "push group");
+      t->level++;
+      break;
+    case SOFEL_PAINT_POP_GROUP:
+      t->level--;
+      tline(t, "pop group mode %u", c->mode);
+      break;
+    case SOFEL_PAINT_COLOR_GLYPH:
+      tline(t, "paint color glyph %u; acting as failed", c->glyph);
+      break;
+    default:
+      tline(t, "kind %u", c->kind);
+    }
+  }
+}
+
+struct tile_sum {
+  int tiles;
+  float covered;
+};
+
+static void sum_tile(void *user, float a0, sofel_color_t c0, float a1, sofel_color_t c1) {
+  struct tile_sum *s = (struct tile_sum *)user;
+  (void)c0;
+  (void)c1;
+  s->tiles++;
+  s->covered += a1 - a0;
+}
+
+static void test_color(void) {
+  int32_t error;
+  sofel_font_t *font = sofel_font_create(color_font, sizeof(color_font), 0, &error);
+  struct text_buf text;
+  size_t i, count;
+  uint16_t u16;
+  uint32_t u32;
+  uint32_t glyphs[4];
+  int32_t indices[4];
+  sofel_color_t colors[8];
+  sofel_color_t fg = {10, 20, 30, 255};
+  sofel_color_stop_t stops[2];
+  float s, c, mn, mx;
+  struct tile_sum sum = {0, 0.0f};
+  sofel_strike_t strike;
+  sofel_glyph_bitmap_t bitmap;
+  const uint8_t *data;
+  size_t len;
+  uint32_t idx, range[2];
+
+  CHECK(error == SOFEL_OK);
+  for (i = 0; i < COUNT(paint_cases); i++) {
+    sofel_paint_commands_t cmds;
+    int32_t painted = sofel_paint_glyph(font, paint_cases[i].glyph, paint_cases[i].palette, NULL, 0,
+                                        fg, 0, &cmds);
+    CHECK(painted == paint_cases[i].painted);
+    paint_text(&cmds, &text);
+    CHECK(strcmp(text.s, paint_cases[i].text) == 0);
+    sofel_paint_commands_free(&cmds);
+    CHECK(cmds.commands == NULL && cmds.count == 0);
+    sofel_paint_commands_free(&cmds);
+  }
+  {
+    /* A custom palette replaces the font's. */
+    sofel_paint_commands_t cmds;
+    sofel_color_t custom[2] = {{1, 2, 3, 4}, {5, 6, 7, 8}};
+    CHECK(sofel_paint_glyph(font, 2, 0, custom, 2, fg, 0, &cmds) == SOFEL_PAINTED_COLRV0);
+    CHECK(cmds.count == 2 && cmds.commands[0].color.r == 5 && cmds.commands[0].palette_index == 1);
+    CHECK(cmds.commands[1].palette_index == -1 && cmds.commands[1].color.b == 30);
+    sofel_paint_commands_free(&cmds);
+  }
+  CHECK(sofel_paint_glyph(NULL, 2, 0, NULL, 0, fg, 0, NULL) == SOFEL_ERROR_NULL);
+
+  CHECK(sofel_palette_count(font, &u16) == SOFEL_OK && u16 == COLOR_PALETTES);
+  CHECK(sofel_palette_entry_count(font, &u16) == SOFEL_OK && u16 == COLOR_ENTRIES);
+  CHECK(sofel_palette_name_id(font, 1, &u16) == SOFEL_OK && u16 == 257);
+  CHECK(sofel_palette_flags(font, 1, &u32) == SOFEL_OK && u32 == 2);
+  CHECK(sofel_palette_color_name_id(font, 1, &u16) == SOFEL_OK && u16 == 301);
+  CHECK(sofel_palette_colors(font, 1, colors, 8, &count) == SOFEL_OK && count == 2);
+  CHECK(memcmp(&colors[0], color_palette_colors[2], 4) == 0);
+  CHECK(sofel_palette_colors(font, 1, colors, 1, &count) == SOFEL_ERROR_BUFFER_TOO_SMALL);
+  CHECK(sofel_find_palette(font, 2, &u16) == SOFEL_OK && u16 == 1);
+  CHECK(sofel_find_palette(font, 4, &u16) == SOFEL_ERROR_NOT_FOUND);
+  CHECK(sofel_color_formats(font, &u32) == SOFEL_OK && u32 == COLOR_FORMATS);
+  CHECK(sofel_glyph_color_format(font, 2, &u32) == SOFEL_OK && u32 == SOFEL_PAINTED_COLRV0);
+  CHECK(sofel_glyph_color_format(font, 3, &u32) == SOFEL_OK && u32 == SOFEL_PAINTED_COLRV1);
+  CHECK(sofel_glyph_color_format(font, 1, &u32) == SOFEL_ERROR_NOT_FOUND);
+  CHECK(sofel_color_layers(font, 2, glyphs, indices, 4, &count) == SOFEL_OK && count == 2);
+  CHECK(glyphs[0] == 1 && indices[0] == 1 && indices[1] == -1);
+  CHECK(sofel_svg_document(font, 2, &data, &len, &idx, range) == SOFEL_ERROR_NOT_FOUND);
+  CHECK(sofel_bitmap_strikes(font, NULL, 0, &count) == SOFEL_OK && count == 0);
+  CHECK(sofel_choose_strike(font, 0, &strike) == SOFEL_ERROR_NOT_FOUND);
+  CHECK(sofel_match_strike(font, 1024, 1024, &strike) == SOFEL_ERROR_NOT_FOUND);
+  CHECK(sofel_glyph_bitmap(font, 0, 1, &bitmap) == SOFEL_ERROR_NOT_FOUND);
+
+  CHECK(sofel_sin_cos(0.0f, &s, &c) == SOFEL_OK && s == 0.0f && c == 1.0f);
+  CHECK(sofel_tan(0.0f) == 0.0f);
+  memset(stops, 0, sizeof(stops));
+  stops[0].offset = 2.0f;
+  stops[1].offset = 1.0f;
+  stops[1].color.a = 255;
+  CHECK(sofel_normalize_color_line(stops, 2, &mn, &mx) == SOFEL_OK);
+  CHECK(mn == 1.0f && mx == 2.0f && stops[0].offset == 0.0f && stops[0].color.a == 255);
+  CHECK(sofel_sweep_gradient_tiles(stops, 2, SOFEL_EXTEND_PAD, 0.0f, 3.14159265f, sum_tile, &sum) ==
+        SOFEL_OK);
+  CHECK(sum.tiles >= 2 && sum.covered > 6.28f && sum.covered < 6.29f);
+  CHECK(sofel_sweep_gradient_tiles(stops, 2, 7, 0.0f, 1.0f, sum_tile, &sum) ==
+        SOFEL_ERROR_INVALID_ARGUMENT);
+  sofel_font_destroy(font);
+}
+
 int main(void) {
   int32_t e = 12345;
   sofel_font_t *font;
@@ -1120,6 +1377,7 @@ int main(void) {
   test_metrics();
   test_cff();
   test_cff_info();
+  test_color();
 #if !defined(__wasi__)
   test_threads(font);
 #endif

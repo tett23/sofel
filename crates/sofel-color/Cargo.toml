@@ -1,0 +1,15 @@
+[package]
+name = "sofel-color"
+description = "Color glyphs through the Painter: CPAL palettes, COLR, SVG, CBDT and sbix, as HarfBuzz paints them (ADR 0023)"
+version.workspace = true
+edition.workspace = true
+license = "MIT"
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+sofel-bitmap = { path = "../sofel-bitmap" }
+sofel-outline = { path = "../sofel-outline" }
+
+[lints]
+workspace = true

@@ -18,6 +18,7 @@ sofel ports algorithms and arithmetic from FreeType 2.15.0 (commit `37515cf56ba3
 | `sofel-font` | `src/sfnt/ttmtx.c`, `src/sfnt/sfobjs.c` (the left side bearing for phantom point 1; the `FT_Face` values), `src/sfnt/ttload.c` (`tt_face_load_name`, `tt_face_load_post`), `src/sfnt/sfdriver.c` (the PostScript name, `sfnt_get_name_index`), `src/sfnt/ttpost.c`, `src/truetype/ttgload.c` (`TT_Get_VMetrics`); `src/cff/cffload.c`, `src/cff/cffobjs.c` (`cff_face_init`), `src/cff/cffdrivr.c` (CID, glyph names, PostScript font information) and `src/base/ftcalc.c` (`FT_Matrix_Multiply_Scaled`, `FT_Vector_Transform_Scaled`) ([ADR 0021](docs/adr/0021-cff-outlines.md)) |
 | `sofel-outline` | `src/truetype/ttgload.c`, `src/truetype/ttpload.c`, `src/base/ftoutln.c`; for CFF ([ADR 0021](docs/adr/0021-cff-outlines.md)) `src/cff/cffgload.c` (`cff_slot_load`) and the Adobe engine's builder callbacks `src/psaux/psft.c` and `src/psaux/psobjs.c` (`ps_builder_*`), which carry the patent license below |
 | `sofel-raster` | `src/smooth/ftgrays.c`, `src/smooth/ftsmooth.c`, `src/base/ftobjs.c` |
+| `sofel-bitmap` | `src/sfnt/ttsbit.c` (`tt_face_load_sbit`, `tt_face_load_strike_metrics`, `tt_sbit_decoder_load_image`, `tt_sbit_decoder_load_bitmap`, `tt_face_load_sbix_image`), `src/sfnt/sfobjs.c` (the `available_sizes`), `src/sfnt/ttmtx.c` (`tt_face_get_metrics`), `src/base/ftobjs.c` (`FT_Match_Size`) ([ADR 0023](docs/adr/0023-color-glyphs.md)) |
 
 The FreeType License follows.
 
@@ -238,6 +239,10 @@ sofel follows rules of HarfBuzz 15.1.0 (commit `3df40d9b98d6b32f0e4288d4ecfbb158
 | `sofel-read` | `src/layout/`, `src/gdef.rs`, `src/gsub.rs`, `src/gpos.rs` and `src/device.rs` (`Device::delta_pixels`) from `src/hb-ot-layout-common.hh`, `src/hb-ot-layout-gsubgpos.hh`, `src/hb-ot-dual.hh`, `src/OT/Layout/Common/`, `src/OT/Layout/GDEF/GDEF.hh`, `src/OT/Layout/GSUB/`, `src/OT/Layout/GPOS/`, `src/hb-ot-layout.cc` (`GDEF::is_blocklisted`) and `src/hb-sanitize.hh` (the operation budget) ([ADR 0020](docs/adr/0020-shaping-foundation.md)) |
 | `sofel-font` | `src/tables/arabic_pua.rs`, generated from HarfBuzz's `src/ArabicPUASimplified.txt` and `src/ArabicPUATraditional.txt`; `src/names.rs` and `src/name_language.rs` from `src/OT/name/name.hh`, `src/hb-ot-name.cc`, `src/hb-ot-name-language-static.hh`, `src/hb-common.cc`, `src/hb-aat-ltag-table.hh`, `src/hb-utf.hh` and `src/hb-ot-post-table.hh`; `src/metrics.rs` and `src/glyf_data.rs` from `src/hb-ot-font.cc`, `src/hb-ot-metrics.cc`, `src/hb-font.hh`, `src/hb-algs.hh` (`_hb_roundf`, `hb_bsearch`, `hb_qsort_inline`), `src/hb-decycler.hh` and `src/OT/glyf/` ([ADR 0016](docs/adr/0016-font-and-vertical-metrics.md)); `src/layout.rs` and `src/base_sanitize.rs` from `src/hb-ot-layout.cc`, `src/hb-ot-layout-base-table.hh`, `src/hb-ot-layout-common.hh` (`Device`, `ItemVariationStore`), `src/hb-ot-tag.cc` (`hb_ot_tag_to_script`) and `src/hb-sanitize.hh` ([ADR 0017](docs/adr/0017-base-baselines.md)); `src/hb_cff.rs` (HarfBuzz's CFF and CFF2 accelerators) and the CFF glyph names of `src/names.rs` from `src/hb-ot-cff1-table.hh`, `src/hb-ot-cff2-table.hh` and `src/hb-face.cc` (Copyright © 2018 Adobe Inc.) ([ADR 0021](docs/adr/0021-cff-outlines.md)) |
 | `sofel-shape` | `src/tag_table.rs`: the language tables and the branches of `hb_ot_tags_from_complex_language` and `hb_ot_ambiguous_tag_to_language`, generated from `src/hb-ot-tag-table.hh`; `src/tag.rs` from `src/hb-ot-tag.cc`; `src/language.rs` from `src/hb-common.cc` (`hb_language_from_string`) (Copyright © 2009 Red Hat, Inc.; © 2011 Google, Inc.) ([ADR 0020](docs/adr/0020-shaping-foundation.md)) |
+| `sofel-geom` | `src/paint.rs` and `src/paint_util.rs`: the paint commands of `src/hb-paint.h`, the transforms of `src/hb-geometry.hh` (`hb_transform_t`), and `hb_paint_reduce_linear_anchors`, `hb_paint_normalize_color_line`, `hb_paint_sweep_gradient_tiles` of `src/hb-paint.cc` and `hb_color_lerp` of `src/hb-paint.hh` (Copyright © 2022 Matthias Clasen) ([ADR 0023](docs/adr/0023-color-glyphs.md)) |
+| `sofel-read` | `src/colr.rs`, `src/cpal.rs`, `src/cblc.rs`, `src/sbix.rs`, `src/svg.rs` and `src/search.rs`: the lookups and the checks of `src/OT/Color/COLR/COLR.hh`, `src/OT/Color/CPAL/CPAL.hh`, `src/OT/Color/CBDT/CBDT.hh`, `src/OT/Color/sbix/sbix.hh`, `src/OT/Color/svg/svg.hh` and `hb_bsearch_impl` of `src/hb-algs.hh` ([ADR 0023](docs/adr/0023-color-glyphs.md)) |
+| `sofel-bitmap` | `choose_strike` and the PNG glyphs and boxes for painting from `src/OT/Color/CBDT/CBDT.hh` and `src/OT/Color/sbix/sbix.hh` ([ADR 0023](docs/adr/0023-color-glyphs.md)) |
+| `sofel-color` | `hb_ot_paint_glyph_or_fail` and `hb_ot_get_glyph_extents` of `src/hb-ot-font.cc`, the painting of `src/OT/Color/COLR/COLR.hh`, `src/OT/Color/svg/svg.hh`, `src/hb-ot-color.cc`, `src/hb-paint-extents.hh`, `src/hb-paint-extents.cc`, `src/hb-paint-bounded.hh`, `src/hb-paint-bounded.cc` and `src/hb-decycler.hh` (Copyright © 2022 Matthias Clasen; © 2018 Ebrahim Byagowi; © 2020 Google, Inc.) ([ADR 0023](docs/adr/0023-color-glyphs.md)) |
 | `sofel-outline` | `src/hb_cff.rs`: HarfBuzz's CFF and CFF2 glyph boxes from `src/hb-cff-interp-common.hh`, `src/hb-cff-interp-cs-common.hh`, `src/hb-cff1-interp-cs.hh`, `src/hb-cff2-interp-cs.hh`, `src/hb-ot-cff1-table.cc`, `src/hb-ot-cff2-table.cc` and `src/hb-ot-font.cc` (`hb_ot_get_glyph_extents`) (Copyright © 2018 Adobe Inc.; © 2011, 2014 Google, Inc.) ([ADR 0021](docs/adr/0021-cff-outlines.md)) |
 | `sofel-shape` | The shaping core ([ADR 0020](docs/adr/0020-shaping-foundation.md)): `src/buffer.rs`, `src/utf.rs`, `src/props.rs` and `src/diff.rs` from `src/hb-buffer.hh`, `src/hb-buffer.cc`, `src/hb-utf.hh`, `src/hb-limits.hh` and `src/hb-common.cc` (`hb_script_get_horizontal_direction`); `src/unicode.rs` from `src/hb-unicode.hh` and `src/hb-unicode.cc`; `src/digest.rs` from `src/hb-set-digest.hh`; `src/plan.rs`, `src/shape.rs`, `src/normalize.rs` and `src/fallback.rs` from `src/hb-ot-shape.cc`, `src/hb-ot-shaper.hh`, `src/hb-ot-shaper-default.cc`, `src/hb-ot-shape-normalize.cc`, `src/hb-ot-shape-fallback.cc` and `src/hb-fallback-shape.cc`; `src/layout/` from `src/hb-ot-map.cc`, `src/hb-ot-map.hh`, `src/hb-ot-layout.cc`, `src/hb-ot-layout.hh`, `src/hb-ot-layout-gsubgpos.hh`, `src/OT/Layout/GDEF/`, `src/OT/Layout/GSUB/` and `src/OT/Layout/GPOS/`; `src/scale.rs` and `src/font.rs` from `src/hb-font.hh` and `src/hb-ot-layout-common.hh` (`HintingDevice::get_delta`) (Copyright © 1998-2004 David Turner and Werner Lemberg; © 2004, 2006-2010 Red Hat, Inc.; © 2007 Chris Wilson; © 2009 Keith Stribley; © 2010-2020 Google, Inc.; © 2019 Facebook, Inc.) ([ADR 0020](docs/adr/0020-shaping-foundation.md)) |
 | `sofel-shape` | `src/feature.rs`: feature strings (`hb_feature_from_string`, `hb_feature_to_string`) from `src/hb-common.cc` (Copyright © 2009, 2010 Red Hat, Inc.; © 2011, 2012 Google, Inc.), and `hb_parse_int`, `hb_parse_uint` from `src/hb-number.cc` (Copyright © 2019-2026 Ebrahim Byagowi); `src/serialize.rs`: buffer serialization from `src/hb-buffer-serialize.cc`, the readers after the Ragel grammars `src/hb-buffer-deserialize-json.rl`, `src/hb-buffer-deserialize-text-glyphs.rl` and `src/hb-buffer-deserialize-text-unicode.rl`, and `glyph_to_string`, `glyph_from_string` from `src/hb-font.hh` (Copyright © 2012, 2013 Google, Inc.; the grammars © 2013 Google, Inc.) ([ADR 0020](docs/adr/0020-shaping-foundation.md)) |
@@ -281,6 +286,42 @@ BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
 FITNESS FOR A PARTICULAR PURPOSE.  THE SOFTWARE PROVIDED HEREUNDER IS
 ON AN "AS IS" BASIS, AND THE COPYRIGHT HOLDER HAS NO OBLIGATION TO
 PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
+```
+
+## musl
+
+`sofel-geom`'s `src/trigf.rs` ports `src/math/sincosf.c`, `src/math/tanf.c`, `src/math/__sindf.c`, `src/math/__cosdf.c`, `src/math/__tandf.c`, `src/math/__rem_pio2f.c` and the `ipio2` table of `src/math/__rem_pio2_large.c` from musl 1.2.6 (commit `bd54dc3e8049b9c7db092905e743cdebbb8864f3`), licensed under the MIT license ([ADR 0023](docs/adr/0023-color-glyphs.md)). These files come from FreeBSD's msun and carry the Sun Microsystems notice below.
+
+```
+Copyright © 2005-2020 Rich Felker, et al.
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
+
+```
+Copyright (C) 1993, 2004 by Sun Microsystems, Inc. All rights reserved.
+
+Developed at SunPro, a Sun Microsystems, Inc. business.
+Permission to use, copy, modify, and distribute this
+software is freely granted, provided that this notice
+is preserved.
 ```
 
 ## Unicode Character Database

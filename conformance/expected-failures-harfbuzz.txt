@@ -2,40 +2,29 @@
 # ADR 0016, ADR 0017), one identifier per line: <font>#<face>:hb:<item>.
 # Give the reason after the identifier as a comment: `<id>  # <reason>`.
 # Remove an entry when it passes; the test fails until you do.
-# sofel gives glyph boxes from glyf, CFF2 and CFF (ADR 0021); the boxes
-# of color glyphs (COLR, CBDT, sbix, which HarfBuzz looks at before glyf)
-# come with ADR 0023.
-harfbuzz/test/shape/data/in-house/fonts/3cf6f8ac6d647473a43a3100e7494b202b2cfafe.ttf#0:hb:extents  # color glyph extents (CBDT): ADR 0023
-harfbuzz/test/shape/data/in-house/fonts/3cf6f8ac6d647473a43a3100e7494b202b2cfafe.ttf#0:hb:v_origin  # color glyph extents (CBDT): ADR 0023 (the vertical origin is centered on the box)
-harfbuzz/test/shape/data/in-house/fonts/53374c7ca3657be37efde7ed02ae34229a56ae1f.ttf#0:hb:extents  # color glyph extents (COLR): ADR 0023
-harfbuzz/test/shape/data/in-house/fonts/53374c7ca3657be37efde7ed02ae34229a56ae1f.ttf#0:hb:v_origin  # color glyph extents (COLR): ADR 0023 (the vertical origin is centered on the box)
-harfbuzz/test/shape/data/in-house/fonts/ba51123c80fa9526c9c3032cd41c22700a4bc3e2.ttf#0:hb:extents  # color glyph extents (COLR): ADR 0023
-harfbuzz/test/shape/data/in-house/fonts/ba51123c80fa9526c9c3032cd41c22700a4bc3e2.ttf#0:hb:v_origin  # color glyph extents (COLR): ADR 0023 (the vertical origin is centered on the box)
-harfbuzz/test/shape/data/in-house/fonts/ee39587d13b2afa5499cc79e45780aa79293bbd4.ttf#0:hb:extents  # color glyph extents (CBDT): ADR 0023
-harfbuzz/test/shape/data/in-house/fonts/ee39587d13b2afa5499cc79e45780aa79293bbd4.ttf#0:hb:v_origin  # color glyph extents (CBDT): ADR 0023 (the vertical origin is centered on the box)
-harfbuzz/test/shape/data/in-house/fonts/fcbaa518d3cce441ed37ae3b1fed6a19e9b54efd.ttf#0:hb:extents  # color glyph extents (sbix): ADR 0023
-harfbuzz/test/shape/data/in-house/fonts/fcbaa518d3cce441ed37ae3b1fed6a19e9b54efd.ttf#0:hb:v_origin  # color glyph extents (sbix): ADR 0023 (the vertical origin is centered on the box)
-harfbuzz/test/subset/data/fonts/BungeeColor-Regular.ttf#0:hb:baseline-fallback  # the math and hang fallbacks use the glyph boxes; color glyph extents (COLR): ADR 0023
-harfbuzz/test/subset/data/fonts/BungeeColor-Regular.ttf#0:hb:extents  # color glyph extents (COLR): ADR 0023
-harfbuzz/test/subset/data/fonts/BungeeColor-Regular.ttf#0:hb:v_origin  # color glyph extents (COLR): ADR 0023 (the vertical origin is centered on the box)
-harfbuzz/test/subset/data/fonts/Foldit.ttf#0:hb:extents  # color glyph extents (COLR): ADR 0023
-harfbuzz/test/subset/data/fonts/Foldit.ttf#0:hb:v_origin  # color glyph extents (COLR): ADR 0023 (the vertical origin is centered on the box)
-harfbuzz/test/subset/data/fonts/KalniaGlaze.ttf#0:hb:extents  # color glyph extents (COLR): ADR 0023
-harfbuzz/test/subset/data/fonts/NotoColorEmoji.subset.gap.ttf#0:hb:extents  # color glyph extents (CBDT): ADR 0023
-harfbuzz/test/subset/data/fonts/NotoColorEmoji.subset.gap.ttf#0:hb:v_origin  # color glyph extents (CBDT): ADR 0023 (the vertical origin is centered on the box)
-harfbuzz/test/subset/data/fonts/NotoColorEmoji.subset.index_format3.ttf#0:hb:extents  # color glyph extents (CBDT): ADR 0023
-harfbuzz/test/subset/data/fonts/NotoColorEmoji.subset.index_format3.ttf#0:hb:v_origin  # color glyph extents (CBDT): ADR 0023 (the vertical origin is centered on the box)
-harfbuzz/test/subset/data/fonts/NotoColorEmoji.subset.multiple_size_tables.ttf#0:hb:extents  # color glyph extents (CBDT): ADR 0023
-harfbuzz/test/subset/data/fonts/NotoColorEmoji.subset.multiple_size_tables.ttf#0:hb:v_origin  # color glyph extents (CBDT): ADR 0023 (the vertical origin is centered on the box)
-harfbuzz/test/subset/data/fonts/NotoColorEmoji.subset.ttf#0:hb:extents  # color glyph extents (CBDT): ADR 0023
-harfbuzz/test/subset/data/fonts/NotoColorEmoji.subset.ttf#0:hb:v_origin  # color glyph extents (CBDT): ADR 0023 (the vertical origin is centered on the box)
-harfbuzz/test/subset/data/fonts/TestCOLRv1.ttf#0:hb:extents  # color glyph extents (COLR): ADR 0023
-harfbuzz/test/subset/data/fonts/TestCOLRv1.ttf#0:hb:v_origin  # color glyph extents (COLR): ADR 0023 (the vertical origin is centered on the box)
-harfbuzz/test/subset/data/fonts/TwemojiMozilla.subset.ttf#0:hb:extents  # color glyph extents (COLR): ADR 0023
-harfbuzz/test/subset/data/fonts/TwemojiMozilla.subset.ttf#0:hb:v_origin  # color glyph extents (COLR): ADR 0023 (the vertical origin is centered on the box)
-harfbuzz/test/subset/data/fonts/colr-table.ttf#0:hb:extents  # color glyph extents (COLR): ADR 0023
-harfbuzz/test/subset/data/fonts/colr-table.ttf#0:hb:v_origin  # color glyph extents (COLR): ADR 0023 (the vertical origin is centered on the box)
-harfbuzz/test/subset/data/fonts/sbix.ttf#0:hb:extents  # color glyph extents (sbix): ADR 0023
-harfbuzz/test/subset/data/fonts/sbix.ttf#0:hb:v_origin  # color glyph extents (sbix): ADR 0023 (the vertical origin is centered on the box)
-harfbuzz/test/subset/data/fonts/sixtyfour_subset.ttf#0:hb:extents  # color glyph extents (COLR): ADR 0023
-harfbuzz/test/subset/data/fonts/sixtyfour_subset.ttf#0:hb:v_origin  # color glyph extents (COLR): ADR 0023 (the vertical origin is centered on the box)
+# The color items of ADR 0023 (harfbuzz_color.rs) have no `:hb:`:
+# <font>#<face>:paint:<palette>:<ppem>:<glyph>, :color, :extents:<glyph>.
+harfbuzz/test/api/fonts/COLRv0.extents.ttf#0:extents:13  # HarfBuzz transforms the components of layer glyph 9 in floating point (it spans 192.024..923.414); sofel-outline loads it in whole font units as FreeType does (192..924) (ADR 0023)
+harfbuzz/test/api/fonts/colr-short-colorline.ttf#0:color  # HarfBuzz drops the BaseGlyphList, whose color line runs past the table; glyph_color_format does not walk paints to check (ADR 0023), paint() does and paints nothing
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-6111992183324672#0:extents:0  # layer glyphs 2 and 3 are outlines FreeType rejects (error 20) and sofel-outline too; HarfBuzz draws them into the box
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-6111992183324672#0:extents:108  # layer glyphs 2 and 3 are outlines FreeType rejects (error 20) and sofel-outline too; HarfBuzz draws them into the box
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-6111992183324672#0:extents:109  # layer glyphs 2 and 3 are outlines FreeType rejects (error 20) and sofel-outline too; HarfBuzz draws them into the box
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-6111992183324672#0:extents:110  # layer glyphs 2 and 3 are outlines FreeType rejects (error 20) and sofel-outline too; HarfBuzz draws them into the box
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-6111992183324672#0:extents:111  # layer glyphs 2 and 3 are outlines FreeType rejects (error 20) and sofel-outline too; HarfBuzz draws them into the box
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-6111992183324672#0:extents:112  # layer glyphs 2 and 3 are outlines FreeType rejects (error 20) and sofel-outline too; HarfBuzz draws them into the box
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-6111992183324672#0:extents:113  # layer glyphs 2 and 3 are outlines FreeType rejects (error 20) and sofel-outline too; HarfBuzz draws them into the box
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-6111992183324672#0:extents:114  # layer glyphs 2 and 3 are outlines FreeType rejects (error 20) and sofel-outline too; HarfBuzz draws them into the box
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-6111992183324672#0:extents:115  # layer glyphs 2 and 3 are outlines FreeType rejects (error 20) and sofel-outline too; HarfBuzz draws them into the box
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-6111992183324672#0:extents:116  # layer glyphs 2 and 3 are outlines FreeType rejects (error 20) and sofel-outline too; HarfBuzz draws them into the box
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-6111992183324672#0:extents:117  # layer glyphs 2 and 3 are outlines FreeType rejects (error 20) and sofel-outline too; HarfBuzz draws them into the box
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-6111992183324672#0:extents:118  # layer glyphs 2 and 3 are outlines FreeType rejects (error 20) and sofel-outline too; HarfBuzz draws them into the box
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-6111992183324672#0:extents:119  # layer glyphs 2 and 3 are outlines FreeType rejects (error 20) and sofel-outline too; HarfBuzz draws them into the box
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-subset-fuzzer-5684014636859392#0:paint:0:0:1  # the CBLC record says 335544420 bytes, past the end of the file; HarfBuzz cuts the table at the end of the file, sofel-read does not read it (ADR 0007)
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-subset-fuzzer-5684014636859392#0:paint:0:0:2  # the CBLC record says 335544420 bytes, past the end of the file; HarfBuzz cuts the table at the end of the file, sofel-read does not read it (ADR 0007)
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-subset-fuzzer-5684014636859392#0:paint:0:109:1  # the CBLC record says 335544420 bytes, past the end of the file; HarfBuzz cuts the table at the end of the file, sofel-read does not read it (ADR 0007)
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-subset-fuzzer-5684014636859392#0:paint:0:109:2  # the CBLC record says 335544420 bytes, past the end of the file; HarfBuzz cuts the table at the end of the file, sofel-read does not read it (ADR 0007)
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-subset-fuzzer-5684014636859392#0:color  # the CBLC record says 335544420 bytes, past the end of the file; HarfBuzz cuts the table at the end of the file, sofel-read does not read it (ADR 0007)
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-subset-fuzzer-5684014636859392#0:extents:1  # the CBLC record says 335544420 bytes, past the end of the file; HarfBuzz cuts the table at the end of the file, sofel-read does not read it (ADR 0007)
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-subset-fuzzer-5684014636859392#0:extents:2  # the CBLC record says 335544420 bytes, past the end of the file; HarfBuzz cuts the table at the end of the file, sofel-read does not read it (ADR 0007)
+harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-subset-fuzzer-6241118484955136#0:color  # the CBLC record runs past the end of the file; HarfBuzz cuts the table at the end of the file, sofel-read does not read it (ADR 0007)
+harfbuzz/test/subset/data/fonts/NotoColrEmojiGlyf-Regular.subset.ttf#0:color  # HarfBuzz drops the BaseGlyphList, whose PaintTransform offsets point past the table; glyph_color_format does not walk paints to check (ADR 0023), paint() does

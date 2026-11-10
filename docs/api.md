@@ -14,14 +14,16 @@ cargo doc --no-deps -p sofel-geom -p sofel-unicode -p sofel-read -p sofel-font -
 
 | クレート | 役割 | 依存 |
 |---|---|---|
-| `sofel-geom` | 固定小数点の演算（`FT_MulFix` などと同じ結果）と、輪郭を受け渡す `Pen`、HarfBuzzの丸めを写す浮動小数点の補助（`float`） | なし |
+| `sofel-geom` | 固定小数点の演算（`FT_MulFix` などと同じ結果）と、輪郭を受け渡す `Pen`、HarfBuzzの丸めを写す浮動小数点の補助（`float`）、カラーグリフの塗りを受け渡す `Painter`（[ADR 0023](adr/0023-color-glyphs.md)） | なし |
 | `sofel-unicode` | Unicode 18.0.0の文字の性質。HarfBuzzの既定のUnicodeの関数と同じ値を返す | なし |
 | `sofel-read` | sfntの表の読み取りと検証。コピーも確保もしない | なし |
 | `sofel-font` | フォントを一度だけ読み、グリフの数、文字からグリフへの対応、送り幅を返す | `sofel-read`、`sofel-geom` |
 | `sofel-outline` | glyfとGLYFの輪郭を、ヒンティングなしでFreeTypeと同じ座標で `Pen` に渡す。HarfBuzzと同じグリフの箱（glyf、CFF2、CFF）を求める | `sofel-font`、`sofel-geom` |
 | `sofel-shape` | HarfBuzz 15.1.0のOTシェーパーと同じシェーピング（バッファ、計画、`GSUB` と `GPOS`）と、機能の文字列、直列化、タグ | `sofel-font`、`sofel-unicode`、`sofel-geom` |
+| `sofel-bitmap` | 埋め込みビットマップのストライク、その選び方、グリフの画像のデータとメトリクス（[ADR 0023](adr/0023-color-glyphs.md)） | `sofel-font` |
+| `sofel-color` | カラーグリフの塗りの命令、パレット、カラーグリフを含むグリフの箱（[ADR 0023](adr/0023-color-glyphs.md)） | `sofel-outline`、`sofel-bitmap` |
 | `sofel-raster` | FreeTypeのsmoothのラスタライザと同じ計算で、8bitのアンチエイリアスの画像を作る | `sofel-geom` |
-| `sofel-cli` | 小さな道具（`sofel-validate`、`sofel-render`）と、1グリフを描く `glyph::render` | すべて |
+| `sofel-cli` | 小さな道具（`sofel-validate`、`sofel-render`、`sofel-paint`）と、1グリフを描く `glyph::render` | すべて |
 | `sofel-capi` | C ABI（[ADR 0015](adr/0015-c-abi.md)） | すべて |
 
 `sofel-cli` と `sofel-capi` 以外は `no_std`（必要なものは `alloc`）で、`wasm32-unknown-unknown` にビルドできる（[ADR 0004](adr/0004-wasm-and-no-std.md)）。
@@ -236,6 +238,58 @@ fn single(gsub_table: &[u8], glyph: GlyphId) -> Option<u32> {
 ```
 
 - `gsub::validate` と `gpos::validate` は、GDEFのマークのグリフの集合の数を引数に取る（`None` なら調べない）。`gdef::validate` は表だけを取る。
+
+## カラーグリフ（`sofel-color`、`sofel-bitmap`）
+
+カラーグリフは `sofel_geom::Painter` に塗りの命令として渡す（[ADR 0023](adr/0023-color-glyphs.md)）。命令の順と値はHarfBuzzの `hb_font_paint_glyph` と同じで、単位はフォントの単位（yは上）。拡大と配置は呼び出し側の変換に含める。
+
+```rust
+use sofel_color::{PaintOptions, Palette, Painted, Scratch, paint};
+use sofel_outline::font::Font;
+use sofel_outline::font::geom::{Brush, CompositeMode, Image, Painter, Rect, Solid, Transform};
+
+struct Log;
+impl Painter for Log {
+    fn push_transform(&mut self, t: Transform) { println!("transform {t:?}"); }
+    fn pop_transform(&mut self) {}
+    fn push_clip_glyph(&mut self, glyph: u32) { println!("clip {glyph}"); }
+    fn push_clip_rectangle(&mut self, r: Rect) { println!("clip {r:?}"); }
+    fn pop_clip(&mut self) {}
+    fn fill(&mut self, brush: &Brush<'_>) { println!("fill {brush:?}"); }
+    fn image(&mut self, image: &Image<'_>) -> bool { println!("{:?}", image.format); true }
+    fn push_group(&mut self, _: CompositeMode) {}
+    fn pop_group(&mut self, _: CompositeMode) {}
+}
+
+let data = std::fs::read("emoji.ttf")?;
+let font = Font::new(&data, 0)?;
+let glyph = font.nominal_glyph(0x1F600).ok_or("no glyph")?.0;
+let options = PaintOptions { palette: Palette::Font(0), ..PaintOptions::default() };
+let mut scratch = Scratch::default(); // グリフをまたいで使い回す
+if paint(&font, glyph, &options, &mut scratch, &mut Log) == Painted::None {
+    // カラーでないグリフ：輪郭を前景色で塗るかは呼び出し側が決める
+}
+```
+
+| sofel | HarfBuzz | FreeType |
+|---|---|---|
+| `paint`、`paint_recording`（`Recording`） | `hb_font_paint_glyph_or_fail` | なし |
+| `palette_count`、`palette_name_id`、`palette_flags`、`palette_color_name_id`、`palette_colors` | `hb_ot_color_palette_*` | `FT_Palette_Data_Get`、`FT_Palette_Select` |
+| `find_palette`（CSSの `font-palette: light`、`dark`） | なし | なし |
+| `layers` | `hb_ot_color_glyph_get_layers` | `FT_Get_Color_Glyph_Layer` |
+| `svg_document` | `hb_ot_color_glyph_reference_svg` など | なし（`svg-hooks`） |
+| `color_formats`、`glyph_color_format` | `hb_ot_color_has_*`、`hb_ot_color_glyph_has_paint` | `FT_HAS_COLOR` |
+| `glyph_extents(&Outlines, glyph, &mut Scratch)` | `hb_font_get_glyph_extents` | なし |
+| `base_paint`、`PaintRef`、`clip_box`、`layer_paint` | なし | `FT_Get_Color_Glyph_Paint`、`FT_Get_Paint`、`FT_Get_Color_Glyph_ClipBox`、`FT_Get_Paint_Layers` |
+| `sofel_bitmap::strikes`、`match_strike` | なし | `available_sizes`、`FT_Match_Size` |
+| `sofel_bitmap::choose_strike` | CBDTとsbixのストライクの選び方 | なし |
+| `sofel_bitmap::glyph_bitmap` | なし | `FT_Load_Glyph`（展開しない） |
+
+- `Palette::Custom(&[Color])` で、`palette_colors` から作って一部を変えたパレット（CSSの `override-colors`）を使える。
+- 単色（`Solid`）は、解決した色と出どころ（パレットの番号とアルファ）の両方を持つ。パレットを替えたとき、塗りの木をたどりなおさずに色を解決しなおせる。
+- グラデーションの停止点はフォントに書かれた順で渡す。`sofel_geom::normalize_color_line`（並べかえと0〜1への直し）、`reduce_linear_anchors`（3点の線形を2点に）、`sweep_gradient_tiles`（扇形を角度の区間に）で、描画の仕組みの形に直す。
+- PNGとSVGの画像は展開せずに渡す（`ImageFormat::Png`、`ImageFormat::Svg { gzip }`）。SVGは、文書の中の `id="glyph<グリフID>"` の要素を描く。
+- 三角関数 `sofel_geom::sin_cos`、`tan` は、どの環境でも同じビットを返す。
 
 ## 固定小数点（`sofel-geom`）
 

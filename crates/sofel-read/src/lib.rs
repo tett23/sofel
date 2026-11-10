@@ -35,8 +35,12 @@
 
 pub mod base;
 pub mod be;
+pub mod cbdt;
+pub mod cblc;
 pub mod cff;
 pub mod cmap;
+pub mod colr;
+pub mod cpal;
 pub mod device;
 mod diag;
 mod error;
@@ -54,7 +58,10 @@ pub mod maxp;
 pub mod name;
 pub mod os2;
 pub mod post;
+pub mod sbix;
+mod search;
 pub mod sfnt;
+pub mod svg;
 mod types;
 pub mod validate;
 pub mod vhea;

@@ -13,6 +13,7 @@
 #include FT_ADVANCES_H
 #include FT_OUTLINE_H
 #include FT_CID_H
+#include FT_COLOR_H
 
 #include <hb.h>
 #include <hb-ot.h>
@@ -248,4 +249,156 @@ long bhb_open_extents(const unsigned char *data, unsigned len, unsigned gid)
   v = bhb_glyph_extents(font, gid);
   bhb_close(font);
   return v;
+}
+
+/* ------------------------------------------------ color glyphs (ADR 0023) */
+
+/* FreeType: the number of COLRv0 layers of a glyph. */
+long bft_layers(void *face, unsigned gid)
+{
+  FT_LayerIterator it;
+  FT_UInt g, c;
+  long n = 0;
+  it.p = NULL;
+  while (FT_Get_Color_Glyph_Layer((FT_Face)face, gid, &g, &c, &it))
+    n++;
+  return n;
+}
+
+static long ft_walk(FT_Face face, FT_OpaquePaint op, int depth)
+{
+  FT_COLR_Paint p;
+  long n = 1;
+  if (depth > 64 || !FT_Get_Paint(face, op, &p))
+    return 0;
+  switch (p.format) {
+  case FT_COLR_PAINTFORMAT_COLR_LAYERS: {
+    FT_OpaquePaint l = {NULL, 0};
+    while (FT_Get_Paint_Layers(face, &p.u.colr_layers.layer_iterator, &l))
+      n += ft_walk(face, l, depth + 1);
+    break;
+  }
+  case FT_COLR_PAINTFORMAT_LINEAR_GRADIENT:
+  case FT_COLR_PAINTFORMAT_RADIAL_GRADIENT:
+  case FT_COLR_PAINTFORMAT_SWEEP_GRADIENT: {
+    FT_ColorStop stop;
+    FT_ColorLine *line = p.format == FT_COLR_PAINTFORMAT_LINEAR_GRADIENT
+                             ? &p.u.linear_gradient.colorline
+                             : p.format == FT_COLR_PAINTFORMAT_RADIAL_GRADIENT
+                                   ? &p.u.radial_gradient.colorline
+                                   : &p.u.sweep_gradient.colorline;
+    while (FT_Get_Colorline_Stops(face, &stop, &line->color_stop_iterator))
+      n++;
+    break;
+  }
+  case FT_COLR_PAINTFORMAT_GLYPH: n += ft_walk(face, p.u.glyph.paint, depth + 1); break;
+  case FT_COLR_PAINTFORMAT_TRANSFORM: n += ft_walk(face, p.u.transform.paint, depth + 1); break;
+  case FT_COLR_PAINTFORMAT_TRANSLATE: n += ft_walk(face, p.u.translate.paint, depth + 1); break;
+  case FT_COLR_PAINTFORMAT_SCALE: n += ft_walk(face, p.u.scale.paint, depth + 1); break;
+  case FT_COLR_PAINTFORMAT_ROTATE: n += ft_walk(face, p.u.rotate.paint, depth + 1); break;
+  case FT_COLR_PAINTFORMAT_SKEW: n += ft_walk(face, p.u.skew.paint, depth + 1); break;
+  case FT_COLR_PAINTFORMAT_COMPOSITE:
+    n += ft_walk(face, p.u.composite.source_paint, depth + 1);
+    n += ft_walk(face, p.u.composite.backdrop_paint, depth + 1);
+    break;
+  default: break;
+  }
+  return n;
+}
+
+/* FreeType: the number of nodes and stops of a glyph's COLRv1 paint
+ * tree, walked with FT_Get_Paint (the walk is the benchmark's). */
+long bft_colr_walk(void *face, unsigned gid)
+{
+  FT_OpaquePaint op = {NULL, 0};
+  if (!FT_Get_Color_Glyph_Paint((FT_Face)face, gid, FT_COLOR_NO_ROOT_TRANSFORM, &op))
+    return 0;
+  return ft_walk((FT_Face)face, op, 0);
+}
+
+/* HarfBuzz: whether a glyph has a paint, times 65536, plus its layers. */
+long bhb_color_format(void *font, unsigned gid)
+{
+  hb_face_t *face = hb_font_get_face((hb_font_t *)font);
+  return (long)hb_ot_color_glyph_has_paint(face, gid) * 65536 +
+         (long)hb_ot_color_glyph_get_layers(face, gid, 0, NULL, NULL);
+}
+
+long bhb_color_layers(void *font, unsigned gid)
+{
+  hb_face_t *face = hb_font_get_face((hb_font_t *)font);
+  unsigned n = hb_ot_color_glyph_get_layers(face, gid, 0, NULL, NULL);
+  hb_ot_color_layer_t layers[64];
+  unsigned count = n < 64 ? n : 64;
+  hb_ot_color_glyph_get_layers(face, gid, 0, &count, layers);
+  return (long)n;
+}
+
+long bhb_svg_len(void *font, unsigned gid)
+{
+  hb_blob_t *b = hb_ot_color_glyph_reference_svg(hb_font_get_face((hb_font_t *)font), gid);
+  long n = (long)hb_blob_get_length(b);
+  hb_blob_destroy(b);
+  return n;
+}
+
+struct paint_count { long commands; long image_len; };
+
+#define PC ((struct paint_count *)data)
+static void pc_push_transform(hb_paint_funcs_t *f, void *data, float a, float b, float c, float d, float e, float g, void *u) { PC->commands++; }
+static void pc_pop(hb_paint_funcs_t *f, void *data, void *u) { PC->commands++; }
+static void pc_clip_glyph(hb_paint_funcs_t *f, void *data, hb_codepoint_t g, hb_font_t *font, void *u) { PC->commands++; }
+static void pc_clip_rect(hb_paint_funcs_t *f, void *data, float a, float b, float c, float d, void *u) { PC->commands++; }
+static void pc_color(hb_paint_funcs_t *f, void *data, hb_bool_t fg, hb_color_t c, void *u) { PC->commands++; }
+static void pc_fill_glyph(hb_paint_funcs_t *f, void *data, hb_codepoint_t g, hb_font_t *font, hb_bool_t fg, hb_color_t c, void *u) { PC->commands++; }
+static hb_bool_t pc_image(hb_paint_funcs_t *f, void *data, hb_blob_t *b, unsigned w, unsigned h, hb_tag_t t, float s, hb_glyph_extents_t *e, void *u)
+{ PC->commands++; PC->image_len += (long)hb_blob_get_length(b); return 1; }
+static void pc_stops(void *data, hb_color_line_t *cl)
+{
+  hb_color_stop_t stops[64];
+  unsigned n = 64;
+  hb_color_line_get_color_stops(cl, 0, &n, stops);
+  PC->commands++;
+}
+static void pc_linear(hb_paint_funcs_t *f, void *data, hb_color_line_t *cl, float a, float b, float c, float d, float e, float g, void *u) { pc_stops(data, cl); }
+static void pc_radial(hb_paint_funcs_t *f, void *data, hb_color_line_t *cl, float a, float b, float c, float d, float e, float g, void *u) { pc_stops(data, cl); }
+static void pc_sweep(hb_paint_funcs_t *f, void *data, hb_color_line_t *cl, float a, float b, float c, float d, void *u) { pc_stops(data, cl); }
+static void pc_group(hb_paint_funcs_t *f, void *data, void *u) { PC->commands++; }
+static void pc_pop_group(hb_paint_funcs_t *f, void *data, hb_paint_composite_mode_t m, void *u) { PC->commands++; }
+#undef PC
+
+static hb_paint_funcs_t *count_funcs;
+
+/* HarfBuzz: the number of paint calls of hb_font_paint_glyph_or_fail
+ * plus the bytes of the images; -1 when it is not a color glyph. */
+long bhb_paint(void *font, unsigned gid)
+{
+  struct paint_count c = {0, 0};
+  if (!count_funcs) {
+    hb_paint_funcs_t *f = hb_paint_funcs_create();
+    hb_paint_funcs_set_push_transform_func(f, pc_push_transform, NULL, NULL);
+    hb_paint_funcs_set_pop_transform_func(f, pc_pop, NULL, NULL);
+    hb_paint_funcs_set_push_clip_glyph_func(f, pc_clip_glyph, NULL, NULL);
+    hb_paint_funcs_set_push_clip_rectangle_func(f, pc_clip_rect, NULL, NULL);
+    hb_paint_funcs_set_pop_clip_func(f, pc_pop, NULL, NULL);
+    hb_paint_funcs_set_color_func(f, pc_color, NULL, NULL);
+    hb_paint_funcs_set_fill_glyph_func(f, pc_fill_glyph, NULL, NULL);
+    hb_paint_funcs_set_image_func(f, pc_image, NULL, NULL);
+    hb_paint_funcs_set_linear_gradient_func(f, pc_linear, NULL, NULL);
+    hb_paint_funcs_set_radial_gradient_func(f, pc_radial, NULL, NULL);
+    hb_paint_funcs_set_sweep_gradient_func(f, pc_sweep, NULL, NULL);
+    hb_paint_funcs_set_push_group_func(f, pc_group, NULL, NULL);
+    hb_paint_funcs_set_pop_group_func(f, pc_pop_group, NULL, NULL);
+    hb_paint_funcs_make_immutable(f);
+    count_funcs = f;
+  }
+  if (!hb_font_paint_glyph_or_fail((hb_font_t *)font, gid, count_funcs, &c, 0, HB_COLOR(0, 0, 0, 255)))
+    return -1;
+  return c.commands + c.image_len;
+}
+
+/* HarfBuzz's strike choice comes from the font's ppem. */
+void bhb_set_bitmap_ppem(void *font, unsigned ppem)
+{
+  hb_font_set_ppem((hb_font_t *)font, ppem, ppem);
 }
