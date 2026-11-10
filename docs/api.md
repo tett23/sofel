@@ -203,6 +203,7 @@ sofel_font_destroy(font);
 | `sofel_font_create` | `Font::new` | `hb_face_create`／`FT_New_Memory_Face` |
 | `sofel_font_nominal_glyph`、`sofel_font_variation_glyph` | `Font::nominal_glyph`、`Font::variation_glyph` | `hb_font_get_nominal_glyph`、`hb_font_get_variation_glyph` |
 | `sofel_font_h_advance` | `Font::advance` | `hb_font_get_glyph_h_advance` |
+| `sofel_font_ft_left_side_bearing` | `Font::ft_left_side_bearing` | `FT_Get_Glyph_Metrics` |
 | `sofel_font_table` | `Font::table` | `hb_face_reference_table`／`FT_Load_Sfnt_Table` |
 | `sofel_outline_draw`、`sofel_outline_load`、`sofel_outline_decompose` | `draw`、`load`、`Scratch::decompose` | `FT_Load_Glyph` + `FT_Outline_Decompose` |
 | `sofel_rasterizer_*`、`sofel_pixel_box` | `Rasterizer`、`pixel_box` | `FT_Outline_Render` |

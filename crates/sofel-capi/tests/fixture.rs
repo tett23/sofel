@@ -406,6 +406,10 @@ fn generate() -> String {
         .map(|g| font.advance(GlyphId(g)))
         .collect();
     ints(&mut out, "uint16_t", "advances", &advances);
+    let bearings: Vec<i16> = (0..font.num_glyphs() + 2)
+        .map(|g| font.ft_left_side_bearing(GlyphId(g)))
+        .collect();
+    ints(&mut out, "int16_t", "ft_bearings", &bearings);
 
     // Tables.
     let rows: Vec<String> = [b"cmap", b"head", b"glyf", b"GSUB"]

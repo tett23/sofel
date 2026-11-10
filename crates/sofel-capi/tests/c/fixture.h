@@ -174,6 +174,7 @@ static const struct open_case open_cases[] = {
 static const struct glyph_case nominal_cases[] = {{0x41, 0, 0, 1}, {0x42, 0, 0, 2}, {0x46, 0, 0, 6}, {0x47, 0, -5, 0}, {0x20, 0, -5, 0}, {0x1f600, 0, -5, 0}};
 static const struct glyph_case variation_cases[] = {{0x41, 0xfe00, 0, 3}, {0x42, 0xfe00, 0, 2}, {0x43, 0xfe00, -5, 0}, {0x41, 0xfe01, -5, 0}};
 static const uint16_t advances[] = {500, 510, 520, 530, 540, 550, 560, 0, 0};
+static const int16_t ft_bearings[] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
 static const struct table_case table_cases[] = {{0x636d6170u, 0, 124, 90}, {0x68656164u, 0, 376, 54}, {0x676c7966u, 0, 216, 158}, {0x47535542u, -5, 0, 0}};
 static const struct { uint16_t x_ppem; uint16_t y_ppem; int32_t x_scale; int32_t y_scale; } scale_cases[] = {{16, 16, 67109, 67109}, {37, 23, 155189, 96469}};
 static const int32_t outline_0_0[] = {0};

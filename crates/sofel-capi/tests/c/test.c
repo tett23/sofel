@@ -60,6 +60,8 @@ static void check_declarations(void) {
   int32_t (*variation_glyph)(const sofel_font_t *, uint32_t, uint32_t, uint32_t *) =
       sofel_font_variation_glyph;
   int32_t (*h_advance)(const sofel_font_t *, uint32_t, uint16_t *) = sofel_font_h_advance;
+  int32_t (*ft_bearing)(const sofel_font_t *, uint32_t, int16_t *) =
+      sofel_font_ft_left_side_bearing;
   int32_t (*table)(const sofel_font_t *, uint32_t, const uint8_t **, size_t *) =
       sofel_font_table;
   sofel_outline_scratch_t *(*scratch_create)(void) = sofel_outline_scratch_create;
@@ -116,6 +118,7 @@ static void check_declarations(void) {
       (const void *)units_per_em,    (const void *)num_glyphs,
       (const void *)nominal_glyph,   (const void *)variation_glyph,
       (const void *)h_advance,       (const void *)table,
+      (const void *)ft_bearing,
       (const void *)scratch_create,  (const void *)scratch_destroy,
       (const void *)pixel_scale,     (const void *)load,
       (const void *)decompose,       (const void *)draw,
@@ -222,6 +225,11 @@ static int run_queries(const sofel_font_t *font, sofel_outline_scratch_t *scratc
   for (i = 0; i < COUNT(advances); i++) {
     uint16_t a = 0;
     bad += sofel_font_h_advance(font, (uint32_t)i, &a) != SOFEL_OK || a != advances[i];
+  }
+  for (i = 0; i < COUNT(ft_bearings); i++) {
+    int16_t b = 12345;
+    bad += sofel_font_ft_left_side_bearing(font, (uint32_t)i, &b) != SOFEL_OK ||
+           b != ft_bearings[i];
   }
   for (i = 0; i < COUNT(outline_cases); i++) {
     const struct outline_case *c = &outline_cases[i];
@@ -355,6 +363,11 @@ static void test_font(const sofel_font_t *font) {
   CHECK(sofel_font_variation_glyph(font, 0x41, 0xFE00, NULL) == SOFEL_ERROR_NULL);
   CHECK(sofel_font_h_advance(NULL, 1, &u16v) == SOFEL_ERROR_NULL);
   CHECK(sofel_font_h_advance(font, 1, NULL) == SOFEL_ERROR_NULL);
+  {
+    int16_t b;
+    CHECK(sofel_font_ft_left_side_bearing(NULL, 1, &b) == SOFEL_ERROR_NULL);
+    CHECK(sofel_font_ft_left_side_bearing(font, 1, NULL) == SOFEL_ERROR_NULL);
+  }
   CHECK(sofel_font_table(NULL, SOFEL_TAG('c', 'm', 'a', 'p'), &data, &len) == SOFEL_ERROR_NULL);
   CHECK(sofel_font_table(font, SOFEL_TAG('c', 'm', 'a', 'p'), NULL, &len) == SOFEL_ERROR_NULL);
   CHECK(sofel_font_table(font, SOFEL_TAG('c', 'm', 'a', 'p'), &data, NULL) == SOFEL_ERROR_NULL);

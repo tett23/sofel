@@ -249,6 +249,18 @@ int32_t sofel_font_variation_glyph(const sofel_font_t *font, uint32_t codepoint,
 int32_t sofel_font_h_advance(const sofel_font_t *font, uint32_t glyph, uint16_t *advance);
 
 /*
+ * The left side bearing of a glyph in font units, as FreeType reads it
+ * for outlines (tt_face_get_metrics), which sofel_font_h_advance does not
+ * follow (ADR 0018).
+ *
+ * Rust: sofel_font::Font::ft_left_side_bearing
+ * HarfBuzz: none
+ * FreeType: FT_Get_Glyph_Metrics (horiBearingX with FT_LOAD_NO_SCALE)
+ */
+int32_t sofel_font_ft_left_side_bearing(const sofel_font_t *font, uint32_t glyph,
+                                        int16_t *bearing);
+
+/*
  * The bytes of a table, without copying: *data points into the font's
  * data and stays valid as long as the data does.
  * SOFEL_ERROR_NOT_FOUND when the font has no such table.

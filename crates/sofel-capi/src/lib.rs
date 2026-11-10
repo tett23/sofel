@@ -448,6 +448,24 @@ pub unsafe extern "C" fn sofel_font_h_advance(
     status(get(font, advance, |f| f.advance(GlyphId(glyph))))
 }
 
+/// `sofel_font_ft_left_side_bearing`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `bearing` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_ft_left_side_bearing(
+    font: *const SofelFont,
+    glyph: u32,
+    bearing: *mut i16,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, bearing) = unsafe { (font_ref(font), w(bearing)) };
+    status(get(font, bearing, |f| {
+        f.ft_left_side_bearing(GlyphId(glyph))
+    }))
+}
+
 fn font_table(
     font: Option<&Font<'static>>,
     tag: u32,
