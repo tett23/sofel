@@ -20,6 +20,7 @@ sofel-bitmap = { path = "../sofel-bitmap" }
 sofel-color = { path = "../sofel-color" }
 sofel-cli = { path = "../sofel-cli" }
 sofel-unicode = { path = "../sofel-unicode" }
+sofel-shape = { path = "../sofel-shape" }
 
 # The workspace lints, except that `unsafe` is allowed: this crate turns
 # the pointers C passes into references (ADR 0015). Every other crate

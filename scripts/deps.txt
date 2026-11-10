@@ -23,6 +23,7 @@ sofel-font sofel-pfr
 sofel-font sofel-bitmapfont
 sofel-font sofel-geom
 sofel-shape sofel-font
+sofel-shape sofel-geom
 sofel-shape sofel-unicode
 sofel-outline sofel-font
 sofel-outline sofel-geom

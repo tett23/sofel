@@ -5,7 +5,6 @@
 # <path> <reason>; a path ending in `::*` covers everything under it.
 
 sofel_font::Font::sfnt Returns a sofel-read view of the table directory; C reads tables with sofel_font_table.
-sofel_font::remap::* HarfBuzz's character remapping tables for crates that read cmap subtables themselves (sofel-subset, ADR 0022); C maps characters with sofel_font_nominal_glyph.
 sofel_font::Font::head Returns a sofel-read view of head; C reads the table with sofel_font_table.
 sofel_geom::Command::apply Replays a recorded Rust Command into a Rust Pen; C pens receive the commands directly.
 sofel_geom::F26Dot6::from_int A multiplication by 64, which C writes as such.
@@ -52,6 +51,9 @@ sofel_outline::cff2_extents The CFF2 step of sofel_outline::HbExtents::glyph_ext
 sofel_outline::HbExtents::cff1 Returns the Rust accelerator that sofel_font_t keeps inside.
 sofel_outline::HbExtents::cff2 Returns the Rust accelerator that sofel_font_t keeps inside.
 sofel_outline::HbExtents::font Returns the font that sofel_font_t is.
+sofel_shape::SerializeFlags::contains A bit test, which C writes as such.
+sofel_shape::SerializeFlags::union A bitwise or, which C writes as such.
+sofel_shape::SerializeFont::* The Rust trait through which serialization asks the font; C passes a sofel_font_t (and a sofel_glyph_names_t) to sofel_buffer_serialize and the deserializers.
 sofel_font::Cff::build_name_index C looks glyphs up by name through sofel_glyph_names_create, which covers CFF charset names (ADR 0021).
 sofel_font::Cff::glyph_from_name C looks glyphs up by name through sofel_glyph_names_glyph_from_name.
 sofel_font::Cff::charset_name C gets glyph names from sofel_font_glyph_name and sofel_font_ft_glyph_name, which read the charset.
@@ -112,6 +114,24 @@ sofel_read::colr::* Zero-copy Rust views and validators of COLR (ADR 0023); C pa
 sofel_read::cpal::* Zero-copy Rust views and validators of CPAL (ADR 0023); C gets palettes with the sofel_palette_* functions, the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::sbix::* Zero-copy Rust views and validators of sbix (ADR 0023); C gets bitmaps with sofel_glyph_bitmap, the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::svg::* Zero-copy Rust views and validators of SVG (ADR 0023); C gets documents with sofel_svg_document, the bytes with sofel_font_table, and validates with sofel_validate.
+sofel_shape::BufferFlags::contains A bit test, which C writes as such on the SOFEL_BUFFER_FLAG_* values.
+sofel_shape::BufferFlags::union A bitwise or, which C writes as such on the SOFEL_BUFFER_FLAG_* values.
+sofel_shape::GlyphFlags::contains A bit test, which C writes as such on the SOFEL_GLYPH_FLAG_* values.
+sofel_shape::GlyphFlags::union A bitwise or, which C writes as such on the SOFEL_GLYPH_FLAG_* values.
+sofel_shape::DiffFlags::contains A bit test, which C writes as such on the SOFEL_DIFF_FLAG_* values.
+sofel_shape::DiffFlags::union A bitwise or, which C writes as such on the SOFEL_DIFF_FLAG_* values.
+sofel_shape::Feature::new A struct literal in C: sofel_feature_t with start SOFEL_FEATURE_GLOBAL_START and end SOFEL_FEATURE_GLOBAL_END.
+sofel_shape::Feature::is_global Two comparisons in C, with SOFEL_FEATURE_GLOBAL_START and SOFEL_FEATURE_GLOBAL_END.
+sofel_shape::UnicodeBuffer::is_empty sofel_buffer_length gives 0.
+sofel_shape::GlyphBuffer::is_empty sofel_buffer_length gives 0.
+sofel_shape::Scale::new The pixel sizes for Device tables; sofel_shape takes the sofel_scale_t of sofel_scale_create without them (x_ppem and y_ppem 0, HarfBuzz's default when hb_font_set_ppem is not called), and Golem, the first C caller, shapes in font units.
+sofel_shape::ShapePlan::key What the caller passed to sofel_shape_plan_create, which a C caller keeps to find its plans again.
+sofel_shape::ShapePlan::chosen_scripts The plan's map, for sofel's conformance tests against hb-dump; HarfBuzz keeps it in the internal hb_ot_shape_plan_t.
+sofel_shape::ShapePlan::feature_masks The plan's map, for sofel's conformance tests against hb-dump; HarfBuzz keeps it in the internal hb_ot_map_t.
+sofel_shape::ShapePlan::stage_lookups The plan's map, for sofel's conformance tests against hb-dump; HarfBuzz keeps it in the internal hb_ot_map_t.
+sofel_shape::ShapePlan::global_mask The plan's map, for sofel's conformance tests against hb-dump; HarfBuzz keeps it in the internal hb_ot_map_t.
+sofel_shape::layout_selection The script and language system choice of a plan, for sofel's conformance tests against hb-dump; C reads the plan's result through shaping.
+sofel_font::remap::* HarfBuzz's character remapping tables for crates that read cmap subtables themselves (sofel-subset, ADR 0022); C maps characters with sofel_font_nominal_glyph.
 sofel_write::Serializer::* HarfBuzz's object serializer, used object by object by Rust table writers; C gets whole tables from the subsetter, and serialized object graphs from sofel_serialize_objects once the repacker lands (ADR 0022 stages 4 and 5).
 sofel_write::Errors::* The serializer's error bits, read by Rust table writers only (ADR 0022).
 sofel_write::Packed::* The serializer's packed objects, read by Rust table writers only (ADR 0022).

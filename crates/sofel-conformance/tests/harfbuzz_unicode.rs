@@ -57,6 +57,13 @@ fn hb_dump_writes_known_unicode_values() {
     assert!(hb.compositions.contains(&(0x1100, 0x1161, Some(0xAC00))));
     assert!(hb.compositions.contains(&(0xAC00, 0x11A8, Some(0xAC01))));
     assert!(hb.compositions.contains(&(0, 0x30A, None)));
+    // ADR 0020's columns: the Arabic shadda moves before the other marks,
+    // ZWJ is ignorable, EM SPACE is one em, the ideographic comma has a
+    // vertical form.
+    assert_eq!(hb.chars[0x651].modified_combining_class, 27);
+    assert!(hb.chars[0x200D].default_ignorable && !hb.chars[0x115F].default_ignorable);
+    assert_eq!(hb.chars[0x2003].space_fallback, 1);
+    assert_eq!(hb.chars[0x3001].vertical, 0xFE11);
 
     // A changed value is reported under its item only.
     let mut changed = hb.clone();

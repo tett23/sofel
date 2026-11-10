@@ -167,6 +167,30 @@ fn nominal_glyphs_stay_below_the_glyph_count() {
 }
 
 #[test]
+fn raw_nominal_glyphs_are_harfbuzzs() {
+    // Glyph ids not below the glyph count, as HarfBuzz gives them.
+    let table = cmap(&[(3, 10, cmap12_13(12, &[(0x41, 0x42, 27)]))]);
+    let data = with(sample_tables(), &[(b"cmap", table)]);
+    let f = Font::new(&data, 0).unwrap();
+    assert_eq!(f.nominal_glyph_raw(0x41), g(27));
+    assert_eq!(f.nominal_glyph_raw(0x42), g(28));
+    assert_eq!(f.nominal_glyph_raw(0x43), None);
+    // Format 2 is read for nominal_glyph (as FreeType) but not looked up
+    // by HarfBuzz.
+    let mut keys = [0u16; 256];
+    keys[0x81] = 1;
+    let table = cmap(&[(
+        3,
+        1,
+        cmap2(&keys, &[(0x20, 0, vec![3]), (0x41, 1, vec![5])]),
+    )]);
+    let data = with(sample_tables(), &[(b"cmap", table)]);
+    let f = Font::new(&data, 0).unwrap();
+    assert_eq!(f.nominal_glyph(0x8141), g(6)); // 5 + idDelta
+    assert_eq!(f.nominal_glyph_raw(0x8141), None);
+}
+
+#[test]
 fn variation_sequences() {
     let uvs = cmap14_15(
         false,
@@ -189,6 +213,7 @@ fn variation_sequences() {
     assert_eq!(f.variation_glyph(0x41, 0xFE00), g(1)); // default: nominal
     assert_eq!(f.variation_glyph(0x42, 0xFE00), g(5));
     assert_eq!(f.variation_glyph(0x43, 0xFE00), None); // 99 >= numGlyphs
+    assert_eq!(f.variation_glyph_raw(0x43, 0xFE00), g(99));
     assert_eq!(f.variation_glyph(0x44, 0xFE00), None);
     assert_eq!(f.variation_glyph(0x41, 0xFE01), None);
 }

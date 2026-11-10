@@ -1,3 +1,4 @@
 /target/
 /bench/target/
 /tools/gen-unicode/target/
+/tools/gen-ot-tag/target/

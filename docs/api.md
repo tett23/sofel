@@ -19,6 +19,7 @@ cargo doc --no-deps -p sofel-geom -p sofel-unicode -p sofel-read -p sofel-font -
 | `sofel-read` | sfntの表の読み取りと検証。コピーも確保もしない | なし |
 | `sofel-font` | フォントを一度だけ読み、グリフの数、文字からグリフへの対応、送り幅を返す | `sofel-read`、`sofel-geom` |
 | `sofel-outline` | glyfとGLYFの輪郭を、ヒンティングなしでFreeTypeと同じ座標で `Pen` に渡す。HarfBuzzと同じグリフの箱（glyf、CFF2、CFF）を求める | `sofel-font`、`sofel-geom` |
+| `sofel-shape` | HarfBuzz 15.1.0のOTシェーパーと同じシェーピング（バッファ、計画、`GSUB` と `GPOS`）と、機能の文字列、直列化、タグ | `sofel-font`、`sofel-unicode`、`sofel-geom` |
 | `sofel-bitmap` | 埋め込みビットマップのストライク、その選び方、グリフの画像のデータとメトリクス（[ADR 0023](adr/0023-color-glyphs.md)） | `sofel-font` |
 | `sofel-color` | カラーグリフの塗りの命令、パレット、カラーグリフを含むグリフの箱（[ADR 0023](adr/0023-color-glyphs.md)） | `sofel-outline`、`sofel-bitmap` |
 | `sofel-write` | sfntの組み立て（`build_sfnt`）と、HarfBuzzと同じ詰め方のオブジェクトの直列化（`Serializer`。[ADR 0022](adr/0022-subsetting.md)） | `sofel-read` |
@@ -58,8 +59,9 @@ let advance: u16 = font.advance(gid.unwrap_or(GlyphId(0))); // フォントの�
 | sofel | HarfBuzz／FreeType |
 |---|---|
 | `Font::new(data, index)` | `hb_face_create` + `hb_font_create`／`FT_New_Memory_Face` |
-| `Font::nominal_glyph(c)` | `hb_font_get_nominal_glyph` |
-| `Font::variation_glyph(c, vs)` | `hb_font_get_variation_glyph` |
+| `Font::nominal_glyph(c)` | `hb_font_get_nominal_glyph`（グリフの数以上のIDは `None`。フォーマット2と8もFreeTypeと同じく引く） |
+| `Font::variation_glyph(c, vs)` | `hb_font_get_variation_glyph`（同じく） |
+| `Font::nominal_glyph_raw(c)`、`Font::variation_glyph_raw(c, vs)` | `hb_font_get_nominal_glyph`、`hb_font_get_variation_glyph` そのまま（シェーピングが使う） |
 | `Font::advance(g)` | `hb_font_get_glyph_h_advance`（拡大縮小なし） |
 | `Font::ft_left_side_bearing(g)` | FreeTypeの `tt_face_get_metrics` の左のサイドベアリング（輪郭のpp1.xに使う） |
 | `Font::table(tag)` | `hb_face_reference_table` |
@@ -364,6 +366,123 @@ assert_eq!(Script::from_iso15924(b"latn").map(Script::tag), Some(*b"Latn"));
 - `vertical_orientation` は、縦書きの文字列を、正立で組む区間（`U`、`Tu`）と、横に組んで90度回す区間（`R`、`Tr`）に分けるのに使う。分割そのものは呼び出し側の仕事である。
 - 版は `UNICODE_VERSION`（`(18, 0, 0)`）。
 
+## 言語と、文字体系と言語のタグ（`sofel-shape`）
+
+```rust
+use sofel_font::read::Tag;
+use sofel_shape::{Language, Script, ot_tags_from_script_and_language, ot_tags_to_script_and_language};
+
+let ja = Language::new(b"ja_JP.UTF-8").unwrap();
+assert_eq!(ja.as_str(), "ja-jp");
+
+let deva = Script::from_iso15924(b"Deva");
+let mr = Language::new(b"mr");
+let (scripts, languages) = ot_tags_from_script_and_language(deva, mr.as_ref());
+assert_eq!(scripts, [Tag(*b"dev3"), Tag(*b"dev2"), Tag(*b"deva")]);
+assert_eq!(languages, [Tag(*b"MAR ")]);
+
+let (script, language) = ot_tags_to_script_and_language(Tag(*b"dev2"), Some(Tag(*b"MAR ")));
+assert_eq!(script, deva);
+assert_eq!(language.unwrap().as_str(), "mr-x-hbsc-64657632");
+```
+
+| sofel | HarfBuzz |
+|---|---|
+| `Language::new(bytes)`、`as_str` | `hb_language_from_string`（長さつき）、`hb_language_to_string` |
+| `ot_tags_from_script_and_language(script, language)` | `hb_ot_tags_from_script_and_language`（上限は `MAX_TAGS_PER_SCRIPT`、`MAX_TAGS_PER_LANGUAGE` の3と3） |
+| `ot_tags_from_script_and_language_max(script, language, n, m)` | 同じく、上限を指定する |
+| `ot_tags_to_script_and_language(script_tag, language_tag)` | `hb_ot_tags_to_script_and_language` |
+| `ot_tag_to_script(tag)`、`ot_tag_to_language(tag)` | `hb_ot_tag_to_script`、`hb_ot_tag_to_language` |
+| `OT_TAG_DEFAULT_SCRIPT`、`OT_TAG_DEFAULT_LANGUAGE` | `HB_OT_TAG_DEFAULT_SCRIPT`（`DFLT`）、`HB_OT_TAG_DEFAULT_LANGUAGE`（`dflt`） |
+
+- 文字体系の `None` は `HB_SCRIPT_INVALID`、言語の `None` は `HB_LANGUAGE_INVALID` に当たる。言語のタグの `None` は `dflt` と同じに扱う。
+- ライブラリはプロセスのロケールを読まない。HarfBuzzの `hb_language_get_default()` と同じ言語が要るときは、呼び出し側が `setlocale(LC_CTYPE, NULL)` などで読んで `Language::new` に渡す。
+- `ot_tag_to_script` は、ISO 15924の形でない値になるタグ（`LATN`、`abc2` など）に `Script::UNKNOWN` を返す。HarfBuzzはそのままの値を返す。
+## 機能の文字列と直列化（`sofel-shape`）
+
+```rust
+use sofel_font::read::Tag;
+use sofel_shape::{
+    EmptyFont, Feature, GlyphInfo, GlyphPosition, SerializeFlags, SerializeFormat,
+    deserialize_glyphs, serialize_glyphs,
+};
+
+let f = Feature::parse(b"aalt[3:5]=2").unwrap();
+assert_eq!((f.tag, f.value, f.start, f.end), (Tag::new(b"aalt"), 2, 3, 5));
+assert_eq!(f.format(), b"aalt[3:5]=2");
+
+let infos = [GlyphInfo { glyph: 1, cluster: 0, ..Default::default() }];
+let positions = [GlyphPosition { x_advance: 500, ..Default::default() }];
+let mut out = Vec::new();
+serialize_glyphs(&infos, Some(&positions), &EmptyFont, SerializeFormat::Text,
+                 SerializeFlags::DEFAULT, &mut out);
+assert_eq!(out, b"[gid1=0+500]");
+
+let (mut back, mut back_positions) = (Vec::new(), Vec::new());
+deserialize_glyphs(&out, SerializeFormat::Text, &EmptyFont, &mut back, &mut back_positions)
+    .unwrap();
+assert_eq!(back, infos);
+```
+
+| sofel | HarfBuzz |
+|---|---|
+| `Feature::parse`、`Feature::format`、`Feature::write` | `hb_feature_from_string`、`hb_feature_to_string` |
+| `serialize_glyphs`、`serialize_glyphs_range` | `hb_buffer_serialize_glyphs`（`size` が `buf_size`） |
+| `serialize_unicode`、`serialize_unicode_range` | `hb_buffer_serialize_unicode` |
+| `serialize_invalid` | 内容の無い空のバッファの `hb_buffer_serialize` |
+| `deserialize_glyphs`、`deserialize_unicode` | `hb_buffer_deserialize_glyphs`、`hb_buffer_deserialize_unicode`（`Err` の `consumed` が `end_ptr`） |
+| `glyph_to_string`、`glyph_from_string` | `hb_font_glyph_to_string`、`hb_font_glyph_from_string` |
+| `SerializeFormat::from_name`、`name` | `hb_buffer_serialize_format_from_string`、`_to_string` |
+| `SerializeFont`、`EmptyFont` | 直列化に渡す `hb_font_t`、`hb_font_get_empty` |
+
+- 書き出しも読み込みもバイト列で行う。グリフ名はバイト列だからである。
+- フォントは `SerializeFont` を実装して渡す。グリフ名と名前からのグリフは `sofel_font::GlyphNames`、グリフの箱は `sofel_outline::HbExtents`、文字からのグリフは `Font::nominal_glyph` から得られる。
+- 読み込みは結果を渡したベクタに追記し、失敗しても、それまでに読んだ項目を残す（HarfBuzzと同じ）。
+
+## 文字列をシェーピングする（`sofel-shape`）
+
+```rust
+use sofel_font::Font;
+use sofel_shape::{BufferFlags, Feature, Scale, SegmentProperties, ShapePlan, UnicodeBuffer, shape};
+
+let font = Font::new(&data, 0)?;
+let mut buffer = UnicodeBuffer::new();
+buffer.set_flags(BufferFlags::BOT.union(BufferFlags::EOT));
+buffer.push_utf8("Hello".as_bytes(), 0, None);
+
+// 区間の性質を推定し、計画を作る。計画は覚えておいて使いまわす。
+let props = SegmentProperties::default().guess(&buffer, None);
+let features = [Feature::parse(b"-liga").unwrap()];
+let plan = ShapePlan::new(&font, props, &features);
+
+// 倍率がunitsPerEmなら、位置はフォントの単位になる。
+let glyphs = shape(&font, &Scale::unscaled(&font), &plan, buffer);
+for (info, pos) in glyphs.glyph_infos().iter().zip(glyphs.glyph_positions()) {
+    println!("{} {} {}", info.glyph, info.cluster, pos.x_advance);
+}
+// 確保した領域を次の文字列に回す。
+let buffer = glyphs.into_unicode();
+```
+
+| sofel | HarfBuzz |
+|---|---|
+| `UnicodeBuffer::push_utf8` などと設定の関数 | `hb_buffer_add_utf8` など、`hb_buffer_set_*` |
+| `UnicodeBuffer::append`、`similar` | `hb_buffer_append`（Unicodeのバッファ）、`hb_buffer_create_similar` |
+| `UnicodeBuffer::number_clusters` | `hb-shape` の、クラスタの値の文字の番号への付けなおし |
+| `SegmentProperties::guess` | `hb_buffer_guess_segment_properties`（言語は引数。ロケールは読まない） |
+| `ShapePlan::new` | `hb_shape_plan_create`（`ot` のシェーパー） |
+| `shape`、`shape_with_extents` | `hb_shape_plan_execute` |
+| `shape_fallback` | `fallback` のシェーパー |
+| `GlyphBuffer::glyph_infos`、`glyph_positions` | `hb_buffer_get_glyph_infos`、`_positions` |
+| `GlyphBuffer::normalize_glyphs`、`diff` | `hb_buffer_normalize_glyphs`、`hb_buffer_diff` |
+| `Scale` | `hb_font_set_scale`、`hb_font_set_ppem` |
+
+- 計画は不変で、スレッドの間で共有できる。区間の性質と機能の組ごとに作り、呼び出し側が覚える（`ShapePlan::key` で比べる）。
+- CFFのフォントやカラーグリフでは、`sofel_outline` の箱を `shape_with_extents` に渡す（フォールバックのマークの配置と縦書きの原点に使う）。
+- シェーピングは、cmapを `Font::nominal_glyph_raw` と `variation_glyph_raw`（HarfBuzzの `hb_font_get_nominal_glyph` と同じく、グリフの数以上のIDも返し、フォーマット2と8は引かない）で引く。
+- `hb-shape` と同じ道具は `sofel-cli` の `sofel-shape` で、`sofel_cli::shape::run_with_input` をライブラリからも呼べる（[README](../README.md)）。
+- [ADR 0024](adr/0024-complex-shapers.md) のシェーパー（アラビア文字、インド系文字など）は、まだdefaultの手順で処理する。`ShapePlan::shaper` はHarfBuzzが選ぶシェーパーを返す。
+
 ## サブセット化する（`sofel-subset`）
 
 `Input` は不変の値で、`map_set` や `with_flags` が新しい値を返す。集合とフラグの意味はHarfBuzzの `hb_subset_input_t` と同じである（[ADR 0022](adr/0022-subsetting.md)）。
@@ -433,9 +552,34 @@ sofel_font_destroy(font);
 | `sofel_render_color_glyph`、`sofel_blend_layer` | `sofel_cli::glyph::render_color`、`sofel_raster::blend_layer` | `FT_Render_Glyph`（`FT_LOAD_COLOR`）、`tt_face_colr_blend_layer` |
 | `sofel_validate`、`sofel_diagnostic_*` | `validate::sfnt`、`validate::collection`、`Kind` | なし |
 | `sofel_unicode_*`、`sofel_script_from_iso15924` | `sofel_unicode` の関数 | `hb_unicode_*`、`hb_script_from_string` |
+| `sofel_feature_parse`、`sofel_feature_format` | `Feature::parse`、`Feature::format` | `hb_feature_from_string`、`hb_feature_to_string` |
+| `sofel_script_from_string`、`sofel_language_*`、`sofel_ot_tag*` | `Script::from_iso15924`、`Language`、`ot_tags_from_script_and_language` など | `hb_script_from_string`、`hb_language_from_string`、`hb_ot_tags_from_script_and_language` など |
+| `sofel_segment_guess` | `SegmentProperties::guess` | `hb_buffer_guess_segment_properties` |
+| `sofel_shape_plan_*` | `ShapePlan` | `hb_shape_plan_create_cached` |
+| `sofel_buffer_*` | `UnicodeBuffer`、`GlyphBuffer` | `hb_buffer_*` |
+| `sofel_shape`、`sofel_shape_fallback` | `shape_with_extents`、`shape_fallback` | `hb_shape_plan_execute` |
+| `sofel_buffer_serialize`、`sofel_buffer_deserialize_*`、`sofel_buffer_diff` | `serialize_glyphs` など、`diff` | `hb_buffer_serialize`、`hb_buffer_deserialize_*`、`hb_buffer_diff` |
 
 - 誤りうる関数は `int32_t` を返し、`SOFEL_OK`（0）以外は誤り。`sofel_error_string` で英語の説明を引ける。NULLのポインタは `SOFEL_ERROR_NULL` になり、panicもクラッシュもしない。
 - 輪郭は5つの関数ポインタと `void *user` で受け取る。`sofel_rasterizer_move_to` などはその型を持つので、`sofel_outline_decompose` にそのまま渡してラスタライザに記録できる。
+- シェーピングは、HarfBuzzの `hb_shape` と違い、呼び出し側が計画を作って持つ。計画は区間の性質と機能の組ごとに1つ作り、スレッドの間で共有してよい。バッファはスレッドごとに持ち、`sofel_buffer_clear` で使いまわす。
+
+```c
+sofel_buffer_t *buf = sofel_buffer_create();
+sofel_buffer_add_utf8(buf, text, len, 0, len);
+sofel_segment_t in = {SOFEL_DIRECTION_TTB, 0, NULL}, props; /* 文字体系と言語は不明 */
+sofel_segment_guess(text, len, &in, NULL, &props);
+sofel_feature_t kern;
+sofel_feature_parse("vkrn", 4, &kern);
+sofel_shape_plan_t *plan = sofel_shape_plan_create(font, &props, &kern, 1, &err); /* 覚えて使いまわす */
+sofel_shape(font, NULL, plan, buf); /* scale が NULL ならフォントの単位 */
+uint32_t gids[64], clusters[64];
+int32_t pos[4 * 64]; /* x_advance, y_advance, x_offset, y_offset */
+int64_t n = sofel_buffer_glyphs(buf, gids, clusters, NULL, pos, 64);
+/* n > 64 なら何も書かれていない。n 個の配列で呼びなおす */
+sofel_buffer_clear(buf); /* 次の文字列へ */
+```
+
 - `sofel-read` の表のビューは公開しない。表のバイト列を `sofel_font_table` で取り出して読む。公開しない関数とその理由は `crates/sofel-capi/unmapped.txt` にある。
 - `wasm32-wasip1` では、同じ静的ライブラリをwasi-sdkのclangでCのプログラムとリンクできる。例外処理の提案もC++の実行時ライブラリも要らない。
 

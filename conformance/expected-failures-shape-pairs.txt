@@ -1,0 +1,13 @@
+# Pairs of hb-dump --shape (ADR 0020, HarfBuzzとの突き合わせ) with lines
+# sofel-shape is expected to shape differently, checked by
+# crates/sofel-conformance/tests/harfbuzz_shape_dump.rs. One item per
+# line, <font>+<text>:<direction>:<features>, with one category of
+# conformance/expected-failures.txt as its comment; the category must fit
+# every line of the pair that differs. Remove an entry when it passes.
+Amiri-Regular.ttf+fa-thelittleprince.txt:auto:-  # shaper:arabic
+Gulzar-Regular.ttf+fa-thelittleprince.txt:auto:-  # shaper:arabic
+Gulzar-Regular.ttf+fa-words.txt:auto:-  # shaper:arabic
+NotoNastaliqUrdu-Regular.ttf+fa-thelittleprince.txt:auto:-  # shaper:arabic
+NotoNastaliqUrdu-Regular.ttf+fa-words.txt:auto:-  # shaper:arabic
+NotoSansDevanagari-Regular.ttf+hi-words.txt:auto:-  # shaper:indic
+NotoSansDuployan-Regular.otf+duployan.txt:auto:-  # shaper:use

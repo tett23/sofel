@@ -122,7 +122,17 @@ dependencies = [
  "sofel-outline",
  "sofel-raster",
  "sofel-read",
+ "sofel-shape",
  "sofel-subset",
+]
+
+[[package]]
+name = "sofel-shape"
+version = "0.0.0"
+dependencies = [
+ "sofel-font",
+ "sofel-geom",
+ "sofel-unicode",
 ]
 
 [[package]]

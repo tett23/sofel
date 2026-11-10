@@ -754,6 +754,141 @@ pub fn check_gpos(input: &[u8]) {
     );
 }
 
+/// Shaping (ADR 0020). The first two bytes give the length of the font
+/// (big-endian); the third byte the direction (bits 0-1), the cluster
+/// level (bits 2-3) and the buffer flags BOT, EOT and the two ways of
+/// handling default-ignorables (bits 4-7); then the font; then UTF-8
+/// text up to a 0 byte, and comma-separated feature strings after it.
+/// Builds a plan and shapes: no panics, at most the buffer's length
+/// limit of glyphs (`HB_BUFFER_MAX_LEN_FACTOR`, `HB_BUFFER_MAX_LEN_MIN`),
+/// and monotone clusters at the monotone cluster levels. The operation
+/// limit (`HB_BUFFER_MAX_OPS_*`) keeps every input within the fuzzer's
+/// time limit.
+pub fn check_shape(input: &[u8]) {
+    use sofel_shape::{
+        BufferFlags, ClusterLevel, Direction, Feature, MAX_LEN_FACTOR, MAX_LEN_MIN, Scale,
+        SegmentProperties, ShapePlan, UnicodeBuffer,
+    };
+    let Some((&[a, b, settings], rest)) = input.split_first_chunk::<3>() else {
+        return;
+    };
+    let n = usize::from(u16::from_be_bytes([a, b])).min(rest.len());
+    let (font_data, rest) = rest.split_at(n);
+    let Ok(font) = sofel_font::Font::new(font_data, 0) else { return };
+    let (text, features) = match rest.iter().position(|&c| c == 0) {
+        Some(i) => (&rest[..i], &rest[i + 1..]),
+        None => (rest, &rest[rest.len()..]),
+    };
+    let direction = [Direction::Ltr, Direction::Rtl, Direction::Ttb, Direction::Btt]
+        [usize::from(settings & 3)];
+    let level = [
+        ClusterLevel::MonotoneGraphemes,
+        ClusterLevel::MonotoneCharacters,
+        ClusterLevel::Characters,
+        ClusterLevel::Graphemes,
+    ][usize::from((settings >> 2) & 3)];
+    let features: Vec<Feature> = features
+        .split(|&c| c == b',')
+        .filter_map(Feature::parse)
+        .collect();
+    let mut buffer = UnicodeBuffer::new();
+    buffer.set_cluster_level(level);
+    buffer.set_flags(BufferFlags(u32::from(settings >> 4)));
+    buffer.push_utf8(text, 0, None);
+    let len = buffer.len();
+    let props = SegmentProperties {
+        direction: Some(direction),
+        ..SegmentProperties::default()
+    }
+    .guess(&buffer, None);
+    let plan = ShapePlan::new(&font, props, &features);
+    let boxes = sofel_outline::HbExtents::new(&font);
+    let glyphs = sofel_shape::shape_with_extents(
+        &font,
+        &Scale::unscaled(&font),
+        &plan,
+        buffer,
+        &|g| boxes.glyph_extents(g),
+    );
+    assert!(
+        glyphs.len() <= len.saturating_mul(MAX_LEN_FACTOR).max(MAX_LEN_MIN),
+        "{} glyphs from {len} characters",
+        glyphs.len()
+    );
+    if matches!(
+        level,
+        ClusterLevel::MonotoneGraphemes | ClusterLevel::MonotoneCharacters
+    ) {
+        let clusters: Vec<u32> = glyphs.glyph_infos().iter().map(|g| g.cluster).collect();
+        let monotone = if direction.is_backward() {
+            clusters.windows(2).all(|w| w[0] >= w[1])
+        } else {
+            clusters.windows(2).all(|w| w[0] <= w[1])
+        };
+        assert!(monotone, "clusters not monotone: {clusters:?}");
+    }
+}
+
+/// Reading serialized buffers (ADR 0020). The first byte picks the
+/// format (bit 0: text or JSON) and the content (bit 1: glyphs or
+/// characters); the rest is read. No panics, and what was read is
+/// written and read back to the same glyphs (with their defined flags)
+/// or characters.
+pub fn check_deserialize(input: &[u8]) {
+    use sofel_shape::{
+        EmptyFont, GlyphFlags, SerializeFlags, SerializeFormat, deserialize_glyphs,
+        deserialize_unicode, serialize_glyphs, serialize_unicode,
+    };
+    let Some((&mode, text)) = input.split_first() else {
+        return;
+    };
+    let format = if mode & 1 == 0 {
+        SerializeFormat::Text
+    } else {
+        SerializeFormat::Json
+    };
+    if mode & 2 == 0 {
+        let (mut infos, mut positions) = (Vec::new(), Vec::new());
+        let _ = deserialize_glyphs(text, format, &EmptyFont, &mut infos, &mut positions);
+        for i in &mut infos {
+            i.flags = GlyphFlags(i.flags.0 & GlyphFlags::DEFINED.0);
+        }
+        let mut out = Vec::new();
+        serialize_glyphs(
+            &infos,
+            Some(&positions),
+            &EmptyFont,
+            format,
+            SerializeFlags::GLYPH_FLAGS,
+            &mut out,
+        );
+        let (mut again, mut again_positions) = (Vec::new(), Vec::new());
+        if !infos.is_empty() {
+            assert!(
+                deserialize_glyphs(&out, format, &EmptyFont, &mut again, &mut again_positions)
+                    .is_ok(),
+                "cannot read back {:?}",
+                String::from_utf8_lossy(&out)
+            );
+        }
+        assert_eq!((infos, positions), (again, again_positions));
+    } else {
+        let (mut codepoints, mut clusters) = (Vec::new(), Vec::new());
+        let _ = deserialize_unicode(text, format, &mut codepoints, &mut clusters);
+        let mut out = Vec::new();
+        serialize_unicode(&codepoints, &clusters, format, SerializeFlags::default(), &mut out);
+        let (mut again, mut again_clusters) = (Vec::new(), Vec::new());
+        if !codepoints.is_empty() {
+            assert!(
+                deserialize_unicode(&out, format, &mut again, &mut again_clusters).is_ok(),
+                "cannot read back {:?}",
+                String::from_utf8_lossy(&out)
+            );
+        }
+        assert_eq!((codepoints, clusters), (again, again_clusters));
+    }
+}
+
 /// Subsets a font with flags and a glyph set taken from the first bytes
 /// (ADR 0022): no panic, and a successful output opens and has no
 /// validator `Error` in the tables that differ from the source's.

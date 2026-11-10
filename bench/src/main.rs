@@ -4,6 +4,7 @@
 //!   cargo run --release --manifest-path bench/Cargo.toml -- [--once] [--filter S] [--testdata DIR]
 
 mod ffi;
+mod shape;
 
 use std::path::PathBuf;
 
@@ -1033,6 +1034,7 @@ fn main() {
 
         outline_items(&mut b, name, &font, &ft, &hb);
     }
+    shape::shape_items(&mut b, &a.testdata);
     let failed = report_checks(&b.checks);
     if !a.once {
         print!("{}", table(&b.rows));
