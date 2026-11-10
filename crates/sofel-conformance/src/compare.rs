@@ -20,6 +20,11 @@
 //! - `cmap-validate:<platform>:<encoding>[:<n>]`: for each subtable
 //!   FreeType dropped, the sofel validator reports an Error.
 //! - `hmtx`: the advances of all glyphs below FreeType's numGlyphs.
+//! - ADR 0016: `fs_type`, `ps_name`, `face_metrics` (the `FT_Face`
+//!   values), `sfnt_names` (every `FT_Get_Sfnt_Name` record),
+//!   `v_advance` (every glyph, `FT_LOAD_VERTICAL_LAYOUT`), `glyph_names`
+//!   (`FT_Get_Glyph_Name`, every glyph) and `name_index`
+//!   (`FT_Get_Name_Index` of every glyph's name).
 
 use std::collections::BTreeMap;
 
@@ -112,6 +117,34 @@ fn freetype_maxp_view(fields: &[(String, String)]) -> Vec<(String, String)> {
         .collect()
 }
 
+/// Compares two lists; the detail names the first difference.
+fn list_item<T: PartialEq + std::fmt::Debug>(
+    font: &str,
+    face: u32,
+    name: &str,
+    ft: &[T],
+    ours: &[T],
+) -> Item {
+    let i = ft
+        .iter()
+        .zip(ours)
+        .position(|(a, b)| a != b)
+        .unwrap_or(ft.len().min(ours.len()));
+    item(
+        font,
+        face,
+        name,
+        ft == ours,
+        format!(
+            "{} in FreeType, {} in sofel; first difference: FreeType {:?}, sofel {:?}",
+            ft.len(),
+            ours.len(),
+            ft.get(i),
+            ours.get(i)
+        ),
+    )
+}
+
 /// Compares the faces of one font file.
 pub fn compare(font: &str, ft: &[Face], ours: &[Face]) -> Vec<Item> {
     let mut items = Vec::new();
@@ -202,6 +235,70 @@ pub fn compare(font: &str, ft: &[Face], ours: &[Face]) -> Vec<Item> {
                 ours.get(i)
             );
             items.push(item(font, f.index, "hmtx", ok, detail));
+        }
+
+        if f.fs_type.is_some() {
+            let pairs: [(&str, String, String); 2] = [
+                (
+                    "fs_type",
+                    format!("{:?}", f.fs_type),
+                    format!("{:?}", o.fs_type),
+                ),
+                (
+                    "ps_name",
+                    format!("{:?}", f.ps_name),
+                    format!("{:?}", o.ps_name),
+                ),
+            ];
+            for (name, a, b) in pairs {
+                items.push(item(
+                    font,
+                    f.index,
+                    name,
+                    a == b,
+                    format!("FreeType {a}, sofel {b}"),
+                ));
+            }
+            items.push(item(
+                font,
+                f.index,
+                "face_metrics",
+                f.face_metrics == o.face_metrics,
+                format!("FreeType {:?}, sofel {:?}", f.face_metrics, o.face_metrics),
+            ));
+            items.push(list_item(
+                font,
+                f.index,
+                "sfnt_names",
+                &f.sfnt_names,
+                &o.sfnt_names,
+            ));
+            items.push(list_item(
+                font,
+                f.index,
+                "v_advance",
+                &f.v_advances,
+                &o.v_advances,
+            ));
+            let names = |v: &[(u32, i64, String)]| -> Vec<(u32, bool, String)> {
+                v.iter()
+                    .map(|(g, e, h)| (*g, *e == 0, if *e == 0 { h.clone() } else { String::new() }))
+                    .collect()
+            };
+            items.push(list_item(
+                font,
+                f.index,
+                "glyph_names",
+                &names(&f.glyph_names),
+                &names(&o.glyph_names),
+            ));
+            items.push(list_item(
+                font,
+                f.index,
+                "name_index",
+                &f.name_indices,
+                &o.name_indices,
+            ));
         }
     }
     items

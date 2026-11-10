@@ -120,6 +120,7 @@ fn check_sfnt(s: &Sfnt<'_>) {
 /// without 4x4 supersampling (ADR 0012). Must not panic.
 pub fn check_outline(data: &[u8]) {
     let Ok(font) = sofel_font::Font::new(data, 0) else { return };
+    check_font_queries(&font);
     let mut scratch = sofel_outline::Scratch::default();
     let mut raster = sofel_raster::Rasterizer::with_band_cells(512);
     let scales = [sofel_outline::Scale::Unscaled, sofel_outline::Scale::pixels(&font, 16, 16)];
@@ -214,6 +215,46 @@ pub fn check_vorg(input: &[u8]) {
             for g in 0..num_glyphs.min(1000) {
                 let _ = v.y_origin(GlyphId(g));
             }
+        }
+    }
+}
+
+/// The queries of ADR 0016 on a whole font: must not panic.
+fn check_font_queries(font: &sofel_font::Font<'_>) {
+    let scales = [sofel_font::HbScale::unscaled(font), sofel_font::HbScale::for_font(font, 768, -1536)];
+    let boxes = |g| font.glyf_extents(g);
+    for s in scales {
+        let _ = (s.h_extents(font), s.v_extents(font));
+        for t in sofel_font::MetricsTag::ALL {
+            let _ = s.metrics_position(font, t);
+            let _ = s.metrics_position_with_fallback(font, t, boxes);
+        }
+        for g in 0..font.num_glyphs().min(64).saturating_add(2) {
+            let g = GlyphId(g);
+            let _ = (s.v_advance(font, g), s.v_origin(font, g, boxes), s.glyf_extents(font, g));
+        }
+    }
+    let _ = (font.fs_type(), font.ft_face_metrics());
+    let mut out = [0u8; 64];
+    let _ = font.postscript_name(&mut out);
+    for e in font.names().take(64) {
+        let mut lang = [0u8; 64];
+        let n = e.language.write(&mut lang);
+        let _ = font.name_utf8(e.name_id, lang.get(..n), &mut out);
+        let _ = font.name_utf16(e.name_id, None, &mut [0u16; 8]);
+        let _ = font.name_utf32(e.name_id, Some(b"en-US"), &mut [0u32; 2]);
+    }
+    for i in 0..font.sfnt_name_count().min(64) {
+        let _ = font.sfnt_name(i);
+    }
+    let mut buf = vec![0u32; font.glyph_names_len().min(1 << 20)];
+    let names = font.glyph_names(&mut buf);
+    for g in 0..font.num_glyphs().min(64) {
+        let g = GlyphId(g);
+        let _ = (font.glyph_name(g), font.ft_glyph_name(g), font.ft_v_advance(g));
+        if let (Some(n), Some(idx)) = (font.glyph_name(g), names.as_ref()) {
+            let _ = idx.glyph_from_name(n);
+            let _ = idx.ft_glyph_from_name(n);
         }
     }
 }

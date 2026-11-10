@@ -44,11 +44,16 @@
 pub use sofel_read as read;
 
 mod float;
+mod ft;
 mod glyf_data;
 mod metrics;
+mod name_language;
+mod names;
 mod tables;
 
+pub use ft::FtFaceMetrics;
 pub use metrics::{FontExtents, GlyphExtents, HbScale, MetricsTag};
+pub use names::{GlyphNames, Language, NameEntry, NameLength, Names, SfntName};
 
 use core::fmt;
 

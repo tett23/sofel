@@ -108,6 +108,13 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   - `glyf_extents`：`x_bearing` はhmtxの左のサイドベアリング（HarfBuzzの読み方）、`y_bearing` は `max(yMin, yMax)`、幅は `|xMax − xMin|`、高さは `−|yMax − yMin|`。空のグリフは0。glyfの数（locaの項目の数 − 1とグリフの数の小さいほう）以上のIDは `None`。
   - `metrics_position` と `metrics_position_with_fallback` は `hb_ot_metrics_tag_t` のすべての値を返す。postはHarfBuzzと同じく版1、2、3だけを使う。
   - `fs_type` はFreeTypeの `FT_Get_FSType_Flags`：OS/2が読めて版が0xFFFFでなければ `fsType`、そうでなければ0。
+- 名前（[ADR 0016](adr/0016-font-and-vertical-metrics.md)）：
+  - `names` と `name_utf8`/`16`/`32` はHarfBuzzの `hb_ot_name_list_names` と `hb_ot_name_get_utf*` と同じ。言語はプラットフォーム3と1の言語IDをHarfBuzzの表で、プラットフォーム0は `ltag` で引く。名前IDと言語の組ごとに、エンコーディングの点の良い記録を選ぶ（(3,10)、(0,6)、(0,4)、(3,1)、(0,3)、(0,2)、(0,1)、(0,0)、(3,0)、(1,0) の順。ほかは使わない）。どれか1つの記録の文字列が表の外にあれば、HarfBuzzと同じく名前を1つも返さない。言語の照合は、完全に一致するものを先に、無ければフォントの言語が要求の接頭（`en` と `en-us`）になるものを、HarfBuzzの二分探索と同じ手順で探す。言語の指定が無ければ英語とする。UTF-16BEとASCII（Macの記録。0x80以上はU+FFFD）を変換し、呼び出し側の配列に終端の0の分を残して書く。確保しない。
+  - `sfnt_name` と `sfnt_name_count` はFreeTypeの `FT_Get_Sfnt_Name`：長さが0の記録、文字列が記録（と言語タグの記録）より前か表の外にある記録、形式1の無効な言語タグを指す記録を除いた生の記録。
+  - `postscript_name` はFreeTypeの `sfnt_get_ps_name`：上の記録のうち名前ID 6の、Windows（3、0か1。言語0x409の最後のもの、無ければ最初のもの）の文字のうちPostScript名に使えるもの、1文字も残らなければApple（1、0。言語0の最後のもの、無ければ最初のもの）。
+  - `glyph_name` はHarfBuzzの `hb_font_get_glyph_name`（postの版1と2。版1は258個の標準の名前。版2の文字列は65535個まで、表の終わりを越える文字列からは使わない）。`glyph_from_name` は呼び出し側が持つ索引 `GlyphNames`（`glyph_names_len` 語の配列）で引き、HarfBuzzと同じく `hb_qsort_inline` で並べて二分探索する。同じ名前のグリフが複数あれば、HarfBuzzと同じものを返す。
+  - FreeTypeの `FT_Get_Glyph_Name` と `FT_Get_Name_Index` は結果が違う（名前の無いグリフは `.notdef`、版1は258グリフのときだけ、版2.5を読む、文字列は0のバイトか表の終わりで切れる）ため、`ft_glyph_name` と `GlyphNames::ft_glyph_from_name` を別に持つ。
+- FreeTypeの値：`ft_face_metrics` は `sfnt_load_face` の `FT_Face` の値（アセンダ、ディセンダ、高さ、最大の送り幅、下線の位置と太さ、`bbox`。値は16bitで巻き戻る。輪郭の無いフェイスとCBLC/CBDTのフェイスは0）、`ft_v_advance` は `FT_Get_Advance`（縦、拡大縮小なし）。
 - `HbScale` はHarfBuzzの `hb_font_t` の拡大縮小を写す。`x_mult` は `x_scale × 0x10000` を `f32` にして `upem` で割り、0へ切り捨てる（HarfBuzzの `changed` と同じ。整数の割り算ではない）。整数の値は `(v × mult + 32768) >> 16`、小数の値はHarfBuzzの `roundf`（`floor((double) x + 0.5)`）、箱は `scale_glyph_extents`（角を `f32` で拡大し、左上を切り下げ、右下を切り上げ）で拡大縮小する。FMAは使わない。代わりの値は拡大縮小した `x_scale`、`y_scale` から求める。
 - hheaの代わりに `HHEA` を使う条件と `HHEA` の `numberOfLongMetrics` の幅（24bit）は、[ADR 0007](adr/0007-sfnt-read-foundation.md) の読み方のままとする（HarfBuzzとFreeTypeは32bitで読む）。
 
@@ -160,6 +167,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - サブセット化は、HarfBuzzの `test/subset/` の期待するフォントと、バイト単位で比べる。
 - head、hhea、maxp、cmap、hmtxの送り幅は、`tools/ft-dump/` の出力と比べる。FreeTypeが捨てたcmapのサブテーブルは、`sofel-read` の検証器が `Error` を報告しなければならない（[ADR 0008](adr/0008-validate-command-and-freetype-comparison.md)）。`ft-dump` は自分で書いたCのプログラムで、取得したFreeTypeのソースから `tools/ft-dump/build.sh` でビルドし、FreeTypeの公開のAPIだけを使う。`ft-dump` の正しさは、値の分かっている小さなフォントで自動のテストにより確かめる。
   - 項目は `<フォント>#<フェイス>:<項目>` で識別する。項目は、`open`、`head`、`hhea`、`maxp`、`cmap:<プラットフォーム>:<エンコーディング>[:<n>]`、`cmap-validate:<プラットフォーム>:<エンコーディング>[:<n>]`、`hmtx`。
+  - [ADR 0016](adr/0016-font-and-vertical-metrics.md) の項目：`fs_type`、`ps_name`、`face_metrics`、`sfnt_names`、`v_advance`（全グリフ、縦、拡大縮小なし）、`glyph_names`（全グリフの `FT_Get_Glyph_Name`）、`name_index`（その名前の `FT_Get_Name_Index`）。CFFのフォントのグリフ名はCFFのcharsetから来るため、期待する失敗とする（[ADR 0021](adr/0021-cff-outlines.md)）。
   - `open` は「FreeTypeが開けるフェイスは、sofelも表の目録を読める」の一方向だけを確かめる。FreeTypeは描けるフェイスだけを開く（glyfかCFFが要る）ため、逆向きは比べない。FreeTypeが開けないフェイスは、ほかの項目も比べない。
   - `maxp` は、FreeTypeが読み込みの時点で行う調整（`maxFunctionDefs` を64以上に、`maxTwilightPoints` を0xFFFB以下に。`src/sfnt/ttload.c`）を、sofelの生の値に当ててから比べる。
   - cmapの対応は、FreeTypeの `FT_Get_Next_Char` と同じく、グリフIDがFreeTypeの `num_glyphs` 未満のものだけを比べる。cmap表に無いプラットフォーム7（Adobe）のエンコーディングは、FreeTypeがPostScriptのグリフ名から合成したものなので比べない。
@@ -167,7 +175,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - テストのデータは、CIでキャッシュが当たったとき `SOFEL_TESTDATA_OFFLINE=1` で取得のスクリプトを走らせ、キャッシュの中身が欠けていれば失敗させる。シェルのスクリプトのテストは `scripts/run-tests.sh` で走らせる。
 - フォント全体と縦書きのメトリクスは、`tools/hb-dump/` の出力と比べる（[ADR 0016](adr/0016-font-and-vertical-metrics.md)）。`hb-dump` はHarfBuzzの `src/harfbuzz.cc` を取りこむC++の1つの翻訳単位で、`tools/hb-dump/build.sh` でビルドする。FreeTypeとは統合しない。書き出す内容は引数の形（`--metrics` など）で選び、形ごとに関数を1つ足して広げる。
   - 拡大縮小は、(`upem`, `upem`)、(2 `upem`, 2 `upem`)、(`upem` / 2, `upem` / 2)、(768, 768)、(−`upem`, −`upem`)、(768, −1536) の6つ。
-  - 項目は `<フォント>#<フェイス>:hb:<項目>` で、`num_glyphs`、`h_extents`、`v_extents`、`metrics`、`metrics-fallback`、`h_advance`、`v_advance`、`v_origin`、`extents`。各項目はすべての拡大縮小とすべてのグリフを含む。期待する失敗は `conformance/expected-failures-harfbuzz.txt` に書く。CFFとCFF2のフォントの箱（[ADR 0021](adr/0021-cff-outlines.md)）と、COLR、CBDT、sbixのカラーのグリフの箱（[ADR 0023](adr/0023-color-glyphs.md)）と、その箱で決まる縦の原点が期待する失敗である。
+  - 項目は `<フォント>#<フェイス>:hb:<項目>` で、`num_glyphs`、`h_extents`、`v_extents`、`metrics`、`metrics-fallback`、`h_advance`、`v_advance`、`v_origin`、`extents`、`names`、`name_utf`（全名前IDと、記録に現れる全言語と言語なしの、UTF-8、16、32。配列の長さは全体＋1と4）、`glyph_names`、`glyph_from_name`。各項目はすべての拡大縮小とすべてのグリフを含む。期待する失敗は `conformance/expected-failures-harfbuzz.txt` に書く。CFFとCFF2のフォントの箱とCFFのグリフ名（[ADR 0021](adr/0021-cff-outlines.md)）と、COLR、CBDT、sbixのカラーのグリフの箱（[ADR 0023](adr/0023-color-glyphs.md)）と、その箱で決まる縦の原点が期待する失敗である。
 - glyfの輪郭は、`ft-dump --outline` の出力と、拡大縮小なし、16画素、48画素で、命令の列、重なりの印、制御の箱が完全に一致することを確かめる（項目 `outline:<SIZE>:<グリフ>`、[ADR 0011](adr/0011-glyf-outlines.md)）。ラスタライズは、`ft-dump --raster` の出力と、12、24、48画素で画像が完全に一致することを確かめる（項目 `raster:<PPEM>:<グリフ>`、[ADR 0012](adr/0012-antialiased-rasterizer.md)）。
 - 輪郭、ラスタライズ（各形式）、埋め込みビットマップ、sfnt以外の形式は、FreeTypeの出力を書き出す `tools/ft-dump/` と比べる。輪郭は完全一致を求める。sfnt以外の形式のテストのフォントは、その形式を実装するまえに、ADRで `testdata.lock` に加える。
 - カラーグリフ、SVGとPDF、GPU、WOFF、検証器、展開器の基準は、それぞれのADRで定める。

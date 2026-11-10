@@ -276,3 +276,203 @@ pub fn compare(font: &str, hb: &HbFace, ours: &HbFace) -> Vec<Item> {
     push("extents", per_glyph(hb, ours, |g| g.4));
     items
 }
+
+/// The output of `hb-dump --names` for one face.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct HbNames {
+    pub index: u32,
+    /// `(name id, language)`.
+    pub names: Vec<(u16, String)>,
+    /// `(kind, name id, language, capacity, total, written, hex)`.
+    pub utf: Vec<(String, u16, String, usize, usize, usize, String)>,
+    /// `(glyph, found, hex)`.
+    pub glyph_names: Vec<(u32, bool, String)>,
+    /// `(glyph, found, glyph from its name)`.
+    pub from_names: Vec<(u32, bool, u32)>,
+}
+
+/// Parses the output of `hb-dump --names`.
+pub fn parse_names(text: &str) -> Result<Vec<HbNames>, String> {
+    let mut faces: Vec<HbNames> = Vec::new();
+    for line in text.lines() {
+        let mut w = line.split(' ');
+        let key = w.next().unwrap_or("");
+        if key == "face" {
+            faces.push(HbNames {
+                index: num(w.next(), line)?,
+                ..HbNames::default()
+            });
+            continue;
+        }
+        let face = faces
+            .last_mut()
+            .ok_or_else(|| format!("line before any face: {line}"))?;
+        let word = |w: Option<&str>| {
+            w.map(str::to_string)
+                .ok_or_else(|| format!("bad line: {line}"))
+        };
+        match key {
+            "name" => face.names.push((num(w.next(), line)?, word(w.next())?)),
+            "utf8" | "utf16" | "utf32" => face.utf.push((
+                key.to_string(),
+                num(w.next(), line)?,
+                word(w.next())?,
+                num(w.next(), line)?,
+                num(w.next(), line)?,
+                num(w.next(), line)?,
+                word(w.next())?,
+            )),
+            "glyph_name" => {
+                let g = num(w.next(), line)?;
+                let found: u8 = num(w.next(), line)?;
+                face.glyph_names.push((g, found != 0, word(w.next())?));
+            }
+            "glyph_from_name" => {
+                let g = num(w.next(), line)?;
+                let found: u8 = num(w.next(), line)?;
+                face.from_names.push((g, found != 0, num(w.next(), line)?));
+            }
+            "end" | "" => {}
+            other => return Err(format!("unknown line kind {other}: {line}")),
+        }
+    }
+    Ok(faces)
+}
+
+fn units_hex<T: Copy + Into<u64>>(u: &[T], digits: usize) -> String {
+    if u.is_empty() {
+        return "-".to_string();
+    }
+    u.iter()
+        .map(|&v| format!("{:0digits$x}", v.into()))
+        .collect()
+}
+
+fn from_hex(h: &str) -> Vec<u8> {
+    if h == "-" {
+        return Vec::new();
+    }
+    (0..h.len() / 2)
+        .map(|i| u8::from_str_radix(&h[2 * i..2 * i + 2], 16).unwrap_or(0))
+        .collect()
+}
+
+/// sofel's values for the calls `hb-dump --names` made.
+pub fn sofel_names(font: &Font<'_>, hb: &HbNames) -> HbNames {
+    let names = font
+        .names()
+        .map(|e| {
+            let mut b = vec![0u8; e.language.len()];
+            e.language.write(&mut b);
+            (e.name_id, String::from_utf8_lossy(&b).into_owned())
+        })
+        .collect();
+    let utf = hb
+        .utf
+        .iter()
+        .map(|(kind, id, lang, cap, _, _, _)| {
+            let l = (lang != "-").then_some(lang.as_bytes());
+            let (n, hex) = match kind.as_str() {
+                "utf8" => {
+                    let mut b = vec![0u8; *cap];
+                    let n = font.name_utf8(*id, l, &mut b);
+                    (n, units_hex(&b[..n.written], 2))
+                }
+                "utf16" => {
+                    let mut b = vec![0u16; *cap];
+                    let n = font.name_utf16(*id, l, &mut b);
+                    (n, units_hex(&b[..n.written], 4))
+                }
+                _ => {
+                    let mut b = vec![0u32; *cap];
+                    let n = font.name_utf32(*id, l, &mut b);
+                    (n, units_hex(&b[..n.written], 8))
+                }
+            };
+            (
+                kind.clone(),
+                *id,
+                lang.clone(),
+                *cap,
+                n.total,
+                n.written,
+                hex,
+            )
+        })
+        .collect();
+    let mut index = vec![0u32; font.glyph_names_len()];
+    let gn = font.glyph_names(&mut index);
+    let glyph_names = hb
+        .glyph_names
+        .iter()
+        .map(|&(g, _, _)| {
+            let n = font.glyph_name(GlyphId(g));
+            // hb-dump reads the name back as a C string from 256 bytes.
+            let n = n.map(|n| {
+                let n = &n[..n.len().min(255)];
+                n.split(|&b| b == 0).next().unwrap_or_default()
+            });
+            (g, n.is_some(), n.map_or("-".to_string(), crate::dump::hex))
+        })
+        .collect();
+    let from_names = hb
+        .from_names
+        .iter()
+        .map(|&(g, _, _)| {
+            let name = hb
+                .glyph_names
+                .iter()
+                .find(|x| x.0 == g)
+                .map(|x| from_hex(&x.2))
+                .unwrap_or_default();
+            let found = gn.as_ref().and_then(|n| n.glyph_from_name(&name));
+            (g, found.is_some(), found.map_or(0, |g| g.0))
+        })
+        .collect();
+    HbNames {
+        index: hb.index,
+        names,
+        utf,
+        glyph_names,
+        from_names,
+    }
+}
+
+fn list<T: PartialEq + std::fmt::Debug>(
+    font: &str,
+    face: u32,
+    name: &str,
+    a: &[T],
+    b: &[T],
+) -> Item {
+    let i = a
+        .iter()
+        .zip(b)
+        .position(|(x, y)| x != y)
+        .unwrap_or(a.len().min(b.len()));
+    item(
+        font,
+        face,
+        name,
+        a == b,
+        format!(
+            "{} in HarfBuzz, {} in sofel; first difference: HarfBuzz {:?}, sofel {:?}",
+            a.len(),
+            b.len(),
+            a.get(i),
+            b.get(i)
+        ),
+    )
+}
+
+/// Compares the names of one face: items `names`, `name_utf`,
+/// `glyph_names` and `glyph_from_name`.
+pub fn compare_names(font: &str, hb: &HbNames, ours: &HbNames) -> Vec<Item> {
+    let f = hb.index;
+    vec![
+        list(font, f, "names", &hb.names, &ours.names),
+        list(font, f, "name_utf", &hb.utf, &ours.utf),
+        list(font, f, "glyph_names", &hb.glyph_names, &ours.glyph_names),
+        list(font, f, "glyph_from_name", &hb.from_names, &ours.from_names),
+    ]
+}

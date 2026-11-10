@@ -35,6 +35,26 @@
  *                     <has_extents> is 0)
  *   end
  *
+ * Mode --names: for each face index i,
+ *
+ *   face <i>
+ *   name <name_id> <language>    (hb_ot_name_list_names, in its order)
+ *   utf8 <name_id> <language> <capacity> <total> <written> <hex>
+ *   utf16 ... and utf32 ...      (hb_ot_name_get_utf8/16/32 for every
+ *                                name id and every language listed, and
+ *                                for HB_LANGUAGE_INVALID written as `-`;
+ *                                with a capacity of total + 1 and of 4;
+ *                                <written> is the text_size HarfBuzz
+ *                                returns, <hex> the units written, two,
+ *                                four or eight hex digits each, `-` for
+ *                                none)
+ *   glyph_name <g> <found> <hex> (hb_font_get_glyph_name with 256 bytes,
+ *                                every glyph)
+ *   glyph_from_name <g> <found> <glyph>
+ *                                (hb_font_get_glyph_from_name of that
+ *                                name, for every glyph with a name)
+ *   end
+ *
  * Exit status: 0 on success, 1 when the file cannot be read, 2 on wrong
  * usage.
  */
@@ -147,6 +167,90 @@ static int dump_metrics (hb_blob_t *blob)
   return 0;
 }
 
+template <typename T>
+static void print_units (const T *u, unsigned n, int digits)
+{
+  if (!n) { printf (" -"); return; }
+  printf (" ");
+  for (unsigned i = 0; i < n; i++) printf ("%0*lx", digits, (unsigned long) u[i]);
+}
+
+template <typename T, typename F>
+static void dump_utf (const char *kind, hb_face_t *face, unsigned id, hb_language_t lang,
+		      int digits, F get)
+{
+  unsigned total = get (face, id, lang, nullptr, nullptr);
+  unsigned caps[2] = {total + 1, 4};
+  for (unsigned c = 0; c < 2; c++)
+  {
+    T buf[1024];
+    unsigned cap = caps[c] < 1024 ? caps[c] : 1024;
+    unsigned size = cap;
+    unsigned t = get (face, id, lang, &size, buf);
+    printf ("%s %u %s %u %u %u", kind, id, lang ? hb_language_to_string (lang) : "-", cap, t, size);
+    print_units (buf, size, digits);
+    printf ("\n");
+  }
+}
+
+static int dump_names (hb_blob_t *blob)
+{
+  unsigned count = hb_face_count (blob);
+  if (!count) count = 1;
+  for (unsigned i = 0; i < count; i++)
+  {
+    hb_face_t *face = hb_face_create (blob, i);
+    hb_font_t *font = hb_font_create (face);
+    printf ("face %u\n", i);
+    unsigned n = 0;
+    const hb_ot_name_entry_t *entries = hb_ot_name_list_names (face, &n);
+    for (unsigned e = 0; e < n; e++)
+      printf ("name %u %s\n", entries[e].name_id, hb_language_to_string (entries[e].language));
+    for (unsigned e = 0; e < n; e++)
+    {
+      if (e && entries[e].name_id == entries[e - 1].name_id) continue;
+      unsigned id = entries[e].name_id;
+      hb_language_t langs[1025];
+      unsigned nl = 0;
+      langs[nl++] = HB_LANGUAGE_INVALID;
+      for (unsigned l = 0; l < n && nl < 1025; l++)
+      {
+	bool seen = false;
+	for (unsigned k = 0; k < nl; k++) seen |= langs[k] == entries[l].language;
+	if (!seen) langs[nl++] = entries[l].language;
+      }
+      for (unsigned l = 0; l < nl; l++)
+      {
+	dump_utf<uint8_t> ("utf8", face, id, langs[l], 2,
+			   [] (hb_face_t *f, unsigned id, hb_language_t lang, unsigned *size, uint8_t *t)
+			   { return hb_ot_name_get_utf8 (f, id, lang, size, (char *) t); });
+	dump_utf<uint16_t> ("utf16", face, id, langs[l], 4, hb_ot_name_get_utf16);
+	dump_utf<uint32_t> ("utf32", face, id, langs[l], 8, hb_ot_name_get_utf32);
+      }
+    }
+    unsigned num_glyphs = hb_face_get_glyph_count (face);
+    for (unsigned g = 0; g < num_glyphs; g++)
+    {
+      char name[256];
+      hb_bool_t found = hb_font_get_glyph_name (font, g, name, sizeof name);
+      unsigned len = found ? (unsigned) strlen (name) : 0;
+      printf ("glyph_name %u %d", g, found ? 1 : 0);
+      print_units ((const uint8_t *) name, len, 2);
+      printf ("\n");
+      if (found && len)
+      {
+	hb_codepoint_t gid = 0;
+	hb_bool_t ok = hb_font_get_glyph_from_name (font, name, (int) len, &gid);
+	printf ("glyph_from_name %u %d %u\n", g, ok ? 1 : 0, ok ? gid : 0);
+      }
+    }
+    printf ("end\n");
+    hb_font_destroy (font);
+    hb_face_destroy (face);
+  }
+  return 0;
+}
+
 struct dump_mode_t
 {
   const char *name;
@@ -155,6 +259,7 @@ struct dump_mode_t
 
 static const dump_mode_t modes[] = {
   {"--metrics", dump_metrics},
+  {"--names", dump_names},
 };
 
 int main (int argc, char **argv)

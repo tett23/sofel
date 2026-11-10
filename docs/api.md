@@ -66,6 +66,11 @@ let advance: u16 = font.advance(gid.unwrap_or(GlyphId(0))); // フォントの�
 | `Font::metrics_position(tag)`、`Font::metrics_position_with_fallback(tag, extents)` | `hb_ot_metrics_get_position`、`hb_ot_metrics_get_position_with_fallback` |
 | `Font::os2()`、`Font::fs_type()` | `FT_Get_Sfnt_Table(FT_SFNT_OS2)`、`FT_Get_FSType_Flags` |
 | `HbScale::for_font(font, x, y)` | `hb_font_set_scale` |
+| `Font::names()`、`Font::name_utf8(id, lang, out)` など | `hb_ot_name_list_names`、`hb_ot_name_get_utf8` など |
+| `Font::sfnt_name(i)`、`Font::postscript_name(out)` | `FT_Get_Sfnt_Name`、`FT_Get_Postscript_Name` |
+| `Font::glyph_name(g)`、`GlyphNames::glyph_from_name(name)` | `hb_font_get_glyph_name`、`hb_font_get_glyph_from_name` |
+| `Font::ft_glyph_name(g)`、`GlyphNames::ft_glyph_from_name(name)` | `FT_Get_Glyph_Name`、`FT_Get_Name_Index` |
+| `Font::ft_face_metrics()`、`Font::ft_v_advance(g)` | `FT_Face` の値、`FT_Get_Advance`（縦） |
 
 - cmapのサブテーブルはHarfBuzzと同じ順で選ぶ。送り幅は、hmtxが欠けたり短かったりするときもHarfBuzzと同じ値を返す（[ADR 0010](adr/0010-font-foundation.md)）。
 - `FontError` は、ファイルがsfntでもコレクションでもない、`head` が読めない、番号のフォントが無い、のいずれか。
@@ -82,6 +87,7 @@ let advance = scale.v_advance(&font, GlyphId(1));
 let x_height = scale.metrics_position(&font, MetricsTag::XHeight);
 ```
 
+- 名前から引く索引は呼び出し側が持つ。`let mut buf = vec![0u32; font.glyph_names_len()]; let names = font.glyph_names(&mut buf)?;` で作り、`names.glyph_from_name(b"A")` で引く。名前の文字列は呼び出し側の配列に書く（`name_utf8` など）か、フォントのデータを借りて返す（`glyph_name`、`sfnt_name`）。
 - 下の層が要るときは `sofel_font::read`（`sofel-read` の再公開）と `Font::sfnt()`、`Font::head()` を使う。
 
 ## 輪郭を取り出す（`sofel-outline`）
@@ -260,6 +266,9 @@ sofel_font_destroy(font);
 | `sofel_font_metrics_position`、`sofel_font_metrics_position_with_fallback` | `Font::metrics_position` など | `hb_ot_metrics_get_position` など |
 | `sofel_font_os2_field`、`sofel_font_fs_type` | `Font::os2`、`Font::fs_type` | `FT_Get_Sfnt_Table`、`FT_Get_FSType_Flags` |
 | `sofel_scale_*` | `HbScale` | `hb_font_set_scale` のあとの各関数 |
+| `sofel_font_name_*`、`sofel_font_sfnt_name*`、`sofel_font_postscript_name` | `Font::names` など | `hb_ot_name_*`、`FT_Get_Sfnt_Name`、`FT_Get_Postscript_Name` |
+| `sofel_font_glyph_name`、`sofel_font_ft_glyph_name`、`sofel_glyph_names_*` | `Font::glyph_name`、`GlyphNames` | `hb_font_get_glyph_name`、`FT_Get_Glyph_Name`、`FT_Get_Name_Index` |
+| `sofel_font_ft_face_metrics`、`sofel_font_ft_v_advance` | `Font::ft_face_metrics`、`Font::ft_v_advance` | `FT_Face`、`FT_Get_Advance` |
 | `sofel_outline_draw`、`sofel_outline_load`、`sofel_outline_decompose` | `draw`、`load`、`Scratch::decompose` | `FT_Load_Glyph` + `FT_Outline_Decompose` |
 | `sofel_rasterizer_*`、`sofel_pixel_box` | `Rasterizer`、`pixel_box` | `FT_Outline_Render` |
 | `sofel_render_glyph` | `sofel_cli::glyph::render` | `FT_Render_Glyph` |

@@ -30,9 +30,13 @@ use sofel_font::{Font, FontError};
 const LIST: &str = "expected-failures-harfbuzz.txt";
 
 fn hb_dump(font: &Path) -> Option<String> {
+    hb_dump_mode("--metrics", font)
+}
+
+fn hb_dump_mode(mode: &str, font: &Path) -> Option<String> {
     let exe = paths::hb_dump();
     paths::require(&exe, "hb-dump").unwrap_or_else(|e| panic!("{e}"));
-    let out = Command::new(exe).arg(font).output().unwrap();
+    let out = Command::new(exe).arg(mode).arg(font).output().unwrap();
     out.status
         .success()
         .then(|| String::from_utf8(out.stdout).unwrap())
@@ -103,6 +107,17 @@ fn agrees_with_harfbuzz() {
             let ours = hb::sofel_face(&font, face);
             items.extend(hb::compare(&id, face, &ours));
         }
+        let Some(text) = hb_dump_mode("--names", path) else {
+            continue;
+        };
+        let faces = hb::parse_names(&text).unwrap_or_else(|e| panic!("{id}: {e}"));
+        for face in &faces {
+            let Ok(font) = Font::new(&bytes, face.index) else {
+                continue;
+            };
+            let ours = hb::sofel_names(&font, face);
+            items.extend(hb::compare_names(&id, face, &ours));
+        }
     }
 
     let mut kinds: BTreeMap<String, (usize, usize)> = BTreeMap::new();
@@ -132,4 +147,43 @@ fn agrees_with_harfbuzz() {
         let failed = items.iter().filter(|i| !i.ok).count();
         panic!("{msg}\n{} items, {failed} failed", items.len());
     }
+}
+
+#[test]
+fn hb_dump_writes_known_names() {
+    let ps = utf16be("Sofel");
+    let mut tables = sample_tables();
+    tables.push((
+        b"name",
+        name(0, &[(1, 0, 0, 1, b"Mac"), (3, 1, 0x409, 1, &ps)], &[]),
+    ));
+    tables.push((b"post", post2(&[0, 36, 258, 258], &["alpha"])));
+    tables.sort_by_key(|(t, _)| **t);
+    let path = temp_font("names", &sfnt(&tables));
+    let text = hb_dump_mode("--names", &path).unwrap();
+    std::fs::remove_file(&path).ok();
+    let f = &hb::parse_names(&text).unwrap()[0];
+    assert_eq!(f.names, vec![(1, "en".to_string())]);
+    assert!(f.utf.contains(&(
+        "utf8".to_string(),
+        1,
+        "-".to_string(),
+        6,
+        5,
+        5,
+        "536f66656c".to_string()
+    )));
+    assert!(f.utf.contains(&(
+        "utf8".to_string(),
+        1,
+        "en".to_string(),
+        4,
+        5,
+        3,
+        "536f66".to_string()
+    )));
+    assert_eq!(f.glyph_names[2], (2, true, "616c706861".to_string()));
+    assert_eq!(f.glyph_names[4], (4, false, "-".to_string()));
+    let from = f.from_names.iter().find(|x| x.0 == 3).unwrap();
+    assert!(from.1 && (from.2 == 2 || from.2 == 3));
 }

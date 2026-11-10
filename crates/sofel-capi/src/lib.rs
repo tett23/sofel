@@ -1060,6 +1060,398 @@ pub unsafe extern "C" fn sofel_scale_metrics_position_with_fallback(
     status(some(scale).and_then(|s| metrics_position(Some(s), font, tag, true, position)))
 }
 
+// --------------------------------------------------------------- names
+
+/// `sofel_glyph_names_t`: an index of the glyph names of a font.
+pub struct SofelGlyphNames {
+    font: Font<'static>,
+    buf: Vec<u32>,
+}
+
+/// The language a C caller asks for: none for a length of 0.
+///
+/// # Safety
+///
+/// `lang` is NULL or valid for reads of `len` bytes.
+unsafe fn language<'a>(lang: *const u8, len: usize) -> Result<Option<&'a [u8]>, i32> {
+    if len == 0 {
+        return Ok(None);
+    }
+    // SAFETY: the caller's conditions.
+    unsafe { bytes(lang, len) }.map(Some).ok_or(ERROR_NULL)
+}
+
+/// Copies `src` to the caller's array, snprintf-style.
+fn copy_out<T: Copy>(src: &[T], out: Option<&mut [T]>, len: Option<&mut usize>) -> Status {
+    let (out, len) = (some(out)?, some(len)?);
+    *len = src.len();
+    let dst = out.get_mut(..src.len()).ok_or(ERROR_BUFFER_TOO_SMALL)?;
+    dst.copy_from_slice(src);
+    Ok(())
+}
+
+/// `sofel_font_name_count`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `count` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_name_count(font: *const SofelFont, count: *mut usize) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, count) = unsafe { (font_ref(font), w(count)) };
+    status(get(font, count, |f| f.names().count()))
+}
+
+/// `sofel_font_name_entry`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `name_id` and `len` are NULL or
+/// writable; `lang` is NULL with `capacity` 0 or writable for `capacity`
+/// bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_name_entry(
+    font: *const SofelFont,
+    index: usize,
+    name_id: *mut u16,
+    lang: *mut u8,
+    capacity: usize,
+    len: *mut usize,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, name_id, lang, len) = unsafe {
+        (
+            font_ref(font),
+            w(name_id),
+            out_array(lang, capacity),
+            w(len),
+        )
+    };
+    status((|| {
+        let (font, name_id) = (some(font)?, some(name_id)?);
+        let e = font.names().nth(index).ok_or(ERROR_NOT_FOUND)?;
+        let mut tag = [0u8; 64];
+        let n = e.language.write(&mut tag);
+        copy_out(tag.get(..n).unwrap_or_default(), lang, len)?;
+        *name_id = e.name_id;
+        Ok(())
+    })())
+}
+
+macro_rules! name_utf {
+    ($name:ident, $method:ident, $t:ty) => {
+        /// The C function of the same name.
+        ///
+        /// # Safety
+        ///
+        /// `font` is NULL or a live font; `lang` is NULL with `lang_len`
+        /// 0 or readable for `lang_len` bytes; `text` is NULL with
+        /// `capacity` 0 or writable for `capacity` units; `written` and
+        /// `total` are NULL or writable.
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn $name(
+            font: *const SofelFont,
+            name_id: u16,
+            lang: *const u8,
+            lang_len: usize,
+            text: *mut $t,
+            capacity: usize,
+            written: *mut usize,
+            total: *mut usize,
+        ) -> i32 {
+            // SAFETY: the caller's conditions.
+            let (font, lang, text, written, total) = unsafe {
+                (
+                    font_ref(font),
+                    language(lang, lang_len),
+                    out_array(text, capacity),
+                    w(written),
+                    w(total),
+                )
+            };
+            status((|| {
+                let (font, text, written, total) =
+                    (some(font)?, some(text)?, some(written)?, some(total)?);
+                let n = font.$method(name_id, lang?, text);
+                (*written, *total) = (n.written, n.total);
+                Ok(())
+            })())
+        }
+    };
+}
+
+name_utf!(sofel_font_name_utf8, name_utf8, u8);
+name_utf!(sofel_font_name_utf16, name_utf16, u16);
+name_utf!(sofel_font_name_utf32, name_utf32, u32);
+
+/// `sofel_font_sfnt_name_count`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `count` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_sfnt_name_count(
+    font: *const SofelFont,
+    count: *mut usize,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, count) = unsafe { (font_ref(font), w(count)) };
+    status(get(font, count, |f| f.sfnt_name_count()))
+}
+
+/// `sofel_font_sfnt_name`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `ids` is NULL or writable for 4
+/// integers; `string` and `len` are NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_sfnt_name(
+    font: *const SofelFont,
+    index: usize,
+    ids: *mut u16,
+    string: *mut *const u8,
+    len: *mut usize,
+) -> i32 {
+    // SAFETY: the caller's conditions; `[u16; 4]` has the alignment of `u16`.
+    let (font, ids, string, len) = unsafe {
+        (
+            font_ref(font),
+            ids.cast::<[u16; 4]>().as_mut(),
+            w(string),
+            w(len),
+        )
+    };
+    status((|| {
+        let (font, ids, string, len) = (some(font)?, some(ids)?, some(string)?, some(len)?);
+        let r = font.sfnt_name(index).ok_or(ERROR_NOT_FOUND)?;
+        *ids = [r.platform_id, r.encoding_id, r.language_id, r.name_id];
+        (*string, *len) = (r.string.as_ptr(), r.string.len());
+        Ok(())
+    })())
+}
+
+/// `sofel_font_postscript_name`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `name` is NULL with `capacity` 0 or
+/// writable for `capacity` bytes; `len` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_postscript_name(
+    font: *const SofelFont,
+    name: *mut u8,
+    capacity: usize,
+    len: *mut usize,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, name, len) = unsafe { (font_ref(font), out_array(name, capacity), w(len)) };
+    status((|| {
+        let font = some(font)?;
+        let mut buf = [0u8; 128];
+        let n = font.postscript_name(&mut buf).ok_or(ERROR_NOT_FOUND)?;
+        copy_out(buf.get(..n).unwrap_or(&buf), name, len)
+    })())
+}
+
+fn glyph_name_out(
+    name: Option<&[u8]>,
+    out: Option<&mut *const u8>,
+    len: Option<&mut usize>,
+) -> Status {
+    let (out, len) = (some(out)?, some(len)?);
+    let n = name.ok_or(ERROR_NOT_FOUND)?;
+    (*out, *len) = (n.as_ptr(), n.len());
+    Ok(())
+}
+
+/// `sofel_font_glyph_name`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `name` and `len` are NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_glyph_name(
+    font: *const SofelFont,
+    glyph: u32,
+    name: *mut *const u8,
+    len: *mut usize,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, name, len) = unsafe { (font_ref(font), w(name), w(len)) };
+    status(some(font).and_then(|f| glyph_name_out(f.glyph_name(GlyphId(glyph)), name, len)))
+}
+
+/// `sofel_font_ft_glyph_name`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `name` and `len` are NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_ft_glyph_name(
+    font: *const SofelFont,
+    glyph: u32,
+    name: *mut *const u8,
+    len: *mut usize,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, name, len) = unsafe { (font_ref(font), w(name), w(len)) };
+    status(some(font).and_then(|f| glyph_name_out(f.ft_glyph_name(GlyphId(glyph)), name, len)))
+}
+
+/// `sofel_glyph_names_create`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font that outlives the index; `error` is
+/// NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_glyph_names_create(
+    font: *const SofelFont,
+    error: *mut i32,
+) -> *mut SofelGlyphNames {
+    // SAFETY: the caller's conditions.
+    let (font, error) = unsafe { (font_ref(font), w(error)) };
+    let Some(error) = error else {
+        return core::ptr::null_mut();
+    };
+    let Some(font) = font else {
+        *error = ERROR_NULL;
+        return core::ptr::null_mut();
+    };
+    let mut buf = vec![0u32; font.glyph_names_len()];
+    if font.glyph_names(&mut buf).is_none() {
+        *error = ERROR_INVALID_ARGUMENT;
+        return core::ptr::null_mut();
+    }
+    *error = OK;
+    Box::into_raw(Box::new(SofelGlyphNames { font: *font, buf }))
+}
+
+/// `sofel_glyph_names_destroy`.
+///
+/// # Safety
+///
+/// `names` is NULL or from `sofel_glyph_names_create`, not yet destroyed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_glyph_names_destroy(names: *mut SofelGlyphNames) {
+    if !names.is_null() {
+        // SAFETY: the pointer came from Box::into_raw and is dropped once.
+        drop(unsafe { Box::from_raw(names) });
+    }
+}
+
+fn from_name(
+    names: Option<&SofelGlyphNames>,
+    name: Option<&[u8]>,
+    glyph: Option<&mut u32>,
+    ft: bool,
+) -> Status {
+    let (names, name, glyph) = (some(names)?, some(name)?, some(glyph)?);
+    let index = names
+        .font
+        .glyph_names_from(&names.buf)
+        .ok_or(ERROR_INVALID_ARGUMENT)?;
+    let found = if ft {
+        index.ft_glyph_from_name(name)
+    } else {
+        index.glyph_from_name(name)
+    };
+    *glyph = found.ok_or(ERROR_NOT_FOUND)?.0;
+    Ok(())
+}
+
+/// `sofel_glyph_names_glyph_from_name`.
+///
+/// # Safety
+///
+/// `names` is NULL or a live index; `name` is NULL or readable for `len`
+/// bytes; `glyph` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_glyph_names_glyph_from_name(
+    names: *const SofelGlyphNames,
+    name: *const u8,
+    len: usize,
+    glyph: *mut u32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (names, name, glyph) = unsafe { (r(names), bytes(name, len), w(glyph)) };
+    status(from_name(names, name, glyph, false))
+}
+
+/// `sofel_glyph_names_ft_glyph_from_name`.
+///
+/// # Safety
+///
+/// `names` is NULL or a live index; `name` is NULL or readable for `len`
+/// bytes; `glyph` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_glyph_names_ft_glyph_from_name(
+    names: *const SofelGlyphNames,
+    name: *const u8,
+    len: usize,
+    glyph: *mut u32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (names, name, glyph) = unsafe { (r(names), bytes(name, len), w(glyph)) };
+    status(from_name(names, name, glyph, true))
+}
+
+/// `sofel_font_ft_face_metrics`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `values` is NULL or writable for 11
+/// integers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_ft_face_metrics(
+    font: *const SofelFont,
+    values: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, values) = unsafe { (font_ref(font), ints::<11>(values)) };
+    status(get(font, values, |f| {
+        let m = f.ft_face_metrics();
+        let [a, b, c, d] = m.bbox;
+        [
+            m.ascender,
+            m.descender,
+            m.height,
+            m.max_advance_width,
+            m.max_advance_height,
+            m.underline_position,
+            m.underline_thickness,
+            a,
+            b,
+            c,
+            d,
+        ]
+        .map(i32::from)
+    }))
+}
+
+/// `sofel_font_ft_v_advance`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `advance` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_ft_v_advance(
+    font: *const SofelFont,
+    glyph: u32,
+    advance: *mut u16,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, advance) = unsafe { (font_ref(font), w(advance)) };
+    status((|| {
+        let (font, advance) = (some(font)?, some(advance)?);
+        *advance = font
+            .ft_v_advance(GlyphId(glyph))
+            .ok_or(ERROR_INVALID_GLYPH)?;
+        Ok(())
+    })())
+}
+
 // ------------------------------------------------------------ outlines
 
 /// The C pen functions as a [`Pen`].

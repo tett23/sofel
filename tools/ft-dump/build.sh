@@ -25,7 +25,7 @@ files="
   base/ftsystem.c base/ftinit.c base/ftdebug.c base/ftbase.c
   base/ftbbox.c base/ftglyph.c base/ftbitmap.c base/ftmm.c
   base/fttype1.c base/ftgasp.c base/ftbdf.c base/ftcid.c base/ftpfr.c
-  base/ftwinfnt.c
+  base/ftwinfnt.c base/ftfstype.c
   sfnt/sfnt.c truetype/truetype.c cff/cff.c cid/type1cid.c
   type1/type1.c type42/type42.c pfr/pfr.c winfonts/winfnt.c
   pcf/pcf.c bdf/bdf.c psaux/psaux.c psnames/psnames.c
