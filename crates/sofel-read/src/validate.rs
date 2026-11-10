@@ -7,8 +7,8 @@ use crate::loca::Loca;
 use crate::maxp::Maxp;
 use crate::sfnt::{Collection, Sfnt, TableRecord};
 use crate::{
-    CountWidth, Diagnostic, Kind, Tag, base, cmap, glyf, head, hhea, hmtx, loca, maxp, name, os2,
-    post, vhea, vmtx, vorg,
+    CountWidth, Diagnostic, Kind, Tag, base, cmap, gdef, glyf, gpos, gsub, head, hhea, hmtx, loca,
+    maxp, name, os2, post, vhea, vmtx, vorg,
 };
 
 /// The pseudo tag of diagnostics about the table directory.
@@ -166,6 +166,23 @@ pub fn sfnt(sfnt: &Sfnt<'_>, report: &mut dyn FnMut(Diagnostic)) {
     }
     if let Some(d) = table(sfnt, base::TAG) {
         base::validate(d, report);
+    }
+    let gdef_data = table(sfnt, gdef::TAG);
+    if let Some(d) = gdef_data {
+        gdef::validate(d, report);
+    }
+    // Lookups may only use mark glyph sets that GDEF defines.
+    let mark_sets = Some(
+        gdef_data
+            .and_then(|d| gdef::Gdef::new(d).ok())
+            .and_then(|g| g.mark_glyph_sets().ok().flatten())
+            .map_or(0, |s| u16::try_from(s.len()).unwrap_or(u16::MAX)),
+    );
+    if let Some(d) = table(sfnt, gsub::TAG) {
+        gsub::validate(d, mark_sets, report);
+    }
+    if let Some(d) = table(sfnt, gpos::TAG) {
+        gpos::validate(d, mark_sets, report);
     }
     // GLYF and LOCA replace glyf and loca when GLYF is present (ADR 0011).
     let extended = table(sfnt, glyf::TAG_WIDE).is_some();

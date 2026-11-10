@@ -311,6 +311,100 @@ pub enum Kind {
         /// The number of baseline tags.
         count: u32,
     },
+    /// Coverage glyphs or ranges that do not ascend, or ranges that
+    /// overlap; binary search may then miss covered glyphs.
+    CoverageNotSorted {
+        /// Index of the offending entry.
+        index: u32,
+    },
+    /// A Coverage glyph array repeats a glyph; binary search still finds
+    /// it, at one of its coverage indices.
+    CoverageDuplicate {
+        /// Index of the second entry.
+        index: u32,
+        /// The glyph id.
+        glyph: u32,
+    },
+    /// `startCoverageIndex` of a Coverage range is not the number of
+    /// glyphs in the ranges before it.
+    CoverageIndexMismatch {
+        /// Index of the range.
+        index: u32,
+        /// The expected value.
+        expected: u32,
+        /// The value found.
+        found: u32,
+    },
+    /// A ClassDef range starts at or before the end of the previous one.
+    ClassRangesOverlap {
+        /// Index of the offending range.
+        index: u32,
+    },
+    /// The number of entries of an array indexed by coverage index is
+    /// not the number of glyphs of its Coverage table.
+    CoverageCountMismatch {
+        /// The number of glyphs covered.
+        coverage: u32,
+        /// The number of entries.
+        count: u32,
+    },
+    /// A lookup index is not below the number of lookups.
+    LookupIndexOutOfRange {
+        /// The index.
+        index: u32,
+        /// The number of lookups.
+        count: u32,
+    },
+    /// A feature index is not below the number of features.
+    FeatureIndexOutOfRange {
+        /// The index.
+        index: u32,
+        /// The number of features.
+        count: u32,
+    },
+    /// A sequence lookup record's position is not below the length of
+    /// the input sequence.
+    SequenceIndexOutOfRange {
+        /// The position.
+        index: u32,
+        /// The length of the input sequence.
+        count: u32,
+    },
+    /// A lookup's `markFilteringSet` is not below the number of mark
+    /// glyph sets in `GDEF`.
+    MarkSetOutOfRange {
+        /// The set index.
+        index: u32,
+        /// The number of sets.
+        count: u32,
+    },
+    /// An unknown lookup type.
+    UnknownLookupType {
+        /// The value found.
+        found: u32,
+    },
+    /// An extension subtable points to a type other than that of the
+    /// lookup's first subtable.
+    ExtensionTypeMismatch {
+        /// The type of the first subtable.
+        expected: u32,
+        /// The type found.
+        found: u32,
+    },
+    /// An extension subtable points to another extension.
+    NestedExtension,
+    /// A sequence context with no input glyphs, or a ligature of no
+    /// components.
+    EmptyInputSequence,
+    /// Reserved bits of a flag field are set (lookup flags, ValueFormat).
+    ReservedBitsSet {
+        /// The value found.
+        found: u32,
+    },
+    /// Validation followed more offsets and records than the size of
+    /// the table allows (HarfBuzz rejects such a table), or found 1000
+    /// problems, and stopped.
+    WorkLimitExceeded,
 }
 
 impl Kind {
@@ -340,7 +434,20 @@ impl Kind {
             | GlyphsNotSorted { .. }
             | DuplicateGlyph { .. }
             | TagsNotSorted { .. }
-            | BaseCoordCountMismatch { .. } => Severity::Error,
+            | BaseCoordCountMismatch { .. }
+            | CoverageNotSorted { .. }
+            | CoverageIndexMismatch { .. }
+            | ClassRangesOverlap { .. }
+            | CoverageCountMismatch { .. }
+            | LookupIndexOutOfRange { .. }
+            | FeatureIndexOutOfRange { .. }
+            | SequenceIndexOutOfRange { .. }
+            | MarkSetOutOfRange { .. }
+            | UnknownLookupType { .. }
+            | ExtensionTypeMismatch { .. }
+            | NestedExtension
+            | EmptyInputSequence
+            | WorkLimitExceeded => Severity::Error,
             RecordsNotSorted { .. }
             | DuplicateTable { .. }
             | ChecksumMismatch { .. }
@@ -361,7 +468,9 @@ impl Kind {
             | FirstCharAfterLast { .. }
             | OddLength { .. }
             | DeprecatedVersion { .. }
-            | DefaultBaselineOutOfRange { .. } => Severity::Warning,
+            | DefaultBaselineOutOfRange { .. }
+            | ReservedBitsSet { .. }
+            | CoverageDuplicate { .. } => Severity::Warning,
         }
     }
 
@@ -413,6 +522,21 @@ impl Kind {
             TagsNotSorted { .. } => "tags_not_sorted",
             BaseCoordCountMismatch { .. } => "base_coord_count_mismatch",
             DefaultBaselineOutOfRange { .. } => "default_baseline_out_of_range",
+            CoverageNotSorted { .. } => "coverage_not_sorted",
+            CoverageDuplicate { .. } => "coverage_duplicate",
+            CoverageIndexMismatch { .. } => "coverage_index_mismatch",
+            ClassRangesOverlap { .. } => "class_ranges_overlap",
+            CoverageCountMismatch { .. } => "coverage_count_mismatch",
+            LookupIndexOutOfRange { .. } => "lookup_index_out_of_range",
+            FeatureIndexOutOfRange { .. } => "feature_index_out_of_range",
+            SequenceIndexOutOfRange { .. } => "sequence_index_out_of_range",
+            MarkSetOutOfRange { .. } => "mark_set_out_of_range",
+            UnknownLookupType { .. } => "unknown_lookup_type",
+            ExtensionTypeMismatch { .. } => "extension_type_mismatch",
+            NestedExtension => "nested_extension",
+            EmptyInputSequence => "empty_input_sequence",
+            ReservedBitsSet { .. } => "reserved_bits_set",
+            WorkLimitExceeded => "work_limit_exceeded",
         }
     }
 
@@ -451,7 +575,35 @@ impl Kind {
             | SelectorsNotSorted { index }
             | SubHeaderRangeInvalid { index }
             | GlyphsNotSorted { index }
-            | TagsNotSorted { index } => f("index", Uint(index)),
+            | TagsNotSorted { index }
+            | CoverageNotSorted { index }
+            | ClassRangesOverlap { index } => f("index", Uint(index)),
+            UnknownLookupType { found } | ReservedBitsSet { found } => f("found", Uint(found)),
+            CoverageIndexMismatch {
+                index,
+                expected,
+                found,
+            } => {
+                f("index", Uint(index));
+                f("expected", Uint(expected));
+                f("found", Uint(found));
+            }
+            CoverageCountMismatch { coverage, count } => {
+                f("coverage", Uint(coverage));
+                f("count", Uint(count));
+            }
+            LookupIndexOutOfRange { index, count }
+            | FeatureIndexOutOfRange { index, count }
+            | SequenceIndexOutOfRange { index, count }
+            | MarkSetOutOfRange { index, count } => {
+                f("index", Uint(index));
+                f("count", Uint(count));
+            }
+            ExtensionTypeMismatch { expected, found } => {
+                f("expected", Uint(expected));
+                f("found", Uint(found));
+            }
+            NestedExtension | EmptyInputSequence | WorkLimitExceeded => {}
             DuplicateTable { tag } => f("tag", DetailValue::Tag(tag)),
             ChecksumMismatch { stored, computed } => {
                 f("stored", Uint(stored));
@@ -521,7 +673,7 @@ impl Kind {
                 f("glyph", Uint(glyph));
                 f("index", Uint(index));
             }
-            DuplicateGlyph { index, glyph } => {
+            DuplicateGlyph { index, glyph } | CoverageDuplicate { index, glyph } => {
                 f("index", Uint(index));
                 f("glyph", Uint(glyph));
             }
@@ -702,6 +854,53 @@ impl fmt::Display for Kind {
                 f,
                 "defaultBaselineIndex {index} is not below the {count} baseline tags"
             ),
+            CoverageNotSorted { index } => write!(
+                f,
+                "coverage record {index} does not come after the previous one"
+            ),
+            CoverageDuplicate { index, glyph } => {
+                write!(f, "coverage record {index} repeats glyph id {glyph}")
+            }
+            CoverageIndexMismatch {
+                index,
+                expected,
+                found,
+            } => write!(
+                f,
+                "startCoverageIndex of range {index} is {found}, expected {expected}"
+            ),
+            ClassRangesOverlap { index } => write!(
+                f,
+                "class range {index} starts at or before the end of the previous one"
+            ),
+            CoverageCountMismatch { coverage, count } => {
+                write!(f, "{count} entries for {coverage} covered glyphs")
+            }
+            LookupIndexOutOfRange { index, count } => {
+                write!(f, "lookup index {index} is not below the {count} lookups")
+            }
+            FeatureIndexOutOfRange { index, count } => {
+                write!(f, "feature index {index} is not below the {count} features")
+            }
+            SequenceIndexOutOfRange { index, count } => write!(
+                f,
+                "sequence index {index} is not below the input length {count}"
+            ),
+            MarkSetOutOfRange { index, count } => write!(
+                f,
+                "mark filtering set {index} is not below the {count} mark glyph sets"
+            ),
+            UnknownLookupType { found } => write!(f, "unknown lookup type {found}"),
+            ExtensionTypeMismatch { expected, found } => write!(
+                f,
+                "extension subtable of type {found} in a lookup of type {expected}"
+            ),
+            NestedExtension => f.write_str("an extension subtable points to an extension"),
+            EmptyInputSequence => f.write_str("an input sequence or ligature has no glyphs"),
+            ReservedBitsSet { found } => write!(f, "reserved bits are set in {found:#06x}"),
+            WorkLimitExceeded => {
+                f.write_str("validation stopped: too many offsets for the size of the table, or too many problems")
+            }
         }
     }
 }

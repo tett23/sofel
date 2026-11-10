@@ -1,0 +1,27 @@
+# Tables that FreeType's otvalid rejects but for which sofel's validator
+# reports no Error (ADR 0020, ADR 0008), one identifier per line:
+# <font>#<face>:otvalid:<tag>. Give the reason after the identifier as a
+# comment: `<id>  # <reason>`. Remove an entry when sofel reports an Error;
+# the test fails until you do.
+harfbuzz/test/shape/data/aots/fonts/classdef1_font1.otf#0:otvalid:GSUB  # FreeType otvalid rejects glyph ids not below numGlyphs; ADR 0020 does not check glyph id ranges in layout tables (HarfBuzz reads them)
+harfbuzz/test/shape/data/aots/fonts/classdef1_font2.otf#0:otvalid:GSUB  # FreeType otvalid rejects glyph ids not below numGlyphs; ADR 0020 does not check glyph id ranges in layout tables (HarfBuzz reads them)
+harfbuzz/test/shape/data/aots/fonts/classdef1_font3.otf#0:otvalid:GSUB  # FreeType otvalid rejects glyph ids not below numGlyphs; ADR 0020 does not check glyph id ranges in layout tables (HarfBuzz reads them)
+harfbuzz/test/shape/data/aots/fonts/classdef1_font4.otf#0:otvalid:GSUB  # FreeType otvalid rejects glyph ids not below numGlyphs; ADR 0020 does not check glyph id ranges in layout tables (HarfBuzz reads them)
+harfbuzz/test/shape/data/aots/fonts/classdef2_font1.otf#0:otvalid:GSUB  # FreeType otvalid rejects glyph ids not below numGlyphs; ADR 0020 does not check glyph id ranges in layout tables (HarfBuzz reads them)
+harfbuzz/test/shape/data/aots/fonts/classdef2_font2.otf#0:otvalid:GSUB  # FreeType otvalid rejects glyph ids not below numGlyphs; ADR 0020 does not check glyph id ranges in layout tables (HarfBuzz reads them)
+harfbuzz/test/shape/data/aots/fonts/classdef2_font3.otf#0:otvalid:GSUB  # FreeType otvalid rejects glyph ids not below numGlyphs; ADR 0020 does not check glyph id ranges in layout tables (HarfBuzz reads them)
+harfbuzz/test/shape/data/aots/fonts/classdef2_font4.otf#0:otvalid:GSUB  # FreeType otvalid rejects glyph ids not below numGlyphs; ADR 0020 does not check glyph id ranges in layout tables (HarfBuzz reads them)
+harfbuzz/test/shape/data/aots/fonts/gsub1_1_modulo_f1.otf#0:otvalid:GSUB  # FreeType otvalid rejects glyph ids not below numGlyphs; ADR 0020 does not check glyph id ranges in layout tables (HarfBuzz reads them)
+harfbuzz/test/shape/data/in-house/fonts/3b791518a9ba89675df02f1eefbc9026a50648a6.ttf#0:otvalid:GSUB  # FreeType otvalid validates a null ClassDef offset of chained context format 2 as a ClassDef at the start of the subtable (otv_u_O_O_O_O_x_Onx); the offset may be null
+harfbuzz/test/shape/data/in-house/fonts/3e46c3b84c1370a06594736c7f8acebf810bbb3b.ttf#0:otvalid:GSUB  # FreeType otvalid validates a null ClassDef offset of chained context format 2 as a ClassDef at the start of the subtable (otv_u_O_O_O_O_x_Onx); the offset may be null
+harfbuzz/test/shape/data/in-house/fonts/573d3a3177c9a8646e94c8a0d7b224334340946a.ttf#0:otvalid:GSUB  # FreeType otvalid validates a null ClassDef offset of chained context format 2 as a ClassDef at the start of the subtable (otv_u_O_O_O_O_x_Onx); the offset may be null
+harfbuzz/test/shape/data/in-house/fonts/7c24183f26d60df414578a0a9f5e79ab9d32a22b.ttf#0:otvalid:GSUB  # FreeType otvalid validates a null ClassDef offset of chained context format 2 as a ClassDef at the start of the subtable (otv_u_O_O_O_O_x_Onx); the offset may be null
+harfbuzz/test/shape/data/in-house/fonts/NotoNastaliqUrdu-Regular.ttf#0:otvalid:GSUB  # FreeType otvalid validates a null ClassDef offset of chained context format 2 as a ClassDef at the start of the subtable (otv_u_O_O_O_O_x_Onx); the offset may be null
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestShapeAran.ttf#0:otvalid:GSUB  # FreeType otvalid validates a null ClassDef offset of chained context format 2 as a ClassDef at the start of the subtable (otv_u_O_O_O_O_x_Onx); the offset may be null
+harfbuzz/test/subset/data/fonts/NotoNastaliqUrdu-Bold.ttf#0:otvalid:GSUB  # FreeType otvalid validates a null ClassDef offset of chained context format 2 as a ClassDef at the start of the subtable (otv_u_O_O_O_O_x_Onx); the offset may be null
+harfbuzz/test/subset/data/fonts/NotoSansNewa-Regular.ttf#0:otvalid:GSUB  # FreeType otvalid validates a null ClassDef offset of chained context format 2 as a ClassDef at the start of the subtable (otv_u_O_O_O_O_x_Onx); the offset may be null
+harfbuzz/test/subset/data/fonts/NotoSerifMyanmar-Regular.otf#0:otvalid:GSUB  # FreeType otvalid validates a null ClassDef offset of chained context format 2 as a ClassDef at the start of the subtable (otv_u_O_O_O_O_x_Onx); the offset may be null
+harfbuzz/test/subset/data/fonts/NotoSansNewa-Regular.ttf#0:otvalid:GPOS  # FreeType otvalid validates a null ClassDef offset of chained context format 2 as a ClassDef at the start of the subtable (otv_u_O_O_O_O_x_Onx); the offset may be null
+harfbuzz/test/subset/data/fonts/NotoSerifMyanmar-Regular.otf#0:otvalid:GPOS  # FreeType otvalid validates a null ClassDef offset of chained context format 2 as a ClassDef at the start of the subtable (otv_u_O_O_O_O_x_Onx); the offset may be null
+harfbuzz/test/subset/data/fonts/bad-gsub.otf#0:otvalid:GSUB  # FreeType otvalid rejects glyph ids not below numGlyphs; ADR 0020 does not check glyph id ranges in layout tables (HarfBuzz reads them)
+harfbuzz/test/subset/data/fonts/gsub_chaining2_empty_input_classdef_f1.otf#0:otvalid:GSUB  # FreeType otvalid rejects an empty ClassDef format 1 (StartGlyph + GlyphCount - 1 underflows); an empty class array is valid
