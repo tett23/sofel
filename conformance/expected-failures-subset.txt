@@ -637,8 +637,6 @@ iftb_requirements.tests/AdobeVFPrototype.iftb_requirements.61,62,63.otf:bytes  #
 iftb_requirements.tests/AdobeVFPrototype.iftb_requirements.61,62,63.otf:validate  # stage:var
 instance_comp_glyph_empty_child.tests/RobotoMono.default.all.wght=700.ttf:bytes  # deferred:instance
 instance_comp_glyph_empty_child.tests/RobotoMono.default.all.wght=700.ttf:validate  # deferred:instance
-instance_feature_variations.tests/MPLUS1-Variable.default.30DD.wght=100.ttf:bytes  # deferred:instance
-instance_feature_variations.tests/MPLUS1-Variable.default.30DD.wght=100.ttf:validate  # deferred:instance
 instance_feature_variations.tests/MPLUS1-Variable.default.30DD.wght=400.ttf:bytes  # deferred:instance
 instance_feature_variations.tests/MPLUS1-Variable.default.30DD.wght=400.ttf:validate  # deferred:instance
 instance_no_double_free.tests/Handjet.default.all.wght=100,ELGR=1,ELSH=2.ttf:bytes  # deferred:instance
@@ -803,10 +801,6 @@ mvar_partial_instance.tests/NotoSans-VF.abc.default.all.wght=200-600,wdth=80-90,
 mvar_partial_instance.tests/NotoSans-VF.abc.default.all.wght=200-600,wdth=80-90,CTGR=20-60.iup_optimize.ttf:validate  # deferred:iup
 mvar_partial_instance.tests/NotoSans-VF.abc.default.all.wght=200-600,wdth=80-90,CTGR=20-60.ttf:bytes  # deferred:instance
 mvar_partial_instance.tests/NotoSans-VF.abc.default.all.wght=200-600,wdth=80-90,CTGR=20-60.ttf:validate  # deferred:instance
-pin_all_at_default.tests/Roboto-Variable.ABC.default.all.wght=drop,wdth=100.ttf:bytes  # stage:pin
-pin_all_at_default.tests/Roboto-Variable.ABC.default.all.wght=drop,wdth=100.ttf:validate  # stage:pin
-pin_all_at_default.tests/Roboto-Variable.ABC.default.all.wght=400,wdth=100.0.ttf:bytes  # stage:pin
-pin_all_at_default.tests/Roboto-Variable.ABC.default.all.wght=400,wdth=100.0.ttf:validate  # stage:pin
 post_apply_mvar_delta.tests/Recursive-ABC.no-layout.all.wght=500,CASL=0,CRSV=0,MONO=0,slnt=0.ttf:bytes  # deferred:instance
 post_apply_mvar_delta.tests/Recursive-ABC.no-layout.all.wght=500,CASL=0,CRSV=0,MONO=0,slnt=0.ttf:validate  # deferred:instance
 retain-num-glyphs.tests/NotoSansJP-VF.subset.retain-num-glyphs.61,63,5009.otf:bytes  # stage:var

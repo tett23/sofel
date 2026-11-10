@@ -1021,20 +1021,61 @@ fn parse_instancing_spec(arg: &str) -> Result<Option<Vec<AxisSpec>>, String> {
 }
 
 /// The input with the options that need the font applied: glyph names
-/// (`hb_font_glyph_from_string`) and `--variations`.
+/// (`hb_font_glyph_from_string`) and `--variations`
+/// (`parse_instancing_spec` with the face).
 ///
 /// # Errors
 ///
-/// For now, glyph names (ADR 0022 stage 12) and any `--variations`
-/// (stage 6) are not supported and give an error.
-pub fn resolve(options: &Options, _font: &Font<'_>) -> Result<Input, String> {
+/// HarfBuzz's message for an axis the font does not have (or `*=drop`
+/// on a font without axes) and a range with the minimum above the
+/// maximum. For now, glyph names (ADR 0022 stage 12) and any
+/// `--variations` other than pinning axes to their defaults (deferred
+/// by ADR 0022) also give an error.
+pub fn resolve(options: &Options, font: &Font<'_>) -> Result<Input, String> {
     if !options.glyph_names.is_empty() {
         return Err("glyph names are not supported yet (ADR 0022 stage 12)".to_string());
     }
-    if !options.instance.is_empty() {
-        return Err("instancing is not supported yet (ADR 0022 stage 6)".to_string());
+    options
+        .instance
+        .iter()
+        .try_fold(options.input.clone(), |input, spec| {
+            apply_axis_spec(input, spec, font)
+        })
+}
+
+/// One `--variations` spec applied to `input` as `parse_instancing_spec`
+/// does with the face.
+fn apply_axis_spec(input: Input, spec: &AxisSpec, font: &Font<'_>) -> Result<Input, String> {
+    let name = |tag: Tag| -> String { tag.0.iter().map(|&b| char::from(b)).collect() };
+    let not_in_fvar = |tag: Tag| format!("Cannot pin axis: '{}', not present in fvar", name(tag));
+    let Some(tag) = spec.tag else {
+        return input
+            .with_all_axes_pinned_to_default(font)
+            .ok_or_else(|| "Failed pinning all axes to default.".to_string());
+    };
+    let next = match spec.value {
+        AxisValue::Drop => input.with_axis_pinned_to_default(tag, font),
+        AxisValue::Range { min, default, max } => {
+            input.with_axis_range(tag, min, max, default, font)
+        }
     }
-    Ok(options.input.clone())
+    .ok_or_else(|| not_in_fvar(tag))?;
+    // Only pinning to the default is implemented; HarfBuzz's set_axis_range
+    // gives the same input for a value equal to the default.
+    let pinned = next.axis_range(tag).is_some_and(|r| {
+        let default = input
+            .with_axis_pinned_to_default(tag, font)
+            .and_then(|i| i.axis_range(tag));
+        Some(r) == default
+    });
+    if pinned {
+        Ok(next)
+    } else {
+        Err(format!(
+            "instancing '{}' other than to its default is not supported yet (deferred by ADR 0022)",
+            name(tag)
+        ))
+    }
 }
 
 const PROGRAM: &str = "sofel-subset";

@@ -7,8 +7,9 @@ use crate::loca::Loca;
 use crate::maxp::Maxp;
 use crate::sfnt::{Collection, Sfnt, TableRecord};
 use crate::{
-    CountWidth, Diagnostic, Kind, Tag, base, cbdt, cblc, cff, cmap, colr, cpal, gdef, glyf, gpos,
-    gsub, head, hhea, hmtx, loca, maxp, name, os2, post, sbix, svg, vhea, vmtx, vorg,
+    CountWidth, Diagnostic, Kind, Tag, avar, base, cbdt, cblc, cff, cmap, colr, cpal, fvar, gdef,
+    glyf, gpos, gsub, head, hhea, hmtx, loca, maxp, name, os2, post, sbix, stat, svg, vhea, vmtx,
+    vorg,
 };
 
 /// The pseudo tag of diagnostics about the table directory.
@@ -101,7 +102,8 @@ fn table<'a>(sfnt: &Sfnt<'a>, tag: Tag) -> Option<&'a [u8]> {
 /// those from `HHEA` and `MAXP` (or `maxp`), `vmtx` and `VMTX` likewise
 /// with `vhea` and `VHEA`, and `cmap` and `VORG` glyph ids against
 /// `MAXP` or `maxp`, and `CFF ` and `CFF2` with the glyph count (and,
-/// for `CFF2`, the axis count of `fvar`) (ADR 0021).
+/// for `CFF2`, the axis count of `fvar`) (ADR 0021), and `avar` with the
+/// axis count of `fvar` (ADR 0022).
 pub fn sfnt(sfnt: &Sfnt<'_>, report: &mut dyn FnMut(Diagnostic)) {
     directory(sfnt, report);
     if let Some(d) = table(sfnt, head::TAG) {
@@ -177,6 +179,19 @@ pub fn sfnt(sfnt: &Sfnt<'_>, report: &mut dyn FnMut(Diagnostic)) {
     }
     if let Some(d) = table(sfnt, base::TAG) {
         base::validate(d, report);
+    }
+    let fvar_data = table(sfnt, fvar::TAG);
+    if let Some(d) = fvar_data {
+        fvar::validate(d, report);
+    }
+    if let Some(d) = table(sfnt, avar::TAG) {
+        let axes = fvar_data
+            .and_then(|f| fvar::Fvar::new(f).ok())
+            .map(|f| u16::try_from(f.axis_count()).unwrap_or(u16::MAX));
+        avar::validate(d, axes, report);
+    }
+    if let Some(d) = table(sfnt, stat::TAG) {
+        stat::validate(d, report);
     }
     color_tables(sfnt, glyphs_wide.or(glyphs_narrow), report);
     let gdef_data = table(sfnt, gdef::TAG);

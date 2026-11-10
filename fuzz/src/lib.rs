@@ -889,8 +889,8 @@ pub fn check_deserialize(input: &[u8]) {
     }
 }
 
-/// Subsets a font with flags and a glyph set taken from the first bytes
-/// (ADR 0022): no panic, and a successful output opens and has no
+/// Subsets a font with flags, a glyph set and whether to pin every axis
+/// to its default taken from the first bytes (ADR 0022): no panic, and a successful output opens and has no
 /// validator `Error` in the tables that differ from the source's.
 pub fn check_subset(data: &[u8]) {
     use sofel_subset::{Flags, Input, SetKind};
@@ -905,9 +905,15 @@ pub fn check_subset(data: &[u8]) {
     let count = u32::from(head[4]);
     let chars = u32::from(head[5]);
     let input = Input::new()
-        .with_flags(Flags(flags))
+        .with_flags(Flags(flags & 0x7FFF))
         .map_set(SetKind::Glyphs, |s| s.add_range(first, first.saturating_add(count)))
         .map_set(SetKind::Unicodes, |s| s.add_range(0x20, 0x20 + chars));
+    // Bit 15 of the flags pins every axis to its default.
+    let input = if flags & 0x8000 != 0 {
+        input.with_all_axes_pinned_to_default(&font).unwrap_or(input)
+    } else {
+        input
+    };
     let Ok(out) = sofel_subset::subset(&font, &input) else {
         return;
     };

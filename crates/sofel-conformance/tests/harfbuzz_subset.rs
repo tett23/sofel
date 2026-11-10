@@ -98,3 +98,109 @@ fn harfbuzz_subset_tests() {
         expect::report(&problems, "expected-failures-subset.txt")
     );
 }
+
+/// Records drawing commands.
+#[derive(Default)]
+struct Record(Vec<sofel_geom::Command>);
+
+impl sofel_geom::Pen for Record {
+    fn move_to(&mut self, p: sofel_geom::Point) {
+        self.0.push(sofel_geom::Command::MoveTo(p));
+    }
+    fn line_to(&mut self, p: sofel_geom::Point) {
+        self.0.push(sofel_geom::Command::LineTo(p));
+    }
+    fn quad_to(&mut self, c: sofel_geom::Point, p: sofel_geom::Point) {
+        self.0.push(sofel_geom::Command::QuadTo(c, p));
+    }
+    fn cubic_to(&mut self, c1: sofel_geom::Point, c2: sofel_geom::Point, p: sofel_geom::Point) {
+        self.0.push(sofel_geom::Command::CubicTo(c1, c2, p));
+    }
+    fn close(&mut self) {
+        self.0.push(sofel_geom::Command::Close);
+    }
+}
+
+/// The unscaled outline of `glyph`, or the error.
+fn outline(font: &Font<'_>, glyph: u32) -> Result<Vec<sofel_geom::Command>, String> {
+    let mut pen = Record::default();
+    let mut scratch = sofel_outline::Scratch::default();
+    sofel_outline::draw(
+        font,
+        sofel_read::GlyphId(glyph),
+        sofel_outline::Scale::Unscaled,
+        &mut scratch,
+        &mut pen,
+    )
+    .map(|_| pen.0)
+    .map_err(|e| format!("{e:?}"))
+}
+
+/// ADR 0022 輪郭と送り幅の保存, for every axis pinned to its default:
+/// each glyph of every variable test font, subset with all glyphs and
+/// `NOTDEF_OUTLINE`, has the outline and the advance of the source
+/// font's default instance. Fonts whose tables this version cannot
+/// subset yet are skipped (and counted).
+#[test]
+fn pinned_outlines_and_advances() {
+    use sofel_subset::{Flags, Input, RangeSet, SetKind, SubsetError};
+    paths::require(&data(), "HarfBuzz test data").unwrap_or_else(|e| panic!("{e}"));
+    let mut fonts: Vec<_> = std::fs::read_dir(data().join("fonts"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    fonts.sort();
+    let (mut checked, mut skipped) = (0, Vec::new());
+    for path in fonts {
+        let Ok(bytes) = std::fs::read(&path) else {
+            continue;
+        };
+        let Ok(font) = Font::new(&bytes, 0) else {
+            continue;
+        };
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        let input = Input::new()
+            .with_set(SetKind::Glyphs, RangeSet::all())
+            .with_flags(Flags::NOTDEF_OUTLINE);
+        let Some(input) = input.with_all_axes_pinned_to_default(&font) else {
+            continue;
+        };
+        let out = match sofel_subset::subset(&font, &input) {
+            Ok(o) => o,
+            Err(SubsetError::Unsupported { .. }) => {
+                skipped.push(name);
+                continue;
+            }
+            Err(e) => panic!("{name}: {e}"),
+        };
+        let pinned = Font::new(&out, 0).unwrap();
+        assert_eq!(pinned.num_glyphs(), font.num_glyphs(), "{name}");
+        for g in 0..font.num_glyphs() {
+            let gid = sofel_read::GlyphId(g);
+            assert_eq!(
+                outline(&pinned, g),
+                outline(&font, g),
+                "{name}: outline of glyph {g}"
+            );
+            assert_eq!(
+                pinned.advance(gid),
+                font.advance(gid),
+                "{name}: advance of glyph {g}"
+            );
+        }
+        // The output validates when the source does.
+        if validate_errors(&bytes).is_empty() {
+            assert!(
+                validate_errors(&out).is_empty(),
+                "{name}: {:?}",
+                validate_errors(&out)
+            );
+        }
+        checked += 1;
+    }
+    eprintln!(
+        "pinned outlines: {checked} fonts checked, skipped (unsupported): {}",
+        skipped.join(" ")
+    );
+    assert!(checked > 0);
+}

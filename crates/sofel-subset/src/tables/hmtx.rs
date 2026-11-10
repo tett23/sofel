@@ -80,6 +80,28 @@ impl<'a> MetricsAccel<'a> {
         }
     }
 
+    /// `has_data`: whether the table has metrics.
+    pub fn has_data(&self) -> bool {
+        self.num_bearings != 0
+    }
+
+    /// `hmtx_accelerator_t` (or `vmtx_accelerator_t` with `vertical`):
+    /// HMTX (VMTX) when it has metrics, else hmtx (vmtx), as
+    /// `hb_dual_accelerator_t`.
+    pub fn dual(font: &Font<'a>, vertical: bool) -> MetricsAccel<'a> {
+        let (upper, lower) = if vertical {
+            (Tag::new(b"VMTX"), Tag::new(b"vmtx"))
+        } else {
+            (Tag::new(b"HMTX"), Tag::new(b"hmtx"))
+        };
+        let u = MetricsAccel::new(font, upper);
+        if u.has_data() {
+            u
+        } else {
+            MetricsAccel::new(font, lower)
+        }
+    }
+
     /// `get_leading_bearing_without_var_unscaled`.
     pub fn side_bearing(&self, g: u32) -> i32 {
         if g < self.num_long_metrics {
@@ -125,8 +147,21 @@ pub(crate) fn subset(
 ) -> Result<bool, SubsetError> {
     let (htag, wide) = header_of(tag);
     let mtx = MetricsAccel::new(font, tag);
+    let horizontal = matches!(&tag.0, b"hmtx" | b"HMTX");
+    let (map, bounds) = if horizontal {
+        (&plan.var.metrics.hmtx, &plan.var.metrics.bounds_width)
+    } else {
+        (&plan.var.metrics.vmtx, &plan.var.metrics.bounds_height)
+    };
     let max = if wide { u32::MAX } else { 0xFFFF };
-    let new_adv = |new: u32| plan.glyphs.old_gid(new).map_or(0, |o| mtx.advance(o));
+    // `get_new_gid_advance_unscaled`.
+    let new_adv = |new: u32| {
+        if map.is_empty() {
+            plan.glyphs.old_gid(new).map_or(0, |o| mtx.advance(o))
+        } else {
+            map.get(&new).map_or(0, |m| m.0)
+        }
+    };
     let mut nlm = plan.num_output_glyphs.min(max);
     let last = new_adv(nlm.wrapping_sub(1));
     while nlm > 1 && last == new_adv(nlm.saturating_sub(2)) {
@@ -139,7 +174,10 @@ pub(crate) fn subset(
             .saturating_add((total.saturating_sub(nlm) as usize).saturating_mul(2)),
     );
     for &(new, old) in &plan.glyphs.new_to_old {
-        let (adv, sb) = (mtx.advance(old), mtx.side_bearing(old));
+        let (adv, sb) = map
+            .get(&new)
+            .copied()
+            .unwrap_or_else(|| (mtx.advance(old), mtx.side_bearing(old)));
         if new < nlm {
             let at = start.saturating_add((new as usize).saturating_mul(4));
             s.set_u16(at, (adv & 0xFFFF) as u16);
@@ -170,6 +208,50 @@ pub(crate) fn subset(
             f.copy_from_slice(&((nlm & 0xFFFF) as u16).to_be_bytes());
         }
     }
+    if plan.var.instancing() {
+        update_header(&mut h, map, bounds);
+    }
     tables.insert(htag, h);
     Ok(true)
+}
+
+/// The instancing part of `subset_update_header`: the maximum advance
+/// and, from the glyphs with bounds, the minimum side bearings and the
+/// maximum extent. (The MVAR deltas and the ascender, descender and line
+/// gap from OS/2 do not change at the default location.)
+fn update_header(
+    h: &mut [u8],
+    map: &alloc::collections::BTreeMap<u32, (u32, i32)>,
+    bounds: &[u32],
+) {
+    let mut empty = true;
+    let (mut min_lsb, mut min_rsb, mut max_extent) = (0x7FFFi32, 0x7FFFi32, -0x7FFFi32);
+    let mut max_adv = 0u32;
+    for (&gid, &(adv, lsb)) in map {
+        max_adv = max_adv.max(adv);
+        let Some(&width) = bounds.get(gid as usize).filter(|&&w| w != u32::MAX) else {
+            continue;
+        };
+        empty = false;
+        // `int rsb = adv - lsb - bound_width` in unsigned arithmetic.
+        let rsb = adv
+            .wrapping_sub(lsb.cast_unsigned())
+            .wrapping_sub(width)
+            .cast_signed();
+        let extent = lsb.cast_unsigned().wrapping_add(width).cast_signed();
+        min_lsb = min_lsb.min(lsb);
+        min_rsb = min_rsb.min(rsb);
+        max_extent = max_extent.max(extent);
+    }
+    let mut put = |at: usize, v: u16| {
+        if let Some(f) = h.get_mut(at..at.saturating_add(2)) {
+            f.copy_from_slice(&v.to_be_bytes());
+        }
+    };
+    put(10, (max_adv & 0xFFFF) as u16);
+    if !empty {
+        put(12, crate::instance::lo16(min_lsb));
+        put(14, crate::instance::lo16(min_rsb));
+        put(16, crate::instance::lo16(max_extent));
+    }
 }

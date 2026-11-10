@@ -20,6 +20,7 @@ mod bits;
 mod cmap_accel;
 mod error;
 mod input;
+mod instance;
 mod layout;
 mod limits;
 mod plan;

@@ -511,11 +511,16 @@ pub(crate) fn subset(
     }
     let notdef_outline = plan.flags.has(Flags::NOTDEF_OUTLINE);
     let no_hinting = plan.flags.has(Flags::NO_HINTING);
+    let instanced = plan.var.glyf.as_ref().filter(|_| plan.var.instancing());
     let glyphs: Vec<(u32, Vec<u8>)> = plan
         .glyphs
         .new_to_old
         .iter()
-        .map(|&(new, old)| {
+        .enumerate()
+        .map(|(i, &(new, old))| {
+            if let Some(compiled) = instanced {
+                return (new, compiled.get(i).cloned().unwrap_or_default());
+            }
             let source = if old == 0 && new == 0 && !notdef_outline {
                 Glyph::new(&[], extended)
             } else {
@@ -566,6 +571,30 @@ pub(crate) fn subset(
     } else {
         return Err(SubsetError::Malformed { tag: HEAD });
     }
+    if plan.var.instancing() {
+        // `_add_head_and_set_loca_version`: the bounds and flags bit 1
+        // (x of the left side bearing point at the minimum x).
+        let m = &plan.var.metrics.head_maxp;
+        for (at, v) in [
+            (36usize, m.x_min),
+            (38, m.y_min),
+            (40, m.x_max),
+            (42, m.y_max),
+        ] {
+            if let Some(f) = head.get_mut(at..at.saturating_add(2)) {
+                f.copy_from_slice(&crate::instance::lo16(v).to_be_bytes());
+            }
+        }
+        let flags = u16_at(&head, 16).unwrap_or(0);
+        let flags = if m.all_x_min_is_lsb {
+            flags | 2
+        } else {
+            flags & !2
+        };
+        if let Some(f) = head.get_mut(16..18) {
+            f.copy_from_slice(&flags.to_be_bytes());
+        }
+    }
     tables.insert(HEAD, head);
     Ok(true)
 }
@@ -601,4 +630,746 @@ fn write_loca(plan: &Plan, sizes: impl Iterator<Item = usize>, short: bool) -> V
         last = last.saturating_add(1);
     }
     out
+}
+
+// ---------------------------------------------------------------------
+// Instancing at the default location (`compile_bytes_with_deltas`).
+
+const ARGS_ARE_XY_VALUES: u16 = 0x0002;
+const SCALED_COMPONENT_OFFSET: u16 = 0x0800;
+const UNSCALED_COMPONENT_OFFSET: u16 = 0x1000;
+const FLAG_ON_CURVE: u8 = 0x01;
+const FLAG_CUBIC: u8 = 0x80;
+
+/// `HB_MAX_GRAPH_EDGE_COUNT`.
+const MAX_GRAPH_EDGE_COUNT: u32 = 16384;
+/// `HB_GLYF_MAX_POINTS`.
+const MAX_POINTS: usize = 200_000;
+
+/// `contour_point_t`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct Pt {
+    x: f32,
+    y: f32,
+    flag: u8,
+}
+
+/// `hb_decycler_t` over the composite levels of one glyph: the
+/// tortoise of level `l` is level `l / 2`.
+#[derive(Debug, Default)]
+struct Decycler {
+    values: Vec<u32>,
+}
+
+impl Decycler {
+    fn enter(&mut self) -> usize {
+        self.values.push(0);
+        self.values.len().saturating_sub(1)
+    }
+
+    fn leave(&mut self) {
+        self.values.pop();
+    }
+
+    fn visit(&mut self, level: usize, value: u32) -> bool {
+        if let Some(v) = self.values.get_mut(level) {
+            *v = value;
+        }
+        let tortoise = level / 2;
+        tortoise == level || self.values.get(tortoise) != Some(&value)
+    }
+}
+
+/// `CompositeGlyphRecord::get_transformation`: the matrix and the
+/// offset (zero for anchored components).
+fn transformation(b: &[u8], c: &Component, extended: bool) -> ([f32; 4], Pt) {
+    let mut m = [1.0f32, 0.0, 0.0, 1.0];
+    let mut p = c.at.saturating_add(4);
+    if extended && c.flags & GID_IS_24BIT != 0 {
+        p = p.saturating_add(1);
+    }
+    let (mut tx, mut ty) = if c.flags & ARG_1_AND_2_ARE_WORDS != 0 {
+        let x = sofel_font::read::be::i16_at(b, p).map_or(0, i32::from);
+        let y = sofel_font::read::be::i16_at(b, p.saturating_add(2)).map_or(0, i32::from);
+        p = p.saturating_add(4);
+        (x, y)
+    } else {
+        let x = sofel_font::read::be::i8_at(b, p).map_or(0, i32::from);
+        let y = sofel_font::read::be::i8_at(b, p.saturating_add(1)).map_or(0, i32::from);
+        p = p.saturating_add(2);
+        (x, y)
+    };
+    if c.flags & ARGS_ARE_XY_VALUES == 0 {
+        tx = 0;
+        ty = 0;
+    }
+    let f = |i: usize| {
+        crate::instance::f2dot14_to_f32(
+            sofel_font::read::be::i16_at(b, p.saturating_add(i.saturating_mul(2))).unwrap_or(0),
+        )
+    };
+    if c.flags & WE_HAVE_A_SCALE != 0 {
+        m[0] = f(0);
+        m[3] = m[0];
+    } else if c.flags & WE_HAVE_AN_X_AND_Y_SCALE != 0 {
+        m[0] = f(0);
+        m[3] = f(1);
+    } else if c.flags & WE_HAVE_A_TWO_BY_TWO != 0 {
+        m = [f(0), f(1), f(2), f(3)];
+    }
+    let t = Pt {
+        x: sofel_geom::float::i32_to_f32(tx),
+        y: sofel_geom::float::i32_to_f32(ty),
+        flag: 0,
+    };
+    (m, t)
+}
+
+/// `CompositeGlyphRecord::get_anchor_points`.
+fn anchor_points(b: &[u8], c: &Component, extended: bool) -> (usize, usize) {
+    let mut p = c.at.saturating_add(4);
+    if extended && c.flags & GID_IS_24BIT != 0 {
+        p = p.saturating_add(1);
+    }
+    if c.flags & ARG_1_AND_2_ARE_WORDS != 0 {
+        (
+            u16_at(b, p).map_or(0, usize::from),
+            u16_at(b, p.saturating_add(2)).map_or(0, usize::from),
+        )
+    } else {
+        (
+            b.get(p).map_or(0, |&v| usize::from(v)),
+            b.get(p.saturating_add(1)).map_or(0, |&v| usize::from(v)),
+        )
+    }
+}
+
+/// `CompositeGlyphRecord::transform_points`.
+fn transform_points(points: &mut [Pt], m: [f32; 4], t: Pt, flags: u16) {
+    let transform = |points: &mut [Pt]| {
+        if m != [1.0, 0.0, 0.0, 1.0] {
+            for p in points.iter_mut() {
+                let x = p.x * m[0] + p.y * m[2];
+                p.y = p.x * m[1] + p.y * m[3];
+                p.x = x;
+            }
+        }
+    };
+    let scaled =
+        flags & (SCALED_COMPONENT_OFFSET | UNSCALED_COMPONENT_OFFSET) == SCALED_COMPONENT_OFFSET;
+    if scaled {
+        translate(points, t);
+        transform(points);
+    } else {
+        transform(points);
+        translate(points, t);
+    }
+}
+
+/// `CompositeGlyphRecord::translate`.
+fn translate(points: &mut [Pt], t: Pt) {
+    if t.x != 0.0 && t.y != 0.0 {
+        for p in points.iter_mut() {
+            p.x += t.x;
+            p.y += t.y;
+        }
+    } else if t.x != 0.0 {
+        points.iter_mut().for_each(|p| p.x += t.x);
+    } else if t.y != 0.0 {
+        points.iter_mut().for_each(|p| p.y += t.y);
+    }
+}
+
+/// `SimpleGlyph::get_contour_points`: the points of a simple glyph,
+/// appended to `out`.
+fn contour_points(g: &Glyph<'_>, out: &mut Vec<Pt>) -> bool {
+    let b = g.bytes;
+    let nc = g.contours();
+    let ends = |i: usize| u16_at(b, HEADER_SIZE.saturating_add(i.saturating_mul(2)));
+    // One more item for the instruction length.
+    if ends(nc).is_none() {
+        return false;
+    }
+    let num_points = ends(nc.saturating_sub(1)).map_or(0, |v| usize::from(v).saturating_add(1));
+    if num_points < nc {
+        return false;
+    }
+    let start = out.len();
+    out.resize(start.saturating_add(num_points), Pt::default());
+    let Some(points) = out.get_mut(start..) else {
+        return false;
+    };
+    let ins = ends(nc).map_or(0, usize::from);
+    let mut p = HEADER_SIZE
+        .saturating_add(nc.saturating_add(1).saturating_mul(2))
+        .saturating_add(ins);
+    if p >= b.len() {
+        return false;
+    }
+    // Flags.
+    let mut i = 0usize;
+    while i < num_points {
+        let Some(&raw) = b.get(p) else {
+            return false;
+        };
+        p = p.saturating_add(1);
+        let flag = if g.extended { raw } else { raw & !FLAG_CUBIC };
+        if let Some(pt) = points.get_mut(i) {
+            pt.flag = flag;
+        }
+        i = i.saturating_add(1);
+        if flag & FLAG_REPEAT != 0 {
+            let Some(&n) = b.get(p) else {
+                return false;
+            };
+            p = p.saturating_add(1);
+            let stop = i.saturating_add(usize::from(n)).min(num_points);
+            for pt in points.get_mut(i..stop).unwrap_or(&mut []) {
+                pt.flag = flag;
+            }
+            i = stop.max(i);
+        }
+    }
+    // Coordinates.
+    for (short, same, is_x) in [
+        (FLAG_X_SHORT, FLAG_X_SAME, true),
+        (FLAG_Y_SHORT, FLAG_Y_SAME, false),
+    ] {
+        let mut v = 0i32;
+        for pt in points.iter_mut() {
+            if pt.flag & short != 0 {
+                let Some(&d) = b.get(p) else {
+                    return false;
+                };
+                p = p.saturating_add(1);
+                let d = i32::from(d);
+                v = if pt.flag & same != 0 {
+                    v.wrapping_add(d)
+                } else {
+                    v.wrapping_sub(d)
+                };
+            } else if pt.flag & same == 0 {
+                let Some(d) = sofel_font::read::be::i16_at(b, p) else {
+                    return false;
+                };
+                p = p.saturating_add(2);
+                v = v.wrapping_add(i32::from(d));
+            }
+            let f = sofel_geom::float::i32_to_f32(v);
+            if is_x {
+                pt.x = f;
+            } else {
+                pt.y = f;
+            }
+        }
+    }
+    true
+}
+
+/// What `get_points` works with for one top-level glyph.
+struct PointsCx<'a, 'f> {
+    accel: &'f GlyfAccel<'a>,
+    hmtx: &'f crate::tables::hmtx::MetricsAccel<'a>,
+    vmtx: &'f crate::tables::hmtx::MetricsAccel<'a>,
+    decycler: Decycler,
+    edge_count: u32,
+    /// `head_maxp_info` when the glyph counts toward it.
+    head: Option<&'f mut crate::instance::HeadMaxp>,
+    composite_contours: Option<u32>,
+    /// The component points of the top-level composite.
+    points_with_deltas: Vec<Pt>,
+}
+
+impl PointsCx<'_, '_> {
+    /// The phantom points of `gid` (`get_points`'s "Init phantom
+    /// points").
+    fn phantoms(&self, gid: u32, g: &Glyph<'_>) -> [Pt; 4] {
+        let hdr = |at: usize| {
+            if g.bytes.len() >= HEADER_SIZE {
+                sofel_font::read::be::i16_at(g.bytes, at).map_or(0, i32::from)
+            } else {
+                0
+            }
+        };
+        let lsb = self.hmtx.side_bearing(gid);
+        let h_delta = hdr(2).wrapping_sub(lsb);
+        let tsb = self.vmtx.side_bearing(gid);
+        let v_orig = hdr(8).wrapping_add(tsb);
+        let h_adv = self.hmtx.advance(gid);
+        let v_adv = self.vmtx.advance(gid);
+        let f = sofel_geom::float::i32_to_f32;
+        let i = |v: u32| i32::try_from(v).unwrap_or(i32::MAX);
+        [
+            Pt {
+                x: f(h_delta),
+                ..Pt::default()
+            },
+            Pt {
+                x: f(i(h_adv).wrapping_add(h_delta)),
+                ..Pt::default()
+            },
+            Pt {
+                y: f(v_orig),
+                ..Pt::default()
+            },
+            Pt {
+                y: f(v_orig.wrapping_sub(i(v_adv))),
+                ..Pt::default()
+            },
+        ]
+    }
+
+    /// `Glyph::get_points` without variations, horizontal shift or
+    /// USE_MY_METRICS (as `compile_bytes_with_deltas` calls it).
+    fn get_points(
+        &mut self,
+        gid: u32,
+        g: &Glyph<'_>,
+        all: &mut Vec<Pt>,
+        comp: &mut Vec<Pt>,
+        depth: u32,
+    ) -> bool {
+        if depth > crate::limits::MAX_NESTING_LEVEL {
+            return false;
+        }
+        if self.edge_count > MAX_GRAPH_EDGE_COUNT {
+            return false;
+        }
+        self.edge_count = self.edge_count.saturating_add(1);
+        if let Some(h) = self.head.as_deref_mut() {
+            h.max_component_depth = h.max_component_depth.max(depth);
+        }
+        let old_length = comp.len();
+        let nc = u32::try_from(g.contours()).unwrap_or(0);
+        match g.kind {
+            Kind::Simple => {
+                if depth == 0
+                    && let Some(h) = self.head.as_deref_mut()
+                {
+                    h.max_contours = h.max_contours.max(nc);
+                }
+                if depth > 0
+                    && let Some(cc) = self.composite_contours.as_mut()
+                {
+                    *cc = cc.saturating_add(nc);
+                }
+                let before = all.len();
+                if !contour_points(g, all) {
+                    return false;
+                }
+                all.extend(self.phantoms(gid, g));
+                if depth == 0
+                    && let Some(h) = self.head.as_deref_mut()
+                {
+                    let n = all.len().saturating_sub(before).saturating_sub(4);
+                    h.max_points = h.max_points.max(u32::try_from(n).unwrap_or(u32::MAX));
+                }
+                true
+            }
+            Kind::Composite => {
+                for c in g.components() {
+                    comp.push(transformation(g.bytes, &c, g.extended).1);
+                }
+                comp.extend(self.phantoms(gid, g));
+                if depth == 0 {
+                    self.points_with_deltas = comp.get(old_length..).unwrap_or(&[]).to_vec();
+                }
+                let level = self.decycler.enter();
+                let mut comp_index = 0usize;
+                let mut ok = true;
+                for c in g.components() {
+                    if !self.decycler.visit(level, c.gid) {
+                        comp_index = comp_index.saturating_add(1);
+                        continue;
+                    }
+                    let old_count = all.len();
+                    let child = self.accel.glyph(c.gid, false);
+                    if !self.get_points(c.gid, &child, all, comp, depth.saturating_add(1)) {
+                        ok = false;
+                        break;
+                    }
+                    let (m, _) = transformation(g.bytes, &c, g.extended);
+                    let t = comp
+                        .get(old_length.saturating_add(comp_index))
+                        .copied()
+                        .unwrap_or_default();
+                    if let Some(cp) = all.get_mut(old_count..) {
+                        transform_points(cp, m, t, c.flags);
+                    }
+                    if c.flags & ARGS_ARE_XY_VALUES == 0 {
+                        let (p1, p2) = anchor_points(g.bytes, &c, g.extended);
+                        let n = all.len().saturating_sub(old_count);
+                        if p1 < all.len() && p2 < n {
+                            let a = all.get(p1).copied().unwrap_or_default();
+                            let b = all
+                                .get(old_count.saturating_add(p2))
+                                .copied()
+                                .unwrap_or_default();
+                            let delta = Pt {
+                                x: a.x - b.x,
+                                y: a.y - b.y,
+                                flag: 0,
+                            };
+                            if let Some(cp) = all.get_mut(old_count..) {
+                                translate(cp, delta);
+                            }
+                        }
+                    }
+                    all.truncate(all.len().saturating_sub(4));
+                    if all.len() > MAX_POINTS {
+                        ok = false;
+                        break;
+                    }
+                    comp_index = comp_index.saturating_add(1);
+                }
+                self.decycler.leave();
+                if !ok {
+                    comp.truncate(old_length);
+                    return false;
+                }
+                if depth == 0
+                    && let Some(h) = self.head.as_deref_mut()
+                {
+                    if let Some(cc) = self.composite_contours {
+                        h.max_composite_contours = h.max_composite_contours.max(cc);
+                    }
+                    let n = u32::try_from(all.len()).unwrap_or(u32::MAX);
+                    h.max_composite_points = h.max_composite_points.max(n);
+                    let e = u32::try_from(comp_index).unwrap_or(u32::MAX);
+                    h.max_component_elements = h.max_component_elements.max(e);
+                }
+                let ph: Vec<Pt> = comp
+                    .get(comp.len().saturating_sub(4)..)
+                    .unwrap_or(&[])
+                    .to_vec();
+                all.extend(ph);
+                comp.truncate(old_length);
+                true
+            }
+            Kind::Empty => {
+                all.extend(self.phantoms(gid, g));
+                comp.truncate(old_length);
+                true
+            }
+        }
+    }
+}
+
+/// `SimpleGlyph::encode_coord`.
+fn encode_coord(value: i32, flag: &mut u8, short: u8, same: u8, out: &mut Vec<u8>) {
+    if value == 0 {
+        *flag |= same;
+    } else if (-255..=255).contains(&value) {
+        *flag |= short;
+        if value > 0 {
+            *flag |= same;
+        }
+        out.push((value.unsigned_abs() & 0xFF) as u8);
+    } else {
+        out.extend_from_slice(&crate::instance::lo16(value).to_be_bytes());
+    }
+}
+
+/// `SimpleGlyph::compile_bytes_with_deltas`: the glyph after its header.
+fn compile_simple(g: &Glyph<'_>, points: &[Pt], no_hinting: bool) -> Vec<u8> {
+    if g.contours() == 0 || points.len() <= 4 {
+        return Vec::new();
+    }
+    let n = points.len().saturating_sub(4);
+    let mut flags: Vec<u8> = Vec::with_capacity(n);
+    let mut xs = Vec::with_capacity(n.saturating_mul(2));
+    let mut ys = Vec::with_capacity(n.saturating_mul(2));
+    let (mut last, mut repeat) = (255u32, 0u32);
+    let (mut px, mut py) = (0i32, 0i32);
+    for p in points.iter().take(n) {
+        let mut flag = p.flag & (FLAG_ON_CURVE | FLAG_OVERLAP_SIMPLE | FLAG_CUBIC);
+        let x = crate::instance::f64_to_i32(sofel_geom::float::hb_roundf32(p.x));
+        let y = crate::instance::f64_to_i32(sofel_geom::float::hb_roundf32(p.y));
+        encode_coord(
+            x.wrapping_sub(px),
+            &mut flag,
+            FLAG_X_SHORT,
+            FLAG_X_SAME,
+            &mut xs,
+        );
+        encode_coord(
+            y.wrapping_sub(py),
+            &mut flag,
+            FLAG_Y_SHORT,
+            FLAG_Y_SAME,
+            &mut ys,
+        );
+        // `encode_flag`.
+        if u32::from(flag) == last && repeat != 255 {
+            repeat = repeat.saturating_add(1);
+            if repeat == 1 {
+                flags.push(flag);
+            } else {
+                let len = flags.len();
+                if let Some(f) = flags.get_mut(len.saturating_sub(2)) {
+                    *f = flag | FLAG_REPEAT;
+                }
+                if let Some(f) = flags.get_mut(len.saturating_sub(1)) {
+                    *f = (repeat & 0xFF) as u8;
+                }
+            }
+        } else {
+            repeat = 0;
+            flags.push(flag);
+        }
+        px = x;
+        py = y;
+        last = u32::from(flag);
+    }
+    let before = 2usize.saturating_mul(g.contours()).saturating_add(2);
+    let mut out = Vec::new();
+    out.extend_from_slice(
+        g.bytes
+            .get(HEADER_SIZE..HEADER_SIZE.saturating_add(before))
+            .unwrap_or(&[]),
+    );
+    if !no_hinting {
+        let ins = g.simple_ins_len();
+        let at = HEADER_SIZE.saturating_add(before);
+        out.extend_from_slice(g.bytes.get(at..at.saturating_add(ins)).unwrap_or(&[]));
+    }
+    out.extend_from_slice(&flags);
+    out.extend_from_slice(&xs);
+    out.extend_from_slice(&ys);
+    out
+}
+
+/// `CompositeGlyphRecord::compile_with_point` of the record `rec`.
+fn compile_with_point(rec: &[u8], c: &Component, p: Pt, extended: bool, out: &mut Vec<u8>) {
+    let mut before = 4usize;
+    if extended && c.flags & GID_IS_24BIT != 0 {
+        before = before.saturating_add(1);
+    }
+    let x = crate::instance::f64_to_i32(sofel_geom::float::hb_roundf32(p.x));
+    let y = crate::instance::f64_to_i32(sofel_geom::float::hb_roundf32(p.y));
+    let start = out.len();
+    if c.flags & ARG_1_AND_2_ARE_WORDS != 0 {
+        out.extend_from_slice(rec);
+        let w = |v: i32| crate::instance::lo16(v).to_be_bytes();
+        if let Some(s) = out
+            .get_mut(start.saturating_add(before)..start.saturating_add(before).saturating_add(4))
+        {
+            s.copy_from_slice(&[w(x), w(y)].concat());
+        }
+    } else if (-128..=127).contains(&x) && (-128..=127).contains(&y) {
+        out.extend_from_slice(rec);
+        if let Some(s) = out
+            .get_mut(start.saturating_add(before)..start.saturating_add(before).saturating_add(2))
+        {
+            s.copy_from_slice(&[crate::instance::lo8(x), crate::instance::lo8(y)]);
+        }
+    } else {
+        out.extend_from_slice(rec.get(..before).unwrap_or(&[]));
+        if let Some(s) = out.get_mut(start..start.saturating_add(2)) {
+            s.copy_from_slice(&(c.flags | ARG_1_AND_2_ARE_WORDS).to_be_bytes());
+        }
+        out.extend_from_slice(&crate::instance::lo16(x).to_be_bytes());
+        out.extend_from_slice(&crate::instance::lo16(y).to_be_bytes());
+        out.extend_from_slice(rec.get(before.saturating_add(2)..).unwrap_or(&[]));
+    }
+}
+
+/// `CompositeGlyph::compile_bytes_with_deltas`: the glyph after its
+/// header, from `source` (the bytes to copy, without instructions with
+/// `NO_HINTING`). `None` when a component has no point.
+fn compile_composite(g: &Glyph<'_>, source: &[u8], points: &[Pt]) -> Option<Vec<u8>> {
+    let nc = if g.bytes.len() >= HEADER_SIZE {
+        sofel_font::read::be::i16_at(g.bytes, 0).unwrap_or(0)
+    } else {
+        0
+    };
+    if source.len() <= HEADER_SIZE || nc != -1 {
+        return Some(Vec::new());
+    }
+    let mut out = Vec::with_capacity(source.len());
+    let mut comp_len = 0usize;
+    for (i, c) in components_of(source, g.extended).iter().enumerate() {
+        if i >= points.len().saturating_sub(4) {
+            return None;
+        }
+        let rec = source.get(c.at..c.at.saturating_add(c.size)).unwrap_or(&[]);
+        if c.flags & ARGS_ARE_XY_VALUES == 0 {
+            out.extend_from_slice(rec);
+        } else {
+            compile_with_point(
+                rec,
+                c,
+                points.get(i).copied().unwrap_or_default(),
+                g.extended,
+                &mut out,
+            );
+        }
+        comp_len = comp_len.saturating_add(c.size);
+    }
+    let src_len = source.len().saturating_sub(HEADER_SIZE);
+    if src_len > comp_len {
+        let at = HEADER_SIZE.saturating_add(comp_len);
+        out.extend_from_slice(source.get(at..).unwrap_or(&[]));
+    }
+    Some(out)
+}
+
+/// The glyphs of the plan compiled at the default location
+/// (`_populate_subset_glyphs` with an instancing font) and the metrics
+/// they give; `None` when a glyph cannot be read (HarfBuzz then fails
+/// the subset).
+pub(crate) fn instance(
+    plan_glyphs: &[(u32, u32)],
+    flags: Flags,
+    num_output_glyphs: u32,
+    font: &Font<'_>,
+) -> Option<(Vec<Vec<u8>>, crate::instance::Metrics)> {
+    let accel = GlyfAccel::new(font);
+    let hmtx = crate::tables::hmtx::MetricsAccel::dual(font, false);
+    let vmtx = crate::tables::hmtx::MetricsAccel::dual(font, true);
+    let notdef_outline = flags.has(Flags::NOTDEF_OUTLINE);
+    let no_hinting = flags.has(Flags::NO_HINTING);
+    let mut m = crate::instance::Metrics {
+        bounds_width: alloc::vec![u32::MAX; num_output_glyphs as usize],
+        bounds_height: alloc::vec![u32::MAX; num_output_glyphs as usize],
+        ..crate::instance::Metrics::default()
+    };
+    let mut glyphs = Vec::with_capacity(plan_glyphs.len());
+    for &(new, old) in plan_glyphs {
+        let g = accel.glyph(old, true);
+        let source: Vec<u8> = if no_hinting {
+            let (a, b) = g.drop_hints_bytes();
+            [a, b].concat()
+        } else {
+            g.bytes.to_vec()
+        };
+        let notdef = old == 0 && !notdef_outline;
+        let counts = g.kind != Kind::Empty && !notdef;
+        let mut head = m.head_maxp;
+        let mut cx = PointsCx {
+            accel: &accel,
+            hmtx: &hmtx,
+            vmtx: &vmtx,
+            decycler: Decycler::default(),
+            edge_count: 0,
+            head: counts.then_some(&mut head),
+            composite_contours: counts.then_some(0),
+            points_with_deltas: Vec::new(),
+        };
+        let mut all = Vec::new();
+        let mut comp = Vec::new();
+        if !cx.get_points(old, &g, &mut all, &mut comp, 0) {
+            return None;
+        }
+        let pwd = core::mem::take(&mut cx.points_with_deltas);
+        drop(cx);
+        m.head_maxp = head;
+        let kind = if notdef { Kind::Empty } else { g.kind };
+        let mut start: Vec<u8> = Vec::new();
+        let end = match kind {
+            Kind::Composite => compile_composite(&g, &source, &pwd)?,
+            Kind::Simple => compile_simple(&g, &all, no_hinting),
+            Kind::Empty => {
+                let nc0 = g.bytes.len() >= HEADER_SIZE
+                    && g.contours() == 0
+                    && sofel_font::read::be::i16_at(g.bytes, 0) == Some(0);
+                if !no_hinting && nc0 {
+                    let ins = g.simple_ins_len();
+                    if ins != 0 {
+                        let len = g.ins_len_at().saturating_add(2).saturating_add(ins);
+                        start = g.bytes.get(..len).unwrap_or(g.bytes).to_vec();
+                    }
+                }
+                Vec::new()
+            }
+        };
+        // `compile_header_bytes`.
+        let (mut x_min, mut x_max, mut y_min, mut y_max) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+        if all.len() > 4 {
+            let pts = all.get(..all.len().saturating_sub(4)).unwrap_or(&[]);
+            if let Some(first) = pts.first() {
+                x_min = first.x;
+                x_max = first.x;
+                y_min = first.y;
+                y_max = first.y;
+            }
+            for p in pts.iter().skip(1) {
+                x_min = if x_min <= p.x { x_min } else { p.x };
+                x_max = if x_max >= p.x { x_max } else { p.x };
+                y_min = if y_min <= p.y { y_min } else { p.y };
+                y_max = if y_max >= p.y { y_max } else { p.y };
+            }
+        }
+        let r = |v: f32| {
+            let c =
+                crate::instance::clamp_f64(sofel_geom::float::hb_roundf32(v), -32768.0, 32767.0);
+            crate::instance::f64_to_i32(c)
+        };
+        let (rx0, rx1, ry0, ry1) = (r(x_min), r(x_max), r(y_min), r(y_max));
+        update_mtx(&mut m, new, kind, (rx0, rx1, ry0, ry1), &all);
+        if kind != Kind::Empty {
+            let h = &mut m.head_maxp;
+            h.x_min = h.x_min.min(rx0);
+            h.y_min = h.y_min.min(ry0);
+            h.x_max = h.x_max.max(rx1);
+            h.y_max = h.y_max.max(ry1);
+        }
+        if kind != Kind::Empty && all.len() >= 4 {
+            start = Vec::with_capacity(HEADER_SIZE);
+            start.extend_from_slice(g.bytes.get(..2).unwrap_or(&[0, 0]));
+            for v in [rx0, ry0, rx1, ry1] {
+                start.extend_from_slice(&crate::instance::lo16(v).to_be_bytes());
+            }
+        }
+        start.extend_from_slice(&end);
+        glyphs.push(start);
+    }
+    m.head_maxp.settle();
+    Some((glyphs, m))
+}
+
+/// `Glyph::update_mtx`.
+fn update_mtx(
+    m: &mut crate::instance::Metrics,
+    new: u32,
+    kind: Kind,
+    (x_min, x_max, y_min, y_max): (i32, i32, i32, i32),
+    all: &[Pt],
+) {
+    if kind != Kind::Empty {
+        if let Some(w) = m.bounds_width.get_mut(new as usize) {
+            *w = x_max.wrapping_sub(x_min).cast_unsigned();
+        }
+        if let Some(h) = m.bounds_height.get_mut(new as usize) {
+            *h = y_max.wrapping_sub(y_min).cast_unsigned();
+        }
+    }
+    let len = all.len();
+    let at = |i: usize| all.get(len.saturating_sub(i)).copied().unwrap_or_default();
+    let (left, right, top, bottom) = (at(4).x, at(3).x, at(2).y, at(1).y);
+    let round = |v: f32| crate::instance::f64_to_i32(sofel_geom::float::hb_roundf32(v));
+    let hori = round(right - left).max(0);
+    let lsb = round(sofel_geom::float::i32_to_f32(x_min) - left);
+    m.hmtx.insert(new, (hori.unsigned_abs(), lsb));
+    if kind != Kind::Empty && lsb != x_min {
+        m.head_maxp.all_x_min_is_lsb = false;
+    }
+    let vert = round(top - bottom).max(0);
+    let tsb = round(top - sofel_geom::float::i32_to_f32(y_max));
+    m.vmtx.insert(new, (vert.unsigned_abs(), tsb));
+}
+
+/// The table (glyf or GLYF) whose subsetting instances the outlines:
+/// the one `glyf::subset` writes, when it is subset and its format is
+/// known.
+pub(crate) fn instanced_tag(plan: &Plan, font: &Font<'_>) -> Option<Tag> {
+    let extended = font.table(GLYF_WIDE).is_some_and(|g| !g.is_empty())
+        && font.table(LOCA_WIDE).is_some_and(|l| !l.is_empty());
+    let (loc, data_format) = head_formats(font);
+    if !(loc <= 1 && data_format <= 1) {
+        return None;
+    }
+    [GLYF, GLYF_WIDE]
+        .into_iter()
+        .find(|&t| plan.subsets_table(font, t) && extended == (t == GLYF_WIDE))
 }

@@ -523,9 +523,53 @@ fn resolve_stubs() {
         resolve(&ok(&["--glyphs=a"]), &font).unwrap_err(),
         "glyph names are not supported yet (ADR 0022 stage 12)"
     );
+    // A font without fvar has no axes to pin.
     assert_eq!(
         resolve(&ok(&["--variations=*=drop"]), &font).unwrap_err(),
-        "instancing is not supported yet (ADR 0022 stage 6)"
+        "Failed pinning all axes to default."
+    );
+    assert_eq!(
+        resolve(&ok(&["--variations=wght=drop"]), &font).unwrap_err(),
+        "Cannot pin axis: 'wght', not present in fvar"
+    );
+}
+
+#[test]
+fn resolve_variations() {
+    let Some(hb) = harfbuzz() else { return };
+    let data = std::fs::read(hb.join("test/subset/data/fonts/Roboto-Variable.ABC.ttf")).unwrap();
+    let font = sofel_font::Font::new(&data, 0).unwrap();
+    let point = |v: f32| sofel_subset::AxisRange {
+        min: v,
+        default: v,
+        max: v,
+    };
+    let axes = |a: &[&str]| resolve(&ok(a), &font).map(|i| i.axes().clone());
+    let both = BTreeMap::from([
+        (Tag::new(b"wght"), point(400.0)),
+        (Tag::new(b"wdth"), point(100.0)),
+    ]);
+    // `drop`, `*=drop` and values equal to the default all pin to the
+    // default (pin_all_at_default.tests).
+    assert_eq!(axes(&["--variations=wght=drop,wdth=100"]).unwrap(), both);
+    assert_eq!(axes(&["--instance=wght=400,wdth=100.0"]).unwrap(), both);
+    assert_eq!(axes(&["--variations=*=drop"]).unwrap(), both);
+    assert_eq!(
+        axes(&["--variations=wght=400:400:400"]).unwrap(),
+        BTreeMap::from([(Tag::new(b"wght"), point(400.0))])
+    );
+    // Other locations and ranges wait for the instancing ADR.
+    for v in ["wght=300", "wght=300:600", "wdth=drop,wght=500"] {
+        let e = axes(&[&format!("--variations={v}")]).unwrap_err();
+        assert!(e.contains("deferred by ADR 0022"), "{v}: {e}");
+    }
+    assert_eq!(
+        axes(&["--variations=opsz=drop"]).unwrap_err(),
+        "Cannot pin axis: 'opsz', not present in fvar"
+    );
+    assert_eq!(
+        axes(&["--variations=wght=500:400"]).unwrap_err(),
+        "Cannot pin axis: 'wght', not present in fvar"
     );
 }
 

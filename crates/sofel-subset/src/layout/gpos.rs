@@ -39,6 +39,13 @@ fn effective_format(format: u16, values: D<'_>, strip_hints: bool, strip_empty: 
     out
 }
 
+/// `ValueFormat::get_effective_format` when instancing: the device
+/// flags dropped (their variation indices map to no variations, or are
+/// not mapped) and nothing else.
+fn instanced_format(format: u16) -> u16 {
+    format & 0x0F
+}
+
 /// Whether the hints of value records are stripped: with `NO_HINTING`
 /// (a variable font keeps them only with a GDEF variation store, which
 /// this version does not subset).
@@ -135,11 +142,14 @@ fn anchor(s: &mut Sub<'_, '_>, a: D<'_>) -> bool {
             s.s.extend(a.slice(0, 6));
             let x = a.off16(6);
             let y = a.off16(8);
-            let is_var = |d: D<'_>| !d.is_null() && d.u16(4) == 0x8000;
-            if is_var(x) || is_var(y) {
+            let is_var = super::gdef::is_variation_device;
+            // A variation index must be in `layout_variation_idx_delta_map`;
+            // when pinned it maps to no variations (and no delta).
+            if (is_var(x) || is_var(y)) && !s.p.layout.varidx_pinned {
                 return false;
             }
-            let no_downgrade = !x.is_null() || !y.is_null();
+            let hinting = |d: D<'_>| !d.is_null() && !is_var(d);
+            let no_downgrade = hinting(x) || hinting(y);
             if !no_downgrade {
                 s.s.set_u16(0, 1);
                 return true;
@@ -206,7 +216,9 @@ pub(crate) fn single(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
             let values = st.at(6);
             let mut inter = BitSet::new();
             cov.intersect_set(gs, &mut inter);
-            let new_format = if strip_hints(s) {
+            let new_format = if s.p.var.instancing() {
+                instanced_format(vf)
+            } else if strip_hints(s) {
                 effective_format(vf, values, true, true)
             } else {
                 vf
@@ -230,7 +242,9 @@ pub(crate) fn single(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
                     )
                 })
                 .collect();
-            let new_format = if strip_hints(s) {
+            let new_format = if s.p.var.instancing() {
+                it.iter().fold(0, |f, _| f | instanced_format(vf))
+            } else if strip_hints(s) {
                 it.iter()
                     .fold(0, |f, (_, v)| f | effective_format(vf, *v, true, true))
             } else {
@@ -306,12 +320,18 @@ fn pair1(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
         .map(|(i, g)| (g, st.off16(10usize.saturating_add(i.saturating_mul(2)))))
         .collect();
     let mut new_vf = vf;
-    if strip_hints(s) {
+    let instancing = s.p.var.instancing();
+    if instancing || strip_hints(s) {
         let (mut f1, mut f2) = (0u16, 0u16);
         for &(_, ps) in &sets {
             for j in 0..usize::from(ps.u16(0)) {
                 let r = ps.at(2usize.saturating_add(j.saturating_mul(record)));
                 if !gs.has(u32::from(r.u16(0))) {
+                    continue;
+                }
+                if instancing {
+                    f1 |= instanced_format(vf[0]);
+                    f2 |= instanced_format(vf[1]);
                     continue;
                 }
                 f1 |= effective_format(vf[0], r.at(2), true, true);
@@ -322,7 +342,7 @@ fn pair1(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
                     true,
                 );
             }
-            if f1 == vf[0] && f2 == vf[1] {
+            if !instancing && f1 == vf[0] && f2 == vf[1] {
                 break;
             }
         }
@@ -409,16 +429,22 @@ fn pair2(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
     let rows: Vec<u32> = (0..class1_count).filter(|c| map1.contains_key(c)).collect();
     let cols: Vec<u32> = (0..class2_count).filter(|c| map2.contains_key(c)).collect();
     let (mut f1, mut f2) = (vf1, vf2);
-    if strip_hints(s) {
+    let instancing = s.p.var.instancing();
+    if instancing || strip_hints(s) {
         f1 = 0;
         f2 = 0;
         for &c1 in &rows {
             for &c2 in &cols {
                 let v = value_at(c1, c2);
+                if instancing {
+                    f1 |= instanced_format(vf1);
+                    f2 |= instanced_format(vf2);
+                    continue;
+                }
                 f1 |= effective_format(vf1, v, true, true);
                 f2 |= effective_format(vf2, v.at(len1.saturating_mul(2)), true, true);
             }
-            if f1 == vf1 && f2 == vf2 {
+            if !instancing && f1 == vf1 && f2 == vf2 {
                 break;
             }
         }

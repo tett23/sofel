@@ -558,8 +558,20 @@ impl<'p, 's> Sub<'p, 's> {
             let tag = t.feature_tag(i);
             self.s.u32(tag);
             let at = self.s.u16(0);
-            let f = t.feature(i);
-            if self.serialize_subset_opt(at, 2, f, |s| s.feature(f, Some(tag))) {
+            // A substitute from the applied FeatureVariations record is
+            // written in place of the feature (`Record::subset` with
+            // `f_sub`).
+            let ok = match self.lp().substitutes.get(&n32(i)) {
+                Some(&off) => {
+                    let f = t.d.at(off);
+                    self.serialize_subset(at, 2, |s| s.feature(f, Some(tag)))
+                }
+                None => {
+                    let f = t.feature(i);
+                    self.serialize_subset_opt(at, 2, f, |s| s.feature(f, Some(tag)))
+                }
+            };
+            if ok {
                 self.bump_u16(count_at, 1);
             } else {
                 self.s.revert(snap);
@@ -775,7 +787,9 @@ impl<'p, 's> Sub<'p, 's> {
             let snap = self.s.snapshot();
             let at = self.s.u32(0);
             let fv = t.feature_variations();
-            let ret = self.serialize_subset_opt(at, 4, fv, |s| s.feature_variations(t, fv));
+            // Pinning every axis drops the feature variations.
+            let ret = !self.p.var.all_axes_pinned()
+                && self.serialize_subset_opt(at, 4, fv, |s| s.feature_variations(t, fv));
             if !ret {
                 self.s.revert(snap);
                 self.s.set_u32(0, 0x0001_0000);
