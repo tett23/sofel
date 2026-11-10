@@ -16,8 +16,28 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Classify changed paths
+        id: classify
+        env:
+          CI_EVENT_NAME: ${{ github.event_name }}
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CI_BEFORE_SHA: ${{ github.event.before }}
+          CI_HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: bash scripts/ci-docs-only.sh
+
   # docs/adr/0007
   rust:
+    needs: changes
+    if: needs.changes.outputs.docs_only == 'false'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -44,6 +64,21 @@ jobs:
       - name: Check crate dependencies
         run: sh scripts/check-deps.sh
       # docs/adr/0008
+      - name: Install adr-guard for protection regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=v0.10.0
+          archive="adr-guard-$version-x86_64-unknown-linux-gnu.tar.gz"
+          url="https://github.com/tett23/adr-guard/releases/download/$version"
+          dir="$RUNNER_TEMP/adr-guard-test"
+          mkdir -p "$dir"
+          cd "$dir"
+          curl -fsSLO "$url/$archive"
+          curl -fsSLO "$url/SHA256SUMS"
+          grep -F " $archive" SHA256SUMS | sha256sum -c -
+          tar -xzf "$archive"
+          printf '%s\n' "$dir/${archive%.tar.gz}" >> "$GITHUB_PATH"
       - name: Test scripts
         run: sh scripts/run-tests.sh
       # docs/adr/0015: the C ABI. The sanitizers of ubuntu-latest need
@@ -60,6 +95,8 @@ jobs:
 
   # docs/adr/0005, docs/adr/0008
   conformance:
+    needs: changes
+    if: needs.changes.outputs.docs_only == 'false'
     strategy:
       fail-fast: false
       matrix:
@@ -154,6 +191,8 @@ jobs:
 
   # docs/adr/0004, docs/adr/0007
   wasm:
+    needs: changes
+    if: needs.changes.outputs.docs_only == 'false'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -206,6 +245,8 @@ jobs:
 
   # docs/adr/0007
   fuzz:
+    needs: changes
+    if: needs.changes.outputs.docs_only == 'false'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -226,6 +267,8 @@ jobs:
   # docs/adr/0013: build the benchmarks natively and for wasm, and check
   # their results against FreeType and HarfBuzz once (no timing).
   bench:
+    needs: changes
+    if: needs.changes.outputs.docs_only == 'false'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -271,6 +314,8 @@ jobs:
   # docs/adr/0015: the C tests of the C ABI on wasm32-wasip1, built with
   # wasi-sdk like the benchmarks' C libraries.
   capi-wasm:
+    needs: changes
+    if: needs.changes.outputs.docs_only == 'false'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -316,3 +361,24 @@ jobs:
           head: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           allow-status: true
           allow-links: true
+
+  ci-result:
+    if: always()
+    needs: [changes, adr, rust, conformance, wasm, fuzz, bench, capi-wasm]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check all CI results
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          ADR_RESULT: ${{ needs.adr.result }}
+          DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
+          RUST_RESULT: ${{ needs.rust.result }}
+          CONFORMANCE_RESULT: ${{ needs.conformance.result }}
+          WASM_RESULT: ${{ needs.wasm.result }}
+          FUZZ_RESULT: ${{ needs.fuzz.result }}
+          BENCH_RESULT: ${{ needs.bench.result }}
+          CAPI_WASM_RESULT: ${{ needs['capi-wasm'].result }}
+        run: bash scripts/ci-result.sh
