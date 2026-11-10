@@ -180,6 +180,11 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 輪郭、ラスタライズ（各形式）、埋め込みビットマップ、sfnt以外の形式は、FreeTypeの出力を書き出す `tools/ft-dump/` と比べる。輪郭は完全一致を求める。sfnt以外の形式のテストのフォントは、その形式を実装するまえに、ADRで `testdata.lock` に加える。
 - カラーグリフ、SVGとPDF、GPU、WOFF、検証器、展開器の基準は、それぞれのADRで定める。
 - Unicodeの文字の性質は、CIで `scripts/fetch-ucd.sh` と生成の道具を走らせ、生成したファイルがコミットしたものと一致することを `git diff --exit-code` で確かめる（[ADR 0019](adr/0019-unicode-character-data.md)）。Vertical_Orientationは、`VerticalOrientation.txt` を生成の道具とは別の読み取りで読み、全文字の値の一致を確かめる。
+- Unicodeの文字の性質は、`hb-dump` のファイルを取らない形と比べる（[ADR 0019](adr/0019-unicode-character-data.md)）。期待する失敗の一覧は持たず、1つでも違えば失敗とする。項目は `unicode:<項目>` である。
+  - `hb-dump --unicode` は、0〜0x10FFFFと、0x110000、0x7FFFFFFF、0xFFFFFFFFのすべてについて、`hb_unicode_general_category`、`hb_unicode_combining_class`、`hb_unicode_script`、`hb_unicode_mirroring`、`hb_unicode_decompose`、Extended_Pictographic（`_hb_unicode_is_emoji_Extended_Pictographic`）、indicの分類と位置、USEの分類、アラビア文字の結合の型を1文字1行で書く。続けて、2文字の分解の1つ目の文字（と0、ハングルのL、LVの音節）と2つ目の文字（と0、ハングルのV、T）の直積の組について `hb_unicode_compose` を書く。項目は `general_category`、`combining_class`、`script`、`mirroring`、`decompose`、`extended_pictographic`、`compose`。
+  - `hb-dump --arabic-pua` は、0x0000〜0xFFFFについて `_hb_arabic_pua_simp_map` と `_hb_arabic_pua_trad_map` を書く。`sofel-font` の生成した表のファイルを適合テストのクレートに取りこんで比べる（項目 `arabic_pua_simp`、`arabic_pua_trad`）。
+  - `hb-dump --vowel-constraints FILE` は、HarfBuzzの `src/ms-use/IndicShapingInvalidCluster.txt` の列の1つ目の文字の文字体系ごとに、その文字体系の列に現れる文字の長さ1〜3の全列について、`_hb_preprocess_text_vowel_constraints` の後の文字の列を書く。
+  - indicの分類と位置、USEの分類、結合の型、母音の組は、まだ比べない。比べる相手の表は `sofel-shape` に置くもので（[ADR 0020](adr/0020-shaping-foundation.md)、[ADR 0024](adr/0024-complex-shapers.md)）、そのクレートとともに比べる。
 - 適合テストは `cargo test -p sofel-conformance` で走らせる。期待する失敗の一覧に無い失敗と、一覧にあるテストの成功は、ともにテストの失敗とする。
 
 ## 性能の計測
