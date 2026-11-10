@@ -1,0 +1,125 @@
+//! The font as shaping queries it: HarfBuzz's `hb_font_t` with the `ot`
+//! font functions, at a [`Scale`].
+//!
+//! Ported from HarfBuzz 15.1.0 `src/hb-font.hh` and `src/hb-ot-font.cc`,
+//! MIT; see THIRD_PARTY_NOTICES.md.
+
+use sofel_font::read::GlyphId;
+use sofel_font::{Font, GlyphExtents};
+
+use crate::scale::Scale;
+
+/// A font with its scale and a source of glyph boxes in font units.
+pub(crate) struct ShapeFont<'f, 'a> {
+    pub(crate) font: &'f Font<'a>,
+    pub(crate) scale: Scale,
+    x_multf: f32,
+    y_multf: f32,
+    extents: &'f dyn Fn(GlyphId) -> Option<GlyphExtents>,
+}
+
+/// `(float) v` for an `i32`.
+#[allow(clippy::cast_precision_loss)]
+pub(crate) fn i32_to_f32(v: i32) -> f32 {
+    v as f32
+}
+
+/// C's `floor` for `f64`.
+fn floor(v: f64) -> f64 {
+    if v.is_nan() || v.abs() >= 4_503_599_627_370_496.0 {
+        return v;
+    }
+    // |v| < 2^52: exact.
+    #[allow(clippy::cast_possible_truncation)]
+    let i = v as i64;
+    #[allow(clippy::cast_precision_loss)]
+    let t = i as f64;
+    if t > v { t - 1.0 } else { t }
+}
+
+/// HarfBuzz's `roundf` (`floor ((double) v + .5)`) cast to
+/// `hb_position_t`, clamped.
+pub(crate) fn round_to_i32(v: f32) -> i32 {
+    let r = floor(f64::from(v) + 0.5);
+    if r.is_nan() {
+        return 0;
+    }
+    let c = r.clamp(f64::from(i32::MIN), f64::from(i32::MAX));
+    // Clamped to the i32 range.
+    #[allow(clippy::cast_possible_truncation)]
+    let i = c as i32;
+    i
+}
+
+impl<'f, 'a> ShapeFont<'f, 'a> {
+    pub(crate) fn new(
+        font: &'f Font<'a>,
+        scale: Scale,
+        extents: &'f dyn Fn(GlyphId) -> Option<GlyphExtents>,
+    ) -> ShapeFont<'f, 'a> {
+        let upem = f32::from(font.hb_units_per_em());
+        ShapeFont {
+            font,
+            scale,
+            x_multf: i32_to_f32(scale.scale.x_scale()) / upem,
+            y_multf: i32_to_f32(scale.scale.y_scale()) / upem,
+            extents,
+        }
+    }
+
+    /// `x_scale`.
+    pub(crate) fn x_scale(&self) -> i32 {
+        self.scale.scale.x_scale()
+    }
+    /// `y_scale`.
+    pub(crate) fn y_scale(&self) -> i32 {
+        self.scale.scale.y_scale()
+    }
+
+    /// `get_nominal_glyph`.
+    pub(crate) fn nominal_glyph(&self, c: u32) -> Option<u32> {
+        self.font.nominal_glyph(c).map(|g| g.0)
+    }
+    /// `has_glyph`.
+    pub(crate) fn has_glyph(&self, c: u32) -> bool {
+        self.font.nominal_glyph(c).is_some()
+    }
+    /// `get_variation_glyph`.
+    pub(crate) fn variation_glyph(&self, c: u32, selector: u32) -> Option<u32> {
+        self.font.variation_glyph(c, selector).map(|g| g.0)
+    }
+    /// `get_glyph_h_advance`.
+    pub(crate) fn h_advance(&self, glyph: u32) -> i32 {
+        self.scale.scale.h_advance(self.font, GlyphId(glyph))
+    }
+    /// `get_glyph_v_advance`.
+    pub(crate) fn v_advance(&self, glyph: u32) -> i32 {
+        self.scale.scale.v_advance(self.font, GlyphId(glyph))
+    }
+    /// `get_glyph_v_origin`.
+    pub(crate) fn v_origin(&self, glyph: u32) -> (i32, i32) {
+        self.scale
+            .scale
+            .v_origin(self.font, GlyphId(glyph), |g| (self.extents)(g))
+    }
+    /// `get_glyph_extents`, scaled.
+    pub(crate) fn glyph_extents(&self, glyph: u32) -> Option<GlyphExtents> {
+        (self.extents)(GlyphId(glyph)).map(|e| self.scale.scale.scale_glyph_extents(e))
+    }
+    /// `em_scale_x`.
+    pub(crate) fn em_scale_x(&self, v: i16) -> i32 {
+        self.scale.scale.em_scale_x(i32::from(v))
+    }
+    /// `em_scale_y`.
+    pub(crate) fn em_scale_y(&self, v: i16) -> i32 {
+        self.scale.scale.em_scale_y(i32::from(v))
+    }
+    /// `em_fscale_x`.
+    pub(crate) fn em_fscale_x(&self, v: i16) -> f32 {
+        f32::from(v) * self.x_multf
+    }
+    /// `em_fscale_y`.
+    pub(crate) fn em_fscale_y(&self, v: i16) -> f32 {
+        f32::from(v) * self.y_multf
+    }
+}
