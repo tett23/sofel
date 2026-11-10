@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use sofel_conformance::compare::{Item, compare};
-use sofel_conformance::dump::{parse_ft_dump, sofel_faces};
+use sofel_conformance::dump::{add_font_values, parse_ft_dump, sofel_faces};
 use sofel_conformance::{expect, paths};
 
 const LIST: &str = "expected-failures-freetype.txt";
@@ -60,7 +60,15 @@ fn items_for(font: &Path, testdata: &Path, ft_dump: &Path) -> Vec<Item> {
             .find(|f| f.index == i && !f.advances.is_empty())
             .and_then(|f| f.num_glyphs)
     };
-    let ours = sofel_faces(&bytes, &glyphs_for);
+    let mut ours = sofel_faces(&bytes, &glyphs_for);
+    for o in ours.iter_mut().filter(|o| o.error.is_none()) {
+        if let (Ok(font), Some(f)) = (
+            sofel_font::Font::new(&bytes, o.index),
+            ft.iter().find(|f| f.index == o.index),
+        ) {
+            add_font_values(o, &font, f);
+        }
+    }
     compare(&id, &ft, &ours)
 }
 

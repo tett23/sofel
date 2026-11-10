@@ -545,6 +545,180 @@ int32_t sofel_scale_metrics_position_with_fallback(const sofel_scale_t *scale,
                                                    const sofel_font_t *font, uint32_t tag,
                                                    int32_t *position);
 
+/* -------------------------------------------------------------- names */
+
+/*
+ * The number of names HarfBuzz lists: the best record for each name id
+ * and language (ADR 0016).
+ *
+ * Rust: sofel_font::Font::names
+ * HarfBuzz: hb_ot_name_list_names
+ * FreeType: none
+ */
+int32_t sofel_font_name_count(const sofel_font_t *font, size_t *count);
+
+/*
+ * Name `index` of that list: its name id, and its language as a BCP 47
+ * tag (not NUL-terminated) in lang[0..*len]. SOFEL_ERROR_NOT_FOUND past
+ * the list.
+ *
+ * Rust: sofel_font::Font::names, sofel_font::Language::write, sofel_font::Language::len
+ * HarfBuzz: hb_ot_name_list_names, hb_language_to_string
+ * FreeType: none
+ */
+int32_t sofel_font_name_entry(const sofel_font_t *font, size_t index, uint16_t *name_id,
+                              char *lang, size_t capacity, size_t *len);
+
+/*
+ * A name in UTF-8, as hb_ot_name_get_utf8 writes it: as much as fits in
+ * text[0..capacity] before a terminating 0; *written is the units written
+ * before the 0, *total the units of the whole name (0 when there is no
+ * such name). `lang` is a BCP 47 tag of `lang_len` bytes; with a length
+ * of 0 (and `lang` NULL or not) English is used, as HarfBuzz does for
+ * HB_LANGUAGE_INVALID.
+ *
+ * Rust: sofel_font::Font::name_utf8, sofel_font::Font::name_entry, sofel_font::Language::new
+ * HarfBuzz: hb_ot_name_get_utf8
+ * FreeType: none
+ */
+int32_t sofel_font_name_utf8(const sofel_font_t *font, uint16_t name_id, const char *lang,
+                             size_t lang_len, char *text, size_t capacity, size_t *written,
+                             size_t *total);
+
+/*
+ * Rust: sofel_font::Font::name_utf16
+ * HarfBuzz: hb_ot_name_get_utf16
+ * FreeType: none
+ */
+int32_t sofel_font_name_utf16(const sofel_font_t *font, uint16_t name_id, const char *lang,
+                              size_t lang_len, uint16_t *text, size_t capacity, size_t *written,
+                              size_t *total);
+
+/*
+ * Rust: sofel_font::Font::name_utf32
+ * HarfBuzz: hb_ot_name_get_utf32
+ * FreeType: none
+ */
+int32_t sofel_font_name_utf32(const sofel_font_t *font, uint16_t name_id, const char *lang,
+                              size_t lang_len, uint32_t *text, size_t capacity, size_t *written,
+                              size_t *total);
+
+/*
+ * The number of name records FreeType keeps.
+ *
+ * Rust: sofel_font::Font::sfnt_name_count
+ * HarfBuzz: none
+ * FreeType: FT_Get_Sfnt_Name_Count
+ */
+int32_t sofel_font_sfnt_name_count(const sofel_font_t *font, size_t *count);
+
+/*
+ * Record `index` of those, raw: ids[0..3] are the platform, encoding,
+ * language and name ids; *string points into the font's data.
+ *
+ * Rust: sofel_font::Font::sfnt_name
+ * HarfBuzz: none
+ * FreeType: FT_Get_Sfnt_Name
+ */
+int32_t sofel_font_sfnt_name(const sofel_font_t *font, size_t index, uint16_t ids[4],
+                             const uint8_t **string, size_t *len);
+
+/*
+ * The PostScript name as FreeType finds it (not NUL-terminated).
+ * SOFEL_ERROR_NOT_FOUND when there is none.
+ *
+ * Rust: sofel_font::Font::postscript_name
+ * HarfBuzz: none
+ * FreeType: FT_Get_Postscript_Name
+ */
+int32_t sofel_font_postscript_name(const sofel_font_t *font, char *name, size_t capacity,
+                                   size_t *len);
+
+/*
+ * The name of a glyph as HarfBuzz gives it from post; *name points into
+ * the font's data or static memory. SOFEL_ERROR_NOT_FOUND without one.
+ *
+ * Rust: sofel_font::Font::glyph_name, sofel_font::GlyphNames::glyph_name
+ * HarfBuzz: hb_font_get_glyph_name
+ * FreeType: none
+ */
+int32_t sofel_font_glyph_name(const sofel_font_t *font, uint32_t glyph, const uint8_t **name,
+                              size_t *len);
+
+/*
+ * The name of a glyph as FreeType gives it for sfnt fonts.
+ *
+ * Rust: sofel_font::Font::ft_glyph_name, sofel_font::GlyphNames::ft_glyph_name
+ * HarfBuzz: none
+ * FreeType: FT_Get_Glyph_Name
+ */
+int32_t sofel_font_ft_glyph_name(const sofel_font_t *font, uint32_t glyph, const uint8_t **name,
+                                 size_t *len);
+
+/* An index of a font's glyph names. Immutable; the font must outlive it. */
+typedef struct sofel_glyph_names_t sofel_glyph_names_t;
+
+/*
+ * Builds the index; NULL on failure, with the reason in *error.
+ *
+ * Rust: sofel_font::Font::glyph_names, sofel_font::Font::glyph_names_len, sofel_font::Font::glyph_names_from
+ * HarfBuzz: none (built on the first hb_font_get_glyph_from_name)
+ * FreeType: none
+ */
+sofel_glyph_names_t *sofel_glyph_names_create(const sofel_font_t *font, int32_t *error);
+
+/*
+ * Frees an index. NULL does nothing.
+ *
+ * Rust: none
+ * HarfBuzz: none
+ * FreeType: none
+ */
+void sofel_glyph_names_destroy(sofel_glyph_names_t *names);
+
+/*
+ * The glyph with a name, as HarfBuzz finds it from post.
+ * SOFEL_ERROR_NOT_FOUND without one.
+ *
+ * Rust: sofel_font::GlyphNames::glyph_from_name
+ * HarfBuzz: hb_font_get_glyph_from_name
+ * FreeType: none
+ */
+int32_t sofel_glyph_names_glyph_from_name(const sofel_glyph_names_t *names, const char *name,
+                                          size_t len, uint32_t *glyph);
+
+/*
+ * The first glyph with a name, as FreeType finds it.
+ * SOFEL_ERROR_NOT_FOUND without one (FreeType returns 0).
+ *
+ * Rust: sofel_font::GlyphNames::ft_glyph_from_name
+ * HarfBuzz: none
+ * FreeType: FT_Get_Name_Index
+ */
+int32_t sofel_glyph_names_ft_glyph_from_name(const sofel_glyph_names_t *names, const char *name,
+                                             size_t len, uint32_t *glyph);
+
+/*
+ * FreeType's FT_Face values in values[0..10]: ascender, descender,
+ * height, max_advance_width, max_advance_height, underline_position,
+ * underline_thickness, bbox xMin, yMin, xMax, yMax.
+ *
+ * Rust: sofel_font::Font::ft_face_metrics
+ * HarfBuzz: none
+ * FreeType: the FT_Face fields
+ */
+int32_t sofel_font_ft_face_metrics(const sofel_font_t *font, int32_t values[11]);
+
+/*
+ * The vertical advance as FreeType gives it (positive).
+ * SOFEL_ERROR_INVALID_GLYPH for glyph ids not below the glyph count.
+ *
+ * Rust: sofel_font::Font::ft_v_advance
+ * HarfBuzz: none
+ * FreeType: FT_Get_Advance (FT_LOAD_VERTICAL_LAYOUT | FT_LOAD_NO_SCALE)
+ */
+int32_t sofel_font_ft_v_advance(const sofel_font_t *font, uint32_t glyph, uint16_t *advance);
+
 /* ----------------------------------------------------------- outlines */
 
 /*

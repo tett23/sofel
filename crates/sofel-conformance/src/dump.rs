@@ -22,6 +22,20 @@ pub struct Face {
     pub charmaps: Vec<Charmap>,
     /// `(glyph, advance)`; `None` when sofel could not read it.
     pub advances: Vec<(u32, Option<i64>)>,
+    /// ADR 0016: `FT_Get_FSType_Flags`.
+    pub fs_type: Option<u32>,
+    /// `FT_Get_Postscript_Name`, as hex (`-` for none).
+    pub ps_name: Option<String>,
+    /// The `FT_Face` values.
+    pub face_metrics: Vec<i64>,
+    /// `FT_Get_Sfnt_Name`: `(platform, encoding, language, name, hex)`.
+    pub sfnt_names: Vec<(u32, u32, u32, u32, String)>,
+    /// `(glyph, vertical advance)`.
+    pub v_advances: Vec<(u32, i64)>,
+    /// `(glyph, error, hex)`.
+    pub glyph_names: Vec<(u32, i64, String)>,
+    /// `(glyph, FT_Get_Name_Index of its name)`.
+    pub name_indices: Vec<(u32, u32)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -94,6 +108,34 @@ pub fn parse_ft_dump(text: &str) -> Result<Vec<Face>, String> {
             "advance" => face
                 .advances
                 .push((num(words.next(), line)?, Some(num(words.next(), line)?))),
+            "fs_type" => face.fs_type = Some(num(words.next(), line)?),
+            "ps_name" => face.ps_name = Some(words.next().unwrap_or("-").to_string()),
+            "face_metrics" => {
+                face.face_metrics = words
+                    .map(|w| w.parse().map_err(|_| format!("bad line: {line}")))
+                    .collect::<Result<_, _>>()?;
+            }
+            "sfnt_name" => {
+                let _i: u32 = num(words.next(), line)?;
+                face.sfnt_names.push((
+                    num(words.next(), line)?,
+                    num(words.next(), line)?,
+                    num(words.next(), line)?,
+                    num(words.next(), line)?,
+                    words.next().unwrap_or("-").to_string(),
+                ));
+            }
+            "v_advance" => face
+                .v_advances
+                .push((num(words.next(), line)?, num(words.next(), line)?)),
+            "glyph_name" => face.glyph_names.push((
+                num(words.next(), line)?,
+                num(words.next(), line)?,
+                words.next().unwrap_or("-").to_string(),
+            )),
+            "name_index" => face
+                .name_indices
+                .push((num(words.next(), line)?, num(words.next(), line)?)),
             "end" | "" => {}
             other => return Err(format!("unknown line kind {other}: {line}")),
         }
@@ -242,7 +284,82 @@ fn sofel_face(s: &Sfnt<'_>, index: u32, list_glyphs: Option<u32>) -> Face {
         maxp: maxp_fields,
         charmaps,
         advances,
+        ..Face::default()
     }
+}
+
+/// Hex of bytes, `-` for none.
+pub fn hex(b: &[u8]) -> String {
+    if b.is_empty() {
+        return "-".to_string();
+    }
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+/// Fills the ADR 0016 values of `face` from sofel-font, for the glyphs
+/// FreeType lists.
+pub fn add_font_values(face: &mut Face, font: &sofel_font::Font<'_>, ft: &Face) {
+    face.fs_type = Some(u32::from(font.fs_type()));
+    let mut buf = [0u8; 256];
+    face.ps_name = Some(match font.postscript_name(&mut buf) {
+        Some(n) => hex(&buf[..n.min(buf.len())]),
+        None => "-".to_string(),
+    });
+    let m = font.ft_face_metrics();
+    face.face_metrics = [
+        m.ascender,
+        m.descender,
+        m.height,
+        m.max_advance_width,
+        m.max_advance_height,
+        m.underline_position,
+        m.underline_thickness,
+    ]
+    .iter()
+    .chain(m.bbox.iter())
+    .map(|&v| i64::from(v))
+    .collect();
+    face.sfnt_names = (0..font.sfnt_name_count())
+        .filter_map(|i| font.sfnt_name(i))
+        .map(|r| {
+            (
+                u32::from(r.platform_id),
+                u32::from(r.encoding_id),
+                u32::from(r.language_id),
+                u32::from(r.name_id),
+                hex(r.string),
+            )
+        })
+        .collect();
+    face.v_advances = ft
+        .v_advances
+        .iter()
+        .map(|&(g, _)| (g, font.ft_v_advance(GlyphId(g)).map_or(-1, i64::from)))
+        .collect();
+    let mut index = vec![0u32; font.glyph_names_len()];
+    let names = font.glyph_names(&mut index);
+    face.glyph_names = ft
+        .glyph_names
+        .iter()
+        .map(|&(g, _, _)| {
+            let name = names.as_ref().and_then(|n| n.ft_glyph_name(GlyphId(g)));
+            match name {
+                Some(n) => (g, 0, hex(n.split(|&b| b == 0).next().unwrap_or_default())),
+                None => (g, -1, "-".to_string()),
+            }
+        })
+        .collect();
+    face.name_indices = ft
+        .name_indices
+        .iter()
+        .map(|&(g, _)| {
+            let name = names.as_ref().and_then(|n| n.ft_glyph_name(GlyphId(g)));
+            let idx = name
+                .and_then(|n| names.as_ref()?.ft_glyph_from_name(n))
+                .map_or(0, |g| g.0);
+            (g, idx)
+        })
+        .collect();
 }
 
 fn charmaps(data: &[u8], num_glyphs: Option<u32>) -> Vec<Charmap> {

@@ -31,3 +31,5 @@ sofel_font::HbScale::x_scale Returns the scale C passed to sofel_scale_create.
 sofel_font::HbScale::y_scale Returns the scale C passed to sofel_scale_create.
 sofel_font::HbScale::em_scalef_x Takes a float; the C ABI uses fixed-width integers only (ADR 0015).
 sofel_font::HbScale::em_scalef_y Takes a float; the C ABI uses fixed-width integers only (ADR 0015).
+sofel_font::Language::bytes An iterator over the tag; C gets the tag as a string from sofel_font_name_entry.
+sofel_font::Language::is_empty C gets the tag's length from sofel_font_name_entry.

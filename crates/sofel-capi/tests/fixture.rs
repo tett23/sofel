@@ -178,9 +178,162 @@ fn metrics_tables() -> Vec<(&'static [u8; 4], Vec<u8>)> {
     tables.push((b"OS/2", os2(Os2Spec::default())));
     tables.push((b"vhea", hhea(n)));
     tables.push((b"vmtx", hmtx(&long, &[])));
-    tables.push((b"post", post_header(0x0003_0000).done()));
+    tables.push((
+        b"post",
+        post2(&[0, 36, 258, 259, 258, 3, 300], &["alpha", "beta"]),
+    ));
+    let ps = utf16be("Sofel-Test");
+    let records: Vec<NameRec<'_>> = vec![
+        (1, 0, 0, 1, b"MacFamily"),
+        (3, 1, 0x409, 1, &[0, b'F', 0, b'a', 0xD8, 0x3D, 0xDE, 0x00]),
+        (3, 1, 0x40C, 1, &[0, b'F', 0, b'r']),
+        (3, 1, 0x409, 6, &ps),
+    ];
+    tables.push((b"name", name(0, &records, &[])));
     tables.sort_by_key(|(t, _)| **t);
     tables
+}
+
+/// The name cases of ADR 0016.
+fn name_cases(out: &mut String, font: &Font<'_>) {
+    let mut ps = [0u8; 128];
+    let n = font.postscript_name(&mut ps).unwrap();
+    writeln!(
+        out,
+        "#define FIXTURE_PS_NAME \"{}\"",
+        String::from_utf8_lossy(&ps[..n])
+    )
+    .unwrap();
+    let rows: Vec<String> = font
+        .names()
+        .map(|e| {
+            let mut b = [0u8; 16];
+            let n = e.language.write(&mut b);
+            format!(
+                "{{{}, \"{}\"}}",
+                e.name_id,
+                String::from_utf8_lossy(&b[..n])
+            )
+        })
+        .collect();
+    writeln!(
+        out,
+        "static const struct {{ uint16_t id; const char *lang; }} name_list[] = {{{}}};",
+        rows.join(", ")
+    )
+    .unwrap();
+    let mut rows = Vec::new();
+    for (id, lang) in [
+        (1u16, None),
+        (1, Some(&b"fr"[..])),
+        (1, Some(&b"en-GB"[..])),
+        (6, None),
+        (9, None),
+    ] {
+        for cap in [16usize, 3] {
+            let mut b8 = vec![0u8; cap];
+            let n8 = font.name_utf8(id, lang, &mut b8);
+            let mut b16 = vec![0u16; cap];
+            let n16 = font.name_utf16(id, lang, &mut b16);
+            let mut b32 = vec![0u32; cap];
+            let n32 = font.name_utf32(id, lang, &mut b32);
+            let units = |v: Vec<String>| {
+                if v.is_empty() {
+                    "0".to_string()
+                } else {
+                    v.join(", ")
+                }
+            };
+            rows.push(format!(
+                "{{{id}, \"{}\", {cap}, {{{}, {}, {}, {}, {}, {}}}, {{{}}}, {{{}}}, {{{}}}}}",
+                lang.map_or(String::new(), |l| String::from_utf8_lossy(l).into_owned()),
+                n8.written,
+                n8.total,
+                n16.written,
+                n16.total,
+                n32.written,
+                n32.total,
+                units(b8[..n8.written].iter().map(|v| v.to_string()).collect()),
+                units(b16[..n16.written].iter().map(|v| v.to_string()).collect()),
+                units(b32[..n32.written].iter().map(|v| v.to_string()).collect()),
+            ));
+        }
+    }
+    writeln!(
+        out,
+        "static const struct name_case name_cases[] = {{{}}};",
+        rows.join(", ")
+    )
+    .unwrap();
+    let rows: Vec<String> = (0..font.sfnt_name_count())
+        .map(|i| {
+            let r = font.sfnt_name(i).unwrap();
+            format!(
+                "{{{{{}, {}, {}, {}}}, {}}}",
+                r.platform_id,
+                r.encoding_id,
+                r.language_id,
+                r.name_id,
+                r.string.len()
+            )
+        })
+        .collect();
+    writeln!(
+        out,
+        "static const struct {{ uint16_t ids[4]; size_t len; }} sfnt_names[] = {{{}}};",
+        rows.join(", ")
+    )
+    .unwrap();
+    let mut buf = vec![0u32; font.glyph_names_len()];
+    let index = font.glyph_names(&mut buf).unwrap();
+    let rows: Vec<String> = (0..font.num_glyphs() + 2)
+        .map(|g| {
+            let g = GlyphId(g);
+            let s = |n: Option<&[u8]>| match n {
+                Some(n) => format!("\"{}\"", String::from_utf8_lossy(n)),
+                None => "NULL".to_string(),
+            };
+            let hb = font.glyph_name(g);
+            let ft = font.ft_glyph_name(g);
+            let back = |n: Option<&[u8]>, ft: bool| {
+                n.and_then(|n| {
+                    if ft {
+                        index.ft_glyph_from_name(n)
+                    } else {
+                        index.glyph_from_name(n)
+                    }
+                })
+                .map_or(-1, |g| i64::from(g.0))
+            };
+            format!(
+                "{{{}, {}, {}, {}, {}, {}}}",
+                g.0,
+                s(hb),
+                s(ft),
+                back(hb, false),
+                back(ft, true),
+                font.ft_v_advance(g).map_or(-1, i64::from)
+            )
+        })
+        .collect();
+    writeln!(
+        out,
+        "static const struct glyph_name_case glyph_names[] = {{{}}};",
+        rows.join(", ")
+    )
+    .unwrap();
+    let m = font.ft_face_metrics();
+    let mut v = vec![
+        m.ascender,
+        m.descender,
+        m.height,
+        m.max_advance_width,
+        m.max_advance_height,
+        m.underline_position,
+        m.underline_thickness,
+    ];
+    v.extend(m.bbox);
+    ints(out, "int32_t", "ft_face_metrics", &v);
 }
 
 fn ext4(e: GlyphExtents) -> [i32; 4] {
@@ -414,6 +567,10 @@ fn generate() -> String {
          \x20 int32_t extents_status; int32_t extents[4]; };\n\
          struct metric_case { uint32_t tag; int32_t status; int32_t value; int32_t fallback; };\n\
          struct os2_case { int32_t field; int32_t status; int64_t value; };\n\
+         struct name_case { uint16_t id; const char *lang; size_t cap; size_t n[6];\n\
+         \x20 uint8_t utf8[16]; uint16_t utf16[16]; uint32_t utf32[16]; };\n\
+         struct glyph_name_case { uint32_t glyph; const char *hb; const char *ft;\n\
+         \x20 int64_t hb_back; int64_t ft_back; int64_t ft_v_advance; };\n\
          struct diagnostic_case { int64_t font; uint32_t table; uint32_t offset; int32_t severity;\n\
          \x20 const char *kind; const char *message; const char *details; };\n\
          struct open_case { const uint8_t *data; size_t len; uint32_t index; int32_t status; };\n\
@@ -808,6 +965,7 @@ fn generate() -> String {
     )
     .unwrap();
     metrics_cases(&mut out, "unscaled", &mfont, HbScale::unscaled(&mfont));
+    name_cases(&mut out, &mfont);
     let scale = HbScale::for_font(&mfont, 768, -1536);
     metrics_cases(&mut out, "scaled", &mfont, scale);
     let ems: Vec<String> = [-1000, -3, 0, 3, 501, 1000]

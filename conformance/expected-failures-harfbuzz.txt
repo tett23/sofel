@@ -2,438 +2,869 @@
 # ADR 0016), one identifier per line: <font>#<face>:hb:<item>.
 # Give the reason after the identifier as a comment: `<id>  # <reason>`.
 # Remove an entry when it passes; the test fails until you do.
-# sofel-font gives glyph boxes from glyf only; the boxes of CFF and CFF2
-# come with ADR 0021, those of color glyphs (COLR, CBDT, sbix, which
-# HarfBuzz looks at before glyf) with ADR 0023.
+# sofel-font gives glyph boxes and names from glyf and post only. The
+# boxes of CFF and CFF2 glyphs and the CFF glyph names come with ADR 0021,
+# the boxes of color glyphs (COLR, CBDT, sbix, which HarfBuzz looks at
+# before glyf) with ADR 0023.
 harfbuzz/test/shape/data/aots/fonts/classdef1_font1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/classdef1_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/classdef1_font1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/classdef1_font1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/classdef1_font2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/classdef1_font2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/classdef1_font2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/classdef1_font2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/classdef1_font3.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/classdef1_font3.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/classdef1_font3.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/classdef1_font3.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/classdef1_font4.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/classdef1_font4.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/classdef1_font4.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/classdef1_font4.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/classdef2_font1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/classdef2_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/classdef2_font1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/classdef2_font1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/classdef2_font2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/classdef2_font2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/classdef2_font2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/classdef2_font2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/classdef2_font3.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/classdef2_font3.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/classdef2_font3.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/classdef2_font3.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/classdef2_font4.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/classdef2_font4.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/classdef2_font4.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/classdef2_font4.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/cmap0_font1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap0_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap0_font1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/cmap0_font1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/cmap10_font1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap10_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap10_font1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/cmap10_font1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/cmap10_font2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap10_font2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap10_font2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/cmap10_font2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/cmap12_font1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap12_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap12_font1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/cmap12_font1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/cmap14_font1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap14_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap14_font1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/cmap14_font1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/cmap2_font1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap2_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap2_font1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/cmap2_font1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/cmap4_font1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap4_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap4_font1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/cmap4_font1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/cmap4_font2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap4_font2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap4_font2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/cmap4_font2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/cmap4_font3.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap4_font3.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap4_font3.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/cmap4_font3.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/cmap4_font4.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap4_font4.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap4_font4.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/cmap4_font4.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/cmap6_font1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap6_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap6_font1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/cmap6_font1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/cmap6_font2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap6_font2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap6_font2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/cmap6_font2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/cmap8_font1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap8_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap8_font1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/cmap8_font1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/cmap_composition_font1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap_composition_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap_composition_font1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/cmap_composition_font1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/cmap_subtableselection_font1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap_subtableselection_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap_subtableselection_font1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/cmap_subtableselection_font1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/cmap_subtableselection_font2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap_subtableselection_font2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap_subtableselection_font2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/cmap_subtableselection_font2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/cmap_subtableselection_font3.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap_subtableselection_font3.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap_subtableselection_font3.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/cmap_subtableselection_font3.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/cmap_subtableselection_font4.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap_subtableselection_font4.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap_subtableselection_font4.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/cmap_subtableselection_font4.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/cmap_subtableselection_font5.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap_subtableselection_font5.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap_subtableselection_font5.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/cmap_subtableselection_font5.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos1_1_lookupflag_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos1_1_lookupflag_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos1_1_lookupflag_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos1_1_lookupflag_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos1_1_simple_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos1_1_simple_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos1_1_simple_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos1_1_simple_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos1_1_simple_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos1_1_simple_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos1_1_simple_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos1_1_simple_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos1_1_simple_f3.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos1_1_simple_f3.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos1_1_simple_f3.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos1_1_simple_f3.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos1_1_simple_f4.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos1_1_simple_f4.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos1_1_simple_f4.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos1_1_simple_f4.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos1_2_font1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos1_2_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos1_2_font1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos1_2_font1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos1_2_font2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos1_2_font2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos1_2_font2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos1_2_font2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos2_1_font6.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos2_1_font6.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos2_1_font6.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos2_1_font6.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos2_1_font7.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos2_1_font7.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos2_1_font7.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos2_1_font7.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos2_1_lookupflag_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos2_1_lookupflag_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos2_1_lookupflag_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos2_1_lookupflag_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos2_1_lookupflag_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos2_1_lookupflag_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos2_1_lookupflag_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos2_1_lookupflag_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos2_1_next_glyph_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos2_1_next_glyph_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos2_1_next_glyph_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos2_1_next_glyph_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos2_1_next_glyph_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos2_1_next_glyph_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos2_1_next_glyph_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos2_1_next_glyph_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos2_1_simple_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos2_1_simple_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos2_1_simple_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos2_1_simple_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos2_2_font1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos2_2_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos2_2_font1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos2_2_font1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos2_2_font2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos2_2_font2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos2_2_font2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos2_2_font2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos2_2_font3.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos2_2_font3.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos2_2_font3.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos2_2_font3.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos2_2_font4.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos2_2_font4.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos2_2_font4.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos2_2_font4.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos2_2_font5.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos2_2_font5.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos2_2_font5.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos2_2_font5.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos3_font1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos3_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos3_font1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos3_font1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos3_font2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos3_font2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos3_font2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos3_font2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos3_font3.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos3_font3.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos3_font3.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos3_font3.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos4_lookupflag_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos4_lookupflag_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos4_lookupflag_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos4_lookupflag_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos4_lookupflag_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos4_lookupflag_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos4_lookupflag_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos4_lookupflag_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos4_multiple_anchors_1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos4_multiple_anchors_1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos4_multiple_anchors_1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos4_multiple_anchors_1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos4_simple_1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos4_simple_1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos4_simple_1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos4_simple_1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos5_font1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos5_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos5_font1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos5_font1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos6_font1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos6_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos6_font1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos6_font1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos7_1_font1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos7_1_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos7_1_font1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos7_1_font1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos9_font1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos9_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos9_font1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos9_font1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos9_font2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos9_font2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos9_font2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos9_font2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_boundary_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_boundary_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_boundary_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_boundary_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_boundary_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_boundary_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_boundary_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_boundary_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_boundary_f3.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_boundary_f3.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_boundary_f3.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_boundary_f3.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_boundary_f4.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_boundary_f4.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_boundary_f4.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_boundary_f4.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_lookupflag_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_lookupflag_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_lookupflag_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_lookupflag_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_multiple_subrules_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_multiple_subrules_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_multiple_subrules_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_multiple_subrules_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_multiple_subrules_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_multiple_subrules_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_multiple_subrules_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_multiple_subrules_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_next_glyph_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_next_glyph_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_next_glyph_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_next_glyph_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_simple_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_simple_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_simple_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_simple_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_simple_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_simple_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_simple_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_simple_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_successive_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_successive_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_successive_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining1_successive_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_boundary_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_boundary_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_boundary_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_boundary_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_boundary_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_boundary_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_boundary_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_boundary_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_boundary_f3.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_boundary_f3.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_boundary_f3.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_boundary_f3.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_boundary_f4.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_boundary_f4.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_boundary_f4.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_boundary_f4.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_lookupflag_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_lookupflag_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_lookupflag_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_lookupflag_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_multiple_subrules_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_multiple_subrules_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_multiple_subrules_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_multiple_subrules_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_multiple_subrules_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_multiple_subrules_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_multiple_subrules_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_multiple_subrules_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_next_glyph_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_next_glyph_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_next_glyph_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_next_glyph_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_simple_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_simple_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_simple_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_simple_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_simple_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_simple_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_simple_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_simple_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_successive_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_successive_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_successive_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining2_successive_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_boundary_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_boundary_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_boundary_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_boundary_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_boundary_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_boundary_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_boundary_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_boundary_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_boundary_f3.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_boundary_f3.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_boundary_f3.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_boundary_f3.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_boundary_f4.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_boundary_f4.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_boundary_f4.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_boundary_f4.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_lookupflag_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_lookupflag_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_lookupflag_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_lookupflag_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_next_glyph_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_next_glyph_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_next_glyph_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_next_glyph_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_simple_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_simple_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_simple_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_simple_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_simple_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_simple_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_simple_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_simple_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_successive_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_successive_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_successive_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_chaining3_successive_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context1_boundary_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context1_boundary_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context1_boundary_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context1_boundary_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context1_boundary_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context1_boundary_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context1_boundary_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context1_boundary_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context1_expansion_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context1_expansion_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context1_expansion_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context1_expansion_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context1_lookupflag_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context1_lookupflag_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context1_lookupflag_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context1_lookupflag_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context1_lookupflag_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context1_lookupflag_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context1_lookupflag_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context1_lookupflag_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context1_multiple_subrules_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context1_multiple_subrules_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context1_multiple_subrules_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context1_multiple_subrules_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context1_multiple_subrules_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context1_multiple_subrules_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context1_multiple_subrules_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context1_multiple_subrules_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context1_next_glyph_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context1_next_glyph_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context1_next_glyph_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context1_next_glyph_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context1_simple_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context1_simple_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context1_simple_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context1_simple_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context1_simple_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context1_simple_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context1_simple_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context1_simple_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context1_successive_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context1_successive_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context1_successive_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context1_successive_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context2_boundary_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context2_boundary_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context2_boundary_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context2_boundary_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context2_boundary_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context2_boundary_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context2_boundary_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context2_boundary_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context2_classes_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context2_classes_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context2_classes_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context2_classes_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context2_classes_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context2_classes_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context2_classes_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context2_classes_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context2_expansion_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context2_expansion_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context2_expansion_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context2_expansion_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context2_lookupflag_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context2_lookupflag_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context2_lookupflag_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context2_lookupflag_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context2_lookupflag_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context2_lookupflag_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context2_lookupflag_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context2_lookupflag_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context2_multiple_subrules_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context2_multiple_subrules_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context2_multiple_subrules_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context2_multiple_subrules_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context2_multiple_subrules_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context2_multiple_subrules_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context2_multiple_subrules_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context2_multiple_subrules_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context2_next_glyph_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context2_next_glyph_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context2_next_glyph_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context2_next_glyph_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context2_simple_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context2_simple_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context2_simple_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context2_simple_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context2_simple_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context2_simple_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context2_simple_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context2_simple_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context2_successive_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context2_successive_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context2_successive_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context2_successive_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context3_boundary_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context3_boundary_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context3_boundary_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context3_boundary_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context3_boundary_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context3_boundary_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context3_boundary_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context3_boundary_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context3_lookupflag_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context3_lookupflag_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context3_lookupflag_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context3_lookupflag_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context3_lookupflag_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context3_lookupflag_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context3_lookupflag_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context3_lookupflag_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context3_next_glyph_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context3_next_glyph_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context3_next_glyph_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context3_next_glyph_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context3_simple_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context3_simple_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context3_simple_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context3_simple_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gpos_context3_successive_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context3_successive_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gpos_context3_successive_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gpos_context3_successive_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub1_1_lookupflag_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub1_1_lookupflag_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub1_1_lookupflag_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub1_1_lookupflag_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub1_1_modulo_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub1_1_modulo_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub1_1_modulo_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub1_1_modulo_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub1_1_simple_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub1_1_simple_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub1_1_simple_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub1_1_simple_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub1_2_lookupflag_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub1_2_lookupflag_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub1_2_lookupflag_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub1_2_lookupflag_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub1_2_simple_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub1_2_simple_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub1_2_simple_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub1_2_simple_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub2_1_lookupflag_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub2_1_lookupflag_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub2_1_lookupflag_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub2_1_lookupflag_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub2_1_multiple_sequences_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub2_1_multiple_sequences_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub2_1_multiple_sequences_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub2_1_multiple_sequences_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub2_1_simple_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub2_1_simple_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub2_1_simple_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub2_1_simple_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub3_1_lookupflag_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub3_1_lookupflag_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub3_1_lookupflag_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub3_1_lookupflag_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub3_1_multiple_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub3_1_multiple_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub3_1_multiple_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub3_1_multiple_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub3_1_simple_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub3_1_simple_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub3_1_simple_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub3_1_simple_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub4_1_lookupflag_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub4_1_lookupflag_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub4_1_lookupflag_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub4_1_lookupflag_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub4_1_multiple_ligatures_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub4_1_multiple_ligatures_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub4_1_multiple_ligatures_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub4_1_multiple_ligatures_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub4_1_multiple_ligatures_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub4_1_multiple_ligatures_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub4_1_multiple_ligatures_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub4_1_multiple_ligatures_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub4_1_multiple_ligsets_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub4_1_multiple_ligsets_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub4_1_multiple_ligsets_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub4_1_multiple_ligsets_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub4_1_simple_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub4_1_simple_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub4_1_simple_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub4_1_simple_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub7_font1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub7_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub7_font1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub7_font1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub7_font2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub7_font2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub7_font2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub7_font2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_boundary_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_boundary_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_boundary_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_boundary_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_boundary_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_boundary_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_boundary_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_boundary_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_boundary_f3.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_boundary_f3.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_boundary_f3.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_boundary_f3.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_boundary_f4.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_boundary_f4.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_boundary_f4.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_boundary_f4.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_lookupflag_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_lookupflag_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_lookupflag_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_lookupflag_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_multiple_subrules_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_multiple_subrules_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_multiple_subrules_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_multiple_subrules_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_multiple_subrules_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_multiple_subrules_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_multiple_subrules_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_multiple_subrules_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_next_glyph_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_next_glyph_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_next_glyph_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_next_glyph_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_simple_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_simple_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_simple_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_simple_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_simple_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_simple_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_simple_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_simple_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_successive_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_successive_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_successive_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining1_successive_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_boundary_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_boundary_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_boundary_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_boundary_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_boundary_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_boundary_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_boundary_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_boundary_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_boundary_f3.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_boundary_f3.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_boundary_f3.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_boundary_f3.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_boundary_f4.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_boundary_f4.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_boundary_f4.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_boundary_f4.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_lookupflag_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_lookupflag_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_lookupflag_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_lookupflag_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_multiple_subrules_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_multiple_subrules_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_multiple_subrules_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_multiple_subrules_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_multiple_subrules_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_multiple_subrules_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_multiple_subrules_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_multiple_subrules_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_next_glyph_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_next_glyph_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_next_glyph_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_next_glyph_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_simple_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_simple_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_simple_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_simple_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_simple_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_simple_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_simple_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_simple_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_successive_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_successive_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_successive_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining2_successive_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_boundary_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_boundary_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_boundary_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_boundary_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_boundary_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_boundary_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_boundary_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_boundary_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_boundary_f3.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_boundary_f3.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_boundary_f3.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_boundary_f3.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_boundary_f4.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_boundary_f4.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_boundary_f4.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_boundary_f4.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_lookupflag_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_lookupflag_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_lookupflag_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_lookupflag_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_next_glyph_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_next_glyph_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_next_glyph_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_next_glyph_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_simple_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_simple_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_simple_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_simple_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_simple_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_simple_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_simple_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_simple_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_successive_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_successive_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_successive_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_chaining3_successive_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context1_boundary_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context1_boundary_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context1_boundary_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context1_boundary_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context1_boundary_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context1_boundary_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context1_boundary_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context1_boundary_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context1_expansion_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context1_expansion_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context1_expansion_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context1_expansion_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context1_lookupflag_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context1_lookupflag_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context1_lookupflag_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context1_lookupflag_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context1_lookupflag_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context1_lookupflag_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context1_lookupflag_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context1_lookupflag_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context1_multiple_subrules_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context1_multiple_subrules_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context1_multiple_subrules_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context1_multiple_subrules_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context1_multiple_subrules_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context1_multiple_subrules_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context1_multiple_subrules_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context1_multiple_subrules_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context1_next_glyph_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context1_next_glyph_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context1_next_glyph_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context1_next_glyph_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context1_simple_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context1_simple_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context1_simple_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context1_simple_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context1_simple_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context1_simple_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context1_simple_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context1_simple_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context1_successive_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context1_successive_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context1_successive_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context1_successive_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context2_boundary_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context2_boundary_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context2_boundary_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context2_boundary_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context2_boundary_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context2_boundary_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context2_boundary_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context2_boundary_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context2_classes_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context2_classes_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context2_classes_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context2_classes_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context2_classes_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context2_classes_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context2_classes_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context2_classes_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context2_expansion_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context2_expansion_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context2_expansion_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context2_expansion_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context2_lookupflag_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context2_lookupflag_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context2_lookupflag_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context2_lookupflag_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context2_lookupflag_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context2_lookupflag_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context2_lookupflag_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context2_lookupflag_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context2_multiple_subrules_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context2_multiple_subrules_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context2_multiple_subrules_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context2_multiple_subrules_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context2_multiple_subrules_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context2_multiple_subrules_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context2_multiple_subrules_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context2_multiple_subrules_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context2_next_glyph_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context2_next_glyph_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context2_next_glyph_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context2_next_glyph_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context2_simple_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context2_simple_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context2_simple_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context2_simple_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context2_simple_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context2_simple_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context2_simple_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context2_simple_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context2_successive_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context2_successive_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context2_successive_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context2_successive_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context3_boundary_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context3_boundary_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context3_boundary_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context3_boundary_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context3_boundary_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context3_boundary_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context3_boundary_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context3_boundary_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context3_lookupflag_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context3_lookupflag_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context3_lookupflag_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context3_lookupflag_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context3_lookupflag_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context3_lookupflag_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context3_lookupflag_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context3_lookupflag_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context3_next_glyph_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context3_next_glyph_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context3_next_glyph_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context3_next_glyph_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context3_simple_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context3_simple_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context3_simple_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context3_simple_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/gsub_context3_successive_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context3_successive_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/gsub_context3_successive_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/gsub_context3_successive_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/lookupflag_ignore_attach_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/lookupflag_ignore_attach_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/lookupflag_ignore_attach_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/lookupflag_ignore_attach_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/lookupflag_ignore_base_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/lookupflag_ignore_base_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/lookupflag_ignore_base_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/lookupflag_ignore_base_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/lookupflag_ignore_combination_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/lookupflag_ignore_combination_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/lookupflag_ignore_combination_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/lookupflag_ignore_combination_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/lookupflag_ignore_ligatures_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/lookupflag_ignore_ligatures_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/lookupflag_ignore_ligatures_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/lookupflag_ignore_ligatures_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/lookupflag_ignore_marks_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/lookupflag_ignore_marks_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/lookupflag_ignore_marks_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/lookupflag_ignore_marks_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/074a5ae6b19de8f29772fdd5df2d3d833f81f5e6.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/074a5ae6b19de8f29772fdd5df2d3d833f81f5e6.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/074a5ae6b19de8f29772fdd5df2d3d833f81f5e6.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/074a5ae6b19de8f29772fdd5df2d3d833f81f5e6.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/086d83239e8f958391ff6cdd8fda9376a4bd3673.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/086d83239e8f958391ff6cdd8fda9376a4bd3673.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/086d83239e8f958391ff6cdd8fda9376a4bd3673.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/086d83239e8f958391ff6cdd8fda9376a4bd3673.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/190a621e48d4af1fffd8144bd41d2027e9a32fbf.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/190a621e48d4af1fffd8144bd41d2027e9a32fbf.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/190a621e48d4af1fffd8144bd41d2027e9a32fbf.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/190a621e48d4af1fffd8144bd41d2027e9a32fbf.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/1a3d8f381387dd29be1e897e4b5100ac8b4829e1.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/1a3d8f381387dd29be1e897e4b5100ac8b4829e1.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/1a3d8f381387dd29be1e897e4b5100ac8b4829e1.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/1a3d8f381387dd29be1e897e4b5100ac8b4829e1.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/1b66a1f4b076b734caa6397b3e57231af1feaafb.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/1b66a1f4b076b734caa6397b3e57231af1feaafb.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/1b66a1f4b076b734caa6397b3e57231af1feaafb.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/1b66a1f4b076b734caa6397b3e57231af1feaafb.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/3105b51976b879032c66aa93a634b3b3672cd344.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/3105b51976b879032c66aa93a634b3b3672cd344.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/3105b51976b879032c66aa93a634b3b3672cd344.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/3105b51976b879032c66aa93a634b3b3672cd344.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/3113f846b81ea15c02e05a1c14fa65f9fd342143.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/3113f846b81ea15c02e05a1c14fa65f9fd342143.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/3113f846b81ea15c02e05a1c14fa65f9fd342143.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/3113f846b81ea15c02e05a1c14fa65f9fd342143.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/341421e629668b1a1242245d39238ca48432d35d.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/341421e629668b1a1242245d39238ca48432d35d.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/341421e629668b1a1242245d39238ca48432d35d.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/341421e629668b1a1242245d39238ca48432d35d.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/373e67bf41ca264e260a9716162b71a23549e885.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/373e67bf41ca264e260a9716162b71a23549e885.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/373e67bf41ca264e260a9716162b71a23549e885.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/373e67bf41ca264e260a9716162b71a23549e885.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/3b791518a9ba89675df02f1eefbc9026a50648a6.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/3b791518a9ba89675df02f1eefbc9026a50648a6.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/3b791518a9ba89675df02f1eefbc9026a50648a6.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/3b791518a9ba89675df02f1eefbc9026a50648a6.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/3cf6f8ac6d647473a43a3100e7494b202b2cfafe.ttf#0:hb:extents  # color glyph extents (CBDT): ADR 0023
 harfbuzz/test/shape/data/in-house/fonts/3cf6f8ac6d647473a43a3100e7494b202b2cfafe.ttf#0:hb:v_origin  # color glyph extents (CBDT): ADR 0023 (the vertical origin is centered on the box)
@@ -441,58 +872,106 @@ harfbuzz/test/shape/data/in-house/fonts/4cbbc461be066fccc611dcc634af6e8cb2705537
 harfbuzz/test/shape/data/in-house/fonts/53374c7ca3657be37efde7ed02ae34229a56ae1f.ttf#0:hb:extents  # color glyph extents (COLR): ADR 0023
 harfbuzz/test/shape/data/in-house/fonts/53374c7ca3657be37efde7ed02ae34229a56ae1f.ttf#0:hb:v_origin  # color glyph extents (COLR): ADR 0023 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/55c88ebbe938680b08f92c3de20713183e0c7481.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/55c88ebbe938680b08f92c3de20713183e0c7481.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/55c88ebbe938680b08f92c3de20713183e0c7481.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/55c88ebbe938680b08f92c3de20713183e0c7481.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/573d3a3177c9a8646e94c8a0d7b224334340946a.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/573d3a3177c9a8646e94c8a0d7b224334340946a.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/573d3a3177c9a8646e94c8a0d7b224334340946a.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/573d3a3177c9a8646e94c8a0d7b224334340946a.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/59a585a63b3df608fbeef00956c8c108deec7de6.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/59a585a63b3df608fbeef00956c8c108deec7de6.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/59a585a63b3df608fbeef00956c8c108deec7de6.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/59a585a63b3df608fbeef00956c8c108deec7de6.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/5bb74492f5e0ffa1fbb72e4c881be035120b6513.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/5bb74492f5e0ffa1fbb72e4c881be035120b6513.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/5bb74492f5e0ffa1fbb72e4c881be035120b6513.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/5bb74492f5e0ffa1fbb72e4c881be035120b6513.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/5f73fff1ffc07b5a99a90c0909609f2b09fef274.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/5f73fff1ffc07b5a99a90c0909609f2b09fef274.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/5f73fff1ffc07b5a99a90c0909609f2b09fef274.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/5f73fff1ffc07b5a99a90c0909609f2b09fef274.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/63a539a90a371ccf028dc2dcced9b63b07163be7.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/63a539a90a371ccf028dc2dcced9b63b07163be7.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/63a539a90a371ccf028dc2dcced9b63b07163be7.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/63a539a90a371ccf028dc2dcced9b63b07163be7.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/663aef6b019dbf45ffd74089e2b5f2496ceceb18.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/663aef6b019dbf45ffd74089e2b5f2496ceceb18.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/663aef6b019dbf45ffd74089e2b5f2496ceceb18.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/663aef6b019dbf45ffd74089e2b5f2496ceceb18.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/6991b13ce889466be6de3f66e891de2bc0f117ee.ttf#0:hb:extents  # CFF extents: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/757ebd573617a24aa9dfbf0b885c54875c6fe06b.ttf#0:hb:extents  # CFF extents: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/7e14e7883ed152baa158b80e207b66114c823a8b.ttf#0:hb:extents  # CFF extents: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/8116e5d8fedfbec74e45dc350d2416d810bed8c4.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/8116e5d8fedfbec74e45dc350d2416d810bed8c4.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/8116e5d8fedfbec74e45dc350d2416d810bed8c4.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/8116e5d8fedfbec74e45dc350d2416d810bed8c4.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/81c368a33816fb20e9f647e8f24e2180f4720263.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/81c368a33816fb20e9f647e8f24e2180f4720263.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/81c368a33816fb20e9f647e8f24e2180f4720263.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/81c368a33816fb20e9f647e8f24e2180f4720263.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/8339c821814d9bad7c77169332327ad8b0f33c81.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/8339c821814d9bad7c77169332327ad8b0f33c81.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/8339c821814d9bad7c77169332327ad8b0f33c81.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/8339c821814d9bad7c77169332327ad8b0f33c81.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/872d2955d326bd6676a06f66b8238ebbaabc212f.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/872d2955d326bd6676a06f66b8238ebbaabc212f.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/872d2955d326bd6676a06f66b8238ebbaabc212f.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/872d2955d326bd6676a06f66b8238ebbaabc212f.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/FallbackPlus-Javanese-no-GDEF.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/FallbackPlus-Javanese-no-GDEF.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/FallbackPlus-Javanese-no-GDEF.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/FallbackPlus-Javanese-no-GDEF.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/NotoSansCJK-VF.abc.otf#0:hb:extents  # CFF extents: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/a014549f766436cf55b2ceb40e462038938ee899.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/a014549f766436cf55b2ceb40e462038938ee899.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/a014549f766436cf55b2ceb40e462038938ee899.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/a014549f766436cf55b2ceb40e462038938ee899.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/a56745bac8449d0ad94918b2bb5930716ba02fe3.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/a56745bac8449d0ad94918b2bb5930716ba02fe3.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/a56745bac8449d0ad94918b2bb5930716ba02fe3.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/a56745bac8449d0ad94918b2bb5930716ba02fe3.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/a6b17da98b9f1565ba428719777bbf94a66403c1.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/a6b17da98b9f1565ba428719777bbf94a66403c1.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/a6b17da98b9f1565ba428719777bbf94a66403c1.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/a6b17da98b9f1565ba428719777bbf94a66403c1.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/af3086380b743099c54a3b11b96766039ea62fcd.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/af3086380b743099c54a3b11b96766039ea62fcd.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/af3086380b743099c54a3b11b96766039ea62fcd.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/af3086380b743099c54a3b11b96766039ea62fcd.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/b082211be29a3e2cf91f0fd43497e40b2a27b344.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/b082211be29a3e2cf91f0fd43497e40b2a27b344.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/b082211be29a3e2cf91f0fd43497e40b2a27b344.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/b082211be29a3e2cf91f0fd43497e40b2a27b344.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/b151cfcdaa77585d77f17a42158e0873fc8e2633.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/b151cfcdaa77585d77f17a42158e0873fc8e2633.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/b151cfcdaa77585d77f17a42158e0873fc8e2633.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/b151cfcdaa77585d77f17a42158e0873fc8e2633.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/ba51123c80fa9526c9c3032cd41c22700a4bc3e2.ttf#0:hb:extents  # color glyph extents (COLR): ADR 0023
 harfbuzz/test/shape/data/in-house/fonts/ba51123c80fa9526c9c3032cd41c22700a4bc3e2.ttf#0:hb:v_origin  # color glyph extents (COLR): ADR 0023 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/be10ea33f28a139f3305db2302af6220f2f9a583.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/be10ea33f28a139f3305db2302af6220f2f9a583.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/be10ea33f28a139f3305db2302af6220f2f9a583.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/be10ea33f28a139f3305db2302af6220f2f9a583.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/c2d320136762887c43d245ecd2ffc2c0d57cfcb3.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/c2d320136762887c43d245ecd2ffc2c0d57cfcb3.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/c2d320136762887c43d245ecd2ffc2c0d57cfcb3.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/c2d320136762887c43d245ecd2ffc2c0d57cfcb3.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/d0430ea499348c420946f6abc2efc84fdf8f00e3.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/d0430ea499348c420946f6abc2efc84fdf8f00e3.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/d0430ea499348c420946f6abc2efc84fdf8f00e3.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/d0430ea499348c420946f6abc2efc84fdf8f00e3.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/d3129450fafe5e5c98cfc25a4e71809b1b4d2855.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/d3129450fafe5e5c98cfc25a4e71809b1b4d2855.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/d3129450fafe5e5c98cfc25a4e71809b1b4d2855.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/d3129450fafe5e5c98cfc25a4e71809b1b4d2855.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/d9b8bc10985f24796826c29f7ccba3d0ae11ec02.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/d9b8bc10985f24796826c29f7ccba3d0ae11ec02.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/d9b8bc10985f24796826c29f7ccba3d0ae11ec02.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/d9b8bc10985f24796826c29f7ccba3d0ae11ec02.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/e5ff44940364c2247abed50bdda30d2ef5aedfe4.ttf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/e5ff44940364c2247abed50bdda30d2ef5aedfe4.ttf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/in-house/fonts/e5ff44940364c2247abed50bdda30d2ef5aedfe4.ttf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/in-house/fonts/e5ff44940364c2247abed50bdda30d2ef5aedfe4.ttf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/ee39587d13b2afa5499cc79e45780aa79293bbd4.ttf#0:hb:extents  # color glyph extents (CBDT): ADR 0023
 harfbuzz/test/shape/data/in-house/fonts/ee39587d13b2afa5499cc79e45780aa79293bbd4.ttf#0:hb:v_origin  # color glyph extents (CBDT): ADR 0023 (the vertical origin is centered on the box)
@@ -505,27 +984,45 @@ harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:hb:v_or
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:hb:extents  # CFF extents: ADR 0021
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestCFFThree.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestCFFThree.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestCFFThree.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestCFFThree.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestCMAP14.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestCMAP14.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestCMAP14.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestCMAP14.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestGPOSTwo.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestGPOSTwo.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestGPOSTwo.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestGPOSTwo.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestGSUBOne.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestGSUBOne.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestGSUBOne.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestGSUBOne.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestHVAROne.otf#0:hb:extents  # CFF extents: ADR 0021
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestHVAROne.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestKERNOne.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestKERNOne.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestKERNOne.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestKERNOne.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestRVRN-CFF2.otf#0:hb:extents  # CFF extents: ADR 0021
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestRVRN-CFF2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSVGgradientTransform.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSVGgradientTransform.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSVGgradientTransform.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSVGgradientTransform.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSVGgzip.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSVGgzip.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSVGgzip.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSVGgzip.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSVGmultiGlyphs.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSVGmultiGlyphs.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSVGmultiGlyphs.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSVGmultiGlyphs.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestVRTR-CID-Regular.otf#0:hb:extents  # CFF extents: ADR 0021
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestVRTR-Regular.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestVRTR-Regular.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestVRTR-Regular.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/32bit_var_store.otf#0:hb:extents  # CFF extents: ADR 0021
 harfbuzz/test/subset/data/fonts/32bit_var_store.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/AdobeVFPrototype.otf#0:hb:extents  # CFF extents: ADR 0021
@@ -549,9 +1046,13 @@ harfbuzz/test/subset/data/fonts/NotoColorEmoji.subset.ttf#0:hb:extents  # color 
 harfbuzz/test/subset/data/fonts/NotoColorEmoji.subset.ttf#0:hb:v_origin  # color glyph extents (CBDT): ADR 0023 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/NotoSansJP-VF.subset.otf#0:hb:extents  # CFF extents: ADR 0021
 harfbuzz/test/subset/data/fonts/NotoSerifMyanmar-Regular.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/NotoSerifMyanmar-Regular.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/NotoSerifMyanmar-Regular.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/NotoSerifMyanmar-Regular.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/SourceHanSans-Regular_subset.otf#0:hb:extents  # CFF extents: ADR 0021
 harfbuzz/test/subset/data/fonts/SourceSansPro-Regular.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/SourceSansPro-Regular.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/SourceSansPro-Regular.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/SourceSansPro-Regular.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/SourceSerif4Variable-Roman-HelloWorld.otf#0:hb:extents  # CFF extents: ADR 0021
 harfbuzz/test/subset/data/fonts/SourceSerif4Variable-Roman-HelloWorld.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
@@ -562,57 +1063,107 @@ harfbuzz/test/subset/data/fonts/TestCOLRv1.ttf#0:hb:v_origin  # color glyph exte
 harfbuzz/test/subset/data/fonts/TwemojiMozilla.subset.ttf#0:hb:extents  # color glyph extents (COLR): ADR 0023
 harfbuzz/test/subset/data/fonts/TwemojiMozilla.subset.ttf#0:hb:v_origin  # color glyph extents (COLR): ADR 0023 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/cmap14_font1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/cmap14_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/cmap14_font1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/cmap14_font1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/cmap14_font2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/cmap14_font2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/cmap14_font2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/cmap14_font2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/colr-table.ttf#0:hb:extents  # color glyph extents (COLR): ADR 0023
 harfbuzz/test/subset/data/fonts/colr-table.ttf#0:hb:v_origin  # color glyph extents (COLR): ADR 0023 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/gpos1_2_font.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos1_2_font.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos1_2_font.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/gpos1_2_font.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/gpos2_1_font7.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos2_1_font7.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos2_1_font7.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/gpos2_1_font7.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/gpos2_2_font5.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos2_2_font5.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos2_2_font5.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/gpos2_2_font5.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/gpos3_font3.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos3_font3.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos3_font3.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/gpos3_font3.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/gpos4_multiple_anchors_1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos4_multiple_anchors_1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos4_multiple_anchors_1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/gpos4_multiple_anchors_1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/gpos5_font1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos5_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos5_font1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/gpos5_font1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/gpos6_font1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos6_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos6_font1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/gpos6_font1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/gpos9_font2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos9_font2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos9_font2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/gpos9_font2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/gpos_chaining1_multiple_subrules_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos_chaining1_multiple_subrules_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos_chaining1_multiple_subrules_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/gpos_chaining1_multiple_subrules_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/gpos_chaining2_multiple_subrules_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos_chaining2_multiple_subrules_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos_chaining2_multiple_subrules_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/gpos_chaining2_multiple_subrules_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/gpos_chaining3_simple_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos_chaining3_simple_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos_chaining3_simple_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/gpos_chaining3_simple_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/gpos_context1_multiple_subrules_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos_context1_multiple_subrules_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos_context1_multiple_subrules_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/gpos_context1_multiple_subrules_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/gpos_context2_multiple_subrules_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos_context2_multiple_subrules_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos_context2_multiple_subrules_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/gpos_context2_multiple_subrules_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/gpos_context3_simple_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos_context3_simple_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/gpos_context3_simple_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/gpos_context3_simple_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/gsub8_manually_created.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/gsub8_manually_created.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/gsub8_manually_created.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/gsub8_manually_created.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/gsub_alternate_substitution.otf#0:hb:extents  # CFF extents: ADR 0021
 harfbuzz/test/subset/data/fonts/gsub_chaining1_multiple_subrules_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/gsub_chaining1_multiple_subrules_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/gsub_chaining1_multiple_subrules_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/gsub_chaining1_multiple_subrules_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/gsub_chaining2_empty_input_classdef.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/gsub_chaining2_empty_input_classdef.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/gsub_chaining2_empty_input_classdef.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/gsub_chaining2_empty_input_classdef.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/gsub_chaining2_empty_input_classdef_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/gsub_chaining2_empty_input_classdef_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/gsub_chaining2_empty_input_classdef_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/gsub_chaining2_empty_input_classdef_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/gsub_chaining2_multiple_subrules_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/gsub_chaining2_multiple_subrules_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/gsub_chaining2_multiple_subrules_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/gsub_chaining2_multiple_subrules_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/gsub_chaining3_simple_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/gsub_chaining3_simple_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/gsub_chaining3_simple_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/gsub_chaining3_simple_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/gsub_context1_multiple_subrules_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/gsub_context1_multiple_subrules_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/gsub_context1_multiple_subrules_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/gsub_context1_multiple_subrules_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/gsub_context2_multiple_subrules_f2.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/gsub_context2_multiple_subrules_f2.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/gsub_context2_multiple_subrules_f2.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/gsub_context2_multiple_subrules_f2.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/gsub_context3_successive_f1.otf#0:hb:extents  # CFF extents: ADR 0021
+harfbuzz/test/subset/data/fonts/gsub_context3_successive_f1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/subset/data/fonts/gsub_context3_successive_f1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/subset/data/fonts/gsub_context3_successive_f1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/subset/data/fonts/sbix.ttf#0:hb:extents  # color glyph extents (sbix): ADR 0023
 harfbuzz/test/subset/data/fonts/sbix.ttf#0:hb:v_origin  # color glyph extents (sbix): ADR 0023 (the vertical origin is centered on the box)

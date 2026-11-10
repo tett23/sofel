@@ -827,6 +827,85 @@ static void check_metrics(const sofel_font_t *font, const sofel_scale_t *scale,
   }
 }
 
+static void test_names(const sofel_font_t *font) {
+  char buf[128];
+  size_t len = 0, written = 0, total = 0, count = 0, i;
+  uint16_t id = 0, ids[4], u16v = 0;
+  const uint8_t *str = NULL;
+  int32_t e = 12345, values[11];
+  sofel_glyph_names_t *names;
+
+  CHECK(sofel_font_postscript_name(font, buf, sizeof buf, &len) == SOFEL_OK &&
+        len == strlen(FIXTURE_PS_NAME) && memcmp(buf, FIXTURE_PS_NAME, len) == 0);
+  CHECK(sofel_font_postscript_name(font, buf, 2, &len) == SOFEL_ERROR_BUFFER_TOO_SMALL &&
+        len == strlen(FIXTURE_PS_NAME));
+  CHECK(sofel_font_name_count(font, &count) == SOFEL_OK && count == COUNT(name_list));
+  for (i = 0; i < COUNT(name_list); i++) {
+    CHECK(sofel_font_name_entry(font, i, &id, buf, sizeof buf, &len) == SOFEL_OK);
+    CHECK(id == name_list[i].id && len == strlen(name_list[i].lang) &&
+          memcmp(buf, name_list[i].lang, len) == 0);
+  }
+  CHECK(sofel_font_name_entry(font, COUNT(name_list), &id, buf, sizeof buf, &len) ==
+        SOFEL_ERROR_NOT_FOUND);
+  for (i = 0; i < COUNT(name_cases); i++) {
+    const struct name_case *c = &name_cases[i];
+    char t8[16];
+    uint16_t t16[16];
+    uint32_t t32[16];
+    size_t ll = strlen(c->lang);
+    CHECK(sofel_font_name_utf8(font, c->id, c->lang, ll, t8, c->cap, &written, &total) ==
+          SOFEL_OK);
+    CHECK(written == c->n[0] && total == c->n[1] && memcmp(t8, c->utf8, written) == 0);
+    CHECK(sofel_font_name_utf16(font, c->id, c->lang, ll, t16, c->cap, &written, &total) ==
+          SOFEL_OK);
+    CHECK(written == c->n[2] && total == c->n[3] &&
+          memcmp(t16, c->utf16, written * sizeof t16[0]) == 0);
+    CHECK(sofel_font_name_utf32(font, c->id, c->lang, ll, t32, c->cap, &written, &total) ==
+          SOFEL_OK);
+    CHECK(written == c->n[4] && total == c->n[5] &&
+          memcmp(t32, c->utf32, written * sizeof t32[0]) == 0);
+  }
+  CHECK(sofel_font_sfnt_name_count(font, &count) == SOFEL_OK && count == COUNT(sfnt_names));
+  for (i = 0; i < COUNT(sfnt_names); i++) {
+    CHECK(sofel_font_sfnt_name(font, i, ids, &str, &len) == SOFEL_OK);
+    CHECK(memcmp(ids, sfnt_names[i].ids, sizeof ids) == 0 && len == sfnt_names[i].len);
+  }
+  CHECK(sofel_font_sfnt_name(font, count, ids, &str, &len) == SOFEL_ERROR_NOT_FOUND);
+
+  names = sofel_glyph_names_create(font, &e);
+  CHECK(e == SOFEL_OK && names != NULL);
+  for (i = 0; i < COUNT(glyph_names); i++) {
+    const struct glyph_name_case *c = &glyph_names[i];
+    uint32_t g = 0;
+    int32_t s = sofel_font_glyph_name(font, c->glyph, &str, &len);
+    CHECK(c->hb ? s == SOFEL_OK && len == strlen(c->hb) && memcmp(str, c->hb, len) == 0
+                : s == SOFEL_ERROR_NOT_FOUND);
+    if (c->hb && names) {
+      s = sofel_glyph_names_glyph_from_name(names, c->hb, strlen(c->hb), &g);
+      CHECK(c->hb_back < 0 ? s == SOFEL_ERROR_NOT_FOUND : s == SOFEL_OK && g == c->hb_back);
+    }
+    s = sofel_font_ft_glyph_name(font, c->glyph, &str, &len);
+    CHECK(c->ft ? s == SOFEL_OK && len == strlen(c->ft) && memcmp(str, c->ft, len) == 0
+                : s == SOFEL_ERROR_NOT_FOUND);
+    if (c->ft && names) {
+      s = sofel_glyph_names_ft_glyph_from_name(names, c->ft, strlen(c->ft), &g);
+      CHECK(c->ft_back < 0 ? s == SOFEL_ERROR_NOT_FOUND : s == SOFEL_OK && g == c->ft_back);
+    }
+    s = sofel_font_ft_v_advance(font, c->glyph, &u16v);
+    CHECK(c->ft_v_advance < 0 ? s == SOFEL_ERROR_INVALID_GLYPH
+                              : s == SOFEL_OK && u16v == c->ft_v_advance);
+  }
+  sofel_glyph_names_destroy(names);
+  sofel_glyph_names_destroy(NULL);
+  CHECK(sofel_glyph_names_create(NULL, &e) == NULL && e == SOFEL_ERROR_NULL);
+  CHECK(sofel_font_ft_face_metrics(font, values) == SOFEL_OK &&
+        memcmp(values, ft_face_metrics, sizeof values) == 0);
+  CHECK(sofel_font_ft_face_metrics(font, NULL) == SOFEL_ERROR_NULL);
+  CHECK(sofel_font_name_utf8(font, 1, NULL, 2, buf, sizeof buf, &written, &total) ==
+        SOFEL_ERROR_NULL);
+  CHECK(sofel_font_glyph_name(font, 1, NULL, &len) == SOFEL_ERROR_NULL);
+}
+
 static void test_metrics(void) {
   int32_t e = 12345, ext[3] = {0, 0, 0}, box[4] = {30, 700, 401, -703}, v = 0;
   uint16_t u16v = 0;
@@ -883,6 +962,7 @@ static void test_metrics(void) {
   CHECK(sofel_font_fs_type(NULL, &u16v) == SOFEL_ERROR_NULL);
   CHECK(sofel_font_os2_field(font, 0, NULL) == SOFEL_ERROR_NULL);
   CHECK(sofel_font_metrics_position_with_fallback(font, 0x68617363u, NULL) == SOFEL_ERROR_NULL);
+  test_names(font);
   sofel_font_destroy(font);
 }
 

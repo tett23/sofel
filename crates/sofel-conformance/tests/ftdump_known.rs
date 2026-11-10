@@ -95,6 +95,15 @@ cmap 3 1 4
     for g in 0..28u32 {
         writeln!(s, "advance {g} {}", 500 + g.min(19)).unwrap();
     }
+    // ADR 0016: no OS/2, name or post; the vertical advance is
+    // |ascender - descender| of hhea; no glyph names (Invalid_Argument).
+    s.push_str("fs_type 0\nps_name -\nface_metrics 800 -200 1090 1200 1090 0 0 -50 -200 950 800\n");
+    for g in 0..28u32 {
+        writeln!(s, "v_advance {g} 1000").unwrap();
+    }
+    for g in 0..28u32 {
+        writeln!(s, "glyph_name {g} 6 -").unwrap();
+    }
     s.push_str("end\n");
     s
 }
@@ -138,4 +147,27 @@ fn broken_subtables_are_left_out() {
         .filter(|l| l.starts_with("cmap ") || l.starts_with("map "))
         .collect();
     assert_eq!(cmaps, vec!["cmap 3 10 12", "map 65 5"]);
+}
+
+#[test]
+fn names_and_glyph_names_are_dumped() {
+    let ps = utf16be("Sofel-Test");
+    let mut tables = sample_tables_with_glyf();
+    tables.push((b"name", name(0, &[(3, 1, 0x409, 6, &ps)], &[])));
+    tables.push((b"post", post2(&[0, 36, 258], &["alpha"])));
+    tables.sort_by_key(|(t, _)| **t);
+    let out = ft_dump("names", &sfnt(&tables));
+    let lines: Vec<&str> = out.lines().collect();
+    for want in [
+        "ps_name 536f66656c2d54657374",
+        "sfnt_name 0 3 1 1033 6 0053006f00660065006c002d0054006500730074",
+        "glyph_name 1 0 41",
+        "glyph_name 2 0 616c706861",
+        "name_index 2 2",
+        // Past post's glyphs, FreeType gives .notdef.
+        "glyph_name 3 0 2e6e6f74646566",
+        "face_metrics 800 -200 1090 1200 1090 -100 50 -50 -200 950 800",
+    ] {
+        assert!(lines.contains(&want), "{want} not in:\n{out}");
+    }
 }

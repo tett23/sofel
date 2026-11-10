@@ -14,7 +14,7 @@ sofel ports algorithms and arithmetic from FreeType 2.15.0 (commit `37515cf56ba3
 | Crate | Ported from |
 |---|---|
 | `sofel-geom` | `src/base/ftcalc.c`, `include/freetype/internal/ftcalc.h`, `src/base/fttrigon.c`, `src/base/ftoutln.c` |
-| `sofel-font` | `src/sfnt/ttmtx.c`, `src/sfnt/sfobjs.c` (the left side bearing for phantom point 1) |
+| `sofel-font` | `src/sfnt/ttmtx.c`, `src/sfnt/sfobjs.c` (the left side bearing for phantom point 1; the `FT_Face` values), `src/sfnt/ttload.c` (`tt_face_load_name`, `tt_face_load_post`), `src/sfnt/sfdriver.c` (the PostScript name, `sfnt_get_name_index`), `src/sfnt/ttpost.c`, `src/truetype/ttgload.c` (`TT_Get_VMetrics`) |
 | `sofel-outline` | `src/truetype/ttgload.c`, `src/truetype/ttpload.c`, `src/base/ftoutln.c` |
 | `sofel-raster` | `src/smooth/ftgrays.c`, `src/smooth/ftsmooth.c`, `src/base/ftobjs.c` |
 
@@ -200,7 +200,7 @@ sofel follows rules of HarfBuzz 15.1.0 (commit `3df40d9b98d6b32f0e4288d4ecfbb158
 |---|---|
 | `tools/gen-unicode/` | The rules of `src/gen-ucd-table.py` (which decompositions are kept, which pairs compose) and `src/gen-arabic-pua.py` ([ADR 0019](docs/adr/0019-unicode-character-data.md)) |
 | `sofel-unicode` | `src/hb-ucd.cc` (Hangul composition and decomposition), `src/hb-common.cc` (`hb_script_from_iso15924_tag`) |
-| `sofel-font` | `src/tables/arabic_pua.rs`, generated from HarfBuzz's `src/ArabicPUASimplified.txt` and `src/ArabicPUATraditional.txt`; `src/metrics.rs` and `src/glyf_data.rs` from `src/hb-ot-font.cc`, `src/hb-ot-metrics.cc`, `src/hb-font.hh`, `src/hb-algs.hh` (`_hb_roundf`), `src/hb-decycler.hh` and `src/OT/glyf/` ([ADR 0016](docs/adr/0016-font-and-vertical-metrics.md)) |
+| `sofel-font` | `src/tables/arabic_pua.rs`, generated from HarfBuzz's `src/ArabicPUASimplified.txt` and `src/ArabicPUATraditional.txt`; `src/names.rs` and `src/name_language.rs` from `src/OT/name/name.hh`, `src/hb-ot-name.cc`, `src/hb-ot-name-language-static.hh`, `src/hb-common.cc`, `src/hb-aat-ltag-table.hh`, `src/hb-utf.hh` and `src/hb-ot-post-table.hh`; `src/metrics.rs` and `src/glyf_data.rs` from `src/hb-ot-font.cc`, `src/hb-ot-metrics.cc`, `src/hb-font.hh`, `src/hb-algs.hh` (`_hb_roundf`, `hb_bsearch`, `hb_qsort_inline`), `src/hb-decycler.hh` and `src/OT/glyf/` ([ADR 0016](docs/adr/0016-font-and-vertical-metrics.md)) |
 
 The HarfBuzz license follows.
 

@@ -20,6 +20,23 @@
  *                                         on the charmap above; not for
  *                                         format 14)
  *   advance <glyph> <value>              (FT_Get_Advances, FT_LOAD_NO_SCALE)
+ *   fs_type <value>                      (FT_Get_FSType_Flags)
+ *   ps_name <hex>                        (FT_Get_Postscript_Name; `-` for
+ *                                         none)
+ *   face_metrics <ascender> <descender> <height> <max_advance_width>
+ *                <max_advance_height> <underline_position>
+ *                <underline_thickness> <xMin> <yMin> <xMax> <yMax>
+ *                                        (the FT_Face fields; bbox last)
+ *   sfnt_name <i> <platform> <encoding> <language> <name> <hex>
+ *                                        (FT_Get_Sfnt_Name, every record;
+ *                                         `-` for an empty string)
+ *   v_advance <glyph> <value>            (FT_Get_Advances,
+ *                                         FT_LOAD_NO_SCALE |
+ *                                         FT_LOAD_VERTICAL_LAYOUT)
+ *   glyph_name <glyph> <error> <hex>     (FT_Get_Glyph_Name with 256 bytes;
+ *                                         `-` for an empty name)
+ *   name_index <glyph> <value>           (FT_Get_Name_Index of that name,
+ *                                         for every non-empty name)
  *   end
  *
  * Field names and order:
@@ -97,6 +114,7 @@
 #include FT_ADVANCES_H
 #include FT_TRIGONOMETRY_H
 #include FT_OUTLINE_H
+#include FT_SFNT_NAMES_H
 
 static int contour_open;
 
@@ -378,6 +396,66 @@ static void dump_advances(FT_Face face)
   free(advances);
 }
 
+static void print_hex(const unsigned char *s, unsigned long n)
+{
+  unsigned long i;
+  if (n == 0) {
+    printf(" -");
+    return;
+  }
+  printf(" ");
+  for (i = 0; i < n; i++)
+    printf("%02x", s[i]);
+}
+
+static void dump_names_and_metrics(FT_Face face)
+{
+  FT_Long n = face->num_glyphs, g;
+  FT_UInt i, count;
+  const char *ps;
+  FT_Fixed *advances;
+
+  printf("fs_type %u\n", (unsigned)FT_Get_FSType_Flags(face));
+  ps = FT_Get_Postscript_Name(face);
+  printf("ps_name");
+  print_hex((const unsigned char *)(ps ? ps : ""), ps ? (unsigned long)strlen(ps) : 0);
+  printf("\n");
+  printf("face_metrics %d %d %d %d %d %d %d %ld %ld %ld %ld\n", (int)face->ascender,
+         (int)face->descender, (int)face->height, (int)face->max_advance_width,
+         (int)face->max_advance_height, (int)face->underline_position,
+         (int)face->underline_thickness, (long)face->bbox.xMin, (long)face->bbox.yMin,
+         (long)face->bbox.xMax, (long)face->bbox.yMax);
+  count = FT_Get_Sfnt_Name_Count(face);
+  for (i = 0; i < count; i++) {
+    FT_SfntName name;
+    if (FT_Get_Sfnt_Name(face, i, &name) != 0)
+      continue;
+    printf("sfnt_name %u %u %u %u %u", i, (unsigned)name.platform_id,
+           (unsigned)name.encoding_id, (unsigned)name.language_id, (unsigned)name.name_id);
+    print_hex(name.string, name.string_len);
+    printf("\n");
+  }
+  if (n > 0) {
+    advances = (FT_Fixed *)calloc((size_t)n, sizeof(FT_Fixed));
+    if (advances && FT_Get_Advances(face, 0, (FT_UInt)n,
+                                    FT_LOAD_NO_SCALE | FT_LOAD_VERTICAL_LAYOUT,
+                                    advances) == 0)
+      for (g = 0; g < n; g++)
+        printf("v_advance %ld %ld\n", (long)g, (long)advances[g]);
+    free(advances);
+  }
+  for (g = 0; g < n; g++) {
+    char buf[256];
+    FT_Error error = FT_Get_Glyph_Name(face, (FT_UInt)g, buf, sizeof buf);
+    unsigned long len = error ? 0 : (unsigned long)strlen(buf);
+    printf("glyph_name %ld %d", (long)g, (int)error);
+    print_hex((const unsigned char *)buf, len);
+    printf("\n");
+    if (!error && len)
+      printf("name_index %ld %u\n", (long)g, FT_Get_Name_Index(face, buf));
+  }
+}
+
 int main(int argc, char **argv)
 {
   FT_Library library;
@@ -426,6 +504,7 @@ int main(int argc, char **argv)
       dump_maxp((const TT_MaxProfile *)table);
     dump_charmaps(face);
     dump_advances(face);
+    dump_names_and_metrics(face);
     printf("end\n");
     FT_Done_Face(face);
   }
