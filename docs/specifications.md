@@ -264,9 +264,12 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - `sofel-write` の `build_sfnt` は、HarfBuzzの面の組み立て（`hb-face-builder.cc`）と同じく、表のデータを長さの昇順（同じ長さはタグの昇順）に4バイトに揃えて並べ、表の記録をタグの順に書き、チェックサムと `checkSumAdjustment` を求める。sfntの版は `CFF ` か `CFF2` があれば `OTTO` とする。
 - `sofel-write` の `Serializer` は、HarfBuzzの `hb_serialize_context_t` と同じ規則でオブジェクトのグラフを組む。子を先に詰め、後に詰めたものほど前に置き、同じバイト列とリンクのオブジェクトをまとめる（統合の表は `BTreeMap`）。オフセットのあふれは `Packed::resolve` が報告する。再配置はまだ無く、あふれた表は `Unsupported` とする。
 - `sofel-subset` の `Input` は `hb_subset_input_t` に相当する不変の値で、集合（文字、グリフ、名前ID、名前の言語、レイアウトのフィーチャ、文字体系、捨てる表、写す表）は反転した集合を表せる `RangeSet`、フラグはHarfBuzzと同じビットの `Flags` とする。`Input::new()` はHarfBuzzの既定の値、`keep_everything()` は `hb_subset_input_keep_everything` と同じ値を持つ。`to_args()` は `hb_subset_input_to_string_or_fail` と同じオプションの列を返す。
-- `Plan::new` は `hb-subset-plan.cc` の順に、鏡像の文字の追加、cmap（DMAPを先に引く）からの文字とグリフの収集（2つの集め方）、異体字シーケンスの閉包、glyfの合成グリフの閉包（HarfBuzzの操作とバイトの上限）、グリフの対応（既定、`RETAIN_GIDS`、`RETAIN_NUM_GLYPHS`、対応の指定）を求める。
-- `Plan::execute` は、元のフォントの表をタグの順に処理する。書く表は、glyf、loca、head（glyfが書く）、GLYF、LOCA、hmtx、hhea、vmtx、vhea、HMTX、HHEA、VMTX、VHEA、maxp、MAXP、OS/2、post、name、cmap、DMAP、hdmx。cvt 、fpgm、prep、gasp、VDMXと、軸を指定しないときのfvar、avar、cvar、MVAR、STATはそのまま写す。HarfBuzzが既定で捨てる表と扱いを持たない表は捨てる（`PASSTHROUGH_UNRECOGNIZED` では写す）。
-- まだ書かない表：GSUB、GPOS、GDEF、BASE、MATH、COLR、CPAL、CBLC、CBDT、sbix、CFF 、VORG、CFF2、gvar、GVAR、HVAR、VVAR、VARC。これらを持ち、捨てる表にも写す表にも入れないフォントは `Unsupported` とする。軸の指定と名前の表の上書きも `Unsupported` とする。
+- `Plan::new` は `hb-subset-plan.cc` の順に、鏡像の文字の追加、cmap（DMAPを先に引く）からの文字とグリフの収集（2つの集め方）、異体字シーケンスの閉包、レイアウトの閉包、名前IDの閉包、glyfの合成グリフの閉包（HarfBuzzの操作とバイトの上限）、グリフの対応（既定、`RETAIN_GIDS`、`RETAIN_NUM_GLYPHS`、対応の指定）を求める。
+- レイアウトの閉包は `hb-subset-plan-layout.cc` のとおり、GSUBとGPOSのそれぞれで、残すフィーチャと文字体系から言語系をたどってフィーチャとlookupを集め（FeatureVariationsの置きかえのフィーチャのlookupも足す）、GSUBではそのlookupで置換の閉包（最大 `HB_CLOSURE_MAX_STAGES` 段）を求め、文脈のlookupからたどれるlookupを足して、どのグリフにも当たらないlookupを除く。そのあと、lookupの無くなったフィーチャを除き、同じタグで同じlookupと引数を持つフィーチャをまとめ、既定の言語系と同じ言語系を除く。上限（`HB_MAX_NESTING_LEVEL`、`HB_MAX_LOOKUP_VISIT_COUNT`、`HB_MAX_SCRIPTS` など）は `src/hb-limits.hh` と同じ値を持つ。名前IDの閉包は、STAT（捨てないとき）とfvarの名前ID、残すフィーチャのFeatureParams（`size`、`ssXX`、`cvXX`）の名前IDを足す。GDEFのマークのグリフの集合は、閉包の後のグリフに当たるものだけを残して番号を振りなおす。
+- `Plan::execute` は、元のフォントの表をタグの順に処理する。書く表は、glyf、loca、head（glyfが書く）、GLYF、LOCA、hmtx、hhea、vmtx、vhea、HMTX、HHEA、VMTX、VHEA、maxp、MAXP、OS/2、post、name、cmap、DMAP、hdmx、GDEF、GSUB、GPOS、BASE。cvt 、fpgm、prep、gasp、VDMXと、軸を指定しないときのfvar、avar、cvar、MVAR、STATはそのまま写す。HarfBuzzが既定で捨てる表と扱いを持たない表は捨てる（`PASSTHROUGH_UNRECOGNIZED` では写す）。
+- GDEF、GSUB、GPOS、BASEは、HarfBuzzの各表の `subset` と同じ値を同じ順で書く。CoverageとClassDefの形式は大きさの比較で選び（ClassDefは同じ大きさなら形式1）、ClassDefのクラスはHarfBuzzと同じく詰めなおす（すべてのグリフがクラスを持つときは最小のクラスを0とする）。値の記録とアンカーのDeviceは、ヒンティングのDeviceを写し、変化量の番号のDeviceを除く（変化量の番号を残さないため）。`NO_HINTING` では値の記録のDeviceと0の値を除き、アンカーの形式2を形式1にする。
+- まだ書かない表：MATH、COLR、CPAL、CBLC、CBDT、sbix、CFF 、VORG、CFF2、gvar、GVAR、HVAR、VVAR、VARC。これらを持ち、捨てる表にも写す表にも入れないフォントは `Unsupported` とする。軸の指定と名前の表の上書きも `Unsupported` とする。
+- レイアウトの表のうち、GDEFとBASEの変化量の表（ItemVariationStore。軸を指定しないときに残す番号へ詰めなおすのは10段階目）、GSUBとGPOSの版1.2とGDEFの版1.4、FeatureVariationsの版1.1と形式1でない条件、65536を超えるグリフのフォントの24bitの形式も `Unsupported` とする。
 
 ## 道具
 
