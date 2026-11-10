@@ -72,7 +72,7 @@ let advance: u16 = font.advance(gid.unwrap_or(GlyphId(0))); // フォントの�
 | `Font::ft_glyph_name(g)`、`GlyphNames::ft_glyph_from_name(name)` | `FT_Get_Glyph_Name`、`FT_Get_Name_Index` |
 | `Font::ft_face_metrics()`、`Font::ft_v_advance(g)` | `FT_Face` の値、`FT_Get_Advance`（縦） |
 
-- cmapのサブテーブルはHarfBuzzと同じ順で選ぶ。送り幅は、hmtxが欠けたり短かったりするときもHarfBuzzと同じ値を返す（[ADR 0010](adr/0010-font-foundation.md)）。
+- cmapのサブテーブルはHarfBuzzと同じ順で選び、記号フォントとMacのエンコーディングではHarfBuzzと同じく文字を付けかえて引く（[ADR 0016](adr/0016-font-and-vertical-metrics.md)）。送り幅は、hmtxが欠けたり短かったりするときもHarfBuzzと同じ値を返す（[ADR 0010](adr/0010-font-foundation.md)）。
 - `FontError` は、ファイルがsfntでもコレクションでもない、`head` が読めない、番号のフォントが無い、のいずれか。
 - メトリクスの値はフォントの単位（HarfBuzzの既定の拡大縮小）で返す。ほかの拡大縮小の値は `HbScale` の同じ名前の関数で求める。HarfBuzzと同じく、整数の値は `em_scale_x`（`(v × mult + 32768) >> 16`）、小数で持つ値は `em_scalef_x`（HarfBuzzの `roundf`）、箱は `scale_glyph_extents` で拡大縮小し、ビット単位で一致する。代わりの値はその拡大縮小で求める（拡大縮小した値は、フォントの単位の代わりの値を拡大縮小したものと一致しないことがある）。
 - `v_origin` と `metrics_position_with_fallback` は、グリフの箱を求める関数を受け取る。いまは `|g| font.glyf_extents(g)` を渡す。CFFとカラーのグリフの箱は上の層（[ADR 0021](adr/0021-cff-outlines.md)、[0023](adr/0023-color-glyphs.md)）が持つ。

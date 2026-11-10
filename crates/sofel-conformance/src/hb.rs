@@ -476,3 +476,59 @@ pub fn compare_names(font: &str, hb: &HbNames, ours: &HbNames) -> Vec<Item> {
         list(font, f, "glyph_from_name", &hb.from_names, &ours.from_names),
     ]
 }
+
+/// The output of `hb-dump --cmap` for one face.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct HbCmap {
+    pub index: u32,
+    pub num_glyphs: u32,
+    /// `(code point, glyph)`.
+    pub maps: Vec<(u32, u32)>,
+}
+
+/// Parses the output of `hb-dump --cmap`.
+pub fn parse_cmap(text: &str) -> Result<Vec<HbCmap>, String> {
+    let mut faces: Vec<HbCmap> = Vec::new();
+    for line in text.lines() {
+        let mut w = line.split(' ');
+        match w.next().unwrap_or("") {
+            "face" => faces.push(HbCmap {
+                index: num(w.next(), line)?,
+                ..HbCmap::default()
+            }),
+            "num_glyphs" => {
+                faces
+                    .last_mut()
+                    .ok_or_else(|| format!("line before any face: {line}"))?
+                    .num_glyphs = num(w.next(), line)?
+            }
+            "map" => {
+                let m = (num(w.next(), line)?, num(w.next(), line)?);
+                faces
+                    .last_mut()
+                    .ok_or_else(|| format!("line before any face: {line}"))?
+                    .maps
+                    .push(m);
+            }
+            "end" | "" => {}
+            other => return Err(format!("unknown line kind {other}: {line}")),
+        }
+    }
+    Ok(faces)
+}
+
+/// Item `nominal`: `hb_font_get_nominal_glyph` for every code point.
+/// Glyphs HarfBuzz gives that are not below the glyph count are left
+/// out, as sofel counts them as unmapped (ADR 0010).
+pub fn compare_cmap(font_id: &str, hb: &HbCmap, font: &Font<'_>) -> Item {
+    let want: Vec<(u32, u32)> = hb
+        .maps
+        .iter()
+        .copied()
+        .filter(|&(_, g)| g < hb.num_glyphs)
+        .collect();
+    let ours: Vec<(u32, u32)> = (0..=0x10_FFFF)
+        .filter_map(|c| font.nominal_glyph(c).map(|g| (c, g.0)))
+        .collect();
+    list(font_id, hb.index, "nominal", &want, &ours)
+}
