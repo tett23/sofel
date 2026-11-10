@@ -5,11 +5,16 @@
 //! by `scripts/fetch-testdata.sh`, packs each property into a multi-level
 //! table, checks every code point of every table, and writes Rust source.
 
+pub mod arabic;
 pub mod emit;
+pub mod hbsrc;
+pub mod indic;
 pub mod pack;
 pub mod props;
 pub mod pua;
 pub mod ucd;
+pub mod use_table;
+pub mod vowel;
 
 use std::fmt::Write;
 

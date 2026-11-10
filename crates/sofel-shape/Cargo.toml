@@ -3,7 +3,7 @@ name = "sofel-shape"
 description = "Text shaping with OpenType GSUB and GPOS, as HarfBuzz 15.1.0 shapes (ADR 0020)"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
+license = "MIT AND Unicode-3.0"
 repository.workspace = true
 rust-version.workspace = true
 
