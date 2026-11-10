@@ -69,5 +69,13 @@ name = "sofel-read"
 version = "0.0.0"
 
 [[package]]
+name = "sofel-shape"
+version = "0.0.0"
+dependencies = [
+ "sofel-font",
+ "sofel-unicode",
+]
+
+[[package]]
 name = "sofel-unicode"
 version = "0.0.0"
