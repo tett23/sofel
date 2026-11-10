@@ -4,9 +4,16 @@
 
 各項は、何が残っているか、どこに由来するか、何があれば進められるかの順に書く。節と項は、ほかの項が依存するものを先に置いた。確認できなかった事項には「未確認」と書いた。
 
-[ADR 0027](adr/0027-variable-fonts.md)（可変フォント）、[ADR 0028](adr/0028-ptem-is-not-opsz.md)（`--font-ptem` は `opsz` を決めない）、[ADR 0029](adr/0029-variation-deltas.md)（変化量の扱い）は、下書き（ステータスは提案）のまま main に入っている。採択するには、利用者のレビューが要る。[ADR 0029](adr/0029-variation-deltas.md) の調査の記録は、手元の `target/handoff/variation-deltas-research.md` にある（コミットしていない）。
+[ADR 0027](adr/0027-variable-fonts.md)（可変フォント）、[ADR 0028](adr/0028-ptem-is-not-opsz.md)（`--font-ptem` は `opsz` を決めない）、[ADR 0029](adr/0029-variation-deltas.md)（変化量の扱い）は、利用者のレビューを経て採択（未実装）になった。[ADR 0029](adr/0029-variation-deltas.md) の調査の記録は、手元の `target/handoff/variation-deltas-research.md` にある（コミットしていない）。
 
 ## 未実装の ADR
+
+### 変化量の評価の修正案
+
+[ADR 0029](adr/0029-variation-deltas.md) の引き継ぎ調査による修正案を、[ADR 0030](adr/0030-variation-evaluation-corrections.md) にまとめた。
+FreeType の丸めの順序、係数のキャッシュの同一性、空の座標と明示した0座標、CFF2 の列数とエラー、gvar の適用手順を扱う。
+ステータスは採択（未実装）である。
+[ADR 0027](adr/0027-variable-fonts.md) と [ADR 0029](adr/0029-variation-deltas.md) の本文は変更していない。
 
 ### 土台となる [ADR 0001](adr/0001-project-goal-and-scope.md)、[0003](adr/0003-crate-layers.md)、[0005](adr/0005-conformance-tests.md)、[0006](adr/0006-performance-measurement.md)
 
@@ -22,7 +29,7 @@
 
 ### [ADR 0022](adr/0022-subsetting.md): サブセット化
 
-[ADR 0022](adr/0022-subsetting.md) は採択（未実装）で、段階ごとに実装している。PR #42 までで、レイアウトの段階などが main に入った。10段階目（gvar、GVAR、HVAR、VVAR、ピン留めなしの CFF2、GDEF、BASE、COLR の項目の変化量の記憶）は、可変フォントの [ADR 0027](adr/0027-variable-fonts.md) が採択されるまで進められない。VARC は13段階目まで待つ。[ADR 0022](adr/0022-subsetting.md) のステータスを採択にする条件は、[ADR 0027](adr/0027-variable-fonts.md) の採択と、10段階目の実装である。
+[ADR 0022](adr/0022-subsetting.md) は採択（未実装）で、段階ごとに実装している。PR #42 までで、レイアウトの段階などが main に入った。10段階目（gvar、GVAR、HVAR、VVAR、ピン留めなしの CFF2、GDEF、BASE、COLR の項目の変化量の記憶）は、可変フォントの [ADR 0027](adr/0027-variable-fonts.md) の読み取り部分の実装を待つ。VARC は13段階目まで待つ。[ADR 0022](adr/0022-subsetting.md) のステータスを採択にする条件は、[ADR 0027](adr/0027-variable-fonts.md) の採択と、10段階目の実装である。
 
 ## 利用者の判断を待つこと
 

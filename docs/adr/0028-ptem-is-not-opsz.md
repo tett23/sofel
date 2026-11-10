@@ -1,6 +1,6 @@
 # ADR 0028: `--font-ptem` は `opsz` を決めない（[ADR 0020](0020-shaping-foundation.md)の訂正）
 
-ステータス: 提案
+ステータス: 採択（未実装）
 
 ## 文脈
 
