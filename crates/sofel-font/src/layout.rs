@@ -9,7 +9,7 @@
 //! (`hb_ot_tag_to_script`). Copyright © the HarfBuzz authors. Used under
 //! HarfBuzz's "Old MIT" license; see THIRD_PARTY_NOTICES.md.
 
-use sofel_read::base::{BaseScript, MinMax};
+use sofel_read::base::{BaseCoord, BaseScript, MinMax};
 use sofel_read::{GlyphId, Tag};
 
 use crate::baseline;
@@ -124,6 +124,31 @@ fn base_script<'a>(font: &Font<'a>, direction: Direction, script: Tag) -> Option
     list.script(i).ok().flatten()
 }
 
+pub(crate) struct BaselineFallback<'a> {
+    pub(crate) baseline: &'a dyn Fn(Tag, Direction, Tag) -> Option<i32>,
+    pub(crate) metric: &'a dyn Fn(MetricsTag) -> i32,
+    pub(crate) font_extents: &'a dyn Fn(Direction) -> FontExtents,
+}
+
+pub(crate) fn base_coord<'a>(
+    font: &Font<'a>,
+    tag: Tag,
+    direction: Direction,
+    script: Tag,
+) -> Option<BaseCoord<'a>> {
+    let axis = font
+        .base?
+        .axis(direction == Direction::Vertical)
+        .ok()
+        .flatten()?;
+    let values = base_script(font, direction, script)?
+        .base_values()
+        .ok()
+        .flatten()?;
+    let index = axis.base_tag_list().ok().flatten()?.find(tag)?;
+    values.coord(index).ok().flatten()
+}
+
 impl HbScale {
     /// `em_scale_y` for horizontal text, `em_scale_x` for vertical text
     /// (`BaseCoord::get_coord`).
@@ -149,15 +174,7 @@ impl HbScale {
         direction: Direction,
         script: Tag,
     ) -> Option<i32> {
-        let axis = font
-            .base?
-            .axis(direction == Direction::Vertical)
-            .ok()
-            .flatten()?;
-        let s = base_script(font, direction, script)?;
-        let values = s.base_values().ok().flatten()?;
-        let index = axis.base_tag_list().ok().flatten()?.find(tag)?;
-        let coord = values.coord(index).ok().flatten()?;
+        let coord = base_coord(font, tag, direction, script)?;
         Some(self.base_scale(coord.coordinate(), direction))
     }
 
@@ -198,7 +215,30 @@ impl HbScale {
         script: Tag,
         extents: &dyn Fn(GlyphId) -> Option<GlyphExtents>,
     ) -> i32 {
-        if let Some(v) = self.baseline(font, tag, direction, script) {
+        self.baseline_fallback_using(
+            font,
+            tag,
+            direction,
+            script,
+            extents,
+            &BaselineFallback {
+                baseline: &|tag, direction, script| self.baseline(font, tag, direction, script),
+                metric: &|tag| self.metrics_position_with_fallback_scaled(font, tag, extents),
+                font_extents: &|direction| self.extents_for(font, direction),
+            },
+        )
+    }
+
+    pub(crate) fn baseline_fallback_using(
+        &self,
+        font: &Font<'_>,
+        tag: Tag,
+        direction: Direction,
+        script: Tag,
+        extents: &dyn Fn(GlyphId) -> Option<GlyphExtents>,
+        callbacks: &BaselineFallback<'_>,
+    ) -> i32 {
+        if let Some(v) = (callbacks.baseline)(tag, direction, script) {
             return v;
         }
         let horizontal = direction == Direction::Horizontal;
@@ -208,7 +248,8 @@ impl HbScale {
             self.x_scale()
         };
         let glyph_box = |g: GlyphId| extents(g);
-        let again = |t: Tag| self.baseline_fallback(font, t, direction, script, extents);
+        let again =
+            |t: Tag| self.baseline_fallback_using(font, t, direction, script, extents, callbacks);
         let sum = |a: i32, b: i32| i64::from(a).saturating_add(i64::from(b));
         let diff = |a: i32, b: i32| i64::from(a).saturating_sub(i64::from(b));
         match tag {
@@ -218,13 +259,7 @@ impl HbScale {
                     .or_else(|| font.nominal_glyph(u32::from('-')));
                 match minus.filter(|_| horizontal).and_then(glyph_box) {
                     Some(e) => e.y_bearing.saturating_add(e.height / 2),
-                    None => {
-                        self.metrics_position_with_fallback_scaled(
-                            font,
-                            MetricsTag::XHeight,
-                            extents,
-                        ) / 2
-                    }
+                    None => (callbacks.metric)(MetricsTag::XHeight) / 2,
                 }
             }
             baseline::IDEO_FACE_TOP_OR_RIGHT | baseline::IDEO_FACE_BOTTOM_OR_LEFT => {
@@ -237,15 +272,15 @@ impl HbScale {
                 }
             }
             baseline::IDEO_EMBOX_TOP_OR_RIGHT => {
-                match self.baseline(font, baseline::IDEO_EMBOX_BOTTOM_OR_LEFT, direction, script) {
+                match (callbacks.baseline)(baseline::IDEO_EMBOX_BOTTOM_OR_LEFT, direction, script) {
                     Some(v) => v.saturating_add(em),
-                    None => self.extents_for(font, direction).ascender,
+                    None => (callbacks.font_extents)(direction).ascender,
                 }
             }
             baseline::IDEO_EMBOX_BOTTOM_OR_LEFT => {
-                match self.baseline(font, baseline::IDEO_EMBOX_TOP_OR_RIGHT, direction, script) {
+                match (callbacks.baseline)(baseline::IDEO_EMBOX_TOP_OR_RIGHT, direction, script) {
                     Some(v) => v.saturating_sub(em),
-                    None => self.extents_for(font, direction).descender,
+                    None => (callbacks.font_extents)(direction).descender,
                 }
             }
             baseline::HANGING => {
@@ -281,18 +316,35 @@ impl HbScale {
         script: Tag,
         language: Tag,
     ) -> (FontExtents, bool) {
+        self.layout_font_extents_using(
+            font,
+            direction,
+            script,
+            language,
+            &|coord| self.base_scale(coord.coordinate(), direction),
+            &|direction| self.extents_for(font, direction),
+        )
+    }
+
+    pub(crate) fn layout_font_extents_using(
+        &self,
+        font: &Font<'_>,
+        direction: Direction,
+        script: Tag,
+        language: Tag,
+        coord_value: &dyn Fn(BaseCoord<'_>) -> i32,
+        font_extents: &dyn Fn(Direction) -> FontExtents,
+    ) -> (FontExtents, bool) {
         let Some(s) = base_script(font, direction, script)
             .filter(|s| s.default_min_max_offset() != 0 || s.num_lang_sys() != 0)
         else {
-            return (self.extents_for(font, direction), false);
+            return (font_extents(direction), false);
         };
         let mm: Option<MinMax<'_>> = match s.find_lang_sys(language).filter(|_| language != NONE) {
             Some(i) => s.lang_sys_min_max(i).ok().flatten(),
             None => s.default_min_max().ok().flatten(),
         };
-        let coord = |c: Option<sofel_read::base::BaseCoord<'_>>| {
-            c.map_or(0, |c| self.base_scale(c.coordinate(), direction))
-        };
+        let coord = |c: Option<BaseCoord<'_>>| c.map_or(0, coord_value);
         let (min, max) = mm.map_or((0, 0), |m| {
             (
                 coord(m.min_coord().ok().flatten()),

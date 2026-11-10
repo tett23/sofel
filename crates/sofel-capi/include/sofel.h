@@ -983,7 +983,7 @@ int32_t sofel_font_baseline(const sofel_font_t *font, const sofel_location_t *lo
  * sofel_font_baseline_with_fallback (font, NULL, SOFEL_BASELINE_IDEO_EMBOX_CENTRAL,
  * SOFEL_DIRECTION_HORIZONTAL, SOFEL_TAG('h', 'a', 'n', 'i'), &coord).
  *
- * Rust: sofel_font::var::Instance::baseline_with_fallback, sofel_font::HbScale::baseline_with_fallback_scaled
+ * Rust: sofel_font::var::Instance::baseline_with_fallback, sofel_font::HbScale::baseline_with_fallback_scaled, sofel_font::var::Instance::scaled_baseline_with_fallback
  * HarfBuzz: hb_ot_layout_get_baseline_with_fallback
  * FreeType: none
  */
@@ -1006,7 +1006,7 @@ int32_t sofel_font_layout_font_extents(const sofel_font_t *font, const sofel_loc
                                        int32_t *found);
 
 /*
- * Rust: sofel_font::HbScale::baseline
+ * Rust: sofel_font::HbScale::baseline, sofel_font::var::Instance::scaled_baseline
  * HarfBuzz: hb_ot_layout_get_baseline
  * FreeType: none
  */
@@ -1015,7 +1015,7 @@ int32_t sofel_scale_baseline(const sofel_scale_t *scale, const sofel_font_t *fon
                              uint32_t tag, int32_t direction, uint32_t script, int32_t *coord);
 
 /*
- * Rust: sofel_font::HbScale::baseline_with_fallback
+ * Rust: sofel_font::HbScale::baseline_with_fallback, sofel_font::var::Instance::scaled_baseline_with_fallback
  * HarfBuzz: hb_ot_layout_get_baseline_with_fallback
  * FreeType: none
  */
@@ -1025,7 +1025,7 @@ int32_t sofel_scale_baseline_with_fallback(const sofel_scale_t *scale, const sof
                                            int32_t *coord);
 
 /*
- * Rust: sofel_font::HbScale::layout_font_extents
+ * Rust: sofel_font::HbScale::layout_font_extents, sofel_font::var::Instance::scaled_layout_font_extents
  * HarfBuzz: hb_ot_layout_get_font_extents
  * FreeType: none
  */

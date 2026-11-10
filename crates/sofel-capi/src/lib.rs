@@ -1341,11 +1341,13 @@ fn baseline(
     *coord = if fallback && scale.is_none() {
         instance.baseline_with_fallback(tag, dir, script, glyph_box(sf, &s))
     } else if fallback {
-        s.baseline_with_fallback_scaled(font, tag, dir, script, glyph_box(sf, &s))
+        instance.scaled_baseline_with_fallback(&s, tag, dir, script, glyph_box(sf, &s))
     } else if scale.is_none() {
         instance.baseline(tag, dir, script).ok_or(ERROR_NOT_FOUND)?
     } else {
-        s.baseline(font, tag, dir, script).ok_or(ERROR_NOT_FOUND)?
+        instance
+            .scaled_baseline(&s, tag, dir, script)
+            .ok_or(ERROR_NOT_FOUND)?
     };
     Ok(())
 }
@@ -1404,18 +1406,27 @@ pub unsafe extern "C" fn sofel_font_baseline_with_fallback(
 pub unsafe extern "C" fn sofel_scale_baseline(
     scale: *const SofelScale,
     font: *const SofelFont,
-    _location: *const SofelLocation,
+    location: *const SofelLocation,
     tag: u32,
     direction: i32,
     script: u32,
     coord: *mut i32,
 ) -> i32 {
     // SAFETY: the caller's conditions.
-    let (scale, font, coord) = unsafe { (r(scale), sofel_ref(font), w(coord)) };
-    status(
-        some(scale)
-            .and_then(|s| baseline(Some(s), font, None, tag, direction, script, false, coord)),
-    )
+    let (scale, font, location, coord) =
+        unsafe { (r(scale), sofel_ref(font), r(location), w(coord)) };
+    status(some(scale).and_then(|s| {
+        baseline(
+            Some(s),
+            font,
+            location,
+            tag,
+            direction,
+            script,
+            false,
+            coord,
+        )
+    }))
 }
 
 /// `sofel_scale_baseline_with_fallback`.
@@ -1428,17 +1439,18 @@ pub unsafe extern "C" fn sofel_scale_baseline(
 pub unsafe extern "C" fn sofel_scale_baseline_with_fallback(
     scale: *const SofelScale,
     font: *const SofelFont,
-    _location: *const SofelLocation,
+    location: *const SofelLocation,
     tag: u32,
     direction: i32,
     script: u32,
     coord: *mut i32,
 ) -> i32 {
     // SAFETY: the caller's conditions.
-    let (scale, font, coord) = unsafe { (r(scale), sofel_ref(font), w(coord)) };
+    let (scale, font, location, coord) =
+        unsafe { (r(scale), sofel_ref(font), r(location), w(coord)) };
     status(
         some(scale)
-            .and_then(|s| baseline(Some(s), font, None, tag, direction, script, true, coord)),
+            .and_then(|s| baseline(Some(s), font, location, tag, direction, script, true, coord)),
     )
 }
 
@@ -1459,9 +1471,12 @@ fn layout_font_extents(
         None => sofel_font::var::Location::default_ref(),
     };
     let (e, f) = if let Some(scale) = scale {
-        scale
-            .scale
-            .layout_font_extents(font, dir, Tag::from_u32(script), Tag::from_u32(language))
+        font.instance(location).scaled_layout_font_extents(
+            &scale.scale,
+            dir,
+            Tag::from_u32(script),
+            Tag::from_u32(language),
+        )
     } else {
         font.instance(location).layout_font_extents(
             dir,
@@ -1510,7 +1525,7 @@ pub unsafe extern "C" fn sofel_font_layout_font_extents(
 pub unsafe extern "C" fn sofel_scale_layout_font_extents(
     scale: *const SofelScale,
     font: *const SofelFont,
-    _location: *const SofelLocation,
+    location: *const SofelLocation,
     direction: i32,
     script: u32,
     language: u32,
@@ -1518,13 +1533,20 @@ pub unsafe extern "C" fn sofel_scale_layout_font_extents(
     found: *mut i32,
 ) -> i32 {
     // SAFETY: the caller's conditions.
-    let (scale, font, extents, found) =
-        unsafe { (r(scale), font_ref(font), ints::<3>(extents), w(found)) };
+    let (scale, font, location, extents, found) = unsafe {
+        (
+            r(scale),
+            font_ref(font),
+            r(location),
+            ints::<3>(extents),
+            w(found),
+        )
+    };
     status(some(scale).and_then(|s| {
         layout_font_extents(
             Some(s),
             font,
-            None,
+            location,
             direction,
             script,
             language,

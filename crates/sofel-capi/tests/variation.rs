@@ -25,6 +25,123 @@ fn font_bytes() -> Vec<u8> {
     sfnt(&tables)
 }
 
+fn base_variation_font_bytes() -> Vec<u8> {
+    let store = Buf::new()
+        .u16(1)
+        .u32(12)
+        .u16(1)
+        .u32(22)
+        .u16(1)
+        .u16(1)
+        .i16(0)
+        .i16(16384)
+        .i16(16384)
+        .u16(1)
+        .u16(1)
+        .u16(1)
+        .u16(0)
+        .i16(21)
+        .done();
+    let coord = || build::Coord::F3(101, Some(build::device(0, 0, 0x8000, &[])));
+    let axis = build::AxisSpec {
+        tags: Some(vec![*b"ideo", *b"romn"]),
+        scripts: Some(vec![(
+            *b"DFLT",
+            Some(build::ScriptSpec {
+                values: Some((0, vec![Some(coord()), Some(coord())])),
+                default_min_max: Some(build::MinMaxSpec {
+                    min: Some(build::Coord::F3(10, Some(build::device(0, 0, 0x8000, &[])))),
+                    max: Some(coord()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+        )]),
+    };
+    let mut tables = sample_tables_with_glyf();
+    tables.push((b"BASE", build::base11(Some(&axis), None, Some(&store))));
+    tables.push((b"fvar", fvar_one_axis()));
+    tables.sort_by_key(|(tag, _)| **tag);
+    sfnt(&tables)
+}
+
+#[test]
+fn i03_base_variation_index_reaches_scaled_c_abi() {
+    let bytes = base_variation_font_bytes();
+    let mut error = -99;
+    // SAFETY: font bytes remain alive through handle destruction.
+    let font = unsafe { sofel_font_create(bytes.as_ptr(), bytes.len(), 0, &mut error) };
+    assert_eq!(error, OK);
+    let coords = [1.0f32];
+    let mut location = core::ptr::null_mut();
+    // SAFETY: font and all pointers are valid.
+    assert_eq!(
+        unsafe { sofel_location_create_design(font, coords.as_ptr(), 1, &mut location) },
+        OK
+    );
+    let scale = unsafe { sofel_scale_create(font, 500, 500, &mut error) };
+    assert_eq!(error, OK);
+    let mut value = i32::MIN;
+    let script = u32::from_be_bytes(*b"DFLT");
+    // SAFETY: all handles are live and value is writable.
+    assert_eq!(
+        unsafe {
+            sofel_scale_baseline(
+                scale,
+                font,
+                location,
+                u32::from_be_bytes(*b"romn"),
+                0,
+                script,
+                &mut value,
+            )
+        },
+        OK
+    );
+    assert_eq!(value, 62);
+    assert_eq!(
+        unsafe {
+            sofel_scale_baseline_with_fallback(
+                scale,
+                font,
+                location,
+                u32::from_be_bytes(*b"idtp"),
+                0,
+                script,
+                &mut value,
+            )
+        },
+        OK
+    );
+    assert_eq!(value, 562);
+    let mut extents = [i32::MIN; 3];
+    let mut found = -1;
+    // SAFETY: all handles are live and outputs are writable.
+    assert_eq!(
+        unsafe {
+            sofel_scale_layout_font_extents(
+                scale,
+                font,
+                location,
+                0,
+                script,
+                u32::from_be_bytes(*b"dflt"),
+                extents.as_mut_ptr(),
+                &mut found,
+            )
+        },
+        OK
+    );
+    assert_eq!(found, 1);
+    assert_eq!(extents, [62, 16, 0]);
+    // SAFETY: each handle is owned and no longer used.
+    unsafe {
+        sofel_scale_destroy(scale);
+        sofel_location_destroy(location);
+        sofel_font_destroy(font);
+    }
+}
+
 fn hvar_font_bytes() -> Vec<u8> {
     let store = Buf::new()
         .u16(1)
