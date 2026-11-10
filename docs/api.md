@@ -53,8 +53,10 @@ let upem = font.units_per_em();
 let n = font.num_glyphs();
 let gid: Option<GlyphId> = font.nominal_glyph('A' as u32);
 let vs = font.variation_glyph(0x845B, 0xE0100); // 異体字セレクタ（cmapのフォーマット14）
-let advance: u16 = font.advance(gid.unwrap_or(GlyphId(0))); // フォントの単位
+let advance: u16 = font.default_instance().advance(gid.unwrap_or(GlyphId(0))); // フォントの単位
 ```
+
+位置を持つ問い合わせは `Instance` の関数として公開する。`font.default_instance()` は既定位置の `Instance` を返す。
 
 | sofel | HarfBuzz／FreeType |
 |---|---|
@@ -62,23 +64,23 @@ let advance: u16 = font.advance(gid.unwrap_or(GlyphId(0))); // フォントの�
 | `Font::nominal_glyph(c)` | `hb_font_get_nominal_glyph`（グリフの数以上のIDは `None`。フォーマット2と8もFreeTypeと同じく引く） |
 | `Font::variation_glyph(c, vs)` | `hb_font_get_variation_glyph`（同じく） |
 | `Font::nominal_glyph_raw(c)`、`Font::variation_glyph_raw(c, vs)` | `hb_font_get_nominal_glyph`、`hb_font_get_variation_glyph` そのまま（シェーピングが使う） |
-| `Font::advance(g)` | `hb_font_get_glyph_h_advance`（拡大縮小なし） |
-| `Font::ft_left_side_bearing(g)` | FreeTypeの `tt_face_get_metrics` の左のサイドベアリング（輪郭のpp1.xに使う） |
+| `Instance::advance(g)` | `hb_font_get_glyph_h_advance`（拡大縮小なし） |
+| `Instance::ft_left_side_bearing(g)` | FreeTypeの `tt_face_get_metrics` の左のサイドベアリング（輪郭のpp1.xに使う） |
 | `Font::table(tag)` | `hb_face_reference_table` |
-| `Font::h_extents()`、`Font::v_extents()` | `hb_font_get_extents_for_direction`（代わりの値つき） |
-| `Font::v_advance(g)` | `hb_font_get_glyph_v_advance`（下向きが負） |
-| `Font::v_origin(g, extents)` | `hb_font_get_glyph_v_origin` |
-| `Font::glyf_extents(g)` | `hb_font_get_glyph_extents`（glyfだけ。CFFとCFF2は `sofel_outline::HbExtents`） |
-| `Font::metrics_position(tag)`、`Font::metrics_position_with_fallback(tag, extents)` | `hb_ot_metrics_get_position`、`hb_ot_metrics_get_position_with_fallback` |
-| `Font::baseline(tag, direction, script)`、`Font::baseline_with_fallback(tag, direction, script, extents)` | `hb_ot_layout_get_baseline`、`hb_ot_layout_get_baseline_with_fallback` |
-| `Font::layout_font_extents(direction, script, language)` | `hb_ot_layout_get_font_extents` |
+| `Instance::h_extents()`、`Instance::v_extents()` | `hb_font_get_extents_for_direction`（代わりの値つき） |
+| `Instance::v_advance(g)` | `hb_font_get_glyph_v_advance`（下向きが負） |
+| `Instance::v_origin(g, extents)` | `hb_font_get_glyph_v_origin` |
+| `Instance::glyf_extents(g)` | `hb_font_get_glyph_extents`（glyfだけ。CFFとCFF2は `sofel_outline::HbExtents`） |
+| `Instance::metrics_position(tag)`、`Instance::metrics_position_with_fallback(tag, extents)` | `hb_ot_metrics_get_position`、`hb_ot_metrics_get_position_with_fallback` |
+| `Instance::baseline(tag, direction, script)`、`Instance::baseline_with_fallback(tag, direction, script, extents)` | `hb_ot_layout_get_baseline`、`hb_ot_layout_get_baseline_with_fallback` |
+| `Instance::layout_font_extents(direction, script, language)` | `hb_ot_layout_get_font_extents` |
 | `Font::os2()`、`Font::fs_type()` | `FT_Get_Sfnt_Table(FT_SFNT_OS2)`、`FT_Get_FSType_Flags` |
 | `HbScale::for_font(font, x, y)` | `hb_font_set_scale` |
 | `Font::names()`、`Font::name_utf8(id, lang, out)` など | `hb_ot_name_list_names`、`hb_ot_name_get_utf8` など |
 | `Font::sfnt_name(i)`、`Font::postscript_name(out)` | `FT_Get_Sfnt_Name`、`FT_Get_Postscript_Name` |
 | `Font::glyph_name(g)`、`GlyphNames::glyph_from_name(name)` | `hb_font_get_glyph_name`、`hb_font_get_glyph_from_name` |
 | `Font::ft_glyph_name(g)`、`GlyphNames::ft_glyph_from_name(name)` | `FT_Get_Glyph_Name`、`FT_Get_Name_Index` |
-| `Font::ft_face_metrics()`、`Font::ft_v_advance(g)` | `FT_Face` の値、`FT_Get_Advance`（縦） |
+| `Instance::ft_face_metrics()`、`Instance::ft_v_advance(g)` | `FT_Face` の値、`FT_Get_Advance`（縦） |
 
 - cmapのサブテーブルはHarfBuzzと同じ順で選び、記号フォントとMacのエンコーディングではHarfBuzzと同じく文字を付けかえて引く（[ADR 0016](adr/0016-font-and-vertical-metrics.md)）。送り幅は、hmtxが欠けたり短かったりするときもHarfBuzzと同じ値を返す（[ADR 0010](adr/0010-font-foundation.md)）。
 - `FontError` は、ファイルがsfntでもコレクションでもない、`head` が読めない、番号のフォントが無い、のいずれか。
@@ -138,7 +140,7 @@ let info = outlines.draw(gid, scale, &mut scratch, &mut pen)?;
 
 - `Outlines::new` は、FreeTypeと同じく、sfntの版が `OTTO` ならCFFかCFF2（`sofel_font::Cff`）、それ以外ならglyfを選ぶ（[ADR 0021](adr/0021-cff-outlines.md)）。glyfのフォントでは費用は無く、CFFのフォントでは開いた表を持つ。`sofel_outline::draw(&font, …)` と `load(&font, …)` は毎回 `Outlines::new` を呼ぶ。CFFの点はフォントの単位の整数に切り捨てられ、FontMatrixをかけてから拡大縮小される。`overlap` は常に偽。
 - `Scale::Unscaled` はフォントの単位のまま（`FT_LOAD_NO_SCALE`）、`Scale::Scaled { x, y }` は16.16の倍率で26.6の座標にする。
-- 点は、FreeTypeと同じく幻の点のpp1.x（見出しの `xMin` − `Font::ft_left_side_bearing` を拡大縮小した値）だけ左に動かしてある。合成グリフでは、USE_MY_METRICSの部品があればその部品のpp1.xを使う（[ADR 0018](adr/0018-phantom-point-shift.md)）。
+- 点は、FreeTypeと同じく幻の点のpp1.x（見出しの `xMin` − `Instance::ft_left_side_bearing` を拡大縮小した値）だけ左に動かしてある。合成グリフでは、USE_MY_METRICSの部品があればその部品のpp1.xを使う（[ADR 0018](adr/0018-phantom-point-shift.md)）。
 - `draw` は `load`（点を `Scratch` に読む）と `Scratch::decompose`（命令を送る）を続けたもの。輪郭を移動してから分解したいとき（ラスタライズ）は、2つを分けて呼ぶ。`decompose(offset, multiplier, pen)` は、`FT_Outline_Translate` で `offset` だけ動かし、各点を `multiplier` 倍してから分解する。暗黙のon-curveの点（2点の中点、0へ切り捨て）がこの順に依存するので、FreeTypeと一致させるには同じ順で行う。
 - HarfBuzzのグリフの箱は `HbExtents`（[ADR 0021](adr/0021-cff-outlines.md)）：`HbExtents::new(&font)` でHarfBuzzのCFFとCFF2のアクセラレータ（`sofel_font::HbCff1`、`HbCff2`）を一度だけ作り、`glyph_extents(g)` で `hb_font_get_glyph_extents` と同じ箱（glyf、CFF2、CFFの順。拡大縮小なし）を、`scaled_glyph_extents(g, &scale)` で `HbScale` の拡大縮小をした箱を返す。CFFの箱はHarfBuzzの解釈器と同じく制御点を含み、FreeTypeの輪郭の `cbox` とは違うことがある。
 - `OutlineError`：グリフIDが範囲外（`InvalidGlyphIndex`）、glyfとlocaが無い（`NoGlyphData`）、グリフのデータが壊れている（`InvalidOutline`）、複合グリフが壊れている・循環している・深すぎる（`InvalidComposite`）、`OTTO` でCFFもCFF2も無い（`UnsupportedFormat`）、FreeTypeが開けないCFF（`InvalidCff`）、解読できないcharstring（`InvalidCharString`）。エラーの前に送った命令は取り消されない。
@@ -549,14 +551,14 @@ sofel_font_t *font = sofel_font_create(data, len, 0, &err); /* data は複製し
 uint32_t gid;
 uint16_t advance;
 if (font != NULL && sofel_font_nominal_glyph(font, 'A', &gid) == SOFEL_OK) {
-  sofel_font_h_advance(font, gid, &advance);
+  sofel_font_h_advance(font, NULL, gid, &advance);
 
   sofel_outline_scratch_t *scratch = sofel_outline_scratch_create(); /* スレッドごとに1つ */
   sofel_rasterizer_t *raster = sofel_rasterizer_create();
   uint8_t pixels[4096];
   size_t n;
   int32_t box[4]; /* left, top, width, rows */
-  err = sofel_render_glyph(font, gid, 48, scratch, raster, pixels, sizeof pixels, &n, box);
+  err = sofel_render_glyph(font, NULL, gid, 48, scratch, raster, pixels, sizeof pixels, &n, box);
   /* SOFEL_ERROR_BUFFER_TOO_SMALL なら n バイトの配列で呼びなおす */
   sofel_rasterizer_destroy(raster);
   sofel_outline_scratch_destroy(scratch);
@@ -568,17 +570,17 @@ sofel_font_destroy(font);
 |---|---|---|
 | `sofel_font_create` | `Font::new` | `hb_face_create`／`FT_New_Memory_Face` |
 | `sofel_font_nominal_glyph`、`sofel_font_variation_glyph` | `Font::nominal_glyph`、`Font::variation_glyph` | `hb_font_get_nominal_glyph`、`hb_font_get_variation_glyph` |
-| `sofel_font_h_advance` | `Font::advance` | `hb_font_get_glyph_h_advance` |
-| `sofel_font_ft_left_side_bearing` | `Font::ft_left_side_bearing` | `FT_Get_Glyph_Metrics` |
+| `sofel_font_h_advance` | `Instance::advance` | `hb_font_get_glyph_h_advance` |
+| `sofel_font_ft_left_side_bearing` | `Instance::ft_left_side_bearing` | `FT_Get_Glyph_Metrics` |
 | `sofel_font_table` | `Font::table` | `hb_face_reference_table`／`FT_Load_Sfnt_Table` |
-| `sofel_font_h_extents`、`sofel_font_v_extents`、`sofel_font_v_advance`、`sofel_font_v_origin`、`sofel_font_glyph_extents` | `Font::h_extents` など | `hb_font_get_extents_for_direction`、`hb_font_get_glyph_v_advance`、`hb_font_get_glyph_v_origin`、`hb_font_get_glyph_extents` |
-| `sofel_font_metrics_position`、`sofel_font_metrics_position_with_fallback` | `Font::metrics_position` など | `hb_ot_metrics_get_position` など |
-| `sofel_font_baseline`、`sofel_font_baseline_with_fallback`、`sofel_font_layout_font_extents` | `Font::baseline` など | `hb_ot_layout_get_baseline`、`hb_ot_layout_get_baseline_with_fallback`、`hb_ot_layout_get_font_extents` |
+| `sofel_font_h_extents`、`sofel_font_v_extents`、`sofel_font_v_advance`、`sofel_font_v_origin`、`sofel_font_glyph_extents` | `Instance::h_extents` など | `hb_font_get_extents_for_direction`、`hb_font_get_glyph_v_advance`、`hb_font_get_glyph_v_origin`、`hb_font_get_glyph_extents` |
+| `sofel_font_metrics_position`、`sofel_font_metrics_position_with_fallback` | `Instance::metrics_position` など | `hb_ot_metrics_get_position` など |
+| `sofel_font_baseline`、`sofel_font_baseline_with_fallback`、`sofel_font_layout_font_extents` | `Instance::baseline` など | `hb_ot_layout_get_baseline`、`hb_ot_layout_get_baseline_with_fallback`、`hb_ot_layout_get_font_extents` |
 | `sofel_font_os2_field`、`sofel_font_fs_type` | `Font::os2`、`Font::fs_type` | `FT_Get_Sfnt_Table`、`FT_Get_FSType_Flags` |
 | `sofel_scale_*` | `HbScale` | `hb_font_set_scale` のあとの各関数 |
 | `sofel_font_name_*`、`sofel_font_sfnt_name*`、`sofel_font_postscript_name` | `Font::names` など | `hb_ot_name_*`、`FT_Get_Sfnt_Name`、`FT_Get_Postscript_Name` |
 | `sofel_font_glyph_name`、`sofel_font_ft_glyph_name`、`sofel_glyph_names_*` | `Font::glyph_name`、`GlyphNames` | `hb_font_get_glyph_name`、`FT_Get_Glyph_Name`、`FT_Get_Name_Index` |
-| `sofel_font_ft_face_metrics`、`sofel_font_ft_v_advance` | `Font::ft_face_metrics`、`Font::ft_v_advance` | `FT_Face`、`FT_Get_Advance` |
+| `sofel_font_ft_face_metrics`、`sofel_font_ft_v_advance` | `Instance::ft_face_metrics`、`Instance::ft_v_advance` | `FT_Face`、`FT_Get_Advance` |
 | `sofel_outline_draw`、`sofel_outline_load`、`sofel_outline_decompose` | `draw`、`load`、`Scratch::decompose` | `FT_Load_Glyph` + `FT_Outline_Decompose` |
 | `sofel_rasterizer_*`、`sofel_pixel_box` | `Rasterizer`、`pixel_box` | `FT_Outline_Render` |
 | `sofel_render_glyph` | `sofel_cli::glyph::render` | `FT_Render_Glyph` |

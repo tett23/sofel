@@ -272,7 +272,7 @@ fn extra_items(b: &mut Bench, testdata: &std::path::Path) {
         b.item(
             name,
             "advance".into(),
-            &mut || (0..n).map(|g| u64::from(font.advance(GlyphId(g)))).sum(),
+            &mut || (0..n).map(|g| u64::from(font.default_instance().advance(GlyphId(g)))).sum(),
             Some((
                 &mut || (0..n).map(|g| wrap(ft.advance(g))).sum(),
                 Compare::Yes,
@@ -369,7 +369,7 @@ fn extra_items(b: &mut Bench, testdata: &std::path::Path) {
                 "vertical advance".into(),
                 &mut || {
                     (0..n)
-                        .map(|g| wrap(i64::from(font.v_advance(GlyphId(g)))))
+                        .map(|g| wrap(i64::from(font.default_instance().v_advance(GlyphId(g)))))
                         .fold(0, u64::wrapping_add)
                 },
                 None,
@@ -1186,7 +1186,7 @@ fn main() {
         b.item(
             name,
             "advance".into(),
-            &mut || (0..n).map(|g| u64::from(font.advance(GlyphId(g)))).sum(),
+            &mut || (0..n).map(|g| u64::from(font.default_instance().advance(GlyphId(g)))).sum(),
             Some((
                 &mut || (0..n).map(|g| wrap(ft.advance(g))).sum(),
                 Compare::Yes,
@@ -1204,7 +1204,7 @@ fn main() {
             "v advance".into(),
             &mut || {
                 (0..n)
-                    .map(|g| wrap(i64::from(font.v_advance(GlyphId(g)))))
+                    .map(|g| wrap(i64::from(font.default_instance().v_advance(GlyphId(g)))))
                     .sum()
             },
             None,
@@ -1220,7 +1220,9 @@ fn main() {
             &mut || {
                 (0..n)
                     .map(|g| {
-                        let (x, y) = font.v_origin(GlyphId(g), |g| v_boxes.glyph_extents(g));
+                        let (x, y) = font
+                            .default_instance()
+                            .v_origin(GlyphId(g), |g| v_boxes.glyph_extents(g));
                         wrap(i64::from(x) + i64::from(y))
                     })
                     .sum()
