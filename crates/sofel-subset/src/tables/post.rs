@@ -104,6 +104,21 @@ pub(crate) fn subset(
     s.extend(src.get(..32).unwrap_or(&[]));
     if !glyph_names {
         s.set_u16(0, 3);
+    }
+    // The underline MVAR deltas are 0 at the default location.
+    if let Some(r) = plan.var.user().get(&Tag::new(b"slnt")) {
+        // hb_max (-90.f, hb_min (middle, 90.f))
+        let m = if r.default <= 90.0 { r.default } else { 90.0 };
+        let angle = if -90.0 >= m { -90.0 } else { m };
+        let current = sofel_font::read::be::i32_at(src, 4).unwrap_or(0);
+        if crate::instance::fixed_to_f32(sofel_font::read::Fixed(current)) != angle {
+            let v = crate::instance::f64_to_i32(sofel_geom::float::hb_roundf32(
+                angle / (1.0 / 65536.0),
+            ));
+            s.set_u32(4, u32::from_be_bytes(v.to_be_bytes()));
+        }
+    }
+    if !glyph_names {
         return Ok(true);
     }
     if u16_at(src, 0) != Some(2) {

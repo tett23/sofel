@@ -9,11 +9,13 @@ sofel_font::Font::head Returns a sofel-read view of head; C reads the table with
 sofel_geom::Command::apply Replays a recorded Rust Command into a Rust Pen; C pens receive the commands directly.
 sofel_geom::F26Dot6::from_int A multiplication by 64, which C writes as such.
 sofel_geom::float::* Floating-point helpers that Rust crates use to copy HarfBuzz's rounding (ADR 0026); C has floor and its own conversions, and gets HarfBuzz's rounded values from the sofel_* functions.
+sofel_read::avar::* Zero-copy Rust views and per-table validators for pinning the axes when subsetting (ADR 0022); C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::base::* Zero-copy Rust views and per-table validators; C gets baselines with sofel_font_baseline and sofel_font_layout_font_extents, reads the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::be::* Bounds-checked big-endian readers of Rust slices for the table views; C reads bytes directly.
 sofel_read::cff::* Zero-copy Rust views, the FreeType DICT parsers, the Type 2 charstring decoder and the CFF validators (ADR 0021); C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::cmap::* Zero-copy Rust views and per-table validators; C maps characters with sofel_font_nominal_glyph and sofel_font_variation_glyph, reads the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::device::* Zero-copy Rust views of Device tables, read through the BASE, GDEF and GPOS views; C reads the bytes with sofel_font_table.
+sofel_read::fvar::* Zero-copy Rust views and per-table validators for pinning the axes when subsetting (ADR 0022); C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::gdef::* Zero-copy Rust views and per-table validators for shaping (ADR 0020); C shapes with the sofel_shape_* functions of ADR 0020, reads the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::gpos::* Zero-copy Rust views and per-table validators for shaping (ADR 0020); C shapes with the sofel_shape_* functions of ADR 0020, reads the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::gsub::* Zero-copy Rust views and per-table validators for shaping (ADR 0020); C shapes with the sofel_shape_* functions of ADR 0020, reads the bytes with sofel_font_table, and validates with sofel_validate.
@@ -24,6 +26,7 @@ sofel_read::hmtx::* Zero-copy Rust views and per-table validators; C gets advanc
 sofel_read::item_variation::* A zero-copy Rust view and validator of the Item Variation Store (ADR 0021); C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::layout::* Zero-copy Rust views of the layout common tables shared by GDEF, GSUB and GPOS (ADR 0020); C shapes with the sofel_shape_* functions of ADR 0020 and reads the bytes with sofel_font_table.
 sofel_read::loca::* Zero-copy Rust views and per-table validators; C gets outlines with sofel_outline_*, the bytes with sofel_font_table, and validates with sofel_validate.
+sofel_read::math::* Zero-copy Rust views and per-table validators of MATH (ADR 0022); C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::maxp::* Zero-copy Rust views and per-table validators; C gets the glyph count with sofel_font_num_glyphs, the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::name::* Zero-copy Rust views and per-table validators; C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::os2::* Zero-copy Rust views and per-table validators; C reads the bytes with sofel_font_table and validates with sofel_validate.
@@ -45,7 +48,7 @@ sofel_font::HbScale::em_scalef_y Takes a float; the C ABI uses fixed-width integ
 sofel_font::Language::bytes An iterator over the tag; C gets the tag as a string from sofel_font_name_entry.
 sofel_font::Language::is_empty C gets the tag's length from sofel_font_name_entry.
 sofel_font::HbCff1::* HarfBuzz's CFF accelerator, the parts that glyph boxes and names read (ADR 0021); C gets the boxes from sofel_font_glyph_extents and the names from sofel_font_glyph_name.
-sofel_font::HbCff2::* HarfBuzz's CFF2 accelerator, the parts that glyph boxes read (ADR 0021); C gets the boxes from sofel_font_glyph_extents.
+sofel_font::HbCff2::* HarfBuzz's CFF2 accelerator, the parts that glyph boxes and CFF2 subsetting read (ADR 0021, ADR 0022); C gets the boxes from sofel_font_glyph_extents and subsets with sofel_subset.
 sofel_outline::cff1_extents The CFF step of sofel_outline::HbExtents::glyph_extents, which sofel_font_glyph_extents runs.
 sofel_outline::cff2_extents The CFF2 step of sofel_outline::HbExtents::glyph_extents, which sofel_font_glyph_extents runs.
 sofel_outline::HbExtents::cff1 Returns the Rust accelerator that sofel_font_t keeps inside.
@@ -113,6 +116,7 @@ sofel_read::cblc::* Zero-copy Rust views and validators of CBLC, EBLC and bloc (
 sofel_read::colr::* Zero-copy Rust views and validators of COLR (ADR 0023); C paints with sofel_paint_glyph, reads the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::cpal::* Zero-copy Rust views and validators of CPAL (ADR 0023); C gets palettes with the sofel_palette_* functions, the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::sbix::* Zero-copy Rust views and validators of sbix (ADR 0023); C gets bitmaps with sofel_glyph_bitmap, the bytes with sofel_font_table, and validates with sofel_validate.
+sofel_read::stat::* Zero-copy Rust views and per-table validators for subsetting with the axes pinned (ADR 0022); C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::svg::* Zero-copy Rust views and validators of SVG (ADR 0023); C gets documents with sofel_svg_document, the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_shape::BufferFlags::contains A bit test, which C writes as such on the SOFEL_BUFFER_FLAG_* values.
 sofel_shape::BufferFlags::union A bitwise or, which C writes as such on the SOFEL_BUFFER_FLAG_* values.
@@ -132,10 +136,30 @@ sofel_shape::ShapePlan::stage_lookups The plan's map, for sofel's conformance te
 sofel_shape::ShapePlan::global_mask The plan's map, for sofel's conformance tests against hb-dump; HarfBuzz keeps it in the internal hb_ot_map_t.
 sofel_shape::layout_selection The script and language system choice of a plan, for sofel's conformance tests against hb-dump; C reads the plan's result through shaping.
 sofel_font::remap::* HarfBuzz's character remapping tables for crates that read cmap subtables themselves (sofel-subset, ADR 0022); C maps characters with sofel_font_nominal_glyph.
-sofel_write::Serializer::* HarfBuzz's object serializer, used object by object by Rust table writers; C gets whole tables from the subsetter, and serialized object graphs from sofel_serialize_objects once the repacker lands (ADR 0022 stages 4 and 5).
 sofel_write::Errors::* The serializer's error bits, read by Rust table writers only (ADR 0022).
 sofel_write::Packed::* The serializer's packed objects, read by Rust table writers only (ADR 0022).
 sofel_write::build_sfnt Assembles a font from tables for Rust table writers; C receives whole fonts from sofel_subset (ADR 0022).
 sofel_write::build_sfnt_ordered As sofel_write::build_sfnt (ADR 0022).
 sofel_write::checksum The sfnt checksum, a loop C writes directly (ADR 0022).
-sofel_subset::* The C ABI of the subsetter is ADR 0022's stage 5; until then C callers have no subsetting.
+sofel_write::Serializer::* HarfBuzz's object serializer, used object by object by Rust table writers; C gets whole tables from the subsetter, and tables from caller-built objects with sofel_serialize_objects (ADR 0022).
+sofel_subset::Flags::has A bit test, which C writes as `(flags & bit) == bit` on the value of sofel_subset_input_get_flags (ADR 0022).
+sofel_subset::SetKind::from_u32 C passes HarfBuzz's set numbers (SOFEL_SUBSET_SET_*) directly; the functions check them (ADR 0022).
+sofel_subset::Input::with_set Replacing a set is sofel_subset_input_set_clear followed by sofel_subset_input_set_add_range or _add (ADR 0022).
+sofel_subset::Input::glyph_mapping C keeps the pairs it set with sofel_subset_input_set_glyph_mapping, and sofel_subset_input_to_args lists them (ADR 0022).
+sofel_subset::Input::axes The axes set in the input: C reads each with sofel_subset_input_get_axis_range, and sofel_subset_input_to_args lists them (ADR 0022).
+sofel_subset::Input::name_overrides C keeps the records it overrode with sofel_subset_input_override_name_table (ADR 0022).
+sofel_subset::Plan::glyph_set The kept glyphs, which are the old glyphs of sofel_subset_plan_old_to_new_glyphs (ADR 0022).
+sofel_subset::Plan::flags The input's flags, which C reads with sofel_subset_input_get_flags (ADR 0022).
+sofel_subset::RangeSet::new The sets of C are those of an input, changed with the sofel_subset_input_set_* functions (ADR 0022).
+sofel_subset::RangeSet::all As sofel_subset::RangeSet::new: sofel_subset_input_set_clear and sofel_subset_input_set_invert make every value (ADR 0022).
+sofel_subset::RangeSet::from_values As sofel_subset::RangeSet::new: a loop of sofel_subset_input_set_add (ADR 0022).
+sofel_subset::RangeSet::with As sofel_subset::RangeSet::new: sofel_subset_input_set_add (ADR 0022).
+sofel_subset::RangeSet::is_empty Whether sofel_subset_input_set_count writes 0 (ADR 0022).
+sofel_subset::RangeSet::is_inverted Rust's representation of a set; C reads the members with sofel_subset_input_set_next and sofel_subset_input_set_count (ADR 0022).
+sofel_subset::RangeSet::iter The members, which C reads one by one with sofel_subset_input_set_next (ADR 0022).
+sofel_subset::RangeSet::ranges As sofel_subset::RangeSet::iter (ADR 0022).
+sofel_subset::RangeSet::min The first member: sofel_subset_input_set_next from SOFEL_SUBSET_SET_INVALID (ADR 0022).
+sofel_subset::RangeSet::max The last member, found with sofel_subset_input_set_next (ADR 0022).
+sofel_subset::RangeSet::remove_range A loop of sofel_subset_input_set_remove over the members found with sofel_subset_input_set_next (ADR 0022).
+sofel_subset::RangeSet::truncate As sofel_subset::RangeSet::remove_range, for every member from a value on (ADR 0022).
+sofel_subset::RangeSet::union A loop of sofel_subset_input_set_add over the other set's members (ADR 0022).

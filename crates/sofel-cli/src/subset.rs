@@ -6,15 +6,19 @@
 //! `--` and the positional `[FONT-FILE] [TEXT]`. The options change the
 //! [`Input`] in command-line order, as HarfBuzz's callbacks do. Glyph names
 //! and `--variations` need the font; they are kept unresolved in
-//! [`Options`] and applied by [`resolve`]. [`run`] is the command.
+//! [`Options`] (the glyph set's changes in order, [`GlyphOp`]) and applied
+//! by [`resolve`]. [`run`] is the command.
 
 use std::cell::RefCell;
 use std::ffi::OsString;
 use std::io::{BufRead, Read, Write};
 
-use sofel_font::Font;
+use sofel_font::{Font, GlyphNames};
 use sofel_read::Tag;
-use sofel_subset::{Flags, INVALID, Input, RangeSet, SetKind, SubsetError, axis_range_from_string};
+use sofel_shape::{SerializeFont, glyph_from_string};
+use sofel_subset::{
+    Flags, INVALID, Input, Plan, Prepared, RangeSet, SetKind, SubsetError, axis_range_from_string,
+};
 
 /// The usage text, printed for `--help`.
 pub const HELP: &str = "\
@@ -130,13 +134,14 @@ pub struct Options {
     pub output_format: Option<String>,
     /// The input, with every option that does not need the font applied.
     pub input: Input,
-    /// The glyph names of `--glyphs`, `--glyphs+`, `--glyphs-` and
-    /// `--glyphs-file`, unresolved. (`--glyphs=*` and the clearing of the
-    /// glyph set by `--glyphs=` are applied to [`Options::input`].)
-    pub glyph_names: Vec<String>,
+    /// Every change of the glyph set, in command-line order. The changes
+    /// without glyph names are also applied to [`Options::input`];
+    /// [`resolve`] replays them all when there are names.
+    pub glyph_ops: Vec<GlyphOp>,
     /// The `--variations` and `--instance` values, in order.
     pub instance: Vec<AxisSpec>,
-    /// `--preprocess` or `--preprocess-face` (no effect on the output).
+    /// `--preprocess` or `--preprocess-face`: subset through a
+    /// [`Prepared`] value of the font (the output is the same).
     pub preprocess: bool,
     /// `--num-iterations` (`-n`), as the unsigned value HarfBuzz stores.
     pub num_iterations: u32,
@@ -152,11 +157,107 @@ impl Default for Options {
             output_file: None,
             output_format: None,
             input: Input::new(),
-            glyph_names: Vec::new(),
+            glyph_ops: Vec::new(),
             instance: Vec::new(),
             preprocess: false,
             num_iterations: 1,
         }
+    }
+}
+
+/// One change of the glyph set by an option, kept so that glyph names,
+/// which need the font, apply in command-line order.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum GlyphOp {
+    /// `hb_set_clear`.
+    Clear,
+    /// `hb_set_invert`.
+    Invert,
+    /// `hb_set_add_range` or (`remove`) `hb_set_del_range` as applied.
+    Change {
+        /// Whether the range is removed.
+        remove: bool,
+        /// The first value.
+        first: u32,
+        /// The last value.
+        last: u32,
+    },
+    /// `hb_set_add` or (`remove`) `hb_set_del` of the glyph `name` names
+    /// (`hb_font_glyph_from_string`).
+    Name {
+        /// Whether the glyph is removed.
+        remove: bool,
+        /// The name.
+        name: String,
+        /// The argument from the name on, which HarfBuzz's error message
+        /// shows.
+        rest: String,
+    },
+    /// The changes of one `--glyphs-file`: a name that is not found stops
+    /// the file without failing the option, as in HarfBuzz.
+    File(Vec<GlyphOp>),
+}
+
+/// The changes the option callbacks make to a set.
+trait SetOps {
+    fn clear(&mut self);
+    fn invert(&mut self);
+    fn is_inverted(&self) -> bool;
+    fn add_range(&mut self, a: u32, b: u32);
+    fn remove_range(&mut self, a: u32, b: u32);
+}
+
+impl SetOps for RangeSet {
+    fn clear(&mut self) {
+        RangeSet::clear(self);
+    }
+    fn invert(&mut self) {
+        RangeSet::invert(self);
+    }
+    fn is_inverted(&self) -> bool {
+        RangeSet::is_inverted(self)
+    }
+    fn add_range(&mut self, a: u32, b: u32) {
+        RangeSet::add_range(self, a, b);
+    }
+    fn remove_range(&mut self, a: u32, b: u32) {
+        RangeSet::remove_range(self, a, b);
+    }
+}
+
+/// The glyph set with its changes logged.
+struct Logged<'a> {
+    set: &'a mut RangeSet,
+    log: &'a mut Vec<GlyphOp>,
+}
+
+impl SetOps for Logged<'_> {
+    fn clear(&mut self) {
+        self.set.clear();
+        self.log.push(GlyphOp::Clear);
+    }
+    fn invert(&mut self) {
+        self.set.invert();
+        self.log.push(GlyphOp::Invert);
+    }
+    fn is_inverted(&self) -> bool {
+        self.set.is_inverted()
+    }
+    fn add_range(&mut self, a: u32, b: u32) {
+        self.set.add_range(a, b);
+        self.log.push(GlyphOp::Change {
+            remove: false,
+            first: a,
+            last: b,
+        });
+    }
+    fn remove_range(&mut self, a: u32, b: u32) {
+        self.set.remove_range(a, b);
+        self.log.push(GlyphOp::Change {
+            remove: true,
+            first: a,
+            last: b,
+        });
     }
 }
 
@@ -532,7 +633,11 @@ impl Parser<'_, '_> {
             Opt::NumIterations => self.opts.num_iterations = parse_int(name, v)?,
             Opt::Preprocess => self.opts.preprocess = true,
             Opt::KeepEverything => {
-                self.opts.input = core::mem::take(&mut self.opts.input).keep_everything()
+                self.opts.input = core::mem::take(&mut self.opts.input).keep_everything();
+                // keep_everything makes the glyph set every glyph.
+                self.opts
+                    .glyph_ops
+                    .extend([GlyphOp::Clear, GlyphOp::Invert]);
             }
             Opt::Flag(f) => {
                 let input = core::mem::take(&mut self.opts.input);
@@ -561,10 +666,18 @@ impl Parser<'_, '_> {
             Opt::UnicodesFile => self.file(v, true, |p, line| {
                 p.numbers(SetKind::Unicodes, Mode::Add, line, NumberList::Unicodes)
             })?,
-            Opt::GlyphsFile => self.file(v, true, |p, line| {
-                p.glyphs(Mode::Add, line);
-                Ok(())
-            })?,
+            Opt::GlyphsFile => {
+                let outer = core::mem::take(&mut self.opts.glyph_ops);
+                let result = self.file(v, true, |p, line| {
+                    p.glyphs(Mode::Add, line);
+                    Ok(())
+                });
+                let inner = core::mem::replace(&mut self.opts.glyph_ops, outer);
+                if !inner.is_empty() {
+                    self.opts.glyph_ops.push(GlyphOp::File(inner));
+                }
+                result?
+            }
             Opt::TextFile => self.file(v, false, |p, line| {
                 p.text(Mode::Add, line);
                 Ok(())
@@ -575,21 +688,29 @@ impl Parser<'_, '_> {
 
     /// Changes the set of `kind` with `f`, which may fail after changing it
     /// partly, as HarfBuzz's callbacks do.
+    /// The glyph set's changes are logged in [`Options::glyph_ops`].
     fn with_set(
         &mut self,
         kind: SetKind,
-        f: impl FnOnce(&mut RangeSet) -> Result<(), String>,
+        f: impl FnOnce(&mut dyn SetOps) -> Result<(), String>,
     ) -> Result<(), String> {
         let mut result = Ok(());
         let input = core::mem::take(&mut self.opts.input);
-        self.opts.input = input.map_set(kind, |s| result = f(s));
+        let log = &mut self.opts.glyph_ops;
+        self.opts.input = input.map_set(kind, |s| {
+            result = if kind == SetKind::Glyphs {
+                f(&mut Logged { set: s, log })
+            } else {
+                f(s)
+            }
+        });
         result
     }
 
     /// The start of every list callback: a plain option clears the set; `*`
     /// makes it everything, or nothing for the `-` form. Returns whether
     /// the argument was `*`.
-    fn begin(s: &mut RangeSet, mode: Mode, arg: &str) -> bool {
+    fn begin(s: &mut dyn SetOps, mode: Mode, arg: &str) -> bool {
         if mode == Mode::Replace {
             s.clear();
         }
@@ -630,18 +751,32 @@ impl Parser<'_, '_> {
     }
 
     /// `parse_glyphs`: `*` and the clearing are applied; the names are
-    /// kept for [`resolve`].
+    /// kept in order for [`resolve`].
     fn glyphs(&mut self, mode: Mode, arg: &str) {
         let _ = self.with_set(SetKind::Glyphs, |s| {
             Self::begin(s, mode, arg);
             Ok(())
         });
-        if arg != "*" {
-            let names = arg
-                .split([' ', ','])
-                .filter(|n| !n.is_empty())
-                .map(str::to_string);
-            self.opts.glyph_names.extend(names);
+        if arg == "*" {
+            return;
+        }
+        let is_delim = |c: char| c == ' ' || c == ',';
+        let mut at = 0usize;
+        while let Some(rest) = arg.get(at..) {
+            let skip = rest
+                .len()
+                .saturating_sub(rest.trim_start_matches(is_delim).len());
+            let start = at.saturating_add(skip);
+            let Some(tail) = arg.get(start..).filter(|t| !t.is_empty()) else {
+                break;
+            };
+            let len = tail.find(is_delim).unwrap_or(tail.len());
+            self.opts.glyph_ops.push(GlyphOp::Name {
+                remove: mode == Mode::Remove,
+                name: tail.get(..len).unwrap_or("").to_string(),
+                rest: tail.to_string(),
+            });
+            at = start.saturating_add(len);
         }
     }
 
@@ -670,14 +805,13 @@ impl Parser<'_, '_> {
         let input = core::mem::take(&mut self.opts.input);
         let mut map = input.glyph_mapping().clone();
         map.extend(pairs.iter().copied());
-        self.opts.input = input
-            .map_set(SetKind::Glyphs, |s| {
-                pairs
-                    .iter()
-                    .for_each(|&(old, _)| change(s, false, old, old))
-            })
-            .with_glyph_mapping(map);
-        Ok(())
+        self.opts.input = input.with_glyph_mapping(map);
+        self.with_set(SetKind::Glyphs, |s| {
+            pairs
+                .iter()
+                .for_each(|&(old, _)| change(s, false, old, old));
+            Ok(())
+        })
     }
 
     /// `parse_file_for`: each line (without the newline, and before `#`
@@ -707,7 +841,7 @@ impl Parser<'_, '_> {
 /// Adds or removes `a..=b` as `hb_set_add_range` and `hb_set_del_range`
 /// do, including their refusal of a range ending at [`INVALID`] when
 /// adding to the underlying (not inverted) bits.
-fn change(s: &mut RangeSet, remove: bool, a: u32, b: u32) {
+fn change(s: &mut dyn SetOps, remove: bool, a: u32, b: u32) {
     if a > b || a == INVALID {
         return;
     }
@@ -752,7 +886,7 @@ const UNICODE_DELIMITERS: &[u8] = b"<+->{},;&#\\xXuUnNiI\n\t\x0b\x0c\r ";
 /// Parses a number list into `s` as HarfBuzz's callbacks do, changing the
 /// set up to the first error.
 fn parse_numbers(
-    s: &mut RangeSet,
+    s: &mut dyn SetOps,
     remove: bool,
     arg: &[u8],
     list: NumberList,
@@ -1021,20 +1155,158 @@ fn parse_instancing_spec(arg: &str) -> Result<Option<Vec<AxisSpec>>, String> {
 }
 
 /// The input with the options that need the font applied: glyph names
-/// (`hb_font_glyph_from_string`) and `--variations`.
+/// (`hb_font_glyph_from_string`) and `--variations`
+/// (`parse_instancing_spec` with the face).
 ///
 /// # Errors
 ///
-/// For now, glyph names (ADR 0022 stage 12) and any `--variations`
-/// (stage 6) are not supported and give an error.
-pub fn resolve(options: &Options, _font: &Font<'_>) -> Result<Input, String> {
-    if !options.glyph_names.is_empty() {
-        return Err("glyph names are not supported yet (ADR 0022 stage 12)".to_string());
+/// `Failed parsing glyph name: '...'` for a glyph name the font does not
+/// have (outside `--glyphs-file`), HarfBuzz's message for an axis the
+/// font does not have (or `*=drop` on a font without axes) and a range
+/// with the minimum above the maximum. For now, any `--variations` other
+/// than pinning axes to their defaults (deferred by ADR 0022) also gives
+/// an error.
+///
+/// A glyph name is looked up as `hb_font_glyph_from_string` does with
+/// HarfBuzz's OpenType functions: `post` names (versions 1 and 2), then
+/// CFF charset names ([`GlyphNames::glyph_from_name`]), then a decimal
+/// glyph id, `gidDDD` and `uniXXXX` (the glyph cmap maps the character
+/// to). When the options name glyphs, the glyph set is rebuilt by
+/// replaying [`Options::glyph_ops`] in order.
+pub fn resolve(options: &Options, font: &Font<'_>) -> Result<Input, String> {
+    let input = if has_glyph_names(&options.glyph_ops) {
+        let mut buf = vec![0u32; font.glyph_names_len()];
+        let lookup = NameLookup {
+            font: *font,
+            names: font.glyph_names(&mut buf),
+        };
+        let mut glyphs = RangeSet::new();
+        replay(&options.glyph_ops, &mut glyphs, &lookup)?;
+        options.input.clone().with_set(SetKind::Glyphs, glyphs)
+    } else {
+        options.input.clone()
+    };
+    options
+        .instance
+        .iter()
+        .try_fold(input, |input, spec| apply_axis_spec(input, spec, font))
+}
+
+fn has_glyph_names(ops: &[GlyphOp]) -> bool {
+    ops.iter().any(|op| match op {
+        GlyphOp::Name { .. } => true,
+        GlyphOp::File(inner) => has_glyph_names(inner),
+        _ => false,
+    })
+}
+
+/// HarfBuzz's `hb_font_t` as far as `hb_font_glyph_from_string` goes.
+struct NameLookup<'a, 'b> {
+    font: Font<'a>,
+    names: Option<GlyphNames<'a, 'b>>,
+}
+
+impl SerializeFont for NameLookup<'_, '_> {
+    fn glyph_from_name(&self, name: &[u8]) -> Option<u32> {
+        self.names.as_ref()?.glyph_from_name(name).map(|g| g.0)
     }
-    if !options.instance.is_empty() {
-        return Err("instancing is not supported yet (ADR 0022 stage 6)".to_string());
+    fn nominal_glyph(&self, c: u32) -> Option<u32> {
+        self.font.nominal_glyph_raw(c).map(|g| g.0)
     }
-    Ok(options.input.clone())
+}
+
+/// Applies `ops` to `glyphs` in order. A name not found fails with
+/// HarfBuzz's message, except inside a `--glyphs-file`, whose reading
+/// then stops.
+fn replay(
+    ops: &[GlyphOp],
+    glyphs: &mut RangeSet,
+    lookup: &NameLookup<'_, '_>,
+) -> Result<(), String> {
+    for op in ops {
+        match op {
+            GlyphOp::Clear => glyphs.clear(),
+            GlyphOp::Invert => glyphs.invert(),
+            GlyphOp::Change {
+                remove: false,
+                first,
+                last,
+            } => glyphs.add_range(*first, *last),
+            GlyphOp::Change {
+                remove: true,
+                first,
+                last,
+            } => glyphs.remove_range(*first, *last),
+            GlyphOp::Name { remove, name, rest } => {
+                let g = glyph_from_string(lookup, name.as_bytes())
+                    .ok_or_else(|| format!("Failed parsing glyph name: '{rest}'"))?;
+                change(glyphs, *remove, g, g);
+            }
+            GlyphOp::File(inner) => {
+                // parse_file_for stops at the failing line and succeeds.
+                let _ = replay(inner, glyphs, lookup);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// One `--variations` spec applied to `input` as `parse_instancing_spec`
+/// does with the face.
+fn apply_axis_spec(input: Input, spec: &AxisSpec, font: &Font<'_>) -> Result<Input, String> {
+    let name = |tag: Tag| -> String { tag.0.iter().map(|&b| char::from(b)).collect() };
+    let not_in_fvar = |tag: Tag| format!("Cannot pin axis: '{}', not present in fvar", name(tag));
+    let Some(tag) = spec.tag else {
+        return input
+            .with_all_axes_pinned_to_default(font)
+            .ok_or_else(|| "Failed pinning all axes to default.".to_string());
+    };
+    let next = match spec.value {
+        AxisValue::Drop => input.with_axis_pinned_to_default(tag, font),
+        AxisValue::Range { min, default, max } => {
+            input.with_axis_range(tag, min, max, default, font)
+        }
+    }
+    .ok_or_else(|| not_in_fvar(tag))?;
+    // Only pinning to the default is implemented; HarfBuzz's set_axis_range
+    // gives the same input for a value equal to the default.
+    let pinned = next.axis_range(tag).is_some_and(|r| {
+        let default = input
+            .with_axis_pinned_to_default(tag, font)
+            .and_then(|i| i.axis_range(tag));
+        Some(r) == default
+    });
+    if pinned {
+        Ok(next)
+    } else {
+        Err(format!(
+            "instancing '{}' other than to its default is not supported yet (deferred by ADR 0022)",
+            name(tag)
+        ))
+    }
+}
+
+/// The [`Prepared`] value of `font` when the options ask for
+/// preprocessing (`--preprocess`; `hb_subset_preprocess`).
+pub fn prepare(options: &Options, font: &Font<'_>) -> Option<Prepared> {
+    options.preprocess.then(|| Prepared::new(font))
+}
+
+/// One subset of `font` (`hb_subset_or_fail`), through `prepared` when
+/// given ([`Plan::with_prepared`]).
+///
+/// # Errors
+///
+/// As [`Plan::new`], [`Plan::with_prepared`] and [`Plan::execute`].
+pub fn subset_once(
+    font: &Font<'_>,
+    input: &Input,
+    prepared: Option<&Prepared>,
+) -> Result<Vec<u8>, SubsetError> {
+    match prepared {
+        Some(p) => Plan::with_prepared(font, p, input)?.execute(font),
+        None => sofel_subset::subset(font, input),
+    }
 }
 
 const PROGRAM: &str = "sofel-subset";
@@ -1235,6 +1507,12 @@ fn run_one(
             &format!("{font_path}: Failed loading font face"),
         );
     };
+    // The options that need the font fail while HarfBuzz parses them,
+    // before the output file is checked.
+    let input = match resolve(&options, &font) {
+        Ok(i) => i,
+        Err(msg) => return fail(err, true, 1, &msg),
+    };
     let Some(output) = options.output_file.as_deref() else {
         return fail(err, true, 1, "No output file was specified");
     };
@@ -1249,12 +1527,10 @@ fn run_one(
             }
         }
     };
-    let input = match resolve(&options, &font) {
-        Ok(i) => i,
-        Err(msg) => return fail(err, true, 1, &msg),
-    };
-    let result =
-        (0..options.num_iterations).fold(None, |_, _| Some(sofel_subset::subset(&font, &input)));
+    let prepared = prepare(&options, &font);
+    let result = (0..options.num_iterations).fold(None, |_, _| {
+        Some(subset_once(&font, &input, prepared.as_ref()))
+    });
     match result {
         Some(Ok(bytes)) => {
             let written = match file.as_mut() {
