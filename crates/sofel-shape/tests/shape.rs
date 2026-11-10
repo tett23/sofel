@@ -226,6 +226,57 @@ fn ligatures_and_multiple() {
 }
 
 #[test]
+fn adr0033_i4_ligature_candidate_order_and_unreadable_candidates() {
+    let shape_ligs = |subtable: Vec<u8>, text: &str| {
+        let gsub = simple_layout(&[b"liga"], vec![lookup(4, 0, vec![subtable])]);
+        let data = make_font(false, vec![(b"GSUB", gsub)]);
+        run(
+            &data,
+            text,
+            Run {
+                flags: BufferFlags::PRODUCE_UNSAFE_TO_CONCAT,
+                ..Run::default()
+            },
+        )
+    };
+    // Empty, one valid, and multiple valid candidates. The first match
+    // wins even when a later candidate has the same components.
+    let empty = shape_ligs(ligature_subst(F as u16, &[]), "fi");
+    assert_eq!(glyphs(&empty), [(F, 0), (I, 1)]);
+    let single = ligature_subst(F as u16, &[(&[I as u16], FI as u16)]);
+    let expected = shape_ligs(single.clone(), "fi");
+    assert_eq!(glyphs(&expected), [(FI, 0)]);
+    let many = ligature_subst(
+        F as u16,
+        &[
+            (&[B as u16], B as u16),
+            (&[I as u16], FI as u16),
+            (&[I as u16], A as u16),
+        ],
+    );
+    assert_eq!(glyphs(&shape_ligs(many.clone(), "fi")), [(FI, 0)]);
+    assert_eq!(glyphs(&shape_ligs(many, "f")), [(F, 0)]);
+
+    // More than one offset does not mean more than one valid candidate.
+    // Null and out-of-bounds offsets must leave the single-candidate
+    // path's glyphs, positions and unsafe flags unchanged.
+    for bad in [0u16, u16::MAX] {
+        for position in [0usize, 1] {
+            let mut subtable = ligature_subst(
+                F as u16,
+                &[(&[I as u16], FI as u16), (&[I as u16], FI as u16)],
+            );
+            let set = u16::from_be_bytes([subtable[6], subtable[7]]) as usize;
+            let at = set + 2 + position * 2;
+            subtable[at..at + 2].copy_from_slice(&bad.to_be_bytes());
+            let actual = shape_ligs(subtable, "fi");
+            assert_eq!(actual.glyph_infos(), expected.glyph_infos());
+            assert_eq!(actual.glyph_positions(), expected.glyph_positions());
+        }
+    }
+}
+
+#[test]
 fn fractions() {
     let gsub = simple_layout(
         &[b"numr", b"dnom"],
