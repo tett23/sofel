@@ -55,6 +55,10 @@
 
 extern crate alloc;
 
+mod hb_cff;
+
+pub use hb_cff::{HbExtents, cff1_extents, cff2_extents};
+
 use alloc::vec::Vec;
 use core::fmt;
 

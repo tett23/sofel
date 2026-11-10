@@ -906,6 +906,42 @@ static void test_names(const sofel_font_t *font) {
   CHECK(sofel_font_glyph_name(font, 1, NULL, &len) == SOFEL_ERROR_NULL);
 }
 
+/* The boxes and names of a CFF font (ADR 0021). */
+static void test_cff(void) {
+  int32_t e = 12345;
+  size_t i, len = 0;
+  const uint8_t *str = NULL;
+  sofel_glyph_names_t *names;
+  sofel_scale_t *scale;
+  sofel_font_t *font = sofel_font_create(cff_font_data, sizeof cff_font_data, 0, &e);
+  CHECK(e == SOFEL_OK && font != NULL);
+  if (font == NULL) return;
+  check_vglyphs(font, NULL, cff_unscaled_glyphs, COUNT(cff_unscaled_glyphs));
+  check_metrics(font, NULL, cff_unscaled_metrics, COUNT(cff_unscaled_metrics));
+  scale = sofel_scale_create(font, SCALE_X, SCALE_Y, &e);
+  CHECK(e == SOFEL_OK && scale != NULL);
+  if (scale != NULL) {
+    check_vglyphs(font, scale, cff_scaled_glyphs, COUNT(cff_scaled_glyphs));
+    check_metrics(font, scale, cff_scaled_metrics, COUNT(cff_scaled_metrics));
+  }
+  sofel_scale_destroy(scale);
+  names = sofel_glyph_names_create(font, &e);
+  CHECK(e == SOFEL_OK && names != NULL);
+  for (i = 0; i < COUNT(cff_names); i++) {
+    const struct cff_name_case *c = &cff_names[i];
+    uint32_t g = 0;
+    int32_t s = sofel_font_glyph_name(font, c->glyph, &str, &len);
+    CHECK(c->hb ? s == SOFEL_OK && len == strlen(c->hb) && memcmp(str, c->hb, len) == 0
+                : s == SOFEL_ERROR_NOT_FOUND);
+    if (c->hb && names) {
+      s = sofel_glyph_names_glyph_from_name(names, c->hb, strlen(c->hb), &g);
+      CHECK(c->back < 0 ? s == SOFEL_ERROR_NOT_FOUND : s == SOFEL_OK && g == c->back);
+    }
+  }
+  sofel_glyph_names_destroy(names);
+  sofel_font_destroy(font);
+}
+
 static void test_metrics(void) {
   int32_t e = 12345, ext[3] = {0, 0, 0}, box[4] = {30, 700, 401, -703}, v = 0;
   uint16_t u16v = 0;
@@ -996,6 +1032,7 @@ int main(void) {
   test_raster(font);
   test_validate();
   test_metrics();
+  test_cff();
 #if !defined(__wasi__)
   test_threads(font);
 #endif

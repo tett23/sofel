@@ -180,9 +180,11 @@ typedef struct sofel_font sofel_font_t;
  * Returns the font, or NULL with an error number in *error
  * (SOFEL_ERROR_NULL, SOFEL_ERROR_INVALID_FONT, SOFEL_ERROR_NO_HEAD,
  * SOFEL_ERROR_FONT_INDEX). *error is SOFEL_OK on success. When `error`
- * is NULL, returns NULL.
+ * is NULL, returns NULL. The font keeps HarfBuzz's CFF and CFF2
+ * accelerators for its glyph boxes (ADR 0021); a broken CFF only leaves
+ * them out.
  *
- * Rust: sofel_font::Font::new
+ * Rust: sofel_font::Font::new, sofel_outline::HbExtents::new
  * HarfBuzz: hb_blob_create (HB_MEMORY_MODE_READONLY), hb_face_create, hb_font_create
  * FreeType: FT_New_Memory_Face
  */
@@ -388,7 +390,8 @@ int32_t sofel_font_v_advance(const sofel_font_t *font, uint32_t glyph, int32_t *
 
 /*
  * The vertical origin (x, y) in origin[0..1]: VORG, else glyf's top
- * phantom point (with vmtx), else centered on the glyph box.
+ * phantom point (with vmtx), else centered on the glyph box of
+ * sofel_font_glyph_extents.
  *
  * Rust: sofel_font::Font::v_origin
  * HarfBuzz: hb_font_get_glyph_v_origin
@@ -398,9 +401,11 @@ int32_t sofel_font_v_origin(const sofel_font_t *font, uint32_t glyph, int32_t or
 
 /*
  * The glyph box (x_bearing, y_bearing, width, height) in extents[0..3];
- * height is negative. SOFEL_ERROR_NOT_FOUND when there is no box.
+ * height is negative. SOFEL_ERROR_NOT_FOUND when there is no box. As
+ * HarfBuzz gives it from glyf, else CFF2, else CFF (ADR 0021); color
+ * glyphs come with ADR 0023.
  *
- * Rust: sofel_font::Font::glyf_extents
+ * Rust: sofel_outline::HbExtents::glyph_extents, sofel_font::Font::glyf_extents
  * HarfBuzz: hb_font_get_glyph_extents
  * FreeType: none (FT_Outline_Get_CBox of the loaded outline)
  */
@@ -521,7 +526,7 @@ int32_t sofel_scale_v_origin(const sofel_scale_t *scale, const sofel_font_t *fon
                              uint32_t glyph, int32_t origin[2]);
 
 /*
- * Rust: sofel_font::HbScale::glyf_extents
+ * Rust: sofel_outline::HbExtents::scaled_glyph_extents, sofel_font::HbScale::glyf_extents
  * HarfBuzz: hb_font_get_glyph_extents
  * FreeType: none
  */
@@ -635,8 +640,10 @@ int32_t sofel_font_postscript_name(const sofel_font_t *font, char *name, size_t 
                                    size_t *len);
 
 /*
- * The name of a glyph as HarfBuzz gives it from post; *name points into
- * the font's data or static memory. SOFEL_ERROR_NOT_FOUND without one.
+ * The name of a glyph as HarfBuzz gives it from post, else from the
+ * charset of a CFF font that is not CID-keyed (ADR 0021); *name points
+ * into the font's data or static memory, and is not cut at a 0 byte as
+ * HarfBuzz's copy is. SOFEL_ERROR_NOT_FOUND without one.
  *
  * Rust: sofel_font::Font::glyph_name, sofel_font::GlyphNames::glyph_name
  * HarfBuzz: hb_font_get_glyph_name

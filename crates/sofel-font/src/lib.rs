@@ -46,12 +46,14 @@ pub use sofel_read as read;
 mod float;
 mod ft;
 mod glyf_data;
+mod hb_cff;
 mod metrics;
 mod name_language;
 mod names;
 mod tables;
 
 pub use ft::FtFaceMetrics;
+pub use hb_cff::{HbCff1, HbCff2};
 pub use metrics::{FontExtents, GlyphExtents, HbScale, MetricsTag};
 pub use names::{GlyphNames, Language, NameEntry, NameLength, Names, SfntName};
 
