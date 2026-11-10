@@ -34,6 +34,8 @@ sofel-color sofel-svg
 sofel-write sofel-read
 sofel-subset sofel-font
 sofel-subset sofel-write
+# The mirrored characters of the bidi closure (ADR 0022)
+sofel-subset sofel-unicode
 # HarfBuzz's rounding in sofel_geom::float (ADR 0026)
 sofel-color sofel-geom
 sofel-subset sofel-geom

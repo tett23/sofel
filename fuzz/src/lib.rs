@@ -753,3 +753,36 @@ pub fn check_gpos(input: &[u8]) {
         "a GPOS offset cannot be followed without an Error"
     );
 }
+
+/// Subsets a font with flags and a glyph set taken from the first bytes
+/// (ADR 0022): no panic, and a successful output opens and has no
+/// validator `Error` in the tables that differ from the source's.
+pub fn check_subset(data: &[u8]) {
+    use sofel_subset::{Flags, Input, SetKind};
+    let (Some(head), Some(font_data)) = (data.get(..6), data.get(6..)) else {
+        return;
+    };
+    let Ok(font) = sofel_font::Font::new(font_data, 0) else {
+        return;
+    };
+    let flags = u32::from(u16::from_be_bytes([head[0], head[1]]));
+    let first = u32::from(u16::from_be_bytes([head[2], head[3]]));
+    let count = u32::from(head[4]);
+    let chars = u32::from(head[5]);
+    let input = Input::new()
+        .with_flags(Flags(flags))
+        .map_set(SetKind::Glyphs, |s| s.add_range(first, first.saturating_add(count)))
+        .map_set(SetKind::Unicodes, |s| s.add_range(0x20, 0x20 + chars));
+    let Ok(out) = sofel_subset::subset(&font, &input) else {
+        return;
+    };
+    let s = Sfnt::new(&out).expect("the subset is an sfnt");
+    let src = font.sfnt();
+    let mut errors = Vec::new();
+    validate::sfnt(&s, &mut |d: Diagnostic| {
+        if d.severity == Severity::Error && s.table(d.table) != src.table(d.table) {
+            errors.push(d);
+        }
+    });
+    assert!(errors.is_empty(), "{errors:?}");
+}

@@ -57,12 +57,13 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   sofel-bitmap  → sofel-font, sofel-png
   sofel-color   → sofel-outline, sofel-bitmap, sofel-svg, sofel-geom
   sofel-write   → sofel-read
-  sofel-subset  → sofel-font, sofel-write, sofel-geom
+  sofel-subset  → sofel-font, sofel-write, sofel-geom, sofel-unicode
   sofel-cli     → 上のすべて（道具のバイナリ群）
   sofel-capi    → 上のすべて（C ABI、[ADR 0015](adr/0015-c-abi.md)）
 ```
 
 - `sofel-color` と `sofel-subset` の `sofel-geom` への依存は、HarfBuzzの丸め（`sofel_geom::float`）を共有するためである（[ADR 0026](adr/0026-harfbuzz-rounding.md)）。
+- `sofel-subset` の `sofel-unicode` への依存は、鏡像の文字（bidiの閉包）のためである（[ADR 0022](adr/0022-subsetting.md)）。
 
 - 輪郭と塗りは、`sofel-geom` の `Pen` と `Painter` で受け渡す。`sofel-raster`、`sofel-gpu`、`sofel-vector` はフォントの型を知らない。
 - 形式のビューと検証器は、形式を読むクレートだけに置く。検証器は確保をせず、誤りを呼び出し側の関数に渡す。charstringの解釈とヒンティングは `sofel-outline` が行い、Type1とCFFで共有する。ただし、FreeTypeのType 2 charstringの解読器（演算子から装置の空間の線と曲線まで）は、全グリフを走らせる `CFF ` と `CFF2` の検証器が使うため `sofel-read` に置き、点への変換と仕上げを `sofel-outline` が行う（[ADR 0021](adr/0021-cff-outlines.md)）。
@@ -198,10 +199,22 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - FreeTypeは、輪郭をビットマップの原点へ動かしてから（重なりの印があればさらに4倍してから）命令に変換する。暗黙の曲線上の点（中点の0への切り捨て）はこの順序で決まるので、完全に一致させるには、`sofel_outline::load` で点を読み、`sofel_raster::pixel_box` で箱を求め、`Scratch::decompose` に `PixelBox::shift()` と倍率を渡して命令に変換し、`Rasterizer::render_placed` で描く。この手順は `sofel_cli::glyph::render` にまとめてある。`Rasterizer::render` は、記録した命令をあとから動かすので、中点のある輪郭では1画素の値が1〜2ずれることがある。
 - HarfBuzz 15.1.0のテストのフォントで、FreeTypeが開けるglyf、CFF、CFF2のフェイスを12、24、48画素で比べ、期待する失敗は無い。CFFのグリフは重なりの印を持たず、非ゼロ規則で描く（FreeTypeの `REVERSE_FILL` と `HIGH_PRECISION` はsmoothのラスタライザが見ない）。
 
+## サブセット化（`sofel-write`、`sofel-subset`）
+
+[ADR 0022](adr/0022-subsetting.md) のとおり、出力はHarfBuzz 15.1.0の `hb-subset` とバイト単位で一致させる。実装は段階ごとに進め、まだ書けない表や設定は `SubsetError::Unsupported` とする（黙って捨てたり、違う形で書いたりしない）。
+
+- `sofel-write` の `build_sfnt` は、HarfBuzzの面の組み立て（`hb-face-builder.cc`）と同じく、表のデータを長さの昇順（同じ長さはタグの昇順）に4バイトに揃えて並べ、表の記録をタグの順に書き、チェックサムと `checkSumAdjustment` を求める。sfntの版は `CFF ` か `CFF2` があれば `OTTO` とする。
+- `sofel-write` の `Serializer` は、HarfBuzzの `hb_serialize_context_t` と同じ規則でオブジェクトのグラフを組む。子を先に詰め、後に詰めたものほど前に置き、同じバイト列とリンクのオブジェクトをまとめる（統合の表は `BTreeMap`）。オフセットのあふれは `Packed::resolve` が報告する。再配置はまだ無く、あふれた表は `Unsupported` とする。
+- `sofel-subset` の `Input` は `hb_subset_input_t` に相当する不変の値で、集合（文字、グリフ、名前ID、名前の言語、レイアウトのフィーチャ、文字体系、捨てる表、写す表）は反転した集合を表せる `RangeSet`、フラグはHarfBuzzと同じビットの `Flags` とする。`Input::new()` はHarfBuzzの既定の値、`keep_everything()` は `hb_subset_input_keep_everything` と同じ値を持つ。`to_args()` は `hb_subset_input_to_string_or_fail` と同じオプションの列を返す。
+- `Plan::new` は `hb-subset-plan.cc` の順に、鏡像の文字の追加、cmap（DMAPを先に引く）からの文字とグリフの収集（2つの集め方）、異体字シーケンスの閉包、glyfの合成グリフの閉包（HarfBuzzの操作とバイトの上限）、グリフの対応（既定、`RETAIN_GIDS`、`RETAIN_NUM_GLYPHS`、対応の指定）を求める。
+- `Plan::execute` は、元のフォントの表をタグの順に処理する。書く表は、glyf、loca、head（glyfが書く）、GLYF、LOCA、hmtx、hhea、vmtx、vhea、HMTX、HHEA、VMTX、VHEA、maxp、MAXP、OS/2、post、name、cmap、DMAP、hdmx。cvt 、fpgm、prep、gasp、VDMXと、軸を指定しないときのfvar、avar、cvar、MVAR、STATはそのまま写す。HarfBuzzが既定で捨てる表と扱いを持たない表は捨てる（`PASSTHROUGH_UNRECOGNIZED` では写す）。
+- まだ書かない表：GSUB、GPOS、GDEF、BASE、MATH、COLR、CPAL、CBLC、CBDT、sbix、CFF 、VORG、CFF2、gvar、GVAR、HVAR、VVAR、VARC。これらを持ち、捨てる表にも写す表にも入れないフォントは `Unsupported` とする。軸の指定と名前の表の上書きも `Unsupported` とする。
+
 ## 道具
 
 - `sofel-paint [--face N] [--palette P] [--foreground RRGGBBAA] [--ppem P] [--exact] (--glyph G | --char U+XXXX) FILE`：カラーグリフの塗りの命令を、HarfBuzzの `test/api/test-paint.c` と同じ字下げのテキストで書く。数はCの `%.3g`、`--exact` では `f32` のビットの16進。カラーでないグリフは終了コード1、使い方の誤りは2（[ADR 0023](adr/0023-color-glyphs.md)）。
 - `sofel-render [--face N] --ppem P [--no-bitmap] [--color [--palette N]] (--glyph G | --char U+XXXX) FILE`：1グリフをヒンティングなしで描き、PGM（P5）を標準出力に書く。位置は注釈の行 `# left <x> top <y>` に書く（[ADR 0012](adr/0012-antialiased-rasterizer.md)）。そのppemのビットマップがあれば、`--no-bitmap` が無いかぎりそれを書く（32bitはPAM。[ADR 0023](adr/0023-color-glyphs.md)）。`--color` では、COLRv0のグリフを層の色で描いてPAMで書く。
+- `sofel-subset [オプション]...`：`hb-subset`（`util/hb-subset.cc`）と同じオプションを受け付けてサブセット化する（[ADR 0022](adr/0022-subsetting.md)）。引数の解析は `sofel_cli::subset` に純粋な関数として置き、適合テストと共有する。`--batch` は、1行に `;` で区切った引数を読み、成功なら `success` を書く。グリフ名の指定（`--glyphs` の名前）と軸の指定（`--variations`、`--instance`）は、まだ誤りとして終了の状態1で終わる。
 - `sofel-validate <ファイル>...`：sfntとTTC/OTCの各表を検証する（[ADR 0008](adr/0008-validate-command-and-freetype-comparison.md)）。1件を1行で `<パス>[#<フォント番号>]: <タグ>+0x<オフセット>: <error|warning>: <説明>` の形で出す。`--json` では、1件を1行のJSONのオブジェクト（JSON Lines）で出す。キーは `path`、`font`、`table`、`offset`、`severity`、`kind`、`message`、`details`。`kind` と `details` のキーは出力の約束の一部とする。終了コードは、`Error` が無ければ0、あれば1、使い方の誤りか読めないファイルがあれば2で、`--json` の有無で変わらない。
 
 ## C ABI（`sofel-capi`）
@@ -227,7 +240,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 - テストのフォントと期待値は同梱せず、`testdata.lock` に書いたコミットのHarfBuzz（15.1.0）とFreeType（2.15.0）を `scripts/fetch-testdata.sh` で取得して使う（[ADR 0002](adr/0002-license-and-reuse.md)、[0005](adr/0005-conformance-tests.md)）。
 - シェーピング（AATを含む）は、HarfBuzzの `test/shape/data/*/tests/*.tests` の期待値と比べる。
-- サブセット化は、HarfBuzzの `test/subset/` の期待するフォントと、バイト単位で比べる。
+- サブセット化は、HarfBuzzの `test/subset/` の期待するフォントと、バイト単位で比べる（[ADR 0022](adr/0022-subsetting.md)）。`test/subset/data/tests/*.tests` の104ファイルの1123件を `subset_test_suite.py` と同じ規則で解析し、`run-tests.py` と同じ引数（`--drop-tables+=DSIG,BASE --drop-tables-=sbix` とプロファイルとインスタンス）を `sofel_cli::subset` で解析して `sofel-subset` を呼ぶ。項目は `<testsのファイル名>/<期待する出力のファイル名>:bytes`（バイト単位の一致）と `:validate`（検証器が `Error` を出さない）で、期待する失敗は `conformance/expected-failures-subset.txt` に理由（`stage:<段階>`、`deferred:instance`、`deferred:iup`）を添えて書く。
 - head、hhea、maxp、cmap、hmtxの送り幅は、`tools/ft-dump/` の出力と比べる。FreeTypeが捨てたcmapのサブテーブルは、`sofel-read` の検証器が `Error` を報告しなければならない（[ADR 0008](adr/0008-validate-command-and-freetype-comparison.md)）。`ft-dump` は自分で書いたCのプログラムで、取得したFreeTypeのソースから `tools/ft-dump/build.sh` でビルドし、FreeTypeの公開のAPIだけを使う。`ft-dump` の正しさは、値の分かっている小さなフォントで自動のテストにより確かめる。
   - 項目は `<フォント>#<フェイス>:<項目>` で識別する。項目は、`open`、`head`、`hhea`、`maxp`、`cmap:<プラットフォーム>:<エンコーディング>[:<n>]`、`cmap-validate:<プラットフォーム>:<エンコーディング>[:<n>]`、`hmtx`。
   - [ADR 0016](adr/0016-font-and-vertical-metrics.md) の項目：`fs_type`、`ps_name`、`face_metrics`、`sfnt_names`、`v_advance`（全グリフ、縦、拡大縮小なし）、`glyph_names`（全グリフの `FT_Get_Glyph_Name`）、`name_index`（その名前の `FT_Get_Name_Index`）。CFFのフォントのグリフ名はCFFのcharsetから来るため、期待する失敗とする（[ADR 0021](adr/0021-cff-outlines.md)）。

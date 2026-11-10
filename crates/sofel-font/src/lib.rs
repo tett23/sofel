@@ -56,6 +56,7 @@ mod layout;
 mod metrics;
 mod name_language;
 mod names;
+pub mod remap;
 mod tables;
 
 pub use cff::{Cff, CffError, CffMatrix, CidError, PsFontInfo, Ros, Subfont, fs_type};

@@ -8,4 +8,5 @@ pub mod glyph;
 pub mod json;
 pub mod paint;
 pub mod render;
+pub mod subset;
 pub mod validate;

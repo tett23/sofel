@@ -23,4 +23,5 @@ pub mod hb;
 pub mod outline;
 pub mod paths;
 pub mod raster;
+pub mod subset;
 pub mod unicode;

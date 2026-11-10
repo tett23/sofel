@@ -15,6 +15,7 @@ sofel-font = { path = "../crates/sofel-font" }
 sofel-geom = { path = "../crates/sofel-geom" }
 sofel-outline = { path = "../crates/sofel-outline" }
 sofel-raster = { path = "../crates/sofel-raster" }
+sofel-subset = { path = "../crates/sofel-subset" }
 
 # Not part of the main workspace (ADR 0007).
 [workspace]
@@ -107,6 +108,13 @@ bench = false
 [[bin]]
 name = "gpos"
 path = "fuzz_targets/gpos.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "subset"
+path = "fuzz_targets/subset.rs"
 test = false
 doc = false
 bench = false

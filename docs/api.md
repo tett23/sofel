@@ -21,8 +21,10 @@ cargo doc --no-deps -p sofel-geom -p sofel-unicode -p sofel-read -p sofel-font -
 | `sofel-outline` | glyfとGLYFの輪郭を、ヒンティングなしでFreeTypeと同じ座標で `Pen` に渡す。HarfBuzzと同じグリフの箱（glyf、CFF2、CFF）を求める | `sofel-font`、`sofel-geom` |
 | `sofel-bitmap` | 埋め込みビットマップのストライク、その選び方、グリフの画像のデータとメトリクス（[ADR 0023](adr/0023-color-glyphs.md)） | `sofel-font` |
 | `sofel-color` | カラーグリフの塗りの命令、パレット、カラーグリフを含むグリフの箱（[ADR 0023](adr/0023-color-glyphs.md)） | `sofel-outline`、`sofel-bitmap` |
+| `sofel-write` | sfntの組み立て（`build_sfnt`）と、HarfBuzzと同じ詰め方のオブジェクトの直列化（`Serializer`。[ADR 0022](adr/0022-subsetting.md)） | `sofel-read` |
+| `sofel-subset` | HarfBuzzの `hb-subset` と同じ出力のサブセット化（`Input`、`Plan`、`subset`。[ADR 0022](adr/0022-subsetting.md)） | `sofel-font`、`sofel-write`、`sofel-unicode`、`sofel-geom` |
 | `sofel-raster` | FreeTypeのsmoothのラスタライザと同じ計算で、8bitのアンチエイリアスの画像を作る | `sofel-geom` |
-| `sofel-cli` | 小さな道具（`sofel-validate`、`sofel-render`、`sofel-paint`）と、1グリフを描く `glyph::render` | すべて |
+| `sofel-cli` | 小さな道具（`sofel-validate`、`sofel-render`、`sofel-paint`、`sofel-subset`）と、1グリフを描く `glyph::render` | すべて |
 | `sofel-capi` | C ABI（[ADR 0015](adr/0015-c-abi.md)） | すべて |
 
 `sofel-cli` と `sofel-capi` 以外は `no_std`（必要なものは `alloc`）で、`wasm32-unknown-unknown` にビルドできる（[ADR 0004](adr/0004-wasm-and-no-std.md)）。
@@ -361,6 +363,25 @@ assert_eq!(Script::from_iso15924(b"latn").map(Script::tag), Some(*b"Latn"));
 - どの関数も `const` の表を引くだけで、確保をしない。0x110000以上の値でもpanicせず、HarfBuzzと同じ既定の値を返す。
 - `vertical_orientation` は、縦書きの文字列を、正立で組む区間（`U`、`Tu`）と、横に組んで90度回す区間（`R`、`Tr`）に分けるのに使う。分割そのものは呼び出し側の仕事である。
 - 版は `UNICODE_VERSION`（`(18, 0, 0)`）。
+
+## サブセット化する（`sofel-subset`）
+
+`Input` は不変の値で、`map_set` や `with_flags` が新しい値を返す。集合とフラグの意味はHarfBuzzの `hb_subset_input_t` と同じである（[ADR 0022](adr/0022-subsetting.md)）。
+
+```rust
+use sofel_font::Font;
+use sofel_subset::{Flags, Input, SetKind, subset};
+
+fn embed(data: &[u8], glyphs: &[u32]) -> Result<Vec<u8>, sofel_subset::SubsetError> {
+    let font = Font::new(data, 0).map_err(|_| sofel_subset::SubsetError::NoGlyphs)?;
+    let input = Input::new()
+        .map_set(SetKind::Glyphs, |s| glyphs.iter().for_each(|&g| s.add(g)))
+        .with_flags(Flags::RETAIN_GIDS);
+    subset(&font, &input)
+}
+```
+
+`Plan::new` で閉包とグリフの対応を求め、`Plan::execute` で表を書く。`subset` はこの2つを続けて呼ぶ。まだ書けない表を持つフォントは、その表を `SetKind::DropTables` に入れないかぎり `SubsetError::Unsupported` になる。
 
 ## Cから使う（`sofel-capi`）
 

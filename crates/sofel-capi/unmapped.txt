@@ -5,6 +5,7 @@
 # <path> <reason>; a path ending in `::*` covers everything under it.
 
 sofel_font::Font::sfnt Returns a sofel-read view of the table directory; C reads tables with sofel_font_table.
+sofel_font::remap::* HarfBuzz's character remapping tables for crates that read cmap subtables themselves (sofel-subset, ADR 0022); C maps characters with sofel_font_nominal_glyph.
 sofel_font::Font::head Returns a sofel-read view of head; C reads the table with sofel_font_table.
 sofel_geom::Command::apply Replays a recorded Rust Command into a Rust Pen; C pens receive the commands directly.
 sofel_geom::F26Dot6::from_int A multiplication by 64, which C writes as such.
@@ -111,3 +112,10 @@ sofel_read::colr::* Zero-copy Rust views and validators of COLR (ADR 0023); C pa
 sofel_read::cpal::* Zero-copy Rust views and validators of CPAL (ADR 0023); C gets palettes with the sofel_palette_* functions, the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::sbix::* Zero-copy Rust views and validators of sbix (ADR 0023); C gets bitmaps with sofel_glyph_bitmap, the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::svg::* Zero-copy Rust views and validators of SVG (ADR 0023); C gets documents with sofel_svg_document, the bytes with sofel_font_table, and validates with sofel_validate.
+sofel_write::Serializer::* HarfBuzz's object serializer, used object by object by Rust table writers; C gets whole tables from the subsetter, and serialized object graphs from sofel_serialize_objects once the repacker lands (ADR 0022 stages 4 and 5).
+sofel_write::Errors::* The serializer's error bits, read by Rust table writers only (ADR 0022).
+sofel_write::Packed::* The serializer's packed objects, read by Rust table writers only (ADR 0022).
+sofel_write::build_sfnt Assembles a font from tables for Rust table writers; C receives whole fonts from sofel_subset (ADR 0022).
+sofel_write::build_sfnt_ordered As sofel_write::build_sfnt (ADR 0022).
+sofel_write::checksum The sfnt checksum, a loop C writes directly (ADR 0022).
+sofel_subset::* The C ABI of the subsetter is ADR 0022's stage 5; until then C callers have no subsetting.

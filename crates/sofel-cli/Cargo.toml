@@ -14,6 +14,7 @@ sofel-outline = { path = "../sofel-outline" }
 sofel-raster = { path = "../sofel-raster" }
 sofel-bitmap = { path = "../sofel-bitmap" }
 sofel-color = { path = "../sofel-color" }
+sofel-subset = { path = "../sofel-subset" }
 
 [[bin]]
 name = "sofel-validate"
@@ -26,6 +27,12 @@ path = "src/bin/sofel-render.rs"
 [[bin]]
 name = "sofel-paint"
 path = "src/bin/sofel-paint.rs"
+
+[[bin]]
+name = "sofel-subset"
+path = "src/bin/sofel-subset.rs"
+# The library crate sofel-subset has the same documentation path.
+doc = false
 
 [lints]
 workspace = true

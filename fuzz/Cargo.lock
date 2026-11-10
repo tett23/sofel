@@ -85,6 +85,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 name = "sofel-font"
 version = "0.0.0"
 dependencies = [
+ "sofel-geom",
  "sofel-read",
 ]
 
@@ -120,5 +121,27 @@ dependencies = [
  "sofel-geom",
  "sofel-outline",
  "sofel-raster",
+ "sofel-read",
+ "sofel-subset",
+]
+
+[[package]]
+name = "sofel-subset"
+version = "0.0.0"
+dependencies = [
+ "sofel-font",
+ "sofel-geom",
+ "sofel-unicode",
+ "sofel-write",
+]
+
+[[package]]
+name = "sofel-unicode"
+version = "0.0.0"
+
+[[package]]
+name = "sofel-write"
+version = "0.0.0"
+dependencies = [
  "sofel-read",
 ]
