@@ -406,7 +406,7 @@ pub fn check_math(input: &[u8]) {
 /// The queries of ADR 0016 on a whole font: must not panic.
 fn check_font_queries(font: &sofel_font::Font<'_>) {
     let scales = [sofel_font::HbScale::unscaled(font), sofel_font::HbScale::for_font(font, 768, -1536)];
-    let boxes = |g| font.glyf_extents(g);
+    let boxes = |g| font.default_instance().glyf_extents(g);
     for s in scales {
         let _ = (s.h_extents(font), s.v_extents(font));
         for t in sofel_font::MetricsTag::ALL {
@@ -429,7 +429,7 @@ fn check_font_queries(font: &sofel_font::Font<'_>) {
             }
         }
     }
-    let _ = (font.fs_type(), font.ft_face_metrics());
+    let _ = (font.fs_type(), font.default_instance().ft_face_metrics());
     let mut out = [0u8; 64];
     let _ = font.postscript_name(&mut out);
     for e in font.names().take(64) {
@@ -446,7 +446,11 @@ fn check_font_queries(font: &sofel_font::Font<'_>) {
     let names = font.glyph_names(&mut buf);
     for g in 0..font.num_glyphs().min(64) {
         let g = GlyphId(g);
-        let _ = (font.glyph_name(g), font.ft_glyph_name(g), font.ft_v_advance(g));
+        let _ = (
+            font.glyph_name(g),
+            font.ft_glyph_name(g),
+            font.default_instance().ft_v_advance(g),
+        );
         if let (Some(n), Some(idx)) = (font.glyph_name(g), names.as_ref()) {
             let _ = idx.glyph_from_name(n);
             let _ = idx.ft_glyph_from_name(n);

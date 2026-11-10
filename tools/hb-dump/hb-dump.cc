@@ -422,6 +422,55 @@
 #include <string>
 #include <vector>
 
+static unsigned reference_named = HB_FONT_NO_VAR_NAMED_INSTANCE;
+static std::vector<hb_variation_t> reference_variations;
+
+static hb_font_t *var_create_font (hb_face_t *face)
+{
+  hb_font_t *font = hb_font_create (face);
+  if (reference_named != HB_FONT_NO_VAR_NAMED_INSTANCE)
+    hb_font_set_var_named_instance (font, reference_named);
+  if (!reference_variations.empty())
+    hb_font_set_variations (font, reference_variations.data(), reference_variations.size());
+  return font;
+}
+
+/* Remove variation options while preserving each mode's positional arguments. */
+static bool reference_options (int *argc, char **argv)
+{
+  int write = 2;
+  for (int read = 2; read < *argc; read++)
+  {
+    const char *arg = argv[read];
+    if (strncmp (arg, "--named-instance=", 17) == 0)
+    {
+      char *end;
+      unsigned long value = strtoul (arg + 17, &end, 10);
+      if (!arg[17] || *end || value > 0xFFFFFFFFul) return false;
+      reference_named = (unsigned) value;
+    }
+    else if (strncmp (arg, "--variations=", 13) == 0)
+    {
+      const char *p = arg + 13;
+      if (!*p) return false;
+      while (*p)
+      {
+        const char *end = strchr (p, ',');
+        unsigned len = end ? (unsigned) (end - p) : (unsigned) strlen (p);
+        hb_variation_t item;
+        if (!hb_variation_from_string (p, (int) len, &item)) return false;
+        reference_variations.push_back (item);
+        if (!end) break;
+        p = end + 1;
+        if (!*p) return false;
+      }
+    }
+    else argv[write++] = argv[read];
+  }
+  *argc = write;
+  return true;
+}
+
 /* ADR 0027 task 2: keep the exact float input bits in reference output. */
 static unsigned var_float_bits (float value)
 {
@@ -446,6 +495,7 @@ static bool var_options (int argc, char **argv, unsigned *named,
     else if (strncmp (argv[i], "--variations=", 13) == 0)
     {
       const char *p = argv[i] + 13;
+      if (!*p) return false;
       while (*p)
       {
         const char *end = strchr (p, ',');
@@ -479,7 +529,7 @@ static int dump_var_reference (int argc, char **argv)
   for (unsigned i = 0; i < faces; i++)
   {
     hb_face_t *face = hb_face_create (blob, i);
-    hb_font_t *font = hb_font_create (face);
+    hb_font_t *font = var_create_font (face);
     hb_ot_font_set_funcs (font);
     if (named != HB_FONT_NO_VAR_NAMED_INSTANCE)
       hb_font_set_var_named_instance (font, named);
@@ -493,12 +543,19 @@ static int dump_var_reference (int argc, char **argv)
     printf ("face %u\naxis_count %u\n", i, count);
     if (!normalize)
     {
+      printf ("has_data %u\n", (unsigned) hb_ot_var_has_data (face));
       for (const auto &axis : axes)
+      {
+        hb_ot_var_axis_info_t found;
+        hb_bool_t ok = hb_ot_var_find_axis_info (face, axis.tag, &found);
         printf ("axis %u %08x %u %u %08x %08x %08x\n",
                 axis.axis_index, axis.tag, axis.name_id, (unsigned) axis.flags,
                 var_float_bits (axis.min_value),
                 var_float_bits (axis.default_value),
                 var_float_bits (axis.max_value));
+        printf ("found_axis %08x %u %u\n", axis.tag, (unsigned) ok,
+                ok ? found.axis_index : 0);
+      }
       unsigned named_count = hb_ot_var_get_named_instance_count (face);
       printf ("named_count %u\n", named_count);
       for (unsigned n = 0; n < named_count; n++)
@@ -517,6 +574,13 @@ static int dump_var_reference (int argc, char **argv)
       const int *normalized = hb_font_get_var_coords_normalized (font, &length);
       printf ("coords_normalized");
       for (unsigned a = 0; a < length; a++) printf (" %d", normalized[a]);
+      printf ("\n");
+      std::vector<int> normalized_variations (count);
+      hb_ot_var_normalize_variations (face, variations.data(), variations.size(),
+                                      normalized_variations.data(), count);
+      printf ("normalized_variations");
+      for (unsigned a = 0; a < count; a++)
+        printf (" %d", normalized_variations[a]);
       printf ("\n");
       const float *design = hb_font_get_var_coords_design (font, &length);
       printf ("coords_design");
@@ -542,9 +606,10 @@ static int dump_var_reference (int argc, char **argv)
         }
         const char *labels[] = {"outside_min", "outside_max", "half_min", "half_max"};
         float span = max - min;
+        float def = axes[a].default_value;
         float values[] = {min - span, max + span,
-                          axes[a].default_value - span / 32768.f,
-                          axes[a].default_value + span / 32768.f};
+                          def - (def - min) / 32768.f,
+                          def + (max - def) / 32768.f};
         for (unsigned k = 0; k < 4; k++)
         {
           coords[a] = values[k];
@@ -646,7 +711,7 @@ static int dump_metrics (hb_blob_t *blob)
   for (unsigned i = 0; i < count; i++)
   {
     hb_face_t *face = hb_face_create (blob, i);
-    hb_font_t *font = hb_font_create (face);
+    hb_font_t *font = var_create_font (face);
     unsigned num_glyphs = hb_face_get_glyph_count (face);
     int upem = (int) hb_face_get_upem (face);
 
@@ -676,7 +741,7 @@ static int dump_sampled_metrics (hb_blob_t *blob, const char *plan)
     FILE *fp = fopen (plan, "r");
     if (!fp) { fprintf (stderr, "hb-dump: cannot read %s\n", plan); return 1; }
     hb_face_t *face = hb_face_create (blob, i);
-    hb_font_t *font = hb_font_create (face);
+    hb_font_t *font = var_create_font (face);
     unsigned num_glyphs = hb_face_get_glyph_count (face);
     unsigned selected[128], count = 0, face_index = 0, glyph = 0;
     int scanned = 0;
@@ -739,7 +804,7 @@ static int dump_names (hb_blob_t *blob)
   for (unsigned i = 0; i < count; i++)
   {
     hb_face_t *face = hb_face_create (blob, i);
-    hb_font_t *font = hb_font_create (face);
+    hb_font_t *font = var_create_font (face);
     printf ("face %u\n", i);
     unsigned n = 0;
     const hb_ot_name_entry_t *entries = hb_ot_name_list_names (face, &n);
@@ -797,7 +862,7 @@ static int dump_cmap (hb_blob_t *blob)
   for (unsigned i = 0; i < count; i++)
   {
     hb_face_t *face = hb_face_create (blob, i);
-    hb_font_t *font = hb_font_create (face);
+    hb_font_t *font = var_create_font (face);
     printf ("face %u\nnum_glyphs %u\n", i, hb_face_get_glyph_count (face));
     for (hb_codepoint_t c = 0; c <= 0x10FFFFu; c++)
     {
@@ -819,7 +884,7 @@ static int dump_cmap_digest (hb_blob_t *blob)
   for (unsigned i = 0; i < count; i++)
   {
     hb_face_t *face = hb_face_create (blob, i);
-    hb_font_t *font = hb_font_create (face);
+    hb_font_t *font = var_create_font (face);
     uint64_t hash = UINT64_C (14695981039346656037);
     for (hb_codepoint_t c = 0; c <= 0x10FFFFu; c++)
     {
@@ -968,7 +1033,7 @@ static int dump_baselines (hb_blob_t *blob)
   for (unsigned i = 0; i < count; i++)
   {
     hb_face_t *face = hb_face_create (blob, i);
-    hb_font_t *font = hb_font_create (face);
+    hb_font_t *font = var_create_font (face);
     int upem = (int) hb_face_get_upem (face);
     tag_list_t scripts = {{0}, 0}, languages = {{0}, 0};
     for (unsigned s = 0; s < sizeof (base_scripts) / sizeof (base_scripts[0]); s++)
@@ -1793,7 +1858,7 @@ static int dump_serialize (hb_blob_t *blob, const char *text_path)
     return 1;
   }
   hb_face_t *face = hb_face_create (blob, 0);
-  hb_font_t *font = hb_font_create (face);
+  hb_font_t *font = var_create_font (face);
   char line[4096];
   unsigned line_no = 0;
   while (fgets (line, sizeof (line), fp))
@@ -1858,7 +1923,7 @@ static int dump_deserialize (hb_blob_t *blob, const char *corpus_path)
     return 1;
   }
   hb_face_t *face = hb_face_create (blob, 0);
-  hb_font_t *font = hb_font_create (face);
+  hb_font_t *font = var_create_font (face);
   std::string line;
   int c;
   while ((c = fgetc (fp)) != EOF)
@@ -2085,7 +2150,7 @@ static int dump_paint (hb_blob_t *blob)
   for (unsigned i = 0; i < count; i++)
   {
     hb_face_t *face = hb_face_create (blob, i);
-    hb_font_t *font = hb_font_create (face);
+    hb_font_t *font = var_create_font (face);
     hb_font_set_synthetic_slant (font, paint_slant);
     unsigned num_glyphs = hb_face_get_glyph_count (face);
     unsigned palettes = hb_ot_color_palette_get_count (face);
@@ -2123,7 +2188,7 @@ static int dump_png_digest (int, char **argv)
   hb_blob_t *blob = hb_blob_create_from_file_or_fail (argv[2]);
   if (!blob) { fprintf (stderr, "hb-dump: cannot read %s\n", argv[2]); return 1; }
   hb_face_t *face = hb_face_create (blob, 0);
-  hb_font_t *font = hb_font_create (face);
+  hb_font_t *font = var_create_font (face);
   hb_font_set_ppem (font, 0, 0);
   unsigned count = hb_face_get_glyph_count (face);
   for (unsigned glyph = 0; glyph < count; glyph++)
@@ -2149,7 +2214,7 @@ static int dump_paint_var (int, char **argv)
   hb_blob_t *blob = hb_blob_create_from_file_or_fail (argv[2]);
   if (!blob) { fprintf (stderr, "hb-dump: cannot read %s\n", argv[2]); return 1; }
   hb_face_t *face = hb_face_create (blob, 0);
-  hb_font_t *font = hb_font_create (face);
+  hb_font_t *font = var_create_font (face);
   char *end = nullptr;
   unsigned long glyph = strtoul (argv[3], &end, 10);
   if (!*argv[3] || *end || glyph >= hb_face_get_glyph_count (face))
@@ -2196,7 +2261,7 @@ static int dump_var_metrics (int, char **argv)
   hb_blob_t *blob = hb_blob_create_from_file_or_fail (argv[2]);
   if (!blob) { fprintf (stderr, "hb-dump: cannot read %s\n", argv[2]); return 1; }
   hb_face_t *face = hb_face_create (blob, 0);
-  hb_font_t *font = hb_font_create (face);
+  hb_font_t *font = var_create_font (face);
   char *end = nullptr;
   unsigned long glyph = strtoul (argv[3], &end, 10);
   if (!*argv[3] || *end || glyph >= hb_face_get_glyph_count (face))
@@ -2241,7 +2306,7 @@ static int dump_color (hb_blob_t *blob)
   for (unsigned i = 0; i < count; i++)
   {
     hb_face_t *face = hb_face_create (blob, i);
-    hb_font_t *font = hb_font_create (face);
+    hb_font_t *font = var_create_font (face);
     unsigned num_glyphs = hb_face_get_glyph_count (face);
     printf ("face %u\n", i);
     printf ("has %d %d %d %d %d\n", hb_ot_color_has_layers (face) ? 1 : 0,
@@ -2310,7 +2375,7 @@ static int dump_extents (hb_blob_t *blob)
   for (unsigned i = 0; i < count; i++)
   {
     hb_face_t *face = hb_face_create (blob, i);
-    hb_font_t *font = hb_font_create (face);
+    hb_font_t *font = var_create_font (face);
     unsigned num_glyphs = hb_face_get_glyph_count (face);
     printf ("face %u\n", i);
     for (unsigned g = 0; g < num_glyphs; g++)
@@ -2364,7 +2429,7 @@ static int dump_mult ()
   {
     hb_face_t *face = hb_face_builder_create ();
     hb_face_set_upem (face, upem);
-    hb_font_t *font = hb_font_create (face);
+    hb_font_t *font = var_create_font (face);
     hb_font_set_scale (font, scale, scale);
     printf ("%lld\n", (long long) font->x_mult);
     hb_font_destroy (font);
@@ -2419,7 +2484,7 @@ static int dump_shape (int argc, char **argv)
   std::vector<hb_feature_t> features;
   parse_feature_list (argv[5], &features);
   hb_face_t *face = hb_face_create (blob, 0);
-  hb_font_t *font = hb_font_create (face);
+  hb_font_t *font = var_create_font (face);
   hb_buffer_t *b = hb_buffer_create ();
   std::string line;
   int c;
@@ -2461,7 +2526,7 @@ static int dump_corpus_shape (int argc, char **argv)
   if (!faces) faces = 1;
   if (face_index >= faces) { hb_blob_destroy (blob); return 2; }
   hb_face_t *face = hb_face_create (blob, face_index);
-  hb_font_t *font = hb_font_create (face);
+  hb_font_t *font = var_create_font (face);
   if (strcmp (argv[9], "-") != 0)
   {
     std::vector<hb_variation_t> variations;
@@ -2546,7 +2611,7 @@ static int dump_shape_random (int argc, char **argv)
   for (unsigned i = 0; i < faces; i++)
   {
     hb_face_t *face = hb_face_create (blob, i);
-    hb_font_t *font = hb_font_create (face);
+    hb_font_t *font = var_create_font (face);
     printf ("face %u\n", i);
     /* The mapped characters, grouped by script, scripts in tag order. */
     std::vector<std::pair<uint32_t, std::vector<hb_codepoint_t>>> groups;
@@ -3022,7 +3087,7 @@ static bool subset_glyphs (subset_args_t *a, char suffix, const char *arg)
 {
   hb_set_t *set = hb_subset_input_glyph_set (a->input);
   if (subset_set_start (set, suffix, arg)) return true;
-  if (!a->font) a->font = hb_font_create (a->face);
+  if (!a->font) a->font = var_create_font (a->face);
   const char *p = arg, *p_end = arg + strlen (arg);
   while (p < p_end)
   {
@@ -3348,6 +3413,11 @@ int main (int argc, char **argv)
     return dump_var_reference (argc, argv);
   if (argc >= 2 && strcmp (argv[1], "--subset") == 0)
     return dump_subset (argc, argv);
+  if (argc >= 2 && !reference_options (&argc, argv))
+  {
+    fprintf (stderr, "hb-dump: invalid variation options\n");
+    return 2;
+  }
   for (unsigned i = 0; i < sizeof (args_modes) / sizeof (args_modes[0]); i++)
     if (argc == args_modes[i].argc && strcmp (argv[1], args_modes[i].name) == 0)
       return args_modes[i].dump (argc, argv);

@@ -101,7 +101,10 @@ fn i05_nondefault_metrics_and_outlines_match_or_named_failure() {
 
         let ft_reference = parse(&outlines[case.id]).unwrap();
         let ft_glyph = &ft_reference[&0].glyphs[&case.glyph];
-        let mut outline = vec![format!("advance {}", font.advance(GlyphId(case.glyph)))];
+        let mut outline = vec![format!(
+            "advance {}",
+            font.default_instance().advance(GlyphId(case.glyph))
+        )];
         let parsed = sofel_outline::Outlines::new(&font);
         outline.extend(sofel_glyph(
             &parsed,

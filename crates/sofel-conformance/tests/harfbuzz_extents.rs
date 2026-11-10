@@ -112,7 +112,8 @@ fn shifted_outlines_start_at_harfbuzz_x_bearing() {
                 // HarfBuzz trusts the header box; FreeType's outline is
                 // where the points are. Compare where the two agree.
                 let points_x_min = info.cbox.x_min
-                    + (i32::from(x_min) - i32::from(font.ft_left_side_bearing(GlyphId(glyph))));
+                    + (i32::from(x_min)
+                        - i32::from(font.default_instance().ft_left_side_bearing(GlyphId(glyph))));
                 if points_x_min != i32::from(x_min) {
                     skipped += 1;
                     continue;
