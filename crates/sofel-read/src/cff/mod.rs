@@ -24,6 +24,7 @@ pub mod dict;
 pub mod encoding;
 pub mod fdselect;
 pub mod ft;
+pub mod hb;
 mod index;
 
 pub use blend::FtBlend;

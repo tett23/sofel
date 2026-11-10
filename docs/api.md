@@ -18,7 +18,7 @@ cargo doc --no-deps -p sofel-geom -p sofel-unicode -p sofel-read -p sofel-font -
 | `sofel-unicode` | Unicode 18.0.0の文字の性質。HarfBuzzの既定のUnicodeの関数と同じ値を返す | なし |
 | `sofel-read` | sfntの表の読み取りと検証。コピーも確保もしない | なし |
 | `sofel-font` | フォントを一度だけ読み、グリフの数、文字からグリフへの対応、送り幅を返す | `sofel-read`、`sofel-geom` |
-| `sofel-outline` | glyfとGLYFの輪郭を、ヒンティングなしでFreeTypeと同じ座標で `Pen` に渡す | `sofel-font`、`sofel-geom` |
+| `sofel-outline` | glyfとGLYFの輪郭を、ヒンティングなしでFreeTypeと同じ座標で `Pen` に渡す。HarfBuzzと同じグリフの箱（glyf、CFF2、CFF）を求める | `sofel-font`、`sofel-geom` |
 | `sofel-raster` | FreeTypeのsmoothのラスタライザと同じ計算で、8bitのアンチエイリアスの画像を作る | `sofel-geom` |
 | `sofel-cli` | 小さな道具（`sofel-validate`、`sofel-render`）と、1グリフを描く `glyph::render` | すべて |
 | `sofel-capi` | C ABI（[ADR 0015](adr/0015-c-abi.md)） | すべて |
@@ -62,7 +62,7 @@ let advance: u16 = font.advance(gid.unwrap_or(GlyphId(0))); // フォントの�
 | `Font::h_extents()`、`Font::v_extents()` | `hb_font_get_extents_for_direction`（代わりの値つき） |
 | `Font::v_advance(g)` | `hb_font_get_glyph_v_advance`（下向きが負） |
 | `Font::v_origin(g, extents)` | `hb_font_get_glyph_v_origin` |
-| `Font::glyf_extents(g)` | `hb_font_get_glyph_extents`（glyfだけ） |
+| `Font::glyf_extents(g)` | `hb_font_get_glyph_extents`（glyfだけ。CFFとCFF2は `sofel_outline::HbExtents`） |
 | `Font::metrics_position(tag)`、`Font::metrics_position_with_fallback(tag, extents)` | `hb_ot_metrics_get_position`、`hb_ot_metrics_get_position_with_fallback` |
 | `Font::baseline(tag, direction, script)`、`Font::baseline_with_fallback(tag, direction, script, extents)` | `hb_ot_layout_get_baseline`、`hb_ot_layout_get_baseline_with_fallback` |
 | `Font::layout_font_extents(direction, script, language)` | `hb_ot_layout_get_font_extents` |
@@ -77,13 +77,15 @@ let advance: u16 = font.advance(gid.unwrap_or(GlyphId(0))); // フォントの�
 - cmapのサブテーブルはHarfBuzzと同じ順で選び、記号フォントとMacのエンコーディングではHarfBuzzと同じく文字を付けかえて引く（[ADR 0016](adr/0016-font-and-vertical-metrics.md)）。送り幅は、hmtxが欠けたり短かったりするときもHarfBuzzと同じ値を返す（[ADR 0010](adr/0010-font-foundation.md)）。
 - `FontError` は、ファイルがsfntでもコレクションでもない、`head` が読めない、番号のフォントが無い、のいずれか。
 - メトリクスの値はフォントの単位（HarfBuzzの既定の拡大縮小）で返す。ほかの拡大縮小の値は `HbScale` の同じ名前の関数で求める。HarfBuzzと同じく、整数の値は `em_scale_x`（`(v × mult + 32768) >> 16`）、小数で持つ値は `em_scalef_x`（HarfBuzzの `roundf`）、箱は `scale_glyph_extents` で拡大縮小し、ビット単位で一致する。代わりの値はその拡大縮小で求める（拡大縮小した値は、フォントの単位の代わりの値を拡大縮小したものと一致しないことがある）。
-- `v_origin` と `metrics_position_with_fallback` は、グリフの箱を求める関数を受け取る。いまは `|g| font.glyf_extents(g)` を渡す。CFFとカラーのグリフの箱は上の層（[ADR 0021](adr/0021-cff-outlines.md)、[0023](adr/0023-color-glyphs.md)）が持つ。
+- `v_origin` と `metrics_position_with_fallback` は、グリフの箱を求める関数を受け取る。glyf、CFF2、CFFの箱は `sofel-outline` の `HbExtents`（[ADR 0021](adr/0021-cff-outlines.md)）が求めるので、`|g| extents.glyph_extents(g)` を渡す。glyfだけのフォントなら `|g| font.glyf_extents(g)` でもよい。カラーのグリフの箱は [ADR 0023](adr/0023-color-glyphs.md) で足す。
 
 ```rust
 use sofel_font::{HbScale, MetricsTag};
+use sofel_outline::HbExtents;
 
 let ext = font.h_extents(); // ascender, descender, line_gap
-let (x, y) = font.v_origin(GlyphId(1), |g| font.glyf_extents(g));
+let extents = HbExtents::new(&font); // 一度だけ作り、持ち続ける
+let (x, y) = font.v_origin(GlyphId(1), |g| extents.glyph_extents(g));
 let scale = HbScale::for_font(&font, 12 * 64, 12 * 64);
 let advance = scale.v_advance(&font, GlyphId(1));
 let x_height = scale.metrics_position(&font, MetricsTag::XHeight);
@@ -105,7 +107,7 @@ let center = font.baseline_with_fallback(
 let (extents, from_base) = font.layout_font_extents(Direction::Horizontal, Tag::new(b"latn"), Tag::new(b"dflt"));
 ```
 
-- 名前から引く索引は呼び出し側が持つ。`let mut buf = vec![0u32; font.glyph_names_len()]; let names = font.glyph_names(&mut buf)?;` で作り、`names.glyph_from_name(b"A")` で引く。名前の文字列は呼び出し側の配列に書く（`name_utf8` など）か、フォントのデータを借りて返す（`glyph_name`、`sfnt_name`）。
+- グリフ名はHarfBuzzと同じく、postに無ければCFFのcharsetから引く（CIDキーのフォントには無い。[ADR 0021](adr/0021-cff-outlines.md)）。名前から引く索引は呼び出し側が持つ。`let mut buf = vec![0u32; font.glyph_names_len()]; let names = font.glyph_names(&mut buf)?;` で作り、`names.glyph_from_name(b"A")` で引く。CFFの名前が同じグリフが複数あれば、グリフIDの小さいものを返す。`glyph_name` は呼び出しごとに `HbCff1` を作るので、繰り返し引くときは作っておいた値を `glyph_name_with(g, cff)` に渡す。名前の文字列は呼び出し側の配列に書く（`name_utf8` など）か、フォントのデータを借りて返す（`glyph_name`、`sfnt_name`）。
 - 下の層が要るときは `sofel_font::read`（`sofel-read` の再公開）と `Font::sfnt()`、`Font::head()` を使う。
 
 ## 輪郭を取り出す（`sofel-outline`）
@@ -128,6 +130,7 @@ let info = draw(&font, gid, scale, &mut scratch, &mut pen)?;
 - `Scale::Unscaled` はフォントの単位のまま（`FT_LOAD_NO_SCALE`）、`Scale::Scaled { x, y }` は16.16の倍率で26.6の座標にする。
 - 点は、FreeTypeと同じく幻の点のpp1.x（見出しの `xMin` − `Font::ft_left_side_bearing` を拡大縮小した値）だけ左に動かしてある。合成グリフでは、USE_MY_METRICSの部品があればその部品のpp1.xを使う（[ADR 0018](adr/0018-phantom-point-shift.md)）。
 - `draw` は `load`（点を `Scratch` に読む）と `Scratch::decompose`（命令を送る）を続けたもの。輪郭を移動してから分解したいとき（ラスタライズ）は、2つを分けて呼ぶ。`decompose(offset, multiplier, pen)` は、`FT_Outline_Translate` で `offset` だけ動かし、各点を `multiplier` 倍してから分解する。暗黙のon-curveの点（2点の中点、0へ切り捨て）がこの順に依存するので、FreeTypeと一致させるには同じ順で行う。
+- HarfBuzzのグリフの箱は `HbExtents`（[ADR 0021](adr/0021-cff-outlines.md)）：`HbExtents::new(&font)` でHarfBuzzのCFFとCFF2のアクセラレータ（`sofel_font::HbCff1`、`HbCff2`）を一度だけ作り、`glyph_extents(g)` で `hb_font_get_glyph_extents` と同じ箱（glyf、CFF2、CFFの順。拡大縮小なし）を、`scaled_glyph_extents(g, &scale)` で `HbScale` の拡大縮小をした箱を返す。CFFの箱はHarfBuzzの解釈器と同じく制御点を含み、FreeTypeの輪郭の `cbox` とは違うことがある。
 - `OutlineError`：グリフIDが範囲外（`InvalidGlyphIndex`）、glyfとlocaが無い（`NoGlyphData`）、グリフのデータが壊れている（`InvalidOutline`）、複合グリフが壊れている・循環している・深すぎる（`InvalidComposite`）。エラーの前に送った命令は取り消されない。
 
 ## ラスタライズする（`sofel-raster`）
@@ -202,6 +205,7 @@ match FontFile::new(&data)? {
 - OS/2の版より後の欄（例えば版1の `s_cap_height`）は `None` を返す。nameの文字列が表の外にある記録は `Name::string` が `None` を返す。postの `MAC_GLYPH_NAMES` はMacの標準の258の名前。
 - `be` は、範囲を確かめるビッグエンディアンの読み取りの関数。
 - `cff` は `CFF ` と `CFF2` の表（[ADR 0021](adr/0021-cff-outlines.md)）：`Cff1`、`Cff2`（ヘッダとINDEXの並び）、`Index`（`get` は厳密に、`ft_element` と `ft_pointer` はFreeTypeの読み方で要素を返す）、`dict`（`DictTokens`、FreeTypeと同じ数の変換をする `Operand`、`TopDict`、`FontDict`、`PrivateDict`。値はFreeTypeが `FT_Long` に持つ64bitの値と型のまま）、`Charset`、`Encoding`、`FdSelect`、`charstring`（`CharStringTokens` と、FreeTypeのAdobe engineをヒンティングなしで移植したType 2 charstringの解読器 `decode`）、`FtBlend`（FreeTypeのCFF2の `blend` の係数）。`cff::validate` と `cff::validate2` が検証器で、`validate::sfnt` は `maxp` のグリフの数と `fvar` の軸の数を渡して呼ぶ。
+- `cff::hb` は、HarfBuzzが `CFF ` と `CFF2` を読む手順（[ADR 0021](adr/0021-cff-outlines.md)）：サニタイザ `Sanitizer`（範囲の確かめと操作の予算）、`HbIndex`、`HbCharset`、`HbFdSelect`、encodingとCFF2のVariation Storeの確かめ、DICTの解釈器 `interpret_dict`。`sofel_font::HbCff1` と `HbCff2` がこれで作られる。
 - `item_variation` はOpenTypeの共通のItem Variation Store（領域の一覧と `ItemVariationData` の領域の番号）のビューと検証器。CFF2の `vstore` が使い、3段階目の可変フォントでHVARなどと共有する。
 
 ## 固定小数点（`sofel-geom`）

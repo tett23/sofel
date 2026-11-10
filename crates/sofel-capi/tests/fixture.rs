@@ -25,7 +25,7 @@ use sofel_font::read::sfnt::FontFile;
 use sofel_font::read::{DetailValue, GlyphId, Severity, Tag, validate};
 use sofel_font::{Direction, Font, FontError, GlyphExtents, HbScale, MetricsTag};
 use sofel_geom::{Command, Fixed, FnPen, Matrix, Pen, Point};
-use sofel_outline::{OutlineError, Scale, Scratch, draw, load};
+use sofel_outline::{HbExtents, OutlineError, Scale, Scratch, draw, load};
 use sofel_raster::{FillRule, RasterError, Rasterizer, RenderOptions, pixel_box};
 
 // The error numbers of sofel.h.
@@ -232,7 +232,8 @@ fn metrics_tables() -> Vec<(&'static [u8; 4], Vec<u8>)> {
 
 /// The baseline cases of ADR 0017 at one scale.
 fn baseline_cases(out: &mut String, prefix: &str, font: &Font<'_>, scale: HbScale) {
-    let boxes = |g: GlyphId| font.glyf_extents(g);
+    let extents = HbExtents::new(font);
+    let boxes = |g: GlyphId| extents.glyph_extents(g);
     let dirs = [(0, Direction::Horizontal), (1, Direction::Vertical)];
     let scripts = [*b"hani", *b"latn", *b"deva", *b"DFLT"];
     let mut rows = Vec::new();
@@ -429,7 +430,8 @@ fn ext4(e: GlyphExtents) -> [i32; 4] {
 
 /// The metrics cases at one scale (`None`: the sofel_font_* functions).
 fn metrics_cases(out: &mut String, prefix: &str, font: &Font<'_>, scale: HbScale) {
-    let boxes = |g: GlyphId| font.glyf_extents(g);
+    let extents = HbExtents::new(font);
+    let boxes = |g: GlyphId| extents.glyph_extents(g);
     let h = scale.h_extents(font);
     let v = scale.v_extents(font);
     ints(
@@ -449,7 +451,7 @@ fn metrics_cases(out: &mut String, prefix: &str, font: &Font<'_>, scale: HbScale
         .map(|g| {
             let g = GlyphId(g);
             let (ox, oy) = scale.v_origin(font, g, boxes);
-            let (es, e) = match scale.glyf_extents(font, g) {
+            let (es, e) = match extents.scaled_glyph_extents(g, &scale) {
                 Some(e) => (OK, ext4(e)),
                 None => (NOT_FOUND, [0; 4]),
             };
@@ -485,6 +487,77 @@ fn metrics_cases(out: &mut String, prefix: &str, font: &Font<'_>, scale: HbScale
     writeln!(
         out,
         "static const struct metric_case {prefix}_metrics[] = {{{}}};",
+        rows.join(", ")
+    )
+    .unwrap();
+}
+
+/// A CFF font for the boxes and names of ADR 0021: glyph 1 "A" a line,
+/// 2 "grave" a curve, 3 "dup" a seac of A and grave, 4 "dup" a
+/// charstring without endchar (no box), 5 "B" with a hint mask.
+fn cff_metrics_font() -> Vec<u8> {
+    use Cs::*;
+    let glyphs = vec![
+        charstring(&[Op(14)]),
+        charstring(&[I(10), I(-20), Op(21), I(300), I(700), Op(5), Op(14)]),
+        charstring(&[
+            I(0),
+            I(0),
+            Op(21),
+            I(50),
+            I(90),
+            I(40),
+            I(-10),
+            I(20),
+            I(-60),
+            Op(8),
+            Op(14),
+        ]),
+        charstring(&[I(400), I(-30), I(100), I(65), I(193), Op(14)]),
+        charstring(&[I(0), I(0), Op(21), I(5), I(5), Op(5)]),
+        charstring(&[
+            I(1),
+            I(2),
+            Op(1),
+            Op(19),
+            Raw(vec![0x80]),
+            F(0x1_8000),
+            F(-0x8000),
+            Op(21),
+            I(9),
+            I(9),
+            Op(5),
+            Op(14),
+        ]),
+    ];
+    let mut spec = Cff1Spec::new(glyphs);
+    spec.charset = Some(vec![0, 0, 34, 0, 124, 1, 135, 1, 136, 0, 35]);
+    spec.strings = vec![b"dup".to_vec(), b"dup".to_vec()];
+    otto_font(6, vec![(b"CFF ", cff1(&spec))])
+}
+
+/// The HarfBuzz glyph names of the CFF font: name and the glyph found by
+/// it.
+fn cff_name_cases(out: &mut String, font: &Font<'_>) {
+    let mut buf = vec![0u32; font.glyph_names_len()];
+    let index = font.glyph_names(&mut buf).unwrap();
+    let rows: Vec<String> = (0..font.num_glyphs() + 2)
+        .map(|g| {
+            let g = GlyphId(g);
+            let hb = font.glyph_name(g);
+            let name = hb.map_or("NULL".to_string(), |n| {
+                format!("\"{}\"", String::from_utf8_lossy(n))
+            });
+            let back = hb
+                .and_then(|n| index.glyph_from_name(n))
+                .map_or(-1, |g| i64::from(g.0));
+            format!("{{{}, {name}, {back}}}", g.0)
+        })
+        .collect();
+    writeln!(
+        out,
+        "static const struct cff_name_case {{ uint32_t glyph; const char *hb; int64_t back; }} \
+         cff_names[] = {{{}}};",
         rows.join(", ")
     )
     .unwrap();
@@ -1079,6 +1152,19 @@ fn generate() -> String {
         height: -703,
     });
     ints(&mut out, "int32_t", "scaled_box", &ext4(e));
+
+    // CFF boxes and names (ADR 0021).
+    let cff_data = cff_metrics_font();
+    bytes(&mut out, "cff_font_data", &cff_data);
+    let cfont = Font::new(&cff_data, 0).unwrap();
+    metrics_cases(&mut out, "cff_unscaled", &cfont, HbScale::unscaled(&cfont));
+    metrics_cases(
+        &mut out,
+        "cff_scaled",
+        &cfont,
+        HbScale::for_font(&cfont, 768, -1536),
+    );
+    cff_name_cases(&mut out, &cfont);
     unicode(&mut out);
 
     // Validation.

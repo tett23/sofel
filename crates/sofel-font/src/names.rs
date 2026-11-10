@@ -1,6 +1,7 @@
 //! Names (ADR 0016): the `name` table as HarfBuzz lists and converts
 //! it, FreeType's records and PostScript name, and glyph names from
-//! `post` as HarfBuzz and FreeType give them.
+//! `post` (and from the CFF charset, ADR 0021) as HarfBuzz and FreeType
+//! give them.
 //!
 //! The HarfBuzz parts are ported from HarfBuzz 15.1.0 (commit
 //! 3df40d9b98d6b32f0e4288d4ecfbb158ddb3a372): `src/OT/name/name.hh`,
@@ -26,8 +27,8 @@ use sofel_read::name::{Name, NameRecord};
 use sofel_read::post::{self, Post};
 use sofel_read::{GlyphId, Tag};
 
-use crate::Font;
 use crate::name_language;
+use crate::{Font, HbCff1};
 
 /// `HB_BUFFER_REPLACEMENT_CODEPOINT_DEFAULT`.
 const REPLACEMENT: u32 = 0xFFFD;
@@ -677,12 +678,27 @@ impl<'a> Font<'a> {
     }
 
     /// The name of a glyph as HarfBuzz's `hb_font_get_glyph_name` gives
-    /// it from `post` (versions 1.0 and 2.0; CFF names come with
+    /// it (`hb_ot_get_glyph_name`): from `post` (versions 1.0 and 2.0),
+    /// else from the charset of a CFF font that is not CID-keyed, when
+    /// HarfBuzz's CFF accelerator is valid ([`HbCff1::glyph_name`],
     /// ADR 0021). `None` for glyphs without a name or with an empty one.
-    /// A stored name takes time in proportion to the strings before it;
+    /// HarfBuzz copies CFF names with `strncpy`, so it ends them at a 0
+    /// byte; the name returned here is not cut.
+    ///
+    /// A stored `post` name takes time in proportion to the strings
+    /// before it, and a CFF name builds [`HbCff1`] each time;
     /// [`GlyphNames`] looks names up in constant time.
     pub fn glyph_name(&self, glyph: GlyphId) -> Option<&'a [u8]> {
+        self.glyph_name_with(glyph, HbCff1::new(self).as_ref())
+    }
+
+    /// [`Font::glyph_name`] with HarfBuzz's CFF accelerator built once by
+    /// the caller ([`HbCff1::new`] of this font; `None` when it is not
+    /// valid), so that CFF names take constant time for format 0
+    /// charsets.
+    pub fn glyph_name_with(&self, glyph: GlyphId, cff: Option<&HbCff1<'a>>) -> Option<&'a [u8]> {
         self.hb_glyph_name(glyph, &|k| self.hb_post()?.names().take(65535).nth(k))
+            .or_else(|| cff?.glyph_name(glyph.0))
     }
 
     fn hb_glyph_name(
@@ -788,8 +804,20 @@ impl<'a> Font<'a> {
         self.ft_glyph_name_with(glyph, &|k| self.ft_post_string(k))
     }
 
-    /// The number of `u32` words [`Font::glyph_names`] needs.
+    /// HarfBuzz's CFF accelerator when it gives glyph names: valid and
+    /// not CID-keyed.
+    fn hb_cff_names(&self) -> Option<HbCff1<'a>> {
+        HbCff1::new(self).filter(|c| !c.is_cid())
+    }
+
+    /// The number of `u32` words [`Font::glyph_names`] needs: the `post`
+    /// part, and two per glyph for the CFF names.
     pub fn glyph_names_len(&self) -> usize {
+        self.post_names_len()
+            .saturating_add(cff_names_len(self.hb_cff_names().as_ref()))
+    }
+
+    fn post_names_len(&self) -> usize {
         self.glyph_name_count()
             .saturating_add(self.post_string_count())
             .saturating_add(1)
@@ -797,14 +825,30 @@ impl<'a> Font<'a> {
 
     /// An index of the glyph names in `buf`, which must have at least
     /// [`Font::glyph_names_len`] words: the offsets of the `post`
-    /// strings, and the glyph ids sorted by name as HarfBuzz sorts them
-    /// (`gids_sorted_by_name`). The index is the caller's value
-    /// (ADR 0003); building it takes O(n log n) time. `None` when `buf`
-    /// is too short.
+    /// strings, the glyph ids sorted by name as HarfBuzz sorts them
+    /// (`gids_sorted_by_name`), and for CFF fonts the SID of each glyph
+    /// and the glyphs sorted by name (equal names by glyph id, ADR 0021).
+    /// The index is the caller's value (ADR 0003); building it takes
+    /// O(n log n) time. `None` when `buf` is too short.
     pub fn glyph_names<'b>(&self, buf: &'b mut [u32]) -> Option<GlyphNames<'a, 'b>> {
+        let cff = self.hb_cff_names();
+        let post_len = self.post_names_len();
+        let buf = buf.get_mut(..post_len.saturating_add(cff_names_len(cff.as_ref())))?;
+        let (buf, cff_buf) = buf.split_at_mut(post_len);
+        let (cff_gids, cff_sids) = cff_buf.split_at_mut(cff_buf.len() / 2);
+        if let Some(c) = &cff {
+            for ((g, slot), gid) in (0u32..).zip(cff_sids.iter_mut()).zip(cff_gids.iter_mut()) {
+                *slot = c.sid(g);
+                *gid = g;
+            }
+            let sids: &[u32] = cff_sids;
+            let name = |g: u32| c.string(sids.get(be::to_usize(g)).copied().unwrap_or(0));
+            sort(cff_gids, &|a, b| {
+                gname_cmp(name(*a), name(*b)).then_with(|| a.cmp(b))
+            });
+        }
         let count = self.glyph_name_count();
         let strings = self.post_string_count();
-        let buf = buf.get_mut(..count.saturating_add(strings).saturating_add(1))?;
         let (gids, offsets) = buf.split_at_mut(count);
         // offsets[k]: where string k starts; offsets[strings]: the end.
         if let Some(p) = self.hb_post() {
@@ -826,26 +870,60 @@ impl<'a> Font<'a> {
             font: *self,
             gids: &[],
             offsets,
+            cff,
+            cff_gids: &[],
+            cff_sids,
         };
         sort(gids, &|a, b| {
-            bytes_cmp(names.name(GlyphId(*b)), names.name(GlyphId(*a)))
+            bytes_cmp(names.post_name(GlyphId(*b)), names.post_name(GlyphId(*a)))
         });
-        Some(GlyphNames { gids, ..names })
+        Some(GlyphNames {
+            gids,
+            cff_gids,
+            ..names
+        })
     }
 
     /// The index in a buffer that [`Font::glyph_names`] filled for this
     /// font, without sorting again. `None` when `buf` is too short.
     pub fn glyph_names_from<'b>(&self, buf: &'b [u32]) -> Option<GlyphNames<'a, 'b>> {
+        let cff = self.hb_cff_names();
+        let post_len = self.post_names_len();
+        let buf = buf.get(..post_len.saturating_add(cff_names_len(cff.as_ref())))?;
+        let (buf, cff_buf) = buf.split_at(post_len);
+        let (cff_gids, cff_sids) = cff_buf.split_at(cff_buf.len() / 2);
         let count = self.glyph_name_count();
-        let strings = self.post_string_count();
-        let buf = buf.get(..count.saturating_add(strings).saturating_add(1))?;
         let (gids, offsets) = buf.split_at(count);
         Some(GlyphNames {
             font: *self,
             gids,
             offsets,
+            cff,
+            cff_gids,
+            cff_sids,
         })
     }
+}
+
+/// The words of a glyph name index for CFF names: two per glyph.
+fn cff_names_len(cff: Option<&HbCff1<'_>>) -> usize {
+    cff.map_or(0, |c| be::to_usize(c.num_glyphs()).saturating_mul(2))
+}
+
+/// `gname_t::cmp` of HarfBuzz's CFF name index: `strncmp` over the
+/// shorter length (so a 0 byte ends the comparison), then the shorter
+/// first.
+fn gname_cmp(a: &[u8], b: &[u8]) -> Ordering {
+    let n = a.len().min(b.len());
+    for (&x, &y) in a.iter().zip(b).take(n) {
+        if x != y {
+            return x.cmp(&y);
+        }
+        if x == 0 {
+            return a.len().cmp(&b.len());
+        }
+    }
+    a.len().cmp(&b.len())
 }
 
 /// `hb_bytes_t::cmp`: the shorter first, then by bytes, with the
@@ -971,6 +1049,11 @@ pub struct GlyphNames<'a, 'b> {
     font: Font<'a>,
     gids: &'b [u32],
     offsets: &'b [u32],
+    cff: Option<HbCff1<'a>>,
+    /// The glyphs sorted by CFF name, equal names by glyph id.
+    cff_gids: &'b [u32],
+    /// The SID of each glyph.
+    cff_sids: &'b [u32],
 }
 
 impl<'a> GlyphNames<'a, '_> {
@@ -983,12 +1066,24 @@ impl<'a> GlyphNames<'a, '_> {
         data.get(pool.saturating_add(start).saturating_add(1)..pool.saturating_add(end))
     }
 
-    fn name(&self, glyph: GlyphId) -> Option<&'a [u8]> {
+    fn post_name(&self, glyph: GlyphId) -> Option<&'a [u8]> {
         self.font.hb_glyph_name(glyph, &|k| {
             (k < self.offsets.len().saturating_sub(1))
                 .then(|| self.string(k))
                 .flatten()
         })
+    }
+
+    /// The CFF name of `glyph` from the SIDs in the index.
+    fn cff_name(&self, glyph: u32) -> Option<&'a [u8]> {
+        let c = self.cff?;
+        let sid = *self.cff_sids.get(be::to_usize(glyph))?;
+        let s = c.string(sid);
+        (!s.is_empty()).then_some(s)
+    }
+
+    fn name(&self, glyph: GlyphId) -> Option<&'a [u8]> {
+        self.post_name(glyph).or_else(|| self.cff_name(glyph.0))
     }
 
     /// [`Font::glyph_name`].
@@ -997,9 +1092,38 @@ impl<'a> GlyphNames<'a, '_> {
     }
 
     /// The glyph with `name`, as HarfBuzz's `hb_font_get_glyph_from_name`
-    /// finds it from `post`: a binary search over the glyphs sorted by
-    /// name. `None` for an empty name or no match.
+    /// finds it (`hb_ot_get_glyph_from_name`): a binary search over the
+    /// glyphs sorted by `post` name, else over those sorted by CFF name
+    /// (ADR 0021). For a CFF name, the glyph is the first one with the
+    /// SID of the match (HarfBuzz's `sid_to_glyph`); of glyphs with equal
+    /// names, the one with the smallest glyph id is matched, where
+    /// HarfBuzz's depends on its sort. `None` for an empty name or no
+    /// match.
     pub fn glyph_from_name(&self, name: &[u8]) -> Option<GlyphId> {
+        self.post_glyph_from_name(name)
+            .or_else(|| self.cff_glyph_from_name(name))
+    }
+
+    fn cff_glyph_from_name(&self, name: &[u8]) -> Option<GlyphId> {
+        let c = self.cff?;
+        if name.is_empty() {
+            return None;
+        }
+        let string = |g: &u32| c.string(self.cff_sids.get(be::to_usize(*g)).copied().unwrap_or(0));
+        let i = self
+            .cff_gids
+            .partition_point(|g| gname_cmp(string(g), name) == Ordering::Less);
+        let g = self.cff_gids.get(i)?;
+        if gname_cmp(string(g), name) != Ordering::Equal {
+            return None;
+        }
+        // gname_t keeps the SID in 16 bits.
+        let sid = self.cff_sids.get(be::to_usize(*g)).copied()? & 0xFFFF;
+        let gid = c.glyph_of_sid(sid);
+        (gid != 0 || sid == 0).then_some(GlyphId(gid))
+    }
+
+    fn post_glyph_from_name(&self, name: &[u8]) -> Option<GlyphId> {
         if name.is_empty() || self.gids.is_empty() {
             return None;
         }
@@ -1008,7 +1132,7 @@ impl<'a> GlyphNames<'a, '_> {
             let mid = min.saturating_add(max) / 2;
             let g = *self.gids.get(usize::try_from(mid).ok()?)?;
             // cmp_key: find_glyph_name (o).cmp (key).
-            match bytes_cmp(self.name(GlyphId(g)), Some(name)) {
+            match bytes_cmp(self.post_name(GlyphId(g)), Some(name)) {
                 Ordering::Less => max = mid.saturating_sub(1),
                 Ordering::Greater => min = mid.saturating_add(1),
                 Ordering::Equal => return Some(GlyphId(g)),

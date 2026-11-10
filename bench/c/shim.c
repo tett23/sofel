@@ -4,7 +4,9 @@
  * so that bench/src/ffi.rs only declares these.
  */
 
+#include <limits.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -195,4 +197,45 @@ long bhb_draw(void *font, unsigned gid)
   if (!hb_font_draw_glyph_or_fail((hb_font_t *)font, gid, draw_funcs, &n))
     return -1;
   return n;
+}
+
+/* The sum of the glyph box's four values, or LONG_MIN when there is
+ * none (ADR 0021). */
+long bhb_glyph_extents(void *font, unsigned gid)
+{
+  hb_glyph_extents_t e;
+  if (!hb_font_get_glyph_extents((hb_font_t *)font, gid, &e))
+    return LONG_MIN;
+  return (long)e.x_bearing + (long)e.y_bearing + (long)e.width + (long)e.height;
+}
+
+/* The length of the glyph's name as hb_font_get_glyph_name writes it
+ * into 256 bytes, or -1 without a name. */
+long bhb_glyph_name(void *font, unsigned gid, char *buf)
+{
+  if (!hb_font_get_glyph_name((hb_font_t *)font, gid, buf, 256))
+    return -1;
+  return (long)strlen(buf);
+}
+
+/* The glyph with the name, or -1. */
+long bhb_glyph_from_name(void *font, const char *name, int len)
+{
+  hb_codepoint_t g = 0;
+  if (!hb_font_get_glyph_from_name((hb_font_t *)font, name, len, &g))
+    return -1;
+  return (long)g;
+}
+
+/* Opens the data (hb_face_create, hb_font_create) and gets the box of
+ * one glyph: what a first query costs, accelerators included. */
+long bhb_open_extents(const unsigned char *data, unsigned len, unsigned gid)
+{
+  void *font = bhb_open(data, len, 0);
+  long v;
+  if (!font)
+    return LONG_MIN;
+  v = bhb_glyph_extents(font, gid);
+  bhb_close(font);
+  return v;
 }
