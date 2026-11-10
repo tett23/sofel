@@ -253,3 +253,90 @@ fn fonts_are_plain_shareable_values() {
     fn check<T: Send + Sync + Copy>() {}
     check::<Font<'static>>();
 }
+
+#[test]
+fn left_side_bearings_follow_freetype() {
+    let lsb = |data: &[u8], glyph| {
+        Font::new(data, 0)
+            .unwrap()
+            .ft_left_side_bearing(GlyphId(glyph))
+    };
+    let data = sample_font();
+    assert_eq!(lsb(&data, 5), 5); // long metric
+    assert_eq!(lsb(&data, 25), -25); // leftSideBearings
+    assert_eq!(lsb(&data, 28), 0); // past the table
+    // Bearings past numGlyphs are still read when the table has them.
+    let long: Vec<(u16, i16)> = (0..20).map(|g| (500, g as i16)).collect();
+    let extra = with(
+        sample_tables(),
+        &[(
+            b"hmtx",
+            hmtx(&long, &[-20, -21, -22, -23, -24, -25, -26, -27, 77]),
+        )],
+    );
+    assert_eq!(lsb(&extra, 28), 77);
+    // A long metric that does not fit: 0, even if part of it is there.
+    let cut = with(
+        sample_tables(),
+        &[
+            (b"hhea", hhea(3)),
+            (b"hmtx", vec![0, 1, 0, 9, 0, 1, 0, 8, 0, 1]),
+        ],
+    );
+    assert_eq!(lsb(&cut, 1), 8);
+    assert_eq!(lsb(&cut, 2), 0);
+    // Past numberOfHMetrics, the last advance must be readable.
+    let cut = with(
+        sample_tables(),
+        &[
+            (b"hhea", hhea(3)),
+            (b"hmtx", vec![0, 1, 0, 9, 0, 1, 0, 8, 0]),
+        ],
+    );
+    assert_eq!(lsb(&cut, 3), 0);
+    // No hhea, no hmtx, or numberOfHMetrics 0: 0.
+    assert_eq!(lsb(&without(b"hhea"), 5), 0);
+    assert_eq!(lsb(&without(b"hmtx"), 5), 0);
+    assert_eq!(lsb(&with(sample_tables(), &[(b"hhea", hhea(0))]), 5), 0);
+}
+
+#[test]
+fn left_side_bearing_tables_follow_freetype() {
+    let wide = || hmtx(&[(700, 40)], &[41; 27]);
+    // hhea and hmtx win over HHEA and HMTX (unlike the advances).
+    let both = with(
+        sample_tables(),
+        &[(b"HHEA", hhea_wide(1)), (b"HMTX", wide())],
+    );
+    let lsb = |data: &[u8], glyph| {
+        Font::new(data, 0)
+            .unwrap()
+            .ft_left_side_bearing(GlyphId(glyph))
+    };
+    assert_eq!(lsb(&both, 5), 5);
+    // Without hhea, HHEA and HMTX.
+    let upper = with(
+        sample_tables(),
+        &[
+            (b"hhea", Vec::new()),
+            (b"HHEA", hhea_wide(1)),
+            (b"HMTX", wide()),
+        ],
+    );
+    assert_eq!(lsb(&upper, 5), 41);
+    // With GLYF, only HHEA and HMTX.
+    let glyf_wide = |extra: &[(&'static [u8; 4], Vec<u8>)]| {
+        let mut r = vec![(b"GLYF", vec![0u8; 4])];
+        r.extend(extra.iter().cloned());
+        with(sample_tables(), &r)
+    };
+    assert_eq!(lsb(&glyf_wide(&[]), 5), 0);
+    assert_eq!(
+        lsb(&glyf_wide(&[(b"HHEA", hhea_wide(1)), (b"HMTX", wide())]), 0),
+        40
+    );
+    assert_eq!(
+        lsb(&glyf_wide(&[(b"HHEA", hhea_wide(1)), (b"HMTX", wide())]), 5),
+        41
+    );
+}

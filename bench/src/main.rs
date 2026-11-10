@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use ffi::{FtFace, HbFont};
 use sofel_bench::harness::{Check, Config, Row, Stats, SystemClock, measure, report_checks, table};
 use sofel_font::Font;
-use sofel_font::read::{GlyphId, Tag};
+use sofel_font::read::GlyphId;
 use sofel_geom::{Command, FnPen};
 use sofel_outline::{Scale, Scratch, draw};
 use sofel_raster::Rasterizer;
@@ -149,49 +149,6 @@ fn time(once: bool, body: Body<'_>) -> Option<Stats> {
     }
 }
 
-/// The glyphs that FreeType shifts by pp1.x = xMin - lsb (phantom
-/// points, not implemented: ADR 0011): those whose glyf header xMin
-/// differs from the hmtx left side bearing. Read from the raw tables.
-fn shifted_glyphs(font: &Font<'_>) -> std::collections::BTreeSet<u32> {
-    let t = |tag: &[u8; 4]| font.table(Tag::new(tag)).unwrap_or_default();
-    let (head, hhea, hmtx, loca, glyf) =
-        (t(b"head"), t(b"hhea"), t(b"hmtx"), t(b"loca"), t(b"glyf"));
-    let u16_at = |d: &[u8], o: usize| d.get(o..o + 2).map(|b| u16::from_be_bytes([b[0], b[1]]));
-    let u32_at = |d: &[u8], o: usize| {
-        d.get(o..o + 4)
-            .map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
-    };
-    let long_loca = u16_at(head, 50) == Some(1);
-    let n_long = usize::from(u16_at(hhea, 34).unwrap_or(0));
-    let offset = |g: usize| {
-        if long_loca {
-            u32_at(loca, g * 4).map(|v| v as usize)
-        } else {
-            u16_at(loca, g * 2).map(|v| usize::from(v) * 2)
-        }
-    };
-    (0..font.num_glyphs())
-        .filter(|&g| {
-            let g = g as usize;
-            let (Some(start), Some(end)) = (offset(g), offset(g + 1)) else {
-                return false;
-            };
-            if end <= start {
-                return false;
-            }
-            let x_min = u16_at(glyf, start + 2).map(|v| v as i16);
-            let lsb = if g < n_long {
-                u16_at(hmtx, g * 4 + 2)
-            } else {
-                u16_at(hmtx, n_long * 4 + (g - n_long) * 2)
-            }
-            .map(|v| v as i16)
-            .unwrap_or(0);
-            x_min.is_some_and(|x| x != lsb)
-        })
-        .collect()
-}
-
 /// FreeType's and HarfBuzz's results, with failures (-1) kept distinct.
 fn wrap(v: i64) -> u64 {
     v as u64
@@ -325,11 +282,8 @@ fn main() {
             );
         }
 
-        // Rendering: the sum of all pixels of every glyph. Glyphs that
-        // FreeType shifts by pp1.x are timed but left out of the check.
-        let known = shifted_glyphs(&font);
-        let checked: Vec<u32> = (0..n).filter(|g| !known.contains(g)).collect();
-        eprintln!("{name}: {n} glyphs, {} shifted by pp1.x", known.len());
+        // Rendering: the sum of all pixels of every glyph.
+        eprintln!("{name}: {n} glyphs");
         for ppem in [12u16, 24, 48, 96] {
             ft.set_ppem(u32::from(ppem));
             let mut scratch = Scratch::default();
@@ -357,18 +311,12 @@ fn main() {
             };
             let item = format!("raster {ppem}px");
             if b.wanted(name, &item) {
-                let (o, t) = (
-                    ours(&mut checked.iter().copied()),
-                    theirs(&mut checked.iter().copied()),
-                );
+                let (o, t) = (ours(&mut (0..n)), theirs(&mut (0..n)));
                 b.checks.push(Check {
                     item: format!("{item} (FreeType)"),
                     font: name.to_string(),
                     ok: o == t,
-                    detail: format!(
-                        "sofel {o}, FreeType {t} ({} shifted glyphs left out)",
-                        known.len()
-                    ),
+                    detail: format!("sofel {o}, FreeType {t}"),
                 });
             }
             b.item(
