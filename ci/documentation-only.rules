@@ -1,0 +1,11 @@
+# ADR 0034: roles verified against source and build/test scripts.
+# The document directory contains prose, diagrams, ADRs and immutable reports.
+document	docs/
+document	README
+document	README.md
+document	README.rst
+document	CONTRIBUTING
+document	CONTRIBUTING.md
+document	CONTRIBUTING.rst
+# This fixture is read by scripts/tests/test-ci-docs-only.sh.
+input	docs/ci-fixtures/input.txt

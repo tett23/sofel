@@ -9,13 +9,11 @@
 
 ## 未実装の ADR
 
-### 追加フォントと文書変更のCI
+### 追加フォント
 
 [ADR 0031](adr/0031-diverse-font-corpus.md) の13ファイルと既存可変COLRの検証拡大を実装する。
 取得元とライセンスを固定し、役割ごとの比較ケースを追加する。
-[ADR 0032](adr/0032-documentation-only-ci.md) と [ADR 0034](adr/0034-ci-document-input-classification.md) では、用途を確認した文書をディレクトリやglobで登録し、文書だけの変更のビルドとテストを省く。
-ビルドやテストの入力の除外規則を優先し、文書と変更禁止の記録の検証は常に実行する。
-これらのADRは採択（未実装）である。
+[ADR 0031](adr/0031-diverse-font-corpus.md) は採択（未実装）である。
 
 ### 変化量の評価の修正案
 

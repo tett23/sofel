@@ -17,7 +17,8 @@ WOFFとWOFF2、Type1やBDFなどの古い形式、AAT、絵文字（COLR、埋�
 範囲と実装の順序は [ADR 0001](docs/adr/0001-project-goal-and-scope.md)、クレートの構成は [ADR 0003](docs/adr/0003-crate-layers.md) を参照。
 仕様は [docs/specifications.md](docs/specifications.md) にまとめる。
 可変フォントの座標と問い合わせは [ADR 0027](docs/adr/0027-variable-fonts.md)、評価の修正は [ADR 0030](docs/adr/0030-variation-evaluation-corrections.md) で採択している。表の読み取り以降の実装はこれから行う。
-追加フォントの検証は [ADR 0031](docs/adr/0031-diverse-font-corpus.md)、文書だけの変更でCIを省く方針は [ADR 0032](docs/adr/0032-documentation-only-ci.md) と、用途とパターンによる判定の [ADR 0034](docs/adr/0034-ci-document-input-classification.md) で採択しており、いずれも未実装である。
+追加フォントの検証は [ADR 0031](docs/adr/0031-diverse-font-corpus.md) で採択しており、未実装である。
+文書だけの変更でCIを省く方針は [ADR 0032](docs/adr/0032-documentation-only-ci.md) と [ADR 0034](docs/adr/0034-ci-document-input-classification.md) に従って実装している。
 FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/) に記録する（最新は [2段階目](docs/benchmarks/2026-11-10-stage2.md)、[CFFとCFF2](docs/benchmarks/2026-11-10-cff.md)、[charsetの索引](docs/benchmarks/2026-11-10-cff-charset-index.md)、[COLRv0の画像](docs/benchmarks/2026-11-10-colrv0-raster.md)、[シェーピング](docs/benchmarks/2026-11-10-shaping.md)、[サブセット化](docs/benchmarks/2026-11-10-subset.md)、[前処理つきのサブセット化](docs/benchmarks/2026-11-10-subset-prepared.md)）。
 ライブラリの使い方は [docs/api.md](docs/api.md) にまとめる（各項目の説明はrustdoc）。
 
@@ -86,6 +87,14 @@ cargo run --release --bin sofel-validate -- --json font.ttf
 終了コードは、`Error` が無ければ0、あれば1、使い方の誤りか読めないファイルがあれば2。出力の形とJSONのキーは `sofel-validate --help` で示す。
 
 ## 開発
+
+CI は、用途を確認して `ci/documentation-only.rules` の `document` に登録した文書だけの変更では、ビルドとテストを省く（[ADR 0032](docs/adr/0032-documentation-only-ci.md)、[ADR 0034](docs/adr/0034-ci-document-input-classification.md)）。
+現在は `docs/` 以下とリポジトリ直下の README、CONTRIBUTING の名前を登録し、テスト入力の `docs/ci-fixtures/input.txt` は `input` に登録している。
+入力に一致するパス、未知のパス、規則自体の変更があれば通常の CI を実行する。
+新たに文書をビルドやテストの入力にする際は、同じ変更で `input` 規則を追加する。
+
+文書だけの変更でも、文書の検査と ADR、監査、計測記録の保護は実行する。
+`ci-result` は、判定と保護、および全ジョブの結果を確認する。
 
 クローン後、gitのhookを有効化する。コミット済みのADRは [adr-guard](https://github.com/tett23/adr-guard) で保護しており、手元に adr-guard が要る。
 
