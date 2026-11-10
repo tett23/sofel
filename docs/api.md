@@ -152,7 +152,9 @@ match FontFile::new(&data)? {
 ```
 
 - 検証器は確保をせず、`Diagnostic`（表、オフセット、重大度、種類）をコールバックに渡す。`Kind::details` で種類ごとの値を取り出せる。`sofel-validate` コマンドの出力はこれを並べたもの。
-- 表ごとのモジュール：`head`、`maxp`、`hhea`、`hmtx`、`cmap`、`loca`、`glyf`。それぞれにビューの型と `validate` 関数がある。大きい番号の版（`MAXP`、`HHEA`、`HMTX`、`GLYF`、`LOCA`）は `CountWidth` や `TAG_WIDE` で扱う。
+- 表ごとのモジュール：`head`、`maxp`、`hhea`、`hmtx`、`cmap`、`loca`、`glyf`、`os2`、`name`、`post`、`vhea`、`vmtx`、`vorg`。それぞれにビューの型と `validate` 関数がある。大きい番号の版（`MAXP`、`HHEA`、`HMTX`、`VHEA`、`VMTX`、`GLYF`、`LOCA`）は `CountWidth` や `TAG_WIDE` で扱う。
+- `vhea` と `vmtx` のビューは `hhea` と `hmtx` のビューそのもの（`Vhea`、`Vmtx` は別名）で、`ascender` は縦のアセンダ、`advance` は縦の送り幅、`left_side_bearing` は上のサイドベアリングを返す。
+- OS/2の版より後の欄（例えば版1の `s_cap_height`）は `None` を返す。nameの文字列が表の外にある記録は `Name::string` が `None` を返す。postの `MAC_GLYPH_NAMES` はMacの標準の258の名前。
 - `be` は、範囲を確かめるビッグエンディアンの読み取りの関数。
 
 ## 固定小数点（`sofel-geom`）

@@ -6,7 +6,10 @@ use crate::hhea::Hhea;
 use crate::loca::Loca;
 use crate::maxp::Maxp;
 use crate::sfnt::{Collection, Sfnt, TableRecord};
-use crate::{CountWidth, Diagnostic, Kind, Tag, cmap, glyf, head, hhea, hmtx, loca, maxp};
+use crate::{
+    CountWidth, Diagnostic, Kind, Tag, cmap, glyf, head, hhea, hmtx, loca, maxp, name, os2, post,
+    vhea, vmtx, vorg,
+};
 
 /// The pseudo tag of diagnostics about the table directory.
 pub const DIRECTORY: Tag = Tag::new(b"sfnt");
@@ -95,8 +98,9 @@ fn table<'a>(sfnt: &Sfnt<'a>, tag: Tag) -> Option<&'a [u8]> {
 
 /// Validates the directory and every table that has a validator.
 /// `hmtx` is checked with the counts from `hhea` and `maxp`, `HMTX` with
-/// those from `HHEA` and `MAXP` (or `maxp`), and `cmap` glyph ids
-/// against `MAXP` or `maxp`.
+/// those from `HHEA` and `MAXP` (or `maxp`), `vmtx` and `VMTX` likewise
+/// with `vhea` and `VHEA`, and `cmap` and `VORG` glyph ids against
+/// `MAXP` or `maxp`.
 pub fn sfnt(sfnt: &Sfnt<'_>, report: &mut dyn FnMut(Diagnostic)) {
     directory(sfnt, report);
     if let Some(d) = table(sfnt, head::TAG) {
@@ -125,12 +129,19 @@ pub fn sfnt(sfnt: &Sfnt<'_>, report: &mut dyn FnMut(Diagnostic)) {
             CountWidth::U24,
             glyphs_wide.or(glyphs_narrow),
         ),
+        (vhea::TAG, vmtx::TAG, CountWidth::U16, glyphs_narrow),
+        (
+            vhea::TAG_WIDE,
+            vmtx::TAG_WIDE,
+            CountWidth::U24,
+            glyphs_wide.or(glyphs_narrow),
+        ),
     ];
     for (hhea_tag, hmtx_tag, width, glyphs) in pairs {
         let Some(hhea_data) = table(sfnt, hhea_tag) else {
             continue;
         };
-        hhea::validate(hhea_data, width, report);
+        hhea::validate_tagged(hhea_tag, hhea_data, width, report);
         let metrics = Hhea::new(hhea_data, width)
             .ok()
             .map(|h| h.number_of_h_metrics());
@@ -140,6 +151,18 @@ pub fn sfnt(sfnt: &Sfnt<'_>, report: &mut dyn FnMut(Diagnostic)) {
     }
     if let Some(d) = table(sfnt, cmap::TAG) {
         cmap::validate(d, glyphs_wide.or(glyphs_narrow), report);
+    }
+    if let Some(d) = table(sfnt, os2::TAG) {
+        os2::validate(d, report);
+    }
+    if let Some(d) = table(sfnt, name::TAG) {
+        name::validate(d, report);
+    }
+    if let Some(d) = table(sfnt, post::TAG) {
+        post::validate(d, report);
+    }
+    if let Some(d) = table(sfnt, vorg::TAG) {
+        vorg::validate(d, glyphs_wide.or(glyphs_narrow), report);
     }
     // GLYF and LOCA replace glyf and loca when GLYF is present (ADR 0011).
     let extended = table(sfnt, glyf::TAG_WIDE).is_some();

@@ -114,6 +114,18 @@ pub fn validate(data: &[u8], width: CountWidth, report: &mut dyn FnMut(Diagnosti
         CountWidth::U16 => TAG,
         CountWidth::U24 => TAG_WIDE,
     };
+    validate_tagged(tag, data, width, report);
+}
+
+/// Like [`validate`], with `tag` labelling the diagnostics: the
+/// vertical header tables `vhea` and `VHEA` have the same structure
+/// (ADR 0016).
+pub fn validate_tagged(
+    tag: Tag,
+    data: &[u8],
+    width: CountWidth,
+    report: &mut dyn FnMut(Diagnostic),
+) {
     let mut emit = |offset: u32, kind: Kind| report(Diagnostic::new(tag, offset, kind));
     match Hhea::new(data, width) {
         Ok(_) => {}

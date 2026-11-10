@@ -845,3 +845,180 @@ pub fn glyph_font(glyphs: &[Vec<u8>], long: bool, extended: bool) -> Vec<u8> {
     tables.sort_by_key(|(t, _)| **t);
     sfnt(&tables)
 }
+
+// ------------------------------------------------- OS/2, name, post, VORG
+
+/// The fields of an OS/2 table that tests vary; the rest have fixed,
+/// distinct values (see `os2`).
+#[derive(Clone)]
+pub struct Os2Spec {
+    pub version: u16,
+    pub weight_class: u16,
+    pub fs_type: u16,
+    pub fs_selection: u16,
+    pub first_char: u16,
+    pub last_char: u16,
+    pub typo: (i16, i16, i16),
+    pub win: (u16, u16),
+    pub x_height: i16,
+    pub cap_height: i16,
+}
+
+impl Default for Os2Spec {
+    fn default() -> Self {
+        Os2Spec {
+            version: 4,
+            weight_class: 400,
+            fs_type: 8,
+            fs_selection: 0x0040,
+            first_char: 0x20,
+            last_char: 0xFFFF,
+            typo: (750, -250, 100),
+            win: (900, 300),
+            x_height: 500,
+            cap_height: 700,
+        }
+    }
+}
+
+/// An OS/2 table of the length its version needs (versions above 5 get
+/// the version 5 fields).
+pub fn os2(spec: Os2Spec) -> Vec<u8> {
+    let mut b = Buf::new()
+        .u16(spec.version)
+        .i16(510) // xAvgCharWidth
+        .u16(spec.weight_class)
+        .u16(5) // usWidthClass
+        .u16(spec.fs_type)
+        .i16(650) // ySubscriptXSize
+        .i16(600) // ySubscriptYSize
+        .i16(10) // ySubscriptXOffset
+        .i16(75) // ySubscriptYOffset
+        .i16(651) // ySuperscriptXSize
+        .i16(601) // ySuperscriptYSize
+        .i16(11) // ySuperscriptXOffset
+        .i16(350) // ySuperscriptYOffset
+        .i16(50) // yStrikeoutSize
+        .i16(260) // yStrikeoutPosition
+        .i16(0x0801) // sFamilyClass
+        .bytes(&[2, 11, 5, 3, 2, 2, 2, 2, 2, 4]) // panose
+        .u32(0x8000_0003)
+        .u32(0x4000_0000)
+        .u32(0x0000_0010)
+        .u32(0x0000_0001) // ulUnicodeRange1..4
+        .tag(b"SOFL")
+        .u16(spec.fs_selection)
+        .u16(spec.first_char)
+        .u16(spec.last_char)
+        .i16(spec.typo.0)
+        .i16(spec.typo.1)
+        .i16(spec.typo.2)
+        .u16(spec.win.0)
+        .u16(spec.win.1);
+    if spec.version >= 1 {
+        b = b.u32(0x2000_0001).u32(0x8000_0000); // ulCodePageRange1..2
+    }
+    if spec.version >= 2 {
+        b = b
+            .i16(spec.x_height)
+            .i16(spec.cap_height)
+            .u16(0) // usDefaultChar
+            .u16(0x20) // usBreakChar
+            .u16(3); // usMaxContext
+    }
+    if spec.version >= 5 {
+        b = b.u16(80).u16(720); // usLower/UpperOpticalPointSize
+    }
+    b.done()
+}
+
+/// A name record: `(platform, encoding, language, name id, string)`.
+pub type NameRec<'a> = (u16, u16, u16, u16, &'a [u8]);
+
+/// A name table of `format` 0 or 1 whose strings follow the records
+/// (and, for format 1, the language tag records) in record order, then
+/// the language tag strings.
+pub fn name(format: u16, records: &[NameRec<'_>], lang_tags: &[&[u8]]) -> Vec<u8> {
+    let header = 6
+        + 12 * records.len()
+        + if format == 1 {
+            2 + 4 * lang_tags.len()
+        } else {
+            0
+        };
+    let mut b = Buf::new()
+        .u16(format)
+        .u16(records.len() as u16)
+        .u16(header as u16);
+    let mut pool = Vec::new();
+    for (p, e, l, id, s) in records {
+        b = b
+            .u16(*p)
+            .u16(*e)
+            .u16(*l)
+            .u16(*id)
+            .u16(s.len() as u16)
+            .u16(pool.len() as u16);
+        pool.extend_from_slice(s);
+    }
+    if format == 1 {
+        b = b.u16(lang_tags.len() as u16);
+        for t in lang_tags {
+            b = b.u16(t.len() as u16).u16(pool.len() as u16);
+            pool.extend_from_slice(t);
+        }
+    }
+    b.bytes(&pool).done()
+}
+
+/// UTF-16BE bytes of `s`.
+pub fn utf16be(s: &str) -> Vec<u8> {
+    s.encode_utf16().flat_map(u16::to_be_bytes).collect()
+}
+
+/// The 32-byte post header with distinct field values.
+pub fn post_header(version: u32) -> Buf {
+    Buf::new()
+        .u32(version)
+        .i32(-0x000C_8000) // italicAngle -12.5
+        .i16(-75) // underlinePosition
+        .i16(50) // underlineThickness
+        .u32(1) // isFixedPitch
+        .u32(2)
+        .u32(3)
+        .u32(4)
+        .u32(5) // min/maxMemType42, min/maxMemType1
+}
+
+/// A post table of version 2.0 with the given name indices and Pascal
+/// strings.
+pub fn post2(indices: &[u16], names: &[&str]) -> Vec<u8> {
+    let mut b = post_header(0x0002_0000).u16(indices.len() as u16);
+    for i in indices {
+        b = b.u16(*i);
+    }
+    for n in names {
+        b = b.u8(n.len() as u8).bytes(n.as_bytes());
+    }
+    b.done()
+}
+
+/// A VORG table: version 1 (16-bit glyph ids) or 2 (24-bit glyph ids
+/// and record count), with `(glyph, vertOriginY)` records as given.
+pub fn vorg(major: u16, default_y: i16, records: &[(u32, i16)]) -> Vec<u8> {
+    let mut b = Buf::new().u16(major).u16(0).i16(default_y);
+    b = if major == 2 {
+        b.u24(records.len() as u32)
+    } else {
+        b.u16(records.len() as u16)
+    };
+    for (g, y) in records {
+        b = if major == 2 {
+            b.u24(*g)
+        } else {
+            b.u16(*g as u16)
+        };
+        b = b.i16(*y);
+    }
+    b.done()
+}

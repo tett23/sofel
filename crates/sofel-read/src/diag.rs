@@ -241,6 +241,54 @@ pub enum Kind {
         /// The glyph id the component refers to.
         found: u32,
     },
+    /// `usWeightClass` in `OS/2` is outside 1..=1000.
+    WeightClassOutOfRange {
+        /// The value found.
+        found: u32,
+    },
+    /// `fsSelection` in `OS/2` sets REGULAR together with ITALIC or BOLD.
+    FsSelectionConflict {
+        /// The value found.
+        found: u32,
+    },
+    /// `usFirstCharIndex` in `OS/2` is above `usLastCharIndex`.
+    FirstCharAfterLast {
+        /// `usFirstCharIndex`.
+        first: u32,
+        /// `usLastCharIndex`.
+        last: u32,
+    },
+    /// A UTF-16BE `name` string has an odd length.
+    OddLength {
+        /// Index of the record.
+        index: u32,
+        /// The length.
+        length: u32,
+    },
+    /// A `post` version 2.0 name index points past the stored names.
+    NameIndexOutOfRange {
+        /// The glyph id.
+        glyph: u32,
+        /// The name index.
+        index: u32,
+    },
+    /// A deprecated table version (`post` 2.5).
+    DeprecatedVersion {
+        /// The value found.
+        found: u32,
+    },
+    /// Glyph ids that should ascend do not (`VORG`).
+    GlyphsNotSorted {
+        /// Index of the offending entry.
+        index: u32,
+    },
+    /// A glyph id appears in two records (`VORG`).
+    DuplicateGlyph {
+        /// Index of the second record.
+        index: u32,
+        /// The glyph id.
+        glyph: u32,
+    },
 }
 
 impl Kind {
@@ -265,7 +313,10 @@ impl Kind {
             | TooManyContours { .. }
             | EndPointsNotSorted { .. }
             | FlagRepeatOverrun { .. }
-            | ComponentGlyphOutOfRange { .. } => Severity::Error,
+            | ComponentGlyphOutOfRange { .. }
+            | NameIndexOutOfRange { .. }
+            | GlyphsNotSorted { .. }
+            | DuplicateGlyph { .. } => Severity::Error,
             RecordsNotSorted { .. }
             | DuplicateTable { .. }
             | ChecksumMismatch { .. }
@@ -280,7 +331,12 @@ impl Kind {
             | SubHeaderKeyNotAligned { .. }
             | SubHeaderRangeInvalid { .. }
             | Is32Mismatch { .. }
-            | LengthMismatch { .. } => Severity::Warning,
+            | LengthMismatch { .. }
+            | WeightClassOutOfRange { .. }
+            | FsSelectionConflict { .. }
+            | FirstCharAfterLast { .. }
+            | OddLength { .. }
+            | DeprecatedVersion { .. } => Severity::Warning,
         }
     }
 
@@ -321,6 +377,14 @@ impl Kind {
             EndPointsNotSorted { .. } => "end_points_not_sorted",
             FlagRepeatOverrun { .. } => "flag_repeat_overrun",
             ComponentGlyphOutOfRange { .. } => "component_glyph_out_of_range",
+            WeightClassOutOfRange { .. } => "weight_class_out_of_range",
+            FsSelectionConflict { .. } => "fs_selection_conflict",
+            FirstCharAfterLast { .. } => "first_char_after_last",
+            OddLength { .. } => "odd_length",
+            NameIndexOutOfRange { .. } => "name_index_out_of_range",
+            DeprecatedVersion { .. } => "deprecated_version",
+            GlyphsNotSorted { .. } => "glyphs_not_sorted",
+            DuplicateGlyph { .. } => "duplicate_glyph",
         }
     }
 
@@ -335,6 +399,9 @@ impl Kind {
             }
             UnknownVersion { found }
             | UnknownFormat { found }
+            | WeightClassOutOfRange { found }
+            | FsSelectionConflict { found }
+            | DeprecatedVersion { found }
             | UnitsPerEmOutOfRange { found }
             | SegCountOdd { found }
             | LastSegmentNotFfff { found } => f("found", Uint(found)),
@@ -354,7 +421,8 @@ impl Kind {
             | RangeOffsetFfff { index }
             | GroupsNotSorted { index }
             | SelectorsNotSorted { index }
-            | SubHeaderRangeInvalid { index } => f("index", Uint(index)),
+            | SubHeaderRangeInvalid { index }
+            | GlyphsNotSorted { index } => f("index", Uint(index)),
             DuplicateTable { tag } => f("tag", DetailValue::Tag(tag)),
             ChecksumMismatch { stored, computed } => {
                 f("stored", Uint(stored));
@@ -411,6 +479,22 @@ impl Kind {
                 f("glyph", Uint(glyph));
                 f("component", Uint(component));
                 f("found", Uint(found));
+            }
+            FirstCharAfterLast { first, last } => {
+                f("first", Uint(first));
+                f("last", Uint(last));
+            }
+            OddLength { index, length } => {
+                f("index", Uint(index));
+                f("length", Uint(length));
+            }
+            NameIndexOutOfRange { glyph, index } => {
+                f("glyph", Uint(glyph));
+                f("index", Uint(index));
+            }
+            DuplicateGlyph { index, glyph } => {
+                f("index", Uint(index));
+                f("glyph", Uint(glyph));
             }
         }
     }
@@ -540,6 +624,37 @@ impl fmt::Display for Kind {
                 f,
                 "component {component} of glyph {glyph} refers to glyph {found}, not below numGlyphs"
             ),
+            WeightClassOutOfRange { found } => {
+                write!(f, "usWeightClass {found} is outside 1..=1000")
+            }
+            FsSelectionConflict { found } => write!(
+                f,
+                "fsSelection {found:#06x} sets REGULAR together with ITALIC or BOLD"
+            ),
+            FirstCharAfterLast { first, last } => write!(
+                f,
+                "usFirstCharIndex {first:#06x} is above usLastCharIndex {last:#06x}"
+            ),
+            OddLength { index, length } => {
+                write!(
+                    f,
+                    "UTF-16BE string of record {index} has odd length {length}"
+                )
+            }
+            NameIndexOutOfRange { glyph, index } => write!(
+                f,
+                "name index {index} of glyph {glyph} points past the stored names"
+            ),
+            DeprecatedVersion { found } => write!(f, "version {found:#010x} is deprecated"),
+            GlyphsNotSorted { index } => {
+                write!(
+                    f,
+                    "glyph id of record {index} is not above the previous one"
+                )
+            }
+            DuplicateGlyph { index, glyph } => {
+                write!(f, "record {index} repeats glyph id {glyph}")
+            }
         }
     }
 }

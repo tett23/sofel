@@ -43,9 +43,15 @@ pub mod hhea;
 pub mod hmtx;
 pub mod loca;
 pub mod maxp;
+pub mod name;
+pub mod os2;
+pub mod post;
 pub mod sfnt;
 mod types;
 pub mod validate;
+pub mod vhea;
+pub mod vmtx;
+pub mod vorg;
 
 pub use diag::{DetailValue, Diagnostic, Kind, Severity};
 pub use error::ReadError;
