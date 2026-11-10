@@ -156,6 +156,21 @@ let bitmap = sofel_cli::glyph::render(&font, gid, 48, &mut scratch, &mut raster)
 // bitmap.width, bitmap.rows, bitmap.pixels（上の行から、1画素1バイト、0〜255）
 ```
 
+COLRv0のグリフをFreeTypeの `FT_LOAD_COLOR` と同じ色の画像にするなら、`sofel_cli::glyph::render_color` を使う。層をそれぞれ `glyph::render` で描き、`sofel_raster::blend_layer` で乗算済みのBGRAの `BgraImage` に重ねる。層の無いグリフや層を描けないグリフは、FreeTypeと同じくグリフ自身の輪郭を灰色で描く。
+
+```rust
+use sofel_cli::glyph::{ColorGlyph, render_color};
+use sofel_color::{PaintOptions, Palette};
+use sofel_raster::BgraImage;
+
+let options = PaintOptions { palette: Palette::Font(0), ..PaintOptions::default() };
+let mut image = BgraImage::default();
+match render_color(&outlines, gid, 48, &options, &mut scratch, &mut raster, &mut image)? {
+    ColorGlyph::Color => { /* image.pixels: BGRA、4 × image.width バイトで1行 */ }
+    ColorGlyph::Gray(bitmap) => { /* glyph::render と同じ */ }
+}
+```
+
 `glyph::render` の中身は次のとおりで、自前で組むときの手本になる。
 
 1. `sofel_outline::load` で、ppemの倍率の輪郭を読む。
@@ -394,6 +409,7 @@ sofel_font_destroy(font);
 | `sofel_outline_draw`、`sofel_outline_load`、`sofel_outline_decompose` | `draw`、`load`、`Scratch::decompose` | `FT_Load_Glyph` + `FT_Outline_Decompose` |
 | `sofel_rasterizer_*`、`sofel_pixel_box` | `Rasterizer`、`pixel_box` | `FT_Outline_Render` |
 | `sofel_render_glyph` | `sofel_cli::glyph::render` | `FT_Render_Glyph` |
+| `sofel_render_color_glyph`、`sofel_blend_layer` | `sofel_cli::glyph::render_color`、`sofel_raster::blend_layer` | `FT_Render_Glyph`（`FT_LOAD_COLOR`）、`tt_face_colr_blend_layer` |
 | `sofel_validate`、`sofel_diagnostic_*` | `validate::sfnt`、`validate::collection`、`Kind` | なし |
 | `sofel_unicode_*`、`sofel_script_from_iso15924` | `sofel_unicode` の関数 | `hb_unicode_*`、`hb_script_from_string` |
 

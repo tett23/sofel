@@ -179,3 +179,95 @@ fn bitmaps_win_at_their_size() {
     );
     let _ = std::fs::remove_file(f);
 }
+
+fn square(size: i16) -> Vec<u8> {
+    simple_glyph(
+        &[&[
+            Pt::On(0, 0),
+            Pt::On(0, size),
+            Pt::On(size, size),
+            Pt::On(size, 0),
+        ]],
+        false,
+        &[],
+    )
+}
+
+/// Glyph 3 has two COLR layers: the 1000-unit square in palette entry 0
+/// and a 500-unit square in the foreground. Palette 0 is red, palette 1
+/// (for dark backgrounds) blue.
+fn color_font(name: &str) -> PathBuf {
+    let colr = colr_v0(&[(3, 0, 2)], &[(1, 0), (2, 0xFFFF)]);
+    let cpal = cpal(
+        1,
+        &[0, 1],
+        &[[0, 0, 255, 255], [255, 0, 0, 255]],
+        Some((Some(vec![0, 2]), None, None)),
+    );
+    let font = glyph_font_with(
+        &[Vec::new(), square(1000), square(500), Vec::new()],
+        true,
+        false,
+        vec![(b"COLR", colr), (b"CPAL", cpal)],
+    );
+    let base = std::env::var_os("TMPDIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    let p = base.join(format!("sofel-render-{name}-{}.ttf", std::process::id()));
+    std::fs::write(&p, font).unwrap();
+    p
+}
+
+#[test]
+fn color_layers_as_pam() {
+    let f = color_font("colr");
+    let path = f.to_str().unwrap();
+    let header =
+        b"P7\n# left 0 top 12\nWIDTH 12\nHEIGHT 12\nDEPTH 4\nMAXVAL 255\nTUPLTYPE RGB_ALPHA\nENDHDR\n";
+    let pixel = |out: &[u8], x: usize, y: usize| {
+        let at = header.len() + (y * 12 + x) * 4;
+        out[at..at + 4].to_vec()
+    };
+    let (code, out, err) = run(&["--ppem", "12", "--color", "--glyph", "3", path]);
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(&out[..header.len()], header);
+    assert_eq!(out.len(), header.len() + 12 * 12 * 4);
+    // Red, with the black foreground square at the bottom left.
+    assert_eq!(pixel(&out, 11, 0), [255, 0, 0, 255]);
+    assert_eq!(pixel(&out, 0, 11), [0, 0, 0, 255]);
+    assert_eq!(pixel(&out, 6, 6), [255, 0, 0, 255]);
+    // Palette 1 is for dark backgrounds: blue, and a white foreground.
+    let (code, out, err) = run(&[
+        "--ppem",
+        "12",
+        "--color",
+        "--palette",
+        "1",
+        "--glyph",
+        "3",
+        path,
+    ]);
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(pixel(&out, 11, 0), [0, 0, 255, 255]);
+    assert_eq!(pixel(&out, 0, 11), [255, 255, 255, 255]);
+    // A glyph without layers is drawn in gray; without --color the base
+    // glyph is its own (empty) outline.
+    let (code, out, _) = run(&["--ppem", "12", "--color", "--glyph", "1", path]);
+    assert_eq!(code, 0);
+    assert!(out.starts_with(b"P5\n# left 0 top 12\n12 12\n"));
+    let (code, _, err) = run(&["--ppem", "12", "--glyph", "3", path]);
+    assert_eq!(code, 1);
+    assert!(err.contains("empty"), "{err}");
+    let (code, _, _) = run(&[
+        "--ppem",
+        "12",
+        "--color",
+        "--palette",
+        "x",
+        "--glyph",
+        "3",
+        path,
+    ]);
+    assert_eq!(code, 2);
+    let _ = std::fs::remove_file(f);
+}

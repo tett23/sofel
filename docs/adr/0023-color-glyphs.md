@@ -1,6 +1,6 @@
 # ADR 0023: カラーグリフと絵文字（`Painter`、`sofel-color`、`sofel-bitmap`）
 
-ステータス: 採択（未実装）→丸めは [ADR 0026](0026-harfbuzz-rounding.md)
+ステータス: 採択→丸めは [ADR 0026](0026-harfbuzz-rounding.md)
 
 ## 文脈
 

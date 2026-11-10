@@ -1802,6 +1802,52 @@ int32_t sofel_font_has_outlines(const sofel_font_t *font, uint8_t *has);
 int32_t sofel_font_has_bitmaps(const sofel_font_t *font, uint8_t *has);
 
 /*
+ * Renders a glyph in color as FT_Load_Glyph with FT_LOAD_COLOR |
+ * FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP and FT_Render_Glyph with
+ * FT_RENDER_MODE_NORMAL: the COLR version 0 layers (as
+ * FT_Get_Color_Glyph_Layer gives them), each rendered as by
+ * sofel_render_glyph and blended as by sofel_blend_layer in the color of
+ * its palette entry (`foreground` for 0xFFFF). The palette is
+ * custom_colors (n_custom of them) or else the font's palette `palette`
+ * (palette 0 past the palettes). *is_color is 1 and the pixels are
+ * premultiplied BGRA (4 bytes a pixel, 4 × width a row) for a color
+ * image; *is_color is 0 and the pixels are 8-bit coverage when the glyph
+ * has no layers or a layer cannot be rendered (the glyph's own outline,
+ * as FreeType falls back to). *len and box are written as by
+ * sofel_rasterizer_render.
+ *
+ * Errors: those of sofel_render_glyph.
+ *
+ * Rust: sofel_cli::glyph::render_color, sofel_cli::glyph::color_layers
+ * HarfBuzz: none
+ * FreeType: FT_Load_Glyph (FT_LOAD_COLOR), FT_Render_Glyph, FT_Get_Color_Glyph_Layer
+ */
+int32_t sofel_render_color_glyph(const sofel_font_t *font, uint32_t glyph, uint16_t ppem,
+                                 uint16_t palette, const sofel_color_t *custom_colors,
+                                 size_t n_custom, sofel_color_t foreground,
+                                 sofel_outline_scratch_t *scratch,
+                                 sofel_rasterizer_t *rasterizer, uint8_t *pixels,
+                                 size_t capacity, size_t *len, int32_t *box,
+                                 uint32_t *is_color);
+
+/*
+ * Blends an 8-bit coverage bitmap (src_*, rows from the top, src_width
+ * bytes a row) in `color` over a premultiplied BGRA image, as FreeType's
+ * tt_face_colr_blend_layer: box is the image's left, top, width and rows
+ * and *len its bytes in `pixels` (0: no image yet, the bitmap's box is
+ * taken); the box grows to cover the bitmap. On success box and *len
+ * describe the new image. SOFEL_ERROR_BUFFER_TOO_SMALL (with the needed
+ * *len, the image unchanged) when it does not fit in capacity.
+ *
+ * Rust: sofel_raster::blend_layer, sofel_raster::BgraImage::clear
+ * HarfBuzz: none
+ * FreeType: tt_face_colr_blend_layer
+ */
+int32_t sofel_blend_layer(uint8_t *pixels, size_t capacity, size_t *len, int32_t *box,
+                          int32_t src_left, int32_t src_top, uint32_t src_width,
+                          uint32_t src_rows, const uint8_t *src_pixels, sofel_color_t color);
+
+/*
  * The sine, cosine and tangent of x (radians), the same on every
  * target (musl's sincosf and tanf).
  *
