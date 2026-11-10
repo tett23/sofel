@@ -272,7 +272,11 @@ fn extra_items(b: &mut Bench, testdata: &std::path::Path) {
         b.item(
             name,
             "advance".into(),
-            &mut || (0..n).map(|g| u64::from(font.default_instance().advance(GlyphId(g)))).sum(),
+            &mut || {
+                (0..n)
+                    .map(|g| u64::from(font.default_instance().advance(GlyphId(g))))
+                    .sum()
+            },
             Some((
                 &mut || (0..n).map(|g| wrap(ft.advance(g))).sum(),
                 Compare::Yes,
@@ -1186,7 +1190,11 @@ fn main() {
         b.item(
             name,
             "advance".into(),
-            &mut || (0..n).map(|g| u64::from(font.default_instance().advance(GlyphId(g)))).sum(),
+            &mut || {
+                (0..n)
+                    .map(|g| u64::from(font.default_instance().advance(GlyphId(g))))
+                    .sum()
+            },
             Some((
                 &mut || (0..n).map(|g| wrap(ft.advance(g))).sum(),
                 Compare::Yes,
