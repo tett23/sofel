@@ -200,13 +200,36 @@ match FontFile::new(&data)? {
 ```
 
 - 検証器は確保をせず、`Diagnostic`（表、オフセット、重大度、種類）をコールバックに渡す。`Kind::details` で種類ごとの値を取り出せる。`sofel-validate` コマンドの出力はこれを並べたもの。
-- 表ごとのモジュール：`head`、`maxp`、`hhea`、`hmtx`、`cmap`、`loca`、`glyf`、`os2`、`name`、`post`、`vhea`、`vmtx`、`vorg`、`base`。`device` はBASEなどが共有するDeviceの表の見出しのビュー。`base` のオフセットをたどる関数は、空のオフセットに `Ok(None)` を、読めない先に `Err` を返す。それぞれにビューの型と `validate` 関数がある。大きい番号の版（`MAXP`、`HHEA`、`HMTX`、`VHEA`、`VMTX`、`GLYF`、`LOCA`）は `CountWidth` や `TAG_WIDE` で扱う。
+- 表ごとのモジュール：`head`、`maxp`、`hhea`、`hmtx`、`cmap`、`loca`、`glyf`、`os2`、`name`、`post`、`vhea`、`vmtx`、`vorg`、`base`、`gdef`、`gsub`、`gpos`。`device` はBASE、GDEF、GPOSが共有するDeviceの表のビュー（`delta_pixels` で補正を読む）。`layout` はGDEF、GSUB、GPOSが共有する構造（Coverage、ClassDef、ScriptList、FeatureList、LookupList、Lookup、GSUBとGPOSの見出しの `LayoutTable`、文脈のサブテーブル）。`base` のオフセットをたどる関数は、空のオフセットに `Ok(None)` を、読めない先に `Err` を返す。それぞれにビューの型と `validate` 関数がある。大きい番号の版（`MAXP`、`HHEA`、`HMTX`、`VHEA`、`VMTX`、`GLYF`、`LOCA`）は `CountWidth` や `TAG_WIDE` で扱う。
 - `vhea` と `vmtx` のビューは `hhea` と `hmtx` のビューそのもの（`Vhea`、`Vmtx` は別名）で、`ascender` は縦のアセンダ、`advance` は縦の送り幅、`left_side_bearing` は上のサイドベアリングを返す。
 - OS/2の版より後の欄（例えば版1の `s_cap_height`）は `None` を返す。nameの文字列が表の外にある記録は `Name::string` が `None` を返す。postの `MAC_GLYPH_NAMES` はMacの標準の258の名前。
 - `be` は、範囲を確かめるビッグエンディアンの読み取りの関数。
 - `cff` は `CFF ` と `CFF2` の表（[ADR 0021](adr/0021-cff-outlines.md)）：`Cff1`、`Cff2`（ヘッダとINDEXの並び）、`Index`（`get` は厳密に、`ft_element` と `ft_pointer` はFreeTypeの読み方で要素を返す）、`dict`（`DictTokens`、FreeTypeと同じ数の変換をする `Operand`、`TopDict`、`FontDict`、`PrivateDict`。値はFreeTypeが `FT_Long` に持つ64bitの値と型のまま）、`Charset`、`Encoding`、`FdSelect`、`charstring`（`CharStringTokens` と、FreeTypeのAdobe engineをヒンティングなしで移植したType 2 charstringの解読器 `decode`）、`FtBlend`（FreeTypeのCFF2の `blend` の係数）。`cff::validate` と `cff::validate2` が検証器で、`validate::sfnt` は `maxp` のグリフの数と `fvar` の軸の数を渡して呼ぶ。
 - `cff::hb` は、HarfBuzzが `CFF ` と `CFF2` を読む手順（[ADR 0021](adr/0021-cff-outlines.md)）：サニタイザ `Sanitizer`（範囲の確かめと操作の予算）、`HbIndex`、`HbCharset`、`HbFdSelect`、encodingとCFF2のVariation Storeの確かめ、DICTの解釈器 `interpret_dict`。`sofel_font::HbCff1` と `HbCff2` がこれで作られる。
 - `item_variation` はOpenTypeの共通のItem Variation Store（領域の一覧と `ItemVariationData` の領域の番号）のビューと検証器。CFF2の `vstore` が使い、3段階目の可変フォントでHVARなどと共有する。
+- GSUBとGPOS（[ADR 0020](adr/0020-shaping-foundation.md)）は、`LayoutTable::new` から `script_list`、`feature_list`、`lookup_list` をたどり、lookupのサブテーブルを `gsub::subtable(&lookup, i)`（`SubstSubtable`）と `gpos::subtable(&lookup, i)`（`PosSubtable`）で読む。拡張はたどった先の型で返る。HarfBuzzと同じく、`Err` のサブテーブルは何も適用しないものとして扱う。
+
+```rust
+use sofel_read::gsub::{self, SubstSubtable};
+use sofel_read::layout::LayoutTable;
+use sofel_read::GlyphId;
+
+fn single(gsub_table: &[u8], glyph: GlyphId) -> Option<u32> {
+    let lookups = LayoutTable::new(gsub_table).ok()?.lookup_list().ok()??;
+    let lookup = lookups.lookup(0).ok()??;
+    match gsub::subtable(&lookup, 0).ok()? {
+        SubstSubtable::SingleDelta { coverage, delta, mask } => {
+            coverage.get(glyph).map(|_| glyph.0.wrapping_add(delta) & mask)
+        }
+        SubstSubtable::SingleList { coverage, substitutes } => {
+            substitutes.get(usize::try_from(coverage.get(glyph)?).ok()?)
+        }
+        _ => None,
+    }
+}
+```
+
+- `gsub::validate` と `gpos::validate` は、GDEFのマークのグリフの集合の数を引数に取る（`None` なら調べない）。`gdef::validate` は表だけを取る。
 
 ## 固定小数点（`sofel-geom`）
 

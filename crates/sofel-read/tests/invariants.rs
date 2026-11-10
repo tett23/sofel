@@ -424,3 +424,413 @@ fn base_table_invariants() {
         }
     }
 }
+
+// ---- GDEF, GSUB and GPOS (ADR 0020) ----
+
+use sofel_read::layout::{
+    ChainedSequenceContext, CoverageArray, LayoutTable, Lookup, SequenceContext,
+};
+use sofel_read::{ReadError, gdef, gpos, gsub};
+
+fn ok<T>(r: Result<Option<T>, ReadError>, f: impl FnOnce(T) -> bool) -> bool {
+    match r {
+        Err(_) => false,
+        Ok(None) => true,
+        Ok(Some(t)) => f(t),
+    }
+}
+
+fn coverages_walk(a: &CoverageArray<'_>) -> bool {
+    (0..a.len()).all(|i| a.get(i).is_ok())
+}
+
+fn context_walks(c: &SequenceContext<'_>) -> bool {
+    match c {
+        SequenceContext::Glyphs { rule_sets, .. } | SequenceContext::Classes { rule_sets, .. } => {
+            (0..rule_sets.len())
+                .all(|i| ok(rule_sets.get(i), |s| (0..s.len()).all(|j| s.get(j).is_ok())))
+        }
+        SequenceContext::Coverages { coverages, .. } => coverages_walk(coverages),
+    }
+}
+
+fn chain_walks(c: &ChainedSequenceContext<'_>) -> bool {
+    match c {
+        ChainedSequenceContext::Glyphs { rule_sets, .. }
+        | ChainedSequenceContext::Classes { rule_sets, .. } => (0..rule_sets.len())
+            .all(|i| ok(rule_sets.get(i), |s| (0..s.len()).all(|j| s.get(j).is_ok()))),
+        ChainedSequenceContext::Coverages {
+            backtrack,
+            input,
+            lookahead,
+            ..
+        } => coverages_walk(backtrack) && coverages_walk(input) && coverages_walk(lookahead),
+    }
+}
+
+/// The header, lists and lookups walk; `sub` walks each subtable.
+fn layout_walks(data: &[u8], extension: u16, sub: impl Fn(&Lookup<'_>, usize) -> bool) -> bool {
+    let Ok(t) = LayoutTable::new(data) else {
+        return false;
+    };
+    let scripts = ok(t.script_list(), |l| {
+        (0..l.len()).all(|i| {
+            ok(l.script(i), |s| {
+                s.default_lang_sys().is_ok() && (0..s.num_lang_sys()).all(|j| s.lang_sys(j).is_ok())
+            })
+        })
+    });
+    let features = ok(t.feature_list(), |l| {
+        (0..l.len()).all(|i| l.feature(i).is_ok())
+    });
+    let lookups = ok(t.lookup_list(), |l| {
+        (0..l.len()).all(|i| {
+            ok(l.lookup(i), |lk| {
+                lk.extension_types_agree(extension)
+                    && (0..lk.num_subtables())
+                        .all(|j| lk.subtable_offset(j) == Some(0) || sub(&lk, j))
+            })
+        })
+    });
+    scripts && features && lookups
+}
+
+fn gsub_walks(data: &[u8]) -> bool {
+    use gsub::SubstSubtable as S;
+    layout_walks(data, gsub::EXTENSION, |lk, j| match gsub::subtable(lk, j) {
+        Err(_) => false,
+        Ok(S::SingleDelta { .. } | S::SingleList { .. }) => true,
+        Ok(
+            S::Multiple { sequences: a, .. }
+            | S::Alternate {
+                alternate_sets: a, ..
+            },
+        ) => (0..a.len()).all(|i| a.get(i).is_ok()),
+        Ok(S::Ligature { ligature_sets, .. }) => (0..ligature_sets.len()).all(|i| {
+            ok(ligature_sets.get(i), |s| {
+                (0..s.len()).all(|k| s.get(k).is_ok())
+            })
+        }),
+        Ok(S::Context(c)) => context_walks(&c),
+        Ok(S::ChainContext(c)) => chain_walks(&c),
+        Ok(S::ReverseChainSingle {
+            backtrack,
+            lookahead,
+            ..
+        }) => coverages_walk(&backtrack) && coverages_walk(&lookahead),
+    })
+}
+
+fn anchor_ok(a: Result<Option<gpos::Anchor<'_>>, ReadError>) -> bool {
+    a.is_ok()
+}
+
+fn matrix_walks(m: &gpos::AnchorMatrix<'_>) -> bool {
+    (0..m.rows()).all(|r| (0..m.cols()).all(|c| anchor_ok(m.get(r, c))))
+}
+
+fn marks_walk(m: &gpos::MarkArray<'_>) -> bool {
+    (0..m.len()).all(|i| m.get(i).is_some_and(|(_, a)| anchor_ok(a)))
+}
+
+fn gpos_walks(data: &[u8]) -> bool {
+    use gpos::PosSubtable as P;
+    layout_walks(data, gpos::EXTENSION, |lk, j| match gpos::subtable(lk, j) {
+        Err(_) => false,
+        Ok(P::Single { .. } | P::SingleArray { .. } | P::PairClasses { .. }) => true,
+        Ok(P::PairGlyphs { pair_sets, .. }) => {
+            (0..pair_sets.len()).all(|i| pair_sets.get(i).is_ok())
+        }
+        Ok(P::Cursive { entry_exits, .. }) => (0..entry_exits.len()).all(|i| {
+            entry_exits
+                .get(i)
+                .is_some_and(|(a, b)| anchor_ok(a) && anchor_ok(b))
+        }),
+        Ok(
+            P::MarkBase {
+                marks, bases: m, ..
+            }
+            | P::MarkMark {
+                marks, mark2s: m, ..
+            },
+        ) => marks_walk(&marks) && matrix_walks(&m),
+        Ok(P::MarkLig {
+            marks, ligatures, ..
+        }) => {
+            marks_walk(&marks)
+                && (0..ligatures.len()).all(|i| ok(ligatures.get(i), |m| matrix_walks(&m)))
+        }
+        Ok(P::Context(c)) => context_walks(&c),
+        Ok(P::ChainContext(c)) => chain_walks(&c),
+    })
+}
+
+fn gdef_walks(data: &[u8]) -> bool {
+    let Ok(t) = gdef::Gdef::new(data) else {
+        return false;
+    };
+    t.glyph_class_def().is_ok()
+        && t.mark_attach_class_def().is_ok()
+        && ok(t.attach_list(), |a| {
+            a.coverage().is_ok() && (0..a.len()).all(|i| a.points(i).is_ok())
+        })
+        && ok(t.lig_caret_list(), |l| {
+            l.coverage().is_ok()
+                && (0..l.len())
+                    .all(|i| ok(l.lig_glyph(i), |g| (0..g.len()).all(|k| g.caret(k).is_ok())))
+        })
+        && ok(t.mark_glyph_sets(), |s| {
+            (0..s.len()).all(|i| s.coverage(i).is_ok())
+        })
+}
+
+fn layout_with(lookups: Vec<Vec<u8>>) -> Vec<u8> {
+    simple_layout(lookups)
+}
+
+fn sub_with(format: u16, coverage: Vec<u8>, kids: Vec<Vec<u8>>, rest: &[u8]) -> Vec<u8> {
+    let n = kids.len();
+    let mut b = zeros(Buf::new().u16(format), 2).u16(n as u16);
+    b = zeros(b, 2 * n).bytes(rest);
+    let mut links = vec![(2, 2, coverage)];
+    links.extend(kids.into_iter().enumerate().map(|(i, k)| (6 + 2 * i, 2, k)));
+    link(b.done(), links)
+}
+
+fn gsub_base() -> Vec<u8> {
+    let cov = || coverage1(&[1, 2]);
+    let single = link(Buf::new().u16(1).u16(0).u16(3).done(), vec![(2, 2, cov())]);
+    let list = link(
+        Buf::new().u16(2).u16(0).u16(2).u16(5).u16(6).done(),
+        vec![(2, 2, cov())],
+    );
+    let seq = Buf::new().u16(2).u16(7).u16(8).done();
+    let multiple = sub_with(1, cov(), vec![seq.clone(), seq.clone()], &[]);
+    let lig = Buf::new().u16(9).u16(2).u16(2).done();
+    let set = link(Buf::new().u16(1).u16(0).done(), vec![(2, 2, lig)]);
+    let ligature = sub_with(1, cov(), vec![set.clone(), set], &[]);
+    let rule = Buf::new().u16(2).u16(1).u16(2).u16(1).u16(0).done();
+    let rules = link(Buf::new().u16(1).u16(0).done(), vec![(2, 2, rule)]);
+    let context = sub_with(1, cov(), vec![rules.clone(), rules], &[]);
+    let chain3 = link(
+        Buf::new()
+            .u16(3)
+            .u16(1)
+            .u16(0)
+            .u16(1)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .done(),
+        vec![(4, 2, cov()), (8, 2, cov())],
+    );
+    let reverse = link(
+        Buf::new()
+            .u16(1)
+            .u16(0)
+            .u16(0)
+            .u16(1)
+            .u16(0)
+            .u16(2)
+            .u16(4)
+            .u16(5)
+            .done(),
+        vec![(2, 2, cov()), (8, 2, cov())],
+    );
+    layout_with(vec![
+        lookup(1, 0, vec![single, list], None),
+        lookup(2, 0x0010, vec![multiple.clone()], Some(0)),
+        lookup(3, 0, vec![multiple], None),
+        lookup(4, 0, vec![ligature], None),
+        lookup(5, 0, vec![context], None),
+        lookup(7, 0, vec![extension(6, chain3)], None),
+        lookup(8, 0, vec![reverse], None),
+    ])
+}
+
+fn gpos_base() -> Vec<u8> {
+    let cov = || coverage1(&[1, 2]);
+    let anchor = || {
+        Buf::new()
+            .u16(3)
+            .i16(1)
+            .i16(2)
+            .u16(10)
+            .u16(0)
+            .bytes(&device(9, 9, 1, &[0x4000]))
+            .done()
+    };
+    let single = link(
+        Buf::new()
+            .u16(1)
+            .u16(0)
+            .u16(0x0011)
+            .i16(5)
+            .u16(8)
+            .bytes(&device(9, 9, 1, &[0x4000]))
+            .done(),
+        vec![(2, 2, cov())],
+    );
+    let set = Buf::new().u16(1).u16(2).i16(-3).done();
+    let pair = link(
+        Buf::new()
+            .u16(1)
+            .u16(0)
+            .u16(0x0004)
+            .u16(0)
+            .u16(2)
+            .u16(0)
+            .u16(0)
+            .done(),
+        vec![(2, 2, cov()), (10, 2, set.clone()), (12, 2, set)],
+    );
+    let pair2 = link(
+        Buf::new()
+            .u16(2)
+            .u16(0)
+            .u16(0x0004)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u16(1)
+            .u16(2)
+            .i16(1)
+            .i16(2)
+            .done(),
+        vec![(2, 2, cov()), (8, 2, class_def1(1, &[0, 1]))],
+    );
+    let cursive = link(
+        Buf::new()
+            .u16(1)
+            .u16(0)
+            .u16(2)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .done(),
+        vec![(2, 2, cov()), (6, 2, anchor()), (12, 2, anchor())],
+    );
+    let marks = link(
+        Buf::new().u16(2).u16(0).u16(0).u16(1).u16(0).done(),
+        vec![(4, 2, anchor()), (8, 2, anchor())],
+    );
+    let matrix = link(
+        Buf::new().u16(2).u16(0).u16(0).done(),
+        vec![(2, 2, anchor()), (4, 2, anchor())],
+    );
+    let mark_base = link(
+        Buf::new().u16(1).u16(0).u16(0).u16(1).u16(0).u16(0).done(),
+        vec![
+            (2, 2, cov()),
+            (4, 2, cov()),
+            (8, 2, marks.clone()),
+            (10, 2, matrix.clone()),
+        ],
+    );
+    let ligs = link(
+        Buf::new().u16(2).u16(0).u16(0).done(),
+        vec![(2, 2, matrix.clone()), (4, 2, matrix.clone())],
+    );
+    let mark_lig = link(
+        Buf::new().u16(1).u16(0).u16(0).u16(1).u16(0).u16(0).done(),
+        vec![
+            (2, 2, cov()),
+            (4, 2, cov()),
+            (8, 2, marks.clone()),
+            (10, 2, ligs),
+        ],
+    );
+    let mark_mark = link(
+        Buf::new().u16(1).u16(0).u16(0).u16(1).u16(0).u16(0).done(),
+        vec![(2, 2, cov()), (4, 2, cov()), (8, 2, marks), (10, 2, matrix)],
+    );
+    let context3 = link(
+        Buf::new().u16(3).u16(1).u16(1).u16(0).u16(0).u16(0).done(),
+        vec![(6, 2, cov())],
+    );
+    layout_with(vec![
+        lookup(1, 0, vec![single], None),
+        lookup(2, 0, vec![pair, pair2], None),
+        lookup(3, 0, vec![cursive], None),
+        lookup(4, 0, vec![mark_base], None),
+        lookup(5, 0, vec![mark_lig], None),
+        lookup(6, 0, vec![mark_mark], None),
+        lookup(9, 0, vec![extension(7, context3)], None),
+    ])
+}
+
+fn gdef_base() -> Vec<u8> {
+    let attach = link(
+        Buf::new().u16(0).u16(1).u16(0).done(),
+        vec![
+            (0, 2, coverage1(&[7])),
+            (4, 2, Buf::new().u16(1).u16(3).done()),
+        ],
+    );
+    let carets = link(
+        Buf::new().u16(2).u16(0).u16(0).done(),
+        vec![
+            (2, 2, Buf::new().u16(1).i16(4).done()),
+            (
+                4,
+                2,
+                link(
+                    Buf::new().u16(3).i16(1).u16(0).done(),
+                    vec![(4, 2, device(9, 9, 2, &[0x1000]))],
+                ),
+            ),
+        ],
+    );
+    let lig = link(
+        Buf::new().u16(0).u16(1).u16(0).done(),
+        vec![(0, 2, coverage1(&[8])), (4, 2, carets)],
+    );
+    let sets = link(
+        Buf::new().u16(1).u16(1).u32(0).done(),
+        vec![(4, 4, coverage2(&[(3, 4, 0)]))],
+    );
+    link(
+        Buf::new()
+            .u32(0x0001_0003)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u32(0)
+            .done(),
+        vec![
+            (4, 2, class_def2(&[(1, 9, 1)])),
+            (6, 2, attach),
+            (8, 2, lig),
+            (10, 2, class_def1(3, &[1, 2])),
+            (12, 2, sets),
+        ],
+    )
+}
+
+#[test]
+fn layout_table_invariants() {
+    let mut rng = XorShift(0x5EED_0020_0020_0020);
+    let (gsub_t, gpos_t, gdef_t) = (gsub_base(), gpos_base(), gdef_base());
+    // The bases are valid and walk.
+    assert!(!has_error(|r| gsub::validate(&gsub_t, Some(1), r)));
+    assert!(!has_error(|r| gpos::validate(&gpos_t, Some(1), r)));
+    assert!(!has_error(|r| gdef::validate(&gdef_t, r)));
+    assert!(gsub_walks(&gsub_t) && gpos_walks(&gpos_t) && gdef_walks(&gdef_t));
+    for _ in 0..ROUNDS * 4 {
+        let d = mutate(&mut rng, &gsub_t);
+        if !has_error(|r| gsub::validate(&d, Some(1), r)) {
+            assert!(gsub_walks(&d), "{d:02x?}");
+        }
+        let d = mutate(&mut rng, &gpos_t);
+        if !has_error(|r| gpos::validate(&d, Some(1), r)) {
+            assert!(gpos_walks(&d), "{d:02x?}");
+        }
+        let d = mutate(&mut rng, &gdef_t);
+        if !has_error(|r| gdef::validate(&d, r)) {
+            assert!(gdef_walks(&d), "{d:02x?}");
+        }
+    }
+}

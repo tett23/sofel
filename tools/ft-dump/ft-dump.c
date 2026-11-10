@@ -100,6 +100,20 @@
  *                                       none when width or rows is 0)
  *   end
  *
+ * Usage: ft-dump --otvalid FILE
+ *
+ * Validates GDEF, GSUB and GPOS with FT_OpenType_Validate (ADR 0020).
+ * Each table present in a face is validated on its own; GDEF is
+ * validated together with those of GSUB and GPOS that passed, because
+ * FreeType reads their lookup flags to decide whether a version 1.0 GDEF
+ * has MarkAttachClassDef. For each face, `face` and `error` as above,
+ * then:
+ *
+ *   otvalid <tag> <error>               (one line per table present, in
+ *                                       the order GSUB GPOS GDEF; 0 when
+ *                                       FreeType accepts it)
+ *   end
+ *
  * Exit status: 0 on success, 1 when FreeType cannot be initialized or
  * the file cannot be opened at all, 2 on wrong usage.
  */
@@ -115,6 +129,7 @@
 #include FT_TRIGONOMETRY_H
 #include FT_OUTLINE_H
 #include FT_SFNT_NAMES_H
+#include FT_OPENTYPE_VALIDATE_H
 
 static int contour_open;
 
@@ -456,6 +471,76 @@ static void dump_names_and_metrics(FT_Face face)
   }
 }
 
+static int table_present(FT_Face face, FT_ULong tag)
+{
+  FT_ULong len = 0;
+  return FT_Load_Sfnt_Table(face, tag, 0, NULL, &len) == 0;
+}
+
+/* FT_OpenType_Validate with `flags`; the returned tables are freed. */
+static FT_Error ot_validate(FT_Face face, FT_UInt flags)
+{
+  FT_Bytes base = NULL, gdef = NULL, gpos = NULL, gsub = NULL, jstf = NULL;
+  FT_Error error =
+      FT_OpenType_Validate(face, flags, &base, &gdef, &gpos, &gsub, &jstf);
+  FT_OpenType_Free(face, base);
+  FT_OpenType_Free(face, gdef);
+  FT_OpenType_Free(face, gpos);
+  FT_OpenType_Free(face, gsub);
+  FT_OpenType_Free(face, jstf);
+  return error;
+}
+
+static int otvalid(const char *path)
+{
+  FT_Library library;
+  FT_Face face;
+  FT_Long num_faces, i;
+  FT_Error error;
+
+  if (FT_Init_FreeType(&library) != 0) {
+    fprintf(stderr, "ft-dump: cannot initialize FreeType\n");
+    return 1;
+  }
+  error = FT_New_Face(library, path, -1, &face);
+  if (error != 0) {
+    fprintf(stderr, "ft-dump: %s: FreeType error %d\n", path, (int)error);
+    FT_Done_FreeType(library);
+    return 1;
+  }
+  num_faces = face->num_faces;
+  FT_Done_Face(face);
+
+  for (i = 0; i < num_faces; i++) {
+    FT_UInt gdef_flags = FT_VALIDATE_GDEF;
+
+    printf("face %ld\n", (long)i);
+    error = FT_New_Face(library, path, i, &face);
+    if (error != 0) {
+      printf("error %d\nend\n", (int)error);
+      continue;
+    }
+    if (table_present(face, FT_MAKE_TAG('G', 'S', 'U', 'B'))) {
+      error = ot_validate(face, FT_VALIDATE_GSUB);
+      printf("otvalid GSUB %d\n", (int)error);
+      if (error == 0)
+        gdef_flags |= FT_VALIDATE_GSUB;
+    }
+    if (table_present(face, FT_MAKE_TAG('G', 'P', 'O', 'S'))) {
+      error = ot_validate(face, FT_VALIDATE_GPOS);
+      printf("otvalid GPOS %d\n", (int)error);
+      if (error == 0)
+        gdef_flags |= FT_VALIDATE_GPOS;
+    }
+    if (table_present(face, FT_MAKE_TAG('G', 'D', 'E', 'F')))
+      printf("otvalid GDEF %d\n", (int)ot_validate(face, gdef_flags));
+    printf("end\n");
+    FT_Done_Face(face);
+  }
+  FT_Done_FreeType(library);
+  return 0;
+}
+
 int main(int argc, char **argv)
 {
   FT_Library library;
@@ -469,8 +554,10 @@ int main(int argc, char **argv)
     return outlines(argv[2], argv[3], 0);
   if (argc == 4 && strcmp(argv[1], "--raster") == 0)
     return outlines(argv[2], argv[3], 1);
+  if (argc == 3 && strcmp(argv[1], "--otvalid") == 0)
+    return otvalid(argv[2]);
   if (argc != 2) {
-    fprintf(stderr, "usage: ft-dump FILE | ft-dump --calc\n");
+    fprintf(stderr, "usage: ft-dump FILE | ft-dump --calc | ft-dump --otvalid FILE\n");
     return 2;
   }
   if (FT_Init_FreeType(&library) != 0) {

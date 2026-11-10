@@ -1703,3 +1703,219 @@ pub fn simple_axis(script: &[u8; 4], values: &[([u8; 4], i16)]) -> AxisSpec {
         )]),
     }
 }
+
+// ---- OpenType layout tables (ADR 0020) ----
+
+/// `head` followed by `kids` in order. For each kid, its offset from the
+/// start of `head` is written, `width` bytes wide (2, 3 or 4), at byte
+/// `at` of `head`. A kid with no bytes gets a null offset.
+pub fn link(mut head: Vec<u8>, kids: Vec<(usize, usize, Vec<u8>)>) -> Vec<u8> {
+    for (at, width, kid) in kids {
+        let offset = if kid.is_empty() { 0 } else { head.len() as u32 };
+        let bytes = offset.to_be_bytes();
+        head[at..at + width].copy_from_slice(&bytes[4 - width..]);
+        head.extend_from_slice(&kid);
+    }
+    head
+}
+
+/// `n` zero bytes, for offsets that `link` fills in.
+pub fn zeros(b: Buf, n: usize) -> Buf {
+    b.bytes(&vec![0; n])
+}
+
+pub fn coverage1(glyphs: &[u16]) -> Vec<u8> {
+    let mut b = Buf::new().u16(1).u16(glyphs.len() as u16);
+    for g in glyphs {
+        b = b.u16(*g);
+    }
+    b.done()
+}
+
+/// Format 2 with `(start, end, startCoverageIndex)` records.
+pub fn coverage2(ranges: &[(u16, u16, u16)]) -> Vec<u8> {
+    let mut b = Buf::new().u16(2).u16(ranges.len() as u16);
+    for (s, e, i) in ranges {
+        b = b.u16(*s).u16(*e).u16(*i);
+    }
+    b.done()
+}
+
+pub fn coverage3(glyphs: &[u32]) -> Vec<u8> {
+    let mut b = Buf::new().u16(3).u24(glyphs.len() as u32);
+    for g in glyphs {
+        b = b.u24(*g);
+    }
+    b.done()
+}
+
+pub fn coverage4(ranges: &[(u32, u32, u32)]) -> Vec<u8> {
+    let mut b = Buf::new().u16(4).u24(ranges.len() as u32);
+    for (s, e, i) in ranges {
+        b = b.u24(*s).u24(*e).u24(*i);
+    }
+    b.done()
+}
+
+pub fn class_def1(start: u16, classes: &[u16]) -> Vec<u8> {
+    let mut b = Buf::new().u16(1).u16(start).u16(classes.len() as u16);
+    for c in classes {
+        b = b.u16(*c);
+    }
+    b.done()
+}
+
+pub fn class_def2(ranges: &[(u16, u16, u16)]) -> Vec<u8> {
+    let mut b = Buf::new().u16(2).u16(ranges.len() as u16);
+    for (s, e, c) in ranges {
+        b = b.u16(*s).u16(*e).u16(*c);
+    }
+    b.done()
+}
+
+pub fn class_def3(start: u32, classes: &[u32]) -> Vec<u8> {
+    let mut b = Buf::new().u16(3).u24(start).u24(classes.len() as u32);
+    for c in classes {
+        b = b.u24(*c);
+    }
+    b.done()
+}
+
+pub fn class_def4(ranges: &[(u32, u32, u16)]) -> Vec<u8> {
+    let mut b = Buf::new().u16(4).u24(ranges.len() as u32);
+    for (s, e, c) in ranges {
+        b = b.u24(*s).u24(*e).u16(*c);
+    }
+    b.done()
+}
+
+/// A Lookup table with 16-bit offsets to `subtables`.
+pub fn lookup(ty: u16, flag: u16, subtables: Vec<Vec<u8>>, mark_set: Option<u16>) -> Vec<u8> {
+    let n = subtables.len();
+    let mut b = zeros(Buf::new().u16(ty).u16(flag).u16(n as u16), 2 * n);
+    if let Some(s) = mark_set {
+        b = b.u16(s);
+    }
+    let kids = subtables
+        .into_iter()
+        .enumerate()
+        .map(|(i, s)| (6 + 2 * i, 2, s))
+        .collect();
+    link(b.done(), kids)
+}
+
+/// An extension subtable (format 1) pointing to `subtable` of type `ty`.
+pub fn extension(ty: u16, subtable: Vec<u8>) -> Vec<u8> {
+    link(
+        Buf::new().u16(1).u16(ty).u32(0).done(),
+        vec![(4, 4, subtable)],
+    )
+}
+
+pub fn lookup_list(lookups: Vec<Vec<u8>>, wide: bool) -> Vec<u8> {
+    let w = if wide { 4 } else { 2 };
+    let n = lookups.len();
+    let b = zeros(Buf::new().u16(n as u16), w * n);
+    let kids = lookups
+        .into_iter()
+        .enumerate()
+        .map(|(i, l)| (2 + w * i, w, l))
+        .collect();
+    link(b.done(), kids)
+}
+
+/// A FeatureList of `(tag, lookup indices)`.
+pub fn feature_list(features: &[(&[u8; 4], &[u16])]) -> Vec<u8> {
+    let n = features.len();
+    let mut b = Buf::new().u16(n as u16);
+    for (t, _) in features {
+        b = b.tag(t).u16(0);
+    }
+    let kids = features
+        .iter()
+        .enumerate()
+        .map(|(i, (_, l))| {
+            let mut f = Buf::new().u16(0).u16(l.len() as u16);
+            for x in *l {
+                f = f.u16(*x);
+            }
+            (2 + 6 * i + 4, 2, f.done())
+        })
+        .collect();
+    link(b.done(), kids)
+}
+
+/// A LangSys table: required feature index and feature indices.
+pub fn lang_sys(required: u16, features: &[u16]) -> Vec<u8> {
+    let mut b = Buf::new().u16(0).u16(required).u16(features.len() as u16);
+    for f in features {
+        b = b.u16(*f);
+    }
+    b.done()
+}
+
+/// A Script table: the default LangSys (empty for none) and tagged ones.
+pub fn script(default: Vec<u8>, langs: Vec<(&[u8; 4], Vec<u8>)>) -> Vec<u8> {
+    let n = langs.len();
+    let mut b = Buf::new().u16(0).u16(n as u16);
+    for (t, _) in &langs {
+        b = b.tag(t).u16(0);
+    }
+    let mut kids = vec![(0, 2, default)];
+    kids.extend(
+        langs
+            .into_iter()
+            .enumerate()
+            .map(|(i, (_, l))| (4 + 6 * i + 4, 2, l)),
+    );
+    link(b.done(), kids)
+}
+
+pub fn script_list(scripts: Vec<(&[u8; 4], Vec<u8>)>) -> Vec<u8> {
+    let n = scripts.len();
+    let mut b = Buf::new().u16(n as u16);
+    for (t, _) in &scripts {
+        b = b.tag(t).u16(0);
+    }
+    let kids = scripts
+        .into_iter()
+        .enumerate()
+        .map(|(i, (_, s))| (2 + 6 * i + 4, 2, s))
+        .collect();
+    link(b.done(), kids)
+}
+
+/// A GSUB or GPOS table of `version` (0x00010000, 0x00010001 with a null
+/// FeatureVariations offset, or 0x00010002 with the lists behind the
+/// 32-bit offsets and the 16-bit ones null).
+pub fn gsubgpos(version: u32, scripts: Vec<u8>, features: Vec<u8>, lookups: Vec<u8>) -> Vec<u8> {
+    let mut b = Buf::new().u32(version).u16(0).u16(0).u16(0);
+    if version >= 0x0001_0001 {
+        b = b.u32(0);
+    }
+    if version >= 0x0001_0002 {
+        b = b.u32(0).u32(0).u32(0);
+        return link(
+            b.done(),
+            vec![(14, 4, scripts), (18, 4, features), (22, 4, lookups)],
+        );
+    }
+    link(
+        b.done(),
+        vec![(4, 2, scripts), (6, 2, features), (8, 2, lookups)],
+    )
+}
+
+/// A GSUB or GPOS 1.0 table with one script (`DFLT`, default LangSys
+/// using every feature), one feature (`test`) using every lookup, and
+/// `lookups` (16-bit offsets).
+pub fn simple_layout(lookups: Vec<Vec<u8>>) -> Vec<u8> {
+    let n = lookups.len() as u16;
+    let indices: Vec<u16> = (0..n).collect();
+    gsubgpos(
+        0x0001_0000,
+        script_list(vec![(b"DFLT", script(lang_sys(0xFFFF, &[0]), vec![]))]),
+        feature_list(&[(b"test", &indices)]),
+        lookup_list(lookups, false),
+    )
+}
