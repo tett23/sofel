@@ -15,7 +15,9 @@ use sofel_read::os2::{self, Os2};
 use sofel_read::vorg::Vorg;
 
 use crate::Font;
-use crate::float::{ceilf, f32_to_i64, f64_to_i32, floorf, i32_to_f32, i64_to_f32, roundf};
+use sofel_geom::float::{
+    ceilf, f32_to_i64, floorf, hb_clamp_to_i32, hb_roundf32, i32_to_f32, i64_to_f32,
+};
 
 /// A font's ascender, descender and line gap (`hb_font_extents_t`).
 /// The descender is negative below the baseline.
@@ -259,6 +261,16 @@ impl HbScale {
     pub fn y_scale(&self) -> i32 {
         self.y_scale
     }
+    /// `x_mult` of HarfBuzz's `hb_font_t`: `(int64_t) x_scale × 0x10000 / upem`,
+    /// where `upem` is a `float`, so the division is done in `float` and
+    /// truncated toward zero (ADR 0026).
+    pub fn x_mult(&self) -> i64 {
+        self.x_mult
+    }
+    /// `y_mult`, as [`HbScale::x_mult`].
+    pub fn y_mult(&self) -> i64 {
+        self.y_mult
+    }
 
     /// `em_scale_x`: `(v × x_mult + 32768) >> 16`.
     pub fn em_scale_x(&self, v: i32) -> i32 {
@@ -269,13 +281,13 @@ impl HbScale {
         em_mult(v, self.y_mult)
     }
     /// `em_scalef_x`: `roundf(v × x_multf)`, with HarfBuzz's `roundf`
-    /// (`floor((double) x + 0.5)`).
+    /// ([`hb_roundf32`]: `floor((double) x + 0.5)`, not C's `roundf`).
     pub fn em_scalef_x(&self, v: f32) -> i32 {
-        f64_to_i32(roundf(v * self.x_multf))
+        hb_clamp_to_i32(hb_roundf32(v * self.x_multf))
     }
     /// `em_scalef_y`: `roundf(v × y_multf)`.
     pub fn em_scalef_y(&self, v: f32) -> i32 {
-        f64_to_i32(roundf(v * self.y_multf))
+        hb_clamp_to_i32(hb_roundf32(v * self.y_multf))
     }
 
     /// `scale_glyph_extents`: the corners scaled in `f32`, the top-left
@@ -285,13 +297,13 @@ impl HbScale {
         let y1 = i32_to_f32(e.y_bearing) * self.y_multf;
         let x2 = x1 + i32_to_f32(e.width) * self.x_multf;
         let y2 = y1 + i32_to_f32(e.height) * self.y_multf;
-        let x_bearing = f64_to_i32(f64::from(floorf(x1)));
-        let y_bearing = f64_to_i32(f64::from(floorf(y1)));
+        let x_bearing = hb_clamp_to_i32(f64::from(floorf(x1)));
+        let y_bearing = hb_clamp_to_i32(f64::from(floorf(y1)));
         GlyphExtents {
             x_bearing,
             y_bearing,
-            width: f64_to_i32(f64::from(ceilf(x2)) - f64::from(x_bearing)),
-            height: f64_to_i32(f64::from(ceilf(y2)) - f64::from(y_bearing)),
+            width: hb_clamp_to_i32(f64::from(ceilf(x2)) - f64::from(x_bearing)),
+            height: hb_clamp_to_i32(f64::from(ceilf(y2)) - f64::from(y_bearing)),
         }
     }
 

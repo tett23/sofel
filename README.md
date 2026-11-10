@@ -19,7 +19,7 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 
 | クレート | 役割 |
 |---|---|
-| [`sofel-geom`](crates/sofel-geom) | FreeTypeと同じ結果を返す固定小数点の演算と、輪郭を受け渡す `Pen` |
+| [`sofel-geom`](crates/sofel-geom) | FreeTypeと同じ結果を返す固定小数点の演算と、輪郭を受け渡す `Pen`、HarfBuzzと同じ丸め（`sofel_geom::float`） |
 | [`sofel-unicode`](crates/sofel-unicode) | Unicode 18.0.0の文字の性質（General_Category、Script、正規分解と合成、Vertical_Orientationなど。[ADR 0019](docs/adr/0019-unicode-character-data.md)） |
 | [`sofel-read`](crates/sofel-read) | sfntの表の読み取りと検証。コピーも確保もせず、どの入力でもpanicしない |
 | [`sofel-font`](crates/sofel-font) | フォントを一度だけ読み、グリフの数、文字からグリフへの対応、送り幅、フォント全体と縦書きのメトリクス、BASEの基準線とその代わりの値、名前とグリフ名（postとCFFのcharset）をHarfBuzzの方針で返し、HarfBuzzと同じ拡大縮小（`HbScale`）をする。HarfBuzzのCFFとCFF2のアクセラレータ（`HbCff1`、`HbCff2`）を持つ。PostScript名と `FT_Face` の値はFreeTypeの方針 |
@@ -80,7 +80,7 @@ sh scripts/check-capi.sh       # ライブラリの公開の関数がすべてC 
 
 ライブラリのクレートは公開の項目すべてにrustdocを書く（`#![warn(missing_docs)]`）。使い方の手引きは [docs/api.md](docs/api.md)。
 
-FreeTypeとの突き合わせ（[ADR 0005](docs/adr/0005-conformance-tests.md)、[0008](docs/adr/0008-validate-command-and-freetype-comparison.md)）には、固定したコミットのHarfBuzzとFreeTypeの取得と、`ft-dump` のビルド（Cのコンパイラが要る）が要る。Vertical_Orientationの照合には、`scripts/fetch-ucd.sh` で取得したUCDのファイルが要る。HarfBuzzとのメトリクスとUnicodeの文字の性質の突き合わせ（[ADR 0016](docs/adr/0016-font-and-vertical-metrics.md)、[ADR 0019](docs/adr/0019-unicode-character-data.md)）には、HarfBuzzの `src/harfbuzz.cc` を取りこんだ `hb-dump` のビルド（C++のコンパイラが要る）が要る。期待する失敗は `conformance/expected-failures-freetype.txt`、`conformance/expected-failures-otvalid.txt`（[ADR 0020](docs/adr/0020-shaping-foundation.md) のotvalidとの照合）と `conformance/expected-failures-harfbuzz.txt` に理由を添えて書く。
+FreeTypeとの突き合わせ（[ADR 0005](docs/adr/0005-conformance-tests.md)、[0008](docs/adr/0008-validate-command-and-freetype-comparison.md)）には、固定したコミットのHarfBuzzとFreeTypeの取得と、`ft-dump` のビルド（Cのコンパイラが要る）が要る。Vertical_Orientationの照合には、`scripts/fetch-ucd.sh` で取得したUCDのファイルが要る。HarfBuzzとのメトリクスとUnicodeの文字の性質の突き合わせ（[ADR 0016](docs/adr/0016-font-and-vertical-metrics.md)、[ADR 0019](docs/adr/0019-unicode-character-data.md)）、丸めの突き合わせ（[ADR 0026](docs/adr/0026-harfbuzz-rounding.md)）には、HarfBuzzの `src/harfbuzz.cc` を取りこんだ `hb-dump` のビルド（C++のコンパイラが要る）が要る。期待する失敗は `conformance/expected-failures-freetype.txt`、`conformance/expected-failures-otvalid.txt`（[ADR 0020](docs/adr/0020-shaping-foundation.md) のotvalidとの照合）と `conformance/expected-failures-harfbuzz.txt` に理由を添えて書く。
 
 ```sh
 sh scripts/fetch-testdata.sh

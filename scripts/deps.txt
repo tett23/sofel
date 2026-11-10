@@ -34,6 +34,9 @@ sofel-color sofel-svg
 sofel-write sofel-read
 sofel-subset sofel-font
 sofel-subset sofel-write
+# HarfBuzz's rounding in sofel_geom::float (ADR 0026)
+sofel-color sofel-geom
+sofel-subset sofel-geom
 sofel-cli *
 sofel-capi *
 

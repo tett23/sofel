@@ -14,7 +14,7 @@ cargo doc --no-deps -p sofel-geom -p sofel-unicode -p sofel-read -p sofel-font -
 
 | クレート | 役割 | 依存 |
 |---|---|---|
-| `sofel-geom` | 固定小数点の演算（`FT_MulFix` などと同じ結果）と、輪郭を受け渡す `Pen` | なし |
+| `sofel-geom` | 固定小数点の演算（`FT_MulFix` などと同じ結果）と、輪郭を受け渡す `Pen`、HarfBuzzの丸めを写す浮動小数点の補助（`float`） | なし |
 | `sofel-unicode` | Unicode 18.0.0の文字の性質。HarfBuzzの既定のUnicodeの関数と同じ値を返す | なし |
 | `sofel-read` | sfntの表の読み取りと検証。コピーも確保もしない | なし |
 | `sofel-font` | フォントを一度だけ読み、グリフの数、文字からグリフへの対応、送り幅を返す | `sofel-read`、`sofel-geom` |
@@ -248,6 +248,20 @@ fn single(gsub_table: &[u8], glyph: GlyphId) -> Option<u32> {
 
 - 型：`F26Dot6`、`Fixed`（16.16）、`F2Dot14`、`Point`（`i32` の `x`、`y`）、`Matrix`。
 - 結果が `i32` に収まらないときは飽和させる（FreeTypeは未定義の動作になる箇所）。
+
+### HarfBuzzの丸め（`sofel_geom::float`）
+
+HarfBuzzの値を写すときの浮動小数点の補助（[ADR 0026](adr/0026-harfbuzz-rounding.md)）。どれも `f32` と `f64` の四則演算だけで書き、FMAを使わない。
+
+| sofel | HarfBuzz、C |
+|---|---|
+| `hb_roundf(v: f64) -> f64` | HarfBuzzの `roundf`（`_hb_roundf (double)`、`floor (x + .5)`） |
+| `hb_roundf32(v: f32) -> f64` | HarfBuzzの `roundf`（`_hb_roundf (float)`、`floor ((double) x + .5)`） |
+| `floor`、`floorf`、`ceilf`、`truncf` | Cの同じ名前の関数 |
+| `hb_clamp_to_i32(v: f64) -> i32` | `hb_clamp_to<int> (double)` |
+| `f32_to_i64`、`i64_to_f32`、`i32_to_f32` | Cの `(int64_t)`、`(float)` の変換 |
+
+- HarfBuzzの `roundf` はCの `roundf` ではない。半分の値は負でも正の無限大の側へ丸まる（`hb_roundf(-2.5)` は −2.0、Cの `roundf` は −3.0）。一般の丸めには使わない。
 
 ## Unicodeの文字の性質（`sofel-unicode`）
 

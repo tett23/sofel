@@ -55,12 +55,14 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   sofel-shape   → sofel-font, sofel-unicode
   sofel-outline → sofel-font, sofel-geom
   sofel-bitmap  → sofel-font, sofel-png
-  sofel-color   → sofel-outline, sofel-bitmap, sofel-svg
+  sofel-color   → sofel-outline, sofel-bitmap, sofel-svg, sofel-geom
   sofel-write   → sofel-read
-  sofel-subset  → sofel-font, sofel-write
+  sofel-subset  → sofel-font, sofel-write, sofel-geom
   sofel-cli     → 上のすべて（道具のバイナリ群）
   sofel-capi    → 上のすべて（C ABI、[ADR 0015](adr/0015-c-abi.md)）
 ```
+
+- `sofel-color` と `sofel-subset` の `sofel-geom` への依存は、HarfBuzzの丸め（`sofel_geom::float`）を共有するためである（[ADR 0026](adr/0026-harfbuzz-rounding.md)）。
 
 - 輪郭と塗りは、`sofel-geom` の `Pen` と `Painter` で受け渡す。`sofel-raster`、`sofel-gpu`、`sofel-vector` はフォントの型を知らない。
 - 形式のビューと検証器は、形式を読むクレートだけに置く。検証器は確保をせず、誤りを呼び出し側の関数に渡す。charstringの解釈とヒンティングは `sofel-outline` が行い、Type1とCFFで共有する。ただし、FreeTypeのType 2 charstringの解読器（演算子から装置の空間の線と曲線まで）は、全グリフを走らせる `CFF ` と `CFF2` の検証器が使うため `sofel-read` に置き、点への変換と仕上げを `sofel-outline` が行う（[ADR 0021](adr/0021-cff-outlines.md)）。
@@ -94,6 +96,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 - `F26Dot6`、`Fixed`（16.16）、`F2Dot14` と、FreeTypeと同じ結果を返す `mul_fix`、`div_fix`、`mul_div`、`mul_div_no_round`、`vector_length`（CORDIC）、`transform` を持つ（[ADR 0009](adr/0009-geom-fixed-point-and-pen.md)）。
 - 輪郭は `Pen`（`move_to`、`line_to`、`quad_to`、`cubic_to`、`close`）で受け渡す。命令の並びは `FT_Outline_Decompose` と同じ約束に従う。`Point` の単位（26.6かフォントの単位）は作る側が決める。
+- `sofel_geom::float` は、HarfBuzzの値を写すための浮動小数点の補助を持つ（[ADR 0026](adr/0026-harfbuzz-rounding.md)）。Cの `floor`、`floorf`、`ceilf`、`truncf`、HarfBuzzの `roundf`（`hb-algs.hh` の `_hb_roundf` のマクロ。`hb_roundf(f64) -> f64` と `hb_roundf32(f32) -> f64`）、`hb_clamp_to<int> (double)`（`hb_clamp_to_i32`）と、整数と `float` の変換。HarfBuzzの `roundf` はCの `roundf` ではなく、値を倍精度に広げてから0.5を足し、床関数をとる。半分の値は負でも正の無限大の側へ丸まる（−2.5は−2）。sofelがHarfBuzzの値を写す箇所の `roundf` は、すべてこの意味とし、`sofel-font`、`sofel-outline`、`sofel-color`、`sofel-subset` はここを使う。HarfBuzzの式の型の混ざり方はC++の通常の算術変換に従って写し（整数と `float` の割り算は `float` で行う）、四則演算と床関数のほかは使わない。FMAは使わない。
 
 ## Unicodeの文字の性質（`sofel-unicode`）
 
@@ -132,7 +135,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   - グリフ名：`charset_name` はCIDキーでないCFFのcharsetの名前。FreeTypeの手順（`Font::ft_glyph_name`、`GlyphNames::ft_*`）では、フェイスがグリフ名の印（sfntの読み込みで、読めた `post` が版3.0でないとき、またはCIDキーでないCFF）を持つときだけ名前を返し、CFFではcharsetの値の文字列（CIDキーのフォントではCIDの番号のSID）、文字列が無ければ空の名前、CFF2では `post` の手順（グリフの数はCharStringsの数）を使う。名前からグリフへは、グリフIDの順に線形に探す。`build_name_index` と `glyph_from_name` は、名前の順（同じ名前はグリフIDの小さい順）の索引を呼び出し側の配列に作り、二分探索する。`build_name_index` はcharsetを1回だけ順に読む。
   - charsetの索引（[ADR 0025](adr/0025-cff-charset-index.md)）：`cid`、`charset_name`、`ft_glyph_name`、`build_name_index`、`glyph_from_name` は、それぞれ `CharsetIndex` を受け取る版（`cid_with` など）を持ち、結果は索引の無い版と等しい。索引の無い版は、フォーマット1と2でグリフの前の範囲を毎回読むので、繰り返し引くなら索引を作る（範囲の数の配列を1回読む）。`Cff` は索引を持たない。
   - `ps_font_info` は `FT_Get_PS_Font_Info` の9つの値（CFF2では誤り）、`ps_fs_type` はTop DICTの `PostScript` の文字列の `/FSType <数> def` の数（数字、空白、CR、LF以外が混じるか、あふれれば0）。
-- `HbScale` はHarfBuzzの `hb_font_t` の拡大縮小を写す。`x_mult` は `x_scale × 0x10000` を `f32` にして `upem` で割り、0へ切り捨てる（HarfBuzzの `changed` と同じ。整数の割り算ではない）。整数の値は `(v × mult + 32768) >> 16`、小数の値はHarfBuzzの `roundf`（`floor((double) x + 0.5)`）、箱は `scale_glyph_extents`（角を `f32` で拡大し、左上を切り下げ、右下を切り上げ）で拡大縮小する。FMAは使わない。代わりの値は拡大縮小した `x_scale`、`y_scale` から求める。
+- `HbScale` はHarfBuzzの `hb_font_t` の拡大縮小を写す。`x_mult` は、HarfBuzzの `changed` の `(int64_t) x_scale * 0x10000 / upem` で `upem` が `float` のため、`x_scale × 0x10000`（`int64_t`）を `float` にして `upem`（`float`）で割り、0へ切り捨てる（整数の割り算ではない。[ADR 0026](adr/0026-harfbuzz-rounding.md)）。整数の値は `(v × mult + 32768) >> 16`、小数の値はHarfBuzzの `roundf`（`sofel_geom::float::hb_roundf32`、`floor((double) x + 0.5)`）、箱は `scale_glyph_extents`（角を `f32` で拡大し、左上を切り下げ、右下を切り上げ）で拡大縮小する。FMAは使わない。代わりの値は拡大縮小した `x_scale`、`y_scale` から求める。
 - 基準線（[ADR 0017](adr/0017-base-baselines.md)）：
   - 方向は `Direction`（横と縦）とし、シェーピングの4つの方向はこれに写す。基準線のタグは `Tag` で受け取り、`baseline` にHarfBuzzの `hb_ot_layout_baseline_tag_t` の9つの値を持つ。
   - BASEは、HarfBuzz 15.1.0の検査（`sanitize`）に通るときだけ使う。HarfBuzz 15.1.0は壊れたオフセットを0に書きかえないため、表に収まらない表、未知のBaseCoordの形式、版1以外、形式1でないItemVariationStoreのどれか1つで表全体を使わない。HarfBuzzと同じく、配列を調べるたびにそのバイト数を、表の1バイトあたり64（最低16384）の予算から引き、使いきれば表全体を使わない。
@@ -146,7 +149,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - glyfと `GLYF` の単純なグリフと合成グリフの輪郭を、ヒンティングをせずに、FreeTypeと同じ座標で `Pen` に渡す（[ADR 0011](adr/0011-glyf-outlines.md)）。`GLYF` があれば `GLYF` と `LOCA` を使い、そのときだけフラグ0x80を三次曲線、0x2000を24bitの成分のグリフIDとして扱う。
 - 倍率は `FT_Set_Pixel_Sizes` と同じく `div_fix(ppem << 6, unitsPerEm)` で、点は `mul_fix` で拡大縮小し、丸めない。locaの解釈と合成の位置の計算はFreeTypeに合わせる。
 - 作業領域（`Scratch`）は呼び出し側が持つ。
-- HarfBuzzのグリフの箱（`HbExtents`、[ADR 0021](adr/0021-cff-outlines.md)）：`hb_ot_get_glyph_extents` のうちカラーとビットマップを除いた順（VARCはまだ無く、glyf、CFF2、CFF）で、拡大縮小の前の値を返す。CFF2が無効なら、または箱が得られなければCFFへ進む。CFFとCFF2の箱は、HarfBuzzの `cff1_cs_interp_env_t`、`cff2_cs_interp_env_t` と `opset_extents` を移植した解釈器で求める。スタックは513、サブルーチンの入れ子は10、演算子は1グリフ200000まで（200000個目で失敗）。算術の演算子とCFFの `blend`、`vsindex` は未知の演算子としてスタックを捨て、`dotsection` は何もしない。CFFでは `endchar` の無いcharstringは失敗し、`endchar` の引数が4つ以上ならseac（標準のエンコーディングの番号をcharsetで引き、基とアクセントの箱を、アクセントをずらして合わせる。入れ子と、グリフの無い番号は失敗）とする。CFF2は文字列の終わりで `return` か `endchar` とし、`blend` は既定のインスタンスでは差分を捨て、既定の値だけを残す（引数の不足と、`blend` の後の `vsindex` は失敗）。移動で経路を閉じ、線と曲線の始まりで現在の点を、その後に各点（曲線の制御点を含む）を箱に足す。数はHarfBuzzの `double` の代わりに16.16を `i64` で持つ。既定のインスタンスでは和と差しか生じないので、値は同じになる。丸めはHarfBuzz 15.1.0の `roundf` マクロ（`_hb_roundf (double)`）と同じ `floor (x + 0.5)` で、`float` を経ない（[ADR 0021](adr/0021-cff-outlines.md)の「アルゴリズム」は `float` への変換と0から遠い側への丸めと書くが、HarfBuzz 15.1.0の実装と `hb-dump` の出力はこちらである）。最小が最大以上の軸は0とする。拡大縮小は `HbScale::scale_glyph_extents` による。
+- HarfBuzzのグリフの箱（`HbExtents`、[ADR 0021](adr/0021-cff-outlines.md)）：`hb_ot_get_glyph_extents` のうちカラーとビットマップを除いた順（VARCはまだ無く、glyf、CFF2、CFF）で、拡大縮小の前の値を返す。CFF2が無効なら、または箱が得られなければCFFへ進む。CFFとCFF2の箱は、HarfBuzzの `cff1_cs_interp_env_t`、`cff2_cs_interp_env_t` と `opset_extents` を移植した解釈器で求める。スタックは513、サブルーチンの入れ子は10、演算子は1グリフ200000まで（200000個目で失敗）。算術の演算子とCFFの `blend`、`vsindex` は未知の演算子としてスタックを捨て、`dotsection` は何もしない。CFFでは `endchar` の無いcharstringは失敗し、`endchar` の引数が4つ以上ならseac（標準のエンコーディングの番号をcharsetで引き、基とアクセントの箱を、アクセントをずらして合わせる。入れ子と、グリフの無い番号は失敗）とする。CFF2は文字列の終わりで `return` か `endchar` とし、`blend` は既定のインスタンスでは差分を捨て、既定の値だけを残す（引数の不足と、`blend` の後の `vsindex` は失敗）。移動で経路を閉じ、線と曲線の始まりで現在の点を、その後に各点（曲線の制御点を含む）を箱に足す。数はHarfBuzzの `double` の代わりに16.16を `i64` で持つ。既定のインスタンスでは和と差しか生じないので、値は同じになる。丸めはHarfBuzz 15.1.0の `roundf` マクロ（`_hb_roundf (double)`）と同じ `floor (x + 0.5)` で、`float` を経ない（[ADR 0026](adr/0026-harfbuzz-rounding.md)）。16.16の値に `0x8000` を足して16bit右へずらす整数の計算で求め、これが `sofel_geom::float::hb_roundf` と常に等しいことをテストで確かめる。最小が最大以上の軸は0とする。拡大縮小は `HbScale::scale_glyph_extents` による。
 - FreeTypeと同じく、読みこんだ輪郭を幻の点の `pp1.x` だけ左に動かす（[ADR 0018](adr/0018-phantom-point-shift.md)）。`pp1.x` は、グリフの見出しの `xMin` からFreeTypeの読み方の左のサイドベアリング（`Font::ft_left_side_bearing`）を引き、点と同じく `mul_fix` で拡大縮小した値で、丸めない。`head` の `flags` のビット1によらない。空のグリフは点が無いので動かない。`OutlineInfo` の `cbox` は動かしたあとの点から求める。
   - 合成グリフは、自身の見出しとサイドベアリングの `pp1.x` を使う。USE_MY_METRICSの部品があれば、最後のその部品の `pp1.x`（部品の見出しとサイドベアリングから求めたもの。部品の変換と位置合わせでは動かない）を使う。入れ子の合成グリフでも同じ規則を部品ごとに当てる。
   - 残りの幻の点（`pp2`、`pp3`、`pp4`）と、ヒンティングと可変フォントでの幻の点は求めない。
@@ -209,6 +212,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   - 項目は `<フォント>#<フェイス>:hb:<項目>` で、`num_glyphs`、`h_extents`、`v_extents`、`metrics`、`metrics-fallback`、`h_advance`、`v_advance`、`v_origin`、`extents`、`nominal`（U+10FFFFまでのすべての符号位置の `hb_font_get_nominal_glyph`。HarfBuzzの値のうちグリフの数以上のものは除く）、`names`、`name_utf`（全名前IDと、記録に現れる全言語と言語なしの、UTF-8、16、32。配列の長さは全体＋1と4）、`glyph_names`、`glyph_from_name`。各項目はすべての拡大縮小とすべてのグリフを含む。期待する失敗は `conformance/expected-failures-harfbuzz.txt` に書く。グリフの箱は `HbExtents`（glyf、CFF2、CFF）で、グリフ名はpostとCFFのcharsetで比べる（[ADR 0021](adr/0021-cff-outlines.md)）。同じ名前を2つ以上持つフォントでは、HarfBuzzの結果が整列の実装によるため、`glyph_from_name` は返ったグリフの名前が引いた名前と等しいことだけを確かめる。COLR、CBDT、sbixのカラーのグリフの箱（[ADR 0023](adr/0023-color-glyphs.md)）と、その箱で決まる縦の原点と、HarfBuzzが引かないcmapのフォーマット2と8（sofelはFreeTypeと同じく引く。[ADR 0010](adr/0010-font-foundation.md)）が期待する失敗である。653個のフォントで9128項目を比べ、期待する失敗は35項目である。
   - 基準線（[ADR 0017](adr/0017-base-baselines.md)、`hb-dump --baselines`）の項目は `baseline`（`hb_ot_layout_get_baseline` の有無と値）、`baseline-fallback`（`hb_ot_layout_get_baseline_with_fallback`）、`layout_font_extents`（`hb_ot_layout_get_font_extents` の有無と値）。6つの拡大縮小、横と縦、9つの基準線、文字体系のタグ（`hani`、`latn`、`deva`、`DFLT` と、代わりの値の文字を持つ文字体系の新旧のタグなど34個と、BASEに現れるすべてのタグ）、言語のタグ（`dflt` とBASEに現れるすべてのタグ）の組を比べる。BASEを持つフォントを足すため、HarfBuzzの `test/api/fonts/base*.ttf` も比べる。`baseline` と `layout_font_extents` はすべて一致し、`baseline-fallback` の期待する失敗は、`math` と `hang` の代わりの値が使うグリフの箱をsofelがまだ持たないカラーのグリフのフォントの1項目である（[ADR 0023](adr/0023-color-glyphs.md)。CFFとCFF2の箱は [ADR 0021](adr/0021-cff-outlines.md) の `HbExtents` を使う）。あわせて、653個のフォントとBASEの3個のフォントで11093項目を比べ、期待する失敗は36項目である。
   - 手で組んだ小さなCFFとCFF2のフォント（丸め、制御点、移動だけの経路、空の軸、seac、入れ子の10と11、演算子の上限、各曲線とflex、ヒントマスク、CIDキーのFDSelectとローカルのサブルーチン、CFF2の `blend`、`vsindex`、FDSelectのフォーマット4、グリフの数、CFF2が無効なときのCFF、charsetとencodingとTop DICTの有効性、重複する名前）でも、`hb-dump` とすべての項目が一致することを確かめる（`tests/harfbuzz_cff.rs`）。
+  - 丸め（[ADR 0026](adr/0026-harfbuzz-rounding.md)）：`hb-dump --roundf` は標準入力の `float` と `double` の値（ビットの16進）にHarfBuzzの `roundf` を通した値を書き、`hb-dump --mult` は `upem` と拡大縮小の組ごとに `hb_font_t` の `x_mult` を書く。`sofel_geom::float` の `hb_roundf`、`hb_roundf32` は、単体テストの値と決まった種の乱数の値100万個（半分の値とその前後を多く含む）で、`HbScale::x_mult` は `upem` 16、1000、1024、2048、16384と負の値を含む拡大縮小で、完全に一致することを確かめる（`tests/harfbuzz_rounding.rs`）。
 - glyfの輪郭は、`ft-dump --outline` の出力と、拡大縮小なし、16画素、48画素で、命令の列、重なりの印、制御の箱が完全に一致することを確かめる（項目 `outline:<SIZE>:<グリフ>`、[ADR 0011](adr/0011-glyf-outlines.md)）。ラスタライズは、`ft-dump --raster` の出力と、12、24、48画素で画像が完全に一致することを確かめる（項目 `raster:<PPEM>:<グリフ>`、[ADR 0012](adr/0012-antialiased-rasterizer.md)）。
 - 輪郭、ラスタライズ（各形式）、埋め込みビットマップ、sfnt以外の形式は、FreeTypeの出力を書き出す `tools/ft-dump/` と比べる。輪郭は完全一致を求める。sfnt以外の形式のテストのフォントは、その形式を実装するまえに、ADRで `testdata.lock` に加える。
 - カラーグリフ、SVGとPDF、GPU、WOFF、検証器、展開器の基準は、それぞれのADRで定める。

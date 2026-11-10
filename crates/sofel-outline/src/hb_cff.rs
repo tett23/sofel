@@ -232,7 +232,12 @@ impl Bounds {
     }
 }
 
-/// HarfBuzz's `roundf (double)`: `floor (x + 0.5)`, for a 16.16 `x`.
+/// HarfBuzz's `roundf (double)`, `floor (x + 0.5)`
+/// ([`sofel_geom::float::hb_roundf`]), for a 16.16 `x`, as an integer:
+/// adding 0x8000 and shifting right by 16 floors `x + 0.5` exactly, since
+/// a 16.16 value and its sum with one half are exact in `double` (ADR
+/// 0026). It is faster and does not go through `double`; the tests check
+/// that both always agree.
 fn round(v: i64) -> i64 {
     v.saturating_add(ONE / 2) >> 16
 }
@@ -921,6 +926,62 @@ impl<'a, 'c> Env<'a, 'c> {
                 self.len = self.len.saturating_sub(drop);
             }
             _ => self.s.set_error(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::arithmetic_side_effects,
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_precision_loss
+    )]
+
+    use super::{ONE, round};
+    use sofel_geom::float::hb_roundf;
+
+    /// `hb_roundf` of the 16.16 value `v`, as HarfBuzz computes it on
+    /// its `double`.
+    fn via_double(v: i64) -> i64 {
+        hb_roundf(v as f64 / ONE as f64) as i64
+    }
+
+    fn check_near(c: i64) {
+        for v in c - 2..=c + 2 {
+            assert_eq!(round(v), via_double(v), "round({v:#x})");
+        }
+    }
+
+    #[test]
+    fn integer_rounding_is_hb_roundf() {
+        // Around every integer k and every half k + 0.5 of the 16-bit
+        // integer range and a little beyond.
+        for k in -0x1_0001..=0x1_0001_i64 {
+            check_near(k * ONE);
+            check_near(k * ONE + ONE / 2);
+        }
+        // The ends of the 16.16 range in i32, and of the sums the
+        // interpreter keeps in i64 (|v| < 2^52 is exact in double).
+        for c in [
+            i64::from(i32::MIN),
+            i64::from(i32::MAX),
+            -(1_i64 << 52),
+            (1_i64 << 52) - 2,
+        ] {
+            check_near(c);
+        }
+        let mut s: u64 = 0x0021_0026;
+        for _ in 0..1_000_000 {
+            s ^= s << 13;
+            s ^= s >> 7;
+            s ^= s << 17;
+            // Any width up to 52 bits, with a sign.
+            let bits = (s >> 58) as u32 % 53;
+            let m = (s & ((1_u64 << bits) - 1)) as i64;
+            let v = if s & (1 << 57) == 0 { m } else { -m };
+            assert_eq!(round(v), via_double(v), "round({v:#x})");
         }
     }
 }

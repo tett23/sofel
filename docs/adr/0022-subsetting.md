@@ -1,6 +1,6 @@
 # ADR 0022: サブセット化と表の書き出し（`sofel-write` と `sofel-subset`）
 
-ステータス: 採択（未実装）
+ステータス: 採択（未実装）→丸めは [ADR 0026](0026-harfbuzz-rounding.md)
 
 ## 文脈
 
