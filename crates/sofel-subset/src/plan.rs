@@ -15,17 +15,14 @@ use crate::layout::{self, Gsubgpos, LayoutPlan};
 use crate::limits;
 use crate::set::{INVALID, RangeSet};
 use crate::tables::cff::SeacFinder;
+use crate::tables::colr::{self, ColorPlan};
+use crate::tables::cpal;
 use crate::tables::glyf::GlyfAccel;
 
 /// The tables whose subsetting or closure this version does not write
 /// yet: present and kept, they make [`Plan::new`] return
 /// [`SubsetError::Unsupported`].
-const PENDING: [(&[u8; 4], &str); 14] = [
-    (b"COLR", "color subsetting (ADR 0022 stage 9)"),
-    (b"CPAL", "color subsetting (ADR 0022 stage 9)"),
-    (b"CBLC", "color subsetting (ADR 0022 stage 9)"),
-    (b"CBDT", "color subsetting (ADR 0022 stage 9)"),
-    (b"sbix", "color subsetting (ADR 0022 stage 9)"),
+const PENDING: [(&[u8; 4], &str); 9] = [
     (b"CFF2", "CFF2 subsetting (ADR 0022 stages 7 and 10)"),
     (b"gvar", "variable font tables (ADR 0022 stage 10)"),
     (b"GVAR", "variable font tables (ADR 0022 stage 10)"),
@@ -125,6 +122,7 @@ pub struct Plan {
     pub(crate) glyphset_cmaped: RangeSet,
     /// The glyphs after the MATH closure (`_glyphset_mathed`).
     pub(crate) glyphset_mathed: RangeSet,
+    pub(crate) color: ColorPlan,
 }
 
 /// The layout part of the plan (the `gsub_*`, `gpos_*`,
@@ -247,6 +245,15 @@ impl Plan {
         }
 
         layout_unsupported(font, drop, no_subset)?;
+        let colr_table = font.table(Tag::new(b"COLR"));
+        let colr_kept = !drop.contains(Tag::new(b"COLR").to_u32())
+            && !no_subset.contains(Tag::new(b"COLR").to_u32());
+        if colr_kept && colr_table.is_some_and(colr::needs_var_store) {
+            return Err(SubsetError::Unsupported {
+                tag: Tag::new(b"COLR"),
+                reason: "the COLR item variation store (ADR 0022 stage 10)",
+            });
+        }
 
         let cmap = CmapAccel::new(font);
         let glyphs_in = input.set(SetKind::Glyphs);
@@ -275,6 +282,7 @@ impl Plan {
             },
             glyphset_cmaped: RangeSet::new(),
             glyphset_mathed: RangeSet::new(),
+            color: ColorPlan::default(),
         };
 
         // _populate_unicodes_to_retain
@@ -365,7 +373,15 @@ impl Plan {
             );
         }
         gsub_glyphs.truncate(num_glyphs);
-        let cur = gsub_glyphs.to_range_set();
+        let mut cur = gsub_glyphs.to_range_set();
+        // _colr_closure
+        if tag_kept(b"COLR") {
+            let (layers, palettes) = colr::closure(colr_table.unwrap_or(&[]), &mut cur);
+            cur.truncate(num_glyphs);
+            p.color.layers = layers;
+            p.color.palettes = palettes;
+        }
+        p.color.glyphset_colred = cur.clone();
         // _nameid_closure
         if tag_kept(b"STAT") {
             stat_name_ids(
@@ -377,6 +393,13 @@ impl Plan {
             font.table(Tag::new(b"fvar")).unwrap_or(&[]),
             &mut p.name_ids,
         );
+        if tag_kept(b"CPAL") {
+            cpal::collect_name_ids(
+                font.table(Tag::new(b"CPAL")).unwrap_or(&[]),
+                &p.color.palettes,
+                &mut p.name_ids,
+            );
+        }
         if tag_kept(b"GPOS") {
             layout::plan::collect_name_ids(
                 table(b"GPOS", false),
