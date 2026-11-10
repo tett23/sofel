@@ -25,6 +25,8 @@ path = "src/bin/sofel-render.rs"
 [[bin]]
 name = "sofel-shape"
 path = "src/bin/sofel-shape.rs"
+# Its documentation would overwrite sofel_shape's (the same file name).
+doc = false
 
 [lints]
 workspace = true
