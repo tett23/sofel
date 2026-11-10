@@ -89,3 +89,24 @@ path = "fuzz_targets/cff.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "gdef"
+path = "fuzz_targets/gdef.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gsub"
+path = "fuzz_targets/gsub.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gpos"
+path = "fuzz_targets/gpos.rs"
+test = false
+doc = false
+bench = false

@@ -422,3 +422,309 @@ fn sfnt_otto(tables: &[([u8; 4], Vec<u8>)]) -> Vec<u8> {
     out.extend(data);
     out
 }
+
+// ---- GDEF, GSUB and GPOS (ADR 0020) ----
+
+mod layout {
+    use sofel_read::layout::{
+        ChainedSequenceContext, ClassDef, Coverage, CoverageArray, LayoutTable, Lookup,
+        SequenceContext,
+    };
+    use sofel_read::{GlyphId, ReadError, Tag, gdef, gpos, gsub};
+
+    const N: usize = 256;
+
+    fn ok<T>(r: Result<Option<T>, ReadError>, f: impl FnOnce(T) -> bool) -> bool {
+        match r {
+            Err(_) => false,
+            Ok(None) => true,
+            Ok(Some(t)) => f(t),
+        }
+    }
+
+    fn query_coverage(c: &Coverage<'_>) {
+        for g in [0, 1, 2, 0xFFFF, 0x1_0000, u32::MAX] {
+            let _ = c.get(GlyphId(g));
+        }
+        let _ = c.ranges().take(N).count();
+    }
+
+    fn query_class_def(c: &ClassDef<'_>) {
+        for g in [0, 1, 2, 0xFFFF, 0x1_0000, u32::MAX] {
+            let _ = c.get(GlyphId(g));
+        }
+    }
+
+    fn coverages(a: &CoverageArray<'_>) -> bool {
+        (0..a.len().min(N)).all(|i| {
+            ok(a.get(i), |c| {
+                query_coverage(&c);
+                true
+            })
+        })
+    }
+
+    fn context(c: &SequenceContext<'_>) -> bool {
+        match c {
+            SequenceContext::Glyphs {
+                coverage,
+                rule_sets,
+            } => {
+                query_coverage(coverage);
+                (0..rule_sets.len().min(N)).all(|i| {
+                    ok(rule_sets.get(i), |s| {
+                        (0..s.len().min(N)).all(|j| {
+                            ok(s.get(j), |r| {
+                                let _ = (r.input.iter().count(), r.lookups.iter().count());
+                                true
+                            })
+                        })
+                    })
+                })
+            }
+            SequenceContext::Classes {
+                coverage,
+                class_def,
+                rule_sets,
+            } => {
+                query_coverage(coverage);
+                query_class_def(class_def);
+                (0..rule_sets.len().min(N)).all(|i| {
+                    ok(rule_sets.get(i), |s| {
+                        (0..s.len().min(N)).all(|j| s.get(j).is_ok())
+                    })
+                })
+            }
+            SequenceContext::Coverages {
+                coverages: a,
+                lookups,
+            } => {
+                let _ = lookups.iter().count();
+                coverages(a)
+            }
+        }
+    }
+
+    fn chain(c: &ChainedSequenceContext<'_>) -> bool {
+        match c {
+            ChainedSequenceContext::Glyphs { rule_sets, .. }
+            | ChainedSequenceContext::Classes { rule_sets, .. } => {
+                (0..rule_sets.len().min(N)).all(|i| {
+                    ok(rule_sets.get(i), |s| {
+                        (0..s.len().min(N)).all(|j| {
+                            ok(s.get(j), |r| {
+                                let _ = (r.backtrack.iter().count(), r.lookahead.iter().count());
+                                true
+                            })
+                        })
+                    })
+                })
+            }
+            ChainedSequenceContext::Coverages {
+                backtrack,
+                input,
+                lookahead,
+                ..
+            } => coverages(backtrack) && coverages(input) && coverages(lookahead),
+        }
+    }
+
+    fn layout(data: &[u8], extension: u16, sub: impl Fn(&Lookup<'_>, usize) -> bool) -> bool {
+        let Ok(t) = LayoutTable::new(data) else {
+            return false;
+        };
+        let _ = t.feature_variations_offset();
+        let scripts = ok(t.script_list(), |l| {
+            let _ = l.find(Tag::new(b"latn"));
+            (0..l.len().min(N)).all(|i| {
+                ok(l.script(i), |s| {
+                    let _ = s.find_lang_sys(Tag::new(b"JAN "));
+                    s.default_lang_sys().is_ok()
+                        && (0..s.num_lang_sys().min(N)).all(|j| s.lang_sys(j).is_ok())
+                })
+            })
+        });
+        let features = ok(t.feature_list(), |l| {
+            (0..l.len().min(N)).all(|i| l.feature(i).is_ok())
+        });
+        let lookups = ok(t.lookup_list(), |l| {
+            (0..l.len().min(N)).all(|i| {
+                ok(l.lookup(i), |lk| {
+                    let _ = (lk.mark_filtering_set(), lk.effective_type(extension));
+                    lk.extension_types_agree(extension)
+                        && (0..lk.num_subtables().min(N))
+                            .all(|j| lk.subtable_offset(j) == Some(0) || sub(&lk, j))
+                })
+            })
+        });
+        scripts && features && lookups
+    }
+
+    pub fn gsub_walks(data: &[u8]) -> bool {
+        use gsub::SubstSubtable as S;
+        layout(data, gsub::EXTENSION, |lk, j| match gsub::subtable(lk, j) {
+            Err(_) => false,
+            Ok(S::SingleDelta { coverage, .. }) => {
+                query_coverage(&coverage);
+                true
+            }
+            Ok(S::SingleList { substitutes, .. }) => substitutes.iter().take(N).count() <= N,
+            Ok(
+                S::Multiple { sequences: a, .. }
+                | S::Alternate {
+                    alternate_sets: a, ..
+                },
+            ) => (0..a.len().min(N)).all(|i| a.get(i).is_ok()),
+            Ok(S::Ligature { ligature_sets, .. }) => (0..ligature_sets.len().min(N)).all(|i| {
+                ok(ligature_sets.get(i), |s| {
+                    (0..s.len().min(N)).all(|k| s.get(k).is_ok())
+                })
+            }),
+            Ok(S::Context(c)) => context(&c),
+            Ok(S::ChainContext(c)) => chain(&c),
+            Ok(S::ReverseChainSingle {
+                backtrack,
+                lookahead,
+                ..
+            }) => coverages(&backtrack) && coverages(&lookahead),
+        })
+    }
+
+    fn anchor(a: Result<Option<gpos::Anchor<'_>>, ReadError>) -> bool {
+        if let Ok(Some(gpos::Anchor::Format3 {
+            x_device: Some(d), ..
+        })) = a
+        {
+            let _ = d.delta_pixels(12);
+        }
+        a.is_ok()
+    }
+
+    fn matrix(m: &gpos::AnchorMatrix<'_>) -> bool {
+        (0..m.rows().min(N)).all(|r| (0..m.cols().min(64)).all(|c| anchor(m.get(r, c))))
+    }
+
+    fn marks(m: &gpos::MarkArray<'_>) -> bool {
+        (0..m.len().min(N)).all(|i| m.get(i).is_some_and(|(_, a)| anchor(a)))
+    }
+
+    pub fn gpos_walks(data: &[u8]) -> bool {
+        use gpos::PosSubtable as P;
+        layout(data, gpos::EXTENSION, |lk, j| match gpos::subtable(lk, j) {
+            Err(_) => false,
+            Ok(P::Single { value, .. }) => {
+                if let Some(d) = value.x_advance_device {
+                    let _ = d.delta_pixels(9);
+                }
+                true
+            }
+            Ok(P::SingleArray { values, .. }) => {
+                (0..values.len().min(N)).all(|i| values.get(i).is_some())
+            }
+            Ok(P::PairGlyphs { pair_sets, .. }) => (0..pair_sets.len().min(N)).all(|i| {
+                ok(pair_sets.get(i), |s| {
+                    let _ = s.find(GlyphId(1));
+                    true
+                })
+            }),
+            Ok(P::PairClasses {
+                values, class_def1, ..
+            }) => {
+                query_class_def(&class_def1);
+                let _ = values.get(1, 1);
+                true
+            }
+            Ok(P::Cursive { entry_exits, .. }) => (0..entry_exits.len().min(N)).all(|i| {
+                entry_exits
+                    .get(i)
+                    .is_some_and(|(a, b)| anchor(a) && anchor(b))
+            }),
+            Ok(
+                P::MarkBase {
+                    marks: m, bases: b, ..
+                }
+                | P::MarkMark {
+                    marks: m,
+                    mark2s: b,
+                    ..
+                },
+            ) => marks(&m) && matrix(&b),
+            Ok(P::MarkLig {
+                marks: m,
+                ligatures,
+                ..
+            }) => {
+                marks(&m)
+                    && (0..ligatures.len().min(N)).all(|i| ok(ligatures.get(i), |x| matrix(&x)))
+            }
+            Ok(P::Context(c)) => context(&c),
+            Ok(P::ChainContext(c)) => chain(&c),
+        })
+    }
+
+    pub fn gdef_walks(data: &[u8]) -> bool {
+        let Ok(t) = gdef::Gdef::new(data) else {
+            return false;
+        };
+        let _ = (
+            t.item_var_store_offset(),
+            gdef::is_blocklisted(data.len(), 0, 0),
+        );
+        ok(t.glyph_class_def(), |c| {
+            query_class_def(&c);
+            true
+        }) && t.mark_attach_class_def().is_ok()
+            && ok(t.attach_list(), |a| {
+                let _ = a.points_of(GlyphId(1));
+                a.coverage().is_ok() && (0..a.len().min(N)).all(|i| a.points(i).is_ok())
+            })
+            && ok(t.lig_caret_list(), |l| {
+                l.coverage().is_ok()
+                    && (0..l.len().min(N)).all(|i| {
+                        ok(l.lig_glyph(i), |g| {
+                            (0..g.len().min(N)).all(|k| g.caret(k).is_ok())
+                        })
+                    })
+            })
+            && ok(t.mark_glyph_sets(), |s| {
+                let _ = s.covers(0, GlyphId(1));
+                (0..s.len().min(N)).all(|i| s.coverage(i).is_ok())
+            })
+    }
+}
+
+/// A GDEF table: validator invariants and queries.
+pub fn check_gdef(data: &[u8]) {
+    let error = has_error(|r| sofel_read::gdef::validate(data, r));
+    assert!(
+        error || layout::gdef_walks(data),
+        "a GDEF offset cannot be followed without an Error"
+    );
+}
+
+/// The first two bytes give the number of GDEF mark glyph sets; the rest
+/// is a GSUB table.
+pub fn check_gsub(input: &[u8]) {
+    let Some((n, data)) = input.split_first_chunk::<2>() else {
+        return;
+    };
+    let sets = Some(u16::from_be_bytes(*n));
+    let error = has_error(|r| sofel_read::gsub::validate(data, sets, r));
+    assert!(
+        error || layout::gsub_walks(data),
+        "a GSUB offset cannot be followed without an Error"
+    );
+}
+
+/// As [`check_gsub`], for GPOS.
+pub fn check_gpos(input: &[u8]) {
+    let Some((n, data)) = input.split_first_chunk::<2>() else {
+        return;
+    };
+    let sets = Some(u16::from_be_bytes(*n));
+    let error = has_error(|r| sofel_read::gpos::validate(data, sets, r));
+    assert!(
+        error || layout::gpos_walks(data),
+        "a GPOS offset cannot be followed without an Error"
+    );
+}

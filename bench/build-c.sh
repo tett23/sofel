@@ -50,12 +50,12 @@ for f in \
   base/ftsystem.c base/ftinit.c base/ftdebug.c base/ftbase.c \
   base/ftbbox.c base/ftglyph.c base/ftbitmap.c base/ftmm.c \
   base/fttype1.c base/ftgasp.c base/ftbdf.c base/ftcid.c base/ftpfr.c \
-  base/ftwinfnt.c base/ftfstype.c \
+  base/ftwinfnt.c base/ftfstype.c base/ftotval.c \
   sfnt/sfnt.c truetype/truetype.c cff/cff.c cid/type1cid.c \
   type1/type1.c type42/type42.c pfr/pfr.c winfonts/winfnt.c \
   pcf/pcf.c bdf/bdf.c psaux/psaux.c psnames/psnames.c \
   pshinter/pshinter.c autofit/autofit.c smooth/smooth.c \
-  raster/raster.c gzip/ftgzip.c lzw/ftlzw.c
+  raster/raster.c gzip/ftgzip.c lzw/ftlzw.c otvalid/otvalid.c
 do
   # shellcheck disable=SC2086 # $cc and $flags are word lists
   $cc $flags -w -DFT2_BUILD_LIBRARY '-DFT_CONFIG_MODULES_H=<ftmodule.h>' \
