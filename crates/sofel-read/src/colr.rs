@@ -286,10 +286,37 @@ impl<'a> Colr<'a> {
         self.clip_record(i)
             .and_then(|(_, _, off)| self.clip_box_at(off))
     }
+    /// Opens the optional DeltaSetIndexMap (ADR 0027).
+    /// Null offsets return `None`; malformed non-null maps return an error.
+    pub fn var_index_map(
+        &self,
+    ) -> Result<Option<crate::delta_set_index_map::DeltaSetIndexMap<'a>>, ReadError> {
+        if self.var_index_map == 0 {
+            return Ok(None);
+        }
+        let data = crate::be::tail_at(self.data, crate::be::to_usize(self.var_index_map))
+            .ok_or(ReadError::OutOfBounds)?;
+        crate::delta_set_index_map::DeltaSetIndexMap::new(data).map(Some)
+    }
+
     /// The offset of the DeltaSetIndexMap (0 for none).
     pub fn var_index_map_offset(&self) -> u32 {
         self.var_index_map
     }
+    /// Opens the optional ItemVariationStore (ADR 0027).
+    /// Null offsets return `None`; malformed non-null stores return an error.
+    pub fn variation_store(
+        &self,
+    ) -> Result<Option<crate::item_variation::ItemVariationStore<'a>>, ReadError> {
+        let offset = self.var_store_offset();
+        if offset == 0 {
+            return Ok(None);
+        }
+        let data = crate::be::tail_at(self.data, crate::be::to_usize(offset))
+            .ok_or(ReadError::OutOfBounds)?;
+        crate::item_variation::ItemVariationStore::new(data).map(Some)
+    }
+
     /// The offset of the ItemVariationStore (0 for none).
     pub fn var_store_offset(&self) -> u32 {
         self.var_store
@@ -467,6 +494,23 @@ pub fn validate(
                     available: to_u32(data.len()),
                 },
             ),
+        }
+    }
+    crate::validate::variation_store(data, colr.var_store_offset(), 30, TAG, None, report);
+    let offset = colr.var_index_map_offset();
+    if offset != 0 {
+        if let Some(child) = be::tail_at(data, to_usize(offset)) {
+            crate::delta_set_index_map::validate(child, TAG, offset, report);
+        } else {
+            report(Diagnostic::new(
+                TAG,
+                26,
+                Kind::OffsetOutOfBounds {
+                    offset,
+                    length: 0,
+                    available: to_u32(data.len()),
+                },
+            ));
         }
     }
 }

@@ -8,12 +8,15 @@ use sofel_read::hhea::Hhea;
 use sofel_read::hmtx::Hmtx;
 use sofel_read::maxp::Maxp;
 use sofel_read::sfnt::{FontFile, Sfnt};
+use sofel_read::feature_variations::FeatureVariations;
+use sofel_read::gvar::Gvar;
 use sofel_read::name::Name;
 use sofel_read::os2::Os2;
 use sofel_read::post::Post;
 use sofel_read::vorg::Vorg;
 use sofel_read::{
-    CountWidth, Diagnostic, GlyphId, Severity, base, cmap, head, hhea, hmtx, maxp, name, os2, post, validate, vorg,
+    CountWidth, Diagnostic, GlyphId, Severity, Tag, base, cmap, feature_variations, gvar,
+    head, hhea, hmtx, maxp, name, os2, post, validate, vorg,
 };
 
 fn has_error(f: impl FnOnce(&mut dyn FnMut(Diagnostic))) -> bool {
@@ -112,6 +115,52 @@ fn check_sfnt(s: &Sfnt<'_>) {
     validate::sfnt(s, &mut |_| {});
     for r in s.records() {
         let _ = r.data(s.file());
+    }
+}
+
+/// A standalone packed gvar decoder. The prefix selects the table format
+/// and a bounded point count; remaining bytes are an arbitrary table.
+pub fn check_gvar(input: &[u8]) {
+    let Some((prefix, data)) = input.split_first_chunk::<3>() else { return };
+    let tag = if prefix[0] & 1 == 0 { gvar::TAG } else { gvar::GVAR_TAG };
+    let points = usize::from(u16::from_be_bytes([prefix[1], prefix[2]])).min(4096);
+    gvar::validate_with_points(data, tag, None, None, |_| Some(points), &mut |_| {});
+    if let Ok(table) = Gvar::new(data, tag) {
+        for glyph in 0..table.glyph_count().min(32) {
+            if let Some(glyph_data) = table.glyph_data(glyph) {
+                let shared = glyph_data.shared_points();
+                for tuple in 0..glyph_data.tuple_count().min(32) {
+                    if let Some(tuple_data) = glyph_data.tuple(tuple) {
+                        if let Some((x, y)) = tuple_data.deltas(points, shared) {
+                            for delta in x.iter() { let _ = delta; }
+                            for delta in y.iter() { let _ = delta; }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// A standalone FeatureVariations condition-tree reader and validator.
+pub fn check_feature_variations(data: &[u8]) {
+    feature_variations::validate(data, Tag::new(b"GSUB"), 0, None, &mut |_| {});
+    if let Ok(table) = FeatureVariations::new(data) {
+        for i in 0..table.len().min(32) {
+            if let Some(record) = table.record(i) {
+                if let Ok(Some(set)) = record.conditions() {
+                    for j in 0..set.len().min(32) {
+                        if let Ok(Some(condition)) = set.condition(j) {
+                            let _ = condition.axis_range();
+                            let _ = condition.value();
+                            for k in 0..condition.children_len().unwrap_or(0).min(32) {
+                                let _ = condition.child(k);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
