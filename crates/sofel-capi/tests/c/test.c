@@ -7,6 +7,7 @@
  * computes with the Rust API.
  */
 
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -2098,6 +2099,14 @@ static void check_subset_declarations(void) {
   int32_t (*clear_map)(sofel_subset_input_t *) = sofel_subset_input_clear_glyph_mapping;
   int32_t (*get_axis)(const sofel_subset_input_t *, uint32_t, float *, float *, float *) =
       sofel_subset_input_get_axis_range;
+  int32_t (*pin_all)(sofel_subset_input_t *, const sofel_font_t *) =
+      sofel_subset_input_pin_all_axes_to_default;
+  int32_t (*pin_default)(sofel_subset_input_t *, const sofel_font_t *, uint32_t) =
+      sofel_subset_input_pin_axis_to_default;
+  int32_t (*pin_location)(sofel_subset_input_t *, const sofel_font_t *, uint32_t, float) =
+      sofel_subset_input_pin_axis_location;
+  int32_t (*set_axis)(sofel_subset_input_t *, const sofel_font_t *, uint32_t, float, float,
+                      float) = sofel_subset_input_set_axis_range;
   int32_t (*override_name)(sofel_subset_input_t *, uint16_t, uint16_t, uint16_t, uint16_t,
                            const char *, size_t) = sofel_subset_input_override_name_table;
   int32_t (*to_args)(const sofel_subset_input_t *, char *, size_t, size_t *) =
@@ -2142,6 +2151,8 @@ static void check_subset_declarations(void) {
       (const void *)plan_count,    (const void *)old_to_new,    (const void *)new_to_old,
       (const void *)unicode_to_old, (const void *)old_to_news,  (const void *)new_to_olds,
       (const void *)unicode_to_olds, (const void *)subset,      (const void *)serialize,
+      (const void *)pin_all,       (const void *)pin_default,   (const void *)pin_location,
+      (const void *)set_axis,
   };
   size_t i;
   for (i = 0; i < COUNT(all); i++) CHECK(all[i] != NULL);
@@ -2437,6 +2448,77 @@ static void test_golem_subset(void) {
   }
 }
 
+/* The axis functions on a variable font of the test data: the ranges
+ * the Rust API sets, the errors, and the subset with every axis pinned
+ * to its default. Skipped without the test data unless
+ * SOFEL_REQUIRE_TESTDATA is set. */
+static void test_subset_axes(const sofel_font_t *static_font) {
+  const uint32_t wght = SOFEL_TAG('w', 'g', 'h', 't');
+  size_t len = 0, i;
+  int32_t e = 12345;
+  sofel_subset_input_t *in = NULL;
+  sofel_bytes_t out = {NULL, 0};
+  float v[3] = {7, 7, 7};
+  uint32_t bits[3];
+  uint8_t *data = read_testdata(AXIS_FONT, &len);
+  sofel_font_t *font;
+
+  /* A font without fvar has no axes: nothing changes. */
+  CHECK(sofel_subset_input_create(&in) == SOFEL_OK);
+  CHECK(sofel_subset_input_pin_all_axes_to_default(in, static_font) == SOFEL_ERROR_NOT_FOUND);
+  CHECK(sofel_subset_input_pin_axis_to_default(in, static_font, wght) == SOFEL_ERROR_NOT_FOUND);
+  CHECK(sofel_subset_input_get_axis_range(in, wght, &v[0], &v[1], &v[2]) ==
+        SOFEL_ERROR_NOT_FOUND);
+  CHECK(sofel_subset_input_pin_all_axes_to_default(NULL, static_font) == SOFEL_ERROR_NULL);
+  CHECK(sofel_subset_input_pin_all_axes_to_default(in, NULL) == SOFEL_ERROR_NULL);
+  CHECK(sofel_subset_input_set_axis_range(in, NULL, wght, 1, 2, 1) == SOFEL_ERROR_NULL);
+  sofel_subset_input_destroy(in);
+
+  if (data == NULL) {
+    fprintf(stderr, "%s: no test data; axes skipped\n", AXIS_FONT);
+    CHECK(getenv("SOFEL_REQUIRE_TESTDATA") == NULL);
+    return;
+  }
+  font = sofel_font_create(data, len, 0, &e);
+  CHECK(e == SOFEL_OK);
+  for (i = 0; i < 3; i++) {
+    int32_t s;
+    CHECK(sofel_subset_input_create(&in) == SOFEL_OK);
+    if (i == 0)
+      s = sofel_subset_input_pin_axis_to_default(in, font, wght);
+    else if (i == 1)
+      s = sofel_subset_input_pin_axis_location(in, font, wght, 1000);
+    else
+      s = sofel_subset_input_set_axis_range(in, font, wght, NAN, 500, NAN);
+    CHECK(s == SOFEL_OK);
+    CHECK(sofel_subset_input_get_axis_range(in, wght, &v[0], &v[1], &v[2]) == SOFEL_OK);
+    memcpy(bits, v, sizeof bits);
+    CHECK(memcmp(bits, axis_ranges[i], sizeof bits) == 0);
+    sofel_subset_input_destroy(in);
+  }
+
+  /* No such axis; a minimum above the maximum. The input is unchanged. */
+  CHECK(sofel_subset_input_create(&in) == SOFEL_OK);
+  CHECK(sofel_subset_input_pin_axis_location(in, font, SOFEL_TAG('Z', 'Z', 'Z', 'Z'), 1) ==
+        SOFEL_ERROR_NOT_FOUND);
+  CHECK(sofel_subset_input_set_axis_range(in, font, SOFEL_TAG('Z', 'Z', 'Z', 'Z'), 1, 2, 1) ==
+        SOFEL_ERROR_NOT_FOUND);
+  CHECK(sofel_subset_input_set_axis_range(in, font, wght, 700, 300, NAN) ==
+        SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_subset_input_get_axis_range(in, wght, &v[0], &v[1], &v[2]) ==
+        SOFEL_ERROR_NOT_FOUND);
+
+  /* Every axis pinned to its default: the Rust API's bytes. */
+  CHECK(sofel_subset_input_set_add_range(in, SOFEL_SUBSET_SET_UNICODES, 0x41, 0x43) == SOFEL_OK);
+  CHECK(sofel_subset_input_pin_all_axes_to_default(in, font) == SOFEL_OK);
+  CHECK(sofel_subset(font, in, &out) == SOFEL_OK);
+  CHECK(out.len == axis_pinned_len && fnv(out.data, out.len) == axis_pinned_fnv);
+  sofel_bytes_destroy(&out);
+  sofel_subset_input_destroy(in);
+  sofel_font_destroy(font);
+  free(data);
+}
+
 int main(void) {
   int32_t e = 12345;
   sofel_font_t *font;
@@ -2482,6 +2564,7 @@ int main(void) {
   test_subset_plans(font);
   test_serialize_objects();
   test_golem_subset();
+  test_subset_axes(font);
 #if !defined(__wasi__)
   test_threads(font);
 #endif

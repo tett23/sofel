@@ -453,6 +453,115 @@ pub unsafe extern "C" fn sofel_subset_input_get_axis_range(
     })())
 }
 
+/// Replaces the input with `f` of it and the font, or leaves it
+/// unchanged with `err` when `f` gives `None`.
+fn change_axes(
+    input: Option<&mut SofelSubsetInput>,
+    font: Option<&SofelFont>,
+    err: impl FnOnce(&Input, &SofelFont) -> i32,
+    f: impl FnOnce(&Input, &SofelFont) -> Option<Input>,
+) -> Status {
+    let (i, font) = (some(input)?, some(font)?);
+    i.input = f(&i.input, font).ok_or_else(|| err(&i.input, font))?;
+    Ok(())
+}
+
+/// `sofel_subset_input_pin_all_axes_to_default`.
+///
+/// # Safety
+///
+/// `input` is NULL or a live input that no other thread uses; `font` is
+/// NULL or a live font.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_subset_input_pin_all_axes_to_default(
+    input: *mut SofelSubsetInput,
+    font: *const SofelFont,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (input, font) = unsafe { (w(input), r(font)) };
+    status(change_axes(
+        input,
+        font,
+        |_, _| ERROR_NOT_FOUND,
+        |i, f| i.with_all_axes_pinned_to_default(&f.font),
+    ))
+}
+
+/// `sofel_subset_input_pin_axis_to_default`.
+///
+/// # Safety
+///
+/// `input` is NULL or a live input that no other thread uses; `font` is
+/// NULL or a live font.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_subset_input_pin_axis_to_default(
+    input: *mut SofelSubsetInput,
+    font: *const SofelFont,
+    tag: u32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (input, font) = unsafe { (w(input), r(font)) };
+    status(change_axes(
+        input,
+        font,
+        |_, _| ERROR_NOT_FOUND,
+        |i, f| i.with_axis_pinned_to_default(Tag::from_u32(tag), &f.font),
+    ))
+}
+
+/// `sofel_subset_input_pin_axis_location`.
+///
+/// # Safety
+///
+/// `input` is NULL or a live input that no other thread uses; `font` is
+/// NULL or a live font.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_subset_input_pin_axis_location(
+    input: *mut SofelSubsetInput,
+    font: *const SofelFont,
+    tag: u32,
+    value: f32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (input, font) = unsafe { (w(input), r(font)) };
+    status(change_axes(
+        input,
+        font,
+        |_, _| ERROR_NOT_FOUND,
+        |i, f| i.with_axis_pinned(Tag::from_u32(tag), value, &f.font),
+    ))
+}
+
+/// `sofel_subset_input_set_axis_range`.
+///
+/// # Safety
+///
+/// `input` is NULL or a live input that no other thread uses; `font` is
+/// NULL or a live font.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_subset_input_set_axis_range(
+    input: *mut SofelSubsetInput,
+    font: *const SofelFont,
+    tag: u32,
+    min: f32,
+    max: f32,
+    def: f32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (input, font) = unsafe { (w(input), r(font)) };
+    let tag = Tag::from_u32(tag);
+    status(change_axes(
+        input,
+        font,
+        // An axis of the font: the range was refused (min above max).
+        |i, f| match i.with_axis_pinned_to_default(tag, &f.font) {
+            Some(_) => ERROR_INVALID_ARGUMENT,
+            None => ERROR_NOT_FOUND,
+        },
+        |i, f| i.with_axis_range(tag, Some(min), Some(max), Some(def), &f.font),
+    ))
+}
+
 /// `sofel_subset_input_override_name_table`.
 ///
 /// # Safety

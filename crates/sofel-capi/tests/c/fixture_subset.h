@@ -15,3 +15,12 @@ static const struct golem_case golem_cases[] = {
   {"harfbuzz/test/subset/data/fonts/Roboto-Regular.ttf", 42, golem_0_glyphs, 19188, 0x5a6096c4fcd9bf68u},
   {"harfbuzz/test/subset/data/fonts/SourceHanSans-Regular_subset.otf", 1918, golem_1_glyphs, 1103548, 0x873bd290ec5d942eu},
 };
+
+#define AXIS_FONT "harfbuzz/test/subset/data/fonts/Roboto-Variable.ABC.ttf"
+static const uint32_t axis_ranges[3][3] = {
+  {0x43c80000u, 0x43c80000u, 0x43c80000u},
+  {0x44610000u, 0x44610000u, 0x44610000u},
+  {0x42c80000u, 0x43c80000u, 0x43fa0000u},
+};
+static const size_t axis_pinned_len = 6780;
+static const uint64_t axis_pinned_fnv = 0x9f1444abcf787073u;

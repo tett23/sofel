@@ -163,7 +163,3 @@ sofel_subset::RangeSet::max The last member, found with sofel_subset_input_set_n
 sofel_subset::RangeSet::remove_range A loop of sofel_subset_input_set_remove over the members found with sofel_subset_input_set_next (ADR 0022).
 sofel_subset::RangeSet::truncate As sofel_subset::RangeSet::remove_range, for every member from a value on (ADR 0022).
 sofel_subset::RangeSet::union A loop of sofel_subset_input_set_add over the other set's members (ADR 0022).
-sofel_subset::Input::with_all_axes_pinned_to_default Its C function, sofel_subset_input_pin_all_axes_to_default, comes in the next commit (ADR 0022).
-sofel_subset::Input::with_axis_pinned_to_default Its C function, sofel_subset_input_pin_axis_to_default, comes in the next commit (ADR 0022).
-sofel_subset::Input::with_axis_pinned Its C function, sofel_subset_input_pin_axis_location, comes in the next commit (ADR 0022).
-sofel_subset::Input::with_axis_range Its C function, sofel_subset_input_set_axis_range, comes in the next commit (ADR 0022).

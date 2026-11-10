@@ -607,6 +607,8 @@ sofel_subset_input_create(&input); /* HarfBuzz の既定の値 */
 for (size_t i = 0; i < n; i++)
   sofel_subset_input_set_add(input, SOFEL_SUBSET_SET_GLYPHS, gids[i]);
 sofel_subset_input_set_flags(input, SOFEL_SUBSET_FLAGS_RETAIN_GIDS);
+/* 可変フォントなら既定のインスタンスにする（軸が無ければ SOFEL_ERROR_NOT_FOUND） */
+sofel_subset_input_pin_all_axes_to_default(input, font);
 sofel_bytes_t out;
 if (sofel_subset(font, input, &out) == SOFEL_OK) {
   /* out.data, out.len: hb-subset と同じバイト列 */

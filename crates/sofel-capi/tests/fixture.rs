@@ -1959,7 +1959,58 @@ fn generate_subset() -> Option<String> {
         "static const struct golem_case golem_cases[] = {{\n{cases}}};\n"
     )
     .unwrap();
+    axis_cases(&mut out, &dir.join(AXIS_FONT))?;
     Some(out)
+}
+
+/// The variable font of the C tests of the axis functions.
+const AXIS_FONT: &str = "harfbuzz/test/subset/data/fonts/Roboto-Variable.ABC.ttf";
+
+/// The axis functions of the C tests (ADR 0022) on [`AXIS_FONT`]: the
+/// ranges of `wght` after pinning it to its default, pinning it at 1000
+/// and restricting its maximum to 500, as the bits of min, default and
+/// max; and the subset of U+0041..U+0043 with every axis pinned to its
+/// default.
+fn axis_cases(out: &mut String, path: &std::path::Path) -> Option<()> {
+    use sofel_subset::{AxisRange, Input, SetKind};
+    let bytes = std::fs::read(path).ok()?;
+    let font = Font::new(&bytes, 0).unwrap();
+    let wght = sofel_font::read::Tag::new(b"wght");
+    let inputs = [
+        Input::new().with_axis_pinned_to_default(wght, &font),
+        Input::new().with_axis_pinned(wght, 1000.0, &font),
+        Input::new().with_axis_range(wght, None, Some(500.0), None, &font),
+    ];
+    let rows: Vec<String> = inputs
+        .iter()
+        .map(|i| {
+            let AxisRange { min, default, max } = i.as_ref().unwrap().axis_range(wght).unwrap();
+            format!(
+                "{{{:#x}u, {:#x}u, {:#x}u}}",
+                min.to_bits(),
+                default.to_bits(),
+                max.to_bits()
+            )
+        })
+        .collect();
+    let input = Input::new()
+        .map_set(SetKind::Unicodes, |s| s.add_range(0x41, 0x43))
+        .with_all_axes_pinned_to_default(&font)
+        .unwrap();
+    let subset = sofel_subset::subset(&font, &input).unwrap();
+    write!(
+        out,
+        "\n#define AXIS_FONT {}\n\
+         static const uint32_t axis_ranges[3][3] = {{\n  {},\n}};\n\
+         static const size_t axis_pinned_len = {};\n\
+         static const uint64_t axis_pinned_fnv = {:#x}u;\n",
+        c_string(AXIS_FONT),
+        rows.join(",\n  "),
+        subset.len(),
+        fnv(&subset)
+    )
+    .unwrap();
+    Some(())
 }
 
 /// `tests/c/fixture_subset.h` is current; skipped without the test data

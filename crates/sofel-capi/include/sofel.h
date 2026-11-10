@@ -2800,6 +2800,50 @@ int32_t sofel_subset_input_get_axis_range(const sofel_subset_input_t *input, uin
                                           float *min, float *def, float *max);
 
 /*
+ * Pins every axis of `font` (its fvar) to its default value.
+ * SOFEL_ERROR_NOT_FOUND, with the input unchanged, when the font has no
+ * axes. Subsetting runs only when every axis is pinned to its default or
+ * no axis is set; other axis settings make plans fail with
+ * SOFEL_ERROR_UNSUPPORTED.
+ *
+ * Rust: sofel_subset::Input::with_all_axes_pinned_to_default
+ * HarfBuzz: hb_subset_input_pin_all_axes_to_default
+ * FreeType: none
+ */
+int32_t sofel_subset_input_pin_all_axes_to_default(sofel_subset_input_t *input,
+                                                   const sofel_font_t *font);
+
+/*
+ * Pins axis `tag` of `font` to its default value (pin_axis_to_default)
+ * or to `value` clamped to the axis range (pin_axis_location).
+ * SOFEL_ERROR_NOT_FOUND, with the input unchanged, when the font has no
+ * such axis.
+ *
+ * Rust: sofel_subset::Input::with_axis_pinned_to_default, sofel_subset::Input::with_axis_pinned
+ * HarfBuzz: hb_subset_input_pin_axis_to_default, hb_subset_input_pin_axis_location
+ * FreeType: none
+ */
+int32_t sofel_subset_input_pin_axis_to_default(sofel_subset_input_t *input,
+                                               const sofel_font_t *font, uint32_t tag);
+int32_t sofel_subset_input_pin_axis_location(sofel_subset_input_t *input,
+                                             const sofel_font_t *font, uint32_t tag, float value);
+
+/*
+ * Restricts axis `tag` of `font` to `min`..`max` with default `def`; NaN
+ * takes the axis's own value. The minimum and maximum are clamped to
+ * the axis range and the default to the new range.
+ * SOFEL_ERROR_NOT_FOUND when the font has no such axis,
+ * SOFEL_ERROR_INVALID_ARGUMENT when `min` is above `max`; the input is
+ * then unchanged.
+ *
+ * Rust: sofel_subset::Input::with_axis_range
+ * HarfBuzz: hb_subset_input_set_axis_range
+ * FreeType: none
+ */
+int32_t sofel_subset_input_set_axis_range(sofel_subset_input_t *input, const sofel_font_t *font,
+                                          uint32_t tag, float min, float max, float def);
+
+/*
  * Overrides the name record (platform_id, encoding_id, language_id,
  * name_id) with `text` (UTF-8; `len` bytes, not NUL-terminated), or
  * removes the record when `len` is 0 (`text` may then be NULL).
