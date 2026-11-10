@@ -23,7 +23,7 @@ use std::fmt::Write as _;
 use build::*;
 use sofel_font::read::sfnt::FontFile;
 use sofel_font::read::{DetailValue, GlyphId, Severity, Tag, validate};
-use sofel_font::{Font, FontError};
+use sofel_font::{Font, FontError, GlyphExtents, HbScale, MetricsTag};
 use sofel_geom::{Command, Fixed, FnPen, Matrix, Pen, Point};
 use sofel_outline::{OutlineError, Scale, Scratch, draw, load};
 use sofel_raster::{FillRule, RasterError, Rasterizer, RenderOptions, pixel_box};
@@ -166,6 +166,88 @@ fn invalid_tables() -> Vec<(&'static [u8; 4], Vec<u8>)> {
     tables.push((b"hhea", hhea(40)));
     tables.sort_by_key(|(t, _)| **t);
     tables
+}
+
+/// `font_tables()` with OS/2, vhea, vmtx and post, for the metrics
+/// (ADR 0016). No VORG, so that the vertical origin comes from glyf's
+/// phantom points.
+fn metrics_tables() -> Vec<(&'static [u8; 4], Vec<u8>)> {
+    let n = glyphs().len() as u16;
+    let long: Vec<(u16, i16)> = (0..n).map(|g| (1000 + 7 * g, 30 + g as i16)).collect();
+    let mut tables = font_tables();
+    tables.push((b"OS/2", os2(Os2Spec::default())));
+    tables.push((b"vhea", hhea(n)));
+    tables.push((b"vmtx", hmtx(&long, &[])));
+    tables.push((b"post", post_header(0x0003_0000).done()));
+    tables.sort_by_key(|(t, _)| **t);
+    tables
+}
+
+fn ext4(e: GlyphExtents) -> [i32; 4] {
+    [e.x_bearing, e.y_bearing, e.width, e.height]
+}
+
+/// The metrics cases at one scale (`None`: the sofel_font_* functions).
+fn metrics_cases(out: &mut String, prefix: &str, font: &Font<'_>, scale: HbScale) {
+    let boxes = |g: GlyphId| font.glyf_extents(g);
+    let h = scale.h_extents(font);
+    let v = scale.v_extents(font);
+    ints(
+        out,
+        "int32_t",
+        &format!("{prefix}_h_extents"),
+        &[h.ascender, h.descender, h.line_gap],
+    );
+    ints(
+        out,
+        "int32_t",
+        &format!("{prefix}_v_extents"),
+        &[v.ascender, v.descender, v.line_gap],
+    );
+    let glyphs = 0..font.num_glyphs() + 2;
+    let rows: Vec<String> = glyphs
+        .map(|g| {
+            let g = GlyphId(g);
+            let (ox, oy) = scale.v_origin(font, g, boxes);
+            let (es, e) = match scale.glyf_extents(font, g) {
+                Some(e) => (OK, ext4(e)),
+                None => (NOT_FOUND, [0; 4]),
+            };
+            format!(
+                "{{{}, {}, {}, {{{ox}, {oy}}}, {es}, {{{}, {}, {}, {}}}}}",
+                g.0,
+                scale.h_advance(font, g),
+                scale.v_advance(font, g),
+                e[0],
+                e[1],
+                e[2],
+                e[3]
+            )
+        })
+        .collect();
+    writeln!(
+        out,
+        "static const struct vglyph_case {prefix}_glyphs[] = {{{}}};",
+        rows.join(", ")
+    )
+    .unwrap();
+    let rows: Vec<String> = MetricsTag::ALL
+        .iter()
+        .map(|&t| {
+            let (s, val) = match scale.metrics_position(font, t) {
+                Some(v) => (OK, v),
+                None => (NOT_FOUND, 0),
+            };
+            let fb = scale.metrics_position_with_fallback(font, t, boxes);
+            format!("{{0x{:08x}u, {s}, {val}, {fb}}}", t.tag().to_u32())
+        })
+        .collect();
+    writeln!(
+        out,
+        "static const struct metric_case {prefix}_metrics[] = {{{}}};",
+        rows.join(", ")
+    )
+    .unwrap();
 }
 
 fn no_head_tables() -> Vec<(&'static [u8; 4], Vec<u8>)> {
@@ -328,6 +410,10 @@ fn generate() -> String {
          struct pixel_box_case { int32_t cbox[4]; int32_t box[4]; int32_t shift[2]; };\n\
          struct fix_case { int32_t a; int32_t b; int32_t c; int32_t mul_fix; int32_t div_fix;\n\
          \x20 int32_t mul_div; int32_t mul_div_no_round; int32_t vector_length; };\n\
+         struct vglyph_case { uint32_t glyph; int32_t h_advance; int32_t v_advance; int32_t origin[2];\n\
+         \x20 int32_t extents_status; int32_t extents[4]; };\n\
+         struct metric_case { uint32_t tag; int32_t status; int32_t value; int32_t fallback; };\n\
+         struct os2_case { int32_t field; int32_t status; int64_t value; };\n\
          struct diagnostic_case { int64_t font; uint32_t table; uint32_t offset; int32_t severity;\n\
          \x20 const char *kind; const char *message; const char *details; };\n\
          struct open_case { const uint8_t *data; size_t len; uint32_t index; int32_t status; };\n\
@@ -680,6 +766,68 @@ fn generate() -> String {
     )
     .unwrap();
 
+    // Metrics (ADR 0016).
+    let metrics_data = sfnt(&metrics_tables());
+    bytes(&mut out, "metrics_font_data", &metrics_data);
+    let mfont = Font::new(&metrics_data, 0).unwrap();
+    writeln!(
+        out,
+        "#define FIXTURE_FS_TYPE {}\n#define FIXTURE_HB_UPEM {}",
+        mfont.fs_type(),
+        mfont.hb_units_per_em()
+    )
+    .unwrap();
+    let os2_view = mfont.os2().unwrap();
+    let rows: Vec<String> = (-1..=48)
+        .map(|field: i32| {
+            let o = &os2_view;
+            let v: Option<i64> = match field {
+                0 => Some(o.version().into()),
+                2 => Some(o.us_weight_class().into()),
+                4 => Some(o.fs_type().into()),
+                20 => Some(o.ach_vend_id().to_u32().into()),
+                21 => Some(o.fs_selection().into()),
+                24 => Some(o.s_typo_ascender().into()),
+                32 => o.s_cap_height().map(i64::from),
+                37 => o.us_upper_optical_point_size().map(i64::from),
+                39 => Some(o.panose()[1].into()),
+                _ => return String::new(),
+            };
+            match v {
+                Some(v) => format!("{{{field}, {OK}, {v}}}"),
+                None => format!("{{{field}, {NOT_FOUND}, 0}}"),
+            }
+        })
+        .filter(|r| !r.is_empty())
+        .chain(["{-1, -12, 0}".to_string(), "{48, -12, 0}".to_string()])
+        .collect();
+    writeln!(
+        out,
+        "static const struct os2_case os2_cases[] = {{{}}};",
+        rows.join(", ")
+    )
+    .unwrap();
+    metrics_cases(&mut out, "unscaled", &mfont, HbScale::unscaled(&mfont));
+    let scale = HbScale::for_font(&mfont, 768, -1536);
+    metrics_cases(&mut out, "scaled", &mfont, scale);
+    let ems: Vec<String> = [-1000, -3, 0, 3, 501, 1000]
+        .iter()
+        .map(|&v| format!("{{{v}, {}, {}}}", scale.em_scale_x(v), scale.em_scale_y(v)))
+        .collect();
+    writeln!(
+        out,
+        "#define SCALE_X 768\n#define SCALE_Y (-1536)\n\
+         static const struct {{ int32_t v; int32_t x; int32_t y; }} em_cases[] = {{{}}};",
+        ems.join(", ")
+    )
+    .unwrap();
+    let e = scale.scale_glyph_extents(GlyphExtents {
+        x_bearing: 30,
+        y_bearing: 700,
+        width: 401,
+        height: -703,
+    });
+    ints(&mut out, "int32_t", "scaled_box", &ext4(e));
     unicode(&mut out);
 
     // Validation.

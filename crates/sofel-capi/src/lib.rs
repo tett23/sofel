@@ -18,9 +18,10 @@ use core::fmt::Write as _;
 use std::ffi::CString;
 
 use sofel_cli::glyph::RenderError;
+use sofel_font::read::os2::Os2;
 use sofel_font::read::sfnt::FontFile;
 use sofel_font::read::{DetailValue, Diagnostic, GlyphId, Severity, Tag, validate};
-use sofel_font::{Font, FontError};
+use sofel_font::{Font, FontError, GlyphExtents, HbScale, MetricsTag};
 use sofel_geom::{Fixed, Matrix, Pen, Point};
 use sofel_outline::{OutlineError, OutlineInfo, Scale, Scratch};
 use sofel_raster::{Bitmap, FillRule, PixelBox, RasterError, Rasterizer, RenderOptions};
@@ -493,6 +494,570 @@ pub unsafe extern "C" fn sofel_font_table(
     // SAFETY: the caller's conditions.
     let (font, data, len) = unsafe { (font_ref(font), w(data), w(len)) };
     status(font_table(font, tag, data, len))
+}
+
+// ------------------------------------------------------------- metrics
+
+/// `sofel_scale_t`: HarfBuzz's scale of a font.
+pub struct SofelScale {
+    scale: HbScale,
+}
+
+/// The value of an `SOFEL_OS2_*` field, `None` past the table's version.
+fn os2_field(o: &Os2<'_>, field: i32) -> Option<i64> {
+    let i = |v: i16| Some(i64::from(v));
+    let u = |v: u16| Some(i64::from(v));
+    let r = o.ul_unicode_range();
+    let c = o.ul_code_page_range();
+    match field {
+        0 => u(o.version()),
+        1 => i(o.x_avg_char_width()),
+        2 => u(o.us_weight_class()),
+        3 => u(o.us_width_class()),
+        4 => u(o.fs_type()),
+        5 => i(o.y_subscript_x_size()),
+        6 => i(o.y_subscript_y_size()),
+        7 => i(o.y_subscript_x_offset()),
+        8 => i(o.y_subscript_y_offset()),
+        9 => i(o.y_superscript_x_size()),
+        10 => i(o.y_superscript_y_size()),
+        11 => i(o.y_superscript_x_offset()),
+        12 => i(o.y_superscript_y_offset()),
+        13 => i(o.y_strikeout_size()),
+        14 => i(o.y_strikeout_position()),
+        15 => i(o.s_family_class()),
+        16..=19 => r
+            .get(usize::try_from(field.wrapping_sub(16)).ok()?)
+            .map(|&v| i64::from(v)),
+        20 => Some(i64::from(o.ach_vend_id().to_u32())),
+        21 => u(o.fs_selection()),
+        22 => u(o.us_first_char_index()),
+        23 => u(o.us_last_char_index()),
+        24 => i(o.s_typo_ascender()),
+        25 => i(o.s_typo_descender()),
+        26 => i(o.s_typo_line_gap()),
+        27 => u(o.us_win_ascent()),
+        28 => u(o.us_win_descent()),
+        29 | 30 => c?
+            .get(usize::try_from(field.wrapping_sub(29)).ok()?)
+            .map(|&v| i64::from(v)),
+        31 => o.sx_height().map(i64::from),
+        32 => o.s_cap_height().map(i64::from),
+        33 => o.us_default_char().map(i64::from),
+        34 => o.us_break_char().map(i64::from),
+        35 => o.us_max_context().map(i64::from),
+        36 => o.us_lower_optical_point_size().map(i64::from),
+        37 => o.us_upper_optical_point_size().map(i64::from),
+        38..=47 => o
+            .panose()
+            .get(usize::try_from(field.wrapping_sub(38)).ok()?)
+            .map(|&v| i64::from(v)),
+        _ => None,
+    }
+}
+
+fn font_os2(font: Option<&Font<'static>>, field: i32, value: Option<&mut i64>) -> Status {
+    let (font, value) = (some(font)?, some(value)?);
+    if !(0..=47).contains(&field) {
+        return Err(ERROR_INVALID_ARGUMENT);
+    }
+    let os2 = font.os2().ok_or(ERROR_NOT_FOUND)?;
+    *value = os2_field(&os2, field).ok_or(ERROR_NOT_FOUND)?;
+    Ok(())
+}
+
+/// `sofel_font_os2_field`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `value` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_os2_field(
+    font: *const SofelFont,
+    field: i32,
+    value: *mut i64,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, value) = unsafe { (font_ref(font), w(value)) };
+    status(font_os2(font, field, value))
+}
+
+/// `sofel_font_fs_type`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `fs_type` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_fs_type(font: *const SofelFont, fs_type: *mut u16) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, fs_type) = unsafe { (font_ref(font), w(fs_type)) };
+    status(get(font, fs_type, |f| f.fs_type()))
+}
+
+/// `sofel_font_hb_units_per_em`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `upem` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_hb_units_per_em(font: *const SofelFont, upem: *mut u16) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, upem) = unsafe { (font_ref(font), w(upem)) };
+    status(get(font, upem, |f| f.hb_units_per_em()))
+}
+
+fn extents3(e: sofel_font::FontExtents) -> [i32; 3] {
+    [e.ascender, e.descender, e.line_gap]
+}
+
+fn extents4(e: GlyphExtents) -> [i32; 4] {
+    [e.x_bearing, e.y_bearing, e.width, e.height]
+}
+
+/// The box of a glyph for the queries that need one: glyf for now (the
+/// layers of ADR 0021 and ADR 0023 come later).
+fn glyph_box<'f>(font: &'f Font<'_>) -> impl Fn(GlyphId) -> Option<GlyphExtents> + 'f {
+    |g| font.glyf_extents(g)
+}
+
+/// The scale of a `sofel_scale_t` pointer, or the default scale of the
+/// font for NULL.
+fn scale_of(scale: Option<&SofelScale>, font: &Font<'_>) -> HbScale {
+    scale.map_or_else(|| HbScale::unscaled(font), |s| s.scale)
+}
+
+/// `sofel_font_h_extents` and `sofel_scale_h_extents`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `extents` is NULL or writable for 3
+/// integers.
+unsafe fn h_or_v_extents(
+    scale: Option<&SofelScale>,
+    font: *const SofelFont,
+    extents: *mut i32,
+    vertical: bool,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, extents) = unsafe { (font_ref(font), ints::<3>(extents)) };
+    status(get(font, extents, |f| {
+        let s = scale_of(scale, f);
+        extents3(if vertical {
+            s.v_extents(f)
+        } else {
+            s.h_extents(f)
+        })
+    }))
+}
+
+/// `sofel_font_h_extents`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `extents` is NULL or writable for 3
+/// integers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_h_extents(font: *const SofelFont, extents: *mut i32) -> i32 {
+    // SAFETY: the caller's conditions.
+    unsafe { h_or_v_extents(None, font, extents, false) }
+}
+
+/// `sofel_font_v_extents`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `extents` is NULL or writable for 3
+/// integers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_v_extents(font: *const SofelFont, extents: *mut i32) -> i32 {
+    // SAFETY: the caller's conditions.
+    unsafe { h_or_v_extents(None, font, extents, true) }
+}
+
+/// `sofel_font_v_advance`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `advance` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_v_advance(
+    font: *const SofelFont,
+    glyph: u32,
+    advance: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, advance) = unsafe { (font_ref(font), w(advance)) };
+    status(get(font, advance, |f| f.v_advance(GlyphId(glyph))))
+}
+
+/// `sofel_font_v_origin`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `origin` is NULL or writable for 2
+/// integers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_v_origin(
+    font: *const SofelFont,
+    glyph: u32,
+    origin: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, origin) = unsafe { (font_ref(font), ints::<2>(origin)) };
+    status(get(font, origin, |f| {
+        let (x, y) = f.v_origin(GlyphId(glyph), glyph_box(f));
+        [x, y]
+    }))
+}
+
+/// `sofel_font_glyph_extents`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `extents` is NULL or writable for 4
+/// integers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_glyph_extents(
+    font: *const SofelFont,
+    glyph: u32,
+    extents: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, extents) = unsafe { (font_ref(font), ints::<4>(extents)) };
+    status(find(font, extents, |f| {
+        f.glyf_extents(GlyphId(glyph)).map(extents4)
+    }))
+}
+
+fn metrics_position(
+    scale: Option<&SofelScale>,
+    font: Option<&Font<'static>>,
+    tag: u32,
+    fallback: bool,
+    position: Option<&mut i32>,
+) -> Status {
+    let (font, position) = (some(font)?, some(position)?);
+    let tag = MetricsTag::from_tag(Tag::from_u32(tag)).ok_or(ERROR_INVALID_ARGUMENT)?;
+    let s = scale_of(scale, font);
+    *position = if fallback {
+        s.metrics_position_with_fallback(font, tag, glyph_box(font))
+    } else {
+        s.metrics_position(font, tag).ok_or(ERROR_NOT_FOUND)?
+    };
+    Ok(())
+}
+
+/// `sofel_font_metrics_position`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `position` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_metrics_position(
+    font: *const SofelFont,
+    tag: u32,
+    position: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, position) = unsafe { (font_ref(font), w(position)) };
+    status(metrics_position(None, font, tag, false, position))
+}
+
+/// `sofel_font_metrics_position_with_fallback`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `position` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_metrics_position_with_fallback(
+    font: *const SofelFont,
+    tag: u32,
+    position: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, position) = unsafe { (font_ref(font), w(position)) };
+    status(metrics_position(None, font, tag, true, position))
+}
+
+/// `sofel_scale_create`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `error` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_scale_create(
+    font: *const SofelFont,
+    x_scale: i32,
+    y_scale: i32,
+    error: *mut i32,
+) -> *mut SofelScale {
+    // SAFETY: the caller's conditions.
+    let (font, error) = unsafe { (font_ref(font), w(error)) };
+    let Some(error) = error else {
+        return core::ptr::null_mut();
+    };
+    match font {
+        None => {
+            *error = ERROR_NULL;
+            core::ptr::null_mut()
+        }
+        Some(f) => {
+            *error = OK;
+            Box::into_raw(Box::new(SofelScale {
+                scale: HbScale::for_font(f, x_scale, y_scale),
+            }))
+        }
+    }
+}
+
+/// `sofel_scale_destroy`.
+///
+/// # Safety
+///
+/// `scale` is NULL or from `sofel_scale_create`, not yet destroyed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_scale_destroy(scale: *mut SofelScale) {
+    if !scale.is_null() {
+        // SAFETY: the pointer came from Box::into_raw and is dropped once.
+        drop(unsafe { Box::from_raw(scale) });
+    }
+}
+
+/// `sofel_scale_em_scale_x` and `_y`.
+fn em_scale(scale: Option<&SofelScale>, v: i32, out: Option<&mut i32>, y: bool) -> Status {
+    let (scale, out) = (some(scale)?, some(out)?);
+    *out = if y {
+        scale.scale.em_scale_y(v)
+    } else {
+        scale.scale.em_scale_x(v)
+    };
+    Ok(())
+}
+
+/// `sofel_scale_em_scale_x`.
+///
+/// # Safety
+///
+/// `scale` is NULL or a live scale; `out` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_scale_em_scale_x(
+    scale: *const SofelScale,
+    v: i32,
+    out: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (scale, out) = unsafe { (r(scale), w(out)) };
+    status(em_scale(scale, v, out, false))
+}
+
+/// `sofel_scale_em_scale_y`.
+///
+/// # Safety
+///
+/// `scale` is NULL or a live scale; `out` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_scale_em_scale_y(
+    scale: *const SofelScale,
+    v: i32,
+    out: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (scale, out) = unsafe { (r(scale), w(out)) };
+    status(em_scale(scale, v, out, true))
+}
+
+/// `sofel_scale_glyph_extents`.
+///
+/// # Safety
+///
+/// `scale` is NULL or a live scale; `extents` is NULL or readable and
+/// writable for 4 integers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_scale_glyph_extents(
+    scale: *const SofelScale,
+    extents: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (scale, extents) = unsafe { (r(scale), ints::<4>(extents)) };
+    status((|| {
+        let (scale, e) = (some(scale)?, some(extents)?);
+        let [x_bearing, y_bearing, width, height] = *e;
+        *e = extents4(scale.scale.scale_glyph_extents(GlyphExtents {
+            x_bearing,
+            y_bearing,
+            width,
+            height,
+        }));
+        Ok(())
+    })())
+}
+
+/// `sofel_scale_h_extents`.
+///
+/// # Safety
+///
+/// `scale` is NULL or a live scale; `font` is NULL or a live font;
+/// `extents` is NULL or writable for 3 integers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_scale_h_extents(
+    scale: *const SofelScale,
+    font: *const SofelFont,
+    extents: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let Some(scale) = (unsafe { r(scale) }) else {
+        return ERROR_NULL;
+    };
+    // SAFETY: the caller's conditions.
+    unsafe { h_or_v_extents(Some(scale), font, extents, false) }
+}
+
+/// `sofel_scale_v_extents`.
+///
+/// # Safety
+///
+/// `scale` is NULL or a live scale; `font` is NULL or a live font;
+/// `extents` is NULL or writable for 3 integers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_scale_v_extents(
+    scale: *const SofelScale,
+    font: *const SofelFont,
+    extents: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let Some(scale) = (unsafe { r(scale) }) else {
+        return ERROR_NULL;
+    };
+    // SAFETY: the caller's conditions.
+    unsafe { h_or_v_extents(Some(scale), font, extents, true) }
+}
+
+fn scaled<T>(
+    scale: Option<&SofelScale>,
+    font: Option<&Font<'static>>,
+    out: Option<&mut T>,
+    f: impl FnOnce(&HbScale, &Font<'static>) -> Option<T>,
+) -> Status {
+    let (scale, font, out) = (some(scale)?, some(font)?, some(out)?);
+    *out = f(&scale.scale, font).ok_or(ERROR_NOT_FOUND)?;
+    Ok(())
+}
+
+/// `sofel_scale_h_advance`.
+///
+/// # Safety
+///
+/// `scale` is NULL or a live scale; `font` is NULL or a live font;
+/// `advance` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_scale_h_advance(
+    scale: *const SofelScale,
+    font: *const SofelFont,
+    glyph: u32,
+    advance: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (scale, font, advance) = unsafe { (r(scale), font_ref(font), w(advance)) };
+    status(scaled(scale, font, advance, |s, f| {
+        Some(s.h_advance(f, GlyphId(glyph)))
+    }))
+}
+
+/// `sofel_scale_v_advance`.
+///
+/// # Safety
+///
+/// `scale` is NULL or a live scale; `font` is NULL or a live font;
+/// `advance` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_scale_v_advance(
+    scale: *const SofelScale,
+    font: *const SofelFont,
+    glyph: u32,
+    advance: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (scale, font, advance) = unsafe { (r(scale), font_ref(font), w(advance)) };
+    status(scaled(scale, font, advance, |s, f| {
+        Some(s.v_advance(f, GlyphId(glyph)))
+    }))
+}
+
+/// `sofel_scale_v_origin`.
+///
+/// # Safety
+///
+/// `scale` is NULL or a live scale; `font` is NULL or a live font;
+/// `origin` is NULL or writable for 2 integers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_scale_v_origin(
+    scale: *const SofelScale,
+    font: *const SofelFont,
+    glyph: u32,
+    origin: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (scale, font, origin) = unsafe { (r(scale), font_ref(font), ints::<2>(origin)) };
+    status(scaled(scale, font, origin, |s, f| {
+        let (x, y) = s.v_origin(f, GlyphId(glyph), glyph_box(f));
+        Some([x, y])
+    }))
+}
+
+/// `sofel_scale_glyph_extents_of`.
+///
+/// # Safety
+///
+/// `scale` is NULL or a live scale; `font` is NULL or a live font;
+/// `extents` is NULL or writable for 4 integers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_scale_glyph_extents_of(
+    scale: *const SofelScale,
+    font: *const SofelFont,
+    glyph: u32,
+    extents: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (scale, font, extents) = unsafe { (r(scale), font_ref(font), ints::<4>(extents)) };
+    status(scaled(scale, font, extents, |s, f| {
+        s.glyf_extents(f, GlyphId(glyph)).map(extents4)
+    }))
+}
+
+/// `sofel_scale_metrics_position`.
+///
+/// # Safety
+///
+/// `scale` is NULL or a live scale; `font` is NULL or a live font;
+/// `position` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_scale_metrics_position(
+    scale: *const SofelScale,
+    font: *const SofelFont,
+    tag: u32,
+    position: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (scale, font, position) = unsafe { (r(scale), font_ref(font), w(position)) };
+    status(some(scale).and_then(|s| metrics_position(Some(s), font, tag, false, position)))
+}
+
+/// `sofel_scale_metrics_position_with_fallback`.
+///
+/// # Safety
+///
+/// `scale` is NULL or a live scale; `font` is NULL or a live font;
+/// `position` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_scale_metrics_position_with_fallback(
+    scale: *const SofelScale,
+    font: *const SofelFont,
+    tag: u32,
+    position: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (scale, font, position) = unsafe { (r(scale), font_ref(font), w(position)) };
+    status(some(scale).and_then(|s| metrics_position(Some(s), font, tag, true, position)))
 }
 
 // ------------------------------------------------------------ outlines

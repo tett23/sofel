@@ -104,7 +104,10 @@ jobs:
           git diff --exit-code
       - name: Build ft-dump
         run: sh tools/ft-dump/build.sh
-      - name: Compare with FreeType
+      # docs/adr/0016
+      - name: Build hb-dump
+        run: sh tools/hb-dump/build.sh
+      - name: Compare with FreeType and HarfBuzz
         run: cargo test --release -p sofel-conformance -- --nocapture
 
   # docs/adr/0004, docs/adr/0007

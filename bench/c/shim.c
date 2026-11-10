@@ -140,6 +140,19 @@ int bhb_advance(void *font, unsigned gid)
   return hb_font_get_glyph_h_advance((hb_font_t *)font, gid);
 }
 
+int bhb_v_advance(void *font, unsigned gid)
+{
+  return hb_font_get_glyph_v_advance((hb_font_t *)font, gid);
+}
+
+/* The sum of the vertical origin's x and y. */
+long bhb_v_origin(void *font, unsigned gid)
+{
+  hb_position_t x = 0, y = 0;
+  hb_font_get_glyph_v_origin((hb_font_t *)font, gid, &x, &y);
+  return (long)x + (long)y;
+}
+
 static void hb_move(hb_draw_funcs_t *d, void *data, hb_draw_state_t *s, float x, float y, void *u)
 {
   (void)d; (void)s; (void)x; (void)y; (void)u; ++*(long *)data;

@@ -101,6 +101,15 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - cmapのサブテーブルは、HarfBuzzと同じ順（(3,0)、(3,10)、(0,6)、(0,4)、(3,1)、(0,3)、(0,2)、(0,1)、(0,0)、(1,0)、(1,任意)）で、読めるものを選ぶ。グリフの数以上のグリフIDは対応なしとする。記号フォントとMacのエンコーディングの付けかえは、まだ行わない。
 - 送り幅はHarfBuzzと同じく、表が覆うグリフ（`numberOfHMetrics` と表の長さから決まる。`numberOfHMetrics` がグリフの数より大きい壊れたフォントでは、グリフの数以上のIDも含む）には表の値を、その外には0を返す。hmtxのデータが全く無ければ `unitsPerEm / 2`（`unitsPerEm` が16〜16384の外なら1000とみなす）を返す。hheaが無くhmtxがあるフォントでは、長いメトリクスが0個なので、すべて0になる。
 - `ft_left_side_bearing` は、輪郭の `pp1.x` のために、FreeTypeの `tt_face_get_metrics` と同じ読み方で左のサイドベアリングを返す（[ADR 0018](adr/0018-phantom-point-shift.md)）。送り幅（HarfBuzzの方針）とは別の読み方である。`numberOfHMetrics` 未満のグリフIDは長い記録から（記録が表に収まらなければ0）、以上はサイドベアリングの配列から（グリフの数によらず、表の外なら0。最後の送り幅が読めなければ0）引く。hheaかhmtxが無ければ0。表は、`GLYF` があれば `HHEA` と `HMTX`、無ければ `hhea` と `hmtx`（`hhea` が無ければ `HHEA` と `HMTX`）を使う。
+- フォント全体と縦書きのメトリクスは、HarfBuzz 15.1.0と同じ値をフォントの単位で返す（[ADR 0016](adr/0016-font-and-vertical-metrics.md)）。表の位置は `Font::new` で一度だけ見つける。
+  - `h_extents`：OS/2（`usWeightClass`、`usWidthClass`、`usFirstCharIndex`、`usLastCharIndex` のどれかが0でないもの）に `USE_TYPO_METRICS` があれば `sTypo*`、なければhhea（`HHEA` があればそれ）。アセンダは絶対値、ディセンダは絶対値の負。どれかが無ければ、アセンダを `y_scale × 0.8`（0へ切り捨て）、ディセンダをアセンダ − `y_scale`、行間を0とする。`v_extents` はvhea（`VHEA`）で、代わりの値はアセンダ `x_scale / 2`。
+  - `v_advance`：vmtx（`VMTX` が送り幅を持てばそれ）の送り幅の負、vmtxが無ければ `h_extents` のディセンダ − アセンダ。
+  - `v_origin`：xは横の送り幅の半分。yは、VORGがあればその値（記録が無ければ既定の値）、vmtxとglyfがあればglyfの上の幻の点（`yMax` + 上のサイドベアリング。複合グリフはHarfBuzzと同じく、USE_MY_METRICSの最後の部品の幻の点を使う。循環の検出もHarfBuzzの `hb_decycler_t` と同じにする。グリフを読めなければ `unitsPerEm`）、どちらでもなければ呼び出し側が渡す箱で `y_bearing + (フォントの高さ + 箱の高さ) >> 1`（箱が無ければアセンダ）。
+  - `glyf_extents`：`x_bearing` はhmtxの左のサイドベアリング（HarfBuzzの読み方）、`y_bearing` は `max(yMin, yMax)`、幅は `|xMax − xMin|`、高さは `−|yMax − yMin|`。空のグリフは0。glyfの数（locaの項目の数 − 1とグリフの数の小さいほう）以上のIDは `None`。
+  - `metrics_position` と `metrics_position_with_fallback` は `hb_ot_metrics_tag_t` のすべての値を返す。postはHarfBuzzと同じく版1、2、3だけを使う。
+  - `fs_type` はFreeTypeの `FT_Get_FSType_Flags`：OS/2が読めて版が0xFFFFでなければ `fsType`、そうでなければ0。
+- `HbScale` はHarfBuzzの `hb_font_t` の拡大縮小を写す。`x_mult` は `x_scale × 0x10000` を `f32` にして `upem` で割り、0へ切り捨てる（HarfBuzzの `changed` と同じ。整数の割り算ではない）。整数の値は `(v × mult + 32768) >> 16`、小数の値はHarfBuzzの `roundf`（`floor((double) x + 0.5)`）、箱は `scale_glyph_extents`（角を `f32` で拡大し、左上を切り下げ、右下を切り上げ）で拡大縮小する。FMAは使わない。代わりの値は拡大縮小した `x_scale`、`y_scale` から求める。
+- hheaの代わりに `HHEA` を使う条件と `HHEA` の `numberOfLongMetrics` の幅（24bit）は、[ADR 0007](adr/0007-sfnt-read-foundation.md) の読み方のままとする（HarfBuzzとFreeTypeは32bitで読む）。
 
 ## 輪郭（`sofel-outline`）
 
@@ -154,6 +163,9 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   - cmapの対応は、FreeTypeの `FT_Get_Next_Char` と同じく、グリフIDがFreeTypeの `num_glyphs` 未満のものだけを比べる。cmap表に無いプラットフォーム7（Adobe）のエンコーディングは、FreeTypeがPostScriptのグリフ名から合成したものなので比べない。
   - HarfBuzz 15.1.0のテストのフォント653個で、4569項目がすべて一致している（期待する失敗は無い）。
 - テストのデータは、CIでキャッシュが当たったとき `SOFEL_TESTDATA_OFFLINE=1` で取得のスクリプトを走らせ、キャッシュの中身が欠けていれば失敗させる。シェルのスクリプトのテストは `scripts/run-tests.sh` で走らせる。
+- フォント全体と縦書きのメトリクスは、`tools/hb-dump/` の出力と比べる（[ADR 0016](adr/0016-font-and-vertical-metrics.md)）。`hb-dump` はHarfBuzzの `src/harfbuzz.cc` を取りこむC++の1つの翻訳単位で、`tools/hb-dump/build.sh` でビルドする。FreeTypeとは統合しない。書き出す内容は引数の形（`--metrics` など）で選び、形ごとに関数を1つ足して広げる。
+  - 拡大縮小は、(`upem`, `upem`)、(2 `upem`, 2 `upem`)、(`upem` / 2, `upem` / 2)、(768, 768)、(−`upem`, −`upem`)、(768, −1536) の6つ。
+  - 項目は `<フォント>#<フェイス>:hb:<項目>` で、`num_glyphs`、`h_extents`、`v_extents`、`metrics`、`metrics-fallback`、`h_advance`、`v_advance`、`v_origin`、`extents`。各項目はすべての拡大縮小とすべてのグリフを含む。期待する失敗は `conformance/expected-failures-harfbuzz.txt` に書く。CFFとCFF2のフォントの箱（[ADR 0021](adr/0021-cff-outlines.md)）と、COLR、CBDT、sbixのカラーのグリフの箱（[ADR 0023](adr/0023-color-glyphs.md)）と、その箱で決まる縦の原点が期待する失敗である。
 - glyfの輪郭は、`ft-dump --outline` の出力と、拡大縮小なし、16画素、48画素で、命令の列、重なりの印、制御の箱が完全に一致することを確かめる（項目 `outline:<SIZE>:<グリフ>`、[ADR 0011](adr/0011-glyf-outlines.md)）。ラスタライズは、`ft-dump --raster` の出力と、12、24、48画素で画像が完全に一致することを確かめる（項目 `raster:<PPEM>:<グリフ>`、[ADR 0012](adr/0012-antialiased-rasterizer.md)）。
 - 輪郭、ラスタライズ（各形式）、埋め込みビットマップ、sfnt以外の形式は、FreeTypeの出力を書き出す `tools/ft-dump/` と比べる。輪郭は完全一致を求める。sfnt以外の形式のテストのフォントは、その形式を実装するまえに、ADRで `testdata.lock` に加える。
 - カラーグリフ、SVGとPDF、GPU、WOFF、検証器、展開器の基準は、それぞれのADRで定める。
@@ -169,6 +181,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   - HarfBuzzの輪郭は、glyfを分解する命令の列がFreeTypeと違うため、命令の数を照合せず、時間だけを計る。
 - FreeTypeはcmapの検証に `setjmp` を使うため、wasmでは例外処理の提案（`-mllvm -wasm-enable-sjlj`、`wasmtime -W exceptions=y`）でビルドし、走らせる。
 - 2段階目の項目：文字からグリフ（FreeType、HarfBuzz）、送り幅（FreeType、HarfBuzz）、輪郭（拡大縮小なしと48画素。FreeType、HarfBuzz）、ラスタライズ（12、24、48、96画素。FreeType）。
+- 縦書きの項目：全グリフの縦の送り幅と縦の原点（HarfBuzz。[ADR 0016](adr/0016-font-and-vertical-metrics.md)）。
 - Unicodeの性質：`perf/texts/` のすべての文章の全文字について、General_Category、Canonical_Combining_Class、Script、Bidi_Mirroring_Glyphを引く。相手はHarfBuzzの既定のUnicodeの関数（`hb_unicode_general_category` などの呼び出しを含む）とする（[ADR 0019](adr/0019-unicode-character-data.md)）。
 - CIでは、ネイティブとwasmの両方を `--once` で走らせ、落ちないことと結果の照合だけを確かめる。
 - 目標は、各項目でsofelの時間が比較の相手以下であること。

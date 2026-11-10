@@ -275,6 +275,36 @@ fn main() {
             )),
         );
 
+        // Vertical advances and origins of every glyph, in font units
+        // (ADR 0016); HarfBuzz only, FreeType has no vertical origin.
+        b.item(
+            name,
+            "v advance".into(),
+            &mut || (0..n).map(|g| wrap(i64::from(font.v_advance(GlyphId(g))))).sum(),
+            None,
+            Some((
+                &mut || (0..n).map(|g| wrap(hb.v_advance(g))).sum(),
+                Compare::Yes,
+            )),
+        );
+        b.item(
+            name,
+            "v origin".into(),
+            &mut || {
+                (0..n)
+                    .map(|g| {
+                        let (x, y) = font.v_origin(GlyphId(g), |g| font.glyf_extents(g));
+                        wrap(i64::from(x) + i64::from(y))
+                    })
+                    .sum()
+            },
+            None,
+            Some((
+                &mut || (0..n).map(|g| wrap(hb.v_origin(g))).sum(),
+                Compare::Yes,
+            )),
+        );
+
         // Outlines: the number of commands (without closes) of every glyph.
         for ppem in [0u16, 48] {
             let scale = if ppem == 0 {
