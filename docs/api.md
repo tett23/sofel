@@ -547,9 +547,9 @@ fn many(font: &Font<'_>, texts: &[&str]) -> Result<Vec<Vec<u8>>, SubsetError> {
 int32_t err;
 sofel_font_t *font = sofel_font_create(data, len, 0, &err); /* data は複製しない */
 uint32_t gid;
-uint16_t advance;
+uint32_t advance;
 if (font != NULL && sofel_font_nominal_glyph(font, 'A', &gid) == SOFEL_OK) {
-  sofel_font_h_advance(font, gid, &advance);
+  sofel_font_h_advance(font, NULL, gid, &advance);
 
   sofel_outline_scratch_t *scratch = sofel_outline_scratch_create(); /* スレッドごとに1つ */
   sofel_rasterizer_t *raster = sofel_rasterizer_create();

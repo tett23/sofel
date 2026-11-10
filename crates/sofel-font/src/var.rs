@@ -6,10 +6,11 @@ use sofel_geom::float::{hb_clamp_to_i32, hb_roundf32, i32_to_f32};
 use sofel_geom::{div_fix, mul_div, mul_fix};
 use sofel_read::item_variation::{ItemVariationStore, Region};
 use sofel_read::{
-    Fixed, GlyphId, Tag,
+    Fixed, GlyphId, ReadError, Tag,
     avar::{Avar, SegmentMap},
     base::Base,
     colr::Colr,
+    delta_set_index_map::DeltaSetIndexMap,
     fvar::{Fvar, InstanceRecord},
     gdef::Gdef,
     hvar::{Hvar, Vvar},
@@ -1114,25 +1115,125 @@ pub struct Instance<'font, 'data, 'loc, 'source> {
 
 impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
     /// Horizontal advance in font units at this location.
-    pub fn advance(&self, glyph: GlyphId) -> u16 {
-        self.font
-            .metrics
-            .advance(glyph, self.font.hb_units_per_em() / 2)
+    pub fn advance(&self, glyph: GlyphId) -> u32 {
+        let base = u32::from(
+            self.font
+                .metrics
+                .advance(glyph, self.font.hb_units_per_em() / 2),
+        );
+        if !self.font.metrics.has_data() || !self.location.hb_nonzero {
+            return base;
+        }
+        let Some(hvar) = self
+            .font
+            .table(Tag::new(b"HVAR"))
+            .and_then(|data| Hvar::new(data).ok())
+        else {
+            return base;
+        };
+        self.advance_with_delta(glyph, base, StoreKind::Hvar, hvar.advance_map())
+    }
+
+    fn advance_with_delta(
+        &self,
+        glyph: GlyphId,
+        base: u32,
+        kind: StoreKind,
+        map: Result<Option<DeltaSetIndexMap<'_>>, ReadError>,
+    ) -> u32 {
+        let index = match map {
+            Ok(Some(map)) => map.map(glyph.0),
+            Ok(None) if glyph.0 <= u32::from(u16::MAX) => glyph.0,
+            _ => return base,
+        };
+        let outer = u16::try_from(index >> 16).unwrap_or(0);
+        let inner = u16::try_from(index & 0xffff).unwrap_or(0);
+        let delta = self.item_delta::<HbF32>(kind, outer, inner).unwrap_or(0.0);
+        let value = f64::from(base) + hb_roundf32(delta);
+        if value.is_nan() {
+            return 0;
+        }
+        // The clamp makes this finite value nonnegative and within u32.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let result = value.clamp(0.0, f64::from(u32::MAX)) as u32;
+        result
     }
 
     /// Horizontal font extents in font units at this location.
     pub fn h_extents(&self) -> FontExtents {
-        HbScale::unscaled(self.font).h_extents(self.font)
+        self.scaled_h_extents(&HbScale::unscaled(self.font))
+    }
+
+    /// Horizontal font extents at a HarfBuzz scale.
+    pub fn scaled_h_extents(&self, scale: &HbScale) -> FontExtents {
+        let get = |tag| self.scaled_metrics_position(scale, tag);
+        match (
+            get(MetricsTag::HorizontalAscender),
+            get(MetricsTag::HorizontalDescender),
+            get(MetricsTag::HorizontalLineGap),
+        ) {
+            (Some(ascender), Some(descender), Some(line_gap)) => FontExtents {
+                ascender,
+                descender,
+                line_gap,
+            },
+            _ => scale.h_extents(self.font),
+        }
     }
 
     /// Vertical font extents in font units at this location.
     pub fn v_extents(&self) -> FontExtents {
-        HbScale::unscaled(self.font).v_extents(self.font)
+        self.scaled_v_extents(&HbScale::unscaled(self.font))
+    }
+
+    /// Vertical font extents at a HarfBuzz scale.
+    pub fn scaled_v_extents(&self, scale: &HbScale) -> FontExtents {
+        let get = |tag| self.scaled_metrics_position(scale, tag);
+        match (
+            get(MetricsTag::VerticalAscender),
+            get(MetricsTag::VerticalDescender),
+            get(MetricsTag::VerticalLineGap),
+        ) {
+            (Some(ascender), Some(descender), Some(line_gap)) => FontExtents {
+                ascender,
+                descender,
+                line_gap,
+            },
+            _ => scale.v_extents(self.font),
+        }
     }
 
     /// Vertical advance in font units at this location.
     pub fn v_advance(&self, glyph: GlyphId) -> i32 {
-        HbScale::unscaled(self.font).v_advance(self.font, glyph)
+        if !self.font.vmetrics.has_data() {
+            return HbScale::unscaled(self.font).v_advance(self.font, glyph);
+        }
+        let base = u32::from(
+            self.font
+                .vmetrics
+                .advance(glyph, self.font.hb_units_per_em()),
+        );
+        let advance = if self.location.hb_nonzero {
+            self.font
+                .table(Tag::new(b"VVAR"))
+                .and_then(|data| Vvar::new(data).ok())
+                .map_or(base, |vvar| {
+                    self.advance_with_delta(glyph, base, StoreKind::Vvar, vvar.advance_map())
+                })
+        } else {
+            base
+        };
+        #[allow(clippy::cast_possible_wrap)] // HarfBuzz casts its unsigned advance to int.
+        let signed = advance as i32;
+        signed.wrapping_neg()
+    }
+
+    /// Vertical advance at a HarfBuzz scale, including the font-extents fallback.
+    pub fn scaled_v_advance(&self, scale: &HbScale, glyph: GlyphId) -> i32 {
+        if !self.font.vmetrics.has_data() {
+            return scale.v_advance(self.font, glyph);
+        }
+        scale.em_scale_y(self.v_advance(glyph))
     }
 
     /// Vertical origin in font units at this location.
@@ -1141,7 +1242,44 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
         glyph: GlyphId,
         extents: impl Fn(GlyphId) -> Option<GlyphExtents>,
     ) -> (i32, i32) {
-        HbScale::unscaled(self.font).v_origin(self.font, glyph, extents)
+        let scale = HbScale::unscaled(self.font);
+        self.scaled_v_origin(&scale, glyph, |g| {
+            extents(g).map(|value| scale.scale_glyph_extents(value))
+        })
+    }
+
+    /// Vertical origin at a HarfBuzz scale; `extents` gives scaled boxes.
+    pub fn scaled_v_origin(
+        &self,
+        scale: &HbScale,
+        glyph: GlyphId,
+        extents: impl Fn(GlyphId) -> Option<GlyphExtents>,
+    ) -> (i32, i32) {
+        #[allow(clippy::cast_possible_wrap)]
+        // HarfBuzz passes its unsigned advance as hb_position_t.
+        let advance = self.advance(glyph) as i32;
+        let x = scale.em_scale_x(advance) / 2;
+        if let Some(vorg) = self.font.vorg {
+            let base = f32::from(vorg.y_origin(glyph));
+            let delta = if self.location.hb_nonzero {
+                self.font
+                    .table(Tag::new(b"VVAR"))
+                    .and_then(|data| Vvar::new(data).ok())
+                    .and_then(|vvar| vvar.vorg_map().ok().flatten())
+                    .map_or(0.0, |map| {
+                        let index = map.map(glyph.0);
+                        let outer = u16::try_from(index >> 16).unwrap_or(0);
+                        let inner = u16::try_from(index & 0xffff).unwrap_or(0);
+                        self.item_delta::<HbF32>(StoreKind::Vvar, outer, inner)
+                            .unwrap_or(0.0)
+                    })
+            } else {
+                0.0
+            };
+            return (x, scale.em_scalef_y(base + delta));
+        }
+        let (_, y) = scale.v_origin_scaled(self.font, glyph, extents);
+        (x, y)
     }
 
     /// The glyf glyph box in font units at this location.
@@ -1151,7 +1289,36 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
 
     /// A font-wide metric in font units at this location.
     pub fn metrics_position(&self, tag: MetricsTag) -> Option<i32> {
-        HbScale::unscaled(self.font).metrics_position(self.font, tag)
+        self.scaled_metrics_position(&HbScale::unscaled(self.font), tag)
+    }
+
+    /// A font-wide metric at a HarfBuzz scale.
+    pub fn scaled_metrics_position(&self, scale: &HbScale, tag: MetricsTag) -> Option<i32> {
+        scale.metrics_position_with_var(self.font, tag, self.hb_mvar_delta(tag.tag()))
+    }
+
+    /// A font-wide metric with HarfBuzz's fallback at a scale.
+    pub fn scaled_metrics_position_with_fallback(
+        &self,
+        scale: &HbScale,
+        tag: MetricsTag,
+        extents: impl Fn(GlyphId) -> Option<GlyphExtents>,
+    ) -> i32 {
+        scale.with_fallback_using(self.font, tag, &extents, &|tag| {
+            self.scaled_metrics_position(scale, tag)
+        })
+    }
+
+    fn hb_mvar_delta(&self, tag: Tag) -> f32 {
+        let record = self
+            .font
+            .table(Tag::new(b"MVAR"))
+            .and_then(|data| Mvar::new(data).ok())
+            .and_then(|mvar| mvar.find(tag));
+        record.map_or(0.0, |record| {
+            self.item_delta::<HbF32>(StoreKind::Mvar, record.outer, record.inner)
+                .unwrap_or(0.0)
+        })
     }
 
     /// A font-wide metric with HarfBuzz's fallback at this location.
@@ -1160,7 +1327,10 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
         tag: MetricsTag,
         extents: impl Fn(GlyphId) -> Option<GlyphExtents>,
     ) -> i32 {
-        HbScale::unscaled(self.font).metrics_position_with_fallback(self.font, tag, extents)
+        let scale = HbScale::unscaled(self.font);
+        self.scaled_metrics_position_with_fallback(&scale, tag, |glyph| {
+            extents(glyph).map(|value| scale.scale_glyph_extents(value))
+        })
     }
 
     /// BASE baseline in font units at this location.
@@ -1197,12 +1367,75 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
 
     /// FreeType's face metrics at this location.
     pub fn ft_face_metrics(&self) -> crate::FtFaceMetrics {
-        self.font.ft_face_metrics_default()
+        let mut metrics = self.font.ft_face_metrics_default();
+        if !self.font.ft_has_outline() {
+            return metrics;
+        }
+        let hasc = self.ft_mvar_delta(Tag::new(b"hasc"));
+        let hdsc = self.ft_mvar_delta(Tag::new(b"hdsc"));
+        let hlgp = self.ft_mvar_delta(Tag::new(b"hlgp"));
+        metrics.ascender = metrics.ascender.wrapping_add(hasc);
+        metrics.descender = metrics.descender.wrapping_add(hdsc);
+        metrics.height = metrics
+            .height
+            .wrapping_add(hasc)
+            .wrapping_sub(hdsc)
+            .wrapping_add(hlgp);
+        let original_underline_position = metrics
+            .underline_position
+            .wrapping_add(metrics.underline_thickness / 2);
+        metrics.underline_thickness = metrics
+            .underline_thickness
+            .wrapping_add(self.ft_mvar_delta(Tag::new(b"unds")));
+        let varied_underline_position =
+            original_underline_position.wrapping_add(self.ft_mvar_delta(Tag::new(b"undo")));
+        metrics.underline_position =
+            varied_underline_position.wrapping_sub(metrics.underline_thickness / 2);
+        metrics
+    }
+
+    fn ft_mvar_delta(&self, tag: Tag) -> i16 {
+        let record = self
+            .font
+            .table(Tag::new(b"MVAR"))
+            .and_then(|data| Mvar::new(data).ok())
+            .and_then(|mvar| mvar.find(tag));
+        let value = record.map_or(0, |record| {
+            self.item_delta::<Ft>(StoreKind::Mvar, record.outer, record.inner)
+                .unwrap_or(0)
+        });
+        #[allow(clippy::cast_possible_truncation)]
+        // FreeType stores each adjusted value as FT_Short.
+        let short = value as i16;
+        short
     }
 
     /// FreeType's unscaled vertical advance at this location.
     pub fn ft_v_advance(&self, glyph: GlyphId) -> Option<u16> {
-        self.font.ft_v_advance_default(glyph)
+        let base = self.font.ft_v_advance_default(glyph)?;
+        if self.font.ft_vertical().is_none() {
+            return Some(base);
+        }
+        let vvar = self
+            .font
+            .table(Tag::new(b"VVAR"))
+            .and_then(|data| Vvar::new(data).ok());
+        let Some(vvar) = vvar else {
+            return Some(base);
+        };
+        let index = match vvar.advance_map() {
+            Ok(Some(map)) => map.map(glyph.0),
+            Ok(None) if glyph.0 <= u32::from(u16::MAX) => glyph.0,
+            _ => return Some(base),
+        };
+        let outer = u16::try_from(index >> 16).unwrap_or(0);
+        let inner = u16::try_from(index & 0xffff).unwrap_or(0);
+        let delta = self
+            .item_delta::<Ft>(StoreKind::Vvar, outer, inner)
+            .unwrap_or(0);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let advance = i32::from(base).wrapping_add(delta) as u16;
+        Some(advance)
     }
 
     /// HarfBuzz 2.14 normalized coordinates.

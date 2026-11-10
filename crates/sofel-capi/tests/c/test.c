@@ -75,7 +75,7 @@ static void check_declarations(void) {
       sofel_font_nominal_glyph;
   int32_t (*variation_glyph)(const sofel_font_t *, uint32_t, uint32_t, uint32_t *) =
       sofel_font_variation_glyph;
-  int32_t (*h_advance)(const sofel_font_t *, const sofel_location_t *, uint32_t, uint16_t *) =
+  int32_t (*h_advance)(const sofel_font_t *, const sofel_location_t *, uint32_t, uint32_t *) =
       sofel_font_h_advance;
   int32_t (*ft_bearing)(const sofel_font_t *, const sofel_location_t *, uint32_t, int16_t *) =
       sofel_font_ft_left_side_bearing;
@@ -329,7 +329,7 @@ static int run_queries(const sofel_font_t *font, sofel_outline_scratch_t *scratc
     bad += s == SOFEL_OK && g != variation_cases[i].glyph;
   }
   for (i = 0; i < COUNT(advances); i++) {
-    uint16_t a = 0;
+    uint32_t a = 0;
     bad += sofel_font_h_advance(font, NULL, (uint32_t)i, &a) != SOFEL_OK || a != advances[i];
   }
   for (i = 0; i < COUNT(ft_bearings); i++) {
@@ -507,7 +507,7 @@ static void test_font(const sofel_font_t *font) {
   CHECK(sofel_font_nominal_glyph(font, 0x41, NULL) == SOFEL_ERROR_NULL);
   CHECK(sofel_font_variation_glyph(NULL, 0x41, 0xFE00, &u32v) == SOFEL_ERROR_NULL);
   CHECK(sofel_font_variation_glyph(font, 0x41, 0xFE00, NULL) == SOFEL_ERROR_NULL);
-  CHECK(sofel_font_h_advance(NULL, NULL, 1, &u16v) == SOFEL_ERROR_NULL);
+  CHECK(sofel_font_h_advance(NULL, NULL, 1, &u32v) == SOFEL_ERROR_NULL);
   CHECK(sofel_font_h_advance(font, NULL, 1, NULL) == SOFEL_ERROR_NULL);
   {
     int16_t b;

@@ -63,7 +63,7 @@ impl<'a> Font<'a> {
         self.os2
     }
 
-    fn ft_vertical(&self) -> Option<(Hhea<'a>, &'a [u8])> {
+    pub(crate) fn ft_vertical(&self) -> Option<(Hhea<'a>, &'a [u8])> {
         let (h, mtx) = ft_hea(
             &self.sfnt,
             [vhea::TAG, vmtx::TAG, vhea::TAG_WIDE, vmtx::TAG_WIDE],
@@ -73,7 +73,7 @@ impl<'a> Font<'a> {
 
     /// FreeType's `has_outline` in `sfnt_load_face`: glyf, `GLYF`, CFF
     /// or CFF2 data, no CBLC or CBDT, and for `true` fonts an `hhea`.
-    fn ft_has_outline(&self) -> bool {
+    pub(crate) fn ft_has_outline(&self) -> bool {
         let t = |tag: &[u8; 4]| self.table(Tag::new(tag)).is_some();
         let outline = t(b"GLYF") || t(b"glyf") || t(b"CFF ") || t(b"CFF2");
         let bitmap = t(b"CBLC") || t(b"CBDT");
