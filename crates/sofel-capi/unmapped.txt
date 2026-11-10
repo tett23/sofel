@@ -10,6 +10,7 @@ sofel_geom::Command::apply Replays a recorded Rust Command into a Rust Pen; C pe
 sofel_geom::F26Dot6::from_int A multiplication by 64, which C writes as such.
 sofel_read::base::* Zero-copy Rust views and per-table validators; C gets baselines with sofel_font_baseline and sofel_font_layout_font_extents, reads the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::be::* Bounds-checked big-endian readers of Rust slices for the table views; C reads bytes directly.
+sofel_read::cff::* Zero-copy Rust views, the FreeType DICT parsers, the Type 2 charstring decoder and the CFF validators (ADR 0021); C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::cmap::* Zero-copy Rust views and per-table validators; C maps characters with sofel_font_nominal_glyph and sofel_font_variation_glyph, reads the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::device::* Zero-copy Rust views of Device tables, read through the BASE, GDEF and GPOS views; C reads the bytes with sofel_font_table.
 sofel_read::gdef::* Zero-copy Rust views and per-table validators for shaping (ADR 0020); C shapes with the sofel_shape_* functions of ADR 0020, reads the bytes with sofel_font_table, and validates with sofel_validate.
@@ -19,6 +20,7 @@ sofel_read::glyf::* Zero-copy Rust views and per-table validators; C gets outlin
 sofel_read::head::* Zero-copy Rust views and per-table validators; C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::hhea::* Zero-copy Rust views and per-table validators; C gets advances with sofel_font_h_advance, the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::hmtx::* Zero-copy Rust views and per-table validators; C gets advances with sofel_font_h_advance, the bytes with sofel_font_table, and validates with sofel_validate.
+sofel_read::item_variation::* A zero-copy Rust view and validator of the Item Variation Store (ADR 0021); C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::layout::* Zero-copy Rust views of the layout common tables shared by GDEF, GSUB and GPOS (ADR 0020); C shapes with the sofel_shape_* functions of ADR 0020 and reads the bytes with sofel_font_table.
 sofel_read::loca::* Zero-copy Rust views and per-table validators; C gets outlines with sofel_outline_*, the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::maxp::* Zero-copy Rust views and per-table validators; C gets the glyph count with sofel_font_num_glyphs, the bytes with sofel_font_table, and validates with sofel_validate.
