@@ -100,6 +100,41 @@
  *                                       none when width or rows is 0)
  *   end
  *
+ * Usage: ft-dump --cid FILE
+ *
+ * For each face (ADR 0021), `face` and `error` as above, then:
+ *
+ *   is_cid <error> <0|1>                (FT_Get_CID_Is_Internally_CID_Keyed)
+ *   ros <error> <registry> <ordering> <supplement>
+ *                                       (FT_Get_CID_Registry_Ordering_Supplement;
+ *                                       strings in hex, `-` for NULL, `""` for empty; only the
+ *                                       error code when it fails)
+ *   cid <glyph> <error> <cid>           (FT_Get_CID_From_Glyph_Index for every
+ *                                       glyph and for num_glyphs itself; the
+ *                                       cid is 0 when it fails)
+ *   end
+ *
+ * Usage: ft-dump --ps-info FILE
+ *
+ * For each face (ADR 0021), `face` and `error` as above, then:
+ *
+ *   has_ps_glyph_names <0|1>            (FT_Has_PS_Glyph_Names)
+ *   ps_font_info <error> <version> <notice> <full_name> <family_name>
+ *                <weight> <italic_angle> <is_fixed_pitch>
+ *                <underline_position> <underline_thickness>
+ *                                       (FT_Get_PS_Font_Info; strings in hex,
+ *                                       `-` for NULL; only the error code when
+ *                                       it fails)
+ *   fs_type_flags <value>               (FT_Get_FSType_Flags: the `/FSType`
+ *                                       of the CFF `PostScript` string when
+ *                                       it is not 0, else OS/2's fsType;
+ *                                       FT_Get_PS_Font_Extra is not public)
+ *   end
+ *
+ * --outline and --raster open each face with the random seed 0
+ * (FT_PARAM_TAG_RANDOM_SEED), so that the CFF `random` operator starts
+ * from the font's initialRandomSeed instead of an address (ADR 0021).
+ *
  * Exit status: 0 on success, 1 when FreeType cannot be initialized or
  * the file cannot be opened at all, 2 on wrong usage.
  */
@@ -115,6 +150,9 @@
 #include FT_TRIGONOMETRY_H
 #include FT_OUTLINE_H
 #include FT_SFNT_NAMES_H
+#include FT_CID_H
+#include FT_TYPE1_TABLES_H
+#include FT_PARAMETER_TAGS_H
 
 static int contour_open;
 
@@ -232,6 +270,113 @@ static void dump_rasters(FT_Face face, int ppem)
   }
 }
 
+/* Opens face `index` with the random seed 0 (ADR 0021). */
+static FT_Error open_seeded(FT_Library library, const char *path, FT_Long index, FT_Face *face)
+{
+  FT_Int32 seed = 0;
+  FT_Parameter param;
+  FT_Open_Args args;
+
+  param.tag = FT_PARAM_TAG_RANDOM_SEED;
+  param.data = &seed;
+  memset(&args, 0, sizeof args);
+  args.flags = FT_OPEN_PATHNAME | FT_OPEN_PARAMS;
+  args.pathname = (char *)path;
+  args.num_params = 1;
+  args.params = &param;
+  return FT_Open_Face(library, &args, index, face);
+}
+
+static void print_str(const char *s)
+{
+  if (!s) {
+    printf(" -");
+    return;
+  }
+  printf(" ");
+  if (!*s)
+    printf("\"\"");
+  for (; *s; s++)
+    printf("%02x", (unsigned char)*s);
+}
+
+static void dump_cid(FT_Face face)
+{
+  FT_Bool is_cid = 0;
+  FT_Error error = FT_Get_CID_Is_Internally_CID_Keyed(face, &is_cid);
+  const char *registry = NULL, *ordering = NULL;
+  FT_Int supplement = 0;
+  FT_Long g;
+
+  printf("is_cid %d %d\n", (int)error, is_cid ? 1 : 0);
+  error = FT_Get_CID_Registry_Ordering_Supplement(face, &registry, &ordering, &supplement);
+  printf("ros %d", (int)error);
+  if (!error) {
+    print_str(registry);
+    print_str(ordering);
+    printf(" %d", (int)supplement);
+  }
+  printf("\n");
+  for (g = 0; g <= face->num_glyphs; g++) {
+    FT_UInt cid = 0;
+    error = FT_Get_CID_From_Glyph_Index(face, (FT_UInt)g, &cid);
+    printf("cid %ld %d %u\n", (long)g, (int)error, error ? 0U : cid);
+  }
+}
+
+static void dump_ps_info(FT_Face face)
+{
+  PS_FontInfoRec info;
+  FT_Error error;
+
+  printf("has_ps_glyph_names %d\n", FT_Has_PS_Glyph_Names(face) ? 1 : 0);
+  memset(&info, 0, sizeof info);
+  error = FT_Get_PS_Font_Info(face, &info);
+  printf("ps_font_info %d", (int)error);
+  if (!error) {
+    print_str(info.version);
+    print_str(info.notice);
+    print_str(info.full_name);
+    print_str(info.family_name);
+    print_str(info.weight);
+    printf(" %ld %d %d %u", (long)info.italic_angle, info.is_fixed_pitch ? 1 : 0,
+           (int)info.underline_position, (unsigned)info.underline_thickness);
+  }
+  printf("\n");
+  printf("fs_type_flags %u\n", (unsigned)FT_Get_FSType_Flags(face));
+}
+
+static int faces(const char *path, void (*dump)(FT_Face))
+{
+  FT_Library library;
+  FT_Face face;
+  FT_Long num_faces, i;
+
+  if (FT_Init_FreeType(&library) != 0)
+    return 1;
+  if (FT_New_Face(library, path, -1, &face) != 0) {
+    FT_Done_FreeType(library);
+    return 1;
+  }
+  num_faces = face->num_faces;
+  FT_Done_Face(face);
+  for (i = 0; i < num_faces; i++) {
+    FT_Error error;
+
+    printf("face %ld\n", (long)i);
+    error = FT_New_Face(library, path, i, &face);
+    if (error != 0) {
+      printf("error %d\nend\n", (int)error);
+      continue;
+    }
+    dump(face);
+    printf("end\n");
+    FT_Done_Face(face);
+  }
+  FT_Done_FreeType(library);
+  return 0;
+}
+
 static int outlines(const char *size, const char *path, int raster)
 {
   FT_Library library;
@@ -256,7 +401,7 @@ static int outlines(const char *size, const char *path, int raster)
     FT_Error error;
 
     printf("face %ld\n", (long)i);
-    error = FT_New_Face(library, path, i, &face);
+    error = open_seeded(library, path, i, &face);
     if (error != 0) {
       printf("error %d\nend\n", (int)error);
       continue;
@@ -469,8 +614,12 @@ int main(int argc, char **argv)
     return outlines(argv[2], argv[3], 0);
   if (argc == 4 && strcmp(argv[1], "--raster") == 0)
     return outlines(argv[2], argv[3], 1);
+  if (argc == 3 && strcmp(argv[1], "--cid") == 0)
+    return faces(argv[2], dump_cid);
+  if (argc == 3 && strcmp(argv[1], "--ps-info") == 0)
+    return faces(argv[2], dump_ps_info);
   if (argc != 2) {
-    fprintf(stderr, "usage: ft-dump FILE | ft-dump --calc\n");
+    fprintf(stderr, "usage: ft-dump FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --raster PPEM FILE | ft-dump --cid FILE | ft-dump --ps-info FILE\n");
     return 2;
   }
   if (FT_Init_FreeType(&library) != 0) {
