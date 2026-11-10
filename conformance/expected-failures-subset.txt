@@ -1547,14 +1547,6 @@ layout.gsub8.tests/gsub8_manually_created.layout-test-retain-gids.41,42,43,44,45
 layout.gsub8.tests/gsub8_manually_created.layout-test-retain-gids.41,42,43,44,45,46,51.otf:validate  # stage:cff
 layout.gsub8.tests/gsub8_manually_created.layout-test-retain-gids.all.otf:bytes  # stage:cff
 layout.gsub8.tests/gsub8_manually_created.layout-test-retain-gids.all.otf:validate  # stage:cff
-layout.notonastaliqurdu.tests/NotoNastaliqUrdu-Bold.default.all.ttf:bytes  # stage:repack
-layout.notonastaliqurdu.tests/NotoNastaliqUrdu-Bold.default.all.ttf:validate  # stage:repack
-layout.notonastaliqurdu.tests/NotoNastaliqUrdu-Bold.retain-gids.all.ttf:bytes  # stage:repack
-layout.notonastaliqurdu.tests/NotoNastaliqUrdu-Bold.retain-gids.all.ttf:validate  # stage:repack
-layout.notonastaliqurdu.tests/NotoNastaliqUrdu-Regular.default.all.ttf:bytes  # stage:repack
-layout.notonastaliqurdu.tests/NotoNastaliqUrdu-Regular.default.all.ttf:validate  # stage:repack
-layout.notonastaliqurdu.tests/NotoNastaliqUrdu-Regular.retain-gids.all.ttf:bytes  # stage:repack
-layout.notonastaliqurdu.tests/NotoNastaliqUrdu-Regular.retain-gids.all.ttf:validate  # stage:repack
 math.tests/STIXTwoMath-Regular.default.2f,7c,305.ttf:bytes  # stage:math
 math.tests/STIXTwoMath-Regular.default.2f,7c,305.ttf:validate  # stage:math
 math.tests/STIXTwoMath-Regular.default.21D4.ttf:bytes  # stage:math

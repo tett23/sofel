@@ -921,3 +921,94 @@ pub fn check_subset(data: &[u8]) {
     });
     assert!(errors.is_empty(), "{errors:?}");
 }
+
+/// An object graph for the repacker (ADR 0022, 再配置): a tag (4 bytes),
+/// an object count (1 byte), each object's length (2 bytes) and fill
+/// byte, then links: parent and child (object indices, 1 byte each, the
+/// child must come first), position (2 bytes), width (1 byte) and flags
+/// (1 byte: bit 0 signed, bits 1-2 whence, bit 3 virtual). The last
+/// object is the root.
+///
+/// Repacking must not panic. The repacker returns only bytes whose
+/// offsets all fit (it fails otherwise), and keeps every object (adding
+/// duplicates), so outside GSUB and GPOS (whose subtables it may shrink)
+/// the result is at least as long as the objects. When the objects lay
+/// out without an overflow in their order, `Packed::repack` gives the
+/// bytes of `Packed::resolve`.
+pub fn check_repack(data: &[u8]) {
+    use sofel_write::{Link, Object, Packed, Whence, serialize_objects};
+    let (Some(tag), Some(&n)) = (data.get(..4), data.get(4)) else {
+        return;
+    };
+    let tag = sofel_read::Tag([tag[0], tag[1], tag[2], tag[3]]);
+    let n = usize::from(n);
+    let mut at = 5;
+    let mut objs = Vec::with_capacity(n);
+    for _ in 0..n {
+        let Some(o) = data.get(at..at + 3) else {
+            return;
+        };
+        let len = usize::from(u16::from_be_bytes([o[0], o[1]]));
+        objs.push(Object {
+            bytes: vec![o[2]; len],
+            ..Object::default()
+        });
+        at += 3;
+    }
+    while let Some(l) = data.get(at..at + 6) {
+        at += 6;
+        let (parent, child) = (usize::from(l[0]), u32::from(l[1]));
+        let Some(o) = objs.get_mut(parent) else {
+            continue;
+        };
+        let link = Link {
+            width: l[4],
+            signed: l[5] & 1 != 0,
+            whence: match (l[5] >> 1) & 3 {
+                1 => Whence::Tail,
+                2 => Whence::Absolute,
+                _ => Whence::Head,
+            },
+            bias: 0,
+            position: u32::from(u16::from_be_bytes([l[2], l[3]])),
+            objidx: child + 1,
+        };
+        if l[5] & 8 != 0 {
+            o.virtual_links.push(Link {
+                objidx: child + 1,
+                ..Link::default()
+            });
+        } else {
+            o.real_links.push(link);
+        }
+    }
+    let total: usize = objs.iter().map(|o| o.bytes.len()).sum();
+    if let Ok(out) = serialize_objects(tag, &objs)
+        && &tag.0 != b"GSUB"
+        && &tag.0 != b"GPOS"
+    {
+        assert!(out.len() >= total, "{} < {total}", out.len());
+    }
+    // The serializer's packed objects: index 0 is the null object, and a
+    // link may only name an object packed before its parent.
+    let ordered = objs.iter().enumerate().all(|(i, o)| {
+        o.real_links
+            .iter()
+            .chain(&o.virtual_links)
+            .all(|l| (l.objidx as usize) <= i)
+            && o.real_links.iter().all(|l| {
+                matches!(l.width, 2 | 3 | 4)
+                    && (l.position as usize) + usize::from(l.width) <= o.bytes.len()
+            })
+    });
+    if !ordered || objs.iter().any(|o| o.bytes.is_empty()) || objs.is_empty() {
+        return;
+    }
+    let mut packed_objs = vec![Object::default()];
+    packed_objs.extend(objs);
+    let packed = Packed::Graph(packed_objs);
+    let repacked = packed.repack(tag);
+    if let Ok(plain) = packed.resolve() {
+        assert_eq!(repacked, Ok(plain));
+    }
+}

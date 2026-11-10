@@ -62,6 +62,7 @@ dependencies = [
  "sofel-shape",
  "sofel-subset",
  "sofel-unicode",
+ "sofel-write",
 ]
 
 [[package]]

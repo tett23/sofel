@@ -319,11 +319,29 @@
  * for each the `x_mult` of an hb_font_t of a face with that upem after
  * hb_font_set_scale (font, scale, scale), in decimal.
  *
+ * --repack FILE (ADR 0022, 再配置): FILE holds object graphs, all
+ * numbers big-endian: a u32 count, then per graph a u32 tag, a u32 kind
+ * and a u32 object count, then per object (the root last) a u32 length
+ * and its bytes, a u32 count of real links, each `width signed whence 0`
+ * (u8 each) and u32 bias, position and objidx (1 is the first object),
+ * and a u32 count of virtual links, each a u32 objidx. Kind 0 serializes
+ * the objects with hb_serialize_context_t (push, the bytes, add_link,
+ * add_virtual_link, pop_pack (false), end_serialize) and repacks as
+ * _hb_subset_repack does (hb_resolve_overflows with its defaults when an
+ * offset overflowed); kind 1 calls hb_subset_serialize_or_fail (whose
+ * links have only width, position and objidx). Writes per graph
+ *
+ *   graph <i> ok <length> <fnv>   (the FNV-1a 64-bit hash of the bytes,
+ *                                 16 hex digits)
+ *   graph <i> fail
+ *
  * Exit status: 0 on success, 1 when the file cannot be read, 2 on wrong
  * usage.
  */
 
 #include "harfbuzz.cc"
+#include "hb-subset-serialize.cc"
+#include "graph/gsubgpos-context.cc"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -2194,6 +2212,150 @@ static int dump_layout_map (hb_blob_t *blob)
   return 0;
 }
 
+/* --repack: see the top of the file. */
+struct repack_reader_t
+{
+  const unsigned char *p, *end;
+  bool ok;
+  unsigned u8 () { if (p >= end) { ok = false; return 0; } return *p++; }
+  unsigned u32 ()
+  {
+    unsigned v = 0;
+    for (unsigned i = 0; i < 4; i++) v = (v << 8) | u8 ();
+    return v;
+  }
+};
+
+struct repack_link_t
+{
+  unsigned width, is_signed, whence, bias, position, objidx;
+};
+
+struct repack_object_t
+{
+  std::vector<char> bytes;
+  std::vector<repack_link_t> real_links;
+  std::vector<unsigned> virtual_links;
+};
+
+static void print_repack_result (unsigned i, hb_blob_t *blob)
+{
+  if (!blob)
+  {
+    printf ("graph %u fail\n", i);
+    return;
+  }
+  unsigned len = 0;
+  const char *data = hb_blob_get_data (blob, &len);
+  uint64_t h = 0xcbf29ce484222325ull;
+  for (unsigned k = 0; k < len; k++)
+  {
+    h ^= (unsigned char) data[k];
+    h *= 0x100000001b3ull;
+  }
+  printf ("graph %u ok %u %016llx\n", i, len, (unsigned long long) h);
+  hb_blob_destroy (blob);
+}
+
+static hb_blob_t *repack_serializer (hb_tag_t tag, const std::vector<repack_object_t> &objs)
+{
+  size_t total = 1024;
+  for (const auto &o : objs) total += o.bytes.size ();
+  std::vector<char> buf (total);
+  hb_serialize_context_t c (buf.data (), total);
+  c.start_serialize<char> ();
+  for (unsigned i = 0; i < objs.size (); i++)
+  {
+    const auto &o = objs[i];
+    c.push ();
+    char *head = c.allocate_size<char> (o.bytes.size ());
+    if (!head) return nullptr;
+    if (o.bytes.size ()) memcpy (head, o.bytes.data (), o.bytes.size ());
+    for (const auto &l : o.real_links)
+    {
+      char *at = head + l.position;
+      hb_serialize_context_t::whence_t w = (hb_serialize_context_t::whence_t) l.whence;
+      if (l.width == 2 && l.is_signed) c.add_link (*(OT::Offset<OT::HBINT16> *) at, l.objidx, w, l.bias);
+      else if (l.width == 2) c.add_link (*(OT::Offset16 *) at, l.objidx, w, l.bias);
+      else if (l.width == 3) c.add_link (*(OT::Offset24 *) at, l.objidx, w, l.bias);
+      else if (l.is_signed) c.add_link (*(OT::Offset<OT::HBINT32> *) at, l.objidx, w, l.bias);
+      else c.add_link (*(OT::Offset32 *) at, l.objidx, w, l.bias);
+    }
+    for (unsigned v : o.virtual_links) c.add_virtual_link (v);
+    if (c.pop_pack (false) != i + 1) return nullptr;
+  }
+  c.end_serialize ();
+  if (c.in_error () && !c.only_offset_overflow ()) return nullptr;
+  if (!c.offset_overflow ()) return c.copy_blob ();
+  return hb_resolve_overflows (c.object_graph (), tag);
+}
+
+static hb_blob_t *repack_or_fail (hb_tag_t tag, const std::vector<repack_object_t> &objs)
+{
+  std::vector<hb_subset_serialize_object_t> hb (objs.size ());
+  std::vector<std::vector<hb_subset_serialize_link_t>> real (objs.size ()), virt (objs.size ());
+  for (unsigned i = 0; i < objs.size (); i++)
+  {
+    for (const auto &l : objs[i].real_links)
+      real[i].push_back (hb_subset_serialize_link_t {l.width, l.position, l.objidx});
+    for (unsigned v : objs[i].virtual_links)
+      virt[i].push_back (hb_subset_serialize_link_t {0, 0, v});
+    hb[i].head = (char *) objs[i].bytes.data ();
+    hb[i].tail = hb[i].head + objs[i].bytes.size ();
+    hb[i].num_real_links = real[i].size ();
+    hb[i].real_links = real[i].data ();
+    hb[i].num_virtual_links = virt[i].size ();
+    hb[i].virtual_links = virt[i].data ();
+  }
+  return hb_subset_serialize_or_fail (tag, hb.data (), hb.size ());
+}
+
+static int dump_repack (hb_blob_t *blob)
+{
+  unsigned len = 0;
+  const char *data = hb_blob_get_data (blob, &len);
+  repack_reader_t r = {(const unsigned char *) data, (const unsigned char *) data + len, true};
+  unsigned count = r.u32 ();
+  for (unsigned i = 0; i < count && r.ok; i++)
+  {
+    hb_tag_t tag = r.u32 ();
+    unsigned kind = r.u32 ();
+    unsigned n = r.u32 ();
+    std::vector<repack_object_t> objs (n);
+    for (auto &o : objs)
+    {
+      unsigned size = r.u32 ();
+      if ((size_t) (r.end - r.p) < size) { r.ok = false; break; }
+      o.bytes.assign ((const char *) r.p, (const char *) r.p + size);
+      r.p += size;
+      unsigned nr = r.u32 ();
+      for (unsigned k = 0; k < nr && r.ok; k++)
+      {
+        repack_link_t l;
+        l.width = r.u8 ();
+        l.is_signed = r.u8 ();
+        l.whence = r.u8 ();
+        r.u8 ();
+        l.bias = r.u32 ();
+        l.position = r.u32 ();
+        l.objidx = r.u32 ();
+        o.real_links.push_back (l);
+      }
+      unsigned nv = r.u32 ();
+      for (unsigned k = 0; k < nv && r.ok; k++)
+        o.virtual_links.push_back (r.u32 ());
+    }
+    if (!r.ok) break;
+    print_repack_result (i, kind ? repack_or_fail (tag, objs) : repack_serializer (tag, objs));
+  }
+  if (!r.ok)
+  {
+    fprintf (stderr, "hb-dump: truncated --repack file\n");
+    return 1;
+  }
+  return 0;
+}
+
 /* The modes with more arguments. */
 struct args_mode_t
 {
@@ -2239,6 +2401,7 @@ static const dump_mode_t modes[] = {
   {"--paint", dump_paint},
   {"--color", dump_color},
   {"--extents", dump_extents},
+  {"--repack", dump_repack},
 };
 
 /* The modes that read a font and a second file. */

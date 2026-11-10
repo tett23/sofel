@@ -11,7 +11,7 @@ WOFFとWOFF2、Type1やBDFなどの古い形式、AAT、絵文字（COLR、埋�
 ## 状態
 
 2段階目（glyfの輪郭とアンチエイリアスのラスタライズ）まで実装し、6段階目のCFFとCFF2の輪郭（可変フォントは既定のインスタンス）、CIDの問い合わせ、PostScriptのフォントの情報（[ADR 0021](docs/adr/0021-cff-outlines.md)）と、CIDとグリフ名を速く引くcharsetの索引（[ADR 0025](docs/adr/0025-cff-charset-index.md)）を実装している。
-サブセット化（[ADR 0022](docs/adr/0022-subsetting.md)）は、sfntの組み立てと直列化、glyf系の表、cmap、name、OS/2、post、hdmx、GDEF、GSUB、GPOS、BASEとレイアウトの閉包までを実装し、HarfBuzzのサブセット化のテストのうちこれらの表だけを持つ組でバイト単位で一致する。
+サブセット化（[ADR 0022](docs/adr/0022-subsetting.md)）は、sfntの組み立てと直列化、オフセットのあふれを解く再配置、glyf系の表、cmap、name、OS/2、post、hdmx、GDEF、GSUB、GPOS、BASEとレイアウトの閉包までを実装し、HarfBuzzのサブセット化のテストのうちこれらの表だけを持つ組でバイト単位で一致する。
 `sofel-read` は、sfntの目録、TTC/OTC、head、maxp/MAXP、hhea/HHEA、hmtx/HMTX、cmap（フォーマット0〜15）、loca、glyf（[ADR 0007](docs/adr/0007-sfnt-read-foundation.md)、[0011](docs/adr/0011-glyf-outlines.md)）と、OS/2、name、post、vhea/VHEA、vmtx/VMTX、VORG（[ADR 0016](docs/adr/0016-font-and-vertical-metrics.md)）、BASE（[ADR 0017](docs/adr/0017-base-baselines.md)）、CFFとCFF2（[ADR 0021](docs/adr/0021-cff-outlines.md)）、GDEF、GSUB、GPOS（[ADR 0020](docs/adr/0020-shaping-foundation.md)）を読み、各表の検証器を持つ。
 範囲と実装の順序は [ADR 0001](docs/adr/0001-project-goal-and-scope.md)、クレートの構成は [ADR 0003](docs/adr/0003-crate-layers.md) を参照。
 仕様は [docs/specifications.md](docs/specifications.md) にまとめる。
@@ -116,7 +116,7 @@ sh scripts/check-capi.sh       # ライブラリの公開の関数がすべてC 
 
 FreeTypeとの突き合わせ（[ADR 0005](docs/adr/0005-conformance-tests.md)、[0008](docs/adr/0008-validate-command-and-freetype-comparison.md)）には、固定したコミットのHarfBuzzとFreeTypeの取得と、`ft-dump` のビルド（Cのコンパイラが要る）が要る。Vertical_Orientationの照合には、`scripts/fetch-ucd.sh` で取得したUCDのファイルが要る。HarfBuzzとのメトリクスとUnicodeの文字の性質の突き合わせ（[ADR 0016](docs/adr/0016-font-and-vertical-metrics.md)、[ADR 0019](docs/adr/0019-unicode-character-data.md)）、丸めの突き合わせ（[ADR 0026](docs/adr/0026-harfbuzz-rounding.md)）には、HarfBuzzの `src/harfbuzz.cc` を取りこんだ `hb-dump` のビルド（C++のコンパイラが要る）が要る。期待する失敗は `conformance/expected-failures-freetype.txt`、`conformance/expected-failures-otvalid.txt`（[ADR 0020](docs/adr/0020-shaping-foundation.md) のotvalidとの照合）、`conformance/expected-failures-harfbuzz.txt` と `conformance/expected-failures-serialize.txt`（[ADR 0020](docs/adr/0020-shaping-foundation.md) の直列化の照合）に理由を添えて書く。
 シェーピングの適合テスト（HarfBuzzの `test/shape` のすべての行と、`hb-dump --shape`、`--shape-random`、`--layout-map` との突き合わせ。[ADR 0020](docs/adr/0020-shaping-foundation.md)）の期待する失敗は、`conformance/expected-failures.txt`、`expected-failures-shape-pairs.txt`、`expected-failures-shape-random.txt`、`expected-failures-layout-map.txt` に、分類（`shaper:<名前>`、`variations`、`aat`、`synthetic`、`cff`、`color`、`out-of-scope:<名前>`）を1つずつ添えて書く。テストは分類がフォントと計画に合うことも確かめる。`SOFEL_SHAPE_VERBOSE=1` で違いを、`SOFEL_SHAPE_SUGGEST=1` で一覧に無い失敗の分類の候補を出す。
-サブセット化の適合テスト（HarfBuzzの `test/subset` の1123件。[ADR 0022](docs/adr/0022-subsetting.md)）の期待する失敗は、`conformance/expected-failures-subset.txt` に理由（`stage:<段階>`、`deferred:instance`、`deferred:iup`）を添えて書く。
+サブセット化の適合テスト（HarfBuzzの `test/subset` の1123件。[ADR 0022](docs/adr/0022-subsetting.md)）の期待する失敗は、`conformance/expected-failures-subset.txt` に理由（`stage:<段階>`、`deferred:instance`、`deferred:iup`）を添えて書く。再配置は、固定の種から作ったオブジェクトのグラフ（任意のグラフと、分割や拡張への昇格が要るGSUBとGPOSの表）を `hb-dump --repack` と突き合わせ、出力のバイト列（長さとハッシュ）か失敗の別が一致することを確かめる（`harfbuzz_repack`）。
 
 ```sh
 sh scripts/fetch-testdata.sh
