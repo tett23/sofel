@@ -7,14 +7,15 @@
  * Conventions
  *
  * - Every name starts with `sofel_` (functions, types) or `SOFEL_`
- *   (macros). Types are opaque structs behind pointers and fixed-width
- *   integers.
+ *   (macros). Object types are opaque structs behind pointers. Value types
+ *   are fixed-width integers and explicitly declared value structs.
  * - A function that can fail returns an `int32_t`: SOFEL_OK (0) on
  *   success, a negative SOFEL_ERROR_* otherwise. Results go to output
  *   arguments, which are written only on success unless said otherwise.
  * - A NULL pointer argument is an error (SOFEL_ERROR_NULL), except the
  *   `user` pointers, which are passed through untouched, and the
- *   `*_destroy` functions, which do nothing for NULL.
+ *   `*_destroy` functions, which do nothing for NULL. The location
+ *   constructors also accept a NULL input array when its count is 0.
  * - Variable-length output goes to an array the caller gives with its
  *   capacity. When the array is too small, the function writes the
  *   needed length, writes nothing to the array, and returns
@@ -221,6 +222,192 @@ sofel_font_t *sofel_font_create(const uint8_t *data, size_t len, uint32_t index,
  * FreeType: FT_Done_Face
  */
 void sofel_font_destroy(sofel_font_t *font);
+
+/* ---------------------------------------------------------- variations */
+
+/* A location keeps coordinates and variation scalars (ADR 0027). */
+typedef struct sofel_location sofel_location_t;
+
+/* A design-space axis setting, like hb_variation_t. */
+typedef struct {
+  uint32_t tag;
+  float value;
+} sofel_variation_t;
+
+/*
+ * Constructs a location by selecting a zero-based fvar named instance,
+ * then applying the variations in order. UINT32_MAX means no named
+ * instance. An invalid fvar index leaves HarfBuzz at the default design
+ * coordinates and is reported by sofel_location_ft_error for FreeType.
+ * `variations` may be NULL only when `count` is 0. Keep the source font
+ * bytes alive and unchanged until sofel_location_destroy; the font handle
+ * itself may be destroyed first.
+ *
+ * Rust: sofel_font::var::Location::new
+ * HarfBuzz: hb_font_set_var_named_instance, hb_font_set_variations
+ * FreeType: FT_Set_Named_Instance, FT_Set_Var_Design_Coordinates
+ */
+int32_t sofel_location_create(const sofel_font_t *font, uint32_t named_instance,
+                              const sofel_variation_t *variations, size_t count,
+                              sofel_location_t **out);
+
+/*
+ * Constructs a location from design coordinates. Keep source font bytes
+ * alive and unchanged until the location is destroyed.
+ *
+ * Rust: sofel_font::var::Location::from_design
+ * HarfBuzz: hb_font_set_var_coords_design
+ * FreeType: FT_Set_Var_Design_Coordinates
+ */
+int32_t sofel_location_create_design(const sofel_font_t *font, const float *coords,
+                                     size_t count, sofel_location_t **out);
+
+/*
+ * Constructs a location from HarfBuzz 2.14 normalized coordinates.
+ * Keep source font bytes alive and unchanged until destroy.
+ *
+ * Rust: sofel_font::var::Location::from_normalized_2_14
+ * HarfBuzz: hb_font_set_var_coords_normalized
+ * FreeType: FT_Set_Var_Blend_Coordinates after multiplying by 4
+ */
+int32_t sofel_location_create_normalized_2_14(const sofel_font_t *font,
+                                               const int32_t *coords, size_t count,
+                                               sofel_location_t **out);
+
+/*
+ * Constructs a location from FreeType 16.16 normalized coordinates.
+ * Keep source font bytes alive and unchanged until destroy.
+ *
+ * Rust: sofel_font::var::Location::from_normalized_16_16
+ * HarfBuzz: hb_ft_font_changed
+ * FreeType: FT_Set_Var_Blend_Coordinates
+ */
+int32_t sofel_location_create_normalized_16_16(const sofel_font_t *font,
+                                                const int32_t *coords, size_t count,
+                                                sofel_location_t **out);
+
+/*
+ * Constructs a location from one zero-based fvar named instance.
+ * Keep source font bytes alive and unchanged until destroy.
+ *
+ * Rust: sofel_font::var::Location::named_instance
+ * HarfBuzz: hb_font_set_var_named_instance
+ * FreeType: FT_Set_Named_Instance
+ */
+int32_t sofel_location_create_named_instance(const sofel_font_t *font, uint32_t index,
+                                              sofel_location_t **out);
+
+/*
+ * Frees a location. The source font bytes may be freed afterwards.
+ *
+ * Rust: none
+ * HarfBuzz: hb_font_destroy
+ * FreeType: FT_Done_Face
+ */
+void sofel_location_destroy(sofel_location_t *location);
+
+/*
+ * Copies the HarfBuzz 2.14 normalized coordinates into the caller's array.
+ * When capacity is too small, writes the required count to *len and returns
+ * SOFEL_ERROR_BUFFER_TOO_SMALL without writing the array.
+ *
+ * Rust: sofel_font::var::Location::coords_normalized
+ * HarfBuzz: hb_font_get_var_coords_normalized
+ * FreeType: none
+ */
+int32_t sofel_location_coords_normalized(const sofel_location_t *location,
+                                          int32_t *out, size_t capacity, size_t *len);
+
+/*
+ * Copies the HarfBuzz design coordinates into the caller's array.
+ * Normalized-coordinate constructors return NaN design coordinates.
+ *
+ * Rust: sofel_font::var::Location::coords_design
+ * HarfBuzz: hb_font_get_var_coords_design
+ * FreeType: none
+ */
+int32_t sofel_location_coords_design(const sofel_location_t *location,
+                                     float *out, size_t capacity, size_t *len);
+
+/*
+ * Copies the FreeType 16.16 normalized coordinates into the caller's array.
+ *
+ * Rust: sofel_font::var::Location::ft_coords
+ * HarfBuzz: none
+ * FreeType: FT_Get_Var_Blend_Coordinates
+ */
+int32_t sofel_location_ft_coords(const sofel_location_t *location,
+                                 int32_t *out, size_t capacity, size_t *len);
+
+/*
+ * Copies the FreeType 16.16 design coordinates into the caller's array.
+ *
+ * Rust: sofel_font::var::Location::ft_design_coords
+ * HarfBuzz: none
+ * FreeType: FT_Get_Var_Design_Coordinates
+ */
+int32_t sofel_location_ft_design_coords(const sofel_location_t *location,
+                                        int32_t *out, size_t capacity, size_t *len);
+
+/*
+ * Returns the FreeType coordinate-setting result: SOFEL_OK or
+ * SOFEL_ERROR_INVALID_ARGUMENT. This function itself returns SOFEL_OK.
+ *
+ * Rust: sofel_font::var::Location::ft_error
+ * HarfBuzz: none
+ * FreeType: FT_Set_Var_Blend_Coordinates, FT_Set_Named_Instance
+ */
+int32_t sofel_location_ft_error(const sofel_location_t *location, int32_t *error);
+
+/*
+ * Returns the zero-based selected fvar index, or UINT32_MAX when none.
+ *
+ * Rust: sofel_font::var::Location::named_instance_index
+ * HarfBuzz: none
+ * FreeType: FT_Face->face_index, upper 16 bits
+ */
+int32_t sofel_location_named_instance_index(const sofel_location_t *location,
+                                             uint32_t *index);
+
+/*
+ * Returns 1 when HarfBuzz has any nonzero normalized coordinate.
+ *
+ * Rust: sofel_font::var::Location::hb_nonzero
+ * HarfBuzz: hb_font_t::has_nonzero_coords
+ * FreeType: none
+ */
+int32_t sofel_location_hb_nonzero(const sofel_location_t *location, uint8_t *nonzero);
+
+/*
+ * Returns 1 when FreeType treats the location as the default instance.
+ *
+ * Rust: sofel_font::var::Location::ft_default
+ * HarfBuzz: none
+ * FreeType: IS_DEFAULT_INSTANCE
+ */
+int32_t sofel_location_ft_default(const sofel_location_t *location, uint8_t *is_default);
+
+/*
+ * Parses one hb-variation or CSS variation string. Invalid UTF-8 and
+ * invalid variation syntax return SOFEL_ERROR_INVALID_ARGUMENT.
+ *
+ * Rust: sofel_font::var::Variation::parse
+ * HarfBuzz: hb_variation_from_string
+ * FreeType: none
+ */
+int32_t sofel_variation_parse(const char *input, size_t len, sofel_variation_t *out);
+
+/*
+ * Formats one variation as tag=value. The output is NUL-terminated.
+ * A short buffer receives no bytes, *len gets the required length, and
+ * the function returns SOFEL_ERROR_BUFFER_TOO_SMALL.
+ *
+ * Rust: sofel_font::var::Variation::format
+ * HarfBuzz: hb_variation_to_string
+ * FreeType: none
+ */
+int32_t sofel_variation_format(const sofel_variation_t *variation, char *out,
+                               size_t capacity, size_t *len);
 
 /*
  * unitsPerEm of the head table, as stored.

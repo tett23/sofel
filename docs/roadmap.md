@@ -7,7 +7,8 @@
 [ADR 0027](adr/0027-variable-fonts.md)（可変フォント）、[ADR 0029](adr/0029-variation-deltas.md)（変化量の扱い）は、利用者のレビューを経て採択（未実装）になった。[ADR 0028](adr/0028-ptem-is-not-opsz.md) の `--font-ptem` の分類訂正は実装済みである。[ADR 0029](adr/0029-variation-deltas.md) の調査の記録は、手元の `target/handoff/variation-deltas-research.md` にある（コミットしていない）。
 [ADR 0027](adr/0027-variable-fonts.md) の作業1の表の読み取りと検証器は実装済みである。
 作業2のうち、座標の正規化と [ADR 0029](adr/0029-variation-deltas.md) と [ADR 0030](adr/0030-variation-evaluation-corrections.md) のItemVariationStoreの評価の核も実装した。
-次は軸と名前つきインスタンスの問い合わせ、FreeTypeが合成する既定の名前つきインスタンス、座標によって変わる問い合わせの移動、CLIとC ABIを実装する。
+C ABIには位置の作成、座標の取得、Variationの文字列変換を実装した。
+次は軸と名前つきインスタンスの問い合わせ、FreeTypeが合成する既定の名前つきインスタンス、座標によって変わる問い合わせの移動、CLIとC ABIの結果問い合わせへの位置の引き渡しを実装する。
 FeatureVariationsの条件評価の単独ファジングは、評価を実装する作業5に残す。
 
 ## 未実装の ADR
