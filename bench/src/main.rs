@@ -238,7 +238,10 @@ fn box_sum(e: Option<sofel_font::GlyphExtents>) -> u64 {
 fn cff_items(b: &mut Bench, testdata: &std::path::Path) {
     for (name, path) in CFF_FONTS {
         let Ok(bytes) = std::fs::read(testdata.join(path)) else {
-            eprintln!("{}: missing; run scripts/fetch-testdata.sh", testdata.join(path).display());
+            eprintln!(
+                "{}: missing; run scripts/fetch-testdata.sh",
+                testdata.join(path).display()
+            );
             std::process::exit(1);
         };
         let font = Font::new(&bytes, 0).expect("sofel opens the font");
@@ -299,7 +302,11 @@ fn cff_items(b: &mut Bench, testdata: &std::path::Path) {
             "glyph names".into(),
             &mut || {
                 (0..n)
-                    .map(|g| names.glyph_name(GlyphId(g)).map_or(wrap(-1), |s| cut(s) as u64))
+                    .map(|g| {
+                        names
+                            .glyph_name(GlyphId(g))
+                            .map_or(wrap(-1), |s| cut(s) as u64)
+                    })
                     .fold(0, u64::wrapping_add)
             },
             None,
@@ -321,7 +328,11 @@ fn cff_items(b: &mut Bench, testdata: &std::path::Path) {
             "glyph from name".into(),
             &mut || {
                 all.iter()
-                    .map(|s| names.glyph_from_name(s).map_or(wrap(-1), |g| u64::from(g.0)))
+                    .map(|s| {
+                        names
+                            .glyph_from_name(s)
+                            .map_or(wrap(-1), |g| u64::from(g.0))
+                    })
                     .fold(0, u64::wrapping_add)
             },
             None,
