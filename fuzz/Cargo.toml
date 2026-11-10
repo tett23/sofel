@@ -84,6 +84,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "cff"
+path = "fuzz_targets/cff.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "gdef"
 path = "fuzz_targets/gdef.rs"
 test = false

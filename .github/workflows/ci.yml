@@ -109,6 +109,11 @@ jobs:
         run: sh tools/hb-dump/build.sh
       - name: Compare with FreeType and HarfBuzz
         run: cargo test --release -p sofel-conformance -- --nocapture
+      # docs/adr/0021: the same hash as on wasm32 (the wasm job).
+      - name: Hash CFF outlines natively
+        env:
+          SOFEL_REQUIRE_TESTDATA: '1'
+        run: cargo test --release -p sofel-outline --test cff_hash
 
   # docs/adr/0004, docs/adr/0007
   wasm:
@@ -132,6 +137,21 @@ jobs:
         env:
           CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime
         run: cargo test --target wasm32-wasip1 -p sofel-read -p sofel-geom -p sofel-unicode -p sofel-font -p sofel-outline -p sofel-raster
+      # docs/adr/0021: the CFF outline hash of two test fonts, compared
+      # with the committed value that the conformance job checks natively.
+      - id: testdata
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/testdata
+          key: ${{ runner.os }}-testdata-${{ hashFiles('testdata.lock') }}
+      - name: Fetch test data
+        env:
+          SOFEL_TESTDATA_OFFLINE: ${{ steps.testdata.outputs.cache-hit == 'true' && '1' || '0' }}
+        run: sh scripts/fetch-testdata.sh
+      - name: Hash CFF outlines on wasm32-wasip1
+        run: |
+          export CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=$GITHUB_WORKSPACE/target/testdata::/testdata --env SOFEL_TESTDATA=/testdata --env SOFEL_REQUIRE_TESTDATA=1"
+          cargo test --release --target wasm32-wasip1 -p sofel-outline --test cff_hash
 
   # docs/adr/0007
   fuzz:
@@ -139,7 +159,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [cmap, metrics, font, outline, os2, name, post, vorg, base, gdef, gsub, gpos]
+        target: [cmap, metrics, font, outline, os2, name, post, vorg, base, gdef, gsub, gpos, cff]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

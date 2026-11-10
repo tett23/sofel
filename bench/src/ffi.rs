@@ -7,6 +7,7 @@ unsafe extern "C" {
     pub fn bft_open(data: *const c_uchar, len: c_long, index: c_long) -> *mut c_void;
     pub fn bft_close(face: *mut c_void);
     pub fn bft_num_glyphs(face: *mut c_void) -> c_long;
+    pub fn bft_cid(face: *mut c_void, gid: c_uint) -> c_long;
     pub fn bft_set_pixel_sizes(face: *mut c_void, ppem: c_uint) -> c_int;
     pub fn bft_char_index(face: *mut c_void, c: c_ulong) -> c_uint;
     pub fn bft_advance(face: *mut c_void, gid: c_uint) -> c_long;
@@ -63,6 +64,10 @@ impl FtFace {
     pub fn outline(&self, gid: u32, unscaled: bool) -> i64 {
         // SAFETY: a valid face.
         unsafe { bft_outline(self.0, gid, c_int::from(unscaled)) as i64 }
+    }
+    pub fn cid(&self, gid: u32) -> i64 {
+        // SAFETY: a valid face.
+        unsafe { bft_cid(self.0, gid) as i64 }
     }
     pub fn render(&self, gid: u32) -> i64 {
         // SAFETY: a valid face.

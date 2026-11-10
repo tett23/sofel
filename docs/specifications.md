@@ -125,6 +125,11 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - HarfBuzzのCFFとCFF2のアクセラレータ（`HbCff1`、`HbCff2`、[ADR 0021](adr/0021-cff-outlines.md)）：HarfBuzzの `accelerator_templ_t` と同じ確かめを同じ順に、同じ操作の予算で行い、HarfBuzzのアクセラレータが無効（`is_valid` が偽）になるときちょうど作れない。表はHarfBuzzの `hb_face_reference_table` と同じく、ファイルの外にはみ出す部分を切って読む。CFFは、Name INDEX、Top DICT INDEX（数0は誤り）、Top DICT、予め定められていないcharset、CIDキーならFDArrayとFDSelect（予め定められたcharsetは誤り）、そうでなければ予め定められていないencoding、String INDEX、Global Subrs（壊れていれば無しとする）、CharStrings（数が `Font::num_glyphs` と違えば誤り）、各Private DICT（ローカルのサブルーチンは壊れていれば無し）を確かめる。CFF2は、Top DICT、Global Subrs、Variation Store（壊れていれば無し）、CharStrings、FDArray（いずれも無ければ誤り）、グリフの数（少ないのは `VARC` の表があるときだけ許す）、FDSelect、各Private DICT（`vsindex` を含む）を確かめる。値は呼び出し側が持つ `Copy` の値で確保をしない。CIDキーのフォントとCFF2では、Font DICTとPrivate DICTをグリフごとに読みなおす（最後のFont DICTのローカルのサブルーチンだけは、予算の尽きた結果を写すため作るときの値を持つ）。
   - FreeTypeの `FT_Get_Glyph_Name` と `FT_Get_Name_Index` は結果が違う（名前の無いグリフは `.notdef`、版1は258グリフのときだけ、版2.5を読む、文字列は0のバイトか表の終わりで切れる）ため、`ft_glyph_name` と `GlyphNames::ft_glyph_from_name` を別に持つ。
 - FreeTypeの値：`ft_face_metrics` は `sfnt_load_face` の `FT_Face` の値（アセンダ、ディセンダ、高さ、最大の送り幅、下線の位置と太さ、`bbox`。値は16bitで巻き戻る。輪郭の無いフェイスとCBLC/CBDTのフェイスは0）、`ft_v_advance` は `FT_Get_Advance`（縦、拡大縮小なし）。
+- CFFとCFF2（[ADR 0021](adr/0021-cff-outlines.md)）：`Font::is_cff`、`is_cff2` は表があり、ファイルで切った長さが0でないこと。`Cff::new` はFreeTypeのCFFの駆動と同じく `CFF2`、`CFF ` の順に表を選び、FreeTypeがフェイスを開けないときにだけ失敗する（ヘッダ、INDEX、Name INDEXの数、DICT、`CharStrings` の有無、Variation Store、FDArrayの数（256以下）、Font DICTとPrivate DICTとローカルのサブルーチン、FDSelect（フォーマット0と3。CFF2のフォーマット4は誤り）、charset、encoding）。FreeTypeは表の後ろもファイルの終わりまで読むので、同じく読む。`Cff` は呼び出し側が持つ値で、Font DICTとPrivate DICTはグリフごとに読む（`Cff::subfont`）。
+  - CIDの問い合わせはFreeTypeに合わせる。`is_cid_keyed` はTop DICTの `ROS`、`cid` はcharsetの値（CIDキーでない、またはグリフIDが範囲外なら誤り）、`ros` は登録者と順序のSIDの文字列（0xFFFFと範囲外は `None`）と、整数に切り捨てた補遺。
+  - FreeTypeの文字列は、String INDEXをNULで終わる写しに並べたもので、空の文字列は写されないため次の空でない文字列として読まれる。これも同じにする。
+  - グリフ名：`charset_name` はCIDキーでないCFFのcharsetの名前。FreeTypeの手順（`Font::ft_glyph_name`、`GlyphNames::ft_*`）では、フェイスがグリフ名の印（sfntの読み込みで、読めた `post` が版3.0でないとき、またはCIDキーでないCFF）を持つときだけ名前を返し、CFFではcharsetの値の文字列（CIDキーのフォントではCIDの番号のSID）、文字列が無ければ空の名前、CFF2では `post` の手順（グリフの数はCharStringsの数）を使う。名前からグリフへは、グリフIDの順に線形に探す。`build_name_index` と `glyph_from_name` は、名前の順（同じ名前はグリフIDの小さい順）の索引を呼び出し側の配列に作り、二分探索する。
+  - `ps_font_info` は `FT_Get_PS_Font_Info` の9つの値（CFF2では誤り）、`ps_fs_type` はTop DICTの `PostScript` の文字列の `/FSType <数> def` の数（数字、空白、CR、LF以外が混じるか、あふれれば0）。
 - `HbScale` はHarfBuzzの `hb_font_t` の拡大縮小を写す。`x_mult` は `x_scale × 0x10000` を `f32` にして `upem` で割り、0へ切り捨てる（HarfBuzzの `changed` と同じ。整数の割り算ではない）。整数の値は `(v × mult + 32768) >> 16`、小数の値はHarfBuzzの `roundf`（`floor((double) x + 0.5)`）、箱は `scale_glyph_extents`（角を `f32` で拡大し、左上を切り下げ、右下を切り上げ）で拡大縮小する。FMAは使わない。代わりの値は拡大縮小した `x_scale`、`y_scale` から求める。
 - 基準線（[ADR 0017](adr/0017-base-baselines.md)）：
   - 方向は `Direction`（横と縦）とし、シェーピングの4つの方向はこれに写す。基準線のタグは `Tag` で受け取り、`baseline` にHarfBuzzの `hb_ot_layout_baseline_tag_t` の9つの値を持つ。
@@ -143,7 +148,12 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - FreeTypeと同じく、読みこんだ輪郭を幻の点の `pp1.x` だけ左に動かす（[ADR 0018](adr/0018-phantom-point-shift.md)）。`pp1.x` は、グリフの見出しの `xMin` からFreeTypeの読み方の左のサイドベアリング（`Font::ft_left_side_bearing`）を引き、点と同じく `mul_fix` で拡大縮小した値で、丸めない。`head` の `flags` のビット1によらない。空のグリフは点が無いので動かない。`OutlineInfo` の `cbox` は動かしたあとの点から求める。
   - 合成グリフは、自身の見出しとサイドベアリングの `pp1.x` を使う。USE_MY_METRICSの部品があれば、最後のその部品の `pp1.x`（部品の見出しとサイドベアリングから求めたもの。部品の変換と位置合わせでは動かない）を使う。入れ子の合成グリフでも同じ規則を部品ごとに当てる。
   - 残りの幻の点（`pp2`、`pp3`、`pp4`）と、ヒンティングと可変フォントでの幻の点は求めない。
-- HarfBuzz 15.1.0のテストのフォントのglyfを持つフェイスで、22万3925項目（拡大縮小なし、16画素、48画素）を比べ、期待する失敗は9項目である。すべて、CFFとglyfの両方を持つ `OTTO` のフォント（FreeTypeはCFFを描く）による。
+- CFFとCFF2（[ADR 0021](adr/0021-cff-outlines.md)）：`Outlines::new` が、FreeTypeの駆動の選び方で形式を決める。sfntの版が `OTTO` なら `Cff::new`（`CFF2`、`CFF ` の順）で、それ以外ならglyf（`GLYF`）で読む。FreeTypeのTrueTypeの駆動は `OTTO` を受け付けないので、CFFとglyfの両方を持つ `OTTO` のフォントはCFFで描く（ADRは「glyfかlocaがあればglyf」と書くが、FreeTypeに合わせた）。`OTTO` でCFFもCFF2も無ければ `UnsupportedFormat`、`Cff::new` が失敗すれば `InvalidCff`、charstringの解読やFont DICTの読み取りが失敗すれば `InvalidCharString` とする。
+  - 点は、`sofel-read` のFreeTypeのcharstringの解読器が倍率 `0x400` の装置の空間で渡す線と曲線から、`ps_builder` と同じく `>> 10` でフォントの単位の整数にし（小数は切り捨て）、輪郭を閉じるときに始点と同じ最後の曲線上の点と、1点だけの輪郭を取り除く。そのあと、`cff_slot_load` と同じく、FontMatrixが単位行列でなければ変換し、平行移動を足し、`Scaled` なら（またはFDArrayのフォントでTop DICTとFont DICTの `units_per_em` が違えば `Unscaled` でも）`mul_fix` で拡大縮小する。`unitsPerEm` が0x7FFFを超えるフォントの拡大縮小は誤りとする。`overlap` は常に偽。
+  - `random` の状態は、描くたびにPrivate DICTの `initialRandomSeed`（FreeTypeでフェイスの種を0にしたときの値）から始める。
+  - FontMatrixは `cff_face_init` と同じく、`yy`（0なら `yx`）で割って正規化し、平行移動を整数のフォントの単位にする。Font DICTの行列はTop DICTの行列と掛け合わせる。行列の無いFont DICTは、正規化した上の行列を写して、もう一度平行移動を16bit右にずらす（FreeTypeと同じ）。
+- `ft-dump` の `--cid` と `--ps-info` の結果を全フェイスで比べる（`:cid`、`:ps-info`、1294項目、期待する失敗は無い）。`--outline` と `--raster` は、フェイスの `random-seed`（`FT_PARAM_TAG_RANDOM_SEED`）を0にして開く。`FT_Get_PS_Font_Extra` は公開のAPIでないので、`--ps-info` は `FT_Get_FSType_Flags`（`/FSType` が0でなければその値、そうでなければOS/2の `fsType`）を書く。
+- HarfBuzz 15.1.0のテストのフォントで、FreeTypeが開けるglyf、CFF、CFF2のフェイスの53万2841項目（拡大縮小なし、16画素、48画素）を比べ、期待する失敗は無い。
 - 同じフォントの単純なグリフ（見出しの `xMin` が点の最小のxと等しい4万9225個）で、拡大縮小なしの `cbox.x_min` が、HarfBuzzのグリフの箱の `x_bearing`（可変フォントの変化なし）と等しいことを確かめている。
 
 ## ラスタライズ（`sofel-raster`）
@@ -152,7 +162,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 掃き出しは、帯の行ごとに触れた列の範囲だけを走査し、被覆率は触れたセルでだけ求めて次のセルまで使う。走査したセルは0に戻し、帯の配列を描画のたびに全体を0にはしない（[ADR 0014](adr/0014-raster-sweep-touched-cells.md)）。
 - 重なりのときは、画素ごとに16個の副標本の `(coverage + 8) / 16` を16bitで合計し、最後に `min(合計, 255)` とする。合計は256以下なので、FreeTypeの標本ごとの `sum - (sum >> 8)` と同じ値になる（[ADR 0014](adr/0014-raster-sweep-touched-cells.md)）。
 - FreeTypeは、輪郭をビットマップの原点へ動かしてから（重なりの印があればさらに4倍してから）命令に変換する。暗黙の曲線上の点（中点の0への切り捨て）はこの順序で決まるので、完全に一致させるには、`sofel_outline::load` で点を読み、`sofel_raster::pixel_box` で箱を求め、`Scratch::decompose` に `PixelBox::shift()` と倍率を渡して命令に変換し、`Rasterizer::render_placed` で描く。この手順は `sofel_cli::glyph::render` にまとめてある。`Rasterizer::render` は、記録した命令をあとから動かすので、中点のある輪郭では1画素の値が1〜2ずれることがある。
-- HarfBuzz 15.1.0のテストのフォントのglyfを持つフェイスで、22万3917項目（12、24、48画素）を比べ、期待する失敗は9項目である。すべて、CFFとglyfの両方を持つフォントのグリフ（輪郭が一致しない）のものである。
+- HarfBuzz 15.1.0のテストのフォントで、FreeTypeが開けるglyf、CFF、CFF2のフェイスを12、24、48画素で比べ、期待する失敗は無い。CFFのグリフは重なりの印を持たず、非ゼロ規則で描く（FreeTypeの `REVERSE_FILL` と `HIGH_PRECISION` はsmoothのラスタライザが見ない）。
 
 ## 道具
 
@@ -167,6 +177,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 可変長の出力（画像、文字列）は呼び出し側の配列に書く。足りなければ要る長さを書き、配列には何も書かず `SOFEL_ERROR_BUFFER_TOO_SMALL` を返す（`snprintf` と同じ形）。
 - 輪郭はCの関数ポインタ（`move_to`、`line_to`、`quad_to`、`cubic_to`、`close` と `void *user`）で受け取る。検証の結果は、1件ずつ関数ポインタに `sofel_diagnostic_t` で渡す。
 - ヘッダの各関数の説明に、対応するRustの関数（`Rust:`）と、相当するHarfBuzzとFreeTypeの関数を書く。`scripts/check-capi.sh` が、ライブラリのクレートの公開の関数（rustdocのJSONの出力から `scripts/public-api.sh` で求める）がすべてヘッダの `Rust:` の行か除外の一覧（`crates/sofel-capi/unmapped.txt`、理由つき）にあることを確かめる。ライブラリに公開の機能を足すADRは、同じプルリクエストでC ABIの関数とヘッダとCのテストも足す。
+- CFFとCFF2（[ADR 0021](adr/0021-cff-outlines.md)）：`sofel_font_t` は作るときに `Outlines`（`Cff::new` の結果とHarfBuzzの箱の値）を持ち、CFFが壊れていてもフォントの作成は失敗しない。輪郭とラスタライズの関数はそれでCFFとCFF2も描く。`sofel_font_is_cff`、`is_cff2`（1か0）、`sofel_font_is_cid_keyed`、`sofel_font_cid`（誤りのとき `*cid` は0）、`sofel_font_ros`（NUL終端で最初のNULで切った文字列、NULLの文字列は空にして `present` のビットで区別）、`sofel_font_ps_font_info`（数の配列と、呼び出し側の配列に並べた文字列とその位置。NULLは `SIZE_MAX`）、`sofel_font_ps_fs_type` を持つ。FreeTypeが開けないCFFには `SOFEL_ERROR_INVALID_CFF`、FreeTypeの `Invalid_Argument` には `SOFEL_ERROR_INVALID_ARGUMENT` を返す。
 - `SOFEL_VERSION_MAJOR` などのマクロと `sofel_version()` を持つ。1.0.0までABIの互換を約束しない。
 - Cのテスト（`crates/sofel-capi/tests/c/`）は `scripts/test-capi.sh` で、ネイティブ、ThreadSanitizer、AddressSanitizer、wasm32-wasip1（wasi-sdkとwasmtime）で走らせる。期待値は、`crates/sofel-capi/tests/fixture.rs` がRustのAPIで求めて `fixture.h` に書く。静的ライブラリの `sofel_` のシンボルとヘッダの関数の一致も確かめる。wasmでは、リンクに例外処理（`-lsetjmp`）もC++の実行時ライブラリも要らない。
 

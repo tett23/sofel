@@ -121,14 +121,20 @@ fn check_sfnt(s: &Sfnt<'_>) {
 pub fn check_outline(data: &[u8]) {
     let Ok(font) = sofel_font::Font::new(data, 0) else { return };
     check_font_queries(&font);
+    draw_all(&font);
+}
+
+/// Every glyph's outline through `Outlines` (glyf, CFF and CFF2), and
+/// its rendering.
+fn draw_all(font: &sofel_font::Font<'_>) {
+    let outlines = sofel_outline::Outlines::new(font);
     let mut scratch = sofel_outline::Scratch::default();
     let mut raster = sofel_raster::Rasterizer::with_band_cells(512);
-    let scales = [sofel_outline::Scale::Unscaled, sofel_outline::Scale::pixels(&font, 16, 16)];
-    for g in 0..font.num_glyphs().min(256) {
+    let scales = [sofel_outline::Scale::Unscaled, sofel_outline::Scale::pixels(font, 16, 16)];
+    for g in 0..font.num_glyphs().max(outlines.cff().map_or(0, |c| c.num_glyphs())).min(256) {
         for scale in scales {
             let mut n = 0usize;
-            let _ = sofel_outline::draw(
-                &font,
+            let _ = outlines.draw(
                 GlyphId(g),
                 scale,
                 &mut scratch,
@@ -137,7 +143,7 @@ pub fn check_outline(data: &[u8]) {
         }
         for overlap in [false, true] {
             raster.clear();
-            if sofel_outline::draw(&font, GlyphId(g), scales[1], &mut scratch, &mut raster).is_ok() {
+            if outlines.draw(GlyphId(g), scales[1], &mut scratch, &mut raster).is_ok() {
                 let options = sofel_raster::RenderOptions {
                     fill: sofel_raster::FillRule::NonZero,
                     overlap,
@@ -329,6 +335,92 @@ fn check_font_queries(font: &sofel_font::Font<'_>) {
             let _ = idx.ft_glyph_from_name(n);
         }
     }
+}
+
+/// A CFF or CFF2 table (ADR 0021): the first byte chooses `CFF ` or
+/// `CFF2` (bit 0) and whether the font has a one-axis `fvar` (bit 1);
+/// the rest is the table. `Cff::new`, every glyph through `Outlines`, the
+/// CID queries, the names and the font information must not panic, and a
+/// table without an `Error` (and without an FDSelect of format 4) opens.
+pub fn check_cff(input: &[u8]) {
+    let Some((&flags, table)) = input.split_first() else { return };
+    let tag: &[u8; 4] = if flags & 1 == 0 { b"CFF " } else { b"CFF2" };
+    let mut tables: Vec<([u8; 4], Vec<u8>)> = vec![
+        (*b"head", head_table()),
+        (*b"maxp", vec![0, 0, 0x50, 0, 0, 16]),
+        (*tag, table.to_vec()),
+    ];
+    if flags & 2 != 0 {
+        tables.push((*b"fvar", vec![0, 1, 0, 0, 0, 16, 0, 2, 0, 1, 0, 20, 0, 0, 0, 0]));
+    }
+    tables.sort();
+    let file = sfnt_otto(&tables);
+    let Ok(font) = sofel_font::Font::new(&file, 0) else { return };
+    let num_glyphs = Some(16);
+    let mut error = false;
+    let mut format4 = false;
+    let mut report = |d: Diagnostic| {
+        error |= d.severity == Severity::Error;
+        format4 |= d.kind.id() == "fd_select_format4";
+    };
+    if flags & 1 == 0 {
+        sofel_read::cff::validate(table, num_glyphs, &mut report);
+    } else {
+        sofel_read::cff::validate2(table, num_glyphs, (flags & 2 != 0).then_some(1), &mut report);
+    }
+    let cff = sofel_font::Cff::new(&font);
+    if !error && !format4 {
+        assert!(cff.is_ok(), "no Error, but Cff::new fails: {cff:?}");
+    }
+    if let Ok(c) = cff {
+        let _ = c.is_cid_keyed();
+        let _ = c.ros();
+        let _ = c.ps_font_info();
+        let _ = c.ps_fs_type();
+        let _ = c.ft_glyph_from_name(b"A");
+        let mut index = vec![0u32; c.num_glyphs().min(4096) as usize];
+        let built = c.build_name_index(&mut index).map(<[u32]>::to_vec);
+        for g in 0..c.num_glyphs().min(256) {
+            let _ = c.cid(GlyphId(g));
+            let _ = c.charset_name(GlyphId(g));
+            let _ = c.ft_glyph_name(GlyphId(g));
+        }
+        if let Some(idx) = built {
+            let _ = c.glyph_from_name(&idx, b".notdef");
+        }
+    }
+    draw_all(&font);
+}
+
+fn head_table() -> Vec<u8> {
+    let mut h = vec![0u8; 54];
+    h[0..4].copy_from_slice(&[0, 1, 0, 0]);
+    h[12..16].copy_from_slice(&0x5F0F_3CF5u32.to_be_bytes());
+    h[18..20].copy_from_slice(&1000u16.to_be_bytes());
+    h
+}
+
+/// An `OTTO` sfnt of `tables` (sorted by tag).
+fn sfnt_otto(tables: &[([u8; 4], Vec<u8>)]) -> Vec<u8> {
+    let n = tables.len();
+    let mut out = b"OTTO".to_vec();
+    out.extend((n as u16).to_be_bytes());
+    out.extend([0u8; 6]);
+    let mut at = 12 + 16 * n;
+    let mut data = Vec::new();
+    for (tag, t) in tables {
+        out.extend(tag);
+        out.extend([0u8; 4]);
+        out.extend((at as u32).to_be_bytes());
+        out.extend((t.len() as u32).to_be_bytes());
+        data.extend(t);
+        while data.len() % 4 != 0 {
+            data.push(0);
+        }
+        at = 12 + 16 * n + data.len();
+    }
+    out.extend(data);
+    out
 }
 
 // ---- GDEF, GSUB and GPOS (ADR 0020) ----

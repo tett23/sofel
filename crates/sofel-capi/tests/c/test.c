@@ -970,6 +970,45 @@ static void test_cff(void) {
   sofel_font_destroy(font);
 }
 
+/* CID queries, font information and CFF outlines (ADR 0021). */
+static void test_cff_info(void) {
+  int32_t e = 12345, v = -1, sup = 0, cbox[4] = {0, 0, 0, 0};
+  uint32_t cid = 99, present = 0, overlap = 9;
+  uint16_t fs = 9;
+  int64_t values[4] = {0, 0, 0, 0};
+  size_t offsets[5] = {0, 0, 0, 0, 0}, len = 0;
+  char reg[16], ord[16], small[3], strings[32];
+  sofel_outline_scratch_t *scratch = sofel_outline_scratch_create();
+  sofel_font_t *cff = sofel_font_create(cff_font_data, sizeof cff_font_data, 0, &e);
+  sofel_font_t *cidf = sofel_font_create(cid_font_data, sizeof cid_font_data, 0, &e);
+  CHECK(cff != NULL && cidf != NULL && scratch != NULL);
+  if (cff == NULL || cidf == NULL || scratch == NULL) return;
+  CHECK(sofel_font_is_cff(cff) == 1 && sofel_font_is_cff2(cff) == 0 && sofel_font_is_cff(NULL) == 0);
+  CHECK(sofel_font_is_cid_keyed(cff, &v) == SOFEL_OK && v == 0);
+  CHECK(sofel_font_cid(cff, 1, &cid) == SOFEL_ERROR_INVALID_ARGUMENT && cid == 0);
+  CHECK(sofel_font_ros(cff, reg, sizeof reg, ord, sizeof ord, &sup, &present) ==
+        SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_font_is_cid_keyed(cidf, &v) == SOFEL_OK && v == 1);
+  CHECK(sofel_font_cid(cidf, 1, &cid) == SOFEL_OK && cid == 100);
+  CHECK(sofel_font_cid(cidf, 3, &cid) == SOFEL_ERROR_INVALID_ARGUMENT && cid == 0);
+  CHECK(sofel_font_ros(cidf, reg, sizeof reg, ord, sizeof ord, &sup, &present) == SOFEL_OK);
+  CHECK(strcmp(reg, "Adobe") == 0 && strcmp(ord, "Japan1") == 0 && sup == 6 && present == 3);
+  CHECK(sofel_font_ros(cidf, small, sizeof small, ord, sizeof ord, &sup, &present) ==
+        SOFEL_ERROR_BUFFER_TOO_SMALL);
+  CHECK(sofel_font_ps_font_info(cidf, values, strings, 2, offsets, &len) ==
+        SOFEL_ERROR_BUFFER_TOO_SMALL && len == 5);
+  CHECK(sofel_font_ps_font_info(cidf, values, strings, sizeof strings, offsets, &len) == SOFEL_OK);
+  CHECK(offsets[0] == (size_t)-1 && offsets[1] == 0 && strcmp(strings, "Note") == 0);
+  CHECK(values[0] == 0 && values[1] == 0 && values[2] == -100 && values[3] == 50);
+  CHECK(sofel_font_ps_fs_type(cidf, &fs) == SOFEL_OK && fs == 0);
+  /* Glyph 1 of the CFF font: rmoveto 10 -20, rlineto 300 700. */
+  CHECK(sofel_outline_load(cff, 1, SOFEL_SCALE_NONE, 0, 0, scratch, cbox, &overlap) == SOFEL_OK);
+  CHECK(cbox[0] == 10 && cbox[1] == -20 && cbox[2] == 310 && cbox[3] == 680 && overlap == 0);
+  sofel_outline_scratch_destroy(scratch);
+  sofel_font_destroy(cff);
+  sofel_font_destroy(cidf);
+}
+
 static void test_metrics(void) {
   int32_t e = 12345, ext[3] = {0, 0, 0}, box[4] = {30, 700, 401, -703}, v = 0;
   uint16_t u16v = 0;
@@ -1080,6 +1119,7 @@ int main(void) {
   test_validate();
   test_metrics();
   test_cff();
+  test_cff_info();
 #if !defined(__wasi__)
   test_threads(font);
 #endif
