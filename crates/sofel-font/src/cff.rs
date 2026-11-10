@@ -19,7 +19,9 @@ use sofel_read::be::{self, to_usize};
 use sofel_read::cff::dict::{
     BlendWeights, DictError, FontDict, FontMatrix, NO_SID, PrivateDict, TopDict,
 };
-use sofel_read::cff::{self, Charset, Encoding, FdSelect, FtBlend, Header, Index, Version, ft};
+use sofel_read::cff::{
+    self, Charset, CharsetIndex, Encoding, FdSelect, FtBlend, Header, Index, Version, ft,
+};
 use sofel_read::item_variation::ItemVariationStore;
 use sofel_read::{GlyphId, Tag};
 
@@ -725,18 +727,39 @@ impl<'a> Cff<'a> {
     }
 
     /// The CID of `glyph` (`FT_Get_CID_From_Glyph_Index`): the charset
-    /// value.
+    /// value. Each call reads the charset ranges before the glyph; to
+    /// look up many glyphs, build a [`CharsetIndex`] once (see
+    /// [`Cff::cid_with`]).
     pub fn cid(&self, glyph: GlyphId) -> Result<u32, CidError> {
+        self.cid_by(None, glyph)
+    }
+
+    /// [`Cff::cid`] with an index of [`Cff::charset`] (ADR 0025), built by
+    /// [`Charset::index_into`] over an array of [`Charset::num_ranges`]
+    /// words: building it reads the ranges once, and each lookup is then
+    /// a binary search over them. The result equals [`Cff::cid`]'s;
+    /// `index` must come from this font's charset.
+    pub fn cid_with(&self, index: &CharsetIndex<'_>, glyph: GlyphId) -> Result<u32, CidError> {
+        self.cid_by(Some(index), glyph)
+    }
+
+    fn cid_by(&self, index: Option<&CharsetIndex<'_>>, glyph: GlyphId) -> Result<u32, CidError> {
         if !self.is_cid_keyed() {
             return Err(CidError::NotCidKeyed);
         }
         if glyph.0 >= self.num_glyphs() {
             return Err(CidError::InvalidGlyphIndex);
         }
-        Ok(self
-            .charset
-            .and_then(|c| c.sid(glyph.0))
-            .map_or(0, u32::from))
+        Ok(self.charset_sid(index, glyph.0).map_or(0, u32::from))
+    }
+
+    /// The charset value of `glyph`, through `index` when there is one.
+    fn charset_sid(&self, index: Option<&CharsetIndex<'_>>, glyph: u32) -> Option<u16> {
+        let c = self.charset?;
+        match index {
+            Some(ix) => ix.sid(glyph),
+            None => c.sid(glyph),
+        }
     }
 
     /// The registry, ordering and supplement
@@ -765,16 +788,41 @@ impl<'a> Cff<'a> {
 
     /// The charset name of `glyph`: the SID's string, cut at a 0 byte as
     /// FreeType's C strings are. `None` for CID-keyed fonts, CFF2, glyph
-    /// ids not below the glyph count, and SIDs without a string.
+    /// ids not below the glyph count, and SIDs without a string. To look
+    /// up many glyphs, use [`Cff::charset_name_with`].
     pub fn charset_name(&self, glyph: GlyphId) -> Option<&'a [u8]> {
-        if self.version != Version::Cff || self.top.is_cid() {
-            return None;
-        }
-        self.charset_string(glyph)
+        self.charset_name_by(None, glyph)
     }
 
-    fn charset_string(&self, glyph: GlyphId) -> Option<&'a [u8]> {
-        let sid = self.charset?.sid(glyph.0)?;
+    /// [`Cff::charset_name`] with an index of the charset; see
+    /// [`Cff::cid_with`]. The result equals [`Cff::charset_name`]'s.
+    pub fn charset_name_with(&self, index: &CharsetIndex<'_>, glyph: GlyphId) -> Option<&'a [u8]> {
+        self.charset_name_by(Some(index), glyph)
+    }
+
+    fn charset_name_by(
+        &self,
+        index: Option<&CharsetIndex<'_>>,
+        glyph: GlyphId,
+    ) -> Option<&'a [u8]> {
+        if !self.has_charset_names() {
+            return None;
+        }
+        self.charset_string(index, glyph)
+    }
+
+    /// Whether the charset holds glyph names: CFF that is not CID-keyed.
+    fn has_charset_names(&self) -> bool {
+        self.version == Version::Cff && !self.top.is_cid()
+    }
+
+    fn charset_string(&self, index: Option<&CharsetIndex<'_>>, glyph: GlyphId) -> Option<&'a [u8]> {
+        let sid = self.charset_sid(index, glyph.0)?;
+        self.sid_name(sid)
+    }
+
+    /// The string of a charset value, cut at a 0 byte.
+    fn sid_name(&self, sid: u16) -> Option<&'a [u8]> {
         self.sid_string(u32::from(sid)).map(cut)
     }
 
@@ -783,16 +831,32 @@ impl<'a> Cff<'a> {
     /// below the glyph count; else the string of the charset value (also
     /// in CID-keyed fonts, where it is a CID), or an empty name when there
     /// is no such string. CFF2 faces use `post` ([`crate::Font::ft_glyph_name`]).
+    /// To look up many glyphs, use [`Cff::ft_glyph_name_with`].
     pub fn ft_glyph_name(&self, glyph: GlyphId) -> Option<&'a [u8]> {
+        self.ft_glyph_name_by(None, glyph)
+    }
+
+    /// [`Cff::ft_glyph_name`] with an index of the charset; see
+    /// [`Cff::cid_with`]. The result equals [`Cff::ft_glyph_name`]'s.
+    pub fn ft_glyph_name_with(&self, index: &CharsetIndex<'_>, glyph: GlyphId) -> Option<&'a [u8]> {
+        self.ft_glyph_name_by(Some(index), glyph)
+    }
+
+    fn ft_glyph_name_by(
+        &self,
+        index: Option<&CharsetIndex<'_>>,
+        glyph: GlyphId,
+    ) -> Option<&'a [u8]> {
         if !self.has_glyph_names() || glyph.0 >= self.num_glyphs() || self.version != Version::Cff {
             return None;
         }
-        Some(self.charset_string(glyph).unwrap_or_default())
+        Some(self.charset_string(index, glyph).unwrap_or_default())
     }
 
     /// FreeType's `FT_Get_Name_Index` for a CFF (version 1) face: the
     /// first glyph, in glyph id order, whose charset string is `name`; 0
-    /// when there is none or without [`Cff::has_glyph_names`].
+    /// when there is none or without [`Cff::has_glyph_names`]. One pass
+    /// over the charset.
     pub fn ft_glyph_from_name(&self, name: &[u8]) -> GlyphId {
         if !self.has_glyph_names() || self.version != Version::Cff {
             return GlyphId(0);
@@ -809,33 +873,96 @@ impl<'a> Cff<'a> {
     /// Fills `buf` (at least [`Cff::num_glyphs`] words) with the glyph
     /// ids sorted by charset name, equal names by glyph id, for
     /// [`Cff::glyph_from_name`]. Glyphs without a name sort first. `None`
-    /// when `buf` is too short or the font has no glyph names. Takes
-    /// O(n log n) time.
+    /// when `buf` is too short or the font has no glyph names. Reads the
+    /// charset once, in glyph id order, and sorts in O(n log n) time.
     pub fn build_name_index<'b>(&self, buf: &'b mut [u32]) -> Option<&'b [u32]> {
-        if self.version != Version::Cff || self.top.is_cid() {
+        let sids = self.charset.map(|c| c.sids());
+        self.build_name_index_from(buf, sids.into_iter().flatten())
+    }
+
+    /// [`Cff::build_name_index`] with an index of the charset; see
+    /// [`Cff::cid_with`]. The result equals [`Cff::build_name_index`]'s;
+    /// since that already reads the charset in one pass, the index gains
+    /// little here.
+    pub fn build_name_index_with<'b>(
+        &self,
+        index: &CharsetIndex<'_>,
+        buf: &'b mut [u32],
+    ) -> Option<&'b [u32]> {
+        let sids = (0..self.num_glyphs()).map_while(|g| self.charset_sid(Some(index), g));
+        self.build_name_index_from(buf, sids)
+    }
+
+    /// Sorts the glyph ids by the names of `sids` (the charset values in
+    /// glyph id order). CFF has at most 65535 glyphs, so each word holds
+    /// the SID above the glyph id while sorting.
+    fn build_name_index_from<'b>(
+        &self,
+        buf: &'b mut [u32],
+        sids: impl Iterator<Item = u16>,
+    ) -> Option<&'b [u32]> {
+        if !self.has_charset_names() {
             return None;
         }
-        let n = to_usize(self.num_glyphs());
-        let buf = buf.get_mut(..n)?;
-        for (g, slot) in (0u32..).zip(buf.iter_mut()) {
-            *slot = g;
+        let n = self.num_glyphs();
+        let buf = buf.get_mut(..to_usize(n))?;
+        if n > 0x1_0000 {
+            return None;
         }
-        buf.sort_unstable_by(|a, b| {
-            let na = self.charset_name(GlyphId(*a)).unwrap_or_default();
-            let nb = self.charset_name(GlyphId(*b)).unwrap_or_default();
-            na.cmp(nb).then(a.cmp(b))
-        });
+        // A glyph the charset has no value for has no name (SID 0xFFFF
+        // has no string).
+        for (g, slot) in (0u32..).zip(buf.iter_mut()) {
+            *slot = (NO_SID << 16) | g;
+        }
+        for (slot, sid) in buf.iter_mut().zip(sids) {
+            *slot = (u32::from(sid) << 16) | (*slot & 0xFFFF);
+        }
+        let name = |w: u32| {
+            u16::try_from(w >> 16)
+                .ok()
+                .and_then(|sid| self.sid_name(sid))
+                .unwrap_or_default()
+        };
+        buf.sort_unstable_by(|&a, &b| name(a).cmp(name(b)).then((a & 0xFFFF).cmp(&(b & 0xFFFF))));
+        for w in buf.iter_mut() {
+            *w &= 0xFFFF;
+        }
         Some(buf)
     }
 
     /// The glyph named `name` in an index from [`Cff::build_name_index`]:
     /// a binary search, giving the smallest glyph id among equal names.
-    /// `None` for an empty name or no match.
+    /// `None` for an empty name or no match. Each step of the search
+    /// reads the charset; [`Cff::glyph_from_name_with`] does not.
     pub fn glyph_from_name(&self, index: &[u32], name: &[u8]) -> Option<GlyphId> {
+        self.glyph_from_name_by(None, index, name)
+    }
+
+    /// [`Cff::glyph_from_name`] with an index of the charset (`charset`;
+    /// see [`Cff::cid_with`]) for comparing the candidates. The result
+    /// equals [`Cff::glyph_from_name`]'s.
+    pub fn glyph_from_name_with(
+        &self,
+        charset: &CharsetIndex<'_>,
+        index: &[u32],
+        name: &[u8],
+    ) -> Option<GlyphId> {
+        self.glyph_from_name_by(Some(charset), index, name)
+    }
+
+    fn glyph_from_name_by(
+        &self,
+        charset: Option<&CharsetIndex<'_>>,
+        index: &[u32],
+        name: &[u8],
+    ) -> Option<GlyphId> {
         if name.is_empty() {
             return None;
         }
-        let key = |g: &u32| self.charset_name(GlyphId(*g)).unwrap_or_default();
+        let key = |g: &u32| {
+            self.charset_name_by(charset, GlyphId(*g))
+                .unwrap_or_default()
+        };
         let i = index.partition_point(|g| key(g) < name);
         let g = *index.get(i)?;
         (key(&g) == name).then_some(GlyphId(g))

@@ -80,3 +80,11 @@ sofel_font::fs_type The /FSType rule on a byte string; C gets it for a font with
 sofel_outline::Outlines::cff The opened CFF that sofel_font_t keeps; C queries it with sofel_font_cid and friends.
 sofel_outline::Outlines::font Returns the Rust font; C keeps the sofel_font_t.
 sofel_outline::Outlines::hb_extents Returns the Rust boxes value; C gets boxes with sofel_font_glyph_extents.
+sofel_read::cff::Charset::num_ranges The length of the caller's array for the charset index (ADR 0025); sofel_font_t builds and keeps the index inside, so C needs no array.
+sofel_read::cff::Charset::index_into Builds the charset index over the caller's array (ADR 0025); sofel_font_create builds it inside sofel_font_t, which sofel_font_cid and sofel_font_ft_glyph_name use.
+sofel_read::cff::CharsetIndex::charset A Rust view of the charset index that sofel_font_t keeps inside (ADR 0025).
+sofel_read::cff::CharsetIndex::sid The charset index that sofel_font_t keeps inside (ADR 0025); C reads CIDs with sofel_font_cid.
+sofel_read::cff::CharsetIndex::glyph The charset index that sofel_font_t keeps inside (ADR 0025); C reads the charset with sofel_font_table.
+sofel_font::Cff::charset_name_with Cff::charset_name with the charset index (ADR 0025); C gets glyph names from sofel_font_ft_glyph_name, which uses the index sofel_font_t keeps.
+sofel_font::Cff::build_name_index_with Cff::build_name_index with the charset index (ADR 0025); C looks glyphs up by name through sofel_glyph_names_create.
+sofel_font::Cff::glyph_from_name_with Cff::glyph_from_name with the charset index (ADR 0025); C looks glyphs up by name through sofel_glyph_names_glyph_from_name.

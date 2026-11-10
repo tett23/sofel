@@ -108,6 +108,7 @@ let (extents, from_base) = font.layout_font_extents(Direction::Horizontal, Tag::
 ```
 
 - CFFとCFF2（[ADR 0021](adr/0021-cff-outlines.md)）：`Cff::new(&font)` は、FreeTypeがフェイスを開けるときだけ成功する。一度作って持ち続ける。`is_cid_keyed`、`cid(gid)`、`ros()`（`FT_Get_CID_*`）、`charset_name`、`build_name_index` と `glyph_from_name`、`ft_glyph_name`、`ft_glyph_from_name`、`ps_font_info()`（`FT_Get_PS_Font_Info`）、`ps_fs_type()`、`top_dict()`、`font_dict(fd)`、`private_dict(fd)`（PDFの `StemV` などに使う生の値）を持つ。`Font::is_cff`、`is_cff2` は表の有無だけを見る。
+- CFFのcharsetの索引（[ADR 0025](adr/0025-cff-charset-index.md)）：`cid`、`charset_name`、`ft_glyph_name` などは、索引が無いとcharsetの範囲を毎回前から読む。全グリフのように繰り返し引くときは、索引を一度作って `_with` の版に渡す。`let cs = cff.charset()?; let mut starts = vec![0u32; cs.num_ranges()]; let index = cs.index_into(&mut starts).ok()?;` のあと `cff.cid_with(&index, gid)`、`charset_name_with`、`ft_glyph_name_with`、`build_name_index_with`、`glyph_from_name_with` を使う。結果は索引の無い版と同じ。作る費用は範囲の数の配列を1回読むことで、配列は呼び出し側が持つ（`sofel-font` は確保しない）。1回だけ引くなら索引は要らない。C ABIでは `sofel_font_t` が内部に持つので、何もしなくてよい。
 - グリフ名はHarfBuzzと同じく、postに無ければCFFのcharsetから引く（CIDキーのフォントには無い。[ADR 0021](adr/0021-cff-outlines.md)）。名前から引く索引は呼び出し側が持つ。`let mut buf = vec![0u32; font.glyph_names_len()]; let names = font.glyph_names(&mut buf)?;` で作り、`names.glyph_from_name(b"A")` で引く。CFFの名前が同じグリフが複数あれば、グリフIDの小さいものを返す。`glyph_name` は呼び出しごとに `HbCff1` を作るので、繰り返し引くときは作っておいた値を `glyph_name_with(g, cff)` に渡す。名前の文字列は呼び出し側の配列に書く（`name_utf8` など）か、フォントのデータを借りて返す（`glyph_name`、`sfnt_name`）。
 - 下の層が要るときは `sofel_font::read`（`sofel-read` の再公開）と `Font::sfnt()`、`Font::head()` を使う。
 
