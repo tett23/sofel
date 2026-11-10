@@ -765,3 +765,136 @@ fn use_mongolian_free_variation_selectors_join() {
     assert_eq!(s(&[A, FVS1, A]), [FORM1, FORM2, FORM3]);
     assert_eq!(s(&[A, A]), [FORM1, FORM3]);
 }
+
+// Khmer.
+
+mod khmr {
+    pub const KA: u32 = 0x1780;
+    pub const KHA: u32 = 0x1781;
+    pub const RO: u32 = 0x179A;
+    pub const AA: u32 = 0x17B6;
+    pub const OE: u32 = 0x17BE;
+    pub const E: u32 = 0x17C1;
+    pub const COENG: u32 = 0x17D2;
+}
+
+/// Khmer: `pref` forms Coeng, Ro; `cfar` and `blwf` form Coeng, Kha
+/// (the `cfar` lookup first, so it wins where its mask is set).
+fn khmer_font() -> (Vec<u8>, Vec<u32>) {
+    use khmr::*;
+    let chars = vec![KA, KHA, RO, AA, OE, E, COENG, DC, FORM1, FORM2, FORM3];
+    let data = indic_font(
+        b"khmr",
+        &chars,
+        &[
+            (b"pref", &[COENG, RO], FORM1),
+            (b"cfar", &[COENG, KHA], FORM2),
+            (b"blwf", &[COENG, KHA], FORM3),
+        ],
+    );
+    (data, chars)
+}
+
+#[test]
+fn khmer_coeng_ro_and_pre_base_vowels() {
+    use khmr::*;
+    let (data, chars) = khmer_font();
+    assert_eq!(plan_shaper(&data, b"Khmr"), Shaper::Khmer);
+    let s = |text: &[u32]| indic_shape(&data, &chars, b"Khmr", text);
+    // KA COENG RO: the Coeng, Ro moves before the base and forms `pref`.
+    assert_eq!(s(&[KA, COENG, RO]), [FORM1, KA]);
+    assert_eq!(indic_clusters(&data, b"Khmr", &[KA, COENG, RO]), [0, 0]);
+    // KA COENG RO COENG KHA: what follows the Coeng, Ro gets `cfar`.
+    assert_eq!(s(&[KA, COENG, RO, COENG, KHA]), [FORM1, KA, FORM2]);
+    // KA COENG KHA: no `cfar`, so `blwf` forms it.
+    assert_eq!(s(&[KA, COENG, KHA]), [KA, FORM3]);
+    // KA E AA: the pre-base vowel moves to the start.
+    assert_eq!(s(&[KA, E, AA]), [E, KA, AA]);
+    assert_eq!(indic_clusters(&data, b"Khmr", &[KA, E, AA]), [0, 0, 0]);
+    // KA OE: the split vowel decomposes into E, OE; E moves first.
+    assert_eq!(s(&[KA, OE]), [E, KA, OE]);
+}
+
+#[test]
+fn khmer_dotted_circles() {
+    use khmr::*;
+    let (data, chars) = khmer_font();
+    let s = |text: &[u32]| indic_shape(&data, &chars, b"Khmr", text);
+    // A vowel alone: a dotted circle is its base.
+    assert_eq!(s(&[AA]), [DC, AA]);
+    assert_eq!(s(&[E]), [E, DC]);
+    // COENG RO alone: it still moves before the dotted circle.
+    assert_eq!(s(&[COENG, RO]), [FORM1, DC]);
+}
+
+// Myanmar.
+
+mod mymr {
+    pub const KA: u32 = 0x1000;
+    pub const NGA: u32 = 0x1004;
+    pub const AA: u32 = 0x102C;
+    pub const U: u32 = 0x102F;
+    pub const E: u32 = 0x1031;
+    pub const VIRAMA: u32 = 0x1039;
+    pub const ASAT: u32 = 0x103A;
+    pub const MEDIAL_RA: u32 = 0x103C;
+}
+
+/// Myanmar: the kinzi (Nga, asat, virama) forms `rphf`.
+fn myanmar_font(ot: &[u8; 4]) -> (Vec<u8>, Vec<u32>) {
+    use mymr::*;
+    let chars = vec![KA, NGA, AA, U, E, VIRAMA, ASAT, MEDIAL_RA, DC, REPH];
+    let data = indic_font(ot, &chars, &[(b"rphf", &[NGA, ASAT, VIRAMA], REPH)]);
+    (data, chars)
+}
+
+#[test]
+fn myanmar_kinzi_medial_ra_and_pre_base_vowels() {
+    use mymr::*;
+    let (data, chars) = myanmar_font(b"mym2");
+    assert_eq!(plan_shaper(&data, b"Mymr"), Shaper::Myanmar);
+    let s = |text: &[u32]| indic_shape(&data, &chars, b"Mymr", text);
+    // KA E: the pre-base vowel goes first.
+    assert_eq!(s(&[KA, E]), [E, KA]);
+    // KA MEDIAL_RA E AA: the vowel goes before the medial Ra, which goes
+    // before the base; all in one cluster.
+    assert_eq!(s(&[KA, MEDIAL_RA, E, AA]), [E, MEDIAL_RA, KA, AA]);
+    assert_eq!(
+        indic_clusters(&data, b"Mymr", &[KA, MEDIAL_RA, E, AA]),
+        [0, 0, 0, 0]
+    );
+    // NGA ASAT VIRAMA KA U: the kinzi goes after the base, before the
+    // below-base vowel, and forms the reph.
+    assert_eq!(s(&[NGA, ASAT, VIRAMA, KA, U]), [KA, REPH, U]);
+}
+
+#[test]
+fn myanmar_dotted_circles() {
+    use mymr::*;
+    let (data, chars) = myanmar_font(b"mym2");
+    let s = |text: &[u32]| indic_shape(&data, &chars, b"Mymr", text);
+    assert_eq!(s(&[U]), [DC, U]);
+    assert_eq!(s(&[E]), [E, DC]);
+    assert_eq!(s(&[KA, U, U]), [KA, U, U]);
+    // KA U ASAT: an asat cannot follow a below-base vowel; it starts a
+    // broken cluster.
+    assert_eq!(s(&[KA, U, ASAT]), [KA, U, DC, ASAT]);
+}
+
+#[test]
+fn myanmar_zawgyi_does_not_reorder() {
+    use mymr::*;
+    let (data, chars) = myanmar_font(b"mym2");
+    assert_eq!(plan_shaper(&data, b"Qaag"), Shaper::MyanmarZawgyi);
+    let s = |text: &[u32]| indic_shape(&data, &chars, b"Qaag", text);
+    assert_eq!(s(&[KA, E]), [KA, E]);
+    assert_eq!(s(&[U]), [U]);
+    // No mark advances are zeroed and no fallback positions are made.
+    let out = shape_cps(&data, b"Qaag", Direction::Ltr, &[KA, U]);
+    let pos: Vec<(i32, i32, i32)> = out
+        .glyph_positions()
+        .iter()
+        .map(|p| (p.x_advance, p.x_offset, p.y_offset))
+        .collect();
+    assert_eq!(pos, [(500, 0, 0), (500, 0, 0)]);
+}
