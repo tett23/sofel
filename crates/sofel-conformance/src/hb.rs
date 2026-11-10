@@ -581,18 +581,14 @@ pub fn parse_cmap(text: &str) -> Result<Vec<HbCmap>, String> {
     Ok(faces)
 }
 
-/// Item `nominal`: `hb_font_get_nominal_glyph` for every code point.
-/// Glyphs HarfBuzz gives that are not below the glyph count are left
-/// out, as sofel counts them as unmapped (ADR 0010).
+/// Item `nominal`: `hb_font_get_nominal_glyph` for every code point,
+/// against `Font::nominal_glyph_raw`, which gives glyph ids not below the
+/// glyph count as HarfBuzz does (ADR 0020); `Font::nominal_glyph` leaves
+/// those out (ADR 0010).
 pub fn compare_cmap(font_id: &str, hb: &HbCmap, font: &Font<'_>) -> Item {
-    let want: Vec<(u32, u32)> = hb
-        .maps
-        .iter()
-        .copied()
-        .filter(|&(_, g)| g < hb.num_glyphs)
-        .collect();
+    let want: Vec<(u32, u32)> = hb.maps.clone();
     let ours: Vec<(u32, u32)> = (0..=0x10_FFFF)
-        .filter_map(|c| font.nominal_glyph(c).map(|g| (c, g.0)))
+        .filter_map(|c| font.nominal_glyph_raw(c).map(|g| (c, g.0)))
         .collect();
     list(font_id, hb.index, "nominal", &want, &ours)
 }

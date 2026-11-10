@@ -12,6 +12,7 @@ sofel-read = { path = "../sofel-read" }
 sofel-font = { path = "../sofel-font" }
 sofel-outline = { path = "../sofel-outline" }
 sofel-raster = { path = "../sofel-raster" }
+sofel-shape = { path = "../sofel-shape" }
 sofel-bitmap = { path = "../sofel-bitmap" }
 sofel-color = { path = "../sofel-color" }
 
@@ -22,6 +23,12 @@ path = "src/bin/sofel-validate.rs"
 [[bin]]
 name = "sofel-render"
 path = "src/bin/sofel-render.rs"
+
+[[bin]]
+name = "sofel-shape"
+path = "src/bin/sofel-shape.rs"
+# Its documentation would overwrite sofel_shape's (the same file name).
+doc = false
 
 [[bin]]
 name = "sofel-paint"

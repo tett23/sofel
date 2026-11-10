@@ -1,0 +1,8 @@
+# Fonts whose script and language system choice in GSUB and GPOS differs
+# from HarfBuzz's (ADR 0020, --layout-map), checked by
+# crates/sofel-conformance/tests/harfbuzz_shape_dump.rs. One item per
+# line, <font>#<face>, with one category of conformance/expected-failures.txt
+# as its comment. Remove an entry when it passes.
+harfbuzz/test/shape/data/in-house/fonts/36f8e7f3b4f54efaa6bfd8225893022dc0041915.ttf#0  # sanitize
+harfbuzz/test/shape/data/in-house/fonts/HarfBust.ttf#0  # sanitize
+harfbuzz/test/shape/data/in-house/fonts/ecc344a5fa31c4d69350231bb3b96cc693646089.ttf#0  # sanitize

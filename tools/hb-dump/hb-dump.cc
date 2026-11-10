@@ -87,6 +87,21 @@
  *                     tag in the BASE table)
  *   end
  *
+ * Mode --layout-map (ADR 0020): for each face i,
+ *
+ *   face <i>
+ *   sel <script> <language> (<found> <script index> <chosen> <language index>)x2
+ *                     (for every script of the code points, Zmth and
+ *                     HB_SCRIPT_INVALID (0), as eight hex digits, and
+ *                     every language: `*` for none and
+ *                     hb_ot_tag_to_language of every language system
+ *                     tag of GSUB and GPOS; the tags of
+ *                     hb_ot_tags_from_script_and_language, then for
+ *                     GSUB and GPOS hb_ot_layout_table_select_script
+ *                     (found 0 or 1, the index, the chosen tag in hex)
+ *                     and hb_ot_layout_script_select_language)
+ *   end
+ *
  * Tags are written as eight hex digits (big-endian), since tags in a
  * font may have spaces or any other bytes.
  * Mode --paint (ADR 0023), or --paint=SLANT with
@@ -154,7 +169,7 @@
  * 0xFFFFFFFF, through hb_unicode_funcs_get_default ():
  *
  *   <cp> <gc> <ccc> <script> <mirroring> <decomposed> <a> <b> <ep>
- *        <indic> <use> <joining>
+ *        <indic> <use> <joining> <mcc> <di> <space> <vert>
  *                     (hb_unicode_general_category as the number of
  *                     hb_unicode_general_category_t,
  *                     hb_unicode_combining_class, hb_unicode_script as its
@@ -162,8 +177,11 @@
  *                     hb_unicode_decompose (<a> <b> 0 0 when not
  *                     decomposed), _hb_unicode_is_emoji_Extended_Pictographic,
  *                     hb_indic_get_categories, hb_use_get_category, and
- *                     get_joining_type of hb-ot-shaper-arabic.cc; numbers
- *                     in decimal)
+ *                     get_joining_type of hb-ot-shaper-arabic.cc, and
+ *                     (ADR 0020) hb_unicode_funcs_t's
+ *                     modified_combining_class, is_default_ignorable
+ *                     (0 or 1), space_fallback_type and vertical_char_for;
+ *                     numbers in decimal)
  *
  *   then, for every pair (a, b) with a in the first and b in the second
  *   characters of the two-character decompositions, with 0 and the
@@ -177,6 +195,119 @@
  *
  *   pua <cp> <simp> <trad>
  *                     (_hb_arabic_pua_simp_map and _hb_arabic_pua_trad_map)
+ *
+ * --ot-tags (ADR 0020): HarfBuzz's conversion between scripts and
+ * languages and OpenType tags (hb-ot-tag.cc). Tags are eight hex digits,
+ * a list of them `-` for none or joined by `,`; a language is
+ * hb_language_to_string, `*` for none.
+ *
+ *   scripts <tags>   the scripts: those of every code point, and
+ *                    HB_SCRIPT_INVALID (0), Zmth and Hrkt, sorted
+ *   branch <kind> <s>
+ *                    the strings the branches of the generated
+ *                    hb_ot_tags_from_complex_language test, read by
+ *                    running a copy of it with recording tests: <kind>
+ *                    l lang_matches and e strcmp (<s> the whole
+ *                    language), n strncmp (<s> the prefix), s and p
+ *                    subtag_matches from the language and from its
+ *                    first dash (<s> the subtag)
+ *   f <input> <language> <language tags> <script tags>...
+ *                    hb_ot_tags_from_script_and_language with
+ *                    HB_OT_MAX_TAGS_PER_SCRIPT and _PER_LANGUAGE, for
+ *                    the language hb_language_from_string (<input>) and
+ *                    every script, in the order of `scripts`. The
+ *                    inputs, sorted: every language of the tables and
+ *                    of hb_ot_ambiguous_tag_to_language, the branches'
+ *                    whole languages, every primary language of the
+ *                    branches (and und, en) x none or every other
+ *                    subtag of the branches x none or every region
+ *                    subtag of the branches x no private use, -x-...
+ *                    and -u-...-x-hbsc-latn, and the languages of
+ *                    test/api/test-ot-tag.c and more edge cases
+ *   c <input> <script> <script count> <language count> <script tags>
+ *     <language tags>
+ *                    the same with the counts 0 to 4, for those last
+ *                    languages and the scripts 0, Latn, Deva, Mymr,
+ *                    Hira and Mlym
+ *   s <script tag> <script>
+ *                    hb_ot_tag_to_script, for every script tag of the
+ *                    `f` lines and DFLT
+ *   l <language tag> <language>
+ *                    hb_ot_tag_to_language, for every language tag of
+ *                    the `f` lines and of the tables, and dflt
+ *   r <script tag> <language tag> <script> <language>
+ *                    hb_ot_tags_to_script_and_language for every pair
+ *                    of those
+ *   end
+ * --features (ADR 0020): for every string of the feature string set
+ * (feature_tags and the other tables below: their direct product, then
+ * feature_extras),
+ *
+ *   feature =<string> 1 <tag> <value> <start> <end> =<to_string>
+ *   feature =<string> 0
+ *                     (hb_feature_from_string, then hb_feature_to_string
+ *                     when it parses; <tag> as eight hex digits)
+ *
+ * Strings are written after a `=`, with the bytes 0x21..0x7E other than
+ * `\` as they are and any other byte as `\xHH`.
+ *
+ * Modes with a font and a second file (ADR 0020):
+ *
+ * --serialize FONT TEXTFILE: for every line of TEXTFILE (without its
+ * newline), in a buffer of its UTF-8 with
+ * hb_buffer_guess_segment_properties, shaped with hb_shape and no
+ * features on face 0 at the default scale:
+ *
+ *   line <n> =<text>
+ *   unicode <cp>,<cluster> ...   (the buffer before shaping)
+ *   serialize unicode <format> <flags> =<string>
+ *   deserialize unicode <format> <ok> <end> <len> <cp>,<cluster> ...
+ *                     (for text and json and every flags value 0..63:
+ *                     hb_buffer_serialize as hb-shape calls it, then
+ *                     hb_buffer_deserialize_unicode of that string into
+ *                     a new buffer: the result, end_ptr - buf and the
+ *                     items)
+ *   glyphs <g>,<cluster>,<mask>,<x_advance>,<y_advance>,<x_offset>,<y_offset> ...
+ *                     (the shaped buffer, the mask as it is)
+ *   serialize glyphs <format> <flags> =<string>
+ *   deserialize glyphs <format> <ok> <end> <len> <glyph items> ...
+ *                     (likewise with the font, and
+ *                     hb_buffer_deserialize_glyphs with the font)
+ *
+ * then, for every input of test-buffer.c's serialization tests and every
+ * prefix of it (the lengths 0 to the whole),
+ *
+ *   corpus =<string>
+ *   deserialize glyphs text ..., deserialize glyphs json ...,
+ *   deserialize unicode text ..., deserialize unicode json ...
+ *
+ * --deserialize FONT CORPUS: the `corpus` block above for every line of
+ * CORPUS, a string written as above without the `=`.
+ * --shape FONT TEXTFILE DIRECTION FEATURES (ADR 0020): for every line of
+ * TEXTFILE (split at `\n`, a last empty piece dropped), a buffer of
+ * its UTF-8 (hb_buffer_add_utf8 of the line alone), the direction set
+ * unless DIRECTION is `auto` (hb_direction_from_string),
+ * hb_buffer_guess_segment_properties, and hb_shape with FEATURES (a
+ * list as hb-shape's --features reads it; `` for none) on face 0 at the
+ * default scale; one line each, as hb-shape writes it with
+ * --no-glyph-names --show-flags and UTF-8 cluster values.
+ *
+ * --shape-random FONT COUNT SEED (ADR 0020): for each face i,
+ *
+ *   face <i>
+ *   script <tag> <n>   (for each script (hb_unicode_script, eight hex
+ *                      digits) of the n code points 0..U+10FFFF that
+ *                      hb_font_get_nominal_glyph maps, in tag order)
+ *   s <cps> <glyphs>   (COUNT strings: with state = SEED at the start of
+ *                      each script and next () = ((state = state *
+ *                      1103515245 + 12345) >> 16) & 0x7FFF, a length
+ *                      1 + next () % 16 and that many code points
+ *                      cps[next () % n] of the script, in hex joined by
+ *                      `,`; shaped with hb_buffer_add_codepoints, the
+ *                      flags BOT, EOT and PRODUCE_UNSAFE_TO_CONCAT,
+ *                      hb_buffer_guess_segment_properties and hb_shape,
+ *                      written as --shape writes them)
+ *   end
  *
  * --roundf (ADR 0026): reads lines from stdin, each `f <bits>` (a
  * `float`, eight hex digits of its bits) or `d <bits>` (a `double`,
@@ -198,6 +329,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+
+#include <algorithm>
+#include <string>
+#include <vector>
 
 static const hb_ot_metrics_tag_t metric_tags[] = {
   HB_OT_METRICS_TAG_HORIZONTAL_ASCENDER,
@@ -679,12 +814,16 @@ static void dump_unicode_value (hb_unicode_funcs_t *ufuncs, hb_codepoint_t u)
   char tag[5];
   hb_tag_to_string (hb_unicode_script (ufuncs, u), tag);
   tag[4] = '\0';
-  printf ("%u %u %u %s %u %d %u %u %d %u %u %u\n", u, (unsigned) gc,
+  printf ("%u %u %u %s %u %d %u %u %d %u %u %u %u %d %u %u\n", u, (unsigned) gc,
 	  hb_unicode_combining_class (ufuncs, u), tag,
 	  hb_unicode_mirroring (ufuncs, u), decomposed ? 1 : 0, a, b,
 	  _hb_unicode_is_emoji_Extended_Pictographic (u) ? 1 : 0,
 	  (unsigned) hb_indic_get_categories (u), (unsigned) hb_use_get_category (u),
-	  get_joining_type (u, gc));
+	  get_joining_type (u, gc),
+	  ufuncs->modified_combining_class (u),
+	  hb_unicode_funcs_t::is_default_ignorable (u) ? 1 : 0,
+	  (unsigned) hb_unicode_funcs_t::space_fallback_type (u),
+	  hb_unicode_funcs_t::vertical_char_for (u));
 }
 
 static int dump_unicode ()
@@ -738,6 +877,722 @@ static int dump_arabic_pua ()
   return 0;
 }
 
+/* --ot-tags (ADR 0020) */
+
+/* The strings the branches of hb_ot_tags_from_complex_language test,
+ * read from HarfBuzz's compiled code rather than from the header's
+ * text: a second copy of hb-ot-tag-table.hh with the four tests
+ * replaced by recorders that fail (strncmp succeeds, so that the
+ * subtag_matches after it is reached), called once per first byte. */
+namespace ot_tag_probe {
+struct record_t { char kind; char first; const char *s; };
+static record_t records[4096];
+static unsigned num_records;
+static char first_byte;
+static void record (char kind, const char *s)
+{
+  if (num_records < sizeof (records) / sizeof (records[0]))
+  {
+    records[num_records].kind = kind;
+    records[num_records].first = first_byte;
+    records[num_records].s = s;
+    num_records++;
+  }
+}
+/* kind: p subtag_matches (p, ...), s subtag_matches (lang_str, ...),
+ * l lang_matches, n strncmp, e strcmp */
+static bool subtag (const char *from, const char *s) { record (from[0] == 'p' ? 'p' : 's', s); return false; }
+static bool lang (const char *s) { record ('l', s); return false; }
+static int ncmp (const char *s) { record ('n', s); return 0; }
+static int cmp (const char *s) { record ('e', s); return 1; }
+#undef strcmp
+#undef strncmp
+#define subtag_matches(a, b, s, n) ::ot_tag_probe::subtag (#a, s)
+#define lang_matches(a, b, s, n) ::ot_tag_probe::lang (s)
+#define strncmp(a, s, n) ::ot_tag_probe::ncmp (s)
+#define strcmp(a, s) ::ot_tag_probe::cmp (s)
+#undef HB_OT_TAG_TABLE_HH
+#include "hb-ot-tag-table.hh"
+#undef subtag_matches
+#undef lang_matches
+#undef strncmp
+#undef strcmp
+}
+
+struct str_list_t
+{
+  char **v;
+  unsigned n, cap;
+};
+
+static void str_add (str_list_t *l, const char *s)
+{
+  if (l->n == l->cap)
+  {
+    l->cap = l->cap ? 2 * l->cap : 256;
+    l->v = (char **) realloc (l->v, l->cap * sizeof (char *));
+    if (!l->v) abort ();
+  }
+  size_t len = strlen (s);
+  char *c = (char *) malloc (len + 1);
+  if (!c) abort ();
+  memcpy (c, s, len + 1);
+  l->v[l->n++] = c;
+}
+
+static int compare_strs (const void *a, const void *b)
+{
+  return strcmp (*(char *const *) a, *(char *const *) b);
+}
+
+static void str_sort_unique (str_list_t *l)
+{
+  qsort (l->v, l->n, sizeof (char *), compare_strs);
+  unsigned j = 0;
+  for (unsigned i = 0; i < l->n; i++)
+    if (!j || strcmp (l->v[j - 1], l->v[i]) != 0)
+      l->v[j++] = l->v[i];
+    else
+      free (l->v[i]);
+  l->n = j;
+}
+
+struct ot_tag_set_t
+{
+  hb_tag_t *v;
+  unsigned n, cap;
+};
+
+static void ot_tag_add (ot_tag_set_t *s, hb_tag_t t)
+{
+  if (s->n == s->cap)
+  {
+    s->cap = s->cap ? 2 * s->cap : 256;
+    s->v = (hb_tag_t *) realloc (s->v, s->cap * sizeof (hb_tag_t));
+    if (!s->v) abort ();
+  }
+  s->v[s->n++] = t;
+}
+
+static int compare_ot_tags (const void *a, const void *b)
+{
+  hb_tag_t x = *(const hb_tag_t *) a, y = *(const hb_tag_t *) b;
+  return x < y ? -1 : x > y ? 1 : 0;
+}
+
+static void ot_tag_sort_unique (ot_tag_set_t *s)
+{
+  qsort (s->v, s->n, sizeof (hb_tag_t), compare_ot_tags);
+  unsigned j = 0;
+  for (unsigned i = 0; i < s->n; i++)
+    if (!j || s->v[j - 1] != s->v[i])
+      s->v[j++] = s->v[i];
+  s->n = j;
+}
+
+/* Tags as `-` for none, else eight hex digits joined by `,`. */
+static void print_ot_tags (const hb_tag_t *t, unsigned n)
+{
+  if (!n) { printf ("-"); return; }
+  for (unsigned i = 0; i < n; i++)
+    printf (i ? ",%08x" : "%08x", t[i]);
+}
+
+static void print_ot_language (hb_language_t l)
+{
+  printf ("%s", l ? hb_language_to_string (l) : "*");
+}
+
+/* The languages of test/api/test-ot-tag.c and further edge cases. */
+static const char *const ot_tag_fixed_languages[] = {
+  "en", "x-hbsc", "x-hbsc-", "x-hbsc-1", "x-hbsc-1a", "x-hbsc-1a2b3c4x",
+  "x-hbsc-326c6f6e67", "x-hbscabc", "x-hbscdeva", "x-hbscdev2", "x-hbscdev3",
+  "x-hbsc-64657633", "x-hbotpap0-hbsccopt", "en-x-hbsc", "en-x-hbscabc",
+  "en-x-hbscdeva", "en-x-hbscdev2", "en-x-hbscdev3", "en-x-hbsc-64657633",
+  "en-x-hbotpap0-hbsccopt", "alt", "ar", "az", "az-ir", "az-az", "en_US",
+  "cja-x-hbot-434a4120", "cjm-x-hbot-434a4d20", "cjm", "eve", "cfm", "flm",
+  "hy", "hyw", "bgr", "cbl", "cka", "cmr", "cnb", "cnh", "cnk", "cnw", "csh",
+  "csy", "ctd", "czt", "dao", "hlt", "mrh", "pck", "sez", "tcp", "tcz", "yos",
+  "zom", "fa", "fa_IR", "man", "aii", "syr", "amw", "cld", "syc", "tru", "zh",
+  "zh-cn", "zh-sg", "zh-mo", "zh-hant-mo", "zh-hans-mo", "zh-HK", "zH-HanT-hK",
+  "zH-HanS-hK", "zh-tw", "zh-Hans", "zh-Hant", "zh-xx", "zh-Hans-TW", "yue",
+  "yue-Hant", "yue-Hans", "abc-x-hbot-41424320", "x-hbot-41424344",
+  "asdf-asdf-wer-x-hbotabc-zxc", "asdf-asdf-wer-x-hbotabc",
+  "asdf-asdf-wer-x-hbotabcd", "asdf-asdf-wer-x-hbot-41424320-zxc",
+  "asdf-asdf-wer-x-hbot-41424320", "asdf-asdf-wer-x-hbot-41424344",
+  "asdf-asdf-wer-x-hbot", "asdf-asdf-wer-x-hbot-zxc",
+  "asdf-asdf-wer-x-hbot-zxc-414243", "asdf-asdf-wer-x-hbot-414243",
+  "asdf-asdf-wer-x-hbot-4142432", "xy", "xyz", "xyz-qw", "-fonipa",
+  "en-fonipax", "en-x-fonipa", "en-a-fonipa", "en-a-qwe-b-fonipa", "en-fonipa",
+  "en-fonipax-fonipa", "rm-CH-fonipa-sursilv-x-foobar", "und-fonipa",
+  "zh-fonipa", "en-fonnapa", "chr-fonnapa", "und-fonnapa", "ka-Geok",
+  "und-Geok", "ga-Latg", "ghc", "ro-MD", "el-polyton", "el-CY-polyton",
+  "aii-Syre", "de-Syre", "syr-Syre", "und-Syre", "aii-Syrj", "de-Syrj",
+  "syr-Syrj", "und-Syrj", "aii-Syrn", "de-Syrn", "syr-Syrn", "und-Syrn",
+  "fa-x-hbotabc-hbot-41686121-zxc", "fa-ir-x-hbotabc-hbot-41686121-zxc",
+  "zh-x-hbotabc-hbot-41686121-zxc", "zh-cn-x-hbotabc-hbot-41686121-zxc",
+  "zh-xy-x-hbotabc-hbot-41686121-zxc", "xyz-xy-x-hbotabc-hbot-41686121-zxc",
+  "fa-x-hbot-41686121-hbotabc-zxc", "fa-ir-x-hbot-41686121-hbotabc-zxc",
+  "zh-x-hbot-41686121-hbotabc-zxc", "zh-cn-x-hbot-41686121-hbotabc-zxc",
+  "zh-xy-x-hbot-41686121-hbotabc-zxc", "xyz-xy-x-hbot-41686121-hbotabc-zxc",
+  "x-hbot", "x-hbot-", "x-hbot-1", "x-hbot-1a", "x-hbot-1a2b3c4x",
+  "x-hbot-326c6f6e67", "ar-aao", "art-lojban", "kok-gom", "i-lux", "drh",
+  "ar-ary", "ar-ary-DZ", "no-bok", "no-nyn", "i-hak", "zh-guoyu", "zh-min",
+  "zh-min-nan", "zh-xiang", "als", "far", "ar-001", "tr@foo=bar",
+  "und", "en-x-hbscdflt", "x-hbot1234-hbsc5678", "x-hbsc5678-hbot1234", "ml",
+  /* Further edge cases. */
+  "x", "x-", "-", "--", "a", "a-", "-a", "a--b", "a-b-c-d", "en-u-hk",
+  "zh-u-co-x-hbsc-hant", "zh-a-b-c-hk", "zh-x-u-hk", "x-hbscDFLT",
+  "x-hbotdflt", "x-hbot-64666c74", "x-hbsc-44464c54", "x-hbot-FFFFFFFF",
+  "en-x-hbsc-6C61746E", "en-x-hbscl", "en-x-hbsclatnn", "en-x-hbot-zz",
+  "zh-yue", "zh-yue-hk", "zh-cmn-hant", "zh-cmn-hans-hk", "zh-hak", "sgn-x-a",
+  "abcd", "abcde-fg", "ab-cde", "ab-cdef", "ab-1de", "ab-cd1", "a1-b2",
+  "123", "12", "ab_cd_ef", "EN", "zh-hantx-hk", "zh-hk-hant", "zh-hkx",
+  "cdo-hant-hkx", "cdo-hant-hk-x", "art-lojban-x", "art-lojbanx",
+  "zh-min-nan-x-hbot-41424344", "hy-arevmda", "oc-provenc", "nv-navajo",
+  "lb-lux", "mnw-th", "ro-md-x-hbsc-6c61746e", "zh-cn-x-hbsc", "en-fonupa",
+};
+
+static const unsigned ot_tag_counts_scripts[] = {0, 1, 2, 3, 4};
+
+static void add_primary_parts (str_list_t *primaries, str_list_t *seconds,
+			       str_list_t *regions, const char *full)
+{
+  char buf[64];
+  snprintf (buf, sizeof buf, "%s", full);
+  char *save = buf;
+  bool first = true;
+  for (char *tok = buf; tok; tok = save)
+  {
+    char *dash = strchr (tok, '-');
+    save = dash ? dash + 1 : nullptr;
+    if (dash) *dash = '\0';
+    if (!*tok) continue;
+    if (first) { str_add (primaries, tok); first = false; continue; }
+    size_t len = strlen (tok);
+    bool region = (len == 2 && ISALPHA (tok[0]) && ISALPHA (tok[1])) ||
+		  (len == 3 && tok[0] >= '0' && tok[0] <= '9');
+    str_add (region ? regions : seconds, tok);
+  }
+}
+
+static int dump_ot_tags ()
+{
+  /* Scripts: those of the characters, then HB_SCRIPT_INVALID, Math and
+   * Hrkt, which no character has. */
+  ot_tag_set_t scripts = {nullptr, 0, 0};
+  hb_unicode_funcs_t *ufuncs = hb_unicode_funcs_get_default ();
+  for (hb_codepoint_t u = 0; u <= 0x10FFFFu; u++)
+    ot_tag_add (&scripts, (hb_tag_t) hb_unicode_script (ufuncs, u));
+  ot_tag_add (&scripts, (hb_tag_t) HB_SCRIPT_INVALID);
+  ot_tag_add (&scripts, (hb_tag_t) HB_SCRIPT_MATH);
+  ot_tag_add (&scripts, HB_TAG ('H','r','k','t'));
+  ot_tag_sort_unique (&scripts);
+  printf ("scripts ");
+  print_ot_tags (scripts.v, scripts.n);
+  printf ("\n");
+
+  /* The strings of the generated functions' branches. */
+  for (int c = 1; c < 128; c++)
+  {
+    char buf[32];
+    snprintf (buf, sizeof buf, "%caaaaaa-bbbbbbbbbbbb", c);
+    ot_tag_probe::first_byte = (char) c;
+    unsigned count = 3;
+    hb_tag_t tags[3];
+    ot_tag_probe::hb_ot_tags_from_complex_language (buf, buf + strlen (buf), &count, tags);
+  }
+  str_list_t primaries = {nullptr, 0, 0}, seconds = {nullptr, 0, 0},
+	     regions = {nullptr, 0, 0}, languages = {nullptr, 0, 0};
+  str_add (&primaries, "und");
+  str_add (&primaries, "en");
+  for (unsigned i = 0; i < ot_tag_probe::num_records; i++)
+  {
+    const ot_tag_probe::record_t &r = ot_tag_probe::records[i];
+    /* The branches before the switch run for every first byte. */
+    if (r.kind == 'p' && r.first != 1) continue;
+    char full[64];
+    snprintf (full, sizeof full, "%c%s", r.first, r.s);
+    switch (r.kind)
+    {
+    case 'l': case 'e':
+      printf ("branch %c %s\n", r.kind, full);
+      str_add (&languages, full);
+      add_primary_parts (&primaries, &seconds, &regions, full);
+      break;
+    case 'n':
+      printf ("branch n %s\n", full);
+      add_primary_parts (&primaries, &seconds, &regions, full);
+      break;
+    case 's': case 'p':
+      printf ("branch %c %s\n", r.kind, r.s);
+      snprintf (full, sizeof full, "und%s", r.s);
+      add_primary_parts (&primaries, &seconds, &regions, full);
+      break;
+    }
+  }
+  str_sort_unique (&primaries);
+  str_sort_unique (&seconds);
+  str_sort_unique (&regions);
+
+  /* primary x script or other subtag x region x private use. */
+  static const char *const privates[] = {"", "-x-hant-hk-fonipa", "-u-hk-x-hbsc-latn"};
+  for (unsigned p = 0; p < primaries.n; p++)
+    for (unsigned s = 0; s <= seconds.n; s++)
+      for (unsigned r = 0; r <= regions.n; r++)
+	for (unsigned x = 0; x < 3; x++)
+	{
+	  char buf[128];
+	  snprintf (buf, sizeof buf, "%s%s%s%s%s%s", primaries.v[p],
+		    s ? "-" : "", s ? seconds.v[s - 1] : "",
+		    r ? "-" : "", r ? regions.v[r - 1] : "", privates[x]);
+	  str_add (&languages, buf);
+	}
+
+  /* Every language of the tables, and the ambiguous tags' languages. */
+  ot_tag_set_t table_tags = {nullptr, 0, 0};
+  char buf[8];
+  for (unsigned i = 0; i < ARRAY_LENGTH (ot_languages2); i++)
+  {
+    hb_tag_to_string (ot_languages2[i].language, buf);
+    buf[2] = '\0';
+    str_add (&languages, buf);
+    ot_tag_add (&table_tags, ot_languages2[i].tag);
+  }
+  for (unsigned i = 0; i < ARRAY_LENGTH (ot_languages3); i++)
+  {
+    hb_tag_to_string (ot_languages3[i].language, buf);
+    buf[3] = '\0';
+    str_add (&languages, buf);
+    ot_tag_add (&table_tags, ot_languages3[i].tag);
+  }
+  for (unsigned i = 0; i < ARRAY_LENGTH (ot_languages3_multi); i++)
+  {
+    hb_tag_to_string (ot_languages3_multi[i].language, buf);
+    buf[3] = '\0';
+    str_add (&languages, buf);
+  }
+  for (unsigned i = 0; i < ARRAY_LENGTH (ot_languages3_multi_values); i++)
+    ot_tag_add (&table_tags, ot_languages3_multi_values[i]);
+  for (unsigned i = 0; i < ARRAY_LENGTH (ot_languages3_blocked); i++)
+  {
+    hb_tag_to_string (ot_languages3_blocked[i], buf);
+    buf[3] = '\0';
+    str_add (&languages, buf);
+  }
+  ot_tag_sort_unique (&table_tags);
+  for (unsigned i = 0; i < table_tags.n; i++)
+  {
+    hb_language_t l = hb_ot_ambiguous_tag_to_language (table_tags.v[i]);
+    if (l) str_add (&languages, hb_language_to_string (l));
+  }
+  for (unsigned i = 0; i < ARRAY_LENGTH (ot_tag_fixed_languages); i++)
+    str_add (&languages, ot_tag_fixed_languages[i]);
+  str_sort_unique (&languages);
+
+  /* Forward, with HB_OT_MAX_TAGS_PER_SCRIPT and _PER_LANGUAGE:
+   *   f <input> <language> <language tags> <script tags of each script>
+   */
+  ot_tag_set_t seen_scripts = {nullptr, 0, 0}, seen_languages = {nullptr, 0, 0};
+  for (unsigned i = 0; i < languages.n; i++)
+  {
+    hb_language_t lang = hb_language_from_string (languages.v[i], -1);
+    if (!lang) continue;
+    hb_tag_t lt0[HB_OT_MAX_TAGS_PER_LANGUAGE];
+    unsigned lc0 = 0;
+    printf ("f %s ", languages.v[i]);
+    print_ot_language (lang);
+    for (unsigned s = 0; s < scripts.n; s++)
+    {
+      hb_tag_t st[HB_OT_MAX_TAGS_PER_SCRIPT], lt[HB_OT_MAX_TAGS_PER_LANGUAGE];
+      unsigned sc = HB_OT_MAX_TAGS_PER_SCRIPT, lc = HB_OT_MAX_TAGS_PER_LANGUAGE;
+      hb_ot_tags_from_script_and_language ((hb_script_t) scripts.v[s], lang,
+					   &sc, st, &lc, lt);
+      if (!s)
+      {
+	lc0 = lc;
+	memcpy (lt0, lt, lc * sizeof (hb_tag_t));
+	printf (" ");
+	print_ot_tags (lt, lc);
+	for (unsigned k = 0; k < lc; k++) ot_tag_add (&seen_languages, lt[k]);
+      }
+      else if (lc != lc0 || memcmp (lt, lt0, lc * sizeof (hb_tag_t)))
+      {
+	fprintf (stderr, "hb-dump: the language tags of %s depend on the script\n",
+		 languages.v[i]);
+	return 1;
+      }
+      printf (" ");
+      print_ot_tags (st, sc);
+      for (unsigned k = 0; k < sc; k++) ot_tag_add (&seen_scripts, st[k]);
+    }
+    printf ("\n");
+  }
+
+  /* Other counts, for the fixed languages and a few scripts:
+   *   c <input> <script> <script count> <language count> <script tags>
+   *     <language tags>
+   */
+  static const hb_tag_t count_scripts[] = {
+    0, HB_TAG ('L','a','t','n'), HB_TAG ('D','e','v','a'), HB_TAG ('M','y','m','r'),
+    HB_TAG ('H','i','r','a'), HB_TAG ('M','l','y','m'),
+  };
+  for (unsigned i = 0; i < ARRAY_LENGTH (ot_tag_fixed_languages); i++)
+  {
+    hb_language_t lang = hb_language_from_string (ot_tag_fixed_languages[i], -1);
+    for (unsigned s = 0; s < ARRAY_LENGTH (count_scripts); s++)
+      for (unsigned scount = 0; scount <= 4; scount++)
+	for (unsigned lcount = 0; lcount <= 4; lcount++)
+	{
+	  hb_tag_t st[4], lt[4];
+	  unsigned sc = scount, lc = lcount;
+	  hb_ot_tags_from_script_and_language ((hb_script_t) count_scripts[s], lang,
+					       &sc, st, &lc, lt);
+	  printf ("c %s %08x %u %u ", ot_tag_fixed_languages[i], count_scripts[s],
+		  scount, lcount);
+	  print_ot_tags (st, sc);
+	  printf (" ");
+	  print_ot_tags (lt, lc);
+	  printf ("\n");
+	}
+  }
+
+  /* Backward, for every tag that appeared and the tables' tags:
+   *   s <script tag> <hb_ot_tag_to_script>
+   *   l <language tag> <hb_ot_tag_to_language, * for none>
+   *   r <script tag> <language tag> <script> <language>
+   *     (hb_ot_tags_to_script_and_language)
+   */
+  ot_tag_add (&seen_scripts, HB_OT_TAG_DEFAULT_SCRIPT);
+  ot_tag_sort_unique (&seen_scripts);
+  for (unsigned i = 0; i < table_tags.n; i++)
+    ot_tag_add (&seen_languages, table_tags.v[i]);
+  ot_tag_add (&seen_languages, HB_OT_TAG_DEFAULT_LANGUAGE);
+  ot_tag_sort_unique (&seen_languages);
+  for (unsigned i = 0; i < seen_scripts.n; i++)
+    printf ("s %08x %08x\n", seen_scripts.v[i], (unsigned) hb_ot_tag_to_script (seen_scripts.v[i]));
+  for (unsigned i = 0; i < seen_languages.n; i++)
+  {
+    printf ("l %08x ", seen_languages.v[i]);
+    print_ot_language (hb_ot_tag_to_language (seen_languages.v[i]));
+    printf ("\n");
+  }
+  for (unsigned i = 0; i < seen_scripts.n; i++)
+    for (unsigned j = 0; j < seen_languages.n; j++)
+    {
+      hb_script_t script;
+      hb_language_t language;
+      hb_ot_tags_to_script_and_language (seen_scripts.v[i], seen_languages.v[j],
+					 &script, &language);
+      printf ("r %08x %08x %08x ", seen_scripts.v[i], seen_languages.v[j], (unsigned) script);
+      print_ot_language (language);
+      printf ("\n");
+    }
+  printf ("end\n");
+  return 0;
+}
+
+/* Bytes 0x21..0x7E but `\` as they are, anything else as \xHH, after a
+ * `=`, so that an empty string is `=`. */
+static void print_escaped (const char *s, unsigned len)
+{
+  putchar ('=');
+  for (unsigned i = 0; i < len; i++)
+  {
+    unsigned char c = (unsigned char) s[i];
+    if (c > 0x20 && c < 0x7F && c != '\\')
+      putchar (c);
+    else
+      printf ("\\x%02x", c);
+  }
+}
+
+/* The strings of --features (ADR 0020): the direct product below, then
+ * the extra cases. sofel-conformance builds the same list. */
+static const char *feature_tags[] = {
+  "kern", "aalt", "a", "abc", "abcde", "'liga'", "\"liga\"", "'abc'",
+  "\"abcde\"", "'liga\"",
+};
+static const char *feature_prefixes[] = {"", "+", "-"};
+static const char *feature_ranges[] = {
+  "", "[]", "[:]", "[3]", "[3:]", "[:5]", "[3:5]", "[3", "[x]",
+};
+static const char *feature_values[] = {
+  "", "=0", "=2", " on", " off", " 2", "=", "=on", " xyz", "=-1",
+};
+static const char *feature_spaces[][2] = {
+  {"", ""}, {" ", ""}, {"", " "}, {"\t ", " \n"},
+};
+static const char *feature_extras[] = {
+  "abcd", "abcd=1", "+abcd", "abcd=0", "-abcd", "abcd=2", "+abcd=2",
+  "-abcd=2", "\"abcd\" on", "\"abcd\" off", "\"abcd\" 1", "\"abcd\" 0",
+  "\"abcd\" 2", "abcd[0]", "abcd[1]", "abcd[1]=1", "abcd[1]=2",
+  "abcd[1]=0", "abcd[]", "abcd[:]", "abcd[1:]", "abcd[:1]", "abcd[1:3]",
+  "abcd[1:2]=1", "abcd[1:4]=2", "aalt[3:5]=2",
+  "kern\t", "kern\t=2", "kern[ 3 : 5 ]", "kern[3;5]", "kern[-1]",
+  "kern[-1:]", "kern[4294967295]", "kern[2147483647]", "kern[2147483648]",
+  "kern=2147483647", "kern=2147483648", "kern=-2147483648", "kern=+2",
+  "kern = 2", "kern=0x10", "kern=010", "kern  ON", "kern OfF", "kern onx",
+  "kern=off", "kern=ON", "-+kern", "+-kern", "--kern", "", " ", "=", "[]",
+  "-", "+", "'kern' 'x'", "'ke\"n'", "\"kern'", "kern'", "k=rn", "k[rn",
+  "'k rn'", "'k[rn'", "'k=rn'", "k:rn", "k]rn", "k\trn", "\xc3\xa9t\xc3",
+  "\xc3\xa9t\xc3\xa9", "\xff\xfe", "\v kern \f", "kern[3:5]=2 ",
+  "kern[3:5] =2", "kern [3:5]", "kern[3:5]x", "kern[3:5", "kern[3:5]]",
+  "kern[:]=3", "kern[0:]", "kern[0:1]", "kern[5:3]", "kern[3:3]",
+  "kern==2", "kern=2=3", "kern 2 3", "kern on off", "'kern'on",
+  "'kern'=2", "\"kern\"[1:2]", "''", "\"\"", "'", "\"", "kern'x",
+  "liga=4294967295", "liga=-0", "liga[+3]", "liga[ -2 ]", "liga[3:-1]",
+};
+
+static void dump_feature (const char *s, unsigned len)
+{
+  hb_feature_t f;
+  hb_bool_t ok = hb_feature_from_string (s, (int) len, &f);
+  printf ("feature ");
+  print_escaped (s, len);
+  if (ok)
+  {
+    char buf[128];
+    hb_feature_to_string (&f, buf, sizeof (buf));
+    printf (" 1 %08x %u %u %u ", f.tag, f.value, f.start, f.end);
+    print_escaped (buf, strlen (buf));
+  }
+  else
+    printf (" 0");
+  printf ("\n");
+}
+
+#define ARRAY_COUNT(a) (sizeof (a) / sizeof ((a)[0]))
+
+static int dump_features ()
+{
+  for (unsigned t = 0; t < ARRAY_COUNT (feature_tags); t++)
+    for (unsigned p = 0; p < ARRAY_COUNT (feature_prefixes); p++)
+      for (unsigned r = 0; r < ARRAY_COUNT (feature_ranges); r++)
+	for (unsigned v = 0; v < ARRAY_COUNT (feature_values); v++)
+	  for (unsigned w = 0; w < ARRAY_COUNT (feature_spaces); w++)
+	  {
+	    char s[128];
+	    int n = snprintf (s, sizeof (s), "%s%s%s%s%s%s",
+			      feature_spaces[w][0], feature_prefixes[p],
+			      feature_tags[t], feature_ranges[r],
+			      feature_values[v], feature_spaces[w][1]);
+	    dump_feature (s, (unsigned) n);
+	  }
+  for (unsigned i = 0; i < ARRAY_COUNT (feature_extras); i++)
+    dump_feature (feature_extras[i], strlen (feature_extras[i]));
+  return 0;
+}
+
+/* --serialize and --deserialize (ADR 0020). */
+static const hb_buffer_serialize_format_t serialize_formats[] = {
+  HB_BUFFER_SERIALIZE_FORMAT_TEXT, HB_BUFFER_SERIALIZE_FORMAT_JSON,
+};
+static const char *serialize_format_names[] = {"text", "json"};
+
+static void print_glyph_items (hb_buffer_t *b)
+{
+  unsigned n = hb_buffer_get_length (b);
+  hb_glyph_info_t *info = hb_buffer_get_glyph_infos (b, nullptr);
+  hb_glyph_position_t *pos = hb_buffer_get_glyph_positions (b, nullptr);
+  for (unsigned i = 0; i < n; i++)
+    printf (" %u,%u,%u,%d,%d,%d,%d", info[i].codepoint, info[i].cluster,
+	    info[i].mask, pos[i].x_advance, pos[i].y_advance,
+	    pos[i].x_offset, pos[i].y_offset);
+}
+
+static void print_unicode_items (hb_buffer_t *b)
+{
+  unsigned n = hb_buffer_get_length (b);
+  hb_glyph_info_t *info = hb_buffer_get_glyph_infos (b, nullptr);
+  for (unsigned i = 0; i < n; i++)
+    printf (" %u,%u", info[i].codepoint, info[i].cluster);
+}
+
+/* What hb-shape does (util/shape-format.hh, serialize). */
+static std::string serialize_all (hb_buffer_t *b, hb_font_t *font,
+				  hb_buffer_serialize_format_t format,
+				  hb_buffer_serialize_flags_t flags)
+{
+  std::string out;
+  unsigned n = hb_buffer_get_length (b), start = 0;
+  while (start < n)
+  {
+    char buf[32768];
+    unsigned consumed;
+    start += hb_buffer_serialize (b, start, n, buf, sizeof (buf), &consumed,
+				  font, format, flags);
+    if (!consumed)
+      break;
+    out.append (buf, consumed);
+  }
+  return out;
+}
+
+static void dump_deserialize_glyphs (const char *s, unsigned len, hb_font_t *font,
+				     unsigned f)
+{
+  hb_buffer_t *b = hb_buffer_create ();
+  const char *end = s;
+  hb_bool_t ok = hb_buffer_deserialize_glyphs (b, s, (int) len, &end, font,
+					       serialize_formats[f]);
+  printf ("deserialize glyphs %s %d %u %u", serialize_format_names[f], ok ? 1 : 0,
+	  (unsigned) (end - s), hb_buffer_get_length (b));
+  print_glyph_items (b);
+  printf ("\n");
+  hb_buffer_destroy (b);
+}
+
+static void dump_deserialize_unicode (const char *s, unsigned len, unsigned f)
+{
+  hb_buffer_t *b = hb_buffer_create ();
+  const char *end = s;
+  hb_bool_t ok = hb_buffer_deserialize_unicode (b, s, (int) len, &end,
+						serialize_formats[f]);
+  printf ("deserialize unicode %s %d %u %u", serialize_format_names[f], ok ? 1 : 0,
+	  (unsigned) (end - s), hb_buffer_get_length (b));
+  print_unicode_items (b);
+  printf ("\n");
+  hb_buffer_destroy (b);
+}
+
+static void dump_corpus_entry (const char *s, unsigned len, hb_font_t *font)
+{
+  printf ("corpus ");
+  print_escaped (s, len);
+  printf ("\n");
+  for (unsigned f = 0; f < 2; f++)
+    dump_deserialize_glyphs (s, len, font, f);
+  for (unsigned f = 0; f < 2; f++)
+    dump_deserialize_unicode (s, len, f);
+}
+
+/* The inputs of test_buffer_serialize_deserialize and
+ * test_buffer_deserialize2 in HarfBuzz's test/api/test-buffer.c. */
+static const char *test_buffer_inputs[] = {
+  "<U+0640=0|U+0635=1>",
+  "[{\"u\":1600,\"cl\":0},{\"u\":1589,\"cl\":1}]",
+  "[{\"u\":1600,\"cl\":0},{\"u\":1589,\"cl\":1}",
+  "[{\"u\":1600,\"cl\":0},{\"g\":1589,\"cl\":1}]",
+  "<U+0640=0|uni0635=1>",
+  "<U+0041=0|U+0042=1>", "[1=0@2,3+4,5|2=1+6]",
+  "[{\"u\":65,\"cl\":0},{\"u\":66,\"cl\":1}]",
+  "[{\"g\":1,\"cl\":0,\"dx\":2,\"dy\":3,\"ax\":4,\"ay\":5},{\"g\":2,\"cl\":1}]",
+  "<U+0041=0>", "[icon0=0+10]",
+  "[{\"u\":65}]", "[{\"g\":\"icon0\",\"ax\":10}]",
+  "<U+0041=0|U+0042=?>", "[1=0|2=?]",
+  "[{\"u\":65},?]", "[{\"g\":1},?]",
+  "<U+0041=0|U+0042=4294967296>", "[1=0|2=4294967296]",
+  "[{\"u\":65},{\"u\":4294967296}]",
+  "[{\"g\":1},{\"g\":2,\"ax\":2147483648}]",
+  "", "[1=0]", "[{\"g\":1}]",
+};
+
+static int dump_serialize (hb_blob_t *blob, const char *text_path)
+{
+  FILE *fp = fopen (text_path, "rb");
+  if (!fp)
+  {
+    fprintf (stderr, "hb-dump: cannot read %s\n", text_path);
+    return 1;
+  }
+  hb_face_t *face = hb_face_create (blob, 0);
+  hb_font_t *font = hb_font_create (face);
+  char line[4096];
+  unsigned line_no = 0;
+  while (fgets (line, sizeof (line), fp))
+  {
+    unsigned len = strlen (line);
+    if (len && line[len - 1] == '\n')
+      line[--len] = '\0';
+    printf ("line %u ", line_no++);
+    print_escaped (line, len);
+    printf ("\n");
+    hb_buffer_t *b = hb_buffer_create ();
+    hb_buffer_add_utf8 (b, line, (int) len, 0, (int) len);
+    hb_buffer_guess_segment_properties (b);
+    printf ("unicode");
+    print_unicode_items (b);
+    printf ("\n");
+    for (unsigned f = 0; f < 2; f++)
+      for (unsigned flags = 0; flags < 64; flags++)
+      {
+	std::string s = serialize_all (b, nullptr, serialize_formats[f],
+				       (hb_buffer_serialize_flags_t) flags);
+	printf ("serialize unicode %s %u ", serialize_format_names[f], flags);
+	print_escaped (s.data (), s.size ());
+	printf ("\n");
+	dump_deserialize_unicode (s.data (), s.size (), f);
+      }
+    hb_shape (font, b, nullptr, 0);
+    printf ("glyphs");
+    print_glyph_items (b);
+    printf ("\n");
+    for (unsigned f = 0; f < 2; f++)
+      for (unsigned flags = 0; flags < 64; flags++)
+      {
+	std::string s = serialize_all (b, font, serialize_formats[f],
+				       (hb_buffer_serialize_flags_t) flags);
+	printf ("serialize glyphs %s %u ", serialize_format_names[f], flags);
+	print_escaped (s.data (), s.size ());
+	printf ("\n");
+	dump_deserialize_glyphs (s.data (), s.size (), font, f);
+      }
+    hb_buffer_destroy (b);
+  }
+  fclose (fp);
+  for (unsigned i = 0; i < ARRAY_COUNT (test_buffer_inputs); i++)
+  {
+    const char *s = test_buffer_inputs[i];
+    unsigned len = strlen (s);
+    for (unsigned n = 0; n <= len; n++)
+      dump_corpus_entry (s, n, font);
+  }
+  hb_font_destroy (font);
+  hb_face_destroy (face);
+  return 0;
+}
+
+static int dump_deserialize (hb_blob_t *blob, const char *corpus_path)
+{
+  FILE *fp = fopen (corpus_path, "rb");
+  if (!fp)
+  {
+    fprintf (stderr, "hb-dump: cannot read %s\n", corpus_path);
+    return 1;
+  }
+  hb_face_t *face = hb_face_create (blob, 0);
+  hb_font_t *font = hb_font_create (face);
+  std::string line;
+  int c;
+  while ((c = fgetc (fp)) != EOF)
+  {
+    if (c != '\n')
+    {
+      line.push_back ((char) c);
+      continue;
+    }
+    /* Undo print_escaped (without its `=`). */
+    std::string s;
+    for (unsigned i = 0; i < line.size (); i++)
+    {
+      if (line[i] == '\\' && i + 3 < line.size () && line[i + 1] == 'x')
+      {
+	char hex[3] = {line[i + 2], line[i + 3], '\0'};
+	s.push_back ((char) strtoul (hex, nullptr, 16));
+	i += 3;
+      }
+      else
+	s.push_back (line[i]);
+    }
+    dump_corpus_entry (s.data (), s.size (), font);
+    line.clear ();
+  }
+  fclose (fp);
+  hb_font_destroy (font);
+  hb_face_destroy (face);
+  return 0;
+}
 
 /* ADR 0023: color glyphs. */
 
@@ -1105,6 +1960,253 @@ static int dump_mult ()
   return 0;
 }
 
+/* --shape, --shape-random and --layout-map (ADR 0020). */
+
+/* hb-shape's parse_features: the list without surrounding quotes, split
+ * at `,` and ` `, items that do not parse dropped. */
+static void parse_feature_list (const char *arg, std::vector<hb_feature_t> *out)
+{
+  std::string s (arg);
+  if (s.size () >= 2 && s[0] == s[s.size () - 1] && (s[0] == '"' || s[0] == '\''))
+    s = s.substr (1, s.size () - 2);
+  size_t start = 0;
+  while (start <= s.size ())
+  {
+    size_t end = s.find_first_of (", ", start);
+    if (end == std::string::npos) end = s.size ();
+    hb_feature_t f;
+    if (end > start && hb_feature_from_string (s.data () + start, (int) (end - start), &f))
+      out->push_back (f);
+    start = end + 1;
+  }
+}
+
+/* What hb-shape writes for the glyphs (shape_format_options_t::serialize),
+ * with glyph ids, UTF-8 cluster values and the flags. */
+static void print_shaped (hb_buffer_t *b, hb_font_t *font)
+{
+  std::string s = serialize_all (b, font, HB_BUFFER_SERIALIZE_FORMAT_TEXT,
+				 (hb_buffer_serialize_flags_t) (HB_BUFFER_SERIALIZE_FLAG_NO_GLYPH_NAMES |
+								HB_BUFFER_SERIALIZE_FLAG_GLYPH_FLAGS));
+  fwrite (s.data (), 1, s.size (), stdout);
+  printf ("\n");
+}
+
+static int dump_shape (int argc, char **argv)
+{
+  const char *font_path = argv[2], *text_path = argv[3], *dir = argv[4];
+  hb_blob_t *blob = hb_blob_create_from_file_or_fail (font_path);
+  FILE *fp = blob ? fopen (text_path, "rb") : nullptr;
+  if (!fp)
+  {
+    fprintf (stderr, "hb-dump: cannot read %s\n", blob ? text_path : font_path);
+    hb_blob_destroy (blob);
+    return 1;
+  }
+  std::vector<hb_feature_t> features;
+  parse_feature_list (argv[5], &features);
+  hb_face_t *face = hb_face_create (blob, 0);
+  hb_font_t *font = hb_font_create (face);
+  hb_buffer_t *b = hb_buffer_create ();
+  std::string line;
+  int c;
+  bool more = true;
+  while (more)
+  {
+    c = fgetc (fp);
+    if (c != EOF && c != '\n')
+    {
+      line.push_back ((char) c);
+      continue;
+    }
+    more = c != EOF;
+    if (!more && line.empty ())
+      break;
+    hb_buffer_clear_contents (b);
+    hb_buffer_add_utf8 (b, line.data (), (int) line.size (), 0, (int) line.size ());
+    if (strcmp (dir, "auto") != 0)
+      hb_buffer_set_direction (b, hb_direction_from_string (dir, -1));
+    hb_buffer_guess_segment_properties (b);
+    hb_shape (font, b, features.data (), (unsigned) features.size ());
+    print_shaped (b, font);
+    line.clear ();
+  }
+  fclose (fp);
+  hb_buffer_destroy (b);
+  hb_font_destroy (font);
+  hb_face_destroy (face);
+  hb_blob_destroy (blob);
+  return 0;
+}
+
+/* The pseudo-random numbers of --shape-random: the C standard's example
+ * LCG, the high 15 bits of the state. */
+static unsigned random_next (uint32_t *state)
+{
+  *state = *state * 1103515245u + 12345u;
+  return (*state >> 16) & 0x7FFFu;
+}
+
+static int compare_u32 (const void *a, const void *b)
+{
+  uint32_t x = *(const uint32_t *) a, y = *(const uint32_t *) b;
+  return x < y ? -1 : x > y;
+}
+
+static int dump_shape_random (int argc, char **argv)
+{
+  hb_blob_t *blob = hb_blob_create_from_file_or_fail (argv[2]);
+  if (!blob)
+  {
+    fprintf (stderr, "hb-dump: cannot read %s\n", argv[2]);
+    return 1;
+  }
+  unsigned count = (unsigned) strtoul (argv[3], nullptr, 10);
+  uint32_t seed = (uint32_t) strtoul (argv[4], nullptr, 10);
+  unsigned faces = hb_face_count (blob);
+  if (!faces) faces = 1;
+  hb_unicode_funcs_t *ufuncs = hb_unicode_funcs_get_default ();
+  hb_buffer_t *b = hb_buffer_create ();
+  for (unsigned i = 0; i < faces; i++)
+  {
+    hb_face_t *face = hb_face_create (blob, i);
+    hb_font_t *font = hb_font_create (face);
+    printf ("face %u\n", i);
+    /* The mapped characters, grouped by script, scripts in tag order. */
+    std::vector<std::pair<uint32_t, std::vector<hb_codepoint_t>>> groups;
+    std::vector<uint32_t> tags;
+    std::vector<std::pair<uint32_t, hb_codepoint_t>> chars;
+    for (hb_codepoint_t u = 0; u <= 0x10FFFFu; u++)
+    {
+      hb_codepoint_t g;
+      if (hb_font_get_nominal_glyph (font, u, &g))
+	chars.push_back (std::make_pair ((uint32_t) hb_unicode_script (ufuncs, u), u));
+    }
+    for (auto &p : chars) tags.push_back (p.first);
+    if (!tags.empty ())
+    {
+      qsort (tags.data (), tags.size (), sizeof (tags[0]), compare_u32);
+      tags.erase (std::unique (tags.begin (), tags.end ()), tags.end ());
+    }
+    for (uint32_t tag : tags)
+    {
+      std::vector<hb_codepoint_t> cps;
+      for (auto &p : chars)
+	if (p.first == tag) cps.push_back (p.second);
+      printf ("script %08x %u\n", tag, (unsigned) cps.size ());
+      uint32_t state = seed;
+      for (unsigned n = 0; n < count; n++)
+      {
+	unsigned len = 1 + random_next (&state) % 16;
+	std::vector<hb_codepoint_t> text;
+	for (unsigned k = 0; k < len; k++)
+	  text.push_back (cps[random_next (&state) % cps.size ()]);
+	hb_buffer_clear_contents (b);
+	hb_buffer_set_flags (b, (hb_buffer_flags_t) (HB_BUFFER_FLAG_BOT | HB_BUFFER_FLAG_EOT |
+						     HB_BUFFER_FLAG_PRODUCE_UNSAFE_TO_CONCAT));
+	hb_buffer_add_codepoints (b, text.data (), (int) text.size (), 0, (int) text.size ());
+	hb_buffer_guess_segment_properties (b);
+	hb_shape (font, b, nullptr, 0);
+	printf ("s ");
+	for (unsigned k = 0; k < len; k++)
+	  printf (k ? ",%x" : "%x", text[k]);
+	printf (" ");
+	print_shaped (b, font);
+      }
+    }
+    printf ("end\n");
+    hb_font_destroy (font);
+    hb_face_destroy (face);
+  }
+  hb_buffer_destroy (b);
+  hb_blob_destroy (blob);
+  return 0;
+}
+
+/* --layout-map: the script and language system hb_ot_map_builder_t picks
+ * in GSUB and GPOS. */
+static int dump_layout_map (hb_blob_t *blob)
+{
+  ot_tag_set_t scripts = {nullptr, 0, 0};
+  hb_unicode_funcs_t *ufuncs = hb_unicode_funcs_get_default ();
+  for (hb_codepoint_t u = 0; u <= 0x10FFFFu; u++)
+    ot_tag_add (&scripts, (hb_tag_t) hb_unicode_script (ufuncs, u));
+  ot_tag_add (&scripts, (hb_tag_t) HB_SCRIPT_INVALID);
+  ot_tag_add (&scripts, (hb_tag_t) HB_SCRIPT_MATH);
+  ot_tag_sort_unique (&scripts);
+  static const hb_tag_t table_tags[2] = {HB_OT_TAG_GSUB, HB_OT_TAG_GPOS};
+  unsigned faces = hb_face_count (blob);
+  if (!faces) faces = 1;
+  for (unsigned i = 0; i < faces; i++)
+  {
+    hb_face_t *face = hb_face_create (blob, i);
+    printf ("face %u\n", i);
+    /* The languages: none, and those of the language system tags of
+     * both tables. */
+    std::vector<hb_language_t> languages;
+    languages.push_back (HB_LANGUAGE_INVALID);
+    for (unsigned t = 0; t < 2; t++)
+    {
+      unsigned sc = hb_ot_layout_table_get_script_tags (face, table_tags[t], 0, nullptr, nullptr);
+      for (unsigned s = 0; s < sc; s++)
+      {
+	hb_tag_t ltags[64];
+	unsigned start = 0, n;
+	do
+	{
+	  n = 64;
+	  hb_ot_layout_script_get_language_tags (face, table_tags[t], s, start, &n, ltags);
+	  for (unsigned k = 0; k < n; k++)
+	  {
+	    hb_language_t l = hb_ot_tag_to_language (ltags[k]);
+	    if (l && std::find (languages.begin (), languages.end (), l) == languages.end ())
+	      languages.push_back (l);
+	  }
+	  start += n;
+	} while (n == 64);
+      }
+    }
+    for (unsigned s = 0; s < scripts.n; s++)
+      for (hb_language_t lang : languages)
+      {
+	unsigned script_count = HB_OT_MAX_TAGS_PER_SCRIPT, language_count = HB_OT_MAX_TAGS_PER_LANGUAGE;
+	hb_tag_t script_tags[HB_OT_MAX_TAGS_PER_SCRIPT], language_tags[HB_OT_MAX_TAGS_PER_LANGUAGE];
+	hb_ot_tags_from_script_and_language ((hb_script_t) scripts.v[s], lang,
+					     &script_count, script_tags,
+					     &language_count, language_tags);
+	printf ("sel %08x %s", scripts.v[s], lang ? hb_language_to_string (lang) : "*");
+	for (unsigned t = 0; t < 2; t++)
+	{
+	  unsigned script_index, language_index;
+	  hb_tag_t chosen;
+	  hb_bool_t found = hb_ot_layout_table_select_script (face, table_tags[t], script_count, script_tags,
+							      &script_index, &chosen);
+	  hb_ot_layout_script_select_language (face, table_tags[t], script_index,
+					       language_count, language_tags, &language_index);
+	  printf (" %d %u %08x %u", found ? 1 : 0, script_index, chosen, language_index);
+	}
+	printf ("\n");
+      }
+    printf ("end\n");
+    hb_face_destroy (face);
+  }
+  free (scripts.v);
+  return 0;
+}
+
+/* The modes with more arguments. */
+struct args_mode_t
+{
+  const char *name;
+  int argc;
+  int (*dump) (int argc, char **argv);
+};
+
+static const args_mode_t args_modes[] = {
+  {"--shape", 6, dump_shape},
+  {"--shape-random", 5, dump_shape_random},
+};
+
 /* The modes that read no file. */
 struct fileless_mode_t
 {
@@ -1115,6 +2217,8 @@ struct fileless_mode_t
 static const fileless_mode_t fileless_modes[] = {
   {"--unicode", dump_unicode},
   {"--arabic-pua", dump_arabic_pua},
+  {"--ot-tags", dump_ot_tags},
+  {"--features", dump_features},
   {"--roundf", dump_roundf},
   {"--mult", dump_mult},
 };
@@ -1131,13 +2235,43 @@ static const dump_mode_t modes[] = {
   {"--cmap", dump_cmap},
   {"--baselines", dump_baselines},
   {"--vowel-constraints", dump_vowel_constraints},
+  {"--layout-map", dump_layout_map},
   {"--paint", dump_paint},
   {"--color", dump_color},
   {"--extents", dump_extents},
 };
 
+/* The modes that read a font and a second file. */
+struct two_file_mode_t
+{
+  const char *name;
+  int (*dump) (hb_blob_t *blob, const char *path);
+};
+
+static const two_file_mode_t two_file_modes[] = {
+  {"--serialize", dump_serialize},
+  {"--deserialize", dump_deserialize},
+};
+
 int main (int argc, char **argv)
 {
+  for (unsigned i = 0; i < sizeof (args_modes) / sizeof (args_modes[0]); i++)
+    if (argc == args_modes[i].argc && strcmp (argv[1], args_modes[i].name) == 0)
+      return args_modes[i].dump (argc, argv);
+  if (argc == 4)
+    for (unsigned i = 0; i < sizeof (two_file_modes) / sizeof (two_file_modes[0]); i++)
+      if (strcmp (argv[1], two_file_modes[i].name) == 0)
+      {
+	hb_blob_t *blob = hb_blob_create_from_file_or_fail (argv[2]);
+	if (!blob)
+	{
+	  fprintf (stderr, "hb-dump: cannot read %s\n", argv[2]);
+	  return 1;
+	}
+	int status = two_file_modes[i].dump (blob, argv[3]);
+	hb_blob_destroy (blob);
+	return status;
+      }
   if (argc == 2)
     for (unsigned i = 0; i < sizeof (fileless_modes) / sizeof (fileless_modes[0]); i++)
       if (strcmp (argv[1], fileless_modes[i].name) == 0)
@@ -1152,17 +2286,29 @@ int main (int argc, char **argv)
     if (strncmp (argv[1], "--paint=", 8) == 0)
     {
       paint_slant = (float) atof (argv[1] + 8);
-      mode = &modes[5];
+      for (unsigned i = 0; i < sizeof (modes) / sizeof (modes[0]); i++)
+	if (strcmp (modes[i].name, "--paint") == 0)
+	  mode = &modes[i];
     }
   }
   if (!mode || argc < 2 || argc > 3)
   {
+    for (unsigned i = 0; i < sizeof (args_modes) / sizeof (args_modes[0]); i++)
+      if (argc >= 2 && strcmp (argv[1], args_modes[i].name) == 0)
+      {
+	fprintf (stderr, "usage: hb-dump %s %s\n", args_modes[i].name,
+		 args_modes[i].argc == 6 ? "FONT TEXTFILE DIRECTION FEATURES" : "FONT COUNT SEED");
+	return 2;
+      }
     fprintf (stderr, "usage: hb-dump [MODE] FILE; MODE is one of:");
     for (unsigned i = 0; i < sizeof (modes) / sizeof (modes[0]); i++)
       fprintf (stderr, " %s", modes[i].name);
     fprintf (stderr, "; or hb-dump MODE, MODE one of:");
     for (unsigned i = 0; i < sizeof (fileless_modes) / sizeof (fileless_modes[0]); i++)
       fprintf (stderr, " %s", fileless_modes[i].name);
+    fprintf (stderr, "; or hb-dump MODE FONT FILE, MODE one of:");
+    for (unsigned i = 0; i < sizeof (two_file_modes) / sizeof (two_file_modes[0]); i++)
+      fprintf (stderr, " %s", two_file_modes[i].name);
     fprintf (stderr, "\n");
     return 2;
   }

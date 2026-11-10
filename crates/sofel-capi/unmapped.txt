@@ -51,6 +51,30 @@ sofel_outline::cff2_extents The CFF2 step of sofel_outline::HbExtents::glyph_ext
 sofel_outline::HbExtents::cff1 Returns the Rust accelerator that sofel_font_t keeps inside.
 sofel_outline::HbExtents::cff2 Returns the Rust accelerator that sofel_font_t keeps inside.
 sofel_outline::HbExtents::font Returns the font that sofel_font_t is.
+sofel_shape::Language::as_str C ABI comes with ADR 0020 part 3.
+sofel_shape::Language::new C ABI comes with ADR 0020 part 3.
+sofel_shape::ot_tag_to_language C ABI comes with ADR 0020 part 3.
+sofel_shape::ot_tag_to_script C ABI comes with ADR 0020 part 3.
+sofel_shape::ot_tags_from_script_and_language C ABI comes with ADR 0020 part 3.
+sofel_shape::ot_tags_from_script_and_language_max C ABI comes with ADR 0020 part 3.
+sofel_shape::ot_tags_to_script_and_language C ABI comes with ADR 0020 part 3.
+sofel_shape::Feature::parse C ABI comes with ADR 0020 part 3.
+sofel_shape::Feature::format C ABI comes with ADR 0020 part 3.
+sofel_shape::Feature::write Appends to a Rust Vec; C gets the string with the C counterpart of Feature::format (ADR 0020 part 3).
+sofel_shape::serialize_glyphs C ABI comes with ADR 0020 part 3.
+sofel_shape::serialize_glyphs_range C ABI comes with ADR 0020 part 3.
+sofel_shape::serialize_unicode C ABI comes with ADR 0020 part 3.
+sofel_shape::serialize_unicode_range C ABI comes with ADR 0020 part 3.
+sofel_shape::serialize_invalid C ABI comes with ADR 0020 part 3.
+sofel_shape::deserialize_glyphs C ABI comes with ADR 0020 part 3.
+sofel_shape::deserialize_unicode C ABI comes with ADR 0020 part 3.
+sofel_shape::glyph_to_string C ABI comes with ADR 0020 part 3.
+sofel_shape::glyph_from_string C ABI comes with ADR 0020 part 3.
+sofel_shape::SerializeFormat::from_name C ABI comes with ADR 0020 part 3.
+sofel_shape::SerializeFormat::name C ABI comes with ADR 0020 part 3.
+sofel_shape::SerializeFlags::contains A bit test, which C writes as such.
+sofel_shape::SerializeFlags::union A bitwise or, which C writes as such.
+sofel_shape::SerializeFont::* The Rust trait through which serialization asks the font; C passes a sofel font to the C counterparts of the serializers (ADR 0020 part 3).
 sofel_font::Cff::build_name_index C looks glyphs up by name through sofel_glyph_names_create, which covers CFF charset names (ADR 0021).
 sofel_font::Cff::glyph_from_name C looks glyphs up by name through sofel_glyph_names_glyph_from_name.
 sofel_font::Cff::charset_name C gets glyph names from sofel_font_glyph_name and sofel_font_ft_glyph_name, which read the charset.
@@ -91,6 +115,85 @@ sofel_read::cff::CharsetIndex::glyph The charset index that sofel_font_t keeps i
 sofel_font::Cff::charset_name_with Cff::charset_name with the charset index (ADR 0025); C gets glyph names from sofel_font_ft_glyph_name, which uses the index sofel_font_t keeps.
 sofel_font::Cff::build_name_index_with Cff::build_name_index with the charset index (ADR 0025); C looks glyphs up by name through sofel_glyph_names_create.
 sofel_font::Cff::glyph_from_name_with Cff::glyph_from_name with the charset index (ADR 0025); C looks glyphs up by name through sofel_glyph_names_glyph_from_name.
+sofel_shape::BufferFlags::contains C ABI comes with ADR 0020 part 3.
+sofel_shape::BufferFlags::union C ABI comes with ADR 0020 part 3.
+sofel_shape::diff C ABI comes with ADR 0020 part 3.
+sofel_shape::diff_unicode C ABI comes with ADR 0020 part 3.
+sofel_shape::DiffFlags::contains C ABI comes with ADR 0020 part 3.
+sofel_shape::DiffFlags::union C ABI comes with ADR 0020 part 3.
+sofel_shape::Direction::as_str C ABI comes with ADR 0020 part 3.
+sofel_shape::Direction::from_bytes C ABI comes with ADR 0020 part 3.
+sofel_shape::Direction::is_backward C ABI comes with ADR 0020 part 3.
+sofel_shape::Direction::is_forward C ABI comes with ADR 0020 part 3.
+sofel_shape::Direction::is_horizontal C ABI comes with ADR 0020 part 3.
+sofel_shape::Direction::is_vertical C ABI comes with ADR 0020 part 3.
+sofel_shape::Direction::reverse C ABI comes with ADR 0020 part 3.
+sofel_shape::Feature::is_global C ABI comes with ADR 0020 part 3.
+sofel_shape::Feature::new C ABI comes with ADR 0020 part 3.
+sofel_shape::GlyphBuffer::direction C ABI comes with ADR 0020 part 3.
+sofel_shape::GlyphBuffer::from_parts C ABI comes with ADR 0020 part 3.
+sofel_shape::GlyphBuffer::glyph_infos C ABI comes with ADR 0020 part 3.
+sofel_shape::GlyphBuffer::glyph_positions C ABI comes with ADR 0020 part 3.
+sofel_shape::GlyphBuffer::into_unicode C ABI comes with ADR 0020 part 3.
+sofel_shape::GlyphBuffer::is_empty C ABI comes with ADR 0020 part 3.
+sofel_shape::GlyphBuffer::len C ABI comes with ADR 0020 part 3.
+sofel_shape::GlyphBuffer::normalize_glyphs C ABI comes with ADR 0020 part 3.
+sofel_shape::GlyphFlags::contains C ABI comes with ADR 0020 part 3.
+sofel_shape::GlyphFlags::union C ABI comes with ADR 0020 part 3.
+sofel_shape::layout_selection C ABI comes with ADR 0020 part 3.
+sofel_shape::Scale::new C ABI comes with ADR 0020 part 3.
+sofel_shape::Scale::unscaled C ABI comes with ADR 0020 part 3.
+sofel_shape::script_horizontal_direction C ABI comes with ADR 0020 part 3.
+sofel_shape::SegmentProperties::guess C ABI comes with ADR 0020 part 3.
+sofel_shape::shape C ABI comes with ADR 0020 part 3.
+sofel_shape::shape_fallback C ABI comes with ADR 0020 part 3.
+sofel_shape::shape_with_extents C ABI comes with ADR 0020 part 3.
+sofel_shape::ShapePlan::chosen_scripts C ABI comes with ADR 0020 part 3.
+sofel_shape::ShapePlan::feature_masks C ABI comes with ADR 0020 part 3.
+sofel_shape::ShapePlan::global_mask C ABI comes with ADR 0020 part 3.
+sofel_shape::ShapePlan::key C ABI comes with ADR 0020 part 3.
+sofel_shape::ShapePlan::new C ABI comes with ADR 0020 part 3.
+sofel_shape::ShapePlan::shaper C ABI comes with ADR 0020 part 3.
+sofel_shape::ShapePlan::stage_lookups C ABI comes with ADR 0020 part 3.
+sofel_shape::unicode::is_default_ignorable C ABI comes with ADR 0020 part 3.
+sofel_shape::unicode::is_regional_indicator C ABI comes with ADR 0020 part 3.
+sofel_shape::unicode::is_variation_selector C ABI comes with ADR 0020 part 3.
+sofel_shape::unicode::modified_combining_class C ABI comes with ADR 0020 part 3.
+sofel_shape::unicode::space_fallback_type C ABI comes with ADR 0020 part 3.
+sofel_shape::unicode::vertical_char_for C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::clear C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::cluster_level C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::clusters C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::codepoints C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::flags C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::invisible_glyph C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::is_empty C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::len C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::new C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::not_found_glyph C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::not_found_variation_selector_glyph C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::post_context C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::pre_context C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::push C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::push_codepoints C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::push_latin1 C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::push_utf16 C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::push_utf32 C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::push_utf8 C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::random_state C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::replacement_codepoint C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::set_cluster_level C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::set_flags C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::set_invisible_glyph C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::set_not_found_glyph C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::set_not_found_variation_selector_glyph C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::set_random_state C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::set_replacement_codepoint C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::append C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::similar C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::number_clusters C ABI comes with ADR 0020 part 3.
+sofel_font::Font::nominal_glyph_raw The cmap lookup of shaping (ADR 0020); its C ABI comes with ADR 0020 part 3, next to sofel_font_nominal_glyph.
+sofel_font::Font::variation_glyph_raw The cmap lookup of shaping (ADR 0020); its C ABI comes with ADR 0020 part 3, next to sofel_font_variation_glyph.
 sofel_bitmap::cbdt_png Used by sofel_paint_glyph; C gets the PNG of a CBDT glyph from its image command.
 sofel_bitmap::cbdt_png_data HarfBuzz's reference_png; C gets the PNG of a CBDT glyph from its image command of sofel_paint_glyph.
 sofel_bitmap::sbix_png Used by sofel_paint_glyph; C gets the PNG of an sbix glyph from its image command.

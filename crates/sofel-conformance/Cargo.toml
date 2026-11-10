@@ -18,6 +18,7 @@ sofel-cli = { path = "../sofel-cli" }
 sofel-bitmap = { path = "../sofel-bitmap" }
 sofel-color = { path = "../sofel-color" }
 sofel-unicode = { path = "../sofel-unicode" }
+sofel-shape = { path = "../sofel-shape" }
 
 [lints]
 workspace = true

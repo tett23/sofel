@@ -4,8 +4,6 @@
 # Remove an entry when it passes; the test fails until you do.
 # The color items of ADR 0023 (harfbuzz_color.rs) have no `:hb:`:
 # <font>#<face>:paint:<palette>:<ppem>:<glyph>, :color, :extents:<glyph>.
-harfbuzz/test/shape/data/aots/fonts/cmap2_font1.otf#0:hb:nominal  # HarfBuzz does not look up cmap format 2 (CmapSubtable::get_glyph); sofel reads it as FreeType does (ADR 0010)
-harfbuzz/test/shape/data/aots/fonts/cmap8_font1.otf#0:hb:nominal  # HarfBuzz does not look up cmap format 8 (CmapSubtable::get_glyph); sofel reads it as FreeType does (ADR 0010)
 harfbuzz/test/api/fonts/COLRv0.extents.ttf#0:extents:13  # HarfBuzz transforms the components of layer glyph 9 in floating point (it spans 192.024..923.414); sofel-outline loads it in whole font units as FreeType does (192..924) (ADR 0023)
 harfbuzz/test/api/fonts/colr-short-colorline.ttf#0:color  # HarfBuzz drops the BaseGlyphList, whose color line runs past the table; glyph_color_format does not walk paints to check (ADR 0023), paint() does and paints nothing
 harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-minimized-hb-raster-fuzzer-6111992183324672#0:extents:0  # layer glyphs 2 and 3 are outlines FreeType rejects (error 20) and sofel-outline too; HarfBuzz draws them into the box
