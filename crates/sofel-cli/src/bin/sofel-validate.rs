@@ -1,3 +1,5 @@
+//! `sofel-validate`: see [`sofel_cli::validate`].
+
 fn main() {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     let code = sofel_cli::validate::run(

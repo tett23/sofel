@@ -10,9 +10,12 @@ use sofel_font::read::GlyphId;
 use sofel_outline::{OutlineError, Scale, Scratch, load};
 use sofel_raster::{Bitmap, FillRule, RasterError, Rasterizer, RenderOptions, pixel_box};
 
+/// Why [`render`] failed.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum RenderError {
+    /// The outline could not be loaded or decomposed.
     Outline(OutlineError),
+    /// The bitmap could not be rendered.
     Raster(RasterError),
 }
 
@@ -29,7 +32,18 @@ impl std::error::Error for RenderError {}
 
 /// Renders `glyph` at `ppem` pixels as `FT_Set_Pixel_Sizes`,
 /// `FT_Load_Glyph` with `FT_LOAD_NO_HINTING` and `FT_Render_Glyph` with
-/// `FT_RENDER_MODE_NORMAL` would.
+/// `FT_RENDER_MODE_NORMAL` would, with the non-zero fill rule.
+///
+/// `scratch` and `raster` are caches the caller keeps and reuses across
+/// glyphs; the outline previously recorded in `raster` is cleared. The
+/// returned [`Bitmap`] borrows its pixels from `raster`. An empty glyph
+/// gives a bitmap with no pixels.
+///
+/// # Errors
+///
+/// [`RenderError::Outline`] if the glyph's outline cannot be loaded, and
+/// [`RenderError::Raster`] if the bitmap would be too large, including
+/// wider or taller than 16 times `ppem` as in FreeType.
 pub fn render<'r>(
     font: &Font<'_>,
     glyph: GlyphId,

@@ -16,8 +16,42 @@
 //! one extra column on the left for cells left of the bitmap. A band's
 //! array stays within a cell budget; taller glyphs are drawn band by
 //! band, as FreeType does when its pool overflows.
+//!
+//! Outlines come in through [`Pen`] in 26.6 fixed point with y growing
+//! upwards; the [`Bitmap`] that comes out has its rows from the top, and
+//! [`Bitmap::left`] and [`Bitmap::top`] in whole pixels.
+//!
+//! # Example
+//!
+//! Render a 10 by 10 pixel square whose bottom-left corner is at (2, 3):
+//!
+//! ```
+//! use sofel_geom::{Pen, Point};
+//! use sofel_raster::{FillRule, Rasterizer, RenderOptions};
+//!
+//! // 26.6: 64 units are one pixel.
+//! let p = |x: i32, y: i32| Point { x: x * 64, y: y * 64 };
+//!
+//! // Keep the Rasterizer and reuse it for the next outlines.
+//! let mut raster = Rasterizer::new();
+//! raster.clear();
+//! raster.move_to(p(2, 3));
+//! raster.line_to(p(12, 3));
+//! raster.line_to(p(12, 13));
+//! raster.line_to(p(2, 13));
+//! raster.line_to(p(2, 3));
+//! raster.close();
+//!
+//! let options = RenderOptions { fill: FillRule::NonZero, overlap: false, ppem: None };
+//! let bitmap = raster.render(options)?;
+//! assert_eq!((bitmap.left, bitmap.top), (2, 13));
+//! assert_eq!((bitmap.width, bitmap.rows), (10, 10));
+//! assert!(bitmap.pixels.iter().all(|&v| v == 255));
+//! # Ok::<(), sofel_raster::RasterError>(())
+//! ```
 
 #![no_std]
+#![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
 extern crate alloc;
@@ -30,13 +64,16 @@ use sofel_geom::{Command, Pen, Point};
 /// How overlapping or self-intersecting contours are filled.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FillRule {
+    /// A point is inside where the winding number is not zero.
     NonZero,
+    /// A point is inside where the winding number is odd.
     EvenOdd,
 }
 
 /// What to render, as `FT_Render_Glyph` with `FT_RENDER_MODE_NORMAL`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct RenderOptions {
+    /// The fill rule (FreeType's `FT_FILL_RULE`).
     pub fill: FillRule,
     /// The outline has FreeType's `FT_OUTLINE_OVERLAP`: render with 4x4
     /// supersampling.
@@ -46,9 +83,13 @@ pub struct RenderOptions {
     pub ppem: Option<(u16, u16)>,
 }
 
+/// Why an outline could not be rendered.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum RasterError {
-    /// The bitmap would be too large (FreeType's `Raster_Overflow`).
+    /// The bitmap would be too large (FreeType's `Raster_Overflow`): 65536
+    /// or more pixels wide or tall, an edge outside -2^24 to 2^24 pixels
+    /// from the origin, wider or taller than [`RenderOptions::ppem`] allows, or,
+    /// with [`RenderOptions::overlap`], more than 0x7FFF supersamples wide.
     TooLarge,
 }
 
@@ -61,13 +102,20 @@ impl fmt::Display for RasterError {
 impl core::error::Error for RasterError {}
 
 /// An 8-bit coverage image. Rows go from the top; `left` and `top` place
-/// it like FreeType's `bitmap_left` and `bitmap_top`.
+/// it like FreeType's `bitmap_left` and `bitmap_top`. It borrows the
+/// pixels from the [`Rasterizer`] that rendered it.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Bitmap<'a> {
+    /// The x of the left column, in pixels from the origin.
     pub left: i32,
+    /// The y of the top edge, in pixels upwards from the origin.
     pub top: i32,
+    /// The number of columns.
     pub width: u32,
+    /// The number of rows.
     pub rows: u32,
+    /// `width * rows` coverage values, 0 (outside) to 255 (fully
+    /// covered), row by row from the top with no padding between rows.
     pub pixels: &'a [u8],
 }
 
@@ -78,7 +126,12 @@ const PIXEL_BITS: u32 = 8;
 const ONE_PIXEL: i64 = 1 << PIXEL_BITS;
 
 /// Records an outline in 26.6 units through [`Pen`], then renders it.
-/// Keep one and reuse it; [`Rasterizer::render`] does not clear it.
+///
+/// The caller owns it as a cache: keep one and reuse it across glyphs so
+/// that its buffers for commands, cells and pixels are allocated once.
+/// Rendering does not forget the recorded outline; call
+/// [`Rasterizer::clear`] before recording the next one. [`Pen::close`]
+/// records nothing.
 #[derive(Clone, Debug)]
 pub struct Rasterizer {
     commands: Vec<Command>,
@@ -113,9 +166,13 @@ impl Pen for Rasterizer {
 /// `bitmap_left`, `bitmap_top`, width and rows.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct PixelBox {
+    /// The x of the left column, in pixels from the origin.
     pub left: i32,
+    /// The y of the top edge, in pixels upwards from the origin.
     pub top: i32,
+    /// The number of columns.
     pub width: u32,
+    /// The number of rows.
     pub rows: u32,
 }
 
@@ -536,6 +593,7 @@ impl Band<'_> {
 }
 
 impl Rasterizer {
+    /// An empty rasterizer whose bands hold at most 8192 cells (64 KiB).
     pub fn new() -> Rasterizer {
         Rasterizer::with_band_cells(BAND_CELLS)
     }
@@ -562,7 +620,12 @@ impl Rasterizer {
     /// recorded points and moving them to it. FreeType decomposes the
     /// outline after that move, so to match it exactly when implied
     /// on-curve points are involved, record the outline already moved
-    /// and use [`Rasterizer::render_placed`] instead.
+    /// and use [`Rasterizer::render_placed`] instead. With
+    /// `options.overlap`, the points are multiplied by 4 after the move.
+    ///
+    /// # Errors
+    ///
+    /// [`RasterError::TooLarge`] if the bitmap would be too large.
     pub fn render(&mut self, options: RenderOptions) -> Result<Bitmap<'_>, RasterError> {
         let (left, top, width, rows) = control_box(&self.commands)
             .map_or((0, 0, 0, 0), |(a, b, c, d)| pixel_box_wide(a, b, c, d));
@@ -587,6 +650,10 @@ impl Rasterizer {
     /// `options.overlap`, multiplied by 4 after the move), as FreeType's
     /// smooth renderer has it. Get the box from the unmoved outline's
     /// control box with [`pixel_box`].
+    ///
+    /// # Errors
+    ///
+    /// [`RasterError::TooLarge`] if the bitmap would be too large.
     pub fn render_placed(
         &mut self,
         pixel_box: PixelBox,

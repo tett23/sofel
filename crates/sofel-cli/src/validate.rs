@@ -9,6 +9,7 @@ use sofel_read::{DetailValue, Diagnostic, Kind, ReadError, Severity, validate};
 
 use crate::json;
 
+/// The usage text, printed for `--help` and after a usage error.
 pub const HELP: &str = "\
 usage: sofel-validate [--json] FILE...
 

@@ -14,6 +14,7 @@ WOFFとWOFF2、Type1やBDFなどの古い形式、AAT、絵文字（COLR、埋�
 `sofel-read` は、sfntの目録、TTC/OTC、head、maxp/MAXP、hhea/HHEA、hmtx/HMTX、cmap（フォーマット0〜15）を読み、各表の検証器を持つ（[ADR 0007](docs/adr/0007-sfnt-read-foundation.md)）。
 範囲と実装の順序は [ADR 0001](docs/adr/0001-project-goal-and-scope.md)、クレートの構成は [ADR 0003](docs/adr/0003-crate-layers.md) を参照。
 仕様は [docs/specifications.md](docs/specifications.md) にまとめる。
+ライブラリの使い方は [docs/api.md](docs/api.md) にまとめる（各項目の説明はrustdoc）。
 
 | クレート | 役割 |
 |---|---|
@@ -61,7 +62,10 @@ cargo test
 cargo clippy --workspace --all-targets -- -D warnings
 sh scripts/check-deps.sh   # クレートの依存が ADR 0003 の表に沿うか（jq が要る）
 sh scripts/run-tests.sh    # シェルのスクリプトのテスト
+RUSTDOCFLAGS="-D warnings" cargo doc --no-deps -p sofel-geom -p sofel-read -p sofel-font -p sofel-outline -p sofel-raster -p sofel-cli
 ```
+
+ライブラリのクレートは公開の項目すべてにrustdocを書く（`#![warn(missing_docs)]`）。使い方の手引きは [docs/api.md](docs/api.md)。
 
 FreeTypeとの突き合わせ（[ADR 0005](docs/adr/0005-conformance-tests.md)、[0008](docs/adr/0008-validate-command-and-freetype-comparison.md)）には、固定したコミットのHarfBuzzとFreeTypeの取得と、`ft-dump` のビルド（Cのコンパイラが要る）が要る。期待する失敗は `conformance/expected-failures-freetype.txt` に理由を添えて書く。
 

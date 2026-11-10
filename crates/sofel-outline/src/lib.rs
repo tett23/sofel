@@ -13,8 +13,43 @@
 //! Not done here (ADR 0011): hinting, variations, phantom points. In
 //! particular, FreeType shifts the final outline by the scaled
 //! `xMin - leftSideBearing` (phantom point 1); this crate does not.
+//!
+//! Points are in font units ([`Scale::Unscaled`]) or 26.6 fixed point
+//! ([`Scale::Scaled`]), with y growing upwards as in the font.
+//!
+//! # Example
+//!
+//! Draw the outline of `A` at 16 pixels per em with an [`FnPen`]:
+//!
+//! ```no_run
+//! use sofel_font::Font;
+//! use sofel_geom::{Command, FnPen};
+//! use sofel_outline::{Scale, Scratch, draw};
+//!
+//! fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     let data = std::fs::read("font.ttf")?;
+//!     let font = Font::new(&data, 0)?;
+//!     let glyph = font.nominal_glyph(u32::from('A')).ok_or("no glyph for A")?;
+//!
+//!     // Keep the Scratch and reuse it for the next glyphs.
+//!     let mut scratch = Scratch::default();
+//!     let mut commands: Vec<Command> = Vec::new();
+//!     let info = draw(
+//!         &font,
+//!         glyph,
+//!         Scale::pixels(&font, 16, 16),
+//!         &mut scratch,
+//!         &mut FnPen(|c| commands.push(c)),
+//!     )?;
+//!     println!("{} commands, control box {:?}", commands.len(), info.cbox);
+//!     Ok(())
+//! }
+//! ```
+//!
+//! [`FnPen`]: sofel_geom::FnPen
 
 #![no_std]
+#![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
 extern crate alloc;
@@ -33,12 +68,19 @@ use sofel_geom::{Fixed, Matrix, Pen, Point, div_fix, mul_fix, transform, vector_
 pub enum Scale {
     /// Keep font units (`FT_LOAD_NO_SCALE`).
     Unscaled,
-    /// Multiply x and y by these 16.16 factors, giving 26.6 coordinates.
-    Scaled { x: Fixed, y: Fixed },
+    /// Multiply x and y by these 16.16 factors with `FT_MulFix`, giving
+    /// 26.6 coordinates (FreeType's `x_scale` and `y_scale`).
+    Scaled {
+        /// The horizontal factor, 16.16.
+        x: Fixed,
+        /// The vertical factor, 16.16.
+        y: Fixed,
+    },
 }
 
 impl Scale {
-    /// The scale `FT_Set_Pixel_Sizes` sets: `FT_DivFix(ppem << 6, unitsPerEm)`.
+    /// The scale `FT_Set_Pixel_Sizes` sets: `FT_DivFix(ppem << 6, unitsPerEm)`
+    /// for each axis, not rounded (as `FT_LOAD_NO_HINTING` uses it).
     pub fn pixels(font: &Font<'_>, x_ppem: u16, y_ppem: u16) -> Scale {
         let upem = i32::from(font.units_per_em());
         let s = |ppem: u16| Fixed(div_fix(i32::from(ppem).saturating_mul(64), upem));
@@ -50,12 +92,17 @@ impl Scale {
 }
 
 /// The smallest box holding every point, off-curve ones included
-/// (`FT_Outline_Get_CBox`); all zero for an empty outline.
+/// (`FT_Outline_Get_CBox`); all zero for an empty outline. In the unit of
+/// the points: font units or 26.6, y up.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct CBox {
+    /// The smallest x.
     pub x_min: i32,
+    /// The smallest y.
     pub y_min: i32,
+    /// The largest x.
     pub x_max: i32,
+    /// The largest y.
     pub y_max: i32,
 }
 
@@ -65,9 +112,12 @@ pub struct OutlineInfo {
     /// FreeType's `FT_OUTLINE_OVERLAP`: a simple glyph whose first point
     /// has OVERLAP_SIMPLE, or a first component with OVERLAP_COMPOUND.
     pub overlap: bool,
+    /// The control box of the loaded points, before any offset or
+    /// multiplier given to [`Scratch::decompose`].
     pub cbox: CBox,
 }
 
+/// Why a glyph's outline could not be loaded or decomposed.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum OutlineError {
     /// The glyph id is not below the glyph count.
@@ -94,7 +144,11 @@ impl fmt::Display for OutlineError {
 
 impl core::error::Error for OutlineError {}
 
-/// The work area of [`draw`]. Keep one and reuse it across glyphs.
+/// The work area of [`draw`] and [`load`]: the points, tags and contour
+/// ends of the last loaded glyph, and the composite stack. The caller
+/// owns it; keep one and reuse it across glyphs so its buffers are
+/// allocated once. Each [`load`] clears it first, and a failed load
+/// leaves it empty.
 #[derive(Clone, Debug, Default)]
 pub struct Scratch {
     points: Vec<Point>,

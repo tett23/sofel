@@ -19,7 +19,9 @@ pub struct Diagnostic {
     pub table: Tag,
     /// Offset from the start of the table (or directory, or file).
     pub offset: u32,
+    /// How bad it is; always [`Kind::severity`] of `kind`.
     pub severity: Severity,
+    /// What the problem is.
     pub kind: Kind,
 }
 
@@ -37,8 +39,11 @@ impl Diagnostic {
 /// A value attached to a [`Kind`], for machine-readable output.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DetailValue {
+    /// An unsigned value (counts, offsets, indices, code points).
     Uint(u32),
+    /// A signed value.
     Int(i32),
+    /// A table tag.
     Tag(Tag),
 }
 
@@ -47,124 +52,199 @@ pub enum DetailValue {
 /// contract (ADR 0008).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Kind {
+    /// The data ends before a structure is complete.
     Truncated {
+        /// Bytes needed.
         needed: u32,
+        /// Bytes available.
         available: u32,
     },
+    /// An unknown table or file version.
     UnknownVersion {
+        /// The value found.
         found: u32,
     },
+    /// An unknown subtable format.
     UnknownFormat {
+        /// The value found.
         found: u32,
     },
+    /// An offset and length point outside the available data.
     OffsetOutOfBounds {
+        /// The offset.
         offset: u32,
+        /// The length.
         length: u32,
+        /// Bytes available.
         available: u32,
     },
+    /// A record (table directory or `cmap` encoding record) is not in ascending order.
     RecordsNotSorted {
+        /// Index of the offending entry.
         index: u32,
     },
+    /// A table tag appears more than once in the table directory.
     DuplicateTable {
+        /// The duplicated tag.
         tag: Tag,
     },
+    /// A table checksum does not match the computed one.
     ChecksumMismatch {
+        /// The stored value.
         stored: u32,
+        /// The computed value.
         computed: u32,
     },
+    /// `magicNumber` in `head` is not 0x5F0F3CF5.
     BadMagicNumber {
+        /// The expected value.
         expected: u32,
+        /// The value found.
         found: u32,
     },
+    /// `unitsPerEm` in `head` is outside 16..=16384.
     UnitsPerEmOutOfRange {
+        /// The value found.
         found: u32,
     },
+    /// `indexToLocFormat` in `head` is neither 0 nor 1.
     InvalidIndexToLocFormat {
+        /// The value found.
         found: i32,
     },
+    /// `numberOfHMetrics` is 0 but the font has glyphs.
     ZeroLongMetrics,
+    /// There are more long metrics than glyphs.
     MetricsExceedGlyphs {
+        /// The number of long metrics.
         metrics: u32,
+        /// The number of glyphs.
         glyphs: u32,
     },
+    /// `segCountX2` in a `cmap` format 4 subtable is odd.
     SegCountOdd {
+        /// The value found.
         found: u32,
     },
+    /// `searchRange`, `entrySelector` or `rangeShift` is wrong.
     SearchParametersInvalid,
+    /// The last segment of a `cmap` format 4 subtable does not end at 0xFFFF.
     LastSegmentNotFfff {
+        /// The value found.
         found: u32,
     },
+    /// A range starts after its end.
     StartAfterEnd {
+        /// Index of the offending entry.
         index: u32,
+        /// The start of the range.
         start: u32,
+        /// The end of the range.
         end: u32,
     },
+    /// A `cmap` format 4 segment is out of order.
     SegmentsNotSorted {
+        /// Index of the offending entry.
         index: u32,
     },
+    /// A `cmap` format 4 segment overlaps the previous one.
     SegmentsOverlap {
+        /// Index of the offending entry.
         index: u32,
     },
+    /// `idRangeOffset` of a `cmap` format 4 segment points outside the glyph id array.
     RangeOffsetOutOfBounds {
+        /// Index of the offending entry.
         index: u32,
     },
+    /// `idRangeOffset` of a `cmap` format 4 segment is 0xFFFF.
     RangeOffsetFfff {
+        /// Index of the offending entry.
         index: u32,
     },
+    /// A glyph id is not below `numGlyphs`.
     GlyphIdOutOfRange {
+        /// The glyph id.
         glyph: u32,
+        /// `numGlyphs`.
         num_glyphs: u32,
     },
+    /// A group or range is out of order or overlaps the previous one.
     GroupsNotSorted {
+        /// Index of the offending entry.
         index: u32,
     },
+    /// A code point is beyond U+10FFFF.
     CodepointOutOfRange {
+        /// The code point.
         codepoint: u32,
     },
+    /// A `cmap` format 14 variation selector record is out of order.
     SelectorsNotSorted {
+        /// Index of the offending entry.
         index: u32,
     },
+    /// A `subHeaderKeys` entry of a `cmap` format 2 subtable is not a multiple of 8.
     SubHeaderKeyNotAligned {
+        /// Index of the offending entry.
         index: u32,
+        /// The value found.
         found: u32,
     },
+    /// A `cmap` format 2 sub-header covers bytes beyond 0xFF.
     SubHeaderRangeInvalid {
+        /// Index of the offending entry.
         index: u32,
     },
+    /// The `is32` bit of a `cmap` format 8 subtable does not match the width of a code.
     Is32Mismatch {
+        /// The code point.
         codepoint: u32,
     },
+    /// A declared length does not match the available bytes.
     LengthMismatch {
+        /// The declared length.
         declared: u32,
+        /// Bytes available.
         available: u32,
     },
     /// A `loca` entry is below the one before it.
     LocaNotSorted {
+        /// Index of the offending entry.
         index: u32,
     },
     /// A simple glyph with 0xFFF or more contours (FreeType rejects it).
     TooManyContours {
+        /// The glyph id.
         glyph: u32,
+        /// The number of contours.
         found: u32,
     },
     /// A contour end point not above the previous one.
     EndPointsNotSorted {
+        /// The glyph id.
         glyph: u32,
+        /// Index of the contour.
         contour: u32,
     },
     /// A flag repeat count that runs past the last point.
     FlagRepeatOverrun {
+        /// The glyph id.
         glyph: u32,
     },
     /// A component glyph id not below numGlyphs.
     ComponentGlyphOutOfRange {
+        /// The glyph id.
         glyph: u32,
+        /// Index of the component.
         component: u32,
+        /// The glyph id the component refers to.
         found: u32,
     },
 }
 
 impl Kind {
+    /// The severity this kind always has.
     pub fn severity(&self) -> Severity {
         use Kind::*;
         match self {

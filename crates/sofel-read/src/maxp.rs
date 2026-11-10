@@ -1,9 +1,13 @@
-//! The `maxp` and `MAXP` tables.
+//! The `maxp` and `MAXP` (maximum profile) tables.
+//!
+//! Specification: <https://learn.microsoft.com/typography/opentype/spec/maxp>
 
 use crate::be::{self, to_u32};
 use crate::{CountWidth, Diagnostic, Kind, ReadError, Tag};
 
+/// The `maxp` tag.
 pub const TAG: Tag = Tag::new(b"maxp");
+/// The `MAXP` tag, the variant with 24-bit counts.
 pub const TAG_WIDE: Tag = Tag::new(b"MAXP");
 
 const V05: u32 = 0x0000_5000;
@@ -13,21 +17,35 @@ const TRUETYPE_LEN: usize = 26;
 /// The TrueType maxima of version 1.0.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct TrueTypeMaxima {
+    /// `maxPoints`.
     pub max_points: u16,
+    /// `maxContours`.
     pub max_contours: u16,
+    /// `maxCompositePoints`.
     pub max_composite_points: u16,
+    /// `maxCompositeContours`.
     pub max_composite_contours: u16,
+    /// `maxZones`.
     pub max_zones: u16,
+    /// `maxTwilightPoints`.
     pub max_twilight_points: u16,
+    /// `maxStorage`.
     pub max_storage: u16,
+    /// `maxFunctionDefs`.
     pub max_function_defs: u16,
+    /// `maxInstructionDefs`.
     pub max_instruction_defs: u16,
+    /// `maxStackElements`.
     pub max_stack_elements: u16,
+    /// `maxSizeOfInstructions`.
     pub max_size_of_instructions: u16,
+    /// `maxComponentElements`.
     pub max_component_elements: u16,
+    /// `maxComponentDepth`.
     pub max_component_depth: u16,
 }
 
+/// The `maxp` or `MAXP` (maximum profile) table, read eagerly.
 #[derive(Clone, Copy, Debug)]
 pub struct Maxp {
     version: u32,
@@ -46,6 +64,10 @@ fn needed(version: u32, width: CountWidth) -> usize {
 
 impl Maxp {
     /// `width` is `U16` for `maxp` and `U24` for `MAXP`.
+    ///
+    /// Fails with [`ReadError::UnknownVersion`] if the version is neither
+    /// 0.5 nor 1.0, and with [`ReadError::Truncated`] if the fields of that
+    /// version do not fit.
     pub fn new(data: &[u8], width: CountWidth) -> Result<Maxp, ReadError> {
         let version = be::u32_at(data, 0).ok_or(ReadError::truncated(4, data.len()))?;
         if version != V05 && version != V10 {
@@ -92,10 +114,12 @@ impl Maxp {
         })
     }
 
+    /// `version`: 0x00005000 (0.5) or 0x00010000 (1.0).
     pub fn version(&self) -> u32 {
         self.version
     }
 
+    /// `numGlyphs` (16 bits in `maxp`, 24 bits in `MAXP`).
     pub fn num_glyphs(&self) -> u32 {
         self.num_glyphs
     }
@@ -106,6 +130,8 @@ impl Maxp {
     }
 }
 
+/// Checks a `maxp` (`U16`) or `MAXP` (`U24`) table and reports an
+/// unknown version or truncation to `report`.
 pub fn validate(data: &[u8], width: CountWidth, report: &mut dyn FnMut(Diagnostic)) {
     let tag = match width {
         CountWidth::U16 => TAG,

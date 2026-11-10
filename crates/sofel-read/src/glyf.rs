@@ -5,35 +5,64 @@
 //! id; callers pass `extended` to say which table the glyph comes from.
 //! Decoding follows the checks FreeType 2.15.0 makes
 //! (`TT_Load_Simple_Glyph`, `TT_Load_Composite_Glyph`).
+//!
+//! Specification: <https://learn.microsoft.com/typography/opentype/spec/glyf>
 
 use crate::be::{self, to_u32, to_usize};
 use crate::loca::Loca;
 use crate::{Diagnostic, GlyphId, Kind, ReadError, Tag};
 
+/// The `glyf` tag.
 pub const TAG: Tag = Tag::new(b"glyf");
+/// The `GLYF` tag, the variant with cubic outlines and 24-bit
+/// component glyph ids.
 pub const TAG_WIDE: Tag = Tag::new(b"GLYF");
 
+/// Simple glyph flag: the point is on the curve.
 pub const ON_CURVE: u8 = 0x01;
+/// Simple glyph flag: the x delta is one byte.
 pub const X_SHORT: u8 = 0x02;
+/// Simple glyph flag: the y delta is one byte.
 pub const Y_SHORT: u8 = 0x04;
+/// Simple glyph flag: the next byte is a repeat count for this flag.
 pub const REPEAT: u8 = 0x08;
+/// Simple glyph flag: with [`X_SHORT`], the x delta is positive;
+/// without it, x is the same as the previous point.
 pub const X_SAME_OR_POSITIVE: u8 = 0x10;
+/// Simple glyph flag: with [`Y_SHORT`], the y delta is positive;
+/// without it, y is the same as the previous point.
 pub const Y_SAME_OR_POSITIVE: u8 = 0x20;
+/// Simple glyph flag: contours may overlap (first flag only).
 pub const OVERLAP_SIMPLE: u8 = 0x40;
+/// Simple glyph flag in `GLYF`: an off-curve point of a cubic curve.
 pub const CUBIC: u8 = 0x80;
 
+/// Component flag: the arguments are 16-bit; otherwise 8-bit.
 pub const ARG_1_AND_2_ARE_WORDS: u16 = 0x0001;
+/// Component flag: the arguments are x and y offsets; otherwise point
+/// numbers.
 pub const ARGS_ARE_XY_VALUES: u16 = 0x0002;
+/// Component flag: round the x and y offsets to the grid.
 pub const ROUND_XY_TO_GRID: u16 = 0x0004;
+/// Component flag: one scale for x and y follows.
 pub const WE_HAVE_A_SCALE: u16 = 0x0008;
+/// Component flag: another component record follows.
 pub const MORE_COMPONENTS: u16 = 0x0020;
+/// Component flag: separate x and y scales follow.
 pub const WE_HAVE_AN_X_AND_Y_SCALE: u16 = 0x0040;
+/// Component flag: a 2x2 transform follows.
 pub const WE_HAVE_A_TWO_BY_TWO: u16 = 0x0080;
+/// Component flag: instructions follow the last component.
 pub const WE_HAVE_INSTRUCTIONS: u16 = 0x0100;
+/// Component flag: use this component's metrics for the composite.
 pub const USE_MY_METRICS: u16 = 0x0200;
+/// Component flag: the components may overlap.
 pub const OVERLAP_COMPOUND: u16 = 0x0400;
+/// Component flag: the offset is scaled by the transform.
 pub const SCALED_COMPONENT_OFFSET: u16 = 0x0800;
+/// Component flag: the offset is not scaled by the transform.
 pub const UNSCALED_COMPONENT_OFFSET: u16 = 0x1000;
+/// Component flag in `GLYF`: the glyph id is 24-bit.
 pub const GID_IS_24_BIT: u16 = 0x2000;
 
 const HEADER: usize = 10;
@@ -48,6 +77,9 @@ pub struct Glyph<'a> {
 }
 
 impl<'a> Glyph<'a> {
+    /// A glyph over `data`, the bytes between two `loca` entries.
+    /// Only the 10-byte header is checked; fails with
+    /// [`ReadError::Truncated`] if it does not fit.
     pub fn new(data: &'a [u8]) -> Result<Glyph<'a>, ReadError> {
         let h = data
             .first_chunk::<HEADER>()
@@ -55,23 +87,33 @@ impl<'a> Glyph<'a> {
         Ok(Glyph { data, h })
     }
 
+    /// `numberOfContours`: positive for a simple glyph, negative for a
+    /// composite one.
     pub fn number_of_contours(&self) -> i16 {
         i16::from_be_bytes([self.h[0], self.h[1]])
     }
+    /// `xMin` of the glyph's bounding box, in font units.
     pub fn x_min(&self) -> i16 {
         i16::from_be_bytes([self.h[2], self.h[3]])
     }
+    /// `yMin` of the glyph's bounding box, in font units.
     pub fn y_min(&self) -> i16 {
         i16::from_be_bytes([self.h[4], self.h[5]])
     }
+    /// `xMax` of the glyph's bounding box, in font units.
     pub fn x_max(&self) -> i16 {
         i16::from_be_bytes([self.h[6], self.h[7]])
     }
+    /// `yMax` of the glyph's bounding box, in font units.
     pub fn y_max(&self) -> i16 {
         i16::from_be_bytes([self.h[8], self.h[9]])
     }
 
     /// The simple glyph description (for `number_of_contours() > 0`).
+    ///
+    /// Fails with [`ReadError::Truncated`] if the data ends early, and
+    /// with [`ReadError::InvalidValue`] for 0xFFF or more contours,
+    /// unsorted end points, or a flag repeat past the last point.
     pub fn simple(&self) -> Result<Simple<'a>, ReadError> {
         parse_simple(self.data).map_err(|e| e.to_read_error())
     }
@@ -221,14 +263,18 @@ fn parse_simple(data: &[u8]) -> Result<Simple<'_>, SimpleError> {
 /// One point of a simple glyph, in font units.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct GlyphPoint {
+    /// The x coordinate.
     pub x: i32,
+    /// The y coordinate.
     pub y: i32,
+    /// Whether the point is on the curve ([`ON_CURVE`]).
     pub on_curve: bool,
     /// An off-curve point of a cubic curve (GLYF only).
     pub cubic: bool,
 }
 
 impl<'a> Simple<'a> {
+    /// The number of points: the last end point plus one.
     pub fn num_points(&self) -> u32 {
         self.num_points
     }
@@ -238,6 +284,7 @@ impl<'a> Simple<'a> {
         self.end_points.iter().map(|e| u16::from_be_bytes(*e))
     }
 
+    /// The TrueType instructions of the glyph.
     pub fn instructions(&self) -> &'a [u8] {
         self.instructions
     }
@@ -247,6 +294,9 @@ impl<'a> Simple<'a> {
         self.num_points > 0 && self.flags.first().is_some_and(|f| f & OVERLAP_SIMPLE != 0)
     }
 
+    /// The points in order, with coordinates accumulated from the deltas.
+    /// `extended` says the glyph comes from `GLYF`, where [`CUBIC`] counts.
+    /// The iterator stops early if the data runs out.
     pub fn points(&self, extended: bool) -> Points<'a> {
         Points {
             flags: self.flags,
@@ -332,20 +382,30 @@ impl Iterator for Points<'_> {
 /// transform is in F2Dot14 raw values; without one it is the identity.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Component {
+    /// The component `flags`, as raw bits.
     pub flags: u16,
+    /// `glyphIndex` of the component glyph.
     pub glyph: GlyphId,
+    /// `argument1`: an x offset or a point number of the composite.
     pub arg1: i32,
+    /// `argument2`: a y offset or a point number of the component.
     pub arg2: i32,
+    /// `xscale` of the transform (F2Dot14 raw value).
     pub xx: i16,
+    /// `scale01` of the transform (F2Dot14 raw value).
     pub yx: i16,
+    /// `scale10` of the transform (F2Dot14 raw value).
     pub xy: i16,
+    /// `yscale` of the transform (F2Dot14 raw value).
     pub yy: i16,
 }
 
 impl Component {
+    /// Whether [`ARGS_ARE_XY_VALUES`] is set.
     pub fn args_are_xy(&self) -> bool {
         self.flags & ARGS_ARE_XY_VALUES != 0
     }
+    /// Whether any of the scale or 2x2 transform flags is set.
     pub fn has_scale(&self) -> bool {
         self.flags & (WE_HAVE_A_SCALE | WE_HAVE_AN_X_AND_Y_SCALE | WE_HAVE_A_TWO_BY_TWO) != 0
     }

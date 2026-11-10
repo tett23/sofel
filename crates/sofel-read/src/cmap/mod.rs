@@ -6,6 +6,8 @@
 //! subtable unreadable here (ADR 0007, ADR 0008). Choosing a subtable,
 //! remapping symbol fonts and converting Mac encodings are left to
 //! `sofel-font`.
+//!
+//! Specification: <https://learn.microsoft.com/typography/opentype/spec/cmap>
 
 mod check;
 mod formats;
@@ -16,11 +18,13 @@ use crate::{GlyphId, ReadError, Tag};
 pub use check::{validate, validate_subtable};
 use formats::{Format0, Format2, Format4, Format6, Format8, Format10, Groups, Uvs};
 
+/// The `cmap` tag.
 pub const TAG: Tag = Tag::new(b"cmap");
 
 const HEADER: usize = 4;
 const RECORD: usize = 8;
 
+/// A view over the `cmap` (character to glyph index mapping) table.
 #[derive(Clone, Copy, Debug)]
 pub struct Cmap<'a> {
     data: &'a [u8],
@@ -31,7 +35,9 @@ pub struct Cmap<'a> {
 /// One encoding record.
 #[derive(Clone, Copy, Debug)]
 pub struct EncodingRecord<'a> {
+    /// `platformID`.
     pub platform_id: u16,
+    /// `encodingID`.
     pub encoding_id: u16,
     /// Offset of the subtable from the start of the `cmap` table.
     pub offset: u32,
@@ -39,6 +45,7 @@ pub struct EncodingRecord<'a> {
 }
 
 impl<'a> EncodingRecord<'a> {
+    /// The subtable this record points to; see [`Subtable::new`].
     pub fn subtable(&self) -> Result<Subtable<'a>, ReadError> {
         Subtable::new(self.cmap, self.offset)
     }
@@ -47,6 +54,8 @@ impl<'a> EncodingRecord<'a> {
 impl<'a> Cmap<'a> {
     /// Reads the header and the encoding records that are wholly present;
     /// like FreeType, a cut-short record array keeps its whole records.
+    /// Fails with [`ReadError::Truncated`] only if the 4-byte header does
+    /// not fit.
     pub fn new(data: &'a [u8]) -> Result<Cmap<'a>, ReadError> {
         let h = data
             .first_chunk::<HEADER>()
@@ -65,10 +74,12 @@ impl<'a> Cmap<'a> {
         })
     }
 
+    /// `version` of the `cmap` header, as stored.
     pub fn version(&self) -> u16 {
         self.version
     }
 
+    /// The encoding records that are wholly present, in table order.
     pub fn records(&self) -> impl Iterator<Item = EncodingRecord<'a>> + 'a {
         let cmap = self.data;
         self.records.iter().map(move |r| EncodingRecord {
@@ -103,20 +114,35 @@ pub enum VariantGlyph {
 /// A cmap subtable of any supported format.
 #[derive(Clone, Copy, Debug)]
 pub enum Subtable<'a> {
+    /// Format 0: byte encoding table.
     Format0(Format0<'a>),
+    /// Format 2: high-byte mapping through table.
     Format2(Format2<'a>),
+    /// Format 4: segment mapping to delta values.
     Format4(Format4<'a>),
+    /// Format 6: trimmed table mapping.
     Format6(Format6<'a>),
+    /// Format 8: mixed 16-bit and 32-bit coverage.
     Format8(Format8<'a>),
+    /// Format 10: trimmed array.
     Format10(Format10<'a>),
+    /// Format 12: segmented coverage.
     Format12(Groups<'a>),
+    /// Format 13: many-to-one range mappings.
     Format13(Groups<'a>),
+    /// Format 14: Unicode variation sequences.
     Format14(Uvs<'a>),
+    /// Format 15: variation sequences with 24-bit glyph ids.
     Format15(Uvs<'a>),
 }
 
 impl<'a> Subtable<'a> {
     /// The subtable at `offset` in the `cmap` table `cmap`.
+    ///
+    /// Fails with [`ReadError::OutOfBounds`] if `offset` is 0 or past the
+    /// end, with [`ReadError::UnknownFormat`] for an unsupported format,
+    /// and with [`ReadError::Truncated`] if the subtable's header or
+    /// arrays do not fit.
     pub fn new(cmap: &'a [u8], offset: u32) -> Result<Subtable<'a>, ReadError> {
         let off = to_usize(offset);
         if off == 0 {
@@ -139,6 +165,7 @@ impl<'a> Subtable<'a> {
         })
     }
 
+    /// The subtable `format` number.
     pub fn format(&self) -> u16 {
         match self {
             Subtable::Format0(_) => 0,

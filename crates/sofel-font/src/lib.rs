@@ -6,8 +6,30 @@
 //! missing data follow HarfBuzz 15.1.0, the reference for shaping
 //! (ADR 0005). `sofel-read` is re-exported as [`read`]; other crates use
 //! table views through it instead of reading bytes (ADR 0003).
+//!
+//! # Example
+//!
+//! Open a font, map a character to its glyph and get the advance:
+//!
+//! ```no_run
+//! use sofel_font::Font;
+//!
+//! fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     let data = std::fs::read("font.ttf")?;
+//!     let font = Font::new(&data, 0)?;
+//!     let glyph = font.nominal_glyph(u32::from('A')).ok_or("no glyph for A")?;
+//!     println!(
+//!         "glyph {} advances {} of {} units per em",
+//!         glyph.0,
+//!         font.advance(glyph),
+//!         font.units_per_em(),
+//!     );
+//!     Ok(())
+//! }
+//! ```
 
 #![no_std]
+#![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
 pub use sofel_read as read;
@@ -137,7 +159,16 @@ fn uvs_subtable<'a>(c: &Cmap<'a>) -> Option<Subtable<'a>> {
 
 impl<'a> Font<'a> {
     /// Opens font `index` of `data`: 0 for a single sfnt, any index of a
-    /// collection.
+    /// collection. Reads the glyph count, picks the cmap subtables and
+    /// prepares the horizontal metrics once; a missing or broken `maxp`,
+    /// `hhea`, `hmtx` or `cmap` is not an error.
+    ///
+    /// # Errors
+    ///
+    /// [`FontError::Read`] if `data` is not a readable sfnt or collection
+    /// (or the chosen font in it cannot be read),
+    /// [`FontError::IndexOutOfRange`] if there is no font `index`, and
+    /// [`FontError::NoHead`] if the font has no readable `head`.
     pub fn new(data: &'a [u8], index: u32) -> Result<Font<'a>, FontError> {
         let sfnt = match FontFile::new(data).map_err(FontError::Read)? {
             FontFile::Sfnt(s) if index == 0 => s,
@@ -187,10 +218,13 @@ impl<'a> Font<'a> {
         })
     }
 
+    /// The sfnt the font was opened from: for a collection, the one font
+    /// chosen by the index.
     pub fn sfnt(&self) -> Sfnt<'a> {
         self.sfnt
     }
 
+    /// The `head` table, which [`Font::new`] requires.
     pub fn head(&self) -> Head<'a> {
         self.head
     }
@@ -210,13 +244,18 @@ impl<'a> Font<'a> {
         self.sfnt.table(tag)
     }
 
-    /// The glyph for a character, from the chosen cmap subtable. Glyph
-    /// ids not below the glyph count count as unmapped.
+    /// The glyph for a character, from the chosen cmap subtable (in
+    /// HarfBuzz's order of preference, `find_best_subtable`). Glyph ids
+    /// not below the glyph count count as unmapped. `None` also when the
+    /// font has no usable subtable.
     pub fn nominal_glyph(&self, c: u32) -> Option<GlyphId> {
         self.cmap?.glyph(c).filter(|g| g.0 < self.num_glyphs)
     }
 
-    /// The glyph for the variation sequence `c` + `selector`.
+    /// The glyph for the variation sequence `c` + `selector`, from the
+    /// (0, 5) subtable: format 15 if present, else the last format 14. A
+    /// default variation falls back to [`Font::nominal_glyph`]; glyph ids
+    /// not below the glyph count count as unmapped.
     pub fn variation_glyph(&self, c: u32, selector: u32) -> Option<GlyphId> {
         match self.uvs?.variant(c, selector)? {
             VariantGlyph::Default => self.nominal_glyph(c),

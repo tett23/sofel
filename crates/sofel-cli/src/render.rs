@@ -10,6 +10,7 @@ use sofel_raster::Rasterizer;
 
 use crate::glyph;
 
+/// The usage text, printed for `--help` and after a usage error.
 pub const HELP: &str = "\
 usage: sofel-render [--face N] --ppem P (--glyph G | --char U+XXXX) FILE
 

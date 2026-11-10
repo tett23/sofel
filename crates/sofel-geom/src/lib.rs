@@ -6,6 +6,7 @@
 //! result does not fit in `i32`, the result saturates.
 
 #![no_std]
+#![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
 mod fixed;

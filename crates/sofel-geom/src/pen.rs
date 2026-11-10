@@ -6,20 +6,31 @@ use crate::Point;
 /// starts with `move_to`, returns to its start point with an explicit
 /// line or curve, and ends with `close`.
 pub trait Pen {
+    /// Starts a contour at `p`.
     fn move_to(&mut self, p: Point);
+    /// Draws a straight line from the current point to `p`.
     fn line_to(&mut self, p: Point);
+    /// Draws a quadratic Bézier curve from the current point to `p`.
     fn quad_to(&mut self, control: Point, p: Point);
+    /// Draws a cubic Bézier curve from the current point to `p`.
     fn cubic_to(&mut self, control1: Point, control2: Point, p: Point);
+    /// Ends the current contour, which the previous command has already
+    /// brought back to its start point.
     fn close(&mut self);
 }
 
 /// One drawing command, for recording and replaying.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Command {
+    /// [`Pen::move_to`].
     MoveTo(Point),
+    /// [`Pen::line_to`].
     LineTo(Point),
+    /// [`Pen::quad_to`]: the control point, then the end point.
     QuadTo(Point, Point),
+    /// [`Pen::cubic_to`]: the two control points, then the end point.
     CubicTo(Point, Point, Point),
+    /// [`Pen::close`].
     Close,
 }
 
