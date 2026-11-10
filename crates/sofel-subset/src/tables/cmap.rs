@@ -1,5 +1,7 @@
 //! cmap and DMAP (`src/hb-ot-cmap-table.hh`'s `cmap::subset`).
 
+use alloc::borrow::Cow;
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use sofel_font::Font;
@@ -28,11 +30,26 @@ fn keep_record(t: &CmapTable<'_>, r: &Record) -> bool {
         || t.subtable(r).is_variation_selector()
 }
 
+/// The characters of the subtables by offset (`SubtableUnicodesCache`).
+type Cache = BTreeMap<u32, RangeSet>;
+
 /// The characters of a subtable (`SubtableUnicodesCache::set_for`).
-fn unicodes_of(t: &CmapTable<'_>, r: &Record) -> RangeSet {
+fn unicodes_of<'c>(t: &CmapTable<'_>, r: &Record, cache: Option<&'c Cache>) -> Cow<'c, RangeSet> {
+    if let Some(s) = cache.and_then(|c| c.get(&r.offset)) {
+        return Cow::Borrowed(s);
+    }
     let mut s = RangeSet::new();
     t.subtable(r).collect_unicodes(&mut s, u32::MAX);
-    s
+    Cow::Owned(s)
+}
+
+/// The characters of every subtable the subsetter keeps
+/// (`SubtableUnicodesCache::create_filled_cache`).
+pub(crate) fn filled_cache(t: &CmapTable<'_>) -> Cache {
+    t.records()
+        .filter(|r| keep_record(t, r))
+        .map(|r| (r.offset, unicodes_of(t, &r, None).into_owned()))
+        .collect()
 }
 
 /// `cmap::subset`.
@@ -67,16 +84,24 @@ pub(crate) fn subset(
     s.u16(0);
     s.u16(0);
     let snap = s.snapshot();
-    let needed = serialize(plan, &t, &records, &it, s, snap, false);
+    // The prepared value's cache holds the subtables of cmap, not DMAP.
+    let cache = plan
+        .prepared
+        .as_ref()
+        .filter(|_| !is_dmap)
+        .map(|p| &p.accel().cmap_sets);
+    let needed = serialize(plan, &t, &records, &it, cache, s, snap, false);
     Ok(needed)
 }
 
 /// `cmap::serialize` after the header.
+#[allow(clippy::too_many_arguments)]
 fn serialize(
     plan: &Plan,
     t: &CmapTable<'_>,
     records: &[Record],
     it: &[(u32, u32)],
+    cache: Option<&Cache>,
     s: &mut Serializer,
     snap: Snapshot,
     drop_format_4: bool,
@@ -94,16 +119,16 @@ fn serialize(
         if !matches!(format, 4 | 12 | 14 | 15) {
             continue;
         }
-        let set = unicodes_of(t, r);
+        let set = unicodes_of(t, r, cache);
         let filtered: Vec<(u32, u32)> = it.iter().copied().filter(|p| set.contains(p.0)).collect();
         if !drop_format_4 && format == 4 {
             copy_record(plan, r, &sub, &filtered, 4, s, &mut f4);
             if s.in_error() && s.only_overflow() {
                 s.revert(snap);
-                return serialize(plan, t, records, it, s, snap, true);
+                return serialize(plan, t, records, it, cache, s, snap, true);
             }
         } else if format == 12 {
-            if can_drop(t, r, &set, it, records) {
+            if can_drop(t, r, &set, it, records, cache) {
                 continue;
             }
             copy_record(plan, r, &sub, &filtered, 12, s, &mut f12);
@@ -160,6 +185,7 @@ fn can_drop(
     cmap12_unicodes: &RangeSet,
     it: &[(u32, u32)],
     records: &[Record],
+    cache: Option<&Cache>,
 ) -> bool {
     if it
         .iter()
@@ -179,7 +205,7 @@ fn can_drop(
     else {
         return false;
     };
-    let sibling = unicodes_of(t, sib);
+    let sibling = unicodes_of(t, sib, cache);
     let a = it
         .iter()
         .map(|p| p.0)

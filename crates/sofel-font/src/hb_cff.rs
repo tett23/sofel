@@ -254,6 +254,11 @@ impl<'a> HbCff1<'a> {
         self.global_subrs
     }
 
+    /// The CharStrings INDEX (`charStrings`).
+    pub fn char_strings(&self) -> HbIndex<'a> {
+        self.char_strings
+    }
+
     /// The Font DICT of `glyph` (`fdSelect->get_fd`): 0 without FDSelect.
     pub fn fd(&self, glyph: u32) -> u32 {
         self.fd_select.fd(glyph)
@@ -461,6 +466,23 @@ impl<'a> HbCff2<'a> {
             .get_at(fd)
             .and_then(|d| private_dict(self.data, d, Version::Cff2, &mut sc))
             .unwrap_or((HbIndex::null(), 0))
+    }
+
+    /// Where the Variation Store (its length field) starts in
+    /// [`HbCff2::data`]; `None` without a valid one.
+    pub fn var_store(&self) -> Option<i64> {
+        self.var_store
+    }
+
+    /// The FDArray INDEX.
+    pub fn fd_array(&self) -> HbIndex<'a> {
+        self.fd_array
+    }
+
+    /// The FDSelect: HarfBuzz's Null FDSelect (format 0xFF) when the
+    /// font has none.
+    pub fn fd_select(&self) -> HbFdSelect<'a> {
+        self.fd_select
     }
 
     /// The number of regions of ItemVariationData `ivs`

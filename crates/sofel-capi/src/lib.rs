@@ -15,6 +15,7 @@
 
 mod color;
 mod shape;
+mod subset;
 
 use core::ffi::{c_char, c_void};
 use core::fmt::Write as _;
@@ -227,6 +228,13 @@ fn error_text(error: i32) -> &'static core::ffi::CStr {
         ERROR_INVALID_ARGUMENT => c"invalid argument",
         ERROR_INVALID_CFF => c"invalid CFF table or no CFF",
         ERROR_BUFFER_CONTENT => c"the buffer holds glyphs or characters where the other is needed",
+        subset::ERROR_NO_GLYPHS => c"the font has no glyphs",
+        subset::ERROR_INVALID_INPUT => c"invalid subsetting input",
+        subset::ERROR_MALFORMED_TABLE => c"a table cannot be read",
+        subset::ERROR_UNSUPPORTED => c"not supported yet",
+        subset::ERROR_OFFSET_OVERFLOW => c"offset overflow",
+        subset::ERROR_LIMIT => c"a limit of HarfBuzz's was reached",
+        subset::ERROR_SUBSET_FAILED => c"subsetting a table failed",
         _ => c"unknown error",
     }
 }

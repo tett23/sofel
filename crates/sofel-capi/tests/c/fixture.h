@@ -578,3 +578,34 @@ static const struct paint_case paint_cases[] = {{0, 0, 0, ""}, {0, 1, 0, ""}, {1
 #define COLOR_ENTRIES 2
 #define COLOR_FORMATS 7u
 static const uint8_t color_palette_colors[][4] = {{255, 0, 0, 255}, {0, 255, 0, 200}, {0, 0, 255, 255}, {7, 8, 9, 6}};
+#define SUBSET_ARGS "--no-hinting --retain-gids --unicodes=41,43 --gids=2 --name-IDs=1-2 --layout-features=\052 --layout-features-=BUZZ,Buzz,HARF,Harf,abvf,abvm,abvs,akhn,blwf,blwm,blws,calt,ccmp,cfar,chws,cjct,clig,cswh,curs,dist,dnom,fin2,fin3,fina,frac,half,haln,halt,init,isol,jalt,kern,liga,ljmo,locl,ltra,ltrm,mark,med2,medi,mkmk,mset,nukt,numr,palt,pref,pres,pstf,psts,rand,rclt,rkrf,rlig,rphf,rtla,rtlm,rvrn,stch,tjmo,valt,vatu,vchw,vert,vhal,vjmo,vkrn,vpal,vrt2 --layout-scripts=\052 --layout-scripts-=latn --drop-tables=DSIG,EBDT,EBLC,EBSC,Feat,GPOS,Glat,Gloc,JSTF,LTSH,PCLT,SVG,Silf,Sill,kern,kerx,mort,morx --gid-map=5:7"
+struct subset_case { int32_t status; uint32_t num_output_glyphs; size_t len; uint64_t fnv;
+  size_t n_old_new; const uint32_t *old_new; size_t n_new_old; const uint32_t *new_old;
+  size_t n_unicode_old; const uint32_t *unicode_old; };
+static const uint32_t subset_0_old_new[] = {0, 0, 1, 1, 2, 2, 3, 3, 0};
+static const uint32_t subset_0_new_old[] = {0, 0, 1, 1, 2, 2, 3, 3, 0};
+static const uint32_t subset_0_unicode_old[] = {65, 1, 67, 3, 0};
+static const uint32_t subset_1_old_new[] = {0, 0, 1, 2, 2, 1, 0};
+static const uint32_t subset_1_new_old[] = {0, 0, 1, 2, 2, 1, 0};
+static const uint32_t subset_1_unicode_old[] = {65, 1, 66, 2, 0};
+static const struct subset_case subset_cases[] = {
+  {0, 4, 408, 0xa5860540ba77b1e4u, 4, subset_0_old_new, 4, subset_0_new_old, 2, subset_0_unicode_old},
+  {0, 3, 372, 0x3a216f51496398e8u, 3, subset_1_old_new, 3, subset_1_new_old, 2, subset_1_unicode_old},
+  {-18, 0, 0, 0, 0, NULL, 0, NULL, 0, NULL},
+};
+#define SUBSET_INVALID_INPUT (-16)
+struct axis_string_case { const char *s; int32_t status; uint32_t bits[3]; };
+static const struct axis_string_case axis_string_cases[] = {
+  {"drop", 0, {0x7fc00000u, 0x7fc00000u, 0x7fc00000u}},
+  {"100", 0, {0x42c80000u, 0x42c80000u, 0x42c80000u}},
+  {"100:200", 0, {0x42c80000u, 0x7fc00000u, 0x43480000u}},
+  {"100:150:200", 0, {0x42c80000u, 0x43160000u, 0x43480000u}},
+  {":150:", 0, {0x7fc00000u, 0x43160000u, 0x7fc00000u}},
+  {"1:2:3:4", 0, {0x3f800000u, 0x40000000u, 0x40400000u}},
+  {"x", -12, {0, 0, 0}},
+  {"", -12, {0, 0, 0}},
+};
+#define CFF_CHARSTRINGS_INDEX_LEN 86
+static const uint8_t cff_charstring_1[9] = {
+  0x95, 0x77, 0x15, 0xf7, 0xc0, 0xf9, 0x50, 0x05, 0x0e,
+};

@@ -46,6 +46,20 @@ pub(crate) fn subset(
                 .step_by(2)
                 .for_each(|o| s.set_u16(at.saturating_add(o), 0));
         }
+        if plan.var.instancing() {
+            // `instancing_update_fields`.
+            let m = &plan.var.metrics.head_maxp;
+            for (o, v) in [
+                (0usize, m.max_points),
+                (2, m.max_contours),
+                (4, m.max_composite_points),
+                (6, m.max_composite_contours),
+                (22, m.max_component_elements),
+                (24, m.max_component_depth),
+            ] {
+                s.set_u16(at.saturating_add(o), (v & 0xFFFF) as u16);
+            }
+        }
     }
     Ok(true)
 }
