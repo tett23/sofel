@@ -107,6 +107,9 @@ pub fn sfnt(sfnt: &Sfnt<'_>, report: &mut dyn FnMut(Diagnostic)) {
     if let Some(d) = table(sfnt, head::TAG) {
         head::validate(d, report);
     }
+    if let Some(d) = table(sfnt, head::TAG_BHED) {
+        head::validate_tagged(head::TAG_BHED, d, report);
+    }
     let maxp_narrow = table(sfnt, maxp::TAG);
     let maxp_wide = table(sfnt, maxp::TAG_WIDE);
     if let Some(d) = maxp_narrow {

@@ -889,3 +889,115 @@ pub unsafe extern "C" fn sofel_sweep_gradient_tiles(
         Ok(())
     })())
 }
+
+/// `sofel_bitmap_layout_t`.
+#[repr(C)]
+#[derive(Default)]
+pub struct CBitmapLayout {
+    width: u16,
+    rows: u16,
+    pitch: u32,
+    pixel_mode: u32,
+    hori_bearing_x: i16,
+    hori_bearing_y: i16,
+    hori_advance: u16,
+    vert_bearing_x: i16,
+    vert_bearing_y: i16,
+    vert_advance: u16,
+}
+
+fn layout_c(l: &sofel_bitmap::BitmapLayout) -> CBitmapLayout {
+    use sofel_bitmap::PixelMode;
+    let m = l.metrics;
+    CBitmapLayout {
+        width: l.width,
+        rows: l.rows,
+        pitch: l.pitch,
+        pixel_mode: match l.pixel_mode {
+            PixelMode::Mono => 1,
+            PixelMode::Gray => 2,
+            PixelMode::Gray2 => 3,
+            PixelMode::Gray4 => 4,
+            PixelMode::Bgra => 7,
+        },
+        hori_bearing_x: m.hori_bearing_x,
+        hori_bearing_y: m.hori_bearing_y,
+        hori_advance: m.hori_advance,
+        vert_bearing_x: m.vert_bearing_x,
+        vert_bearing_y: m.vert_bearing_y,
+        vert_advance: m.vert_advance,
+    }
+}
+
+fn bitmap_error(e: sofel_bitmap::BitmapError) -> i32 {
+    use sofel_bitmap::BitmapError;
+    match e {
+        BitmapError::Missing | BitmapError::InvalidComposite => ERROR_NOT_FOUND,
+        BitmapError::Invalid => crate::ERROR_INVALID_FONT,
+        BitmapError::Png => crate::ERROR_NO_GLYPH_DATA,
+        BitmapError::BufferTooSmall(_) => ERROR_BUFFER_TOO_SMALL,
+    }
+}
+
+/// `sofel_draw_bitmap` (`pixels` NULL: the layout only).
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `pixels` is NULL or writable for
+/// `capacity` bytes; `layout` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_draw_bitmap(
+    font: *const SofelFont,
+    strike_index: u32,
+    glyph: u32,
+    pixels: *mut u8,
+    capacity: usize,
+    layout: *mut CBitmapLayout,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, layout) = unsafe { (font_ref(font), w(layout)) };
+    let pixels = if pixels.is_null() {
+        None
+    } else {
+        // SAFETY: not NULL; the caller's conditions.
+        Some(unsafe { core::slice::from_raw_parts_mut(pixels, capacity) })
+    };
+    status((|| {
+        let (f, layout) = (some(font)?, some(layout)?);
+        let s = strike_by_index(f, strike_index).ok_or(ERROR_NOT_FOUND)?;
+        let l = sofel_bitmap::bitmap_layout(f, &s, glyph).map_err(bitmap_error)?;
+        *layout = layout_c(&l);
+        if let Some(out) = pixels {
+            if out.len() < l.len() {
+                return Err(ERROR_BUFFER_TOO_SMALL);
+            }
+            let l = sofel_bitmap::draw_bitmap(f, &s, glyph, out).map_err(bitmap_error)?;
+            *layout = layout_c(&l);
+        }
+        Ok(())
+    })())
+}
+
+/// `sofel_font_has_outlines`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `has` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_has_outlines(font: *const SofelFont, has: *mut u8) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, has) = unsafe { (font_ref(font), w(has)) };
+    status(get(font, has, |f| u8::from(f.has_outlines())))
+}
+
+/// `sofel_font_has_bitmaps`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `has` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_has_bitmaps(font: *const SofelFont, has: *mut u8) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, has) = unsafe { (font_ref(font), w(has)) };
+    status(get(font, has, |f| u8::from(f.has_bitmaps())))
+}

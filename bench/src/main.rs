@@ -539,6 +539,128 @@ fn outline_items(b: &mut Bench, name: &str, font: &Font<'_>, ft: &FtFace, hb: &H
     }
 }
 
+/// An EBLC/EBDT font built for the benchmark (the test data has none):
+/// `n` glyphs of 16×16 8-bit pixels in one 16-ppem strike, index format
+/// 1, image format 1, after the tables of a minimal font.
+fn ebdt_font(n: u16) -> Vec<u8> {
+    let mut seed = 0x1234_5678u32;
+    let mut data = vec![0, 2, 0, 0];
+    let mut offsets = vec![0u32];
+    for _ in 0..n {
+        data.extend([16, 16, 0, 14, 17]);
+        for _ in 0..256 {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            data.push((seed >> 24) as u8);
+        }
+        offsets.push(data.len() as u32 - 4);
+    }
+    let mut index = Vec::new();
+    index.extend(1u16.to_be_bytes());
+    index.extend(1u16.to_be_bytes());
+    index.extend(4u32.to_be_bytes());
+    for o in &offsets {
+        index.extend(o.to_be_bytes());
+    }
+    let mut eblc = Vec::new();
+    eblc.extend([0, 2, 0, 0, 0, 0, 0, 1]);
+    let array = 8 + 48u32;
+    eblc.extend(array.to_be_bytes());
+    eblc.extend((8 + index.len() as u32).to_be_bytes());
+    eblc.extend(1u32.to_be_bytes());
+    eblc.extend(0u32.to_be_bytes());
+    eblc.extend([14, 0xFE, 16, 1, 0, 0, 0, 0, 14, 0xFE, 0, 0]);
+    eblc.extend([14, 0xFE, 16, 1, 0, 0, 0, 0, 14, 0xFE, 0, 0]);
+    eblc.extend(1u16.to_be_bytes());
+    eblc.extend(n.to_be_bytes());
+    eblc.extend([16, 16, 8, 1]);
+    eblc.extend(1u16.to_be_bytes());
+    eblc.extend(n.to_be_bytes());
+    eblc.extend(8u32.to_be_bytes());
+    eblc.extend(index);
+    let glyphs = u32::from(n) + 1;
+    let mut head = vec![0u8; 54];
+    head[0..4].copy_from_slice(&0x0001_0000u32.to_be_bytes());
+    head[12..16].copy_from_slice(&0x5F0F_3CF5u32.to_be_bytes());
+    head[18..20].copy_from_slice(&1000u16.to_be_bytes());
+    let mut maxp = vec![0, 0, 0x50, 0];
+    maxp.extend((glyphs as u16).to_be_bytes());
+    let mut hhea = vec![0u8; 36];
+    hhea[0..4].copy_from_slice(&0x0001_0000u32.to_be_bytes());
+    hhea[34..36].copy_from_slice(&1u16.to_be_bytes());
+    let mut hmtx = vec![0x03, 0xE8, 0, 0];
+    hmtx.extend(vec![0u8; 2 * (glyphs as usize - 1)]);
+    let tables: [(&[u8; 4], Vec<u8>); 6] = [
+        (b"EBDT", data),
+        (b"EBLC", eblc),
+        (b"head", head),
+        (b"hhea", hhea),
+        (b"hmtx", hmtx),
+        (b"maxp", maxp),
+    ];
+    let mut out = Vec::new();
+    out.extend(0x0001_0000u32.to_be_bytes());
+    out.extend((tables.len() as u16).to_be_bytes());
+    out.extend([0u8; 6]);
+    let mut at = 12 + 16 * tables.len() as u32;
+    let mut body = Vec::new();
+    for (tag, t) in &tables {
+        out.extend(*tag);
+        out.extend(0u32.to_be_bytes());
+        out.extend(at.to_be_bytes());
+        out.extend((t.len() as u32).to_be_bytes());
+        body.extend(t);
+        while body.len() % 4 != 0 {
+            body.push(0);
+        }
+        at = 12 + 16 * tables.len() as u32 + body.len() as u32;
+    }
+    out.extend(body);
+    out
+}
+
+/// The EBDT item of ADR 0023 (stage 5c): every glyph's bitmap decoded.
+fn ebdt_items(b: &mut Bench) {
+    let bytes = ebdt_font(200);
+    let font = Font::new(&bytes, 0).expect("sofel opens the EBDT font");
+    let ft = FtFace::open(&bytes).expect("FreeType opens the EBDT font");
+    ft.set_ppem(16);
+    let strike = sofel_bitmap::strikes(&font).next().expect("a strike");
+    let n = font.num_glyphs();
+    let mut buf = vec![0u8; 4096];
+    b.item(
+        "EBDT (built, 200 glyphs)",
+        "bitmap pixels 16 ppem".into(),
+        &mut || {
+            (0..n)
+                .map(
+                    |g| match sofel_bitmap::draw_bitmap(&font, &strike, g, &mut buf) {
+                        Ok(l) => {
+                            u64::from(l.width)
+                                + u64::from(l.rows)
+                                + buf[..l.len()].iter().map(|&v| u64::from(v)).sum::<u64>()
+                        }
+                        // FreeType gives a missing glyph of a bitmap-only
+                        // font an empty bitmap (whitespace).
+                        Err(sofel_bitmap::BitmapError::Missing) => 0,
+                        Err(_) => wrap(-1),
+                    },
+                )
+                .fold(0u64, u64::wrapping_add)
+        },
+        Some((
+            &mut || {
+                (0..n)
+                    .map(|g| wrap(ft.sbit(g)))
+                    .fold(0u64, u64::wrapping_add)
+            },
+            Compare::Yes,
+        )),
+        None,
+    );
+}
+
 /// A [`sofel_geom::Painter`] that counts the commands and image bytes,
 /// as the shim's HarfBuzz paint functions do (without HarfBuzz's root
 /// and inverse scales).
@@ -629,6 +751,55 @@ fn color_items(b: &mut Bench, testdata: &std::path::Path) {
                     Compare::Yes,
                 )),
             );
+        }
+        if formats.has(F::COLR_V0) {
+            // ADR 0023 (5d): COLRv0 glyphs in color as FT_LOAD_COLOR.
+            let outlines = Outlines::new(&font);
+            let options = PaintOptions::default();
+            for ppem in [12u16, 24, 48] {
+                ft.set_ppem(u32::from(ppem));
+                let mut scratch = sofel_outline::Scratch::default();
+                let mut raster = Rasterizer::new();
+                let mut image = sofel_raster::BgraImage::default();
+                let mut ours = || {
+                    (0..n)
+                        .map(|g| {
+                            use sofel_cli::glyph::{ColorGlyph, render_color};
+                            match render_color(
+                                &outlines,
+                                GlyphId(g),
+                                ppem,
+                                &options,
+                                &mut scratch,
+                                &mut raster,
+                                &mut image,
+                            ) {
+                                Ok(ColorGlyph::Gray(bm)) => {
+                                    bm.pixels.iter().map(|&v| u64::from(v)).sum()
+                                }
+                                Ok(ColorGlyph::Color) => {
+                                    image.pixels.iter().map(|&v| u64::from(v)).sum()
+                                }
+                                Err(_) => u64::MAX,
+                            }
+                        })
+                        .fold(0u64, u64::wrapping_add)
+                };
+                b.item(
+                    name,
+                    format!("COLRv0 raster {ppem}px"),
+                    &mut ours,
+                    Some((
+                        &mut || {
+                            (0..n)
+                                .map(|g| wrap(ft.colr_render(g)))
+                                .fold(0u64, u64::wrapping_add)
+                        },
+                        Compare::Yes,
+                    )),
+                    None,
+                );
+            }
         }
         let mut scratch = Scratch::default();
         let mut painter = CountPainter::default();
@@ -773,6 +944,7 @@ fn main() {
     unicode_properties(&mut b, &a.testdata);
     cff_items(&mut b, &a.testdata);
     color_items(&mut b, &a.testdata);
+    ebdt_items(&mut b);
     for (name, path) in FONTS {
         let bytes = match std::fs::read(a.testdata.join(path)) {
             Ok(b) => b,

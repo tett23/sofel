@@ -1399,7 +1399,35 @@ fn color_font() -> Vec<u8> {
     )
 }
 
+/// A font without outlines whose EBLC strike of 12 ppem has glyph 1 as a
+/// 3×2 one-bit image: rows 101 and 010.
+fn bitmap_font() -> Vec<u8> {
+    let image = Buf::new()
+        .bytes(&[2, 3, 1, 2, 4])
+        .bytes(&[0b1010_0000, 0b0100_0000])
+        .done();
+    let data = Buf::new().u16(2).u16(0).bytes(&image).done();
+    let loc = cblc(
+        2,
+        &[SizeSpec {
+            ppem_x: 12,
+            ppem_y: 12,
+            bit_depth: 1,
+            start_glyph: 1,
+            end_glyph: 1,
+            subtables: vec![(1, 1, index_offsets(1, 1, 4, &[0, image.len() as u32]))],
+            ..SizeSpec::default()
+        }],
+    );
+    let mut t = sample_tables();
+    t.push((b"EBDT", data));
+    t.push((b"EBLC", loc));
+    t.sort_by_key(|(tag, _)| **tag);
+    sfnt(&t)
+}
+
 fn color_cases(out: &mut String) {
+    bytes(out, "bitmap_font", &bitmap_font());
     use sofel_color::{PaintOptions, Palette, Recording, Scratch};
     let data = color_font();
     let font = Font::new(&data, 0).unwrap();

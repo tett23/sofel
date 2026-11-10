@@ -1777,6 +1777,94 @@ typedef struct sofel_glyph_bitmap_t {
 int32_t sofel_glyph_bitmap(const sofel_font_t *font, uint32_t strike_index, uint32_t glyph,
                            sofel_glyph_bitmap_t *bitmap);
 
+/* A decoded bitmap: pixel_mode is FreeType's (1 mono, 2 gray, 3 gray2,
+ * 4 gray4, 7 BGRA); rows top first, pitch bytes each. */
+typedef struct sofel_bitmap_layout_t {
+  uint16_t width;
+  uint16_t rows;
+  uint32_t pitch;
+  uint32_t pixel_mode;
+  int16_t hori_bearing_x;
+  int16_t hori_bearing_y;
+  uint16_t hori_advance;
+  int16_t vert_bearing_x;
+  int16_t vert_bearing_y;
+  uint16_t vert_advance;
+} sofel_bitmap_layout_t;
+
+/*
+ * Decodes a glyph's EBDT/CBDT/bdat bitmap in the strike with index
+ * strike_index as FreeType's FT_Load_Glyph (FT_LOAD_COLOR): the layout
+ * goes to *layout, and the pixels (pitch × rows bytes) to `pixels` unless
+ * it is NULL. SOFEL_ERROR_NOT_FOUND without a bitmap,
+ * SOFEL_ERROR_NO_GLYPH_DATA for PNG images (not decoded),
+ * SOFEL_ERROR_BUFFER_TOO_SMALL when capacity is smaller.
+ *
+ * Rust: sofel_bitmap::bitmap_layout, sofel_bitmap::draw_bitmap, sofel_bitmap::BitmapLayout::len, sofel_bitmap::BitmapLayout::is_empty
+ * HarfBuzz: none
+ * FreeType: FT_Load_Glyph
+ */
+int32_t sofel_draw_bitmap(const sofel_font_t *font, uint32_t strike_index, uint32_t glyph,
+                          uint8_t *pixels, size_t capacity, sofel_bitmap_layout_t *layout);
+
+/*
+ * Whether the font has outlines as FreeType decides (glyf, GLYF, CFF or
+ * CFF2, and no CBLC or CBDT), and whether it has embedded bitmaps (CBLC,
+ * EBLC, bloc or sbix): 1 or 0.
+ *
+ * Rust: sofel_font::Font::has_outlines, sofel_font::Font::has_bitmaps
+ * HarfBuzz: none
+ * FreeType: FT_IS_SCALABLE, FT_HAS_FIXED_SIZES
+ */
+int32_t sofel_font_has_outlines(const sofel_font_t *font, uint8_t *has);
+int32_t sofel_font_has_bitmaps(const sofel_font_t *font, uint8_t *has);
+
+/*
+ * Renders a glyph in color as FT_Load_Glyph with FT_LOAD_COLOR |
+ * FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP and FT_Render_Glyph with
+ * FT_RENDER_MODE_NORMAL: the COLR version 0 layers (as
+ * FT_Get_Color_Glyph_Layer gives them), each rendered as by
+ * sofel_render_glyph and blended as by sofel_blend_layer in the color of
+ * its palette entry (`foreground` for 0xFFFF). The palette is
+ * custom_colors (n_custom of them) or else the font's palette `palette`
+ * (palette 0 past the palettes). *is_color is 1 and the pixels are
+ * premultiplied BGRA (4 bytes a pixel, 4 × width a row) for a color
+ * image; *is_color is 0 and the pixels are 8-bit coverage when the glyph
+ * has no layers or a layer cannot be rendered (the glyph's own outline,
+ * as FreeType falls back to). *len and box are written as by
+ * sofel_rasterizer_render.
+ *
+ * Errors: those of sofel_render_glyph.
+ *
+ * Rust: sofel_cli::glyph::render_color, sofel_cli::glyph::color_layers
+ * HarfBuzz: none
+ * FreeType: FT_Load_Glyph (FT_LOAD_COLOR), FT_Render_Glyph, FT_Get_Color_Glyph_Layer
+ */
+int32_t sofel_render_color_glyph(const sofel_font_t *font, uint32_t glyph, uint16_t ppem,
+                                 uint16_t palette, const sofel_color_t *custom_colors,
+                                 size_t n_custom, sofel_color_t foreground,
+                                 sofel_outline_scratch_t *scratch,
+                                 sofel_rasterizer_t *rasterizer, uint8_t *pixels,
+                                 size_t capacity, size_t *len, int32_t *box,
+                                 uint32_t *is_color);
+
+/*
+ * Blends an 8-bit coverage bitmap (src_*, rows from the top, src_width
+ * bytes a row) in `color` over a premultiplied BGRA image, as FreeType's
+ * tt_face_colr_blend_layer: box is the image's left, top, width and rows
+ * and *len its bytes in `pixels` (0: no image yet, the bitmap's box is
+ * taken); the box grows to cover the bitmap. On success box and *len
+ * describe the new image. SOFEL_ERROR_BUFFER_TOO_SMALL (with the needed
+ * *len, the image unchanged) when it does not fit in capacity.
+ *
+ * Rust: sofel_raster::blend_layer, sofel_raster::BgraImage::clear
+ * HarfBuzz: none
+ * FreeType: tt_face_colr_blend_layer
+ */
+int32_t sofel_blend_layer(uint8_t *pixels, size_t capacity, size_t *len, int32_t *box,
+                          int32_t src_left, int32_t src_top, uint32_t src_width,
+                          uint32_t src_rows, const uint8_t *src_pixels, sofel_color_t color);
+
 /*
  * The sine, cosine and tangent of x (radians), the same on every
  * target (musl's sincosf and tanf).

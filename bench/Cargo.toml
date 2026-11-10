@@ -15,6 +15,7 @@ sofel-cli = { path = "../crates/sofel-cli" }
 sofel-unicode = { path = "../crates/sofel-unicode" }
 sofel-color = { path = "../crates/sofel-color" }
 sofel-shape = { path = "../crates/sofel-shape" }
+sofel-bitmap = { path = "../crates/sofel-bitmap" }
 
 [profile.release]
 debug = "line-tables-only"

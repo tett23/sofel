@@ -100,6 +100,29 @@
  *                                       none when width or rows is 0)
  *   end
  *
+ * Usage: ft-dump --raster PPEM --color FILE
+ *
+ * Renders the COLR version 0 glyphs in color (ADR 0023). For each face,
+ * `face`, `error` and `num_glyphs` as above, then for palette 0 and the
+ * last palette (only 0 when the font has no CPAL):
+ *
+ *   palette <i>                         (FT_Palette_Select)
+ *   palette_error <code>                (selecting failed; the palette's
+ *                                       glyphs are skipped)
+ *
+ * and for each glyph for which FT_Get_Color_Glyph_Layer gives a layer,
+ * FT_Load_Glyph with FT_LOAD_COLOR | FT_LOAD_NO_HINTING |
+ * FT_LOAD_NO_BITMAP | FT_LOAD_NO_SVG and FT_Render_Glyph with
+ * FT_RENDER_MODE_NORMAL:
+ *
+ *   glyph <g>
+ *   error <code>                        (loading or rendering failed)
+ *   bitmap <left> <top> <width> <rows> <bgra|gray>
+ *   <row as hex, eight digits (B, G, R, A) per pixel for bgra, two for
+ *    gray>                              (one line per row, top first;
+ *                                       none when width or rows is 0)
+ *   end
+ *
  * Usage: ft-dump --cid FILE
  *
  * For each face (ADR 0021), `face` and `error` as above, then:
@@ -168,11 +191,12 @@
  *   size <i>
  *   glyph <g> <error> <left> <top> <width> <rows> <pitch> <pixel_mode>
  *         <hori_advance> <vert_bearing_x> <vert_bearing_y> <vert_advance>
- *                                       (FT_Load_Glyph with FT_LOAD_COLOR |
- *                                       FT_LOAD_BITMAP_METRICS_ONLY, the
- *                                       slot's bitmap fields and metrics in
- *                                       26.6; only the error when it fails;
- *                                       every glyph)
+ *                                       (FT_Load_Glyph with FT_LOAD_COLOR,
+ *                                       the slot's bitmap fields and metrics
+ *                                       in 26.6; only the error when it
+ *                                       fails, -1 when the glyph is not a
+ *                                       bitmap; every glyph)
+ *   <row as hex, pitch bytes>           (one line per row, top first)
  *   end
  *
  * Usage: ft-dump --otvalid FILE
@@ -323,6 +347,72 @@ static void dump_rasters(FT_Face face, int ppem)
       if (b->width)
         printf("\n");
     }
+  }
+}
+
+static void dump_color_glyphs(FT_Face face)
+{
+  FT_Long g;
+
+  for (g = 0; g < face->num_glyphs; g++) {
+    FT_LayerIterator it;
+    FT_UInt lg, li;
+    FT_Error error;
+    FT_Bitmap *b;
+    unsigned int r, c, bytes;
+
+    it.p = NULL;
+    if (!FT_Get_Color_Glyph_Layer(face, (FT_UInt)g, &lg, &li, &it))
+      continue;
+    printf("glyph %ld\n", (long)g);
+    error = FT_Load_Glyph(face, (FT_UInt)g,
+                          FT_LOAD_COLOR | FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP | FT_LOAD_NO_SVG);
+    if (error == 0)
+      error = FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
+    if (error != 0) {
+      printf("error %d\n", (int)error);
+      continue;
+    }
+    b = &face->glyph->bitmap;
+    bytes = b->pixel_mode == FT_PIXEL_MODE_BGRA ? 4 : 1;
+    printf("bitmap %d %d %u %u %s\n", face->glyph->bitmap_left, face->glyph->bitmap_top,
+           b->width, b->rows, bytes == 4 ? "bgra" : "gray");
+    if (!b->buffer)
+      continue;
+    for (r = 0; r < b->rows; r++) {
+      const unsigned char *row = b->buffer + (long)r * b->pitch;
+      for (c = 0; c < b->width * bytes; c++)
+        printf("%02x", row[c]);
+      if (b->width)
+        printf("\n");
+    }
+  }
+}
+
+static void dump_color_rasters(FT_Face face, int ppem)
+{
+  FT_Palette_Data pd;
+  unsigned int palettes[2], n = 1, k;
+
+  if (FT_Set_Pixel_Sizes(face, 0, (FT_UInt)ppem) != 0) {
+    printf("error size\n");
+    return;
+  }
+  palettes[0] = 0;
+  if (FT_Palette_Data_Get(face, &pd) == 0 && pd.num_palettes > 1)
+    palettes[n++] = (unsigned int)pd.num_palettes - 1;
+  for (k = 0; k < n; k++) {
+    FT_Error error;
+
+    printf("palette %u\n", palettes[k]);
+    if (FT_Palette_Data_Get(face, &pd) == 0 && pd.num_palettes > 0) {
+      error = FT_Palette_Select(face, (FT_UShort)palettes[k], NULL);
+      if (error != 0) {
+        printf("palette_error %d\n", (int)error);
+        continue;
+      }
+    }
+    dump_color_glyphs(face);
   }
 }
 
@@ -568,7 +658,8 @@ static void dump_sbit(FT_Face face)
     printf("size %d\n", i);
     for (g = 0; g < face->num_glyphs; g++) {
       FT_GlyphSlot s = face->glyph;
-      FT_Error e = FT_Load_Glyph(face, (FT_UInt)g, FT_LOAD_COLOR | FT_LOAD_BITMAP_METRICS_ONLY);
+      FT_Error e = FT_Load_Glyph(face, (FT_UInt)g, FT_LOAD_COLOR);
+      unsigned r, k;
       if (e != 0 || s->format != FT_GLYPH_FORMAT_BITMAP) {
         printf("glyph %ld %d\n", (long)g, e != 0 ? (int)e : -1);
         continue;
@@ -578,6 +669,12 @@ static void dump_sbit(FT_Face face)
              (int)s->bitmap.pixel_mode, (long)s->metrics.horiAdvance,
              (long)s->metrics.vertBearingX, (long)s->metrics.vertBearingY,
              (long)s->metrics.vertAdvance);
+      for (r = 0; r < s->bitmap.rows && s->bitmap.buffer; r++) {
+        const unsigned char *row = s->bitmap.buffer + (long)r * s->bitmap.pitch;
+        for (k = 0; k < (unsigned)abs(s->bitmap.pitch); k++)
+          printf("%02x", row[k]);
+        printf("\n");
+      }
     }
   }
 }
@@ -613,6 +710,7 @@ static int faces(const char *path, void (*dump)(FT_Face))
   return 0;
 }
 
+/* raster: 0 for --outline, 1 for --raster, 2 for --raster --color. */
 static int outlines(const char *size, const char *path, int raster)
 {
   FT_Library library;
@@ -643,7 +741,9 @@ static int outlines(const char *size, const char *path, int raster)
       continue;
     }
     printf("num_glyphs %ld\n", (long)face->num_glyphs);
-    if (raster)
+    if (raster == 2)
+      dump_color_rasters(face, ppem);
+    else if (raster)
       dump_rasters(face, ppem);
     else
       dump_outlines(face, unscaled, ppem);
@@ -920,6 +1020,8 @@ int main(int argc, char **argv)
     return outlines(argv[2], argv[3], 0);
   if (argc == 4 && strcmp(argv[1], "--raster") == 0)
     return outlines(argv[2], argv[3], 1);
+  if (argc == 5 && strcmp(argv[1], "--raster") == 0 && strcmp(argv[3], "--color") == 0)
+    return outlines(argv[2], argv[4], 2);
   if (argc == 3 && strcmp(argv[1], "--cid") == 0)
     return faces(argv[2], dump_cid);
   if (argc == 3 && strcmp(argv[1], "--ps-info") == 0)
@@ -931,7 +1033,7 @@ int main(int argc, char **argv)
   if (argc == 3 && strcmp(argv[1], "--otvalid") == 0)
     return otvalid(argv[2]);
   if (argc != 2) {
-    fprintf(stderr, "usage: ft-dump FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --raster PPEM FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
+    fprintf(stderr, "usage: ft-dump FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --raster PPEM [--color] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
     return 2;
   }
   if (FT_Init_FreeType(&library) != 0) {

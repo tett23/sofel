@@ -6,6 +6,7 @@ version = 4
 name = "sofel-bench"
 version = "0.0.0"
 dependencies = [
+ "sofel-bitmap",
  "sofel-cli",
  "sofel-color",
  "sofel-font",

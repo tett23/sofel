@@ -7,6 +7,8 @@ use crate::{Diagnostic, Fixed, Kind, LongDateTime, ReadError, Tag};
 
 /// The `head` tag.
 pub const TAG: Tag = Tag::new(b"head");
+/// The tag of Apple's `bhed`, which has the layout of `head` (ADR 0023).
+pub const TAG_BHED: Tag = Tag::new(b"bhed");
 /// The required value of `magicNumber`.
 pub const MAGIC_NUMBER: u32 = 0x5F0F_3CF5;
 const LEN: usize = 54;
@@ -122,7 +124,13 @@ impl<'a> Head<'a> {
 /// be built), a wrong `magicNumber`, `unitsPerEm` outside 16..=16384, and
 /// `indexToLocFormat` other than 0 or 1.
 pub fn validate(data: &[u8], report: &mut dyn FnMut(Diagnostic)) {
-    let mut emit = |offset: u32, kind: Kind| report(Diagnostic::new(TAG, offset, kind));
+    validate_tagged(TAG, data, report);
+}
+
+/// [`validate`] for a table with the layout of `head` under another tag
+/// (Apple's `bhed`, ADR 0023).
+pub fn validate_tagged(tag: Tag, data: &[u8], report: &mut dyn FnMut(Diagnostic)) {
+    let mut emit = |offset: u32, kind: Kind| report(Diagnostic::new(tag, offset, kind));
     let head = match Head::new(data) {
         Ok(h) => h,
         Err(ReadError::UnknownVersion(found)) => return emit(0, Kind::UnknownVersion { found }),

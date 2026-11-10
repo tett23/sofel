@@ -2236,6 +2236,9 @@ static const dump_mode_t modes[] = {
   {"--baselines", dump_baselines},
   {"--vowel-constraints", dump_vowel_constraints},
   {"--layout-map", dump_layout_map},
+  {"--paint", dump_paint},
+  {"--color", dump_color},
+  {"--extents", dump_extents},
 };
 
 /* The modes that read a font and a second file. */
@@ -2248,9 +2251,6 @@ struct two_file_mode_t
 static const two_file_mode_t two_file_modes[] = {
   {"--serialize", dump_serialize},
   {"--deserialize", dump_deserialize},
-  {"--paint", dump_paint},
-  {"--color", dump_color},
-  {"--extents", dump_extents},
 };
 
 int main (int argc, char **argv)
@@ -2286,7 +2286,9 @@ int main (int argc, char **argv)
     if (strncmp (argv[1], "--paint=", 8) == 0)
     {
       paint_slant = (float) atof (argv[1] + 8);
-      mode = &modes[5];
+      for (unsigned i = 0; i < sizeof (modes) / sizeof (modes[0]); i++)
+	if (strcmp (modes[i].name, "--paint") == 0)
+	  mode = &modes[i];
     }
   }
   if (!mode || argc < 2 || argc > 3)
