@@ -107,7 +107,7 @@
  * 0xFFFFFFFF, through hb_unicode_funcs_get_default ():
  *
  *   <cp> <gc> <ccc> <script> <mirroring> <decomposed> <a> <b> <ep>
- *        <indic> <use> <joining>
+ *        <indic> <use> <joining> <mcc> <di> <space> <vert>
  *                     (hb_unicode_general_category as the number of
  *                     hb_unicode_general_category_t,
  *                     hb_unicode_combining_class, hb_unicode_script as its
@@ -115,8 +115,11 @@
  *                     hb_unicode_decompose (<a> <b> 0 0 when not
  *                     decomposed), _hb_unicode_is_emoji_Extended_Pictographic,
  *                     hb_indic_get_categories, hb_use_get_category, and
- *                     get_joining_type of hb-ot-shaper-arabic.cc; numbers
- *                     in decimal)
+ *                     get_joining_type of hb-ot-shaper-arabic.cc, and
+ *                     (ADR 0020) hb_unicode_funcs_t's
+ *                     modified_combining_class, is_default_ignorable
+ *                     (0 or 1), space_fallback_type and vertical_char_for;
+ *                     numbers in decimal)
  *
  *   then, for every pair (a, b) with a in the first and b in the second
  *   characters of the two-character decompositions, with 0 and the
@@ -720,12 +723,16 @@ static void dump_unicode_value (hb_unicode_funcs_t *ufuncs, hb_codepoint_t u)
   char tag[5];
   hb_tag_to_string (hb_unicode_script (ufuncs, u), tag);
   tag[4] = '\0';
-  printf ("%u %u %u %s %u %d %u %u %d %u %u %u\n", u, (unsigned) gc,
+  printf ("%u %u %u %s %u %d %u %u %d %u %u %u %u %d %u %u\n", u, (unsigned) gc,
 	  hb_unicode_combining_class (ufuncs, u), tag,
 	  hb_unicode_mirroring (ufuncs, u), decomposed ? 1 : 0, a, b,
 	  _hb_unicode_is_emoji_Extended_Pictographic (u) ? 1 : 0,
 	  (unsigned) hb_indic_get_categories (u), (unsigned) hb_use_get_category (u),
-	  get_joining_type (u, gc));
+	  get_joining_type (u, gc),
+	  ufuncs->modified_combining_class (u),
+	  hb_unicode_funcs_t::is_default_ignorable (u) ? 1 : 0,
+	  (unsigned) hb_unicode_funcs_t::space_fallback_type (u),
+	  hb_unicode_funcs_t::vertical_char_for (u));
 }
 
 static int dump_unicode ()

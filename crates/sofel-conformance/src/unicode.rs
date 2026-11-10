@@ -10,6 +10,9 @@
 //!   point.
 //! - `compose`: [`sofel_unicode::compose`] for every pair `hb-dump`
 //!   tried.
+//! - `modified_combining_class`, `default_ignorable`, `space_fallback`,
+//!   `vertical_char_for`: the hand-written functions of
+//!   [`sofel_shape::unicode`] (ADR 0020) for every code point.
 //! - `arabic_pua_simp`, `arabic_pua_trad`: the maps of sofel-font,
 //!   included here from the generated file because sofel-font keeps them
 //!   to itself.
@@ -47,6 +50,14 @@ pub struct HbChar {
     pub use_category: u8,
     /// `get_joining_type` of HarfBuzz's Arabic shaper.
     pub joining: u8,
+    /// `modified_combining_class` (ADR 0020).
+    pub modified_combining_class: u8,
+    /// `is_default_ignorable`.
+    pub default_ignorable: bool,
+    /// `space_fallback_type` as its number.
+    pub space_fallback: u8,
+    /// `vertical_char_for`.
+    pub vertical: u32,
 }
 
 /// The output of `hb-dump --unicode`.
@@ -106,6 +117,10 @@ pub fn parse(text: &str) -> Result<HbUnicode, String> {
             indic: num(w.next(), line)?,
             use_category: num(w.next(), line)?,
             joining: num(w.next(), line)?,
+            modified_combining_class: num(w.next(), line)?,
+            default_ignorable: flag(w.next(), line)?,
+            space_fallback: num(w.next(), line)?,
+            vertical: num(w.next(), line)?,
         };
         if w.next().is_some() {
             return Err(format!("bad line: {line}"));
@@ -172,6 +187,30 @@ pub fn compare(hb: &HbUnicode) -> Vec<Item> {
             u::is_extended_pictographic,
         ),
         item("compose", &compose, hb.compositions.len()),
+        per_char(
+            "modified_combining_class",
+            hb,
+            |c| c.modified_combining_class,
+            sofel_shape::unicode::modified_combining_class,
+        ),
+        per_char(
+            "default_ignorable",
+            hb,
+            |c| c.default_ignorable,
+            sofel_shape::unicode::is_default_ignorable,
+        ),
+        per_char(
+            "space_fallback",
+            hb,
+            |c| c.space_fallback,
+            |cp| sofel_shape::unicode::space_fallback_type(cp) as u8,
+        ),
+        per_char(
+            "vertical_char_for",
+            hb,
+            |c| c.vertical,
+            sofel_shape::unicode::vertical_char_for,
+        ),
     ]
 }
 
