@@ -135,9 +135,17 @@ const ONE_PIXEL: i64 = 1 << PIXEL_BITS;
 #[derive(Clone, Debug)]
 pub struct Rasterizer {
     commands: Vec<Command>,
+    /// Dense `(cover, area)` cells of a band; all zero between renders
+    /// (ADR 0014).
     cells: Vec<(i32, i32)>,
+    /// Per band row: the lowest and highest touched column.
+    extent: Vec<(usize, usize)>,
+    /// Per pixel: the sum of the 4x4 supersamples (overlap only).
+    sums: Vec<u16>,
     pixels: Vec<u8>,
     band_cells: usize,
+    /// Sweep every cell as ADR 0012 did (the reference for tests).
+    reference: bool,
 }
 
 impl Default for Rasterizer {
@@ -286,6 +294,8 @@ struct Band<'a> {
     cell: Option<usize>,
     x: i64,
     y: i64,
+    /// Per row: the lowest and highest touched column.
+    extent: &'a mut [(usize, usize)],
 }
 
 #[inline]
@@ -331,6 +341,9 @@ impl Band<'_> {
         let ex = ex.max(self.min_ex.wrapping_sub(1));
         let col = usize::try_from(ex.wrapping_sub(self.min_ex.wrapping_sub(1))).unwrap_or(0);
         let row = usize::try_from(ey.wrapping_sub(self.min_ey)).unwrap_or(0);
+        if let Some(e) = self.extent.get_mut(row) {
+            *e = (e.0.min(col), e.1.max(col));
+        }
         self.cell = Some(row.wrapping_mul(self.columns).wrapping_add(col));
     }
 
@@ -605,9 +618,21 @@ impl Rasterizer {
         Rasterizer {
             commands: Vec::new(),
             cells: Vec::new(),
+            extent: Vec::new(),
+            sums: Vec::new(),
             pixels: Vec::new(),
             band_cells: cells.max(1),
+            reference: false,
         }
+    }
+
+    /// Sweeps every cell of the dense array, as ADR 0012 did, instead of
+    /// only the touched ones (ADR 0014). The images are the same; tests
+    /// use this as the reference.
+    #[doc(hidden)]
+    pub fn set_reference_sweep(&mut self, on: bool) {
+        self.reference = on;
+        self.cells.clear();
     }
 
     /// Forgets the recorded outline.
@@ -722,14 +747,26 @@ impl Rasterizer {
         let columns = sw.saturating_add(1);
         let band_rows = self.band_cells.checked_div(columns).unwrap_or(1).max(1);
         let max_ex = i32::try_from(sw).unwrap_or(i32::MAX);
-        let mut row_cov: Vec<u8> = Vec::with_capacity(sw);
+        let mut row_cov: Vec<u8> = Vec::new();
+        if scale != 1 && !self.reference {
+            self.sums.clear();
+            self.sums.resize(w.saturating_mul(h), 0);
+        }
         let mut y0 = 0usize;
         while y0 < sh {
             let y1 = y0.saturating_add(band_rows).min(sh);
             let n = columns.saturating_mul(y1.saturating_sub(y0));
-            self.cells.clear();
-            self.cells.resize(n, (0, 0));
+            if self.reference {
+                self.cells.clear();
+                self.cells.resize(n, (0, 0));
+            } else if self.cells.len() < n {
+                // The cells are zero between renders: only grow.
+                self.cells.resize(n, (0, 0));
+            }
+            self.extent.clear();
+            self.extent.resize(y1.saturating_sub(y0), (usize::MAX, 0));
             let mut band = Band {
+                extent: &mut self.extent,
                 cells: &mut self.cells,
                 columns,
                 min_ex: 0,
@@ -756,39 +793,170 @@ impl Rasterizer {
                     Command::Close => {}
                 }
             }
-            // gray_sweep: rows of this band, bottom-up coordinates.
-            for (r, cells) in self.cells.chunks(columns).enumerate() {
-                let y = y0.saturating_add(r);
-                row_cov.clear();
-                let mut cover: i32 = 0;
-                for (i, &(c, a)) in cells.iter().enumerate() {
-                    cover = cover.wrapping_add(c.wrapping_mul(512));
-                    if i > 0 {
-                        row_cov.push(coverage(cover.wrapping_sub(a), fill));
-                    }
+            if self.reference {
+                self.sweep_full(y0, columns, scale, w, h, fill, &mut row_cov);
+            } else {
+                self.sweep_touched(y0, columns, scale, w, h, fill);
+            }
+            y0 = y1;
+        }
+        if scale != 1 && !self.reference {
+            // A pixel's 16 samples add at most 16 each, so FreeType's
+            // `sum - (sum >> 8)` per sample equals min(total, 255).
+            for (d, &v) in self.pixels.iter_mut().zip(&self.sums) {
+                *d = u8::try_from(v).unwrap_or(u8::MAX);
+            }
+        }
+    }
+
+    /// `gray_sweep` over every cell of the band, as ADR 0012 did: the
+    /// reference for [`Rasterizer::set_reference_sweep`].
+    #[allow(clippy::too_many_arguments)]
+    fn sweep_full(
+        &mut self,
+        y0: usize,
+        columns: usize,
+        scale: i32,
+        w: usize,
+        h: usize,
+        fill: FillRule,
+        row_cov: &mut Vec<u8>,
+    ) {
+        // gray_sweep: rows of this band, bottom-up coordinates.
+        for (r, cells) in self.cells.chunks(columns).enumerate() {
+            let y = y0.saturating_add(r);
+            row_cov.clear();
+            let mut cover: i32 = 0;
+            for (i, &(c, a)) in cells.iter().enumerate() {
+                cover = cover.wrapping_add(c.wrapping_mul(512));
+                if i > 0 {
+                    row_cov.push(coverage(cover.wrapping_sub(a), fill));
                 }
-                if scale == 1 {
-                    let top_row = h.saturating_sub(1).saturating_sub(y);
-                    let start = top_row.saturating_mul(w);
-                    if let Some(dst) = self.pixels.get_mut(start..start.saturating_add(w)) {
-                        dst.copy_from_slice(&row_cov);
-                    }
-                } else {
-                    // ft_smooth_overlap_spans: (coverage + 8) / 16 per sample.
-                    let top_row = h.saturating_sub(1).saturating_sub(y / 4);
-                    let start = top_row.saturating_mul(w);
-                    if let Some(dst) = self.pixels.get_mut(start..start.saturating_add(w)) {
-                        for (x, &v) in row_cov.iter().enumerate() {
-                            if let Some(d) = dst.get_mut(x / 4) {
-                                let sum = u32::from(*d)
-                                    .saturating_add((u32::from(v).saturating_add(8)) / 16);
-                                *d = sum.saturating_sub(sum >> 8).to_le_bytes()[0];
-                            }
+            }
+            if scale == 1 {
+                let top_row = h.saturating_sub(1).saturating_sub(y);
+                let start = top_row.saturating_mul(w);
+                if let Some(dst) = self.pixels.get_mut(start..start.saturating_add(w)) {
+                    dst.copy_from_slice(row_cov);
+                }
+            } else {
+                // ft_smooth_overlap_spans: (coverage + 8) / 16 per sample.
+                let top_row = h.saturating_sub(1).saturating_sub(y / 4);
+                let start = top_row.saturating_mul(w);
+                if let Some(dst) = self.pixels.get_mut(start..start.saturating_add(w)) {
+                    for (x, &v) in row_cov.iter().enumerate() {
+                        if let Some(d) = dst.get_mut(x / 4) {
+                            let sum =
+                                u32::from(*d).saturating_add((u32::from(v).saturating_add(8)) / 16);
+                            *d = sum.saturating_sub(sum >> 8).to_le_bytes()[0];
                         }
                     }
                 }
             }
-            y0 = y1;
         }
+    }
+
+    /// `gray_sweep` over the touched range of each row (ADR 0014):
+    /// coverage is found at touched cells only and holds until the next
+    /// one; the touched cells are set back to zero. With `scale` 4, the
+    /// samples are summed per pixel into `sums`.
+    fn sweep_touched(
+        &mut self,
+        y0: usize,
+        columns: usize,
+        scale: i32,
+        w: usize,
+        h: usize,
+        fill: FillRule,
+    ) {
+        let samples = columns.saturating_sub(1);
+        for (r, &(lo, hi)) in self.extent.iter().enumerate() {
+            if lo > hi {
+                continue;
+            }
+            let base = r.saturating_mul(columns);
+            let Some(cells) = self
+                .cells
+                .get_mut(base.saturating_add(lo)..=base.saturating_add(hi))
+            else {
+                continue;
+            };
+            let y = y0.saturating_add(r);
+            if scale == 1 {
+                let start = h.saturating_sub(1).saturating_sub(y).saturating_mul(w);
+                if let Some(dst) = self.pixels.get_mut(start..start.saturating_add(w)) {
+                    sweep_row(cells, lo, samples, fill, |from, to, v| {
+                        if let Some(d) = dst.get_mut(from..to).filter(|_| v != 0) {
+                            d.fill(v);
+                        }
+                    });
+                }
+            } else {
+                let start = h.saturating_sub(1).saturating_sub(y >> 2).saturating_mul(w);
+                if let Some(acc) = self.sums.get_mut(start..start.saturating_add(w)) {
+                    sweep_row(cells, lo, samples, fill, |from, to, v| {
+                        add_samples(acc, from, to, (u16::from(v) + 8) >> 4);
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// Sweeps the touched cells `cells` of one row, the first in column
+/// `lo`, and sets them back to zero. Calls `put(from, to, coverage)` for
+/// runs of samples `from..to` (sample `x` is column `x + 1`) up to
+/// `samples`; runs of zero coverage may be skipped or passed.
+fn sweep_row(
+    cells: &mut [(i32, i32)],
+    lo: usize,
+    samples: usize,
+    fill: FillRule,
+    mut put: impl FnMut(usize, usize, u8),
+) {
+    let mut cover: i32 = 0;
+    let mut plain: u8 = 0;
+    // The first sample not yet passed to `put`.
+    let mut next = 0usize;
+    for (k, cell) in cells.iter_mut().enumerate() {
+        let (c, a) = core::mem::take(cell);
+        if c == 0 && a == 0 {
+            continue;
+        }
+        let col = lo.saturating_add(k);
+        cover = cover.wrapping_add(c.wrapping_mul(512));
+        if let Some(x) = col.checked_sub(1) {
+            if plain != 0 && next < x {
+                put(next, x, plain);
+            }
+            put(
+                x,
+                x.saturating_add(1),
+                coverage(cover.wrapping_sub(a), fill),
+            );
+            next = x.saturating_add(1);
+        }
+        plain = coverage(cover, fill);
+    }
+    if plain != 0 && next < samples {
+        put(next, samples, plain);
+    }
+}
+
+/// Adds `v` to the per-pixel sums of samples `from..to`, four samples a
+/// pixel.
+fn add_samples(sums: &mut [u16], from: usize, to: usize, v: u16) {
+    if v == 0 {
+        return;
+    }
+    let mut x = from;
+    while x < to {
+        let px = x >> 2;
+        let end = px.saturating_add(1).saturating_mul(4).min(to);
+        let n = u16::try_from(end.saturating_sub(x)).unwrap_or(0);
+        if let Some(d) = sums.get_mut(px) {
+            *d = d.saturating_add(v.saturating_mul(n));
+        }
+        x = end;
     }
 }
