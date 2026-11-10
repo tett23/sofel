@@ -4,6 +4,10 @@
 決定の経緯は各ADRを参照。
 可変フォントの [ADR 0027](adr/0027-variable-fonts.md)、変化量の評価の [ADR 0029](adr/0029-variation-deltas.md) と、その修正の [ADR 0030](adr/0030-variation-evaluation-corrections.md) は採択（未実装）である。`--font-ptem` の分類訂正は [ADR 0028](adr/0028-ptem-is-not-opsz.md) に従って実装済みである。
 ただし、[ADR 0027](adr/0027-variable-fonts.md) の表の読み取りと検証器は実装済みである。
+`sofel-font::var` には、設計座標と正規化座標からの位置の構築、avar版1と版2の写像、[ADR 0029](adr/0029-variation-deltas.md) と [ADR 0030](adr/0030-variation-evaluation-corrections.md) に従うItemVariationStoreの差分の評価の核を実装している。
+C ABIは [ADR 0027](adr/0027-variable-fonts.md) の位置の作成、座標の取得、Variationの文字列変換まで実装している。
+位置を使うメトリクス、輪郭、シェーピングの結果問い合わせは未実装である。
+FreeTypeが合成する既定の名前つきインスタンス、位置によってメトリクス、輪郭、シェーピングを変える問い合わせと、そのCLIとC ABIは未実装である。
 追加フォントの検証は [ADR 0031](adr/0031-diverse-font-corpus.md) に従って実装した。
 文書だけの変更でCIを省く方針は [ADR 0032](adr/0032-documentation-only-ci.md) と [ADR 0034](adr/0034-ci-document-input-classification.md) に従って実装している。
 以下の実装済みの機能の記述は、各実装の PR で更新する。
@@ -330,9 +334,14 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 ## C ABI（`sofel-capi`）
 
 - `crates/sofel-capi` は、ライブラリのクレートの機能をCの呼び出し規約で公開する（[ADR 0015](adr/0015-c-abi.md)）。静的ライブラリ、動的ライブラリ、rlibを作る。ヘッダ `crates/sofel-capi/include/sofel.h` は手で書く。
-- 名前は `sofel_` で始め、型は不透明な構造体へのポインタと固定の幅の整数だけを使う。誤りうる関数は `int32_t` を返し、0を成功、負の値を誤り（`SOFEL_ERROR_*`、`sofel_error_string` で説明）とする。結果は出力の引数に書く。ポインタの引数がNULLなら `SOFEL_ERROR_NULL` を返す（`user` のポインタと `*_destroy` を除く）。panicしない。
+- 名前は `sofel_` で始め、オブジェクトの型は不透明な構造体へのポインタ、値の型は固定幅の整数とヘッダに宣言した構造体を使う。
+  誤りうる関数は `int32_t` を返し、0を成功、負の値を誤り（`SOFEL_ERROR_*`、`sofel_error_string` で説明）とする。
+  結果は出力の引数に書く。
+  ポインタの引数がNULLなら `SOFEL_ERROR_NULL` を返す（`user` のポインタ、`*_destroy`、要素数0の位置の構築子の入力配列を除く）。
+  panicしない。
 - フォント（`sofel_font_t`）はデータを複製しない。呼び出し側は、フォントを捨てるまでデータを生かしておく。フォントは不変で、複数のスレッドから同時に使える。作業領域（`sofel_outline_scratch_t`、`sofel_rasterizer_t`）は呼び出し側が持ち、スレッドの間で共有しない。
-- 可変長の出力（画像、文字列）は呼び出し側の配列に書く。足りなければ要る長さを書き、配列には何も書かず `SOFEL_ERROR_BUFFER_TOO_SMALL` を返す（`snprintf` と同じ形）。
+- 可変長の出力（画像、文字列、座標の配列）は呼び出し側の配列に書く。足りなければ要る長さを書き、配列には何も書かず `SOFEL_ERROR_BUFFER_TOO_SMALL` を返す（`snprintf` と同じ形）。
+- `sofel_location_t` は、作成に使った `sofel_font_t` のハンドルを破棄した後も使えるが、元のフォントのバイト列は位置を破棄するまで生かして変更しない。
 - 輪郭はCの関数ポインタ（`move_to`、`line_to`、`quad_to`、`cubic_to`、`close` と `void *user`）で受け取る。検証の結果は、1件ずつ関数ポインタに `sofel_diagnostic_t` で渡す。
 - ヘッダの各関数の説明に、対応するRustの関数（`Rust:`）と、相当するHarfBuzzとFreeTypeの関数を書く。`scripts/check-capi.sh` が、ライブラリのクレートの公開の関数（rustdocのJSONの出力から `scripts/public-api.sh` で求める）がすべてヘッダの `Rust:` の行か除外の一覧（`crates/sofel-capi/unmapped.txt`、理由つき）にあることを確かめる。ライブラリに公開の機能を足すADRは、同じプルリクエストでC ABIの関数とヘッダとCのテストも足す。
 - CFFとCFF2（[ADR 0021](adr/0021-cff-outlines.md)）：`sofel_font_t` は作るときに `Outlines`（`Cff::new` の結果とHarfBuzzの箱の値）を持ち、CFFが壊れていてもフォントの作成は失敗しない。輪郭とラスタライズの関数はそれでCFFとCFF2も描く。`sofel_font_is_cff`、`is_cff2`（1か0）、`sofel_font_is_cid_keyed`、`sofel_font_cid`（誤りのとき `*cid` は0）、`sofel_font_ros`（NUL終端で最初のNULで切った文字列、NULLの文字列は空にして `present` のビットで区別）、`sofel_font_ps_font_info`（数の配列と、呼び出し側の配列に並べた文字列とその位置。NULLは `SIZE_MAX`）、`sofel_font_ps_fs_type` を持つ。`sofel_font_t` は作るときにCFFのcharsetの索引も作って持ち、`sofel_font_cid` と `sofel_font_ft_glyph_name` はそれで引く（[ADR 0025](adr/0025-cff-charset-index.md)。関数の形は変わらない）。FreeTypeが開けないCFFには `SOFEL_ERROR_INVALID_CFF`、FreeTypeの `Invalid_Argument` には `SOFEL_ERROR_INVALID_ARGUMENT` を返す。

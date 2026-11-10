@@ -16,6 +16,9 @@
 mod color;
 mod shape;
 mod subset;
+mod variation;
+
+pub use variation::*;
 
 use core::ffi::{c_char, c_void};
 use core::fmt::Write as _;

@@ -16,8 +16,11 @@ WOFFとWOFF2、Type1やBDFなどの古い形式、AAT、絵文字（COLR、埋�
 さらに、[ADR 0027](docs/adr/0027-variable-fonts.md) の可変フォントの表（ItemVariationStore、DeltaSetIndexMap、HVAR、VVAR、MVAR、gvar、GVAR、avar版2、FeatureVariations）を読み、検証する。`sofel-subset` はFeatureVariationsをこのビューから読む。
 範囲と実装の順序は [ADR 0001](docs/adr/0001-project-goal-and-scope.md)、クレートの構成は [ADR 0003](docs/adr/0003-crate-layers.md) を参照。
 仕様は [docs/specifications.md](docs/specifications.md) にまとめる。
-可変フォントの座標と問い合わせは [ADR 0027](docs/adr/0027-variable-fonts.md)、評価の修正は [ADR 0030](docs/adr/0030-variation-evaluation-corrections.md) で採択している。表の読み取り以降の実装はこれから行う。
-ライセンスと取得元を固定した追加フォントの検証は [ADR 0031](docs/adr/0031-diverse-font-corpus.md) に従う。
+可変フォントの座標と問い合わせは [ADR 0027](docs/adr/0027-variable-fonts.md)、変化量の評価は [ADR 0029](docs/adr/0029-variation-deltas.md)、評価の修正は [ADR 0030](docs/adr/0030-variation-evaluation-corrections.md) で採択している。
+`sofel-font::var` には、設計座標と正規化座標からの位置の構築、座標の正規化、ItemVariationStoreの差分の評価の核を実装した。
+C ABIには位置の作成、座標の取得、Variationの文字列変換を追加した。
+座標に応じたメトリクス、輪郭、シェーピングの問い合わせと、コマンドラインやC ABIの結果問い合わせへ位置を渡す機能は未実装である。
+ライセンスと取得元を固定した追加フォントの検証は [ADR 0031](docs/adr/0031-diverse-font-corpus.md) に従って実装した。
 文書だけの変更でCIを省く方針は [ADR 0032](docs/adr/0032-documentation-only-ci.md) と [ADR 0034](docs/adr/0034-ci-document-input-classification.md) に従って実装している。
 FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/) に記録する（最新は [追加フォント](docs/benchmarks/2026-11-11-extra-fonts.md)、[2段階目](docs/benchmarks/2026-11-10-stage2.md)、[CFFとCFF2](docs/benchmarks/2026-11-10-cff.md)、[charsetの索引](docs/benchmarks/2026-11-10-cff-charset-index.md)、[COLRv0の画像](docs/benchmarks/2026-11-10-colrv0-raster.md)、[シェーピング](docs/benchmarks/2026-11-10-shaping.md)、[サブセット化](docs/benchmarks/2026-11-10-subset.md)、[前処理つきのサブセット化](docs/benchmarks/2026-11-10-subset-prepared.md)）。
 ライブラリの使い方は [docs/api.md](docs/api.md) にまとめる（各項目の説明はrustdoc）。
