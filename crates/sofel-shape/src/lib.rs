@@ -35,6 +35,7 @@ mod plan;
 mod props;
 mod scale;
 mod shape;
+mod shapers;
 mod tables;
 mod tag;
 pub mod unicode;

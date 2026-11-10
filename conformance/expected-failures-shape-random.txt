@@ -87,10 +87,7 @@ harfbuzz/test/shape/data/in-house/fonts/5dfad7735c6a67085f1b90d4d497e32907db4c78
 harfbuzz/test/shape/data/in-house/fonts/5f1d25b1f66fc4ef6d55b7c98f34b045b4adaa9d.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/in-house/fonts/5f1d25b1f66fc4ef6d55b7c98f34b045b4adaa9d.ttf#0:Zyyy  # aat
 harfbuzz/test/shape/data/in-house/fonts/5f73fff1ffc07b5a99a90c0909609f2b09fef274.ttf#0:Guru  # shaper:indic
-harfbuzz/test/shape/data/in-house/fonts/600387433d01cd5799e421dad6510a54c862f56b.ttf#0:Hang  # shaper:hangul
 harfbuzz/test/shape/data/in-house/fonts/604026ae5aaca83c49cd8416909d71ba3e1c1194.ttf#0:Guru  # shaper:indic
-harfbuzz/test/shape/data/in-house/fonts/63a539a90a371ccf028dc2dcced9b63b07163be7.ttf#0:Laoo  # shaper:thai
-harfbuzz/test/shape/data/in-house/fonts/63a539a90a371ccf028dc2dcced9b63b07163be7.ttf#0:Thai  # shaper:thai
 harfbuzz/test/shape/data/in-house/fonts/63e224dcb3d559d590f80c83b832cfca789e5dcc.ttf#0:Gujr  # shaper:indic
 harfbuzz/test/shape/data/in-house/fonts/65984dfce552a785f564422aadf4715fa07795ad.ttf#0:Arab  # shaper:arabic
 harfbuzz/test/shape/data/in-house/fonts/661373fa372e6925c89d82332b60e5a791c8c9f7.ttf#0:Latn  # aat
@@ -102,19 +99,16 @@ harfbuzz/test/shape/data/in-house/fonts/7125f48c02c32e8f8890bd3db88afa13c7ab8b18
 harfbuzz/test/shape/data/in-house/fonts/738d9f3b8c2dfd03875bf35a61d28fd78faf17c8.ttf#0:Gujr  # shaper:indic
 harfbuzz/test/shape/data/in-house/fonts/73c3222a2992bac9067663888d2a1503774976bb.ttf#0:Arab  # shaper:arabic
 harfbuzz/test/shape/data/in-house/fonts/755160ddba002332349fda3eb999e629d63dccf6.ttf#0:Guru  # shaper:indic
-harfbuzz/test/shape/data/in-house/fonts/757ebd573617a24aa9dfbf0b885c54875c6fe06b.ttf#0:Hang  # shaper:hangul
 harfbuzz/test/shape/data/in-house/fonts/76945ad2b2303cbdf235f5be45285993eb65694b.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/in-house/fonts/7ac4822ace9d0c1ebdb3dd52f15408c1be9582e0.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/in-house/fonts/7bbd3175734d5d291e1c15271ec0cbb97b626ebf.ttf#0:Arab  # shaper:arabic
 harfbuzz/test/shape/data/in-house/fonts/7c24183f26d60df414578a0a9f5e79ab9d32a22b.ttf#0:Newa  # shaper:use
 harfbuzz/test/shape/data/in-house/fonts/7d18685e1529e4ceaad5b6095dfab2f9789e5bce.ttf#0:Knda  # shaper:indic
-harfbuzz/test/shape/data/in-house/fonts/7e14e7883ed152baa158b80e207b66114c823a8b.ttf#0:Hang  # shaper:hangul
 harfbuzz/test/shape/data/in-house/fonts/8116e5d8fedfbec74e45dc350d2416d810bed8c4.ttf#0:Deva  # shaper:indic
 harfbuzz/test/shape/data/in-house/fonts/813c2f8e5512187fd982417a7fb4286728e6f4a8.ttf#0:Mong  # shaper:use
 harfbuzz/test/shape/data/in-house/fonts/81c368a33816fb20e9f647e8f24e2180f4720263.ttf#0:Knda  # shaper:indic
 harfbuzz/test/shape/data/in-house/fonts/82f4f3b57bb55344e72e70231380202a52af5805.ttf#0:Tibt  # shaper:use
 harfbuzz/test/shape/data/in-house/fonts/8339c821814d9bad7c77169332327ad8b0f33c81.ttf#0:Arab  # shaper:arabic
-harfbuzz/test/shape/data/in-house/fonts/8454d22037f892e76614e1645d066689a0200e61.ttf#0:Hebr  # shaper:hebrew
 harfbuzz/test/shape/data/in-house/fonts/85414f2552b654585b7a8d13dcc3e8fd9f7970a3.ttf#0:Marc  # shaper:use
 harfbuzz/test/shape/data/in-house/fonts/85fe0be440c64ac77699e21c2f1bd933a919167e.ttf#0:Guru  # shaper:indic
 harfbuzz/test/shape/data/in-house/fonts/872d2955d326bd6676a06f66b8238ebbaabc212f.ttf#0:Arab  # shaper:arabic
@@ -151,9 +145,7 @@ harfbuzz/test/shape/data/in-house/fonts/AdobeBlank2.ttf#0:Gran  # shaper:use
 harfbuzz/test/shape/data/in-house/fonts/AdobeBlank2.ttf#0:Gujr  # shaper:indic
 harfbuzz/test/shape/data/in-house/fonts/AdobeBlank2.ttf#0:Gukh  # shaper:use
 harfbuzz/test/shape/data/in-house/fonts/AdobeBlank2.ttf#0:Guru  # shaper:indic
-harfbuzz/test/shape/data/in-house/fonts/AdobeBlank2.ttf#0:Hang  # shaper:hangul
 harfbuzz/test/shape/data/in-house/fonts/AdobeBlank2.ttf#0:Hano  # shaper:use
-harfbuzz/test/shape/data/in-house/fonts/AdobeBlank2.ttf#0:Hebr  # shaper:hebrew
 harfbuzz/test/shape/data/in-house/fonts/AdobeBlank2.ttf#0:Hmng  # shaper:use
 harfbuzz/test/shape/data/in-house/fonts/AdobeBlank2.ttf#0:Hmnp  # shaper:use
 harfbuzz/test/shape/data/in-house/fonts/AdobeBlank2.ttf#0:Java  # shaper:use
@@ -166,7 +158,6 @@ harfbuzz/test/shape/data/in-house/fonts/AdobeBlank2.ttf#0:Knda  # shaper:indic
 harfbuzz/test/shape/data/in-house/fonts/AdobeBlank2.ttf#0:Krai  # shaper:use
 harfbuzz/test/shape/data/in-house/fonts/AdobeBlank2.ttf#0:Kthi  # shaper:use
 harfbuzz/test/shape/data/in-house/fonts/AdobeBlank2.ttf#0:Lana  # shaper:use
-harfbuzz/test/shape/data/in-house/fonts/AdobeBlank2.ttf#0:Laoo  # shaper:thai
 harfbuzz/test/shape/data/in-house/fonts/AdobeBlank2.ttf#0:Lepc  # shaper:use
 harfbuzz/test/shape/data/in-house/fonts/AdobeBlank2.ttf#0:Limb  # shaper:use
 harfbuzz/test/shape/data/in-house/fonts/AdobeBlank2.ttf#0:Maka  # shaper:use
@@ -208,7 +199,6 @@ harfbuzz/test/shape/data/in-house/fonts/AdobeBlank2.ttf#0:Tayo  # shaper:use
 harfbuzz/test/shape/data/in-house/fonts/AdobeBlank2.ttf#0:Telu  # shaper:indic
 harfbuzz/test/shape/data/in-house/fonts/AdobeBlank2.ttf#0:Tfng  # shaper:use
 harfbuzz/test/shape/data/in-house/fonts/AdobeBlank2.ttf#0:Tglg  # shaper:use
-harfbuzz/test/shape/data/in-house/fonts/AdobeBlank2.ttf#0:Thai  # shaper:thai
 harfbuzz/test/shape/data/in-house/fonts/AdobeBlank2.ttf#0:Tibt  # shaper:use
 harfbuzz/test/shape/data/in-house/fonts/AdobeBlank2.ttf#0:Tirh  # shaper:use
 harfbuzz/test/shape/data/in-house/fonts/AdobeBlank2.ttf#0:Todr  # shaper:use
@@ -253,7 +243,6 @@ harfbuzz/test/shape/data/in-house/fonts/b5cb7b50f2975a3375bf6688eb5211d37b16a90b
 harfbuzz/test/shape/data/in-house/fonts/b6031119874ae9ff1dd65383a335e361c0962220.ttf#0:Khmr  # shaper:khmer
 harfbuzz/test/shape/data/in-house/fonts/b722a7d09e60421f3efbc706ad348ab47b88567b.ttf#0:Deva  # shaper:indic
 harfbuzz/test/shape/data/in-house/fonts/b767b987abb0c618ba75fb65459feff4a73e20be.ttf#0:Latn  # aat
-harfbuzz/test/shape/data/in-house/fonts/b895f8ff06493cc893ec44de380690ca0074edfa.ttf#0:Hebr  # shaper:hebrew
 harfbuzz/test/shape/data/in-house/fonts/be58c7e67838c61088189342d65e6e6f9dd62345.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/in-house/fonts/bf39b0e91ef9807f15a9e283a21a14a209fd2cfc.ttf#0:Arab  # shaper:arabic
 harfbuzz/test/shape/data/in-house/fonts/bf962d3202883a820aed019d9b5c1838c2ff69c6.ttf#0:Arab  # shaper:arabic
@@ -321,9 +310,7 @@ harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Gran  #
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Gujr  # shaper:indic
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Gukh  # shaper:use
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Guru  # shaper:indic
-harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Hang  # shaper:hangul
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Hano  # shaper:use
-harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Hebr  # shaper:hebrew
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Hmng  # shaper:use
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Hmnp  # shaper:use
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Java  # shaper:use
@@ -336,7 +323,6 @@ harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Knda  #
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Krai  # shaper:use
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Kthi  # shaper:use
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Lana  # shaper:use
-harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Laoo  # shaper:thai
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Lepc  # shaper:use
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Limb  # shaper:use
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Mahj  # shaper:use
@@ -379,7 +365,6 @@ harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Tayo  #
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Telu  # shaper:indic
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Tfng  # shaper:use
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Tglg  # shaper:use
-harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Thai  # shaper:thai
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Tibt  # shaper:use
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Tirh  # shaper:use
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Todr  # shaper:use
@@ -413,9 +398,7 @@ harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:Gran 
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:Gujr  # shaper:indic
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:Gukh  # shaper:use
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:Guru  # shaper:indic
-harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:Hang  # shaper:hangul
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:Hano  # shaper:use
-harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:Hebr  # shaper:hebrew
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:Hmng  # shaper:use
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:Hmnp  # shaper:use
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:Java  # shaper:use
@@ -428,7 +411,6 @@ harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:Knda 
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:Krai  # shaper:use
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:Kthi  # shaper:use
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:Lana  # shaper:use
-harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:Laoo  # shaper:thai
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:Lepc  # shaper:use
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:Limb  # shaper:use
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:Mahj  # shaper:use
@@ -471,7 +453,6 @@ harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:Tayo 
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:Telu  # shaper:indic
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:Tfng  # shaper:use
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:Tglg  # shaper:use
-harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:Thai  # shaper:thai
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:Tibt  # shaper:use
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:Tirh  # shaper:use
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest65535.otf#0:Todr  # shaper:use
@@ -498,7 +479,7 @@ harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXEighteen.ttf#0:Latn 
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXEighteen.ttf#0:Zyyy  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXEleven.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXEleven.ttf#0:Zyyy  # aat
-harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXForty.ttf#0:Hebr  # shaper:hebrew
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXForty.ttf#0:Hebr  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXForty.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXForty.ttf#0:Zyyy  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXFour.ttf#0:Latn  # aat
@@ -519,19 +500,19 @@ harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXTen.ttf#0:Latn  # aa
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXTen.ttf#0:Zyyy  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXThirteen.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXThirteen.ttf#0:Zyyy  # aat
-harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXThirtyeight.ttf#0:Hebr  # shaper:hebrew
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXThirtyeight.ttf#0:Hebr  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXThirtyeight.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXThirtyeight.ttf#0:Zyyy  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXThirtyfive.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXThirtyfive.ttf#0:Zyyy  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXThirtyfour.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXThirtyfour.ttf#0:Zyyy  # aat
-harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXThirtynine.ttf#0:Hebr  # shaper:hebrew
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXThirtynine.ttf#0:Hebr  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXThirtynine.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXThirtynine.ttf#0:Zyyy  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXThirtyone.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXThirtyone.ttf#0:Zyyy  # aat
-harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXThirtyseven.ttf#0:Hebr  # shaper:hebrew
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXThirtyseven.ttf#0:Hebr  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXThirtyseven.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXThirtyseven.ttf#0:Zyyy  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXThirtysix.ttf#0:Latn  # aat
@@ -595,9 +576,7 @@ harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Gran  # shaper:use
 harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Gujr  # shaper:indic
 harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Gukh  # shaper:use
 harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Guru  # shaper:indic
-harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Hang  # shaper:hangul
 harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Hano  # shaper:use
-harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Hebr  # shaper:hebrew
 harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Hmng  # shaper:use
 harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Hmnp  # shaper:use
 harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Java  # shaper:use
@@ -610,7 +589,6 @@ harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Knda  # shaper:indic
 harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Krai  # shaper:use
 harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Kthi  # shaper:use
 harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Lana  # shaper:use
-harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Laoo  # shaper:thai
 harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Lepc  # shaper:use
 harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Limb  # shaper:use
 harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Maka  # shaper:use
@@ -652,7 +630,6 @@ harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Tayo  # shaper:use
 harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Telu  # shaper:indic
 harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Tfng  # shaper:use
 harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Tglg  # shaper:use
-harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Thai  # shaper:thai
 harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Tibt  # shaper:use
 harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Tirh  # shaper:use
 harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Todr  # shaper:use
@@ -670,7 +647,6 @@ harfbuzz/test/subset/data/fonts/IndicTestHowrah-Regular.ttf#0:Beng  # shaper:ind
 harfbuzz/test/subset/data/fonts/IndicTestJalandhar-Regular.ttf#0:Guru  # shaper:indic
 harfbuzz/test/subset/data/fonts/Khmer.ttf#0:Khmr  # shaper:khmer
 harfbuzz/test/subset/data/fonts/Khmer.ttf#0:Zyyy  # aat
-harfbuzz/test/subset/data/fonts/Mplus1p-Regular.ttf#0:Hebr  # shaper:hebrew
 harfbuzz/test/subset/data/fonts/NotoNastaliqUrdu-Bold.ttf#0:Arab  # shaper:arabic
 harfbuzz/test/subset/data/fonts/NotoNastaliqUrdu-Regular.ttf#0:Arab  # shaper:arabic
 harfbuzz/test/subset/data/fonts/NotoSansDevanagari-Regular.ttf#0:Deva  # shaper:indic
@@ -678,4 +654,4 @@ harfbuzz/test/subset/data/fonts/NotoSansNewa-Regular.ttf#0:Newa  # shaper:use
 harfbuzz/test/subset/data/fonts/NotoSansOriya-subset.ttf#0:Orya  # variations
 harfbuzz/test/subset/data/fonts/NotoSerifMyanmar-Regular.otf#0:Mymr  # shaper:myanmar
 harfbuzz/test/subset/data/fonts/SreeKrushnadevaraya-Regular.ttf#0:Telu  # shaper:indic
-harfbuzz/test/subset/data/fonts/Tinos-Italic.ttf#0:Hebr  # shaper:hebrew
+harfbuzz/test/subset/data/fonts/Tinos-Italic.ttf#0:Hebr  # aat

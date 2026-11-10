@@ -286,3 +286,24 @@ pub(crate) fn category_from_u8(v: u8) -> GeneralCategory {
     ];
     ALL.get(usize::from(v)).copied().unwrap_or(Unassigned)
 }
+
+/// Modified combining classes the shapers test
+/// (`HB_MODIFIED_COMBINING_CLASS_*` and `HB_UNICODE_COMBINING_CLASS_*` of
+/// `src/hb-unicode.hh`).
+#[allow(dead_code)] // Used by the shapers of ADR 0024 as they land.
+pub(crate) mod mcc {
+    /// Sheva.
+    pub(crate) const CCC10: u8 = 22;
+    /// Hiriq.
+    pub(crate) const CCC14: u8 = 23;
+    /// Patah.
+    pub(crate) const CCC17: u8 = 20;
+    /// Qamats and qamats qatan.
+    pub(crate) const CCC18: u8 = 21;
+    /// Meteg.
+    pub(crate) const CCC22: u8 = 25;
+    /// `HB_UNICODE_COMBINING_CLASS_BELOW`.
+    pub(crate) const BELOW: u8 = 220;
+    /// `HB_UNICODE_COMBINING_CLASS_ABOVE`.
+    pub(crate) const ABOVE: u8 = 230;
+}
