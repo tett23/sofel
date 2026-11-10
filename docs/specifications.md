@@ -2,6 +2,8 @@
 
 この文書は、採択したADRから、現在の仕様をまとめる。
 決定の経緯は各ADRを参照。
+可変フォントの [ADR 0027](adr/0027-variable-fonts.md)、`ptem` の分類訂正の [ADR 0028](adr/0028-ptem-is-not-opsz.md)、変化量の評価の [ADR 0029](adr/0029-variation-deltas.md) と、その修正の [ADR 0030](adr/0030-variation-evaluation-corrections.md) は採択（未実装）である。
+以下の実装済みの機能の記述は、各実装の PR で更新する。
 
 ## 目的
 

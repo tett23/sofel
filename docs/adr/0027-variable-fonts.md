@@ -1,6 +1,6 @@
 # ADR 0027: 可変フォント（座標の模型、変化量の読み取りと適用）
 
-ステータス: 提案
+ステータス: 採択（未実装）→変化量の評価と Location の生存期間は [ADR 0030](0030-variation-evaluation-corrections.md)
 
 ## 文脈
 
