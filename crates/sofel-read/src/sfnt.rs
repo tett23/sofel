@@ -1,4 +1,6 @@
 //! The sfnt table directory and TTC/OTC collections.
+//!
+//! Specification: <https://learn.microsoft.com/typography/opentype/spec/otff>
 
 use crate::be::{self, to_usize};
 use crate::{ReadError, Tag};
@@ -23,9 +25,13 @@ pub struct Sfnt<'a> {
 /// One entry of the table directory.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct TableRecord {
+    /// `tableTag`.
     pub tag: Tag,
+    /// `checksum` of the table, as stored.
     pub checksum: u32,
+    /// `offset`: from the start of the file, in bytes.
     pub offset: u32,
+    /// `length` of the table, in bytes.
     pub length: u32,
 }
 
@@ -78,23 +84,28 @@ impl<'a> Sfnt<'a> {
         })
     }
 
+    /// `sfntVersion`: one of [`SFNT_VERSIONS`].
     pub fn version(&self) -> u32 {
         let h = self.header;
         u32::from_be_bytes([h[0], h[1], h[2], h[3]])
     }
 
+    /// `numTables`: the number of table records.
     pub fn num_tables(&self) -> u16 {
         u16::from_be_bytes([self.header[4], self.header[5]])
     }
 
+    /// `searchRange` from the directory header, as stored.
     pub fn search_range(&self) -> u16 {
         u16::from_be_bytes([self.header[6], self.header[7]])
     }
 
+    /// `entrySelector` from the directory header, as stored.
     pub fn entry_selector(&self) -> u16 {
         u16::from_be_bytes([self.header[8], self.header[9]])
     }
 
+    /// `rangeShift` from the directory header, as stored.
     pub fn range_shift(&self) -> u16 {
         u16::from_be_bytes([self.header[10], self.header[11]])
     }
@@ -109,6 +120,7 @@ impl<'a> Sfnt<'a> {
         self.start
     }
 
+    /// The table records in file order.
     pub fn records(&self) -> impl Iterator<Item = TableRecord> + 'a {
         self.records.iter().map(TableRecord::parse)
     }
@@ -138,6 +150,11 @@ pub struct Collection<'a> {
 const TTCF: u32 = 0x7474_6366;
 
 impl<'a> Collection<'a> {
+    /// The collection header at the start of `file`.
+    ///
+    /// Fails with [`ReadError::UnknownVersion`] if the tag is not `ttcf`
+    /// or the major version is not 1 or 2, and with
+    /// [`ReadError::Truncated`] if the header or offsets do not fit.
     pub fn new(file: &'a [u8]) -> Result<Collection<'a>, ReadError> {
         let header = file
             .first_chunk::<12>()
@@ -168,14 +185,17 @@ impl<'a> Collection<'a> {
         })
     }
 
+    /// `majorVersion` of the collection header (1 or 2).
     pub fn major_version(&self) -> u16 {
         self.major
     }
 
+    /// `minorVersion` of the collection header.
     pub fn minor_version(&self) -> u16 {
         self.minor
     }
 
+    /// `numFonts`: the number of fonts in the collection.
     pub fn num_fonts(&self) -> u32 {
         be::to_u32(self.offsets.len())
     }
@@ -187,11 +207,16 @@ impl<'a> Collection<'a> {
             .map(|o| u32::from_be_bytes(*o))
     }
 
+    /// Font `index`'s table directory.
+    ///
+    /// Fails with [`ReadError::OutOfBounds`] if `index` is not below
+    /// [`num_fonts`](Self::num_fonts), or as [`Sfnt::at`] does.
     pub fn font(&self, index: u32) -> Result<Sfnt<'a>, ReadError> {
         let offset = self.offset(index).ok_or(ReadError::OutOfBounds)?;
         Sfnt::at(self.file, to_usize(offset))
     }
 
+    /// The whole collection file.
     pub fn file(&self) -> &'a [u8] {
         self.file
     }
@@ -200,11 +225,15 @@ impl<'a> Collection<'a> {
 /// A font file: a single sfnt or a collection.
 #[derive(Clone, Copy, Debug)]
 pub enum FontFile<'a> {
+    /// A single font.
     Sfnt(Sfnt<'a>),
+    /// A `ttcf` collection.
     Collection(Collection<'a>),
 }
 
 impl<'a> FontFile<'a> {
+    /// A collection if `file` starts with `ttcf`, otherwise a single
+    /// font at its start.
     pub fn new(file: &'a [u8]) -> Result<FontFile<'a>, ReadError> {
         if be::u32_at(file, 0) == Some(TTCF) {
             Collection::new(file).map(FontFile::Collection)

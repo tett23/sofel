@@ -8,9 +8,30 @@
 //!
 //! No input makes this crate panic: indexing, unchecked arithmetic and
 //! lossy casts are denied by clippy lints, and the crate is fuzzed.
+//!
+//! # Example
+//!
+//! ```
+//! use sofel_read::sfnt::Sfnt;
+//! use sofel_read::{Diagnostic, Tag, validate};
+//!
+//! fn main() -> Result<(), sofel_read::ReadError> {
+//!     // A TrueType table directory with no tables.
+//!     let file = [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+//!     let font = Sfnt::new(&file)?;
+//!     assert_eq!(font.num_tables(), 0);
+//!     assert_eq!(font.table(Tag::new(b"head")), None);
+//!
+//!     let mut problems = 0;
+//!     validate::sfnt(&font, &mut |_: Diagnostic| problems += 1);
+//!     assert_eq!(problems, 0);
+//!     Ok(())
+//! }
+//! ```
 
 #![no_std]
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
 
 pub mod be;
 pub mod cmap;

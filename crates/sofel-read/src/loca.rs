@@ -3,13 +3,18 @@
 //! `LOCA` has the same two formats as `loca`; both are chosen by
 //! `head.indexToLocFormat`. Which byte ranges make up a glyph when the
 //! entries are broken is a policy left to the outline layer.
+//!
+//! Specification: <https://learn.microsoft.com/typography/opentype/spec/loca>
 
 use crate::be::{to_u32, to_usize};
 use crate::{Diagnostic, Kind, ReadError, Tag};
 
+/// The `loca` tag.
 pub const TAG: Tag = Tag::new(b"loca");
+/// The `LOCA` tag, the variant with 24-bit counts.
 pub const TAG_WIDE: Tag = Tag::new(b"LOCA");
 
+/// A view over the `loca` or `LOCA` (index to location) table.
 #[derive(Clone, Copy, Debug)]
 pub struct Loca<'a> {
     short: &'a [[u8; 2]],
@@ -18,6 +23,8 @@ pub struct Loca<'a> {
 
 impl<'a> Loca<'a> {
     /// `index_to_loc_format` is 0 (16-bit offsets / 2) or 1 (32-bit).
+    /// Any other value fails with [`ReadError::UnknownFormat`]. A trailing
+    /// partial entry is ignored.
     pub fn new(data: &'a [u8], index_to_loc_format: i16) -> Result<Loca<'a>, ReadError> {
         match index_to_loc_format {
             0 => Ok(Loca {

@@ -5,12 +5,15 @@ use core::fmt;
 pub struct Tag(pub [u8; 4]);
 
 impl Tag {
+    /// A tag from its four bytes.
     pub const fn new(bytes: &[u8; 4]) -> Tag {
         Tag(*bytes)
     }
+    /// A tag from its big-endian `u32` value.
     pub const fn from_u32(v: u32) -> Tag {
         Tag(v.to_be_bytes())
     }
+    /// The tag as a big-endian `u32` value.
     pub const fn to_u32(self) -> u32 {
         u32::from_be_bytes(self.0)
     }
@@ -57,7 +60,9 @@ pub struct LongDateTime(pub i64);
 /// `hmtx`, 24 bits in `MAXP`, `HHEA` and `HMTX`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum CountWidth {
+    /// 16-bit counts (`maxp`, `hhea`, `hmtx`).
     U16,
+    /// 24-bit counts (`MAXP`, `HHEA`, `HMTX`).
     U24,
 }
 

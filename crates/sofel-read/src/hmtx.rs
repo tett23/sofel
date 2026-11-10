@@ -2,13 +2,18 @@
 //!
 //! The structure is the same for both; only the counts that come from
 //! `hhea`/`HHEA` and `maxp`/`MAXP` differ in width.
+//!
+//! Specification: <https://learn.microsoft.com/typography/opentype/spec/hmtx>
 
 use crate::be::{self, to_u32, to_usize};
 use crate::{Diagnostic, GlyphId, Kind, ReadError, Tag};
 
+/// The `hmtx` tag.
 pub const TAG: Tag = Tag::new(b"hmtx");
+/// The `HMTX` tag, the variant with 24-bit counts.
 pub const TAG_WIDE: Tag = Tag::new(b"HMTX");
 
+/// A view over the `hmtx` or `HMTX` (horizontal metrics) table.
 #[derive(Clone, Copy, Debug)]
 pub struct Hmtx<'a> {
     long: &'a [[u8; 4]],
@@ -20,6 +25,10 @@ impl<'a> Hmtx<'a> {
     /// `num_long_metrics` is `numberOfHMetrics` from `hhea`, `num_glyphs`
     /// is `numGlyphs` from `maxp`. The long metrics must all be present;
     /// the trailing left side bearings may be cut short.
+    ///
+    /// Fails with [`ReadError::InvalidValue`] if `num_long_metrics` is 0
+    /// while `num_glyphs` is not, and with [`ReadError::Truncated`] if
+    /// the long metrics do not fit.
     pub fn new(
         data: &'a [u8],
         num_long_metrics: u32,
@@ -42,6 +51,9 @@ impl<'a> Hmtx<'a> {
         })
     }
 
+    /// `advanceWidth` of `glyph`, in font units. Glyphs past the last long
+    /// metric take the advance of the last one. `None` if `glyph` is not
+    /// below `num_glyphs`.
     pub fn advance(&self, glyph: GlyphId) -> Option<u16> {
         if glyph.0 >= self.num_glyphs {
             return None;
@@ -50,6 +62,9 @@ impl<'a> Hmtx<'a> {
         self.long.get(i).map(|m| u16::from_be_bytes([m[0], m[1]]))
     }
 
+    /// `lsb` of `glyph`, in font units, from its long metric or from the
+    /// trailing `leftSideBearings` array. `None` if `glyph` is not below
+    /// `num_glyphs` or its bearing was cut off.
     pub fn left_side_bearing(&self, glyph: GlyphId) -> Option<i16> {
         if glyph.0 >= self.num_glyphs {
             return None;
@@ -65,7 +80,9 @@ impl<'a> Hmtx<'a> {
     }
 }
 
-/// `tag` is [`TAG`] or [`TAG_WIDE`]; it only labels the diagnostics.
+/// Checks an `hmtx` table against `numberOfHMetrics` and `numGlyphs`,
+/// labelling diagnostics `hmtx`: zero long metrics with glyphs present,
+/// more long metrics than glyphs, and data shorter than the counts need.
 pub fn validate(
     data: &[u8],
     num_long_metrics: u32,
@@ -75,6 +92,8 @@ pub fn validate(
     validate_tagged(TAG, data, num_long_metrics, num_glyphs, report);
 }
 
+/// Like [`validate`], with `tag` labelling the diagnostics.
+/// `tag` is [`TAG`] or [`TAG_WIDE`]; it only labels the diagnostics.
 pub fn validate_tagged(
     tag: Tag,
     data: &[u8],

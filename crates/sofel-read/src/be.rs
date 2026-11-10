@@ -19,41 +19,49 @@ pub fn array_at<const N: usize>(data: &[u8], offset: usize) -> Option<&[u8; N]> 
     data.get(offset..)?.first_chunk::<N>()
 }
 
+/// A `u8` at `offset`. `None` if the bytes are not there.
 #[inline]
 pub fn u8_at(data: &[u8], offset: usize) -> Option<u8> {
     data.get(offset).copied()
 }
 
+/// An `i8` at `offset`. `None` if the bytes are not there.
 #[inline]
 pub fn i8_at(data: &[u8], offset: usize) -> Option<i8> {
     array_at::<1>(data, offset).map(|a| i8::from_be_bytes(*a))
 }
 
+/// A big-endian `u16` at `offset`. `None` if the bytes are not there.
 #[inline]
 pub fn u16_at(data: &[u8], offset: usize) -> Option<u16> {
     array_at::<2>(data, offset).map(|a| u16::from_be_bytes(*a))
 }
 
+/// A big-endian `i16` at `offset`. `None` if the bytes are not there.
 #[inline]
 pub fn i16_at(data: &[u8], offset: usize) -> Option<i16> {
     array_at::<2>(data, offset).map(|a| i16::from_be_bytes(*a))
 }
 
+/// A big-endian 24-bit unsigned integer at `offset`, widened to `u32`. `None` if the bytes are not there.
 #[inline]
 pub fn u24_at(data: &[u8], offset: usize) -> Option<u32> {
     array_at::<3>(data, offset).map(|a| u24(*a))
 }
 
+/// A big-endian `u32` at `offset`. `None` if the bytes are not there.
 #[inline]
 pub fn u32_at(data: &[u8], offset: usize) -> Option<u32> {
     array_at::<4>(data, offset).map(|a| u32::from_be_bytes(*a))
 }
 
+/// A big-endian `i32` at `offset`. `None` if the bytes are not there.
 #[inline]
 pub fn i32_at(data: &[u8], offset: usize) -> Option<i32> {
     array_at::<4>(data, offset).map(|a| i32::from_be_bytes(*a))
 }
 
+/// A big-endian `i64` at `offset`. `None` if the bytes are not there.
 #[inline]
 pub fn i64_at(data: &[u8], offset: usize) -> Option<i64> {
     array_at::<8>(data, offset).map(|a| i64::from_be_bytes(*a))

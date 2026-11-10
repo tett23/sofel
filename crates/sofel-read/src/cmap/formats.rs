@@ -47,8 +47,8 @@ impl<'a> Format0<'a> {
         u32::from(self.language)
     }
 
-    /// The raw glyph id for `cp`: 0 when unmapped, `None` when `cp` is
-    /// outside the table or the data runs out.
+    /// The raw glyph id stored for `cp`, before [`super::Subtable::glyph`]
+    /// drops glyph 0. Unmapped codes give 0 or `None`.
     pub fn glyph(&self, cp: u32) -> Option<u32> {
         self.ids.get(to_usize(cp)).map(|&g| u32::from(g))
     }
@@ -128,8 +128,8 @@ impl<'a> Format2<'a> {
         }
     }
 
-    /// The raw glyph id for `cp`: 0 when unmapped, `None` when `cp` is
-    /// outside the table or the data runs out.
+    /// The raw glyph id stored for `cp`, before [`super::Subtable::glyph`]
+    /// drops glyph 0. Unmapped codes give 0 or `None`.
     pub fn glyph(&self, cp: u32) -> Option<u32> {
         let sub = self.subheader(cp)?;
         let first = u32::from(be::u16_at(self.data, sub)?);
@@ -250,8 +250,8 @@ impl<'a> Format4<'a> {
         None
     }
 
-    /// The raw glyph id for `cp`: 0 when unmapped, `None` when `cp` is
-    /// outside the table or the data runs out.
+    /// The raw glyph id stored for `cp`, before [`super::Subtable::glyph`]
+    /// drops glyph 0. Unmapped codes give 0 or `None`.
     pub fn glyph(&self, cp: u32) -> Option<u32> {
         if cp > 0xFFFF {
             return None;
@@ -329,8 +329,8 @@ impl<'a> Format6<'a> {
         u32::from(self.language)
     }
 
-    /// The raw glyph id for `cp`: 0 when unmapped, `None` when `cp` is
-    /// outside the table or the data runs out.
+    /// The raw glyph id stored for `cp`, before [`super::Subtable::glyph`]
+    /// drops glyph 0. Unmapped codes give 0 or `None`.
     pub fn glyph(&self, cp: u32) -> Option<u32> {
         let i = cp.checked_sub(u32::from(self.first))?;
         Some(
@@ -415,8 +415,8 @@ impl<'a> Format8<'a> {
         self.language
     }
 
-    /// The raw glyph id for `cp`: 0 when unmapped, `None` when `cp` is
-    /// outside the table or the data runs out.
+    /// The raw glyph id stored for `cp`, before [`super::Subtable::glyph`]
+    /// drops glyph 0. Unmapped codes give 0 or `None`.
     pub fn glyph(&self, cp: u32) -> Option<u32> {
         let Some((start, _, id)) = find_group(self.groups, cp) else {
             return Some(0);
@@ -468,8 +468,8 @@ impl<'a> Format10<'a> {
         self.language
     }
 
-    /// The raw glyph id for `cp`: 0 when unmapped, `None` when `cp` is
-    /// outside the table or the data runs out.
+    /// The raw glyph id stored for `cp`, before [`super::Subtable::glyph`]
+    /// drops glyph 0. Unmapped codes give 0 or `None`.
     pub fn glyph(&self, cp: u32) -> Option<u32> {
         let i = cp.checked_sub(self.start)?;
         Some(
@@ -523,8 +523,8 @@ impl<'a> Groups<'a> {
         self.language
     }
 
-    /// The raw glyph id for `cp`: 0 when unmapped, `None` when `cp` is
-    /// outside the table or the data runs out.
+    /// The raw glyph id stored for `cp`, before [`super::Subtable::glyph`]
+    /// drops glyph 0. Unmapped codes give 0 or `None`.
     pub fn glyph(&self, cp: u32) -> Option<u32> {
         let Some((start, _, id)) = find_group(self.groups, cp) else {
             return Some(0);

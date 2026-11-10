@@ -35,6 +35,11 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test
+      # API documentation: every public item documented, no broken links.
+      - name: Build the API documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps -p sofel-geom -p sofel-read -p sofel-font -p sofel-outline -p sofel-raster -p sofel-cli
       # docs/adr/0003, docs/adr/0008
       - name: Check crate dependencies
         run: sh scripts/check-deps.sh

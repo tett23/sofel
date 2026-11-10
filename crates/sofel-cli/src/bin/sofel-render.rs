@@ -1,3 +1,5 @@
+//! `sofel-render`: see [`sofel_cli::render`].
+
 fn main() {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     let code = sofel_cli::render::run(

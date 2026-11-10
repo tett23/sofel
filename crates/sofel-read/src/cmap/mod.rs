@@ -6,6 +6,8 @@
 //! subtable unreadable here (ADR 0007, ADR 0008). Choosing a subtable,
 //! remapping symbol fonts and converting Mac encodings are left to
 //! `sofel-font`.
+//!
+//! Specification: <https://learn.microsoft.com/typography/opentype/spec/cmap>
 
 mod check;
 mod formats;

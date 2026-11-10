@@ -4,7 +4,12 @@ use core::fmt;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ReadError {
     /// `needed` bytes were required but only `available` were there.
-    Truncated { needed: usize, available: usize },
+    Truncated {
+        /// Bytes required.
+        needed: usize,
+        /// Bytes present.
+        available: usize,
+    },
     /// An unknown table or file version.
     UnknownVersion(u32),
     /// An unknown subtable format.

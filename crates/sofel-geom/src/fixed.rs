@@ -12,6 +12,7 @@
 pub struct F26Dot6(pub i32);
 
 impl F26Dot6 {
+    /// The integer `v` in 26.6 (`v * 64`), saturating at the `i32` range.
     pub const fn from_int(v: i32) -> F26Dot6 {
         F26Dot6(v.saturating_mul(64))
     }
@@ -22,6 +23,7 @@ impl F26Dot6 {
 pub struct Fixed(pub i32);
 
 impl Fixed {
+    /// 1.0 (`0x10000`).
     pub const ONE: Fixed = Fixed(0x1_0000);
 }
 
@@ -40,20 +42,27 @@ impl From<F2Dot14> for Fixed {
 /// outlines, font units for unscaled ones.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
 pub struct Point {
+    /// The horizontal coordinate, growing to the right.
     pub x: i32,
+    /// The vertical coordinate, growing upwards (as in fonts and FreeType).
     pub y: i32,
 }
 
 /// A 2x2 matrix of 16.16 numbers.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Matrix {
+    /// The factor of `x` in `x'`.
     pub xx: Fixed,
+    /// The factor of `y` in `x'`.
     pub xy: Fixed,
+    /// The factor of `x` in `y'`.
     pub yx: Fixed,
+    /// The factor of `y` in `y'`.
     pub yy: Fixed,
 }
 
 impl Matrix {
+    /// The identity matrix.
     pub const IDENTITY: Matrix = Matrix {
         xx: Fixed::ONE,
         xy: Fixed(0),
