@@ -41,3 +41,10 @@ sofel_font::HbScale::em_scalef_x Takes a float; the C ABI uses fixed-width integ
 sofel_font::HbScale::em_scalef_y Takes a float; the C ABI uses fixed-width integers only (ADR 0015).
 sofel_font::Language::bytes An iterator over the tag; C gets the tag as a string from sofel_font_name_entry.
 sofel_font::Language::is_empty C gets the tag's length from sofel_font_name_entry.
+sofel_font::HbCff1::* HarfBuzz's CFF accelerator, the parts that glyph boxes and names read (ADR 0021); C gets the boxes from sofel_font_glyph_extents and the names from sofel_font_glyph_name.
+sofel_font::HbCff2::* HarfBuzz's CFF2 accelerator, the parts that glyph boxes read (ADR 0021); C gets the boxes from sofel_font_glyph_extents.
+sofel_outline::cff1_extents The CFF step of sofel_outline::HbExtents::glyph_extents, which sofel_font_glyph_extents runs.
+sofel_outline::cff2_extents The CFF2 step of sofel_outline::HbExtents::glyph_extents, which sofel_font_glyph_extents runs.
+sofel_outline::HbExtents::cff1 Returns the Rust accelerator that sofel_font_t keeps inside.
+sofel_outline::HbExtents::cff2 Returns the Rust accelerator that sofel_font_t keeps inside.
+sofel_outline::HbExtents::font Returns the font that sofel_font_t is.

@@ -12,7 +12,7 @@ use sofel_bench::harness::{Check, Config, Row, Stats, SystemClock, measure, repo
 use sofel_font::Font;
 use sofel_font::read::GlyphId;
 use sofel_geom::{Command, FnPen};
-use sofel_outline::{Scale, Scratch, draw};
+use sofel_outline::{HbExtents, Scale, Scratch, draw};
 use sofel_raster::Rasterizer;
 
 const FONTS: [(&str, &str); 5] = [
@@ -32,6 +32,28 @@ const FONTS: [(&str, &str); 5] = [
     (
         "SourceSerifVariable-Roman",
         "harfbuzz/test/subset/data/fonts/SourceSerifVariable-Roman.ttf",
+    ),
+];
+
+/// The CFF and CFF2 fonts of HarfBuzz's perf/benchmark-font.cc (the
+/// CFF2 one at its default instance) and a CID-keyed Japanese font
+/// (ADR 0021).
+const CFF_FONTS: [(&str, &str); 4] = [
+    (
+        "SourceSansPro-Regular",
+        "harfbuzz/test/subset/data/fonts/SourceSansPro-Regular.otf",
+    ),
+    (
+        "NotoSerifMyanmar-Regular",
+        "harfbuzz/test/subset/data/fonts/NotoSerifMyanmar-Regular.otf",
+    ),
+    (
+        "AdobeVFPrototype",
+        "harfbuzz/test/subset/data/fonts/AdobeVFPrototype.otf",
+    ),
+    (
+        "SourceHanSans-Regular_subset",
+        "harfbuzz/test/subset/data/fonts/SourceHanSans-Regular_subset.otf",
     ),
 ];
 
@@ -197,6 +219,135 @@ fn unicode_properties(b: &mut Bench, testdata: &std::path::Path) {
     );
 }
 
+/// A box as one number, the way the shim sums HarfBuzz's.
+fn box_sum(e: Option<sofel_font::GlyphExtents>) -> u64 {
+    e.map_or(wrap(i64::MIN), |e| {
+        wrap(
+            i64::from(e.x_bearing)
+                + i64::from(e.y_bearing)
+                + i64::from(e.width)
+                + i64::from(e.height),
+        )
+    })
+}
+
+/// The HarfBuzz items of the CFF and CFF2 fonts (ADR 0021): glyph boxes,
+/// glyph names and names to glyphs, and opening the font with the first
+/// box. The outline, raster and FreeType items are added with the
+/// outlines.
+fn cff_items(b: &mut Bench, testdata: &std::path::Path) {
+    for (name, path) in CFF_FONTS {
+        let Ok(bytes) = std::fs::read(testdata.join(path)) else {
+            eprintln!(
+                "{}: missing; run scripts/fetch-testdata.sh",
+                testdata.join(path).display()
+            );
+            std::process::exit(1);
+        };
+        let font = Font::new(&bytes, 0).expect("sofel opens the font");
+        let hb = HbFont::open(&bytes).expect("HarfBuzz opens the font");
+        hb.set_ppem(0);
+        let n = font.num_glyphs();
+        let extents = HbExtents::new(&font);
+        b.item(
+            name,
+            "glyph extents".into(),
+            &mut || {
+                (0..n)
+                    .map(|g| box_sum(extents.glyph_extents(GlyphId(g))))
+                    .fold(0, u64::wrapping_add)
+            },
+            None,
+            Some((
+                &mut || {
+                    (0..n)
+                        .map(|g| hb.glyph_extents(g).map_or(wrap(i64::MIN), wrap))
+                        .fold(0, u64::wrapping_add)
+                },
+                Compare::Yes,
+            )),
+        );
+
+        let first = 1.min(n.saturating_sub(1));
+        b.item(
+            name,
+            "open (HarfBuzz)".into(),
+            &mut || {
+                let f = Font::new(&bytes, 0).expect("sofel opens the font");
+                box_sum(HbExtents::new(&f).glyph_extents(GlyphId(first)))
+            },
+            None,
+            Some((
+                &mut || HbFont::open_extents(&bytes, first).map_or(wrap(i64::MIN), wrap),
+                Compare::Yes,
+            )),
+        );
+
+        let mut buf = vec![0u32; font.glyph_names_len()];
+        let Some(names) = font.glyph_names(&mut buf) else {
+            continue;
+        };
+        if extents.cff1().is_none_or(|c| c.is_cid()) {
+            continue;
+        }
+        // The name as hb_font_get_glyph_name copies it: cut at a 0 byte
+        // and at 255 bytes.
+        let cut = |s: &[u8]| -> usize {
+            let s = &s[..s.len().min(255)];
+            s.iter().position(|&c| c == 0).unwrap_or(s.len())
+        };
+        let mut hb_buf = [0u8; 256];
+        b.item(
+            name,
+            "glyph names".into(),
+            &mut || {
+                (0..n)
+                    .map(|g| {
+                        names
+                            .glyph_name(GlyphId(g))
+                            .map_or(wrap(-1), |s| cut(s) as u64)
+                    })
+                    .fold(0, u64::wrapping_add)
+            },
+            None,
+            Some((
+                &mut || {
+                    (0..n)
+                        .map(|g| hb.glyph_name_len(g, &mut hb_buf).map_or(wrap(-1), wrap))
+                        .fold(0, u64::wrapping_add)
+                },
+                Compare::Yes,
+            )),
+        );
+        let all: Vec<&[u8]> = (0..n)
+            .filter_map(|g| names.glyph_name(GlyphId(g)))
+            .map(|s| &s[..cut(s)])
+            .collect();
+        b.item(
+            name,
+            "glyph from name".into(),
+            &mut || {
+                all.iter()
+                    .map(|s| {
+                        names
+                            .glyph_from_name(s)
+                            .map_or(wrap(-1), |g| u64::from(g.0))
+                    })
+                    .fold(0, u64::wrapping_add)
+            },
+            None,
+            Some((
+                &mut || {
+                    all.iter()
+                        .map(|s| hb.glyph_from_name(s).map_or(wrap(-1), u64::from))
+                        .fold(0, u64::wrapping_add)
+                },
+                Compare::Yes,
+            )),
+        );
+    }
+}
+
 fn main() {
     let a = args();
     let text: Vec<u32> = TEXTS
@@ -223,6 +374,7 @@ fn main() {
         checks: Vec::new(),
     };
     unicode_properties(&mut b, &a.testdata);
+    cff_items(&mut b, &a.testdata);
     for (name, path) in FONTS {
         let bytes = match std::fs::read(a.testdata.join(path)) {
             Ok(b) => b,

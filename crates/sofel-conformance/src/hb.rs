@@ -16,12 +16,13 @@
 //!   `hb_ot_layout_get_font_extents` for both directions, the scripts
 //!   and languages `hb-dump` lists and every baseline tag.
 //!
-//! sofel's glyph boxes come from glyf only ([`Font::glyf_extents`]);
-//! the boxes of other outline formats and of color glyphs come with
-//! ADR 0021 and ADR 0023.
+//! sofel's glyph boxes come from glyf, CFF2 and CFF
+//! ([`HbExtents`], ADR 0021); the boxes of color glyphs come with
+//! ADR 0023.
 
 use sofel_font::read::{GlyphId, Tag};
 use sofel_font::{Direction, Font, FontExtents, GlyphExtents, HbScale, MetricsTag};
+use sofel_outline::HbExtents;
 
 use crate::compare::Item;
 
@@ -135,7 +136,8 @@ fn ext4(e: GlyphExtents) -> [i32; 4] {
 /// sofel's values for the scales HarfBuzz wrote, glyphs below
 /// `num_glyphs`.
 pub fn sofel_face(font: &Font<'_>, hb: &HbFace) -> HbFace {
-    let boxes = |g: GlyphId| font.glyf_extents(g);
+    let extents = HbExtents::new(font);
+    let boxes = |g: GlyphId| extents.glyph_extents(g);
     let scales = hb
         .scales
         .iter()
@@ -159,7 +161,7 @@ pub fn sofel_face(font: &Font<'_>, hb: &HbFace) -> HbFace {
                         scale.v_advance(font, g),
                         ox,
                         oy,
-                        scale.glyf_extents(font, g).map(ext4),
+                        extents.scaled_glyph_extents(g, &scale).map(ext4),
                     )
                 })
                 .collect();
@@ -472,13 +474,49 @@ fn list<T: PartialEq + std::fmt::Debug>(
 
 /// Compares the names of one face: items `names`, `name_utf`,
 /// `glyph_names` and `glyph_from_name`.
+///
+/// When two glyphs or more have the same name, the glyph HarfBuzz finds
+/// for it depends on its sort, and sofel finds the one with the smallest
+/// glyph id (ADR 0021): for such fonts `glyph_from_name` compares the
+/// name of the glyph found instead of its id.
 pub fn compare_names(font: &str, hb: &HbNames, ours: &HbNames) -> Vec<Item> {
     let f = hb.index;
+    let named: Vec<&str> = hb
+        .glyph_names
+        .iter()
+        .filter(|x| x.1)
+        .map(|x| x.2.as_str())
+        .collect();
+    let mut sorted = named.clone();
+    sorted.sort_unstable();
+    let duplicates = sorted.windows(2).any(|w| w[0] == w[1]);
+    let from_names = if duplicates {
+        let name_of = |g: u32| {
+            hb.glyph_names
+                .iter()
+                .find(|x| x.0 == g)
+                .map_or("-".to_string(), |x| x.2.clone())
+        };
+        let by_name = |v: &[(u32, bool, u32)]| -> Vec<(u32, bool, String)> {
+            v.iter()
+                .map(|&(g, found, r)| (g, found, if found { name_of(r) } else { "-".into() }))
+                .collect()
+        };
+        list(
+            font,
+            f,
+            "glyph_from_name",
+            &by_name(&hb.from_names),
+            &by_name(&ours.from_names),
+        )
+    } else {
+        list(font, f, "glyph_from_name", &hb.from_names, &ours.from_names)
+    };
     vec![
         list(font, f, "names", &hb.names, &ours.names),
         list(font, f, "name_utf", &hb.utf, &ours.utf),
         list(font, f, "glyph_names", &hb.glyph_names, &ours.glyph_names),
-        list(font, f, "glyph_from_name", &hb.from_names, &ours.from_names),
+        from_names,
     ]
 }
 
@@ -646,7 +684,8 @@ fn dir_of(d: char) -> Direction {
 
 /// sofel's values for the calls `hb-dump --baselines` made.
 pub fn sofel_baselines(font: &Font<'_>, hb: &HbBaselines) -> HbBaselines {
-    let boxes = |g: GlyphId| font.glyf_extents(g);
+    let extents = HbExtents::new(font);
+    let boxes = |g: GlyphId| extents.glyph_extents(g);
     let scales = hb
         .scales
         .iter()

@@ -21,6 +21,10 @@ unsafe extern "C" {
     pub fn bhb_v_advance(font: *mut c_void, gid: c_uint) -> c_int;
     pub fn bhb_v_origin(font: *mut c_void, gid: c_uint) -> c_long;
     pub fn bhb_draw(font: *mut c_void, gid: c_uint) -> c_long;
+    pub fn bhb_glyph_extents(font: *mut c_void, gid: c_uint) -> c_long;
+    pub fn bhb_glyph_name(font: *mut c_void, gid: c_uint, buf: *mut c_uchar) -> c_long;
+    pub fn bhb_glyph_from_name(font: *mut c_void, name: *const c_uchar, len: c_int) -> c_long;
+    pub fn bhb_open_extents(data: *const c_uchar, len: c_uint, gid: c_uint) -> c_long;
 
     // HarfBuzz's own Unicode functions (hb-unicode.h), called directly.
     pub fn hb_unicode_funcs_get_default() -> *mut c_void;
@@ -107,6 +111,33 @@ impl HbFont {
     pub fn draw(&self, gid: u32) -> i64 {
         // SAFETY: a valid font.
         unsafe { bhb_draw(self.0, gid) as i64 }
+    }
+    /// The sum of the glyph box's values; `None` without a box.
+    pub fn glyph_extents(&self, gid: u32) -> Option<i64> {
+        // SAFETY: a valid font.
+        let v = unsafe { bhb_glyph_extents(self.0, gid) };
+        (v != c_long::MIN).then_some(v as i64)
+    }
+    /// The length of the glyph's name (`hb_font_get_glyph_name` with 256
+    /// bytes, read back as a C string); `None` without a name.
+    pub fn glyph_name_len(&self, gid: u32, buf: &mut [u8; 256]) -> Option<i64> {
+        // SAFETY: a valid font; the buffer has the 256 bytes the shim uses.
+        let n = unsafe { bhb_glyph_name(self.0, gid, buf.as_mut_ptr()) };
+        (n >= 0).then_some(n as i64)
+    }
+    /// The glyph with `name`, or `None`.
+    pub fn glyph_from_name(&self, name: &[u8]) -> Option<u32> {
+        // SAFETY: a valid font; `name` is valid for its length.
+        let g = unsafe { bhb_glyph_from_name(self.0, name.as_ptr(), name.len() as c_int) };
+        (g >= 0).then_some(g as u32)
+    }
+    /// Opens `data` and gets the box of `gid`: the sum of its values, or
+    /// `None`.
+    pub fn open_extents(data: &[u8], gid: u32) -> Option<i64> {
+        // SAFETY: the blob is read-only over `data` and destroyed before
+        // the call returns.
+        let v = unsafe { bhb_open_extents(data.as_ptr(), data.len() as c_uint, gid) };
+        (v != c_long::MIN).then_some(v as i64)
     }
 }
 
