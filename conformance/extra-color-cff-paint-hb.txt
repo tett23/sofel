@@ -1,0 +1,264 @@
+face 0
+paint 0 0 0 1
+fill glyph 0 solid 0 0 0 255
+paint 0 0 1 1
+fill glyph 1 solid 0 0 0 255
+paint 0 0 2 1
+fill glyph 2 solid 0 0 0 255
+paint 0 0 3 1
+fill glyph 3 solid 0 0 0 255
+paint 0 0 4 1
+fill glyph 4 solid 0 0 0 255
+paint 0 0 5 1
+fill glyph 5 solid 0 0 0 255
+paint 0 0 6 1
+fill glyph 6 solid 0 0 0 255
+paint 0 0 7 1
+fill glyph 7 solid 0 0 0 255
+paint 0 0 8 1
+fill glyph 8 solid 0 0 0 255
+paint 0 0 9 1
+fill glyph 9 solid 0 0 0 255
+paint 0 0 10 1
+fill glyph 10 solid 0 0 0 255
+paint 0 0 11 1
+fill glyph 11 solid 0 0 0 255
+paint 0 0 12 1
+fill glyph 12 solid 0 0 0 255
+paint 0 0 13 1
+fill glyph 13 solid 0 0 0 255
+paint 0 0 14 1
+fill glyph 14 solid 0 0 0 255
+paint 0 0 15 1
+fill glyph 15 solid 0 0 0 255
+paint 0 0 16 1
+fill glyph 16 solid 0 0 0 255
+paint 0 0 17 1
+fill glyph 17 solid 0 0 0 255
+paint 0 0 18 1
+fill glyph 18 solid 0 0 0 255
+paint 0 0 19 43
+start transform 1 0 0 1 0 0
+  start clip rectangle 128 -160 1.12e+03 832
+    start transform 1 0 0 1 0 0
+      start clip glyph 28
+        start transform 1 0 0 1 0 0
+          linear gradient
+            p0 206 410
+            p1 1.07e+03 410
+            colors 0
+              0 255 215 0 128
+              1 255 0 0 255
+        end transform
+      end clip
+    end transform
+    start transform 0.125 0 0 8 558 -2.45e+03
+      start transform 1 0 0 1 0 0
+        start clip glyph 28
+          start transform 1 0 0 1 0 0
+            linear gradient
+              p0 158 404
+              p1 158 296
+              colors 0
+                0 255 215 0 255
+                1 255 0 0 128
+          end transform
+        end clip
+      end transform
+    end transform
+    start transform 1 0 0 1 0 0
+      start clip glyph 29
+        start transform 1 0 0 1 0 0
+          radial gradient
+            p0 638 350 radius 0
+            p1 638 350 radius 240
+            colors 0
+              0 255 215 0 255
+              0.85 255 0 0 128
+              1 255 255 255 179
+        end transform
+      end clip
+    end transform
+  end clip
+end transform
+paint 0 0 20 19
+start transform 1 0 0 1 0 0
+  start clip rectangle 32 -256 1.25e+03 960
+    start transform 1.25 0 0 10 -159 -3.15e+03
+      start transform 1 0 0 1 0 0
+        start clip glyph 28
+          start transform 1 0 0 1 0 0
+            linear gradient
+              p0 158 410
+              p1 446 410
+              colors 2
+                0 0 128 0 255
+                0.5 255 255 255 255
+                1 255 0 0 255
+          end transform
+        end clip
+      end transform
+    end transform
+  end clip
+end transform
+paint 0 0 21 19
+start transform 1 0 0 1 0 0
+  start clip rectangle 32 -256 1.25e+03 960
+    start transform 1.25 0 0 10 -159 -3.15e+03
+      start transform 1 0 0 1 0 0
+        start clip glyph 28
+          start transform 1 0 0 1 0 0
+            linear gradient
+              p0 158 410
+              p1 446 410
+              colors 1
+                0 0 128 0 255
+                0.5 255 255 255 255
+                1 255 0 0 255
+          end transform
+        end clip
+      end transform
+    end transform
+  end clip
+end transform
+paint 0 0 22 19
+start transform 1 0 0 1 0 0
+  start clip rectangle 32 -256 1.25e+03 960
+    start transform 1.25 0 0 10 -159 -3.15e+03
+      start transform 1 0 0 1 0 0
+        start clip glyph 28
+          start transform 1 0 0 1 0 0
+            linear gradient
+              p0 158 410
+              p1 173 292
+              colors 0
+                0 0 128 0 255
+                0.5 255 255 255 255
+                1 255 0 0 255
+          end transform
+        end clip
+      end transform
+    end transform
+  end clip
+end transform
+paint 0 0 23 21
+start transform 1 0 0 1 0 0
+  start clip rectangle 32 -256 1.25e+03 960
+    start transform 1.25 0 0 10 -159 -3.15e+03
+      start transform 1 0 0 1 0 0
+        start clip glyph 28
+          start transform 1 0 0 1 0 0
+            start transform 1 0 -0.364 0.125 0 0
+              radial gradient
+                p0 1.51e+03 3.04e+03 radius 0
+                p1 1.51e+03 3.04e+03 radius 240
+                colors 2
+                  0 0 0 139 255
+                  0.5 135 206 235 255
+                  1 128 0 128 255
+            end transform
+          end transform
+        end clip
+      end transform
+    end transform
+  end clip
+end transform
+paint 0 0 24 21
+start transform 1 0 0 1 0 0
+  start clip rectangle 32 -256 1.25e+03 960
+    start transform 1.25 0 0 10 -159 -3.15e+03
+      start transform 1 0 0 1 0 0
+        start clip glyph 28
+          start transform 1 0 0 1 0 0
+            start transform 1 0 -0.364 0.125 0 0
+              radial gradient
+                p0 1.51e+03 3.04e+03 radius 0
+                p1 1.51e+03 3.04e+03 radius 240
+                colors 1
+                  0 0 0 139 255
+                  0.5 135 206 235 255
+                  1 128 0 128 255
+            end transform
+          end transform
+        end clip
+      end transform
+    end transform
+  end clip
+end transform
+paint 0 0 25 21
+start transform 1 0 0 1 0 0
+  start clip rectangle 32 -256 1.25e+03 960
+    start transform 1.25 0 0 10 -159 -3.15e+03
+      start transform 1 0 0 1 0 0
+        start clip glyph 28
+          start transform 1 0 0 1 0 0
+            start transform 1 0 -0.364 0.125 0 0
+              radial gradient
+                p0 1.66e+03 2.8e+03 radius 0
+                p1 1.66e+03 2.8e+03 radius 480
+                colors 0
+                  0 0 0 139 255
+                  0.5 135 206 235 255
+                  1 25 25 112 255
+            end transform
+          end transform
+        end clip
+      end transform
+    end transform
+  end clip
+end transform
+paint 0 0 26 30
+start transform 1 0 0 1 0 0
+  start clip rectangle 128 -160 1.12e+03 832
+    start transform 1 0 0 1 0 0
+      start clip glyph 28
+        start transform 1 0 0 1 0 0
+          linear gradient
+            p0 206 410
+            p1 1.07e+03 410
+            colors 0
+              0 255 215 0 255
+              1 255 0 0 255
+        end transform
+      end clip
+    end transform
+    start transform 0.125 0 0 8 558 -2.45e+03
+      start transform 1 0 0 1 0 0
+        start clip glyph 28
+          start transform 1 0 0 1 0 0
+            linear gradient
+              p0 158 404
+              p1 158 296
+              colors 0
+                0 255 215 0 255
+                1 255 0 0 255
+          end transform
+        end clip
+      end transform
+    end transform
+  end clip
+end transform
+paint 0 0 27 18
+start transform 1 0 0 1 0 0
+  start clip rectangle 128 -160 1.12e+03 832
+    start transform 2 0 0 2 -638 -350
+      start transform 1 0 0 1 0 0
+        start clip glyph 29
+          start transform 1 0 0 1 0 0
+            radial gradient
+              p0 638 350 radius 0
+              p1 638 350 radius 240
+              colors 0
+                0.1 255 215 0 255
+                0.95 255 0 0 255
+          end transform
+        end clip
+      end transform
+    end transform
+  end clip
+end transform
+paint 0 0 28 1
+fill glyph 28 solid 0 0 0 255
+paint 0 0 29 1
+fill glyph 29 solid 0 0 0 255
+end

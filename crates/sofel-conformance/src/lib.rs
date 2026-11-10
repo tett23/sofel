@@ -18,6 +18,7 @@ pub mod color;
 pub mod compare;
 pub mod dump;
 pub mod expect;
+pub mod extra;
 pub mod fonts;
 pub mod hb;
 pub mod outline;
