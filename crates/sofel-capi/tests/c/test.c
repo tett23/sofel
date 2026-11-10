@@ -42,6 +42,17 @@ static int failures;
  */
 static void check_declarations(void) {
   uint32_t (*version)(void) = sofel_version;
+  uint32_t (*u_version)(void) = sofel_unicode_version;
+  uint8_t (*u_general_category)(uint32_t) = sofel_unicode_general_category;
+  uint8_t (*u_combining_class)(uint32_t) = sofel_unicode_combining_class;
+  uint32_t (*u_script)(uint32_t) = sofel_unicode_script;
+  int32_t (*u_script_from_iso15924)(const uint8_t *, size_t, uint32_t *) =
+      sofel_script_from_iso15924;
+  uint32_t (*u_mirroring)(uint32_t) = sofel_unicode_mirroring;
+  int32_t (*u_decompose)(uint32_t, uint32_t *, uint32_t *) = sofel_unicode_decompose;
+  int32_t (*u_compose)(uint32_t, uint32_t, uint32_t *) = sofel_unicode_compose;
+  uint8_t (*u_pictographic)(uint32_t) = sofel_unicode_is_extended_pictographic;
+  uint8_t (*u_vertical_orientation)(uint32_t) = sofel_unicode_vertical_orientation;
   const char *(*error_string)(int32_t) = sofel_error_string;
   int32_t (*mul_fix)(int32_t, int32_t) = sofel_mul_fix;
   int32_t (*div_fix)(int32_t, int32_t) = sofel_div_fix;
@@ -133,6 +144,11 @@ static void check_declarations(void) {
       (const void *)diag_offset,     (const void *)diag_severity,
       (const void *)diag_kind,       (const void *)diag_message,
       (const void *)diag_details,
+      (const void *)u_version,       (const void *)u_general_category,
+      (const void *)u_combining_class, (const void *)u_script,
+      (const void *)u_script_from_iso15924, (const void *)u_mirroring,
+      (const void *)u_decompose,     (const void *)u_compose,
+      (const void *)u_pictographic,  (const void *)u_vertical_orientation,
   };
   size_t i;
   for (i = 0; i < COUNT(all); i++) CHECK(all[i] != NULL);
@@ -295,6 +311,46 @@ static void test_geometry(void) {
   CHECK(x == TRANSFORM_X && y == TRANSFORM_Y);
   CHECK(sofel_transform(NULL, &y, 0x10000, 0, 0, 0x10000) == SOFEL_ERROR_NULL);
   CHECK(sofel_transform(&x, NULL, 0x10000, 0, 0, 0x10000) == SOFEL_ERROR_NULL);
+}
+
+static void test_unicode(void) {
+  size_t i;
+  uint32_t a = 7, b = 7, ab = 7, script = 7;
+  CHECK(sofel_unicode_version() == UNICODE_VERSION);
+  for (i = 0; i < COUNT(unicode_cases); i++) {
+    const struct unicode_case *c = &unicode_cases[i];
+    uint32_t da = 0, db = 0;
+    CHECK(sofel_unicode_general_category(c->codepoint) == c->gc);
+    CHECK(sofel_unicode_combining_class(c->codepoint) == c->ccc);
+    CHECK(sofel_unicode_script(c->codepoint) == c->script);
+    CHECK(sofel_unicode_mirroring(c->codepoint) == c->mirror);
+    CHECK(sofel_unicode_decompose(c->codepoint, &da, &db) == c->status);
+    CHECK(da == c->a && db == c->b);
+    CHECK(sofel_unicode_is_extended_pictographic(c->codepoint) == c->pict);
+    CHECK(sofel_unicode_vertical_orientation(c->codepoint) == c->vo);
+  }
+  CHECK(sofel_unicode_general_category(0x41) == SOFEL_GC_UPPERCASE_LETTER);
+  CHECK(sofel_unicode_script(0x41) == 0x4C61746E);
+  CHECK(sofel_unicode_vertical_orientation(0x3042) == SOFEL_VO_U);
+  for (i = 0; i < COUNT(compose_cases); i++) {
+    const struct compose_case *c = &compose_cases[i];
+    uint32_t out = 0;
+    CHECK(sofel_unicode_compose(c->a, c->b, &out) == c->status);
+    CHECK(out == c->ab);
+  }
+  for (i = 0; i < COUNT(script_cases); i++) {
+    const struct script_case *c = &script_cases[i];
+    uint32_t out = 0;
+    CHECK(sofel_script_from_iso15924((const uint8_t *)c->tag, strlen(c->tag), &out) ==
+          c->status);
+    CHECK(out == c->script);
+  }
+  CHECK(sofel_unicode_decompose(0xC5, NULL, &b) == SOFEL_ERROR_NULL);
+  CHECK(sofel_unicode_decompose(0xC5, &a, NULL) == SOFEL_ERROR_NULL);
+  CHECK(sofel_unicode_compose(0x41, 0x30A, NULL) == SOFEL_ERROR_NULL);
+  CHECK(sofel_script_from_iso15924(NULL, 4, &script) == SOFEL_ERROR_NULL);
+  CHECK(sofel_script_from_iso15924((const uint8_t *)"Latn", 4, NULL) == SOFEL_ERROR_NULL);
+  CHECK(a == 7 && b == 7 && ab == 7 && script == 7);
 }
 
 static void test_open(void) {
@@ -741,6 +797,7 @@ int main(void) {
   check_declarations();
   test_version_and_errors();
   test_geometry();
+  test_unicode();
   test_open();
 
   font = sofel_font_create(font_data, sizeof font_data, 0, &e);

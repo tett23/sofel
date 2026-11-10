@@ -4,10 +4,10 @@ sofelのライブラリのクレートを使うための手引き。
 各項目の詳しい説明はrustdocにある。手元では次で作って開く。
 
 ```sh
-cargo doc --no-deps -p sofel-geom -p sofel-read -p sofel-font -p sofel-outline -p sofel-raster -p sofel-cli --open
+cargo doc --no-deps -p sofel-geom -p sofel-unicode -p sofel-read -p sofel-font -p sofel-outline -p sofel-raster -p sofel-cli --open
 ```
 
-ここに書くのは、2段階目（[ADR 0009](adr/0009-geom-fixed-point-and-pen.md)〜[ADR 0012](adr/0012-antialiased-rasterizer.md)）までに公開しているAPIである。
+ここに書くのは、2段階目（[ADR 0009](adr/0009-geom-fixed-point-and-pen.md)〜[ADR 0012](adr/0012-antialiased-rasterizer.md)）までと、Unicodeの文字の性質（[ADR 0019](adr/0019-unicode-character-data.md)）の公開しているAPIである。
 仕様は [specifications.md](specifications.md) にある。
 
 ## クレートの構成
@@ -15,6 +15,7 @@ cargo doc --no-deps -p sofel-geom -p sofel-read -p sofel-font -p sofel-outline -
 | クレート | 役割 | 依存 |
 |---|---|---|
 | `sofel-geom` | 固定小数点の演算（`FT_MulFix` などと同じ結果）と、輪郭を受け渡す `Pen` | なし |
+| `sofel-unicode` | Unicode 18.0.0の文字の性質。HarfBuzzの既定のUnicodeの関数と同じ値を返す | なし |
 | `sofel-read` | sfntの表の読み取りと検証。コピーも確保もしない | なし |
 | `sofel-font` | フォントを一度だけ読み、グリフの数、文字からグリフへの対応、送り幅を返す | `sofel-read`、`sofel-geom` |
 | `sofel-outline` | glyfとGLYFの輪郭を、ヒンティングなしでFreeTypeと同じ座標で `Pen` に渡す | `sofel-font`、`sofel-geom` |
@@ -169,6 +170,34 @@ match FontFile::new(&data)? {
 - 型：`F26Dot6`、`Fixed`（16.16）、`F2Dot14`、`Point`（`i32` の `x`、`y`）、`Matrix`。
 - 結果が `i32` に収まらないときは飽和させる（FreeTypeは未定義の動作になる箇所）。
 
+## Unicodeの文字の性質（`sofel-unicode`）
+
+```rust
+use sofel_unicode::{GeneralCategory, Script, VerticalOrientation};
+
+assert_eq!(sofel_unicode::general_category(0x41), GeneralCategory::UppercaseLetter);
+assert_eq!(sofel_unicode::script(0x3042).tag(), *b"Hira");
+assert_eq!(sofel_unicode::decompose(0xC5), Some((0x41, 0x30A)));
+assert_eq!(sofel_unicode::compose(0x41, 0x30A), Some(0xC5));
+assert_eq!(sofel_unicode::vertical_orientation(0x41), VerticalOrientation::R);
+assert_eq!(Script::from_iso15924(b"latn").map(Script::tag), Some(*b"Latn"));
+```
+
+| sofel | HarfBuzz |
+|---|---|
+| `general_category(cp)` | `hb_unicode_general_category`（値も同じ順） |
+| `combining_class(cp)` | `hb_unicode_combining_class` |
+| `script(cp)`、`Script::tag` | `hb_unicode_script`（`hb_script_t` はタグの4バイト） |
+| `Script::from_iso15924(tag)` | `hb_script_from_string`（`Qaai`、`Qaac` も読みかえる） |
+| `mirroring(cp)` | `hb_unicode_mirroring` |
+| `decompose(cp)`、`compose(a, b)` | `hb_unicode_decompose`、`hb_unicode_compose` |
+| `is_extended_pictographic(cp)` | HarfBuzzの内部の `_hb_unicode_is_emoji_Extended_Pictographic` |
+| `vertical_orientation(cp)` | なし（UAX #50） |
+
+- どの関数も `const` の表を引くだけで、確保をしない。0x110000以上の値でもpanicせず、HarfBuzzと同じ既定の値を返す。
+- `vertical_orientation` は、縦書きの文字列を、正立で組む区間（`U`、`Tu`）と、横に組んで90度回す区間（`R`、`Tr`）に分けるのに使う。分割そのものは呼び出し側の仕事である。
+- 版は `UNICODE_VERSION`（`(18, 0, 0)`）。
+
 ## Cから使う（`sofel-capi`）
 
 `sofel-capi` は、上のAPIをCの呼び出し規約で公開する（[ADR 0015](adr/0015-c-abi.md)）。
@@ -209,6 +238,7 @@ sofel_font_destroy(font);
 | `sofel_rasterizer_*`、`sofel_pixel_box` | `Rasterizer`、`pixel_box` | `FT_Outline_Render` |
 | `sofel_render_glyph` | `sofel_cli::glyph::render` | `FT_Render_Glyph` |
 | `sofel_validate`、`sofel_diagnostic_*` | `validate::sfnt`、`validate::collection`、`Kind` | なし |
+| `sofel_unicode_*`、`sofel_script_from_iso15924` | `sofel_unicode` の関数 | `hb_unicode_*`、`hb_script_from_string` |
 
 - 誤りうる関数は `int32_t` を返し、`SOFEL_OK`（0）以外は誤り。`sofel_error_string` で英語の説明を引ける。NULLのポインタは `SOFEL_ERROR_NULL` になり、panicもクラッシュもしない。
 - 輪郭は5つの関数ポインタと `void *user` で受け取る。`sofel_rasterizer_move_to` などはその型を持つので、`sofel_outline_decompose` にそのまま渡してラスタライザに記録できる。

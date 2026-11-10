@@ -1,5 +1,5 @@
-//! Where the test data and `ft-dump` are. `SOFEL_TESTDATA` and
-//! `SOFEL_FT_DUMP` override the defaults under `target/`.
+//! Where the test data, the UCD files and `ft-dump` are. `SOFEL_TESTDATA`,
+//! `SOFEL_UCD` and `SOFEL_FT_DUMP` override the defaults under `target/`.
 
 use std::path::{Path, PathBuf};
 
@@ -9,6 +9,12 @@ pub fn root() -> PathBuf {
 
 pub fn testdata() -> PathBuf {
     std::env::var_os("SOFEL_TESTDATA").map_or_else(|| root().join("target/testdata"), PathBuf::from)
+}
+
+/// The UCD files fetched by `scripts/fetch-ucd.sh` (ADR 0019); `SOFEL_UCD`
+/// overrides `target/ucd`.
+pub fn ucd() -> PathBuf {
+    std::env::var_os("SOFEL_UCD").map_or_else(|| root().join("target/ucd"), PathBuf::from)
 }
 
 pub fn ft_dump() -> PathBuf {

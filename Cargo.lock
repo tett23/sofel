@@ -12,6 +12,7 @@ dependencies = [
  "sofel-outline",
  "sofel-raster",
  "sofel-read",
+ "sofel-unicode",
 ]
 
 [[package]]
@@ -34,6 +35,7 @@ dependencies = [
  "sofel-outline",
  "sofel-raster",
  "sofel-read",
+ "sofel-unicode",
 ]
 
 [[package]]
@@ -64,4 +66,8 @@ dependencies = [
 
 [[package]]
 name = "sofel-read"
+version = "0.0.0"
+
+[[package]]
+name = "sofel-unicode"
 version = "0.0.0"

@@ -43,6 +43,8 @@
 
 pub use sofel_read as read;
 
+mod tables;
+
 use core::fmt;
 
 use sofel_read::cmap::{Cmap, Subtable, VariantGlyph};

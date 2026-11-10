@@ -7,7 +7,7 @@ mod ffi;
 
 use std::path::PathBuf;
 
-use ffi::{FtFace, HbFont};
+use ffi::{FtFace, HbFont, HbUnicode};
 use sofel_bench::harness::{Check, Config, Row, Stats, SystemClock, measure, report_checks, table};
 use sofel_font::Font;
 use sofel_font::read::GlyphId;
@@ -41,6 +41,9 @@ const TEXTS: [&str; 4] = [
     "harfbuzz/perf/texts/hi-words.txt",
     "harfbuzz/perf/texts/ja-runs.txt",
 ];
+
+/// Every text of HarfBuzz's perf/texts/, for the Unicode properties.
+const ALL_TEXTS: &str = "harfbuzz/perf/texts";
 
 struct Args {
     once: bool,
@@ -154,6 +157,46 @@ fn wrap(v: i64) -> u64 {
     v as u64
 }
 
+/// The Unicode properties of every character of every text of
+/// perf/texts/ (ADR 0019): the sum of General_Category,
+/// Canonical_Combining_Class, the script tag and Bidi_Mirroring_Glyph.
+fn unicode_properties(b: &mut Bench, testdata: &std::path::Path) {
+    let dir = testdata.join(ALL_TEXTS);
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("{}: {e}; run scripts/fetch-testdata.sh", dir.display()))
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|x| x == "txt"))
+        .collect();
+    files.sort();
+    let text: Vec<u32> = files
+        .iter()
+        .flat_map(|p| {
+            std::fs::read_to_string(p)
+                .unwrap_or_default()
+                .chars()
+                .collect::<Vec<_>>()
+        })
+        .map(u32::from)
+        .collect();
+    let hb = HbUnicode::get();
+    b.item(
+        "perf/texts",
+        format!("Unicode properties ({} characters)", text.len()),
+        &mut || {
+            text.iter()
+                .map(|&c| {
+                    u64::from(sofel_unicode::general_category(c) as u8)
+                        + u64::from(sofel_unicode::combining_class(c))
+                        + u64::from(u32::from_be_bytes(sofel_unicode::script(c).tag()))
+                        + u64::from(sofel_unicode::mirroring(c))
+                })
+                .sum()
+        },
+        None,
+        Some((&mut || text.iter().map(|&c| hb.sum(c)).sum(), Compare::Yes)),
+    );
+}
+
 fn main() {
     let a = args();
     let text: Vec<u32> = TEXTS
@@ -179,6 +222,7 @@ fn main() {
         rows: Vec::new(),
         checks: Vec::new(),
     };
+    unicode_properties(&mut b, &a.testdata);
     for (name, path) in FONTS {
         let bytes = match std::fs::read(a.testdata.join(path)) {
             Ok(b) => b,

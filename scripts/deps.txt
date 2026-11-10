@@ -3,6 +3,7 @@
 # a crate to use `unsafe`.
 
 # Crates that do not depend on fonts
+# (sofel-unicode: no dependencies, ADR 0019)
 sofel-png sofel-inflate
 sofel-svg sofel-inflate
 sofel-svg sofel-geom
@@ -22,6 +23,7 @@ sofel-font sofel-pfr
 sofel-font sofel-bitmapfont
 sofel-font sofel-geom
 sofel-shape sofel-font
+sofel-shape sofel-unicode
 sofel-outline sofel-font
 sofel-outline sofel-geom
 sofel-bitmap sofel-font

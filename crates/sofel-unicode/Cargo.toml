@@ -1,0 +1,11 @@
+[package]
+name = "sofel-unicode"
+description = "Unicode character properties for shaping, from the Unicode Character Database (ADR 0019)"
+version.workspace = true
+edition.workspace = true
+license = "MIT AND Unicode-3.0"
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true

@@ -711,6 +711,158 @@ typedef void (*sofel_detail_func_t)(void *user, const char *name, int32_t kind,
 int32_t sofel_diagnostic_details(const sofel_diagnostic_t *diagnostic,
                                  sofel_detail_func_t detail, void *user);
 
+/* ------------------------------------------------------------ unicode */
+
+/*
+ * Unicode character properties from the Unicode Character Database
+ * (ADR 0019), with HarfBuzz's default values beyond U+10FFFF. None of
+ * these functions fails or allocates.
+ */
+
+/* General_Category: the values of HarfBuzz's hb_unicode_general_category_t. */
+#define SOFEL_GC_CONTROL 0
+#define SOFEL_GC_FORMAT 1
+#define SOFEL_GC_UNASSIGNED 2
+#define SOFEL_GC_PRIVATE_USE 3
+#define SOFEL_GC_SURROGATE 4
+#define SOFEL_GC_LOWERCASE_LETTER 5
+#define SOFEL_GC_MODIFIER_LETTER 6
+#define SOFEL_GC_OTHER_LETTER 7
+#define SOFEL_GC_TITLECASE_LETTER 8
+#define SOFEL_GC_UPPERCASE_LETTER 9
+#define SOFEL_GC_SPACING_MARK 10
+#define SOFEL_GC_ENCLOSING_MARK 11
+#define SOFEL_GC_NON_SPACING_MARK 12
+#define SOFEL_GC_DECIMAL_NUMBER 13
+#define SOFEL_GC_LETTER_NUMBER 14
+#define SOFEL_GC_OTHER_NUMBER 15
+#define SOFEL_GC_CONNECT_PUNCTUATION 16
+#define SOFEL_GC_DASH_PUNCTUATION 17
+#define SOFEL_GC_CLOSE_PUNCTUATION 18
+#define SOFEL_GC_FINAL_PUNCTUATION 19
+#define SOFEL_GC_INITIAL_PUNCTUATION 20
+#define SOFEL_GC_OTHER_PUNCTUATION 21
+#define SOFEL_GC_OPEN_PUNCTUATION 22
+#define SOFEL_GC_CURRENCY_SYMBOL 23
+#define SOFEL_GC_MODIFIER_SYMBOL 24
+#define SOFEL_GC_MATH_SYMBOL 25
+#define SOFEL_GC_OTHER_SYMBOL 26
+#define SOFEL_GC_LINE_SEPARATOR 27
+#define SOFEL_GC_PARAGRAPH_SEPARATOR 28
+#define SOFEL_GC_SPACE_SEPARATOR 29
+
+/* Vertical_Orientation (UAX #50). */
+#define SOFEL_VO_U 0
+#define SOFEL_VO_R 1
+#define SOFEL_VO_TU 2
+#define SOFEL_VO_TR 3
+
+/*
+ * The Unicode version of the tables, (major << 16) | (minor << 8) |
+ * update.
+ *
+ * Rust: none
+ * HarfBuzz: none
+ * FreeType: none
+ */
+uint32_t sofel_unicode_version(void);
+
+/*
+ * General_Category of a code point, SOFEL_GC_*; SOFEL_GC_UNASSIGNED
+ * beyond U+10FFFF.
+ *
+ * Rust: sofel_unicode::general_category
+ * HarfBuzz: hb_unicode_general_category
+ * FreeType: none
+ */
+uint8_t sofel_unicode_general_category(uint32_t codepoint);
+
+/*
+ * Canonical_Combining_Class of a code point; 0 beyond U+10FFFF.
+ *
+ * Rust: sofel_unicode::combining_class
+ * HarfBuzz: hb_unicode_combining_class
+ * FreeType: none
+ */
+uint8_t sofel_unicode_combining_class(uint32_t codepoint);
+
+/*
+ * Script of a code point, as its ISO 15924 tag with the first letter in
+ * the high byte (the values of hb_script_t: 'Latn' is 0x4C61746E). Common,
+ * Inherited and Unknown are 'Zyyy', 'Zinh' and 'Zzzz'; 'Zzzz' beyond
+ * U+10FFFF.
+ *
+ * Rust: sofel_unicode::script, sofel_unicode::Script::tag
+ * HarfBuzz: hb_unicode_script
+ * FreeType: none
+ */
+uint32_t sofel_unicode_script(uint32_t codepoint);
+
+/*
+ * The script of a four-letter ISO 15924 tag of `len` bytes, in the form
+ * of sofel_unicode_script: the case is adjusted, HarfBuzz's variants
+ * ('Aran', 'Latf', 'Hans', ...) map to their script, and 'Qaai' and
+ * 'Qaac' to Inherited and Coptic. SOFEL_ERROR_INVALID_ARGUMENT when the
+ * tag is not four letters.
+ *
+ * Rust: sofel_unicode::Script::from_iso15924
+ * HarfBuzz: hb_script_from_string
+ * FreeType: none
+ */
+int32_t sofel_script_from_iso15924(const uint8_t *tag, size_t len, uint32_t *script);
+
+/*
+ * Bidi_Mirroring_Glyph of a code point; the code point itself if it has
+ * none.
+ *
+ * Rust: sofel_unicode::mirroring
+ * HarfBuzz: hb_unicode_mirroring
+ * FreeType: none
+ */
+uint32_t sofel_unicode_mirroring(uint32_t codepoint);
+
+/*
+ * One step of the canonical decomposition of a code point: a and b, or
+ * a and 0 for a decomposition into one character. Hangul syllables
+ * decompose by arithmetic. SOFEL_ERROR_NOT_FOUND when the code point
+ * does not decompose.
+ *
+ * Rust: sofel_unicode::decompose
+ * HarfBuzz: hb_unicode_decompose
+ * FreeType: none
+ */
+int32_t sofel_unicode_decompose(uint32_t codepoint, uint32_t *a, uint32_t *b);
+
+/*
+ * The primary composite of a and b. SOFEL_ERROR_NOT_FOUND when either is
+ * 0, the pair is not a canonical decomposition, or the composite is a
+ * composition exclusion or has a non-zero combining class.
+ *
+ * Rust: sofel_unicode::compose
+ * HarfBuzz: hb_unicode_compose
+ * FreeType: none
+ */
+int32_t sofel_unicode_compose(uint32_t a, uint32_t b, uint32_t *ab);
+
+/*
+ * 1 if the code point is Extended_Pictographic, else 0.
+ *
+ * Rust: sofel_unicode::is_extended_pictographic
+ * HarfBuzz: none (internal)
+ * FreeType: none
+ */
+uint8_t sofel_unicode_is_extended_pictographic(uint32_t codepoint);
+
+/*
+ * Vertical_Orientation of a code point, SOFEL_VO_*; SOFEL_VO_R beyond
+ * U+10FFFF.
+ *
+ * Rust: sofel_unicode::vertical_orientation
+ * HarfBuzz: none
+ * FreeType: none
+ */
+uint8_t sofel_unicode_vertical_orientation(uint32_t codepoint);
+
 #ifdef __cplusplus
 }
 #endif
