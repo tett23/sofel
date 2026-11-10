@@ -4,7 +4,7 @@
 
 各項は、何が残っているか、どこに由来するか、何があれば進められるかの順に書く。節と項は、ほかの項が依存するものを先に置いた。確認できなかった事項には「未確認」と書いた。
 
-ADR 0027（可変フォント）と ADR 0028（`--font-ptem` は `opsz` を決めない）は、この時点では main にコミットされておらず、ステータスは提案である。ADR 0029（変化量の扱い）は書いている途中である。そのためこの文書では、これらの ADR にリンクを張らない。
+[ADR 0027](adr/0027-variable-fonts.md)（可変フォント）、[ADR 0028](adr/0028-ptem-is-not-opsz.md)（`--font-ptem` は `opsz` を決めない）、[ADR 0029](adr/0029-variation-deltas.md)（変化量の扱い）は、下書き（ステータスは提案）のまま main に入っている。採択するには、利用者のレビューが要る。[ADR 0029](adr/0029-variation-deltas.md) の調査の記録は、手元の `target/handoff/variation-deltas-research.md` にある（コミットしていない）。
 
 ## 未実装の ADR
 
@@ -22,7 +22,7 @@ ADR 0027（可変フォント）と ADR 0028（`--font-ptem` は `opsz` を決�
 
 ### [ADR 0022](adr/0022-subsetting.md): サブセット化
 
-[ADR 0022](adr/0022-subsetting.md) は採択（未実装）で、段階ごとに実装している。PR #42 までで、レイアウトの段階などが main に入った。10段階目（gvar、GVAR、HVAR、VVAR、ピン留めなしの CFF2、GDEF、BASE、COLR の項目の変化量の記憶）は、可変フォントの ADR 0027 が採択されるまで進められない。VARC は13段階目まで待つ。[ADR 0022](adr/0022-subsetting.md) のステータスを採択にする条件は、ADR 0027 の採択と、10段階目の実装である。
+[ADR 0022](adr/0022-subsetting.md) は採択（未実装）で、段階ごとに実装している。PR #42 までで、レイアウトの段階などが main に入った。10段階目（gvar、GVAR、HVAR、VVAR、ピン留めなしの CFF2、GDEF、BASE、COLR の項目の変化量の記憶）は、可変フォントの [ADR 0027](adr/0027-variable-fonts.md) が採択されるまで進められない。VARC は13段階目まで待つ。[ADR 0022](adr/0022-subsetting.md) のステータスを採択にする条件は、[ADR 0027](adr/0027-variable-fonts.md) の採択と、10段階目の実装である。
 
 ## 利用者の判断を待つこと
 
@@ -88,14 +88,14 @@ Unicode の性質の引きが HarfBuzz の 1.24 倍である。2段または3段
 
 ## 実装のあとに起こす ADR
 
-次の項は、各 ADR の「後回しにしたもの」に挙げられたものと、そこから派生するものである。それぞれ、先行する実装が終わってから ADR を書く。先に、可変フォントの ADR 0027 に依存する項を並べる。
+次の項は、各 ADR の「後回しにしたもの」に挙げられたものと、そこから派生するものである。それぞれ、先行する実装が終わってから ADR を書く。先に、可変フォントの [ADR 0027](adr/0027-variable-fonts.md) に依存する項を並べる。
 
-- 任意の位置への可変フォントのインスタンス化と、軸の範囲を絞る部分的なインスタンス化。[ADR 0022](adr/0022-subsetting.md) の「後回しにしたもの」にある。ADR 0027 の採択と実装の後に書く。解消すると、サブセット化のテストの期待する失敗のうち、インスタンスの91件と IUP の23件が消える。
-- ppem を使った Device 表の補正（ヒンティングの Device）。GPOS、GDEF のキャレット、BASE、MATH が対象である。[ADR 0017](adr/0017-base-baselines.md) による。変化量の部分は ADR 0027 に入る。
-- GDEF のリガチャのキャレットの API。ADR 0027 の一覧にある。
-- スタイルの値 `hb_style_get_value`。ADR 0027 の一覧にある。
+- 任意の位置への可変フォントのインスタンス化と、軸の範囲を絞る部分的なインスタンス化。[ADR 0022](adr/0022-subsetting.md) の「後回しにしたもの」にある。[ADR 0027](adr/0027-variable-fonts.md) の採択と実装の後に書く。解消すると、サブセット化のテストの期待する失敗のうち、インスタンスの91件と IUP の23件が消える。
+- ppem を使った Device 表の補正（ヒンティングの Device）。GPOS、GDEF のキャレット、BASE、MATH が対象である。[ADR 0017](adr/0017-base-baselines.md) による。変化量の部分は [ADR 0027](adr/0027-variable-fonts.md) に入る。
+- GDEF のリガチャのキャレットの API。[ADR 0027](adr/0027-variable-fonts.md) の一覧にある。
+- スタイルの値 `hb_style_get_value`。[ADR 0027](adr/0027-variable-fonts.md) の一覧にある。
 - MATH の問い合わせ（`hb_ot_math_*`）と、JSTF の扱いの決定。[ADR 0017](adr/0017-base-baselines.md) による。MATH のビューは [ADR 0022](adr/0022-subsetting.md) で入っている。
-- 領域のスカラーと送り幅の cache。ADR 0029 が扱う可能性がある。
+- 送り幅の cache（HarfBuzz の `advance_cache` に当たるもの）。領域の係数は [ADR 0029](adr/0029-variation-deltas.md) が `Location` に持つ。送り幅の cache は、計測で遅い項目が出たときに ADR を書く。
 - AAT のシェーピング（10段階目）。morx、mort、kerx、ankr、trak、feat、ltag、dumber シェーパー、旧 `kern` 表、`--font-ptem` による trak。[ADR 0020](adr/0020-shaping-foundation.md) による。適合テストの `aat` 分類の期待する失敗が、これで消える。
 - ヒンティング（7段階目）。TrueType バイトコード（v35、v40）、cvar、幻の点の丸め（[ADR 0018](adr/0018-phantom-point-shift.md)）、CFF のヒンターとステムの太らせ（[ADR 0021](adr/0021-cff-outlines.md)）、オートヒンター、mono と LCD と SDF のラスタライズ。
 - 合成の太字と斜体。HarfBuzz の `hb_font_set_synthetic_*`、FreeType の `FT_GlyphSlot_Embolden`、`FT_GlyphSlot_Oblique`、`FT_Bitmap_Embolden`。[ADR 0016](adr/0016-font-and-vertical-metrics.md)、[ADR 0020](adr/0020-shaping-foundation.md)、[ADR 0023](adr/0023-color-glyphs.md) による。適合テストの `synthetic` 分類が消える。
