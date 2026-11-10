@@ -2,8 +2,11 @@
 //! `subset` functions).
 
 mod base;
+mod cblc;
 pub(crate) mod cff;
 pub(crate) mod cmap;
+pub(crate) mod colr;
+pub(crate) mod cpal;
 pub(crate) mod glyf;
 mod hdmx;
 mod hmtx;
@@ -11,6 +14,7 @@ mod maxp;
 mod name;
 mod os2;
 mod post;
+mod sbix;
 mod vorg;
 
 use alloc::collections::{BTreeMap, BTreeSet};
@@ -117,6 +121,12 @@ impl Plan {
             b"BASE" => Some(base::subset),
             b"CFF " => Some(cff::subset),
             b"VORG" => Some(vorg::subset),
+            b"COLR" => Some(colr::subset),
+            b"CPAL" => Some(cpal::subset),
+            b"CBLC" => Some(cblc::subset),
+            b"sbix" => Some(sbix::subset),
+            // Written by CBLC.
+            b"CBDT" => return Ok(()),
             b"hhea" | b"HHEA" | b"vhea" | b"VHEA" | b"loca" | b"LOCA" => return Ok(()),
             b"fvar" | b"avar" | b"cvar" | b"MVAR" | b"STAT" if self.axes.is_empty() => {
                 self.passthrough(font, tag, tables);
