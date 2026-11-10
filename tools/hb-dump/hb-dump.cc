@@ -2286,7 +2286,9 @@ int main (int argc, char **argv)
     if (strncmp (argv[1], "--paint=", 8) == 0)
     {
       paint_slant = (float) atof (argv[1] + 8);
-      mode = &modes[5];
+      for (unsigned i = 0; i < sizeof (modes) / sizeof (modes[0]); i++)
+	if (strcmp (modes[i].name, "--paint") == 0)
+	  mode = &modes[i];
     }
   }
   if (!mode || argc < 2 || argc > 3)
