@@ -18,9 +18,9 @@
 //! Ported from HarfBuzz 15.1.0: `src/hb-ot-cff1-table.hh` and
 //! `src/hb-ot-cff2-table.hh` (`accelerator_templ_t`, `get_glyph_name`,
 //! `get_glyph_from_name`), `src/hb-face.cc`
-//! (`_hb_face_for_data_reference_table`). Copyright © 2018 Adobe Inc.
-//! and the HarfBuzz authors. Used under the MIT license; see
-//! THIRD_PARTY_NOTICES.md.
+//! (`_hb_face_for_data_reference_table`). Copyright © 2018 Adobe Inc.;
+//! © 2009 Red Hat, Inc.; © 2012 Google, Inc. Used under HarfBuzz's
+//! "Old MIT" license; see THIRD_PARTY_NOTICES.md.
 
 use sofel_read::Tag;
 use sofel_read::be::to_usize;

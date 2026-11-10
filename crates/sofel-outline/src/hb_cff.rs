@@ -23,8 +23,8 @@
 //! `_get_bounds`, `get_extents`), `src/hb-ot-cff2-table.cc`
 //! (`cff2_extents_param_t`, `cff2_path_procs_extents_t`,
 //! `get_extents_at`) and `src/hb-ot-font.cc` (`hb_ot_get_glyph_extents`).
-//! Copyright © 2018 Adobe Inc. and the HarfBuzz authors. Used under the
-//! MIT license; see THIRD_PARTY_NOTICES.md.
+//! Copyright © 2018 Adobe Inc.; © 2011, 2014 Google, Inc. Used under
+//! HarfBuzz's "Old MIT" license; see THIRD_PARTY_NOTICES.md.
 
 use sofel_font::read::GlyphId;
 use sofel_font::read::cff::hb::HbIndex;

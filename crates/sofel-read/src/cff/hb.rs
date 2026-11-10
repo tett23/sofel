@@ -15,9 +15,9 @@
 //! sets), `src/hb-ot-layout-common.hh` (`ItemVariationStore`,
 //! `VarRegionList`, `VarData`), `src/hb-cff-interp-common.hh`,
 //! `src/hb-cff-interp-dict-common.hh` and `src/hb-number-parser.hh`.
-//! Copyright © 2007-2026 the HarfBuzz authors (Behdad Esfahbod, Adobe
-//! Inc., Ebrahim Byagowi and others). Used under the MIT license; see
-//! THIRD_PARTY_NOTICES.md.
+//! Copyright © 2018 Adobe Inc.; © 2007-2010 Red Hat, Inc.; © 2010-2018
+//! Google, Inc.; © 2019-2026 Ebrahim Byagowi. Used under HarfBuzz's
+//! "Old MIT" license; see THIRD_PARTY_NOTICES.md.
 //!
 //! Positions are byte offsets from the start of the table, as `i64` so
 //! that HarfBuzz's signed offsets can point before it (which its range
