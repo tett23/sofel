@@ -1,5 +1,7 @@
 //! Fixed-point arithmetic that gives the same results as FreeType 2.15.0,
-//! and the [`Pen`] that carries outlines between crates (ADR 0009).
+//! and the [`Pen`] that carries outlines between crates (ADR 0009),
+//! and in [`float`] the floating-point operations that copy HarfBuzz's
+//! rounding (ADR 0026).
 //!
 //! FreeType computes in C `long`, 64 bits on LP64 systems. This crate
 //! takes and returns `i32` and computes in 64 bits; where FreeType's
@@ -10,6 +12,7 @@
 #![forbid(unsafe_code)]
 
 mod fixed;
+pub mod float;
 mod pen;
 mod trig;
 
