@@ -15,7 +15,7 @@ use alloc::vec::Vec;
 
 use sofel_font::Font;
 use sofel_font::read::Tag;
-use sofel_write::{Errors, Serializer};
+use sofel_write::{Errors, Serializer, WriteError};
 
 use crate::error::SubsetError;
 use crate::input::Flags;
@@ -135,26 +135,29 @@ impl Plan {
         let src = font.table(tag).unwrap_or(&[]);
         let mut s = Serializer::new();
         let needed = f(self, font, tag, src, &mut s, tables)?;
-        if s.in_error() && s.errors() != Errors::OFFSET_OVERFLOW {
-            return Err(SubsetError::Failed { tag });
+        if let Some(bytes) = finish_table(tag, s, needed)? {
+            tables.insert(tag, bytes);
         }
-        if !needed {
-            return Ok(());
-        }
-        let packed = s.end().map_err(|_| SubsetError::Failed { tag })?;
-        let bytes = packed.resolve().map_err(|e| {
-            if e == Errors::OFFSET_OVERFLOW {
-                SubsetError::Unsupported {
-                    tag,
-                    reason: "repacking offset overflows (ADR 0022 stage 4)",
-                }
-            } else {
-                SubsetError::Failed { tag }
-            }
-        })?;
-        tables.insert(tag, bytes);
         Ok(())
     }
+}
+
+/// The end of `_hb_subset_table`: the table's bytes from the serializer
+/// (none when the writer found it not needed), repacked as
+/// `_hb_subset_repack` does when an offset overflowed.
+fn finish_table(tag: Tag, s: Serializer, needed: bool) -> Result<Option<Vec<u8>>, SubsetError> {
+    if s.in_error() && s.errors() != Errors::OFFSET_OVERFLOW {
+        return Err(SubsetError::Failed { tag });
+    }
+    if !needed {
+        return Ok(None);
+    }
+    let packed = s.end().map_err(|_| SubsetError::Failed { tag })?;
+    let bytes = packed.repack(tag).map_err(|e| match e {
+        WriteError::Serialize(_) => SubsetError::Failed { tag },
+        _ => SubsetError::OffsetOverflow { tag },
+    })?;
+    Ok(Some(bytes))
 }
 
 /// head without glyf: copied (`head::subset` embeds the table).
@@ -169,4 +172,52 @@ fn head(font: &Font<'_>) -> Result<Vec<u8>, SubsetError> {
         return Err(SubsetError::Malformed { tag: t(b"head") });
     }
     Ok(h.get(..54).unwrap_or(h).to_vec())
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::arithmetic_side_effects)]
+    use super::*;
+
+    fn object(s: &mut Serializer, bytes: &[u8], children: &[u32]) -> u32 {
+        s.push();
+        s.extend(bytes);
+        for &c in children {
+            let at = s.zeros(2);
+            s.link16(at, c);
+        }
+        s.pop_pack(false)
+    }
+
+    #[test]
+    fn overflowing_tables_are_repacked() {
+        // test-repacker.cc's dedup overflow: resolved by duplicating the
+        // shared leaf.
+        let mut s = Serializer::new();
+        let leaf = object(&mut s, b"def", &[]);
+        let mid = object(&mut s, &[b'a'; 60000], &[leaf]);
+        s.extend(&[b'a'; 10000]);
+        let at = s.zeros(4);
+        s.link16(at, mid);
+        s.link16(at + 2, leaf);
+        let out = finish_table(Tag::new(b"test"), s, true).unwrap().unwrap();
+        assert_eq!(out.len(), 10000 + 2 * 2 + 60000 + 2 + 3 * 2);
+    }
+
+    #[test]
+    fn unresolved_overflows_are_reported() {
+        // A 16-bit offset past a 70000-byte object cannot be resolved.
+        let mut s = Serializer::new();
+        let leaf = object(&mut s, b"x", &[]);
+        let large = object(&mut s, &[b'a'; 70000], &[leaf]);
+        let small = object(&mut s, b"s", &[leaf]);
+        let at = s.zeros(4);
+        s.link16(at, small);
+        s.link16(at + 2, large);
+        let tag = Tag::new(b"test");
+        assert_eq!(
+            finish_table(tag, s, true),
+            Err(SubsetError::OffsetOverflow { tag })
+        );
+    }
 }

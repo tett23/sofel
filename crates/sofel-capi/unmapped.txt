@@ -138,4 +138,5 @@ sofel_write::Packed::* The serializer's packed objects, read by Rust table write
 sofel_write::build_sfnt Assembles a font from tables for Rust table writers; C receives whole fonts from sofel_subset (ADR 0022).
 sofel_write::build_sfnt_ordered As sofel_write::build_sfnt (ADR 0022).
 sofel_write::checksum The sfnt checksum, a loop C writes directly (ADR 0022).
+sofel_write::serialize_objects The repacker over caller-built objects; its C function, sofel_serialize_objects, comes with the C API of the subsetter (ADR 0022 stage 5).
 sofel_subset::* The C ABI of the subsetter is ADR 0022's stage 5; until then C callers have no subsetting.
