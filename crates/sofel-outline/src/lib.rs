@@ -245,8 +245,11 @@ impl Context<'_> {
     /// Phantom point 1's x for a glyph whose header says `x_min`
     /// (`tt_loader_set_pp`), scaled like the points.
     fn pp1_x(&self, glyph: u32, x_min: i16) -> i32 {
-        let x = i32::from(x_min)
-            .saturating_sub(i32::from(self.font.ft_left_side_bearing(GlyphId(glyph))));
+        let x = i32::from(x_min).saturating_sub(i32::from(
+            self.font
+                .default_instance()
+                .ft_left_side_bearing(GlyphId(glyph)),
+        ));
         match self.scale {
             Scale::Unscaled => x,
             Scale::Scaled { x: sx, .. } => mul_fix(x, sx.0),
@@ -393,7 +396,7 @@ impl<'a> Outlines<'a> {
 /// `FT_LOAD_NO_HINTING` would, without sending any command: the points
 /// end up moved left by phantom point 1, `pp1.x`, the scaled difference
 /// between the `xMin` of the glyph header and FreeType's left side
-/// bearing ([`Font::ft_left_side_bearing`]). A composite glyph takes the
+/// bearing ([`sofel_font::var::Instance::ft_left_side_bearing`]). A composite glyph takes the
 /// phantom point of its last component with USE_MY_METRICS, if any.
 /// Use [`Scratch::decompose`] to draw them.
 ///

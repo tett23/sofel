@@ -110,11 +110,13 @@ fn agrees_with_freetype() {
     // Outline and raster items have their own tests (ADR 0011, 0012).
     let mut expected = expect::parse(&list);
     // ... and the COLR and CPAL items too (ADR 0023, freetype_color.rs).
+    // Variable-font reference queries have their own test (ADR 0027).
     expected.retain(|id| {
         !id.contains(":outline:")
             && !id.contains(":raster:")
             && !id.contains(":colr:")
             && !id.contains(":colr-raster:")
+            && !id.contains(":var:")
             && !id.ends_with(":cpal")
             && !id.ends_with(":strikes")
     });

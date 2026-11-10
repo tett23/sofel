@@ -229,6 +229,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -243,6 +244,30 @@
 #include FT_PARAMETER_TAGS_H
 #include FT_OPENTYPE_VALIDATE_H
 #include FT_COLOR_H
+
+static FT_UInt reference_named;
+static int reference_has_named;
+static const char *reference_variations;
+
+static int reference_options(int *argc, char **argv)
+{
+  int read, write = 2;
+  for (read = 2; read < *argc; read++) {
+    const char *arg = argv[read];
+    if (strncmp(arg, "--named-instance=", 17) == 0) {
+      char *end;
+      unsigned long value = strtoul(arg + 17, &end, 10);
+      if (!arg[17] || *end || value >= 0xFFFF) return 0;
+      reference_named = (FT_UInt)value + 1;
+      reference_has_named = 1;
+    } else if (strncmp(arg, "--variations=", 13) == 0) {
+      reference_variations = arg + 13;
+      if (!*reference_variations) return 0;
+    } else argv[write++] = argv[read];
+  }
+  *argc = write;
+  return 1;
+}
 
 static int contour_open;
 
@@ -705,6 +730,8 @@ static void dump_sbit(FT_Face face)
   }
 }
 
+static int set_reference_location(FT_Library library, FT_Face face, const char *variations);
+
 static int faces(const char *path, void (*dump)(FT_Face))
 {
   FT_Library library;
@@ -727,6 +754,11 @@ static int faces(const char *path, void (*dump)(FT_Face))
     if (error != 0) {
       printf("error %d\nend\n", (int)error);
       continue;
+    }
+    if (set_reference_location(library, face, reference_variations) != 0) {
+      FT_Done_Face(face);
+      FT_Done_FreeType(library);
+      return 2;
     }
     dump(face);
     printf("end\n");
@@ -752,8 +784,9 @@ static int set_design_coordinates(FT_Library library, FT_Face face, const char *
     free(coordinates); free(copy); FT_Done_MM_Var(library, mm); return 1;
   }
   strcpy(copy, text);
-  for (i = 0; i < mm->num_axis; i++)
-    coordinates[i] = mm->axis[i].def;
+  if (FT_Get_Var_Design_Coordinates(face, mm->num_axis, coordinates) != 0)
+    for (i = 0; i < mm->num_axis; i++)
+      coordinates[i] = mm->axis[i].def;
   token = strtok(copy, ",");
   if (!token) {
     free(coordinates); free(copy); FT_Done_MM_Var(library, mm); return 2;
@@ -761,19 +794,19 @@ static int set_design_coordinates(FT_Library library, FT_Face face, const char *
   while (token) {
     char *equal = strchr(token, '=');
     char *end = NULL;
-    double value;
+    float value;
     FT_ULong tag;
     if (!equal || equal - token != 4) break;
     tag = ((FT_ULong)(unsigned char)token[0] << 24) |
           ((FT_ULong)(unsigned char)token[1] << 16) |
           ((FT_ULong)(unsigned char)token[2] << 8) |
           (FT_ULong)(unsigned char)token[3];
-    value = strtod(equal + 1, &end);
-    if (end == equal + 1 || *end || value < -32768.0 || value > 32767.0) break;
+    value = strtof(equal + 1, &end);
+    if (end == equal + 1 || *end || !isfinite(value) ||
+        value < -32768.0f || value > 32767.0f) break;
     for (i = 0; i < mm->num_axis && mm->axis[i].tag != tag; i++) {}
     if (i == mm->num_axis) break;
-    value *= 65536.0;
-    coordinates[i] = (FT_Fixed)(value < 0 ? value - 0.5 : value + 0.5);
+    coordinates[i] = (FT_Fixed)(value * 65536.f);
     token = strtok(NULL, ",");
   }
   error = token ? 2 : FT_Set_Var_Design_Coordinates(face, mm->num_axis, coordinates);
@@ -781,6 +814,13 @@ static int set_design_coordinates(FT_Library library, FT_Face face, const char *
   free(copy);
   FT_Done_MM_Var(library, mm);
   return error ? 2 : 0;
+}
+
+static int set_reference_location(FT_Library library, FT_Face face, const char *variations)
+{
+  if (reference_has_named && FT_Set_Named_Instance(face, reference_named) != 0)
+    return 2;
+  return set_design_coordinates(library, face, variations);
 }
 
 /* raster: 0 for --outline, 1 for --raster, 2 for --raster --color.
@@ -890,8 +930,9 @@ static int outlines(const char *size, const char *path, int raster, const char *
       printf("error %d\nend\n", (int)error);
       continue;
     }
-    if (set_design_coordinates(library, face, variations) != 0) {
-      fprintf(stderr, "ft-dump: invalid design coordinates %s\n", variations);
+    if (set_reference_location(library, face,
+                               variations ? variations : reference_variations) != 0) {
+      fprintf(stderr, "ft-dump: invalid variation location\n");
       FT_Done_Face(face);
       free(selected);
       free(selected_faces);
@@ -1097,6 +1138,159 @@ static void dump_names_and_metrics(FT_Face face)
   }
 }
 
+/* ADR 0027 task 2: public FreeType variation queries and normalization. */
+static int dump_var_reference(int argc, char **argv)
+{
+  FT_Library library;
+  FT_Face face;
+  FT_Long face_count, index;
+  const char *variations = NULL;
+  FT_UInt named = 0;
+  int has_named = 0, normalize = strcmp(argv[1], "--var-normalize") == 0;
+  int arg;
+  if (argc < 3) return 2;
+  for (arg = 2; arg < argc - 1; arg++) {
+    if (strncmp(argv[arg], "--named-instance=", 17) == 0) {
+      char *end;
+      unsigned long parsed = strtoul(argv[arg] + 17, &end, 10);
+      if (!argv[arg][17] || *end || parsed >= 0xFFFF) return 2;
+      named = (FT_UInt)parsed + 1;
+      has_named = 1;
+    } else if (strncmp(argv[arg], "--variations=", 13) == 0) {
+      variations = argv[arg] + 13;
+      if (!*variations) return 2;
+    } else return 2;
+  }
+  if (FT_Init_FreeType(&library) != 0) return 1;
+  if (FT_New_Face(library, argv[argc - 1], -1, &face) != 0) {
+    FT_Done_FreeType(library);
+    return 1;
+  }
+  face_count = face->num_faces;
+  FT_Done_Face(face);
+  for (index = 0; index < face_count; index++) {
+    FT_MM_Var *mm = NULL;
+    FT_Error error = FT_New_Face(library, argv[argc - 1], index, &face);
+    FT_UInt axis;
+    printf("face %ld\n", (long)index);
+    if (error) {
+      printf("error %d\nend\n", (int)error);
+      continue;
+    }
+    if (has_named && FT_Set_Named_Instance(face, named) != 0) {
+      FT_Done_Face(face);
+      FT_Done_FreeType(library);
+      return 2;
+    }
+    if (set_design_coordinates(library, face, variations) != 0) {
+      FT_Done_Face(face);
+      FT_Done_FreeType(library);
+      return 2;
+    }
+    error = FT_Get_MM_Var(face, &mm);
+    if (error) {
+      printf("axis_count 0\nnamed_count 0\ndefault_named 0\ncoords_blend\ncoords_design\nps_name");
+      print_hex((const unsigned char *)FT_Get_Postscript_Name(face),
+                FT_Get_Postscript_Name(face) ? strlen(FT_Get_Postscript_Name(face)) : 0);
+      printf("\nend\n");
+      FT_Done_Face(face);
+      continue;
+    }
+    printf("axis_count %u\n", mm->num_axis);
+    if (!normalize) {
+      for (axis = 0; axis < mm->num_axis; axis++) {
+        FT_UInt flags = 0;
+        FT_Var_Axis *a = &mm->axis[axis];
+        FT_Get_Var_Axis_Flags(mm, axis, &flags);
+        printf("axis %u %08lx %u %u %ld %ld %ld\n", axis,
+               (unsigned long)a->tag, (unsigned)a->strid, (unsigned)flags,
+               (long)a->minimum, (long)a->def, (long)a->maximum);
+      }
+      printf("named_count %u\n", mm->num_namedstyles);
+      for (axis = 0; axis < mm->num_namedstyles; axis++) {
+        FT_UInt a;
+        FT_Var_Named_Style *style = &mm->namedstyle[axis];
+        printf("named %u %u %u", axis, (unsigned)style->strid,
+               (unsigned)style->psid);
+        for (a = 0; a < mm->num_axis; a++)
+          printf(" %ld", (long)style->coords[a]);
+        printf("\n");
+      }
+      {
+        FT_UInt def = 0;
+        FT_Error def_error = FT_Get_Default_Named_Instance(face, &def);
+        printf("default_named %u %d\n", def, (int)def_error);
+      }
+      {
+        FT_Fixed *coords = (FT_Fixed *)calloc(mm->num_axis, sizeof(*coords));
+        if (!coords) { FT_Done_MM_Var(library, mm); FT_Done_Face(face); FT_Done_FreeType(library); return 1; }
+        error = FT_Get_Var_Blend_Coordinates(face, mm->num_axis, coords);
+        printf("coords_blend");
+        for (axis = 0; !error && axis < mm->num_axis; axis++)
+          printf(" %ld", (long)coords[axis]);
+        printf("\n");
+        error = FT_Get_Var_Design_Coordinates(face, mm->num_axis, coords);
+        printf("coords_design");
+        for (axis = 0; !error && axis < mm->num_axis; axis++)
+          printf(" %ld", (long)coords[axis]);
+        printf("\n");
+        free(coords);
+      }
+      {
+        const char *name = FT_Get_Postscript_Name(face);
+        printf("ps_name");
+        print_hex((const unsigned char *)(name ? name : ""), name ? strlen(name) : 0);
+        printf("\n");
+      }
+    } else {
+      FT_Fixed *design = (FT_Fixed *)calloc(mm->num_axis, sizeof(*design));
+      FT_Fixed *blend = (FT_Fixed *)calloc(mm->num_axis, sizeof(*blend));
+      if (!design || !blend) {
+        free(design); free(blend); FT_Done_MM_Var(library, mm);
+        FT_Done_Face(face); FT_Done_FreeType(library); return 1;
+      }
+      for (axis = 0; axis < mm->num_axis; axis++) {
+        FT_UInt other, sample;
+        long long span = (long long)mm->axis[axis].maximum - mm->axis[axis].minimum;
+        for (other = 0; other < mm->num_axis; other++)
+          design[other] = mm->axis[other].def;
+        for (sample = 0; sample <= 256; sample++) {
+          design[axis] = mm->axis[axis].minimum + (FT_Fixed)(span * sample / 256);
+          FT_Set_Var_Design_Coordinates(face, mm->num_axis, design);
+          FT_Get_Var_Blend_Coordinates(face, mm->num_axis, blend);
+          printf("sample %u %u %ld %ld\n", axis, sample,
+                 (long)design[axis], (long)blend[axis]);
+        }
+        {
+          const char *labels[] = {"outside_min", "outside_max", "half_min", "half_max"};
+          FT_Fixed values[] = {
+            mm->axis[axis].minimum - (FT_Fixed)span,
+            mm->axis[axis].maximum + (FT_Fixed)span,
+            mm->axis[axis].def -
+              (FT_Fixed)(((long long)mm->axis[axis].def - mm->axis[axis].minimum) / 32768),
+            mm->axis[axis].def +
+              (FT_Fixed)(((long long)mm->axis[axis].maximum - mm->axis[axis].def) / 32768)
+          };
+          for (sample = 0; sample < 4; sample++) {
+            design[axis] = values[sample];
+            FT_Set_Var_Design_Coordinates(face, mm->num_axis, design);
+            FT_Get_Var_Blend_Coordinates(face, mm->num_axis, blend);
+            printf("sample %u %s %ld %ld\n", axis, labels[sample],
+                   (long)design[axis], (long)blend[axis]);
+          }
+        }
+      }
+      free(design);
+      free(blend);
+    }
+    printf("end\n");
+    FT_Done_MM_Var(library, mm);
+    FT_Done_Face(face);
+  }
+  FT_Done_FreeType(library);
+  return 0;
+}
+
 static int table_present(FT_Face face, FT_ULong tag)
 {
   FT_ULong len = 0;
@@ -1174,6 +1368,10 @@ int main(int argc, char **argv)
   FT_Long num_faces, i;
   FT_Error error;
 
+  if (argc >= 2 && (strcmp(argv[1], "--var") == 0 ||
+                    strcmp(argv[1], "--var-normalize") == 0))
+    return dump_var_reference(argc, argv);
+  if (argc >= 2 && !reference_options(&argc, argv)) return 2;
   if (argc == 2 && strcmp(argv[1], "--calc") == 0)
     return calc();
   if (argc == 4 && strcmp(argv[1], "--outline") == 0)
@@ -1196,6 +1394,10 @@ int main(int argc, char **argv)
     return faces(argv[2], dump_sbit);
   if (argc == 3 && strcmp(argv[1], "--otvalid") == 0)
     return otvalid(argv[2]);
+  if (argc == 3 && strcmp(argv[1], "--metrics") == 0) {
+    argv[1] = argv[2];
+    argc = 2;
+  }
   if (argc != 2) {
     fprintf(stderr, "usage: ft-dump FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --sampled-outline SIZE FILE PLAN | ft-dump --sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...] | ft-dump --raster PPEM [--color] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
     return 2;
@@ -1221,6 +1423,11 @@ int main(int argc, char **argv)
     if (error != 0) {
       printf("error %d\nend\n", (int)error);
       continue;
+    }
+    if (set_reference_location(library, face, reference_variations) != 0) {
+      FT_Done_Face(face);
+      FT_Done_FreeType(library);
+      return 2;
     }
     printf("num_glyphs %ld\n", (long)face->num_glyphs);
     if ((table = FT_Get_Sfnt_Table(face, FT_SFNT_HEAD)) != NULL)

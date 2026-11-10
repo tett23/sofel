@@ -141,7 +141,7 @@ impl HbScale {
         }
     }
 
-    /// [`Font::baseline`] at this scale.
+    /// [`crate::var::Instance::baseline`] at this scale.
     pub fn baseline(
         &self,
         font: &Font<'_>,
@@ -161,7 +161,7 @@ impl HbScale {
         Some(self.base_scale(coord.coordinate(), direction))
     }
 
-    /// [`Font::baseline_with_fallback`] at this scale; `extents` gives
+    /// [`crate::var::Instance::baseline_with_fallback`] at this scale; `extents` gives
     /// boxes in font units, which are scaled with
     /// [`HbScale::scale_glyph_extents`].
     pub fn baseline_with_fallback(
@@ -273,7 +273,7 @@ impl HbScale {
         }
     }
 
-    /// [`Font::layout_font_extents`] at this scale.
+    /// [`crate::var::Instance::layout_font_extents`] at this scale.
     pub fn layout_font_extents(
         &self,
         font: &Font<'_>,

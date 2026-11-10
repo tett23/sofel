@@ -79,7 +79,7 @@ impl<'a> HbExtents<'a> {
     /// The box of `glyph` in font units, as HarfBuzz's
     /// `hb_font_get_glyph_extents` gives it at the default scale for a
     /// font without color or bitmap glyphs: from glyf
-    /// ([`Font::glyf_extents`]), else from CFF2, else from CFF. `None`
+    /// ([`sofel_font::var::Instance::glyf_extents`]), else from CFF2, else from CFF. `None`
     /// when none of them gives one (a charstring HarfBuzz's interpreter
     /// rejects, a glyph id past them).
     pub fn glyph_extents(&self, glyph: GlyphId) -> Option<GlyphExtents> {

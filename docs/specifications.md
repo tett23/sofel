@@ -4,10 +4,11 @@
 決定の経緯は各ADRを参照。
 可変フォントの [ADR 0027](adr/0027-variable-fonts.md)、変化量の評価の [ADR 0029](adr/0029-variation-deltas.md) と、その修正の [ADR 0030](adr/0030-variation-evaluation-corrections.md) は採択（未実装）である。`--font-ptem` の分類訂正は [ADR 0028](adr/0028-ptem-is-not-opsz.md) に従って実装済みである。
 ただし、[ADR 0027](adr/0027-variable-fonts.md) の表の読み取りと検証器は実装済みである。
-`sofel-font::var` には、設計座標と正規化座標からの位置の構築、avar版1と版2の写像、[ADR 0029](adr/0029-variation-deltas.md) と [ADR 0030](adr/0030-variation-evaluation-corrections.md) に従うItemVariationStoreの差分の評価の核を実装している。
-C ABIは [ADR 0027](adr/0027-variable-fonts.md) の位置の作成、座標の取得、Variationの文字列変換まで実装している。
-位置を使うメトリクス、輪郭、シェーピングの結果問い合わせは未実装である。
-FreeTypeが合成する既定の名前つきインスタンス、位置によってメトリクス、輪郭、シェーピングを変える問い合わせと、そのCLIとC ABIは未実装である。
+`sofel-font::var` には、設計座標と正規化座標からの位置の構築、avar版1と版2の写像、[ADR 0029](adr/0029-variation-deltas.md) と [ADR 0030](adr/0030-variation-evaluation-corrections.md) に従うItemVariationStoreの差分の評価の核、fvarの軸と名前つきインスタンスの問い合わせ、FreeTypeのMMVarの読み取り、位置ごとのPostScript名を実装している。
+C ABIは [ADR 0027](adr/0027-variable-fonts.md) の位置の作成、座標の取得、Variationの文字列変換、軸と名前つきインスタンスの問い合わせ、位置ごとのPostScript名を実装している。
+メトリクス、基準線、輪郭、シェーピング、塗りの既存C ABI関数は位置の引数を受け取るが、値への適用は未実装である。
+FreeTypeが合成する既定の名前つきインスタンスは必要なnameレコードがある場合に実装済みである。
+必要なnameレコードがない場合の扱いは未決定であり、位置によって値を変える処理とCLIから位置を指定する機能も未実装である。
 追加フォントの検証は [ADR 0031](adr/0031-diverse-font-corpus.md) に従って実装した。
 文書だけの変更でCIを省く方針は [ADR 0032](adr/0032-documentation-only-ci.md) と [ADR 0034](adr/0034-ci-document-input-classification.md) に従って実装している。
 以下の実装済みの機能の記述は、各実装の PR で更新する。
