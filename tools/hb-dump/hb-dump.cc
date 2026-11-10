@@ -1,10 +1,12 @@
 /*
- * hb-dump: write what HarfBuzz gives for a font's metrics, for
- * comparison with sofel (ADR 0016). Built as one translation unit with
+ * hb-dump: write what HarfBuzz gives for a font's metrics (ADR 0016) and
+ * for the Unicode character data (ADR 0019), for comparison with sofel.
+ * Built as one translation unit with
  * HarfBuzz's src/harfbuzz.cc, so that internal functions can be called
  * as well; no FreeType integration.
  *
- * Usage: hb-dump [MODE] FILE
+ * Usage: hb-dump [MODE] FILE, or hb-dump MODE for the modes without
+ * a file
  *
  * MODE selects what is written; each mode is one function in the table
  * `modes` at the bottom, so that new dumps are added as new entries.
@@ -63,6 +65,48 @@
  *                                code point up to U+10FFFF it maps)
  *   end
  *
+ * Mode --vowel-constraints (ADR 0019); FILE is HarfBuzz's
+ * src/ms-use/IndicShapingInvalidCluster.txt, the input of the table:
+ *
+ *   vowel <script> <in> <out>
+ *                     (for each script of the first characters of the
+ *                     file's sequences, in the order of first appearance,
+ *                     and for every sequence of length 1 to 3 over the
+ *                     characters of that script's sequences, in ascending
+ *                     order: <in> the sequence, <out> the code points
+ *                     after _hb_preprocess_text_vowel_constraints with the
+ *                     buffer's script set; both hex joined by `,`)
+ *
+ * Modes without FILE (ADR 0019):
+ *
+ * --unicode: for every code point 0..0x10FFFF and 0x110000, 0x7FFFFFFF,
+ * 0xFFFFFFFF, through hb_unicode_funcs_get_default ():
+ *
+ *   <cp> <gc> <ccc> <script> <mirroring> <decomposed> <a> <b> <ep>
+ *        <indic> <use> <joining>
+ *                     (hb_unicode_general_category as the number of
+ *                     hb_unicode_general_category_t,
+ *                     hb_unicode_combining_class, hb_unicode_script as its
+ *                     four-letter tag, hb_unicode_mirroring,
+ *                     hb_unicode_decompose (<a> <b> 0 0 when not
+ *                     decomposed), _hb_unicode_is_emoji_Extended_Pictographic,
+ *                     hb_indic_get_categories, hb_use_get_category, and
+ *                     get_joining_type of hb-ot-shaper-arabic.cc; numbers
+ *                     in decimal)
+ *
+ *   then, for every pair (a, b) with a in the first and b in the second
+ *   characters of the two-character decompositions, with 0 and the
+ *   Hangul L jamo (and the LV syllables) added to the first, 0 and the
+ *   V and T jamo added to the second, both in ascending order:
+ *
+ *   compose <a> <b> <composed> <ab>
+ *                     (hb_unicode_compose; <ab> 0 when not composed)
+ *
+ * --arabic-pua: for every code point 0..0xFFFF,
+ *
+ *   pua <cp> <simp> <trad>
+ *                     (_hb_arabic_pua_simp_map and _hb_arabic_pua_trad_map)
+ *
  * Exit status: 0 on success, 1 when the file cannot be read, 2 on wrong
  * usage.
  */
@@ -70,6 +114,7 @@
 #include "harfbuzz.cc"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static const hb_ot_metrics_tag_t metric_tags[] = {
@@ -281,6 +326,196 @@ static int dump_cmap (hb_blob_t *blob)
   return 0;
 }
 
+static void print_hex_list (const hb_codepoint_t *u, unsigned n)
+{
+  for (unsigned i = 0; i < n; i++) printf ("%s%04X", i ? "," : "", u[i]);
+}
+
+/* The characters of the sequences of IndicShapingInvalidCluster.txt, by
+ * the script of each sequence's first character. */
+struct vowel_script_t
+{
+  hb_script_t script;
+  hb_codepoint_t chars[256];
+  unsigned count;
+};
+
+static int compare_codepoints (const void *a, const void *b)
+{
+  hb_codepoint_t x = *(const hb_codepoint_t *) a, y = *(const hb_codepoint_t *) b;
+  return x < y ? -1 : x > y;
+}
+
+static int dump_vowel_constraints (hb_blob_t *blob)
+{
+  hb_unicode_funcs_t *ufuncs = hb_unicode_funcs_get_default ();
+  unsigned len = 0;
+  const char *data = hb_blob_get_data (blob, &len);
+  static vowel_script_t scripts[64];
+  unsigned num_scripts = 0;
+  for (unsigned i = 0; i < len;)
+  {
+    unsigned end = i;
+    while (end < len && data[end] != '\n') end++;
+    /* The code points before `;` (and before `#`). */
+    hb_codepoint_t seq[16];
+    unsigned n = 0;
+    for (unsigned j = i; j < end && data[j] != ';' && data[j] != '#';)
+    {
+      char *stop = nullptr;
+      char word[16] = {0};
+      unsigned w = 0;
+      while (j < end && (data[j] == ' ' || data[j] == '\t' || data[j] == '\r')) j++;
+      while (j < end && w < 15 && ((data[j] >= '0' && data[j] <= '9') ||
+				   (data[j] >= 'A' && data[j] <= 'F') ||
+				   (data[j] >= 'a' && data[j] <= 'f')))
+	word[w++] = data[j++];
+      if (!w) break;
+      if (n < 16) seq[n++] = (hb_codepoint_t) strtoul (word, &stop, 16);
+    }
+    i = end + 1;
+    if (!n) continue;
+    hb_script_t sc = hb_unicode_script (ufuncs, seq[0]);
+    unsigned s = 0;
+    while (s < num_scripts && scripts[s].script != sc) s++;
+    if (s == num_scripts)
+    {
+      if (num_scripts == 64) return 1;
+      scripts[num_scripts].script = sc;
+      scripts[num_scripts].count = 0;
+      num_scripts++;
+    }
+    for (unsigned k = 0; k < n; k++)
+    {
+      bool seen = false;
+      for (unsigned c = 0; c < scripts[s].count; c++) seen |= scripts[s].chars[c] == seq[k];
+      if (!seen && scripts[s].count < 256) scripts[s].chars[scripts[s].count++] = seq[k];
+    }
+  }
+
+  hb_buffer_t *buffer = hb_buffer_create ();
+  for (unsigned s = 0; s < num_scripts; s++)
+  {
+    vowel_script_t &v = scripts[s];
+    qsort (v.chars, v.count, sizeof (v.chars[0]), compare_codepoints);
+    char tag[5];
+    hb_tag_to_string (v.script, tag);
+    tag[4] = '\0';
+    for (unsigned length = 1; length <= 3; length++)
+    {
+      unsigned total = 1;
+      for (unsigned k = 0; k < length; k++) total *= v.count;
+      for (unsigned index = 0; index < total; index++)
+      {
+	hb_codepoint_t seq[3];
+	unsigned rest = index;
+	for (unsigned k = length; k-- > 0;)
+	{
+	  seq[k] = v.chars[rest % v.count];
+	  rest /= v.count;
+	}
+	hb_buffer_clear_contents (buffer);
+	hb_buffer_add_utf32 (buffer, seq, (int) length, 0, (int) length);
+	hb_buffer_set_script (buffer, v.script);
+	hb_buffer_set_direction (buffer, HB_DIRECTION_LTR);
+	_hb_preprocess_text_vowel_constraints (nullptr, buffer, nullptr);
+	unsigned out_len = 0;
+	hb_glyph_info_t *info = hb_buffer_get_glyph_infos (buffer, &out_len);
+	hb_codepoint_t out[8];
+	unsigned m = out_len < 8 ? out_len : 8;
+	for (unsigned k = 0; k < m; k++) out[k] = info[k].codepoint;
+	printf ("vowel %s ", tag);
+	print_hex_list (seq, length);
+	printf (" ");
+	print_hex_list (out, m);
+	printf ("\n");
+      }
+    }
+  }
+  hb_buffer_destroy (buffer);
+  return 0;
+}
+
+static void dump_unicode_value (hb_unicode_funcs_t *ufuncs, hb_codepoint_t u)
+{
+  hb_unicode_general_category_t gc = hb_unicode_general_category (ufuncs, u);
+  hb_codepoint_t a = 0, b = 0;
+  hb_bool_t decomposed = hb_unicode_decompose (ufuncs, u, &a, &b);
+  if (!decomposed) a = b = 0;
+  char tag[5];
+  hb_tag_to_string (hb_unicode_script (ufuncs, u), tag);
+  tag[4] = '\0';
+  printf ("%u %u %u %s %u %d %u %u %d %u %u %u\n", u, (unsigned) gc,
+	  hb_unicode_combining_class (ufuncs, u), tag,
+	  hb_unicode_mirroring (ufuncs, u), decomposed ? 1 : 0, a, b,
+	  _hb_unicode_is_emoji_Extended_Pictographic (u) ? 1 : 0,
+	  (unsigned) hb_indic_get_categories (u), (unsigned) hb_use_get_category (u),
+	  get_joining_type (u, gc));
+}
+
+static int dump_unicode ()
+{
+  hb_unicode_funcs_t *ufuncs = hb_unicode_funcs_get_default ();
+  for (hb_codepoint_t u = 0; u <= 0x10FFFFu; u++)
+    dump_unicode_value (ufuncs, u);
+  const hb_codepoint_t beyond[] = {0x110000u, 0x7FFFFFFFu, 0xFFFFFFFFu};
+  for (unsigned i = 0; i < 3; i++)
+    dump_unicode_value (ufuncs, beyond[i]);
+
+  /* Membership of the first and second characters of the pairs. */
+  static bool first[0x110000], second[0x110000];
+  first[0] = second[0] = true;
+  for (hb_codepoint_t u = 0; u <= 0x10FFFFu; u++)
+  {
+    hb_codepoint_t a = 0, b = 0;
+    if (hb_unicode_decompose (ufuncs, u, &a, &b) && b)
+    {
+      if (a < 0x110000u) first[a] = true;
+      if (b < 0x110000u) second[b] = true;
+    }
+  }
+  for (hb_codepoint_t l = 0x1100u; l < 0x1100u + 19; l++) first[l] = true;
+  for (hb_codepoint_t s = 0xAC00u; s < 0xAC00u + 11172; s += 28) first[s] = true;
+  for (hb_codepoint_t v = 0x1161u; v < 0x1161u + 21; v++) second[v] = true;
+  for (hb_codepoint_t t = 0x11A7u; t < 0x11A7u + 28; t++) second[t] = true;
+  static hb_codepoint_t seconds[0x110000];
+  unsigned num_seconds = 0;
+  for (hb_codepoint_t b = 0; b <= 0x10FFFFu; b++)
+    if (second[b]) seconds[num_seconds++] = b;
+  for (hb_codepoint_t a = 0; a <= 0x10FFFFu; a++)
+  {
+    if (!first[a]) continue;
+    for (unsigned i = 0; i < num_seconds; i++)
+    {
+      hb_codepoint_t b = seconds[i];
+      hb_codepoint_t ab = 0;
+      hb_bool_t composed = hb_unicode_compose (ufuncs, a, b, &ab);
+      printf ("compose %u %u %d %u\n", a, b, composed ? 1 : 0, composed ? ab : 0);
+    }
+  }
+  return 0;
+}
+
+static int dump_arabic_pua ()
+{
+  for (unsigned u = 0; u <= 0xFFFFu; u++)
+    printf ("pua %u %u %u\n", u, (unsigned) _hb_arabic_pua_simp_map (u),
+	    (unsigned) _hb_arabic_pua_trad_map (u));
+  return 0;
+}
+
+/* The modes that read no file. */
+struct fileless_mode_t
+{
+  const char *name;
+  int (*dump) ();
+};
+
+static const fileless_mode_t fileless_modes[] = {
+  {"--unicode", dump_unicode},
+  {"--arabic-pua", dump_arabic_pua},
+};
+
 struct dump_mode_t
 {
   const char *name;
@@ -291,10 +526,15 @@ static const dump_mode_t modes[] = {
   {"--metrics", dump_metrics},
   {"--names", dump_names},
   {"--cmap", dump_cmap},
+  {"--vowel-constraints", dump_vowel_constraints},
 };
 
 int main (int argc, char **argv)
 {
+  if (argc == 2)
+    for (unsigned i = 0; i < sizeof (fileless_modes) / sizeof (fileless_modes[0]); i++)
+      if (strcmp (argv[1], fileless_modes[i].name) == 0)
+	return fileless_modes[i].dump ();
   const dump_mode_t *mode = &modes[0];
   if (argc == 3)
   {
@@ -308,6 +548,9 @@ int main (int argc, char **argv)
     fprintf (stderr, "usage: hb-dump [MODE] FILE; MODE is one of:");
     for (unsigned i = 0; i < sizeof (modes) / sizeof (modes[0]); i++)
       fprintf (stderr, " %s", modes[i].name);
+    fprintf (stderr, "; or hb-dump MODE, MODE one of:");
+    for (unsigned i = 0; i < sizeof (fileless_modes) / sizeof (fileless_modes[0]); i++)
+      fprintf (stderr, " %s", fileless_modes[i].name);
     fprintf (stderr, "\n");
     return 2;
   }
