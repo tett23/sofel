@@ -26,9 +26,8 @@ use crate::tag::ot_tags_from_script_and_language;
 
 /// The script-specific shaper a plan uses (`hb_ot_shaper_categorize`).
 ///
-/// Until ADR 0024 implements them, every shaper other than
-/// [`Shaper::Default`] runs the default shaper's steps; the plan still
-/// reports which one HarfBuzz would pick.
+/// The shapers of ADR 0024 not implemented yet run the default shaper's
+/// steps; the plan still reports which one HarfBuzz would pick.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Shaper {
     /// `_hb_ot_shaper_default`.
@@ -78,6 +77,8 @@ pub(crate) enum ZeroWidthMarks {
 pub(crate) enum ShaperData {
     #[default]
     None,
+    /// `hangul_shape_plan_t`.
+    Hangul(crate::shapers::hangul::HangulPlan),
 }
 
 /// A hook that runs on the buffer.
@@ -124,10 +125,16 @@ pub(crate) static DEFAULT_SHAPER: ShaperFuncs = ShaperFuncs {
 };
 
 impl Shaper {
-    /// The hooks of the shaper. ADR 0024 fills in the script-specific
-    /// shapers; until then they are the default shaper's.
+    /// The hooks of the shaper. The shapers of ADR 0024 not implemented
+    /// yet run the default shaper's.
     pub(crate) fn funcs(self) -> &'static ShaperFuncs {
-        &DEFAULT_SHAPER
+        use crate::shapers;
+        match self {
+            Shaper::Hangul => &shapers::hangul::HANGUL,
+            Shaper::Hebrew => &shapers::hebrew::HEBREW,
+            Shaper::Thai => &shapers::thai::THAI,
+            _ => &DEFAULT_SHAPER,
+        }
     }
 
     /// `hb_ot_shaper_categorize`.

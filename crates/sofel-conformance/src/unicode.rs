@@ -13,13 +13,25 @@
 //! - `modified_combining_class`, `default_ignorable`, `space_fallback`,
 //!   `vertical_char_for`: the hand-written functions of
 //!   [`sofel_shape::unicode`] (ADR 0020) for every code point.
-//! - `arabic_pua_simp`, `arabic_pua_trad`: the maps of sofel-font,
-//!   included here from the generated file because sofel-font keeps them
-//!   to itself.
+//! - `indic`, `use`, `joining`: the shaper tables of sofel-shape
+//!   (`crates/sofel-shape/src/tables/`, ADR 0024) for every code point:
+//!   `indic_categories` against `hb_indic_get_categories`, `use_category`
+//!   against `hb_use_get_category`, and `joining_type` completed as
+//!   HarfBuzz's `get_joining_type` (T for Mn, Me and Cf, U otherwise, when
+//!   the table has X).
+//! - `arabic_pua_simp`, `arabic_pua_trad`: the maps of sofel-font.
+//! - `vowel_constraints`: every line of `hb-dump --vowel-constraints`,
+//!   replayed with sofel-shape's `vowel_constraint_match`.
+//! - `arabic_shaping_table`, `arabic_ligature_table`,
+//!   `arabic_ligature_mark_table`, `arabic_ligature_3_table`,
+//!   `arabic_joining_scripts`: the constant tables of sofel-shape's
+//!   `tables/arabic.rs` against HarfBuzz's generated sources
+//!   (`src/hb-ot-shaper-arabic-table.hh`,
+//!   `src/hb-ot-shaper-arabic-joining-list.hh`), which `hb-dump` cannot
+//!   reach.
 //!
-//! The shaper classes (indic, USE, Arabic joining) and the vowel
-//! constraints are parsed but not compared yet: their tables belong to
-//! sofel-shape (ADR 0020, ADR 0024), which does not exist yet.
+//! The generated tables of sofel-font and sofel-shape are included here
+//! from their files because those crates keep them to themselves.
 
 use sofel_unicode as u;
 
@@ -31,6 +43,24 @@ use crate::compare::Item;
 #[path = "../../sofel-font/src/tables/arabic_pua.rs"]
 #[allow(dead_code, missing_docs)]
 mod arabic_pua;
+
+// The generated shaper tables of sofel-shape, likewise.
+#[rustfmt::skip]
+#[path = "../../sofel-shape/src/tables/indic.rs"]
+#[allow(dead_code, missing_docs)]
+mod indic;
+#[rustfmt::skip]
+#[path = "../../sofel-shape/src/tables/use_.rs"]
+#[allow(dead_code, missing_docs)]
+mod use_;
+#[rustfmt::skip]
+#[path = "../../sofel-shape/src/tables/arabic.rs"]
+#[allow(dead_code, missing_docs)]
+mod arabic;
+#[rustfmt::skip]
+#[path = "../../sofel-shape/src/tables/vowel_constraints.rs"]
+#[allow(dead_code, missing_docs)]
+mod vowel_constraints;
 
 /// One line of `hb-dump --unicode` for a code point.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -159,6 +189,24 @@ fn per_char<T: PartialEq + std::fmt::Debug>(
     item(name, &mismatches, hb.chars.len())
 }
 
+/// HarfBuzz's `get_joining_type` (`hb-ot-shaper-arabic.cc`): the table's
+/// joining type, or for a character it does not list (X), T for the
+/// nonspacing and enclosing marks and the format characters, U otherwise.
+pub fn joining_type(cp: u32) -> u8 {
+    const X: u8 = 7;
+    const T: u8 = 6;
+    const U: u8 = 0;
+    match arabic::joining_type(cp) {
+        X => match u::general_category(cp) {
+            u::GeneralCategory::NonspacingMark
+            | u::GeneralCategory::EnclosingMark
+            | u::GeneralCategory::Format => T,
+            _ => U,
+        },
+        j => j,
+    }
+}
+
 /// Compares every value of `hb-dump --unicode` with sofel-unicode.
 pub fn compare(hb: &HbUnicode) -> Vec<Item> {
     let compose: Vec<String> = hb
@@ -187,6 +235,9 @@ pub fn compare(hb: &HbUnicode) -> Vec<Item> {
             u::is_extended_pictographic,
         ),
         item("compose", &compose, hb.compositions.len()),
+        per_char("indic", hb, |c| c.indic, indic::indic_categories),
+        per_char("use", hb, |c| c.use_category, use_::use_category),
+        per_char("joining", hb, |c| c.joining, joining_type),
         per_char(
             "modified_combining_class",
             hb,
@@ -286,4 +337,220 @@ pub fn parse_vowel_constraints(text: &str) -> Result<Vec<HbVowel>, String> {
             })
         })
         .collect()
+}
+
+/// The output of the loop of HarfBuzz's
+/// `_hb_preprocess_text_vowel_constraints` over `cps` under `script`, with
+/// sofel-shape's `vowel_constraint_match` deciding where the dotted
+/// circles go.
+pub fn vowel_constraints(script: [u8; 4], cps: &[u32]) -> Vec<u32> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i + 1 < cps.len() {
+        match vowel_constraints::vowel_constraint_match(script, cps, i) {
+            Some(n) => {
+                out.extend_from_slice(&cps[i..i + n - 1]);
+                out.push(0x25CC);
+                out.push(cps[i + n - 1]);
+                i += n;
+            }
+            None => {
+                out.push(cps[i]);
+                i += 1;
+            }
+        }
+    }
+    out.extend_from_slice(&cps[i.min(cps.len())..]);
+    out
+}
+
+/// Compares every line of `hb-dump --vowel-constraints`.
+pub fn compare_vowel_constraints(hb: &[HbVowel]) -> Item {
+    let m: Vec<String> = hb
+        .iter()
+        .filter_map(|v| {
+            let o = vowel_constraints(v.script, &v.input);
+            (o != v.output).then(|| {
+                format!(
+                    "{} {:X?}: HarfBuzz {:X?}, sofel {o:X?}",
+                    String::from_utf8_lossy(&v.script),
+                    v.input,
+                    v.output
+                )
+            })
+        })
+        .collect();
+    item("vowel_constraints", &m, hb.len())
+}
+
+/// A ligature table: each first component with its `(components,
+/// ligature)` entries.
+type Ligatures = Vec<(u32, Vec<(Vec<u32>, u32)>)>;
+
+/// A ligature table of sofel-shape.
+type OurLigatures<'a, const N: usize> = &'a [(u16, &'a [([u16; N], u16)])];
+
+/// The hexadecimal numbers of a line of C, outside its comments.
+fn c_hex(line: &str) -> Vec<u32> {
+    line.split("/*")
+        .next()
+        .unwrap_or("")
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter_map(|w| w.strip_prefix("0x"))
+        .filter_map(|w| u32::from_str_radix(w.trim_end_matches('u'), 16).ok())
+        .collect()
+}
+
+/// The lines of `text` after the line containing `start`, up to the first
+/// `};`.
+fn c_block<'a>(text: &'a str, start: &str) -> Vec<&'a str> {
+    text.lines()
+        .skip_while(|l| !l.contains(start))
+        .skip(1)
+        .take_while(|l| !l.starts_with("};"))
+        .collect()
+}
+
+/// A ligature table of HarfBuzz's C source: each first component with its
+/// `(components, ligature)` entries.
+fn c_ligatures(text: &str, start: &str) -> Ligatures {
+    let mut out: Ligatures = Vec::new();
+    for l in c_block(text, start) {
+        match c_hex(l)[..] {
+            [first] => out.push((first, Vec::new())),
+            [ref comps @ .., lig] if !comps.is_empty() => {
+                if let Some(last) = out.last_mut() {
+                    last.1.push((comps.to_vec(), lig));
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+fn ours<const N: usize>(t: OurLigatures<N>) -> Ligatures {
+    t.iter()
+        .map(|(f, ls)| {
+            (
+                u32::from(*f),
+                ls.iter()
+                    .map(|(c, l)| (c.iter().map(|&x| u32::from(x)).collect(), u32::from(*l)))
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
+/// Compares the constant tables of sofel-shape's `tables/arabic.rs` with
+/// HarfBuzz's `src/hb-ot-shaper-arabic-table.hh` (`table_hh`),
+/// `src/hb-ot-shaper-arabic-joining-list.hh` (`joining_list_hh`) and the
+/// script tags of `src/hb-script-list.h` (`script_list_h`).
+pub fn compare_arabic_tables(
+    table_hh: &str,
+    joining_list_hh: &str,
+    script_list_h: &str,
+) -> Vec<Item> {
+    let define = |name: &str| {
+        table_hh
+            .lines()
+            .find(|l| l.starts_with(&format!("#define {name}")))
+            .and_then(|l| c_hex(l).first().copied())
+    };
+    let hb_rows: Vec<Vec<u32>> = c_block(table_hh, "shaping_table[][4]")
+        .into_iter()
+        .map(c_hex)
+        .filter(|r| !r.is_empty())
+        .collect();
+    let our_rows: Vec<Vec<u32>> = arabic::SHAPING_TABLE
+        .iter()
+        .map(|r| r.iter().map(|&x| u32::from(x)).collect())
+        .collect();
+    let mut shaping = Vec::new();
+    let bounds = (define("SHAPING_TABLE_FIRST"), define("SHAPING_TABLE_LAST"));
+    let ours_bounds = (
+        Some(arabic::SHAPING_TABLE_FIRST),
+        Some(arabic::SHAPING_TABLE_LAST),
+    );
+    if bounds != ours_bounds {
+        shaping.push(format!(
+            "bounds: HarfBuzz {bounds:X?}, sofel {ours_bounds:X?}"
+        ));
+    }
+    if hb_rows != our_rows {
+        shaping.push(format!(
+            "rows: HarfBuzz {} rows, sofel {}; first different: {:?}",
+            hb_rows.len(),
+            our_rows.len(),
+            hb_rows.iter().zip(&our_rows).position(|(a, b)| a != b)
+        ));
+    }
+    let lig = |name: &str, c_name: &str, o: Ligatures| {
+        let hb = c_ligatures(table_hh, &format!("}} {c_name}[] ="));
+        let m = if hb == o {
+            vec![]
+        } else {
+            vec![format!("HarfBuzz {hb:X?}, sofel {o:X?}")]
+        };
+        item(name, &m, hb.len())
+    };
+
+    // Every script tag, and whether HarfBuzz lists it.
+    let tags: Vec<(String, [u8; 4])> = script_list_h
+        .lines()
+        .filter_map(|l| {
+            let (name, rest) = l.trim().split_once('=')?;
+            let name = name.trim().strip_prefix("HB_SCRIPT_")?;
+            let tag: Vec<u8> = rest
+                .split_once("HB_TAG")?
+                .1
+                .split('\'')
+                .skip(1)
+                .step_by(2)
+                .take(4)
+                .filter_map(|c| c.bytes().next())
+                .collect();
+            Some((name.to_string(), <[u8; 4]>::try_from(tag).ok()?))
+        })
+        .collect();
+    let listed: Vec<&str> = joining_list_hh
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix("case HB_SCRIPT_"))
+        .map(|l| l.trim_end_matches(':'))
+        .collect();
+    let mut scripts: Vec<String> = tags
+        .iter()
+        .filter(|(name, tag)| listed.contains(&name.as_str()) != arabic::has_arabic_joining(*tag))
+        .map(|(name, _)| format!("{name}: HarfBuzz {}", listed.contains(&name.as_str())))
+        .collect();
+    if let Some(n) = listed
+        .iter()
+        .find(|n| !tags.iter().any(|(name, _)| name == *n))
+    {
+        scripts.push(format!("{n} has no tag in hb-script-list.h"));
+    }
+
+    vec![
+        item("arabic_shaping_table", &shaping, hb_rows.len()),
+        lig(
+            "arabic_ligature_table",
+            "ligature_table",
+            ours(&arabic::LIGATURE_TABLE),
+        ),
+        lig(
+            "arabic_ligature_mark_table",
+            "ligature_mark_table",
+            ours(&arabic::LIGATURE_MARK_TABLE),
+        ),
+        lig(
+            "arabic_ligature_3_table",
+            "ligature_3_table",
+            ours(&arabic::LIGATURE_3_TABLE),
+        ),
+        item(
+            "arabic_joining_scripts",
+            &scripts,
+            listed.len().min(tags.len()),
+        ),
+    ]
 }

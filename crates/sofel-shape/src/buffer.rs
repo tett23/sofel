@@ -196,6 +196,10 @@ pub(crate) struct Info {
     pub(crate) shaper_category: u8,
     /// A shaper's character position (ADR 0024).
     pub(crate) shaper_position: u8,
+    /// A shaper's per-item value besides the category and position: the
+    /// Hangul jamo feature, the Arabic joining action (HarfBuzz's
+    /// `ot_shaper_var_u8_auxiliary`).
+    pub(crate) shaper_aux: u8,
 }
 
 /// The position of an item, with the attachment chain of `GPOS`
@@ -1970,7 +1974,7 @@ mod tests {
     /// `glyph_props`, `lig_props` and `syllable`.
     #[test]
     fn item_sizes() {
-        assert_eq!(core::mem::size_of::<Info>(), 24);
+        assert_eq!(core::mem::size_of::<Info>(), 28);
         assert_eq!(core::mem::size_of::<Pos>(), 20);
     }
 }
