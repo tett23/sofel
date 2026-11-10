@@ -347,7 +347,9 @@ impl HbScale {
 
     /// The horizontal advance at this scale (`hb_font_get_glyph_h_advance`).
     pub fn h_advance(&self, font: &Font<'_>, glyph: GlyphId) -> i32 {
-        self.em_scale_x(i32::from(font.default_instance().advance(glyph)))
+        #[allow(clippy::cast_possible_wrap)] // hb_position_t receives HarfBuzz's unsigned advance.
+        let advance = font.default_instance().advance(glyph) as i32;
+        self.em_scale_x(advance)
     }
 
     /// [`crate::var::Instance::v_advance`] at this scale.
@@ -433,11 +435,20 @@ impl HbScale {
 
     /// The four values `_hb_ot_metrics_get_position_common` handles.
     fn common(&self, font: &Font<'_>, tag: MetricsTag) -> Option<i32> {
+        self.common_with_var(font, tag, 0.0)
+    }
+
+    pub(crate) fn common_with_var(
+        &self,
+        font: &Font<'_>,
+        tag: MetricsTag,
+        delta: f32,
+    ) -> Option<i32> {
         use MetricsTag::*;
         let os2 = hb_os2(font);
         let typo = os2.filter(|o| o.fs_selection() & os2::USE_TYPO_METRICS != 0);
-        let y = |v: i16| self.em_scalef_y(fix_sign(f32::from(v), tag));
-        let x = |v: i16| self.em_scalef_x(fix_sign(f32::from(v), tag));
+        let y = |v: i16| self.em_scalef_y(fix_sign(f32::from(v) + delta, tag));
+        let x = |v: i16| self.em_scalef_x(fix_sign(f32::from(v) + delta, tag));
         match tag {
             HorizontalAscender => typo
                 .map(|o| y(o.s_typo_ascender()))
@@ -457,18 +468,27 @@ impl HbScale {
 
     /// [`crate::var::Instance::metrics_position`] at this scale.
     pub fn metrics_position(&self, font: &Font<'_>, tag: MetricsTag) -> Option<i32> {
+        self.metrics_position_with_var(font, tag, 0.0)
+    }
+
+    pub(crate) fn metrics_position_with_var(
+        &self,
+        font: &Font<'_>,
+        tag: MetricsTag,
+        delta: f32,
+    ) -> Option<i32> {
         use MetricsTag::*;
         let os2 = hb_os2(font);
-        let x = |v: i16| self.em_scalef_x(f32::from(v));
-        let y = |v: i16| self.em_scalef_y(f32::from(v));
-        let yu = |v: u16| self.em_scalef_y(f32::from(v));
+        let x = |v: i16| self.em_scalef_x(f32::from(v) + delta);
+        let y = |v: i16| self.em_scalef_y(f32::from(v) + delta);
+        let yu = |v: u16| self.em_scalef_y(f32::from(v) + delta);
         // OS2V2Tail::has_data: sxHeight or sCapHeight is non-zero.
         let v2 =
             os2.filter(|o| o.sx_height().unwrap_or(0) != 0 || o.s_cap_height().unwrap_or(0) != 0);
         let post = font.post;
         match tag {
             HorizontalAscender | HorizontalDescender | HorizontalLineGap | VerticalAscender
-            | VerticalDescender | VerticalLineGap => self.common(font, tag),
+            | VerticalDescender | VerticalLineGap => self.common_with_var(font, tag, delta),
             HorizontalClippingAscent => os2.map(|o| yu(o.us_win_ascent())),
             HorizontalClippingDescent => os2.map(|o| yu(o.us_win_descent())),
             HorizontalCaretRise => font.hhea.map(|h| y(h.caret_slope_rise())),
@@ -525,8 +545,18 @@ impl HbScale {
         tag: MetricsTag,
         extents: &dyn Fn(GlyphId) -> Option<GlyphExtents>,
     ) -> i32 {
+        self.with_fallback_using(font, tag, extents, &|tag| self.metrics_position(font, tag))
+    }
+
+    pub(crate) fn with_fallback_using(
+        &self,
+        font: &Font<'_>,
+        tag: MetricsTag,
+        extents: &dyn Fn(GlyphId) -> Option<GlyphExtents>,
+        metric: &dyn Fn(MetricsTag) -> Option<i32>,
+    ) -> i32 {
         use MetricsTag::*;
-        if let Some(v) = self.metrics_position(font, tag)
+        if let Some(v) = metric(tag)
             && (!matches!(tag, StrikeoutSize | UnderlineSize) || v != 0)
         {
             return v;
@@ -552,7 +582,9 @@ impl HbScale {
                 None => clamp_i32(ys.saturating_mul(2) / 3),
             },
             StrikeoutSize | UnderlineSize => self.y_scale / 18,
-            StrikeoutOffset => self.with_fallback(font, HorizontalAscender, extents) / 2,
+            StrikeoutOffset => {
+                self.with_fallback_using(font, HorizontalAscender, extents, metric) / 2
+            }
             UnderlineOffset => {
                 // hb_saturate_neg.
                 self.y_scale.checked_neg().unwrap_or(i32::MAX) / 18

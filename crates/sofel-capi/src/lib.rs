@@ -555,7 +555,7 @@ pub unsafe extern "C" fn sofel_font_h_advance(
     font: *const SofelFont,
     location: *const SofelLocation,
     glyph: u32,
-    advance: *mut u16,
+    advance: *mut u32,
 ) -> i32 {
     // SAFETY: the caller's conditions.
     let (font, location, advance) = unsafe { (font_ref(font), r(location), w(advance)) };
@@ -772,6 +772,7 @@ fn scale_of(scale: Option<&SofelScale>, font: &Font<'_>) -> HbScale {
 unsafe fn h_or_v_extents(
     scale: Option<&SofelScale>,
     font: *const SofelFont,
+    location: Option<&SofelLocation>,
     extents: *mut i32,
     vertical: bool,
 ) -> i32 {
@@ -779,10 +780,15 @@ unsafe fn h_or_v_extents(
     let (font, extents) = unsafe { (font_ref(font), ints::<3>(extents)) };
     status(get(font, extents, |f| {
         let s = scale_of(scale, f);
+        let location = match location {
+            Some(value) => &value.location,
+            None => sofel_font::var::Location::default_ref(),
+        };
+        let instance = f.instance(location);
         extents3(if vertical {
-            s.v_extents(f)
+            instance.scaled_v_extents(&s)
         } else {
-            s.h_extents(f)
+            instance.scaled_h_extents(&s)
         })
     }))
 }
@@ -932,13 +938,15 @@ fn metrics_position(
     let instance = font.instance(location);
     *position = if fallback {
         if scale.is_some() {
-            s.metrics_position_with_fallback_scaled(font, tag, glyph_box(sf, &s))
+            instance.scaled_metrics_position_with_fallback(&s, tag, glyph_box(sf, &s))
         } else {
             instance.metrics_position_with_fallback(tag, glyph_box(sf, &s))
         }
     } else {
         if scale.is_some() {
-            s.metrics_position(font, tag).ok_or(ERROR_NOT_FOUND)?
+            instance
+                .scaled_metrics_position(&s, tag)
+                .ok_or(ERROR_NOT_FOUND)?
         } else {
             instance.metrics_position(tag).ok_or(ERROR_NOT_FOUND)?
         }
@@ -1105,7 +1113,7 @@ pub unsafe extern "C" fn sofel_scale_glyph_extents(
 pub unsafe extern "C" fn sofel_scale_h_extents(
     scale: *const SofelScale,
     font: *const SofelFont,
-    _location: *const SofelLocation,
+    location: *const SofelLocation,
     extents: *mut i32,
 ) -> i32 {
     // SAFETY: the caller's conditions.
@@ -1113,7 +1121,7 @@ pub unsafe extern "C" fn sofel_scale_h_extents(
         return ERROR_NULL;
     };
     // SAFETY: the caller's conditions.
-    unsafe { h_or_v_extents(Some(scale), font, extents, false) }
+    unsafe { h_or_v_extents(Some(scale), font, r(location), extents, false) }
 }
 
 /// `sofel_scale_v_extents`.
@@ -1126,7 +1134,7 @@ pub unsafe extern "C" fn sofel_scale_h_extents(
 pub unsafe extern "C" fn sofel_scale_v_extents(
     scale: *const SofelScale,
     font: *const SofelFont,
-    _location: *const SofelLocation,
+    location: *const SofelLocation,
     extents: *mut i32,
 ) -> i32 {
     // SAFETY: the caller's conditions.
@@ -1134,7 +1142,7 @@ pub unsafe extern "C" fn sofel_scale_v_extents(
         return ERROR_NULL;
     };
     // SAFETY: the caller's conditions.
-    unsafe { h_or_v_extents(Some(scale), font, extents, true) }
+    unsafe { h_or_v_extents(Some(scale), font, r(location), extents, true) }
 }
 
 fn scaled<T>(
@@ -1158,14 +1166,20 @@ fn scaled<T>(
 pub unsafe extern "C" fn sofel_scale_h_advance(
     scale: *const SofelScale,
     font: *const SofelFont,
-    _location: *const SofelLocation,
+    location: *const SofelLocation,
     glyph: u32,
     advance: *mut i32,
 ) -> i32 {
     // SAFETY: the caller's conditions.
-    let (scale, font, advance) = unsafe { (r(scale), sofel_ref(font), w(advance)) };
+    let (scale, font, location, advance) =
+        unsafe { (r(scale), sofel_ref(font), r(location), w(advance)) };
     status(scaled(scale, font, advance, |s, f| {
-        Some(s.h_advance(&f.font, GlyphId(glyph)))
+        let location =
+            location.map_or_else(sofel_font::var::Location::default_ref, |v| &v.location);
+        #[allow(clippy::cast_possible_wrap)]
+        // HarfBuzz casts the unsigned advance to hb_position_t.
+        let signed = f.font.instance(location).advance(GlyphId(glyph)) as i32;
+        Some(s.em_scale_x(signed))
     }))
 }
 
@@ -1179,14 +1193,21 @@ pub unsafe extern "C" fn sofel_scale_h_advance(
 pub unsafe extern "C" fn sofel_scale_v_advance(
     scale: *const SofelScale,
     font: *const SofelFont,
-    _location: *const SofelLocation,
+    location: *const SofelLocation,
     glyph: u32,
     advance: *mut i32,
 ) -> i32 {
     // SAFETY: the caller's conditions.
-    let (scale, font, advance) = unsafe { (r(scale), sofel_ref(font), w(advance)) };
+    let (scale, font, location, advance) =
+        unsafe { (r(scale), sofel_ref(font), r(location), w(advance)) };
     status(scaled(scale, font, advance, |s, f| {
-        Some(s.v_advance(&f.font, GlyphId(glyph)))
+        let location =
+            location.map_or_else(sofel_font::var::Location::default_ref, |v| &v.location);
+        Some(
+            f.font
+                .instance(location)
+                .scaled_v_advance(s, GlyphId(glyph)),
+        )
     }))
 }
 
@@ -1200,14 +1221,20 @@ pub unsafe extern "C" fn sofel_scale_v_advance(
 pub unsafe extern "C" fn sofel_scale_v_origin(
     scale: *const SofelScale,
     font: *const SofelFont,
-    _location: *const SofelLocation,
+    location: *const SofelLocation,
     glyph: u32,
     origin: *mut i32,
 ) -> i32 {
     // SAFETY: the caller's conditions.
-    let (scale, font, origin) = unsafe { (r(scale), sofel_ref(font), ints::<2>(origin)) };
+    let (scale, font, location, origin) =
+        unsafe { (r(scale), sofel_ref(font), r(location), ints::<2>(origin)) };
     status(scaled(scale, font, origin, |s, f| {
-        let (x, y) = s.v_origin_scaled(&f.font, GlyphId(glyph), glyph_box(f, s));
+        let location =
+            location.map_or_else(sofel_font::var::Location::default_ref, |v| &v.location);
+        let (x, y) = f
+            .font
+            .instance(location)
+            .scaled_v_origin(s, GlyphId(glyph), glyph_box(f, s));
         Some([x, y])
     }))
 }
@@ -1249,13 +1276,16 @@ pub unsafe extern "C" fn sofel_scale_glyph_extents_of(
 pub unsafe extern "C" fn sofel_scale_metrics_position(
     scale: *const SofelScale,
     font: *const SofelFont,
-    _location: *const SofelLocation,
+    location: *const SofelLocation,
     tag: u32,
     position: *mut i32,
 ) -> i32 {
     // SAFETY: the caller's conditions.
-    let (scale, font, position) = unsafe { (r(scale), sofel_ref(font), w(position)) };
-    status(some(scale).and_then(|s| metrics_position(Some(s), font, None, tag, false, position)))
+    let (scale, font, location, position) =
+        unsafe { (r(scale), sofel_ref(font), r(location), w(position)) };
+    status(
+        some(scale).and_then(|s| metrics_position(Some(s), font, location, tag, false, position)),
+    )
 }
 
 /// `sofel_scale_metrics_position_with_fallback`.
@@ -1268,13 +1298,14 @@ pub unsafe extern "C" fn sofel_scale_metrics_position(
 pub unsafe extern "C" fn sofel_scale_metrics_position_with_fallback(
     scale: *const SofelScale,
     font: *const SofelFont,
-    _location: *const SofelLocation,
+    location: *const SofelLocation,
     tag: u32,
     position: *mut i32,
 ) -> i32 {
     // SAFETY: the caller's conditions.
-    let (scale, font, position) = unsafe { (r(scale), sofel_ref(font), w(position)) };
-    status(some(scale).and_then(|s| metrics_position(Some(s), font, None, tag, true, position)))
+    let (scale, font, location, position) =
+        unsafe { (r(scale), sofel_ref(font), r(location), w(position)) };
+    status(some(scale).and_then(|s| metrics_position(Some(s), font, location, tag, true, position)))
 }
 
 // ----------------------------------------------------------- baselines

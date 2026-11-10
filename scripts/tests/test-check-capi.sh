@@ -66,7 +66,7 @@ grep -qx 'sofel_geom::Pen::move_to' "$tmp/real" || fail "public-api.sh missed a 
 grep -qx 'sofel_geom::mul_fix' "$tmp/real" || fail "public-api.sh missed a re-exported function"
 sh "$script" "$header" "$unmapped" "$tmp/real" >/dev/null ||
   fail "sofel.h does not cover the public API"
-grep -v 'Rust: sofel_font::var::Instance::advance$' "$header" >"$tmp/broken.h"
+grep -v 'Rust:.*sofel_font::var::Instance::advance' "$header" >"$tmp/broken.h"
 if sh "$script" "$tmp/broken.h" "$unmapped" "$tmp/real" >/dev/null 2>&1; then
   fail "a header without Instance::advance was accepted"
 fi

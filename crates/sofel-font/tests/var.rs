@@ -5,7 +5,7 @@
 #[path = "../../sofel-read/tests/support/build.rs"]
 mod build;
 
-use build::{name, sample_tables, sample_tables_with_glyf, sfnt, utf16be};
+use build::{Buf, name, sample_tables, sample_tables_with_glyf, sfnt, utf16be};
 use sofel_font::Font;
 use sofel_font::read::{Fixed, GlyphId};
 use sofel_font::var::{Ft, FtLocationError, HbF32, Location, StoreKind, VarError, Variation};
@@ -18,6 +18,297 @@ fn fvar_one_axis() -> Vec<u8> {
     }
     fvar.extend_from_slice(&[0, 0, 1, 0]);
     fvar
+}
+
+fn font_with_hvar(first_advance: u16, include_hmtx: bool) -> Vec<u8> {
+    let store = Buf::new()
+        .u16(1)
+        .u32(12)
+        .u16(1)
+        .u32(22)
+        .u16(1)
+        .u16(1)
+        .i16(0)
+        .i16(16384)
+        .i16(16384)
+        .u16(2)
+        .u16(1)
+        .u16(1)
+        .u16(0)
+        .i16(21)
+        .i16(-31)
+        .done();
+    let hvar = Buf::new()
+        .u32(0x0001_0000)
+        .u32(20)
+        .u32(0)
+        .u32(0)
+        .u32(0)
+        .bytes(&store)
+        .done();
+    let mut tables = sample_tables_with_glyf();
+    if !include_hmtx {
+        tables.retain(|(tag, _)| **tag != *b"hmtx");
+    }
+    if let Some(data) = tables
+        .iter_mut()
+        .find(|(tag, _)| **tag == *b"hmtx")
+        .and_then(|(_, data)| data.get_mut(..2))
+    {
+        data.copy_from_slice(&first_advance.to_be_bytes());
+    }
+    tables.push((b"fvar", fvar_one_axis()));
+    tables.push((b"HVAR", hvar));
+    tables.sort_by_key(|(tag, _)| **tag);
+    sfnt(&tables)
+}
+
+fn font_with_vvar() -> Vec<u8> {
+    let store = Buf::new()
+        .u16(1)
+        .u32(12)
+        .u16(1)
+        .u32(22)
+        .u16(1)
+        .u16(1)
+        .i16(0)
+        .i16(16384)
+        .i16(16384)
+        .u16(1)
+        .u16(1)
+        .u16(1)
+        .u16(0)
+        .i16(21)
+        .done();
+    let vvar = Buf::new()
+        .u32(0x0001_0000)
+        .u32(24)
+        .u32(0)
+        .u32(0)
+        .u32(0)
+        .u32(56)
+        .bytes(&store)
+        .u8(0)
+        .u8(0)
+        .u16(1)
+        .u8(0)
+        .done();
+    let mut tables = sample_tables_with_glyf();
+    tables.push((b"vhea", build::hhea(1)));
+    tables.push((b"vmtx", build::hmtx(&[(500, 0)], &[])));
+    tables.push((b"VORG", Buf::new().u16(1).u16(0).i16(700).u16(0).done()));
+    tables.push((b"fvar", fvar_one_axis()));
+    tables.push((b"VVAR", vvar));
+    tables.sort_by_key(|(tag, _)| **tag);
+    sfnt(&tables)
+}
+
+fn font_with_metric_mvar(default_region: bool, tag: &[u8; 4], delta: i16) -> Vec<u8> {
+    let peak = if default_region { 0 } else { 16384 };
+    let store = Buf::new()
+        .u16(1)
+        .u32(12)
+        .u16(1)
+        .u32(22)
+        .u16(1)
+        .u16(1)
+        .i16(0)
+        .i16(peak)
+        .i16(peak)
+        .u16(1)
+        .u16(1)
+        .u16(1)
+        .u16(0)
+        .i16(delta)
+        .done();
+    let mvar = Buf::new()
+        .u32(0x0001_0000)
+        .u16(0)
+        .u16(8)
+        .u16(1)
+        .u16(20)
+        .bytes(tag)
+        .u16(0)
+        .u16(0)
+        .bytes(&store)
+        .done();
+    let mut tables = sample_tables_with_glyf();
+    tables.push((b"vhea", build::hhea(1)));
+    tables.push((
+        b"post",
+        Buf::new()
+            .u32(0x0003_0000)
+            .i32(0)
+            .i16(-100)
+            .i16(20)
+            .bytes(&[0; 20])
+            .done(),
+    ));
+    tables.push((b"fvar", fvar_one_axis()));
+    tables.push((b"MVAR", mvar));
+    tables.sort_by_key(|(tag, _)| **tag);
+    sfnt(&tables)
+}
+
+#[test]
+fn i03_freetype_mvar_does_not_create_metrics_without_outline() {
+    let bytes = font_with_metric_mvar(false, b"hasc", 21);
+    let mut tables = sample_tables();
+    let mvar_font = Font::new(&bytes, 0).unwrap();
+    let mvar = mvar_font
+        .table(sofel_font::read::Tag::new(b"MVAR"))
+        .unwrap();
+    tables.push((b"MVAR", mvar.to_vec()));
+    tables.push((b"fvar", fvar_one_axis()));
+    tables.sort_by_key(|(tag, _)| **tag);
+    let bytes = sfnt(&tables);
+    let font = Font::new(&bytes, 0).unwrap();
+    let location = Location::from_normalized_2_14(&font, &[8192]);
+    assert_eq!(font.instance(&location).ft_face_metrics().ascender, 0);
+}
+
+#[test]
+fn i03_hvar_advance_uses_implicit_map_and_harfbuzz_roundf() {
+    let bytes = font_with_hvar(500, true);
+    let font = Font::new(&bytes, 0).unwrap();
+    let default = font.default_instance();
+    assert_eq!(default.advance(GlyphId(0)), 500);
+    assert_eq!(default.advance(GlyphId(1)), 501);
+    let half = Location::from_design(&font, &[0.5]);
+    let instance = font.instance(&half);
+    assert_eq!(
+        instance.item_delta::<HbF32>(StoreKind::Hvar, 0, 0),
+        Ok(10.5)
+    );
+    assert_eq!(instance.advance(GlyphId(0)), 511);
+    assert_eq!(instance.advance(GlyphId(1)), 486);
+    let max = Location::from_design(&font, &[1.0]);
+    let instance = font.instance(&max);
+    assert_eq!(
+        instance.item_delta::<HbF32>(StoreKind::Hvar, 0, 0),
+        Ok(21.0)
+    );
+    assert_eq!(instance.advance(GlyphId(0)), 521);
+    assert_eq!(instance.advance(GlyphId(1)), 470);
+}
+
+#[test]
+fn i03_hvar_advance_retains_unsigned_range_above_u16() {
+    let bytes = font_with_hvar(u16::MAX, true);
+    let font = Font::new(&bytes, 0).unwrap();
+    let max = Location::from_design(&font, &[1.0]);
+    let value: u32 = font.instance(&max).advance(GlyphId(0));
+    assert_eq!(value, 65_556);
+}
+
+#[test]
+fn i03_hvar_does_not_adjust_missing_horizontal_metrics() {
+    let bytes = font_with_hvar(500, false);
+    let font = Font::new(&bytes, 0).unwrap();
+    let max = Location::from_design(&font, &[1.0]);
+    assert_eq!(font.instance(&max).advance(GlyphId(0)), 500);
+}
+
+#[test]
+fn i03_vvar_advance_uses_implicit_map_and_negative_harfbuzz_result() {
+    let bytes = font_with_vvar();
+    let font = Font::new(&bytes, 0).unwrap();
+    assert_eq!(font.default_instance().v_advance(GlyphId(0)), -500);
+    let half = Location::from_design(&font, &[0.5]);
+    assert_eq!(font.instance(&half).v_advance(GlyphId(0)), -511);
+    let max = Location::from_design(&font, &[1.0]);
+    assert_eq!(font.instance(&max).v_advance(GlyphId(0)), -521);
+    assert_eq!(font.default_instance().ft_v_advance(GlyphId(0)), Some(500));
+    assert_eq!(font.instance(&max).ft_v_advance(GlyphId(0)), Some(521));
+}
+
+#[test]
+fn i03_vorg_uses_vvar_origin_map_before_scaling() {
+    let bytes = font_with_vvar();
+    let font = Font::new(&bytes, 0).unwrap();
+    assert_eq!(
+        font.default_instance().v_origin(GlyphId(0), |_| None),
+        (250, 700)
+    );
+    let half = Location::from_design(&font, &[0.5]);
+    assert_eq!(
+        font.instance(&half).v_origin(GlyphId(0), |_| None),
+        (250, 711)
+    );
+}
+
+#[test]
+fn i03_mvar_adds_float_delta_before_metric_scaling() {
+    let bytes = font_with_metric_mvar(false, b"hasc", 21);
+    let font = Font::new(&bytes, 0).unwrap();
+    let tag = sofel_font::MetricsTag::HorizontalAscender;
+    assert_eq!(font.default_instance().metrics_position(tag), Some(800));
+    let half = Location::from_design(&font, &[0.5]);
+    assert_eq!(font.instance(&half).metrics_position(tag), Some(811));
+    let max = Location::from_design(&font, &[1.0]);
+    assert_eq!(font.instance(&max).metrics_position(tag), Some(821));
+    assert_eq!(font.instance(&max).h_extents().ascender, 821);
+    assert_eq!(
+        font.instance(&max)
+            .metrics_position_with_fallback(tag, |_| None),
+        821
+    );
+}
+
+#[test]
+fn i03_mvar_static_default_region_still_applies() {
+    let bytes = font_with_metric_mvar(true, b"hasc", 21);
+    let font = Font::new(&bytes, 0).unwrap();
+    assert_eq!(
+        font.default_instance()
+            .metrics_position(sofel_font::MetricsTag::HorizontalAscender),
+        Some(821)
+    );
+}
+
+#[test]
+fn i03_mvar_vertical_extents_follow_the_horizontal_scale() {
+    let bytes = font_with_metric_mvar(false, b"vasc", 21);
+    let font = Font::new(&bytes, 0).unwrap();
+    let half = Location::from_design(&font, &[0.5]);
+    let tag = sofel_font::MetricsTag::VerticalAscender;
+    assert_eq!(font.instance(&half).metrics_position(tag), Some(811));
+    assert_eq!(font.instance(&half).v_extents().ascender, 811);
+}
+
+#[test]
+fn i03_mvar_zero_underline_size_uses_the_fallback() {
+    let bytes = font_with_metric_mvar(false, b"unds", -20);
+    let font = Font::new(&bytes, 0).unwrap();
+    let max = Location::from_design(&font, &[1.0]);
+    let instance = font.instance(&max);
+    let tag = sofel_font::MetricsTag::UnderlineSize;
+    assert_eq!(instance.metrics_position(tag), Some(0));
+    assert_eq!(instance.metrics_position_with_fallback(tag, |_| None), 55);
+}
+
+#[test]
+fn i03_freetype_mvar_adjusts_derived_face_height() {
+    let bytes = font_with_metric_mvar(false, b"hasc", 21);
+    let font = Font::new(&bytes, 0).unwrap();
+    let original = font.default_instance().ft_face_metrics();
+    let max = Location::from_design(&font, &[1.0]);
+    let varied = font.instance(&max).ft_face_metrics();
+    assert_eq!(
+        i32::from(varied.ascender),
+        i32::from(original.ascender) + 21
+    );
+    assert_eq!(i32::from(varied.height), i32::from(original.height) + 21);
+}
+
+#[test]
+fn i03_freetype_mvar_recomputes_underline_center() {
+    let bytes = font_with_metric_mvar(false, b"unds", -20);
+    let font = Font::new(&bytes, 0).unwrap();
+    let max = Location::from_design(&font, &[1.0]);
+    let varied = font.instance(&max).ft_face_metrics();
+    assert_eq!(varied.underline_thickness, 0);
+    assert_eq!(varied.underline_position, -100);
 }
 
 #[test]

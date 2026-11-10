@@ -619,15 +619,15 @@ int32_t sofel_font_variation_glyph_raw(const sofel_font_t *font, uint32_t codepo
                                        uint32_t selector, uint32_t *glyph);
 
 /*
- * The horizontal advance of a glyph in font units, as HarfBuzz gives it
- * (0 for glyphs beyond the metrics). NULL location selects the default.
+ * The unsigned horizontal advance of a glyph in font units, as HarfBuzz gives it.
+ * It is 0 for glyphs beyond the metrics. NULL location selects the default.
  *
  * Rust: sofel_font::var::Instance::advance
  * HarfBuzz: hb_font_get_glyph_h_advance (with the scale at unitsPerEm)
  * FreeType: FT_Get_Advance (FT_LOAD_NO_SCALE)
  */
 int32_t sofel_font_h_advance(const sofel_font_t *font, const sofel_location_t *location,
-                             uint32_t glyph, uint16_t *advance);
+                             uint32_t glyph, uint32_t *advance);
 
 /*
  * The left side bearing of a glyph in font units, as FreeType reads it
@@ -874,7 +874,7 @@ int32_t sofel_scale_glyph_extents(const sofel_scale_t *scale, int32_t extents[4]
 /*
  * sofel_font_h_extents at this scale (the fallback is computed at it).
  *
- * Rust: sofel_font::HbScale::h_extents
+ * Rust: sofel_font::HbScale::h_extents, sofel_font::var::Instance::scaled_h_extents
  * HarfBuzz: hb_font_get_extents_for_direction (HB_DIRECTION_LTR)
  * FreeType: none
  */
@@ -883,7 +883,7 @@ int32_t sofel_scale_h_extents(const sofel_scale_t *scale, const sofel_font_t *fo
                               int32_t extents[3]);
 
 /*
- * Rust: sofel_font::HbScale::v_extents
+ * Rust: sofel_font::HbScale::v_extents, sofel_font::var::Instance::scaled_v_extents
  * HarfBuzz: hb_font_get_extents_for_direction (HB_DIRECTION_TTB)
  * FreeType: none
  */
@@ -892,7 +892,7 @@ int32_t sofel_scale_v_extents(const sofel_scale_t *scale, const sofel_font_t *fo
                               int32_t extents[3]);
 
 /*
- * Rust: sofel_font::HbScale::h_advance
+ * Rust: sofel_font::HbScale::h_advance, sofel_font::var::Instance::advance
  * HarfBuzz: hb_font_get_glyph_h_advance
  * FreeType: none
  */
@@ -901,7 +901,7 @@ int32_t sofel_scale_h_advance(const sofel_scale_t *scale, const sofel_font_t *fo
                               uint32_t glyph, int32_t *advance);
 
 /*
- * Rust: sofel_font::HbScale::v_advance
+ * Rust: sofel_font::HbScale::v_advance, sofel_font::var::Instance::scaled_v_advance
  * HarfBuzz: hb_font_get_glyph_v_advance
  * FreeType: none
  */
@@ -910,7 +910,7 @@ int32_t sofel_scale_v_advance(const sofel_scale_t *scale, const sofel_font_t *fo
                               uint32_t glyph, int32_t *advance);
 
 /*
- * Rust: sofel_font::HbScale::v_origin
+ * Rust: sofel_font::HbScale::v_origin, sofel_font::var::Instance::scaled_v_origin
  * HarfBuzz: hb_font_get_glyph_v_origin
  * FreeType: none
  */
@@ -928,7 +928,7 @@ int32_t sofel_scale_glyph_extents_of(const sofel_scale_t *scale, const sofel_fon
                                      uint32_t glyph, int32_t extents[4]);
 
 /*
- * Rust: sofel_font::HbScale::metrics_position
+ * Rust: sofel_font::HbScale::metrics_position, sofel_font::var::Instance::scaled_metrics_position
  * HarfBuzz: hb_ot_metrics_get_position
  * FreeType: none
  */
@@ -937,7 +937,7 @@ int32_t sofel_scale_metrics_position(const sofel_scale_t *scale, const sofel_fon
                                      uint32_t tag, int32_t *position);
 
 /*
- * Rust: sofel_font::HbScale::metrics_position_with_fallback
+ * Rust: sofel_font::HbScale::metrics_position_with_fallback, sofel_font::var::Instance::scaled_metrics_position_with_fallback
  * HarfBuzz: hb_ot_metrics_get_position_with_fallback
  * FreeType: none
  */

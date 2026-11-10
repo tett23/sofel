@@ -842,10 +842,10 @@ fn generate() -> String {
     .unwrap();
 
     // Advances, two glyphs past the end included.
-    let advances: Vec<u16> = (0..font.num_glyphs() + 2)
+    let advances: Vec<u32> = (0..font.num_glyphs() + 2)
         .map(|g| font.default_instance().advance(GlyphId(g)))
         .collect();
-    ints(&mut out, "uint16_t", "advances", &advances);
+    ints(&mut out, "uint32_t", "advances", &advances);
     let bearings: Vec<i16> = (0..font.num_glyphs() + 2)
         .map(|g| font.default_instance().ft_left_side_bearing(GlyphId(g)))
         .collect();

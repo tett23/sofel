@@ -5,18 +5,137 @@
 #[path = "../../sofel-read/tests/support/build.rs"]
 mod build;
 
-use build::{name, sample_tables_with_glyf, sfnt, utf16be};
+use build::{Buf, name, sample_tables_with_glyf, sfnt, utf16be};
 use sofel_capi::*;
 
-fn font_bytes() -> Vec<u8> {
+fn fvar_one_axis() -> Vec<u8> {
     let mut fvar = vec![0, 1, 0, 0, 0, 16, 0, 2, 0, 1, 0, 20, 0, 0, 0, 8];
     fvar.extend_from_slice(b"wght");
     for value in [0i32, 0, 0x10000] {
         fvar.extend_from_slice(&value.to_be_bytes());
     }
     fvar.extend_from_slice(&[0, 0, 1, 0]);
+    fvar
+}
+
+fn font_bytes() -> Vec<u8> {
     let mut tables = sample_tables_with_glyf();
-    tables.push((b"fvar", fvar));
+    tables.push((b"fvar", fvar_one_axis()));
+    tables.sort_by_key(|(tag, _)| **tag);
+    sfnt(&tables)
+}
+
+fn hvar_font_bytes() -> Vec<u8> {
+    let store = Buf::new()
+        .u16(1)
+        .u32(12)
+        .u16(1)
+        .u32(22)
+        .u16(1)
+        .u16(1)
+        .i16(0)
+        .i16(16384)
+        .i16(16384)
+        .u16(1)
+        .u16(1)
+        .u16(1)
+        .u16(0)
+        .i16(21)
+        .done();
+    let hvar = Buf::new()
+        .u32(0x0001_0000)
+        .u32(20)
+        .u32(0)
+        .u32(0)
+        .u32(0)
+        .bytes(&store)
+        .done();
+    let mut tables = sample_tables_with_glyf();
+    tables
+        .iter_mut()
+        .find(|(tag, _)| **tag == *b"hmtx")
+        .unwrap()
+        .1
+        .get_mut(..2)
+        .unwrap()
+        .copy_from_slice(&u16::MAX.to_be_bytes());
+    tables.push((b"HVAR", hvar));
+    tables.push((b"fvar", fvar_one_axis()));
+    tables.sort_by_key(|(tag, _)| **tag);
+    sfnt(&tables)
+}
+
+fn vvar_font_bytes() -> Vec<u8> {
+    let store = Buf::new()
+        .u16(1)
+        .u32(12)
+        .u16(1)
+        .u32(22)
+        .u16(1)
+        .u16(1)
+        .i16(0)
+        .i16(16384)
+        .i16(16384)
+        .u16(1)
+        .u16(1)
+        .u16(1)
+        .u16(0)
+        .i16(21)
+        .done();
+    let vvar = Buf::new()
+        .u32(0x0001_0000)
+        .u32(24)
+        .u32(0)
+        .u32(0)
+        .u32(0)
+        .u32(56)
+        .bytes(&store)
+        .u8(0)
+        .u8(0)
+        .u16(1)
+        .u8(0)
+        .done();
+    let mut tables = sample_tables_with_glyf();
+    tables.push((b"vhea", build::hhea(1)));
+    tables.push((b"vmtx", build::hmtx(&[(500, 0)], &[])));
+    tables.push((b"VORG", Buf::new().u16(1).u16(0).i16(700).u16(0).done()));
+    tables.push((b"fvar", fvar_one_axis()));
+    tables.push((b"VVAR", vvar));
+    tables.sort_by_key(|(tag, _)| **tag);
+    sfnt(&tables)
+}
+
+fn mvar_font_bytes() -> Vec<u8> {
+    let store = Buf::new()
+        .u16(1)
+        .u32(12)
+        .u16(1)
+        .u32(22)
+        .u16(1)
+        .u16(1)
+        .i16(0)
+        .i16(16384)
+        .i16(16384)
+        .u16(1)
+        .u16(1)
+        .u16(1)
+        .u16(0)
+        .i16(21)
+        .done();
+    let mvar = Buf::new()
+        .u32(0x0001_0000)
+        .u16(0)
+        .u16(8)
+        .u16(1)
+        .u16(20)
+        .bytes(b"hasc")
+        .u16(0)
+        .u16(0)
+        .bytes(&store)
+        .done();
+    let mut tables = sample_tables_with_glyf();
+    tables.push((b"fvar", fvar_one_axis()));
+    tables.push((b"MVAR", mvar));
     tables.sort_by_key(|(tag, _)| **tag);
     sfnt(&tables)
 }
@@ -222,7 +341,7 @@ fn i03_h_advance_accepts_location() {
         unsafe { sofel_location_create_design(font, coords.as_ptr(), 1, &mut location) },
         OK
     );
-    let mut advance = 0u16;
+    let mut advance = 0u32;
     // SAFETY: font and location are live; advance is writable.
     assert_eq!(
         unsafe { sofel_font_h_advance(font, location, 0, &mut advance) },
@@ -251,6 +370,165 @@ fn i03_h_advance_accepts_location() {
     assert_eq!(advance, 500);
     // SAFETY: both handles are owned and no longer used.
     unsafe {
+        sofel_location_destroy(location);
+        sofel_font_destroy(font);
+    }
+}
+
+#[test]
+fn i03_hvar_advance_preserves_unsigned_range_in_c_abi() {
+    let bytes = hvar_font_bytes();
+    let mut error = -99;
+    // SAFETY: bytes remain valid through handle destruction.
+    let font = unsafe { sofel_font_create(bytes.as_ptr(), bytes.len(), 0, &mut error) };
+    assert_eq!(error, OK);
+    let coords = [1.0f32];
+    let mut location = core::ptr::null_mut();
+    // SAFETY: font and all pointers are valid.
+    assert_eq!(
+        unsafe { sofel_location_create_design(font, coords.as_ptr(), 1, &mut location) },
+        OK
+    );
+    let mut advance = 0u32;
+    // SAFETY: font and location are live; advance is writable.
+    assert_eq!(
+        unsafe { sofel_font_h_advance(font, location, 0, &mut advance) },
+        OK
+    );
+    assert_eq!(advance, 65_556);
+    // SAFETY: font remains live until scale destruction.
+    let scale = unsafe { sofel_scale_create(font, 1000, 1000, &mut error) };
+    assert_eq!(error, OK);
+    let mut scaled = i32::MIN;
+    // SAFETY: all handles are live; scaled is writable.
+    assert_eq!(
+        unsafe { sofel_scale_h_advance(scale, font, location, 0, &mut scaled) },
+        OK
+    );
+    assert_eq!(scaled, 65_556);
+    // SAFETY: both handles are owned and no longer used.
+    unsafe {
+        sofel_scale_destroy(scale);
+        sofel_location_destroy(location);
+        sofel_font_destroy(font);
+    }
+}
+
+#[test]
+fn i03_vvar_advance_uses_location_in_c_abi() {
+    let bytes = vvar_font_bytes();
+    let mut error = -99;
+    // SAFETY: bytes remain valid through handle destruction.
+    let font = unsafe { sofel_font_create(bytes.as_ptr(), bytes.len(), 0, &mut error) };
+    assert_eq!(error, OK);
+    let coords = [0.5f32];
+    let mut location = core::ptr::null_mut();
+    // SAFETY: font and all pointers are valid.
+    assert_eq!(
+        unsafe { sofel_location_create_design(font, coords.as_ptr(), 1, &mut location) },
+        OK
+    );
+    let mut advance = i32::MIN;
+    // SAFETY: font and location are live; advance is writable.
+    assert_eq!(
+        unsafe { sofel_font_v_advance(font, location, 0, &mut advance) },
+        OK
+    );
+    assert_eq!(advance, -511);
+    let mut ft_advance = u16::MAX;
+    // SAFETY: font and location are live; ft_advance is writable.
+    assert_eq!(
+        unsafe { sofel_font_ft_v_advance(font, location, 0, &mut ft_advance) },
+        OK
+    );
+    assert_eq!(ft_advance, 511);
+    let mut origin = [i32::MIN; 2];
+    // SAFETY: font and location are live; origin is writable.
+    assert_eq!(
+        unsafe { sofel_font_v_origin(font, location, 0, origin.as_mut_ptr()) },
+        OK
+    );
+    assert_eq!(origin, [250, 711]);
+    // SAFETY: font remains live until scale destruction.
+    let scale = unsafe { sofel_scale_create(font, 1000, 1000, &mut error) };
+    assert_eq!(error, OK);
+    // SAFETY: all handles are live; advance is writable.
+    assert_eq!(
+        unsafe { sofel_scale_v_advance(scale, font, location, 0, &mut advance) },
+        OK
+    );
+    assert_eq!(advance, -511);
+    origin = [i32::MIN; 2];
+    // SAFETY: all handles are live; origin is writable.
+    assert_eq!(
+        unsafe { sofel_scale_v_origin(scale, font, location, 0, origin.as_mut_ptr()) },
+        OK
+    );
+    assert_eq!(origin, [250, 711]);
+    // SAFETY: all handles are owned and no longer used.
+    unsafe {
+        sofel_scale_destroy(scale);
+        sofel_location_destroy(location);
+        sofel_font_destroy(font);
+    }
+}
+
+#[test]
+fn i03_mvar_metric_uses_location_at_scale_in_c_abi() {
+    let bytes = mvar_font_bytes();
+    let mut error = -99;
+    // SAFETY: bytes remain valid through handle destruction.
+    let font = unsafe { sofel_font_create(bytes.as_ptr(), bytes.len(), 0, &mut error) };
+    assert_eq!(error, OK);
+    let coords = [1.0f32];
+    let mut location = core::ptr::null_mut();
+    // SAFETY: font and all pointers are valid.
+    assert_eq!(
+        unsafe { sofel_location_create_design(font, coords.as_ptr(), 1, &mut location) },
+        OK
+    );
+    let tag = u32::from_be_bytes(*b"hasc");
+    let mut position = i32::MIN;
+    // SAFETY: font and location are live; position is writable.
+    assert_eq!(
+        unsafe { sofel_font_metrics_position(font, location, tag, &mut position) },
+        OK
+    );
+    assert_eq!(position, 821);
+    let mut extents = [i32::MIN; 3];
+    // SAFETY: font and location are live; extents is writable.
+    assert_eq!(
+        unsafe { sofel_font_h_extents(font, location, extents.as_mut_ptr()) },
+        OK
+    );
+    assert_eq!(extents[0], 821);
+    let mut ft_metrics = [i32::MIN; 11];
+    // SAFETY: font and location are live; ft_metrics is writable.
+    assert_eq!(
+        unsafe { sofel_font_ft_face_metrics(font, location, ft_metrics.as_mut_ptr()) },
+        OK
+    );
+    assert_eq!(ft_metrics[0], 821);
+    // SAFETY: font remains live until scale destruction.
+    let scale = unsafe { sofel_scale_create(font, 1000, 1000, &mut error) };
+    assert_eq!(error, OK);
+    position = i32::MIN;
+    // SAFETY: all handles are live; position is writable.
+    assert_eq!(
+        unsafe { sofel_scale_metrics_position(scale, font, location, tag, &mut position) },
+        OK
+    );
+    assert_eq!(position, 821);
+    extents = [i32::MIN; 3];
+    // SAFETY: all handles are live; extents is writable.
+    assert_eq!(
+        unsafe { sofel_scale_h_extents(scale, font, location, extents.as_mut_ptr()) },
+        OK
+    );
+    assert_eq!(extents[0], 821);
+    // SAFETY: all handles are owned and no longer used.
+    unsafe {
+        sofel_scale_destroy(scale);
         sofel_location_destroy(location);
         sofel_font_destroy(font);
     }
@@ -472,8 +750,8 @@ fn i03_location_keeps_default_outline_and_metrics_until_values_are_applied() {
         unsafe { sofel_location_create_design(font, coords.as_ptr(), 1, &mut location) },
         OK
     );
-    let mut default_advance = u16::MAX;
-    let mut located_advance = u16::MAX;
+    let mut default_advance = u32::MAX;
+    let mut located_advance = u32::MAX;
     // SAFETY: font and location are live; outputs are writable.
     assert_eq!(
         unsafe { sofel_font_h_advance(font, core::ptr::null(), 1, &mut default_advance) },
