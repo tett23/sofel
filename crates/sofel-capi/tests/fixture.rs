@@ -1201,7 +1201,21 @@ fn generate() -> String {
     diagnostics(&mut out, "ttc_diagnostics", &ttc_data);
     color_cases(&mut out);
     subset_cases(&mut out, &font_data);
+    subset_cff_cases(&mut out, &cff_data);
     out
+}
+
+/// The CFF charstring accessors (ADR 0022 stage 11) on the CFF fixture
+/// font: the length of the CharStrings INDEX and glyph 1's charstring.
+fn subset_cff_cases(out: &mut String, cff_data: &[u8]) {
+    let font = Font::new(cff_data, 0).unwrap();
+    let index = sofel_subset::cff_charstrings_index(&font).unwrap();
+    writeln!(out, "#define CFF_CHARSTRINGS_INDEX_LEN {}", index.len()).unwrap();
+    bytes(
+        out,
+        "cff_charstring_1",
+        sofel_subset::cff_charstring_data(&font, 1).unwrap(),
+    );
 }
 
 /// Unicode properties (ADR 0019): the code points of sofel-unicode's
@@ -1779,6 +1793,10 @@ fn subset_cases(out: &mut String, font_data: &[u8]) {
         };
         let bytes = plan.execute(&font).unwrap();
         assert_eq!(subset(&font, input).unwrap(), bytes);
+        // A plan made with the prepared value gives the same bytes.
+        let prepared = sofel_subset::Prepared::new(&font);
+        let fast = Plan::with_prepared(&font, &prepared, input).unwrap();
+        assert_eq!(fast.execute(&font).unwrap(), bytes);
         let old_new = plan.old_to_new_glyphs();
         let new_old = plan.new_to_old_glyphs().to_vec();
         let unicode_old: Vec<(u32, u32)> = plan.unicode_to_old_glyphs().collect();

@@ -633,6 +633,30 @@ impl Parsed {
         self.add_op(op, end, subr_num);
     }
 
+    /// `compact`: joins each run of adjacent tokens that are not calls,
+    /// have the same hint mark and span at most 255 bytes into one token
+    /// (with an invalid operator). The encoded program is the same.
+    pub fn compact(&mut self) {
+        let is_call = |t: &Tok| t.op == CALLSUBR || t.op == CALLGSUBR;
+        let mut out: Vec<Tok> = Vec::with_capacity(self.values.len());
+        for t in self.values.drain(..) {
+            match out.last_mut() {
+                Some(j)
+                    if !is_call(j)
+                        && !is_call(&t)
+                        && j.hinting == t.hinting
+                        && j.end == t.start
+                        && t.end.saturating_sub(j.start) <= 255 =>
+                {
+                    j.end = t.end;
+                    j.op = INVALID;
+                }
+                _ => out.push(t),
+            }
+        }
+        self.values = out;
+    }
+
     /// `at_end`: whether token `pos` is the last before `return`.
     pub fn at_end(&self, pos: usize) -> bool {
         let next = pos.saturating_add(1);

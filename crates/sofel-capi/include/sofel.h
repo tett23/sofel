@@ -2896,21 +2896,45 @@ int32_t sofel_subset_axis_range_from_string(const char *s, size_t len, float *mi
 int32_t sofel_subset_axis_range_to_string(const sofel_subset_input_t *input, uint32_t tag,
                                           char *s, size_t capacity, size_t *len);
 
-/* The result of preprocessing a font (ADR 0022's later stage); no
- * function makes one yet. */
+/* The result of preprocessing a font: immutable, usable from several
+ * threads at once. */
 typedef struct sofel_subset_prepared sofel_subset_prepared_t;
+
+/*
+ * Preprocesses `font` for subsetting it many times: plans made with the
+ * result (sofel_subset_plan_create) give the same bytes, faster. It
+ * fails only for a NULL argument.
+ *
+ * Rust: sofel_subset::Prepared::new
+ * HarfBuzz: hb_subset_preprocess
+ * FreeType: none
+ */
+int32_t sofel_subset_prepared_create(const sofel_font_t *font,
+                                     sofel_subset_prepared_t **prepared);
+
+/*
+ * Plans made with `prepared` keep their own reference to its data and
+ * may outlive it.
+ *
+ * Rust: none
+ * HarfBuzz: hb_face_destroy (of the preprocessed face)
+ * FreeType: none
+ */
+void sofel_subset_prepared_destroy(sofel_subset_prepared_t *prepared);
 
 /* A subsetting plan: immutable, usable from several threads at once. */
 typedef struct sofel_subset_plan sofel_subset_plan_t;
 
 /*
- * Computes the glyph closure and mapping of `input` for `font`.
- * `prepared` must be NULL for now (SOFEL_ERROR_INVALID_ARGUMENT
- * otherwise). The errors are those of subsetting (SOFEL_ERROR_NO_GLYPHS,
- * _INVALID_INPUT, _MALFORMED_TABLE, _UNSUPPORTED, _LIMIT).
+ * Computes the glyph closure and mapping of `input` for `font`, with
+ * `prepared` (from sofel_subset_prepared_create for the same font) when
+ * it is not NULL. The errors are those of subsetting
+ * (SOFEL_ERROR_NO_GLYPHS, _INVALID_INPUT, _MALFORMED_TABLE, _UNSUPPORTED,
+ * _LIMIT); SOFEL_ERROR_INVALID_INPUT also when `prepared` was made from
+ * a font with another glyph count or cmap, DMAP or CFF table length.
  *
- * Rust: sofel_subset::Plan::new
- * HarfBuzz: hb_subset_plan_create_or_fail
+ * Rust: sofel_subset::Plan::new, sofel_subset::Plan::with_prepared
+ * HarfBuzz: hb_subset_plan_create_or_fail (on a preprocessed face)
  * FreeType: none
  */
 int32_t sofel_subset_plan_create(const sofel_font_t *font,
@@ -2923,6 +2947,30 @@ int32_t sofel_subset_plan_create(const sofel_font_t *font,
  * FreeType: none
  */
 void sofel_subset_plan_destroy(sofel_subset_plan_t *plan);
+
+/*
+ * The bytes of the CharStrings INDEX of the font's CFF table, without
+ * copying: *data points into the font's data. SOFEL_ERROR_NOT_FOUND
+ * when HarfBuzz does not read the table.
+ *
+ * Rust: sofel_subset::cff_charstrings_index
+ * HarfBuzz: hb_subset_cff_get_charstrings_index
+ * FreeType: none
+ */
+int32_t sofel_subset_cff_charstrings_index(const sofel_font_t *font, const uint8_t **data,
+                                           size_t *len);
+
+/*
+ * The charstring of `glyph` in the font's CFF table, without copying.
+ * SOFEL_ERROR_NOT_FOUND when HarfBuzz does not read the table, for a
+ * glyph not below the count and for an empty charstring.
+ *
+ * Rust: sofel_subset::cff_charstring_data
+ * HarfBuzz: hb_subset_cff_get_charstring_data
+ * FreeType: none
+ */
+int32_t sofel_subset_cff_charstring_data(const sofel_font_t *font, uint32_t glyph,
+                                         const uint8_t **data, size_t *len);
 
 /*
  * Writes the subset font of a plan made for `font`; free the bytes with

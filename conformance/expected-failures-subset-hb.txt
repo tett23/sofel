@@ -1,52 +1,112 @@
 # Expected failures of the comparisons with hb-dump --subset (ADR 0022,
 # 突き合わせ; crates/sofel-conformance/tests/harfbuzz_subset_hb.rs), each
 # with its reason: stage:<name> for an ADR 0022 stage not implemented yet
-# (stage:var for the tables of variable fonts kept unpinned and the item
-# variation stores, stage 10), deferred:instance for the instancing ADR
-# 0022 defers (avar version 2).
+# (stage:var for the tables of variable fonts kept unpinned and the item variation
+# stores, stage 10), deferred:instance for the instancing ADR 0022
+# defers (avar version 2). A golem case run with --preprocess (id
+# suffixed +prepared) fails for the same reason as the case without it;
+# upstream:preprocess-malformed marks a font whose malformed table
+# HarfBuzz's preprocessing rewrites, so that HarfBuzz's own output with
+# --preprocess differs from its output without it (sofel gives the
+# latter both times; ADR 0022 does not match HarfBuzz on malformed
+# tables).
+hb-dump/glyphs/AdobeVFPrototype.otf  # stage:var
+hb-dump/glyphs/COLRv1-alpha.ttf  # stage:var
+hb-dump/glyphs/Comfortaa-Regular-new.ttf  # stage:var
+hb-dump/glyphs/Fraunces.ttf  # stage:var
+hb-dump/glyphs/ImplicitHVAR.ttf  # stage:var
+hb-dump/glyphs/MPLUS1-Variable.ttf  # stage:var
+hb-dump/glyphs/RobotoFlex-Variable.ttf  # stage:var
 hb-dump/golem/32bit_var_store.otf:keep  # stage:var
+hb-dump/golem/32bit_var_store.otf:keep+prepared  # stage:var
 hb-dump/golem/AdobeVFPrototype.otf:keep  # stage:var
+hb-dump/golem/AdobeVFPrototype.otf:keep+prepared  # stage:var
 hb-dump/golem/AdobeVFPrototype_vsindex.otf:keep  # stage:var
+hb-dump/golem/AdobeVFPrototype_vsindex.otf:keep+prepared  # stage:var
 hb-dump/golem/AnekBangla-question-subset.ttf:keep  # stage:var
+hb-dump/golem/AnekBangla-question-subset.ttf:keep+prepared  # stage:var
 hb-dump/golem/AnekBangla-subset.ttf:keep  # stage:var
+hb-dump/golem/AnekBangla-subset.ttf:keep+prepared  # stage:var
 hb-dump/golem/COLRv1-alpha.ttf:keep  # stage:var
+hb-dump/golem/COLRv1-alpha.ttf:keep+prepared  # stage:var
 hb-dump/golem/COLRv1-alpha.ttf:pin  # stage:var
+hb-dump/golem/COLRv1-alpha.ttf:pin+prepared  # stage:var
 hb-dump/golem/Cantarell-VF-ABC.otf:keep  # stage:var
+hb-dump/golem/Cantarell-VF-ABC.otf:keep+prepared  # stage:var
 hb-dump/golem/Comfortaa-Regular-new.ttf:keep  # stage:var
+hb-dump/golem/Comfortaa-Regular-new.ttf:keep+prepared  # stage:var
 hb-dump/golem/FeatureParams-variations.ttf:keep  # stage:var
+hb-dump/golem/FeatureParams-variations.ttf:keep+prepared  # stage:var
 hb-dump/golem/Foldit.ttf:keep  # stage:var
+hb-dump/golem/Foldit.ttf:keep+prepared  # stage:var
 hb-dump/golem/Foldit.ttf:pin  # stage:var
+hb-dump/golem/Foldit.ttf:pin+prepared  # stage:var
 hb-dump/golem/Fraunces.ttf:keep  # stage:var
+hb-dump/golem/Fraunces.ttf:keep+prepared  # stage:var
 hb-dump/golem/Handjet.ttf:keep  # stage:var
+hb-dump/golem/Handjet.ttf:keep+prepared  # stage:var
 hb-dump/golem/IUP-large-contour.ttf:keep  # stage:var
+hb-dump/golem/IUP-large-contour.ttf:keep+prepared  # stage:var
 hb-dump/golem/ImplicitHVAR.ttf:keep  # stage:var
+hb-dump/golem/ImplicitHVAR.ttf:keep+prepared  # stage:var
 hb-dump/golem/KalniaGlaze.ttf:keep  # stage:var
+hb-dump/golem/KalniaGlaze.ttf:keep+prepared  # stage:var
 hb-dump/golem/KalniaGlaze.ttf:pin  # stage:var
+hb-dump/golem/KalniaGlaze.ttf:pin+prepared  # stage:var
 hb-dump/golem/LayoutFeatureDedup.ttf:keep  # stage:var
+hb-dump/golem/LayoutFeatureDedup.ttf:keep+prepared  # stage:var
 hb-dump/golem/MPLUS1-Variable.ttf:keep  # stage:var
+hb-dump/golem/MPLUS1-Variable.ttf:keep+prepared  # stage:var
 hb-dump/golem/Muli-ABC.ttf:keep  # stage:var
+hb-dump/golem/Muli-ABC.ttf:keep+prepared  # stage:var
 hb-dump/golem/NotoSans-VF.abc.ttf:keep  # stage:var
+hb-dump/golem/NotoSans-VF.abc.ttf:keep+prepared  # stage:var
 hb-dump/golem/NotoSansJP-VF.subset.otf:keep  # stage:var
+hb-dump/golem/NotoSansJP-VF.subset.otf:keep+prepared  # stage:var
 hb-dump/golem/NotoSansOriya-subset.ttf:keep  # stage:var
+hb-dump/golem/NotoSansOriya-subset.ttf:keep+prepared  # stage:var
 hb-dump/golem/NotoSansOriya-valueformat-subset.ttf:keep  # stage:var
+hb-dump/golem/NotoSansOriya-valueformat-subset.ttf:keep+prepared  # stage:var
 hb-dump/golem/NotoSerifHK-subset.ttf:keep  # stage:var
+hb-dump/golem/NotoSerifHK-subset.ttf:keep+prepared  # stage:var
 hb-dump/golem/NotoSerifHK-subset.ttf:pin  # stage:var
+hb-dump/golem/NotoSerifHK-subset.ttf:pin+prepared  # stage:var
 hb-dump/golem/Recursive-ABC.ttf:keep  # stage:var
+hb-dump/golem/Recursive-ABC.ttf:keep+prepared  # stage:var
 hb-dump/golem/Roboto-Variable.ABC.ttf:keep  # stage:var
+hb-dump/golem/Roboto-Variable.ABC.ttf:keep+prepared  # stage:var
 hb-dump/golem/Roboto-Variable.composite.ttf:keep  # stage:var
+hb-dump/golem/Roboto-Variable.composite.ttf:keep+prepared  # stage:var
 hb-dump/golem/Roboto-Variable.ttf:keep  # stage:var
+hb-dump/golem/Roboto-Variable.ttf:keep+prepared  # stage:var
 hb-dump/golem/RobotoDelta-NullVarStore-VF.ttf:keep  # stage:var
+hb-dump/golem/RobotoDelta-NullVarStore-VF.ttf:keep+prepared  # stage:var
 hb-dump/golem/RobotoDelta-NullVarStore-VF.ttf:pin  # deferred:instance
+hb-dump/golem/RobotoDelta-NullVarStore-VF.ttf:pin+prepared  # deferred:instance
 hb-dump/golem/RobotoDelta-Roman-VF-subset.ttf:keep  # stage:var
+hb-dump/golem/RobotoDelta-Roman-VF-subset.ttf:keep+prepared  # stage:var
 hb-dump/golem/RobotoDelta-Roman-VF-subset.ttf:pin  # deferred:instance
+hb-dump/golem/RobotoDelta-Roman-VF-subset.ttf:pin+prepared  # deferred:instance
 hb-dump/golem/RobotoFlex-Variable.ABC.ttf:keep  # stage:var
+hb-dump/golem/RobotoFlex-Variable.ABC.ttf:keep+prepared  # stage:var
 hb-dump/golem/RobotoFlex-Variable.ttf:keep  # stage:var
+hb-dump/golem/RobotoFlex-Variable.ttf:keep+prepared  # stage:var
 hb-dump/golem/RobotoMono.ttf:keep  # stage:var
+hb-dump/golem/RobotoMono.ttf:keep+prepared  # stage:var
 hb-dump/golem/SourceSerif4Variable-Roman-HelloWorld.otf:keep  # stage:var
+hb-dump/golem/SourceSerif4Variable-Roman-HelloWorld.otf:keep+prepared  # stage:var
 hb-dump/golem/SourceSerif4Variable-Roman_subset.otf:keep  # stage:var
+hb-dump/golem/SourceSerif4Variable-Roman_subset.otf:keep+prepared  # stage:var
 hb-dump/golem/SourceSerifVariable-Roman.ttf:keep  # stage:var
+hb-dump/golem/SourceSerifVariable-Roman.ttf:keep+prepared  # stage:var
+hb-dump/golem/bad-gsub.otf:keep+prepared  # upstream:preprocess-malformed
 hb-dump/golem/google_symbols_subset_test.ttf:keep  # stage:var
+hb-dump/golem/google_symbols_subset_test.ttf:keep+prepared  # stage:var
 hb-dump/golem/googlesansflex_subset.ttf:keep  # stage:var
+hb-dump/golem/googlesansflex_subset.ttf:keep+prepared  # stage:var
 hb-dump/golem/playwrite_mm.subset.ttf:keep  # stage:var
+hb-dump/golem/playwrite_mm.subset.ttf:keep+prepared  # stage:var
 hb-dump/golem/sixtyfour_subset.ttf:keep  # stage:var
+hb-dump/golem/sixtyfour_subset.ttf:keep+prepared  # stage:var
 hb-dump/golem/sixtyfour_subset.ttf:pin  # stage:var
+hb-dump/golem/sixtyfour_subset.ttf:pin+prepared  # stage:var

@@ -12,6 +12,7 @@ mod specialize;
 
 pub(crate) use cff2::{instance_metrics, subset as subset2};
 
+use alloc::borrow::Cow;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec;
 use alloc::vec::Vec;
@@ -659,122 +660,234 @@ fn drop_hints_in_subr(
     has_hint
 }
 
-/// `collect_subr_refs_in_str` with hints dropped.
+/// `collect_subr_refs_in_str`: adds the subroutines that `p` calls to
+/// the closures, without the calls marked as hints when `drop_hints`.
 fn collect_subr_refs(
-    progs: &mut Programs<'_>,
-    id: (Kind, u32),
+    p: &Parsed,
+    gsubrs: &[Parsed],
+    lsubrs: &[Parsed],
+    drop_hints: bool,
     global: &mut BTreeSet<u32>,
     local: &mut BTreeSet<u32>,
 ) {
-    let Some(p) = progs.get(id.0, id.1) else {
-        return;
-    };
     if !p.has_calls {
         return;
     }
-    let calls: Vec<(u32, u32)> = p
-        .values
-        .iter()
-        .filter(|t| !t.hinting && (t.op == cs::CALLSUBR || t.op == cs::CALLGSUBR))
-        .map(|t| (t.op, t.subr_num))
-        .collect();
-    for (op, num) in calls {
-        let (kind, closure) = if op == cs::CALLSUBR {
-            (Kind::Local, &mut *local)
-        } else {
-            (Kind::Global, &mut *global)
+    for t in &p.values {
+        if drop_hints && t.hinting {
+            continue;
+        }
+        let (subrs, global_call) = match t.op {
+            cs::CALLSUBR => (lsubrs, false),
+            cs::CALLGSUBR => (gsubrs, true),
+            _ => continue,
         };
-        if closure.insert(num) {
-            collect_subr_refs(progs, (kind, num), global, local);
+        let added = if global_call {
+            global.insert(t.subr_num)
+        } else {
+            local.insert(t.subr_num)
+        };
+        if added && let Some(s) = subrs.get(t.subr_num as usize) {
+            collect_subr_refs(s, gsubrs, lsubrs, drop_hints, global, local);
         }
     }
 }
 
-/// The subroutine subsetter (`subr_subsetter_t`) after `subset`.
-struct Subrs {
+/// The parsed programs of every glyph of a font, as HarfBuzz's
+/// preprocessing leaves them in its `cff_subset_accelerator_t`: each
+/// glyph parsed in glyph order, its hints marked, and the tokens
+/// compacted.
+#[derive(Clone, Debug)]
+pub(crate) struct CffCache {
+    /// By old glyph id.
     charstrings: Vec<Parsed>,
     gsubrs: Vec<Parsed>,
     lsubrs: Vec<Vec<Parsed>>,
+}
+
+/// The empty parsed programs of `acc`'s subroutines.
+fn empty_subrs(acc: &Acc<'_>) -> (Vec<Parsed>, Vec<Vec<Parsed>>) {
+    let gsubrs = vec![Parsed::default(); acc.gsubrs.len() as usize];
+    let lsubrs = (0..acc.fd_count)
+        .map(|fd| vec![Parsed::default(); acc.local_subrs(fd).len() as usize])
+        .collect();
+    (gsubrs, lsubrs)
+}
+
+/// One glyph of `subr_subsetter_t::subset`'s first loop: parses glyph
+/// `old` into `cs`, adds the subroutines it runs to the closures, and
+/// with `analyze_hints` marks its hints (`drop_hints_in_str`). `false`
+/// when the program cannot be parsed.
+#[allow(clippy::too_many_arguments)]
+fn parse_glyph(
+    acc: &Acc<'_>,
+    old: u32,
+    cs: &mut Parsed,
+    gsubrs: &mut [Parsed],
+    lsubrs: &mut [Vec<Parsed>],
+    gclosure: &mut BTreeSet<u32>,
+    lclosures: &mut [BTreeSet<u32>],
+    analyze_hints: bool,
+) -> bool {
+    let fd = acc.fd(old);
+    if fd >= acc.fd_count {
+        return false;
+    }
+    let mut env = Env::new(acc.char_string(old), acc.gsubrs, acc.local_subrs(fd));
+    let (Some(ls), Some(lc)) = (lsubrs.get_mut(fd as usize), lclosures.get_mut(fd as usize)) else {
+        return false;
+    };
+    let mut ss = SubrSubset {
+        programs: Programs {
+            charstring: cs,
+            gsubrs,
+            lsubrs: ls,
+        },
+        global_closure: gclosure,
+        local_closure: lc,
+        current: (Kind::CharString, 0),
+    };
+    if !cs::interpret(&mut env, &mut ss) {
+        return false;
+    }
+    ss.complete(&mut env);
+    if analyze_hints {
+        let mut drop = DropState::default();
+        if drop_hints_in_str(&mut ss.programs, (Kind::CharString, 0), &mut drop) {
+            ss.programs.charstring.hint_dropped = true;
+        }
+    }
+    true
+}
+
+/// [`CffCache`] of `font`, or `None` when HarfBuzz's accelerator is not
+/// valid or a glyph cannot be parsed (HarfBuzz's preprocessing then
+/// fails and leaves no accelerator).
+pub(crate) fn prepare(font: &Font<'_>) -> Option<CffCache> {
+    let acc = Acc::new(font)?;
+    let n = acc.num_glyphs();
+    let mut charstrings = vec![Parsed::default(); n as usize];
+    let (mut gsubrs, mut lsubrs) = empty_subrs(&acc);
+    let mut gclosure = BTreeSet::new();
+    let mut lclosures = vec![BTreeSet::new(); acc.fd_count as usize];
+    for (g, cs) in (0..n).zip(charstrings.iter_mut()) {
+        // populating the accelerator analyzes the hints of every glyph.
+        let ok = parse_glyph(
+            &acc,
+            g,
+            cs,
+            &mut gsubrs,
+            &mut lsubrs,
+            &mut gclosure,
+            &mut lclosures,
+            true,
+        );
+        if !ok {
+            return None;
+        }
+        cs.compact();
+    }
+    gsubrs.iter_mut().for_each(Parsed::compact);
+    lsubrs.iter_mut().flatten().for_each(Parsed::compact);
+    Some(CffCache {
+        charstrings,
+        gsubrs,
+        lsubrs,
+    })
+}
+
+/// The subroutine subsetter (`subr_subsetter_t`) after `subset`: the
+/// parsed programs, borrowed from a [`CffCache`] or parsed for the plan.
+struct Subrs<'c> {
+    /// By new glyph id when parsed for the plan.
+    charstrings: Vec<Parsed>,
+    /// By old glyph id (`cached_charstrings`).
+    cached: Option<&'c [Parsed]>,
+    gsubrs: Cow<'c, [Parsed]>,
+    lsubrs: Cow<'c, [Vec<Parsed>]>,
     global_remap: Remap,
     local_remaps: Vec<Remap>,
 }
 
 /// `subr_subsetter_t::subset`.
-fn subset_subrs(plan: &Plan, acc: &Acc<'_>, tag: Tag) -> Result<Subrs, SubsetError> {
+fn subset_subrs<'c>(plan: &'c Plan, acc: &Acc<'_>, tag: Tag) -> Result<Subrs<'c>, SubsetError> {
     let fail = SubsetError::Failed { tag };
     let drop_hints = plan.flags.has(Flags::NO_HINTING);
     let fd_count = acc.fd_count as usize;
-    let mut charstrings = vec![Parsed::default(); plan.num_output_glyphs as usize];
-    let mut gsubrs = vec![Parsed::default(); acc.gsubrs.len() as usize];
-    let mut lsubrs: Vec<Vec<Parsed>> = (0..acc.fd_count)
-        .map(|fd| vec![Parsed::default(); acc.local_subrs(fd).len() as usize])
-        .collect();
     let mut gclosure = BTreeSet::new();
     let mut lclosures = vec![BTreeSet::new(); fd_count];
-    for &(new, old) in &plan.glyphs.new_to_old {
-        let fd = acc.fd(old);
-        if fd >= acc.fd_count {
-            return Err(fail);
+    let cache = plan.prepared.as_ref().and_then(|p| p.cff());
+    let mut subrs = if let Some(c) = cache {
+        Subrs {
+            charstrings: Vec::new(),
+            cached: Some(&c.charstrings),
+            gsubrs: Cow::Borrowed(&c.gsubrs),
+            lsubrs: Cow::Borrowed(&c.lsubrs),
+            global_remap: Remap::default(),
+            local_remaps: Vec::new(),
         }
-        let mut env = Env::new(acc.char_string(old), acc.gsubrs, acc.local_subrs(fd));
-        let (Some(cs), Some(ls), Some(lc)) = (
-            charstrings.get_mut(new as usize),
-            lsubrs.get_mut(fd as usize),
-            lclosures.get_mut(fd as usize),
-        ) else {
-            return Err(fail);
-        };
-        let mut ss = SubrSubset {
-            programs: Programs {
-                charstring: cs,
-                gsubrs: &mut gsubrs,
-                lsubrs: ls,
-            },
-            global_closure: &mut gclosure,
-            local_closure: lc,
-            current: (Kind::CharString, 0),
-        };
-        if !cs::interpret(&mut env, &mut ss) {
-            return Err(fail);
-        }
-        ss.complete(&mut env);
-        if drop_hints {
-            let mut drop = DropState::default();
-            if drop_hints_in_str(&mut ss.programs, (Kind::CharString, 0), &mut drop) {
-                ss.programs.charstring.hint_dropped = true;
+    } else {
+        let mut charstrings = vec![Parsed::default(); plan.num_output_glyphs as usize];
+        let (mut gsubrs, mut lsubrs) = empty_subrs(acc);
+        for &(new, old) in &plan.glyphs.new_to_old {
+            let cs = charstrings.get_mut(new as usize).ok_or(fail)?;
+            let ok = parse_glyph(
+                acc,
+                old,
+                cs,
+                &mut gsubrs,
+                &mut lsubrs,
+                &mut gclosure,
+                &mut lclosures,
+                drop_hints,
+            );
+            if !ok {
+                return Err(fail);
             }
         }
-    }
-    if drop_hints {
+        Subrs {
+            charstrings,
+            cached: None,
+            gsubrs: Cow::Owned(gsubrs),
+            lsubrs: Cow::Owned(lsubrs),
+            global_remap: Remap::default(),
+            local_remaps: Vec::new(),
+        }
+    };
+    // With a cache the closures are computed from the parsed programs;
+    // when dropping hints they are computed again without the hints.
+    if cache.is_some() || drop_hints {
         gclosure.clear();
         lclosures.iter_mut().for_each(BTreeSet::clear);
         for &(new, old) in &plan.glyphs.new_to_old {
             let fd = acc.fd(old) as usize;
+            if fd >= fd_count {
+                return Err(fail);
+            }
             let (Some(cs), Some(ls), Some(lc)) = (
-                charstrings.get_mut(new as usize),
-                lsubrs.get_mut(fd),
+                subrs.charstring(new, old),
+                subrs.lsubrs.get(fd),
                 lclosures.get_mut(fd),
             ) else {
                 return Err(fail);
             };
-            let mut progs = Programs {
-                charstring: cs,
-                gsubrs: &mut gsubrs,
-                lsubrs: ls,
-            };
-            collect_subr_refs(&mut progs, (Kind::CharString, 0), &mut gclosure, lc);
+            collect_subr_refs(cs, &subrs.gsubrs, ls, drop_hints, &mut gclosure, lc);
         }
     }
-    Ok(Subrs {
-        charstrings,
-        gsubrs,
-        lsubrs,
-        global_remap: Remap::new(&gclosure),
-        local_remaps: lclosures.iter().map(Remap::new).collect(),
-    })
+    subrs.global_remap = Remap::new(&gclosure);
+    subrs.local_remaps = lclosures.iter().map(Remap::new).collect();
+    Ok(subrs)
 }
 
-impl Subrs {
+impl Subrs<'_> {
+    /// The parsed charstring of new glyph `new` (`get_parsed_charstring`).
+    fn charstring(&self, new: u32, old: u32) -> Option<&Parsed> {
+        match self.cached {
+            Some(c) => c.get(old as usize),
+            None => self.charstrings.get(new as usize),
+        }
+    }
+
     /// `encode_str`.
     fn encode(&self, p: &Parsed, src: &[u8], fd: u32, hinting: bool) -> Vec<u8> {
         let mut out = Vec::new();
@@ -964,7 +1077,7 @@ fn create(plan: &Plan, acc: &Acc<'_>, tag: Tag) -> Result<CffPlan, SubsetError> 
                 if fd >= fd_count {
                     return Err(fail);
                 }
-                let p = subrs.charstrings.get(gid as usize).ok_or(fail)?;
+                let p = subrs.charstring(gid, old).ok_or(fail)?;
                 let e = subrs.encode(p, acc.char_string(old), fd, hinting);
                 if let Some(o) = out.get_mut(gid as usize) {
                     *o = e;
