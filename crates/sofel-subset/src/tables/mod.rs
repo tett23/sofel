@@ -25,6 +25,7 @@ use crate::input::Flags;
 use crate::layout::Gsubgpos;
 use crate::layout::common::Sub;
 use crate::plan::Plan;
+use crate::room;
 
 /// `hb_face_get_upem`.
 pub(crate) fn hb_upem(font: &Font<'_>) -> u32 {
@@ -70,10 +71,11 @@ impl Plan {
             .map(|t| t.to_u32())
             .collect();
         let mut tables = Tables::new();
+        let mut room = room::initial();
         // No dependency delays without instancing (`_dependencies_satisfied`).
         while let Some(&tag) = pending.iter().next() {
             pending.remove(&tag);
-            self.subset_table(font, Tag::from_u32(tag), &mut tables)?;
+            room = self.subset_table(font, Tag::from_u32(tag), room, &mut tables)?;
         }
         let list: Vec<(Tag, &[u8])> = tables.iter().map(|(t, d)| (*t, d.as_slice())).collect();
         sofel_write::build_sfnt(&list).map_err(|_| SubsetError::Failed { tag: t(b"sfnt") })
@@ -83,16 +85,39 @@ impl Plan {
         tables.insert(tag, font.table(tag).unwrap_or(&[]).to_vec());
     }
 
-    /// `_subset_table`.
+    /// The room of HarfBuzz's buffer after subsetting `tag` from `src`
+    /// with a serializer that held at most `peak` bytes;
+    /// [`SubsetError::Limit`] when HarfBuzz's buffer cannot grow enough
+    /// (see [`room`]).
+    fn room_after(
+        &self,
+        font: &Font<'_>,
+        tag: Tag,
+        src: &[u8],
+        room: u32,
+        peak: usize,
+    ) -> Result<u32, SubsetError> {
+        let len = u32::try_from(src.len()).unwrap_or(u32::MAX);
+        let kept = u32::try_from(self.glyph_set().len()).unwrap_or(u32::MAX);
+        let estimate = room::estimate(self.flags, font.num_glyphs(), kept, len, tag);
+        match room::fit(room, estimate, peak, len) {
+            (room, true) => Ok(room),
+            (_, false) => Err(SubsetError::Limit { tag }),
+        }
+    }
+
+    /// `_subset_table`; returns the room of HarfBuzz's buffer after the
+    /// table.
     fn subset_table(
         &self,
         font: &Font<'_>,
         tag: Tag,
+        room: u32,
         tables: &mut Tables,
-    ) -> Result<(), SubsetError> {
+    ) -> Result<u32, SubsetError> {
         if self.no_subset_tables.contains(tag.to_u32()) {
             self.passthrough(font, tag, tables);
-            return Ok(());
+            return Ok(room);
         }
         type F = fn(
             &Plan,
@@ -117,22 +142,26 @@ impl Plan {
             b"BASE" => Some(base::subset),
             b"CFF " => Some(cff::subset),
             b"VORG" => Some(vorg::subset),
-            b"hhea" | b"HHEA" | b"vhea" | b"VHEA" | b"loca" | b"LOCA" => return Ok(()),
+            b"hhea" | b"HHEA" | b"vhea" | b"VHEA" | b"loca" | b"LOCA" => return Ok(room),
             b"fvar" | b"avar" | b"cvar" | b"MVAR" | b"STAT" if self.axes.is_empty() => {
                 self.passthrough(font, tag, tables);
-                return Ok(());
+                return Ok(room);
             }
             b"head" => {
                 let present = |t: Tag| font.table(t).is_some() && !self.should_drop(t);
                 if present(Tag::new(b"glyf")) || present(Tag::new(b"GLYF")) {
-                    return Ok(());
+                    return Ok(room);
                 }
-                tables.insert(tag, head(font)?);
-                return Ok(());
+                let bytes = head(font)?;
+                // `head::subset` embeds the 54 bytes.
+                let room =
+                    self.room_after(font, tag, font.table(tag).unwrap_or(&[]), room, bytes.len())?;
+                tables.insert(tag, bytes);
+                return Ok(room);
             }
             b"cvt " => {
                 self.passthrough(font, tag, tables);
-                return Ok(());
+                return Ok(room);
             }
             _ => None,
         };
@@ -140,15 +169,16 @@ impl Plan {
             if self.flags.has(Flags::PASSTHROUGH_UNRECOGNIZED) {
                 self.passthrough(font, tag, tables);
             }
-            return Ok(());
+            return Ok(room);
         };
         let src = font.table(tag).unwrap_or(&[]);
         let mut s = Serializer::new();
         let needed = f(self, font, tag, src, &mut s, tables)?;
+        let room = self.room_after(font, tag, src, room, s.peak_len())?;
         if let Some(bytes) = finish_table(tag, s, needed)? {
             tables.insert(tag, bytes);
         }
-        Ok(())
+        Ok(room)
     }
 }
 

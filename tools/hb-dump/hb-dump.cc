@@ -355,13 +355,50 @@
  *                                 16 hex digits)
  *   graph <i> fail
  *
+ * --subset OPTION... (ADR 0022, 突き合わせ): subsets a font as
+ * HarfBuzz's util/hb-subset does with these options, and writes the font
+ * hb_subset_or_fail and hb_face_reference_blob give. hb-dump is built
+ * with HB_EXPERIMENTAL_API (tools/hb-dump/build.sh), as HarfBuzz's
+ * subsetting tests are, so that --iftb-requirements and
+ * --retain-num-glyphs work. The options are those of hb-subset, applied
+ * in order with the same semantics: --font-file=FILE (required),
+ * --face-index=N, --output-file=FILE or -o FILE (required), --gids,
+ * --unicodes, --text, --glyphs, --name-IDs, --name-languages,
+ * --layout-features, --layout-scripts and --drop-tables (each also with
+ * a `+` or `-` suffix, and `*`), --gid-map, --variations and
+ * --instance, --keep-everything, every flag option, --preprocess and
+ * --preprocess-face, and --num-iterations=N. An option's value follows
+ * `=` or comes as the next argument. The *-file options and the
+ * positional FONT-FILE and TEXT are not accepted.
+ * Exit status: 0 when the font was written, 1 when subsetting failed
+ * (nothing is written) or a file cannot be read or written, 2 on a wrong
+ * option.
+ *
  * Exit status: 0 on success, 1 when the file cannot be read, 2 on wrong
  * usage.
  */
 
 #include "harfbuzz.cc"
-#include "hb-subset-serialize.cc"
+/* The subsetter: the files of harfbuzz-subset.cc that harfbuzz.cc does
+ * not include. */
 #include "graph/gsubgpos-context.cc"
+#include "hb-depend.cc"
+#include "hb-subset-cff-common.cc"
+#include "hb-subset-cff1.cc"
+#include "hb-subset-cff2.cc"
+#include "hb-subset-input.cc"
+#include "hb-subset-instancer-iup.cc"
+#include "hb-subset-instancer-solver.cc"
+#include "hb-subset-plan-layout.cc"
+#include "hb-subset-plan-var.cc"
+#include "hb-subset-plan.cc"
+#include "hb-subset-serialize.cc"
+#include "hb-subset-table-cff.cc"
+#include "hb-subset-table-color.cc"
+#include "hb-subset-table-layout.cc"
+#include "hb-subset-table-other.cc"
+#include "hb-subset-table-var.cc"
+#include "hb-subset.cc"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -2456,6 +2493,386 @@ static int dump_repack (hb_blob_t *blob)
   return 0;
 }
 
+/* --subset: util/hb-subset.cc's option callbacks without GLib. */
+
+struct subset_args_t
+{
+  hb_face_t *face = nullptr;
+  hb_font_t *font = nullptr;
+  hb_subset_input_t *input = nullptr;
+};
+
+static bool subset_fail (const char *fmt, const char *s)
+{
+  fprintf (stderr, "hb-dump --subset: ");
+  fprintf (stderr, fmt, s);
+  fprintf (stderr, "\n");
+  return false;
+}
+
+/* The suffix of an option name: '+', '-' or 0. */
+static char subset_suffix (const char *name)
+{
+  size_t n = strlen (name);
+  char c = n ? name[n - 1] : 0;
+  return c == '+' || c == '-' ? c : 0;
+}
+
+/* The start of every set option: clears the set without a suffix, and
+ * handles `*`; returns true when the value is done. */
+static bool subset_set_start (hb_set_t *set, char suffix, const char *arg)
+{
+  if (!suffix) hb_set_clear (set);
+  if (strcmp (arg, "*") != 0) return false;
+  hb_set_clear (set);
+  if (suffix != '-') hb_set_invert (set);
+  return true;
+}
+
+static void subset_set_put (hb_set_t *set, char suffix, hb_codepoint_t a, hb_codepoint_t b)
+{
+  if (suffix != '-') hb_set_add_range (set, a, b);
+  else hb_set_del_range (set, a, b);
+}
+
+/* parse_gids (base 10, ", ") and parse_unicodes (base 16, its
+ * delimiters). */
+static bool subset_numbers (hb_set_t *set, char suffix, const char *arg, int base,
+			    const char *delimiters, bool reject_minus)
+{
+  if (subset_set_start (set, suffix, arg)) return true;
+  char *s = (char *) arg;
+  char *p;
+  while (s && *s)
+  {
+    while (*s && strchr (delimiters, *s)) s++;
+    if (!*s) break;
+    errno = 0;
+    hb_codepoint_t start = strtoul (s, &p, base);
+    if ((reject_minus && s[0] == '-') || errno || s == p)
+      return subset_fail ("failed parsing at: '%s'", s);
+    hb_codepoint_t end = start;
+    if (p && p[0] == '-')
+    {
+      s = ++p;
+      end = strtoul (s, &p, base);
+      if (s[0] == '-' || errno || s == p)
+	return subset_fail ("failed parsing at: '%s'", s);
+      if (end < start) return subset_fail ("invalid range at: '%s'", s);
+    }
+    subset_set_put (set, suffix, start, end);
+    s = p;
+  }
+  return true;
+}
+
+/* parse_nameids and parse_name_languages: base 10, no ranges. */
+static bool subset_ids (hb_set_t *set, char suffix, const char *arg)
+{
+  if (subset_set_start (set, suffix, arg)) return true;
+  char *s = (char *) arg;
+  char *p;
+  while (s && *s)
+  {
+    while (*s && strchr (", ", *s)) s++;
+    if (!*s) break;
+    errno = 0;
+    hb_codepoint_t u = strtoul (s, &p, 10);
+    if (errno || s == p) return subset_fail ("failed parsing id at: '%s'", s);
+    subset_set_put (set, suffix, u, u);
+    s = p;
+  }
+  return true;
+}
+
+/* parse_layout_tag_list and parse_drop_tables. */
+static bool subset_tags (hb_set_t *set, char suffix, const char *arg)
+{
+  if (subset_set_start (set, suffix, arg)) return true;
+  std::string copy (arg);
+  for (char *s = strtok (&copy[0], ", "); s; s = strtok (nullptr, ", "))
+  {
+    if (strlen (s) > 4) return subset_fail ("failed parsing tag at: '%s'", s);
+    hb_tag_t tag = hb_tag_from_string (s, strlen (s));
+    subset_set_put (set, suffix, tag, tag);
+  }
+  return true;
+}
+
+/* parse_text, with g_utf8_get_char's decoding of valid UTF-8. */
+static bool subset_text (hb_set_t *set, char suffix, const char *arg)
+{
+  if (subset_set_start (set, suffix, arg)) return true;
+  const unsigned char *c = (const unsigned char *) arg;
+  while (*c)
+  {
+    unsigned n = *c < 0x80 ? 1 : *c < 0xE0 ? 2 : *c < 0xF0 ? 3 : 4;
+    hb_codepoint_t cp = n == 1 ? *c : *c & (0x7F >> n);
+    for (unsigned i = 1; i < n && c[i]; i++)
+      cp = (cp << 6) | (c[i] & 0x3F);
+    subset_set_put (set, suffix, cp, cp);
+    for (unsigned i = 0; i < n && *c; i++) c++;
+  }
+  return true;
+}
+
+/* parse_glyphs. */
+static bool subset_glyphs (subset_args_t *a, char suffix, const char *arg)
+{
+  hb_set_t *set = hb_subset_input_glyph_set (a->input);
+  if (subset_set_start (set, suffix, arg)) return true;
+  if (!a->font) a->font = hb_font_create (a->face);
+  const char *p = arg, *p_end = arg + strlen (arg);
+  while (p < p_end)
+  {
+    while (p < p_end && (*p == ' ' || *p == ',')) p++;
+    const char *end = p;
+    while (end < p_end && *end != ' ' && *end != ',') end++;
+    if (p < end)
+    {
+      hb_codepoint_t gid;
+      if (!hb_font_glyph_from_string (a->font, p, end - p, &gid))
+	return subset_fail ("failed parsing glyph name: '%s'", p);
+      subset_set_put (set, suffix, gid, gid);
+    }
+    p = end + 1;
+  }
+  return true;
+}
+
+/* parse_glyph_map. */
+static bool subset_gid_map (subset_args_t *a, const char *arg)
+{
+  hb_set_t *glyphs = hb_subset_input_glyph_set (a->input);
+  char *s = (char *) arg;
+  char *p;
+  while (s && *s)
+  {
+    while (*s && strchr (", ", *s)) s++;
+    if (!*s) break;
+    errno = 0;
+    hb_codepoint_t from = strtoul (s, &p, 10);
+    if (s[0] == '-' || errno || s == p || !p || p[0] != ':')
+      return subset_fail ("failed parsing glyph map at: '%s'", s);
+    s = ++p;
+    hb_codepoint_t to = strtoul (s, &p, 10);
+    if (s[0] == '-' || errno || s == p)
+      return subset_fail ("failed parsing glyph map at: '%s'", s);
+    hb_set_add (glyphs, from);
+    hb_map_set (hb_subset_input_old_to_new_glyph_mapping (a->input), from, to);
+    s = p;
+  }
+  return true;
+}
+
+/* util/helper-subset.hh's parse_instancing_spec. */
+static bool subset_instance (subset_args_t *a, const char *arg)
+{
+  std::string copy (arg);
+  char *rest = &copy[0];
+  char *s;
+  while ((s = strtok (rest, "=")))
+  {
+    rest = nullptr;
+    unsigned len = strlen (s);
+    if (len > 4) return subset_fail ("failed parsing axis tag at: '%s'", s);
+    if (strcmp (s, "*") == 0)
+    {
+      s = strtok (nullptr, ", ");
+      if (!s || strcmp (s, "drop") != 0)
+	return subset_fail ("failed parsing axis position at: '%s'", s ? s : "");
+      if (!hb_subset_input_pin_all_axes_to_default (a->input, a->face))
+	return subset_fail ("%s", "failed pinning all axes to default");
+      continue;
+    }
+    hb_tag_t axis = hb_tag_from_string (s, len);
+    s = strtok (nullptr, ", ");
+    if (!s) return subset_fail ("value not specified for axis '%s'", "");
+    if (strcmp (s, "drop") == 0)
+    {
+      if (!hb_subset_input_pin_axis_to_default (a->input, a->face, axis))
+	return subset_fail ("cannot pin axis at: '%s'", s);
+      continue;
+    }
+    float min, def, max;
+    if (!hb_subset_axis_range_from_string (s, -1, &min, &max, &def))
+      return subset_fail ("failed parsing axis range: '%s'", s);
+    if (!hb_subset_input_set_axis_range (a->input, a->face, axis, min, max, def))
+      return subset_fail ("cannot set axis range at: '%s'", s);
+  }
+  return true;
+}
+
+struct subset_flag_t
+{
+  const char *name;
+  hb_subset_flags_t flag;
+};
+
+static const subset_flag_t subset_flags[] = {
+  {"no-hinting", HB_SUBSET_FLAGS_NO_HINTING},
+  {"retain-gids", HB_SUBSET_FLAGS_RETAIN_GIDS},
+  {"desubroutinize", HB_SUBSET_FLAGS_DESUBROUTINIZE},
+  {"downgrade-cff2", HB_SUBSET_FLAGS_DOWNGRADE_CFF2},
+  {"cff-identity-charset", HB_SUBSET_FLAGS_CFF_IDENTITY_CHARSET},
+  {"name-legacy", HB_SUBSET_FLAGS_NAME_LEGACY},
+  {"set-overlaps-flag", HB_SUBSET_FLAGS_SET_OVERLAPS_FLAG},
+  {"notdef-outline", HB_SUBSET_FLAGS_NOTDEF_OUTLINE},
+  {"no-prune-unicode-ranges", HB_SUBSET_FLAGS_NO_PRUNE_UNICODE_RANGES},
+  {"no-layout-closure", HB_SUBSET_FLAGS_NO_LAYOUT_CLOSURE},
+  {"no-bidi-closure", HB_SUBSET_FLAGS_NO_BIDI_CLOSURE},
+  {"glyph-names", HB_SUBSET_FLAGS_GLYPH_NAMES},
+  {"passthrough-tables", HB_SUBSET_FLAGS_PASSTHROUGH_UNRECOGNIZED},
+  {"iftb-requirements", HB_SUBSET_FLAGS_IFTB_REQUIREMENTS},
+  {"retain-num-glyphs", HB_SUBSET_FLAGS_RETAIN_NUM_GLYPHS},
+  {"optimize", HB_SUBSET_FLAGS_OPTIMIZE_IUP_DELTAS},
+};
+
+/* Applies one option with a value; false on a bad value. */
+static bool subset_option (subset_args_t *a, const std::string &name, const char *arg)
+{
+  std::string base = name;
+  char suffix = subset_suffix (name.c_str ());
+  if (suffix) base.erase (base.size () - 1);
+  hb_subset_input_t *in = a->input;
+  if (base == "gids")
+    return subset_numbers (hb_subset_input_glyph_set (in), suffix, arg, 10, ", ", true);
+  if (base == "unicodes")
+    return subset_numbers (hb_subset_input_unicode_set (in), suffix, arg, 16,
+			   "<+->{},;&#\\xXuUnNiI\n\t\v\f\r ", false);
+  if (base == "text") return subset_text (hb_subset_input_unicode_set (in), suffix, arg);
+  if (base == "glyphs") return subset_glyphs (a, suffix, arg);
+  if (base == "name-IDs")
+    return subset_ids (hb_subset_input_set (in, HB_SUBSET_SETS_NAME_ID), suffix, arg);
+  if (base == "name-languages")
+    return subset_ids (hb_subset_input_set (in, HB_SUBSET_SETS_NAME_LANG_ID), suffix, arg);
+  if (base == "layout-features")
+    return subset_tags (hb_subset_input_set (in, HB_SUBSET_SETS_LAYOUT_FEATURE_TAG), suffix, arg);
+  if (base == "layout-scripts")
+    return subset_tags (hb_subset_input_set (in, HB_SUBSET_SETS_LAYOUT_SCRIPT_TAG), suffix, arg);
+  if (base == "drop-tables")
+    return subset_tags (hb_subset_input_set (in, HB_SUBSET_SETS_DROP_TABLE_TAG), suffix, arg);
+  if (name == "gid-map") return subset_gid_map (a, arg);
+  if (name == "variations" || name == "instance") return subset_instance (a, arg);
+  return subset_fail ("unknown option --%s", name.c_str ());
+}
+
+static int dump_subset (int argc, char **argv)
+{
+  /* The font first, as hb-subset parses the face before the options. */
+  const char *font_file = nullptr, *output_file = nullptr;
+  unsigned face_index = 0, iterations = 1;
+  bool preprocess = false;
+  std::vector<std::pair<std::string, const char *>> options;
+  for (int i = 2; i < argc; i++)
+  {
+    std::string a = argv[i];
+    const char *value = nullptr;
+    std::string name;
+    if (a == "-o")
+      name = "output-file";
+    else if (a.compare (0, 2, "--") == 0)
+    {
+      size_t eq = a.find ('=');
+      name = a.substr (2, eq == std::string::npos ? std::string::npos : eq - 2);
+      if (eq != std::string::npos) value = argv[i] + eq + 1;
+    }
+    else
+    {
+      subset_fail ("unexpected argument '%s'", argv[i]);
+      return 2;
+    }
+    bool is_flag = name == "keep-everything" || name == "preprocess" || name == "preprocess-face";
+    for (const auto &f : subset_flags) is_flag = is_flag || name == f.name;
+    if (is_flag)
+    {
+      if (value) { subset_fail ("--%s takes no value", name.c_str ()); return 2; }
+      if (name == "preprocess" || name == "preprocess-face") preprocess = true;
+      else options.push_back ({name, nullptr});
+      continue;
+    }
+    if (!value)
+    {
+      if (i + 1 >= argc) { subset_fail ("--%s needs a value", name.c_str ()); return 2; }
+      value = argv[++i];
+    }
+    if (name == "font-file") font_file = value;
+    else if (name == "output-file") output_file = value;
+    else if (name == "face-index") face_index = strtoul (value, nullptr, 10);
+    else if (name == "num-iterations") iterations = strtoul (value, nullptr, 10);
+    else options.push_back ({name, value});
+  }
+  if (!font_file || !output_file)
+  {
+    fprintf (stderr, "usage: hb-dump --subset --font-file=FILE --output-file=FILE [OPTION...]\n");
+    return 2;
+  }
+  hb_blob_t *blob = hb_blob_create_from_file_or_fail (font_file);
+  if (!blob)
+  {
+    fprintf (stderr, "hb-dump: cannot read %s\n", font_file);
+    return 1;
+  }
+  subset_args_t a;
+  a.face = hb_face_create (blob, face_index);
+  hb_blob_destroy (blob);
+  a.input = hb_subset_input_create_or_fail ();
+  int status = 0;
+  for (const auto &o : options)
+  {
+    bool ok = true;
+    if (o.first == "keep-everything")
+      hb_subset_input_keep_everything (a.input);
+    else if (!o.second)
+    {
+      for (const auto &f : subset_flags)
+	if (o.first == f.name)
+	  hb_subset_input_set_flags (a.input, hb_subset_input_get_flags (a.input) | f.flag);
+    }
+    else
+      ok = subset_option (&a, o.first, o.second);
+    if (!ok) { status = 2; break; }
+  }
+  hb_face_t *source = hb_face_reference (a.face);
+  if (!status && preprocess)
+  {
+    hb_face_destroy (source);
+    source = hb_subset_preprocess (a.face);
+  }
+  hb_face_t *out = nullptr;
+  for (unsigned i = 0; !status && i < (iterations ? iterations : 1); i++)
+  {
+    hb_face_destroy (out);
+    out = hb_subset_or_fail (source, a.input);
+  }
+  if (!status && !out)
+  {
+    fprintf (stderr, "hb-dump --subset: subsetting failed\n");
+    status = 1;
+  }
+  if (!status)
+  {
+    hb_blob_t *result = hb_face_reference_blob (out);
+    unsigned size = 0;
+    const char *data = hb_blob_get_data (result, &size);
+    FILE *fp = fopen (output_file, "wb");
+    bool written = fp && fwrite (data, 1, size, fp) == size;
+    if (fp && fclose (fp) != 0) written = false;
+    if (!written)
+    {
+      fprintf (stderr, "hb-dump: cannot write %s\n", output_file);
+      status = 1;
+    }
+    hb_blob_destroy (result);
+  }
+  hb_face_destroy (out);
+  hb_face_destroy (source);
+  hb_font_destroy (a.font);
+  hb_subset_input_destroy (a.input);
+  hb_face_destroy (a.face);
+  return status;
+}
+
 /* The modes with more arguments. */
 struct args_mode_t
 {
@@ -2519,6 +2936,8 @@ static const two_file_mode_t two_file_modes[] = {
 
 int main (int argc, char **argv)
 {
+  if (argc >= 2 && strcmp (argv[1], "--subset") == 0)
+    return dump_subset (argc, argv);
   for (unsigned i = 0; i < sizeof (args_modes) / sizeof (args_modes[0]); i++)
     if (argc == args_modes[i].argc && strcmp (argv[1], args_modes[i].name) == 0)
       return args_modes[i].dump (argc, argv);

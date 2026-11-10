@@ -63,10 +63,12 @@ do
     -c "$ft/src/$f" -o "$obj/ft/$(echo "$f" | tr / _).o"
 done
 
-# HarfBuzz: the single translation unit, as HarfBuzz's own build flags it.
+# HarfBuzz: the single translation unit with the subsetter
+# (harfbuzz-subset.cc: harfbuzz.cc and the hb-subset files, ADR 0022), as
+# HarfBuzz's own build flags it.
 # shellcheck disable=SC2086
 $cxx $flags $hbflags -std=c++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -w \
-  -I "$hb/src" -c "$hb/src/harfbuzz.cc" -o "$obj/hb/harfbuzz.o"
+  -I "$hb/src" -c "$hb/src/harfbuzz-subset.cc" -o "$obj/hb/harfbuzz.o"
 
 # shellcheck disable=SC2086
 $cc $flags -I "$ft/include" -I "$hb/src" -c "$here/c/shim.c" -o "$obj/shim/shim.o"

@@ -24,7 +24,9 @@ if [ ! -f "$src/src/harfbuzz.cc" ]; then
 fi
 
 mkdir -p "$(dirname "$out")"
-# The flags of HarfBuzz's own build (as in bench/build-c.sh).
-"$cxx" -O2 -DNDEBUG -std=c++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -w \
+# The flags of HarfBuzz's own build (as in bench/build-c.sh), with the
+# experimental API that HarfBuzz's subsetting tests are built with (ADR
+# 0022): --subset needs it for --iftb-requirements and --retain-num-glyphs.
+"$cxx" -O2 -DNDEBUG -DHB_EXPERIMENTAL_API -std=c++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -w \
   -I "$src/src" "$here/hb-dump.cc" -o "$out"
 echo "$out"

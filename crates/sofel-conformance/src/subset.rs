@@ -239,3 +239,119 @@ pub fn diff(expected: &[u8], actual: &[u8]) -> String {
     }
     out.join(", ")
 }
+
+/// One test of `test/subset/data/repack_tests/` (`repack_test.py`): a
+/// font and the characters to keep.
+#[derive(Clone, Debug)]
+pub struct RepackCase {
+    /// The `.tests` file's name.
+    pub name: String,
+    pub font: PathBuf,
+    /// The characters, as written in the file (`0x060C`).
+    pub codepoints: Vec<String>,
+}
+
+impl RepackCase {
+    /// The arguments of `run-repack-tests.py` (without the output file).
+    pub fn args(&self) -> Vec<String> {
+        vec![
+            format!("--font-file={}", self.font.display()),
+            format!("--unicodes={}", self.codepoints.join(",")),
+            "--drop-tables-=GPOS,GSUB,GDEF".to_string(),
+        ]
+    }
+}
+
+/// Every test of `repack_tests/`, sorted by file name.
+pub fn repack_cases(data: &Path) -> Result<Vec<RepackCase>, String> {
+    let mut names: Vec<PathBuf> = std::fs::read_dir(data.join("repack_tests"))
+        .map_err(|e| e.to_string())?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|e| e == "tests"))
+        .collect();
+    names.sort();
+    names
+        .iter()
+        .map(|n| {
+            let text = std::fs::read_to_string(n).map_err(|e| e.to_string())?;
+            let mut lines = text.lines();
+            let font = lines.next().ok_or("empty repack test")?.trim();
+            Ok(RepackCase {
+                name: n
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string(),
+                font: data.join("fonts").join(font),
+                codepoints: lines
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty())
+                    .map(str::to_string)
+                    .collect(),
+            })
+        })
+        .collect()
+}
+
+/// The texts whose characters make Golem's glyph sets (ADR 0022,
+/// 突き合わせ), under the test data.
+pub const GOLEM_TEXTS: [&str; 2] = [
+    "harfbuzz/perf/texts/ja-runs.txt",
+    "harfbuzz/perf/texts/en-paragraph.txt",
+];
+
+/// Golem's glyph set for a font: the glyphs that the characters of
+/// [`GOLEM_TEXTS`] map to in the cmap, glyph 1 and the last glyph,
+/// ascending.
+pub fn golem_glyphs(font: &sofel_font::Font<'_>, texts: &[String]) -> Vec<u32> {
+    let n = font.num_glyphs();
+    let mut set: std::collections::BTreeSet<u32> = texts
+        .iter()
+        .flat_map(|t| t.chars())
+        .filter_map(|c| font.nominal_glyph(u32::from(c)).map(|g| g.0))
+        .collect();
+    set.insert(1);
+    set.insert(n.saturating_sub(1));
+    set.into_iter().collect()
+}
+
+/// The `hb-subset` arguments of Golem's usage (without the output file):
+/// the glyphs and `--retain-gids`, and with `pin` every axis pinned to
+/// its default (`hb_subset_input_pin_all_axes_to_default`).
+pub fn golem_args(font: &Path, glyphs: &[u32], pin: bool) -> Vec<String> {
+    let list: Vec<String> = glyphs.iter().map(u32::to_string).collect();
+    let mut a = vec![
+        format!("--font-file={}", font.display()),
+        format!("--gids={}", list.join(",")),
+        "--retain-gids".to_string(),
+    ];
+    if pin {
+        a.push("--instance=*=drop".to_string());
+    }
+    a
+}
+
+/// The fonts of `test/subset/data/fonts/`, sorted by file name.
+pub fn fonts(data: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut v: Vec<PathBuf> = std::fs::read_dir(data.join("fonts"))
+        .map_err(|e| e.to_string())?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.is_file())
+        .collect();
+    v.sort();
+    Ok(v)
+}
+
+/// sofel's output for `hb-subset` arguments (with `--font-file`), parsed
+/// by `sofel_cli::subset`, or why it failed.
+pub fn run_sofel(args: &[String]) -> Result<Vec<u8>, String> {
+    let font_file = args
+        .iter()
+        .find_map(|a| a.strip_prefix("--font-file="))
+        .ok_or("no --font-file")?;
+    let opts = sofel_cli::subset::parse(args)?;
+    let bytes = std::fs::read(font_file).map_err(|e| e.to_string())?;
+    let font = sofel_font::Font::new(&bytes, 0).map_err(|e| format!("{e:?}"))?;
+    let input = sofel_cli::subset::resolve(&opts, &font)?;
+    sofel_subset::subset(&font, &input).map_err(|e| e.to_string())
+}

@@ -23,6 +23,7 @@ mod input;
 mod layout;
 mod limits;
 mod plan;
+mod room;
 mod set;
 mod tables;
 

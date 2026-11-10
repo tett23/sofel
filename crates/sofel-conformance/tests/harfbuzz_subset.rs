@@ -5,6 +5,13 @@
 //! (`:validate`; for a CFF font also its `CFF ` table on its own, as
 //! PDF embeds it). Expected failures are listed with their reasons in
 //! `conformance/expected-failures-subset.txt`.
+//!
+//! The repacking tests (`test/subset/data/repack_tests/`) run with
+//! `run-repack-tests.py`'s arguments; each must succeed (`:success`) and
+//! pass the validator (`:validate`). Nothing here needs `hb-dump` or
+//! `ft-dump`, so that the test also runs on wasm32-wasip1 (ADR 0022,
+//! 適合テスト); the comparisons with `hb-dump` are in
+//! `harfbuzz_subset_hb.rs`.
 
 #![allow(
     clippy::all,
@@ -15,7 +22,6 @@
 )]
 
 use sofel_conformance::{expect, paths, subset};
-use sofel_font::Font;
 use sofel_read::sfnt::Sfnt;
 use sofel_read::{Diagnostic, Severity, validate};
 
@@ -25,12 +31,7 @@ fn data() -> std::path::PathBuf {
 
 /// The output of one case, or why it failed.
 fn run(case: &subset::Case) -> Result<Vec<u8>, String> {
-    let args = case.args()?;
-    let opts = sofel_cli::subset::parse(&args)?;
-    let bytes = std::fs::read(&case.font).map_err(|e| e.to_string())?;
-    let font = Font::new(&bytes, 0).map_err(|e| format!("{e:?}"))?;
-    let input = sofel_cli::subset::resolve(&opts, &font)?;
-    sofel_subset::subset(&font, &input).map_err(|e| e.to_string())
+    subset::run_sofel(&case.args()?)
 }
 
 fn validate_errors(bytes: &[u8]) -> Vec<String> {
@@ -82,6 +83,28 @@ fn harfbuzz_subset_tests() {
             }
         };
         results.push((format!("{id}:bytes"), bytes_ok));
+        results.push((format!("{id}:validate"), validate_ok));
+    }
+    // ADR 0022: the repacking tests (run-repack-tests.py's arguments) must
+    // succeed and pass the validator; hb-dump compares their bytes
+    // (harfbuzz_subset_hb.rs).
+    for case in subset::repack_cases(&data()).unwrap() {
+        let id = format!("repack_tests/{}", case.name);
+        let out = subset::run_sofel(&case.args());
+        let validate_ok = match &out {
+            Ok(o) => {
+                let errs = validate_errors(o);
+                if !errs.is_empty() {
+                    detail.push(format!("{id}:validate {}", errs.join("; ")));
+                }
+                errs.is_empty()
+            }
+            Err(err) => {
+                detail.push(format!("{id}: {err}"));
+                false
+            }
+        };
+        results.push((format!("{id}:success"), out.is_ok()));
         results.push((format!("{id}:validate"), validate_ok));
     }
     let passed = results.iter().filter(|r| r.1).count();

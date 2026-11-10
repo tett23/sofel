@@ -140,3 +140,34 @@ fn virtual_links_merge_on_share() {
     let p = s.end().unwrap();
     assert_eq!(p.objects()[a as usize].virtual_links.len(), 1);
 }
+
+/// The room HarfBuzz's buffer needs: the bytes on the stack and the packed
+/// bytes at their highest; discarded, reverted and shared objects give
+/// their room back.
+#[test]
+fn peak_len_is_the_most_bytes_held() {
+    let mut s = Serializer::new();
+    assert_eq!(s.peak_len(), 0);
+    s.extend(b"root");
+    s.push();
+    s.extend(&[1; 10]);
+    assert_eq!(s.peak_len(), 14);
+    let a = s.pop_pack(true);
+    s.push();
+    s.extend(&[1; 10]);
+    assert_eq!(s.pop_pack(true), a); // shared: no new bytes packed
+    assert_eq!(s.peak_len(), 24);
+    s.push();
+    s.zeros(6);
+    s.pop_discard();
+    assert_eq!(s.peak_len(), 24);
+    s.push();
+    s.extend(&[2; 3]);
+    assert_eq!(s.peak_len(), 24);
+    let snap = s.snapshot();
+    s.extend(&[2; 20]);
+    assert_eq!(s.peak_len(), 4 + 10 + 23);
+    s.revert(snap);
+    s.extend(&[2; 1]);
+    assert_eq!(s.peak_len(), 37);
+}

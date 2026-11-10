@@ -5,6 +5,7 @@
 
 mod ffi;
 mod shape;
+mod subset;
 
 use std::path::PathBuf;
 
@@ -1035,6 +1036,7 @@ fn main() {
         outline_items(&mut b, name, &font, &ft, &hb);
     }
     shape::shape_items(&mut b, &a.testdata);
+    subset::subset_items(&mut b, &a.testdata);
     let failed = report_checks(&b.checks);
     if !a.once {
         print!("{}", table(&b.rows));

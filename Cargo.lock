@@ -22,7 +22,9 @@ dependencies = [
  "sofel-raster",
  "sofel-read",
  "sofel-shape",
+ "sofel-subset",
  "sofel-unicode",
+ "sofel-write",
 ]
 
 [[package]]

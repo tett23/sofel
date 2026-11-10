@@ -70,6 +70,17 @@ unsafe extern "C" {
         direction: c_int,
     ) -> u64;
 
+    // Subsetting (ADR 0022).
+    pub fn bhb_subset(
+        font: *mut c_void,
+        glyphs: *const c_uint,
+        num_glyphs: c_uint,
+        unicodes: *const c_uint,
+        num_unicodes: c_uint,
+        flags: c_uint,
+        len: *mut c_uint,
+    ) -> u64;
+
     // HarfBuzz's own Unicode functions (hb-unicode.h), called directly.
     pub fn hb_unicode_funcs_get_default() -> *mut c_void;
     pub fn hb_unicode_general_category(ufuncs: *mut c_void, cp: c_uint) -> c_int;
@@ -175,6 +186,25 @@ impl HbFont {
     pub fn paint(&self, gid: u32) -> i64 {
         // SAFETY: a valid font.
         unsafe { bhb_paint(self.0, gid) as i64 }
+    }
+    /// `hb_subset_or_fail` of the glyphs or characters with the flags:
+    /// the FNV-1a hash of the subset font and its length, `(0, 0)` on
+    /// failure.
+    pub fn subset(&self, glyphs: &[u32], unicodes: &[u32], flags: u32) -> (u64, usize) {
+        let mut len: c_uint = 0;
+        // SAFETY: a valid font; the arrays have the lengths given.
+        let h = unsafe {
+            bhb_subset(
+                self.0,
+                glyphs.as_ptr(),
+                glyphs.len() as c_uint,
+                unicodes.as_ptr(),
+                unicodes.len() as c_uint,
+                flags,
+                &mut len,
+            )
+        };
+        (h, len as usize)
     }
     pub fn nominal_glyph(&self, c: u32) -> u32 {
         // SAFETY: a valid font.
