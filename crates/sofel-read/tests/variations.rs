@@ -300,3 +300,60 @@ fn stat_rejects_what_harfbuzz_rejects() {
         Err(ReadError::Truncated { .. })
     ));
 }
+
+#[test]
+fn adr0027_avar_v2_opens_optional_map_and_store() {
+    let mut data = avar_table(2, &[]);
+    data[8..12].copy_from_slice(&16u32.to_be_bytes());
+    data[12..16].copy_from_slice(&21u32.to_be_bytes());
+    // Format 0, one one-byte entry, one inner bit: outer 1, inner 1.
+    data.extend([0, 0, 0, 1, 3]);
+    // Store format 1, empty region list and no item data.
+    data.extend([0, 1, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0]);
+    let view = Avar::new(&data).unwrap();
+    assert_eq!(view.axis_index_map().unwrap().unwrap().map(0), 0x10001);
+    assert_eq!(view.variation_store().unwrap().unwrap().axis_count(), 0);
+    assert!(diagnostics(|r| avar::validate(&data, Some(0), r)).is_empty());
+    for version in [1, 2] {
+        let empty = avar_table(version, &[]);
+        let view = Avar::new(&empty).unwrap();
+        assert!(view.axis_index_map().unwrap().is_none());
+        assert!(view.variation_store().unwrap().is_none());
+    }
+}
+
+#[test]
+fn adr0027_avar_v2_rejects_truncated_children_and_axis_mismatch() {
+    for field in [8, 12] {
+        let mut data = avar_table(2, &[]);
+        data[field..field + 4].copy_from_slice(&16u32.to_be_bytes());
+        let view = Avar::new(&data).unwrap();
+        assert!(if field == 8 {
+            view.axis_index_map().is_err()
+        } else {
+            view.variation_store().is_err()
+        });
+        assert!(
+            diagnostics(|r| avar::validate(&data, Some(0), r))
+                .iter()
+                .any(|d| d.severity == Severity::Error)
+        );
+        data[field..field + 4].copy_from_slice(&u32::MAX.to_be_bytes());
+        assert!(
+            diagnostics(|r| avar::validate(&data, Some(0), r))
+                .iter()
+                .any(|d| d.severity == Severity::Error)
+        );
+    }
+    let mut data = avar_table(2, &[&[]]);
+    data[14..18].copy_from_slice(&18u32.to_be_bytes());
+    data.extend([0, 1, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0]);
+    let diagnostics = diagnostics(|r| avar::validate(&data, Some(1), r));
+    assert!(diagnostics.iter().any(|d| matches!(
+        d.kind,
+        Kind::AxisCountMismatch {
+            found: 0,
+            expected: 1
+        }
+    )));
+}

@@ -2,12 +2,13 @@
 //! and 2 (ADR 0022).
 //!
 //! Version 2 appends offsets to a DeltaSetIndexMap and an
-//! ItemVariationStore; the view checks that they are there but does not
-//! read them.
+//! ItemVariationStore, both exposed as checked views (ADR 0027).
 //!
 //! Specification: <https://learn.microsoft.com/typography/opentype/spec/avar>
 
-use crate::be::{self, to_u32};
+use crate::be::{self, to_u32, to_usize};
+use crate::delta_set_index_map::{self, DeltaSetIndexMap};
+use crate::item_variation::{self, ItemVariationStore};
 use crate::{Diagnostic, F2Dot14, Kind, ReadError, Tag};
 
 /// The `avar` tag.
@@ -139,6 +140,34 @@ impl<'a> Avar<'a> {
         })
     }
 
+    /// The version 2 axis index map. An absent or zero offset is `None`.
+    /// A nonzero offset to invalid data returns an error.
+    pub fn axis_index_map(&self) -> Result<Option<DeltaSetIndexMap<'a>>, ReadError> {
+        self.v2_offsets().map_or(Ok(None), |(offset, _)| {
+            self.child(offset, DeltaSetIndexMap::new)
+        })
+    }
+
+    /// The version 2 item variation store. An absent or zero offset is `None`.
+    /// A nonzero offset to invalid data returns an error.
+    pub fn variation_store(&self) -> Result<Option<ItemVariationStore<'a>>, ReadError> {
+        self.v2_offsets().map_or(Ok(None), |(_, offset)| {
+            self.child(offset, ItemVariationStore::new)
+        })
+    }
+
+    fn child<T>(
+        &self,
+        offset: u32,
+        open: impl FnOnce(&'a [u8]) -> Result<T, ReadError>,
+    ) -> Result<Option<T>, ReadError> {
+        if offset == 0 {
+            return Ok(None);
+        }
+        let data = be::tail_at(self.data, to_usize(offset)).ok_or(ReadError::OutOfBounds)?;
+        open(data).map(Some)
+    }
+
     /// The version 2 offsets: `(axisIndexMapOffset, varStoreOffset)`.
     pub fn v2_offsets(&self) -> Option<(u32, u32)> {
         if self.major != 2 {
@@ -153,7 +182,7 @@ impl<'a> Avar<'a> {
 
 /// Checks an `avar` table: an unknown version and truncation (and
 /// nothing else then), and an axis count other than `fvar_axes` (when
-/// given).
+/// given), and the optional version 2 map and store, including store axes.
 pub fn validate(data: &[u8], fvar_axes: Option<u16>, report: &mut dyn FnMut(Diagnostic)) {
     let mut emit = |offset: usize, kind: Kind| report(Diagnostic::new(TAG, to_u32(offset), kind));
     let avar = match Avar::new(data) {
@@ -179,5 +208,35 @@ pub fn validate(data: &[u8], fvar_axes: Option<u16>, report: &mut dyn FnMut(Diag
                 expected: u32::from(expected),
             },
         );
+    }
+    if let Some((map_offset, store_offset)) = avar.v2_offsets() {
+        for (offset, is_store) in [(map_offset, false), (store_offset, true)] {
+            if offset == 0 {
+                continue;
+            }
+            let Some(child) = be::tail_at(data, to_usize(offset)) else {
+                report(Diagnostic::new(
+                    TAG,
+                    to_u32(avar.end.saturating_add(if is_store { 4 } else { 0 })),
+                    Kind::OffsetOutOfBounds {
+                        offset,
+                        length: 0,
+                        available: to_u32(data.len()),
+                    },
+                ));
+                continue;
+            };
+            if is_store {
+                item_variation::validate(
+                    child,
+                    TAG,
+                    offset,
+                    u16::try_from(avar.axis_count()).ok(),
+                    report,
+                );
+            } else {
+                delta_set_index_map::validate(child, TAG, offset, report);
+            }
+        }
     }
 }
