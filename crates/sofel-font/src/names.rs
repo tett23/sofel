@@ -689,8 +689,16 @@ impl<'a> Font<'a> {
     /// before it, and a CFF name builds [`HbCff1`] each time;
     /// [`GlyphNames`] looks names up in constant time.
     pub fn glyph_name(&self, glyph: GlyphId) -> Option<&'a [u8]> {
+        self.glyph_name_with(glyph, HbCff1::new(self).as_ref())
+    }
+
+    /// [`Font::glyph_name`] with HarfBuzz's CFF accelerator built once by
+    /// the caller ([`HbCff1::new`] of this font; `None` when it is not
+    /// valid), so that CFF names take constant time for format 0
+    /// charsets.
+    pub fn glyph_name_with(&self, glyph: GlyphId, cff: Option<&HbCff1<'a>>) -> Option<&'a [u8]> {
         self.hb_glyph_name(glyph, &|k| self.hb_post()?.names().take(65535).nth(k))
-            .or_else(|| HbCff1::new(self)?.glyph_name(glyph.0))
+            .or_else(|| cff?.glyph_name(glyph.0))
     }
 
     fn hb_glyph_name(

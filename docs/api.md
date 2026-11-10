@@ -89,7 +89,7 @@ let advance = scale.v_advance(&font, GlyphId(1));
 let x_height = scale.metrics_position(&font, MetricsTag::XHeight);
 ```
 
-- グリフ名はHarfBuzzと同じく、postに無ければCFFのcharsetから引く（CIDキーのフォントには無い。[ADR 0021](adr/0021-cff-outlines.md)）。名前から引く索引は呼び出し側が持つ。`let mut buf = vec![0u32; font.glyph_names_len()]; let names = font.glyph_names(&mut buf)?;` で作り、`names.glyph_from_name(b"A")` で引く。CFFの名前が同じグリフが複数あれば、グリフIDの小さいものを返す。名前の文字列は呼び出し側の配列に書く（`name_utf8` など）か、フォントのデータを借りて返す（`glyph_name`、`sfnt_name`）。
+- グリフ名はHarfBuzzと同じく、postに無ければCFFのcharsetから引く（CIDキーのフォントには無い。[ADR 0021](adr/0021-cff-outlines.md)）。名前から引く索引は呼び出し側が持つ。`let mut buf = vec![0u32; font.glyph_names_len()]; let names = font.glyph_names(&mut buf)?;` で作り、`names.glyph_from_name(b"A")` で引く。CFFの名前が同じグリフが複数あれば、グリフIDの小さいものを返す。`glyph_name` は呼び出しごとに `HbCff1` を作るので、繰り返し引くときは作っておいた値を `glyph_name_with(g, cff)` に渡す。名前の文字列は呼び出し側の配列に書く（`name_utf8` など）か、フォントのデータを借りて返す（`glyph_name`、`sfnt_name`）。
 - 下の層が要るときは `sofel_font::read`（`sofel-read` の再公開）と `Font::sfnt()`、`Font::head()` を使う。
 
 ## 輪郭を取り出す（`sofel-outline`）

@@ -321,9 +321,15 @@ fn cff_glyph_names_in_harfbuzz_order() {
     let mut buf = vec![0u32; font.glyph_names_len()];
     assert_eq!(buf.len(), 1 + 2 * 5);
     let names = font.glyph_names(&mut buf).unwrap();
+    let cff = HbCff1::new(&font);
     for g in 0..6 {
         assert_eq!(names.glyph_name(GlyphId(g)), font.glyph_name(GlyphId(g)));
+        assert_eq!(
+            font.glyph_name_with(GlyphId(g), cff.as_ref()),
+            font.glyph_name(GlyphId(g))
+        );
     }
+    assert_eq!(font.glyph_name_with(GlyphId(1), None), None);
     assert_eq!(names.glyph_from_name(b"foo"), Some(GlyphId(2)));
     assert_eq!(names.glyph_from_name(b"A"), Some(GlyphId(1)));
     assert_eq!(names.glyph_from_name(b".notdef"), Some(GlyphId(0)));

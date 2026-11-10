@@ -645,7 +645,7 @@ int32_t sofel_font_postscript_name(const sofel_font_t *font, char *name, size_t 
  * into the font's data or static memory, and is not cut at a 0 byte as
  * HarfBuzz's copy is. SOFEL_ERROR_NOT_FOUND without one.
  *
- * Rust: sofel_font::Font::glyph_name, sofel_font::GlyphNames::glyph_name
+ * Rust: sofel_font::Font::glyph_name, sofel_font::Font::glyph_name_with, sofel_font::GlyphNames::glyph_name
  * HarfBuzz: hb_font_get_glyph_name
  * FreeType: none
  */

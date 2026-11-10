@@ -1300,8 +1300,11 @@ pub unsafe extern "C" fn sofel_font_glyph_name(
     len: *mut usize,
 ) -> i32 {
     // SAFETY: the caller's conditions.
-    let (font, name, len) = unsafe { (font_ref(font), w(name), w(len)) };
-    status(some(font).and_then(|f| glyph_name_out(f.glyph_name(GlyphId(glyph)), name, len)))
+    let (font, name, len) = unsafe { (sofel_ref(font), w(name), w(len)) };
+    status(some(font).and_then(|f| {
+        let n = f.font.glyph_name_with(GlyphId(glyph), f.extents.cff1());
+        glyph_name_out(n, name, len)
+    }))
 }
 
 /// `sofel_font_ft_glyph_name`.
