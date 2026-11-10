@@ -75,8 +75,9 @@ static void check_declarations(void) {
       sofel_font_nominal_glyph;
   int32_t (*variation_glyph)(const sofel_font_t *, uint32_t, uint32_t, uint32_t *) =
       sofel_font_variation_glyph;
-  int32_t (*h_advance)(const sofel_font_t *, uint32_t, uint16_t *) = sofel_font_h_advance;
-  int32_t (*ft_bearing)(const sofel_font_t *, uint32_t, int16_t *) =
+  int32_t (*h_advance)(const sofel_font_t *, const sofel_location_t *, uint32_t, uint16_t *) =
+      sofel_font_h_advance;
+  int32_t (*ft_bearing)(const sofel_font_t *, const sofel_location_t *, uint32_t, int16_t *) =
       sofel_font_ft_left_side_bearing;
   int32_t (*table)(const sofel_font_t *, uint32_t, const uint8_t **, size_t *) =
       sofel_font_table;
@@ -84,13 +85,13 @@ static void check_declarations(void) {
   void (*scratch_destroy)(sofel_outline_scratch_t *) = sofel_outline_scratch_destroy;
   int32_t (*pixel_scale)(const sofel_font_t *, uint16_t, uint16_t, int32_t *, int32_t *) =
       sofel_outline_pixel_scale;
-  int32_t (*load)(const sofel_font_t *, uint32_t, uint32_t, int32_t, int32_t,
+  int32_t (*load)(const sofel_font_t *, const sofel_location_t *, uint32_t, uint32_t, int32_t, int32_t,
                   sofel_outline_scratch_t *, int32_t *, uint32_t *) = sofel_outline_load;
   int32_t (*decompose)(const sofel_outline_scratch_t *, int32_t, int32_t, int32_t,
                        sofel_move_to_func_t, sofel_line_to_func_t, sofel_quad_to_func_t,
                        sofel_cubic_to_func_t, sofel_close_func_t, void *) =
       sofel_outline_decompose;
-  int32_t (*draw)(const sofel_font_t *, uint32_t, uint32_t, int32_t, int32_t,
+  int32_t (*draw)(const sofel_font_t *, const sofel_location_t *, uint32_t, uint32_t, int32_t, int32_t,
                   sofel_outline_scratch_t *, sofel_move_to_func_t, sofel_line_to_func_t,
                   sofel_quad_to_func_t, sofel_cubic_to_func_t, sofel_close_func_t, void *,
                   int32_t *, uint32_t *) = sofel_outline_draw;
@@ -110,7 +111,7 @@ static void check_declarations(void) {
   int32_t (*render_placed)(sofel_rasterizer_t *, int32_t, int32_t, uint32_t, uint32_t,
                            uint32_t, uint32_t, uint16_t, uint16_t, uint8_t *, size_t,
                            size_t *, int32_t *) = sofel_rasterizer_render_placed;
-  int32_t (*render_glyph)(const sofel_font_t *, uint32_t, uint16_t, sofel_outline_scratch_t *,
+  int32_t (*render_glyph)(const sofel_font_t *, const sofel_location_t *, uint32_t, uint16_t, sofel_outline_scratch_t *,
                           sofel_rasterizer_t *, uint8_t *, size_t, size_t *, int32_t *) =
       sofel_render_glyph;
   int32_t (*validate)(const uint8_t *, size_t, sofel_diagnostic_func_t, void *) =
@@ -125,7 +126,7 @@ static void check_declarations(void) {
       sofel_diagnostic_message;
   int32_t (*diag_details)(const sofel_diagnostic_t *, sofel_detail_func_t, void *) =
       sofel_diagnostic_details;
-  int32_t (*paint_glyph)(const sofel_font_t *, uint32_t, uint16_t, const sofel_color_t *, size_t,
+  int32_t (*paint_glyph)(const sofel_font_t *, const sofel_location_t *, uint32_t, uint16_t, const sofel_color_t *, size_t,
                          sofel_color_t, uint16_t, sofel_paint_commands_t *) = sofel_paint_glyph;
   void (*paint_free)(sofel_paint_commands_t *) = sofel_paint_commands_free;
   int32_t (*palette_count)(const sofel_font_t *, uint16_t *) = sofel_palette_count;
@@ -329,11 +330,11 @@ static int run_queries(const sofel_font_t *font, sofel_outline_scratch_t *scratc
   }
   for (i = 0; i < COUNT(advances); i++) {
     uint16_t a = 0;
-    bad += sofel_font_h_advance(font, (uint32_t)i, &a) != SOFEL_OK || a != advances[i];
+    bad += sofel_font_h_advance(font, NULL, (uint32_t)i, &a) != SOFEL_OK || a != advances[i];
   }
   for (i = 0; i < COUNT(ft_bearings); i++) {
     int16_t b = 12345;
-    bad += sofel_font_ft_left_side_bearing(font, (uint32_t)i, &b) != SOFEL_OK ||
+    bad += sofel_font_ft_left_side_bearing(font, NULL, (uint32_t)i, &b) != SOFEL_OK ||
            b != ft_bearings[i];
   }
   for (i = 0; i < COUNT(outline_cases); i++) {
@@ -343,7 +344,7 @@ static int run_queries(const sofel_font_t *font, sofel_outline_scratch_t *scratc
     uint32_t overlap = 0;
     int32_t s;
     rec.len = 0;
-    s = sofel_outline_draw(font, c->glyph, c->mode, c->x_scale, c->y_scale, scratch,
+    s = sofel_outline_draw(font, NULL, c->glyph, c->mode, c->x_scale, c->y_scale, scratch,
                            rec_move_to, rec_line_to, rec_quad_to, rec_cubic_to, rec_close,
                            &rec, cbox, &overlap);
     bad += s != c->status;
@@ -357,7 +358,7 @@ static int run_queries(const sofel_font_t *font, sofel_outline_scratch_t *scratc
     uint8_t buf[RENDER_CAPACITY];
     size_t len = 0;
     int32_t box[4] = {0, 0, 0, 0};
-    int32_t s = sofel_render_glyph(font, c->glyph, c->ppem, scratch, raster, buf, sizeof buf,
+    int32_t s = sofel_render_glyph(font, NULL, c->glyph, c->ppem, scratch, raster, buf, sizeof buf,
                                    &len, box);
     bad += s != c->status;
     if (s == SOFEL_OK) {
@@ -506,12 +507,12 @@ static void test_font(const sofel_font_t *font) {
   CHECK(sofel_font_nominal_glyph(font, 0x41, NULL) == SOFEL_ERROR_NULL);
   CHECK(sofel_font_variation_glyph(NULL, 0x41, 0xFE00, &u32v) == SOFEL_ERROR_NULL);
   CHECK(sofel_font_variation_glyph(font, 0x41, 0xFE00, NULL) == SOFEL_ERROR_NULL);
-  CHECK(sofel_font_h_advance(NULL, 1, &u16v) == SOFEL_ERROR_NULL);
-  CHECK(sofel_font_h_advance(font, 1, NULL) == SOFEL_ERROR_NULL);
+  CHECK(sofel_font_h_advance(NULL, NULL, 1, &u16v) == SOFEL_ERROR_NULL);
+  CHECK(sofel_font_h_advance(font, NULL, 1, NULL) == SOFEL_ERROR_NULL);
   {
     int16_t b;
-    CHECK(sofel_font_ft_left_side_bearing(NULL, 1, &b) == SOFEL_ERROR_NULL);
-    CHECK(sofel_font_ft_left_side_bearing(font, 1, NULL) == SOFEL_ERROR_NULL);
+    CHECK(sofel_font_ft_left_side_bearing(NULL, NULL, 1, &b) == SOFEL_ERROR_NULL);
+    CHECK(sofel_font_ft_left_side_bearing(font, NULL, 1, NULL) == SOFEL_ERROR_NULL);
   }
   CHECK(sofel_font_table(NULL, SOFEL_TAG('c', 'm', 'a', 'p'), &data, &len) == SOFEL_ERROR_NULL);
   CHECK(sofel_font_table(font, SOFEL_TAG('c', 'm', 'a', 'p'), NULL, &len) == SOFEL_ERROR_NULL);
@@ -541,7 +542,7 @@ static void test_outlines(const sofel_font_t *font) {
   /* load + decompose gives what draw gives. */
   for (i = 0; i < COUNT(outline_cases); i++) {
     const struct outline_case *c = &outline_cases[i];
-    int32_t s = sofel_outline_load(font, c->glyph, c->mode, c->x_scale, c->y_scale, scratch,
+    int32_t s = sofel_outline_load(font, NULL, c->glyph, c->mode, c->x_scale, c->y_scale, scratch,
                                    cbox, &overlap);
     CHECK(s == c->status);
     if (s != SOFEL_OK) continue;
@@ -553,7 +554,7 @@ static void test_outlines(const sofel_font_t *font) {
   }
 
   /* An offset and a multiplier. */
-  CHECK(sofel_outline_load(font, 1, SOFEL_SCALE_FIXED, scale_cases[0].x_scale,
+  CHECK(sofel_outline_load(font, NULL, 1, SOFEL_SCALE_FIXED, scale_cases[0].x_scale,
                            scale_cases[0].y_scale, scratch, cbox, &overlap) == SOFEL_OK);
   rec.len = 0;
   CHECK(sofel_outline_decompose(scratch, 100, -50, 4, rec_move_to, rec_line_to, rec_quad_to,
@@ -561,17 +562,17 @@ static void test_outlines(const sofel_font_t *font) {
   CHECK(same_commands(&rec, decomposed, COUNT(decomposed)));
 
   /* Errors. */
-  CHECK(sofel_outline_load(font, 1, 2, 0, 0, scratch, cbox, &overlap) ==
+  CHECK(sofel_outline_load(font, NULL, 1, 2, 0, 0, scratch, cbox, &overlap) ==
         SOFEL_ERROR_INVALID_ARGUMENT);
-  CHECK(sofel_outline_load(font, FIXTURE_NUM_GLYPHS, SOFEL_SCALE_NONE, 0, 0, scratch, cbox,
+  CHECK(sofel_outline_load(font, NULL, FIXTURE_NUM_GLYPHS, SOFEL_SCALE_NONE, 0, 0, scratch, cbox,
                            &overlap) == SOFEL_ERROR_INVALID_GLYPH);
-  CHECK(sofel_outline_load(NULL, 1, SOFEL_SCALE_NONE, 0, 0, scratch, cbox, &overlap) ==
+  CHECK(sofel_outline_load(NULL, NULL, 1, SOFEL_SCALE_NONE, 0, 0, scratch, cbox, &overlap) ==
         SOFEL_ERROR_NULL);
-  CHECK(sofel_outline_load(font, 1, SOFEL_SCALE_NONE, 0, 0, NULL, cbox, &overlap) ==
+  CHECK(sofel_outline_load(font, NULL, 1, SOFEL_SCALE_NONE, 0, 0, NULL, cbox, &overlap) ==
         SOFEL_ERROR_NULL);
-  CHECK(sofel_outline_load(font, 1, SOFEL_SCALE_NONE, 0, 0, scratch, NULL, &overlap) ==
+  CHECK(sofel_outline_load(font, NULL, 1, SOFEL_SCALE_NONE, 0, 0, scratch, NULL, &overlap) ==
         SOFEL_ERROR_NULL);
-  CHECK(sofel_outline_load(font, 1, SOFEL_SCALE_NONE, 0, 0, scratch, cbox, NULL) ==
+  CHECK(sofel_outline_load(font, NULL, 1, SOFEL_SCALE_NONE, 0, 0, scratch, cbox, NULL) ==
         SOFEL_ERROR_NULL);
   CHECK(sofel_outline_decompose(NULL, 0, 0, 1, rec_move_to, rec_line_to, rec_quad_to,
                                 rec_cubic_to, rec_close, &rec) == SOFEL_ERROR_NULL);
@@ -580,18 +581,18 @@ static void test_outlines(const sofel_font_t *font) {
   CHECK(sofel_outline_decompose(scratch, 0, 0, 1, rec_move_to, rec_line_to, rec_quad_to,
                                 rec_cubic_to, NULL, &rec) == SOFEL_ERROR_NULL);
   rec.len = 0;
-  CHECK(sofel_outline_draw(font, 1, SOFEL_SCALE_NONE, 0, 0, scratch, rec_move_to, rec_line_to,
+  CHECK(sofel_outline_draw(font, NULL, 1, SOFEL_SCALE_NONE, 0, 0, scratch, rec_move_to, rec_line_to,
                            NULL, rec_cubic_to, rec_close, &rec, cbox,
                            &overlap) == SOFEL_ERROR_NULL);
-  CHECK(sofel_outline_draw(NULL, 1, SOFEL_SCALE_NONE, 0, 0, scratch, rec_move_to, rec_line_to,
+  CHECK(sofel_outline_draw(NULL, NULL, 1, SOFEL_SCALE_NONE, 0, 0, scratch, rec_move_to, rec_line_to,
                            rec_quad_to, rec_cubic_to, rec_close, &rec, cbox,
                            &overlap) == SOFEL_ERROR_NULL);
-  CHECK(sofel_outline_draw(font, 1, 7, 0, 0, scratch, rec_move_to, rec_line_to, rec_quad_to,
+  CHECK(sofel_outline_draw(font, NULL, 1, 7, 0, 0, scratch, rec_move_to, rec_line_to, rec_quad_to,
                            rec_cubic_to, rec_close, &rec, cbox,
                            &overlap) == SOFEL_ERROR_INVALID_ARGUMENT);
   CHECK(rec.len == 0);
   /* `user` may be NULL. */
-  CHECK(sofel_outline_draw(font, 0, SOFEL_SCALE_NONE, 0, 0, scratch, rec_move_to, rec_line_to,
+  CHECK(sofel_outline_draw(font, NULL, 0, SOFEL_SCALE_NONE, 0, 0, scratch, rec_move_to, rec_line_to,
                            rec_quad_to, rec_cubic_to, rec_close, NULL, cbox,
                            &overlap) == SOFEL_OK);
 
@@ -691,7 +692,7 @@ static void test_raster(const sofel_font_t *font) {
 
   /* render_placed composed from load, pixel_box and decompose. */
   CHECK(sofel_outline_pixel_scale(font, 41, 41, &xs, &ys) == SOFEL_OK);
-  CHECK(sofel_outline_load(font, 2, SOFEL_SCALE_FIXED, xs, ys, scratch, cbox, &overlap) ==
+  CHECK(sofel_outline_load(font, NULL, 2, SOFEL_SCALE_FIXED, xs, ys, scratch, cbox, &overlap) ==
         SOFEL_OK);
   CHECK(overlap == 1);
   CHECK(sofel_pixel_box(cbox[0], cbox[1], cbox[2], cbox[3], box, shift) == SOFEL_OK);
@@ -717,21 +718,21 @@ static void test_raster(const sofel_font_t *font) {
     uint8_t tiny[4];
     memset(tiny, 0xAB, sizeof tiny);
     len = 0;
-    CHECK(sofel_render_glyph(font, 1, 16, scratch, r, tiny, sizeof tiny, &len, box) ==
+    CHECK(sofel_render_glyph(font, NULL, 1, 16, scratch, r, tiny, sizeof tiny, &len, box) ==
           SOFEL_ERROR_BUFFER_TOO_SMALL);
     CHECK(len == render_cases[2].len);
     for (i = 0; i < sizeof tiny; i++) CHECK(tiny[i] == 0xAB);
-    CHECK(sofel_render_glyph(NULL, 1, 16, scratch, r, buf, sizeof buf, &len, box) ==
+    CHECK(sofel_render_glyph(NULL, NULL, 1, 16, scratch, r, buf, sizeof buf, &len, box) ==
           SOFEL_ERROR_NULL);
-    CHECK(sofel_render_glyph(font, 1, 16, NULL, r, buf, sizeof buf, &len, box) ==
+    CHECK(sofel_render_glyph(font, NULL, 1, 16, NULL, r, buf, sizeof buf, &len, box) ==
           SOFEL_ERROR_NULL);
-    CHECK(sofel_render_glyph(font, 1, 16, scratch, NULL, buf, sizeof buf, &len, box) ==
+    CHECK(sofel_render_glyph(font, NULL, 1, 16, scratch, NULL, buf, sizeof buf, &len, box) ==
           SOFEL_ERROR_NULL);
-    CHECK(sofel_render_glyph(font, 1, 16, scratch, r, buf, sizeof buf, NULL, box) ==
+    CHECK(sofel_render_glyph(font, NULL, 1, 16, scratch, r, buf, sizeof buf, NULL, box) ==
           SOFEL_ERROR_NULL);
-    CHECK(sofel_render_glyph(font, 1, 16, scratch, r, buf, sizeof buf, &len, NULL) ==
+    CHECK(sofel_render_glyph(font, NULL, 1, 16, scratch, r, buf, sizeof buf, &len, NULL) ==
           SOFEL_ERROR_NULL);
-    CHECK(sofel_render_glyph(font, FIXTURE_NUM_GLYPHS, 16, scratch, r, buf, sizeof buf, &len,
+    CHECK(sofel_render_glyph(font, NULL, FIXTURE_NUM_GLYPHS, 16, scratch, r, buf, sizeof buf, &len,
                              box) == SOFEL_ERROR_INVALID_GLYPH);
   }
 
@@ -861,7 +862,7 @@ static void *work(void *arg) {
     /* A plan shared between threads, a buffer per thread (ADR 0020). */
     sofel_buffer_clear(buffer);
     sofel_buffer_add_utf8(buffer, "AB", 2, 0, 2);
-    w->bad += sofel_shape(w->font, NULL, w->plan, buffer) != SOFEL_OK ||
+    w->bad += sofel_shape(w->font, NULL, NULL, w->plan, buffer) != SOFEL_OK ||
               sofel_buffer_glyphs(buffer, gids, NULL, NULL, NULL, 2) != 2 || gids[0] != 1 ||
               gids[1] != 2;
   }
@@ -878,7 +879,7 @@ static void test_threads(const sofel_font_t *font) {
   struct worker workers[THREADS];
   sofel_segment_t seg = {SOFEL_DIRECTION_LTR, SOFEL_TAG('L', 'a', 't', 'n'), NULL};
   int32_t e = 12345;
-  sofel_shape_plan_t *plan = sofel_shape_plan_create(font, &seg, NULL, 0, &e);
+  sofel_shape_plan_t *plan = sofel_shape_plan_create(font, NULL, &seg, NULL, 0, &e);
   int i;
   CHECK(e == SOFEL_OK);
   for (i = 0; i < THREADS; i++) {
@@ -903,14 +904,14 @@ static void check_vglyphs(const sofel_font_t *font, const sofel_scale_t *scale,
     const struct vglyph_case *c = &cases[i];
     int32_t v = 12345, o[2] = {0, 0}, e[4] = {0, 0, 0, 0}, s;
     if (scale) {
-      CHECK(sofel_scale_h_advance(scale, font, c->glyph, &v) == SOFEL_OK && v == c->h_advance);
-      CHECK(sofel_scale_v_advance(scale, font, c->glyph, &v) == SOFEL_OK && v == c->v_advance);
-      CHECK(sofel_scale_v_origin(scale, font, c->glyph, o) == SOFEL_OK);
-      s = sofel_scale_glyph_extents_of(scale, font, c->glyph, e);
+      CHECK(sofel_scale_h_advance(scale, font, NULL, c->glyph, &v) == SOFEL_OK && v == c->h_advance);
+      CHECK(sofel_scale_v_advance(scale, font, NULL, c->glyph, &v) == SOFEL_OK && v == c->v_advance);
+      CHECK(sofel_scale_v_origin(scale, font, NULL, c->glyph, o) == SOFEL_OK);
+      s = sofel_scale_glyph_extents_of(scale, font, NULL, c->glyph, e);
     } else {
-      CHECK(sofel_font_v_advance(font, c->glyph, &v) == SOFEL_OK && v == c->v_advance);
-      CHECK(sofel_font_v_origin(font, c->glyph, o) == SOFEL_OK);
-      s = sofel_font_glyph_extents(font, c->glyph, e);
+      CHECK(sofel_font_v_advance(font, NULL, c->glyph, &v) == SOFEL_OK && v == c->v_advance);
+      CHECK(sofel_font_v_origin(font, NULL, c->glyph, o) == SOFEL_OK);
+      s = sofel_font_glyph_extents(font, NULL, c->glyph, e);
     }
     CHECK(o[0] == c->origin[0] && o[1] == c->origin[1]);
     CHECK(s == c->extents_status);
@@ -924,12 +925,12 @@ static void check_metrics(const sofel_font_t *font, const sofel_scale_t *scale,
   for (i = 0; i < count; i++) {
     const struct metric_case *c = &cases[i];
     int32_t v = 12345, s;
-    s = scale ? sofel_scale_metrics_position(scale, font, c->tag, &v)
-              : sofel_font_metrics_position(font, c->tag, &v);
+    s = scale ? sofel_scale_metrics_position(scale, font, NULL, c->tag, &v)
+              : sofel_font_metrics_position(font, NULL, c->tag, &v);
     CHECK(s == c->status);
     CHECK(s != SOFEL_OK || v == c->value);
-    s = scale ? sofel_scale_metrics_position_with_fallback(scale, font, c->tag, &v)
-              : sofel_font_metrics_position_with_fallback(font, c->tag, &v);
+    s = scale ? sofel_scale_metrics_position_with_fallback(scale, font, NULL, c->tag, &v)
+              : sofel_font_metrics_position_with_fallback(font, NULL, c->tag, &v);
     CHECK(s == SOFEL_OK && v == c->fallback);
   }
 }
@@ -942,21 +943,21 @@ static void check_baselines(const sofel_font_t *font, const sofel_scale_t *scale
   for (i = 0; i < count; i++) {
     const struct baseline_case *c = &cases[i];
     int32_t v = 12345, s;
-    s = scale ? sofel_scale_baseline(scale, font, c->tag, c->direction, c->script, &v)
-              : sofel_font_baseline(font, c->tag, c->direction, c->script, &v);
+    s = scale ? sofel_scale_baseline(scale, font, NULL, c->tag, c->direction, c->script, &v)
+              : sofel_font_baseline(font, NULL, c->tag, c->direction, c->script, &v);
     CHECK(s == c->status);
     CHECK(s != SOFEL_OK || v == c->value);
-    s = scale ? sofel_scale_baseline_with_fallback(scale, font, c->tag, c->direction, c->script,
+    s = scale ? sofel_scale_baseline_with_fallback(scale, font, NULL, c->tag, c->direction, c->script,
                                                    &v)
-              : sofel_font_baseline_with_fallback(font, c->tag, c->direction, c->script, &v);
+              : sofel_font_baseline_with_fallback(font, NULL, c->tag, c->direction, c->script, &v);
     CHECK(s == SOFEL_OK && v == c->fallback);
   }
   for (i = 0; i < ext_count; i++) {
     const struct layout_extents_case *c = &ext_cases[i];
     int32_t e[3] = {0, 0, 0}, found = 12345, s;
-    s = scale ? sofel_scale_layout_font_extents(scale, font, c->direction, c->script,
+    s = scale ? sofel_scale_layout_font_extents(scale, font, NULL, c->direction, c->script,
                                                 c->language, e, &found)
-              : sofel_font_layout_font_extents(font, c->direction, c->script, c->language, e,
+              : sofel_font_layout_font_extents(font, NULL, c->direction, c->script, c->language, e,
                                                &found);
     CHECK(s == SOFEL_OK && found == c->found && memcmp(e, c->extents, sizeof e) == 0);
   }
@@ -970,9 +971,9 @@ static void test_names(const sofel_font_t *font) {
   int32_t e = 12345, values[11];
   sofel_glyph_names_t *names;
 
-  CHECK(sofel_font_postscript_name(font, buf, sizeof buf, &len) == SOFEL_OK &&
+  CHECK(sofel_font_postscript_name(font, NULL, buf, sizeof buf, &len) == SOFEL_OK &&
         len == strlen(FIXTURE_PS_NAME) && memcmp(buf, FIXTURE_PS_NAME, len) == 0);
-  CHECK(sofel_font_postscript_name(font, buf, 2, &len) == SOFEL_ERROR_BUFFER_TOO_SMALL &&
+  CHECK(sofel_font_postscript_name(font, NULL, buf, 2, &len) == SOFEL_ERROR_BUFFER_TOO_SMALL &&
         len == strlen(FIXTURE_PS_NAME));
   CHECK(sofel_font_name_count(font, &count) == SOFEL_OK && count == COUNT(name_list));
   for (i = 0; i < COUNT(name_list); i++) {
@@ -1026,16 +1027,16 @@ static void test_names(const sofel_font_t *font) {
       s = sofel_glyph_names_ft_glyph_from_name(names, c->ft, strlen(c->ft), &g);
       CHECK(c->ft_back < 0 ? s == SOFEL_ERROR_NOT_FOUND : s == SOFEL_OK && g == c->ft_back);
     }
-    s = sofel_font_ft_v_advance(font, c->glyph, &u16v);
+    s = sofel_font_ft_v_advance(font, NULL, c->glyph, &u16v);
     CHECK(c->ft_v_advance < 0 ? s == SOFEL_ERROR_INVALID_GLYPH
                               : s == SOFEL_OK && u16v == c->ft_v_advance);
   }
   sofel_glyph_names_destroy(names);
   sofel_glyph_names_destroy(NULL);
   CHECK(sofel_glyph_names_create(NULL, &e) == NULL && e == SOFEL_ERROR_NULL);
-  CHECK(sofel_font_ft_face_metrics(font, values) == SOFEL_OK &&
+  CHECK(sofel_font_ft_face_metrics(font, NULL, values) == SOFEL_OK &&
         memcmp(values, ft_face_metrics, sizeof values) == 0);
-  CHECK(sofel_font_ft_face_metrics(font, NULL) == SOFEL_ERROR_NULL);
+  CHECK(sofel_font_ft_face_metrics(font, NULL, NULL) == SOFEL_ERROR_NULL);
   CHECK(sofel_font_name_utf8(font, 1, NULL, 2, buf, sizeof buf, &written, &total) ==
         SOFEL_ERROR_NULL);
   CHECK(sofel_font_glyph_name(font, 1, NULL, &len) == SOFEL_ERROR_NULL);
@@ -1109,7 +1110,7 @@ static void test_cff_info(void) {
   CHECK(values[0] == 0 && values[1] == 0 && values[2] == -100 && values[3] == 50);
   CHECK(sofel_font_ps_fs_type(cidf, &fs) == SOFEL_OK && fs == 0);
   /* Glyph 1 of the CFF font: rmoveto 10 -20, rlineto 300 700. */
-  CHECK(sofel_outline_load(cff, 1, SOFEL_SCALE_NONE, 0, 0, scratch, cbox, &overlap) == SOFEL_OK);
+  CHECK(sofel_outline_load(cff, NULL, 1, SOFEL_SCALE_NONE, 0, 0, scratch, cbox, &overlap) == SOFEL_OK);
   CHECK(cbox[0] == 10 && cbox[1] == -20 && cbox[2] == 310 && cbox[3] == 680 && overlap == 0);
   sofel_outline_scratch_destroy(scratch);
   sofel_font_destroy(cff);
@@ -1133,41 +1134,41 @@ static void test_metrics(void) {
     CHECK(s == os2_cases[i].status);
     CHECK(s != SOFEL_OK || i64v == os2_cases[i].value);
   }
-  CHECK(sofel_font_h_extents(font, ext) == SOFEL_OK &&
+  CHECK(sofel_font_h_extents(font, NULL, ext) == SOFEL_OK &&
         memcmp(ext, unscaled_h_extents, sizeof ext) == 0);
-  CHECK(sofel_font_v_extents(font, ext) == SOFEL_OK &&
+  CHECK(sofel_font_v_extents(font, NULL, ext) == SOFEL_OK &&
         memcmp(ext, unscaled_v_extents, sizeof ext) == 0);
   check_vglyphs(font, NULL, unscaled_glyphs, COUNT(unscaled_glyphs));
   check_metrics(font, NULL, unscaled_metrics, COUNT(unscaled_metrics));
-  CHECK(sofel_font_metrics_position(font, 0x6e6f6e65u, &v) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_font_metrics_position(font, NULL, 0x6e6f6e65u, &v) == SOFEL_ERROR_INVALID_ARGUMENT);
   check_baselines(font, NULL, unscaled_baselines, COUNT(unscaled_baselines),
                   unscaled_layout_extents, COUNT(unscaled_layout_extents));
   /* Golem's em box center: Idce, horizontal, hani. */
-  CHECK(sofel_font_baseline_with_fallback(font, SOFEL_BASELINE_IDEO_EMBOX_CENTRAL,
+  CHECK(sofel_font_baseline_with_fallback(font, NULL, SOFEL_BASELINE_IDEO_EMBOX_CENTRAL,
                                           SOFEL_DIRECTION_HORIZONTAL,
                                           SOFEL_TAG('h', 'a', 'n', 'i'), &v) == SOFEL_OK);
-  CHECK(sofel_font_baseline(font, SOFEL_BASELINE_ROMAN, 2, SOFEL_TAG('l', 'a', 't', 'n'), &v) ==
+  CHECK(sofel_font_baseline(font, NULL, SOFEL_BASELINE_ROMAN, 2, SOFEL_TAG('l', 'a', 't', 'n'), &v) ==
         SOFEL_ERROR_INVALID_ARGUMENT);
-  CHECK(sofel_font_baseline(font, SOFEL_BASELINE_MATH, SOFEL_DIRECTION_HORIZONTAL,
+  CHECK(sofel_font_baseline(font, NULL, SOFEL_BASELINE_MATH, SOFEL_DIRECTION_HORIZONTAL,
                             SOFEL_TAG('l', 'a', 't', 'n'), &v) == SOFEL_ERROR_NOT_FOUND);
-  CHECK(sofel_font_baseline(font, SOFEL_BASELINE_ROMAN, SOFEL_DIRECTION_HORIZONTAL,
+  CHECK(sofel_font_baseline(font, NULL, SOFEL_BASELINE_ROMAN, SOFEL_DIRECTION_HORIZONTAL,
                             SOFEL_TAG('l', 'a', 't', 'n'), NULL) == SOFEL_ERROR_NULL);
-  CHECK(sofel_font_layout_font_extents(font, SOFEL_DIRECTION_VERTICAL, 0, 0, ext, NULL) ==
+  CHECK(sofel_font_layout_font_extents(font, NULL, SOFEL_DIRECTION_VERTICAL, 0, 0, ext, NULL) ==
         SOFEL_ERROR_NULL);
-  CHECK(sofel_font_layout_font_extents(font, -1, 0, 0, ext, &v) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_font_layout_font_extents(font, NULL, -1, 0, 0, ext, &v) == SOFEL_ERROR_INVALID_ARGUMENT);
 
   scale = sofel_scale_create(font, SCALE_X, SCALE_Y, &e);
   CHECK(e == SOFEL_OK && scale != NULL);
   if (scale != NULL) {
-    CHECK(sofel_scale_h_extents(scale, font, ext) == SOFEL_OK &&
+    CHECK(sofel_scale_h_extents(scale, font, NULL, ext) == SOFEL_OK &&
           memcmp(ext, scaled_h_extents, sizeof ext) == 0);
-    CHECK(sofel_scale_v_extents(scale, font, ext) == SOFEL_OK &&
+    CHECK(sofel_scale_v_extents(scale, font, NULL, ext) == SOFEL_OK &&
           memcmp(ext, scaled_v_extents, sizeof ext) == 0);
     check_vglyphs(font, scale, scaled_glyphs, COUNT(scaled_glyphs));
     check_metrics(font, scale, scaled_metrics, COUNT(scaled_metrics));
     check_baselines(font, scale, scaled_baselines, COUNT(scaled_baselines),
                     scaled_layout_extents, COUNT(scaled_layout_extents));
-    CHECK(sofel_scale_baseline(NULL, font, SOFEL_BASELINE_ROMAN, SOFEL_DIRECTION_HORIZONTAL, 0,
+    CHECK(sofel_scale_baseline(NULL, font, NULL, SOFEL_BASELINE_ROMAN, SOFEL_DIRECTION_HORIZONTAL, 0,
                                &v) == SOFEL_ERROR_NULL);
     for (i = 0; i < COUNT(em_cases); i++) {
       CHECK(sofel_scale_em_scale_x(scale, em_cases[i].v, &v) == SOFEL_OK && v == em_cases[i].x);
@@ -1176,21 +1177,21 @@ static void test_metrics(void) {
     CHECK(sofel_scale_glyph_extents(scale, box) == SOFEL_OK &&
           memcmp(box, scaled_box, sizeof box) == 0);
     CHECK(sofel_scale_em_scale_x(scale, 1, NULL) == SOFEL_ERROR_NULL);
-    CHECK(sofel_scale_h_extents(NULL, font, ext) == SOFEL_ERROR_NULL);
-    CHECK(sofel_scale_v_origin(scale, NULL, 1, ext) == SOFEL_ERROR_NULL);
-    CHECK(sofel_scale_metrics_position(NULL, font, 0x68617363u, &v) == SOFEL_ERROR_NULL);
+    CHECK(sofel_scale_h_extents(NULL, font, NULL, ext) == SOFEL_ERROR_NULL);
+    CHECK(sofel_scale_v_origin(scale, NULL, NULL, 1, ext) == SOFEL_ERROR_NULL);
+    CHECK(sofel_scale_metrics_position(NULL, font, NULL, 0x68617363u, &v) == SOFEL_ERROR_NULL);
   }
   sofel_scale_destroy(scale);
   sofel_scale_destroy(NULL);
   CHECK(sofel_scale_create(NULL, 1, 1, &e) == NULL && e == SOFEL_ERROR_NULL);
   CHECK(sofel_scale_create(font, 1, 1, NULL) == NULL);
 
-  CHECK(sofel_font_h_extents(NULL, ext) == SOFEL_ERROR_NULL);
-  CHECK(sofel_font_h_extents(font, NULL) == SOFEL_ERROR_NULL);
-  CHECK(sofel_font_v_origin(font, 1, NULL) == SOFEL_ERROR_NULL);
+  CHECK(sofel_font_h_extents(NULL, NULL, ext) == SOFEL_ERROR_NULL);
+  CHECK(sofel_font_h_extents(font, NULL, NULL) == SOFEL_ERROR_NULL);
+  CHECK(sofel_font_v_origin(font, NULL, 1, NULL) == SOFEL_ERROR_NULL);
   CHECK(sofel_font_fs_type(NULL, &u16v) == SOFEL_ERROR_NULL);
   CHECK(sofel_font_os2_field(font, 0, NULL) == SOFEL_ERROR_NULL);
-  CHECK(sofel_font_metrics_position_with_fallback(font, 0x68617363u, NULL) == SOFEL_ERROR_NULL);
+  CHECK(sofel_font_metrics_position_with_fallback(font, NULL, 0x68617363u, NULL) == SOFEL_ERROR_NULL);
   test_names(font);
   sofel_font_destroy(font);
 }
@@ -1376,7 +1377,7 @@ static void test_color(void) {
   CHECK(error == SOFEL_OK);
   for (i = 0; i < COUNT(paint_cases); i++) {
     sofel_paint_commands_t cmds;
-    int32_t painted = sofel_paint_glyph(font, paint_cases[i].glyph, paint_cases[i].palette, NULL, 0,
+    int32_t painted = sofel_paint_glyph(font, NULL, paint_cases[i].glyph, paint_cases[i].palette, NULL, 0,
                                         fg, 0, &cmds);
     CHECK(painted == paint_cases[i].painted);
     paint_text(&cmds, &text);
@@ -1389,12 +1390,12 @@ static void test_color(void) {
     /* A custom palette replaces the font's. */
     sofel_paint_commands_t cmds;
     sofel_color_t custom[2] = {{1, 2, 3, 4}, {5, 6, 7, 8}};
-    CHECK(sofel_paint_glyph(font, 2, 0, custom, 2, fg, 0, &cmds) == SOFEL_PAINTED_COLRV0);
+    CHECK(sofel_paint_glyph(font, NULL, 2, 0, custom, 2, fg, 0, &cmds) == SOFEL_PAINTED_COLRV0);
     CHECK(cmds.count == 2 && cmds.commands[0].color.r == 5 && cmds.commands[0].palette_index == 1);
     CHECK(cmds.commands[1].palette_index == -1 && cmds.commands[1].color.b == 30);
     sofel_paint_commands_free(&cmds);
   }
-  CHECK(sofel_paint_glyph(NULL, 2, 0, NULL, 0, fg, 0, NULL) == SOFEL_ERROR_NULL);
+  CHECK(sofel_paint_glyph(NULL, NULL, 2, 0, NULL, 0, fg, 0, NULL) == SOFEL_ERROR_NULL);
 
   CHECK(sofel_palette_count(font, &u16) == SOFEL_OK && u16 == COLOR_PALETTES);
   CHECK(sofel_palette_entry_count(font, &u16) == SOFEL_OK && u16 == COLOR_ENTRIES);
@@ -1434,18 +1435,18 @@ static void test_color(void) {
     int32_t box[4];
     uint32_t is_color = 9;
     size_t n, mid;
-    CHECK(sofel_render_color_glyph(font, 2, 10, 0, NULL, 0, fg, scratch, raster, px, sizeof px, &n,
+    CHECK(sofel_render_color_glyph(font, NULL, 2, 10, 0, NULL, 0, fg, scratch, raster, px, sizeof px, &n,
                                    box, &is_color) == SOFEL_OK);
     CHECK(is_color == 1 && box[2] > 0 && box[3] > 0 && n == (size_t)box[2] * box[3] * 4);
     mid = ((size_t)box[3] / 2 * box[2] + box[2] / 2) * 4;
     CHECK(px[mid] == 30 && px[mid + 1] == 20 && px[mid + 2] == 10 && px[mid + 3] == 255);
-    CHECK(sofel_render_color_glyph(font, 2, 10, 0, NULL, 0, fg, scratch, raster, px, 4, &n, box,
+    CHECK(sofel_render_color_glyph(font, NULL, 2, 10, 0, NULL, 0, fg, scratch, raster, px, 4, &n, box,
                                    &is_color) == SOFEL_ERROR_BUFFER_TOO_SMALL);
     /* Not a COLRv0 glyph: the gray outline. */
-    CHECK(sofel_render_color_glyph(font, 1, 10, 0, NULL, 0, fg, scratch, raster, px, sizeof px, &n,
+    CHECK(sofel_render_color_glyph(font, NULL, 1, 10, 0, NULL, 0, fg, scratch, raster, px, sizeof px, &n,
                                    box, &is_color) == SOFEL_OK);
     CHECK(is_color == 0 && n == (size_t)box[2] * box[3]);
-    CHECK(sofel_render_color_glyph(font, 2, 10, 0, NULL, 0, fg, scratch, raster, px, sizeof px, &n,
+    CHECK(sofel_render_color_glyph(font, NULL, 2, 10, 0, NULL, 0, fg, scratch, raster, px, sizeof px, &n,
                                    box, NULL) == SOFEL_ERROR_NULL);
     sofel_rasterizer_destroy(raster);
     sofel_outline_scratch_destroy(scratch);
@@ -1513,7 +1514,7 @@ static void check_shape_declarations(void) {
       sofel_feature_format;
   int32_t (*segment_guess)(const char *, size_t, const sofel_segment_t *,
                            const sofel_language_t *, sofel_segment_t *) = sofel_segment_guess;
-  sofel_shape_plan_t *(*plan_create)(const sofel_font_t *, const sofel_segment_t *,
+  sofel_shape_plan_t *(*plan_create)(const sofel_font_t *, const sofel_location_t *, const sofel_segment_t *,
                                      const sofel_feature_t *, size_t, int32_t *) =
       sofel_shape_plan_create;
   void (*plan_destroy)(sofel_shape_plan_t *) = sofel_shape_plan_destroy;
@@ -1559,9 +1560,9 @@ static void check_shape_declarations(void) {
       sofel_buffer_set_not_found_variation_selector_glyph;
   int32_t (*get_random)(const sofel_buffer_t *, uint32_t *) = sofel_buffer_get_random_state;
   int32_t (*set_random)(sofel_buffer_t *, uint32_t) = sofel_buffer_set_random_state;
-  int32_t (*shape)(const sofel_font_t *, const sofel_scale_t *, const sofel_shape_plan_t *,
+  int32_t (*shape)(const sofel_font_t *, const sofel_location_t *, const sofel_scale_t *, const sofel_shape_plan_t *,
                    sofel_buffer_t *) = sofel_shape;
-  int32_t (*shape_fallback)(const sofel_font_t *, const sofel_scale_t *, const sofel_segment_t *,
+  int32_t (*shape_fallback)(const sofel_font_t *, const sofel_location_t *, const sofel_scale_t *, const sofel_segment_t *,
                             sofel_buffer_t *) = sofel_shape_fallback;
   int64_t (*buffer_glyphs)(const sofel_buffer_t *, uint32_t *, uint32_t *, uint32_t *, int32_t *,
                            size_t) = sofel_buffer_glyphs;
@@ -1973,32 +1974,32 @@ static void test_shape_fixture_font(const sofel_font_t *font) {
 
   CHECK(sofel_buffer_add_utf8(b, "AB", 2, 0, 2) == SOFEL_OK);
   CHECK(sofel_segment_guess("AB", 2, &seg, NULL, &guessed) == SOFEL_OK);
-  plan = sofel_shape_plan_create(font, &guessed, &f, 1, &e);
+  plan = sofel_shape_plan_create(font, NULL, &guessed, &f, 1, &e);
   CHECK(e == SOFEL_OK && plan != NULL);
   CHECK(sofel_shape_plan_shaper(plan, &shaper) == SOFEL_OK && shaper == SOFEL_SHAPER_DEFAULT);
-  CHECK(sofel_shape(font, NULL, plan, b) == SOFEL_OK);
+  CHECK(sofel_shape(font, NULL, NULL, plan, b) == SOFEL_OK);
   CHECK(sofel_buffer_glyphs(b, gids, NULL, NULL, pos, 4) == 2);
   CHECK(gids[0] == 1 && gids[1] == 2 && pos[0] == advances[1] && pos[4] == advances[2]);
-  CHECK(sofel_shape(font, NULL, plan, b) == SOFEL_ERROR_BUFFER_CONTENT);
+  CHECK(sofel_shape(font, NULL, NULL, plan, b) == SOFEL_ERROR_BUFFER_CONTENT);
   CHECK(sofel_buffer_clear(b) == SOFEL_OK);
   CHECK(sofel_buffer_length(b, &n) == SOFEL_OK && n == 0);
   CHECK(sofel_buffer_add_utf8(b, "BA", 2, 0, 2) == SOFEL_OK);
   seg.direction = SOFEL_DIRECTION_RTL;
-  CHECK(sofel_shape_fallback(font, NULL, &seg, b) == SOFEL_OK);
+  CHECK(sofel_shape_fallback(font, NULL, NULL, &seg, b) == SOFEL_OK);
   CHECK(sofel_buffer_glyphs(b, gids, NULL, NULL, pos, 4) == 2);
   CHECK(gids[0] == 1 && gids[1] == 2 && pos[0] == advances[1]);
-  CHECK(sofel_shape(NULL, NULL, plan, b) == SOFEL_ERROR_NULL);
+  CHECK(sofel_shape(NULL, NULL, NULL, plan, b) == SOFEL_ERROR_NULL);
   sofel_shape_plan_destroy(plan);
 
   seg.direction = 0;
-  CHECK(sofel_shape_plan_create(font, &seg, NULL, 0, &e) == NULL &&
+  CHECK(sofel_shape_plan_create(font, NULL, &seg, NULL, 0, &e) == NULL &&
         e == SOFEL_ERROR_INVALID_ARGUMENT);
   seg.direction = SOFEL_DIRECTION_RTL;
   seg.script = SOFEL_TAG('A', 'r', 'a', 'b');
-  plan = sofel_shape_plan_create(font, &seg, NULL, 0, &e);
+  plan = sofel_shape_plan_create(font, NULL, &seg, NULL, 0, &e);
   CHECK(sofel_shape_plan_shaper(plan, &shaper) == SOFEL_OK && shaper == SOFEL_SHAPER_ARABIC);
   sofel_shape_plan_destroy(plan);
-  CHECK(sofel_shape_plan_create(NULL, &seg, NULL, 0, &e) == NULL && e == SOFEL_ERROR_NULL);
+  CHECK(sofel_shape_plan_create(NULL, NULL, &seg, NULL, 0, &e) == NULL && e == SOFEL_ERROR_NULL);
   sofel_shape_plan_destroy(NULL);
   sofel_buffer_destroy(b);
 }
@@ -2033,9 +2034,9 @@ static int golem_shape(const sofel_font_t *f, const char *utf8, int len, const c
       p = end + 1;
     }
   }
-  plan = sofel_shape_plan_create(f, &props, feats, nfeat, &e);
+  plan = sofel_shape_plan_create(f, NULL, &props, feats, nfeat, &e);
   CHECK(e == SOFEL_OK);
-  CHECK(sofel_shape(f, NULL, plan, buf) == SOFEL_OK);
+  CHECK(sofel_shape(f, NULL, NULL, plan, buf) == SOFEL_OK);
   count = sofel_buffer_glyphs(buf, out_gids, out_clusters, out_flags, out_pos,
                               (size_t)max_glyphs);
   sofel_shape_plan_destroy(plan);

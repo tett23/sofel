@@ -222,18 +222,24 @@ fn variation_sequences() {
 fn advances_follow_harfbuzz() {
     let data = sample_font();
     let f = Font::new(&data, 0).unwrap();
-    assert_eq!(f.advance(GlyphId(0)), 500);
-    assert_eq!(f.advance(GlyphId(19)), 519);
-    assert_eq!(f.advance(GlyphId(27)), 519); // last long metric
-    assert_eq!(f.advance(GlyphId(28)), 0); // >= numGlyphs
+    assert_eq!(f.default_instance().advance(GlyphId(0)), 500);
+    assert_eq!(f.default_instance().advance(GlyphId(19)), 519);
+    assert_eq!(f.default_instance().advance(GlyphId(27)), 519); // last long metric
+    assert_eq!(f.default_instance().advance(GlyphId(28)), 0); // >= numGlyphs
     // No metrics at all: unitsPerEm / 2.
     assert_eq!(
-        Font::new(&without(b"hmtx"), 0).unwrap().advance(GlyphId(3)),
+        Font::new(&without(b"hmtx"), 0)
+            .unwrap()
+            .default_instance()
+            .advance(GlyphId(3)),
         500
     );
     // hhea missing but hmtx present: no long metrics, but data, so 0.
     assert_eq!(
-        Font::new(&without(b"hhea"), 0).unwrap().advance(GlyphId(3)),
+        Font::new(&without(b"hhea"), 0)
+            .unwrap()
+            .default_instance()
+            .advance(GlyphId(3)),
         0
     );
     // Out-of-range unitsPerEm counts as 1000 for the default.
@@ -252,7 +258,7 @@ fn advances_follow_harfbuzz() {
     );
     let f = Font::new(&odd, 0).unwrap();
     assert_eq!(f.units_per_em(), 5);
-    assert_eq!(f.advance(GlyphId(0)), 500);
+    assert_eq!(f.default_instance().advance(GlyphId(0)), 500);
 }
 
 #[test]
@@ -261,16 +267,22 @@ fn truncated_metrics_are_used_as_far_as_they_go() {
     let table = hmtx(&[(100, 0), (200, 0)], &[0]);
     let data = with(sample_tables(), &[(b"hhea", hhea(3)), (b"hmtx", table)]);
     let f = Font::new(&data, 0).unwrap();
-    assert_eq!(f.advance(GlyphId(1)), 200);
-    assert_eq!(f.advance(GlyphId(2)), 200); // a bearing exists for glyph 2
-    assert_eq!(f.advance(GlyphId(3)), 0); // beyond the data
+    assert_eq!(f.default_instance().advance(GlyphId(1)), 200);
+    assert_eq!(f.default_instance().advance(GlyphId(2)), 200); // a bearing exists for glyph 2
+    assert_eq!(f.default_instance().advance(GlyphId(3)), 0); // beyond the data
 }
 
 #[test]
 fn wide_metrics_win() {
     let wide = hmtx(&[(700, 0)], &[0; 27]);
     let data = with(sample_tables(), &[(b"HHEA", hhea_wide(1)), (b"HMTX", wide)]);
-    assert_eq!(Font::new(&data, 0).unwrap().advance(GlyphId(5)), 700);
+    assert_eq!(
+        Font::new(&data, 0)
+            .unwrap()
+            .default_instance()
+            .advance(GlyphId(5)),
+        700
+    );
 }
 
 #[test]
@@ -284,6 +296,7 @@ fn left_side_bearings_follow_freetype() {
     let lsb = |data: &[u8], glyph| {
         Font::new(data, 0)
             .unwrap()
+            .default_instance()
             .ft_left_side_bearing(GlyphId(glyph))
     };
     let data = sample_font();
@@ -336,6 +349,7 @@ fn left_side_bearing_tables_follow_freetype() {
     let lsb = |data: &[u8], glyph| {
         Font::new(data, 0)
             .unwrap()
+            .default_instance()
             .ft_left_side_bearing(GlyphId(glyph))
     };
     assert_eq!(lsb(&both, 5), 5);

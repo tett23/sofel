@@ -90,7 +90,7 @@ impl<'a> Font<'a> {
     /// position is `post`'s moved to the center of the line. Values wrap
     /// to 16 bits as FreeType's do. All 0 when FreeType does not treat the
     /// face as scalable (no outlines, or CBLC/CBDT bitmaps).
-    pub fn ft_face_metrics(&self) -> FtFaceMetrics {
+    pub(crate) fn ft_face_metrics_default(&self) -> FtFaceMetrics {
         if !self.ft_has_outline() {
             return FtFaceMetrics::default();
         }
@@ -168,10 +168,10 @@ impl<'a> Font<'a> {
     /// (`TT_Get_VMetrics`): from `vmtx` read as `tt_face_get_metrics`
     /// does, else `|sTypoAscender − sTypoDescender|` of `OS/2`, else
     /// `|ascender − descender|` of `hhea`. Positive downward, unlike
-    /// [`Font::v_advance`]. `None` for glyph ids not below the glyph
+    /// [`crate::var::Instance::v_advance`]. `None` for glyph ids not below the glyph
     /// count. (FreeType's CFF driver loads the glyph instead when there
     /// is no `vmtx`; that comes with ADR 0021.)
-    pub fn ft_v_advance(&self, glyph: GlyphId) -> Option<u16> {
+    pub(crate) fn ft_v_advance_default(&self, glyph: GlyphId) -> Option<u16> {
         if glyph.0 >= self.num_glyphs {
             return None;
         }

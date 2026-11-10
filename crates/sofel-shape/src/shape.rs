@@ -30,7 +30,7 @@ use crate::unicode;
 /// Shapes `buffer` with `font` at `scale` as `plan` says
 /// (`hb_shape_plan_execute` with the `ot` shaper), taking glyph boxes for
 /// fallback mark positioning and vertical origins from the font's
-/// `glyf` table ([`Font::glyf_extents`]).
+/// `glyf` table ([`sofel_font::var::Instance::glyf_extents`]).
 ///
 /// The buffer's direction and script are the plan's.
 pub fn shape(
@@ -39,7 +39,9 @@ pub fn shape(
     plan: &ShapePlan<'_>,
     buffer: UnicodeBuffer,
 ) -> GlyphBuffer {
-    shape_with_extents(font, scale, plan, buffer, &|g| font.glyf_extents(g))
+    shape_with_extents(font, scale, plan, buffer, &|g| {
+        font.default_instance().glyf_extents(g)
+    })
 }
 
 /// [`shape`] with glyph boxes in font units from `extents`, for fonts
@@ -586,7 +588,7 @@ pub fn shape_fallback(
     let mut buf = buffer.buf;
     buf.direction = props.direction;
     buf.script = props.script;
-    let extents = |g: GlyphId| font.glyf_extents(g);
+    let extents = |g: GlyphId| font.default_instance().glyf_extents(g);
     let sf = ShapeFont::new(font, *scale, &extents);
     let space = sf.nominal_glyph(0x20);
     buf.clear_positions();

@@ -20,8 +20,8 @@ use sofel_shape::{
 
 use crate::{
     ERROR_BUFFER_CONTENT, ERROR_BUFFER_TOO_SMALL, ERROR_INVALID_ARGUMENT, ERROR_NOT_FOUND,
-    ERROR_NULL, OK, SofelFont, SofelGlyphNames, SofelScale, Status, out_array, r, scale_of, some,
-    status, w,
+    ERROR_NULL, OK, SofelFont, SofelGlyphNames, SofelLocation, SofelScale, Status, out_array, r,
+    scale_of, some, status, w,
 };
 
 /// `sofel_language_t`.
@@ -516,6 +516,7 @@ pub unsafe extern "C" fn sofel_segment_guess(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sofel_shape_plan_create(
     font: *const SofelFont,
+    _location: *const SofelLocation,
     segment: *const CSegment,
     features: *const CFeature,
     n: usize,
@@ -1158,6 +1159,7 @@ fn shape(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sofel_shape(
     font: *const SofelFont,
+    _location: *const SofelLocation,
     scale: *const SofelScale,
     plan: *const SofelShapePlan,
     buffer: *mut SofelBuffer,
@@ -1177,6 +1179,7 @@ pub unsafe extern "C" fn sofel_shape(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sofel_shape_fallback(
     font: *const SofelFont,
+    _location: *const SofelLocation,
     scale: *const SofelScale,
     segment: *const CSegment,
     buffer: *mut SofelBuffer,

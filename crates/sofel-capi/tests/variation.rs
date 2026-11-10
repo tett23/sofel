@@ -5,7 +5,7 @@
 #[path = "../../sofel-read/tests/support/build.rs"]
 mod build;
 
-use build::{sample_tables_with_glyf, sfnt};
+use build::{name, sample_tables_with_glyf, sfnt, utf16be};
 use sofel_capi::*;
 
 fn font_bytes() -> Vec<u8> {
@@ -19,6 +19,518 @@ fn font_bytes() -> Vec<u8> {
     tables.push((b"fvar", fvar));
     tables.sort_by_key(|(tag, _)| **tag);
     sfnt(&tables)
+}
+
+fn named_font_bytes() -> Vec<u8> {
+    let mut fvar = vec![0, 1, 0, 0, 0, 16, 0, 2, 0, 1, 0, 20, 0, 1, 0, 10];
+    fvar.extend_from_slice(b"wght");
+    for value in [0i32, 0, 0x10000] {
+        fvar.extend_from_slice(&value.to_be_bytes());
+    }
+    fvar.extend_from_slice(&[0, 0, 1, 0]);
+    fvar.extend_from_slice(&[1, 1, 0, 0]);
+    fvar.extend_from_slice(&0xC000i32.to_be_bytes());
+    fvar.extend_from_slice(&258u16.to_be_bytes());
+    let mut tables = sample_tables_with_glyf();
+    tables.push((b"fvar", fvar));
+    let prefix = utf16be("Demo");
+    tables.push((b"name", name(0, &[(3, 1, 0x409, 25, &prefix)], &[])));
+    tables.sort_by_key(|(tag, _)| **tag);
+    sfnt(&tables)
+}
+
+#[test]
+fn i02_axis_inquiries_match_rust_view() {
+    let bytes = font_bytes();
+    let mut error = -99;
+    // SAFETY: bytes stay alive until the font is destroyed.
+    let font = unsafe { sofel_font_create(bytes.as_ptr(), bytes.len(), 0, &mut error) };
+    assert_eq!(error, OK);
+    let mut count = usize::MAX;
+    // SAFETY: font is live and count is writable.
+    assert_eq!(unsafe { sofel_font_var_axis_count(font, &mut count) }, OK);
+    assert_eq!(count, 1);
+    let mut axis = SofelVarAxisInfo::default();
+    // SAFETY: font is live and axis is writable.
+    assert_eq!(unsafe { sofel_font_var_axis(font, 0, &mut axis) }, OK);
+    assert_eq!(
+        (
+            axis.index,
+            axis.tag,
+            axis.name_id,
+            axis.min,
+            axis.default,
+            axis.max
+        ),
+        (0, u32::from_be_bytes(*b"wght"), 256, 0.0, 0.0, 1.0)
+    );
+    // SAFETY: font is live and axis is writable.
+    assert_eq!(
+        unsafe { sofel_font_find_var_axis(font, u32::from_be_bytes(*b"wght"), &mut axis) },
+        OK
+    );
+    // SAFETY: font is live and axis is writable.
+    assert_eq!(
+        unsafe { sofel_font_find_var_axis(font, u32::from_be_bytes(*b"wdth"), &mut axis) },
+        ERROR_NOT_FOUND
+    );
+    // SAFETY: font is owned and no longer used.
+    unsafe { sofel_font_destroy(font) };
+}
+
+#[test]
+fn i02_named_instance_inquiries_copy_design_coordinates() {
+    let bytes = named_font_bytes();
+    let mut error = -99;
+    // SAFETY: bytes stay alive until the font is destroyed.
+    let font = unsafe { sofel_font_create(bytes.as_ptr(), bytes.len(), 0, &mut error) };
+    assert_eq!(error, OK);
+    let mut count = usize::MAX;
+    // SAFETY: font is live and count is writable.
+    assert_eq!(
+        unsafe { sofel_font_named_instance_count(font, &mut count) },
+        OK
+    );
+    assert_eq!(count, 1);
+    let mut info = SofelNamedInstanceInfo::default();
+    // SAFETY: font is live and info is writable.
+    assert_eq!(unsafe { sofel_font_named_instance(font, 0, &mut info) }, OK);
+    assert_eq!(
+        (info.subfamily_name_id, info.postscript_name_id),
+        (257, 258)
+    );
+    let mut coords = [0.0f32; 1];
+    let mut needed = 0usize;
+    // SAFETY: font is live and outputs are writable.
+    assert_eq!(
+        unsafe { sofel_font_named_instance_coords(font, 0, coords.as_mut_ptr(), 1, &mut needed) },
+        OK
+    );
+    assert_eq!((coords, needed), ([0.75], 1));
+    // SAFETY: font is live and outputs are writable.
+    assert_eq!(
+        unsafe { sofel_font_named_instance_coords(font, 0, coords.as_mut_ptr(), 0, &mut needed) },
+        ERROR_BUFFER_TOO_SMALL
+    );
+    assert_eq!(coords, [0.75]);
+    // SAFETY: font and output are valid; the index is intentionally out of range.
+    assert_eq!(
+        unsafe { sofel_font_named_instance(font, 1, &mut info) },
+        ERROR_NOT_FOUND
+    );
+    // SAFETY: font is owned and no longer used.
+    unsafe { sofel_font_destroy(font) };
+}
+
+#[test]
+fn i02_freetype_mm_var_inquiries_use_fixed_coordinates() {
+    let bytes = named_font_bytes();
+    let mut error = -99;
+    // SAFETY: bytes stay alive until the font is destroyed.
+    let font = unsafe { sofel_font_create(bytes.as_ptr(), bytes.len(), 0, &mut error) };
+    assert_eq!(error, OK);
+    let mut count = 0usize;
+    // SAFETY: font is live and count is writable.
+    assert_eq!(
+        unsafe { sofel_font_ft_mm_var_axis_count(font, &mut count) },
+        OK
+    );
+    assert_eq!(count, 1);
+    let mut axis = SofelFtAxisInfo::default();
+    // SAFETY: font is live and axis is writable.
+    assert_eq!(unsafe { sofel_font_ft_mm_var_axis(font, 0, &mut axis) }, OK);
+    assert_eq!(
+        (axis.tag, axis.min, axis.default, axis.max),
+        (u32::from_be_bytes(*b"wght"), 0, 0, 65536)
+    );
+    // SAFETY: font is live and count is writable.
+    assert_eq!(
+        unsafe { sofel_font_ft_mm_var_named_style_count(font, &mut count) },
+        OK
+    );
+    assert_eq!(count, 1);
+    let mut style = SofelFtNamedStyleInfo::default();
+    // SAFETY: font is live and style is writable.
+    assert_eq!(
+        unsafe { sofel_font_ft_mm_var_named_style(font, 0, &mut style) },
+        OK
+    );
+    assert_eq!((style.strid, style.psid), (257, 258));
+    let mut coords = [0i32; 1];
+    let mut needed = 0usize;
+    // SAFETY: font is live and outputs are writable.
+    assert_eq!(
+        unsafe {
+            sofel_font_ft_mm_var_named_style_coords(font, 0, coords.as_mut_ptr(), 1, &mut needed)
+        },
+        OK
+    );
+    assert_eq!((coords, needed), ([0xC000], 1));
+    let mut default_index = u32::MAX;
+    // SAFETY: font is live and output is writable.
+    assert_eq!(
+        unsafe { sofel_font_ft_default_named_instance(font, &mut default_index) },
+        OK
+    );
+    assert_eq!(default_index, 0);
+    // SAFETY: font is owned and no longer used.
+    unsafe { sofel_font_destroy(font) };
+}
+
+#[test]
+fn i02_postscript_name_uses_location() {
+    let bytes = named_font_bytes();
+    let mut error = -99;
+    // SAFETY: bytes stay alive for the font and location.
+    let font = unsafe { sofel_font_create(bytes.as_ptr(), bytes.len(), 0, &mut error) };
+    assert_eq!(error, OK);
+    let coords = [0.5f32];
+    let mut location = core::ptr::null_mut();
+    // SAFETY: font and input/output pointers are valid.
+    assert_eq!(
+        unsafe { sofel_location_create_design(font, coords.as_ptr(), 1, &mut location) },
+        OK
+    );
+    let mut out = [0u8; 128];
+    let mut needed = 0usize;
+    // SAFETY: font, location, and output pointers are valid.
+    assert_eq!(
+        unsafe {
+            sofel_font_postscript_name(font, location, out.as_mut_ptr(), out.len(), &mut needed)
+        },
+        OK
+    );
+    assert_eq!(out.get(..needed), Some(b"Demo_.5wght".as_slice()));
+    // SAFETY: the handles are owned and no longer used.
+    unsafe {
+        sofel_location_destroy(location);
+        sofel_font_destroy(font);
+    }
+}
+
+#[test]
+fn i03_h_advance_accepts_location() {
+    let bytes = font_bytes();
+    let mut error = -99;
+    // SAFETY: bytes stay alive for both handles.
+    let font = unsafe { sofel_font_create(bytes.as_ptr(), bytes.len(), 0, &mut error) };
+    assert_eq!(error, OK);
+    let coords = [0.5f32];
+    let mut location = core::ptr::null_mut();
+    // SAFETY: the font and all pointers are valid.
+    assert_eq!(
+        unsafe { sofel_location_create_design(font, coords.as_ptr(), 1, &mut location) },
+        OK
+    );
+    let mut advance = 0u16;
+    // SAFETY: font and location are live; advance is writable.
+    assert_eq!(
+        unsafe { sofel_font_h_advance(font, location, 0, &mut advance) },
+        OK
+    );
+    assert_eq!(advance, 500);
+    let mut bearing = i16::MIN;
+    // SAFETY: font and location are live; bearing is writable.
+    assert_eq!(
+        unsafe { sofel_font_ft_left_side_bearing(font, location, 0, &mut bearing) },
+        OK
+    );
+    assert_ne!(bearing, i16::MIN);
+    let mut vertical = i32::MIN;
+    // SAFETY: font and location are live; vertical is writable.
+    assert_eq!(
+        unsafe { sofel_font_v_advance(font, location, 0, &mut vertical) },
+        OK
+    );
+    assert_ne!(vertical, i32::MIN);
+    // SAFETY: font is live; NULL means the default location.
+    assert_eq!(
+        unsafe { sofel_font_h_advance(font, core::ptr::null(), 0, &mut advance) },
+        OK
+    );
+    assert_eq!(advance, 500);
+    // SAFETY: both handles are owned and no longer used.
+    unsafe {
+        sofel_location_destroy(location);
+        sofel_font_destroy(font);
+    }
+}
+
+#[test]
+fn i03_font_extents_accept_location() {
+    let bytes = font_bytes();
+    let mut error = -99;
+    // SAFETY: bytes stay alive for both handles.
+    let font = unsafe { sofel_font_create(bytes.as_ptr(), bytes.len(), 0, &mut error) };
+    assert_eq!(error, OK);
+    let coords = [0.5f32];
+    let mut location = core::ptr::null_mut();
+    // SAFETY: font and all pointers are valid.
+    assert_eq!(
+        unsafe { sofel_location_create_design(font, coords.as_ptr(), 1, &mut location) },
+        OK
+    );
+    let mut h = [0i32; 3];
+    let mut v = [0i32; 3];
+    // SAFETY: the font and location are live, outputs are writable.
+    assert_eq!(
+        unsafe { sofel_font_h_extents(font, location, h.as_mut_ptr()) },
+        OK
+    );
+    // SAFETY: the font and location are live, outputs are writable.
+    assert_eq!(
+        unsafe { sofel_font_v_extents(font, location, v.as_mut_ptr()) },
+        OK
+    );
+    assert_ne!(h, [0; 3]);
+    assert_ne!(v, [0; 3]);
+    let mut origin = [i32::MIN; 2];
+    // SAFETY: font and location are live, output is writable.
+    assert_eq!(
+        unsafe { sofel_font_v_origin(font, location, 0, origin.as_mut_ptr()) },
+        OK
+    );
+    assert_ne!(origin, [i32::MIN; 2]);
+    let mut glyph_extents = [i32::MIN; 4];
+    // SAFETY: font and location are live, output is writable.
+    assert_eq!(
+        unsafe { sofel_font_glyph_extents(font, location, 0, glyph_extents.as_mut_ptr()) },
+        OK
+    );
+    // SAFETY: both handles are owned and no longer used.
+    unsafe {
+        sofel_location_destroy(location);
+        sofel_font_destroy(font);
+    }
+}
+
+#[test]
+fn i03_metric_position_accepts_location() {
+    let bytes = font_bytes();
+    let mut error = -99;
+    // SAFETY: bytes stay alive for both handles.
+    let font = unsafe { sofel_font_create(bytes.as_ptr(), bytes.len(), 0, &mut error) };
+    assert_eq!(error, OK);
+    let coords = [0.5f32];
+    let mut location = core::ptr::null_mut();
+    // SAFETY: font and all pointers are valid.
+    assert_eq!(
+        unsafe { sofel_location_create_design(font, coords.as_ptr(), 1, &mut location) },
+        OK
+    );
+    let mut value = i32::MIN;
+    let tag = u32::from_be_bytes(*b"hasc");
+    // SAFETY: font and location are live; value is writable.
+    let status = unsafe { sofel_font_metrics_position(font, location, tag, &mut value) };
+    assert!(matches!(status, OK | ERROR_NOT_FOUND));
+    // SAFETY: font and location are live; value is writable.
+    assert_eq!(
+        unsafe { sofel_font_metrics_position_with_fallback(font, location, tag, &mut value) },
+        OK
+    );
+    assert_ne!(value, i32::MIN);
+    // SAFETY: both handles are owned and no longer used.
+    unsafe {
+        sofel_location_destroy(location);
+        sofel_font_destroy(font);
+    }
+}
+
+#[test]
+fn i03_baseline_and_layout_extents_accept_location() {
+    let bytes = font_bytes();
+    let mut error = -99;
+    // SAFETY: bytes stay alive for both handles.
+    let font = unsafe { sofel_font_create(bytes.as_ptr(), bytes.len(), 0, &mut error) };
+    assert_eq!(error, OK);
+    let coords = [0.5f32];
+    let mut location = core::ptr::null_mut();
+    // SAFETY: font and all pointers are valid.
+    assert_eq!(
+        unsafe { sofel_location_create_design(font, coords.as_ptr(), 1, &mut location) },
+        OK
+    );
+    let mut baseline = i32::MIN;
+    // SAFETY: font and location are live; baseline is writable.
+    assert_eq!(
+        unsafe {
+            sofel_font_baseline_with_fallback(
+                font,
+                location,
+                u32::from_be_bytes(*b"romn"),
+                0,
+                u32::from_be_bytes(*b"latn"),
+                &mut baseline,
+            )
+        },
+        OK
+    );
+    assert_ne!(baseline, i32::MIN);
+    let mut extents = [i32::MIN; 3];
+    let mut found = -1i32;
+    // SAFETY: font and location are live; both outputs are writable.
+    assert_eq!(
+        unsafe {
+            sofel_font_layout_font_extents(
+                font,
+                location,
+                0,
+                u32::from_be_bytes(*b"latn"),
+                0,
+                extents.as_mut_ptr(),
+                &mut found,
+            )
+        },
+        OK
+    );
+    assert_ne!(extents, [i32::MIN; 3]);
+    // SAFETY: both handles are owned and no longer used.
+    unsafe {
+        sofel_location_destroy(location);
+        sofel_font_destroy(font);
+    }
+}
+
+#[test]
+fn i03_scaled_advance_accepts_location() {
+    let bytes = font_bytes();
+    let mut error = -99;
+    // SAFETY: bytes stay alive for all handles.
+    let font = unsafe { sofel_font_create(bytes.as_ptr(), bytes.len(), 0, &mut error) };
+    assert_eq!(error, OK);
+    // SAFETY: font stays live until scale destruction.
+    let scale = unsafe { sofel_scale_create(font, 1000, 1000, &mut error) };
+    assert_eq!(error, OK);
+    let coords = [0.5f32];
+    let mut location = core::ptr::null_mut();
+    // SAFETY: font and all pointers are valid.
+    assert_eq!(
+        unsafe { sofel_location_create_design(font, coords.as_ptr(), 1, &mut location) },
+        OK
+    );
+    let mut advance = i32::MIN;
+    // SAFETY: all handles are live and output is writable.
+    assert_eq!(
+        unsafe { sofel_scale_h_advance(scale, font, location, 0, &mut advance) },
+        OK
+    );
+    assert_ne!(advance, i32::MIN);
+    // SAFETY: all handles are owned and no longer used.
+    unsafe {
+        sofel_location_destroy(location);
+        sofel_scale_destroy(scale);
+        sofel_font_destroy(font);
+    }
+}
+
+#[test]
+fn i03_freetype_metrics_accept_location() {
+    let bytes = font_bytes();
+    let mut error = -99;
+    // SAFETY: bytes stay alive through handle destruction.
+    let font = unsafe { sofel_font_create(bytes.as_ptr(), bytes.len(), 0, &mut error) };
+    assert_eq!(error, OK);
+    let coords = [0.5f32];
+    let mut location = core::ptr::null_mut();
+    // SAFETY: font and all pointers are valid.
+    assert_eq!(
+        unsafe { sofel_location_create_design(font, coords.as_ptr(), 1, &mut location) },
+        OK
+    );
+    let mut values = [i32::MIN; 11];
+    // SAFETY: handles are live and values are writable.
+    assert_eq!(
+        unsafe { sofel_font_ft_face_metrics(font, location, values.as_mut_ptr()) },
+        OK
+    );
+    assert_ne!(values, [i32::MIN; 11]);
+    let mut advance = u16::MAX;
+    // SAFETY: handles are live and advance is writable.
+    assert_eq!(
+        unsafe { sofel_font_ft_v_advance(font, location, 0, &mut advance) },
+        OK
+    );
+    assert_ne!(advance, u16::MAX);
+    // SAFETY: handles are owned and no longer used.
+    unsafe {
+        sofel_location_destroy(location);
+        sofel_font_destroy(font);
+    }
+}
+
+#[test]
+fn i03_location_keeps_default_outline_and_metrics_until_values_are_applied() {
+    let bytes = font_bytes();
+    let mut error = -99;
+    // SAFETY: bytes remain valid through handle destruction.
+    let font = unsafe { sofel_font_create(bytes.as_ptr(), bytes.len(), 0, &mut error) };
+    assert_eq!(error, OK);
+    let coords = [1.0f32];
+    let mut location = core::ptr::null_mut();
+    // SAFETY: all pointers are valid.
+    assert_eq!(
+        unsafe { sofel_location_create_design(font, coords.as_ptr(), 1, &mut location) },
+        OK
+    );
+    let mut default_advance = u16::MAX;
+    let mut located_advance = u16::MAX;
+    // SAFETY: font and location are live; outputs are writable.
+    assert_eq!(
+        unsafe { sofel_font_h_advance(font, core::ptr::null(), 1, &mut default_advance) },
+        OK
+    );
+    // SAFETY: font and location are live; outputs are writable.
+    assert_eq!(
+        unsafe { sofel_font_h_advance(font, location, 1, &mut located_advance) },
+        OK
+    );
+    assert_eq!(located_advance, default_advance);
+    let scratch = sofel_outline_scratch_create();
+    assert!(!scratch.is_null());
+    let mut default_box = [i32::MIN; 4];
+    let mut located_box = [i32::MIN; 4];
+    let mut overlap = u32::MAX;
+    // SAFETY: handles are live; box and overlap are writable.
+    assert_eq!(
+        unsafe {
+            sofel_outline_load(
+                font,
+                core::ptr::null(),
+                1,
+                0,
+                0,
+                0,
+                scratch,
+                default_box.as_mut_ptr(),
+                &mut overlap,
+            )
+        },
+        OK
+    );
+    // SAFETY: handles are live; box and overlap are writable.
+    assert_eq!(
+        unsafe {
+            sofel_outline_load(
+                font,
+                location,
+                1,
+                0,
+                0,
+                0,
+                scratch,
+                located_box.as_mut_ptr(),
+                &mut overlap,
+            )
+        },
+        OK
+    );
+    assert_eq!(located_box, default_box);
+    // SAFETY: handles are owned and no longer used.
+    unsafe {
+        sofel_outline_scratch_destroy(scratch);
+        sofel_location_destroy(location);
+        sofel_font_destroy(font);
+    }
 }
 
 #[test]

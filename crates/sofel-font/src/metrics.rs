@@ -294,7 +294,7 @@ impl HbScale {
         }
     }
 
-    /// [`Font::h_extents`] at this scale; the fallback is computed from
+    /// [`crate::var::Instance::h_extents`] at this scale; the fallback is computed from
     /// `y_scale` (`get_h_extents_with_fallback`).
     pub fn h_extents(&self, font: &Font<'_>) -> FontExtents {
         let get = |t| self.common(font, t);
@@ -320,7 +320,7 @@ impl HbScale {
         }
     }
 
-    /// [`Font::v_extents`] at this scale; the fallback is computed from
+    /// [`crate::var::Instance::v_extents`] at this scale; the fallback is computed from
     /// `x_scale` (`get_v_extents_with_fallback`).
     pub fn v_extents(&self, font: &Font<'_>) -> FontExtents {
         let get = |t| self.common(font, t);
@@ -347,10 +347,10 @@ impl HbScale {
 
     /// The horizontal advance at this scale (`hb_font_get_glyph_h_advance`).
     pub fn h_advance(&self, font: &Font<'_>, glyph: GlyphId) -> i32 {
-        self.em_scale_x(i32::from(font.advance(glyph)))
+        self.em_scale_x(i32::from(font.default_instance().advance(glyph)))
     }
 
-    /// [`Font::v_advance`] at this scale.
+    /// [`crate::var::Instance::v_advance`] at this scale.
     pub fn v_advance(&self, font: &Font<'_>, glyph: GlyphId) -> i32 {
         if font.vmetrics.has_data() {
             let adv = font.vmetrics.advance(glyph, font.hb_units_per_em());
@@ -360,7 +360,7 @@ impl HbScale {
         e.descender.wrapping_sub(e.ascender)
     }
 
-    /// [`Font::v_origin`] at this scale; `extents` gives boxes in font
+    /// [`crate::var::Instance::v_origin`] at this scale; `extents` gives boxes in font
     /// units, which are scaled with [`HbScale::scale_glyph_extents`].
     pub fn v_origin(
         &self,
@@ -410,7 +410,7 @@ impl HbScale {
         (x, y)
     }
 
-    /// [`Font::glyf_extents`] at this scale.
+    /// [`crate::var::Instance::glyf_extents`] at this scale.
     pub fn glyf_extents(&self, font: &Font<'_>, glyph: GlyphId) -> Option<GlyphExtents> {
         let glyf = font.glyf?;
         if glyph.0 >= glyf.num_glyphs() {
@@ -455,7 +455,7 @@ impl HbScale {
         }
     }
 
-    /// [`Font::metrics_position`] at this scale.
+    /// [`crate::var::Instance::metrics_position`] at this scale.
     pub fn metrics_position(&self, font: &Font<'_>, tag: MetricsTag) -> Option<i32> {
         use MetricsTag::*;
         let os2 = hb_os2(font);
@@ -494,7 +494,7 @@ impl HbScale {
         }
     }
 
-    /// [`Font::metrics_position_with_fallback`] at this scale; `extents`
+    /// [`crate::var::Instance::metrics_position_with_fallback`] at this scale; `extents`
     /// gives boxes in font units.
     pub fn metrics_position_with_fallback(
         &self,

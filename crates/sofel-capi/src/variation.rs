@@ -2,11 +2,11 @@
 
 use super::*;
 use sofel_font::read::Fixed as ReadFixed;
-use sofel_font::var::{FtLocationError, Location, Variation};
+use sofel_font::var::{FtAxisInfo, FtLocationError, Location, VarAxisInfo, Variation};
 
 /// `sofel_location_t`: immutable coordinates and cached variation scalars.
 pub struct SofelLocation {
-    location: Location<'static>,
+    pub(crate) location: Location<'static>,
 }
 
 /// `sofel_variation_t`.
@@ -17,6 +17,368 @@ pub struct SofelVariation {
     pub tag: u32,
     /// Design-space axis value.
     pub value: f32,
+}
+
+/// `sofel_var_axis_info_t`: HarfBuzz-compatible design axis information.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SofelVarAxisInfo {
+    /// Zero-based axis index.
+    pub index: u32,
+    /// Four-byte axis tag.
+    pub tag: u32,
+    /// Axis name ID.
+    pub name_id: u16,
+    /// Bit 0 marks a hidden axis.
+    pub flags: u16,
+    /// Ordered minimum design value.
+    pub min: f32,
+    /// Default design value.
+    pub default: f32,
+    /// Ordered maximum design value.
+    pub max: f32,
+}
+
+/// `sofel_named_instance_info_t`: one fvar record.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SofelNamedInstanceInfo {
+    /// Subfamily name ID.
+    pub subfamily_name_id: u16,
+    /// PostScript name ID, or 0xFFFF when absent.
+    pub postscript_name_id: u16,
+}
+
+/// `sofel_ft_axis_info_t`: one FreeType MM axis.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SofelFtAxisInfo {
+    /// Four-byte axis tag.
+    pub tag: u32,
+    /// Raw axis name ID.
+    pub name_id: u16,
+    /// `FT_Get_Var_Axis_Flags` value.
+    pub flags: u16,
+    /// Minimum design value in 16.16.
+    pub min: i32,
+    /// Default design value in 16.16.
+    pub default: i32,
+    /// Maximum design value in 16.16.
+    pub max: i32,
+}
+
+impl From<FtAxisInfo> for SofelFtAxisInfo {
+    fn from(value: FtAxisInfo) -> Self {
+        Self {
+            tag: value.tag.to_u32(),
+            name_id: value.name_id,
+            flags: value.flags,
+            min: value.min.0,
+            default: value.default.0,
+            max: value.max.0,
+        }
+    }
+}
+
+/// `sofel_ft_named_style_info_t`: one FreeType MM named style.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SofelFtNamedStyleInfo {
+    /// Subfamily string ID.
+    pub strid: u16,
+    /// PostScript string ID, or 0xFFFF when absent.
+    pub psid: u16,
+}
+
+impl From<VarAxisInfo> for SofelVarAxisInfo {
+    fn from(value: VarAxisInfo) -> Self {
+        Self {
+            index: value.index,
+            tag: value.tag.to_u32(),
+            name_id: value.name_id,
+            flags: u16::from(value.hidden),
+            min: value.min,
+            default: value.default,
+            max: value.max,
+        }
+    }
+}
+
+/// `sofel_font_var_axis_count`.
+///
+/// # Safety
+///
+/// `font` is NULL or live, and `count` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_var_axis_count(
+    font: *const SofelFont,
+    count: *mut usize,
+) -> i32 {
+    // SAFETY: the caller guarantees the pointers.
+    let (font, count) = unsafe { (font_ref(font), w(count)) };
+    status(get(font, count, |f| f.var_axes().count()))
+}
+
+/// `sofel_font_var_axis`.
+///
+/// # Safety
+///
+/// `font` is NULL or live, and `axis` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_var_axis(
+    font: *const SofelFont,
+    index: usize,
+    axis: *mut SofelVarAxisInfo,
+) -> i32 {
+    // SAFETY: the caller guarantees the pointers.
+    let (font, axis) = unsafe { (font_ref(font), w(axis)) };
+    status(find(font, axis, |f| {
+        f.var_axes().nth(index).map(Into::into)
+    }))
+}
+
+/// `sofel_font_find_var_axis`.
+///
+/// # Safety
+///
+/// `font` is NULL or live, and `axis` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_find_var_axis(
+    font: *const SofelFont,
+    tag: u32,
+    axis: *mut SofelVarAxisInfo,
+) -> i32 {
+    // SAFETY: the caller guarantees the pointers.
+    let (font, axis) = unsafe { (font_ref(font), w(axis)) };
+    status(find(font, axis, |f| {
+        f.find_var_axis(Tag::from_u32(tag)).map(Into::into)
+    }))
+}
+
+/// `sofel_font_named_instance_count`.
+///
+/// # Safety
+///
+/// `font` is NULL or live, and `count` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_named_instance_count(
+    font: *const SofelFont,
+    count: *mut usize,
+) -> i32 {
+    // SAFETY: the caller guarantees the pointers.
+    let (font, count) = unsafe { (font_ref(font), w(count)) };
+    status(get(font, count, |f| f.named_instances().count()))
+}
+
+/// `sofel_font_named_instance`.
+///
+/// # Safety
+///
+/// `font` is NULL or live, and `info` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_named_instance(
+    font: *const SofelFont,
+    index: usize,
+    info: *mut SofelNamedInstanceInfo,
+) -> i32 {
+    // SAFETY: the caller guarantees the pointers.
+    let (font, info) = unsafe { (font_ref(font), w(info)) };
+    status(find(font, info, |f| {
+        f.named_instances()
+            .nth(index)
+            .map(|record| SofelNamedInstanceInfo {
+                subfamily_name_id: record.subfamily_name_id,
+                postscript_name_id: record.postscript_name_id.unwrap_or(0xFFFF),
+            })
+    }))
+}
+
+/// `sofel_font_named_instance_coords`.
+///
+/// # Safety
+///
+/// `font` is NULL or live; `out` has `capacity` writable floats or is NULL
+/// with zero capacity; `len` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_named_instance_coords(
+    font: *const SofelFont,
+    index: usize,
+    out: *mut f32,
+    capacity: usize,
+    len: *mut usize,
+) -> i32 {
+    // SAFETY: the caller guarantees all input and output pointers.
+    let (font, out, len) = unsafe { (font_ref(font), out_array(out, capacity), w(len)) };
+    status((|| {
+        let (font, out, len) = (some(font)?, some(out)?, some(len)?);
+        let record = font.named_instances().nth(index).ok_or(ERROR_NOT_FOUND)?;
+        let count = record.design_coords().count();
+        *len = count;
+        if out.len() < count {
+            return Err(ERROR_BUFFER_TOO_SMALL);
+        }
+        for (slot, coord) in out.iter_mut().zip(record.design_coords()) {
+            *slot = coord;
+        }
+        Ok(())
+    })())
+}
+
+/// `sofel_font_ft_mm_var_axis_count`.
+///
+/// # Safety
+///
+/// `font` is NULL or live, and `count` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_ft_mm_var_axis_count(
+    font: *const SofelFont,
+    count: *mut usize,
+) -> i32 {
+    // SAFETY: the caller guarantees the pointers.
+    let (font, count) = unsafe { (font_ref(font), w(count)) };
+    status((|| {
+        let (font, count) = (some(font)?, some(count)?);
+        *count = font.ft_mm_var().ok_or(ERROR_NOT_FOUND)?.axes().count();
+        Ok(())
+    })())
+}
+
+/// `sofel_font_ft_mm_var_axis`.
+///
+/// # Safety
+///
+/// `font` is NULL or live, and `axis` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_ft_mm_var_axis(
+    font: *const SofelFont,
+    index: usize,
+    axis: *mut SofelFtAxisInfo,
+) -> i32 {
+    // SAFETY: the caller guarantees the pointers.
+    let (font, axis) = unsafe { (font_ref(font), w(axis)) };
+    status((|| {
+        let (font, axis) = (some(font)?, some(axis)?);
+        *axis = font
+            .ft_mm_var()
+            .ok_or(ERROR_NOT_FOUND)?
+            .axes()
+            .nth(index)
+            .ok_or(ERROR_NOT_FOUND)?
+            .into();
+        Ok(())
+    })())
+}
+
+/// `sofel_font_ft_mm_var_named_style_count`.
+///
+/// # Safety
+///
+/// `font` is NULL or live, and `count` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_ft_mm_var_named_style_count(
+    font: *const SofelFont,
+    count: *mut usize,
+) -> i32 {
+    // SAFETY: the caller guarantees the pointers.
+    let (font, count) = unsafe { (font_ref(font), w(count)) };
+    status((|| {
+        let (font, count) = (some(font)?, some(count)?);
+        *count = font
+            .ft_mm_var()
+            .ok_or(ERROR_NOT_FOUND)?
+            .named_styles()
+            .count();
+        Ok(())
+    })())
+}
+
+/// `sofel_font_ft_mm_var_named_style`.
+///
+/// # Safety
+///
+/// `font` is NULL or live, and `style` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_ft_mm_var_named_style(
+    font: *const SofelFont,
+    index: usize,
+    style: *mut SofelFtNamedStyleInfo,
+) -> i32 {
+    // SAFETY: the caller guarantees the pointers.
+    let (font, style) = unsafe { (font_ref(font), w(style)) };
+    status((|| {
+        let (font, style) = (some(font)?, some(style)?);
+        let record = font
+            .ft_mm_var()
+            .ok_or(ERROR_NOT_FOUND)?
+            .named_styles()
+            .nth(index)
+            .ok_or(ERROR_NOT_FOUND)?;
+        *style = SofelFtNamedStyleInfo {
+            strid: record.strid,
+            psid: record.psid,
+        };
+        Ok(())
+    })())
+}
+
+/// `sofel_font_ft_mm_var_named_style_coords`.
+///
+/// # Safety
+///
+/// `font` is NULL or live; `out` has `capacity` writable integers or is NULL
+/// with zero capacity; `len` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_ft_mm_var_named_style_coords(
+    font: *const SofelFont,
+    index: usize,
+    out: *mut i32,
+    capacity: usize,
+    len: *mut usize,
+) -> i32 {
+    // SAFETY: the caller guarantees all input and output pointers.
+    let (font, out, len) = unsafe { (font_ref(font), out_array(out, capacity), w(len)) };
+    status((|| {
+        let (font, out, len) = (some(font)?, some(out)?, some(len)?);
+        let record = font
+            .ft_mm_var()
+            .ok_or(ERROR_NOT_FOUND)?
+            .named_styles()
+            .nth(index)
+            .ok_or(ERROR_NOT_FOUND)?;
+        let count = record.design_coords().count();
+        *len = count;
+        if out.len() < count {
+            return Err(ERROR_BUFFER_TOO_SMALL);
+        }
+        for (slot, coord) in out.iter_mut().zip(record.design_coords()) {
+            *slot = coord.0;
+        }
+        Ok(())
+    })())
+}
+
+/// `sofel_font_ft_default_named_instance`.
+///
+/// # Safety
+///
+/// `font` is NULL or live, and `index` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_ft_default_named_instance(
+    font: *const SofelFont,
+    index: *mut u32,
+) -> i32 {
+    // SAFETY: the caller guarantees the pointers.
+    let (font, index) = unsafe { (font_ref(font), w(index)) };
+    status((|| {
+        let (font, index) = (some(font)?, some(index)?);
+        *index = u32::from(
+            font.ft_mm_var()
+                .ok_or(ERROR_NOT_FOUND)?
+                .default_named_instance()
+                .unwrap_or(0),
+        );
+        Ok(())
+    })())
 }
 
 /// A caller's input array; NULL is allowed only for zero elements.
