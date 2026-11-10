@@ -189,3 +189,8 @@ sofel_shape::UnicodeBuffer::set_not_found_glyph C ABI comes with ADR 0020 part 3
 sofel_shape::UnicodeBuffer::set_not_found_variation_selector_glyph C ABI comes with ADR 0020 part 3.
 sofel_shape::UnicodeBuffer::set_random_state C ABI comes with ADR 0020 part 3.
 sofel_shape::UnicodeBuffer::set_replacement_codepoint C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::append C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::similar C ABI comes with ADR 0020 part 3.
+sofel_shape::UnicodeBuffer::number_clusters C ABI comes with ADR 0020 part 3.
+sofel_font::Font::nominal_glyph_raw The cmap lookup of shaping (ADR 0020); its C ABI comes with ADR 0020 part 3, next to sofel_font_nominal_glyph.
+sofel_font::Font::variation_glyph_raw The cmap lookup of shaping (ADR 0020); its C ABI comes with ADR 0020 part 3, next to sofel_font_variation_glyph.

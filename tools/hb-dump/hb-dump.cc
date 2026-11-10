@@ -87,6 +87,21 @@
  *                     tag in the BASE table)
  *   end
  *
+ * Mode --layout-map (ADR 0020): for each face i,
+ *
+ *   face <i>
+ *   sel <script> <language> (<found> <script index> <chosen> <language index>)x2
+ *                     (for every script of the code points, Zmth and
+ *                     HB_SCRIPT_INVALID (0), as eight hex digits, and
+ *                     every language: `*` for none and
+ *                     hb_ot_tag_to_language of every language system
+ *                     tag of GSUB and GPOS; the tags of
+ *                     hb_ot_tags_from_script_and_language, then for
+ *                     GSUB and GPOS hb_ot_layout_table_select_script
+ *                     (found 0 or 1, the index, the chosen tag in hex)
+ *                     and hb_ot_layout_script_select_language)
+ *   end
+ *
  * Tags are written as eight hex digits (big-endian), since tags in a
  * font may have spaces or any other bytes.
  * Mode --vowel-constraints (ADR 0019); FILE is HarfBuzz's
@@ -221,6 +236,32 @@
  *
  * --deserialize FONT CORPUS: the `corpus` block above for every line of
  * CORPUS, a string written as above without the `=`.
+ * --shape FONT TEXTFILE DIRECTION FEATURES (ADR 0020): for every line of
+ * TEXTFILE (split at `\n`, a last empty piece dropped), a buffer of
+ * its UTF-8 (hb_buffer_add_utf8 of the line alone), the direction set
+ * unless DIRECTION is `auto` (hb_direction_from_string),
+ * hb_buffer_guess_segment_properties, and hb_shape with FEATURES (a
+ * list as hb-shape's --features reads it; `` for none) on face 0 at the
+ * default scale; one line each, as hb-shape writes it with
+ * --no-glyph-names --show-flags and UTF-8 cluster values.
+ *
+ * --shape-random FONT COUNT SEED (ADR 0020): for each face i,
+ *
+ *   face <i>
+ *   script <tag> <n>   (for each script (hb_unicode_script, eight hex
+ *                      digits) of the n code points 0..U+10FFFF that
+ *                      hb_font_get_nominal_glyph maps, in tag order)
+ *   s <cps> <glyphs>   (COUNT strings: with state = SEED at the start of
+ *                      each script and next () = ((state = state *
+ *                      1103515245 + 12345) >> 16) & 0x7FFF, a length
+ *                      1 + next () % 16 and that many code points
+ *                      cps[next () % n] of the script, in hex joined by
+ *                      `,`; shaped with hb_buffer_add_codepoints, the
+ *                      flags BOT, EOT and PRODUCE_UNSAFE_TO_CONCAT,
+ *                      hb_buffer_guess_segment_properties and hb_shape,
+ *                      written as --shape writes them)
+ *   end
+ *
  * --roundf (ADR 0026): reads lines from stdin, each `f <bits>` (a
  * `float`, eight hex digits of its bits) or `d <bits>` (a `double`,
  * sixteen hex digits), and writes for each the sixteen hex digits of the
@@ -1872,6 +1913,13 @@ int main (int argc, char **argv)
   }
   if (!mode || argc < 2 || argc > 3)
   {
+    for (unsigned i = 0; i < sizeof (args_modes) / sizeof (args_modes[0]); i++)
+      if (argc >= 2 && strcmp (argv[1], args_modes[i].name) == 0)
+      {
+	fprintf (stderr, "usage: hb-dump %s %s\n", args_modes[i].name,
+		 args_modes[i].argc == 6 ? "FONT TEXTFILE DIRECTION FEATURES" : "FONT COUNT SEED");
+	return 2;
+      }
     fprintf (stderr, "usage: hb-dump [MODE] FILE; MODE is one of:");
     for (unsigned i = 0; i < sizeof (modes) / sizeof (modes[0]); i++)
       fprintf (stderr, " %s", modes[i].name);

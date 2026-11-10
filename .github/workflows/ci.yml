@@ -123,6 +123,11 @@ jobs:
         env:
           SOFEL_REQUIRE_TESTDATA: '1'
         run: cargo test --release -p sofel-outline --test cff_hash
+      # docs/adr/0020: the same hash of the --shape pairs as on wasm32.
+      - name: Hash shaping natively
+        env:
+          SOFEL_REQUIRE_TESTDATA: '1'
+        run: cargo test --release -p sofel-shape --test shape_hash
 
   # docs/adr/0004, docs/adr/0007
   wasm:
@@ -141,11 +146,11 @@ jobs:
           key: ${{ runner.os }}-wasm-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
       - uses: bytecodealliance/actions/wasmtime/setup@9152e710e9f7182e4c29ad218e4f335a7b203613 # v1.1.3
       - name: Build libraries for wasm32-unknown-unknown
-        run: cargo build --release --target wasm32-unknown-unknown -p sofel-read -p sofel-geom -p sofel-unicode -p sofel-font -p sofel-outline -p sofel-raster -p sofel-capi
+        run: cargo build --release --target wasm32-unknown-unknown -p sofel-read -p sofel-geom -p sofel-unicode -p sofel-font -p sofel-outline -p sofel-raster -p sofel-shape -p sofel-capi
       - name: Test libraries on wasm32-wasip1
         env:
           CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime
-        run: cargo test --target wasm32-wasip1 -p sofel-read -p sofel-geom -p sofel-unicode -p sofel-font -p sofel-outline -p sofel-raster
+        run: cargo test --target wasm32-wasip1 -p sofel-read -p sofel-geom -p sofel-unicode -p sofel-font -p sofel-outline -p sofel-raster -p sofel-shape
       # docs/adr/0021: the CFF outline hash of two test fonts, compared
       # with the committed value that the conformance job checks natively.
       - id: testdata
@@ -161,6 +166,12 @@ jobs:
         run: |
           export CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=$GITHUB_WORKSPACE/target/testdata::/testdata --env SOFEL_TESTDATA=/testdata --env SOFEL_REQUIRE_TESTDATA=1"
           cargo test --release --target wasm32-wasip1 -p sofel-outline --test cff_hash
+      # docs/adr/0020: the --shape pairs of the HarfBuzz comparison shaped
+      # on wasm32, hashed and compared with the native hash.
+      - name: Hash shaping on wasm32-wasip1
+        run: |
+          export CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=$GITHUB_WORKSPACE/target/testdata::/testdata --env SOFEL_TESTDATA=/testdata --env SOFEL_REQUIRE_TESTDATA=1"
+          cargo test --release --target wasm32-wasip1 -p sofel-shape --test shape_hash
 
   # docs/adr/0007
   fuzz:

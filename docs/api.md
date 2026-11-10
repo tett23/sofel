@@ -55,8 +55,9 @@ let advance: u16 = font.advance(gid.unwrap_or(GlyphId(0))); // フォントの�
 | sofel | HarfBuzz／FreeType |
 |---|---|
 | `Font::new(data, index)` | `hb_face_create` + `hb_font_create`／`FT_New_Memory_Face` |
-| `Font::nominal_glyph(c)` | `hb_font_get_nominal_glyph` |
-| `Font::variation_glyph(c, vs)` | `hb_font_get_variation_glyph` |
+| `Font::nominal_glyph(c)` | `hb_font_get_nominal_glyph`（グリフの数以上のIDは `None`。フォーマット2と8もFreeTypeと同じく引く） |
+| `Font::variation_glyph(c, vs)` | `hb_font_get_variation_glyph`（同じく） |
+| `Font::nominal_glyph_raw(c)`、`Font::variation_glyph_raw(c, vs)` | `hb_font_get_nominal_glyph`、`hb_font_get_variation_glyph` そのまま（シェーピングが使う） |
 | `Font::advance(g)` | `hb_font_get_glyph_h_advance`（拡大縮小なし） |
 | `Font::ft_left_side_bearing(g)` | FreeTypeの `tt_face_get_metrics` の左のサイドベアリング（輪郭のpp1.xに使う） |
 | `Font::table(tag)` | `hb_face_reference_table` |
@@ -393,6 +394,8 @@ let buffer = glyphs.into_unicode();
 | sofel | HarfBuzz |
 |---|---|
 | `UnicodeBuffer::push_utf8` などと設定の関数 | `hb_buffer_add_utf8` など、`hb_buffer_set_*` |
+| `UnicodeBuffer::append`、`similar` | `hb_buffer_append`（Unicodeのバッファ）、`hb_buffer_create_similar` |
+| `UnicodeBuffer::number_clusters` | `hb-shape` の、クラスタの値の文字の番号への付けなおし |
 | `SegmentProperties::guess` | `hb_buffer_guess_segment_properties`（言語は引数。ロケールは読まない） |
 | `ShapePlan::new` | `hb_shape_plan_create`（`ot` のシェーパー） |
 | `shape`、`shape_with_extents` | `hb_shape_plan_execute` |
@@ -403,6 +406,8 @@ let buffer = glyphs.into_unicode();
 
 - 計画は不変で、スレッドの間で共有できる。区間の性質と機能の組ごとに作り、呼び出し側が覚える（`ShapePlan::key` で比べる）。
 - CFFのフォントやカラーグリフでは、`sofel_outline` の箱を `shape_with_extents` に渡す（フォールバックのマークの配置と縦書きの原点に使う）。
+- シェーピングは、cmapを `Font::nominal_glyph_raw` と `variation_glyph_raw`（HarfBuzzの `hb_font_get_nominal_glyph` と同じく、グリフの数以上のIDも返し、フォーマット2と8は引かない）で引く。
+- `hb-shape` と同じ道具は `sofel-cli` の `sofel-shape` で、`sofel_cli::shape::run_with_input` をライブラリからも呼べる（[README](../README.md)）。
 - [ADR 0024](adr/0024-complex-shapers.md) のシェーパー（アラビア文字、インド系文字など）は、まだdefaultの手順で処理する。`ShapePlan::shaper` はHarfBuzzが選ぶシェーパーを返す。
 
 ## Cから使う（`sofel-capi`）
