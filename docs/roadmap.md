@@ -1,0 +1,119 @@
+# ロードマップ（放置していること）
+
+この文書は、2026-11-11 時点で sofel に残っている作業と、利用者の判断を待っている事項を一か所にまとめたものである。利用者と、Claude Code や Codex のような道具が、次に何をするかを選ぶために使う。仕様ではないので、決まったことは [docs/specifications.md](specifications.md) と各 ADR に書く。この文書は、作業が済むたびに該当する項を消す。
+
+各項は、何が残っているか、どこに由来するか、何があれば進められるかの順に書く。節と項は、ほかの項が依存するものを先に置いた。確認できなかった事項には「未確認」と書いた。
+
+ADR 0027（可変フォント）と ADR 0028（`--font-ptem` は `opsz` を決めない）は、この時点では main にコミットされておらず、ステータスは提案である。ADR 0029（変化量の扱い）は書いている途中である。そのためこの文書では、これらの ADR にリンクを張らない。
+
+## 未実装の ADR
+
+### 土台となる [ADR 0001](adr/0001-project-goal-and-scope.md)、[0003](adr/0003-crate-layers.md)、[0005](adr/0005-conformance-tests.md)、[0006](adr/0006-performance-measurement.md)
+
+[ADR 0001](adr/0001-project-goal-and-scope.md)、[ADR 0003](adr/0003-crate-layers.md)、[ADR 0005](adr/0005-conformance-tests.md)、[ADR 0006](adr/0006-performance-measurement.md) のステータスは、いまも採択（未実装）である。[ADR 0001](adr/0001-project-goal-and-scope.md) と [ADR 0003](adr/0003-crate-layers.md) は、プロジェクト全体の目標とクレートの層を定めており、段階が進むたびに部分的に実装されてきた。ステータスを採択に変える条件は、ADR にまだ書かれていない。ほかの項のうち、段階の番号（4段階目、7段階目、8段階目など）で参照しているものは、すべて [ADR 0001](adr/0001-project-goal-and-scope.md) の段階を指す。これらを採択にするには、どの段階まで終えたら完了とするかを、利用者が決める必要がある。
+
+### [ADR 0024](adr/0024-complex-shapers.md): 文字体系ごとのシェーパー
+
+[ADR 0024](adr/0024-complex-shapers.md) は採択（未実装）で、実装の途中である。段階3までは main に入っている（[PR #40](https://github.com/tett23/sofel/pull/40)）。残りの3つのプルリクエストは、CI が通った状態で開いている。indic は [PR #41](https://github.com/tett23/sofel/pull/41)、khmer と myanmar は [PR #43](https://github.com/tett23/sofel/pull/43)、USE は [PR #44](https://github.com/tett23/sofel/pull/44) である。PR #44 が [ADR 0024](adr/0024-complex-shapers.md) の最後の段階で、これを含めてステータスを採択にする。これらをマージすれば、[ADR 0019](adr/0019-unicode-character-data.md) が定めたシェーパーの表（indic、USE、arabic、母音の制約）も使われる。[ADR 0020](adr/0020-shaping-foundation.md) の適合テストの `shaper:<name>` に分類された期待する失敗の一覧（`conformance/expected-failures.txt`）が、これらのマージで減る。
+
+### [ADR 0020](adr/0020-shaping-foundation.md): シェーピングの土台
+
+[ADR 0020](adr/0020-shaping-foundation.md) のステータスは採択（未実装）のままである。[ADR 0024](adr/0024-complex-shapers.md) がマージされ、適合テストの期待する失敗の一覧に残る項目が、[ADR 0020](adr/0020-shaping-foundation.md) の分類（`variations`、`aat`、`synthetic`、`cff`、`color`、`out-of-scope`）だけになれば、採択にできる。そのとき、ADR の分類にない `dfont` と `sanitize` が残っているので、この2つを後述の「利用者の判断を待つこと」で決める必要がある。決まらない限り、[ADR 0020](adr/0020-shaping-foundation.md) は採択にならない。
+
+### [ADR 0022](adr/0022-subsetting.md): サブセット化
+
+[ADR 0022](adr/0022-subsetting.md) は採択（未実装）で、段階ごとに実装している。PR #42 までで、レイアウトの段階などが main に入った。10段階目（gvar、GVAR、HVAR、VVAR、ピン留めなしの CFF2、GDEF、BASE、COLR の項目の変化量の記憶）は、可変フォントの ADR 0027 が採択されるまで進められない。VARC は13段階目まで待つ。[ADR 0022](adr/0022-subsetting.md) のステータスを採択にする条件は、ADR 0027 の採択と、10段階目の実装である。
+
+## 利用者の判断を待つこと
+
+次の項は、利用者の決定がないと進まない。決まれば、必要に応じて新しい ADR にする。ADR を直接書き換えない。
+
+### [ADR 0020](adr/0020-shaping-foundation.md) の分類にない2つの失敗
+
+`conformance/expected-failures.txt` の見出しに、「[ADR 0020](adr/0020-shaping-foundation.md) の分類ではなく、判断待ち」と書かれた分類が2つある。
+
+`dfont` は、Mac のリソースフォークにあるフォントである。`in-house/collections.tests:1` の1件がこれに当たる。[ADR 0007](adr/0007-sfnt-read-foundation.md) と [ADR 0001](adr/0001-project-goal-and-scope.md) の8段階目が、読めないままにすると決めている。この項目の選択肢は、8段階目まで期待する失敗に残すか、先に実装するかである。
+
+`sanitize` は、HarfBuzz のサニタイザが、オフセットを無効にした後に GSUB や GPOS の全体を捨てる動作である。sofel は有効な部分を読む。`in-house/harfbust.tests:4`、`--layout-map` の3つのフォント（`conformance/expected-failures-layout-map.txt`）、`--shape-random` の3件（`conformance/expected-failures-shape-random.txt`）が当たる。HarfBuzz と同じ結果にするには、GSUB、GPOS、GDEF の「無効にして捨てる」サニタイズを移植する必要がある。選択肢は、移植するか、期待する失敗に残して仕様に書くかである。
+
+### [ADR 0020](adr/0020-shaping-foundation.md) の細部
+
+以下は、[ADR 0020](adr/0020-shaping-foundation.md) を実装した際に、ADR と食い違った点である。どれも新しい ADR で訂正するか、実装を ADR に合わせるかを、利用者が決める。
+
+- `ot_tag_to_script` が、`Script` で表せないタグに `Script::UNKNOWN` を返す。HarfBuzz は元のタグを返す。合わせるには、`sofel-unicode` に生のタグから作る構築子が要る。
+- バッファの1要素が24バイトで、ADR の20バイトと違う（正規化が持つグリフの番号の欄が別にあるため）。[ADR 0020](adr/0020-shaping-foundation.md) の167行目の記述と実装の差を、[ADR 0020](adr/0020-shaping-foundation.md) で確かめられていない（未確認）。
+- C の `sofel_shape` は ppem を受け取らず、ppem を0として扱う。`sofel_buffer_deserialize_glyphs` はバッファの設定をリセットする。
+
+これらは、手元の報告にあった内容で、この文書の作成時にコードで再確認していない（未確認）。
+
+### [ADR 0016](adr/0016-font-and-vertical-metrics.md) と [ADR 0007](adr/0007-sfnt-read-foundation.md) の読み方
+
+cmap のフォーマット2と8について、HarfBuzz は引かないが、sofel は FreeType と同じく読む（[ADR 0010](adr/0010-font-foundation.md) の subtable の選び方）。aots のフォント2つが期待する失敗になっている。HarfBuzz に合わせるには ADR が要る。
+
+HHEA と VHEA の `numberOfLongMetrics` は、[ADR 0007](adr/0007-sfnt-read-foundation.md) に従い 24 bit で読んでいる。HarfBuzz と FreeType は 32 bit で読む。HHEA を持つテスト用フォントはない。どちらを正とするかを決める。
+
+### そのほかの判断
+
+- [ADR 0023](adr/0023-color-glyphs.md): `sofel-cli` のライセンスは MIT のままだが、`render_color` が FreeType の `FT_Render_Glyph_Internal` と `tt_face_get_colr_layer` の制御の流れをなぞっている。移植した算術は `sofel-raster`（MIT AND FTL）にある。ライセンスを変えるか、いまのまま続けるかを決める。
+- [ADR 0021](adr/0021-cff-outlines.md): CFF2 の FDSelect フォーマット4は、FreeType が開けないが、検証器では警告にしている。FreeType に合わせてエラーにするかどうかを決める。
+- [ADR 0018](adr/0018-phantom-point-shift.md): ステータスが採択になっているが、ベンチマークの記録が `docs/benchmarks/` にない。計測して記録を足すまで、ステータスを戻すか、そのまま置くかを決める。
+
+## 性能の目標に届いていないもの
+
+[ADR 0006](adr/0006-performance-measurement.md) の目標は、すべての項目で HarfBuzz と FreeType より遅くならないことである。以下の数値は、`docs/benchmarks/` の記録と、集めた報告による。報告のうち、記録の中で確かめていない数値（Roboto 5.5倍など）は未確認である。
+
+### シェーピング（長い文章）
+
+文章全体のシェーピングが、HarfBuzz の 1.4〜5.5 倍の時間がかかる。Roboto が 5.5 倍と 5.1 倍、SourceSerif の react-dom が 3.1 倍、Mplus1p の日本語が横書き 1.6 倍と縦書き 1.4 倍である。最初のシェーピングは速く、0.35〜0.81 倍である。原因は、ClassDef と Coverage の cache を [ADR 0020](adr/0020-shaping-foundation.md) が測るまで後回しにしたことだと推測している。これは測っておらず、推測である。記録は [docs/benchmarks/2026-11-10-shaping.md](benchmarks/2026-11-10-shaping.md) にある。進めるには、プロファイルで原因を確かめ、cache を足すかどうかを決める ADR を書く。
+
+### サブセット化
+
+サブセット化が、前処理なしで HarfBuzz の 0.7〜4.3 倍かかる。前処理つきの SourceHanSans の CID（グリフ番号の保持）が 7.2 倍で最も遅い。Golem の日本語の経路がこれである。記録は [docs/benchmarks/2026-11-10-subset.md](benchmarks/2026-11-10-subset.md) と [docs/benchmarks/2026-11-10-subset-prepared.md](benchmarks/2026-11-10-subset-prepared.md) である。
+
+### COLRv0 のカラーのラスタライズ
+
+TwemojiMozilla.subset が、FreeType の 1.16〜1.45 倍かかる。wasm では 1.2〜1.5 倍である。`render_color` が、レイヤーとパレットの配列を割り当て、グリフごとに COLR を開き直していることが原因と見ている。記録は [docs/benchmarks/2026-11-10-colrv0-raster.md](benchmarks/2026-11-10-colrv0-raster.md) である。割り当てと開き直しを避ける変更で解消できる見込みである。
+
+### Unicode の性質
+
+Unicode の性質の引きが HarfBuzz の 1.24 倍である。2段または3段の表という制限のため、一般カテゴリと文字体系の表が HarfBuzz の深い表より大きくなる。表の構造を変えるかどうかを決める必要がある。
+
+### RobotoFlex（重なりのある輪郭）のラスタライズ
+
+[ADR 0014](adr/0014-raster-sweep-touched-cells.md) の実装は [PR #13](https://github.com/tett23/sofel/pull/13) でマージ済みである。ADR の本文にある計測では、修正後に FreeType の 0.92 倍と 0.93 倍になった。ただし `docs/benchmarks/` に [ADR 0014](adr/0014-raster-sweep-touched-cells.md) のベンチマークの記録がなく、これを足すのが残っている。報告では、記録を足す作業が別のブランチ（`bench-record-adr-0014`）で進んでいるとのことだが、このブランチはこの時点でマージされていない（未確認）。進めるには、負荷のないマシンで計測して記録を足す。
+
+### 負荷の高いマシンで取った記録
+
+負荷平均が最大 280 のマシンで取った記録がある。負荷のないマシンで取り直すべきものは、[ADR 0013](adr/0013-benchmark-harness.md) の2段階目の記録（[docs/benchmarks/2026-11-10-stage2.md](benchmarks/2026-11-10-stage2.md)）、[ADR 0018](adr/0018-phantom-point-shift.md) の記録（まだない）、[ADR 0019](adr/0019-unicode-character-data.md)、[ADR 0021](adr/0021-cff-outlines.md)（[docs/benchmarks/2026-11-10-cff.md](benchmarks/2026-11-10-cff.md)）、[ADR 0023](adr/0023-color-glyphs.md)、[ADR 0025](adr/0025-cff-charset-index.md)（[docs/benchmarks/2026-11-10-cff-charset-index.md](benchmarks/2026-11-10-cff-charset-index.md)）、[ADR 0020](adr/0020-shaping-foundation.md)、[ADR 0022](adr/0022-subsetting.md) である。どの記録が高負荷で取られたかを、記録の本文では確かめていない（未確認）。
+
+## 実装のあとに起こす ADR
+
+次の項は、各 ADR の「後回しにしたもの」に挙げられたものと、そこから派生するものである。それぞれ、先行する実装が終わってから ADR を書く。先に、可変フォントの ADR 0027 に依存する項を並べる。
+
+- 任意の位置への可変フォントのインスタンス化と、軸の範囲を絞る部分的なインスタンス化。[ADR 0022](adr/0022-subsetting.md) の「後回しにしたもの」にある。ADR 0027 の採択と実装の後に書く。解消すると、サブセット化のテストの期待する失敗のうち、インスタンスの91件と IUP の23件が消える。
+- ppem を使った Device 表の補正（ヒンティングの Device）。GPOS、GDEF のキャレット、BASE、MATH が対象である。[ADR 0017](adr/0017-base-baselines.md) による。変化量の部分は ADR 0027 に入る。
+- GDEF のリガチャのキャレットの API。ADR 0027 の一覧にある。
+- スタイルの値 `hb_style_get_value`。ADR 0027 の一覧にある。
+- MATH の問い合わせ（`hb_ot_math_*`）と、JSTF の扱いの決定。[ADR 0017](adr/0017-base-baselines.md) による。MATH のビューは [ADR 0022](adr/0022-subsetting.md) で入っている。
+- 領域のスカラーと送り幅の cache。ADR 0029 が扱う可能性がある。
+- AAT のシェーピング（10段階目）。morx、mort、kerx、ankr、trak、feat、ltag、dumber シェーパー、旧 `kern` 表、`--font-ptem` による trak。[ADR 0020](adr/0020-shaping-foundation.md) による。適合テストの `aat` 分類の期待する失敗が、これで消える。
+- ヒンティング（7段階目）。TrueType バイトコード（v35、v40）、cvar、幻の点の丸め（[ADR 0018](adr/0018-phantom-point-shift.md)）、CFF のヒンターとステムの太らせ（[ADR 0021](adr/0021-cff-outlines.md)）、オートヒンター、mono と LCD と SDF のラスタライズ。
+- 合成の太字と斜体。HarfBuzz の `hb_font_set_synthetic_*`、FreeType の `FT_GlyphSlot_Embolden`、`FT_GlyphSlot_Oblique`、`FT_Bitmap_Embolden`。[ADR 0016](adr/0016-font-and-vertical-metrics.md)、[ADR 0020](adr/0020-shaping-foundation.md)、[ADR 0023](adr/0023-color-glyphs.md) による。適合テストの `synthetic` 分類が消える。
+- カラーの残り（[ADR 0023](adr/0023-color-glyphs.md)）。`sofel-inflate` と `sofel-png` による復号、`sofel-raster` での RGBA の合成（グラデーションと28の合成モード）、`sofel-svg` での OT-SVG の描画、ベクトルと GPU の出力（12段階目）。
+- sfnt 以外の形式（8段階目）。素の CFF と CEF（[ADR 0021](adr/0021-cff-outlines.md)）、Type1、CID、Type42、PFR、BDF、PCF、FNT、dfont、gzip、LZW、bzip2。9段階目に WOFF と WOFF2 と Brotli がある。
+- C ABI。HarfBuzz と FreeType の互換層（`hb_*` と `FT_*` の shim）と、バインディングジェネレータ向けのヘッダの規約。[ADR 0015](adr/0015-c-abi.md) による。
+- フォントの関数の差し替え（`hb_font_funcs_t` とサブフォント）。[ADR 0016](adr/0016-font-and-vertical-metrics.md) による。
+- VARC（13段階目）。
+- 利用者の判断を待つ項のうち、cmap のフォーマット2と8の HarfBuzz の動作、HHEA の 24 bit と 32 bit は、決まれば ADR になる。
+
+## 監査とテストの改善
+
+利用者から、すべての実装が終わった後に行うよう頼まれている作業がある。Fable を使って、ADR と実装とテストの食い違いを調べ、訂正する ADR を書く。セキュリティの監査も行う。その後、足りないテストを足し、弱いテストを直す。
+
+あらかじめ分かっている工程の欠けは、次のとおりである。[ADR 0016](adr/0016-font-and-vertical-metrics.md) のプルリクエスト2〜4と、[ADR 0022](adr/0022-subsetting.md) のいくつかの段階では、テストを実装の後に書いた。これは、先にテストを書いて失敗させるという方針に反している。fuzz のターゲットは、手元では動かしていない（cargo-fuzz が入っていない）。CI は fuzz を動かしている。監査では、この2点を確かめる。
+
+## 環境と運用
+
+- ディスクが逼迫している。2026-11-10 の時点で 98% が埋まり、空きは約 18 GiB だった。`target/wt` の worktree とビルドの出力が容量を使う。使い終えた worktree を消す。
+- 共有のツール `target/ft-dump`、`target/hb-dump`、`target/bench-c` は、ツールを変えると古くなる。`tools/*/build.sh` と `bench/build-c.sh` で作りなおす。
+- Golem への移行。切り替えの前後で Golem の出力を比べる。Golem は HarfBuzz 14.6.0 と FreeType 2.14.3 を使い、sofel は 15.1.0 と 2.15.0 を目標にしている。メトリクスは HarfBuzz に従うので、Golem での FreeType 由来の値は変わる可能性がある。GHC のランタイムのロケールの動作は、確かめていない（言語の推定に影響する）。
