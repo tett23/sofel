@@ -45,6 +45,10 @@
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
+mod decode;
+
+pub use decode::{BitmapError, BitmapLayout, PixelMode};
+
 use sofel_font::geom::float::{hb_clamp_to_i32, hb_roundf32, i32_to_f32};
 use sofel_font::geom::{GlyphExtents, mul_div};
 use sofel_font::read::cbdt::{self, Cbdt, GlyphMetrics};
@@ -202,8 +206,13 @@ fn ft_source<'a>(font: &Font<'a>) -> Option<Source<'a>> {
 /// when the strike's metrics cannot be read or a ppem is 0.
 fn strike_of(font: &Font<'_>, source: &Source<'_>, index: u32) -> Option<Strike> {
     let upem = i32::from(font.head().units_per_em());
-    let os2 = font.os2();
-    let (avg, em) = match os2 {
+    // FreeType does not load OS/2 for Apple's bitmap-only fonts (`bhed`
+    // instead of `head`); its zeroed OS/2 then gives an average width 0.
+    let apple_sbit = !font.has_outlines()
+        && font.table(sofel_font::read::head::TAG_BHED).is_some()
+        && font.table(sbix::TAG).is_none();
+    let (avg, em) = match font.os2() {
+        _ if apple_sbit => (0, upem),
         Some(o) if upem != 0 => (i32::from(o.x_avg_char_width()), upem),
         _ => (1, 1),
     };
@@ -466,6 +475,53 @@ pub fn glyph_bitmap<'a>(font: &Font<'a>, strike: &Strike, glyph: u32) -> Option<
             }
             None
         }
+    }
+}
+
+/// The layout and metrics of `glyph`'s bitmap in `strike`, as FreeType's
+/// `FT_Load_Glyph` with `FT_LOAD_BITMAP_METRICS_ONLY` gives them for
+/// `EBDT`, `CBDT` and `bdat` (`tt_sbit_decoder_load_image`), compound
+/// glyphs included. `sbix` strikes give [`BitmapError::Png`].
+pub fn bitmap_layout(
+    font: &Font<'_>,
+    strike: &Strike,
+    glyph: u32,
+) -> Result<BitmapLayout, BitmapError> {
+    match ft_source(font) {
+        Some(Source::Eblc(_, view, data)) => decode::decode(
+            &view,
+            data,
+            usize::try_from(strike.index).unwrap_or(usize::MAX),
+            glyph,
+            None,
+        ),
+        Some(Source::Sbix(_)) => Err(BitmapError::Png),
+        None => Err(BitmapError::Missing),
+    }
+}
+
+/// Decodes `glyph`'s bitmap in `strike` into `out` as FreeType's
+/// `FT_Load_Glyph` with `FT_LOAD_COLOR` does: [`BitmapLayout::len`]
+/// bytes, rows top first, `pitch` bytes each; 1, 2 and 4-bit pixels
+/// most significant bit first, 32-bit pixels as stored (BGRA). Image
+/// formats 1, 2, 5, 6, 7 and the compound formats 8 and 9; PNG images
+/// give [`BitmapError::Png`]. [`bitmap_layout`] gives the size first.
+pub fn draw_bitmap(
+    font: &Font<'_>,
+    strike: &Strike,
+    glyph: u32,
+    out: &mut [u8],
+) -> Result<BitmapLayout, BitmapError> {
+    match ft_source(font) {
+        Some(Source::Eblc(_, view, data)) => decode::decode(
+            &view,
+            data,
+            usize::try_from(strike.index).unwrap_or(usize::MAX),
+            glyph,
+            Some(out),
+        ),
+        Some(Source::Sbix(_)) => Err(BitmapError::Png),
+        None => Err(BitmapError::Missing),
     }
 }
 

@@ -163,7 +163,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 ## カラーグリフ（`sofel-color`、`sofel-bitmap`、`Painter`）
 
-[ADR 0023](adr/0023-color-glyphs.md) の5a段階（`Painter`、CPAL、COLRv0、CBDTとsbixのデータ、SVGの文書、グリフの箱、フォールバックの問い合わせ）と5b段階（COLRv1）を実装している。5c（EBDTとビットマップだけのフォント）と5d（COLRv0の画像）は未実装である。
+[ADR 0023](adr/0023-color-glyphs.md) の5a段階（`Painter`、CPAL、COLRv0、CBDTとsbixのデータ、SVGの文書、グリフの箱、フォールバックの問い合わせ）、5b段階（COLRv1）、5c段階（EBDTとビットマップだけのフォント）を実装している。5d（COLRv0の画像）は未実装である。
 
 - `sofel-geom` の `Painter` は、HarfBuzz 15.1.0の `hb_paint_funcs_t` と同じ順で同じ値の命令を受ける。単色と3種類のグラデーションは `fill(&Brush)` にまとめ、グループの合成の方法は `push_group` と `pop_group` の両方で渡す。単位はフォントの単位でyは上に増え、HarfBuzzの根の拡大の変換と、`PaintGlyph` と `PaintColrGlyph` の周りの逆の変換は出さない。数は `f32` で、HarfBuzzの `float` の計算と同じ順で同じ演算をし、FMAを使わない。
 - `Image` の `extents` は `Option` とする。HarfBuzzはSVGの文書を範囲なし（NULL）で渡すためで、ADRの型（`GlyphExtents`）から変えた。
@@ -178,6 +178,10 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   - `color_formats`、`glyph_color_format`（塗りの木をたどらない。`v1_fits` も見ない）、`layers`、`svg_document` を持つ。
   - 生の塗りの木（`base_paint`、`PaintRef`、`clip_box`、`layer_paint`）は、FreeTypeの `FT_Get_Color_Glyph_Paint` などと同じ値を返す。基本のグリフの探索はFreeTypeの二分探索による。
 - `sofel-bitmap`：`strikes` はFreeTypeの `available_sizes`（CBLC、EBLC、`bloc`、sbixの順に最初の表、ppemが0のストライクは除く）、`match_strike` は `FT_Match_Size`、`choose_strike` はHarfBuzzの選び方（`max(x, y)` が要求以上で最小、無ければ最大、0は最大）、`glyph_bitmap` はFreeTypeの読み込み（sbixの `dupe` と `flip` を4回まで）で画像のデータとメトリクスを返す。PNGを塗るための `cbdt_png`、`sbix_png` とその箱はHarfBuzzの読み方（CBDTは索引の形式1と3、画像の形式17と18、sbixは `dupe` を8回まで）による。
+- `sofel-bitmap` の `bitmap_layout` と `draw_bitmap` は、EBDT、CBDT、`bdat` の画像の形式1、2、5、6、7と成分の形式8、9を、1、2、4、8、32bitの深さで、FreeTypeの `tt_sbit_decoder_load_image`（索引の形式1〜5、形式2と7のバイト単位とビット単位の判定、成分のメトリクスの戻し方）と同じ画素とメトリクスにして、呼び出し側の領域（`pitch × rows` バイト、上の行から）に書く。32bitは `FT_LOAD_COLOR` と同じくBGRAのまま書く。PNGの画像は展開しない（`BitmapError::Png`）。
+- `sofel-font` の `Font::new` は、FreeTypeと同じく、輪郭（glyf、GLYF、CFF、CFF2）が無くsbixも無いフォントでは、Appleの `bhed` を `head` の代わりに読む。`Font::has_outlines`（CBLCかCBDTがあれば偽。FreeTypeは輪郭を無視する）と `Font::has_bitmaps`（CBLC、EBLC、`bloc`、sbix）を持つ。`bhed` は `head` の検証器で検証する。Appleのビットマップだけのフォントでは、FreeTypeがOS/2を読まないため、ストライクの `width` は0になる。
+- `sofel-render` は、`--ppem` に等しいストライク（`FT_Match_Size`）があり、グリフのビットマップがあれば、`--no-bitmap` が無いかぎりビットマップを書く。白黒と灰色はPGM（階調を0〜255に広げて反転）、32bitはPAM（`P7`、`TUPLTYPE RGB_ALPHA`、乗算済みでない値に直す）とし、位置は同じ注釈の行に書く。
+- 検査：テストのデータにEBLCや `bloc` のフォントが無いため、画像の形式1、2、5、6、7、8、9、深さ1、2、4、8、32、索引の形式1〜5の組み合わせを、EBLC/EBDTと `bloc`/`bdat`/`bhed` で組み立てた110個のフォントと、glyfの輪郭とCBLC/CBDTを両方持つフォントを、`ft-dump --sbit`（`FT_Select_Size` と `FT_LOAD_COLOR` の画素とメトリクス）と比べ、すべて一致する。
 - `sofel-paint` は塗りの命令をHarfBuzzの `test/api/test-paint.c` の字下げのテキストで書く。
 - C ABIは `sofel_paint_glyph`（命令の配列。`sofel_paint_commands_free` で解放）、パレット、形式、層、SVGの文書、ストライク、グリフのビットマップ、補助の関数、三角関数を持つ。`sofel_font_glyph_extents` などグリフの箱を使う関数は `sofel_color` の箱を使う。
 - 検査：HarfBuzzの `test/api/results-paint/` の24個（残りの2個はテストの実行の記録で塗りのテキストではない）と一致し、`hb-dump --paint` もこれを再現する。HarfBuzzのテストのカラーのフォント92個で `hb-dump --paint`、`--color`、`--extents` の7万8225項目を比べ、期待する失敗は22項目（理由は一覧）である。`hb-dump --metrics` の箱、縦書きの原点、代わりの基準線もカラーグリフで一致する。FreeTypeとは `ft-dump --colr` の生の塗りの木とCPAL、`--sbit` のストライクの一覧を比べる（2178項目、期待する失敗480項目。FreeTypeが `paletteTypes` を16bitで読むこと、FreeTypeが読み込まないCOLRと可変の塗り）。FreeTypeの試験の版はlibpngを持たないため、PNGのグリフのメトリクスは比べない。
@@ -193,7 +197,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 ## 道具
 
 - `sofel-paint [--face N] [--palette P] [--foreground RRGGBBAA] [--ppem P] [--exact] (--glyph G | --char U+XXXX) FILE`：カラーグリフの塗りの命令を、HarfBuzzの `test/api/test-paint.c` と同じ字下げのテキストで書く。数はCの `%.3g`、`--exact` では `f32` のビットの16進。カラーでないグリフは終了コード1、使い方の誤りは2（[ADR 0023](adr/0023-color-glyphs.md)）。
-- `sofel-render [--face N] --ppem P (--glyph G | --char U+XXXX) FILE`：1グリフをヒンティングなしで描き、PGM（P5）を標準出力に書く。位置は注釈の行 `# left <x> top <y>` に書く（[ADR 0012](adr/0012-antialiased-rasterizer.md)）。
+- `sofel-render [--face N] --ppem P [--no-bitmap] (--glyph G | --char U+XXXX) FILE`：1グリフをヒンティングなしで描き、PGM（P5）を標準出力に書く。位置は注釈の行 `# left <x> top <y>` に書く（[ADR 0012](adr/0012-antialiased-rasterizer.md)）。そのppemのビットマップがあれば、`--no-bitmap` が無いかぎりそれを書く（32bitはPAM。[ADR 0023](adr/0023-color-glyphs.md)）。
 - `sofel-validate <ファイル>...`：sfntとTTC/OTCの各表を検証する（[ADR 0008](adr/0008-validate-command-and-freetype-comparison.md)）。1件を1行で `<パス>[#<フォント番号>]: <タグ>+0x<オフセット>: <error|warning>: <説明>` の形で出す。`--json` では、1件を1行のJSONのオブジェクト（JSON Lines）で出す。キーは `path`、`font`、`table`、`offset`、`severity`、`kind`、`message`、`details`。`kind` と `details` のキーは出力の約束の一部とする。終了コードは、`Error` が無ければ0、あれば1、使い方の誤りか読めないファイルがあれば2で、`--json` の有無で変わらない。
 
 ## C ABI（`sofel-capi`）

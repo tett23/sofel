@@ -147,6 +147,10 @@ static void check_declarations(void) {
       sofel_match_strike;
   int32_t (*glyph_bitmap)(const sofel_font_t *, uint32_t, uint32_t, sofel_glyph_bitmap_t *) =
       sofel_glyph_bitmap;
+  int32_t (*draw_bitmap)(const sofel_font_t *, uint32_t, uint32_t, uint8_t *, size_t,
+                         sofel_bitmap_layout_t *) = sofel_draw_bitmap;
+  int32_t (*has_outlines)(const sofel_font_t *, uint8_t *) = sofel_font_has_outlines;
+  int32_t (*has_bitmaps)(const sofel_font_t *, uint8_t *) = sofel_font_has_bitmaps;
   int32_t (*sin_cos)(float, float *, float *) = sofel_sin_cos;
   float (*tan_f)(float) = sofel_tan;
   int32_t (*normalize)(sofel_color_stop_t *, size_t, float *, float *) = sofel_normalize_color_line;
@@ -190,6 +194,7 @@ static void check_declarations(void) {
       (const void *)bitmap_strikes, (const void *)choose_strike, (const void *)match_strike,
       (const void *)glyph_bitmap, (const void *)sin_cos, (const void *)tan_f,
       (const void *)normalize, (const void *)reduce, (const void *)tiles,
+      (const void *)draw_bitmap, (const void *)has_outlines, (const void *)has_bitmaps,
   };
   size_t i;
   for (i = 0; i < COUNT(all); i++) CHECK(all[i] != NULL);
@@ -1264,6 +1269,29 @@ static void sum_tile(void *user, float a0, sofel_color_t c0, float a1, sofel_col
   s->covered += a1 - a0;
 }
 
+/* The EBLC font of the fixture: glyph 1 a 3x2 one-bit bitmap. */
+static void test_bitmap_font(void) {
+  int32_t error;
+  sofel_font_t *font = sofel_font_create(bitmap_font, sizeof(bitmap_font), 0, &error);
+  sofel_strike_t strikes[2];
+  sofel_bitmap_layout_t layout;
+  uint8_t pixels[8], has;
+  size_t count;
+  CHECK(error == SOFEL_OK);
+  CHECK(sofel_font_has_outlines(font, &has) == SOFEL_OK && has == 0);
+  CHECK(sofel_font_has_bitmaps(font, &has) == SOFEL_OK && has == 1);
+  CHECK(sofel_bitmap_strikes(font, strikes, 2, &count) == SOFEL_OK && count == 1);
+  CHECK(strikes[0].x_ppem == 12 && strikes[0].table == 1 && strikes[0].bit_depth == 1);
+  CHECK(sofel_draw_bitmap(font, 0, 1, NULL, 0, &layout) == SOFEL_OK);
+  CHECK(layout.width == 3 && layout.rows == 2 && layout.pitch == 1 && layout.pixel_mode == 1);
+  CHECK(sofel_draw_bitmap(font, 0, 1, pixels, 1, &layout) == SOFEL_ERROR_BUFFER_TOO_SMALL);
+  CHECK(sofel_draw_bitmap(font, 0, 1, pixels, 8, &layout) == SOFEL_OK);
+  CHECK(pixels[0] == 0xA0 && pixels[1] == 0x40);
+  CHECK(layout.hori_bearing_x == 1 && layout.hori_bearing_y == 2 && layout.hori_advance == 4);
+  CHECK(sofel_draw_bitmap(font, 0, 2, pixels, 8, &layout) == SOFEL_ERROR_NOT_FOUND);
+  sofel_font_destroy(font);
+}
+
 static void test_color(void) {
   int32_t error;
   sofel_font_t *font = sofel_font_create(color_font, sizeof(color_font), 0, &error);
@@ -1328,6 +1356,14 @@ static void test_color(void) {
   CHECK(sofel_choose_strike(font, 0, &strike) == SOFEL_ERROR_NOT_FOUND);
   CHECK(sofel_match_strike(font, 1024, 1024, &strike) == SOFEL_ERROR_NOT_FOUND);
   CHECK(sofel_glyph_bitmap(font, 0, 1, &bitmap) == SOFEL_ERROR_NOT_FOUND);
+  {
+    uint8_t has;
+    sofel_bitmap_layout_t layout;
+    CHECK(sofel_font_has_outlines(font, &has) == SOFEL_OK && has == 1);
+    CHECK(sofel_font_has_bitmaps(font, &has) == SOFEL_OK && has == 0);
+    CHECK(sofel_draw_bitmap(font, 0, 1, NULL, 0, &layout) == SOFEL_ERROR_NOT_FOUND);
+  }
+  test_bitmap_font();
 
   CHECK(sofel_sin_cos(0.0f, &s, &c) == SOFEL_OK && s == 0.0f && c == 1.0f);
   CHECK(sofel_tan(0.0f) == 0.0f);

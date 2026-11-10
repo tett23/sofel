@@ -402,3 +402,20 @@ void bhb_set_bitmap_ppem(void *font, unsigned ppem)
 {
   hb_font_set_ppem((hb_font_t *)font, ppem, ppem);
 }
+
+/* FreeType: an embedded bitmap glyph loaded with FT_LOAD_DEFAULT at the
+ * current size: the sum of its bytes plus its width and rows; -1 when
+ * it is not a bitmap. */
+long bft_sbit(void *face, unsigned gid)
+{
+  FT_Face f = (FT_Face)face;
+  long sum;
+  unsigned r, k;
+  if (FT_Load_Glyph(f, gid, FT_LOAD_DEFAULT) != 0 || f->glyph->format != FT_GLYPH_FORMAT_BITMAP)
+    return -1;
+  sum = (long)f->glyph->bitmap.width + (long)f->glyph->bitmap.rows;
+  for (r = 0; r < f->glyph->bitmap.rows; r++)
+    for (k = 0; k < (unsigned)abs(f->glyph->bitmap.pitch); k++)
+      sum += f->glyph->bitmap.buffer[(long)r * f->glyph->bitmap.pitch + k];
+  return sum;
+}
