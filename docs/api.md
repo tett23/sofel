@@ -531,9 +531,34 @@ sofel_font_destroy(font);
 | `sofel_render_color_glyph`、`sofel_blend_layer` | `sofel_cli::glyph::render_color`、`sofel_raster::blend_layer` | `FT_Render_Glyph`（`FT_LOAD_COLOR`）、`tt_face_colr_blend_layer` |
 | `sofel_validate`、`sofel_diagnostic_*` | `validate::sfnt`、`validate::collection`、`Kind` | なし |
 | `sofel_unicode_*`、`sofel_script_from_iso15924` | `sofel_unicode` の関数 | `hb_unicode_*`、`hb_script_from_string` |
+| `sofel_feature_parse`、`sofel_feature_format` | `Feature::parse`、`Feature::format` | `hb_feature_from_string`、`hb_feature_to_string` |
+| `sofel_script_from_string`、`sofel_language_*`、`sofel_ot_tag*` | `Script::from_iso15924`、`Language`、`ot_tags_from_script_and_language` など | `hb_script_from_string`、`hb_language_from_string`、`hb_ot_tags_from_script_and_language` など |
+| `sofel_segment_guess` | `SegmentProperties::guess` | `hb_buffer_guess_segment_properties` |
+| `sofel_shape_plan_*` | `ShapePlan` | `hb_shape_plan_create_cached` |
+| `sofel_buffer_*` | `UnicodeBuffer`、`GlyphBuffer` | `hb_buffer_*` |
+| `sofel_shape`、`sofel_shape_fallback` | `shape_with_extents`、`shape_fallback` | `hb_shape_plan_execute` |
+| `sofel_buffer_serialize`、`sofel_buffer_deserialize_*`、`sofel_buffer_diff` | `serialize_glyphs` など、`diff` | `hb_buffer_serialize`、`hb_buffer_deserialize_*`、`hb_buffer_diff` |
 
 - 誤りうる関数は `int32_t` を返し、`SOFEL_OK`（0）以外は誤り。`sofel_error_string` で英語の説明を引ける。NULLのポインタは `SOFEL_ERROR_NULL` になり、panicもクラッシュもしない。
 - 輪郭は5つの関数ポインタと `void *user` で受け取る。`sofel_rasterizer_move_to` などはその型を持つので、`sofel_outline_decompose` にそのまま渡してラスタライザに記録できる。
+- シェーピングは、HarfBuzzの `hb_shape` と違い、呼び出し側が計画を作って持つ。計画は区間の性質と機能の組ごとに1つ作り、スレッドの間で共有してよい。バッファはスレッドごとに持ち、`sofel_buffer_clear` で使いまわす。
+
+```c
+sofel_buffer_t *buf = sofel_buffer_create();
+sofel_buffer_add_utf8(buf, text, len, 0, len);
+sofel_segment_t in = {SOFEL_DIRECTION_TTB, 0, NULL}, props; /* 文字体系と言語は不明 */
+sofel_segment_guess(text, len, &in, NULL, &props);
+sofel_feature_t kern;
+sofel_feature_parse("vkrn", 4, &kern);
+sofel_shape_plan_t *plan = sofel_shape_plan_create(font, &props, &kern, 1, &err); /* 覚えて使いまわす */
+sofel_shape(font, NULL, plan, buf); /* scale が NULL ならフォントの単位 */
+uint32_t gids[64], clusters[64];
+int32_t pos[4 * 64]; /* x_advance, y_advance, x_offset, y_offset */
+int64_t n = sofel_buffer_glyphs(buf, gids, clusters, NULL, pos, 64);
+/* n > 64 なら何も書かれていない。n 個の配列で呼びなおす */
+sofel_buffer_clear(buf); /* 次の文字列へ */
+```
+
 - `sofel-read` の表のビューは公開しない。表のバイト列を `sofel_font_table` で取り出して読む。公開しない関数とその理由は `crates/sofel-capi/unmapped.txt` にある。
 - `wasm32-wasip1` では、同じ静的ライブラリをwasi-sdkのclangでCのプログラムとリンクできる。例外処理の提案もC++の実行時ライブラリも要らない。
 

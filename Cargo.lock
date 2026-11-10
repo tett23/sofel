@@ -21,6 +21,7 @@ dependencies = [
  "sofel-outline",
  "sofel-raster",
  "sofel-read",
+ "sofel-shape",
  "sofel-unicode",
 ]
 
