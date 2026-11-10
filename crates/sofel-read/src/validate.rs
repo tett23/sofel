@@ -7,8 +7,8 @@ use crate::loca::Loca;
 use crate::maxp::Maxp;
 use crate::sfnt::{Collection, Sfnt, TableRecord};
 use crate::{
-    CountWidth, Diagnostic, Kind, Tag, base, cff, cmap, gdef, glyf, gpos, gsub, head, hhea, hmtx,
-    loca, maxp, name, os2, post, vhea, vmtx, vorg,
+    CountWidth, Diagnostic, Kind, Tag, base, cbdt, cblc, cff, cmap, colr, cpal, gdef, glyf, gpos,
+    gsub, head, hhea, hmtx, loca, maxp, name, os2, post, sbix, svg, vhea, vmtx, vorg,
 };
 
 /// The pseudo tag of diagnostics about the table directory.
@@ -175,6 +175,7 @@ pub fn sfnt(sfnt: &Sfnt<'_>, report: &mut dyn FnMut(Diagnostic)) {
     if let Some(d) = table(sfnt, base::TAG) {
         base::validate(d, report);
     }
+    color_tables(sfnt, glyphs_wide.or(glyphs_narrow), report);
     let gdef_data = table(sfnt, gdef::TAG);
     if let Some(d) = gdef_data {
         gdef::validate(d, report);
@@ -210,5 +211,44 @@ pub fn sfnt(sfnt: &Sfnt<'_>, report: &mut dyn FnMut(Diagnostic)) {
         if let Ok(lv) = Loca::new(l, format) {
             glyf::validate(g, &lv, n, extended, glyf_tag, report);
         }
+    }
+}
+
+/// The color and bitmap tables (ADR 0023): `CPAL`, `COLR` (with the
+/// glyph count and the palette size of `CPAL`), the location and data
+/// tables of embedded bitmaps in their pairs, `sbix` and `SVG `.
+fn color_tables(sfnt: &Sfnt<'_>, glyphs: Option<u32>, report: &mut dyn FnMut(Diagnostic)) {
+    let cpal_data = table(sfnt, cpal::TAG);
+    if let Some(d) = cpal_data {
+        cpal::validate(d, report);
+    }
+    if let Some(d) = table(sfnt, colr::TAG) {
+        let entries = cpal_data
+            .and_then(|c| cpal::Cpal::new(c).ok())
+            .map(|c| c.num_palette_entries());
+        colr::validate(d, glyphs, entries, report);
+    }
+    let pairs = [
+        (cblc::TAG_CBLC, cbdt::TAG_CBDT),
+        (cblc::TAG_EBLC, cbdt::TAG_EBDT),
+        (cblc::TAG_BLOC, cbdt::TAG_BDAT),
+    ];
+    for (loc_tag, data_tag) in pairs {
+        let loc = table(sfnt, loc_tag);
+        if let Some(d) = loc {
+            cblc::validate(loc_tag, d, report);
+        }
+        if let Some(d) = table(sfnt, data_tag) {
+            cbdt::validate(data_tag, d, report);
+            if let Some(c) = loc.and_then(|l| cblc::Cblc::new(l).ok()) {
+                cbdt::validate_images(data_tag, d, &c, report);
+            }
+        }
+    }
+    if let Some(d) = table(sfnt, sbix::TAG) {
+        sbix::validate(d, glyphs, report);
+    }
+    if let Some(d) = table(sfnt, svg::TAG) {
+        svg::validate(d, report);
     }
 }

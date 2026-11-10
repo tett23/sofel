@@ -281,8 +281,8 @@ int32_t sofel_font_table(const sofel_font_t *font, uint32_t tag, const uint8_t *
 /*
  * Font-wide and vertical metrics (ADR 0016). Values are in font units,
  * as HarfBuzz gives them at its default scale (both scales unitsPerEm);
- * sofel_scale_t gives them at other scales. Glyph boxes come from glyf
- * only for now (CFF with ADR 0021, color glyphs with ADR 0023).
+ * sofel_scale_t gives them at other scales. Glyph boxes come from sbix,
+ * CBDT and COLR (ADR 0023), then from glyf, CFF2 and CFF (ADR 0021).
  */
 
 /*
@@ -395,7 +395,7 @@ int32_t sofel_font_v_advance(const sofel_font_t *font, uint32_t glyph, int32_t *
  * phantom point (with vmtx), else centered on the glyph box of
  * sofel_font_glyph_extents.
  *
- * Rust: sofel_font::Font::v_origin
+ * Rust: sofel_font::Font::v_origin, sofel_font::HbScale::v_origin_scaled
  * HarfBuzz: hb_font_get_glyph_v_origin
  * FreeType: none
  */
@@ -407,7 +407,7 @@ int32_t sofel_font_v_origin(const sofel_font_t *font, uint32_t glyph, int32_t or
  * HarfBuzz gives it from glyf, else CFF2, else CFF (ADR 0021); color
  * glyphs come with ADR 0023.
  *
- * Rust: sofel_outline::HbExtents::glyph_extents, sofel_outline::Outlines::glyph_extents, sofel_font::Font::glyf_extents
+ * Rust: sofel_color::glyph_extents, sofel_outline::HbExtents::glyph_extents, sofel_outline::Outlines::glyph_extents, sofel_font::Font::glyf_extents, sofel_bitmap::sbix_extents, sofel_bitmap::cbdt_extents
  * HarfBuzz: hb_font_get_glyph_extents
  * FreeType: none (FT_Outline_Get_CBox of the loaded outline)
  */
@@ -428,7 +428,7 @@ int32_t sofel_font_metrics_position(const sofel_font_t *font, uint32_t tag, int3
  * Like sofel_font_metrics_position, made up from other metrics when the
  * font does not have it.
  *
- * Rust: sofel_font::Font::metrics_position_with_fallback
+ * Rust: sofel_font::Font::metrics_position_with_fallback, sofel_font::HbScale::metrics_position_with_fallback_scaled
  * HarfBuzz: hb_ot_metrics_get_position_with_fallback
  * FreeType: none
  */
@@ -528,7 +528,7 @@ int32_t sofel_scale_v_origin(const sofel_scale_t *scale, const sofel_font_t *fon
                              uint32_t glyph, int32_t origin[2]);
 
 /*
- * Rust: sofel_outline::HbExtents::scaled_glyph_extents, sofel_font::HbScale::glyf_extents
+ * Rust: sofel_color::scaled_glyph_extents, sofel_outline::HbExtents::scaled_glyph_extents, sofel_font::HbScale::glyf_extents
  * HarfBuzz: hb_font_get_glyph_extents
  * FreeType: none
  */
@@ -588,7 +588,7 @@ int32_t sofel_font_baseline(const sofel_font_t *font, uint32_t tag, int32_t dire
  * sofel_font_baseline_with_fallback (font, SOFEL_BASELINE_IDEO_EMBOX_CENTRAL,
  * SOFEL_DIRECTION_HORIZONTAL, SOFEL_TAG('h', 'a', 'n', 'i'), &coord).
  *
- * Rust: sofel_font::Font::baseline_with_fallback
+ * Rust: sofel_font::Font::baseline_with_fallback, sofel_font::HbScale::baseline_with_fallback_scaled
  * HarfBuzz: hb_ot_layout_get_baseline_with_fallback
  * FreeType: none
  */
@@ -1489,6 +1489,321 @@ uint8_t sofel_unicode_is_extended_pictographic(uint32_t codepoint);
  * FreeType: none
  */
 uint8_t sofel_unicode_vertical_orientation(uint32_t codepoint);
+
+/* ------------------------------------------------------- color glyphs */
+
+/*
+ * Color glyphs (ADR 0023): CPAL palettes, the paint commands of COLR,
+ * SVG, CBDT and sbix glyphs as HarfBuzz paints them, in font units
+ * without HarfBuzz's root scale, the bitmap strikes as FreeType lists
+ * them, and the helpers for mapping the commands to renderers.
+ */
+
+/* A color: sRGB, not premultiplied. */
+typedef struct sofel_color_t {
+  uint8_t r, g, b, a;
+} sofel_color_t;
+
+/* A color stop: palette_index is -1 for the foreground; alpha is the
+ * font's alpha, clamped to 0..1, that color was resolved with. */
+typedef struct sofel_color_stop_t {
+  float offset;
+  sofel_color_t color;
+  int32_t palette_index;
+  float alpha;
+} sofel_color_stop_t;
+
+/* The kinds of sofel_paint_command_t. */
+#define SOFEL_PAINT_PUSH_TRANSFORM 0      /* values: xx yx xy yy dx dy */
+#define SOFEL_PAINT_POP_TRANSFORM 1
+#define SOFEL_PAINT_PUSH_CLIP_GLYPH 2     /* glyph */
+#define SOFEL_PAINT_PUSH_CLIP_RECTANGLE 3 /* values: x_min y_min x_max y_max */
+#define SOFEL_PAINT_POP_CLIP 4
+#define SOFEL_PAINT_FILL_SOLID 5          /* color, palette_index, alpha */
+#define SOFEL_PAINT_FILL_LINEAR 6         /* values: p0 p1 p2; mode: extend; stops */
+#define SOFEL_PAINT_FILL_RADIAL 7         /* values: c0 r0 c1 r1; mode: extend; stops */
+#define SOFEL_PAINT_FILL_SWEEP 8          /* values: center start end; mode: extend; stops */
+#define SOFEL_PAINT_FILL_GLYPH 9          /* glyph, color, palette_index, alpha */
+#define SOFEL_PAINT_IMAGE 10              /* mode: 0 PNG, 1 SVG, 2 gzip SVG;
+                                             data, len, width, height,
+                                             extents when has_extents */
+#define SOFEL_PAINT_PUSH_GROUP 11         /* mode: SOFEL_COMPOSITE_* (0..27, HarfBuzz's numbers) */
+#define SOFEL_PAINT_POP_GROUP 12          /* mode */
+#define SOFEL_PAINT_COLOR_GLYPH 13        /* glyph (HarfBuzz's color_glyph; recorded as failed) */
+
+/* The extend modes of gradients. */
+#define SOFEL_EXTEND_PAD 0
+#define SOFEL_EXTEND_REPEAT 1
+#define SOFEL_EXTEND_REFLECT 2
+
+/* What sofel_paint_glyph painted from (its non-negative results). */
+#define SOFEL_PAINTED_NONE 0
+#define SOFEL_PAINTED_COLRV1 1
+#define SOFEL_PAINTED_COLRV0 2
+#define SOFEL_PAINTED_SVG 3
+#define SOFEL_PAINTED_CBDT 4
+#define SOFEL_PAINTED_SBIX 5
+
+/* One paint command; the fields a kind does not use are 0 (palette_index
+ * -1). Image data points into the font's data; stops into the list. */
+typedef struct sofel_paint_command_t {
+  uint32_t kind;
+  uint32_t glyph;
+  uint32_t mode;
+  int32_t palette_index;
+  sofel_color_t color;
+  float alpha;
+  float values[9];
+  int32_t has_extents;
+  int32_t extents[4];
+  uint32_t width;
+  uint32_t height;
+  const sofel_color_stop_t *stops;
+  size_t n_stops;
+  const uint8_t *data;
+  size_t len;
+} sofel_paint_command_t;
+
+/* The commands of a glyph; free with sofel_paint_commands_free. */
+typedef struct sofel_paint_commands_t {
+  const sofel_paint_command_t *commands;
+  size_t count;
+  void *internal;
+} sofel_paint_commands_t;
+
+/*
+ * Paints a glyph into an array of commands: from COLR, else SVG, else
+ * CBDT, else sbix, as HarfBuzz's hb_ot_paint_glyph_or_fail. With
+ * custom_colors (n_custom of them), they replace the palette (entries
+ * past them are transparent black); otherwise palette `palette` of the
+ * font (palette 0 past the palettes). ppem picks bitmap strikes, 0 for
+ * the largest. Returns SOFEL_PAINTED_* (SOFEL_PAINTED_NONE with no
+ * commands for a glyph that is not a color glyph) or an error.
+ *
+ * Rust: sofel_color::paint, sofel_color::paint_recording, sofel_color::Recording::new, sofel_color::Recording::commands, sofel_color::Recording::stops, sofel_color::Recording::brush, sofel_color::Recording::clear, sofel_color::Recording::replay
+ * HarfBuzz: hb_font_paint_glyph_or_fail
+ * FreeType: none
+ */
+int32_t sofel_paint_glyph(const sofel_font_t *font, uint32_t glyph, uint16_t palette,
+                          const sofel_color_t *custom_colors, size_t n_custom,
+                          sofel_color_t foreground, uint16_t ppem,
+                          sofel_paint_commands_t *out);
+
+/*
+ * Frees the commands of sofel_paint_glyph and clears *commands; NULL
+ * and cleared commands are ignored.
+ *
+ * Rust: none
+ */
+void sofel_paint_commands_free(sofel_paint_commands_t *commands);
+
+/*
+ * The number of CPAL palettes, and of colors in each.
+ *
+ * Rust: sofel_color::palette_count, sofel_color::palette_entry_count
+ * HarfBuzz: hb_ot_color_palette_get_count
+ * FreeType: FT_Palette_Data_Get
+ */
+int32_t sofel_palette_count(const sofel_font_t *font, uint16_t *count);
+int32_t sofel_palette_entry_count(const sofel_font_t *font, uint16_t *count);
+
+/*
+ * A palette's name id (0xFFFF for none), its flags (1: light
+ * backgrounds, 2: dark), and a palette entry's name id.
+ *
+ * Rust: sofel_color::palette_name_id, sofel_color::palette_flags, sofel_color::palette_color_name_id
+ * HarfBuzz: hb_ot_color_palette_get_name_id, hb_ot_color_palette_get_flags, hb_ot_color_palette_color_get_name_id
+ * FreeType: FT_Palette_Data_Get
+ */
+int32_t sofel_palette_name_id(const sofel_font_t *font, uint16_t palette, uint16_t *name_id);
+int32_t sofel_palette_flags(const sofel_font_t *font, uint16_t palette, uint32_t *flags);
+int32_t sofel_palette_color_name_id(const sofel_font_t *font, uint16_t entry,
+                                    uint16_t *name_id);
+
+/*
+ * The colors of a palette, snprintf-style: *count is set to the number
+ * of colors; SOFEL_ERROR_BUFFER_TOO_SMALL when capacity is smaller.
+ *
+ * Rust: sofel_color::palette_colors
+ * HarfBuzz: hb_ot_color_palette_get_colors
+ * FreeType: FT_Palette_Select
+ */
+int32_t sofel_palette_colors(const sofel_font_t *font, uint16_t palette, sofel_color_t *colors,
+                             size_t capacity, size_t *count);
+
+/*
+ * The first palette whose flags include all of `flags` (CSS font-palette
+ * light: 1, dark: 2). SOFEL_ERROR_NOT_FOUND when none.
+ *
+ * Rust: sofel_color::find_palette
+ * HarfBuzz: none
+ * FreeType: none
+ */
+int32_t sofel_find_palette(const sofel_font_t *font, uint32_t flags, uint16_t *palette);
+
+/* The bits of sofel_color_formats. */
+#define SOFEL_COLOR_COLRV0 1
+#define SOFEL_COLOR_COLRV1 2
+#define SOFEL_COLOR_CPAL 4
+#define SOFEL_COLOR_SVG 8
+#define SOFEL_COLOR_CBDT 16
+#define SOFEL_COLOR_SBIX 32
+#define SOFEL_COLOR_EBDT 64
+
+/*
+ * The color and bitmap formats of a font, SOFEL_COLOR_* bits.
+ *
+ * Rust: sofel_color::color_formats, sofel_color::ColorFormats::has, sofel_bitmap::has_hb_cbdt, sofel_bitmap::has_hb_sbix
+ * HarfBuzz: hb_ot_color_has_layers, hb_ot_color_has_paint, hb_ot_color_has_palettes, hb_ot_color_has_svg, hb_ot_color_has_png
+ * FreeType: FT_HAS_COLOR, FT_HAS_FIXED_SIZES
+ */
+int32_t sofel_color_formats(const sofel_font_t *font, uint32_t *formats);
+
+/*
+ * What sofel_paint_glyph would paint a glyph from, without walking the
+ * paint: SOFEL_PAINTED_COLRV1 ... SOFEL_PAINTED_SBIX.
+ * SOFEL_ERROR_NOT_FOUND for a glyph that is not a color glyph.
+ *
+ * Rust: sofel_color::glyph_color_format
+ * HarfBuzz: hb_ot_color_glyph_has_paint
+ * FreeType: none
+ */
+int32_t sofel_glyph_color_format(const sofel_font_t *font, uint32_t glyph, uint32_t *format);
+
+/*
+ * The COLR version 0 layers of a glyph, snprintf-style: each layer's
+ * glyph and palette index (-1 for the foreground).
+ *
+ * Rust: sofel_color::layers
+ * HarfBuzz: hb_ot_color_glyph_get_layers
+ * FreeType: FT_Get_Color_Glyph_Layer
+ */
+int32_t sofel_color_layers(const sofel_font_t *font, uint32_t glyph, uint32_t *glyphs,
+                           int32_t *indices, size_t capacity, size_t *count);
+
+/*
+ * The SVG document of a glyph without copying (gzip-compressed when it
+ * starts with 0x1F 0x8B), its index and the glyphs it covers.
+ * SOFEL_ERROR_NOT_FOUND when none.
+ *
+ * Rust: sofel_color::svg_document
+ * HarfBuzz: hb_ot_color_glyph_reference_svg, hb_ot_color_glyph_get_svg_document_index, hb_ot_color_get_svg_document_glyph_range
+ * FreeType: none (svg-hooks)
+ */
+int32_t sofel_svg_document(const sofel_font_t *font, uint32_t glyph, const uint8_t **data,
+                           size_t *len, uint32_t *index, uint32_t range[2]);
+
+/* A strike: table is 0 CBLC, 1 EBLC, 2 bloc, 3 sbix. */
+typedef struct sofel_strike_t {
+  uint32_t index;
+  uint32_t table;
+  uint16_t x_ppem;
+  uint16_t y_ppem;
+  uint8_t bit_depth;
+  uint16_t resolution;
+  int16_t height;
+  int16_t width;
+} sofel_strike_t;
+
+/*
+ * The strikes as FreeType's available_sizes, snprintf-style.
+ *
+ * Rust: sofel_bitmap::strikes
+ * HarfBuzz: none
+ * FreeType: FT_Face available_sizes
+ */
+int32_t sofel_bitmap_strikes(const sofel_font_t *font, sofel_strike_t *strikes, size_t capacity,
+                             size_t *count);
+
+/*
+ * The strike HarfBuzz picks for ppem (0: the largest), and the strike
+ * FreeType's FT_Match_Size picks for ppems in 26.6 (0: the other one).
+ * SOFEL_ERROR_NOT_FOUND when none.
+ *
+ * Rust: sofel_bitmap::choose_strike, sofel_bitmap::match_strike
+ * HarfBuzz: none (internal)
+ * FreeType: FT_Match_Size
+ */
+int32_t sofel_choose_strike(const sofel_font_t *font, uint16_t ppem, sofel_strike_t *strike);
+int32_t sofel_match_strike(const sofel_font_t *font, uint32_t x_ppem, uint32_t y_ppem,
+                           sofel_strike_t *strike);
+
+/* A glyph's undecoded bitmap: format is the EBDT/CBDT image format (0
+ * for sbix), tag the sbix graphic type (0 for the others). */
+typedef struct sofel_glyph_bitmap_t {
+  uint32_t format;
+  uint32_t tag;
+  const uint8_t *data;
+  size_t len;
+  uint16_t width;
+  uint16_t height;
+  int16_t hori_bearing_x;
+  int16_t hori_bearing_y;
+  uint16_t hori_advance;
+  int16_t vert_bearing_x;
+  int16_t vert_bearing_y;
+  uint16_t vert_advance;
+  uint8_t bit_depth;
+  uint8_t flipped;
+} sofel_glyph_bitmap_t;
+
+/*
+ * The image data and metrics of a glyph in the strike with index
+ * strike_index (sofel_strike_t.index), as FreeType reads them.
+ * SOFEL_ERROR_NOT_FOUND when the glyph has none there.
+ *
+ * Rust: sofel_bitmap::glyph_bitmap
+ * HarfBuzz: none
+ * FreeType: FT_Load_Glyph (FT_LOAD_BITMAP_METRICS_ONLY)
+ */
+int32_t sofel_glyph_bitmap(const sofel_font_t *font, uint32_t strike_index, uint32_t glyph,
+                           sofel_glyph_bitmap_t *bitmap);
+
+/*
+ * The sine, cosine and tangent of x (radians), the same on every
+ * target (musl's sincosf and tanf).
+ *
+ * Rust: sofel_geom::sin_cos, sofel_geom::sin, sofel_geom::cos, sofel_geom::tan
+ * HarfBuzz: none
+ * FreeType: none
+ */
+int32_t sofel_sin_cos(float x, float *s, float *c);
+float sofel_tan(float x);
+
+/*
+ * Sorts the stops by offset (stably) and rescales the offsets to 0..1;
+ * the original smallest and largest offsets go to *min and *max.
+ *
+ * Rust: sofel_geom::normalize_color_line
+ * HarfBuzz: hb_paint_normalize_color_line
+ * FreeType: none
+ */
+int32_t sofel_normalize_color_line(sofel_color_stop_t *stops, size_t n, float *min, float *max);
+
+/*
+ * The two points (x0 y0 x1 y1) of the axis of COLR's three-point linear
+ * gradient (x0 y0 x1 y1 x2 y2).
+ *
+ * Rust: sofel_geom::reduce_linear_anchors
+ * HarfBuzz: hb_paint_reduce_linear_anchors
+ * FreeType: none
+ */
+int32_t sofel_reduce_linear_anchors(const float points[6], float out[4]);
+
+typedef void (*sofel_sweep_tile_func_t)(void *user, float a0, sofel_color_t c0, float a1,
+                                        sofel_color_t c1);
+
+/*
+ * The segments within 0..2π of a sweep gradient of sorted, normalized
+ * stops, from start to end (radians), passed to emit; at most 4096.
+ *
+ * Rust: sofel_geom::sweep_gradient_tiles
+ * HarfBuzz: hb_paint_sweep_gradient_tiles
+ * FreeType: none
+ */
+int32_t sofel_sweep_gradient_tiles(sofel_color_stop_t *stops, size_t n, uint32_t extend,
+                                   float start, float end, sofel_sweep_tile_func_t emit,
+                                   void *user);
 
 #ifdef __cplusplus
 }

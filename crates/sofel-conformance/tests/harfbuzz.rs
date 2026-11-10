@@ -154,7 +154,11 @@ fn agrees_with_harfbuzz() {
     }
 
     let list = std::fs::read_to_string(paths::conformance_file(LIST)).unwrap_or_default();
-    let expected = expect::parse(&list);
+    // The color items (`harfbuzz_color.rs`) have no `:hb:`.
+    let expected = expect::parse(&list)
+        .into_iter()
+        .filter(|id| id.contains(":hb:"))
+        .collect();
     let problems = expect::judge(items.iter().map(|i| (i.id.as_str(), i.ok)), &expected);
     if !problems.is_empty() {
         let mut msg = expect::report(&problems, LIST);

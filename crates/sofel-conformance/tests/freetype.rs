@@ -109,7 +109,14 @@ fn agrees_with_freetype() {
     let list = std::fs::read_to_string(paths::conformance_file(LIST)).unwrap_or_default();
     // Outline and raster items have their own tests (ADR 0011, 0012).
     let mut expected = expect::parse(&list);
-    expected.retain(|id| !id.contains(":outline:") && !id.contains(":raster:"));
+    // ... and the COLR and CPAL items too (ADR 0023, freetype_color.rs).
+    expected.retain(|id| {
+        !id.contains(":outline:")
+            && !id.contains(":raster:")
+            && !id.contains(":colr:")
+            && !id.ends_with(":cpal")
+            && !id.ends_with(":strikes")
+    });
     let problems = expect::judge(items.iter().map(|i| (i.id.as_str(), i.ok)), &expected);
     if !problems.is_empty() {
         let mut msg = expect::report(&problems, LIST);

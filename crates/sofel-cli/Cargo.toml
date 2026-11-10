@@ -12,6 +12,8 @@ sofel-read = { path = "../sofel-read" }
 sofel-font = { path = "../sofel-font" }
 sofel-outline = { path = "../sofel-outline" }
 sofel-raster = { path = "../sofel-raster" }
+sofel-bitmap = { path = "../sofel-bitmap" }
+sofel-color = { path = "../sofel-color" }
 
 [[bin]]
 name = "sofel-validate"
@@ -20,6 +22,10 @@ path = "src/bin/sofel-validate.rs"
 [[bin]]
 name = "sofel-render"
 path = "src/bin/sofel-render.rs"
+
+[[bin]]
+name = "sofel-paint"
+path = "src/bin/sofel-paint.rs"
 
 [lints]
 workspace = true

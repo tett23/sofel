@@ -22,6 +22,9 @@
 //! The Adobe files carry a patent license besides the FTL; see
 //! THIRD_PARTY_NOTICES.md.
 //!
+//! `sofel-font` is re-exported as [`font`], through which `sofel-color`
+//! uses fonts (ADR 0023).
+//!
 //! Points are in font units ([`Scale::Unscaled`]) or 26.6 fixed point
 //! ([`Scale::Scaled`]), with y growing upwards as in the font.
 //!
@@ -63,6 +66,8 @@
 extern crate alloc;
 
 mod hb_cff;
+
+pub use sofel_font as font;
 
 pub use hb_cff::{HbExtents, cff1_extents, cff2_extents};
 

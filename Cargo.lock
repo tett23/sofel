@@ -3,10 +3,19 @@
 version = 4
 
 [[package]]
+name = "sofel-bitmap"
+version = "0.0.0"
+dependencies = [
+ "sofel-font",
+]
+
+[[package]]
 name = "sofel-capi"
 version = "0.0.0"
 dependencies = [
+ "sofel-bitmap",
  "sofel-cli",
+ "sofel-color",
  "sofel-font",
  "sofel-geom",
  "sofel-outline",
@@ -19,6 +28,8 @@ dependencies = [
 name = "sofel-cli"
 version = "0.0.0"
 dependencies = [
+ "sofel-bitmap",
+ "sofel-color",
  "sofel-font",
  "sofel-outline",
  "sofel-raster",
@@ -26,10 +37,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sofel-color"
+version = "0.0.0"
+dependencies = [
+ "sofel-bitmap",
+ "sofel-outline",
+]
+
+[[package]]
 name = "sofel-conformance"
 version = "0.0.0"
 dependencies = [
+ "sofel-bitmap",
  "sofel-cli",
+ "sofel-color",
  "sofel-font",
  "sofel-geom",
  "sofel-outline",
