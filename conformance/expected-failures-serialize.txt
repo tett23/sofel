@@ -1,0 +1,8 @@
+# Items of the serialization comparison (ADR 0020, tests/harfbuzz_serialize.rs)
+# that are expected to fail, one identifier per line: <font>:<kind>, the kind
+# being serialize-glyphs, serialize-glyphs-extents (with GLYPH_EXTENTS),
+# serialize-unicode, deserialize-glyphs, deserialize-unicode, or those of
+# the corpus (corpus-deserialize-*).
+# Give the reason after the identifier as a comment: `<id>  # <reason>`.
+# Remove an entry when it passes; the test fails until you do.
+harfbuzz/test/api/fonts/adwaita.ttf:serialize-glyphs-extents  # color glyph extents (COLR; glyph 2, icon0): ADR 0023
