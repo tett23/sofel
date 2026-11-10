@@ -20,8 +20,8 @@ WOFFとWOFF2、Type1やBDFなどの古い形式、AAT、絵文字（COLR、埋�
 `sofel-font::var` には、設計座標と正規化座標からの位置の構築、座標の正規化、ItemVariationStoreの差分の評価の核、軸と名前つきインスタンスの問い合わせ、FreeTypeのMMVarの読み取り、位置ごとのPostScript名を実装した。
 C ABIには位置の作成、座標の取得、Variationの文字列変換、軸と名前つきインスタンスの問い合わせ、位置ごとのPostScript名を追加した。
 さらに、メトリクス、基準線、輪郭、シェーピング、塗りの既存関数には位置の引数を追加した。
-位置による値の変更は、HVARとVVARの送り幅、VORGとVVARの縦原点、MVARのフォント全体のメトリクス、FreeTypeの縦送り幅まで実装した。
-gvarの幻の点による送り幅と箱、BASEのVariationIndex、輪郭、シェーピング、塗りの変化量と、コマンドラインから位置を指定する機能は未実装である。
+位置による値の変更は、HVARとVVARの送り幅、VORGとVVARの縦原点、MVARのフォント全体のメトリクス、FreeTypeの縦送り幅、BASEのVariationIndexまで実装した。
+gvarの幻の点による送り幅と箱、輪郭、シェーピング、塗りの変化量と、コマンドラインから位置を指定する機能は未実装である。
 ライセンスと取得元を固定した追加フォントの検証は [ADR 0031](docs/adr/0031-diverse-font-corpus.md) に従って実装した。
 文書だけの変更でCIを省く方針は [ADR 0032](docs/adr/0032-documentation-only-ci.md) と [ADR 0034](docs/adr/0034-ci-document-input-classification.md) に従って実装している。
 FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/) に記録する（最新は [追加フォント](docs/benchmarks/2026-11-11-extra-fonts.md)、[2段階目](docs/benchmarks/2026-11-10-stage2.md)、[CFFとCFF2](docs/benchmarks/2026-11-10-cff.md)、[charsetの索引](docs/benchmarks/2026-11-10-cff-charset-index.md)、[COLRv0の画像](docs/benchmarks/2026-11-10-colrv0-raster.md)、[シェーピング](docs/benchmarks/2026-11-10-shaping.md)、[サブセット化](docs/benchmarks/2026-11-10-subset.md)、[前処理つきのサブセット化](docs/benchmarks/2026-11-10-subset-prepared.md)）。

@@ -8,7 +8,7 @@ use sofel_read::item_variation::{ItemVariationStore, Region};
 use sofel_read::{
     Fixed, GlyphId, ReadError, Tag,
     avar::{Avar, SegmentMap},
-    base::Base,
+    base::{Base, BaseCoord},
     colr::Colr,
     delta_set_index_map::DeltaSetIndexMap,
     fvar::{Fvar, InstanceRecord},
@@ -1335,7 +1335,50 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
 
     /// BASE baseline in font units at this location.
     pub fn baseline(&self, tag: Tag, direction: Direction, script: Tag) -> Option<i32> {
-        HbScale::unscaled(self.font).baseline(self.font, tag, direction, script)
+        self.scaled_baseline(&HbScale::unscaled(self.font), tag, direction, script)
+    }
+
+    /// BASE baseline at a HarfBuzz scale.
+    pub fn scaled_baseline(
+        &self,
+        scale: &HbScale,
+        tag: Tag,
+        direction: Direction,
+        script: Tag,
+    ) -> Option<i32> {
+        let coord = crate::layout::base_coord(self.font, tag, direction, script)?;
+        Some(self.scaled_base_coord(scale, direction, coord))
+    }
+
+    fn scaled_base_coord(
+        &self,
+        scale: &HbScale,
+        direction: Direction,
+        coord: BaseCoord<'_>,
+    ) -> i32 {
+        let base = match direction {
+            Direction::Horizontal => scale.em_scale_y(i32::from(coord.coordinate())),
+            Direction::Vertical => scale.em_scale_x(i32::from(coord.coordinate())),
+        };
+        if !self.location.hb_nonzero {
+            return base;
+        }
+        let index = coord
+            .device()
+            .ok()
+            .flatten()
+            .and_then(|device| device.variation_index());
+        let Some((outer, inner)) = index else {
+            return base;
+        };
+        let delta = self
+            .item_delta::<HbF32>(StoreKind::Base, outer, inner)
+            .unwrap_or(0.0);
+        let scaled = match direction {
+            Direction::Horizontal => scale.em_scalef_y(delta),
+            Direction::Vertical => scale.em_scalef_x(delta),
+        };
+        base.saturating_add(scaled)
     }
 
     /// BASE baseline with HarfBuzz's fallback at this location.
@@ -1346,8 +1389,38 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
         script: Tag,
         extents: impl Fn(GlyphId) -> Option<GlyphExtents>,
     ) -> i32 {
-        HbScale::unscaled(self.font)
-            .baseline_with_fallback(self.font, tag, direction, script, extents)
+        let scale = HbScale::unscaled(self.font);
+        self.scaled_baseline_with_fallback(&scale, tag, direction, script, |glyph| {
+            extents(glyph).map(|value| scale.scale_glyph_extents(value))
+        })
+    }
+
+    /// BASE baseline or HarfBuzz's fallback at a scale; `extents` gives scaled boxes.
+    pub fn scaled_baseline_with_fallback(
+        &self,
+        scale: &HbScale,
+        tag: Tag,
+        direction: Direction,
+        script: Tag,
+        extents: impl Fn(GlyphId) -> Option<GlyphExtents>,
+    ) -> i32 {
+        scale.baseline_fallback_using(
+            self.font,
+            tag,
+            direction,
+            script,
+            &extents,
+            &crate::layout::BaselineFallback {
+                baseline: &|tag, direction, script| {
+                    self.scaled_baseline(scale, tag, direction, script)
+                },
+                metric: &|tag| self.scaled_metrics_position_with_fallback(scale, tag, &extents),
+                font_extents: &|direction| match direction {
+                    Direction::Horizontal => self.scaled_h_extents(scale),
+                    Direction::Vertical => self.scaled_v_extents(scale),
+                },
+            },
+        )
     }
 
     /// Script and language extents from BASE at this location.
@@ -1357,7 +1430,28 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
         script: Tag,
         language: Tag,
     ) -> (FontExtents, bool) {
-        HbScale::unscaled(self.font).layout_font_extents(self.font, direction, script, language)
+        self.scaled_layout_font_extents(&HbScale::unscaled(self.font), direction, script, language)
+    }
+
+    /// Script and language extents from BASE at a HarfBuzz scale.
+    pub fn scaled_layout_font_extents(
+        &self,
+        scale: &HbScale,
+        direction: Direction,
+        script: Tag,
+        language: Tag,
+    ) -> (FontExtents, bool) {
+        scale.layout_font_extents_using(
+            self.font,
+            direction,
+            script,
+            language,
+            &|coord| self.scaled_base_coord(scale, direction, coord),
+            &|direction| match direction {
+                Direction::Horizontal => self.scaled_h_extents(scale),
+                Direction::Vertical => self.scaled_v_extents(scale),
+            },
+        )
     }
 
     /// FreeType's left side bearing in font units at this location.

@@ -1,6 +1,6 @@
 # ADR 0017: BASEの表と基準線（`baseline_with_fallback`）
 
-ステータス: 採択
+ステータス: 採択→可変フォントの差分は [ADR 0027](0027-variable-fonts.md)
 
 ## 文脈
 

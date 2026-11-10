@@ -19,6 +19,7 @@ mod build;
 
 use build::*;
 use sofel_font::read::{GlyphId, Tag};
+use sofel_font::var::Location;
 use sofel_font::{Direction, Font, FontExtents, GlyphExtents, HbScale, baseline};
 
 const H: Direction = Direction::Horizontal;
@@ -75,6 +76,93 @@ fn ext(ascender: i32, descender: i32, line_gap: i32) -> FontExtents {
         descender,
         line_gap,
     }
+}
+
+#[test]
+fn i03_base_variation_index_changes_baseline_at_location() {
+    let mut fvar = vec![0, 1, 0, 0, 0, 16, 0, 2, 0, 1, 0, 20, 0, 0, 0, 8];
+    fvar.extend_from_slice(b"wght");
+    for value in [0i32, 0, 0x10000] {
+        fvar.extend_from_slice(&value.to_be_bytes());
+    }
+    fvar.extend_from_slice(&[0, 0, 1, 0]);
+    let store = Buf::new()
+        .u16(1)
+        .u32(12)
+        .u16(1)
+        .u32(22)
+        .u16(1)
+        .u16(1)
+        .i16(0)
+        .i16(16384)
+        .i16(16384)
+        .u16(1)
+        .u16(1)
+        .u16(1)
+        .u16(0)
+        .i16(21)
+        .done();
+    let axis = AxisSpec {
+        tags: Some(vec![*b"ideo", *b"romn"]),
+        scripts: Some(vec![(
+            *b"DFLT",
+            Some(ScriptSpec {
+                values: Some((
+                    0,
+                    vec![
+                        Some(Coord::F3(101, Some(device(0, 0, 0x8000, &[])))),
+                        Some(Coord::F3(101, Some(device(0, 0, 0x8000, &[])))),
+                    ],
+                )),
+                default_min_max: Some(MinMaxSpec {
+                    min: Some(Coord::F3(10, Some(device(0, 0, 0x8000, &[])))),
+                    max: Some(Coord::F3(101, Some(device(0, 0, 0x8000, &[])))),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+        )]),
+    };
+    let bytes = font_with(
+        Some(base11(Some(&axis), None, Some(&store))),
+        &[],
+        &[(b"fvar", fvar)],
+        &[],
+    );
+    let font = Font::new(&bytes, 0).unwrap();
+    let location = Location::from_normalized_2_14(&font, &[8192]);
+    assert_eq!(
+        font.default_instance()
+            .baseline(baseline::ROMAN, H, t(b"DFLT")),
+        Some(101)
+    );
+    assert_eq!(
+        font.instance(&location)
+            .baseline(baseline::ROMAN, H, t(b"DFLT")),
+        Some(112)
+    );
+    let full = Location::from_normalized_2_14(&font, &[16384]);
+    let scale = HbScale::for_font(&font, 500, 500);
+    assert_eq!(
+        font.instance(&full)
+            .scaled_baseline(&scale, baseline::ROMAN, H, t(b"DFLT")),
+        Some(62)
+    );
+    assert_eq!(
+        font.instance(&full).scaled_baseline_with_fallback(
+            &scale,
+            baseline::IDEO_EMBOX_TOP_OR_RIGHT,
+            H,
+            t(b"DFLT"),
+            no_boxes,
+        ),
+        562
+    );
+    assert_eq!(
+        font.instance(&full)
+            .scaled_layout_font_extents(&scale, H, t(b"DFLT"), t(b"dflt")),
+        (ext(62, 16, 0), true)
+    );
 }
 
 // --------------------------------------------------------------- lookup
