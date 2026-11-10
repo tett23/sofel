@@ -25,3 +25,9 @@ sofel_read::validate::directory Part of sofel_read::validate::sfnt, which sofel_
 sofel_read::vhea::* The hhea view and validator under the vhea tags; C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::vmtx::* The hmtx view and validator under the vmtx tags; C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::vorg::* Zero-copy Rust views and per-table validators; C reads the bytes with sofel_font_table and validates with sofel_validate.
+sofel_font::HbScale::new Takes unitsPerEm directly; C makes scales from a font with sofel_scale_create.
+sofel_font::HbScale::unscaled The default scale; C gets unscaled values from the sofel_font_* functions.
+sofel_font::HbScale::x_scale Returns the scale C passed to sofel_scale_create.
+sofel_font::HbScale::y_scale Returns the scale C passed to sofel_scale_create.
+sofel_font::HbScale::em_scalef_x Takes a float; the C ABI uses fixed-width integers only (ADR 0015).
+sofel_font::HbScale::em_scalef_y Takes a float; the C ABI uses fixed-width integers only (ADR 0015).

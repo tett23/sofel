@@ -43,7 +43,12 @@
 
 pub use sofel_read as read;
 
+mod float;
+mod glyf_data;
+mod metrics;
 mod tables;
+
+pub use metrics::{FontExtents, GlyphExtents, HbScale, MetricsTag};
 
 use core::fmt;
 
@@ -52,8 +57,14 @@ use sofel_read::head::Head;
 use sofel_read::hhea::Hhea;
 use sofel_read::hmtx::Hmtx;
 use sofel_read::maxp::Maxp;
+use sofel_read::os2::Os2;
+use sofel_read::post::Post;
 use sofel_read::sfnt::{FontFile, Sfnt};
-use sofel_read::{CountWidth, GlyphId, ReadError, Tag, cmap, glyf, head, hhea, hmtx, maxp};
+use sofel_read::vorg::Vorg;
+use sofel_read::{
+    CountWidth, GlyphId, ReadError, Tag, cmap, glyf, head, hhea, hmtx, maxp, os2, post, vhea, vmtx,
+    vorg,
+};
 
 /// Why a font could not be opened.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -78,8 +89,8 @@ impl fmt::Display for FontError {
 
 impl core::error::Error for FontError {}
 
-/// Horizontal metrics, with the counts HarfBuzz derives from the data
-/// (`hb-ot-hmtx-table.hh`, `accelerator_t`).
+/// Horizontal or vertical metrics, with the counts HarfBuzz derives from
+/// the data (`hb-ot-hmtx-table.hh`, `accelerator_t`).
 #[derive(Clone, Copy, Debug)]
 struct Metrics<'a> {
     hmtx: Option<Hmtx<'a>>,
@@ -112,6 +123,63 @@ impl<'a> Metrics<'a> {
             num_advances,
         }
     }
+
+    /// HarfBuzz's pair of tables (`hb_dual_accelerator_t`): the wide
+    /// tables when they give any metrics, otherwise the narrow ones. The
+    /// header must pass HarfBuzz's checks (version 1, all fields
+    /// present); otherwise it counts as giving no long metrics.
+    fn dual(sfnt: &Sfnt<'a>, tags: [(Tag, Tag, CountWidth); 2], num_glyphs: u32) -> Metrics<'a> {
+        let one = |(hea_tag, mtx_tag, width): (Tag, Tag, CountWidth)| {
+            let long = hea(sfnt, hea_tag, width).map_or(0, |h| h.number_of_h_metrics());
+            Metrics::new(sfnt.table(mtx_tag), long, num_glyphs)
+        };
+        let [narrow, wide] = tags;
+        let upper = one(wide);
+        if upper.num_bearings != 0 {
+            upper
+        } else {
+            one(narrow)
+        }
+    }
+
+    /// HarfBuzz's `get_advance_without_var_unscaled`; `default` when the
+    /// table gives no advances at all.
+    fn advance(&self, glyph: GlyphId, default: u16) -> u16 {
+        if glyph.0 < self.num_bearings {
+            return self.hmtx.and_then(|h| h.advance(glyph)).unwrap_or(0);
+        }
+        if self.num_advances == 0 {
+            return default;
+        }
+        0
+    }
+
+    /// HarfBuzz's `get_leading_bearing_without_var_unscaled`: 0 past
+    /// the bearings.
+    fn bearing(&self, glyph: GlyphId) -> i16 {
+        if glyph.0 >= self.num_bearings {
+            return 0;
+        }
+        self.hmtx
+            .and_then(|h| h.left_side_bearing(glyph))
+            .unwrap_or(0)
+    }
+
+    /// HarfBuzz's `has_data`.
+    fn has_data(&self) -> bool {
+        self.num_bearings != 0
+    }
+}
+
+/// An `hhea`-shaped header that can be read: version 1 and all fields
+/// present (HarfBuzz's `_hea::sanitize`).
+fn hea<'a>(sfnt: &Sfnt<'a>, tag: Tag, width: CountWidth) -> Option<Hhea<'a>> {
+    sfnt.table(tag).and_then(|d| Hhea::new(d, width).ok())
+}
+
+/// HarfBuzz's pair of headers: the wide one when it is there.
+fn dual_hea<'a>(sfnt: &Sfnt<'a>, narrow: Tag, wide: Tag) -> Option<Hhea<'a>> {
+    hea(sfnt, wide, CountWidth::U24).or_else(|| hea(sfnt, narrow, CountWidth::U16))
 }
 
 /// The horizontal metrics as FreeType reads them (`tt_face_load_hhea`,
@@ -182,9 +250,16 @@ pub struct Font<'a> {
     head: Head<'a>,
     num_glyphs: u32,
     metrics: Metrics<'a>,
+    vmetrics: Metrics<'a>,
     ft_metrics: FtMetrics<'a>,
     cmap: Option<Subtable<'a>>,
     uvs: Option<Subtable<'a>>,
+    os2: Option<Os2<'a>>,
+    hhea: Option<Hhea<'a>>,
+    vhea: Option<Hhea<'a>>,
+    post: Option<Post<'a>>,
+    vorg: Option<Vorg<'a>>,
+    glyf: Option<glyf_data::Glyf<'a>>,
 }
 
 /// HarfBuzz's order of preference (`find_best_subtable`). `ANY` matches
@@ -265,30 +340,52 @@ impl<'a> Font<'a> {
             .or_else(|| glyphs(maxp::TAG, CountWidth::U16))
             .unwrap_or(0);
 
-        let wide = sfnt.table(hhea::TAG_WIDE).is_some() && sfnt.table(hmtx::TAG_WIDE).is_some();
-        let (hhea_tag, hmtx_tag, width) = if wide {
-            (hhea::TAG_WIDE, hmtx::TAG_WIDE, CountWidth::U24)
-        } else {
-            (hhea::TAG, hmtx::TAG, CountWidth::U16)
-        };
-        let long_metrics = sfnt
-            .table(hhea_tag)
-            .and_then(|d| Hhea::new(d, width).ok())
-            .map_or(0, |h| h.number_of_h_metrics());
-        let metrics = Metrics::new(sfnt.table(hmtx_tag), long_metrics, num_glyphs);
+        let metrics = Metrics::dual(
+            &sfnt,
+            [
+                (hhea::TAG, hmtx::TAG, CountWidth::U16),
+                (hhea::TAG_WIDE, hmtx::TAG_WIDE, CountWidth::U24),
+            ],
+            num_glyphs,
+        );
+        let vmetrics = Metrics::dual(
+            &sfnt,
+            [
+                (vhea::TAG, vmtx::TAG, CountWidth::U16),
+                (vhea::TAG_WIDE, vmtx::TAG_WIDE, CountWidth::U24),
+            ],
+            num_glyphs,
+        );
 
         let cmap_table = sfnt.table(cmap::TAG).and_then(|d| Cmap::new(d).ok());
         let cmap = cmap_table.as_ref().and_then(best_subtable);
         let uvs = cmap_table.as_ref().and_then(uvs_subtable);
+
+        let post = sfnt
+            .table(post::TAG)
+            .and_then(|d| Post::new(d).ok())
+            .filter(|p| {
+                matches!(
+                    p.version(),
+                    post::VERSION_1 | post::VERSION_2 | post::VERSION_3
+                )
+            });
 
         Ok(Font {
             sfnt,
             head,
             num_glyphs,
             metrics,
+            vmetrics,
             ft_metrics: FtMetrics::new(&sfnt),
             cmap,
             uvs,
+            os2: sfnt.table(os2::TAG).and_then(|d| Os2::new(d).ok()),
+            hhea: dual_hea(&sfnt, hhea::TAG, hhea::TAG_WIDE),
+            vhea: dual_hea(&sfnt, vhea::TAG, vhea::TAG_WIDE),
+            post,
+            vorg: sfnt.table(vorg::TAG).and_then(|d| Vorg::new(d).ok()),
+            glyf: glyf_data::Glyf::new(&sfnt, &head, num_glyphs),
         })
     }
 
@@ -342,20 +439,113 @@ impl<'a> Font<'a> {
     /// (with an out-of-range `unitsPerEm` taken as 1000) when the font
     /// has no metrics data at all.
     pub fn advance(&self, glyph: GlyphId) -> u16 {
-        let m = &self.metrics;
-        if glyph.0 < m.num_bearings {
-            return m.hmtx.and_then(|h| h.advance(glyph)).unwrap_or(0);
+        self.metrics.advance(glyph, self.hb_units_per_em() / 2)
+    }
+
+    /// `unitsPerEm` as HarfBuzz uses it (`hb_face_get_upem`): 1000 when
+    /// the stored value is outside 16..=16384.
+    pub fn hb_units_per_em(&self) -> u16 {
+        let upem = self.units_per_em();
+        if (16..=16384).contains(&upem) {
+            upem
+        } else {
+            1000
         }
-        if m.num_advances == 0 {
-            let upem = self.units_per_em();
-            let upem = if (16..=16384).contains(&upem) {
-                upem
-            } else {
-                1000
-            };
-            return upem / 2;
-        }
-        0
+    }
+
+    /// The `OS/2` table, if it can be read (ADR 0016).
+    pub fn os2(&self) -> Option<Os2<'a>> {
+        self.os2
+    }
+
+    /// The embedding permissions, as FreeType's `FT_Get_FSType_Flags`
+    /// gives them for sfnt fonts: `fsType` of `OS/2`, or 0 when the
+    /// table cannot be read or its version is 0xFFFF (FreeType's mark of
+    /// a missing table).
+    pub fn fs_type(&self) -> u16 {
+        self.os2
+            .filter(|o| o.version() != 0xFFFF)
+            .map_or(0, |o| o.fs_type())
+    }
+
+    /// The font's horizontal ascender, descender (negative below the
+    /// baseline) and line gap in font units, as HarfBuzz's
+    /// `hb_font_get_extents_for_direction` gives them for horizontal
+    /// text at the default scale: from `OS/2` with `USE_TYPO_METRICS`,
+    /// else from `hhea` (`HHEA` when present), with the signs fixed; when
+    /// a value is missing, the ascender is 0.8 em, the descender the
+    /// ascender minus 1 em and the line gap 0.
+    pub fn h_extents(&self) -> FontExtents {
+        HbScale::unscaled(self).h_extents(self)
+    }
+
+    /// The vertical extents in font units, as HarfBuzz's
+    /// `hb_font_get_extents_for_direction` gives them for vertical text
+    /// at the default scale: from `vhea` (`VHEA` when present), with the
+    /// signs fixed; when a value is missing, the ascender is half an em,
+    /// the descender the ascender minus 1 em and the line gap 0.
+    pub fn v_extents(&self) -> FontExtents {
+        HbScale::unscaled(self).v_extents(self)
+    }
+
+    /// The vertical advance in font units, negative downward as in
+    /// HarfBuzz (`hb_font_get_glyph_v_advance`): minus the `vmtx` advance,
+    /// or, without `vmtx` data, the descender minus the ascender of
+    /// [`Font::h_extents`].
+    pub fn v_advance(&self, glyph: GlyphId) -> i32 {
+        HbScale::unscaled(self).v_advance(self, glyph)
+    }
+
+    /// The vertical origin `(x, y)` in font units, as HarfBuzz's
+    /// `hb_font_get_glyph_v_origin` gives it: x is half the horizontal
+    /// advance; y comes from `VORG` if present, else (with `vmtx` and
+    /// glyf data) from glyf's top phantom point (the glyph's `yMax` plus
+    /// its top side bearing, from the last USE_MY_METRICS component for
+    /// composites; 1 em when the glyph cannot be read), else from the box
+    /// that `extents` gives (centered between the ascender and descender
+    /// of [`Font::h_extents`]; the ascender when `extents` gives `None`).
+    ///
+    /// `extents` is only called in that last case. Pass
+    /// [`Font::glyf_extents`] for glyf fonts; other outline formats get
+    /// their boxes from the layers above (ADR 0016).
+    pub fn v_origin(
+        &self,
+        glyph: GlyphId,
+        extents: impl Fn(GlyphId) -> Option<GlyphExtents>,
+    ) -> (i32, i32) {
+        HbScale::unscaled(self).v_origin(self, glyph, extents)
+    }
+
+    /// The box of a glyf glyph in font units, as HarfBuzz's
+    /// `hb_font_get_glyph_extents` gives it for glyf fonts without
+    /// variations, from the glyph header and `hmtx` only: `x_bearing` is
+    /// the left side bearing (FreeType shifts outlines so, ADR 0018),
+    /// `y_bearing` the top, `width` positive and `height` negative; all 0
+    /// for empty glyphs. `None` without glyf data or for glyph ids past
+    /// it.
+    pub fn glyf_extents(&self, glyph: GlyphId) -> Option<GlyphExtents> {
+        HbScale::unscaled(self).glyf_extents(self, glyph)
+    }
+
+    /// A font-wide metric in font units, as HarfBuzz's
+    /// `hb_ot_metrics_get_position` gives it at the default scale.
+    /// `None` when the font does not have it.
+    pub fn metrics_position(&self, tag: MetricsTag) -> Option<i32> {
+        HbScale::unscaled(self).metrics_position(self, tag)
+    }
+
+    /// A font-wide metric in font units, as HarfBuzz's
+    /// `hb_ot_metrics_get_position_with_fallback` gives it at the default
+    /// scale: [`Font::metrics_position`], or a value made up from other
+    /// metrics when the font does not have it (or has a zero underline
+    /// or strikeout size). The x-height and cap height fallbacks use the
+    /// boxes of the glyphs for `x` and `O` from `extents`.
+    pub fn metrics_position_with_fallback(
+        &self,
+        tag: MetricsTag,
+        extents: impl Fn(GlyphId) -> Option<GlyphExtents>,
+    ) -> i32 {
+        HbScale::unscaled(self).metrics_position_with_fallback(self, tag, extents)
     }
 
     /// The left side bearing in font units, as FreeType reads it for

@@ -59,9 +59,29 @@ let advance: u16 = font.advance(gid.unwrap_or(GlyphId(0))); // フォントの�
 | `Font::advance(g)` | `hb_font_get_glyph_h_advance`（拡大縮小なし） |
 | `Font::ft_left_side_bearing(g)` | FreeTypeの `tt_face_get_metrics` の左のサイドベアリング（輪郭のpp1.xに使う） |
 | `Font::table(tag)` | `hb_face_reference_table` |
+| `Font::h_extents()`、`Font::v_extents()` | `hb_font_get_extents_for_direction`（代わりの値つき） |
+| `Font::v_advance(g)` | `hb_font_get_glyph_v_advance`（下向きが負） |
+| `Font::v_origin(g, extents)` | `hb_font_get_glyph_v_origin` |
+| `Font::glyf_extents(g)` | `hb_font_get_glyph_extents`（glyfだけ） |
+| `Font::metrics_position(tag)`、`Font::metrics_position_with_fallback(tag, extents)` | `hb_ot_metrics_get_position`、`hb_ot_metrics_get_position_with_fallback` |
+| `Font::os2()`、`Font::fs_type()` | `FT_Get_Sfnt_Table(FT_SFNT_OS2)`、`FT_Get_FSType_Flags` |
+| `HbScale::for_font(font, x, y)` | `hb_font_set_scale` |
 
 - cmapのサブテーブルはHarfBuzzと同じ順で選ぶ。送り幅は、hmtxが欠けたり短かったりするときもHarfBuzzと同じ値を返す（[ADR 0010](adr/0010-font-foundation.md)）。
 - `FontError` は、ファイルがsfntでもコレクションでもない、`head` が読めない、番号のフォントが無い、のいずれか。
+- メトリクスの値はフォントの単位（HarfBuzzの既定の拡大縮小）で返す。ほかの拡大縮小の値は `HbScale` の同じ名前の関数で求める。HarfBuzzと同じく、整数の値は `em_scale_x`（`(v × mult + 32768) >> 16`）、小数で持つ値は `em_scalef_x`（HarfBuzzの `roundf`）、箱は `scale_glyph_extents` で拡大縮小し、ビット単位で一致する。代わりの値はその拡大縮小で求める（拡大縮小した値は、フォントの単位の代わりの値を拡大縮小したものと一致しないことがある）。
+- `v_origin` と `metrics_position_with_fallback` は、グリフの箱を求める関数を受け取る。いまは `|g| font.glyf_extents(g)` を渡す。CFFとカラーのグリフの箱は上の層（[ADR 0021](adr/0021-cff-outlines.md)、[0023](adr/0023-color-glyphs.md)）が持つ。
+
+```rust
+use sofel_font::{HbScale, MetricsTag};
+
+let ext = font.h_extents(); // ascender, descender, line_gap
+let (x, y) = font.v_origin(GlyphId(1), |g| font.glyf_extents(g));
+let scale = HbScale::for_font(&font, 12 * 64, 12 * 64);
+let advance = scale.v_advance(&font, GlyphId(1));
+let x_height = scale.metrics_position(&font, MetricsTag::XHeight);
+```
+
 - 下の層が要るときは `sofel_font::read`（`sofel-read` の再公開）と `Font::sfnt()`、`Font::head()` を使う。
 
 ## 輪郭を取り出す（`sofel-outline`）
@@ -236,6 +256,10 @@ sofel_font_destroy(font);
 | `sofel_font_h_advance` | `Font::advance` | `hb_font_get_glyph_h_advance` |
 | `sofel_font_ft_left_side_bearing` | `Font::ft_left_side_bearing` | `FT_Get_Glyph_Metrics` |
 | `sofel_font_table` | `Font::table` | `hb_face_reference_table`／`FT_Load_Sfnt_Table` |
+| `sofel_font_h_extents`、`sofel_font_v_extents`、`sofel_font_v_advance`、`sofel_font_v_origin`、`sofel_font_glyph_extents` | `Font::h_extents` など | `hb_font_get_extents_for_direction`、`hb_font_get_glyph_v_advance`、`hb_font_get_glyph_v_origin`、`hb_font_get_glyph_extents` |
+| `sofel_font_metrics_position`、`sofel_font_metrics_position_with_fallback` | `Font::metrics_position` など | `hb_ot_metrics_get_position` など |
+| `sofel_font_os2_field`、`sofel_font_fs_type` | `Font::os2`、`Font::fs_type` | `FT_Get_Sfnt_Table`、`FT_Get_FSType_Flags` |
+| `sofel_scale_*` | `HbScale` | `hb_font_set_scale` のあとの各関数 |
 | `sofel_outline_draw`、`sofel_outline_load`、`sofel_outline_decompose` | `draw`、`load`、`Scratch::decompose` | `FT_Load_Glyph` + `FT_Outline_Decompose` |
 | `sofel_rasterizer_*`、`sofel_pixel_box` | `Rasterizer`、`pixel_box` | `FT_Outline_Render` |
 | `sofel_render_glyph` | `sofel_cli::glyph::render` | `FT_Render_Glyph` |

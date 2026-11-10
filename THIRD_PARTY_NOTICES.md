@@ -200,7 +200,7 @@ sofel follows rules of HarfBuzz 15.1.0 (commit `3df40d9b98d6b32f0e4288d4ecfbb158
 |---|---|
 | `tools/gen-unicode/` | The rules of `src/gen-ucd-table.py` (which decompositions are kept, which pairs compose) and `src/gen-arabic-pua.py` ([ADR 0019](docs/adr/0019-unicode-character-data.md)) |
 | `sofel-unicode` | `src/hb-ucd.cc` (Hangul composition and decomposition), `src/hb-common.cc` (`hb_script_from_iso15924_tag`) |
-| `sofel-font` | `src/tables/arabic_pua.rs`, generated from HarfBuzz's `src/ArabicPUASimplified.txt` and `src/ArabicPUATraditional.txt` |
+| `sofel-font` | `src/tables/arabic_pua.rs`, generated from HarfBuzz's `src/ArabicPUASimplified.txt` and `src/ArabicPUATraditional.txt`; `src/metrics.rs` and `src/glyf_data.rs` from `src/hb-ot-font.cc`, `src/hb-ot-metrics.cc`, `src/hb-font.hh`, `src/hb-algs.hh` (`_hb_roundf`), `src/hb-decycler.hh` and `src/OT/glyf/` ([ADR 0016](docs/adr/0016-font-and-vertical-metrics.md)) |
 
 The HarfBuzz license follows.
 

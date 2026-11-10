@@ -272,6 +272,279 @@ int32_t sofel_font_ft_left_side_bearing(const sofel_font_t *font, uint32_t glyph
 int32_t sofel_font_table(const sofel_font_t *font, uint32_t tag, const uint8_t **data,
                          size_t *len);
 
+/* ------------------------------------------------------------ metrics */
+
+/*
+ * Font-wide and vertical metrics (ADR 0016). Values are in font units,
+ * as HarfBuzz gives them at its default scale (both scales unitsPerEm);
+ * sofel_scale_t gives them at other scales. Glyph boxes come from glyf
+ * only for now (CFF with ADR 0021, color glyphs with ADR 0023).
+ */
+
+/*
+ * unitsPerEm as HarfBuzz uses it: 1000 when the stored value is outside
+ * 16..=16384.
+ *
+ * Rust: sofel_font::Font::hb_units_per_em
+ * HarfBuzz: hb_face_get_upem
+ * FreeType: none
+ */
+int32_t sofel_font_hb_units_per_em(const sofel_font_t *font, uint16_t *upem);
+
+/* The fields of the OS/2 table for sofel_font_os2_field. */
+#define SOFEL_OS2_VERSION 0
+#define SOFEL_OS2_X_AVG_CHAR_WIDTH 1
+#define SOFEL_OS2_US_WEIGHT_CLASS 2
+#define SOFEL_OS2_US_WIDTH_CLASS 3
+#define SOFEL_OS2_FS_TYPE 4
+#define SOFEL_OS2_Y_SUBSCRIPT_X_SIZE 5
+#define SOFEL_OS2_Y_SUBSCRIPT_Y_SIZE 6
+#define SOFEL_OS2_Y_SUBSCRIPT_X_OFFSET 7
+#define SOFEL_OS2_Y_SUBSCRIPT_Y_OFFSET 8
+#define SOFEL_OS2_Y_SUPERSCRIPT_X_SIZE 9
+#define SOFEL_OS2_Y_SUPERSCRIPT_Y_SIZE 10
+#define SOFEL_OS2_Y_SUPERSCRIPT_X_OFFSET 11
+#define SOFEL_OS2_Y_SUPERSCRIPT_Y_OFFSET 12
+#define SOFEL_OS2_Y_STRIKEOUT_SIZE 13
+#define SOFEL_OS2_Y_STRIKEOUT_POSITION 14
+#define SOFEL_OS2_S_FAMILY_CLASS 15
+/* ulUnicodeRange1..4: SOFEL_OS2_UL_UNICODE_RANGE1 + 0..3. */
+#define SOFEL_OS2_UL_UNICODE_RANGE1 16
+/* achVendID as a big-endian 32-bit value. */
+#define SOFEL_OS2_ACH_VEND_ID 20
+#define SOFEL_OS2_FS_SELECTION 21
+#define SOFEL_OS2_US_FIRST_CHAR_INDEX 22
+#define SOFEL_OS2_US_LAST_CHAR_INDEX 23
+#define SOFEL_OS2_S_TYPO_ASCENDER 24
+#define SOFEL_OS2_S_TYPO_DESCENDER 25
+#define SOFEL_OS2_S_TYPO_LINE_GAP 26
+#define SOFEL_OS2_US_WIN_ASCENT 27
+#define SOFEL_OS2_US_WIN_DESCENT 28
+/* ulCodePageRange1..2 (version 1 and later). */
+#define SOFEL_OS2_UL_CODE_PAGE_RANGE1 29
+#define SOFEL_OS2_UL_CODE_PAGE_RANGE2 30
+/* Version 2 and later. */
+#define SOFEL_OS2_SX_HEIGHT 31
+#define SOFEL_OS2_S_CAP_HEIGHT 32
+#define SOFEL_OS2_US_DEFAULT_CHAR 33
+#define SOFEL_OS2_US_BREAK_CHAR 34
+#define SOFEL_OS2_US_MAX_CONTEXT 35
+/* Version 5 and later. */
+#define SOFEL_OS2_US_LOWER_OPTICAL_POINT_SIZE 36
+#define SOFEL_OS2_US_UPPER_OPTICAL_POINT_SIZE 37
+/* panose[0..9]: SOFEL_OS2_PANOSE + 0..9. */
+#define SOFEL_OS2_PANOSE 38
+
+/*
+ * A field of the OS/2 table (SOFEL_OS2_*). SOFEL_ERROR_NOT_FOUND when the
+ * font has no readable OS/2 table or the field is past its version;
+ * SOFEL_ERROR_INVALID_ARGUMENT for an unknown field.
+ *
+ * Rust: sofel_font::Font::os2
+ * HarfBuzz: none
+ * FreeType: FT_Get_Sfnt_Table (FT_SFNT_OS2)
+ */
+int32_t sofel_font_os2_field(const sofel_font_t *font, int32_t field, int64_t *value);
+
+/*
+ * The embedding permissions: fsType of OS/2, 0 without it or when its
+ * version is 0xFFFF.
+ *
+ * Rust: sofel_font::Font::fs_type
+ * HarfBuzz: none
+ * FreeType: FT_Get_FSType_Flags
+ */
+int32_t sofel_font_fs_type(const sofel_font_t *font, uint16_t *fs_type);
+
+/*
+ * The horizontal ascender, descender (negative) and line gap, with
+ * HarfBuzz's fallback, in extents[0..2].
+ *
+ * Rust: sofel_font::Font::h_extents
+ * HarfBuzz: hb_font_get_extents_for_direction (HB_DIRECTION_LTR)
+ * FreeType: none
+ */
+int32_t sofel_font_h_extents(const sofel_font_t *font, int32_t extents[3]);
+
+/*
+ * The vertical ascender, descender and line gap, with HarfBuzz's
+ * fallback, in extents[0..2].
+ *
+ * Rust: sofel_font::Font::v_extents
+ * HarfBuzz: hb_font_get_extents_for_direction (HB_DIRECTION_TTB)
+ * FreeType: none
+ */
+int32_t sofel_font_v_extents(const sofel_font_t *font, int32_t extents[3]);
+
+/*
+ * The vertical advance, negative downward as in HarfBuzz.
+ *
+ * Rust: sofel_font::Font::v_advance
+ * HarfBuzz: hb_font_get_glyph_v_advance
+ * FreeType: none (FT_Get_Advance with FT_LOAD_VERTICAL_LAYOUT is positive
+ *           and falls back differently)
+ */
+int32_t sofel_font_v_advance(const sofel_font_t *font, uint32_t glyph, int32_t *advance);
+
+/*
+ * The vertical origin (x, y) in origin[0..1]: VORG, else glyf's top
+ * phantom point (with vmtx), else centered on the glyph box.
+ *
+ * Rust: sofel_font::Font::v_origin
+ * HarfBuzz: hb_font_get_glyph_v_origin
+ * FreeType: none
+ */
+int32_t sofel_font_v_origin(const sofel_font_t *font, uint32_t glyph, int32_t origin[2]);
+
+/*
+ * The glyph box (x_bearing, y_bearing, width, height) in extents[0..3];
+ * height is negative. SOFEL_ERROR_NOT_FOUND when there is no box.
+ *
+ * Rust: sofel_font::Font::glyf_extents
+ * HarfBuzz: hb_font_get_glyph_extents
+ * FreeType: none (FT_Outline_Get_CBox of the loaded outline)
+ */
+int32_t sofel_font_glyph_extents(const sofel_font_t *font, uint32_t glyph, int32_t extents[4]);
+
+/*
+ * A font-wide metric by its hb_ot_metrics_tag_t tag ('hasc', 'xhgt',
+ * ...). SOFEL_ERROR_NOT_FOUND when the font does not have it,
+ * SOFEL_ERROR_INVALID_ARGUMENT for an unknown tag.
+ *
+ * Rust: sofel_font::Font::metrics_position, sofel_font::MetricsTag::from_tag, sofel_font::MetricsTag::tag
+ * HarfBuzz: hb_ot_metrics_get_position
+ * FreeType: none
+ */
+int32_t sofel_font_metrics_position(const sofel_font_t *font, uint32_t tag, int32_t *position);
+
+/*
+ * Like sofel_font_metrics_position, made up from other metrics when the
+ * font does not have it.
+ *
+ * Rust: sofel_font::Font::metrics_position_with_fallback
+ * HarfBuzz: hb_ot_metrics_get_position_with_fallback
+ * FreeType: none
+ */
+int32_t sofel_font_metrics_position_with_fallback(const sofel_font_t *font, uint32_t tag,
+                                                  int32_t *position);
+
+/* HarfBuzz's scale of a font (x_scale, y_scale). Immutable. */
+typedef struct sofel_scale_t sofel_scale_t;
+
+/*
+ * A scale for `font`; NULL on failure, with the reason in *error.
+ * Destroy it with sofel_scale_destroy.
+ *
+ * Rust: sofel_font::HbScale::for_font
+ * HarfBuzz: hb_font_set_scale
+ * FreeType: none
+ */
+sofel_scale_t *sofel_scale_create(const sofel_font_t *font, int32_t x_scale, int32_t y_scale,
+                                  int32_t *error);
+
+/*
+ * Frees a scale. NULL does nothing.
+ *
+ * Rust: none
+ * HarfBuzz: none
+ * FreeType: none
+ */
+void sofel_scale_destroy(sofel_scale_t *scale);
+
+/*
+ * A value in font units scaled like HarfBuzz's integer values
+ * ((v * mult + 32768) >> 16).
+ *
+ * Rust: sofel_font::HbScale::em_scale_x
+ * HarfBuzz: none (hb_font_t::em_scale_x)
+ * FreeType: none
+ */
+int32_t sofel_scale_em_scale_x(const sofel_scale_t *scale, int32_t v, int32_t *out);
+
+/*
+ * Rust: sofel_font::HbScale::em_scale_y
+ * HarfBuzz: none (hb_font_t::em_scale_y)
+ * FreeType: none
+ */
+int32_t sofel_scale_em_scale_y(const sofel_scale_t *scale, int32_t v, int32_t *out);
+
+/*
+ * Scales a glyph box (x_bearing, y_bearing, width, height) in place,
+ * rounding outward.
+ *
+ * Rust: sofel_font::HbScale::scale_glyph_extents
+ * HarfBuzz: none (hb_font_t::scale_glyph_extents)
+ * FreeType: none
+ */
+int32_t sofel_scale_glyph_extents(const sofel_scale_t *scale, int32_t extents[4]);
+
+/*
+ * sofel_font_h_extents at this scale (the fallback is computed at it).
+ *
+ * Rust: sofel_font::HbScale::h_extents
+ * HarfBuzz: hb_font_get_extents_for_direction (HB_DIRECTION_LTR)
+ * FreeType: none
+ */
+int32_t sofel_scale_h_extents(const sofel_scale_t *scale, const sofel_font_t *font,
+                              int32_t extents[3]);
+
+/*
+ * Rust: sofel_font::HbScale::v_extents
+ * HarfBuzz: hb_font_get_extents_for_direction (HB_DIRECTION_TTB)
+ * FreeType: none
+ */
+int32_t sofel_scale_v_extents(const sofel_scale_t *scale, const sofel_font_t *font,
+                              int32_t extents[3]);
+
+/*
+ * Rust: sofel_font::HbScale::h_advance
+ * HarfBuzz: hb_font_get_glyph_h_advance
+ * FreeType: none
+ */
+int32_t sofel_scale_h_advance(const sofel_scale_t *scale, const sofel_font_t *font,
+                              uint32_t glyph, int32_t *advance);
+
+/*
+ * Rust: sofel_font::HbScale::v_advance
+ * HarfBuzz: hb_font_get_glyph_v_advance
+ * FreeType: none
+ */
+int32_t sofel_scale_v_advance(const sofel_scale_t *scale, const sofel_font_t *font,
+                              uint32_t glyph, int32_t *advance);
+
+/*
+ * Rust: sofel_font::HbScale::v_origin
+ * HarfBuzz: hb_font_get_glyph_v_origin
+ * FreeType: none
+ */
+int32_t sofel_scale_v_origin(const sofel_scale_t *scale, const sofel_font_t *font,
+                             uint32_t glyph, int32_t origin[2]);
+
+/*
+ * Rust: sofel_font::HbScale::glyf_extents
+ * HarfBuzz: hb_font_get_glyph_extents
+ * FreeType: none
+ */
+int32_t sofel_scale_glyph_extents_of(const sofel_scale_t *scale, const sofel_font_t *font,
+                                     uint32_t glyph, int32_t extents[4]);
+
+/*
+ * Rust: sofel_font::HbScale::metrics_position
+ * HarfBuzz: hb_ot_metrics_get_position
+ * FreeType: none
+ */
+int32_t sofel_scale_metrics_position(const sofel_scale_t *scale, const sofel_font_t *font,
+                                     uint32_t tag, int32_t *position);
+
+/*
+ * Rust: sofel_font::HbScale::metrics_position_with_fallback
+ * HarfBuzz: hb_ot_metrics_get_position_with_fallback
+ * FreeType: none
+ */
+int32_t sofel_scale_metrics_position_with_fallback(const sofel_scale_t *scale,
+                                                   const sofel_font_t *font, uint32_t tag,
+                                                   int32_t *position);
+
 /* ----------------------------------------------------------- outlines */
 
 /*

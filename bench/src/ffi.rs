@@ -18,6 +18,8 @@ unsafe extern "C" {
     pub fn bhb_set_ppem(font: *mut c_void, ppem: c_uint);
     pub fn bhb_nominal_glyph(font: *mut c_void, c: c_uint) -> c_uint;
     pub fn bhb_advance(font: *mut c_void, gid: c_uint) -> c_int;
+    pub fn bhb_v_advance(font: *mut c_void, gid: c_uint) -> c_int;
+    pub fn bhb_v_origin(font: *mut c_void, gid: c_uint) -> c_long;
     pub fn bhb_draw(font: *mut c_void, gid: c_uint) -> c_long;
 
     // HarfBuzz's own Unicode functions (hb-unicode.h), called directly.
@@ -92,6 +94,15 @@ impl HbFont {
     pub fn advance(&self, gid: u32) -> i64 {
         // SAFETY: a valid font.
         unsafe { i64::from(bhb_advance(self.0, gid)) }
+    }
+    pub fn v_advance(&self, gid: u32) -> i64 {
+        // SAFETY: a valid font.
+        unsafe { i64::from(bhb_v_advance(self.0, gid)) }
+    }
+    /// The sum of the vertical origin's x and y.
+    pub fn v_origin(&self, gid: u32) -> i64 {
+        // SAFETY: a valid font.
+        unsafe { bhb_v_origin(self.0, gid) as i64 }
     }
     pub fn draw(&self, gid: u32) -> i64 {
         // SAFETY: a valid font.

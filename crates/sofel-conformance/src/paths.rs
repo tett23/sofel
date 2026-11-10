@@ -1,5 +1,6 @@
-//! Where the test data, the UCD files and `ft-dump` are. `SOFEL_TESTDATA`,
-//! `SOFEL_UCD` and `SOFEL_FT_DUMP` override the defaults under `target/`.
+//! Where the test data, the UCD files, `ft-dump` and `hb-dump` are.
+//! `SOFEL_TESTDATA`, `SOFEL_UCD`, `SOFEL_FT_DUMP` and `SOFEL_HB_DUMP`
+//! override the defaults under `target/`.
 
 use std::path::{Path, PathBuf};
 
@@ -22,6 +23,11 @@ pub fn ft_dump() -> PathBuf {
         .map_or_else(|| root().join("target/ft-dump/ft-dump"), PathBuf::from)
 }
 
+pub fn hb_dump() -> PathBuf {
+    std::env::var_os("SOFEL_HB_DUMP")
+        .map_or_else(|| root().join("target/hb-dump/hb-dump"), PathBuf::from)
+}
+
 pub fn conformance_file(name: &str) -> PathBuf {
     root().join("conformance").join(name)
 }
@@ -32,7 +38,7 @@ pub fn require(path: &Path, what: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!(
-            "{what} not found at {}.\nRun:\n  scripts/fetch-testdata.sh\n  tools/ft-dump/build.sh",
+            "{what} not found at {}.\nRun:\n  scripts/fetch-testdata.sh\n  tools/ft-dump/build.sh\n  tools/hb-dump/build.sh",
             path.display()
         ))
     }
