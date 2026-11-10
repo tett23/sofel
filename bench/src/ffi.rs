@@ -1,0 +1,100 @@
+//! The functions of bench/c/shim.c (ADR 0013). Declared by hand; the
+//! shim keeps FreeType's and HarfBuzz's structs out of Rust.
+
+use std::os::raw::{c_int, c_long, c_uchar, c_uint, c_ulong, c_void};
+
+unsafe extern "C" {
+    pub fn bft_open(data: *const c_uchar, len: c_long, index: c_long) -> *mut c_void;
+    pub fn bft_close(face: *mut c_void);
+    pub fn bft_num_glyphs(face: *mut c_void) -> c_long;
+    pub fn bft_set_pixel_sizes(face: *mut c_void, ppem: c_uint) -> c_int;
+    pub fn bft_char_index(face: *mut c_void, c: c_ulong) -> c_uint;
+    pub fn bft_advance(face: *mut c_void, gid: c_uint) -> c_long;
+    pub fn bft_outline(face: *mut c_void, gid: c_uint, unscaled: c_int) -> c_long;
+    pub fn bft_render(face: *mut c_void, gid: c_uint) -> c_long;
+
+    pub fn bhb_open(data: *const c_uchar, len: c_uint, index: c_uint) -> *mut c_void;
+    pub fn bhb_close(font: *mut c_void);
+    pub fn bhb_set_ppem(font: *mut c_void, ppem: c_uint);
+    pub fn bhb_nominal_glyph(font: *mut c_void, c: c_uint) -> c_uint;
+    pub fn bhb_advance(font: *mut c_void, gid: c_uint) -> c_int;
+    pub fn bhb_draw(font: *mut c_void, gid: c_uint) -> c_long;
+}
+
+/// A FreeType face over borrowed font data.
+pub struct FtFace(*mut c_void);
+
+impl FtFace {
+    pub fn open(data: &[u8]) -> Option<FtFace> {
+        // SAFETY: the shim copies nothing; `data` outlives the face (it is
+        // kept by the caller for the whole run).
+        let f = unsafe { bft_open(data.as_ptr(), data.len() as c_long, 0) };
+        (!f.is_null()).then_some(FtFace(f))
+    }
+    pub fn num_glyphs(&self) -> u32 {
+        // SAFETY: a valid face.
+        unsafe { bft_num_glyphs(self.0) as u32 }
+    }
+    pub fn set_ppem(&self, ppem: u32) {
+        // SAFETY: a valid face.
+        unsafe { bft_set_pixel_sizes(self.0, ppem) };
+    }
+    pub fn char_index(&self, c: u32) -> u32 {
+        // SAFETY: a valid face.
+        unsafe { bft_char_index(self.0, c_ulong::from(c)) }
+    }
+    pub fn advance(&self, gid: u32) -> i64 {
+        // SAFETY: a valid face.
+        unsafe { bft_advance(self.0, gid) as i64 }
+    }
+    pub fn outline(&self, gid: u32, unscaled: bool) -> i64 {
+        // SAFETY: a valid face.
+        unsafe { bft_outline(self.0, gid, c_int::from(unscaled)) as i64 }
+    }
+    pub fn render(&self, gid: u32) -> i64 {
+        // SAFETY: a valid face.
+        unsafe { bft_render(self.0, gid) as i64 }
+    }
+}
+
+impl Drop for FtFace {
+    fn drop(&mut self) {
+        // SAFETY: a valid face, dropped once.
+        unsafe { bft_close(self.0) };
+    }
+}
+
+/// A HarfBuzz font (default `ot` font functions) over borrowed data.
+pub struct HbFont(*mut c_void);
+
+impl HbFont {
+    pub fn open(data: &[u8]) -> Option<HbFont> {
+        // SAFETY: the blob is read-only over `data`, which outlives the font.
+        let f = unsafe { bhb_open(data.as_ptr(), data.len() as c_uint, 0) };
+        (!f.is_null()).then_some(HbFont(f))
+    }
+    /// 0 for unscaled.
+    pub fn set_ppem(&self, ppem: u32) {
+        // SAFETY: a valid font.
+        unsafe { bhb_set_ppem(self.0, ppem) };
+    }
+    pub fn nominal_glyph(&self, c: u32) -> u32 {
+        // SAFETY: a valid font.
+        unsafe { bhb_nominal_glyph(self.0, c) }
+    }
+    pub fn advance(&self, gid: u32) -> i64 {
+        // SAFETY: a valid font.
+        unsafe { i64::from(bhb_advance(self.0, gid)) }
+    }
+    pub fn draw(&self, gid: u32) -> i64 {
+        // SAFETY: a valid font.
+        unsafe { bhb_draw(self.0, gid) as i64 }
+    }
+}
+
+impl Drop for HbFont {
+    fn drop(&mut self) {
+        // SAFETY: a valid font, dropped once.
+        unsafe { bhb_close(self.0) };
+    }
+}
