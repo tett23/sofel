@@ -12,7 +12,7 @@ use sofel_bench::harness::{Check, Config, Row, Stats, SystemClock, measure, repo
 use sofel_font::Font;
 use sofel_font::read::GlyphId;
 use sofel_geom::{Command, FnPen};
-use sofel_outline::{HbExtents, Scale, Scratch, draw};
+use sofel_outline::{HbExtents, Outlines, Scale, Scratch};
 use sofel_raster::Rasterizer;
 
 const FONTS: [(&str, &str); 5] = [
@@ -248,6 +248,37 @@ fn cff_items(b: &mut Bench, testdata: &std::path::Path) {
         let hb = HbFont::open(&bytes).expect("HarfBuzz opens the font");
         hb.set_ppem(0);
         let n = font.num_glyphs();
+        // FreeType's half (ADR 0021): outlines, rendering, CIDs, opening.
+        let ft = FtFace::open(&bytes).expect("FreeType opens the font");
+        outline_items(b, name, &font, &ft, &hb);
+        hb.set_ppem(0);
+        let cff = sofel_font::Cff::new(&font).expect("sofel opens the CFF");
+        if cff.is_cid_keyed() {
+            b.item(
+                name,
+                "cid".into(),
+                &mut || {
+                    (0..n)
+                        .map(|g| cff.cid(GlyphId(g)).map_or(u64::MAX, u64::from))
+                        .fold(0, u64::wrapping_add)
+                },
+                Some((
+                    &mut || (0..n).map(|g| wrap(ft.cid(g))).fold(0, u64::wrapping_add),
+                    Compare::Yes,
+                )),
+                None,
+            );
+        }
+        b.item(
+            name,
+            "open (FreeType)".into(),
+            &mut || u64::from(sofel_font::Cff::new(&font).map_or(0, |c| c.num_glyphs())),
+            Some((
+                &mut || FtFace::open(&bytes).map_or(0, |f| u64::from(f.num_glyphs())),
+                Compare::Yes,
+            )),
+            None,
+        );
         let extents = HbExtents::new(&font);
         b.item(
             name,
@@ -348,6 +379,111 @@ fn cff_items(b: &mut Bench, testdata: &std::path::Path) {
     }
 }
 
+/// Outlines (ADR 0011, ADR 0021): the number of commands (without
+/// closes) of every glyph, unscaled and at 48 px, against FreeType (and
+/// HarfBuzz's drawing, not compared); rendering (ADR 0012) at 12, 24, 48
+/// and 96 px against FreeType.
+fn outline_items(b: &mut Bench, name: &str, font: &Font<'_>, ft: &FtFace, hb: &HbFont) {
+    let n = font.num_glyphs();
+    let outlines = Outlines::new(font);
+    // Outlines: the number of commands (without closes) of every glyph.
+    for ppem in [0u16, 48] {
+        let scale = if ppem == 0 {
+            Scale::Unscaled
+        } else {
+            Scale::pixels(font, ppem, ppem)
+        };
+        if ppem > 0 {
+            ft.set_ppem(u32::from(ppem));
+        }
+        hb.set_ppem(u32::from(ppem));
+        let mut scratch = Scratch::default();
+        let label = if ppem == 0 {
+            "outline unscaled".to_string()
+        } else {
+            format!("outline {ppem}px")
+        };
+        b.item(
+            name,
+            label,
+            &mut || {
+                (0..n)
+                    .map(|g| {
+                        let mut count = 0u64;
+                        let mut pen = FnPen(|c| {
+                            if c != Command::Close {
+                                count += 1;
+                            }
+                        });
+                        match outlines.draw(GlyphId(g), scale, &mut scratch, &mut pen) {
+                            Ok(_) => count,
+                            Err(_) => u64::MAX,
+                        }
+                    })
+                    .fold(0u64, u64::wrapping_add)
+            },
+            Some((
+                &mut || {
+                    (0..n)
+                        .map(|g| wrap(ft.outline(g, ppem == 0)))
+                        .fold(0, u64::wrapping_add)
+                },
+                Compare::Yes,
+            )),
+            Some((
+                &mut || (0..n).map(|g| wrap(hb.draw(g))).fold(0, u64::wrapping_add),
+                Compare::No,
+            )),
+        );
+    }
+
+    // Rendering: the sum of all pixels of every glyph.
+    eprintln!("{name}: {n} glyphs");
+    for ppem in [12u16, 24, 48, 96] {
+        ft.set_ppem(u32::from(ppem));
+        let mut scratch = Scratch::default();
+        let mut raster = Rasterizer::new();
+        let mut ours = |glyphs: &mut dyn Iterator<Item = u32>| {
+            glyphs
+                .map(|g| {
+                    match sofel_cli::glyph::render(
+                        &outlines,
+                        GlyphId(g),
+                        ppem,
+                        &mut scratch,
+                        &mut raster,
+                    ) {
+                        Ok(bm) => bm.pixels.iter().map(|&v| u64::from(v)).sum(),
+                        Err(_) => u64::MAX,
+                    }
+                })
+                .fold(0u64, u64::wrapping_add)
+        };
+        let theirs = |glyphs: &mut dyn Iterator<Item = u32>| {
+            glyphs
+                .map(|g| wrap(ft.render(g)))
+                .fold(0, u64::wrapping_add)
+        };
+        let item = format!("raster {ppem}px");
+        if b.wanted(name, &item) {
+            let (o, t) = (ours(&mut (0..n)), theirs(&mut (0..n)));
+            b.checks.push(Check {
+                item: format!("{item} (FreeType)"),
+                font: name.to_string(),
+                ok: o == t,
+                detail: format!("sofel {o}, FreeType {t}"),
+            });
+        }
+        b.item(
+            name,
+            item,
+            &mut || ours(&mut (0..n)),
+            Some((&mut || theirs(&mut (0..n)), Compare::No)),
+            None,
+        );
+    }
+}
+
 fn main() {
     let a = args();
     let text: Vec<u32> = TEXTS
@@ -443,13 +579,14 @@ fn main() {
                 Compare::Yes,
             )),
         );
+        let v_boxes = HbExtents::new(&font);
         b.item(
             name,
             "v origin".into(),
             &mut || {
                 (0..n)
                     .map(|g| {
-                        let (x, y) = font.v_origin(GlyphId(g), |g| font.glyf_extents(g));
+                        let (x, y) = font.v_origin(GlyphId(g), |g| v_boxes.glyph_extents(g));
                         wrap(i64::from(x) + i64::from(y))
                     })
                     .sum()
@@ -461,102 +598,7 @@ fn main() {
             )),
         );
 
-        // Outlines: the number of commands (without closes) of every glyph.
-        for ppem in [0u16, 48] {
-            let scale = if ppem == 0 {
-                Scale::Unscaled
-            } else {
-                Scale::pixels(&font, ppem, ppem)
-            };
-            if ppem > 0 {
-                ft.set_ppem(u32::from(ppem));
-            }
-            hb.set_ppem(u32::from(ppem));
-            let mut scratch = Scratch::default();
-            let label = if ppem == 0 {
-                "outline unscaled".to_string()
-            } else {
-                format!("outline {ppem}px")
-            };
-            b.item(
-                name,
-                label,
-                &mut || {
-                    (0..n)
-                        .map(|g| {
-                            let mut count = 0u64;
-                            let mut pen = FnPen(|c| {
-                                if c != Command::Close {
-                                    count += 1;
-                                }
-                            });
-                            match draw(&font, GlyphId(g), scale, &mut scratch, &mut pen) {
-                                Ok(_) => count,
-                                Err(_) => u64::MAX,
-                            }
-                        })
-                        .fold(0u64, u64::wrapping_add)
-                },
-                Some((
-                    &mut || {
-                        (0..n)
-                            .map(|g| wrap(ft.outline(g, ppem == 0)))
-                            .fold(0, u64::wrapping_add)
-                    },
-                    Compare::Yes,
-                )),
-                Some((
-                    &mut || (0..n).map(|g| wrap(hb.draw(g))).fold(0, u64::wrapping_add),
-                    Compare::No,
-                )),
-            );
-        }
-
-        // Rendering: the sum of all pixels of every glyph.
-        eprintln!("{name}: {n} glyphs");
-        for ppem in [12u16, 24, 48, 96] {
-            ft.set_ppem(u32::from(ppem));
-            let mut scratch = Scratch::default();
-            let mut raster = Rasterizer::new();
-            let mut ours = |glyphs: &mut dyn Iterator<Item = u32>| {
-                glyphs
-                    .map(|g| {
-                        match sofel_cli::glyph::render(
-                            &font,
-                            GlyphId(g),
-                            ppem,
-                            &mut scratch,
-                            &mut raster,
-                        ) {
-                            Ok(bm) => bm.pixels.iter().map(|&v| u64::from(v)).sum(),
-                            Err(_) => u64::MAX,
-                        }
-                    })
-                    .fold(0u64, u64::wrapping_add)
-            };
-            let theirs = |glyphs: &mut dyn Iterator<Item = u32>| {
-                glyphs
-                    .map(|g| wrap(ft.render(g)))
-                    .fold(0, u64::wrapping_add)
-            };
-            let item = format!("raster {ppem}px");
-            if b.wanted(name, &item) {
-                let (o, t) = (ours(&mut (0..n)), theirs(&mut (0..n)));
-                b.checks.push(Check {
-                    item: format!("{item} (FreeType)"),
-                    font: name.to_string(),
-                    ok: o == t,
-                    detail: format!("sofel {o}, FreeType {t}"),
-                });
-            }
-            b.item(
-                name,
-                item,
-                &mut || ours(&mut (0..n)),
-                Some((&mut || theirs(&mut (0..n)), Compare::No)),
-                None,
-            );
-        }
+        outline_items(&mut b, name, &font, &ft, &hb);
     }
     let failed = report_checks(&b.checks);
     if !a.once {

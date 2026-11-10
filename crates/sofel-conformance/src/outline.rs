@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use sofel_font::Font;
 use sofel_font::read::{GlyphId, Tag};
 use sofel_geom::{Command, FnPen};
-use sofel_outline::{Scale, Scratch, draw};
+use sofel_outline::{Outlines, Scale, Scratch};
 
 /// The lines of one glyph, with error codes dropped (`error`).
 pub type GlyphLines = Vec<String>;
@@ -74,10 +74,14 @@ pub fn parse(text: &str) -> Result<BTreeMap<u32, FaceOutlines>, String> {
 }
 
 /// The lines sofel produces for one glyph, in the same form.
-pub fn sofel_glyph(font: &Font<'_>, glyph: u32, scale: Scale, scratch: &mut Scratch) -> GlyphLines {
+pub fn sofel_glyph(
+    outlines: &Outlines<'_>,
+    glyph: u32,
+    scale: Scale,
+    scratch: &mut Scratch,
+) -> GlyphLines {
     let mut lines = Vec::new();
-    let r = draw(
-        font,
+    let r = outlines.draw(
         GlyphId(glyph),
         scale,
         scratch,
@@ -107,8 +111,12 @@ pub fn sofel_glyph(font: &Font<'_>, glyph: u32, scale: Scale, scratch: &mut Scra
     lines
 }
 
-/// Whether sofel draws this face's outlines from glyf or GLYF.
+/// Whether sofel draws this face's outlines: from glyf or GLYF, or
+/// (for `OTTO` fonts) from CFF or CFF2 (ADR 0021).
 pub fn has_glyf(font: &Font<'_>) -> bool {
+    if font.sfnt().version() == u32::from_be_bytes(*b"OTTO") {
+        return sofel_font::Cff::new(font).is_ok();
+    }
     font.table(Tag::new(b"glyf")).is_some() || font.table(Tag::new(b"GLYF")).is_some()
 }
 

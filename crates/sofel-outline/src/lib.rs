@@ -15,6 +15,13 @@
 //! the other phantom points are not computed. Not done here (ADR 0011):
 //! hinting and variations.
 //!
+//! CFF and CFF2 outlines (ADR 0021) are ported from FreeType 2.15.0's
+//! `src/psaux/psft.c` (the builder callbacks), `src/psaux/psobjs.c`
+//! (`ps_builder_*`) and `src/cff/cffgload.c` (`cff_slot_load`); the
+//! charstrings themselves are decoded by `sofel_read::cff::charstring`.
+//! The Adobe files carry a patent license besides the FTL; see
+//! THIRD_PARTY_NOTICES.md.
+//!
 //! Points are in font units ([`Scale::Unscaled`]) or 26.6 fixed point
 //! ([`Scale::Scaled`]), with y growing upwards as in the font.
 //!
@@ -62,10 +69,11 @@ pub use hb_cff::{HbExtents, cff1_extents, cff2_extents};
 use alloc::vec::Vec;
 use core::fmt;
 
-use sofel_font::Font;
+use sofel_font::read::cff::charstring::Work;
 use sofel_font::read::glyf::{self, Component, Glyph, SCALED_COMPONENT_OFFSET, USE_MY_METRICS};
 use sofel_font::read::loca::{self, Loca};
 use sofel_font::read::{GlyphId, Tag};
+use sofel_font::{Cff, CffError, Font};
 use sofel_geom::{Fixed, Matrix, Pen, Point, div_fix, mul_fix, transform, vector_length};
 
 /// How to scale font units.
@@ -135,6 +143,14 @@ pub enum OutlineError {
     InvalidOutline,
     /// A composite glyph is broken, recursive, or too deep.
     InvalidComposite,
+    /// The font has no outline table this crate reads: an `OTTO` font
+    /// without `CFF ` or `CFF2`, which FreeType cannot open (ADR 0021).
+    UnsupportedFormat,
+    /// The CFF or CFF2 table cannot be opened ([`Cff::new`] fails; FreeType
+    /// cannot open the face).
+    InvalidCff,
+    /// A charstring cannot be decoded, or its Font DICT cannot be read.
+    InvalidCharString,
 }
 
 impl fmt::Display for OutlineError {
@@ -144,6 +160,9 @@ impl fmt::Display for OutlineError {
             OutlineError::NoGlyphData => "no glyf and loca tables",
             OutlineError::InvalidOutline => "invalid outline",
             OutlineError::InvalidComposite => "invalid composite glyph",
+            OutlineError::UnsupportedFormat => "no outline table",
+            OutlineError::InvalidCff => "invalid CFF table",
+            OutlineError::InvalidCharString => "invalid charstring",
         })
     }
 }
@@ -165,6 +184,8 @@ pub struct Scratch {
     components: Vec<Component>,
     /// Glyph ids of the composites being loaded, for cycle detection.
     stack: Vec<u32>,
+    /// The work area of the Type 2 charstring decoder (ADR 0021).
+    cff: Work,
 }
 
 const TAG_ON: u8 = 1;
@@ -243,6 +264,9 @@ impl Context<'_> {
 /// [`Scale::Unscaled`]) followed by `FT_Outline_Decompose` would: [`load`]
 /// and then [`Scratch::decompose`] with no offset. On an error, the
 /// commands sent so far stay sent.
+///
+/// This picks the outline format at every call ([`Outlines::new`]); a
+/// caller that draws many glyphs of a CFF font keeps an [`Outlines`].
 pub fn draw(
     font: &Font<'_>,
     glyph: GlyphId,
@@ -250,9 +274,114 @@ pub fn draw(
     scratch: &mut Scratch,
     pen: &mut impl Pen,
 ) -> Result<OutlineInfo, OutlineError> {
-    let info = load(font, glyph, scale, scratch)?;
-    scratch.decompose(Point::default(), 1, pen)?;
-    Ok(info)
+    Outlines::new(font).draw(glyph, scale, scratch, pen)
+}
+
+/// How a font's outlines are read: chosen as FreeType chooses its driver.
+#[derive(Clone, Copy, Debug)]
+#[allow(clippy::large_enum_variant)]
+enum Format<'a> {
+    Glyf,
+    Cff(Cff<'a>),
+    Unsupported(OutlineError),
+}
+
+/// The outlines of a font: the caller's value, made once per font
+/// (ADR 0021). The format is chosen as FreeType chooses its driver: a
+/// font whose sfnt version is `OTTO` is read from `CFF2` or `CFF `
+/// ([`Cff::new`]), any other from `glyf` and `loca` (or `GLYF` and
+/// `LOCA`). For glyf fonts it costs nothing over [`draw`]; for CFF fonts
+/// it keeps the opened table.
+#[derive(Clone, Copy, Debug)]
+pub struct Outlines<'a> {
+    font: Font<'a>,
+    format: Format<'a>,
+    extents: HbExtents<'a>,
+}
+
+impl<'a> Outlines<'a> {
+    /// The outlines of `font`. Also builds HarfBuzz's CFF accelerators
+    /// for [`Outlines::glyph_extents`] ([`HbExtents::new`]).
+    pub fn new(font: &Font<'a>) -> Outlines<'a> {
+        let format = if font.sfnt().version() == u32::from_be_bytes(*b"OTTO") {
+            match Cff::new(font) {
+                Ok(c) => Format::Cff(c),
+                Err(CffError::NotCff) => Format::Unsupported(OutlineError::UnsupportedFormat),
+                Err(_) => Format::Unsupported(OutlineError::InvalidCff),
+            }
+        } else {
+            Format::Glyf
+        };
+        Outlines {
+            font: *font,
+            format,
+            extents: HbExtents::new(font),
+        }
+    }
+
+    /// HarfBuzz's glyph box of `glyph`, unscaled
+    /// (`hb_ot_get_glyph_extents` without color and bitmap glyphs, in the
+    /// order VARC (none yet), glyf, CFF2, CFF; ADR 0021). It comes from
+    /// HarfBuzz's own interpreter and may differ from the control box of
+    /// [`Outlines::draw`], which follows FreeType.
+    pub fn glyph_extents(&self, glyph: GlyphId) -> Option<sofel_font::GlyphExtents> {
+        self.extents.glyph_extents(glyph)
+    }
+
+    /// The HarfBuzz glyph boxes this value holds.
+    pub fn hb_extents(&self) -> &HbExtents<'a> {
+        &self.extents
+    }
+
+    /// The font.
+    pub fn font(&self) -> &Font<'a> {
+        &self.font
+    }
+
+    /// The opened CFF or CFF2 table, for CFF fonts.
+    pub fn cff(&self) -> Option<&Cff<'a>> {
+        match &self.format {
+            Format::Cff(c) => Some(c),
+            _ => None,
+        }
+    }
+
+    /// Draws `glyph` into `pen` as FreeType's `FT_Load_Glyph` with
+    /// `FT_LOAD_NO_HINTING` (and `FT_LOAD_NO_SCALE` for
+    /// [`Scale::Unscaled`]) followed by `FT_Outline_Decompose` would:
+    /// [`Outlines::load`] and then [`Scratch::decompose`] with no offset.
+    pub fn draw(
+        &self,
+        glyph: GlyphId,
+        scale: Scale,
+        scratch: &mut Scratch,
+        pen: &mut impl Pen,
+    ) -> Result<OutlineInfo, OutlineError> {
+        let info = self.load(glyph, scale, scratch)?;
+        scratch.decompose(Point::default(), 1, pen)?;
+        Ok(info)
+    }
+
+    /// Loads the points of `glyph` into `scratch` as `FT_Load_Glyph` with
+    /// `FT_LOAD_NO_HINTING` would; see [`load`] for glyf fonts. CFF and
+    /// CFF2 glyphs follow FreeType's Adobe engine without hinting: points
+    /// in whole font units (fractions truncated), the FontMatrix applied,
+    /// then the scale; never overlapping.
+    pub fn load(
+        &self,
+        glyph: GlyphId,
+        scale: Scale,
+        scratch: &mut Scratch,
+    ) -> Result<OutlineInfo, OutlineError> {
+        match &self.format {
+            Format::Glyf => load_glyf(&self.font, glyph, scale, scratch),
+            Format::Cff(c) => load_cff(&self.font, c, glyph, scale, scratch),
+            Format::Unsupported(e) => {
+                scratch.clear();
+                Err(*e)
+            }
+        }
+    }
 }
 
 /// Loads the points of `glyph` into `scratch`, as `FT_Load_Glyph` with
@@ -262,7 +391,18 @@ pub fn draw(
 /// bearing ([`Font::ft_left_side_bearing`]). A composite glyph takes the
 /// phantom point of its last component with USE_MY_METRICS, if any.
 /// Use [`Scratch::decompose`] to draw them.
+///
+/// This picks the outline format at every call; see [`Outlines`].
 pub fn load(
+    font: &Font<'_>,
+    glyph: GlyphId,
+    scale: Scale,
+    scratch: &mut Scratch,
+) -> Result<OutlineInfo, OutlineError> {
+    Outlines::new(font).load(glyph, scale, scratch)
+}
+
+fn load_glyf(
     font: &Font<'_>,
     glyph: GlyphId,
     scale: Scale,
@@ -315,6 +455,14 @@ pub fn load(
 }
 
 impl Scratch {
+    fn clear(&mut self) {
+        self.points.clear();
+        self.tags.clear();
+        self.ends.clear();
+        self.components.clear();
+        self.stack.clear();
+    }
+
     /// Sends the outline last loaded by [`load`] to `pen`, as
     /// `FT_Outline_Decompose` would after `FT_Outline_Translate` by
     /// `offset` and multiplying every point by `multiplier`. FreeType's
@@ -669,3 +817,6 @@ fn decompose(
     }
     Ok(())
 }
+
+mod cff;
+use cff::load_cff;

@@ -729,6 +729,35 @@ impl<'a> Font<'a> {
         glyph: GlyphId,
         string: &dyn Fn(usize) -> Option<&'a [u8]>,
     ) -> Option<&'a [u8]> {
+        match self.ft_face() {
+            FtFace::Sfnt => self.ft_post_glyph_name(glyph, self.num_glyphs, string),
+            FtFace::Cff(c) => c.ft_glyph_name(glyph),
+            FtFace::Cff2(n) => self.ft_post_glyph_name(glyph, n, string),
+            FtFace::Closed => None,
+        }
+    }
+
+    /// How FreeType opens the face for glyph names: the TrueType driver
+    /// (sfnt names from `post`), the CFF driver with CFF (the charset) or
+    /// CFF2 (`post`, with the CharStrings count), or not at all (ADR 0021).
+    pub(crate) fn ft_face(&self) -> FtFace<'a> {
+        if self.sfnt.version() != u32::from_be_bytes(*b"OTTO") {
+            return FtFace::Sfnt;
+        }
+        match crate::Cff::new(self) {
+            Ok(c) if c.version() == sofel_read::cff::Version::Cff => FtFace::Cff(c),
+            Ok(c) if c.has_glyph_names() => FtFace::Cff2(c.num_glyphs()),
+            Ok(_) => FtFace::Closed,
+            Err(_) => FtFace::Closed,
+        }
+    }
+
+    fn ft_post_glyph_name(
+        &self,
+        glyph: GlyphId,
+        num_glyphs: u32,
+        string: &dyn Fn(usize) -> Option<&'a [u8]>,
+    ) -> Option<&'a [u8]> {
         let data = self.table(post::TAG)?;
         let version = be::u32_at(data, 0)?;
         if data.len() < 32
@@ -736,17 +765,17 @@ impl<'a> Font<'a> {
                 version,
                 post::VERSION_1 | post::VERSION_2 | post::VERSION_2_5
             )
-            || glyph.0 >= self.num_glyphs
+            || glyph.0 >= num_glyphs
         {
             return None;
         }
         let notdef = post::MAC_GLYPH_NAMES[0].as_bytes();
         let mac = |i: u16| post::mac_glyph_name(i).map_or(notdef, str::as_bytes);
         let n = be::u16_at(data, 32).map_or(0, u32::from);
-        let loaded = data.len() >= 34 && n != 0 && n <= self.num_glyphs;
+        let loaded = data.len() >= 34 && n != 0 && n <= num_glyphs;
         let g = u16::try_from(glyph.0).ok();
         Some(match version {
-            post::VERSION_1 if self.num_glyphs == 258 => mac(g?),
+            post::VERSION_1 if num_glyphs == 258 => mac(g?),
             post::VERSION_1 => notdef,
             _ if !loaded || glyph.0 >= n => notdef,
             post::VERSION_2 => {
@@ -793,8 +822,11 @@ impl<'a> Font<'a> {
         Some(s.split(|&b| b == 0).next().unwrap_or_default())
     }
 
-    /// The name of a glyph as FreeType's `FT_Get_Glyph_Name` gives it for
-    /// sfnt fonts (`tt_face_get_ps_name`), which differs from
+    /// The name of a glyph as FreeType's `FT_Get_Glyph_Name` gives it. For
+    /// CFF fonts (ADR 0021): the charset name ([`crate::Cff::ft_glyph_name`];
+    /// this builds the [`crate::Cff`] at each call), for CFF2 the `post`
+    /// names below. For other sfnt fonts (`tt_face_get_ps_name`), which
+    /// differs from
     /// [`Font::glyph_name`]: `.notdef` for glyphs without a stored name,
     /// version 1.0 only with exactly 258 glyphs, version 2.5 read, and
     /// stored names cut at a 0 byte or at the end of the table. `None`
@@ -870,6 +902,7 @@ impl<'a> Font<'a> {
             font: *self,
             gids: &[],
             offsets,
+            ft: self.ft_face(),
             cff,
             cff_gids: &[],
             cff_sids,
@@ -898,6 +931,7 @@ impl<'a> Font<'a> {
             font: *self,
             gids,
             offsets,
+            ft: self.ft_face(),
             cff,
             cff_gids,
             cff_sids,
@@ -1054,6 +1088,17 @@ pub struct GlyphNames<'a, 'b> {
     cff_gids: &'b [u32],
     /// The SID of each glyph.
     cff_sids: &'b [u32],
+    ft: FtFace<'a>,
+}
+
+/// The driver FreeType opens a face with, as far as glyph names go.
+#[derive(Clone, Copy, Debug)]
+#[allow(clippy::large_enum_variant)]
+pub(crate) enum FtFace<'a> {
+    Sfnt,
+    Cff(crate::Cff<'a>),
+    Cff2(u32),
+    Closed,
 }
 
 impl<'a> GlyphNames<'a, '_> {
@@ -1146,16 +1191,34 @@ impl<'a> GlyphNames<'a, '_> {
     /// [`Font::ft_glyph_name`] is `name`. FreeType returns 0 both for
     /// glyph 0 and for no match; this gives `None` for no match.
     pub fn ft_glyph_from_name(&self, name: &[u8]) -> Option<GlyphId> {
-        let string = |k: usize| self.font.ft_post_string_indexed(k, self);
-        (0..self.font.num_glyphs())
+        match self.ft {
+            FtFace::Cff(c) => {
+                let g = c.ft_glyph_from_name(name);
+                return (c.ft_glyph_name(g) == Some(name)).then_some(g);
+            }
+            FtFace::Closed => return None,
+            _ => {}
+        }
+        let n = match self.ft {
+            FtFace::Cff2(n) => n,
+            _ => self.font.num_glyphs(),
+        };
+        (0..n)
             .map(GlyphId)
-            .find(|&g| self.font.ft_glyph_name_with(g, &string) == Some(name))
+            .find(|&g| self.ft_glyph_name(g) == Some(name))
     }
 
     /// [`Font::ft_glyph_name`], with the strings looked up in the index.
     pub fn ft_glyph_name(&self, glyph: GlyphId) -> Option<&'a [u8]> {
         let string = |k: usize| self.font.ft_post_string_indexed(k, self);
-        self.font.ft_glyph_name_with(glyph, &string)
+        match self.ft {
+            FtFace::Sfnt => self
+                .font
+                .ft_post_glyph_name(glyph, self.font.num_glyphs, &string),
+            FtFace::Cff(c) => c.ft_glyph_name(glyph),
+            FtFace::Cff2(n) => self.font.ft_post_glyph_name(glyph, n, &string),
+            FtFace::Closed => None,
+        }
     }
 }
 

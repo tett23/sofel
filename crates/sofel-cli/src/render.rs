@@ -5,7 +5,7 @@ use std::io::Write;
 
 use sofel_font::Font;
 use sofel_font::read::GlyphId;
-use sofel_outline::Scratch;
+use sofel_outline::{Outlines, Scratch};
 use sofel_raster::Rasterizer;
 
 use crate::glyph;
@@ -131,7 +131,8 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
     };
     let mut scratch = Scratch::default();
     let mut raster = Rasterizer::new();
-    let b = match glyph::render(&font, glyph, args.ppem, &mut scratch, &mut raster) {
+    let outlines = Outlines::new(&font);
+    let b = match glyph::render(&outlines, glyph, args.ppem, &mut scratch, &mut raster) {
         Ok(b) => b,
         Err(e) => return fail(err, format!("glyph {}: {e}", glyph.0)),
     };

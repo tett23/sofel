@@ -13,6 +13,7 @@
     clippy::cast_sign_loss
 )]
 
+pub mod cff_info;
 pub mod compare;
 pub mod dump;
 pub mod expect;

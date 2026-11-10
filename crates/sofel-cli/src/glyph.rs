@@ -5,9 +5,8 @@
 
 use std::fmt;
 
-use sofel_font::Font;
 use sofel_font::read::GlyphId;
-use sofel_outline::{OutlineError, Scale, Scratch, load};
+use sofel_outline::{OutlineError, Outlines, Scale, Scratch};
 use sofel_raster::{Bitmap, FillRule, RasterError, Rasterizer, RenderOptions, pixel_box};
 
 /// Why [`render`] failed.
@@ -44,14 +43,19 @@ impl std::error::Error for RenderError {}
 /// [`RenderError::Outline`] if the glyph's outline cannot be loaded, and
 /// [`RenderError::Raster`] if the bitmap would be too large, including
 /// wider or taller than 16 times `ppem` as in FreeType.
+///
+/// `outlines` is the font's [`Outlines`], which the caller makes once per
+/// font.
 pub fn render<'r>(
-    font: &Font<'_>,
+    outlines: &Outlines<'_>,
     glyph: GlyphId,
     ppem: u16,
     scratch: &mut Scratch,
     raster: &'r mut Rasterizer,
 ) -> Result<Bitmap<'r>, RenderError> {
-    let info = load(font, glyph, Scale::pixels(font, ppem, ppem), scratch)
+    let font = outlines.font();
+    let info = outlines
+        .load(glyph, Scale::pixels(font, ppem, ppem), scratch)
         .map_err(RenderError::Outline)?;
     let c = info.cbox;
     let b = pixel_box(c.x_min, c.y_min, c.x_max, c.y_max);

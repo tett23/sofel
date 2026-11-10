@@ -12,6 +12,7 @@
 #include FT_FREETYPE_H
 #include FT_ADVANCES_H
 #include FT_OUTLINE_H
+#include FT_CID_H
 
 #include <hb.h>
 #include <hb-ot.h>
@@ -33,6 +34,15 @@ void *bft_open(const unsigned char *data, long len, long index)
 void bft_close(void *face) { FT_Done_Face((FT_Face)face); }
 
 long bft_num_glyphs(void *face) { return ((FT_Face)face)->num_glyphs; }
+
+/* FT_Get_CID_From_Glyph_Index; -1 on error (ADR 0021). */
+long bft_cid(void *face, unsigned gid)
+{
+  FT_UInt cid = 0;
+  if (FT_Get_CID_From_Glyph_Index((FT_Face)face, gid, &cid) != 0)
+    return -1;
+  return (long)cid;
+}
 
 int bft_set_pixel_sizes(void *face, unsigned ppem)
 {

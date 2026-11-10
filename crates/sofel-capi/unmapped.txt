@@ -72,3 +72,35 @@ sofel_shape::SerializeFormat::name C ABI comes with ADR 0020 part 3.
 sofel_shape::SerializeFlags::contains A bit test, which C writes as such.
 sofel_shape::SerializeFlags::union A bitwise or, which C writes as such.
 sofel_shape::SerializeFont::* The Rust trait through which serialization asks the font; C passes a sofel font to the C counterparts of the serializers (ADR 0020 part 3).
+sofel_font::Cff::build_name_index C looks glyphs up by name through sofel_glyph_names_create, which covers CFF charset names (ADR 0021).
+sofel_font::Cff::glyph_from_name C looks glyphs up by name through sofel_glyph_names_glyph_from_name.
+sofel_font::Cff::charset_name C gets glyph names from sofel_font_glyph_name and sofel_font_ft_glyph_name, which read the charset.
+sofel_font::Cff::ft_glyph_name C gets FreeType's glyph names from sofel_font_ft_glyph_name.
+sofel_font::Cff::ft_glyph_from_name C uses sofel_glyph_names_ft_glyph_from_name.
+sofel_font::Cff::has_glyph_names FreeType's face flag; C sees it as sofel_font_ft_glyph_name failing.
+sofel_font::Cff::from_table Bare CFF is a later ADR; C opens sfnt fonts with sofel_font_create, which opens the CFF.
+sofel_font::Cff::char_strings Rust views of the CFF structures for the outline crate; C reads the bytes with sofel_font_table.
+sofel_font::Cff::charset Rust views of the CFF structures; C reads CIDs with sofel_font_cid.
+sofel_font::Cff::data Rust view of the table; C reads the bytes with sofel_font_table.
+sofel_font::Cff::default_blend Rust blend weights for the decoder; C draws CFF2 with sofel_outline_draw.
+sofel_font::Cff::encoding Rust view; C reads the bytes with sofel_font_table.
+sofel_font::Cff::fd_select Rust view; C reads the bytes with sofel_font_table.
+sofel_font::Cff::font_dict Rust DICT structures; C reads the bytes with sofel_font_table.
+sofel_font::Cff::private_dict Rust DICT structures; C reads the bytes with sofel_font_table.
+sofel_font::Cff::top_dict Rust DICT structures; C gets the PostScript values with sofel_font_ps_font_info.
+sofel_font::Cff::fvar_axes A value the outline crate uses; C reads fvar with sofel_font_table.
+sofel_font::Cff::global_subrs Rust view for the decoder; C draws with sofel_outline_draw.
+sofel_font::Cff::local_subrs_sorted A cached flag for the decoder; C draws with sofel_outline_draw.
+sofel_font::Cff::subfont Per-glyph DICT values for the decoder; C draws with sofel_outline_draw.
+sofel_font::Cff::head_units_per_em C gets unitsPerEm from sofel_font_units_per_em.
+sofel_font::Cff::num_font_dicts Rust structure value; C reads the bytes with sofel_font_table.
+sofel_font::Cff::num_glyphs C gets the glyph count from sofel_font_num_glyphs.
+sofel_font::Cff::sid_string Rust string lookup; C gets the strings through sofel_font_ros and sofel_font_ps_font_info.
+sofel_font::Cff::top_matrix Applied by sofel_outline_load and sofel_outline_draw.
+sofel_font::Cff::variation_store Rust view; C reads the bytes with sofel_font_table.
+sofel_font::Cff::version C tells CFF from CFF2 with sofel_font_is_cff and sofel_font_is_cff2.
+sofel_font::CffMatrix::is_identity A helper of the Rust matrix value; C does not see the matrix.
+sofel_font::fs_type The /FSType rule on a byte string; C gets it for a font with sofel_font_ps_fs_type.
+sofel_outline::Outlines::cff The opened CFF that sofel_font_t keeps; C queries it with sofel_font_cid and friends.
+sofel_outline::Outlines::font Returns the Rust font; C keeps the sofel_font_t.
+sofel_outline::Outlines::hb_extents Returns the Rust boxes value; C gets boxes with sofel_font_glyph_extents.

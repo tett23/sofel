@@ -45,6 +45,7 @@ pub use sofel_read as read;
 
 mod base_sanitize;
 pub mod baseline;
+mod cff;
 mod float;
 mod ft;
 mod glyf_data;
@@ -55,6 +56,7 @@ mod name_language;
 mod names;
 mod tables;
 
+pub use cff::{Cff, CffError, CffMatrix, CidError, PsFontInfo, Ros, Subfont, fs_type};
 pub use ft::FtFaceMetrics;
 pub use hb_cff::{HbCff1, HbCff2};
 pub use layout::Direction;

@@ -2,9 +2,8 @@
 
 use std::fmt::Write;
 
-use sofel_font::Font;
 use sofel_font::read::GlyphId;
-use sofel_outline::Scratch;
+use sofel_outline::{Outlines, Scratch};
 use sofel_raster::Rasterizer;
 
 use crate::outline::GlyphLines;
@@ -12,13 +11,13 @@ use crate::outline::GlyphLines;
 /// The lines sofel produces for one glyph at `ppem`, in the same form
 /// as `ft-dump --raster` (error codes dropped).
 pub fn sofel_glyph(
-    font: &Font<'_>,
+    outlines: &Outlines<'_>,
     glyph: u32,
     ppem: u16,
     scratch: &mut Scratch,
     raster: &mut Rasterizer,
 ) -> GlyphLines {
-    let Ok(b) = sofel_cli::glyph::render(font, GlyphId(glyph), ppem, scratch, raster) else {
+    let Ok(b) = sofel_cli::glyph::render(outlines, GlyphId(glyph), ppem, scratch, raster) else {
         return vec!["error".to_string()];
     };
     let mut lines = vec![format!(

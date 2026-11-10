@@ -129,8 +129,9 @@ fn outlines_agree_with_freetype() {
                     continue;
                 }
                 let scale = scale_for(&font, size);
+                let outlines = sofel_outline::Outlines::new(&font);
                 for (glyph, ft_lines) in &ft.glyphs {
-                    let ours = sofel_glyph(&font, *glyph, scale, &mut scratch);
+                    let ours = sofel_glyph(&outlines, *glyph, scale, &mut scratch);
                     let ok = &ours == ft_lines;
                     let detail = if ok {
                         String::new()

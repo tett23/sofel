@@ -43,6 +43,9 @@ fn outline_error(e: OutlineError) -> i32 {
         OutlineError::NoGlyphData => -7,
         OutlineError::InvalidOutline => -8,
         OutlineError::InvalidComposite => -9,
+        OutlineError::UnsupportedFormat => -7,
+        OutlineError::InvalidCff => -13,
+        OutlineError::InvalidCharString => -8,
     }
 }
 
@@ -536,6 +539,29 @@ fn cff_metrics_font() -> Vec<u8> {
     otto_font(6, vec![(b"CFF ", cff1(&spec))])
 }
 
+/// A CID-keyed CFF font for the CID queries and the font information
+/// (ADR 0021): registry "Adobe", ordering "Japan1", supplement 6, glyph
+/// 1 CID 100, Notice "Note".
+fn cid_font() -> Vec<u8> {
+    use Cs::*;
+    let glyphs = vec![
+        charstring(&[Op(14)]),
+        charstring(&[Op(14)]),
+        charstring(&[Op(14)]),
+    ];
+    let mut spec = Cff1Spec::new(glyphs);
+    spec.private = None;
+    spec.charset = Some(vec![2, 0, 100, 0, 1]);
+    spec.strings = vec![b"Adobe".to_vec(), b"Japan1".to_vec(), b"Note".to_vec()];
+    spec.top = dict(&[(&[393], 1)]);
+    spec.cid = Some(CidSpec {
+        ros: (391, 392, 6),
+        fds: vec![(Vec::new(), Vec::new(), Vec::new())],
+        fd_select: vec![0, 0, 0, 0],
+    });
+    otto_font(3, vec![(b"CFF ", cff1(&spec))])
+}
+
 /// The HarfBuzz glyph names of the CFF font: name and the glyph found by
 /// it.
 fn cff_name_cases(out: &mut String, font: &Font<'_>) {
@@ -928,13 +954,15 @@ fn generate() -> String {
     // Rendering every glyph and one past the end.
     let mut cases = Vec::new();
     let mut raster = Rasterizer::new();
+    let outlines = sofel_outline::Outlines::new(&font);
     for g in 0..=font.num_glyphs() {
         for ppem in [16u16, 41] {
-            let r = sofel_cli::glyph::render(&font, GlyphId(g), ppem, &mut scratch, &mut raster)
-                .map_err(|e| match e {
-                    sofel_cli::glyph::RenderError::Outline(e) => outline_error(e),
-                    sofel_cli::glyph::RenderError::Raster(e) => raster_error(e),
-                });
+            let r =
+                sofel_cli::glyph::render(&outlines, GlyphId(g), ppem, &mut scratch, &mut raster)
+                    .map_err(|e| match e {
+                        sofel_cli::glyph::RenderError::Outline(e) => outline_error(e),
+                        sofel_cli::glyph::RenderError::Raster(e) => raster_error(e),
+                    });
             let bm = bitmap(r);
             let name = format!("render_{g}_{ppem}");
             bitmap_case(&mut out, &mut cases, &name, &format!("{g}, {ppem}, "), &bm);
@@ -1165,6 +1193,7 @@ fn generate() -> String {
         HbScale::for_font(&cfont, 768, -1536),
     );
     cff_name_cases(&mut out, &cfont);
+    bytes(&mut out, "cid_font_data", &cid_font());
     unicode(&mut out);
 
     // Validation.
