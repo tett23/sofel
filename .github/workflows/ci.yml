@@ -124,13 +124,24 @@ jobs:
       - id: testdata
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: target/testdata
+          path: |
+            target/testdata/harfbuzz
+            target/testdata/freetype
           key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-testdata-${{ hashFiles('testdata.lock') }}
       # With a cache hit, the offline mode fails if the cache is incomplete.
       - name: Fetch test data
         env:
           SOFEL_TESTDATA_OFFLINE: ${{ steps.testdata.outputs.cache-hit == 'true' && '1' || '0' }}
         run: sh scripts/fetch-testdata.sh
+      - id: extra_fonts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/testdata/extra-fonts
+          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-extra-fonts-${{ hashFiles('fonts.lock', 'conformance/fonts.tsv') }}
+      - name: Fetch extra fonts and licenses
+        env:
+          SOFEL_FONTS_OFFLINE: ${{ steps.extra_fonts.outputs.cache-hit == 'true' && '1' || '0' }}
+        run: sh scripts/fetch-fonts.sh
       # docs/adr/0019: the UCD files, pinned by SHA-256 in ucd.lock.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -243,12 +254,23 @@ jobs:
       - id: testdata
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: target/testdata
+          path: |
+            target/testdata/harfbuzz
+            target/testdata/freetype
           key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-testdata-${{ hashFiles('testdata.lock') }}
       - name: Fetch test data
         env:
           SOFEL_TESTDATA_OFFLINE: ${{ steps.testdata.outputs.cache-hit == 'true' && '1' || '0' }}
         run: sh scripts/fetch-testdata.sh
+      - id: extra_fonts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/testdata/extra-fonts
+          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-extra-fonts-${{ hashFiles('fonts.lock', 'conformance/fonts.tsv') }}
+      - name: Fetch extra fonts and licenses
+        env:
+          SOFEL_FONTS_OFFLINE: ${{ steps.extra_fonts.outputs.cache-hit == 'true' && '1' || '0' }}
+        run: sh scripts/fetch-fonts.sh
       - name: Hash CFF outlines on wasm32-wasip1
         run: |
           export CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=$GITHUB_WORKSPACE/target/testdata::/testdata --env SOFEL_TESTDATA=/testdata --env SOFEL_REQUIRE_TESTDATA=1"
@@ -267,6 +289,10 @@ jobs:
         run: |
           export CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=$GITHUB_WORKSPACE::$GITHUB_WORKSPACE"
           cargo test --release --target wasm32-wasip1 -p sofel-conformance --test harfbuzz_subset
+      - name: Test extra font corpus on wasm32-wasip1
+        run: |
+          export CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=$GITHUB_WORKSPACE/target/testdata::/testdata --env SOFEL_TESTDATA=/testdata"
+          cargo test --release --target wasm32-wasip1 -p sofel-conformance --test extra_registry --test extra_structure --test extra_cmap --test extra_metrics --test extra_outline --test extra_shape --test extra_color --test extra_variation
 
   # docs/adr/0007
   fuzz:
@@ -310,12 +336,23 @@ jobs:
       - id: testdata
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: target/testdata
+          path: |
+            target/testdata/harfbuzz
+            target/testdata/freetype
           key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-testdata-${{ hashFiles('testdata.lock') }}
       - name: Fetch test data
         env:
           SOFEL_TESTDATA_OFFLINE: ${{ steps.testdata.outputs.cache-hit == 'true' && '1' || '0' }}
         run: sh scripts/fetch-testdata.sh
+      - id: extra_fonts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/testdata/extra-fonts
+          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-extra-fonts-${{ hashFiles('fonts.lock', 'conformance/fonts.tsv') }}
+      - name: Fetch extra fonts and licenses
+        env:
+          SOFEL_FONTS_OFFLINE: ${{ steps.extra_fonts.outputs.cache-hit == 'true' && '1' || '0' }}
+        run: sh scripts/fetch-fonts.sh
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target/wasi-sdk
@@ -373,7 +410,9 @@ jobs:
       - id: testdata
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: target/testdata
+          path: |
+            target/testdata/harfbuzz
+            target/testdata/freetype
           key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-testdata-${{ hashFiles('testdata.lock') }}
       - name: Fetch test data
         env:

@@ -37,6 +37,24 @@ const FONTS: [(&str, &str); 5] = [
     ),
 ];
 
+/// One file for each role in ADR 0031's fixed extra corpus. `--once`
+/// checks bounded cmap and advance samples against both references.
+const EXTRA_FONTS: [(&str, &str); 13] = [
+    ("extra/arabic", "extra-fonts/fonts/arabic.ttf"),
+    ("extra/devanagari", "extra-fonts/fonts/devanagari.ttf"),
+    ("extra/khmer", "extra-fonts/fonts/khmer.ttf"),
+    ("extra/myanmar", "extra-fonts/fonts/myanmar.ttf"),
+    ("extra/balinese", "extra-fonts/fonts/balinese.ttf"),
+    ("extra/hebrew", "extra-fonts/fonts/hebrew.ttf"),
+    ("extra/source-serif", "extra-fonts/fonts/source-serif.otf"),
+    ("extra/stix-math", "extra-fonts/fonts/stix-math.otf"),
+    ("extra/source-han", "extra-fonts/fonts/source-han.ttc"),
+    ("extra/amstelvar", "extra-fonts/fonts/amstelvar.ttf"),
+    ("extra/color-cff", "extra-fonts/fonts/color-cff.otf"),
+    ("extra/color-sbix", "extra-fonts/fonts/color-sbix.ttf"),
+    ("extra/color-svg", "extra-fonts/fonts/color-svg.ttf"),
+];
+
 /// The CFF and CFF2 fonts of HarfBuzz's perf/benchmark-font.cc (the
 /// CFF2 one at its default instance) and a CID-keyed Japanese font
 /// (ADR 0021).
@@ -68,7 +86,10 @@ const TEXTS: [&str; 4] = [
 
 /// The color fonts of ADR 0023: COLRv0, COLRv1 (glyf and CFF layers
 /// alike), CBDT, sbix and SVG.
-const COLOR_FONTS: [(&str, &str); 6] = [
+const COLOR_FONTS: [(&str, &str); 9] = [
+    ("extra/color-cff", "extra-fonts/fonts/color-cff.otf"),
+    ("extra/color-sbix", "extra-fonts/fonts/color-sbix.ttf"),
+    ("extra/color-svg", "extra-fonts/fonts/color-svg.ttf"),
     (
         "TwemojiMozilla.subset",
         "harfbuzz/test/subset/data/fonts/TwemojiMozilla.subset.ttf",
@@ -202,6 +223,166 @@ fn time(once: bool, body: Body<'_>) -> Option<Stats> {
             body,
             &Config::default(),
         ))
+    }
+}
+
+fn extra_items(b: &mut Bench, testdata: &std::path::Path) {
+    const CHARS: [u32; 10] = [
+        0x41, 0x627, 0x915, 0x1780, 0x1000, 0x1b05, 0x5b57, 0x2211, 0x5d0, 0x1f600,
+    ];
+    for (name, path) in EXTRA_FONTS {
+        if ![
+            "cmap",
+            "advance",
+            "outline unscaled sampled",
+            "vertical advance",
+            "MATH constants",
+        ]
+        .iter()
+        .any(|item| b.wanted(name, item))
+        {
+            continue;
+        }
+        let path = testdata.join(path);
+        let bytes = std::fs::read(&path)
+            .unwrap_or_else(|e| panic!("{}: {e}; run scripts/fetch-fonts.sh", path.display()));
+        let font = Font::new(&bytes, 0).expect("sofel opens the extra font");
+        let ft = FtFace::open(&bytes).expect("FreeType opens the extra font");
+        let hb = HbFont::open(&bytes).expect("HarfBuzz opens the extra font");
+        hb.set_ppem(0);
+        let n = font.num_glyphs().min(128);
+        b.item(
+            name,
+            "cmap".into(),
+            &mut || {
+                CHARS
+                    .iter()
+                    .map(|&c| u64::from(font.nominal_glyph(c).map_or(0, |g| g.0)))
+                    .sum()
+            },
+            Some((
+                &mut || CHARS.iter().map(|&c| u64::from(ft.char_index(c))).sum(),
+                Compare::Yes,
+            )),
+            Some((
+                &mut || CHARS.iter().map(|&c| u64::from(hb.nominal_glyph(c))).sum(),
+                Compare::Yes,
+            )),
+        );
+        b.item(
+            name,
+            "advance".into(),
+            &mut || (0..n).map(|g| u64::from(font.advance(GlyphId(g)))).sum(),
+            Some((
+                &mut || (0..n).map(|g| wrap(ft.advance(g))).sum(),
+                Compare::Yes,
+            )),
+            Some((
+                &mut || (0..n).map(|g| wrap(hb.advance(g))).sum(),
+                Compare::Yes,
+            )),
+        );
+        let outlines = Outlines::new(&font);
+        let mut scratch = Scratch::default();
+        b.item(
+            name,
+            "outline unscaled sampled".into(),
+            &mut || {
+                (0..n)
+                    .map(|g| {
+                        let mut count = 0u64;
+                        let mut pen = FnPen(|command| {
+                            if command != Command::Close {
+                                count += 1;
+                            }
+                        });
+                        match outlines.draw(GlyphId(g), Scale::Unscaled, &mut scratch, &mut pen) {
+                            Ok(_) => count,
+                            Err(_) => u64::MAX,
+                        }
+                    })
+                    .fold(0, u64::wrapping_add)
+            },
+            Some((
+                &mut || {
+                    (0..n)
+                        .map(|g| wrap(ft.outline(g, true)))
+                        .fold(0, u64::wrapping_add)
+                },
+                Compare::Yes,
+            )),
+            None,
+        );
+        if name == "extra/stix-math" {
+            let math = sofel_font::read::math::Math::new(
+                font.table(sofel_font::read::Tag::new(b"MATH"))
+                    .expect("MATH table"),
+            )
+            .expect("valid MATH");
+            let constants = math
+                .constants()
+                .expect("valid constants")
+                .expect("constants");
+            let constant = |index: u32| -> i64 {
+                match index {
+                    0 => i64::from(constants.script_percent_scale_down()),
+                    1 => i64::from(constants.script_script_percent_scale_down()),
+                    2 => i64::from(constants.delimited_sub_formula_min_height()),
+                    3 => i64::from(constants.display_operator_min_height()),
+                    4..=54 => i64::from(constants.value((index - 4) as usize).unwrap().value()),
+                    55 => i64::from(constants.radical_degree_bottom_raise_percent()),
+                    _ => unreachable!(),
+                }
+            };
+            for index in 0..56 {
+                let ours = constant(index);
+                let theirs = hb.math_constant(index);
+                b.checks.push(Check {
+                    font: name.into(),
+                    item: format!("MATH constant {index} (HarfBuzz)"),
+                    ok: ours == theirs,
+                    detail: format!("sofel={ours}, HarfBuzz={theirs}"),
+                });
+            }
+            b.item(
+                name,
+                "MATH constants".into(),
+                &mut || {
+                    (0..56)
+                        .map(|i| wrap(constant(i)))
+                        .fold(0, u64::wrapping_add)
+                },
+                None,
+                Some((
+                    &mut || {
+                        (0..56)
+                            .map(|i| wrap(hb.math_constant(i)))
+                            .fold(0, u64::wrapping_add)
+                    },
+                    Compare::Yes,
+                )),
+            );
+        }
+        if name == "extra/source-han" {
+            b.item(
+                name,
+                "vertical advance".into(),
+                &mut || {
+                    (0..n)
+                        .map(|g| wrap(i64::from(font.v_advance(GlyphId(g)))))
+                        .fold(0, u64::wrapping_add)
+                },
+                None,
+                Some((
+                    &mut || {
+                        (0..n)
+                            .map(|g| wrap(hb.v_advance(g)))
+                            .fold(0, u64::wrapping_add)
+                    },
+                    Compare::Yes,
+                )),
+            );
+        }
     }
 }
 
@@ -719,6 +900,23 @@ fn color_items(b: &mut Bench, testdata: &std::path::Path) {
         hb.set_ppem(0);
         let n = font.num_glyphs();
         let formats = sofel_color::color_formats(&font);
+        // The timing checksum counts paint commands; HarfBuzz adds root
+        // transforms. Verify the complete normalized paint stream separately.
+        if name == "extra/color-cff" && b.wanted(name, "COLRv1 paint") {
+            let reference = sofel_conformance::color::parse_paint(include_str!(
+                "../../conformance/extra-color-cff-paint-hb.txt"
+            ))
+            .expect("pinned HarfBuzz paint reference");
+            assert_eq!(reference.len(), 1);
+            for item in sofel_conformance::color::compare_paint(name, &font, &reference[0]) {
+                b.checks.push(Check {
+                    font: name.into(),
+                    item: format!("COLRv1 paint {} (HarfBuzz)", item.id),
+                    ok: item.ok,
+                    detail: item.detail,
+                });
+            }
+        }
         use sofel_color::ColorFormats as F;
         b.item(
             name,
@@ -943,6 +1141,7 @@ fn main() {
         checks: Vec::new(),
     };
     unicode_properties(&mut b, &a.testdata);
+    extra_items(&mut b, &a.testdata);
     cff_items(&mut b, &a.testdata);
     color_items(&mut b, &a.testdata);
     ebdt_items(&mut b);

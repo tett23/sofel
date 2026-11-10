@@ -19,6 +19,7 @@ unsafe extern "C" {
     pub fn bhb_set_ppem(font: *mut c_void, ppem: c_uint);
     pub fn bhb_nominal_glyph(font: *mut c_void, c: c_uint) -> c_uint;
     pub fn bhb_advance(font: *mut c_void, gid: c_uint) -> c_int;
+    pub fn bhb_math_constant(font: *mut c_void, index: c_uint) -> c_int;
     pub fn bhb_v_advance(font: *mut c_void, gid: c_uint) -> c_int;
     pub fn bhb_v_origin(font: *mut c_void, gid: c_uint) -> c_long;
     pub fn bhb_draw(font: *mut c_void, gid: c_uint) -> c_long;
@@ -225,6 +226,10 @@ impl HbFont {
     pub fn advance(&self, gid: u32) -> i64 {
         // SAFETY: a valid font.
         unsafe { i64::from(bhb_advance(self.0, gid)) }
+    }
+    pub fn math_constant(&self, index: u32) -> i64 {
+        // SAFETY: a valid font; the caller uses the 56 defined constants.
+        unsafe { i64::from(bhb_math_constant(self.0, index)) }
     }
     pub fn v_advance(&self, gid: u32) -> i64 {
         // SAFETY: a valid font.

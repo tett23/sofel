@@ -13,12 +13,6 @@ FeatureVariationsの条件評価の単独ファジングは、評価を実装す
 
 ## 未実装の ADR
 
-### 追加フォント
-
-[ADR 0031](adr/0031-diverse-font-corpus.md) の13ファイルと既存可変COLRの検証拡大を実装する。
-取得元とライセンスを固定し、役割ごとの比較ケースを追加する。
-[ADR 0031](adr/0031-diverse-font-corpus.md) は採択（未実装）である。
-
 ### 変化量の評価の修正案
 
 [ADR 0029](adr/0029-variation-deltas.md) の引き継ぎ調査による修正案を、[ADR 0030](adr/0030-variation-evaluation-corrections.md) にまとめた。

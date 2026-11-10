@@ -86,6 +86,15 @@
  *   cbox <xMin> <yMin> <xMax> <yMax>    (FT_Outline_Get_CBox)
  *   end
  *
+ * Usage: ft-dump --sampled-outline SIZE FILE PLAN
+ *
+ * PLAN contains sorted "face glyph" decimal pairs, at most 128 glyphs
+ * per face. The output has the --outline form for these glyphs only,
+ * with an additional "advance <value>" line after each glyph line
+ * (FT_Get_Advance with FT_LOAD_NO_SCALE).
+ * Add `--sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...]` to
+ * apply design coordinates before loading the sampled glyphs (ADR 0031).
+ *
  * Usage: ft-dump --raster PPEM FILE
  *
  * Renders every glyph (ADR 0012): FT_Set_Pixel_Sizes(PPEM), FT_Load_Glyph
@@ -227,6 +236,7 @@
 #include FT_ADVANCES_H
 #include FT_TRIGONOMETRY_H
 #include FT_OUTLINE_H
+#include FT_MULTIPLE_MASTERS_H
 #include FT_SFNT_NAMES_H
 #include FT_CID_H
 #include FT_TYPE1_TABLES_H
@@ -279,10 +289,12 @@ static const FT_Outline_Funcs outline_funcs = {
   move_to, line_to, conic_to, cubic_to, 0, 0
 };
 
-static void dump_outlines(FT_Face face, int unscaled, int ppem)
+static void dump_outlines(FT_Face face, int unscaled, int ppem,
+                          const FT_ULong *selected, size_t selected_count)
 {
   FT_Int32 flags = FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP;
   FT_Long g;
+  size_t index;
 
   if (unscaled)
     flags |= FT_LOAD_NO_SCALE;
@@ -290,11 +302,25 @@ static void dump_outlines(FT_Face face, int unscaled, int ppem)
     printf("error size\n");
     return;
   }
-  for (g = 0; g < face->num_glyphs; g++) {
+  for (index = 0; index < (selected ? selected_count : (size_t)face->num_glyphs); index++) {
     FT_Error error;
     FT_BBox cbox;
 
+    g = selected ? (FT_Long)selected[index] : (FT_Long)index;
+    if (g < 0 || g >= face->num_glyphs) {
+      printf("glyph %ld\nerror range\n", (long)g);
+      continue;
+    }
+
     printf("glyph %ld\n", (long)g);
+    if (selected) {
+      FT_Fixed advance;
+      FT_Error advance_error = FT_Get_Advance(face, (FT_UInt)g, FT_LOAD_NO_SCALE, &advance);
+      if (advance_error == 0)
+        printf("advance %ld\n", (long)advance);
+      else
+        printf("advance_error %d\n", (int)advance_error);
+    }
     error = FT_Load_Glyph(face, (FT_UInt)g, flags);
     if (error == 0 && face->glyph->format != FT_GLYPH_FORMAT_OUTLINE)
       error = -1;
@@ -710,14 +736,67 @@ static int faces(const char *path, void (*dump)(FT_Face))
   return 0;
 }
 
-/* raster: 0 for --outline, 1 for --raster, 2 for --raster --color. */
-static int outlines(const char *size, const char *path, int raster)
+static int set_design_coordinates(FT_Library library, FT_Face face, const char *text)
+{
+  FT_MM_Var *mm = NULL;
+  FT_Fixed *coordinates;
+  char *copy, *token;
+  FT_UInt i;
+  FT_Error error;
+
+  if (!text || FT_Get_MM_Var(face, &mm) != 0)
+    return text ? 2 : 0;
+  coordinates = (FT_Fixed *)malloc((size_t)mm->num_axis * sizeof(*coordinates));
+  copy = (char *)malloc(strlen(text) + 1);
+  if (!coordinates || !copy) {
+    free(coordinates); free(copy); FT_Done_MM_Var(library, mm); return 1;
+  }
+  strcpy(copy, text);
+  for (i = 0; i < mm->num_axis; i++)
+    coordinates[i] = mm->axis[i].def;
+  token = strtok(copy, ",");
+  if (!token) {
+    free(coordinates); free(copy); FT_Done_MM_Var(library, mm); return 2;
+  }
+  while (token) {
+    char *equal = strchr(token, '=');
+    char *end = NULL;
+    double value;
+    FT_ULong tag;
+    if (!equal || equal - token != 4) break;
+    tag = ((FT_ULong)(unsigned char)token[0] << 24) |
+          ((FT_ULong)(unsigned char)token[1] << 16) |
+          ((FT_ULong)(unsigned char)token[2] << 8) |
+          (FT_ULong)(unsigned char)token[3];
+    value = strtod(equal + 1, &end);
+    if (end == equal + 1 || *end || value < -32768.0 || value > 32767.0) break;
+    for (i = 0; i < mm->num_axis && mm->axis[i].tag != tag; i++) {}
+    if (i == mm->num_axis) break;
+    value *= 65536.0;
+    coordinates[i] = (FT_Fixed)(value < 0 ? value - 0.5 : value + 0.5);
+    token = strtok(NULL, ",");
+  }
+  error = token ? 2 : FT_Set_Var_Design_Coordinates(face, mm->num_axis, coordinates);
+  free(coordinates);
+  free(copy);
+  FT_Done_MM_Var(library, mm);
+  return error ? 2 : 0;
+}
+
+/* raster: 0 for --outline, 1 for --raster, 2 for --raster --color.
+ * plan: sorted "face glyph" pairs for --sampled-outline, or NULL. */
+static int outlines(const char *size, const char *path, int raster, const char *plan,
+                    const char *variations)
 {
   FT_Library library;
   FT_Face face;
   FT_Long num_faces, i;
   int unscaled = strcmp(size, "unscaled") == 0;
   int ppem = atoi(size);
+  FT_ULong *selected = NULL;
+  FT_Long *selected_faces = NULL;
+  size_t selected_count = 0, selected_capacity = 0, cursor = 0, face_samples = 0;
+  FILE *input = NULL;
 
   if ((raster && unscaled) || (!unscaled && ppem <= 0)) {
     fprintf(stderr, "ft-dump: bad size %s\n", size);
@@ -731,8 +810,79 @@ static int outlines(const char *size, const char *path, int raster)
   }
   num_faces = face->num_faces;
   FT_Done_Face(face);
+  if (plan) {
+    unsigned long face_number, glyph_number;
+    int parsed;
+    input = fopen(plan, "r");
+    if (!input) {
+      FT_Done_FreeType(library);
+      return 1;
+    }
+    while ((parsed = fscanf(input, "%lu %lu", &face_number, &glyph_number)) == 2) {
+      if (!selected_count || face_number != (unsigned long)selected_faces[selected_count - 1])
+        face_samples = 0;
+      face_samples++;
+      if (face_number >= (unsigned long)num_faces || selected_count >= 128 * (size_t)num_faces ||
+          face_samples > 128 ||
+          (selected_count && (face_number < (unsigned long)selected_faces[selected_count - 1] ||
+          (face_number == (unsigned long)selected_faces[selected_count - 1] && glyph_number <= selected[selected_count - 1])))) {
+        fprintf(stderr, "ft-dump: invalid sample plan\n");
+        fclose(input);
+        free(selected);
+        free(selected_faces);
+        FT_Done_FreeType(library);
+        return 2;
+      }
+      if (selected_count == selected_capacity) {
+        size_t next = selected_capacity ? selected_capacity * 2 : 128;
+        FT_ULong *new_selected = (FT_ULong *)realloc(selected, next * sizeof(*selected));
+        FT_Long *new_faces;
+        if (!new_selected) {
+          fclose(input);
+          free(selected);
+          free(selected_faces);
+          FT_Done_FreeType(library);
+          return 1;
+        }
+        selected = new_selected;
+        new_faces = (FT_Long *)realloc(selected_faces, next * sizeof(*selected_faces));
+        if (!new_faces) {
+          fclose(input);
+          free(selected);
+          free(selected_faces);
+          FT_Done_FreeType(library);
+          return 1;
+        }
+        selected_faces = new_faces;
+        selected_capacity = next;
+      }
+      selected[selected_count] = (FT_ULong)glyph_number;
+      selected_faces[selected_count] = (FT_Long)face_number;
+      selected_count++;
+    }
+    if (parsed != EOF) {
+      fprintf(stderr, "ft-dump: invalid sample plan\n");
+      fclose(input);
+      free(selected);
+      free(selected_faces);
+      FT_Done_FreeType(library);
+      return 2;
+    }
+    fclose(input);
+    if (!selected) {
+      selected = (FT_ULong *)malloc(sizeof(*selected));
+      if (!selected) {
+        FT_Done_FreeType(library);
+        return 1;
+      }
+    }
+  }
   for (i = 0; i < num_faces; i++) {
     FT_Error error;
+    size_t begin = cursor;
+
+    while (cursor < selected_count && selected_faces[cursor] == i)
+      cursor++;
 
     printf("face %ld\n", (long)i);
     error = open_seeded(library, path, i, &face);
@@ -740,16 +890,26 @@ static int outlines(const char *size, const char *path, int raster)
       printf("error %d\nend\n", (int)error);
       continue;
     }
+    if (set_design_coordinates(library, face, variations) != 0) {
+      fprintf(stderr, "ft-dump: invalid design coordinates %s\n", variations);
+      FT_Done_Face(face);
+      free(selected);
+      free(selected_faces);
+      FT_Done_FreeType(library);
+      return 2;
+    }
     printf("num_glyphs %ld\n", (long)face->num_glyphs);
     if (raster == 2)
       dump_color_rasters(face, ppem);
     else if (raster)
       dump_rasters(face, ppem);
     else
-      dump_outlines(face, unscaled, ppem);
+      dump_outlines(face, unscaled, ppem, plan ? selected + begin : NULL, cursor - begin);
     printf("end\n");
     FT_Done_Face(face);
   }
+  free(selected);
+  free(selected_faces);
   FT_Done_FreeType(library);
   return 0;
 }
@@ -1017,11 +1177,15 @@ int main(int argc, char **argv)
   if (argc == 2 && strcmp(argv[1], "--calc") == 0)
     return calc();
   if (argc == 4 && strcmp(argv[1], "--outline") == 0)
-    return outlines(argv[2], argv[3], 0);
+    return outlines(argv[2], argv[3], 0, NULL, NULL);
+  if (argc == 5 && strcmp(argv[1], "--sampled-outline") == 0)
+    return outlines(argv[2], argv[3], 0, argv[4], NULL);
+  if (argc == 6 && strcmp(argv[1], "--sampled-outline-var") == 0)
+    return outlines(argv[2], argv[3], 0, argv[4], argv[5]);
   if (argc == 4 && strcmp(argv[1], "--raster") == 0)
-    return outlines(argv[2], argv[3], 1);
+    return outlines(argv[2], argv[3], 1, NULL, NULL);
   if (argc == 5 && strcmp(argv[1], "--raster") == 0 && strcmp(argv[3], "--color") == 0)
-    return outlines(argv[2], argv[4], 2);
+    return outlines(argv[2], argv[4], 2, NULL, NULL);
   if (argc == 3 && strcmp(argv[1], "--cid") == 0)
     return faces(argv[2], dump_cid);
   if (argc == 3 && strcmp(argv[1], "--ps-info") == 0)
@@ -1033,7 +1197,7 @@ int main(int argc, char **argv)
   if (argc == 3 && strcmp(argv[1], "--otvalid") == 0)
     return otvalid(argv[2]);
   if (argc != 2) {
-    fprintf(stderr, "usage: ft-dump FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --raster PPEM [--color] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
+    fprintf(stderr, "usage: ft-dump FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --sampled-outline SIZE FILE PLAN | ft-dump --sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...] | ft-dump --raster PPEM [--color] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
     return 2;
   }
   if (FT_Init_FreeType(&library) != 0) {

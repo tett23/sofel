@@ -137,6 +137,16 @@ fn ext4(e: GlyphExtents) -> [i32; 4] {
 /// sofel's values for the scales HarfBuzz wrote, glyphs below
 /// `num_glyphs`.
 pub fn sofel_face(font: &Font<'_>, hb: &HbFace) -> HbFace {
+    sofel_face_for(font, hb, 0..hb.num_glyphs)
+}
+
+/// sofel's values at HarfBuzz's scales for the selected glyph IDs.
+/// The reference face still gives the full glyph count.
+pub fn sofel_face_sampled(font: &Font<'_>, hb: &HbFace, glyphs: &[u32]) -> HbFace {
+    sofel_face_for(font, hb, glyphs.iter().copied())
+}
+
+fn sofel_face_for<I: Iterator<Item = u32> + Clone>(font: &Font<'_>, hb: &HbFace, ids: I) -> HbFace {
     let outlines = Outlines::new(font);
     let scratch = RefCell::new(sofel_color::Scratch::default());
     let scales = hb
@@ -160,7 +170,8 @@ pub fn sofel_face(font: &Font<'_>, hb: &HbFace) -> HbFace {
                     (tag, found.is_some(), found.unwrap_or(0), fallback)
                 })
                 .collect();
-            let glyphs = (0..hb.num_glyphs)
+            let glyphs = ids
+                .clone()
                 .map(|g| {
                     let g = GlyphId(g);
                     let (ox, oy) = scale.v_origin_scaled(font, g, |g| {
