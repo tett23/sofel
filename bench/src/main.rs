@@ -67,12 +67,30 @@ const TEXTS: [&str; 4] = [
 /// The color fonts of ADR 0023: COLRv0, COLRv1 (glyf and CFF layers
 /// alike), CBDT, sbix and SVG.
 const COLOR_FONTS: [(&str, &str); 6] = [
-    ("TwemojiMozilla.subset", "harfbuzz/test/subset/data/fonts/TwemojiMozilla.subset.ttf"),
-    ("test_glyphs-glyf_colr_1", "harfbuzz/test/api/fonts/test_glyphs-glyf_colr_1.ttf"),
-    ("noto_handwriting-glyf_colr_1", "harfbuzz/test/fuzzing/fonts/noto_handwriting-glyf_colr_1.ttf"),
-    ("NotoColorEmoji.subset", "harfbuzz/test/subset/data/fonts/NotoColorEmoji.subset.ttf"),
-    ("noto_handwriting-sbix", "harfbuzz/test/fuzzing/fonts/noto_handwriting-sbix.ttf"),
-    ("chromacheck-svg", "harfbuzz/test/api/fonts/chromacheck-svg.ttf"),
+    (
+        "TwemojiMozilla.subset",
+        "harfbuzz/test/subset/data/fonts/TwemojiMozilla.subset.ttf",
+    ),
+    (
+        "test_glyphs-glyf_colr_1",
+        "harfbuzz/test/api/fonts/test_glyphs-glyf_colr_1.ttf",
+    ),
+    (
+        "noto_handwriting-glyf_colr_1",
+        "harfbuzz/test/fuzzing/fonts/noto_handwriting-glyf_colr_1.ttf",
+    ),
+    (
+        "NotoColorEmoji.subset",
+        "harfbuzz/test/subset/data/fonts/NotoColorEmoji.subset.ttf",
+    ),
+    (
+        "noto_handwriting-sbix",
+        "harfbuzz/test/fuzzing/fonts/noto_handwriting-sbix.ttf",
+    ),
+    (
+        "chromacheck-svg",
+        "harfbuzz/test/api/fonts/chromacheck-svg.ttf",
+    ),
 ];
 
 /// Every text of HarfBuzz's perf/texts/, for the Unicode properties.
@@ -584,21 +602,31 @@ fn color_items(b: &mut Bench, testdata: &std::path::Path) {
             &mut || {
                 (0..n)
                     .map(|g| {
-                        let paint = u64::from(glyph_color_format(&font, g) == Some(ColorFormat::ColrV1));
+                        let paint =
+                            u64::from(glyph_color_format(&font, g) == Some(ColorFormat::ColrV1));
                         paint * 65536 + layers(&font, g).count() as u64
                     })
                     .sum()
             },
             None,
-            Some((&mut || (0..n).map(|g| wrap(hb.color_format(g))).sum(), Compare::Yes)),
+            Some((
+                &mut || (0..n).map(|g| wrap(hb.color_format(g))).sum(),
+                Compare::Yes,
+            )),
         );
         if formats.has(F::COLR_V0) {
             b.item(
                 name,
                 "COLRv0 layers".into(),
                 &mut || (0..n).map(|g| layers(&font, g).count() as u64).sum(),
-                Some((&mut || (0..n).map(|g| wrap(ft.layers(g))).sum(), Compare::Yes)),
-                Some((&mut || (0..n).map(|g| wrap(hb.color_layers(g))).sum(), Compare::Yes)),
+                Some((
+                    &mut || (0..n).map(|g| wrap(ft.layers(g))).sum(),
+                    Compare::Yes,
+                )),
+                Some((
+                    &mut || (0..n).map(|g| wrap(hb.color_layers(g))).sum(),
+                    Compare::Yes,
+                )),
             );
         }
         let mut scratch = Scratch::default();
@@ -629,7 +657,11 @@ fn color_items(b: &mut Bench, testdata: &std::path::Path) {
                 &mut || paint_all(0),
                 v1.then_some((&mut ft_walk as Body<'_>, Compare::No)),
                 Some((
-                    &mut || (0..n).map(|g| wrap(hb.paint(g))).fold(0u64, u64::wrapping_add),
+                    &mut || {
+                        (0..n)
+                            .map(|g| wrap(hb.paint(g)))
+                            .fold(0u64, u64::wrapping_add)
+                    },
                     cmp,
                 )),
             );
@@ -662,7 +694,11 @@ fn color_items(b: &mut Bench, testdata: &std::path::Path) {
                     &mut || paint_all(ppem),
                     None,
                     Some((
-                        &mut || (0..n).map(|g| wrap(hb.paint(g))).fold(0u64, u64::wrapping_add),
+                        &mut || {
+                            (0..n)
+                                .map(|g| wrap(hb.paint(g)))
+                                .fold(0u64, u64::wrapping_add)
+                        },
                         Compare::Yes,
                     )),
                 );
@@ -679,7 +715,10 @@ fn color_items(b: &mut Bench, testdata: &std::path::Path) {
                         .sum()
                 },
                 None,
-                Some((&mut || (0..n).map(|g| wrap(hb.svg_len(g))).sum(), Compare::Yes)),
+                Some((
+                    &mut || (0..n).map(|g| wrap(hb.svg_len(g))).sum(),
+                    Compare::Yes,
+                )),
             );
         }
         let outlines = Outlines::new(&font);
