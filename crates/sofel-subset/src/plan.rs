@@ -20,8 +20,7 @@ use crate::tables::glyf::GlyfAccel;
 /// The tables whose subsetting or closure this version does not write
 /// yet: present and kept, they make [`Plan::new`] return
 /// [`SubsetError::Unsupported`].
-const PENDING: [(&[u8; 4], &str); 15] = [
-    (b"MATH", "MATH subsetting (ADR 0022 stage 8)"),
+const PENDING: [(&[u8; 4], &str); 14] = [
     (b"COLR", "color subsetting (ADR 0022 stage 9)"),
     (b"CPAL", "color subsetting (ADR 0022 stage 9)"),
     (b"CBLC", "color subsetting (ADR 0022 stage 9)"),
@@ -122,6 +121,10 @@ pub struct Plan {
     /// The number of glyphs of the source font.
     pub(crate) source_glyphs: u32,
     pub(crate) layout: PlanLayout,
+    /// The glyphs after the cmap closure (`_glyphset_cmaped`).
+    pub(crate) glyphset_cmaped: RangeSet,
+    /// The glyphs after the MATH closure (`_glyphset_mathed`).
+    pub(crate) glyphset_mathed: RangeSet,
 }
 
 /// The layout part of the plan (the `gsub_*`, `gpos_*`,
@@ -174,6 +177,21 @@ fn layout_unsupported(
         return Err(SubsetError::Unsupported {
             tag: Tag::new(b"GDEF"),
             reason: "the GDEF item variation store (ADR 0022 stage 10)",
+        });
+    }
+    // collect_layout_variation_indices remaps MATH's VariationIndex
+    // tables with the GDEF store even when GDEF itself is dropped.
+    let math_kept = font.table(Tag::new(b"MATH")).is_some()
+        && !drop.contains(Tag::new(b"MATH").to_u32())
+        && !no_subset.contains(Tag::new(b"MATH").to_u32());
+    if math_kept
+        && font
+            .table(Tag::new(b"GDEF"))
+            .is_some_and(layout::gdef::has_var_store)
+    {
+        return Err(SubsetError::Unsupported {
+            tag: Tag::new(b"MATH"),
+            reason: "MATH with a GDEF item variation store (ADR 0022 stage 10)",
         });
     }
     if let Some(d) = kept(b"BASE") {
@@ -255,6 +273,8 @@ impl Plan {
                 layout_scripts: input.set(SetKind::LayoutScripts).clone(),
                 ..PlanLayout::default()
             },
+            glyphset_cmaped: RangeSet::new(),
+            glyphset_mathed: RangeSet::new(),
         };
 
         // _populate_unicodes_to_retain
@@ -311,10 +331,14 @@ impl Plan {
         // _populate_gids_to_retain
         glyphset_gsub.add(0);
         cmap.closure_glyphs(&p.unicodes, &mut glyphset_gsub);
+        p.glyphset_cmaped = glyphset_gsub.clone();
         let tag_kept = |t: &[u8; 4]| !drop.contains(Tag::new(t).to_u32());
         if tag_kept(b"MATH") {
+            let math = font.table(Tag::new(b"MATH")).unwrap_or(&[]);
+            crate::tables::math::closure(math, &mut glyphset_gsub);
             glyphset_gsub.truncate(num_glyphs);
         }
+        p.glyphset_mathed = glyphset_gsub.clone();
         // layout_populate_gids_to_retain
         let mut gsub_glyphs = BitSet::from_range_set(&glyphset_gsub);
         let table =

@@ -8,7 +8,7 @@ use crate::maxp::Maxp;
 use crate::sfnt::{Collection, Sfnt, TableRecord};
 use crate::{
     CountWidth, Diagnostic, Kind, Tag, base, cbdt, cblc, cff, cmap, colr, cpal, gdef, glyf, gpos,
-    gsub, head, hhea, hmtx, loca, maxp, name, os2, post, sbix, svg, vhea, vmtx, vorg,
+    gsub, head, hhea, hmtx, loca, math, maxp, name, os2, post, sbix, svg, vhea, vmtx, vorg,
 };
 
 /// The pseudo tag of diagnostics about the table directory.
@@ -100,7 +100,7 @@ fn table<'a>(sfnt: &Sfnt<'a>, tag: Tag) -> Option<&'a [u8]> {
 /// `hmtx` is checked with the counts from `hhea` and `maxp`, `HMTX` with
 /// those from `HHEA` and `MAXP` (or `maxp`), `vmtx` and `VMTX` likewise
 /// with `vhea` and `VHEA`, and `cmap` and `VORG` glyph ids against
-/// `MAXP` or `maxp`, and `CFF ` and `CFF2` with the glyph count (and,
+/// `MAXP` or `maxp`, `MATH` glyph ids likewise, and `CFF ` and `CFF2` with the glyph count (and,
 /// for `CFF2`, the axis count of `fvar`) (ADR 0021).
 pub fn sfnt(sfnt: &Sfnt<'_>, report: &mut dyn FnMut(Diagnostic)) {
     directory(sfnt, report);
@@ -177,6 +177,9 @@ pub fn sfnt(sfnt: &Sfnt<'_>, report: &mut dyn FnMut(Diagnostic)) {
     }
     if let Some(d) = table(sfnt, base::TAG) {
         base::validate(d, report);
+    }
+    if let Some(d) = table(sfnt, math::TAG) {
+        math::validate(d, glyphs_wide.or(glyphs_narrow), report);
     }
     color_tables(sfnt, glyphs_wide.or(glyphs_narrow), report);
     let gdef_data = table(sfnt, gdef::TAG);

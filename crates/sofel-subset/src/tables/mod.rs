@@ -7,6 +7,7 @@ pub(crate) mod cmap;
 pub(crate) mod glyf;
 mod hdmx;
 mod hmtx;
+pub(crate) mod math;
 mod maxp;
 mod name;
 mod os2;
@@ -140,6 +141,7 @@ impl Plan {
             b"GDEF" => Some(gdef),
             b"GSUB" | b"GPOS" => Some(gsubgpos),
             b"BASE" => Some(base::subset),
+            b"MATH" => Some(math::subset),
             b"CFF " => Some(cff::subset),
             b"VORG" => Some(vorg::subset),
             b"hhea" | b"HHEA" | b"vhea" | b"VHEA" | b"loca" | b"LOCA" => return Ok(room),

@@ -54,6 +54,7 @@ pub mod hmtx;
 pub mod item_variation;
 pub mod layout;
 pub mod loca;
+pub mod math;
 pub mod maxp;
 pub mod name;
 pub mod os2;

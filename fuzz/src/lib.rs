@@ -286,6 +286,74 @@ pub fn check_base(data: &[u8]) {
     assert!(error || walks, "an offset cannot be followed without an Error");
 }
 
+/// The first two bytes give numGlyphs (0 means none); the rest is a MATH table.
+pub fn check_math(input: &[u8]) {
+    use sofel_read::math::{self, Corner, Math, MathValue};
+    use sofel_read::ReadError;
+    fn ok<T>(r: Result<Option<T>, ReadError>, f: impl FnOnce(T) -> bool) -> bool {
+        match r {
+            Err(_) => false,
+            Ok(None) => true,
+            Ok(Some(t)) => f(t),
+        }
+    }
+    fn device(v: Option<MathValue<'_>>) -> bool {
+        v.is_some_and(|v| v.device().is_ok())
+    }
+    let Some((n, data)) = input.split_first_chunk::<2>() else { return };
+    let n = u32::from(u16::from_be_bytes(*n));
+    let error = has_error(|r| math::validate(data, (n != 0).then_some(n), r));
+    let Ok(m) = Math::new(data) else {
+        assert!(error, "Math::new failed without an Error");
+        return;
+    };
+    let constants = ok(m.constants(), |c| {
+        let _ = (c.script_percent_scale_down(), c.radical_degree_bottom_raise_percent());
+        (0..math::NUM_CONSTANT_VALUES).all(|i| device(c.value(i)))
+    });
+    let info = ok(m.glyph_info(), |gi| {
+        let table = |t| {
+            ok(t, |t: math::MathValueTable<'_>| {
+                let _ = t.get(GlyphId(3));
+                t.coverage().is_ok() && (0..t.len().min(1000)).all(|i| device(t.value(i)))
+            })
+        };
+        table(gi.italics_correction())
+            && table(gi.top_accent_attachment())
+            && gi.extended_shape_coverage().is_ok()
+            && ok(gi.kern_info(), |k| {
+                k.coverage().is_ok()
+                    && (0..k.len().min(1000)).all(|i| {
+                        [Corner::TopRight, Corner::TopLeft, Corner::BottomRight, Corner::BottomLeft]
+                            .into_iter()
+                            .all(|c| {
+                                ok(k.kern(i, c), |k| {
+                                    (0..k.height_count().min(1000)).all(|j| device(k.correction_height(j)))
+                                        && (0..=k.height_count().min(1000)).all(|j| device(k.kern_value(j)))
+                                })
+                            })
+                    })
+            })
+    });
+    let variants = ok(m.variants(), |v| {
+        let construction = |c| {
+            ok(c, |c: math::MathGlyphConstruction<'_>| {
+                (0..c.num_variants().min(1000)).all(|i| c.variant(i).is_some())
+                    && ok(c.glyph_assembly(), |a| {
+                        a.italics_correction().device().is_ok()
+                            && (0..a.num_parts().min(1000)).all(|i| a.part(i).is_some())
+                    })
+            })
+        };
+        let _ = v.min_connector_overlap();
+        v.vert_coverage().is_ok()
+            && v.horiz_coverage().is_ok()
+            && (0..v.vert_glyph_count().min(1000)).all(|i| construction(v.vert_construction(i)))
+            && (0..v.horiz_glyph_count().min(1000)).all(|i| construction(v.horiz_construction(i)))
+    });
+    assert!(error || (constants && info && variants), "a read failed without an Error");
+}
+
 /// The queries of ADR 0016 on a whole font: must not panic.
 fn check_font_queries(font: &sofel_font::Font<'_>) {
     let scales = [sofel_font::HbScale::unscaled(font), sofel_font::HbScale::for_font(font, 768, -1536)];
