@@ -32,7 +32,7 @@ cargo doc --no-deps -p sofel-geom -p sofel-read -p sofel-font -p sofel-outline -
 - **作業領域は呼び出し側が持つ。** `sofel_outline::Scratch` と `sofel_raster::Rasterizer` は、グリフごとに作らずに使い回す。中の `Vec` の容量が残るので、2つ目からは確保がほとんど起きない。スレッドごとに1つ持つ。
 - **単位。** フォントの座標はフォントの単位（`unitsPerEm` 分の1 em）。拡大縮小した座標は26.6の固定小数点（1画素 = 64）。倍率は16.16の固定小数点（`Fixed`）。
 - **y軸は上向き。** 輪郭の座標はy軸が上向き。画像（`Bitmap`）の行は上から下に並ぶ。
-- **FreeTypeとの対応。** 輪郭とラスタライズはFreeType 2.15.0と、文字からグリフと送り幅はHarfBuzz 15.1.0と同じ結果を返すことを、適合テストで確かめている（[ADR 0005](adr/0005-conformance-tests.md)）。既知の違いは、FreeTypeが輪郭をpp1.x（glyfのxMin − hmtxの左のサイドベアリング）だけずらす点で、sofelはまだずらさない（[ADR 0011](adr/0011-glyf-outlines.md)）。
+- **FreeTypeとの対応。** 輪郭とラスタライズはFreeType 2.15.0と、文字からグリフと送り幅はHarfBuzz 15.1.0と同じ結果を返すことを、適合テストで確かめている（[ADR 0005](adr/0005-conformance-tests.md)）。輪郭は、FreeTypeと同じく、幻の点のpp1.x（glyfのxMin − hmtxの左のサイドベアリング）だけ左にずらしてある（[ADR 0018](adr/0018-phantom-point-shift.md)）。
 
 ## フォントを開く（`sofel-font`）
 
@@ -56,6 +56,7 @@ let advance: u16 = font.advance(gid.unwrap_or(GlyphId(0))); // フォントの�
 | `Font::nominal_glyph(c)` | `hb_font_get_nominal_glyph` |
 | `Font::variation_glyph(c, vs)` | `hb_font_get_variation_glyph` |
 | `Font::advance(g)` | `hb_font_get_glyph_h_advance`（拡大縮小なし） |
+| `Font::ft_left_side_bearing(g)` | FreeTypeの `tt_face_get_metrics` の左のサイドベアリング（輪郭のpp1.xに使う） |
 | `Font::table(tag)` | `hb_face_reference_table` |
 
 - cmapのサブテーブルはHarfBuzzと同じ順で選ぶ。送り幅は、hmtxが欠けたり短かったりするときもHarfBuzzと同じ値を返す（[ADR 0010](adr/0010-font-foundation.md)）。
@@ -80,6 +81,7 @@ let info = draw(&font, gid, scale, &mut scratch, &mut pen)?;
 ```
 
 - `Scale::Unscaled` はフォントの単位のまま（`FT_LOAD_NO_SCALE`）、`Scale::Scaled { x, y }` は16.16の倍率で26.6の座標にする。
+- 点は、FreeTypeと同じく幻の点のpp1.x（見出しの `xMin` − `Font::ft_left_side_bearing` を拡大縮小した値）だけ左に動かしてある。合成グリフでは、USE_MY_METRICSの部品があればその部品のpp1.xを使う（[ADR 0018](adr/0018-phantom-point-shift.md)）。
 - `draw` は `load`（点を `Scratch` に読む）と `Scratch::decompose`（命令を送る）を続けたもの。輪郭を移動してから分解したいとき（ラスタライズ）は、2つを分けて呼ぶ。`decompose(offset, multiplier, pen)` は、`FT_Outline_Translate` で `offset` だけ動かし、各点を `multiplier` 倍してから分解する。暗黙のon-curveの点（2点の中点、0へ切り捨て）がこの順に依存するので、FreeTypeと一致させるには同じ順で行う。
 - `OutlineError`：グリフIDが範囲外（`InvalidGlyphIndex`）、glyfとlocaが無い（`NoGlyphData`）、グリフのデータが壊れている（`InvalidOutline`）、複合グリフが壊れている・循環している・深すぎる（`InvalidComposite`）。エラーの前に送った命令は取り消されない。
 

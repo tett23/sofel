@@ -89,20 +89,24 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - グリフの数は `MAXP` を `maxp` より優先する。メトリクスは `HHEA`/`HMTX` を `hhea`/`hmtx` より優先する。
 - cmapのサブテーブルは、HarfBuzzと同じ順（(3,0)、(3,10)、(0,6)、(0,4)、(3,1)、(0,3)、(0,2)、(0,1)、(0,0)、(1,0)、(1,任意)）で、読めるものを選ぶ。グリフの数以上のグリフIDは対応なしとする。記号フォントとMacのエンコーディングの付けかえは、まだ行わない。
 - 送り幅はHarfBuzzと同じく、表が覆うグリフ（`numberOfHMetrics` と表の長さから決まる。`numberOfHMetrics` がグリフの数より大きい壊れたフォントでは、グリフの数以上のIDも含む）には表の値を、その外には0を返す。hmtxのデータが全く無ければ `unitsPerEm / 2`（`unitsPerEm` が16〜16384の外なら1000とみなす）を返す。hheaが無くhmtxがあるフォントでは、長いメトリクスが0個なので、すべて0になる。
+- `ft_left_side_bearing` は、輪郭の `pp1.x` のために、FreeTypeの `tt_face_get_metrics` と同じ読み方で左のサイドベアリングを返す（[ADR 0018](adr/0018-phantom-point-shift.md)）。送り幅（HarfBuzzの方針）とは別の読み方である。`numberOfHMetrics` 未満のグリフIDは長い記録から（記録が表に収まらなければ0）、以上はサイドベアリングの配列から（グリフの数によらず、表の外なら0。最後の送り幅が読めなければ0）引く。hheaかhmtxが無ければ0。表は、`GLYF` があれば `HHEA` と `HMTX`、無ければ `hhea` と `hmtx`（`hhea` が無ければ `HHEA` と `HMTX`）を使う。
 
 ## 輪郭（`sofel-outline`）
 
 - glyfと `GLYF` の単純なグリフと合成グリフの輪郭を、ヒンティングをせずに、FreeTypeと同じ座標で `Pen` に渡す（[ADR 0011](adr/0011-glyf-outlines.md)）。`GLYF` があれば `GLYF` と `LOCA` を使い、そのときだけフラグ0x80を三次曲線、0x2000を24bitの成分のグリフIDとして扱う。
 - 倍率は `FT_Set_Pixel_Sizes` と同じく `div_fix(ppem << 6, unitsPerEm)` で、点は `mul_fix` で拡大縮小し、丸めない。locaの解釈と合成の位置の計算はFreeTypeに合わせる。
 - 作業領域（`Scratch`）は呼び出し側が持つ。
-- 幻の点は計算しない（[ADR 0011](adr/0011-glyf-outlines.md)）。FreeTypeは最後に輪郭を `pp1.x`（`xMin` − 左のサイドベアリングを拡大縮小した値）だけ横に動かすが、sofelは動かさない。そのため、左のサイドベアリングが `xMin` と異なるグリフでは、FreeTypeと座標が異なる。
-- HarfBuzz 15.1.0のテストのフォントのglyfを持つフェイスで、22万3925項目（拡大縮小なし、16画素、48画素）を比べ、期待する失敗は243項目である。うち234項目は上の `pp1.x` の平行移動、9項目はCFFとglyfの両方を持つ `OTTO` のフォント（FreeTypeはCFFを描く）による。
+- FreeTypeと同じく、読みこんだ輪郭を幻の点の `pp1.x` だけ左に動かす（[ADR 0018](adr/0018-phantom-point-shift.md)）。`pp1.x` は、グリフの見出しの `xMin` からFreeTypeの読み方の左のサイドベアリング（`Font::ft_left_side_bearing`）を引き、点と同じく `mul_fix` で拡大縮小した値で、丸めない。`head` の `flags` のビット1によらない。空のグリフは点が無いので動かない。`OutlineInfo` の `cbox` は動かしたあとの点から求める。
+  - 合成グリフは、自身の見出しとサイドベアリングの `pp1.x` を使う。USE_MY_METRICSの部品があれば、最後のその部品の `pp1.x`（部品の見出しとサイドベアリングから求めたもの。部品の変換と位置合わせでは動かない）を使う。入れ子の合成グリフでも同じ規則を部品ごとに当てる。
+  - 残りの幻の点（`pp2`、`pp3`、`pp4`）と、ヒンティングと可変フォントでの幻の点は求めない。
+- HarfBuzz 15.1.0のテストのフォントのglyfを持つフェイスで、22万3925項目（拡大縮小なし、16画素、48画素）を比べ、期待する失敗は9項目である。すべて、CFFとglyfの両方を持つ `OTTO` のフォント（FreeTypeはCFFを描く）による。
+- 同じフォントの単純なグリフ（見出しの `xMin` が点の最小のxと等しい4万9225個）で、拡大縮小なしの `cbox.x_min` が、HarfBuzzのグリフの箱の `x_bearing`（可変フォントの変化なし）と等しいことを確かめている。
 
 ## ラスタライズ（`sofel-raster`）
 
 - 8bitのアンチエイリアスの画像を、FreeTypeのsmoothのラスタライザと同じ数値の計算で作る（[ADR 0012](adr/0012-antialiased-rasterizer.md)）。セルは帯ごとの密な配列（上限64KiB）に積む。重なりの印のある輪郭は4×4の副標本で描く。FreeTypeとの差は0（完全一致）とする。
 - FreeTypeは、輪郭をビットマップの原点へ動かしてから（重なりの印があればさらに4倍してから）命令に変換する。暗黙の曲線上の点（中点の0への切り捨て）はこの順序で決まるので、完全に一致させるには、`sofel_outline::load` で点を読み、`sofel_raster::pixel_box` で箱を求め、`Scratch::decompose` に `PixelBox::shift()` と倍率を渡して命令に変換し、`Rasterizer::render_placed` で描く。この手順は `sofel_cli::glyph::render` にまとめてある。`Rasterizer::render` は、記録した命令をあとから動かすので、中点のある輪郭では1画素の値が1〜2ずれることがある。
-- HarfBuzz 15.1.0のテストのフォントのglyfを持つフェイスで、22万3917項目（12、24、48画素）を比べ、期待する失敗は223項目である。すべて、輪郭が一致しないグリフ（`pp1.x` の平行移動、またはCFFとglyfの両方を持つフォント）のものである。
+- HarfBuzz 15.1.0のテストのフォントのglyfを持つフェイスで、22万3917項目（12、24、48画素）を比べ、期待する失敗は9項目である。すべて、CFFとglyfの両方を持つフォントのグリフ（輪郭が一致しない）のものである。
 
 ## 道具
 
@@ -149,7 +153,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 比較の相手は、HarfBuzz 15.1.0とFreeType 2.15.0とする（[ADR 0006](adr/0006-performance-measurement.md)）。シェーピング、サブセット化、COLRv1の描画はHarfBuzzと、輪郭、ラスタライズ、埋め込みビットマップ、WOFF2の展開、sfnt以外の形式はFreeTypeと比べる。
 - 計測はワークスペースの外の `bench/` で行い、ネイティブとwasm（wasmtime）の両方で計測する。HarfBuzzとFreeTypeは、取得したソースから `bench/build-c.sh` で静的ライブラリにする。wasmにはwasi-sdk（`bench/wasi-sdk.lock` で版とSHA-256を固定）を使う（[ADR 0013](adr/0013-benchmark-harness.md)）。
 - 1回の標本を10ミリ秒以上にまとめ、ウォームアップを3つ捨てて30個の標本を取り、中央値と中央絶対偏差を出す。計測の前に、相手と同じ結果を出していることを確かめる。
-  - ラスタライズの照合では、glyfの先頭のxMinとhmtxの左のサイドベアリングが違うグリフを除く。FreeTypeはこれらの輪郭をpp1.xだけずらし、sofelはまだずらさない（[ADR 0011](adr/0011-glyf-outlines.md)）。除いたグリフも計測には含める。
+  - ラスタライズの照合は、すべてのグリフで行う（[ADR 0018](adr/0018-phantom-point-shift.md) で、FreeTypeと同じく輪郭をpp1.xだけずらすようになったため）。
   - HarfBuzzの輪郭は、glyfを分解する命令の列がFreeTypeと違うため、命令の数を照合せず、時間だけを計る。
 - FreeTypeはcmapの検証に `setjmp` を使うため、wasmでは例外処理の提案（`-mllvm -wasm-enable-sjlj`、`wasmtime -W exceptions=y`）でビルドし、走らせる。
 - 2段階目の項目：文字からグリフ（FreeType、HarfBuzz）、送り幅（FreeType、HarfBuzz）、輪郭（拡大縮小なしと48画素。FreeType、HarfBuzz）、ラスタライズ（12、24、48、96画素。FreeType）。

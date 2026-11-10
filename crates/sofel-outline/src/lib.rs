@@ -10,9 +10,10 @@
 //! Robert Wilhelm, and Werner Lemberg. Used under the FreeType License
 //! (FTL); see THIRD_PARTY_NOTICES.md.
 //!
-//! Not done here (ADR 0011): hinting, variations, phantom points. In
-//! particular, FreeType shifts the final outline by the scaled
-//! `xMin - leftSideBearing` (phantom point 1); this crate does not.
+//! Like FreeType, the loaded outline is moved left by phantom point 1,
+//! `pp1.x = xMin - leftSideBearing` scaled like the points (ADR 0018);
+//! the other phantom points are not computed. Not done here (ADR 0011):
+//! hinting and variations.
 //!
 //! Points are in font units ([`Scale::Unscaled`]) or 26.6 fixed point
 //! ([`Scale::Scaled`]), with y growing upwards as in the font.
@@ -58,7 +59,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use sofel_font::Font;
-use sofel_font::read::glyf::{self, Component, Glyph, SCALED_COMPONENT_OFFSET};
+use sofel_font::read::glyf::{self, Component, Glyph, SCALED_COMPONENT_OFFSET, USE_MY_METRICS};
 use sofel_font::read::loca::{self, Loca};
 use sofel_font::read::{GlyphId, Tag};
 use sofel_geom::{Fixed, Matrix, Pen, Point, div_fix, mul_fix, transform, vector_length};
@@ -112,8 +113,9 @@ pub struct OutlineInfo {
     /// FreeType's `FT_OUTLINE_OVERLAP`: a simple glyph whose first point
     /// has OVERLAP_SIMPLE, or a first component with OVERLAP_COMPOUND.
     pub overlap: bool,
-    /// The control box of the loaded points, before any offset or
-    /// multiplier given to [`Scratch::decompose`].
+    /// The control box of the loaded points, after the move by phantom
+    /// point 1 and before any offset or multiplier given to
+    /// [`Scratch::decompose`].
     pub cbox: CBox,
 }
 
@@ -167,6 +169,7 @@ const TAG_CUBIC: u8 = 2;
 const MAX_RECURSION: usize = 100;
 
 struct Context<'a> {
+    font: &'a Font<'a>,
     glyf: &'a [u8],
     loca: Loca<'a>,
     num_glyphs: u32,
@@ -209,6 +212,17 @@ impl Context<'_> {
         }
     }
 
+    /// Phantom point 1's x for a glyph whose header says `x_min`
+    /// (`tt_loader_set_pp`), scaled like the points.
+    fn pp1_x(&self, glyph: u32, x_min: i16) -> i32 {
+        let x = i32::from(x_min)
+            .saturating_sub(i32::from(self.font.ft_left_side_bearing(GlyphId(glyph))));
+        match self.scale {
+            Scale::Unscaled => x,
+            Scale::Scaled { x: sx, .. } => mul_fix(x, sx.0),
+        }
+    }
+
     fn scale_point(&self, x: i32, y: i32) -> Point {
         match self.scale {
             Scale::Unscaled => Point { x, y },
@@ -238,8 +252,12 @@ pub fn draw(
 }
 
 /// Loads the points of `glyph` into `scratch`, as `FT_Load_Glyph` with
-/// `FT_LOAD_NO_HINTING` would, without sending any command. Use
-/// [`Scratch::decompose`] to draw them.
+/// `FT_LOAD_NO_HINTING` would, without sending any command: the points
+/// end up moved left by phantom point 1, `pp1.x`, the scaled difference
+/// between the `xMin` of the glyph header and FreeType's left side
+/// bearing ([`Font::ft_left_side_bearing`]). A composite glyph takes the
+/// phantom point of its last component with USE_MY_METRICS, if any.
+/// Use [`Scratch::decompose`] to draw them.
 pub fn load(
     font: &Font<'_>,
     glyph: GlyphId,
@@ -256,6 +274,7 @@ pub fn load(
     let loca = Loca::new(loca_data, font.head().index_to_loc_format())
         .map_err(|_| OutlineError::NoGlyphData)?;
     let ctx = Context {
+        font,
         glyf: font.table(glyf_tag).unwrap_or(&[]),
         loca,
         num_glyphs: font.num_glyphs(),
@@ -271,12 +290,19 @@ pub fn load(
         return Err(OutlineError::InvalidGlyphIndex);
     }
     let mut overlap = false;
-    let loaded = load_glyph(&ctx, scratch, glyph.0, 0, &mut overlap);
+    let mut pp1_x = 0;
+    let loaded = load_glyph(&ctx, scratch, glyph.0, 0, &mut overlap, &mut pp1_x);
     if let Err(e) = loaded {
         scratch.points.clear();
         scratch.tags.clear();
         scratch.ends.clear();
         return Err(e);
+    }
+    // `TT_Load_Glyph`: whatever bit 1 of the head flags says.
+    if pp1_x != 0 {
+        for p in &mut scratch.points {
+            p.x = p.x.saturating_sub(pp1_x);
+        }
     }
     Ok(OutlineInfo {
         overlap,
@@ -330,19 +356,23 @@ fn control_box(points: &[Point]) -> CBox {
     )
 }
 
-/// `load_truetype_glyph` without hinting, variations and metrics.
+/// `load_truetype_glyph` without hinting, variations and metrics other
+/// than `pp1.x`, which it sets for `glyph`.
 fn load_glyph(
     ctx: &Context<'_>,
     s: &mut Scratch,
     glyph: u32,
     depth: usize,
     overlap: &mut bool,
+    pp1_x: &mut i32,
 ) -> Result<(), OutlineError> {
     if depth > MAX_RECURSION {
         return Err(OutlineError::InvalidComposite);
     }
     let (offset, len) = ctx.location(glyph);
     if len == 0 {
+        // An empty glyph's box is all zero.
+        *pp1_x = ctx.pp1_x(glyph, 0);
         return Ok(());
     }
     let data = ctx
@@ -352,12 +382,14 @@ fn load_glyph(
     let g = Glyph::new(data).map_err(|_| OutlineError::InvalidOutline)?;
     let n = g.number_of_contours();
     if n == 0 {
+        *pp1_x = ctx.pp1_x(glyph, 0);
         return Ok(());
     }
+    *pp1_x = ctx.pp1_x(glyph, g.x_min());
     if n > 0 {
         load_simple(ctx, s, &g, overlap)
     } else {
-        load_composite(ctx, s, &g, glyph, depth, overlap)
+        load_composite(ctx, s, &g, glyph, depth, overlap, pp1_x)
     }
 }
 
@@ -395,6 +427,7 @@ fn load_composite(
     glyph: u32,
     depth: usize,
     overlap: &mut bool,
+    pp1_x: &mut i32,
 ) -> Result<(), OutlineError> {
     if s.stack.contains(&glyph) {
         return Err(OutlineError::InvalidComposite);
@@ -423,7 +456,13 @@ fn load_composite(
             break;
         };
         let base = s.points.len();
-        load_glyph(ctx, s, c.glyph.0, depth.saturating_add(1), overlap)?;
+        let saved = *pp1_x;
+        load_glyph(ctx, s, c.glyph.0, depth.saturating_add(1), overlap, pp1_x)?;
+        // The component's phantom points stay only with USE_MY_METRICS;
+        // its offset and transform do not move them.
+        if c.flags & USE_MY_METRICS == 0 {
+            *pp1_x = saved;
+        }
         if s.points.len() == base {
             continue;
         }
