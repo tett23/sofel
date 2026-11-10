@@ -280,7 +280,11 @@ fn main() {
         b.item(
             name,
             "v advance".into(),
-            &mut || (0..n).map(|g| wrap(i64::from(font.v_advance(GlyphId(g))))).sum(),
+            &mut || {
+                (0..n)
+                    .map(|g| wrap(i64::from(font.v_advance(GlyphId(g)))))
+                    .sum()
+            },
             None,
             Some((
                 &mut || (0..n).map(|g| wrap(hb.v_advance(g))).sum(),
