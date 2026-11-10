@@ -2,6 +2,7 @@
 //! `subset` functions).
 
 mod base;
+pub(crate) mod cff;
 pub(crate) mod cmap;
 pub(crate) mod glyf;
 mod hdmx;
@@ -10,6 +11,7 @@ mod maxp;
 mod name;
 mod os2;
 mod post;
+mod vorg;
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
@@ -113,6 +115,8 @@ impl Plan {
             b"GDEF" => Some(gdef),
             b"GSUB" | b"GPOS" => Some(gsubgpos),
             b"BASE" => Some(base::subset),
+            b"CFF " => Some(cff::subset),
+            b"VORG" => Some(vorg::subset),
             b"hhea" | b"HHEA" | b"vhea" | b"VHEA" | b"loca" | b"LOCA" => return Ok(()),
             b"fvar" | b"avar" | b"cvar" | b"MVAR" | b"STAT" if self.axes.is_empty() => {
                 self.passthrough(font, tag, tables);

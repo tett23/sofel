@@ -14,20 +14,19 @@ use crate::input::{AxisRange, Flags, Input, SetKind};
 use crate::layout::{self, Gsubgpos, LayoutPlan};
 use crate::limits;
 use crate::set::{INVALID, RangeSet};
+use crate::tables::cff::SeacFinder;
 use crate::tables::glyf::GlyfAccel;
 
 /// The tables whose subsetting or closure this version does not write
 /// yet: present and kept, they make [`Plan::new`] return
 /// [`SubsetError::Unsupported`].
-const PENDING: [(&[u8; 4], &str); 17] = [
+const PENDING: [(&[u8; 4], &str); 15] = [
     (b"MATH", "MATH subsetting (ADR 0022 stage 8)"),
     (b"COLR", "color subsetting (ADR 0022 stage 9)"),
     (b"CPAL", "color subsetting (ADR 0022 stage 9)"),
     (b"CBLC", "color subsetting (ADR 0022 stage 9)"),
     (b"CBDT", "color subsetting (ADR 0022 stage 9)"),
     (b"sbix", "color subsetting (ADR 0022 stage 9)"),
-    (b"CFF ", "CFF subsetting (ADR 0022 stage 2)"),
-    (b"VORG", "CFF subsetting (ADR 0022 stage 2)"),
     (b"CFF2", "CFF2 subsetting (ADR 0022 stages 7 and 10)"),
     (b"gvar", "variable font tables (ADR 0022 stage 10)"),
     (b"GVAR", "variable font tables (ADR 0022 stage 10)"),
@@ -387,6 +386,16 @@ impl Plan {
             }
         } else {
             p.glyphset.union(&cur);
+        }
+        // _add_cff_seac_components: nothing to add when every glyph is
+        // kept already.
+        if cur.len() != u64::from(num_glyphs)
+            && let Some(cff) = SeacFinder::new(font)
+        {
+            for (base, accent) in cur.iter().filter_map(|g| cff.components(g)) {
+                p.glyphset.add(base);
+                p.glyphset.add(accent);
+            }
         }
         p.glyphset.truncate(num_glyphs);
 
