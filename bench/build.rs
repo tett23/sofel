@@ -21,6 +21,12 @@ fn main() {
     println!("cargo:rustc-link-lib=static=benchshim");
     println!("cargo:rustc-link-lib=static=harfbuzz");
     println!("cargo:rustc-link-lib=static=freetype");
+    // HarfBuzz's C++ runtime (std::mutex and friends) on native targets.
+    if target.contains("apple") {
+        println!("cargo:rustc-link-lib=dylib=c++");
+    } else if target.contains("linux") {
+        println!("cargo:rustc-link-lib=dylib=stdc++");
+    }
     // setjmp and longjmp for FreeType in wasm (bench/build-c.sh).
     if dir.join("libsetjmp.a").exists() {
         println!("cargo:rustc-link-lib=static=setjmp");

@@ -16,6 +16,7 @@ fn add_delta(a: u32, delta: i16) -> u32 {
 
 // ---------------------------------------------------------------- format 0
 
+/// Format 0: byte encoding table.
 #[derive(Clone, Copy, Debug)]
 pub struct Format0<'a> {
     language: u16,
@@ -41,10 +42,13 @@ impl<'a> Format0<'a> {
         Ok(Format0 { language, ids })
     }
 
+    /// The `language` field.
     pub fn language(&self) -> u32 {
         u32::from(self.language)
     }
 
+    /// The raw glyph id for `cp`: 0 when unmapped, `None` when `cp` is
+    /// outside the table or the data runs out.
     pub fn glyph(&self, cp: u32) -> Option<u32> {
         self.ids.get(to_usize(cp)).map(|&g| u32::from(g))
     }
@@ -52,6 +56,7 @@ impl<'a> Format0<'a> {
 
 // ---------------------------------------------------------------- format 2
 
+/// Format 2: high-byte mapping through table.
 #[derive(Clone, Copy, Debug)]
 pub struct Format2<'a> {
     data: &'a [u8],
@@ -97,6 +102,7 @@ impl<'a> Format2<'a> {
         })
     }
 
+    /// The `language` field.
     pub fn language(&self) -> u32 {
         u32::from(self.language)
     }
@@ -122,6 +128,8 @@ impl<'a> Format2<'a> {
         }
     }
 
+    /// The raw glyph id for `cp`: 0 when unmapped, `None` when `cp` is
+    /// outside the table or the data runs out.
     pub fn glyph(&self, cp: u32) -> Option<u32> {
         let sub = self.subheader(cp)?;
         let first = u32::from(be::u16_at(self.data, sub)?);
@@ -155,6 +163,7 @@ impl<'a> Format2<'a> {
 
 // ---------------------------------------------------------------- format 4
 
+/// Format 4: segment mapping to delta values.
 #[derive(Clone, Copy, Debug)]
 pub struct Format4<'a> {
     data: &'a [u8],
@@ -212,6 +221,7 @@ impl<'a> Format4<'a> {
         })
     }
 
+    /// The `language` field.
     pub fn language(&self) -> u32 {
         u32::from(self.language)
     }
@@ -240,6 +250,8 @@ impl<'a> Format4<'a> {
         None
     }
 
+    /// The raw glyph id for `cp`: 0 when unmapped, `None` when `cp` is
+    /// outside the table or the data runs out.
     pub fn glyph(&self, cp: u32) -> Option<u32> {
         if cp > 0xFFFF {
             return None;
@@ -281,6 +293,7 @@ impl<'a> Format4<'a> {
 
 // ---------------------------------------------------------------- format 6
 
+/// Format 6: trimmed table mapping.
 #[derive(Clone, Copy, Debug)]
 pub struct Format6<'a> {
     language: u16,
@@ -311,10 +324,13 @@ impl<'a> Format6<'a> {
         })
     }
 
+    /// The `language` field.
     pub fn language(&self) -> u32 {
         u32::from(self.language)
     }
 
+    /// The raw glyph id for `cp`: 0 when unmapped, `None` when `cp` is
+    /// outside the table or the data runs out.
     pub fn glyph(&self, cp: u32) -> Option<u32> {
         let i = cp.checked_sub(u32::from(self.first))?;
         Some(
@@ -360,6 +376,7 @@ fn find_group(groups: &[[u8; 12]], cp: u32) -> Option<(u32, u32, u32)> {
 
 // ---------------------------------------------------------------- format 8
 
+/// Format 8: mixed 16-bit and 32-bit coverage.
 #[derive(Clone, Copy, Debug)]
 pub struct Format8<'a> {
     language: u32,
@@ -393,10 +410,13 @@ impl<'a> Format8<'a> {
         Ok(Format8 { language, groups })
     }
 
+    /// The `language` field.
     pub fn language(&self) -> u32 {
         self.language
     }
 
+    /// The raw glyph id for `cp`: 0 when unmapped, `None` when `cp` is
+    /// outside the table or the data runs out.
     pub fn glyph(&self, cp: u32) -> Option<u32> {
         let Some((start, _, id)) = find_group(self.groups, cp) else {
             return Some(0);
@@ -412,6 +432,7 @@ impl<'a> Format8<'a> {
 
 // ---------------------------------------------------------------- format 10
 
+/// Format 10: trimmed array.
 #[derive(Clone, Copy, Debug)]
 pub struct Format10<'a> {
     language: u32,
@@ -442,10 +463,13 @@ impl<'a> Format10<'a> {
         })
     }
 
+    /// The `language` field.
     pub fn language(&self) -> u32 {
         self.language
     }
 
+    /// The raw glyph id for `cp`: 0 when unmapped, `None` when `cp` is
+    /// outside the table or the data runs out.
     pub fn glyph(&self, cp: u32) -> Option<u32> {
         let i = cp.checked_sub(self.start)?;
         Some(
@@ -494,10 +518,13 @@ impl<'a> Groups<'a> {
         })
     }
 
+    /// The `language` field.
     pub fn language(&self) -> u32 {
         self.language
     }
 
+    /// The raw glyph id for `cp`: 0 when unmapped, `None` when `cp` is
+    /// outside the table or the data runs out.
     pub fn glyph(&self, cp: u32) -> Option<u32> {
         let Some((start, _, id)) = find_group(self.groups, cp) else {
             return Some(0);
@@ -560,6 +587,7 @@ impl<'a> Uvs<'a> {
         ))
     }
 
+    /// The glyph for `cp` + `selector`; see [`super::Subtable::variant`].
     pub fn variant(&self, cp: u32, selector: u32) -> Option<VariantGlyph> {
         let (default, non_default) = self.record(selector)?;
         if default != 0 && self.in_default(default, cp) {
