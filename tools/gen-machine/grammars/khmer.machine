@@ -1,0 +1,49 @@
+# The syllable machine of HarfBuzz 15.1.0's src/hb-ot-shaper-khmer-machine.rl
+# (MIT; see THIRD_PARTY_NOTICES.md): its categories and rules, with each
+# action replaced by the number of its syllable type:
+#   0 khmer_consonant_syllable
+#   1 khmer_broken_cluster
+#   2 khmer_non_khmer_cluster
+# Read by tools/gen-machine (ADR 0024).
+
+# We use category H for spec category Coeng
+
+export C    = 1;
+export V    = 2;
+export H    = 4;
+export ZWNJ = 5;
+export ZWJ  = 6;
+export PLACEHOLDER = 10;
+export DOTTEDCIRCLE = 11;
+export Ra   = 15;
+
+export VAbv = 20;
+export VBlw = 21;
+export VPre = 22;
+export VPst = 23;
+
+export Robatic = 25;
+export Xgroup  = 26;
+export Ygroup  = 27;
+
+c = (C | Ra | V);
+cn = c.((ZWJ|ZWNJ)?.Robatic)?;
+joiner = (ZWJ | ZWNJ);
+xgroup = (joiner*.Xgroup)*;
+ygroup = Ygroup*;
+
+# This grammar was experimentally extracted from what Uniscribe allows.
+
+matra_group = VPre? xgroup VBlw? xgroup (joiner?.VAbv)? xgroup VPst?;
+syllable_tail = xgroup matra_group xgroup (H.c)? ygroup;
+
+broken_cluster =	Robatic? (H.cn)* (H | syllable_tail);
+consonant_syllable =	(cn|PLACEHOLDER|DOTTEDCIRCLE) broken_cluster;
+other =			any;
+
+main := |*
+	consonant_syllable	=> 0;	# khmer_consonant_syllable
+	broken_cluster		=> 1;	# khmer_broken_cluster
+	other			=> 2;	# khmer_non_khmer_cluster
+*|;
+

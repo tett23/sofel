@@ -220,6 +220,13 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - `shape_fallback` は HarfBuzzの `fallback` のシェーパー（`src/hb-fallback-shape.cc`）である。
 - HarfBuzzの `roundf`（`floor ((double) x + 0.5)`）は `sofel_geom::float` を使う（[ADR 0026](adr/0026-harfbuzz-rounding.md)）。
 
+### 音節の状態機械
+
+- indic、khmer、myanmar、USEのシェーパーが文字の分類の列を音節に区切る状態機械は、`tools/gen-machine/`（ワークスペースの外のRustのパッケージ、外部のクレートに依存しない）が `tools/gen-machine/grammars/<名前>.machine` から `crates/sofel-shape/src/tables/machine_<名前>.rs` に書き、コミットする（[ADR 0024](adr/0024-complex-shapers.md)）。Ragelとその生成したコードは使わない。
+- 文法のファイルは、HarfBuzz 15.1.0の `src/hb-ot-shaper-<名前>-machine.rl` の分類の番号（`export`）と規則を写し、動作を音節の型の番号に置きかえたもの。文法は、和（`|`）、連接（`.` か並べる）、`?`、`*`、`+`、回数（`{n}`、`{n,}`、`{,m}`、`{n,m}`）、括弧、名前の定義、`any`、最長一致の走査子（`main := |* ... => 番号; ... *|;`）を読む。
+- 道具は、規則の和のNFA（Thompsonの構成）から部分集合の構成でDFAを作り、Mooreの分割の細分で最小化する。入力は、規則が名指す分類の値ごとの組と、それ以外の値の組の、等しい値の組に分ける。状態0は行き止まり、状態1は始まりとし、ほかは始まりからの幅優先の順に番号を振る。書き出すまえに、長さ3までのすべての入力で、最小化したDFAとNFAの受理する規則が一致することを確かめる。
+- 実行（`crates/sofel-shape/src/machine.rs`）は、表を引くだけの手書きの関数で、Ragelの走査子と同じく、いまの位置から規則のどれかに合う最長の空でない列を取り、同じ長さなら先に書いた規則を選ぶ。音節の値は、HarfBuzzと同じく、番号（1〜15で巡回）を上位4bit、型を下位4bitとする。USEは、HarfBuzzの `find_syllables_use` と同じく、CGJと、次のCGJでない文字がUnicodeのマークであるZWNJを飛ばして走らせ、音節は最初の残った文字から次の音節の最初の残った文字の手前まで（最後の音節はバッファの終わりまで）を覆う。
+
 ### 手書きのUnicodeの関数
 
 - `sofel_shape::unicode` に、HarfBuzzが手で書いた `modified_combining_class`、`is_default_ignorable`、`space_fallback_type`、`vertical_char_for`、`is_variation_selector`、`is_regional_indicator` を置く（[ADR 0019](adr/0019-unicode-character-data.md)、[ADR 0020](adr/0020-shaping-foundation.md)）。全文字の値を `hb-dump --unicode` と比べる。
@@ -305,6 +312,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - `hb-dump` によるシェーピングの突き合わせ（[ADR 0020](adr/0020-shaping-foundation.md)、`tests/harfbuzz_shape_dump.rs`）。`hb-dump` は `LC_ALL=C` で走らせる。期待する失敗の分類は上と同じで、同じく確かめる。
   - `hb-dump --shape FONT TEXTFILE DIRECTION FEATURES` は、行ごとに `hb_buffer_add_utf8`、`hb_buffer_guess_segment_properties`、`hb_shape` を行い、`hb-shape` の形（グリフID、UTF-8のクラスタ、フラグ）で書く。`perf/benchmark-shape.cc` のすべての組（可変フォントは既定のインスタンス）と、`Mplus1p-Regular.ttf` と `ja-runs.txt`（LTRとTTB、機能なし、`vrt2`、`-vert`、`palt`、`vkrn`）を、`sofel-shape --text-file --utf8-clusters --no-glyph-names --show-flags` と比べる。項目は `<フォント>+<文字列>:<方向>:<機能>` で、1行でも違えば失敗とし、分類は違ったすべての行に合わなければならない。期待する失敗は `conformance/expected-failures-shape-pairs.txt` に書く。52万9399行のうち、アラビア文字（5組）、デーヴァナーガリー、デュプロワイエの組の2万6595行が `shaper:*` で違い、ほかはすべて一致する。
   - `hb-dump --shape-random FONT COUNT SEED` は、テストのフォントのフェイスごとに、cmapで引ける文字を文字体系ごとに分け、同じ線形合同法（C標準の例の式、上位15ビット）で長さ1〜16の文字列をCOUNT個作り、`BOT`、`EOT`、`PRODUCE_UNSAFE_TO_CONCAT` で形にする。文字列も書き、テストはsofelのcmapから同じ文字列を作って一致を確かめる。件数は200、種は20。項目は `<フォント>#<フェイス>:<文字体系>` で、期待する失敗は `conformance/expected-failures-shape-random.txt` に書く。sofelが開けないフェイス（headの無いもの。[ADR 0010](adr/0010-font-foundation.md)）は比べない。2017項目のうち1342が一致し、期待する失敗は `shaper:*` 544、`aat` 123、`variations` 5（既定の座標で条件の成り立つFeatureVariations）、`sanitize` 3である。
+- 音節の状態機械は、HarfBuzzの機械と突き合わせる（[ADR 0024](adr/0024-complex-shapers.md)、`tests/harfbuzz_syllables.rs`）。`hb-dump --syllables MACHINE ALPHABET COUNT SEED` は、分類を直接書いたバッファ（ほかの欄は0）にHarfBuzzの `find_syllables_<機械>` を走らせ、音節の値を書く。分類の値の集まりは、HarfBuzzの `.rl` の `export` の値と、`export` に無い最小の値とする。長さ1〜4のすべての列と、`--shape-random` と同じ線形合同法（種1）による長さ5〜32の列100万個について、sofelの結果とすべて一致することを確かめる。期待する失敗の一覧は持たない。4つの機械の合わせて約894万列が一致する。
   - `hb-dump --layout-map FONT` は、全文字体系と、フォントの言語のシステムのタグの言語（と言語なし）について、`hb_ot_tags_from_script_and_language` のタグで `hb_ot_layout_table_select_script` と `hb_ot_layout_script_select_language` が選ぶGSUBとGPOSの文字体系と言語の番号を書く。`layout_selection` と比べ、項目は `<フォント>#<フェイス>`、期待する失敗は `conformance/expected-failures-layout-map.txt` に書く。652項目のうち、HarfBuzzのsanitizerがGSUBを拒む3つのフォント（`sanitize`）を除いてすべて一致する。
   - 決定性：`--shape` の組を `sofel-shape` のライブラリで形にした全行の結果（グリフ、クラスタ、フラグ、位置）のFNV-1aのハッシュを、コミットした値と比べる（`crates/sofel-shape/tests/shape_hash.rs`）。CIは、Linux（x86-64）とmacOS（aarch64）の適合テストと同じ一覧に加えて、このテストをネイティブと `wasm32-wasip1` で走らせる。
 - サブセット化は、HarfBuzzの `test/subset/` の期待するフォントと、バイト単位で比べる。
