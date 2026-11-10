@@ -463,6 +463,23 @@ impl<'a> HbCff2<'a> {
             .unwrap_or((HbIndex::null(), 0))
     }
 
+    /// Where the Variation Store (its length field) starts in
+    /// [`HbCff2::data`]; `None` without a valid one.
+    pub fn var_store(&self) -> Option<i64> {
+        self.var_store
+    }
+
+    /// The FDArray INDEX.
+    pub fn fd_array(&self) -> HbIndex<'a> {
+        self.fd_array
+    }
+
+    /// The FDSelect: HarfBuzz's Null FDSelect (format 0xFF) when the
+    /// font has none.
+    pub fn fd_select(&self) -> HbFdSelect<'a> {
+        self.fd_select
+    }
+
     /// The number of regions of ItemVariationData `ivs`
     /// (`get_region_index_count`): what `blend` takes per value. 0
     /// without a (valid) Variation Store or such a subtable.

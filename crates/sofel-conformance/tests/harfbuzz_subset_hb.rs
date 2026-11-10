@@ -11,6 +11,8 @@
 //! - `hb-dump/golem/<font>:pin`: the same with every axis pinned to its
 //!   default (`--instance=*=drop`), for the fonts with an `fvar` table
 //!   (HarfBuzz refuses to pin a font without axes).
+//! - `hb-dump/golem/<font>:pin-downgrade`: the same with
+//!   `--downgrade-cff2`, for the fonts with a `CFF2` table.
 //! - `hb-dump/repack/<tests file>`: the repacking tests of
 //!   `test/subset/data/repack_tests/` with `run-repack-tests.py`'s
 //!   arguments.
@@ -89,12 +91,13 @@ fn subsetting_agrees_with_harfbuzz() {
         let bytes = std::fs::read(&path).unwrap();
         // A font sofel cannot open gets an empty glyph set; the arguments
         // are still compared (both must fail).
-        let (glyphs, variable) = match Font::new(&bytes, 0) {
+        let (glyphs, variable, cff2) = match Font::new(&bytes, 0) {
             Ok(font) => (
                 subset::golem_glyphs(&font, &texts),
                 font.table(Tag::new(b"fvar")).is_some(),
+                font.table(Tag::new(b"CFF2")).is_some(),
             ),
-            Err(_) => (vec![1], false),
+            Err(_) => (vec![1], false, false),
         };
         cases.push((
             format!("hb-dump/golem/{name}:keep"),
@@ -105,6 +108,11 @@ fn subsetting_agrees_with_harfbuzz() {
                 format!("hb-dump/golem/{name}:pin"),
                 subset::golem_args(&path, &glyphs, true),
             ));
+        }
+        if variable && cff2 {
+            let mut args = subset::golem_args(&path, &glyphs, true);
+            args.push("--downgrade-cff2".to_string());
+            cases.push((format!("hb-dump/golem/{name}:pin-downgrade"), args));
         }
     }
     for case in subset::repack_cases(&data()).unwrap() {

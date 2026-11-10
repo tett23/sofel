@@ -9,7 +9,7 @@ pub(crate) mod colr;
 pub(crate) mod cpal;
 pub(crate) mod glyf;
 mod hdmx;
-mod hmtx;
+pub(crate) mod hmtx;
 pub(crate) mod math;
 mod maxp;
 mod name;
@@ -94,7 +94,9 @@ impl Plan {
         }
         if let Some(&tag) = pending.iter().next() {
             // "Table dependencies unable to be satisfied. Subset failed."
-            return Err(SubsetError::Failed { tag: Tag::from_u32(tag) });
+            return Err(SubsetError::Failed {
+                tag: Tag::from_u32(tag),
+            });
         }
         let list: Vec<(Tag, &[u8])> = tables.iter().map(|(t, d)| (*t, d.as_slice())).collect();
         sofel_write::build_sfnt(&list).map_err(|_| SubsetError::Failed { tag: t(b"sfnt") })
@@ -175,6 +177,7 @@ impl Plan {
             b"BASE" => Some(base::subset),
             b"MATH" => Some(math::subset),
             b"CFF " => Some(cff::subset),
+            b"CFF2" => Some(cff::subset2),
             b"VORG" => Some(vorg::subset),
             b"COLR" => Some(colr::subset),
             b"CPAL" => Some(cpal::subset),
