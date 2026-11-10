@@ -75,3 +75,10 @@ path = "fuzz_targets/post.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "base"
+path = "fuzz_targets/base.rs"
+test = false
+doc = false
+bench = false

@@ -34,3 +34,25 @@ pub fn id(font: &Path, testdata: &Path) -> String {
         .display()
         .to_string()
 }
+
+/// HarfBuzz's API test fonts with BASE tables (`test/api/fonts/base*.ttf`),
+/// sorted. The shaping and subsetting fonts have few BASE tables, so the
+/// baseline comparison adds these (ADR 0017).
+pub fn harfbuzz_base_fonts(testdata: &Path) -> Vec<PathBuf> {
+    let dir = testdata.join("harfbuzz/test/api/fonts");
+    let mut out: Vec<PathBuf> = std::fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| {
+                    p.file_name()
+                        .and_then(|n| n.to_str())
+                        .is_some_and(|n| n.starts_with("base") && n.ends_with(".ttf"))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    out.sort();
+    out
+}

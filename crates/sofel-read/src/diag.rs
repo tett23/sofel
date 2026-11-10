@@ -289,6 +289,28 @@ pub enum Kind {
         /// The glyph id.
         glyph: u32,
     },
+    /// Records searched by tag are not in ascending tag order, or repeat
+    /// a tag (`BASE`).
+    TagsNotSorted {
+        /// Index of the offending entry.
+        index: u32,
+    },
+    /// A BaseValues table has a different number of coordinates than
+    /// the axis has baseline tags.
+    BaseCoordCountMismatch {
+        /// The number of baseline tags.
+        tags: u32,
+        /// The number of coordinates.
+        coords: u32,
+    },
+    /// `defaultBaselineIndex` of a BaseValues table is not below the
+    /// number of baseline tags.
+    DefaultBaselineOutOfRange {
+        /// The index.
+        index: u32,
+        /// The number of baseline tags.
+        count: u32,
+    },
 }
 
 impl Kind {
@@ -316,7 +338,9 @@ impl Kind {
             | ComponentGlyphOutOfRange { .. }
             | NameIndexOutOfRange { .. }
             | GlyphsNotSorted { .. }
-            | DuplicateGlyph { .. } => Severity::Error,
+            | DuplicateGlyph { .. }
+            | TagsNotSorted { .. }
+            | BaseCoordCountMismatch { .. } => Severity::Error,
             RecordsNotSorted { .. }
             | DuplicateTable { .. }
             | ChecksumMismatch { .. }
@@ -336,7 +360,8 @@ impl Kind {
             | FsSelectionConflict { .. }
             | FirstCharAfterLast { .. }
             | OddLength { .. }
-            | DeprecatedVersion { .. } => Severity::Warning,
+            | DeprecatedVersion { .. }
+            | DefaultBaselineOutOfRange { .. } => Severity::Warning,
         }
     }
 
@@ -385,6 +410,9 @@ impl Kind {
             DeprecatedVersion { .. } => "deprecated_version",
             GlyphsNotSorted { .. } => "glyphs_not_sorted",
             DuplicateGlyph { .. } => "duplicate_glyph",
+            TagsNotSorted { .. } => "tags_not_sorted",
+            BaseCoordCountMismatch { .. } => "base_coord_count_mismatch",
+            DefaultBaselineOutOfRange { .. } => "default_baseline_out_of_range",
         }
     }
 
@@ -422,7 +450,8 @@ impl Kind {
             | GroupsNotSorted { index }
             | SelectorsNotSorted { index }
             | SubHeaderRangeInvalid { index }
-            | GlyphsNotSorted { index } => f("index", Uint(index)),
+            | GlyphsNotSorted { index }
+            | TagsNotSorted { index } => f("index", Uint(index)),
             DuplicateTable { tag } => f("tag", DetailValue::Tag(tag)),
             ChecksumMismatch { stored, computed } => {
                 f("stored", Uint(stored));
@@ -495,6 +524,14 @@ impl Kind {
             DuplicateGlyph { index, glyph } => {
                 f("index", Uint(index));
                 f("glyph", Uint(glyph));
+            }
+            BaseCoordCountMismatch { tags, coords } => {
+                f("tags", Uint(tags));
+                f("coords", Uint(coords));
+            }
+            DefaultBaselineOutOfRange { index, count } => {
+                f("index", Uint(index));
+                f("count", Uint(count));
             }
         }
     }
@@ -655,6 +692,16 @@ impl fmt::Display for Kind {
             DuplicateGlyph { index, glyph } => {
                 write!(f, "record {index} repeats glyph id {glyph}")
             }
+            TagsNotSorted { index } => {
+                write!(f, "tag of record {index} is not above the previous one")
+            }
+            BaseCoordCountMismatch { tags, coords } => {
+                write!(f, "{coords} base coordinates for {tags} baseline tags")
+            }
+            DefaultBaselineOutOfRange { index, count } => write!(
+                f,
+                "defaultBaselineIndex {index} is not below the {count} baseline tags"
+            ),
         }
     }
 }

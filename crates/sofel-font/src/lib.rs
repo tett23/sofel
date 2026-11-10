@@ -43,20 +43,25 @@
 
 pub use sofel_read as read;
 
+mod base_sanitize;
+pub mod baseline;
 mod float;
 mod ft;
 mod glyf_data;
+mod layout;
 mod metrics;
 mod name_language;
 mod names;
 mod tables;
 
 pub use ft::FtFaceMetrics;
+pub use layout::Direction;
 pub use metrics::{FontExtents, GlyphExtents, HbScale, MetricsTag};
 pub use names::{GlyphNames, Language, NameEntry, NameLength, Names, SfntName};
 
 use core::fmt;
 
+use sofel_read::base::Base;
 use sofel_read::cmap::{Cmap, Subtable, VariantGlyph};
 use sofel_read::head::Head;
 use sofel_read::hhea::Hhea;
@@ -67,8 +72,8 @@ use sofel_read::post::Post;
 use sofel_read::sfnt::{FontFile, Sfnt};
 use sofel_read::vorg::Vorg;
 use sofel_read::{
-    CountWidth, GlyphId, ReadError, Tag, cmap, glyf, head, hhea, hmtx, maxp, os2, post, vhea, vmtx,
-    vorg,
+    CountWidth, GlyphId, ReadError, Tag, base, cmap, glyf, head, hhea, hmtx, maxp, os2, post, vhea,
+    vmtx, vorg,
 };
 
 /// Why a font could not be opened.
@@ -266,6 +271,8 @@ pub struct Font<'a> {
     post: Option<Post<'a>>,
     vorg: Option<Vorg<'a>>,
     glyf: Option<glyf_data::Glyf<'a>>,
+    /// `BASE`, when HarfBuzz's sanitizer keeps it (ADR 0017).
+    base: Option<Base<'a>>,
 }
 
 /// HarfBuzz's order of preference (`find_best_subtable`). `ANY` matches
@@ -573,6 +580,10 @@ impl<'a> Font<'a> {
             post,
             vorg: sfnt.table(vorg::TAG).and_then(|d| Vorg::new(d).ok()),
             glyf: glyf_data::Glyf::new(&sfnt, &head, num_glyphs),
+            base: sfnt
+                .table(base::TAG)
+                .filter(|d| base_sanitize::sane(d))
+                .and_then(|d| Base::new(d).ok()),
         })
     }
 
@@ -758,6 +769,54 @@ impl<'a> Font<'a> {
         extents: impl Fn(GlyphId) -> Option<GlyphExtents>,
     ) -> i32 {
         HbScale::unscaled(self).metrics_position_with_fallback(self, tag, extents)
+    }
+
+    /// A baseline from `BASE` in font units, as HarfBuzz's
+    /// `hb_ot_layout_get_baseline` gives it at the default scale
+    /// (ADR 0017): the axis of `direction`, the BaseScript of `script`
+    /// (or of `DFLT` when the axis has no record for it), and the
+    /// coordinate of `tag` (see [`baseline`]) in its BaseValues. Only
+    /// the `coordinate` of a BaseCoord is used: HarfBuzz ignores the
+    /// reference glyph of formats 2 and 4, and the Device or
+    /// VariationIndex delta of format 3 is 0 without a ppem and
+    /// variation coordinates. `None` when the font has no such value, or
+    /// a `BASE` HarfBuzz's sanitizer rejects.
+    pub fn baseline(&self, tag: Tag, direction: Direction, script: Tag) -> Option<i32> {
+        HbScale::unscaled(self).baseline(self, tag, direction, script)
+    }
+
+    /// A baseline in font units, as HarfBuzz's
+    /// `hb_ot_layout_get_baseline_with_fallback` gives it at the default
+    /// scale: [`Font::baseline`], or one synthesized as CSS Inline
+    /// Layout 3 describes when the font does not have it. `extents`
+    /// gives glyph boxes in font units for the `math` baseline (the box
+    /// of U+2212 or `-`) and the `hang` baseline (the box of the
+    /// script's hanging character); pass [`Font::glyf_extents`] for glyf
+    /// fonts.
+    pub fn baseline_with_fallback(
+        &self,
+        tag: Tag,
+        direction: Direction,
+        script: Tag,
+        extents: impl Fn(GlyphId) -> Option<GlyphExtents>,
+    ) -> i32 {
+        HbScale::unscaled(self).baseline_with_fallback(self, tag, direction, script, extents)
+    }
+
+    /// The ascender and descender of a script and language system from
+    /// `BASE`'s MinMax tables in font units, as HarfBuzz's
+    /// `hb_ot_layout_get_font_extents` gives them at the default scale:
+    /// the language's MinMax if the BaseScript has one, else its default
+    /// MinMax (a null coordinate counts as 0), with a line gap of 0 and
+    /// `true`. Without MinMax data, [`Font::h_extents`] or
+    /// [`Font::v_extents`] for `direction`, and `false`.
+    pub fn layout_font_extents(
+        &self,
+        direction: Direction,
+        script: Tag,
+        language: Tag,
+    ) -> (FontExtents, bool) {
+        HbScale::unscaled(self).layout_font_extents(self, direction, script, language)
     }
 
     /// The left side bearing in font units, as FreeType reads it for

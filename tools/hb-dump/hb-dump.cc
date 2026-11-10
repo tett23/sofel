@@ -63,6 +63,31 @@
  *                                code point up to U+10FFFF it maps)
  *   end
  *
+ * Mode --baselines (ADR 0017): for each face index i,
+ *
+ *   face <i>
+ *   upem <hb_face_get_upem>
+ *   then for each scale of --metrics, in the same order:
+ *   scale <x_scale> <y_scale>
+ *   baseline <dir> <script> <tag> <found> <value> <fallback>
+ *                     (<dir> h for HB_DIRECTION_LTR, v for TTB; for
+ *                     every script tag of `base_scripts` and every
+ *                     script tag in the BASE table, and every
+ *                     hb_ot_layout_baseline_tag_t: <found> and <value>
+ *                     from hb_ot_layout_get_baseline, <value> 0 when not
+ *                     found; <fallback> from
+ *                     hb_ot_layout_get_baseline_with_fallback; the
+ *                     language is HB_OT_TAG_DEFAULT_LANGUAGE)
+ *   extents <dir> <script> <language> <found> <ascender> <descender>
+ *           <line_gap>
+ *                     (hb_ot_layout_get_font_extents for the same
+ *                     scripts, and for `dflt` and every language system
+ *                     tag in the BASE table)
+ *   end
+ *
+ * Tags are written as eight hex digits (big-endian), since tags in a
+ * font may have spaces or any other bytes.
+ *
  * Exit status: 0 on success, 1 when the file cannot be read, 2 on wrong
  * usage.
  */
@@ -281,6 +306,159 @@ static int dump_cmap (hb_blob_t *blob)
   return 0;
 }
 
+/* The script tags written for every font: the ones Golem uses, the
+ * default, and every tag (old and new) of a script with a hanging
+ * character in hb_ot_layout_get_baseline_with_fallback. */
+static const char *const base_scripts[] = {
+  "hani", "latn", "deva", "DFLT", "kana", "hang", "cyrl", "math",
+  "dev2", "dev3", "bng2", "gjr2", "gur2", "knd2",
+  "beng", "gujr", "guru", "tibt", "limb", "sylo", "phag", "mtei", "shrd",
+  "takr", "modi", "sidd", "tirh", "marc", "newa", "soyo", "zanb", "dogr",
+  "gong", "nand",
+};
+
+static const hb_ot_layout_baseline_tag_t baseline_tags[] = {
+  HB_OT_LAYOUT_BASELINE_TAG_ROMAN,
+  HB_OT_LAYOUT_BASELINE_TAG_HANGING,
+  HB_OT_LAYOUT_BASELINE_TAG_IDEO_FACE_BOTTOM_OR_LEFT,
+  HB_OT_LAYOUT_BASELINE_TAG_IDEO_FACE_TOP_OR_RIGHT,
+  HB_OT_LAYOUT_BASELINE_TAG_IDEO_FACE_CENTRAL,
+  HB_OT_LAYOUT_BASELINE_TAG_IDEO_EMBOX_BOTTOM_OR_LEFT,
+  HB_OT_LAYOUT_BASELINE_TAG_IDEO_EMBOX_TOP_OR_RIGHT,
+  HB_OT_LAYOUT_BASELINE_TAG_IDEO_EMBOX_CENTRAL,
+  HB_OT_LAYOUT_BASELINE_TAG_MATH,
+};
+
+struct tag_list_t
+{
+  hb_tag_t tags[1024];
+  unsigned count;
+  void add (hb_tag_t t)
+  {
+    for (unsigned i = 0; i < count; i++)
+      if (tags[i] == t) return;
+    if (count < sizeof (tags) / sizeof (tags[0])) tags[count++] = t;
+  }
+};
+
+static unsigned be16 (const uint8_t *d, unsigned len, unsigned at, bool *ok)
+{
+  if (at + 2 > len) { *ok = false; return 0; }
+  return (d[at] << 8) | d[at + 1];
+}
+
+static hb_tag_t be32 (const uint8_t *d, unsigned len, unsigned at, bool *ok)
+{
+  if (at + 4 > len) { *ok = false; return 0; }
+  return ((hb_tag_t) d[at] << 24) | (d[at + 1] << 16) | (d[at + 2] << 8) | d[at + 3];
+}
+
+/* The script and language system tags of the raw BASE bytes, read
+ * independently of HarfBuzz's parser (bounds-checked; whatever cannot
+ * be read is skipped). */
+static void base_tags (hb_face_t *face, tag_list_t *scripts, tag_list_t *languages)
+{
+  hb_blob_t *blob = hb_face_reference_table (face, HB_TAG ('B','A','S','E'));
+  unsigned len = 0;
+  const uint8_t *d = (const uint8_t *) hb_blob_get_data (blob, &len);
+  bool ok = true;
+  for (unsigned field = 4; field <= 6; field += 2)
+  {
+    unsigned axis = be16 (d, len, field, &ok);
+    if (!ok || !axis) { ok = true; continue; }
+    unsigned list = be16 (d, len, axis + 2, &ok);
+    if (!ok || !list) { ok = true; continue; }
+    list += axis;
+    unsigned n = be16 (d, len, list, &ok);
+    for (unsigned i = 0; ok && i < n; i++)
+    {
+      unsigned rec = list + 2 + 6 * i;
+      hb_tag_t t = be32 (d, len, rec, &ok);
+      unsigned script = be16 (d, len, rec + 4, &ok);
+      if (!ok) break;
+      scripts->add (t);
+      if (!script) continue;
+      script += list;
+      unsigned m = be16 (d, len, script + 4, &ok);
+      for (unsigned j = 0; ok && j < m; j++)
+      {
+	hb_tag_t l = be32 (d, len, script + 6 + 6 * j, &ok);
+	if (ok) languages->add (l);
+      }
+      ok = true;
+    }
+    ok = true;
+  }
+  hb_blob_destroy (blob);
+}
+
+static void dump_baseline_scale (hb_font_t *font, const tag_list_t &scripts,
+				 const tag_list_t &languages, int x, int y)
+{
+  hb_font_set_scale (font, x, y);
+  printf ("scale %d %d\n", x, y);
+  const hb_direction_t dirs[2] = {HB_DIRECTION_LTR, HB_DIRECTION_TTB};
+  for (unsigned d = 0; d < 2; d++)
+  {
+    const char *dir = d ? "v" : "h";
+    for (unsigned s = 0; s < scripts.count; s++)
+    {
+      for (unsigned b = 0; b < sizeof (baseline_tags) / sizeof (baseline_tags[0]); b++)
+      {
+	hb_position_t v = 0, fallback = 0;
+	hb_bool_t found = hb_ot_layout_get_baseline (font, baseline_tags[b], dirs[d],
+						     scripts.tags[s], HB_OT_TAG_DEFAULT_LANGUAGE, &v);
+	if (!found) v = 0;
+	hb_ot_layout_get_baseline_with_fallback (font, baseline_tags[b], dirs[d],
+						 scripts.tags[s], HB_OT_TAG_DEFAULT_LANGUAGE,
+						 &fallback);
+	printf ("baseline %s %08x %08x %d %d %d\n", dir, (unsigned) scripts.tags[s],
+		(unsigned) baseline_tags[b], found ? 1 : 0, v, fallback);
+      }
+      for (unsigned l = 0; l < languages.count; l++)
+      {
+	hb_font_extents_t e = {0, 0, 0};
+	hb_bool_t found = hb_ot_layout_get_font_extents (font, dirs[d], scripts.tags[s],
+							 languages.tags[l], &e);
+	printf ("extents %s %08x %08x %d %d %d %d\n", dir, (unsigned) scripts.tags[s],
+		(unsigned) languages.tags[l], found ? 1 : 0, e.ascender, e.descender,
+		e.line_gap);
+      }
+    }
+  }
+}
+
+static int dump_baselines (hb_blob_t *blob)
+{
+  unsigned count = hb_face_count (blob);
+  if (!count) count = 1;
+  for (unsigned i = 0; i < count; i++)
+  {
+    hb_face_t *face = hb_face_create (blob, i);
+    hb_font_t *font = hb_font_create (face);
+    int upem = (int) hb_face_get_upem (face);
+    tag_list_t scripts = {{0}, 0}, languages = {{0}, 0};
+    for (unsigned s = 0; s < sizeof (base_scripts) / sizeof (base_scripts[0]); s++)
+      scripts.add (hb_tag_from_string (base_scripts[s], 4));
+    languages.add (HB_OT_TAG_DEFAULT_LANGUAGE);
+    base_tags (face, &scripts, &languages);
+
+    printf ("face %u\n", i);
+    printf ("upem %d\n", upem);
+    const int scales[][2] = {
+      {upem, upem}, {2 * upem, 2 * upem}, {upem / 2, upem / 2},
+      {768, 768}, {-upem, -upem}, {768, -1536},
+    };
+    for (unsigned s = 0; s < sizeof (scales) / sizeof (scales[0]); s++)
+      dump_baseline_scale (font, scripts, languages, scales[s][0], scales[s][1]);
+    printf ("end\n");
+
+    hb_font_destroy (font);
+    hb_face_destroy (face);
+  }
+  return 0;
+}
+
 struct dump_mode_t
 {
   const char *name;
@@ -291,6 +469,7 @@ static const dump_mode_t modes[] = {
   {"--metrics", dump_metrics},
   {"--names", dump_names},
   {"--cmap", dump_cmap},
+  {"--baselines", dump_baselines},
 };
 
 int main (int argc, char **argv)
