@@ -151,6 +151,26 @@
  *                     every glyph; 0 when not found)
  *   end
  *
+ * Mode --syllables MACHINE ALPHABET COUNT SEED (ADR 0024): HarfBuzz's
+ * syllable machine MACHINE (indic, khmer, myanmar or use;
+ * find_syllables_<MACHINE>) run on buffers whose shaper categories are
+ * set directly (all other fields zero). ALPHABET is the category values,
+ * decimal, joined by `,`. For every sequence over ALPHABET of length 1
+ * to 4 (shorter first; within a length in lexicographic order of the
+ * positions in ALPHABET):
+ *
+ *   e <syllables>
+ *
+ * then for COUNT sequences of length 5 to 32 from the pseudo-random
+ * numbers of --shape-random seeded with SEED (the length is 5 plus the
+ * next number modulo 28; each value is ALPHABET[next number modulo its
+ * size]):
+ *
+ *   r <values> <syllables>
+ *
+ * <values> are the categories, hex joined by `,`; <syllables> is the
+ * syllable byte of every item, two hex digits each, concatenated.
+ *
  * Mode --vowel-constraints (ADR 0019); FILE is HarfBuzz's
  * src/ms-use/IndicShapingInvalidCluster.txt, the input of the table:
  *
@@ -2123,6 +2143,86 @@ static int dump_shape_random (int argc, char **argv)
   return 0;
 }
 
+/* --syllables: the syllable machines on given categories. */
+static void syllables_run (const char *machine, hb_buffer_t *b,
+			   const unsigned char *cats, unsigned len)
+{
+  hb_buffer_clear_contents (b);
+  for (unsigned i = 0; i < len; i++)
+    hb_buffer_add (b, 0, i);
+  hb_glyph_info_t *info = b->info;
+  for (unsigned i = 0; i < len; i++)
+  {
+    info[i].ot_shaper_var_u8_category () = cats[i];
+    info[i].syllable () = 0;
+  }
+  if (strcmp (machine, "indic") == 0) find_syllables_indic (b);
+  else if (strcmp (machine, "khmer") == 0) find_syllables_khmer (b);
+  else if (strcmp (machine, "myanmar") == 0) find_syllables_myanmar (b);
+  else find_syllables_use (b);
+}
+
+static void syllables_print (hb_buffer_t *b)
+{
+  for (unsigned i = 0; i < b->len; i++)
+    printf ("%02x", b->info[i].syllable ());
+  printf ("\n");
+}
+
+static int dump_syllables (int argc HB_UNUSED, char **argv)
+{
+  const char *machine = argv[2];
+  if (strcmp (machine, "indic") && strcmp (machine, "khmer") &&
+      strcmp (machine, "myanmar") && strcmp (machine, "use"))
+  {
+    fprintf (stderr, "hb-dump: unknown machine %s\n", machine);
+    return 2;
+  }
+  std::vector<unsigned char> alphabet;
+  for (const char *p = argv[3]; *p;)
+  {
+    alphabet.push_back ((unsigned char) strtoul (p, (char **) &p, 10));
+    if (*p == ',') p++;
+  }
+  if (alphabet.empty ()) return 2;
+  unsigned count = (unsigned) strtoul (argv[4], nullptr, 10);
+  uint32_t state = (uint32_t) strtoul (argv[5], nullptr, 10);
+  hb_buffer_t *b = hb_buffer_create ();
+  unsigned n = (unsigned) alphabet.size ();
+  unsigned char cats[32];
+  for (unsigned len = 1; len <= 4; len++)
+  {
+    unsigned total = 1;
+    for (unsigned k = 0; k < len; k++) total *= n;
+    for (unsigned idx = 0; idx < total; idx++)
+    {
+      unsigned v = idx;
+      for (unsigned k = len; k-- > 0;)
+      {
+	cats[k] = alphabet[v % n];
+	v /= n;
+      }
+      syllables_run (machine, b, cats, len);
+      printf ("e ");
+      syllables_print (b);
+    }
+  }
+  for (unsigned c = 0; c < count; c++)
+  {
+    unsigned len = 5 + random_next (&state) % 28;
+    for (unsigned k = 0; k < len; k++)
+      cats[k] = alphabet[random_next (&state) % n];
+    syllables_run (machine, b, cats, len);
+    printf ("r ");
+    for (unsigned k = 0; k < len; k++)
+      printf (k ? ",%x" : "%x", cats[k]);
+    printf (" ");
+    syllables_print (b);
+  }
+  hb_buffer_destroy (b);
+  return 0;
+}
+
 /* --layout-map: the script and language system hb_ot_map_builder_t picks
  * in GSUB and GPOS. */
 static int dump_layout_map (hb_blob_t *blob)
@@ -2205,6 +2305,7 @@ struct args_mode_t
 static const args_mode_t args_modes[] = {
   {"--shape", 6, dump_shape},
   {"--shape-random", 5, dump_shape_random},
+  {"--syllables", 6, dump_syllables},
 };
 
 /* The modes that read no file. */
@@ -2297,7 +2398,7 @@ int main (int argc, char **argv)
       if (argc >= 2 && strcmp (argv[1], args_modes[i].name) == 0)
       {
 	fprintf (stderr, "usage: hb-dump %s %s\n", args_modes[i].name,
-		 args_modes[i].argc == 6 ? "FONT TEXTFILE DIRECTION FEATURES" : "FONT COUNT SEED");
+		 strcmp (args_modes[i].name, "--syllables") == 0 ? "MACHINE ALPHABET COUNT SEED" : args_modes[i].argc == 6 ? "FONT TEXTFILE DIRECTION FEATURES" : "FONT COUNT SEED");
 	return 2;
       }
     fprintf (stderr, "usage: hb-dump [MODE] FILE; MODE is one of:");

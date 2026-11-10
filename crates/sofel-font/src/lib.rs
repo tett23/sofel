@@ -48,7 +48,6 @@ pub use sofel_read as read;
 mod base_sanitize;
 pub mod baseline;
 mod cff;
-mod float;
 mod ft;
 mod glyf_data;
 mod hb_cff;

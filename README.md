@@ -131,6 +131,13 @@ cargo run --release --manifest-path tools/gen-ot-tag/Cargo.toml
 cargo test --manifest-path tools/gen-ot-tag/Cargo.toml
 ```
 
+`sofel-shape` の音節の状態機械の表（`crates/sofel-shape/src/tables/machine_*.rs`）は、HarfBuzzの `*-machine.rl` から写した文法（`tools/gen-machine/grammars/`）から `tools/gen-machine/` が書き、コミットする（[ADR 0024](docs/adr/0024-complex-shapers.md)）。CIは作りなおした表とコミットしたものの一致を確かめる。
+
+```sh
+cargo run --release --manifest-path tools/gen-machine/Cargo.toml
+cargo test --manifest-path tools/gen-machine/Cargo.toml
+```
+
 wasmでは、`wasm32-unknown-unknown` へのビルドと、`wasm32-wasip1` での単体テストを確かめる（[ADR 0004](docs/adr/0004-wasm-and-no-std.md)）。単体テストには [wasmtime](https://wasmtime.dev/) が要る。
 
 ```sh

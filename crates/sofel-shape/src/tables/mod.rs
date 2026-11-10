@@ -11,6 +11,52 @@ pub(crate) mod indic;
 pub(crate) mod use_;
 #[rustfmt::skip]
 pub(crate) mod vowel_constraints;
+#[rustfmt::skip]
+pub(crate) mod machine_indic;
+#[rustfmt::skip]
+pub(crate) mod machine_khmer;
+#[rustfmt::skip]
+pub(crate) mod machine_myanmar;
+#[rustfmt::skip]
+pub(crate) mod machine_use;
+
+use alloc::vec::Vec;
+
+use crate::machine::{KeptIndices, Machine};
+
+/// The [`Machine`] of a generated `machine_<name>` module.
+macro_rules! machine {
+    ($m:ident) => {
+        Machine {
+            classes: &$m::CLASSES,
+            other: $m::OTHER,
+            num_classes: $m::NUM_CLASSES,
+            transitions: &$m::TRANSITIONS,
+            accept: &$m::ACCEPT,
+        }
+    };
+}
+
+/// The syllable machine of the indic shaper (`find_syllables_indic`).
+pub(crate) const INDIC_MACHINE: Machine = machine!(machine_indic);
+/// The syllable machine of the khmer shaper (`find_syllables_khmer`).
+pub(crate) const KHMER_MACHINE: Machine = machine!(machine_khmer);
+/// The syllable machine of the myanmar shaper (`find_syllables_myanmar`).
+pub(crate) const MYANMAR_MACHINE: Machine = machine!(machine_myanmar);
+/// The syllable machine of the USE shaper (`find_syllables_use`).
+pub(crate) const USE_MACHINE: Machine = machine!(machine_use);
+
+impl KeptIndices for Vec<usize> {
+    fn clear_indices(&mut self) {
+        self.clear();
+    }
+    fn push_index(&mut self, i: usize) {
+        self.push(i);
+    }
+    fn indices(&self) -> &[usize] {
+        self
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -79,5 +125,74 @@ mod tests {
             vowel_constraint_match(deva, &[0x905, 0x93E], usize::MAX),
             None
         );
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::indexing_slicing)]
+mod machine_tests {
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    use super::{INDIC_MACHINE, KHMER_MACHINE, MYANMAR_MACHINE, USE_MACHINE};
+    use crate::machine::Machine;
+
+    fn syllables(m: &Machine, cats: &[u8]) -> Vec<u8> {
+        let mut out = vec![0; cats.len()];
+        m.syllables(cats.len(), |i| cats[i], |i, s| out[i] = s);
+        out
+    }
+
+    #[test]
+    fn indic() {
+        // C H C M M: one consonant syllable (0); X is non-indic (5).
+        assert_eq!(
+            syllables(&INDIC_MACHINE, &[1, 4, 1, 7, 7, 0]),
+            vec![0x10, 0x10, 0x10, 0x10, 0x10, 0x25]
+        );
+        // A matra without a consonant is a broken cluster (4).
+        assert_eq!(syllables(&INDIC_MACHINE, &[0, 7]), vec![0x15, 0x24]);
+    }
+
+    #[test]
+    fn serials_wrap_after_15() {
+        let cats = [0u8; 17];
+        let s = syllables(&KHMER_MACHINE, &cats);
+        assert_eq!(s[0], 0x12);
+        assert_eq!(s[14], 0xF2);
+        assert_eq!(s[15], 0x12);
+        assert_eq!(s[16], 0x22);
+    }
+
+    #[test]
+    fn myanmar() {
+        // ZWJ alone: non-Myanmar (2); C As: a consonant syllable (0).
+        assert_eq!(
+            syllables(&MYANMAR_MACHINE, &[6, 1, 32]),
+            vec![0x12, 0x20, 0x20]
+        );
+    }
+
+    #[test]
+    fn use_skips_cgj_and_zwnj_before_marks() {
+        // B CGJ VAbv: CGJ is skipped and the syllable spans it.
+        let cats = [1u8, 6, 33];
+        let mut out = vec![0; 3];
+        let mut kept = Vec::new();
+        USE_MACHINE.syllables_use(3, |i| cats[i], |_| false, &mut kept, |i, s| out[i] = s);
+        assert_eq!(out, vec![0x12, 0x12, 0x12]);
+        // B ZWNJ B: ZWNJ ends the first standard cluster.
+        let cats = [1u8, 14, 1];
+        USE_MACHINE.syllables_use(3, |i| cats[i], |_| false, &mut kept, |i, s| out[i] = s);
+        assert_eq!(out, vec![0x12, 0x12, 0x22]);
+        // ... unless a mark follows: then ZWNJ is skipped and belongs to
+        // the first syllable.
+        USE_MACHINE.syllables_use(3, |i| cats[i], |i| i == 2, &mut kept, |i, s| out[i] = s);
+        assert_eq!(out, vec![0x12, 0x12, 0x22]);
+        // A leading CGJ keeps its syllable.
+        let cats = [6u8, 1];
+        let mut out = vec![0x77; 2];
+        USE_MACHINE.syllables_use(2, |i| cats[i], |_| false, &mut kept, |i, s| out[i] = s);
+        assert_eq!(out, vec![0x77, 0x12]);
     }
 }

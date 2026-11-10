@@ -232,6 +232,7 @@ sofel follows rules of HarfBuzz 15.1.0 (commit `3df40d9b98d6b32f0e4288d4ecfbb158
 | Where | Ported from |
 |---|---|
 | `tools/gen-unicode/` | The rules of `src/gen-ucd-table.py` (which decompositions are kept, which pairs compose), `src/gen-arabic-pua.py`, `src/gen-indic-table.py`, `src/gen-use-table.py`, `src/gen-arabic-table.py`, `src/gen-arabic-joining-list.py` and `src/gen-vowel-constraints.py` ([ADR 0019](docs/adr/0019-unicode-character-data.md)) |
+| `tools/gen-machine/` | `grammars/*.machine`: the categories and rules of `src/hb-ot-shaper-indic-machine.rl`, `src/hb-ot-shaper-khmer-machine.rl`, `src/hb-ot-shaper-myanmar-machine.rl` and `src/hb-ot-shaper-use-machine.rl`; the generated `crates/sofel-shape/src/tables/machine_*.rs` and the scanner of `crates/sofel-shape/src/machine.rs` (including `find_syllables_use`'s skipping of CGJ and ZWNJ) follow them ([ADR 0024](docs/adr/0024-complex-shapers.md)) |
 | `tools/gen-ot-tag/` | Reads `src/hb-ot-tag-table.hh` (the output of HarfBuzz's `src/gen-tag-table.py`) ([ADR 0020](docs/adr/0020-shaping-foundation.md)) |
 | `sofel-unicode` | `src/hb-ucd.cc` (Hangul composition and decomposition), `src/hb-common.cc` (`hb_script_from_iso15924_tag`) |
 | `sofel-geom` | `src/float.rs`: `_hb_roundf` (HarfBuzz's `roundf` macro) and `hb_clamp_to` from `src/hb-algs.hh` (Copyright © 2017 Google, Inc.; © 2019 Facebook, Inc.) ([ADR 0026](docs/adr/0026-harfbuzz-rounding.md)) |
