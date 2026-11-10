@@ -6,7 +6,8 @@
 ただし、[ADR 0027](adr/0027-variable-fonts.md) の表の読み取りと検証器は実装済みである。
 `sofel-font::var` には、設計座標と正規化座標からの位置の構築、avar版1と版2の写像、[ADR 0029](adr/0029-variation-deltas.md) と [ADR 0030](adr/0030-variation-evaluation-corrections.md) に従うItemVariationStoreの差分の評価の核を実装している。
 FreeTypeが合成する既定の名前つきインスタンス、位置によってメトリクス、輪郭、シェーピングを変える問い合わせと、そのCLIとC ABIは未実装である。
-追加フォントの検証は [ADR 0031](adr/0031-diverse-font-corpus.md)、文書だけの変更でCIを省く方針は [ADR 0032](adr/0032-documentation-only-ci.md) と、用途とパターンによる判定の [ADR 0034](adr/0034-ci-document-input-classification.md) で採択しており、いずれも未実装である。
+追加フォントの検証は [ADR 0031](adr/0031-diverse-font-corpus.md) で採択しており、未実装である。
+文書だけの変更でCIを省く方針は [ADR 0032](adr/0032-documentation-only-ci.md) と [ADR 0034](adr/0034-ci-document-input-classification.md) に従って実装している。
 以下の実装済みの機能の記述は、各実装の PR で更新する。
 
 ## 目的
@@ -408,6 +409,13 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - ネイティブの適合テストの runner は `scripts/test-conformance.sh [JOBS]` とする（[ADR 0033](adr/0033-ci-latency-and-ligature-iteration.md)）。`JOBS` の既定値と CI の値は2で、正の整数以外は終了コード2となる。Cargo がビルドしたすべてのテストの実行ファイルを最大 `JOBS` 本で実行し、各実行ファイルの libtest のスレッド数は1とする。テスト自身が作るスレッドと子プロセスは変えない。doctest も実行し、ビルドやテストの失敗は非ゼロの終了コードで伝える。
 - CI の `conformance` は Rust の release の成果物と生成ツールのビルド成果物をキャッシュし、更新の判定は Cargo に任せる（[ADR 0033](adr/0033-ci-latency-and-ligature-iteration.md)）。C の参照ツールと計測用ライブラリは、OS、アーキテクチャ、runner image、コンパイラ、固定した外部ソースとビルド入力が一致するキーだけを復元する。キャッシュの有無によってテストや照合を省かない。
 - CI の参照ツールのビルド、適合テストと計測用 C ビルドは、`scripts/measure-process-tree.sh` で起動する（[ADR 0033](adr/0033-ci-latency-and-ligature-iteration.md)）。起動したコマンドと子孫の RSS の合計を採取し、取得の後に0.1秒待って繰り返す。`peak_tree_rss_kib` に最大観測値、`samples` に取得回数を出力する。共有ページも各プロセスで数えるため、物理メモリの使用量や瞬間的な最大値とは限らない。計測に失敗しなければ、起動したコマンドの終了コードをそのまま返す。
+
+CI の文書だけの変更は、比較起点の `ci/documentation-only.rules` で判定する（[ADR 0032](adr/0032-documentation-only-ci.md)、[ADR 0034](adr/0034-ci-document-input-classification.md)）。
+`document` にだけ一致するパスの変更では、Rust、適合テスト、wasm、fuzz、ベンチマーク、C ABI の六つのビルドとテストのジョブを省く。
+`input` に一致するパス、未知のパス、規則の変更では、六つとも実行する。
+文書だけでも `adr` は変更禁止の ADR、監査、計測記録と文書を検査する。
+`ci-result` は判定と保護の成功、および六つのジョブの結果を確認する。
+文書をプログラムの入力にする変更には `input` 規則を追加する。
 
 ## 性能の計測
 
