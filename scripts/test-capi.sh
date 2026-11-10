@@ -38,7 +38,8 @@ header_functions() {
 # Builds the native static library and prints its path, after writing
 # the system libraries it needs to $tmp/libs.
 native_lib() {
-  cargo rustc --quiet --manifest-path "$root/Cargo.toml" -p sofel-capi --lib \
+  # Without colors: the libraries are read from the note rustc prints.
+  cargo rustc --quiet --color never --manifest-path "$root/Cargo.toml" -p sofel-capi --lib \
     --crate-type staticlib -- --print native-static-libs 2>"$tmp/rustc.err" || {
     cat "$tmp/rustc.err" >&2
     exit 1
