@@ -82,3 +82,10 @@ path = "fuzz_targets/base.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "cff"
+path = "fuzz_targets/cff.rs"
+test = false
+doc = false
+bench = false

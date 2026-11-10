@@ -213,9 +213,12 @@ pub struct Cff<'a> {
     /// The axis count of `fvar`, when the font has one.
     fvar_axes: Option<u16>,
     head_upem: u16,
-    /// `FormatType` of `post` as FreeType loaded it (0 without a
-    /// readable `post`).
-    post_format: u32,
+    /// `FormatType` of `post` as FreeType loaded it; `None` when the
+    /// sfnt loader could not load `post`.
+    post_format: Option<u32>,
+    /// Bit `fd`: [`Index::ft_offsets_sorted`] of that Font DICT's Local
+    /// Subrs INDEX (bit 0 without an FDArray).
+    local_sorted: [u64; 4],
 }
 
 /// The table FreeType's `tt_face_goto_table` finds: the first record with
@@ -289,11 +292,10 @@ impl<'a> Cff<'a> {
             return Err(CffError::NotCff);
         }
         let fvar_axes = font.table(Tag::new(b"fvar")).and_then(|f| be::u16_at(f, 8));
-        let post_format = font
-            .table(Tag::new(b"post"))
+        // tt_face_load_post reads the 32-byte header through the file.
+        let post_format = ft_table(font, Tag::new(b"post"))
             .filter(|p| p.len() >= 32)
-            .and_then(|p| be::u32_at(p, 0))
-            .unwrap_or(0);
+            .and_then(|p| be::u32_at(p, 0));
         let c = if let Some(t) = ft_table(font, cff::TAG2) {
             Cff::from_table(t, Version::Cff2, font.units_per_em(), fvar_axes)
         } else {
@@ -428,8 +430,32 @@ impl<'a> Cff<'a> {
             store,
             fvar_axes,
             head_upem: units_per_em,
-            post_format: 0,
-        })
+            post_format: None,
+            local_sorted: [0; 4],
+        }
+        .with_local_sorted())
+    }
+
+    fn with_local_sorted(mut self) -> Cff<'a> {
+        let n = self.fd_array.map_or(1, |i| i.len());
+        for fd in 0..n.min(256) {
+            let sorted = self
+                .subfont_of(fd)
+                .is_some_and(|s| s.local_subrs.ft_offsets_sorted());
+            if sorted && let Some(w) = self.local_sorted.get_mut(to_usize(fd / 64)) {
+                *w |= 1u64 << (fd % 64);
+            }
+        }
+        self
+    }
+
+    /// Whether the Local Subrs INDEX of Font DICT `fd` needs none of
+    /// FreeType's offset corrections ([`Index::ft_offsets_sorted`]),
+    /// found once by [`Cff::new`].
+    pub fn local_subrs_sorted(&self, fd: u16) -> bool {
+        self.local_sorted
+            .get(usize::from(fd / 64))
+            .is_some_and(|w| w & (1u64 << (fd % 64)) != 0)
     }
 
     /// CFF or CFF2.
@@ -545,6 +571,21 @@ impl<'a> Cff<'a> {
             return None;
         }
         let Some(fda) = self.fd_array else {
+            return self.subfont_of(0);
+        };
+        let fd = self
+            .fd_select
+            .map_or(0, |s| u32::from(s.fd(glyph.0) & 0xFF));
+        if fd >= fda.len() {
+            return None;
+        }
+        self.subfont_of(fd)
+    }
+
+    /// The subfont of Font DICT `fd` (of the Top DICT without an
+    /// FDArray).
+    fn subfont_of(&self, fd: u32) -> Option<Subfont<'a>> {
+        if self.fd_array.is_none() {
             let private = self.private_dict(0)?;
             let local_subrs = self.local_subrs(&private, self.top.private_offset)?;
             return Some(Subfont {
@@ -553,13 +594,6 @@ impl<'a> Cff<'a> {
                 local_subrs,
                 matrix: self.top_matrix,
             });
-        };
-        let fd = self
-            .fd_select
-            .map_or(0, |s| u32::from(s.fd(glyph.0) & 0xFF));
-        let n = fda.len();
-        if n == 0 || fd >= n {
-            return None;
         }
         let f = self.font_dict(fd)?;
         let private = self.private_dict(fd)?;
@@ -721,11 +755,12 @@ impl<'a> Cff<'a> {
 
     /// Whether FreeType gives the face glyph names
     /// (`FT_FACE_FLAG_GLYPH_NAMES`, `FT_Has_PS_Glyph_Names`): set by the
-    /// sfnt loader unless `post` has format 3.0 (or without a readable
-    /// `post`), and by the CFF driver for CFF that is not CID-keyed.
+    /// sfnt loader when it loads a `post` that is not format 3.0, and by
+    /// the CFF driver for CFF that is not CID-keyed.
     /// Only with it do `FT_Get_Glyph_Name` and `FT_Get_Name_Index` answer.
     pub fn has_glyph_names(&self) -> bool {
-        self.post_format != 0x0003_0000 || (self.version == Version::Cff && !self.top.is_cid())
+        self.post_format.is_some_and(|f| f != 0x0003_0000)
+            || (self.version == Version::Cff && !self.top.is_cid())
     }
 
     /// The charset name of `glyph`: the SID's string, cut at a 0 byte as

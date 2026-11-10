@@ -68,9 +68,10 @@ fn rasters_agree_with_freetype() {
                 if !has_glyf(&font) {
                     continue;
                 }
+                let outlines = sofel_outline::Outlines::new(&font);
                 for (glyph, ft_lines) in &ft.glyphs {
                     let ours = sofel_glyph(
-                        &font,
+                        &outlines,
                         *glyph,
                         size.parse().unwrap(),
                         &mut scratch,

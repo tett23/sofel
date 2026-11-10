@@ -2,21 +2,3 @@
 # ADR 0008), one identifier per line: <font>#<face>:<item>.
 # Give the reason after the identifier as a comment: `<id>  # <reason>`.
 # Remove an entry when it passes; the test fails until you do.
-harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSFNTOne.otf#0:outline:16:0  # OTTO font with both CFF and glyf: FreeType draws CFF, sofel draws glyf (CFF is stage 6 of ADR 0001)
-harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSFNTOne.otf#0:outline:16:2  # OTTO font with both CFF and glyf: FreeType draws CFF, sofel draws glyf (CFF is stage 6 of ADR 0001)
-harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSFNTOne.otf#0:outline:16:3  # OTTO font with both CFF and glyf: FreeType draws CFF, sofel draws glyf (CFF is stage 6 of ADR 0001)
-harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSFNTOne.otf#0:outline:48:0  # OTTO font with both CFF and glyf: FreeType draws CFF, sofel draws glyf (CFF is stage 6 of ADR 0001)
-harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSFNTOne.otf#0:outline:48:2  # OTTO font with both CFF and glyf: FreeType draws CFF, sofel draws glyf (CFF is stage 6 of ADR 0001)
-harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSFNTOne.otf#0:outline:48:3  # OTTO font with both CFF and glyf: FreeType draws CFF, sofel draws glyf (CFF is stage 6 of ADR 0001)
-harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSFNTOne.otf#0:outline:unscaled:0  # OTTO font with both CFF and glyf: FreeType draws CFF, sofel draws glyf (CFF is stage 6 of ADR 0001)
-harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSFNTOne.otf#0:outline:unscaled:2  # OTTO font with both CFF and glyf: FreeType draws CFF, sofel draws glyf (CFF is stage 6 of ADR 0001)
-harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSFNTOne.otf#0:outline:unscaled:3  # OTTO font with both CFF and glyf: FreeType draws CFF, sofel draws glyf (CFF is stage 6 of ADR 0001)
-harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSFNTOne.otf#0:raster:12:0  # OTTO font with both CFF and glyf: FreeType draws CFF, sofel draws glyf (CFF is stage 6 of ADR 0001)
-harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSFNTOne.otf#0:raster:12:2  # OTTO font with both CFF and glyf: FreeType draws CFF, sofel draws glyf (CFF is stage 6 of ADR 0001)
-harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSFNTOne.otf#0:raster:12:3  # OTTO font with both CFF and glyf: FreeType draws CFF, sofel draws glyf (CFF is stage 6 of ADR 0001)
-harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSFNTOne.otf#0:raster:24:0  # OTTO font with both CFF and glyf: FreeType draws CFF, sofel draws glyf (CFF is stage 6 of ADR 0001)
-harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSFNTOne.otf#0:raster:24:2  # OTTO font with both CFF and glyf: FreeType draws CFF, sofel draws glyf (CFF is stage 6 of ADR 0001)
-harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSFNTOne.otf#0:raster:24:3  # OTTO font with both CFF and glyf: FreeType draws CFF, sofel draws glyf (CFF is stage 6 of ADR 0001)
-harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSFNTOne.otf#0:raster:48:0  # OTTO font with both CFF and glyf: FreeType draws CFF, sofel draws glyf (CFF is stage 6 of ADR 0001)
-harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSFNTOne.otf#0:raster:48:2  # OTTO font with both CFF and glyf: FreeType draws CFF, sofel draws glyf (CFF is stage 6 of ADR 0001)
-harfbuzz/test/shape/data/text-rendering-tests/fonts/TestSFNTOne.otf#0:raster:48:3  # OTTO font with both CFF and glyf: FreeType draws CFF, sofel draws glyf (CFF is stage 6 of ADR 0001)
