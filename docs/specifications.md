@@ -207,7 +207,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 計画は `GDEF` のグリフのクラス（HarfBuzzの拒否の一覧に載る表は無いものとする）とマークのグリフの集合、`GSUB` と `GPOS` のすべてのlookupについて、拡張をたどったサブテーブルのビューと、それぞれの最初のグリフのCoverageの要約（`hb_set_digest_t` と同じ3つの64ビットのマスク）を持つ。拡張の型がそろわないlookupと、読めないサブテーブルは、HarfBuzzと同じく無いものとする。
 - `ShapePlan::key` は計画を作った区間の性質と機能を返す。計画は不変で、`Send` と `Sync` を満たす。
 - `layout_selection(font, script_tags, language_tags)` は、計画と同じ文字体系と言語の選択の結果を返す。
-- [ADR 0024](adr/0024-complex-shapers.md) のシェーパーが実装されるまでは、`Shaper::Default` 以外のシェーパーもdefaultのシェーパーの手順で処理する。シェーパーの差しこみ口（`collect_features`、`override_features`、`data_create`、`preprocess_text`、`postprocess_glyphs`、`decompose`、`compose`、`setup_masks`、`reorder_marks`、`gpos_tag`、正規化の方式、マークの幅の0化の時期、フォールバックの配置、段の間の関数）は、HarfBuzzの `hb_ot_shaper_t` と同じ位置に置く。
+- [ADR 0024](adr/0024-complex-shapers.md) のシェーパーのうち、hebrew、hangul、thaiを実装した（下の「文字体系ごとのシェーパー」）。まだ実装していないシェーパーは、defaultのシェーパーの手順で処理する。シェーパーの差しこみ口（`collect_features`、`override_features`、`data_create`、`preprocess_text`、`postprocess_glyphs`、`decompose`、`compose`、`setup_masks`、`reorder_marks`、`gpos_tag`、正規化の方式、マークの幅の0化の時期、フォールバックの配置、段の間の関数）は、HarfBuzzの `hb_ot_shaper_t` と同じ位置に置く。
 
 ### 手順
 
@@ -219,6 +219,14 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   - 既定で無視する文字の非表示（空白のグリフか見えないグリフ）、削除、保持、見つからない異体字セレクタのグリフ、送り幅と縦書きの原点、空白の代わりの幅、マークの幅の0化、フォールバックのマークの配置、逆向きなら反転、クラスタごとのフラグの伝播。
 - `shape_fallback` は HarfBuzzの `fallback` のシェーパー（`src/hb-fallback-shape.cc`）である。
 - HarfBuzzの `roundf`（`floor ((double) x + 0.5)`）は `sofel_geom::float` を使う（[ADR 0026](adr/0026-harfbuzz-rounding.md)）。
+
+### 文字体系ごとのシェーパー
+
+[ADR 0024](adr/0024-complex-shapers.md) のシェーパーは `crates/sofel-shape/src/shapers/` に置き、HarfBuzz 15.1.0の `hb-ot-shaper-*.cc` と同じ規則とする。シェーパーごとの値（分類、位置、音節の番号、ハングルの字母の機能やアラビア文字の結合の動作）は、バッファの要素の名前のついた欄（`shaper_category`、`shaper_position`、`syllable`、`shaper_aux`）に置く。要素は28バイトである。
+
+- hebrew：フォントのGPOSに `mark` が無いとき、正規の合成に無い表示形（U+FB1D〜U+FB4F）へ合成する（`compose_hebrew`）。パタハかカメツ、シェヴァかヒリク、メテグか下のマークの並びで、後ろの2つを入れかえる。`gpos_tag` は `hebr` で、GPOSの文字体系が違えばGPOSを使わない。
+- hangul：前処理で、字母の列を音節に合成するか（フォントに音節のグリフがあるとき）、音節を字母に分解して `ljmo`、`vjmo`、`tjmo` のマスクを付ける。声調の印は、幅が0でなければ音節の前へ移し、音節が無ければ点線の円を足す。字母では `calt` のマスクを外す。正規化は `NONE`。
+- thai（タイ文字とラオ文字）：前処理で `SARA AM` をNIKHAHITと `SARA AA` に分解し、NIKHAHITを上のマークの前へ移す。文字体系がThaiで、GSUBにThaiの文字体系が無いとき、上下のマークの状態機械でWindowsとMacの私用領域の字形に置きかえる（`thai_pua_shape`）。
 
 ### 音節の状態機械
 
@@ -308,10 +316,10 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - シェーピング（AATを含む）は、HarfBuzzの `test/shape/data/*/tests/*.tests` の期待値と比べる（[ADR 0020](adr/0020-shaping-foundation.md)、`tests/harfbuzz_shape.rs`）。
   - `in-house`、`aots`、`text-rendering-tests` のすべての行を、`run-tests.py` と同じく `<フォント> --unicodes <文字> <オプション> --shaper=<シェーパー>` で `sofel_cli::shape` に渡し、期待値が `*` でなければ `--verify --unsafe-to-concat --safe-to-insert-tatweel` を加える。結果が期待値と違い `gid` を含むときは、両方を `--glyphs --no-glyph-names` で読みなおしてグリフIDで比べる。`@shapers=` と行の `--shaper=` の指示でシェーパーを選び（既定は `ot`）、sofelに無いシェーパーの行は走らせずに失敗とする。`@font-funcs=` と `@face-loader=` は無視する。システムのフォントを絶対パスで指す行は飛ばし、HarfBuzz自身が走らせない（失敗する）ファイル（`text-rendering-tests/DISABLED`。`CMAP-3.tests` はMacの非Unicodeのcmapで、HarfBuzzもASCIIしか引かない）は除く。
   - 項目は `<スイート>/<ファイル>:<行>` で、`ot` 以外のシェーパーには `@<シェーパー>` を付ける。期待する失敗は `conformance/expected-failures.txt` に、[ADR 0020](adr/0020-shaping-foundation.md)の分類をちょうど1つコメントに書く：`shaper:<名前>`（[ADR 0024](adr/0024-complex-shapers.md) の未実装のシェーパー）、`variations`、`aat`（AATと古い `kern` 表）、`synthetic`、`cff`、`color`、`out-of-scope:<名前>`。テストは分類が行に合うこと（`shaper:` は計画のシェーパー、`out-of-scope:` は行のシェーパー、`synthetic` はオプション、`variations` はオプションか `fvar`、`aat`、`cff`、`color` はフォントの表）を確かめる。[ADR 0020](adr/0020-shaping-foundation.md)の分類に当てはまらない2行は、決定を待つ分類 `dfont`（Macのリソースの形式のフォント。[ADR 0007](adr/0007-sfnt-read-foundation.md) で後回し）と `sanitize`（HarfBuzzのsanitizerがGSUB全体を拒むフォント。sofelの検証器が `Error` を報告することを確かめる）とする。
-  - 5850の場合（145行はシステムのフォント、16ファイルはHarfBuzzが無効にしたもの）のうち4576が通り、期待する失敗は1274（`shaper:*` 812、`variations` 263、`aat` 167、`out-of-scope:*` 28、`synthetic` 2、`dfont` 1、`sanitize` 1）である。`shaper:*` の行は、シェーパーをdefaultに固定したHarfBuzzと、`aat` の行はAATと `kern` を除いてビルドしたHarfBuzzと、すべて一致することを手元で確かめた。
+  - 5850の場合（145行はシステムのフォント、16ファイルはHarfBuzzが無効にしたもの）のうち4639が通り、期待する失敗は1211（`shaper:*` 745、`variations` 263、`aat` 171、`out-of-scope:*` 28、`synthetic` 2、`dfont` 1、`sanitize` 1）である。`shaper:*` の行は、シェーパーをdefaultに固定したHarfBuzzと、`aat` の行はAATと `kern` を除いてビルドしたHarfBuzzと、すべて一致することを手元で確かめた。
 - `hb-dump` によるシェーピングの突き合わせ（[ADR 0020](adr/0020-shaping-foundation.md)、`tests/harfbuzz_shape_dump.rs`）。`hb-dump` は `LC_ALL=C` で走らせる。期待する失敗の分類は上と同じで、同じく確かめる。
   - `hb-dump --shape FONT TEXTFILE DIRECTION FEATURES` は、行ごとに `hb_buffer_add_utf8`、`hb_buffer_guess_segment_properties`、`hb_shape` を行い、`hb-shape` の形（グリフID、UTF-8のクラスタ、フラグ）で書く。`perf/benchmark-shape.cc` のすべての組（可変フォントは既定のインスタンス）と、`Mplus1p-Regular.ttf` と `ja-runs.txt`（LTRとTTB、機能なし、`vrt2`、`-vert`、`palt`、`vkrn`）を、`sofel-shape --text-file --utf8-clusters --no-glyph-names --show-flags` と比べる。項目は `<フォント>+<文字列>:<方向>:<機能>` で、1行でも違えば失敗とし、分類は違ったすべての行に合わなければならない。期待する失敗は `conformance/expected-failures-shape-pairs.txt` に書く。52万9399行のうち、アラビア文字（5組）、デーヴァナーガリー、デュプロワイエの組の2万6595行が `shaper:*` で違い、ほかはすべて一致する。
-  - `hb-dump --shape-random FONT COUNT SEED` は、テストのフォントのフェイスごとに、cmapで引ける文字を文字体系ごとに分け、同じ線形合同法（C標準の例の式、上位15ビット）で長さ1〜16の文字列をCOUNT個作り、`BOT`、`EOT`、`PRODUCE_UNSAFE_TO_CONCAT` で形にする。文字列も書き、テストはsofelのcmapから同じ文字列を作って一致を確かめる。件数は200、種は20。項目は `<フォント>#<フェイス>:<文字体系>` で、期待する失敗は `conformance/expected-failures-shape-random.txt` に書く。sofelが開けないフェイス（headの無いもの。[ADR 0010](adr/0010-font-foundation.md)）は比べない。2017項目のうち1342が一致し、期待する失敗は `shaper:*` 544、`aat` 123、`variations` 5（既定の座標で条件の成り立つFeatureVariations）、`sanitize` 3である。
+  - `hb-dump --shape-random FONT COUNT SEED` は、テストのフォントのフェイスごとに、cmapで引ける文字を文字体系ごとに分け、同じ線形合同法（C標準の例の式、上位15ビット）で長さ1〜16の文字列をCOUNT個作り、`BOT`、`EOT`、`PRODUCE_UNSAFE_TO_CONCAT` で形にする。文字列も書き、テストはsofelのcmapから同じ文字列を作って一致を確かめる。件数は200、種は20。項目は `<フォント>#<フェイス>:<文字体系>` で、期待する失敗は `conformance/expected-failures-shape-random.txt` に書く。sofelが開けないフェイス（headの無いもの。[ADR 0010](adr/0010-font-foundation.md)）は比べない。2017項目のうち1366が一致し、期待する失敗は `shaper:*` 515、`aat` 128、`variations` 5（既定の座標で条件の成り立つFeatureVariations）、`sanitize` 3である。
 - 音節の状態機械は、HarfBuzzの機械と突き合わせる（[ADR 0024](adr/0024-complex-shapers.md)、`tests/harfbuzz_syllables.rs`）。`hb-dump --syllables MACHINE ALPHABET COUNT SEED` は、分類を直接書いたバッファ（ほかの欄は0）にHarfBuzzの `find_syllables_<機械>` を走らせ、音節の値を書く。分類の値の集まりは、HarfBuzzの `.rl` の `export` の値と、`export` に無い最小の値とする。長さ1〜4のすべての列と、`--shape-random` と同じ線形合同法（種1）による長さ5〜32の列100万個について、sofelの結果とすべて一致することを確かめる。期待する失敗の一覧は持たない。4つの機械の合わせて約894万列が一致する。
   - `hb-dump --layout-map FONT` は、全文字体系と、フォントの言語のシステムのタグの言語（と言語なし）について、`hb_ot_tags_from_script_and_language` のタグで `hb_ot_layout_table_select_script` と `hb_ot_layout_script_select_language` が選ぶGSUBとGPOSの文字体系と言語の番号を書く。`layout_selection` と比べ、項目は `<フォント>#<フェイス>`、期待する失敗は `conformance/expected-failures-layout-map.txt` に書く。652項目のうち、HarfBuzzのsanitizerがGSUBを拒む3つのフォント（`sanitize`）を除いてすべて一致する。
   - 決定性：`--shape` の組を `sofel-shape` のライブラリで形にした全行の結果（グリフ、クラスタ、フラグ、位置）のFNV-1aのハッシュを、コミットした値と比べる（`crates/sofel-shape/tests/shape_hash.rs`）。CIは、Linux（x86-64）とmacOS（aarch64）の適合テストと同じ一覧に加えて、このテストをネイティブと `wasm32-wasip1` で走らせる。
