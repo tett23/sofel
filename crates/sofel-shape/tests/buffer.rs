@@ -367,3 +367,63 @@ fn types_are_send_and_sync() {
     check::<ShapePlan<'static>>();
     check::<ResolvedProperties>();
 }
+
+#[test]
+fn append_copies_characters_and_context_as_hb_buffer_append() {
+    let mut src = UnicodeBuffer::new();
+    // Context "xy" before, "z" after the item "abcdefgh".
+    src.push_utf8(b"xyabcdefghz", 2, Some(8));
+    assert_eq!(src.pre_context(), [0x79, 0x78]);
+    assert_eq!(src.post_context(), [0x7A]);
+    let mut b = UnicodeBuffer::new();
+    b.append(&src, 3, 6);
+    assert_eq!(contents(&b), [(0x64, 5), (0x65, 6), (0x66, 7)]);
+    // The characters before the range, then the source's pre-context.
+    assert_eq!(b.pre_context(), [0x63, 0x62, 0x61, 0x79, 0x78]);
+    // The characters after the range, then the source's post-context.
+    assert_eq!(b.post_context(), [0x67, 0x68, 0x7A]);
+    // Appending more keeps the pre-context, replaces the post-context.
+    b.append(&src, 7, 8);
+    assert_eq!(contents(&b).len(), 4);
+    assert_eq!(b.pre_context(), [0x63, 0x62, 0x61, 0x79, 0x78]);
+    assert_eq!(b.post_context(), [0x7A]);
+    // Empty and clamped ranges add nothing and leave the context.
+    b.append(&src, 5, 5);
+    b.append(&src, 9, 20);
+    assert_eq!(contents(&b).len(), 4);
+    assert_eq!(b.post_context(), [0x7A]);
+    // From the start, the source's pre-context alone.
+    let mut c = UnicodeBuffer::new();
+    c.append(&src, 0, 1);
+    assert_eq!(c.pre_context(), [0x79, 0x78]);
+}
+
+#[test]
+fn similar_and_number_clusters() {
+    let mut src = UnicodeBuffer::new();
+    src.set_flags(BufferFlags::BOT);
+    src.set_cluster_level(ClusterLevel::Characters);
+    src.set_replacement_codepoint(0x3F);
+    src.set_invisible_glyph(7);
+    src.set_not_found_glyph(8);
+    src.set_not_found_variation_selector_glyph(Some(9));
+    src.set_random_state(5);
+    src.push_utf8("aé😀".as_bytes(), 0, None);
+    let s = src.similar();
+    assert!(s.is_empty());
+    assert_eq!(s.flags(), BufferFlags::BOT);
+    assert_eq!(s.cluster_level(), ClusterLevel::Characters);
+    assert_eq!(s.replacement_codepoint(), 0x3F);
+    assert_eq!(
+        (
+            s.invisible_glyph(),
+            s.not_found_glyph(),
+            s.not_found_variation_selector_glyph()
+        ),
+        (7, 8, Some(9))
+    );
+    assert_eq!(s.random_state(), 1);
+    assert_eq!(src.clusters().collect::<Vec<_>>(), [0, 1, 3]);
+    src.number_clusters();
+    assert_eq!(src.clusters().collect::<Vec<_>>(), [0, 1, 2]);
+}

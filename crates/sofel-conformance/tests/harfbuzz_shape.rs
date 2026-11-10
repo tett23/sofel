@@ -45,20 +45,12 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use sofel_conformance::{expect, paths};
-use sofel_font::Font;
-use sofel_font::read::Tag;
-use sofel_shape::{
-    Direction, Language, Script, SegmentProperties, ShapePlan, Shaper, UnicodeBuffer,
-};
+use sofel_conformance::paths;
+use sofel_conformance::shape::{self, Subject, option};
+use sofel_shape::{Direction, Language, Script, SegmentProperties};
 
 const LIST: &str = "expected-failures.txt";
 const SUITES: [&str; 3] = ["in-house", "aots", "text-rendering-tests"];
-/// The shapers of ADR 0024.
-const COMPLEX: [&str; 8] = [
-    "arabic", "hebrew", "hangul", "thai", "indic", "khmer", "myanmar", "use",
-];
-
 /// One test: a line of a `.tests` file with one shaper.
 struct Case {
     id: String,
@@ -207,163 +199,15 @@ fn run(case: &Case) -> Result<(), (String, String)> {
     Ok(())
 }
 
-fn shaper_name(s: Shaper) -> &'static str {
-    match s {
-        Shaper::Default => "default",
-        Shaper::Arabic => "arabic",
-        Shaper::Hangul => "hangul",
-        Shaper::Hebrew => "hebrew",
-        Shaper::Indic => "indic",
-        Shaper::Khmer => "khmer",
-        Shaper::Myanmar | Shaper::MyanmarZawgyi => "myanmar",
-        Shaper::Thai => "thai",
-        Shaper::Use => "use",
-    }
-}
-
-/// The option's value, `--name=value` or `--name value`.
-fn option<'a>(options: &'a [String], name: &str) -> Option<&'a str> {
-    let mut it = options.iter();
-    while let Some(o) = it.next() {
-        if o == name {
-            return it.next().map(String::as_str);
-        }
-        if let Some(v) = o.strip_prefix(name).and_then(|v| v.strip_prefix('=')) {
-            return Some(v);
-        }
-    }
-    None
-}
-
-/// The shaper HarfBuzz's plan picks for the case
-/// (`hb_ot_shaper_categorize`).
-fn plan_shaper(case: &Case, font: &Font<'_>) -> &'static str {
-    let mut buffer = UnicodeBuffer::new();
-    for u in case.unicodes.split(',') {
-        let u = u.trim().trim_start_matches("U+").trim_start_matches("u+");
-        if let Ok(v) = u32::from_str_radix(u, 16) {
-            buffer.push(v, 0);
-        }
-    }
-    let props = SegmentProperties {
-        direction: option(&case.options, "--direction")
-            .and_then(|d| Direction::from_bytes(d.as_bytes())),
-        script: option(&case.options, "--script").and_then(|s| Script::from_iso15924(s.as_bytes())),
-        language: option(&case.options, "--language").and_then(|l| Language::new(l.as_bytes())),
-    }
-    .guess(&buffer, None);
-    shaper_name(ShapePlan::new(font, props, &[]).shaper())
-}
-
-/// Why a category does not fit a failing case, or `None` when it does.
-fn misfit(case: &Case, category: &str) -> Option<String> {
-    let data = std::fs::read(&case.font).ok()?;
-    let face = option(&case.options, "--face-index")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
-    let font = Font::new(&data, face).ok();
-    // The table directory, also of fonts sofel cannot open (no `head`).
-    let sfnt = sofel_font::read::sfnt::Sfnt::new(&data).ok();
-    let has = |t: &[u8; 4]| sfnt.as_ref().is_some_and(|f| f.table(Tag(*t)).is_some());
-    let has_option = |names: &[&str]| names.iter().any(|n| option(&case.options, n).is_some());
-    let fits = match category {
-        c if c.starts_with("out-of-scope:") => {
-            let name = &c["out-of-scope:".len()..];
-            name == case.shaper && !["ot", "fallback"].contains(&name)
-        }
-        c if c.starts_with("shaper:") => {
-            let name = &c["shaper:".len()..];
-            let actual = font.as_ref().map(|f| plan_shaper(case, f));
-            if actual != Some(name) || !COMPLEX.contains(&name) || case.shaper != "ot" {
-                return Some(format!("the plan's shaper is {actual:?}"));
-            }
-            true
-        }
-        "variations" => {
-            has_option(&["--variations", "--named-instance", "--font-ptem"])
-                || has(b"fvar")
-                || has(b"HVAR")
-                || has(b"VVAR")
-        }
-        "aat" => {
-            has(b"morx")
-                || has(b"mort")
-                || has(b"kerx")
-                || has(b"kern")
-                || has(b"trak")
-                || has(b"ankr")
-        }
-        "synthetic" => has_option(&["--font-bold", "--font-slant", "--font-grade"]),
-        "cff" => has(b"CFF ") || has(b"CFF2"),
-        "color" => has(b"COLR") || has(b"CBDT") || has(b"sbix") || has(b"SVG "),
-        // Not categories of ADR 0020; see expected-failures.txt.
-        "dfont" => data.starts_with(&[0, 0, 1, 0]),
-        "sanitize" => font.as_ref().is_some_and(|f| {
-            let mut error = false;
-            let mut seen = |d: sofel_font::read::Diagnostic| {
-                error |= d.severity == sofel_font::read::Severity::Error;
-            };
-            if let Some(t) = f.table(Tag(*b"GSUB")) {
-                sofel_font::read::gsub::validate(t, None, &mut seen);
-            }
-            if let Some(t) = f.table(Tag(*b"GPOS")) {
-                sofel_font::read::gpos::validate(t, None, &mut seen);
-            }
-            error
-        }),
-        _ => return Some("unknown category".into()),
-    };
-    (!fits).then(|| "the font or the options do not have what the category names".into())
-}
-
-/// A category to start from for an unlisted failure (a developer aid,
-/// `SOFEL_SHAPE_SUGGEST=1`); `?` marks guesses to check by hand.
-fn suggest(case: &Case) -> String {
-    if !["ot", "fallback"].contains(&case.shaper.as_str()) {
-        return format!("out-of-scope:{}", case.shaper);
-    }
-    for c in ["synthetic", "variations"] {
-        if c == "variations"
-            && !["--variations", "--named-instance", "--font-ptem"]
-                .iter()
-                .any(|n| option(&case.options, n).is_some())
-        {
-            continue;
-        }
-        if misfit(case, c).is_none() {
-            return c.into();
-        }
-    }
-    let Ok(data) = std::fs::read(&case.font) else {
-        return "UNKNOWN-nofont".into();
-    };
-    let face = option(&case.options, "--face-index")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
-    let Ok(font) = Font::new(&data, face) else {
-        return "UNKNOWN-badfont".into();
-    };
-    let s = plan_shaper(case, &font);
-    if COMPLEX.contains(&s) && case.shaper == "ot" {
-        return format!("shaper:{s}");
-    }
-    let has = |t: &[u8; 4]| font.table(Tag(*t)).is_some();
-    if has(b"morx") || has(b"mort") || has(b"kerx") || has(b"trak") || has(b"ankr") {
-        return "aat".into();
-    }
-    if has(b"kern") {
-        return "aat?kern".into();
-    }
-    if has(b"fvar") {
-        return "variations?".into();
-    }
-    if misfit(case, "color").is_none() {
-        return "color?".into();
-    }
-    if misfit(case, "cff").is_none() {
-        return "cff?".into();
-    }
-    "UNKNOWN".into()
+/// The characters of a `--unicodes` list.
+fn codepoints(unicodes: &str) -> Vec<u32> {
+    unicodes
+        .split(',')
+        .filter_map(|u| {
+            let u = u.trim().trim_start_matches("U+").trim_start_matches("u+");
+            u32::from_str_radix(u, 16).ok()
+        })
+        .collect()
 }
 
 #[test]
@@ -434,67 +278,65 @@ fn harfbuzz_shaping_tests() {
             .collect()
     });
     let elapsed = started.elapsed();
-    let reasons = expect::parse_reasons(
-        &std::fs::read_to_string(paths::conformance_file(LIST)).unwrap_or_default(),
-    );
-    let expected = reasons.keys().cloned().collect();
-    let mut by_category: BTreeMap<String, usize> = BTreeMap::new();
-    let mut misfits = Vec::new();
     let mut passes = 0usize;
+    let mut flat = Vec::new();
     for (i, r) in &results {
         let case = &all[*i];
-        match r {
-            Ok(()) => passes += 1,
-            Err((got, want)) => {
-                if std::env::var_os("SOFEL_SHAPE_SUGGEST").is_some()
-                    && !reasons.contains_key(&case.id)
-                {
-                    println!("SUGGEST {} # {}", case.id, suggest(case));
-                }
-                if verbose {
-                    println!(
-                        "FAIL {}: {} {}\n  got:  {got}\n  want: {want}",
-                        case.id,
-                        case.unicodes,
-                        case.options.join(" ")
-                    );
-                }
-                if let Some(cat) = reasons.get(&case.id) {
-                    *by_category.entry(cat.clone()).or_default() += 1;
-                    if let Some(why) = misfit(case, cat) {
-                        misfits.push(format!("{} # {cat}: {why}", case.id));
-                    }
-                }
-            }
+        if let Err((got, want)) = r
+            && verbose
+        {
+            println!(
+                "FAIL {}: {} {}\n  got:  {got}\n  want: {want}",
+                case.id,
+                case.unicodes,
+                case.options.join(" ")
+            );
         }
+        passes += usize::from(r.is_ok());
+        flat.push((case.id.clone(), r.is_ok()));
     }
     println!(
         "{} cases ({skipped} lines with system fonts skipped, {disabled_files} files disabled by HarfBuzz), {passes} passed, {} failed, in {elapsed:.1?}",
         all.len(),
         all.len() - passes
     );
+    let by_id: BTreeMap<&str, &Case> = all.iter().map(|c| (c.id.as_str(), c)).collect();
+    let fonts: BTreeMap<&Path, Vec<u8>> = all
+        .iter()
+        .filter_map(|c| Some((c.font.as_path(), std::fs::read(&c.font).ok()?)))
+        .collect();
+    let texts: BTreeMap<&str, Vec<u32>> = all
+        .iter()
+        .map(|c| (c.id.as_str(), codepoints(&c.unicodes)))
+        .collect();
+    let subject = |i: usize| {
+        let id = flat.get(i)?.0.as_str();
+        let case = by_id.get(id)?;
+        Some(Subject {
+            data: fonts.get(case.font.as_path())?,
+            face: option(&case.options, "--face-index")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0),
+            options: &case.options,
+            shaper: &case.shaper,
+            text: texts.get(id)?,
+            props: SegmentProperties {
+                direction: option(&case.options, "--direction")
+                    .and_then(|d| Direction::from_bytes(d.as_bytes())),
+                script: option(&case.options, "--script")
+                    .and_then(|s| Script::from_iso15924(s.as_bytes())),
+                language: option(&case.options, "--language")
+                    .and_then(|l| Language::new(l.as_bytes())),
+            },
+        })
+    };
+    let suggest = std::env::var_os("SOFEL_SHAPE_SUGGEST").is_some();
+    let (report, by_category) = shape::judge(&flat, &subject, LIST, suggest);
     for (cat, n) in &by_category {
         println!("  expected failures {cat}: {n}");
     }
     if filter.is_some() {
         return;
-    }
-    let problems = expect::judge(
-        results
-            .iter()
-            .map(|(i, r)| (all[*i].id.as_str(), r.is_ok())),
-        &expected,
-    );
-    let mut report = expect::report(&problems, LIST);
-    for (id, cat) in &reasons {
-        if cat.split_whitespace().count() != 1 {
-            report.push_str(&format!(
-                "{LIST}: {id} needs exactly one category, has `{cat}`\n"
-            ));
-        }
-    }
-    for m in &misfits {
-        report.push_str(&format!("category does not fit: {m}\n"));
     }
     assert!(report.is_empty(), "{report}");
 }

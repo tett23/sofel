@@ -628,15 +628,25 @@ impl<'a> Font<'a> {
     /// the glyph count count as unmapped (ADR 0010). `None` also when the
     /// font has no usable subtable.
     pub fn nominal_glyph(&self, c: u32) -> Option<GlyphId> {
-        self.nominal_glyph_raw(c).filter(|g| g.0 < self.num_glyphs)
+        self.lookup(c).filter(|g| g.0 < self.num_glyphs)
     }
 
+    /// The glyph for a character as HarfBuzz's `hb_font_get_nominal_glyph`
+    /// with the `ot` font functions gives it, for shaping (ADR 0020):
     /// [`Font::nominal_glyph`] with every glyph id the subtable gives,
-    /// as HarfBuzz's `hb_font_get_nominal_glyph` with the `ot` font
-    /// functions gives it, glyph ids not below the glyph count included.
-    /// Shaping uses these as HarfBuzz does (ADR 0020); their advances
-    /// are 0 and they have no outlines.
+    /// glyph ids not below the glyph count included (their advances are
+    /// 0 and they have no outlines), and nothing from subtables of
+    /// formats 2 and 8, which HarfBuzz does not look up
+    /// (`CmapSubtable::get_glyph`).
     pub fn nominal_glyph_raw(&self, c: u32) -> Option<GlyphId> {
+        if matches!(self.cmap.map(|s| s.format()), Some(2 | 8)) {
+            return None;
+        }
+        self.lookup(c)
+    }
+
+    /// The lookup of [`Font::nominal_glyph`], before the glyph count.
+    fn lookup(&self, c: u32) -> Option<GlyphId> {
         let s = self.cmap?;
         let again = |m: u32| (m != 0).then(|| s.glyph(m)).flatten();
         match self.remap {
@@ -663,8 +673,11 @@ impl<'a> Font<'a> {
     /// default variation falls back to [`Font::nominal_glyph`]; glyph ids
     /// not below the glyph count count as unmapped.
     pub fn variation_glyph(&self, c: u32, selector: u32) -> Option<GlyphId> {
-        self.variation_glyph_raw(c, selector)
-            .filter(|g| g.0 < self.num_glyphs)
+        match self.uvs?.variant(c, selector)? {
+            VariantGlyph::Default => self.lookup(c),
+            VariantGlyph::Glyph(g) => Some(g),
+        }
+        .filter(|g| g.0 < self.num_glyphs)
     }
 
     /// [`Font::variation_glyph`] with every glyph id, as HarfBuzz's

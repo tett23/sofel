@@ -1038,9 +1038,12 @@ pub fn run_with_input(
     };
     let mut failed = false;
     let mut text_out = Vec::new();
+    // The plan of the last line, used again while the properties stay
+    // (HarfBuzz's plan cache).
+    let mut plan = None;
     for (n, line) in (1u32..).zip(split_lines(&text, o.single_par)) {
         text_out.clear();
-        if !line_output(&cx, n, line, &mut text_out, err) {
+        if !line_output(&cx, &mut plan, n, line, &mut text_out, err) {
             failed = true;
         }
         if out.write_all(&text_out).is_err() {
@@ -1058,8 +1061,9 @@ fn font_size_to_scale(size: f64) -> i32 {
 
 /// Shapes one line and writes its output (`shape_consumer_t::consume_line`).
 /// `false` when shaping failed.
-fn line_output(
-    cx: &Context<'_, '_, '_>,
+fn line_output<'a>(
+    cx: &Context<'a, '_, '_>,
+    plan_cache: &mut Option<ShapePlan<'a>>,
     line_no: u32,
     line: &[u8],
     out: &mut Vec<u8>,
@@ -1132,10 +1136,15 @@ fn line_output(
         out.push(b'\n');
         return true;
     }
-    let plan = ShapePlan::new(&cx.font.font, props.clone(), &o.features);
+    if plan_cache.as_ref().is_none_or(|p| p.key().0 != props) {
+        *plan_cache = Some(ShapePlan::new(&cx.font.font, props.clone(), &o.features));
+    }
+    let Some(plan) = plan_cache.as_ref() else {
+        return false;
+    };
     let shape_one = |b: UnicodeBuffer| -> GlyphBuffer {
         match o.shaper {
-            Shaper::Ot => shape_with_extents(&cx.font.font, &cx.scale, &plan, b, &|g| {
+            Shaper::Ot => shape_with_extents(&cx.font.font, &cx.scale, plan, b, &|g| {
                 cx.font.extents.glyph_extents(g)
             }),
             Shaper::Fallback => shape_fallback(&cx.font.font, &cx.scale, &props, b),

@@ -5,8 +5,6 @@
 # sofel gives glyph boxes from glyf, CFF2 and CFF (ADR 0021); the boxes
 # of color glyphs (COLR, CBDT, sbix, which HarfBuzz looks at before glyf)
 # come with ADR 0023.
-harfbuzz/test/shape/data/aots/fonts/cmap2_font1.otf#0:hb:nominal  # HarfBuzz does not look up cmap format 2 (CmapSubtable::get_glyph); sofel reads it as FreeType does (ADR 0010)
-harfbuzz/test/shape/data/aots/fonts/cmap8_font1.otf#0:hb:nominal  # HarfBuzz does not look up cmap format 8 (CmapSubtable::get_glyph); sofel reads it as FreeType does (ADR 0010)
 harfbuzz/test/shape/data/in-house/fonts/3cf6f8ac6d647473a43a3100e7494b202b2cfafe.ttf#0:hb:extents  # color glyph extents (CBDT): ADR 0023
 harfbuzz/test/shape/data/in-house/fonts/3cf6f8ac6d647473a43a3100e7494b202b2cfafe.ttf#0:hb:v_origin  # color glyph extents (CBDT): ADR 0023 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/in-house/fonts/53374c7ca3657be37efde7ed02ae34229a56ae1f.ttf#0:hb:extents  # color glyph extents (COLR): ADR 0023
