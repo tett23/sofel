@@ -102,6 +102,15 @@ jobs:
         run: |
           cargo run --release --manifest-path tools/gen-unicode/Cargo.toml
           git diff --exit-code
+      # docs/adr/0020: the generated language tag table is the one committed.
+      - name: Test the language tag table generator
+        run: |
+          cargo fmt --check --manifest-path tools/gen-ot-tag/Cargo.toml
+          cargo test --release --manifest-path tools/gen-ot-tag/Cargo.toml
+      - name: Regenerate the language tag table
+        run: |
+          cargo run --release --manifest-path tools/gen-ot-tag/Cargo.toml
+          git diff --exit-code
       - name: Build ft-dump
         run: sh tools/ft-dump/build.sh
       # docs/adr/0016

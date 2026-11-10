@@ -99,6 +99,14 @@ cargo run --release --manifest-path tools/gen-unicode/Cargo.toml
 cargo test --manifest-path tools/gen-unicode/Cargo.toml
 ```
 
+`sofel-shape` の言語のタグの表（`crates/sofel-shape/src/tag_table.rs`）は、`scripts/fetch-testdata.sh` で取得したHarfBuzzの `src/hb-ot-tag-table.hh` から `tools/gen-ot-tag/` が書き、コミットする（[ADR 0020](docs/adr/0020-shaping-foundation.md)）。CIは作りなおした表とコミットしたものの一致を確かめる。
+
+```sh
+sh scripts/fetch-testdata.sh
+cargo run --release --manifest-path tools/gen-ot-tag/Cargo.toml
+cargo test --manifest-path tools/gen-ot-tag/Cargo.toml
+```
+
 wasmでは、`wasm32-unknown-unknown` へのビルドと、`wasm32-wasip1` での単体テストを確かめる（[ADR 0004](docs/adr/0004-wasm-and-no-std.md)）。単体テストには [wasmtime](https://wasmtime.dev/) が要る。
 
 ```sh

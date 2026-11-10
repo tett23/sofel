@@ -22,9 +22,17 @@ mod direction;
 mod feature;
 mod glyph;
 mod language;
+mod tag;
+#[rustfmt::skip]
+mod tag_table;
 
 pub use direction::Direction;
 pub use feature::Feature;
 pub use glyph::{GlyphFlags, GlyphInfo, GlyphPosition};
 pub use language::Language;
 pub use sofel_unicode::Script;
+pub use tag::{
+    MAX_TAGS_PER_LANGUAGE, MAX_TAGS_PER_SCRIPT, OT_TAG_DEFAULT_LANGUAGE, OT_TAG_DEFAULT_SCRIPT,
+    ot_tag_to_language, ot_tag_to_script, ot_tags_from_script_and_language,
+    ot_tags_from_script_and_language_max, ot_tags_to_script_and_language,
+};

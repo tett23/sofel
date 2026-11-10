@@ -273,6 +273,39 @@ assert_eq!(Script::from_iso15924(b"latn").map(Script::tag), Some(*b"Latn"));
 - `vertical_orientation` は、縦書きの文字列を、正立で組む区間（`U`、`Tu`）と、横に組んで90度回す区間（`R`、`Tr`）に分けるのに使う。分割そのものは呼び出し側の仕事である。
 - 版は `UNICODE_VERSION`（`(18, 0, 0)`）。
 
+## 言語と、文字体系と言語のタグ（`sofel-shape`）
+
+```rust
+use sofel_font::read::Tag;
+use sofel_shape::{Language, Script, ot_tags_from_script_and_language, ot_tags_to_script_and_language};
+
+let ja = Language::new(b"ja_JP.UTF-8").unwrap();
+assert_eq!(ja.as_str(), "ja-jp");
+
+let deva = Script::from_iso15924(b"Deva");
+let mr = Language::new(b"mr");
+let (scripts, languages) = ot_tags_from_script_and_language(deva, mr.as_ref());
+assert_eq!(scripts, [Tag(*b"dev3"), Tag(*b"dev2"), Tag(*b"deva")]);
+assert_eq!(languages, [Tag(*b"MAR ")]);
+
+let (script, language) = ot_tags_to_script_and_language(Tag(*b"dev2"), Some(Tag(*b"MAR ")));
+assert_eq!(script, deva);
+assert_eq!(language.unwrap().as_str(), "mr-x-hbsc-64657632");
+```
+
+| sofel | HarfBuzz |
+|---|---|
+| `Language::new(bytes)`、`as_str` | `hb_language_from_string`（長さつき）、`hb_language_to_string` |
+| `ot_tags_from_script_and_language(script, language)` | `hb_ot_tags_from_script_and_language`（上限は `MAX_TAGS_PER_SCRIPT`、`MAX_TAGS_PER_LANGUAGE` の3と3） |
+| `ot_tags_from_script_and_language_max(script, language, n, m)` | 同じく、上限を指定する |
+| `ot_tags_to_script_and_language(script_tag, language_tag)` | `hb_ot_tags_to_script_and_language` |
+| `ot_tag_to_script(tag)`、`ot_tag_to_language(tag)` | `hb_ot_tag_to_script`、`hb_ot_tag_to_language` |
+| `OT_TAG_DEFAULT_SCRIPT`、`OT_TAG_DEFAULT_LANGUAGE` | `HB_OT_TAG_DEFAULT_SCRIPT`（`DFLT`）、`HB_OT_TAG_DEFAULT_LANGUAGE`（`dflt`） |
+
+- 文字体系の `None` は `HB_SCRIPT_INVALID`、言語の `None` は `HB_LANGUAGE_INVALID` に当たる。言語のタグの `None` は `dflt` と同じに扱う。
+- ライブラリはプロセスのロケールを読まない。HarfBuzzの `hb_language_get_default()` と同じ言語が要るときは、呼び出し側が `setlocale(LC_CTYPE, NULL)` などで読んで `Language::new` に渡す。
+- `ot_tag_to_script` は、ISO 15924の形でない値になるタグ（`LATN`、`abc2` など）に `Script::UNKNOWN` を返す。HarfBuzzはそのままの値を返す。
+
 ## Cから使う（`sofel-capi`）
 
 `sofel-capi` は、上のAPIをCの呼び出し規約で公開する（[ADR 0015](adr/0015-c-abi.md)）。

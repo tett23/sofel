@@ -1,0 +1,11 @@
+[package]
+name = "gen-ot-tag"
+description = "Generator of sofel-shape's OpenType language tag table (ADR 0020)"
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+# Not part of the main workspace (ADR 0020), like tools/gen-unicode/.
+[workspace]
+members = ["."]

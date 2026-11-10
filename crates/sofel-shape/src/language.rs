@@ -3,8 +3,9 @@
 use alloc::string::String;
 
 /// A BCP 47 language tag normalized as `hb_language_from_string` does:
-/// ASCII letters lowercased, `_` turned into `-`, cut at the first byte
-/// that is not a letter, digit, `-` or `_`.
+/// the input cut to its first 63 bytes, ASCII letters lowercased, `_`
+/// turned into `-`, and cut again at the first byte that is not a
+/// letter, digit, `-` or `_`.
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
 pub struct Language(String);
 
@@ -19,11 +20,22 @@ fn canon(b: u8) -> Option<u8> {
 }
 
 impl Language {
-    /// The language of `s`, normalized; `None` when nothing is left
-    /// (HarfBuzz's `HB_LANGUAGE_INVALID`).
+    /// The language of `s`, normalized; `None` (HarfBuzz's
+    /// `HB_LANGUAGE_INVALID`) when `s` is empty or starts with a NUL
+    /// byte. A first byte outside the map gives the empty language, as
+    /// in HarfBuzz (`"."` is not `HB_LANGUAGE_INVALID`).
     pub fn new(s: &[u8]) -> Option<Language> {
-        let normalized: String = s.iter().map_while(|&b| canon(b)).map(char::from).collect();
-        (!normalized.is_empty()).then_some(Language(normalized))
+        if matches!(s.first(), None | Some(0)) {
+            return None;
+        }
+        // The `char strbuf[64]` of hb_language_from_string.
+        let normalized: String = s
+            .iter()
+            .take(63)
+            .map_while(|&b| canon(b))
+            .map(char::from)
+            .collect();
+        Some(Language(normalized))
     }
     /// The normalized tag.
     pub fn as_str(&self) -> &str {
