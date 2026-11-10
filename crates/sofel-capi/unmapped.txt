@@ -131,3 +131,11 @@ sofel_shape::ShapePlan::feature_masks The plan's map, for sofel's conformance te
 sofel_shape::ShapePlan::stage_lookups The plan's map, for sofel's conformance tests against hb-dump; HarfBuzz keeps it in the internal hb_ot_map_t.
 sofel_shape::ShapePlan::global_mask The plan's map, for sofel's conformance tests against hb-dump; HarfBuzz keeps it in the internal hb_ot_map_t.
 sofel_shape::layout_selection The script and language system choice of a plan, for sofel's conformance tests against hb-dump; C reads the plan's result through shaping.
+sofel_font::remap::* HarfBuzz's character remapping tables for crates that read cmap subtables themselves (sofel-subset, ADR 0022); C maps characters with sofel_font_nominal_glyph.
+sofel_write::Serializer::* HarfBuzz's object serializer, used object by object by Rust table writers; C gets whole tables from the subsetter, and serialized object graphs from sofel_serialize_objects once the repacker lands (ADR 0022 stages 4 and 5).
+sofel_write::Errors::* The serializer's error bits, read by Rust table writers only (ADR 0022).
+sofel_write::Packed::* The serializer's packed objects, read by Rust table writers only (ADR 0022).
+sofel_write::build_sfnt Assembles a font from tables for Rust table writers; C receives whole fonts from sofel_subset (ADR 0022).
+sofel_write::build_sfnt_ordered As sofel_write::build_sfnt (ADR 0022).
+sofel_write::checksum The sfnt checksum, a loop C writes directly (ADR 0022).
+sofel_subset::* The C ABI of the subsetter is ADR 0022's stage 5; until then C callers have no subsetting.

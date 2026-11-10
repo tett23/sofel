@@ -1,0 +1,17 @@
+[package]
+name = "sofel-subset"
+description = "Font subsetting with the same output as HarfBuzz's hb-subset (ADR 0022)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+sofel-font = { path = "../sofel-font" }
+sofel-write = { path = "../sofel-write" }
+sofel-unicode = { path = "../sofel-unicode" }
+sofel-geom = { path = "../sofel-geom" }
+
+[lints]
+workspace = true
