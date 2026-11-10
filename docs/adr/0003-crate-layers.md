@@ -1,6 +1,6 @@
 # ADR 0003: クレートの層と依存の向き
 
-ステータス: 採択（未実装）→C言語のAPIは [ADR 0015](0015-c-abi.md)
+ステータス: 採択（未実装）→C言語のAPIは [ADR 0015](0015-c-abi.md)、`sofel-unicode` の追加は [ADR 0019](0019-unicode-character-data.md)
 
 ## 文脈
 

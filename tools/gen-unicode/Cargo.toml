@@ -1,0 +1,11 @@
+[package]
+name = "gen-unicode"
+description = "Generator of sofel's Unicode tables (ADR 0019)"
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+# Not part of the main workspace (ADR 0019), like bench/.
+[workspace]
+members = ["."]

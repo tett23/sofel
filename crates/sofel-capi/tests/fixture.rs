@@ -35,6 +35,7 @@ const NO_HEAD: i32 = -3;
 const FONT_INDEX: i32 = -4;
 const NOT_FOUND: i32 = -5;
 const TOO_LARGE: i32 = -10;
+const INVALID_ARGUMENT: i32 = -12;
 
 fn outline_error(e: OutlineError) -> i32 {
     match e {
@@ -329,7 +330,11 @@ fn generate() -> String {
          \x20 int32_t mul_div; int32_t mul_div_no_round; int32_t vector_length; };\n\
          struct diagnostic_case { int64_t font; uint32_t table; uint32_t offset; int32_t severity;\n\
          \x20 const char *kind; const char *message; const char *details; };\n\
-         struct open_case { const uint8_t *data; size_t len; uint32_t index; int32_t status; };\n\n",
+         struct open_case { const uint8_t *data; size_t len; uint32_t index; int32_t status; };\n\
+         struct unicode_case { uint32_t codepoint; uint8_t gc; uint8_t ccc; uint32_t script;\n\
+         \x20 uint32_t mirror; int32_t status; uint32_t a; uint32_t b; uint8_t pict; uint8_t vo; };\n\
+         struct compose_case { uint32_t a; uint32_t b; int32_t status; uint32_t ab; };\n\
+         struct script_case { const char *tag; int32_t status; uint32_t script; };\n\n",
     );
 
     bytes(&mut out, "font_data", &font_data);
@@ -675,10 +680,104 @@ fn generate() -> String {
     )
     .unwrap();
 
+    unicode(&mut out);
+
     // Validation.
     diagnostics(&mut out, "invalid_diagnostics", &invalid_data);
     diagnostics(&mut out, "ttc_diagnostics", &ttc_data);
     out
+}
+
+/// Unicode properties (ADR 0019): the code points of sofel-unicode's
+/// tests and the defaults beyond U+10FFFF.
+fn unicode(out: &mut String) {
+    let tag = |s: sofel_unicode::Script| u32::from_be_bytes(s.tag());
+    let rows: Vec<String> = [
+        0x41,
+        0x301,
+        0x3042,
+        0x30A2,
+        0x4E00,
+        0x30FC,
+        0x28,
+        0x378,
+        0xE000,
+        0xD800,
+        0xC5,
+        0x212B,
+        0xAC00,
+        0xAC01,
+        0x958,
+        0x1F600,
+        0xA9,
+        0x3001,
+        0xFF08,
+        0x10FFFF,
+        0x110000,
+        u32::MAX,
+    ]
+    .iter()
+    .map(|&cp| {
+        let (status, (a, b)) = match sofel_unicode::decompose(cp) {
+            Some(d) => (OK, d),
+            None => (NOT_FOUND, (0, 0)),
+        };
+        format!(
+            "{{{cp:#x}, {}, {}, {:#x}, {:#x}, {status}, {a:#x}, {b:#x}, {}, {}}}",
+            sofel_unicode::general_category(cp) as u8,
+            sofel_unicode::combining_class(cp),
+            tag(sofel_unicode::script(cp)),
+            sofel_unicode::mirroring(cp),
+            u8::from(sofel_unicode::is_extended_pictographic(cp)),
+            sofel_unicode::vertical_orientation(cp) as u8,
+        )
+    })
+    .collect();
+    writeln!(
+        out,
+        "#define UNICODE_VERSION {:#x}\nstatic const struct unicode_case unicode_cases[] = {{{}}};",
+        {
+            let (a, b, c) = sofel_unicode::UNICODE_VERSION;
+            (u32::from(a) << 16) | (u32::from(b) << 8) | u32::from(c)
+        },
+        rows.join(",\n  ")
+    )
+    .unwrap();
+    let rows: Vec<String> = [
+        (0x41, 0x30A),
+        (0x1100, 0x1161),
+        (0xAC00, 0x11A8),
+        (0x915, 0x93C),
+        (0, 0x30A),
+        (0x41, 0),
+    ]
+    .iter()
+    .map(|&(a, b)| match sofel_unicode::compose(a, b) {
+        Some(ab) => format!("{{{a:#x}, {b:#x}, {OK}, {ab:#x}}}"),
+        None => format!("{{{a:#x}, {b:#x}, {NOT_FOUND}, 0}}"),
+    })
+    .collect();
+    writeln!(
+        out,
+        "static const struct compose_case compose_cases[] = {{{}}};",
+        rows.join(", ")
+    )
+    .unwrap();
+    let rows: Vec<String> = ["latn", "Qaai", "Aran", "Lat", "Latnx", "La1n"]
+        .iter()
+        .map(
+            |t| match sofel_unicode::Script::from_iso15924(t.as_bytes()) {
+                Some(s) => format!("{{\"{t}\", {OK}, {:#x}}}", tag(s)),
+                None => format!("{{\"{t}\", {INVALID_ARGUMENT}, 0}}"),
+            },
+        )
+        .collect();
+    writeln!(
+        out,
+        "static const struct script_case script_cases[] = {{{}}};",
+        rows.join(", ")
+    )
+    .unwrap();
 }
 
 #[test]

@@ -19,6 +19,13 @@ unsafe extern "C" {
     pub fn bhb_nominal_glyph(font: *mut c_void, c: c_uint) -> c_uint;
     pub fn bhb_advance(font: *mut c_void, gid: c_uint) -> c_int;
     pub fn bhb_draw(font: *mut c_void, gid: c_uint) -> c_long;
+
+    // HarfBuzz's own Unicode functions (hb-unicode.h), called directly.
+    pub fn hb_unicode_funcs_get_default() -> *mut c_void;
+    pub fn hb_unicode_general_category(ufuncs: *mut c_void, cp: c_uint) -> c_int;
+    pub fn hb_unicode_combining_class(ufuncs: *mut c_void, cp: c_uint) -> c_int;
+    pub fn hb_unicode_script(ufuncs: *mut c_void, cp: c_uint) -> c_uint;
+    pub fn hb_unicode_mirroring(ufuncs: *mut c_void, cp: c_uint) -> c_uint;
 }
 
 /// A FreeType face over borrowed font data.
@@ -96,5 +103,27 @@ impl Drop for HbFont {
     fn drop(&mut self) {
         // SAFETY: a valid font, dropped once.
         unsafe { bhb_close(self.0) };
+    }
+}
+
+/// HarfBuzz's default Unicode functions (`hb_unicode_funcs_get_default`).
+pub struct HbUnicode(*mut c_void);
+
+impl HbUnicode {
+    pub fn get() -> HbUnicode {
+        // SAFETY: returns HarfBuzz's static, immutable functions.
+        HbUnicode(unsafe { hb_unicode_funcs_get_default() })
+    }
+    /// The sum of General_Category, Canonical_Combining_Class, the script
+    /// tag and Bidi_Mirroring_Glyph of one character, as the benchmark
+    /// adds them.
+    pub fn sum(&self, cp: u32) -> u64 {
+        // SAFETY: valid functions; any code point is allowed.
+        unsafe {
+            u64::from(hb_unicode_general_category(self.0, cp) as u32)
+                + u64::from(hb_unicode_combining_class(self.0, cp) as u32)
+                + u64::from(hb_unicode_script(self.0, cp))
+                + u64::from(hb_unicode_mirroring(self.0, cp))
+        }
     }
 }

@@ -1358,6 +1358,105 @@ pub unsafe extern "C" fn sofel_diagnostic_details(
     status(details(d, detail, user))
 }
 
+// ------------------------------------------------------------- unicode
+
+/// `sofel_unicode_version`.
+#[unsafe(no_mangle)]
+pub extern "C" fn sofel_unicode_version() -> u32 {
+    let (major, minor, update) = sofel_unicode::UNICODE_VERSION;
+    (u32::from(major) << 16) | (u32::from(minor) << 8) | u32::from(update)
+}
+
+/// `sofel_unicode_general_category`.
+#[unsafe(no_mangle)]
+pub extern "C" fn sofel_unicode_general_category(codepoint: u32) -> u8 {
+    sofel_unicode::general_category(codepoint) as u8
+}
+
+/// `sofel_unicode_combining_class`.
+#[unsafe(no_mangle)]
+pub extern "C" fn sofel_unicode_combining_class(codepoint: u32) -> u8 {
+    sofel_unicode::combining_class(codepoint)
+}
+
+/// `sofel_unicode_script`.
+#[unsafe(no_mangle)]
+pub extern "C" fn sofel_unicode_script(codepoint: u32) -> u32 {
+    u32::from_be_bytes(sofel_unicode::script(codepoint).tag())
+}
+
+/// `sofel_script_from_iso15924`.
+///
+/// # Safety
+///
+/// `tag` is NULL or valid for reads of `len` bytes; `script` is NULL or
+/// writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_script_from_iso15924(
+    tag: *const u8,
+    len: usize,
+    script: *mut u32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (tag, script) = unsafe { (bytes(tag, len), w(script)) };
+    status((|| {
+        let (tag, script) = (some(tag)?, some(script)?);
+        let s = sofel_unicode::Script::from_iso15924(tag).ok_or(ERROR_INVALID_ARGUMENT)?;
+        *script = u32::from_be_bytes(s.tag());
+        Ok(())
+    })())
+}
+
+/// `sofel_unicode_mirroring`.
+#[unsafe(no_mangle)]
+pub extern "C" fn sofel_unicode_mirroring(codepoint: u32) -> u32 {
+    sofel_unicode::mirroring(codepoint)
+}
+
+/// `sofel_unicode_decompose`.
+///
+/// # Safety
+///
+/// `a` and `b` are NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_unicode_decompose(codepoint: u32, a: *mut u32, b: *mut u32) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (a, b) = unsafe { (w(a), w(b)) };
+    status((|| {
+        let (a, b) = (some(a)?, some(b)?);
+        (*a, *b) = sofel_unicode::decompose(codepoint).ok_or(ERROR_NOT_FOUND)?;
+        Ok(())
+    })())
+}
+
+/// `sofel_unicode_compose`.
+///
+/// # Safety
+///
+/// `ab` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_unicode_compose(a: u32, b: u32, ab: *mut u32) -> i32 {
+    // SAFETY: the caller's conditions.
+    let ab = unsafe { w(ab) };
+    status((|| {
+        let ab = some(ab)?;
+        *ab = sofel_unicode::compose(a, b).ok_or(ERROR_NOT_FOUND)?;
+        Ok(())
+    })())
+}
+
+/// `sofel_unicode_is_extended_pictographic`.
+#[unsafe(no_mangle)]
+pub extern "C" fn sofel_unicode_is_extended_pictographic(codepoint: u32) -> u8 {
+    u8::from(sofel_unicode::is_extended_pictographic(codepoint))
+}
+
+/// `sofel_unicode_vertical_orientation`.
+#[unsafe(no_mangle)]
+pub extern "C" fn sofel_unicode_vertical_orientation(codepoint: u32) -> u8 {
+    sofel_unicode::vertical_orientation(codepoint) as u8
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::indexing_slicing)]

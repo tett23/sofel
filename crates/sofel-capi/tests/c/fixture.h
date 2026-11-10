@@ -19,6 +19,10 @@ struct fix_case { int32_t a; int32_t b; int32_t c; int32_t mul_fix; int32_t div_
 struct diagnostic_case { int64_t font; uint32_t table; uint32_t offset; int32_t severity;
   const char *kind; const char *message; const char *details; };
 struct open_case { const uint8_t *data; size_t len; uint32_t index; int32_t status; };
+struct unicode_case { uint32_t codepoint; uint8_t gc; uint8_t ccc; uint32_t script;
+  uint32_t mirror; int32_t status; uint32_t a; uint32_t b; uint8_t pict; uint8_t vo; };
+struct compose_case { uint32_t a; uint32_t b; int32_t status; uint32_t ab; };
+struct script_case { const char *tag; int32_t status; uint32_t script; };
 
 static const uint8_t font_data[520] = {
   0x00, 0x01, 0x00, 0x00, 0x00, 0x07, 0x00, 0x40, 0x00, 0x02, 0x00, 0x30, 0x63, 0x6d, 0x61, 0x70,
@@ -283,6 +287,31 @@ static const struct fix_case fix_cases[] = {{98304, 163840, 3, 245760, 39322, 21
 #define TRANSFORM_IN 300, -77, 0x10000, 0x4000, -0x8000, 0x18000
 #define TRANSFORM_X 281
 #define TRANSFORM_Y -266
+#define UNICODE_VERSION 0x120000
+static const struct unicode_case unicode_cases[] = {{0x41, 9, 0, 0x4c61746e, 0x41, -5, 0x0, 0x0, 0, 1},
+  {0x301, 12, 230, 0x5a696e68, 0x301, -5, 0x0, 0x0, 0, 1},
+  {0x3042, 7, 0, 0x48697261, 0x3042, -5, 0x0, 0x0, 0, 0},
+  {0x30a2, 7, 0, 0x4b616e61, 0x30a2, -5, 0x0, 0x0, 0, 0},
+  {0x4e00, 7, 0, 0x48616e69, 0x4e00, -5, 0x0, 0x0, 0, 0},
+  {0x30fc, 6, 0, 0x5a797979, 0x30fc, -5, 0x0, 0x0, 0, 3},
+  {0x28, 22, 0, 0x5a797979, 0x29, -5, 0x0, 0x0, 0, 1},
+  {0x378, 2, 0, 0x5a7a7a7a, 0x378, -5, 0x0, 0x0, 0, 1},
+  {0xe000, 3, 0, 0x5a7a7a7a, 0xe000, -5, 0x0, 0x0, 0, 0},
+  {0xd800, 4, 0, 0x5a7a7a7a, 0xd800, -5, 0x0, 0x0, 0, 1},
+  {0xc5, 9, 0, 0x4c61746e, 0xc5, 0, 0x41, 0x30a, 0, 1},
+  {0x212b, 9, 0, 0x4c61746e, 0x212b, 0, 0xc5, 0x0, 0, 1},
+  {0xac00, 7, 0, 0x48616e67, 0xac00, 0, 0x1100, 0x1161, 0, 0},
+  {0xac01, 7, 0, 0x48616e67, 0xac01, 0, 0xac00, 0x11a8, 0, 0},
+  {0x958, 7, 0, 0x44657661, 0x958, 0, 0x915, 0x93c, 0, 1},
+  {0x1f600, 26, 0, 0x5a797979, 0x1f600, -5, 0x0, 0x0, 1, 0},
+  {0xa9, 26, 0, 0x5a797979, 0xa9, -5, 0x0, 0x0, 1, 0},
+  {0x3001, 21, 0, 0x5a797979, 0x3001, -5, 0x0, 0x0, 0, 2},
+  {0xff08, 22, 0, 0x5a797979, 0xff09, -5, 0x0, 0x0, 0, 3},
+  {0x10ffff, 2, 0, 0x5a7a7a7a, 0x10ffff, -5, 0x0, 0x0, 0, 1},
+  {0x110000, 2, 0, 0x5a7a7a7a, 0x110000, -5, 0x0, 0x0, 0, 1},
+  {0xffffffff, 2, 0, 0x5a7a7a7a, 0xffffffff, -5, 0x0, 0x0, 0, 1}};
+static const struct compose_case compose_cases[] = {{0x41, 0x30a, 0, 0xc5}, {0x1100, 0x1161, 0, 0xac00}, {0xac00, 0x11a8, 0, 0xac01}, {0x915, 0x93c, -5, 0}, {0x0, 0x30a, -5, 0}, {0x41, 0x0, -5, 0}};
+static const struct script_case script_cases[] = {{"latn", 0, 0x4c61746e}, {"Qaai", 0, 0x5a696e68}, {"Aran", 0, 0x41726162}, {"Lat", -12, 0}, {"Latnx", -12, 0}, {"La1n", -12, 0}};
 static const struct diagnostic_case invalid_diagnostics[] = {
   {-1, 0x686d7478u, 0u, 1, "metrics_exceed_glyphs", "40 long metrics for only 28 glyphs", "metrics:0:40;glyphs:0:28;"},
   {-1, 0x686d7478u, 96u, 0, "truncated", "data ends early: 160 bytes needed, 96 available", "needed:0:160;available:0:96;"},

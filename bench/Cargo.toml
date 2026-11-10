@@ -12,6 +12,7 @@ sofel-geom = { path = "../crates/sofel-geom" }
 sofel-outline = { path = "../crates/sofel-outline" }
 sofel-raster = { path = "../crates/sofel-raster" }
 sofel-cli = { path = "../crates/sofel-cli" }
+sofel-unicode = { path = "../crates/sofel-unicode" }
 
 [profile.release]
 debug = "line-tables-only"

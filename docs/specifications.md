@@ -27,11 +27,12 @@ HarfBuzzのシェーピングと、FreeTypeのグリフの読み込み、ヒン�
 
 ## 構成
 
-Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003](adr/0003-crate-layers.md)）。矢印の先が依存先である。
+Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003](adr/0003-crate-layers.md)、`sofel-unicode` は [ADR 0019](adr/0019-unicode-character-data.md)）。矢印の先が依存先である。
 
 ```
 フォントに依存しないクレート
   sofel-geom
+  sofel-unicode
   sofel-inflate
   sofel-lzw
   sofel-bzip2
@@ -51,7 +52,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 フォントを扱うクレート
   sofel-woff    → sofel-inflate, sofel-brotli
   sofel-font    → sofel-read, sofel-type1, sofel-pfr, sofel-bitmapfont, sofel-geom
-  sofel-shape   → sofel-font
+  sofel-shape   → sofel-font, sofel-unicode
   sofel-outline → sofel-font, sofel-geom
   sofel-bitmap  → sofel-font, sofel-png
   sofel-color   → sofel-outline, sofel-bitmap, sofel-svg
@@ -83,6 +84,15 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 - `F26Dot6`、`Fixed`（16.16）、`F2Dot14` と、FreeTypeと同じ結果を返す `mul_fix`、`div_fix`、`mul_div`、`mul_div_no_round`、`vector_length`（CORDIC）、`transform` を持つ（[ADR 0009](adr/0009-geom-fixed-point-and-pen.md)）。
 - 輪郭は `Pen`（`move_to`、`line_to`、`quad_to`、`cubic_to`、`close`）で受け渡す。命令の並びは `FT_Outline_Decompose` と同じ約束に従う。`Point` の単位（26.6かフォントの単位）は作る側が決める。
+
+## Unicodeの文字の性質（`sofel-unicode`）
+
+- Unicode 18.0.0（HarfBuzz 15.1.0の表と同じ版）の文字の性質を、確保をせずに `const` の表から引く（[ADR 0019](adr/0019-unicode-character-data.md)）。HarfBuzzの固定のコミットを上げるときは、同じプルリクエストで `ucd.lock` の版を揃える。
+- 性質は、General_Category（値はHarfBuzzの `hb_unicode_general_category_t` の順）、Canonical_Combining_Class、Script（ISO 15924のタグ。Common、Inherited、Unknownは `Zyyy`、`Zinh`、`Zzzz`）、Bidi_Mirroring_Glyph、正規分解の1段と合成（HarfBuzzの `decompose` と `compose` と同じ形。ハングルの音節は計算で扱う。合成の除外は `Full_Composition_Exclusion`）、Extended_Pictographic、Vertical_Orientation（UAX #50）とする。範囲の外（0x110000以上を含む）は、HarfBuzzと同じ既定の値（Cn、0、Unknown、鏡像なし、分解なし）を返し、Vertical_Orientationは `@missing` の `R` を返す。U+10FFFFを超える文字は合成しない。
+- `Script::from_iso15924` は、大文字小文字を直し、HarfBuzzの読みかえ（`Aran` などの変種）と、UCDの別名 `Qaai`（Inherited）と `Qaac`（Coptic）を当てる。4文字の英字でなければ `None` とする。
+- Vertical_Orientationは、縦書きの文字列を、正立で組む区間と、横に組んで回す区間に分けるために呼び出し側が使う。区間の分割そのものは範囲の外とする。
+- 表は `tools/gen-unicode/`（ワークスペースの外のRustのパッケージ）が、`scripts/fetch-ucd.sh` で取得したUCDのテキストのファイル（`ucd.lock` でURLとSHA-256を固定）から生成し、コミットする。性質ごとに2段か3段の表とし、分け方（`k2`、`k3` はそれぞれ0〜8）は合計のバイト数が最小のものを選ぶ。表の下限と上限は既定でない値を持つ最初と最後の文字で決める。生成の道具は、書き出すまえに0〜0x10FFFFのすべての文字で詰めた表と元の値の一致を確かめる。入力が同じなら出力は同じバイト列になる。
+- 同じ道具が、記号フォントのcmapの付けかえ（[ADR 0016](adr/0016-font-and-vertical-metrics.md)）に使う、HarfBuzzの `gen-arabic-pua.py` と同じアラビア文字の私用領域の対応の表を `sofel-font` に書く。シェーパーの分類の表（indic、USE、アラビア文字、母音の組）は、`sofel-shape` を作るときに同じ道具で生成する。
 
 ## フォント（`sofel-font`）
 
@@ -147,6 +157,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - glyfの輪郭は、`ft-dump --outline` の出力と、拡大縮小なし、16画素、48画素で、命令の列、重なりの印、制御の箱が完全に一致することを確かめる（項目 `outline:<SIZE>:<グリフ>`、[ADR 0011](adr/0011-glyf-outlines.md)）。ラスタライズは、`ft-dump --raster` の出力と、12、24、48画素で画像が完全に一致することを確かめる（項目 `raster:<PPEM>:<グリフ>`、[ADR 0012](adr/0012-antialiased-rasterizer.md)）。
 - 輪郭、ラスタライズ（各形式）、埋め込みビットマップ、sfnt以外の形式は、FreeTypeの出力を書き出す `tools/ft-dump/` と比べる。輪郭は完全一致を求める。sfnt以外の形式のテストのフォントは、その形式を実装するまえに、ADRで `testdata.lock` に加える。
 - カラーグリフ、SVGとPDF、GPU、WOFF、検証器、展開器の基準は、それぞれのADRで定める。
+- Unicodeの文字の性質は、CIで `scripts/fetch-ucd.sh` と生成の道具を走らせ、生成したファイルがコミットしたものと一致することを `git diff --exit-code` で確かめる（[ADR 0019](adr/0019-unicode-character-data.md)）。Vertical_Orientationは、`VerticalOrientation.txt` を生成の道具とは別の読み取りで読み、全文字の値の一致を確かめる。
 - 適合テストは `cargo test -p sofel-conformance` で走らせる。期待する失敗の一覧に無い失敗と、一覧にあるテストの成功は、ともにテストの失敗とする。
 
 ## 性能の計測
@@ -158,6 +169,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   - HarfBuzzの輪郭は、glyfを分解する命令の列がFreeTypeと違うため、命令の数を照合せず、時間だけを計る。
 - FreeTypeはcmapの検証に `setjmp` を使うため、wasmでは例外処理の提案（`-mllvm -wasm-enable-sjlj`、`wasmtime -W exceptions=y`）でビルドし、走らせる。
 - 2段階目の項目：文字からグリフ（FreeType、HarfBuzz）、送り幅（FreeType、HarfBuzz）、輪郭（拡大縮小なしと48画素。FreeType、HarfBuzz）、ラスタライズ（12、24、48、96画素。FreeType）。
+- Unicodeの性質：`perf/texts/` のすべての文章の全文字について、General_Category、Canonical_Combining_Class、Script、Bidi_Mirroring_Glyphを引く。相手はHarfBuzzの既定のUnicodeの関数（`hb_unicode_general_category` などの呼び出しを含む）とする（[ADR 0019](adr/0019-unicode-character-data.md)）。
 - CIでは、ネイティブとwasmの両方を `--once` で走らせ、落ちないことと結果の照合だけを確かめる。
 - 目標は、各項目でsofelの時間が比較の相手以下であること。
 - 結果は `docs/benchmarks/` に記録し、コミット後は変更しない。
@@ -166,3 +178,4 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 - sofelはMITとする。FreeTypeのコードを流用する場合はFTLを選び、文書でFreeType Projectを明示する（[ADR 0002](adr/0002-license-and-reuse.md)）。Slugを流用する場合は、READMEにクレジットを載せる。
 - 流用元の著作権表示とライセンスは `THIRD_PARTY_NOTICES.md` に載せ、流用したファイルの先頭に流用元を書く。
+- UCDから生成した表を含む `sofel-unicode` は、Unicode License v3にも従う（`MIT AND Unicode-3.0`）。
