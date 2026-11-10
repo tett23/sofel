@@ -22,7 +22,6 @@
 )]
 
 use sofel_conformance::{expect, paths, subset};
-use sofel_font::Font;
 use sofel_read::sfnt::Sfnt;
 use sofel_read::{Diagnostic, Severity, validate};
 

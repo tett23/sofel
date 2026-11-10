@@ -1724,11 +1724,10 @@ fn args_input() -> sofel_subset::Input {
 fn plan_inputs() -> Vec<sofel_subset::Input> {
     use sofel_subset::{Input, SetKind};
     vec![
-        Input::new()
-            .map_set(SetKind::Unicodes, |s| {
-                s.add(0x41);
-                s.add(0x43);
-            }),
+        Input::new().map_set(SetKind::Unicodes, |s| {
+            s.add(0x41);
+            s.add(0x43);
+        }),
         Input::new()
             .map_set(SetKind::Glyphs, |s| {
                 s.add(1);
@@ -1826,22 +1825,31 @@ fn subset_cases(out: &mut String, font_data: &[u8]) {
 
     // Axis ranges as strings: (string, status, bits of min, default, max).
     out.push_str("struct axis_string_case { const char *s; int32_t status; uint32_t bits[3]; };\n");
-    let rows: Vec<String> = ["drop", "100", "100:200", "100:150:200", ":150:", "1:2:3:4", "x", ""]
-        .iter()
-        .map(|s| match axis_range_from_string(s) {
-            Some((a, d, b)) => {
-                let bits = |v: Option<f32>| format!("{:#x}u", v.unwrap_or(f32::NAN).to_bits());
-                format!(
-                    "{{{}, {OK}, {{{}, {}, {}}}}}",
-                    c_string(s),
-                    bits(a),
-                    bits(d),
-                    bits(b)
-                )
-            }
-            None => format!("{{{}, {INVALID_ARGUMENT}, {{0, 0, 0}}}}", c_string(s)),
-        })
-        .collect();
+    let rows: Vec<String> = [
+        "drop",
+        "100",
+        "100:200",
+        "100:150:200",
+        ":150:",
+        "1:2:3:4",
+        "x",
+        "",
+    ]
+    .iter()
+    .map(|s| match axis_range_from_string(s) {
+        Some((a, d, b)) => {
+            let bits = |v: Option<f32>| format!("{:#x}u", v.unwrap_or(f32::NAN).to_bits());
+            format!(
+                "{{{}, {OK}, {{{}, {}, {}}}}}",
+                c_string(s),
+                bits(a),
+                bits(d),
+                bits(b)
+            )
+        }
+        None => format!("{{{}, {INVALID_ARGUMENT}, {{0, 0, 0}}}}", c_string(s)),
+    })
+    .collect();
     writeln!(
         out,
         "static const struct axis_string_case axis_string_cases[] = {{\n  {},\n}};",
@@ -1919,7 +1927,10 @@ fn generate_subset() -> Option<String> {
             assert!(status.success(), "hb-dump --subset failed for {path}");
             let theirs = std::fs::read(&tmp).unwrap();
             let _ = std::fs::remove_file(&tmp);
-            assert!(theirs == subset, "{path}: sofel's subset differs from HarfBuzz's");
+            assert!(
+                theirs == subset,
+                "{path}: sofel's subset differs from HarfBuzz's"
+            );
         } else {
             eprintln!("no hb-dump; the Golem cases are not checked against HarfBuzz");
         }

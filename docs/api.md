@@ -500,7 +500,7 @@ fn embed(data: &[u8], glyphs: &[u32]) -> Result<Vec<u8>, sofel_subset::SubsetErr
 }
 ```
 
-`Plan::new` で閉包とグリフの対応を求め、`Plan::execute` で表を書く。`subset` はこの2つを続けて呼ぶ。CFFのフォント（名前のキーとCIDのキー）は、HarfBuzzと同じく `CFF ` の表をサブセット化し、出力から取り出した `CFF ` の表はそれだけでCFFとして正しい（PDFの `FontFile3` に入れられる）。まだ書けない表を持つフォントは、その表を `SetKind::DropTables` に入れないかぎり `SubsetError::Unsupported` になる。
+`Plan::new` で閉包とグリフの対応を求め、`Plan::execute` で表を書く。`subset` はこの2つを続けて呼ぶ。CFFのフォント（名前のキーとCIDのキー）は、HarfBuzzと同じく `CFF ` の表をサブセット化し、出力から取り出した `CFF ` の表はそれだけでCFFとして正しい（PDFの `FontFile3` に入れられる）。まだ書けない表を持つフォントは、その表を `SetKind::DropTables` に入れないかぎり `SubsetError::Unsupported` になる。HarfBuzzが失敗する入力では、sofelも失敗する。例えば、表の出力が元の表の256倍を超えてHarfBuzzの作業領域に入らないときは `SubsetError::Limit` になる。
 
 ## Cから使う（`sofel-capi`）
 
@@ -559,6 +559,10 @@ sofel_font_destroy(font);
 | `sofel_buffer_*` | `UnicodeBuffer`、`GlyphBuffer` | `hb_buffer_*` |
 | `sofel_shape`、`sofel_shape_fallback` | `shape_with_extents`、`shape_fallback` | `hb_shape_plan_execute` |
 | `sofel_buffer_serialize`、`sofel_buffer_deserialize_*`、`sofel_buffer_diff` | `serialize_glyphs` など、`diff` | `hb_buffer_serialize`、`hb_buffer_deserialize_*`、`hb_buffer_diff` |
+| `sofel_subset_input_*` | `Input`、`RangeSet` | `hb_subset_input_*`、`hb_set_*` |
+| `sofel_subset_plan_*` | `Plan` | `hb_subset_plan_*` |
+| `sofel_subset`、`sofel_bytes_destroy` | `subset` | `hb_subset_or_fail`、`hb_face_reference_blob` |
+| `sofel_serialize_objects` | `sofel_write::serialize_objects` | `hb_subset_serialize_or_fail` |
 
 - 誤りうる関数は `int32_t` を返し、`SOFEL_OK`（0）以外は誤り。`sofel_error_string` で英語の説明を引ける。NULLのポインタは `SOFEL_ERROR_NULL` になり、panicもクラッシュもしない。
 - 輪郭は5つの関数ポインタと `void *user` で受け取る。`sofel_rasterizer_move_to` などはその型を持つので、`sofel_outline_decompose` にそのまま渡してラスタライザに記録できる。
@@ -578,6 +582,22 @@ int32_t pos[4 * 64]; /* x_advance, y_advance, x_offset, y_offset */
 int64_t n = sofel_buffer_glyphs(buf, gids, clusters, NULL, pos, 64);
 /* n > 64 なら何も書かれていない。n 個の配列で呼びなおす */
 sofel_buffer_clear(buf); /* 次の文字列へ */
+```
+
+- サブセット化は、入力を作って集合とフラグを入れ、`sofel_subset` を呼ぶ。出力はsofelが確保するので、`sofel_bytes_destroy` で解放する。入力は値を変える関数で変わるので、スレッドの間で共有しながら変えない。
+
+```c
+sofel_subset_input_t *input;
+sofel_subset_input_create(&input); /* HarfBuzz の既定の値 */
+for (size_t i = 0; i < n; i++)
+  sofel_subset_input_set_add(input, SOFEL_SUBSET_SET_GLYPHS, gids[i]);
+sofel_subset_input_set_flags(input, SOFEL_SUBSET_FLAGS_RETAIN_GIDS);
+sofel_bytes_t out;
+if (sofel_subset(font, input, &out) == SOFEL_OK) {
+  /* out.data, out.len: hb-subset と同じバイト列 */
+  sofel_bytes_destroy(&out);
+}
+sofel_subset_input_destroy(input);
 ```
 
 - `sofel-read` の表のビューは公開しない。表のバイト列を `sofel_font_table` で取り出して読む。公開しない関数とその理由は `crates/sofel-capi/unmapped.txt` にある。

@@ -14,6 +14,7 @@ dependencies = [
  "sofel-outline",
  "sofel-raster",
  "sofel-shape",
+ "sofel-subset",
  "sofel-unicode",
 ]
 
@@ -35,6 +36,7 @@ dependencies = [
  "sofel-raster",
  "sofel-read",
  "sofel-shape",
+ "sofel-subset",
 ]
 
 [[package]]
@@ -86,5 +88,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "sofel-subset"
+version = "0.0.0"
+dependencies = [
+ "sofel-font",
+ "sofel-geom",
+ "sofel-unicode",
+ "sofel-write",
+]
+
+[[package]]
 name = "sofel-unicode"
 version = "0.0.0"
+
+[[package]]
+name = "sofel-write"
+version = "0.0.0"
+dependencies = [
+ "sofel-read",
+]
