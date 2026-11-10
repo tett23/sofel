@@ -751,6 +751,55 @@ fn color_items(b: &mut Bench, testdata: &std::path::Path) {
                 )),
             );
         }
+        if formats.has(F::COLR_V0) {
+            // ADR 0023 (5d): COLRv0 glyphs in color as FT_LOAD_COLOR.
+            let outlines = Outlines::new(&font);
+            let options = PaintOptions::default();
+            for ppem in [12u16, 24, 48] {
+                ft.set_ppem(u32::from(ppem));
+                let mut scratch = sofel_outline::Scratch::default();
+                let mut raster = Rasterizer::new();
+                let mut image = sofel_raster::BgraImage::default();
+                let mut ours = || {
+                    (0..n)
+                        .map(|g| {
+                            use sofel_cli::glyph::{ColorGlyph, render_color};
+                            match render_color(
+                                &outlines,
+                                GlyphId(g),
+                                ppem,
+                                &options,
+                                &mut scratch,
+                                &mut raster,
+                                &mut image,
+                            ) {
+                                Ok(ColorGlyph::Gray(bm)) => {
+                                    bm.pixels.iter().map(|&v| u64::from(v)).sum()
+                                }
+                                Ok(ColorGlyph::Color) => {
+                                    image.pixels.iter().map(|&v| u64::from(v)).sum()
+                                }
+                                Err(_) => u64::MAX,
+                            }
+                        })
+                        .fold(0u64, u64::wrapping_add)
+                };
+                b.item(
+                    name,
+                    format!("COLRv0 raster {ppem}px"),
+                    &mut ours,
+                    Some((
+                        &mut || {
+                            (0..n)
+                                .map(|g| wrap(ft.colr_render(g)))
+                                .fold(0u64, u64::wrapping_add)
+                        },
+                        Compare::Yes,
+                    )),
+                    None,
+                );
+            }
+        }
         let mut scratch = Scratch::default();
         let mut painter = CountPainter::default();
         let options = PaintOptions::default();

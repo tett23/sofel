@@ -1364,6 +1364,53 @@ static void test_color(void) {
     CHECK(sofel_draw_bitmap(font, 0, 1, NULL, 0, &layout) == SOFEL_ERROR_NOT_FOUND);
   }
   test_bitmap_font();
+  {
+    /* Glyph 2's layers are the same square: palette entry 1, then the
+       foreground on top. */
+    sofel_outline_scratch_t *scratch = sofel_outline_scratch_create();
+    sofel_rasterizer_t *raster = sofel_rasterizer_create();
+    uint8_t px[1024];
+    int32_t box[4];
+    uint32_t is_color = 9;
+    size_t n, mid;
+    CHECK(sofel_render_color_glyph(font, 2, 10, 0, NULL, 0, fg, scratch, raster, px, sizeof px, &n,
+                                   box, &is_color) == SOFEL_OK);
+    CHECK(is_color == 1 && box[2] > 0 && box[3] > 0 && n == (size_t)box[2] * box[3] * 4);
+    mid = ((size_t)box[3] / 2 * box[2] + box[2] / 2) * 4;
+    CHECK(px[mid] == 30 && px[mid + 1] == 20 && px[mid + 2] == 10 && px[mid + 3] == 255);
+    CHECK(sofel_render_color_glyph(font, 2, 10, 0, NULL, 0, fg, scratch, raster, px, 4, &n, box,
+                                   &is_color) == SOFEL_ERROR_BUFFER_TOO_SMALL);
+    /* Not a COLRv0 glyph: the gray outline. */
+    CHECK(sofel_render_color_glyph(font, 1, 10, 0, NULL, 0, fg, scratch, raster, px, sizeof px, &n,
+                                   box, &is_color) == SOFEL_OK);
+    CHECK(is_color == 0 && n == (size_t)box[2] * box[3]);
+    CHECK(sofel_render_color_glyph(font, 2, 10, 0, NULL, 0, fg, scratch, raster, px, sizeof px, &n,
+                                   box, NULL) == SOFEL_ERROR_NULL);
+    sofel_rasterizer_destroy(raster);
+    sofel_outline_scratch_destroy(scratch);
+  }
+  {
+    uint8_t img[64];
+    const uint8_t cov[2] = {255, 0};
+    const uint8_t cov2[1] = {255};
+    int32_t box[4] = {0, 0, 0, 0};
+    size_t n = 0;
+    sofel_color_t red = {255, 0, 0, 255};
+    sofel_color_t blue = {0, 0, 255, 255};
+    CHECK(sofel_blend_layer(img, sizeof img, &n, box, 1, 2, 2, 1, cov, red) == SOFEL_OK);
+    CHECK(n == 8 && box[0] == 1 && box[1] == 2 && box[2] == 2 && box[3] == 1);
+    CHECK(img[0] == 0 && img[2] == 255 && img[3] == 255 && img[7] == 0);
+    /* The box grows to the left and down. */
+    CHECK(sofel_blend_layer(img, sizeof img, &n, box, 0, 1, 1, 1, cov2, blue) == SOFEL_OK);
+    CHECK(n == 24 && box[0] == 0 && box[1] == 2 && box[2] == 3 && box[3] == 2);
+    CHECK(img[4 + 2] == 255 && img[12] == 255 && img[15] == 255);
+    CHECK(sofel_blend_layer(img, 24, &n, box, -5, 1, 1, 1, cov2, blue) ==
+          SOFEL_ERROR_BUFFER_TOO_SMALL);
+    CHECK(n == 64);
+    n = 24;
+    CHECK(sofel_blend_layer(img, 8, &n, box, 0, 1, 1, 1, cov2, blue) == SOFEL_ERROR_INVALID_ARGUMENT);
+    CHECK(sofel_blend_layer(img, sizeof img, &n, box, 0, 1, 1, 1, NULL, blue) == SOFEL_ERROR_NULL);
+  }
 
   CHECK(sofel_sin_cos(0.0f, &s, &c) == SOFEL_OK && s == 0.0f && c == 1.0f);
   CHECK(sofel_tan(0.0f) == 0.0f);

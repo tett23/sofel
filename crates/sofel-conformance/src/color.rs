@@ -721,3 +721,151 @@ pub fn compare_strikes(font_id: &str, index: u32, font: &Font<'_>, ft: &str) -> 
         detail: format!("FreeType:\n{theirs}sofel:\n{ours}"),
     }
 }
+
+/// The foreground FreeType uses for palette entry 0xFFFF after
+/// `FT_Palette_Select(palette)` (`tt_face_colr_blend_layer`): white when
+/// the palette's flags, as FreeType reads them (16 bits each from the
+/// `uint32` paletteTypes array of CPAL version 1), have
+/// `FT_PALETTE_FOR_DARK_BACKGROUND`, else black.
+pub fn freetype_foreground(font: &Font<'_>, palette: u16) -> Color {
+    let flags = font
+        .table(sofel_font::read::Tag::new(b"CPAL"))
+        .and_then(|d| {
+            let be16 = |at: usize| d.get(at..at + 2).map(|b| u16::from_be_bytes([b[0], b[1]]));
+            if be16(0)? != 1 {
+                return None;
+            }
+            let n = usize::from(be16(4)?);
+            let at = 12 + 2 * n;
+            let off = d
+                .get(at..at + 4)
+                .map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]))?;
+            if off == 0 {
+                return None;
+            }
+            be16(off as usize + 2 * usize::from(palette))
+        });
+    if flags.is_some_and(|f| f & 2 != 0) {
+        Color::new(255, 255, 255, 255)
+    } else {
+        Color::new(0, 0, 0, 255)
+    }
+}
+
+/// The `colr-raster:<ppem>:<palette>:<glyph>` items of one face of
+/// `ft-dump --raster PPEM --color`: `sofel_cli::glyph::render_color`
+/// with FreeType's palette and foreground.
+pub fn compare_color_rasters(
+    font_id: &str,
+    index: u32,
+    font: &Font<'_>,
+    ppem: u16,
+    ft: &str,
+) -> Vec<Item> {
+    use sofel_cli::glyph::{ColorGlyph, color_layers, render_color};
+    use std::fmt::Write as _;
+    // palette -> glyph -> lines
+    let mut theirs: Vec<(u16, std::collections::BTreeMap<u32, String>)> = Vec::new();
+    let mut glyph = None;
+    for l in ft.lines() {
+        if let Some(p) = l.strip_prefix("palette ") {
+            theirs.push((p.parse().unwrap_or(0), std::collections::BTreeMap::new()));
+            glyph = None;
+        } else if l.starts_with("palette_error ") {
+            theirs.pop();
+        } else if let Some(g) = l.strip_prefix("glyph ") {
+            glyph = g.parse::<u32>().ok();
+        } else if l != "end"
+            && let (Some(g), Some((_, map))) = (glyph, theirs.last_mut())
+        {
+            let e = map.entry(g).or_default();
+            e.push_str(l);
+            e.push('\n');
+        }
+    }
+    let outlines = Outlines::new(font);
+    let mut scratch = sofel_outline::Scratch::default();
+    let mut raster = sofel_raster::Rasterizer::new();
+    let mut image = sofel_raster::BgraImage::default();
+    let mut items = Vec::new();
+    for (palette, ft_glyphs) in theirs {
+        let options = PaintOptions {
+            palette: Palette::Font(palette),
+            foreground: freetype_foreground(font, palette),
+            ppem: 0,
+        };
+        let ours_glyphs = (0..font.num_glyphs()).filter(|&g| !color_layers(font, g).is_empty());
+        let keys: std::collections::BTreeSet<u32> =
+            ft_glyphs.keys().copied().chain(ours_glyphs).collect();
+        for g in keys {
+            let mut s = String::new();
+            let r = render_color(
+                &outlines,
+                sofel_font::read::GlyphId(g),
+                ppem,
+                &options,
+                &mut scratch,
+                &mut raster,
+                &mut image,
+            );
+            match r {
+                Err(_) => s.push_str("error\n"),
+                Ok(ColorGlyph::Gray(b)) => {
+                    let _ = writeln!(s, "bitmap {} {} {} {} gray", b.left, b.top, b.width, b.rows);
+                    if b.width > 0 {
+                        for row in b.pixels.chunks(b.width as usize) {
+                            row.iter().for_each(|v| {
+                                let _ = write!(s, "{v:02x}");
+                            });
+                            s.push('\n');
+                        }
+                    }
+                }
+                Ok(ColorGlyph::Color) => {
+                    let _ = writeln!(
+                        s,
+                        "bitmap {} {} {} {} bgra",
+                        image.left, image.top, image.width, image.rows
+                    );
+                    if image.width > 0 {
+                        for row in image.pixels.chunks(image.width as usize * 4) {
+                            row.iter().for_each(|v| {
+                                let _ = write!(s, "{v:02x}");
+                            });
+                            s.push('\n');
+                        }
+                    }
+                }
+            }
+            let ft_text = ft_glyphs.get(&g).map(|t| {
+                if t.starts_with("error ") {
+                    "error\n".to_string()
+                } else {
+                    t.clone()
+                }
+            });
+            let ok = ft_text.as_deref() == Some(s.as_str());
+            let detail = if ok {
+                String::new()
+            } else {
+                let t = ft_text.unwrap_or_else(|| "(no glyph)\n".into());
+                let i = t
+                    .lines()
+                    .zip(s.lines())
+                    .position(|(a, b)| a != b)
+                    .unwrap_or(0);
+                format!(
+                    "FreeType {:?} / sofel {:?}",
+                    t.lines().nth(i),
+                    s.lines().nth(i)
+                )
+            };
+            items.push(Item {
+                id: format!("{font_id}#{index}:colr-raster:{ppem}:{palette}:{g}"),
+                ok,
+                detail,
+            });
+        }
+    }
+    items
+}

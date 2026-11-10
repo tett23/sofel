@@ -2572,6 +2572,221 @@ pub unsafe extern "C" fn sofel_render_glyph(
     status(render_glyph(font, glyph, ppem, scratch, rasterizer, out))
 }
 
+fn image_out(image: &sofel_raster::BgraImage, out: BitmapOut<'_>) -> Status {
+    let (pixels, len, b) = (some(out.pixels)?, some(out.len)?, some(out.b)?);
+    *len = image.pixels.len();
+    *b = [
+        image.left,
+        image.top,
+        to_i32(image.width),
+        to_i32(image.rows),
+    ];
+    pixels
+        .get_mut(..image.pixels.len())
+        .ok_or(ERROR_BUFFER_TOO_SMALL)?
+        .copy_from_slice(&image.pixels);
+    Ok(())
+}
+
+struct ColorRequest<'a> {
+    palette: u16,
+    custom: Option<&'a [color::CColor]>,
+    foreground: color::CColor,
+}
+
+fn render_color_glyph(
+    font: Option<&SofelFont>,
+    glyph: u32,
+    ppem: u16,
+    request: ColorRequest<'_>,
+    scratch: Option<&mut SofelOutlineScratch>,
+    rasterizer: Option<&mut SofelRasterizer>,
+    out: BitmapOut<'_>,
+    is_color: Option<&mut u32>,
+) -> Status {
+    use sofel_cli::glyph::{ColorGlyph, render_color};
+    let (font, scratch, r) = (some(font)?, some(scratch)?, some(rasterizer)?);
+    let is_color = some(is_color)?;
+    out.check()?;
+    let custom: Option<Vec<sofel_geom::Color>> = request
+        .custom
+        .map(|c| c.iter().map(|&x| x.into()).collect());
+    let options = sofel_color::PaintOptions {
+        palette: custom.as_deref().map_or(
+            sofel_color::Palette::Font(request.palette),
+            sofel_color::Palette::Custom,
+        ),
+        foreground: request.foreground.into(),
+        ppem: 0,
+    };
+    let mut image = sofel_raster::BgraImage::default();
+    let drawn = render_color(
+        &font.outlines,
+        GlyphId(glyph),
+        ppem,
+        &options,
+        &mut scratch.scratch,
+        &mut r.raster,
+        &mut image,
+    )
+    .map_err(|e| match e {
+        RenderError::Outline(e) => outline_error(e),
+        RenderError::Raster(e) => raster_error(e),
+    })?;
+    match drawn {
+        ColorGlyph::Color => {
+            *is_color = 1;
+            image_out(&image, out)
+        }
+        ColorGlyph::Gray(b) => {
+            *is_color = 0;
+            out.put(Ok(b))
+        }
+    }
+}
+
+/// `sofel_render_color_glyph`.
+///
+/// # Safety
+///
+/// As [`sofel_render_glyph`]; `custom_colors` is NULL or valid for
+/// `n_custom` colors; `is_color` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_render_color_glyph(
+    font: *const SofelFont,
+    glyph: u32,
+    ppem: u16,
+    palette: u16,
+    custom_colors: *const color::CColor,
+    n_custom: usize,
+    foreground: color::CColor,
+    scratch: *mut SofelOutlineScratch,
+    rasterizer: *mut SofelRasterizer,
+    pixels: *mut u8,
+    capacity: usize,
+    len: *mut usize,
+    box_: *mut i32,
+    is_color: *mut u32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, scratch, rasterizer, pixels, len, b, is_color) = unsafe {
+        (
+            r(font),
+            w(scratch),
+            w(rasterizer),
+            out_array(pixels, capacity),
+            w(len),
+            ints::<4>(box_),
+            w(is_color),
+        )
+    };
+    let custom = if custom_colors.is_null() {
+        None
+    } else {
+        // SAFETY: not NULL; the caller's conditions.
+        Some(unsafe { core::slice::from_raw_parts(custom_colors, n_custom) })
+    };
+    let out = BitmapOut { pixels, len, b };
+    let request = ColorRequest {
+        palette,
+        custom,
+        foreground,
+    };
+    status(render_color_glyph(
+        font, glyph, ppem, request, scratch, rasterizer, out, is_color,
+    ))
+}
+
+fn blend(
+    image: Option<&mut [u8]>,
+    len: Option<&mut usize>,
+    b: Option<&mut [i32; 4]>,
+    src: Result<Bitmap<'_>, i32>,
+    bgra: [u8; 4],
+) -> Status {
+    let (pixels, len, b) = (some(image)?, some(len)?, some(b)?);
+    let src = src?;
+    let [left, top, width, rows] = *b;
+    let used = pixels.get(..*len).ok_or(ERROR_INVALID_ARGUMENT)?;
+    let mut image = sofel_raster::BgraImage {
+        left,
+        top,
+        width: u32::try_from(width).map_err(|_| ERROR_INVALID_ARGUMENT)?,
+        rows: u32::try_from(rows).map_err(|_| ERROR_INVALID_ARGUMENT)?,
+        pixels: used.to_vec(),
+    };
+    let expected = usize::try_from(image.width)
+        .unwrap_or(usize::MAX)
+        .saturating_mul(4)
+        .saturating_mul(usize::try_from(image.rows).unwrap_or(usize::MAX));
+    if !image.pixels.is_empty() && image.pixels.len() != expected {
+        return Err(ERROR_INVALID_ARGUMENT);
+    }
+    sofel_raster::blend_layer(&mut image, &src, bgra);
+    if image.pixels.len() > pixels.len() {
+        *len = image.pixels.len();
+        return Err(ERROR_BUFFER_TOO_SMALL);
+    }
+    image_out(
+        &image,
+        BitmapOut {
+            pixels: Some(pixels),
+            len: Some(len),
+            b: Some(b),
+        },
+    )
+}
+
+/// `sofel_blend_layer`.
+///
+/// # Safety
+///
+/// `pixels` is NULL or valid for reads and writes of `capacity` bytes;
+/// `len` is NULL or writable; `box_` is NULL or writable for 4 integers;
+/// `src_pixels` is NULL or valid for reads of `src_width × src_rows`
+/// bytes; none of them overlap.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_blend_layer(
+    pixels: *mut u8,
+    capacity: usize,
+    len: *mut usize,
+    box_: *mut i32,
+    src_left: i32,
+    src_top: i32,
+    src_width: u32,
+    src_rows: u32,
+    src_pixels: *const u8,
+    color: color::CColor,
+) -> i32 {
+    let n = usize::try_from(src_width)
+        .unwrap_or(usize::MAX)
+        .saturating_mul(usize::try_from(src_rows).unwrap_or(usize::MAX));
+    // SAFETY: the caller's conditions.
+    let (image, len, b, src) = unsafe {
+        (
+            out_array(pixels, capacity),
+            w(len),
+            ints::<4>(box_),
+            if n == 0 {
+                Some(&[][..])
+            } else {
+                bytes(src_pixels, n)
+            },
+        )
+    };
+    let src = src.ok_or(ERROR_NULL).map(|p| Bitmap {
+        left: src_left,
+        top: src_top,
+        width: src_width,
+        rows: src_rows,
+        pixels: p,
+    });
+    status(blend(image, len, b, src, {
+        let c: sofel_geom::Color = color.into();
+        [c.b, c.g, c.r, c.a]
+    }))
+}
+
 // ---------------------------------------------------------- validation
 
 fn validate_data(data: Option<&[u8]>, report: DiagnosticFunc, user: *mut c_void) -> Status {
