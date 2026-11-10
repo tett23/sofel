@@ -10,13 +10,18 @@
 //! - `metrics-fallback`: `hb_ot_metrics_get_position_with_fallback` for
 //!   every tag.
 //! - `h_advance`, `v_advance`, `v_origin`, `extents`: every glyph.
+//! - `baseline`, `baseline-fallback`, `layout_font_extents` (ADR 0017,
+//!   from `hb-dump --baselines`): `hb_ot_layout_get_baseline`,
+//!   `hb_ot_layout_get_baseline_with_fallback` and
+//!   `hb_ot_layout_get_font_extents` for both directions, the scripts
+//!   and languages `hb-dump` lists and every baseline tag.
 //!
 //! sofel's glyph boxes come from glyf only ([`Font::glyf_extents`]);
 //! the boxes of other outline formats and of color glyphs come with
 //! ADR 0021 and ADR 0023.
 
-use sofel_font::read::GlyphId;
-use sofel_font::{Font, FontExtents, GlyphExtents, HbScale, MetricsTag};
+use sofel_font::read::{GlyphId, Tag};
+use sofel_font::{Direction, Font, FontExtents, GlyphExtents, HbScale, MetricsTag};
 
 use crate::compare::Item;
 
@@ -531,4 +536,225 @@ pub fn compare_cmap(font_id: &str, hb: &HbCmap, font: &Font<'_>) -> Item {
         .filter_map(|c| font.nominal_glyph(c).map(|g| (c, g.0)))
         .collect();
     list(font_id, hb.index, "nominal", &want, &ours)
+}
+
+/// One `baseline` line of `hb-dump --baselines`:
+/// `(direction, script, tag, found, value, fallback)`.
+pub type BaselineLine = (char, u32, u32, bool, i32, i32);
+/// One `extents` line: `(direction, script, language, found, [ascender,
+/// descender, line gap])`.
+pub type ExtentsLine = (char, u32, u32, bool, [i32; 3]);
+
+/// The values of one scale of `hb-dump --baselines`.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct BaselineScale {
+    pub x_scale: i32,
+    pub y_scale: i32,
+    pub baselines: Vec<BaselineLine>,
+    pub extents: Vec<ExtentsLine>,
+}
+
+/// The output of `hb-dump --baselines` for one face (ADR 0017).
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct HbBaselines {
+    pub index: u32,
+    pub upem: i32,
+    pub scales: Vec<BaselineScale>,
+}
+
+fn hex_tag(s: Option<&str>, line: &str) -> Result<u32, String> {
+    s.and_then(|v| u32::from_str_radix(v, 16).ok())
+        .ok_or_else(|| format!("bad line: {line}"))
+}
+
+fn direction(s: Option<&str>, line: &str) -> Result<char, String> {
+    match s {
+        Some("h") => Ok('h'),
+        Some("v") => Ok('v'),
+        _ => Err(format!("bad line: {line}")),
+    }
+}
+
+fn last_scale<'f>(face: &'f mut HbBaselines, line: &str) -> Result<&'f mut BaselineScale, String> {
+    face.scales
+        .last_mut()
+        .ok_or_else(|| format!("line before any scale: {line}"))
+}
+
+/// Parses the output of `hb-dump --baselines`.
+pub fn parse_baselines(text: &str) -> Result<Vec<HbBaselines>, String> {
+    let mut faces: Vec<HbBaselines> = Vec::new();
+    for line in text.lines() {
+        let mut w = line.split(' ');
+        let key = w.next().unwrap_or("");
+        if key == "face" {
+            faces.push(HbBaselines {
+                index: num(w.next(), line)?,
+                ..HbBaselines::default()
+            });
+            continue;
+        }
+        let face = faces
+            .last_mut()
+            .ok_or_else(|| format!("line before any face: {line}"))?;
+        match key {
+            "upem" => face.upem = num(w.next(), line)?,
+            "scale" => face.scales.push(BaselineScale {
+                x_scale: num(w.next(), line)?,
+                y_scale: num(w.next(), line)?,
+                ..BaselineScale::default()
+            }),
+            "baseline" => {
+                let entry = (
+                    direction(w.next(), line)?,
+                    hex_tag(w.next(), line)?,
+                    hex_tag(w.next(), line)?,
+                    num::<u8>(w.next(), line)? != 0,
+                    num(w.next(), line)?,
+                    num(w.next(), line)?,
+                );
+                last_scale(face, line)?.baselines.push(entry);
+            }
+            "extents" => {
+                let entry = (
+                    direction(w.next(), line)?,
+                    hex_tag(w.next(), line)?,
+                    hex_tag(w.next(), line)?,
+                    num::<u8>(w.next(), line)? != 0,
+                    [
+                        num(w.next(), line)?,
+                        num(w.next(), line)?,
+                        num(w.next(), line)?,
+                    ],
+                );
+                last_scale(face, line)?.extents.push(entry);
+            }
+            "end" | "" => {}
+            other => return Err(format!("unknown line kind {other}: {line}")),
+        }
+    }
+    Ok(faces)
+}
+
+fn dir_of(d: char) -> Direction {
+    if d == 'v' {
+        Direction::Vertical
+    } else {
+        Direction::Horizontal
+    }
+}
+
+/// sofel's values for the calls `hb-dump --baselines` made.
+pub fn sofel_baselines(font: &Font<'_>, hb: &HbBaselines) -> HbBaselines {
+    let boxes = |g: GlyphId| font.glyf_extents(g);
+    let scales = hb
+        .scales
+        .iter()
+        .map(|s| {
+            let scale = HbScale::for_font(font, s.x_scale, s.y_scale);
+            let baselines = s
+                .baselines
+                .iter()
+                .map(|&(d, script, tag, _, _, _)| {
+                    let (dir, script_tag, t) =
+                        (dir_of(d), Tag::from_u32(script), Tag::from_u32(tag));
+                    let found = scale.baseline(font, t, dir, script_tag);
+                    let fallback = scale.baseline_with_fallback(font, t, dir, script_tag, boxes);
+                    (
+                        d,
+                        script,
+                        tag,
+                        found.is_some(),
+                        found.unwrap_or(0),
+                        fallback,
+                    )
+                })
+                .collect();
+            let extents = s
+                .extents
+                .iter()
+                .map(|&(d, script, lang, _, _)| {
+                    let (e, found) = scale.layout_font_extents(
+                        font,
+                        dir_of(d),
+                        Tag::from_u32(script),
+                        Tag::from_u32(lang),
+                    );
+                    (d, script, lang, found, ext3(e))
+                })
+                .collect();
+            BaselineScale {
+                x_scale: s.x_scale,
+                y_scale: s.y_scale,
+                baselines,
+                extents,
+            }
+        })
+        .collect();
+    HbBaselines {
+        index: hb.index,
+        upem: i32::from(font.hb_units_per_em()),
+        scales,
+    }
+}
+
+/// The first difference of a per-scale list, for failure messages.
+fn per_scale_list<T: PartialEq + std::fmt::Debug>(
+    font: &str,
+    face: u32,
+    name: &str,
+    hb: &HbBaselines,
+    ours: &HbBaselines,
+    get: impl Fn(&BaselineScale) -> Vec<T>,
+) -> Item {
+    let mut detail = String::new();
+    let mut ok = hb.scales.len() == ours.scales.len() && hb.upem == ours.upem;
+    if !ok {
+        detail = format!(
+            "upem or scale count differs: HarfBuzz {}, sofel {}",
+            hb.upem, ours.upem
+        );
+    }
+    for (a, b) in hb.scales.iter().zip(&ours.scales) {
+        let (x, y) = (get(a), get(b));
+        if let Some((p, q)) = x.iter().zip(&y).find(|(p, q)| p != q) {
+            ok = false;
+            detail = format!(
+                "at scale {}x{}: HarfBuzz {p:?}, sofel {q:?}",
+                a.x_scale, a.y_scale
+            );
+            break;
+        }
+        if x.len() != y.len() {
+            ok = false;
+            detail = "line count differs".to_string();
+            break;
+        }
+    }
+    item(font, face, name, ok, detail)
+}
+
+/// Compares the baselines of one face: items `baseline`
+/// (`hb_ot_layout_get_baseline`), `baseline-fallback`
+/// (`hb_ot_layout_get_baseline_with_fallback`) and
+/// `layout_font_extents` (`hb_ot_layout_get_font_extents`).
+pub fn compare_baselines(font: &str, hb: &HbBaselines, ours: &HbBaselines) -> Vec<Item> {
+    let f = hb.index;
+    vec![
+        per_scale_list(font, f, "baseline", hb, ours, |s| {
+            s.baselines
+                .iter()
+                .map(|&(d, sc, t, found, v, _)| (d, sc, t, found, v))
+                .collect()
+        }),
+        per_scale_list(font, f, "baseline-fallback", hb, ours, |s| {
+            s.baselines
+                .iter()
+                .map(|&(d, sc, t, _, _, fb)| (d, sc, t, fb))
+                .collect()
+        }),
+        per_scale_list(font, f, "layout_font_extents", hb, ours, |s| {
+            s.extents.clone()
+        }),
+    ]
 }

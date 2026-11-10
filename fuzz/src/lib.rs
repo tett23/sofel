@@ -13,7 +13,7 @@ use sofel_read::os2::Os2;
 use sofel_read::post::Post;
 use sofel_read::vorg::Vorg;
 use sofel_read::{
-    CountWidth, Diagnostic, GlyphId, Severity, cmap, head, hhea, hmtx, maxp, name, os2, post, validate, vorg,
+    CountWidth, Diagnostic, GlyphId, Severity, base, cmap, head, hhea, hmtx, maxp, name, os2, post, validate, vorg,
 };
 
 fn has_error(f: impl FnOnce(&mut dyn FnMut(Diagnostic))) -> bool {
@@ -219,6 +219,67 @@ pub fn check_vorg(input: &[u8]) {
     }
 }
 
+/// A BASE table (ADR 0017): without an `Error`, every offset can be
+/// followed.
+pub fn check_base(data: &[u8]) {
+    use sofel_read::base::{Base, BaseCoord, MinMax};
+    use sofel_read::ReadError;
+    fn coord(c: Result<Option<BaseCoord<'_>>, ReadError>) -> bool {
+        match c {
+            Err(_) => false,
+            Ok(None) => true,
+            Ok(Some(c)) => {
+                let _ = (c.coordinate(), c.reference_glyph(), c.coord_point());
+                c.device().map(|d| d.map(|d| d.variation_index())).is_ok()
+            }
+        }
+    }
+    fn min_max(m: Result<Option<MinMax<'_>>, ReadError>) -> bool {
+        match m {
+            Err(_) => false,
+            Ok(None) => true,
+            Ok(Some(m)) => {
+                coord(m.min_coord())
+                    && coord(m.max_coord())
+                    && (0..m.num_features().min(1000))
+                        .all(|i| coord(m.feature_min_coord(i)) && coord(m.feature_max_coord(i)))
+            }
+        }
+    }
+    let error = has_error(|r| base::validate(data, r));
+    let Ok(b) = Base::new(data) else {
+        assert!(error, "Base::new failed without an Error");
+        return;
+    };
+    let walks = [b.horiz_axis(), b.vert_axis()].into_iter().all(|a| {
+        let Ok(a) = a else { return false };
+        let Some(a) = a else { return true };
+        let Ok(tags) = a.base_tag_list() else { return false };
+        if let Some(t) = tags {
+            let _ = t.find(sofel_read::Tag::new(b"romn"));
+        }
+        let Ok(list) = a.base_script_list() else { return false };
+        let Some(list) = list else { return true };
+        let _ = list.find(sofel_read::Tag::new(b"latn"));
+        (0..list.len().min(1000)).all(|i| match list.script(i) {
+            Err(_) => false,
+            Ok(None) => true,
+            Ok(Some(s)) => {
+                let values = match s.base_values() {
+                    Err(_) => false,
+                    Ok(None) => true,
+                    Ok(Some(v)) => (0..v.len().min(1000)).all(|i| coord(v.coord(i))),
+                };
+                let _ = s.find_lang_sys(sofel_read::Tag::new(b"ENG "));
+                values
+                    && min_max(s.default_min_max())
+                    && (0..s.num_lang_sys().min(1000)).all(|i| min_max(s.lang_sys_min_max(i)))
+            }
+        })
+    });
+    assert!(error || walks, "an offset cannot be followed without an Error");
+}
+
 /// The queries of ADR 0016 on a whole font: must not panic.
 fn check_font_queries(font: &sofel_font::Font<'_>) {
     let scales = [sofel_font::HbScale::unscaled(font), sofel_font::HbScale::for_font(font, 768, -1536)];
@@ -232,6 +293,17 @@ fn check_font_queries(font: &sofel_font::Font<'_>) {
         for g in 0..font.num_glyphs().min(64).saturating_add(2) {
             let g = GlyphId(g);
             let _ = (s.v_advance(font, g), s.v_origin(font, g, boxes), s.glyf_extents(font, g));
+        }
+        // ADR 0017.
+        for d in [sofel_font::Direction::Horizontal, sofel_font::Direction::Vertical] {
+            for script in [b"latn", b"DFLT", b"deva", b"dev2", b"hani"] {
+                let script = sofel_read::Tag::new(script);
+                for t in sofel_font::baseline::ALL {
+                    let _ = s.baseline(font, t, d, script);
+                    let _ = s.baseline_with_fallback(font, t, d, script, boxes);
+                }
+                let _ = s.layout_font_extents(font, d, script, sofel_read::Tag::new(b"dflt"));
+            }
         }
     }
     let _ = (font.fs_type(), font.ft_face_metrics());

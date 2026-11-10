@@ -510,6 +510,28 @@ pub enum Kind {
         /// The operator (`0x0C00 | b` for `12 b`).
         operator: u32,
     },
+    /// Records searched by tag are not in ascending tag order, or repeat
+    /// a tag (`BASE`).
+    TagsNotSorted {
+        /// Index of the offending entry.
+        index: u32,
+    },
+    /// A BaseValues table has a different number of coordinates than
+    /// the axis has baseline tags.
+    BaseCoordCountMismatch {
+        /// The number of baseline tags.
+        tags: u32,
+        /// The number of coordinates.
+        coords: u32,
+    },
+    /// `defaultBaselineIndex` of a BaseValues table is not below the
+    /// number of baseline tags.
+    DefaultBaselineOutOfRange {
+        /// The index.
+        index: u32,
+        /// The number of baseline tags.
+        count: u32,
+    },
 }
 
 impl Kind {
@@ -572,7 +594,9 @@ impl Kind {
             | MissingEndchar { .. }
             | VsindexOutOfRange { .. }
             | BlendWithoutStore { .. }
-            | InvalidCharString { .. } => Severity::Error,
+            | InvalidCharString { .. }
+            | TagsNotSorted { .. }
+            | BaseCoordCountMismatch { .. } => Severity::Error,
             RecordsNotSorted { .. }
             | DuplicateTable { .. }
             | ChecksumMismatch { .. }
@@ -599,7 +623,8 @@ impl Kind {
             | GlyphCountMismatch { .. }
             | SidOutOfRange { .. }
             | FdSelectFormat4
-            | UnknownCharStringOperator { .. } => Severity::Warning,
+            | UnknownCharStringOperator { .. }
+            | DefaultBaselineOutOfRange { .. } => Severity::Warning,
         }
     }
 
@@ -690,6 +715,9 @@ impl Kind {
             SidOutOfRange { .. } => "sid_out_of_range",
             FdSelectFormat4 => "fd_select_format4",
             UnknownCharStringOperator { .. } => "unknown_char_string_operator",
+            TagsNotSorted { .. } => "tags_not_sorted",
+            BaseCoordCountMismatch { .. } => "base_coord_count_mismatch",
+            DefaultBaselineOutOfRange { .. } => "default_baseline_out_of_range",
         }
     }
 
@@ -727,7 +755,8 @@ impl Kind {
             | GroupsNotSorted { index }
             | SelectorsNotSorted { index }
             | SubHeaderRangeInvalid { index }
-            | GlyphsNotSorted { index } => f("index", Uint(index)),
+            | GlyphsNotSorted { index }
+            | TagsNotSorted { index } => f("index", Uint(index)),
             DuplicateTable { tag } => f("tag", DetailValue::Tag(tag)),
             ChecksumMismatch { stored, computed } => {
                 f("stored", Uint(stored));
@@ -931,6 +960,14 @@ impl Kind {
                 f("glyph", Uint(glyph));
                 f("position", Uint(position));
                 f("operator", Uint(operator));
+            }
+            BaseCoordCountMismatch { tags, coords } => {
+                f("tags", Uint(tags));
+                f("coords", Uint(coords));
+            }
+            DefaultBaselineOutOfRange { index, count } => {
+                f("index", Uint(index));
+                f("count", Uint(count));
             }
         }
     }
@@ -1206,6 +1243,16 @@ impl fmt::Display for Kind {
             } => write!(
                 f,
                 "glyph {glyph}: unknown operator {operator:#06x} at byte {position}"
+            ),
+            TagsNotSorted { index } => {
+                write!(f, "tag of record {index} is not above the previous one")
+            }
+            BaseCoordCountMismatch { tags, coords } => {
+                write!(f, "{coords} base coordinates for {tags} baseline tags")
+            }
+            DefaultBaselineOutOfRange { index, count } => write!(
+                f,
+                "defaultBaselineIndex {index} is not below the {count} baseline tags"
             ),
         }
     }

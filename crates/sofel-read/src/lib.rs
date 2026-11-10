@@ -33,9 +33,11 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod base;
 pub mod be;
 pub mod cff;
 pub mod cmap;
+pub mod device;
 mod diag;
 mod error;
 pub mod glyf;

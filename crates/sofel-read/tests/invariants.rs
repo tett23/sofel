@@ -328,3 +328,99 @@ fn metrics_table_invariants() {
         }
     }
 }
+
+/// Follows every offset of a BASE table; false when any table it points
+/// to cannot be read.
+fn base_walks(data: &[u8]) -> bool {
+    use sofel_read::base::{Base, BaseCoord, MinMax};
+    fn coord(c: Result<Option<BaseCoord<'_>>, sofel_read::ReadError>) -> bool {
+        match c {
+            Err(_) => false,
+            Ok(None) => true,
+            Ok(Some(c)) => c.device().is_ok(),
+        }
+    }
+    fn min_max(m: Result<Option<MinMax<'_>>, sofel_read::ReadError>) -> bool {
+        match m {
+            Err(_) => false,
+            Ok(None) => true,
+            Ok(Some(m)) => {
+                coord(m.min_coord())
+                    && coord(m.max_coord())
+                    && (0..m.num_features())
+                        .all(|i| coord(m.feature_min_coord(i)) && coord(m.feature_max_coord(i)))
+            }
+        }
+    }
+    let Ok(b) = Base::new(data) else { return false };
+    [b.horiz_axis(), b.vert_axis()].into_iter().all(|a| {
+        let Ok(a) = a else { return false };
+        let Some(a) = a else { return true };
+        if a.base_tag_list().is_err() {
+            return false;
+        }
+        let Ok(list) = a.base_script_list() else {
+            return false;
+        };
+        let Some(list) = list else { return true };
+        (0..list.len()).all(|i| match list.script(i) {
+            Err(_) => false,
+            Ok(None) => true,
+            Ok(Some(s)) => {
+                let values = match s.base_values() {
+                    Err(_) => false,
+                    Ok(None) => true,
+                    Ok(Some(v)) => (0..v.len()).all(|i| coord(v.coord(i))),
+                };
+                values
+                    && min_max(s.default_min_max())
+                    && (0..s.num_lang_sys()).all(|i| min_max(s.lang_sys_min_max(i)))
+            }
+        })
+    })
+}
+
+#[test]
+fn base_table_invariants() {
+    use sofel_read::base;
+    let mut rng = XorShift(0x5EED_BA5E_0017_0017);
+    let axis = AxisSpec {
+        tags: Some(vec![*b"ideo", *b"romn"]),
+        scripts: Some(vec![(
+            *b"latn",
+            Some(ScriptSpec {
+                values: Some((
+                    1,
+                    vec![
+                        Some(Coord::F3(-120, Some(device(9, 17, 2, &[0, 0, 0])))),
+                        Some(Coord::F4(0, 5, 1)),
+                    ],
+                )),
+                default_min_max: Some(MinMaxSpec {
+                    min: Some(Coord::F2(-200, 1, 2)),
+                    max: Some(Coord::F1(900)),
+                    features: vec![(*b"kern", Some(Coord::F1(-1)), None)],
+                }),
+                lang_sys: vec![(
+                    *b"ENG ",
+                    Some(MinMaxSpec {
+                        min: Some(Coord::F1(-100)),
+                        ..Default::default()
+                    }),
+                )],
+            }),
+        )]),
+    };
+    let tables = [
+        base(Some(&axis), Some(&axis)),
+        base11(Some(&axis), None, Some(&[0, 1, 0, 0, 0, 0, 0, 0])),
+    ];
+    for _ in 0..ROUNDS {
+        for t in &tables {
+            let d = mutate(&mut rng, t);
+            if !has_error(|r| base::validate(&d, r)) {
+                assert!(base_walks(&d), "{d:02x?}");
+            }
+        }
+    }
+}
