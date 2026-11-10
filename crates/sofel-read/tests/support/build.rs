@@ -475,7 +475,7 @@ pub struct Uvs {
 /// Format 14 (`wide` false, 16-bit glyphs) or 15 (`wide` true, 24-bit glyphs).
 pub fn cmap14_15(wide: bool, records: &[Uvs]) -> Vec<u8> {
     let header = 10 + 11 * records.len();
-    let mut tail = Vec::new();
+    let mut tail: Vec<u8> = Vec::new();
     let mut recs = Buf::new();
     for r in records {
         let def_off = match &r.defaults {
@@ -1021,4 +1021,496 @@ pub fn vorg(major: u16, default_y: i16, records: &[(u32, i16)]) -> Vec<u8> {
         b = b.i16(*y);
     }
     b.done()
+}
+
+// CFF and CFF2 (ADR 0021).
+
+/// A CFF INDEX of `items` with offset size `off_size` (16-bit count, or
+/// 32-bit for CFF2 when `wide`).
+pub fn cff_index(items: &[Vec<u8>], off_size: u8, wide: bool) -> Vec<u8> {
+    let mut b = if wide {
+        Buf::new().u32(items.len() as u32)
+    } else {
+        Buf::new().u16(items.len() as u16)
+    };
+    if items.is_empty() {
+        return b.done();
+    }
+    b = b.u8(off_size);
+    let mut off = 1u32;
+    let put = |b: Buf, v: u32| {
+        let bytes = v.to_be_bytes();
+        b.bytes(&bytes[4 - off_size as usize..])
+    };
+    b = put(b, off);
+    for it in items {
+        off += it.len() as u32;
+        b = put(b, off);
+    }
+    for it in items {
+        b = b.bytes(it);
+    }
+    b.done()
+}
+
+/// A DICT integer in its shortest encoding.
+pub fn d_int(v: i32) -> Vec<u8> {
+    match v {
+        -107..=107 => vec![(v + 139) as u8],
+        108..=1131 => {
+            let w = v - 108;
+            vec![(w / 256 + 247) as u8, (w % 256) as u8]
+        }
+        -1131..=-108 => {
+            let w = -v - 108;
+            vec![(w / 256 + 251) as u8, (w % 256) as u8]
+        }
+        -32768..=32767 => {
+            let b = (v as i16).to_be_bytes();
+            vec![28, b[0], b[1]]
+        }
+        _ => {
+            let b = v.to_be_bytes();
+            vec![29, b[0], b[1], b[2], b[3]]
+        }
+    }
+}
+
+/// A DICT integer in the five-byte encoding (29).
+pub fn d_int5(v: i32) -> Vec<u8> {
+    let b = v.to_be_bytes();
+    vec![29, b[0], b[1], b[2], b[3]]
+}
+
+/// A DICT real from its text (`0-9 . E E- -`), terminated.
+pub fn d_real(s: &str) -> Vec<u8> {
+    let mut nibbles = Vec::new();
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        let n = match c {
+            '0'..='9' => c as u8 - b'0',
+            '.' => 0xA,
+            'E' => {
+                if chars.peek() == Some(&'-') {
+                    chars.next();
+                    0xC
+                } else {
+                    0xB
+                }
+            }
+            '-' => 0xE,
+            _ => unreachable!("bad real {s}"),
+        };
+        nibbles.push(n);
+    }
+    nibbles.push(0xF);
+    if nibbles.len() % 2 == 1 {
+        nibbles.push(0xF);
+    }
+    let mut out = vec![30];
+    for p in nibbles.chunks(2) {
+        out.push(p[0] << 4 | p[1]);
+    }
+    out
+}
+
+/// A DICT operator (`0x0C00 | b` for `12 b`).
+pub fn d_op(op: u16) -> Vec<u8> {
+    if op >= 0x0C00 {
+        vec![12, (op & 0xFF) as u8]
+    } else {
+        vec![op as u8]
+    }
+}
+
+/// DICT data: each entry is operands then an operator.
+pub fn dict(entries: &[(&[i32], u16)]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for (operands, op) in entries {
+        for v in *operands {
+            out.extend(d_int(*v));
+        }
+        out.extend(d_op(*op));
+    }
+    out
+}
+
+/// A charstring integer in its shortest encoding (28 for the 16-bit
+/// form).
+pub fn cs_int(v: i32) -> Vec<u8> {
+    match v {
+        -107..=107 => vec![(v + 139) as u8],
+        108..=1131 => {
+            let w = v - 108;
+            vec![(w / 256 + 247) as u8, (w % 256) as u8]
+        }
+        -1131..=-108 => {
+            let w = -v - 108;
+            vec![(w / 256 + 251) as u8, (w % 256) as u8]
+        }
+        _ => {
+            let b = (v as i16).to_be_bytes();
+            vec![28, b[0], b[1]]
+        }
+    }
+}
+
+/// A charstring 16.16 number (255).
+pub fn cs_fixed(v: i32) -> Vec<u8> {
+    let b = v.to_be_bytes();
+    vec![255, b[0], b[1], b[2], b[3]]
+}
+
+/// A charstring from integer operands and operators: `Cs::I(v)` pushes,
+/// `Cs::Op(o)` runs, `Cs::F(v)` pushes a 16.16 number, `Cs::Raw(b)` is
+/// copied.
+#[derive(Clone, Debug)]
+pub enum Cs {
+    I(i32),
+    F(i32),
+    Op(u16),
+    Raw(Vec<u8>),
+}
+
+pub fn charstring(items: &[Cs]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for it in items {
+        match it {
+            Cs::I(v) => out.extend(cs_int(*v)),
+            Cs::F(v) => out.extend(cs_fixed(*v)),
+            Cs::Op(o) => out.extend(d_op(*o)),
+            Cs::Raw(b) => out.extend(b),
+        }
+    }
+    out
+}
+
+/// A CID-keyed part of a CFF table: ROS, the Font DICTs (each with a
+/// Private DICT and its local subroutines) and the FDSelect bytes.
+#[derive(Clone, Debug, Default)]
+pub struct CidSpec {
+    /// Registry and ordering SIDs and the supplement.
+    pub ros: (i32, i32, i32),
+    /// Extra operators of each Font DICT, its Private DICT and its local
+    /// subroutines.
+    pub fds: Vec<(Vec<u8>, Vec<u8>, Vec<Vec<u8>>)>,
+    /// The FDSelect, format byte included.
+    pub fd_select: Vec<u8>,
+}
+
+/// The parts of a CFF (version 1) table. `top` holds the Top DICT
+/// operators other than charset, CharStrings, Private, FDArray and
+/// FDSelect, which the builder adds with five-byte offsets.
+#[derive(Clone, Debug, Default)]
+pub struct Cff1Spec {
+    pub names: Vec<Vec<u8>>,
+    pub top: Vec<u8>,
+    pub strings: Vec<Vec<u8>>,
+    pub gsubrs: Vec<Vec<u8>>,
+    /// The charset bytes (format byte included); `None` for the ISOAdobe
+    /// charset (offset 0).
+    pub charset: Option<Vec<u8>>,
+    /// The encoding bytes; `None` for the Standard encoding.
+    pub encoding: Option<Vec<u8>>,
+    pub charstrings: Vec<Vec<u8>>,
+    /// The Private DICT operators (Subrs is added); `None` for no
+    /// Private DICT.
+    pub private: Option<Vec<u8>>,
+    pub lsubrs: Vec<Vec<u8>>,
+    pub cid: Option<CidSpec>,
+}
+
+impl Cff1Spec {
+    /// A font named "Test" with `charstrings` and an empty Private DICT.
+    pub fn new(charstrings: Vec<Vec<u8>>) -> Cff1Spec {
+        Cff1Spec {
+            names: vec![b"Test".to_vec()],
+            charstrings,
+            private: Some(Vec::new()),
+            ..Default::default()
+        }
+    }
+}
+
+fn private_with_subrs(private: &[u8], lsubrs: &[Vec<u8>]) -> Vec<u8> {
+    let mut p = private.to_vec();
+    if !lsubrs.is_empty() {
+        let len = p.len() + 6;
+        p.extend(d_int5(len as i32));
+        p.push(19);
+    }
+    p
+}
+
+/// A CFF table built from `spec`.
+pub fn cff1(spec: &Cff1Spec) -> Vec<u8> {
+    // The Top DICT has a fixed size: the extra operators plus 5-byte
+    // offsets.
+    let extra_len = 6
+        + 6
+        + if spec.private.is_some() && spec.cid.is_none() {
+            11
+        } else {
+            0
+        }
+        + if spec.encoding.is_some() { 6 } else { 0 }
+        + if spec.cid.is_some() {
+            7 + 7 + 3 * 5 + 2
+        } else {
+            0
+        };
+    let top_len = spec.top.len() + extra_len;
+    let header = vec![1u8, 0, 4, 4];
+    let names = cff_index(&spec.names, 1, false);
+    let top_index_len = cff_index(&[vec![0u8; top_len]], 4, false).len();
+    let strings = cff_index(&spec.strings, 4, false);
+    let gsubrs = cff_index(&spec.gsubrs, 4, false);
+    let mut at = header.len() + names.len() + top_index_len + strings.len() + gsubrs.len();
+    let charset_at = at;
+    let charset = spec.charset.clone().unwrap_or_default();
+    at += charset.len();
+    let encoding_at = at;
+    let encoding = spec.encoding.clone().unwrap_or_default();
+    at += encoding.len();
+    let cs_at = at;
+    let cs = cff_index(&spec.charstrings, 4, false);
+    at += cs.len();
+    let private_at = at;
+    let private = spec
+        .private
+        .as_ref()
+        .map(|p| private_with_subrs(p, &spec.lsubrs))
+        .unwrap_or_default();
+    at += private.len();
+    let lsubrs = cff_index(&spec.lsubrs, 4, false);
+    if !spec.lsubrs.is_empty() {
+        at += lsubrs.len();
+    }
+    // CID part.
+    let mut cid_bytes = Vec::new();
+    let mut fd_array_at = 0;
+    let mut fd_select_at = 0;
+    if let Some(cid) = &spec.cid {
+        // Font DICTs: extra + Private (2 x 5-byte + op).
+        let privates: Vec<Vec<u8>> = cid
+            .fds
+            .iter()
+            .map(|(_, p, l)| private_with_subrs(p, l))
+            .collect();
+        let fd_dict_lens: Vec<usize> = cid.fds.iter().map(|(e, _, _)| e.len() + 11).collect();
+        let fd_index_len = cff_index(
+            &fd_dict_lens
+                .iter()
+                .map(|l| vec![0u8; *l])
+                .collect::<Vec<_>>(),
+            4,
+            false,
+        )
+        .len();
+        fd_array_at = at;
+        let mut p_at = at + fd_index_len;
+        let mut dicts = Vec::new();
+        let mut tail: Vec<u8> = Vec::new();
+        for ((extra, _, l), p) in cid.fds.iter().zip(&privates) {
+            let mut d = extra.clone();
+            d.extend(d_int5(p.len() as i32));
+            d.extend(d_int5(p_at as i32));
+            d.push(18);
+            dicts.push(d);
+            tail.extend(p);
+            p_at += p.len();
+            if !l.is_empty() {
+                let li = cff_index(l, 4, false);
+                tail.extend(&li);
+                p_at += li.len();
+            }
+        }
+        cid_bytes.extend(cff_index(&dicts, 4, false));
+        cid_bytes.extend(tail);
+        fd_select_at = fd_array_at + cid_bytes.len();
+        cid_bytes.extend(&cid.fd_select);
+    }
+    let mut top = Vec::new();
+    if let Some(cid) = &spec.cid {
+        for v in [cid.ros.0, cid.ros.1, cid.ros.2] {
+            top.extend(d_int5(v));
+        }
+        top.extend([12, 30]);
+    }
+    top.extend(&spec.top);
+    top.extend(d_int5(if spec.charset.is_some() {
+        charset_at as i32
+    } else {
+        0
+    }));
+    top.push(15);
+    if spec.encoding.is_some() {
+        top.extend(d_int5(encoding_at as i32));
+        top.push(16);
+    }
+    top.extend(d_int5(cs_at as i32));
+    top.push(17);
+    if spec.private.is_some() && spec.cid.is_none() {
+        top.extend(d_int5(private.len() as i32));
+        top.extend(d_int5(private_at as i32));
+        top.push(18);
+    }
+    if spec.cid.is_some() {
+        top.extend(d_int5(fd_array_at as i32));
+        top.extend([12, 36]);
+        top.extend(d_int5(fd_select_at as i32));
+        top.extend([12, 37]);
+    }
+    assert_eq!(top.len(), top_len, "top dict size");
+    let mut out = header;
+    out.extend(names);
+    out.extend(cff_index(&[top], 4, false));
+    out.extend(strings);
+    out.extend(gsubrs);
+    out.extend(charset);
+    out.extend(encoding);
+    out.extend(cs);
+    out.extend(private);
+    if !spec.lsubrs.is_empty() {
+        out.extend(lsubrs);
+    }
+    out.extend(cid_bytes);
+    out
+}
+
+/// The parts of a CFF2 table. The Top DICT gets CharStrings, FDArray,
+/// FDSelect (with more than one Font DICT) and vstore (when given).
+#[derive(Clone, Debug, Default)]
+pub struct Cff2Spec {
+    pub top: Vec<u8>,
+    pub gsubrs: Vec<Vec<u8>>,
+    pub charstrings: Vec<Vec<u8>>,
+    /// Each Font DICT's Private DICT and local subroutines.
+    pub fds: Vec<(Vec<u8>, Vec<Vec<u8>>)>,
+    /// The FDSelect, format byte included (with more than one Font DICT).
+    pub fd_select: Vec<u8>,
+    /// The Item Variation Store (without the 2-byte length).
+    pub vstore: Option<Vec<u8>>,
+}
+
+/// A CFF2 table built from `spec`.
+pub fn cff2(spec: &Cff2Spec) -> Vec<u8> {
+    let extra =
+        6 + 7 + if spec.fds.len() > 1 { 7 } else { 0 } + if spec.vstore.is_some() { 6 } else { 0 };
+    let top_len = spec.top.len() + extra;
+    let header_len = 5;
+    let gsubrs = cff_index(&spec.gsubrs, 4, true);
+    let mut at = header_len + top_len + gsubrs.len();
+    let vstore_at = at;
+    let vstore = spec.vstore.as_ref().map(|v| {
+        let mut b = (v.len() as u16).to_be_bytes().to_vec();
+        b.extend(v);
+        b
+    });
+    at += vstore.as_ref().map_or(0, |v| v.len());
+    let cs_at = at;
+    let cs = cff_index(&spec.charstrings, 4, true);
+    at += cs.len();
+    let fd_select_at = at;
+    if spec.fds.len() > 1 {
+        at += spec.fd_select.len();
+    }
+    let fd_array_at = at;
+    let privates: Vec<Vec<u8>> = spec
+        .fds
+        .iter()
+        .map(|(p, l)| private_with_subrs(p, l))
+        .collect();
+    let fd_index_len = cff_index(&vec![vec![0u8; 11]; spec.fds.len()], 4, true).len();
+    let mut p_at = at + fd_index_len;
+    let mut dicts = Vec::new();
+    let mut tail: Vec<u8> = Vec::new();
+    for ((_, l), p) in spec.fds.iter().zip(&privates) {
+        let mut d = d_int5(p.len() as i32);
+        d.extend(d_int5(p_at as i32));
+        d.push(18);
+        dicts.push(d);
+        tail.extend(p);
+        p_at += p.len();
+        if !l.is_empty() {
+            let li = cff_index(l, 4, true);
+            tail.extend(&li);
+            p_at += li.len();
+        }
+    }
+    let mut top = spec.top.clone();
+    top.extend(d_int5(cs_at as i32));
+    top.push(17);
+    top.extend(d_int5(fd_array_at as i32));
+    top.extend([12, 36]);
+    if spec.fds.len() > 1 {
+        top.extend(d_int5(fd_select_at as i32));
+        top.extend([12, 37]);
+    }
+    if spec.vstore.is_some() {
+        top.extend(d_int5(vstore_at as i32));
+        top.push(24);
+    }
+    assert_eq!(top.len(), top_len);
+    let mut out = vec![2u8, 0, 5];
+    out.extend((top_len as u16).to_be_bytes());
+    out.extend(top);
+    out.extend(gsubrs);
+    if let Some(v) = vstore {
+        out.extend(v);
+    }
+    out.extend(cs);
+    if spec.fds.len() > 1 {
+        out.extend(&spec.fd_select);
+    }
+    out.extend(cff_index(&dicts, 4, true));
+    out.extend(tail);
+    out
+}
+
+/// An Item Variation Store: `axis_count` axes, the regions as
+/// `(start, peak, end)` per axis, and ItemVariationData region indexes.
+pub fn item_variation_store(
+    axis_count: u16,
+    regions: &[Vec<(i16, i16, i16)>],
+    data: &[Vec<u16>],
+) -> Vec<u8> {
+    let header = 8 + 4 * data.len();
+    let region_list = 4 + regions.len() * axis_count as usize * 6;
+    let mut b = Buf::new().u16(1).u32(header as u32).u16(data.len() as u16);
+    let mut at = header + region_list;
+    for d in data {
+        b = b.u32(at as u32);
+        at += 6 + 2 * d.len();
+    }
+    b = b.u16(axis_count).u16(regions.len() as u16);
+    for r in regions {
+        for (s, p, e) in r {
+            b = b.i16(*s).i16(*p).i16(*e);
+        }
+    }
+    for d in data {
+        b = b.u16(0).u16(0).u16(d.len() as u16);
+        for i in d {
+            b = b.u16(*i);
+        }
+    }
+    b.done()
+}
+
+/// An OpenType font with CFF outlines: the sample tables (head, hhea,
+/// hmtx, maxp with `num_glyphs`, cmap) plus `extra` tables, with sfnt
+/// version `OTTO`.
+pub fn otto_font(num_glyphs: u16, extra: Vec<(&'static [u8; 4], Vec<u8>)>) -> Vec<u8> {
+    let long: Vec<(u16, i16)> = (0..num_glyphs.max(1)).map(|g| (500 + g, 0)).collect();
+    let mut tables: Vec<(&[u8; 4], Vec<u8>)> = vec![
+        (b"cmap", cmap(&[(3, 1, cmap4(&[seg(0xFFFF, 0xFFFF, 1)]))])),
+        (b"head", head(HeadSpec::default())),
+        (b"hhea", hhea(num_glyphs.max(1))),
+        (b"hmtx", hmtx(&long, &[])),
+        (b"maxp", maxp05(num_glyphs)),
+    ];
+    tables.extend(extra);
+    tables.sort_by(|a, b| a.0.cmp(b.0));
+    sfnt_with_version(u32::from_be_bytes(*b"OTTO"), &tables)
 }

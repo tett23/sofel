@@ -289,6 +289,227 @@ pub enum Kind {
         /// The glyph id.
         glyph: u32,
     },
+    /// A CFF or CFF2 `hdrSize` below the header's own size.
+    HeaderSizeTooSmall {
+        /// The value found.
+        found: u32,
+        /// The smallest allowed value.
+        minimum: u32,
+    },
+    /// A CFF offset size that is not 1 to 4.
+    InvalidOffSize {
+        /// The value found.
+        found: u32,
+    },
+    /// The first offset of a CFF INDEX is not 1.
+    FirstOffsetNotOne {
+        /// The value found.
+        found: u32,
+    },
+    /// A CFF INDEX offset is below the one before it.
+    OffsetsNotSorted {
+        /// Index of the offending entry.
+        index: u32,
+    },
+    /// A sfnt `CFF ` table with more than one font in its Name INDEX.
+    MultipleNames {
+        /// The count.
+        count: u32,
+    },
+    /// The Top DICT INDEX has fewer entries than the Name INDEX.
+    TooFewTopDicts {
+        /// The value found.
+        found: u32,
+        /// The expected value.
+        expected: u32,
+    },
+    /// Too many operands before a DICT operator.
+    DictStackOverflow,
+    /// A DICT operator without the operands it needs.
+    DictMissingOperands {
+        /// The operator (`0x0C00 | b` for `12 b`).
+        operator: u32,
+    },
+    /// A two-byte DICT operator cut by the end of the data.
+    DictTruncatedOperator,
+    /// A DICT operand value FreeType rejects.
+    DictInvalidValue {
+        /// The operator (`0x0C00 | b` for `12 b`).
+        operator: u32,
+    },
+    /// A Private DICT `blend` without a usable Variation Store region list.
+    DictBlend,
+    /// A DICT real number that is not terminated or has an invalid nibble.
+    InvalidReal,
+    /// A Top DICT without `CharStrings`.
+    MissingCharStrings,
+    /// A `CharstringType` other than 2.
+    UnsupportedCharstringType {
+        /// The value found.
+        found: u32,
+    },
+    /// A CharStrings INDEX without glyphs.
+    NoGlyphs,
+    /// More glyphs than a predefined charset covers.
+    PredefinedCharsetTooShort {
+        /// The number of glyphs.
+        glyphs: u32,
+        /// The number of glyphs it covers.
+        max: u32,
+    },
+    /// An FDArray with more than 256 Font DICTs.
+    TooManyFontDicts {
+        /// The value found.
+        found: u32,
+    },
+    /// A Font DICT without a `Private` DICT.
+    MissingPrivate {
+        /// The Font DICT index.
+        fd: u32,
+    },
+    /// A CID-keyed CFF or CFF2 table without an FDArray.
+    MissingFdArray,
+    /// An FDSelect of format 3 or 4 without ranges.
+    EmptyRanges,
+    /// The first FDSelect range does not start at glyph 0.
+    FirstRangeNotZero {
+        /// The value found.
+        found: u32,
+    },
+    /// An FDSelect range does not start after the one before it.
+    RangesNotSorted {
+        /// Index of the offending entry.
+        index: u32,
+    },
+    /// The FDSelect sentinel is not the glyph count.
+    SentinelMismatch {
+        /// The value found.
+        found: u32,
+        /// The expected value.
+        expected: u32,
+    },
+    /// An FDSelect Font DICT index not below the FDArray count.
+    FdOutOfRange {
+        /// The Font DICT index.
+        fd: u32,
+        /// The count.
+        count: u32,
+    },
+    /// Variation regions whose axis count differs from `fvar`.
+    AxisCountMismatch {
+        /// The value found.
+        found: u32,
+        /// The expected value.
+        expected: u32,
+    },
+    /// A region index not below the region count.
+    RegionIndexOutOfRange {
+        /// Index of the offending entry.
+        index: u32,
+        /// The count.
+        count: u32,
+    },
+    /// A charstring pushes more operands than the stack holds.
+    CharStringStackOverflow {
+        /// The glyph id.
+        glyph: u32,
+        /// The byte position in the charstring or subroutine.
+        position: u32,
+    },
+    /// A charstring operator without the operands it needs.
+    CharStringStackUnderflow {
+        /// The glyph id.
+        glyph: u32,
+        /// The byte position in the charstring or subroutine.
+        position: u32,
+    },
+    /// A subroutine number outside its INDEX.
+    SubroutineOutOfRange {
+        /// The glyph id.
+        glyph: u32,
+        /// The byte position in the charstring or subroutine.
+        position: u32,
+    },
+    /// Subroutines nested deeper than FreeType allows.
+    SubroutineTooDeep {
+        /// The glyph id.
+        glyph: u32,
+        /// The byte position in the charstring or subroutine.
+        position: u32,
+    },
+    /// A charstring number, operator or mask cut by the end of the data.
+    CharStringTruncated {
+        /// The glyph id.
+        glyph: u32,
+        /// The byte position in the charstring or subroutine.
+        position: u32,
+    },
+    /// A CFF charstring that ends without `endchar`.
+    MissingEndchar {
+        /// The glyph id.
+        glyph: u32,
+    },
+    /// A CFF2 `vsindex` outside the Variation Store.
+    VsindexOutOfRange {
+        /// The glyph id.
+        glyph: u32,
+        /// The byte position in the charstring or subroutine.
+        position: u32,
+    },
+    /// A CFF2 `blend` in a font without a Variation Store.
+    BlendWithoutStore {
+        /// The glyph id.
+        glyph: u32,
+        /// The byte position in the charstring or subroutine.
+        position: u32,
+    },
+    /// A charstring FreeType cannot decode for another reason.
+    InvalidCharString {
+        /// The glyph id.
+        glyph: u32,
+        /// The byte position in the charstring or subroutine.
+        position: u32,
+    },
+    /// A DICT operator neither the specification nor FreeType knows.
+    UnknownOperator {
+        /// The operator (`0x0C00 | b` for `12 b`).
+        operator: u32,
+    },
+    /// A DICT operator of the other CFF version.
+    OperatorNotAllowed {
+        /// The operator (`0x0C00 | b` for `12 b`).
+        operator: u32,
+    },
+    /// A DICT operator that appears more than once (the last one wins).
+    DuplicateOperator {
+        /// The operator (`0x0C00 | b` for `12 b`).
+        operator: u32,
+    },
+    /// The CharStrings count differs from `maxp`.
+    GlyphCountMismatch {
+        /// The value found.
+        found: u32,
+        /// The expected value.
+        expected: u32,
+    },
+    /// A charset SID beyond the String INDEX.
+    SidOutOfRange {
+        /// The glyph id.
+        glyph: u32,
+        /// The SID.
+        sid: u32,
+    },
+    /// An FDSelect of format 4, which FreeType cannot read.
+    FdSelectFormat4,
+    /// A charstring operator that is reserved or of the other version.
+    UnknownCharStringOperator {
+        /// The glyph id.
+        glyph: u32,
+        /// The byte position in the charstring or subroutine.
+        position: u32,
+        /// The operator (`0x0C00 | b` for `12 b`).
+        operator: u32,
+    },
 }
 
 impl Kind {
@@ -316,7 +537,42 @@ impl Kind {
             | ComponentGlyphOutOfRange { .. }
             | NameIndexOutOfRange { .. }
             | GlyphsNotSorted { .. }
-            | DuplicateGlyph { .. } => Severity::Error,
+            | DuplicateGlyph { .. }
+            | HeaderSizeTooSmall { .. }
+            | InvalidOffSize { .. }
+            | FirstOffsetNotOne { .. }
+            | OffsetsNotSorted { .. }
+            | MultipleNames { .. }
+            | TooFewTopDicts { .. }
+            | DictStackOverflow
+            | DictMissingOperands { .. }
+            | DictTruncatedOperator
+            | DictInvalidValue { .. }
+            | DictBlend
+            | InvalidReal
+            | MissingCharStrings
+            | UnsupportedCharstringType { .. }
+            | NoGlyphs
+            | PredefinedCharsetTooShort { .. }
+            | TooManyFontDicts { .. }
+            | MissingPrivate { .. }
+            | MissingFdArray
+            | EmptyRanges
+            | FirstRangeNotZero { .. }
+            | RangesNotSorted { .. }
+            | SentinelMismatch { .. }
+            | FdOutOfRange { .. }
+            | AxisCountMismatch { .. }
+            | RegionIndexOutOfRange { .. }
+            | CharStringStackOverflow { .. }
+            | CharStringStackUnderflow { .. }
+            | SubroutineOutOfRange { .. }
+            | SubroutineTooDeep { .. }
+            | CharStringTruncated { .. }
+            | MissingEndchar { .. }
+            | VsindexOutOfRange { .. }
+            | BlendWithoutStore { .. }
+            | InvalidCharString { .. } => Severity::Error,
             RecordsNotSorted { .. }
             | DuplicateTable { .. }
             | ChecksumMismatch { .. }
@@ -336,7 +592,14 @@ impl Kind {
             | FsSelectionConflict { .. }
             | FirstCharAfterLast { .. }
             | OddLength { .. }
-            | DeprecatedVersion { .. } => Severity::Warning,
+            | DeprecatedVersion { .. }
+            | UnknownOperator { .. }
+            | OperatorNotAllowed { .. }
+            | DuplicateOperator { .. }
+            | GlyphCountMismatch { .. }
+            | SidOutOfRange { .. }
+            | FdSelectFormat4
+            | UnknownCharStringOperator { .. } => Severity::Warning,
         }
     }
 
@@ -385,6 +648,48 @@ impl Kind {
             DeprecatedVersion { .. } => "deprecated_version",
             GlyphsNotSorted { .. } => "glyphs_not_sorted",
             DuplicateGlyph { .. } => "duplicate_glyph",
+            HeaderSizeTooSmall { .. } => "header_size_too_small",
+            InvalidOffSize { .. } => "invalid_off_size",
+            FirstOffsetNotOne { .. } => "first_offset_not_one",
+            OffsetsNotSorted { .. } => "offsets_not_sorted",
+            MultipleNames { .. } => "multiple_names",
+            TooFewTopDicts { .. } => "too_few_top_dicts",
+            DictStackOverflow => "dict_stack_overflow",
+            DictMissingOperands { .. } => "dict_missing_operands",
+            DictTruncatedOperator => "dict_truncated_operator",
+            DictInvalidValue { .. } => "dict_invalid_value",
+            DictBlend => "dict_blend",
+            InvalidReal => "invalid_real",
+            MissingCharStrings => "missing_char_strings",
+            UnsupportedCharstringType { .. } => "unsupported_charstring_type",
+            NoGlyphs => "no_glyphs",
+            PredefinedCharsetTooShort { .. } => "predefined_charset_too_short",
+            TooManyFontDicts { .. } => "too_many_font_dicts",
+            MissingPrivate { .. } => "missing_private",
+            MissingFdArray => "missing_fd_array",
+            EmptyRanges => "empty_ranges",
+            FirstRangeNotZero { .. } => "first_range_not_zero",
+            RangesNotSorted { .. } => "ranges_not_sorted",
+            SentinelMismatch { .. } => "sentinel_mismatch",
+            FdOutOfRange { .. } => "fd_out_of_range",
+            AxisCountMismatch { .. } => "axis_count_mismatch",
+            RegionIndexOutOfRange { .. } => "region_index_out_of_range",
+            CharStringStackOverflow { .. } => "char_string_stack_overflow",
+            CharStringStackUnderflow { .. } => "char_string_stack_underflow",
+            SubroutineOutOfRange { .. } => "subroutine_out_of_range",
+            SubroutineTooDeep { .. } => "subroutine_too_deep",
+            CharStringTruncated { .. } => "char_string_truncated",
+            MissingEndchar { .. } => "missing_endchar",
+            VsindexOutOfRange { .. } => "vsindex_out_of_range",
+            BlendWithoutStore { .. } => "blend_without_store",
+            InvalidCharString { .. } => "invalid_char_string",
+            UnknownOperator { .. } => "unknown_operator",
+            OperatorNotAllowed { .. } => "operator_not_allowed",
+            DuplicateOperator { .. } => "duplicate_operator",
+            GlyphCountMismatch { .. } => "glyph_count_mismatch",
+            SidOutOfRange { .. } => "sid_out_of_range",
+            FdSelectFormat4 => "fd_select_format4",
+            UnknownCharStringOperator { .. } => "unknown_char_string_operator",
         }
     }
 
@@ -495,6 +800,137 @@ impl Kind {
             DuplicateGlyph { index, glyph } => {
                 f("index", Uint(index));
                 f("glyph", Uint(glyph));
+            }
+            HeaderSizeTooSmall { found, minimum } => {
+                f("found", Uint(found));
+                f("minimum", Uint(minimum));
+            }
+            InvalidOffSize { found } => {
+                f("found", Uint(found));
+            }
+            FirstOffsetNotOne { found } => {
+                f("found", Uint(found));
+            }
+            OffsetsNotSorted { index } => {
+                f("index", Uint(index));
+            }
+            MultipleNames { count } => {
+                f("count", Uint(count));
+            }
+            TooFewTopDicts { found, expected } => {
+                f("found", Uint(found));
+                f("expected", Uint(expected));
+            }
+            DictStackOverflow => {}
+            DictMissingOperands { operator } => {
+                f("operator", Uint(operator));
+            }
+            DictTruncatedOperator => {}
+            DictInvalidValue { operator } => {
+                f("operator", Uint(operator));
+            }
+            DictBlend => {}
+            InvalidReal => {}
+            MissingCharStrings => {}
+            UnsupportedCharstringType { found } => {
+                f("found", Uint(found));
+            }
+            NoGlyphs => {}
+            PredefinedCharsetTooShort { glyphs, max } => {
+                f("glyphs", Uint(glyphs));
+                f("max", Uint(max));
+            }
+            TooManyFontDicts { found } => {
+                f("found", Uint(found));
+            }
+            MissingPrivate { fd } => {
+                f("fd", Uint(fd));
+            }
+            MissingFdArray => {}
+            EmptyRanges => {}
+            FirstRangeNotZero { found } => {
+                f("found", Uint(found));
+            }
+            RangesNotSorted { index } => {
+                f("index", Uint(index));
+            }
+            SentinelMismatch { found, expected } => {
+                f("found", Uint(found));
+                f("expected", Uint(expected));
+            }
+            FdOutOfRange { fd, count } => {
+                f("fd", Uint(fd));
+                f("count", Uint(count));
+            }
+            AxisCountMismatch { found, expected } => {
+                f("found", Uint(found));
+                f("expected", Uint(expected));
+            }
+            RegionIndexOutOfRange { index, count } => {
+                f("index", Uint(index));
+                f("count", Uint(count));
+            }
+            CharStringStackOverflow { glyph, position } => {
+                f("glyph", Uint(glyph));
+                f("position", Uint(position));
+            }
+            CharStringStackUnderflow { glyph, position } => {
+                f("glyph", Uint(glyph));
+                f("position", Uint(position));
+            }
+            SubroutineOutOfRange { glyph, position } => {
+                f("glyph", Uint(glyph));
+                f("position", Uint(position));
+            }
+            SubroutineTooDeep { glyph, position } => {
+                f("glyph", Uint(glyph));
+                f("position", Uint(position));
+            }
+            CharStringTruncated { glyph, position } => {
+                f("glyph", Uint(glyph));
+                f("position", Uint(position));
+            }
+            MissingEndchar { glyph } => {
+                f("glyph", Uint(glyph));
+            }
+            VsindexOutOfRange { glyph, position } => {
+                f("glyph", Uint(glyph));
+                f("position", Uint(position));
+            }
+            BlendWithoutStore { glyph, position } => {
+                f("glyph", Uint(glyph));
+                f("position", Uint(position));
+            }
+            InvalidCharString { glyph, position } => {
+                f("glyph", Uint(glyph));
+                f("position", Uint(position));
+            }
+            UnknownOperator { operator } => {
+                f("operator", Uint(operator));
+            }
+            OperatorNotAllowed { operator } => {
+                f("operator", Uint(operator));
+            }
+            DuplicateOperator { operator } => {
+                f("operator", Uint(operator));
+            }
+            GlyphCountMismatch { found, expected } => {
+                f("found", Uint(found));
+                f("expected", Uint(expected));
+            }
+            SidOutOfRange { glyph, sid } => {
+                f("glyph", Uint(glyph));
+                f("sid", Uint(sid));
+            }
+            FdSelectFormat4 => {}
+            UnknownCharStringOperator {
+                glyph,
+                position,
+                operator,
+            } => {
+                f("glyph", Uint(glyph));
+                f("position", Uint(position));
+                f("operator", Uint(operator));
             }
         }
     }
@@ -655,6 +1091,122 @@ impl fmt::Display for Kind {
             DuplicateGlyph { index, glyph } => {
                 write!(f, "record {index} repeats glyph id {glyph}")
             }
+            HeaderSizeTooSmall { found, minimum } => {
+                write!(f, "hdrSize {found} is below {minimum}")
+            }
+            InvalidOffSize { found } => write!(f, "offset size {found} is not 1 to 4"),
+            FirstOffsetNotOne { found } => write!(f, "the first INDEX offset is {found}, not 1"),
+            OffsetsNotSorted { index } => {
+                write!(f, "INDEX offset {index} is below the one before it")
+            }
+            MultipleNames { count } => write!(
+                f,
+                "the Name INDEX has {count} fonts; a sfnt CFF table has one"
+            ),
+            TooFewTopDicts { found, expected } => {
+                write!(f, "{found} Top DICTs for {expected} names")
+            }
+            DictStackOverflow => f.write_str("too many operands before a DICT operator"),
+            DictMissingOperands { operator } => {
+                write!(f, "DICT operator {operator:#06x} lacks operands")
+            }
+            DictTruncatedOperator => {
+                f.write_str("a two-byte DICT operator is cut by the end of the data")
+            }
+            DictInvalidValue { operator } => {
+                write!(f, "DICT operator {operator:#06x} has an invalid value")
+            }
+            DictBlend => f.write_str("a Private DICT blend cannot be computed"),
+            InvalidReal => f.write_str("a DICT real number is broken"),
+            MissingCharStrings => f.write_str("the Top DICT has no CharStrings"),
+            UnsupportedCharstringType { found } => write!(f, "CharstringType {found} is not 2"),
+            NoGlyphs => f.write_str("the CharStrings INDEX is empty"),
+            PredefinedCharsetTooShort { glyphs, max } => {
+                write!(f, "{glyphs} glyphs for a predefined charset of {max}")
+            }
+            TooManyFontDicts { found } => {
+                write!(f, "the FDArray has {found} Font DICTs (more than 256)")
+            }
+            MissingPrivate { fd } => write!(f, "Font DICT {fd} has no Private DICT"),
+            MissingFdArray => f.write_str("there is no FDArray"),
+            EmptyRanges => f.write_str("the FDSelect has no ranges"),
+            FirstRangeNotZero { found } => {
+                write!(f, "the first FDSelect range starts at glyph {found}, not 0")
+            }
+            RangesNotSorted { index } => write!(
+                f,
+                "FDSelect range {index} does not start after the one before it"
+            ),
+            SentinelMismatch { found, expected } => write!(
+                f,
+                "the FDSelect sentinel is {found}, not the glyph count {expected}"
+            ),
+            FdOutOfRange { fd, count } => write!(
+                f,
+                "Font DICT index {fd} is not below the FDArray count {count}"
+            ),
+            AxisCountMismatch { found, expected } => {
+                write!(f, "the regions have {found} axes, fvar has {expected}")
+            }
+            RegionIndexOutOfRange { index, count } => write!(
+                f,
+                "region index {index} is not below the region count {count}"
+            ),
+            CharStringStackOverflow { glyph, position } => write!(
+                f,
+                "glyph {glyph}: operand stack overflow at byte {position}"
+            ),
+            CharStringStackUnderflow { glyph, position } => write!(
+                f,
+                "glyph {glyph}: operand stack underflow at byte {position}"
+            ),
+            SubroutineOutOfRange { glyph, position } => write!(
+                f,
+                "glyph {glyph}: subroutine out of range at byte {position}"
+            ),
+            SubroutineTooDeep { glyph, position } => write!(
+                f,
+                "glyph {glyph}: subroutines nested too deeply at byte {position}"
+            ),
+            CharStringTruncated { glyph, position } => {
+                write!(f, "glyph {glyph}: charstring cut at byte {position}")
+            }
+            MissingEndchar { glyph } => {
+                write!(f, "glyph {glyph}: the charstring ends without endchar")
+            }
+            VsindexOutOfRange { glyph, position } => {
+                write!(f, "glyph {glyph}: vsindex out of range at byte {position}")
+            }
+            BlendWithoutStore { glyph, position } => write!(
+                f,
+                "glyph {glyph}: blend without a Variation Store at byte {position}"
+            ),
+            InvalidCharString { glyph, position } => {
+                write!(f, "glyph {glyph}: invalid charstring at byte {position}")
+            }
+            UnknownOperator { operator } => write!(f, "unknown DICT operator {operator:#06x}"),
+            OperatorNotAllowed { operator } => write!(
+                f,
+                "DICT operator {operator:#06x} is not allowed in this version"
+            ),
+            DuplicateOperator { operator } => {
+                write!(f, "DICT operator {operator:#06x} appears more than once")
+            }
+            GlyphCountMismatch { found, expected } => {
+                write!(f, "{found} charstrings, but maxp has {expected} glyphs")
+            }
+            SidOutOfRange { glyph, sid } => {
+                write!(f, "SID {sid} of glyph {glyph} is beyond the String INDEX")
+            }
+            FdSelectFormat4 => f.write_str("FDSelect format 4 (FreeType cannot read it)"),
+            UnknownCharStringOperator {
+                glyph,
+                position,
+                operator,
+            } => write!(
+                f,
+                "glyph {glyph}: unknown operator {operator:#06x} at byte {position}"
+            ),
         }
     }
 }

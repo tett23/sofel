@@ -9,11 +9,13 @@ sofel_font::Font::head Returns a sofel-read view of head; C reads the table with
 sofel_geom::Command::apply Replays a recorded Rust Command into a Rust Pen; C pens receive the commands directly.
 sofel_geom::F26Dot6::from_int A multiplication by 64, which C writes as such.
 sofel_read::be::* Bounds-checked big-endian readers of Rust slices for the table views; C reads bytes directly.
+sofel_read::cff::* Zero-copy Rust views, the FreeType DICT parsers, the Type 2 charstring decoder and the CFF validators (ADR 0021); C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::cmap::* Zero-copy Rust views and per-table validators; C maps characters with sofel_font_nominal_glyph and sofel_font_variation_glyph, reads the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::glyf::* Zero-copy Rust views and per-table validators; C gets outlines with sofel_outline_*, the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::head::* Zero-copy Rust views and per-table validators; C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::hhea::* Zero-copy Rust views and per-table validators; C gets advances with sofel_font_h_advance, the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::hmtx::* Zero-copy Rust views and per-table validators; C gets advances with sofel_font_h_advance, the bytes with sofel_font_table, and validates with sofel_validate.
+sofel_read::item_variation::* A zero-copy Rust view and validator of the Item Variation Store (ADR 0021); C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::loca::* Zero-copy Rust views and per-table validators; C gets outlines with sofel_outline_*, the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::maxp::* Zero-copy Rust views and per-table validators; C gets the glyph count with sofel_font_num_glyphs, the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::name::* Zero-copy Rust views and per-table validators; C reads the bytes with sofel_font_table and validates with sofel_validate.

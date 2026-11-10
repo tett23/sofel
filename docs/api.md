@@ -183,6 +183,8 @@ match FontFile::new(&data)? {
 - `vhea` と `vmtx` のビューは `hhea` と `hmtx` のビューそのもの（`Vhea`、`Vmtx` は別名）で、`ascender` は縦のアセンダ、`advance` は縦の送り幅、`left_side_bearing` は上のサイドベアリングを返す。
 - OS/2の版より後の欄（例えば版1の `s_cap_height`）は `None` を返す。nameの文字列が表の外にある記録は `Name::string` が `None` を返す。postの `MAC_GLYPH_NAMES` はMacの標準の258の名前。
 - `be` は、範囲を確かめるビッグエンディアンの読み取りの関数。
+- `cff` は `CFF ` と `CFF2` の表（[ADR 0021](adr/0021-cff-outlines.md)）：`Cff1`、`Cff2`（ヘッダとINDEXの並び）、`Index`（`get` は厳密に、`ft_element` と `ft_pointer` はFreeTypeの読み方で要素を返す）、`dict`（`DictTokens`、FreeTypeと同じ数の変換をする `Operand`、`TopDict`、`FontDict`、`PrivateDict`。値はFreeTypeが `FT_Long` に持つ64bitの値と型のまま）、`Charset`、`Encoding`、`FdSelect`、`charstring`（`CharStringTokens` と、FreeTypeのAdobe engineをヒンティングなしで移植したType 2 charstringの解読器 `decode`）、`FtBlend`（FreeTypeのCFF2の `blend` の係数）。`cff::validate` と `cff::validate2` が検証器で、`validate::sfnt` は `maxp` のグリフの数と `fvar` の軸の数を渡して呼ぶ。
+- `item_variation` はOpenTypeの共通のItem Variation Store（領域の一覧と `ItemVariationData` の領域の番号）のビューと検証器。CFF2の `vstore` が使い、3段階目の可変フォントでHVARなどと共有する。
 
 ## 固定小数点（`sofel-geom`）
 

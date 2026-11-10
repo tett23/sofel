@@ -34,6 +34,7 @@
 #![warn(missing_docs)]
 
 pub mod be;
+pub mod cff;
 pub mod cmap;
 mod diag;
 mod error;
@@ -41,6 +42,7 @@ pub mod glyf;
 pub mod head;
 pub mod hhea;
 pub mod hmtx;
+pub mod item_variation;
 pub mod loca;
 pub mod maxp;
 pub mod name;
