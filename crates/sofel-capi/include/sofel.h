@@ -1759,6 +1759,48 @@ typedef struct sofel_glyph_bitmap_t {
 int32_t sofel_glyph_bitmap(const sofel_font_t *font, uint32_t strike_index, uint32_t glyph,
                            sofel_glyph_bitmap_t *bitmap);
 
+/* A decoded bitmap: pixel_mode is FreeType's (1 mono, 2 gray, 3 gray2,
+ * 4 gray4, 7 BGRA); rows top first, pitch bytes each. */
+typedef struct sofel_bitmap_layout_t {
+  uint16_t width;
+  uint16_t rows;
+  uint32_t pitch;
+  uint32_t pixel_mode;
+  int16_t hori_bearing_x;
+  int16_t hori_bearing_y;
+  uint16_t hori_advance;
+  int16_t vert_bearing_x;
+  int16_t vert_bearing_y;
+  uint16_t vert_advance;
+} sofel_bitmap_layout_t;
+
+/*
+ * Decodes a glyph's EBDT/CBDT/bdat bitmap in the strike with index
+ * strike_index as FreeType's FT_Load_Glyph (FT_LOAD_COLOR): the layout
+ * goes to *layout, and the pixels (pitch × rows bytes) to `pixels` unless
+ * it is NULL. SOFEL_ERROR_NOT_FOUND without a bitmap,
+ * SOFEL_ERROR_NO_GLYPH_DATA for PNG images (not decoded),
+ * SOFEL_ERROR_BUFFER_TOO_SMALL when capacity is smaller.
+ *
+ * Rust: sofel_bitmap::bitmap_layout, sofel_bitmap::draw_bitmap, sofel_bitmap::BitmapLayout::len, sofel_bitmap::BitmapLayout::is_empty
+ * HarfBuzz: none
+ * FreeType: FT_Load_Glyph
+ */
+int32_t sofel_draw_bitmap(const sofel_font_t *font, uint32_t strike_index, uint32_t glyph,
+                          uint8_t *pixels, size_t capacity, sofel_bitmap_layout_t *layout);
+
+/*
+ * Whether the font has outlines as FreeType decides (glyf, GLYF, CFF or
+ * CFF2, and no CBLC or CBDT), and whether it has embedded bitmaps (CBLC,
+ * EBLC, bloc or sbix): 1 or 0.
+ *
+ * Rust: sofel_font::Font::has_outlines, sofel_font::Font::has_bitmaps
+ * HarfBuzz: none
+ * FreeType: FT_IS_SCALABLE, FT_HAS_FIXED_SIZES
+ */
+int32_t sofel_font_has_outlines(const sofel_font_t *font, uint8_t *has);
+int32_t sofel_font_has_bitmaps(const sofel_font_t *font, uint8_t *has);
+
 /*
  * The sine, cosine and tangent of x (radians), the same on every
  * target (musl's sincosf and tanf).

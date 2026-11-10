@@ -282,6 +282,8 @@ if paint(&font, glyph, &options, &mut scratch, &mut Log) == Painted::None {
 | `sofel_bitmap::strikes`、`match_strike` | なし | `available_sizes`、`FT_Match_Size` |
 | `sofel_bitmap::choose_strike` | CBDTとsbixのストライクの選び方 | なし |
 | `sofel_bitmap::glyph_bitmap` | なし | `FT_Load_Glyph`（展開しない） |
+| `sofel_bitmap::bitmap_layout`、`draw_bitmap` | なし | `FT_Load_Glyph`（`FT_LOAD_COLOR`。EBDTの画素） |
+| `Font::has_outlines`、`has_bitmaps` | なし | `FT_IS_SCALABLE`、`FT_HAS_FIXED_SIZES` |
 
 - `Palette::Custom(&[Color])` で、`palette_colors` から作って一部を変えたパレット（CSSの `override-colors`）を使える。
 - 単色（`Solid`）は、解決した色と出どころ（パレットの番号とアルファ）の両方を持つ。パレットを替えたとき、塗りの木をたどりなおさずに色を解決しなおせる。

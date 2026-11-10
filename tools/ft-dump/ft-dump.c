@@ -168,11 +168,12 @@
  *   size <i>
  *   glyph <g> <error> <left> <top> <width> <rows> <pitch> <pixel_mode>
  *         <hori_advance> <vert_bearing_x> <vert_bearing_y> <vert_advance>
- *                                       (FT_Load_Glyph with FT_LOAD_COLOR |
- *                                       FT_LOAD_BITMAP_METRICS_ONLY, the
- *                                       slot's bitmap fields and metrics in
- *                                       26.6; only the error when it fails;
- *                                       every glyph)
+ *                                       (FT_Load_Glyph with FT_LOAD_COLOR,
+ *                                       the slot's bitmap fields and metrics
+ *                                       in 26.6; only the error when it
+ *                                       fails, -1 when the glyph is not a
+ *                                       bitmap; every glyph)
+ *   <row as hex, pitch bytes>           (one line per row, top first)
  *   end
  *
  * Usage: ft-dump --otvalid FILE
@@ -568,7 +569,8 @@ static void dump_sbit(FT_Face face)
     printf("size %d\n", i);
     for (g = 0; g < face->num_glyphs; g++) {
       FT_GlyphSlot s = face->glyph;
-      FT_Error e = FT_Load_Glyph(face, (FT_UInt)g, FT_LOAD_COLOR | FT_LOAD_BITMAP_METRICS_ONLY);
+      FT_Error e = FT_Load_Glyph(face, (FT_UInt)g, FT_LOAD_COLOR);
+      unsigned r, k;
       if (e != 0 || s->format != FT_GLYPH_FORMAT_BITMAP) {
         printf("glyph %ld %d\n", (long)g, e != 0 ? (int)e : -1);
         continue;
@@ -578,6 +580,12 @@ static void dump_sbit(FT_Face face)
              (int)s->bitmap.pixel_mode, (long)s->metrics.horiAdvance,
              (long)s->metrics.vertBearingX, (long)s->metrics.vertBearingY,
              (long)s->metrics.vertAdvance);
+      for (r = 0; r < s->bitmap.rows && s->bitmap.buffer; r++) {
+        const unsigned char *row = s->bitmap.buffer + (long)r * s->bitmap.pitch;
+        for (k = 0; k < (unsigned)abs(s->bitmap.pitch); k++)
+          printf("%02x", row[k]);
+        printf("\n");
+      }
     }
   }
 }
