@@ -52,7 +52,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 フォントを扱うクレート
   sofel-woff    → sofel-inflate, sofel-brotli
   sofel-font    → sofel-read, sofel-type1, sofel-pfr, sofel-bitmapfont, sofel-geom
-  sofel-shape   → sofel-font, sofel-unicode
+  sofel-shape   → sofel-font, sofel-unicode, sofel-geom
   sofel-outline → sofel-font, sofel-geom
   sofel-bitmap  → sofel-font, sofel-png
   sofel-color   → sofel-outline, sofel-bitmap, sofel-svg, sofel-geom
@@ -187,6 +187,36 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - `hb-buffer-serialize.cc` と同じ書き出しを、バッファの型によらない関数として置く（[ADR 0020](adr/0020-shaping-foundation.md)）。`serialize_glyphs(_range)` はグリフの列（`GlyphInfo` と、位置を持てば `GlyphPosition`）を、`serialize_unicode(_range)` は文字とクラスタの列を、`SerializeFormat::{Text, Json}` と `SerializeFlags`（HarfBuzzと同じビット）で書く。範囲の関数は、HarfBuzzの `buf_size` と同じく、残りの大きさより短いグリフだけを書いて、書いた数を返す。`[` と `]` は0番目と範囲の最後のグリフに付く。`serialize_invalid` は内容の無い空のバッファの `!!` と `[]` を書く。
 - フォントへの問い合わせは `SerializeFont`（グリフ名、グリフの箱、名前からのグリフ、文字からのグリフ。既定は何も知らない `EmptyFont`、HarfBuzzの `hb_font_get_empty`）にまとめる。名前は `hb_font_glyph_to_string` と同じく127バイトと最初の0のバイトで切り、名前が無ければ `gid<n>` と書く。`glyph_from_string` は名前、10進のグリフID、`gid<n>`、`uni<16進>`（cmap）の順に読む。
 - 読み込み（`deserialize_glyphs`、`deserialize_unicode`）は、HarfBuzzのRagelの文法と同じ言語を受け付ける手書きの解析器で、結果を呼び出し側のベクタに追記する。受け付けない入力でのRagelの機械の振る舞いも写す。アクション（範囲外の数、名前の解決できないグリフ、文字のバッファのグリフ）が失敗すれば、それまでの項目を残し、終わりの位置（`DeserializeError::consumed`、HarfBuzzの `end_ptr`）を最後に項目を足した位置とする。文法に無いバイトではそのバイトの位置で止まる。項目の途中で入力が終われば、その項目を除いて成功とする。テキストの項目は次の項目が始まるときか入力の終わりで足され、JSONの項目は `,` か `]` と、その後の空白のたびに足される。テキストのグリフ名の後の `<` は名前の続きとグリフの箱の始まりの両方であり、HarfBuzzと同じく両方をたどる。
+
+### 区間の性質とバッファ
+
+- `SegmentProperties { direction, script, language }`（どれも `Option`）の `guess(buffer, default_language)` が、`hb_buffer_guess_segment_properties` と同じく、文字体系をCommon、Inherited、Unknownでない最初の文字から、方向を `script_horizontal_direction`（`hb_script_get_horizontal_direction`。両方向に書く文字体系は `None` で、そのときは左から右）から決め、`ResolvedProperties` を返す。言語は引数の `default_language` で、ロケールは読まない（[ADR 0020](adr/0020-shaping-foundation.md)）。
+- `UnicodeBuffer` は文字、クラスタの値、前後の文脈（各5文字まで）、フラグ（`BufferFlags`、HarfBuzzと同じビット）、クラスタの水準（`ClusterLevel`）、見えないグリフ、見つからないグリフ、見つからない異体字セレクタのグリフ、置きかえの文字、`rand` の乱数の状態（HarfBuzzと同じ `state × 48271 mod 2³¹ − 1`、積は32ビットで折り返す。初期値1）を持つ。`push_utf8`、`push_utf16`、`push_utf32`、`push_codepoints`、`push_latin1` は `hb_buffer_add_utf*` と同じで、クラスタの値は `text` の先頭からの位置、不正な符号の列は `src/hb-utf.hh` と同じ区切りで置きかえの文字になる。`clear` は `hb_buffer_clear_contents` と同じく設定を残して中身を消し、乱数の状態を1に戻す。入力の長さと操作の数の上限は `HB_BUFFER_MAX_*` と同じ定数（`MAX_LEN_FACTOR` など）で決める。
+- `GlyphBuffer` は `GlyphInfo`（グリフID、クラスタ、`GlyphFlags`）と `GlyphPosition` の列を持つ。`into_unicode` は、設定を残し確保した領域を再利用する空の `UnicodeBuffer` を返す。`normalize_glyphs` は `hb_buffer_normalize_glyphs`、`from_parts` は読み込んだ列から作る。`diff` と `diff_unicode` は `hb_buffer_diff` と同じ `DiffFlags` を返す。
+- 作業用のバッファの要素は、HarfBuzzの `var1`、`var2` の共用体を名前のついた欄に分けた24バイトの構造体である。HarfBuzzの20バイトに、正規化が選んだグリフの欄（HarfBuzzは `glyph_props`、`lig_props`、`syllable` と重ねる）が加わる。位置は別の配列（20バイト）で、`GPOS` の付着の鎖を持つ。出力の配列は、入力より長くなるまで入力の配列そのものに書く。
+
+### 計画
+
+- `ShapePlan::new(font, props, features)` が、`hb_ot_shape_plan_t` と同じ判断を一度だけ行う（[ADR 0020](adr/0020-shaping-foundation.md)）。`GSUB` と `GPOS` の文字体系と言語の選択（`hb_ot_layout_table_select_script` の `DFLT`、`dflt`、`latn` への後退と `hb_ot_layout_script_select_language`）、シェーパー（`Shaper`、`hb_ot_shaper_categorize`）、`hb_ot_shape_collect_features` の順の機能、`hb_ot_map_builder_t::compile` と同じマスクのビットの割り当て（大域の値1の機能は31ビット目、ほかはグリフのフラグの後の4ビット目から。足りなければ機能を捨てる）、必須の機能、`F_GLOBAL_SEARCH`、`F_HAS_FALLBACK`、段ごとにlookupの番号の順に並べて重複をまとめたlookupの列、位置の決め方（`GPOS` の有無、マークの幅の0化、フォールバックのマークの配置）である。AATの表と古い `kern` 表は無いものとして判定する。
+- 計画は `GDEF` のグリフのクラス（HarfBuzzの拒否の一覧に載る表は無いものとする）とマークのグリフの集合、`GSUB` と `GPOS` のすべてのlookupについて、拡張をたどったサブテーブルのビューと、それぞれの最初のグリフのCoverageの要約（`hb_set_digest_t` と同じ3つの64ビットのマスク）を持つ。拡張の型がそろわないlookupと、読めないサブテーブルは、HarfBuzzと同じく無いものとする。
+- `ShapePlan::key` は計画を作った区間の性質と機能を返す。計画は不変で、`Send` と `Sync` を満たす。
+- `layout_selection(font, script_tags, language_tags)` は、計画と同じ文字体系と言語の選択の結果を返す。
+- [ADR 0024](adr/0024-complex-shapers.md) のシェーパーが実装されるまでは、`Shaper::Default` 以外のシェーパーもdefaultのシェーパーの手順で処理する。シェーパーの差しこみ口（`collect_features`、`override_features`、`data_create`、`preprocess_text`、`postprocess_glyphs`、`decompose`、`compose`、`setup_masks`、`reorder_marks`、`gpos_tag`、正規化の方式、マークの幅の0化の時期、フォールバックの配置、段の間の関数）は、HarfBuzzの `hb_ot_shaper_t` と同じ位置に置く。
+
+### 手順
+
+- `shape(font, scale, plan, buffer)` と、グリフの箱をフォントの単位で返す関数を受け取る `shape_with_extents` が、`hb_ot_shape_internal` の順に処理する（[ADR 0020](adr/0020-shaping-foundation.md)）。`shape` は `Font::glyf_extents` を使う。`Scale` は `HbScale` とppemで、ppemが0ならDevice表は使わない。
+  - Unicodeの性質と書記素の続き、点線の円（U+25CC）の挿入、書記素のクラスタへのまとめ、本来の方向への調整（RTLの文字体系の数字の列と地域指示子）、鏡像と、`vert` の無い縦書きでの `unicode::vertical_char_for`。
+  - 正規化（`_hb_ot_shape_normalize`）：分解（フォントにある短い形を選ぶ短絡、異体字セレクタ、空白と U+2011 の代わり）、結合クラスでの並べかえ（32個まで）、CGJの扱い、合成。default のシェーパーの `AUTO` は `COMPOSED_DIACRITICS` になる。
+  - 分数（U+2044 の前後の数字への `numr`、`frac`、`dnom`）と利用者の機能の範囲のマスク、`GDEF` のクラスか一般カテゴリからの合成。
+  - `GSUB` と `GPOS` の適用は `hb-ot-layout-gsubgpos.hh` と同じで、飛ばすグリフの判定、自動のZWJとZWNJ、合字の成分の番号、入れ子（64まで）、操作の数の上限、`UNSAFE_TO_BREAK` と `UNSAFE_TO_CONCAT` の範囲、4つより多い規則の速い経路（フラグの立て方が変わる）、逆向きの連鎖の単一の置換を写す。付着はHarfBuzz 15.1.0と同じく筆記体の鎖を交差方向に足して求める。
+  - 既定で無視する文字の非表示（空白のグリフか見えないグリフ）、削除、保持、見つからない異体字セレクタのグリフ、送り幅と縦書きの原点、空白の代わりの幅、マークの幅の0化、フォールバックのマークの配置、逆向きなら反転、クラスタごとのフラグの伝播。
+- `shape_fallback` は HarfBuzzの `fallback` のシェーパー（`src/hb-fallback-shape.cc`）である。
+- HarfBuzzの `roundf`（`floor ((double) x + 0.5)`）は `sofel_geom::float` を使う（[ADR 0026](adr/0026-harfbuzz-rounding.md)）。
+
+### 手書きのUnicodeの関数
+
+- `sofel_shape::unicode` に、HarfBuzzが手で書いた `modified_combining_class`、`is_default_ignorable`、`space_fallback_type`、`vertical_char_for`、`is_variation_selector`、`is_regional_indicator` を置く（[ADR 0019](adr/0019-unicode-character-data.md)、[ADR 0020](adr/0020-shaping-foundation.md)）。全文字の値を `hb-dump --unicode` と比べる。
 
 ## ラスタライズ（`sofel-raster`）
 

@@ -19,6 +19,7 @@ cargo doc --no-deps -p sofel-geom -p sofel-unicode -p sofel-read -p sofel-font -
 | `sofel-read` | sfntの表の読み取りと検証。コピーも確保もしない | なし |
 | `sofel-font` | フォントを一度だけ読み、グリフの数、文字からグリフへの対応、送り幅を返す | `sofel-read`、`sofel-geom` |
 | `sofel-outline` | glyfとGLYFの輪郭を、ヒンティングなしでFreeTypeと同じ座標で `Pen` に渡す。HarfBuzzと同じグリフの箱（glyf、CFF2、CFF）を求める | `sofel-font`、`sofel-geom` |
+| `sofel-shape` | HarfBuzz 15.1.0のOTシェーパーと同じシェーピング（バッファ、計画、`GSUB` と `GPOS`）と、機能の文字列、直列化、タグ | `sofel-font`、`sofel-unicode`、`sofel-geom` |
 | `sofel-raster` | FreeTypeのsmoothのラスタライザと同じ計算で、8bitのアンチエイリアスの画像を作る | `sofel-geom` |
 | `sofel-cli` | 小さな道具（`sofel-validate`、`sofel-render`）と、1グリフを描く `glyph::render` | すべて |
 | `sofel-capi` | C ABI（[ADR 0015](adr/0015-c-abi.md)） | すべて |
@@ -363,6 +364,46 @@ assert_eq!(back, infos);
 - 書き出しも読み込みもバイト列で行う。グリフ名はバイト列だからである。
 - フォントは `SerializeFont` を実装して渡す。グリフ名と名前からのグリフは `sofel_font::GlyphNames`、グリフの箱は `sofel_outline::HbExtents`、文字からのグリフは `Font::nominal_glyph` から得られる。
 - 読み込みは結果を渡したベクタに追記し、失敗しても、それまでに読んだ項目を残す（HarfBuzzと同じ）。
+
+## 文字列をシェーピングする（`sofel-shape`）
+
+```rust
+use sofel_font::Font;
+use sofel_shape::{BufferFlags, Feature, Scale, SegmentProperties, ShapePlan, UnicodeBuffer, shape};
+
+let font = Font::new(&data, 0)?;
+let mut buffer = UnicodeBuffer::new();
+buffer.set_flags(BufferFlags::BOT.union(BufferFlags::EOT));
+buffer.push_utf8("Hello".as_bytes(), 0, None);
+
+// 区間の性質を推定し、計画を作る。計画は覚えておいて使いまわす。
+let props = SegmentProperties::default().guess(&buffer, None);
+let features = [Feature::parse(b"-liga").unwrap()];
+let plan = ShapePlan::new(&font, props, &features);
+
+// 倍率がunitsPerEmなら、位置はフォントの単位になる。
+let glyphs = shape(&font, &Scale::unscaled(&font), &plan, buffer);
+for (info, pos) in glyphs.glyph_infos().iter().zip(glyphs.glyph_positions()) {
+    println!("{} {} {}", info.glyph, info.cluster, pos.x_advance);
+}
+// 確保した領域を次の文字列に回す。
+let buffer = glyphs.into_unicode();
+```
+
+| sofel | HarfBuzz |
+|---|---|
+| `UnicodeBuffer::push_utf8` などと設定の関数 | `hb_buffer_add_utf8` など、`hb_buffer_set_*` |
+| `SegmentProperties::guess` | `hb_buffer_guess_segment_properties`（言語は引数。ロケールは読まない） |
+| `ShapePlan::new` | `hb_shape_plan_create`（`ot` のシェーパー） |
+| `shape`、`shape_with_extents` | `hb_shape_plan_execute` |
+| `shape_fallback` | `fallback` のシェーパー |
+| `GlyphBuffer::glyph_infos`、`glyph_positions` | `hb_buffer_get_glyph_infos`、`_positions` |
+| `GlyphBuffer::normalize_glyphs`、`diff` | `hb_buffer_normalize_glyphs`、`hb_buffer_diff` |
+| `Scale` | `hb_font_set_scale`、`hb_font_set_ppem` |
+
+- 計画は不変で、スレッドの間で共有できる。区間の性質と機能の組ごとに作り、呼び出し側が覚える（`ShapePlan::key` で比べる）。
+- CFFのフォントやカラーグリフでは、`sofel_outline` の箱を `shape_with_extents` に渡す（フォールバックのマークの配置と縦書きの原点に使う）。
+- [ADR 0024](adr/0024-complex-shapers.md) のシェーパー（アラビア文字、インド系文字など）は、まだdefaultの手順で処理する。`ShapePlan::shaper` はHarfBuzzが選ぶシェーパーを返す。
 
 ## Cから使う（`sofel-capi`）
 

@@ -239,6 +239,7 @@ sofel follows rules of HarfBuzz 15.1.0 (commit `3df40d9b98d6b32f0e4288d4ecfbb158
 | `sofel-font` | `src/tables/arabic_pua.rs`, generated from HarfBuzz's `src/ArabicPUASimplified.txt` and `src/ArabicPUATraditional.txt`; `src/names.rs` and `src/name_language.rs` from `src/OT/name/name.hh`, `src/hb-ot-name.cc`, `src/hb-ot-name-language-static.hh`, `src/hb-common.cc`, `src/hb-aat-ltag-table.hh`, `src/hb-utf.hh` and `src/hb-ot-post-table.hh`; `src/metrics.rs` and `src/glyf_data.rs` from `src/hb-ot-font.cc`, `src/hb-ot-metrics.cc`, `src/hb-font.hh`, `src/hb-algs.hh` (`_hb_roundf`, `hb_bsearch`, `hb_qsort_inline`), `src/hb-decycler.hh` and `src/OT/glyf/` ([ADR 0016](docs/adr/0016-font-and-vertical-metrics.md)); `src/layout.rs` and `src/base_sanitize.rs` from `src/hb-ot-layout.cc`, `src/hb-ot-layout-base-table.hh`, `src/hb-ot-layout-common.hh` (`Device`, `ItemVariationStore`), `src/hb-ot-tag.cc` (`hb_ot_tag_to_script`) and `src/hb-sanitize.hh` ([ADR 0017](docs/adr/0017-base-baselines.md)); `src/hb_cff.rs` (HarfBuzz's CFF and CFF2 accelerators) and the CFF glyph names of `src/names.rs` from `src/hb-ot-cff1-table.hh`, `src/hb-ot-cff2-table.hh` and `src/hb-face.cc` (Copyright © 2018 Adobe Inc.) ([ADR 0021](docs/adr/0021-cff-outlines.md)) |
 | `sofel-shape` | `src/tag_table.rs`: the language tables and the branches of `hb_ot_tags_from_complex_language` and `hb_ot_ambiguous_tag_to_language`, generated from `src/hb-ot-tag-table.hh`; `src/tag.rs` from `src/hb-ot-tag.cc`; `src/language.rs` from `src/hb-common.cc` (`hb_language_from_string`) (Copyright © 2009 Red Hat, Inc.; © 2011 Google, Inc.) ([ADR 0020](docs/adr/0020-shaping-foundation.md)) |
 | `sofel-outline` | `src/hb_cff.rs`: HarfBuzz's CFF and CFF2 glyph boxes from `src/hb-cff-interp-common.hh`, `src/hb-cff-interp-cs-common.hh`, `src/hb-cff1-interp-cs.hh`, `src/hb-cff2-interp-cs.hh`, `src/hb-ot-cff1-table.cc`, `src/hb-ot-cff2-table.cc` and `src/hb-ot-font.cc` (`hb_ot_get_glyph_extents`) (Copyright © 2018 Adobe Inc.; © 2011, 2014 Google, Inc.) ([ADR 0021](docs/adr/0021-cff-outlines.md)) |
+| `sofel-shape` | The shaping core ([ADR 0020](docs/adr/0020-shaping-foundation.md)): `src/buffer.rs`, `src/utf.rs`, `src/props.rs` and `src/diff.rs` from `src/hb-buffer.hh`, `src/hb-buffer.cc`, `src/hb-utf.hh`, `src/hb-limits.hh` and `src/hb-common.cc` (`hb_script_get_horizontal_direction`); `src/unicode.rs` from `src/hb-unicode.hh` and `src/hb-unicode.cc`; `src/digest.rs` from `src/hb-set-digest.hh`; `src/plan.rs`, `src/shape.rs`, `src/normalize.rs` and `src/fallback.rs` from `src/hb-ot-shape.cc`, `src/hb-ot-shaper.hh`, `src/hb-ot-shaper-default.cc`, `src/hb-ot-shape-normalize.cc`, `src/hb-ot-shape-fallback.cc` and `src/hb-fallback-shape.cc`; `src/layout/` from `src/hb-ot-map.cc`, `src/hb-ot-map.hh`, `src/hb-ot-layout.cc`, `src/hb-ot-layout.hh`, `src/hb-ot-layout-gsubgpos.hh`, `src/OT/Layout/GDEF/`, `src/OT/Layout/GSUB/` and `src/OT/Layout/GPOS/`; `src/scale.rs` and `src/font.rs` from `src/hb-font.hh` and `src/hb-ot-layout-common.hh` (`HintingDevice::get_delta`) (Copyright © 1998-2004 David Turner and Werner Lemberg; © 2004, 2006-2010 Red Hat, Inc.; © 2007 Chris Wilson; © 2009 Keith Stribley; © 2010-2020 Google, Inc.; © 2019 Facebook, Inc.) ([ADR 0020](docs/adr/0020-shaping-foundation.md)) |
 | `sofel-shape` | `src/feature.rs`: feature strings (`hb_feature_from_string`, `hb_feature_to_string`) from `src/hb-common.cc` (Copyright © 2009, 2010 Red Hat, Inc.; © 2011, 2012 Google, Inc.), and `hb_parse_int`, `hb_parse_uint` from `src/hb-number.cc` (Copyright © 2019-2026 Ebrahim Byagowi); `src/serialize.rs`: buffer serialization from `src/hb-buffer-serialize.cc`, the readers after the Ragel grammars `src/hb-buffer-deserialize-json.rl`, `src/hb-buffer-deserialize-text-glyphs.rl` and `src/hb-buffer-deserialize-text-unicode.rl`, and `glyph_to_string`, `glyph_from_string` from `src/hb-font.hh` (Copyright © 2012, 2013 Google, Inc.; the grammars © 2013 Google, Inc.) ([ADR 0020](docs/adr/0020-shaping-foundation.md)) |
 
 The HarfBuzz license follows.
@@ -325,4 +326,33 @@ Except as contained in this notice, the name of a copyright holder shall
 not be used in advertising or otherwise to promote the sale, use or other
 dealings in these Data Files or Software without prior written
 authorization of the copyright holder.
+```
+
+## HarfRust
+
+`sofel-shape`'s shaping core (`src/buffer.rs`, `src/shape.rs`, `src/plan.rs`, `src/normalize.rs`, `src/fallback.rs` and `src/layout/`) also follows HarfRust 0.15.0 (https://github.com/harfbuzz/harfrust), a Rust port of HarfBuzz, where it matches HarfBuzz 15.1.0. Its license follows.
+
+```
+The MIT License (MIT)
+
+Copyright (c) HarfBuzz developers
+Copyright (c) 2020 Yevhenii Reizner
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
