@@ -1976,6 +1976,123 @@ static int dump_paint (hb_blob_t *blob)
   return 0;
 }
 
+/* ADR 0031: the bytes returned for each sbix PNG at the default ppem. */
+static int dump_png_digest (int, char **argv)
+{
+  hb_blob_t *blob = hb_blob_create_from_file_or_fail (argv[2]);
+  if (!blob) { fprintf (stderr, "hb-dump: cannot read %s\n", argv[2]); return 1; }
+  hb_face_t *face = hb_face_create (blob, 0);
+  hb_font_t *font = hb_font_create (face);
+  hb_font_set_ppem (font, 0, 0);
+  unsigned count = hb_face_get_glyph_count (face);
+  for (unsigned glyph = 0; glyph < count; glyph++)
+  {
+    hb_blob_t *png = hb_ot_color_glyph_reference_png (font, glyph);
+    unsigned length = hb_blob_get_length (png);
+    const char *data = hb_blob_get_data (png, nullptr);
+    unsigned long long hash = length ? 0xcbf29ce484222325ULL : 0;
+    for (unsigned i = 0; i < length; i++)
+      hash = (hash ^ (unsigned char) data[i]) * 0x100000001b3ULL;
+    printf ("glyph %u %u %016llx\n", glyph, length, hash);
+    hb_blob_destroy (png);
+  }
+  hb_font_destroy (font);
+  hb_face_destroy (face);
+  hb_blob_destroy (blob);
+  return 0;
+}
+
+/* ADR 0031: one color paint at explicit design coordinates, as FNV-1a. */
+static int dump_paint_var (int, char **argv)
+{
+  hb_blob_t *blob = hb_blob_create_from_file_or_fail (argv[2]);
+  if (!blob) { fprintf (stderr, "hb-dump: cannot read %s\n", argv[2]); return 1; }
+  hb_face_t *face = hb_face_create (blob, 0);
+  hb_font_t *font = hb_font_create (face);
+  char *end = nullptr;
+  unsigned long glyph = strtoul (argv[3], &end, 10);
+  if (!*argv[3] || *end || glyph >= hb_face_get_glyph_count (face))
+  {
+    hb_font_destroy (font); hb_face_destroy (face); hb_blob_destroy (blob); return 2;
+  }
+  if (strcmp (argv[4], "-") != 0)
+  {
+    std::vector<hb_variation_t> variations;
+    std::string coordinates (argv[4]);
+    size_t begin = 0;
+    while (begin < coordinates.size ())
+    {
+      size_t stop = coordinates.find (',', begin);
+      if (stop == std::string::npos) stop = coordinates.size ();
+      hb_variation_t variation;
+      if (!hb_variation_from_string (coordinates.data () + begin, (int) (stop - begin), &variation))
+      {
+        hb_font_destroy (font); hb_face_destroy (face); hb_blob_destroy (blob); return 2;
+      }
+      variations.push_back (variation);
+      begin = stop + 1;
+    }
+    hb_font_set_variations (font, variations.data (), (unsigned) variations.size ());
+  }
+  paint_text_t text;
+  text.level = 0;
+  hb_paint_funcs_t *funcs = paint_text_funcs ();
+  hb_font_paint_glyph (font, glyph, funcs, &text, 0, HB_COLOR (0, 0, 0, 255));
+  unsigned long long hash = 0xcbf29ce484222325ULL;
+  for (unsigned i = 0; i < text.text.length; i++)
+    hash = (hash ^ (unsigned char) text.text[i]) * 0x100000001b3ULL;
+  printf ("%016llx\n", hash);
+  hb_paint_funcs_destroy (funcs);
+  hb_font_destroy (font);
+  hb_face_destroy (face);
+  hb_blob_destroy (blob);
+  return 0;
+}
+
+/* ADR 0031: one sampled glyph's metrics at explicit design coordinates. */
+static int dump_var_metrics (int, char **argv)
+{
+  hb_blob_t *blob = hb_blob_create_from_file_or_fail (argv[2]);
+  if (!blob) { fprintf (stderr, "hb-dump: cannot read %s\n", argv[2]); return 1; }
+  hb_face_t *face = hb_face_create (blob, 0);
+  hb_font_t *font = hb_font_create (face);
+  char *end = nullptr;
+  unsigned long glyph = strtoul (argv[3], &end, 10);
+  if (!*argv[3] || *end || glyph >= hb_face_get_glyph_count (face))
+  {
+    hb_font_destroy (font); hb_face_destroy (face); hb_blob_destroy (blob); return 2;
+  }
+  if (strcmp (argv[4], "-") != 0)
+  {
+    std::vector<hb_variation_t> variations;
+    std::string coordinates (argv[4]);
+    size_t begin = 0;
+    while (begin < coordinates.size ())
+    {
+      size_t stop = coordinates.find (',', begin);
+      if (stop == std::string::npos) stop = coordinates.size ();
+      hb_variation_t variation;
+      if (!hb_variation_from_string (coordinates.data () + begin, (int) (stop - begin), &variation))
+      {
+        hb_font_destroy (font); hb_face_destroy (face); hb_blob_destroy (blob); return 2;
+      }
+      variations.push_back (variation);
+      begin = stop + 1;
+    }
+    hb_font_set_variations (font, variations.data (), (unsigned) variations.size ());
+  }
+  unsigned selected = (unsigned) glyph;
+  printf ("face 0\nnum_glyphs %u\nupem %u\n", hb_face_get_glyph_count (face),
+          hb_face_get_upem (face));
+  dump_scale (font, hb_face_get_glyph_count (face), (int) hb_face_get_upem (face),
+              (int) hb_face_get_upem (face), &selected, 1);
+  printf ("end\n");
+  hb_font_destroy (font);
+  hb_face_destroy (face);
+  hb_blob_destroy (blob);
+  return 0;
+}
+
 static int dump_color (hb_blob_t *blob)
 {
   unsigned count = hb_face_count (blob);
@@ -3029,6 +3146,9 @@ static const args_mode_t args_modes[] = {
   {"--corpus-shape", 10, dump_corpus_shape},
   {"--shape-random", 5, dump_shape_random},
   {"--syllables", 6, dump_syllables},
+  {"--png-digest", 3, dump_png_digest},
+  {"--paint-var", 5, dump_paint_var},
+  {"--var-metrics", 5, dump_var_metrics},
 };
 
 /* The modes that read no file. */

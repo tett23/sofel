@@ -1,0 +1,371 @@
+# hb-dump --var-metrics, fixed HarfBuzz source; ADR 0031
+case arabic.default
+face 0
+num_glyphs 1711
+upem 1000
+scale 1000 1000
+h_extents 1374 -738 0
+v_extents 500 -500 0
+metric hasc 1 1374 1374
+metric hdsc 1 -738 -738
+metric hlgp 1 0 0
+metric hcla 1 1431 1431
+metric hcld 1 738 738
+metric vasc 0 0 500
+metric vdsc 0 0 -500
+metric vlgp 0 0 0
+metric hcrs 1 1 1
+metric hcrn 1 0 0
+metric hcof 1 0 0
+metric vcrs 0 0 1
+metric vcrn 0 0 0
+metric vcof 0 0 0
+metric xhgt 1 536 536
+metric cpht 1 714 714
+metric sbxs 1 650 650
+metric sbys 1 600 600
+metric sbxo 1 0 0
+metric sbyo 1 75 75
+metric spxs 1 650 650
+metric spys 1 600 600
+metric spxo 1 0 0
+metric spyo 1 350 350
+metric strs 1 50 50
+metric stro 1 322 322
+metric unds 1 50 50
+metric undo 1 -100 -100
+glyph 15 1093 -2112 546 1215 1 30 339 1113 -360
+end
+case arabic.wght.max
+face 0
+num_glyphs 1711
+upem 1000
+scale 1000 1000
+h_extents 1374 -738 0
+v_extents 500 -500 0
+metric hasc 1 1374 1374
+metric hdsc 1 -738 -738
+metric hlgp 1 0 0
+metric hcla 1 1431 1431
+metric hcld 1 738 738
+metric vasc 0 0 500
+metric vdsc 0 0 -500
+metric vlgp 0 0 0
+metric hcrs 1 1 1
+metric hcrn 1 0 0
+metric hcof 1 0 0
+metric vcrs 0 0 1
+metric vcrn 0 0 0
+metric vcof 0 0 0
+metric xhgt 1 553 553
+metric cpht 1 714 714
+metric sbxs 1 650 650
+metric sbys 1 600 600
+metric sbxo 1 0 0
+metric sbyo 1 75 75
+metric spxs 1 650 650
+metric spys 1 600 600
+metric spxo 1 0 0
+metric spyo 1 350 350
+metric strs 1 50 50
+metric stro 1 332 332
+metric unds 1 50 50
+metric undo 1 -100 -100
+glyph 15 1192 -2112 596 1258 1 58 425 1234 -446
+end
+case arabic.wdth.min
+face 0
+num_glyphs 1711
+upem 1000
+scale 1000 1000
+h_extents 1374 -738 0
+v_extents 500 -500 0
+metric hasc 1 1374 1374
+metric hdsc 1 -738 -738
+metric hlgp 1 0 0
+metric hcla 1 1431 1431
+metric hcld 1 738 738
+metric vasc 0 0 500
+metric vdsc 0 0 -500
+metric vlgp 0 0 0
+metric hcrs 1 1 1
+metric hcrn 1 0 0
+metric hcof 1 0 0
+metric vcrs 0 0 1
+metric vcrn 0 0 0
+metric vcof 0 0 0
+metric xhgt 1 536 536
+metric cpht 1 714 714
+metric sbxs 1 650 650
+metric sbys 1 600 600
+metric sbxo 1 0 0
+metric sbyo 1 75 75
+metric spxs 1 650 650
+metric spys 1 600 600
+metric spxo 1 0 0
+metric spyo 1 350 350
+metric strs 1 50 50
+metric stro 1 322 322
+metric unds 1 50 50
+metric undo 1 -100 -100
+glyph 15 791 -2112 395 1210 1 28 329 813 -350
+end
+case source-serif.default
+face 0
+num_glyphs 1464
+upem 1000
+scale 1000 1000
+h_extents 1036 -335 0
+v_extents 500 -500 0
+metric hasc 1 1036 1036
+metric hdsc 1 -335 -335
+metric hlgp 1 0 0
+metric hcla 1 1036 1036
+metric hcld 1 335 335
+metric vasc 0 0 500
+metric vdsc 0 0 -500
+metric vlgp 0 0 0
+metric hcrs 1 1 1
+metric hcrn 1 0 0
+metric hcof 1 0 0
+metric vcrs 0 0 1
+metric vcrn 0 0 0
+metric vcof 0 0 0
+metric xhgt 1 475 475
+metric cpht 1 670 670
+metric sbxs 1 650 650
+metric sbys 1 600 600
+metric sbxo 1 0 0
+metric sbyo 1 75 75
+metric spxs 1 650 650
+metric spys 1 600 600
+metric spxo 1 0 0
+metric spyo 1 350 350
+metric strs 1 50 50
+metric stro 1 285 285
+metric unds 1 50 50
+metric undo 1 -50 -50
+glyph 42 549 -1371 274 923 1 45 488 459 -501
+end
+case source-serif.wght.max
+face 0
+num_glyphs 1464
+upem 1000
+scale 1000 1000
+h_extents 1036 -335 0
+v_extents 500 -500 0
+metric hasc 1 1036 1036
+metric hdsc 1 -335 -335
+metric hlgp 1 0 0
+metric hcla 1 1036 1036
+metric hcld 1 335 335
+metric vasc 0 0 500
+metric vdsc 0 0 -500
+metric vlgp 0 0 0
+metric hcrs 1 1 1
+metric hcrn 1 0 0
+metric hcof 1 0 0
+metric vcrs 0 0 1
+metric vcrn 0 0 0
+metric vcof 0 0 0
+metric xhgt 1 487 487
+metric cpht 1 670 670
+metric sbxs 1 650 650
+metric sbys 1 600 600
+metric sbxo 1 0 0
+metric sbyo 1 75 75
+metric spxs 1 650 650
+metric spys 1 600 600
+metric spxo 1 0 0
+metric spyo 1 350 350
+metric strs 1 50 50
+metric stro 1 292 292
+metric unds 1 50 50
+metric undo 1 -50 -50
+glyph 42 572 -1371 286 929 1 22 503 528 -519
+end
+case source-serif.opsz.max
+face 0
+num_glyphs 1464
+upem 1000
+scale 1000 1000
+h_extents 1036 -335 0
+v_extents 500 -500 0
+metric hasc 1 1036 1036
+metric hdsc 1 -335 -335
+metric hlgp 1 0 0
+metric hcla 1 1036 1036
+metric hcld 1 335 335
+metric vasc 0 0 500
+metric vdsc 0 0 -500
+metric vlgp 0 0 0
+metric hcrs 1 1 1
+metric hcrn 1 0 0
+metric hcof 1 0 0
+metric vcrs 0 0 1
+metric vcrn 0 0 0
+metric vcof 0 0 0
+metric xhgt 1 452 452
+metric cpht 1 670 670
+metric sbxs 1 650 650
+metric sbys 1 600 600
+metric sbxo 1 0 0
+metric sbyo 1 75 75
+metric spxs 1 650 650
+metric spys 1 600 600
+metric spxo 1 0 0
+metric spyo 1 350 350
+metric strs 1 50 50
+metric stro 1 271 271
+metric unds 1 50 50
+metric undo 1 -50 -50
+glyph 42 501 -1371 250 911 1 44 464 414 -476
+end
+case amstelvar.default
+face 0
+num_glyphs 1049
+upem 2000
+scale 2000 2000
+h_extents 1920 -480 0
+v_extents 1000 -1000 0
+metric hasc 1 1920 1920
+metric hdsc 1 -480 -480
+metric hlgp 1 0 0
+metric hcla 1 2642 2642
+metric hcld 1 700 700
+metric vasc 0 0 1000
+metric vdsc 0 0 -1000
+metric vlgp 0 0 0
+metric hcrs 1 2000 2000
+metric hcrn 1 0 0
+metric hcof 1 0 0
+metric vcrs 0 0 1
+metric vcrn 0 0 0
+metric vcof 0 0 0
+metric xhgt 1 1000 1000
+metric cpht 1 1500 1500
+metric sbxs 1 1300 1300
+metric sbys 1 1200 1200
+metric sbxo 1 0 0
+metric sbyo 1 150 150
+metric spxs 1 1300 1300
+metric spys 1 1200 1200
+metric spxo 1 0 0
+metric spyo 1 700 700
+metric strs 1 100 100
+metric stro 1 600 600
+metric unds 1 100 100
+metric undo 1 -150 -150
+glyph 405 1168 -2400 584 1700 1 64 1022 1040 -1044
+end
+case amstelvar.wght.max
+face 0
+num_glyphs 1049
+upem 2000
+scale 2000 2000
+h_extents 5919 -480 7839
+v_extents 1000 -1000 0
+metric hasc 1 5919 5919
+metric hdsc 1 -480 -480
+metric hlgp 1 7839 7839
+metric hcla 1 -10834 -10834
+metric hcld 1 -3406 -3406
+metric vasc 0 0 1000
+metric vdsc 0 0 -1000
+metric vlgp 0 0 0
+metric hcrs 1 2000 2000
+metric hcrn 1 0 0
+metric hcof 1 0 0
+metric vcrs 0 0 1
+metric vcrn 0 0 0
+metric vcof 0 0 0
+metric xhgt 1 1051 1051
+metric cpht 1 1500 1500
+metric sbxs 1 1300 1300
+metric sbys 1 1200 1200
+metric sbxo 1 0 0
+metric sbyo 1 150 150
+metric spxs 1 1300 1300
+metric spys 1 1200 1200
+metric spxo 1 0 0
+metric spyo 1 700 700
+metric strs 1 100 100
+metric stro 1 630 630
+metric unds 1 100 100
+metric undo 1 -150 -150
+glyph 405 1566 -6399 783 3723 1 54 1075 1457 -1102
+end
+case amstelvar.XTSP.max
+face 0
+num_glyphs 1049
+upem 2000
+scale 2000 2000
+h_extents 1020 -480 2940
+v_extents 1000 -1000 0
+metric hasc 1 1020 1020
+metric hdsc 1 -480 -480
+metric hlgp 1 2940 2940
+metric hcla 1 -2412 -2412
+metric hcld 1 -840 -840
+metric vasc 0 0 1000
+metric vdsc 0 0 -1000
+metric vlgp 0 0 0
+metric hcrs 1 2000 2000
+metric hcrn 1 0 0
+metric hcof 1 0 0
+metric vcrs 0 0 1
+metric vcrn 0 0 0
+metric vcof 0 0 0
+metric xhgt 1 1000 1000
+metric cpht 1 1500 1500
+metric sbxs 1 1300 1300
+metric sbys 1 1200 1200
+metric sbxo 1 0 0
+metric sbyo 1 150 150
+metric spxs 1 1300 1300
+metric spys 1 1200 1200
+metric spxo 1 0 0
+metric spyo 1 700 700
+metric strs 1 100 100
+metric stro 1 600 600
+metric unds 1 100 100
+metric undo 1 -150 -150
+glyph 405 1434 -1500 717 1250 1 197 1022 1040 -1044
+end
+case amstelvar.wght-XTSP.max
+face 0
+num_glyphs 1049
+upem 2000
+scale 2000 2000
+h_extents 7869 -480 9789
+v_extents 1000 -1000 0
+metric hasc 1 7869 7869
+metric hdsc 1 -480 -480
+metric hlgp 1 9789 9789
+metric hcla 1 -14186 -14186
+metric hcld 1 -4428 -4428
+metric vasc 0 0 1000
+metric vdsc 0 0 -1000
+metric vlgp 0 0 0
+metric hcrs 1 2000 2000
+metric hcrn 1 0 0
+metric hcof 1 0 0
+metric vcrs 0 0 1
+metric vcrn 0 0 0
+metric vcof 0 0 0
+metric xhgt 1 1051 1051
+metric cpht 1 1500 1500
+metric sbxs 1 1300 1300
+metric sbys 1 1200 1200
+metric sbxo 1 0 0
+metric sbyo 1 150 150
+metric spxs 1 1300 1300
+metric spys 1 1200 1200
+metric spxo 1 0 0
+metric spyo 1 700 700
+metric strs 1 100 100
+metric stro 1 630 630
+metric unds 1 100 100
+metric undo 1 -150 -150
+glyph 405 1823 -8349 911 4698 1 182 1075 1458 -1102
+end

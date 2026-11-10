@@ -292,7 +292,7 @@ jobs:
       - name: Test extra font corpus on wasm32-wasip1
         run: |
           export CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=$GITHUB_WORKSPACE/target/testdata::/testdata --env SOFEL_TESTDATA=/testdata"
-          cargo test --release --target wasm32-wasip1 -p sofel-conformance --test extra_registry --test extra_structure --test extra_cmap --test extra_metrics --test extra_outline --test extra_shape
+          cargo test --release --target wasm32-wasip1 -p sofel-conformance --test extra_registry --test extra_structure --test extra_cmap --test extra_metrics --test extra_outline --test extra_shape --test extra_color --test extra_variation
 
   # docs/adr/0007
   fuzz:
