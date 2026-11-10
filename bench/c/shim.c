@@ -402,3 +402,44 @@ void bhb_set_bitmap_ppem(void *font, unsigned ppem)
 {
   hb_font_set_ppem((hb_font_t *)font, ppem, ppem);
 }
+
+/* FreeType: an embedded bitmap glyph loaded with FT_LOAD_DEFAULT at the
+ * current size: the sum of its bytes plus its width and rows; -1 when
+ * it is not a bitmap. */
+/* Loads (COLOR | NO_HINTING | NO_BITMAP | NO_SVG) and renders (NORMAL)
+ * a glyph at the current size, COLR version 0 layers blended in palette
+ * 0; returns the sum of the bytes of its pixels (4 a pixel for BGRA),
+ * or -1. */
+long bft_colr_render(void *face, unsigned gid)
+{
+  FT_Face f = (FT_Face)face;
+  FT_Bitmap *b;
+  unsigned r, c, bytes;
+  long sum = 0;
+  if (FT_Load_Glyph(f, gid, FT_LOAD_COLOR | FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP | FT_LOAD_NO_SVG) != 0)
+    return -1;
+  if (FT_Render_Glyph(f->glyph, FT_RENDER_MODE_NORMAL) != 0)
+    return -1;
+  b = &f->glyph->bitmap;
+  if (!b->buffer)
+    return 0;
+  bytes = b->pixel_mode == FT_PIXEL_MODE_BGRA ? 4 : 1;
+  for (r = 0; r < b->rows; r++)
+    for (c = 0; c < b->width * bytes; c++)
+      sum += b->buffer[(long)r * b->pitch + c];
+  return sum;
+}
+
+long bft_sbit(void *face, unsigned gid)
+{
+  FT_Face f = (FT_Face)face;
+  long sum;
+  unsigned r, k;
+  if (FT_Load_Glyph(f, gid, FT_LOAD_DEFAULT) != 0 || f->glyph->format != FT_GLYPH_FORMAT_BITMAP)
+    return -1;
+  sum = (long)f->glyph->bitmap.width + (long)f->glyph->bitmap.rows;
+  for (r = 0; r < f->glyph->bitmap.rows; r++)
+    for (k = 0; k < (unsigned)abs(f->glyph->bitmap.pitch); k++)
+      sum += f->glyph->bitmap.buffer[(long)r * f->glyph->bitmap.pitch + k];
+  return sum;
+}

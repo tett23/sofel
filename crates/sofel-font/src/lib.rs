@@ -259,6 +259,19 @@ impl<'a> FtMetrics<'a> {
     }
 }
 
+/// The tag of `sbix`.
+fn sbix_tag() -> Tag {
+    Tag::new(b"sbix")
+}
+
+/// FreeType's `has_outline` (`sfnt_load_face`): `glyf`, `GLYF`, `CFF `
+/// or `CFF2`.
+fn has_outline(sfnt: &Sfnt<'_>) -> bool {
+    [b"glyf", b"GLYF", b"CFF ", b"CFF2"]
+        .iter()
+        .any(|t| sfnt.table(Tag::new(t)).is_some())
+}
+
 /// A font. Built once by [`Font::new`]; immutable and cheap to copy.
 #[derive(Clone, Copy, Debug)]
 pub struct Font<'a> {
@@ -508,9 +521,13 @@ impl<'a> Font<'a> {
             }
             FontFile::Collection(_) => return Err(FontError::IndexOutOfRange),
         };
-        let head = sfnt
-            .table(head::TAG)
-            .and_then(|d| Head::new(d).ok())
+        // FreeType reads Apple's `bhed` instead of `head` for fonts
+        // without outlines, unless they have `sbix` (sfobjs.c).
+        let apple_sbit = !has_outline(&sfnt) && sfnt.table(sbix_tag()).is_none();
+        let head = apple_sbit
+            .then(|| sfnt.table(head::TAG_BHED).and_then(|d| Head::new(d).ok()))
+            .flatten()
+            .or_else(|| sfnt.table(head::TAG).and_then(|d| Head::new(d).ok()))
             .ok_or(FontError::NoHead)?;
 
         let glyphs = |tag, width| {
@@ -591,6 +608,24 @@ impl<'a> Font<'a> {
                 .filter(|d| base_sanitize::sane(d))
                 .and_then(|d| Base::new(d).ok()),
         })
+    }
+
+    /// Whether the font has outlines as FreeType decides
+    /// (`sfnt_load_face`): `glyf`, `GLYF`, `CFF ` or `CFF2`, and no `CBLC`
+    /// or `CBDT` (FreeType ignores the outlines of fonts with color
+    /// bitmaps).
+    pub fn has_outlines(&self) -> bool {
+        has_outline(&self.sfnt)
+            && self.sfnt.table(Tag::new(b"CBLC")).is_none()
+            && self.sfnt.table(Tag::new(b"CBDT")).is_none()
+    }
+
+    /// Whether the font has embedded bitmaps: `CBLC`, `EBLC`, `bloc` or
+    /// `sbix` (the tables FreeType reads strikes from).
+    pub fn has_bitmaps(&self) -> bool {
+        [b"CBLC", b"EBLC", b"bloc", b"sbix"]
+            .iter()
+            .any(|t| self.sfnt.table(Tag::new(t)).is_some())
     }
 
     /// The sfnt the font was opened from: for a collection, the one font

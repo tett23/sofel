@@ -114,6 +114,7 @@ fn agrees_with_freetype() {
         !id.contains(":outline:")
             && !id.contains(":raster:")
             && !id.contains(":colr:")
+            && !id.contains(":colr-raster:")
             && !id.ends_with(":cpal")
             && !id.ends_with(":strikes")
     });

@@ -154,3 +154,67 @@ fn sbix_dupe_flip_and_other_graphics() {
         5
     );
 }
+
+#[test]
+fn bitmap_only_fonts_open() {
+    use sofel_bitmap::{PixelMode, bitmap_layout, draw_bitmap};
+    // Apple's bloc/bdat with bhed and no head.
+    let image = Buf::new()
+        .bytes(&[2, 3, 1, 2, 4])
+        .bytes(&[0xA0, 0x40])
+        .done();
+    let data = Buf::new().u16(2).u16(0).bytes(&image).done();
+    let loc = cblc(
+        2,
+        &[SizeSpec {
+            start_glyph: 1,
+            end_glyph: 1,
+            subtables: vec![(1, 1, index_offsets(1, 1, 4, &[0, image.len() as u32]))],
+            ..SizeSpec::default()
+        }],
+    );
+    let mut t: Vec<(&[u8; 4], Vec<u8>)> = sample_tables()
+        .into_iter()
+        .map(|(tag, d)| (if tag == b"head" { b"bhed" } else { tag }, d))
+        .collect();
+    t.push((b"bdat", data));
+    t.push((b"bloc", loc));
+    t.sort_by_key(|(tag, _)| **tag);
+    let bytes = sfnt(&t);
+    let font = Font::new(&bytes, 0).unwrap();
+    assert!(!font.has_outlines() && font.has_bitmaps());
+    let s = strikes(&font).next().unwrap();
+    assert_eq!(s.table, StrikeTable::Bloc);
+    let l = bitmap_layout(&font, &s, 1).unwrap();
+    assert_eq!(
+        (l.width, l.rows, l.pitch, l.pixel_mode),
+        (3, 2, 1, PixelMode::Mono)
+    );
+    let mut px = [0xFFu8; 2];
+    draw_bitmap(&font, &s, 1, &mut px).unwrap();
+    assert_eq!(px, [0xA0, 0x40]);
+    assert_eq!(
+        draw_bitmap(&font, &s, 1, &mut [0u8; 1]),
+        Err(sofel_bitmap::BitmapError::BufferTooSmall(2))
+    );
+    assert_eq!(
+        bitmap_layout(&font, &s, 2),
+        Err(sofel_bitmap::BitmapError::Missing)
+    );
+    // An outline font with CBLC/CBDT: FreeType ignores the outlines.
+    let square = simple_glyph(
+        &[&[Pt::On(0, 0), Pt::On(0, 9), Pt::On(9, 9), Pt::On(9, 0)]],
+        false,
+        &[],
+    );
+    let bytes = glyph_font_with(
+        &[Vec::new(), square],
+        false,
+        false,
+        vec![(b"CBLC", cblc(3, &[])), (b"CBDT", vec![0, 3, 0, 0])],
+    );
+    let font = Font::new(&bytes, 0).unwrap();
+    assert!(!font.has_outlines());
+    let bytes = glyph_font(&[Vec::new()], false, false);
+    assert!(Font::new(&bytes, 0).unwrap().has_outlines());
+}

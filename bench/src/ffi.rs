@@ -30,6 +30,8 @@ unsafe extern "C" {
     // Color glyphs (ADR 0023).
     pub fn bft_layers(face: *mut c_void, gid: c_uint) -> c_long;
     pub fn bft_colr_walk(face: *mut c_void, gid: c_uint) -> c_long;
+    pub fn bft_sbit(face: *mut c_void, gid: c_uint) -> c_long;
+    pub fn bft_colr_render(face: *mut c_void, gid: c_uint) -> c_long;
     pub fn bhb_color_format(font: *mut c_void, gid: c_uint) -> c_long;
     pub fn bhb_color_layers(font: *mut c_void, gid: c_uint) -> c_long;
     pub fn bhb_svg_len(font: *mut c_void, gid: c_uint) -> c_long;
@@ -81,6 +83,14 @@ impl FtFace {
     pub fn layers(&self, gid: u32) -> i64 {
         // SAFETY: a valid face.
         unsafe { bft_layers(self.0, gid) as i64 }
+    }
+    pub fn sbit(&self, gid: u32) -> i64 {
+        // SAFETY: a valid face.
+        unsafe { bft_sbit(self.0, gid) as i64 }
+    }
+    pub fn colr_render(&self, gid: u32) -> i64 {
+        // SAFETY: a valid face.
+        unsafe { bft_colr_render(self.0, gid) as i64 }
     }
     pub fn colr_walk(&self, gid: u32) -> i64 {
         // SAFETY: a valid face.
