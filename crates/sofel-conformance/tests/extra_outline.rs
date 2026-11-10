@@ -141,7 +141,10 @@ fn i05_sampled_outlines_match_freetype() {
             let outlines = sofel_outline::Outlines::new(&font);
             for gid in gids {
                 compared += 1;
-                let mut ours = vec![format!("advance {}", font.advance(GlyphId(*gid)))];
+                let mut ours = vec![format!(
+                    "advance {}",
+                    font.default_instance().advance(GlyphId(*gid))
+                )];
                 ours.extend(sofel_glyph(&outlines, *gid, Scale::Unscaled, &mut scratch));
                 if ours != face.glyphs[gid] {
                     differences.push(format!(
