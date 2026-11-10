@@ -1,5 +1,6 @@
 # The allowed dependencies of each crate: the table of ADR 0003.
-# <crate> <dependency>, or <crate> * for any.
+# <crate> <dependency>, or <crate> * for any; `!unsafe <crate>` allows
+# a crate to use `unsafe`.
 
 # Crates that do not depend on fonts
 sofel-png sofel-inflate
@@ -32,6 +33,11 @@ sofel-write sofel-read
 sofel-subset sofel-font
 sofel-subset sofel-write
 sofel-cli *
+sofel-capi *
+
+# Crates that may use `unsafe` (ADR 0015): the C ABI turns C pointers
+# into references. Every other crate forbids it.
+!unsafe sofel-capi
 
 # Test crate (ADR 0005, ADR 0008)
 sofel-conformance *

@@ -22,7 +22,8 @@ HarfBuzzのシェーピングと、FreeTypeのグリフの読み込み、ヒン�
 - カラーグリフと絵文字：COLRv0、COLRv1、埋め込みビットマップ（EBDT、CBDT、sbix）、SVGのグリフ。
 - フォントの書き出し：sfntの書き出し、サブセット化、可変フォントの固定。sfnt以外の形式と、WOFF、WOFF2への書き出しは扱わない。
 - 出力：SVGとPDFへの書き出し、GPUでの描画のためのデータとシェーダー（Slugの方式）。GPUの装置とAPIは扱わない。
-- 行分割、双方向テキスト、フォントの選択、C言語のAPIは扱わない。
+- 行分割、双方向テキスト、フォントの選択は扱わない。
+- C言語のAPIは、sofel独自のABI（`sofel-capi`）として持つ（[ADR 0015](adr/0015-c-abi.md)）。HarfBuzzやFreeTypeと互換のABI（`hb_*`、`FT_*`）は扱わない。
 
 ## 構成
 
@@ -57,6 +58,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   sofel-write   → sofel-read
   sofel-subset  → sofel-font, sofel-write
   sofel-cli     → 上のすべて（道具のバイナリ群）
+  sofel-capi    → 上のすべて（C ABI、[ADR 0015](adr/0015-c-abi.md)）
 ```
 
 - 輪郭と塗りは、`sofel-geom` の `Pen` と `Painter` で受け渡す。`sofel-raster`、`sofel-gpu`、`sofel-vector` はフォントの型を知らない。
@@ -64,7 +66,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - `sofel-font` が形式を判別し、形式によらない形でフォントを表す。圧縮で包んだフォントの展開は、`sofel-font` に渡すまえに呼び出し側が行う（`sofel-cli` は自動で展開する）。
 - ライブラリの値は不変で、内部可変性を使わない。キャッシュ（シェーピングの計画など）は、呼び出し側が持つ値とする。
 - 公開の値はすべて `Send` と `Sync` を満たす。ライブラリの中でスレッドを作らない。
-- ライブラリのクレートは `#![forbid(unsafe_code)]` とし、外部のクレートに依存しない。
+- ライブラリのクレートは `#![forbid(unsafe_code)]` とし、外部のクレートに依存しない。`unsafe` を使ってよいのは、Cから渡されたポインタを参照に変える `sofel-capi` だけである（[ADR 0015](adr/0015-c-abi.md)）。`scripts/check-deps.sh` が、ほかのクレートが `unsafe` を禁じていることを確かめる。
 - ライブラリは `&[u8]` を受け取るだけで、ファイルを読まない。
 - 検査には、必要に応じて形式手法（Kani、Verus、Creusotなど）を使ってよい。道具はライブラリの依存に入れない。
 
@@ -107,11 +109,23 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - `sofel-render [--face N] --ppem P (--glyph G | --char U+XXXX) FILE`：1グリフをヒンティングなしで描き、PGM（P5）を標準出力に書く。位置は注釈の行 `# left <x> top <y>` に書く（[ADR 0012](adr/0012-antialiased-rasterizer.md)）。
 - `sofel-validate <ファイル>...`：sfntとTTC/OTCの各表を検証する（[ADR 0008](adr/0008-validate-command-and-freetype-comparison.md)）。1件を1行で `<パス>[#<フォント番号>]: <タグ>+0x<オフセット>: <error|warning>: <説明>` の形で出す。`--json` では、1件を1行のJSONのオブジェクト（JSON Lines）で出す。キーは `path`、`font`、`table`、`offset`、`severity`、`kind`、`message`、`details`。`kind` と `details` のキーは出力の約束の一部とする。終了コードは、`Error` が無ければ0、あれば1、使い方の誤りか読めないファイルがあれば2で、`--json` の有無で変わらない。
 
+## C ABI（`sofel-capi`）
+
+- `crates/sofel-capi` は、ライブラリのクレートの機能をCの呼び出し規約で公開する（[ADR 0015](adr/0015-c-abi.md)）。静的ライブラリ、動的ライブラリ、rlibを作る。ヘッダ `crates/sofel-capi/include/sofel.h` は手で書く。
+- 名前は `sofel_` で始め、型は不透明な構造体へのポインタと固定の幅の整数だけを使う。誤りうる関数は `int32_t` を返し、0を成功、負の値を誤り（`SOFEL_ERROR_*`、`sofel_error_string` で説明）とする。結果は出力の引数に書く。ポインタの引数がNULLなら `SOFEL_ERROR_NULL` を返す（`user` のポインタと `*_destroy` を除く）。panicしない。
+- フォント（`sofel_font_t`）はデータを複製しない。呼び出し側は、フォントを捨てるまでデータを生かしておく。フォントは不変で、複数のスレッドから同時に使える。作業領域（`sofel_outline_scratch_t`、`sofel_rasterizer_t`）は呼び出し側が持ち、スレッドの間で共有しない。
+- 可変長の出力（画像、文字列）は呼び出し側の配列に書く。足りなければ要る長さを書き、配列には何も書かず `SOFEL_ERROR_BUFFER_TOO_SMALL` を返す（`snprintf` と同じ形）。
+- 輪郭はCの関数ポインタ（`move_to`、`line_to`、`quad_to`、`cubic_to`、`close` と `void *user`）で受け取る。検証の結果は、1件ずつ関数ポインタに `sofel_diagnostic_t` で渡す。
+- ヘッダの各関数の説明に、対応するRustの関数（`Rust:`）と、相当するHarfBuzzとFreeTypeの関数を書く。`scripts/check-capi.sh` が、ライブラリのクレートの公開の関数（rustdocのJSONの出力から `scripts/public-api.sh` で求める）がすべてヘッダの `Rust:` の行か除外の一覧（`crates/sofel-capi/unmapped.txt`、理由つき）にあることを確かめる。ライブラリに公開の機能を足すADRは、同じプルリクエストでC ABIの関数とヘッダとCのテストも足す。
+- `SOFEL_VERSION_MAJOR` などのマクロと `sofel_version()` を持つ。1.0.0までABIの互換を約束しない。
+- Cのテスト（`crates/sofel-capi/tests/c/`）は `scripts/test-capi.sh` で、ネイティブ、ThreadSanitizer、AddressSanitizer、wasm32-wasip1（wasi-sdkとwasmtime）で走らせる。期待値は、`crates/sofel-capi/tests/fixture.rs` がRustのAPIで求めて `fixture.h` に書く。静的ライブラリの `sofel_` のシンボルとヘッダの関数の一致も確かめる。wasmでは、リンクに例外処理（`-lsetjmp`）もC++の実行時ライブラリも要らない。
+
 ## wasm
 
 - ライブラリのクレートは `#![no_std]`（必要なら `alloc`）とする（[ADR 0004](adr/0004-wasm-and-no-std.md)）。
 - CIで、`wasm32-unknown-unknown` へのビルドと、`wasm32-wasip1` での単体テスト（wasmtime）を行う。ツールチェーンは `rust-toolchain.toml` でstableの版を固定する（[ADR 0007](adr/0007-sfnt-read-foundation.md)）。
 - JavaScriptからの呼び出しの層は持たない。
+- `sofel-capi` は `wasm32-wasip1` の静的ライブラリとしてwasi-sdkのCのプログラムとリンクでき、`wasm32-unknown-unknown` にはビルドだけを確かめる（[ADR 0015](adr/0015-c-abi.md)）。
 
 ## 正しさの検査
 

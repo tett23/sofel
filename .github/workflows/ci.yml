@@ -39,13 +39,24 @@ jobs:
       - name: Build the API documentation
         env:
           RUSTDOCFLAGS: -D warnings
-        run: cargo doc --no-deps -p sofel-geom -p sofel-read -p sofel-font -p sofel-outline -p sofel-raster -p sofel-cli
+        run: cargo doc --no-deps -p sofel-geom -p sofel-read -p sofel-font -p sofel-outline -p sofel-raster -p sofel-cli -p sofel-capi
       # docs/adr/0003, docs/adr/0008
       - name: Check crate dependencies
         run: sh scripts/check-deps.sh
       # docs/adr/0008
       - name: Test scripts
         run: sh scripts/run-tests.sh
+      # docs/adr/0015: the C ABI. The sanitizers of ubuntu-latest need
+      # fewer random bits in mmap addresses than the kernel's default.
+      - name: Test the C ABI
+        run: sh scripts/test-capi.sh
+      - name: Check that the C ABI covers the public API
+        run: sh scripts/check-capi.sh
+      - name: Test the C ABI with sanitizers
+        run: |
+          sudo sysctl vm.mmap_rnd_bits=28
+          sh scripts/test-capi.sh tsan
+          sh scripts/test-capi.sh asan
 
   # docs/adr/0005, docs/adr/0008
   conformance:
@@ -97,7 +108,7 @@ jobs:
           key: ${{ runner.os }}-wasm-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
       - uses: bytecodealliance/actions/wasmtime/setup@9152e710e9f7182e4c29ad218e4f335a7b203613 # v1.1.3
       - name: Build libraries for wasm32-unknown-unknown
-        run: cargo build --release --target wasm32-unknown-unknown -p sofel-read -p sofel-geom -p sofel-font -p sofel-outline -p sofel-raster
+        run: cargo build --release --target wasm32-unknown-unknown -p sofel-read -p sofel-geom -p sofel-font -p sofel-outline -p sofel-raster -p sofel-capi
       - name: Test libraries on wasm32-wasip1
         env:
           CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime
@@ -166,6 +177,29 @@ jobs:
         run: |
           cargo build --release --manifest-path bench/Cargo.toml --target wasm32-wasip1
           wasmtime run -W exceptions=y --dir target/testdata bench/target/wasm32-wasip1/release/sofel-bench.wasm --once
+
+  # docs/adr/0015: the C tests of the C ABI on wasm32-wasip1, built with
+  # wasi-sdk like the benchmarks' C libraries.
+  capi-wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-capi-wasm-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/wasi-sdk
+          key: ${{ runner.os }}-wasi-sdk-${{ hashFiles('bench/wasi-sdk.lock') }}
+      - uses: bytecodealliance/actions/wasmtime/setup@9152e710e9f7182e4c29ad218e4f335a7b203613 # v1.1.3
+      - name: Test the C ABI on wasm32-wasip1
+        run: sh scripts/test-capi.sh wasm
 
   adr:
     runs-on: ubuntu-latest

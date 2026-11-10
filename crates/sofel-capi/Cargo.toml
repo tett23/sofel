@@ -1,0 +1,37 @@
+[package]
+name = "sofel-capi"
+description = "The C ABI of sofel (ADR 0015)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+sofel-read = { path = "../sofel-read" }
+sofel-geom = { path = "../sofel-geom" }
+sofel-font = { path = "../sofel-font" }
+sofel-outline = { path = "../sofel-outline" }
+sofel-raster = { path = "../sofel-raster" }
+sofel-cli = { path = "../sofel-cli" }
+
+# The workspace lints, except that `unsafe` is allowed: this crate turns
+# the pointers C passes into references (ADR 0015). Every other crate
+# keeps `unsafe_code = "forbid"` (scripts/check-deps.sh checks it).
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+indexing_slicing = "deny"
+arithmetic_side_effects = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+cast_possible_truncation = "deny"
+cast_possible_wrap = "deny"
+cast_sign_loss = "deny"
+undocumented_unsafe_blocks = "deny"
+missing_safety_doc = "deny"
