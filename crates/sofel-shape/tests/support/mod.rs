@@ -88,8 +88,11 @@ pub fn layout(
         let named: Vec<&LangSpec> = langs.iter().filter(|l| l.tag.is_some()).collect();
         let header = 4 + 6 * named.len();
         let mut body = Vec::new();
-        let default_off = default.map(|d| (header + append(&mut body, &lang_sys(d)) as usize) as u16);
-        let mut b = Buf::new().u16(default_off.unwrap_or(0)).u16(named.len() as u16);
+        let default_off =
+            default.map(|d| (header + append(&mut body, &lang_sys(d)) as usize) as u16);
+        let mut b = Buf::new()
+            .u16(default_off.unwrap_or(0))
+            .u16(named.len() as u16);
         for l in &named {
             let off = header + append(&mut body, &lang_sys(l)) as usize;
             b = b.tag(&l.tag.unwrap()).u16(off as u16);

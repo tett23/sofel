@@ -38,7 +38,10 @@ fn utf16_conversion_tests() {
     // test-buffer.c `utf16_conversion_tests`.
     let m = u32::MAX;
     let cases: &[(&[u16], &[u32])] = &[
-        (&[0x41, 0x004D, 0x0430, 0x4E8C, 0xD800, 0xDF02, 0x61], &[0x004D, 0x0430, 0x4E8C, 0x10302]),
+        (
+            &[0x41, 0x004D, 0x0430, 0x4E8C, 0xD800, 0xDF02, 0x61],
+            &[0x004D, 0x0430, 0x4E8C, 0x10302],
+        ),
         (&[0x41, 0xD800, 0xDF02, 0x61], &[0x10302]),
         (&[0x41, 0xD800, 0xDF02], &[m]),
         (&[0x41, 0x61, 0xD800, 0xDF02], &[0x61, m]),
@@ -60,7 +63,13 @@ fn utf8_clusters_and_context() {
     // per byte inside the item, and its last byte alone after it.
     assert_eq!(
         contents(&b),
-        [(0x80, 1), (0x1234, 3), (0xFFFD, 6), (0xFFFD, 7), (0xFFFD, 8)]
+        [
+            (0x80, 1),
+            (0x1234, 3),
+            (0xFFFD, 6),
+            (0xFFFD, 7),
+            (0xFFFD, 8)
+        ]
     );
     assert_eq!(b.pre_context(), [u32::from(b'a')]);
     assert_eq!(b.post_context(), [0xFFFD]);
@@ -121,7 +130,11 @@ fn utf16_lone_surrogates() {
     );
     let mut b = UnicodeBuffer::new();
     b.push_utf16(&text, 5, None);
-    assert_eq!(b.pre_context()[0], 0xFFFD, "a low surrogate whose high one is outside");
+    assert_eq!(
+        b.pre_context()[0],
+        0xFFFD,
+        "a low surrogate whose high one is outside"
+    );
     assert_eq!(contents(&b), [(0xFFFD, 5)]);
 }
 
@@ -179,7 +192,11 @@ fn settings_survive_clear() {
     assert_eq!(b.invisible_glyph(), 3);
     assert_eq!(b.not_found_glyph(), 4);
     assert_eq!(b.not_found_variation_selector_glyph(), Some(5));
-    assert_eq!(b.random_state(), 1, "hb_buffer_clear_contents resets the random state");
+    assert_eq!(
+        b.random_state(),
+        1,
+        "hb_buffer_clear_contents resets the random state"
+    );
 }
 
 #[test]
@@ -243,11 +260,23 @@ fn guess_keeps_given_properties_and_uses_default_language() {
 
 #[test]
 fn horizontal_directions() {
-    assert_eq!(script_horizontal_direction(Some(script(b"Arab"))), Some(Direction::Rtl));
-    assert_eq!(script_horizontal_direction(Some(script(b"Sidt"))), Some(Direction::Rtl));
+    assert_eq!(
+        script_horizontal_direction(Some(script(b"Arab"))),
+        Some(Direction::Rtl)
+    );
+    assert_eq!(
+        script_horizontal_direction(Some(script(b"Sidt"))),
+        Some(Direction::Rtl)
+    );
     assert_eq!(script_horizontal_direction(Some(script(b"Tfng"))), None);
-    assert_eq!(script_horizontal_direction(Some(script(b"Latn"))), Some(Direction::Ltr));
-    assert_eq!(script_horizontal_direction(Some(script(b"Xyzw"))), Some(Direction::Ltr));
+    assert_eq!(
+        script_horizontal_direction(Some(script(b"Latn"))),
+        Some(Direction::Ltr)
+    );
+    assert_eq!(
+        script_horizontal_direction(Some(script(b"Xyzw"))),
+        Some(Direction::Ltr)
+    );
     assert_eq!(script_horizontal_direction(None), Some(Direction::Ltr));
 }
 
@@ -293,12 +322,19 @@ fn diff_flags() {
             .union(DiffFlags::POSITION_MISMATCH)
     );
     let e = glyphs(&[(1, 0, 8), (2, 1, 0)], &[100, 103]);
-    assert_eq!(diff(&a, &e, u32::MAX, 3), DiffFlags::EQUAL, "fuzz and undefined flags");
+    assert_eq!(
+        diff(&a, &e, u32::MAX, 3),
+        DiffFlags::EQUAL,
+        "fuzz and undefined flags"
+    );
     let mut u = UnicodeBuffer::new();
     u.push_utf8(b"ab", 0, None);
     let mut v = UnicodeBuffer::new();
     v.push_utf8(b"ac", 0, None);
-    assert_eq!(diff_unicode(&u, &v, u32::MAX), DiffFlags::CODEPOINT_MISMATCH);
+    assert_eq!(
+        diff_unicode(&u, &v, u32::MAX),
+        DiffFlags::CODEPOINT_MISMATCH
+    );
 }
 
 #[test]
@@ -310,7 +346,10 @@ fn normalize_glyphs_moves_advances() {
     // offset, sorted by glyph id, descending.
     assert_eq!(infos, [5, 3, 9]);
     let p = g.glyph_positions();
-    assert_eq!((p[0].x_advance, p[1].x_advance, p[1].x_offset), (150, 0, -50));
+    assert_eq!(
+        (p[0].x_advance, p[1].x_advance, p[1].x_offset),
+        (150, 0, -50)
+    );
 }
 
 #[test]

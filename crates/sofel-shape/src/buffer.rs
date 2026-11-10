@@ -1888,3 +1888,17 @@ fn stable_sort(infos: &mut [GlyphInfo], pos: &mut [GlyphPosition]) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{Info, Pos};
+
+    /// The measured sizes (ADR 0020, データ構造): HarfBuzz's 20 bytes plus
+    /// the normalizer's glyph index, which HarfBuzz overlays on
+    /// `glyph_props`, `lig_props` and `syllable`.
+    #[test]
+    fn item_sizes() {
+        assert_eq!(core::mem::size_of::<Info>(), 24);
+        assert_eq!(core::mem::size_of::<Pos>(), 20);
+    }
+}
