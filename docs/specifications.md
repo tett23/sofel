@@ -98,7 +98,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 - `Font::new(data, index)` は、sfntとTTC/OTCのフォントを開き、head、グリフの数、横書きのメトリクス、文字の対応に使うcmapのサブテーブルを一度だけ読む（[ADR 0010](adr/0010-font-foundation.md)）。不変で、キャッシュを持たない。
 - グリフの数は `MAXP` を `maxp` より優先する。メトリクスは `HHEA`/`HMTX` を `hhea`/`hmtx` より優先する。
-- cmapのサブテーブルは、HarfBuzzと同じ順（(3,0)、(3,10)、(0,6)、(0,4)、(3,1)、(0,3)、(0,2)、(0,1)、(0,0)、(1,0)、(1,任意)）で、読めるものを選ぶ。グリフの数以上のグリフIDは対応なしとする。記号フォントとMacのエンコーディングの付けかえは、まだ行わない。
+- cmapのサブテーブルは、HarfBuzzと同じ順（(3,0)、(3,10)、(0,6)、(0,4)、(3,1)、(0,3)、(0,2)、(0,1)、(0,0)、(1,0)、(1,任意)）で、読めるものを選ぶ。グリフの数以上のグリフIDは対応なしとする。HarfBuzzと同じく、記号フォント（(3,0)）では、対応の無い文字を、OS/2（版0）のフォントのページが無ければU+0000〜U+00FFをU+F000〜U+F0FFとして、簡体と繁体のアラビア文字のページならHarfBuzzのPUAの表で引きなおす。(1,0) では、ASCIIの外の文字をMacRomanに変換して引く（HarfBuzzと同じく、符号位置の下位16bitで表を引く）。ほかのMacのエンコーディングはASCIIだけを引く（[ADR 0016](adr/0016-font-and-vertical-metrics.md)）。
 - 送り幅はHarfBuzzと同じく、表が覆うグリフ（`numberOfHMetrics` と表の長さから決まる。`numberOfHMetrics` がグリフの数より大きい壊れたフォントでは、グリフの数以上のIDも含む）には表の値を、その外には0を返す。hmtxのデータが全く無ければ `unitsPerEm / 2`（`unitsPerEm` が16〜16384の外なら1000とみなす）を返す。hheaが無くhmtxがあるフォントでは、長いメトリクスが0個なので、すべて0になる。
 - `ft_left_side_bearing` は、輪郭の `pp1.x` のために、FreeTypeの `tt_face_get_metrics` と同じ読み方で左のサイドベアリングを返す（[ADR 0018](adr/0018-phantom-point-shift.md)）。送り幅（HarfBuzzの方針）とは別の読み方である。`numberOfHMetrics` 未満のグリフIDは長い記録から（記録が表に収まらなければ0）、以上はサイドベアリングの配列から（グリフの数によらず、表の外なら0。最後の送り幅が読めなければ0）引く。hheaかhmtxが無ければ0。表は、`GLYF` があれば `HHEA` と `HMTX`、無ければ `hhea` と `hmtx`（`hhea` が無ければ `HHEA` と `HMTX`）を使う。
 - フォント全体と縦書きのメトリクスは、HarfBuzz 15.1.0と同じ値をフォントの単位で返す（[ADR 0016](adr/0016-font-and-vertical-metrics.md)）。表の位置は `Font::new` で一度だけ見つける。
@@ -171,11 +171,11 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   - `open` は「FreeTypeが開けるフェイスは、sofelも表の目録を読める」の一方向だけを確かめる。FreeTypeは描けるフェイスだけを開く（glyfかCFFが要る）ため、逆向きは比べない。FreeTypeが開けないフェイスは、ほかの項目も比べない。
   - `maxp` は、FreeTypeが読み込みの時点で行う調整（`maxFunctionDefs` を64以上に、`maxTwilightPoints` を0xFFFB以下に。`src/sfnt/ttload.c`）を、sofelの生の値に当ててから比べる。
   - cmapの対応は、FreeTypeの `FT_Get_Next_Char` と同じく、グリフIDがFreeTypeの `num_glyphs` 未満のものだけを比べる。cmap表に無いプラットフォーム7（Adobe）のエンコーディングは、FreeTypeがPostScriptのグリフ名から合成したものなので比べない。
-  - HarfBuzz 15.1.0のテストのフォント653個で、4569項目がすべて一致している（期待する失敗は無い）。
+  - HarfBuzz 15.1.0のテストのフォント653個で9098項目を比べ、期待する失敗は550項目（CFFのグリフ名）である。
 - テストのデータは、CIでキャッシュが当たったとき `SOFEL_TESTDATA_OFFLINE=1` で取得のスクリプトを走らせ、キャッシュの中身が欠けていれば失敗させる。シェルのスクリプトのテストは `scripts/run-tests.sh` で走らせる。
 - フォント全体と縦書きのメトリクスは、`tools/hb-dump/` の出力と比べる（[ADR 0016](adr/0016-font-and-vertical-metrics.md)）。`hb-dump` はHarfBuzzの `src/harfbuzz.cc` を取りこむC++の1つの翻訳単位で、`tools/hb-dump/build.sh` でビルドする。FreeTypeとは統合しない。書き出す内容は引数の形（`--metrics` など）で選び、形ごとに関数を1つ足して広げる。
   - 拡大縮小は、(`upem`, `upem`)、(2 `upem`, 2 `upem`)、(`upem` / 2, `upem` / 2)、(768, 768)、(−`upem`, −`upem`)、(768, −1536) の6つ。
-  - 項目は `<フォント>#<フェイス>:hb:<項目>` で、`num_glyphs`、`h_extents`、`v_extents`、`metrics`、`metrics-fallback`、`h_advance`、`v_advance`、`v_origin`、`extents`、`names`、`name_utf`（全名前IDと、記録に現れる全言語と言語なしの、UTF-8、16、32。配列の長さは全体＋1と4）、`glyph_names`、`glyph_from_name`。各項目はすべての拡大縮小とすべてのグリフを含む。期待する失敗は `conformance/expected-failures-harfbuzz.txt` に書く。CFFとCFF2のフォントの箱とCFFのグリフ名（[ADR 0021](adr/0021-cff-outlines.md)）と、COLR、CBDT、sbixのカラーのグリフの箱（[ADR 0023](adr/0023-color-glyphs.md)）と、その箱で決まる縦の原点が期待する失敗である。
+  - 項目は `<フォント>#<フェイス>:hb:<項目>` で、`num_glyphs`、`h_extents`、`v_extents`、`metrics`、`metrics-fallback`、`h_advance`、`v_advance`、`v_origin`、`extents`、`nominal`（U+10FFFFまでのすべての符号位置の `hb_font_get_nominal_glyph`。HarfBuzzの値のうちグリフの数以上のものは除く）、`names`、`name_utf`（全名前IDと、記録に現れる全言語と言語なしの、UTF-8、16、32。配列の長さは全体＋1と4）、`glyph_names`、`glyph_from_name`。各項目はすべての拡大縮小とすべてのグリフを含む。期待する失敗は `conformance/expected-failures-harfbuzz.txt` に書く。CFFとCFF2のフォントの箱とCFFのグリフ名（[ADR 0021](adr/0021-cff-outlines.md)）と、COLR、CBDT、sbixのカラーのグリフの箱（[ADR 0023](adr/0023-color-glyphs.md)）と、その箱で決まる縦の原点と、HarfBuzzが引かないcmapのフォーマット2と8（sofelはFreeTypeと同じく引く。[ADR 0010](adr/0010-font-foundation.md)）が期待する失敗である。653個のフォントで9128項目を比べ、期待する失敗は1165項目である。
 - glyfの輪郭は、`ft-dump --outline` の出力と、拡大縮小なし、16画素、48画素で、命令の列、重なりの印、制御の箱が完全に一致することを確かめる（項目 `outline:<SIZE>:<グリフ>`、[ADR 0011](adr/0011-glyf-outlines.md)）。ラスタライズは、`ft-dump --raster` の出力と、12、24、48画素で画像が完全に一致することを確かめる（項目 `raster:<PPEM>:<グリフ>`、[ADR 0012](adr/0012-antialiased-rasterizer.md)）。
 - 輪郭、ラスタライズ（各形式）、埋め込みビットマップ、sfnt以外の形式は、FreeTypeの出力を書き出す `tools/ft-dump/` と比べる。輪郭は完全一致を求める。sfnt以外の形式のテストのフォントは、その形式を実装するまえに、ADRで `testdata.lock` に加える。
 - カラーグリフ、SVGとPDF、GPU、WOFF、検証器、展開器の基準は、それぞれのADRで定める。

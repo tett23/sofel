@@ -107,6 +107,14 @@ fn agrees_with_harfbuzz() {
             let ours = hb::sofel_face(&font, face);
             items.extend(hb::compare(&id, face, &ours));
         }
+        if let Some(text) = hb_dump_mode("--cmap", path) {
+            let faces = hb::parse_cmap(&text).unwrap_or_else(|e| panic!("{id}: {e}"));
+            for face in &faces {
+                if let Ok(font) = Font::new(&bytes, face.index) {
+                    items.push(hb::compare_cmap(&id, face, &font));
+                }
+            }
+        }
         let Some(text) = hb_dump_mode("--names", path) else {
             continue;
         };

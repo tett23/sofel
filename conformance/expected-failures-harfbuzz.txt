@@ -61,6 +61,7 @@ harfbuzz/test/shape/data/aots/fonts/cmap14_font1.otf#0:hb:v_origin  # CFF extent
 harfbuzz/test/shape/data/aots/fonts/cmap2_font1.otf#0:hb:extents  # CFF extents: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/cmap2_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/cmap2_font1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap2_font1.otf#0:hb:nominal  # HarfBuzz does not look up cmap format 2 (CmapSubtable::get_glyph); sofel reads it as FreeType does (ADR 0010)
 harfbuzz/test/shape/data/aots/fonts/cmap2_font1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/cmap4_font1.otf#0:hb:extents  # CFF extents: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/cmap4_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
@@ -89,6 +90,7 @@ harfbuzz/test/shape/data/aots/fonts/cmap6_font2.otf#0:hb:v_origin  # CFF extents
 harfbuzz/test/shape/data/aots/fonts/cmap8_font1.otf#0:hb:extents  # CFF extents: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/cmap8_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/cmap8_font1.otf#0:hb:glyph_names  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021
+harfbuzz/test/shape/data/aots/fonts/cmap8_font1.otf#0:hb:nominal  # HarfBuzz does not look up cmap format 8 (CmapSubtable::get_glyph); sofel reads it as FreeType does (ADR 0010)
 harfbuzz/test/shape/data/aots/fonts/cmap8_font1.otf#0:hb:v_origin  # CFF extents: ADR 0021 (the vertical origin is centered on the box)
 harfbuzz/test/shape/data/aots/fonts/cmap_composition_font1.otf#0:hb:extents  # CFF extents: ADR 0021
 harfbuzz/test/shape/data/aots/fonts/cmap_composition_font1.otf#0:hb:glyph_from_name  # CFF glyph names come from the CFF charset in HarfBuzz: ADR 0021

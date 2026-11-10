@@ -55,6 +55,14 @@
  *                                name, for every glyph with a name)
  *   end
  *
+ * Mode --cmap: for each face index i,
+ *
+ *   face <i>
+ *   num_glyphs <hb_face_get_glyph_count>
+ *   map <code point> <glyph>     (hb_font_get_nominal_glyph, for every
+ *                                code point up to U+10FFFF it maps)
+ *   end
+ *
  * Exit status: 0 on success, 1 when the file cannot be read, 2 on wrong
  * usage.
  */
@@ -251,6 +259,28 @@ static int dump_names (hb_blob_t *blob)
   return 0;
 }
 
+static int dump_cmap (hb_blob_t *blob)
+{
+  unsigned count = hb_face_count (blob);
+  if (!count) count = 1;
+  for (unsigned i = 0; i < count; i++)
+  {
+    hb_face_t *face = hb_face_create (blob, i);
+    hb_font_t *font = hb_font_create (face);
+    printf ("face %u\nnum_glyphs %u\n", i, hb_face_get_glyph_count (face));
+    for (hb_codepoint_t c = 0; c <= 0x10FFFFu; c++)
+    {
+      hb_codepoint_t g = 0;
+      if (hb_font_get_nominal_glyph (font, c, &g))
+	printf ("map %u %u\n", c, g);
+    }
+    printf ("end\n");
+    hb_font_destroy (font);
+    hb_face_destroy (face);
+  }
+  return 0;
+}
+
 struct dump_mode_t
 {
   const char *name;
@@ -260,6 +290,7 @@ struct dump_mode_t
 static const dump_mode_t modes[] = {
   {"--metrics", dump_metrics},
   {"--names", dump_names},
+  {"--cmap", dump_cmap},
 };
 
 int main (int argc, char **argv)
