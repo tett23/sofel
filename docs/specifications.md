@@ -103,6 +103,19 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 表は `tools/gen-unicode/`（ワークスペースの外のRustのパッケージ）が、`scripts/fetch-ucd.sh` で取得したUCDのテキストのファイル（`ucd.lock` でURLとSHA-256を固定）から生成し、コミットする。性質ごとに2段か3段の表とし、分け方（`k2`、`k3` はそれぞれ0〜8）は合計のバイト数が最小のものを選ぶ。表の下限と上限は既定でない値を持つ最初と最後の文字で決める。生成の道具は、書き出すまえに0〜0x10FFFFのすべての文字で詰めた表と元の値の一致を確かめる。入力が同じなら出力は同じバイト列になる。
 - 同じ道具が、記号フォントのcmapの付けかえ（[ADR 0016](adr/0016-font-and-vertical-metrics.md)）に使う、HarfBuzzの `gen-arabic-pua.py` と同じアラビア文字の私用領域の対応の表を `sofel-font` に書く。シェーパーの分類の表（indic、USE、アラビア文字、母音の組）は、`sofel-shape` を作るときに同じ道具で生成する。
 
+## 言語と、文字体系と言語のタグ（`sofel-shape`）
+
+- `Language::new(bytes)` は、HarfBuzzの `hb_language_from_string` と同じ正規化をする（[ADR 0020](adr/0020-shaping-foundation.md)）。入力の先頭の63バイトを取り、ASCIIの英字を小文字に、`_` を `-` にし、英数字と `-`、`_` 以外のバイトでそこまでとする（`ja_JP.UTF-8` は `ja-jp`）。入力が空か、先頭がNULなら `None`（`HB_LANGUAGE_INVALID`）とする。先頭のバイトが対象の外なら、HarfBuzzと同じく空の言語（`""`）とする。
+- 文字体系と言語からOpenTypeのタグへの変換（`ot_tags_from_script_and_language`）と、その逆（`ot_tags_to_script_and_language`、`ot_tag_to_script`、`ot_tag_to_language`）は、HarfBuzz 15.1.0の `src/hb-ot-tag.cc` と同じとする。新しい世代のタグ（`dev3`、`dev2`、`mym2` など）を先に、古いタグ（`kana`、`lao ` など）を後に返す規則、私用の下位タグ `-x-hbsc-`、`-x-hbot-`（16進の8桁か4文字まで）、拡張言語の下位タグ、地域や文字体系の下位タグに依存する例外、2文字と3文字の言語の表、複数のタグを持つ言語、曖昧なタグの言語を含む。
+  - タグの数の上限は、HarfBuzzのシェーパーと同じく文字体系に3、言語に3とする（`MAX_TAGS_PER_SCRIPT`、`MAX_TAGS_PER_LANGUAGE`）。`ot_tags_from_script_and_language_max` は上限を引数で取る。
+  - 文字体系の `None` は `HB_SCRIPT_INVALID`、言語の `None` は `HB_LANGUAGE_INVALID`、言語のタグの `None` は `dflt` とする。
+  - HarfBuzzの `hb_ot_tag_to_script` は、知らないタグを先頭の文字を大文字にしたそのままの値で返す。`Script` はISO 15924の形（大文字1つと小文字3つ）のタグしか持たないため、その形でない値と、`Script::from_iso15924` が別の文字体系に読みかえる値（`Aran`、`Qaai` など）は `Script::UNKNOWN` とする。`ot_tags_to_script_and_language` の言語に付ける `-x-hbsc-` は、HarfBuzzと同じく元のタグの値から作る。
+  - HarfBuzzはC文字列をポインタでたどる。移植は、言語を末尾の先が0のバイト列として読み、位置をその中の添字として扱って、空の下位タグ、言語の無い私用の部分、`limit` が空のポインタの場合も同じ結果にする。HarfBuzzの「最後に見つけた位置」のキャッシュは、結果を変えないので持たない。
+- 言語の表（`ot_languages2`、`ot_languages3`、`ot_languages3_blocked`、`ot_languages3_multi*`）と、生成された2つの関数（`hb_ot_tags_from_complex_language`、`hb_ot_ambiguous_tag_to_language`）は、`tools/gen-ot-tag/`（ワークスペースの外のRustのパッケージ）が、`scripts/fetch-testdata.sh` で取得したHarfBuzzの `src/hb-ot-tag-table.hh` から `crates/sofel-shape/src/tag_table.rs` に書き、コミットする。
+  - 道具は、コメントを除いた行ごとに、決まった形（配列の要素、`subtag_matches`、`lang_matches`、`strncmp` と `subtag_matches` の組、`strcmp`、1文字目の `switch` の `case`、1つのタグか `possible_tags` の配列の結果、`case` と `hb_language_from_string`）だけを受け付け、知らない形、長さの引数と文字列の長さの不一致、並びの乱れで失敗する。
+  - 関数は、分岐の表（1文字目、条件の種類と文字列、結果のタグの列）として書く。`sofel-shape` は表を順にたどり、HarfBuzzの分岐と同じ順で最初に成り立つものを使う。
+  - CIは、道具の単体テストと、作りなおした表とコミットしたものの一致を `git diff --exit-code` で確かめる。
+
 ## フォント（`sofel-font`）
 
 - `Font::new(data, index)` は、sfntとTTC/OTCのフォントを開き、head、グリフの数、横書きのメトリクス、文字の対応に使うcmapのサブテーブルを一度だけ読む（[ADR 0010](adr/0010-font-foundation.md)）。不変で、キャッシュを持たない。
@@ -205,6 +218,10 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   - `hb-dump --arabic-pua` は、0x0000〜0xFFFFについて `_hb_arabic_pua_simp_map` と `_hb_arabic_pua_trad_map` を書く。`sofel-font` の生成した表のファイルを適合テストのクレートに取りこんで比べる（項目 `arabic_pua_simp`、`arabic_pua_trad`）。
   - `hb-dump --vowel-constraints FILE` は、HarfBuzzの `src/ms-use/IndicShapingInvalidCluster.txt` の列の1つ目の文字の文字体系ごとに、その文字体系の列に現れる文字の長さ1〜3の全列について、`_hb_preprocess_text_vowel_constraints` の後の文字の列を書く。
   - indicの分類と位置、USEの分類、結合の型、母音の組は、まだ比べない。比べる相手の表は `sofel-shape` に置くもので（[ADR 0020](adr/0020-shaping-foundation.md)、[ADR 0024](adr/0024-complex-shapers.md)）、そのクレートとともに比べる。
+- 文字体系と言語のタグは、`hb-dump --ot-tags`（ファイルを取らない形）と比べる（[ADR 0020](adr/0020-shaping-foundation.md)、`tests/harfbuzz_ot_tags.rs`）。期待する失敗の一覧は持たず、1つでも違えば失敗とする。
+  - 文字体系は、HarfBuzzの全符号位置の `hb_unicode_script` の値（`sofel-unicode` の全文字体系と一致することを確かめる）と、`HB_SCRIPT_INVALID`、`Zmth`、`Hrkt` とする。
+  - 言語の集まりは、表のすべての言語、曖昧なタグの言語、生成された関数の分岐の言語と、分岐の主たる言語（と `und`、`en`）× なしか分岐のほかの下位タグ × なしか分岐の地域の下位タグ × 私用の部分（なし、`-x-hant-hk-fonipa`、`-u-hk-x-hbsc-latn`）、`test/api/test-ot-tag.c` の言語と境界の例とする。分岐の文字列は、`hb-ot-tag-table.hh` をもう一度取りこみ、4つの比較を記録して失敗する関数に置きかえて走らせ、HarfBuzzのコンパイルされたコードから読む。`tools/gen-ot-tag/` の読んだ分岐と一致することも確かめる。
+  - すべての言語と文字体系の組の `hb_ot_tags_from_script_and_language`（上限は3と3）、境界の例の言語と6つの文字体系の上限0〜4の組、現れたすべての文字体系のタグと言語のタグ（と表のタグ、`DFLT`、`dflt`）の `hb_ot_tag_to_script`、`hb_ot_tag_to_language` と、その組の `hb_ot_tags_to_script_and_language` を比べる。約240万の比較である。
 - 適合テストは `cargo test -p sofel-conformance` で走らせる。期待する失敗の一覧に無い失敗と、一覧にあるテストの成功は、ともにテストの失敗とする。
 
 ## 性能の計測

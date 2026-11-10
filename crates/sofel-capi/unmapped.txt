@@ -48,3 +48,10 @@ sofel_outline::cff2_extents The CFF2 step of sofel_outline::HbExtents::glyph_ext
 sofel_outline::HbExtents::cff1 Returns the Rust accelerator that sofel_font_t keeps inside.
 sofel_outline::HbExtents::cff2 Returns the Rust accelerator that sofel_font_t keeps inside.
 sofel_outline::HbExtents::font Returns the font that sofel_font_t is.
+sofel_shape::Language::as_str C ABI comes with ADR 0020 part 3.
+sofel_shape::Language::new C ABI comes with ADR 0020 part 3.
+sofel_shape::ot_tag_to_language C ABI comes with ADR 0020 part 3.
+sofel_shape::ot_tag_to_script C ABI comes with ADR 0020 part 3.
+sofel_shape::ot_tags_from_script_and_language C ABI comes with ADR 0020 part 3.
+sofel_shape::ot_tags_from_script_and_language_max C ABI comes with ADR 0020 part 3.
+sofel_shape::ot_tags_to_script_and_language C ABI comes with ADR 0020 part 3.

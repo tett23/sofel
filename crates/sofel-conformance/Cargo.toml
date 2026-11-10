@@ -16,6 +16,7 @@ sofel-outline = { path = "../sofel-outline" }
 sofel-raster = { path = "../sofel-raster" }
 sofel-cli = { path = "../sofel-cli" }
 sofel-unicode = { path = "../sofel-unicode" }
+sofel-shape = { path = "../sofel-shape" }
 
 [lints]
 workspace = true

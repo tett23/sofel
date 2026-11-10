@@ -131,6 +131,50 @@
  *   pua <cp> <simp> <trad>
  *                     (_hb_arabic_pua_simp_map and _hb_arabic_pua_trad_map)
  *
+ * --ot-tags (ADR 0020): HarfBuzz's conversion between scripts and
+ * languages and OpenType tags (hb-ot-tag.cc). Tags are eight hex digits,
+ * a list of them `-` for none or joined by `,`; a language is
+ * hb_language_to_string, `*` for none.
+ *
+ *   scripts <tags>   the scripts: those of every code point, and
+ *                    HB_SCRIPT_INVALID (0), Zmth and Hrkt, sorted
+ *   branch <kind> <s>
+ *                    the strings the branches of the generated
+ *                    hb_ot_tags_from_complex_language test, read by
+ *                    running a copy of it with recording tests: <kind>
+ *                    l lang_matches and e strcmp (<s> the whole
+ *                    language), n strncmp (<s> the prefix), s and p
+ *                    subtag_matches from the language and from its
+ *                    first dash (<s> the subtag)
+ *   f <input> <language> <language tags> <script tags>...
+ *                    hb_ot_tags_from_script_and_language with
+ *                    HB_OT_MAX_TAGS_PER_SCRIPT and _PER_LANGUAGE, for
+ *                    the language hb_language_from_string (<input>) and
+ *                    every script, in the order of `scripts`. The
+ *                    inputs, sorted: every language of the tables and
+ *                    of hb_ot_ambiguous_tag_to_language, the branches'
+ *                    whole languages, every primary language of the
+ *                    branches (and und, en) x none or every other
+ *                    subtag of the branches x none or every region
+ *                    subtag of the branches x no private use, -x-...
+ *                    and -u-...-x-hbsc-latn, and the languages of
+ *                    test/api/test-ot-tag.c and more edge cases
+ *   c <input> <script> <script count> <language count> <script tags>
+ *     <language tags>
+ *                    the same with the counts 0 to 4, for those last
+ *                    languages and the scripts 0, Latn, Deva, Mymr,
+ *                    Hira and Mlym
+ *   s <script tag> <script>
+ *                    hb_ot_tag_to_script, for every script tag of the
+ *                    `f` lines and DFLT
+ *   l <language tag> <language>
+ *                    hb_ot_tag_to_language, for every language tag of
+ *                    the `f` lines and of the tables, and dflt
+ *   r <script tag> <language tag> <script> <language>
+ *                    hb_ot_tags_to_script_and_language for every pair
+ *                    of those
+ *   end
+ *
  * Exit status: 0 on success, 1 when the file cannot be read, 2 on wrong
  * usage.
  */
@@ -680,6 +724,421 @@ static int dump_arabic_pua ()
   return 0;
 }
 
+/* --ot-tags (ADR 0020) */
+
+/* The strings the branches of hb_ot_tags_from_complex_language test,
+ * read from HarfBuzz's compiled code rather than from the header's
+ * text: a second copy of hb-ot-tag-table.hh with the four tests
+ * replaced by recorders that fail (strncmp succeeds, so that the
+ * subtag_matches after it is reached), called once per first byte. */
+namespace ot_tag_probe {
+struct record_t { char kind; char first; const char *s; };
+static record_t records[4096];
+static unsigned num_records;
+static char first_byte;
+static void record (char kind, const char *s)
+{
+  if (num_records < sizeof (records) / sizeof (records[0]))
+  {
+    records[num_records].kind = kind;
+    records[num_records].first = first_byte;
+    records[num_records].s = s;
+    num_records++;
+  }
+}
+/* kind: p subtag_matches (p, ...), s subtag_matches (lang_str, ...),
+ * l lang_matches, n strncmp, e strcmp */
+static bool subtag (const char *from, const char *s) { record (from[0] == 'p' ? 'p' : 's', s); return false; }
+static bool lang (const char *s) { record ('l', s); return false; }
+static int ncmp (const char *s) { record ('n', s); return 0; }
+static int cmp (const char *s) { record ('e', s); return 1; }
+#undef strcmp
+#undef strncmp
+#define subtag_matches(a, b, s, n) ::ot_tag_probe::subtag (#a, s)
+#define lang_matches(a, b, s, n) ::ot_tag_probe::lang (s)
+#define strncmp(a, s, n) ::ot_tag_probe::ncmp (s)
+#define strcmp(a, s) ::ot_tag_probe::cmp (s)
+#undef HB_OT_TAG_TABLE_HH
+#include "hb-ot-tag-table.hh"
+#undef subtag_matches
+#undef lang_matches
+#undef strncmp
+#undef strcmp
+}
+
+struct str_list_t
+{
+  char **v;
+  unsigned n, cap;
+};
+
+static void str_add (str_list_t *l, const char *s)
+{
+  if (l->n == l->cap)
+  {
+    l->cap = l->cap ? 2 * l->cap : 256;
+    l->v = (char **) realloc (l->v, l->cap * sizeof (char *));
+    if (!l->v) abort ();
+  }
+  size_t len = strlen (s);
+  char *c = (char *) malloc (len + 1);
+  if (!c) abort ();
+  memcpy (c, s, len + 1);
+  l->v[l->n++] = c;
+}
+
+static int compare_strs (const void *a, const void *b)
+{
+  return strcmp (*(char *const *) a, *(char *const *) b);
+}
+
+static void str_sort_unique (str_list_t *l)
+{
+  qsort (l->v, l->n, sizeof (char *), compare_strs);
+  unsigned j = 0;
+  for (unsigned i = 0; i < l->n; i++)
+    if (!j || strcmp (l->v[j - 1], l->v[i]) != 0)
+      l->v[j++] = l->v[i];
+    else
+      free (l->v[i]);
+  l->n = j;
+}
+
+struct ot_tag_set_t
+{
+  hb_tag_t *v;
+  unsigned n, cap;
+};
+
+static void ot_tag_add (ot_tag_set_t *s, hb_tag_t t)
+{
+  if (s->n == s->cap)
+  {
+    s->cap = s->cap ? 2 * s->cap : 256;
+    s->v = (hb_tag_t *) realloc (s->v, s->cap * sizeof (hb_tag_t));
+    if (!s->v) abort ();
+  }
+  s->v[s->n++] = t;
+}
+
+static int compare_ot_tags (const void *a, const void *b)
+{
+  hb_tag_t x = *(const hb_tag_t *) a, y = *(const hb_tag_t *) b;
+  return x < y ? -1 : x > y ? 1 : 0;
+}
+
+static void ot_tag_sort_unique (ot_tag_set_t *s)
+{
+  qsort (s->v, s->n, sizeof (hb_tag_t), compare_ot_tags);
+  unsigned j = 0;
+  for (unsigned i = 0; i < s->n; i++)
+    if (!j || s->v[j - 1] != s->v[i])
+      s->v[j++] = s->v[i];
+  s->n = j;
+}
+
+/* Tags as `-` for none, else eight hex digits joined by `,`. */
+static void print_ot_tags (const hb_tag_t *t, unsigned n)
+{
+  if (!n) { printf ("-"); return; }
+  for (unsigned i = 0; i < n; i++)
+    printf (i ? ",%08x" : "%08x", t[i]);
+}
+
+static void print_ot_language (hb_language_t l)
+{
+  printf ("%s", l ? hb_language_to_string (l) : "*");
+}
+
+/* The languages of test/api/test-ot-tag.c and further edge cases. */
+static const char *const ot_tag_fixed_languages[] = {
+  "en", "x-hbsc", "x-hbsc-", "x-hbsc-1", "x-hbsc-1a", "x-hbsc-1a2b3c4x",
+  "x-hbsc-326c6f6e67", "x-hbscabc", "x-hbscdeva", "x-hbscdev2", "x-hbscdev3",
+  "x-hbsc-64657633", "x-hbotpap0-hbsccopt", "en-x-hbsc", "en-x-hbscabc",
+  "en-x-hbscdeva", "en-x-hbscdev2", "en-x-hbscdev3", "en-x-hbsc-64657633",
+  "en-x-hbotpap0-hbsccopt", "alt", "ar", "az", "az-ir", "az-az", "en_US",
+  "cja-x-hbot-434a4120", "cjm-x-hbot-434a4d20", "cjm", "eve", "cfm", "flm",
+  "hy", "hyw", "bgr", "cbl", "cka", "cmr", "cnb", "cnh", "cnk", "cnw", "csh",
+  "csy", "ctd", "czt", "dao", "hlt", "mrh", "pck", "sez", "tcp", "tcz", "yos",
+  "zom", "fa", "fa_IR", "man", "aii", "syr", "amw", "cld", "syc", "tru", "zh",
+  "zh-cn", "zh-sg", "zh-mo", "zh-hant-mo", "zh-hans-mo", "zh-HK", "zH-HanT-hK",
+  "zH-HanS-hK", "zh-tw", "zh-Hans", "zh-Hant", "zh-xx", "zh-Hans-TW", "yue",
+  "yue-Hant", "yue-Hans", "abc-x-hbot-41424320", "x-hbot-41424344",
+  "asdf-asdf-wer-x-hbotabc-zxc", "asdf-asdf-wer-x-hbotabc",
+  "asdf-asdf-wer-x-hbotabcd", "asdf-asdf-wer-x-hbot-41424320-zxc",
+  "asdf-asdf-wer-x-hbot-41424320", "asdf-asdf-wer-x-hbot-41424344",
+  "asdf-asdf-wer-x-hbot", "asdf-asdf-wer-x-hbot-zxc",
+  "asdf-asdf-wer-x-hbot-zxc-414243", "asdf-asdf-wer-x-hbot-414243",
+  "asdf-asdf-wer-x-hbot-4142432", "xy", "xyz", "xyz-qw", "-fonipa",
+  "en-fonipax", "en-x-fonipa", "en-a-fonipa", "en-a-qwe-b-fonipa", "en-fonipa",
+  "en-fonipax-fonipa", "rm-CH-fonipa-sursilv-x-foobar", "und-fonipa",
+  "zh-fonipa", "en-fonnapa", "chr-fonnapa", "und-fonnapa", "ka-Geok",
+  "und-Geok", "ga-Latg", "ghc", "ro-MD", "el-polyton", "el-CY-polyton",
+  "aii-Syre", "de-Syre", "syr-Syre", "und-Syre", "aii-Syrj", "de-Syrj",
+  "syr-Syrj", "und-Syrj", "aii-Syrn", "de-Syrn", "syr-Syrn", "und-Syrn",
+  "fa-x-hbotabc-hbot-41686121-zxc", "fa-ir-x-hbotabc-hbot-41686121-zxc",
+  "zh-x-hbotabc-hbot-41686121-zxc", "zh-cn-x-hbotabc-hbot-41686121-zxc",
+  "zh-xy-x-hbotabc-hbot-41686121-zxc", "xyz-xy-x-hbotabc-hbot-41686121-zxc",
+  "fa-x-hbot-41686121-hbotabc-zxc", "fa-ir-x-hbot-41686121-hbotabc-zxc",
+  "zh-x-hbot-41686121-hbotabc-zxc", "zh-cn-x-hbot-41686121-hbotabc-zxc",
+  "zh-xy-x-hbot-41686121-hbotabc-zxc", "xyz-xy-x-hbot-41686121-hbotabc-zxc",
+  "x-hbot", "x-hbot-", "x-hbot-1", "x-hbot-1a", "x-hbot-1a2b3c4x",
+  "x-hbot-326c6f6e67", "ar-aao", "art-lojban", "kok-gom", "i-lux", "drh",
+  "ar-ary", "ar-ary-DZ", "no-bok", "no-nyn", "i-hak", "zh-guoyu", "zh-min",
+  "zh-min-nan", "zh-xiang", "als", "far", "ar-001", "tr@foo=bar",
+  "und", "en-x-hbscdflt", "x-hbot1234-hbsc5678", "x-hbsc5678-hbot1234", "ml",
+  /* Further edge cases. */
+  "x", "x-", "-", "--", "a", "a-", "-a", "a--b", "a-b-c-d", "en-u-hk",
+  "zh-u-co-x-hbsc-hant", "zh-a-b-c-hk", "zh-x-u-hk", "x-hbscDFLT",
+  "x-hbotdflt", "x-hbot-64666c74", "x-hbsc-44464c54", "x-hbot-FFFFFFFF",
+  "en-x-hbsc-6C61746E", "en-x-hbscl", "en-x-hbsclatnn", "en-x-hbot-zz",
+  "zh-yue", "zh-yue-hk", "zh-cmn-hant", "zh-cmn-hans-hk", "zh-hak", "sgn-x-a",
+  "abcd", "abcde-fg", "ab-cde", "ab-cdef", "ab-1de", "ab-cd1", "a1-b2",
+  "123", "12", "ab_cd_ef", "EN", "zh-hantx-hk", "zh-hk-hant", "zh-hkx",
+  "cdo-hant-hkx", "cdo-hant-hk-x", "art-lojban-x", "art-lojbanx",
+  "zh-min-nan-x-hbot-41424344", "hy-arevmda", "oc-provenc", "nv-navajo",
+  "lb-lux", "mnw-th", "ro-md-x-hbsc-6c61746e", "zh-cn-x-hbsc", "en-fonupa",
+};
+
+static const unsigned ot_tag_counts_scripts[] = {0, 1, 2, 3, 4};
+
+static void add_primary_parts (str_list_t *primaries, str_list_t *seconds,
+			       str_list_t *regions, const char *full)
+{
+  char buf[64];
+  snprintf (buf, sizeof buf, "%s", full);
+  char *save = buf;
+  bool first = true;
+  for (char *tok = buf; tok; tok = save)
+  {
+    char *dash = strchr (tok, '-');
+    save = dash ? dash + 1 : nullptr;
+    if (dash) *dash = '\0';
+    if (!*tok) continue;
+    if (first) { str_add (primaries, tok); first = false; continue; }
+    size_t len = strlen (tok);
+    bool region = (len == 2 && ISALPHA (tok[0]) && ISALPHA (tok[1])) ||
+		  (len == 3 && tok[0] >= '0' && tok[0] <= '9');
+    str_add (region ? regions : seconds, tok);
+  }
+}
+
+static int dump_ot_tags ()
+{
+  /* Scripts: those of the characters, then HB_SCRIPT_INVALID, Math and
+   * Hrkt, which no character has. */
+  ot_tag_set_t scripts = {nullptr, 0, 0};
+  hb_unicode_funcs_t *ufuncs = hb_unicode_funcs_get_default ();
+  for (hb_codepoint_t u = 0; u <= 0x10FFFFu; u++)
+    ot_tag_add (&scripts, (hb_tag_t) hb_unicode_script (ufuncs, u));
+  ot_tag_add (&scripts, (hb_tag_t) HB_SCRIPT_INVALID);
+  ot_tag_add (&scripts, (hb_tag_t) HB_SCRIPT_MATH);
+  ot_tag_add (&scripts, HB_TAG ('H','r','k','t'));
+  ot_tag_sort_unique (&scripts);
+  printf ("scripts ");
+  print_ot_tags (scripts.v, scripts.n);
+  printf ("\n");
+
+  /* The strings of the generated functions' branches. */
+  for (int c = 1; c < 128; c++)
+  {
+    char buf[32];
+    snprintf (buf, sizeof buf, "%caaaaaa-bbbbbbbbbbbb", c);
+    ot_tag_probe::first_byte = (char) c;
+    unsigned count = 3;
+    hb_tag_t tags[3];
+    ot_tag_probe::hb_ot_tags_from_complex_language (buf, buf + strlen (buf), &count, tags);
+  }
+  str_list_t primaries = {nullptr, 0, 0}, seconds = {nullptr, 0, 0},
+	     regions = {nullptr, 0, 0}, languages = {nullptr, 0, 0};
+  str_add (&primaries, "und");
+  str_add (&primaries, "en");
+  for (unsigned i = 0; i < ot_tag_probe::num_records; i++)
+  {
+    const ot_tag_probe::record_t &r = ot_tag_probe::records[i];
+    /* The branches before the switch run for every first byte. */
+    if (r.kind == 'p' && r.first != 1) continue;
+    char full[64];
+    snprintf (full, sizeof full, "%c%s", r.first, r.s);
+    switch (r.kind)
+    {
+    case 'l': case 'e':
+      printf ("branch %c %s\n", r.kind, full);
+      str_add (&languages, full);
+      add_primary_parts (&primaries, &seconds, &regions, full);
+      break;
+    case 'n':
+      printf ("branch n %s\n", full);
+      add_primary_parts (&primaries, &seconds, &regions, full);
+      break;
+    case 's': case 'p':
+      printf ("branch %c %s\n", r.kind, r.s);
+      snprintf (full, sizeof full, "und%s", r.s);
+      add_primary_parts (&primaries, &seconds, &regions, full);
+      break;
+    }
+  }
+  str_sort_unique (&primaries);
+  str_sort_unique (&seconds);
+  str_sort_unique (&regions);
+
+  /* primary x script or other subtag x region x private use. */
+  static const char *const privates[] = {"", "-x-hant-hk-fonipa", "-u-hk-x-hbsc-latn"};
+  for (unsigned p = 0; p < primaries.n; p++)
+    for (unsigned s = 0; s <= seconds.n; s++)
+      for (unsigned r = 0; r <= regions.n; r++)
+	for (unsigned x = 0; x < 3; x++)
+	{
+	  char buf[128];
+	  snprintf (buf, sizeof buf, "%s%s%s%s%s%s", primaries.v[p],
+		    s ? "-" : "", s ? seconds.v[s - 1] : "",
+		    r ? "-" : "", r ? regions.v[r - 1] : "", privates[x]);
+	  str_add (&languages, buf);
+	}
+
+  /* Every language of the tables, and the ambiguous tags' languages. */
+  ot_tag_set_t table_tags = {nullptr, 0, 0};
+  char buf[8];
+  for (unsigned i = 0; i < ARRAY_LENGTH (ot_languages2); i++)
+  {
+    hb_tag_to_string (ot_languages2[i].language, buf);
+    buf[2] = '\0';
+    str_add (&languages, buf);
+    ot_tag_add (&table_tags, ot_languages2[i].tag);
+  }
+  for (unsigned i = 0; i < ARRAY_LENGTH (ot_languages3); i++)
+  {
+    hb_tag_to_string (ot_languages3[i].language, buf);
+    buf[3] = '\0';
+    str_add (&languages, buf);
+    ot_tag_add (&table_tags, ot_languages3[i].tag);
+  }
+  for (unsigned i = 0; i < ARRAY_LENGTH (ot_languages3_multi); i++)
+  {
+    hb_tag_to_string (ot_languages3_multi[i].language, buf);
+    buf[3] = '\0';
+    str_add (&languages, buf);
+  }
+  for (unsigned i = 0; i < ARRAY_LENGTH (ot_languages3_multi_values); i++)
+    ot_tag_add (&table_tags, ot_languages3_multi_values[i]);
+  for (unsigned i = 0; i < ARRAY_LENGTH (ot_languages3_blocked); i++)
+  {
+    hb_tag_to_string (ot_languages3_blocked[i], buf);
+    buf[3] = '\0';
+    str_add (&languages, buf);
+  }
+  ot_tag_sort_unique (&table_tags);
+  for (unsigned i = 0; i < table_tags.n; i++)
+  {
+    hb_language_t l = hb_ot_ambiguous_tag_to_language (table_tags.v[i]);
+    if (l) str_add (&languages, hb_language_to_string (l));
+  }
+  for (unsigned i = 0; i < ARRAY_LENGTH (ot_tag_fixed_languages); i++)
+    str_add (&languages, ot_tag_fixed_languages[i]);
+  str_sort_unique (&languages);
+
+  /* Forward, with HB_OT_MAX_TAGS_PER_SCRIPT and _PER_LANGUAGE:
+   *   f <input> <language> <language tags> <script tags of each script>
+   */
+  ot_tag_set_t seen_scripts = {nullptr, 0, 0}, seen_languages = {nullptr, 0, 0};
+  for (unsigned i = 0; i < languages.n; i++)
+  {
+    hb_language_t lang = hb_language_from_string (languages.v[i], -1);
+    if (!lang) continue;
+    hb_tag_t lt0[HB_OT_MAX_TAGS_PER_LANGUAGE];
+    unsigned lc0 = 0;
+    printf ("f %s ", languages.v[i]);
+    print_ot_language (lang);
+    for (unsigned s = 0; s < scripts.n; s++)
+    {
+      hb_tag_t st[HB_OT_MAX_TAGS_PER_SCRIPT], lt[HB_OT_MAX_TAGS_PER_LANGUAGE];
+      unsigned sc = HB_OT_MAX_TAGS_PER_SCRIPT, lc = HB_OT_MAX_TAGS_PER_LANGUAGE;
+      hb_ot_tags_from_script_and_language ((hb_script_t) scripts.v[s], lang,
+					   &sc, st, &lc, lt);
+      if (!s)
+      {
+	lc0 = lc;
+	memcpy (lt0, lt, lc * sizeof (hb_tag_t));
+	printf (" ");
+	print_ot_tags (lt, lc);
+	for (unsigned k = 0; k < lc; k++) ot_tag_add (&seen_languages, lt[k]);
+      }
+      else if (lc != lc0 || memcmp (lt, lt0, lc * sizeof (hb_tag_t)))
+      {
+	fprintf (stderr, "hb-dump: the language tags of %s depend on the script\n",
+		 languages.v[i]);
+	return 1;
+      }
+      printf (" ");
+      print_ot_tags (st, sc);
+      for (unsigned k = 0; k < sc; k++) ot_tag_add (&seen_scripts, st[k]);
+    }
+    printf ("\n");
+  }
+
+  /* Other counts, for the fixed languages and a few scripts:
+   *   c <input> <script> <script count> <language count> <script tags>
+   *     <language tags>
+   */
+  static const hb_tag_t count_scripts[] = {
+    0, HB_TAG ('L','a','t','n'), HB_TAG ('D','e','v','a'), HB_TAG ('M','y','m','r'),
+    HB_TAG ('H','i','r','a'), HB_TAG ('M','l','y','m'),
+  };
+  for (unsigned i = 0; i < ARRAY_LENGTH (ot_tag_fixed_languages); i++)
+  {
+    hb_language_t lang = hb_language_from_string (ot_tag_fixed_languages[i], -1);
+    for (unsigned s = 0; s < ARRAY_LENGTH (count_scripts); s++)
+      for (unsigned scount = 0; scount <= 4; scount++)
+	for (unsigned lcount = 0; lcount <= 4; lcount++)
+	{
+	  hb_tag_t st[4], lt[4];
+	  unsigned sc = scount, lc = lcount;
+	  hb_ot_tags_from_script_and_language ((hb_script_t) count_scripts[s], lang,
+					       &sc, st, &lc, lt);
+	  printf ("c %s %08x %u %u ", ot_tag_fixed_languages[i], count_scripts[s],
+		  scount, lcount);
+	  print_ot_tags (st, sc);
+	  printf (" ");
+	  print_ot_tags (lt, lc);
+	  printf ("\n");
+	}
+  }
+
+  /* Backward, for every tag that appeared and the tables' tags:
+   *   s <script tag> <hb_ot_tag_to_script>
+   *   l <language tag> <hb_ot_tag_to_language, * for none>
+   *   r <script tag> <language tag> <script> <language>
+   *     (hb_ot_tags_to_script_and_language)
+   */
+  ot_tag_add (&seen_scripts, HB_OT_TAG_DEFAULT_SCRIPT);
+  ot_tag_sort_unique (&seen_scripts);
+  for (unsigned i = 0; i < table_tags.n; i++)
+    ot_tag_add (&seen_languages, table_tags.v[i]);
+  ot_tag_add (&seen_languages, HB_OT_TAG_DEFAULT_LANGUAGE);
+  ot_tag_sort_unique (&seen_languages);
+  for (unsigned i = 0; i < seen_scripts.n; i++)
+    printf ("s %08x %08x\n", seen_scripts.v[i], (unsigned) hb_ot_tag_to_script (seen_scripts.v[i]));
+  for (unsigned i = 0; i < seen_languages.n; i++)
+  {
+    printf ("l %08x ", seen_languages.v[i]);
+    print_ot_language (hb_ot_tag_to_language (seen_languages.v[i]));
+    printf ("\n");
+  }
+  for (unsigned i = 0; i < seen_scripts.n; i++)
+    for (unsigned j = 0; j < seen_languages.n; j++)
+    {
+      hb_script_t script;
+      hb_language_t language;
+      hb_ot_tags_to_script_and_language (seen_scripts.v[i], seen_languages.v[j],
+					 &script, &language);
+      printf ("r %08x %08x %08x ", seen_scripts.v[i], seen_languages.v[j], (unsigned) script);
+      print_ot_language (language);
+      printf ("\n");
+    }
+  printf ("end\n");
+  return 0;
+}
+
 /* The modes that read no file. */
 struct fileless_mode_t
 {
@@ -690,6 +1149,7 @@ struct fileless_mode_t
 static const fileless_mode_t fileless_modes[] = {
   {"--unicode", dump_unicode},
   {"--arabic-pua", dump_arabic_pua},
+  {"--ot-tags", dump_ot_tags},
 };
 
 struct dump_mode_t
