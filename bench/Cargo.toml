@@ -16,6 +16,7 @@ sofel-unicode = { path = "../crates/sofel-unicode" }
 sofel-color = { path = "../crates/sofel-color" }
 sofel-shape = { path = "../crates/sofel-shape" }
 sofel-bitmap = { path = "../crates/sofel-bitmap" }
+sofel-subset = { path = "../crates/sofel-subset" }
 
 [profile.release]
 debug = "line-tables-only"

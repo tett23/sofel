@@ -22,8 +22,8 @@ cargo doc --no-deps -p sofel-geom -p sofel-unicode -p sofel-read -p sofel-font -
 | `sofel-shape` | HarfBuzz 15.1.0のOTシェーパーと同じシェーピング（バッファ、計画、`GSUB` と `GPOS`）と、機能の文字列、直列化、タグ | `sofel-font`、`sofel-unicode`、`sofel-geom` |
 | `sofel-bitmap` | 埋め込みビットマップのストライク、その選び方、グリフの画像のデータとメトリクス（[ADR 0023](adr/0023-color-glyphs.md)） | `sofel-font` |
 | `sofel-color` | カラーグリフの塗りの命令、パレット、カラーグリフを含むグリフの箱（[ADR 0023](adr/0023-color-glyphs.md)） | `sofel-outline`、`sofel-bitmap` |
-| `sofel-write` | sfntの組み立て（`build_sfnt`）と、HarfBuzzと同じ詰め方のオブジェクトの直列化（`Serializer`。[ADR 0022](adr/0022-subsetting.md)） | `sofel-read` |
-| `sofel-subset` | HarfBuzzの `hb-subset` と同じ出力のサブセット化（`Input`、`Plan`、`subset`。[ADR 0022](adr/0022-subsetting.md)） | `sofel-font`、`sofel-write`、`sofel-unicode`、`sofel-geom` |
+| `sofel-write` | sfntの組み立て（`build_sfnt`）と、HarfBuzzと同じ詰め方のオブジェクトの直列化（`Serializer`）と再配置（`Packed::repack`、`serialize_objects`。[ADR 0022](adr/0022-subsetting.md)） | `sofel-read` |
+| `sofel-subset` | HarfBuzzの `hb-subset` と同じ出力のサブセット化（`Input`、`Plan`、`subset`、前処理の `Prepared`。[ADR 0022](adr/0022-subsetting.md)） | `sofel-font`、`sofel-write`、`sofel-unicode`、`sofel-geom` |
 | `sofel-raster` | FreeTypeのsmoothのラスタライザと同じ計算で、8bitのアンチエイリアスの画像を作る | `sofel-geom` |
 | `sofel-cli` | 小さな道具（`sofel-validate`、`sofel-render`、`sofel-paint`、`sofel-subset`）と、1グリフを描く `glyph::render` | すべて |
 | `sofel-capi` | C ABI（[ADR 0015](adr/0015-c-abi.md)） | すべて |
@@ -225,12 +225,13 @@ match FontFile::new(&data)? {
 ```
 
 - 検証器は確保をせず、`Diagnostic`（表、オフセット、重大度、種類）をコールバックに渡す。`Kind::details` で種類ごとの値を取り出せる。`sofel-validate` コマンドの出力はこれを並べたもの。
-- 表ごとのモジュール：`head`、`maxp`、`hhea`、`hmtx`、`cmap`、`loca`、`glyf`、`os2`、`name`、`post`、`vhea`、`vmtx`、`vorg`、`base`、`gdef`、`gsub`、`gpos`。`device` はBASE、GDEF、GPOSが共有するDeviceの表のビュー（`delta_pixels` で補正を読む）。`layout` はGDEF、GSUB、GPOSが共有する構造（Coverage、ClassDef、ScriptList、FeatureList、LookupList、Lookup、GSUBとGPOSの見出しの `LayoutTable`、文脈のサブテーブル）。`base` のオフセットをたどる関数は、空のオフセットに `Ok(None)` を、読めない先に `Err` を返す。それぞれにビューの型と `validate` 関数がある。大きい番号の版（`MAXP`、`HHEA`、`HMTX`、`VHEA`、`VMTX`、`GLYF`、`LOCA`）は `CountWidth` や `TAG_WIDE` で扱う。
+- 表ごとのモジュール：`head`、`maxp`、`hhea`、`hmtx`、`cmap`、`loca`、`glyf`、`os2`、`name`、`post`、`vhea`、`vmtx`、`vorg`、`base`、`gdef`、`gsub`、`gpos`、`math`。`device` はBASE、GDEF、GPOS、MATHが共有するDeviceの表のビュー（`delta_pixels` で補正を読む）。`layout` はGDEF、GSUB、GPOSが共有する構造（Coverage、ClassDef、ScriptList、FeatureList、LookupList、Lookup、GSUBとGPOSの見出しの `LayoutTable`、文脈のサブテーブル）。`base` と `math` のオフセットをたどる関数は、空のオフセットに `Ok(None)` を、読めない先に `Err` を返す。それぞれにビューの型と `validate` 関数がある。大きい番号の版（`MAXP`、`HHEA`、`HMTX`、`VHEA`、`VMTX`、`GLYF`、`LOCA`）は `CountWidth` や `TAG_WIDE` で扱う。
 - `vhea` と `vmtx` のビューは `hhea` と `hmtx` のビューそのもの（`Vhea`、`Vmtx` は別名）で、`ascender` は縦のアセンダ、`advance` は縦の送り幅、`left_side_bearing` は上のサイドベアリングを返す。
 - OS/2の版より後の欄（例えば版1の `s_cap_height`）は `None` を返す。nameの文字列が表の外にある記録は `Name::string` が `None` を返す。postの `MAC_GLYPH_NAMES` はMacの標準の258の名前。
 - `be` は、範囲を確かめるビッグエンディアンの読み取りの関数。
 - `cff` は `CFF ` と `CFF2` の表（[ADR 0021](adr/0021-cff-outlines.md)）：`Cff1`、`Cff2`（ヘッダとINDEXの並び）、`Index`（`get` は厳密に、`ft_element` と `ft_pointer` はFreeTypeの読み方で要素を返す）、`dict`（`DictTokens`、FreeTypeと同じ数の変換をする `Operand`、`TopDict`、`FontDict`、`PrivateDict`。値はFreeTypeが `FT_Long` に持つ64bitの値と型のまま）、`Charset`、`Encoding`、`FdSelect`、`charstring`（`CharStringTokens` と、FreeTypeのAdobe engineをヒンティングなしで移植したType 2 charstringの解読器 `decode`）、`FtBlend`（FreeTypeのCFF2の `blend` の係数）。`cff::validate` と `cff::validate2` が検証器で、`validate::sfnt` は `maxp` のグリフの数と `fvar` の軸の数を渡して呼ぶ。
-- `cff::hb` は、HarfBuzzが `CFF ` と `CFF2` を読む手順（[ADR 0021](adr/0021-cff-outlines.md)）：サニタイザ `Sanitizer`（範囲の確かめと操作の予算）、`HbIndex`、`HbCharset`、`HbFdSelect`、encodingとCFF2のVariation Storeの確かめ、DICTの解釈器 `interpret_dict`。`sofel_font::HbCff1` と `HbCff2` がこれで作られる。
+- `cff::hb` は、HarfBuzzが `CFF ` と `CFF2` を読む手順（[ADR 0021](adr/0021-cff-outlines.md)）：サニタイザ `Sanitizer`（範囲の確かめと操作の予算）、`HbIndex`、`HbCharset`、`HbFdSelect`（`fd_range` はHarfBuzzの `get_fd_range`）、encodingとCFF2のVariation Storeの確かめ、DICTの解釈器 `interpret_dict` と、DICTの字句を1つずつ読む `dict_token`。`sofel_font::HbCff1` と `HbCff2` がこれで作られ、`sofel-subset` はCFFとCFF2のサブセット化に使う。`HbCff2` の `var_store`、`fd_array`、`fd_select` は、CFF2のサブセット化が読むVariation Storeの位置、FDArray、FDSelectを返す。
+- `fvar`、`avar`、`stat` は可変フォントの軸の表（[ADR 0022](adr/0022-subsetting.md)）：`Fvar`（軸の `VariationAxis` と名前つきのインスタンス。`find_axis` は最初に当たる軸）、`Avar`（軸ごとの `SegmentMap`。版2は変化量の表のオフセットを持つことだけを確かめる）、`Stat`（デザインの軸と、形式1から4の `AxisValue`。表に収まらない軸の値は `None`）。どれもHarfBuzzのサニタイザが受け付ける形だけを受け付け、`validate::sfnt` は `avar` の軸の数を `fvar` と比べる。
 - `item_variation` はOpenTypeの共通のItem Variation Store（領域の一覧と `ItemVariationData` の領域の番号）のビューと検証器。CFF2の `vstore` が使い、3段階目の可変フォントでHVARなどと共有する。
 - GSUBとGPOS（[ADR 0020](adr/0020-shaping-foundation.md)）は、`LayoutTable::new` から `script_list`、`feature_list`、`lookup_list` をたどり、lookupのサブテーブルを `gsub::subtable(&lookup, i)`（`SubstSubtable`）と `gpos::subtable(&lookup, i)`（`PosSubtable`）で読む。拡張はたどった先の型で返る。HarfBuzzと同じく、`Err` のサブテーブルは何も適用しないものとして扱う。
 
@@ -500,7 +501,39 @@ fn embed(data: &[u8], glyphs: &[u32]) -> Result<Vec<u8>, sofel_subset::SubsetErr
 }
 ```
 
-`Plan::new` で閉包とグリフの対応を求め、`Plan::execute` で表を書く。`subset` はこの2つを続けて呼ぶ。まだ書けない表を持つフォントは、その表を `SetKind::DropTables` に入れないかぎり `SubsetError::Unsupported` になる。
+`Plan::new` で閉包とグリフの対応を求め、`Plan::execute` で表を書く。`subset` はこの2つを続けて呼ぶ。CFFのフォント（名前のキーとCIDのキー）は、HarfBuzzと同じく `CFF ` の表をサブセット化し、出力から取り出した `CFF ` の表はそれだけでCFFとして正しい（PDFの `FontFile3` に入れられる）。まだ書けない表を持つフォントは、その表を `SetKind::DropTables` に入れないかぎり `SubsetError::Unsupported` になる。HarfBuzzが失敗する入力では、sofelも失敗する。例えば、表の出力が元の表の256倍を超えてHarfBuzzの作業領域に入らないときは `SubsetError::Limit` になる。
+
+可変フォントは、`with_all_axes_pinned_to_default` ですべての軸を既定の値に固定すると、HarfBuzzの `hb_subset_input_pin_all_axes_to_default` と同じく既定のインスタンスとして書く（fvarなどの変化量の表を除き、glyfの輪郭と送り幅から計る値を書きなおす）。軸の関数（`with_axis_pinned_to_default`、`with_axis_pinned`、`with_axis_range`）は、フォントに軸が無ければ `None` を返す。既定の値以外への固定と範囲の指定は、`Plan::new` が `SubsetError::Unsupported` を返す。
+
+```rust
+use sofel_font::Font;
+use sofel_subset::{Input, SetKind, SubsetError, subset};
+
+fn default_instance(data: &[u8], text: &str) -> Result<Vec<u8>, SubsetError> {
+    let font = Font::new(data, 0).map_err(|_| SubsetError::NoGlyphs)?;
+    let input = Input::new().map_set(SetKind::Unicodes, |s| text.chars().for_each(|c| s.add(u32::from(c))));
+    let input = input.with_all_axes_pinned_to_default(&font).unwrap_or(input);
+    subset(&font, &input)
+}
+```
+
+同じフォントを何度もサブセット化するときは、`Prepared::new` で一度だけ前処理し（HarfBuzzの `hb_subset_preprocess`）、`Plan::with_prepared` で計画を作る。出力は前処理の無いときと同じで、計画が速くなる（cmapの対応の逆引き、CFFの解析済みのcharstringを使う）。`Prepared` は不変で、複製は安く（中身を共有する）、スレッドの間で共有できる。前処理したフォントと違うフォントに使うと `SubsetError::InvalidInput` になる。`cff_charstrings_index` と `cff_charstring_data` は、`CFF ` の表のCharStrings INDEXと各グリフのcharstringのバイト列を写さずに返す。
+
+```rust
+use sofel_font::Font;
+use sofel_subset::{Input, Plan, Prepared, SetKind, SubsetError};
+
+fn many(font: &Font<'_>, texts: &[&str]) -> Result<Vec<Vec<u8>>, SubsetError> {
+    let prepared = Prepared::new(font);
+    texts
+        .iter()
+        .map(|t| {
+            let input = Input::new().map_set(SetKind::Unicodes, |s| t.chars().for_each(|c| s.add(u32::from(c))));
+            Plan::with_prepared(font, &prepared, &input)?.execute(font)
+        })
+        .collect()
+}
+```
 
 ## Cから使う（`sofel-capi`）
 
@@ -559,6 +592,12 @@ sofel_font_destroy(font);
 | `sofel_buffer_*` | `UnicodeBuffer`、`GlyphBuffer` | `hb_buffer_*` |
 | `sofel_shape`、`sofel_shape_fallback` | `shape_with_extents`、`shape_fallback` | `hb_shape_plan_execute` |
 | `sofel_buffer_serialize`、`sofel_buffer_deserialize_*`、`sofel_buffer_diff` | `serialize_glyphs` など、`diff` | `hb_buffer_serialize`、`hb_buffer_deserialize_*`、`hb_buffer_diff` |
+| `sofel_subset_input_*` | `Input`、`RangeSet` | `hb_subset_input_*`、`hb_set_*` |
+| `sofel_subset_prepared_*` | `Prepared` | `hb_subset_preprocess` |
+| `sofel_subset_plan_*` | `Plan` | `hb_subset_plan_*` |
+| `sofel_subset_cff_charstrings_index`、`sofel_subset_cff_charstring_data` | `cff_charstrings_index`、`cff_charstring_data` | `hb_subset_cff_get_charstrings_index`、`hb_subset_cff_get_charstring_data` |
+| `sofel_subset`、`sofel_bytes_destroy` | `subset` | `hb_subset_or_fail`、`hb_face_reference_blob` |
+| `sofel_serialize_objects` | `sofel_write::serialize_objects` | `hb_subset_serialize_or_fail` |
 
 - 誤りうる関数は `int32_t` を返し、`SOFEL_OK`（0）以外は誤り。`sofel_error_string` で英語の説明を引ける。NULLのポインタは `SOFEL_ERROR_NULL` になり、panicもクラッシュもしない。
 - 輪郭は5つの関数ポインタと `void *user` で受け取る。`sofel_rasterizer_move_to` などはその型を持つので、`sofel_outline_decompose` にそのまま渡してラスタライザに記録できる。
@@ -578,6 +617,24 @@ int32_t pos[4 * 64]; /* x_advance, y_advance, x_offset, y_offset */
 int64_t n = sofel_buffer_glyphs(buf, gids, clusters, NULL, pos, 64);
 /* n > 64 なら何も書かれていない。n 個の配列で呼びなおす */
 sofel_buffer_clear(buf); /* 次の文字列へ */
+```
+
+- サブセット化は、入力を作って集合とフラグを入れ、`sofel_subset` を呼ぶ。出力はsofelが確保するので、`sofel_bytes_destroy` で解放する。入力は値を変える関数で変わるので、スレッドの間で共有しながら変えない。
+
+```c
+sofel_subset_input_t *input;
+sofel_subset_input_create(&input); /* HarfBuzz の既定の値 */
+for (size_t i = 0; i < n; i++)
+  sofel_subset_input_set_add(input, SOFEL_SUBSET_SET_GLYPHS, gids[i]);
+sofel_subset_input_set_flags(input, SOFEL_SUBSET_FLAGS_RETAIN_GIDS);
+/* 可変フォントなら既定のインスタンスにする（軸が無ければ SOFEL_ERROR_NOT_FOUND） */
+sofel_subset_input_pin_all_axes_to_default(input, font);
+sofel_bytes_t out;
+if (sofel_subset(font, input, &out) == SOFEL_OK) {
+  /* out.data, out.len: hb-subset と同じバイト列 */
+  sofel_bytes_destroy(&out);
+}
+sofel_subset_input_destroy(input);
 ```
 
 - `sofel-read` の表のビューは公開しない。表のバイト列を `sofel_font_table` で取り出して読む。公開しない関数とその理由は `crates/sofel-capi/unmapped.txt` にある。

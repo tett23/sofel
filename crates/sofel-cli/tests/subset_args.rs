@@ -20,7 +20,9 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use sofel_cli::subset::{Action, AxisSpec, AxisValue, Options, parse, parse_with, resolve, run};
+use sofel_cli::subset::{
+    Action, AxisSpec, AxisValue, GlyphOp, Options, parse, parse_with, resolve, run,
+};
 use sofel_read::Tag;
 use sofel_subset::{DEFAULT_DROP_TABLES, Flags, Input, RangeSet, SetKind};
 
@@ -201,13 +203,50 @@ fn gids_and_glyphs() {
     // `--glyphs=*` is every glyph without the font.
     let o = ok(&["--gids=4", "--glyphs=*"]);
     assert_eq!(*set(&o, SetKind::Glyphs), RangeSet::all());
-    assert!(o.glyph_names.is_empty());
+    assert!(!has_names(&o));
     let o = ok(&["--glyphs-=*"]);
     assert!(set(&o, SetKind::Glyphs).is_empty());
-    // Names are kept; the plain form still clears the set.
-    let o = ok(&["--gids=4", "--glyphs=a,b  c", "--glyphs+=d"]);
-    assert_eq!(o.glyph_names, vec!["a", "b", "c", "d"]);
+    // Names are kept with every change of the glyph set, in order; the
+    // plain form still clears the set.
+    let o = ok(&["--gids=4", "--glyphs=a,b  c", "--glyphs+=d", "--gids-=7"]);
     assert!(set(&o, SetKind::Glyphs).is_empty());
+    let name = |remove: bool, name: &str, rest: &str| GlyphOp::Name {
+        remove,
+        name: name.to_string(),
+        rest: rest.to_string(),
+    };
+    assert_eq!(
+        o.glyph_ops,
+        vec![
+            GlyphOp::Clear,
+            GlyphOp::Change {
+                remove: false,
+                first: 4,
+                last: 4
+            },
+            GlyphOp::Clear,
+            name(false, "a", "a,b  c"),
+            name(false, "b", "b  c"),
+            name(false, "c", "c"),
+            name(false, "d", "d"),
+            GlyphOp::Change {
+                remove: true,
+                first: 7,
+                last: 7
+            },
+        ]
+    );
+}
+
+fn has_names(o: &Options) -> bool {
+    fn any(ops: &[GlyphOp]) -> bool {
+        ops.iter().any(|op| match op {
+            GlyphOp::Name { .. } => true,
+            GlyphOp::File(inner) => any(inner),
+            _ => false,
+        })
+    }
+    any(&o.glyph_ops)
 }
 
 #[test]
@@ -503,7 +542,7 @@ fn files() {
     let o = p(&["--gids-file=g"]).unwrap();
     assert_eq!(members(set(&o, SetKind::Glyphs)), vec![1]);
     let o = p(&["--glyphs-file=n"]).unwrap();
-    assert_eq!(o.glyph_names, vec!["a", "b"]);
+    assert!(has_names(&o));
     assert_eq!(*set(&o, SetKind::Glyphs), RangeSet::all());
     let o = p(&["--unicodes-file=s"]).unwrap();
     assert_eq!(*set(&o, SetKind::Unicodes), RangeSet::all());
@@ -513,19 +552,194 @@ fn files() {
     );
 }
 
+/// The sample font (A to Z map to glyphs 1 to 26) with `post` version 2
+/// names: glyph 1 "A" (a standard name), glyph 2 "Bee", glyph 3 "dup",
+/// glyph 4 "uni0041" (a name that looks like a character), glyph 5
+/// "dup" again; the others have no name.
+fn named_font() -> Vec<u8> {
+    let mut t = build::sample_tables();
+    let mut indices = vec![0u16; 28];
+    indices[1] = 36; // "A" among the 258 standard names
+    indices[2] = 258;
+    indices[3] = 259;
+    indices[4] = 260;
+    indices[5] = 259;
+    t.push((b"post", build::post2(&indices, &["Bee", "dup", "uni0041"])));
+    t.sort_by_key(|(t, _)| **t);
+    build::sfnt(&t)
+}
+
+fn glyphs_of(a: &[&str], font: &sofel_font::Font<'_>) -> Vec<u32> {
+    let input = resolve(&ok(a), font).unwrap_or_else(|e| panic!("{a:?}: {e}"));
+    members(input.set(SetKind::Glyphs))
+}
+
+#[test]
+fn glyph_names() {
+    let data = named_font();
+    let font = sofel_font::Font::new(&data, 0).unwrap();
+    // post names, then numbers, gidDDD and uniXXXX (hb_font_glyph_from_string).
+    assert_eq!(glyphs_of(&["--glyphs=A,Bee"], &font), vec![1, 2]);
+    assert_eq!(glyphs_of(&["--glyphs=9 gid12"], &font), vec![9, 12]);
+    assert_eq!(glyphs_of(&["--glyphs=uni0043"], &font), vec![3]);
+    // A post name wins over the uniXXXX fallback.
+    assert_eq!(glyphs_of(&["--glyphs=uni0041"], &font), vec![4]);
+    // Numbers beyond the glyph count are kept (the plan drops them).
+    assert_eq!(glyphs_of(&["--glyphs=4000"], &font), vec![4000]);
+    // A duplicate name finds one of its glyphs.
+    let dup = glyphs_of(&["--glyphs=dup"], &font);
+    assert!(dup == vec![3] || dup == vec![5], "{dup:?}");
+    // The error names the rest of the argument, as HarfBuzz's.
+    assert_eq!(
+        resolve(&ok(&["--glyphs=A,nosuch,Bee"]), &font).unwrap_err(),
+        "Failed parsing glyph name: 'nosuch,Bee'"
+    );
+    assert_eq!(
+        resolve(&ok(&["--glyphs=gid"]), &font).unwrap_err(),
+        "Failed parsing glyph name: 'gid'"
+    );
+    // `*` needs no font; removing names.
+    assert_eq!(
+        resolve(&ok(&["--glyphs=*", "--unicodes=41"]), &font).unwrap(),
+        ok(&["--glyphs=*", "--unicodes=41"]).input
+    );
+    assert_eq!(
+        glyphs_of(&["--gids=1-3", "--glyphs-=Bee"], &font),
+        vec![1, 3]
+    );
+}
+
+#[test]
+fn glyph_names_keep_the_command_line_order() {
+    let data = named_font();
+    let font = sofel_font::Font::new(&data, 0).unwrap();
+    // The name is added, then its glyph removed by number.
+    assert!(glyphs_of(&["--glyphs=Bee", "--gids-=2"], &font).is_empty());
+    // The glyph is removed, then added back by name.
+    assert_eq!(glyphs_of(&["--gids-=2", "--glyphs+=Bee"], &font), vec![2]);
+    // A plain --gids after names replaces them.
+    assert_eq!(glyphs_of(&["--glyphs=Bee", "--gids=7"], &font), vec![7]);
+    // A plain --glyphs after --gids replaces them.
+    assert_eq!(glyphs_of(&["--gids=7", "--glyphs=Bee"], &font), vec![2]);
+    // --gid-map and --keep-everything change the set in order too.
+    assert_eq!(
+        glyphs_of(&["--glyphs=Bee", "--gid-map=5:1"], &font),
+        vec![2, 5]
+    );
+    let input = resolve(&ok(&["--glyphs=Bee", "--keep-everything"]), &font).unwrap();
+    assert_eq!(*input.set(SetKind::Glyphs), RangeSet::all());
+    let input = resolve(&ok(&["--keep-everything", "--glyphs-=Bee"]), &font).unwrap();
+    let s = input.set(SetKind::Glyphs);
+    assert!(s.is_inverted() && !s.contains(2) && s.contains(1));
+}
+
+#[test]
+fn glyph_names_files() {
+    let data = named_font();
+    let font = sofel_font::Font::new(&data, 0).unwrap();
+    let read = |path: &str| -> Result<Vec<u8>, String> {
+        match path {
+            "n" => Ok(b"A # comment
+Bee
+"
+            .to_vec()),
+            // A bad name stops the file without failing, as in HarfBuzz;
+            // the later lines are not read.
+            "bad" => Ok(b"A
+nosuch Bee
+*
+"
+            .to_vec()),
+            _ => Err("No such file or directory".into()),
+        }
+    };
+    let input = |a: &[&str]| resolve(&parse_with(&args(a), &read).unwrap(), &font).unwrap();
+    assert_eq!(
+        members(input(&["--glyphs-file=n"]).set(SetKind::Glyphs)),
+        vec![1, 2]
+    );
+    assert_eq!(
+        members(input(&["--glyphs-file=bad", "--gids+=9"]).set(SetKind::Glyphs)),
+        vec![1, 9]
+    );
+}
+
+#[test]
+fn cff_glyph_names() {
+    // A CFF font without post: names come from the charset.
+    let a = sofel_read::cff::STANDARD_ENCODING[65];
+    let acute = sofel_read::cff::STANDARD_ENCODING[194];
+    let endchar = build::charstring(&[build::Cs::Op(14)]);
+    let mut spec = build::Cff1Spec::new(vec![endchar.clone(); 3]);
+    let mut charset = vec![0u8];
+    for sid in [a, acute] {
+        charset.extend(sid.to_be_bytes());
+    }
+    spec.charset = Some(charset);
+    let data = build::otto_font(3, vec![(b"CFF ", build::cff1(&spec))]);
+    let font = sofel_font::Font::new(&data, 0).unwrap();
+    assert_eq!(glyphs_of(&["--glyphs=acute,A"], &font), vec![1, 2]);
+    assert_eq!(glyphs_of(&["--glyphs=.notdef"], &font), vec![0]);
+}
+
 #[test]
 fn resolve_stubs() {
     let data = build::sample_font();
     let font = sofel_font::Font::new(&data, 0).unwrap();
     let o = ok(&["--glyphs=*", "--unicodes=41"]);
     assert_eq!(resolve(&o, &font).unwrap(), o.input);
+    // Without names, only the fallbacks work.
     assert_eq!(
         resolve(&ok(&["--glyphs=a"]), &font).unwrap_err(),
-        "glyph names are not supported yet (ADR 0022 stage 12)"
+        "Failed parsing glyph name: 'a'"
     );
+    // A font without fvar has no axes to pin.
     assert_eq!(
         resolve(&ok(&["--variations=*=drop"]), &font).unwrap_err(),
-        "instancing is not supported yet (ADR 0022 stage 6)"
+        "Failed pinning all axes to default."
+    );
+    assert_eq!(
+        resolve(&ok(&["--variations=wght=drop"]), &font).unwrap_err(),
+        "Cannot pin axis: 'wght', not present in fvar"
+    );
+}
+
+#[test]
+fn resolve_variations() {
+    let Some(hb) = harfbuzz() else { return };
+    let data = std::fs::read(hb.join("test/subset/data/fonts/Roboto-Variable.ABC.ttf")).unwrap();
+    let font = sofel_font::Font::new(&data, 0).unwrap();
+    let point = |v: f32| sofel_subset::AxisRange {
+        min: v,
+        default: v,
+        max: v,
+    };
+    let axes = |a: &[&str]| resolve(&ok(a), &font).map(|i| i.axes().clone());
+    let both = BTreeMap::from([
+        (Tag::new(b"wght"), point(400.0)),
+        (Tag::new(b"wdth"), point(100.0)),
+    ]);
+    // `drop`, `*=drop` and values equal to the default all pin to the
+    // default (pin_all_at_default.tests).
+    assert_eq!(axes(&["--variations=wght=drop,wdth=100"]).unwrap(), both);
+    assert_eq!(axes(&["--instance=wght=400,wdth=100.0"]).unwrap(), both);
+    assert_eq!(axes(&["--variations=*=drop"]).unwrap(), both);
+    assert_eq!(
+        axes(&["--variations=wght=400:400:400"]).unwrap(),
+        BTreeMap::from([(Tag::new(b"wght"), point(400.0))])
+    );
+    // Other locations and ranges wait for the instancing ADR.
+    for v in ["wght=300", "wght=300:600", "wdth=drop,wght=500"] {
+        let e = axes(&[&format!("--variations={v}")]).unwrap_err();
+        assert!(e.contains("deferred by ADR 0022"), "{v}: {e}");
+    }
+    assert_eq!(
+        axes(&["--variations=opsz=drop"]).unwrap_err(),
+        "Cannot pin axis: 'opsz', not present in fvar"
+    );
+    assert_eq!(
+        axes(&["--variations=wght=500:400"]).unwrap_err(),
+        "Cannot pin axis: 'wght', not present in fvar"
     );
 }
 
@@ -663,7 +877,16 @@ fn command_errors() {
     assert!(out.starts_with("usage: sofel-subset"));
     let (code, _, err) = run_with(&["--glyphs=a", font.to_str().unwrap(), "-o", "-"], "");
     assert_eq!(code, 1);
-    assert!(err.contains("glyph names are not supported yet"), "{err}");
+    assert!(
+        err.starts_with("sofel-subset: Failed parsing glyph name: 'a'\n"),
+        "{err}"
+    );
+    let (code, out, _) = run_with(
+        &["--glyphs=gid1,uni0042", font.to_str().unwrap(), "-o", "-"],
+        "",
+    );
+    assert_eq!(code, 0);
+    assert!(!out.is_empty());
     // -n 0 subsets nothing: a failure.
     let (code, out, _) = run_with(&["-n", "0", font.to_str().unwrap(), "-o", "-"], "");
     assert_eq!(code, 1);

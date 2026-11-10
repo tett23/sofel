@@ -109,6 +109,7 @@ pub struct Serializer {
     map: BTreeMap<Key, ObjIdx>,
     errors: Errors,
     packed_bytes: usize,
+    peak: usize,
 }
 
 impl Default for Serializer {
@@ -138,6 +139,7 @@ impl Serializer {
             map: BTreeMap::new(),
             errors: Errors::NONE,
             packed_bytes: 0,
+            peak: 0,
         }
     }
 
@@ -205,20 +207,40 @@ impl Serializer {
         self.stack.len()
     }
 
+    /// The most bytes the serializer held at once: the objects on the
+    /// stack and the packed objects, at their highest. This is the room
+    /// HarfBuzz's buffer needs (`head - start` plus `end - tail`), which
+    /// runs out when it is smaller (`HB_SERIALIZE_ERROR_OUT_OF_ROOM`).
+    pub fn peak_len(&self) -> usize {
+        self.peak
+    }
+
+    /// Records the bytes held now in [`peak_len`](Self::peak_len).
+    fn note_room(&mut self) {
+        let held = self
+            .stack
+            .iter()
+            .map(|f| f.obj.bytes.len())
+            .fold(self.packed_bytes, usize::saturating_add);
+        self.peak = self.peak.max(held);
+    }
+
     /// Appends bytes to the current object and returns where they start.
     /// Nothing happens in error.
     pub fn extend(&mut self, bytes: &[u8]) -> usize {
         if self.in_error() {
             return self.len();
         }
-        match self.top() {
+        let at = match self.top() {
             Some(o) => {
                 let at = o.bytes.len();
                 o.bytes.extend_from_slice(bytes);
                 at
             }
-            None => 0,
-        }
+            None => return 0,
+        };
+        self.note_room();
+        at
     }
 
     /// Appends `n` zeros (`allocate_size`) and returns where they start.
@@ -226,14 +248,16 @@ impl Serializer {
         if self.in_error() {
             return self.len();
         }
-        match self.top() {
+        let at = match self.top() {
             Some(o) => {
                 let at = o.bytes.len();
                 o.bytes.resize(at.saturating_add(n), 0);
                 at
             }
-            None => 0,
-        }
+            None => return 0,
+        };
+        self.note_room();
+        at
     }
 
     /// Appends a `u8`.

@@ -21,6 +21,8 @@ sofel-color = { path = "../sofel-color" }
 sofel-cli = { path = "../sofel-cli" }
 sofel-unicode = { path = "../sofel-unicode" }
 sofel-shape = { path = "../sofel-shape" }
+sofel-subset = { path = "../sofel-subset" }
+sofel-write = { path = "../sofel-write" }
 
 # The workspace lints, except that `unsafe` is allowed: this crate turns
 # the pointers C passes into references (ADR 0015). Every other crate

@@ -395,7 +395,7 @@ pub enum Kind {
         /// The count.
         count: u32,
     },
-    /// Variation regions whose axis count differs from `fvar`.
+    /// Variation regions, or `avar`, whose axis count differs from `fvar`.
     AxisCountMismatch {
         /// The value found.
         found: u32,
