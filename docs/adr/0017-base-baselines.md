@@ -1,6 +1,6 @@
 # ADR 0017: BASEの表と基準線（`baseline_with_fallback`）
 
-ステータス: 採択（未実装）
+ステータス: 採択
 
 ## 文脈
 

@@ -11,7 +11,7 @@ WOFFとWOFF2、Type1やBDFなどの古い形式、AAT、絵文字（COLR、埋�
 ## 状態
 
 2段階目（glyfの輪郭とアンチエイリアスのラスタライズ）まで実装している。
-`sofel-read` は、sfntの目録、TTC/OTC、head、maxp/MAXP、hhea/HHEA、hmtx/HMTX、cmap（フォーマット0〜15）、loca、glyf（[ADR 0007](docs/adr/0007-sfnt-read-foundation.md)、[0011](docs/adr/0011-glyf-outlines.md)）と、OS/2、name、post、vhea/VHEA、vmtx/VMTX、VORG（[ADR 0016](docs/adr/0016-font-and-vertical-metrics.md)）を読み、各表の検証器を持つ。
+`sofel-read` は、sfntの目録、TTC/OTC、head、maxp/MAXP、hhea/HHEA、hmtx/HMTX、cmap（フォーマット0〜15）、loca、glyf（[ADR 0007](docs/adr/0007-sfnt-read-foundation.md)、[0011](docs/adr/0011-glyf-outlines.md)）と、OS/2、name、post、vhea/VHEA、vmtx/VMTX、VORG（[ADR 0016](docs/adr/0016-font-and-vertical-metrics.md)）、BASE（[ADR 0017](docs/adr/0017-base-baselines.md)）を読み、各表の検証器を持つ。
 範囲と実装の順序は [ADR 0001](docs/adr/0001-project-goal-and-scope.md)、クレートの構成は [ADR 0003](docs/adr/0003-crate-layers.md) を参照。
 仕様は [docs/specifications.md](docs/specifications.md) にまとめる。
 FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/) に記録する（最新は [2段階目](docs/benchmarks/2026-11-10-stage2.md)）。
@@ -22,7 +22,7 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-geom`](crates/sofel-geom) | FreeTypeと同じ結果を返す固定小数点の演算と、輪郭を受け渡す `Pen` |
 | [`sofel-unicode`](crates/sofel-unicode) | Unicode 18.0.0の文字の性質（General_Category、Script、正規分解と合成、Vertical_Orientationなど。[ADR 0019](docs/adr/0019-unicode-character-data.md)） |
 | [`sofel-read`](crates/sofel-read) | sfntの表の読み取りと検証。コピーも確保もせず、どの入力でもpanicしない |
-| [`sofel-font`](crates/sofel-font) | フォントを一度だけ読み、グリフの数、文字からグリフへの対応、送り幅、フォント全体と縦書きのメトリクス、名前とグリフ名をHarfBuzzの方針で返し、HarfBuzzと同じ拡大縮小（`HbScale`）をする。PostScript名と `FT_Face` の値はFreeTypeの方針 |
+| [`sofel-font`](crates/sofel-font) | フォントを一度だけ読み、グリフの数、文字からグリフへの対応、送り幅、フォント全体と縦書きのメトリクス、BASEの基準線とその代わりの値、名前とグリフ名をHarfBuzzの方針で返し、HarfBuzzと同じ拡大縮小（`HbScale`）をする。PostScript名と `FT_Face` の値はFreeTypeの方針 |
 | [`sofel-outline`](crates/sofel-outline) | glyfとGLYFの輪郭を、ヒンティングなしでFreeTypeと同じ座標で `Pen` に渡す |
 | [`sofel-raster`](crates/sofel-raster) | FreeTypeのsmoothのラスタライザと同じ計算で、8bitのアンチエイリアスの画像を作る |
 | [`sofel-cli`](crates/sofel-cli) | 小さな道具（`sofel-validate`、`sofel-render`） |
@@ -116,7 +116,7 @@ cargo build --release --manifest-path bench/Cargo.toml --target wasm32-wasip1
 wasmtime run -W exceptions=y --dir target/testdata bench/target/wasm32-wasip1/release/sofel-bench.wasm
 ```
 
-ファジングには、nightlyのツールチェーンと [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) が要る。対象は `cmap`、`metrics`、`font`、`outline`、`os2`、`name`、`post`、`vorg`。
+ファジングには、nightlyのツールチェーンと [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) が要る。対象は `cmap`、`metrics`、`font`、`outline`、`os2`、`name`、`post`、`vorg`、`base`。
 
 ```sh
 cd fuzz
