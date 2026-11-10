@@ -500,9 +500,8 @@ unsigned long long bhb_first_shape(const unsigned char *data, unsigned len, cons
   hb_buffer_destroy(buf);
   hb_font_destroy(font);
   return h;
-/* FreeType: an embedded bitmap glyph loaded with FT_LOAD_DEFAULT at the
- * current size: the sum of its bytes plus its width and rows; -1 when
- * it is not a bitmap. */
+}
+
 /* Loads (COLOR | NO_HINTING | NO_BITMAP | NO_SVG) and renders (NORMAL)
  * a glyph at the current size, COLR version 0 layers blended in palette
  * 0; returns the sum of the bytes of its pixels (4 a pixel for BGRA),
@@ -527,6 +526,9 @@ long bft_colr_render(void *face, unsigned gid)
   return sum;
 }
 
+/* FreeType: an embedded bitmap glyph loaded with FT_LOAD_DEFAULT at the
+ * current size: the sum of its bytes plus its width and rows; -1 when
+ * it is not a bitmap. */
 long bft_sbit(void *face, unsigned gid)
 {
   FT_Face f = (FT_Face)face;
