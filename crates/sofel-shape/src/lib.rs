@@ -33,6 +33,7 @@ mod plan;
 mod props;
 mod scale;
 mod shape;
+mod tables;
 mod tag;
 pub mod unicode;
 mod utf;

@@ -105,7 +105,11 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - `Script::from_iso15924` は、大文字小文字を直し、HarfBuzzの読みかえ（`Aran` などの変種）と、UCDの別名 `Qaai`（Inherited）と `Qaac`（Coptic）を当てる。4文字の英字でなければ `None` とする。
 - Vertical_Orientationは、縦書きの文字列を、正立で組む区間と、横に組んで回す区間に分けるために呼び出し側が使う。区間の分割そのものは範囲の外とする。
 - 表は `tools/gen-unicode/`（ワークスペースの外のRustのパッケージ）が、`scripts/fetch-ucd.sh` で取得したUCDのテキストのファイル（`ucd.lock` でURLとSHA-256を固定）から生成し、コミットする。性質ごとに2段か3段の表とし、分け方（`k2`、`k3` はそれぞれ0〜8）は合計のバイト数が最小のものを選ぶ。表の下限と上限は既定でない値を持つ最初と最後の文字で決める。生成の道具は、書き出すまえに0〜0x10FFFFのすべての文字で詰めた表と元の値の一致を確かめる。入力が同じなら出力は同じバイト列になる。
-- 同じ道具が、記号フォントのcmapの付けかえ（[ADR 0016](adr/0016-font-and-vertical-metrics.md)）に使う、HarfBuzzの `gen-arabic-pua.py` と同じアラビア文字の私用領域の対応の表を `sofel-font` に書く。シェーパーの分類の表（indic、USE、アラビア文字、母音の組）は、`sofel-shape` を作るときに同じ道具で生成する。
+- 同じ道具が、記号フォントのcmapの付けかえ（[ADR 0016](adr/0016-font-and-vertical-metrics.md)）に使う、HarfBuzzの `gen-arabic-pua.py` と同じアラビア文字の私用領域の対応の表を `sofel-font` に書く。同じ道具が、シェーパーの分類の表を `sofel-shape` の `src/tables/` に書く（[ADR 0024](adr/0024-complex-shapers.md) のシェーパーが使う）。HarfBuzz 15.1.0の生成のスクリプトの規則（付けかえ、既定の値、範囲の選び方）を移植し、値の意味はHarfBuzzと揃え、表の形は上の多段の表とする。
+  - `indic.rs` の `indic_categories` は `hb_indic_get_categories`（`gen-indic-table.py`）と同じ値を返す。下位のバイトがindic、khmer、myanmarのシェーパーの分類（番号はHarfBuzzの状態機械の `export` の値）、上位のバイトが位置（`ot_position_t`）である。
+  - `use_.rs` の `use_category` は `hb_use_get_category`（`gen-use-table.py`。Microsoftの `ms-use/` の付けかえを含む）と同じ値を返す。
+  - `arabic.rs` は、`joining_type`（HarfBuzzの表の値そのもので、表に無い文字は `JOINING_TYPE_X` の7）、表示形の表 `SHAPING_TABLE`（`SHAPING_TABLE_FIRST` から `SHAPING_TABLE_LAST` までの各文字の語頭形、語中形、語末形、独立形）、合字の表 `LIGATURE_TABLE`、`LIGATURE_MARK_TABLE`、`LIGATURE_3_TABLE`（1つ目の構成要素と、`(残りの構成要素, 合字)` の並び。HarfBuzzと同じ内容と順で、HarfBuzzの0の詰め物は持たない）、`has_arabic_joining`（`gen-arabic-joining-list.py`。ISO 15924のタグで引く）を持つ。
+  - `vowel_constraints.rs` は、`ms-use/IndicShapingInvalidCluster.txt` の列を1つ目の文字の文字体系ごとにまとめた表と、それを引く `vowel_constraint_match` を持つ。HarfBuzzの生成のスクリプトと同じく、一方が他方の先頭である2つの列は短いほうだけを残す。`vowel_constraint_match(script, cps, i)` は、HarfBuzzの `_hb_preprocess_text_vowel_constraints` の繰り返しが位置 `i` で一致させる列の長さ（2か3）を返す。長さ3の列は `i + 2 < cps.len()` のときだけ一致する。呼び出し側は、一致すれば列の最後の文字の前に U+25CC を挟んで `i + 長さ` へ進み、一致しなければ `cps[i]` を出して `i + 1` へ進む。生成の道具は、HarfBuzzの生成のスクリプトが扱えない形の列の組を、誤りとして止める。
 
 ## 言語と、文字体系と言語のタグ（`sofel-shape`）
 
@@ -324,10 +328,11 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - カラーグリフ、SVGとPDF、GPU、WOFF、検証器、展開器の基準は、それぞれのADRで定める。
 - Unicodeの文字の性質は、CIで `scripts/fetch-ucd.sh` と生成の道具を走らせ、生成したファイルがコミットしたものと一致することを `git diff --exit-code` で確かめる（[ADR 0019](adr/0019-unicode-character-data.md)）。Vertical_Orientationは、`VerticalOrientation.txt` を生成の道具とは別の読み取りで読み、全文字の値の一致を確かめる。
 - Unicodeの文字の性質は、`hb-dump` のファイルを取らない形と比べる（[ADR 0019](adr/0019-unicode-character-data.md)）。期待する失敗の一覧は持たず、1つでも違えば失敗とする。項目は `unicode:<項目>` である。
-  - `hb-dump --unicode` は、0〜0x10FFFFと、0x110000、0x7FFFFFFF、0xFFFFFFFFのすべてについて、`hb_unicode_general_category`、`hb_unicode_combining_class`、`hb_unicode_script`、`hb_unicode_mirroring`、`hb_unicode_decompose`、Extended_Pictographic（`_hb_unicode_is_emoji_Extended_Pictographic`）、indicの分類と位置、USEの分類、アラビア文字の結合の型を1文字1行で書く。続けて、2文字の分解の1つ目の文字（と0、ハングルのL、LVの音節）と2つ目の文字（と0、ハングルのV、T）の直積の組について `hb_unicode_compose` を書く。項目は `general_category`、`combining_class`、`script`、`mirroring`、`decompose`、`extended_pictographic`、`compose`。
+  - `hb-dump --unicode` は、0〜0x10FFFFと、0x110000、0x7FFFFFFF、0xFFFFFFFFのすべてについて、`hb_unicode_general_category`、`hb_unicode_combining_class`、`hb_unicode_script`、`hb_unicode_mirroring`、`hb_unicode_decompose`、Extended_Pictographic（`_hb_unicode_is_emoji_Extended_Pictographic`）、indicの分類と位置、USEの分類、アラビア文字の結合の型を1文字1行で書く。続けて、2文字の分解の1つ目の文字（と0、ハングルのL、LVの音節）と2つ目の文字（と0、ハングルのV、T）の直積の組について `hb_unicode_compose` を書く。項目は `general_category`、`combining_class`、`script`、`mirroring`、`decompose`、`extended_pictographic`、`compose`、`indic`、`use`、`joining`。
   - `hb-dump --arabic-pua` は、0x0000〜0xFFFFについて `_hb_arabic_pua_simp_map` と `_hb_arabic_pua_trad_map` を書く。`sofel-font` の生成した表のファイルを適合テストのクレートに取りこんで比べる（項目 `arabic_pua_simp`、`arabic_pua_trad`）。
   - `hb-dump --vowel-constraints FILE` は、HarfBuzzの `src/ms-use/IndicShapingInvalidCluster.txt` の列の1つ目の文字の文字体系ごとに、その文字体系の列に現れる文字の長さ1〜3の全列について、`_hb_preprocess_text_vowel_constraints` の後の文字の列を書く。
-  - indicの分類と位置、USEの分類、結合の型、母音の組は、まだ比べない。比べる相手の表は `sofel-shape` に置くもので（[ADR 0020](adr/0020-shaping-foundation.md)、[ADR 0024](adr/0024-complex-shapers.md)）、そのクレートとともに比べる。
+  - `sofel-shape` の生成した表のファイル（`src/tables/`）を適合テストのクレートに取りこみ、全文字の `indic_categories`、`use_category`、HarfBuzzの `get_joining_type` と同じく補った結合の型（表がXなら、Mn、Me、CfはT、ほかはU）を比べる（項目 `indic`、`use`、`joining`）。`--vowel-constraints` のすべての行は、`vowel_constraint_match` でHarfBuzzの繰り返しをなぞった結果と比べる（項目 `vowel_constraints`）。
+  - `hb-dump` が書けないアラビア文字の表示形と合字の表、結合する文字体系の一覧は、HarfBuzzの生成したソース（`src/hb-ot-shaper-arabic-table.hh`、`src/hb-ot-shaper-arabic-joining-list.hh`、文字体系のタグは `src/hb-script-list.h`）を読んで比べる（項目 `arabic_shaping_table`、`arabic_ligature_table`、`arabic_ligature_mark_table`、`arabic_ligature_3_table`、`arabic_joining_scripts`）。
 - 文字体系と言語のタグは、`hb-dump --ot-tags`（ファイルを取らない形）と比べる（[ADR 0020](adr/0020-shaping-foundation.md)、`tests/harfbuzz_ot_tags.rs`）。期待する失敗の一覧は持たず、1つでも違えば失敗とする。
   - 文字体系は、HarfBuzzの全符号位置の `hb_unicode_script` の値（`sofel-unicode` の全文字体系と一致することを確かめる）と、`HB_SCRIPT_INVALID`、`Zmth`、`Hrkt` とする。
   - 言語の集まりは、表のすべての言語、曖昧なタグの言語、生成された関数の分岐の言語と、分岐の主たる言語（と `und`、`en`）× なしか分岐のほかの下位タグ × なしか分岐の地域の下位タグ × 私用の部分（なし、`-x-hant-hk-fonipa`、`-u-hk-x-hbsc-latn`）、`test/api/test-ot-tag.c` の言語と境界の例とする。分岐の文字列は、`hb-ot-tag-table.hh` をもう一度取りこみ、4つの比較を記録して失敗する関数に置きかえて走らせ、HarfBuzzのコンパイルされたコードから読む。`tools/gen-ot-tag/` の読んだ分岐と一致することも確かめる。
@@ -359,4 +364,4 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 - sofelはMITとする。FreeTypeのコードを流用する場合はFTLを選び、文書でFreeType Projectを明示する（[ADR 0002](adr/0002-license-and-reuse.md)）。Slugを流用する場合は、READMEにクレジットを載せる。
 - 流用元の著作権表示とライセンスは `THIRD_PARTY_NOTICES.md` に載せ、流用したファイルの先頭に流用元を書く。
-- UCDから生成した表を含む `sofel-unicode` は、Unicode License v3にも従う（`MIT AND Unicode-3.0`）。
+- UCDから生成した表を含む `sofel-unicode` と `sofel-shape` は、Unicode License v3にも従う（`MIT AND Unicode-3.0`）。

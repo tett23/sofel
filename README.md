@@ -114,7 +114,7 @@ sh tools/hb-dump/build.sh
 cargo test --release -p sofel-conformance
 ```
 
-Unicodeの文字の表（`crates/sofel-unicode/src/tables.rs` と `crates/sofel-font/src/tables/arabic_pua.rs`）は生成してコミットする（[ADR 0019](docs/adr/0019-unicode-character-data.md)）。`scripts/fetch-ucd.sh` が `ucd.lock` のUCDのファイルを `target/ucd/` に取得してSHA-256を確かめ、`tools/gen-unicode/` が表を書く。アラビア文字の私用領域の表は、`scripts/fetch-testdata.sh` で取得したHarfBuzzのファイルから作る。CIは作りなおした表とコミットしたものの一致を確かめる。
+Unicodeの文字の表（`crates/sofel-unicode/src/tables.rs`、`crates/sofel-font/src/tables/arabic_pua.rs` と、シェーパーの分類の表 `crates/sofel-shape/src/tables/` の `indic.rs`、`use_.rs`、`arabic.rs`、`vowel_constraints.rs`）は生成してコミットする（[ADR 0019](docs/adr/0019-unicode-character-data.md)）。`scripts/fetch-ucd.sh` が `ucd.lock` のUCDのファイルを `target/ucd/` に取得してSHA-256を確かめ、`tools/gen-unicode/` が表を書く。アラビア文字の私用領域の表と、シェーパーの表のHarfBuzzの入力（Microsoftの `src/ms-use/` と状態機械の番号）は、`scripts/fetch-testdata.sh` で取得したHarfBuzzのファイルから読む。CIは作りなおした表とコミットしたものの一致を確かめる。
 
 ```sh
 sh scripts/fetch-ucd.sh
@@ -159,7 +159,7 @@ cargo +nightly fuzz run cmap -- -max_total_time=60
 
 MIT（[LICENSE](LICENSE)、[ADR 0002](docs/adr/0002-license-and-reuse.md)）。流用したコードの著作権表示は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) に載せる。
 
-Unicode Character Databaseから生成した表を含む `sofel-unicode` は、Unicode License v3にも従う（`MIT AND Unicode-3.0`）。
+Unicode Character Databaseから生成した表を含む `sofel-unicode` と `sofel-shape` は、Unicode License v3にも従う（`MIT AND Unicode-3.0`）。
 
 FreeTypeの計算を移植した部分を含むクレート（`sofel-geom` など）は、FreeType License（FTL）にも従う（`MIT AND FTL`）。FTLの求めにより、次の文を載せる。
 
