@@ -42,6 +42,8 @@
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
+extern crate alloc;
+
 pub use sofel_geom as geom;
 pub use sofel_read as read;
 
@@ -57,6 +59,7 @@ mod name_language;
 mod names;
 pub mod remap;
 mod tables;
+pub mod var;
 
 pub use cff::{Cff, CffError, CffMatrix, CidError, PsFontInfo, Ros, Subfont, fs_type};
 pub use ft::FtFaceMetrics;
@@ -276,6 +279,7 @@ fn has_outline(sfnt: &Sfnt<'_>) -> bool {
 #[derive(Clone, Copy, Debug)]
 pub struct Font<'a> {
     sfnt: Sfnt<'a>,
+    face_index: u32,
     head: Head<'a>,
     num_glyphs: u32,
     metrics: Metrics<'a>,
@@ -589,6 +593,7 @@ impl<'a> Font<'a> {
 
         Ok(Font {
             sfnt,
+            face_index: index,
             head,
             num_glyphs,
             metrics,

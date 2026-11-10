@@ -204,6 +204,45 @@ static void check_declarations(void) {
   for (i = 0; i < COUNT(all); i++) CHECK(all[i] != NULL);
 }
 
+/* -------------------------------------------- variation location ABI */
+
+static void test_variation_abi(const sofel_font_t *font) {
+  sofel_location_t *loc = NULL;
+  sofel_variation_t variation = {0, 0.0f};
+  char text[16] = {0};
+  size_t len = 99;
+  uint32_t index = 0;
+  uint8_t flag = 99;
+  int32_t ft_error = 99;
+
+  CHECK(sofel_variation_parse("wght=500", 8, &variation) == SOFEL_OK);
+  CHECK(variation.tag == SOFEL_TAG('w', 'g', 'h', 't') && variation.value == 500.0f);
+  CHECK(sofel_variation_format(&variation, text, sizeof text, &len) == SOFEL_OK);
+  CHECK(len == 8 && memcmp(text, "wght=500", len + 1) == 0);
+
+  CHECK(sofel_location_create(font, UINT32_MAX, &variation, 1, &loc) == SOFEL_OK);
+  CHECK(loc != NULL);
+  CHECK(sofel_location_coords_normalized(loc, NULL, 0, &len) == SOFEL_OK && len == 0);
+  CHECK(sofel_location_coords_design(loc, NULL, 0, &len) == SOFEL_OK && len == 0);
+  CHECK(sofel_location_ft_coords(loc, NULL, 0, &len) == SOFEL_OK && len == 0);
+  CHECK(sofel_location_ft_design_coords(loc, NULL, 0, &len) == SOFEL_OK && len == 0);
+  CHECK(sofel_location_ft_error(loc, &ft_error) == SOFEL_OK && ft_error == SOFEL_OK);
+  CHECK(sofel_location_named_instance_index(loc, &index) == SOFEL_OK && index == UINT32_MAX);
+  CHECK(sofel_location_hb_nonzero(loc, &flag) == SOFEL_OK && flag == 0);
+  CHECK(sofel_location_ft_default(loc, &flag) == SOFEL_OK && flag == 1);
+  sofel_location_destroy(loc);
+
+  CHECK(sofel_location_create_design(font, NULL, 0, &loc) == SOFEL_OK);
+  sofel_location_destroy(loc);
+  CHECK(sofel_location_create_normalized_2_14(font, NULL, 0, &loc) == SOFEL_OK);
+  sofel_location_destroy(loc);
+  CHECK(sofel_location_create_normalized_16_16(font, NULL, 0, &loc) == SOFEL_OK);
+  sofel_location_destroy(loc);
+  CHECK(sofel_location_create_named_instance(font, 0, &loc) == SOFEL_OK);
+  sofel_location_destroy(loc);
+  sofel_location_destroy(NULL);
+}
+
 /* ----------------------------------------------------- recording pens */
 
 #define MAX_COMMANDS 256
@@ -2603,6 +2642,7 @@ int main(void) {
   sofel_outline_scratch_destroy(scratch);
 
   test_font(font);
+  test_variation_abi(font);
   test_collection();
   test_outlines(font);
   test_raster(font);

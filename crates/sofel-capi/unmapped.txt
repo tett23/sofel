@@ -6,6 +6,14 @@
 
 sofel_font::Font::sfnt Returns a sofel-read view of the table directory; C reads tables with sofel_font_table.
 sofel_font::Font::head Returns a sofel-read view of head; C reads the table with sofel_font_table.
+sofel_font::Font::instance C coordinate-dependent queries pair a font and location argument directly; those queries follow in the ADR 0027 query PR.
+sofel_font::Font::default_instance A NULL location will select the static default in C coordinate-dependent queries in the ADR 0027 query PR.
+sofel_font::var::Arith::* Generic arithmetic policy used internally to evaluate variation tables, without a direct C operation (ADR 0029).
+sofel_font::var::Instance::item_delta Generic variation-table evaluation is an internal building block; the C API will expose coordinate-dependent font values rather than a raw store row (ADR 0029).
+sofel_font::var::Location::default_ref The NULL location argument will represent the static default for C coordinate-dependent queries in the ADR 0027 query PR.
+sofel_font::var::StoreScalars::* Internal cached variation-region coefficients, without a direct C operation (ADR 0029).
+sofel_font::var::map_float Internal avar interpolation helper, without a direct C operation (ADR 0027).
+sofel_font::var::normalize_axis_value Internal fvar normalization helper, without a direct C operation (ADR 0027).
 sofel_geom::Command::apply Replays a recorded Rust Command into a Rust Pen; C pens receive the commands directly.
 sofel_geom::F26Dot6::from_int A multiplication by 64, which C writes as such.
 sofel_geom::float::* Floating-point helpers that Rust crates use to copy HarfBuzz's rounding (ADR 0026); C has floor and its own conversions, and gets HarfBuzz's rounded values from the sofel_* functions.
