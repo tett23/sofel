@@ -296,10 +296,12 @@ enum Format<'a> {
 pub struct Outlines<'a> {
     font: Font<'a>,
     format: Format<'a>,
+    extents: HbExtents<'a>,
 }
 
 impl<'a> Outlines<'a> {
-    /// The outlines of `font`.
+    /// The outlines of `font`. Also builds HarfBuzz's CFF accelerators
+    /// for [`Outlines::glyph_extents`] ([`HbExtents::new`]).
     pub fn new(font: &Font<'a>) -> Outlines<'a> {
         let format = if font.sfnt().version() == u32::from_be_bytes(*b"OTTO") {
             match Cff::new(font) {
@@ -313,7 +315,22 @@ impl<'a> Outlines<'a> {
         Outlines {
             font: *font,
             format,
+            extents: HbExtents::new(font),
         }
+    }
+
+    /// HarfBuzz's glyph box of `glyph`, unscaled
+    /// (`hb_ot_get_glyph_extents` without color and bitmap glyphs, in the
+    /// order VARC (none yet), glyf, CFF2, CFF; ADR 0021). It comes from
+    /// HarfBuzz's own interpreter and may differ from the control box of
+    /// [`Outlines::draw`], which follows FreeType.
+    pub fn glyph_extents(&self, glyph: GlyphId) -> Option<sofel_font::GlyphExtents> {
+        self.extents.glyph_extents(glyph)
+    }
+
+    /// The HarfBuzz glyph boxes this value holds.
+    pub fn hb_extents(&self) -> &HbExtents<'a> {
+        &self.extents
     }
 
     /// The font.

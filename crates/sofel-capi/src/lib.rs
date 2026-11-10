@@ -21,9 +21,9 @@ use sofel_cli::glyph::RenderError;
 use sofel_font::read::os2::Os2;
 use sofel_font::read::sfnt::FontFile;
 use sofel_font::read::{DetailValue, Diagnostic, GlyphId, Severity, Tag, validate};
-use sofel_font::{Direction, Font, FontError, GlyphExtents, HbScale, MetricsTag};
+use sofel_font::{Cff, CidError, Direction, Font, FontError, GlyphExtents, HbScale, MetricsTag};
 use sofel_geom::{Fixed, Matrix, Pen, Point};
-use sofel_outline::{HbExtents, OutlineError, OutlineInfo, Scale, Scratch};
+use sofel_outline::{OutlineError, OutlineInfo, Outlines, Scale, Scratch};
 use sofel_raster::{Bitmap, FillRule, PixelBox, RasterError, Rasterizer, RenderOptions};
 
 /// `SOFEL_VERSION_MAJOR`.
@@ -59,13 +59,19 @@ pub const ERROR_TOO_LARGE: i32 = -10;
 pub const ERROR_BUFFER_TOO_SMALL: i32 = -11;
 /// `SOFEL_ERROR_INVALID_ARGUMENT`.
 pub const ERROR_INVALID_ARGUMENT: i32 = -12;
+/// `SOFEL_ERROR_INVALID_CFF`.
+pub const ERROR_INVALID_CFF: i32 = -13;
 
 /// `sofel_font_t`: a font over data the caller keeps alive, with
 /// HarfBuzz's CFF and CFF2 accelerators for its glyph boxes (ADR 0021),
 /// built once at creation (a broken CFF only leaves them out).
 pub struct SofelFont {
     font: Font<'static>,
-    extents: HbExtents<'static>,
+    /// The outline format, the opened CFF and HarfBuzz's glyph boxes
+    /// (ADR 0021); a broken CFF does not fail the font.
+    outlines: Outlines<'static>,
+    /// FreeType's CFF view, when FreeType can open the face as CFF.
+    cff: Option<Cff<'static>>,
 }
 
 /// `sofel_outline_scratch_t`.
@@ -197,6 +203,7 @@ fn error_text(error: i32) -> &'static core::ffi::CStr {
         ERROR_TOO_LARGE => c"bitmap too large",
         ERROR_BUFFER_TOO_SMALL => c"buffer too small",
         ERROR_INVALID_ARGUMENT => c"invalid argument",
+        ERROR_INVALID_CFF => c"invalid CFF table or no CFF",
         _ => c"unknown error",
     }
 }
@@ -221,6 +228,9 @@ fn outline_error(e: OutlineError) -> i32 {
         OutlineError::NoGlyphData => ERROR_NO_GLYPH_DATA,
         OutlineError::InvalidOutline => ERROR_INVALID_OUTLINE,
         OutlineError::InvalidComposite => ERROR_INVALID_COMPOSITE,
+        OutlineError::UnsupportedFormat => ERROR_NO_GLYPH_DATA,
+        OutlineError::InvalidCff => ERROR_INVALID_CFF,
+        OutlineError::InvalidCharString => ERROR_INVALID_OUTLINE,
     }
 }
 
@@ -298,8 +308,13 @@ pub extern "C" fn sofel_vector_length(x: i32, y: i32) -> i32 {
 
 fn font_create(data: Option<&'static [u8]>, index: u32) -> Result<SofelFont, i32> {
     let font = Font::new(some(data)?, index).map_err(font_error)?;
-    let extents = HbExtents::new(&font);
-    Ok(SofelFont { font, extents })
+    let outlines = Outlines::new(&font);
+    let cff = outlines.cff().copied();
+    Ok(SofelFont {
+        font,
+        outlines,
+        cff,
+    })
 }
 
 /// `sofel_font_create`.
@@ -632,7 +647,7 @@ fn extents4(e: GlyphExtents) -> [i32; 4] {
 /// The box of a glyph for the queries that need one: glyf, CFF2 and CFF
 /// (ADR 0021; the color glyphs of ADR 0023 come later).
 fn glyph_box<'f>(font: &'f SofelFont) -> impl Fn(GlyphId) -> Option<GlyphExtents> + 'f {
-    |g| font.extents.glyph_extents(g)
+    |g| font.outlines.glyph_extents(g)
 }
 
 /// The scale of a `sofel_scale_t` pointer, or the default scale of the
@@ -743,7 +758,7 @@ pub unsafe extern "C" fn sofel_font_glyph_extents(
     let (font, extents) = unsafe { (sofel_ref(font), ints::<4>(extents)) };
     status(font.ok_or(ERROR_NULL).and_then(|sf| {
         find(Some(&sf.font), extents, |_| {
-            sf.extents.glyph_extents(GlyphId(glyph)).map(extents4)
+            sf.outlines.glyph_extents(GlyphId(glyph)).map(extents4)
         })
     }))
 }
@@ -1040,7 +1055,8 @@ pub unsafe extern "C" fn sofel_scale_glyph_extents_of(
     // SAFETY: the caller's conditions.
     let (scale, font, extents) = unsafe { (r(scale), sofel_ref(font), ints::<4>(extents)) };
     status(scaled(scale, font, extents, |s, f| {
-        f.extents
+        f.outlines
+            .hb_extents()
             .scaled_glyph_extents(GlyphId(glyph), s)
             .map(extents4)
     }))
@@ -1479,7 +1495,9 @@ pub unsafe extern "C" fn sofel_font_glyph_name(
     // SAFETY: the caller's conditions.
     let (font, name, len) = unsafe { (sofel_ref(font), w(name), w(len)) };
     status(some(font).and_then(|f| {
-        let n = f.font.glyph_name_with(GlyphId(glyph), f.extents.cff1());
+        let n = f
+            .font
+            .glyph_name_with(GlyphId(glyph), f.outlines.hb_extents().cff1());
         glyph_name_out(n, name, len)
     }))
 }
@@ -1654,6 +1672,203 @@ pub unsafe extern "C" fn sofel_font_ft_v_advance(
     })())
 }
 
+// ---------------------------------------------------------------- CFF
+
+/// `sofel_font_is_cff`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_is_cff(font: *const SofelFont) -> i32 {
+    // SAFETY: the caller's conditions.
+    unsafe { font_ref(font) }.map_or(0, |f| i32::from(f.is_cff()))
+}
+
+/// `sofel_font_is_cff2`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_is_cff2(font: *const SofelFont) -> i32 {
+    // SAFETY: the caller's conditions.
+    unsafe { font_ref(font) }.map_or(0, |f| i32::from(f.is_cff2()))
+}
+
+fn cff_of(font: Option<&SofelFont>) -> Result<&Cff<'static>, i32> {
+    some(font)?.cff.as_ref().ok_or(ERROR_INVALID_CFF)
+}
+
+fn cid_error(_: CidError) -> i32 {
+    ERROR_INVALID_ARGUMENT
+}
+
+/// `sofel_font_is_cid_keyed`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `out` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_is_cid_keyed(font: *const SofelFont, out: *mut i32) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, out) = unsafe { (sofel_ref(font), w(out)) };
+    status((|| {
+        let out = some(out)?;
+        *out = i32::from(cff_of(font)?.is_cid_keyed());
+        Ok(())
+    })())
+}
+
+/// `sofel_font_cid`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `cid` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_cid(font: *const SofelFont, glyph: u32, cid: *mut u32) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, cid) = unsafe { (sofel_ref(font), w(cid)) };
+    status((|| {
+        let cid = some(cid)?;
+        *cid = 0;
+        *cid = cff_of(font)?.cid(GlyphId(glyph)).map_err(cid_error)?;
+        Ok(())
+    })())
+}
+
+/// Writes `s` cut at its first 0 byte, with a terminating 0, into `out`.
+fn c_string(s: Option<&[u8]>, out: &mut [u8]) -> Status {
+    let s = s.unwrap_or_default();
+    let s = s.split(|&b| b == 0).next().unwrap_or_default();
+    let dst = out.get_mut(..=s.len()).ok_or(ERROR_BUFFER_TOO_SMALL)?;
+    let (body, end) = dst.split_at_mut(s.len());
+    body.copy_from_slice(s);
+    if let Some(e) = end.first_mut() {
+        *e = 0;
+    }
+    Ok(())
+}
+
+/// `sofel_font_ros`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `registry` and `ordering` are NULL or
+/// writable for their capacities; `supplement` and `present` are NULL or
+/// writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_ros(
+    font: *const SofelFont,
+    registry: *mut u8,
+    registry_capacity: usize,
+    ordering: *mut u8,
+    ordering_capacity: usize,
+    supplement: *mut i32,
+    present: *mut u32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, reg, ord, sup, present) = unsafe {
+        (
+            sofel_ref(font),
+            out_array(registry, registry_capacity),
+            out_array(ordering, ordering_capacity),
+            w(supplement),
+            w(present),
+        )
+    };
+    status((|| {
+        let (reg, ord, sup, present) = (some(reg)?, some(ord)?, some(sup)?, some(present)?);
+        let r = cff_of(font)?.ros().map_err(cid_error)?;
+        c_string(r.registry, reg)?;
+        c_string(r.ordering, ord)?;
+        *sup = r.supplement;
+        *present = u32::from(r.registry.is_some()) | (u32::from(r.ordering.is_some()) << 1);
+        Ok(())
+    })())
+}
+
+/// `sofel_font_ps_font_info`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `values` is NULL or writable for 4
+/// integers, `offsets` for 5; `strings` is NULL or writable for
+/// `capacity` bytes; `len` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_ps_font_info(
+    font: *const SofelFont,
+    values: *mut i64,
+    strings: *mut u8,
+    capacity: usize,
+    offsets: *mut usize,
+    len: *mut usize,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, values, strings, offsets, len) = unsafe {
+        (
+            sofel_ref(font),
+            values.cast::<[i64; 4]>().as_mut(),
+            out_array(strings, capacity),
+            offsets.cast::<[usize; 5]>().as_mut(),
+            w(len),
+        )
+    };
+    status((|| {
+        let (values, strings, offsets, len) =
+            (some(values)?, some(strings)?, some(offsets)?, some(len)?);
+        let i = cff_of(font)?
+            .ps_font_info()
+            .map_err(|_| ERROR_INVALID_ARGUMENT)?;
+        let parts = [i.version, i.notice, i.full_name, i.family_name, i.weight];
+        let cut = |s: &'static [u8]| s.split(|&b| b == 0).next().unwrap_or_default();
+        let needed = parts
+            .iter()
+            .flatten()
+            .map(|s| cut(s).len().saturating_add(1))
+            .fold(0usize, usize::saturating_add);
+        *len = needed;
+        if needed > strings.len() {
+            return Err(ERROR_BUFFER_TOO_SMALL);
+        }
+        let mut at = 0usize;
+        for (slot, p) in offsets.iter_mut().zip(parts) {
+            match p {
+                None => *slot = usize::MAX,
+                Some(s) => {
+                    *slot = at;
+                    let rest = strings.get_mut(at..).ok_or(ERROR_BUFFER_TOO_SMALL)?;
+                    c_string(Some(s), rest)?;
+                    at = at.saturating_add(cut(s).len()).saturating_add(1);
+                }
+            }
+        }
+        *values = [
+            i.italic_angle,
+            i64::from(i.is_fixed_pitch),
+            i64::from(i.underline_position),
+            i64::from(i.underline_thickness),
+        ];
+        Ok(())
+    })())
+}
+
+/// `sofel_font_ps_fs_type`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `fs_type` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_ps_fs_type(font: *const SofelFont, fs_type: *mut u16) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, fs_type) = unsafe { (sofel_ref(font), w(fs_type)) };
+    status((|| {
+        let out = some(fs_type)?;
+        *out = cff_of(font)?.ps_fs_type();
+        Ok(())
+    })())
+}
+
 // ------------------------------------------------------------ outlines
 
 /// The C pen functions as a [`Pen`].
@@ -1777,7 +1992,7 @@ fn put_info(info: OutlineInfo, cbox: &mut [i32; 4], overlap: &mut u32) {
 }
 
 fn outline_load(
-    font: Option<&Font<'_>>,
+    font: Option<&SofelFont>,
     glyph: u32,
     scale: Result<Scale, i32>,
     scratch: Option<&mut SofelOutlineScratch>,
@@ -1785,7 +2000,9 @@ fn outline_load(
     overlap: Option<&mut u32>,
 ) -> Status {
     let (font, scratch, cbox, overlap) = (some(font)?, some(scratch)?, some(cbox)?, some(overlap)?);
-    let info = sofel_outline::load(font, GlyphId(glyph), scale?, &mut scratch.scratch)
+    let info = font
+        .outlines
+        .load(GlyphId(glyph), scale?, &mut scratch.scratch)
         .map_err(outline_error)?;
     put_info(info, cbox, overlap);
     Ok(())
@@ -1811,7 +2028,7 @@ pub unsafe extern "C" fn sofel_outline_load(
 ) -> i32 {
     // SAFETY: the caller's conditions.
     let (font, scratch, cbox, overlap) =
-        unsafe { (font_ref(font), w(scratch), ints::<4>(cbox), w(overlap)) };
+        unsafe { (r(font), w(scratch), ints::<4>(cbox), w(overlap)) };
     status(outline_load(
         font,
         glyph,
@@ -1866,7 +2083,7 @@ pub unsafe extern "C" fn sofel_outline_decompose(
 }
 
 fn outline_draw(
-    font: Option<&Font<'_>>,
+    font: Option<&SofelFont>,
     glyph: u32,
     scale: Result<Scale, i32>,
     scratch: Option<&mut SofelOutlineScratch>,
@@ -1876,7 +2093,9 @@ fn outline_draw(
 ) -> Status {
     let (font, scratch, cbox, overlap) = (some(font)?, some(scratch)?, some(cbox)?, some(overlap)?);
     let (scale, mut pen) = (scale?, pen?);
-    let info = sofel_outline::draw(font, GlyphId(glyph), scale, &mut scratch.scratch, &mut pen)
+    let info = font
+        .outlines
+        .draw(GlyphId(glyph), scale, &mut scratch.scratch, &mut pen)
         .map_err(outline_error)?;
     put_info(info, cbox, overlap);
     Ok(())
@@ -1906,7 +2125,7 @@ pub unsafe extern "C" fn sofel_outline_draw(
 ) -> i32 {
     // SAFETY: the caller's conditions.
     let (font, scratch, cbox, overlap) =
-        unsafe { (font_ref(font), w(scratch), ints::<4>(cbox), w(overlap)) };
+        unsafe { (r(font), w(scratch), ints::<4>(cbox), w(overlap)) };
     let pen = CPen::new(move_to, line_to, quad_to, cubic_to, close, user);
     status(outline_draw(
         font,
@@ -2235,7 +2454,7 @@ pub unsafe extern "C" fn sofel_rasterizer_render_placed(
 }
 
 fn render_glyph(
-    font: Option<&Font<'_>>,
+    font: Option<&SofelFont>,
     glyph: u32,
     ppem: u16,
     scratch: Option<&mut SofelOutlineScratch>,
@@ -2245,7 +2464,7 @@ fn render_glyph(
     let (font, scratch, r) = (some(font)?, some(scratch)?, some(rasterizer)?);
     out.check()?;
     let bitmap = sofel_cli::glyph::render(
-        font,
+        &font.outlines,
         GlyphId(glyph),
         ppem,
         &mut scratch.scratch,
@@ -2280,7 +2499,7 @@ pub unsafe extern "C" fn sofel_render_glyph(
     // SAFETY: the caller's conditions.
     let (font, scratch, rasterizer, pixels, len, b) = unsafe {
         (
-            font_ref(font),
+            r(font),
             w(scratch),
             w(rasterizer),
             out_array(pixels, capacity),

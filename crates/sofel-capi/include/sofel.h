@@ -89,6 +89,8 @@ uint32_t sofel_version(void);
 #define SOFEL_ERROR_BUFFER_TOO_SMALL (-11)
 /* An argument has a value outside the ones listed for it. */
 #define SOFEL_ERROR_INVALID_ARGUMENT (-12)
+/* The font has no CFF or CFF2 table FreeType can open (ADR 0021). */
+#define SOFEL_ERROR_INVALID_CFF (-13)
 
 /*
  * A short English description of an error number, as a static
@@ -184,7 +186,7 @@ typedef struct sofel_font sofel_font_t;
  * accelerators for its glyph boxes (ADR 0021); a broken CFF only leaves
  * them out.
  *
- * Rust: sofel_font::Font::new, sofel_outline::HbExtents::new
+ * Rust: sofel_font::Font::new, sofel_outline::HbExtents::new, sofel_outline::Outlines::new, sofel_font::Cff::new
  * HarfBuzz: hb_blob_create (HB_MEMORY_MODE_READONLY), hb_face_create, hb_font_create
  * FreeType: FT_New_Memory_Face
  */
@@ -405,7 +407,7 @@ int32_t sofel_font_v_origin(const sofel_font_t *font, uint32_t glyph, int32_t or
  * HarfBuzz gives it from glyf, else CFF2, else CFF (ADR 0021); color
  * glyphs come with ADR 0023.
  *
- * Rust: sofel_outline::HbExtents::glyph_extents, sofel_font::Font::glyf_extents
+ * Rust: sofel_outline::HbExtents::glyph_extents, sofel_outline::Outlines::glyph_extents, sofel_font::Font::glyf_extents
  * HarfBuzz: hb_font_get_glyph_extents
  * FreeType: none (FT_Outline_Get_CBox of the loaded outline)
  */
@@ -871,6 +873,93 @@ typedef void (*sofel_close_func_t)(void *user);
 /* Multiply by the 16.16 x and y scales, giving 26.6 coordinates. */
 #define SOFEL_SCALE_FIXED 1
 
+
+/*
+ * CFF and CFF2 (ADR 0021). The font keeps the CFF opened when it is
+ * created; a CFF that FreeType cannot open does not fail the font, but
+ * the functions below then return SOFEL_ERROR_INVALID_CFF.
+ */
+
+/*
+ * 1 when the font has a `CFF ` table of non-zero length (cut at the end
+ * of the file), else 0 (also for NULL).
+ *
+ * Rust: sofel_font::Font::is_cff
+ * HarfBuzz: hb_face_reference_table
+ * FreeType: none
+ */
+int32_t sofel_font_is_cff(const sofel_font_t *font);
+
+/*
+ * 1 when the font has a `CFF2` table of non-zero length, else 0.
+ *
+ * Rust: sofel_font::Font::is_cff2
+ * HarfBuzz: hb_face_reference_table
+ * FreeType: none
+ */
+int32_t sofel_font_is_cff2(const sofel_font_t *font);
+
+/*
+ * 1 in *out when the CFF font is CID-keyed (has ROS), else 0.
+ *
+ * Rust: sofel_font::Cff::new, sofel_font::Cff::is_cid_keyed
+ * HarfBuzz: none
+ * FreeType: FT_Get_CID_Is_Internally_CID_Keyed
+ */
+int32_t sofel_font_is_cid_keyed(const sofel_font_t *font, int32_t *out);
+
+/*
+ * The CID of a glyph (the charset value). SOFEL_ERROR_INVALID_ARGUMENT
+ * when the font is not CID-keyed or the glyph id is not below the
+ * CharStrings count; *cid is 0 then, as in FreeType.
+ *
+ * Rust: sofel_font::Cff::cid
+ * HarfBuzz: none
+ * FreeType: FT_Get_CID_From_Glyph_Index
+ */
+int32_t sofel_font_cid(const sofel_font_t *font, uint32_t glyph, uint32_t *cid);
+
+/*
+ * The registry and ordering, written as NUL-terminated strings cut at
+ * their first 0 byte, and the supplement. A string FreeType gives as
+ * NULL is written empty, with its bit (1 registry, 2 ordering) clear in
+ * *present. SOFEL_ERROR_INVALID_ARGUMENT when the font is not CID-keyed;
+ * SOFEL_ERROR_BUFFER_TOO_SMALL when a string does not fit.
+ *
+ * Rust: sofel_font::Cff::ros
+ * HarfBuzz: none
+ * FreeType: FT_Get_CID_Registry_Ordering_Supplement
+ */
+int32_t sofel_font_ros(const sofel_font_t *font, char *registry, size_t registry_capacity,
+                       char *ordering, size_t ordering_capacity, int32_t *supplement,
+                       uint32_t *present);
+
+/*
+ * The PostScript font information: values = italic angle (16.16),
+ * isFixedPitch, underline position and thickness; the strings version,
+ * notice, full name, family name and weight, each NUL-terminated and
+ * cut at its first 0 byte, one after the other in `strings`, with their
+ * starts in offsets[0..4] (SIZE_MAX for a NULL string). *len is the
+ * number of bytes the strings need; SOFEL_ERROR_BUFFER_TOO_SMALL when
+ * `capacity` is less. SOFEL_ERROR_INVALID_ARGUMENT for CFF2.
+ *
+ * Rust: sofel_font::Cff::ps_font_info
+ * HarfBuzz: none
+ * FreeType: FT_Get_PS_Font_Info
+ */
+int32_t sofel_font_ps_font_info(const sofel_font_t *font, int64_t values[4], char *strings,
+                                size_t capacity, size_t offsets[5], size_t *len);
+
+/*
+ * The fs_type of the CFF PostScript string (`/FSType <n> def`), 0 when
+ * there is none.
+ *
+ * Rust: sofel_font::Cff::ps_fs_type
+ * HarfBuzz: none
+ * FreeType: FT_Get_PS_Font_Extra (fs_type)
+ */
+int32_t sofel_font_ps_fs_type(const sofel_font_t *font, uint16_t *fs_type);
+
 /*
  * The work area of the outline functions: the points of the last loaded
  * glyph. Owned by the caller; one per thread, reused across glyphs.
@@ -918,7 +1007,7 @@ int32_t sofel_outline_pixel_scale(const sofel_font_t *font, uint16_t x_ppem,
  * SOFEL_ERROR_INVALID_OUTLINE, SOFEL_ERROR_INVALID_COMPOSITE,
  * SOFEL_ERROR_INVALID_ARGUMENT (mode).
  *
- * Rust: sofel_outline::load
+ * Rust: sofel_outline::load, sofel_outline::Outlines::load
  * HarfBuzz: none
  * FreeType: FT_Load_Glyph (FT_LOAD_NO_HINTING), FT_Outline_Get_CBox
  */
@@ -947,7 +1036,7 @@ int32_t sofel_outline_decompose(const sofel_outline_scratch_t *scratch, int32_t 
  * sofel_outline_load followed by sofel_outline_decompose with no offset:
  * draws a glyph into the pen. Commands sent before an error stay sent.
  *
- * Rust: sofel_outline::draw
+ * Rust: sofel_outline::draw, sofel_outline::Outlines::draw
  * HarfBuzz: hb_font_draw_glyph
  * FreeType: FT_Load_Glyph (FT_LOAD_NO_HINTING), FT_Outline_Decompose
  */

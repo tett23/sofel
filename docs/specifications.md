@@ -171,6 +171,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 可変長の出力（画像、文字列）は呼び出し側の配列に書く。足りなければ要る長さを書き、配列には何も書かず `SOFEL_ERROR_BUFFER_TOO_SMALL` を返す（`snprintf` と同じ形）。
 - 輪郭はCの関数ポインタ（`move_to`、`line_to`、`quad_to`、`cubic_to`、`close` と `void *user`）で受け取る。検証の結果は、1件ずつ関数ポインタに `sofel_diagnostic_t` で渡す。
 - ヘッダの各関数の説明に、対応するRustの関数（`Rust:`）と、相当するHarfBuzzとFreeTypeの関数を書く。`scripts/check-capi.sh` が、ライブラリのクレートの公開の関数（rustdocのJSONの出力から `scripts/public-api.sh` で求める）がすべてヘッダの `Rust:` の行か除外の一覧（`crates/sofel-capi/unmapped.txt`、理由つき）にあることを確かめる。ライブラリに公開の機能を足すADRは、同じプルリクエストでC ABIの関数とヘッダとCのテストも足す。
+- CFFとCFF2（[ADR 0021](adr/0021-cff-outlines.md)）：`sofel_font_t` は作るときに `Outlines`（`Cff::new` の結果とHarfBuzzの箱の値）を持ち、CFFが壊れていてもフォントの作成は失敗しない。輪郭とラスタライズの関数はそれでCFFとCFF2も描く。`sofel_font_is_cff`、`is_cff2`（1か0）、`sofel_font_is_cid_keyed`、`sofel_font_cid`（誤りのとき `*cid` は0）、`sofel_font_ros`（NUL終端で最初のNULで切った文字列、NULLの文字列は空にして `present` のビットで区別）、`sofel_font_ps_font_info`（数の配列と、呼び出し側の配列に並べた文字列とその位置。NULLは `SIZE_MAX`）、`sofel_font_ps_fs_type` を持つ。FreeTypeが開けないCFFには `SOFEL_ERROR_INVALID_CFF`、FreeTypeの `Invalid_Argument` には `SOFEL_ERROR_INVALID_ARGUMENT` を返す。
 - `SOFEL_VERSION_MAJOR` などのマクロと `sofel_version()` を持つ。1.0.0までABIの互換を約束しない。
 - Cのテスト（`crates/sofel-capi/tests/c/`）は `scripts/test-capi.sh` で、ネイティブ、ThreadSanitizer、AddressSanitizer、wasm32-wasip1（wasi-sdkとwasmtime）で走らせる。期待値は、`crates/sofel-capi/tests/fixture.rs` がRustのAPIで求めて `fixture.h` に書く。静的ライブラリの `sofel_` のシンボルとヘッダの関数の一致も確かめる。wasmでは、リンクに例外処理（`-lsetjmp`）もC++の実行時ライブラリも要らない。
 
