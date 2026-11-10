@@ -481,7 +481,7 @@ let buffer = glyphs.into_unicode();
 - CFFのフォントやカラーグリフでは、`sofel_outline` の箱を `shape_with_extents` に渡す（フォールバックのマークの配置と縦書きの原点に使う）。
 - シェーピングは、cmapを `Font::nominal_glyph_raw` と `variation_glyph_raw`（HarfBuzzの `hb_font_get_nominal_glyph` と同じく、グリフの数以上のIDも返し、フォーマット2と8は引かない）で引く。
 - `hb-shape` と同じ道具は `sofel-cli` の `sofel-shape` で、`sofel_cli::shape::run_with_input` をライブラリからも呼べる（[README](../README.md)）。
-- [ADR 0024](adr/0024-complex-shapers.md) のシェーパー（アラビア文字、インド系文字など）は、まだdefaultの手順で処理する。`ShapePlan::shaper` はHarfBuzzが選ぶシェーパーを返す。
+- [ADR 0024](adr/0024-complex-shapers.md) のシェーパー（アラビア文字、インド系文字、USEなど）は、HarfBuzzと同じ規則で処理する。`ShapePlan::shaper` はHarfBuzzが選ぶシェーパーを返す。
 
 ## サブセット化する（`sofel-subset`）
 
