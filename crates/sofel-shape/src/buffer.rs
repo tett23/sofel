@@ -90,6 +90,7 @@ pub enum ClusterLevel {
     Graphemes,
 }
 
+#[allow(dead_code)] // Some items serve the shapers of ADR 0024.
 impl ClusterLevel {
     /// `HB_BUFFER_CLUSTER_LEVEL_IS_MONOTONE`.
     pub(crate) fn is_monotone(self) -> bool {
@@ -147,6 +148,7 @@ pub(crate) mod gprops {
     pub(crate) const BASE_GLYPH: u16 = 0x02;
     pub(crate) const LIGATURE: u16 = 0x04;
     pub(crate) const MARK: u16 = 0x08;
+    #[allow(dead_code)]
     pub(crate) const CLASS_MASK: u16 = BASE_GLYPH | LIGATURE | MARK;
     pub(crate) const SUBSTITUTED: u16 = 0x10;
     pub(crate) const LIGATED: u16 = 0x20;
@@ -210,6 +212,7 @@ pub(crate) struct Pos {
     pub(crate) attach_type: u8,
 }
 
+#[allow(dead_code)] // Some items serve the shapers of ADR 0024.
 impl Info {
     /// The general category (`_hb_glyph_info_get_general_category`).
     pub(crate) fn general_category(&self) -> GeneralCategory {
@@ -487,6 +490,7 @@ impl Default for Buffer {
     }
 }
 
+#[allow(dead_code)] // Some items serve the shapers of ADR 0024.
 impl Buffer {
     pub(crate) fn new() -> Buffer {
         Buffer {
@@ -1577,6 +1581,7 @@ impl Buffer {
 }
 
 /// `HB_MAX_SYLLABLE_LENGTH`.
+#[allow(dead_code)] // Some items serve the shapers of ADR 0024.
 pub(crate) const MAX_SYLLABLE_LENGTH: usize = 64;
 
 /// Text to shape (`hb_buffer_t` holding Unicode): characters with their

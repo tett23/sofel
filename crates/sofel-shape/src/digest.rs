@@ -15,6 +15,7 @@ pub(crate) struct Digest {
     masks: [u64; 3],
 }
 
+#[allow(dead_code)] // Some items serve the shapers of ADR 0024.
 impl Digest {
     /// A digest that may have every glyph.
     pub(crate) fn full() -> Digest {

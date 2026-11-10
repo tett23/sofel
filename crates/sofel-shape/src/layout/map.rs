@@ -77,6 +77,7 @@ pub(crate) struct StageMap {
 
 /// `hb_ot_map_t`.
 #[derive(Clone, Debug, Default)]
+#[allow(dead_code)] // Some items serve the shapers of ADR 0024.
 pub(crate) struct Map {
     pub(crate) global_mask: Mask,
     /// Sorted by tag.
@@ -87,6 +88,7 @@ pub(crate) struct Map {
     pub(crate) found_script: [bool; 2],
 }
 
+#[allow(dead_code)] // Some items serve the shapers of ADR 0024.
 impl Map {
     fn feature(&self, tag: Tag) -> Option<&FeatureMap> {
         self.features
@@ -154,6 +156,7 @@ fn bit_storage(v: u32) -> u32 {
     32u32.saturating_sub(v.leading_zeros())
 }
 
+#[allow(dead_code)] // Some items serve the shapers of ADR 0024.
 impl<'l, 'a> MapBuilder<'l, 'a> {
     /// The builder for the script and language tags (in preference
     /// order) of the segment.
@@ -363,17 +366,24 @@ impl<'l, 'a> MapBuilder<'l, 'a> {
             }
             let mut found = false;
             let mut feature_index = [None, None];
-            for t in [GSUB, GPOS] {
-                if required[t].1 == Some(info.tag) {
-                    required_stage[t] = info.stage[t];
+            for (((req, stage), (index, map)), info_stage) in required
+                .iter()
+                .zip(required_stage.iter_mut())
+                .zip(feature_index.iter_mut().zip(feature_indices.iter()))
+                .zip(info.stage)
+            {
+                if req.1 == Some(info.tag) {
+                    *stage = info_stage;
                 }
-                feature_index[t] = feature_indices[t].get(&info.tag).copied();
-                found |= feature_index[t].is_some();
+                *index = map.get(&info.tag).copied();
+                found |= index.is_some();
             }
             if !found && info.flags & flags::GLOBAL_SEARCH != 0 {
-                feature_index[GSUB] = self.layout.gsub.find_feature(info.tag);
-                feature_index[GPOS] = self.layout.gpos.find_feature(info.tag);
-                found = feature_index[GSUB].is_some() || feature_index[GPOS].is_some();
+                feature_index = [
+                    self.layout.gsub.find_feature(info.tag),
+                    self.layout.gpos.find_feature(info.tag),
+                ];
+                found = feature_index.iter().any(Option::is_some);
             }
             if !found && info.flags & flags::HAS_FALLBACK == 0 {
                 continue;
@@ -404,7 +414,7 @@ impl<'l, 'a> MapBuilder<'l, 'a> {
             });
         }
         if self.is_simple {
-            m.features.sort_by(|a, b| a.tag.cmp(&b.tag));
+            m.features.sort_by_key(|f| f.tag);
         }
 
         self.add_gsub_pause(None);
@@ -413,8 +423,13 @@ impl<'l, 'a> MapBuilder<'l, 'a> {
         for t in [GSUB, GPOS] {
             let mut stage_index = 0usize;
             let mut last_num_lookups = 0usize;
-            for stage in 0..self.current_stage[t] {
-                if let (Some(index), true) = (required[t].0, required_stage[t] == stage) {
+            let (req, req_stage) = (
+                required.get(t).and_then(|r| r.0),
+                required_stage.get(t).copied().unwrap_or(0),
+            );
+            let current = self.current_stage.get(t).copied().unwrap_or(0);
+            for stage in 0..current {
+                if let (Some(index), true) = (req, req_stage == stage) {
                     self.add_lookups(
                         &mut m,
                         t,
@@ -428,11 +443,14 @@ impl<'l, 'a> MapBuilder<'l, 'a> {
                     );
                 }
                 let features = m.features.clone();
-                for f in features.iter().filter(|f| f.stage[t] == stage) {
+                for f in features
+                    .iter()
+                    .filter(|f| f.stage.get(t).copied() == Some(stage))
+                {
                     self.add_lookups(
                         &mut m,
                         t,
-                        f.index[t],
+                        f.index.get(t).copied().flatten(),
                         f.mask,
                         f.auto_zwnj,
                         f.auto_zwj,
@@ -461,7 +479,7 @@ impl<'l, 'a> MapBuilder<'l, 'a> {
                     }
                     last_num_lookups = lookups.len();
                 }
-                if let Some(s) = self.stages[t].get(stage_index)
+                if let Some(s) = self.stages.get(t).and_then(|v| v.get(stage_index))
                     && s.index == stage
                 {
                     if let Some(stages) = m.stages.get_mut(t) {

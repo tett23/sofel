@@ -106,8 +106,9 @@ pub fn diff(
     if a.len() != b.len() || a.is_empty() {
         return r;
     }
-    let far =
-        |x: i32, y: i32| (i64::from(x) - i64::from(y)).unsigned_abs() > u64::from(position_fuzz);
+    let far = |x: i32, y: i32| {
+        i64::from(x).wrapping_sub(i64::from(y)).unsigned_abs() > u64::from(position_fuzz)
+    };
     if buffer
         .glyph_positions()
         .iter()

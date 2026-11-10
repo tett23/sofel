@@ -69,6 +69,7 @@ pub(crate) enum Skip {
 
 /// `match_t` of the iterator.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[allow(clippy::enum_variant_names)]
 pub(crate) enum Match {
     Match,
     NotMatch,
@@ -559,9 +560,7 @@ pub(crate) fn match_input<'a>(
     let mut ligbase = LigBase::NotChecked;
     let mut total: u32 = 0;
     for i in 1..count {
-        if let Err(unsafe_to) = c.iter_next(Which::Input) {
-            return Err(unsafe_to);
-        }
+        c.iter_next(Which::Input)?;
         let at = c.iter_input.idx;
         c.set_match_position(i, at);
         let this = c.buffer.info[at];

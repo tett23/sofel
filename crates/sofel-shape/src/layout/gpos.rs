@@ -676,7 +676,7 @@ fn apply_cursive(
             }
         }
         let parent_chain = pos.get(parent).map_or(0, |p| p.attach_chain);
-        if i32::from(parent_chain) == -i32::from(ch)
+        if i32::from(parent_chain) == i32::from(ch).wrapping_neg()
             && let Some(p) = pos.get_mut(parent)
         {
             p.attach_chain = 0;

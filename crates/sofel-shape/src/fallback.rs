@@ -55,7 +55,7 @@ fn recategorize_combining_class(u: u32, class: u8) -> u8 {
     }
     match klass {
         // Hebrew (modified classes).
-        22 | 15 | 16 | 17 | 23 | 18 | 19 | 20 | 21 | 24 | 25 => BELOW,
+        15..=25 => BELOW,
         13 => ATTACHED_ABOVE,
         10 => ABOVE_RIGHT,
         11 | 14 => ABOVE_LEFT,
@@ -127,18 +127,22 @@ fn position_mark(
     pos.y_offset = 0;
     let (bx, bw) = (i64::from(base.x_bearing), i64::from(base.width));
     let (mx, mw) = (i64::from(mark.x_bearing), i64::from(mark.width));
-    let centered = || clamp(bx + (bw - mw) / 2 - mx);
+    let centered = || clamp(bx.wrapping_add(bw.wrapping_sub(mw) / 2).wrapping_sub(mx));
     pos.x_offset = match class {
-        DOUBLE_BELOW | DOUBLE_ABOVE if direction == Direction::Ltr => {
-            clamp(bx + bw - i64::from(mark.width / 2) - mx)
-        }
+        DOUBLE_BELOW | DOUBLE_ABOVE if direction == Direction::Ltr => clamp(
+            bx.wrapping_add(bw)
+                .wrapping_sub(i64::from(mark.width / 2))
+                .wrapping_sub(mx),
+        ),
         DOUBLE_BELOW | DOUBLE_ABOVE if direction == Direction::Rtl => {
-            clamp(bx - i64::from(mark.width / 2) - mx)
+            clamp(bx.wrapping_sub(i64::from(mark.width / 2)).wrapping_sub(mx))
         }
         ATTACHED_BELOW_LEFT | BELOW_LEFT | ABOVE_LEFT => {
             base.x_bearing.saturating_sub(mark.x_bearing)
         }
-        ATTACHED_ABOVE_RIGHT | BELOW_RIGHT | ABOVE_RIGHT => clamp(bx + bw - mw - mx),
+        ATTACHED_ABOVE_RIGHT | BELOW_RIGHT | ABOVE_RIGHT => {
+            clamp(bx.wrapping_add(bw).wrapping_sub(mw).wrapping_sub(mx))
+        }
         _ => centered(),
     };
     match class {
@@ -147,7 +151,9 @@ fn position_mark(
                 base.height = base.height.saturating_sub(y_gap);
             }
             pos.y_offset = clamp(
-                i64::from(base.y_bearing) + i64::from(base.height) - i64::from(mark.y_bearing),
+                i64::from(base.y_bearing)
+                    .wrapping_add(i64::from(base.height))
+                    .wrapping_sub(i64::from(mark.y_bearing)),
             );
             if (y_gap > 0) == (pos.y_offset > 0) {
                 base.height = base.height.saturating_sub(pos.y_offset);
@@ -161,7 +167,9 @@ fn position_mark(
                 base.height = base.height.saturating_sub(y_gap);
             }
             pos.y_offset = clamp(
-                i64::from(base.y_bearing) - i64::from(mark.y_bearing) - i64::from(mark.height),
+                i64::from(base.y_bearing)
+                    .wrapping_sub(i64::from(mark.y_bearing))
+                    .wrapping_sub(i64::from(mark.height)),
             );
             if (y_gap > 0) != (pos.y_offset > 0) {
                 let correction = (pos.y_offset / 2).checked_neg().unwrap_or(i32::MAX);
@@ -215,9 +223,9 @@ fn position_around_base(
         if class != 0 {
             if num_lig_components > 1 {
                 let this_lig_id = info.lig_id();
-                let mut this_comp = i64::from(info.lig_comp()) - 1;
+                let mut this_comp = i64::from(info.lig_comp()).wrapping_sub(1);
                 if lig_id == 0 || lig_id != this_lig_id || this_comp >= num_lig_components {
-                    this_comp = num_lig_components - 1;
+                    this_comp = num_lig_components.wrapping_sub(1);
                 }
                 if last_lig_component != this_comp {
                     last_lig_component = this_comp;
@@ -235,10 +243,15 @@ fn position_around_base(
                     let k = if dir == Some(Direction::Ltr) {
                         this_comp
                     } else {
-                        num_lig_components - 1 - this_comp
+                        num_lig_components.wrapping_sub(1).wrapping_sub(this_comp)
                     };
-                    component_extents.x_bearing =
-                        clamp(x + (k * w).checked_div(num_lig_components).unwrap_or(0));
+                    component_extents.x_bearing = clamp(
+                        x.wrapping_add(
+                            k.wrapping_mul(w)
+                                .checked_div(num_lig_components)
+                                .unwrap_or(0),
+                        ),
+                    );
                     component_extents.width =
                         i32::try_from(w.checked_div(num_lig_components).unwrap_or(0)).unwrap_or(0);
                 }
@@ -338,7 +351,7 @@ pub(crate) fn fallback_spaces(font: &ShapeFont<'_, '_>, buffer: &mut Buffer) {
             if horizontal {
                 buffer.pos[i].x_advance = font.x_scale() / 4;
             } else {
-                buffer.pos[i].y_advance = wrap((-ys) / 4);
+                buffer.pos[i].y_advance = wrap(ys.wrapping_neg() / 4);
             }
         }
         let advance_of = |g: u32| {
@@ -360,16 +373,21 @@ pub(crate) fn fallback_spaces(font: &ShapeFont<'_, '_>, buffer: &mut Buffer) {
             | SpaceFallback::Em16) => {
                 let n = i64::from(s as u8);
                 if horizontal {
-                    p.x_advance = wrap((xs + n / 2).checked_div(n).unwrap_or(0));
+                    p.x_advance = wrap(xs.wrapping_add(n / 2).checked_div(n).unwrap_or(0));
                 } else {
-                    p.y_advance = wrap(-((ys + n / 2).checked_div(n).unwrap_or(0)));
+                    p.y_advance = wrap(
+                        ys.wrapping_add(n / 2)
+                            .checked_div(n)
+                            .unwrap_or(0)
+                            .wrapping_neg(),
+                    );
                 }
             }
             SpaceFallback::FourEm18 => {
                 if horizontal {
-                    p.x_advance = wrap(xs * 4 / 18);
+                    p.x_advance = wrap(xs.wrapping_mul(4) / 18);
                 } else {
-                    p.y_advance = wrap(-ys * 4 / 18);
+                    p.y_advance = wrap(ys.wrapping_neg().wrapping_mul(4) / 18);
                 }
             }
             SpaceFallback::Figure => {

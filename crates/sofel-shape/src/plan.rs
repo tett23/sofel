@@ -83,6 +83,11 @@ pub(crate) enum ShaperData {
 /// A hook that runs on the buffer.
 pub(crate) type BufferHook = fn(&ShapePlan<'_>, &mut Buffer, &ShapeFont<'_, '_>);
 
+/// A shaper's decomposition (`decompose`).
+pub(crate) type DecomposeFn = fn(&NormalizeContext<'_, '_, '_>, u32) -> Option<(u32, u32)>;
+/// A shaper's composition (`compose`).
+pub(crate) type ComposeFn = fn(&NormalizeContext<'_, '_, '_>, u32, u32) -> Option<u32>;
+
 /// The hooks and settings of a shaper (`hb_ot_shaper_t`), at the places
 /// HarfBuzz calls them.
 pub(crate) struct ShaperFuncs {
@@ -91,8 +96,8 @@ pub(crate) struct ShaperFuncs {
     pub(crate) data_create: Option<fn(&ShapePlan<'_>) -> ShaperData>,
     pub(crate) preprocess_text: Option<BufferHook>,
     pub(crate) postprocess_glyphs: Option<BufferHook>,
-    pub(crate) decompose: Option<fn(&NormalizeContext<'_, '_, '_>, u32) -> Option<(u32, u32)>>,
-    pub(crate) compose: Option<fn(&NormalizeContext<'_, '_, '_>, u32, u32) -> Option<u32>>,
+    pub(crate) decompose: Option<DecomposeFn>,
+    pub(crate) compose: Option<ComposeFn>,
     pub(crate) setup_masks: Option<BufferHook>,
     pub(crate) reorder_marks: Option<fn(&ShapePlan<'_>, &mut Buffer, usize, usize)>,
     pub(crate) gpos_tag: Option<Tag>,
@@ -235,6 +240,7 @@ pub fn layout_selection(
 /// properties and features that does not depend on the text. Immutable,
 /// and shareable between threads.
 #[derive(Clone, Debug)]
+#[allow(dead_code)] // Some items serve the shapers of ADR 0024.
 pub struct ShapePlan<'a> {
     pub(crate) props: ResolvedProperties,
     pub(crate) user_features: Vec<Feature>,

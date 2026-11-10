@@ -180,7 +180,10 @@ fn apply_alternates(c: &mut ApplyContext<'_, '_, '_, '_, '_>, set: Option<GlyphA
     if alt_index > count || alt_index == 0 {
         return false;
     }
-    let Some(g) = usize::try_from(alt_index - 1).ok().and_then(|i| set.get(i)) else {
+    let Some(g) = usize::try_from(alt_index.wrapping_sub(1))
+        .ok()
+        .and_then(|i| set.get(i))
+    else {
         return false;
     };
     c.replace_glyph(g);

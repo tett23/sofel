@@ -218,6 +218,7 @@ pub(crate) struct Table<'a, S> {
     pub(crate) lookups: Vec<LookupAccel<S>>,
 }
 
+#[allow(dead_code)] // Some items serve the shapers of ADR 0024.
 impl<'a, S> Table<'a, S> {
     fn empty() -> Table<'a, S> {
         Table {
