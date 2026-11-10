@@ -1200,6 +1200,7 @@ fn generate() -> String {
     diagnostics(&mut out, "invalid_diagnostics", &invalid_data);
     diagnostics(&mut out, "ttc_diagnostics", &ttc_data);
     color_cases(&mut out);
+    subset_cases(&mut out, &font_data);
     out
 }
 
@@ -1666,6 +1667,296 @@ fn generate_shape() -> Option<String> {
 fn shape_fixture_is_current() {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/c/fixture_shape.h");
     let Some(generated) = generate_shape() else {
+        assert!(
+            std::env::var_os("SOFEL_REQUIRE_TESTDATA").is_none(),
+            "no test data; run scripts/fetch-testdata.sh"
+        );
+        eprintln!("no test data; skipped");
+        return;
+    };
+    if std::env::var_os("SOFEL_UPDATE_FIXTURE").is_some() {
+        std::fs::write(path, &generated).unwrap();
+    }
+    let committed = std::fs::read_to_string(path).unwrap_or_default();
+    assert!(
+        committed == generated,
+        "{path} is out of date; run SOFEL_UPDATE_FIXTURE=1 cargo test -p sofel-capi --test fixture"
+    );
+}
+
+/// FNV-1a 64 of bytes: the C tests compare subset fonts by length and
+/// hash.
+fn fnv(b: &[u8]) -> u64 {
+    b.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, &x| {
+        (h ^ u64::from(x)).wrapping_mul(0x100_0000_01b3)
+    })
+}
+
+fn tag_u32(t: &[u8; 4]) -> u32 {
+    u32::from_be_bytes(*t)
+}
+
+/// The input that the C test builds with the input functions and
+/// compares through `sofel_subset_input_to_args` (ADR 0022).
+fn args_input() -> sofel_subset::Input {
+    use sofel_subset::{Flags, Input, SetKind};
+    Input::new()
+        .map_set(SetKind::Unicodes, |s| {
+            s.add_range(0x41, 0x43);
+            s.remove(0x42);
+        })
+        .map_set(SetKind::Glyphs, |s| s.add(2))
+        .map_set(SetKind::DropTables, |s| s.add(tag_u32(b"GPOS")))
+        .map_set(SetKind::NameIds, |s| {
+            s.clear();
+            s.add(1);
+            s.add(2);
+        })
+        .map_set(SetKind::LayoutFeatures, |s| s.invert())
+        .map_set(SetKind::LayoutScripts, |s| s.remove(tag_u32(b"latn")))
+        .with_flags(Flags::RETAIN_GIDS | Flags::NO_HINTING)
+        .with_glyph_mapping([(5, 7)].into_iter().collect())
+}
+
+/// The inputs of the C tests' plans: characters; glyphs with a glyph
+/// mapping; a name override. Each runs through `sofel_subset`, a plan and
+/// its mappings.
+fn plan_inputs() -> Vec<sofel_subset::Input> {
+    use sofel_subset::{Input, SetKind};
+    vec![
+        Input::new()
+            .map_set(SetKind::Unicodes, |s| {
+                s.add(0x41);
+                s.add(0x43);
+            }),
+        Input::new()
+            .map_set(SetKind::Glyphs, |s| {
+                s.add(1);
+                s.add(2);
+            })
+            .with_glyph_mapping([(1, 2), (2, 1)].into_iter().collect()),
+        Input::new()
+            .map_set(SetKind::Unicodes, |s| s.add(0x41))
+            .with_name_override((3, 1, 0x409, 1), b"Sofel".to_vec()),
+    ]
+}
+
+fn pair_list(v: &[(u32, u32)]) -> String {
+    v.iter()
+        .flat_map(|&(a, b)| [a, b])
+        .map(|x| x.to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The subsetting cases of the C tests (ADR 0022) on the fixture font.
+fn subset_cases(out: &mut String, font_data: &[u8]) {
+    use sofel_subset::{Flags, Plan, SubsetError, axis_range_from_string, subset};
+    let font = Font::new(font_data, 0).unwrap();
+    writeln!(
+        out,
+        "#define SUBSET_ARGS {}",
+        c_string(&args_input().to_args().join(" "))
+    )
+    .unwrap();
+    out.push_str(
+        "struct subset_case { int32_t status; uint32_t num_output_glyphs; size_t len; uint64_t fnv;\n\
+         \x20 size_t n_old_new; const uint32_t *old_new; size_t n_new_old; const uint32_t *new_old;\n\
+         \x20 size_t n_unicode_old; const uint32_t *unicode_old; };\n",
+    );
+    let mut rows = Vec::new();
+    for (i, input) in plan_inputs().iter().enumerate() {
+        let plan = match Plan::new(&font, input).and_then(|p| p.execute(&font).map(|_| p)) {
+            Ok(p) => p,
+            Err(e) => {
+                assert_eq!(subset(&font, input).err(), Some(e));
+                let status = match e {
+                    SubsetError::Unsupported { .. } => -18,
+                    _ => panic!("{e:?}"),
+                };
+                rows.push(format!("{{{status}, 0, 0, 0, 0, NULL, 0, NULL, 0, NULL}}"));
+                continue;
+            }
+        };
+        let bytes = plan.execute(&font).unwrap();
+        assert_eq!(subset(&font, input).unwrap(), bytes);
+        let old_new = plan.old_to_new_glyphs();
+        let new_old = plan.new_to_old_glyphs().to_vec();
+        let unicode_old: Vec<(u32, u32)> = plan.unicode_to_old_glyphs().collect();
+        for (name, v) in [
+            ("old_new", &old_new),
+            ("new_old", &new_old),
+            ("unicode_old", &unicode_old),
+        ] {
+            writeln!(
+                out,
+                "static const uint32_t subset_{i}_{name}[] = {{{}0}};",
+                pair_list(v)
+                    .split(", ")
+                    .filter(|s| !s.is_empty())
+                    .map(|s| format!("{s}, "))
+                    .collect::<String>()
+            )
+            .unwrap();
+        }
+        rows.push(format!(
+            "{{{OK}, {}, {}, {:#x}u, {}, subset_{i}_old_new, {}, subset_{i}_new_old, {}, \
+             subset_{i}_unicode_old}}",
+            plan.num_output_glyphs(),
+            bytes.len(),
+            fnv(&bytes),
+            old_new.len(),
+            new_old.len(),
+            unicode_old.len()
+        ));
+    }
+    writeln!(
+        out,
+        "static const struct subset_case subset_cases[] = {{\n  {},\n}};",
+        rows.join(",\n  ")
+    )
+    .unwrap();
+    // RETAIN_GIDS with a glyph mapping: HarfBuzz refuses it.
+    let refused = plan_inputs()[1].clone().with_flags(Flags::RETAIN_GIDS);
+    assert_eq!(
+        Plan::new(&font, &refused).err(),
+        Some(SubsetError::InvalidInput)
+    );
+    writeln!(out, "#define SUBSET_INVALID_INPUT (-16)").unwrap();
+
+    // Axis ranges as strings: (string, status, bits of min, default, max).
+    out.push_str("struct axis_string_case { const char *s; int32_t status; uint32_t bits[3]; };\n");
+    let rows: Vec<String> = ["drop", "100", "100:200", "100:150:200", ":150:", "1:2:3:4", "x", ""]
+        .iter()
+        .map(|s| match axis_range_from_string(s) {
+            Some((a, d, b)) => {
+                let bits = |v: Option<f32>| format!("{:#x}u", v.unwrap_or(f32::NAN).to_bits());
+                format!(
+                    "{{{}, {OK}, {{{}, {}, {}}}}}",
+                    c_string(s),
+                    bits(a),
+                    bits(d),
+                    bits(b)
+                )
+            }
+            None => format!("{{{}, {INVALID_ARGUMENT}, {{0, 0, 0}}}}", c_string(s)),
+        })
+        .collect();
+    writeln!(
+        out,
+        "static const struct axis_string_case axis_string_cases[] = {{\n  {},\n}};",
+        rows.join(",\n  ")
+    )
+    .unwrap();
+}
+
+/// Golem's subsetting (ADR 0022): the fonts of the C tests, whose glyph
+/// sets are those of the hb-dump comparisons (sofel-conformance's
+/// `hb-dump/golem/<font>:keep`).
+const GOLEM_FONTS: [&str; 2] = [
+    "harfbuzz/test/subset/data/fonts/Roboto-Regular.ttf",
+    "harfbuzz/test/subset/data/fonts/SourceHanSans-Regular_subset.otf",
+];
+
+/// `tests/c/fixture_subset.h`, or `None` without the test data. When
+/// `hb-dump` (tools/hb-dump/build.sh; `SOFEL_HB_DUMP` overrides
+/// target/hb-dump/hb-dump) is there, the Rust output is also checked
+/// against HarfBuzz's for the same arguments, so that the C test's
+/// output, equal to the Rust output, is HarfBuzz's.
+fn generate_subset() -> Option<String> {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let dir = std::env::var_os("SOFEL_TESTDATA")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| root.join("target/testdata"));
+    let hb_dump = std::env::var_os("SOFEL_HB_DUMP")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| root.join("target/hb-dump/hb-dump"));
+    let texts: Vec<String> = [
+        "harfbuzz/perf/texts/ja-runs.txt",
+        "harfbuzz/perf/texts/en-paragraph.txt",
+    ]
+    .iter()
+    .map(|t| std::fs::read_to_string(dir.join(t)).ok())
+    .collect::<Option<Vec<_>>>()?;
+    let mut out = String::from(
+        "/* Generated by crates/sofel-capi/tests/fixture.rs from the Rust API and\n \
+         * the test data (scripts/fetch-testdata.sh); do not edit.\n \
+         * `SOFEL_UPDATE_FIXTURE=1 cargo test -p sofel-capi --test fixture`\n \
+         * rewrites it. */\n\n\
+         #include <stddef.h>\n#include <stdint.h>\n\n\
+         struct golem_case { const char *font; size_t n; const uint32_t *glyphs; size_t len;\n\
+         \x20 uint64_t fnv; };\n\n",
+    );
+    let mut cases = String::new();
+    for (i, path) in GOLEM_FONTS.iter().enumerate() {
+        let bytes = std::fs::read(dir.join(path)).ok()?;
+        let font = Font::new(&bytes, 0).unwrap();
+        let mut glyphs: std::collections::BTreeSet<u32> = texts
+            .iter()
+            .flat_map(|t| t.chars())
+            .filter_map(|c| font.nominal_glyph(u32::from(c)).map(|g| g.0))
+            .collect();
+        glyphs.insert(1);
+        glyphs.insert(font.num_glyphs() - 1);
+        let glyphs: Vec<u32> = glyphs.into_iter().collect();
+        let input = sofel_subset::Input::new()
+            .map_set(sofel_subset::SetKind::Glyphs, |s| {
+                glyphs.iter().for_each(|&g| s.add(g))
+            })
+            .with_flags(sofel_subset::Flags::RETAIN_GIDS);
+        let subset = sofel_subset::subset(&font, &input).unwrap();
+        if hb_dump.exists() {
+            let tmp = std::env::temp_dir().join(format!("sofel-capi-golem-{}", std::process::id()));
+            let list: Vec<String> = glyphs.iter().map(u32::to_string).collect();
+            let status = std::process::Command::new(&hb_dump)
+                .arg("--subset")
+                .arg(format!("--font-file={}", dir.join(path).display()))
+                .arg(format!("--gids={}", list.join(",")))
+                .arg("--retain-gids")
+                .arg(format!("--output-file={}", tmp.display()))
+                .status()
+                .unwrap();
+            assert!(status.success(), "hb-dump --subset failed for {path}");
+            let theirs = std::fs::read(&tmp).unwrap();
+            let _ = std::fs::remove_file(&tmp);
+            assert!(theirs == subset, "{path}: sofel's subset differs from HarfBuzz's");
+        } else {
+            eprintln!("no hb-dump; the Golem cases are not checked against HarfBuzz");
+        }
+        writeln!(
+            out,
+            "static const uint32_t golem_{i}_glyphs[] = {{{}}};",
+            glyphs
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+        .unwrap();
+        writeln!(
+            cases,
+            "  {{{}, {}, golem_{i}_glyphs, {}, {:#x}u}},",
+            c_string(path),
+            glyphs.len(),
+            subset.len(),
+            fnv(&subset)
+        )
+        .unwrap();
+    }
+    write!(
+        out,
+        "static const struct golem_case golem_cases[] = {{\n{cases}}};\n"
+    )
+    .unwrap();
+    Some(out)
+}
+
+/// `tests/c/fixture_subset.h` is current; skipped without the test data
+/// unless `SOFEL_REQUIRE_TESTDATA` is set.
+#[test]
+fn subset_fixture_is_current() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/c/fixture_subset.h");
+    let Some(generated) = generate_subset() else {
         assert!(
             std::env::var_os("SOFEL_REQUIRE_TESTDATA").is_none(),
             "no test data; run scripts/fetch-testdata.sh"

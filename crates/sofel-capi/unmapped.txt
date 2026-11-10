@@ -132,11 +132,30 @@ sofel_shape::ShapePlan::stage_lookups The plan's map, for sofel's conformance te
 sofel_shape::ShapePlan::global_mask The plan's map, for sofel's conformance tests against hb-dump; HarfBuzz keeps it in the internal hb_ot_map_t.
 sofel_shape::layout_selection The script and language system choice of a plan, for sofel's conformance tests against hb-dump; C reads the plan's result through shaping.
 sofel_font::remap::* HarfBuzz's character remapping tables for crates that read cmap subtables themselves (sofel-subset, ADR 0022); C maps characters with sofel_font_nominal_glyph.
-sofel_write::Serializer::* HarfBuzz's object serializer, used object by object by Rust table writers; C gets whole tables from the subsetter, and serialized object graphs from sofel_serialize_objects once the repacker lands (ADR 0022 stages 4 and 5).
 sofel_write::Errors::* The serializer's error bits, read by Rust table writers only (ADR 0022).
 sofel_write::Packed::* The serializer's packed objects, read by Rust table writers only (ADR 0022).
 sofel_write::build_sfnt Assembles a font from tables for Rust table writers; C receives whole fonts from sofel_subset (ADR 0022).
 sofel_write::build_sfnt_ordered As sofel_write::build_sfnt (ADR 0022).
 sofel_write::checksum The sfnt checksum, a loop C writes directly (ADR 0022).
-sofel_write::serialize_objects The repacker over caller-built objects; its C function, sofel_serialize_objects, comes with the C API of the subsetter (ADR 0022 stage 5).
-sofel_subset::* The C ABI of the subsetter is ADR 0022's stage 5; until then C callers have no subsetting.
+sofel_write::Serializer::* HarfBuzz's object serializer, used object by object by Rust table writers; C gets whole tables from the subsetter, and tables from caller-built objects with sofel_serialize_objects (ADR 0022).
+sofel_subset::Flags::has A bit test, which C writes as `(flags & bit) == bit` on the value of sofel_subset_input_get_flags (ADR 0022).
+sofel_subset::SetKind::from_u32 C passes HarfBuzz's set numbers (SOFEL_SUBSET_SET_*) directly; the functions check them (ADR 0022).
+sofel_subset::Input::with_set Replacing a set is sofel_subset_input_set_clear followed by sofel_subset_input_set_add_range or _add (ADR 0022).
+sofel_subset::Input::glyph_mapping C keeps the pairs it set with sofel_subset_input_set_glyph_mapping, and sofel_subset_input_to_args lists them (ADR 0022).
+sofel_subset::Input::axes The axes set in the input: C reads each with sofel_subset_input_get_axis_range, and sofel_subset_input_to_args lists them (ADR 0022).
+sofel_subset::Input::name_overrides C keeps the records it overrode with sofel_subset_input_override_name_table (ADR 0022).
+sofel_subset::Plan::glyph_set The kept glyphs, which are the old glyphs of sofel_subset_plan_old_to_new_glyphs (ADR 0022).
+sofel_subset::Plan::flags The input's flags, which C reads with sofel_subset_input_get_flags (ADR 0022).
+sofel_subset::RangeSet::new The sets of C are those of an input, changed with the sofel_subset_input_set_* functions (ADR 0022).
+sofel_subset::RangeSet::all As sofel_subset::RangeSet::new: sofel_subset_input_set_clear and sofel_subset_input_set_invert make every value (ADR 0022).
+sofel_subset::RangeSet::from_values As sofel_subset::RangeSet::new: a loop of sofel_subset_input_set_add (ADR 0022).
+sofel_subset::RangeSet::with As sofel_subset::RangeSet::new: sofel_subset_input_set_add (ADR 0022).
+sofel_subset::RangeSet::is_empty Whether sofel_subset_input_set_count writes 0 (ADR 0022).
+sofel_subset::RangeSet::is_inverted Rust's representation of a set; C reads the members with sofel_subset_input_set_next and sofel_subset_input_set_count (ADR 0022).
+sofel_subset::RangeSet::iter The members, which C reads one by one with sofel_subset_input_set_next (ADR 0022).
+sofel_subset::RangeSet::ranges As sofel_subset::RangeSet::iter (ADR 0022).
+sofel_subset::RangeSet::min The first member: sofel_subset_input_set_next from SOFEL_SUBSET_SET_INVALID (ADR 0022).
+sofel_subset::RangeSet::max The last member, found with sofel_subset_input_set_next (ADR 0022).
+sofel_subset::RangeSet::remove_range A loop of sofel_subset_input_set_remove over the members found with sofel_subset_input_set_next (ADR 0022).
+sofel_subset::RangeSet::truncate As sofel_subset::RangeSet::remove_range, for every member from a value on (ADR 0022).
+sofel_subset::RangeSet::union A loop of sofel_subset_input_set_add over the other set's members (ADR 0022).

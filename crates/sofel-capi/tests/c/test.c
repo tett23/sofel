@@ -15,6 +15,7 @@
 #include "sofel.h"
 #include "fixture.h"
 #include "fixture_shape.h"
+#include "fixture_subset.h"
 
 #if !defined(__wasi__)
 #include <pthread.h>
@@ -2068,6 +2069,374 @@ static void test_golem_shape(void) {
   }
 }
 
+/* ---------------------------------------------------------- subsetting */
+
+static void check_subset_declarations(void) {
+  void (*bytes_destroy)(sofel_bytes_t *) = sofel_bytes_destroy;
+  int32_t (*input_create)(sofel_subset_input_t **) = sofel_subset_input_create;
+  void (*input_destroy)(sofel_subset_input_t *) = sofel_subset_input_destroy;
+  int32_t (*keep_everything)(sofel_subset_input_t *) = sofel_subset_input_keep_everything;
+  int32_t (*set_add)(sofel_subset_input_t *, sofel_subset_set_t, uint32_t) =
+      sofel_subset_input_set_add;
+  int32_t (*set_add_range)(sofel_subset_input_t *, sofel_subset_set_t, uint32_t, uint32_t) =
+      sofel_subset_input_set_add_range;
+  int32_t (*set_remove)(sofel_subset_input_t *, sofel_subset_set_t, uint32_t) =
+      sofel_subset_input_set_remove;
+  int32_t (*set_clear)(sofel_subset_input_t *, sofel_subset_set_t) = sofel_subset_input_set_clear;
+  int32_t (*set_invert)(sofel_subset_input_t *, sofel_subset_set_t) =
+      sofel_subset_input_set_invert;
+  int32_t (*set_contains)(const sofel_subset_input_t *, sofel_subset_set_t, uint32_t) =
+      sofel_subset_input_set_contains;
+  int32_t (*set_count)(const sofel_subset_input_t *, sofel_subset_set_t, uint64_t *) =
+      sofel_subset_input_set_count;
+  int32_t (*set_next)(const sofel_subset_input_t *, sofel_subset_set_t, uint32_t *) =
+      sofel_subset_input_set_next;
+  int32_t (*get_flags)(const sofel_subset_input_t *, uint32_t *) = sofel_subset_input_get_flags;
+  int32_t (*set_flags)(sofel_subset_input_t *, uint32_t) = sofel_subset_input_set_flags;
+  int32_t (*set_map)(sofel_subset_input_t *, uint32_t, uint32_t) =
+      sofel_subset_input_set_glyph_mapping;
+  int32_t (*clear_map)(sofel_subset_input_t *) = sofel_subset_input_clear_glyph_mapping;
+  int32_t (*get_axis)(const sofel_subset_input_t *, uint32_t, float *, float *, float *) =
+      sofel_subset_input_get_axis_range;
+  int32_t (*override_name)(sofel_subset_input_t *, uint16_t, uint16_t, uint16_t, uint16_t,
+                           const char *, size_t) = sofel_subset_input_override_name_table;
+  int32_t (*to_args)(const sofel_subset_input_t *, char *, size_t, size_t *) =
+      sofel_subset_input_to_args;
+  int32_t (*axis_from)(const char *, size_t, float *, float *, float *) =
+      sofel_subset_axis_range_from_string;
+  int32_t (*axis_to)(const sofel_subset_input_t *, uint32_t, char *, size_t, size_t *) =
+      sofel_subset_axis_range_to_string;
+  int32_t (*plan_create)(const sofel_font_t *, const sofel_subset_prepared_t *,
+                         const sofel_subset_input_t *, sofel_subset_plan_t **) =
+      sofel_subset_plan_create;
+  void (*plan_destroy)(sofel_subset_plan_t *) = sofel_subset_plan_destroy;
+  int32_t (*plan_execute)(const sofel_subset_plan_t *, const sofel_font_t *, sofel_bytes_t *) =
+      sofel_subset_plan_execute;
+  int32_t (*plan_count)(const sofel_subset_plan_t *, uint32_t *) =
+      sofel_subset_plan_num_output_glyphs;
+  int32_t (*old_to_new)(const sofel_subset_plan_t *, uint32_t, uint32_t *) =
+      sofel_subset_plan_old_to_new_glyph;
+  int32_t (*new_to_old)(const sofel_subset_plan_t *, uint32_t, uint32_t *) =
+      sofel_subset_plan_new_to_old_glyph;
+  int32_t (*unicode_to_old)(const sofel_subset_plan_t *, uint32_t, uint32_t *) =
+      sofel_subset_plan_unicode_to_old_glyph;
+  int32_t (*old_to_news)(const sofel_subset_plan_t *, uint32_t *, uint32_t *, size_t, size_t *) =
+      sofel_subset_plan_old_to_new_glyphs;
+  int32_t (*new_to_olds)(const sofel_subset_plan_t *, uint32_t *, uint32_t *, size_t, size_t *) =
+      sofel_subset_plan_new_to_old_glyphs;
+  int32_t (*unicode_to_olds)(const sofel_subset_plan_t *, uint32_t *, uint32_t *, size_t,
+                             size_t *) = sofel_subset_plan_unicode_to_old_glyphs;
+  int32_t (*subset)(const sofel_font_t *, const sofel_subset_input_t *, sofel_bytes_t *) =
+      sofel_subset;
+  int32_t (*serialize)(uint32_t, const sofel_serialize_object_t *, size_t, sofel_bytes_t *) =
+      sofel_serialize_objects;
+  const void *all[] = {
+      (const void *)bytes_destroy, (const void *)input_create,  (const void *)input_destroy,
+      (const void *)keep_everything, (const void *)set_add,     (const void *)set_add_range,
+      (const void *)set_remove,    (const void *)set_clear,     (const void *)set_invert,
+      (const void *)set_contains,  (const void *)set_count,     (const void *)set_next,
+      (const void *)get_flags,     (const void *)set_flags,     (const void *)set_map,
+      (const void *)clear_map,     (const void *)get_axis,      (const void *)override_name,
+      (const void *)to_args,       (const void *)axis_from,     (const void *)axis_to,
+      (const void *)plan_create,   (const void *)plan_destroy,  (const void *)plan_execute,
+      (const void *)plan_count,    (const void *)old_to_new,    (const void *)new_to_old,
+      (const void *)unicode_to_old, (const void *)old_to_news,  (const void *)new_to_olds,
+      (const void *)unicode_to_olds, (const void *)subset,      (const void *)serialize,
+  };
+  size_t i;
+  for (i = 0; i < COUNT(all); i++) CHECK(all[i] != NULL);
+}
+
+static uint64_t fnv(const uint8_t *b, size_t n) {
+  uint64_t h = 0xcbf29ce484222325u;
+  size_t i;
+  for (i = 0; i < n; i++) h = (h ^ b[i]) * 0x100000001b3u;
+  return h;
+}
+
+/* Checks the pairs of a mapping against the fixture's flat array. */
+static void check_pairs(const sofel_subset_plan_t *plan,
+                        int32_t (*f)(const sofel_subset_plan_t *, uint32_t *, uint32_t *, size_t,
+                                     size_t *),
+                        size_t n, const uint32_t *expected) {
+  uint32_t a[64], b[64];
+  size_t len = 12345, i;
+  a[0] = 777;
+  if (n > 0) {
+    CHECK(f(plan, a, b, n - 1, &len) == SOFEL_ERROR_BUFFER_TOO_SMALL && len == n && a[0] == 777);
+  }
+  CHECK(f(plan, NULL, NULL, 0, &len) == (n ? SOFEL_ERROR_BUFFER_TOO_SMALL : SOFEL_OK) && len == n);
+  CHECK(f(plan, a, b, 64, &len) == SOFEL_OK && len == n);
+  for (i = 0; i < n && i < 64; i++) CHECK(a[i] == expected[2 * i] && b[i] == expected[2 * i + 1]);
+}
+
+/* The input functions against to_args, which the fixture computed for
+ * the same input built with the Rust API. */
+static void test_subset_input(void) {
+  sofel_subset_input_t *in = NULL;
+  char args[4096];
+  size_t len = 0;
+  uint64_t count = 0;
+  uint32_t v, flags = 1;
+  float mn = 1, df = 1, mx = 1;
+  CHECK(sofel_subset_input_create(&in) == SOFEL_OK && in != NULL);
+  CHECK(sofel_subset_input_to_args(in, args, sizeof args, &len) == SOFEL_OK && len == 0);
+  CHECK(sofel_subset_input_set_add_range(in, SOFEL_SUBSET_SET_UNICODES, 0x41, 0x43) == SOFEL_OK);
+  CHECK(sofel_subset_input_set_remove(in, SOFEL_SUBSET_SET_UNICODES, 0x42) == SOFEL_OK);
+  CHECK(sofel_subset_input_set_add(in, SOFEL_SUBSET_SET_GLYPHS, 2) == SOFEL_OK);
+  CHECK(sofel_subset_input_set_add(in, SOFEL_SUBSET_SET_DROP_TABLES, SOFEL_TAG('G', 'P', 'O', 'S')) ==
+        SOFEL_OK);
+  CHECK(sofel_subset_input_set_clear(in, SOFEL_SUBSET_SET_NAME_IDS) == SOFEL_OK);
+  CHECK(sofel_subset_input_set_add(in, SOFEL_SUBSET_SET_NAME_IDS, 1) == SOFEL_OK);
+  CHECK(sofel_subset_input_set_add(in, SOFEL_SUBSET_SET_NAME_IDS, 2) == SOFEL_OK);
+  CHECK(sofel_subset_input_set_invert(in, SOFEL_SUBSET_SET_LAYOUT_FEATURES) == SOFEL_OK);
+  CHECK(sofel_subset_input_set_remove(in, SOFEL_SUBSET_SET_LAYOUT_SCRIPTS,
+                                      SOFEL_TAG('l', 'a', 't', 'n')) == SOFEL_OK);
+  CHECK(sofel_subset_input_set_flags(
+            in, SOFEL_SUBSET_FLAGS_RETAIN_GIDS | SOFEL_SUBSET_FLAGS_NO_HINTING) == SOFEL_OK);
+  CHECK(sofel_subset_input_set_glyph_mapping(in, 5, 9) == SOFEL_OK);
+  CHECK(sofel_subset_input_set_glyph_mapping(in, 5, 7) == SOFEL_OK); /* replaces */
+  /* to_args: the needed length when the array is too small. */
+  args[0] = 'x';
+  CHECK(sofel_subset_input_to_args(in, args, 3, &len) == SOFEL_ERROR_BUFFER_TOO_SMALL &&
+        len == strlen(SUBSET_ARGS) && args[0] == 'x');
+  CHECK(sofel_subset_input_to_args(in, args, sizeof args, &len) == SOFEL_OK &&
+        len == strlen(SUBSET_ARGS) && memcmp(args, SUBSET_ARGS, len) == 0);
+
+  /* Reading the sets and flags. */
+  CHECK(sofel_subset_input_set_contains(in, SOFEL_SUBSET_SET_UNICODES, 0x41) == 1);
+  CHECK(sofel_subset_input_set_contains(in, SOFEL_SUBSET_SET_UNICODES, 0x42) == 0);
+  CHECK(sofel_subset_input_set_count(in, SOFEL_SUBSET_SET_UNICODES, &count) == SOFEL_OK &&
+        count == 2);
+  CHECK(sofel_subset_input_set_count(in, SOFEL_SUBSET_SET_LAYOUT_SCRIPTS, &count) == SOFEL_OK &&
+        count == 0xFFFFFFFEu);
+  v = SOFEL_SUBSET_SET_INVALID;
+  CHECK(sofel_subset_input_set_next(in, SOFEL_SUBSET_SET_UNICODES, &v) == 1 && v == 0x41);
+  CHECK(sofel_subset_input_set_next(in, SOFEL_SUBSET_SET_UNICODES, &v) == 1 && v == 0x43);
+  CHECK(sofel_subset_input_set_next(in, SOFEL_SUBSET_SET_UNICODES, &v) == 0 &&
+        v == SOFEL_SUBSET_SET_INVALID);
+  CHECK(sofel_subset_input_get_flags(in, &flags) == SOFEL_OK &&
+        flags == (SOFEL_SUBSET_FLAGS_RETAIN_GIDS | SOFEL_SUBSET_FLAGS_NO_HINTING));
+  CHECK(sofel_subset_input_clear_glyph_mapping(in) == SOFEL_OK);
+  CHECK(sofel_subset_input_to_args(in, args, sizeof args, &len) == SOFEL_OK &&
+        strstr(SUBSET_ARGS, " --gid-map=5:7") != NULL &&
+        len == strlen(SUBSET_ARGS) - strlen(" --gid-map=5:7"));
+  /* keep_everything changes the flags and the sets. */
+  CHECK(sofel_subset_input_keep_everything(in) == SOFEL_OK);
+  CHECK(sofel_subset_input_set_contains(in, SOFEL_SUBSET_SET_GLYPHS, 12345) == 1);
+  CHECK(sofel_subset_input_set_count(in, SOFEL_SUBSET_SET_DROP_TABLES, &count) == SOFEL_OK &&
+        count == 0);
+
+  /* No axes yet: not found, and nothing written. */
+  CHECK(sofel_subset_input_get_axis_range(in, SOFEL_TAG('w', 'g', 'h', 't'), &mn, &df, &mx) ==
+            SOFEL_ERROR_NOT_FOUND &&
+        mn == 1 && df == 1 && mx == 1);
+  CHECK(sofel_subset_axis_range_to_string(in, SOFEL_TAG('w', 'g', 'h', 't'), args, sizeof args,
+                                          &len) == SOFEL_ERROR_NOT_FOUND);
+
+  /* Name overrides: HarfBuzz refuses a Macintosh name that is not ASCII. */
+  CHECK(sofel_subset_input_override_name_table(in, 1, 3, 1, 0x409, "Sofel", 5) == SOFEL_OK);
+  CHECK(sofel_subset_input_override_name_table(in, 1, 3, 1, 0x409, NULL, 0) == SOFEL_OK);
+  CHECK(sofel_subset_input_override_name_table(in, 1, 1, 0, 0, "\303\251", 2) ==
+        SOFEL_ERROR_INVALID_ARGUMENT);
+
+  /* Errors: NULL, invalid flags, invalid set kinds. */
+  CHECK(sofel_subset_input_create(NULL) == SOFEL_ERROR_NULL);
+  CHECK(sofel_subset_input_set_add(NULL, SOFEL_SUBSET_SET_GLYPHS, 1) == SOFEL_ERROR_NULL);
+  CHECK(sofel_subset_input_set_flags(NULL, 0) == SOFEL_ERROR_NULL);
+  CHECK(sofel_subset_input_get_flags(in, NULL) == SOFEL_ERROR_NULL);
+  CHECK(sofel_subset_input_set_flags(in, 0x10000u) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_subset_input_get_flags(in, &flags) == SOFEL_OK &&
+        (flags & SOFEL_SUBSET_FLAGS_GLYPH_NAMES) != 0);
+  CHECK(sofel_subset_input_set_add(in, 8, 1) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_subset_input_set_add_range(in, 99, 1, 2) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_subset_input_set_remove(in, 8, 1) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_subset_input_set_clear(in, 8) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_subset_input_set_invert(in, 8) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_subset_input_set_contains(in, 8, 1) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_subset_input_set_count(in, 8, &count) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_subset_input_set_next(in, 8, &v) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_subset_input_to_args(NULL, args, sizeof args, &len) == SOFEL_ERROR_NULL);
+  CHECK(sofel_subset_input_keep_everything(NULL) == SOFEL_ERROR_NULL);
+  sofel_subset_input_destroy(in);
+  sofel_subset_input_destroy(NULL);
+}
+
+static void test_axis_strings(void) {
+  size_t i;
+  for (i = 0; i < COUNT(axis_string_cases); i++) {
+    const struct axis_string_case *c = &axis_string_cases[i];
+    float v[3] = {7, 7, 7};
+    uint32_t bits[3];
+    int32_t s = sofel_subset_axis_range_from_string(c->s, strlen(c->s), &v[0], &v[1], &v[2]);
+    CHECK(s == c->status);
+    if (s == SOFEL_OK) {
+      memcpy(bits, v, sizeof bits);
+      CHECK(memcmp(bits, c->bits, sizeof bits) == 0);
+    } else {
+      CHECK(v[0] == 7 && v[1] == 7 && v[2] == 7);
+    }
+  }
+  CHECK(sofel_subset_axis_range_from_string(NULL, 1, NULL, NULL, NULL) == SOFEL_ERROR_NULL);
+}
+
+/* The inputs of fixture.rs's plan_inputs, built with the C functions. */
+static sofel_subset_input_t *plan_input(size_t i) {
+  sofel_subset_input_t *in = NULL;
+  CHECK(sofel_subset_input_create(&in) == SOFEL_OK);
+  if (i == 0) {
+    sofel_subset_input_set_add(in, SOFEL_SUBSET_SET_UNICODES, 0x41);
+    sofel_subset_input_set_add(in, SOFEL_SUBSET_SET_UNICODES, 0x43);
+  } else if (i == 1) {
+    sofel_subset_input_set_add(in, SOFEL_SUBSET_SET_GLYPHS, 1);
+    sofel_subset_input_set_add(in, SOFEL_SUBSET_SET_GLYPHS, 2);
+    sofel_subset_input_set_glyph_mapping(in, 1, 2);
+    sofel_subset_input_set_glyph_mapping(in, 2, 1);
+  } else {
+    sofel_subset_input_set_add(in, SOFEL_SUBSET_SET_UNICODES, 0x41);
+    sofel_subset_input_override_name_table(in, 1, 3, 1, 0x409, "Sofel", 5);
+  }
+  return in;
+}
+
+/* sofel_subset and the plan give the same bytes as the Rust API, and the
+ * plan's mappings are the Rust plan's. */
+static void test_subset_plans(const sofel_font_t *font) {
+  size_t i;
+  for (i = 0; i < COUNT(subset_cases); i++) {
+    const struct subset_case *c = &subset_cases[i];
+    sofel_subset_input_t *in = plan_input(i);
+    sofel_subset_plan_t *plan = NULL;
+    sofel_bytes_t a = {NULL, 0}, b = {NULL, 0};
+    uint32_t n = 0, g = 0;
+    CHECK(sofel_subset(font, in, &a) == c->status);
+    if (c->status != SOFEL_OK) {
+      CHECK(a.data == NULL);
+      sofel_subset_input_destroy(in);
+      continue;
+    }
+    CHECK(a.len == c->len && fnv(a.data, a.len) == c->fnv);
+    CHECK(sofel_subset_plan_create(font, NULL, in, &plan) == SOFEL_OK && plan != NULL);
+    sofel_subset_input_destroy(in); /* the plan does not borrow the input */
+    CHECK(sofel_subset_plan_execute(plan, font, &b) == SOFEL_OK);
+    CHECK(b.len == a.len && memcmp(a.data, b.data, a.len) == 0);
+    CHECK(sofel_subset_plan_num_output_glyphs(plan, &n) == SOFEL_OK &&
+          n == c->num_output_glyphs);
+    check_pairs(plan, sofel_subset_plan_old_to_new_glyphs, c->n_old_new, c->old_new);
+    check_pairs(plan, sofel_subset_plan_new_to_old_glyphs, c->n_new_old, c->new_old);
+    check_pairs(plan, sofel_subset_plan_unicode_to_old_glyphs, c->n_unicode_old, c->unicode_old);
+    if (c->n_old_new > 0) {
+      CHECK(sofel_subset_plan_old_to_new_glyph(plan, c->old_new[0], &g) == SOFEL_OK &&
+            g == c->old_new[1]);
+      CHECK(sofel_subset_plan_new_to_old_glyph(plan, c->new_old[2], &g) == SOFEL_OK &&
+            g == c->new_old[3]);
+    }
+    if (c->n_unicode_old > 0) {
+      CHECK(sofel_subset_plan_unicode_to_old_glyph(plan, c->unicode_old[0], &g) == SOFEL_OK &&
+            g == c->unicode_old[1]);
+    }
+    g = 777;
+    CHECK(sofel_subset_plan_old_to_new_glyph(plan, 100000, &g) == SOFEL_ERROR_NOT_FOUND &&
+          g == 777);
+    CHECK(sofel_subset_plan_new_to_old_glyph(plan, 100000, &g) == SOFEL_ERROR_NOT_FOUND);
+    CHECK(sofel_subset_plan_unicode_to_old_glyph(plan, 0x10FFFF, &g) == SOFEL_ERROR_NOT_FOUND);
+    CHECK(sofel_subset_plan_execute(plan, NULL, &b) == SOFEL_ERROR_NULL);
+    CHECK(sofel_subset_plan_execute(plan, font, NULL) == SOFEL_ERROR_NULL);
+    sofel_subset_plan_destroy(plan);
+    sofel_bytes_destroy(&a);
+    sofel_bytes_destroy(&b);
+    CHECK(a.data == NULL && a.len == 0);
+    sofel_bytes_destroy(&a); /* again: nothing */
+  }
+  sofel_bytes_destroy(NULL);
+  sofel_subset_plan_destroy(NULL);
+  {
+    /* RETAIN_GIDS with a glyph mapping: refused as by HarfBuzz. */
+    sofel_subset_input_t *in = plan_input(1);
+    sofel_subset_plan_t *plan = NULL;
+    sofel_bytes_t out = {NULL, 0};
+    const sofel_subset_prepared_t *prepared = (const sofel_subset_prepared_t *)&out;
+    sofel_subset_input_set_flags(in, SOFEL_SUBSET_FLAGS_RETAIN_GIDS);
+    CHECK(sofel_subset_plan_create(font, NULL, in, &plan) == SUBSET_INVALID_INPUT &&
+          plan == NULL);
+    CHECK(sofel_subset(font, in, &out) == SUBSET_INVALID_INPUT && out.data == NULL);
+    /* Errors: NULL, and a prepared value (none can be made yet). */
+    CHECK(sofel_subset(NULL, in, &out) == SOFEL_ERROR_NULL);
+    CHECK(sofel_subset(font, NULL, &out) == SOFEL_ERROR_NULL);
+    CHECK(sofel_subset(font, in, NULL) == SOFEL_ERROR_NULL);
+    CHECK(sofel_subset_plan_create(font, NULL, NULL, &plan) == SOFEL_ERROR_NULL);
+    CHECK(sofel_subset_plan_create(font, NULL, in, NULL) == SOFEL_ERROR_NULL);
+    CHECK(sofel_subset_plan_create(font, prepared, in, &plan) == SOFEL_ERROR_INVALID_ARGUMENT);
+    CHECK(sofel_subset_plan_num_output_glyphs(NULL, NULL) == SOFEL_ERROR_NULL);
+    sofel_subset_input_destroy(in);
+  }
+}
+
+/* sofel_serialize_objects: a root with a 16-bit offset to a child, a
+ * shared child and the argument errors. */
+static void test_serialize_objects(void) {
+  static const uint8_t leaf[] = {0xAA, 0xBB};
+  static const uint8_t root[] = {0x01, 0x00, 0x00, 0x00, 0x00};
+  sofel_serialize_link_t links[2] = {{2, 1, 1, 0, SOFEL_SERIALIZE_WHENCE_HEAD, 0},
+                                     {2, 3, 1, 0, SOFEL_SERIALIZE_WHENCE_HEAD, 0}};
+  sofel_serialize_object_t objs[2] = {{leaf, sizeof leaf, NULL, 0, NULL, 0},
+                                      {root, sizeof root, links, 2, NULL, 0}};
+  static const uint8_t expected[] = {0x01, 0x00, 0x05, 0x00, 0x05, 0xAA, 0xBB};
+  sofel_bytes_t out = {NULL, 0};
+  CHECK(sofel_serialize_objects(SOFEL_TAG('t', 'e', 's', 't'), objs, 2, &out) == SOFEL_OK);
+  CHECK(out.len == sizeof expected && memcmp(out.data, expected, out.len) == 0);
+  sofel_bytes_destroy(&out);
+  CHECK(sofel_serialize_objects(0, NULL, 0, &out) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_serialize_objects(0, objs, 2, NULL) == SOFEL_ERROR_NULL);
+  links[1].width = 5;
+  CHECK(sofel_serialize_objects(0, objs, 2, &out) == SOFEL_ERROR_INVALID_ARGUMENT);
+  links[1].width = 2;
+  links[1].objidx = 3;
+  CHECK(sofel_serialize_objects(0, objs, 2, &out) == SOFEL_ERROR_INVALID_ARGUMENT);
+  links[1].objidx = 1;
+  links[1].position = 4; /* past the end of the root */
+  CHECK(sofel_serialize_objects(0, objs, 2, &out) == SOFEL_ERROR_INVALID_ARGUMENT);
+  links[1].position = 3;
+  links[1].whence = 3;
+  CHECK(sofel_serialize_objects(0, objs, 2, &out) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(out.data == NULL);
+}
+
+/* Golem's golem_font_subset with sofel (ADR 0022): the glyphs, RETAIN_GIDS
+ * and sofel_subset, on real fonts of the test data; the fixture's
+ * bytes are those of hb-dump --subset (fixture.rs checks them when
+ * hb-dump is built). Skipped without the test data unless
+ * SOFEL_REQUIRE_TESTDATA is set. */
+static void test_golem_subset(void) {
+  size_t i, j;
+  for (i = 0; i < COUNT(golem_cases); i++) {
+    const struct golem_case *c = &golem_cases[i];
+    size_t len = 0;
+    int32_t e = 12345;
+    sofel_subset_input_t *in = NULL;
+    sofel_bytes_t out = {NULL, 0};
+    uint8_t *data = read_testdata(c->font, &len);
+    sofel_font_t *font;
+    if (data == NULL) {
+      fprintf(stderr, "%s: no test data; subsetting skipped\n", c->font);
+      CHECK(getenv("SOFEL_REQUIRE_TESTDATA") == NULL);
+      return;
+    }
+    font = sofel_font_create(data, len, 0, &e);
+    CHECK(e == SOFEL_OK);
+    CHECK(sofel_subset_input_create(&in) == SOFEL_OK);
+    for (j = 0; j < c->n; j++)
+      CHECK(sofel_subset_input_set_add(in, SOFEL_SUBSET_SET_GLYPHS, c->glyphs[j]) == SOFEL_OK);
+    CHECK(sofel_subset_input_set_flags(in, SOFEL_SUBSET_FLAGS_RETAIN_GIDS) == SOFEL_OK);
+    CHECK(sofel_subset(font, in, &out) == SOFEL_OK);
+    sofel_subset_input_destroy(in);
+    CHECK(out.len == c->len && fnv(out.data, out.len) == c->fnv);
+    sofel_bytes_destroy(&out);
+    sofel_font_destroy(font);
+    free(data);
+  }
+}
+
 int main(void) {
   int32_t e = 12345;
   sofel_font_t *font;
@@ -2076,6 +2445,7 @@ int main(void) {
 
   check_declarations();
   check_shape_declarations();
+  check_subset_declarations();
   test_version_and_errors();
   test_geometry();
   test_unicode();
@@ -2107,6 +2477,11 @@ int main(void) {
   test_shape_glyph_buffers(font);
   test_shape_fixture_font(font);
   test_golem_shape();
+  test_subset_input();
+  test_axis_strings();
+  test_subset_plans(font);
+  test_serialize_objects();
+  test_golem_subset();
 #if !defined(__wasi__)
   test_threads(font);
 #endif

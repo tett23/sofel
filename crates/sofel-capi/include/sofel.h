@@ -94,6 +94,23 @@ uint32_t sofel_version(void);
 /* The buffer holds glyphs where characters are needed, or characters
  * where glyphs are needed (ADR 0020). */
 #define SOFEL_ERROR_BUFFER_CONTENT (-14)
+/* Subsetting (ADR 0022): the font has no glyphs. */
+#define SOFEL_ERROR_NO_GLYPHS (-15)
+/* Subsetting: an input HarfBuzz refuses (a glyph mapping that is not
+ * one-to-one, maps a glyph other than 0 to 0, or comes with
+ * SOFEL_SUBSET_FLAGS_RETAIN_GIDS; an axis the font does not have). */
+#define SOFEL_ERROR_INVALID_INPUT (-16)
+/* Subsetting: a table cannot be read. */
+#define SOFEL_ERROR_MALFORMED_TABLE (-17)
+/* Subsetting: a table, flag or axis setting this version does not subset
+ * yet. */
+#define SOFEL_ERROR_UNSUPPORTED (-18)
+/* Writing: an offset does not fit, even after repacking. */
+#define SOFEL_ERROR_OFFSET_OVERFLOW (-19)
+/* Subsetting: a limit of HarfBuzz's was reached. */
+#define SOFEL_ERROR_LIMIT (-20)
+/* Subsetting: a table cannot be written, where HarfBuzz fails too. */
+#define SOFEL_ERROR_SUBSET_FAILED (-21)
 
 /*
  * A short English description of an error number, as a static
@@ -2608,6 +2625,374 @@ uint8_t sofel_unicode_is_variation_selector(uint32_t codepoint);
 uint8_t sofel_unicode_is_regional_indicator(uint32_t codepoint);
 uint8_t sofel_unicode_space_fallback_type(uint32_t codepoint);
 uint32_t sofel_unicode_vertical_char_for(uint32_t codepoint);
+
+/* --------------------------------------------------------- subsetting */
+
+/*
+ * Subsetting as HarfBuzz 15.1.0's hb-subset does, byte for byte, and the
+ * writing of tables from objects (ADR 0022). An input
+ * (sofel_subset_input_t) says what to keep; a plan
+ * (sofel_subset_plan_t) holds the glyph closure and mapping; executing
+ * it writes the font. sofel_subset does both.
+ *
+ * Golem's subsetting (golem_font_subset) is:
+ *   sofel_subset_input_create (&input);
+ *   sofel_subset_input_set_add (input, SOFEL_SUBSET_SET_GLYPHS, gid) for
+ *     each glyph;
+ *   sofel_subset_input_set_flags (input, SOFEL_SUBSET_FLAGS_RETAIN_GIDS);
+ *   sofel_subset (font, input, &bytes);
+ *   sofel_subset_input_destroy (input); ... sofel_bytes_destroy (&bytes);
+ */
+
+/* Bytes that sofel allocated: free them with sofel_bytes_destroy. */
+typedef struct sofel_bytes
+{
+  const uint8_t *data;
+  size_t len;
+} sofel_bytes_t;
+
+/*
+ * Frees bytes from sofel and sets them to {NULL, 0}; nothing for NULL or
+ * for bytes already {NULL, 0}.
+ *
+ * Rust: none
+ * HarfBuzz: hb_blob_destroy
+ * FreeType: none
+ */
+void sofel_bytes_destroy(sofel_bytes_t *bytes);
+
+/* A subsetting input; not to be shared between threads while changed. */
+typedef struct sofel_subset_input sofel_subset_input_t;
+
+/*
+ * The subsetting flags, with HarfBuzz's values (hb_subset_flags_t).
+ * IFTB_REQUIREMENTS and RETAIN_NUM_GLYPHS behave as in HarfBuzz built
+ * with its experimental API.
+ */
+#define SOFEL_SUBSET_FLAGS_DEFAULT 0x0u
+#define SOFEL_SUBSET_FLAGS_NO_HINTING 0x1u
+#define SOFEL_SUBSET_FLAGS_RETAIN_GIDS 0x2u
+#define SOFEL_SUBSET_FLAGS_DESUBROUTINIZE 0x4u
+#define SOFEL_SUBSET_FLAGS_NAME_LEGACY 0x8u
+#define SOFEL_SUBSET_FLAGS_SET_OVERLAPS_FLAG 0x10u
+#define SOFEL_SUBSET_FLAGS_PASSTHROUGH_UNRECOGNIZED 0x20u
+#define SOFEL_SUBSET_FLAGS_NOTDEF_OUTLINE 0x40u
+#define SOFEL_SUBSET_FLAGS_GLYPH_NAMES 0x80u
+#define SOFEL_SUBSET_FLAGS_NO_PRUNE_UNICODE_RANGES 0x100u
+#define SOFEL_SUBSET_FLAGS_NO_LAYOUT_CLOSURE 0x200u
+#define SOFEL_SUBSET_FLAGS_OPTIMIZE_IUP_DELTAS 0x400u
+#define SOFEL_SUBSET_FLAGS_NO_BIDI_CLOSURE 0x800u
+#define SOFEL_SUBSET_FLAGS_IFTB_REQUIREMENTS 0x1000u
+#define SOFEL_SUBSET_FLAGS_RETAIN_NUM_GLYPHS 0x2000u
+#define SOFEL_SUBSET_FLAGS_DOWNGRADE_CFF2 0x4000u
+#define SOFEL_SUBSET_FLAGS_CFF_IDENTITY_CHARSET 0x8000u
+
+/* The sets of an input, with HarfBuzz's numbers (hb_subset_sets_t). */
+typedef uint32_t sofel_subset_set_t;
+#define SOFEL_SUBSET_SET_GLYPHS 0
+#define SOFEL_SUBSET_SET_UNICODES 1
+#define SOFEL_SUBSET_SET_NO_SUBSET_TABLES 2
+#define SOFEL_SUBSET_SET_DROP_TABLES 3
+#define SOFEL_SUBSET_SET_NAME_IDS 4
+#define SOFEL_SUBSET_SET_NAME_LANGUAGES 5
+#define SOFEL_SUBSET_SET_LAYOUT_FEATURES 6
+#define SOFEL_SUBSET_SET_LAYOUT_SCRIPTS 7
+/* Never a member of a set (HB_SET_VALUE_INVALID). */
+#define SOFEL_SUBSET_SET_INVALID 0xFFFFFFFFu
+
+/*
+ * A new input with HarfBuzz's defaults: no glyphs or characters, name ids
+ * 0 to 6 in language 0x409, HarfBuzz's dropped, copied and layout feature
+ * tables, every script and no flags.
+ *
+ * Rust: sofel_subset::Input::new
+ * HarfBuzz: hb_subset_input_create_or_fail
+ * FreeType: none
+ */
+int32_t sofel_subset_input_create(sofel_subset_input_t **input);
+
+/*
+ * Rust: none
+ * HarfBuzz: hb_subset_input_destroy
+ * FreeType: none
+ */
+void sofel_subset_input_destroy(sofel_subset_input_t *input);
+
+/*
+ * Keeps everything: every glyph, character, name, language, feature and
+ * script; no dropped tables; and the flags NOTDEF_OUTLINE, GLYPH_NAMES,
+ * NAME_LEGACY, NO_PRUNE_UNICODE_RANGES and PASSTHROUGH_UNRECOGNIZED.
+ *
+ * Rust: sofel_subset::Input::keep_everything
+ * HarfBuzz: hb_subset_input_keep_everything
+ * FreeType: none
+ */
+int32_t sofel_subset_input_keep_everything(sofel_subset_input_t *input);
+
+/*
+ * The sets of an input, with HarfBuzz's set semantics: a set may be
+ * inverted ("every value but these"), values are below
+ * SOFEL_SUBSET_SET_INVALID, and tags are SOFEL_TAG values.
+ * SOFEL_ERROR_INVALID_ARGUMENT for a `set` other than SOFEL_SUBSET_SET_*.
+ *
+ * add, add_range (nothing when first > last), remove, clear (also undoes
+ * an inversion) and invert change the set. contains returns 1 or 0.
+ * count writes the number of members (of an inverted set, the values
+ * below SOFEL_SUBSET_SET_INVALID not excluded). next writes the smallest
+ * member greater than *value (SOFEL_SUBSET_SET_INVALID starts from the
+ * beginning) and returns 1, or writes SOFEL_SUBSET_SET_INVALID and
+ * returns 0 when there is none.
+ *
+ * Rust: sofel_subset::Input::set, sofel_subset::Input::map_set, sofel_subset::RangeSet::add, sofel_subset::RangeSet::add_range, sofel_subset::RangeSet::remove, sofel_subset::RangeSet::clear, sofel_subset::RangeSet::invert, sofel_subset::RangeSet::contains, sofel_subset::RangeSet::len, sofel_subset::RangeSet::next
+ * HarfBuzz: hb_subset_input_set, hb_subset_input_glyph_set, hb_subset_input_unicode_set with hb_set_add, hb_set_add_range, hb_set_del, hb_set_clear, hb_set_invert, hb_set_has, hb_set_get_population, hb_set_next
+ * FreeType: none
+ */
+int32_t sofel_subset_input_set_add(sofel_subset_input_t *input, sofel_subset_set_t set,
+                                   uint32_t value);
+int32_t sofel_subset_input_set_add_range(sofel_subset_input_t *input, sofel_subset_set_t set,
+                                         uint32_t first, uint32_t last);
+int32_t sofel_subset_input_set_remove(sofel_subset_input_t *input, sofel_subset_set_t set,
+                                      uint32_t value);
+int32_t sofel_subset_input_set_clear(sofel_subset_input_t *input, sofel_subset_set_t set);
+int32_t sofel_subset_input_set_invert(sofel_subset_input_t *input, sofel_subset_set_t set);
+int32_t sofel_subset_input_set_contains(const sofel_subset_input_t *input,
+                                        sofel_subset_set_t set, uint32_t value);
+int32_t sofel_subset_input_set_count(const sofel_subset_input_t *input, sofel_subset_set_t set,
+                                     uint64_t *count);
+int32_t sofel_subset_input_set_next(const sofel_subset_input_t *input, sofel_subset_set_t set,
+                                    uint32_t *value);
+
+/*
+ * The flags (SOFEL_SUBSET_FLAGS_*). set_flags replaces them;
+ * SOFEL_ERROR_INVALID_ARGUMENT for bits not listed above.
+ *
+ * Rust: sofel_subset::Input::flags, sofel_subset::Input::with_flags
+ * HarfBuzz: hb_subset_input_get_flags, hb_subset_input_set_flags
+ * FreeType: none
+ */
+int32_t sofel_subset_input_get_flags(const sofel_subset_input_t *input, uint32_t *flags);
+int32_t sofel_subset_input_set_flags(sofel_subset_input_t *input, uint32_t flags);
+
+/*
+ * The requested glyph mapping: set_glyph_mapping maps old glyph `old` to
+ * new glyph `new_glyph` (replacing an earlier mapping of `old`);
+ * clear_glyph_mapping removes every pair. The glyphs mapped must also be
+ * in the glyph set to be kept, as in HarfBuzz. Plans fail with
+ * SOFEL_ERROR_INVALID_INPUT for a mapping HarfBuzz refuses.
+ *
+ * Rust: sofel_subset::Input::with_glyph_mapping
+ * HarfBuzz: hb_subset_input_old_to_new_glyph_mapping with hb_map_set, hb_map_clear
+ * FreeType: none
+ */
+int32_t sofel_subset_input_set_glyph_mapping(sofel_subset_input_t *input, uint32_t old,
+                                             uint32_t new_glyph);
+int32_t sofel_subset_input_clear_glyph_mapping(sofel_subset_input_t *input);
+
+/*
+ * The range of axis `tag` set in the input (the user coordinates min,
+ * default and max). SOFEL_ERROR_NOT_FOUND when the input has none.
+ *
+ * Rust: sofel_subset::Input::axis_range
+ * HarfBuzz: hb_subset_input_get_axis_range
+ * FreeType: none
+ */
+int32_t sofel_subset_input_get_axis_range(const sofel_subset_input_t *input, uint32_t tag,
+                                          float *min, float *def, float *max);
+
+/*
+ * Overrides the name record (platform_id, encoding_id, language_id,
+ * name_id) with `text` (UTF-8; `len` bytes, not NUL-terminated), or
+ * removes the record when `len` is 0 (`text` may then be NULL).
+ * SOFEL_ERROR_INVALID_ARGUMENT, with the input unchanged, for platform 1
+ * with a byte that is not ASCII, as HarfBuzz refuses.
+ *
+ * Rust: sofel_subset::Input::with_name_override
+ * HarfBuzz: hb_subset_input_override_name_table
+ * FreeType: none
+ */
+int32_t sofel_subset_input_override_name_table(sofel_subset_input_t *input, uint16_t name_id,
+                                               uint16_t platform_id, uint16_t encoding_id,
+                                               uint16_t language_id, const char *text,
+                                               size_t len);
+
+/*
+ * The input as hb-subset options, separated by spaces (not
+ * NUL-terminated): the flags, then each set that differs from the
+ * defaults, the glyph mapping and the axes.
+ *
+ * Rust: sofel_subset::Input::to_args
+ * HarfBuzz: hb_subset_input_to_string_or_fail
+ * FreeType: none
+ */
+int32_t sofel_subset_input_to_args(const sofel_subset_input_t *input, char *args,
+                                   size_t capacity, size_t *len);
+
+/*
+ * Parses an axis range as hb-subset's --variations does: `drop`, a value,
+ * `min:max` or `min:default:max`, where an empty part means the font's
+ * value, written as NaN (drop gives three NaNs; `min:max` a NaN
+ * default). SOFEL_ERROR_INVALID_ARGUMENT when it does not parse.
+ *
+ * Rust: sofel_subset::axis_range_from_string
+ * HarfBuzz: hb_subset_axis_range_from_string
+ * FreeType: none
+ */
+int32_t sofel_subset_axis_range_from_string(const char *s, size_t len, float *min, float *def,
+                                            float *max);
+
+/*
+ * The range of axis `tag` of the input as `min:default:max` (each as C's
+ * "%g"; not NUL-terminated). SOFEL_ERROR_NOT_FOUND when the input has
+ * none.
+ *
+ * Rust: sofel_subset::axis_range_to_string
+ * HarfBuzz: hb_subset_axis_range_to_string
+ * FreeType: none
+ */
+int32_t sofel_subset_axis_range_to_string(const sofel_subset_input_t *input, uint32_t tag,
+                                          char *s, size_t capacity, size_t *len);
+
+/* The result of preprocessing a font (ADR 0022's later stage); no
+ * function makes one yet. */
+typedef struct sofel_subset_prepared sofel_subset_prepared_t;
+
+/* A subsetting plan: immutable, usable from several threads at once. */
+typedef struct sofel_subset_plan sofel_subset_plan_t;
+
+/*
+ * Computes the glyph closure and mapping of `input` for `font`.
+ * `prepared` must be NULL for now (SOFEL_ERROR_INVALID_ARGUMENT
+ * otherwise). The errors are those of subsetting (SOFEL_ERROR_NO_GLYPHS,
+ * _INVALID_INPUT, _MALFORMED_TABLE, _UNSUPPORTED, _LIMIT).
+ *
+ * Rust: sofel_subset::Plan::new
+ * HarfBuzz: hb_subset_plan_create_or_fail
+ * FreeType: none
+ */
+int32_t sofel_subset_plan_create(const sofel_font_t *font,
+                                 const sofel_subset_prepared_t *prepared,
+                                 const sofel_subset_input_t *input, sofel_subset_plan_t **plan);
+
+/*
+ * Rust: none
+ * HarfBuzz: hb_subset_plan_destroy
+ * FreeType: none
+ */
+void sofel_subset_plan_destroy(sofel_subset_plan_t *plan);
+
+/*
+ * Writes the subset font of a plan made for `font`; free the bytes with
+ * sofel_bytes_destroy. The errors are those of subsetting.
+ *
+ * Rust: sofel_subset::Plan::execute
+ * HarfBuzz: hb_subset_plan_execute_or_fail, hb_face_reference_blob
+ * FreeType: none
+ */
+int32_t sofel_subset_plan_execute(const sofel_subset_plan_t *plan, const sofel_font_t *font,
+                                  sofel_bytes_t *out);
+
+/*
+ * The number of glyphs of the subset font.
+ *
+ * Rust: sofel_subset::Plan::num_output_glyphs
+ * HarfBuzz: none
+ * FreeType: none
+ */
+int32_t sofel_subset_plan_num_output_glyphs(const sofel_subset_plan_t *plan, uint32_t *count);
+
+/*
+ * The new glyph of an old glyph, the old glyph of a new glyph, and the old
+ * glyph of a kept character. SOFEL_ERROR_NOT_FOUND when there is none.
+ *
+ * Rust: sofel_subset::Plan::new_glyph, sofel_subset::Plan::old_glyph
+ * HarfBuzz: hb_subset_plan_old_to_new_glyph_mapping, hb_subset_plan_new_to_old_glyph_mapping, hb_subset_plan_unicode_to_old_glyph_mapping with hb_map_get
+ * FreeType: none
+ */
+int32_t sofel_subset_plan_old_to_new_glyph(const sofel_subset_plan_t *plan, uint32_t old,
+                                           uint32_t *new_glyph);
+int32_t sofel_subset_plan_new_to_old_glyph(const sofel_subset_plan_t *plan, uint32_t new_glyph,
+                                           uint32_t *old);
+int32_t sofel_subset_plan_unicode_to_old_glyph(const sofel_subset_plan_t *plan,
+                                               uint32_t unicode, uint32_t *old);
+
+/*
+ * Every pair of a mapping, into the caller's arrays of `capacity` pairs:
+ * (old, new) ascending by old glyph, (new, old) ascending by new glyph,
+ * and (character, old glyph) ascending by character. *len is the number
+ * of pairs; SOFEL_ERROR_BUFFER_TOO_SMALL as for other arrays.
+ *
+ * Rust: sofel_subset::Plan::old_to_new_glyphs, sofel_subset::Plan::new_to_old_glyphs, sofel_subset::Plan::unicode_to_old_glyphs
+ * HarfBuzz: hb_subset_plan_old_to_new_glyph_mapping, hb_subset_plan_new_to_old_glyph_mapping, hb_subset_plan_unicode_to_old_glyph_mapping with hb_map_next
+ * FreeType: none
+ */
+int32_t sofel_subset_plan_old_to_new_glyphs(const sofel_subset_plan_t *plan, uint32_t *old,
+                                            uint32_t *new_glyph, size_t capacity, size_t *len);
+int32_t sofel_subset_plan_new_to_old_glyphs(const sofel_subset_plan_t *plan,
+                                            uint32_t *new_glyph, uint32_t *old,
+                                            size_t capacity, size_t *len);
+int32_t sofel_subset_plan_unicode_to_old_glyphs(const sofel_subset_plan_t *plan,
+                                                uint32_t *unicode, uint32_t *old,
+                                                size_t capacity, size_t *len);
+
+/*
+ * Subsets `font` as `input` says, into bytes to free with
+ * sofel_bytes_destroy. The errors are those of sofel_subset_plan_create
+ * and sofel_subset_plan_execute.
+ *
+ * Rust: sofel_subset::subset
+ * HarfBuzz: hb_subset_or_fail, hb_face_reference_blob
+ * FreeType: none
+ */
+int32_t sofel_subset(const sofel_font_t *font, const sofel_subset_input_t *input,
+                     sofel_bytes_t *out);
+
+/* What a link's offset is measured from. */
+#define SOFEL_SERIALIZE_WHENCE_HEAD 0     /* the start of the parent */
+#define SOFEL_SERIALIZE_WHENCE_TAIL 1     /* the end of the parent */
+#define SOFEL_SERIALIZE_WHENCE_ABSOLUTE 2 /* the start of the table */
+
+/* A link from an object to another (hb_subset_serialize_link_t, with the
+ * offset kinds of HarfBuzz's serializer). `objidx` 1 is objects[0].
+ * Virtual links (which only order the objects) use `objidx` alone. */
+typedef struct sofel_serialize_link
+{
+  uint32_t width;     /* the offset's bytes: 2, 3 or 4 */
+  uint32_t position;  /* of the offset in the parent */
+  uint32_t objidx;
+  uint32_t is_signed; /* 0, or 1 for a signed offset (width 2 or 4) */
+  uint32_t whence;    /* SOFEL_SERIALIZE_WHENCE_* */
+  uint32_t bias;      /* subtracted from the offset */
+} sofel_serialize_link_t;
+
+/* An object: its bytes (offsets zero) and links
+ * (hb_subset_serialize_object_t). */
+typedef struct sofel_serialize_object
+{
+  const uint8_t *data;
+  size_t len;
+  const sofel_serialize_link_t *real_links;
+  size_t num_real_links;
+  const sofel_serialize_link_t *virtual_links;
+  size_t num_virtual_links;
+} sofel_serialize_object_t;
+
+/*
+ * Serializes caller-built objects into one table, the last object being
+ * the root, and repacks them to resolve offset overflows (for `GSUB` and
+ * `GPOS`, splitting subtables and promoting lookups to extension
+ * lookups). Free the bytes with sofel_bytes_destroy.
+ * SOFEL_ERROR_INVALID_ARGUMENT for no objects, a width other than 2, 3 or
+ * 4, a signed offset of 3 bytes, an unknown whence, a link outside its
+ * object or to an object that does not exist, or a graph the repacker
+ * refuses; SOFEL_ERROR_OFFSET_OVERFLOW when the overflows cannot be
+ * resolved. A pointer of an empty array may be NULL.
+ *
+ * Rust: sofel_write::serialize_objects
+ * HarfBuzz: hb_subset_serialize_or_fail
+ * FreeType: none
+ */
+int32_t sofel_serialize_objects(uint32_t tag, const sofel_serialize_object_t *objects,
+                                size_t count, sofel_bytes_t *out);
 
 #ifdef __cplusplus
 }
