@@ -1979,7 +1979,8 @@ static void test_shape_fixture_font(const sofel_font_t *font) {
   CHECK(sofel_shape_plan_shaper(plan, &shaper) == SOFEL_OK && shaper == SOFEL_SHAPER_DEFAULT);
   CHECK(sofel_shape(font, NULL, NULL, plan, b) == SOFEL_OK);
   CHECK(sofel_buffer_glyphs(b, gids, NULL, NULL, pos, 4) == 2);
-  CHECK(gids[0] == 1 && gids[1] == 2 && pos[0] == advances[1] && pos[4] == advances[2]);
+  CHECK(gids[0] == 1 && gids[1] == 2 && pos[0] == (int32_t)advances[1] &&
+        pos[4] == (int32_t)advances[2]);
   CHECK(sofel_shape(font, NULL, NULL, plan, b) == SOFEL_ERROR_BUFFER_CONTENT);
   CHECK(sofel_buffer_clear(b) == SOFEL_OK);
   CHECK(sofel_buffer_length(b, &n) == SOFEL_OK && n == 0);
@@ -1987,7 +1988,7 @@ static void test_shape_fixture_font(const sofel_font_t *font) {
   seg.direction = SOFEL_DIRECTION_RTL;
   CHECK(sofel_shape_fallback(font, NULL, NULL, &seg, b) == SOFEL_OK);
   CHECK(sofel_buffer_glyphs(b, gids, NULL, NULL, pos, 4) == 2);
-  CHECK(gids[0] == 1 && gids[1] == 2 && pos[0] == advances[1]);
+  CHECK(gids[0] == 1 && gids[1] == 2 && pos[0] == (int32_t)advances[1]);
   CHECK(sofel_shape(NULL, NULL, NULL, plan, b) == SOFEL_ERROR_NULL);
   sofel_shape_plan_destroy(plan);
 
