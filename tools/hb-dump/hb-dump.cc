@@ -406,8 +406,149 @@
 #include <stdarg.h>
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <vector>
+
+/* ADR 0027 task 2: keep the exact float input bits in reference output. */
+static unsigned var_float_bits (float value)
+{
+  unsigned bits;
+  memcpy (&bits, &value, sizeof bits);
+  return bits;
+}
+
+static bool var_options (int argc, char **argv, unsigned *named,
+                         std::vector<hb_variation_t> *variations)
+{
+  *named = HB_FONT_NO_VAR_NAMED_INSTANCE;
+  for (int i = 2; i < argc - 1; i++)
+  {
+    if (strncmp (argv[i], "--named-instance=", 17) == 0)
+    {
+      char *end;
+      unsigned long value = strtoul (argv[i] + 17, &end, 10);
+      if (!* (argv[i] + 17) || *end || value > 0xFFFFFFFFul) return false;
+      *named = (unsigned) value;
+    }
+    else if (strncmp (argv[i], "--variations=", 13) == 0)
+    {
+      const char *p = argv[i] + 13;
+      while (*p)
+      {
+        const char *end = strchr (p, ',');
+        unsigned len = end ? (unsigned) (end - p) : (unsigned) strlen (p);
+        hb_variation_t item;
+        if (!hb_variation_from_string (p, (int) len, &item)) return false;
+        variations->push_back (item);
+        if (!end) break;
+        p = end + 1;
+        if (!*p) return false;
+      }
+    }
+    else return false;
+  }
+  return true;
+}
+
+static int dump_var_reference (int argc, char **argv)
+{
+  bool normalize = strcmp (argv[1], "--var-normalize") == 0;
+  unsigned named;
+  std::vector<hb_variation_t> variations;
+  if (argc < 3 || !var_options (argc, argv, &named, &variations))
+  {
+    fprintf (stderr, "usage: hb-dump --var[\u002dnormalize] [--named-instance=N] [--variations=TAG=VALUE,...] FILE\n");
+    return 2;
+  }
+  hb_blob_t *blob = hb_blob_create_from_file_or_fail (argv[argc - 1]);
+  if (!blob) return 1;
+  unsigned faces = hb_face_count (blob);
+  for (unsigned i = 0; i < faces; i++)
+  {
+    hb_face_t *face = hb_face_create (blob, i);
+    hb_font_t *font = hb_font_create (face);
+    hb_ot_font_set_funcs (font);
+    if (named != HB_FONT_NO_VAR_NAMED_INSTANCE)
+      hb_font_set_var_named_instance (font, named);
+    if (!variations.empty())
+      hb_font_set_variations (font, variations.data(), variations.size());
+    unsigned count = hb_ot_var_get_axis_count (face);
+    std::vector<hb_ot_var_axis_info_t> axes (count);
+    unsigned actual = count;
+    hb_ot_var_get_axis_infos (face, 0, &actual, axes.data());
+    axes.resize (actual);
+    printf ("face %u\naxis_count %u\n", i, count);
+    if (!normalize)
+    {
+      for (const auto &axis : axes)
+        printf ("axis %u %08x %u %u %08x %08x %08x\n",
+                axis.axis_index, axis.tag, axis.name_id, (unsigned) axis.flags,
+                var_float_bits (axis.min_value),
+                var_float_bits (axis.default_value),
+                var_float_bits (axis.max_value));
+      unsigned named_count = hb_ot_var_get_named_instance_count (face);
+      printf ("named_count %u\n", named_count);
+      for (unsigned n = 0; n < named_count; n++)
+      {
+        unsigned length = count;
+        std::vector<float> coords (count);
+        hb_ot_var_named_instance_get_design_coords (face, n, &length, coords.data());
+        printf ("named %u %u %u", n,
+                hb_ot_var_named_instance_get_subfamily_name_id (face, n),
+                hb_ot_var_named_instance_get_postscript_name_id (face, n));
+        for (unsigned a = 0; a < length; a++)
+          printf (" %08x", var_float_bits (coords[a]));
+        printf ("\n");
+      }
+      unsigned length = 0;
+      const int *normalized = hb_font_get_var_coords_normalized (font, &length);
+      printf ("coords_normalized");
+      for (unsigned a = 0; a < length; a++) printf (" %d", normalized[a]);
+      printf ("\n");
+      const float *design = hb_font_get_var_coords_design (font, &length);
+      printf ("coords_design");
+      for (unsigned a = 0; a < length; a++)
+        printf (" %08x", var_float_bits (design[a]));
+      printf ("\n");
+    }
+    else
+    {
+      std::vector<float> coords (axes.size());
+      std::vector<int> result (axes.size());
+      for (unsigned a = 0; a < axes.size(); a++)
+      {
+        for (unsigned b = 0; b < axes.size(); b++)
+          coords[b] = axes[b].default_value;
+        float min = axes[a].min_value, max = axes[a].max_value;
+        for (unsigned k = 0; k <= 256; k++)
+        {
+          coords[a] = min + (max - min) * (float) k / 256.f;
+          hb_ot_var_normalize_coords (face, coords.size(), coords.data(), result.data());
+          printf ("sample %u %u %08x %d\n", a, k,
+                  var_float_bits (coords[a]), result[a]);
+        }
+        const char *labels[] = {"outside_min", "outside_max", "half_min", "half_max"};
+        float span = max - min;
+        float values[] = {min - span, max + span,
+                          axes[a].default_value - span / 32768.f,
+                          axes[a].default_value + span / 32768.f};
+        for (unsigned k = 0; k < 4; k++)
+        {
+          coords[a] = values[k];
+          hb_ot_var_normalize_coords (face, coords.size(), coords.data(), result.data());
+          printf ("sample %u %s %08x %d\n", a, labels[k],
+                  var_float_bits (coords[a]), result[a]);
+        }
+      }
+    }
+    printf ("end\n");
+    hb_font_destroy (font);
+    hb_face_destroy (face);
+  }
+  hb_blob_destroy (blob);
+  return 0;
+}
 
 static const hb_ot_metrics_tag_t metric_tags[] = {
   HB_OT_METRICS_TAG_HORIZONTAL_ASCENDER,
@@ -2936,6 +3077,9 @@ static const two_file_mode_t two_file_modes[] = {
 
 int main (int argc, char **argv)
 {
+  if (argc >= 2 && (strcmp (argv[1], "--var") == 0 ||
+                    strcmp (argv[1], "--var-normalize") == 0))
+    return dump_var_reference (argc, argv);
   if (argc >= 2 && strcmp (argv[1], "--subset") == 0)
     return dump_subset (argc, argv);
   for (unsigned i = 0; i < sizeof (args_modes) / sizeof (args_modes[0]); i++)
