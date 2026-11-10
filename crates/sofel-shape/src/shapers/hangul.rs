@@ -40,7 +40,7 @@ fn override_features(planner: &mut Planner<'_, '_>) {
 }
 
 /// `data_create_hangul`.
-fn data_create(plan: &ShapePlan<'_>) -> ShaperData {
+fn data_create(plan: &ShapePlan<'_>, _: &sofel_font::Font<'_>) -> ShaperData {
     let m = |t: [u8; 4]| plan.map.one_mask(Tag(t));
     ShaperData::Hangul(HangulPlan {
         mask_array: [0, m(FEATURES[0]), m(FEATURES[1]), m(FEATURES[2])],

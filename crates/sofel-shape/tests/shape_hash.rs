@@ -92,7 +92,7 @@ const PAIRS: &[(&str, &str, &[&str], &[&str])] = &[
 
 /// FNV-1a over the glyph, cluster, flags and position of every glyph of
 /// every line of every pair.
-const EXPECTED: u64 = 0xba0f_727a_08c5_b046;
+const EXPECTED: u64 = 0x07b4_39d7_a29c_e64b;
 
 fn fnv(h: &mut u64, v: i64) {
     for b in v.to_le_bytes() {

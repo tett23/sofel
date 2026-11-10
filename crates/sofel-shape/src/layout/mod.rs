@@ -177,7 +177,7 @@ fn chain_coverage<'a>(c: &ChainedSequenceContext<'a>) -> Coverage<'a> {
 }
 
 /// The coverage of a `GSUB` subtable's first glyph (`get_coverage`).
-fn subst_coverage<'a>(s: &SubstSubtable<'a>) -> Coverage<'a> {
+pub(crate) fn subst_coverage<'a>(s: &SubstSubtable<'a>) -> Coverage<'a> {
     match s {
         SubstSubtable::SingleDelta { coverage, .. }
         | SubstSubtable::SingleList { coverage, .. }
