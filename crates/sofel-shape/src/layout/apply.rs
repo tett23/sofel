@@ -1405,6 +1405,61 @@ fn apply_string(c: &mut ApplyContext<'_, '_, '_, '_, '_>, index: usize) -> bool 
     }
 }
 
+/// `hb_ot_layout_substitute_lookup` for a lookup a shaper built, not in
+/// the font (the Arabic fallback lookups of ADR 0024): its `props`, its
+/// subtables with their digests, and the digest of all of them. The
+/// context applies it as HarfBuzz's with an empty `GDEF`
+/// (`has_glyph_classes` cleared by the caller).
+pub(crate) fn apply_synthesized_gsub<'a>(
+    c: &mut ApplyContext<'_, 'a, '_, '_, '_>,
+    props: u32,
+    subtables: &[(
+        sofel_font::read::gsub::SubstSubtable<'a>,
+        crate::digest::Digest,
+    )],
+    digest: &crate::digest::Digest,
+) -> bool {
+    if c.buffer.len == 0 || c.lookup_mask == 0 {
+        return false;
+    }
+    c.set_lookup_props(props);
+    c.buffer.clear_output();
+    c.buffer.idx = 0;
+    let mut ret = false;
+    while c.buffer.successful {
+        let mut j = c.buffer.idx;
+        while j < c.buffer.len {
+            let info = &c.buffer.info[j];
+            if digest.may_have(info.codepoint)
+                && info.mask & c.lookup_mask != 0
+                && c.check_glyph_property(info, c.lookup_props)
+            {
+                break;
+            }
+            j = j.wrapping_add(1);
+        }
+        if j > c.buffer.idx && !c.buffer.next_glyphs(j.wrapping_sub(c.buffer.idx)) {
+            break;
+        }
+        if c.buffer.idx >= c.buffer.len {
+            break;
+        }
+        let applied = match subtables {
+            [(only, _)] => super::gsub::apply(c, only),
+            _ => subtables
+                .iter()
+                .any(|(s, d)| d.may_have(c.buffer.cur(0).codepoint) && super::gsub::apply(c, s)),
+        };
+        if applied {
+            ret = true;
+        } else {
+            let _ = c.buffer.next_glyph();
+        }
+    }
+    c.buffer.sync();
+    ret
+}
+
 /// `hb_ot_map_t::apply`: the lookups of every stage of `table`, with the
 /// pauses between stages.
 pub(crate) fn apply_map(

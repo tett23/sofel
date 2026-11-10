@@ -165,6 +165,10 @@ pub(crate) mod scratch {
     pub(crate) const HAS_CGJ: u32 = 0x0000_0010;
     pub(crate) const HAS_VARIATION_SELECTOR_FALLBACK: u32 = 0x0000_0040;
     pub(crate) const HAS_CONTINUATIONS: u32 = 0x0000_0080;
+    #[allow(dead_code)] // Used by the shapers of ADR 0024 as they land.
+    pub(crate) const HAS_BROKEN_SYLLABLE: u32 = 0x0000_0020;
+    /// The first flag a shaper may use (`HB_BUFFER_SCRATCH_FLAG_SHAPER0`).
+    pub(crate) const SHAPER0: u32 = 0x0100_0000;
 }
 
 /// `IS_LIG_BASE` of `lig_props`.
