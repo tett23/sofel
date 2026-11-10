@@ -628,9 +628,18 @@ impl<'a> Font<'a> {
     /// the glyph count count as unmapped (ADR 0010). `None` also when the
     /// font has no usable subtable.
     pub fn nominal_glyph(&self, c: u32) -> Option<GlyphId> {
+        self.nominal_glyph_raw(c).filter(|g| g.0 < self.num_glyphs)
+    }
+
+    /// [`Font::nominal_glyph`] with every glyph id the subtable gives,
+    /// as HarfBuzz's `hb_font_get_nominal_glyph` with the `ot` font
+    /// functions gives it, glyph ids not below the glyph count included.
+    /// Shaping uses these as HarfBuzz does (ADR 0020); their advances
+    /// are 0 and they have no outlines.
+    pub fn nominal_glyph_raw(&self, c: u32) -> Option<GlyphId> {
         let s = self.cmap?;
         let again = |m: u32| (m != 0).then(|| s.glyph(m)).flatten();
-        let g = match self.remap {
+        match self.remap {
             Remap::None => s.glyph(c),
             Remap::Symbol => s
                 .glyph(c)
@@ -646,8 +655,7 @@ impl<'a> Font<'a> {
                 .flatten()
                 .or_else(|| unicode_to_macroman(c).and_then(|m| s.glyph(m))),
             Remap::Ascii => (c < 0x80).then(|| s.glyph(c)).flatten(),
-        };
-        g.filter(|g| g.0 < self.num_glyphs)
+        }
     }
 
     /// The glyph for the variation sequence `c` + `selector`, from the
@@ -655,9 +663,17 @@ impl<'a> Font<'a> {
     /// default variation falls back to [`Font::nominal_glyph`]; glyph ids
     /// not below the glyph count count as unmapped.
     pub fn variation_glyph(&self, c: u32, selector: u32) -> Option<GlyphId> {
+        self.variation_glyph_raw(c, selector)
+            .filter(|g| g.0 < self.num_glyphs)
+    }
+
+    /// [`Font::variation_glyph`] with every glyph id, as HarfBuzz's
+    /// `hb_font_get_variation_glyph` gives it (see
+    /// [`Font::nominal_glyph_raw`]).
+    pub fn variation_glyph_raw(&self, c: u32, selector: u32) -> Option<GlyphId> {
         match self.uvs?.variant(c, selector)? {
-            VariantGlyph::Default => self.nominal_glyph(c),
-            VariantGlyph::Glyph(g) => (g.0 < self.num_glyphs).then_some(g),
+            VariantGlyph::Default => self.nominal_glyph_raw(c),
+            VariantGlyph::Glyph(g) => Some(g),
         }
     }
 

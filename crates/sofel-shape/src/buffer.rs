@@ -1638,6 +1638,78 @@ impl UnicodeBuffer {
         self.buf.add(codepoint, cluster);
     }
 
+    /// Adds the characters `start..end` of `source` with their cluster
+    /// values (`hb_buffer_append` of Unicode buffers; both clamped to
+    /// `source`; nothing happens for an empty range). When this buffer
+    /// was empty, the characters of `source` before `start` and then the
+    /// pre-context of `source` become the pre-context, up to five; the
+    /// characters after `end` and then the post-context of `source`
+    /// always become the post-context. The settings stay.
+    pub fn append(&mut self, source: &UnicodeBuffer, start: usize, end: usize) {
+        let src = &source.buf;
+        let end = end.min(src.len);
+        let start = start.min(end);
+        if start == end {
+            return;
+        }
+        let orig_len = self.buf.len;
+        for i in src.infos().get(start..end).unwrap_or_default() {
+            self.buf.add(i.codepoint, i.cluster);
+        }
+        let push = |ctx: &mut [u32; CONTEXT_LENGTH], n: &mut usize, u: u32| {
+            if let Some(slot) = ctx.get_mut(*n) {
+                *slot = u;
+                *n = n.wrapping_add(1);
+            }
+        };
+        let codepoint = |i: usize| src.infos().get(i).map_or(0, |x| x.codepoint);
+        if orig_len == 0 && start.saturating_add(src.context_len[0]) > 0 {
+            let mut n = 0;
+            let mut ctx = [0; CONTEXT_LENGTH];
+            for i in (0..start).rev().take(CONTEXT_LENGTH) {
+                push(&mut ctx, &mut n, codepoint(i));
+            }
+            for &u in source.pre_context() {
+                push(&mut ctx, &mut n, u);
+            }
+            self.buf.context[0] = ctx;
+            self.buf.context_len[0] = n;
+        }
+        let mut n = 0;
+        let mut ctx = [0; CONTEXT_LENGTH];
+        for i in (end..src.len).take(CONTEXT_LENGTH) {
+            push(&mut ctx, &mut n, codepoint(i));
+        }
+        for &u in source.post_context() {
+            push(&mut ctx, &mut n, u);
+        }
+        self.buf.context[1] = ctx;
+        self.buf.context_len[1] = n;
+    }
+
+    /// Sets the cluster value of every character to its index, as
+    /// `hb-shape` does without `--utf8-clusters`.
+    pub fn number_clusters(&mut self) {
+        for (i, info) in (0u32..).zip(self.buf.infos_mut()) {
+            info.cluster = i;
+        }
+    }
+
+    /// A buffer with this one's settings and no characters
+    /// (`hb_buffer_create_similar`): the flags, cluster level,
+    /// replacement character and the invisible, not-found and
+    /// not-found variation selector glyphs. The random state is 1.
+    pub fn similar(&self) -> UnicodeBuffer {
+        let mut b = UnicodeBuffer::new();
+        b.buf.flags = self.buf.flags;
+        b.buf.cluster_level = self.buf.cluster_level;
+        b.buf.replacement = self.buf.replacement;
+        b.buf.invisible = self.buf.invisible;
+        b.buf.not_found = self.buf.not_found;
+        b.buf.not_found_variation_selector = self.buf.not_found_variation_selector;
+        b
+    }
+
     /// Adds UTF-8 text (`hb_buffer_add_utf8`): the characters of
     /// `text[item_offset..item_offset + item_len]` (to the end for
     /// `None`; both clamped to the text) with their byte positions in

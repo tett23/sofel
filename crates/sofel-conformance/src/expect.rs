@@ -73,3 +73,22 @@ pub fn report(problems: &[Problem], list: &str) -> String {
     }
     out
 }
+
+/// The identifiers of an expected-failures file with their comments (the
+/// text after the identifier's `#`, trimmed; empty when there is none).
+pub fn parse_reasons(text: &str) -> std::collections::BTreeMap<String, String> {
+    text.lines()
+        .filter_map(|l| {
+            let l = l.trim();
+            if l.is_empty() || l.starts_with('#') {
+                return None;
+            }
+            let end = l
+                .char_indices()
+                .find(|&(i, c)| c == '#' && l[..i].ends_with(char::is_whitespace))
+                .map_or(l.len(), |(i, _)| i);
+            let reason = l.get(end + 1..).unwrap_or("").trim();
+            Some((l[..end].trim().to_string(), reason.to_string()))
+        })
+        .collect()
+}

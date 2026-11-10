@@ -241,7 +241,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <algorithm>
 #include <string>
+#include <vector>
 
 static const hb_ot_metrics_tag_t metric_tags[] = {
   HB_OT_METRICS_TAG_HORIZONTAL_ASCENDER,
@@ -1547,6 +1549,253 @@ static int dump_mult ()
   return 0;
 }
 
+/* --shape, --shape-random and --layout-map (ADR 0020). */
+
+/* hb-shape's parse_features: the list without surrounding quotes, split
+ * at `,` and ` `, items that do not parse dropped. */
+static void parse_feature_list (const char *arg, std::vector<hb_feature_t> *out)
+{
+  std::string s (arg);
+  if (s.size () >= 2 && s[0] == s[s.size () - 1] && (s[0] == '"' || s[0] == '\''))
+    s = s.substr (1, s.size () - 2);
+  size_t start = 0;
+  while (start <= s.size ())
+  {
+    size_t end = s.find_first_of (", ", start);
+    if (end == std::string::npos) end = s.size ();
+    hb_feature_t f;
+    if (end > start && hb_feature_from_string (s.data () + start, (int) (end - start), &f))
+      out->push_back (f);
+    start = end + 1;
+  }
+}
+
+/* What hb-shape writes for the glyphs (shape_format_options_t::serialize),
+ * with glyph ids, UTF-8 cluster values and the flags. */
+static void print_shaped (hb_buffer_t *b, hb_font_t *font)
+{
+  std::string s = serialize_all (b, font, HB_BUFFER_SERIALIZE_FORMAT_TEXT,
+				 (hb_buffer_serialize_flags_t) (HB_BUFFER_SERIALIZE_FLAG_NO_GLYPH_NAMES |
+								HB_BUFFER_SERIALIZE_FLAG_GLYPH_FLAGS));
+  fwrite (s.data (), 1, s.size (), stdout);
+  printf ("\n");
+}
+
+static int dump_shape (int argc, char **argv)
+{
+  const char *font_path = argv[2], *text_path = argv[3], *dir = argv[4];
+  hb_blob_t *blob = hb_blob_create_from_file_or_fail (font_path);
+  FILE *fp = blob ? fopen (text_path, "rb") : nullptr;
+  if (!fp)
+  {
+    fprintf (stderr, "hb-dump: cannot read %s\n", blob ? text_path : font_path);
+    hb_blob_destroy (blob);
+    return 1;
+  }
+  std::vector<hb_feature_t> features;
+  parse_feature_list (argv[5], &features);
+  hb_face_t *face = hb_face_create (blob, 0);
+  hb_font_t *font = hb_font_create (face);
+  hb_buffer_t *b = hb_buffer_create ();
+  std::string line;
+  int c;
+  bool more = true;
+  while (more)
+  {
+    c = fgetc (fp);
+    if (c != EOF && c != '\n')
+    {
+      line.push_back ((char) c);
+      continue;
+    }
+    more = c != EOF;
+    if (!more && line.empty ())
+      break;
+    hb_buffer_clear_contents (b);
+    hb_buffer_add_utf8 (b, line.data (), (int) line.size (), 0, (int) line.size ());
+    if (strcmp (dir, "auto") != 0)
+      hb_buffer_set_direction (b, hb_direction_from_string (dir, -1));
+    hb_buffer_guess_segment_properties (b);
+    hb_shape (font, b, features.data (), (unsigned) features.size ());
+    print_shaped (b, font);
+    line.clear ();
+  }
+  fclose (fp);
+  hb_buffer_destroy (b);
+  hb_font_destroy (font);
+  hb_face_destroy (face);
+  hb_blob_destroy (blob);
+  return 0;
+}
+
+/* The pseudo-random numbers of --shape-random: the C standard's example
+ * LCG, the high 15 bits of the state. */
+static unsigned random_next (uint32_t *state)
+{
+  *state = *state * 1103515245u + 12345u;
+  return (*state >> 16) & 0x7FFFu;
+}
+
+static int compare_u32 (const void *a, const void *b)
+{
+  uint32_t x = *(const uint32_t *) a, y = *(const uint32_t *) b;
+  return x < y ? -1 : x > y;
+}
+
+static int dump_shape_random (int argc, char **argv)
+{
+  hb_blob_t *blob = hb_blob_create_from_file_or_fail (argv[2]);
+  if (!blob)
+  {
+    fprintf (stderr, "hb-dump: cannot read %s\n", argv[2]);
+    return 1;
+  }
+  unsigned count = (unsigned) strtoul (argv[3], nullptr, 10);
+  uint32_t seed = (uint32_t) strtoul (argv[4], nullptr, 10);
+  unsigned faces = hb_face_count (blob);
+  if (!faces) faces = 1;
+  hb_unicode_funcs_t *ufuncs = hb_unicode_funcs_get_default ();
+  hb_buffer_t *b = hb_buffer_create ();
+  for (unsigned i = 0; i < faces; i++)
+  {
+    hb_face_t *face = hb_face_create (blob, i);
+    hb_font_t *font = hb_font_create (face);
+    printf ("face %u\n", i);
+    /* The mapped characters, grouped by script, scripts in tag order. */
+    std::vector<std::pair<uint32_t, std::vector<hb_codepoint_t>>> groups;
+    std::vector<uint32_t> tags;
+    std::vector<std::pair<uint32_t, hb_codepoint_t>> chars;
+    for (hb_codepoint_t u = 0; u <= 0x10FFFFu; u++)
+    {
+      hb_codepoint_t g;
+      if (hb_font_get_nominal_glyph (font, u, &g))
+	chars.push_back (std::make_pair ((uint32_t) hb_unicode_script (ufuncs, u), u));
+    }
+    for (auto &p : chars) tags.push_back (p.first);
+    if (!tags.empty ())
+    {
+      qsort (tags.data (), tags.size (), sizeof (tags[0]), compare_u32);
+      tags.erase (std::unique (tags.begin (), tags.end ()), tags.end ());
+    }
+    for (uint32_t tag : tags)
+    {
+      std::vector<hb_codepoint_t> cps;
+      for (auto &p : chars)
+	if (p.first == tag) cps.push_back (p.second);
+      printf ("script %08x %u\n", tag, (unsigned) cps.size ());
+      uint32_t state = seed;
+      for (unsigned n = 0; n < count; n++)
+      {
+	unsigned len = 1 + random_next (&state) % 16;
+	std::vector<hb_codepoint_t> text;
+	for (unsigned k = 0; k < len; k++)
+	  text.push_back (cps[random_next (&state) % cps.size ()]);
+	hb_buffer_clear_contents (b);
+	hb_buffer_set_flags (b, (hb_buffer_flags_t) (HB_BUFFER_FLAG_BOT | HB_BUFFER_FLAG_EOT |
+						     HB_BUFFER_FLAG_PRODUCE_UNSAFE_TO_CONCAT));
+	hb_buffer_add_codepoints (b, text.data (), (int) text.size (), 0, (int) text.size ());
+	hb_buffer_guess_segment_properties (b);
+	hb_shape (font, b, nullptr, 0);
+	printf ("s ");
+	for (unsigned k = 0; k < len; k++)
+	  printf (k ? ",%x" : "%x", text[k]);
+	printf (" ");
+	print_shaped (b, font);
+      }
+    }
+    printf ("end\n");
+    hb_font_destroy (font);
+    hb_face_destroy (face);
+  }
+  hb_buffer_destroy (b);
+  hb_blob_destroy (blob);
+  return 0;
+}
+
+/* --layout-map: the script and language system hb_ot_map_builder_t picks
+ * in GSUB and GPOS. */
+static int dump_layout_map (hb_blob_t *blob)
+{
+  ot_tag_set_t scripts = {nullptr, 0, 0};
+  hb_unicode_funcs_t *ufuncs = hb_unicode_funcs_get_default ();
+  for (hb_codepoint_t u = 0; u <= 0x10FFFFu; u++)
+    ot_tag_add (&scripts, (hb_tag_t) hb_unicode_script (ufuncs, u));
+  ot_tag_add (&scripts, (hb_tag_t) HB_SCRIPT_INVALID);
+  ot_tag_add (&scripts, (hb_tag_t) HB_SCRIPT_MATH);
+  ot_tag_sort_unique (&scripts);
+  static const hb_tag_t table_tags[2] = {HB_OT_TAG_GSUB, HB_OT_TAG_GPOS};
+  unsigned faces = hb_face_count (blob);
+  if (!faces) faces = 1;
+  for (unsigned i = 0; i < faces; i++)
+  {
+    hb_face_t *face = hb_face_create (blob, i);
+    printf ("face %u\n", i);
+    /* The languages: none, and those of the language system tags of
+     * both tables. */
+    std::vector<hb_language_t> languages;
+    languages.push_back (HB_LANGUAGE_INVALID);
+    for (unsigned t = 0; t < 2; t++)
+    {
+      unsigned sc = hb_ot_layout_table_get_script_tags (face, table_tags[t], 0, nullptr, nullptr);
+      for (unsigned s = 0; s < sc; s++)
+      {
+	hb_tag_t ltags[64];
+	unsigned start = 0, n;
+	do
+	{
+	  n = 64;
+	  hb_ot_layout_script_get_language_tags (face, table_tags[t], s, start, &n, ltags);
+	  for (unsigned k = 0; k < n; k++)
+	  {
+	    hb_language_t l = hb_ot_tag_to_language (ltags[k]);
+	    if (l && std::find (languages.begin (), languages.end (), l) == languages.end ())
+	      languages.push_back (l);
+	  }
+	  start += n;
+	} while (n == 64);
+      }
+    }
+    for (unsigned s = 0; s < scripts.n; s++)
+      for (hb_language_t lang : languages)
+      {
+	unsigned script_count = HB_OT_MAX_TAGS_PER_SCRIPT, language_count = HB_OT_MAX_TAGS_PER_LANGUAGE;
+	hb_tag_t script_tags[HB_OT_MAX_TAGS_PER_SCRIPT], language_tags[HB_OT_MAX_TAGS_PER_LANGUAGE];
+	hb_ot_tags_from_script_and_language ((hb_script_t) scripts.v[s], lang,
+					     &script_count, script_tags,
+					     &language_count, language_tags);
+	printf ("sel %08x %s", scripts.v[s], lang ? hb_language_to_string (lang) : "*");
+	for (unsigned t = 0; t < 2; t++)
+	{
+	  unsigned script_index, language_index;
+	  hb_tag_t chosen;
+	  hb_bool_t found = hb_ot_layout_table_select_script (face, table_tags[t], script_count, script_tags,
+							      &script_index, &chosen);
+	  hb_ot_layout_script_select_language (face, table_tags[t], script_index,
+					       language_count, language_tags, &language_index);
+	  printf (" %d %u %08x %u", found ? 1 : 0, script_index, chosen, language_index);
+	}
+	printf ("\n");
+      }
+    printf ("end\n");
+    hb_face_destroy (face);
+  }
+  free (scripts.v);
+  return 0;
+}
+
+/* The modes with more arguments. */
+struct args_mode_t
+{
+  const char *name;
+  int argc;
+  int (*dump) (int argc, char **argv);
+};
+
+static const args_mode_t args_modes[] = {
+  {"--shape", 6, dump_shape},
+  {"--shape-random", 5, dump_shape_random},
+};
+
 /* The modes that read no file. */
 struct fileless_mode_t
 {
@@ -1575,6 +1824,7 @@ static const dump_mode_t modes[] = {
   {"--cmap", dump_cmap},
   {"--baselines", dump_baselines},
   {"--vowel-constraints", dump_vowel_constraints},
+  {"--layout-map", dump_layout_map},
 };
 
 /* The modes that read a font and a second file. */
@@ -1591,6 +1841,9 @@ static const two_file_mode_t two_file_modes[] = {
 
 int main (int argc, char **argv)
 {
+  for (unsigned i = 0; i < sizeof (args_modes) / sizeof (args_modes[0]); i++)
+    if (argc == args_modes[i].argc && strcmp (argv[1], args_modes[i].name) == 0)
+      return args_modes[i].dump (argc, argv);
   if (argc == 4)
     for (unsigned i = 0; i < sizeof (two_file_modes) / sizeof (two_file_modes[0]); i++)
       if (strcmp (argv[1], two_file_modes[i].name) == 0)

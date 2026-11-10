@@ -51,17 +51,18 @@ impl<'f, 'a> ShapeFont<'f, 'a> {
         self.scale.scale.y_scale()
     }
 
-    /// `get_nominal_glyph`.
+    /// `get_nominal_glyph`: glyph ids not below the glyph count
+    /// included, as HarfBuzz's `ot` font functions give them.
     pub(crate) fn nominal_glyph(&self, c: u32) -> Option<u32> {
-        self.font.nominal_glyph(c).map(|g| g.0)
+        self.font.nominal_glyph_raw(c).map(|g| g.0)
     }
     /// `has_glyph`.
     pub(crate) fn has_glyph(&self, c: u32) -> bool {
-        self.font.nominal_glyph(c).is_some()
+        self.font.nominal_glyph_raw(c).is_some()
     }
-    /// `get_variation_glyph`.
+    /// `get_variation_glyph`, as [`Self::nominal_glyph`].
     pub(crate) fn variation_glyph(&self, c: u32, selector: u32) -> Option<u32> {
-        self.font.variation_glyph(c, selector).map(|g| g.0)
+        self.font.variation_glyph_raw(c, selector).map(|g| g.0)
     }
     /// `get_glyph_h_advance`.
     pub(crate) fn h_advance(&self, glyph: u32) -> i32 {
