@@ -55,6 +55,14 @@ fn adr0030_i06_cff2_preserves_zero_columns_and_order() {
         assert_eq!(adapter.weight(0, index), old.weight(0, index));
     }
 
+    let at_max = font.instance(&max);
+    let adapter_max = at_max.ft_blend_weights(&cff);
+    let old_max = FtBlend::new(cff.variation_store(), &[0x10000]);
+    assert_eq!(adapter_max.regions(0), old_max.regions(0));
+    for index in 0..3 {
+        assert_eq!(adapter_max.weight(0, index), old_max.weight(0, index));
+    }
+
     let hb = font.instance(&max).blend_scalars::<HbF64>(0).unwrap();
     assert_eq!(hb.len(), 3);
     assert_eq!(hb.iter().collect::<Vec<_>>(), vec![1.0, 1.0, 1.0]);
