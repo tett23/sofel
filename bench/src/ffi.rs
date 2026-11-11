@@ -18,6 +18,7 @@ unsafe extern "C" {
     pub fn bhb_close(font: *mut c_void);
     pub fn bhb_set_ppem(font: *mut c_void, ppem: c_uint);
     pub fn bhb_nominal_glyph(font: *mut c_void, c: c_uint) -> c_uint;
+    fn hb_ot_metrics_get_variation(font: *mut c_void, tag: c_uint) -> f32;
     pub fn bhb_advance(font: *mut c_void, gid: c_uint) -> c_int;
     pub fn bhb_math_constant(font: *mut c_void, index: c_uint) -> c_int;
     pub fn bhb_v_advance(font: *mut c_void, gid: c_uint) -> c_int;
@@ -182,6 +183,10 @@ impl HbFont {
     pub fn set_bitmap_ppem(&self, ppem: u32) {
         // SAFETY: a valid font.
         unsafe { bhb_set_bitmap_ppem(self.0, ppem) };
+    }
+    pub fn metric_variation(&self, tag: u32) -> f32 {
+        // SAFETY: the font is live and the tag is an OpenType metric tag.
+        unsafe { hb_ot_metrics_get_variation(self.0, tag) }
     }
     pub fn color_format(&self, gid: u32) -> i64 {
         // SAFETY: a valid font.

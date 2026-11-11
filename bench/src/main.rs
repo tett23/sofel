@@ -6,6 +6,7 @@
 mod ffi;
 mod shape;
 mod subset;
+mod variation;
 
 use std::path::PathBuf;
 
@@ -1244,6 +1245,7 @@ fn main() {
 
         outline_items(&mut b, name, &font, &ft, &hb);
     }
+    variation::items(&mut b, &a.testdata);
     shape::shape_items(&mut b, &a.testdata);
     subset::subset_items(&mut b, &a.testdata);
     let failed = report_checks(&b.checks);
@@ -1253,5 +1255,23 @@ fn main() {
     if let Err(e) = failed {
         eprintln!("{e}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod variation_tests {
+    use super::*;
+
+    #[test]
+    fn i02_cached_and_recomputed_hvar_and_i04_default_mvar_match() {
+        let mut b = Bench {
+            once: true,
+            filter: Some("item delta".into()),
+            rows: vec![],
+            checks: vec![],
+        };
+        let data = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/testdata");
+        variation::items(&mut b, &data);
+        assert_eq!(b.rows.len(), 11);
     }
 }
