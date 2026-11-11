@@ -374,8 +374,9 @@ pub fn apply_hb(
         return Err(GvarError::InvalidData);
     }
     let start = if phantom_only { count - 4 } else { 0 };
-    let private_any =
-        (0..data.tuple_count()).any(|i| data.tuple(i).is_some_and(|tuple| tuple.private_points()));
+    let private_any = data
+        .tuples()
+        .any(|tuple| tuple.is_some_and(|tuple| tuple.private_points()));
     scratch.working.clear();
     scratch.working.extend_from_slice(points);
     scratch.original.clear();
@@ -384,8 +385,8 @@ pub fn apply_hb(
     scratch.explicit.clear();
     scratch.explicit.resize(count, false);
     let mut flush = false;
-    for index in 0..data.tuple_count() {
-        let tuple = data.tuple(index).ok_or(GvarError::InvalidData)?;
+    for tuple in data.tuples() {
+        let tuple = tuple.ok_or(GvarError::InvalidData)?;
         let scalar = scalar_hb(table, &tuple, coords, shared)?;
         if scalar == 0.0 {
             continue;
@@ -473,8 +474,8 @@ pub fn apply_ft(
     scratch.deltas.resize(count, Point::default());
     scratch.explicit.clear();
     scratch.explicit.resize(count, false);
-    for index in 0..data.tuple_count() {
-        let tuple = data.tuple(index).ok_or(GvarError::InvalidData)?;
+    for tuple in data.tuples() {
+        let tuple = tuple.ok_or(GvarError::InvalidData)?;
         let scalar = scalar_ft(table, &tuple, coords, shared)?;
         if scalar == 0 {
             continue;
@@ -707,6 +708,58 @@ mod tests {
         assert_eq!(data.len(), 40);
         data.shrink_to_fit();
         data
+    }
+
+    #[test]
+    fn adr0047_i03_active_private_and_zero_scalar_tuples_preserve_deltas() {
+        let bytes = [
+            0, 1, 0, 0, 0, 1, 0, 0, // version and one axis
+            0, 0, 0, 24, 0, 1, 0, 0, // shared tuple offset and glyph count
+            0, 0, 0, 24, 0, 0, 0, 21, // glyph data offset and 42-byte glyph
+            0, 3, 0, 22, // three tuples, data after 18 header bytes
+            0, 6, 0x80, 0, 0x40, 0, // all points, positive peak
+            0, 7, 0xa0, 0, 0x40, 0, // private points, positive peak
+            0, 7, 0xa0, 0, 0xc0, 0, // private points, negative peak
+            3, 10, 20, 30, 40, 0x83, // first x and zero y deltas
+            0, 3, 1, 1, 1, 1, 0x83, // private all points, positive deltas
+            0, 3, 99, 99, 99, 99, 0x83, // zero-scalar tuple must not apply
+            0,    // short-offset padding
+        ];
+        let parsed = Gvar::new(&bytes, TAG);
+        assert!(parsed.is_ok());
+        let Some(table) = parsed.ok() else { return };
+        let mut hb = [Point::default(); 4];
+        let mut budget = 8;
+        assert_eq!(
+            apply_hb(
+                &table,
+                0,
+                &[0x2000],
+                &[],
+                &mut hb,
+                &mut HbScratch::default(),
+                false,
+                &mut budget,
+            ),
+            Ok(true)
+        );
+        assert_eq!(hb.map(|point| point.x), [5.5, 10.5, 15.5, 20.5]);
+        let mut ft = [Point::default(); 4];
+        assert_eq!(
+            apply_ft(
+                &table,
+                0,
+                &[0x8000],
+                &[],
+                &mut ft,
+                &mut FtScratch::default()
+            ),
+            Ok(true)
+        );
+        assert_eq!(
+            ft.map(|point| point.x),
+            [5, 10, 15, 20].map(|x| (x << 16) + 0x8000)
+        );
     }
 
     #[test]
