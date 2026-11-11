@@ -616,6 +616,106 @@ fn freetype_mm_var_synthesizes_missing_default_named_style() {
 }
 
 #[test]
+fn adr0036_i01_missing_default_counts_tail_without_names() {
+    let mut tables = sample_tables_with_glyf();
+    tables.push((b"fvar", fvar_one_named()));
+    tables.sort_by_key(|(tag, _)| **tag);
+    let bytes = sfnt(&tables);
+    let font = Font::new(&bytes, 0).unwrap();
+    assert_eq!(font.ft_mm_var().unwrap().named_styles().count(), 2);
+
+    let mut tables = sample_tables_with_glyf();
+    tables.push((b"fvar", fvar_one_axis()));
+    tables.sort_by_key(|(tag, _)| **tag);
+    let bytes = sfnt(&tables);
+    let font = Font::new(&bytes, 0).unwrap();
+    assert_eq!(font.ft_mm_var().unwrap().named_styles().count(), 1);
+}
+
+#[test]
+fn adr0036_i02_missing_names_leave_zero_tail() {
+    let mut fvar = fvar_one_named();
+    fvar.get_mut(24..28)
+        .unwrap()
+        .copy_from_slice(&0x4000i32.to_be_bytes());
+    let mut tables = sample_tables_with_glyf();
+    tables.push((b"fvar", fvar));
+    tables.sort_by_key(|(tag, _)| **tag);
+    let bytes = sfnt(&tables);
+    let font = Font::new(&bytes, 0).unwrap();
+    let tail = font.ft_mm_var().unwrap().named_styles().nth(1).unwrap();
+    assert_eq!((tail.strid, tail.psid), (0, 0));
+    assert_eq!(tail.design_coords().collect::<Vec<_>>(), vec![Fixed(0)]);
+}
+
+#[test]
+fn adr0036_i02_zero_length_and_unsupported_platform_leave_zero_tail() {
+    for names in [
+        vec![(3, 1, 0x409, 2, &[][..]), (3, 1, 0x409, 6, &[][..])],
+        vec![
+            (0, 1, 0x409, 2, &b"Regular"[..]),
+            (0, 1, 0x409, 6, &b"Demo"[..]),
+        ],
+    ] {
+        let mut tables = sample_tables_with_glyf();
+        tables.push((b"fvar", fvar_one_named()));
+        tables.push((b"name", name(0, &names, &[])));
+        tables.sort_by_key(|(tag, _)| **tag);
+        let bytes = sfnt(&tables);
+        let font = Font::new(&bytes, 0).unwrap();
+        let tail = font.ft_mm_var().unwrap().named_styles().nth(1).unwrap();
+        assert_eq!((tail.strid, tail.psid), (0, 0));
+        assert_eq!(tail.design_coords().collect::<Vec<_>>(), vec![Fixed(0)]);
+    }
+}
+
+#[test]
+fn adr0036_i03_default_named_instance_uses_one_based_tail() {
+    let mut tables = sample_tables_with_glyf();
+    tables.push((b"fvar", fvar_one_named()));
+    tables.sort_by_key(|(tag, _)| **tag);
+    let bytes = sfnt(&tables);
+    let font = Font::new(&bytes, 0).unwrap();
+    assert_eq!(font.ft_default_named_instance(), Some(2));
+
+    let mut fvar = fvar_one_named();
+    fvar.get_mut(40..44)
+        .unwrap()
+        .copy_from_slice(&0i32.to_be_bytes());
+    let mut tables = sample_tables_with_glyf();
+    tables.push((b"fvar", fvar));
+    tables.sort_by_key(|(tag, _)| **tag);
+    let bytes = sfnt(&tables);
+    let font = Font::new(&bytes, 0).unwrap();
+    assert_eq!(font.ft_default_named_instance(), Some(1));
+}
+
+#[test]
+fn adr0036_i02_named_default_uses_name_ids() {
+    let subfamily = utf16be("Regular");
+    let typographic = utf16be("Text");
+    let postscript = utf16be("Demo-Regular");
+    let names = name(
+        0,
+        &[
+            (3, 1, 0x409, 2, &subfamily),
+            (3, 1, 0x409, 6, &postscript),
+            (3, 1, 0x409, 17, &typographic),
+        ],
+        &[],
+    );
+    let mut tables = sample_tables_with_glyf();
+    tables.push((b"fvar", fvar_one_named()));
+    tables.push((b"name", names));
+    tables.sort_by_key(|(tag, _)| **tag);
+    let bytes = sfnt(&tables);
+    let font = Font::new(&bytes, 0).unwrap();
+    let tail = font.ft_mm_var().unwrap().named_styles().nth(1).unwrap();
+    assert_eq!((tail.strid, tail.psid), (17, 6));
+    assert_eq!(tail.design_coords().collect::<Vec<_>>(), vec![Fixed(0)]);
+}
+
+#[test]
 fn freetype_mm_var_uses_existing_default_named_style() {
     let mut fvar = fvar_one_named();
     fvar.get_mut(40..44)

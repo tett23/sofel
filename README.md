@@ -16,8 +16,10 @@ WOFFとWOFF2、Type1やBDFなどの古い形式、AAT、絵文字（COLR、埋�
 さらに、[ADR 0027](docs/adr/0027-variable-fonts.md) の可変フォントの表（ItemVariationStore、DeltaSetIndexMap、HVAR、VVAR、MVAR、gvar、GVAR、avar版2、FeatureVariations）を読み、検証する。`sofel-subset` はFeatureVariationsをこのビューから読む。
 範囲と実装の順序は [ADR 0001](docs/adr/0001-project-goal-and-scope.md)、クレートの構成は [ADR 0003](docs/adr/0003-crate-layers.md) を参照。
 仕様は [docs/specifications.md](docs/specifications.md) にまとめる。
+シェーピング計画の生成時間は、[Coverageの走査を打ち切る計測](docs/benchmarks/2026-11-11-shape-coverage-digest.md) に記録している。
 可変フォントの座標と問い合わせは [ADR 0027](docs/adr/0027-variable-fonts.md)、変化量の評価は [ADR 0029](docs/adr/0029-variation-deltas.md)、評価の修正は [ADR 0030](docs/adr/0030-variation-evaluation-corrections.md) で採択している。
 `sofel-font::var` には、設計座標と正規化座標からの位置の構築、座標の正規化、ItemVariationStoreの差分の評価の核、軸と名前つきインスタンスの問い合わせ、FreeTypeのMMVarの読み取り、位置ごとのPostScript名を実装した。
+FreeTypeが合成する既定の名前つきスタイルは、名前が欠ける場合も件数と既定番号を再現する（[ADR 0036](docs/adr/0036-freetype-missing-default-named-style.md)）。
 C ABIには位置の作成、座標の取得、Variationの文字列変換、軸と名前つきインスタンスの問い合わせ、位置ごとのPostScript名を追加した。
 さらに、メトリクス、基準線、輪郭、シェーピング、塗りの既存関数には位置の引数を追加した。
 位置による値の変更は、HVARとVVARの送り幅、VORGとVVARの縦原点、MVARのフォント全体のメトリクス、FreeTypeの縦送り幅、BASEのVariationIndexまで実装した。
@@ -99,6 +101,7 @@ CI は、用途を確認して `ci/documentation-only.rules` の `document` に�
 新たに文書をビルドやテストの入力にする際は、同じ変更で `input` 規則を追加する。
 
 文書だけの変更でも、文書の検査と ADR、監査、計測記録の保護は実行する。
+通常のCIでは、LinuxとmacOSで生成器の検査と適合テストを並列に実行する（[ADR 0039](docs/adr/0039-generator-ci-parallelism.md)）。
 `ci-result` は、判定と保護、および全ジョブの結果を確認する。
 
 クローン後、gitのhookを有効化する。コミット済みのADRは [adr-guard](https://github.com/tett23/adr-guard) で保護しており、手元に adr-guard が要る。
@@ -154,9 +157,16 @@ sh tools/hb-dump/build.sh
 cargo test --release -p sofel-conformance
 ```
 
+ラスタの適合テストはFreeTypeの出力をグリフごとに比較する。参照出力の全文や成功した全グリフの識別子は保持しない（[ADR 0037](docs/adr/0037-stream-raster-reference.md)）。
+輪郭の適合テストもグリフごとの比較を共用し、命令、overlap、制御箱を照合する（[ADR 0040](docs/adr/0040-stream-outline-reference.md)）。
+
 適合テストを最大2本の実行ファイルで並列に走らせるには、`sh scripts/test-conformance.sh 2` を使う（`jq` が必要。[ADR 0033](docs/adr/0033-ci-latency-and-ligature-iteration.md)）。
 引数を1にすると直列で実行する。
+計測用の HarfBuzz は、元の include の順序を保った最大4個の翻訳単位に分け、native と wasm のビルドを並行したままコンパイラのメモリ使用量を抑える（[ADR 0038](docs/adr/0038-partition-benchmark-harfbuzz-units.md)）。
 CI ではこの runner を使い、参照ツールと計測用の C ライブラリは入力とツールチェーンが一致する場合にキャッシュから復元する。
+直列化の適合テストは、入力を一行ずつ書き、HarfBuzz の参照出力も一行ずつ比較して、全文の重複保持を避ける（[ADR 0035](docs/adr/0035-stream-serialization-reference-output.md)）。
+カラーグリフの適合テストはHarfBuzzの塗りをグリフごとに読み、各本文を比較する（[ADR 0043](docs/adr/0043-stream-harfbuzz-paint-records.md)）。
+シェーピングの適合テストではフォントと文章の組ごとに一致行の数を集計し、不一致行の詳細をカテゴリ判定に使う（[ADR 0041](docs/adr/0041-compact-shape-comparison-results.md)）。
 テストと結果の照合は、キャッシュがある場合も実行する。
 CI の参照ツールのビルド、適合テストと計測用 C ビルドは、子プロセスを含む合計 RSS の最大観測値をログへ書く。
 

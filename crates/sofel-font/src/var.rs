@@ -151,12 +151,16 @@ pub struct FtNamedStyle<'a> {
     pub psid: u16,
     fvar: Fvar<'a>,
     record: Option<InstanceRecord<'a>>,
+    zero_coords: bool,
 }
 
 impl FtNamedStyle<'_> {
     /// Design coordinates in fvar axis order, in 16.16.
     pub fn design_coords(&self) -> impl Iterator<Item = Fixed> + '_ {
         (0..self.fvar.axis_count()).filter_map(|i| {
+            if self.zero_coords {
+                return Some(Fixed(0));
+            }
             self.record
                 .and_then(|record| record.coordinate(i))
                 .or_else(|| self.fvar.axis(i).map(|axis| axis.default))
@@ -168,7 +172,9 @@ impl FtNamedStyle<'_> {
 #[derive(Clone, Copy, Debug)]
 pub struct FtMmVar<'a> {
     fvar: Fvar<'a>,
-    synthetic_strid: Option<u16>,
+    synthetic: bool,
+    synthetic_strid: u16,
+    synthetic_psid: u16,
 }
 
 impl<'a> FtMmVar<'a> {
@@ -196,22 +202,24 @@ impl<'a> FtMmVar<'a> {
         let count = self
             .fvar
             .instance_count()
-            .saturating_add(usize::from(self.synthetic_strid.is_some()));
-        (0..count).filter_map(move |i| {
+            .saturating_add(usize::from(self.synthetic));
+        (0..count).map(move |i| {
             if let Some(record) = self.fvar.instance(i) {
-                Some(FtNamedStyle {
+                FtNamedStyle {
                     strid: record.subfamily_name_id,
                     psid: record.postscript_name_id.unwrap_or(0xFFFF),
                     fvar: self.fvar,
                     record: Some(record),
-                })
+                    zero_coords: false,
+                }
             } else {
-                Some(FtNamedStyle {
-                    strid: self.synthetic_strid?,
-                    psid: 6,
+                FtNamedStyle {
+                    strid: self.synthetic_strid,
+                    psid: self.synthetic_psid,
                     fvar: self.fvar,
                     record: None,
-                })
+                    zero_coords: self.synthetic_strid == 0,
+                }
             }
         })
     }
@@ -228,8 +236,9 @@ impl<'a> FtMmVar<'a> {
                 return u16::try_from(index.saturating_add(1)).ok();
             }
         }
-        self.synthetic_strid
-            .and_then(|_| u16::try_from(self.fvar.instance_count().saturating_add(1)).ok())
+        self.synthetic
+            .then(|| self.fvar.instance_count().saturating_add(1))
+            .and_then(|index| u16::try_from(index).ok())
     }
 }
 
@@ -480,18 +489,18 @@ impl<'data> Font<'data> {
                 (0..axes).all(|axis| fvar.axis(axis).map(|a| a.default) == record.coordinate(axis))
             })
         });
-        let synthetic_strid = if has_default || !ft_has_name_id(self, 6) {
-            None
-        } else if ft_has_name_id(self, 17) {
-            Some(17)
-        } else if ft_has_name_id(self, 2) {
-            Some(2)
+        let synthetic_strid = if ft_has_name_id(self, 6) && ft_has_name_id(self, 17) {
+            17
+        } else if ft_has_name_id(self, 6) && ft_has_name_id(self, 2) {
+            2
         } else {
-            None
+            0
         };
         Some(FtMmVar {
             fvar,
+            synthetic: !has_default,
             synthetic_strid,
+            synthetic_psid: if synthetic_strid == 0 { 0 } else { 6 },
         })
     }
 
@@ -636,7 +645,7 @@ impl<'data> Location<'data> {
                 && font.ft_mm_var().is_some_and(|mm| {
                     mm.named_styles()
                         .nth(usize::from(index))
-                        .is_some_and(|style| style.record.is_none())
+                        .is_some_and(|style| style.record.is_none() && style.strid != 0)
                 })
         });
         if let Some(record) = named {

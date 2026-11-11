@@ -10,8 +10,8 @@ C ABIは [ADR 0027](adr/0027-variable-fonts.md) の位置の作成、座標の�
 メトリクスではHVARとVVARの送り幅、VORGとVVARの縦原点、MVARのフォント全体のメトリクス、FreeTypeの縦送り幅に位置を適用する。
 基準線とレイアウトのフォント全体の値では、BASEのVariationIndexに位置を適用する。
 gvarの幻の点による送り幅と箱、輪郭、シェーピング、塗りの変化量は未実装である。
-FreeTypeが合成する既定の名前つきインスタンスは必要なnameレコードがある場合に実装済みである。
-必要なnameレコードがない場合の扱いは未決定であり、上記以外の位置による値の変更とCLIから位置を指定する機能は未実装である。
+FreeTypeが合成する既定の名前つきインスタンスは、必要なnameレコードが欠ける場合も件数と既定番号に含める。nameレコードが欠けた末尾のスタイルは名前IDと全座標がゼロである（[ADR 0036](adr/0036-freetype-missing-default-named-style.md)）。
+上記以外の位置による値の変更とCLIから位置を指定する機能は未実装である。
 追加フォントの検証は [ADR 0031](adr/0031-diverse-font-corpus.md) に従って実装した。
 文書だけの変更でCIを省く方針は [ADR 0032](adr/0032-documentation-only-ci.md) と [ADR 0034](adr/0034-ci-document-input-classification.md) に従って実装している。
 以下の実装済みの機能の記述は、各実装の PR で更新する。
@@ -221,6 +221,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 - `ShapePlan::new(font, props, features)` が、`hb_ot_shape_plan_t` と同じ判断を一度だけ行う（[ADR 0020](adr/0020-shaping-foundation.md)）。`GSUB` と `GPOS` の文字体系と言語の選択（`hb_ot_layout_table_select_script` の `DFLT`、`dflt`、`latn` への後退と `hb_ot_layout_script_select_language`）、シェーパー（`Shaper`、`hb_ot_shaper_categorize`）、`hb_ot_shape_collect_features` の順の機能、`hb_ot_map_builder_t::compile` と同じマスクのビットの割り当て（大域の値1の機能は31ビット目、ほかはグリフのフラグの後の4ビット目から。足りなければ機能を捨てる）、必須の機能、`F_GLOBAL_SEARCH`、`F_HAS_FALLBACK`、段ごとにlookupの番号の順に並べて重複をまとめたlookupの列、位置の決め方（`GPOS` の有無、マークの幅の0化、フォールバックのマークの配置）である。AATの表と古い `kern` 表は無いものとして判定する。
 - 計画は `GDEF` のグリフのクラス（HarfBuzzの拒否の一覧に載る表は無いものとする）とマークのグリフの集合、`GSUB` と `GPOS` のすべてのlookupについて、拡張をたどったサブテーブルのビューと、それぞれの最初のグリフのCoverageの要約（`hb_set_digest_t` と同じ3つの64ビットのマスク）を持つ。拡張の型がそろわないlookupと、読めないサブテーブルは、HarfBuzzと同じく無いものとする。
+  GSUBとGPOSのCoverageを三つの64 bitマスクに要約するときは、全ビットが立った時点でそのCoverageの走査を終える。どのグリフが照合の候補になるかは全範囲を読んだ場合と一致する（[ADR 0042](adr/0042-stop-at-saturated-coverage-digest.md)）。
 - `ShapePlan::key` は計画を作った区間の性質と機能を返す。計画は不変で、`Send` と `Sync` を満たす。
 - `layout_selection(font, script_tags, language_tags)` は、計画と同じ文字体系と言語の選択の結果を返す。
 - [ADR 0024](adr/0024-complex-shapers.md) のシェーパーのうち、hebrew、hangul、thai、arabicを実装した（下の「文字体系ごとのシェーパー」）。まだ実装していないシェーパーは、defaultのシェーパーの手順で処理する。シェーパーの差しこみ口（`collect_features`、`override_features`、`data_create`、`preprocess_text`、`postprocess_glyphs`、`decompose`、`compose`、`setup_masks`、`reorder_marks`、`gpos_tag`、正規化の方式、マークの幅の0化の時期、フォールバックの配置、段の間の関数）は、HarfBuzzの `hb_ot_shaper_t` と同じ位置に置く。
@@ -404,6 +405,8 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   - 手で組んだ小さなCFFとCFF2のフォント（丸め、制御点、移動だけの経路、空の軸、seac、入れ子の10と11、演算子の上限、各曲線とflex、ヒントマスク、CIDキーのFDSelectとローカルのサブルーチン、CFF2の `blend`、`vsindex`、FDSelectのフォーマット4、グリフの数、CFF2が無効なときのCFF、charsetとencodingとTop DICTの有効性、重複する名前）でも、`hb-dump` とすべての項目が一致することを確かめる（`tests/harfbuzz_cff.rs`）。
   - 丸め（[ADR 0026](adr/0026-harfbuzz-rounding.md)）：`hb-dump --roundf` は標準入力の `float` と `double` の値（ビットの16進）にHarfBuzzの `roundf` を通した値を書き、`hb-dump --mult` は `upem` と拡大縮小の組ごとに `hb_font_t` の `x_mult` を書く。`sofel_geom::float` の `hb_roundf`、`hb_roundf32` は、単体テストの値と決まった種の乱数の値100万個（半分の値とその前後を多く含む）で、`HbScale::x_mult` は `upem` 16、1000、1024、2048、16384と負の値を含む拡大縮小で、完全に一致することを確かめる（`tests/harfbuzz_rounding.rs`）。
 - glyfの輪郭は、`ft-dump --outline` の出力と、拡大縮小なし、16画素、48画素で、命令の列、重なりの印、制御の箱が完全に一致することを確かめる（項目 `outline:<SIZE>:<グリフ>`、[ADR 0011](adr/0011-glyf-outlines.md)）。ラスタライズは、`ft-dump --raster` の出力と、12、24、48画素で画像が完全に一致することを確かめる（項目 `raster:<PPEM>:<グリフ>`、[ADR 0012](adr/0012-antialiased-rasterizer.md)）。
+- ラスタの参照出力はグリフごとに比較する（[ADR 0037](adr/0037-stream-raster-reference.md)）。参照プロセスが非ゼロで終了した入力は従来どおり除外し、その呼び出しの件数と判定を加えない。終了状態0の空出力、グリフ数や順序の不一致、フェイス末尾の欠落は失敗にする。比較後は件数、問題の詳細、照合した期待する失敗の識別子を保持し、全成功ケースの識別子を蓄積しない。
+- 輪郭の参照出力もグリフごとの比較を共用する（[ADR 0040](adr/0040-stream-outline-reference.md)）。拡大縮小なし、16画素、48画素で全命令、overlap、制御箱を照合する。終了状態が非ゼロの呼び出しを除外し、正常終了した空出力、グリフ番号や個数の不一致、フェイス末尾の欠落を失敗にする。
 - 輪郭、ラスタライズ（各形式）、埋め込みビットマップ、sfnt以外の形式は、FreeTypeの出力を書き出す `tools/ft-dump/` と比べる。輪郭は完全一致を求める。sfnt以外の形式のテストのフォントは、その形式を実装するまえに、ADRで `testdata.lock` に加える。
 - カラーグリフ、SVGとPDF、GPU、WOFF、検証器、展開器の基準は、それぞれのADRで定める。
 - Unicodeの文字の性質は、CIで `scripts/fetch-ucd.sh` と生成の道具を走らせ、生成したファイルがコミットしたものと一致することを `git diff --exit-code` で確かめる（[ADR 0019](adr/0019-unicode-character-data.md)）。Vertical_Orientationは、`VerticalOrientation.txt` を生成の道具とは別の読み取りで読み、全文字の値の一致を確かめる。
@@ -421,15 +424,20 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   - `hb-dump --features` は、タグ（4文字、短い、長い、引用符つき）、前置き（なし、`+`、`-`）、範囲（なし、`[]`、`[:]`、`[3]`、`[3:]`、`[:5]`、`[3:5]`、不正）、値（なし、`=0`、`=2`、` on`、` off`、` 2`、不正）、前後の空白の直積と、境目の例を `hb_feature_from_string` で読み、`hb_feature_to_string` で書く。1万900の文字列のすべてで、`Feature::parse` と `Feature::format` が一致することを確かめる（`tests/harfbuzz_features.rs`。期待する失敗の一覧は持たない）。
   - `hb-dump --serialize FONT TEXTFILE` は、`conformance/serialize-text.txt` の各行をHarfBuzzで形にした生の結果（グリフ、クラスタ、マスク、送り幅、ずれ）と、その直列化をテキストとJSONの全64の指定の組で書き、それぞれをHarfBuzzで読みなおした結果（成否、終わりの位置、項目）を書く。続けて `test/api/test-buffer.c` の読み込みの入力とそのすべての接頭辞を読んだ結果を書く。`hb-dump --deserialize FONT CORPUS` は、与えた文字列の集まりを読んだ結果を書く。テストは生の結果を `GlyphInfo` と `GlyphPosition` に読み（sofelのシェーパーに依らない）、sofelで書いてバイトごとに比べ、すべての文字列をsofelで読んで比べる。集まりは、書き出した文字列の接頭辞、1バイトを除いたものと区切りの文字を各位置に挿したもの、手で書いた例である。フォントは、postの名前を持つglyf（adwaita）、名前の無いglyf（Roboto）、CFF（SourceSansPro）、マークの位置を持つglyf（OpenSans、NotoNastaliqUrdu）とする（`tests/harfbuzz_serialize.rs`）。項目は `<フォント>:<種類>` で、期待する失敗は `conformance/expected-failures-serialize.txt` に書く。
 - 適合テストは `cargo test -p sofel-conformance` で走らせる。期待する失敗の一覧に無い失敗と、一覧にあるテストの成功は、ともにテストの失敗とする。
+- 直列化の適合テストでは、全変異の byte arena と範囲の索引に必要な容量を一度確保し、索引だけを並べ替えて重複を除く（[ADR 0035](adr/0035-stream-serialization-reference-output.md)）。エスケープした入力を一行ずつファイルへ書き、HarfBuzz の参照出力も再利用する一行のバッファで比較する。入力と出力の全文を重複して保持しない。入力の集合と順序、全5フォントの比較を保つ。読み取りエラー、参照プロセスの失敗、復元結果の順序の違いと比較件数の不足や余分な行はテストの失敗にする。
+- `hb-dump --paint` の適合テストは、フェイス内の各塗りの宣言行数だけ本文を読み、グリフごとに比較する。参照プロセスが成功した場合にその呼び出しの比較結果を確定する。既知の24件では参照の成功と選んだグリフのテキスト再現も検査する（[ADR 0043](adr/0043-stream-harfbuzz-paint-records.md)）。
+- `--shape` の行比較は、フォント、文章、方向、機能の組ごとに行数を数え、不一致行の順序、入力、両者の出力をカテゴリ判定と診断に渡す。一回の判定で不一致の各フォントをパスごとに一度読み込む。入力・参照・sofelの行数が食い違うと失敗とする（[ADR 0041](adr/0041-compact-shape-comparison-results.md)）。
 - ネイティブの適合テストの runner は `scripts/test-conformance.sh [JOBS]` とする（[ADR 0033](adr/0033-ci-latency-and-ligature-iteration.md)）。`JOBS` の既定値と CI の値は2で、正の整数以外は終了コード2となる。Cargo がビルドしたすべてのテストの実行ファイルを最大 `JOBS` 本で実行し、各実行ファイルの libtest のスレッド数は1とする。テスト自身が作るスレッドと子プロセスは変えない。doctest も実行し、ビルドやテストの失敗は非ゼロの終了コードで伝える。
-- CI の `conformance` は Rust の release の成果物と生成ツールのビルド成果物をキャッシュし、更新の判定は Cargo に任せる（[ADR 0033](adr/0033-ci-latency-and-ligature-iteration.md)）。C の参照ツールと計測用ライブラリは、OS、アーキテクチャ、runner image、コンパイラ、固定した外部ソースとビルド入力が一致するキーだけを復元する。キャッシュの有無によってテストや照合を省かない。
+- CI の `conformance` はRustのrelease成果物を、`generators` は生成ツールのビルド成果物をそれぞれキャッシュし、更新の判定は Cargo に任せる（[ADR 0033](adr/0033-ci-latency-and-ligature-iteration.md)）。C の参照ツールと計測用ライブラリは、OS、アーキテクチャ、runner image、コンパイラ、固定した外部ソースとビルド入力が一致するキーだけを復元する。キャッシュの有無によってテストや照合を省かない。
 - CI の参照ツールのビルド、適合テストと計測用 C ビルドは、`scripts/measure-process-tree.sh` で起動する（[ADR 0033](adr/0033-ci-latency-and-ligature-iteration.md)）。起動したコマンドと子孫の RSS の合計を採取し、取得の後に0.1秒待って繰り返す。`peak_tree_rss_kib` に最大観測値、`samples` に取得回数を出力する。共有ページも各プロセスで数えるため、物理メモリの使用量や瞬間的な最大値とは限らない。計測に失敗しなければ、起動したコマンドの終了コードをそのまま返す。
 
+生成表の再現検査はLinuxとmacOSで適合テストと並列に実行する（[ADR 0039](adr/0039-generator-ci-parallelism.md)）。
+
 CI の文書だけの変更は、比較起点の `ci/documentation-only.rules` で判定する（[ADR 0032](adr/0032-documentation-only-ci.md)、[ADR 0034](adr/0034-ci-document-input-classification.md)）。
-`document` にだけ一致するパスの変更では、Rust、適合テスト、wasm、fuzz、ベンチマーク、C ABI の六つのビルドとテストのジョブを省く。
-`input` に一致するパス、未知のパス、規則の変更では、六つとも実行する。
+`document` にだけ一致するパスの変更では、Rust、生成器、適合テスト、wasm、fuzz、ベンチマーク、C ABI の七つのビルドとテストのジョブを省く。
+`input` に一致するパス、未知のパス、規則の変更では、七つとも実行する。
 文書だけでも `adr` は変更禁止の ADR、監査、計測記録と文書を検査する。
-`ci-result` は判定と保護の成功、および六つのジョブの結果を確認する。
+`ci-result` は判定と保護の成功、および七つのジョブの結果を確認する。
 文書をプログラムの入力にする変更には `input` 規則を追加する。
 
 ## 性能の計測
@@ -446,7 +454,7 @@ CI の文書だけの変更は、比較起点の `ci/documentation-only.rules` �
 - CFFの項目（FreeType。[ADR 0021](adr/0021-cff-outlines.md)、[ADR 0025](adr/0025-cff-charset-index.md)）：輪郭とラスタライズ、CIDキーのフォントの全グリフのCID（`cid` はcharsetの索引を使う `Cff::cid_with`、`cid (no index)` は索引の無い `Cff::cid`、相手は `FT_Get_CID_From_Glyph_Index`）、開くこと（`Cff::new` とcharsetの索引の配列の確保と作成、`FT_New_Memory_Face`）。
 - Unicodeの性質：`perf/texts/` のすべての文章の全文字について、General_Category、Canonical_Combining_Class、Script、Bidi_Mirroring_Glyphを引く。相手はHarfBuzzの既定のUnicodeの関数（`hb_unicode_general_category` などの呼び出しを含む）とする（[ADR 0019](adr/0019-unicode-character-data.md)）。
 - シェーピングの項目（HarfBuzz。[ADR 0020](adr/0020-shaping-foundation.md)）：「シェーピング」（`shaping <文章>`）は、HarfBuzzの `perf/benchmark-shape.cc` と同じく、文章を改行で終わる行に区切り、行ごとに区間の性質を推定してシェーピングする。sofelは性質の組ごとに計画を前もって作って使いまわし、HarfBuzzは `hb_shape`（計画のキャッシュと `ot` のフォントの関数）を呼ぶ。区間の性質の言語は、sofelがロケールを読まないため、両者とも無し（`HB_LANGUAGE_INVALID`）とする。「最初のシェーピング」（`first shaping <文章>`）は、フォントのバイト列から、フォント（とグリフの箱）と計画を作って1行目をシェーピングするまでで、HarfBuzzはblob、face、font、bufferを作って捨てる。組は `perf/benchmark-shape.cc` のすべての組と、Mplus1p-Regularと `ja-runs.txt`（LTRとTTB）である。計測の前に、全行でグリフID、クラスタ、フラグ、位置が一致することを確かめる。文字体系ごとのシェーパーの組のうち、まだ実装していないシェーパーの組（デーヴァナーガリー、デュプロワイエ）は、[ADR 0024](adr/0024-complex-shapers.md) のそのシェーパーの実装まで計らない。
-- サブセット化の項目（HarfBuzz。[ADR 0022](adr/0022-subsetting.md)）：`Roboto-Regular.ttf`（glyf）、`SourceHanSans-Regular_subset.otf`（CIDキーのCFF）、`NotoNastaliqUrdu-Bold.ttf`（大きなGSUBとGPOS）を、グリフIDと `RETAIN_GIDS`（Golemの使い方）、文字と既定のフラグでサブセット化する。グリフと文字は `hb-dump` の突き合わせと同じく `ja-runs.txt` と `en-paragraph.txt` から作る。sofelは `Input` を作って `subset` を呼び、HarfBuzzは `hb_subset_input_t` を作って `hb_subset_or_fail` と `hb_face_reference_blob` を呼ぶ。どちらも出力のFNV-1aのハッシュを求め、計測の前に一致を確かめる。HarfBuzzは `bench/build-c.sh` が `harfbuzz-subset.cc`（`harfbuzz.cc` にサブセット化のファイルを足した単一の翻訳単位）からビルドする。前処理つきの項目は、前処理の段階で足す。
+- サブセット化の項目（HarfBuzz。[ADR 0022](adr/0022-subsetting.md)）：`Roboto-Regular.ttf`（glyf）、`SourceHanSans-Regular_subset.otf`（CIDキーのCFF）、`NotoNastaliqUrdu-Bold.ttf`（大きなGSUBとGPOS）を、グリフIDと `RETAIN_GIDS`（Golemの使い方）、文字と既定のフラグでサブセット化する。グリフと文字は `hb-dump` の突き合わせと同じく `ja-runs.txt` と `en-paragraph.txt` から作る。sofelは `Input` を作って `subset` を呼び、HarfBuzzは `hb_subset_input_t` を作って `hb_subset_or_fail` と `hb_face_reference_blob` を呼ぶ。どちらも出力のFNV-1aのハッシュを求め、計測の前に一致を確かめる。HarfBuzz は、`bench/build-c.sh` が `harfbuzz-subset.cc` の include の内容と順序を保って最大4個の翻訳単位に分割し、同じフラグでコンパイルしてビルドする（[ADR 0038](adr/0038-partition-benchmark-harfbuzz-units.md)）。native と wasm は並列のまま、ターゲット内のコンパイルは一つずつ実行する。前処理つきの項目は、前処理の段階で足す。
 - CIでは、ネイティブとwasmの両方を `--once` で走らせ、落ちないことと結果の照合だけを確かめる。
 - 目標は、各項目でsofelの時間が比較の相手以下であること。
 - 追加フォントの代表項目（[ADR 0031](adr/0031-diverse-font-corpus.md)）は13ファイルのフェイス0・既定座標を使う。10文字のcmapと先頭最大128グリフの横advance・輪郭コマンド数、Source Hanの縦advance、STIXのMATH全56定数、3カラー形式、9フォントの短いシェーピング入力を含む。MATH定数は個別にも照合し、COLRv1は固定HarfBuzzの正規化済みpaint列も照合する。シェーピングはscriptを推定し、言語なし・既定featureとする。未実装のIndic・Khmer・Myanmar・USEの4ケースは個別に不一致を期待し、予期しない成功を失敗にする。これら4ケースは計測しない。具体的な入力と計測値は [役割別計測記録](benchmarks/2026-11-11-extra-font-roles.md) に記す。
