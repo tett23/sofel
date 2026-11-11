@@ -502,7 +502,9 @@ fn load_glyf(
     scratch.ends.clear();
     scratch.components.clear();
     scratch.stack.clear();
-    scratch.phantoms = [Point::default(); 4];
+    if !ctx.location.ft_default() {
+        scratch.phantoms = [Point::default(); 4];
+    }
     if glyph.0 >= ctx.num_glyphs {
         return Err(OutlineError::InvalidGlyphIndex);
     }
@@ -599,8 +601,10 @@ fn load_glyph(
     if len == 0 {
         // An empty glyph's box is all zero.
         *pp1_x = ctx.pp1_x(glyph, 0);
-        s.phantoms = ctx.phantoms(glyph, 0, 0);
-        vary_empty_phantoms(ctx, s, glyph, pp1_x)?;
+        if !ctx.location.ft_default() {
+            s.phantoms = ctx.phantoms(glyph, 0, 0);
+            vary_empty_phantoms(ctx, s, glyph, pp1_x)?;
+        }
         return Ok(());
     }
     let data = ctx
@@ -611,12 +615,16 @@ fn load_glyph(
     let n = g.number_of_contours();
     if n == 0 {
         *pp1_x = ctx.pp1_x(glyph, 0);
-        s.phantoms = ctx.phantoms(glyph, 0, 0);
-        vary_empty_phantoms(ctx, s, glyph, pp1_x)?;
+        if !ctx.location.ft_default() {
+            s.phantoms = ctx.phantoms(glyph, 0, 0);
+            vary_empty_phantoms(ctx, s, glyph, pp1_x)?;
+        }
         return Ok(());
     }
     *pp1_x = ctx.pp1_x(glyph, g.x_min());
-    s.phantoms = ctx.phantoms(glyph, g.x_min(), g.y_max());
+    if !ctx.location.ft_default() {
+        s.phantoms = ctx.phantoms(glyph, g.x_min(), g.y_max());
+    }
     if n > 0 {
         load_simple(ctx, s, &g, glyph, pp1_x, overlap)
     } else {
@@ -850,13 +858,18 @@ fn load_composite(
             break;
         };
         let base = s.points.len();
+        let saved_pp1 = *pp1_x;
         let saved = s.phantoms;
         load_glyph(ctx, s, c.glyph.0, depth.saturating_add(1), overlap, pp1_x)?;
         // The component's phantom points stay only with USE_MY_METRICS;
         // its offset and transform do not move them.
         if c.flags & USE_MY_METRICS == 0 {
-            s.phantoms = saved;
-            *pp1_x = s.phantoms.first().map_or(0, |p| p.x);
+            if ctx.location.ft_default() {
+                *pp1_x = saved_pp1;
+            } else {
+                s.phantoms = saved;
+                *pp1_x = s.phantoms.first().map_or(0, |p| p.x);
+            }
         } else {
             metrics_component = true;
         }
