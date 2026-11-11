@@ -1149,12 +1149,12 @@ fn adr0027_i03_location_changes_glyf_outline_and_box() {
         (
             default_len,
             default_bitmap_box,
-            &default_pixels[..default_len]
+            default_pixels.get(..default_len)
         ),
         (
             located_len,
             located_bitmap_box,
-            &located_pixels[..located_len]
+            located_pixels.get(..located_len)
         )
     );
     // SAFETY: handles are live and owned.
