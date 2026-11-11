@@ -14,7 +14,8 @@
 //!   against
 //!   conformance/expected-failures-shape-pairs.txt. Variable fonts are
 //!   shaped at every ADR 0027 position.
-//! - `--shape-random FONT COUNT SEED`: for every HarfBuzz test font, the
+//! - `--shape-random FONT COUNT SEED`: for every HarfBuzz test font, and
+//!   every variable face in HarfBuzz's API and perf font directories, the
 //!   characters its cmap maps, grouped by script; for each script COUNT
 //!   strings of 1 to 16 of them from the same linear congruential
 //!   generator on both sides (the strings are compared too), shaped with
@@ -51,6 +52,7 @@ use std::time::Instant;
 
 use sofel_conformance::shape::{self, Subject};
 use sofel_conformance::{fonts, paths};
+use sofel_font::read::sfnt::FontFile;
 use sofel_font::read::{GlyphId, Tag};
 use sofel_font::{Font, var::Instance};
 use sofel_outline::HbExtents;
@@ -540,12 +542,48 @@ fn compare_random_face(
         .collect()
 }
 
+fn additional_variable_fonts(testdata: &Path) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    for dir in ["harfbuzz/test/api/fonts", "harfbuzz/perf/fonts"] {
+        for entry in std::fs::read_dir(testdata.join(dir))
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
+            let path = entry.path();
+            let Ok(data) = std::fs::read(&path) else {
+                continue;
+            };
+            let faces = match FontFile::new(&data) {
+                Ok(FontFile::Sfnt(_)) => 1,
+                Ok(FontFile::Collection(c)) => c.num_fonts(),
+                Err(_) => continue,
+            };
+            if (0..faces).any(|i| Font::new(&data, i).is_ok_and(|f| f.var_axes().next().is_some()))
+            {
+                paths.push(path);
+            }
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
 #[test]
 fn shape_random_agrees_with_harfbuzz() {
     let testdata = paths::testdata();
     let started = Instant::now();
-    let fonts = fonts::harfbuzz_fonts(&testdata);
-    let lines: Vec<Line> = parallel(fonts, |path| {
+    let jobs = fonts::harfbuzz_fonts(&testdata)
+        .into_iter()
+        .map(|path| (path, false))
+        .chain(
+            additional_variable_fonts(&testdata)
+                .into_iter()
+                .map(|path| (path, true)),
+        )
+        .collect();
+    let lines: Vec<Line> = parallel(jobs, |(path, variable_only)| {
         let id = fonts::id(&path, &testdata);
         let dump = hb_dump(&[
             &"--shape-random".into(),
@@ -562,6 +600,9 @@ fn shape_random_agrees_with_harfbuzz() {
                 continue;
             };
             let variable = font.var_axes().next().is_some();
+            if variable_only && !variable {
+                continue;
+            }
             let positions = variation_locations::positions(&font);
             for position in positions.iter().filter(|p| {
                 p.id == "default"
