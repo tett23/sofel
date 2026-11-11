@@ -55,7 +55,7 @@ sofel_read::mvar::* Zero-copy Rust views and validator of MVAR (ADR 0027); C rea
 sofel_read::name::* Zero-copy Rust views and per-table validators; C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::os2::* Zero-copy Rust views and per-table validators; C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::post::* Zero-copy Rust views and per-table validators; C reads the bytes with sofel_font_table and validates with sofel_validate.
-sofel_read::sfnt::* Views of the table directory and collection header; C opens a font of a collection by index with sofel_font_create and reads tables with sofel_font_table.
+sofel_read::sfnt::* Views of the table directory and container headers; C opens a font of a collection or dfont by index with sofel_font_create and reads tables with sofel_font_table.
 sofel_read::validate::checksum Part of the directory validation that sofel_validate runs.
 sofel_read::validate::directory Part of sofel_read::validate::sfnt, which sofel_validate runs.
 sofel_read::vhea::* The hhea view and validator under the vhea tags; C reads the bytes with sofel_font_table and validates with sofel_validate.
