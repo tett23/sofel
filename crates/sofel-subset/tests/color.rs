@@ -250,6 +250,12 @@ fn colr_variation_store_is_stage_10() {
         subset(&font, &chars("A")),
         Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"COLR")
     ));
+    let v0 = subset(&font, &chars("C")).unwrap();
+    let table = out_table(&v0, b"COLR").unwrap();
+    assert_eq!(&table[..2], &[0, 0]);
+    let without_store = font_with(vec![(b"COLR", colr1()), (b"CPAL", cpal_table(false))]);
+    let without_store = Font::new(&without_store, 0).unwrap();
+    assert_eq!(v0, subset(&without_store, &chars("C")).unwrap());
     // Dropping COLR leaves CPAL without palette entries to keep.
     let input = chars("A").map_set(SetKind::DropTables, |s| s.add(Tag::new(b"COLR").to_u32()));
     let out = subset(&font, &input).unwrap();

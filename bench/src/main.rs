@@ -7,6 +7,7 @@ mod ffi;
 mod shape;
 mod subset;
 mod variation;
+mod variation_deltas;
 
 use std::path::PathBuf;
 
@@ -1273,7 +1274,9 @@ fn main() {
 
         outline_items(&mut b, name, &font, &ft, &hb);
     }
+    variation_deltas::items(&mut b, &a.testdata);
     shape::shape_items(&mut b, &a.testdata);
+    shape::variable_shape_items(&mut b, &a.testdata);
     if b.adr0049_enabled() {
         shape::adr0049_items(&mut b, &a.testdata);
     }

@@ -14,9 +14,8 @@ use std::path::Path;
 
 use sofel_bench::harness::Check;
 use sofel_font::Font;
-use sofel_font::read::GlyphId;
-use sofel_font::read::Tag;
-use sofel_font::var::{Location, Variation};
+use sofel_font::read::{GlyphId, Tag};
+use sofel_font::var::{Instance, Location, Variation};
 use sofel_outline::HbExtents;
 use sofel_shape::{
     Direction, GlyphBuffer, ResolvedProperties, Scale, SegmentProperties, ShapePlan, UnicodeBuffer,
@@ -222,28 +221,40 @@ fn properties(b: &UnicodeBuffer, direction: Option<Direction>) -> ResolvedProper
 
 /// sofel's side of a pair: the font, its glyph boxes as HarfBuzz's `ot`
 /// functions take them, and the plans, one per set of properties.
-struct Shaper<'a> {
+struct Shaper<'a, 'loc, 'source> {
     font: Font<'a>,
-    boxes: HbExtents<'a, 'static, 'static>,
+    location: &'loc Location<'source>,
+    boxes: HbExtents<'a, 'loc, 'source>,
     scale: Scale,
     plans: Vec<(ResolvedProperties, ShapePlan<'a>)>,
 }
 
-impl<'a> Shaper<'a> {
-    fn new(bytes: &'a [u8]) -> Shaper<'a> {
+impl<'a> Shaper<'a, 'static, 'static> {
+    fn new(bytes: &'a [u8]) -> Self {
+        Self::with_location(bytes, Location::default_ref())
+    }
+}
+
+impl<'a, 'loc, 'source> Shaper<'a, 'loc, 'source> {
+    fn with_location(bytes: &'a [u8], location: &'loc Location<'source>) -> Self {
         let font = Font::new(bytes, 0).expect("sofel opens the font");
         Shaper {
             font,
-            boxes: HbExtents::new(font.default_instance()),
+            location,
+            boxes: HbExtents::new(font.instance(location)),
             scale: Scale::unscaled(&font),
             plans: Vec::new(),
         }
     }
 
+    fn instance(&self) -> Instance<'_, 'a, 'loc, 'source> {
+        self.font.instance(self.location)
+    }
+
     /// Makes the plan for `props` unless there is one.
     fn plan_for(&mut self, props: &ResolvedProperties) {
         if !self.plans.iter().any(|(k, _)| k == props) {
-            let plan = ShapePlan::new(self.font.default_instance(), props.clone(), &[]);
+            let plan = ShapePlan::new(self.instance(), props.clone(), &[]);
             self.plans.push((props.clone(), plan));
         }
     }
@@ -258,14 +269,14 @@ impl<'a> Shaper<'a> {
             .expect("a plan for every line")
             .1;
         let boxes = |g: GlyphId| self.boxes.glyph_extents(g);
-        sofel_shape::shape_with_extents(self.font.default_instance(), &self.scale, plan, b, &boxes)
+        sofel_shape::shape_with_extents(self.instance(), &self.scale, plan, b, &boxes)
     }
 }
 
 /// How many lines differ and the first one, as text for the check;
 /// makes the plans of all lines.
 fn first_difference(
-    s: &mut Shaper<'_>,
+    s: &mut Shaper<'_, '_, '_>,
     hb: &HbFont,
     text: &[u8],
     lines: &[(usize, usize)],
@@ -461,5 +472,89 @@ pub fn adr0049_items(b: &mut Bench, testdata: &Path) {
                 );
             }
         }
+    }
+}
+
+/// ADR 0027's non-default shaping item, with the same per-line protocol
+/// and complete comparison as the default `react-dom.txt` item.
+pub fn variable_shape_items(b: &mut Bench, testdata: &Path) {
+    let item = "shaping react-dom.txt wght=500";
+    let name = "SourceSerifVariable-Roman";
+    if !b.wanted(name, item) {
+        return;
+    }
+    let bytes = std::fs::read(testdata.join(SERIF)).expect("SourceSerifVariable-Roman test data");
+    let text = std::fs::read(testdata.join("harfbuzz/perf/texts/react-dom.txt"))
+        .expect("react-dom.txt test data");
+    let lines = lines(&text);
+    let hb = HbFont::open(&bytes).expect("HarfBuzz opens the font");
+    hb.set_ppem(0);
+    hb.set_weight(500.0);
+    let font = Font::new(&bytes, 0).expect("sofel opens the font");
+    let location = Location::new(
+        &font,
+        None,
+        &[Variation {
+            tag: Tag::new(b"wght"),
+            value: 500.0,
+        }],
+    );
+    let mut shaper = Shaper::with_location(&bytes, &location);
+    let diff = first_difference(&mut shaper, &hb, &text, &lines, None);
+    b.checks.push(Check {
+        item: format!("{item} (HarfBuzz, every line)"),
+        font: name.into(),
+        ok: diff.is_none(),
+        detail: diff.unwrap_or_else(|| format!("{} lines equal", lines.len())),
+    });
+
+    let hb_buffer = HbBuffer::new();
+    let mut spare = Some(UnicodeBuffer::new());
+    b.item(
+        name,
+        item.into(),
+        &mut || {
+            let mut sum = 0u64;
+            for &(start, len) in &lines {
+                let mut u = spare.take().unwrap_or_default();
+                u.push_utf8(&text[start..], 0, Some(len));
+                let g = shaper.shape(u, None);
+                sum = sum.wrapping_add(checksum(&g));
+                spare = Some(g.into_unicode());
+            }
+            sum
+        },
+        None,
+        Some((&mut || hb_buffer.shape_text(&hb, &text, 0), Compare::Yes)),
+    );
+}
+
+#[cfg(test)]
+mod variable_shape_tests {
+    use super::*;
+
+    #[test]
+    fn adr0027_weight_shape_matches_harfbuzz_all_lines() {
+        let _ffi = crate::variation_bench_tests::lock_ffi();
+        let mut bench = Bench {
+            once: true,
+            filter: Some("shaping react-dom.txt wght=500".into()),
+            rows: Vec::new(),
+            checks: Vec::new(),
+        };
+        variable_shape_items(
+            &mut bench,
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/testdata"),
+        );
+        assert_eq!(bench.rows.len(), 1);
+        assert!(
+            bench.checks.iter().all(|check| check.ok),
+            "{:?}",
+            bench
+                .checks
+                .iter()
+                .map(|check| &check.detail)
+                .collect::<Vec<_>>()
+        );
     }
 }
