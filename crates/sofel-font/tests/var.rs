@@ -8,7 +8,9 @@ mod build;
 use build::{Buf, name, sample_tables, sample_tables_with_glyf, sfnt, utf16be};
 use sofel_font::Font;
 use sofel_font::read::{Fixed, GlyphId};
-use sofel_font::var::{Ft, FtLocationError, HbF32, Location, StoreKind, VarError, Variation};
+use sofel_font::var::{
+    AdvanceCache, Ft, FtLocationError, HbF32, Location, StoreKind, VarError, Variation,
+};
 
 #[test]
 fn adr0027_zero_normalized_coordinates_disable_ft_gvar_blending() {
@@ -162,6 +164,133 @@ fn font_with_vvar() -> Vec<u8> {
     tables.push((b"VVAR", vvar));
     tables.sort_by_key(|(tag, _)| **tag);
     sfnt(&tables)
+}
+
+#[test]
+fn adr0049_i1_cache_matches_uncached_hvar_boundaries() {
+    let bytes = font_with_hvar(500, true);
+    let font = Font::new(&bytes, 0).unwrap();
+    let location = Location::from_design(&font, &[1.0]);
+    let instance = font.instance(&location);
+    let cache = AdvanceCache::new(instance);
+    let mut scratch = sofel_font::GlyphScratch::default();
+    for glyph in [0, 0, 1, 127, 128, 0, u32::MAX, u32::MAX] {
+        assert_eq!(
+            cache.advance_with_scratch(GlyphId(glyph), &mut scratch),
+            instance.advance_with_scratch(GlyphId(glyph), &mut scratch),
+            "glyph {glyph}"
+        );
+    }
+    for glyph in 0..128 {
+        assert_eq!(
+            cache.advance_with_scratch(GlyphId(glyph), &mut scratch),
+            instance.advance(GlyphId(glyph))
+        );
+    }
+}
+
+#[test]
+fn adr0049_i2_cache_owns_one_instance() {
+    let first = font_with_hvar(500, true);
+    let second = font_with_hvar(700, true);
+    let first = Font::new(&first, 0).unwrap();
+    let second = Font::new(&second, 0).unwrap();
+    let default = Location::default_ref();
+    let varied = Location::from_design(&first, &[1.0]);
+    let mut scratch = sofel_font::GlyphScratch::default();
+    let first_default = AdvanceCache::new(first.instance(default));
+    let first_varied = AdvanceCache::new(first.instance(&varied));
+    let second_varied = AdvanceCache::new(second.instance(&varied));
+    assert_eq!(
+        first_default.advance_with_scratch(GlyphId(0), &mut scratch),
+        500
+    );
+    assert_eq!(
+        first_varied.advance_with_scratch(GlyphId(0), &mut scratch),
+        521
+    );
+    assert_eq!(
+        second_varied.advance_with_scratch(GlyphId(0), &mut scratch),
+        721
+    );
+}
+
+#[test]
+#[allow(clippy::indexing_slicing)] // The synthetic sfnt directory and table offsets are fixed here.
+fn adr0049_i3_hvar_vvar_single_table_view_preserves_values_and_fallbacks() {
+    let change_offset = |bytes: &mut [u8], tag: &[u8; 4], field: usize, value: u32| {
+        let count = usize::from(u16::from_be_bytes([bytes[4], bytes[5]]));
+        let record = (0..count)
+            .map(|i| 12 + i * 16)
+            .find(|&i| &bytes[i..i + 4] == tag)
+            .unwrap();
+        let start = u32::from_be_bytes(bytes[record + 8..record + 12].try_into().unwrap()) as usize;
+        bytes[start + field..start + field + 4].copy_from_slice(&value.to_be_bytes());
+    };
+    let mut scratch = sofel_font::GlyphScratch::default();
+    let hvar = font_with_hvar(500, true);
+    let font = Font::new(&hvar, 0).unwrap();
+    let max = Location::from_design(&font, &[1.0]);
+    assert_eq!(
+        font.default_instance()
+            .advance_with_scratch(GlyphId(0), &mut scratch),
+        500
+    );
+    assert_eq!(
+        font.instance(&max)
+            .advance_with_scratch(GlyphId(0), &mut scratch),
+        521
+    );
+    let mut bad_map = hvar.clone();
+    change_offset(&mut bad_map, b"HVAR", 8, u32::MAX);
+    let font = Font::new(&bad_map, 0).unwrap();
+    let max = Location::from_design(&font, &[1.0]);
+    assert_eq!(
+        font.instance(&max)
+            .advance_with_scratch(GlyphId(0), &mut scratch),
+        500
+    );
+    let mut bad_store = hvar;
+    change_offset(&mut bad_store, b"HVAR", 4, 0);
+    let font = Font::new(&bad_store, 0).unwrap();
+    let max = Location::from_design(&font, &[1.0]);
+    assert_eq!(
+        font.instance(&max)
+            .advance_with_scratch(GlyphId(0), &mut scratch),
+        500
+    );
+
+    let vvar = font_with_vvar();
+    let font = Font::new(&vvar, 0).unwrap();
+    let max = Location::from_design(&font, &[1.0]);
+    assert_eq!(
+        font.default_instance()
+            .v_advance_with_scratch(GlyphId(0), &mut scratch),
+        -500
+    );
+    assert_eq!(
+        font.instance(&max)
+            .v_advance_with_scratch(GlyphId(0), &mut scratch),
+        -521
+    );
+    let mut bad_map = vvar.clone();
+    change_offset(&mut bad_map, b"VVAR", 8, u32::MAX);
+    let font = Font::new(&bad_map, 0).unwrap();
+    let max = Location::from_design(&font, &[1.0]);
+    assert_eq!(
+        font.instance(&max)
+            .v_advance_with_scratch(GlyphId(0), &mut scratch),
+        -500
+    );
+    let mut bad_store = vvar;
+    change_offset(&mut bad_store, b"VVAR", 4, 0);
+    let font = Font::new(&bad_store, 0).unwrap();
+    let max = Location::from_design(&font, &[1.0]);
+    assert_eq!(
+        font.instance(&max)
+            .v_advance_with_scratch(GlyphId(0), &mut scratch),
+        -500
+    );
 }
 
 fn font_with_metric_mvar(default_region: bool, tag: &[u8; 4], delta: i16) -> Vec<u8> {

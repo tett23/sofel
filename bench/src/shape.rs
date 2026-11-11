@@ -15,6 +15,8 @@ use std::path::Path;
 use sofel_bench::harness::Check;
 use sofel_font::Font;
 use sofel_font::read::GlyphId;
+use sofel_font::read::Tag;
+use sofel_font::var::{Location, Variation};
 use sofel_outline::HbExtents;
 use sofel_shape::{
     Direction, GlyphBuffer, ResolvedProperties, Scale, SegmentProperties, ShapePlan, UnicodeBuffer,
@@ -441,5 +443,77 @@ pub fn shape_items(b: &mut Bench, testdata: &Path) {
                 Compare::Yes,
             )),
         );
+    }
+}
+
+/// ADR 0049: one shape call per line, with a fresh 128-slot cache each time.
+/// The same item can be measured on the pre-cache commit for the uncached time.
+pub fn adr0049_items(b: &mut Bench, testdata: &Path) {
+    for (name, file) in [
+        ("RobotoFlex-Variable", "RobotoFlex-Variable.ttf"),
+        ("SourceSerifVariable-Roman", "SourceSerifVariable-Roman.ttf"),
+        ("AdobeVFPrototype", "AdobeVFPrototype.otf"),
+    ] {
+        for text_name in ["react-dom.txt", "en-thelittleprince.txt"] {
+            for varied in [false, true] {
+                let position = if varied { "wght=500" } else { "default" };
+                let item = format!("ADR0049 shaping {text_name} {position}");
+                if !b.wanted(name, &item) {
+                    continue;
+                }
+                let bytes = std::fs::read(
+                    testdata.join("harfbuzz/test/subset/data/fonts").join(file),
+                )
+                .unwrap();
+                let text = std::fs::read(testdata.join("harfbuzz/perf/texts").join(text_name))
+                    .unwrap();
+                let font = Font::new(&bytes, 0).unwrap();
+                let location = Location::new(
+                    &font,
+                    None,
+                    &[Variation { tag: Tag::new(b"wght"), value: 500.0 }],
+                );
+                let instance = font.instance(if varied { &location } else { Location::default_ref() });
+                let scale = Scale::unscaled(&font);
+                let boxes = HbExtents::new(instance);
+                let hb = HbFont::open(&bytes).unwrap();
+                hb.set_ppem(0);
+                if varied {
+                    hb.set_weight(500.0);
+                }
+                let lines = lines(&text);
+                let mut plans = Vec::new();
+                for &(start, len) in &lines {
+                    let mut u = UnicodeBuffer::new();
+                    u.push_utf8(&text[start..], 0, Some(len));
+                    let props = properties(&u, None);
+                    if !plans.iter().any(|(known, _): &(ResolvedProperties, ShapePlan<'_>)| *known == props) {
+                        plans.push((props.clone(), ShapePlan::new(instance, props, &[])));
+                    }
+                }
+                let hb_buffer = HbBuffer::new();
+                let mut spare = Some(UnicodeBuffer::new());
+                b.item(
+                    name,
+                    item,
+                    &mut || {
+                        let mut sum = 0u64;
+                        for &(start, len) in &lines {
+                            let mut u = spare.take().unwrap_or_default();
+                            u.push_utf8(&text[start..], 0, Some(len));
+                            let props = properties(&u, None);
+                            let plan = &plans.iter().find(|(known, _)| *known == props).unwrap().1;
+                            let extents = |g: GlyphId| boxes.glyph_extents(g);
+                            let g = sofel_shape::shape_with_extents(instance, &scale, plan, u, &extents);
+                            sum = sum.wrapping_add(checksum(&g));
+                            spare = Some(g.into_unicode());
+                        }
+                        sum
+                    },
+                    None,
+                    Some((&mut || hb_buffer.shape_text(&hb, &text, 0), Compare::Yes)),
+                );
+            }
+        }
     }
 }

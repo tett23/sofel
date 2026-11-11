@@ -168,6 +168,10 @@ struct Bench {
 }
 
 impl Bench {
+    fn adr0049_enabled(&self) -> bool {
+        self.filter.as_deref().is_some_and(|f| f.contains("ADR0049"))
+    }
+
     fn wanted(&self, font: &str, item: &str) -> bool {
         self.filter
             .as_ref()
@@ -1268,6 +1272,9 @@ fn main() {
         outline_items(&mut b, name, &font, &ft, &hb);
     }
     shape::shape_items(&mut b, &a.testdata);
+    if b.adr0049_enabled() {
+        shape::adr0049_items(&mut b, &a.testdata);
+    }
     subset::subset_items(&mut b, &a.testdata);
     subset::unicode_range_items(&mut b, &a.testdata);
     let failed = report_checks(&b.checks);
