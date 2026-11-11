@@ -472,7 +472,13 @@ pub fn check_cff(input: &[u8]) {
         (*tag, table.to_vec()),
     ];
     if flags & 2 != 0 {
-        tables.push((*b"fvar", vec![0, 1, 0, 0, 0, 16, 0, 2, 0, 1, 0, 20, 0, 0, 0, 0]));
+        let mut fvar = vec![0, 1, 0, 0, 0, 16, 0, 2, 0, 1, 0, 20, 0, 0, 0, 8];
+        fvar.extend_from_slice(b"wght");
+        for value in [0i32, 0, 0x10000] {
+            fvar.extend_from_slice(&value.to_be_bytes());
+        }
+        fvar.extend_from_slice(&[0, 0, 1, 0]);
+        tables.push((*b"fvar", fvar));
     }
     tables.sort();
     let file = sfnt_otto(&tables);
@@ -536,6 +542,32 @@ pub fn check_cff(input: &[u8]) {
         }
     }
     draw_all(&font);
+    if flags & 3 == 3 {
+        for design in [0.0, 0.5, 1.0] {
+            let location = sofel_font::var::Location::from_design(&font, &[design]);
+            let instance = font.instance(&location);
+            if let Ok(cff) = sofel_font::Cff::new(&font) {
+                for vsindex in 0..4 {
+                    let _ = instance.blend_scalars::<sofel_font::var::HbF64>(vsindex);
+                    let _ = instance.blend_scalars::<sofel_font::var::Ft>(vsindex);
+                }
+                let weights = instance.ft_blend_weights(&cff);
+                for fd in 0..cff.num_font_dicts().max(1).min(4) {
+                    let _ = cff.private_dict_with_blend(fd, &weights);
+                }
+            }
+            let outlines = sofel_outline::Outlines::new(instance);
+            let mut scratch = sofel_outline::Scratch::default();
+            for glyph in 0..font.num_glyphs().min(16) {
+                let _ = outlines.draw(
+                    GlyphId(glyph),
+                    sofel_outline::Scale::Unscaled,
+                    &mut scratch,
+                    &mut sofel_geom::FnPen(|_| {}),
+                );
+            }
+        }
+    }
 }
 
 fn head_table() -> Vec<u8> {
