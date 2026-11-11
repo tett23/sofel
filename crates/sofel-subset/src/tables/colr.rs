@@ -75,14 +75,10 @@ fn plan_store(
         return Ok(());
     }
     if retains_no_v1_paints(colr, glyphset) {
-        return if glyphset
-            .iter()
-            .any(|g| colr.find_base_glyph(g).is_some_and(|r| r.num_layers != 0))
-        {
-            Ok(())
-        } else {
-            Err(unsupported_store())
-        };
+        // A valid v1 table can downgrade even when no color glyph remains.
+        colr.variation_store().map_err(|_| unsupported_store())?;
+        colr.var_index_map().map_err(|_| unsupported_store())?;
+        return Ok(());
     }
     for g in glyphset.iter() {
         if let Some(base) = colr.clip_box(g).and_then(|b| b.var_index_base) {
