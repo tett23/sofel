@@ -106,7 +106,12 @@ fn shifted_outlines_start_at_harfbuzz_x_bearing() {
                 let Some(x_min) = simple_x_min(&font, glyph) else {
                     continue;
                 };
-                let Ok(info) = load(&font, GlyphId(glyph), Scale::Unscaled, &mut scratch) else {
+                let Ok(info) = load(
+                    font.default_instance(),
+                    GlyphId(glyph),
+                    Scale::Unscaled,
+                    &mut scratch,
+                ) else {
                     continue;
                 };
                 // HarfBuzz trusts the header box; FreeType's outline is

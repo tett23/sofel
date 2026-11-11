@@ -6,6 +6,7 @@
 mod ffi;
 mod shape;
 mod subset;
+mod variation;
 mod variation_deltas;
 
 use std::path::PathBuf;
@@ -287,7 +288,7 @@ fn extra_items(b: &mut Bench, testdata: &std::path::Path) {
                 Compare::Yes,
             )),
         );
-        let outlines = Outlines::new(&font);
+        let outlines = Outlines::new(font.default_instance());
         let mut scratch = Scratch::default();
         b.item(
             name,
@@ -521,7 +522,7 @@ fn cff_items(b: &mut Bench, testdata: &std::path::Path) {
             )),
             None,
         );
-        let extents = HbExtents::new(&font);
+        let extents = HbExtents::new(font.default_instance());
         b.item(
             name,
             "glyph extents".into(),
@@ -547,7 +548,7 @@ fn cff_items(b: &mut Bench, testdata: &std::path::Path) {
             "open (HarfBuzz)".into(),
             &mut || {
                 let f = Font::new(&bytes, 0).expect("sofel opens the font");
-                box_sum(HbExtents::new(&f).glyph_extents(GlyphId(first)))
+                box_sum(HbExtents::new(f.default_instance()).glyph_extents(GlyphId(first)))
             },
             None,
             Some((
@@ -627,7 +628,7 @@ fn cff_items(b: &mut Bench, testdata: &std::path::Path) {
 /// and 96 px against FreeType.
 fn outline_items(b: &mut Bench, name: &str, font: &Font<'_>, ft: &FtFace, hb: &HbFont) {
     let n = font.num_glyphs();
-    let outlines = Outlines::new(font);
+    let outlines = Outlines::new(font.default_instance());
     // Outlines: the number of commands (without closes) of every glyph.
     for ppem in [0u16, 48] {
         let scale = if ppem == 0 {
@@ -958,7 +959,7 @@ fn color_items(b: &mut Bench, testdata: &std::path::Path) {
         }
         if formats.has(F::COLR_V0) {
             // ADR 0023 (5d): COLRv0 glyphs in color as FT_LOAD_COLOR.
-            let outlines = Outlines::new(&font);
+            let outlines = Outlines::new(font.default_instance());
             let options = PaintOptions::default();
             for ppem in [12u16, 24, 48] {
                 ft.set_ppem(u32::from(ppem));
@@ -1097,7 +1098,7 @@ fn color_items(b: &mut Bench, testdata: &std::path::Path) {
                 )),
             );
         }
-        let outlines = Outlines::new(&font);
+        let outlines = Outlines::new(font.default_instance());
         let mut scratch = Scratch::default();
         b.item(
             name,
@@ -1145,6 +1146,7 @@ fn main() {
         rows: Vec::new(),
         checks: Vec::new(),
     };
+    variation::items(&mut b, &a.testdata);
     unicode_properties(&mut b, &a.testdata);
     extra_items(&mut b, &a.testdata);
     cff_items(&mut b, &a.testdata);
@@ -1222,7 +1224,7 @@ fn main() {
                 Compare::Yes,
             )),
         );
-        let v_boxes = HbExtents::new(&font);
+        let v_boxes = HbExtents::new(font.default_instance());
         b.item(
             name,
             "v origin".into(),
@@ -1260,11 +1262,19 @@ fn main() {
 }
 
 #[cfg(test)]
-mod variation_tests {
+mod variation_bench_tests {
     use super::*;
+
+    // The C shim holds one process-wide FreeType library without locking.
+    static FFI_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    pub(super) fn lock_ffi() -> std::sync::MutexGuard<'static, ()> {
+        FFI_LOCK.lock().unwrap()
+    }
 
     #[test]
     fn i02_cached_and_recomputed_hvar_and_i04_default_mvar_match() {
+        let _ffi = lock_ffi();
         let mut b = Bench {
             once: true,
             filter: Some("item delta".into()),
@@ -1274,5 +1284,38 @@ mod variation_tests {
         let data = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/testdata");
         variation_deltas::items(&mut b, &data);
         assert_eq!(b.rows.len(), 11);
+        assert!(b.checks.iter().all(|check| check.ok));
+    }
+
+    #[test]
+    fn adr0027_weight_advances_match_for_every_glyph() {
+        let _ffi = lock_ffi();
+        let mut bench = Bench {
+            once: true,
+            filter: Some("advance wght=500".into()),
+            rows: Vec::new(),
+            checks: Vec::new(),
+        };
+        variation::items(
+            &mut bench,
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/testdata"),
+        );
+        assert_eq!(bench.rows.len(), 3);
+        assert!(bench.checks.iter().all(|c| c.ok));
+    }
+
+    #[test]
+    fn adr0027_weight_location_matches_both_references_on_three_fonts() {
+        let _ffi = lock_ffi();
+        let mut bench = Bench {
+            once: true,
+            filter: Some("location wght=500".into()),
+            rows: Vec::new(),
+            checks: Vec::new(),
+        };
+        let testdata = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/testdata");
+        variation::items(&mut bench, &testdata);
+        assert_eq!(bench.rows.len(), 3);
+        assert!(bench.checks.iter().all(|check| check.ok));
     }
 }

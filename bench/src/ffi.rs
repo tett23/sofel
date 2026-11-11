@@ -4,6 +4,10 @@
 use std::os::raw::{c_int, c_long, c_uchar, c_uint, c_ulong, c_void};
 
 unsafe extern "C" {
+    fn bft_set_design(face: *mut c_void, count: c_uint, coords: *mut c_long) -> c_int;
+    fn bft_get_normalized(face: *mut c_void, count: c_uint, coords: *mut c_long) -> c_int;
+    fn bhb_set_weight(font: *mut c_void, weight: f32);
+    fn bhb_normalized(font: *mut c_void, count: *mut c_uint) -> *const c_int;
     pub fn bft_open(data: *const c_uchar, len: c_long, index: c_long) -> *mut c_void;
     pub fn bft_close(face: *mut c_void);
     pub fn bft_num_glyphs(face: *mut c_void) -> c_long;
@@ -112,6 +116,28 @@ unsafe extern "C" {
 pub struct FtFace(*mut c_void);
 
 impl FtFace {
+    pub fn set_design(&self, coordinates: &mut [c_long]) -> bool {
+        // SAFETY: the face is live; the slice supplies count coordinates.
+        unsafe {
+            bft_set_design(
+                self.0,
+                coordinates.len() as c_uint,
+                coordinates.as_mut_ptr(),
+            ) == 0
+        }
+    }
+
+    pub fn normalized(&self, coordinates: &mut [c_long]) -> bool {
+        // SAFETY: the slice is writable for count entries.
+        unsafe {
+            bft_get_normalized(
+                self.0,
+                coordinates.len() as c_uint,
+                coordinates.as_mut_ptr(),
+            ) == 0
+        }
+    }
+
     pub fn open(data: &[u8]) -> Option<FtFace> {
         // SAFETY: the shim copies nothing; `data` outlives the face (it is
         // kept by the caller for the whole run).
@@ -175,6 +201,24 @@ impl Drop for FtFace {
 pub struct HbFont(*mut c_void);
 
 impl HbFont {
+    pub fn set_weight(&self, weight: f32) {
+        // SAFETY: self holds a live font.
+        unsafe {
+            bhb_set_weight(self.0, weight);
+        }
+    }
+    pub fn normalized(&self) -> Vec<i32> {
+        let mut count = 0;
+        // SAFETY: HarfBuzz owns count readable values until the next font mutation.
+        unsafe {
+            let data = bhb_normalized(self.0, &mut count);
+            if count == 0 {
+                return Vec::new();
+            }
+            std::slice::from_raw_parts(data, count as usize).to_vec()
+        }
+    }
+
     pub fn open(data: &[u8]) -> Option<HbFont> {
         // SAFETY: the blob is read-only over `data`, which outlives the font.
         let f = unsafe { bhb_open(data.as_ptr(), data.len() as c_uint, 0) };

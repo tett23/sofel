@@ -30,6 +30,8 @@ FreeType's FT_LOAD_COLOR does (ADR 0023) and written as PAM; the color
 of palette entry 0xFFFF is white when the palette is marked for dark
 backgrounds, else black.
 
+  --variations LIST   design coordinates, e.g. wght=500
+  --named-instance N  start at named instance N (zero-based)
   --face N      the font in a collection (default 0)
   --ppem P      the size in pixels per em
   --no-bitmap   draw the outline even when there is a bitmap
@@ -47,6 +49,7 @@ Exit status:
 ";
 
 struct Args {
+    location: crate::variation_options::LocationOptions,
     face: u32,
     ppem: u16,
     no_bitmap: bool,
@@ -63,6 +66,7 @@ enum Target {
 
 fn parse(args: &[OsString]) -> Result<Option<Args>, String> {
     let (mut face, mut ppem, mut target, mut file) = (0u32, None, None, None);
+    let mut location = crate::variation_options::LocationOptions::default();
     let mut no_bitmap = false;
     let (mut color, mut palette) = (false, 0u16);
     let mut it = args.iter();
@@ -73,6 +77,9 @@ fn parse(args: &[OsString]) -> Result<Option<Args>, String> {
                 .map(str::to_string)
                 .ok_or_else(|| format!("{name} needs a value"))
         };
+        if location.consume(a.to_str(), &mut value)? {
+            continue;
+        }
         match a.to_str() {
             Some("--help" | "-h") => return Ok(None),
             Some("--face") => face = value("--face")?.parse().map_err(|_| "bad --face")?,
@@ -114,6 +121,7 @@ fn parse(args: &[OsString]) -> Result<Option<Args>, String> {
         }
     }
     Ok(Some(Args {
+        location,
         face,
         no_bitmap,
         color,
@@ -150,6 +158,10 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
         Ok(f) => f,
         Err(e) => return fail(err, format!("{}: {e}", args.file.to_string_lossy())),
     };
+    let location = args.location.resolve(&font);
+    if let Some(error) = location.ft_error() {
+        return fail(err, format!("invalid variation location: {error:?}"));
+    }
     let glyph = match args.target {
         Target::Glyph(g) => GlyphId(g),
         Target::Char(c) => match font.nominal_glyph(c) {
@@ -158,6 +170,7 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
         },
     };
     if !args.no_bitmap
+        && location.ft_default()
         && let Some(image) = bitmap_image(&font, glyph.0, args.ppem)
     {
         if out.write_all(&image).is_err() {
@@ -167,7 +180,7 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
     }
     let mut scratch = Scratch::default();
     let mut raster = Rasterizer::new();
-    let outlines = Outlines::new(&font);
+    let outlines = Outlines::new(font.instance(&location));
     let rendered = if args.color {
         let options = color_options(&font, args.palette);
         let mut image = sofel_raster::BgraImage::default();
