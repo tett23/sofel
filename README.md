@@ -231,6 +231,8 @@ Roboto と Comfortaa のラスタライズについて、12、24、48、96 ppem 
 
 性能の計測（[ADR 0013](docs/adr/0013-benchmark-harness.md)）は、ワークスペースの外の `bench/` で行う。テストのデータの取得のあと、FreeTypeとHarfBuzzを静的ライブラリにビルドする（C++のコンパイラが要る。wasmでは `bench/fetch-wasi-sdk.sh` がwasi-sdkを取得する）。`--once` は各項目を1回だけ走らせ、結果の照合だけを行う。シェーピングの項目（[ADR 0020](docs/adr/0020-shaping-foundation.md)）は、計測の前に全行の結果をHarfBuzzと比べる。サブセット化の項目（[ADR 0022](docs/adr/0022-subsetting.md)）は、計測の前に出力のバイト列のハッシュをHarfBuzzと比べる。記録は `docs/benchmarks/` に置く。
 
+SourceSerifVariable-Romanの `wght=500` でのシェーピングは `--filter 'shaping react-dom.txt wght=500'` で選ぶ。全行の照合とnative・wasmの測定値は [可変位置のシェーピング計測](docs/benchmarks/2026-11-11-variable-shaping.md) に記録した。
+
 可変フォントの変化量は `--filter 'item delta'` で計れる。HVAR の係数を再利用できる場合と計算し直す場合、および既定位置の MVAR を個別に表示する。
 
 HarfBuzz と同じ文字数でサブセット化を計るには、計測の引数に `--filter 'subset unicode range'` を渡す。静的フォント7個について、既定の設定とグリフIDを保つ設定の両方を計る。
