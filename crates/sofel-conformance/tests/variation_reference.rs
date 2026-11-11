@@ -474,6 +474,7 @@ fn adr0030_i01_unrounded_mvar_reference_at_corpus_positions() {
         let bytes = std::fs::read(&path).unwrap();
         let faces = match FontFile::new(&bytes) {
             Ok(FontFile::Collection(c)) => c.num_fonts(),
+            Ok(FontFile::Dfont(d)) => d.num_fonts(),
             Ok(FontFile::Sfnt(_)) => 1,
             Err(_) => continue,
         };
@@ -542,6 +543,7 @@ fn adr0027_i02_design_normalized_and_postscript_at_all_positions() {
         let bytes = std::fs::read(&path).unwrap();
         let faces = match FontFile::new(&bytes) {
             Ok(FontFile::Collection(c)) => c.num_fonts(),
+            Ok(FontFile::Dfont(d)) => d.num_fonts(),
             Ok(FontFile::Sfnt(_)) => 1,
             Err(_) => continue,
         };
@@ -665,6 +667,7 @@ fn adr0029_corpus_delta_digest() {
         let bytes = std::fs::read(path).unwrap();
         let faces = match FontFile::new(&bytes) {
             Ok(FontFile::Collection(c)) => c.num_fonts(),
+            Ok(FontFile::Dfont(d)) => d.num_fonts(),
             Ok(FontFile::Sfnt(_)) => 1,
             Err(_) => continue,
         };

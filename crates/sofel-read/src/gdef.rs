@@ -532,12 +532,12 @@ pub fn validate(data: &[u8], report: &mut dyn FnMut(Diagnostic)) {
 }
 
 fn attach_list(w: &mut Walker<'_, '_>, field: usize, width: usize) {
-    let Some((at, list)) = w.follow(field, 0, width, AttachList::new) else {
+    let Some((at, count, available)) = w.offset_prefix(field, 0, width, 2, 2) else {
         return;
     };
     let covered = w.coverage(at, at, 2);
-    w.count_matches(at.saturating_add(2), covered, list.len());
-    for i in 0..list.len() {
+    w.count_matches(at.saturating_add(2), covered, count);
+    for i in 0..available {
         let f = at.saturating_add(4).saturating_add(i.saturating_mul(2));
         w.follow(f, at, 2, |d| counted(d, 0, 2, 2));
     }

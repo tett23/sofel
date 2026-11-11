@@ -148,6 +148,7 @@ pub struct Collection<'a> {
 }
 
 const TTCF: u32 = 0x7474_6366;
+const DFONT: u32 = 0x0000_0100;
 
 impl<'a> Collection<'a> {
     /// The collection header at the start of `file`.
@@ -222,6 +223,85 @@ impl<'a> Collection<'a> {
     }
 }
 
+/// A Mac resource fork containing sfnt resources. Face numbers follow the
+/// reference list of the first `sfnt` type record, without sorting by ID.
+#[derive(Clone, Copy, Debug)]
+pub struct Dfont<'a> {
+    data: &'a [u8],
+    references: &'a [[u8; 12]],
+}
+
+impl<'a> Dfont<'a> {
+    /// Reads the data and map regions and the first `sfnt` reference list.
+    /// All region and reference-list extents must fit their declared bounds.
+    pub fn new(file: &'a [u8]) -> Result<Dfont<'a>, ReadError> {
+        let header = file
+            .first_chunk::<16>()
+            .ok_or(ReadError::truncated(16, file.len()))?;
+        if u32::from_be_bytes([header[0], header[1], header[2], header[3]]) != DFONT {
+            return Err(ReadError::UnknownVersion(u32::from_be_bytes([
+                header[0], header[1], header[2], header[3],
+            ])));
+        }
+        let data_offset = to_usize(u32::from_be_bytes([
+            header[0], header[1], header[2], header[3],
+        ]));
+        let map_offset = to_usize(u32::from_be_bytes([
+            header[4], header[5], header[6], header[7],
+        ]));
+        let data_len = to_usize(u32::from_be_bytes([
+            header[8], header[9], header[10], header[11],
+        ]));
+        let map_len = to_usize(u32::from_be_bytes([
+            header[12], header[13], header[14], header[15],
+        ]));
+        let data = be::slice_at(file, data_offset, data_len).ok_or(ReadError::OutOfBounds)?;
+        let map = be::slice_at(file, map_offset, map_len).ok_or(ReadError::OutOfBounds)?;
+        let map_header = map.first_chunk::<28>().ok_or(ReadError::OutOfBounds)?;
+        let type_offset = usize::from(u16::from_be_bytes([map_header[24], map_header[25]]));
+        let name_offset = usize::from(u16::from_be_bytes([map_header[26], map_header[27]]));
+        if name_offset > map.len() {
+            return Err(ReadError::OutOfBounds);
+        }
+        let types = be::tail_at(map, type_offset).ok_or(ReadError::OutOfBounds)?;
+        let type_count = usize::from(be::u16_at(types, 0).ok_or(ReadError::OutOfBounds)?)
+            .checked_add(1)
+            .ok_or(ReadError::OutOfBounds)?;
+        let records = be::chunks_at::<8>(types, 2, type_count).ok_or(ReadError::OutOfBounds)?;
+        let mut references = &[][..];
+        for record in records {
+            let count = usize::from(u16::from_be_bytes([record[4], record[5]]))
+                .checked_add(1)
+                .ok_or(ReadError::OutOfBounds)?;
+            let offset = usize::from(u16::from_be_bytes([record[6], record[7]]));
+            let list = be::chunks_at::<12>(types, offset, count).ok_or(ReadError::OutOfBounds)?;
+            if &record[..4] == b"sfnt" && references.is_empty() {
+                references = list;
+            }
+        }
+        Ok(Dfont { data, references })
+    }
+
+    /// Number of sfnt faces in the first `sfnt` type record.
+    pub fn num_fonts(&self) -> u32 {
+        be::to_u32(self.references.len())
+    }
+
+    /// Reads the selected resource body as a standalone sfnt.
+    /// The length prefix and body must fit the declared data region.
+    pub fn font(&self, index: u32) -> Result<Sfnt<'a>, ReadError> {
+        let reference = self
+            .references
+            .get(to_usize(index))
+            .ok_or(ReadError::OutOfBounds)?;
+        let offset = to_usize(be::u24([reference[5], reference[6], reference[7]]));
+        let length = to_usize(be::u32_at(self.data, offset).ok_or(ReadError::OutOfBounds)?);
+        let start = offset.checked_add(4).ok_or(ReadError::OutOfBounds)?;
+        let body = be::slice_at(self.data, start, length).ok_or(ReadError::OutOfBounds)?;
+        Sfnt::new(body)
+    }
+}
+
 /// A font file: a single sfnt or a collection.
 #[derive(Clone, Copy, Debug)]
 pub enum FontFile<'a> {
@@ -229,6 +309,8 @@ pub enum FontFile<'a> {
     Sfnt(Sfnt<'a>),
     /// A `ttcf` collection.
     Collection(Collection<'a>),
+    /// A Mac resource fork containing sfnt resources.
+    Dfont(Dfont<'a>),
 }
 
 impl<'a> FontFile<'a> {
@@ -237,6 +319,8 @@ impl<'a> FontFile<'a> {
     pub fn new(file: &'a [u8]) -> Result<FontFile<'a>, ReadError> {
         if be::u32_at(file, 0) == Some(TTCF) {
             Collection::new(file).map(FontFile::Collection)
+        } else if be::u32_at(file, 0) == Some(DFONT) {
+            Dfont::new(file).map(FontFile::Dfont)
         } else {
             Sfnt::new(file).map(FontFile::Sfnt)
         }

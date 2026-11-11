@@ -3,6 +3,7 @@
 
 use crate::be::{self, to_u32, to_usize};
 use crate::hhea::Hhea;
+use crate::layout::damage::{DamageEvent, inspect_damage};
 use crate::loca::Loca;
 use crate::maxp::Maxp;
 use crate::sfnt::{Collection, Sfnt, TableRecord};
@@ -105,6 +106,27 @@ fn table<'a>(sfnt: &Sfnt<'a>, tag: Tag) -> Option<&'a [u8]> {
 /// for `CFF2`, the axis count of `fvar`) (ADR 0021), and `avar` with the
 /// axis count of `fvar` (ADR 0022).
 pub fn sfnt(sfnt: &Sfnt<'_>, report: &mut dyn FnMut(Diagnostic)) {
+    sfnt_inner(sfnt, report, None);
+}
+
+/// Validates the font as [`sfnt`] does, and reports extra layout damage
+/// events without repeating any original diagnostics. `report` receives
+/// every original diagnostic exactly once; `damage` receives only
+/// [`DamageEvent::Unchecked`] and [`DamageEvent::WorkLimit`] events for
+/// GDEF, GSUB and GPOS. The caller groups those events by face and table.
+pub fn sfnt_with_layout_damage(
+    sfnt: &Sfnt<'_>,
+    report: &mut dyn FnMut(Diagnostic),
+    damage: &mut dyn FnMut(DamageEvent),
+) {
+    sfnt_inner(sfnt, report, Some(damage));
+}
+
+fn sfnt_inner(
+    sfnt: &Sfnt<'_>,
+    report: &mut dyn FnMut(Diagnostic),
+    mut damage: Option<&mut dyn FnMut(DamageEvent)>,
+) {
     directory(sfnt, report);
     if let Some(d) = table(sfnt, head::TAG) {
         head::validate(d, report);
@@ -207,7 +229,7 @@ pub fn sfnt(sfnt: &Sfnt<'_>, report: &mut dyn FnMut(Diagnostic)) {
     color_tables(sfnt, glyphs_wide.or(glyphs_narrow), report);
     let gdef_data = table(sfnt, gdef::TAG);
     if let Some(d) = gdef_data {
-        gdef::validate(d, report);
+        validate_layout(gdef::TAG, d, None, axes, report, &mut damage);
     }
     // Lookups may only use mark glyph sets that GDEF defines.
     let mark_sets = Some(
@@ -217,12 +239,10 @@ pub fn sfnt(sfnt: &Sfnt<'_>, report: &mut dyn FnMut(Diagnostic)) {
             .map_or(0, |s| u16::try_from(s.len()).unwrap_or(u16::MAX)),
     );
     if let Some(d) = table(sfnt, gsub::TAG) {
-        gsub::validate(d, mark_sets, report);
-        layout_variations(d, gsub::TAG, axes, report);
+        validate_layout(gsub::TAG, d, mark_sets, axes, report, &mut damage);
     }
     if let Some(d) = table(sfnt, gpos::TAG) {
-        gpos::validate(d, mark_sets, report);
-        layout_variations(d, gpos::TAG, axes, report);
+        validate_layout(gpos::TAG, d, mark_sets, axes, report, &mut damage);
     }
     // GLYF and LOCA replace glyf and loca when GLYF is present (ADR 0011).
     let extended = table(sfnt, glyf::TAG_WIDE).is_some();
@@ -265,6 +285,44 @@ pub fn sfnt(sfnt: &Sfnt<'_>, report: &mut dyn FnMut(Diagnostic)) {
     }
 }
 
+fn validate_layout(
+    tag: Tag,
+    data: &[u8],
+    mark_sets: Option<u16>,
+    axes: Option<u16>,
+    report: &mut dyn FnMut(Diagnostic),
+    damage: &mut Option<&mut dyn FnMut(DamageEvent)>,
+) {
+    use crate::layout::sanitize::{Admission, assess};
+    if assess(tag, Some(data)) == Admission::Discarded {
+        report(Diagnostic::new(
+            tag,
+            0,
+            Kind::LayoutTableDiscarded { table: tag },
+        ));
+    }
+    if let Some(extra) = damage.as_deref_mut() {
+        let mut emit = |event| match event {
+            DamageEvent::Diagnostic(diagnostic) => report(diagnostic),
+            other => extra(other),
+        };
+        inspect_damage(tag, data, mark_sets, &mut emit);
+        if tag != gdef::TAG {
+            layout_variations(data, tag, axes, &mut |diagnostic| {
+                crate::layout::damage::forward(diagnostic, &mut emit)
+            });
+        }
+    } else if tag == gdef::TAG {
+        gdef::validate(data, report);
+    } else if tag == gsub::TAG {
+        gsub::validate(data, mark_sets, report);
+        layout_variations(data, tag, axes, report);
+    } else if tag == gpos::TAG {
+        gpos::validate(data, mark_sets, report);
+        layout_variations(data, tag, axes, report);
+    }
+}
+
 fn glyph_point_count(
     glyf_data: &[u8],
     loca: &Loca<'_>,
@@ -297,7 +355,17 @@ fn layout_variations(data: &[u8], tag: Tag, axes: Option<u16>, report: &mut dyn 
         return;
     };
     if let Some(bytes) = be::tail_at(data, to_usize(offset)) {
-        feature_variations::validate(bytes, tag, offset, axes, report);
+        let lookup_count = layout.lookup_list().ok().flatten().map(|list| list.len());
+        let feature_count = layout.feature_list().ok().flatten().map(|list| list.len());
+        feature_variations::validate(
+            bytes,
+            tag,
+            offset,
+            axes,
+            feature_count,
+            lookup_count,
+            report,
+        );
     } else {
         report(Diagnostic::new(
             tag,
