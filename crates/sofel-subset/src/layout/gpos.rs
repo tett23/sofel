@@ -51,10 +51,10 @@ fn collect_value_devices(
     Some(())
 }
 
-/// Indices used by retained PairPos records. Every 0x8000 word
-/// in the source GPOS must be a parsed PairPos Device format; this keeps
+/// Indices used by retained SinglePos and PairPos records. Every 0x8000 word
+/// in the source GPOS must be a parsed Device format; this keeps
 /// other GPOS variation Devices and unparsed formats unsupported.
-pub(crate) fn retained_pair_variation_indices(
+pub(crate) fn retained_variation_indices(
     data: &[u8],
     plan: &LayoutPlan,
     glyphs: &BitSet,
@@ -70,9 +70,50 @@ pub(crate) fn retained_pair_variation_indices(
         let ty = lookup.u16(0);
         for j in 0..usize::from(lookup.u16(4)) {
             let st = lookup.off16(6usize.saturating_add(j.saturating_mul(2)));
-            let Some((Kind::PairPos, pair)) = super::resolve(ty, st, false) else {
+            let Some((kind, subtable)) = super::resolve(ty, st, false) else {
                 continue;
             };
+            if kind == Kind::SinglePos {
+                let cov = Cov(subtable.off16(2));
+                let vf = subtable.u16(4);
+                match subtable.u16(0) {
+                    1 => {
+                        collect_value_devices(
+                            data,
+                            subtable,
+                            subtable.at(6),
+                            [vf, 0],
+                            keep_lookup && cov.intersects(glyphs),
+                            &mut formats,
+                            &mut selected,
+                        )?;
+                    }
+                    2 => {
+                        let n = usize::from(subtable.u16(6));
+                        let record_len = value_len(vf).saturating_mul(2);
+                        if n.checked_mul(record_len)? > subtable.0.len().saturating_sub(8) {
+                            return None;
+                        }
+                        for (k, glyph) in cov.glyphs().into_iter().take(n).enumerate() {
+                            collect_value_devices(
+                                data,
+                                subtable,
+                                subtable.at(8usize.saturating_add(k.saturating_mul(record_len))),
+                                [vf, 0],
+                                keep_lookup && glyphs.has(glyph),
+                                &mut formats,
+                                &mut selected,
+                            )?;
+                        }
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+            if kind != Kind::PairPos {
+                continue;
+            }
+            let pair = subtable;
             let cov = Cov(pair.off16(2));
             let vf = [pair.u16(4), pair.u16(6)];
             let lengths = [value_len(vf[0]), value_len(vf[1])];
@@ -232,7 +273,7 @@ fn strip_hints(s: &Sub<'_, '_>) -> bool {
 }
 
 /// `Device::copy` into the current object: hinting devices are copied,
-/// retained PairPos variation indices use the GDEF store's new indices.
+/// retained GPOS variation indices use the GDEF store's new indices.
 fn device_copy(s: &mut Sub<'_, '_>, dev: D<'_>) -> bool {
     match dev.u16(4) {
         1..=3 => {

@@ -347,6 +347,158 @@ fn gdef_store_with_gpos_variation_index_remains_unsupported() {
     assert_eq!(out_table(&out, b"GPOS"), out_table(&data, b"GPOS"));
 }
 
+fn singlepos_with_variation_index(format: u16) -> Vec<u8> {
+    let device = |inner| Buf::new().u16(0).u16(inner).u16(0x8000).done();
+    let single = if format == 1 {
+        link(
+            Buf::new().u16(1).u16(0).u16(0x0040).u16(0).done(),
+            vec![(2, 2, coverage1(&[g('B'), g('C')])), (6, 2, device(2))],
+        )
+    } else {
+        link(
+            Buf::new()
+                .u16(2)
+                .u16(0)
+                .u16(0x0040)
+                .u16(2)
+                .u16(0)
+                .u16(0)
+                .done(),
+            vec![
+                (2, 2, coverage1(&[g('A'), g('B')])),
+                (8, 2, device(1)),
+                (10, 2, device(2)),
+            ],
+        )
+    };
+    layout_table(&[(b"kern", &[0])], &[(1, single)])
+}
+
+#[test]
+fn gpos_single1_variation_index_retained_after_glyph_filter_is_remapped() {
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[2])),
+        (b"GPOS", singlepos_with_variation_index(1)),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("BC")).unwrap();
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    let store = sofel_font::read::gdef::Gdef::new(&gdef)
+        .unwrap()
+        .variation_store()
+        .unwrap()
+        .unwrap();
+    assert_eq!(store.item_data(0).unwrap().item_count, 1);
+    let gpos = out_table(&out, b"GPOS").unwrap();
+    assert!(gpos.windows(6).any(|w| w == [0, 0, 0, 0, 0x80, 0]));
+}
+
+#[test]
+fn gpos_single2_variation_index_uses_only_kept_value_record() {
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[2])),
+        (b"GPOS", singlepos_with_variation_index(2)),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("B")).unwrap();
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    let store = sofel_font::read::gdef::Gdef::new(&gdef)
+        .unwrap()
+        .variation_store()
+        .unwrap()
+        .unwrap();
+    assert_eq!(store.item_data(0).unwrap().item_count, 1);
+    let gpos = out_table(&out, b"GPOS").unwrap();
+    assert!(gpos.windows(6).any(|w| w == [0, 0, 0, 0, 0x80, 0]));
+}
+
+#[test]
+fn gpos_single_variation_index_is_removed_by_no_hinting() {
+    for format in [1, 2] {
+        let data = font_with(vec![
+            (b"GDEF", gdef_with_referenced_store(&[2])),
+            (b"GPOS", singlepos_with_variation_index(format)),
+        ]);
+        let font = Font::new(&data, 0).unwrap();
+        let input = chars("B").with_flags(Flags::NO_HINTING);
+        let out = subset(&font, &input).unwrap();
+        let gpos = out_table(&out, b"GPOS").unwrap();
+        assert!(!gpos.windows(6).any(|w| w == [0, 0, 0, 0, 0x80, 0]));
+    }
+}
+
+#[test]
+fn copied_gdef_uses_single_index_remap_like_harfbuzz() {
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[2])),
+        (b"GPOS", singlepos_with_variation_index(1)),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let input = chars("BC").map_set(SetKind::NoSubsetTables, |set| {
+        set.add(Tag::new(b"GDEF").to_u32());
+    });
+    let out = subset(&font, &input).unwrap();
+    assert_eq!(out_table(&out, b"GDEF"), out_table(&data, b"GDEF"));
+    let gpos = out_table(&out, b"GPOS").unwrap();
+    assert!(gpos.windows(6).any(|w| w == [0, 0, 0, 0, 0x80, 0]));
+}
+
+#[test]
+fn gpos_single_variation_index_combines_with_gdef_caret() {
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[0])),
+        (b"GPOS", singlepos_with_variation_index(1)),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("ABC")).unwrap();
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    let store = sofel_font::read::gdef::Gdef::new(&gdef)
+        .unwrap()
+        .variation_store()
+        .unwrap()
+        .unwrap();
+    assert_eq!(store.item_data(0).unwrap().item_count, 2);
+    let gpos = out_table(&out, b"GPOS").unwrap();
+    assert!(gpos.windows(6).any(|w| w == [0, 0, 0, 1, 0x80, 0]));
+}
+
+#[test]
+fn gpos_single_variation_index_drops_with_lookup_or_glyph() {
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[2])),
+        (b"GPOS", singlepos_with_variation_index(1)),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    assert!(out_table(&subset(&font, &chars("D")).unwrap(), b"GDEF").is_none());
+    let input = chars("BC").map_set(SetKind::LayoutFeatures, |set| {
+        set.clear();
+        set.add(Tag::new(b"liga").to_u32());
+    });
+    assert!(out_table(&subset(&font, &input).unwrap(), b"GDEF").is_none());
+}
+
+#[test]
+fn gpos_cursive_variation_index_remains_unsupported() {
+    let device = Buf::new().u16(0).u16(2).u16(0x8000).done();
+    let anchor = link(
+        Buf::new().u16(3).i16(0).i16(0).u16(0).u16(0).done(),
+        vec![(6, 2, device)],
+    );
+    let cursive = link(
+        Buf::new().u16(1).u16(0).u16(1).u16(0).u16(0).done(),
+        vec![(2, 2, coverage1(&[g('B')])), (6, 2, anchor)],
+    );
+    let gpos = layout_table(&[(b"curs", &[0])], &[(3, cursive)]);
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[2])),
+        (b"GPOS", gpos),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    assert!(
+        matches!(subset(&font, &chars("B")), Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF"))
+    );
+}
+
 #[test]
 fn gpos_pair_variation_index_retained_after_layout_filter_is_remapped() {
     // GDEF's caret on A is dropped. PairPos on B+C keeps row 2.

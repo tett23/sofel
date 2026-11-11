@@ -580,7 +580,7 @@ impl Plan {
             if !pinned && layout::gdef::has_var_store(gdef) && (!copied_gdef || gpos_has_var_format)
             {
                 let gpos_indices = if gpos_has_var_format {
-                    layout::gpos::retained_pair_variation_indices(
+                    layout::gpos::retained_variation_indices(
                         gpos_data,
                         &p.layout.gpos,
                         &p.layout.glyphset_gsub,
