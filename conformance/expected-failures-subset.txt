@@ -220,10 +220,6 @@ empty_region_vardata.tests/RobotoFlex-Variable.ABC.default.all.wght=200-300,opsz
 empty_region_vardata.tests/RobotoFlex-Variable.ABC.default.all.wght=200-300,opsz=14.ttf+prepared:bytes  # deferred:instance
 empty_region_vardata.tests/RobotoFlex-Variable.ABC.default.all.wght=200-300,opsz=14.ttf:validate  # deferred:instance
 empty_region_vardata.tests/RobotoFlex-Variable.ABC.default.all.wght=200-300,opsz=14.ttf+prepared:validate  # deferred:instance
-feature_params_alternate.tests/FeatureParams-variations.feature-params-variations.all.ttf:bytes  # stage:var
-feature_params_alternate.tests/FeatureParams-variations.feature-params-variations.all.ttf+prepared:bytes  # stage:var
-feature_params_alternate.tests/FeatureParams-variations.feature-params-variations.all.ttf:validate  # stage:var
-feature_params_alternate.tests/FeatureParams-variations.feature-params-variations.all.ttf+prepared:validate  # stage:var
 feature_params_variations.tests/FeatureParams-variations.feature-params-variations.all.wght=400,wdth=87.5.ttf:bytes  # deferred:instance
 feature_params_variations.tests/FeatureParams-variations.feature-params-variations.all.wght=400,wdth=87.5.ttf+prepared:bytes  # deferred:instance
 feature_params_variations.tests/FeatureParams-variations.feature-params-variations.all.wght=400,wdth=87.5.ttf:validate  # deferred:instance
@@ -628,10 +624,6 @@ instantiate_gvar_padding.tests/googlesansflex_subset.default.all.ROND=100.0,slnt
 instantiate_gvar_padding.tests/googlesansflex_subset.default.all.ROND=100.0,slnt=0.0,wdth=150.0,wght=500.0.ttf+prepared:bytes  # deferred:instance
 instantiate_gvar_padding.tests/googlesansflex_subset.default.all.ROND=100.0,slnt=0.0,wdth=150.0,wght=500.0.ttf:validate  # deferred:instance
 instantiate_gvar_padding.tests/googlesansflex_subset.default.all.ROND=100.0,slnt=0.0,wdth=150.0,wght=500.0.ttf+prepared:validate  # deferred:instance
-layout.feature_dedup.tests/LayoutFeatureDedup.layout-feature-dedup.all.ttf:bytes  # stage:var
-layout.feature_dedup.tests/LayoutFeatureDedup.layout-feature-dedup.all.ttf+prepared:bytes  # stage:var
-layout.feature_dedup.tests/LayoutFeatureDedup.layout-feature-dedup.all.ttf:validate  # stage:var
-layout.feature_dedup.tests/LayoutFeatureDedup.layout-feature-dedup.all.ttf+prepared:validate  # stage:var
 layout.feature_dedup_instance.tests/LayoutFeatureDedup.layout-feature-dedup.all.wght=400,wdth=87.5.ttf:bytes  # deferred:instance
 layout.feature_dedup_instance.tests/LayoutFeatureDedup.layout-feature-dedup.all.wght=400,wdth=87.5.ttf+prepared:bytes  # deferred:instance
 layout.feature_dedup_instance.tests/LayoutFeatureDedup.layout-feature-dedup.all.wght=400,wdth=87.5.ttf:validate  # deferred:instance
@@ -744,10 +736,6 @@ retain-num-glyphs.tests/NotoSansJP-VF.subset.retain-num-glyphs.all.otf:bytes  # 
 retain-num-glyphs.tests/NotoSansJP-VF.subset.retain-num-glyphs.all.otf+prepared:bytes  # stage:var
 retain-num-glyphs.tests/NotoSansJP-VF.subset.retain-num-glyphs.all.otf:validate  # stage:var
 retain-num-glyphs.tests/NotoSansJP-VF.subset.retain-num-glyphs.all.otf+prepared:validate  # stage:var
-subset_gvar_padding.tests/google_symbols_subset_test.default.all.ttf:bytes  # stage:var
-subset_gvar_padding.tests/google_symbols_subset_test.default.all.ttf+prepared:bytes  # stage:var
-subset_gvar_padding.tests/google_symbols_subset_test.default.all.ttf:validate  # stage:var
-subset_gvar_padding.tests/google_symbols_subset_test.default.all.ttf+prepared:validate  # stage:var
 sync_vmetrics.tests/playwrite_mm.subset.default.all.SPED=25,YEXT=520,wght=100-400,slnt=18.iup_optimize.ttf:bytes  # deferred:iup
 sync_vmetrics.tests/playwrite_mm.subset.default.all.SPED=25,YEXT=520,wght=100-400,slnt=18.iup_optimize.ttf+prepared:bytes  # deferred:iup
 sync_vmetrics.tests/playwrite_mm.subset.default.all.SPED=25,YEXT=520,wght=100-400,slnt=18.iup_optimize.ttf:validate  # deferred:iup
