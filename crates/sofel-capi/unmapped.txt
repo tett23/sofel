@@ -19,6 +19,7 @@ sofel_font::var::Instance::v_advance_with_scratch Rust work-area variant of the 
 sofel_font::var::Instance::scaled_v_advance_with_scratch Rust work-area variant of the C scaled vertical advance query (ADR 0027).
 sofel_font::var::Instance::scaled_v_origin_with_scratch Rust work-area variant of the C vertical origin query (ADR 0027).
 sofel_font::var::Instance::glyf_extents_with_scratch Rust work-area variant of the C glyph extents query (ADR 0027).
+sofel_font::var::Instance::varied_glyf_control_box Unrounded internal outline for COLR layer clipping; C receives the painted glyph extents (ADR 0027).
 sofel_font::var::gvar::apply_hb Internal HarfBuzz gvar point evaluation; C gets the resulting font values through coordinate-dependent queries (ADR 0030).
 sofel_font::var::gvar::apply_ft Internal FreeType gvar point evaluation; C gets the resulting outline through sofel_outline_load and sofel_outline_draw (ADR 0030).
 sofel_font::var::Location::default_ref The NULL location argument will represent the static default for C coordinate-dependent queries in the ADR 0027 query PR.
