@@ -336,6 +336,7 @@ pub struct HbCff2<'a> {
     fd_select: HbFdSelect<'a>,
     fd_count: u32,
     var_store: Option<i64>,
+    parsed_store: Option<ItemVariationStore<'a>>,
     last_subrs: HbIndex<'a>,
     last_ivs: u32,
 }
@@ -372,6 +373,10 @@ impl<'a> HbCff2<'a> {
         let var_store = sc
             .struct_at(0, top.vstore)
             .filter(|&p| sanitize_cff2_var_store(data, p, &mut sc));
+        let parsed_store = var_store.and_then(|p| {
+            let start = usize::try_from(p).ok()?.checked_add(2)?;
+            ItemVariationStore::new(data.get(start..)?).ok()
+        });
         let char_strings = sc
             .struct_at(0, top.char_strings)
             .and_then(|p| HbIndex::sanitize(data, p, Version::Cff2, &mut sc));
@@ -421,6 +426,7 @@ impl<'a> HbCff2<'a> {
             fd_select,
             fd_count,
             var_store,
+            parsed_store,
             last_subrs: last.0,
             last_ivs: last.1,
         })
@@ -477,8 +483,7 @@ impl<'a> HbCff2<'a> {
 
     /// The sanitized CFF2 ItemVariationStore for blend coefficients.
     pub fn variation_store(&self) -> Option<ItemVariationStore<'a>> {
-        let start = usize::try_from(self.var_store?).ok()?.checked_add(2)?;
-        ItemVariationStore::new(self.data.get(start..)?).ok()
+        self.parsed_store
     }
 
     /// The FDArray INDEX.
