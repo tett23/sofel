@@ -10,6 +10,12 @@ sofel_font::Font::instance C coordinate-dependent queries pair a font and locati
 sofel_font::Font::default_instance A NULL location will select the static default in C coordinate-dependent queries in the ADR 0027 query PR.
 sofel_font::var::Arith::* Generic arithmetic policy used internally to evaluate variation tables, without a direct C operation (ADR 0029).
 sofel_font::var::Instance::item_delta Generic variation-table evaluation is an internal building block; the C API will expose coordinate-dependent font values rather than a raw store row (ADR 0029).
+sofel_font::var::Instance::font Gives Rust callers the font paired with an Instance; C receives that font as sofel_font_t.
+sofel_font::var::Instance::location Gives Rust callers the normalized location; C passes its sofel_location_t to coordinate-dependent queries.
+sofel_font::var::Instance::apply_gvar_hb Internal HarfBuzz glyph point evaluation; C gets the resulting coordinate-dependent font values (ADR 0030).
+sofel_font::var::Instance::apply_gvar_ft Internal FreeType glyph point evaluation; C gets the resulting coordinate-dependent outline (ADR 0030).
+sofel_font::var::gvar::apply_hb Internal HarfBuzz gvar point evaluation; C gets the resulting font values through coordinate-dependent queries (ADR 0030).
+sofel_font::var::gvar::apply_ft Internal FreeType gvar point evaluation; C gets the resulting outline through sofel_outline_load and sofel_outline_draw (ADR 0030).
 sofel_font::var::Location::default_ref The NULL location argument will represent the static default for C coordinate-dependent queries in the ADR 0027 query PR.
 sofel_font::var::StoreScalars::* Internal cached variation-region coefficients, without a direct C operation (ADR 0029).
 sofel_font::var::map_float Internal avar interpolation helper, without a direct C operation (ADR 0027).
@@ -105,6 +111,7 @@ sofel_font::CffMatrix::is_identity A helper of the Rust matrix value; C does not
 sofel_font::fs_type The /FSType rule on a byte string; C gets it for a font with sofel_font_ps_fs_type.
 sofel_outline::Outlines::cff The opened CFF that sofel_font_t keeps; C queries it with sofel_font_cid and friends.
 sofel_outline::Outlines::font Returns the Rust font; C keeps the sofel_font_t.
+sofel_outline::Outlines::instance Returns the Rust font and location pair; C passes sofel_font_t and sofel_location_t to coordinate-dependent queries (ADR 0027).
 sofel_outline::Outlines::hb_extents Returns the Rust boxes value; C gets boxes with sofel_font_glyph_extents.
 sofel_read::cff::Charset::num_ranges The length of the caller's array for the charset index (ADR 0025); sofel_font_t builds and keeps the index inside, so C needs no array.
 sofel_read::cff::Charset::index_into Builds the charset index over the caller's array (ADR 0025); sofel_font_create builds it inside sofel_font_t, which sofel_font_cid and sofel_font_ft_glyph_name use.
