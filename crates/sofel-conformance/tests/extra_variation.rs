@@ -24,7 +24,6 @@ struct Case<'a> {
     id: &'a str,
     font: &'a str,
     glyph: u32,
-    #[cfg(not(target_arch = "wasm32"))]
     coordinates: &'a str,
 }
 
@@ -39,7 +38,6 @@ fn cases() -> Vec<Case<'static>> {
                 id: fields[0],
                 font: fields[1],
                 glyph: fields[2].parse().unwrap(),
-                #[cfg(not(target_arch = "wasm32"))]
                 coordinates: fields[3],
             }
         })
