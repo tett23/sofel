@@ -24,7 +24,7 @@ pub(super) fn subset(
     _tables: &mut Tables,
 ) -> Result<bool, SubsetError> {
     let vertical = tag == Tag::new(b"VVAR");
-    let (store, maps) = if vertical {
+    let (store, mut maps) = if vertical {
         let table = Vvar::new(src).map_err(|_| SubsetError::Malformed { tag })?;
         (
             table.store().map_err(|_| SubsetError::Malformed { tag })?,
@@ -61,6 +61,11 @@ pub(super) fn subset(
             ],
         )
     };
+    // Only advances use implicit glyph indexing. Empty optional maps
+    // contribute no side-bearing or vertical-origin deltas.
+    for map in maps.iter_mut().skip(1) {
+        *map = map.filter(|m| !m.is_empty());
+    }
     let mut old_items: BTreeMap<u16, BTreeSet<u32>> = BTreeMap::new();
     for (map_index, map) in maps.iter().enumerate() {
         if map_index != 0 && map.is_none() {

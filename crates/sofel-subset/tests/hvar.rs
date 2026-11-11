@@ -314,6 +314,23 @@ fn adr0022_explicit_metric_maps_trim_repeated_tail_across_gid_holes() {
 }
 
 #[test]
+fn adr0022_empty_optional_metric_map_has_no_output_offset() {
+    for tag in [b"HVAR", b"VVAR"] {
+        let mut data = font_with_explicit_maps(tag, false);
+        let directory = sofel_font::read::sfnt::Sfnt::new(&data).unwrap();
+        let table = directory.record(Tag::new(tag)).unwrap().offset as usize;
+        let first_side = if tag == b"HVAR" { 27 } else { 31 };
+        data[table + first_side + 2..table + first_side + 4].fill(0);
+        let font = Font::new(&data, 0).unwrap();
+        let input = Input::new().map_set(SetKind::Glyphs, |g| g.add(2));
+        let output = subset(&font, &input).unwrap();
+        let result = Font::new(&output, 0).unwrap();
+        let bytes = result.table(Tag::new(tag)).unwrap();
+        assert_eq!(&bytes[12..16], &[0; 4]);
+    }
+}
+
+#[test]
 fn adr0022_hvar_implicit_advance_map_follows_new_glyph_ids() {
     let data = font_with_hvar(b"HVAR");
     let font = Font::new(&data, 0).unwrap();
