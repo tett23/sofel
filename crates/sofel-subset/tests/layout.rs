@@ -313,6 +313,23 @@ fn gdef_store_with_kept_gpos_remains_unsupported() {
     );
 }
 
+#[test]
+fn gdef_store_with_gsub_feature_variations_remains_unsupported() {
+    let gdef = gdef_with_unused_store(class_def2(&[(1, 5, 1)]));
+    let gsub = Buf::new()
+        .u32(0x0001_0001)
+        .u16(0)
+        .u16(0)
+        .u16(0)
+        .u32(14)
+        .done();
+    let data = font_with(vec![(b"GDEF", gdef), (b"GSUB", gsub)]);
+    let font = Font::new(&data, 0).unwrap();
+    assert!(
+        matches!(subset(&font, &chars("A")), Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF"))
+    );
+}
+
 fn glyph_class_def(out: &[u8]) -> Vec<u8> {
     let gdef = out_table(out, b"GDEF").unwrap();
     let cd = follow(&gdef, 4);
