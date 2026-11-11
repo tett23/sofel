@@ -225,9 +225,8 @@ fn instanced_format(format: u16) -> u16 {
     format & 0x0F
 }
 
-/// Whether the hints of value records are stripped: with `NO_HINTING`
-/// (a variable font keeps them only with a GDEF variation store, which
-/// this version does not subset).
+/// Whether `NO_HINTING` strips hinting Devices from value records.
+/// Retained PairPos variation Devices are handled separately.
 fn strip_hints(s: &Sub<'_, '_>) -> bool {
     s.p.flags.has(Flags::NO_HINTING)
 }
