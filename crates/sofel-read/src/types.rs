@@ -62,7 +62,8 @@ pub struct LongDateTime(pub i64);
 pub enum CountWidth {
     /// 16-bit counts (`maxp`, `hhea`, `hmtx`).
     U16,
-    /// 24-bit counts (`MAXP`, `HHEA`, `HMTX`).
+    /// Wide-table selector: 24-bit glyph counts in `MAXP`, 32-bit metric
+    /// counts in `HHEA` and `VHEA`.
     U24,
 }
 
