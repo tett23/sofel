@@ -304,3 +304,431 @@ fn arabic_stch_repeats_tiles_to_fill_the_word() {
         .sum();
     assert_eq!(tiles, 0);
 }
+
+// Indic.
+
+/// A font for the Indic shaper: glyph `i + 1` is `chars[i]` (the forms
+/// are private-use characters), and a `GSUB` with the script tag `ot`
+/// whose features are ligatures `(feature, components, form)`, one
+/// lookup per feature.
+fn indic_font(
+    ot: &[u8; 4],
+    chars: &[u32],
+    ligatures: &[(&'static [u8; 4], &[u32], u32)],
+) -> Vec<u8> {
+    let mut tags: Vec<&'static [u8; 4]> = Vec::new();
+    for (t, _, _) in ligatures {
+        if !tags.contains(t) {
+            tags.push(t);
+        }
+    }
+    let gl = |c: u32| g(chars, c) as u16;
+    let lookups: Vec<support::LookupSpec> = tags
+        .iter()
+        .map(|t| {
+            let subtables = ligatures
+                .iter()
+                .filter(|(f, _, _)| f == t)
+                .map(|(_, comps, form)| {
+                    let rest: Vec<u16> = comps[1..].iter().map(|&c| gl(c)).collect();
+                    support::ligature_subst(gl(comps[0]), &[(&rest, gl(*form))])
+                })
+                .collect();
+            lookup(4, 0, subtables)
+        })
+        .collect();
+    let features: Vec<(&[u8; 4], Vec<u16>)> = tags
+        .iter()
+        .enumerate()
+        .map(|(i, t)| (*t, vec![i as u16]))
+        .collect();
+    let idx: Vec<u16> = (0..tags.len() as u16).collect();
+    let gsub = support::layout(
+        &[(ot, vec![support::lang(None, &idx)])],
+        &features,
+        &lookups,
+    );
+    font_for(chars, 500, vec![(b"GSUB", gsub)])
+}
+
+/// Shapes `text` left to right and gives the characters of the glyphs
+/// (0 for `.notdef`).
+fn indic_shape(data: &[u8], chars: &[u32], script: &[u8; 4], text: &[u32]) -> Vec<u32> {
+    let out = shape_cps(data, script, Direction::Ltr, text);
+    glyphs(&out)
+        .iter()
+        .map(|&gl| if gl == 0 { 0 } else { chars[gl as usize - 1] })
+        .collect()
+}
+
+const DC: u32 = 0x25CC;
+const ZWJ: u32 = 0x200D;
+const FORM1: u32 = 0xE001;
+const FORM2: u32 = 0xE002;
+const FORM3: u32 = 0xE003;
+const REPH: u32 = 0xE000;
+
+mod deva {
+    pub const KA: u32 = 0x0915;
+    pub const RA: u32 = 0x0930;
+    pub const SSA: u32 = 0x0937;
+    pub const VIRAMA: u32 = 0x094D;
+    pub const I: u32 = 0x093F;
+    pub const A: u32 = 0x0905;
+    pub const AA: u32 = 0x093E;
+}
+
+/// Devanagari: reph from Ra, H; half forms; Ra below the base with the
+/// old (Ra, H) and new (H, Ra) orders of `blwf`.
+fn deva_font(ot: &[u8; 4]) -> (Vec<u8>, Vec<u32>) {
+    use deva::*;
+    let chars = vec![KA, RA, SSA, VIRAMA, I, A, AA, DC, REPH, FORM1, FORM2, FORM3];
+    let data = indic_font(
+        ot,
+        &chars,
+        &[
+            (b"rphf", &[RA, VIRAMA], REPH),
+            (b"blwf", &[RA, VIRAMA], FORM2),
+            (b"blwf", &[VIRAMA, RA], FORM3),
+            (b"half", &[KA, VIRAMA], FORM1),
+        ],
+    );
+    (data, chars)
+}
+
+/// The other scripts: Ra, the virama, a consonant, and the characters of
+/// each script's rule.
+mod script {
+    pub const BENG: [u32; 5] = [0x0995, 0x09B0, 0x09CD, 0x09AF, 0x09BF]; // KA RA VIRAMA YA I
+    pub const GURU: [u32; 4] = [0x0A15, 0x0A30, 0x0A4D, 0x0A39]; // KA RA VIRAMA HA
+    pub const GUJR: [u32; 4] = [0x0A95, 0x0AB0, 0x0ACD, 0x0ABF]; // KA RA VIRAMA I
+    pub const ORYA: [u32; 4] = [0x0B15, 0x0B30, 0x0B4D, 0x0B3E]; // KA RA VIRAMA AA
+    pub const TAML: [u32; 5] = [0x0B95, 0x0BB0, 0x0BCD, 0x0BB7, 0x0BC6]; // KA RA VIRAMA SSA E
+    pub const TELU: [u32; 3] = [0x0C15, 0x0C30, 0x0C4D]; // KA RA VIRAMA
+    pub const KNDA: [u32; 3] = [0x0C95, 0x0CB0, 0x0CCD]; // KA RA VIRAMA
+    pub const MLYM: [u32; 4] = [0x0D15, 0x0D30, 0x0D4D, 0x0D4E]; // KA RA VIRAMA DOT REPH
+}
+
+/// A font for `base` (KA, RA, VIRAMA, ...) with the reph `rphf` of Ra,
+/// virama and `more` ligatures.
+fn script_font(
+    ot: &[u8; 4],
+    base: &[u32],
+    more: &[(&'static [u8; 4], &[u32], u32)],
+) -> (Vec<u8>, Vec<u32>) {
+    let mut chars = base.to_vec();
+    chars.extend([ZWJ, DC, REPH, FORM1, FORM2, FORM3]);
+    let mut ligs: Vec<(&'static [u8; 4], &[u32], u32)> = Vec::new();
+    let rv = [base[1], base[2]];
+    ligs.push((b"rphf", &rv, REPH));
+    ligs.extend_from_slice(more);
+    (indic_font(ot, &chars, &ligs), chars)
+}
+
+fn indic_clusters(data: &[u8], script: &[u8; 4], text: &[u32]) -> Vec<u32> {
+    clusters(&shape_cps(data, script, Direction::Ltr, text))
+}
+
+#[test]
+fn indic_devanagari_new_spec() {
+    use deva::*;
+    let (data, chars) = deva_font(b"dev2");
+    assert_eq!(plan_shaper(&data, b"Deva"), Shaper::Indic);
+    let s = |text: &[u32]| indic_shape(&data, &chars, b"Deva", text);
+    // RA VIRAMA KA VIRAMA SSA I: Ra, virama forms the reph, which moves
+    // to the end (before post-base forms: there are none); KA, virama
+    // forms the half form; SSA is the base; the pre-base matra I stays
+    // first (no halant is left after the half form), all in one cluster.
+    assert_eq!(s(&[RA, VIRAMA, KA, VIRAMA, SSA, I]), [I, FORM1, SSA, REPH]);
+    assert_eq!(
+        indic_clusters(&data, b"Deva", &[RA, VIRAMA, KA, VIRAMA, SSA, I]),
+        [0, 0, 0, 0]
+    );
+    // KA VIRAMA RA: `blwf` would form RA below, so KA is the base and the
+    // new order (virama, RA) forms the below-base RA.
+    assert_eq!(s(&[KA, VIRAMA, RA]), [KA, FORM3]);
+    // A Ra, virama with no other consonant: Ra is the base, no reph.
+    assert_eq!(s(&[RA, VIRAMA]), [RA, VIRAMA]);
+    // RA VIRAMA KA I: the matra moves before the base, the reph after it.
+    assert_eq!(s(&[RA, VIRAMA, KA, I]), [I, KA, REPH]);
+}
+
+#[test]
+fn indic_devanagari_old_spec() {
+    use deva::*;
+    let (data, chars) = deva_font(b"deva");
+    let s = |text: &[u32]| indic_shape(&data, &chars, b"Deva", text);
+    // The old specification moves the post-base virama after the last
+    // consonant: RA, virama forms the below-base RA.
+    assert_eq!(s(&[KA, VIRAMA, RA]), [KA, FORM2]);
+    // KA VIRAMA RA VIRAMA SSA: SSA is the base; the half KA and the Ra,
+    // virama before it are not reordered, and the eyelash rule gives Ra,
+    // virama `blwf` too.
+    assert_eq!(s(&[KA, VIRAMA, RA, VIRAMA, SSA]), [FORM1, FORM2, SSA]);
+    assert_eq!(
+        indic_clusters(&data, b"Deva", &[KA, VIRAMA, RA, VIRAMA, SSA]),
+        [0, 2, 4]
+    );
+}
+
+#[test]
+fn indic_dotted_circle_and_vowel_constraints() {
+    use deva::*;
+    let (data, chars) = deva_font(b"dev2");
+    let s = |text: &[u32]| indic_shape(&data, &chars, b"Deva", text);
+    // A matra alone is a broken cluster: a dotted circle is its base,
+    // and the pre-base matra goes before it.
+    assert_eq!(s(&[I]), [I, DC]);
+    // A, AA looks like AA: a dotted circle is put between them.
+    assert_eq!(s(&[A, AA]), [A, DC, AA]);
+
+    // Neither with DO_NOT_INSERT_DOTTED_CIRCLE: A AA I is one vowel
+    // syllable, whose pre-base matra goes first.
+    let font = Font::new(&data, 0).unwrap();
+    let props = ResolvedProperties {
+        direction: Direction::Ltr,
+        script: Script::from_iso15924(b"Deva"),
+        language: None,
+    };
+    let plan = ShapePlan::new(&font, props, &[]);
+    let mut b = UnicodeBuffer::new();
+    b.set_flags(sofel_shape::BufferFlags::DO_NOT_INSERT_DOTTED_CIRCLE);
+    b.push_codepoints(&[A, AA, I], 0, None);
+    let out = shape(&font, &Scale::unscaled(&font), &plan, b);
+    assert_eq!(glyphs(&out), [g(&chars, I), g(&chars, A), g(&chars, AA)]);
+}
+
+#[test]
+fn indic_bengali_reph_after_below_base_forms() {
+    use script::BENG as b;
+    let (data, chars) = script_font(b"bng2", &b, &[(b"blwf", &[b[2], b[3]], FORM1)]);
+    let s = |text: &[u32]| indic_shape(&data, &chars, b"Beng", text);
+    // RA VIRAMA KA VIRAMA YA: YA forms below the base KA; the reph goes
+    // after the below-base form.
+    assert_eq!(s(&[b[1], b[2], b[0], b[2], b[3]]), [b[0], FORM1, REPH]);
+    // KA VIRAMA YA I: the pre-base matra goes before the base.
+    assert_eq!(s(&[b[0], b[2], b[3], b[4]]), [b[4], b[0], FORM1]);
+}
+
+#[test]
+fn indic_gurmukhi_reph_before_below_base_forms() {
+    use script::GURU as b;
+    let (data, chars) = script_font(b"gur2", &b, &[(b"blwf", &[b[2], b[3]], FORM1)]);
+    let s = |text: &[u32]| indic_shape(&data, &chars, b"Guru", text);
+    // RA VIRAMA KA VIRAMA HA: the reph has no halant to follow; it ends
+    // the syllable, after the below-base HA.
+    assert_eq!(s(&[b[1], b[2], b[0], b[2], b[3]]), [b[0], FORM1, REPH]);
+}
+
+#[test]
+fn indic_gujarati_reph_and_matra() {
+    use script::GUJR as b;
+    let (data, chars) = script_font(b"gjr2", &b, &[]);
+    let s = |text: &[u32]| indic_shape(&data, &chars, b"Gujr", text);
+    assert_eq!(s(&[b[1], b[2], b[0], b[3]]), [b[3], b[0], REPH]);
+    // RA VIRAMA KA KA: two syllables.
+    assert_eq!(s(&[b[1], b[2], b[0], b[0]]), [b[0], REPH, b[0]]);
+    assert_eq!(
+        indic_clusters(&data, b"Gujr", &[b[1], b[2], b[0], b[0]]),
+        [0, 0, 3]
+    );
+}
+
+#[test]
+fn indic_oriya_reph_after_main() {
+    use script::ORYA as b;
+    let (data, chars) = script_font(b"ory2", &b, &[]);
+    // RA VIRAMA KA AA: the reph goes right after the main consonant,
+    // before the post-base matra.
+    assert_eq!(
+        indic_shape(&data, &chars, b"Orya", &[b[1], b[2], b[0], b[3]]),
+        [b[0], REPH, b[3]]
+    );
+}
+
+#[test]
+fn indic_tamil_matra_after_half_forms() {
+    use script::TAML as b;
+    let (data, chars) = script_font(b"tml2", &b, &[(b"half", &[b[0], b[2]], FORM1)]);
+    let s = |text: &[u32]| indic_shape(&data, &chars, b"Taml", text);
+    // KA VIRAMA SSA E: the pre-base matra goes right before the base,
+    // after the ligated KA, virama (Tamil looks for no halant).
+    assert_eq!(s(&[b[0], b[2], b[3], b[4]]), [FORM1, b[4], b[3]]);
+    assert_eq!(
+        indic_clusters(&data, b"Taml", &[b[0], b[2], b[3], b[4]]),
+        [0, 2, 2]
+    );
+    // RA VIRAMA KA E: the reph goes after the post-base forms, to the end.
+    assert_eq!(s(&[b[1], b[2], b[0], b[4]]), [b[4], b[0], REPH]);
+}
+
+#[test]
+fn indic_telugu_explicit_reph_and_below_base() {
+    use script::TELU as b;
+    let (data, chars) = script_font(b"tel2", &b, &[(b"blwf", &[b[2], b[0]], FORM1)]);
+    let s = |text: &[u32]| indic_shape(&data, &chars, b"Telu", text);
+    // The reph is explicit: RA VIRAMA ZWJ KA forms it ...
+    assert_eq!(s(&[b[1], b[2], ZWJ, b[0]]), [b[0], REPH]);
+    // ... RA VIRAMA KA does not: KA forms below RA, the base.
+    assert_eq!(s(&[b[1], b[2], b[0]]), [b[1], FORM1]);
+    assert_eq!(s(&[b[0], b[2], b[0]]), [b[0], FORM1]);
+}
+
+#[test]
+fn indic_kannada_ra_virama_zwj() {
+    use script::KNDA as b;
+    let (data, chars) = script_font(b"knd2", &b, &[]);
+    let s = |text: &[u32]| indic_shape(&data, &chars, b"Knda", text);
+    // RA VIRAMA ZWJ behaves as RA ZWJ VIRAMA: no reph, and the ZWJ is
+    // gone (default ignorable).
+    assert_eq!(s(&[b[1], b[2], ZWJ, b[0]]), [b[1], b[2], b[0]]);
+    assert_eq!(s(&[b[1], b[2], b[0]]), [b[0], REPH]);
+}
+
+#[test]
+fn indic_malayalam_dot_reph_and_pref() {
+    use script::MLYM as b;
+    let (data, chars) = script_font(b"mlm2", &b, &[(b"pref", &[b[2], b[1]], FORM1)]);
+    let s = |text: &[u32]| indic_shape(&data, &chars, b"Mlym", text);
+    // The encoded DOT REPH moves after the main consonant.
+    assert_eq!(s(&[b[3], b[0]]), [b[0], b[3]]);
+    // KA VIRAMA RA: `pref` forms RA, which moves before the base.
+    assert_eq!(s(&[b[0], b[2], b[1]]), [FORM1, b[0]]);
+    // DOT REPH alone: the dotted circle goes after it, and it moves after
+    // the dotted circle.
+    assert_eq!(s(&[b[3]]), [DC, b[3]]);
+    assert_eq!(s(&[b[0], b[2], b[1], b[3]]), [FORM1, b[0], DC, b[3]]);
+}
+
+// Khmer.
+
+mod khmr {
+    pub const KA: u32 = 0x1780;
+    pub const KHA: u32 = 0x1781;
+    pub const RO: u32 = 0x179A;
+    pub const AA: u32 = 0x17B6;
+    pub const OE: u32 = 0x17BE;
+    pub const E: u32 = 0x17C1;
+    pub const COENG: u32 = 0x17D2;
+}
+
+/// Khmer: `pref` forms Coeng, Ro; `cfar` and `blwf` form Coeng, Kha
+/// (the `cfar` lookup first, so it wins where its mask is set).
+fn khmer_font() -> (Vec<u8>, Vec<u32>) {
+    use khmr::*;
+    let chars = vec![KA, KHA, RO, AA, OE, E, COENG, DC, FORM1, FORM2, FORM3];
+    let data = indic_font(
+        b"khmr",
+        &chars,
+        &[
+            (b"pref", &[COENG, RO], FORM1),
+            (b"cfar", &[COENG, KHA], FORM2),
+            (b"blwf", &[COENG, KHA], FORM3),
+        ],
+    );
+    (data, chars)
+}
+
+#[test]
+fn khmer_coeng_ro_and_pre_base_vowels() {
+    use khmr::*;
+    let (data, chars) = khmer_font();
+    assert_eq!(plan_shaper(&data, b"Khmr"), Shaper::Khmer);
+    let s = |text: &[u32]| indic_shape(&data, &chars, b"Khmr", text);
+    // KA COENG RO: the Coeng, Ro moves before the base and forms `pref`.
+    assert_eq!(s(&[KA, COENG, RO]), [FORM1, KA]);
+    assert_eq!(indic_clusters(&data, b"Khmr", &[KA, COENG, RO]), [0, 0]);
+    // KA COENG RO COENG KHA: what follows the Coeng, Ro gets `cfar`.
+    assert_eq!(s(&[KA, COENG, RO, COENG, KHA]), [FORM1, KA, FORM2]);
+    // KA COENG KHA: no `cfar`, so `blwf` forms it.
+    assert_eq!(s(&[KA, COENG, KHA]), [KA, FORM3]);
+    // KA E AA: the pre-base vowel moves to the start.
+    assert_eq!(s(&[KA, E, AA]), [E, KA, AA]);
+    assert_eq!(indic_clusters(&data, b"Khmr", &[KA, E, AA]), [0, 0, 0]);
+    // KA OE: the split vowel decomposes into E, OE; E moves first.
+    assert_eq!(s(&[KA, OE]), [E, KA, OE]);
+}
+
+#[test]
+fn khmer_dotted_circles() {
+    use khmr::*;
+    let (data, chars) = khmer_font();
+    let s = |text: &[u32]| indic_shape(&data, &chars, b"Khmr", text);
+    // A vowel alone: a dotted circle is its base.
+    assert_eq!(s(&[AA]), [DC, AA]);
+    assert_eq!(s(&[E]), [E, DC]);
+    // COENG RO alone: it still moves before the dotted circle.
+    assert_eq!(s(&[COENG, RO]), [FORM1, DC]);
+}
+
+// Myanmar.
+
+mod mymr {
+    pub const KA: u32 = 0x1000;
+    pub const NGA: u32 = 0x1004;
+    pub const AA: u32 = 0x102C;
+    pub const U: u32 = 0x102F;
+    pub const E: u32 = 0x1031;
+    pub const VIRAMA: u32 = 0x1039;
+    pub const ASAT: u32 = 0x103A;
+    pub const MEDIAL_RA: u32 = 0x103C;
+}
+
+/// Myanmar: the kinzi (Nga, asat, virama) forms `rphf`.
+fn myanmar_font(ot: &[u8; 4]) -> (Vec<u8>, Vec<u32>) {
+    use mymr::*;
+    let chars = vec![KA, NGA, AA, U, E, VIRAMA, ASAT, MEDIAL_RA, DC, REPH];
+    let data = indic_font(ot, &chars, &[(b"rphf", &[NGA, ASAT, VIRAMA], REPH)]);
+    (data, chars)
+}
+
+#[test]
+fn myanmar_kinzi_medial_ra_and_pre_base_vowels() {
+    use mymr::*;
+    let (data, chars) = myanmar_font(b"mym2");
+    assert_eq!(plan_shaper(&data, b"Mymr"), Shaper::Myanmar);
+    let s = |text: &[u32]| indic_shape(&data, &chars, b"Mymr", text);
+    // KA E: the pre-base vowel goes first.
+    assert_eq!(s(&[KA, E]), [E, KA]);
+    // KA MEDIAL_RA E AA: the vowel goes before the medial Ra, which goes
+    // before the base; all in one cluster.
+    assert_eq!(s(&[KA, MEDIAL_RA, E, AA]), [E, MEDIAL_RA, KA, AA]);
+    assert_eq!(
+        indic_clusters(&data, b"Mymr", &[KA, MEDIAL_RA, E, AA]),
+        [0, 0, 0, 0]
+    );
+    // NGA ASAT VIRAMA KA U: the kinzi goes after the base, before the
+    // below-base vowel, and forms the reph.
+    assert_eq!(s(&[NGA, ASAT, VIRAMA, KA, U]), [KA, REPH, U]);
+}
+
+#[test]
+fn myanmar_dotted_circles() {
+    use mymr::*;
+    let (data, chars) = myanmar_font(b"mym2");
+    let s = |text: &[u32]| indic_shape(&data, &chars, b"Mymr", text);
+    assert_eq!(s(&[U]), [DC, U]);
+    assert_eq!(s(&[E]), [E, DC]);
+    assert_eq!(s(&[KA, U, U]), [KA, U, U]);
+    // KA U ASAT: an asat cannot follow a below-base vowel; it starts a
+    // broken cluster.
+    assert_eq!(s(&[KA, U, ASAT]), [KA, U, DC, ASAT]);
+}
+
+#[test]
+fn myanmar_zawgyi_does_not_reorder() {
+    use mymr::*;
+    let (data, chars) = myanmar_font(b"mym2");
+    assert_eq!(plan_shaper(&data, b"Qaag"), Shaper::MyanmarZawgyi);
+    let s = |text: &[u32]| indic_shape(&data, &chars, b"Qaag", text);
+    assert_eq!(s(&[KA, E]), [KA, E]);
+    assert_eq!(s(&[U]), [U]);
+    // No mark advances are zeroed and no fallback positions are made.
+    let out = shape_cps(&data, b"Qaag", Direction::Ltr, &[KA, U]);
+    let pos: Vec<(i32, i32, i32)> = out
+        .glyph_positions()
+        .iter()
+        .map(|p| (p.x_advance, p.x_offset, p.y_offset))
+        .collect();
+    assert_eq!(pos, [(500, 0, 0), (500, 0, 0)]);
+}

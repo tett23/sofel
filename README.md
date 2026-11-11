@@ -9,12 +9,14 @@ WOFFとWOFF2、Type1やBDFなどの古い形式、AAT、絵文字（COLR、埋�
 - 外部のクレートに依存せず、すべて自分で書く。正しさは、HarfBuzzとFreeTypeの出力と突き合わせて確かめる（[ADR 0005](docs/adr/0005-conformance-tests.md)）。
 
 シェーピングの適合テストでは、dfont と破損したレイアウト表に由来する既知の差を [ADR 0044](docs/adr/0044-shaping-conformance-exceptions.md) の入力に限って認める。対応予定は[ロードマップ](docs/roadmap.md)に記す。
+対応範囲を広げる段階と今後の実装予定は[ロードマップ](docs/roadmap.md)に記す。現在の実装を支えるクレート、適合テスト、性能計測の完了条件は [ADR 0045](docs/adr/0045-foundation-completion-criteria.md) を参照。
 
 ## 状態
 
 2段階目（glyfの輪郭とアンチエイリアスのラスタライズ）まで実装し、6段階目のCFFとCFF2の輪郭（可変フォントは既定のインスタンス）、CIDの問い合わせ、PostScriptのフォントの情報（[ADR 0021](docs/adr/0021-cff-outlines.md)）と、CIDとグリフ名を速く引くcharsetの索引（[ADR 0025](docs/adr/0025-cff-charset-index.md)）を実装している。
-サブセット化（[ADR 0022](docs/adr/0022-subsetting.md)）は、sfntの組み立てと直列化、オフセットのあふれを解く再配置、glyf系の表、cmap、name、OS/2、post、hdmx、CFF（名前のキーとCIDのキー）、VORG、GDEF、GSUB、GPOS、BASEとレイアウトの閉包、COLR（版0と、変化量の表を持たない版1）、CPAL、CBLC、CBDT、sbixとCOLRの閉包、MATHとその閉包、glyfとCFF2の可変フォントのすべての軸の既定の値への固定（fvar、avar、STATの読み取りと、CFF2をCFFに変換する `DOWNGRADE_CFF2` を含む）、同じフォントを繰り返しサブセット化するための前処理（`Prepared`）、CFFのcharstringの取り出し、グリフ名での指定（`--glyphs`）と、これらのC ABI（`sofel_subset` など）までを実装し、HarfBuzzのサブセット化のテストのうちこれらの表だけを持つ組でバイト単位で一致する。Golemの使い方（グリフIDと `RETAIN_GIDS`）は、HarfBuzzのテストのフォントのうちこれらの表だけを持つものすべてで `hb-subset` と同じバイト列を出す。軸を指定しないときの可変フォントの表（gvar、HVAR、VVAR、軸を固定しないCFF2、GDEF、BASE、COLRの変化量の表）は、10段階目で書く。
+サブセット化（[ADR 0022](docs/adr/0022-subsetting.md)）は、sfntの組み立てと直列化、オフセットのあふれを解く再配置、glyf系の表、cmap、name、OS/2、post、hdmx、CFF（名前のキーとCIDのキー）、VORG、GDEF、GSUB、GPOS、BASEとレイアウトの閉包、COLR（版0と、変化量の表を持たない版1）、CPAL、CBLC、CBDT、sbixとCOLRの閉包、MATHとその閉包、軸を指定しないgvarとGVARの書き出し、glyfとCFF2の可変フォントのすべての軸の既定の値への固定（fvar、avar、STATの読み取りと、CFF2をCFFに変換する `DOWNGRADE_CFF2` を含む）、同じフォントを繰り返しサブセット化するための前処理（`Prepared`）、CFFのcharstringの取り出し、グリフ名での指定（`--glyphs`）と、これらのC ABI（`sofel_subset` など）までを実装し、HarfBuzzのサブセット化のテストのうちこれらの表だけを持つ組でバイト単位で一致する。Golemの使い方（グリフIDと `RETAIN_GIDS`）は、HarfBuzzのテストのフォントのうちこれらの表だけを持つものすべてで `hb-subset` と同じバイト列を出す。軸を指定しないときの残りの可変フォントの表（HVAR、VVAR、軸を固定しないCFF2、GDEF、BASE、COLRの変化量の表）は、10段階目で書く。
 `sofel-read` は、sfntの目録、TTC/OTC、head、maxp/MAXP、hhea/HHEA、hmtx/HMTX、cmap（フォーマット0〜15）、loca、glyf（[ADR 0007](docs/adr/0007-sfnt-read-foundation.md)、[0011](docs/adr/0011-glyf-outlines.md)）と、OS/2、name、post、vhea/VHEA、vmtx/VMTX、VORG（[ADR 0016](docs/adr/0016-font-and-vertical-metrics.md)）、BASE（[ADR 0017](docs/adr/0017-base-baselines.md)）、CFFとCFF2（[ADR 0021](docs/adr/0021-cff-outlines.md)）、GDEF、GSUB、GPOS（[ADR 0020](docs/adr/0020-shaping-foundation.md)）、MATH、fvar、avar、STAT（[ADR 0022](docs/adr/0022-subsetting.md)）を読み、各表の検証器を持つ。
+可変フォントの位置でFreeType互換の生の塗り、停止点、クリップ矩形を読むには `FtPaintGraph` を使う。FreeType互換のCOLRの生の塗りを複数グリフで調べるときは、`RawPaintGraph::new` の結果を再利用できる。
 COLRv1の描画は、Rustの `paint_recording_at` とCの `sofel_paint_glyph` に可変フォントの位置を渡して記録できる。
 さらに、[ADR 0027](docs/adr/0027-variable-fonts.md) の可変フォントの表（ItemVariationStore、DeltaSetIndexMap、HVAR、VVAR、MVAR、gvar、GVAR、avar版2、FeatureVariations）を読み、検証する。`sofel-subset` はFeatureVariationsをこのビューから読む。
 範囲と実装の順序は [ADR 0001](docs/adr/0001-project-goal-and-scope.md)、クレートの構成は [ADR 0003](docs/adr/0003-crate-layers.md) を参照。
@@ -39,7 +41,7 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-read`](crates/sofel-read) | sfntの表の読み取りと検証。コピーも確保もせず、どの入力でもpanicしない |
 | [`sofel-font`](crates/sofel-font) | フォントを一度だけ読み、グリフの数、文字からグリフへの対応、送り幅、フォント全体と縦書きのメトリクス、BASEの基準線とその代わりの値、名前とグリフ名（postとCFFのcharset）をHarfBuzzの方針で返し、HarfBuzzと同じ拡大縮小（`HbScale`）をする。HarfBuzzのCFFとCFF2のアクセラレータ（`HbCff1`、`HbCff2`）を持つ。PostScript名と `FT_Face` の値はFreeTypeの方針 |
 | [`sofel-outline`](crates/sofel-outline) | glyfとGLYFの輪郭を、ヒンティングなしでFreeTypeと同じ座標で `Pen` に渡す。HarfBuzzと同じグリフの箱（glyf、CFF2、CFF。`HbExtents`、[ADR 0021](docs/adr/0021-cff-outlines.md)）を求める |
-| [`sofel-shape`](crates/sofel-shape) | HarfBuzz 15.1.0のOTシェーパーと同じシェーピング（バッファ、区間の性質、計画、正規化、`GSUB` と `GPOS`、フォールバックの位置。[ADR 0020](docs/adr/0020-shaping-foundation.md)）、機能の文字列、直列化、言語と文字体系のタグ。文字体系ごとのシェーパー（[ADR 0024](docs/adr/0024-complex-shapers.md)）は未実装で、defaultの手順で処理する |
+| [`sofel-shape`](crates/sofel-shape) | HarfBuzz 15.1.0のOTシェーパーと同じシェーピング（バッファ、区間の性質、計画、正規化、`GSUB` と `GPOS`、フォールバックの位置。[ADR 0020](docs/adr/0020-shaping-foundation.md)）、機能の文字列、直列化、言語と文字体系のタグ。文字体系ごとのシェーパー（[ADR 0024](docs/adr/0024-complex-shapers.md)）は、hebrew、hangul、thai、arabic、indicを実装し、残り（khmer、myanmar、USE）はdefaultの手順で処理する |
 | [`sofel-bitmap`](crates/sofel-bitmap) | 埋め込みビットマップ（CBLC/CBDT、EBLC/EBDT、`bloc`/`bdat`、sbix）のストライク、その選び方（HarfBuzzとFreeTypeの両方）、グリフの画像のデータとメトリクス、EBDTの画素のFreeTypeと同じ書き込み（PNGは展開しない。[ADR 0023](docs/adr/0023-color-glyphs.md)） |
 | [`sofel-color`](crates/sofel-color) | カラーグリフ：CPALのパレット、COLR（版0と版1）、SVG、CBDT、sbixをHarfBuzzと同じ命令で `Painter` に渡す。命令の記録（`Recording`）、カラーグリフを含むグリフの箱、フォールバックのための問い合わせ（[ADR 0023](docs/adr/0023-color-glyphs.md)） |
 | [`sofel-write`](crates/sofel-write) | sfntの組み立てと、HarfBuzzと同じ詰め方のオブジェクトの直列化（[ADR 0022](docs/adr/0022-subsetting.md)） |
@@ -70,6 +72,8 @@ cargo run --release --bin sofel-shape -- --direction=ttb --features=vrt2 --outpu
 
 言語は `--language`、無ければ `--default-language` で、どちらも無ければ「言語なし」とする（`hb-shape` は `$LANG` を読む）。終了コードは、成功が0、フォントか文字列のファイルを読めなければ1、使い方の誤りと解釈しないオプション（`--variations`、`--font-ptem`、`--font-bold` など）が2、`--verify` の検査の失敗が3。オプションの一覧は `sofel-shape --help` で示す。
 ### `sofel-paint`
+
+可変フォントの色の描画には、たとえば `--variations=wght=500` を指定する。`--named-instance=0` は先頭の名前つきインスタンスを選ぶ。
 
 カラーグリフの塗りの命令を、HarfBuzzの `test/api/test-paint.c` と同じ字下げのテキストで標準出力に書く（[ADR 0023](docs/adr/0023-color-glyphs.md)）。数はCの `%.3g`、`--exact` では `f32` のビットの16進。カラーでないグリフは終了コード1。
 
@@ -209,7 +213,9 @@ CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=$PWD::$PWD" cargo test --relea
 
 性能の計測（[ADR 0013](docs/adr/0013-benchmark-harness.md)）は、ワークスペースの外の `bench/` で行う。テストのデータの取得のあと、FreeTypeとHarfBuzzを静的ライブラリにビルドする（C++のコンパイラが要る。wasmでは `bench/fetch-wasi-sdk.sh` がwasi-sdkを取得する）。`--once` は各項目を1回だけ走らせ、結果の照合だけを行う。シェーピングの項目（[ADR 0020](docs/adr/0020-shaping-foundation.md)）は、計測の前に全行の結果をHarfBuzzと比べる。サブセット化の項目（[ADR 0022](docs/adr/0022-subsetting.md)）は、計測の前に出力のバイト列のハッシュをHarfBuzzと比べる。記録は `docs/benchmarks/` に置く。
 
-追加フォントは `--filter extra` で選べる。cmap・advanceに加え、輪郭、縦advance、MATH定数、カラー形式、シェーピングの代表ケースを比較する（[ADR 0031](docs/adr/0031-diverse-font-corpus.md)）。未実装シェーパーの4ケースは期待する失敗として照合し、速度は計らない。条件と計測値は [追加フォントの役割別計測](docs/benchmarks/2026-11-11-extra-font-roles.md) に記す。
+HarfBuzz と同じ文字数でサブセット化を計るには、計測の引数に `--filter 'subset unicode range'` を渡す。静的フォント7個について、既定の設定とグリフIDを保つ設定の両方を計る。
+
+追加フォントは `--filter extra` で選べる。cmap・advanceに加え、輪郭、縦advance、MATH定数、カラー形式、シェーピングの代表ケースを比較する（[ADR 0031](docs/adr/0031-diverse-font-corpus.md)）。未実装のUSEの代表ケースは期待する失敗として照合し、速度は計らない。条件と計測値は [追加フォントの役割別計測](docs/benchmarks/2026-11-11-extra-font-roles.md) に記す。
 
 ```sh
 sh bench/build-c.sh
