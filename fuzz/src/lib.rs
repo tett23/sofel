@@ -134,8 +134,8 @@ pub fn check_gvar(input: &[u8]) {
         for glyph in 0..table.glyph_count().min(32) {
             if let Some(glyph_data) = table.glyph_data(glyph) {
                 let shared = glyph_data.shared_points();
-                for tuple in 0..glyph_data.tuple_count().min(32) {
-                    if let Some(tuple_data) = glyph_data.tuple(tuple) {
+                for tuple in glyph_data.tuples().take(32) {
+                    if let Some(tuple_data) = tuple {
                         if let Some((x, y)) = tuple_data.deltas(points, shared) {
                             for delta in x.iter() { let _ = delta; }
                             for delta in y.iter() { let _ = delta; }
