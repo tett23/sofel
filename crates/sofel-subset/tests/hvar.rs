@@ -30,6 +30,142 @@ fn item_store() -> Vec<u8> {
     store
 }
 
+fn two_item_data_store() -> Vec<u8> {
+    let mut store = Vec::new();
+    store.extend(1u16.to_be_bytes());
+    store.extend(16u32.to_be_bytes());
+    store.extend(2u16.to_be_bytes());
+    store.extend(26u32.to_be_bytes());
+    store.extend(37u32.to_be_bytes());
+    store.extend(1u16.to_be_bytes());
+    store.extend(1u16.to_be_bytes());
+    store.extend([0, 0, 0x40, 0, 0x40, 0]);
+    for values in [[0, 1, 2], [10, 20, 30]] {
+        store.extend(3u16.to_be_bytes());
+        store.extend(0u16.to_be_bytes());
+        store.extend(1u16.to_be_bytes());
+        store.extend(0u16.to_be_bytes());
+        store.extend(values);
+    }
+    store
+}
+
+fn font_with_two_item_data(tag: &'static [u8; 4]) -> Vec<u8> {
+    let header = if tag == b"VVAR" { 24u32 } else { 20u32 };
+    let advance = [0, 1, 0, 3, 6, 1, 4];
+    let side = [0, 1, 0, 3, 0, 5, 2];
+    let mut variation = Vec::new();
+    variation.extend(0x0001_0000u32.to_be_bytes());
+    variation.extend((if tag == b"VVAR" { 38u32 } else { 34u32 }).to_be_bytes());
+    variation.extend(header.to_be_bytes());
+    variation.extend((if tag == b"VVAR" { 31u32 } else { 27u32 }).to_be_bytes());
+    for _ in 0..if tag == b"VVAR" { 2 } else { 1 } {
+        variation.extend(0u32.to_be_bytes());
+    }
+    variation.extend(advance);
+    variation.extend(side);
+    variation.extend(two_item_data_store());
+    let mut tables = sample_tables();
+    tables.push((tag, variation));
+    tables.sort_by_key(|(tag, _)| **tag);
+    sfnt(&tables)
+}
+
+#[test]
+fn adr0022_hvar_multiple_item_data_preserves_advance_and_side_deltas() {
+    let data = font_with_two_item_data(b"HVAR");
+    let font = Font::new(&data, 0).unwrap();
+    let input = Input::new().map_set(SetKind::Glyphs, |glyphs| {
+        glyphs.add(2);
+    });
+    let output = subset(&font, &input).unwrap();
+    let output = Font::new(&output, 0).unwrap();
+    let hvar = Hvar::new(output.table(Tag::new(b"HVAR")).unwrap()).unwrap();
+    let store = hvar.store().unwrap();
+    let advance = hvar.advance_map().unwrap().unwrap();
+    let side = hvar.lsb_map().unwrap().unwrap();
+    assert_eq!(store.data_count(), 2);
+    for (gid, expected) in [(0, 30), (1, 10)] {
+        let index = advance.map(gid);
+        assert_eq!(
+            store.delta(
+                (index >> 16) as u16,
+                u16::try_from(index & 0xffff).unwrap(),
+                0
+            ),
+            Some(expected)
+        );
+    }
+    let index = side.map(0);
+    assert_eq!(
+        store.delta(
+            (index >> 16) as u16,
+            u16::try_from(index & 0xffff).unwrap(),
+            0
+        ),
+        Some(0)
+    );
+}
+
+#[test]
+fn adr0022_vvar_multiple_item_data_preserves_advance_and_side_deltas() {
+    let data = font_with_two_item_data(b"VVAR");
+    let font = Font::new(&data, 0).unwrap();
+    let input = Input::new().map_set(SetKind::Glyphs, |glyphs| {
+        glyphs.add(2);
+    });
+    let output = subset(&font, &input).unwrap();
+    let output = Font::new(&output, 0).unwrap();
+    let vvar = Vvar::new(output.table(Tag::new(b"VVAR")).unwrap()).unwrap();
+    let store = vvar.store().unwrap();
+    let advance = vvar.advance_map().unwrap().unwrap();
+    let side = vvar.tsb_map().unwrap().unwrap();
+    assert_eq!(store.data_count(), 2);
+    let index = advance.map(1);
+    assert_eq!(
+        store.delta(
+            (index >> 16) as u16,
+            u16::try_from(index & 0xffff).unwrap(),
+            0
+        ),
+        Some(10)
+    );
+    let index = side.map(1);
+    assert_eq!(
+        store.delta(
+            (index >> 16) as u16,
+            u16::try_from(index & 0xffff).unwrap(),
+            0
+        ),
+        Some(2)
+    );
+}
+
+#[test]
+fn adr0022_hvar_multiple_item_data_with_retain_gids() {
+    let data = font_with_two_item_data(b"HVAR");
+    let font = Font::new(&data, 0).unwrap();
+    let input = Input::new()
+        .map_set(SetKind::Glyphs, |glyphs| {
+            glyphs.add(2);
+        })
+        .with_flags(Flags::RETAIN_GIDS);
+    let output = subset(&font, &input).unwrap();
+    let output = Font::new(&output, 0).unwrap();
+    let hvar = Hvar::new(output.table(Tag::new(b"HVAR")).unwrap()).unwrap();
+    let store = hvar.store().unwrap();
+    let advance = hvar.advance_map().unwrap().unwrap();
+    let index = advance.map(2);
+    assert_eq!(
+        store.delta(
+            (index >> 16) as u16,
+            u16::try_from(index & 0xffff).unwrap(),
+            0
+        ),
+        Some(10)
+    );
+}
+
 fn font_with_hvar(tag: &'static [u8; 4]) -> Vec<u8> {
     let mut variation = Vec::new();
     variation.extend(0x0001_0000u32.to_be_bytes());

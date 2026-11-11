@@ -628,6 +628,7 @@ pub struct Location<'data> {
 
 impl Location<'static> {
     /// The static default location, usable with any font.
+    #[inline]
     pub fn default_ref() -> &'static Self {
         static DEFAULT: Location<'static> = Location {
             hb_coords: Vec::new(),
@@ -665,14 +666,9 @@ impl<'data> Location<'data> {
         };
         let mut design: Vec<f32> = fvar.axes().map(|axis| fixed_to_f32(axis.default)).collect();
         let named = named_instance.and_then(|i| fvar.instance(usize::from(i)));
-        let ft_synthetic = named_instance.is_some_and(|index| {
-            usize::from(index) == fvar.instance_count()
-                && font.ft_mm_var().is_some_and(|mm| {
-                    mm.named_styles()
-                        .nth(usize::from(index))
-                        .is_some_and(|style| style.record.is_none() && style.strid != 0)
-                })
-        });
+        let ft_style =
+            named_instance.and_then(|i| font.ft_mm_var()?.named_styles().nth(usize::from(i)));
+        let mut ft_design = ft_style.map(|style| style.design_coords().collect::<Vec<_>>());
         if let Some(record) = named {
             for (axis, value) in design.iter_mut().enumerate() {
                 if let Some(coord) = record.coordinate(axis) {
@@ -680,17 +676,33 @@ impl<'data> Location<'data> {
                 }
             }
         }
+        if ft_design.is_none() && !variations.is_empty() {
+            ft_design = Some(
+                design
+                    .iter()
+                    .map(|value| Fixed(hb_clamp_to_i32(f64::from(*value * 65536.0))))
+                    .collect(),
+            );
+        }
         for variation in variations {
             for (axis, value) in fvar.axes().zip(&mut design) {
                 if axis.tag == variation.tag {
                     *value = variation.value;
                 }
             }
+            if let Some((index, _)) = fvar
+                .axes()
+                .enumerate()
+                .find(|(_, axis)| axis.tag == variation.tag)
+                && let Some(ft) = ft_design.as_mut().and_then(|values| values.get_mut(index))
+            {
+                *ft = Fixed(hb_clamp_to_i32(f64::from(variation.value * 65536.0)));
+            }
         }
-        let mut location = Self::from_design(font, &design);
+        let mut location = Self::design_location(font, &fvar, &design, ft_design);
         location.named_instance = named_instance;
         location.ft_default = named_instance.is_none() && location.ft_default;
-        if named_instance.is_some() && named.is_none() && !ft_synthetic {
+        if named_instance.is_some() && named.is_none() && ft_style.is_none() {
             location.ft_error = Some(FtLocationError::InvalidArgument);
         }
         location
@@ -709,6 +721,15 @@ impl<'data> Location<'data> {
         else {
             return Self::from_coords(font, Vec::new(), Vec::new(), false);
         };
+        Self::design_location(font, &fvar, values, None)
+    }
+
+    fn design_location(
+        font: &Font<'data>,
+        fvar: &Fvar<'_>,
+        values: &[f32],
+        ft_values: Option<Vec<Fixed>>,
+    ) -> Self {
         let design: Vec<f32> = fvar
             .axes()
             .enumerate()
@@ -719,10 +740,12 @@ impl<'data> Location<'data> {
                     .unwrap_or_else(|| fixed_to_f32(axis.default))
             })
             .collect();
-        let ft_design: Vec<Fixed> = design
-            .iter()
-            .map(|v| Fixed(hb_clamp_to_i32(f64::from(*v * 65536.0))))
-            .collect();
+        let ft_design: Vec<Fixed> = ft_values.unwrap_or_else(|| {
+            design
+                .iter()
+                .map(|v| Fixed(hb_clamp_to_i32(f64::from(*v * 65536.0))))
+                .collect()
+        });
         let mut hb_coords: Vec<i32> = fvar
             .axes()
             .zip(&design)
@@ -1180,17 +1203,32 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
     }
 
     /// Horizontal advance in font units at this location.
+    #[inline]
     pub fn advance(&self, glyph: GlyphId) -> u32 {
+        if !self.location.hb_nonzero {
+            return self.base_advance(glyph);
+        }
+        self.varied_advance(glyph)
+    }
+
+    // Keep the owned work area off the default caller's stack frame.
+    #[inline(never)]
+    fn varied_advance(&self, glyph: GlyphId) -> u32 {
         self.advance_with_scratch(glyph, &mut crate::GlyphScratch::default())
+    }
+
+    #[inline]
+    fn base_advance(&self, glyph: GlyphId) -> u32 {
+        u32::from(
+            self.font
+                .metrics
+                .advance(glyph, self.font.hb_units_per_em() / 2),
+        )
     }
 
     /// Horizontal advance using a reusable glyf variation work area.
     pub fn advance_with_scratch(&self, glyph: GlyphId, scratch: &mut crate::GlyphScratch) -> u32 {
-        let base = u32::from(
-            self.font
-                .metrics
-                .advance(glyph, self.font.hb_units_per_em() / 2),
-        );
+        let base = self.base_advance(glyph);
         if !self.font.metrics.has_data() || !self.location.hb_nonzero {
             return base;
         }
@@ -1241,6 +1279,9 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
 
     /// Horizontal font extents at a HarfBuzz scale.
     pub fn scaled_h_extents(&self, scale: &HbScale) -> FontExtents {
+        if !self.font.has_variable_h_extents {
+            return scale.h_extents(self.font);
+        }
         let get = |tag| self.scaled_metrics_position(scale, tag);
         match (
             get(MetricsTag::HorizontalAscender),
@@ -1279,7 +1320,16 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
     }
 
     /// Vertical advance in font units at this location.
+    #[inline]
     pub fn v_advance(&self, glyph: GlyphId) -> i32 {
+        if !self.location.hb_nonzero && !self.font.has_variable_h_extents {
+            return HbScale::unscaled(self.font).v_advance(self.font, glyph);
+        }
+        self.varied_v_advance(glyph)
+    }
+
+    #[inline(never)]
+    fn varied_v_advance(&self, glyph: GlyphId) -> i32 {
         self.v_advance_with_scratch(glyph, &mut crate::GlyphScratch::default())
     }
 
@@ -1608,8 +1658,30 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
         self.font.ft_metrics.left_side_bearing(glyph)
     }
 
-    /// FreeType's unscaled horizontal advance after HVAR adjustment.
+    /// FreeType's first unscaled horizontal advance on a fresh face.
     pub fn ft_h_advance(&self, glyph: GlyphId) -> Option<u16> {
+        self.ft_h_advance_with_scratch(glyph, &mut crate::FtAdvanceScratch::default())
+    }
+
+    /// Reuse gvar storage across FreeType horizontal advance queries.
+    pub fn ft_h_advance_with_scratch(
+        &self,
+        glyph: GlyphId,
+        scratch: &mut crate::FtAdvanceScratch,
+    ) -> Option<u16> {
+        if self.font.glyf.is_some() && !self.location.ft_default() && self.ft_hvar_supported() {
+            let source = crate::ft_glyf::metrics_source_glyph(*self, glyph)?;
+            return self.ft_h_advance_before_gvar(source);
+        }
+        if self.font.glyf.is_some() && !self.location.ft_default() {
+            return crate::ft_glyf::advances(*self, glyph, scratch)?.0;
+        }
+        self.ft_h_advance_before_gvar(glyph)
+    }
+
+    /// Horizontal metric used to initialize the outline's gvar phantom points.
+    #[doc(hidden)]
+    pub fn ft_h_advance_before_gvar(&self, glyph: GlyphId) -> Option<u16> {
         let base = self.font.ft_h_advance_default(glyph)?;
         if self.location.ft_default() {
             return Some(base);
@@ -1687,11 +1759,56 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
         short
     }
 
-    /// FreeType's unscaled vertical advance at this location.
+    /// FreeType's first unscaled vertical advance on a fresh face.
     pub fn ft_v_advance(&self, glyph: GlyphId) -> Option<u16> {
+        self.ft_v_advance_with_scratch(glyph, &mut crate::FtAdvanceScratch::default())
+    }
+
+    /// Reuse gvar storage across FreeType vertical advance queries.
+    pub fn ft_v_advance_with_scratch(
+        &self,
+        glyph: GlyphId,
+        scratch: &mut crate::FtAdvanceScratch,
+    ) -> Option<u16> {
+        if self.font.glyf.is_some() && !self.location.ft_default() && self.ft_vvar_supported() {
+            let source = crate::ft_glyf::metrics_source_glyph(*self, glyph)?;
+            return self.ft_v_advance_before_gvar(source);
+        }
+        if self.font.glyf.is_some()
+            && self.font.ft_vertical().is_some()
+            && !self.location.ft_default()
+        {
+            return crate::ft_glyf::advances(*self, glyph, scratch)?.1;
+        }
+        self.ft_v_advance_before_gvar(glyph)
+    }
+
+    pub(crate) fn ft_hvar_supported(&self) -> bool {
+        self.font
+            .table(Tag::new(b"HVAR"))
+            .and_then(|data| Hvar::new(data).ok())
+            .is_some_and(|hvar| hvar.store().is_ok() && hvar.advance_map().is_ok())
+    }
+
+    pub(crate) fn ft_vvar_supported(&self) -> bool {
+        self.font
+            .table(Tag::new(b"VVAR"))
+            .and_then(|data| Vvar::new(data).ok())
+            .is_some_and(|vvar| vvar.store().is_ok() && vvar.advance_map().is_ok())
+    }
+
+    /// Vertical metric used to initialize the outline's gvar phantom points.
+    #[doc(hidden)]
+    pub fn ft_v_advance_before_gvar(&self, glyph: GlyphId) -> Option<u16> {
         let base = self.font.ft_v_advance_default(glyph)?;
         if self.font.ft_vertical().is_none() {
-            return Some(base);
+            let ascender = self.ft_mvar_delta(Tag::new(b"hasc"));
+            let descender = self.ft_mvar_delta(Tag::new(b"hdsc"));
+            let adjusted = i32::from(base)
+                .wrapping_add(i32::from(ascender))
+                .wrapping_sub(i32::from(descender));
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            return Some(adjusted as u16);
         }
         let vvar = self
             .font
@@ -1824,6 +1941,7 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
 
 impl<'data> Font<'data> {
     /// Pair this font with a location. The location may originate from another font.
+    #[inline]
     pub fn instance<'font, 'loc, 'source>(
         &'font self,
         location: &'loc Location<'source>,
@@ -1835,6 +1953,7 @@ impl<'data> Font<'data> {
     }
 
     /// Pair this font with the static default location.
+    #[inline]
     pub fn default_instance(&self) -> Instance<'_, 'data, 'static, 'static> {
         self.instance(Location::default_ref())
     }
