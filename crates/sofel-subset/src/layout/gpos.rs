@@ -2,17 +2,174 @@
 //! records and devices, anchors, single, pair, cursive and mark
 //! attachment positioning.
 
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 
 use super::common::Sub;
 use super::data::{Cls, Cov, D, bit_storage, n16, n32};
+use super::{Gsubgpos, Kind, LayoutPlan};
 use crate::bits::BitSet;
 use crate::input::Flags;
 
 /// The number of 16-bit values of a ValueRecord of `format`.
 fn value_len(format: u16) -> usize {
     (format & 0xFF).count_ones() as usize
+}
+
+fn collect_value_devices(
+    data: &[u8],
+    base: D<'_>,
+    values: D<'_>,
+    vf: [u16; 2],
+    keep: bool,
+    formats: &mut BTreeSet<usize>,
+    selected: &mut BTreeSet<u32>,
+) -> Option<()> {
+    let mut start = 0usize;
+    for format in vf {
+        for bit in 4..8u16 {
+            let flag = 1u16 << bit;
+            if format & flag == 0 {
+                continue;
+            }
+            let index = (format & flag.wrapping_sub(1)).count_ones() as usize;
+            let off = values.u16(start.saturating_add(index.saturating_mul(2)));
+            let dev = base.follow(u32::from(off));
+            if dev.is_null() || dev.u16(4) != 0x8000 {
+                continue;
+            }
+            if dev.0.len() < 6 {
+                return None;
+            }
+            formats.insert(data.len().checked_sub(dev.0.len())?.saturating_add(4));
+            if keep {
+                selected.insert((u32::from(dev.u16(0)) << 16) | u32::from(dev.u16(2)));
+            }
+        }
+        start = start.saturating_add(value_len(format).saturating_mul(2));
+    }
+    Some(())
+}
+
+/// Indices used by retained PairPos records. Every 0x8000 word
+/// in the source GPOS must be a parsed PairPos Device format; this keeps
+/// other GPOS variation Devices and unparsed formats unsupported.
+pub(crate) fn retained_pair_variation_indices(
+    data: &[u8],
+    plan: &LayoutPlan,
+    glyphs: &BitSet,
+    num_glyphs: u32,
+) -> Option<BTreeSet<u32>> {
+    let t = Gsubgpos::new(data, false);
+    let mut formats = BTreeSet::new();
+    let mut selected = BTreeSet::new();
+    let list = t.lookup_list();
+    for i in 0..usize::from(list.u16(0)) {
+        let lookup = list.off16(2usize.saturating_add(i.saturating_mul(2)));
+        let keep_lookup = plan.lookups.contains_key(&n32(i));
+        let ty = lookup.u16(0);
+        for j in 0..usize::from(lookup.u16(4)) {
+            let st = lookup.off16(6usize.saturating_add(j.saturating_mul(2)));
+            let Some((Kind::PairPos, pair)) = super::resolve(ty, st, false) else {
+                continue;
+            };
+            let cov = Cov(pair.off16(2));
+            let vf = [pair.u16(4), pair.u16(6)];
+            let lengths = [value_len(vf[0]), value_len(vf[1])];
+            match pair.u16(0) {
+                1 => {
+                    let record_len = 2usize
+                        .saturating_add(lengths[0].saturating_add(lengths[1]).saturating_mul(2));
+                    for (k, first) in cov
+                        .glyphs()
+                        .into_iter()
+                        .take(usize::from(pair.u16(8)))
+                        .enumerate()
+                    {
+                        let ps = pair.off16(10usize.saturating_add(k.saturating_mul(2)));
+                        if ps.is_null() {
+                            continue;
+                        }
+                        for m in 0..usize::from(ps.u16(0)) {
+                            let r = ps.at(2usize.saturating_add(m.saturating_mul(record_len)));
+                            let keep =
+                                keep_lookup && glyphs.has(first) && glyphs.has(u32::from(r.u16(0)));
+                            collect_value_devices(
+                                data,
+                                ps,
+                                r.at(2),
+                                vf,
+                                keep,
+                                &mut formats,
+                                &mut selected,
+                            )?;
+                        }
+                    }
+                }
+                2 => {
+                    let c1_count = usize::from(pair.u16(12));
+                    let c2_count = usize::from(pair.u16(14));
+                    let record_len = lengths[0].saturating_add(lengths[1]).saturating_mul(2);
+                    let bytes = c1_count.checked_mul(c2_count)?.checked_mul(record_len)?;
+                    if bytes > pair.0.len().saturating_sub(16) {
+                        return None;
+                    }
+                    let cd1 = Cls(pair.off16(8));
+                    let cd2 = Cls(pair.off16(10));
+                    let (pairs1, classes1) = cd1.subset_pairs(
+                        glyphs,
+                        num_glyphs,
+                        |g| glyphs.has(g).then_some(g),
+                        |g| cov.has(g),
+                    );
+                    let count_covered = glyphs.iter().filter(|&g| cov.has(g)).count();
+                    let mut rows: BTreeSet<u32> = classes1.iter().collect();
+                    if count_covered > pairs1.len() {
+                        rows.insert(0);
+                    }
+                    let (_, classes2) = cd2.subset_pairs(
+                        glyphs,
+                        num_glyphs,
+                        |g| glyphs.has(g).then_some(g),
+                        |_| true,
+                    );
+                    let mut cols: BTreeSet<u32> = classes2.iter().collect();
+                    cols.insert(0);
+                    let keep_subtable =
+                        keep_lookup && cov.intersects(glyphs) && cd2.intersects(glyphs);
+                    for c1 in 0..c1_count {
+                        for c2 in 0..c2_count {
+                            let at = 16usize.saturating_add(
+                                c1.saturating_mul(c2_count)
+                                    .saturating_add(c2)
+                                    .saturating_mul(record_len),
+                            );
+                            let keep =
+                                keep_subtable && rows.contains(&n32(c1)) && cols.contains(&n32(c2));
+                            collect_value_devices(
+                                data,
+                                pair,
+                                pair.at(at),
+                                vf,
+                                keep,
+                                &mut formats,
+                                &mut selected,
+                            )?;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    if data
+        .windows(2)
+        .enumerate()
+        .any(|(at, bytes)| bytes == [0x80, 0x00] && !formats.contains(&at))
+    {
+        return None;
+    }
+    Some(selected)
 }
 
 /// `ValueFormat::get_effective_format` without instancing: drops the
@@ -39,6 +196,28 @@ fn effective_format(format: u16, values: D<'_>, strip_hints: bool, strip_empty: 
     out
 }
 
+/// With NO_HINTING, hinting Devices disappear but a retained PairPos
+/// VariationIndex continues to address the compacted GDEF store.
+fn pair_effective_format(s: &Sub<'_, '_>, format: u16, base: D<'_>, values: D<'_>) -> u16 {
+    let mut out = effective_format(format, values, true, true);
+    for bit in 4..8u16 {
+        let flag = 1u16 << bit;
+        if format & flag == 0 {
+            continue;
+        }
+        let index = (format & flag.wrapping_sub(1)).count_ones() as usize;
+        let dev = base.follow(u32::from(values.u16_at(0, index)));
+        if dev.u16(4) != 0x8000 {
+            continue;
+        }
+        let old = (u32::from(dev.u16(0)) << 16) | u32::from(dev.u16(2));
+        if s.p.layout.gdef_var_map.contains_key(&old) {
+            out |= flag;
+        }
+    }
+    out
+}
+
 /// `ValueFormat::get_effective_format` when instancing: the device
 /// flags dropped (their variation indices map to no variations, or are
 /// not mapped) and nothing else.
@@ -54,7 +233,7 @@ fn strip_hints(s: &Sub<'_, '_>) -> bool {
 }
 
 /// `Device::copy` into the current object: hinting devices are copied,
-/// variation devices are dropped (no variation indices are kept).
+/// retained PairPos variation indices use the GDEF store's new indices.
 fn device_copy(s: &mut Sub<'_, '_>, dev: D<'_>) -> bool {
     match dev.u16(4) {
         1..=3 => {
@@ -69,6 +248,16 @@ fn device_copy(s: &mut Sub<'_, '_>, dev: D<'_>) -> bool {
                 )))
             };
             s.s.extend(dev.slice(0, size));
+            true
+        }
+        0x8000 => {
+            let old = (u32::from(dev.u16(0)) << 16) | u32::from(dev.u16(2));
+            let Some(&new) = s.p.layout.gdef_var_map.get(&old) else {
+                return false;
+            };
+            s.s.u16(u16::try_from(new >> 16).unwrap_or(0));
+            s.s.u16(u16::try_from(new & 0xffff).unwrap_or(0));
+            s.s.u16(0x8000);
             true
         }
         _ => false,
@@ -334,12 +523,12 @@ fn pair1(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
                     f2 |= instanced_format(vf[1]);
                     continue;
                 }
-                f1 |= effective_format(vf[0], r.at(2), true, true);
-                f2 |= effective_format(
+                f1 |= pair_effective_format(s, vf[0], ps, r.at(2));
+                f2 |= pair_effective_format(
+                    s,
                     vf[1],
+                    ps,
                     r.at(2usize.saturating_add(len1.saturating_mul(2))),
-                    true,
-                    true,
                 );
             }
             if !instancing && f1 == vf[0] && f2 == vf[1] {
@@ -441,8 +630,8 @@ fn pair2(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
                     f2 |= instanced_format(vf2);
                     continue;
                 }
-                f1 |= effective_format(vf1, v, true, true);
-                f2 |= effective_format(vf2, v.at(len1.saturating_mul(2)), true, true);
+                f1 |= pair_effective_format(s, vf1, st, v);
+                f2 |= pair_effective_format(s, vf2, st, v.at(len1.saturating_mul(2)));
             }
             if !instancing && f1 == vf1 && f2 == vf2 {
                 break;

@@ -348,6 +348,179 @@ fn gdef_store_with_gpos_variation_index_remains_unsupported() {
 }
 
 #[test]
+fn gpos_pair_variation_index_retained_after_layout_filter_is_remapped() {
+    // GDEF's caret on A is dropped. PairPos on B+C keeps row 2.
+    let gdef = gdef_with_referenced_store(&[2]);
+    let gpos = pairpos_with_variation_index(2);
+    let data = font_with(vec![(b"GDEF", gdef), (b"GPOS", gpos)]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("BC")).unwrap();
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    let store = sofel_font::read::gdef::Gdef::new(&gdef)
+        .unwrap()
+        .variation_store()
+        .unwrap()
+        .unwrap();
+    assert_eq!(store.item_data(0).unwrap().item_count, 1);
+    let gpos = out_table(&out, b"GPOS").unwrap();
+    let lookup = follow(follow(&gpos, 8), 2);
+    let pair = follow(lookup, 6);
+    let pair_set = follow(pair, 10);
+    let device = follow(pair_set, 4);
+    assert_eq!(&device[..6], &[0, 0, 0, 0, 0x80, 0]);
+}
+
+fn pairpos_with_variation_index(inner: u16) -> Vec<u8> {
+    let varidx = Buf::new().u16(0).u16(inner).u16(0x8000).done();
+    let pair_set = link(
+        Buf::new().u16(1).u16(g('C')).u16(0).done(),
+        vec![(4, 2, varidx)],
+    );
+    let pair = link(
+        Buf::new()
+            .u16(1)
+            .u16(0)
+            .u16(0x0040)
+            .u16(0)
+            .u16(1)
+            .u16(0)
+            .done(),
+        vec![(2, 2, coverage1(&[g('B')])), (10, 2, pair_set)],
+    );
+    layout_table(&[(b"kern", &[0])], &[(2, pair)])
+}
+
+fn pairpos2_with_variation_index(inner: u16) -> Vec<u8> {
+    let varidx = Buf::new().u16(0).u16(inner).u16(0x8000).done();
+    let pair = link(
+        Buf::new()
+            .u16(2)
+            .u16(0)
+            .u16(0x0040)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u16(2)
+            .u16(2)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .done(),
+        vec![
+            (2, 2, coverage1(&[g('B')])),
+            (8, 2, class_def2(&[(g('B'), g('B'), 1)])),
+            (10, 2, class_def2(&[(g('C'), g('C'), 1)])),
+            (22, 2, varidx),
+        ],
+    );
+    layout_table(&[(b"kern", &[0])], &[(2, pair)])
+}
+
+#[test]
+fn gpos_pair2_variation_index_follows_kept_classes() {
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[2])),
+        (b"GPOS", pairpos2_with_variation_index(2)),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("BC")).unwrap();
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    let store = sofel_font::read::gdef::Gdef::new(&gdef)
+        .unwrap()
+        .variation_store()
+        .unwrap()
+        .unwrap();
+    assert_eq!(store.item_data(0).unwrap().item_count, 1);
+    let gpos = out_table(&out, b"GPOS").unwrap();
+    assert!(gpos.windows(6).any(|w| w == [0, 0, 0, 0, 0x80, 0]));
+}
+
+#[test]
+fn gpos_pair2_variation_index_survives_no_hinting() {
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[2])),
+        (b"GPOS", pairpos2_with_variation_index(2)),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let input = chars("BC").with_flags(Flags::NO_HINTING);
+    let out = subset(&font, &input).unwrap();
+    let gpos = out_table(&out, b"GPOS").unwrap();
+    assert!(gpos.windows(6).any(|w| w == [0, 0, 0, 0, 0x80, 0]));
+}
+
+#[test]
+fn gpos_pair2_variation_index_drops_with_class_two() {
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[2])),
+        (b"GPOS", pairpos2_with_variation_index(2)),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("B")).unwrap();
+    assert!(out_table(&out, b"GDEF").is_none());
+}
+
+#[test]
+fn gdef_store_with_empty_mark_sets_zeros_removed_offset() {
+    let mut gdef = gdef_with_referenced_store(&[2]);
+    let mark_sets_offset = u16::try_from(gdef.len()).unwrap();
+    gdef[12..14].copy_from_slice(&mark_sets_offset.to_be_bytes());
+    gdef.extend_from_slice(&[0, 1, 0, 0]);
+    let data = font_with(vec![(b"GDEF", gdef)]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("A")).unwrap();
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    assert_eq!(u16_at(&gdef, 12), 0);
+}
+
+#[test]
+fn gpos_pair_variation_index_dropped_with_second_glyph() {
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[2])),
+        (b"GPOS", pairpos_with_variation_index(2)),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("B")).unwrap();
+    assert!(out_table(&out, b"GDEF").is_none());
+}
+
+#[test]
+fn gpos_pair_variation_index_dropped_with_feature() {
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[2])),
+        (b"GPOS", pairpos_with_variation_index(2)),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let input = chars("BC").map_set(SetKind::LayoutFeatures, |set| {
+        set.clear();
+        set.add(Tag::new(b"liga").to_u32());
+    });
+    let out = subset(&font, &input).unwrap();
+    assert!(out_table(&out, b"GDEF").is_none());
+}
+
+#[test]
+fn gpos_pair_variation_index_combines_with_gdef_caret() {
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[0])),
+        (b"GPOS", pairpos_with_variation_index(2)),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("ABC")).unwrap();
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    let store = sofel_font::read::gdef::Gdef::new(&gdef)
+        .unwrap()
+        .variation_store()
+        .unwrap()
+        .unwrap();
+    assert_eq!(store.item_data(0).unwrap().item_count, 2);
+    let gpos = out_table(&out, b"GPOS").unwrap();
+    let pair = follow(follow(follow(&gpos, 8), 2), 6);
+    let device = follow(follow(pair, 10), 4);
+    assert_eq!(&device[..6], &[0, 0, 0, 1, 0x80, 0]);
+}
+
+#[test]
 fn gdef_store_with_math_variation_index_remains_unsupported() {
     let gdef = gdef_with_unused_store(class_def2(&[(1, 5, 1)]));
     let varidx = Buf::new().u16(0).u16(0).u16(0x8000).done();
