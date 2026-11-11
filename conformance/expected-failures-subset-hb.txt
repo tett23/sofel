@@ -41,8 +41,6 @@ hb-dump/golem/Muli-ABC.ttf:keep  # stage:var
 hb-dump/golem/Muli-ABC.ttf:keep+prepared  # stage:var
 hb-dump/golem/NotoSansJP-VF.subset.otf:keep  # stage:var
 hb-dump/golem/NotoSansJP-VF.subset.otf:keep+prepared  # stage:var
-hb-dump/golem/NotoSansOriya-subset.ttf:keep  # stage:var
-hb-dump/golem/NotoSansOriya-subset.ttf:keep+prepared  # stage:var
 hb-dump/golem/NotoSerifHK-subset.ttf:keep  # stage:var
 hb-dump/golem/NotoSerifHK-subset.ttf:keep+prepared  # stage:var
 hb-dump/golem/Recursive-ABC.ttf:keep  # stage:var
@@ -70,7 +68,5 @@ hb-dump/golem/SourceSerifVariable-Roman.ttf:keep+prepared  # stage:var
 hb-dump/golem/bad-gsub.otf:keep+prepared  # upstream:preprocess-malformed
 hb-dump/golem/googlesansflex_subset.ttf:keep  # stage:var
 hb-dump/golem/googlesansflex_subset.ttf:keep+prepared  # stage:var
-hb-dump/golem/sixtyfour_subset.ttf:keep  # stage:var
-hb-dump/golem/sixtyfour_subset.ttf:keep+prepared  # stage:var
 hb-dump/golem/sixtyfour_subset.ttf:pin  # stage:var
 hb-dump/golem/sixtyfour_subset.ttf:pin+prepared  # stage:var
