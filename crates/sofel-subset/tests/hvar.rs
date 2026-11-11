@@ -285,6 +285,35 @@ fn adr0022_hvar_explicit_maps_with_retain_gids() {
 }
 
 #[test]
+fn adr0022_explicit_metric_maps_trim_repeated_tail_across_gid_holes() {
+    for tag in [b"HVAR", b"VVAR"] {
+        let data = font_with_explicit_maps(tag, false);
+        let font = Font::new(&data, 0).unwrap();
+        let selection = Input::new().map_set(SetKind::Glyphs, |glyphs| {
+            glyphs.add(2);
+            glyphs.add(5);
+        });
+        for (input, count) in [
+            (selection.clone(), 2),
+            (selection.with_flags(Flags::RETAIN_GIDS), 3),
+        ] {
+            let output = subset(&font, &input).unwrap();
+            let font = Font::new(&output, 0).unwrap();
+            let bytes = font.table(Tag::new(tag)).unwrap();
+            let map = if tag == b"HVAR" {
+                Hvar::new(bytes).unwrap().advance_map()
+            } else {
+                Vvar::new(bytes).unwrap().advance_map()
+            }
+            .unwrap()
+            .unwrap();
+            assert_eq!(map.len(), count);
+            assert_eq!(map.map(5), map.map(count - 1));
+        }
+    }
+}
+
+#[test]
 fn adr0022_hvar_implicit_advance_map_follows_new_glyph_ids() {
     let data = font_with_hvar(b"HVAR");
     let font = Font::new(&data, 0).unwrap();
