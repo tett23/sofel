@@ -102,12 +102,12 @@ cargo run --release --bin sofel-paint -- --palette 0 --foreground 000000ff --cha
 
 ### `sofel-subset`
 
-HarfBuzzの `hb-subset` と同じオプションでサブセット化する（[ADR 0022](docs/adr/0022-subsetting.md)）。出力は `hb-subset` 15.1.0とバイト単位で一致させる。まだ書けない表（サブルーチンを持つCFF2、gvar、HVARなど）や、変化量の表を持つCOLRを含むフォント（版1の塗りが残らず版0にできる場合と、残す版1の塗りとクリップがすべて静的な場合、および軸を固定せず変化量ストアを直接またはマップを介して参照する場合を除く）は、その表を `--drop-tables` で捨てないかぎり誤りとなる（可変フォントの表は、すべての軸を既定の値に固定すれば捨てられる）。`--variations` は、すべての軸を既定の値に固定する指定（`*=drop`、各軸の `drop` か既定の値）だけを受け付ける。`--preprocess` はフォントを前処理してから計画を作る（出力は同じ）。`--glyphs` はグリフ名（postとCFFの名前、`gidDDD`、`uniXXXX`）で指定し、`--gids` などとはコマンドラインの順に働く。
+HarfBuzzの `hb-subset` と同じオプションでサブセット化する（[ADR 0022](docs/adr/0022-subsetting.md)）。出力は `hb-subset` 15.1.0とバイト単位で一致させる。まだ書けない表（残すグリフがサブルーチンを呼ぶCFF2など）や、変化量の表を持つCOLRを含むフォント（版1の塗りが残らず版0にできる場合と、残す版1の塗りとクリップがすべて静的な場合、および軸を固定せず変化量ストアを直接またはマップを介して参照する場合を除く）は、その表を `--drop-tables` で捨てないかぎり誤りとなる（可変フォントの表は、すべての軸を既定の値に固定すれば捨てられる）。`--variations` は、すべての軸を既定の値に固定する指定（`*=drop`、各軸の `drop` か既定の値）だけを受け付ける。`--preprocess` はフォントを前処理してから計画を作る（出力は同じ）。`--glyphs` はグリフ名（postとCFFの名前、`gidDDD`、`uniXXXX`）で指定し、`--gids` などとはコマンドラインの順に働く。
 全軸を既定値に固定すると、BASE のベースライン座標を保ち、変化量の表とその参照を除く。
 軸を固定しない場合も、BASE の座標に VariationIndex の参照がなければ、使われない変化量の表を除く。
 適合テストで出力が違えば、表ごとに最初の差の位置を示す。片方だけにある表は、どちらに欠けているかも示す。
 
-軸を固定しない CFF2 は `--desubroutinize` を指定するとサブセット化できる。サブルーチンが元から無い場合は指定なしでも書ける。`blend`、`vsindex` と VariationStore を残し、使うグリフのサブルーチンを展開する。
+軸を固定しない CFF2 は `--desubroutinize` を指定するとサブセット化できる。残すグリフがサブルーチンを呼ばない場合は、元の表に未使用のサブルーチンがあっても指定なしで書ける。`blend`、`vsindex` と VariationStore を残し、使うグリフのサブルーチンを展開する。
 
 ```sh
 sofel-subset --font-file=Roboto.ttf --unicodes=41-5A -o out.ttf
@@ -154,6 +154,8 @@ sh scripts/check-deps.sh   # クレートの依存が ADR 0003 の表に沿い�
 sh scripts/run-tests.sh    # シェルのスクリプトのテスト
 RUSTDOCFLAGS="-D warnings" cargo doc --no-deps -p sofel-geom -p sofel-unicode -p sofel-read -p sofel-font -p sofel-write -p sofel-subset -p sofel-outline -p sofel-bitmap -p sofel-color -p sofel-raster -p sofel-cli -p sofel-capi
 ```
+
+C API でテキスト形式や JSON のグリフ列を読み込んだバッファは、パースエラーの後も、クリアすれば元の設定で再利用できる（[ADR 0053](docs/adr/0053-preserve-buffer-settings-after-glyph-deserialization.md)）。
 
 C ABI（[ADR 0015](docs/adr/0015-c-abi.md)）のテストには、Cのコンパイラと `nm` と jq が要る。Cのテストの期待値 `crates/sofel-capi/tests/c/fixture.h`、`fixture_shape.h`、`fixture_subset.h` はRustのAPIから作り、`cargo test` が最新であることを確かめる（`SOFEL_UPDATE_FIXTURE=1 cargo test -p sofel-capi --test fixture` で書きなおす）。シェーピングとGolemのサブセット化のCのテスト（[ADR 0020](docs/adr/0020-shaping-foundation.md)、[ADR 0022](docs/adr/0022-subsetting.md)）はテストのデータのフォントを読み（場所は `SOFEL_TESTDATA`、既定は `target/testdata`）、データが無ければ飛ばす。`SOFEL_REQUIRE_TESTDATA=1` で飛ばさずに失敗させる。
 

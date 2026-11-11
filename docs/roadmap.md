@@ -31,10 +31,6 @@ FreeType の丸めの順序、係数のキャッシュの同一性、空の座�
 
 ### シェーピング、フォントの検証と描画、照合の記録
 
-各項目の実装状況はリンク先の ADR に記す。
-
-- [ADR 0053](adr/0053-preserve-buffer-settings-after-glyph-deserialization.md)：C API でグリフ列を読み込んだ後も、バッファをクリアして再利用するときは通常のクリアと同じ設定を引き継ぐ。
-
 cmap のフォーマット2と8は、通常のグリフ検索では読み、シェーピングでは HarfBuzz に合わせて対応なしとする処理を実装済みである。[仕様書](specifications.md) に両方の検索規則を記載している。
 
 [ADR 0057](adr/0057-record-unexcluded-phantom-point-check.md)：[ADR 0018](adr/0018-phantom-point-shift.md) は採択を維持する。ネイティブと wasm の両方で、グリフを除外せずに照合した。[4サイズの照合結果](benchmarks/2026-11-11-unexcluded-phantom-point-check.md)を記録した。

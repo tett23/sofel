@@ -1819,6 +1819,27 @@ impl UnicodeBuffer {
     }
 }
 
+impl UnicodeBuffer {
+    /// Builds a glyph buffer from decoded parts, retaining the working buffer
+    /// and its settings for a later call to [`GlyphBuffer::into_unicode`].
+    pub fn into_glyphs(
+        self,
+        direction: Direction,
+        mut infos: Vec<GlyphInfo>,
+        mut positions: Vec<GlyphPosition>,
+    ) -> GlyphBuffer {
+        let n = infos.len().max(positions.len());
+        infos.resize(n, GlyphInfo::default());
+        positions.resize(n, GlyphPosition::default());
+        GlyphBuffer {
+            infos,
+            positions,
+            direction,
+            spare: self.buf,
+        }
+    }
+}
+
 /// The result of shaping: glyphs with their cluster values, flags and
 /// positions, in visual order (`hb_buffer_t` holding glyphs).
 #[derive(Clone, Debug)]
@@ -1835,18 +1856,10 @@ impl GlyphBuffer {
     /// the shorter of `infos` and `positions` is padded with zeros.
     pub fn from_parts(
         direction: Direction,
-        mut infos: Vec<GlyphInfo>,
-        mut positions: Vec<GlyphPosition>,
+        infos: Vec<GlyphInfo>,
+        positions: Vec<GlyphPosition>,
     ) -> GlyphBuffer {
-        let n = infos.len().max(positions.len());
-        infos.resize(n, GlyphInfo::default());
-        positions.resize(n, GlyphPosition::default());
-        GlyphBuffer {
-            infos,
-            positions,
-            direction,
-            spare: Buffer::new(),
-        }
+        UnicodeBuffer::new().into_glyphs(direction, infos, positions)
     }
     /// The glyphs.
     pub fn glyph_infos(&self) -> &[GlyphInfo] {

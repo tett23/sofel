@@ -1556,10 +1556,8 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
         glyph: GlyphId,
         scratch: &mut crate::GlyphScratch,
     ) -> Option<GlyphExtents> {
-        if self.location.hb_nonzero
-            && let Some(extents) = crate::hb_glyf::extents(*self, glyph, scratch)
-        {
-            return Some(extents);
+        if self.location.hb_nonzero {
+            return crate::hb_glyf::extents(*self, glyph, scratch);
         }
         HbScale::unscaled(self.font).glyf_extents(self.font, glyph)
     }
