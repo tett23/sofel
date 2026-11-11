@@ -498,3 +498,75 @@ fn adr0027_i2_variable_corpus_normalization_samples() {
     eprintln!("{faces} variable faces, {samples} normalization samples");
     assert_eq!(faces, 166);
 }
+
+#[path = "support/variation_locations.rs"]
+mod variation_locations;
+
+#[test]
+fn adr0030_i01_unrounded_mvar_reference_at_corpus_positions() {
+    use sofel_read::{mvar::Mvar, sfnt::FontFile};
+    let mut values = 0;
+    let mut fractional = 0;
+    for path in variable_font_paths(&paths::testdata()) {
+        let bytes = std::fs::read(&path).unwrap();
+        let faces = match FontFile::new(&bytes) {
+            Ok(FontFile::Collection(c)) => c.num_fonts(),
+            Ok(FontFile::Sfnt(_)) => 1,
+            Err(_) => continue,
+        };
+        for index in 0..faces {
+            let Ok(font) = Font::new(&bytes, index) else {
+                continue;
+            };
+            let Some(mvar) = font
+                .table(Tag::new(b"MVAR"))
+                .and_then(|d| Mvar::new(d).ok())
+            else {
+                continue;
+            };
+            for pos in variation_locations::positions(&font) {
+                let extra = pos.args();
+                let mut args = vec!["--metrics-variation"];
+                args.extend(extra.iter().map(String::as_str));
+                let reference = dump(&paths::hb_dump(), &args, &path);
+                let location = pos.location(&font);
+                let instance = font.instance(&location);
+                let scale = sofel_font::HbScale::for_font(&font, 768, -1536);
+                let section = reference
+                    .split(&format!("face {index}\n"))
+                    .nth(1)
+                    .unwrap()
+                    .split("end\n")
+                    .next()
+                    .unwrap();
+                let mut records = 0;
+                for (i, line) in section.lines().enumerate() {
+                    let record = mvar.record(i).unwrap();
+                    let fields: Vec<_> = line.split_whitespace().collect();
+                    let tag = record.tag;
+                    let raw = instance.metrics_variation(tag);
+                    assert_eq!(
+                        fields,
+                        [
+                            format!("{:08x}", u32::from_be_bytes(tag.0)),
+                            format!("{:08x}", raw.to_bits()),
+                            instance.metrics_x_variation(&scale, tag).to_string(),
+                            instance.metrics_y_variation(&scale, tag).to_string()
+                        ],
+                        "{} {} {:?}",
+                        path.display(),
+                        pos.id,
+                        tag
+                    );
+                    fractional += usize::from(raw.fract() != 0.0);
+                    records += 1;
+                }
+                assert_eq!(records, section.lines().count());
+                assert_eq!(records, mvar.record_count());
+                values += records;
+            }
+        }
+    }
+    assert!(values > 0 && fractional > 0);
+    eprintln!("{values} MVAR values, {fractional} fractional");
+}
