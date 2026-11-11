@@ -12,6 +12,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4.13"
 sofel-read = { path = "../crates/sofel-read" }
 sofel-font = { path = "../crates/sofel-font" }
+sofel-color = { path = "../crates/sofel-color" }
 sofel-geom = { path = "../crates/sofel-geom" }
 sofel-outline = { path = "../crates/sofel-outline" }
 sofel-raster = { path = "../crates/sofel-raster" }
@@ -159,6 +160,13 @@ bench = false
 [[bin]]
 name = "feature_variations"
 path = "fuzz_targets/feature_variations.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "location"
+path = "fuzz_targets/location.rs"
 test = false
 doc = false
 bench = false
