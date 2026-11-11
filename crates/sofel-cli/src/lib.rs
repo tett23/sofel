@@ -11,3 +11,4 @@ pub mod render;
 pub mod shape;
 pub mod subset;
 pub mod validate;
+pub mod variation_options;
