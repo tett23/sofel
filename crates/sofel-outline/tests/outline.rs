@@ -30,7 +30,7 @@ fn run(
     let mut log = Vec::new();
     let mut scratch = Scratch::default();
     let r = draw(
-        &f,
+        f.default_instance(),
         GlyphId(glyph),
         scale(&f),
         &mut scratch,
@@ -468,7 +468,7 @@ fn scratch_is_reused() {
     let mut a = Vec::new();
     let mut b = Vec::new();
     draw(
-        &f,
+        f.default_instance(),
         GlyphId(1),
         Scale::Unscaled,
         &mut scratch,
@@ -476,7 +476,7 @@ fn scratch_is_reused() {
     )
     .unwrap();
     draw(
-        &f,
+        f.default_instance(),
         GlyphId(1),
         Scale::Unscaled,
         &mut scratch,
@@ -497,7 +497,13 @@ fn decompose_moves_points_before_finding_implied_ones() {
     ));
     let f = Font::new(&font, 0).unwrap();
     let mut scratch = Scratch::default();
-    sofel_outline::load(&f, GlyphId(1), Scale::Unscaled, &mut scratch).unwrap();
+    sofel_outline::load(
+        f.default_instance(),
+        GlyphId(1),
+        Scale::Unscaled,
+        &mut scratch,
+    )
+    .unwrap();
     let mut plain = Vec::new();
     scratch
         .decompose(p(0, 0), 1, &mut FnPen(|c| plain.push(c)))
