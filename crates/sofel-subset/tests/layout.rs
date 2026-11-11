@@ -944,6 +944,72 @@ fn gdef_store_with_math_variation_index_remains_unsupported() {
 }
 
 #[test]
+fn adr0022_negative_gpos_advance_is_not_a_variation_index() {
+    let gdef = gdef_with_unused_store(class_def2(&[(1, 5, 1)]));
+    let position = link(
+        Buf::new().u16(1).u16(0).u16(4).i16(i16::MIN).done(),
+        vec![(2, 2, coverage1(&[g('A')]))],
+    );
+    let gpos = layout_table(&[(b"kern", &[0])], &[(1, position)]);
+    let data = font_with(vec![(b"GDEF", gdef), (b"GPOS", gpos)]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("A")).unwrap();
+    let gpos = out_table(&out, b"GPOS").unwrap();
+    let lookup_list = follow(&gpos, 8);
+    let lookup = follow(lookup_list, 2);
+    let single = follow(lookup, 6);
+    assert_eq!(u16_at(single, 6), 0x8000);
+    assert_eq!(
+        &out_table(&out, b"GDEF").unwrap()[..4],
+        &0x10000u32.to_be_bytes()
+    );
+}
+
+#[test]
+fn adr0022_gsub_axis_range_can_survive_gdef_store_subsetting() {
+    let gdef = gdef_with_unused_store(class_def2(&[(1, 5, 1)]));
+    let mut gsub = gsubgpos(
+        0x0001_0001,
+        script_list(vec![(b"DFLT", script(lang_sys(0xffff, &[0]), vec![]))]),
+        feature_list(&[(b"liga", &[0])]),
+        lookup_list(
+            vec![
+                lookup(1, 0, vec![single(&[1], 1)], None),
+                lookup(1, 0, vec![single(&[1], 2)], None),
+            ],
+            false,
+        ),
+    );
+    let fv_at = u32::try_from(gsub.len()).unwrap();
+    gsub[10..14].copy_from_slice(&fv_at.to_be_bytes());
+    let condition = Buf::new().u16(1).u16(0).i16(0).i16(0x4000).done();
+    let conditions = link(Buf::new().u16(1).u32(0).done(), vec![(2, 4, condition)]);
+    let replacement = Buf::new().u16(0).u16(1).u16(1).done();
+    let substitutions = link(
+        Buf::new().u32(0x10000).u16(1).u16(0).u32(0).done(),
+        vec![(8, 4, replacement)],
+    );
+    let fv = link(
+        Buf::new().u32(0x10000).u32(1).u32(0).u32(0).done(),
+        vec![(8, 4, conditions), (12, 4, substitutions)],
+    );
+    gsub.extend(fv);
+    let data = font_with(vec![(b"GDEF", gdef), (b"GSUB", gsub)]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("ABC")).unwrap();
+    let gsub = out_table(&out, b"GSUB").unwrap();
+    let offset = u32::from_be_bytes(gsub[10..14].try_into().unwrap()) as usize;
+    let view =
+        sofel_font::read::feature_variations::FeatureVariations::new(&gsub[offset..]).unwrap();
+    let record = view.record(0).unwrap();
+    let set = record.conditions().unwrap().unwrap();
+    assert_eq!(set.condition(0).unwrap().unwrap().format(), 1);
+    assert_eq!(record.substitutions().unwrap().unwrap().len(), 1);
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    assert_eq!(&gdef[..4], &0x10000u32.to_be_bytes());
+}
+
+#[test]
 fn gdef_store_with_gsub_feature_variations_remains_unsupported() {
     let gdef = gdef_with_unused_store(class_def2(&[(1, 5, 1)]));
     let gsub = Buf::new()
