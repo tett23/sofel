@@ -191,6 +191,33 @@ impl<'a> Font<'a> {
         );
         Some(h.map_or(0, |(h, _)| abs(h.ascender(), h.descender())))
     }
+
+    /// `TT_Get_HMetrics` advance before HVAR, with FreeType's raw table bounds.
+    pub(crate) fn ft_h_advance_default(&self, glyph: GlyphId) -> Option<u16> {
+        (glyph.0 < self.num_glyphs)
+            .then(|| ft_metrics_advance(self.ft_metrics.hmtx, self.ft_metrics.long_metrics, glyph))
+    }
+
+    /// `TT_Get_VMetrics` bearing before VVAR (whose FreeType bearing callback is absent).
+    pub(crate) fn ft_top_side_bearing_default(&self, glyph: GlyphId, y_max: i16) -> Option<i16> {
+        if glyph.0 >= self.num_glyphs {
+            return None;
+        }
+        if self.ft_vertical().is_some() {
+            return Some(self.vmetrics.bearing(glyph));
+        }
+        let ascender = self.ft_os2().map_or_else(
+            || {
+                ft_hea(
+                    &self.sfnt,
+                    [hhea::TAG, hmtx::TAG, hhea::TAG_WIDE, hmtx::TAG_WIDE],
+                )
+                .map_or(0, |(h, _)| h.ascender())
+            },
+            |o| o.s_typo_ascender(),
+        );
+        Some(short(i32::from(ascender).wrapping_sub(i32::from(y_max))))
+    }
 }
 
 /// `tt_face_get_metrics` for the advance, without variations.
