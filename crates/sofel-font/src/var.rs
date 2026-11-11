@@ -1781,6 +1781,7 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
 
 impl<'data> Font<'data> {
     /// Pair this font with a location. The location may originate from another font.
+    #[inline]
     pub fn instance<'font, 'loc, 'source>(
         &'font self,
         location: &'loc Location<'source>,
