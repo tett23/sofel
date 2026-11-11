@@ -25,6 +25,7 @@ WOFFとWOFF2、Type1やBDFなどの古い形式、AAT、絵文字（COLR、埋�
 COLRv1の描画は、Rustの `paint`・`paint_recording` とCの `sofel_paint_glyph` に可変フォントの位置を渡して記録できる。
 MVARのメトリクス差分は、Rustの `Instance::metrics_variation` とCの `sofel_instance_metrics_variation` で丸める前の値を取得できる。
 さらに、[ADR 0027](docs/adr/0027-variable-fonts.md) の可変フォントの表（ItemVariationStore、DeltaSetIndexMap、HVAR、VVAR、MVAR、gvar、GVAR、avar版2、FeatureVariations）を読み、検証する。`sofel-subset` はFeatureVariationsをこのビューから読む。glyfのFreeType互換の送り幅は、位置設定後の初回 `FT_Get_Advances` の値に合わせる（[ADR 0048](docs/adr/0048-freetype-advance-query-state.md)）。
+FeatureVariations版1.1以降のlookup条件も読み、軸の位置に合うlookupをシェーピング計画に加える（[ADR 0046](docs/adr/0046-harfbuzz-lookup-variations.md)）。
 範囲と実装の順序は [ADR 0001](docs/adr/0001-project-goal-and-scope.md)、クレートの構成は [ADR 0003](docs/adr/0003-crate-layers.md) を参照。
 仕様は [docs/specifications.md](docs/specifications.md) にまとめる。フォントの用語と sofel の型名は[用語集](docs/glossary.md)で引ける。
 シェーピング計画の生成時間は、[Coverageの走査を打ち切る計測](docs/benchmarks/2026-11-11-shape-coverage-digest.md) に記録している。
