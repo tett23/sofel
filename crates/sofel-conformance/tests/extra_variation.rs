@@ -105,7 +105,7 @@ fn i05_nondefault_metrics_and_outlines_match_or_named_failure() {
             "advance {}",
             font.default_instance().advance(GlyphId(case.glyph))
         )];
-        let parsed = sofel_outline::Outlines::new(&font);
+        let parsed = sofel_outline::Outlines::new(font.default_instance());
         outline.extend(sofel_glyph(
             &parsed,
             case.glyph,
