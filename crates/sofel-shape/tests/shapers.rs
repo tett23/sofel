@@ -600,6 +600,172 @@ fn indic_malayalam_dot_reph_and_pref() {
     assert_eq!(s(&[b[0], b[2], b[1], b[3]]), [FORM1, b[0], DC, b[3]]);
 }
 
+// USE.
+
+/// A substitution of a [`use_font`]: a ligature of characters, or a
+/// single substitution of one character.
+enum Subst {
+    Lig(&'static [u32], u32),
+    Single(u32, u32),
+}
+
+/// A font for the USE shaper: glyph `i + 1` is `chars[i]`, and a `GSUB`
+/// with the script tag `ot` whose features `(feature, substitution)`
+/// have a lookup each.
+fn use_font(ot: &[u8; 4], chars: &[u32], substs: &[(&'static [u8; 4], Subst)]) -> Vec<u8> {
+    let gl = |c: u32| g(chars, c) as u16;
+    let lookups: Vec<support::LookupSpec> = substs
+        .iter()
+        .map(|(_, s)| match s {
+            Subst::Lig(comps, form) => {
+                let rest: Vec<u16> = comps[1..].iter().map(|&c| gl(c)).collect();
+                lookup(
+                    4,
+                    0,
+                    vec![support::ligature_subst(gl(comps[0]), &[(&rest, gl(*form))])],
+                )
+            }
+            Subst::Single(from, to) => lookup(1, 0, vec![single_subst(&[(gl(*from), gl(*to))])]),
+        })
+        .collect();
+    let mut tags: Vec<&'static [u8; 4]> = Vec::new();
+    for (t, _) in substs {
+        if !tags.contains(t) {
+            tags.push(t);
+        }
+    }
+    let features: Vec<(&[u8; 4], Vec<u16>)> = tags
+        .iter()
+        .map(|t| {
+            let ls = substs
+                .iter()
+                .enumerate()
+                .filter(|(_, (f, _))| f == t)
+                .map(|(i, _)| i as u16)
+                .collect();
+            (*t, ls)
+        })
+        .collect();
+    let idx: Vec<u16> = (0..tags.len() as u16).collect();
+    let gsub = support::layout(
+        &[(ot, vec![support::lang(None, &idx)])],
+        &features,
+        &lookups,
+    );
+    font_for(chars, 500, vec![(b"GSUB", gsub)])
+}
+
+/// Balinese: KA and YA (base consonants), RA, ADEG ADEG (halant), TALING
+/// (a pre-base vowel) and TEDUNG (a post-base vowel).
+mod bali {
+    pub const KA: u32 = 0x1B13;
+    pub const YA: u32 = 0x1B2C;
+    pub const RA: u32 = 0x1B2D;
+    pub const ADEG: u32 = 0x1B44;
+    pub const TALING: u32 = 0x1B3E;
+    pub const TEDUNG: u32 = 0x1B35;
+}
+
+fn bali_font(substs: &[(&'static [u8; 4], Subst)]) -> (Vec<u8>, Vec<u32>) {
+    use bali::*;
+    let chars = vec![
+        KA, YA, RA, ADEG, TALING, TEDUNG, DC, REPH, FORM1, FORM2, FORM3,
+    ];
+    (use_font(b"bali", &chars, substs), chars)
+}
+
+#[test]
+fn use_reorders_repha_and_pre_base_vowels() {
+    use bali::*;
+    let (data, chars) = bali_font(&[
+        (b"rphf", Subst::Lig(&[RA, ADEG], REPH)),
+        (b"pref", Subst::Lig(&[ADEG, YA], FORM1)),
+    ]);
+    assert_eq!(plan_shaper(&data, b"Bali"), Shaper::Use);
+    let s = |text: &[u32]| indic_shape(&data, &chars, b"Bali", text);
+    // RA ADEG KA TALING: `rphf` forms the repha, which moves before the
+    // first post-base glyph (the vowel); the pre-base vowel moves to the
+    // start of the syllable. One cluster.
+    assert_eq!(s(&[RA, ADEG, KA, TALING]), [TALING, KA, REPH]);
+    assert_eq!(
+        indic_clusters(&data, b"Bali", &[RA, ADEG, KA, TALING]),
+        [0, 0, 0]
+    );
+    // RA ADEG KA TEDUNG: the repha goes before the post-base vowel.
+    assert_eq!(s(&[RA, ADEG, KA, TEDUNG]), [KA, REPH, TEDUNG]);
+    // RA ADEG KA: no post-base glyph, the repha goes to the end.
+    assert_eq!(s(&[RA, ADEG, KA]), [KA, REPH]);
+    // KA ADEG YA: `pref` forms a pre-base form, which moves like a
+    // pre-base vowel.
+    assert_eq!(s(&[KA, ADEG, YA]), [FORM1, KA]);
+    // KA ADEG KA TALING: the vowel stays after the halant.
+    assert_eq!(s(&[KA, ADEG, KA, TALING]), [KA, ADEG, TALING, KA]);
+}
+
+#[test]
+fn use_dotted_circle() {
+    use bali::*;
+    let (data, chars) = bali_font(&[]);
+    let s = |text: &[u32]| indic_shape(&data, &chars, b"Bali", text);
+    // A vowel alone is a broken cluster: a dotted circle is its base, and
+    // the pre-base vowel goes before it.
+    assert_eq!(s(&[TALING]), [TALING, DC]);
+    assert_eq!(s(&[TEDUNG]), [DC, TEDUNG]);
+    // Not with DO_NOT_INSERT_DOTTED_CIRCLE.
+    let font = Font::new(&data, 0).unwrap();
+    let props = ResolvedProperties {
+        direction: Direction::Ltr,
+        script: Script::from_iso15924(b"Bali"),
+        language: None,
+    };
+    let plan = ShapePlan::new(&font, props, &[]);
+    let mut b = UnicodeBuffer::new();
+    b.set_flags(sofel_shape::BufferFlags::DO_NOT_INSERT_DOTTED_CIRCLE);
+    b.push_codepoints(&[TALING], 0, None);
+    let out = shape(&font, &Scale::unscaled(&font), &plan, b);
+    assert_eq!(glyphs(&out), [g(&chars, TALING)]);
+}
+
+#[test]
+fn use_topographical_features_by_cluster() {
+    use bali::*;
+    let (data, chars) = bali_font(&[
+        (b"isol", Subst::Single(KA, FORM1)),
+        (b"init", Subst::Single(KA, FORM2)),
+        (b"medi", Subst::Single(KA, FORM3)),
+        (b"fina", Subst::Single(KA, REPH)),
+    ]);
+    let s = |text: &[u32]| indic_shape(&data, &chars, b"Bali", text);
+    assert_eq!(s(&[KA]), [FORM1]);
+    assert_eq!(s(&[KA, KA]), [FORM2, REPH]);
+    assert_eq!(s(&[KA, KA, KA]), [FORM2, FORM3, REPH]);
+    // A cluster of several characters takes one form.
+    assert_eq!(s(&[KA, TEDUNG, KA]), [FORM2, TEDUNG, REPH]);
+}
+
+#[test]
+fn use_mongolian_free_variation_selectors_join() {
+    // MONGOLIAN LETTER A, FVS1, A: Mongolian joins as Arabic; the free
+    // variation selector takes the initial form of the letter before it,
+    // so `init` substitutes it too.
+    const A: u32 = 0x1820;
+    const FVS1: u32 = 0x180B;
+    let chars = vec![A, FVS1, FORM1, FORM2, FORM3];
+    let data = use_font(
+        b"mong",
+        &chars,
+        &[
+            (b"init", Subst::Single(A, FORM1)),
+            (b"init", Subst::Single(FVS1, FORM2)),
+            (b"fina", Subst::Single(A, FORM3)),
+        ],
+    );
+    assert_eq!(plan_shaper(&data, b"Mong"), Shaper::Use);
+    let s = |text: &[u32]| indic_shape(&data, &chars, b"Mong", text);
+    assert_eq!(s(&[A, FVS1, A]), [FORM1, FORM2, FORM3]);
+    assert_eq!(s(&[A, A]), [FORM1, FORM3]);
+}
+
 // Khmer.
 
 mod khmr {
