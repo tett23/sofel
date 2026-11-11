@@ -25,7 +25,7 @@ pub(crate) const DOTTED_CIRCLE: u32 = 0x25CC;
 /// machine's caller sets) or without a dotted circle in the font.
 /// Returns whether the buffer was rewritten.
 pub(crate) fn insert_dotted_circles(
-    font: &ShapeFont<'_, '_>,
+    font: &ShapeFont<'_, '_, '_, '_>,
     buffer: &mut Buffer,
     broken_syllable_type: u8,
     dotted_circle_category: u8,
@@ -106,7 +106,11 @@ fn insert_dotted_circle_glyphs(
 /// longer needed. HarfBuzz frees the buffer variable; the named field
 /// keeps its values, which the later per-syllable lookups still see, as
 /// in HarfBuzz.
-pub(crate) fn clear_syllables(_: &ShapePlan<'_>, _: &ShapeFont<'_, '_>, _: &mut Buffer) -> bool {
+pub(crate) fn clear_syllables(
+    _: &ShapePlan<'_>,
+    _: &ShapeFont<'_, '_, '_, '_>,
+    _: &mut Buffer,
+) -> bool {
     false
 }
 

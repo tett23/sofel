@@ -340,13 +340,6 @@ impl Plan {
         let colr_table = font.table(Tag::new(b"COLR"));
         let colr_kept = !drop.contains(Tag::new(b"COLR").to_u32())
             && !no_subset.contains(Tag::new(b"COLR").to_u32());
-        if colr_kept && colr_table.is_some_and(colr::needs_var_store) {
-            return Err(SubsetError::Unsupported {
-                tag: Tag::new(b"COLR"),
-                reason: "the COLR item variation store (ADR 0022 stage 10)",
-            });
-        }
-
         let cmap = CmapAccel::new(font);
         let glyphs_in = input.set(SetKind::Glyphs);
         let mut p = Plan {
@@ -456,6 +449,13 @@ impl Plan {
             p.color.layers = layers;
             p.color.palettes = palettes;
         }
+        if colr_kept && colr_table.is_some_and(|data| colr::needs_var_store(data, &cur)) {
+            return Err(SubsetError::Unsupported {
+                tag: Tag::new(b"COLR"),
+                reason: "the COLR item variation store (ADR 0022 stage 10)",
+            });
+        }
+
         p.color.glyphset_colred = cur.clone();
         // _nameid_closure
         if tag_kept(b"STAT") {

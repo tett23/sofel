@@ -352,7 +352,7 @@ impl FallbackPlan {
     pub(crate) fn shape(
         &self,
         plan: &ShapePlan<'_>,
-        font: &ShapeFont<'_, '_>,
+        font: &ShapeFont<'_, '_, '_, '_>,
         buffer: &mut Buffer,
     ) {
         for l in &self.lookups {

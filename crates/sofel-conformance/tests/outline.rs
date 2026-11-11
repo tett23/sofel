@@ -187,3 +187,117 @@ fn adr0040_i1_i2_error_then_normal_outline() {
         "face 0\nnum_glyphs 2\nglyph 0\nerror 8\nglyph 1\nM 1 2\nZ\noverlap 0\ncbox 1 2 1 2\nend\n",
     );
 }
+
+#[test]
+fn adr0027_variable_geometry_matches_freetype_at_corpus_positions() {
+    let data = paths::testdata();
+    let mut paths = fonts::harfbuzz_fonts(&data);
+    for dir in ["harfbuzz/test/api/fonts", "harfbuzz/perf/fonts"] {
+        paths.extend(
+            std::fs::read_dir(data.join(dir))
+                .into_iter()
+                .flatten()
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .filter(|p| p.is_file()),
+        );
+    }
+    paths.sort();
+    paths.dedup();
+    let mut tested_faces = 0;
+    for path in paths {
+        let name = fonts::id(&path, &data);
+        let bytes = std::fs::read(&path).unwrap();
+        use sofel_read::sfnt::FontFile;
+        let faces = match FontFile::new(&bytes) {
+            Ok(FontFile::Sfnt(_)) => 1,
+            Ok(FontFile::Collection(c)) => c.num_fonts(),
+            Err(_) => continue,
+        };
+        for index in 0..faces {
+            let Ok(font) = Font::new(&bytes, index) else {
+                continue;
+            };
+            // VARC outlines are outside the scope of ADR 0027.
+            if font.var_axes().next().is_none()
+                || !has_glyf(&font)
+                || font.table(sofel_read::Tag::new(b"VARC")).is_some()
+            {
+                continue;
+            }
+            tested_faces += 1;
+            let mut checked = [0u64; 2];
+            for pos in variation_locations::positions(&font) {
+                let location = pos.location(&font);
+                let outlines = sofel_outline::Outlines::new(font.instance(&location));
+                let mut scratch = Scratch::default();
+                let raster_sizes = if pos.id == "default"
+                    || pos.id.starts_with("named:")
+                    || matches!(pos.id.as_str(), "rand:0" | "rand:1")
+                {
+                    &["12", "24", "48"][..]
+                } else {
+                    &[]
+                };
+                let mut raster = sofel_raster::Rasterizer::new();
+                for (mode, size) in SIZES
+                    .into_iter()
+                    .map(|s| ("--outline", s))
+                    .chain(raster_sizes.iter().map(|s| ("--raster", *s)))
+                {
+                    let scale = scale_for(&font, size);
+                    let mut glyphs = 0;
+                    let ran = ft_stream::reference(
+                        Command::new(paths::ft_dump())
+                            .args([mode, size])
+                            .args(pos.args())
+                            .arg(&path),
+                        |face, glyph, expected| {
+                            if face != index {
+                                return;
+                            }
+                            let ours = if mode == "--raster" {
+                                sofel_conformance::raster::sofel_glyph(
+                                    &outlines,
+                                    glyph,
+                                    size.parse().unwrap(),
+                                    &mut scratch,
+                                    &mut raster,
+                                )
+                            } else {
+                                sofel_glyph(&outlines, glyph, scale, &mut scratch)
+                            };
+                            assert_eq!(
+                                ours, expected,
+                                "{name}#{face}:{mode}:{size}:{glyph}@{}",
+                                pos.id
+                            );
+                            glyphs += 1;
+                        },
+                    )
+                    .unwrap();
+                    checked[usize::from(mode == "--raster")] += u64::from(glyphs);
+                    assert!(
+                        ran,
+                        "reference failed for {name}#{index}:{mode}:{size}@{}",
+                        pos.id
+                    );
+                    assert_eq!(
+                        glyphs,
+                        font.num_glyphs(),
+                        "{name}#{index}:{mode}:{size}@{}",
+                        pos.id
+                    );
+                }
+            }
+            eprintln!(
+                "{name}#{index}: {} outlines, {} rasters",
+                checked[0], checked[1]
+            );
+        }
+    }
+    assert!(tested_faces > 0, "variable font corpus is empty");
+}
+
+#[path = "support/variation_locations.rs"]
+mod variation_locations;
