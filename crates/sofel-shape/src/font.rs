@@ -4,18 +4,25 @@
 //! Ported from HarfBuzz 15.1.0 `src/hb-font.hh` and `src/hb-ot-font.cc`,
 //! MIT; see THIRD_PARTY_NOTICES.md.
 
-use sofel_font::read::GlyphId;
-use sofel_font::{Font, GlyphExtents};
+use core::cell::RefCell;
+
+use sofel_font::read::{GlyphId, device::Device};
+use sofel_font::{
+    GlyphExtents, GlyphScratch,
+    var::{HbF32, Instance, StoreKind},
+};
 
 use crate::scale::Scale;
 
 /// A font with its scale and a source of glyph boxes in font units.
-pub(crate) struct ShapeFont<'f, 'a> {
-    pub(crate) font: &'f Font<'a>,
+pub(crate) struct ShapeFont<'f, 'a, 'l, 's> {
+    pub(crate) instance: Instance<'f, 'a, 'l, 's>,
+    pub(crate) font: &'f sofel_font::Font<'a>,
     pub(crate) scale: Scale,
     x_multf: f32,
     y_multf: f32,
     extents: &'f dyn Fn(GlyphId) -> Option<GlyphExtents>,
+    glyph_scratch: RefCell<GlyphScratch>,
 }
 
 pub(crate) use sofel_geom::float::i32_to_f32;
@@ -26,19 +33,22 @@ pub(crate) fn round_to_i32(v: f32) -> i32 {
     sofel_geom::float::hb_clamp_to_i32(sofel_geom::float::hb_roundf32(v))
 }
 
-impl<'f, 'a> ShapeFont<'f, 'a> {
+impl<'f, 'a, 'l, 's> ShapeFont<'f, 'a, 'l, 's> {
     pub(crate) fn new(
-        font: &'f Font<'a>,
+        instance: Instance<'f, 'a, 'l, 's>,
         scale: Scale,
         extents: &'f dyn Fn(GlyphId) -> Option<GlyphExtents>,
-    ) -> ShapeFont<'f, 'a> {
+    ) -> ShapeFont<'f, 'a, 'l, 's> {
+        let font = instance.font();
         let upem = f32::from(font.hb_units_per_em());
         ShapeFont {
+            instance,
             font,
             scale,
             x_multf: i32_to_f32(scale.scale.x_scale()) / upem,
             y_multf: i32_to_f32(scale.scale.y_scale()) / upem,
             extents,
+            glyph_scratch: RefCell::new(GlyphScratch::default()),
         }
     }
 
@@ -66,22 +76,74 @@ impl<'f, 'a> ShapeFont<'f, 'a> {
     }
     /// `get_glyph_h_advance`.
     pub(crate) fn h_advance(&self, glyph: u32) -> i32 {
-        self.scale.scale.h_advance(self.font, GlyphId(glyph))
+        let mut scratch = self.glyph_scratch.borrow_mut();
+        self.scale.scale.em_scale_x(
+            self.instance
+                .advance_with_scratch(GlyphId(glyph), &mut scratch)
+                .cast_signed(),
+        )
     }
     /// `get_glyph_v_advance`.
     pub(crate) fn v_advance(&self, glyph: u32) -> i32 {
-        self.scale.scale.v_advance(self.font, GlyphId(glyph))
+        let mut scratch = self.glyph_scratch.borrow_mut();
+        self.instance
+            .scaled_v_advance_with_scratch(&self.scale.scale, GlyphId(glyph), &mut scratch)
     }
     /// `get_glyph_v_origin`.
     pub(crate) fn v_origin(&self, glyph: u32) -> (i32, i32) {
-        self.scale
-            .scale
-            .v_origin(self.font, GlyphId(glyph), |g| (self.extents)(g))
+        let mut scratch = self.glyph_scratch.borrow_mut();
+        self.instance.scaled_v_origin_with_scratch(
+            &self.scale.scale,
+            GlyphId(glyph),
+            |g| (self.extents)(g).map(|e| self.scale.scale.scale_glyph_extents(e)),
+            &mut scratch,
+        )
     }
     /// `get_glyph_extents`, scaled.
     pub(crate) fn glyph_extents(&self, glyph: u32) -> Option<GlyphExtents> {
         (self.extents)(GlyphId(glyph)).map(|e| self.scale.scale.scale_glyph_extents(e))
     }
+    /// VariationIndex uses GDEF ItemVariationStore independently of ppem.
+    fn variation_delta(&self, device: Option<&Device<'_>>) -> Option<f32> {
+        if !self.instance.location().hb_nonzero() {
+            return None;
+        }
+        let (outer, inner) = device?.variation_index()?;
+        Some(
+            self.instance
+                .item_delta::<HbF32>(StoreKind::Gdef, outer, inner)
+                .unwrap_or(0.0),
+        )
+    }
+
+    pub(crate) fn x_device_delta(&self, device: Option<&Device<'_>>) -> i32 {
+        self.variation_delta(device).map_or_else(
+            || self.scale.x_delta(device),
+            |delta| self.scale.scale.em_scalef_x(delta),
+        )
+    }
+
+    pub(crate) fn y_device_delta(&self, device: Option<&Device<'_>>) -> i32 {
+        self.variation_delta(device).map_or_else(
+            || self.scale.y_delta(device),
+            |delta| self.scale.scale.em_scalef_y(delta),
+        )
+    }
+
+    pub(crate) fn x_device_fdelta(&self, device: Option<&Device<'_>>) -> f32 {
+        self.variation_delta(device).map_or_else(
+            || i32_to_f32(self.scale.x_delta(device)),
+            |delta| delta * self.x_multf,
+        )
+    }
+
+    pub(crate) fn y_device_fdelta(&self, device: Option<&Device<'_>>) -> f32 {
+        self.variation_delta(device).map_or_else(
+            || i32_to_f32(self.scale.y_delta(device)),
+            |delta| delta * self.y_multf,
+        )
+    }
+
     /// `em_scale_x`.
     pub(crate) fn em_scale_x(&self, v: i16) -> i32 {
         self.scale.scale.em_scale_x(i32::from(v))

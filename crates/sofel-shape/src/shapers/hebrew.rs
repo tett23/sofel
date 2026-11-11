@@ -72,7 +72,7 @@ fn presentation_form(a: u32, b: u32) -> Option<u32> {
 }
 
 /// `compose_hebrew`.
-fn compose(c: &NormalizeContext<'_, '_, '_>, a: u32, b: u32) -> Option<u32> {
+fn compose(c: &NormalizeContext<'_, '_, '_, '_, '_>, a: u32, b: u32) -> Option<u32> {
     sofel_unicode::compose(a, b).or_else(|| {
         if c.plan.has_gpos_mark {
             None
