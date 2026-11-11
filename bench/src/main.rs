@@ -626,8 +626,21 @@ fn cff_items(b: &mut Bench, testdata: &std::path::Path) {
 /// HarfBuzz's drawing, not compared); rendering (ADR 0012) at 12, 24, 48
 /// and 96 px against FreeType.
 fn outline_items(b: &mut Bench, name: &str, font: &Font<'_>, ft: &FtFace, hb: &HbFont) {
+    geometry_items(b, name, font.default_instance(), ft, hb, "", &[12, 24, 48, 96]);
+}
+
+fn geometry_items(
+    b: &mut Bench,
+    name: &str,
+    instance: sofel_font::var::Instance<'_, '_, '_, '_>,
+    ft: &FtFace,
+    hb: &HbFont,
+    suffix: &str,
+    raster_sizes: &[u16],
+) {
+    let font = instance.font();
     let n = font.num_glyphs();
-    let outlines = Outlines::new(font.default_instance());
+    let outlines = Outlines::new(instance);
     // Outlines: the number of commands (without closes) of every glyph.
     for ppem in [0u16, 48] {
         let scale = if ppem == 0 {
@@ -647,7 +660,7 @@ fn outline_items(b: &mut Bench, name: &str, font: &Font<'_>, ft: &FtFace, hb: &H
         };
         b.item(
             name,
-            label,
+            format!("{label}{suffix}"),
             &mut || {
                 (0..n)
                     .map(|g| {
@@ -681,7 +694,7 @@ fn outline_items(b: &mut Bench, name: &str, font: &Font<'_>, ft: &FtFace, hb: &H
 
     // Rendering: the sum of all pixels of every glyph.
     eprintln!("{name}: {n} glyphs");
-    for ppem in [12u16, 24, 48, 96] {
+    for &ppem in raster_sizes {
         ft.set_ppem(u32::from(ppem));
         let mut scratch = Scratch::default();
         let mut raster = Rasterizer::new();
@@ -706,7 +719,7 @@ fn outline_items(b: &mut Bench, name: &str, font: &Font<'_>, ft: &FtFace, hb: &H
                 .map(|g| wrap(ft.render(g)))
                 .fold(0, u64::wrapping_add)
         };
-        let item = format!("raster {ppem}px");
+        let item = format!("raster {ppem}px{suffix}");
         if b.wanted(name, &item) {
             let (o, t) = (ours(&mut (0..n)), theirs(&mut (0..n)));
             b.checks.push(Check {

@@ -22,7 +22,17 @@ pub(super) fn items(bench: &mut Bench, data: &Path) {
     };
     let item = "location wght=500";
     for (name, file) in FONTS {
-        if !bench.wanted(name, item) && !bench.wanted(name, "advance wght=500") {
+        if ![
+            item,
+            "advance wght=500",
+            "box wght=500",
+            "outline unscaled wght=500",
+            "outline 48px wght=500",
+            "raster 24px wght=500",
+        ]
+        .iter()
+        .any(|item| bench.wanted(name, item))
+        {
             continue;
         }
         let bytes = std::fs::read(data.join("harfbuzz/test/subset/data/fonts").join(file)).unwrap();
@@ -67,8 +77,32 @@ pub(super) fn items(bench: &mut Bench, data: &Path) {
                 Compare::Yes,
             )),
         );
+        let instance = font.instance(&location);
+        if bench.wanted(name, "box wght=500") {
+            let boxes = sofel_outline::HbExtents::new(instance);
+            bench.item(
+                name,
+                "box wght=500".into(),
+                &mut || {
+                    (0..font.num_glyphs())
+                        .map(|g| super::box_sum(boxes.glyph_extents(sofel_font::read::GlyphId(g))))
+                        .fold(0u64, u64::wrapping_add)
+                },
+                None,
+                Some((
+                    &mut || {
+                        (0..font.num_glyphs())
+                            .map(|g| {
+                                hb.glyph_extents(g)
+                                    .map_or(super::wrap(i64::MIN), super::wrap)
+                            })
+                            .fold(0u64, u64::wrapping_add)
+                    },
+                    Compare::Yes,
+                )),
+            );
+        }
         if bench.wanted(name, "advance wght=500") {
-            let instance = font.instance(&location);
             let ours = |g| u64::from(instance.advance(sofel_font::read::GlyphId(g)));
             let theirs_ft = |g| ft.advance(g) as u64;
             let theirs_hb = |g| hb.advance(g) as u64;
@@ -90,5 +124,6 @@ pub(super) fn items(bench: &mut Bench, data: &Path) {
                 )),
             );
         }
+        super::geometry_items(bench, name, instance, &ft, &hb, " wght=500", &[24]);
     }
 }
