@@ -47,7 +47,7 @@ pub(crate) enum MatchFn<'a> {
 
 impl MatchFn<'_> {
     /// Whether `info` matches the value at `pos`.
-    fn matches(&self, info: &Info, pos: usize) -> bool {
+    pub(super) fn matches(&self, info: &Info, pos: usize) -> bool {
         match self {
             MatchFn::Always => true,
             MatchFn::Glyph(a) => a.get(pos) == Some(info.codepoint),
@@ -839,7 +839,7 @@ impl<'a> RuleMatch<'a> {
             RuleMatch::Classes { backtrack, .. } => MatchFn::Class(values, backtrack),
         }
     }
-    fn input(&self, values: GlyphArray<'a>) -> MatchFn<'a> {
+    pub(super) fn input(&self, values: GlyphArray<'a>) -> MatchFn<'a> {
         match *self {
             RuleMatch::Glyphs => MatchFn::Glyph(values),
             RuleMatch::Classes { input, .. } => MatchFn::Class(values, input),

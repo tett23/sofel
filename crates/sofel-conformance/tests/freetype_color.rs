@@ -85,3 +85,45 @@ fn raw_colors_agree_with_freetype() {
         panic!("{msg}");
     }
 }
+
+#[test]
+fn adr0027_raw_paints_and_clip_boxes_at_design_locations() {
+    let settings = include_str!("../../../conformance/extra-color-var-cases.tsv")
+        .lines()
+        .filter(|s| !s.starts_with('#'))
+        .filter_map(|s| s.split('\t').nth(2))
+        .filter(|&s| s != "-")
+        .map(|s| ("test_glyphs-glyf_colr_1_variable.ttf", s));
+    for (name, settings) in [
+        ("colr-clip-rounding.ttf", "wght=0.5"),
+        ("colr-wide-scale.ttf", "wght=1"),
+    ]
+    .into_iter()
+    .chain(settings)
+    {
+        let path = paths::testdata().join("harfbuzz/test/api/fonts").join(name);
+        let bytes = std::fs::read(&path).unwrap();
+        let font = Font::new(&bytes, 0).unwrap();
+        let settings_list: Vec<_> = settings
+            .split(',')
+            .map(|s| sofel_font::var::Variation::parse(s).unwrap())
+            .collect();
+        let location = sofel_font::var::Location::new(&font, None, &settings_list);
+        let output = Command::new(paths::ft_dump())
+            .arg("--colr")
+            .arg(format!("--variations={settings}"))
+            .arg(path)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{name}");
+        let text = String::from_utf8(output.stdout).unwrap();
+        let faces = color::split_faces(&text);
+        assert_eq!(faces.len(), 1);
+        let items =
+            color::compare_colr_at(name, 0, font.instance(&location), &faces.first().unwrap().1);
+        assert!(items.len() > 1);
+        for item in items.into_iter().filter(|item| item.id.contains(":colr:")) {
+            assert!(item.ok, "{}: {}", item.id, item.detail);
+        }
+    }
+}
