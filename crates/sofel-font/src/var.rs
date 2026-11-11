@@ -594,6 +594,18 @@ fn format_g6(value: f32) -> String {
 }
 
 /// A normalized location and its cached variation-region coefficients.
+///
+/// A location borrows the font bytes, so they must outlive it (ADR 0030 I03).
+/// The font handle itself can be dropped first.
+///
+/// ```compile_fail,E0515
+/// use sofel_font::{Font, var::Location};
+/// fn invalid() -> Location<'static> {
+///     let bytes = Vec::from([0u8; 64]);
+///     let font = Font::new(&bytes, 0).unwrap();
+///     Location::new(&font, None, &[])
+/// }
+/// ```
 #[derive(Clone, Debug)]
 pub struct Location<'data> {
     hb_coords: Vec<i32>,
