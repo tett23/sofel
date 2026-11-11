@@ -101,9 +101,11 @@ pub(super) fn subset(
 
     let header_len = if vertical { 24u32 } else { 20u32 };
     let mut offset = header_len;
-    let mut map_offsets = Vec::new();
-    for map in &rewritten_maps {
-        map_offsets.push(if map.is_some() { offset } else { 0 });
+    let mut map_offsets = alloc::vec![0; rewritten_maps.len()];
+    for (index, map) in rewritten_maps.iter().enumerate().rev() {
+        *map_offsets
+            .get_mut(index)
+            .ok_or(SubsetError::Limit { tag })? = if map.is_some() { offset } else { 0 };
         offset = offset
             .checked_add(
                 u32::try_from(map.as_ref().map_or(0, Vec::len))
@@ -116,7 +118,7 @@ pub(super) fn subset(
     for map_offset in map_offsets {
         serializer.u32(map_offset);
     }
-    for map in rewritten_maps.into_iter().flatten() {
+    for map in rewritten_maps.into_iter().rev().flatten() {
         serializer.extend(&map);
     }
     serializer.extend(&store_bytes);
@@ -146,15 +148,15 @@ fn index_map(
             .ok_or(SubsetError::Malformed { tag })? =
             u16::try_from(inner).map_err(|_| SubsetError::Limit { tag })?;
     }
-    if values
-        .iter()
-        .enumerate()
-        .all(|(index, &value)| usize::from(value) == index)
+    if source.is_none()
+        && values
+            .iter()
+            .enumerate()
+            .all(|(index, &value)| usize::from(value) == index)
     {
         return Ok(None);
     }
-    let max_inner =
-        u16::try_from(old_items.len().saturating_sub(1)).map_err(|_| SubsetError::Limit { tag })?;
+    let max_inner = values.iter().copied().max().unwrap_or(0);
     let inner_bits = u16::BITS.saturating_sub(max_inner.leading_zeros()).max(1);
     let width = usize::try_from(inner_bits.saturating_add(1).div_ceil(8))
         .map_err(|_| SubsetError::Limit { tag })?;

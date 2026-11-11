@@ -44,11 +44,15 @@ fn font_with_hvar(tag: &'static [u8; 4]) -> Vec<u8> {
     sfnt(&tables)
 }
 
-fn font_with_explicit_maps(tag: &'static [u8; 4]) -> Vec<u8> {
+fn font_with_explicit_maps(tag: &'static [u8; 4], side_identity: bool) -> Vec<u8> {
     let mut variation = Vec::new();
     let header = if tag == b"VVAR" { 24u32 } else { 20u32 };
     let advance = [0, 1, 0, 3, 2, 0, 1];
-    let side = [0, 1, 0, 3, 1, 2, 0];
+    let side = if side_identity {
+        [0, 1, 0, 3, 0, 1, 2]
+    } else {
+        [0, 1, 0, 3, 1, 2, 0]
+    };
     variation.extend(0x0001_0000u32.to_be_bytes());
     variation.extend((if tag == b"VVAR" { 38u32 } else { 34u32 }).to_be_bytes());
     variation.extend(header.to_be_bytes());
@@ -67,7 +71,7 @@ fn font_with_explicit_maps(tag: &'static [u8; 4]) -> Vec<u8> {
 
 #[test]
 fn adr0022_hvar_explicit_advance_and_side_maps_follow_retained_glyphs() {
-    let data = font_with_explicit_maps(b"HVAR");
+    let data = font_with_explicit_maps(b"HVAR", false);
     let font = Font::new(&data, 0).unwrap();
     let input = Input::new().map_set(SetKind::Glyphs, |glyphs| {
         glyphs.add(2);
@@ -92,7 +96,7 @@ fn adr0022_hvar_explicit_advance_and_side_maps_follow_retained_glyphs() {
 
 #[test]
 fn adr0022_vvar_explicit_advance_and_side_maps_follow_retained_glyphs() {
-    let data = font_with_explicit_maps(b"VVAR");
+    let data = font_with_explicit_maps(b"VVAR", false);
     let font = Font::new(&data, 0).unwrap();
     let input = Input::new().map_set(SetKind::Glyphs, |glyphs| {
         glyphs.add(2);
@@ -109,6 +113,39 @@ fn adr0022_vvar_explicit_advance_and_side_maps_follow_retained_glyphs() {
         Some(1)
     );
     assert_eq!(data.delta(u16::try_from(side.map(1)).unwrap(), 0), Some(0));
+}
+
+#[test]
+fn adr0022_hvar_explicit_side_map_is_kept_when_identity() {
+    let data = font_with_explicit_maps(b"HVAR", true);
+    let font = Font::new(&data, 0).unwrap();
+    let input = Input::new().map_set(SetKind::Glyphs, |glyphs| {
+        glyphs.add(1);
+        glyphs.add(2);
+    });
+    let output = subset(&font, &input).unwrap();
+    let output = Font::new(&output, 0).unwrap();
+    let hvar = Hvar::new(output.table(Tag::new(b"HVAR")).unwrap()).unwrap();
+    let side = hvar.lsb_map().unwrap().unwrap();
+    assert_eq!((side.map(0), side.map(1), side.map(2)), (0, 1, 2));
+}
+
+#[test]
+fn adr0022_hvar_explicit_maps_with_retain_gids() {
+    let data = font_with_explicit_maps(b"HVAR", false);
+    let font = Font::new(&data, 0).unwrap();
+    let input = Input::new()
+        .map_set(SetKind::Glyphs, |glyphs| {
+            glyphs.add(2);
+        })
+        .with_flags(Flags::RETAIN_GIDS);
+    let output = subset(&font, &input).unwrap();
+    let output = Font::new(&output, 0).unwrap();
+    let hvar = Hvar::new(output.table(Tag::new(b"HVAR")).unwrap()).unwrap();
+    let advance = hvar.advance_map().unwrap().unwrap();
+    let side = hvar.lsb_map().unwrap().unwrap();
+    assert_eq!((advance.map(0), advance.map(1), advance.map(2)), (2, 0, 1));
+    assert_eq!((side.map(0), side.map(1), side.map(2)), (1, 0, 0));
 }
 
 #[test]
