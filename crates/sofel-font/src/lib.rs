@@ -52,6 +52,8 @@ pub mod baseline;
 mod cff;
 mod ft;
 mod glyf_data;
+mod hb_glyf;
+pub use hb_glyf::GlyphScratch;
 mod hb_cff;
 mod layout;
 mod metrics;
