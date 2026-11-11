@@ -163,6 +163,14 @@
  *                                       FT_Get_PS_Font_Extra is not public)
  *   end
  *
+ * Usage: ft-dump --cff2-private [--named-instance=N | --variations=TAG=value,...] FILE
+ *
+ * For each CFF2 face and Font DICT, prints the location-evaluated Private
+ * DICT scalar fields as `private`, followed by its six array fields as
+ * `private_array`. The reference accesses the CFF driver's internal load
+ * service from the pinned FreeType source; no public CFF2 Private DICT
+ * query exists. Non-CFF2 faces have no `private` lines.
+ *
  * --outline and --raster open each face with the random seed 0
  * (FT_PARAM_TAG_RANDOM_SEED), so that the CFF `random` operator starts
  * from the font's initialRandomSeed instead of an address (ADR 0021).
@@ -244,6 +252,8 @@
 #include FT_PARAMETER_TAGS_H
 #include FT_OPENTYPE_VALIDATE_H
 #include FT_COLOR_H
+#include <freetype/internal/cffotypes.h>
+#include <freetype/internal/services/svcfftl.h>
 
 static FT_UInt reference_named;
 static int reference_has_named;
@@ -1212,6 +1222,71 @@ static void dump_names_and_metrics(FT_Face face, int with_bearings)
   }
 }
 
+/* Test-only access to FreeType's CFF load service.  The public Type 1
+ * private-DICT query is absent for the CFF driver; this uses the same
+ * load_private_dict callback as cff_slot_load, once for each Font DICT. */
+static void dump_cff2_private(FT_Face face)
+{
+  FT_ULong table_len = 0;
+  CFF_Face cff_face;
+  CFF_Font cff;
+  const FT_Service_CFFLoadRec *service;
+  FT_Fixed *coords = NULL;
+  FT_UInt axes, count, fd;
+
+  if (FT_Load_Sfnt_Table(face, FT_MAKE_TAG('C','F','F','2'), 0, NULL, &table_len) != 0)
+    return;
+  cff_face = (CFF_Face)face;
+  cff = (CFF_Font)cff_face->extra.data;
+  if (!cff || !cff->cff2 || !cff->cffload)
+    return;
+  service = (const FT_Service_CFFLoadRec *)cff->cffload;
+  if (!service->load_private_dict)
+    return;
+  axes = cff->vstore.axisCount;
+  if (axes) {
+    coords = (FT_Fixed *)calloc(axes, sizeof(*coords));
+    if (!coords || FT_Get_Var_Blend_Coordinates(face, axes, coords) != 0) {
+      free(coords);
+      printf("private_error coords\n");
+      return;
+    }
+  }
+  count = cff->num_subfonts ? cff->num_subfonts : 1;
+  for (fd = 0; fd < count; fd++) {
+    CFF_SubFont sub = cff->num_subfonts ? cff->subfonts[fd] : &cff->top_font;
+    CFF_Private priv = &sub->private_dict;
+    FT_Error error = service->load_private_dict(cff, sub, axes, coords);
+    if (error) {
+      printf("private_error %u %d\n", (unsigned)fd, (int)error);
+      continue;
+    }
+    printf("private %u %u %ld %ld %ld %ld %ld %ld %ld %ld %ld %u %ld %d %d %lu\n",
+           (unsigned)fd, (unsigned)priv->vsindex,
+           (long)priv->standard_width, (long)priv->standard_height,
+           (long)priv->blue_scale, (long)priv->blue_shift,
+           (long)priv->blue_fuzz, (long)priv->expansion_factor,
+           (long)priv->initial_random_seed, (long)priv->default_width,
+           (long)priv->nominal_width, (unsigned)priv->force_bold,
+           (long)priv->force_bold_threshold, (int)priv->lenIV,
+           (int)priv->language_group, (unsigned long)priv->local_subrs_offset);
+#define DUMP_ARRAY(name, count, values) do {                                  \
+      FT_UInt j;                                                               \
+      printf("private_array %u %s %u", (unsigned)fd, name, (unsigned)(count)); \
+      for (j = 0; j < (FT_UInt)(count); j++) printf(" %ld", (long)(values)[j]); \
+      printf("\n");                                                         \
+    } while (0)
+    DUMP_ARRAY("blue_values", priv->num_blue_values, priv->blue_values);
+    DUMP_ARRAY("other_blues", priv->num_other_blues, priv->other_blues);
+    DUMP_ARRAY("family_blues", priv->num_family_blues, priv->family_blues);
+    DUMP_ARRAY("family_other_blues", priv->num_family_other_blues, priv->family_other_blues);
+    DUMP_ARRAY("stem_snap_h", priv->num_snap_widths, priv->snap_widths);
+    DUMP_ARRAY("stem_snap_v", priv->num_snap_heights, priv->snap_heights);
+#undef DUMP_ARRAY
+  }
+  free(coords);
+}
+
 /* ADR 0027 task 2: public FreeType variation queries and normalization. */
 static int dump_var_reference(int argc, char **argv)
 {
@@ -1464,6 +1539,8 @@ int main(int argc, char **argv)
     return faces(argv[2], dump_cid);
   if (argc == 3 && strcmp(argv[1], "--ps-info") == 0)
     return faces(argv[2], dump_ps_info);
+  if (argc == 3 && strcmp(argv[1], "--cff2-private") == 0)
+    return faces(argv[2], dump_cff2_private);
   if (argc == 3 && strcmp(argv[1], "--colr") == 0)
     return faces(argv[2], dump_colr);
   if (argc == 3 && strcmp(argv[1], "--sbit") == 0)
@@ -1476,7 +1553,7 @@ int main(int argc, char **argv)
     argc = 2;
   }
   if (argc != 2) {
-    fprintf(stderr, "usage: ft-dump FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --sampled-outline SIZE FILE PLAN | ft-dump --sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...] | ft-dump --raster PPEM [--color] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
+    fprintf(stderr, "usage: ft-dump FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --sampled-outline SIZE FILE PLAN | ft-dump --sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...] | ft-dump --raster PPEM [--color] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --cff2-private FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
     return 2;
   }
   if (FT_Init_FreeType(&library) != 0) {
