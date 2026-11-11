@@ -126,3 +126,23 @@ pub fn items(b: &mut Bench, testdata: &Path) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn i02_cached_and_recomputed_hvar_and_i04_default_mvar_match() {
+        let _ffi = crate::variation_bench_tests::lock_ffi();
+        let mut b = Bench {
+            once: true,
+            filter: Some("item delta".into()),
+            rows: vec![],
+            checks: vec![],
+        };
+        let data = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/testdata");
+        items(&mut b, &data);
+        assert_eq!(b.rows.len(), 11);
+        assert!(b.checks.iter().all(|check| check.ok));
+    }
+}

@@ -1273,18 +1273,21 @@ mod variation_bench_tests {
     }
 
     #[test]
-    fn i02_cached_and_recomputed_hvar_and_i04_default_mvar_match() {
+    fn adr0029_warm_location_checks_both_references() {
         let _ffi = lock_ffi();
-        let mut b = Bench {
+        let mut bench = Bench {
             once: true,
-            filter: Some("item delta".into()),
-            rows: vec![],
-            checks: vec![],
+            filter: Some("location with reference queries".into()),
+            rows: Vec::new(),
+            checks: Vec::new(),
         };
-        let data = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/testdata");
-        variation_deltas::items(&mut b, &data);
-        assert_eq!(b.rows.len(), 11);
-        assert!(b.checks.iter().all(|check| check.ok));
+        variation::items(
+            &mut bench,
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/testdata"),
+        );
+        assert_eq!(bench.rows.len(), 3);
+        assert_eq!(bench.checks.len(), 6);
+        assert!(bench.checks.iter().all(|check| check.ok));
     }
 
     #[test]

@@ -6,6 +6,15 @@ use std::os::raw::{c_int, c_long, c_uchar, c_uint, c_ulong, c_void};
 unsafe extern "C" {
     fn bft_set_design(face: *mut c_void, count: c_uint, coords: *mut c_long) -> c_int;
     fn bft_get_normalized(face: *mut c_void, count: c_uint, coords: *mut c_long) -> c_int;
+    fn hb_ot_metrics_get_position(font: *mut c_void, tag: c_uint, value: *mut c_int) -> c_int;
+    fn hb_ot_layout_get_baseline(
+        font: *mut c_void,
+        baseline: c_uint,
+        direction: c_uint,
+        script: c_uint,
+        language: c_uint,
+        value: *mut c_int,
+    ) -> c_int;
     fn bhb_set_weight(font: *mut c_void, weight: f32);
     fn bhb_normalized(font: *mut c_void, count: *mut c_uint) -> *const c_int;
     pub fn bft_open(data: *const c_uchar, len: c_long, index: c_long) -> *mut c_void;
@@ -280,6 +289,15 @@ impl HbFont {
     pub fn advance(&self, gid: u32) -> i64 {
         // SAFETY: a valid font.
         unsafe { i64::from(bhb_advance(self.0, gid)) }
+    }
+    pub fn query_variable_metrics(&self) {
+        let tag = |s: &[u8; 4]| u32::from_be_bytes(*s);
+        let mut value = 0;
+        // SAFETY: the font and the output pointer remain valid across both queries.
+        unsafe {
+            hb_ot_metrics_get_position(self.0, tag(b"xhgt"), &mut value);
+            hb_ot_layout_get_baseline(self.0, tag(b"romn"), 4, tag(b"latn"), 0, &mut value);
+        }
     }
     pub fn math_constant(&self, index: u32) -> i64 {
         // SAFETY: a valid font; the caller uses the 56 defined constants.
