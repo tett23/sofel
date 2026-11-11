@@ -189,7 +189,7 @@ fn adr0040_i1_i2_error_then_normal_outline() {
 }
 
 #[test]
-fn adr0027_variable_benchmark_outlines_match_every_coordinate() {
+fn adr0027_variable_geometry_matches_freetype_at_corpus_positions() {
     let root = paths::testdata().join("harfbuzz/test/subset/data/fonts");
     for name in [
         "RobotoFlex-Variable.ttf",
@@ -199,30 +199,62 @@ fn adr0027_variable_benchmark_outlines_match_every_coordinate() {
         let path = root.join(name);
         let bytes = std::fs::read(&path).unwrap();
         let font = Font::new(&bytes, 0).unwrap();
-        let weight = sofel_font::var::Variation::parse("wght=500").unwrap();
-        let location = sofel_font::var::Location::new(&font, None, &[weight]);
-        let outlines = sofel_outline::Outlines::new(font.instance(&location));
-        let mut scratch = Scratch::default();
-        for size in SIZES {
-            let scale = scale_for(&font, size);
-            let mut glyphs = 0;
-            let ran = ft_stream::reference(
-                Command::new(paths::ft_dump())
-                    .args(["--outline", size, "--variations=wght=500"])
-                    .arg(&path),
-                |face, glyph, expected| {
-                    assert_eq!(face, 0);
-                    let ours = sofel_glyph(&outlines, glyph, scale, &mut scratch);
-                    assert_eq!(
-                        ours, expected,
-                        "{name}#{face}:outline:{size}:{glyph}@wght=500"
-                    );
-                    glyphs += 1;
-                },
-            )
-            .unwrap();
-            assert!(ran);
-            assert_eq!(glyphs, font.num_glyphs(), "{name} at {size}");
+        let mut checked = [0u64; 2];
+        for pos in variation_locations::positions(&font) {
+            let location = pos.location(&font);
+            let outlines = sofel_outline::Outlines::new(font.instance(&location));
+            let mut scratch = Scratch::default();
+            let raster_sizes = if pos.id == "default"
+                || pos.id.starts_with("named:")
+                || matches!(pos.id.as_str(), "rand:0" | "rand:1")
+            {
+                &["12", "24", "48"][..]
+            } else {
+                &[]
+            };
+            let mut raster = sofel_raster::Rasterizer::new();
+            for (mode, size) in SIZES
+                .into_iter()
+                .map(|s| ("--outline", s))
+                .chain(raster_sizes.iter().map(|s| ("--raster", *s)))
+            {
+                let scale = scale_for(&font, size);
+                let mut glyphs = 0;
+                let ran = ft_stream::reference(
+                    Command::new(paths::ft_dump())
+                        .args([mode, size])
+                        .args(pos.args())
+                        .arg(&path),
+                    |face, glyph, expected| {
+                        assert_eq!(face, 0);
+                        let ours = if mode == "--raster" {
+                            sofel_conformance::raster::sofel_glyph(
+                                &outlines,
+                                glyph,
+                                size.parse().unwrap(),
+                                &mut scratch,
+                                &mut raster,
+                            )
+                        } else {
+                            sofel_glyph(&outlines, glyph, scale, &mut scratch)
+                        };
+                        assert_eq!(
+                            ours, expected,
+                            "{name}#{face}:{mode}:{size}:{glyph}@{}",
+                            pos.id
+                        );
+                        glyphs += 1;
+                    },
+                )
+                .unwrap();
+                checked[usize::from(mode == "--raster")] += u64::from(glyphs);
+                assert!(ran);
+                assert_eq!(glyphs, font.num_glyphs(), "{name} at {size}");
+            }
         }
+        eprintln!("{name}: {} outlines, {} rasters", checked[0], checked[1]);
     }
 }
+
+#[path = "support/variation_locations.rs"]
+mod variation_locations;

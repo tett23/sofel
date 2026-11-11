@@ -475,56 +475,16 @@ fn adr0027_colr_paints_at_axis_named_and_random_locations() {
 }
 
 fn check_color_locations(name: &str, path: &Path) {
-    use sofel_font::var::{Location, Variation};
     let bytes = std::fs::read(path).unwrap();
     let font = Font::new(&bytes, 0).unwrap();
-    let mut positions = vec![("default".to_string(), None, Vec::new())];
-    for i in 0..font.ft_mm_var().unwrap().named_styles().count() {
-        positions.push((format!("named:{i}"), Some(i as u16), Vec::new()));
-    }
-    for axis in font.var_axes() {
-        for (edge, value) in [("min", axis.min), ("max", axis.max)] {
-            positions.push((
-                format!("{}:{edge}", axis.tag),
-                None,
-                vec![Variation {
-                    tag: axis.tag,
-                    value,
-                }],
-            ));
-        }
-    }
-    let mut state = 1u32;
-    for sample in 0..8 {
-        let settings = font
-            .var_axes()
-            .map(|axis| {
-                state = state.wrapping_mul(1103515245).wrapping_add(12345);
-                let t = ((state >> 16) & 0x7fff) as f32 / 32767.0;
-                Variation {
-                    tag: axis.tag,
-                    value: axis.min + (axis.max - axis.min) * t,
-                }
-            })
-            .collect();
-        positions.push((format!("rand:{sample}"), None, settings));
-    }
+    let positions = variation_locations::positions(&font);
     let mut records = 0;
     let samples = positions.len();
     let mut scratch = Scratch::default();
-    for (id, named, variations) in positions {
-        let location = Location::new(&font, named, &variations);
-        let mut args = Vec::new();
-        if let Some(index) = named {
-            args.push(format!("--named-instance={index}"));
-        }
-        if !variations.is_empty() {
-            let values: Vec<_> = variations
-                .iter()
-                .map(|v| format!("{}={}", v.tag, v.value))
-                .collect();
-            args.push(format!("--variations={}", values.join(",")));
-        }
+    for pos in positions {
+        let id = &pos.id;
+        let location = pos.location(&font);
+        let args = pos.args();
         let ft = Command::new(paths::ft_dump())
             .arg("--colr")
             .args(&args)
@@ -581,3 +541,6 @@ fn canonical_paint(text: &str) -> String {
         })
         .collect()
 }
+
+#[path = "support/variation_locations.rs"]
+mod variation_locations;
