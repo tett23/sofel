@@ -6,6 +6,7 @@
 mod ffi;
 mod shape;
 mod subset;
+mod variation;
 
 use std::path::PathBuf;
 
@@ -1144,6 +1145,7 @@ fn main() {
         rows: Vec::new(),
         checks: Vec::new(),
     };
+    variation::items(&mut b, &a.testdata);
     unicode_properties(&mut b, &a.testdata);
     extra_items(&mut b, &a.testdata);
     cff_items(&mut b, &a.testdata);
@@ -1254,5 +1256,67 @@ fn main() {
     if let Err(e) = failed {
         eprintln!("{e}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod variation_bench_tests {
+    use super::*;
+
+    // The C shim holds one process-wide FreeType library without locking.
+    static FFI_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    pub(super) fn lock_ffi() -> std::sync::MutexGuard<'static, ()> {
+        FFI_LOCK.lock().unwrap()
+    }
+
+    #[test]
+    fn adr0029_warm_location_checks_both_references() {
+        let _ffi = lock_ffi();
+        let mut bench = Bench {
+            once: true,
+            filter: Some("location with reference queries".into()),
+            rows: Vec::new(),
+            checks: Vec::new(),
+        };
+        variation::items(
+            &mut bench,
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/testdata"),
+        );
+        assert_eq!(bench.rows.len(), 3);
+        assert_eq!(bench.checks.len(), 6);
+        assert!(bench.checks.iter().all(|check| check.ok));
+    }
+
+    #[test]
+    fn adr0027_weight_advances_match_for_every_glyph() {
+        let _ffi = lock_ffi();
+        let mut bench = Bench {
+            once: true,
+            filter: Some("advance wght=500".into()),
+            rows: Vec::new(),
+            checks: Vec::new(),
+        };
+        variation::items(
+            &mut bench,
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/testdata"),
+        );
+        assert_eq!(bench.rows.len(), 3);
+        assert!(bench.checks.iter().all(|c| c.ok));
+    }
+
+    #[test]
+    fn adr0027_weight_location_matches_both_references_on_three_fonts() {
+        let _ffi = lock_ffi();
+        let mut bench = Bench {
+            once: true,
+            filter: Some("location wght=500".into()),
+            rows: Vec::new(),
+            checks: Vec::new(),
+        };
+        let testdata = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/testdata");
+        variation::items(&mut bench, &testdata);
+        assert_eq!(bench.rows.len(), 3);
+        assert!(bench.checks.iter().all(|check| check.ok));
     }
 }
