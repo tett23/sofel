@@ -221,18 +221,6 @@ fn layout_unsupported(
             reason: "MATH with a GDEF item variation store (ADR 0022 stage 10)",
         });
     }
-    if let Some(d) = kept(b"BASE").filter(|_| !pinned) {
-        let v = sofel_font::read::be::u32_at(d, 0).unwrap_or(0);
-        if v >= 0x0001_0001
-            && sofel_font::read::be::u32_at(d, 8).unwrap_or(0) != 0
-            && !crate::tables::base::unused_variation_store(d)
-        {
-            return Err(SubsetError::Unsupported {
-                tag: Tag::new(b"BASE"),
-                reason: "the BASE item variation store (ADR 0022 stage 10)",
-            });
-        }
-    }
     Ok(())
 }
 

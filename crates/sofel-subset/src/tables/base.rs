@@ -1,6 +1,9 @@
 //! BASE subsetting (`hb-ot-layout-base-table.hh`), including removal of the
 //! variation store when every axis is pinned to its default.
 
+use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::vec::Vec;
+
 use sofel_font::Font;
 use sofel_font::read::ReadError;
 use sofel_font::read::Tag;
@@ -83,7 +86,103 @@ pub(crate) fn unused_variation_store(src: &[u8]) -> bool {
     inspect().unwrap_or(false)
 }
 
-fn device_copy(s: &mut Sub<'_, '_>, dev: D<'_>) -> bool {
+type RetainedVariations = (Vec<(u16, Vec<u32>)>, BTreeMap<u32, u32>);
+
+fn collect_coord(coord: Option<BaseCoord<'_>>, indices: &mut BTreeSet<u32>) -> Option<()> {
+    let Some(coord) = coord else { return Some(()) };
+    let Some(device) = coord.device().ok()? else {
+        return Some(());
+    };
+    match device.delta_format() {
+        1..=3 => Some(()),
+        0x8000 => {
+            let (outer, inner) = device.variation_index()?;
+            indices.insert((u32::from(outer) << 16) | u32::from(inner));
+            Some(())
+        }
+        _ => None,
+    }
+}
+
+fn collect_min_max(m: MinMax<'_>, p: &Plan, indices: &mut BTreeSet<u32>) -> Option<()> {
+    collect_coord(m.min_coord().ok()?, indices)?;
+    collect_coord(m.max_coord().ok()?, indices)?;
+    for i in 0..m.num_features() {
+        let (tag, _, _) = m.feature_record(i)?;
+        if p.layout.layout_features.contains(tag.to_u32()) {
+            collect_coord(m.feature_min_coord(i).ok()?, indices)?;
+            collect_coord(m.feature_max_coord(i).ok()?, indices)?;
+        }
+    }
+    Some(())
+}
+
+fn retained_variation_indices(src: &[u8], p: &Plan) -> Option<RetainedVariations> {
+    let base = Base::new(src).ok()?;
+    let store = base.variation_store().ok()??;
+    let mut selected = BTreeSet::new();
+    for vertical in [false, true] {
+        let Some(axis) = base.axis(vertical).ok()? else {
+            continue;
+        };
+        let Some(scripts) = axis.base_script_list().ok()? else {
+            continue;
+        };
+        for i in 0..scripts.len() {
+            let (tag, _) = scripts.record(i)?;
+            if !p.layout.layout_scripts.contains(tag.to_u32()) {
+                continue;
+            }
+            let Some(script) = scripts.script(i).ok()? else {
+                continue;
+            };
+            if let Some(values) = script.base_values().ok()? {
+                for j in 0..values.len() {
+                    collect_coord(values.coord(j).ok()?, &mut selected)?;
+                }
+            }
+            if let Some(m) = script.default_min_max().ok()? {
+                collect_min_max(m, p, &mut selected)?;
+            }
+            for j in 0..script.num_lang_sys() {
+                if let Some(m) = script.lang_sys_min_max(j).ok()? {
+                    collect_min_max(m, p, &mut selected)?;
+                }
+            }
+        }
+    }
+    let mut grouped: BTreeMap<u16, Vec<u32>> = BTreeMap::new();
+    for index in selected {
+        let outer = u16::try_from(index >> 16).ok()?;
+        let inner = u16::try_from(index & 0xffff).ok()?;
+        if inner >= store.item_data(outer)?.item_count {
+            return None;
+        }
+        grouped.entry(outer).or_default().push(u32::from(inner));
+    }
+    let old_items: Vec<_> = grouped.into_iter().collect();
+    let mut remap = BTreeMap::new();
+    for (new_outer, (old_outer, rows)) in old_items.iter().enumerate() {
+        for (new_inner, old_inner) in rows.iter().enumerate() {
+            let old = (u32::from(*old_outer) << 16) | *old_inner;
+            let new = (u32::try_from(new_outer).ok()? << 16) | u32::try_from(new_inner).ok()?;
+            remap.insert(old, new);
+        }
+    }
+    Some((old_items, remap))
+}
+
+fn device_copy(s: &mut Sub<'_, '_>, dev: D<'_>, remap: &BTreeMap<u32, u32>) -> bool {
+    if dev.u16(4) == 0x8000 {
+        let old = (u32::from(dev.u16(0)) << 16) | u32::from(dev.u16(2));
+        let Some(&new) = remap.get(&old) else {
+            return false;
+        };
+        s.s.u16(u16::try_from(new >> 16).unwrap_or(0));
+        s.s.u16(u16::try_from(new & 0xffff).unwrap_or(0));
+        s.s.u16(0x8000);
+        return true;
+    }
     if !matches!(dev.u16(4), 1..=3) {
         return false;
     }
@@ -102,7 +201,7 @@ fn device_copy(s: &mut Sub<'_, '_>, dev: D<'_>) -> bool {
 }
 
 /// `BaseCoord::subset`.
-fn base_coord(s: &mut Sub<'_, '_>, c: D<'_>) -> bool {
+fn base_coord(s: &mut Sub<'_, '_>, c: D<'_>, remap: &BTreeMap<u32, u32>) -> bool {
     match c.u16(0) {
         1 => {
             s.s.extend(c.slice(0, 4));
@@ -119,7 +218,7 @@ fn base_coord(s: &mut Sub<'_, '_>, c: D<'_>) -> bool {
             s.s.extend(c.slice(0, 4));
             let dev = c.off16(4);
             let at = s.s.u16(0);
-            s.serialize_copy(at, 2, dev, |s| device_copy(s, dev));
+            s.serialize_copy(at, 2, dev, |s| device_copy(s, dev, remap));
             true
         }
         _ => false,
@@ -127,14 +226,14 @@ fn base_coord(s: &mut Sub<'_, '_>, c: D<'_>) -> bool {
 }
 
 /// `MinMax::subset`.
-fn min_max(s: &mut Sub<'_, '_>, m: D<'_>) -> bool {
+fn min_max(s: &mut Sub<'_, '_>, m: D<'_>, remap: &BTreeMap<u32, u32>) -> bool {
     let min = m.off16(0);
     let max = m.off16(2);
     s.s.u16(0);
     s.s.u16(0);
     let count_at = s.s.u16(0);
-    let mut ret = s.serialize_subset_opt(0, 2, min, |s| base_coord(s, min));
-    ret |= s.serialize_subset_opt(2, 2, max, |s| base_coord(s, max));
+    let mut ret = s.serialize_subset_opt(0, 2, min, |s| base_coord(s, min, remap));
+    ret |= s.serialize_subset_opt(2, 2, max, |s| base_coord(s, max, remap));
     let mut len = 0u16;
     for i in 0..usize::from(m.u16(4)) {
         let rec = 6usize.saturating_add(i.saturating_mul(8));
@@ -148,8 +247,8 @@ fn min_max(s: &mut Sub<'_, '_>, m: D<'_>) -> bool {
         let max_at = s.s.u16(0);
         let fmin = m.off16(rec.saturating_add(4));
         let fmax = m.off16(rec.saturating_add(6));
-        let mut ok = s.serialize_subset_opt(min_at, 2, fmin, |s| base_coord(s, fmin));
-        ok |= s.serialize_subset_opt(max_at, 2, fmax, |s| base_coord(s, fmax));
+        let mut ok = s.serialize_subset_opt(min_at, 2, fmin, |s| base_coord(s, fmin, remap));
+        ok |= s.serialize_subset_opt(max_at, 2, fmax, |s| base_coord(s, fmax, remap));
         if ok {
             len = len.wrapping_add(1);
         } else {
@@ -167,7 +266,7 @@ fn min_max(s: &mut Sub<'_, '_>, m: D<'_>) -> bool {
 }
 
 /// `BaseValues::subset`.
-fn base_values(s: &mut Sub<'_, '_>, v: D<'_>) -> bool {
+fn base_values(s: &mut Sub<'_, '_>, v: D<'_>, remap: &BTreeMap<u32, u32>) -> bool {
     s.s.u16(v.u16(0));
     let count_at = s.s.u16(0);
     let mut ret = false;
@@ -175,20 +274,20 @@ fn base_values(s: &mut Sub<'_, '_>, v: D<'_>) -> bool {
         let c = v.off16(4usize.saturating_add(i.saturating_mul(2)));
         let at = s.s.u16(0);
         s.bump_u16(count_at, 1);
-        ret |= s.serialize_subset_opt(at, 2, c, |s| base_coord(s, c));
+        ret |= s.serialize_subset_opt(at, 2, c, |s| base_coord(s, c, remap));
     }
     ret
 }
 
 /// `BaseScript::subset`.
-fn base_script(s: &mut Sub<'_, '_>, b: D<'_>) -> bool {
+fn base_script(s: &mut Sub<'_, '_>, b: D<'_>, remap: &BTreeMap<u32, u32>) -> bool {
     s.s.u16(0);
     s.s.u16(0);
     let count_at = s.s.u16(0);
     let values = b.off16(0);
-    let mut ret = s.serialize_subset_opt(0, 2, values, |s| base_values(s, values));
+    let mut ret = s.serialize_subset_opt(0, 2, values, |s| base_values(s, values, remap));
     let dmm = b.off16(2);
-    ret |= s.serialize_subset_opt(2, 2, dmm, |s| min_max(s, dmm));
+    ret |= s.serialize_subset_opt(2, 2, dmm, |s| min_max(s, dmm, remap));
     let mut len = 0u16;
     for i in 0..usize::from(b.u16(4)) {
         let rec = 6usize.saturating_add(i.saturating_mul(6));
@@ -196,7 +295,7 @@ fn base_script(s: &mut Sub<'_, '_>, b: D<'_>) -> bool {
         s.s.u32(b.u32(rec));
         let at = s.s.u16(0);
         let mm = b.off16(rec.saturating_add(4));
-        if s.serialize_subset_opt(at, 2, mm, |s| min_max(s, mm)) {
+        if s.serialize_subset_opt(at, 2, mm, |s| min_max(s, mm, remap)) {
             ret = true;
             len = len.wrapping_add(1);
         } else {
@@ -211,7 +310,7 @@ fn base_script(s: &mut Sub<'_, '_>, b: D<'_>) -> bool {
 }
 
 /// `BaseScriptList::subset`.
-fn base_script_list(s: &mut Sub<'_, '_>, l: D<'_>) -> bool {
+fn base_script_list(s: &mut Sub<'_, '_>, l: D<'_>, remap: &BTreeMap<u32, u32>) -> bool {
     let count_at = s.s.u16(0);
     let mut len = 0u16;
     for i in 0..usize::from(l.u16(0)) {
@@ -224,7 +323,7 @@ fn base_script_list(s: &mut Sub<'_, '_>, l: D<'_>) -> bool {
         s.s.u32(tag);
         let at = s.s.u16(0);
         let bs = l.off16(rec.saturating_add(4));
-        if s.serialize_subset_opt(at, 2, bs, |s| base_script(s, bs)) {
+        if s.serialize_subset_opt(at, 2, bs, |s| base_script(s, bs, remap)) {
             len = len.wrapping_add(1);
         } else {
             s.s.revert(snap);
@@ -238,7 +337,7 @@ fn base_script_list(s: &mut Sub<'_, '_>, l: D<'_>) -> bool {
 }
 
 /// `Axis::subset`.
-fn axis(s: &mut Sub<'_, '_>, a: D<'_>) -> bool {
+fn axis(s: &mut Sub<'_, '_>, a: D<'_>, remap: &BTreeMap<u32, u32>) -> bool {
     s.s.u16(0);
     s.s.u16(0);
     let tags = a.off16(0);
@@ -248,7 +347,7 @@ fn axis(s: &mut Sub<'_, '_>, a: D<'_>) -> bool {
         true
     });
     let list = a.off16(2);
-    ret |= s.serialize_subset_opt(2, 2, list, |s| base_script_list(s, list));
+    ret |= s.serialize_subset_opt(2, 2, list, |s| base_script_list(s, list, remap));
     ret
 }
 
@@ -263,6 +362,28 @@ pub(crate) fn subset(
 ) -> Result<bool, SubsetError> {
     let d = D(src);
     let version = d.u32(0);
+    let mut remap = BTreeMap::new();
+    let mut store_bytes = None;
+    if version >= 0x0001_0001
+        && d.u32(8) != 0
+        && !p.var.all_axes_pinned()
+        && !unused_variation_store(src)
+    {
+        let Some((old_items, new_indices)) = retained_variation_indices(src, p) else {
+            return Err(SubsetError::Unsupported {
+                tag,
+                reason: "the BASE item variation store (ADR 0022 stage 10)",
+            });
+        };
+        remap = new_indices;
+        if !old_items.is_empty() {
+            let store = Base::new(src)
+                .ok()
+                .and_then(|base| base.variation_store().ok().flatten())
+                .ok_or(SubsetError::Malformed { tag })?;
+            store_bytes = Some(crate::tables::hvar::subset_store(store, &old_items, tag)?);
+        }
+    }
     let mut c = Sub::new(p, s, false);
     c.s.u32(version);
     c.s.u16(0);
@@ -270,20 +391,19 @@ pub(crate) fn subset(
     let mut ret = false;
     if version >= 0x0001_0001 {
         c.s.u32(0);
-        if (p.var.instancing() && p.var.all_axes_pinned()) || unused_variation_store(src) {
-            // BASE::subset_varstore keeps the null offset, even with no Axis.
-            ret = true;
-        } else if d.u32(8) != 0 {
-            return Err(SubsetError::Unsupported {
-                tag,
-                reason: "the BASE item variation store (ADR 0022 stage 10)",
+        // BASE::subset_varstore keeps the offset field even with no Axis.
+        ret = true;
+        if let Some(bytes) = store_bytes {
+            c.serialize_serialize(8, 4, |s| {
+                s.s.extend(&bytes);
+                true
             });
         }
     }
     let h = d.off16(4);
-    ret |= c.serialize_subset_opt(4, 2, h, |s| axis(s, h));
+    ret |= c.serialize_subset_opt(4, 2, h, |s| axis(s, h, &remap));
     let v = d.off16(6);
-    ret |= c.serialize_subset_opt(6, 2, v, |s| axis(s, v));
+    ret |= c.serialize_subset_opt(6, 2, v, |s| axis(s, v, &remap));
     if let Some(reason) = c.unsupported {
         return Err(SubsetError::Unsupported { tag, reason });
     }
