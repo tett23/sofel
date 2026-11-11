@@ -1,5 +1,8 @@
-//! Bounded reference parsing and result retention for ADR 0037.
-use sofel_conformance::expect::Problem;
+//! Bounded reference parsing and result retention for the raster and outline conformance tests.
+use sofel_conformance::{
+    expect::{self, Problem},
+    paths,
+};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
@@ -134,6 +137,27 @@ pub struct Results {
     pub seen_expected: BTreeSet<String>,
 }
 impl Results {
+    pub fn compare_glyph(
+        &mut self,
+        id: String,
+        ours: &[String],
+        reference: &[String],
+        expected: &BTreeSet<String>,
+    ) {
+        let passed = ours == reference;
+        let detail = if passed {
+            String::new()
+        } else {
+            let i = reference
+                .iter()
+                .zip(ours)
+                .position(|(a, b)| a != b)
+                .unwrap_or(0);
+            format!("FreeType {:?} / sofel {:?}", reference.get(i), ours.get(i))
+        };
+        self.record(id, passed, detail, expected);
+    }
+
     pub fn record(
         &mut self,
         id: String,
@@ -164,6 +188,25 @@ impl Results {
             self.details.entry(id).or_insert(detail);
         }
         self.seen_expected.extend(other.seen_expected);
+    }
+    pub fn assert_expected(&mut self, expected: &BTreeSet<String>, list: &str, report_file: &str) {
+        let problems = self.finish(expected);
+        if !problems.is_empty() {
+            // Every problem, for reviewing or updating the list.
+            let dir = paths::root().join("target/conformance");
+            let _ = std::fs::create_dir_all(&dir);
+            let all: String = expect::report(&problems, list);
+            let _ = std::fs::write(dir.join(report_file), all);
+            let mut msg = expect::report(&problems[..problems.len().min(200)], list);
+            for p in problems.iter().take(50) {
+                if let expect::Problem::Regressed(id) = p
+                    && let Some(detail) = self.details.get(id)
+                {
+                    msg.push_str(&format!("  {id}: {detail}\n"));
+                }
+            }
+            panic!("{msg}\n{} problems", problems.len());
+        }
     }
     pub fn finish(&mut self, expected: &BTreeSet<String>) -> Vec<Problem> {
         let mut problems = std::mem::take(&mut self.problems);

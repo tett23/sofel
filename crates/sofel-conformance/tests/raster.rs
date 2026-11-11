@@ -51,7 +51,7 @@ fn rasters_agree_with_freetype() {
     let list = std::fs::read_to_string(paths::conformance_file(LIST)).unwrap_or_default();
     let mut expected = expect::parse(&list);
     expected.retain(|id| id.contains(":raster:"));
-    let mut results = raster_stream::Results::default();
+    let mut results = ft_stream::Results::default();
     let mut scratch = Scratch::default();
     let mut raster = Rasterizer::new();
     let exe = paths::ft_dump();
@@ -60,10 +60,10 @@ fn rasters_agree_with_freetype() {
         let id = fonts::id(&path, &testdata);
         let bytes = std::fs::read(&path).unwrap();
         for size in PPEMS {
-            let mut pending = raster_stream::Results::default();
+            let mut pending = ft_stream::Results::default();
             let mut cached_face = None;
             let mut outlines = None;
-            let success = raster_stream::reference(
+            let success = ft_stream::reference(
                 Command::new(&exe).args(["--raster", size]).arg(&path),
                 |face, glyph, ft_lines| {
                     if cached_face != Some(face) {
@@ -83,21 +83,10 @@ fn rasters_agree_with_freetype() {
                         &mut scratch,
                         &mut raster,
                     );
-                    let ok = ours == ft_lines;
-                    let detail = if ok {
-                        String::new()
-                    } else {
-                        let i = ft_lines
-                            .iter()
-                            .zip(&ours)
-                            .position(|(a, b)| a != b)
-                            .unwrap_or(0);
-                        format!("FreeType {:?} / sofel {:?}", ft_lines.get(i), ours.get(i))
-                    };
-                    pending.record(
+                    pending.compare_glyph(
                         format!("{id}#{face}:raster:{size}:{glyph}"),
-                        ok,
-                        detail,
+                        &ours,
+                        ft_lines,
                         &expected,
                     );
                 },
@@ -109,23 +98,7 @@ fn rasters_agree_with_freetype() {
         }
     }
     eprintln!("{} raster items, {} failed", results.count, results.failed);
-    let problems = results.finish(&expected);
-    if !problems.is_empty() {
-        // Every problem, for reviewing or updating the list.
-        let dir = paths::root().join("target/conformance");
-        let _ = std::fs::create_dir_all(&dir);
-        let all: String = expect::report(&problems, LIST);
-        let _ = std::fs::write(dir.join("raster.problems"), all);
-        let mut msg = expect::report(&problems[..problems.len().min(200)], LIST);
-        for p in problems.iter().take(50) {
-            if let expect::Problem::Regressed(id) = p
-                && let Some(detail) = results.details.get(id)
-            {
-                msg.push_str(&format!("  {id}: {detail}\n"));
-            }
-        }
-        panic!("{msg}\n{} problems", problems.len());
-    }
+    results.assert_expected(&expected, LIST, "raster.problems");
 }
 
 #[test]
@@ -159,8 +132,8 @@ fn ft_dump_renders_a_known_square() {
     assert_eq!(out, expected);
 }
 
-#[path = "support/raster_stream.rs"]
-mod raster_stream;
+#[path = "support/ft_stream.rs"]
+mod ft_stream;
 
 #[cfg(test)]
 mod stream_tests {
@@ -178,7 +151,7 @@ mod stream_tests {
             .collect();
         for capacity in [1, 2, 7, 8192] {
             let mut got = Vec::new();
-            let count = raster_stream::stream(
+            let count = ft_stream::stream(
                 BufReader::with_capacity(capacity, Cursor::new(SAMPLE)),
                 |f, g, lines| {
                     got.push((f, g, lines.to_vec()));
@@ -192,10 +165,7 @@ mod stream_tests {
 
     #[test]
     fn adr0037_i2_empty_missing_duplicate_and_truncated() {
-        assert_eq!(
-            raster_stream::stream(Cursor::new(""), |_, _, _| {}).unwrap(),
-            0
-        );
+        assert_eq!(ft_stream::stream(Cursor::new(""), |_, _, _| {}).unwrap(), 0);
         for bad in [
             "face 0\nnum_glyphs 1\nend\n",
             "face 0\nnum_glyphs 1\nglyph 0\nerror 2\n",
@@ -204,7 +174,7 @@ mod stream_tests {
             "face 0\nend\n",
         ] {
             assert!(
-                raster_stream::stream(Cursor::new(bad), |_, _, _| {}).is_err(),
+                ft_stream::stream(Cursor::new(bad), |_, _, _| {}).is_err(),
                 "{bad}"
             );
         }
@@ -218,7 +188,7 @@ mod stream_tests {
                 Err(std::io::Error::other("injected"))
             }
         }
-        assert!(raster_stream::stream(BufReader::new(Fails), |_, _, _| {}).is_err());
+        assert!(ft_stream::stream(BufReader::new(Fails), |_, _, _| {}).is_err());
         let consumed = std::rc::Rc::new(std::cell::Cell::new(0));
         struct Count<R>(R, std::rc::Rc<std::cell::Cell<usize>>);
         impl<R: Read> Read for Count<R> {
@@ -230,7 +200,7 @@ mod stream_tests {
         }
         let input = Count(Cursor::new(SAMPLE), consumed.clone());
         let mut visits = 0;
-        raster_stream::stream(BufReader::with_capacity(1, input), |_, _, _| {
+        ft_stream::stream(BufReader::with_capacity(1, input), |_, _, _| {
             visits += 1;
             assert!(consumed.get() < SAMPLE.len());
         })
@@ -241,16 +211,14 @@ mod stream_tests {
     #[test]
     fn adr0037_i2_i4_process_status_and_drain() {
         assert!(
-            raster_stream::reference(Command::new("sh").args(["-c", "exit 0"]), |_, _, _| {})
-                .is_err()
+            ft_stream::reference(Command::new("sh").args(["-c", "exit 0"]), |_, _, _| {}).is_err()
         );
         assert!(
-            !raster_stream::reference(Command::new("sh").args(["-c", "exit 1"]), |_, _, _| {})
-                .unwrap()
+            !ft_stream::reference(Command::new("sh").args(["-c", "exit 1"]), |_, _, _| {}).unwrap()
         );
-        let mut pending = raster_stream::Results::default();
+        let mut pending = ft_stream::Results::default();
         let expected = BTreeSet::new();
-        let success = raster_stream::reference(
+        let success = ft_stream::reference(
             Command::new("sh").args([
                 "-c",
                 "printf 'face 0\nnum_glyphs 1\nglyph 0\nerror 7\nend\n'; exit 1",
@@ -262,14 +230,14 @@ mod stream_tests {
         .unwrap();
         assert!(!success);
         assert_eq!(pending.count, 1);
-        let mut final_results = raster_stream::Results::default();
+        let mut final_results = ft_stream::Results::default();
         if success {
             final_results.merge(pending);
         }
         assert_eq!(final_results.count, 0);
         // More than a pipe's capacity after the malformed first line.
         assert!(
-            raster_stream::reference(
+            ft_stream::reference(
                 Command::new("sh").args([
                     "-c",
                     "printf 'bad\n'; dd if=/dev/zero bs=65536 count=4 2>/dev/null"
@@ -290,17 +258,17 @@ mod stream_tests {
             ("fixed", true),
         ];
         let old = expect::judge(cases, &expected);
-        let mut got = raster_stream::Results::default();
+        let mut got = ft_stream::Results::default();
         for (id, pass) in cases {
             got.record(id.into(), pass, "detail".into(), &expected);
         }
-        let mut discarded = raster_stream::Results::default();
+        let mut discarded = ft_stream::Results::default();
         discarded.record("discarded".into(), false, "detail".into(), &expected);
         drop(discarded);
         assert_eq!(got.count, 4);
         assert_eq!(got.failed, 2);
         assert_eq!(got.finish(&expected), old);
-        let mut success = raster_stream::Results::default();
+        let mut success = ft_stream::Results::default();
         for i in 0..1000 {
             success.record(i.to_string(), true, String::new(), &expected);
         }
