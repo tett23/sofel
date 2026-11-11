@@ -163,6 +163,7 @@ cargo test --release -p sofel-conformance
 引数を1にすると直列で実行する。
 計測用の HarfBuzz は、元の include の順序を保った最大4個の翻訳単位に分け、native と wasm のビルドを並行したままコンパイラのメモリ使用量を抑える（[ADR 0038](docs/adr/0038-partition-benchmark-harfbuzz-units.md)）。
 CI ではこの runner を使い、参照ツールと計測用の C ライブラリは入力とツールチェーンが一致する場合にキャッシュから復元する。
+カラーグリフの適合テストはHarfBuzzの塗りをグリフごとに読み、各本文を比較する（[ADR 0043](docs/adr/0043-stream-harfbuzz-paint-records.md)）。
 シェーピングの適合テストではフォントと文章の組ごとに一致行の数を集計し、不一致行の詳細をカテゴリ判定に使う（[ADR 0041](docs/adr/0041-compact-shape-comparison-results.md)）。
 テストと結果の照合は、キャッシュがある場合も実行する。
 CI の参照ツールのビルド、適合テストと計測用 C ビルドは、子プロセスを含む合計 RSS の最大観測値をログへ書く。
