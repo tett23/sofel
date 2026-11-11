@@ -200,6 +200,10 @@ fn call_sites(bytes: &[u8], globals: u32, locals: u32) -> Option<Vec<CallSite>> 
         } else if b == 12 {
             at += 1;
             bytes.get(at - 1)?;
+        } else if (b == 11 || b == 14) && at != bytes.len() {
+            // The interpreter stops at return/endchar; raw copying would
+            // otherwise preserve unreachable bytes that HarfBuzz drops.
+            return None;
         }
         immediate = None;
     }
