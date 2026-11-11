@@ -36,7 +36,6 @@ FreeType の丸めの順序、係数のキャッシュの同一性、空の座�
 - [ADR 0050](adr/0050-preserve-opentype-script-values.md)：OpenType タグからスクリプトを求める二つの API で、HarfBuzz が返す4バイトを保持する。
 - [ADR 0051](adr/0051-shaping-buffer-item-size.md)：作業バッファの要素は現在の28バイトを認め、仕様書のサイズを訂正する。将来の縮小案は同じ入力で計測して判断する。
 - [ADR 0052](adr/0052-c-shaping-ppem.md)：C API で横と縦の ppem を指定できるスケール構築子を追加する。既存の呼び出しでは両軸とも0を使う。
-- [ADR 0053](adr/0053-preserve-buffer-settings-after-glyph-deserialization.md)：C API でグリフ列を読み込んだ後も、バッファをクリアして再利用するときは通常のクリアと同じ設定を引き継ぐ。
 - [ADR 0054](adr/0054-wide-metrics-header-count.md)：大文字の HHEA と VHEA のメトリクス件数を32ビットで読む。件数の欄が3バイトで途切れた場合はデータ不足とする。
 - [ADR 0055](adr/0055-rewrite-cli-color-rendering.md)：CLI の COLRv0 描画制御を独自実装に書き直し、sofel-cli の MIT 表記を維持する。画素の合成には sofel-raster の既存実装を使う。
 - [ADR 0056](adr/0056-cff2-fdselect-format4-warning.md)：CFF2 の FDSelect 形式4は互換性の警告とし、ほかにエラーがなければ検証を成功とする。辞書の割り当てを保って形式0か3で再生成できるフォントは、生成側でその形式を使う。
