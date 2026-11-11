@@ -6,11 +6,20 @@ use super::{
 };
 use crate::{ReadError, be, gpos, gsub};
 
-fn coverage(data: &[u8]) -> bool {
-    matches!(
-        Coverage::new(data),
-        Ok(_) | Err(ReadError::UnknownFormat(_))
-    )
+fn coverage(data: &[u8], budget: &mut Budget) -> bool {
+    match Coverage::new(data) {
+        Ok(c) => budget.take(c.records.len()),
+        Err(ReadError::UnknownFormat(_)) => true,
+        Err(_) => false,
+    }
+}
+
+pub(super) fn class_bytes(data: &[u8], budget: &mut Budget) -> bool {
+    match super::super::ClassDef::new(data) {
+        Ok(c) => budget.take(c.records.len()),
+        Err(ReadError::UnknownFormat(_)) => true,
+        Err(_) => false,
+    }
 }
 
 fn known(ty: u16, positioning: bool) -> bool {
@@ -37,7 +46,7 @@ fn subtable(data: &[u8], ty: u16, positioning: bool, extension: u16, budget: &mu
     let parsed = if positioning {
         gpos::parse(ty, data).map(|view| children::pos(view, data, fmt, budget))
     } else {
-        gsub::parse(ty, data).map(|view| children::subst(view, budget))
+        gsub::parse(ty, data).map(|view| children::subst(view, fmt, budget))
     };
     match parsed {
         Err(ReadError::UnknownFormat(_)) => return true,
@@ -55,20 +64,16 @@ fn subtable(data: &[u8], ty: u16, positioning: bool, extension: u16, budget: &mu
         _ => fmt == 2,
     };
     let width: usize = if wide { 4 } else { 2 };
-    let reference = |field: usize, check: fn(&[u8]) -> bool| {
-        uint(data, field, width).is_some_and(|off| target(data, off, check))
+    let mut reference = |field: usize, check: fn(&[u8], &mut Budget) -> bool| {
+        uint(data, field, width).is_some_and(|off| target(data, off, |d| check(d, budget)))
     };
     if !reference(2, coverage) {
         return false;
     }
     if matches!(fmt, 2 | 5) && (ty == context.0 || ty == context.1) {
         let count = if ty == context.0 { 1 } else { 3 };
-        return (1usize..=count).all(|i| {
-            reference(
-                2usize.saturating_add(i.saturating_mul(width)),
-                super::classes,
-            )
-        });
+        return (1usize..=count)
+            .all(|i| reference(2usize.saturating_add(i.saturating_mul(width)), class_bytes));
     }
     if positioning && matches!(ty, 4..=6) {
         return reference(2usize.saturating_add(width), coverage) && marks(data, ty, wide, budget);
@@ -83,7 +88,8 @@ fn lookup(value: Lookup<'_>, positioning: bool, visited: &mut usize, budget: &mu
         gsub::EXTENSION
     };
     *visited = visited.saturating_add(value.num_subtables());
-    *visited < 0x4000
+    budget.take(value.offsets.len().saturating_mul(2))
+        && *visited < 0x4000
         && value.extension_types_agree(extension)
         && (0..value.num_subtables()).all(|i| {
             !known(value.lookup_type(), positioning)
@@ -94,13 +100,18 @@ fn lookup(value: Lookup<'_>, positioning: bool, visited: &mut usize, budget: &mu
         })
 }
 
-pub(super) fn inspect(list: LookupList<'_>, positioning: bool, budget: &mut Budget) -> bool {
-    let mut visited = 0;
-    (0..list.len()).all(|i| match list.lookup(i) {
-        Ok(Some(value)) => lookup(value, positioning, &mut visited, budget),
-        Ok(None) => true,
-        Err(_) => false,
-    })
+pub(super) fn inspect(
+    list: LookupList<'_>,
+    positioning: bool,
+    budget: &mut Budget,
+    visited: &mut usize,
+) -> bool {
+    budget.take(list.offsets.len())
+        && (0..list.len()).all(|i| match list.lookup(i) {
+            Ok(Some(value)) => lookup(value, positioning, visited, budget),
+            Ok(None) => true,
+            Err(_) => false,
+        })
 }
 
 fn marks(data: &[u8], ty: u16, wide: bool, budget: &mut Budget) -> bool {
@@ -124,23 +135,31 @@ fn marks(data: &[u8], ty: u16, wide: bool, budget: &mut Budget) -> bool {
             budget.take(rows.len())
                 && rows
                     .chunks_exact(stride)
-                    .all(|r| uint(r, 2, w).is_some_and(|off| target(m, off, anchor)))
+                    .all(|r| uint(r, 2, w).is_some_and(|off| target(m, off, |d| anchor(d, budget))))
         })
     }) && uint(data, second_at, cw).is_some_and(|off| {
         target(data, off, |t| match ty {
             gpos::MARK_LIG => gpos::LigatureArray::new(t, count, w).is_ok(),
-            gpos::MARK_BASE => gpos::AnchorMatrix::new(t, count, w, w).is_ok(),
-            _ => gpos::AnchorMatrix::new(t, count, 2, w).is_ok(),
+            _ => gpos::AnchorMatrix::new(t, count, if ty == gpos::MARK_BASE { w } else { 2 }, w)
+                .is_ok_and(|m| {
+                    budget.take(
+                        m.rows()
+                            .saturating_mul(usize::from(count))
+                            .saturating_mul(w),
+                    )
+                }),
         })
     })
 }
 
-fn anchor(data: &[u8]) -> bool {
+fn anchor(data: &[u8], budget: &mut Budget) -> bool {
     match gpos::Anchor::new(data) {
         Ok(gpos::Anchor::Format3 { .. }) => [6, 8].into_iter().all(|at| {
             be::u16_at(data, at).is_some_and(|off| {
                 target(data, u32::from(off), |d| {
-                    crate::device::Device::new(d).is_ok()
+                    crate::device::Device::new(d).is_ok_and(|v| {
+                        !matches!(v.delta_format(), 1..=3) || budget.take(v.data().len())
+                    })
                 })
             })
         }),

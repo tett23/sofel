@@ -60,3 +60,17 @@ fn inv1_unknown_lookup_does_not_read_subtable_format() {
         assert_eq!(assess(Tag::new(tag), Some(&table)), Admission::Accepted);
     }
 }
+
+#[test]
+fn inv1_shared_lookup_consumes_budget_on_every_visit() {
+    for (count, expected) in [(69u16, Admission::Accepted), (70, Admission::Discarded)] {
+        let offset = count.saturating_mul(2).saturating_add(2);
+        let words = [1, 0, 0, 0, 10, count]
+            .into_iter()
+            .chain(core::iter::repeat_n(offset, usize::from(count)))
+            .chain([1, 0, 1, 8, 2, 0, 1000])
+            .chain(core::iter::repeat_n(0, 1000));
+        let data: Vec<_> = words.flat_map(u16::to_be_bytes).collect();
+        assert_eq!(assess(Tag::new(b"GSUB"), Some(&data)), expected);
+    }
+}

@@ -95,7 +95,10 @@ pub(super) fn feature(tag: u32, data: &[u8], budget: &mut Budget) -> bool {
                     || ((start..=end).contains(&design) && (256..=32767).contains(&name)))
         }
         [b's', b's', _, _] => params.len() >= 4,
-        [b'c', b'v', _, _] => array_fits(params, 12, 3),
+        [b'c', b'v', _, _] => {
+            array_fits(params, 12, 3)
+                && budget.take(usize::from(u16_at(params, 12).unwrap_or(0)).saturating_mul(3))
+        }
         _ => true,
     }
 }
