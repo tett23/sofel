@@ -5,6 +5,7 @@
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
+use sofel_font::read::feature_variations::FeatureVariations;
 
 use super::closure::{closure_lookups, substitute_closure};
 use super::data::{D, bsearch, n32};
@@ -151,18 +152,23 @@ fn feature_lookups(f: D<'_>) -> impl Iterator<Item = u32> + '_ {
 
 /// The substitution records of FeatureVariations version 1.x:
 /// `(feature index, substitute feature)`, per record.
-fn substitutions(fv: D<'_>) -> Vec<Vec<(u32, D<'_>)>> {
-    if fv.is_null() || fv.u16(0) != 1 {
+fn substitutions(fv: Option<FeatureVariations<'_>>) -> Vec<Vec<(u32, D<'_>)>> {
+    let Some(fv) = fv else {
         return Vec::new();
-    }
-    let n = fv.u32(4) as usize;
-    (0..n)
+    };
+    (0..fv.len())
         .map(|i| {
-            let subs = fv.off32(8usize.saturating_add(i.saturating_mul(8)).saturating_add(4));
-            (0..usize::from(subs.u16(4)))
-                .map(|j| {
-                    let rec = 6usize.saturating_add(j.saturating_mul(6));
-                    (u32::from(subs.u16(rec)), subs.off32(rec.saturating_add(2)))
+            let subs = fv.record(i).and_then(|r| r.substitutions().ok().flatten());
+            let Some(subs) = subs else {
+                return Vec::new();
+            };
+            (0..subs.len())
+                .filter_map(|j| {
+                    let record = subs.record(j)?;
+                    Some((
+                        u32::from(record.feature_index()),
+                        D(record.feature().ok().flatten().unwrap_or(&[])),
+                    ))
                 })
                 .collect()
         })
@@ -174,34 +180,35 @@ fn substitutions(fv: D<'_>) -> Vec<Vec<(u32, D<'_>)>> {
 /// `all_axes_pinned`): the first record whose conditions all hold at the
 /// normalized location 0. Only conditions of format 1 (axis ranges) are
 /// evaluated by this version.
-fn applied_record(fv: D<'_>, axis_count: usize) -> Result<Option<usize>, &'static str> {
-    if fv.is_null() || fv.u16(0) != 1 {
+fn applied_record(
+    fv: Option<FeatureVariations<'_>>,
+    axis_count: usize,
+) -> Result<Option<usize>, &'static str> {
+    let Some(fv) = fv else {
         return Ok(None);
-    }
-    if fv.u16(2) != 0 {
+    };
+    if fv.version() != 0x0001_0000 {
         return Err("pinning the axes of FeatureVariations 1.1 (deferred by ADR 0022)");
     }
-    let n = fv.u32(4) as usize;
-    for i in 0..n {
-        let conditions = fv.off32(8usize.saturating_add(i.saturating_mul(8)));
+    for i in 0..fv.len() {
+        let conditions = fv.record(i).and_then(|r| r.conditions().ok().flatten());
         let mut applies = true;
-        for j in 0..usize::from(conditions.u16(0)) {
-            let c = conditions.off32(2usize.saturating_add(j.saturating_mul(4)));
-            if c.u16(0) != 1 {
-                return Err(
-                    "pinning FeatureVariations conditions other than format 1 (deferred by ADR 0022)",
-                );
-            }
-            let axis = usize::from(c.u16(2));
-            let min = c.u16(4).cast_signed();
-            let max = c.u16(6).cast_signed();
-            if axis >= axis_count || min > 0 || max < 0 {
-                applies = false;
-                break;
+        if let Some(conditions) = conditions {
+            for j in 0..conditions.len() {
+                let condition = conditions.condition(j).ok().flatten();
+                let Some((axis, min, max)) = condition.and_then(|c| c.axis_range()) else {
+                    return Err(
+                        "pinning FeatureVariations conditions other than format 1 (deferred by ADR 0022)",
+                    );
+                };
+                if usize::from(axis) >= axis_count || min > 0 || max < 0 {
+                    applies = false;
+                    break;
+                }
             }
         }
         if applies {
-            return Ok(Some(i));
+            return Ok(usize::try_from(i).ok());
         }
     }
     Ok(None)
@@ -214,15 +221,24 @@ fn pinned_substitutes(
     features: &BitSet,
     axis_count: usize,
 ) -> Result<BTreeMap<u32, usize>, &'static str> {
-    let fv = t.feature_variations();
+    let fv = t.feature_variations_view();
     let mut out = BTreeMap::new();
     if let Some(i) = applied_record(fv, axis_count)? {
-        let subs = fv.off32(8usize.saturating_add(i.saturating_mul(8)).saturating_add(4));
-        for j in 0..usize::from(subs.u16(4)) {
-            let rec = 6usize.saturating_add(j.saturating_mul(6));
-            let fi = u32::from(subs.u16(rec));
-            if features.has(fi) {
-                out.insert(fi, t.delta(subs.off32(rec.saturating_add(2))));
+        let subs = fv
+            .and_then(|f| f.record(u32::try_from(i).ok()?))
+            .and_then(|r| r.substitutions().ok().flatten());
+        if let Some(subs) = subs {
+            for j in 0..subs.len() {
+                let Some(record) = subs.record(j) else {
+                    continue;
+                };
+                let fi = u32::from(record.feature_index());
+                if features.has(fi) {
+                    out.insert(
+                        fi,
+                        t.delta(D(record.feature().ok().flatten().unwrap_or(&[]))),
+                    );
+                }
             }
         }
     }
@@ -303,7 +319,7 @@ pub(crate) fn closure_glyphs_lookups_features(
     let subs = if pinned.is_some() {
         Vec::new()
     } else {
-        substitutions(t.feature_variations())
+        substitutions(t.feature_variations_view())
     };
     for record in &subs {
         for &(fi, f) in record {
@@ -577,7 +593,7 @@ pub(crate) fn collect_name_ids(
     if pinned {
         return;
     }
-    for record in substitutions(t.feature_variations()) {
+    for record in substitutions(t.feature_variations_view()) {
         for (fi, f) in record {
             if features.contains_key(&fi) {
                 add(f, t.feature_tag(fi as usize), names);

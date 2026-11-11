@@ -783,7 +783,7 @@ pub const VERSION_1_1: u32 = 0x0001_0001;
 pub const VERSION_1_2: u32 = 0x0001_0002;
 
 /// A view over the `GSUB` or `GPOS` header, versions 1.0, 1.1 (the
-/// FeatureVariations offset is kept but not read) and 1.2 (HarfBuzz's
+/// FeatureVariations offset is available as a checked view) and 1.2 (HarfBuzz's
 /// `scriptList2`, `featureList2` and `lookupList2`, used when not null).
 #[derive(Clone, Copy, Debug)]
 pub struct LayoutTable<'a> {
@@ -860,14 +860,28 @@ impl<'a> LayoutTable<'a> {
             LookupList::new(d, wide)
         })
     }
-    /// `featureVariationsOffset` (version 1.1 on); `None` before. The
-    /// table is not read (ADR 0020).
+    /// `featureVariationsOffset` (version 1.1 on); `None` before.
     pub fn feature_variations_offset(&self) -> Option<u32> {
         if self.version >= VERSION_1_1 {
             be::u32_at(self.data, 10)
         } else {
             None
         }
+    }
+
+    /// The checked FeatureVariations view, absent before version 1.1 or
+    /// when the offset is zero.
+    pub fn feature_variations(
+        &self,
+    ) -> Result<Option<crate::feature_variations::FeatureVariations<'a>>, ReadError> {
+        let Some(offset) = self.feature_variations_offset() else {
+            return Ok(None);
+        };
+        if offset == 0 {
+            return Ok(None);
+        }
+        let data = be::tail_at(self.data, be::to_usize(offset)).ok_or(ReadError::OutOfBounds)?;
+        crate::feature_variations::FeatureVariations::new(data).map(Some)
     }
 }
 

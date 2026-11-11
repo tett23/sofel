@@ -1,6 +1,6 @@
 //! The baseline tags of HarfBuzz's `hb_ot_layout_baseline_tag_t`
-//! (ADR 0017), for [`Font::baseline`](crate::Font::baseline) and
-//! [`Font::baseline_with_fallback`](crate::Font::baseline_with_fallback).
+//! (ADR 0017), for [`Instance::baseline`](crate::var::Instance::baseline) and
+//! [`Instance::baseline_with_fallback`](crate::var::Instance::baseline_with_fallback).
 
 use sofel_read::Tag;
 

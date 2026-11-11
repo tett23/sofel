@@ -102,6 +102,7 @@ cbox 0 -3 300 101
 end
 ";
     assert_eq!(out, expected);
+    assert_stream_matches(&out);
 }
 
 #[test]
@@ -109,69 +110,77 @@ fn outlines_agree_with_freetype() {
     let testdata = paths::testdata();
     paths::require(&testdata.join("harfbuzz"), "the HarfBuzz test data")
         .unwrap_or_else(|e| panic!("{e}"));
-    let mut items: Vec<(String, bool, String)> = Vec::new();
+    let list = std::fs::read_to_string(paths::conformance_file(LIST)).unwrap_or_default();
+    let mut expected = expect::parse(&list);
+    expected.retain(|id| id.contains(":outline:"));
+    let mut results = ft_stream::Results::default();
     let mut scratch = Scratch::default();
+    let exe = paths::ft_dump();
+    paths::require(&exe, "ft-dump").unwrap_or_else(|e| panic!("{e}"));
     for path in fonts::harfbuzz_fonts(&testdata) {
         let id = fonts::id(&path, &testdata);
         let bytes = std::fs::read(&path).unwrap();
         for size in SIZES {
-            let Some(text) = ft_dump_outline(size, &path) else {
-                continue;
-            };
-            for (face, ft) in parse(&text).unwrap() {
-                if ft.error {
-                    continue;
-                }
-                let Ok(font) = Font::new(&bytes, face) else {
-                    continue;
-                };
-                if !has_glyf(&font) {
-                    continue;
-                }
-                let scale = scale_for(&font, size);
-                let outlines = sofel_outline::Outlines::new(&font);
-                for (glyph, ft_lines) in &ft.glyphs {
-                    let ours = sofel_glyph(&outlines, *glyph, scale, &mut scratch);
-                    let ok = &ours == ft_lines;
-                    let detail = if ok {
-                        String::new()
-                    } else {
-                        let i = ft_lines
-                            .iter()
-                            .zip(&ours)
-                            .position(|(a, b)| a != b)
-                            .unwrap_or(0);
-                        format!("FreeType {:?} / sofel {:?}", ft_lines.get(i), ours.get(i))
+            let mut pending = ft_stream::Results::default();
+            let mut cached_face = None;
+            let mut outlines_and_scale = None;
+            let success = ft_stream::reference(
+                Command::new(&exe).args(["--outline", size]).arg(&path),
+                |face, glyph, ft_lines| {
+                    if cached_face != Some(face) {
+                        cached_face = Some(face);
+                        outlines_and_scale =
+                            Font::new(&bytes, face).ok().filter(has_glyf).map(|font| {
+                                (sofel_outline::Outlines::new(&font), scale_for(&font, size))
+                            });
+                    }
+                    let Some((outlines, scale)) = outlines_and_scale.as_ref() else {
+                        return;
                     };
-                    items.push((format!("{id}#{face}:outline:{size}:{glyph}"), ok, detail));
-                }
+                    let ours = sofel_glyph(outlines, glyph, *scale, &mut scratch);
+                    pending.compare_glyph(
+                        format!("{id}#{face}:outline:{size}:{glyph}"),
+                        &ours,
+                        ft_lines,
+                        &expected,
+                    );
+                },
+            )
+            .unwrap_or_else(|e| panic!("{id} {size}px: {e}"));
+            if success {
+                results.merge(pending);
             }
         }
     }
-    let failed = items.iter().filter(|i| !i.1).count();
-    eprintln!("{} outline items, {failed} failed", items.len());
+    eprintln!("{} outline items, {} failed", results.count, results.failed);
+    results.assert_expected(&expected, LIST, "outline.problems");
+}
 
-    let list = std::fs::read_to_string(paths::conformance_file(LIST)).unwrap_or_default();
-    let mut expected = expect::parse(&list);
-    expected.retain(|id| id.contains(":outline:"));
-    let problems = expect::judge(
-        items.iter().map(|(id, ok, _)| (id.as_str(), *ok)),
-        &expected,
+#[path = "support/ft_stream.rs"]
+mod ft_stream;
+
+fn assert_stream_matches(input: &str) {
+    let old: Vec<_> = parse(input)
+        .unwrap()
+        .into_iter()
+        .flat_map(|(face, value)| {
+            value
+                .glyphs
+                .into_iter()
+                .map(move |(glyph, lines)| (face, glyph, lines))
+        })
+        .collect();
+    let mut new = Vec::new();
+    ft_stream::stream(std::io::Cursor::new(input), |face, glyph, lines| {
+        new.push((face, glyph, lines.to_vec()));
+    })
+    .unwrap();
+    assert_eq!(new, old);
+}
+
+#[test]
+fn adr0040_i1_i2_error_then_normal_outline() {
+    assert_stream_matches(
+        "face 0\nnum_glyphs 2\nglyph 0\nerror 8\nglyph 1\nM 1 2\nZ\noverlap 0\ncbox 1 2 1 2\nend\n",
     );
-    if !problems.is_empty() {
-        // Every problem, for reviewing or updating the list.
-        let dir = paths::root().join("target/conformance");
-        let _ = std::fs::create_dir_all(&dir);
-        let all: String = expect::report(&problems, LIST);
-        let _ = std::fs::write(dir.join("outline.problems"), all);
-        let mut msg = expect::report(&problems[..problems.len().min(200)], LIST);
-        for p in problems.iter().take(50) {
-            if let expect::Problem::Regressed(id) = p
-                && let Some(i) = items.iter().find(|i| &i.0 == id)
-            {
-                msg.push_str(&format!("  {id}: {}\n", i.2));
-            }
-        }
-        panic!("{msg}\n{} problems", problems.len());
-    }
 }

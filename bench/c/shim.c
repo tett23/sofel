@@ -153,6 +153,11 @@ int bhb_advance(void *font, unsigned gid)
   return hb_font_get_glyph_h_advance((hb_font_t *)font, gid);
 }
 
+int bhb_math_constant(void *font, unsigned index)
+{
+  return hb_ot_math_get_constant((hb_font_t *)font, (hb_ot_math_constant_t)index);
+}
+
 int bhb_v_advance(void *font, unsigned gid)
 {
   return hb_font_get_glyph_v_advance((hb_font_t *)font, gid);

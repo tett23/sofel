@@ -86,6 +86,15 @@
  *   cbox <xMin> <yMin> <xMax> <yMax>    (FT_Outline_Get_CBox)
  *   end
  *
+ * Usage: ft-dump --sampled-outline SIZE FILE PLAN
+ *
+ * PLAN contains sorted "face glyph" decimal pairs, at most 128 glyphs
+ * per face. The output has the --outline form for these glyphs only,
+ * with an additional "advance <value>" line after each glyph line
+ * (FT_Get_Advance with FT_LOAD_NO_SCALE).
+ * Add `--sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...]` to
+ * apply design coordinates before loading the sampled glyphs (ADR 0031).
+ *
  * Usage: ft-dump --raster PPEM FILE
  *
  * Renders every glyph (ADR 0012): FT_Set_Pixel_Sizes(PPEM), FT_Load_Glyph
@@ -220,6 +229,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -227,12 +237,37 @@
 #include FT_ADVANCES_H
 #include FT_TRIGONOMETRY_H
 #include FT_OUTLINE_H
+#include FT_MULTIPLE_MASTERS_H
 #include FT_SFNT_NAMES_H
 #include FT_CID_H
 #include FT_TYPE1_TABLES_H
 #include FT_PARAMETER_TAGS_H
 #include FT_OPENTYPE_VALIDATE_H
 #include FT_COLOR_H
+
+static FT_UInt reference_named;
+static int reference_has_named;
+static const char *reference_variations;
+
+static int reference_options(int *argc, char **argv)
+{
+  int read, write = 2;
+  for (read = 2; read < *argc; read++) {
+    const char *arg = argv[read];
+    if (strncmp(arg, "--named-instance=", 17) == 0) {
+      char *end;
+      unsigned long value = strtoul(arg + 17, &end, 10);
+      if (!arg[17] || *end || value >= 0xFFFF) return 0;
+      reference_named = (FT_UInt)value + 1;
+      reference_has_named = 1;
+    } else if (strncmp(arg, "--variations=", 13) == 0) {
+      reference_variations = arg + 13;
+      if (!*reference_variations) return 0;
+    } else argv[write++] = argv[read];
+  }
+  *argc = write;
+  return 1;
+}
 
 static int contour_open;
 
@@ -279,10 +314,12 @@ static const FT_Outline_Funcs outline_funcs = {
   move_to, line_to, conic_to, cubic_to, 0, 0
 };
 
-static void dump_outlines(FT_Face face, int unscaled, int ppem)
+static void dump_outlines(FT_Face face, int unscaled, int ppem,
+                          const FT_ULong *selected, size_t selected_count)
 {
   FT_Int32 flags = FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP;
   FT_Long g;
+  size_t index;
 
   if (unscaled)
     flags |= FT_LOAD_NO_SCALE;
@@ -290,11 +327,25 @@ static void dump_outlines(FT_Face face, int unscaled, int ppem)
     printf("error size\n");
     return;
   }
-  for (g = 0; g < face->num_glyphs; g++) {
+  for (index = 0; index < (selected ? selected_count : (size_t)face->num_glyphs); index++) {
     FT_Error error;
     FT_BBox cbox;
 
+    g = selected ? (FT_Long)selected[index] : (FT_Long)index;
+    if (g < 0 || g >= face->num_glyphs) {
+      printf("glyph %ld\nerror range\n", (long)g);
+      continue;
+    }
+
     printf("glyph %ld\n", (long)g);
+    if (selected) {
+      FT_Fixed advance;
+      FT_Error advance_error = FT_Get_Advance(face, (FT_UInt)g, FT_LOAD_NO_SCALE, &advance);
+      if (advance_error == 0)
+        printf("advance %ld\n", (long)advance);
+      else
+        printf("advance_error %d\n", (int)advance_error);
+    }
     error = FT_Load_Glyph(face, (FT_UInt)g, flags);
     if (error == 0 && face->glyph->format != FT_GLYPH_FORMAT_OUTLINE)
       error = -1;
@@ -679,6 +730,8 @@ static void dump_sbit(FT_Face face)
   }
 }
 
+static int set_reference_location(FT_Library library, FT_Face face, const char *variations);
+
 static int faces(const char *path, void (*dump)(FT_Face))
 {
   FT_Library library;
@@ -702,6 +755,11 @@ static int faces(const char *path, void (*dump)(FT_Face))
       printf("error %d\nend\n", (int)error);
       continue;
     }
+    if (set_reference_location(library, face, reference_variations) != 0) {
+      FT_Done_Face(face);
+      FT_Done_FreeType(library);
+      return 2;
+    }
     dump(face);
     printf("end\n");
     FT_Done_Face(face);
@@ -710,14 +768,75 @@ static int faces(const char *path, void (*dump)(FT_Face))
   return 0;
 }
 
-/* raster: 0 for --outline, 1 for --raster, 2 for --raster --color. */
-static int outlines(const char *size, const char *path, int raster)
+static int set_design_coordinates(FT_Library library, FT_Face face, const char *text)
+{
+  FT_MM_Var *mm = NULL;
+  FT_Fixed *coordinates;
+  char *copy, *token;
+  FT_UInt i;
+  FT_Error error;
+
+  if (!text || FT_Get_MM_Var(face, &mm) != 0)
+    return text ? 2 : 0;
+  coordinates = (FT_Fixed *)malloc((size_t)mm->num_axis * sizeof(*coordinates));
+  copy = (char *)malloc(strlen(text) + 1);
+  if (!coordinates || !copy) {
+    free(coordinates); free(copy); FT_Done_MM_Var(library, mm); return 1;
+  }
+  strcpy(copy, text);
+  if (FT_Get_Var_Design_Coordinates(face, mm->num_axis, coordinates) != 0)
+    for (i = 0; i < mm->num_axis; i++)
+      coordinates[i] = mm->axis[i].def;
+  token = strtok(copy, ",");
+  if (!token) {
+    free(coordinates); free(copy); FT_Done_MM_Var(library, mm); return 2;
+  }
+  while (token) {
+    char *equal = strchr(token, '=');
+    char *end = NULL;
+    float value;
+    FT_ULong tag;
+    if (!equal || equal - token != 4) break;
+    tag = ((FT_ULong)(unsigned char)token[0] << 24) |
+          ((FT_ULong)(unsigned char)token[1] << 16) |
+          ((FT_ULong)(unsigned char)token[2] << 8) |
+          (FT_ULong)(unsigned char)token[3];
+    value = strtof(equal + 1, &end);
+    if (end == equal + 1 || *end || !isfinite(value) ||
+        value < -32768.0f || value > 32767.0f) break;
+    for (i = 0; i < mm->num_axis && mm->axis[i].tag != tag; i++) {}
+    if (i == mm->num_axis) break;
+    coordinates[i] = (FT_Fixed)(value * 65536.f);
+    token = strtok(NULL, ",");
+  }
+  error = token ? 2 : FT_Set_Var_Design_Coordinates(face, mm->num_axis, coordinates);
+  free(coordinates);
+  free(copy);
+  FT_Done_MM_Var(library, mm);
+  return error ? 2 : 0;
+}
+
+static int set_reference_location(FT_Library library, FT_Face face, const char *variations)
+{
+  if (reference_has_named && FT_Set_Named_Instance(face, reference_named) != 0)
+    return 2;
+  return set_design_coordinates(library, face, variations);
+}
+
+/* raster: 0 for --outline, 1 for --raster, 2 for --raster --color.
+ * plan: sorted "face glyph" pairs for --sampled-outline, or NULL. */
+static int outlines(const char *size, const char *path, int raster, const char *plan,
+                    const char *variations)
 {
   FT_Library library;
   FT_Face face;
   FT_Long num_faces, i;
   int unscaled = strcmp(size, "unscaled") == 0;
   int ppem = atoi(size);
+  FT_ULong *selected = NULL;
+  FT_Long *selected_faces = NULL;
+  size_t selected_count = 0, selected_capacity = 0, cursor = 0, face_samples = 0;
+  FILE *input = NULL;
 
   if ((raster && unscaled) || (!unscaled && ppem <= 0)) {
     fprintf(stderr, "ft-dump: bad size %s\n", size);
@@ -731,8 +850,79 @@ static int outlines(const char *size, const char *path, int raster)
   }
   num_faces = face->num_faces;
   FT_Done_Face(face);
+  if (plan) {
+    unsigned long face_number, glyph_number;
+    int parsed;
+    input = fopen(plan, "r");
+    if (!input) {
+      FT_Done_FreeType(library);
+      return 1;
+    }
+    while ((parsed = fscanf(input, "%lu %lu", &face_number, &glyph_number)) == 2) {
+      if (!selected_count || face_number != (unsigned long)selected_faces[selected_count - 1])
+        face_samples = 0;
+      face_samples++;
+      if (face_number >= (unsigned long)num_faces || selected_count >= 128 * (size_t)num_faces ||
+          face_samples > 128 ||
+          (selected_count && (face_number < (unsigned long)selected_faces[selected_count - 1] ||
+          (face_number == (unsigned long)selected_faces[selected_count - 1] && glyph_number <= selected[selected_count - 1])))) {
+        fprintf(stderr, "ft-dump: invalid sample plan\n");
+        fclose(input);
+        free(selected);
+        free(selected_faces);
+        FT_Done_FreeType(library);
+        return 2;
+      }
+      if (selected_count == selected_capacity) {
+        size_t next = selected_capacity ? selected_capacity * 2 : 128;
+        FT_ULong *new_selected = (FT_ULong *)realloc(selected, next * sizeof(*selected));
+        FT_Long *new_faces;
+        if (!new_selected) {
+          fclose(input);
+          free(selected);
+          free(selected_faces);
+          FT_Done_FreeType(library);
+          return 1;
+        }
+        selected = new_selected;
+        new_faces = (FT_Long *)realloc(selected_faces, next * sizeof(*selected_faces));
+        if (!new_faces) {
+          fclose(input);
+          free(selected);
+          free(selected_faces);
+          FT_Done_FreeType(library);
+          return 1;
+        }
+        selected_faces = new_faces;
+        selected_capacity = next;
+      }
+      selected[selected_count] = (FT_ULong)glyph_number;
+      selected_faces[selected_count] = (FT_Long)face_number;
+      selected_count++;
+    }
+    if (parsed != EOF) {
+      fprintf(stderr, "ft-dump: invalid sample plan\n");
+      fclose(input);
+      free(selected);
+      free(selected_faces);
+      FT_Done_FreeType(library);
+      return 2;
+    }
+    fclose(input);
+    if (!selected) {
+      selected = (FT_ULong *)malloc(sizeof(*selected));
+      if (!selected) {
+        FT_Done_FreeType(library);
+        return 1;
+      }
+    }
+  }
   for (i = 0; i < num_faces; i++) {
     FT_Error error;
+    size_t begin = cursor;
+
+    while (cursor < selected_count && selected_faces[cursor] == i)
+      cursor++;
 
     printf("face %ld\n", (long)i);
     error = open_seeded(library, path, i, &face);
@@ -740,16 +930,27 @@ static int outlines(const char *size, const char *path, int raster)
       printf("error %d\nend\n", (int)error);
       continue;
     }
+    if (set_reference_location(library, face,
+                               variations ? variations : reference_variations) != 0) {
+      fprintf(stderr, "ft-dump: invalid variation location\n");
+      FT_Done_Face(face);
+      free(selected);
+      free(selected_faces);
+      FT_Done_FreeType(library);
+      return 2;
+    }
     printf("num_glyphs %ld\n", (long)face->num_glyphs);
     if (raster == 2)
       dump_color_rasters(face, ppem);
     else if (raster)
       dump_rasters(face, ppem);
     else
-      dump_outlines(face, unscaled, ppem);
+      dump_outlines(face, unscaled, ppem, plan ? selected + begin : NULL, cursor - begin);
     printf("end\n");
     FT_Done_Face(face);
   }
+  free(selected);
+  free(selected_faces);
   FT_Done_FreeType(library);
   return 0;
 }
@@ -937,6 +1138,159 @@ static void dump_names_and_metrics(FT_Face face)
   }
 }
 
+/* ADR 0027 task 2: public FreeType variation queries and normalization. */
+static int dump_var_reference(int argc, char **argv)
+{
+  FT_Library library;
+  FT_Face face;
+  FT_Long face_count, index;
+  const char *variations = NULL;
+  FT_UInt named = 0;
+  int has_named = 0, normalize = strcmp(argv[1], "--var-normalize") == 0;
+  int arg;
+  if (argc < 3) return 2;
+  for (arg = 2; arg < argc - 1; arg++) {
+    if (strncmp(argv[arg], "--named-instance=", 17) == 0) {
+      char *end;
+      unsigned long parsed = strtoul(argv[arg] + 17, &end, 10);
+      if (!argv[arg][17] || *end || parsed >= 0xFFFF) return 2;
+      named = (FT_UInt)parsed + 1;
+      has_named = 1;
+    } else if (strncmp(argv[arg], "--variations=", 13) == 0) {
+      variations = argv[arg] + 13;
+      if (!*variations) return 2;
+    } else return 2;
+  }
+  if (FT_Init_FreeType(&library) != 0) return 1;
+  if (FT_New_Face(library, argv[argc - 1], -1, &face) != 0) {
+    FT_Done_FreeType(library);
+    return 1;
+  }
+  face_count = face->num_faces;
+  FT_Done_Face(face);
+  for (index = 0; index < face_count; index++) {
+    FT_MM_Var *mm = NULL;
+    FT_Error error = FT_New_Face(library, argv[argc - 1], index, &face);
+    FT_UInt axis;
+    printf("face %ld\n", (long)index);
+    if (error) {
+      printf("error %d\nend\n", (int)error);
+      continue;
+    }
+    if (has_named && FT_Set_Named_Instance(face, named) != 0) {
+      FT_Done_Face(face);
+      FT_Done_FreeType(library);
+      return 2;
+    }
+    if (set_design_coordinates(library, face, variations) != 0) {
+      FT_Done_Face(face);
+      FT_Done_FreeType(library);
+      return 2;
+    }
+    error = FT_Get_MM_Var(face, &mm);
+    if (error) {
+      printf("axis_count 0\nnamed_count 0\ndefault_named 0\ncoords_blend\ncoords_design\nps_name");
+      print_hex((const unsigned char *)FT_Get_Postscript_Name(face),
+                FT_Get_Postscript_Name(face) ? strlen(FT_Get_Postscript_Name(face)) : 0);
+      printf("\nend\n");
+      FT_Done_Face(face);
+      continue;
+    }
+    printf("axis_count %u\n", mm->num_axis);
+    if (!normalize) {
+      for (axis = 0; axis < mm->num_axis; axis++) {
+        FT_UInt flags = 0;
+        FT_Var_Axis *a = &mm->axis[axis];
+        FT_Get_Var_Axis_Flags(mm, axis, &flags);
+        printf("axis %u %08lx %u %u %ld %ld %ld\n", axis,
+               (unsigned long)a->tag, (unsigned)a->strid, (unsigned)flags,
+               (long)a->minimum, (long)a->def, (long)a->maximum);
+      }
+      printf("named_count %u\n", mm->num_namedstyles);
+      for (axis = 0; axis < mm->num_namedstyles; axis++) {
+        FT_UInt a;
+        FT_Var_Named_Style *style = &mm->namedstyle[axis];
+        printf("named %u %u %u", axis, (unsigned)style->strid,
+               (unsigned)style->psid);
+        for (a = 0; a < mm->num_axis; a++)
+          printf(" %ld", (long)style->coords[a]);
+        printf("\n");
+      }
+      {
+        FT_UInt def = 0;
+        FT_Error def_error = FT_Get_Default_Named_Instance(face, &def);
+        printf("default_named %u %d\n", def, (int)def_error);
+      }
+      {
+        FT_Fixed *coords = (FT_Fixed *)calloc(mm->num_axis, sizeof(*coords));
+        if (!coords) { FT_Done_MM_Var(library, mm); FT_Done_Face(face); FT_Done_FreeType(library); return 1; }
+        error = FT_Get_Var_Blend_Coordinates(face, mm->num_axis, coords);
+        printf("coords_blend");
+        for (axis = 0; !error && axis < mm->num_axis; axis++)
+          printf(" %ld", (long)coords[axis]);
+        printf("\n");
+        error = FT_Get_Var_Design_Coordinates(face, mm->num_axis, coords);
+        printf("coords_design");
+        for (axis = 0; !error && axis < mm->num_axis; axis++)
+          printf(" %ld", (long)coords[axis]);
+        printf("\n");
+        free(coords);
+      }
+      {
+        const char *name = FT_Get_Postscript_Name(face);
+        printf("ps_name");
+        print_hex((const unsigned char *)(name ? name : ""), name ? strlen(name) : 0);
+        printf("\n");
+      }
+    } else {
+      FT_Fixed *design = (FT_Fixed *)calloc(mm->num_axis, sizeof(*design));
+      FT_Fixed *blend = (FT_Fixed *)calloc(mm->num_axis, sizeof(*blend));
+      if (!design || !blend) {
+        free(design); free(blend); FT_Done_MM_Var(library, mm);
+        FT_Done_Face(face); FT_Done_FreeType(library); return 1;
+      }
+      for (axis = 0; axis < mm->num_axis; axis++) {
+        FT_UInt other, sample;
+        long long span = (long long)mm->axis[axis].maximum - mm->axis[axis].minimum;
+        for (other = 0; other < mm->num_axis; other++)
+          design[other] = mm->axis[other].def;
+        for (sample = 0; sample <= 256; sample++) {
+          design[axis] = mm->axis[axis].minimum + (FT_Fixed)(span * sample / 256);
+          FT_Set_Var_Design_Coordinates(face, mm->num_axis, design);
+          FT_Get_Var_Blend_Coordinates(face, mm->num_axis, blend);
+          printf("sample %u %u %ld %ld\n", axis, sample,
+                 (long)design[axis], (long)blend[axis]);
+        }
+        {
+          const char *labels[] = {"outside_min", "outside_max", "half_min", "half_max"};
+          FT_Fixed values[] = {
+            mm->axis[axis].minimum - (FT_Fixed)span,
+            mm->axis[axis].maximum + (FT_Fixed)span,
+            mm->axis[axis].def -
+              (FT_Fixed)(((long long)mm->axis[axis].def - mm->axis[axis].minimum) / 32768),
+            mm->axis[axis].def +
+              (FT_Fixed)(((long long)mm->axis[axis].maximum - mm->axis[axis].def) / 32768)
+          };
+          for (sample = 0; sample < 4; sample++) {
+            design[axis] = values[sample];
+            FT_Set_Var_Design_Coordinates(face, mm->num_axis, design);
+            FT_Get_Var_Blend_Coordinates(face, mm->num_axis, blend);
+            printf("sample %u %s %ld %ld\n", axis, labels[sample],
+                   (long)design[axis], (long)blend[axis]);
+          }
+        }
+      }
+      free(design);
+      free(blend);
+    }
+    printf("end\n");
+    FT_Done_MM_Var(library, mm);
+    FT_Done_Face(face);
+  }
+  FT_Done_FreeType(library);
+  return 0;
+}
+
 static int table_present(FT_Face face, FT_ULong tag)
 {
   FT_ULong len = 0;
@@ -1014,14 +1368,22 @@ int main(int argc, char **argv)
   FT_Long num_faces, i;
   FT_Error error;
 
+  if (argc >= 2 && (strcmp(argv[1], "--var") == 0 ||
+                    strcmp(argv[1], "--var-normalize") == 0))
+    return dump_var_reference(argc, argv);
+  if (argc >= 2 && !reference_options(&argc, argv)) return 2;
   if (argc == 2 && strcmp(argv[1], "--calc") == 0)
     return calc();
   if (argc == 4 && strcmp(argv[1], "--outline") == 0)
-    return outlines(argv[2], argv[3], 0);
+    return outlines(argv[2], argv[3], 0, NULL, NULL);
+  if (argc == 5 && strcmp(argv[1], "--sampled-outline") == 0)
+    return outlines(argv[2], argv[3], 0, argv[4], NULL);
+  if (argc == 6 && strcmp(argv[1], "--sampled-outline-var") == 0)
+    return outlines(argv[2], argv[3], 0, argv[4], argv[5]);
   if (argc == 4 && strcmp(argv[1], "--raster") == 0)
-    return outlines(argv[2], argv[3], 1);
+    return outlines(argv[2], argv[3], 1, NULL, NULL);
   if (argc == 5 && strcmp(argv[1], "--raster") == 0 && strcmp(argv[3], "--color") == 0)
-    return outlines(argv[2], argv[4], 2);
+    return outlines(argv[2], argv[4], 2, NULL, NULL);
   if (argc == 3 && strcmp(argv[1], "--cid") == 0)
     return faces(argv[2], dump_cid);
   if (argc == 3 && strcmp(argv[1], "--ps-info") == 0)
@@ -1032,8 +1394,12 @@ int main(int argc, char **argv)
     return faces(argv[2], dump_sbit);
   if (argc == 3 && strcmp(argv[1], "--otvalid") == 0)
     return otvalid(argv[2]);
+  if (argc == 3 && strcmp(argv[1], "--metrics") == 0) {
+    argv[1] = argv[2];
+    argc = 2;
+  }
   if (argc != 2) {
-    fprintf(stderr, "usage: ft-dump FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --raster PPEM [--color] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
+    fprintf(stderr, "usage: ft-dump FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --sampled-outline SIZE FILE PLAN | ft-dump --sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...] | ft-dump --raster PPEM [--color] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
     return 2;
   }
   if (FT_Init_FreeType(&library) != 0) {
@@ -1057,6 +1423,11 @@ int main(int argc, char **argv)
     if (error != 0) {
       printf("error %d\nend\n", (int)error);
       continue;
+    }
+    if (set_reference_location(library, face, reference_variations) != 0) {
+      FT_Done_Face(face);
+      FT_Done_FreeType(library);
+      return 2;
     }
     printf("num_glyphs %ld\n", (long)face->num_glyphs);
     if ((table = FT_Get_Sfnt_Table(face, FT_SFNT_HEAD)) != NULL)

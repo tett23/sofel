@@ -148,3 +148,17 @@ path = "fuzz_targets/repack.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "gvar"
+path = "fuzz_targets/gvar.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "feature_variations"
+path = "fuzz_targets/feature_variations.rs"
+test = false
+doc = false
+bench = false

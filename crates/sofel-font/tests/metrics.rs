@@ -55,7 +55,7 @@ fn no_extents(_: GlyphId) -> Option<GlyphExtents> {
 fn h_extents_from_hhea_without_os2() {
     let data = font_with(&[], &[]);
     let f = Font::new(&data, 0).unwrap();
-    assert_eq!(f.h_extents(), ext(800, -200, 90));
+    assert_eq!(f.default_instance().h_extents(), ext(800, -200, 90));
 }
 
 #[test]
@@ -66,7 +66,7 @@ fn h_extents_follow_use_typo_metrics() {
     });
     let data = font_with(&[(b"OS/2", typo)], &[]);
     assert_eq!(
-        Font::new(&data, 0).unwrap().h_extents(),
+        Font::new(&data, 0).unwrap().default_instance().h_extents(),
         ext(750, -250, 100)
     );
 
@@ -75,7 +75,10 @@ fn h_extents_follow_use_typo_metrics() {
         ..Default::default()
     });
     let data = font_with(&[(b"OS/2", no_typo)], &[]);
-    assert_eq!(Font::new(&data, 0).unwrap().h_extents(), ext(800, -200, 90));
+    assert_eq!(
+        Font::new(&data, 0).unwrap().default_instance().h_extents(),
+        ext(800, -200, 90)
+    );
 }
 
 #[test]
@@ -91,7 +94,10 @@ fn h_extents_ignore_os2_without_data() {
     });
     empty[6..8].copy_from_slice(&[0, 0]); // usWidthClass
     let data = font_with(&[(b"OS/2", empty)], &[]);
-    assert_eq!(Font::new(&data, 0).unwrap().h_extents(), ext(800, -200, 90));
+    assert_eq!(
+        Font::new(&data, 0).unwrap().default_instance().h_extents(),
+        ext(800, -200, 90)
+    );
 }
 
 #[test]
@@ -99,7 +105,7 @@ fn h_extents_fall_back_without_hhea() {
     let data = font_with(&[(b"head", head_upem(2048))], &[b"hhea"]);
     let f = Font::new(&data, 0).unwrap();
     // 2048 * 0.8 truncated, then minus 1 em.
-    assert_eq!(f.h_extents(), ext(1638, -410, 0));
+    assert_eq!(f.default_instance().h_extents(), ext(1638, -410, 0));
     // With OS/2 USE_TYPO_METRICS, hhea is not needed.
     let typo = os2(Os2Spec {
         fs_selection: 0x0080,
@@ -107,7 +113,7 @@ fn h_extents_fall_back_without_hhea() {
     });
     let data = font_with(&[(b"OS/2", typo)], &[b"hhea"]);
     assert_eq!(
-        Font::new(&data, 0).unwrap().h_extents(),
+        Font::new(&data, 0).unwrap().default_instance().h_extents(),
         ext(750, -250, 100)
     );
 }
@@ -120,7 +126,7 @@ fn h_extents_fix_the_signs() {
     flipped[8..10].copy_from_slice(&(-90i16).to_be_bytes());
     let data = font_with(&[(b"hhea", flipped)], &[]);
     assert_eq!(
-        Font::new(&data, 0).unwrap().h_extents(),
+        Font::new(&data, 0).unwrap().default_instance().h_extents(),
         ext(800, -200, -90)
     );
 }
@@ -130,9 +136,15 @@ fn h_extents_fix_the_signs() {
 #[test]
 fn v_extents_from_vhea_or_fallback() {
     let data = font_with(&[(b"vhea", hhea(20))], &[]);
-    assert_eq!(Font::new(&data, 0).unwrap().v_extents(), ext(800, -200, 90));
+    assert_eq!(
+        Font::new(&data, 0).unwrap().default_instance().v_extents(),
+        ext(800, -200, 90)
+    );
     let data = font_with(&[], &[]);
-    assert_eq!(Font::new(&data, 0).unwrap().v_extents(), ext(500, -500, 0));
+    assert_eq!(
+        Font::new(&data, 0).unwrap().default_instance().v_extents(),
+        ext(500, -500, 0)
+    );
 }
 
 fn vertical_tables() -> Vec<(&'static [u8; 4], Vec<u8>)> {
@@ -144,20 +156,20 @@ fn vertical_tables() -> Vec<(&'static [u8; 4], Vec<u8>)> {
 fn v_advance_from_vmtx() {
     let data = font_with(&vertical_tables(), &[]);
     let f = Font::new(&data, 0).unwrap();
-    assert_eq!(f.v_advance(GlyphId(0)), -1000);
-    assert_eq!(f.v_advance(GlyphId(2)), -1002);
-    assert_eq!(f.v_advance(GlyphId(10)), -1002);
-    assert_eq!(f.v_advance(GlyphId(28)), 0);
+    assert_eq!(f.default_instance().v_advance(GlyphId(0)), -1000);
+    assert_eq!(f.default_instance().v_advance(GlyphId(2)), -1002);
+    assert_eq!(f.default_instance().v_advance(GlyphId(10)), -1002);
+    assert_eq!(f.default_instance().v_advance(GlyphId(28)), 0);
 }
 
 #[test]
 fn v_advance_without_vmtx_is_the_font_height() {
     let data = font_with(&[], &[]);
     let f = Font::new(&data, 0).unwrap();
-    assert_eq!(f.v_advance(GlyphId(1)), -1000);
+    assert_eq!(f.default_instance().v_advance(GlyphId(1)), -1000);
     let data = font_with(&[(b"head", head_upem(2048))], &[b"hhea"]);
     let f = Font::new(&data, 0).unwrap();
-    assert_eq!(f.v_advance(GlyphId(1)), -2048);
+    assert_eq!(f.default_instance().v_advance(GlyphId(1)), -2048);
 }
 
 // ------------------------------------------------------------- v_origin
@@ -196,8 +208,14 @@ fn v_origin_from_vorg() {
     let data = font_with(&tables, &[]);
     let f = Font::new(&data, 0).unwrap();
     // x is half the horizontal advance (501 / 2).
-    assert_eq!(f.v_origin(GlyphId(1), no_extents), (250, 900));
-    assert_eq!(f.v_origin(GlyphId(2), no_extents), (251, 880));
+    assert_eq!(
+        f.default_instance().v_origin(GlyphId(1), no_extents),
+        (250, 900)
+    );
+    assert_eq!(
+        f.default_instance().v_origin(GlyphId(2), no_extents),
+        (251, 880)
+    );
 }
 
 #[test]
@@ -207,16 +225,28 @@ fn v_origin_from_the_top_phantom_point() {
     let data = font_with(&tables, &[]);
     let f = Font::new(&data, 0).unwrap();
     // yMax + tsb.
-    assert_eq!(f.v_origin(GlyphId(1), no_extents).1, 700 + 51);
-    assert_eq!(f.v_origin(GlyphId(2), no_extents).1, 300 + 52);
+    assert_eq!(
+        f.default_instance().v_origin(GlyphId(1), no_extents).1,
+        700 + 51
+    );
+    assert_eq!(
+        f.default_instance().v_origin(GlyphId(2), no_extents).1,
+        300 + 52
+    );
     // A composite with USE_MY_METRICS takes its component's phantoms.
-    assert_eq!(f.v_origin(GlyphId(3), no_extents).1, 300 + 52);
+    assert_eq!(
+        f.default_instance().v_origin(GlyphId(3), no_extents).1,
+        300 + 52
+    );
     // Without the flag, its own header and bearing.
-    assert_eq!(f.v_origin(GlyphId(4), no_extents).1, 900 + 60);
+    assert_eq!(
+        f.default_instance().v_origin(GlyphId(4), no_extents).1,
+        900 + 60
+    );
     // An empty glyph has an all-zero header.
-    assert_eq!(f.v_origin(GlyphId(0), no_extents).1, 50);
+    assert_eq!(f.default_instance().v_origin(GlyphId(0), no_extents).1, 50);
     // Past the glyphs.
-    assert_eq!(f.v_origin(GlyphId(40), no_extents).1, 0);
+    assert_eq!(f.default_instance().v_origin(GlyphId(40), no_extents).1, 0);
 }
 
 #[test]
@@ -232,12 +262,19 @@ fn v_origin_from_the_box_without_vmtx() {
             height: -701,
         })
     };
-    assert_eq!(f.v_origin(GlyphId(1), e), (250, 700 + ((1000 - 701) >> 1)));
+    assert_eq!(
+        f.default_instance().v_origin(GlyphId(1), e),
+        (250, 700 + ((1000 - 701) >> 1))
+    );
     // Without a box, the ascender.
-    assert_eq!(f.v_origin(GlyphId(1), no_extents), (250, 800));
+    assert_eq!(
+        f.default_instance().v_origin(GlyphId(1), no_extents),
+        (250, 800)
+    );
     // With the glyf boxes.
     assert_eq!(
-        f.v_origin(GlyphId(1), |g| f.glyf_extents(g)),
+        f.default_instance()
+            .v_origin(GlyphId(1), |g| f.default_instance().glyf_extents(g)),
         (250, 700 + ((1000 - 700) >> 1))
     );
 }
@@ -255,11 +292,17 @@ fn v_origin_asks_for_boxes_only_as_the_last_resort() {
         let mut t = tables.clone();
         t.extend(extra);
         let data = font_with(&t, &[]);
-        Font::new(&data, 0).unwrap().v_origin(GlyphId(1), counting);
+        Font::new(&data, 0)
+            .unwrap()
+            .default_instance()
+            .v_origin(GlyphId(1), counting);
         assert_eq!(calls.get(), 0);
     }
     let data = font_with(&glyf_tables(), &[]);
-    Font::new(&data, 0).unwrap().v_origin(GlyphId(1), counting);
+    Font::new(&data, 0)
+        .unwrap()
+        .default_instance()
+        .v_origin(GlyphId(1), counting);
     assert_eq!(calls.get(), 1);
 }
 
@@ -271,7 +314,7 @@ fn glyf_extents_use_the_side_bearing() {
     let f = Font::new(&data, 0).unwrap();
     // hmtx gives glyph 1 the bearing 1, not its xMin 100.
     assert_eq!(
-        f.glyf_extents(GlyphId(1)),
+        f.default_instance().glyf_extents(GlyphId(1)),
         Some(GlyphExtents {
             x_bearing: 1,
             y_bearing: 700,
@@ -279,10 +322,19 @@ fn glyf_extents_use_the_side_bearing() {
             height: -700,
         })
     );
-    assert_eq!(f.glyf_extents(GlyphId(0)), Some(GlyphExtents::default()));
-    assert_eq!(f.glyf_extents(GlyphId(28)), None);
+    assert_eq!(
+        f.default_instance().glyf_extents(GlyphId(0)),
+        Some(GlyphExtents::default())
+    );
+    assert_eq!(f.default_instance().glyf_extents(GlyphId(28)), None);
     let data = font_with(&[], &[]);
-    assert_eq!(Font::new(&data, 0).unwrap().glyf_extents(GlyphId(1)), None);
+    assert_eq!(
+        Font::new(&data, 0)
+            .unwrap()
+            .default_instance()
+            .glyf_extents(GlyphId(1)),
+        None
+    );
 }
 
 // --------------------------------------------------------------- fs_type
@@ -319,7 +371,7 @@ fn metrics_positions() {
         &[],
     );
     let f = Font::new(&data, 0).unwrap();
-    let p = |t| f.metrics_position(t);
+    let p = |t| f.default_instance().metrics_position(t);
     assert_eq!(p(MetricsTag::HorizontalAscender), Some(800));
     assert_eq!(p(MetricsTag::HorizontalClippingAscent), Some(900));
     assert_eq!(p(MetricsTag::HorizontalClippingDescent), Some(300));
@@ -345,9 +397,20 @@ fn metrics_positions_need_their_tables() {
     let post25 = post_header(0x0002_5000).u16(0).done();
     let data = font_with(&[(b"OS/2", v1), (b"post", post25)], &[]);
     let f = Font::new(&data, 0).unwrap();
-    assert_eq!(f.metrics_position(MetricsTag::XHeight), None);
-    assert_eq!(f.metrics_position(MetricsTag::UnderlineSize), None);
-    assert_eq!(f.metrics_position(MetricsTag::StrikeoutOffset), Some(260));
+    assert_eq!(
+        f.default_instance().metrics_position(MetricsTag::XHeight),
+        None
+    );
+    assert_eq!(
+        f.default_instance()
+            .metrics_position(MetricsTag::UnderlineSize),
+        None
+    );
+    assert_eq!(
+        f.default_instance()
+            .metrics_position(MetricsTag::StrikeoutOffset),
+        Some(260)
+    );
     // OS/2 version 2 with both heights 0 has no x-height.
     let zero = os2(Os2Spec {
         x_height: 0,
@@ -358,6 +421,7 @@ fn metrics_positions_need_their_tables() {
     assert_eq!(
         Font::new(&data, 0)
             .unwrap()
+            .default_instance()
             .metrics_position(MetricsTag::XHeight),
         None
     );
@@ -367,7 +431,10 @@ fn metrics_positions_need_their_tables() {
 fn metrics_position_fallbacks() {
     let data = font_with(&glyf_tables(), &[]);
     let f = Font::new(&data, 0).unwrap();
-    let q = |t| f.metrics_position_with_fallback(t, |g| f.glyf_extents(g));
+    let q = |t| {
+        f.default_instance()
+            .metrics_position_with_fallback(t, |g| f.default_instance().glyf_extents(g))
+    };
     assert_eq!(q(MetricsTag::HorizontalAscender), 800);
     assert_eq!(q(MetricsTag::HorizontalClippingAscent), 800);
     assert_eq!(q(MetricsTag::HorizontalClippingDescent), -200);
@@ -390,9 +457,14 @@ fn metrics_position_fallbacks() {
     zero[10..12].copy_from_slice(&[0, 0]);
     let data = font_with(&[(b"post", zero)], &[]);
     let f = Font::new(&data, 0).unwrap();
-    assert_eq!(f.metrics_position(MetricsTag::UnderlineSize), Some(0));
     assert_eq!(
-        f.metrics_position_with_fallback(MetricsTag::UnderlineSize, |_| None),
+        f.default_instance()
+            .metrics_position(MetricsTag::UnderlineSize),
+        Some(0)
+    );
+    assert_eq!(
+        f.default_instance()
+            .metrics_position_with_fallback(MetricsTag::UnderlineSize, |_| None),
         55
     );
 }

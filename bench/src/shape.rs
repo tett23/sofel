@@ -30,6 +30,7 @@ struct Pair {
     path: &'static str,
     text: &'static str,
     direction: Option<Direction>,
+    literal: Option<&'static str>,
     /// `Some` while the pair waits for its script's shaper (ADR 0024).
     waits_for: Option<&'static str>,
 }
@@ -46,6 +47,7 @@ const fn pair(
         path,
         text,
         direction,
+        literal: None,
         waits_for,
     }
 }
@@ -122,6 +124,83 @@ const PAIRS: [Pair; 12] = [
         Some(Direction::Ttb),
         None,
     ),
+];
+
+// Fixed role specimens: guessed script, no language, default features and
+// coordinates, face zero. Unsupported scripts are checked as expected failures.
+const EXTRA_PAIRS: [Pair; 9] = [
+    Pair {
+        font: "extra/arabic",
+        path: "extra-fonts/fonts/arabic.ttf",
+        text: "role-default-und",
+        direction: Some(Direction::Rtl),
+        literal: Some("بِت\n"),
+        waits_for: None,
+    },
+    Pair {
+        font: "extra/devanagari",
+        path: "extra-fonts/fonts/devanagari.ttf",
+        text: "role-default-und",
+        direction: Some(Direction::Ltr),
+        literal: Some("क्‍ष\n"),
+        waits_for: Some("indic"),
+    },
+    Pair {
+        font: "extra/khmer",
+        path: "extra-fonts/fonts/khmer.ttf",
+        text: "role-default-und",
+        direction: Some(Direction::Ltr),
+        literal: Some("ក្រ\n"),
+        waits_for: Some("khmer"),
+    },
+    Pair {
+        font: "extra/myanmar",
+        path: "extra-fonts/fonts/myanmar.ttf",
+        text: "role-default-und",
+        direction: Some(Direction::Ltr),
+        literal: Some("င်္ကိ\n"),
+        waits_for: Some("myanmar"),
+    },
+    Pair {
+        font: "extra/balinese",
+        path: "extra-fonts/fonts/balinese.ttf",
+        text: "role-default-und",
+        direction: Some(Direction::Ltr),
+        literal: Some("ᬓ᭄ᬱᬶ\n"),
+        waits_for: Some("USE"),
+    },
+    Pair {
+        font: "extra/hebrew",
+        path: "extra-fonts/fonts/hebrew.ttf",
+        text: "role-default-und",
+        direction: Some(Direction::Rtl),
+        literal: Some("שָׁלוֹם\n"),
+        waits_for: None,
+    },
+    Pair {
+        font: "extra/source-serif",
+        path: "extra-fonts/fonts/source-serif.otf",
+        text: "role-default-und",
+        direction: Some(Direction::Ltr),
+        literal: Some("office\n"),
+        waits_for: None,
+    },
+    Pair {
+        font: "extra/source-han",
+        path: "extra-fonts/fonts/source-han.ttc",
+        text: "role-default-und",
+        direction: Some(Direction::Ttb),
+        literal: Some("漢字\n"),
+        waits_for: None,
+    },
+    Pair {
+        font: "extra/amstelvar",
+        path: "extra-fonts/fonts/amstelvar.ttf",
+        text: "role-default-und",
+        direction: Some(Direction::Ltr),
+        literal: Some("office\n"),
+        waits_for: None,
+    },
 ];
 
 /// `hb_direction_t` of a direction; 0 for the guessed one.
@@ -260,7 +339,7 @@ fn first_difference(
 /// Adds the shaping items of every pair that does not wait for a
 /// shaper.
 pub fn shape_items(b: &mut Bench, testdata: &Path) {
-    for p in &PAIRS {
+    for p in PAIRS.iter().chain(EXTRA_PAIRS.iter()) {
         let dir = match p.direction {
             Some(Direction::Ttb) => " TTB",
             _ => "",
@@ -270,7 +349,7 @@ pub fn shape_items(b: &mut Bench, testdata: &Path) {
         if !b.wanted(p.font, &item) && !b.wanted(p.font, &first) {
             continue;
         }
-        if let Some(shaper) = p.waits_for {
+        if let Some(shaper) = p.waits_for.filter(|_| p.literal.is_none()) {
             eprintln!(
                 "{}: {item}: waits for the {shaper} shaper (ADR 0024)",
                 p.font
@@ -280,7 +359,10 @@ pub fn shape_items(b: &mut Bench, testdata: &Path) {
         let text_path = testdata.join("harfbuzz/perf/texts").join(p.text);
         let (Ok(bytes), Ok(text)) = (
             std::fs::read(testdata.join(p.path)),
-            std::fs::read(&text_path),
+            p.literal.map_or_else(
+                || std::fs::read(&text_path),
+                |text| Ok(text.as_bytes().to_vec()),
+            ),
         ) else {
             eprintln!("{}: missing; run scripts/fetch-testdata.sh", p.path);
             std::process::exit(1);
@@ -290,6 +372,17 @@ pub fn shape_items(b: &mut Bench, testdata: &Path) {
         hb.set_ppem(0);
         let mut s = Shaper::new(&bytes);
         let diff = first_difference(&mut s, &hb, &text, &lines, p.direction);
+        if let Some(shaper) = p.waits_for {
+            b.checks.push(Check {
+                item: format!("{item} (expected failure: {shaper}, ADR 0024)"),
+                font: p.font.into(),
+                ok: diff.is_some(),
+                detail: diff.unwrap_or_else(|| {
+                    "unexpected pass: remove the expected failure and measure this pair".into()
+                }),
+            });
+            continue;
+        }
         b.checks.push(Check {
             item: format!("{item} (HarfBuzz, every line)"),
             font: p.font.to_string(),

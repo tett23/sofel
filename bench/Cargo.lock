@@ -9,6 +9,7 @@ dependencies = [
  "sofel-bitmap",
  "sofel-cli",
  "sofel-color",
+ "sofel-conformance",
  "sofel-font",
  "sofel-geom",
  "sofel-outline",
@@ -45,6 +46,24 @@ version = "0.0.0"
 dependencies = [
  "sofel-bitmap",
  "sofel-outline",
+]
+
+[[package]]
+name = "sofel-conformance"
+version = "0.0.0"
+dependencies = [
+ "sofel-bitmap",
+ "sofel-cli",
+ "sofel-color",
+ "sofel-font",
+ "sofel-geom",
+ "sofel-outline",
+ "sofel-raster",
+ "sofel-read",
+ "sofel-shape",
+ "sofel-subset",
+ "sofel-unicode",
+ "sofel-write",
 ]
 
 [[package]]

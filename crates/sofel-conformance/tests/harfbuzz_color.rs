@@ -16,8 +16,9 @@
     clippy::panic
 )]
 
+use std::io::{self, BufRead, BufReader};
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use sofel_color::Scratch;
 use sofel_conformance::color::{self, sofel_paint_text};
@@ -34,6 +35,87 @@ fn hb_dump(mode: &str, font: &Path) -> Option<String> {
     out.status
         .success()
         .then(|| String::from_utf8(out.stdout).unwrap())
+}
+
+fn invalid_paint(message: &str) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, message)
+}
+
+fn paint_number<T: std::str::FromStr>(s: &str) -> io::Result<T> {
+    s.parse()
+        .map_err(|_| invalid_paint(&format!("invalid paint number: {s}")))
+}
+
+fn visit_paint_records(
+    reader: &mut impl BufRead,
+    mut visit: impl FnMut(u32, u16, u16, u32, &str),
+) -> io::Result<()> {
+    let mut face = None;
+    let mut header = String::new();
+    let mut body = String::new();
+    loop {
+        header.clear();
+        if reader.read_line(&mut header)? == 0 {
+            return if face.is_none() {
+                Ok(())
+            } else {
+                Err(invalid_paint("missing face end"))
+            };
+        }
+        let fields: Vec<_> = header.split_ascii_whitespace().collect();
+        match fields.as_slice() {
+            [] => {}
+            ["face", index] if face.is_none() => face = Some(paint_number(index)?),
+            ["end"] if face.is_some() => face = None,
+            ["paint", p, pp, glyph, n] => {
+                let face = face.ok_or_else(|| invalid_paint("paint outside a face"))?;
+                let (p, pp, glyph) = (paint_number(p)?, paint_number(pp)?, paint_number(glyph)?);
+                let count: u32 = paint_number(n)?;
+                body.clear();
+                for _ in 0..count {
+                    if reader.read_line(&mut body)? == 0 {
+                        return Err(invalid_paint("truncated paint body"));
+                    }
+                }
+                visit(face, p, pp, glyph, &body);
+            }
+            _ => return Err(invalid_paint(&format!("invalid paint header: {header}"))),
+        }
+    }
+}
+
+/// Commit a command's comparison state only after a successful exit. Drain a
+/// malformed stream before waiting so a writer cannot block on the pipe.
+fn read_paint_command<T>(
+    command: &mut Command,
+    mut state: T,
+    mut visit: impl FnMut(&mut T, u32, u16, u16, u32, &str),
+) -> io::Result<Option<T>> {
+    let mut child = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()?;
+    let mut reader = BufReader::new(child.stdout.take().unwrap());
+    let parsed = visit_paint_records(&mut reader, |f, p, pp, g, body| {
+        visit(&mut state, f, p, pp, g, body)
+    });
+    let drained = io::copy(&mut reader, &mut io::sink());
+    drop(reader);
+    let status = child.wait()?;
+    drained?;
+    match parsed {
+        Err(e) if e.kind() != io::ErrorKind::InvalidData || status.success() => Err(e),
+        _ if !status.success() => Ok(None),
+        _ => Ok(Some(state)),
+    }
+}
+
+fn paint_command(mode: &str, font: &Path) -> Command {
+    let exe = paths::hb_dump();
+    paths::require(&exe, "hb-dump").unwrap_or_else(|e| panic!("{e}"));
+    let mut command = Command::new(exe);
+    command.arg(mode).arg(font);
+    command
 }
 
 /// HarfBuzz's `paint_tests` of `test/api/test-paint.c`: font, slant,
@@ -114,14 +196,18 @@ fn results_paint_items(testdata: &Path) -> Vec<Item> {
             detail: format!("expected:\n{expected}sofel:\n{ours}"),
         });
         // hb-dump itself writes HarfBuzz's test text.
-        let text = hb_dump(&format!("--paint={slant}"), &path).unwrap();
-        let faces = color::parse_paint(&text).unwrap();
-        let hb = faces[0]
-            .paints
-            .iter()
-            .find(|(p, pp, g, _)| (*p, *pp, *g) == (0, 0, glyph))
-            .map(|x| x.3.clone())
-            .unwrap();
+        let hb = read_paint_command(
+            &mut paint_command(&format!("--paint={slant}"), &path),
+            None,
+            |found, face, p, pp, g, body| {
+                if found.is_none() && (face, p, pp, g) == (0, 0, 0, glyph) {
+                    *found = Some(body.to_owned());
+                }
+            },
+        )
+        .unwrap()
+        .expect("hb-dump --paint failed")
+        .expect("missing selected glyph");
         assert_eq!(
             hb, expected,
             "hb-dump --paint does not reproduce results-paint/{name}"
@@ -145,12 +231,30 @@ fn colors_agree_with_harfbuzz() {
     for path in &color_fonts {
         let id = fonts::id(path, &testdata);
         let bytes = std::fs::read(path).unwrap();
-        if let Some(text) = hb_dump("--paint", path) {
-            for face in color::parse_paint(&text).unwrap_or_else(|e| panic!("{id}: {e}")) {
-                if let Ok(font) = Font::new(&bytes, face.index) {
-                    items.extend(color::compare_paint(&id, &font, &face));
+        let mut current_face = None;
+        let mut scratch = Scratch::default();
+        let paints = read_paint_command(
+            &mut paint_command("--paint", path),
+            Vec::new(),
+            |results, face, p, pp, glyph, body| {
+                if current_face.as_ref().map(|(index, _)| *index) != Some(face) {
+                    current_face = Some((face, Font::new(&bytes, face).ok()));
                 }
-            }
+                if let Some((_, Some(font))) = &current_face {
+                    results.push(color::compare_paint_record(
+                        &id,
+                        font,
+                        face,
+                        (p, pp, glyph),
+                        body,
+                        &mut scratch,
+                    ));
+                }
+            },
+        )
+        .unwrap_or_else(|e| panic!("{id}: {e}"));
+        if let Some(paints) = paints {
+            items.extend(paints);
         }
         if let Some(text) = hb_dump("--color", path) {
             for (index, part) in color::split_faces(&text) {
@@ -222,4 +326,90 @@ fn format_g3_matches_printf() {
     for (v, want) in cases {
         assert_eq!(color::g3(v), want, "{v}");
     }
+}
+
+#[test]
+fn adr0043_i1_i2_paint_records_match_buffered_parser_at_every_chunk_size() {
+    use std::io::{BufReader, Cursor};
+    let valid =
+        "face 0\npaint 0 0 4 0\npaint 1 24 5 2\nx\n y\nend\nface 3\npaint 0 12 8 1\nend\nend\n";
+    let expected: Vec<_> = color::parse_paint(valid)
+        .unwrap()
+        .into_iter()
+        .flat_map(|face| {
+            face.paints
+                .into_iter()
+                .map(move |(p, pp, g, s)| (face.index, p, pp, g, s))
+        })
+        .collect();
+    for width in [1, 2, 7, 8192] {
+        let mut got = Vec::new();
+        visit_paint_records(
+            &mut BufReader::with_capacity(width, Cursor::new(valid)),
+            |face, p, pp, g, body| {
+                got.push((face, p, pp, g, body.to_owned()));
+            },
+        )
+        .unwrap();
+        assert_eq!(got, expected);
+    }
+    for valid_empty in ["", "face 0\nend\n"] {
+        visit_paint_records(&mut Cursor::new(valid_empty), |_, _, _, _, _| {
+            panic!("unexpected paint")
+        })
+        .unwrap();
+    }
+    for invalid in [
+        "face 0\n",
+        "end\n",
+        "paint 0 0 1 0\n",
+        "face bad\n",
+        "face 0\nface 1\nend\n",
+        "face 0\npaint 0 0 0 2\none\n",
+        "face 0\npaint 0 0 0 bad\nend\n",
+        "face 0\nextra\nend\n",
+    ] {
+        assert!(
+            visit_paint_records(&mut Cursor::new(invalid), |_, _, _, _, _| {}).is_err(),
+            "{invalid}"
+        );
+    }
+}
+
+#[test]
+fn adr0043_i3_first_glyph_is_compared_before_a_later_read_error() {
+    use std::io::{self, BufReader, Cursor, Read as _};
+    struct Fails;
+    impl io::Read for Fails {
+        fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+            Err(io::Error::other("late read error"))
+        }
+    }
+    let data = Cursor::new("face 0\npaint 0 0 9 1\nblue\n").chain(Fails);
+    let mut got = Vec::new();
+    assert!(
+        visit_paint_records(&mut BufReader::new(data), |_, _, _, glyph, text| got
+            .push((glyph, text.to_owned())))
+        .is_err()
+    );
+    assert_eq!(got, [(9, "blue\n".to_owned())]);
+}
+
+#[test]
+fn adr0043_i4_nonzero_reference_discards_all_partial_results() {
+    let run = |script: &str| {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg(script);
+        read_paint_command(&mut cmd, Vec::new(), |ids, _, _, _, g, _| ids.push(g))
+    };
+    assert_eq!(
+        run("printf 'face 0\\npaint 0 0 9 0\\nend\\n'").unwrap(),
+        Some(vec![9])
+    );
+    assert_eq!(
+        run("printf 'face 0\\npaint 0 0 9 0\\n'; exit 9").unwrap(),
+        None
+    );
+    assert_eq!(run("printf 'bad\\n'; exit 9").unwrap(), None);
+    assert!(run("printf 'face 0\\npaint 0 0 9 0\\n'").is_err());
 }

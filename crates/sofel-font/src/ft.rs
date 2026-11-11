@@ -63,7 +63,7 @@ impl<'a> Font<'a> {
         self.os2
     }
 
-    fn ft_vertical(&self) -> Option<(Hhea<'a>, &'a [u8])> {
+    pub(crate) fn ft_vertical(&self) -> Option<(Hhea<'a>, &'a [u8])> {
         let (h, mtx) = ft_hea(
             &self.sfnt,
             [vhea::TAG, vmtx::TAG, vhea::TAG_WIDE, vmtx::TAG_WIDE],
@@ -73,7 +73,7 @@ impl<'a> Font<'a> {
 
     /// FreeType's `has_outline` in `sfnt_load_face`: glyf, `GLYF`, CFF
     /// or CFF2 data, no CBLC or CBDT, and for `true` fonts an `hhea`.
-    fn ft_has_outline(&self) -> bool {
+    pub(crate) fn ft_has_outline(&self) -> bool {
         let t = |tag: &[u8; 4]| self.table(Tag::new(tag)).is_some();
         let outline = t(b"GLYF") || t(b"glyf") || t(b"CFF ") || t(b"CFF2");
         let bitmap = t(b"CBLC") || t(b"CBDT");
@@ -90,7 +90,7 @@ impl<'a> Font<'a> {
     /// position is `post`'s moved to the center of the line. Values wrap
     /// to 16 bits as FreeType's do. All 0 when FreeType does not treat the
     /// face as scalable (no outlines, or CBLC/CBDT bitmaps).
-    pub fn ft_face_metrics(&self) -> FtFaceMetrics {
+    pub(crate) fn ft_face_metrics_default(&self) -> FtFaceMetrics {
         if !self.ft_has_outline() {
             return FtFaceMetrics::default();
         }
@@ -168,10 +168,10 @@ impl<'a> Font<'a> {
     /// (`TT_Get_VMetrics`): from `vmtx` read as `tt_face_get_metrics`
     /// does, else `|sTypoAscender − sTypoDescender|` of `OS/2`, else
     /// `|ascender − descender|` of `hhea`. Positive downward, unlike
-    /// [`Font::v_advance`]. `None` for glyph ids not below the glyph
+    /// [`crate::var::Instance::v_advance`]. `None` for glyph ids not below the glyph
     /// count. (FreeType's CFF driver loads the glyph instead when there
     /// is no `vmtx`; that comes with ADR 0021.)
-    pub fn ft_v_advance(&self, glyph: GlyphId) -> Option<u16> {
+    pub(crate) fn ft_v_advance_default(&self, glyph: GlyphId) -> Option<u16> {
         if glyph.0 >= self.num_glyphs {
             return None;
         }

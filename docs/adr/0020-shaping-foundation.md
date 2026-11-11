@@ -1,6 +1,6 @@
 # ADR 0020: シェーピングの土台（`sofel-shape`、GDEF、GSUB、GPOS、バッファ、計画、既定のシェーパー）
 
-ステータス: 採択（未実装）
+ステータス: 採択（未実装）→`--font-ptem` の分類は [ADR 0028](0028-ptem-is-not-opsz.md)
 
 ## 文脈
 

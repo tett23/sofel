@@ -12,7 +12,7 @@ use sofel_geom::{Color, ColorRef, ColorStop, Extend, ImageFormat, PointF, Solid}
 
 use crate::{
     ERROR_BUFFER_TOO_SMALL, ERROR_INVALID_ARGUMENT, ERROR_NOT_FOUND, ERROR_NULL, SofelFont,
-    font_ref, get, out_array, r, some, status, w,
+    SofelLocation, font_ref, get, out_array, r, some, status, w,
 };
 
 /// `sofel_color_t`.
@@ -335,6 +335,7 @@ fn paint_glyph(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sofel_paint_glyph(
     font: *const SofelFont,
+    _location: *const SofelLocation,
     glyph: u32,
     palette: u16,
     custom_colors: *const CColor,
