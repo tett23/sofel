@@ -243,3 +243,23 @@ fn pinned_outlines_and_advances() {
     );
     assert!(checked > 0);
 }
+
+#[test]
+fn table_diff_reports_changed_missing_and_extra_tables() {
+    use sofel_read::Tag;
+    use sofel_write::build_sfnt;
+
+    let shared = Tag::new(b"aaaa");
+    let removed = Tag::new(b"bbbb");
+    let added = Tag::new(b"cccc");
+    let expected = build_sfnt(&[(shared, &[1, 2]), (removed, &[])]).unwrap();
+    let actual = build_sfnt(&[(shared, &[1, 3]), (added, &[4])]).unwrap();
+    let report = subset::diff(&expected, &actual);
+    for detail in [
+        "aaaa@1 (len 2 vs 2)",
+        "bbbb@0 (missing in actual)",
+        "cccc@0 (missing in expected)",
+    ] {
+        assert!(report.contains(detail), "{report}");
+    }
+}
