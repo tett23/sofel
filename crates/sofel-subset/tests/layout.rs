@@ -17,7 +17,7 @@ use build::*;
 use sofel_font::Font;
 use sofel_font::read::Tag;
 use sofel_font::read::sfnt::Sfnt;
-use sofel_subset::{Flags, Input, SetKind, subset};
+use sofel_subset::{Flags, Input, SetKind, SubsetError, subset};
 
 /// Glyph id of a capital letter of the sample font ('A' is 1).
 fn g(c: char) -> u16 {
@@ -231,6 +231,80 @@ fn gdef_with_classes(class_def: Vec<u8>) -> Vec<u8> {
             .done(),
         vec![(4, 2, class_def)],
     )
+}
+
+fn gdef_with_unused_store(class_def: Vec<u8>) -> Vec<u8> {
+    let store = Buf::new().u16(1).u32(8).u16(0).u16(0).u16(0).done();
+    link(
+        Buf::new()
+            .u32(0x0001_0003)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u32(0)
+            .done(),
+        vec![(4, 2, class_def), (14, 4, store)],
+    )
+}
+
+#[test]
+fn unused_gdef_variation_store_is_removed() {
+    let class_def = class_def2(&[(1, 5, 1)]);
+    let data = font_with(vec![(b"GDEF", gdef_with_unused_store(class_def))]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("ABCDE")).unwrap();
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    assert_eq!(
+        u32::from_be_bytes(gdef[0..4].try_into().unwrap()),
+        0x0001_0000
+    );
+    assert_eq!(glyph_class_def(&out), vec![0, 2, 0, 1, 0, 1, 0, 5, 0, 1]);
+}
+
+#[test]
+fn referenced_gdef_variation_store_remains_unsupported() {
+    let varidx = Buf::new().u16(0).u16(0).u16(0x8000).done();
+    let caret = link(Buf::new().u16(3).i16(0).u16(0).done(), vec![(4, 2, varidx)]);
+    let glyph = link(Buf::new().u16(1).u16(0).done(), vec![(2, 2, caret)]);
+    let carets = link(
+        Buf::new().u16(0).u16(1).u16(0).done(),
+        vec![(0, 2, coverage1(&[1])), (4, 2, glyph)],
+    );
+    let store = Buf::new().u16(1).u32(8).u16(0).u16(0).u16(0).done();
+    let gdef = link(
+        Buf::new()
+            .u32(0x0001_0003)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u32(0)
+            .done(),
+        vec![
+            (4, 2, class_def2(&[(1, 5, 1)])),
+            (8, 2, carets),
+            (14, 4, store),
+        ],
+    );
+    let data = font_with(vec![(b"GDEF", gdef)]);
+    let font = Font::new(&data, 0).unwrap();
+    assert!(
+        matches!(subset(&font, &chars("A")), Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF"))
+    );
+}
+
+#[test]
+fn gdef_store_with_kept_gpos_remains_unsupported() {
+    let gdef = gdef_with_unused_store(class_def2(&[(1, 5, 1)]));
+    let gpos = layout_table(&[], &[]);
+    let data = font_with(vec![(b"GDEF", gdef), (b"GPOS", gpos)]);
+    let font = Font::new(&data, 0).unwrap();
+    assert!(
+        matches!(subset(&font, &chars("A")), Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF"))
+    );
 }
 
 fn glyph_class_def(out: &[u8]) -> Vec<u8> {

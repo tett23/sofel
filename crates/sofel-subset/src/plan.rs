@@ -177,7 +177,10 @@ fn layout_unsupported(
         }
     }
     // Pinning every axis drops the GDEF variation store.
-    if !pinned && kept(b"GDEF").is_some_and(layout::gdef::has_var_store) {
+    let gdef_store_is_unused = kept(b"GDEF").is_some_and(layout::gdef::unused_variation_store)
+        && kept(b"GPOS").is_none()
+        && kept(b"MATH").is_none();
+    if !pinned && kept(b"GDEF").is_some_and(layout::gdef::has_var_store) && !gdef_store_is_unused {
         return Err(SubsetError::Unsupported {
             tag: Tag::new(b"GDEF"),
             reason: "the GDEF item variation store (ADR 0022 stage 10)",
