@@ -34,18 +34,17 @@ FreeType の丸めの順序、係数のキャッシュの同一性、空の座�
 各項目の実装状況はリンク先の ADR に記す。
 
 - [ADR 0050](adr/0050-preserve-opentype-script-values.md)：OpenType タグからスクリプトを求める二つの API で、HarfBuzz が返す4バイトを保持する。
-- [ADR 0055](adr/0055-rewrite-cli-color-rendering.md)：CLI の COLRv0 描画制御を独自実装に書き直し、sofel-cli の MIT 表記を維持する。画素の合成には sofel-raster の既存実装を使う。
 
 cmap のフォーマット2と8は、通常のグリフ検索では読み、シェーピングでは HarfBuzz に合わせて対応なしとする処理を実装済みである。[仕様書](specifications.md) に両方の検索規則を記載している。
 
 [ADR 0057](adr/0057-record-unexcluded-phantom-point-check.md)：[ADR 0018](adr/0018-phantom-point-shift.md) は採択を維持する。ネイティブと wasm の両方で、グリフを除外せずに照合した。[4サイズの照合結果](benchmarks/2026-11-11-unexcluded-phantom-point-check.md)を記録した。
 
-## dfont の読み取りと HarfBuzz のサニタイザの移植
+## HarfBuzz のサニタイザの移植
 
-[ADR 0044](adr/0044-shaping-conformance-exceptions.md) で認めた適合テストの差を解消するため、次の2件を採択した。いずれも未実装である。
+[ADR 0044](adr/0044-shaping-conformance-exceptions.md) で認めた dfont の差は、[ADR 0058](adr/0058-dfont-face-selection.md) に従って解消した。
+固定した `in-house/collections.tests:1` は HarfBuzz と一致した。シェーピングの全5850件では5632件が通り、残る218件は期待する失敗である。dfont を含めた FreeType の654ファイルでは9113項目が一致し、生成した2フェイスの dfont でも cmap とメトリクスの4項目が一致した。
 
-- [ADR 0058](adr/0058-dfont-face-selection.md) に従い、第8段階で、渡された dfont のバイト列から `sfnt` を取り出す。参照リストの順に既存のゼロ始まりのフェイス番号で選べるようにする。`in-house/collections.tests:1` のグリフ列が HarfBuzz と一致したら、`dfont` の期待失敗を削除する。
-- [ADR 0059](adr/0059-layout-sanitizer-diagnostics.md) に従い、GSUB、GPOS、GDEF のサニタイズを HarfBuzz 15.1.0 に合わせる。シェーピング、レイアウト選択、検証器で表の採否を共有する。`in-house/harfbust.tests:4`、レイアウト選択の3件、無作為な文字列のシェーピングの3件を照合し、一致した項目から `sanitize` の期待失敗を削除する。
+- [ADR 0059](adr/0059-layout-sanitizer-diagnostics.md) に従い、GSUB、GPOS、GDEF のサニタイズを HarfBuzz 15.1.0 に合わせた。シェーピング、レイアウト選択、検証器で表の採否を共有する。`in-house/harfbust.tests:4`、レイアウト選択の3件、無作為な文字列のシェーピングの3件を照合し、7件すべてで HarfBuzz と一致し、`sanitize` の期待失敗を削除した。
 
 `sofel-validate` は、表を破棄しても元のデータの検証を続ける。1回の検証で確認できたすべての破損箇所について、フェイス、表タグ、バイト位置、理由をテキストと JSON に出し、同じ箇所を重複させずに数える。未検査範囲があれば、件数が下限であることと、その範囲と理由を示す。シェーピングが表を無視することは、破損箇所数に含めず、破棄した表ごとに警告する。
 
@@ -95,7 +94,7 @@ Unicode の性質の引きが HarfBuzz の 1.24 倍である。2段または3段
 - ヒンティング（7段階目）。TrueType バイトコード（v35、v40）、cvar、幻の点の丸め（[ADR 0018](adr/0018-phantom-point-shift.md)）、CFF のヒンターとステムの太らせ（[ADR 0021](adr/0021-cff-outlines.md)）、オートヒンター、mono と LCD と SDF のラスタライズ。
 - 合成の太字と斜体。HarfBuzz の `hb_font_set_synthetic_*`、FreeType の `FT_GlyphSlot_Embolden`、`FT_GlyphSlot_Oblique`、`FT_Bitmap_Embolden`。[ADR 0016](adr/0016-font-and-vertical-metrics.md)、[ADR 0020](adr/0020-shaping-foundation.md)、[ADR 0023](adr/0023-color-glyphs.md) による。適合テストの `synthetic` 分類が消える。
 - カラーの残り（[ADR 0023](adr/0023-color-glyphs.md)）。`sofel-inflate` と `sofel-png` による復号、`sofel-raster` での RGBA の合成（グラデーションと28の合成モード）、`sofel-svg` での OT-SVG の描画、ベクトルと GPU の出力（12段階目）。
-- sfnt 以外の形式（8段階目）。素の CFF と CEF（[ADR 0021](adr/0021-cff-outlines.md)）、Type1、CID、Type42、PFR、BDF、PCF、FNT、dfont、gzip、LZW、bzip2。9段階目に WOFF と WOFF2 と Brotli がある。
+- sfnt 以外の形式（8段階目）。素の CFF と CEF（[ADR 0021](adr/0021-cff-outlines.md)）、Type1、CID、Type42、PFR、BDF、PCF、FNT、gzip、LZW、bzip2。dfont は [ADR 0058](adr/0058-dfont-face-selection.md) に従って実装した。9段階目に WOFF と WOFF2 と Brotli がある。
 - C ABI。HarfBuzz と FreeType の互換層（`hb_*` と `FT_*` の shim）と、バインディングジェネレータ向けのヘッダの規約。[ADR 0015](adr/0015-c-abi.md) による。
 - フォントの関数の差し替え（`hb_font_funcs_t` とサブフォント）。[ADR 0016](adr/0016-font-and-vertical-metrics.md) による。
 - VARC（13段階目）。

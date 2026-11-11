@@ -70,7 +70,7 @@ impl<'a> Gdef<'a> {
 
     fn new(font: &Font<'a>) -> Gdef<'a> {
         let len = |t: &[u8; 4]| font.table(Tag(*t)).map_or(0, <[u8]>::len);
-        let Some(data) = font.table(gdef::TAG) else {
+        let Some(data) = font.shaping_table(gdef::TAG) else {
             return Gdef::empty();
         };
         if gdef::is_blocklisted(data.len(), len(b"GSUB"), len(b"GPOS")) {
@@ -430,14 +430,14 @@ impl<'a> Layout<'a> {
         Layout {
             gdef: Gdef::new(font),
             gsub: Table::new(
-                font.table(gsub_view::TAG),
+                font.shaping_table(gsub_view::TAG),
                 gsub_view::EXTENSION,
                 |l, i| gsub_view::subtable(l, i).ok(),
                 subst_coverage,
                 Some(gsub_view::REVERSE_CHAIN_SINGLE),
             ),
             gpos: Table::new(
-                font.table(gpos_view::TAG),
+                font.shaping_table(gpos_view::TAG),
                 gpos_view::EXTENSION,
                 |l, i| gpos_view::subtable(l, i).ok(),
                 pos_coverage,

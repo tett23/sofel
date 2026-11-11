@@ -361,10 +361,22 @@ fn colr_extents(
     );
     let mut stacks = core::mem::take(&mut scratch.extents);
     let mut outline = core::mem::take(&mut scratch.outline);
+    let mut glyph_scratch = sofel_outline::font::GlyphScratch::default();
     let (painted, e) = {
         // HarfBuzz draws the layer's outline and takes every point, as
         // the control box of the loaded outline does.
         let mut painter = ExtentsPainter::new(&mut stacks, |g| {
+            if let Some(r) = outlines
+                .instance()
+                .varied_glyf_control_box(sofel_outline::font::read::GlyphId(g), &mut glyph_scratch)
+            {
+                return Some(extents::Extents {
+                    x_min: r.x_min,
+                    y_min: r.y_min,
+                    x_max: r.x_max,
+                    y_max: r.y_max,
+                });
+            }
             let c = outlines
                 .load(
                     sofel_outline::font::read::GlyphId(g),
@@ -373,12 +385,12 @@ fn colr_extents(
                 )
                 .ok()?
                 .cbox;
-            Some(GlyphExtents {
+            Some(extents::Extents::from_glyph(&GlyphExtents {
                 x_bearing: c.x_min,
                 y_bearing: c.y_max,
                 width: c.x_max.saturating_sub(c.x_min),
                 height: c.y_min.saturating_sub(c.y_max),
-            })
+            }))
         });
         painter.push_transform(root);
         let options = PaintOptions {
