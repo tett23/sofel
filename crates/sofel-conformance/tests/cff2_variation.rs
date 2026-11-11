@@ -94,6 +94,7 @@ fn compare(font_path: &Path, positions: &[(&str, &[u8; 4], f32)]) -> usize {
     let bytes = std::fs::read(font_path).unwrap();
     let font = Font::new(&bytes, 0).unwrap();
     let cff = HbCff2::new(&font).unwrap();
+    let default_outlines = Outlines::new(font.default_instance());
     let mut total = 0;
     for &(label, tag, value) in positions {
         let location = Location::new(
@@ -105,7 +106,7 @@ fn compare(font_path: &Path, positions: &[(&str, &[u8; 4], f32)]) -> usize {
             }],
         );
         let instance = font.instance(&location);
-        let outlines = Outlines::new(instance);
+        let outlines = default_outlines.with_location(&location);
         let output = Command::new(&exe)
             .arg("--extents")
             .arg(format!("--variations={label}"))
@@ -194,6 +195,7 @@ fn adr0027_i04_cff2_outlines_match_freetype() {
     paths::require(&exe, "ft-dump").unwrap();
     let bytes = std::fs::read(&font_path).unwrap();
     let font = Font::new(&bytes, 0).unwrap();
+    let default_outlines = Outlines::new(font.default_instance());
     let mut scratch = Scratch::default();
     let mut checked = 0;
     for &(label, tag, value) in &[
@@ -209,7 +211,7 @@ fn adr0027_i04_cff2_outlines_match_freetype() {
                 value,
             }],
         );
-        let outlines = Outlines::new(font.instance(&location));
+        let outlines = default_outlines.with_location(&location);
         for size in ["unscaled", "48"] {
             let output = Command::new(&exe)
                 .args(["--outline", size])
@@ -243,6 +245,7 @@ fn adr0027_i04_cff2_rasters_match_freetype() {
     paths::require(&exe, "ft-dump").unwrap();
     let bytes = std::fs::read(&font_path).unwrap();
     let font = Font::new(&bytes, 0).unwrap();
+    let default_outlines = Outlines::new(font.default_instance());
     let mut scratch = Scratch::default();
     let mut raster = Rasterizer::new();
     let mut checked = 0;
@@ -259,7 +262,7 @@ fn adr0027_i04_cff2_rasters_match_freetype() {
                 value,
             }],
         );
-        let outlines = Outlines::new(font.instance(&location));
+        let outlines = default_outlines.with_location(&location);
         for ppem in [16u16, 48] {
             let output = Command::new(&exe)
                 .args(["--raster", &ppem.to_string()])

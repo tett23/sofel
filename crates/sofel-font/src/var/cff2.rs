@@ -1,11 +1,14 @@
 //! CFF2 blend columns in the order of the ItemVariationData (ADR 0030).
 
 use crate::CffError;
+use alloc::borrow::Cow;
 use alloc::vec::Vec;
 use sofel_read::cff::dict::BlendWeights;
 use sofel_read::item_variation::ItemVariationStore;
 
-use super::{Arith, Cff, Ft, FtLocationError, Instance, SourceFont, StoreKind, StoreScalars};
+use super::{
+    Arith, Cff, Ft, FtLocationError, HbF64, Instance, SourceFont, StoreKind, StoreScalars,
+};
 
 /// Why a CFF2 blend vector cannot be evaluated.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -89,6 +92,24 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
             live.regions()
         };
         select_columns(&store, &data, regions)
+    }
+
+    /// CFF2 region scalars for HarfBuzz boxes, borrowed from this location when possible.
+    pub fn cff2_hb_region_scalars<'a>(&'a self, store: &ItemVariationStore<'_>) -> Cow<'a, [f32]> {
+        let same = self.location.source.is_some_and(|source: SourceFont<'_>| {
+            source.matches(self.font.sfnt.file(), self.font.face_index)
+        });
+        if same
+            && let Some(cached) = HbF64::cached(self.location, StoreKind::Cff2)
+            && cached.regions().len() == usize::from(store.region_count())
+        {
+            return Cow::Borrowed(cached.regions());
+        }
+        Cow::Owned(
+            StoreScalars::from_store::<HbF64>(store, self.coords_normalized(), true)
+                .regions()
+                .to_vec(),
+        )
     }
 }
 

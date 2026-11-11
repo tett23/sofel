@@ -30,7 +30,7 @@ use alloc::vec::Vec;
 use sofel_font::read::GlyphId;
 use sofel_font::read::cff::hb::HbIndex;
 use sofel_font::read::cff::subr_bias;
-use sofel_font::var::{HbF64, Instance, StoreScalars};
+use sofel_font::var::{Instance, Location};
 use sofel_font::{Font, GlyphExtents, HbCff1, HbCff2, HbScale};
 use sofel_geom::float::{hb_clamp_to_i32, hb_roundf};
 
@@ -47,12 +47,21 @@ const ONE: i64 = 0x1_0000;
 
 /// HarfBuzz's glyph boxes of one font: the CFF and CFF2 accelerators,
 /// built once with [`HbExtents::new`] and kept by the caller (ADR 0003).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct HbExtents<'data, 'loc, 'source> {
     font: Font<'data>,
     location: &'loc sofel_font::var::Location<'source>,
     cff2: Option<HbCff2<'data>>,
+    cff2_scalars: Option<Vec<f32>>,
     cff1: Option<HbCff1<'data>>,
+}
+
+fn cff2_scalars_at(cff2: Option<&HbCff2<'_>>, instance: Instance<'_, '_, '_, '_>) -> Option<Vec<f32>> {
+    instance.font().var_axes().next()?;
+    cff2.and_then(|cff| {
+        cff.variation_store()
+            .map(|store| instance.cff2_hb_region_scalars(&store).into_owned())
+    })
 }
 
 impl<'data, 'loc, 'source> HbExtents<'data, 'loc, 'source> {
@@ -63,11 +72,28 @@ impl<'data, 'loc, 'source> HbExtents<'data, 'loc, 'source> {
         instance: sofel_font::var::Instance<'_, 'data, 'loc, 'source>,
     ) -> HbExtents<'data, 'loc, 'source> {
         let font = instance.font();
+        let cff2 = HbCff2::new(font);
+        let cff2_scalars = cff2_scalars_at(cff2.as_ref(), instance);
         HbExtents {
             font: *font,
             location: instance.location(),
-            cff2: HbCff2::new(font),
+            cff2,
+            cff2_scalars,
             cff1: HbCff1::new(font),
+        }
+    }
+
+    /// Reuses the CFF accelerators for another location of the same font.
+    pub fn with_location<'new_loc, 'new_source>(
+        &self,
+        location: &'new_loc Location<'new_source>,
+    ) -> HbExtents<'data, 'new_loc, 'new_source> {
+        HbExtents {
+            font: self.font,
+            location,
+            cff2: self.cff2,
+            cff2_scalars: cff2_scalars_at(self.cff2.as_ref(), self.font.instance(location)),
+            cff1: self.cff1,
         }
     }
 
@@ -108,7 +134,7 @@ impl<'data, 'loc, 'source> HbExtents<'data, 'loc, 'source> {
         }
         self.cff2
             .as_ref()
-            .and_then(|c| cff2_extents_at(c, glyph.0, &instance))
+            .and_then(|c| cff2_extents_with_scalars(c, glyph.0, self.cff2_scalars.as_deref()))
             .or_else(|| self.cff1.as_ref().and_then(|c| cff1_extents(c, glyph.0)))
             .map(|e| scale.scale_glyph_extents(e))
     }
@@ -135,19 +161,18 @@ pub fn cff2_extents_at(
     // hb_font_create initializes one zero coordinate per fvar axis, even
     // when the caller supplied no variations.
     let scalars = if instance.font().var_axes().next().is_some() {
-        cff.variation_store().map(|store| {
-            StoreScalars::from_store::<HbF64>(&store, instance.coords_normalized(), true)
-        })
+        cff.variation_store()
+            .map(|store| instance.cff2_hb_region_scalars(&store))
     } else {
         None
     };
-    cff2_extents_with_scalars(cff, glyph, scalars)
+    cff2_extents_with_scalars(cff, glyph, scalars.as_deref())
 }
 
 fn cff2_extents_with_scalars(
     cff: &HbCff2<'_>,
     glyph: u32,
-    scalars: Option<StoreScalars<f32>>,
+    scalars: Option<&[f32]>,
 ) -> Option<GlyphExtents> {
     if glyph >= cff.num_glyphs() {
         return None;
@@ -342,7 +367,7 @@ enum Fetched {
 
 /// The interpreter state (`cff1_cs_interp_env_t`,
 /// `cff2_cs_interp_env_t`) and the extents parameter.
-struct Env<'a, 'c> {
+struct Env<'a, 'c, 's> {
     s: Str<'a>,
     stack: [f64; STACK],
     len: usize,
@@ -363,19 +388,19 @@ struct Env<'a, 'c> {
     seen_vsindex: bool,
     seen_blend: bool,
     region_count: u32,
-    region_scalars: Option<StoreScalars<f32>>,
+    region_scalars: Option<&'s [f32]>,
     weights: Vec<f32>,
     path_open: bool,
     bounds: Bounds,
 }
 
-impl<'a, 'c> Env<'a, 'c> {
+impl<'a, 'c, 's> Env<'a, 'c, 's> {
     fn new(
         data: &'a [u8],
         global: HbIndex<'a>,
         local: HbIndex<'a>,
         kind: Kind<'a, 'c>,
-        region_scalars: Option<StoreScalars<f32>>,
+        region_scalars: Option<&'s [f32]>,
     ) -> Self {
         let s = Str { data, offset: 0 };
         let ivs = match kind {
@@ -960,7 +985,7 @@ impl<'a, 'c> Env<'a, 'c> {
             self.region_count = cff.region_count(self.ivs);
             if let (Some(store), Some(scalars), Ok(ivs)) = (
                 cff.variation_store(),
-                self.region_scalars.as_ref(),
+                self.region_scalars,
                 u16::try_from(self.ivs),
             ) && let Some(data) = store.item_data(ivs)
                 && u32::from(data.region_index_count()) == self.region_count
@@ -969,7 +994,7 @@ impl<'a, 'c> Env<'a, 'c> {
                     let Some(index) = data.region_index(column) else {
                         break;
                     };
-                    let Some(&value) = scalars.regions().get(usize::from(index)) else {
+                    let Some(&value) = scalars.get(usize::from(index)) else {
                         break;
                     };
                     self.weights.push(value);

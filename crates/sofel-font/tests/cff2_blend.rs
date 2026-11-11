@@ -10,6 +10,7 @@ use sofel_font::read::cff::FtBlend;
 use sofel_font::read::cff::dict::BlendWeights;
 use sofel_font::var::{BlendError, Ft, HbF64, Location};
 use sofel_font::{Cff, Font};
+use std::borrow::Cow;
 
 fn fvar_one_axis() -> Vec<u8> {
     let mut fvar = vec![0, 1, 0, 0, 0, 16, 0, 2, 0, 1, 0, 20, 0, 0, 0, 8];
@@ -133,4 +134,26 @@ fn adr0027_i04_private_dict_reparses_for_each_location() {
         14
     );
     assert_eq!(cff.private_dict(0).unwrap().std_hw, 10);
+}
+
+#[test]
+fn adr0030_i03_cff2_region_cache_requires_same_source() {
+    let store = item_variation_store(1, &[vec![(0, 0x4000, 0x4000)]], &[vec![0]]);
+    let bytes = font_with_store(Some(store));
+    let font = Font::new(&bytes, 0).unwrap();
+    let location = Location::from_design(&font, &[1.0]);
+    let cff = Cff::new(&font).unwrap();
+    let data = cff.variation_store().unwrap();
+    let same_instance = font.instance(&location);
+    let same = same_instance.cff2_hb_region_scalars(&data);
+    assert!(matches!(same, Cow::Borrowed(_)));
+
+    let copied_bytes = bytes.clone();
+    let copied_font = Font::new(&copied_bytes, 0).unwrap();
+    let copied_cff = Cff::new(&copied_font).unwrap();
+    let copied_data = copied_cff.variation_store().unwrap();
+    let other_instance = copied_font.instance(&location);
+    let other = other_instance.cff2_hb_region_scalars(&copied_data);
+    assert!(matches!(other, Cow::Owned(_)));
+    assert_eq!(same.as_ref(), other.as_ref());
 }

@@ -301,7 +301,7 @@ enum Format<'a> {
 /// ([`Cff::new`]), any other from `glyf` and `loca` (or `GLYF` and
 /// `LOCA`). For glyf fonts it costs nothing over [`draw`]; for CFF fonts
 /// it keeps the opened table.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct Outlines<'data, 'loc, 'source> {
     font: Font<'data>,
     location: &'loc sofel_font::var::Location<'source>,
@@ -328,6 +328,19 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
             location: instance.location(),
             format,
             extents: HbExtents::new(instance),
+        }
+    }
+
+    /// Reuses the opened CFF and HarfBuzz views at another font location.
+    pub fn with_location<'new_loc, 'new_source>(
+        &self,
+        location: &'new_loc sofel_font::var::Location<'new_source>,
+    ) -> Outlines<'data, 'new_loc, 'new_source> {
+        Outlines {
+            font: self.font,
+            location,
+            format: self.format,
+            extents: self.extents.with_location(location),
         }
     }
 

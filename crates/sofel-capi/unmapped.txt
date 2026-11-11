@@ -74,6 +74,7 @@ sofel_outline::cff2_extents_at The location-aware CFF2 step of HbExtents::glyph_
 sofel_outline::HbExtents::cff1 Returns the Rust accelerator that sofel_font_t keeps inside.
 sofel_outline::HbExtents::cff2 Returns the Rust accelerator that sofel_font_t keeps inside.
 sofel_outline::HbExtents::font Returns the font that sofel_font_t is.
+sofel_outline::HbExtents::with_location Reuses the Rust CFF box accelerator; C passes location to sofel_font_glyph_extents.
 sofel_shape::SerializeFlags::contains A bit test, which C writes as such.
 sofel_shape::SerializeFlags::union A bitwise or, which C writes as such.
 sofel_shape::SerializeFont::* The Rust trait through which serialization asks the font; C passes a sofel_font_t (and a sofel_glyph_names_t) to sofel_buffer_serialize and the deserializers.
@@ -91,6 +92,7 @@ sofel_font::Cff::default_blend Rust blend weights for the decoder; C draws CFF2 
 sofel_font::Cff::private_dict_with_blend The internal location-aware DICT parser; C draws through sofel_outline_draw.
 sofel_font::Cff::subfont_with_blend The internal location-aware CFF subfont view; C draws through sofel_outline_draw.
 sofel_font::var::Instance::ft_blend_weights The decoder's FreeType weight adapter; C draws through sofel_outline_draw and reads coefficients through sofel_cff2_blend_vector.
+sofel_font::var::Instance::cff2_hb_region_scalars Internal HarfBuzz CFF2 box coefficients borrowed from the location cache; C gets the box through sofel_font_glyph_extents.
 sofel_font::Cff::encoding Rust view; C reads the bytes with sofel_font_table.
 sofel_font::Cff::fd_select Rust view; C reads the bytes with sofel_font_table.
 sofel_font::Cff::font_dict Rust DICT structures; C reads the bytes with sofel_font_table.
@@ -112,6 +114,7 @@ sofel_font::fs_type The /FSType rule on a byte string; C gets it for a font with
 sofel_outline::Outlines::cff The opened CFF that sofel_font_t keeps; C queries it with sofel_font_cid and friends.
 sofel_outline::Outlines::font Returns the Rust font; C keeps the sofel_font_t.
 sofel_outline::Outlines::instance Returns the Rust font and location pair; C passes sofel_font_t and sofel_location_t to coordinate-dependent queries (ADR 0027).
+sofel_outline::Outlines::with_location Reuses the Rust CFF outline accelerator for coordinate-dependent C drawing.
 sofel_outline::Outlines::hb_extents Returns the Rust boxes value; C gets boxes with sofel_font_glyph_extents.
 sofel_read::cff::Charset::num_ranges The length of the caller's array for the charset index (ADR 0025); sofel_font_t builds and keeps the index inside, so C needs no array.
 sofel_read::cff::Charset::index_into Builds the charset index over the caller's array (ADR 0025); sofel_font_create builds it inside sofel_font_t, which sofel_font_cid and sofel_font_ft_glyph_name use.

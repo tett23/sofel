@@ -371,6 +371,10 @@ fn adr0030_i04_cff2_harfbuzz_default_evaluates_zero_peak() {
         Some(ext(0, 100, 150, -100))
     );
     assert_eq!(
+        HbExtents::new(font.default_instance()).glyph_extents(GlyphId(0)),
+        Some(ext(0, 100, 150, -100))
+    );
+    assert_eq!(
         cff2_extents_at(&cff, 0, &font.instance(&zero)),
         Some(ext(0, 100, 150, -100))
     );
