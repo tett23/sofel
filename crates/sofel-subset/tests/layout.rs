@@ -969,12 +969,24 @@ fn gdef_store_with_invalid_math_constant_index_is_rejected() {
 }
 
 #[test]
-fn gdef_store_with_math_glyph_info_variation_index_remains_unsupported() {
+fn gdef_store_with_math_glyph_info_variation_index_follows_kept_glyphs() {
     let gdef = gdef_with_referenced_store(&[0]);
-    let varidx = Buf::new().u16(0).u16(0).u16(0x8000).done();
+    let first_varidx = Buf::new().u16(0).u16(1).u16(0x8000).done();
+    let second_varidx = Buf::new().u16(0).u16(2).u16(0x8000).done();
     let value_table = link(
-        Buf::new().u16(0).u16(1).i16(10).u16(0).done(),
-        vec![(0, 2, coverage1(&[1])), (6, 2, varidx)],
+        Buf::new()
+            .u16(0)
+            .u16(2)
+            .i16(10)
+            .u16(0)
+            .i16(20)
+            .u16(0)
+            .done(),
+        vec![
+            (0, 2, coverage1(&[1, 2])),
+            (6, 2, first_varidx),
+            (10, 2, second_varidx),
+        ],
     );
     let glyph_info = link(vec![0; 8], vec![(0, 2, value_table)]);
     let math = link(
@@ -983,10 +995,50 @@ fn gdef_store_with_math_glyph_info_variation_index_remains_unsupported() {
     );
     let data = font_with(vec![(b"GDEF", gdef), (b"MATH", math)]);
     let font = Font::new(&data, 0).unwrap();
-    assert!(matches!(
-        subset(&font, &chars("A")),
-        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF")
-    ));
+    for (text, retained_index, item_count) in [("A", 1, 2), ("B", 0, 1)] {
+        let out = subset(&font, &chars(text)).unwrap();
+        let gdef = out_table(&out, b"GDEF").unwrap();
+        let store = sofel_font::read::gdef::Gdef::new(&gdef)
+            .unwrap()
+            .variation_store()
+            .unwrap()
+            .unwrap();
+        assert_eq!(store.item_data(0).unwrap().item_count, item_count);
+        let math = out_table(&out, b"MATH").unwrap();
+        let info = follow(&math, 6);
+        let values = follow(info, 0);
+        assert_eq!(u16_at(values, 2), 1);
+        let device = follow(values, 6);
+        assert_eq!(&device[..6], &[0, 0, 0, retained_index, 0x80, 0]);
+    }
+}
+
+#[test]
+fn gdef_store_with_math_top_accent_variation_index_is_remapped() {
+    let gdef = gdef_with_referenced_store(&[0]);
+    let varidx = Buf::new().u16(0).u16(2).u16(0x8000).done();
+    let value_table = link(
+        Buf::new().u16(0).u16(1).i16(20).u16(0).done(),
+        vec![(0, 2, coverage1(&[2])), (6, 2, varidx)],
+    );
+    let glyph_info = link(vec![0; 8], vec![(2, 2, value_table)]);
+    let math = link(
+        Buf::new().u32(0x0001_0000).u16(0).u16(0).u16(0).done(),
+        vec![(6, 2, glyph_info)],
+    );
+    let data = font_with(vec![(b"GDEF", gdef), (b"MATH", math)]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("B")).unwrap();
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    let store = sofel_font::read::gdef::Gdef::new(&gdef)
+        .unwrap()
+        .variation_store()
+        .unwrap()
+        .unwrap();
+    assert_eq!(store.item_data(0).unwrap().item_count, 1);
+    let math = out_table(&out, b"MATH").unwrap();
+    let device = follow(follow(follow(&math, 6), 2), 6);
+    assert_eq!(&device[..6], &[0, 0, 0, 0, 0x80, 0]);
 }
 
 #[test]
