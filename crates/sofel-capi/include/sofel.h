@@ -3027,7 +3027,9 @@ int32_t sofel_buffer_serialize(const sofel_buffer_t *buffer, size_t start, size_
  * text does not read to its end, is empty, or the format or direction
  * is unknown.
  *
- * Rust: sofel_shape::deserialize_glyphs, sofel_shape::GlyphBuffer::from_parts
+ * Clearing the result reuses the original buffer settings, including after a parse error.
+ *
+ * Rust: sofel_shape::deserialize_glyphs, sofel_shape::GlyphBuffer::from_parts, sofel_shape::UnicodeBuffer::into_glyphs
  * HarfBuzz: hb_buffer_deserialize_glyphs
  * FreeType: none
  */
