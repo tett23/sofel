@@ -291,17 +291,97 @@ fn cff2_called_subroutines_recompute_bias_after_shrinking_index() {
 }
 
 #[test]
-fn cff2_called_subroutines_without_token_rewriter_remain_unsupported() {
+fn cff2_no_hinting_called_subroutines_remain_unsupported() {
     let mut programs = charstrings();
     programs[2] = charstring(&[Cs::Op(19), Cs::I(-107), Cs::Op(29)]);
     let bytes = font_with_programs(vec![vec![11]], Vec::new(), programs);
     let font = Font::new(&bytes, 0).unwrap();
-    for input in [glyphs(&[2]), glyphs(&[2]).with_flags(Flags::NO_HINTING)] {
-        assert!(matches!(
-            Plan::new(&font, &input),
-            Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"CFF2")
-        ));
-    }
+    assert!(Plan::new(&font, &glyphs(&[2])).is_ok());
+    assert!(matches!(
+        Plan::new(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)),
+        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"CFF2")
+    ));
+}
+
+#[test]
+fn cff2_hintmask_bytes_that_look_like_calls_are_not_calls() {
+    let mut programs = charstrings();
+    programs[2] = charstring(&[
+        Cs::I(0),
+        Cs::I(10),
+        Cs::Op(1),
+        Cs::Op(19),
+        Cs::Raw(vec![29]),
+        Cs::Op(20),
+        Cs::Raw(vec![10]),
+        Cs::I(-107),
+        Cs::Op(29),
+    ]);
+    let bytes = font_with_programs(vec![vec![11]], vec![vec![11]], programs);
+    let font = Font::new(&bytes, 0).unwrap();
+    assert!(Plan::new(&font, &glyphs(&[2])).is_ok());
+    let out = subset(&font, &glyphs(&[2])).unwrap();
+    // HarfBuzz 15.1.0: hb-dump --subset --font-file=INPUT --output-file=OUTPUT --gids=2.
+    assert_eq!(out, include_bytes!("data/cff2-hintmask-hb15.otf"));
+    let result = Font::new(&out, 0).unwrap();
+    let cff2 = HbCff2::new(&result).unwrap();
+    assert_eq!(cff2.global_subrs().len(), 1);
+    assert_eq!(cff2.private(0).0.len(), 0);
+    assert!(
+        cff2.char_string(1)
+            .unwrap()
+            .windows(2)
+            .any(|w| w == [19, 29])
+    );
+    assert!(
+        cff2.char_string(1)
+            .unwrap()
+            .windows(2)
+            .any(|w| w == [20, 10])
+    );
+}
+
+#[test]
+fn cff2_mask_length_counts_stems_added_in_a_subroutine() {
+    let mut programs = charstrings();
+    programs[2] = charstring(&[
+        Cs::I(-107),
+        Cs::Op(29),
+        Cs::Op(19),
+        Cs::Raw(vec![10]),
+        Cs::I(-107),
+        Cs::Op(10),
+    ]);
+    let global = charstring(&[Cs::I(0), Cs::I(10), Cs::Op(1), Cs::Op(11)]);
+    let bytes = font_with_programs(vec![global], vec![vec![11]], programs);
+    let font = Font::new(&bytes, 0).unwrap();
+    assert!(Plan::new(&font, &glyphs(&[2])).is_ok());
+    let out = subset(&font, &glyphs(&[2])).unwrap();
+    // HarfBuzz 15.1.0, with INPUT built above and --gids=2.
+    assert_eq!(out, include_bytes!("data/cff2-subr-stem-hb15.otf"));
+    let result = Font::new(&out, 0).unwrap();
+    let cff2 = HbCff2::new(&result).unwrap();
+    assert_eq!(cff2.global_subrs().len(), 1);
+    assert_eq!(cff2.private(0).0.len(), 1);
+    assert!(
+        cff2.char_string(1)
+            .unwrap()
+            .windows(2)
+            .any(|w| w == [19, 10])
+    );
+}
+
+#[test]
+fn cff2_shared_subroutine_with_conflicting_mask_lengths_is_unsupported() {
+    let mut programs = charstrings();
+    programs[1] = charstring(&[Cs::I(0), Cs::I(10), Cs::Op(1), Cs::I(-107), Cs::Op(29)]);
+    programs[2] = charstring(&[Cs::I(-107), Cs::Op(29)]);
+    let bytes = font_with_programs(vec![vec![19, 139, 11]], Vec::new(), programs);
+    let font = Font::new(&bytes, 0).unwrap();
+    assert!(matches!(
+        Plan::new(&font, &glyphs(&[1, 2])),
+        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"CFF2")
+    ));
 }
 
 #[test]

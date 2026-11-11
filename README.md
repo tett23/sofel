@@ -97,7 +97,7 @@ HarfBuzzの `hb-subset` と同じオプションでサブセット化する（[A
 軸を固定しない場合も、BASE の座標に VariationIndex の参照がなければ、使われない変化量の表を除く。
 適合テストで出力が違えば、表ごとに最初の差の位置を示す。片方だけにある表は、どちらに欠けているかも示す。
 
-軸を固定しない CFF2 は `--desubroutinize` を指定するとサブセット化できる。指定しない場合は、残すグリフがサブルーチンを呼ばなければ未使用のサブルーチンを除き、呼ぶ場合は即値の番号で呼ぶ global/local のサブルーチンを必要な分だけ残して番号を詰める。`blend`、`vsindex` と VariationStore を残す。ヒントマスクを含む charstring や `--no-hinting` でサブルーチンを呼ぶ場合は、まだ対応していない。
+軸を固定しない CFF2 は `--desubroutinize` を指定するとサブセット化できる。指定しない場合は、残すグリフがサブルーチンを呼ばなければ未使用のサブルーチンを除き、呼ぶ場合は即値の番号で呼ぶ global/local のサブルーチンを必要な分だけ残して番号を詰める。`blend`、`vsindex` と VariationStore を残す。ヒントを保持する場合は `hintmask` と `cntrmask` のデータバイトを解釈器に従って読み飛ばす。`--no-hinting` でサブルーチンを呼ぶ場合と、同じサブルーチンのマスク長が呼び出しごとに異なる場合は、まだ対応していない。
 
 ```sh
 sofel-subset --font-file=Roboto.ttf --unicodes=41-5A -o out.ttf
