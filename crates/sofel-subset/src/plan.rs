@@ -298,6 +298,7 @@ impl Plan {
             && !drop.contains(cff2.to_u32())
             && !no_subset.contains(cff2.to_u32())
             && !full_instance
+            && !input.flags().has(Flags::DESUBROUTINIZE)
         {
             return Err(SubsetError::Unsupported {
                 tag: cff2,

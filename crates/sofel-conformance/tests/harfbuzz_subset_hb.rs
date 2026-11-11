@@ -16,6 +16,8 @@
 //! - `hb-dump/golem/<font>:keep+prepared` and `:pin+prepared`: the same
 //!   with `--preprocess` (`hb_subset_preprocess` in HarfBuzz,
 //!   `sofel_subset::Prepared` in sofel).
+//! - `hb-dump/cff2/<font>:desubroutinize`: keep a CFF2 VariationStore and
+//!   blends while flattening subroutines in three variable fonts.
 //! - `hb-dump/glyphs/<font>`: glyphs by name (`--glyphs`, ADR 0022 stage
 //!   12) on every font with glyph names: up to 24 named glyphs spread
 //!   over the font, `gid1` and `uni0041`, then the second name's glyph
@@ -161,6 +163,22 @@ fn subsetting_agrees_with_harfbuzz() {
             args.push("--downgrade-cff2".to_string());
             cases.push((format!("hb-dump/golem/{name}:pin-downgrade"), args));
         }
+    }
+    for font in [
+        "AdobeVFPrototype.otf",
+        "AdobeVFPrototype_vsindex.otf",
+        "Cantarell-VF-ABC.otf",
+    ] {
+        let path = data().join("fonts").join(font);
+        cases.push((
+            format!("hb-dump/cff2/{font}:desubroutinize"),
+            vec![
+                format!("--font-file={}", path.display()),
+                "--gids=0-3".to_string(),
+                "--desubroutinize".to_string(),
+                "--drop-tables+=GDEF,HVAR,VVAR".to_string(),
+            ],
+        ));
     }
     for case in subset::repack_cases(&data()).unwrap() {
         cases.push((format!("hb-dump/repack/{}", case.name), case.args()));

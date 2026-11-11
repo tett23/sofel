@@ -172,6 +172,42 @@ fn cff2_with_its_variations_is_unsupported() {
 }
 
 #[test]
+fn cff2_keep_variations_with_desubroutinize() {
+    let bytes = font();
+    let f = Font::new(&bytes, 0).unwrap();
+    let input = glyphs(&[1]).with_flags(Flags::DESUBROUTINIZE);
+    let out = subset(&f, &input).unwrap();
+    let result = Font::new(&out, 0).unwrap();
+    let cff2 = HbCff2::new(&result).unwrap();
+    assert!(cff2.var_store().is_some());
+    assert!(cff2.global_subrs().is_empty());
+    assert_eq!(cff2.num_glyphs(), 2);
+    assert!(cff2.char_string(1).unwrap().contains(&16));
+    assert_eq!(cff2_private(&out), private());
+}
+
+#[test]
+fn cff2_without_variation_store_can_be_desubroutinized() {
+    let bytes = otto_font(
+        2,
+        vec![(
+            b"CFF2",
+            cff2(&Cff2Spec {
+                charstrings: vec![Vec::new(), charstring(&[Cs::I(1), Cs::I(2), Cs::Op(21)])],
+                fds: vec![(Vec::new(), Vec::new())],
+                ..Cff2Spec::default()
+            }),
+        )],
+    );
+    let font = Font::new(&bytes, 0).unwrap();
+    let out = subset(&font, &glyphs(&[1]).with_flags(Flags::DESUBROUTINIZE)).unwrap();
+    let result = Font::new(&out, 0).unwrap();
+    let cff2 = HbCff2::new(&result).unwrap();
+    assert_eq!(cff2.var_store(), None);
+    assert_eq!(cff2.char_string(1).unwrap(), &[140, 141, 21]);
+}
+
+#[test]
 fn pinned_blends_are_evaluated_and_positions_rounded() {
     let (out, _) = pinned(glyphs(&[1, 2, 3]));
     assert!(table(&out, b"fvar").is_none());
