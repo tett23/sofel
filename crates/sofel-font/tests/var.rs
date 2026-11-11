@@ -9,7 +9,7 @@ use build::{Buf, name, sample_tables, sample_tables_with_glyf, sfnt, utf16be};
 use sofel_font::Font;
 use sofel_font::read::{Fixed, GlyphId};
 use sofel_font::var::{
-    AdvanceCache, Ft, FtLocationError, HbF32, Location, StoreKind, VarError, Variation,
+    AdvanceCache, Ft, FtLocationError, HbF32, HbF64, Location, StoreKind, VarError, Variation,
 };
 
 #[test]
@@ -756,6 +756,54 @@ fn i02_cached_and_copied_font_use_equal_deltas() {
         cached.item_delta::<Ft>(StoreKind::Mvar, 0, 0),
         live.item_delta::<Ft>(StoreKind::Mvar, 0, 0)
     );
+}
+
+#[test]
+fn adr0029_i03_location_from_another_font_uses_the_target_regions() {
+    let source_bytes = sfnt(&mvar_tables(4));
+    let source = Font::new(&source_bytes, 0).unwrap();
+    let mut seed = 29u32;
+    for _ in 0..1000 {
+        seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        let [a, b, c, _] = seed.to_be_bytes();
+        let target_bytes = sfnt(&mvar_tables(1 + a % 16));
+        let target = Font::new(&target_bytes, 0).unwrap();
+        // The region ends at 16 in 2.14. Include fractional 16.16
+        // coordinates between the 2.14 values, as well as the limits.
+        let coordinate = match b % 5 {
+            0 => -65536,
+            1 => 0,
+            2 => 65536,
+            _ => i32::from(c % 65),
+        };
+        let coords = [Fixed(coordinate)];
+        let foreign = Location::from_normalized_16_16(&source, &coords);
+        let local = Location::from_normalized_16_16(&target, &coords);
+        let live = target.instance(&foreign);
+        let cached = target.instance(&local);
+        assert_eq!(
+            live.item_delta::<HbF32>(StoreKind::Mvar, 0, 0)
+                .unwrap()
+                .to_bits(),
+            cached
+                .item_delta::<HbF32>(StoreKind::Mvar, 0, 0)
+                .unwrap()
+                .to_bits()
+        );
+        assert_eq!(
+            live.item_delta::<HbF64>(StoreKind::Mvar, 0, 0)
+                .unwrap()
+                .to_bits(),
+            cached
+                .item_delta::<HbF64>(StoreKind::Mvar, 0, 0)
+                .unwrap()
+                .to_bits()
+        );
+        assert_eq!(
+            live.item_delta::<Ft>(StoreKind::Mvar, 0, 0),
+            cached.item_delta::<Ft>(StoreKind::Mvar, 0, 0)
+        );
+    }
 }
 
 #[test]

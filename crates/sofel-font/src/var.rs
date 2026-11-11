@@ -2,6 +2,8 @@
 
 mod cff2;
 pub use cff2::{BlendError, BlendScalars};
+#[cfg(test)]
+mod generated_stores;
 pub mod gvar;
 
 use alloc::vec::Vec;
