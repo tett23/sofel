@@ -422,6 +422,17 @@ fn adr0027_variable_clip_rounds_each_edge_outward() {
     let font = Font::new(&bytes, 0).unwrap();
     for (weight, expected) in [(0.0, [50., 50., 500., 500.]), (0.5, [49., 49., 501., 501.])] {
         let location = sofel_font::var::Location::from_design(&font, &[weight, 0.0]);
+        let outlines = sofel_outline::Outlines::new(font.instance(&location));
+        let e = sofel_color::glyph_extents(&outlines, 1, &mut Scratch::default()).unwrap();
+        assert_eq!(
+            [
+                e.x_bearing,
+                e.y_bearing + e.height,
+                e.x_bearing + e.width,
+                e.y_bearing
+            ],
+            expected.map(|v| v as i32)
+        );
         let mut recording = sofel_color::Recording::new();
         sofel_color::paint_recording_at(
             font.instance(&location),
