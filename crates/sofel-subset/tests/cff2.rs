@@ -102,7 +102,7 @@ fn private() -> Vec<u8> {
     p
 }
 
-fn font() -> Vec<u8> {
+fn font_with_subrs(gsubrs: Vec<Vec<u8>>) -> Vec<u8> {
     let mut top = Vec::new();
     for r in [".001", "0", "0", ".001", "0", "0"] {
         top.extend(d_real(r));
@@ -115,12 +115,17 @@ fn font() -> Vec<u8> {
     );
     let t = cff2(&Cff2Spec {
         top,
+        gsubrs,
         charstrings: charstrings(),
         fds: vec![(private(), Vec::new())],
         vstore: Some(vstore),
         ..Cff2Spec::default()
     });
     otto_font(4, vec![(b"CFF2", t), (b"fvar", fvar())])
+}
+
+fn font() -> Vec<u8> {
+    font_with_subrs(Vec::new())
 }
 
 fn glyphs(ids: &[u32]) -> Input {
@@ -155,20 +160,29 @@ fn cff2_private(out: &[u8]) -> Vec<u8> {
 }
 
 #[test]
-fn cff2_with_its_variations_is_unsupported() {
+fn cff2_without_subroutines_keeps_variations() {
     let bytes = font();
     let f = Font::new(&bytes, 0).unwrap();
-    let r = subset(&f, &glyphs(&[1]));
-    assert!(
-        matches!(r, Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"CFF2")),
-        "{r:?}"
-    );
+    let out = subset(&f, &glyphs(&[1])).unwrap();
+    let result = Font::new(&out, 0).unwrap();
+    let cff2 = HbCff2::new(&result).unwrap();
+    assert!(cff2.var_store().is_some());
+    assert_eq!(cff2.num_glyphs(), 2);
+    assert!(cff2.char_string(1).unwrap().contains(&16));
     let drop = glyphs(&[1]).map_set(SetKind::DropTables, |s| {
         s.add(Tag::new(b"CFF2").to_u32());
         s.add(Tag::new(b"fvar").to_u32());
     });
     let out = subset(&f, &drop).unwrap();
     assert!(table(&out, b"CFF2").is_none());
+}
+
+#[test]
+fn cff2_with_subroutines_remains_unsupported_without_desubroutinize() {
+    let bytes = font_with_subrs(vec![vec![11]]);
+    let font = Font::new(&bytes, 0).unwrap();
+    let result = subset(&font, &glyphs(&[1]));
+    assert!(matches!(result, Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"CFF2")));
 }
 
 #[test]

@@ -18,6 +18,8 @@
 //!   `sofel_subset::Prepared` in sofel).
 //! - `hb-dump/cff2/<font>:desubroutinize`: keep a CFF2 VariationStore and
 //!   blends while flattening subroutines in three variable fonts.
+//! - `hb-dump/cff2/<font>:keep`: retain variations in a CFF2 font without
+//!   global or local subroutines.
 //! - `hb-dump/glyphs/<font>`: glyphs by name (`--glyphs`, ADR 0022 stage
 //!   12) on every font with glyph names: up to 24 named glyphs spread
 //!   over the font, `gid1` and `uni0041`, then the second name's glyph
@@ -180,6 +182,16 @@ fn subsetting_agrees_with_harfbuzz() {
             ],
         ));
     }
+    let no_subrs = paths::testdata()
+        .join("harfbuzz/test/api/fonts/AdobeVFPrototype.ac.nosubrs.otf");
+    cases.push((
+        "hb-dump/cff2/AdobeVFPrototype.ac.nosubrs.otf:keep".to_string(),
+        vec![
+            format!("--font-file={}", no_subrs.display()),
+            "--gids=0-2".to_string(),
+            "--drop-tables+=GDEF,HVAR,VVAR".to_string(),
+        ],
+    ));
     for case in subset::repack_cases(&data()).unwrap() {
         cases.push((format!("hb-dump/repack/{}", case.name), case.args()));
     }
