@@ -33,11 +33,31 @@ pub(crate) fn extents(
     glyph: GlyphId,
     scratch: &mut GlyphScratch,
 ) -> Option<GlyphExtents> {
+    let rect = control_box(instance, glyph, scratch)?;
+    let (min_x, max_x, min_y, max_y) = (rect.x_min, rect.x_max, rect.y_min, rect.y_max);
+    let x_min = hb_roundf32(min_x);
+    let x_max = hb_roundf32(max_x);
+    let y_min = hb_roundf32(min_y);
+    let y_max = hb_roundf32(max_y);
+    Some(GlyphExtents {
+        x_bearing: hb_clamp_to_i32(x_min),
+        y_bearing: hb_clamp_to_i32(y_max),
+        width: hb_clamp_to_i32(x_max - x_min),
+        height: hb_clamp_to_i32(y_min - y_max),
+    })
+}
+
+/// The unrounded control box used when HarfBuzz draws a glyf layer for COLR.
+pub(crate) fn control_box(
+    instance: Instance<'_, '_, '_, '_>,
+    glyph: GlyphId,
+    scratch: &mut GlyphScratch,
+) -> Option<sofel_geom::Rect> {
     let mut budget = 1 << 24;
     let (outline, phantoms) = outline_at(instance, glyph, scratch, &mut budget)?;
     let mut points = outline.iter();
     let Some(first) = points.next() else {
-        return Some(GlyphExtents::default());
+        return Some(sofel_geom::Rect::default());
     };
     let shift = phantoms[0].x;
     let first_x = first.x - shift;
@@ -50,17 +70,13 @@ pub(crate) fn extents(
         max_y = max_y.max(point.y);
     }
     if min_x >= max_x || min_y >= max_y {
-        return Some(GlyphExtents::default());
+        return Some(sofel_geom::Rect::default());
     }
-    let x_min = hb_roundf32(min_x);
-    let x_max = hb_roundf32(max_x);
-    let y_min = hb_roundf32(min_y);
-    let y_max = hb_roundf32(max_y);
-    Some(GlyphExtents {
-        x_bearing: hb_clamp_to_i32(x_min),
-        y_bearing: hb_clamp_to_i32(y_max),
-        width: hb_clamp_to_i32(x_max - x_min),
-        height: hb_clamp_to_i32(y_min - y_max),
+    Some(sofel_geom::Rect {
+        x_min: min_x,
+        y_min: min_y,
+        x_max: max_x,
+        y_max: max_y,
     })
 }
 

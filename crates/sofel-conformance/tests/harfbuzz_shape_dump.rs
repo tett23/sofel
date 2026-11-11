@@ -13,14 +13,16 @@
 //!   lines differs (the category must fit every line that does), judged
 //!   against
 //!   conformance/expected-failures-shape-pairs.txt. Variable fonts are
-//!   shaped at their default instance.
-//! - `--shape-random FONT COUNT SEED`: for every HarfBuzz test font, the
+//!   shaped at every ADR 0027 position.
+//! - `--shape-random FONT COUNT SEED`: for every HarfBuzz test font, and
+//!   every variable face in HarfBuzz's API and perf font directories, the
 //!   characters its cmap maps, grouped by script; for each script COUNT
 //!   strings of 1 to 16 of them from the same linear congruential
 //!   generator on both sides (the strings are compared too), shaped with
 //!   `BOT | EOT | PRODUCE_UNSAFE_TO_CONCAT`. Items
 //!   `<font>#<face>:<script>`, failing when one of the strings differs,
 //!   judged against conformance/expected-failures-shape-random.txt.
+//!   Variable faces are also shaped at default and rand:0 through rand:3.
 //! - `--layout-map FONT`: for every test font, every script and the
 //!   languages of the font's language systems, the script and language
 //!   system `hb_ot_map_builder_t` picks in `GSUB` and `GPOS`, against
@@ -50,8 +52,9 @@ use std::time::Instant;
 
 use sofel_conformance::shape::{self, Subject};
 use sofel_conformance::{fonts, paths};
-use sofel_font::Font;
+use sofel_font::read::sfnt::FontFile;
 use sofel_font::read::{GlyphId, Tag};
+use sofel_font::{Font, var::Instance};
 use sofel_outline::HbExtents;
 use sofel_shape::{
     BufferFlags, Direction, EmptyFont, Language, Scale, Script, SegmentProperties, SerializeFlags,
@@ -64,6 +67,9 @@ const RANDOM_LIST: &str = "expected-failures-shape-random.txt";
 const LAYOUT_LIST: &str = "expected-failures-layout-map.txt";
 const RANDOM_COUNT: u32 = 200;
 const RANDOM_SEED: u32 = 20;
+
+#[path = "support/variation_locations.rs"]
+mod variation_locations;
 
 /// The pairs: font, text, directions, features (relative to HarfBuzz).
 const PAIRS: &[(&str, &str, &[&str], &[&str])] = &[
@@ -184,6 +190,7 @@ struct Line {
     face: u32,
     text: Vec<u32>,
     direction: Option<Direction>,
+    options: Vec<String>,
     got: String,
     want: String,
 }
@@ -207,13 +214,12 @@ fn judge(lines: &[Line], count: usize, list: &str, what: &str, elapsed: std::tim
     let verbose = std::env::var_os("SOFEL_SHAPE_VERBOSE").is_some();
     let suggest = std::env::var_os("SOFEL_SHAPE_SUGGEST").is_some();
     let fonts = failure_fonts(lines, |p| std::fs::read(p));
-    let options = Vec::new();
     let subject = |i: usize| {
         let l = lines.get(i)?;
         Some(Subject {
             data: fonts.get(l.font.as_path())?,
             face: l.face,
-            options: &options,
+            options: &l.options,
             shaper: "ot",
             text: &l.text,
             props: SegmentProperties {
@@ -252,6 +258,7 @@ fn pair_cases(
     id: &str,
     font: &Path,
     direction: Option<Direction>,
+    options: &[String],
     input: &str,
     got: &str,
     want: &str,
@@ -275,6 +282,7 @@ fn pair_cases(
                         face: 0,
                         text: text.chars().map(u32::from).collect(),
                         direction,
+                        options: options.to_vec(),
                         got: g.to_owned(),
                         want: w.to_owned(),
                     });
@@ -296,6 +304,7 @@ fn pair_cases(
             face: 0,
             text: Vec::new(),
             direction,
+            options: options.to_vec(),
             got: String::new(),
             want: String::new(),
         });
@@ -311,20 +320,31 @@ fn shape_pairs_agree_with_harfbuzz() {
     for &(font, text, dirs, feats) in PAIRS {
         for &dir in dirs {
             for &feat in feats {
-                jobs.push((font, text, dir, feat));
+                let data = std::fs::read(hb.join(font)).unwrap();
+                let face = Font::new(&data, 0).unwrap();
+                if face.var_axes().next().is_some() {
+                    for position in variation_locations::positions(&face) {
+                        jobs.push((font, text, dir, feat, Some(position)));
+                    }
+                } else {
+                    jobs.push((font, text, dir, feat, None));
+                }
             }
         }
     }
-    let pairs = parallel(jobs, |(font, text, dir, feat)| {
+    let pairs = parallel(jobs, |(font, text, dir, feat, position)| {
         let font_path = hb.join(font);
         let text_path = hb.join(text);
-        let want = hb_dump(&[
-            &"--shape".into(),
-            &font_path.clone().into(),
-            &text_path.clone().into(),
-            &dir.into(),
-            &feat.into(),
-        ]);
+        let options = position.as_ref().map_or_else(Vec::new, |p| p.args());
+        let mut hb_args: Vec<OsString> = vec![
+            "--shape".into(),
+            font_path.clone().into(),
+            text_path.clone().into(),
+            dir.into(),
+            feat.into(),
+        ];
+        hb_args.extend(options.iter().map(OsString::from));
+        let want = hb_dump(&hb_args.iter().collect::<Vec<_>>());
         let mut args: Vec<OsString> = vec![
             font_path.clone().into(),
             "--text-file".into(),
@@ -339,6 +359,7 @@ fn shape_pairs_agree_with_harfbuzz() {
         if !feat.is_empty() {
             args.push(format!("--features={feat}").into());
         }
+        args.extend(options.iter().map(OsString::from));
         let (mut out, mut err) = (Vec::new(), Vec::new());
         let status = sofel_cli::shape::run_with_input(&args, &mut &b""[..], &mut out, &mut err);
         assert_eq!(status, 0, "{}", String::from_utf8_lossy(&err));
@@ -347,7 +368,8 @@ fn shape_pairs_agree_with_harfbuzz() {
         let direction = Direction::from_bytes(dir.as_bytes()).filter(|_| dir != "auto");
         let feat_id = if feat.is_empty() { "-" } else { feat };
         let id = format!("{}+{}:{dir}:{feat_id}", name(font), name(text));
-        pair_cases(&id, &font_path, direction, &texts, &got, &want).unwrap()
+        let id = position.map_or(id.clone(), |p| format!("{id}@{}", p.id));
+        pair_cases(&id, &font_path, direction, &options, &texts, &got, &want).unwrap()
     });
     let count = pairs.iter().map(|(count, _)| count).sum();
     let lines: Vec<_> = pairs.into_iter().flat_map(|(_, lines)| lines).collect();
@@ -422,7 +444,7 @@ fn parse_random(text: &str) -> RandomDump {
 
 /// sofel's result for a string, as `hb-dump` writes it.
 fn sofel_random<'a>(
-    font: &Font<'a>,
+    instance: Instance<'_, 'a, '_, '_>,
     extents: &HbExtents<'_, '_, '_>,
     plans: &mut Vec<ShapePlan<'a>>,
     text: &[u32],
@@ -438,13 +460,13 @@ fn sofel_random<'a>(
     let plan = match plans.iter().position(|p| p.key().0 == props) {
         Some(i) => &plans[i],
         None => {
-            plans.push(ShapePlan::new(font.default_instance(), props, &[]));
+            plans.push(ShapePlan::new(instance, props, &[]));
             plans.last().unwrap()
         }
     };
     let glyphs = shape_with_extents(
-        font.default_instance(),
-        &Scale::unscaled(font),
+        instance,
+        &Scale::unscaled(instance.font()),
         plan,
         buffer,
         &|g: GlyphId| extents.glyph_extents(g),
@@ -461,12 +483,107 @@ fn sofel_random<'a>(
     String::from_utf8(out).unwrap()
 }
 
+fn compare_random_face(
+    font: &Font<'_>,
+    path: &Path,
+    id: &str,
+    face: u32,
+    position: &variation_locations::Position,
+    variable: bool,
+    scripts: &[(u32, Vec<(Vec<u32>, String)>)],
+) -> Vec<Line> {
+    let ours = random_strings(font);
+    let hb_tags: Vec<u32> = scripts.iter().map(|s| s.0).collect();
+    let our_tags: Vec<u32> = ours.iter().map(|s| s.0).collect();
+    assert_eq!(
+        hb_tags, our_tags,
+        "{id}#{face}: the scripts of the cmap differ"
+    );
+    let location = position.location(font);
+    let instance = font.instance(&location);
+    let extents = HbExtents::new(instance);
+    let mut plans = Vec::new();
+    let options = position.args();
+    let suffix = if variable {
+        format!("@{}", position.id)
+    } else {
+        String::new()
+    };
+    scripts
+        .iter()
+        .zip(&ours)
+        .map(|((tag, strings), (_, our_strings))| {
+            let script = String::from_utf8_lossy(&tag.to_be_bytes()).into_owned();
+            let mut first_failure = None;
+            for ((text, want), our_text) in strings.iter().zip(our_strings) {
+                assert_eq!(
+                    text, our_text,
+                    "{id}#{face}:{script}{suffix}: the strings differ"
+                );
+                let got = sofel_random(instance, &extents, &mut plans, text);
+                if &got != want && first_failure.is_none() {
+                    first_failure = Some((text.clone(), got, want.clone()));
+                }
+            }
+            let (text, got, want) = first_failure.clone().unwrap_or_default();
+            Line {
+                id: format!("{id}#{face}:{script}{suffix}"),
+                line: 0,
+                passed: first_failure.is_none(),
+                font: path.to_owned(),
+                face,
+                text,
+                direction: None,
+                options: options.clone(),
+                got,
+                want,
+            }
+        })
+        .collect()
+}
+
+fn additional_variable_fonts(testdata: &Path) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    for dir in ["harfbuzz/test/api/fonts", "harfbuzz/perf/fonts"] {
+        for entry in std::fs::read_dir(testdata.join(dir))
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
+            let path = entry.path();
+            let Ok(data) = std::fs::read(&path) else {
+                continue;
+            };
+            let faces = match FontFile::new(&data) {
+                Ok(FontFile::Sfnt(_)) => 1,
+                Ok(FontFile::Collection(c)) => c.num_fonts(),
+                Err(_) => continue,
+            };
+            if (0..faces).any(|i| Font::new(&data, i).is_ok_and(|f| f.var_axes().next().is_some()))
+            {
+                paths.push(path);
+            }
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
 #[test]
 fn shape_random_agrees_with_harfbuzz() {
     let testdata = paths::testdata();
     let started = Instant::now();
-    let fonts = fonts::harfbuzz_fonts(&testdata);
-    let lines: Vec<Line> = parallel(fonts, |path| {
+    let jobs = fonts::harfbuzz_fonts(&testdata)
+        .into_iter()
+        .map(|path| (path, false))
+        .chain(
+            additional_variable_fonts(&testdata)
+                .into_iter()
+                .map(|path| (path, true)),
+        )
+        .collect();
+    let lines: Vec<Line> = parallel(jobs, |(path, variable_only)| {
         let id = fonts::id(&path, &testdata);
         let dump = hb_dump(&[
             &"--shape-random".into(),
@@ -482,37 +599,41 @@ fn shape_random_agrees_with_harfbuzz() {
             let Ok(font) = Font::new(&data, face) else {
                 continue;
             };
-            let ours = random_strings(&font);
-            let hb_tags: Vec<u32> = scripts.iter().map(|s| s.0).collect();
-            let our_tags: Vec<u32> = ours.iter().map(|s| s.0).collect();
-            assert_eq!(
-                hb_tags, our_tags,
-                "{id}#{face}: the scripts of the cmap differ"
-            );
-            let extents = HbExtents::new(font.default_instance());
-            let mut plans = Vec::new();
-            for ((tag, strings), (_, our_strings)) in scripts.iter().zip(&ours) {
-                let script = String::from_utf8_lossy(&tag.to_be_bytes()).into_owned();
-                let mut first_failure = None;
-                for ((text, want), our_text) in strings.iter().zip(our_strings) {
-                    assert_eq!(text, our_text, "{id}#{face}:{script}: the strings differ");
-                    let got = sofel_random(&font, &extents, &mut plans, text);
-                    if &got != want && first_failure.is_none() {
-                        first_failure = Some((text.clone(), got, want.clone()));
-                    }
-                }
-                let (text, got, want) = first_failure.clone().unwrap_or_default();
-                lines.push(Line {
-                    id: format!("{id}#{face}:{script}"),
-                    line: 0,
-                    passed: first_failure.is_none(),
-                    font: path.clone(),
+            let variable = font.var_axes().next().is_some();
+            if variable_only && !variable {
+                continue;
+            }
+            let positions = variation_locations::positions(&font);
+            for position in positions.iter().filter(|p| {
+                p.id == "default"
+                    || variable
+                        && matches!(p.id.as_str(), "rand:0" | "rand:1" | "rand:2" | "rand:3")
+            }) {
+                let positioned = if position.id == "default" {
+                    scripts.clone()
+                } else {
+                    let mut args: Vec<OsString> = vec![
+                        "--shape-random".into(),
+                        path.clone().into(),
+                        RANDOM_COUNT.to_string().into(),
+                        RANDOM_SEED.to_string().into(),
+                    ];
+                    args.extend(position.args().iter().map(OsString::from));
+                    parse_random(&hb_dump(&args.iter().collect::<Vec<_>>()))
+                        .into_iter()
+                        .find(|(i, _)| *i == face)
+                        .unwrap()
+                        .1
+                };
+                lines.extend(compare_random_face(
+                    &font,
+                    &path,
+                    &id,
                     face,
-                    text,
-                    direction: None,
-                    got,
-                    want,
-                });
+                    position,
+                    variable,
+                    &positioned,
+                ));
             }
         }
         lines
@@ -559,6 +680,7 @@ fn layout_map_agrees_with_harfbuzz() {
                         face,
                         text: Vec::new(),
                         direction: None,
+                        options: Vec::new(),
                         got: String::new(),
                         want: String::new(),
                     });
@@ -613,7 +735,8 @@ fn layout_map_agrees_with_harfbuzz() {
 #[test]
 fn adr0041_i1_i2_compacts_passes_and_keeps_each_failure() {
     let font = Path::new("example.ttf");
-    let compress = |input, got, want| pair_cases("pair", font, None, input, got, want).unwrap();
+    let compress =
+        |input, got, want| pair_cases("pair", font, None, &[], input, got, want).unwrap();
     let empty = compress("", "", "");
     assert_eq!(empty.0, 0);
     assert!(empty.1.is_empty());
@@ -649,7 +772,8 @@ fn adr0041_i1_i2_compacts_passes_and_keeps_each_failure() {
 
 #[test]
 fn adr0041_i3_requires_one_result_for_each_source_line() {
-    let check = |input, got, want| pair_cases("pair", Path::new("font"), None, input, got, want);
+    let check =
+        |input, got, want| pair_cases("pair", Path::new("font"), None, &[], input, got, want);
     assert!(check("\n", "[]\n", "[]\n").is_ok());
     assert!(check("x", "x", "x\n").is_ok());
     for (input, got, want) in [
@@ -678,7 +802,7 @@ fn adr0041_i4_reads_each_failing_font_once() {
         ("absent", "m"),
     ] {
         all.extend(
-            pair_cases(name, Path::new(name), None, "x", got, "x")
+            pair_cases(name, Path::new(name), None, &[], "x", got, "x")
                 .unwrap()
                 .1,
         );

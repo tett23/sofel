@@ -2,9 +2,9 @@
 
 use super::{Bench, Compare, FtFace, HbFont};
 use sofel_font::{
-    Font,
-    read::Tag,
-    var::{Location, Variation},
+    Font, GlyphScratch,
+    read::{GlyphId, Tag},
+    var::{AdvanceCache, Instance, Location, Variation},
 };
 use std::os::raw::c_long;
 use std::path::Path;
@@ -31,6 +31,7 @@ pub(super) fn items(bench: &mut Bench, data: &Path) {
             "outline unscaled wght=500",
             "outline 48px wght=500",
             "raster 24px wght=500",
+            "ADR0049 advance",
         ]
         .iter()
         .any(|item| bench.wanted(name, item))
@@ -173,5 +174,84 @@ pub(super) fn items(bench: &mut Bench, data: &Path) {
             );
         }
         super::geometry_items(bench, name, instance, &ft, &hb, " wght=500", &[24]);
+        if bench.adr0049_enabled() {
+            let hb_cache = HbFont::open(&bytes).unwrap();
+            hb_cache.set_weight(weight.value);
+            advance_cache_items(bench, name, &font, instance, &hb_cache, "wght=500");
+            let hb_default = HbFont::open(&bytes).unwrap();
+            advance_cache_items(
+                bench,
+                name,
+                &font,
+                font.default_instance(),
+                &hb_default,
+                "default",
+            );
+        }
     }
+}
+
+fn advance_cache_items(
+    bench: &mut Bench,
+    name: &str,
+    font: &Font<'_>,
+    instance: Instance<'_, '_, '_, '_>,
+    hb: &HbFont,
+    location: &str,
+) {
+    let n = font.num_glyphs();
+    let repeated = n.saturating_sub(1);
+    for (pattern, ids) in [
+        ("sequential", (0..n).collect::<Vec<_>>()),
+        ("repeated", vec![repeated; usize::try_from(n).unwrap()]),
+    ] {
+        let reference = || {
+            ids.iter()
+                .map(|&glyph| u64::try_from(hb.advance(glyph)).unwrap())
+                .fold(0u64, u64::wrapping_add)
+        };
+        bench.item(
+            name,
+            format!("ADR0049 advance {pattern} uncached {location}"),
+            &mut || {
+                let mut scratch = GlyphScratch::default();
+                ids.iter()
+                    .map(|&glyph| {
+                        u64::from(instance.advance_with_scratch(GlyphId(glyph), &mut scratch))
+                    })
+                    .fold(0u64, u64::wrapping_add)
+            },
+            None,
+            Some((&mut || reference(), Compare::Yes)),
+        );
+        bench.item(
+            name,
+            format!("ADR0049 advance {pattern} cached {location}"),
+            &mut || {
+                let cache = AdvanceCache::new(instance);
+                let mut scratch = GlyphScratch::default();
+                ids.iter()
+                    .map(|&glyph| {
+                        u64::from(cache.advance_with_scratch(GlyphId(glyph), &mut scratch))
+                    })
+                    .fold(0u64, u64::wrapping_add)
+            },
+            None,
+            Some((&mut || reference(), Compare::Yes)),
+        );
+    }
+    bench.item(
+        name,
+        format!("ADR0049 advance cache initialization {location}"),
+        &mut || {
+            let mut bytes = 0;
+            for _ in 0..1000 {
+                let cache = std::hint::black_box(Box::new(AdvanceCache::new(instance)));
+                bytes += core::mem::size_of_val(&*cache) as u64;
+            }
+            bytes
+        },
+        None,
+        None,
+    );
 }

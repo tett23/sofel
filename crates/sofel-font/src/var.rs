@@ -6,6 +6,7 @@ pub mod gvar;
 
 use alloc::vec::Vec;
 use alloc::{format, string::String};
+use core::sync::atomic::{AtomicU64, Ordering};
 use sofel_geom::float::{hb_clamp_to_i32, hb_roundf32, i32_to_f32};
 use sofel_geom::{div_fix, mul_div, mul_fix};
 use sofel_read::item_variation::{ItemVariationStore, Region};
@@ -1191,6 +1192,58 @@ pub struct Instance<'font, 'data, 'loc, 'source> {
     location: &'loc Location<'source>,
 }
 
+/// A caller-owned horizontal advance cache bound to one font and location.
+pub struct AdvanceCache<'font, 'data, 'loc, 'source> {
+    instance: Instance<'font, 'data, 'loc, 'source>,
+    slots: AdvanceSlots,
+}
+
+struct AdvanceSlots([AtomicU64; 128]);
+
+impl AdvanceSlots {
+    fn new() -> Self {
+        Self([const { AtomicU64::new(u64::MAX) }; 128])
+    }
+
+    #[inline]
+    fn get_or_compute(&self, glyph: u32, compute: impl FnOnce() -> u32) -> u32 {
+        if glyph == u32::MAX {
+            return compute();
+        }
+        let Some(slot) = self.0.get(usize::try_from(glyph & 127).unwrap_or(0)) else {
+            return compute();
+        };
+        let cached = slot.load(Ordering::Relaxed);
+        if u32::try_from(cached >> 32).unwrap_or(u32::MAX) == glyph {
+            return u32::try_from(cached & u64::from(u32::MAX)).unwrap_or(0);
+        }
+        let advance = compute();
+        slot.store(
+            (u64::from(glyph) << 32) | u64::from(advance),
+            Ordering::Relaxed,
+        );
+        advance
+    }
+}
+
+impl<'font, 'data, 'loc, 'source> AdvanceCache<'font, 'data, 'loc, 'source> {
+    /// Creates empty slots for this instance. The cache cannot be rebound.
+    pub fn new(instance: Instance<'font, 'data, 'loc, 'source>) -> Self {
+        Self {
+            instance,
+            slots: AdvanceSlots::new(),
+        }
+    }
+
+    /// Returns the final horizontal advance, evaluating a miss with `scratch`.
+    #[inline]
+    pub fn advance_with_scratch(&self, glyph: GlyphId, scratch: &mut crate::GlyphScratch) -> u32 {
+        self.slots.get_or_compute(glyph.0, || {
+            self.instance.advance_with_scratch(glyph, scratch)
+        })
+    }
+}
+
 impl<'font, 'data> From<&'font Font<'data>> for Instance<'font, 'data, 'static, 'static> {
     fn from(font: &'font Font<'data>) -> Self {
         font.default_instance()
@@ -1250,7 +1303,13 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             return value.clamp(0.0, f64::from(u32::MAX)) as u32;
         };
-        self.advance_with_delta(glyph, base, StoreKind::Hvar, hvar.advance_map())
+        self.advance_with_delta(
+            glyph,
+            base,
+            StoreKind::Hvar,
+            hvar.advance_map(),
+            hvar.store(),
+        )
     }
 
     fn advance_with_delta(
@@ -1259,6 +1318,7 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
         base: u32,
         kind: StoreKind,
         map: Result<Option<DeltaSetIndexMap<'_>>, ReadError>,
+        store: Result<ItemVariationStore<'_>, ReadError>,
     ) -> u32 {
         let index = match map {
             Ok(Some(map)) => map.map(glyph.0),
@@ -1267,8 +1327,14 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
         };
         let outer = u16::try_from(index >> 16).unwrap_or(0);
         let inner = u16::try_from(index & 0xffff).unwrap_or(0);
-        let delta = self.item_delta::<HbF32>(kind, outer, inner).unwrap_or(0.0);
-        let value = f64::from(base) + hb_roundf32(delta);
+        let delta = store
+            .ok()
+            .map(|store| self.item_delta_from_store::<HbF32>(kind, &store, outer, inner))
+            .unwrap_or(0.0);
+        // HarfBuzz's `_hb_roundf(float)` returns float, so the unsigned
+        // advance and rounded delta are added in float precision.
+        #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+        let value = f64::from(base as f32 + hb_roundf32(delta) as f32);
         if value.is_nan() {
             return 0;
         }
@@ -1365,7 +1431,13 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
                         result
                     },
                     |vvar| {
-                        self.advance_with_delta(glyph, base, StoreKind::Vvar, vvar.advance_map())
+                        self.advance_with_delta(
+                            glyph,
+                            base,
+                            StoreKind::Vvar,
+                            vvar.advance_map(),
+                            vvar.store(),
+                        )
                     },
                 )
         } else {
@@ -1490,6 +1562,19 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
             return Some(extents);
         }
         HbScale::unscaled(self.font).glyf_extents(self.font, glyph)
+    }
+
+    /// Unrounded control box for painting an outline at nonzero HarfBuzz coordinates.
+    pub fn varied_glyf_control_box(
+        &self,
+        glyph: GlyphId,
+        scratch: &mut crate::GlyphScratch,
+    ) -> Option<sofel_geom::Rect> {
+        if self.location.hb_nonzero {
+            crate::hb_glyf::control_box(*self, glyph, scratch)
+        } else {
+            None
+        }
     }
 
     /// A font-wide metric in font units at this location.
@@ -1975,15 +2060,25 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
         let Some(store) = variation_store(self.font, kind) else {
             return Ok(zero);
         };
+        Ok(self.item_delta_from_store::<A>(kind, &store, outer, inner))
+    }
+
+    fn item_delta_from_store<A: Arith>(
+        &self,
+        kind: StoreKind,
+        store: &ItemVariationStore<'_>,
+        outer: u16,
+        inner: u16,
+    ) -> A::Delta {
         let same = self
             .location
             .source
             .is_some_and(|source| source.matches(self.font.sfnt.file(), self.font.face_index));
         if same && let Some(cached) = A::cached(self.location, kind) {
-            return Ok(item_delta::<A>(&store, cached, outer, inner));
+            return item_delta::<A>(store, cached, outer, inner);
         }
-        let live = OnTheFly::<A>::new(&store, A::coords(self.location), A::supplied(self.location));
-        Ok(item_delta::<A>(&store, &live, outer, inner))
+        let live = OnTheFly::<A>::new(store, A::coords(self.location), A::supplied(self.location));
+        item_delta::<A>(store, &live, outer, inner)
     }
 }
 
@@ -2384,6 +2479,68 @@ pub(crate) fn item_delta<A: Arith>(
 mod tests {
     use super::*;
     use sofel_read::item_variation::ItemVariationStore;
+
+    #[test]
+    fn adr0049_i1_direct_slots_hit_collision_and_sentinel() {
+        let slots = AdvanceSlots::new();
+        let mut computed = 0;
+        for glyph in 0..128 {
+            assert_eq!(
+                slots.get_or_compute(glyph, || {
+                    computed += 1;
+                    glyph + 10
+                }),
+                glyph + 10
+            );
+        }
+        assert_eq!(computed, 128);
+        for glyph in 0..128 {
+            assert_eq!(
+                slots.get_or_compute(glyph, || {
+                    computed += 1;
+                    0
+                }),
+                glyph + 10
+            );
+        }
+        assert_eq!(computed, 128);
+        assert_eq!(
+            slots.get_or_compute(128, || {
+                computed += 1;
+                138
+            }),
+            138
+        );
+        assert_eq!(
+            slots.get_or_compute(0, || {
+                computed += 1;
+                10
+            }),
+            10
+        );
+        assert_eq!(computed, 130);
+        for _ in 0..2 {
+            assert_eq!(
+                slots.get_or_compute(u32::MAX, || {
+                    computed += 1;
+                    7
+                }),
+                7
+            );
+        }
+        assert_eq!(computed, 132);
+    }
+
+    #[test]
+    fn adr0049_i2_cache_is_send_and_sync() {
+        fn require_send_sync<T: Send + Sync>() {}
+        require_send_sync::<AdvanceCache<'static, 'static, 'static, 'static>>();
+        assert_eq!(core::mem::size_of::<AdvanceSlots>(), 1024);
+        assert_eq!(
+            core::mem::size_of::<AdvanceCache<'static, 'static, 'static, 'static>>(),
+            1024 + core::mem::size_of::<Instance<'static, 'static, 'static, 'static>>()
+        );
+    }
 
     fn store(row: &[u8]) -> alloc::vec::Vec<u8> {
         let mut data = alloc::vec![
