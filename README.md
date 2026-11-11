@@ -99,6 +99,7 @@ CI は、用途を確認して `ci/documentation-only.rules` の `document` に�
 新たに文書をビルドやテストの入力にする際は、同じ変更で `input` 規則を追加する。
 
 文書だけの変更でも、文書の検査と ADR、監査、計測記録の保護は実行する。
+通常のCIでは、LinuxとmacOSで生成器の検査と適合テストを並列に実行する（[ADR 0039](docs/adr/0039-generator-ci-parallelism.md)）。
 `ci-result` は、判定と保護、および全ジョブの結果を確認する。
 
 クローン後、gitのhookを有効化する。コミット済みのADRは [adr-guard](https://github.com/tett23/adr-guard) で保護しており、手元に adr-guard が要る。
@@ -158,6 +159,7 @@ cargo test --release -p sofel-conformance
 引数を1にすると直列で実行する。
 CI ではこの runner を使い、参照ツールと計測用の C ライブラリは入力とツールチェーンが一致する場合にキャッシュから復元する。
 直列化の適合テストは、入力を一行ずつ書き、HarfBuzz の参照出力も一行ずつ比較して、全文の重複保持を避ける（[ADR 0035](docs/adr/0035-stream-serialization-reference-output.md)）。
+シェーピングの適合テストではフォントと文章の組ごとに一致行の数を集計し、不一致行の詳細をカテゴリ判定に使う（[ADR 0041](docs/adr/0041-compact-shape-comparison-results.md)）。
 テストと結果の照合は、キャッシュがある場合も実行する。
 CI の参照ツールのビルド、適合テストと計測用 C ビルドは、子プロセスを含む合計 RSS の最大観測値をログへ書く。
 
