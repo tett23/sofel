@@ -168,6 +168,59 @@ pub fn ttc(version2: bool, fonts: &[Vec<(&[u8; 4], Vec<u8>)>]) -> Vec<u8> {
     out
 }
 
+/// A resource fork containing the given type records in file order.
+/// Each resource body is supplied without its four-byte length prefix.
+pub fn dfont(types: &[(&[u8; 4], Vec<(u16, Vec<u8>)>)]) -> Vec<u8> {
+    assert!(!types.is_empty());
+    let mut data = Vec::new();
+    let mut records = Vec::new();
+    let mut references = Vec::new();
+    for (tag, resources) in types {
+        assert!(!resources.is_empty());
+        let offset = 2 + types.len() * 8 + references.len();
+        records = Buf(records)
+            .tag(tag)
+            .u16((resources.len() - 1) as u16)
+            .u16(offset as u16)
+            .done();
+        for (id, body) in resources {
+            let data_offset = data.len() as u32;
+            data = Buf(data).u32(body.len() as u32).bytes(body).done();
+            references = Buf(references)
+                .u16(*id)
+                .u16(0xFFFF)
+                .u8(0)
+                .u24(data_offset)
+                .u32(0)
+                .done();
+        }
+    }
+    let map_offset = 256 + data.len();
+    let type_list = Buf::new()
+        .u16((types.len() - 1) as u16)
+        .bytes(&records)
+        .bytes(&references)
+        .done();
+    let map = Buf::new()
+        .bytes(&[0; 16])
+        .u32(0)
+        .u16(0)
+        .u16(0)
+        .u16(28)
+        .u16((28 + type_list.len()) as u16)
+        .bytes(&type_list)
+        .done();
+    Buf::new()
+        .u32(256)
+        .u32(map_offset as u32)
+        .u32(data.len() as u32)
+        .u32(map.len() as u32)
+        .bytes(&vec![0; 240])
+        .bytes(&data)
+        .bytes(&map)
+        .done()
+}
+
 pub struct HeadSpec {
     pub units_per_em: u16,
     pub index_to_loc_format: i16,

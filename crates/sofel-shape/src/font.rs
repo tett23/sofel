@@ -4,12 +4,13 @@
 //! Ported from HarfBuzz 15.1.0 `src/hb-font.hh` and `src/hb-ot-font.cc`,
 //! MIT; see THIRD_PARTY_NOTICES.md.
 
+use alloc::boxed::Box;
 use core::cell::RefCell;
 
 use sofel_font::read::{GlyphId, device::Device};
 use sofel_font::{
     GlyphExtents, GlyphScratch,
-    var::{HbF32, Instance, StoreKind},
+    var::{AdvanceCache, HbF32, Instance, StoreKind},
 };
 
 use crate::scale::Scale;
@@ -23,6 +24,7 @@ pub(crate) struct ShapeFont<'f, 'a, 'l, 's> {
     y_multf: f32,
     extents: &'f dyn Fn(GlyphId) -> Option<GlyphExtents>,
     glyph_scratch: RefCell<GlyphScratch>,
+    advance_cache: Option<Box<AdvanceCache<'f, 'a, 'l, 's>>>,
 }
 
 pub(crate) use sofel_geom::float::i32_to_f32;
@@ -41,6 +43,10 @@ impl<'f, 'a, 'l, 's> ShapeFont<'f, 'a, 'l, 's> {
     ) -> ShapeFont<'f, 'a, 'l, 's> {
         let font = instance.font();
         let upem = f32::from(font.hb_units_per_em());
+        let advance_cache = instance
+            .location()
+            .hb_nonzero()
+            .then(|| Box::new(AdvanceCache::new(instance)));
         ShapeFont {
             instance,
             font,
@@ -49,6 +55,7 @@ impl<'f, 'a, 'l, 's> ShapeFont<'f, 'a, 'l, 's> {
             y_multf: i32_to_f32(scale.scale.y_scale()) / upem,
             extents,
             glyph_scratch: RefCell::new(GlyphScratch::default()),
+            advance_cache,
         }
     }
 
@@ -76,12 +83,13 @@ impl<'f, 'a, 'l, 's> ShapeFont<'f, 'a, 'l, 's> {
     }
     /// `get_glyph_h_advance`.
     pub(crate) fn h_advance(&self, glyph: u32) -> i32 {
-        let mut scratch = self.glyph_scratch.borrow_mut();
-        self.scale.scale.em_scale_x(
-            self.instance
-                .advance_with_scratch(GlyphId(glyph), &mut scratch)
-                .cast_signed(),
-        )
+        let advance = self.advance_cache.as_ref().map_or_else(
+            || self.instance.advance(GlyphId(glyph)),
+            |cache| {
+                cache.advance_with_scratch(GlyphId(glyph), &mut self.glyph_scratch.borrow_mut())
+            },
+        );
+        self.scale.scale.em_scale_x(advance.cast_signed())
     }
     /// `get_glyph_v_advance`.
     pub(crate) fn v_advance(&self, glyph: u32) -> i32 {

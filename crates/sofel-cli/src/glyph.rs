@@ -2,8 +2,7 @@
 //! outline without hinting, find the bitmap box from its control box,
 //! move the outline to the bitmap origin (and multiply it by 4 when it
 //! has the overlap flag) before decomposing it, and rasterize. Color
-//! glyphs blend their `COLR` version 0 layers as FreeType's
-//! `FT_LOAD_COLOR` does (ADR 0023).
+//! glyphs follow the COLR version 0 layer records (ADR 0023).
 
 use std::fmt;
 
@@ -92,44 +91,46 @@ pub enum ColorGlyph<'r> {
     Gray(Bitmap<'r>),
 }
 
-/// The `COLR` version 0 layers of `glyph` (each layer's glyph and palette
-/// entry) that FreeType's `FT_Get_Color_Glyph_Layer` gives and
-/// [`render_color`] draws: none when the
-/// base glyph's record reaches past the layer records, and up to the
-/// first layer whose glyph is past the font's glyphs or whose palette
-/// entry (other than the foreground, `None`) is past the palette
-/// entries.
+/// The usable prefix of `glyph`'s COLR version 0 layer records.
+/// A range extending past the layer array is rejected as a whole;
+/// invalid glyph or palette indices end the prefix. `None` is the
+/// foreground color.
 pub fn color_layers(font: &sofel_font::Font<'_>, glyph: u32) -> Vec<(u32, Option<u16>)> {
-    use sofel_read::colr::{Colr, TAG};
-    let fits = font
-        .table(TAG)
-        .and_then(|d| Colr::new(d).ok())
-        .and_then(|c| {
-            let r = c.find_base_glyph(glyph)?;
-            let end = usize::from(r.first_layer).saturating_add(usize::from(r.num_layers));
-            Some(r.num_layers > 0 && end <= c.num_layers())
-        })
-        .unwrap_or(false);
-    if !fits {
+    use sofel_read::colr::{Colr, FOREGROUND, TAG};
+    let Some(colr) = font.table(TAG).and_then(|data| Colr::new(data).ok()) else {
+        return Vec::new();
+    };
+    let Some(base) = colr.find_base_glyph(glyph) else {
+        return Vec::new();
+    };
+    let start = usize::from(base.first_layer);
+    let Some(end) = start.checked_add(usize::from(base.num_layers)) else {
+        return Vec::new();
+    };
+    if end > colr.num_layers() {
         return Vec::new();
     }
-    let entries = sofel_color::palette_entry_count(font);
-    sofel_color::layers(font, glyph)
-        .take_while(|&(g, c)| g < font.num_glyphs() && c.is_none_or(|c| c < entries))
+    let max_palette = sofel_color::palette_entry_count(font);
+    (start..end)
+        .map_while(|index| {
+            let (layer_glyph, entry) = colr.layer(index)?;
+            (u32::from(layer_glyph) < font.num_glyphs()
+                && (entry == FOREGROUND || entry < max_palette))
+                .then_some((
+                    u32::from(layer_glyph),
+                    (entry != FOREGROUND).then_some(entry),
+                ))
+        })
         .collect()
 }
 
-/// Renders `glyph` at `ppem` pixels in color as FreeType's
-/// `FT_Load_Glyph` with `FT_LOAD_COLOR | FT_LOAD_NO_HINTING |
-/// FT_LOAD_NO_BITMAP` and `FT_Render_Glyph` with `FT_RENDER_MODE_NORMAL`
-/// do (ADR 0023): each `COLR` version 0 layer ([`color_layers`]) is rendered like
-/// [`render`] and blended with [`blend_layer`] into `image` in the color
-/// of its palette entry from `options` (`options.foreground` for entry
-/// 0xFFFF; `options.ppem` is not used).
+/// Renders the usable COLR version 0 layers of `glyph` at `ppem` pixels
+/// (ADR 0023). Each layer is rendered with [`render`] and combined in
+/// record order with [`blend_layer`]. `options.ppem` is not used.
 ///
 /// `image` is cleared first. When the glyph has no layers, or a layer
 /// cannot be rendered, the glyph's own outline is rendered in gray
-/// instead, as FreeType does.
+/// instead.
 ///
 /// # Errors
 ///
@@ -150,37 +151,35 @@ pub fn render_color<'r>(
         .load(glyph, Scale::pixels(font, ppem, ppem), scratch)
         .map_err(RenderError::Outline)?;
     let layers = color_layers(font, glyph.0);
-    if !layers.is_empty() {
-        let palette: Vec<Color> = match options.palette {
-            Palette::Font(i) => {
-                let i = if i < sofel_color::palette_count(font) {
-                    i
-                } else {
-                    0
-                };
-                sofel_color::palette_colors(font, i).collect()
-            }
-            Palette::Custom(c) => c.to_vec(),
-        };
-        let all = layers.iter().all(|&(g, c)| {
-            let color = c.map_or(options.foreground, |c| {
-                palette
-                    .get(usize::from(c))
-                    .copied()
-                    .unwrap_or(Color::new(0, 0, 0, 0))
-            });
-            match render(outlines, GlyphId(g), ppem, scratch, raster) {
-                Ok(b) => {
-                    blend_layer(image, &b, [color.b, color.g, color.r, color.a]);
-                    true
-                }
-                Err(_) => false,
-            }
-        });
-        if all {
-            return Ok(ColorGlyph::Color);
-        }
-        image.clear();
+    if layers.is_empty() {
+        return render(outlines, glyph, ppem, scratch, raster).map(ColorGlyph::Gray);
     }
-    render(outlines, glyph, ppem, scratch, raster).map(ColorGlyph::Gray)
+    let palette: Vec<Color> = match options.palette {
+        Palette::Font(index) => {
+            let selected = if index < sofel_color::palette_count(font) {
+                index
+            } else {
+                0
+            };
+            sofel_color::palette_colors(font, selected).collect()
+        }
+        Palette::Custom(colors) => colors.to_vec(),
+    };
+    for (layer_glyph, entry) in layers {
+        let color = match entry {
+            None => options.foreground,
+            Some(index) => palette
+                .get(usize::from(index))
+                .copied()
+                .unwrap_or(Color::new(0, 0, 0, 0)),
+        };
+        match render(outlines, GlyphId(layer_glyph), ppem, scratch, raster) {
+            Ok(bitmap) => blend_layer(image, &bitmap, [color.b, color.g, color.r, color.a]),
+            Err(_) => {
+                image.clear();
+                return render(outlines, glyph, ppem, scratch, raster).map(ColorGlyph::Gray);
+            }
+        }
+    }
+    Ok(ColorGlyph::Color)
 }

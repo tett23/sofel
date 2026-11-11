@@ -48,7 +48,14 @@ impl<'a> FeatureVariations<'a> {
             return Err(ReadError::UnknownVersion(version));
         }
         let count = be::u32_at(data, 4).ok_or(ReadError::OutOfBounds)?;
-        need(data, array_end(8, to_usize(count), 8)?)?;
+        let end = array_end(8, to_usize(count), 8)?;
+        need(data, end)?;
+        if version >= 0x0001_0001 {
+            need(data, array_end(end, 1, 4)?)?;
+            let lookup_count = be::u32_at(data, end).ok_or(ReadError::OutOfBounds)?;
+            let records_start = end.checked_add(4).ok_or(ReadError::OutOfBounds)?;
+            need(data, array_end(records_start, to_usize(lookup_count), 6)?)?;
+        }
         Ok(Self {
             data,
             version,
@@ -86,6 +93,168 @@ impl<'a> FeatureVariations<'a> {
             data: self.data,
             at,
         })
+    }
+
+    /// The number of LookupVariationRecords in version 1.1 and later.
+    pub fn lookup_record_count(&self) -> u32 {
+        if self.version < 0x0001_0001 {
+            return 0;
+        }
+        let Some(at) = array_end(8, to_usize(self.count), 8).ok() else {
+            return 0;
+        };
+        be::u32_at(self.data, at).unwrap_or(0)
+    }
+
+    /// LookupVariationRecord `i`, if its complete array is present.
+    pub fn lookup_record(&self, i: u32) -> Option<LookupVariationRecord<'a>> {
+        let count = self.lookup_record_count();
+        if i >= count {
+            return None;
+        }
+        let start = array_end(12, to_usize(self.count), 8).ok()?;
+        let end = array_end(start, to_usize(count), 6).ok()?;
+        self.data.get(..end)?;
+        let at = array_end(start, to_usize(i), 6).ok()?;
+        Some(LookupVariationRecord {
+            data: self.data,
+            at,
+        })
+    }
+}
+
+/// A feature index and a FeatureLookupsTable offset relative to FeatureVariations.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct LookupVariationRecord<'a> {
+    data: &'a [u8],
+    at: usize,
+}
+
+impl<'a> LookupVariationRecord<'a> {
+    /// The feature whose lookups this record changes.
+    pub fn feature_index(&self) -> u16 {
+        be::u16_at(self.data, self.at).unwrap_or(0)
+    }
+
+    /// The referenced table, absent for a null offset.
+    pub fn feature_lookups(&self) -> Result<Option<FeatureLookupsTable<'a>>, ReadError> {
+        let field = self.at.checked_add(2).ok_or(ReadError::OutOfBounds)?;
+        let offset = be::u32_at(self.data, field).ok_or(ReadError::OutOfBounds)?;
+        follow(self.data, offset, FeatureLookupsTable::new)
+    }
+}
+
+/// The lookup conditions for one feature.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct FeatureLookupsTable<'a> {
+    data: &'a [u8],
+    count: u32,
+}
+
+impl<'a> FeatureLookupsTable<'a> {
+    /// Reads the header and condition record array.
+    pub fn new(data: &'a [u8]) -> Result<Self, ReadError> {
+        need(data, 10)?;
+        let count = be::u32_at(data, 6).ok_or(ReadError::OutOfBounds)?;
+        need(data, array_end(10, to_usize(count), 8)?)?;
+        Ok(Self { data, count })
+    }
+
+    /// The bytes from the start of the table to the parent end.
+    pub fn data(&self) -> &'a [u8] {
+        self.data
+    }
+    /// The 16.16 version number.
+    pub fn version(&self) -> u32 {
+        be::u32_at(self.data, 0).unwrap_or(0)
+    }
+    /// Flags; bit zero includes the selected Feature lookups.
+    pub fn flags(&self) -> u16 {
+        be::u16_at(self.data, 4).unwrap_or(0)
+    }
+    /// Number of condition records.
+    pub fn len(&self) -> u32 {
+        self.count
+    }
+    /// Whether there are no condition records.
+    pub fn is_empty(&self) -> bool {
+        self.count == 0
+    }
+
+    /// Condition record `i`, if present.
+    pub fn record(&self, i: u32) -> Option<LookupConditionRecord<'a>> {
+        if i >= self.count {
+            return None;
+        }
+        let at = array_end(10, to_usize(i), 8).ok()?;
+        Some(LookupConditionRecord {
+            data: self.data,
+            at,
+        })
+    }
+}
+
+/// A condition offset and a LookupIndexList offset relative to FeatureLookupsTable.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct LookupConditionRecord<'a> {
+    data: &'a [u8],
+    at: usize,
+}
+
+impl<'a> LookupConditionRecord<'a> {
+    /// The condition offset relative to FeatureLookupsTable.
+    pub fn condition_offset(&self) -> u32 {
+        be::u32_at(self.data, self.at).unwrap_or(0)
+    }
+
+    /// The condition, absent for a null offset (which evaluates true).
+    pub fn condition(&self) -> Result<Option<Condition<'a>>, ReadError> {
+        follow(self.data, self.condition_offset(), Condition::new)
+    }
+
+    /// The lookup list, absent for a null offset.
+    pub fn lookup_indices(&self) -> Result<Option<LookupIndexList<'a>>, ReadError> {
+        let field = self.at.checked_add(4).ok_or(ReadError::OutOfBounds)?;
+        let offset = be::u32_at(self.data, field).ok_or(ReadError::OutOfBounds)?;
+        follow(self.data, offset, LookupIndexList::new)
+    }
+}
+
+/// A checked list of lookup indices.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct LookupIndexList<'a> {
+    data: &'a [u8],
+    count: u16,
+}
+
+impl<'a> LookupIndexList<'a> {
+    /// Reads the count and the full index array.
+    pub fn new(data: &'a [u8]) -> Result<Self, ReadError> {
+        need(data, 2)?;
+        let count = be::u16_at(data, 0).ok_or(ReadError::OutOfBounds)?;
+        need(data, array_end(2, usize::from(count), 2)?)?;
+        Ok(Self { data, count })
+    }
+
+    /// Raw bytes of the index list.
+    pub fn data(&self) -> &'a [u8] {
+        self.data
+    }
+    /// Number of lookup indices.
+    pub fn len(&self) -> u16 {
+        self.count
+    }
+    /// Whether the list is empty.
+    pub fn is_empty(&self) -> bool {
+        self.count == 0
+    }
+    /// Lookup index `i`, if present.
+    pub fn get(&self, i: u16) -> Option<u16> {
+        if i >= self.count {
+            return None;
+        }
+        let at = array_end(2, usize::from(i), 2).ok()?;
+        be::u16_at(self.data, at)
     }
 }
 
@@ -314,6 +483,8 @@ struct Validator<'a, 'r> {
     tag: Tag,
     base_at: u32,
     axis_count: Option<u16>,
+    feature_count: Option<usize>,
+    lookup_count: Option<usize>,
     report: &'r mut dyn FnMut(Diagnostic),
     budget: usize,
     exhausted: bool,
@@ -457,15 +628,78 @@ impl Validator<'_, '_> {
             }
         }
     }
+
+    fn feature_lookups(&mut self, table: FeatureLookupsTable<'_>) {
+        let at = self.at(table.data());
+        if table.version() >> 16 != 1 {
+            self.emit(
+                at,
+                Kind::UnknownVersion {
+                    found: table.version(),
+                },
+            );
+        }
+        if table.flags() & !1 != 0 {
+            self.emit(
+                at.saturating_add(4),
+                Kind::ReservedBitsSet {
+                    found: u32::from(table.flags()),
+                },
+            );
+        }
+        for i in 0..table.len() {
+            if !self.spend() {
+                return;
+            }
+            let Some(record) = table.record(i) else {
+                break;
+            };
+            let field = at
+                .saturating_add(10)
+                .saturating_add(to_usize(i).saturating_mul(8));
+            match record.condition() {
+                Ok(Some(condition)) => self.condition(condition, 64),
+                Ok(None) => {}
+                Err(e) => self.error(field, e),
+            }
+            match record.lookup_indices() {
+                Ok(Some(indices)) => {
+                    for j in 0..indices.len() {
+                        if !self.spend() {
+                            return;
+                        }
+                        let index = indices.get(j).unwrap_or(0);
+                        if let Some(count) = self.lookup_count
+                            && usize::from(index) >= count
+                        {
+                            self.emit(
+                                self.at(indices.data())
+                                    .saturating_add(2)
+                                    .saturating_add(usize::from(j) * 2),
+                                Kind::LookupIndexOutOfRange {
+                                    index: u32::from(index),
+                                    count: to_u32(count),
+                                },
+                            );
+                        }
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => self.error(field.saturating_add(4), e),
+            }
+        }
+    }
 }
 
 /// Validates a FeatureVariations table embedded at `base_at` in a GSUB
-/// or GPOS table. `axis_count` is the fvar axis count when available.
+/// or GPOS table. The axis and lookup counts are used when available.
 pub fn validate(
     data: &[u8],
     tag: Tag,
     base_at: u32,
     axis_count: Option<u16>,
+    feature_count: Option<usize>,
+    lookup_count: Option<usize>,
     report: &mut dyn FnMut(Diagnostic),
 ) {
     let budget = data.len().saturating_mul(64).clamp(16384, 0x3fff_ffff);
@@ -474,6 +708,8 @@ pub fn validate(
         tag,
         base_at,
         axis_count,
+        feature_count,
+        lookup_count,
         report,
         budget,
         exhausted: false,
@@ -504,6 +740,34 @@ pub fn validate(
             Ok(Some(subs)) => v.substitutions(subs),
             Ok(None) => {}
             Err(e) => v.error(record_at.saturating_add(4), e),
+        }
+    }
+    for i in 0..fv.lookup_record_count() {
+        if !v.spend() {
+            return;
+        }
+        let Some(record) = fv.lookup_record(i) else {
+            break;
+        };
+        let at = to_usize(base_at)
+            .saturating_add(12)
+            .saturating_add(to_usize(fv.len()).saturating_mul(8))
+            .saturating_add(to_usize(i).saturating_mul(6));
+        if let Some(count) = v.feature_count
+            && usize::from(record.feature_index()) >= count
+        {
+            v.emit(
+                at,
+                Kind::FeatureIndexOutOfRange {
+                    index: u32::from(record.feature_index()),
+                    count: to_u32(count),
+                },
+            );
+        }
+        match record.feature_lookups() {
+            Ok(Some(table)) => v.feature_lookups(table),
+            Ok(None) => {}
+            Err(e) => v.error(at.saturating_add(2), e),
         }
     }
 }

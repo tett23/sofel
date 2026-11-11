@@ -257,7 +257,7 @@ pub(crate) struct ExtentsStacks {
     groups: Vec<Bounds>,
 }
 
-impl<'s, F: FnMut(u32) -> Option<GlyphExtents>> ExtentsPainter<'s, F> {
+impl<'s, F: FnMut(u32) -> Option<Extents>> ExtentsPainter<'s, F> {
     pub(crate) fn new(stacks: &'s mut ExtentsStacks, glyph_box: F) -> ExtentsPainter<'s, F> {
         stacks.transforms.clear();
         stacks.clips.clear();
@@ -295,7 +295,7 @@ impl<'s, F: FnMut(u32) -> Option<GlyphExtents>> ExtentsPainter<'s, F> {
     }
 }
 
-impl<F: FnMut(u32) -> Option<GlyphExtents>> Painter for ExtentsPainter<'_, F> {
+impl<F: FnMut(u32) -> Option<Extents>> Painter for ExtentsPainter<'_, F> {
     fn push_transform(&mut self, t: Transform) {
         let top = self.transforms.last().copied().unwrap_or_default();
         self.transforms.push(top.multiply(&t));
@@ -305,8 +305,8 @@ impl<F: FnMut(u32) -> Option<GlyphExtents>> Painter for ExtentsPainter<'_, F> {
     }
     fn push_clip_glyph(&mut self, glyph: u32) {
         let e = (self.glyph_box)(glyph)
-            .filter(|e| e.width != 0 || e.height != 0)
-            .map_or(Extents::VOID, |e| Extents::from_glyph(&e));
+            .filter(|e| e.x_min != e.x_max || e.y_min != e.y_max)
+            .unwrap_or(Extents::VOID);
         self.push_clip(e);
     }
     fn push_clip_rectangle(&mut self, r: Rect) {

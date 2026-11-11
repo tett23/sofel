@@ -510,6 +510,10 @@ impl<'a> Font<'a> {
                 c.font(index).map_err(FontError::Read)?
             }
             FontFile::Collection(_) => return Err(FontError::IndexOutOfRange),
+            FontFile::Dfont(d) if index < d.num_fonts() => {
+                d.font(index).map_err(FontError::Read)?
+            }
+            FontFile::Dfont(_) => return Err(FontError::IndexOutOfRange),
         };
         // FreeType reads Apple's `bhed` instead of `head` for fonts
         // without outlines, unless they have `sbix` (sfobjs.c).
@@ -654,6 +658,13 @@ impl<'a> Font<'a> {
     /// The bytes of a table.
     pub fn table(&self, tag: Tag) -> Option<&'a [u8]> {
         self.sfnt.table(tag)
+    }
+
+    /// Raw layout bytes retained by HarfBuzz's shaping-time checks.
+    pub fn shaping_table(&self, tag: Tag) -> Option<&'a [u8]> {
+        use sofel_read::layout::sanitize::{Admission, assess};
+        self.table(tag)
+            .filter(|d| assess(tag, Some(d)) == Admission::Accepted)
     }
 
     /// The glyph for a character, from the chosen cmap subtable (in
