@@ -22,7 +22,7 @@ pub(super) fn items(bench: &mut Bench, data: &Path) {
     };
     let item = "location wght=500";
     for (name, file) in FONTS {
-        if !bench.wanted(name, item) {
+        if !bench.wanted(name, item) && !bench.wanted(name, "advance wght=500") {
             continue;
         }
         let bytes = std::fs::read(data.join("harfbuzz/test/subset/data/fonts").join(file)).unwrap();
@@ -67,5 +67,28 @@ pub(super) fn items(bench: &mut Bench, data: &Path) {
                 Compare::Yes,
             )),
         );
+        if bench.wanted(name, "advance wght=500") {
+            let instance = font.instance(&location);
+            let ours = |g| u64::from(instance.advance(sofel_font::read::GlyphId(g)));
+            let theirs_ft = |g| ft.advance(g) as u64;
+            let theirs_hb = |g| hb.advance(g) as u64;
+            for g in 0..font.num_glyphs() {
+                assert_eq!(ours(g), theirs_hb(g), "{name} glyph {g}, HarfBuzz advance");
+                assert_eq!(ours(g), theirs_ft(g), "{name} glyph {g}, FreeType advance");
+            }
+            bench.item(
+                name,
+                "advance wght=500".into(),
+                &mut || (0..font.num_glyphs()).map(ours).sum(),
+                Some((
+                    &mut || (0..font.num_glyphs()).map(theirs_ft).sum(),
+                    Compare::Yes,
+                )),
+                Some((
+                    &mut || (0..font.num_glyphs()).map(theirs_hb).sum(),
+                    Compare::Yes,
+                )),
+            );
+        }
     }
 }

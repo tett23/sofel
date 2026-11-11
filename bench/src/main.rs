@@ -1263,6 +1263,22 @@ mod variation_bench_tests {
     use super::*;
 
     #[test]
+    fn adr0027_weight_advances_match_for_every_glyph() {
+        let mut bench = Bench {
+            once: true,
+            filter: Some("advance wght=500".into()),
+            rows: Vec::new(),
+            checks: Vec::new(),
+        };
+        variation::items(
+            &mut bench,
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/testdata"),
+        );
+        assert_eq!(bench.rows.len(), 3);
+        assert!(bench.checks.iter().all(|c| c.ok));
+    }
+
+    #[test]
     fn adr0027_weight_location_matches_both_references_on_three_fonts() {
         let mut bench = Bench {
             once: true,
