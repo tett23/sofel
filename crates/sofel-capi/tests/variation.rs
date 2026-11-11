@@ -641,6 +641,13 @@ fn i03_h_advance_accepts_location() {
         OK
     );
     assert_eq!(advance, 500);
+    let mut ft_advance = u16::MAX;
+    // SAFETY: font and location are live; advance is writable.
+    assert_eq!(
+        unsafe { sofel_font_ft_h_advance(font, location, 0, &mut ft_advance) },
+        OK
+    );
+    assert_eq!(ft_advance, 500);
     let mut bearing = i16::MIN;
     // SAFETY: font and location are live; bearing is writable.
     assert_eq!(
@@ -689,6 +696,13 @@ fn i03_hvar_advance_preserves_unsigned_range_in_c_abi() {
         OK
     );
     assert_eq!(advance, 65_556);
+    let mut ft_advance = u16::MAX;
+    // SAFETY: font and location are live; advance is writable.
+    assert_eq!(
+        unsafe { sofel_font_ft_h_advance(font, location, 0, &mut ft_advance) },
+        OK
+    );
+    assert_eq!(ft_advance, 20);
     // SAFETY: font remains live until scale destruction.
     let scale = unsafe { sofel_scale_create(font, 1000, 1000, &mut error) };
     assert_eq!(error, OK);
@@ -735,6 +749,13 @@ fn i03_vvar_advance_uses_location_in_c_abi() {
         OK
     );
     assert_eq!(ft_advance, 511);
+    let mut top = i16::MIN;
+    // SAFETY: font and location are live; top is writable.
+    assert_eq!(
+        unsafe { sofel_font_ft_top_side_bearing(font, location, 0, 123, &mut top) },
+        OK
+    );
+    assert_eq!(top, 0);
     let mut origin = [i32::MIN; 2];
     // SAFETY: font and location are live; origin is writable.
     assert_eq!(
@@ -1098,6 +1119,144 @@ fn i03_location_keeps_default_outline_and_metrics_until_values_are_applied() {
     assert_eq!(located_box, default_box);
     // SAFETY: handles are owned and no longer used.
     unsafe {
+        sofel_outline_scratch_destroy(scratch);
+        sofel_location_destroy(location);
+        sofel_font_destroy(font);
+    }
+}
+
+#[test]
+fn adr0027_i03_location_changes_glyf_outline_and_box() {
+    let root = std::env::var_os("SOFEL_TESTDATA")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/testdata")
+        });
+    let bytes = std::fs::read(root.join("extra-fonts/fonts/arabic.ttf")).unwrap();
+    let mut error = -99;
+    // SAFETY: bytes live through both handle destructions.
+    let font = unsafe { sofel_font_create(bytes.as_ptr(), bytes.len(), 0, &mut error) };
+    assert_eq!(error, OK);
+    let mut location = core::ptr::null_mut();
+    let coords = [900.0f32];
+    // SAFETY: font and output pointer are live; one coordinate is readable.
+    assert_eq!(
+        unsafe { sofel_location_create_design(font, coords.as_ptr(), 1, &mut location) },
+        OK
+    );
+    let scratch = sofel_outline_scratch_create();
+    let mut default_box = [0; 4];
+    let mut located_box = [0; 4];
+    let mut overlap = 0;
+    // SAFETY: handles are live; outputs are writable.
+    assert_eq!(
+        unsafe {
+            sofel_outline_load(
+                font,
+                core::ptr::null(),
+                5,
+                0,
+                0,
+                0,
+                scratch,
+                default_box.as_mut_ptr(),
+                &mut overlap,
+            )
+        },
+        OK
+    );
+    // SAFETY: handles are live; outputs are writable.
+    assert_eq!(
+        unsafe {
+            sofel_outline_load(
+                font,
+                location,
+                5,
+                0,
+                0,
+                0,
+                scratch,
+                located_box.as_mut_ptr(),
+                &mut overlap,
+            )
+        },
+        OK
+    );
+    assert_ne!(located_box, default_box);
+    let mut default_extents = [0; 4];
+    let mut located_extents = [0; 4];
+    // SAFETY: handles are live; output is writable.
+    assert_eq!(
+        unsafe {
+            sofel_font_glyph_extents(font, core::ptr::null(), 5, default_extents.as_mut_ptr())
+        },
+        OK
+    );
+    // SAFETY: handles are live; output is writable.
+    assert_eq!(
+        unsafe { sofel_font_glyph_extents(font, location, 5, located_extents.as_mut_ptr()) },
+        OK
+    );
+    assert_ne!(located_extents, default_extents);
+    assert_eq!(located_extents, [10, 589, 470, -529]);
+    let rasterizer = sofel_rasterizer_create();
+    let mut default_pixels = vec![0u8; 65536];
+    let mut located_pixels = vec![0u8; 65536];
+    let mut default_len = 0;
+    let mut located_len = 0;
+    let mut default_bitmap_box = [0; 4];
+    let mut located_bitmap_box = [0; 4];
+    // SAFETY: all handles are live; buffers and output pointers are writable.
+    assert_eq!(
+        unsafe {
+            sofel_render_glyph(
+                font,
+                core::ptr::null(),
+                5,
+                24,
+                scratch,
+                rasterizer,
+                default_pixels.as_mut_ptr(),
+                default_pixels.len(),
+                &mut default_len,
+                default_bitmap_box.as_mut_ptr(),
+            )
+        },
+        OK
+    );
+    // SAFETY: all handles are live; buffers and output pointers are writable.
+    assert_eq!(
+        unsafe {
+            sofel_render_glyph(
+                font,
+                location,
+                5,
+                24,
+                scratch,
+                rasterizer,
+                located_pixels.as_mut_ptr(),
+                located_pixels.len(),
+                &mut located_len,
+                located_bitmap_box.as_mut_ptr(),
+            )
+        },
+        OK
+    );
+    assert_ne!(
+        (
+            default_len,
+            default_bitmap_box,
+            default_pixels.get(..default_len)
+        ),
+        (
+            located_len,
+            located_bitmap_box,
+            located_pixels.get(..located_len)
+        )
+    );
+    // SAFETY: handles are live and owned.
+    unsafe {
+        sofel_rasterizer_destroy(rasterizer);
         sofel_outline_scratch_destroy(scratch);
         sofel_location_destroy(location);
         sofel_font_destroy(font);
