@@ -1125,7 +1125,7 @@ static void print_hex(const unsigned char *s, unsigned long n)
     printf("%02x", s[i]);
 }
 
-static void dump_names_and_metrics(FT_Face face)
+static void dump_names_and_metrics(FT_Face face, int with_bearings)
 {
   FT_Long n = face->num_glyphs, g;
   FT_UInt i, count;
@@ -1163,7 +1163,7 @@ static void dump_names_and_metrics(FT_Face face)
   }
   /* The glyph slot bearing is recomputed from the outline's CBox.  Read the
    * metric tables instead: this is the input of tt_face_get_metrics. */
-  {
+  if (with_bearings) {
     TT_HoriHeader *h = (TT_HoriHeader *)FT_Get_Sfnt_Table(face, FT_SFNT_HHEA);
     TT_VertHeader *v = (TT_VertHeader *)FT_Get_Sfnt_Table(face, FT_SFNT_VHEA);
     FT_ULong hlen = 0, vlen = 0;
@@ -1441,6 +1441,7 @@ int main(int argc, char **argv)
   FT_Long num_faces, i;
   FT_Long byte_count = 0;
   FT_Byte *bytes = NULL;
+  int metrics_mode = 0;
   FT_Error error;
 
   if (argc >= 2 && (strcmp(argv[1], "--var") == 0 ||
@@ -1470,6 +1471,7 @@ int main(int argc, char **argv)
   if (argc == 3 && strcmp(argv[1], "--otvalid") == 0)
     return otvalid(argv[2]);
   if (argc == 3 && strcmp(argv[1], "--metrics") == 0) {
+    metrics_mode = 1;
     argv[1] = argv[2];
     argc = 2;
   }
@@ -1519,7 +1521,7 @@ int main(int argc, char **argv)
       dump_maxp((const TT_MaxProfile *)table);
     dump_charmaps(face);
     dump_advances(face);
-    dump_names_and_metrics(face);
+    dump_names_and_metrics(face, metrics_mode);
     printf("end\n");
     FT_Done_Face(face);
   }
