@@ -37,7 +37,7 @@ pub(crate) mod flags {
 
 /// A pause between stages (`pause_func_t`): returns whether glyphs
 /// may have been added, so that the buffer digest is refreshed.
-pub(crate) type PauseFn = fn(&ShapePlan<'_>, &ShapeFont<'_, '_>, &mut Buffer) -> bool;
+pub(crate) type PauseFn = fn(&ShapePlan<'_>, &ShapeFont<'_, '_, '_, '_>, &mut Buffer) -> bool;
 
 /// `feature_map_t`.
 #[derive(Clone, Copy, Debug)]
@@ -146,6 +146,7 @@ pub(crate) struct MapBuilder<'l, 'a> {
     pub(crate) found_script: [bool; 2],
     pub(crate) script_index: [Option<usize>; 2],
     pub(crate) language_index: [Option<usize>; 2],
+    pub(crate) variations_index: [Option<u32>; 2],
     current_stage: [usize; 2],
     feature_infos: Vec<FeatureInfo>,
     stages: [Vec<StageInfo>; 2],
@@ -177,6 +178,7 @@ impl<'l, 'a> MapBuilder<'l, 'a> {
                 layout.gsub.select_language(script0, language_tags),
                 layout.gpos.select_language(script1, language_tags),
             ],
+            variations_index: [None, None],
             current_stage: [0, 0],
             feature_infos: Vec::new(),
             stages: [Vec::new(), Vec::new()],
@@ -256,9 +258,13 @@ impl<'l, 'a> MapBuilder<'l, 'a> {
 
     fn feature_lookups(&self, table: usize, index: u16) -> Vec<u16> {
         if table == GSUB {
-            self.layout.gsub.feature_lookups(index)
+            self.layout
+                .gsub
+                .feature_lookups(index, self.variations_index[GSUB])
         } else {
-            self.layout.gpos.feature_lookups(index)
+            self.layout
+                .gpos
+                .feature_lookups(index, self.variations_index[GPOS])
         }
     }
 
