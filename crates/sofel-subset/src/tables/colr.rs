@@ -35,6 +35,7 @@ pub(crate) struct ColorPlan {
     pub palettes: BTreeMap<u32, u32>,
     variation_indices: BTreeMap<u32, u32>,
     variation_store: Vec<u8>,
+    index_map: Vec<u8>,
 }
 
 /// The COLR table HarfBuzz's sanitizer accepts, as far as the views
@@ -97,20 +98,25 @@ fn plan_store(
     if indices.is_empty() {
         return Ok(());
     }
-    if pinned || colr.var_index_map_offset() != 0 {
+    if pinned {
         return Err(unsupported_store());
     }
-    let store = colr
-        .variation_store()
-        .ok()
-        .flatten()
-        .ok_or_else(unsupported_store)?;
+    let map = colr
+        .var_index_map()
+        .map_err(|_| unsupported_store())?
+        .filter(|m| !m.is_empty());
+    let store = colr.variation_store().map_err(|_| unsupported_store())?;
+    let rows: BTreeSet<_> = indices
+        .iter()
+        .map(|&idx| map.map_or(idx, |m| m.map(idx)))
+        .filter(|&idx| idx != NO_VARIATION)
+        .collect();
     let mut groups: BTreeMap<u16, Vec<u32>> = BTreeMap::new();
-    for idx in indices {
+    for idx in rows {
         let outer = u16::try_from(idx >> 16).map_err(|_| unsupported_store())?;
         let inner = idx & 0xffff;
         if !store
-            .item_data(outer)
+            .and_then(|s| s.item_data(outer))
             .is_some_and(|data| inner < u32::from(data.item_count))
         {
             return Err(unsupported_store());
@@ -126,7 +132,30 @@ fn plan_store(
             plan.variation_indices.insert(old, new);
         }
     }
-    plan.variation_store = super::hvar::subset_store(store, &groups, TAG)?;
+    if let Some(store) = store {
+        plan.variation_store = super::hvar::subset_store(store, &groups, TAG)?;
+    }
+    if let Some(map) = map {
+        let rows = core::mem::take(&mut plan.variation_indices);
+        let mut entries = Vec::new();
+        for idx in indices {
+            let source = map.map(idx);
+            let target = if source == NO_VARIATION {
+                source
+            } else {
+                *rows.get(&source).ok_or_else(unsupported_store)?
+            };
+            let new = u32::try_from(entries.len()).map_err(|_| unsupported_store())?;
+            plan.variation_indices.insert(idx, new);
+            entries.push(target);
+        }
+        // Indices beyond the stored map repeat its last entry.
+        if let Some(&last) = entries.last() {
+            let suffix = entries.iter().rev().take_while(|&&v| v == last).count();
+            entries.truncate(entries.len().saturating_sub(suffix.saturating_sub(1)));
+        }
+        plan.index_map = super::hvar::encode_index_map(&entries, TAG)?;
+    }
     Ok(())
 }
 
@@ -824,6 +853,12 @@ pub(crate) fn subset(
     }
     c.serialize_subset(18, 4, off(18), |c, at| c.layer_list(at));
     c.serialize_subset(22, 4, off(22), |c, at| c.clip_list(at));
+    if !plan.color.index_map.is_empty() {
+        s.push();
+        s.extend(&plan.color.index_map);
+        let idx = s.pop_pack(true);
+        s.link32(26, idx);
+    }
     Ok(true)
 }
 

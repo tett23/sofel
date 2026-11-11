@@ -298,8 +298,7 @@ fn retained_variable_paint_or_clip_needs_the_colr_store() {
     }
 }
 
-#[test]
-fn colr_implicit_store_renumbers_alpha_and_discards_unused_rows() {
+fn colr_with_alpha_store() -> Vec<u8> {
     let solid = |idx| Buf::new().u8(3).u16(0).u16(0x4000).u32(idx).done();
     let mut colr = colr_v1(
         &[],
@@ -341,6 +340,12 @@ fn colr_implicit_store_renumbers_alpha_and_discards_unused_rows() {
         ],
     );
     colr.extend_from_slice(&store);
+    colr
+}
+
+#[test]
+fn colr_implicit_store_renumbers_alpha_and_discards_unused_rows() {
+    let colr = colr_with_alpha_store();
     let data = font_with(vec![(b"COLR", colr), (b"CPAL", cpal_table(false))]);
     let font = Font::new(&data, 0).unwrap();
     let result = subset(&font, &chars("A")).unwrap();
@@ -361,6 +366,41 @@ fn colr_implicit_store_renumbers_alpha_and_discards_unused_rows() {
         .item_data(0)
         .unwrap();
     assert_eq!(vardata.item_count, 1);
+}
+
+#[test]
+fn colr_mapped_store_renumbers_alpha_and_writes_the_output_map() {
+    let mut table = colr_with_alpha_store();
+    let offset = table.len() as u32;
+    table[26..30].copy_from_slice(&offset.to_be_bytes());
+    table.extend_from_slice(&[0, 1, 0, 3, 2, 1, 0]);
+    let input = font_with(vec![(b"COLR", table), (b"CPAL", cpal_table(false))]);
+    let font = Font::new(&input, 0).unwrap();
+    let result = subset(&font, &chars("AB")).unwrap();
+    let table = out_table(&result, b"COLR").unwrap();
+    let colr = Colr::new(&table).unwrap();
+    let map = colr.var_index_map().unwrap().unwrap();
+    assert_eq!((map.len(), map.map(0), map.map(1)), (2, 1, 0));
+    let store = colr.variation_store().unwrap().unwrap();
+    assert_eq!(store.item_data(0).unwrap().item_count, 2);
+}
+
+#[test]
+fn colr_sentinel_only_map_repeats_its_last_entry_without_a_store() {
+    let mut table = colr_with_alpha_store();
+    table[30..34].fill(0);
+    let offset = table.len() as u32;
+    table[26..30].copy_from_slice(&offset.to_be_bytes());
+    // A single 32-bit entry maps every source index to NO_VARIATION.
+    table.extend_from_slice(&[0, 0x3f, 0, 1, 255, 255, 255, 255]);
+    let input = font_with(vec![(b"COLR", table), (b"CPAL", cpal_table(false))]);
+    let font = Font::new(&input, 0).unwrap();
+    let result = subset(&font, &chars("AB")).unwrap();
+    let table = out_table(&result, b"COLR").unwrap();
+    let colr = Colr::new(&table).unwrap();
+    assert!(colr.variation_store().unwrap().is_none());
+    let map = colr.var_index_map().unwrap().unwrap();
+    assert_eq!((map.len(), map.map(0), map.map(1)), (1, u32::MAX, u32::MAX));
 }
 
 /// CBDT with 3 image blocks for 'A', 'B' and 'C', and CBLC with one strike
