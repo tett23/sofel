@@ -25,15 +25,13 @@ use crate::ffi::{HbBuffer, HbFont, ShapedLine, hb_first_shape};
 use crate::{Bench, Compare};
 
 /// A pair of a font and a text, with the direction to shape in (`None`
-/// for the guessed one), and why it is not measured yet.
+/// for the guessed one).
 struct Pair {
     font: &'static str,
     path: &'static str,
     text: &'static str,
     direction: Option<Direction>,
     literal: Option<&'static str>,
-    /// `Some` while the pair waits for its script's shaper (ADR 0024).
-    waits_for: Option<&'static str>,
 }
 
 const fn pair(
@@ -41,7 +39,6 @@ const fn pair(
     path: &'static str,
     text: &'static str,
     direction: Option<Direction>,
-    waits_for: Option<&'static str>,
 ) -> Pair {
     Pair {
         font,
@@ -49,7 +46,6 @@ const fn pair(
         text,
         direction,
         literal: None,
-        waits_for,
     }
 }
 
@@ -65,70 +61,37 @@ const MPLUS: &str = "harfbuzz/test/api/fonts/Mplus1p-Regular.ttf";
 /// Every pair of perf/benchmark-shape.cc, and M+ 1p with ja-runs.txt
 /// both ways.
 const PAIRS: [Pair; 12] = [
-    pair(
-        "Roboto-Regular",
-        ROBOTO,
-        "en-thelittleprince.txt",
-        None,
-        None,
-    ),
-    pair("Roboto-Regular", ROBOTO, "en-words.txt", None, None),
-    pair(
-        "SourceSerifVariable-Roman",
-        SERIF,
-        "react-dom.txt",
-        None,
-        None,
-    ),
+    pair("Roboto-Regular", ROBOTO, "en-thelittleprince.txt", None),
+    pair("Roboto-Regular", ROBOTO, "en-words.txt", None),
+    pair("SourceSerifVariable-Roman", SERIF, "react-dom.txt", None),
     pair(
         "NotoSansDevanagari-Regular",
         DEVANAGARI,
         "hi-words.txt",
         None,
-        None,
     ),
-    pair("Amiri-Regular", AMIRI, "fa-thelittleprince.txt", None, None),
+    pair("Amiri-Regular", AMIRI, "fa-thelittleprince.txt", None),
     pair(
         "NotoNastaliqUrdu-Regular",
         NASTALIQ,
         "fa-thelittleprince.txt",
         None,
-        None,
     ),
-    pair(
-        "NotoNastaliqUrdu-Regular",
-        NASTALIQ,
-        "fa-words.txt",
-        None,
-        None,
-    ),
-    pair(
-        "Gulzar-Regular",
-        GULZAR,
-        "fa-thelittleprince.txt",
-        None,
-        None,
-    ),
-    pair("Gulzar-Regular", GULZAR, "fa-words.txt", None, None),
-    pair(
-        "NotoSansDuployan-Regular",
-        DUPLOYAN,
-        "duployan.txt",
-        None,
-        Some("USE"),
-    ),
-    pair("Mplus1p-Regular", MPLUS, "ja-runs.txt", None, None),
+    pair("NotoNastaliqUrdu-Regular", NASTALIQ, "fa-words.txt", None),
+    pair("Gulzar-Regular", GULZAR, "fa-thelittleprince.txt", None),
+    pair("Gulzar-Regular", GULZAR, "fa-words.txt", None),
+    pair("NotoSansDuployan-Regular", DUPLOYAN, "duployan.txt", None),
+    pair("Mplus1p-Regular", MPLUS, "ja-runs.txt", None),
     pair(
         "Mplus1p-Regular",
         MPLUS,
         "ja-runs.txt",
         Some(Direction::Ttb),
-        None,
     ),
 ];
 
 // Fixed role specimens: guessed script, no language, default features and
-// coordinates, face zero. Unsupported scripts are checked as expected failures.
+// coordinates, face zero.
 const EXTRA_PAIRS: [Pair; 9] = [
     Pair {
         font: "extra/arabic",
@@ -136,7 +99,6 @@ const EXTRA_PAIRS: [Pair; 9] = [
         text: "role-default-und",
         direction: Some(Direction::Rtl),
         literal: Some("بِت\n"),
-        waits_for: None,
     },
     Pair {
         font: "extra/devanagari",
@@ -144,7 +106,6 @@ const EXTRA_PAIRS: [Pair; 9] = [
         text: "role-default-und",
         direction: Some(Direction::Ltr),
         literal: Some("क्‍ष\n"),
-        waits_for: None,
     },
     Pair {
         font: "extra/khmer",
@@ -152,7 +113,6 @@ const EXTRA_PAIRS: [Pair; 9] = [
         text: "role-default-und",
         direction: Some(Direction::Ltr),
         literal: Some("ក្រ\n"),
-        waits_for: None,
     },
     Pair {
         font: "extra/myanmar",
@@ -160,7 +120,6 @@ const EXTRA_PAIRS: [Pair; 9] = [
         text: "role-default-und",
         direction: Some(Direction::Ltr),
         literal: Some("င်္ကိ\n"),
-        waits_for: None,
     },
     Pair {
         font: "extra/balinese",
@@ -168,7 +127,6 @@ const EXTRA_PAIRS: [Pair; 9] = [
         text: "role-default-und",
         direction: Some(Direction::Ltr),
         literal: Some("ᬓ᭄ᬱᬶ\n"),
-        waits_for: Some("USE"),
     },
     Pair {
         font: "extra/hebrew",
@@ -176,7 +134,6 @@ const EXTRA_PAIRS: [Pair; 9] = [
         text: "role-default-und",
         direction: Some(Direction::Rtl),
         literal: Some("שָׁלוֹם\n"),
-        waits_for: None,
     },
     Pair {
         font: "extra/source-serif",
@@ -184,7 +141,6 @@ const EXTRA_PAIRS: [Pair; 9] = [
         text: "role-default-und",
         direction: Some(Direction::Ltr),
         literal: Some("office\n"),
-        waits_for: None,
     },
     Pair {
         font: "extra/source-han",
@@ -192,7 +148,6 @@ const EXTRA_PAIRS: [Pair; 9] = [
         text: "role-default-und",
         direction: Some(Direction::Ttb),
         literal: Some("漢字\n"),
-        waits_for: None,
     },
     Pair {
         font: "extra/amstelvar",
@@ -200,7 +155,6 @@ const EXTRA_PAIRS: [Pair; 9] = [
         text: "role-default-und",
         direction: Some(Direction::Ltr),
         literal: Some("office\n"),
-        waits_for: None,
     },
 ];
 
@@ -349,8 +303,7 @@ fn first_difference(
     first.map(|f| format!("{count} of {} lines differ; {f}", lines.len()))
 }
 
-/// Adds the shaping items of every pair that does not wait for a
-/// shaper.
+/// Adds the shaping items of every pair.
 pub fn shape_items(b: &mut Bench, testdata: &Path) {
     for p in PAIRS.iter().chain(EXTRA_PAIRS.iter()) {
         let dir = match p.direction {
@@ -360,13 +313,6 @@ pub fn shape_items(b: &mut Bench, testdata: &Path) {
         let item = format!("shaping {}{dir}", p.text);
         let first = format!("first shaping {}{dir}", p.text);
         if !b.wanted(p.font, &item) && !b.wanted(p.font, &first) {
-            continue;
-        }
-        if let Some(shaper) = p.waits_for.filter(|_| p.literal.is_none()) {
-            eprintln!(
-                "{}: {item}: waits for the {shaper} shaper (ADR 0024)",
-                p.font
-            );
             continue;
         }
         let text_path = testdata.join("harfbuzz/perf/texts").join(p.text);
@@ -385,17 +331,6 @@ pub fn shape_items(b: &mut Bench, testdata: &Path) {
         hb.set_ppem(0);
         let mut s = Shaper::new(&bytes);
         let diff = first_difference(&mut s, &hb, &text, &lines, p.direction);
-        if let Some(shaper) = p.waits_for {
-            b.checks.push(Check {
-                item: format!("{item} (expected failure: {shaper}, ADR 0024)"),
-                font: p.font.into(),
-                ok: diff.is_some(),
-                detail: diff.unwrap_or_else(|| {
-                    "unexpected pass: remove the expected failure and measure this pair".into()
-                }),
-            });
-            continue;
-        }
         b.checks.push(Check {
             item: format!("{item} (HarfBuzz, every line)"),
             font: p.font.to_string(),
