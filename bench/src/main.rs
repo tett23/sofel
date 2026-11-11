@@ -6,7 +6,7 @@
 mod ffi;
 mod shape;
 mod subset;
-mod variation;
+mod variation_deltas;
 
 use std::path::PathBuf;
 
@@ -1245,7 +1245,7 @@ fn main() {
 
         outline_items(&mut b, name, &font, &ft, &hb);
     }
-    variation::items(&mut b, &a.testdata);
+    variation_deltas::items(&mut b, &a.testdata);
     shape::shape_items(&mut b, &a.testdata);
     subset::subset_items(&mut b, &a.testdata);
     subset::unicode_range_items(&mut b, &a.testdata);
@@ -1272,7 +1272,7 @@ mod variation_tests {
             checks: vec![],
         };
         let data = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/testdata");
-        variation::items(&mut b, &data);
+        variation_deltas::items(&mut b, &data);
         assert_eq!(b.rows.len(), 11);
     }
 }
