@@ -20,9 +20,13 @@ pub(super) fn items(bench: &mut Bench, data: &Path) {
         tag: Tag::new(b"wght"),
         value: 500.0,
     };
+    let warm = "location with reference queries wght=499/500";
     let item = "location wght=500";
     for (name, file) in FONTS {
-        if !bench.wanted(name, item) && !bench.wanted(name, "advance wght=500") {
+        if !bench.wanted(name, item)
+            && !bench.wanted(name, "advance wght=500")
+            && !bench.wanted(name, warm)
+        {
             continue;
         }
         let bytes = std::fs::read(data.join("harfbuzz/test/subset/data/fonts").join(file)).unwrap();
@@ -67,6 +71,52 @@ pub(super) fn items(bench: &mut Bench, data: &Path) {
                 Compare::Yes,
             )),
         );
+        if bench.wanted(name, warm) {
+            let buffer = super::ffi::HbBuffer::new();
+            let gid = hb.nominal_glyph(u32::from('A'));
+            let alternate = Variation {
+                value: 499.0,
+                ..weight
+            };
+            let mut pair = [Location::new(&font, None, &[alternate]), make_location()].map(|loc| {
+                loc.ft_design_coords()
+                    .iter()
+                    .map(|v| c_long::from(v.0))
+                    .collect::<Vec<_>>()
+            });
+            // Each invocation changes coordinates, including across timing samples.
+            let (mut ours_index, mut ft_index, mut hb_index) = (0, 0, 0);
+            let weights = [alternate, weight];
+            bench.item(
+                name,
+                warm.into(),
+                &mut || {
+                    let loc = Location::new(&font, None, &[weights[ours_index]]);
+                    ours_index ^= 1;
+                    u64::from(font.instance(&loc).advance(sofel_font::read::GlyphId(gid)))
+                },
+                Some((
+                    &mut || {
+                        assert!(ft.set_design(&mut pair[ft_index]));
+                        ft_index ^= 1;
+                        std::hint::black_box(ft.outline(gid, true));
+                        ft.advance(gid) as u64
+                    },
+                    Compare::Yes,
+                )),
+                Some((
+                    &mut || {
+                        hb.set_weight(weights[hb_index].value);
+                        hb_index ^= 1;
+                        hb.query_variable_metrics();
+                        std::hint::black_box(hb.glyph_extents(gid));
+                        std::hint::black_box(buffer.shape_text(&hb, b"AV\n", 4));
+                        hb.advance(gid) as u64
+                    },
+                    Compare::Yes,
+                )),
+            );
+        }
         if bench.wanted(name, "advance wght=500") {
             let instance = font.instance(&location);
             let ours = |g| u64::from(instance.advance(sofel_font::read::GlyphId(g)));
