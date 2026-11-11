@@ -668,21 +668,16 @@ impl<'data> Location<'data> {
         let named = named_instance.and_then(|i| fvar.instance(usize::from(i)));
         let ft_style =
             named_instance.and_then(|i| font.ft_mm_var()?.named_styles().nth(usize::from(i)));
-        let mut ft_design = ft_style.map(|style| style.design_coords().collect::<Vec<_>>());
+        let mut ft_design = ft_style.map_or_else(
+            || fvar.axes().map(|axis| axis.default).collect::<Vec<_>>(),
+            |style| style.design_coords().collect(),
+        );
         if let Some(record) = named {
             for (axis, value) in design.iter_mut().enumerate() {
                 if let Some(coord) = record.coordinate(axis) {
                     *value = fixed_to_f32(coord);
                 }
             }
-        }
-        if ft_design.is_none() && !variations.is_empty() {
-            ft_design = Some(
-                design
-                    .iter()
-                    .map(|value| Fixed(hb_clamp_to_i32(f64::from(*value * 65536.0))))
-                    .collect(),
-            );
         }
         for variation in variations {
             for (axis, value) in fvar.axes().zip(&mut design) {
@@ -694,12 +689,12 @@ impl<'data> Location<'data> {
                 .axes()
                 .enumerate()
                 .find(|(_, axis)| axis.tag == variation.tag)
-                && let Some(ft) = ft_design.as_mut().and_then(|values| values.get_mut(index))
+                && let Some(ft) = ft_design.get_mut(index)
             {
                 *ft = Fixed(hb_clamp_to_i32(f64::from(variation.value * 65536.0)));
             }
         }
-        let mut location = Self::design_location(font, &fvar, &design, ft_design);
+        let mut location = Self::design_location(font, &fvar, &design, Some(ft_design));
         location.named_instance = named_instance;
         location.ft_default = named_instance.is_none() && location.ft_default;
         if named_instance.is_some() && named.is_none() && ft_style.is_none() {
@@ -741,9 +736,13 @@ impl<'data> Location<'data> {
             })
             .collect();
         let ft_design: Vec<Fixed> = ft_values.unwrap_or_else(|| {
-            design
-                .iter()
-                .map(|v| Fixed(hb_clamp_to_i32(f64::from(*v * 65536.0))))
+            fvar.axes()
+                .enumerate()
+                .map(|(i, axis)| {
+                    values.get(i).map_or(axis.default, |v| {
+                        Fixed(hb_clamp_to_i32(f64::from(*v * 65536.0)))
+                    })
+                })
                 .collect()
         });
         let mut hb_coords: Vec<i32> = fvar
@@ -818,6 +817,13 @@ impl<'data> Location<'data> {
         let mut location = Self::from_coords(font, hb_coords, ft_coords, fvar.axis_count() != 0);
         location.hb_design = design;
         location.ft_design = ft_design;
+        // FT_Get_Var_Design_Coordinates returns axis defaults when avar
+        // maps every supplied coordinate to zero (TT_Get_Var_Design).
+        if location.ft_default {
+            for (coord, axis) in location.ft_design.iter_mut().zip(fvar.axes()) {
+                *coord = axis.default;
+            }
+        }
         location
     }
 
@@ -1493,7 +1499,7 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
 
     /// A font-wide metric at a HarfBuzz scale.
     pub fn scaled_metrics_position(&self, scale: &HbScale, tag: MetricsTag) -> Option<i32> {
-        scale.metrics_position_with_var(self.font, tag, self.hb_mvar_delta(tag.tag()))
+        scale.metrics_position_with_var(self.font, tag, self.metrics_variation(tag.tag()))
     }
 
     /// A font-wide metric with HarfBuzz's fallback at a scale.
@@ -1508,7 +1514,8 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
         })
     }
 
-    fn hb_mvar_delta(&self, tag: Tag) -> f32 {
+    /// Unscaled MVAR delta, as returned by HarfBuzz's hb_ot_metrics_get_variation.
+    pub fn metrics_variation(&self, tag: Tag) -> f32 {
         let record = self
             .font
             .table(Tag::new(b"MVAR"))
@@ -1518,6 +1525,16 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
             self.item_delta::<HbF32>(StoreKind::Mvar, record.outer, record.inner)
                 .unwrap_or(0.0)
         })
+    }
+
+    /// The MVAR delta at the horizontal font scale.
+    pub fn metrics_x_variation(&self, scale: &HbScale, tag: Tag) -> i32 {
+        scale.em_scalef_x(self.metrics_variation(tag))
+    }
+
+    /// The MVAR delta at the vertical font scale.
+    pub fn metrics_y_variation(&self, scale: &HbScale, tag: Tag) -> i32 {
+        scale.em_scalef_y(self.metrics_variation(tag))
     }
 
     /// A font-wide metric with HarfBuzz's fallback at this location.
@@ -1861,16 +1878,6 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
             .font
             .table(Tag::new(b"fvar"))
             .and_then(|data| Fvar::new(data).ok())?;
-        if let Some(index) = self.location.named_instance
-            && let Some(record) = fvar.instance(usize::from(index))
-            && (0..fvar.axis_count())
-                .all(|axis| record.coordinate(axis) == self.location.ft_design.get(axis).copied())
-            && let Some(psid) = record.postscript_name_id
-            && (psid == 6 || (256..32768).contains(&psid))
-            && let Some(name) = name_string(self.font, psid)
-        {
-            return Some(write_name(&name, out));
-        }
         let prefix = [25, 16, 1]
             .into_iter()
             .find_map(|id| name_string(self.font, id))?;
@@ -1880,22 +1887,63 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
             .take(91)
             .collect();
         let prefix_len = name.len();
-        for (index, axis) in fvar.axes().enumerate() {
-            let value = self
-                .location
-                .ft_design
-                .get(index)
-                .copied()
-                .unwrap_or(axis.default);
-            if value == axis.default {
-                continue;
+        let named = self
+            .location
+            .named_instance
+            .and_then(|index| {
+                self.font
+                    .ft_mm_var()?
+                    .named_styles()
+                    .nth(usize::from(index))
+            })
+            .filter(|style| {
+                // FreeType retains the selected name when the blend stays at
+                // the named position or returns to the all-zero blend.
+                self.location.ft_coords.iter().all(|value| value.0 == 0)
+                    || style
+                        .design_coords()
+                        .eq(self.location.ft_design.iter().copied())
+                    || Location::design_location(
+                        self.font,
+                        &fvar,
+                        &[],
+                        Some(style.design_coords().collect()),
+                    )
+                    .ft_coords
+                        == self.location.ft_coords
+            });
+        let named_part = named.and_then(|style| {
+            if (style.psid == 6 || (256..32768).contains(&style.psid))
+                && let Some(ps) = name_string(self.font, style.psid)
+            {
+                return Some(ps);
             }
-            name.push('_');
-            let number = ft_fixed_to_short_decimal(value);
-            name.push_str(&number);
-            for byte in axis.tag.to_u32().to_be_bytes() {
-                if byte.is_ascii_alphanumeric() {
-                    name.push(char::from(byte));
+            let subfamily = name_string(self.font, style.strid)?;
+            let mut result = name.clone();
+            result.push('-');
+            result.extend(subfamily.chars().filter(char::is_ascii_alphanumeric));
+            Some(result)
+        });
+        if let Some(named) = named_part {
+            name = named;
+        } else {
+            for (index, axis) in fvar.axes().enumerate() {
+                let value = self
+                    .location
+                    .ft_design
+                    .get(index)
+                    .copied()
+                    .unwrap_or(axis.default);
+                if value == axis.default {
+                    continue;
+                }
+                name.push('_');
+                let number = ft_fixed_to_short_decimal(value);
+                name.push_str(&number);
+                for byte in axis.tag.to_u32().to_be_bytes() {
+                    if byte.is_ascii_alphanumeric() {
+                        name.push(char::from(byte));
+                    }
                 }
             }
         }
