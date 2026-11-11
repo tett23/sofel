@@ -7,12 +7,19 @@ run() { bash "$root/scripts/ci-result.sh"; }
 export CHANGES_RESULT=success ADR_RESULT=success DOCS_ONLY=true
 export RUST_RESULT=skipped CONFORMANCE_RESULT=skipped WASM_RESULT=skipped
 export FUZZ_RESULT=skipped BENCH_RESULT=skipped CAPI_WASM_RESULT=skipped
+export GENERATORS_RESULT=skipped
 run
+for value in success failure cancelled ''; do
+  GENERATORS_RESULT=$value run >/dev/null 2>&1 && { echo "ADR0039 I02: accepted $value" >&2; exit 1; }
+done
 DOCS_ONLY=false bash "$root/scripts/ci-result.sh" >/dev/null 2>&1 && exit 1
-export DOCS_ONLY=false
+export DOCS_ONLY=false GENERATORS_RESULT=success
 export RUST_RESULT=success CONFORMANCE_RESULT=success WASM_RESULT=success
 export FUZZ_RESULT=success BENCH_RESULT=success CAPI_WASM_RESULT=success
 run
+for value in skipped failure cancelled ''; do
+  GENERATORS_RESULT=$value run >/dev/null 2>&1 && { echo "ADR0039 I01: accepted $value" >&2; exit 1; }
+done
 for name in CHANGES_RESULT ADR_RESULT RUST_RESULT CONFORMANCE_RESULT WASM_RESULT FUZZ_RESULT BENCH_RESULT CAPI_WASM_RESULT; do
   old=${!name}
   printf -v "$name" failed

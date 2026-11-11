@@ -99,6 +99,7 @@ CI は、用途を確認して `ci/documentation-only.rules` の `document` に�
 新たに文書をビルドやテストの入力にする際は、同じ変更で `input` 規則を追加する。
 
 文書だけの変更でも、文書の検査と ADR、監査、計測記録の保護は実行する。
+通常のCIでは、LinuxとmacOSで生成器の検査と適合テストを並列に実行する（[ADR 0039](docs/adr/0039-generator-ci-parallelism.md)）。
 `ci-result` は、判定と保護、および全ジョブの結果を確認する。
 
 クローン後、gitのhookを有効化する。コミット済みのADRは [adr-guard](https://github.com/tett23/adr-guard) で保護しており、手元に adr-guard が要る。
