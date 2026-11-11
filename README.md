@@ -229,6 +229,8 @@ CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=$PWD::$PWD" cargo test --relea
 
 SourceSerifVariable-Romanの `wght=500` でのシェーピングは `--filter 'shaping react-dom.txt wght=500'` で選ぶ。全行の照合とnative・wasmの測定値は [可変位置のシェーピング計測](docs/benchmarks/2026-11-11-variable-shaping.md) に記録した。
 
+可変フォントの変化量は `--filter 'item delta'` で計れる。HVAR の係数を再利用できる場合と計算し直す場合、および既定位置の MVAR を個別に表示する。
+
 HarfBuzz と同じ文字数でサブセット化を計るには、計測の引数に `--filter 'subset unicode range'` を渡す。静的フォント7個について、既定の設定とグリフIDを保つ設定の両方を計る。
 
 追加フォントは `--filter extra` で選べる。cmap・advanceに加え、輪郭、縦advance、MATH定数、カラー形式、シェーピングの代表ケースを比較する（[ADR 0031](docs/adr/0031-diverse-font-corpus.md)）。条件と計測値は [追加フォントの役割別計測](docs/benchmarks/2026-11-11-extra-font-roles.md) に記す。
