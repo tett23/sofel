@@ -297,7 +297,17 @@ fn layout_variations(data: &[u8], tag: Tag, axes: Option<u16>, report: &mut dyn 
         return;
     };
     if let Some(bytes) = be::tail_at(data, to_usize(offset)) {
-        feature_variations::validate(bytes, tag, offset, axes, report);
+        let lookup_count = layout.lookup_list().ok().flatten().map(|list| list.len());
+        let feature_count = layout.feature_list().ok().flatten().map(|list| list.len());
+        feature_variations::validate(
+            bytes,
+            tag,
+            offset,
+            axes,
+            feature_count,
+            lookup_count,
+            report,
+        );
     } else {
         report(Diagnostic::new(
             tag,

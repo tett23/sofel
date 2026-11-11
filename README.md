@@ -20,6 +20,7 @@ WOFFとWOFF2、Type1やBDFなどの古い形式、AAT、絵文字（COLR、埋�
 可変フォントの位置でFreeType互換の生の塗り、停止点、クリップ矩形を読むには `FtPaintGraph` を使う。FreeType互換のCOLRの生の塗りを複数グリフで調べるときは、`RawPaintGraph::new` の結果を再利用できる。
 COLRv1の描画は、Rustの `paint_recording_at` とCの `sofel_paint_glyph` に可変フォントの位置を渡して記録できる。
 さらに、[ADR 0027](docs/adr/0027-variable-fonts.md) の可変フォントの表（ItemVariationStore、DeltaSetIndexMap、HVAR、VVAR、MVAR、gvar、GVAR、avar版2、FeatureVariations）を読み、検証する。`sofel-subset` はFeatureVariationsをこのビューから読む。
+FeatureVariations版1.1以降のlookup条件も読み、軸の位置に合うlookupをシェーピング計画に加える（[ADR 0046](docs/adr/0046-harfbuzz-lookup-variations.md)）。
 範囲と実装の順序は [ADR 0001](docs/adr/0001-project-goal-and-scope.md)、クレートの構成は [ADR 0003](docs/adr/0003-crate-layers.md) を参照。
 仕様は [docs/specifications.md](docs/specifications.md) にまとめる。
 シェーピング計画の生成時間は、[Coverageの走査を打ち切る計測](docs/benchmarks/2026-11-11-shape-coverage-digest.md) に記録している。

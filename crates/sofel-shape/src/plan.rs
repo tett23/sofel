@@ -256,6 +256,15 @@ pub fn layout_selection(
     }
 }
 
+/// FeatureVariations state for one layout table at an instance position.
+#[derive(Clone, Default, PartialEq, Eq, Debug)]
+pub struct VariationSelection {
+    /// First matching FeatureVariationRecord, if any.
+    pub index: Option<u32>,
+    /// Sorted distinct offsets of true, non-null lookup conditions.
+    pub lookup_conditions: Vec<u32>,
+}
+
 /// A shaping plan: everything about how to shape with a font, segment
 /// properties and features that does not depend on the text. Immutable,
 /// and shareable between threads.
@@ -264,7 +273,7 @@ pub fn layout_selection(
 pub struct ShapePlan<'a> {
     pub(crate) props: ResolvedProperties,
     pub(crate) user_features: Vec<Feature>,
-    variations_index: [Option<u32>; 2],
+    variations_index: [VariationSelection; 2],
     pub(crate) shaper: Shaper,
     pub(crate) map: Map,
     pub(crate) layout: Layout<'a>,
@@ -385,7 +394,7 @@ impl<'a> ShapePlan<'a> {
         let (script_tags, language_tags) =
             ot_tags_from_script_and_language(props.script, props.language.as_ref());
         let mut builder = MapBuilder::new(&layout, &script_tags, &language_tags);
-        builder.variations_index = variations_index;
+        builder.variations_index = variations_index.clone();
         let shaper = Shaper::categorize(props.script, props.direction, builder.chosen_script[GSUB]);
         let funcs = shaper.funcs();
         let mut planner = Planner {
@@ -449,16 +458,16 @@ impl<'a> ShapePlan<'a> {
 
     /// What the plan was made from, for the caller to compare when it
     /// keeps plans: the segment properties and the features.
-    pub fn key(&self) -> (ResolvedProperties, Vec<Feature>, [Option<u32>; 2]) {
+    pub fn key(&self) -> (ResolvedProperties, Vec<Feature>, [VariationSelection; 2]) {
         (
             self.props.clone(),
             self.user_features.clone(),
-            self.variations_index,
+            self.variations_index.clone(),
         )
     }
 
     /// The GSUB and GPOS FeatureVariations record indices for an instance.
-    pub fn variations_index_for(instance: Instance<'_, '_, '_, '_>) -> [Option<u32>; 2] {
+    pub fn variations_index_for(instance: Instance<'_, '_, '_, '_>) -> [VariationSelection; 2] {
         let font = instance.font();
         let location = instance.location();
         let delta = |outer, inner| {
@@ -471,16 +480,25 @@ impl<'a> ShapePlan<'a> {
             }
         };
         [Tag(*b"GSUB"), Tag(*b"GPOS")].map(|tag| {
-            font.table(tag)
+            let Some(variations) = font
+                .table(tag)
                 .and_then(|data| LayoutTable::new(data).ok())
                 .and_then(|table| table.feature_variations().ok().flatten())
-                .and_then(|variations| {
-                    crate::layout::variations::find_index(
-                        variations,
-                        location.coords_normalized(),
-                        delta,
-                    )
-                })
+            else {
+                return VariationSelection::default();
+            };
+            VariationSelection {
+                index: crate::layout::variations::find_index(
+                    variations,
+                    location.coords_normalized(),
+                    delta,
+                ),
+                lookup_conditions: crate::layout::variations::collect_lookup_conditions(
+                    variations,
+                    location.coords_normalized(),
+                    &delta,
+                ),
+            }
         })
     }
 
