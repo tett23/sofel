@@ -2001,6 +2001,61 @@ pub unsafe extern "C" fn sofel_font_ft_v_advance(
     })())
 }
 
+/// `sofel_font_ft_h_advance`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `location` is NULL for the default or live;
+/// `advance` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_ft_h_advance(
+    font: *const SofelFont,
+    location: *const SofelLocation,
+    glyph: u32,
+    advance: *mut u16,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, location, advance) = unsafe { (font_ref(font), r(location), w(advance)) };
+    status((|| {
+        let (font, advance) = (some(font)?, some(advance)?);
+        let location =
+            location.map_or_else(sofel_font::var::Location::default_ref, |v| &v.location);
+        *advance = font
+            .instance(location)
+            .ft_h_advance(GlyphId(glyph))
+            .ok_or(ERROR_INVALID_GLYPH)?;
+        Ok(())
+    })())
+}
+
+/// `sofel_font_ft_top_side_bearing`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `location` is NULL for the default or live;
+/// `bearing` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_ft_top_side_bearing(
+    font: *const SofelFont,
+    location: *const SofelLocation,
+    glyph: u32,
+    y_max: i16,
+    bearing: *mut i16,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, location, bearing) = unsafe { (font_ref(font), r(location), w(bearing)) };
+    status((|| {
+        let (font, bearing) = (some(font)?, some(bearing)?);
+        let location =
+            location.map_or_else(sofel_font::var::Location::default_ref, |v| &v.location);
+        *bearing = font
+            .instance(location)
+            .ft_top_side_bearing(GlyphId(glyph), y_max)
+            .ok_or(ERROR_INVALID_GLYPH)?;
+        Ok(())
+    })())
+}
+
 // ---------------------------------------------------------------- CFF
 
 /// `sofel_font_is_cff`.
