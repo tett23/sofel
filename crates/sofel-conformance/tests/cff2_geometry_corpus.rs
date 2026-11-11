@@ -61,11 +61,16 @@ fn adr0027_cff2_geometry_matches_freetype_at_all_corpus_locations() {
         let face_count = match &parsed {
             FontFile::Sfnt(_) => 1,
             FontFile::Collection(collection) => collection.num_fonts(),
+            FontFile::Dfont(dfont) => dfont.num_fonts(),
         };
         for face_index in 0..face_count {
             let sfnt = match &parsed {
                 FontFile::Sfnt(sfnt) => *sfnt,
                 FontFile::Collection(collection) => match collection.font(face_index) {
+                    Ok(sfnt) => sfnt,
+                    Err(_) => continue,
+                },
+                FontFile::Dfont(dfont) => match dfont.font(face_index) {
                     Ok(sfnt) => sfnt,
                     Err(_) => continue,
                 },
