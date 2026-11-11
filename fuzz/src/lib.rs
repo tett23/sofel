@@ -8,12 +8,15 @@ use sofel_read::hhea::Hhea;
 use sofel_read::hmtx::Hmtx;
 use sofel_read::maxp::Maxp;
 use sofel_read::sfnt::{FontFile, Sfnt};
+use sofel_read::feature_variations::FeatureVariations;
+use sofel_read::gvar::Gvar;
 use sofel_read::name::Name;
 use sofel_read::os2::Os2;
 use sofel_read::post::Post;
 use sofel_read::vorg::Vorg;
 use sofel_read::{
-    CountWidth, Diagnostic, GlyphId, Severity, base, cmap, head, hhea, hmtx, maxp, name, os2, post, validate, vorg,
+    CountWidth, Diagnostic, GlyphId, Severity, Tag, base, cmap, feature_variations, gvar,
+    head, hhea, hmtx, maxp, name, os2, post, validate, vorg,
 };
 
 fn has_error(f: impl FnOnce(&mut dyn FnMut(Diagnostic))) -> bool {
@@ -112,6 +115,52 @@ fn check_sfnt(s: &Sfnt<'_>) {
     validate::sfnt(s, &mut |_| {});
     for r in s.records() {
         let _ = r.data(s.file());
+    }
+}
+
+/// A standalone packed gvar decoder. The prefix selects the table format
+/// and a bounded point count; remaining bytes are an arbitrary table.
+pub fn check_gvar(input: &[u8]) {
+    let Some((prefix, data)) = input.split_first_chunk::<3>() else { return };
+    let tag = if prefix[0] & 1 == 0 { gvar::TAG } else { gvar::GVAR_TAG };
+    let points = usize::from(u16::from_be_bytes([prefix[1], prefix[2]])).min(4096);
+    gvar::validate_with_points(data, tag, None, None, |_| Some(points), &mut |_| {});
+    if let Ok(table) = Gvar::new(data, tag) {
+        for glyph in 0..table.glyph_count().min(32) {
+            if let Some(glyph_data) = table.glyph_data(glyph) {
+                let shared = glyph_data.shared_points();
+                for tuple in 0..glyph_data.tuple_count().min(32) {
+                    if let Some(tuple_data) = glyph_data.tuple(tuple) {
+                        if let Some((x, y)) = tuple_data.deltas(points, shared) {
+                            for delta in x.iter() { let _ = delta; }
+                            for delta in y.iter() { let _ = delta; }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// A standalone FeatureVariations condition-tree reader and validator.
+pub fn check_feature_variations(data: &[u8]) {
+    feature_variations::validate(data, Tag::new(b"GSUB"), 0, None, &mut |_| {});
+    if let Ok(table) = FeatureVariations::new(data) {
+        for i in 0..table.len().min(32) {
+            if let Some(record) = table.record(i) {
+                if let Ok(Some(set)) = record.conditions() {
+                    for j in 0..set.len().min(32) {
+                        if let Ok(Some(condition)) = set.condition(j) {
+                            let _ = condition.axis_range();
+                            let _ = condition.value();
+                            for k in 0..condition.children_len().unwrap_or(0).min(32) {
+                                let _ = condition.child(k);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -286,10 +335,78 @@ pub fn check_base(data: &[u8]) {
     assert!(error || walks, "an offset cannot be followed without an Error");
 }
 
+/// The first two bytes give numGlyphs (0 means none); the rest is a MATH table.
+pub fn check_math(input: &[u8]) {
+    use sofel_read::math::{self, Corner, Math, MathValue};
+    use sofel_read::ReadError;
+    fn ok<T>(r: Result<Option<T>, ReadError>, f: impl FnOnce(T) -> bool) -> bool {
+        match r {
+            Err(_) => false,
+            Ok(None) => true,
+            Ok(Some(t)) => f(t),
+        }
+    }
+    fn device(v: Option<MathValue<'_>>) -> bool {
+        v.is_some_and(|v| v.device().is_ok())
+    }
+    let Some((n, data)) = input.split_first_chunk::<2>() else { return };
+    let n = u32::from(u16::from_be_bytes(*n));
+    let error = has_error(|r| math::validate(data, (n != 0).then_some(n), r));
+    let Ok(m) = Math::new(data) else {
+        assert!(error, "Math::new failed without an Error");
+        return;
+    };
+    let constants = ok(m.constants(), |c| {
+        let _ = (c.script_percent_scale_down(), c.radical_degree_bottom_raise_percent());
+        (0..math::NUM_CONSTANT_VALUES).all(|i| device(c.value(i)))
+    });
+    let info = ok(m.glyph_info(), |gi| {
+        let table = |t| {
+            ok(t, |t: math::MathValueTable<'_>| {
+                let _ = t.get(GlyphId(3));
+                t.coverage().is_ok() && (0..t.len().min(1000)).all(|i| device(t.value(i)))
+            })
+        };
+        table(gi.italics_correction())
+            && table(gi.top_accent_attachment())
+            && gi.extended_shape_coverage().is_ok()
+            && ok(gi.kern_info(), |k| {
+                k.coverage().is_ok()
+                    && (0..k.len().min(1000)).all(|i| {
+                        [Corner::TopRight, Corner::TopLeft, Corner::BottomRight, Corner::BottomLeft]
+                            .into_iter()
+                            .all(|c| {
+                                ok(k.kern(i, c), |k| {
+                                    (0..k.height_count().min(1000)).all(|j| device(k.correction_height(j)))
+                                        && (0..=k.height_count().min(1000)).all(|j| device(k.kern_value(j)))
+                                })
+                            })
+                    })
+            })
+    });
+    let variants = ok(m.variants(), |v| {
+        let construction = |c| {
+            ok(c, |c: math::MathGlyphConstruction<'_>| {
+                (0..c.num_variants().min(1000)).all(|i| c.variant(i).is_some())
+                    && ok(c.glyph_assembly(), |a| {
+                        a.italics_correction().device().is_ok()
+                            && (0..a.num_parts().min(1000)).all(|i| a.part(i).is_some())
+                    })
+            })
+        };
+        let _ = v.min_connector_overlap();
+        v.vert_coverage().is_ok()
+            && v.horiz_coverage().is_ok()
+            && (0..v.vert_glyph_count().min(1000)).all(|i| construction(v.vert_construction(i)))
+            && (0..v.horiz_glyph_count().min(1000)).all(|i| construction(v.horiz_construction(i)))
+    });
+    assert!(error || (constants && info && variants), "a read failed without an Error");
+}
+
 /// The queries of ADR 0016 on a whole font: must not panic.
 fn check_font_queries(font: &sofel_font::Font<'_>) {
     let scales = [sofel_font::HbScale::unscaled(font), sofel_font::HbScale::for_font(font, 768, -1536)];
-    let boxes = |g| font.glyf_extents(g);
+    let boxes = |g| font.default_instance().glyf_extents(g);
     for s in scales {
         let _ = (s.h_extents(font), s.v_extents(font));
         for t in sofel_font::MetricsTag::ALL {
@@ -312,7 +429,7 @@ fn check_font_queries(font: &sofel_font::Font<'_>) {
             }
         }
     }
-    let _ = (font.fs_type(), font.ft_face_metrics());
+    let _ = (font.fs_type(), font.default_instance().ft_face_metrics());
     let mut out = [0u8; 64];
     let _ = font.postscript_name(&mut out);
     for e in font.names().take(64) {
@@ -329,7 +446,11 @@ fn check_font_queries(font: &sofel_font::Font<'_>) {
     let names = font.glyph_names(&mut buf);
     for g in 0..font.num_glyphs().min(64) {
         let g = GlyphId(g);
-        let _ = (font.glyph_name(g), font.ft_glyph_name(g), font.ft_v_advance(g));
+        let _ = (
+            font.glyph_name(g),
+            font.ft_glyph_name(g),
+            font.default_instance().ft_v_advance(g),
+        );
         if let (Some(n), Some(idx)) = (font.glyph_name(g), names.as_ref()) {
             let _ = idx.glyph_from_name(n);
             let _ = idx.ft_glyph_from_name(n);
@@ -889,8 +1010,8 @@ pub fn check_deserialize(input: &[u8]) {
     }
 }
 
-/// Subsets a font with flags and a glyph set taken from the first bytes
-/// (ADR 0022): no panic, and a successful output opens and has no
+/// Subsets a font with flags, a glyph set and whether to pin every axis
+/// to its default taken from the first bytes (ADR 0022): no panic, and a successful output opens and has no
 /// validator `Error` in the tables that differ from the source's.
 pub fn check_subset(data: &[u8]) {
     use sofel_subset::{Flags, Input, SetKind};
@@ -905,9 +1026,15 @@ pub fn check_subset(data: &[u8]) {
     let count = u32::from(head[4]);
     let chars = u32::from(head[5]);
     let input = Input::new()
-        .with_flags(Flags(flags))
+        .with_flags(Flags(flags & 0x7FFF))
         .map_set(SetKind::Glyphs, |s| s.add_range(first, first.saturating_add(count)))
         .map_set(SetKind::Unicodes, |s| s.add_range(0x20, 0x20 + chars));
+    // Bit 15 of the flags pins every axis to its default.
+    let input = if flags & 0x8000 != 0 {
+        input.with_all_axes_pinned_to_default(&font).unwrap_or(input)
+    } else {
+        input
+    };
     let Ok(out) = sofel_subset::subset(&font, &input) else {
         return;
     };
@@ -920,4 +1047,95 @@ pub fn check_subset(data: &[u8]) {
         }
     });
     assert!(errors.is_empty(), "{errors:?}");
+}
+
+/// An object graph for the repacker (ADR 0022, 再配置): a tag (4 bytes),
+/// an object count (1 byte), each object's length (2 bytes) and fill
+/// byte, then links: parent and child (object indices, 1 byte each, the
+/// child must come first), position (2 bytes), width (1 byte) and flags
+/// (1 byte: bit 0 signed, bits 1-2 whence, bit 3 virtual). The last
+/// object is the root.
+///
+/// Repacking must not panic. The repacker returns only bytes whose
+/// offsets all fit (it fails otherwise), and keeps every object (adding
+/// duplicates), so outside GSUB and GPOS (whose subtables it may shrink)
+/// the result is at least as long as the objects. When the objects lay
+/// out without an overflow in their order, `Packed::repack` gives the
+/// bytes of `Packed::resolve`.
+pub fn check_repack(data: &[u8]) {
+    use sofel_write::{Link, Object, Packed, Whence, serialize_objects};
+    let (Some(tag), Some(&n)) = (data.get(..4), data.get(4)) else {
+        return;
+    };
+    let tag = sofel_read::Tag([tag[0], tag[1], tag[2], tag[3]]);
+    let n = usize::from(n);
+    let mut at = 5;
+    let mut objs = Vec::with_capacity(n);
+    for _ in 0..n {
+        let Some(o) = data.get(at..at + 3) else {
+            return;
+        };
+        let len = usize::from(u16::from_be_bytes([o[0], o[1]]));
+        objs.push(Object {
+            bytes: vec![o[2]; len],
+            ..Object::default()
+        });
+        at += 3;
+    }
+    while let Some(l) = data.get(at..at + 6) {
+        at += 6;
+        let (parent, child) = (usize::from(l[0]), u32::from(l[1]));
+        let Some(o) = objs.get_mut(parent) else {
+            continue;
+        };
+        let link = Link {
+            width: l[4],
+            signed: l[5] & 1 != 0,
+            whence: match (l[5] >> 1) & 3 {
+                1 => Whence::Tail,
+                2 => Whence::Absolute,
+                _ => Whence::Head,
+            },
+            bias: 0,
+            position: u32::from(u16::from_be_bytes([l[2], l[3]])),
+            objidx: child + 1,
+        };
+        if l[5] & 8 != 0 {
+            o.virtual_links.push(Link {
+                objidx: child + 1,
+                ..Link::default()
+            });
+        } else {
+            o.real_links.push(link);
+        }
+    }
+    let total: usize = objs.iter().map(|o| o.bytes.len()).sum();
+    if let Ok(out) = serialize_objects(tag, &objs)
+        && &tag.0 != b"GSUB"
+        && &tag.0 != b"GPOS"
+    {
+        assert!(out.len() >= total, "{} < {total}", out.len());
+    }
+    // The serializer's packed objects: index 0 is the null object, and a
+    // link may only name an object packed before its parent.
+    let ordered = objs.iter().enumerate().all(|(i, o)| {
+        o.real_links
+            .iter()
+            .chain(&o.virtual_links)
+            .all(|l| (l.objidx as usize) <= i)
+            && o.real_links.iter().all(|l| {
+                matches!(l.width, 2 | 3 | 4)
+                    && (l.position as usize) + usize::from(l.width) <= o.bytes.len()
+            })
+    });
+    if !ordered || objs.iter().any(|o| o.bytes.is_empty()) || objs.is_empty() {
+        return;
+    }
+    let mut packed_objs = vec![Object::default()];
+    packed_objs.extend(objs);
+    let packed = Packed::Graph(packed_objs);
+    let repacked = packed.repack(tag);
+    if let Ok(plain) = packed.resolve() {
+        assert_eq!(repacked, Ok(plain));
+    }
 }

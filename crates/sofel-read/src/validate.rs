@@ -7,8 +7,9 @@ use crate::loca::Loca;
 use crate::maxp::Maxp;
 use crate::sfnt::{Collection, Sfnt, TableRecord};
 use crate::{
-    CountWidth, Diagnostic, Kind, Tag, base, cbdt, cblc, cff, cmap, colr, cpal, gdef, glyf, gpos,
-    gsub, head, hhea, hmtx, loca, maxp, name, os2, post, sbix, svg, vhea, vmtx, vorg,
+    CountWidth, Diagnostic, Kind, Tag, avar, base, cbdt, cblc, cff, cmap, colr, cpal,
+    feature_variations, fvar, gdef, glyf, gpos, gsub, gvar, head, hhea, hmtx, hvar, loca, math,
+    maxp, mvar, name, os2, post, sbix, stat, svg, vhea, vmtx, vorg,
 };
 
 /// The pseudo tag of diagnostics about the table directory.
@@ -100,8 +101,9 @@ fn table<'a>(sfnt: &Sfnt<'a>, tag: Tag) -> Option<&'a [u8]> {
 /// `hmtx` is checked with the counts from `hhea` and `maxp`, `HMTX` with
 /// those from `HHEA` and `MAXP` (or `maxp`), `vmtx` and `VMTX` likewise
 /// with `vhea` and `VHEA`, and `cmap` and `VORG` glyph ids against
-/// `MAXP` or `maxp`, and `CFF ` and `CFF2` with the glyph count (and,
-/// for `CFF2`, the axis count of `fvar`) (ADR 0021).
+/// `MAXP` or `maxp`, `MATH` glyph ids likewise, and `CFF ` and `CFF2` with the glyph count (and,
+/// for `CFF2`, the axis count of `fvar`) (ADR 0021), and `avar` with the
+/// axis count of `fvar` (ADR 0022).
 pub fn sfnt(sfnt: &Sfnt<'_>, report: &mut dyn FnMut(Diagnostic)) {
     directory(sfnt, report);
     if let Some(d) = table(sfnt, head::TAG) {
@@ -178,6 +180,30 @@ pub fn sfnt(sfnt: &Sfnt<'_>, report: &mut dyn FnMut(Diagnostic)) {
     if let Some(d) = table(sfnt, base::TAG) {
         base::validate(d, report);
     }
+    if let Some(d) = table(sfnt, math::TAG) {
+        math::validate(d, glyphs_wide.or(glyphs_narrow), report);
+    }
+    let fvar_data = table(sfnt, fvar::TAG);
+    let axes = fvar_data
+        .and_then(|f| fvar::Fvar::new(f).ok())
+        .map(|f| u16::try_from(f.axis_count()).unwrap_or(u16::MAX));
+    if let Some(d) = fvar_data {
+        fvar::validate(d, report);
+    }
+    if let Some(d) = table(sfnt, avar::TAG) {
+        avar::validate(d, axes, report);
+    }
+    for tag in [hvar::TAG, hvar::TAG_VVAR] {
+        if let Some(d) = table(sfnt, tag) {
+            hvar::validate(d, tag, axes, report);
+        }
+    }
+    if let Some(d) = table(sfnt, mvar::TAG) {
+        mvar::validate(d, axes, report);
+    }
+    if let Some(d) = table(sfnt, stat::TAG) {
+        stat::validate(d, report);
+    }
     color_tables(sfnt, glyphs_wide.or(glyphs_narrow), report);
     let gdef_data = table(sfnt, gdef::TAG);
     if let Some(d) = gdef_data {
@@ -192,9 +218,11 @@ pub fn sfnt(sfnt: &Sfnt<'_>, report: &mut dyn FnMut(Diagnostic)) {
     );
     if let Some(d) = table(sfnt, gsub::TAG) {
         gsub::validate(d, mark_sets, report);
+        layout_variations(d, gsub::TAG, axes, report);
     }
     if let Some(d) = table(sfnt, gpos::TAG) {
         gpos::validate(d, mark_sets, report);
+        layout_variations(d, gpos::TAG, axes, report);
     }
     // GLYF and LOCA replace glyf and loca when GLYF is present (ADR 0011).
     let extended = table(sfnt, glyf::TAG_WIDE).is_some();
@@ -214,6 +242,72 @@ pub fn sfnt(sfnt: &Sfnt<'_>, report: &mut dyn FnMut(Diagnostic)) {
         if let Ok(lv) = Loca::new(l, format) {
             glyf::validate(g, &lv, n, extended, glyf_tag, report);
         }
+    }
+    let gvar_tag = if extended { gvar::GVAR_TAG } else { gvar::TAG };
+    if let Some(d) = table(sfnt, gvar_tag) {
+        let glyf_data = table(sfnt, glyf_tag);
+        let loca_view = table(sfnt, loca_tag)
+            .zip(format)
+            .and_then(|(bytes, fmt)| Loca::new(bytes, fmt).ok());
+        gvar::validate_with_points(
+            d,
+            gvar_tag,
+            axes,
+            glyphs,
+            |glyph| {
+                let (Some(glyf_data), Some(loca_view)) = (glyf_data, loca_view) else {
+                    return None;
+                };
+                glyph_point_count(glyf_data, &loca_view, glyph, extended)
+            },
+            report,
+        );
+    }
+}
+
+fn glyph_point_count(
+    glyf_data: &[u8],
+    loca: &Loca<'_>,
+    glyph: u32,
+    extended: bool,
+) -> Option<usize> {
+    let start = to_usize(loca.offset(to_usize(glyph))?);
+    let end = to_usize(loca.offset(to_usize(glyph).checked_add(1)?)?);
+    let bytes = be::slice_at(glyf_data, start, end.checked_sub(start)?)?;
+    if bytes.is_empty() {
+        return Some(4);
+    }
+    let glyph = glyf::Glyph::new(bytes).ok()?;
+    if glyph.number_of_contours() >= 0 {
+        return to_usize(glyph.simple().ok()?.num_points()).checked_add(4);
+    }
+    let mut count = 4usize;
+    for component in glyph.components(extended) {
+        component.ok()?;
+        count = count.checked_add(1)?;
+    }
+    Some(count)
+}
+
+fn layout_variations(data: &[u8], tag: Tag, axes: Option<u16>, report: &mut dyn FnMut(Diagnostic)) {
+    let Ok(layout) = crate::layout::LayoutTable::new(data) else {
+        return;
+    };
+    let Some(offset) = layout.feature_variations_offset().filter(|o| *o != 0) else {
+        return;
+    };
+    if let Some(bytes) = be::tail_at(data, to_usize(offset)) {
+        feature_variations::validate(bytes, tag, offset, axes, report);
+    } else {
+        report(Diagnostic::new(
+            tag,
+            10,
+            Kind::OffsetOutOfBounds {
+                offset,
+                length: 0,
+                available: to_u32(data.len()),
+            },
+        ));
     }
 }
 
@@ -253,5 +347,32 @@ fn color_tables(sfnt: &Sfnt<'_>, glyphs: Option<u32>, report: &mut dyn FnMut(Dia
     }
     if let Some(d) = table(sfnt, svg::TAG) {
         svg::validate(d, report);
+    }
+}
+
+/// Checks a nullable embedded ItemVariationStore without allocation.
+pub(crate) fn variation_store(
+    data: &[u8],
+    offset: u32,
+    field: u32,
+    tag: Tag,
+    axes: Option<u16>,
+    report: &mut dyn FnMut(Diagnostic),
+) {
+    if offset == 0 {
+        return;
+    }
+    if let Some(child) = be::tail_at(data, to_usize(offset)) {
+        crate::item_variation::validate(child, tag, offset, axes, report);
+    } else {
+        report(Diagnostic::new(
+            tag,
+            field,
+            Kind::OffsetOutOfBounds {
+                offset,
+                length: 0,
+                available: to_u32(data.len()),
+            },
+        ));
     }
 }

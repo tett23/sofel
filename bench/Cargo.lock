@@ -9,11 +9,13 @@ dependencies = [
  "sofel-bitmap",
  "sofel-cli",
  "sofel-color",
+ "sofel-conformance",
  "sofel-font",
  "sofel-geom",
  "sofel-outline",
  "sofel-raster",
  "sofel-shape",
+ "sofel-subset",
  "sofel-unicode",
 ]
 
@@ -35,6 +37,7 @@ dependencies = [
  "sofel-raster",
  "sofel-read",
  "sofel-shape",
+ "sofel-subset",
 ]
 
 [[package]]
@@ -43,6 +46,24 @@ version = "0.0.0"
 dependencies = [
  "sofel-bitmap",
  "sofel-outline",
+]
+
+[[package]]
+name = "sofel-conformance"
+version = "0.0.0"
+dependencies = [
+ "sofel-bitmap",
+ "sofel-cli",
+ "sofel-color",
+ "sofel-font",
+ "sofel-geom",
+ "sofel-outline",
+ "sofel-raster",
+ "sofel-read",
+ "sofel-shape",
+ "sofel-subset",
+ "sofel-unicode",
+ "sofel-write",
 ]
 
 [[package]]
@@ -86,5 +107,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "sofel-subset"
+version = "0.0.0"
+dependencies = [
+ "sofel-font",
+ "sofel-geom",
+ "sofel-unicode",
+ "sofel-write",
+]
+
+[[package]]
 name = "sofel-unicode"
 version = "0.0.0"
+
+[[package]]
+name = "sofel-write"
+version = "0.0.0"
+dependencies = [
+ "sofel-read",
+]

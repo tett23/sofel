@@ -151,9 +151,7 @@ pub(crate) struct LookupAccel<S> {
 
 /// Adds the glyphs of a coverage to a digest (`collect_coverage`).
 pub(crate) fn add_coverage(d: &mut Digest, c: &Coverage<'_>) {
-    for (a, b) in c.ranges() {
-        d.add_range(a.0, b.0);
-    }
+    d.add_ranges(c.ranges().map(|(first, last)| (first.0, last.0)));
 }
 
 fn context_coverage<'a>(c: &SequenceContext<'a>) -> Coverage<'a> {

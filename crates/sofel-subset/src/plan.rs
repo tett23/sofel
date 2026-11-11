@@ -7,38 +7,34 @@ use alloc::vec::Vec;
 use sofel_font::Font;
 use sofel_font::read::Tag;
 
+use crate::bits::BitSet;
 use crate::cmap_accel::CmapAccel;
 use crate::error::SubsetError;
-use crate::input::{AxisRange, Flags, Input, SetKind};
+use crate::input::{Flags, Input, SetKind};
+use crate::instance::{self, VarPlan};
+use crate::layout::{self, Gsubgpos, LayoutPlan};
 use crate::limits;
+use crate::prepared::{Accel, Key, Prepared};
 use crate::set::{INVALID, RangeSet};
+use crate::tables::cff::SeacFinder;
+use crate::tables::colr::{self, ColorPlan};
+use crate::tables::cpal;
 use crate::tables::glyf::GlyfAccel;
 
 /// The tables whose subsetting or closure this version does not write
 /// yet: present and kept, they make [`Plan::new`] return
 /// [`SubsetError::Unsupported`].
-const PENDING: [(&[u8; 4], &str); 21] = [
-    (b"GSUB", "layout subsetting (ADR 0022 stage 3)"),
-    (b"GPOS", "layout subsetting (ADR 0022 stage 3)"),
-    (b"GDEF", "layout subsetting (ADR 0022 stage 3)"),
-    (b"BASE", "BASE subsetting (ADR 0022 stage 3)"),
-    (b"MATH", "MATH subsetting (ADR 0022 stage 8)"),
-    (b"COLR", "color subsetting (ADR 0022 stage 9)"),
-    (b"CPAL", "color subsetting (ADR 0022 stage 9)"),
-    (b"CBLC", "color subsetting (ADR 0022 stage 9)"),
-    (b"CBDT", "color subsetting (ADR 0022 stage 9)"),
-    (b"sbix", "color subsetting (ADR 0022 stage 9)"),
-    (b"CFF ", "CFF subsetting (ADR 0022 stage 2)"),
-    (b"VORG", "CFF subsetting (ADR 0022 stage 2)"),
-    (b"CFF2", "CFF2 subsetting (ADR 0022 stages 7 and 10)"),
+const PENDING: [(&[u8; 4], &str); 5] = [
     (b"gvar", "variable font tables (ADR 0022 stage 10)"),
     (b"GVAR", "variable font tables (ADR 0022 stage 10)"),
     (b"HVAR", "variable font tables (ADR 0022 stage 10)"),
     (b"VVAR", "variable font tables (ADR 0022 stage 10)"),
     (b"VARC", "variable composites (ADR 0022 stage 10)"),
-    (b"fvar", "instancing (ADR 0022 stage 6)"),
-    (b"avar", "instancing (ADR 0022 stage 6)"),
-    (b"STAT", "STAT subsetting (ADR 0022 stage 6)"),
+];
+
+/// The tables `_should_drop_table` drops when every axis is pinned.
+pub(crate) const PINNED_DROP: [&[u8; 4]; 8] = [
+    b"avar", b"fvar", b"gvar", b"GVAR", b"HVAR", b"VVAR", b"MVAR", b"cvar",
 ];
 
 /// The glyph mapping: new ids in ascending order with their old ids, and
@@ -121,7 +117,103 @@ pub struct Plan {
     pub(crate) os2_min_cp: u32,
     pub(crate) os2_max_cp: u32,
     pub(crate) force_long_loca: bool,
-    pub(crate) axes: BTreeMap<Tag, AxisRange>,
+    /// The axis location and what instancing recomputes.
+    pub(crate) var: VarPlan,
+    /// The number of glyphs of the source font.
+    pub(crate) source_glyphs: u32,
+    pub(crate) layout: PlanLayout,
+    /// The glyphs after the cmap closure (`_glyphset_cmaped`).
+    pub(crate) glyphset_cmaped: RangeSet,
+    /// The glyphs after the MATH closure (`_glyphset_mathed`).
+    pub(crate) glyphset_mathed: RangeSet,
+    pub(crate) color: ColorPlan,
+    /// The preprocessed data the plan was made with (`accelerator`).
+    pub(crate) prepared: Option<Prepared>,
+}
+
+/// The layout part of the plan (the `gsub_*`, `gpos_*`,
+/// `_glyphset_gsub`, `glyph_map_gsub` and `used_mark_sets_map` members of
+/// `hb_subset_plan_t`).
+#[derive(Clone, Debug, Default)]
+pub(crate) struct PlanLayout {
+    /// The glyphs after the GSUB closure (`_glyphset_gsub`).
+    pub glyphset_gsub: BitSet,
+    /// Old to new ids of `glyphset_gsub`, [`INVALID`] elsewhere
+    /// (`glyph_map_gsub_flat`).
+    pub gsub_map_flat: Vec<u32>,
+    pub gsub: LayoutPlan,
+    pub gpos: LayoutPlan,
+    /// Old mark glyph set index to new (`used_mark_sets_map`).
+    pub used_mark_sets: BTreeMap<u32, u32>,
+    pub layout_features: RangeSet,
+    pub layout_scripts: RangeSet,
+    /// Every axis is pinned and GDEF has a variation store: its
+    /// variation indices map to `HB_OT_LAYOUT_NO_VARIATIONS_INDEX` with
+    /// no delta (`layout_variation_idx_delta_map`).
+    pub varidx_pinned: bool,
+}
+
+/// The checks of the layout tables this version cannot write yet.
+fn layout_unsupported(
+    font: &Font<'_>,
+    drop: &RangeSet,
+    no_subset: &RangeSet,
+    pinned: bool,
+) -> Result<(), SubsetError> {
+    let kept = |t: &[u8; 4]| {
+        let tag = Tag::new(t);
+        font.table(tag)
+            .filter(|_| !drop.contains(tag.to_u32()) && !no_subset.contains(tag.to_u32()))
+    };
+    let any = [b"GSUB", b"GPOS", b"GDEF", b"BASE"]
+        .iter()
+        .any(|t| kept(t).is_some());
+    if any && font.num_glyphs() > 0x1_0000 {
+        return Err(SubsetError::Unsupported {
+            tag: Tag::new(b"GSUB"),
+            reason: "layout tables of fonts with more than 65536 glyphs (ADR 0022 stage 3)",
+        });
+    }
+    for t in [b"GSUB", b"GPOS"] {
+        if kept(t).is_some_and(|d| sofel_font::read::be::u32_at(d, 0).unwrap_or(0) >= 0x0001_0002) {
+            return Err(SubsetError::Unsupported {
+                tag: Tag::new(t),
+                reason: "GSUB and GPOS 1.2 (ADR 0022 stage 3)",
+            });
+        }
+    }
+    // Pinning every axis drops the GDEF variation store.
+    if !pinned && kept(b"GDEF").is_some_and(layout::gdef::has_var_store) {
+        return Err(SubsetError::Unsupported {
+            tag: Tag::new(b"GDEF"),
+            reason: "the GDEF item variation store (ADR 0022 stage 10)",
+        });
+    }
+    // collect_layout_variation_indices remaps MATH's VariationIndex
+    // tables with the GDEF store even when GDEF itself is dropped.
+    let math_kept = font.table(Tag::new(b"MATH")).is_some()
+        && !drop.contains(Tag::new(b"MATH").to_u32())
+        && !no_subset.contains(Tag::new(b"MATH").to_u32());
+    if math_kept
+        && font
+            .table(Tag::new(b"GDEF"))
+            .is_some_and(layout::gdef::has_var_store)
+    {
+        return Err(SubsetError::Unsupported {
+            tag: Tag::new(b"MATH"),
+            reason: "MATH with a GDEF item variation store (ADR 0022 stage 10)",
+        });
+    }
+    if let Some(d) = kept(b"BASE") {
+        let v = sofel_font::read::be::u32_at(d, 0).unwrap_or(0);
+        if v >= 0x0001_0001 && sofel_font::read::be::u32_at(d, 8).unwrap_or(0) != 0 {
+            return Err(SubsetError::Unsupported {
+                tag: Tag::new(b"BASE"),
+                reason: "the BASE item variation store (ADR 0022 stage 10)",
+            });
+        }
+    }
+    Ok(())
 }
 
 impl Plan {
@@ -136,17 +228,57 @@ impl Plan {
     /// budget, and [`SubsetError::Unsupported`] for tables and settings
     /// not subset yet.
     pub fn new(font: &Font<'_>, input: &Input) -> Result<Plan, SubsetError> {
+        Plan::build(font, input, None)
+    }
+
+    /// [`Plan::new`] with the data `prepared` holds for `font`
+    /// (`hb_subset_plan_create_or_fail` on a face from
+    /// `hb_subset_preprocess`): the same plan, made faster, whose
+    /// [`Plan::execute`] also uses `prepared` and gives the same bytes.
+    ///
+    /// # Errors
+    ///
+    /// As [`Plan::new`], and [`SubsetError::InvalidInput`] when
+    /// `prepared` was made from a font with another glyph count or other
+    /// lengths of the cmap, DMAP or CFF table.
+    pub fn with_prepared(
+        font: &Font<'_>,
+        prepared: &Prepared,
+        input: &Input,
+    ) -> Result<Plan, SubsetError> {
+        if prepared.accel().key != Key::of(font) {
+            return Err(SubsetError::InvalidInput);
+        }
+        Plan::build(font, input, Some(prepared))
+    }
+
+    fn build(
+        font: &Font<'_>,
+        input: &Input,
+        prepared: Option<&Prepared>,
+    ) -> Result<Plan, SubsetError> {
         let num_glyphs = font.num_glyphs();
         if num_glyphs == 0 {
             return Err(SubsetError::NoGlyphs);
         }
         let flags = input.flags();
-        if !input.axes().is_empty() {
-            return Err(SubsetError::Unsupported {
-                tag: Tag::new(b"fvar"),
-                reason: "pinning axes (ADR 0022 stage 6)",
-            });
+        // normalize_axes_location
+        let norm = instance::normalize(font, input.axes());
+        if !norm.user.is_empty() {
+            if norm.avar2 {
+                return Err(SubsetError::Unsupported {
+                    tag: Tag::new(b"avar"),
+                    reason: "pinning the axes of avar version 2 (deferred by ADR 0022)",
+                });
+            }
+            if !(norm.all_axes_pinned && norm.pinned_at_default) {
+                return Err(SubsetError::Unsupported {
+                    tag: Tag::new(b"fvar"),
+                    reason: "instancing other than pinning every axis to its default (deferred by ADR 0022)",
+                });
+            }
         }
+        let pinned = norm.all_axes_pinned;
         if !input.name_overrides().is_empty() {
             return Err(SubsetError::Unsupported {
                 tag: Tag::new(b"name"),
@@ -157,11 +289,36 @@ impl Plan {
         let no_subset = input.set(SetKind::NoSubsetTables);
         for (tag, reason) in PENDING {
             let t = Tag::new(tag);
-            let passthrough = no_subset.contains(t.to_u32())
-                || (matches!(tag, b"fvar" | b"avar" | b"STAT") && input.axes().is_empty());
-            if font.table(t).is_some() && !drop.contains(t.to_u32()) && !passthrough {
+            let passthrough = no_subset.contains(t.to_u32());
+            let dropped = drop.contains(t.to_u32()) || (pinned && PINNED_DROP.contains(&tag));
+            if font.table(t).is_some() && !dropped && !passthrough {
                 return Err(SubsetError::Unsupported { tag: t, reason });
             }
+        }
+
+        // CFF2 is written only as a full instance (stage 7); with its
+        // variations kept it is stage 10.
+        let cff2 = Tag::new(b"CFF2");
+        let full_instance = pinned && !norm.normalized_coords.is_empty();
+        if font.table(cff2).is_some()
+            && !drop.contains(cff2.to_u32())
+            && !no_subset.contains(cff2.to_u32())
+            && !full_instance
+        {
+            return Err(SubsetError::Unsupported {
+                tag: cff2,
+                reason: "CFF2 subsetting without pinning every axis (ADR 0022 stage 10)",
+            });
+        }
+        layout_unsupported(font, drop, no_subset, pinned)?;
+        let colr_table = font.table(Tag::new(b"COLR"));
+        let colr_kept = !drop.contains(Tag::new(b"COLR").to_u32())
+            && !no_subset.contains(Tag::new(b"COLR").to_u32());
+        if colr_kept && colr_table.is_some_and(colr::needs_var_store) {
+            return Err(SubsetError::Unsupported {
+                tag: Tag::new(b"COLR"),
+                reason: "the COLR item variation store (ADR 0022 stage 10)",
+            });
         }
 
         let cmap = CmapAccel::new(font);
@@ -182,65 +339,136 @@ impl Plan {
             os2_min_cp: INVALID,
             os2_max_cp: INVALID,
             force_long_loca: flags.has(Flags::IFTB_REQUIREMENTS),
-            axes: input.axes().clone(),
+            var: VarPlan {
+                n: norm,
+                ..VarPlan::default()
+            },
+            source_glyphs: num_glyphs,
+            layout: PlanLayout {
+                layout_features: input.set(SetKind::LayoutFeatures).clone(),
+                layout_scripts: input.set(SetKind::LayoutScripts).clone(),
+                ..PlanLayout::default()
+            },
+            glyphset_cmaped: RangeSet::new(),
+            glyphset_mathed: RangeSet::new(),
+            color: ColorPlan::default(),
+            prepared: prepared.cloned(),
         };
 
         // _populate_unicodes_to_retain
-        let mut glyphset_gsub = RangeSet::new();
         let unicodes = unicode_closure(
             input.set(SetKind::Unicodes),
             !flags.has(Flags::NO_BIDI_CLOSURE),
         );
-        let mut list: Vec<(u32, u32)> = Vec::new();
-        if glyphs_in.is_empty() && unicodes.len() < u64::from(num_glyphs) {
-            for cp in unicodes.iter() {
-                if let Some(g) = cmap.nominal_glyph(cp) {
-                    p.codepoint_to_glyph.insert(cp, g);
-                    list.push((cp, g));
-                }
-            }
-        } else {
-            let mut cmap_unicodes = RangeSet::new();
-            let mut mapping = BTreeMap::new();
-            cmap.collect_mapping(&mut cmap_unicodes, &mut mapping);
-            for (a, b) in cmap_unicodes.ranges() {
-                for cp in a..=b {
-                    let gid = mapping.get(&cp).copied().unwrap_or(INVALID);
-                    if !unicodes.contains(cp) && !glyphs_in.contains(gid) {
-                        continue;
-                    }
-                    if gid == INVALID {
-                        continue;
-                    }
-                    p.codepoint_to_glyph.insert(cp, gid);
-                    list.push((cp, gid));
-                }
-            }
-            for (a, b) in glyphs_in.ranges() {
-                if a >= num_glyphs {
-                    break;
-                }
-                glyphset_gsub.add_range(a, b.min(num_glyphs.saturating_sub(1)));
-            }
-        }
-        list.iter().for_each(|&(cp, g)| {
-            p.unicodes.add(cp);
-            glyphset_gsub.add(g);
-        });
-        p.os2_min_cp = p.unicodes.min();
-        p.os2_max_cp = p.unicodes.max();
-        let mut selectors = RangeSet::new();
-        cmap.collect_variation_selectors(&mut selectors);
-        selectors
-            .iter()
-            .filter(|s| unicodes.contains(*s))
-            .for_each(|s| p.unicodes.add(s));
+        let u = populate_unicodes(
+            &cmap,
+            &unicodes,
+            glyphs_in,
+            num_glyphs,
+            prepared.map(Prepared::accel),
+        );
+        let mut glyphset_gsub = u.glyphset_gsub;
+        let list = u.list;
+        p.codepoint_to_glyph = u.codepoint_to_glyph;
+        p.unicodes = u.unicodes;
+        p.os2_min_cp = u.os2_min_cp;
+        p.os2_max_cp = u.os2_max_cp;
 
         // _populate_gids_to_retain
         glyphset_gsub.add(0);
         cmap.closure_glyphs(&p.unicodes, &mut glyphset_gsub);
-        glyphset_gsub.truncate(num_glyphs);
-        let cur = glyphset_gsub;
+        p.glyphset_cmaped = glyphset_gsub.clone();
+        let tag_kept = |t: &[u8; 4]| !drop.contains(Tag::new(t).to_u32());
+        if tag_kept(b"MATH") {
+            let math = font.table(Tag::new(b"MATH")).unwrap_or(&[]);
+            crate::tables::math::closure(math, &mut glyphset_gsub);
+            glyphset_gsub.truncate(num_glyphs);
+        }
+        p.glyphset_mathed = glyphset_gsub.clone();
+        // layout_populate_gids_to_retain
+        let mut gsub_glyphs = BitSet::from_range_set(&glyphset_gsub);
+        let table =
+            |t: &[u8; 4], gsub: bool| Gsubgpos::new(font.table(Tag::new(t)).unwrap_or(&[]), gsub);
+        let no_closure = flags.has(Flags::NO_LAYOUT_CLOSURE);
+        let pinned_axes = pinned.then_some(p.var.n.axis_tags.len());
+        if tag_kept(b"GSUB") {
+            p.layout.gsub = layout::plan::closure_glyphs_lookups_features(
+                table(b"GSUB", true),
+                num_glyphs,
+                no_closure,
+                &p.layout.layout_features,
+                &p.layout.layout_scripts,
+                &mut gsub_glyphs,
+                pinned_axes,
+            );
+        }
+        if tag_kept(b"GPOS") {
+            p.layout.gpos = layout::plan::closure_glyphs_lookups_features(
+                table(b"GPOS", false),
+                num_glyphs,
+                no_closure,
+                &p.layout.layout_features,
+                &p.layout.layout_scripts,
+                &mut gsub_glyphs,
+                pinned_axes,
+            );
+        }
+        for (t, lp) in [(b"GSUB", &p.layout.gsub), (b"GPOS", &p.layout.gpos)] {
+            if let Some(reason) = lp.unsupported {
+                return Err(SubsetError::Unsupported {
+                    tag: Tag::new(t),
+                    reason,
+                });
+            }
+        }
+        gsub_glyphs.truncate(num_glyphs);
+        let mut cur = gsub_glyphs.to_range_set();
+        // _colr_closure
+        if tag_kept(b"COLR") {
+            let (layers, palettes) = colr::closure(colr_table.unwrap_or(&[]), &mut cur);
+            cur.truncate(num_glyphs);
+            p.color.layers = layers;
+            p.color.palettes = palettes;
+        }
+        p.color.glyphset_colred = cur.clone();
+        // _nameid_closure
+        if tag_kept(b"STAT") {
+            stat_name_ids(
+                font.table(Tag::new(b"STAT")).unwrap_or(&[]),
+                p.var.user(),
+                &mut p.name_ids,
+            );
+        }
+        if !pinned {
+            fvar_name_ids(
+                font.table(Tag::new(b"fvar")).unwrap_or(&[]),
+                &mut p.name_ids,
+            );
+        }
+        if tag_kept(b"CPAL") {
+            cpal::collect_name_ids(
+                font.table(Tag::new(b"CPAL")).unwrap_or(&[]),
+                &p.color.palettes,
+                &mut p.name_ids,
+            );
+        }
+        if tag_kept(b"GPOS") {
+            layout::plan::collect_name_ids(
+                table(b"GPOS", false),
+                &p.layout.gpos,
+                pinned,
+                &mut p.name_ids,
+            );
+        }
+        if tag_kept(b"GSUB") {
+            layout::plan::collect_name_ids(
+                table(b"GSUB", true),
+                &p.layout.gsub,
+                pinned,
+                &mut p.name_ids,
+            );
+        }
+        p.layout.glyphset_gsub = gsub_glyphs;
         let glyf = GlyfAccel::new(font);
         if glyf.has_data() {
             let mut budget: i64 = i64::try_from(glyf.table_len())
@@ -260,6 +488,17 @@ impl Plan {
         } else {
             p.glyphset.union(&cur);
         }
+        // _add_cff_seac_components: nothing to add when every glyph is
+        // kept already, or when the prepared value found no seac.
+        if cur.len() != u64::from(num_glyphs)
+            && prepared.is_none_or(|p| p.accel().has_seac)
+            && let Some(cff) = SeacFinder::new(font)
+        {
+            for (base, accent) in cur.iter().filter_map(|g| cff.components(g)) {
+                p.glyphset.add(base);
+                p.glyphset.add(accent);
+            }
+        }
         p.glyphset.truncate(num_glyphs);
 
         // _create_old_gid_to_new_gid_map
@@ -275,10 +514,35 @@ impl Plan {
                 n
             };
         p.glyphs = GlyphMap::new(new_to_old, num_glyphs);
+        // _create_glyph_map_gsub
+        let flat = match p.layout.glyphset_gsub.max() {
+            INVALID => 0,
+            m => m.saturating_add(1) as usize,
+        };
+        let mut gsub_map = alloc::vec![INVALID; flat];
+        for g in p.layout.glyphset_gsub.iter() {
+            if let Some(slot) = gsub_map.get_mut(g as usize) {
+                *slot = p.glyphs.new_gid(g).unwrap_or(INVALID);
+            }
+        }
+        p.layout.gsub_map_flat = gsub_map;
         p.unicode_to_new_gid = list
             .into_iter()
             .map(|(cp, g)| (cp, p.glyphs.new_gid(g).unwrap_or(INVALID)))
             .collect();
+        // collect_layout_variation_indices: when pinned, the variation
+        // indices of a GDEF store all map to "no variations".
+        p.layout.varidx_pinned = pinned
+            && tag_kept(b"GDEF")
+            && font
+                .table(Tag::new(b"GDEF"))
+                .is_some_and(layout::gdef::has_var_store);
+        if tag_kept(b"GDEF")
+            && let Some(gdef) = font.table(Tag::new(b"GDEF"))
+        {
+            p.layout.used_mark_sets = layout::gdef::used_mark_sets(gdef, &p.layout.glyphset_gsub);
+        }
+        p.instance_metrics(font)?;
         Ok(p)
     }
 
@@ -331,11 +595,213 @@ impl Plan {
     pub fn flags(&self) -> Flags {
         self.flags
     }
+
+    /// Whether the table `tag` is subset (present, not dropped by
+    /// `_should_drop_table`, not copied as it is).
+    pub(crate) fn subsets_table(&self, font: &Font<'_>, tag: Tag) -> bool {
+        font.table(tag).is_some()
+            && !self.should_drop(tag)
+            && !self.no_subset_tables.contains(tag.to_u32())
+    }
+
+    /// The metrics instancing recomputes: from the glyf outlines (which
+    /// HarfBuzz computes while writing glyf) and from CFF2
+    /// (`update_instance_metrics_map_from_cff2`).
+    fn instance_metrics(&mut self, font: &Font<'_>) -> Result<(), SubsetError> {
+        let n = self.num_output_glyphs as usize;
+        self.var.metrics.bounds_width = alloc::vec![u32::MAX; n];
+        self.var.metrics.bounds_height = alloc::vec![u32::MAX; n];
+        if !self.var.instancing() {
+            return Ok(());
+        }
+        crate::tables::cff::instance_metrics(
+            font,
+            &self.glyphs.new_to_old,
+            &self.var.n.normalized_coords,
+            &mut self.var.metrics,
+        );
+        let glyf_tag = crate::tables::glyf::instanced_tag(self, font);
+        if let Some(tag) = glyf_tag {
+            let (glyphs, metrics) = crate::tables::glyf::instance(
+                &self.glyphs.new_to_old,
+                self.flags,
+                self.num_output_glyphs,
+                font,
+            )
+            .ok_or(SubsetError::Failed { tag })?;
+            self.var.metrics = metrics;
+            self.var.glyf = Some(glyphs);
+        }
+        Ok(())
+    }
+}
+
+/// `STAT::collect_name_ids`: the design axes' names, the names of the
+/// axis values inside the axis ranges of `user` and the elided fallback
+/// name.
+fn stat_name_ids(stat: &[u8], user: &BTreeMap<Tag, crate::input::AxisRange>, names: &mut RangeSet) {
+    let Ok(stat) = sofel_font::read::stat::Stat::new(stat) else {
+        return;
+    };
+    stat.design_axes()
+        .for_each(|a| names.add(u32::from(a.name_id)));
+    for i in 0..stat.axis_value_count() {
+        let Some((v, _)) = stat.axis_value(i) else {
+            continue;
+        };
+        if crate::tables::stat::keep_axis_value(&stat, &v, user) {
+            names.add(u32::from(v.name_id().unwrap_or(0xFFFF)));
+        }
+    }
+    names.add(u32::from(stat.elided_fallback_name_id()));
+}
+
+/// `fvar::collect_name_ids` without axis limits: the axes' names and
+/// the instances' subfamily and PostScript names.
+fn fvar_name_ids(fvar: &[u8], names: &mut RangeSet) {
+    let d = layout::data::D(fvar);
+    let axis_count = usize::from(d.u16(8));
+    let instance_size = usize::from(d.u16(14));
+    let ok = fvar.len() >= 16
+        && d.u16(0) == 1
+        && d.u16(10) == 20
+        && instance_size >= axis_count.saturating_mul(4).saturating_add(4);
+    if !ok {
+        return;
+    }
+    let axes = d.follow(u32::from(d.u16(4)));
+    for i in 0..axis_count {
+        names.add(u32::from(axes.u16(i.saturating_mul(20).saturating_add(18))));
+    }
+    let instances = axes.at(axis_count.saturating_mul(20));
+    for i in 0..usize::from(d.u16(12)) {
+        let inst = instances.at(i.saturating_mul(instance_size));
+        names.add(u32::from(inst.u16(0)));
+        if instance_size >= axis_count.saturating_mul(4).saturating_add(6) {
+            let ps = inst.u16(axis_count.saturating_mul(4).saturating_add(4));
+            if ps != 0xFFFF {
+                names.add(u32::from(ps));
+            }
+        }
+    }
+}
+
+/// What `_populate_unicodes_to_retain` collects.
+pub(crate) struct Unicodes {
+    /// `unicode_to_new_gid_list` (with old glyphs), ascending.
+    pub list: Vec<(u32, u32)>,
+    pub codepoint_to_glyph: BTreeMap<u32, u32>,
+    /// `plan->unicodes`, with the variation selectors.
+    pub unicodes: RangeSet,
+    /// The glyphs of `list` and the requested glyphs below the count.
+    pub glyphset_gsub: RangeSet,
+    pub os2_min_cp: u32,
+    pub os2_max_cp: u32,
+}
+
+/// `_populate_unicodes_to_retain` for the characters `unicodes` (after
+/// `_unicode_closure`) and the requested glyphs `glyphs`, with the
+/// prepared value's map when there is one (`plan->accelerator`).
+pub(crate) fn populate_unicodes(
+    cmap: &CmapAccel<'_>,
+    unicodes: &RangeSet,
+    glyphs: &RangeSet,
+    num_glyphs: u32,
+    accel: Option<&Accel>,
+) -> Unicodes {
+    let mut glyphset_gsub = RangeSet::new();
+    let mut codepoint_to_glyph = BTreeMap::new();
+    let mut list: Vec<(u32, u32)> = Vec::new();
+    let mut fill = |cp: u32, gid: u32, list: &mut Vec<(u32, u32)>| {
+        if gid != INVALID {
+            codepoint_to_glyph.insert(cp, gid);
+            list.push((cp, gid));
+        }
+    };
+    if glyphs.is_empty() && unicodes.len() < u64::from(num_glyphs) {
+        // The direct lookup, for few characters and no glyphs.
+        for cp in unicodes.iter() {
+            let gid = match accel {
+                Some(a) => a.unicode_to_gid.get(&cp).copied(),
+                None => cmap.nominal_glyph(cp),
+            };
+            fill(cp, gid.unwrap_or(INVALID), &mut list);
+        }
+    } else {
+        let mut storage = (RangeSet::new(), BTreeMap::new());
+        let (cmap_unicodes, mapping) = match accel {
+            Some(a) => (&a.unicodes, &a.unicode_to_gid),
+            None => {
+                cmap.collect_mapping(&mut storage.0, &mut storage.1);
+                (&storage.0, &storage.1)
+            }
+        };
+        let get = |cp: u32| mapping.get(&cp).copied().unwrap_or(INVALID);
+        match accel {
+            Some(a)
+                if unicodes.len() < cmap_unicodes.len() && glyphs.len() < cmap_unicodes.len() =>
+            {
+                // The reverse map: the characters of the requested
+                // glyphs, then the requested characters not added yet.
+                for gid in glyphs.iter() {
+                    for &cp in a.gid_to_unicodes.get(&gid).into_iter().flatten() {
+                        fill(cp, gid, &mut list);
+                    }
+                }
+                let added: alloc::collections::BTreeSet<u32> = list.iter().map(|p| p.0).collect();
+                for cp in unicodes.iter().filter(|cp| !added.contains(cp)) {
+                    fill(cp, get(cp), &mut list);
+                }
+                list.sort_unstable();
+            }
+            _ => {
+                // The walk over the mapping.
+                for (a, b) in cmap_unicodes.ranges() {
+                    for cp in a..=b {
+                        let gid = get(cp);
+                        if !unicodes.contains(cp) && !glyphs.contains(gid) {
+                            continue;
+                        }
+                        fill(cp, gid, &mut list);
+                    }
+                }
+            }
+        }
+        // The requested glyphs that the cmap does not map.
+        for (a, b) in glyphs.ranges() {
+            if a >= num_glyphs {
+                break;
+            }
+            glyphset_gsub.add_range(a, b.min(num_glyphs.saturating_sub(1)));
+        }
+    }
+    let mut kept = RangeSet::new();
+    list.iter().for_each(|&(cp, g)| {
+        kept.add(cp);
+        glyphset_gsub.add(g);
+    });
+    let (os2_min_cp, os2_max_cp) = (kept.min(), kept.max());
+    // Variation selectors have no glyph but are kept; the OS/2 range is
+    // taken before they are added.
+    let mut selectors = RangeSet::new();
+    cmap.collect_variation_selectors(&mut selectors);
+    selectors
+        .iter()
+        .filter(|s| unicodes.contains(*s))
+        .for_each(|s| kept.add(s));
+    Unicodes {
+        list,
+        codepoint_to_glyph,
+        unicodes: kept,
+        glyphset_gsub,
+        os2_min_cp,
+        os2_max_cp,
+    }
 }
 
 /// `_unicode_closure`: the characters and, unless disabled or inverted,
 /// their mirrored characters.
-fn unicode_closure(unicodes: &RangeSet, bidi: bool) -> RangeSet {
+pub(crate) fn unicode_closure(unicodes: &RangeSet, bidi: bool) -> RangeSet {
     let mut out = unicodes.clone();
     if !bidi || out.is_inverted() {
         return out;

@@ -3,8 +3,6 @@
 //! Ported from HarfBuzz 15.1.0 `src/OT/Layout/GSUB/` and HarfRust 0.15.0
 //! `src/ot/lookup/gsub.rs`, MIT; see THIRD_PARTY_NOTICES.md.
 
-use alloc::vec::Vec;
-
 use sofel_font::read::GlyphId;
 use sofel_font::read::gsub::{Ligature, SubstSubtable};
 use sofel_font::read::layout::GlyphArray;
@@ -82,10 +80,8 @@ pub(crate) fn apply<'a>(c: &mut ApplyContext<'_, 'a, '_, '_, '_>, s: &SubstSubta
             else {
                 return false;
             };
-            let ligs: Vec<Ligature<'a>> = (0..set.len())
-                .filter_map(|i| set.get(i).ok().flatten())
-                .collect();
-            apply_ligature_set(c, &ligs)
+            let ligs = (0..set.len()).filter_map(|i| set.get(i).ok().flatten());
+            apply_ligature_set(c, ligs)
         }
         SubstSubtable::Context(ctx) => apply_context(c, ctx),
         SubstSubtable::ChainContext(ctx) => apply_chain_context(c, ctx),
@@ -215,9 +211,16 @@ fn apply_ligature<'a>(c: &mut ApplyContext<'_, 'a, '_, '_, '_>, lig: &Ligature<'
 
 /// `LigatureSet::apply`, with HarfBuzz's fast path for more than one
 /// ligature.
-fn apply_ligature_set<'a>(c: &mut ApplyContext<'_, 'a, '_, '_, '_>, ligs: &[Ligature<'a>]) -> bool {
-    let slow = |c: &mut ApplyContext<'_, 'a, '_, '_, '_>| ligs.iter().any(|l| apply_ligature(c, l));
-    if ligs.len() <= 1 {
+fn apply_ligature_set<'a>(
+    c: &mut ApplyContext<'_, 'a, '_, '_, '_>,
+    ligs: impl Iterator<Item = Ligature<'a>> + Clone,
+) -> bool {
+    let slow =
+        |c: &mut ApplyContext<'_, 'a, '_, '_, '_>| ligs.clone().any(|l| apply_ligature(c, &l));
+    // The fast path depends on the number of readable ligatures, not on
+    // the raw offset count. Inspect only two; do not allocate or parse
+    // the unused tail for every glyph (ADR 0033).
+    if ligs.clone().take(2).count() <= 1 {
         return slow(c);
     }
     let idx = c.buffer.idx;
@@ -237,7 +240,7 @@ fn apply_ligature_set<'a>(c: &mut ApplyContext<'_, 'a, '_, '_, '_>, ligs: &[Liga
     let mut unsafe_to_concat = false;
     for l in ligs {
         if l.components.is_empty() || l.components.get(0) == Some(second) {
-            if apply_ligature(c, l) {
+            if apply_ligature(c, &l) {
                 if unsafe_to_concat {
                     let idx = c.buffer.idx;
                     c.buffer.unsafe_to_concat(idx, unsafe_to);

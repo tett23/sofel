@@ -3,6 +3,7 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
+use sofel_font::Font;
 use sofel_font::read::Tag;
 
 use crate::set::RangeSet;
@@ -152,6 +153,22 @@ pub struct AxisRange {
     pub max: f32,
 }
 
+/// A range of one value.
+fn point(v: f32) -> AxisRange {
+    AxisRange {
+        min: v,
+        default: v,
+        max: v,
+    }
+}
+
+/// `hb_ot_var_find_axis_info`: the first axis tagged `tag`.
+fn find_axis(font: &Font<'_>, tag: Tag) -> Option<crate::instance::AxisInfo> {
+    crate::instance::axis_infos(font)
+        .into_iter()
+        .find(|a| a.tag == tag)
+}
+
 /// The subsetting input: an immutable value; each `with_*` returns a new
 /// one (HarfBuzz's `hb_subset_input_t`).
 #[derive(Clone, PartialEq, Debug)]
@@ -293,10 +310,72 @@ impl Input {
 
     /// The input with `tag` set to `range`, unchecked (used by the
     /// functions that check the font's `fvar`).
-    #[cfg(test)]
     pub(crate) fn with_axis_unchecked(mut self, tag: Tag, range: AxisRange) -> Input {
         self.axes.insert(tag, range);
         self
+    }
+
+    /// The input with every axis of `font` pinned to its default
+    /// (`hb_subset_input_pin_all_axes_to_default`); `None`, as HarfBuzz
+    /// fails, when the font has no axes (no valid `fvar`).
+    pub fn with_all_axes_pinned_to_default(&self, font: &Font<'_>) -> Option<Input> {
+        let axes = crate::instance::axis_infos(font);
+        if axes.is_empty() {
+            return None;
+        }
+        Some(axes.iter().fold(self.clone(), |input, a| {
+            input.with_axis_unchecked(a.tag, point(a.default))
+        }))
+    }
+
+    /// The input with axis `tag` pinned to its default
+    /// (`hb_subset_input_pin_axis_to_default`); `None` when `font` has no
+    /// such axis.
+    pub fn with_axis_pinned_to_default(&self, tag: Tag, font: &Font<'_>) -> Option<Input> {
+        let a = find_axis(font, tag)?;
+        Some(self.clone().with_axis_unchecked(tag, point(a.default)))
+    }
+
+    /// The input with axis `tag` pinned to `value`, clamped to the axis
+    /// range (`hb_subset_input_pin_axis_location`); `None` when `font`
+    /// has no such axis.
+    pub fn with_axis_pinned(&self, tag: Tag, value: f32, font: &Font<'_>) -> Option<Input> {
+        let a = find_axis(font, tag)?;
+        let v = crate::instance::clamp_f64(f64::from(value), f64::from(a.min), f64::from(a.max));
+        let v = crate::instance::f64_to_f32(v);
+        Some(self.clone().with_axis_unchecked(tag, point(v)))
+    }
+
+    /// The input with the range of axis `tag` restricted
+    /// (`hb_subset_input_set_axis_range`): `None` (or NaN) for a value
+    /// takes the axis's own; the minimum and maximum are clamped to the
+    /// axis range and the default to the new range. `None` when `font`
+    /// has no such axis or when `min` is above `max`.
+    pub fn with_axis_range(
+        &self,
+        tag: Tag,
+        min: Option<f32>,
+        max: Option<f32>,
+        default: Option<f32>,
+        font: &Font<'_>,
+    ) -> Option<Input> {
+        let a = find_axis(font, tag)?;
+        let or = |v: Option<f32>, d: f32| v.filter(|v| !v.is_nan()).unwrap_or(d);
+        let (min, max, def) = (or(min, a.min), or(max, a.max), or(default, a.default));
+        if min > max {
+            return None;
+        }
+        let new_min = crate::instance::clamp_f32(min, a.min, a.max);
+        let new_max = crate::instance::clamp_f32(max, a.min, a.max);
+        let new_default = crate::instance::clamp_f32(def, new_min, new_max);
+        Some(self.clone().with_axis_unchecked(
+            tag,
+            AxisRange {
+                min: new_min,
+                default: new_default,
+                max: new_max,
+            },
+        ))
     }
 
     /// The name records to override, by (platform, encoding, language, name

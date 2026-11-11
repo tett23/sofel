@@ -448,6 +448,37 @@ fn process_number(op: u32, cur: &mut Cursor<'_>, stack: &mut Stack) {
     }
 }
 
+/// One token of DICT data as HarfBuzz's DICT interpreters read it.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum DictToken {
+    /// A number (integer forms and BCD reals).
+    Number(f64),
+    /// Any other byte or escaped pair: `256 + b` for `12 b`, 0xFFFF
+    /// (`OpCode_Invalid`) for an escape byte at the end.
+    Operator(u32),
+}
+
+/// The DICT token at `offset` of `data` (`fetch_op` and, for numbers,
+/// `dict_opset_t::process_op`) and the offset after it; `None` at the
+/// end and for a number HarfBuzz's interpreter rejects (truncated, or a
+/// malformed BCD).
+pub fn dict_token(data: &[u8], offset: usize) -> Option<(DictToken, usize)> {
+    let mut cur = Cursor { data, offset };
+    if !cur.avail(1) {
+        return None;
+    }
+    let op = cur.fetch_op();
+    if !matches!(op, 28..=30 | 32..=254) {
+        return Some((DictToken::Operator(op), cur.offset));
+    }
+    let mut stack = Stack::new();
+    process_number(op, &mut cur, &mut stack);
+    if cur.in_error() || stack.len != 1 {
+        return None;
+    }
+    Some((DictToken::Number(stack.pop()), cur.offset))
+}
+
 /// `dict_opset_t::parse_bcd`: a real number; 0 and the cursor in error
 /// when it is malformed.
 fn parse_bcd(cur: &mut Cursor<'_>) -> f64 {
@@ -1319,6 +1350,52 @@ impl<'a> HbFdSelect<'a> {
                 u32::from(u16_at(self.data, add(r, 4))?),
             ))
         }
+    }
+
+    /// The format: 0, 3 or 4; 0xFF for the Null FDSelect.
+    pub fn format(&self) -> u8 {
+        self.format
+    }
+
+    /// `get_fd_range`: the Font DICT of `glyph` and the glyph after its
+    /// range. Format 0 ranges are one glyph; in formats 3 and 4 the last
+    /// range ends, as in HarfBuzz, at its own first glyph. The Null
+    /// FDSelect gives `(0, 1)`.
+    pub fn fd_range(&self, glyph: u32) -> (u32, u32) {
+        let gid_size = match self.format {
+            0 => {
+                let p = add(self.at, 1u64.saturating_add(u64::from(glyph)));
+                let fd = u8_at(self.data, p).map_or(0, u32::from);
+                return (fd, glyph.saturating_add(1));
+            }
+            3 => 2u8,
+            4 => 4,
+            _ => return (0, 1),
+        };
+        let n = if gid_size == 2 {
+            u16_at(self.data, add(self.at, 1)).map_or(0, u32::from)
+        } else {
+            u32_at(self.data, add(self.at, 1)).unwrap_or(0)
+        };
+        let (mut lo, mut hi) = (0u32, n.saturating_sub(1));
+        while lo < hi {
+            let mid = lo.saturating_add(hi.saturating_sub(lo) / 2);
+            let (Some((first, fd)), Some((next, _))) = (
+                self.range(gid_size, mid),
+                self.range(gid_size, mid.saturating_add(1)),
+            ) else {
+                return (0, 1);
+            };
+            if glyph < first {
+                hi = mid;
+            } else if glyph < next {
+                return (fd, next);
+            } else {
+                lo = mid.saturating_add(1);
+            }
+        }
+        self.range(gid_size, n.saturating_sub(1))
+            .map_or((0, 1), |(first, fd)| (fd, first))
     }
 
     /// `get_fd`: the Font DICT of `glyph`.

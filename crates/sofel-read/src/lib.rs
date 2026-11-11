@@ -33,6 +33,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod avar;
 pub mod base;
 pub mod be;
 pub mod cbdt;
@@ -41,26 +42,34 @@ pub mod cff;
 pub mod cmap;
 pub mod colr;
 pub mod cpal;
+pub mod delta_set_index_map;
 pub mod device;
 mod diag;
 mod error;
+pub mod feature_variations;
+pub mod fvar;
 pub mod gdef;
 pub mod glyf;
 pub mod gpos;
 pub mod gsub;
+pub mod gvar;
 pub mod head;
 pub mod hhea;
 pub mod hmtx;
+pub mod hvar;
 pub mod item_variation;
 pub mod layout;
 pub mod loca;
+pub mod math;
 pub mod maxp;
+pub mod mvar;
 pub mod name;
 pub mod os2;
 pub mod post;
 pub mod sbix;
 mod search;
 pub mod sfnt;
+pub mod stat;
 pub mod svg;
 mod types;
 pub mod validate;

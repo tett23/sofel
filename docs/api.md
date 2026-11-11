@@ -22,8 +22,8 @@ cargo doc --no-deps -p sofel-geom -p sofel-unicode -p sofel-read -p sofel-font -
 | `sofel-shape` | HarfBuzz 15.1.0のOTシェーパーと同じシェーピング（バッファ、計画、`GSUB` と `GPOS`）と、機能の文字列、直列化、タグ | `sofel-font`、`sofel-unicode`、`sofel-geom` |
 | `sofel-bitmap` | 埋め込みビットマップのストライク、その選び方、グリフの画像のデータとメトリクス（[ADR 0023](adr/0023-color-glyphs.md)） | `sofel-font` |
 | `sofel-color` | カラーグリフの塗りの命令、パレット、カラーグリフを含むグリフの箱（[ADR 0023](adr/0023-color-glyphs.md)） | `sofel-outline`、`sofel-bitmap` |
-| `sofel-write` | sfntの組み立て（`build_sfnt`）と、HarfBuzzと同じ詰め方のオブジェクトの直列化（`Serializer`。[ADR 0022](adr/0022-subsetting.md)） | `sofel-read` |
-| `sofel-subset` | HarfBuzzの `hb-subset` と同じ出力のサブセット化（`Input`、`Plan`、`subset`。[ADR 0022](adr/0022-subsetting.md)） | `sofel-font`、`sofel-write`、`sofel-unicode`、`sofel-geom` |
+| `sofel-write` | sfntの組み立て（`build_sfnt`）と、HarfBuzzと同じ詰め方のオブジェクトの直列化（`Serializer`）と再配置（`Packed::repack`、`serialize_objects`。[ADR 0022](adr/0022-subsetting.md)） | `sofel-read` |
+| `sofel-subset` | HarfBuzzの `hb-subset` と同じ出力のサブセット化（`Input`、`Plan`、`subset`、前処理の `Prepared`。[ADR 0022](adr/0022-subsetting.md)） | `sofel-font`、`sofel-write`、`sofel-unicode`、`sofel-geom` |
 | `sofel-raster` | FreeTypeのsmoothのラスタライザと同じ計算で、8bitのアンチエイリアスの画像を作る | `sofel-geom` |
 | `sofel-cli` | 小さな道具（`sofel-validate`、`sofel-render`、`sofel-paint`、`sofel-subset`）と、1グリフを描く `glyph::render` | すべて |
 | `sofel-capi` | C ABI（[ADR 0015](adr/0015-c-abi.md)） | すべて |
@@ -53,8 +53,10 @@ let upem = font.units_per_em();
 let n = font.num_glyphs();
 let gid: Option<GlyphId> = font.nominal_glyph('A' as u32);
 let vs = font.variation_glyph(0x845B, 0xE0100); // 異体字セレクタ（cmapのフォーマット14）
-let advance: u16 = font.advance(gid.unwrap_or(GlyphId(0))); // フォントの単位
+let advance: u16 = font.default_instance().advance(gid.unwrap_or(GlyphId(0))); // フォントの単位
 ```
+
+位置を持つ問い合わせは `Instance` の関数として公開する。`font.default_instance()` は既定位置の `Instance` を返す。
 
 | sofel | HarfBuzz／FreeType |
 |---|---|
@@ -62,23 +64,23 @@ let advance: u16 = font.advance(gid.unwrap_or(GlyphId(0))); // フォントの�
 | `Font::nominal_glyph(c)` | `hb_font_get_nominal_glyph`（グリフの数以上のIDは `None`。フォーマット2と8もFreeTypeと同じく引く） |
 | `Font::variation_glyph(c, vs)` | `hb_font_get_variation_glyph`（同じく） |
 | `Font::nominal_glyph_raw(c)`、`Font::variation_glyph_raw(c, vs)` | `hb_font_get_nominal_glyph`、`hb_font_get_variation_glyph` そのまま（シェーピングが使う） |
-| `Font::advance(g)` | `hb_font_get_glyph_h_advance`（拡大縮小なし） |
-| `Font::ft_left_side_bearing(g)` | FreeTypeの `tt_face_get_metrics` の左のサイドベアリング（輪郭のpp1.xに使う） |
+| `Instance::advance(g)` | `hb_font_get_glyph_h_advance`（拡大縮小なし） |
+| `Instance::ft_left_side_bearing(g)` | FreeTypeの `tt_face_get_metrics` の左のサイドベアリング（輪郭のpp1.xに使う） |
 | `Font::table(tag)` | `hb_face_reference_table` |
-| `Font::h_extents()`、`Font::v_extents()` | `hb_font_get_extents_for_direction`（代わりの値つき） |
-| `Font::v_advance(g)` | `hb_font_get_glyph_v_advance`（下向きが負） |
-| `Font::v_origin(g, extents)` | `hb_font_get_glyph_v_origin` |
-| `Font::glyf_extents(g)` | `hb_font_get_glyph_extents`（glyfだけ。CFFとCFF2は `sofel_outline::HbExtents`） |
-| `Font::metrics_position(tag)`、`Font::metrics_position_with_fallback(tag, extents)` | `hb_ot_metrics_get_position`、`hb_ot_metrics_get_position_with_fallback` |
-| `Font::baseline(tag, direction, script)`、`Font::baseline_with_fallback(tag, direction, script, extents)` | `hb_ot_layout_get_baseline`、`hb_ot_layout_get_baseline_with_fallback` |
-| `Font::layout_font_extents(direction, script, language)` | `hb_ot_layout_get_font_extents` |
+| `Instance::h_extents()`、`Instance::v_extents()` | `hb_font_get_extents_for_direction`（代わりの値つき） |
+| `Instance::v_advance(g)` | `hb_font_get_glyph_v_advance`（下向きが負） |
+| `Instance::v_origin(g, extents)` | `hb_font_get_glyph_v_origin` |
+| `Instance::glyf_extents(g)` | `hb_font_get_glyph_extents`（glyfだけ。CFFとCFF2は `sofel_outline::HbExtents`） |
+| `Instance::metrics_position(tag)`、`Instance::metrics_position_with_fallback(tag, extents)` | `hb_ot_metrics_get_position`、`hb_ot_metrics_get_position_with_fallback` |
+| `Instance::baseline(tag, direction, script)`、`Instance::baseline_with_fallback(tag, direction, script, extents)` | `hb_ot_layout_get_baseline`、`hb_ot_layout_get_baseline_with_fallback` |
+| `Instance::layout_font_extents(direction, script, language)` | `hb_ot_layout_get_font_extents` |
 | `Font::os2()`、`Font::fs_type()` | `FT_Get_Sfnt_Table(FT_SFNT_OS2)`、`FT_Get_FSType_Flags` |
 | `HbScale::for_font(font, x, y)` | `hb_font_set_scale` |
 | `Font::names()`、`Font::name_utf8(id, lang, out)` など | `hb_ot_name_list_names`、`hb_ot_name_get_utf8` など |
 | `Font::sfnt_name(i)`、`Font::postscript_name(out)` | `FT_Get_Sfnt_Name`、`FT_Get_Postscript_Name` |
 | `Font::glyph_name(g)`、`GlyphNames::glyph_from_name(name)` | `hb_font_get_glyph_name`、`hb_font_get_glyph_from_name` |
 | `Font::ft_glyph_name(g)`、`GlyphNames::ft_glyph_from_name(name)` | `FT_Get_Glyph_Name`、`FT_Get_Name_Index` |
-| `Font::ft_face_metrics()`、`Font::ft_v_advance(g)` | `FT_Face` の値、`FT_Get_Advance`（縦） |
+| `Instance::ft_face_metrics()`、`Instance::ft_v_advance(g)` | `FT_Face` の値、`FT_Get_Advance`（縦） |
 
 - cmapのサブテーブルはHarfBuzzと同じ順で選び、記号フォントとMacのエンコーディングではHarfBuzzと同じく文字を付けかえて引く（[ADR 0016](adr/0016-font-and-vertical-metrics.md)）。送り幅は、hmtxが欠けたり短かったりするときもHarfBuzzと同じ値を返す（[ADR 0010](adr/0010-font-foundation.md)）。
 - `FontError` は、ファイルがsfntでもコレクションでもない、`head` が読めない、番号のフォントが無い、のいずれか。
@@ -138,7 +140,7 @@ let info = outlines.draw(gid, scale, &mut scratch, &mut pen)?;
 
 - `Outlines::new` は、FreeTypeと同じく、sfntの版が `OTTO` ならCFFかCFF2（`sofel_font::Cff`）、それ以外ならglyfを選ぶ（[ADR 0021](adr/0021-cff-outlines.md)）。glyfのフォントでは費用は無く、CFFのフォントでは開いた表を持つ。`sofel_outline::draw(&font, …)` と `load(&font, …)` は毎回 `Outlines::new` を呼ぶ。CFFの点はフォントの単位の整数に切り捨てられ、FontMatrixをかけてから拡大縮小される。`overlap` は常に偽。
 - `Scale::Unscaled` はフォントの単位のまま（`FT_LOAD_NO_SCALE`）、`Scale::Scaled { x, y }` は16.16の倍率で26.6の座標にする。
-- 点は、FreeTypeと同じく幻の点のpp1.x（見出しの `xMin` − `Font::ft_left_side_bearing` を拡大縮小した値）だけ左に動かしてある。合成グリフでは、USE_MY_METRICSの部品があればその部品のpp1.xを使う（[ADR 0018](adr/0018-phantom-point-shift.md)）。
+- 点は、FreeTypeと同じく幻の点のpp1.x（見出しの `xMin` − `Instance::ft_left_side_bearing` を拡大縮小した値）だけ左に動かしてある。合成グリフでは、USE_MY_METRICSの部品があればその部品のpp1.xを使う（[ADR 0018](adr/0018-phantom-point-shift.md)）。
 - `draw` は `load`（点を `Scratch` に読む）と `Scratch::decompose`（命令を送る）を続けたもの。輪郭を移動してから分解したいとき（ラスタライズ）は、2つを分けて呼ぶ。`decompose(offset, multiplier, pen)` は、`FT_Outline_Translate` で `offset` だけ動かし、各点を `multiplier` 倍してから分解する。暗黙のon-curveの点（2点の中点、0へ切り捨て）がこの順に依存するので、FreeTypeと一致させるには同じ順で行う。
 - HarfBuzzのグリフの箱は `HbExtents`（[ADR 0021](adr/0021-cff-outlines.md)）：`HbExtents::new(&font)` でHarfBuzzのCFFとCFF2のアクセラレータ（`sofel_font::HbCff1`、`HbCff2`）を一度だけ作り、`glyph_extents(g)` で `hb_font_get_glyph_extents` と同じ箱（glyf、CFF2、CFFの順。拡大縮小なし）を、`scaled_glyph_extents(g, &scale)` で `HbScale` の拡大縮小をした箱を返す。CFFの箱はHarfBuzzの解釈器と同じく制御点を含み、FreeTypeの輪郭の `cbox` とは違うことがある。
 - `OutlineError`：グリフIDが範囲外（`InvalidGlyphIndex`）、glyfとlocaが無い（`NoGlyphData`）、グリフのデータが壊れている（`InvalidOutline`）、複合グリフが壊れている・循環している・深すぎる（`InvalidComposite`）、`OTTO` でCFFもCFF2も無い（`UnsupportedFormat`）、FreeTypeが開けないCFF（`InvalidCff`）、解読できないcharstring（`InvalidCharString`）。エラーの前に送った命令は取り消されない。
@@ -225,12 +227,13 @@ match FontFile::new(&data)? {
 ```
 
 - 検証器は確保をせず、`Diagnostic`（表、オフセット、重大度、種類）をコールバックに渡す。`Kind::details` で種類ごとの値を取り出せる。`sofel-validate` コマンドの出力はこれを並べたもの。
-- 表ごとのモジュール：`head`、`maxp`、`hhea`、`hmtx`、`cmap`、`loca`、`glyf`、`os2`、`name`、`post`、`vhea`、`vmtx`、`vorg`、`base`、`gdef`、`gsub`、`gpos`。`device` はBASE、GDEF、GPOSが共有するDeviceの表のビュー（`delta_pixels` で補正を読む）。`layout` はGDEF、GSUB、GPOSが共有する構造（Coverage、ClassDef、ScriptList、FeatureList、LookupList、Lookup、GSUBとGPOSの見出しの `LayoutTable`、文脈のサブテーブル）。`base` のオフセットをたどる関数は、空のオフセットに `Ok(None)` を、読めない先に `Err` を返す。それぞれにビューの型と `validate` 関数がある。大きい番号の版（`MAXP`、`HHEA`、`HMTX`、`VHEA`、`VMTX`、`GLYF`、`LOCA`）は `CountWidth` や `TAG_WIDE` で扱う。
+- 表ごとのモジュール：`head`、`maxp`、`hhea`、`hmtx`、`cmap`、`loca`、`glyf`、`os2`、`name`、`post`、`vhea`、`vmtx`、`vorg`、`base`、`gdef`、`gsub`、`gpos`、`math`。`device` はBASE、GDEF、GPOS、MATHが共有するDeviceの表のビュー（`delta_pixels` で補正を読む）。`layout` はGDEF、GSUB、GPOSが共有する構造（Coverage、ClassDef、ScriptList、FeatureList、LookupList、Lookup、GSUBとGPOSの見出しの `LayoutTable`、文脈のサブテーブル）。`base` と `math` のオフセットをたどる関数は、空のオフセットに `Ok(None)` を、読めない先に `Err` を返す。それぞれにビューの型と `validate` 関数がある。大きい番号の版（`MAXP`、`HHEA`、`HMTX`、`VHEA`、`VMTX`、`GLYF`、`LOCA`）は `CountWidth` や `TAG_WIDE` で扱う。
 - `vhea` と `vmtx` のビューは `hhea` と `hmtx` のビューそのもの（`Vhea`、`Vmtx` は別名）で、`ascender` は縦のアセンダ、`advance` は縦の送り幅、`left_side_bearing` は上のサイドベアリングを返す。
 - OS/2の版より後の欄（例えば版1の `s_cap_height`）は `None` を返す。nameの文字列が表の外にある記録は `Name::string` が `None` を返す。postの `MAC_GLYPH_NAMES` はMacの標準の258の名前。
 - `be` は、範囲を確かめるビッグエンディアンの読み取りの関数。
 - `cff` は `CFF ` と `CFF2` の表（[ADR 0021](adr/0021-cff-outlines.md)）：`Cff1`、`Cff2`（ヘッダとINDEXの並び）、`Index`（`get` は厳密に、`ft_element` と `ft_pointer` はFreeTypeの読み方で要素を返す）、`dict`（`DictTokens`、FreeTypeと同じ数の変換をする `Operand`、`TopDict`、`FontDict`、`PrivateDict`。値はFreeTypeが `FT_Long` に持つ64bitの値と型のまま）、`Charset`、`Encoding`、`FdSelect`、`charstring`（`CharStringTokens` と、FreeTypeのAdobe engineをヒンティングなしで移植したType 2 charstringの解読器 `decode`）、`FtBlend`（FreeTypeのCFF2の `blend` の係数）。`cff::validate` と `cff::validate2` が検証器で、`validate::sfnt` は `maxp` のグリフの数と `fvar` の軸の数を渡して呼ぶ。
-- `cff::hb` は、HarfBuzzが `CFF ` と `CFF2` を読む手順（[ADR 0021](adr/0021-cff-outlines.md)）：サニタイザ `Sanitizer`（範囲の確かめと操作の予算）、`HbIndex`、`HbCharset`、`HbFdSelect`、encodingとCFF2のVariation Storeの確かめ、DICTの解釈器 `interpret_dict`。`sofel_font::HbCff1` と `HbCff2` がこれで作られる。
+- `cff::hb` は、HarfBuzzが `CFF ` と `CFF2` を読む手順（[ADR 0021](adr/0021-cff-outlines.md)）：サニタイザ `Sanitizer`（範囲の確かめと操作の予算）、`HbIndex`、`HbCharset`、`HbFdSelect`（`fd_range` はHarfBuzzの `get_fd_range`）、encodingとCFF2のVariation Storeの確かめ、DICTの解釈器 `interpret_dict` と、DICTの字句を1つずつ読む `dict_token`。`sofel_font::HbCff1` と `HbCff2` がこれで作られ、`sofel-subset` はCFFとCFF2のサブセット化に使う。`HbCff2` の `var_store`、`fd_array`、`fd_select` は、CFF2のサブセット化が読むVariation Storeの位置、FDArray、FDSelectを返す。
+- `fvar`、`avar`、`stat` は可変フォントの軸の表（[ADR 0022](adr/0022-subsetting.md)）：`Fvar`（軸の `VariationAxis` と名前つきのインスタンス。`find_axis` は最初に当たる軸）、`Avar`（軸ごとの `SegmentMap`。版2は変化量の表のオフセットを持つことだけを確かめる）、`Stat`（デザインの軸と、形式1から4の `AxisValue`。表に収まらない軸の値は `None`）。どれもHarfBuzzのサニタイザが受け付ける形だけを受け付け、`validate::sfnt` は `avar` の軸の数を `fvar` と比べる。
 - `item_variation` はOpenTypeの共通のItem Variation Store（領域の一覧と `ItemVariationData` の領域の番号）のビューと検証器。CFF2の `vstore` が使い、3段階目の可変フォントでHVARなどと共有する。
 - GSUBとGPOS（[ADR 0020](adr/0020-shaping-foundation.md)）は、`LayoutTable::new` から `script_list`、`feature_list`、`lookup_list` をたどり、lookupのサブテーブルを `gsub::subtable(&lookup, i)`（`SubstSubtable`）と `gpos::subtable(&lookup, i)`（`PosSubtable`）で読む。拡張はたどった先の型で返る。HarfBuzzと同じく、`Err` のサブテーブルは何も適用しないものとして扱う。
 
@@ -500,7 +503,39 @@ fn embed(data: &[u8], glyphs: &[u32]) -> Result<Vec<u8>, sofel_subset::SubsetErr
 }
 ```
 
-`Plan::new` で閉包とグリフの対応を求め、`Plan::execute` で表を書く。`subset` はこの2つを続けて呼ぶ。まだ書けない表を持つフォントは、その表を `SetKind::DropTables` に入れないかぎり `SubsetError::Unsupported` になる。
+`Plan::new` で閉包とグリフの対応を求め、`Plan::execute` で表を書く。`subset` はこの2つを続けて呼ぶ。CFFのフォント（名前のキーとCIDのキー）は、HarfBuzzと同じく `CFF ` の表をサブセット化し、出力から取り出した `CFF ` の表はそれだけでCFFとして正しい（PDFの `FontFile3` に入れられる）。まだ書けない表を持つフォントは、その表を `SetKind::DropTables` に入れないかぎり `SubsetError::Unsupported` になる。HarfBuzzが失敗する入力では、sofelも失敗する。例えば、表の出力が元の表の256倍を超えてHarfBuzzの作業領域に入らないときは `SubsetError::Limit` になる。
+
+可変フォントは、`with_all_axes_pinned_to_default` ですべての軸を既定の値に固定すると、HarfBuzzの `hb_subset_input_pin_all_axes_to_default` と同じく既定のインスタンスとして書く（fvarなどの変化量の表を除き、glyfの輪郭と送り幅から計る値を書きなおす）。軸の関数（`with_axis_pinned_to_default`、`with_axis_pinned`、`with_axis_range`）は、フォントに軸が無ければ `None` を返す。既定の値以外への固定と範囲の指定は、`Plan::new` が `SubsetError::Unsupported` を返す。
+
+```rust
+use sofel_font::Font;
+use sofel_subset::{Input, SetKind, SubsetError, subset};
+
+fn default_instance(data: &[u8], text: &str) -> Result<Vec<u8>, SubsetError> {
+    let font = Font::new(data, 0).map_err(|_| SubsetError::NoGlyphs)?;
+    let input = Input::new().map_set(SetKind::Unicodes, |s| text.chars().for_each(|c| s.add(u32::from(c))));
+    let input = input.with_all_axes_pinned_to_default(&font).unwrap_or(input);
+    subset(&font, &input)
+}
+```
+
+同じフォントを何度もサブセット化するときは、`Prepared::new` で一度だけ前処理し（HarfBuzzの `hb_subset_preprocess`）、`Plan::with_prepared` で計画を作る。出力は前処理の無いときと同じで、計画が速くなる（cmapの対応の逆引き、CFFの解析済みのcharstringを使う）。`Prepared` は不変で、複製は安く（中身を共有する）、スレッドの間で共有できる。前処理したフォントと違うフォントに使うと `SubsetError::InvalidInput` になる。`cff_charstrings_index` と `cff_charstring_data` は、`CFF ` の表のCharStrings INDEXと各グリフのcharstringのバイト列を写さずに返す。
+
+```rust
+use sofel_font::Font;
+use sofel_subset::{Input, Plan, Prepared, SetKind, SubsetError};
+
+fn many(font: &Font<'_>, texts: &[&str]) -> Result<Vec<Vec<u8>>, SubsetError> {
+    let prepared = Prepared::new(font);
+    texts
+        .iter()
+        .map(|t| {
+            let input = Input::new().map_set(SetKind::Unicodes, |s| t.chars().for_each(|c| s.add(u32::from(c))));
+            Plan::with_prepared(font, &prepared, &input)?.execute(font)
+        })
+        .collect()
+}
+```
 
 ## Cから使う（`sofel-capi`）
 
@@ -514,16 +549,16 @@ fn embed(data: &[u8], glyphs: &[u32]) -> Result<Vec<u8>, sofel_subset::SubsetErr
 int32_t err;
 sofel_font_t *font = sofel_font_create(data, len, 0, &err); /* data は複製しない */
 uint32_t gid;
-uint16_t advance;
+uint32_t advance;
 if (font != NULL && sofel_font_nominal_glyph(font, 'A', &gid) == SOFEL_OK) {
-  sofel_font_h_advance(font, gid, &advance);
+  sofel_font_h_advance(font, NULL, gid, &advance);
 
   sofel_outline_scratch_t *scratch = sofel_outline_scratch_create(); /* スレッドごとに1つ */
   sofel_rasterizer_t *raster = sofel_rasterizer_create();
   uint8_t pixels[4096];
   size_t n;
   int32_t box[4]; /* left, top, width, rows */
-  err = sofel_render_glyph(font, gid, 48, scratch, raster, pixels, sizeof pixels, &n, box);
+  err = sofel_render_glyph(font, NULL, gid, 48, scratch, raster, pixels, sizeof pixels, &n, box);
   /* SOFEL_ERROR_BUFFER_TOO_SMALL なら n バイトの配列で呼びなおす */
   sofel_rasterizer_destroy(raster);
   sofel_outline_scratch_destroy(scratch);
@@ -535,17 +570,17 @@ sofel_font_destroy(font);
 |---|---|---|
 | `sofel_font_create` | `Font::new` | `hb_face_create`／`FT_New_Memory_Face` |
 | `sofel_font_nominal_glyph`、`sofel_font_variation_glyph` | `Font::nominal_glyph`、`Font::variation_glyph` | `hb_font_get_nominal_glyph`、`hb_font_get_variation_glyph` |
-| `sofel_font_h_advance` | `Font::advance` | `hb_font_get_glyph_h_advance` |
-| `sofel_font_ft_left_side_bearing` | `Font::ft_left_side_bearing` | `FT_Get_Glyph_Metrics` |
+| `sofel_font_h_advance` | `Instance::advance` | `hb_font_get_glyph_h_advance` |
+| `sofel_font_ft_left_side_bearing` | `Instance::ft_left_side_bearing` | `FT_Get_Glyph_Metrics` |
 | `sofel_font_table` | `Font::table` | `hb_face_reference_table`／`FT_Load_Sfnt_Table` |
-| `sofel_font_h_extents`、`sofel_font_v_extents`、`sofel_font_v_advance`、`sofel_font_v_origin`、`sofel_font_glyph_extents` | `Font::h_extents` など | `hb_font_get_extents_for_direction`、`hb_font_get_glyph_v_advance`、`hb_font_get_glyph_v_origin`、`hb_font_get_glyph_extents` |
-| `sofel_font_metrics_position`、`sofel_font_metrics_position_with_fallback` | `Font::metrics_position` など | `hb_ot_metrics_get_position` など |
-| `sofel_font_baseline`、`sofel_font_baseline_with_fallback`、`sofel_font_layout_font_extents` | `Font::baseline` など | `hb_ot_layout_get_baseline`、`hb_ot_layout_get_baseline_with_fallback`、`hb_ot_layout_get_font_extents` |
+| `sofel_font_h_extents`、`sofel_font_v_extents`、`sofel_font_v_advance`、`sofel_font_v_origin`、`sofel_font_glyph_extents` | `Instance::h_extents` など | `hb_font_get_extents_for_direction`、`hb_font_get_glyph_v_advance`、`hb_font_get_glyph_v_origin`、`hb_font_get_glyph_extents` |
+| `sofel_font_metrics_position`、`sofel_font_metrics_position_with_fallback` | `Instance::metrics_position` など | `hb_ot_metrics_get_position` など |
+| `sofel_font_baseline`、`sofel_font_baseline_with_fallback`、`sofel_font_layout_font_extents` | `Instance::baseline` など | `hb_ot_layout_get_baseline`、`hb_ot_layout_get_baseline_with_fallback`、`hb_ot_layout_get_font_extents` |
 | `sofel_font_os2_field`、`sofel_font_fs_type` | `Font::os2`、`Font::fs_type` | `FT_Get_Sfnt_Table`、`FT_Get_FSType_Flags` |
 | `sofel_scale_*` | `HbScale` | `hb_font_set_scale` のあとの各関数 |
 | `sofel_font_name_*`、`sofel_font_sfnt_name*`、`sofel_font_postscript_name` | `Font::names` など | `hb_ot_name_*`、`FT_Get_Sfnt_Name`、`FT_Get_Postscript_Name` |
 | `sofel_font_glyph_name`、`sofel_font_ft_glyph_name`、`sofel_glyph_names_*` | `Font::glyph_name`、`GlyphNames` | `hb_font_get_glyph_name`、`FT_Get_Glyph_Name`、`FT_Get_Name_Index` |
-| `sofel_font_ft_face_metrics`、`sofel_font_ft_v_advance` | `Font::ft_face_metrics`、`Font::ft_v_advance` | `FT_Face`、`FT_Get_Advance` |
+| `sofel_font_ft_face_metrics`、`sofel_font_ft_v_advance` | `Instance::ft_face_metrics`、`Instance::ft_v_advance` | `FT_Face`、`FT_Get_Advance` |
 | `sofel_outline_draw`、`sofel_outline_load`、`sofel_outline_decompose` | `draw`、`load`、`Scratch::decompose` | `FT_Load_Glyph` + `FT_Outline_Decompose` |
 | `sofel_rasterizer_*`、`sofel_pixel_box` | `Rasterizer`、`pixel_box` | `FT_Outline_Render` |
 | `sofel_render_glyph` | `sofel_cli::glyph::render` | `FT_Render_Glyph` |
@@ -559,6 +594,12 @@ sofel_font_destroy(font);
 | `sofel_buffer_*` | `UnicodeBuffer`、`GlyphBuffer` | `hb_buffer_*` |
 | `sofel_shape`、`sofel_shape_fallback` | `shape_with_extents`、`shape_fallback` | `hb_shape_plan_execute` |
 | `sofel_buffer_serialize`、`sofel_buffer_deserialize_*`、`sofel_buffer_diff` | `serialize_glyphs` など、`diff` | `hb_buffer_serialize`、`hb_buffer_deserialize_*`、`hb_buffer_diff` |
+| `sofel_subset_input_*` | `Input`、`RangeSet` | `hb_subset_input_*`、`hb_set_*` |
+| `sofel_subset_prepared_*` | `Prepared` | `hb_subset_preprocess` |
+| `sofel_subset_plan_*` | `Plan` | `hb_subset_plan_*` |
+| `sofel_subset_cff_charstrings_index`、`sofel_subset_cff_charstring_data` | `cff_charstrings_index`、`cff_charstring_data` | `hb_subset_cff_get_charstrings_index`、`hb_subset_cff_get_charstring_data` |
+| `sofel_subset`、`sofel_bytes_destroy` | `subset` | `hb_subset_or_fail`、`hb_face_reference_blob` |
+| `sofel_serialize_objects` | `sofel_write::serialize_objects` | `hb_subset_serialize_or_fail` |
 
 - 誤りうる関数は `int32_t` を返し、`SOFEL_OK`（0）以外は誤り。`sofel_error_string` で英語の説明を引ける。NULLのポインタは `SOFEL_ERROR_NULL` になり、panicもクラッシュもしない。
 - 輪郭は5つの関数ポインタと `void *user` で受け取る。`sofel_rasterizer_move_to` などはその型を持つので、`sofel_outline_decompose` にそのまま渡してラスタライザに記録できる。
@@ -578,6 +619,24 @@ int32_t pos[4 * 64]; /* x_advance, y_advance, x_offset, y_offset */
 int64_t n = sofel_buffer_glyphs(buf, gids, clusters, NULL, pos, 64);
 /* n > 64 なら何も書かれていない。n 個の配列で呼びなおす */
 sofel_buffer_clear(buf); /* 次の文字列へ */
+```
+
+- サブセット化は、入力を作って集合とフラグを入れ、`sofel_subset` を呼ぶ。出力はsofelが確保するので、`sofel_bytes_destroy` で解放する。入力は値を変える関数で変わるので、スレッドの間で共有しながら変えない。
+
+```c
+sofel_subset_input_t *input;
+sofel_subset_input_create(&input); /* HarfBuzz の既定の値 */
+for (size_t i = 0; i < n; i++)
+  sofel_subset_input_set_add(input, SOFEL_SUBSET_SET_GLYPHS, gids[i]);
+sofel_subset_input_set_flags(input, SOFEL_SUBSET_FLAGS_RETAIN_GIDS);
+/* 可変フォントなら既定のインスタンスにする（軸が無ければ SOFEL_ERROR_NOT_FOUND） */
+sofel_subset_input_pin_all_axes_to_default(input, font);
+sofel_bytes_t out;
+if (sofel_subset(font, input, &out) == SOFEL_OK) {
+  /* out.data, out.len: hb-subset と同じバイト列 */
+  sofel_bytes_destroy(&out);
+}
+sofel_subset_input_destroy(input);
 ```
 
 - `sofel-read` の表のビューは公開しない。表のバイト列を `sofel_font_table` で取り出して読む。公開しない関数とその理由は `crates/sofel-capi/unmapped.txt` にある。

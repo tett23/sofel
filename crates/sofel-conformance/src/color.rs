@@ -238,19 +238,31 @@ pub fn compare_paint(font_id: &str, font: &Font<'_>, hb: &HbPaintFace) -> Vec<It
     hb.paints
         .iter()
         .map(|(p, pp, g, text)| {
-            let ours = sofel_paint_text(font, *g, *p, *pp, 0.0, &mut scratch);
-            let ok = &ours == text;
-            Item {
-                id: format!("{font_id}#{}:paint:{p}:{pp}:{g}", hb.index),
-                ok,
-                detail: if ok {
-                    String::new()
-                } else {
-                    format!("HarfBuzz:\n{text}sofel:\n{ours}")
-                },
-            }
+            compare_paint_record(font_id, font, hb.index, (*p, *pp, *g), text, &mut scratch)
         })
         .collect()
+}
+
+/// Compare one HarfBuzz paint body using the same identifier as a buffered face.
+pub fn compare_paint_record(
+    font_id: &str,
+    font: &Font<'_>,
+    face: u32,
+    (p, pp, g): (u16, u16, u32),
+    text: &str,
+    scratch: &mut Scratch,
+) -> Item {
+    let ours = sofel_paint_text(font, g, p, pp, 0.0, scratch);
+    let ok = ours == text;
+    Item {
+        id: format!("{font_id}#{face}:paint:{p}:{pp}:{g}"),
+        ok,
+        detail: if ok {
+            String::new()
+        } else {
+            format!("HarfBuzz:\n{text}sofel:\n{ours}")
+        },
+    }
 }
 
 /// `hb-dump --color` of one face, as sofel gives it.

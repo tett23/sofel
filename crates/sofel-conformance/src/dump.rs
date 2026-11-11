@@ -305,7 +305,7 @@ pub fn add_font_values(face: &mut Face, font: &sofel_font::Font<'_>, ft: &Face) 
         Some(n) => hex(&buf[..n.min(buf.len())]),
         None => "-".to_string(),
     });
-    let m = font.ft_face_metrics();
+    let m = font.default_instance().ft_face_metrics();
     face.face_metrics = [
         m.ascender,
         m.descender,
@@ -334,7 +334,14 @@ pub fn add_font_values(face: &mut Face, font: &sofel_font::Font<'_>, ft: &Face) 
     face.v_advances = ft
         .v_advances
         .iter()
-        .map(|&(g, _)| (g, font.ft_v_advance(GlyphId(g)).map_or(-1, i64::from)))
+        .map(|&(g, _)| {
+            (
+                g,
+                font.default_instance()
+                    .ft_v_advance(GlyphId(g))
+                    .map_or(-1, i64::from),
+            )
+        })
         .collect();
     let mut index = vec![0u32; font.glyph_names_len()];
     let names = font.glyph_names(&mut index);

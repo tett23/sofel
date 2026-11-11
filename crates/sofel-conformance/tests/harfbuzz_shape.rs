@@ -211,6 +211,42 @@ fn codepoints(unicodes: &str) -> Vec<u32> {
 }
 
 #[test]
+fn adr0028_trak_ptem_cases_are_aat_not_variations() {
+    let data = paths::testdata().join("harfbuzz/test/shape/data");
+    paths::require(&data, "HarfBuzz test data").unwrap();
+    let mut skipped = 0;
+    let cases = cases(
+        "in-house",
+        &data.join("in-house/tests/aat-trak.tests"),
+        &mut skipped,
+    );
+    let reasons = sofel_conformance::expect::parse_reasons(
+        &std::fs::read_to_string(paths::conformance_file(LIST)).unwrap(),
+    );
+    let ptem_cases: Vec<_> = cases
+        .iter()
+        .filter(|c| option(&c.options, "--font-ptem").is_some())
+        .collect();
+    assert_eq!(ptem_cases.len(), 7);
+    for case in ptem_cases {
+        let font = std::fs::read(&case.font).unwrap();
+        let text = codepoints(&case.unicodes);
+        let subject = Subject {
+            data: &font,
+            face: 0,
+            options: &case.options,
+            shaper: &case.shaper,
+            text: &text,
+            props: SegmentProperties::default(),
+        };
+        assert!(subject.misfit("aat").is_none(), "{}", case.id);
+        assert!(subject.misfit("variations").is_some(), "{}", case.id);
+        assert_eq!(subject.suggest(), "aat?", "{}", case.id);
+        assert_eq!(reasons.get(&case.id).map(String::as_str), Some("aat"));
+    }
+}
+
+#[test]
 fn harfbuzz_shaping_tests() {
     let testdata = paths::testdata();
     let data = testdata.join("harfbuzz/test/shape/data");

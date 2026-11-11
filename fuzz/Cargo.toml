@@ -17,6 +17,7 @@ sofel-outline = { path = "../crates/sofel-outline" }
 sofel-raster = { path = "../crates/sofel-raster" }
 sofel-shape = { path = "../crates/sofel-shape" }
 sofel-subset = { path = "../crates/sofel-subset" }
+sofel-write = { path = "../crates/sofel-write" }
 
 # Not part of the main workspace (ADR 0007).
 [workspace]
@@ -86,6 +87,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "math"
+path = "fuzz_targets/math.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "cff"
 path = "fuzz_targets/cff.rs"
 test = false
@@ -130,6 +138,27 @@ bench = false
 [[bin]]
 name = "subset"
 path = "fuzz_targets/subset.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "repack"
+path = "fuzz_targets/repack.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gvar"
+path = "fuzz_targets/gvar.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "feature_variations"
+path = "fuzz_targets/feature_variations.rs"
 test = false
 doc = false
 bench = false

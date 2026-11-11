@@ -69,6 +69,18 @@ pub enum Kind {
         /// The value found.
         found: u32,
     },
+    /// An unknown FeatureVariations condition format, treated as false.
+    UnknownConditionFormat {
+        /// The value found.
+        found: u32,
+    },
+    /// A FeatureVariations condition refers to an axis outside fvar.
+    ConditionAxisOutOfRange {
+        /// The axis index.
+        axis: u32,
+        /// Number of fvar axes.
+        count: u32,
+    },
     /// An offset and length point outside the available data.
     OffsetOutOfBounds {
         /// The offset.
@@ -395,7 +407,7 @@ pub enum Kind {
         /// The count.
         count: u32,
     },
-    /// Variation regions whose axis count differs from `fvar`.
+    /// Variation regions, or `avar`, whose axis count differs from `fvar`.
     AxisCountMismatch {
         /// The value found.
         found: u32,
@@ -408,6 +420,27 @@ pub enum Kind {
         index: u32,
         /// The count.
         count: u32,
+    },
+    /// `wordDeltaCount` exceeds `regionIndexCount` in ItemVariationData.
+    WordDeltaCountOutOfRange {
+        /// Count excluding the LONG_WORDS flag.
+        found: u32,
+        /// `regionIndexCount`.
+        count: u32,
+    },
+    /// A variation index refers outside its ItemVariationStore.
+    VariationIndexOutOfRange {
+        /// ItemVariationData index.
+        outer: u32,
+        /// Item index in that subtable.
+        inner: u32,
+    },
+    /// A gvar tuple has invalid point numbers or packed delta lengths.
+    PointDeltaCountMismatch {
+        /// Glyph index.
+        glyph: u32,
+        /// Tuple index within that glyph.
+        tuple: u32,
     },
     /// A charstring pushes more operands than the stack holds.
     CharStringStackOverflow {
@@ -696,6 +729,10 @@ impl Kind {
             | FdOutOfRange { .. }
             | AxisCountMismatch { .. }
             | RegionIndexOutOfRange { .. }
+            | WordDeltaCountOutOfRange { .. }
+            | VariationIndexOutOfRange { .. }
+            | PointDeltaCountMismatch { .. }
+            | ConditionAxisOutOfRange { .. }
             | CharStringStackOverflow { .. }
             | CharStringStackUnderflow { .. }
             | SubroutineOutOfRange { .. }
@@ -752,6 +789,7 @@ impl Kind {
             | ReservedBitsSet { .. }
             | CoverageDuplicate { .. }
             | ColorIndexOutOfRange { .. } => Severity::Warning,
+            UnknownConditionFormat { .. } => Severity::Warning,
         }
     }
 
@@ -762,6 +800,8 @@ impl Kind {
             Truncated { .. } => "truncated",
             UnknownVersion { .. } => "unknown_version",
             UnknownFormat { .. } => "unknown_format",
+            UnknownConditionFormat { .. } => "unknown_condition_format",
+            ConditionAxisOutOfRange { .. } => "condition_axis_out_of_range",
             OffsetOutOfBounds { .. } => "offset_out_of_bounds",
             RecordsNotSorted { .. } => "records_not_sorted",
             DuplicateTable { .. } => "duplicate_table",
@@ -826,6 +866,9 @@ impl Kind {
             FdOutOfRange { .. } => "fd_out_of_range",
             AxisCountMismatch { .. } => "axis_count_mismatch",
             RegionIndexOutOfRange { .. } => "region_index_out_of_range",
+            WordDeltaCountOutOfRange { .. } => "word_delta_count_out_of_range",
+            VariationIndexOutOfRange { .. } => "variation_index_out_of_range",
+            PointDeltaCountMismatch { .. } => "point_delta_count_mismatch",
             CharStringStackOverflow { .. } => "char_string_stack_overflow",
             CharStringStackUnderflow { .. } => "char_string_stack_underflow",
             SubroutineOutOfRange { .. } => "subroutine_out_of_range",
@@ -876,6 +919,7 @@ impl Kind {
             }
             UnknownVersion { found }
             | UnknownFormat { found }
+            | UnknownConditionFormat { found }
             | WeightClassOutOfRange { found }
             | FsSelectionConflict { found }
             | DeprecatedVersion { found }
@@ -1073,6 +1117,22 @@ impl Kind {
                 f("index", Uint(index));
                 f("count", Uint(count));
             }
+            WordDeltaCountOutOfRange { found, count } => {
+                f("found", Uint(found));
+                f("count", Uint(count));
+            }
+            VariationIndexOutOfRange { outer, inner } => {
+                f("outer", Uint(outer));
+                f("inner", Uint(inner));
+            }
+            PointDeltaCountMismatch { glyph, tuple } => {
+                f("glyph", Uint(glyph));
+                f("tuple", Uint(tuple));
+            }
+            ConditionAxisOutOfRange { axis, count } => {
+                f("axis", Uint(axis));
+                f("count", Uint(count));
+            }
             CharStringStackOverflow { glyph, position } => {
                 f("glyph", Uint(glyph));
                 f("position", Uint(position));
@@ -1159,6 +1219,12 @@ impl fmt::Display for Kind {
             }
             UnknownVersion { found } => write!(f, "unknown version {found:#010x}"),
             UnknownFormat { found } => write!(f, "unknown subtable format {found}"),
+            UnknownConditionFormat { found } => {
+                write!(f, "unknown FeatureVariations condition format {found}")
+            }
+            ConditionAxisOutOfRange { axis, count } => {
+                write!(f, "FeatureVariations condition axis {axis} is not below fvar axis count {count}")
+            }
             OffsetOutOfBounds {
                 offset,
                 length,
@@ -1362,6 +1428,18 @@ impl fmt::Display for Kind {
             RegionIndexOutOfRange { index, count } => write!(
                 f,
                 "region index {index} is not below the region count {count}"
+            ),
+            WordDeltaCountOutOfRange { found, count } => write!(
+                f,
+                "word delta count {found} exceeds the region index count {count}"
+            ),
+            VariationIndexOutOfRange { outer, inner } => write!(
+                f,
+                "variation index ({outer}, {inner}) is outside the ItemVariationStore"
+            ),
+            PointDeltaCountMismatch { glyph, tuple } => write!(
+                f,
+                "gvar glyph {glyph} tuple {tuple} has invalid point numbers or delta count"
             ),
             CharStringStackOverflow { glyph, position } => write!(
                 f,

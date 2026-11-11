@@ -1,0 +1,32 @@
+face 0
+has 0 0 0 0 1
+palettes 0
+glyph 0 0 - - - - 0 0
+glyph 1 0 - - - - 0 0
+glyph 2 0 - - - - 0 0
+glyph 3 0 - - - - 0 0
+glyph 4 0 - - - - 0 0
+glyph 5 0 - - - - 0 0
+glyph 6 0 - - - - 0 0
+glyph 7 0 - - - - 0 0
+glyph 8 0 - - - - 0 0
+glyph 9 0 - - - - 0 0
+glyph 10 0 - - - - 0 0
+glyph 11 0 - - - - 0 0
+glyph 12 0 - - - - 0 0
+glyph 13 0 - - - - 0 0
+glyph 14 0 - - - - 0 0
+glyph 15 0 - - - - 0 0
+glyph 16 0 - - - - 0 0
+glyph 17 0 - - - - 0 0
+glyph 18 0 - - - - 0 0
+glyph 19 0 - - - - 0 2516
+glyph 20 0 - - - - 0 436
+glyph 21 0 - - - - 0 435
+glyph 22 0 - - - - 0 648
+glyph 23 0 - - - - 0 4858
+glyph 24 0 - - - - 0 4635
+glyph 25 0 - - - - 0 2469
+glyph 26 0 - - - - 0 642
+glyph 27 0 - - - - 0 1316
+end

@@ -65,6 +65,18 @@
  *                                code point up to U+10FFFF it maps)
  *   end
  *
+ * Mode --sampled-metrics FONT PLAN (ADR 0031): PLAN contains one
+ * `<face-index> <glyph-id>` pair per line, at most 128 sorted glyphs per
+ * face. Writes the --metrics lines at the units-per-em scale only, for
+ * those glyphs. The `glyph` line retains its actual glyph ID.
+ * Mode --cmap-digest (ADR 0031): for each face, a 64-bit FNV-1a digest
+ * of the nominal glyph ID as four little-endian bytes for every Unicode
+ * scalar value in ascending order. Unmapped scalars contribute glyph 0.
+ * Mode --corpus-shape FONT FACE HEX-CODEPOINTS SCRIPT LANGUAGE DIRECTION
+ * FEATURES VARIATIONS (ADR 0031): one shaping case with explicit buffer
+ * properties, feature settings and design coordinates. Use `-` for no
+ * feature or variation setting. The output is --shape's glyph text.
+ *
  * Mode --baselines (ADR 0017): for each face index i,
  *
  *   face <i>
@@ -339,11 +351,66 @@
  * for each the `x_mult` of an hb_font_t of a face with that upem after
  * hb_font_set_scale (font, scale, scale), in decimal.
  *
+ * --repack FILE (ADR 0022, 再配置): FILE holds object graphs, all
+ * numbers big-endian: a u32 count, then per graph a u32 tag, a u32 kind
+ * and a u32 object count, then per object (the root last) a u32 length
+ * and its bytes, a u32 count of real links, each `width signed whence 0`
+ * (u8 each) and u32 bias, position and objidx (1 is the first object),
+ * and a u32 count of virtual links, each a u32 objidx. Kind 0 serializes
+ * the objects with hb_serialize_context_t (push, the bytes, add_link,
+ * add_virtual_link, pop_pack (false), end_serialize) and repacks as
+ * _hb_subset_repack does (hb_resolve_overflows with its defaults when an
+ * offset overflowed); kind 1 calls hb_subset_serialize_or_fail (whose
+ * links have only width, position and objidx). Writes per graph
+ *
+ *   graph <i> ok <length> <fnv>   (the FNV-1a 64-bit hash of the bytes,
+ *                                 16 hex digits)
+ *   graph <i> fail
+ *
+ * --subset OPTION... (ADR 0022, 突き合わせ): subsets a font as
+ * HarfBuzz's util/hb-subset does with these options, and writes the font
+ * hb_subset_or_fail and hb_face_reference_blob give. hb-dump is built
+ * with HB_EXPERIMENTAL_API (tools/hb-dump/build.sh), as HarfBuzz's
+ * subsetting tests are, so that --iftb-requirements and
+ * --retain-num-glyphs work. The options are those of hb-subset, applied
+ * in order with the same semantics: --font-file=FILE (required),
+ * --face-index=N, --output-file=FILE or -o FILE (required), --gids,
+ * --unicodes, --text, --glyphs, --name-IDs, --name-languages,
+ * --layout-features, --layout-scripts and --drop-tables (each also with
+ * a `+` or `-` suffix, and `*`), --gid-map, --variations and
+ * --instance, --keep-everything, every flag option, --preprocess and
+ * --preprocess-face, and --num-iterations=N. An option's value follows
+ * `=` or comes as the next argument. The *-file options and the
+ * positional FONT-FILE and TEXT are not accepted.
+ * Exit status: 0 when the font was written, 1 when subsetting failed
+ * (nothing is written) or a file cannot be read or written, 2 on a wrong
+ * option.
+ *
  * Exit status: 0 on success, 1 when the file cannot be read, 2 on wrong
  * usage.
  */
 
 #include "harfbuzz.cc"
+/* The subsetter: the files of harfbuzz-subset.cc that harfbuzz.cc does
+ * not include. */
+#include "graph/gsubgpos-context.cc"
+#include "hb-depend.cc"
+#include "hb-subset-cff-common.cc"
+#include "hb-subset-cff1.cc"
+#include "hb-subset-cff2.cc"
+#include "hb-subset-input.cc"
+#include "hb-subset-instancer-iup.cc"
+#include "hb-subset-instancer-solver.cc"
+#include "hb-subset-plan-layout.cc"
+#include "hb-subset-plan-var.cc"
+#include "hb-subset-plan.cc"
+#include "hb-subset-serialize.cc"
+#include "hb-subset-table-cff.cc"
+#include "hb-subset-table-color.cc"
+#include "hb-subset-table-layout.cc"
+#include "hb-subset-table-other.cc"
+#include "hb-subset-table-var.cc"
+#include "hb-subset.cc"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -351,8 +418,214 @@
 #include <stdarg.h>
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <vector>
+
+static unsigned reference_named = HB_FONT_NO_VAR_NAMED_INSTANCE;
+static std::vector<hb_variation_t> reference_variations;
+
+static hb_font_t *var_create_font (hb_face_t *face)
+{
+  hb_font_t *font = hb_font_create (face);
+  if (reference_named != HB_FONT_NO_VAR_NAMED_INSTANCE)
+    hb_font_set_var_named_instance (font, reference_named);
+  if (!reference_variations.empty())
+    hb_font_set_variations (font, reference_variations.data(), reference_variations.size());
+  return font;
+}
+
+/* Remove variation options while preserving each mode's positional arguments. */
+static bool reference_options (int *argc, char **argv)
+{
+  int write = 2;
+  for (int read = 2; read < *argc; read++)
+  {
+    const char *arg = argv[read];
+    if (strncmp (arg, "--named-instance=", 17) == 0)
+    {
+      char *end;
+      unsigned long value = strtoul (arg + 17, &end, 10);
+      if (!arg[17] || *end || value > 0xFFFFFFFFul) return false;
+      reference_named = (unsigned) value;
+    }
+    else if (strncmp (arg, "--variations=", 13) == 0)
+    {
+      const char *p = arg + 13;
+      if (!*p) return false;
+      while (*p)
+      {
+        const char *end = strchr (p, ',');
+        unsigned len = end ? (unsigned) (end - p) : (unsigned) strlen (p);
+        hb_variation_t item;
+        if (!hb_variation_from_string (p, (int) len, &item)) return false;
+        reference_variations.push_back (item);
+        if (!end) break;
+        p = end + 1;
+        if (!*p) return false;
+      }
+    }
+    else argv[write++] = argv[read];
+  }
+  *argc = write;
+  return true;
+}
+
+/* ADR 0027 task 2: keep the exact float input bits in reference output. */
+static unsigned var_float_bits (float value)
+{
+  unsigned bits;
+  memcpy (&bits, &value, sizeof bits);
+  return bits;
+}
+
+static bool var_options (int argc, char **argv, unsigned *named,
+                         std::vector<hb_variation_t> *variations)
+{
+  *named = HB_FONT_NO_VAR_NAMED_INSTANCE;
+  for (int i = 2; i < argc - 1; i++)
+  {
+    if (strncmp (argv[i], "--named-instance=", 17) == 0)
+    {
+      char *end;
+      unsigned long value = strtoul (argv[i] + 17, &end, 10);
+      if (!* (argv[i] + 17) || *end || value > 0xFFFFFFFFul) return false;
+      *named = (unsigned) value;
+    }
+    else if (strncmp (argv[i], "--variations=", 13) == 0)
+    {
+      const char *p = argv[i] + 13;
+      if (!*p) return false;
+      while (*p)
+      {
+        const char *end = strchr (p, ',');
+        unsigned len = end ? (unsigned) (end - p) : (unsigned) strlen (p);
+        hb_variation_t item;
+        if (!hb_variation_from_string (p, (int) len, &item)) return false;
+        variations->push_back (item);
+        if (!end) break;
+        p = end + 1;
+        if (!*p) return false;
+      }
+    }
+    else return false;
+  }
+  return true;
+}
+
+static int dump_var_reference (int argc, char **argv)
+{
+  bool normalize = strcmp (argv[1], "--var-normalize") == 0;
+  unsigned named;
+  std::vector<hb_variation_t> variations;
+  if (argc < 3 || !var_options (argc, argv, &named, &variations))
+  {
+    fprintf (stderr, "usage: hb-dump --var[\u002dnormalize] [--named-instance=N] [--variations=TAG=VALUE,...] FILE\n");
+    return 2;
+  }
+  hb_blob_t *blob = hb_blob_create_from_file_or_fail (argv[argc - 1]);
+  if (!blob) return 1;
+  unsigned faces = hb_face_count (blob);
+  for (unsigned i = 0; i < faces; i++)
+  {
+    hb_face_t *face = hb_face_create (blob, i);
+    hb_font_t *font = var_create_font (face);
+    hb_ot_font_set_funcs (font);
+    if (named != HB_FONT_NO_VAR_NAMED_INSTANCE)
+      hb_font_set_var_named_instance (font, named);
+    if (!variations.empty())
+      hb_font_set_variations (font, variations.data(), variations.size());
+    unsigned count = hb_ot_var_get_axis_count (face);
+    std::vector<hb_ot_var_axis_info_t> axes (count);
+    unsigned actual = count;
+    hb_ot_var_get_axis_infos (face, 0, &actual, axes.data());
+    axes.resize (actual);
+    printf ("face %u\naxis_count %u\n", i, count);
+    if (!normalize)
+    {
+      printf ("has_data %u\n", (unsigned) hb_ot_var_has_data (face));
+      for (const auto &axis : axes)
+      {
+        hb_ot_var_axis_info_t found;
+        hb_bool_t ok = hb_ot_var_find_axis_info (face, axis.tag, &found);
+        printf ("axis %u %08x %u %u %08x %08x %08x\n",
+                axis.axis_index, axis.tag, axis.name_id, (unsigned) axis.flags,
+                var_float_bits (axis.min_value),
+                var_float_bits (axis.default_value),
+                var_float_bits (axis.max_value));
+        printf ("found_axis %08x %u %u\n", axis.tag, (unsigned) ok,
+                ok ? found.axis_index : 0);
+      }
+      unsigned named_count = hb_ot_var_get_named_instance_count (face);
+      printf ("named_count %u\n", named_count);
+      for (unsigned n = 0; n < named_count; n++)
+      {
+        unsigned length = count;
+        std::vector<float> coords (count);
+        hb_ot_var_named_instance_get_design_coords (face, n, &length, coords.data());
+        printf ("named %u %u %u", n,
+                hb_ot_var_named_instance_get_subfamily_name_id (face, n),
+                hb_ot_var_named_instance_get_postscript_name_id (face, n));
+        for (unsigned a = 0; a < length; a++)
+          printf (" %08x", var_float_bits (coords[a]));
+        printf ("\n");
+      }
+      unsigned length = 0;
+      const int *normalized = hb_font_get_var_coords_normalized (font, &length);
+      printf ("coords_normalized");
+      for (unsigned a = 0; a < length; a++) printf (" %d", normalized[a]);
+      printf ("\n");
+      std::vector<int> normalized_variations (count);
+      hb_ot_var_normalize_variations (face, variations.data(), variations.size(),
+                                      normalized_variations.data(), count);
+      printf ("normalized_variations");
+      for (unsigned a = 0; a < count; a++)
+        printf (" %d", normalized_variations[a]);
+      printf ("\n");
+      const float *design = hb_font_get_var_coords_design (font, &length);
+      printf ("coords_design");
+      for (unsigned a = 0; a < length; a++)
+        printf (" %08x", var_float_bits (design[a]));
+      printf ("\n");
+    }
+    else
+    {
+      std::vector<float> coords (axes.size());
+      std::vector<int> result (axes.size());
+      for (unsigned a = 0; a < axes.size(); a++)
+      {
+        for (unsigned b = 0; b < axes.size(); b++)
+          coords[b] = axes[b].default_value;
+        float min = axes[a].min_value, max = axes[a].max_value;
+        for (unsigned k = 0; k <= 256; k++)
+        {
+          coords[a] = min + (max - min) * (float) k / 256.f;
+          hb_ot_var_normalize_coords (face, coords.size(), coords.data(), result.data());
+          printf ("sample %u %u %08x %d\n", a, k,
+                  var_float_bits (coords[a]), result[a]);
+        }
+        const char *labels[] = {"outside_min", "outside_max", "half_min", "half_max"};
+        float span = max - min;
+        float def = axes[a].default_value;
+        float values[] = {min - span, max + span,
+                          def - (def - min) / 32768.f,
+                          def + (max - def) / 32768.f};
+        for (unsigned k = 0; k < 4; k++)
+        {
+          coords[a] = values[k];
+          hb_ot_var_normalize_coords (face, coords.size(), coords.data(), result.data());
+          printf ("sample %u %s %08x %d\n", a, labels[k],
+                  var_float_bits (coords[a]), result[a]);
+        }
+      }
+    }
+    printf ("end\n");
+    hb_font_destroy (font);
+    hb_face_destroy (face);
+  }
+  hb_blob_destroy (blob);
+  return 0;
+}
 
 static const hb_ot_metrics_tag_t metric_tags[] = {
   HB_OT_METRICS_TAG_HORIZONTAL_ASCENDER,
@@ -393,7 +666,8 @@ static void print_tag (hb_tag_t t)
   printf ("%s", s);
 }
 
-static void dump_scale (hb_font_t *font, unsigned num_glyphs, int x, int y)
+static void dump_scale (hb_font_t *font, unsigned num_glyphs, int x, int y,
+			const unsigned *selected = nullptr, unsigned selected_count = 0)
 {
   hb_font_set_scale (font, x, y);
   printf ("scale %d %d\n", x, y);
@@ -415,8 +689,9 @@ static void dump_scale (hb_font_t *font, unsigned num_glyphs, int x, int y)
     printf (" %d %d %d\n", found ? 1 : 0, v, fallback);
   }
 
-  for (unsigned g = 0; g < num_glyphs; g++)
+  for (unsigned n = 0; n < (selected ? selected_count : num_glyphs); n++)
   {
+    unsigned g = selected ? selected[n] : n;
     hb_position_t ox = 0, oy = 0;
     hb_glyph_extents_t ext = {0, 0, 0, 0};
     hb_position_t ha = hb_font_get_glyph_h_advance (font, g);
@@ -436,7 +711,7 @@ static int dump_metrics (hb_blob_t *blob)
   for (unsigned i = 0; i < count; i++)
   {
     hb_face_t *face = hb_face_create (blob, i);
-    hb_font_t *font = hb_font_create (face);
+    hb_font_t *font = var_create_font (face);
     unsigned num_glyphs = hb_face_get_glyph_count (face);
     int upem = (int) hb_face_get_upem (face);
 
@@ -451,6 +726,45 @@ static int dump_metrics (hb_blob_t *blob)
       dump_scale (font, num_glyphs, scales[s][0], scales[s][1]);
     printf ("end\n");
 
+    hb_font_destroy (font);
+    hb_face_destroy (face);
+  }
+  return 0;
+}
+
+static int dump_sampled_metrics (hb_blob_t *blob, const char *plan)
+{
+  unsigned faces = hb_face_count (blob);
+  if (!faces) faces = 1;
+  for (unsigned i = 0; i < faces; i++)
+  {
+    FILE *fp = fopen (plan, "r");
+    if (!fp) { fprintf (stderr, "hb-dump: cannot read %s\n", plan); return 1; }
+    hb_face_t *face = hb_face_create (blob, i);
+    hb_font_t *font = var_create_font (face);
+    unsigned num_glyphs = hb_face_get_glyph_count (face);
+    unsigned selected[128], count = 0, face_index = 0, glyph = 0;
+    int scanned = 0;
+    while ((scanned = fscanf (fp, "%u %u", &face_index, &glyph)) == 2)
+    {
+      if (face_index >= faces || glyph >= num_glyphs ||
+	  (face_index == i && (count == 128 || (count && selected[count - 1] >= glyph))))
+      {
+	fprintf (stderr, "hb-dump: invalid sampled glyph %u %u\n", face_index, glyph);
+	fclose (fp); hb_font_destroy (font); hb_face_destroy (face); return 1;
+      }
+      if (face_index == i) selected[count++] = glyph;
+    }
+    fclose (fp);
+    if (scanned != EOF || (num_glyphs && !count))
+    {
+      fprintf (stderr, "hb-dump: invalid or empty plan for face %u\n", i);
+      hb_font_destroy (font); hb_face_destroy (face); return 1;
+    }
+    int upem = (int) hb_face_get_upem (face);
+    printf ("face %u\nnum_glyphs %u\nupem %d\n", i, num_glyphs, upem);
+    dump_scale (font, num_glyphs, upem, upem, selected, count);
+    printf ("end\n");
     hb_font_destroy (font);
     hb_face_destroy (face);
   }
@@ -490,7 +804,7 @@ static int dump_names (hb_blob_t *blob)
   for (unsigned i = 0; i < count; i++)
   {
     hb_face_t *face = hb_face_create (blob, i);
-    hb_font_t *font = hb_font_create (face);
+    hb_font_t *font = var_create_font (face);
     printf ("face %u\n", i);
     unsigned n = 0;
     const hb_ot_name_entry_t *entries = hb_ot_name_list_names (face, &n);
@@ -548,7 +862,7 @@ static int dump_cmap (hb_blob_t *blob)
   for (unsigned i = 0; i < count; i++)
   {
     hb_face_t *face = hb_face_create (blob, i);
-    hb_font_t *font = hb_font_create (face);
+    hb_font_t *font = var_create_font (face);
     printf ("face %u\nnum_glyphs %u\n", i, hb_face_get_glyph_count (face));
     for (hb_codepoint_t c = 0; c <= 0x10FFFFu; c++)
     {
@@ -557,6 +871,33 @@ static int dump_cmap (hb_blob_t *blob)
 	printf ("map %u %u\n", c, g);
     }
     printf ("end\n");
+    hb_font_destroy (font);
+    hb_face_destroy (face);
+  }
+  return 0;
+}
+
+static int dump_cmap_digest (hb_blob_t *blob)
+{
+  unsigned count = hb_face_count (blob);
+  if (!count) count = 1;
+  for (unsigned i = 0; i < count; i++)
+  {
+    hb_face_t *face = hb_face_create (blob, i);
+    hb_font_t *font = var_create_font (face);
+    uint64_t hash = UINT64_C (14695981039346656037);
+    for (hb_codepoint_t c = 0; c <= 0x10FFFFu; c++)
+    {
+      if (c >= 0xD800u && c <= 0xDFFFu) continue;
+      hb_codepoint_t g = 0;
+      hb_font_get_nominal_glyph (font, c, &g);
+      for (unsigned b = 0; b < 4; b++)
+      {
+	hash ^= (g >> (b * 8)) & 0xFFu;
+	hash *= UINT64_C (1099511628211);
+      }
+    }
+    printf ("face %u cmap %016llx\n", i, (unsigned long long) hash);
     hb_font_destroy (font);
     hb_face_destroy (face);
   }
@@ -692,7 +1033,7 @@ static int dump_baselines (hb_blob_t *blob)
   for (unsigned i = 0; i < count; i++)
   {
     hb_face_t *face = hb_face_create (blob, i);
-    hb_font_t *font = hb_font_create (face);
+    hb_font_t *font = var_create_font (face);
     int upem = (int) hb_face_get_upem (face);
     tag_list_t scripts = {{0}, 0}, languages = {{0}, 0};
     for (unsigned s = 0; s < sizeof (base_scripts) / sizeof (base_scripts[0]); s++)
@@ -1517,7 +1858,7 @@ static int dump_serialize (hb_blob_t *blob, const char *text_path)
     return 1;
   }
   hb_face_t *face = hb_face_create (blob, 0);
-  hb_font_t *font = hb_font_create (face);
+  hb_font_t *font = var_create_font (face);
   char line[4096];
   unsigned line_no = 0;
   while (fgets (line, sizeof (line), fp))
@@ -1582,7 +1923,7 @@ static int dump_deserialize (hb_blob_t *blob, const char *corpus_path)
     return 1;
   }
   hb_face_t *face = hb_face_create (blob, 0);
-  hb_font_t *font = hb_font_create (face);
+  hb_font_t *font = var_create_font (face);
   std::string line;
   int c;
   while ((c = fgetc (fp)) != EOF)
@@ -1809,7 +2150,7 @@ static int dump_paint (hb_blob_t *blob)
   for (unsigned i = 0; i < count; i++)
   {
     hb_face_t *face = hb_face_create (blob, i);
-    hb_font_t *font = hb_font_create (face);
+    hb_font_t *font = var_create_font (face);
     hb_font_set_synthetic_slant (font, paint_slant);
     unsigned num_glyphs = hb_face_get_glyph_count (face);
     unsigned palettes = hb_ot_color_palette_get_count (face);
@@ -1841,6 +2182,123 @@ static int dump_paint (hb_blob_t *blob)
   return 0;
 }
 
+/* ADR 0031: the bytes returned for each sbix PNG at the default ppem. */
+static int dump_png_digest (int, char **argv)
+{
+  hb_blob_t *blob = hb_blob_create_from_file_or_fail (argv[2]);
+  if (!blob) { fprintf (stderr, "hb-dump: cannot read %s\n", argv[2]); return 1; }
+  hb_face_t *face = hb_face_create (blob, 0);
+  hb_font_t *font = var_create_font (face);
+  hb_font_set_ppem (font, 0, 0);
+  unsigned count = hb_face_get_glyph_count (face);
+  for (unsigned glyph = 0; glyph < count; glyph++)
+  {
+    hb_blob_t *png = hb_ot_color_glyph_reference_png (font, glyph);
+    unsigned length = hb_blob_get_length (png);
+    const char *data = hb_blob_get_data (png, nullptr);
+    unsigned long long hash = length ? 0xcbf29ce484222325ULL : 0;
+    for (unsigned i = 0; i < length; i++)
+      hash = (hash ^ (unsigned char) data[i]) * 0x100000001b3ULL;
+    printf ("glyph %u %u %016llx\n", glyph, length, hash);
+    hb_blob_destroy (png);
+  }
+  hb_font_destroy (font);
+  hb_face_destroy (face);
+  hb_blob_destroy (blob);
+  return 0;
+}
+
+/* ADR 0031: one color paint at explicit design coordinates, as FNV-1a. */
+static int dump_paint_var (int, char **argv)
+{
+  hb_blob_t *blob = hb_blob_create_from_file_or_fail (argv[2]);
+  if (!blob) { fprintf (stderr, "hb-dump: cannot read %s\n", argv[2]); return 1; }
+  hb_face_t *face = hb_face_create (blob, 0);
+  hb_font_t *font = var_create_font (face);
+  char *end = nullptr;
+  unsigned long glyph = strtoul (argv[3], &end, 10);
+  if (!*argv[3] || *end || glyph >= hb_face_get_glyph_count (face))
+  {
+    hb_font_destroy (font); hb_face_destroy (face); hb_blob_destroy (blob); return 2;
+  }
+  if (strcmp (argv[4], "-") != 0)
+  {
+    std::vector<hb_variation_t> variations;
+    std::string coordinates (argv[4]);
+    size_t begin = 0;
+    while (begin < coordinates.size ())
+    {
+      size_t stop = coordinates.find (',', begin);
+      if (stop == std::string::npos) stop = coordinates.size ();
+      hb_variation_t variation;
+      if (!hb_variation_from_string (coordinates.data () + begin, (int) (stop - begin), &variation))
+      {
+        hb_font_destroy (font); hb_face_destroy (face); hb_blob_destroy (blob); return 2;
+      }
+      variations.push_back (variation);
+      begin = stop + 1;
+    }
+    hb_font_set_variations (font, variations.data (), (unsigned) variations.size ());
+  }
+  paint_text_t text;
+  text.level = 0;
+  hb_paint_funcs_t *funcs = paint_text_funcs ();
+  hb_font_paint_glyph (font, glyph, funcs, &text, 0, HB_COLOR (0, 0, 0, 255));
+  unsigned long long hash = 0xcbf29ce484222325ULL;
+  for (unsigned i = 0; i < text.text.length; i++)
+    hash = (hash ^ (unsigned char) text.text[i]) * 0x100000001b3ULL;
+  printf ("%016llx\n", hash);
+  hb_paint_funcs_destroy (funcs);
+  hb_font_destroy (font);
+  hb_face_destroy (face);
+  hb_blob_destroy (blob);
+  return 0;
+}
+
+/* ADR 0031: one sampled glyph's metrics at explicit design coordinates. */
+static int dump_var_metrics (int, char **argv)
+{
+  hb_blob_t *blob = hb_blob_create_from_file_or_fail (argv[2]);
+  if (!blob) { fprintf (stderr, "hb-dump: cannot read %s\n", argv[2]); return 1; }
+  hb_face_t *face = hb_face_create (blob, 0);
+  hb_font_t *font = var_create_font (face);
+  char *end = nullptr;
+  unsigned long glyph = strtoul (argv[3], &end, 10);
+  if (!*argv[3] || *end || glyph >= hb_face_get_glyph_count (face))
+  {
+    hb_font_destroy (font); hb_face_destroy (face); hb_blob_destroy (blob); return 2;
+  }
+  if (strcmp (argv[4], "-") != 0)
+  {
+    std::vector<hb_variation_t> variations;
+    std::string coordinates (argv[4]);
+    size_t begin = 0;
+    while (begin < coordinates.size ())
+    {
+      size_t stop = coordinates.find (',', begin);
+      if (stop == std::string::npos) stop = coordinates.size ();
+      hb_variation_t variation;
+      if (!hb_variation_from_string (coordinates.data () + begin, (int) (stop - begin), &variation))
+      {
+        hb_font_destroy (font); hb_face_destroy (face); hb_blob_destroy (blob); return 2;
+      }
+      variations.push_back (variation);
+      begin = stop + 1;
+    }
+    hb_font_set_variations (font, variations.data (), (unsigned) variations.size ());
+  }
+  unsigned selected = (unsigned) glyph;
+  printf ("face 0\nnum_glyphs %u\nupem %u\n", hb_face_get_glyph_count (face),
+          hb_face_get_upem (face));
+  dump_scale (font, hb_face_get_glyph_count (face), (int) hb_face_get_upem (face),
+              (int) hb_face_get_upem (face), &selected, 1);
+  printf ("end\n");
+  hb_font_destroy (font);
+  hb_face_destroy (face);
+  hb_blob_destroy (blob);
+  return 0;
+}
+
 static int dump_color (hb_blob_t *blob)
 {
   unsigned count = hb_face_count (blob);
@@ -1848,7 +2306,7 @@ static int dump_color (hb_blob_t *blob)
   for (unsigned i = 0; i < count; i++)
   {
     hb_face_t *face = hb_face_create (blob, i);
-    hb_font_t *font = hb_font_create (face);
+    hb_font_t *font = var_create_font (face);
     unsigned num_glyphs = hb_face_get_glyph_count (face);
     printf ("face %u\n", i);
     printf ("has %d %d %d %d %d\n", hb_ot_color_has_layers (face) ? 1 : 0,
@@ -1917,7 +2375,7 @@ static int dump_extents (hb_blob_t *blob)
   for (unsigned i = 0; i < count; i++)
   {
     hb_face_t *face = hb_face_create (blob, i);
-    hb_font_t *font = hb_font_create (face);
+    hb_font_t *font = var_create_font (face);
     unsigned num_glyphs = hb_face_get_glyph_count (face);
     printf ("face %u\n", i);
     for (unsigned g = 0; g < num_glyphs; g++)
@@ -1971,7 +2429,7 @@ static int dump_mult ()
   {
     hb_face_t *face = hb_face_builder_create ();
     hb_face_set_upem (face, upem);
-    hb_font_t *font = hb_font_create (face);
+    hb_font_t *font = var_create_font (face);
     hb_font_set_scale (font, scale, scale);
     printf ("%lld\n", (long long) font->x_mult);
     hb_font_destroy (font);
@@ -2026,7 +2484,7 @@ static int dump_shape (int argc, char **argv)
   std::vector<hb_feature_t> features;
   parse_feature_list (argv[5], &features);
   hb_face_t *face = hb_face_create (blob, 0);
-  hb_font_t *font = hb_font_create (face);
+  hb_font_t *font = var_create_font (face);
   hb_buffer_t *b = hb_buffer_create ();
   std::string line;
   int c;
@@ -2053,6 +2511,69 @@ static int dump_shape (int argc, char **argv)
   }
   fclose (fp);
   hb_buffer_destroy (b);
+  hb_font_destroy (font);
+  hb_face_destroy (face);
+  hb_blob_destroy (blob);
+  return 0;
+}
+
+static int dump_corpus_shape (int argc, char **argv)
+{
+  hb_blob_t *blob = hb_blob_create_from_file_or_fail (argv[2]);
+  if (!blob) { fprintf (stderr, "hb-dump: cannot read %s\n", argv[2]); return 1; }
+  unsigned face_index = (unsigned) strtoul (argv[3], nullptr, 10);
+  unsigned faces = hb_face_count (blob);
+  if (!faces) faces = 1;
+  if (face_index >= faces) { hb_blob_destroy (blob); return 2; }
+  hb_face_t *face = hb_face_create (blob, face_index);
+  hb_font_t *font = var_create_font (face);
+  if (strcmp (argv[9], "-") != 0)
+  {
+    std::vector<hb_variation_t> variations;
+    std::string coordinates (argv[9]);
+    size_t begin = 0;
+    while (begin < coordinates.size ())
+    {
+      size_t end = coordinates.find (',', begin);
+      if (end == std::string::npos) end = coordinates.size ();
+      hb_variation_t variation;
+      if (!hb_variation_from_string (coordinates.data () + begin, (int) (end - begin), &variation))
+      {
+	hb_font_destroy (font); hb_face_destroy (face); hb_blob_destroy (blob); return 2;
+      }
+      variations.push_back (variation);
+      begin = end + 1;
+    }
+    hb_font_set_variations (font, variations.data (), (unsigned) variations.size ());
+  }
+  std::vector<hb_feature_t> features;
+  if (strcmp (argv[8], "-") != 0) parse_feature_list (argv[8], &features);
+  hb_buffer_t *buffer = hb_buffer_create ();
+  std::vector<hb_codepoint_t> points;
+  std::string hex (argv[4]);
+  size_t begin = 0;
+  while (begin < hex.size ())
+  {
+    size_t end = hex.find (',', begin);
+    if (end == std::string::npos) end = hex.size ();
+    std::string part = hex.substr (begin, end - begin);
+    char *tail = nullptr;
+    unsigned long value = strtoul (part.c_str (), &tail, 16);
+    if (!tail || *tail || value > 0x10FFFFu || (value >= 0xD800u && value <= 0xDFFFu))
+    {
+      hb_buffer_destroy (buffer); hb_font_destroy (font); hb_face_destroy (face);
+      hb_blob_destroy (blob); return 2;
+    }
+    points.push_back ((hb_codepoint_t) value);
+    begin = end + 1;
+  }
+  hb_buffer_add_utf32 (buffer, points.data (), (int) points.size (), 0, (int) points.size ());
+  hb_buffer_set_script (buffer, hb_script_from_string (argv[5], -1));
+  hb_buffer_set_language (buffer, hb_language_from_string (argv[6], -1));
+  hb_buffer_set_direction (buffer, hb_direction_from_string (argv[7], -1));
+  hb_shape (font, buffer, features.data (), (unsigned) features.size ());
+  print_shaped (buffer, font);
+  hb_buffer_destroy (buffer);
   hb_font_destroy (font);
   hb_face_destroy (face);
   hb_blob_destroy (blob);
@@ -2090,7 +2611,7 @@ static int dump_shape_random (int argc, char **argv)
   for (unsigned i = 0; i < faces; i++)
   {
     hb_face_t *face = hb_face_create (blob, i);
-    hb_font_t *font = hb_font_create (face);
+    hb_font_t *font = var_create_font (face);
     printf ("face %u\n", i);
     /* The mapped characters, grouped by script, scripts in tag order. */
     std::vector<std::pair<uint32_t, std::vector<hb_codepoint_t>>> groups;
@@ -2294,6 +2815,530 @@ static int dump_layout_map (hb_blob_t *blob)
   return 0;
 }
 
+/* --repack: see the top of the file. */
+struct repack_reader_t
+{
+  const unsigned char *p, *end;
+  bool ok;
+  unsigned u8 () { if (p >= end) { ok = false; return 0; } return *p++; }
+  unsigned u32 ()
+  {
+    unsigned v = 0;
+    for (unsigned i = 0; i < 4; i++) v = (v << 8) | u8 ();
+    return v;
+  }
+};
+
+struct repack_link_t
+{
+  unsigned width, is_signed, whence, bias, position, objidx;
+};
+
+struct repack_object_t
+{
+  std::vector<char> bytes;
+  std::vector<repack_link_t> real_links;
+  std::vector<unsigned> virtual_links;
+};
+
+static void print_repack_result (unsigned i, hb_blob_t *blob)
+{
+  if (!blob)
+  {
+    printf ("graph %u fail\n", i);
+    return;
+  }
+  unsigned len = 0;
+  const char *data = hb_blob_get_data (blob, &len);
+  uint64_t h = 0xcbf29ce484222325ull;
+  for (unsigned k = 0; k < len; k++)
+  {
+    h ^= (unsigned char) data[k];
+    h *= 0x100000001b3ull;
+  }
+  printf ("graph %u ok %u %016llx\n", i, len, (unsigned long long) h);
+  hb_blob_destroy (blob);
+}
+
+static hb_blob_t *repack_serializer (hb_tag_t tag, const std::vector<repack_object_t> &objs)
+{
+  size_t total = 1024;
+  for (const auto &o : objs) total += o.bytes.size ();
+  std::vector<char> buf (total);
+  hb_serialize_context_t c (buf.data (), total);
+  c.start_serialize<char> ();
+  for (unsigned i = 0; i < objs.size (); i++)
+  {
+    const auto &o = objs[i];
+    c.push ();
+    char *head = c.allocate_size<char> (o.bytes.size ());
+    if (!head) return nullptr;
+    if (o.bytes.size ()) memcpy (head, o.bytes.data (), o.bytes.size ());
+    for (const auto &l : o.real_links)
+    {
+      char *at = head + l.position;
+      hb_serialize_context_t::whence_t w = (hb_serialize_context_t::whence_t) l.whence;
+      if (l.width == 2 && l.is_signed) c.add_link (*(OT::Offset<OT::HBINT16> *) at, l.objidx, w, l.bias);
+      else if (l.width == 2) c.add_link (*(OT::Offset16 *) at, l.objidx, w, l.bias);
+      else if (l.width == 3) c.add_link (*(OT::Offset24 *) at, l.objidx, w, l.bias);
+      else if (l.is_signed) c.add_link (*(OT::Offset<OT::HBINT32> *) at, l.objidx, w, l.bias);
+      else c.add_link (*(OT::Offset32 *) at, l.objidx, w, l.bias);
+    }
+    for (unsigned v : o.virtual_links) c.add_virtual_link (v);
+    if (c.pop_pack (false) != i + 1) return nullptr;
+  }
+  c.end_serialize ();
+  if (c.in_error () && !c.only_offset_overflow ()) return nullptr;
+  if (!c.offset_overflow ()) return c.copy_blob ();
+  return hb_resolve_overflows (c.object_graph (), tag);
+}
+
+static hb_blob_t *repack_or_fail (hb_tag_t tag, const std::vector<repack_object_t> &objs)
+{
+  std::vector<hb_subset_serialize_object_t> hb (objs.size ());
+  std::vector<std::vector<hb_subset_serialize_link_t>> real (objs.size ()), virt (objs.size ());
+  for (unsigned i = 0; i < objs.size (); i++)
+  {
+    for (const auto &l : objs[i].real_links)
+      real[i].push_back (hb_subset_serialize_link_t {l.width, l.position, l.objidx});
+    for (unsigned v : objs[i].virtual_links)
+      virt[i].push_back (hb_subset_serialize_link_t {0, 0, v});
+    hb[i].head = (char *) objs[i].bytes.data ();
+    hb[i].tail = hb[i].head + objs[i].bytes.size ();
+    hb[i].num_real_links = real[i].size ();
+    hb[i].real_links = real[i].data ();
+    hb[i].num_virtual_links = virt[i].size ();
+    hb[i].virtual_links = virt[i].data ();
+  }
+  return hb_subset_serialize_or_fail (tag, hb.data (), hb.size ());
+}
+
+static int dump_repack (hb_blob_t *blob)
+{
+  unsigned len = 0;
+  const char *data = hb_blob_get_data (blob, &len);
+  repack_reader_t r = {(const unsigned char *) data, (const unsigned char *) data + len, true};
+  unsigned count = r.u32 ();
+  for (unsigned i = 0; i < count && r.ok; i++)
+  {
+    hb_tag_t tag = r.u32 ();
+    unsigned kind = r.u32 ();
+    unsigned n = r.u32 ();
+    std::vector<repack_object_t> objs (n);
+    for (auto &o : objs)
+    {
+      unsigned size = r.u32 ();
+      if ((size_t) (r.end - r.p) < size) { r.ok = false; break; }
+      o.bytes.assign ((const char *) r.p, (const char *) r.p + size);
+      r.p += size;
+      unsigned nr = r.u32 ();
+      for (unsigned k = 0; k < nr && r.ok; k++)
+      {
+        repack_link_t l;
+        l.width = r.u8 ();
+        l.is_signed = r.u8 ();
+        l.whence = r.u8 ();
+        r.u8 ();
+        l.bias = r.u32 ();
+        l.position = r.u32 ();
+        l.objidx = r.u32 ();
+        o.real_links.push_back (l);
+      }
+      unsigned nv = r.u32 ();
+      for (unsigned k = 0; k < nv && r.ok; k++)
+        o.virtual_links.push_back (r.u32 ());
+    }
+    if (!r.ok) break;
+    print_repack_result (i, kind ? repack_or_fail (tag, objs) : repack_serializer (tag, objs));
+  }
+  if (!r.ok)
+  {
+    fprintf (stderr, "hb-dump: truncated --repack file\n");
+    return 1;
+  }
+  return 0;
+}
+
+/* --subset: util/hb-subset.cc's option callbacks without GLib. */
+
+struct subset_args_t
+{
+  hb_face_t *face = nullptr;
+  hb_font_t *font = nullptr;
+  hb_subset_input_t *input = nullptr;
+};
+
+static bool subset_fail (const char *fmt, const char *s)
+{
+  fprintf (stderr, "hb-dump --subset: ");
+  fprintf (stderr, fmt, s);
+  fprintf (stderr, "\n");
+  return false;
+}
+
+/* The suffix of an option name: '+', '-' or 0. */
+static char subset_suffix (const char *name)
+{
+  size_t n = strlen (name);
+  char c = n ? name[n - 1] : 0;
+  return c == '+' || c == '-' ? c : 0;
+}
+
+/* The start of every set option: clears the set without a suffix, and
+ * handles `*`; returns true when the value is done. */
+static bool subset_set_start (hb_set_t *set, char suffix, const char *arg)
+{
+  if (!suffix) hb_set_clear (set);
+  if (strcmp (arg, "*") != 0) return false;
+  hb_set_clear (set);
+  if (suffix != '-') hb_set_invert (set);
+  return true;
+}
+
+static void subset_set_put (hb_set_t *set, char suffix, hb_codepoint_t a, hb_codepoint_t b)
+{
+  if (suffix != '-') hb_set_add_range (set, a, b);
+  else hb_set_del_range (set, a, b);
+}
+
+/* parse_gids (base 10, ", ") and parse_unicodes (base 16, its
+ * delimiters). */
+static bool subset_numbers (hb_set_t *set, char suffix, const char *arg, int base,
+			    const char *delimiters, bool reject_minus)
+{
+  if (subset_set_start (set, suffix, arg)) return true;
+  char *s = (char *) arg;
+  char *p;
+  while (s && *s)
+  {
+    while (*s && strchr (delimiters, *s)) s++;
+    if (!*s) break;
+    errno = 0;
+    hb_codepoint_t start = strtoul (s, &p, base);
+    if ((reject_minus && s[0] == '-') || errno || s == p)
+      return subset_fail ("failed parsing at: '%s'", s);
+    hb_codepoint_t end = start;
+    if (p && p[0] == '-')
+    {
+      s = ++p;
+      end = strtoul (s, &p, base);
+      if (s[0] == '-' || errno || s == p)
+	return subset_fail ("failed parsing at: '%s'", s);
+      if (end < start) return subset_fail ("invalid range at: '%s'", s);
+    }
+    subset_set_put (set, suffix, start, end);
+    s = p;
+  }
+  return true;
+}
+
+/* parse_nameids and parse_name_languages: base 10, no ranges. */
+static bool subset_ids (hb_set_t *set, char suffix, const char *arg)
+{
+  if (subset_set_start (set, suffix, arg)) return true;
+  char *s = (char *) arg;
+  char *p;
+  while (s && *s)
+  {
+    while (*s && strchr (", ", *s)) s++;
+    if (!*s) break;
+    errno = 0;
+    hb_codepoint_t u = strtoul (s, &p, 10);
+    if (errno || s == p) return subset_fail ("failed parsing id at: '%s'", s);
+    subset_set_put (set, suffix, u, u);
+    s = p;
+  }
+  return true;
+}
+
+/* parse_layout_tag_list and parse_drop_tables. */
+static bool subset_tags (hb_set_t *set, char suffix, const char *arg)
+{
+  if (subset_set_start (set, suffix, arg)) return true;
+  std::string copy (arg);
+  for (char *s = strtok (&copy[0], ", "); s; s = strtok (nullptr, ", "))
+  {
+    if (strlen (s) > 4) return subset_fail ("failed parsing tag at: '%s'", s);
+    hb_tag_t tag = hb_tag_from_string (s, strlen (s));
+    subset_set_put (set, suffix, tag, tag);
+  }
+  return true;
+}
+
+/* parse_text, with g_utf8_get_char's decoding of valid UTF-8. */
+static bool subset_text (hb_set_t *set, char suffix, const char *arg)
+{
+  if (subset_set_start (set, suffix, arg)) return true;
+  const unsigned char *c = (const unsigned char *) arg;
+  while (*c)
+  {
+    unsigned n = *c < 0x80 ? 1 : *c < 0xE0 ? 2 : *c < 0xF0 ? 3 : 4;
+    hb_codepoint_t cp = n == 1 ? *c : *c & (0x7F >> n);
+    for (unsigned i = 1; i < n && c[i]; i++)
+      cp = (cp << 6) | (c[i] & 0x3F);
+    subset_set_put (set, suffix, cp, cp);
+    for (unsigned i = 0; i < n && *c; i++) c++;
+  }
+  return true;
+}
+
+/* parse_glyphs. */
+static bool subset_glyphs (subset_args_t *a, char suffix, const char *arg)
+{
+  hb_set_t *set = hb_subset_input_glyph_set (a->input);
+  if (subset_set_start (set, suffix, arg)) return true;
+  if (!a->font) a->font = var_create_font (a->face);
+  const char *p = arg, *p_end = arg + strlen (arg);
+  while (p < p_end)
+  {
+    while (p < p_end && (*p == ' ' || *p == ',')) p++;
+    const char *end = p;
+    while (end < p_end && *end != ' ' && *end != ',') end++;
+    if (p < end)
+    {
+      hb_codepoint_t gid;
+      if (!hb_font_glyph_from_string (a->font, p, end - p, &gid))
+	return subset_fail ("failed parsing glyph name: '%s'", p);
+      subset_set_put (set, suffix, gid, gid);
+    }
+    p = end + 1;
+  }
+  return true;
+}
+
+/* parse_glyph_map. */
+static bool subset_gid_map (subset_args_t *a, const char *arg)
+{
+  hb_set_t *glyphs = hb_subset_input_glyph_set (a->input);
+  char *s = (char *) arg;
+  char *p;
+  while (s && *s)
+  {
+    while (*s && strchr (", ", *s)) s++;
+    if (!*s) break;
+    errno = 0;
+    hb_codepoint_t from = strtoul (s, &p, 10);
+    if (s[0] == '-' || errno || s == p || !p || p[0] != ':')
+      return subset_fail ("failed parsing glyph map at: '%s'", s);
+    s = ++p;
+    hb_codepoint_t to = strtoul (s, &p, 10);
+    if (s[0] == '-' || errno || s == p)
+      return subset_fail ("failed parsing glyph map at: '%s'", s);
+    hb_set_add (glyphs, from);
+    hb_map_set (hb_subset_input_old_to_new_glyph_mapping (a->input), from, to);
+    s = p;
+  }
+  return true;
+}
+
+/* util/helper-subset.hh's parse_instancing_spec. */
+static bool subset_instance (subset_args_t *a, const char *arg)
+{
+  std::string copy (arg);
+  char *rest = &copy[0];
+  char *s;
+  while ((s = strtok (rest, "=")))
+  {
+    rest = nullptr;
+    unsigned len = strlen (s);
+    if (len > 4) return subset_fail ("failed parsing axis tag at: '%s'", s);
+    if (strcmp (s, "*") == 0)
+    {
+      s = strtok (nullptr, ", ");
+      if (!s || strcmp (s, "drop") != 0)
+	return subset_fail ("failed parsing axis position at: '%s'", s ? s : "");
+      if (!hb_subset_input_pin_all_axes_to_default (a->input, a->face))
+	return subset_fail ("%s", "failed pinning all axes to default");
+      continue;
+    }
+    hb_tag_t axis = hb_tag_from_string (s, len);
+    s = strtok (nullptr, ", ");
+    if (!s) return subset_fail ("value not specified for axis '%s'", "");
+    if (strcmp (s, "drop") == 0)
+    {
+      if (!hb_subset_input_pin_axis_to_default (a->input, a->face, axis))
+	return subset_fail ("cannot pin axis at: '%s'", s);
+      continue;
+    }
+    float min, def, max;
+    if (!hb_subset_axis_range_from_string (s, -1, &min, &max, &def))
+      return subset_fail ("failed parsing axis range: '%s'", s);
+    if (!hb_subset_input_set_axis_range (a->input, a->face, axis, min, max, def))
+      return subset_fail ("cannot set axis range at: '%s'", s);
+  }
+  return true;
+}
+
+struct subset_flag_t
+{
+  const char *name;
+  hb_subset_flags_t flag;
+};
+
+static const subset_flag_t subset_flags[] = {
+  {"no-hinting", HB_SUBSET_FLAGS_NO_HINTING},
+  {"retain-gids", HB_SUBSET_FLAGS_RETAIN_GIDS},
+  {"desubroutinize", HB_SUBSET_FLAGS_DESUBROUTINIZE},
+  {"downgrade-cff2", HB_SUBSET_FLAGS_DOWNGRADE_CFF2},
+  {"cff-identity-charset", HB_SUBSET_FLAGS_CFF_IDENTITY_CHARSET},
+  {"name-legacy", HB_SUBSET_FLAGS_NAME_LEGACY},
+  {"set-overlaps-flag", HB_SUBSET_FLAGS_SET_OVERLAPS_FLAG},
+  {"notdef-outline", HB_SUBSET_FLAGS_NOTDEF_OUTLINE},
+  {"no-prune-unicode-ranges", HB_SUBSET_FLAGS_NO_PRUNE_UNICODE_RANGES},
+  {"no-layout-closure", HB_SUBSET_FLAGS_NO_LAYOUT_CLOSURE},
+  {"no-bidi-closure", HB_SUBSET_FLAGS_NO_BIDI_CLOSURE},
+  {"glyph-names", HB_SUBSET_FLAGS_GLYPH_NAMES},
+  {"passthrough-tables", HB_SUBSET_FLAGS_PASSTHROUGH_UNRECOGNIZED},
+  {"iftb-requirements", HB_SUBSET_FLAGS_IFTB_REQUIREMENTS},
+  {"retain-num-glyphs", HB_SUBSET_FLAGS_RETAIN_NUM_GLYPHS},
+  {"optimize", HB_SUBSET_FLAGS_OPTIMIZE_IUP_DELTAS},
+};
+
+/* Applies one option with a value; false on a bad value. */
+static bool subset_option (subset_args_t *a, const std::string &name, const char *arg)
+{
+  std::string base = name;
+  char suffix = subset_suffix (name.c_str ());
+  if (suffix) base.erase (base.size () - 1);
+  hb_subset_input_t *in = a->input;
+  if (base == "gids")
+    return subset_numbers (hb_subset_input_glyph_set (in), suffix, arg, 10, ", ", true);
+  if (base == "unicodes")
+    return subset_numbers (hb_subset_input_unicode_set (in), suffix, arg, 16,
+			   "<+->{},;&#\\xXuUnNiI\n\t\v\f\r ", false);
+  if (base == "text") return subset_text (hb_subset_input_unicode_set (in), suffix, arg);
+  if (base == "glyphs") return subset_glyphs (a, suffix, arg);
+  if (base == "name-IDs")
+    return subset_ids (hb_subset_input_set (in, HB_SUBSET_SETS_NAME_ID), suffix, arg);
+  if (base == "name-languages")
+    return subset_ids (hb_subset_input_set (in, HB_SUBSET_SETS_NAME_LANG_ID), suffix, arg);
+  if (base == "layout-features")
+    return subset_tags (hb_subset_input_set (in, HB_SUBSET_SETS_LAYOUT_FEATURE_TAG), suffix, arg);
+  if (base == "layout-scripts")
+    return subset_tags (hb_subset_input_set (in, HB_SUBSET_SETS_LAYOUT_SCRIPT_TAG), suffix, arg);
+  if (base == "drop-tables")
+    return subset_tags (hb_subset_input_set (in, HB_SUBSET_SETS_DROP_TABLE_TAG), suffix, arg);
+  if (name == "gid-map") return subset_gid_map (a, arg);
+  if (name == "variations" || name == "instance") return subset_instance (a, arg);
+  return subset_fail ("unknown option --%s", name.c_str ());
+}
+
+static int dump_subset (int argc, char **argv)
+{
+  /* The font first, as hb-subset parses the face before the options. */
+  const char *font_file = nullptr, *output_file = nullptr;
+  unsigned face_index = 0, iterations = 1;
+  bool preprocess = false;
+  std::vector<std::pair<std::string, const char *>> options;
+  for (int i = 2; i < argc; i++)
+  {
+    std::string a = argv[i];
+    const char *value = nullptr;
+    std::string name;
+    if (a == "-o")
+      name = "output-file";
+    else if (a.compare (0, 2, "--") == 0)
+    {
+      size_t eq = a.find ('=');
+      name = a.substr (2, eq == std::string::npos ? std::string::npos : eq - 2);
+      if (eq != std::string::npos) value = argv[i] + eq + 1;
+    }
+    else
+    {
+      subset_fail ("unexpected argument '%s'", argv[i]);
+      return 2;
+    }
+    bool is_flag = name == "keep-everything" || name == "preprocess" || name == "preprocess-face";
+    for (const auto &f : subset_flags) is_flag = is_flag || name == f.name;
+    if (is_flag)
+    {
+      if (value) { subset_fail ("--%s takes no value", name.c_str ()); return 2; }
+      if (name == "preprocess" || name == "preprocess-face") preprocess = true;
+      else options.push_back ({name, nullptr});
+      continue;
+    }
+    if (!value)
+    {
+      if (i + 1 >= argc) { subset_fail ("--%s needs a value", name.c_str ()); return 2; }
+      value = argv[++i];
+    }
+    if (name == "font-file") font_file = value;
+    else if (name == "output-file") output_file = value;
+    else if (name == "face-index") face_index = strtoul (value, nullptr, 10);
+    else if (name == "num-iterations") iterations = strtoul (value, nullptr, 10);
+    else options.push_back ({name, value});
+  }
+  if (!font_file || !output_file)
+  {
+    fprintf (stderr, "usage: hb-dump --subset --font-file=FILE --output-file=FILE [OPTION...]\n");
+    return 2;
+  }
+  hb_blob_t *blob = hb_blob_create_from_file_or_fail (font_file);
+  if (!blob)
+  {
+    fprintf (stderr, "hb-dump: cannot read %s\n", font_file);
+    return 1;
+  }
+  subset_args_t a;
+  a.face = hb_face_create (blob, face_index);
+  hb_blob_destroy (blob);
+  a.input = hb_subset_input_create_or_fail ();
+  int status = 0;
+  for (const auto &o : options)
+  {
+    bool ok = true;
+    if (o.first == "keep-everything")
+      hb_subset_input_keep_everything (a.input);
+    else if (!o.second)
+    {
+      for (const auto &f : subset_flags)
+	if (o.first == f.name)
+	  hb_subset_input_set_flags (a.input, hb_subset_input_get_flags (a.input) | f.flag);
+    }
+    else
+      ok = subset_option (&a, o.first, o.second);
+    if (!ok) { status = 2; break; }
+  }
+  hb_face_t *source = hb_face_reference (a.face);
+  if (!status && preprocess)
+  {
+    hb_face_destroy (source);
+    source = hb_subset_preprocess (a.face);
+  }
+  hb_face_t *out = nullptr;
+  for (unsigned i = 0; !status && i < (iterations ? iterations : 1); i++)
+  {
+    hb_face_destroy (out);
+    out = hb_subset_or_fail (source, a.input);
+  }
+  if (!status && !out)
+  {
+    fprintf (stderr, "hb-dump --subset: subsetting failed\n");
+    status = 1;
+  }
+  if (!status)
+  {
+    hb_blob_t *result = hb_face_reference_blob (out);
+    unsigned size = 0;
+    const char *data = hb_blob_get_data (result, &size);
+    FILE *fp = fopen (output_file, "wb");
+    bool written = fp && fwrite (data, 1, size, fp) == size;
+    if (fp && fclose (fp) != 0) written = false;
+    if (!written)
+    {
+      fprintf (stderr, "hb-dump: cannot write %s\n", output_file);
+      status = 1;
+    }
+    hb_blob_destroy (result);
+  }
+  hb_face_destroy (out);
+  hb_face_destroy (source);
+  hb_font_destroy (a.font);
+  hb_subset_input_destroy (a.input);
+  hb_face_destroy (a.face);
+  return status;
+}
+
 /* The modes with more arguments. */
 struct args_mode_t
 {
@@ -2304,8 +3349,12 @@ struct args_mode_t
 
 static const args_mode_t args_modes[] = {
   {"--shape", 6, dump_shape},
+  {"--corpus-shape", 10, dump_corpus_shape},
   {"--shape-random", 5, dump_shape_random},
   {"--syllables", 6, dump_syllables},
+  {"--png-digest", 3, dump_png_digest},
+  {"--paint-var", 5, dump_paint_var},
+  {"--var-metrics", 5, dump_var_metrics},
 };
 
 /* The modes that read no file. */
@@ -2334,12 +3383,14 @@ static const dump_mode_t modes[] = {
   {"--metrics", dump_metrics},
   {"--names", dump_names},
   {"--cmap", dump_cmap},
+  {"--cmap-digest", dump_cmap_digest},
   {"--baselines", dump_baselines},
   {"--vowel-constraints", dump_vowel_constraints},
   {"--layout-map", dump_layout_map},
   {"--paint", dump_paint},
   {"--color", dump_color},
   {"--extents", dump_extents},
+  {"--repack", dump_repack},
 };
 
 /* The modes that read a font and a second file. */
@@ -2352,10 +3403,21 @@ struct two_file_mode_t
 static const two_file_mode_t two_file_modes[] = {
   {"--serialize", dump_serialize},
   {"--deserialize", dump_deserialize},
+  {"--sampled-metrics", dump_sampled_metrics},
 };
 
 int main (int argc, char **argv)
 {
+  if (argc >= 2 && (strcmp (argv[1], "--var") == 0 ||
+                    strcmp (argv[1], "--var-normalize") == 0))
+    return dump_var_reference (argc, argv);
+  if (argc >= 2 && strcmp (argv[1], "--subset") == 0)
+    return dump_subset (argc, argv);
+  if (argc >= 2 && !reference_options (&argc, argv))
+  {
+    fprintf (stderr, "hb-dump: invalid variation options\n");
+    return 2;
+  }
   for (unsigned i = 0; i < sizeof (args_modes) / sizeof (args_modes[0]); i++)
     if (argc == args_modes[i].argc && strcmp (argv[1], args_modes[i].name) == 0)
       return args_modes[i].dump (argc, argv);

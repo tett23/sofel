@@ -1,7 +1,6 @@
 //! The Item Variation Store shared by CFF2, HVAR, VVAR, MVAR, GDEF and
 //! others: the variation regions and the ItemVariationData subtables
-//! (ADR 0021). The delta rows are not read yet; the variable font ADR of
-//! stage 3 adds them.
+//! (ADR 0021, ADR 0027, ADR 0030).
 //!
 //! Specification: <https://learn.microsoft.com/typography/opentype/spec/otvarcommonformats>
 
@@ -47,8 +46,7 @@ impl Region<'_> {
     }
 }
 
-/// A view over the header and the region indexes of an
-/// ItemVariationData subtable.
+/// A view over an ItemVariationData subtable, including its delta rows.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct ItemVariationData<'a> {
     /// `itemCount`.
@@ -56,6 +54,7 @@ pub struct ItemVariationData<'a> {
     /// `wordDeltaCount`.
     pub word_delta_count: u16,
     indexes: &'a [u8],
+    rows: &'a [u8],
 }
 
 impl ItemVariationData<'_> {
@@ -67,6 +66,58 @@ impl ItemVariationData<'_> {
     /// Region index `k`.
     pub fn region_index(&self, k: usize) -> Option<u16> {
         be::u16_at(self.indexes, k.checked_mul(2)?)
+    }
+
+    /// The raw delta at `inner` and `column`; a cut-off row gives `None`.
+    pub fn delta(&self, inner: u16, column: u16) -> Option<i32> {
+        if inner >= self.item_count || column >= self.region_index_count() {
+            return None;
+        }
+        let long = self.word_delta_count & 0x8000 != 0;
+        let words = usize::from(self.word_delta_count & 0x7fff);
+        let count = usize::from(self.region_index_count());
+        if words > count {
+            return None;
+        }
+        let big = if long { 4usize } else { 2 };
+        let small = if long { 2usize } else { 1 };
+        let row_size = words
+            .checked_mul(big)?
+            .checked_add(count.checked_sub(words)?.checked_mul(small)?)?;
+        let row_at = usize::from(inner).checked_mul(row_size)?;
+        let row = be::slice_at(self.rows, row_at, row_size)?;
+        let column = usize::from(column);
+        if column < words {
+            let at = column.checked_mul(big)?;
+            if long {
+                be::i32_at(row, at)
+            } else {
+                be::i16_at(row, at).map(i32::from)
+            }
+        } else {
+            let at = words
+                .checked_mul(big)?
+                .checked_add(column.checked_sub(words)?.checked_mul(small)?)?;
+            if long {
+                be::i16_at(row, at).map(i32::from)
+            } else {
+                be::i8_at(row, at).map(i32::from)
+            }
+        }
+    }
+
+    fn rows_size(&self) -> Option<usize> {
+        let words = usize::from(self.word_delta_count & 0x7fff);
+        let count = usize::from(self.region_index_count());
+        let long = self.word_delta_count & 0x8000 != 0;
+        words
+            .checked_mul(if long { 4 } else { 2 })?
+            .checked_add(
+                count
+                    .checked_sub(words)?
+                    .checked_mul(if long { 2 } else { 1 })?,
+            )?
+            .checked_mul(usize::from(self.item_count))
     }
 }
 
@@ -169,17 +220,26 @@ impl<'a> ItemVariationStore<'a> {
             at.saturating_add(6),
             usize::from(n).saturating_mul(2),
         )?;
+        let rows_at = at
+            .checked_add(6)?
+            .checked_add(usize::from(n).checked_mul(2)?)?;
         Some(ItemVariationData {
             item_count,
             word_delta_count,
             indexes,
+            rows: self.data.get(rows_at..)?,
         })
+    }
+
+    /// The raw delta for a store data index, row and region column.
+    pub fn delta(&self, outer: u16, inner: u16, column: u16) -> Option<i32> {
+        self.item_data(outer)?.delta(inner, column)
     }
 }
 
 /// Validates an Item Variation Store at the start of `data`, which is at
 /// `base` in table `tag`: the format, the header, the region list, each
-/// ItemVariationData header and region indexes, and that every region
+/// ItemVariationData header, region indexes and delta rows, and that every region
 /// index is below the region count (all Error). With `axes`, also that
 /// the regions have that many axes (Error).
 pub fn validate(
@@ -237,6 +297,30 @@ pub fn validate(
             ));
             continue;
         };
+        let words = d.word_delta_count & 0x7fff;
+        if words > d.region_index_count() {
+            report(Diagnostic::new(
+                tag,
+                at(to_usize(offset).saturating_add(2)),
+                Kind::WordDeltaCountOutOfRange {
+                    found: u32::from(words),
+                    count: u32::from(d.region_index_count()),
+                },
+            ));
+        } else if let Some(needed) = d.rows_size()
+            && needed > d.rows.len()
+        {
+            report(Diagnostic::new(
+                tag,
+                at(to_usize(offset)
+                    .saturating_add(6)
+                    .saturating_add(d.indexes.len())),
+                Kind::Truncated {
+                    needed: be::to_u32(needed),
+                    available: be::to_u32(d.rows.len()),
+                },
+            ));
+        }
         for k in 0..usize::from(d.region_index_count()) {
             let r = d.region_index(k).unwrap_or(0);
             if r >= store.region_count() {

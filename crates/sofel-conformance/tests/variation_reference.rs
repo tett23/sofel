@@ -1,0 +1,500 @@
+//! ADR 0027 task 2: reference variation queries precede value evaluation.
+
+#![allow(
+    clippy::arithmetic_side_effects,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::unwrap_used
+)]
+
+use sofel_conformance::{expect, fonts, paths};
+use sofel_font::{
+    Font,
+    var::{Location, Variation},
+};
+use sofel_read::Tag;
+use std::path::Path;
+use std::process::Command;
+
+fn source_serif() -> std::path::PathBuf {
+    paths::testdata().join("harfbuzz/test/subset/data/fonts/SourceSerifVariable-Roman.ttf")
+}
+
+fn variable_colr() -> std::path::PathBuf {
+    paths::testdata().join("harfbuzz/test/api/fonts/test_glyphs-glyf_colr_1_variable.ttf")
+}
+
+fn dump(executable: &Path, args: &[&str], font: &Path) -> String {
+    paths::require(executable, "variation reference").unwrap();
+    let output = Command::new(executable)
+        .args(args)
+        .arg(font)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{} {}: {}",
+        executable.display(),
+        args.join(" "),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).unwrap()
+}
+
+fn row<'a>(text: &'a str, prefix: &str) -> Vec<&'a str> {
+    text.lines()
+        .find(|line| line.starts_with(prefix))
+        .unwrap_or_else(|| panic!("missing {prefix}: {text}"))
+        .split_ascii_whitespace()
+        .collect()
+}
+
+fn face_block(text: &str, index: u32) -> Option<&str> {
+    let marker = format!("face {index}\n");
+    let start = text.find(&marker)?;
+    let after = &text[start + marker.len()..];
+    let end = after.find("\nend\n")?;
+    Some(&after[..end])
+}
+
+fn variable_font_paths(data: &Path) -> Vec<std::path::PathBuf> {
+    let mut paths = fonts::harfbuzz_fonts(data);
+    for dir in ["harfbuzz/test/api/fonts", "harfbuzz/perf/fonts"] {
+        if let Ok(entries) = std::fs::read_dir(data.join(dir)) {
+            paths.extend(
+                entries
+                    .flatten()
+                    .map(|entry| entry.path())
+                    .filter(|path| path.is_file()),
+            );
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
+#[test]
+fn adr0027_i2_variable_corpus_axis_queries() {
+    let data = paths::testdata();
+    let mut checked = 0;
+    let mut ft_unavailable = 0;
+    let mut ft_missing_view = 0;
+    let mut named_style_results = Vec::new();
+    for path in variable_font_paths(&data) {
+        let bytes = std::fs::read(&path).unwrap();
+        let face_count = if bytes.starts_with(b"ttcf") && bytes.len() >= 12 {
+            u32::from_be_bytes(bytes[8..12].try_into().unwrap()).min(1024)
+        } else {
+            1
+        };
+        let mut variable_faces = Vec::new();
+        for index in 0..face_count {
+            if let Ok(font) = Font::new(&bytes, index)
+                && font.table(Tag::new(b"fvar")).is_some()
+            {
+                variable_faces.push((
+                    index,
+                    font.var_axes().count(),
+                    font.named_instances().count(),
+                    font.ft_mm_var().map(|v| {
+                        (
+                            v.axes().count(),
+                            v.named_styles().count(),
+                            v.default_named_instance().unwrap_or(0),
+                        )
+                    }),
+                ));
+            }
+        }
+        if variable_faces.is_empty() {
+            continue;
+        }
+        let hb = dump(&paths::hb_dump(), &["--var"], &path);
+        let ft = Command::new(paths::ft_dump())
+            .arg("--var")
+            .arg(&path)
+            .output()
+            .unwrap();
+        let ft_text = String::from_utf8(ft.stdout).unwrap();
+        for (index, hb_count, hb_named, ft_count) in variable_faces {
+            let font = Font::new(&bytes, index).unwrap();
+            let hb_face =
+                face_block(&hb, index).unwrap_or_else(|| panic!("{}#{index}", path.display()));
+            assert_eq!(
+                row(hb_face, "axis_count ")[1].parse::<usize>().unwrap(),
+                hb_count,
+                "{}#{index}",
+                path.display()
+            );
+            assert_eq!(
+                row(hb_face, "named_count ")[1].parse::<usize>().unwrap(),
+                hb_named,
+                "{}#{index}",
+                path.display()
+            );
+            for axis in font.var_axes() {
+                let fields = row(hb_face, &format!("axis {} ", axis.index));
+                assert_eq!(fields[2], format!("{:08x}", axis.tag.to_u32()));
+                assert_eq!(fields[3].parse::<u16>().unwrap(), axis.name_id);
+                assert_eq!(fields[4].parse::<u32>().unwrap(), u32::from(axis.hidden));
+                for (field, value) in fields[5..8].iter().zip([axis.min, axis.default, axis.max]) {
+                    assert_eq!(u32::from_str_radix(field, 16).unwrap(), value.to_bits());
+                }
+            }
+            for (named_index, named_style) in font.named_instances().enumerate() {
+                let fields = row(hb_face, &format!("named {named_index} "));
+                assert_eq!(fields.len(), hb_count + 4);
+                assert_eq!(
+                    fields[2].parse::<u16>().unwrap(),
+                    named_style.subfamily_name_id
+                );
+                assert_eq!(
+                    fields[3].parse::<u16>().unwrap(),
+                    named_style.postscript_name_id.unwrap_or(0xFFFF)
+                );
+                for (field, value) in fields[4..].iter().zip(named_style.design_coords()) {
+                    assert_eq!(u32::from_str_radix(field, 16).unwrap(), value.to_bits());
+                }
+            }
+            if let Some((axes, named, default)) = ft_count {
+                if ft.status.success() {
+                    let ft_face = face_block(&ft_text, index)
+                        .unwrap_or_else(|| panic!("{}#{index}", path.display()));
+                    assert_eq!(
+                        row(ft_face, "axis_count ")[1].parse::<usize>().unwrap(),
+                        axes,
+                        "{}#{index}",
+                        path.display()
+                    );
+                    let ft_view = font.ft_mm_var().unwrap();
+                    for (axis_index, axis) in ft_view.axes().enumerate() {
+                        let fields = row(ft_face, &format!("axis {axis_index} "));
+                        assert_eq!(
+                            u32::from_str_radix(fields[2], 16).unwrap(),
+                            axis.tag.to_u32()
+                        );
+                        assert_eq!(fields[3].parse::<u16>().unwrap(), axis.name_id);
+                        assert_eq!(fields[4].parse::<u16>().unwrap(), axis.flags);
+                        for (field, value) in
+                            fields[5..8].iter().zip([axis.min, axis.default, axis.max])
+                        {
+                            assert_eq!(field.parse::<i32>().unwrap(), value.0);
+                        }
+                    }
+                    for (named_index, named_style) in ft_view.named_styles().enumerate() {
+                        let fields = row(ft_face, &format!("named {named_index} "));
+                        assert_eq!(fields.len(), axes + 4);
+                        assert_eq!(fields[2].parse::<u16>().unwrap(), named_style.strid);
+                        assert_eq!(fields[3].parse::<u16>().unwrap(), named_style.psid);
+                        for (field, value) in fields[4..].iter().zip(named_style.design_coords()) {
+                            assert_eq!(field.parse::<i32>().unwrap(), value.0);
+                        }
+                    }
+                    let actual_named = row(ft_face, "named_count ")[1].parse::<usize>().unwrap();
+                    let actual_default = row(ft_face, "default_named ")[1].parse::<u16>().unwrap();
+                    let id = format!(
+                        "{}#{index}:var:ft-named-style",
+                        path.strip_prefix(&data).unwrap().display()
+                    );
+                    let passed = (actual_named, actual_default) == (named, default);
+                    if !passed {
+                        assert_eq!(
+                            (actual_named, actual_default, named, default),
+                            (1, 1, 0, 0),
+                            "unexpected difference in {id}"
+                        );
+                        assert!(
+                            row(ft_face, "named 0 ")
+                                .iter()
+                                .skip(2)
+                                .all(|value| value.parse::<i32>() == Ok(0)),
+                            "expected a zero-entry synthesized style in {id}"
+                        );
+                    }
+                    named_style_results.push((id, passed));
+                } else {
+                    ft_unavailable += 1;
+                }
+            } else {
+                ft_missing_view += 1;
+            }
+            checked += 1;
+        }
+    }
+    eprintln!(
+        "{checked} variable faces queried; {ft_unavailable} FreeType inputs unavailable; {ft_missing_view} FreeType views unavailable"
+    );
+    let expected = expect::parse(include_str!(
+        "../../../conformance/expected-failures-freetype.txt"
+    ))
+    .into_iter()
+    .filter(|id| id.ends_with(":var:ft-named-style"))
+    .collect();
+    let problems = expect::judge(
+        named_style_results
+            .iter()
+            .map(|(id, passed)| (id.as_str(), *passed)),
+        &expected,
+    );
+    assert!(
+        problems.is_empty(),
+        "{}",
+        expect::report(&problems, "expected-failures-freetype.txt")
+    );
+    assert!(checked > 20, "only {checked} variable faces");
+    assert_eq!(ft_unavailable, 0, "FreeType reference input unavailable");
+    assert_eq!(ft_missing_view, 0, "FreeType view unavailable");
+}
+
+#[test]
+fn adr0027_i2_harfbuzz_var_queries_match_fvar() {
+    let path = source_serif();
+    let bytes = std::fs::read(&path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let axes: Vec<_> = font.var_axes().collect();
+    assert!(!axes.is_empty());
+    let text = dump(&paths::hb_dump(), &["--var"], &path);
+    assert!(text.contains(&format!("axis_count {}\n", axes.len())));
+    assert!(text.contains(&format!("named_count {}\n", font.named_instances().count())));
+    for axis in axes {
+        let tag = axis.tag.to_u32();
+        let fields = row(&text, &format!("axis {} ", axis.index));
+        assert_eq!(fields[2], format!("{tag:08x}"));
+        assert_eq!(fields[3].parse::<u16>().unwrap(), axis.name_id);
+        assert_eq!(fields[4].parse::<u32>().unwrap(), u32::from(axis.hidden));
+        for (field, expected) in [axis.min, axis.default, axis.max]
+            .into_iter()
+            .zip(&fields[5..8])
+        {
+            assert_eq!(u32::from_str_radix(expected, 16).unwrap(), field.to_bits());
+        }
+    }
+    assert!(text.contains("coords_normalized"));
+    assert!(text.contains("coords_design"));
+}
+
+#[test]
+fn adr0027_i2_freetype_var_queries_match_fvar() {
+    let path = source_serif();
+    let bytes = std::fs::read(&path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let view = font.ft_mm_var().unwrap();
+    let text = dump(&paths::ft_dump(), &["--var"], &path);
+    assert!(text.contains(&format!("axis_count {}\n", view.axes().count())));
+    for (index, axis) in view.axes().enumerate() {
+        let fields = row(&text, &format!("axis {index} "));
+        assert_eq!(
+            u32::from_str_radix(fields[2], 16).unwrap(),
+            axis.tag.to_u32()
+        );
+        assert_eq!(fields[3].parse::<u16>().unwrap(), axis.name_id);
+        assert_eq!(fields[4].parse::<u16>().unwrap(), axis.flags);
+        for (value, field) in [axis.min.0, axis.default.0, axis.max.0]
+            .into_iter()
+            .zip(&fields[5..8])
+        {
+            assert_eq!(field.parse::<i32>().unwrap(), value);
+        }
+    }
+    assert!(text.contains(&format!("named_count {}\n", view.named_styles().count())));
+    let default = view.default_named_instance().unwrap_or(0);
+    assert_eq!(
+        row(&text, "default_named ")[1].parse::<u16>().unwrap(),
+        default
+    );
+    assert!(text.contains("coords_blend"));
+    assert!(text.contains("coords_design"));
+    assert!(text.contains("ps_name "));
+}
+
+#[test]
+fn adr0027_i2_named_and_overridden_design_coordinates() {
+    let path = source_serif();
+    let bytes = std::fs::read(&path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let variation = Variation {
+        tag: Tag::new(b"wght"),
+        value: 900.0,
+    };
+    for (args, location) in [
+        (
+            vec!["--named-instance=0"],
+            Location::named_instance(&font, 0),
+        ),
+        (
+            vec!["--named-instance=0", "--variations=wght=900"],
+            Location::new(&font, Some(0), &[variation]),
+        ),
+    ] {
+        let mut hb_args = vec!["--var"];
+        hb_args.extend(&args);
+        let hb = dump(&paths::hb_dump(), &hb_args, &path);
+        let normalized: Vec<i32> = row(&hb, "coords_normalized")
+            .into_iter()
+            .skip(1)
+            .map(|value| value.parse().unwrap())
+            .collect();
+        assert_eq!(normalized, location.coords_normalized());
+        let design: Vec<u32> = row(&hb, "coords_design")
+            .into_iter()
+            .skip(1)
+            .map(|value| u32::from_str_radix(value, 16).unwrap())
+            .collect();
+        assert_eq!(
+            design,
+            location
+                .coords_design()
+                .iter()
+                .map(|value| value.to_bits())
+                .collect::<Vec<_>>()
+        );
+        let mut ft_args = vec!["--var"];
+        ft_args.extend(&args);
+        let ft = dump(&paths::ft_dump(), &ft_args, &path);
+        let blend: Vec<i32> = row(&ft, "coords_blend")
+            .into_iter()
+            .skip(1)
+            .map(|value| value.parse().unwrap())
+            .collect();
+        assert_eq!(
+            blend,
+            location
+                .ft_coords()
+                .iter()
+                .map(|value| value.0)
+                .collect::<Vec<_>>()
+        );
+        let design: Vec<i32> = row(&ft, "coords_design")
+            .into_iter()
+            .skip(1)
+            .map(|value| value.parse().unwrap())
+            .collect();
+        assert_eq!(
+            design,
+            location
+                .ft_design_coords()
+                .iter()
+                .map(|value| value.0)
+                .collect::<Vec<_>>()
+        );
+        let mut ps_name = [0u8; 128];
+        let ps_len = font
+            .instance(&location)
+            .postscript_name(&mut ps_name)
+            .unwrap_or(0);
+        let ps_hex: String = ps_name[..ps_len]
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<Vec<_>>()
+            .join("");
+        assert_eq!(row(&ft, "ps_name").get(1).copied().unwrap_or(""), ps_hex);
+    }
+}
+
+#[test]
+fn adr0027_i2_variation_options_reach_existing_reference_modes() {
+    let path = source_serif();
+    let hb_default = dump(&paths::hb_dump(), &["--metrics"], &path);
+    let hb_heavy = dump(
+        &paths::hb_dump(),
+        &["--metrics", "--variations=wght=900"],
+        &path,
+    );
+    assert_ne!(hb_default, hb_heavy, "HarfBuzz metrics ignored variations");
+    let ft_default = dump(&paths::ft_dump(), &["--outline", "unscaled"], &path);
+    let ft_heavy = dump(
+        &paths::ft_dump(),
+        &["--outline", "unscaled", "--variations=wght=900"],
+        &path,
+    );
+    assert_ne!(ft_default, ft_heavy, "FreeType outlines ignored variations");
+}
+
+#[test]
+fn adr0027_i2_normalize_samples_cover_257_intervals_and_outside() {
+    for path in [source_serif(), variable_colr()] {
+        let bytes = std::fs::read(&path).unwrap();
+        let font = Font::new(&bytes, 0).unwrap();
+        for executable in [paths::hb_dump(), paths::ft_dump()] {
+            let text = dump(&executable, &["--var-normalize"], &path);
+            let is_hb = executable == paths::hb_dump();
+            assert_normalize_face(&font, &text, is_hb, &path);
+            assert!(text.contains("sample 0 0 "));
+            assert!(text.contains("sample 0 256 "));
+            assert!(text.contains("sample 0 outside_min "));
+            assert!(text.contains("sample 0 outside_max "));
+            assert!(text.contains("sample 0 half_min "));
+            assert!(text.contains("sample 0 half_max "));
+        }
+    }
+}
+
+fn assert_normalize_face(font: &Font<'_>, text: &str, is_hb: bool, path: &Path) -> usize {
+    let defaults: Vec<_> = font.var_axes().map(|axis| axis.default).collect();
+    let mut samples = 0;
+    for line in text.lines().filter(|line| line.starts_with("sample ")) {
+        let parts: Vec<_> = line.split_ascii_whitespace().collect();
+        let axis: usize = parts[1].parse().unwrap();
+        let design = if is_hb {
+            f32::from_bits(u32::from_str_radix(parts[3], 16).unwrap())
+        } else {
+            parts[3].parse::<i32>().unwrap() as f32 / 65536.0
+        };
+        let value: i32 = parts[4].parse().unwrap();
+        let mut coordinates = defaults.clone();
+        coordinates[axis] = design;
+        let location = Location::from_design(font, &coordinates);
+        let ours = if is_hb {
+            location.coords_normalized()[axis]
+        } else {
+            location.ft_coords()[axis].0
+        };
+        assert_eq!(ours, value, "{}: {line}", path.display());
+        samples += 1;
+    }
+    assert_eq!(
+        samples,
+        defaults.len() * 261,
+        "{}: {samples}",
+        path.display()
+    );
+    samples
+}
+
+#[test]
+fn adr0027_i2_variable_corpus_normalization_samples() {
+    let data = paths::testdata();
+    let mut faces = 0;
+    let mut samples = 0;
+    for path in variable_font_paths(&data) {
+        let bytes = std::fs::read(&path).unwrap();
+        let face_count = if bytes.starts_with(b"ttcf") && bytes.len() >= 12 {
+            u32::from_be_bytes(bytes[8..12].try_into().unwrap()).min(1024)
+        } else {
+            1
+        };
+        let indices: Vec<_> = (0..face_count)
+            .filter(|index| {
+                Font::new(&bytes, *index)
+                    .ok()
+                    .is_some_and(|font| font.table(Tag::new(b"fvar")).is_some())
+            })
+            .collect();
+        if indices.is_empty() {
+            continue;
+        }
+        let hb = dump(&paths::hb_dump(), &["--var-normalize"], &path);
+        let ft = dump(&paths::ft_dump(), &["--var-normalize"], &path);
+        for index in indices {
+            let font = Font::new(&bytes, index).unwrap();
+            for (is_hb, text) in [(true, &hb), (false, &ft)] {
+                let face = face_block(text, index).unwrap();
+                samples += assert_normalize_face(&font, face, is_hb, &path);
+            }
+            faces += 1;
+        }
+    }
+    eprintln!("{faces} variable faces, {samples} normalization samples");
+    assert_eq!(faces, 166);
+}

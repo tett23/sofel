@@ -16,7 +16,7 @@
 //!
 //! Specification: <https://learn.microsoft.com/typography/opentype/spec/base>
 
-use crate::be::{self, to_u32, to_usize};
+use crate::be::{self, to_u32};
 use crate::device::Device;
 use crate::{Diagnostic, GlyphId, Kind, ReadError, Tag};
 
@@ -119,6 +119,20 @@ impl<'a> Base<'a> {
     pub fn vert_axis_offset(&self) -> u16 {
         be::u16_at(self.data, 6).unwrap_or(0)
     }
+    /// Opens the optional ItemVariationStore (ADR 0027).
+    /// Null offsets return `None`; malformed non-null stores return an error.
+    pub fn variation_store(
+        &self,
+    ) -> Result<Option<crate::item_variation::ItemVariationStore<'a>>, ReadError> {
+        let offset = self.item_var_store_offset().unwrap_or(0);
+        if offset == 0 {
+            return Ok(None);
+        }
+        let data = crate::be::tail_at(self.data, crate::be::to_usize(offset))
+            .ok_or(ReadError::OutOfBounds)?;
+        crate::item_variation::ItemVariationStore::new(data).map(Some)
+    }
+
     /// `itemVarStoreOffset` (from version 1.1 on); `None` before.
     pub fn item_var_store_offset(&self) -> Option<u32> {
         if self.version >= VERSION_1_1 {
@@ -540,13 +554,15 @@ pub fn validate(data: &[u8], report: &mut dyn FnMut(Diagnostic)) {
             ));
         }
     };
+    crate::validate::variation_store(
+        data,
+        base.item_var_store_offset().unwrap_or(0),
+        8,
+        TAG,
+        None,
+        report,
+    );
     let mut v = Validator { data, report };
-    if let Some(off) = base.item_var_store_offset()
-        && off != 0
-        && to_usize(off).saturating_add(8) > data.len()
-    {
-        v.out_of_bounds(8, to_usize(off), 8);
-    }
     for (field, offset) in [(4, base.horiz_axis_offset()), (6, base.vert_axis_offset())] {
         v.axis(field, offset);
     }

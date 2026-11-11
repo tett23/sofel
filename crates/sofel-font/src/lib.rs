@@ -8,7 +8,7 @@
 //! table views through it instead of reading bytes (ADR 0003). Likewise
 //! `sofel-geom` is re-exported as [`geom`] (ADR 0023).
 //!
-//! [`Font::ft_left_side_bearing`] reads the left side bearing the way
+//! [`crate::var::Instance::ft_left_side_bearing`] reads the left side bearing the way
 //! FreeType does for outlines instead (ADR 0018). It is ported from
 //! FreeType 2.15.0 (commit 37515cf56ba3349656049edbed89ffc6f6466f2d):
 //! `src/sfnt/ttmtx.c` (`tt_face_load_hhea`, `tt_face_load_hmtx`,
@@ -31,7 +31,7 @@
 //!     println!(
 //!         "glyph {} advances {} of {} units per em",
 //!         glyph.0,
-//!         font.advance(glyph),
+//!         font.default_instance().advance(glyph),
 //!         font.units_per_em(),
 //!     );
 //!     Ok(())
@@ -41,6 +41,8 @@
 #![no_std]
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
+
+extern crate alloc;
 
 pub use sofel_geom as geom;
 pub use sofel_read as read;
@@ -57,6 +59,7 @@ mod name_language;
 mod names;
 pub mod remap;
 mod tables;
+pub mod var;
 
 pub use cff::{Cff, CffError, CffMatrix, CidError, PsFontInfo, Ros, Subfont, fs_type};
 pub use ft::FtFaceMetrics;
@@ -276,6 +279,7 @@ fn has_outline(sfnt: &Sfnt<'_>) -> bool {
 #[derive(Clone, Copy, Debug)]
 pub struct Font<'a> {
     sfnt: Sfnt<'a>,
+    face_index: u32,
     head: Head<'a>,
     num_glyphs: u32,
     metrics: Metrics<'a>,
@@ -589,6 +593,7 @@ impl<'a> Font<'a> {
 
         Ok(Font {
             sfnt,
+            face_index: index,
             head,
             num_glyphs,
             metrics,
@@ -727,14 +732,6 @@ impl<'a> Font<'a> {
         }
     }
 
-    /// The horizontal advance in font units, as HarfBuzz gives it: from
-    /// the table for glyphs it covers, 0 beyond, and `unitsPerEm / 2`
-    /// (with an out-of-range `unitsPerEm` taken as 1000) when the font
-    /// has no metrics data at all.
-    pub fn advance(&self, glyph: GlyphId) -> u16 {
-        self.metrics.advance(glyph, self.hb_units_per_em() / 2)
-    }
-
     /// `unitsPerEm` as HarfBuzz uses it (`hb_face_get_upem`): 1000 when
     /// the stored value is outside 16..=16384.
     pub fn hb_units_per_em(&self) -> u16 {
@@ -759,145 +756,5 @@ impl<'a> Font<'a> {
         self.os2
             .filter(|o| o.version() != 0xFFFF)
             .map_or(0, |o| o.fs_type())
-    }
-
-    /// The font's horizontal ascender, descender (negative below the
-    /// baseline) and line gap in font units, as HarfBuzz's
-    /// `hb_font_get_extents_for_direction` gives them for horizontal
-    /// text at the default scale: from `OS/2` with `USE_TYPO_METRICS`,
-    /// else from `hhea` (`HHEA` when present), with the signs fixed; when
-    /// a value is missing, the ascender is 0.8 em, the descender the
-    /// ascender minus 1 em and the line gap 0.
-    pub fn h_extents(&self) -> FontExtents {
-        HbScale::unscaled(self).h_extents(self)
-    }
-
-    /// The vertical extents in font units, as HarfBuzz's
-    /// `hb_font_get_extents_for_direction` gives them for vertical text
-    /// at the default scale: from `vhea` (`VHEA` when present), with the
-    /// signs fixed; when a value is missing, the ascender is half an em,
-    /// the descender the ascender minus 1 em and the line gap 0.
-    pub fn v_extents(&self) -> FontExtents {
-        HbScale::unscaled(self).v_extents(self)
-    }
-
-    /// The vertical advance in font units, negative downward as in
-    /// HarfBuzz (`hb_font_get_glyph_v_advance`): minus the `vmtx` advance,
-    /// or, without `vmtx` data, the descender minus the ascender of
-    /// [`Font::h_extents`].
-    pub fn v_advance(&self, glyph: GlyphId) -> i32 {
-        HbScale::unscaled(self).v_advance(self, glyph)
-    }
-
-    /// The vertical origin `(x, y)` in font units, as HarfBuzz's
-    /// `hb_font_get_glyph_v_origin` gives it: x is half the horizontal
-    /// advance; y comes from `VORG` if present, else (with `vmtx` and
-    /// glyf data) from glyf's top phantom point (the glyph's `yMax` plus
-    /// its top side bearing, from the last USE_MY_METRICS component for
-    /// composites; 1 em when the glyph cannot be read), else from the box
-    /// that `extents` gives (centered between the ascender and descender
-    /// of [`Font::h_extents`]; the ascender when `extents` gives `None`).
-    ///
-    /// `extents` is only called in that last case. Pass
-    /// [`Font::glyf_extents`] for glyf fonts; other outline formats get
-    /// their boxes from the layers above (ADR 0016).
-    pub fn v_origin(
-        &self,
-        glyph: GlyphId,
-        extents: impl Fn(GlyphId) -> Option<GlyphExtents>,
-    ) -> (i32, i32) {
-        HbScale::unscaled(self).v_origin(self, glyph, extents)
-    }
-
-    /// The box of a glyf glyph in font units, as HarfBuzz's
-    /// `hb_font_get_glyph_extents` gives it for glyf fonts without
-    /// variations, from the glyph header and `hmtx` only: `x_bearing` is
-    /// the left side bearing (FreeType shifts outlines so, ADR 0018),
-    /// `y_bearing` the top, `width` positive and `height` negative; all 0
-    /// for empty glyphs. `None` without glyf data or for glyph ids past
-    /// it.
-    pub fn glyf_extents(&self, glyph: GlyphId) -> Option<GlyphExtents> {
-        HbScale::unscaled(self).glyf_extents(self, glyph)
-    }
-
-    /// A font-wide metric in font units, as HarfBuzz's
-    /// `hb_ot_metrics_get_position` gives it at the default scale.
-    /// `None` when the font does not have it.
-    pub fn metrics_position(&self, tag: MetricsTag) -> Option<i32> {
-        HbScale::unscaled(self).metrics_position(self, tag)
-    }
-
-    /// A font-wide metric in font units, as HarfBuzz's
-    /// `hb_ot_metrics_get_position_with_fallback` gives it at the default
-    /// scale: [`Font::metrics_position`], or a value made up from other
-    /// metrics when the font does not have it (or has a zero underline
-    /// or strikeout size). The x-height and cap height fallbacks use the
-    /// boxes of the glyphs for `x` and `O` from `extents`.
-    pub fn metrics_position_with_fallback(
-        &self,
-        tag: MetricsTag,
-        extents: impl Fn(GlyphId) -> Option<GlyphExtents>,
-    ) -> i32 {
-        HbScale::unscaled(self).metrics_position_with_fallback(self, tag, extents)
-    }
-
-    /// A baseline from `BASE` in font units, as HarfBuzz's
-    /// `hb_ot_layout_get_baseline` gives it at the default scale
-    /// (ADR 0017): the axis of `direction`, the BaseScript of `script`
-    /// (or of `DFLT` when the axis has no record for it), and the
-    /// coordinate of `tag` (see [`baseline`]) in its BaseValues. Only
-    /// the `coordinate` of a BaseCoord is used: HarfBuzz ignores the
-    /// reference glyph of formats 2 and 4, and the Device or
-    /// VariationIndex delta of format 3 is 0 without a ppem and
-    /// variation coordinates. `None` when the font has no such value, or
-    /// a `BASE` HarfBuzz's sanitizer rejects.
-    pub fn baseline(&self, tag: Tag, direction: Direction, script: Tag) -> Option<i32> {
-        HbScale::unscaled(self).baseline(self, tag, direction, script)
-    }
-
-    /// A baseline in font units, as HarfBuzz's
-    /// `hb_ot_layout_get_baseline_with_fallback` gives it at the default
-    /// scale: [`Font::baseline`], or one synthesized as CSS Inline
-    /// Layout 3 describes when the font does not have it. `extents`
-    /// gives glyph boxes in font units for the `math` baseline (the box
-    /// of U+2212 or `-`) and the `hang` baseline (the box of the
-    /// script's hanging character); pass [`Font::glyf_extents`] for glyf
-    /// fonts.
-    pub fn baseline_with_fallback(
-        &self,
-        tag: Tag,
-        direction: Direction,
-        script: Tag,
-        extents: impl Fn(GlyphId) -> Option<GlyphExtents>,
-    ) -> i32 {
-        HbScale::unscaled(self).baseline_with_fallback(self, tag, direction, script, extents)
-    }
-
-    /// The ascender and descender of a script and language system from
-    /// `BASE`'s MinMax tables in font units, as HarfBuzz's
-    /// `hb_ot_layout_get_font_extents` gives them at the default scale:
-    /// the language's MinMax if the BaseScript has one, else its default
-    /// MinMax (a null coordinate counts as 0), with a line gap of 0 and
-    /// `true`. Without MinMax data, [`Font::h_extents`] or
-    /// [`Font::v_extents`] for `direction`, and `false`.
-    pub fn layout_font_extents(
-        &self,
-        direction: Direction,
-        script: Tag,
-        language: Tag,
-    ) -> (FontExtents, bool) {
-        HbScale::unscaled(self).layout_font_extents(self, direction, script, language)
-    }
-
-    /// The left side bearing in font units, as FreeType reads it for
-    /// outlines (`tt_face_get_metrics`), which [`Font::advance`] does not
-    /// follow: from the long metric below `numberOfHMetrics`, else from
-    /// the `leftSideBearings` array, whatever the glyph count; 0 when the
-    /// value is past the table, when the last advance is, and when there
-    /// is no `hhea` and `hmtx`. With `GLYF`, it reads `HHEA` and `HMTX`;
-    /// otherwise `hhea` and `hmtx`, or `HHEA` and `HMTX` without `hhea`.
-    /// `sofel-outline` uses it for FreeType's phantom point 1 (ADR 0018).
-    pub fn ft_left_side_bearing(&self, glyph: GlyphId) -> i16 {
-        self.ft_metrics.left_side_bearing(glyph)
     }
 }
