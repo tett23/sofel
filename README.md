@@ -227,6 +227,8 @@ CARGO_TARGET_WASM32_WASIP1_RUNNER=wasmtime cargo test --target wasm32-wasip1 -p 
 CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=$PWD::$PWD" cargo test --release --target wasm32-wasip1 -p sofel-conformance --test harfbuzz_subset
 ```
 
+Roboto と Comfortaa のラスタライズについて、12、24、48、96 ppem で全グリフを FreeType と比較した[照合記録](docs/benchmarks/2026-11-11-unexcluded-phantom-point-check.md)がある。
+
 性能の計測（[ADR 0013](docs/adr/0013-benchmark-harness.md)）は、ワークスペースの外の `bench/` で行う。テストのデータの取得のあと、FreeTypeとHarfBuzzを静的ライブラリにビルドする（C++のコンパイラが要る。wasmでは `bench/fetch-wasi-sdk.sh` がwasi-sdkを取得する）。`--once` は各項目を1回だけ走らせ、結果の照合だけを行う。シェーピングの項目（[ADR 0020](docs/adr/0020-shaping-foundation.md)）は、計測の前に全行の結果をHarfBuzzと比べる。サブセット化の項目（[ADR 0022](docs/adr/0022-subsetting.md)）は、計測の前に出力のバイト列のハッシュをHarfBuzzと比べる。記録は `docs/benchmarks/` に置く。
 
 可変フォントの変化量は `--filter 'item delta'` で計れる。HVAR の係数を再利用できる場合と計算し直す場合、および既定位置の MVAR を個別に表示する。
