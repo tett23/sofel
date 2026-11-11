@@ -157,6 +157,7 @@ cargo test --release -p sofel-conformance
 適合テストを最大2本の実行ファイルで並列に走らせるには、`sh scripts/test-conformance.sh 2` を使う（`jq` が必要。[ADR 0033](docs/adr/0033-ci-latency-and-ligature-iteration.md)）。
 引数を1にすると直列で実行する。
 CI ではこの runner を使い、参照ツールと計測用の C ライブラリは入力とツールチェーンが一致する場合にキャッシュから復元する。
+シェーピングの適合テストではフォントと文章の組ごとに一致行の数を集計し、不一致行の詳細をカテゴリ判定に使う（[ADR 0041](docs/adr/0041-compact-shape-comparison-results.md)）。
 テストと結果の照合は、キャッシュがある場合も実行する。
 CI の参照ツールのビルド、適合テストと計測用 C ビルドは、子プロセスを含む合計 RSS の最大観測値をログへ書く。
 
