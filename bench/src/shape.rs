@@ -14,7 +14,8 @@ use std::path::Path;
 
 use sofel_bench::harness::Check;
 use sofel_font::Font;
-use sofel_font::read::GlyphId;
+use sofel_font::read::{GlyphId, Tag};
+use sofel_font::var::{Instance, Location, Variation};
 use sofel_outline::HbExtents;
 use sofel_shape::{
     Direction, GlyphBuffer, ResolvedProperties, Scale, SegmentProperties, ShapePlan, UnicodeBuffer,
@@ -268,6 +269,7 @@ fn properties(b: &UnicodeBuffer, direction: Option<Direction>) -> ResolvedProper
 /// functions take them, and the plans, one per set of properties.
 struct Shaper<'a> {
     font: Font<'a>,
+    location: Option<Location<'a>>,
     boxes: HbExtents<'a>,
     scale: Scale,
     plans: Vec<(ResolvedProperties, ShapePlan<'a>)>,
@@ -278,16 +280,37 @@ impl<'a> Shaper<'a> {
         let font = Font::new(bytes, 0).expect("sofel opens the font");
         Shaper {
             font,
+            location: None,
             boxes: HbExtents::new(&font),
             scale: Scale::unscaled(&font),
             plans: Vec::new(),
         }
     }
 
+    fn at_weight(bytes: &'a [u8], weight: f32) -> Shaper<'a> {
+        let mut shaper = Shaper::new(bytes);
+        shaper.location = Some(Location::new(
+            &shaper.font,
+            None,
+            &[Variation {
+                tag: Tag::new(b"wght"),
+                value: weight,
+            }],
+        ));
+        shaper
+    }
+
+    fn instance(&self) -> Instance<'_, 'a, '_, 'a> {
+        self.location.as_ref().map_or_else(
+            || self.font.default_instance(),
+            |location| self.font.instance(location),
+        )
+    }
+
     /// Makes the plan for `props` unless there is one.
     fn plan_for(&mut self, props: &ResolvedProperties) {
         if !self.plans.iter().any(|(k, _)| k == props) {
-            let plan = ShapePlan::new(self.font.default_instance(), props.clone(), &[]);
+            let plan = ShapePlan::new(self.instance(), props.clone(), &[]);
             self.plans.push((props.clone(), plan));
         }
     }
@@ -301,8 +324,17 @@ impl<'a> Shaper<'a> {
             .find(|(k, _)| *k == props)
             .expect("a plan for every line")
             .1;
-        let boxes = |g: GlyphId| self.boxes.glyph_extents(g);
-        sofel_shape::shape_with_extents(self.font.default_instance(), &self.scale, plan, b, &boxes)
+        let instance = self.instance();
+        let boxes = |g: GlyphId| {
+            if self.location.is_some() {
+                instance
+                    .glyf_extents(g)
+                    .or_else(|| self.boxes.glyph_extents(g))
+            } else {
+                self.boxes.glyph_extents(g)
+            }
+        };
+        sofel_shape::shape_with_extents(instance, &self.scale, plan, b, &boxes)
     }
 }
 
@@ -424,7 +456,8 @@ pub fn shape_items(b: &mut Bench, testdata: &Path) {
                 let boxes = HbExtents::new(&font);
                 let mut u = UnicodeBuffer::new();
                 u.push_utf8(&text[start..], 0, Some(len));
-                let plan = ShapePlan::new(font.default_instance(), properties(&u, p.direction), &[]);
+                let plan =
+                    ShapePlan::new(font.default_instance(), properties(&u, p.direction), &[]);
                 let g = sofel_shape::shape_with_extents(
                     font.default_instance(),
                     &Scale::unscaled(&font),
@@ -439,6 +472,81 @@ pub fn shape_items(b: &mut Bench, testdata: &Path) {
                 &mut || hb_first_shape(&bytes, &text[start..], len, hb_direction(p.direction)),
                 Compare::Yes,
             )),
+        );
+    }
+}
+
+/// ADR 0027's non-default shaping item, with the same per-line protocol
+/// and complete comparison as the default `react-dom.txt` item.
+pub fn variable_shape_items(b: &mut Bench, testdata: &Path) {
+    let item = "shaping react-dom.txt wght=500";
+    let name = "SourceSerifVariable-Roman";
+    if !b.wanted(name, item) {
+        return;
+    }
+    let bytes = std::fs::read(testdata.join(SERIF)).expect("SourceSerifVariable-Roman test data");
+    let text = std::fs::read(testdata.join("harfbuzz/perf/texts/react-dom.txt"))
+        .expect("react-dom.txt test data");
+    let lines = lines(&text);
+    let hb = HbFont::open(&bytes).expect("HarfBuzz opens the font");
+    hb.set_ppem(0);
+    hb.set_weight(500.0);
+    let mut shaper = Shaper::at_weight(&bytes, 500.0);
+    let diff = first_difference(&mut shaper, &hb, &text, &lines, None);
+    b.checks.push(Check {
+        item: format!("{item} (HarfBuzz, every line)"),
+        font: name.into(),
+        ok: diff.is_none(),
+        detail: diff.unwrap_or_else(|| format!("{} lines equal", lines.len())),
+    });
+
+    let hb_buffer = HbBuffer::new();
+    let mut spare = Some(UnicodeBuffer::new());
+    b.item(
+        name,
+        item.into(),
+        &mut || {
+            let mut sum = 0u64;
+            for &(start, len) in &lines {
+                let mut u = spare.take().unwrap_or_default();
+                u.push_utf8(&text[start..], 0, Some(len));
+                let g = shaper.shape(u, None);
+                sum = sum.wrapping_add(checksum(&g));
+                spare = Some(g.into_unicode());
+            }
+            sum
+        },
+        None,
+        Some((&mut || hb_buffer.shape_text(&hb, &text, 0), Compare::Yes)),
+    );
+}
+
+#[cfg(test)]
+mod variable_shape_tests {
+    use super::*;
+
+    #[test]
+    fn adr0027_weight_shape_matches_harfbuzz_all_lines() {
+        let _ffi = crate::variation_bench_tests::lock_ffi();
+        let mut bench = Bench {
+            once: true,
+            filter: Some("shaping react-dom.txt wght=500".into()),
+            rows: Vec::new(),
+            checks: Vec::new(),
+        };
+        variable_shape_items(
+            &mut bench,
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/testdata"),
+        );
+        assert_eq!(bench.rows.len(), 1);
+        assert!(
+            bench.checks.iter().all(|check| check.ok),
+            "{:?}",
+            bench
+                .checks
+                .iter()
+                .map(|check| &check.detail)
+                .collect::<Vec<_>>()
         );
     }
 }
