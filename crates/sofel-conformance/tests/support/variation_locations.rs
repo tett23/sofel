@@ -38,7 +38,11 @@ pub fn positions(font: &Font<'_>) -> Vec<Position> {
         .map_or(0, |mm| mm.named_styles().count())
         .max(font.named_instances().count())
     {
-        positions.push((format!("named:{i}"), Some(u16::try_from(i).unwrap()), Vec::new()));
+        positions.push((
+            format!("named:{i}"),
+            Some(u16::try_from(i).unwrap()),
+            Vec::new(),
+        ));
     }
     for axis in font.var_axes() {
         for (edge, value) in [("min", axis.min), ("max", axis.max)] {
