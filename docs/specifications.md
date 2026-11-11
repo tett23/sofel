@@ -466,3 +466,5 @@ CI の文書だけの変更は、比較起点の `ci/documentation-only.rules` �
 - sofelはMITとする。FreeTypeのコードを流用する場合はFTLを選び、文書でFreeType Projectを明示する（[ADR 0002](adr/0002-license-and-reuse.md)）。Slugを流用する場合は、READMEにクレジットを載せる。
 - 流用元の著作権表示とライセンスは `THIRD_PARTY_NOTICES.md` に載せ、流用したファイルの先頭に流用元を書く。
 - UCDから生成した表を含む `sofel-unicode` と `sofel-shape` は、Unicode License v3にも従う（`MIT AND Unicode-3.0`）。
+
+可変フォントの位置の生成は [3フォントのnative・wasmの計測](benchmarks/2026-11-11-variable-location-creation.md) に記録した。

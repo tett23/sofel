@@ -6,6 +6,7 @@
 mod ffi;
 mod shape;
 mod subset;
+mod variation;
 
 use std::path::PathBuf;
 
@@ -1144,6 +1145,7 @@ fn main() {
         rows: Vec::new(),
         checks: Vec::new(),
     };
+    variation::items(&mut b, &a.testdata);
     unicode_properties(&mut b, &a.testdata);
     extra_items(&mut b, &a.testdata);
     cff_items(&mut b, &a.testdata);
@@ -1253,5 +1255,24 @@ fn main() {
     if let Err(e) = failed {
         eprintln!("{e}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod variation_bench_tests {
+    use super::*;
+
+    #[test]
+    fn adr0027_weight_location_matches_both_references_on_three_fonts() {
+        let mut bench = Bench {
+            once: true,
+            filter: Some("location wght=500".into()),
+            rows: Vec::new(),
+            checks: Vec::new(),
+        };
+        let testdata = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/testdata");
+        variation::items(&mut bench, &testdata);
+        assert_eq!(bench.rows.len(), 3);
+        assert!(bench.checks.iter().all(|check| check.ok));
     }
 }
