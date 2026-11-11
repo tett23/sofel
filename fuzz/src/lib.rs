@@ -1139,3 +1139,6 @@ pub fn check_repack(data: &[u8]) {
         assert_eq!(repacked, Ok(plain));
     }
 }
+
+mod location;
+pub use location::check_location;

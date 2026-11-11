@@ -746,9 +746,10 @@ fn outlines_at<'a>(
     font: &SofelFont,
     location: Option<&'a SofelLocation>,
 ) -> Outlines<'static, 'a, 'static> {
-    location.map_or(font.outlines, |loc| {
-        Outlines::new(font.font.instance(&loc.location))
-    })
+    match location {
+        Some(loc) => font.outlines.with_location(&loc.location),
+        None => font.outlines.clone(),
+    }
 }
 
 fn glyph_box<'f>(

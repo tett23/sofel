@@ -45,6 +45,8 @@
 extern crate alloc;
 
 mod extents;
+mod ft_paint;
+pub use ft_paint::{FtPaint, FtPaintGraph};
 mod paint;
 mod palette;
 mod raw;
@@ -64,7 +66,7 @@ pub use palette::{
     PaintOptions, Palette, find_palette, palette_color_name_id, palette_colors, palette_count,
     palette_entry_count, palette_flags, palette_name_id,
 };
-pub use raw::{PaintRef, base_paint, clip_box, layer_paint, layer_paint_count};
+pub use raw::{PaintRef, RawPaintGraph, base_paint, clip_box, layer_paint, layer_paint_count};
 pub use record::{PaintCommand, RecordedBrush, Recording};
 pub use sofel_outline::font::read::colr::{
     Affine, ClipBox, ColorLine as RawColorLine, ColorStop as RawColorStop, Paint,
@@ -106,32 +108,26 @@ impl Scratch {
 /// format used; [`Painted::None`] (nothing painted) for glyphs that are
 /// not color glyphs, which a caller may fill with the foreground color
 /// as HarfBuzz's `hb_font_paint_glyph` does.
-pub fn paint<'a>(
-    font: &Font<'a>,
+pub fn paint<'f, 'a: 'f, 'l, 's: 'l>(
+    font: impl Into<sofel_outline::font::var::Instance<'f, 'a, 'l, 's>>,
     glyph: u32,
     options: &PaintOptions<'a>,
     scratch: &mut Scratch,
     painter: &mut impl Painter,
 ) -> Painted {
-    paint_any(
-        font.default_instance(),
-        glyph,
-        options,
-        scratch,
-        &mut Direct(painter),
-    )
+    paint_any(font.into(), glyph, options, scratch, &mut Direct(painter))
 }
 
 /// [`paint`] into a [`Recording`], which keeps images (their data
 /// borrows the font).
-pub fn paint_recording<'a>(
-    font: &Font<'a>,
+pub fn paint_recording<'f, 'a: 'f, 'l, 's: 'l>(
+    font: impl Into<sofel_outline::font::var::Instance<'f, 'a, 'l, 's>>,
     glyph: u32,
     options: &PaintOptions<'a>,
     scratch: &mut Scratch,
     recording: &mut Recording<'a>,
 ) -> Painted {
-    paint_any(font.default_instance(), glyph, options, scratch, recording)
+    paint_any(font.into(), glyph, options, scratch, recording)
 }
 
 /// Records color glyph commands at the supplied variation location.
@@ -349,11 +345,12 @@ fn colr_extents(
     if c.version() >= 1
         && let Some(b) = c.clip_box(glyph)
     {
+        let [x_min, y_min, x_max, y_max] = v1::clip_edges(&b, &v1::deltas(outlines.instance(), &c));
         let e = GlyphExtents {
-            x_bearing: i32::from(b.x_min),
-            y_bearing: i32::from(b.y_max),
-            width: i32::from(b.x_max).saturating_sub(i32::from(b.x_min)),
-            height: i32::from(b.y_min).saturating_sub(i32::from(b.y_max)),
+            x_bearing: x_min,
+            y_bearing: y_max,
+            width: x_max.saturating_sub(x_min),
+            height: y_min.saturating_sub(y_max),
         };
         return Some(scale.scale_glyph_extents(e));
     }
@@ -388,7 +385,13 @@ fn colr_extents(
             foreground: Default::default(),
             ..PaintOptions::default()
         };
-        let painted = paint_colr_only(font, glyph, &options, scratch, &mut Direct(&mut painter));
+        let painted = paint_colr_only(
+            outlines.instance(),
+            glyph,
+            &options,
+            scratch,
+            &mut Direct(&mut painter),
+        );
         (painted, painter.extents())
     };
     scratch.extents = stacks;
