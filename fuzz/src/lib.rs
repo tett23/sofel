@@ -121,9 +121,16 @@ fn check_sfnt(s: &Sfnt<'_>) {
 /// A standalone packed gvar decoder. The prefix selects the table format
 /// and a bounded point count; remaining bytes are an arbitrary table.
 pub fn check_gvar(input: &[u8]) {
-    let Some((prefix, data)) = input.split_first_chunk::<3>() else { return };
+    let Some((prefix, rest)) = input.split_first_chunk::<3>() else { return };
     let tag = if prefix[0] & 1 == 0 { gvar::TAG } else { gvar::GVAR_TAG };
     let points = usize::from(u16::from_be_bytes([prefix[1], prefix[2]])).min(4096);
+    let data = if prefix[0] & 0x80 != 0 {
+        let payload_len = 16 + points.clamp(4, 64) * 5;
+        let Some(data) = rest.get(payload_len..) else { return };
+        data
+    } else {
+        rest
+    };
     gvar::validate_with_points(data, tag, None, None, |_| Some(points), &mut |_| {});
     if let Ok(table) = Gvar::new(data, tag) {
         let glyph = u32::from(prefix[0] >> 3);
@@ -145,6 +152,98 @@ pub fn check_gvar(input: &[u8]) {
             }
         }
     }
+    if prefix[0] & 0x80 != 0 {
+        let _ = run_gvar_ft(input);
+    }
+}
+
+type FtGvarApplyResult = (
+    Result<bool, sofel_font::var::gvar::GvarError>,
+    Vec<sofel_font::var::gvar::Point<i32>>,
+);
+
+/// Extended gvar corpus format: eight 16-bit axis coordinates, up to 64
+/// arbitrary five-byte points, then the gvar table. Exercise both
+/// arithmetic paths with the same points and a bounded budget.
+fn run_gvar_ft(input: &[u8]) -> Option<FtGvarApplyResult> {
+    use sofel_font::var::gvar::{FtScratch, HbScratch, Point, apply_ft, apply_hb};
+
+    let (prefix, rest) = input.split_first_chunk::<3>()?;
+    if prefix[0] & 0x80 == 0 {
+        return None;
+    }
+    let count = usize::from(u16::from_be_bytes([prefix[1], prefix[2]])).clamp(4, 64);
+    let (axis_bytes, rest) = rest.split_first_chunk::<16>()?;
+    let (point_bytes, data) = rest.split_at_checked(count * 5)?;
+    let tag = if prefix[0] & 1 == 0 {
+        gvar::TAG
+    } else {
+        gvar::GVAR_TAG
+    };
+    let table = Gvar::new(data, tag).ok()?;
+    let glyph = u32::from((prefix[0] >> 3) & 0x0f);
+    let glyph_data = table.glyph_data(glyph)?;
+    if table.axis_count() > 8 || glyph_data.tuple_count() > 16 {
+        return None;
+    }
+    let axis_values: Vec<i16> = axis_bytes
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|bytes| i16::from_be_bytes([bytes[0], bytes[1]]))
+        .collect();
+    let ft_coords: Vec<i32> = axis_values
+        .iter()
+        .take(usize::from(table.axis_count()))
+        .map(|&coord| i32::from(coord) << 2)
+        .collect();
+    let hb_coords: Vec<i32> = axis_values
+        .iter()
+        .take(usize::from(table.axis_count()))
+        .map(|&coord| i32::from(coord))
+        .collect();
+    let mut points: Vec<Point<i32>> = point_bytes
+        .as_chunks::<5>()
+        .0
+        .iter()
+        .map(|bytes| Point {
+            x: i32::from(i16::from_be_bytes([bytes[0], bytes[1]])) << 16,
+            y: i32::from(i16::from_be_bytes([bytes[2], bytes[3]])) << 16,
+            end: bytes[4] & 1 != 0,
+        })
+        .collect();
+    let initial = points.clone();
+    let result = apply_ft(
+        &table,
+        glyph,
+        &ft_coords,
+        &[],
+        &mut points,
+        &mut FtScratch::default(),
+    );
+    if result.is_err() {
+        assert_eq!(points, initial, "failed FT gvar application changed points");
+    }
+    let mut hb_points: Vec<Point<f32>> = initial
+        .iter()
+        .map(|p| Point {
+            x: p.x as f32 / 65536.0,
+            y: p.y as f32 / 65536.0,
+            end: p.end,
+        })
+        .collect();
+    let mut budget = i64::from(glyph_data.tuple_count()) * count as i64;
+    let _ = apply_hb(
+        &table,
+        glyph,
+        &hb_coords,
+        &[],
+        &mut hb_points,
+        &mut HbScratch::default(),
+        false,
+        &mut budget,
+    );
+    Some((result, points))
 }
 
 /// Replay a successful application at its exact cost and one unit below it.
@@ -1322,5 +1421,61 @@ mod gvar_budget_tests {
             );
         }
         check_gvar(seed);
+    }
+}
+
+#[cfg(test)]
+mod gvar_ft_apply_tests {
+    use super::*;
+
+    fn valid_input() -> Vec<u8> {
+        include_bytes!("../corpus/gvar/ft-apply-two-active").to_vec()
+    }
+
+    #[test]
+    fn adr0029_ft_gvar_fixed_seed_reaches_apply() {
+        let input = valid_input();
+        let (result, points) = run_gvar_ft(&input).expect("valid gvar and point payload");
+        assert_eq!(result, Ok(true));
+        assert_ne!(points[0].x, 0);
+    }
+
+    #[test]
+    fn adr0029_ft_gvar_truncation_and_fixed_mutations_do_not_panic() {
+        let input = valid_input();
+        for len in 0..input.len() {
+            check_gvar(&input[..len]);
+        }
+        let mut state = 0x29u32;
+        for _ in 0..512 {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let mut changed = input.clone();
+            let at = state as usize % changed.len();
+            changed[at] ^= (state >> 16) as u8;
+            check_gvar(&changed);
+        }
+    }
+
+    #[test]
+    fn adr0029_ft_gvar_point_and_coordinate_boundaries_reach_apply() {
+        let seed = valid_input();
+        let table = &seed[49..];
+        for count in [0u16, 1, 4, 6, 64, 65, u16::MAX] {
+            let bounded = usize::from(count).clamp(4, 64);
+            let mut input = seed[..19].to_vec();
+            input[1..3].copy_from_slice(&count.to_be_bytes());
+            for i in 0..bounded {
+                input.extend_from_slice(&seed[19 + (i % 6) * 5..24 + (i % 6) * 5]);
+            }
+            input.extend_from_slice(table);
+            assert!(run_gvar_ft(&input).is_some(), "point count {count}");
+            check_gvar(&input);
+            input[3..5].copy_from_slice(&(-0x4000i16).to_be_bytes());
+            assert!(
+                run_gvar_ft(&input).is_some(),
+                "negative coordinate, count {count}"
+            );
+            check_gvar(&input);
+        }
     }
 }
