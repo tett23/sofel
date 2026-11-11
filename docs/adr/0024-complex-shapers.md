@@ -1,6 +1,6 @@
 # ADR 0024: 文字体系ごとのシェーパー（arabic、hebrew、hangul、thai、indic、khmer、myanmar、USE）
 
-ステータス: 採択（未実装）
+ステータス: 採択
 
 ## 文脈
 
