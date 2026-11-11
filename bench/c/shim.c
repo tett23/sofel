@@ -11,6 +11,7 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include FT_ADVANCES_H
+#include FT_MULTIPLE_MASTERS_H
 #include FT_OUTLINE_H
 #include FT_CID_H
 #include FT_COLOR_H
@@ -43,6 +44,27 @@ long bft_cid(void *face, unsigned gid)
   if (FT_Get_CID_From_Glyph_Index((FT_Face)face, gid, &cid) != 0)
     return -1;
   return (long)cid;
+}
+
+int bft_set_design(void *face, unsigned count, long *coords)
+{
+  return FT_Set_Var_Design_Coordinates((FT_Face)face, count, coords);
+}
+
+int bft_get_normalized(void *face, unsigned count, long *coords)
+{
+  return FT_Get_Var_Blend_Coordinates((FT_Face)face, count, coords);
+}
+
+void bhb_set_weight(void *font, float weight)
+{
+  hb_variation_t variation = { HB_TAG('w','g','h','t'), weight };
+  hb_font_set_variations((hb_font_t *)font, &variation, 1);
+}
+
+const int *bhb_normalized(void *font, unsigned *count)
+{
+  return hb_font_get_var_coords_normalized((hb_font_t *)font, count);
 }
 
 int bft_set_pixel_sizes(void *face, unsigned ppem)
