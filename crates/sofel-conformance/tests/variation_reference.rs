@@ -327,68 +327,9 @@ fn adr0027_i2_named_and_overridden_design_coordinates() {
             Location::new(&font, Some(0), &[variation]),
         ),
     ] {
-        let mut hb_args = vec!["--var"];
-        hb_args.extend(&args);
-        let hb = dump(&paths::hb_dump(), &hb_args, &path);
-        let normalized: Vec<i32> = row(&hb, "coords_normalized")
-            .into_iter()
-            .skip(1)
-            .map(|value| value.parse().unwrap())
-            .collect();
-        assert_eq!(normalized, location.coords_normalized());
-        let design: Vec<u32> = row(&hb, "coords_design")
-            .into_iter()
-            .skip(1)
-            .map(|value| u32::from_str_radix(value, 16).unwrap())
-            .collect();
-        assert_eq!(
-            design,
-            location
-                .coords_design()
-                .iter()
-                .map(|value| value.to_bits())
-                .collect::<Vec<_>>()
-        );
-        let mut ft_args = vec!["--var"];
-        ft_args.extend(&args);
-        let ft = dump(&paths::ft_dump(), &ft_args, &path);
-        let blend: Vec<i32> = row(&ft, "coords_blend")
-            .into_iter()
-            .skip(1)
-            .map(|value| value.parse().unwrap())
-            .collect();
-        assert_eq!(
-            blend,
-            location
-                .ft_coords()
-                .iter()
-                .map(|value| value.0)
-                .collect::<Vec<_>>()
-        );
-        let design: Vec<i32> = row(&ft, "coords_design")
-            .into_iter()
-            .skip(1)
-            .map(|value| value.parse().unwrap())
-            .collect();
-        assert_eq!(
-            design,
-            location
-                .ft_design_coords()
-                .iter()
-                .map(|value| value.0)
-                .collect::<Vec<_>>()
-        );
-        let mut ps_name = [0u8; 128];
-        let ps_len = font
-            .instance(&location)
-            .postscript_name(&mut ps_name)
-            .unwrap_or(0);
-        let ps_hex: String = ps_name[..ps_len]
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<Vec<_>>()
-            .join("");
-        assert_eq!(row(&ft, "ps_name").get(1).copied().unwrap_or(""), ps_hex);
+        let mut options = vec!["--var"];
+        options.extend_from_slice(&args);
+        assert_location(&path, 0, &font, &location, &options);
     }
 }
 
@@ -569,4 +510,86 @@ fn adr0030_i01_unrounded_mvar_reference_at_corpus_positions() {
     }
     assert!(values > 0 && fractional > 0);
     eprintln!("{values} MVAR values, {fractional} fractional");
+}
+
+#[test]
+fn adr0027_i02_design_normalized_and_postscript_at_all_positions() {
+    use sofel_read::sfnt::FontFile;
+    let mut tested = 0;
+    for path in variable_font_paths(&paths::testdata()) {
+        let bytes = std::fs::read(&path).unwrap();
+        let faces = match FontFile::new(&bytes) {
+            Ok(FontFile::Collection(c)) => c.num_fonts(),
+            Ok(FontFile::Sfnt(_)) => 1,
+            Err(_) => continue,
+        };
+        for index in 0..faces {
+            let Ok(font) = Font::new(&bytes, index) else {
+                continue;
+            };
+            if font.var_axes().next().is_none() {
+                continue;
+            }
+            for pos in variation_locations::positions(&font) {
+                let loc = pos.location(&font);
+                let extra = pos.args();
+                let mut args = vec!["--var"];
+                args.extend(extra.iter().map(String::as_str));
+                assert_location(&path, index, &font, &loc, &args);
+                tested += 1;
+            }
+        }
+    }
+    eprintln!("checked {tested} face-locations");
+    assert!(tested > 0);
+}
+
+fn assert_location(path: &Path, index: u32, font: &Font<'_>, loc: &Location<'_>, args: &[&str]) {
+    let instance = font.instance(loc);
+    let size = instance.postscript_name(&mut []).unwrap_or(0);
+    let mut name = vec![0; size];
+    instance.postscript_name(&mut name);
+    let hex = if name.is_empty() {
+        "-".to_string()
+    } else {
+        name.iter().map(|b| format!("{b:02x}")).collect()
+    };
+    let fixed = |v: &[sofel_read::Fixed]| v.iter().map(|x| x.0.to_string()).collect::<Vec<_>>();
+    let hb_fields = [
+        (
+            "coords_normalized",
+            loc.coords_normalized()
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+        ),
+        (
+            "coords_design",
+            loc.coords_design()
+                .iter()
+                .map(|x| format!("{:08x}", x.to_bits()))
+                .collect(),
+        ),
+    ];
+    let ft_fields = [
+        ("coords_blend", fixed(loc.ft_coords())),
+        ("coords_design", fixed(loc.ft_design_coords())),
+        ("ps_name", vec![hex]),
+    ];
+    for (tool, fields) in [
+        (paths::hb_dump(), hb_fields.as_slice()),
+        (paths::ft_dump(), ft_fields.as_slice()),
+    ] {
+        let reference = dump(&tool, args, path);
+        let face = face_block(&reference, index).unwrap();
+        for (field, actual) in fields {
+            let expected = row(face, field);
+            assert_eq!(
+                actual,
+                &expected[1..],
+                "{} face {index} {args:?} {field}",
+                path.display()
+            );
+        }
+    }
 }
