@@ -300,6 +300,7 @@ fn convert(rec: &Recording<'_>) -> Owned {
 
 fn paint_glyph(
     font: Option<&crate::Font<'static>>,
+    location: Option<&SofelLocation>,
     glyph: u32,
     palette: u16,
     custom: Option<&[CColor]>,
@@ -317,8 +318,16 @@ fn paint_glyph(
         ppem,
     };
     let mut rec = Recording::new();
-    let painted =
-        sofel_color::paint_recording(font, glyph, &options, &mut Scratch::default(), &mut rec);
+    let loc = location
+        .map(|v| &v.location)
+        .unwrap_or(sofel_font::var::Location::default_ref());
+    let painted = sofel_color::paint_recording_at(
+        font.instance(loc),
+        glyph,
+        &options,
+        &mut Scratch::default(),
+        &mut rec,
+    );
     let owned = Box::new(convert(&rec));
     out.commands = owned.commands.as_ptr();
     out.count = owned.commands.len();
@@ -335,7 +344,7 @@ fn paint_glyph(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sofel_paint_glyph(
     font: *const SofelFont,
-    _location: *const SofelLocation,
+    location: *const SofelLocation,
     glyph: u32,
     palette: u16,
     custom_colors: *const CColor,
@@ -345,14 +354,17 @@ pub unsafe extern "C" fn sofel_paint_glyph(
     out: *mut CPaintCommands,
 ) -> i32 {
     // SAFETY: the caller's conditions.
-    let (font, out) = unsafe { (font_ref(font), w(out)) };
+    let (font, location, out) = unsafe { (font_ref(font), r(location), w(out)) };
     let custom = if custom_colors.is_null() {
         None
     } else {
         // SAFETY: not NULL; the caller's conditions.
         Some(unsafe { core::slice::from_raw_parts(custom_colors, n_custom) })
     };
-    paint_glyph(font, glyph, palette, custom, foreground, ppem, out).unwrap_or_else(|e| e)
+    paint_glyph(
+        font, location, glyph, palette, custom, foreground, ppem, out,
+    )
+    .unwrap_or_else(|e| e)
 }
 
 /// `sofel_paint_commands_free`.

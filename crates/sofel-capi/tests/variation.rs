@@ -258,6 +258,92 @@ fn hvar_font_bytes() -> Vec<u8> {
     sfnt(&tables)
 }
 
+#[test]
+fn i08_item_delta_c_abi_matches_rust_and_checks_arguments() {
+    let bytes = hvar_font_bytes();
+    let mut error = -99;
+    let font = unsafe { sofel_font_create(bytes.as_ptr(), bytes.len(), 0, &mut error) };
+    assert_eq!(error, OK);
+    let coord = [1.0f32];
+    let mut location = core::ptr::null_mut();
+    assert_eq!(
+        unsafe { sofel_location_create_design(font, coord.as_ptr(), 1, &mut location) },
+        OK
+    );
+    let mut hb = -1.0f32;
+    let mut ft = -1i32;
+    assert_eq!(
+        unsafe {
+            sofel_instance_item_delta_hb(font, location, SOFEL_VAR_STORE_HVAR, 0, 0, &mut hb)
+        },
+        OK
+    );
+    assert_eq!(hb, 21.0);
+    assert_eq!(
+        unsafe {
+            sofel_instance_item_delta_ft(font, location, SOFEL_VAR_STORE_HVAR, 0, 0, &mut ft)
+        },
+        OK
+    );
+    assert_eq!(ft, 21);
+    assert_eq!(
+        unsafe {
+            sofel_instance_item_delta_hb(font, location, SOFEL_VAR_STORE_HVAR, 1, 0, &mut hb)
+        },
+        OK
+    );
+    assert_eq!(hb, 0.0);
+    assert_eq!(
+        unsafe {
+            sofel_instance_item_delta_hb(
+                font,
+                core::ptr::null(),
+                SOFEL_VAR_STORE_HVAR,
+                0,
+                0,
+                &mut hb,
+            )
+        },
+        OK
+    );
+    assert_eq!(hb, 0.0);
+    assert_eq!(
+        unsafe { sofel_instance_item_delta_hb(font, location, -1, 0, 0, &mut hb) },
+        ERROR_INVALID_ARGUMENT
+    );
+    assert_eq!(hb, 0.0);
+    assert_eq!(
+        unsafe {
+            sofel_instance_item_delta_hb(
+                core::ptr::null(),
+                location,
+                SOFEL_VAR_STORE_HVAR,
+                0,
+                0,
+                &mut hb,
+            )
+        },
+        ERROR_NULL
+    );
+    assert_eq!(
+        unsafe {
+            sofel_instance_item_delta_ft(
+                font,
+                location,
+                SOFEL_VAR_STORE_HVAR,
+                0,
+                0,
+                core::ptr::null_mut(),
+            )
+        },
+        ERROR_NULL
+    );
+    unsafe {
+        sofel_location_destroy(location);
+        sofel_font_destroy(font);
+    }
+}
+
 fn vvar_font_bytes() -> Vec<u8> {
     let store = Buf::new()
         .u16(1)

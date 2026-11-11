@@ -576,6 +576,7 @@ sofel_font_destroy(font);
 | `sofel_font_nominal_glyph`、`sofel_font_variation_glyph` | `Font::nominal_glyph`、`Font::variation_glyph` | `hb_font_get_nominal_glyph`、`hb_font_get_variation_glyph` |
 | `sofel_font_h_advance` | `Instance::advance` | `hb_font_get_glyph_h_advance` |
 | `sofel_font_ft_left_side_bearing` | `Instance::ft_left_side_bearing` | `FT_Get_Glyph_Metrics` |
+| `sofel_instance_item_delta_hb`、`sofel_instance_item_delta_ft` | `Instance::item_delta::<HbF32>`、`Instance::item_delta::<Ft>` | HarfBuzz／FreeType の ItemVariationStore 評価 |
 | `sofel_font_table` | `Font::table` | `hb_face_reference_table`／`FT_Load_Sfnt_Table` |
 | `sofel_font_h_extents`、`sofel_font_v_extents`、`sofel_font_v_advance`、`sofel_font_v_origin`、`sofel_font_glyph_extents` | `Instance::h_extents` など | `hb_font_get_extents_for_direction`、`hb_font_get_glyph_v_advance`、`hb_font_get_glyph_v_origin`、`hb_font_get_glyph_extents` |
 | `sofel_font_metrics_position`、`sofel_font_metrics_position_with_fallback` | `Instance::metrics_position` など | `hb_ot_metrics_get_position` など |
