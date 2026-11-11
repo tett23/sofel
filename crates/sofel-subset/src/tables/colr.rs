@@ -80,22 +80,19 @@ fn plan_store(
         colr.var_index_map().map_err(|_| unsupported_store())?;
         return Ok(());
     }
-    for g in glyphset.iter() {
-        if let Some(base) = colr.clip_box(g).and_then(|b| b.var_index_base) {
-            if pinned {
-                return Err(unsupported_store());
-            }
-            collect_variations(&mut indices, base, 4);
-        }
-    }
     if !complete {
         return Err(unsupported_store());
     }
-    if indices.is_empty() {
+    if pinned {
         return Ok(());
     }
-    if pinned {
-        return Err(unsupported_store());
+    for g in glyphset.iter() {
+        if let Some(base) = colr.clip_box(g).and_then(|b| b.var_index_base) {
+            collect_variations(&mut indices, base, 4);
+        }
+    }
+    if indices.is_empty() {
+        return Ok(());
     }
     let map = colr
         .var_index_map()
@@ -314,7 +311,11 @@ impl Closure<'_, '_> {
                 9 | 19 | 31 => 4,
                 _ => 6,
             };
-            self.check_var_index(at.saturating_add(size), count);
+            // A default-pinned PaintVarSolid keeps its base alpha and
+            // loses its variation index when written as PaintSolid.
+            if !(self.pinned && format == 3) {
+                self.check_var_index(at.saturating_add(size), count);
+            }
         } else if format == 13 {
             let offset = u24(self.t, at.saturating_add(4)) as usize;
             self.check_var_index(at.saturating_add(offset).saturating_add(24), 6);
@@ -581,6 +582,10 @@ impl Sub<'_, '_> {
         };
         let out = self.embed(at, size);
         let p = self.t.at(at);
+        if format == 3 && self.p.var.instancing() && self.p.var.all_axes_pinned() {
+            self.s.write_at(out, &[2]);
+            return self.palette(out.saturating_add(1), p.u16(1));
+        }
         let ok = match format {
             1 => {
                 let v = if p.u8(1) == 0 {
@@ -701,7 +706,11 @@ impl Sub<'_, '_> {
                 true
             }
             2 => {
-                self.embed(at, 9);
+                let out = self.embed(at, 9);
+                if self.p.var.instancing() && self.p.var.all_axes_pinned() {
+                    self.s.write_at(out, &[1]);
+                    return true;
+                }
                 self.var_index(at.saturating_add(9))
             }
             _ => false,

@@ -521,3 +521,64 @@ fn colr_paints_nested_too_deep_are_cut() {
     let out = subset(&font, &chars("A")).unwrap();
     assert!(out_table(&out, b"COLR").is_none());
 }
+
+#[test]
+fn adr0022_default_pin_converts_solid_and_clip_to_static_formats() {
+    let fvar = Buf::new()
+        .u32(0x10000)
+        .u16(16)
+        .u16(2)
+        .u16(1)
+        .u16(20)
+        .u16(0)
+        .u16(8)
+        .u32(Tag::new(b"wght").to_u32())
+        .u32(0)
+        .u32(0)
+        .u32(0x10000)
+        .u16(0)
+        .u16(256)
+        .done();
+    let paint = Buf::new().u8(3).u16(0).u16(0x2000).u32(0).done();
+    let clip = Buf::new()
+        .u8(2)
+        .i16(-8)
+        .i16(-4)
+        .i16(100)
+        .i16(80)
+        .u32(0)
+        .done();
+    let mut colr = colr_v1(
+        &[],
+        &[],
+        &[paint],
+        &[(g('A'), 0)],
+        &[],
+        &[(g('A'), g('A'), clip)],
+    );
+    let offset = colr.len() as u32;
+    colr[30..34].copy_from_slice(&offset.to_be_bytes());
+    colr.extend(item_variation_store(1, &[], &[]));
+    let input = font_with(vec![
+        (b"COLR", colr),
+        (b"CPAL", cpal_table(false)),
+        (b"fvar", fvar),
+    ]);
+    let font = Font::new(&input, 0).unwrap();
+    let selection = chars("A").with_all_axes_pinned_to_default(&font).unwrap();
+    let output = subset(&font, &selection).unwrap();
+    let table = out_table(&output, b"COLR").unwrap();
+    // HarfBuzz 15.1.0, hb-dump --subset --unicodes=U+0041 --instance=*=drop.
+    let bytes: String = table.iter().map(|b| format!("{b:02x}")).collect();
+    assert_eq!(
+        bytes,
+        "0001000000000000000000000000000000370000000000000022000000000000000001000000010001000100000c01fff8fffc006400500000000100010000000a0200002000"
+    );
+    let colr = Colr::new(&table).unwrap();
+    let paint = colr.base_glyph_paint(1).unwrap();
+    assert_eq!(&table[paint..paint + 5], &[2, 0, 0, 0x20, 0]);
+    let clip = colr.clip_box(1).unwrap();
+    assert_eq!(clip.var_index_base, None);
+    assert_eq!(colr.var_store_offset(), 0);
+    assert_eq!(colr.var_index_map_offset(), 0);
+}
