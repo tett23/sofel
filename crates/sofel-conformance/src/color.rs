@@ -432,7 +432,7 @@ pub fn g3(v: f64) -> String {
 /// One token list of FreeType's paint tree (`ft-dump --colr`'s
 /// `paint_tree`) for the raw paint at `p`.
 fn raw_tree(
-    font: &Font<'_>,
+    graph: sofel_color::RawPaintGraph<'_>,
     p: Option<sofel_color::PaintRef<'_>>,
     depth: u32,
     budget: &mut i32,
@@ -479,8 +479,8 @@ fn raw_tree(
         } => {
             out.push_str(" layers");
             for k in first_layer..first_layer + u32::from(num_layers) {
-                let l = sofel_color::layer_paint(font, k as usize);
-                raw_tree(font, l, depth + 1, budget, out);
+                let l = graph.layer_paint(k as usize);
+                raw_tree(graph, l, depth + 1, budget, out);
             }
             out.push_str(" .");
         }
@@ -547,7 +547,7 @@ fn raw_tree(
         }
         Paint::Glyph { paint, glyph } => {
             let _ = write!(out, " glyph {glyph}");
-            raw_tree(font, child(paint), depth + 1, budget, out);
+            raw_tree(graph, child(paint), depth + 1, budget, out);
         }
         Paint::ColrGlyph { glyph } => {
             let _ = write!(out, " colr_glyph {glyph}");
@@ -560,12 +560,12 @@ fn raw_tree(
                     " transform {} {} {} {} {} {}",
                     t.xx.0, t.yx.0, t.xy.0, t.yy.0, t.dx.0, t.dy.0
                 );
-                raw_tree(font, child(paint), depth + 1, budget, out);
+                raw_tree(graph, child(paint), depth + 1, budget, out);
             }
         },
         Paint::Translate { paint, delta, .. } => {
             let _ = write!(out, " translate {} {}", i(delta.0), i(delta.1));
-            raw_tree(font, child(paint), depth + 1, budget, out);
+            raw_tree(graph, child(paint), depth + 1, budget, out);
         }
         Paint::Scale {
             paint,
@@ -582,7 +582,7 @@ fn raw_tree(
                 i(cx),
                 i(cy)
             );
-            raw_tree(font, child(paint), depth + 1, budget, out);
+            raw_tree(graph, child(paint), depth + 1, budget, out);
         }
         Paint::Rotate {
             paint,
@@ -592,7 +592,7 @@ fn raw_tree(
         } => {
             let (cx, cy) = center.unwrap_or((0, 0));
             let _ = write!(out, " rotate {} {} {}", f2(angle), i(cx), i(cy));
-            raw_tree(font, child(paint), depth + 1, budget, out);
+            raw_tree(graph, child(paint), depth + 1, budget, out);
         }
         Paint::Skew {
             paint,
@@ -609,7 +609,7 @@ fn raw_tree(
                 i(cx),
                 i(cy)
             );
-            raw_tree(font, child(paint), depth + 1, budget, out);
+            raw_tree(graph, child(paint), depth + 1, budget, out);
         }
         Paint::Composite {
             source,
@@ -617,8 +617,8 @@ fn raw_tree(
             backdrop,
         } => {
             let _ = write!(out, " composite {mode}");
-            raw_tree(font, child(source), depth + 1, budget, out);
-            raw_tree(font, child(backdrop), depth + 1, budget, out);
+            raw_tree(graph, child(source), depth + 1, budget, out);
+            raw_tree(graph, child(backdrop), depth + 1, budget, out);
         }
     }
 }
@@ -652,6 +652,7 @@ pub fn sofel_colr(font: &Font<'_>) -> (String, std::collections::BTreeMap<u32, S
             let _ = writeln!(cpal, "color_name {c} {}", palette_color_name_id(font, c));
         }
     }
+    let graph = sofel_color::RawPaintGraph::new(font);
     let mut glyphs = std::collections::BTreeMap::new();
     for g in 0..font.num_glyphs() {
         let mut s = String::new();
@@ -661,13 +662,15 @@ pub fn sofel_colr(font: &Font<'_>) -> (String, std::collections::BTreeMap<u32, S
         if !l.is_empty() {
             let _ = writeln!(s, "layers {g} {}", l.join(","));
         }
-        if let Some(p) = sofel_color::base_paint(font, g) {
+        if let Some(graph) = graph
+            && let Some(p) = graph.base_paint(g)
+        {
             let _ = write!(s, "paint {g}");
             let mut budget = 100_000;
-            raw_tree(font, Some(p), 0, &mut budget, &mut s);
+            raw_tree(graph, Some(p), 0, &mut budget, &mut s);
             s.push('\n');
         }
-        if let Some(b) = sofel_color::clip_box(font, g) {
+        if let Some(b) = graph.and_then(|graph| graph.clip_box(g)) {
             let v = |x: i16| i64::from(x) * 64;
             let _ = writeln!(
                 s,
@@ -709,8 +712,22 @@ pub fn compare_colr(font_id: &str, index: u32, font: &Font<'_>, ft: &str) -> Vec
         ok: cpal == ft_cpal,
         detail: format!("FreeType:\n{ft_cpal}sofel:\n{cpal}"),
     }];
-    let keys: std::collections::BTreeSet<u32> =
+    let mut keys: std::collections::BTreeSet<u32> =
         ft_glyphs.keys().chain(ours.keys()).copied().collect();
+    // Also compare absent results for glyphs named by a table that FreeType rejects.
+    if sofel_color::RawPaintGraph::new(font).is_none()
+        && let Some(table) = font
+            .table(sofel_font::read::colr::TAG)
+            .and_then(|data| sofel_font::read::colr::Colr::new(data).ok())
+    {
+        keys.extend(
+            (0..table.num_base_glyph_paints())
+                .filter_map(|i| table.base_glyph_paint_record(i).map(|(g, _)| u32::from(g))),
+        );
+        if table.num_clips() != 0 {
+            keys.extend((0..font.num_glyphs().min(65536)).filter(|&g| table.clip_box(g).is_some()));
+        }
+    }
     for g in keys {
         let (a, b) = (
             ft_glyphs.get(&g).cloned().unwrap_or_default(),
@@ -826,8 +843,24 @@ pub fn compare_color_rasters(
             ppem: 0,
         };
         let ours_glyphs = (0..font.num_glyphs()).filter(|&g| !color_layers(font, g).is_empty());
-        let keys: std::collections::BTreeSet<u32> =
+        let mut keys: std::collections::BTreeSet<u32> =
             ft_glyphs.keys().copied().chain(ours_glyphs).collect();
+        // Also compare absent results for glyphs named by a table that FreeType rejects.
+        if sofel_color::RawPaintGraph::new(font).is_none()
+            && let Some(table) = font
+                .table(sofel_font::read::colr::TAG)
+                .and_then(|data| sofel_font::read::colr::Colr::new(data).ok())
+        {
+            keys.extend(
+                (0..table.num_base_glyph_paints())
+                    .filter_map(|i| table.base_glyph_paint_record(i).map(|(g, _)| u32::from(g))),
+            );
+            for i in 0..table.num_clips() {
+                if let Some((first, last, _)) = table.clip_record(i) {
+                    keys.extend(u32::from(first)..=u32::from(last));
+                }
+            }
+        }
         for g in keys {
             let mut s = String::new();
             let r = render_color(
