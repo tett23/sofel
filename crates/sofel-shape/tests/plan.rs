@@ -390,10 +390,13 @@ fn adr0046_i2_i4_plan_key_and_lookups_follow_condition_state() {
     gsub.extend_from_slice(&[
         0, 1, 0, 1, 0, 0, 0, 0, // FeatureVariations 1.1, no standard records
         0, 0, 0, 1, 0, 0, 0, 0, 0, 18, // one lookup variation record, feature 0
-        0, 1, 0, 0, 0, 0, 0, 0, 0, 1, // FeatureLookupsTable, flags 0, one condition
-        0, 0, 0, 18, 0, 0, 0, 26, // condition and lookup list offsets
+        0, 1, 0, 0, 0, 0, 0, 0, 0, 2, // FeatureLookupsTable, flags 0, two conditions
+        0, 0, 0, 26, 0, 0, 0, 34, // first condition and lookup list offsets
+        0, 0, 0, 38, 0, 0, 0, 46, // second condition and lookup list offsets
         0, 1, 0, 0, 0x10, 0, 0x30, 0, // axis 0 in [0.25, 0.75]
         0, 1, 0, 1, // lookup index 1
+        0, 1, 0, 0, 0x20, 0, 0x40, 0, // axis 0 in [0.5, 1]
+        0, 1, 0, 1, // same lookup despite a distinct condition state
     ]);
     let mut fvar = vec![0, 1, 0, 0, 0, 16, 0, 2, 0, 1, 0, 20, 0, 0, 0, 8];
     fvar.extend_from_slice(b"wght");
@@ -417,12 +420,19 @@ fn adr0046_i2_i4_plan_key_and_lookups_follow_condition_state() {
         )
     };
     let zero = plan("wght=0");
-    let middle = plan("wght=0.5");
-    let nearby = plan("wght=0.6");
+    let middle = plan("wght=0.3");
+    let nearby = plan("wght=0.4");
+    let later = plan("wght=0.6");
+    let last = plan("wght=0.8");
     assert!(zero.key().2[0].lookup_conditions.is_empty());
-    assert_eq!(middle.key().2[0].lookup_conditions, vec![36]);
+    assert_eq!(middle.key().2[0].lookup_conditions, vec![44]);
     assert_eq!(middle.key().2, nearby.key().2);
     assert_ne!(zero.key().2, middle.key().2);
+    assert_eq!(later.key().2[0].lookup_conditions, vec![44, 56]);
+    assert_eq!(last.key().2[0].lookup_conditions, vec![56]);
+    assert_ne!(middle.key().2, later.key().2);
+    assert_ne!(later.key().2, last.key().2);
+    assert_eq!(middle.stage_lookups(0), later.stage_lookups(0));
     assert!(zero.stage_lookups(0).concat().is_empty());
     assert_eq!(
         middle
