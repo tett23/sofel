@@ -95,6 +95,11 @@ unsafe extern "C" {
         len: *mut c_uint,
     ) -> u64;
 
+    fn hb_set_create() -> *mut c_void;
+    fn hb_set_destroy(set: *mut c_void);
+    fn hb_face_collect_unicodes(face: *mut c_void, set: *mut c_void);
+    fn hb_set_next_many(set: *const c_void, after: u32, out: *mut u32, size: c_uint) -> c_uint;
+
     // HarfBuzz's own Unicode functions (hb-unicode.h), called directly.
     pub fn hb_unicode_funcs_get_default() -> *mut c_void;
     pub fn hb_unicode_general_category(ufuncs: *mut c_void, cp: c_uint) -> c_int;
@@ -286,6 +291,21 @@ impl HbPreprocessed {
     pub fn new(font: &HbFont) -> HbPreprocessed {
         // SAFETY: a valid font; the result is a new face (never NULL).
         HbPreprocessed(unsafe { bhb_subset_preprocess(font.0) })
+    }
+    /// The first mapped code points, in the order of benchmark-subset.cc.
+    pub fn first_unicodes(&self, limit: u32) -> Vec<u32> {
+        let mut points = vec![0; limit as usize];
+        // SAFETY: the face is live. The set is owned until destroyed below
+        // and points has space for limit hb_codepoint_t values.
+        let count = unsafe {
+            let set = hb_set_create();
+            hb_face_collect_unicodes(self.0, set);
+            let count = hb_set_next_many(set, u32::MAX, points.as_mut_ptr(), limit);
+            hb_set_destroy(set);
+            count
+        };
+        points.truncate(count as usize);
+        points
     }
     pub fn glyph_count(&self) -> u32 {
         // SAFETY: a valid face.

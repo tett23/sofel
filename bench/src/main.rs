@@ -1248,6 +1248,7 @@ fn main() {
     variation::items(&mut b, &a.testdata);
     shape::shape_items(&mut b, &a.testdata);
     subset::subset_items(&mut b, &a.testdata);
+    subset::unicode_range_items(&mut b, &a.testdata);
     let failed = report_checks(&b.checks);
     if !a.once {
         print!("{}", table(&b.rows));
