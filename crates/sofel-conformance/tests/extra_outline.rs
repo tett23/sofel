@@ -138,7 +138,7 @@ fn i05_sampled_outlines_match_freetype() {
                 "{}#{face_index}: no comparable outline",
                 entry.id
             );
-            let outlines = sofel_outline::Outlines::new(&font);
+            let outlines = sofel_outline::Outlines::new(font.default_instance());
             for gid in gids {
                 compared += 1;
                 let mut ours = vec![format!(

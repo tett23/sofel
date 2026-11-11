@@ -131,7 +131,10 @@ fn outlines_agree_with_freetype() {
                         cached_face = Some(face);
                         outlines_and_scale =
                             Font::new(&bytes, face).ok().filter(has_glyf).map(|font| {
-                                (sofel_outline::Outlines::new(&font), scale_for(&font, size))
+                                (
+                                    sofel_outline::Outlines::new(font.default_instance()),
+                                    scale_for(&font, size),
+                                )
                             });
                     }
                     let Some((outlines, scale)) = outlines_and_scale.as_ref() else {

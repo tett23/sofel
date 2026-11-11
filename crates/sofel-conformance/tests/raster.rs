@@ -71,7 +71,7 @@ fn rasters_agree_with_freetype() {
                         outlines = Font::new(&bytes, face)
                             .ok()
                             .filter(has_glyf)
-                            .map(|font| sofel_outline::Outlines::new(&font));
+                            .map(|font| sofel_outline::Outlines::new(font.default_instance()));
                     }
                     let Some(outlines) = outlines.as_ref() else {
                         return;
