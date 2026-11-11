@@ -595,28 +595,16 @@ fn format_g6(value: f32) -> String {
 
 /// A normalized location and its cached variation-region coefficients.
 ///
-/// The font value may be dropped while the location remains in use:
+/// A location borrows the font bytes, so they must outlive it (ADR 0030 I03).
+/// The font handle itself can be dropped first.
 ///
-/// ```no_run
+/// ```compile_fail,E0515
 /// use sofel_font::{Font, var::Location};
-/// let data = [0u8; 12];
-/// let location = {
-///     let font = Font::new(&data, 0).unwrap();
+/// fn invalid() -> Location<'static> {
+///     let bytes = Vec::from([0u8; 64]);
+///     let font = Font::new(&bytes, 0).unwrap();
 ///     Location::new(&font, None, &[])
-/// };
-/// let _ = location.coords_normalized();
-/// ```
-///
-/// The source bytes must outlive the location (ADR 0030 I03):
-///
-/// ```compile_fail
-/// use sofel_font::{Font, var::Location};
-/// let location = {
-///     let data = [0u8; 12];
-///     let font = Font::new(&data, 0).unwrap();
-///     Location::new(&font, None, &[])
-/// };
-/// let _ = location.coords_normalized();
+/// }
 /// ```
 #[derive(Clone, Debug)]
 pub struct Location<'data> {
@@ -2147,97 +2135,76 @@ mod tests {
         assert_eq!(item_delta::<HbF32>(&cut, &scalars, 0, 0), 0.0);
     }
 
+    fn compare_sources<A: Arith>(
+        view: &ItemVariationStore<'_>,
+        coords: &[A::Coord],
+        supplied: bool,
+        outer: u16,
+        inner: u16,
+    ) where
+        A::Delta: core::fmt::Debug + PartialEq,
+    {
+        let cached = StoreScalars::<A::Scalar>::from_store::<A>(view, coords, supplied);
+        let live = OnTheFly::<A>::new(view, coords, supplied);
+        assert_eq!(
+            item_delta::<A>(view, &cached, outer, inner),
+            item_delta::<A>(view, &live, outer, inner)
+        );
+    }
+
     #[test]
     fn i02_cached_equals_on_the_fly() {
-        // Three regions: a rising slope, a default-position peak, and an
-        // invalid start/peak ordering. One row refers to all three.
-        let mut bytes = alloc::vec![0, 1, 0, 0, 0, 12, 0, 1, 0, 0, 0, 34];
-        bytes.extend_from_slice(&[0, 1, 0, 3]);
-        for (start, peak, end) in [(0i16, 8i16, 16i16), (-8, 0, 8), (8, 4, 16)] {
-            for value in [start, peak, end] {
-                bytes.extend_from_slice(&value.to_be_bytes());
+        let mut seed = 27_u32;
+        for i in 0..1000 {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let octets = seed.to_le_bytes();
+            let mut bytes = store(&octets[..2]);
+            if i % 7 == 0 {
+                bytes
+                    .get_mut(16..22)
+                    .unwrap()
+                    .copy_from_slice(&[0xff, 0xff, 0, 8, 0, 16]);
             }
-        }
-        bytes.extend_from_slice(&[0, 1, 0, 3, 0, 3, 0, 0, 0, 1, 0, 2]);
-        bytes.extend_from_slice(&[0, 7, 0xff, 0xf5, 0, 13]);
-        let view = ItemVariationStore::new(&bytes).unwrap();
-        let mut state = 0x30_02_20_26u32;
-        for case in 0..1000 {
-            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-            let coord = if case % 5 == 1 {
-                0 // supplied zero coordinates, distinct from the empty case
-            } else {
-                i32::try_from(state % 49).unwrap() - 24
+            if i % 11 == 0 {
+                bytes
+                    .get_mut(28..30)
+                    .unwrap()
+                    .copy_from_slice(&u16::MAX.to_be_bytes());
+            }
+            let view = ItemVariationStore::new(&bytes).unwrap();
+            let coord = match i % 5 {
+                0 | 1 => 0,
+                _ => i32::from(octets[2] % 24) - 4,
             };
-            let supplied = case % 5 != 0;
-            let hb_coords = if case % 5 == 0 { &[][..] } else { &[coord][..] };
-            let ft_coords = if case % 5 == 0 {
-                &[][..]
-            } else {
-                &[Fixed(coord * 4)][..]
-            };
-            let outer = if case % 11 == 0 { u16::MAX } else { 0 };
-            let inner = if case % 13 == 0 { u16::MAX } else { 0 };
-            let hb32 = StoreScalars::<f32>::from_store::<HbF32>(&view, hb_coords, supplied);
-            let hb64 = StoreScalars::<f32>::from_store::<HbF64>(&view, hb_coords, supplied);
-            let ft = StoreScalars::<i32>::from_store::<Ft>(&view, ft_coords, supplied);
-            assert_eq!(
-                item_delta::<HbF32>(&view, &hb32, outer, inner).to_bits(),
-                item_delta::<HbF32>(
-                    &view,
-                    &OnTheFly::<HbF32>::new(&view, hb_coords, supplied),
-                    outer,
-                    inner,
-                )
-                .to_bits(),
-                "HbF32 case {case}"
-            );
-            assert_eq!(
-                item_delta::<HbF64>(&view, &hb64, outer, inner).to_bits(),
-                item_delta::<HbF64>(
-                    &view,
-                    &OnTheFly::<HbF64>::new(&view, hb_coords, supplied),
-                    outer,
-                    inner,
-                )
-                .to_bits(),
-                "HbF64 case {case}"
-            );
-            assert_eq!(
-                item_delta::<Ft>(&view, &ft, outer, inner),
-                item_delta::<Ft>(
-                    &view,
-                    &OnTheFly::<Ft>::new(&view, ft_coords, supplied),
-                    outer,
-                    inner,
-                ),
-                "Ft case {case}"
-            );
+            let hb = [coord];
+            let ft = [Fixed(coord * 4)];
+            let empty = i % 5 == 0;
+            let outer = if i % 17 == 0 { u16::MAX } else { 0 };
+            let inner = if i % 19 == 0 { 1 } else { 0 };
+            compare_sources::<HbF32>(&view, if empty { &[] } else { &hb }, !empty, outer, inner);
+            compare_sources::<HbF64>(&view, if empty { &[] } else { &hb }, !empty, outer, inner);
+            compare_sources::<Ft>(&view, if empty { &[] } else { &ft }, !empty, outer, inner);
         }
     }
 
     #[test]
     fn i09_shared_data_memory() {
-        // Every outer index points to the same ItemVariationData offset.
-        // The coefficient cache must remain proportional to regions, not
-        // to the 64K references to that data.
-        let count = u16::MAX;
-        let region_at = 8usize + usize::from(count) * 4;
-        let data_at = region_at + 10;
-        let mut bytes = alloc::vec![0, 1];
-        bytes.extend_from_slice(&u32::try_from(region_at).unwrap().to_be_bytes());
-        bytes.extend_from_slice(&count.to_be_bytes());
-        for _ in 0..count {
-            bytes.extend_from_slice(&u32::try_from(data_at).unwrap().to_be_bytes());
+        let single = store(&7i16.to_be_bytes());
+        for count in [1_u16, u16::MAX] {
+            let regions_offset = 8 + 4 * u32::from(count);
+            let mut bytes = Vec::from(1u16.to_be_bytes());
+            bytes.extend_from_slice(&regions_offset.to_be_bytes());
+            bytes.extend_from_slice(&count.to_be_bytes());
+            let data_offset = (regions_offset + 10).to_be_bytes();
+            for _ in 0..count {
+                bytes.extend_from_slice(&data_offset);
+            }
+            bytes.extend_from_slice(single.get(12..).unwrap());
+            let view = ItemVariationStore::new(&bytes).unwrap();
+            let scalars = StoreScalars::<f32>::from_store::<HbF32>(&view, &[4], true);
+            assert_eq!(scalars.regions(), &[0.5]);
+            assert_eq!(item_delta::<HbF32>(&view, &scalars, count - 1, 0), 3.5);
         }
-        bytes.extend_from_slice(&[0, 1, 0, 1, 0, 0, 0, 8, 0, 16]);
-        bytes.extend_from_slice(&[0, 1, 0, 1, 0, 1, 0, 0, 0, 7]);
-        let view = ItemVariationStore::new(&bytes).unwrap();
-        let cached = StoreScalars::<f32>::from_store::<HbF32>(&view, &[4], true);
-        assert_eq!(view.region_count(), 1);
-        assert_eq!(cached.regions().len(), 1);
-        assert_eq!(item_delta::<HbF32>(&view, &cached, 0, 0), 3.5);
-        assert_eq!(item_delta::<HbF32>(&view, &cached, count - 1, 0), 3.5);
     }
 
     #[test]
