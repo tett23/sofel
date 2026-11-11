@@ -97,7 +97,11 @@ fn script_and_language_selection() {
         (false, Some(t(b"latn")))
     );
     // The plan picks the tags from the script and language.
-    let plan = ShapePlan::new(&font, props(Direction::Ltr, Some(b"Latn"), None), &[]);
+    let plan = ShapePlan::new(
+        font.default_instance(),
+        props(Direction::Ltr, Some(b"Latn"), None),
+        &[],
+    );
     assert_eq!(plan.chosen_scripts()[0], Some(t(b"latn")));
 }
 
@@ -105,7 +109,9 @@ fn script_and_language_selection() {
 fn shaper_categorization() {
     let data = gsub_font(layout(&[(b"DFLT", vec![lang(None, &[])])], &[], &[]));
     let font = Font::new(&data, 0).unwrap();
-    let shaper = |d, s: &[u8; 4]| ShapePlan::new(&font, props(d, Some(s), None), &[]).shaper();
+    let shaper = |d, s: &[u8; 4]| {
+        ShapePlan::new(font.default_instance(), props(d, Some(s), None), &[]).shaper()
+    };
     assert_eq!(shaper(Direction::Rtl, b"Arab"), Shaper::Arabic);
     assert_eq!(shaper(Direction::Ttb, b"Arab"), Shaper::Default);
     // Syriac with only DFLT in GSUB uses the default shaper.
@@ -132,8 +138,14 @@ fn shaper_categorization() {
         &[],
     ));
     let font = Font::new(&data, 0).unwrap();
-    let shaper =
-        |s: &[u8; 4]| ShapePlan::new(&font, props(Direction::Ltr, Some(s), None), &[]).shaper();
+    let shaper = |s: &[u8; 4]| {
+        ShapePlan::new(
+            font.default_instance(),
+            props(Direction::Ltr, Some(s), None),
+            &[],
+        )
+        .shaper()
+    };
     assert_eq!(shaper(b"Deva"), Shaper::Use, "dev3 is chosen first");
     assert_eq!(shaper(b"Java"), Shaper::Use);
     assert_eq!(shaper(b"Mymr"), Shaper::Myanmar);
@@ -153,7 +165,11 @@ fn features_font(tags: &[&[u8; 4]]) -> Vec<u8> {
 fn mask_bits_and_lookup_order() {
     let data = features_font(&[b"liga", b"ccmp", b"frac", b"aalt", b"rand"]);
     let font = Font::new(&data, 0).unwrap();
-    let plan = ShapePlan::new(&font, props(Direction::Ltr, None, None), &[]);
+    let plan = ShapePlan::new(
+        font.default_instance(),
+        props(Direction::Ltr, None, None),
+        &[],
+    );
     let masks = plan.feature_masks();
     let get = |t: &[u8; 4]| masks.iter().find(|m| m.0 == Tag(*t)).copied();
     // Global features with value 1 use the global bit.
@@ -183,7 +199,11 @@ fn mask_bits_and_lookup_order() {
         Feature::parse(b"liga[2:4]").unwrap(),
         Feature::parse(b"aalt=3").unwrap(),
     ];
-    let plan = ShapePlan::new(&font, props(Direction::Ltr, None, None), &features);
+    let plan = ShapePlan::new(
+        font.default_instance(),
+        props(Direction::Ltr, None, None),
+        &features,
+    );
     let masks = plan.feature_masks();
     let get = |t: &[u8; 4]| masks.iter().find(|m| m.0 == Tag(*t)).copied();
     // Sorted by tag now: aalt, ccmp, ..., frac, liga, rand.
@@ -193,7 +213,7 @@ fn mask_bits_and_lookup_order() {
     assert_eq!(get(b"rand").unwrap().1, 0xFF << 8);
     // liga stays on everywhere except where the user range turns it off.
     assert_ne!(plan.global_mask() & (1 << 7), 0);
-    let (_, key_features) = plan.key();
+    let (_, key_features, _) = plan.key();
     assert_eq!(key_features, features);
 }
 
@@ -207,7 +227,11 @@ fn bits_run_out() {
     let data = features_font(&refs);
     let font = Font::new(&data, 0).unwrap();
     let features: Vec<Feature> = tags.iter().map(|t| Feature::new(Tag(*t), 255)).collect();
-    let plan = ShapePlan::new(&font, props(Direction::Ltr, None, None), &features);
+    let plan = ShapePlan::new(
+        font.default_instance(),
+        props(Direction::Ltr, None, None),
+        &features,
+    );
     let masks = plan.feature_masks();
     let mine: Vec<_> = masks.iter().filter(|m| m.0.0[0] == b'x').collect();
     // frac and rand are not in the font and are left without bits; three
@@ -238,7 +262,11 @@ fn vert_is_searched_globally() {
     );
     let data = gsub_font(gsub);
     let font = Font::new(&data, 0).unwrap();
-    let plan = ShapePlan::new(&font, props(Direction::Ttb, Some(b"Latn"), None), &[]);
+    let plan = ShapePlan::new(
+        font.default_instance(),
+        props(Direction::Ttb, Some(b"Latn"), None),
+        &[],
+    );
     let vert = plan
         .feature_masks()
         .into_iter()
@@ -246,7 +274,11 @@ fn vert_is_searched_globally() {
     assert_eq!(vert.map(|v| v.3), Some(true));
     assert_eq!(plan.stage_lookups(0).concat(), [(0, 1 << 31)]);
     // Horizontal text does not ask for vert.
-    let plan = ShapePlan::new(&font, props(Direction::Ltr, Some(b"Latn"), None), &[]);
+    let plan = ShapePlan::new(
+        font.default_instance(),
+        props(Direction::Ltr, Some(b"Latn"), None),
+        &[],
+    );
     assert!(plan.stage_lookups(0).concat().is_empty());
 }
 
@@ -269,7 +301,69 @@ fn required_feature_goes_first() {
     );
     let data = gsub_font(gsub);
     let font = Font::new(&data, 0).unwrap();
-    let plan = ShapePlan::new(&font, props(Direction::Ltr, None, None), &[]);
+    let plan = ShapePlan::new(
+        font.default_instance(),
+        props(Direction::Ltr, None, None),
+        &[],
+    );
     // The required feature applies in stage 0 with the global bit.
     assert_eq!(plan.stage_lookups(0)[0], [(0, 1 << 31)]);
+}
+
+#[test]
+fn adr0027_i_plan_key_tracks_selected_record_not_exact_coords() {
+    use sofel_font::var::{Location, Variation};
+
+    let mut gsub = layout(
+        &[(b"latn", vec![lang(None, &[0])])],
+        &[(b"liga", vec![0])],
+        &[lookup(1, 0, vec![single_subst(&[(1, 2)])])],
+    );
+    let old_len = gsub.len();
+    let script = u16::from_be_bytes([gsub[4], gsub[5]]) + 4;
+    let feature = u16::from_be_bytes([gsub[6], gsub[7]]) + 4;
+    let lookup = u16::from_be_bytes([gsub[8], gsub[9]]) + 4;
+    gsub[0..4].copy_from_slice(&0x0001_0001u32.to_be_bytes());
+    gsub[4..6].copy_from_slice(&script.to_be_bytes());
+    gsub[6..8].copy_from_slice(&feature.to_be_bytes());
+    gsub[8..10].copy_from_slice(&lookup.to_be_bytes());
+    gsub.splice(10..10, (old_len as u32 + 4).to_be_bytes());
+    // One record; an axis-zero inclusive range [0.25, 1.0].
+    gsub.extend_from_slice(&[
+        0, 1, 0, 0, 0, 0, 0, 1, // FeatureVariations header
+        0, 0, 0, 16, 0, 0, 0, 0, // condition and null substitution offsets
+        0, 1, 0, 0, 0, 6, // one condition
+        0, 1, 0, 0, 0x10, 0, 0x40, 0, // format 1, axis 0
+    ]);
+    let mut fvar = vec![0, 1, 0, 0, 0, 16, 0, 2, 0, 1, 0, 20, 0, 0, 0, 8];
+    fvar.extend_from_slice(b"wght");
+    for value in [0i32, 0, 0x10000] {
+        fvar.extend_from_slice(&value.to_be_bytes());
+    }
+    fvar.extend_from_slice(&[0, 0, 1, 0]);
+    let data = support::font(
+        10,
+        &[(0x61, 1)],
+        &[500],
+        vec![(b"GSUB", gsub), (b"fvar", fvar)],
+    );
+    let font = Font::new(&data, 0).unwrap();
+    let key = |v: f32| {
+        let loc = Location::new(
+            &font,
+            None,
+            &[Variation::parse(&format!("wght={v}")).unwrap()],
+        );
+        ShapePlan::new(
+            font.instance(&loc),
+            props(Direction::Ltr, Some(b"Latn"), None),
+            &[],
+        )
+        .key()
+        .2
+    };
+    assert_eq!(key(0.0)[0], None);
+    assert_eq!(key(0.5)[0], Some(0));
+    assert_eq!(key(0.75)[0], Some(0));
+    assert_ne!(key(0.0), key(0.5));
 }

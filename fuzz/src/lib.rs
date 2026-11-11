@@ -129,8 +129,8 @@ pub fn check_gvar(input: &[u8]) {
         for glyph in 0..table.glyph_count().min(32) {
             if let Some(glyph_data) = table.glyph_data(glyph) {
                 let shared = glyph_data.shared_points();
-                for tuple in 0..glyph_data.tuple_count().min(32) {
-                    if let Some(tuple_data) = glyph_data.tuple(tuple) {
+                for tuple in glyph_data.tuples().take(32) {
+                    if let Some(tuple_data) = tuple {
                         if let Some((x, y)) = tuple_data.deltas(points, shared) {
                             for delta in x.iter() { let _ = delta; }
                             for delta in y.iter() { let _ = delta; }
@@ -1017,10 +1017,19 @@ pub fn check_shape(input: &[u8]) {
         ..SegmentProperties::default()
     }
     .guess(&buffer, None);
-    let plan = ShapePlan::new(&font, props, &features);
-    let boxes = sofel_outline::HbExtents::new(font.default_instance());
+    // Exercise the selected FeatureVariations record and variable metrics.
+    let fvar = font.table(Tag::new(b"fvar")).and_then(|data| sofel_read::fvar::Fvar::new(data).ok());
+    let variations = fvar.and_then(|fvar| fvar.axes().next()).map(|axis| {
+        let value = if settings & 0x80 == 0 { axis.min } else { axis.max };
+        sofel_font::var::Variation { tag: axis.tag, value: value.0 as f32 / 65536.0 }
+    });
+    let vars: Vec<_> = variations.into_iter().collect();
+    let location = sofel_font::var::Location::new(&font, None, &vars);
+    let instance = font.instance(&location);
+    let plan = ShapePlan::new(instance, props, &features);
+    let boxes = sofel_outline::HbExtents::new(instance);
     let glyphs = sofel_shape::shape_with_extents(
-        &font,
+        instance,
         &Scale::unscaled(&font),
         &plan,
         buffer,
