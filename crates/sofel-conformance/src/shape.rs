@@ -4,7 +4,7 @@
 //!
 //! The categories are those of ADR 0020: `shaper:<name>` (the shaper of
 //! ADR 0024 HarfBuzz's plan picks), `variations`, `aat`, `synthetic`,
-//! `cff`, `color`, `out-of-scope:<name>`; and, pending a decision, `dfont`
+//! `cff`, `color`, `out-of-scope:<name>`; and, for the cases in ADR 0044, `dfont`
 //! and `sanitize` (see conformance/expected-failures.txt).
 
 use std::collections::BTreeMap;
@@ -76,7 +76,9 @@ impl Subject<'_> {
             buffer.push(u, i);
         }
         let props = self.props.clone().guess(&buffer, None);
-        Some(shaper_name(ShapePlan::new(&font, props, &[]).shaper()))
+        Some(shaper_name(
+            ShapePlan::new(font.default_instance(), props, &[]).shaper(),
+        ))
     }
 
     fn has_table(&self, tag: &[u8; 4]) -> bool {

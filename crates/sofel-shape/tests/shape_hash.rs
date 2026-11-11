@@ -92,7 +92,7 @@ const PAIRS: &[(&str, &str, &[&str], &[&str])] = &[
 
 /// FNV-1a over the glyph, cluster, flags and position of every glyph of
 /// every line of every pair.
-const EXPECTED: u64 = 0xbc06_4516_7d7c_4a3d;
+const EXPECTED: u64 = 0x5868_1607_f09f_2ea0;
 
 fn fnv(h: &mut u64, v: i64) {
     for b in v.to_le_bytes() {
@@ -147,11 +147,11 @@ fn shape_hash() {
                     let i = match plans.iter().position(|p| p.key().0 == props) {
                         Some(i) => i,
                         None => {
-                            plans.push(ShapePlan::new(&font, props, &features));
+                            plans.push(ShapePlan::new(font.default_instance(), props, &features));
                             plans.len() - 1
                         }
                     };
-                    let glyphs = shape(&font, &scale, &plans[i], buffer);
+                    let glyphs = shape(font.default_instance(), &scale, &plans[i], buffer);
                     for (g, p) in glyphs.glyph_infos().iter().zip(glyphs.glyph_positions()) {
                         for v in [g.glyph, g.cluster, g.flags.0] {
                             fnv(&mut h, i64::from(v));

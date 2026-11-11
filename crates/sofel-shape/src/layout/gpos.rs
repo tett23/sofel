@@ -28,7 +28,11 @@ const IGNORE_FLAGS: u32 = 0x000E;
 
 /// `ValueFormat::apply_value`: adds the record's values to `pos` and
 /// says whether any was not zero.
-fn apply_value(c: &ApplyContext<'_, '_, '_, '_, '_>, v: &ValueRecord<'_>, pos: &mut Pos) -> bool {
+fn apply_value(
+    c: &ApplyContext<'_, '_, '_, '_, '_, '_, '_>,
+    v: &ValueRecord<'_>,
+    pos: &mut Pos,
+) -> bool {
     let f = v.format.0;
     if f == 0 {
         return false;
@@ -56,9 +60,8 @@ fn apply_value(c: &ApplyContext<'_, '_, '_, '_, '_>, v: &ValueRecord<'_>, pos: &
     if f & VF::DEVICES == 0 {
         return ret;
     }
-    let scale = font.scale;
-    let use_x = scale.x_ppem != 0;
-    let use_y = scale.y_ppem != 0;
+    let use_x = font.scale.x_ppem != 0 || font.instance.location().hb_nonzero();
+    let use_y = font.scale.y_ppem != 0 || font.instance.location().hb_nonzero();
     if !use_x && !use_y {
         return ret;
     }
@@ -66,25 +69,25 @@ fn apply_value(c: &ApplyContext<'_, '_, '_, '_, '_>, v: &ValueRecord<'_>, pos: &
         ret |= v.x_placement_device.is_some();
         pos.x_offset = pos
             .x_offset
-            .saturating_add(scale.x_delta(v.x_placement_device.as_ref()));
+            .saturating_add(font.x_device_delta(v.x_placement_device.as_ref()));
     }
     if f & VF::Y_PLACEMENT_DEVICE != 0 && use_y {
         ret |= v.y_placement_device.is_some();
         pos.y_offset = pos
             .y_offset
-            .saturating_add(scale.y_delta(v.y_placement_device.as_ref()));
+            .saturating_add(font.y_device_delta(v.y_placement_device.as_ref()));
     }
     if f & VF::X_ADVANCE_DEVICE != 0 && horizontal && use_x {
         ret |= v.x_advance_device.is_some();
         pos.x_advance = pos
             .x_advance
-            .saturating_add(scale.x_delta(v.x_advance_device.as_ref()));
+            .saturating_add(font.x_device_delta(v.x_advance_device.as_ref()));
     }
     if f & VF::Y_ADVANCE_DEVICE != 0 && !horizontal && use_y {
         ret |= v.y_advance_device.is_some();
         pos.y_advance = pos
             .y_advance
-            .saturating_sub(scale.y_delta(v.y_advance_device.as_ref()));
+            .saturating_sub(font.y_device_delta(v.y_advance_device.as_ref()));
     }
     ret
 }
@@ -107,7 +110,10 @@ fn anchor(r: AnchorResult<'_>) -> Option<AnchorRef<'_>> {
 }
 
 /// `Anchor::get_anchor`.
-fn get_anchor(c: &ApplyContext<'_, '_, '_, '_, '_>, a: Option<AnchorRef<'_>>) -> (f32, f32) {
+fn get_anchor(
+    c: &ApplyContext<'_, '_, '_, '_, '_, '_, '_>,
+    a: Option<AnchorRef<'_>>,
+) -> (f32, f32) {
     let font = c.font;
     match a {
         Some(AnchorRef::Known(Anchor::Format1 { x, y }))
@@ -122,11 +128,11 @@ fn get_anchor(c: &ApplyContext<'_, '_, '_, '_, '_>, a: Option<AnchorRef<'_>>) ->
         })) => {
             let mut fx = font.em_fscale_x(x);
             let mut fy = font.em_fscale_y(y);
-            if font.scale.x_ppem != 0 {
-                fx += crate::font::i32_to_f32(font.scale.x_delta(x_device.as_ref()));
+            if font.scale.x_ppem != 0 || font.instance.location().hb_nonzero() {
+                fx += font.x_device_fdelta(x_device.as_ref());
             }
-            if font.scale.y_ppem != 0 {
-                fy += crate::font::i32_to_f32(font.scale.y_delta(y_device.as_ref()));
+            if font.scale.y_ppem != 0 || font.instance.location().hb_nonzero() {
+                fy += font.y_device_fdelta(y_device.as_ref());
             }
             (fx, fy)
         }
@@ -135,7 +141,10 @@ fn get_anchor(c: &ApplyContext<'_, '_, '_, '_, '_>, a: Option<AnchorRef<'_>>) ->
 }
 
 /// Applies a subtable at the current glyph.
-pub(crate) fn apply<'a>(c: &mut ApplyContext<'_, 'a, '_, '_, '_>, s: &PosSubtable<'a>) -> bool {
+pub(crate) fn apply<'a>(
+    c: &mut ApplyContext<'_, 'a, '_, '_, '_, '_, '_>,
+    s: &PosSubtable<'a>,
+) -> bool {
     let glyph = GlyphId(c.buffer.cur(0).codepoint);
     match s {
         PosSubtable::Single { coverage, value } => {
@@ -397,7 +406,7 @@ pub(crate) fn apply<'a>(c: &mut ApplyContext<'_, 'a, '_, '_, '_>, s: &PosSubtabl
 /// `MarkLigPos`, which keeps the last base found for the lookup:
 /// `accept` says whether a matching glyph may be used.
 fn find_base(
-    c: &mut ApplyContext<'_, '_, '_, '_, '_>,
+    c: &mut ApplyContext<'_, '_, '_, '_, '_, '_, '_>,
     accept: impl Fn(&Buffer, usize) -> bool,
 ) -> Option<usize> {
     c.iter_input.set_lookup_props(IGNORE_MARKS);
@@ -432,7 +441,7 @@ fn find_base(
 
 /// `PairSet::apply` and the tail of `PairPosFormat2::apply`.
 fn apply_pair(
-    c: &mut ApplyContext<'_, '_, '_, '_, '_>,
+    c: &mut ApplyContext<'_, '_, '_, '_, '_, '_, '_>,
     v1: &ValueRecord<'_>,
     v2: &ValueRecord<'_>,
     len1: usize,
@@ -462,7 +471,7 @@ fn apply_pair(
 /// `MarkArray::apply`.
 #[allow(clippy::too_many_arguments)]
 fn mark_array_apply(
-    c: &mut ApplyContext<'_, '_, '_, '_, '_>,
+    c: &mut ApplyContext<'_, '_, '_, '_, '_, '_, '_>,
     marks: &MarkArray<'_>,
     mark_index: u32,
     row: u32,
@@ -525,7 +534,7 @@ fn resolve_cross_offset(pos: &[Pos], glyph_pos: usize, direction: Direction) -> 
 
 /// `apply_mark_attachment`.
 fn apply_mark_attachment(
-    c: &mut ApplyContext<'_, '_, '_, '_, '_>,
+    c: &mut ApplyContext<'_, '_, '_, '_, '_, '_, '_>,
     mark_anchor: Option<AnchorRef<'_>>,
     glyph_anchor: Option<AnchorRef<'_>>,
     glyph_pos: usize,
@@ -603,7 +612,7 @@ fn reverse_cursive_minor_offset(
 
 /// `apply_cursive_attachment`.
 fn apply_cursive(
-    c: &mut ApplyContext<'_, '_, '_, '_, '_>,
+    c: &mut ApplyContext<'_, '_, '_, '_, '_, '_, '_>,
     exit: AnchorRef<'_>,
     entry: AnchorRef<'_>,
     i: usize,

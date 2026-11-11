@@ -438,13 +438,17 @@ fn sofel_random<'a>(
     let plan = match plans.iter().position(|p| p.key().0 == props) {
         Some(i) => &plans[i],
         None => {
-            plans.push(ShapePlan::new(font, props, &[]));
+            plans.push(ShapePlan::new(font.default_instance(), props, &[]));
             plans.last().unwrap()
         }
     };
-    let glyphs = shape_with_extents(font, &Scale::unscaled(font), plan, buffer, &|g: GlyphId| {
-        extents.glyph_extents(g)
-    });
+    let glyphs = shape_with_extents(
+        font.default_instance(),
+        &Scale::unscaled(font),
+        plan,
+        buffer,
+        &|g: GlyphId| extents.glyph_extents(g),
+    );
     let mut out = Vec::new();
     serialize_glyphs(
         glyphs.glyph_infos(),
