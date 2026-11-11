@@ -60,7 +60,9 @@ sofel_read::mvar::* Zero-copy Rust views and validator of MVAR (ADR 0027); C rea
 sofel_read::name::* Zero-copy Rust views and per-table validators; C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::os2::* Zero-copy Rust views and per-table validators; C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::post::* Zero-copy Rust views and per-table validators; C reads the bytes with sofel_font_table and validates with sofel_validate.
-sofel_read::sfnt::* Views of the table directory and collection header; C opens a font of a collection by index with sofel_font_create and reads tables with sofel_font_table.
+sofel_read::sfnt::* Views of the table directory and container headers; C opens a font of a collection or dfont by index with sofel_font_create and reads tables with sofel_font_table.
+sofel_font::Font::shaping_table The C shaping entry points select these tables internally; sofel_font_table exposes the original input.
+sofel_read::validate::sfnt_with_layout_damage The Rust event interface supplies the detailed sofel-validate CLI summary; sofel_validate reports individual diagnostics.
 sofel_read::validate::checksum Part of the directory validation that sofel_validate runs.
 sofel_read::validate::directory Part of sofel_read::validate::sfnt, which sofel_validate runs.
 sofel_read::vhea::* The hhea view and validator under the vhea tags; C reads the bytes with sofel_font_table and validates with sofel_validate.
@@ -165,7 +167,6 @@ sofel_shape::Feature::new A struct literal in C: sofel_feature_t with start SOFE
 sofel_shape::Feature::is_global Two comparisons in C, with SOFEL_FEATURE_GLOBAL_START and SOFEL_FEATURE_GLOBAL_END.
 sofel_shape::UnicodeBuffer::is_empty sofel_buffer_length gives 0.
 sofel_shape::GlyphBuffer::is_empty sofel_buffer_length gives 0.
-sofel_shape::Scale::new The pixel sizes for Device tables; sofel_shape takes the sofel_scale_t of sofel_scale_create without them (x_ppem and y_ppem 0, HarfBuzz's default when hb_font_set_ppem is not called), and Golem, the first C caller, shapes in font units.
 sofel_shape::ShapePlan::key What the caller passed to sofel_shape_plan_create, which a C caller keeps to find its plans again.
 sofel_shape::ShapePlan::chosen_scripts The plan's map, for sofel's conformance tests against hb-dump; HarfBuzz keeps it in the internal hb_ot_shape_plan_t.
 sofel_shape::ShapePlan::feature_masks The plan's map, for sofel's conformance tests against hb-dump; HarfBuzz keeps it in the internal hb_ot_map_t.

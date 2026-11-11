@@ -249,6 +249,7 @@ pub(crate) struct Env<'a, 'c> {
     ctx: Ctx<'a>,
     calls: Vec<Ctx<'a>>,
     call_error: bool,
+    called_subr: bool,
     pub args: Vec<Arg>,
     arg_error: bool,
     endchar: bool,
@@ -284,6 +285,7 @@ impl<'a, 'c> Env<'a, 'c> {
             },
             calls: Vec::new(),
             call_error: false,
+            called_subr: false,
             args: Vec::new(),
             arg_error: false,
             endchar: false,
@@ -308,6 +310,10 @@ impl<'a, 'c> Env<'a, 'c> {
 
     fn in_error(&self) -> bool {
         self.call_error || self.arg_error || self.ctx.off > self.ctx.bytes.len()
+    }
+
+    pub(crate) fn called_subr(&self) -> bool {
+        self.called_subr
     }
 
     pub fn set_error(&mut self) {
@@ -413,6 +419,7 @@ impl<'a, 'c> Env<'a, 'c> {
     }
 
     fn call_subr(&mut self, kind: Kind) {
+        self.called_subr = true;
         let subrs = if kind == Kind::Local {
             self.p.lsubrs
         } else {

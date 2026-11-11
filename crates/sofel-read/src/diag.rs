@@ -655,6 +655,11 @@ pub enum Kind {
         /// The value found.
         found: u32,
     },
+    /// Shaping discarded a layout table during sanitization.
+    LayoutTableDiscarded {
+        /// The discarded table.
+        table: Tag,
+    },
     /// Validation followed more offsets and records than the size of
     /// the table allows (HarfBuzz rejects such a table), or found 1000
     /// problems, and stopped.
@@ -789,7 +794,7 @@ impl Kind {
             | ReservedBitsSet { .. }
             | CoverageDuplicate { .. }
             | ColorIndexOutOfRange { .. } => Severity::Warning,
-            UnknownConditionFormat { .. } => Severity::Warning,
+            UnknownConditionFormat { .. } | LayoutTableDiscarded { .. } => Severity::Warning,
         }
     }
 
@@ -902,6 +907,7 @@ impl Kind {
             NestedExtension => "nested_extension",
             EmptyInputSequence => "empty_input_sequence",
             ReservedBitsSet { .. } => "reserved_bits_set",
+            LayoutTableDiscarded { .. } => "layout_table_discarded",
             WorkLimitExceeded => "work_limit_exceeded",
             ColorIndexOutOfRange { .. } => "color_index_out_of_range",
             LayerIndexOutOfRange { .. } => "layer_index_out_of_range",
@@ -974,7 +980,10 @@ impl Kind {
                 f("expected", Uint(expected));
                 f("found", Uint(found));
             }
-            NestedExtension | EmptyInputSequence | WorkLimitExceeded => {}
+            NestedExtension
+            | EmptyInputSequence
+            | WorkLimitExceeded
+            | LayoutTableDiscarded { .. } => {}
             DuplicateTable { tag } => f("tag", DetailValue::Tag(tag)),
             ChecksumMismatch { stored, computed } => {
                 f("stored", Uint(stored));
@@ -1556,6 +1565,7 @@ impl fmt::Display for Kind {
             LayerIndexOutOfRange { index, count } => {
                 write!(f, "layer index {index} is not below the {count} layers")
             }
+            LayoutTableDiscarded { table } => write!(f, "shaping ignores the {table} table after sanitization failed"),
             WorkLimitExceeded => {
                 f.write_str("validation stopped: too many offsets for the size of the table, or too many problems")
             }

@@ -5,7 +5,8 @@
     clippy::cast_possible_wrap,
     clippy::cast_sign_loss,
     clippy::indexing_slicing,
-    clippy::unwrap_used
+    clippy::unwrap_used,
+    clippy::panic
 )]
 
 mod support;
@@ -118,4 +119,100 @@ fn font_files() {
     let file = ttc(true, &[vec![(b"maxp", maxp05(3))]]);
     assert!(matches!(FontFile::new(&file), Ok(FontFile::Collection(_))));
     assert!(FontFile::new(b"wOFF0000").is_err());
+}
+
+#[test]
+fn inv1_dfont_faces() {
+    let first = sfnt(&[(b"maxp", maxp05(3))]);
+    let second = sfnt(&[(b"maxp", maxp05(4))]);
+    let file = dfont(&[(b"sfnt", vec![(14116, first.clone()), (3, second.clone())])]);
+    let FontFile::Dfont(faces) = FontFile::new(&file).unwrap() else {
+        panic!("dfont");
+    };
+    assert_eq!(faces.num_fonts(), 2);
+    assert_eq!(
+        faces.font(0).unwrap().table(Tag::new(b"maxp")),
+        Some(&maxp05(3)[..])
+    );
+    assert_eq!(
+        faces.font(1).unwrap().table(Tag::new(b"maxp")),
+        Some(&maxp05(4)[..])
+    );
+    let duplicate = dfont(&[
+        (b"sfnt", vec![(14116, first)]),
+        (b"sfnt", vec![(3, second)]),
+    ]);
+    let FontFile::Dfont(faces) = FontFile::new(&duplicate).unwrap() else {
+        panic!("dfont");
+    };
+    assert_eq!(faces.num_fonts(), 1);
+    assert_eq!(
+        faces.font(0).unwrap().table(Tag::new(b"maxp")),
+        Some(&maxp05(3)[..])
+    );
+}
+
+#[test]
+fn inv2_dfont_face_index() {
+    for count in [0, 1, 2] {
+        let sfnt = sfnt(&[(b"maxp", maxp05(3))]);
+        let file = if count == 0 {
+            dfont(&[(b"FOND", vec![(0, vec![1])])])
+        } else {
+            dfont(&[(b"sfnt", (0..count).map(|id| (id, sfnt.clone())).collect())])
+        };
+        let FontFile::Dfont(faces) = FontFile::new(&file).unwrap() else {
+            panic!("dfont");
+        };
+        assert_eq!(faces.num_fonts(), u32::from(count));
+        assert!(faces.font(u32::from(count)).is_err());
+    }
+}
+
+#[test]
+fn inv3_dfont_bounds() {
+    let body = sfnt(&[(b"maxp", maxp05(3))]);
+    let file = dfont(&[(b"sfnt", vec![(14116, body)])]);
+    let FontFile::Dfont(faces) = FontFile::new(&file).unwrap() else {
+        panic!("dfont");
+    };
+    assert!(faces.font(0).is_ok()); // body ends at the declared data boundary
+    for lost in [1, 4, 16, 28] {
+        assert!(FontFile::new(&file[..file.len() - lost]).is_err());
+    }
+    let mut long = file.clone();
+    long[256..260].copy_from_slice(&((file.len() as u32) + 1).to_be_bytes());
+    let FontFile::Dfont(faces) = FontFile::new(&long).unwrap() else {
+        panic!("dfont");
+    };
+    assert!(faces.font(0).is_err());
+
+    let mut first = sfnt(&[(b"maxp", maxp05(3))]);
+    let outside_first = first.len() as u32 + 4;
+    first[20..24].copy_from_slice(&outside_first.to_be_bytes());
+    let adjacent = dfont(&[(
+        b"sfnt",
+        vec![(1, first), (2, sfnt(&[(b"maxp", maxp05(4))]))],
+    )]);
+    let FontFile::Dfont(faces) = FontFile::new(&adjacent).unwrap() else {
+        panic!("dfont");
+    };
+    assert_eq!(faces.font(0).unwrap().table(Tag::new(b"maxp")), None);
+
+    let mut wrong_map = file.clone();
+    wrong_map[4..8].copy_from_slice(&0xFFFF_FFFFu32.to_be_bytes());
+    assert!(FontFile::new(&wrong_map).is_err());
+    let mut wrong_data = file.clone();
+    wrong_data[8..12].copy_from_slice(&0xFFFF_FFFFu32.to_be_bytes());
+    assert!(FontFile::new(&wrong_data).is_err());
+    let map_offset = u32::from_be_bytes(file[4..8].try_into().unwrap()) as usize;
+    let mut wrong_list = file.clone();
+    wrong_list[map_offset + 36..map_offset + 38].copy_from_slice(&0xFFFFu16.to_be_bytes());
+    assert!(FontFile::new(&wrong_list).is_err());
+    let mut wrong_resource = file.clone();
+    wrong_resource[map_offset + 43..map_offset + 46].copy_from_slice(&[0xFF; 3]);
+    let FontFile::Dfont(faces) = FontFile::new(&wrong_resource).unwrap() else {
+        panic!("dfont");
+    };
+    assert!(faces.font(0).is_err());
 }

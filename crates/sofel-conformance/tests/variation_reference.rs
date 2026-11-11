@@ -326,69 +326,32 @@ fn adr0027_i2_named_and_overridden_design_coordinates() {
             vec!["--named-instance=0", "--variations=wght=900"],
             Location::new(&font, Some(0), &[variation]),
         ),
+        (
+            vec!["--named-instance=0", "--variations=wght=389.34425354003906"],
+            Location::new(
+                &font,
+                Some(0),
+                &[Variation {
+                    value: 389.34425,
+                    ..variation
+                }],
+            ),
+        ),
+        (
+            vec!["--named-instance=0", "--variations=wght=100"],
+            Location::new(
+                &font,
+                Some(0),
+                &[Variation {
+                    value: 100.0,
+                    ..variation
+                }],
+            ),
+        ),
     ] {
-        let mut hb_args = vec!["--var"];
-        hb_args.extend(&args);
-        let hb = dump(&paths::hb_dump(), &hb_args, &path);
-        let normalized: Vec<i32> = row(&hb, "coords_normalized")
-            .into_iter()
-            .skip(1)
-            .map(|value| value.parse().unwrap())
-            .collect();
-        assert_eq!(normalized, location.coords_normalized());
-        let design: Vec<u32> = row(&hb, "coords_design")
-            .into_iter()
-            .skip(1)
-            .map(|value| u32::from_str_radix(value, 16).unwrap())
-            .collect();
-        assert_eq!(
-            design,
-            location
-                .coords_design()
-                .iter()
-                .map(|value| value.to_bits())
-                .collect::<Vec<_>>()
-        );
-        let mut ft_args = vec!["--var"];
-        ft_args.extend(&args);
-        let ft = dump(&paths::ft_dump(), &ft_args, &path);
-        let blend: Vec<i32> = row(&ft, "coords_blend")
-            .into_iter()
-            .skip(1)
-            .map(|value| value.parse().unwrap())
-            .collect();
-        assert_eq!(
-            blend,
-            location
-                .ft_coords()
-                .iter()
-                .map(|value| value.0)
-                .collect::<Vec<_>>()
-        );
-        let design: Vec<i32> = row(&ft, "coords_design")
-            .into_iter()
-            .skip(1)
-            .map(|value| value.parse().unwrap())
-            .collect();
-        assert_eq!(
-            design,
-            location
-                .ft_design_coords()
-                .iter()
-                .map(|value| value.0)
-                .collect::<Vec<_>>()
-        );
-        let mut ps_name = [0u8; 128];
-        let ps_len = font
-            .instance(&location)
-            .postscript_name(&mut ps_name)
-            .unwrap_or(0);
-        let ps_hex: String = ps_name[..ps_len]
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<Vec<_>>()
-            .join("");
-        assert_eq!(row(&ft, "ps_name").get(1).copied().unwrap_or(""), ps_hex);
+        let mut options = vec!["--var"];
+        options.extend_from_slice(&args);
+        assert_location(&path, 0, &font, &location, &options);
     }
 }
 
@@ -511,6 +474,7 @@ fn adr0030_i01_unrounded_mvar_reference_at_corpus_positions() {
         let bytes = std::fs::read(&path).unwrap();
         let faces = match FontFile::new(&bytes) {
             Ok(FontFile::Collection(c)) => c.num_fonts(),
+            Ok(FontFile::Dfont(d)) => d.num_fonts(),
             Ok(FontFile::Sfnt(_)) => 1,
             Err(_) => continue,
         };
@@ -569,4 +533,174 @@ fn adr0030_i01_unrounded_mvar_reference_at_corpus_positions() {
     }
     assert!(values > 0 && fractional > 0);
     eprintln!("{values} MVAR values, {fractional} fractional");
+}
+
+#[test]
+fn adr0027_i02_design_normalized_and_postscript_at_all_positions() {
+    use sofel_read::sfnt::FontFile;
+    let mut tested = 0;
+    for path in variable_font_paths(&paths::testdata()) {
+        let bytes = std::fs::read(&path).unwrap();
+        let faces = match FontFile::new(&bytes) {
+            Ok(FontFile::Collection(c)) => c.num_fonts(),
+            Ok(FontFile::Dfont(d)) => d.num_fonts(),
+            Ok(FontFile::Sfnt(_)) => 1,
+            Err(_) => continue,
+        };
+        for index in 0..faces {
+            let Ok(font) = Font::new(&bytes, index) else {
+                continue;
+            };
+            if font.var_axes().next().is_none() {
+                continue;
+            }
+            for pos in variation_locations::positions(&font) {
+                let loc = pos.location(&font);
+                let extra = pos.args();
+                let mut args = vec!["--var"];
+                args.extend(extra.iter().map(String::as_str));
+                assert_location(&path, index, &font, &loc, &args);
+                tested += 1;
+            }
+        }
+    }
+    eprintln!("checked {tested} face-locations");
+    assert!(tested > 0);
+}
+
+fn assert_location(path: &Path, index: u32, font: &Font<'_>, loc: &Location<'_>, args: &[&str]) {
+    let instance = font.instance(loc);
+    let size = instance.postscript_name(&mut []).unwrap_or(0);
+    let mut name = vec![0; size];
+    instance.postscript_name(&mut name);
+    let hex = if name.is_empty() {
+        "-".to_string()
+    } else {
+        name.iter().map(|b| format!("{b:02x}")).collect()
+    };
+    let fixed = |v: &[sofel_read::Fixed]| v.iter().map(|x| x.0.to_string()).collect::<Vec<_>>();
+    let hb_fields = [
+        (
+            "coords_normalized",
+            loc.coords_normalized()
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+        ),
+        (
+            "coords_design",
+            loc.coords_design()
+                .iter()
+                .map(|x| format!("{:08x}", x.to_bits()))
+                .collect(),
+        ),
+    ];
+    let ft_fields = [
+        ("coords_blend", fixed(loc.ft_coords())),
+        ("coords_design", fixed(loc.ft_design_coords())),
+        ("ps_name", vec![hex]),
+    ];
+    for (tool, fields) in [
+        (paths::hb_dump(), hb_fields.as_slice()),
+        (paths::ft_dump(), ft_fields.as_slice()),
+    ] {
+        let reference = dump(&tool, args, path);
+        let face = face_block(&reference, index).unwrap();
+        for (field, actual) in fields {
+            let expected = row(face, field);
+            assert_eq!(
+                actual,
+                &expected[1..],
+                "{} face {index} {args:?} {field}",
+                path.display()
+            );
+        }
+    }
+}
+
+fn delta_indices(font: &Font<'_>) -> Vec<(sofel_font::var::StoreKind, u16, u16)> {
+    use sofel_font::var::StoreKind;
+    use sofel_read::{gdef::Gdef, hvar::Hvar, mvar::Mvar};
+    let mut indices = Vec::new();
+    if let Some(mvar) = font
+        .table(Tag::new(b"MVAR"))
+        .and_then(|bytes| Mvar::new(bytes).ok())
+    {
+        for record in (0..mvar.record_count()).filter_map(|i| mvar.record(i)) {
+            indices.push((StoreKind::Mvar, record.outer, record.inner));
+        }
+    }
+    if let Some(map) = font
+        .table(Tag::new(b"HVAR"))
+        .and_then(|bytes| Hvar::new(bytes).ok()?.advance_map().ok())
+    {
+        for glyph in 0..font.num_glyphs() {
+            let index = map.map_or(glyph, |map| map.map(glyph));
+            let [a, b, c, d] = index.to_be_bytes();
+            indices.push((
+                StoreKind::Hvar,
+                u16::from_be_bytes([a, b]),
+                u16::from_be_bytes([c, d]),
+            ));
+        }
+    }
+    if let Some(store) = font
+        .table(Tag::new(b"GDEF"))
+        .and_then(|bytes| Gdef::new(bytes).ok()?.variation_store().ok().flatten())
+    {
+        for outer in 0..store.data_count() {
+            if let Some(data) = store.item_data(outer) {
+                indices.extend((0..data.item_count).map(|inner| (StoreKind::Gdef, outer, inner)));
+            }
+        }
+    }
+    indices
+}
+
+#[test]
+fn adr0029_corpus_delta_digest() {
+    use sofel_font::var::{Ft, HbF32};
+    use sofel_read::sfnt::FontFile;
+    let mut digest = 0xcbf2_9ce4_8422_2325u64;
+    let mut rows = 0u64;
+    for path in variable_font_paths(&paths::testdata()) {
+        let bytes = std::fs::read(path).unwrap();
+        let faces = match FontFile::new(&bytes) {
+            Ok(FontFile::Collection(c)) => c.num_fonts(),
+            Ok(FontFile::Dfont(d)) => d.num_fonts(),
+            Ok(FontFile::Sfnt(_)) => 1,
+            Err(_) => continue,
+        };
+        for index in 0..faces {
+            let Ok(font) = Font::new(&bytes, index) else {
+                continue;
+            };
+            if font.var_axes().next().is_none() {
+                continue;
+            }
+            let indices = delta_indices(&font);
+            for pos in variation_locations::positions(&font) {
+                let location = pos.location(&font);
+                let instance = font.instance(&location);
+                for &(kind, outer, inner) in &indices {
+                    let hb = instance.item_delta::<HbF32>(kind, outer, inner).unwrap();
+                    let bits = if hb.is_nan() {
+                        0x7fc0_0000
+                    } else {
+                        hb.to_bits()
+                    };
+                    let ft = instance.item_delta::<Ft>(kind, outer, inner).unwrap();
+                    for byte in bits.to_le_bytes().into_iter().chain(ft.to_le_bytes()) {
+                        digest = (digest ^ u64::from(byte)).wrapping_mul(0x100_0000_01b3);
+                    }
+                    rows += 1;
+                }
+            }
+        }
+    }
+    assert!(rows > 0);
+    assert_eq!(
+        format!("{digest:016x} {rows}"),
+        include_str!("../../../conformance/var-deltas.digest").trim()
+    );
 }
