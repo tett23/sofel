@@ -69,7 +69,7 @@ mod hb_cff;
 
 pub use sofel_font as font;
 
-pub use hb_cff::{HbExtents, cff1_extents, cff2_extents};
+pub use hb_cff::{HbExtents, cff1_extents, cff2_extents, cff2_extents_at};
 
 use alloc::vec::Vec;
 use core::fmt;
@@ -392,7 +392,7 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
     ) -> Result<OutlineInfo, OutlineError> {
         match &self.format {
             Format::Glyf => load_glyf(&self.font, glyph, scale, scratch),
-            Format::Cff(c) => load_cff(&self.font, c, glyph, scale, scratch),
+            Format::Cff(c) => load_cff_at(&self.font, self.location, c, glyph, scale, scratch),
             Format::Unsupported(e) => {
                 scratch.clear();
                 Err(*e)
@@ -836,4 +836,4 @@ fn decompose(
 }
 
 mod cff;
-use cff::load_cff;
+use cff::load_cff_at;

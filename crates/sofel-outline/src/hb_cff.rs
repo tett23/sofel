@@ -10,9 +10,9 @@
 //! values when the font has no variation coordinates. The box covers
 //! every point of every path that draws, curve control points included;
 //! a path of moves only is not in it. HarfBuzz keeps numbers as
-//! `double`; here they are 16.16 in `i64`, which gives the same values:
-//! operands are 16-bit integers or 16.16 numbers, and at the default
-//! instance only sums are taken, which `double` holds exactly. The edges
+//! `double`; here they are 16.16 units in `f64`. At the default
+//! instance only sums are taken, so the integer and fixed operands stay
+//! exact. The edges
 //! are rounded as HarfBuzz 15.1.0 rounds them, `floor (x + 0.5)` on the
 //! `double` (its `roundf` macro, `_hb_roundf (double)`).
 //!
@@ -26,10 +26,13 @@
 //! Copyright © 2018 Adobe Inc.; © 2011, 2014 Google, Inc. Used under
 //! HarfBuzz's "Old MIT" license; see THIRD_PARTY_NOTICES.md.
 
+use alloc::vec::Vec;
 use sofel_font::read::GlyphId;
 use sofel_font::read::cff::hb::HbIndex;
 use sofel_font::read::cff::subr_bias;
+use sofel_font::var::{HbF64, Instance, StoreScalars};
 use sofel_font::{Font, GlyphExtents, HbCff1, HbCff2, HbScale};
+use sofel_geom::float::{hb_clamp_to_i32, hb_roundf};
 
 /// `HB_CFF_MAX_OPS`.
 const MAX_OPS: u32 = 200_000;
@@ -37,7 +40,9 @@ const MAX_OPS: u32 = 200_000;
 const STACK: usize = 513;
 /// `kMaxCallLimit`.
 const MAX_CALLS: usize = 10;
-/// 1.0 in 16.16.
+/// The 16.16 scale of charstring operands.
+const SCALE: f64 = 65_536.0;
+#[cfg(test)]
 const ONE: i64 = 0x1_0000;
 
 /// HarfBuzz's glyph boxes of one font: the CFF and CFF2 accelerators,
@@ -94,9 +99,8 @@ impl<'data, 'loc, 'source> HbExtents<'data, 'loc, 'source> {
     /// [`HbExtents::glyph_extents`] at `scale` (HarfBuzz's
     /// `scale_glyph_extents` of the unscaled box).
     pub fn scaled_glyph_extents(&self, glyph: GlyphId, scale: &HbScale) -> Option<GlyphExtents> {
-        if let Some(e) = self
-            .font
-            .instance(self.location)
+        let instance = self.font.instance(self.location);
+        if let Some(e) = instance
             .glyf_extents(glyph)
             .map(|e| scale.scale_glyph_extents(e))
         {
@@ -104,7 +108,7 @@ impl<'data, 'loc, 'source> HbExtents<'data, 'loc, 'source> {
         }
         self.cff2
             .as_ref()
-            .and_then(|c| cff2_extents(c, glyph.0))
+            .and_then(|c| cff2_extents_at(c, glyph.0, &instance))
             .or_else(|| self.cff1.as_ref().and_then(|c| cff1_extents(c, glyph.0)))
             .map(|e| scale.scale_glyph_extents(e))
     }
@@ -119,6 +123,30 @@ pub fn cff1_extents(cff: &HbCff1<'_>, glyph: u32) -> Option<GlyphExtents> {
 /// The box of `glyph` from HarfBuzz's CFF2 accelerator at the default
 /// instance, before scaling (`OT::cff2::accelerator_t::get_extents`).
 pub fn cff2_extents(cff: &HbCff2<'_>, glyph: u32) -> Option<GlyphExtents> {
+    cff2_extents_with_scalars(cff, glyph, None)
+}
+
+/// HarfBuzz's CFF2 box at one variable-font location.
+pub fn cff2_extents_at(
+    cff: &HbCff2<'_>,
+    glyph: u32,
+    instance: &Instance<'_, '_, '_, '_>,
+) -> Option<GlyphExtents> {
+    let scalars = if instance.coords_normalized().iter().any(|&coord| coord != 0) {
+        cff.variation_store().map(|store| {
+            StoreScalars::from_store::<HbF64>(&store, instance.coords_normalized(), true)
+        })
+    } else {
+        None
+    };
+    cff2_extents_with_scalars(cff, glyph, scalars)
+}
+
+fn cff2_extents_with_scalars(
+    cff: &HbCff2<'_>,
+    glyph: u32,
+    scalars: Option<StoreScalars<f32>>,
+) -> Option<GlyphExtents> {
     if glyph >= cff.num_glyphs() {
         return None;
     }
@@ -129,6 +157,7 @@ pub fn cff2_extents(cff: &HbCff2<'_>, glyph: u32) -> Option<GlyphExtents> {
         cff.global_subrs(),
         local,
         Kind::Cff2 { cff, ivs },
+        scalars,
     );
     env.run()?;
     Some(env.bounds.extents())
@@ -146,23 +175,24 @@ fn bounds1(cff: &HbCff1<'_>, glyph: u32, in_seac: bool) -> Option<Bounds> {
         cff.global_subrs(),
         local,
         Kind::Cff1 { cff, in_seac },
+        None,
     );
     env.run()?;
     Some(env.bounds)
 }
 
-/// A point in 16.16.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+/// A point in 16.16 units, held as HarfBuzz double precision.
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
 struct Point {
-    x: i64,
-    y: i64,
+    x: f64,
+    y: f64,
 }
 
 impl Point {
-    fn moved(self, dx: i64, dy: i64) -> Point {
+    fn moved(self, dx: f64, dy: f64) -> Point {
         Point {
-            x: self.x.saturating_add(dx),
-            y: self.y.saturating_add(dy),
+            x: self.x + dx,
+            y: self.y + dy,
         }
     }
 }
@@ -178,12 +208,12 @@ impl Bounds {
     fn new() -> Bounds {
         Bounds {
             min: Point {
-                x: i64::from(i32::MAX).saturating_mul(ONE),
-                y: i64::from(i32::MAX).saturating_mul(ONE),
+                x: f64::from(i32::MAX) * SCALE,
+                y: f64::from(i32::MAX) * SCALE,
             },
             max: Point {
-                x: i64::from(i32::MIN).saturating_mul(ONE),
-                y: i64::from(i32::MIN).saturating_mul(ONE),
+                x: f64::from(i32::MIN) * SCALE,
+                y: f64::from(i32::MIN) * SCALE,
             },
         }
     }
@@ -220,15 +250,15 @@ impl Bounds {
     /// `get_extents`: each axis rounded with `floor (x + 0.5)`, or 0 when
     /// its minimum is not below its maximum.
     fn extents(&self) -> GlyphExtents {
-        let axis = |min: i64, max: i64, flip: bool| {
+        let axis = |min: f64, max: f64, flip: bool| {
             if min >= max {
                 return (0, 0);
             }
-            let (lo, hi) = (round(min), round(max));
+            let (lo, hi) = (hb_roundf(min / SCALE), hb_roundf(max / SCALE));
             if flip {
-                (clamp(hi), clamp(lo.saturating_sub(hi)))
+                (hb_clamp_to_i32(hi), hb_clamp_to_i32(lo - hi))
             } else {
-                (clamp(lo), clamp(hi.saturating_sub(lo)))
+                (hb_clamp_to_i32(lo), hb_clamp_to_i32(hi - lo))
             }
         };
         let (x_bearing, width) = axis(self.min.x, self.max.x, false);
@@ -242,24 +272,17 @@ impl Bounds {
     }
 }
 
-/// HarfBuzz's `roundf (double)`, `floor (x + 0.5)`
-/// ([`sofel_geom::float::hb_roundf`]), for a 16.16 `x`, as an integer:
-/// adding 0x8000 and shifting right by 16 floors `x + 0.5` exactly, since
-/// a 16.16 value and its sum with one half are exact in `double` (ADR
-/// 0026). It is faster and does not go through `double`; the tests check
-/// that both always agree.
+/// The default-instance fixed-point rounding equivalence (ADR 0026).
+#[cfg(test)]
 fn round(v: i64) -> i64 {
     v.saturating_add(ONE / 2) >> 16
 }
 
-/// `hb_clamp_to<hb_position_t>`.
-fn clamp(v: i64) -> i32 {
-    i32::try_from(v).unwrap_or(if v < 0 { i32::MIN } else { i32::MAX })
-}
-
-/// `number_t::to_int` of a 16.16 number: truncated toward zero.
-fn to_int(v: i64) -> i64 {
-    v.checked_div(ONE).unwrap_or(0)
+/// `number_t::to_int`: truncate the 16.16 representation toward zero.
+#[allow(clippy::cast_possible_truncation)]
+fn to_int(v: f64) -> i64 {
+    // A cast from a finite double truncates toward zero as number_t does.
+    (v / SCALE) as i64
 }
 
 /// The table being read and what only it has.
@@ -319,7 +342,7 @@ enum Fetched {
 /// `cff2_cs_interp_env_t`) and the extents parameter.
 struct Env<'a, 'c> {
     s: Str<'a>,
-    stack: [i64; STACK],
+    stack: [f64; STACK],
     len: usize,
     stack_error: bool,
     calls: [Str<'a>; MAX_CALLS],
@@ -338,12 +361,20 @@ struct Env<'a, 'c> {
     seen_vsindex: bool,
     seen_blend: bool,
     region_count: u32,
+    region_scalars: Option<StoreScalars<f32>>,
+    weights: Vec<f32>,
     path_open: bool,
     bounds: Bounds,
 }
 
 impl<'a, 'c> Env<'a, 'c> {
-    fn new(data: &'a [u8], global: HbIndex<'a>, local: HbIndex<'a>, kind: Kind<'a, 'c>) -> Self {
+    fn new(
+        data: &'a [u8],
+        global: HbIndex<'a>,
+        local: HbIndex<'a>,
+        kind: Kind<'a, 'c>,
+        region_scalars: Option<StoreScalars<f32>>,
+    ) -> Self {
         let s = Str { data, offset: 0 };
         let ivs = match kind {
             Kind::Cff2 { ivs, .. } => ivs,
@@ -351,7 +382,7 @@ impl<'a, 'c> Env<'a, 'c> {
         };
         Env {
             s,
-            stack: [0; STACK],
+            stack: [0.0; STACK],
             len: 0,
             stack_error: false,
             calls: [s; MAX_CALLS],
@@ -370,6 +401,8 @@ impl<'a, 'c> Env<'a, 'c> {
             seen_vsindex: false,
             seen_blend: false,
             region_count: 0,
+            region_scalars,
+            weights: Vec::new(),
             path_open: false,
             bounds: Bounds::new(),
         }
@@ -427,7 +460,7 @@ impl<'a, 'c> Env<'a, 'c> {
         Fetched::Op(u32::from(e).saturating_add(256))
     }
 
-    fn push(&mut self, v: i64) {
+    fn push(&mut self, v: f64) {
         if let Some(slot) = self.stack.get_mut(self.len) {
             *slot = v;
             self.len = self.len.saturating_add(1);
@@ -436,13 +469,13 @@ impl<'a, 'c> Env<'a, 'c> {
         }
     }
 
-    fn pop(&mut self) -> i64 {
+    fn pop(&mut self) -> f64 {
         if let Some(n) = self.len.checked_sub(1) {
             self.len = n;
-            self.stack.get(n).copied().unwrap_or(0)
+            self.stack.get(n).copied().unwrap_or(0.0)
         } else {
             self.stack_error = true;
-            0
+            0.0
         }
     }
 
@@ -456,12 +489,12 @@ impl<'a, 'c> Env<'a, 'c> {
     }
 
     /// `eval_arg`: operand `i` from the bottom; an error past the top.
-    fn arg(&mut self, i: usize) -> i64 {
+    fn arg(&mut self, i: usize) -> f64 {
         if i < self.len {
-            self.stack.get(i).copied().unwrap_or(0)
+            self.stack.get(i).copied().unwrap_or(0.0)
         } else {
             self.stack_error = true;
-            0
+            0.0
         }
     }
 
@@ -488,7 +521,7 @@ impl<'a, 'c> Env<'a, 'c> {
                         self.s.byte(2),
                         self.s.byte(3),
                     ]);
-                    self.push(i64::from(v));
+                    self.push(f64::from(v));
                     self.s.inc(4);
                 }
             }
@@ -527,13 +560,13 @@ impl<'a, 'c> Env<'a, 'c> {
             }
             22 => {
                 let dx = self.pop();
-                let p = self.pt.moved(dx, 0);
+                let p = self.pt.moved(dx, 0.0);
                 self.moveto(p);
                 self.clear();
             }
             4 => {
                 let dy = self.pop();
-                let p = self.pt.moved(0, dy);
+                let p = self.pt.moved(0.0, dy);
                 self.moveto(p);
                 self.clear();
             }
@@ -552,13 +585,12 @@ impl<'a, 'c> Env<'a, 'c> {
         u32::try_from(self.len).unwrap_or(u32::MAX)
     }
 
-    /// `opset_t::process_op`: numbers are pushed, unknown operators clear
-    /// the stack.
+    /// `opset_t::process_op`: Type 2 numbers, kept in double precision.
     fn number(&mut self, op: u32) {
         match op {
             28 => {
                 let v = i16::from_be_bytes([self.s.byte(0), self.s.byte(1)]);
-                self.push(i64::from(v).saturating_mul(ONE));
+                self.push(f64::from(v) * SCALE);
                 self.s.inc(2);
             }
             247..=250 => {
@@ -567,7 +599,7 @@ impl<'a, 'c> Env<'a, 'c> {
                     .saturating_mul(256)
                     .saturating_add(i64::from(self.s.byte(0)))
                     .saturating_add(108);
-                self.push(v.saturating_mul(ONE));
+                self.push(v as f64 * SCALE);
                 self.s.inc(1);
             }
             251..=254 => {
@@ -576,10 +608,10 @@ impl<'a, 'c> Env<'a, 'c> {
                     .saturating_mul(256)
                     .saturating_sub(i64::from(self.s.byte(0)))
                     .saturating_sub(108);
-                self.push(v.saturating_mul(ONE));
+                self.push(v as f64 * SCALE);
                 self.s.inc(1);
             }
-            32..=246 => self.push(i64::from(op).saturating_sub(139).saturating_mul(ONE)),
+            32..=246 => self.push(i64::from(op).saturating_sub(139) as f64 * SCALE),
             _ => self.clear(),
         }
     }
@@ -716,11 +748,11 @@ impl<'a, 'c> Env<'a, 'c> {
     }
 
     /// `p` moved along x (`horizontal`) or y by `d`.
-    fn axis(&self, p: Point, d: i64, horizontal: bool) -> Point {
+    fn axis(&self, p: Point, d: f64, horizontal: bool) -> Point {
         if horizontal {
-            p.moved(d, 0)
+            p.moved(d, 0.0)
         } else {
-            p.moved(0, d)
+            p.moved(0.0, d)
         }
     }
 
@@ -811,13 +843,13 @@ impl<'a, 'c> Env<'a, 'c> {
         let pt = self.pt;
         let points = match (op, n) {
             (290, 7) => {
-                let p1 = pt.moved(self.arg(0), 0);
+                let p1 = pt.moved(self.arg(0), 0.0);
                 let p2 = p1.moved(self.arg(1), self.arg(2));
-                let p3 = p2.moved(self.arg(3), 0);
-                let p4 = p3.moved(self.arg(4), 0);
-                let mut p5 = p4.moved(self.arg(5), 0);
+                let p3 = p2.moved(self.arg(3), 0.0);
+                let p4 = p3.moved(self.arg(4), 0.0);
+                let mut p5 = p4.moved(self.arg(5), 0.0);
                 p5.y = p1.y;
-                let p6 = p5.moved(self.arg(6), 0);
+                let p6 = p5.moved(self.arg(6), 0.0);
                 [p1, p2, p3, p4, p5, p6]
             }
             (291, 13) => {
@@ -832,18 +864,18 @@ impl<'a, 'c> Env<'a, 'c> {
             (292, 9) => {
                 let p1 = pt.moved(self.arg(0), self.arg(1));
                 let p2 = p1.moved(self.arg(2), self.arg(3));
-                let p3 = p2.moved(self.arg(4), 0);
-                let p4 = p3.moved(self.arg(5), 0);
+                let p3 = p2.moved(self.arg(4), 0.0);
+                let p4 = p3.moved(self.arg(5), 0.0);
                 let p5 = p4.moved(self.arg(6), self.arg(7));
-                let mut p6 = p5.moved(self.arg(8), 0);
+                let mut p6 = p5.moved(self.arg(8), 0.0);
                 p6.y = pt.y;
                 [p1, p2, p3, p4, p5, p6]
             }
             (293, 11) => {
-                let (mut dx, mut dy) = (0i64, 0i64);
+                let (mut dx, mut dy) = (0.0f64, 0.0f64);
                 for k in 0usize..5 {
-                    dx = dx.saturating_add(self.arg(k.saturating_mul(2)));
-                    dy = dy.saturating_add(self.arg(k.saturating_mul(2).saturating_add(1)));
+                    dx += self.arg(k.saturating_mul(2));
+                    dy += self.arg(k.saturating_mul(2).saturating_add(1));
                 }
                 let p1 = pt.moved(self.arg(0), self.arg(1));
                 let p2 = p1.moved(self.arg(2), self.arg(3));
@@ -852,11 +884,11 @@ impl<'a, 'c> Env<'a, 'c> {
                 let p5 = p4.moved(self.arg(8), self.arg(9));
                 let mut p6 = p5;
                 if dx.abs() > dy.abs() {
-                    p6.x = p6.x.saturating_add(self.arg(10));
+                    p6.x += self.arg(10);
                     p6.y = pt.y;
                 } else {
                     p6.x = pt.x;
-                    p6.y = p6.y.saturating_add(self.arg(10));
+                    p6.y += self.arg(10);
                 }
                 [p1, p2, p3, p4, p5, p6]
             }
@@ -881,13 +913,13 @@ impl<'a, 'c> Env<'a, 'c> {
         let top = |k: usize| {
             n.checked_sub(k)
                 .and_then(|i| self.stack.get(i).copied())
-                .unwrap_or(0)
+                .unwrap_or(0.0)
         };
         let delta = Point {
             x: top(4),
             y: top(3),
         };
-        let code = |v: i64| u32::try_from(to_int(v)).unwrap_or(u32::MAX);
+        let code = |v: f64| u32::try_from(to_int(v)).unwrap_or(u32::MAX);
         let base = cff.std_code_to_glyph(code(top(2)));
         let accent = cff.std_code_to_glyph(code(top(1)));
         let parts = if in_seac || base == 0 || accent == 0 {
@@ -917,14 +949,30 @@ impl<'a, 'c> Env<'a, 'c> {
         self.clear();
     }
 
-    /// CFF2's `blend` without coordinates: the default values stay, the
-    /// deltas are dropped.
+    /// CFF2's `blend`: add every delta column in its original order.
     fn blend(&mut self) {
         let Kind::Cff2 { cff, .. } = self.kind else {
             return;
         };
         if !self.seen_blend {
             self.region_count = cff.region_count(self.ivs);
+            if let (Some(store), Some(scalars), Ok(ivs)) = (
+                cff.variation_store(),
+                self.region_scalars.as_ref(),
+                u16::try_from(self.ivs),
+            ) && let Some(data) = store.item_data(ivs)
+                && u32::from(data.region_index_count()) == self.region_count
+            {
+                for column in 0..usize::from(data.region_index_count()) {
+                    let Some(index) = data.region_index(column) else {
+                        break;
+                    };
+                    let Some(&value) = scalars.regions().get(usize::from(index)) else {
+                        break;
+                    };
+                    self.weights.push(value);
+                }
+            }
             self.seen_blend = true;
         }
         let k = self.region_count;
@@ -932,6 +980,23 @@ impl<'a, 'c> Env<'a, 'c> {
         let total = k.checked_add(1).and_then(|k1| k1.checked_mul(n));
         match total {
             Some(t) if t <= self.count() => {
+                let start = self
+                    .len
+                    .saturating_sub(usize::try_from(t).unwrap_or(usize::MAX));
+                let n_values = usize::try_from(n).unwrap_or(usize::MAX);
+                let n_regions = usize::try_from(k).unwrap_or(usize::MAX);
+                if self.weights.len() == n_regions
+                    && n_regions > 0
+                    && let Some(columns) = self.stack.get_mut(start..self.len)
+                    && let Some((defaults, deltas)) = columns.split_at_mut_checked(n_values)
+                {
+                    for (value, columns) in defaults.iter_mut().zip(deltas.chunks_exact(n_regions))
+                    {
+                        for (scalar, delta) in self.weights.iter().zip(columns) {
+                            *value += f64::from(*scalar) * *delta;
+                        }
+                    }
+                }
                 let drop = usize::try_from(k.saturating_mul(n)).unwrap_or(usize::MAX);
                 self.len = self.len.saturating_sub(drop);
             }

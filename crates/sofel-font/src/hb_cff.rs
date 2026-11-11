@@ -29,6 +29,7 @@ use sofel_read::cff::hb::{
     sanitize_cff2_var_store, sanitize_charset, sanitize_encoding, var_store_region_count,
 };
 use sofel_read::cff::{self, NUM_STANDARD_STRINGS, STANDARD_STRINGS, Version};
+use sofel_read::item_variation::ItemVariationStore;
 
 use crate::Font;
 
@@ -472,6 +473,12 @@ impl<'a> HbCff2<'a> {
     /// [`HbCff2::data`]; `None` without a valid one.
     pub fn var_store(&self) -> Option<i64> {
         self.var_store
+    }
+
+    /// The sanitized CFF2 ItemVariationStore for blend coefficients.
+    pub fn variation_store(&self) -> Option<ItemVariationStore<'a>> {
+        let start = usize::try_from(self.var_store?).ok()?.checked_add(2)?;
+        ItemVariationStore::new(self.data.get(start..)?).ok()
     }
 
     /// The FDArray INDEX.
