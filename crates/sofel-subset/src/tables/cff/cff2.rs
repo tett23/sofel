@@ -23,7 +23,9 @@ use sofel_geom::float::hb_clamp_to_i32;
 use sofel_write::{Errors, ObjIdx, Serializer, Whence};
 
 use super::cs::{ENDCHAR_BYTE, bias, encode_int, encode_op};
-use super::cs2::{self, Command, Env, Flatten, Programs, Rounding, Store, Usage, c_round};
+use super::cs2::{
+    self, Command, Env, Flatten, HintTrace, Programs, Rounding, Source, Store, Usage, c_round,
+};
 use super::dict::{self, Dict};
 use super::specialize;
 use super::{
@@ -129,85 +131,12 @@ pub(crate) fn uses_subroutines(font: &Font<'_>, glyphs: &[(u32, u32)]) -> bool {
     })
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 struct CallSite {
     start: usize,
     end: usize,
     local: bool,
     old: u32,
-}
-
-/// Read only literal subroutine operands. Mask lengths and computed operands
-/// require the interpreter's token stream and remain unsupported here.
-#[allow(clippy::arithmetic_side_effects)]
-fn call_sites(bytes: &[u8], globals: u32, locals: u32) -> Option<Vec<CallSite>> {
-    let mut sites = Vec::new();
-    let mut at = 0;
-    let mut immediate = None;
-    while at < bytes.len() {
-        let start = at;
-        let b = *bytes.get(at)?;
-        at += 1;
-        let number = match b {
-            28 => {
-                let n = i16::from_be_bytes([*bytes.get(at)?, *bytes.get(at + 1)?]);
-                at += 2;
-                Some(i32::from(n))
-            }
-            247..=250 => {
-                let n = i32::from(b - 247) * 256 + i32::from(*bytes.get(at)?) + 108;
-                at += 1;
-                Some(n)
-            }
-            251..=254 => {
-                let n = -i32::from(b - 251) * 256 - i32::from(*bytes.get(at)?) - 108;
-                at += 1;
-                Some(n)
-            }
-            32..=246 => Some(i32::from(b) - 139),
-            255 => {
-                let raw = i32::from_be_bytes([
-                    *bytes.get(at)?,
-                    *bytes.get(at + 1)?,
-                    *bytes.get(at + 2)?,
-                    *bytes.get(at + 3)?,
-                ]);
-                at += 4;
-                (raw & 0xffff == 0).then_some(raw >> 16)
-            }
-            _ => None,
-        };
-        if let Some(n) = number {
-            immediate = Some((start, n));
-            continue;
-        }
-        if b == 10 || b == 29 {
-            let (operand, n) = immediate?;
-            let local = b == 10;
-            let count = if local { locals } else { globals };
-            let old = u32::try_from(i64::from(n) + i64::from(bias(count))).ok()?;
-            if old >= count {
-                return None;
-            }
-            sites.push(CallSite {
-                start: operand,
-                end: at,
-                local,
-                old,
-            });
-        } else if b == 19 || b == 20 {
-            return None;
-        } else if b == 12 {
-            at += 1;
-            bytes.get(at - 1)?;
-        } else if (b == 11 || b == 14) && at != bytes.len() {
-            // The interpreter stops at return/endchar; raw copying would
-            // otherwise preserve unreachable bytes that HarfBuzz drops.
-            return None;
-        }
-        immediate = None;
-    }
-    Some(sites)
 }
 
 #[derive(Default)]
@@ -220,72 +149,135 @@ struct KeptSubrs {
 fn rewrite_calls(
     bytes: &[u8],
     sites: &[CallSite],
+    dropped: &[HintTrace],
     global: &BTreeMap<u32, u32>,
     local: &BTreeMap<u32, u32>,
 ) -> Option<Vec<u8>> {
     let mut out = Vec::new();
     let mut cursor = 0;
-    for site in sites {
-        out.extend_from_slice(bytes.get(cursor..site.start)?);
-        let (map, count) = if site.local {
-            (local, local.len())
-        } else {
-            (global, global.len())
-        };
-        let next = *map.get(&site.old)?;
-        encode_int(
-            &mut out,
-            i32::try_from(next)
-                .ok()?
-                .checked_sub(bias(u32::try_from(count).ok()?))?,
-        );
-        out.push(if site.local { 10 } else { 29 });
-        cursor = site.end;
+    let mut events: Vec<(usize, usize, Option<&CallSite>)> = sites
+        .iter()
+        .map(|s| (s.start, s.end, Some(s)))
+        .chain(dropped.iter().map(|s| (s.start, s.end, None)))
+        .collect();
+    events.sort_unstable_by_key(|e| e.0);
+    for (start, end, call) in events {
+        out.extend_from_slice(bytes.get(cursor..start)?);
+        if let Some(site) = call {
+            let (map, count) = if site.local {
+                (local, local.len())
+            } else {
+                (global, global.len())
+            };
+            let next = *map.get(&site.old)?;
+            encode_int(
+                &mut out,
+                i32::try_from(next)
+                    .ok()?
+                    .checked_sub(bias(u32::try_from(count).ok()?))?,
+            );
+            out.push(if site.local { 10 } else { 29 });
+        }
+        cursor = end;
     }
     out.extend_from_slice(bytes.get(cursor..)?);
     Some(out)
 }
 
-fn keep_subrs(fonts: &Fonts<'_>, glyphs: &[(u32, u32)], output_count: u32) -> Option<KeptSubrs> {
+fn keep_subrs(
+    fonts: &Fonts<'_>,
+    glyphs: &[(u32, u32)],
+    output_count: u32,
+    drop_hints: bool,
+) -> Option<KeptSubrs> {
     let fd_count = usize::try_from(fonts.fd_count()).ok()?;
     let mut global_used = BTreeSet::new();
     let mut local_used = vec![BTreeSet::new(); fd_count];
-    let mut pending = Vec::new();
     let mut glyph_sites = Vec::new();
+    let mut subr_sites: BTreeMap<(usize, Source), BTreeMap<usize, CallSite>> = BTreeMap::new();
+    let mut subr_drops: BTreeMap<(usize, Source), BTreeMap<usize, HintTrace>> = BTreeMap::new();
+    let mut visited = BTreeSet::new();
+    let mut mask_sizes = BTreeMap::new();
     for &(new, old) in glyphs {
         let fd = usize::try_from(fonts.fd(old)).ok()?;
         let p = fonts.programs(u32::try_from(fd).ok()?);
         let mut env = Env::new(fonts.char_string(old), p, &[]);
+        env.enable_call_trace(drop_hints);
         if !cs2::interpret(&mut env, &mut Usage::default()) {
             return None;
         }
-        let sites = call_sites(fonts.char_string(old), p.gsubrs.len(), p.lsubrs.len())?;
-        for site in &sites {
-            pending.push((fd, site.local, site.old));
+        for mask in env.mask_trace() {
+            if mask.source != Source::Glyph
+                && mask_sizes
+                    .insert((fd, mask.source, mask.at), mask.size)
+                    .is_some_and(|old| old != mask.size)
+            {
+                return None;
+            }
         }
-        glyph_sites.push((new, old, fd, sites));
-    }
-    let mut scanned = BTreeMap::new();
-    while let Some((fd, local, old)) = pending.pop() {
-        if scanned.contains_key(&(fd, local, old)) {
-            continue;
+        let mut direct = BTreeMap::new();
+        let mut direct_drops = BTreeMap::new();
+        if drop_hints {
+            for &hint in env.hint_trace() {
+                if !hint.terminal
+                    && env
+                        .call_trace()?
+                        .iter()
+                        .any(|call| call.source == hint.source && call.end <= hint.start)
+                {
+                    return None;
+                }
+                let drops = if hint.source == Source::Glyph {
+                    &mut direct_drops
+                } else {
+                    subr_drops.entry((fd, hint.source)).or_default()
+                };
+                if drops
+                    .insert(hint.start, hint)
+                    .is_some_and(|old| old != hint)
+                {
+                    return None;
+                }
+            }
         }
-        let p = fonts.programs(u32::try_from(fd).ok()?);
-        let bytes = if local {
-            p.lsubrs.get(old)?
-        } else {
-            p.gsubrs.get(old)?
-        };
-        let sites = call_sites(bytes, p.gsubrs.len(), p.lsubrs.len())?;
-        for site in &sites {
-            pending.push((fd, site.local, site.old));
+        for trace in env.call_trace()? {
+            let (local, old) = match trace.target {
+                Source::Global(old) => {
+                    global_used.insert(old);
+                    (false, old)
+                }
+                Source::Local(old) => {
+                    local_used.get_mut(fd)?.insert(old);
+                    (true, old)
+                }
+                Source::Glyph => return None,
+            };
+            visited.insert((fd, trace.target));
+            let site = CallSite {
+                start: trace.start,
+                end: trace.end,
+                local,
+                old,
+            };
+            let sites = if trace.source == Source::Glyph {
+                &mut direct
+            } else {
+                subr_sites.entry((fd, trace.source)).or_default()
+            };
+            if sites
+                .insert(trace.start, site)
+                .is_some_and(|old| old != site)
+            {
+                return None;
+            }
         }
-        if local {
-            local_used.get_mut(fd)?.insert(old);
-        } else {
-            global_used.insert(old);
-        }
-        scanned.insert((fd, local, old), sites);
+        glyph_sites.push((
+            new,
+            old,
+            fd,
+            direct.into_values().collect::<Vec<_>>(),
+            direct_drops.into_values().collect::<Vec<_>>(),
+        ));
     }
     let gmap: BTreeMap<_, _> = global_used.iter().copied().zip(0u32..).collect();
     let lmaps: Vec<BTreeMap<_, _>> = local_used
@@ -297,16 +289,32 @@ fn keep_subrs(fonts: &Fonts<'_>, glyphs: &[(u32, u32)], output_count: u32) -> Op
         globals: Vec::new(),
         locals: vec![Vec::new(); fd_count],
     };
-    for (new, old, fd, sites) in glyph_sites {
-        *result.glyphs.get_mut(new as usize)? =
-            rewrite_calls(fonts.char_string(old), &sites, &gmap, lmaps.get(fd)?)?;
+    for (new, old, fd, sites, dropped) in glyph_sites {
+        *result.glyphs.get_mut(new as usize)? = rewrite_calls(
+            fonts.char_string(old),
+            &sites,
+            &dropped,
+            &gmap,
+            lmaps.get(fd)?,
+        )?;
     }
     for old in global_used {
         let mut encoded = None;
         for fd in 0..fd_count {
-            if let Some(sites) = scanned.get(&(fd, false, old)) {
+            if visited.contains(&(fd, Source::Global(old))) {
+                let sites = subr_sites.get(&(fd, Source::Global(old)));
+                let dropped = subr_drops.get(&(fd, Source::Global(old)));
                 let bytes = fonts.programs(u32::try_from(fd).ok()?).gsubrs.get(old)?;
-                let value = rewrite_calls(bytes, sites, &gmap, lmaps.get(fd)?)?;
+                let value = rewrite_calls(
+                    bytes,
+                    &sites.map_or(Vec::new(), |s| s.values().copied().collect()),
+                    &dropped.map_or(Vec::new(), |s| s.values().copied().collect()),
+                    &gmap,
+                    lmaps.get(fd)?,
+                )?;
+                if drop_hints && value.is_empty() {
+                    return None;
+                }
                 if encoded.as_ref().is_some_and(|v| v != &value) {
                     return None;
                 }
@@ -318,13 +326,19 @@ fn keep_subrs(fonts: &Fonts<'_>, glyphs: &[(u32, u32)], output_count: u32) -> Op
     for (fd, used) in local_used.iter().enumerate() {
         let p = fonts.programs(u32::try_from(fd).ok()?);
         for &old in used {
-            let sites = scanned.get(&(fd, true, old))?;
-            result.locals.get_mut(fd)?.push(rewrite_calls(
+            let sites = subr_sites.get(&(fd, Source::Local(old)));
+            let dropped = subr_drops.get(&(fd, Source::Local(old)));
+            let value = rewrite_calls(
                 p.lsubrs.get(old)?,
-                sites,
+                &sites.map_or(Vec::new(), |s| s.values().copied().collect()),
+                &dropped.map_or(Vec::new(), |s| s.values().copied().collect()),
                 &gmap,
                 lmaps.get(fd)?,
-            )?);
+            )?;
+            if drop_hints && value.is_empty() {
+                return None;
+            }
+            result.locals.get_mut(fd)?.push(value);
         }
     }
     Some(result)
@@ -334,8 +348,10 @@ pub(crate) fn supports_subroutines(
     font: &Font<'_>,
     glyphs: &[(u32, u32)],
     output_count: u32,
+    drop_hints: bool,
 ) -> bool {
-    HbCff2::new(font).is_some_and(|hb| keep_subrs(&Fonts::new(hb), glyphs, output_count).is_some())
+    HbCff2::new(font)
+        .is_some_and(|hb| keep_subrs(&Fonts::new(hb), glyphs, output_count, drop_hints).is_some())
 }
 
 /// HarfBuzz's subset accelerator (`OT::cff2::accelerator_subset_t`):
@@ -479,19 +495,18 @@ fn create(plan: &Plan, acc: &Acc<'_>, tag: Tag) -> Result<Cff2Plan, SubsetError>
         }
         None => (1, None, FdMap::identity(1)),
     };
-    let subrs =
-        if called && keep_variations && !drop_hints && !plan.flags.has(Flags::DESUBROUTINIZE) {
-            Some(
-                keep_subrs(fonts, &plan.glyphs.new_to_old, num_glyphs).ok_or(
-                    SubsetError::Unsupported {
-                        tag,
-                        reason: "CFF2 call operand cannot be renumbered",
-                    },
-                )?,
-            )
-        } else {
-            None
-        };
+    let subrs = if called && keep_variations && !plan.flags.has(Flags::DESUBROUTINIZE) {
+        Some(
+            keep_subrs(fonts, &plan.glyphs.new_to_old, num_glyphs, drop_hints).ok_or(
+                SubsetError::Unsupported {
+                    tag,
+                    reason: "CFF2 call operand cannot be renumbered",
+                },
+            )?,
+        )
+    } else {
+        None
+    };
     if let Some(kept) = &subrs {
         charstrings.clone_from(&kept.glyphs);
     }

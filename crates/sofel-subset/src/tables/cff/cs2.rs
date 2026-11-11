@@ -17,8 +17,8 @@ use sofel_font::read::cff::hb::HbIndex;
 use sofel_geom::float::{floor, i32_to_f32};
 
 use super::cs::{
-    CALLGSUBR, CALLSUBR, CNTRMASK, ENDCHAR, FIXEDCS, HINTMASK, HMOVETO, HSTEM, HSTEMHM, RETURN,
-    RMOVETO, SHORTINT, VMOVETO, VSTEM, VSTEMHM, bias, encode_int, encode_num_cs, encode_op,
+    CALLGSUBR, CALLSUBR, CNTRMASK, DOTSECTION, ENDCHAR, FIXEDCS, HINTMASK, HMOVETO, HSTEM, HSTEMHM,
+    RETURN, RMOVETO, SHORTINT, VMOVETO, VSTEM, VSTEMHM, bias, encode_int, encode_num_cs, encode_op,
 };
 
 /// `HB_CFF_MAX_OPS`.
@@ -226,12 +226,43 @@ enum Kind {
     Local,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Source {
+    Glyph,
+    Global(u32),
+    Local(u32),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CallTrace {
+    pub source: Source,
+    pub start: usize,
+    pub end: usize,
+    pub target: Source,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct MaskTrace {
+    pub source: Source,
+    pub at: usize,
+    pub size: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct HintTrace {
+    pub source: Source,
+    pub start: usize,
+    pub end: usize,
+    pub terminal: bool,
+}
+
 /// A program and the position in it; an offset past the end is the error
 /// state.
 #[derive(Clone, Copy, Debug)]
 struct Ctx<'a> {
     bytes: &'a [u8],
     off: usize,
+    source: Source,
 }
 
 /// The fonts' parts an interpreter reads.
@@ -250,6 +281,16 @@ pub(crate) struct Env<'a, 'c> {
     calls: Vec<Ctx<'a>>,
     call_error: bool,
     called_subr: bool,
+    trace_calls: bool,
+    trace_drop_hints: bool,
+    trace_valid: bool,
+    last_literal: Option<(Source, usize, usize)>,
+    fetched_explicit: bool,
+    call_trace: Vec<CallTrace>,
+    mask_trace: Vec<MaskTrace>,
+    hint_trace: Vec<HintTrace>,
+    literal_run: Option<(Source, usize, usize, usize)>,
+    path_started: bool,
     pub args: Vec<Arg>,
     arg_error: bool,
     endchar: bool,
@@ -282,10 +323,21 @@ impl<'a, 'c> Env<'a, 'c> {
             ctx: Ctx {
                 bytes: charstring,
                 off: 0,
+                source: Source::Glyph,
             },
             calls: Vec::new(),
             call_error: false,
             called_subr: false,
+            trace_calls: false,
+            trace_drop_hints: false,
+            trace_valid: true,
+            last_literal: None,
+            fetched_explicit: false,
+            call_trace: Vec::new(),
+            mask_trace: Vec::new(),
+            hint_trace: Vec::new(),
+            literal_run: None,
+            path_started: false,
             args: Vec::new(),
             arg_error: false,
             endchar: false,
@@ -316,6 +368,69 @@ impl<'a, 'c> Env<'a, 'c> {
         self.called_subr
     }
 
+    pub(crate) fn enable_call_trace(&mut self, drop_hints: bool) {
+        self.trace_calls = true;
+        self.trace_drop_hints = drop_hints;
+    }
+
+    pub(crate) fn call_trace(&self) -> Option<&[CallTrace]> {
+        self.trace_valid.then_some(&self.call_trace)
+    }
+
+    pub(crate) fn mask_trace(&self) -> &[MaskTrace] {
+        &self.mask_trace
+    }
+
+    pub(crate) fn hint_trace(&self) -> &[HintTrace] {
+        &self.hint_trace
+    }
+
+    fn record_literal(&mut self, start: usize) {
+        if !self.trace_calls {
+            return;
+        }
+        self.last_literal = Some((self.ctx.source, start, self.ctx.off));
+        if !self.trace_drop_hints {
+            return;
+        }
+        self.literal_run = match self.literal_run {
+            Some((source, first, end, count)) if source == self.ctx.source && end == start => {
+                Some((source, first, self.ctx.off, count.saturating_add(1)))
+            }
+            _ => Some((self.ctx.source, start, self.ctx.off, 1)),
+        };
+    }
+
+    fn record_hint(&mut self, end: usize) {
+        if !self.trace_drop_hints {
+            return;
+        }
+        if self.path_started || !self.args.len().is_multiple_of(2) {
+            self.trace_valid = false;
+        }
+        let start = if self.args.is_empty() {
+            self.ctx.off.saturating_sub(1)
+        } else {
+            match self.literal_run {
+                Some((source, start, _, count))
+                    if source == self.ctx.source && count == self.args.len() =>
+                {
+                    start
+                }
+                _ => {
+                    self.trace_valid = false;
+                    return;
+                }
+            }
+        };
+        self.hint_trace.push(HintTrace {
+            source: self.ctx.source,
+            start,
+            end,
+            terminal: false,
+        });
+    }
+
     pub fn set_error(&mut self) {
         self.ctx.off = self.ctx.bytes.len().saturating_add(1);
     }
@@ -342,12 +457,14 @@ impl<'a, 'c> Env<'a, 'c> {
     /// string.
     fn fetch_op(&mut self) -> u32 {
         let Some(&b) = self.ctx.bytes.get(self.ctx.off) else {
+            self.fetched_explicit = false;
             return if self.calls.is_empty() {
                 ENDCHAR
             } else {
                 RETURN
             };
         };
+        self.fetched_explicit = true;
         self.inc(1);
         if b != 12 {
             return u32::from(b);
@@ -431,21 +548,56 @@ impl<'a, 'c> Env<'a, 'c> {
             self.set_error();
             return;
         };
+        let target = if kind == Kind::Local {
+            Source::Local(num)
+        } else {
+            Source::Global(num)
+        };
+        if self.trace_calls {
+            let op_start = self.ctx.off.saturating_sub(1);
+            match self.last_literal {
+                Some((source, start, end)) if source == self.ctx.source && end == op_start => {
+                    self.call_trace.push(CallTrace {
+                        source,
+                        start,
+                        end: self.ctx.off,
+                        target,
+                    });
+                }
+                _ => self.trace_valid = false,
+            }
+        }
         self.calls.push(self.ctx);
         self.ctx = Ctx {
             bytes: subrs.get(num).unwrap_or(&[]),
             off: 0,
+            source: target,
         };
     }
 
     fn return_from_subr(&mut self) {
+        if self.trace_drop_hints && self.fetched_explicit {
+            self.hint_trace.push(HintTrace {
+                source: self.ctx.source,
+                start: self.ctx.off.saturating_sub(1),
+                end: self.ctx.off,
+                terminal: true,
+            });
+        }
+        if self.trace_calls && self.ctx.off < self.ctx.bytes.len() {
+            self.trace_valid = false;
+        }
         // HarfBuzz marks the returning program in error when it is, and
         // then replaces it with the caller's.
         match self.calls.pop() {
             Some(c) => self.ctx = c,
             None => {
                 self.call_error = true;
-                self.ctx = Ctx { bytes: &[], off: 0 };
+                self.ctx = Ctx {
+                    bytes: &[],
+                    off: 0,
+                    source: Source::Glyph,
+                };
             }
         }
     }
@@ -466,6 +618,7 @@ impl<'a, 'c> Env<'a, 'c> {
     /// `opset_t::process_op`: numbers are pushed, unknown operators clear
     /// the arguments.
     fn process_number(&mut self, op: u32) {
+        let start = self.ctx.off.saturating_sub(1);
         match op {
             SHORTINT => {
                 let v = u16::from_be_bytes([self.byte(0), self.byte(1)]);
@@ -499,16 +652,21 @@ impl<'a, 'c> Env<'a, 'c> {
             }
             _ => self.clear_args(),
         }
+        if matches!(op, SHORTINT | 247..=254 | 32..=246) {
+            self.record_literal(start);
+        }
     }
 
     /// `push_fixed_from_substr`.
     fn push_fixed(&mut self) {
+        let start = self.ctx.off.saturating_sub(1);
         if !self.avail(4) {
             return;
         }
         let v = u32::from_be_bytes([self.byte(0), self.byte(1), self.byte(2), self.byte(3)]);
         self.push(f64::from(i32::from_ne_bytes(v.to_ne_bytes())) / 65536.0);
         self.inc(4);
+        self.record_literal(start);
     }
 
     /// `cff2_cs_interp_env_t::process_blend`.
@@ -637,9 +795,46 @@ pub(crate) trait Ops {
 
 /// `cff2_cs_opset_t::process_op` over `cs_opset_t::process_op`.
 fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
+    if env.trace_drop_hints && matches!(op, BLENDCS | VSINDEXCS | DOTSECTION) {
+        env.trace_valid = false;
+    }
+    if env.trace_drop_hints
+        && matches!(
+            op,
+            RMOVETO
+                | HMOVETO
+                | VMOVETO
+                | RLINETO
+                | HLINETO
+                | VLINETO
+                | RRCURVETO
+                | RCURVELINE
+                | RLINECURVE
+                | VVCURVETO
+                | HHCURVETO
+                | HVCURVETO
+                | HFLEX
+                | FLEX
+                | HFLEX1
+                | FLEX1
+        )
+    {
+        env.path_started = true;
+    }
     match op {
         RETURN => env.return_from_subr(),
         ENDCHAR => {
+            if env.trace_drop_hints && env.fetched_explicit {
+                env.hint_trace.push(HintTrace {
+                    source: env.ctx.source,
+                    start: env.ctx.off.saturating_sub(1),
+                    end: env.ctx.off,
+                    terminal: true,
+                });
+            }
+            if env.trace_calls && env.ctx.off < env.ctx.bytes.len() {
+                env.trace_valid = false;
+            }
             env.endchar = true;
             o.flush_args_and_op(op, env);
         }
@@ -647,11 +842,13 @@ fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
         CALLSUBR => env.call_subr(Kind::Local),
         CALLGSUBR => env.call_subr(Kind::Global),
         HSTEM | HSTEMHM => {
+            env.record_hint(env.ctx.off);
             let n = u32::try_from(env.args.len() / 2).unwrap_or(u32::MAX);
             env.hstem_count = env.hstem_count.saturating_add(n);
             o.flush_args_and_op(op, env);
         }
         VSTEM | VSTEMHM => {
+            env.record_hint(env.ctx.off);
             let n = u32::try_from(env.args.len() / 2).unwrap_or(u32::MAX);
             env.vstem_count = env.vstem_count.saturating_add(n);
             o.flush_args_and_op(op, env);
@@ -659,6 +856,14 @@ fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
         HINTMASK | CNTRMASK => {
             env.determine_hintmask_size();
             let size = env.hintmask_size as usize;
+            env.record_hint(env.ctx.off.saturating_add(size));
+            if env.trace_calls {
+                env.mask_trace.push(MaskTrace {
+                    source: env.ctx.source,
+                    at: env.ctx.off.saturating_sub(1),
+                    size: env.hintmask_size,
+                });
+            }
             if env.avail(size) {
                 o.flush_hintmask(op, env);
                 env.inc(size);
@@ -683,6 +888,9 @@ fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
             env.clear_args();
         }
         _ => env.process_number(op),
+    }
+    if !matches!(op, SHORTINT | 247..=254 | 32..=246 | FIXEDCS) {
+        env.literal_run = None;
     }
 }
 
