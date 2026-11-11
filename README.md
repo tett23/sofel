@@ -67,6 +67,8 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 
 1グリフをヒンティングなしで描き、PGM（P5、白地に黒）を標準出力に書く（[ADR 0012](docs/adr/0012-antialiased-rasterizer.md)）。FreeTypeの `FT_Render_Glyph` と同じ画像になる。そのppemの埋め込みビットマップがあれば、FreeTypeと同じく `--no-bitmap` が無いかぎりそれを書く（32bitはPAM。[ADR 0023](docs/adr/0023-color-glyphs.md)）。`--color` では、COLRv0のグリフをFreeTypeの `FT_LOAD_COLOR` と同じ色の画像にしてPAMで書く（`--palette N` でパレットを選ぶ）。
 
+CLI のレイヤー選択と描画制御は独自実装で、画素合成には `sofel-raster` を使う（[ADR 0055](docs/adr/0055-rewrite-cli-color-rendering.md)）。
+
 ```sh
 cargo run --release --bin sofel-render -- --ppem 48 --char U+0041 font.ttf > a.pgm
 cargo run --release --bin sofel-render -- --ppem 48 --color --char U+1F600 emoji.ttf > a.pam
