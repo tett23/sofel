@@ -424,7 +424,8 @@ pub fn shape_items(b: &mut Bench, testdata: &Path) {
                 let boxes = HbExtents::new(&font);
                 let mut u = UnicodeBuffer::new();
                 u.push_utf8(&text[start..], 0, Some(len));
-                let plan = ShapePlan::new(font.default_instance(), properties(&u, p.direction), &[]);
+                let plan =
+                    ShapePlan::new(font.default_instance(), properties(&u, p.direction), &[]);
                 let g = sofel_shape::shape_with_extents(
                     font.default_instance(),
                     &Scale::unscaled(&font),
