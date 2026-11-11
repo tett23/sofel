@@ -70,6 +70,10 @@ HHEA と VHEA の `numberOfLongMetrics` は、[ADR 0007](adr/0007-sfnt-read-foun
 - [ADR 0021](adr/0021-cff-outlines.md): CFF2 の FDSelect フォーマット4は、FreeType が開けないが、検証器では警告にしている。FreeType に合わせてエラーにするかどうかを決める。
 - [ADR 0018](adr/0018-phantom-point-shift.md): ステータスが採択になっているが、ベンチマークの記録が `docs/benchmarks/` にない。計測して記録を足すまで、ステータスを戻すか、そのまま置くかを決める。
 
+## v1 リリース時の性能比較
+
+v1 リリース時に、[ADR 0006](adr/0006-performance-measurement.md) に従って sofel と HarfBuzz・FreeType の対応する処理を同じ条件でベンチマークし、比較結果を `docs/benchmarks/` に記録する。
+
 ## 性能の目標に届いていないもの
 
 [ADR 0006](adr/0006-performance-measurement.md) の目標は、すべての項目で HarfBuzz と FreeType より遅くならないことである。以下の数値は、`docs/benchmarks/` の記録と、集めた報告による。報告のうち、記録の中で確かめていない数値（Roboto 5.5倍など）は未確認である。

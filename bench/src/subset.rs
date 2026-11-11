@@ -163,3 +163,77 @@ pub fn subset_items(b: &mut Bench, testdata: &Path) {
         );
     }
 }
+
+// Google Benchmark's Range(10, max) uses a multiplier of eight and
+// includes both endpoints, even when the maximum is not a power of eight.
+fn subset_sizes(max: u32) -> Vec<u32> {
+    let mut sizes = vec![10];
+    sizes.extend(std::iter::successors(Some(64u32), |n| n.checked_mul(8)).take_while(|&n| n < max));
+    if max > 10 {
+        sizes.push(max);
+    }
+    sizes
+}
+
+/// The static fonts and Unicode subset sizes in perf/benchmark-subset.cc.
+pub fn unicode_range_items(b: &mut Bench, testdata: &Path) {
+    for (name, max) in [
+        ("Roboto-Regular.ttf", 1000),
+        ("Amiri-Regular.ttf", 4096),
+        ("NotoNastaliqUrdu-Regular.ttf", 1400),
+        ("NotoSansDevanagari-Regular.ttf", 1000),
+        ("Mplus1p-Regular.ttf", 10000),
+        ("SourceHanSans-Regular_subset.otf", 10000),
+        ("SourceSansPro-Regular.otf", 2000),
+    ] {
+        let items: Vec<_> = subset_sizes(max)
+            .into_iter()
+            .flat_map(|n| {
+                [(Flags::DEFAULT, ""), (Flags::RETAIN_GIDS, ", retain-gids")]
+                    .map(|(flags, suffix)| (n, flags, format!("subset unicode range {n}{suffix}")))
+            })
+            .filter(|(_, _, item)| b.wanted(name, item))
+            .collect();
+        if items.is_empty() {
+            continue;
+        }
+        let path = testdata.join("harfbuzz/test/subset/data/fonts").join(name);
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let font = Font::new(&bytes, 0).expect("sofel opens the font");
+        let hb = HbFont::open(&bytes).expect("HarfBuzz opens the font");
+        let prepared = Prepared::new(&font);
+        let preprocessed = HbPreprocessed::new(&hb);
+        let chars = preprocessed.first_unicodes(max);
+        assert!(!chars.is_empty(), "{name}: no mapped characters");
+        for (n, flags, item) in items {
+            let selected = &chars[..chars.len().min(n as usize)];
+            b.item(
+                name,
+                item,
+                &mut || ours_prepared(&font, &prepared, &[], selected, flags),
+                None,
+                Some((
+                    &mut || {
+                        let (hash, len) = preprocessed.subset(&[], selected, flags.0);
+                        assert!(len > 0, "{name}: reference subset failed");
+                        hash
+                    },
+                    Compare::Yes,
+                )),
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn upstream_size_range_includes_both_endpoints_and_powers_of_eight() {
+        assert_eq!(subset_sizes(10), [10]);
+        assert_eq!(subset_sizes(512), [10, 64, 512]);
+        assert_eq!(subset_sizes(1000), [10, 64, 512, 1000]);
+        assert_eq!(subset_sizes(10000), [10, 64, 512, 4096, 10000]);
+    }
+}
