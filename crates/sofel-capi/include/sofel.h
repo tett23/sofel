@@ -874,6 +874,24 @@ int32_t sofel_font_metrics_position_with_fallback(const sofel_font_t *font,
 /* HarfBuzz's scale of a font (x_scale, y_scale). Immutable. */
 typedef struct sofel_scale_t sofel_scale_t;
 
+/* Returns the unrounded MVAR delta. NULL location selects the default.
+ * Rust: sofel_font::var::Instance::metrics_variation
+ */
+int32_t sofel_instance_metrics_variation(const sofel_font_t *font,
+    const sofel_location_t *location, uint32_t tag, float *out);
+
+/* Returns the scaled MVAR delta. NULL location selects the default.
+ * Rust: sofel_font::var::Instance::metrics_x_variation
+ */
+int32_t sofel_scale_metrics_x_variation(const sofel_scale_t *scale, const sofel_font_t *font,
+    const sofel_location_t *location, uint32_t tag, int32_t *out);
+
+/* Returns the scaled MVAR delta. NULL location selects the default.
+ * Rust: sofel_font::var::Instance::metrics_y_variation
+ */
+int32_t sofel_scale_metrics_y_variation(const sofel_scale_t *scale, const sofel_font_t *font,
+    const sofel_location_t *location, uint32_t tag, int32_t *out);
+
 /*
  * A scale for `font`; NULL on failure, with the reason in *error.
  * Destroy it with sofel_scale_destroy.
@@ -884,6 +902,20 @@ typedef struct sofel_scale_t sofel_scale_t;
  */
 sofel_scale_t *sofel_scale_create(const sofel_font_t *font, int32_t x_scale, int32_t y_scale,
                                   int32_t *error);
+
+/*
+ * A scale with separate horizontal and vertical pixels per em for Device
+ * adjustments during shaping. A zero ppem disables Device adjustments on
+ * that axis. The ownership and error rules match sofel_scale_create.
+ *
+ * Rust: sofel_shape::Scale::new
+ * HarfBuzz: hb_font_set_scale, hb_font_set_ppem
+ * FreeType: none
+ */
+sofel_scale_t *sofel_scale_create_with_ppem(const sofel_font_t *font,
+                                            int32_t x_scale, int32_t y_scale,
+                                            uint32_t x_ppem, uint32_t y_ppem,
+                                            int32_t *error);
 
 /*
  * Frees a scale. NULL does nothing.

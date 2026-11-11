@@ -34,7 +34,6 @@ FreeType の丸めの順序、係数のキャッシュの同一性、空の座�
 各項目の実装状況はリンク先の ADR に記す。
 
 - [ADR 0050](adr/0050-preserve-opentype-script-values.md)：OpenType タグからスクリプトを求める二つの API で、HarfBuzz が返す4バイトを保持する。
-- [ADR 0052](adr/0052-c-shaping-ppem.md)：C API で横と縦の ppem を指定できるスケール構築子を追加する。既存の呼び出しでは両軸とも0を使う。
 - [ADR 0055](adr/0055-rewrite-cli-color-rendering.md)：CLI の COLRv0 描画制御を独自実装に書き直し、sofel-cli の MIT 表記を維持する。画素の合成には sofel-raster の既存実装を使う。
 
 cmap のフォーマット2と8は、通常のグリフ検索では読み、シェーピングでは HarfBuzz に合わせて対応なしとする処理を実装済みである。[仕様書](specifications.md) に両方の検索規則を記載している。
