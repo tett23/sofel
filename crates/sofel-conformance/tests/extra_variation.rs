@@ -364,6 +364,40 @@ fn adr0027_i07_gvar_sampled_metrics() {
 
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
+fn adr0027_i07_gvar_composite_extents() {
+    let path = paths::testdata().join("extra-fonts/fonts/arabic.ttf");
+    let bytes = std::fs::read(&path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let location = Location::new(
+        &font,
+        None,
+        &[Variation {
+            tag: Tag::new(b"wght"),
+            value: 900.0,
+        }],
+    );
+    for glyph in [5, 6, 7, 15] {
+        let actual = font.instance(&location).glyf_extents(GlyphId(glyph));
+        let output = Command::new(paths::hb_dump())
+            .arg("--var-metrics")
+            .arg(&path)
+            .arg(glyph.to_string())
+            .arg("wght=900")
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let reference = hb::parse(&String::from_utf8(output.stdout).unwrap()).unwrap();
+        let expected = reference[0].scales[0].glyphs[0].4;
+        assert_eq!(
+            actual.map(|e| [e.x_bearing, e.y_bearing, e.width, e.height]),
+            expected,
+            "glyph {glyph}"
+        );
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
 fn i06_nondefault_references_match_pinned_harfbuzz_and_freetype() {
     let hb_dump = paths::hb_dump();
     let ft_dump = paths::ft_dump();
