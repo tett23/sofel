@@ -223,8 +223,20 @@ pub fn diff(expected: &[u8], actual: &[u8]) -> String {
             at.iter().map(|t| t.to_string()).collect::<Vec<_>>()
         ));
     }
-    for t in et {
-        let (x, y) = (e.table(t).unwrap_or(&[]), a.table(t).unwrap_or(&[]));
+    let tags: std::collections::BTreeSet<_> = et.into_iter().chain(at).collect();
+    for t in tags {
+        let (x, y) = match (e.table(t), a.table(t)) {
+            (Some(x), Some(y)) => (x, y),
+            (None, Some(_)) => {
+                out.push(format!("{t}@0 (missing in expected)"));
+                continue;
+            }
+            (Some(_), None) => {
+                out.push(format!("{t}@0 (missing in actual)"));
+                continue;
+            }
+            (None, None) => continue,
+        };
         if x != y {
             let at = x
                 .iter()

@@ -176,7 +176,7 @@ pub fn check_outline(data: &[u8]) {
 /// Every glyph's outline through `Outlines` (glyf, CFF and CFF2), and
 /// its rendering.
 fn draw_all(font: &sofel_font::Font<'_>) {
-    let outlines = sofel_outline::Outlines::new(font);
+    let outlines = sofel_outline::Outlines::new(font.default_instance());
     let mut scratch = sofel_outline::Scratch::default();
     let mut raster = sofel_raster::Rasterizer::with_band_cells(512);
     let scales = [sofel_outline::Scale::Unscaled, sofel_outline::Scale::pixels(font, 16, 16)];
@@ -923,7 +923,7 @@ pub fn check_shape(input: &[u8]) {
     }
     .guess(&buffer, None);
     let plan = ShapePlan::new(&font, props, &features);
-    let boxes = sofel_outline::HbExtents::new(&font);
+    let boxes = sofel_outline::HbExtents::new(font.default_instance());
     let glyphs = sofel_shape::shape_with_extents(
         &font,
         &Scale::unscaled(&font),
