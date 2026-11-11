@@ -21,7 +21,7 @@ WOFFとWOFF2、Type1やBDFなどの古い形式、AAT、絵文字（COLR、埋�
 `sofel-read` は、sfntの目録、TTC/OTC、head、maxp/MAXP、hhea/HHEA、hmtx/HMTX、cmap（フォーマット0〜15）、loca、glyf（[ADR 0007](docs/adr/0007-sfnt-read-foundation.md)、[0011](docs/adr/0011-glyf-outlines.md)）と、OS/2、name、post、vhea/VHEA、vmtx/VMTX、VORG（[ADR 0016](docs/adr/0016-font-and-vertical-metrics.md)）、BASE（[ADR 0017](docs/adr/0017-base-baselines.md)）、CFFとCFF2（[ADR 0021](docs/adr/0021-cff-outlines.md)）、GDEF、GSUB、GPOS（[ADR 0020](docs/adr/0020-shaping-foundation.md)）、MATH、fvar、avar、STAT（[ADR 0022](docs/adr/0022-subsetting.md)）を読み、各表の検証器を持つ。
 可変フォントの位置でFreeType互換の生の塗り、停止点、クリップ矩形を読むには `FtPaintGraph` を使う。FreeType互換のCOLRの生の塗りを複数グリフで調べるときは、`RawPaintGraph::new` の結果を再利用できる。
 COLRv1の描画は、Rustの `paint`・`paint_recording` とCの `sofel_paint_glyph` に可変フォントの位置を渡して記録できる。
-さらに、[ADR 0027](docs/adr/0027-variable-fonts.md) の可変フォントの表（ItemVariationStore、DeltaSetIndexMap、HVAR、VVAR、MVAR、gvar、GVAR、avar版2、FeatureVariations）を読み、検証する。`sofel-subset` はFeatureVariationsをこのビューから読む。
+さらに、[ADR 0027](docs/adr/0027-variable-fonts.md) の可変フォントの表（ItemVariationStore、DeltaSetIndexMap、HVAR、VVAR、MVAR、gvar、GVAR、avar版2、FeatureVariations）を読み、検証する。`sofel-subset` はFeatureVariationsをこのビューから読む。glyfのFreeType互換の送り幅は、位置設定後の初回 `FT_Get_Advances` の値に合わせる（[ADR 0048](docs/adr/0048-freetype-advance-query-state.md)）。
 範囲と実装の順序は [ADR 0001](docs/adr/0001-project-goal-and-scope.md)、クレートの構成は [ADR 0003](docs/adr/0003-crate-layers.md) を参照。
 仕様は [docs/specifications.md](docs/specifications.md) にまとめる。フォントの用語と sofel の型名は[用語集](docs/glossary.md)で引ける。
 シェーピング計画の生成時間は、[Coverageの走査を打ち切る計測](docs/benchmarks/2026-11-11-shape-coverage-digest.md) に記録している。
@@ -82,7 +82,7 @@ cargo run --release --bin sofel-shape -- --variations=wght=700 --text=Hello vari
 `--variations` は軸のタグと設計座標を、`--named-instance` は0から数える名前つきインスタンスを指定する（[ADR 0027](docs/adr/0027-variable-fonts.md)）。言語は `--language`、無ければ `--default-language` で、どちらも無ければ「言語なし」とする（`hb-shape` は `$LANG` を読む）。終了コードは、成功が0、フォントか文字列のファイルを読めなければ1、使い方の誤りと解釈しないオプション（`--font-ptem`、`--font-bold` など）が2、`--verify` の検査の失敗が3。オプションの一覧は `sofel-shape --help` で示す。
 ### `sofel-paint`
 
-可変フォントの色の描画には、たとえば `--variations=wght=500` を指定する。`--named-instance=0` は先頭の名前つきインスタンスを選ぶ。
+可変フォントの色の描画には、たとえば `--variations=wght=500` を指定する。`--named-instance=0` は先頭の名前つきインスタンスを選ぶ。FreeTypeの輪郭とラスタライズでは、FreeTypeが末尾に補った既定インスタンスの番号も指定できる。
 
 カラーグリフの塗りの命令を、HarfBuzzの `test/api/test-paint.c` と同じ字下げのテキストで標準出力に書く（[ADR 0023](docs/adr/0023-color-glyphs.md)）。数はCの `%.3g`、`--exact` では `f32` のビットの16進。カラーでないグリフは終了コード1。
 
