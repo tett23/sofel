@@ -45,6 +45,8 @@
 extern crate alloc;
 
 mod extents;
+mod ft_paint;
+pub use ft_paint::{FtPaint, FtPaintGraph};
 mod paint;
 mod palette;
 mod raw;

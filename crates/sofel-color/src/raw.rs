@@ -43,7 +43,7 @@ impl<'a> PaintRef<'a> {
 /// A COLR table opened with FreeType's variation-store checks. Reuse it when
 /// walking more than one glyph of the same face.
 #[derive(Clone, Copy, Debug)]
-pub struct RawPaintGraph<'a>(Colr<'a>);
+pub struct RawPaintGraph<'a>(pub(crate) Colr<'a>);
 
 impl<'a> RawPaintGraph<'a> {
     /// Opens the paint graph, checking the variation store and map once.
