@@ -233,6 +233,66 @@ impl<'a> GlyphVariationData<'a> {
             .flatten()
     }
 
+    /// Tuple variations in serialized order, without restarting the header scan.
+    pub fn tuples(&self) -> TupleVariations<'a> {
+        let data_at = if self.shared_points {
+            be::tail_at(self.bytes, self.data_at)
+                .and_then(PackedPoints::parse)
+                .and_then(|(_, used)| self.data_at.checked_add(used))
+        } else {
+            Some(self.data_at)
+        };
+        TupleVariations {
+            glyph: *self,
+            header_at: self.header_at,
+            data_at,
+            remaining: self.count,
+        }
+    }
+
+    fn tuple_at(
+        &self,
+        header: usize,
+        data: usize,
+        size: usize,
+        index: u16,
+    ) -> Option<TupleVariation<'a>> {
+        let bytes = be::slice_at(self.bytes, data, size)?;
+        let coordinate_at = header.checked_add(4)?;
+        let coordinate_len = usize::from(self.axes).checked_mul(2)?;
+        let embedded = index & 0x8000 != 0;
+        let peak = if embedded {
+            Some(Tuple {
+                bytes: be::slice_at(self.bytes, coordinate_at, coordinate_len)?,
+            })
+        } else {
+            None
+        };
+        let mid = coordinate_at.checked_add(if embedded { coordinate_len } else { 0 })?;
+        let intermediate = if index & 0x4000 != 0 {
+            Some((
+                Tuple {
+                    bytes: be::slice_at(self.bytes, mid, coordinate_len)?,
+                },
+                Tuple {
+                    bytes: be::slice_at(
+                        self.bytes,
+                        mid.checked_add(coordinate_len)?,
+                        coordinate_len,
+                    )?,
+                },
+            ))
+        } else {
+            None
+        };
+        Some(TupleVariation {
+            bytes,
+            index,
+            peak,
+            intermediate,
+        })
+    }
+
     /// Tuple variation `i`, with its own serialized-data slice.
     pub fn tuple(&self, i: u16) -> Option<TupleVariation<'a>> {
         if i >= self.count {
@@ -246,45 +306,72 @@ impl<'a> GlyphVariationData<'a> {
         for k in 0..=i {
             let (next, size, index) = self.header(header)?;
             if k == i {
-                let bytes = be::slice_at(self.bytes, data, size)?;
-                let coordinate_at = header.checked_add(4)?;
-                let coordinate_len = usize::from(self.axes).checked_mul(2)?;
-                let embedded = index & 0x8000 != 0;
-                let peak = if embedded {
-                    Some(Tuple {
-                        bytes: be::slice_at(self.bytes, coordinate_at, coordinate_len)?,
-                    })
-                } else {
-                    None
-                };
-                let mid = coordinate_at.checked_add(if embedded { coordinate_len } else { 0 })?;
-                let intermediate = if index & 0x4000 != 0 {
-                    Some((
-                        Tuple {
-                            bytes: be::slice_at(self.bytes, mid, coordinate_len)?,
-                        },
-                        Tuple {
-                            bytes: be::slice_at(
-                                self.bytes,
-                                mid.checked_add(coordinate_len)?,
-                                coordinate_len,
-                            )?,
-                        },
-                    ))
-                } else {
-                    None
-                };
-                return Some(TupleVariation {
-                    bytes,
-                    index,
-                    peak,
-                    intermediate,
-                });
+                return self.tuple_at(header, data, size, index);
             }
             header = next;
             data = data.checked_add(size)?;
         }
         None
+    }
+}
+
+/// Borrowed iterator over a glyph's tuple variations.
+pub struct TupleVariations<'a> {
+    glyph: GlyphVariationData<'a>,
+    header_at: usize,
+    data_at: Option<usize>,
+    remaining: u16,
+}
+
+impl<'a> Iterator for TupleVariations<'a> {
+    type Item = Option<TupleVariation<'a>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.remaining == 0 {
+            return None;
+        }
+        self.remaining = self.remaining.saturating_sub(1);
+        let tuple = (|| {
+            let data = self.data_at?;
+            let (next, size, index) = self.glyph.header(self.header_at)?;
+            let tuple = self.glyph.tuple_at(self.header_at, data, size, index)?;
+            self.header_at = next;
+            self.data_at = data.checked_add(size);
+            Some(tuple)
+        })();
+        if tuple.is_none() {
+            self.remaining = 0;
+        }
+        Some(tuple)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = usize::from(self.remaining);
+        (0, Some(remaining))
+    }
+}
+
+#[cfg(test)]
+mod tuple_iteration_tests {
+    use super::GlyphVariationData;
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn adr0047_i05_tuple_cursors_only_advance() {
+        let bytes = [
+            0, 2, 0, 12, // two tuples, data begins after the two headers
+            0, 2, 0, 0, // first two-byte data slice
+            0, 2, 0, 0, // second two-byte data slice
+            0xaa, 0xbb, 0xcc, 0xdd,
+        ];
+        let glyph = GlyphVariationData::new(&bytes, 1, false).unwrap();
+        let mut tuples = glyph.tuples();
+        assert_eq!((tuples.header_at, tuples.data_at), (4, Some(12)));
+        assert_eq!(tuples.next().unwrap().unwrap().data(), &[0xaa, 0xbb]);
+        assert_eq!((tuples.header_at, tuples.data_at), (8, Some(14)));
+        assert_eq!(tuples.next().unwrap().unwrap().data(), &[0xcc, 0xdd]);
+        assert_eq!((tuples.header_at, tuples.data_at), (12, Some(16)));
+        assert!(tuples.next().is_none());
     }
 }
 

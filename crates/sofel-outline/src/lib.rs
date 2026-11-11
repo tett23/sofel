@@ -279,7 +279,9 @@ impl Context<'_, '_, '_> {
         }
         let instance = self.font.instance(self.location);
         let right = left.wrapping_add(i32::from(
-            instance.ft_h_advance(GlyphId(glyph)).unwrap_or(0),
+            instance
+                .ft_h_advance_before_gvar(GlyphId(glyph))
+                .unwrap_or(0),
         ));
         let top = i32::from(y_max).wrapping_add(i32::from(
             instance
@@ -287,7 +289,9 @@ impl Context<'_, '_, '_> {
                 .unwrap_or(0),
         ));
         let bottom = top.wrapping_sub(i32::from(
-            instance.ft_v_advance(GlyphId(glyph)).unwrap_or(0),
+            instance
+                .ft_v_advance_before_gvar(GlyphId(glyph))
+                .unwrap_or(0),
         ));
         [
             Point { x: left, y: 0 },

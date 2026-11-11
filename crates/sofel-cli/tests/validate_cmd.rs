@@ -14,6 +14,7 @@
 mod build;
 
 use build::*;
+use sofel_font::{Cff, Font, HbCff2};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -91,6 +92,68 @@ fn warning_font() -> Vec<u8> {
         }
     }
     sfnt(&tables)
+}
+
+fn cff2_fdselect_font(format: u8, sentinel: u32) -> Vec<u8> {
+    let fd_select = match format {
+        0 => vec![0, 0, 1, 1],
+        3 => vec![3, 0, 2, 0, 0, 0, 0, 1, 1, 0, 3],
+        4 => {
+            let mut bytes = vec![4];
+            bytes.extend(2u32.to_be_bytes());
+            bytes.extend(0u32.to_be_bytes());
+            bytes.extend(0u16.to_be_bytes());
+            bytes.extend(1u32.to_be_bytes());
+            bytes.extend(1u16.to_be_bytes());
+            bytes.extend(sentinel.to_be_bytes());
+            bytes
+        }
+        _ => unreachable!(),
+    };
+    otto_font(
+        3,
+        vec![(
+            b"CFF2",
+            cff2(&Cff2Spec {
+                charstrings: vec![
+                    Vec::new(),
+                    charstring(&[Cs::I(0), Cs::Op(22)]),
+                    charstring(&[Cs::I(0), Cs::Op(22)]),
+                ],
+                fds: vec![(Vec::new(), Vec::new()); 2],
+                fd_select,
+                ..Default::default()
+            }),
+        )],
+    )
+}
+
+#[test]
+fn inv2_validate_fdselect_exit() {
+    let dir = Dir::new("cff2-fdselect");
+    for (format, sentinel, code) in [(4, 3, 0), (4, 4, 1), (0, 3, 0), (3, 3, 0)] {
+        let bytes = cff2_fdselect_font(format, sentinel);
+        let path = dir.file(&format!("format-{format}-{sentinel}.otf"), &bytes);
+        let out = run(&[std::ffi::OsStr::new("--json"), os(&path)]);
+        assert_eq!(out.code, code, "{}", out.stdout);
+        assert_eq!(
+            out.stdout.contains("fd_select_format4"),
+            format == 4,
+            "{}",
+            out.stdout
+        );
+    }
+}
+
+#[test]
+fn inv3_equivalent_fdselect() {
+    for format in [0, 3, 4] {
+        let bytes = cff2_fdselect_font(format, 3);
+        let font = Font::new(&bytes, 0).unwrap();
+        let cff = HbCff2::new(&font).unwrap();
+        assert_eq!([0, 1, 2].map(|g| cff.fd(g)), [0, 1, 1]);
+        assert_eq!(Cff::new(&font).is_ok(), format != 4);
+    }
 }
 
 #[test]
