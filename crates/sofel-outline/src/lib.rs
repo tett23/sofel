@@ -69,7 +69,7 @@ mod hb_cff;
 
 pub use sofel_font as font;
 
-pub use hb_cff::{HbExtents, cff1_extents, cff2_extents};
+pub use hb_cff::{HbExtents, cff1_extents, cff2_extents, cff2_extents_at};
 
 use alloc::vec::Vec;
 use core::fmt;
@@ -301,7 +301,7 @@ enum Format<'a> {
 /// ([`Cff::new`]), any other from `glyf` and `loca` (or `GLYF` and
 /// `LOCA`). For glyf fonts it costs nothing over [`draw`]; for CFF fonts
 /// it keeps the opened table.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct Outlines<'data, 'loc, 'source> {
     font: Font<'data>,
     location: &'loc sofel_font::var::Location<'source>,
@@ -328,6 +328,19 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
             location: instance.location(),
             format,
             extents: HbExtents::new(instance),
+        }
+    }
+
+    /// Reuses the opened CFF and HarfBuzz views at another font location.
+    pub fn with_location<'new_loc, 'new_source>(
+        &self,
+        location: &'new_loc sofel_font::var::Location<'new_source>,
+    ) -> Outlines<'data, 'new_loc, 'new_source> {
+        Outlines {
+            font: self.font,
+            location,
+            format: self.format,
+            extents: self.extents.with_location(location),
         }
     }
 
@@ -392,7 +405,7 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
     ) -> Result<OutlineInfo, OutlineError> {
         match &self.format {
             Format::Glyf => load_glyf(&self.font, glyph, scale, scratch),
-            Format::Cff(c) => load_cff(&self.font, c, glyph, scale, scratch),
+            Format::Cff(c) => load_cff_at(&self.font, self.location, c, glyph, scale, scratch),
             Format::Unsupported(e) => {
                 scratch.clear();
                 Err(*e)
@@ -836,4 +849,4 @@ fn decompose(
 }
 
 mod cff;
-use cff::load_cff;
+use cff::load_cff_at;
