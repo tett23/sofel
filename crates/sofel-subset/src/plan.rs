@@ -432,18 +432,14 @@ impl Plan {
         let mut cur = gsub_glyphs.to_range_set();
         // _colr_closure
         if tag_kept(b"COLR") {
-            let (layers, palettes) = colr::closure(colr_table.unwrap_or(&[]), &mut cur);
-            cur.truncate(num_glyphs);
-            p.color.layers = layers;
-            p.color.palettes = palettes;
+            p.color = colr::closure(
+                colr_table.unwrap_or(&[]),
+                &mut cur,
+                full_instance,
+                colr_kept,
+                num_glyphs,
+            )?;
         }
-        if colr_kept && colr_table.is_some_and(|data| colr::needs_var_store(data, &cur)) {
-            return Err(SubsetError::Unsupported {
-                tag: Tag::new(b"COLR"),
-                reason: "the COLR item variation store (ADR 0022 stage 10)",
-            });
-        }
-
         p.color.glyphset_colred = cur.clone();
         // _nameid_closure
         if tag_kept(b"STAT") {

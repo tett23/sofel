@@ -159,6 +159,12 @@ fn index_map(
     {
         return Ok(None);
     }
+    encode_index_map(&values, tag).map(Some)
+}
+
+/// Encodes an already remapped DeltaSetIndexMap, preserving the caller's entry count.
+pub(super) fn encode_index_map(values: &[u32], tag: Tag) -> Result<Vec<u8>, SubsetError> {
+    let count = values.len();
     let max_inner = values.iter().map(|value| value & 0xffff).max().unwrap_or(0);
     let max_outer = values.iter().map(|value| value >> 16).max().unwrap_or(0);
     let inner_bits = u32::BITS.saturating_sub(max_inner.leading_zeros()).max(1);
@@ -183,7 +189,11 @@ fn index_map(
                 .to_be_bytes(),
         );
     } else {
-        output.extend(map_count.to_be_bytes());
+        output.extend(
+            u32::try_from(count)
+                .map_err(|_| SubsetError::Limit { tag })?
+                .to_be_bytes(),
+        );
     }
     for value in values {
         let bytes = (((value >> 16) << inner_bits) | (value & 0xffff)).to_be_bytes();
@@ -193,7 +203,7 @@ fn index_map(
                 .ok_or(SubsetError::Limit { tag })?,
         );
     }
-    Ok(Some(output))
+    Ok(output)
 }
 
 pub(crate) fn subset_store(
