@@ -461,6 +461,22 @@ fn gpos_pair2_variation_index_drops_with_class_two() {
 }
 
 #[test]
+fn copied_gdef_with_subset_pair_variation_index_is_unsupported() {
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[2])),
+        (b"GPOS", pairpos2_with_variation_index(2)),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let input = chars("BC").map_set(SetKind::NoSubsetTables, |set| {
+        set.add(Tag::new(b"GDEF").to_u32());
+    });
+    assert!(matches!(
+        subset(&font, &input),
+        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF")
+    ));
+}
+
+#[test]
 fn gdef_store_with_empty_mark_sets_zeros_removed_offset() {
     let mut gdef = gdef_with_referenced_store(&[2]);
     let mark_sets_offset = u16::try_from(gdef.len()).unwrap();

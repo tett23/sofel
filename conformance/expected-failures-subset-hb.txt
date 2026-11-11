@@ -31,8 +31,6 @@ hb-dump/golem/Foldit.ttf:pin  # stage:var
 hb-dump/golem/Foldit.ttf:pin+prepared  # stage:var
 hb-dump/golem/Fraunces.ttf:keep  # stage:var
 hb-dump/golem/Fraunces.ttf:keep+prepared  # stage:var
-hb-dump/golem/KalniaGlaze.ttf:keep  # stage:var
-hb-dump/golem/KalniaGlaze.ttf:keep+prepared  # stage:var
 hb-dump/golem/KalniaGlaze.ttf:pin  # stage:var
 hb-dump/golem/KalniaGlaze.ttf:pin+prepared  # stage:var
 hb-dump/golem/MPLUS1-Variable.ttf:keep  # stage:var

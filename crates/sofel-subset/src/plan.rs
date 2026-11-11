@@ -199,6 +199,21 @@ fn layout_unsupported(
         && font
             .table(Tag::new(b"GPOS"))
             .is_some_and(may_reference_gdef_store);
+    let copied_gdef = no_subset.contains(Tag::new(b"GDEF").to_u32())
+        && retained(b"GDEF")
+        && font
+            .table(Tag::new(b"GDEF"))
+            .is_some_and(layout::gdef::has_var_store);
+    if !pinned
+        && copied_gdef
+        && gpos_may_reference_store
+        && !no_subset.contains(Tag::new(b"GPOS").to_u32())
+    {
+        return Err(SubsetError::Unsupported {
+            tag: Tag::new(b"GDEF"),
+            reason: "copied GDEF with subset GPOS variation indices (ADR 0022 stage 10)",
+        });
+    }
     let math_may_reference_store = retained(b"MATH")
         && font
             .table(Tag::new(b"MATH"))
@@ -572,7 +587,10 @@ impl Plan {
             && let Some(gdef) = font.table(Tag::new(b"GDEF"))
         {
             p.layout.used_mark_sets = layout::gdef::used_mark_sets(gdef, &p.layout.glyphset_gsub);
-            if !pinned && layout::gdef::has_var_store(gdef) {
+            if !pinned
+                && !no_subset.contains(Tag::new(b"GDEF").to_u32())
+                && layout::gdef::has_var_store(gdef)
+            {
                 let gpos_data = font.table(Tag::new(b"GPOS")).unwrap_or(&[]);
                 let gpos_indices = if tag_kept(b"GPOS")
                     && !no_subset.contains(Tag::new(b"GPOS").to_u32())
