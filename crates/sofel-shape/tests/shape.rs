@@ -112,11 +112,11 @@ fn run(data: &[u8], text: &str, r: Run) -> GlyphBuffer {
     b.push_utf8(text.as_bytes(), 0, None);
     b.set_flags(r.flags);
     b.set_cluster_level(r.level);
-    let plan = ShapePlan::new(&font, props(r.direction), &r.features);
+    let plan = ShapePlan::new(font.default_instance(), props(r.direction), &r.features);
     let scale = r.scale.unwrap_or_else(|| Scale::unscaled(&font));
     match r.extents {
-        Some(e) => shape_with_extents(&font, &scale, &plan, b, &e),
-        None => shape(&font, &scale, &plan, b),
+        Some(e) => shape_with_extents(font.default_instance(), &scale, &plan, b, &e),
+        None => shape(font.default_instance(), &scale, &plan, b),
     }
 }
 
@@ -512,7 +512,12 @@ fn fallback_shaper() {
     let font = Font::new(&data, 0).unwrap();
     let mut b = UnicodeBuffer::new();
     b.push_utf8("ab\u{200D}".as_bytes(), 0, None);
-    let g = shape_fallback(&font, &Scale::unscaled(&font), &props(Direction::Rtl), b);
+    let g = shape_fallback(
+        font.default_instance(),
+        &Scale::unscaled(&font),
+        &props(Direction::Rtl),
+        b,
+    );
     assert_eq!(glyphs(&g), [(SPACE, 2), (B, 1), (A, 0)]);
     assert_eq!(advances(&g), [0, 520, 510]);
 }
@@ -521,16 +526,51 @@ fn fallback_shaper() {
 fn buffers_are_reused() {
     let data = make_font(false, vec![]);
     let font = Font::new(&data, 0).unwrap();
-    let plan = ShapePlan::new(&font, props(Direction::Ltr), &[]);
+    let plan = ShapePlan::new(font.default_instance(), props(Direction::Ltr), &[]);
     let mut b = UnicodeBuffer::new();
     b.set_flags(BufferFlags::BOT);
     b.push_utf8(b"ab", 0, None);
-    let g = shape(&font, &Scale::unscaled(&font), &plan, b);
+    let g = shape(font.default_instance(), &Scale::unscaled(&font), &plan, b);
     let mut b = g.into_unicode();
     assert!(b.is_empty());
     assert_eq!(b.flags(), BufferFlags::BOT);
     b.push_utf8(b"ba", 0, None);
-    let g = shape(&font, &Scale::unscaled(&font), &plan, b);
+    let g = shape(font.default_instance(), &Scale::unscaled(&font), &plan, b);
     assert_eq!(glyphs(&g), [(B, 0), (A, 1)]);
     let _ = Language::new(b"en");
+}
+
+#[test]
+fn adr0027_i_gpos_variation_index_applies_without_ppem() {
+    use sofel_font::var::{Location, Variation};
+
+    let mut sub = single_pos_device(&[A as u16], 10, 12, &[2]);
+    let device_offset = u16::from_be_bytes([sub[8], sub[9]]) as usize;
+    sub[device_offset..device_offset + 6].copy_from_slice(&[0, 0, 0, 0, 0x80, 0]);
+    let gpos = simple_layout(&[b"kern"], vec![lookup(1, 0, vec![sub])]);
+    let store = [
+        0, 1, 0, 0, 0, 12, 0, 1, 0, 0, 0, 22, // region-list offset, one data offset
+        0, 1, 0, 1, 0, 0, 0x40, 0, 0x40, 0, // one axis and one full region
+        0, 1, 0, 1, 0, 1, 0, 0, 0, 21, // one row with delta 21
+    ];
+    let mut gdef = vec![0, 1, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 18];
+    gdef.extend_from_slice(&store);
+    let mut fvar = vec![0, 1, 0, 0, 0, 16, 0, 2, 0, 1, 0, 20, 0, 0, 0, 8];
+    fvar.extend_from_slice(b"wght");
+    for value in [0i32, 0, 0x10000] {
+        fvar.extend_from_slice(&value.to_be_bytes());
+    }
+    fvar.extend_from_slice(&[0, 0, 1, 0]);
+    let data = make_font(
+        false,
+        vec![(b"GPOS", gpos), (b"GDEF", gdef), (b"fvar", fvar)],
+    );
+    let font = Font::new(&data, 0).unwrap();
+    let mut b = UnicodeBuffer::new();
+    b.push_utf8(b"a", 0, None);
+    let scale = Scale::unscaled(&font);
+    let loc = Location::new(&font, None, &[Variation::parse("wght=1").unwrap()]);
+    let plan = ShapePlan::new(font.instance(&loc), props(Direction::Ltr), &[]);
+    let glyphs = shape(font.instance(&loc), &scale, &plan, b);
+    assert_eq!(advances(&glyphs), [541]);
 }

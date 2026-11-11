@@ -16,8 +16,12 @@
 use std::ffi::OsString;
 use std::io::{BufRead, Read, Write};
 
+use crate::variation_options::{parse_named_instance, parse_variations};
 use sofel_font::read::GlyphId;
-use sofel_font::{Font, GlyphExtents, GlyphNames, HbScale};
+use sofel_font::{
+    Font, GlyphExtents, GlyphNames, HbScale,
+    var::{Location, Variation},
+};
 use sofel_outline::HbExtents;
 use sofel_shape::{
     BufferFlags, ClusterLevel, DiffFlags, Direction, Feature, GlyphBuffer, GlyphFlags, GlyphInfo,
@@ -59,6 +63,8 @@ Font:
   -y, --face-index=N            the font in a collection (default 0)
   --font-size=N[,M]|upem        the scale (default: upem, font units)
   --font-ppem=N[,M]             the pixels per em (default 0, none)
+  --variations=LIST             comma-separated design coordinates
+  --named-instance=N            zero-based named instance
   --font-funcs=NAME             accepted and ignored
   --face-loader=NAME            accepted and ignored
 
@@ -90,7 +96,7 @@ Exit status:
   0  the text was shaped
   1  the font or the text file cannot be read
   2  wrong usage, or an option sofel-shape does not support
-     (--variations, --named-instance, --font-ptem, --font-slant,
+     (--font-ptem, --font-slant,
      --font-bold, --font-grade, other shapers, ...)
   3  shaping failed (--verify found a problem)
 ";
@@ -110,6 +116,8 @@ struct Options {
     face_index: u32,
     font_size: Option<(f64, f64)>,
     ppem: (i32, i32),
+    variations: Vec<Variation>,
+    named_instance: Option<u16>,
     text: Option<Vec<u8>>,
     /// `text_len`: `None` is -1 (`strlen`).
     text_len: Option<usize>,
@@ -156,6 +164,8 @@ impl Default for Options {
             face_index: 0,
             font_size: None,
             ppem: (0, 0),
+            variations: Vec::new(),
+            named_instance: None,
             text: None,
             text_len: None,
             text_file: None,
@@ -388,8 +398,25 @@ const OPTIONS: &[(&str, Option<u8>, Kind)] = &[
     ("show-flags", None, Kind::Flag(|o| o.show_flags = true)),
     ("show-extents", None, Kind::Flag(|o| o.show_extents = true)),
     // hb-shape's options sofel-shape does not have.
-    ("variations", None, Kind::Unsupported),
-    ("named-instance", None, Kind::Unsupported),
+    (
+        "variations",
+        None,
+        Kind::Value(|o, v| {
+            let value = std::str::from_utf8(v).map_err(|_| "invalid variations".to_string())?;
+            o.variations
+                .extend(parse_variations(value).ok_or("invalid variations")?);
+            Ok(())
+        }),
+    ),
+    (
+        "named-instance",
+        None,
+        Kind::Value(|o, v| {
+            let value = std::str::from_utf8(v).map_err(|_| "invalid named instance".to_string())?;
+            o.named_instance = Some(parse_named_instance(value).ok_or("invalid named instance")?);
+            Ok(())
+        }),
+    ),
     ("font-ptem", None, Kind::Unsupported),
     ("font-slant", None, Kind::Unsupported),
     ("font-bold", None, Kind::Unsupported),
@@ -901,6 +928,7 @@ impl SerializeFont for CliFont<'_, '_> {
 struct Context<'a, 'b, 'c> {
     o: &'c Options,
     font: CliFont<'a, 'b>,
+    location: Location<'a>,
     scale: Scale,
     format: Option<SerializeFormat>,
     flags: SerializeFlags,
@@ -1024,8 +1052,10 @@ pub fn run_with_input(
             flags = flags.union(f);
         }
     }
+    let location = Location::new(&font, o.named_instance, &o.variations);
     let cx = Context {
         o: &o,
+        location,
         font: CliFont {
             font,
             names,
@@ -1136,18 +1166,25 @@ fn line_output<'a>(
         out.push(b'\n');
         return true;
     }
-    if plan_cache.as_ref().is_none_or(|p| p.key().0 != props) {
-        *plan_cache = Some(ShapePlan::new(&cx.font.font, props.clone(), &o.features));
+    let instance = cx.font.font.instance(&cx.location);
+    let selected = ShapePlan::variations_index_for(instance);
+    if plan_cache
+        .as_ref()
+        .is_none_or(|p| p.key().0 != props || p.key().2 != selected)
+    {
+        *plan_cache = Some(ShapePlan::new(instance, props.clone(), &o.features));
     }
     let Some(plan) = plan_cache.as_ref() else {
         return false;
     };
     let shape_one = |b: UnicodeBuffer| -> GlyphBuffer {
         match o.shaper {
-            Shaper::Ot => shape_with_extents(&cx.font.font, &cx.scale, plan, b, &|g| {
-                cx.font.extents.glyph_extents(g)
+            Shaper::Ot => shape_with_extents(instance, &cx.scale, plan, b, &|g| {
+                instance
+                    .glyf_extents(g)
+                    .or_else(|| cx.font.extents.glyph_extents(g))
             }),
-            Shaper::Fallback => shape_fallback(&cx.font.font, &cx.scale, &props, b),
+            Shaper::Fallback => shape_fallback(instance, &cx.scale, &props, b),
         }
     };
     let text = o.verify.then(|| buffer.clone());
