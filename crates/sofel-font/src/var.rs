@@ -1608,6 +1608,40 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
         self.font.ft_metrics.left_side_bearing(glyph)
     }
 
+    /// FreeType's unscaled horizontal advance after HVAR adjustment.
+    pub fn ft_h_advance(&self, glyph: GlyphId) -> Option<u16> {
+        let base = self.font.ft_h_advance_default(glyph)?;
+        if self.location.ft_default() {
+            return Some(base);
+        }
+        let Some(hvar) = self
+            .font
+            .table(Tag::new(b"HVAR"))
+            .and_then(|data| Hvar::new(data).ok())
+        else {
+            return Some(base);
+        };
+        let index = match hvar.advance_map() {
+            Ok(Some(map)) => map.map(glyph.0),
+            Ok(None) if glyph.0 <= u32::from(u16::MAX) => glyph.0,
+            _ => return Some(base),
+        };
+        let outer = u16::try_from(index >> 16).unwrap_or(0);
+        let inner = u16::try_from(index & 0xffff).unwrap_or(0);
+        let delta = self
+            .item_delta::<Ft>(StoreKind::Hvar, outer, inner)
+            .unwrap_or(0);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        // `tt_face_get_metrics` stores the adjusted FT_Int as FT_UShort.
+        let advance = i32::from(base).wrapping_add(delta) as u16;
+        Some(advance)
+    }
+
+    /// FreeType's unscaled top side bearing; its VVAR callback is absent.
+    pub fn ft_top_side_bearing(&self, glyph: GlyphId, y_max: i16) -> Option<i16> {
+        self.font.ft_top_side_bearing_default(glyph, y_max)
+    }
+
     /// FreeType's face metrics at this location.
     pub fn ft_face_metrics(&self) -> crate::FtFaceMetrics {
         let mut metrics = self.font.ft_face_metrics_default();
