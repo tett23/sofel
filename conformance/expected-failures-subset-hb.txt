@@ -20,8 +20,6 @@ hb-dump/golem/32bit_var_store.otf:keep  # stage:var
 hb-dump/golem/32bit_var_store.otf:keep+prepared  # stage:var
 hb-dump/golem/AdobeVFPrototype.otf:keep  # stage:var
 hb-dump/golem/AdobeVFPrototype.otf:keep+prepared  # stage:var
-hb-dump/golem/AdobeVFPrototype_vsindex.otf:keep  # stage:var
-hb-dump/golem/AdobeVFPrototype_vsindex.otf:keep+prepared  # stage:var
 hb-dump/golem/AnekBangla-subset.ttf:keep  # stage:var
 hb-dump/golem/AnekBangla-subset.ttf:keep+prepared  # stage:var
 hb-dump/golem/COLRv1-alpha.ttf:keep  # stage:var
@@ -72,8 +70,6 @@ hb-dump/golem/RobotoFlex-Variable.ttf:keep  # stage:var
 hb-dump/golem/RobotoFlex-Variable.ttf:keep+prepared  # stage:var
 hb-dump/golem/SourceSerif4Variable-Roman-HelloWorld.otf:keep  # stage:var
 hb-dump/golem/SourceSerif4Variable-Roman-HelloWorld.otf:keep+prepared  # stage:var
-hb-dump/golem/SourceSerif4Variable-Roman_subset.otf:keep  # stage:var
-hb-dump/golem/SourceSerif4Variable-Roman_subset.otf:keep+prepared  # stage:var
 hb-dump/golem/SourceSerifVariable-Roman.ttf:keep  # stage:var
 hb-dump/golem/SourceSerifVariable-Roman.ttf:keep+prepared  # stage:var
 hb-dump/golem/bad-gsub.otf:keep+prepared  # upstream:preprocess-malformed
