@@ -220,7 +220,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - `UnicodeBuffer` は文字、クラスタの値、前後の文脈（各5文字まで）、フラグ（`BufferFlags`、HarfBuzzと同じビット）、クラスタの水準（`ClusterLevel`）、見えないグリフ、見つからないグリフ、見つからない異体字セレクタのグリフ、置きかえの文字、`rand` の乱数の状態（HarfBuzzと同じ `state × 48271 mod 2³¹ − 1`、積は32ビットで折り返す。初期値1）を持つ。`push_utf8`、`push_utf16`、`push_utf32`、`push_codepoints`、`push_latin1` は `hb_buffer_add_utf*` と同じで、クラスタの値は `text` の先頭からの位置、不正な符号の列は `src/hb-utf.hh` と同じ区切りで置きかえの文字になる。`clear` は `hb_buffer_clear_contents` と同じく設定を残して中身を消し、乱数の状態を1に戻す。入力の長さと操作の数の上限は `HB_BUFFER_MAX_*` と同じ定数（`MAX_LEN_FACTOR` など）で決める。
 - `UnicodeBuffer::append(source, start, end)` は、Unicodeのバッファの `hb_buffer_append` と同じく、範囲の文字をクラスタの値ごと足し、空のバッファに足すときは範囲の前の文字と元の前の文脈を、いつも範囲の後の文字と元の後の文脈を、各5文字まで文脈にする。`similar` は `hb_buffer_create_similar` と同じく設定（フラグ、クラスタの水準、置きかえの文字、見えないグリフ、見つからないグリフ、見つからない異体字セレクタのグリフ）だけを写す。`number_clusters` は、`hb-shape` が `--utf8-clusters` の無いときにするように、クラスタの値を文字の番号に付けなおす。
 - `GlyphBuffer` は `GlyphInfo`（グリフID、クラスタ、`GlyphFlags`）と `GlyphPosition` の列を持つ。`into_unicode` は、設定を残し確保した領域を再利用する空の `UnicodeBuffer` を返す。`normalize_glyphs` は `hb_buffer_normalize_glyphs`、`from_parts` は読み込んだ列から作る。`diff` と `diff_unicode` は `hb_buffer_diff` と同じ `DiffFlags` を返す。
-- 作業用のバッファの要素は、HarfBuzzの `var1`、`var2` の共用体を名前のついた欄に分けた24バイトの構造体である。HarfBuzzの20バイトに、正規化が選んだグリフの欄（HarfBuzzは `glyph_props`、`lig_props`、`syllable` と重ねる）が加わる。位置は別の配列（20バイト）で、`GPOS` の付着の鎖を持つ。出力の配列は、入力より長くなるまで入力の配列そのものに書く。
+- 作業用のバッファの要素は、HarfBuzzの `var1`、`var2` の共用体を名前のついた欄に分けた28バイトの構造体である（[ADR 0051](adr/0051-shaping-buffer-item-size.md)）。HarfBuzzの20バイトに、正規化が選んだグリフの欄（HarfBuzzは `glyph_props`、`lig_props`、`syllable` と重ねる）が加わる。位置は別の配列（20バイト）で、`GPOS` の付着の鎖を持つ。出力の配列は、入力より長くなるまで入力の配列そのものに書く。
 
 ### 計画
 
