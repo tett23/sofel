@@ -8,8 +8,9 @@
 //! `src/hb-subset-plan-var.cc`).
 //!
 //! CFF2 kept with its variations (no axis pinned) is stage 10 of ADR 0022.
-//! Retained glyphs that call subroutines still need the subroutine-preserving path.
+//! Literal calls from retained glyphs use the subroutine-preserving path.
 
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -21,13 +22,13 @@ use sofel_font::{Font, GlyphExtents, HbCff2};
 use sofel_geom::float::hb_clamp_to_i32;
 use sofel_write::{Errors, ObjIdx, Serializer, Whence};
 
-use super::cs::{ENDCHAR_BYTE, encode_int, encode_op};
+use super::cs::{ENDCHAR_BYTE, bias, encode_int, encode_op};
 use super::cs2::{self, Command, Env, Flatten, Programs, Rounding, Store, Usage, c_round};
 use super::dict::{self, Dict};
 use super::specialize;
 use super::{
-    FdMap, fdselect, index, index_header, index_header_n, index_n, int2, link4_op, plan_fdselect,
-    private_bytes,
+    FdMap, fdselect, index, index_header, index_header_n, index_n, int2, link2_op, link4_op,
+    plan_fdselect, private_bytes,
 };
 use crate::error::SubsetError;
 use crate::input::Flags;
@@ -128,6 +129,211 @@ pub(crate) fn uses_subroutines(font: &Font<'_>, glyphs: &[(u32, u32)]) -> bool {
     })
 }
 
+#[derive(Clone, Copy)]
+struct CallSite {
+    start: usize,
+    end: usize,
+    local: bool,
+    old: u32,
+}
+
+/// Read only literal subroutine operands. Mask lengths and computed operands
+/// require the interpreter's token stream and remain unsupported here.
+#[allow(clippy::arithmetic_side_effects)]
+fn call_sites(bytes: &[u8], globals: u32, locals: u32) -> Option<Vec<CallSite>> {
+    let mut sites = Vec::new();
+    let mut at = 0;
+    let mut immediate = None;
+    while at < bytes.len() {
+        let start = at;
+        let b = *bytes.get(at)?;
+        at += 1;
+        let number = match b {
+            28 => {
+                let n = i16::from_be_bytes([*bytes.get(at)?, *bytes.get(at + 1)?]);
+                at += 2;
+                Some(i32::from(n))
+            }
+            247..=250 => {
+                let n = i32::from(b - 247) * 256 + i32::from(*bytes.get(at)?) + 108;
+                at += 1;
+                Some(n)
+            }
+            251..=254 => {
+                let n = -i32::from(b - 251) * 256 - i32::from(*bytes.get(at)?) - 108;
+                at += 1;
+                Some(n)
+            }
+            32..=246 => Some(i32::from(b) - 139),
+            255 => {
+                let raw = i32::from_be_bytes([
+                    *bytes.get(at)?,
+                    *bytes.get(at + 1)?,
+                    *bytes.get(at + 2)?,
+                    *bytes.get(at + 3)?,
+                ]);
+                at += 4;
+                (raw & 0xffff == 0).then_some(raw >> 16)
+            }
+            _ => None,
+        };
+        if let Some(n) = number {
+            immediate = Some((start, n));
+            continue;
+        }
+        if b == 10 || b == 29 {
+            let (operand, n) = immediate?;
+            let local = b == 10;
+            let count = if local { locals } else { globals };
+            let old = u32::try_from(i64::from(n) + i64::from(bias(count))).ok()?;
+            if old >= count {
+                return None;
+            }
+            sites.push(CallSite {
+                start: operand,
+                end: at,
+                local,
+                old,
+            });
+        } else if b == 19 || b == 20 {
+            return None;
+        } else if b == 12 {
+            at += 1;
+            bytes.get(at - 1)?;
+        }
+        immediate = None;
+    }
+    Some(sites)
+}
+
+#[derive(Default)]
+struct KeptSubrs {
+    glyphs: Vec<Vec<u8>>,
+    globals: Vec<Vec<u8>>,
+    locals: Vec<Vec<Vec<u8>>>,
+}
+
+fn rewrite_calls(
+    bytes: &[u8],
+    sites: &[CallSite],
+    global: &BTreeMap<u32, u32>,
+    local: &BTreeMap<u32, u32>,
+) -> Option<Vec<u8>> {
+    let mut out = Vec::new();
+    let mut cursor = 0;
+    for site in sites {
+        out.extend_from_slice(bytes.get(cursor..site.start)?);
+        let (map, count) = if site.local {
+            (local, local.len())
+        } else {
+            (global, global.len())
+        };
+        let next = *map.get(&site.old)?;
+        encode_int(
+            &mut out,
+            i32::try_from(next)
+                .ok()?
+                .checked_sub(bias(u32::try_from(count).ok()?))?,
+        );
+        out.push(if site.local { 10 } else { 29 });
+        cursor = site.end;
+    }
+    out.extend_from_slice(bytes.get(cursor..)?);
+    Some(out)
+}
+
+fn keep_subrs(fonts: &Fonts<'_>, glyphs: &[(u32, u32)], output_count: u32) -> Option<KeptSubrs> {
+    let fd_count = usize::try_from(fonts.fd_count()).ok()?;
+    let mut global_used = BTreeSet::new();
+    let mut local_used = vec![BTreeSet::new(); fd_count];
+    let mut pending = Vec::new();
+    let mut glyph_sites = Vec::new();
+    for &(new, old) in glyphs {
+        let fd = usize::try_from(fonts.fd(old)).ok()?;
+        let p = fonts.programs(u32::try_from(fd).ok()?);
+        let mut env = Env::new(fonts.char_string(old), p, &[]);
+        if !cs2::interpret(&mut env, &mut Usage::default()) {
+            return None;
+        }
+        let sites = call_sites(fonts.char_string(old), p.gsubrs.len(), p.lsubrs.len())?;
+        for site in &sites {
+            pending.push((fd, site.local, site.old));
+        }
+        glyph_sites.push((new, old, fd, sites));
+    }
+    let mut scanned = BTreeMap::new();
+    while let Some((fd, local, old)) = pending.pop() {
+        if scanned.contains_key(&(fd, local, old)) {
+            continue;
+        }
+        let p = fonts.programs(u32::try_from(fd).ok()?);
+        let bytes = if local {
+            p.lsubrs.get(old)?
+        } else {
+            p.gsubrs.get(old)?
+        };
+        let sites = call_sites(bytes, p.gsubrs.len(), p.lsubrs.len())?;
+        for site in &sites {
+            pending.push((fd, site.local, site.old));
+        }
+        if local {
+            local_used.get_mut(fd)?.insert(old);
+        } else {
+            global_used.insert(old);
+        }
+        scanned.insert((fd, local, old), sites);
+    }
+    let gmap: BTreeMap<_, _> = global_used.iter().copied().zip(0u32..).collect();
+    let lmaps: Vec<BTreeMap<_, _>> = local_used
+        .iter()
+        .map(|set| set.iter().copied().zip(0u32..).collect())
+        .collect();
+    let mut result = KeptSubrs {
+        glyphs: vec![Vec::new(); output_count as usize],
+        globals: Vec::new(),
+        locals: vec![Vec::new(); fd_count],
+    };
+    for (new, old, fd, sites) in glyph_sites {
+        *result.glyphs.get_mut(new as usize)? =
+            rewrite_calls(fonts.char_string(old), &sites, &gmap, lmaps.get(fd)?)?;
+    }
+    for old in global_used {
+        let mut encoded = None;
+        for fd in 0..fd_count {
+            if let Some(sites) = scanned.get(&(fd, false, old)) {
+                let bytes = fonts.programs(u32::try_from(fd).ok()?).gsubrs.get(old)?;
+                let value = rewrite_calls(bytes, sites, &gmap, lmaps.get(fd)?)?;
+                if encoded.as_ref().is_some_and(|v| v != &value) {
+                    return None;
+                }
+                encoded = Some(value);
+            }
+        }
+        result.globals.push(encoded?);
+    }
+    for (fd, used) in local_used.iter().enumerate() {
+        let p = fonts.programs(u32::try_from(fd).ok()?);
+        for &old in used {
+            let sites = scanned.get(&(fd, true, old))?;
+            result.locals.get_mut(fd)?.push(rewrite_calls(
+                p.lsubrs.get(old)?,
+                sites,
+                &gmap,
+                lmaps.get(fd)?,
+            )?);
+        }
+    }
+    Some(result)
+}
+
+pub(crate) fn supports_subroutines(
+    font: &Font<'_>,
+    glyphs: &[(u32, u32)],
+    output_count: u32,
+) -> bool {
+    HbCff2::new(font).is_some_and(|hb| keep_subrs(&Fonts::new(hb), glyphs, output_count).is_some())
+}
+
 /// HarfBuzz's subset accelerator (`OT::cff2::accelerator_subset_t`):
 /// the DICTs as its subsetter records them.
 struct Acc<'a> {
@@ -191,6 +397,7 @@ struct Cff2Plan {
     fdselect: Option<(u8, Vec<(u32, u32)>)>,
     fdmap: FdMap,
     keep_variations: bool,
+    subrs: Option<KeptSubrs>,
 }
 
 /// `cff2_subset_plan::create` on the full-instance or desubroutinized path.
@@ -217,6 +424,7 @@ fn create(plan: &Plan, acc: &Acc<'_>, tag: Tag) -> Result<Cff2Plan, SubsetError>
     // Which charstrings round absolute coordinates: those with a blend
     // a kept operator takes, without flex1.
     let mut round = vec![false; num_glyphs as usize];
+    let mut called = false;
     for i in 0..num_glyphs {
         let Some((old, fd)) = glyph(i)? else {
             continue;
@@ -229,12 +437,7 @@ fn create(plan: &Plan, acc: &Acc<'_>, tag: Tag) -> Result<Cff2Plan, SubsetError>
         if !cs2::interpret(&mut env, &mut u) {
             return Err(fail);
         }
-        if keep_variations && !plan.flags.has(Flags::DESUBROUTINIZE) && env.called_subr() {
-            return Err(SubsetError::Unsupported {
-                tag,
-                reason: "CFF2 subroutines used by retained glyphs (ADR 0022 stage 10)",
-            });
-        }
+        called |= env.called_subr();
         if let Some(r) = round.get_mut(i as usize) {
             *r = !keep_variations && u.has_blend && !u.has_flex1;
         }
@@ -272,6 +475,22 @@ fn create(plan: &Plan, acc: &Acc<'_>, tag: Tag) -> Result<Cff2Plan, SubsetError>
         }
         None => (1, None, FdMap::identity(1)),
     };
+    let subrs =
+        if called && keep_variations && !drop_hints && !plan.flags.has(Flags::DESUBROUTINIZE) {
+            Some(
+                keep_subrs(fonts, &plan.glyphs.new_to_old, num_glyphs).ok_or(
+                    SubsetError::Unsupported {
+                        tag,
+                        reason: "CFF2 call operand cannot be renumbered",
+                    },
+                )?,
+            )
+        } else {
+            None
+        };
+    if let Some(kept) = &subrs {
+        charstrings.clone_from(&kept.glyphs);
+    }
     Ok(Cff2Plan {
         num_glyphs,
         drop_hints,
@@ -286,6 +505,7 @@ fn create(plan: &Plan, acc: &Acc<'_>, tag: Tag) -> Result<Cff2Plan, SubsetError>
         fdselect,
         fdmap,
         keep_variations,
+        subrs,
     })
 }
 
@@ -591,6 +811,7 @@ fn private_dict(
     drop_hints: bool,
     coords: &[i32],
     keep_variations: bool,
+    subrs_link: ObjIdx,
 ) -> bool {
     let Some((d, bytes)) = acc.privates.get(fd) else {
         return false;
@@ -608,6 +829,9 @@ fn private_dict(
             continue;
         }
         if o.op == dict::SUBRS {
+            if subrs_link != 0 {
+                link2_op(s, o.op, subrs_link);
+            }
             continue;
         }
         if keep_variations {
@@ -643,8 +867,27 @@ fn privates(
         if !p.fdmap.has(fd) {
             continue;
         }
+        let mut subrs_link = 0;
+        if let Some(local) = p.subrs.as_ref().and_then(|k| k.locals.get(i))
+            && !local.is_empty()
+        {
+            s.push();
+            if !index_n(s, local, 0, true) {
+                s.pop_discard();
+                return None;
+            }
+            subrs_link = s.pop_pack(true);
+        }
         s.push();
-        if !private_dict(s, acc, i, p.drop_hints, coords, p.keep_variations) {
+        if !private_dict(
+            s,
+            acc,
+            i,
+            p.drop_hints,
+            coords,
+            p.keep_variations,
+            subrs_link,
+        ) {
             s.pop_discard();
             return None;
         }
@@ -755,7 +998,12 @@ fn serialize2(s: &mut Serializer, acc: &Acc<'_>, p: &Cff2Plan, coords: &[i32]) -
     if !s.check_assign_u16(header.saturating_add(3), size as u64, Errors::INT_OVERFLOW) {
         return false;
     }
-    index_n(s, &[], 0, true)
+    index_n(
+        s,
+        p.subrs.as_ref().map_or(&[][..], |k| k.globals.as_slice()),
+        0,
+        true,
+    )
 }
 
 /// `serialize_cff2_to_cff1`: the instance as a CID-keyed CFF font.

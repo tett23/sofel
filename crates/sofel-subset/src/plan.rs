@@ -504,6 +504,12 @@ impl Plan {
             && !(pinned && !p.var.n.normalized_coords.is_empty())
             && !flags.has(Flags::DESUBROUTINIZE)
             && crate::tables::cff::uses_subroutines(font, p.glyphs.new_to_old.as_slice())
+            && (flags.has(Flags::NO_HINTING)
+                || !crate::tables::cff::supports_subroutines(
+                    font,
+                    p.glyphs.new_to_old.as_slice(),
+                    p.num_output_glyphs,
+                ))
         {
             return Err(SubsetError::Unsupported {
                 tag: cff2,
