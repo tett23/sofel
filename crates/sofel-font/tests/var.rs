@@ -1291,3 +1291,48 @@ fn i04_static_default_keeps_hb_mvar_but_ft_unsupplied_is_zero() {
     assert_eq!(instance.item_delta::<HbF32>(StoreKind::Mvar, 0, 0), Ok(7.0));
     assert_eq!(instance.item_delta::<Ft>(StoreKind::Mvar, 0, 0), Ok(0));
 }
+
+#[test]
+fn adr0030_i03_foreign_faces_recompute_shared_gvar_scalars() {
+    use sofel_font::var::gvar::{FtScratch, HbScratch, Point};
+
+    let tables = |peak: u16| {
+        let mut gvar = vec![
+            0, 1, 0, 0, 0, 1, 0, 1, // version, one axis, one shared peak
+            0, 0, 0, 24, 0, 1, 0, 0, // peak offset, one glyph, short offsets
+            0, 0, 0, 26, 0, 0, 0, 7, // glyph data starts at 26, length 14
+        ];
+        gvar.extend(peak.to_be_bytes());
+        gvar.extend([0, 1, 0, 8, 0, 6, 0, 0, 3, 10, 20, 30, 40, 0x83]);
+        let mut tables = sample_tables_with_glyf();
+        tables.push((b"fvar", fvar_one_axis()));
+        tables.push((b"gvar", gvar));
+        tables.sort_by_key(|(tag, _)| **tag);
+        tables
+    };
+    let first = tables(0x2000);
+    let second = tables(0x4000);
+    let collection = build::ttc(false, &[first, second.clone()]);
+    let separate = sfnt(&second);
+    let source = Font::new(&collection, 0).unwrap();
+    let location = Location::from_normalized_2_14(&source, &[0x2000]);
+    for (font, expected) in [
+        (&source, [10i16, 20, 30, 40]),
+        (&Font::new(&collection, 1).unwrap(), [5, 10, 15, 20]),
+        (&Font::new(&separate, 0).unwrap(), [5, 10, 15, 20]),
+    ] {
+        let instance = font.instance(&location);
+        let mut hb = [Point::default(); 4];
+        assert_eq!(
+            instance.apply_gvar_hb(0, &mut hb, &mut HbScratch::default(), false, &mut 4),
+            Ok(true)
+        );
+        assert_eq!(hb.map(|p| p.x), expected.map(f32::from));
+        let mut ft = [Point::default(); 4];
+        assert_eq!(
+            instance.apply_gvar_ft(0, &mut ft, &mut FtScratch::default()),
+            Ok(true)
+        );
+        assert_eq!(ft.map(|p| p.x), expected.map(|x| i32::from(x) << 16));
+    }
+}
