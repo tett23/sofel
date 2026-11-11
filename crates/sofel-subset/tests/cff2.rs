@@ -196,14 +196,16 @@ fn cff2_unused_subroutines_are_removed_for_the_selected_glyphs() {
     let reference = subset(&Font::new(&without_subrs, 0).unwrap(), &glyphs(&[1])).unwrap();
     assert!(Plan::new(&font, &glyphs(&[1])).is_ok());
     assert_eq!(subset(&font, &glyphs(&[1])).unwrap(), reference);
-    assert!(matches!(
-        Plan::new(&font, &glyphs(&[2])),
-        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"CFF2")
-    ));
-    assert!(matches!(
-        subset(&font, &glyphs(&[2])),
-        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"CFF2")
-    ));
+    assert!(Plan::new(&font, &glyphs(&[2])).is_ok());
+    let used = subset(&font, &glyphs(&[2])).unwrap();
+    let result = Font::new(&used, 0).unwrap();
+    let cff2 = HbCff2::new(&result).unwrap();
+    assert_eq!(cff2.global_subrs().len(), 1);
+    assert_eq!(cff2.global_subrs().get(0), Some([11].as_slice()));
+    assert_eq!(
+        cff2.char_string(1),
+        Some(charstring(&[Cs::I(-107), Cs::Op(29)]).as_slice())
+    );
 }
 
 #[test]
@@ -216,14 +218,90 @@ fn cff2_unused_local_subroutines_are_removed_for_the_selected_glyphs() {
     let reference = subset(&Font::new(&without_subrs, 0).unwrap(), &glyphs(&[1])).unwrap();
     assert!(Plan::new(&font, &glyphs(&[1])).is_ok());
     assert_eq!(subset(&font, &glyphs(&[1])).unwrap(), reference);
-    assert!(matches!(
-        Plan::new(&font, &glyphs(&[2])),
-        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"CFF2")
-    ));
-    assert!(matches!(
-        subset(&font, &glyphs(&[2])),
-        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"CFF2")
-    ));
+    assert!(Plan::new(&font, &glyphs(&[2])).is_ok());
+    let used = subset(&font, &glyphs(&[2])).unwrap();
+    let result = Font::new(&used, 0).unwrap();
+    let cff2 = HbCff2::new(&result).unwrap();
+    assert_eq!(cff2.global_subrs().len(), 0);
+    assert_eq!(cff2.private(0).0.len(), 1);
+    assert_eq!(cff2.private(0).0.get(0), Some([11].as_slice()));
+    assert_eq!(
+        cff2.char_string(1),
+        Some(charstring(&[Cs::I(-107), Cs::Op(10)]).as_slice())
+    );
+}
+
+#[test]
+fn cff2_called_subroutines_collect_nested_calls_and_renumber() {
+    let mut programs = charstrings();
+    // Old global 2 calls local 2; old local 2 calls global 1.
+    programs[2] = charstring(&[Cs::I(-105), Cs::Op(29)]);
+    let gsubrs = vec![
+        vec![11],
+        vec![11],
+        charstring(&[Cs::I(-105), Cs::Op(10), Cs::Op(11)]),
+    ];
+    let lsubrs = vec![
+        vec![11],
+        vec![11],
+        charstring(&[Cs::I(-106), Cs::Op(29), Cs::Op(11)]),
+    ];
+    let bytes = font_with_programs(gsubrs, lsubrs, programs);
+    let out = subset(&Font::new(&bytes, 0).unwrap(), &glyphs(&[2])).unwrap();
+    // HarfBuzz 15.1.0: hb-dump --subset --font-file=INPUT
+    // --output-file=OUTPUT --gids=2 (the generated INPUT is this test's bytes).
+    assert_eq!(out, include_bytes!("data/cff2-called-subrs-hb15.otf"));
+    let result = Font::new(&out, 0).unwrap();
+    let cff2 = HbCff2::new(&result).unwrap();
+    assert_eq!(cff2.global_subrs().len(), 2);
+    assert_eq!(cff2.private(0).0.len(), 1);
+    assert_eq!(
+        cff2.char_string(1),
+        Some(charstring(&[Cs::I(-106), Cs::Op(29)]).as_slice())
+    );
+    assert_eq!(
+        cff2.global_subrs().get(1),
+        Some(charstring(&[Cs::I(-107), Cs::Op(10), Cs::Op(11)]).as_slice())
+    );
+    assert_eq!(
+        cff2.private(0).0.get(0),
+        Some(charstring(&[Cs::I(-107), Cs::Op(29), Cs::Op(11)]).as_slice())
+    );
+}
+
+#[test]
+fn cff2_called_subroutines_recompute_bias_after_shrinking_index() {
+    let mut programs = charstrings();
+    programs[2] = charstring(&[Cs::I(109), Cs::Op(29)]);
+    let mut gsubrs = vec![vec![11]; 1241];
+    gsubrs[1240] = charstring(&[Cs::I(50), Cs::Op(22), Cs::Op(11)]);
+    let bytes = font_with_programs(gsubrs, Vec::new(), programs);
+    let out = subset(&Font::new(&bytes, 0).unwrap(), &glyphs(&[2])).unwrap();
+    let result = Font::new(&out, 0).unwrap();
+    let cff2 = HbCff2::new(&result).unwrap();
+    assert_eq!(cff2.global_subrs().len(), 1);
+    assert_eq!(
+        cff2.global_subrs().get(0),
+        Some(charstring(&[Cs::I(50), Cs::Op(22), Cs::Op(11)]).as_slice())
+    );
+    assert_eq!(
+        cff2.char_string(1),
+        Some(charstring(&[Cs::I(-107), Cs::Op(29)]).as_slice())
+    );
+}
+
+#[test]
+fn cff2_called_subroutines_without_token_rewriter_remain_unsupported() {
+    let mut programs = charstrings();
+    programs[2] = charstring(&[Cs::Op(19), Cs::I(-107), Cs::Op(29)]);
+    let bytes = font_with_programs(vec![vec![11]], Vec::new(), programs);
+    let font = Font::new(&bytes, 0).unwrap();
+    for input in [glyphs(&[2]), glyphs(&[2]).with_flags(Flags::NO_HINTING)] {
+        assert!(matches!(
+            Plan::new(&font, &input),
+            Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"CFF2")
+        ));
+    }
 }
 
 #[test]
