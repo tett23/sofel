@@ -224,3 +224,75 @@ fn adr0046_i1_validator_reports_lookup_index_boundary() {
             .any(|d| d.kind == Kind::LookupIndexOutOfRange { index: 4, count: 5 })
     );
 }
+
+#[test]
+fn adr0046_i4_harfbuzz_ot_layout_reference_lookups() {
+    use std::collections::BTreeSet;
+
+    let root = std::env::var_os("SOFEL_TESTDATA")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/testdata")
+        });
+    let path = root.join(
+        "harfbuzz/test/shape/data/in-house/fonts/4e9f0bc6a8f25b5fd3547bbc17423ce8cedb915f.ttf",
+    );
+    if !path.exists() {
+        assert!(
+            std::env::var_os("SOFEL_REQUIRE_TESTDATA").is_none(),
+            "missing {}",
+            path.display()
+        );
+        return;
+    }
+    let bytes = std::fs::read(path).unwrap();
+    let font = sofel_read::sfnt::Sfnt::new(&bytes).unwrap();
+    for (table_tag, feature_tag, expected) in [
+        (Tag(*b"GSUB"), Tag(*b"liga"), &[0, 1, 2, 5][..]),
+        (Tag(*b"GPOS"), Tag(*b"kern"), &[0, 1][..]),
+    ] {
+        let layout = LayoutTable::new(font.table(table_tag).unwrap()).unwrap();
+        let features = layout.feature_list().unwrap().unwrap();
+        let index = (0..features.len())
+            .find(|&i| features.tag(i) == Some(feature_tag))
+            .unwrap();
+        let selected = features.feature(index).unwrap().unwrap();
+        let variations = layout.feature_variations().unwrap().unwrap();
+        let mut got = BTreeSet::new();
+        for i in 0..variations.len() {
+            if let Some(substitutions) = variations.record(i).unwrap().substitutions().unwrap() {
+                for j in 0..substitutions.len() {
+                    let record = substitutions.record(j).unwrap();
+                    if usize::from(record.feature_index()) == index {
+                        let feature =
+                            sofel_read::layout::Feature::new(record.feature().unwrap().unwrap())
+                                .unwrap();
+                        got.extend(
+                            (0..feature.num_lookups()).filter_map(|k| feature.lookup_index(k)),
+                        );
+                    }
+                }
+            }
+        }
+        for i in 0..variations.lookup_record_count() {
+            let record = variations.lookup_record(i).unwrap();
+            if usize::from(record.feature_index()) != index {
+                continue;
+            }
+            let table = record.feature_lookups().unwrap().unwrap();
+            if table.flags() & 1 != 0 {
+                got.extend((0..selected.num_lookups()).filter_map(|j| selected.lookup_index(j)));
+            }
+            for j in 0..table.len() {
+                let indices = table.record(j).unwrap().lookup_indices().unwrap().unwrap();
+                got.extend((0..indices.len()).filter_map(|k| indices.get(k)));
+            }
+            break;
+        }
+        assert_eq!(
+            got.into_iter().collect::<Vec<_>>(),
+            expected,
+            "{table_tag:?}"
+        );
+    }
+}
