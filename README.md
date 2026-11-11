@@ -225,6 +225,8 @@ CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=$PWD::$PWD" cargo test --relea
 
 性能の計測（[ADR 0013](docs/adr/0013-benchmark-harness.md)）は、ワークスペースの外の `bench/` で行う。テストのデータの取得のあと、FreeTypeとHarfBuzzを静的ライブラリにビルドする（C++のコンパイラが要る。wasmでは `bench/fetch-wasi-sdk.sh` がwasi-sdkを取得する）。`--once` は各項目を1回だけ走らせ、結果の照合だけを行う。シェーピングの項目（[ADR 0020](docs/adr/0020-shaping-foundation.md)）は、計測の前に全行の結果をHarfBuzzと比べる。サブセット化の項目（[ADR 0022](docs/adr/0022-subsetting.md)）は、計測の前に出力のバイト列のハッシュをHarfBuzzと比べる。記録は `docs/benchmarks/` に置く。
 
+SourceSerifVariable-Romanの `wght=500` でのシェーピングは `--filter 'shaping react-dom.txt wght=500'` で選ぶ。全行の照合とnative・wasmの測定値は [可変位置のシェーピング計測](docs/benchmarks/2026-11-11-variable-shaping.md) に記録した。
+
 HarfBuzz と同じ文字数でサブセット化を計るには、計測の引数に `--filter 'subset unicode range'` を渡す。静的フォント7個について、既定の設定とグリフIDを保つ設定の両方を計る。
 
 追加フォントは `--filter extra` で選べる。cmap・advanceに加え、輪郭、縦advance、MATH定数、カラー形式、シェーピングの代表ケースを比較する（[ADR 0031](docs/adr/0031-diverse-font-corpus.md)）。条件と計測値は [追加フォントの役割別計測](docs/benchmarks/2026-11-11-extra-font-roles.md) に記す。
