@@ -74,7 +74,7 @@ impl<'f, 'a, 'l, 's> ShapeFont<'f, 'a, 'l, 's> {
     pub(crate) fn h_advance(&self, glyph: u32) -> i32 {
         self.scale
             .scale
-            .em_scale_x(self.instance.advance(GlyphId(glyph)) as i32)
+            .em_scale_x(self.instance.advance(GlyphId(glyph)).cast_signed())
     }
     /// `get_glyph_v_advance`.
     pub(crate) fn v_advance(&self, glyph: u32) -> i32 {

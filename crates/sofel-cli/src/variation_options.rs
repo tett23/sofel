@@ -16,6 +16,7 @@ pub fn parse_named_instance(input: &str) -> Option<u16> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::{parse_named_instance, parse_variations};
 

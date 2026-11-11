@@ -74,28 +74,32 @@ fn condition_matches(
             let delta = if index == u32::MAX {
                 0.0
             } else {
-                condition_delta((index >> 16) as u16, index as u16)
+                condition_delta(
+                    u16::try_from(index >> 16).unwrap_or(0),
+                    u16::try_from(index & 0xffff).unwrap_or(0),
+                )
             };
             f64::from(default) + delta > 0.0
         }),
         3 => (0..condition.children_len().unwrap_or(0)).all(|index| {
-            condition
-                .child(index)
-                .is_ok_and(|child| condition_matches(child, coords, condition_delta, depth - 1))
+            condition.child(index).is_ok_and(|child| {
+                condition_matches(child, coords, condition_delta, depth.saturating_sub(1))
+            })
         }),
         4 => (0..condition.children_len().unwrap_or(0)).any(|index| {
-            condition
-                .child(index)
-                .is_ok_and(|child| condition_matches(child, coords, condition_delta, depth - 1))
+            condition.child(index).is_ok_and(|child| {
+                condition_matches(child, coords, condition_delta, depth.saturating_sub(1))
+            })
         }),
-        5 => condition
-            .child(0)
-            .is_ok_and(|child| !condition_matches(child, coords, condition_delta, depth - 1)),
+        5 => condition.child(0).is_ok_and(|child| {
+            !condition_matches(child, coords, condition_delta, depth.saturating_sub(1))
+        }),
         _ => false,
     }
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use alloc::vec;
     use sofel_font::read::feature_variations::{Condition, FeatureVariations};
