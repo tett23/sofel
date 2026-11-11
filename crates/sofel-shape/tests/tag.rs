@@ -448,15 +448,60 @@ fn the_default_counts_are_harfbuzz_maxima() {
 }
 
 #[test]
-fn script_tags_that_name_no_iso15924_script_are_unknown() {
-    // HarfBuzz returns the raw value ('LATN', 'Aran'); a sofel Script
-    // holds only ISO 15924 shaped tags, so these become Unknown.
-    assert_eq!(ot_tag_to_script(tag("LATN")), Some(Script::UNKNOWN));
-    assert_eq!(ot_tag_to_script(tag("aran")), Some(Script::UNKNOWN));
+fn script_tags_preserve_harfbuzz_values() {
+    assert_eq!(
+        ot_tag_to_script(tag("LATN")).map(Script::tag),
+        Some(*b"LATN")
+    );
+    assert_eq!(
+        ot_tag_to_script(tag("aran")).map(Script::tag),
+        Some(*b"Aran")
+    );
     assert_eq!(ot_tag_to_script(tag("abc2")), Some(Script::UNKNOWN));
     // The language still carries the script tag HarfBuzz would give.
     let (_, l) = ot_tags_to_script_and_language(tag("aran"), Some(tag("ARA")));
     assert_eq!(l.as_ref().map(Language::as_str), Some("ar"));
+}
+
+#[test]
+fn inv1_script_tag_bytes() {
+    let cases: [(&str, Option<&[u8; 4]>); 9] = [
+        ("DFLT", None),
+        ("latn", Some(b"Latn")),
+        ("aran", Some(b"Aran")),
+        ("qaai", Some(b"Qaai")),
+        ("ab!d", Some(b"Ab!d")),
+        ("LATN", Some(b"LATN")),
+        ("dev3", Some(b"Deva")),
+        ("abc2", Some(b"Zzzz")),
+        ("zzzz", Some(b"Zzzz")),
+    ];
+    for (source, expected) in cases {
+        assert_eq!(
+            ot_tag_to_script(tag(source)).map(Script::tag).as_ref(),
+            expected,
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn inv2_script_with_language() {
+    for source in [
+        "DFLT", "latn", "aran", "qaai", "ab!d", "LATN", "dev3", "abc2", "zzzz",
+    ] {
+        let alone = ot_tag_to_script(tag(source));
+        for language in [None, Some(tag("ARA"))] {
+            let (script, _) = ot_tags_to_script_and_language(tag(source), language);
+            assert_eq!(script, alone, "{source} {language:?}");
+        }
+    }
+    assert_eq!(
+        ot_tags_to_script_and_language(tag("aran"), Some(tag("ARA")))
+            .0
+            .map(Script::tag),
+        Some(*b"Aran")
+    );
 }
 
 #[test]

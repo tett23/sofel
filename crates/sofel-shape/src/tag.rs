@@ -168,20 +168,12 @@ fn tag_to_script(tag: u32) -> u32 {
     }
 }
 
-/// An `hb_script_t` value as a [`Script`]: `None` for
-/// `HB_SCRIPT_INVALID`, Unknown for a value that is not an ISO 15924
-/// shaped tag (one capital and three small letters) or that
-/// [`Script::from_iso15924`] maps to another script.
+/// An `hb_script_t` value as a [`Script`], preserving all nonzero bytes.
 fn script_from_raw(raw: u32) -> Option<Script> {
     if raw == SCRIPT_INVALID {
         return None;
     }
-    let bytes = raw.to_be_bytes();
-    Some(
-        Script::from_iso15924(&bytes)
-            .filter(|s| s.tag() == bytes)
-            .unwrap_or(Script::UNKNOWN),
-    )
+    Some(Script::from_raw_tag(raw.to_be_bytes()))
 }
 
 /// The byte at `i`, 0 past the end (the NUL of a C string and what
@@ -580,12 +572,8 @@ pub fn ot_tags_from_script_and_language_max(
 /// The script of an OpenType script tag (`hb_ot_tag_to_script`): `None`
 /// for `DFLT`.
 ///
-/// HarfBuzz returns the tag itself with the first letter capitalized
-/// (and trailing spaces replaced), so that an unknown tag gives an
-/// `hb_script_t` that names no script. A [`Script`] holds only ISO
-/// 15924 shaped tags, so such a value, and one that
-/// [`Script::from_iso15924`] would map to another script (`Aran`,
-/// `Qaai`), is [`Script::UNKNOWN`] here.
+/// HarfBuzz's four-byte result is preserved, including values outside
+/// ISO 15924 and aliases such as `Aran` and `Qaai`.
 pub fn ot_tag_to_script(tag: Tag) -> Option<Script> {
     script_from_raw(tag_to_script(tag.to_u32()))
 }
