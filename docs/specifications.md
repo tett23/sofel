@@ -406,6 +406,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   - 丸め（[ADR 0026](adr/0026-harfbuzz-rounding.md)）：`hb-dump --roundf` は標準入力の `float` と `double` の値（ビットの16進）にHarfBuzzの `roundf` を通した値を書き、`hb-dump --mult` は `upem` と拡大縮小の組ごとに `hb_font_t` の `x_mult` を書く。`sofel_geom::float` の `hb_roundf`、`hb_roundf32` は、単体テストの値と決まった種の乱数の値100万個（半分の値とその前後を多く含む）で、`HbScale::x_mult` は `upem` 16、1000、1024、2048、16384と負の値を含む拡大縮小で、完全に一致することを確かめる（`tests/harfbuzz_rounding.rs`）。
 - glyfの輪郭は、`ft-dump --outline` の出力と、拡大縮小なし、16画素、48画素で、命令の列、重なりの印、制御の箱が完全に一致することを確かめる（項目 `outline:<SIZE>:<グリフ>`、[ADR 0011](adr/0011-glyf-outlines.md)）。ラスタライズは、`ft-dump --raster` の出力と、12、24、48画素で画像が完全に一致することを確かめる（項目 `raster:<PPEM>:<グリフ>`、[ADR 0012](adr/0012-antialiased-rasterizer.md)）。
 - ラスタの参照出力はグリフごとに比較する（[ADR 0037](adr/0037-stream-raster-reference.md)）。参照プロセスが非ゼロで終了した入力は従来どおり除外し、その呼び出しの件数と判定を加えない。終了状態0の空出力、グリフ数や順序の不一致、フェイス末尾の欠落は失敗にする。比較後は件数、問題の詳細、照合した期待する失敗の識別子を保持し、全成功ケースの識別子を蓄積しない。
+- 輪郭の参照出力もグリフごとの比較を共用する（[ADR 0040](adr/0040-stream-outline-reference.md)）。拡大縮小なし、16画素、48画素で全命令、overlap、制御箱を照合する。終了状態が非ゼロの呼び出しを除外し、正常終了した空出力、グリフ番号や個数の不一致、フェイス末尾の欠落を失敗にする。
 - 輪郭、ラスタライズ（各形式）、埋め込みビットマップ、sfnt以外の形式は、FreeTypeの出力を書き出す `tools/ft-dump/` と比べる。輪郭は完全一致を求める。sfnt以外の形式のテストのフォントは、その形式を実装するまえに、ADRで `testdata.lock` に加える。
 - カラーグリフ、SVGとPDF、GPU、WOFF、検証器、展開器の基準は、それぞれのADRで定める。
 - Unicodeの文字の性質は、CIで `scripts/fetch-ucd.sh` と生成の道具を走らせ、生成したファイルがコミットしたものと一致することを `git diff --exit-code` で確かめる（[ADR 0019](adr/0019-unicode-character-data.md)）。Vertical_Orientationは、`VerticalOrientation.txt` を生成の道具とは別の読み取りで読み、全文字の値の一致を確かめる。

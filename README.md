@@ -157,6 +157,7 @@ cargo test --release -p sofel-conformance
 ```
 
 ラスタの適合テストはFreeTypeの出力をグリフごとに比較する。参照出力の全文や成功した全グリフの識別子は保持しない（[ADR 0037](docs/adr/0037-stream-raster-reference.md)）。
+輪郭の適合テストもグリフごとの比較を共用し、命令、overlap、制御箱を照合する（[ADR 0040](docs/adr/0040-stream-outline-reference.md)）。
 
 適合テストを最大2本の実行ファイルで並列に走らせるには、`sh scripts/test-conformance.sh 2` を使う（`jq` が必要。[ADR 0033](docs/adr/0033-ci-latency-and-ligature-iteration.md)）。
 引数を1にすると直列で実行する。
