@@ -6,7 +6,7 @@
 決定の経緯は各ADRを参照。
 可変フォントの [ADR 0027](adr/0027-variable-fonts.md)、変化量の評価の [ADR 0029](adr/0029-variation-deltas.md) と、その修正の [ADR 0030](adr/0030-variation-evaluation-corrections.md) は採択（未実装）である。`--font-ptem` の分類訂正は [ADR 0028](adr/0028-ptem-is-not-opsz.md) に従って実装済みである。
 ただし、[ADR 0027](adr/0027-variable-fonts.md) の表の読み取りと検証器は実装済みである。
-`sofel-font::var` には、設計座標と正規化座標からの位置の構築、avar版1と版2の写像、[ADR 0029](adr/0029-variation-deltas.md) と [ADR 0030](adr/0030-variation-evaluation-corrections.md) に従うItemVariationStoreの差分の評価の核、fvarの軸と名前つきインスタンスの問い合わせ、FreeTypeのMMVarの読み取り、位置ごとのPostScript名を実装している。
+`sofel-font::var` には、設計座標と正規化座標からの位置の構築、avar版1と版2の写像、[ADR 0029](adr/0029-variation-deltas.md) と [ADR 0030](adr/0030-variation-evaluation-corrections.md) に従うItemVariationStoreの差分の評価の核、fvarの軸と名前つきインスタンスの問い合わせ、FreeTypeのMMVarの読み取り、位置ごとのPostScript名を実装している。FreeTypeが既定のインスタンスを合成した場合は、名前のIDが0でもその番号と設計座標を使える。同じタグを持つ軸が複数ある場合、タグによる指定はHarfBuzz側では該当する全軸に、FreeType側では先頭の該当軸に適用する。
 ItemVariationStore の行の評価は、C ABI の `sofel_instance_item_delta_hb` と `sofel_instance_item_delta_ft` からも呼べる。ストアや行がなければ0を返し、不正なストアの列挙値は `SOFEL_ERROR_INVALID_ARGUMENT` を返す。NULL の位置は静的な既定位置とする（[ADR 0030](adr/0030-variation-evaluation-corrections.md)）。
 C ABIは [ADR 0027](adr/0027-variable-fonts.md) の位置の作成、座標の取得、Variationの文字列変換、軸と名前つきインスタンスの問い合わせ、位置ごとのPostScript名を実装している。
 メトリクス、基準線、輪郭、シェーピング、塗りの既存C ABI関数は位置の引数を受け取る。

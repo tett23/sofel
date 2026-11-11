@@ -649,14 +649,9 @@ impl<'data> Location<'data> {
         };
         let mut design: Vec<f32> = fvar.axes().map(|axis| fixed_to_f32(axis.default)).collect();
         let named = named_instance.and_then(|i| fvar.instance(usize::from(i)));
-        let ft_synthetic = named_instance.is_some_and(|index| {
-            usize::from(index) == fvar.instance_count()
-                && font.ft_mm_var().is_some_and(|mm| {
-                    mm.named_styles()
-                        .nth(usize::from(index))
-                        .is_some_and(|style| style.record.is_none() && style.strid != 0)
-                })
-        });
+        let ft_style =
+            named_instance.and_then(|i| font.ft_mm_var()?.named_styles().nth(usize::from(i)));
+        let mut ft_design = ft_style.map(|style| style.design_coords().collect::<Vec<_>>());
         if let Some(record) = named {
             for (axis, value) in design.iter_mut().enumerate() {
                 if let Some(coord) = record.coordinate(axis) {
@@ -664,17 +659,33 @@ impl<'data> Location<'data> {
                 }
             }
         }
+        if ft_design.is_none() && !variations.is_empty() {
+            ft_design = Some(
+                design
+                    .iter()
+                    .map(|value| Fixed(hb_clamp_to_i32(f64::from(*value * 65536.0))))
+                    .collect(),
+            );
+        }
         for variation in variations {
             for (axis, value) in fvar.axes().zip(&mut design) {
                 if axis.tag == variation.tag {
                     *value = variation.value;
                 }
             }
+            if let Some((index, _)) = fvar
+                .axes()
+                .enumerate()
+                .find(|(_, axis)| axis.tag == variation.tag)
+                && let Some(ft) = ft_design.as_mut().and_then(|values| values.get_mut(index))
+            {
+                *ft = Fixed(hb_clamp_to_i32(f64::from(variation.value * 65536.0)));
+            }
         }
-        let mut location = Self::from_design(font, &design);
+        let mut location = Self::design_location(font, &fvar, &design, ft_design);
         location.named_instance = named_instance;
         location.ft_default = named_instance.is_none() && location.ft_default;
-        if named_instance.is_some() && named.is_none() && !ft_synthetic {
+        if named_instance.is_some() && named.is_none() && ft_style.is_none() {
             location.ft_error = Some(FtLocationError::InvalidArgument);
         }
         location
@@ -693,6 +704,15 @@ impl<'data> Location<'data> {
         else {
             return Self::from_coords(font, Vec::new(), Vec::new(), false);
         };
+        Self::design_location(font, &fvar, values, None)
+    }
+
+    fn design_location(
+        font: &Font<'data>,
+        fvar: &Fvar<'_>,
+        values: &[f32],
+        ft_values: Option<Vec<Fixed>>,
+    ) -> Self {
         let design: Vec<f32> = fvar
             .axes()
             .enumerate()
@@ -703,10 +723,12 @@ impl<'data> Location<'data> {
                     .unwrap_or_else(|| fixed_to_f32(axis.default))
             })
             .collect();
-        let ft_design: Vec<Fixed> = design
-            .iter()
-            .map(|v| Fixed(hb_clamp_to_i32(f64::from(*v * 65536.0))))
-            .collect();
+        let ft_design: Vec<Fixed> = ft_values.unwrap_or_else(|| {
+            design
+                .iter()
+                .map(|v| Fixed(hb_clamp_to_i32(f64::from(*v * 65536.0))))
+                .collect()
+        });
         let mut hb_coords: Vec<i32> = fvar
             .axes()
             .zip(&design)

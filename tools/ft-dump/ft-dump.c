@@ -467,8 +467,30 @@ static void dump_color_rasters(FT_Face face, int ppem)
   }
 }
 
+/* The pinned driver can free an invalid file-stream frame when closing
+ * named instances of variable color fonts without a gvar table.
+ * A memory face keeps all table frames in the caller's input buffer. */
+static FT_Byte *read_font(const char *path, FT_Long *size)
+{
+  FILE *file = fopen(path, "rb");
+  FT_Byte *bytes = NULL;
+  if (!file)
+    return NULL;
+  if (fseek(file, 0, SEEK_END) == 0 && (*size = ftell(file)) > 0 &&
+      fseek(file, 0, SEEK_SET) == 0) {
+    bytes = (FT_Byte *)malloc((size_t)*size);
+    if (bytes && fread(bytes, 1, (size_t)*size, file) != (size_t)*size) {
+      free(bytes);
+      bytes = NULL;
+    }
+  }
+  fclose(file);
+  return bytes;
+}
+
 /* Opens face `index` with the random seed 0 (ADR 0021). */
-static FT_Error open_seeded(FT_Library library, const char *path, FT_Long index, FT_Face *face)
+static FT_Error open_seeded(FT_Library library, const char *path, const FT_Byte *bytes,
+                            FT_Long size, FT_Long index, FT_Face *face)
 {
   FT_Int32 seed = 0;
   FT_Parameter param;
@@ -477,8 +499,10 @@ static FT_Error open_seeded(FT_Library library, const char *path, FT_Long index,
   param.tag = FT_PARAM_TAG_RANDOM_SEED;
   param.data = &seed;
   memset(&args, 0, sizeof args);
-  args.flags = FT_OPEN_PATHNAME | FT_OPEN_PARAMS;
+  args.flags = (bytes ? FT_OPEN_MEMORY : FT_OPEN_PATHNAME) | FT_OPEN_PARAMS;
   args.pathname = (char *)path;
+  args.memory_base = bytes;
+  args.memory_size = size;
   args.num_params = 1;
   args.params = &param;
   return FT_Open_Face(library, &args, index, face);
@@ -837,6 +861,8 @@ static int outlines(const char *size, const char *path, int raster, const char *
   FT_Long *selected_faces = NULL;
   size_t selected_count = 0, selected_capacity = 0, cursor = 0, face_samples = 0;
   FILE *input = NULL;
+  FT_Byte *bytes = NULL;
+  FT_Long byte_count = 0;
 
   if ((raster && unscaled) || (!unscaled && ppem <= 0)) {
     fprintf(stderr, "ft-dump: bad size %s\n", size);
@@ -917,6 +943,12 @@ static int outlines(const char *size, const char *path, int raster, const char *
       }
     }
   }
+  if (reference_has_named && !(bytes = read_font(path, &byte_count))) {
+    free(selected);
+    free(selected_faces);
+    FT_Done_FreeType(library);
+    return 1;
+  }
   for (i = 0; i < num_faces; i++) {
     FT_Error error;
     size_t begin = cursor;
@@ -925,7 +957,7 @@ static int outlines(const char *size, const char *path, int raster, const char *
       cursor++;
 
     printf("face %ld\n", (long)i);
-    error = open_seeded(library, path, i, &face);
+    error = open_seeded(library, path, bytes, byte_count, i, &face);
     if (error != 0) {
       printf("error %d\nend\n", (int)error);
       continue;
@@ -934,6 +966,7 @@ static int outlines(const char *size, const char *path, int raster, const char *
                                variations ? variations : reference_variations) != 0) {
       fprintf(stderr, "ft-dump: invalid variation location\n");
       FT_Done_Face(face);
+      free(bytes);
       free(selected);
       free(selected_faces);
       FT_Done_FreeType(library);
@@ -949,6 +982,7 @@ static int outlines(const char *size, const char *path, int raster, const char *
     printf("end\n");
     FT_Done_Face(face);
   }
+  free(bytes);
   free(selected);
   free(selected_faces);
   FT_Done_FreeType(library);

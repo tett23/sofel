@@ -20,6 +20,38 @@ fn fvar_one_axis() -> Vec<u8> {
     fvar
 }
 
+#[test]
+fn adr0027_duplicate_axis_tags_keep_hb_and_ft_design_coordinates_separate() {
+    let axis = fvar_one_axis().get(16..36).unwrap().to_vec();
+    let mut fvar = fvar_one_axis();
+    fvar.get_mut(8..10)
+        .unwrap()
+        .copy_from_slice(&3u16.to_be_bytes());
+    fvar.get_mut(14..16)
+        .unwrap()
+        .copy_from_slice(&16u16.to_be_bytes());
+    fvar.extend_from_slice(&axis);
+    fvar.extend_from_slice(&axis);
+    let mut tables = sample_tables_with_glyf();
+    tables.push((b"fvar", fvar));
+    tables.sort_by_key(|(tag, _)| **tag);
+    let bytes = sfnt(&tables);
+    let font = Font::new(&bytes, 0).unwrap();
+    let location = Location::new(
+        &font,
+        None,
+        &[Variation {
+            tag: sofel_font::read::Tag::new(b"wght"),
+            value: 0.75,
+        }],
+    );
+    assert_eq!(location.coords_design(), &[0.75, 0.75, 0.75]);
+    assert_eq!(
+        location.ft_design_coords(),
+        &[Fixed(49152), Fixed(0), Fixed(0)]
+    );
+}
+
 fn font_with_hvar(first_advance: u16, include_hmtx: bool) -> Vec<u8> {
     let store = Buf::new()
         .u16(1)
@@ -534,7 +566,8 @@ fn i04_named_location_then_later_variation_wins() {
     assert_eq!(overridden.coords_design(), &[0.25]);
     assert_eq!(overridden.ft_design_coords(), &[Fixed(16384)]);
     assert_eq!(overridden.named_instance_index(), Some(0));
-    let missing = Location::named_instance(&font, 1);
+    let first_missing = u16::try_from(font.ft_mm_var().unwrap().named_styles().count()).unwrap();
+    let missing = Location::named_instance(&font, first_missing);
     assert_eq!(missing.coords_design(), &[0.0]);
     assert_eq!(missing.ft_error(), Some(FtLocationError::InvalidArgument));
 }
@@ -662,6 +695,14 @@ fn adr0036_i02_missing_names_leave_zero_tail() {
     let tail = font.ft_mm_var().unwrap().named_styles().nth(1).unwrap();
     assert_eq!((tail.strid, tail.psid), (0, 0));
     assert_eq!(tail.design_coords().collect::<Vec<_>>(), vec![Fixed(0)]);
+    let location = Location::named_instance(&font, 1);
+    assert_eq!(location.ft_error(), None);
+    assert_eq!(location.ft_design_coords(), &[Fixed(0)]);
+    assert_eq!(location.coords_design(), &[0.25]);
+    let weight = Variation::parse("wght=0.5").unwrap();
+    let overridden = Location::new(&font, Some(1), &[weight]);
+    assert_eq!(overridden.ft_design_coords(), &[Fixed(32768)]);
+    assert_eq!(overridden.coords_design(), &[0.5]);
 }
 
 #[test]
