@@ -203,8 +203,8 @@ impl<'a> Font<'a> {
         if glyph.0 >= self.num_glyphs {
             return None;
         }
-        if self.ft_vertical().is_some() {
-            return Some(self.vmetrics.bearing(glyph));
+        if let Some((h, mtx)) = self.ft_vertical() {
+            return Some(ft_metrics_bearing(mtx, h.number_of_h_metrics(), glyph));
         }
         let ascender = self.ft_os2().map_or_else(
             || {
@@ -218,6 +218,33 @@ impl<'a> Font<'a> {
         );
         Some(short(i32::from(ascender).wrapping_sub(i32::from(y_max))))
     }
+}
+
+/// `tt_face_get_metrics` for the bearing in hmtx or vmtx.
+pub(crate) fn ft_metrics_bearing(mtx: &[u8], long_metrics: u32, glyph: GlyphId) -> i16 {
+    let read = |pos: u64| {
+        let at = usize::try_from(pos).ok()?;
+        let b = mtx.get(at..at.checked_add(2)?)?;
+        Some(i16::from_be_bytes([*b.first()?, *b.get(1)?]))
+    };
+    let size = u64::try_from(mtx.len()).unwrap_or(u64::MAX);
+    let (g, k) = (u64::from(glyph.0), u64::from(long_metrics));
+    let bearing = if k == 0 {
+        None
+    } else if g < k {
+        let pos = g.saturating_mul(4);
+        (pos.saturating_add(4) <= size)
+            .then(|| read(pos.saturating_add(2)))
+            .flatten()
+    } else if k.saturating_sub(1).saturating_mul(4).saturating_add(2) > size {
+        None
+    } else {
+        read(
+            k.saturating_mul(4)
+                .saturating_add(g.saturating_sub(k).saturating_mul(2)),
+        )
+    };
+    bearing.unwrap_or(0)
 }
 
 /// `tt_face_get_metrics` for the advance, without variations.
