@@ -48,6 +48,7 @@ pub(crate) fn collect_lookup_conditions(
     condition_delta: &impl Fn(u16, u16) -> f64,
 ) -> Vec<u32> {
     let mut evaluated = BTreeMap::<u32, bool>::new();
+    let mut visited_tables = BTreeSet::new();
     let mut true_offsets = BTreeSet::new();
     for i in 0..variations.lookup_record_count() {
         let Some(table) = variations
@@ -57,6 +58,9 @@ pub(crate) fn collect_lookup_conditions(
             continue;
         };
         let table_at = variations.data().len().saturating_sub(table.data().len());
+        if !visited_tables.insert(table_at) {
+            continue;
+        }
         for j in 0..table.len() {
             let Some(record) = table.record(j) else {
                 continue;
