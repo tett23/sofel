@@ -202,7 +202,7 @@ pub fn check_variation_store(input: &[u8]) {
 
 fn variation_rows(store: &[u8], seed: u16) -> Vec<(u16, u16)> {
     // Compare every declared row in small stores. Larger stores use at most
-    // 256 disjoint strata plus three out-of-range probes per fuzz input.
+    // 256 disjoint strata, leaving room for out-of-range boundary probes.
     const MAX_VALID_ROWS: usize = 256;
     let Ok(store) = ItemVariationStore::new(store) else {
         return vec![(0, 0), (u16::MAX, u16::MAX)];
@@ -216,20 +216,26 @@ fn variation_rows(store: &[u8], seed: u16) -> Vec<(u16, u16)> {
         })
         .collect();
     let total: u64 = data.iter().map(|(_, count)| u64::from(*count)).sum();
+    let first_is_outer_zero = data.first().is_some_and(|&(outer, _)| outer == 0);
     let mut rows = Vec::new();
     if total <= MAX_VALID_ROWS as u64 {
         for &(outer, count) in &data {
             rows.extend((0..count).map(|inner| (outer, inner)));
         }
     } else {
+        let strata = if first_is_outer_zero {
+            MAX_VALID_ROWS
+        } else {
+            MAX_VALID_ROWS - 1
+        };
         let mut state = u64::from(seed) | 1;
-        for slot in 0..MAX_VALID_ROWS {
+        for slot in 0..strata {
             state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
-            let start = slot as u64 * total / MAX_VALID_ROWS as u64;
-            let end = (slot as u64 + 1) * total / MAX_VALID_ROWS as u64;
+            let start = slot as u64 * total / strata as u64;
+            let end = (slot as u64 + 1) * total / strata as u64;
             let index = if slot == 0 {
                 0
-            } else if slot + 1 == MAX_VALID_ROWS {
+            } else if slot + 1 == strata {
                 total - 1
             } else {
                 start + state % (end - start)
@@ -252,6 +258,11 @@ fn variation_rows(store: &[u8], seed: u16) -> Vec<(u16, u16)> {
     rows.push((u16::MAX, u16::MAX));
     rows.sort_unstable();
     rows.dedup();
+    if rows.len() > MAX_VALID_ROWS + 3 {
+        // At exactly 256 valid rows, keep them all and omit this optional
+        // probe when outer zero has no valid rows.
+        rows.retain(|&row| row != (0, 0));
+    }
     rows
 }
 
@@ -318,6 +329,26 @@ mod variation_row_tests {
         let over = variation_rows(&store(1, 257), 0x5eed);
         assert_eq!(over.len(), 259);
         assert!(over.contains(&(0, 256)));
+    }
+
+    #[test]
+    fn adr0030_fuzz_empty_first_outer_keeps_limit() {
+        for count in [256, u16::MAX] {
+            let mut store = store(2, count);
+            let first_at = 8 + 2 * 4 + 10;
+            store.splice(first_at..first_at, [0, 0, 0, 0, 0, 0]);
+            store[12..16].copy_from_slice(&u32::try_from(first_at + 6).unwrap().to_be_bytes());
+            let rows = variation_rows(&store, 0x5eed);
+            assert_eq!(rows.len(), 259, "itemCount={count}");
+            assert!(rows.contains(&(1, 0)));
+            assert!(rows.contains(&(1, count - 1)));
+            if count == 256 {
+                assert!((0..count).all(|inner| rows.contains(&(1, inner))));
+                assert!(!rows.contains(&(0, 0)));
+            } else {
+                assert!(rows.contains(&(0, 0)));
+            }
+        }
     }
 }
 
