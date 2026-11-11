@@ -177,9 +177,13 @@ fn layout_unsupported(
         }
     }
     // Pinning every axis drops the GDEF variation store.
+    let retained = |t: &[u8; 4]| {
+        let tag = Tag::new(t);
+        font.table(tag).is_some() && !drop.contains(tag.to_u32())
+    };
     let gdef_store_is_unused = kept(b"GDEF").is_some_and(layout::gdef::unused_variation_store)
-        && kept(b"GPOS").is_none()
-        && kept(b"MATH").is_none();
+        && !retained(b"GPOS")
+        && !retained(b"MATH");
     if !pinned && kept(b"GDEF").is_some_and(layout::gdef::has_var_store) && !gdef_store_is_unused {
         return Err(SubsetError::Unsupported {
             tag: Tag::new(b"GDEF"),

@@ -305,6 +305,12 @@ fn gdef_store_with_kept_gpos_remains_unsupported() {
     assert!(
         matches!(subset(&font, &chars("A")), Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF"))
     );
+    let copied_gpos = chars("A").map_set(SetKind::NoSubsetTables, |set| {
+        set.add(Tag::new(b"GPOS").to_u32());
+    });
+    assert!(
+        matches!(subset(&font, &copied_gpos), Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF"))
+    );
 }
 
 fn glyph_class_def(out: &[u8]) -> Vec<u8> {
