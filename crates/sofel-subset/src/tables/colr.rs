@@ -311,11 +311,7 @@ impl Closure<'_, '_> {
                 9 | 19 | 31 => 4,
                 _ => 6,
             };
-            // A default-pinned PaintVarSolid keeps its base alpha and
-            // loses its variation index when written as PaintSolid.
-            if !(self.pinned && format == 3) {
-                self.check_var_index(at.saturating_add(size), count);
-            }
+            self.check_var_index(at.saturating_add(size), count);
         } else if format == 13 {
             let offset = u24(self.t, at.saturating_add(4)) as usize;
             self.check_var_index(at.saturating_add(offset).saturating_add(24), 6);
@@ -334,9 +330,8 @@ impl Closure<'_, '_> {
     }
 
     fn check_var_index(&mut self, at: usize, count: u32) {
-        collect_variations(self.indices, self.t.u32(at), count);
-        if self.pinned {
-            self.can_subset_store = false;
+        if !self.pinned {
+            collect_variations(self.indices, self.t.u32(at), count);
         }
     }
 
@@ -522,6 +517,9 @@ impl Sub<'_, '_> {
     /// `Variable::subset`'s variation index:
     /// retains the sentinel or rewrites a collected index.
     fn var_index(&mut self, at: usize) -> bool {
+        if self.p.var.instancing() && self.p.var.all_axes_pinned() {
+            return true;
+        }
         let old = self.t.u32(at);
         let new = if old == NO_VARIATION {
             old
@@ -582,9 +580,10 @@ impl Sub<'_, '_> {
         };
         let out = self.embed(at, size);
         let p = self.t.at(at);
-        if format == 3 && self.p.var.instancing() && self.p.var.all_axes_pinned() {
-            self.s.write_at(out, &[2]);
-            return self.palette(out.saturating_add(1), p.u16(1));
+        if (var || format == 13) && self.p.var.instancing() && self.p.var.all_axes_pinned() {
+            // All supported full instances are pinned at the default.
+            // The preceding paint format carries the same base values.
+            self.s.write_at(out, &[format.saturating_sub(1)]);
         }
         let ok = match format {
             1 => {

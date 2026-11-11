@@ -524,21 +524,7 @@ fn colr_paints_nested_too_deep_are_cut() {
 
 #[test]
 fn adr0022_default_pin_converts_solid_and_clip_to_static_formats() {
-    let fvar = Buf::new()
-        .u32(0x10000)
-        .u16(16)
-        .u16(2)
-        .u16(1)
-        .u16(20)
-        .u16(0)
-        .u16(8)
-        .u32(Tag::new(b"wght").to_u32())
-        .u32(0)
-        .u32(0)
-        .u32(0x10000)
-        .u16(0)
-        .u16(256)
-        .done();
+    let fvar = weight_axis();
     let paint = Buf::new().u8(3).u16(0).u16(0x2000).u32(0).done();
     let clip = Buf::new()
         .u8(2)
@@ -581,4 +567,95 @@ fn adr0022_default_pin_converts_solid_and_clip_to_static_formats() {
     assert_eq!(clip.var_index_base, None);
     assert_eq!(colr.var_store_offset(), 0);
     assert_eq!(colr.var_index_map_offset(), 0);
+}
+
+fn weight_axis() -> Vec<u8> {
+    Buf::new()
+        .u32(0x10000)
+        .u16(16)
+        .u16(2)
+        .u16(1)
+        .u16(20)
+        .u16(0)
+        .u16(8)
+        .u32(Tag::new(b"wght").to_u32())
+        .u32(0)
+        .u32(0)
+        .u32(0x10000)
+        .u16(0)
+        .u16(256)
+        .done()
+}
+
+#[test]
+fn adr0022_default_pinned_paint_graph_matches_static_graph() {
+    let tables = |variable: bool| {
+        let index = |mut data: Vec<u8>| {
+            if variable {
+                data.extend(0u32.to_be_bytes());
+            }
+            data
+        };
+        let mut stops = vec![0, 0, 2];
+        for (position, palette) in [(0u16, 0u16), (0x4000, 1)] {
+            stops.extend(index(
+                Buf::new().u16(position).u16(palette).u16(0x3000).done(),
+            ));
+        }
+        let mut roots = Vec::new();
+        for (format, coordinates) in [(4u8, 6i16), (6, 6), (8, 4)] {
+            let mut paint = vec![format + u8::from(variable), 0, 0, 0];
+            for n in 0..coordinates {
+                paint.extend((10 + n).to_be_bytes());
+            }
+            roots.push(link(index(paint), vec![(1, 3, stops.clone())]));
+        }
+        for (format, parameters) in [
+            (14u8, 2i16),
+            (16, 2),
+            (18, 4),
+            (20, 1),
+            (22, 3),
+            (24, 1),
+            (26, 3),
+            (28, 2),
+            (30, 4),
+        ] {
+            let mut transform = vec![format + u8::from(variable), 0, 0, 0];
+            for n in 0..parameters {
+                transform.extend((50 + n).to_be_bytes());
+            }
+            roots.push(link(index(transform), vec![(1, 3, solid(0))]));
+        }
+        let affine = index(
+            [65536i32, 0, 0, 65536, 42, -27]
+                .into_iter()
+                .flat_map(i32::to_be_bytes)
+                .collect(),
+        );
+        roots.push(link(
+            vec![12 + u8::from(variable), 0, 0, 0, 0, 0, 0],
+            vec![(1, 3, solid(1)), (4, 3, affine)],
+        ));
+        let base: Vec<_> = (0..roots.len()).map(|i| (1 + i as u16, i)).collect();
+        let mut colr = colr_v1(&[], &[], &roots, &base, &[], &[]);
+        if variable {
+            let offset = colr.len() as u32;
+            colr[30..34].copy_from_slice(&offset.to_be_bytes());
+            colr.extend(item_variation_store(1, &[], &[]));
+        }
+        font_with(vec![
+            (b"COLR", colr),
+            (b"CPAL", cpal_table(false)),
+            (b"fvar", weight_axis()),
+        ])
+    };
+    let pinned = |data: &[u8]| {
+        let font = Font::new(data, 0).unwrap();
+        let input = chars("ABCDEFGHIJKLM")
+            .with_all_axes_pinned_to_default(&font)
+            .unwrap();
+        subset(&font, &input).unwrap()
+    };
+    assert_eq!(pinned(&tables(true)), pinned(&tables(false)));
 }
