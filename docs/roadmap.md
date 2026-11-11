@@ -6,7 +6,7 @@
 
 [ADR 0027](adr/0027-variable-fonts.md)（可変フォント）と [ADR 0029](adr/0029-variation-deltas.md)（変化量の扱い）は採択（未実装）である。座標の正規化、表の読み取りと検証、ItemVariationStoreの評価の核、名前つきインスタンス、PostScript名、HVARとVVARのメトリクス、gvarとCFF2の輪郭、FeatureVariationsとGPOSの変化量を使うシェーピング、COLRv1の可変の塗り、C ABI、CLI、計測を段階ごとに実装した。[ADR 0028](adr/0028-ptem-is-not-opsz.md) の分類訂正は実装済みで、[ADR 0030](adr/0030-variation-evaluation-corrections.md) の変化量評価の修正は段階ごとに進めている。[ADR 0029](adr/0029-variation-deltas.md) の調査記録は、手元の `target/handoff/variation-deltas-research.md` にある（コミットしていない）。
 
-[ADR 0027](adr/0027-variable-fonts.md) の全位置でのCFF2輪郭・ラスタの比較と、追加フォントの非既定位置でのメトリクス・輪郭の比較は、CIとマージを待っている。`ft_left_side_bearing` と `ft_top_side_bearing` にHVAR・VVARの差分を適用するという決定は、固定版FreeTypeの公開値と異なる。合成フォントで送り幅だけが変わり、サイドベアリングが変わらないことを確認したため、修正ADRをレビュー用に起草した。
+[ADR 0027](adr/0027-variable-fonts.md) の CFF2 輪郭とラスタをコーパスに列挙された各位置で比較する検査と、追加フォントの非既定位置でメトリクスと輪郭を比較する検査は main に入った。`ft_left_side_bearing` と `ft_top_side_bearing` に HVAR・VVAR の差分を適用するという決定は、固定版 FreeType の公開値と異なる。合成フォントで送り幅だけが変わり、サイドベアリングが変わらないことを確認したため、修正 ADR をレビュー用に起草した。
 
 ## HarfBuzz・FreeType 互換に必要な機能
 
