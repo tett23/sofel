@@ -478,7 +478,7 @@ fn gpos_single_variation_index_drops_with_lookup_or_glyph() {
 }
 
 #[test]
-fn gpos_cursive_variation_index_remains_unsupported() {
+fn gpos_cursive_variation_index_is_remapped() {
     let device = Buf::new().u16(0).u16(2).u16(0x8000).done();
     let anchor = link(
         Buf::new().u16(3).i16(0).i16(0).u16(0).u16(0).done(),
@@ -494,9 +494,238 @@ fn gpos_cursive_variation_index_remains_unsupported() {
         (b"GPOS", gpos),
     ]);
     let font = Font::new(&data, 0).unwrap();
-    assert!(
-        matches!(subset(&font, &chars("B")), Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF"))
+    let out = subset(&font, &chars("B")).unwrap();
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    let store = sofel_font::read::gdef::Gdef::new(&gdef)
+        .unwrap()
+        .variation_store()
+        .unwrap()
+        .unwrap();
+    assert_eq!(store.item_data(0).unwrap().item_count, 1);
+}
+
+fn anchor3_varidx(inner: u16) -> Vec<u8> {
+    let device = Buf::new().u16(0).u16(inner).u16(0x8000).done();
+    link(
+        Buf::new().u16(3).i16(10).i16(20).u16(0).u16(0).done(),
+        vec![(6, 2, device)],
+    )
+}
+
+fn anchor3_both_varidx(x: u16, y: u16) -> Vec<u8> {
+    link(
+        Buf::new().u16(3).i16(10).i16(20).u16(0).u16(0).done(),
+        vec![
+            (6, 2, Buf::new().u16(0).u16(x).u16(0x8000).done()),
+            (8, 2, Buf::new().u16(0).u16(y).u16(0x8000).done()),
+        ],
+    )
+}
+
+fn gpos_anchor_lookup(kind: u16) -> Vec<u8> {
+    let subtable = if kind == 3 {
+        link(
+            Buf::new()
+                .u16(1)
+                .u16(0)
+                .u16(2)
+                .u16(0)
+                .u16(0)
+                .u16(0)
+                .u16(0)
+                .done(),
+            vec![
+                (2, 2, coverage1(&[g('A'), g('B')])),
+                (6, 2, anchor3_varidx(1)),
+                (10, 2, anchor3_varidx(2)),
+            ],
+        )
+    } else {
+        let marks = link(
+            Buf::new().u16(2).u16(0).u16(0).u16(0).u16(0).done(),
+            vec![(4, 2, anchor3_varidx(0)), (8, 2, anchor3_varidx(1))],
+        );
+        let bases = if kind == 5 {
+            let attach = |inner| {
+                link(
+                    Buf::new().u16(1).u16(0).done(),
+                    vec![(2, 2, anchor3_varidx(inner))],
+                )
+            };
+            link(
+                Buf::new().u16(2).u16(0).u16(0).done(),
+                vec![(2, 2, attach(0)), (4, 2, attach(2))],
+            )
+        } else {
+            link(
+                Buf::new().u16(2).u16(0).u16(0).done(),
+                vec![(2, 2, anchor3_varidx(0)), (4, 2, anchor3_varidx(2))],
+            )
+        };
+        link(
+            Buf::new().u16(1).u16(0).u16(0).u16(1).u16(0).u16(0).done(),
+            vec![
+                (2, 2, coverage1(&[g('A'), g('B')])),
+                (4, 2, coverage1(&[g('C'), g('D')])),
+                (8, 2, marks),
+                (10, 2, bases),
+            ],
+        )
+    };
+    let feature = if kind == 3 { b"curs" } else { b"mark" };
+    layout_table(&[(feature, &[0])], &[(kind, subtable)])
+}
+
+fn mark_base_two_classes() -> Vec<u8> {
+    let marks = link(
+        Buf::new().u16(2).u16(0).u16(0).u16(1).u16(0).done(),
+        vec![(4, 2, anchor3_varidx(0)), (8, 2, anchor3_varidx(1))],
     );
+    let bases = link(
+        Buf::new().u16(2).u16(0).u16(0).u16(0).u16(0).done(),
+        vec![(2, 2, anchor3_varidx(0)), (8, 2, anchor3_varidx(2))],
+    );
+    let subtable = link(
+        Buf::new().u16(1).u16(0).u16(0).u16(2).u16(0).u16(0).done(),
+        vec![
+            (2, 2, coverage1(&[g('A'), g('B')])),
+            (4, 2, coverage1(&[g('C'), g('D')])),
+            (8, 2, marks),
+            (10, 2, bases),
+        ],
+    );
+    layout_table(&[(b"mark", &[0])], &[(4, subtable)])
+}
+
+fn assert_anchor_subset(kind: u16, expected_items: u16) {
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[0])),
+        (b"GPOS", gpos_anchor_lookup(kind)),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("BD")).unwrap();
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    let store = sofel_font::read::gdef::Gdef::new(&gdef)
+        .unwrap()
+        .variation_store()
+        .unwrap()
+        .unwrap();
+    assert_eq!(store.item_data(0).unwrap().item_count, expected_items);
+    let gpos = out_table(&out, b"GPOS").unwrap();
+    assert!(gpos.windows(6).any(|w| w == [0, 0, 0, 0, 0x80, 0]));
+}
+
+#[test]
+fn gpos_cursive_anchor_variation_index_follows_kept_glyph() {
+    assert_anchor_subset(3, 1);
+}
+
+#[test]
+fn gpos_cursive_anchor_variation_index_remaps_both_devices() {
+    let cursive = link(
+        Buf::new().u16(1).u16(0).u16(1).u16(0).u16(0).done(),
+        vec![
+            (2, 2, coverage1(&[g('B')])),
+            (6, 2, anchor3_both_varidx(2, 1)),
+        ],
+    );
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[0])),
+        (b"GPOS", layout_table(&[(b"curs", &[0])], &[(3, cursive)])),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("B")).unwrap();
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    let store = sofel_font::read::gdef::Gdef::new(&gdef)
+        .unwrap()
+        .variation_store()
+        .unwrap()
+        .unwrap();
+    assert_eq!(store.item_data(0).unwrap().item_count, 2);
+    let gpos = out_table(&out, b"GPOS").unwrap();
+    assert!(gpos.windows(6).any(|w| w == [0, 0, 0, 1, 0x80, 0]));
+    assert!(gpos.windows(6).any(|w| w == [0, 0, 0, 0, 0x80, 0]));
+}
+
+#[test]
+fn gpos_mark_base_anchor_variation_index_follows_kept_rows() {
+    assert_anchor_subset(4, 2);
+}
+
+#[test]
+fn gpos_mark_lig_anchor_variation_index_follows_kept_rows() {
+    assert_anchor_subset(5, 2);
+}
+
+#[test]
+fn gpos_mark_mark_anchor_variation_index_follows_kept_rows() {
+    assert_anchor_subset(6, 2);
+}
+
+#[test]
+fn gpos_mark_base_anchor_variation_index_follows_kept_class_column() {
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[0])),
+        (b"GPOS", mark_base_two_classes()),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("BD")).unwrap();
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    let store = sofel_font::read::gdef::Gdef::new(&gdef)
+        .unwrap()
+        .variation_store()
+        .unwrap()
+        .unwrap();
+    assert_eq!(store.item_data(0).unwrap().item_count, 2);
+}
+
+#[test]
+fn gpos_anchor_variation_index_survives_no_hinting() {
+    for kind in [3, 4, 5, 6] {
+        let data = font_with(vec![
+            (b"GDEF", gdef_with_referenced_store(&[0])),
+            (b"GPOS", gpos_anchor_lookup(kind)),
+        ]);
+        let font = Font::new(&data, 0).unwrap();
+        let out = subset(&font, &chars("BD").with_flags(Flags::NO_HINTING)).unwrap();
+        let gpos = out_table(&out, b"GPOS").unwrap();
+        assert!(gpos.windows(6).any(|w| w == [0, 0, 0, 0, 0x80, 0]));
+    }
+}
+
+#[test]
+fn copied_gdef_uses_anchor_index_remap_like_harfbuzz() {
+    for kind in [3, 4, 5, 6] {
+        let data = font_with(vec![
+            (b"GDEF", gdef_with_referenced_store(&[0])),
+            (b"GPOS", gpos_anchor_lookup(kind)),
+        ]);
+        let font = Font::new(&data, 0).unwrap();
+        let input = chars("BD").map_set(SetKind::NoSubsetTables, |set| {
+            set.add(Tag::new(b"GDEF").to_u32());
+        });
+        let out = subset(&font, &input).unwrap();
+        assert_eq!(out_table(&out, b"GDEF"), out_table(&data, b"GDEF"));
+        let gpos = out_table(&out, b"GPOS").unwrap();
+        assert!(gpos.windows(6).any(|w| w == [0, 0, 0, 0, 0x80, 0]));
+    }
+}
+
+#[test]
+fn gpos_anchor_variation_index_drops_with_lookup_or_glyph() {
+    for kind in [3, 4, 5, 6] {
+        let data = font_with(vec![
+            (b"GDEF", gdef_with_referenced_store(&[0])),
+            (b"GPOS", gpos_anchor_lookup(kind)),
+        ]);
+        let font = Font::new(&data, 0).unwrap();
+        let filtered_lookup = chars("BD").map_set(SetKind::LayoutFeatures, |set| {
+            set.clear();
+            set.add(Tag::new(b"liga").to_u32());
+        });
+        assert!(out_table(&subset(&font, &filtered_lookup).unwrap(), b"GDEF").is_none());
+        assert!(out_table(&subset(&font, &chars("E")).unwrap(), b"GDEF").is_none());
+    }
 }
 
 #[test]
