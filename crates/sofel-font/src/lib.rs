@@ -286,6 +286,7 @@ pub struct Font<'a> {
     num_glyphs: u32,
     metrics: Metrics<'a>,
     vmetrics: Metrics<'a>,
+    has_variable_h_extents: bool,
     ft_metrics: FtMetrics<'a>,
     cmap: Option<Subtable<'a>>,
     remap: Remap,
@@ -593,6 +594,15 @@ impl<'a> Font<'a> {
                 )
             });
 
+        let has_variable_h_extents = sfnt
+            .table(sofel_read::mvar::TAG)
+            .and_then(|data| sofel_read::mvar::Mvar::new(data).ok())
+            .is_some_and(|mvar| {
+                [b"hasc", b"hdsc", b"hlgp"]
+                    .iter()
+                    .any(|tag| mvar.find(Tag::new(tag)).is_some())
+            });
+
         Ok(Font {
             sfnt,
             face_index: index,
@@ -600,6 +610,7 @@ impl<'a> Font<'a> {
             num_glyphs,
             metrics,
             vmetrics,
+            has_variable_h_extents,
             ft_metrics: FtMetrics::new(&sfnt),
             cmap,
             remap,
