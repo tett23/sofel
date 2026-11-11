@@ -346,7 +346,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [cmap, metrics, font, outline, os2, name, post, vorg, base, math, gdef, gsub, gpos, cff, shape, deserialize, repack, gvar, feature_variations]
+        target: [cmap, metrics, font, outline, os2, name, post, vorg, base, math, gdef, gsub, gpos, cff, shape, deserialize, repack, gvar, feature_variations, location]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
