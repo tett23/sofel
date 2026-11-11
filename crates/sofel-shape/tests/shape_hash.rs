@@ -147,11 +147,11 @@ fn shape_hash() {
                     let i = match plans.iter().position(|p| p.key().0 == props) {
                         Some(i) => i,
                         None => {
-                            plans.push(ShapePlan::new(&font, props, &features));
+                            plans.push(ShapePlan::new(font.default_instance(), props, &features));
                             plans.len() - 1
                         }
                     };
-                    let glyphs = shape(&font, &scale, &plans[i], buffer);
+                    let glyphs = shape(font.default_instance(), &scale, &plans[i], buffer);
                     for (g, p) in glyphs.glyph_infos().iter().zip(glyphs.glyph_positions()) {
                         for v in [g.glyph, g.cluster, g.flags.0] {
                             fnv(&mut h, i64::from(v));
