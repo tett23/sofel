@@ -59,8 +59,11 @@ pub(crate) fn needs_var_store(data: &[u8], glyphset: &RangeSet) -> bool {
     let t = D(data);
     sanitized(data).is_some_and(|c| {
         c.version() >= 1
-            && !retains_no_v1_paints(&c, glyphset)
             && (v1_offset(t, 1, 26) != 0 || v1_offset(t, 1, 30) != 0)
+            && !(retains_no_v1_paints(&c, glyphset)
+                && glyphset
+                    .iter()
+                    .any(|g| c.find_base_glyph(g).is_some_and(|r| r.num_layers != 0)))
     })
 }
 
