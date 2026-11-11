@@ -471,7 +471,7 @@ void sofel_location_destroy(sofel_location_t *location);
  * SOFEL_ERROR_NULL. Missing stores and invalid vsindex values are
  * SOFEL_ERROR_INVALID_ARGUMENT; malformed stores are SOFEL_ERROR_INVALID_FONT.
  *
- * Rust: sofel_font::var::Instance::blend_scalars::<Ft>
+ * Rust: sofel_font::var::Instance::blend_scalars, sofel_font::var::BlendScalars::len, sofel_font::var::BlendScalars::is_empty, sofel_font::var::BlendScalars::iter
  * HarfBuzz: none
  * FreeType: cff_blend_build_vector
  */

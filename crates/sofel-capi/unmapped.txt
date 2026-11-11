@@ -64,6 +64,7 @@ sofel_font::HbCff1::* HarfBuzz's CFF accelerator, the parts that glyph boxes and
 sofel_font::HbCff2::* HarfBuzz's CFF2 accelerator, the parts that glyph boxes and CFF2 subsetting read (ADR 0021, ADR 0022); C gets the boxes from sofel_font_glyph_extents and subsets with sofel_subset.
 sofel_outline::cff1_extents The CFF step of sofel_outline::HbExtents::glyph_extents, which sofel_font_glyph_extents runs.
 sofel_outline::cff2_extents The CFF2 step of sofel_outline::HbExtents::glyph_extents, which sofel_font_glyph_extents runs.
+sofel_outline::cff2_extents_at The location-aware CFF2 step of HbExtents::glyph_extents; C calls sofel_font_glyph_extents with a location.
 sofel_outline::HbExtents::cff1 Returns the Rust accelerator that sofel_font_t keeps inside.
 sofel_outline::HbExtents::cff2 Returns the Rust accelerator that sofel_font_t keeps inside.
 sofel_outline::HbExtents::font Returns the font that sofel_font_t is.
@@ -81,6 +82,9 @@ sofel_font::Cff::char_strings Rust views of the CFF structures for the outline c
 sofel_font::Cff::charset Rust views of the CFF structures; C reads CIDs with sofel_font_cid.
 sofel_font::Cff::data Rust view of the table; C reads the bytes with sofel_font_table.
 sofel_font::Cff::default_blend Rust blend weights for the decoder; C draws CFF2 with sofel_outline_draw.
+sofel_font::Cff::private_dict_with_blend The internal location-aware DICT parser; C draws through sofel_outline_draw.
+sofel_font::Cff::subfont_with_blend The internal location-aware CFF subfont view; C draws through sofel_outline_draw.
+sofel_font::var::Instance::ft_blend_weights The decoder's FreeType weight adapter; C draws through sofel_outline_draw and reads coefficients through sofel_cff2_blend_vector.
 sofel_font::Cff::encoding Rust view; C reads the bytes with sofel_font_table.
 sofel_font::Cff::fd_select Rust view; C reads the bytes with sofel_font_table.
 sofel_font::Cff::font_dict Rust DICT structures; C reads the bytes with sofel_font_table.
