@@ -902,6 +902,30 @@ fn i03_mvar_metric_uses_location_at_scale_in_c_abi() {
         OK
     );
     assert_eq!(extents[0], 821);
+    let mut raw = 0.0;
+    let mut scaled = 0;
+    // SAFETY: the handles are live and both output variables are writable.
+    unsafe {
+        assert_eq!(
+            sofel_instance_metrics_variation(font, location, tag, &mut raw),
+            OK
+        );
+        assert_eq!(
+            sofel_scale_metrics_x_variation(scale, font, location, tag, &mut scaled),
+            OK
+        );
+        assert_eq!(f64::from(scaled), f64::from(raw));
+        assert_eq!(
+            sofel_scale_metrics_y_variation(scale, font, location, tag, &mut scaled),
+            OK
+        );
+        assert_eq!(f64::from(scaled), f64::from(raw));
+        assert_eq!(
+            sofel_instance_metrics_variation(font, core::ptr::null(), tag, &mut raw),
+            OK
+        );
+        assert_eq!(raw, 0.0);
+    }
     // SAFETY: all handles are owned and no longer used.
     unsafe {
         sofel_scale_destroy(scale);

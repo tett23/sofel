@@ -1,6 +1,6 @@
 use sofel_read::GlyphId;
 
-/// A mode, a coordinate count and big-endian words precede the SFNT.
+/// A mode, a coordinate count, big-endian words and a short text precede the SFNT.
 /// The same instance supplies all glyph queries for this font.
 pub fn check_location(input: &[u8]) {
     use sofel_color::{PaintOptions, Recording, paint_recording_at};
@@ -9,6 +9,9 @@ pub fn check_location(input: &[u8]) {
         return;
     };
     let Some((words, data)) = rest.split_at_checked(usize::from(header[1]) * 4) else {
+        return;
+    };
+    let Some((text, data)) = data.split_at_checked(usize::from(header[0] >> 2)) else {
         return;
     };
     let Ok(font) = sofel_font::Font::new(data, 0) else {
@@ -35,6 +38,17 @@ pub fn check_location(input: &[u8]) {
     let instance = font.instance(&location);
     let outlines = sofel_outline::Outlines::new(instance);
     let boxes = sofel_outline::HbExtents::new(instance);
+    let mut buffer = sofel_shape::UnicodeBuffer::new();
+    buffer.push_utf8(if text.is_empty() { b"office" } else { text }, 0, None);
+    let props = sofel_shape::SegmentProperties::default().guess(&buffer, None);
+    let plan = sofel_shape::ShapePlan::new(instance, props, &[]);
+    let _ = sofel_shape::shape_with_extents(
+        instance,
+        &sofel_shape::Scale::unscaled(&font),
+        &plan,
+        buffer,
+        &|g| boxes.glyph_extents(g),
+    );
     let mut scratch = sofel_outline::Scratch::default();
     let mut paint_scratch = sofel_color::Scratch::default();
     let mut recording = Recording::new();

@@ -1157,7 +1157,11 @@ fn shape(
 ) -> Status {
     let (font, plan, b) = (some(font)?, some(plan)?, some(b)?);
     let u = take_unicode(b)?;
-    let s = Scale::new(scale_of(scale, &font.font), 0, 0);
+    let s = Scale::new(
+        scale_of(scale, &font.font),
+        scale.map_or(0, |s| s.x_ppem),
+        scale.map_or(0, |s| s.y_ppem),
+    );
     let location = location
         .map(|v| &v.location)
         .unwrap_or(sofel_font::var::Location::default_ref());
@@ -1213,7 +1217,11 @@ pub unsafe extern "C" fn sofel_shape_fallback(
         let (font, seg, b) = (some(font)?, some(seg)?, some(b)?);
         let props = resolved_from_c(seg, language)?;
         let u = take_unicode(b)?;
-        let s = Scale::new(scale_of(scale, &font.font), 0, 0);
+        let s = Scale::new(
+            scale_of(scale, &font.font),
+            scale.map_or(0, |s| s.x_ppem),
+            scale.map_or(0, |s| s.y_ppem),
+        );
         let location = location
             .map(|v| &v.location)
             .unwrap_or(sofel_font::var::Location::default_ref());

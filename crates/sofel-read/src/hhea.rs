@@ -7,7 +7,7 @@ use crate::{CountWidth, Diagnostic, Kind, ReadError, Tag};
 
 /// The `hhea` tag.
 pub const TAG: Tag = Tag::new(b"hhea");
-/// The `HHEA` tag, the variant with 24-bit counts.
+/// The `HHEA` tag, the variant with a 32-bit metric count.
 pub const TAG_WIDE: Tag = Tag::new(b"HHEA");
 
 const FIXED: usize = 34;
@@ -20,11 +20,15 @@ pub struct Hhea<'a> {
 }
 
 fn needed(width: CountWidth) -> usize {
-    FIXED.saturating_add(width.bytes())
+    FIXED.saturating_add(match width {
+        CountWidth::U16 => 2,
+        CountWidth::U24 => 4,
+    })
 }
 
 impl<'a> Hhea<'a> {
     /// `width` is `U16` for `hhea` and `U24` for `HHEA`.
+    /// The latter selects the wide table; its metric count is 32 bits.
     ///
     /// Fails with [`ReadError::Truncated`] if the fixed fields and
     /// `numberOfHMetrics` do not fit, and with
@@ -39,7 +43,7 @@ impl<'a> Hhea<'a> {
         }
         let number_of_h_metrics = match width {
             CountWidth::U16 => be::u16_at(data, FIXED).map(u32::from),
-            CountWidth::U24 => be::u24_at(data, FIXED),
+            CountWidth::U24 => be::u32_at(data, FIXED),
         }
         .ok_or(truncated)?;
         Ok(Hhea {
@@ -101,7 +105,7 @@ impl<'a> Hhea<'a> {
         i16::from_be_bytes([self.h[32], self.h[33]])
     }
     /// `numberOfHMetrics`: the number of long metrics in `hmtx`
-    /// (16 bits in `hhea`, 24 bits in `HHEA`).
+    /// (16 bits in `hhea`, 32 bits in `HHEA`).
     pub fn number_of_h_metrics(&self) -> u32 {
         self.number_of_h_metrics
     }

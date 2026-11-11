@@ -626,6 +626,8 @@ pub unsafe extern "C" fn sofel_font_table(
 /// `sofel_scale_t`: HarfBuzz's scale of a font.
 pub struct SofelScale {
     scale: HbScale,
+    x_ppem: u32,
+    y_ppem: u32,
 }
 
 /// The value of an `SOFEL_OS2_*` field, `None` past the table's version.
@@ -1016,6 +1018,24 @@ pub unsafe extern "C" fn sofel_scale_create(
     y_scale: i32,
     error: *mut i32,
 ) -> *mut SofelScale {
+    // SAFETY: the caller's conditions are those of the delegated constructor.
+    unsafe { sofel_scale_create_with_ppem(font, x_scale, y_scale, 0, 0, error) }
+}
+
+/// `sofel_scale_create_with_ppem`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `error` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_scale_create_with_ppem(
+    font: *const SofelFont,
+    x_scale: i32,
+    y_scale: i32,
+    x_ppem: u32,
+    y_ppem: u32,
+    error: *mut i32,
+) -> *mut SofelScale {
     // SAFETY: the caller's conditions.
     let (font, error) = unsafe { (font_ref(font), w(error)) };
     let Some(error) = error else {
@@ -1030,6 +1050,8 @@ pub unsafe extern "C" fn sofel_scale_create(
             *error = OK;
             Box::into_raw(Box::new(SofelScale {
                 scale: HbScale::for_font(f, x_scale, y_scale),
+                x_ppem,
+                y_ppem,
             }))
         }
     }
@@ -3468,10 +3490,42 @@ pub extern "C" fn sofel_unicode_vertical_orientation(codepoint: u32) -> u8 {
 }
 
 #[cfg(test)]
+#[path = "../../sofel-read/tests/support/build.rs"]
+#[allow(clippy::unwrap_used)]
+mod test_build;
+
+#[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
 
     use super::*;
+
+    #[test]
+    fn inv2_axis_ppem_values() {
+        let data = test_build::sample_font();
+        let mut error = 0;
+        // SAFETY: the font bytes remain live until the handle is destroyed.
+        let font = unsafe { sofel_font_create(data.as_ptr(), data.len(), 0, &mut error) };
+        assert_eq!(error, OK);
+        assert!(!font.is_null());
+        for (x_ppem, y_ppem) in [(0, 0), (1, 0), (0, 1), (12, 16), (u32::MAX, 1)] {
+            // SAFETY: font is a live handle and error is writable.
+            let scale = unsafe {
+                sofel_scale_create_with_ppem(font, 1000, 2000, x_ppem, y_ppem, &mut error)
+            };
+            assert_eq!(error, OK);
+            assert!(!scale.is_null());
+            // SAFETY: a successful constructor returns a live scale.
+            let scale_value = unsafe { &*scale };
+            let rust =
+                sofel_shape::Scale::new(scale_value.scale, scale_value.x_ppem, scale_value.y_ppem);
+            assert_eq!((rust.x_ppem, rust.y_ppem), (x_ppem, y_ppem));
+            // SAFETY: scale is a live handle and is destroyed once.
+            unsafe { sofel_scale_destroy(scale) };
+        }
+        // SAFETY: font is a live handle and is destroyed once.
+        unsafe { sofel_font_destroy(font) };
+    }
 
     #[test]
     fn version_follows_the_crate() {

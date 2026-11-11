@@ -704,6 +704,44 @@ static void dump_scale (hb_font_t *font, unsigned num_glyphs, int x, int y,
   }
 }
 
+/* Raw MVAR records, including tags outside hb_ot_metrics_tag_t's named constants. */
+static int dump_metrics_variation (hb_blob_t *blob)
+{
+  unsigned count = hb_face_count (blob);
+  for (unsigned i = 0; i < count; i++)
+  {
+    hb_face_t *face = hb_face_create (blob, i);
+    hb_font_t *font = var_create_font (face);
+    hb_font_set_scale (font, 768, -1536);
+    hb_blob_t *table = hb_face_reference_table (face, HB_TAG ('M','V','A','R'));
+    unsigned len;
+    const unsigned char *data = (const unsigned char *) hb_blob_get_data (table, &len);
+    printf ("face %u\n", i);
+    if (len >= 12)
+    {
+      unsigned stride = data[6] * 256u + data[7];
+      unsigned records = data[8] * 256u + data[9];
+      if (stride >= 8 && records <= (len - 12) / stride)
+        for (unsigned j = 0; j < records; j++)
+        {
+          const unsigned char *p = data + 12 + stride * j;
+          auto tag = (hb_ot_metrics_tag_t) HB_TAG (p[0], p[1], p[2], p[3]);
+          float delta = hb_ot_metrics_get_variation (font, tag);
+          uint32_t bits;
+          memcpy (&bits, &delta, sizeof bits);
+          printf ("%08x %08x %d %d\n", (unsigned) tag, (unsigned) bits,
+                  hb_ot_metrics_get_x_variation (font, tag),
+                  hb_ot_metrics_get_y_variation (font, tag));
+        }
+    }
+    puts ("end");
+    hb_blob_destroy (table);
+    hb_font_destroy (font);
+    hb_face_destroy (face);
+  }
+  return 0;
+}
+
 static int dump_metrics (hb_blob_t *blob)
 {
   unsigned count = hb_face_count (blob);
@@ -3381,6 +3419,7 @@ struct dump_mode_t
 
 static const dump_mode_t modes[] = {
   {"--metrics", dump_metrics},
+  {"--metrics-variation", dump_metrics_variation},
   {"--names", dump_names},
   {"--cmap", dump_cmap},
   {"--cmap-digest", dump_cmap_digest},
