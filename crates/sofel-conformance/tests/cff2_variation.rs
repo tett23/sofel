@@ -17,7 +17,7 @@ use sofel_conformance::raster::sofel_glyph as sofel_raster_glyph;
 use sofel_font::read::{GlyphId, Tag};
 use sofel_font::var::{Location, Variation};
 use sofel_font::{Font, HbCff2};
-use sofel_outline::{Outlines, Scratch, cff2_extents_at};
+use sofel_outline::{HbExtents, Outlines, Scratch, cff2_extents_at};
 use sofel_raster::Rasterizer;
 
 #[path = "../../sofel-read/tests/support/build.rs"]
@@ -184,6 +184,46 @@ fn adr0027_i04_cff2_extents_match_harfbuzz() {
         ),
         4392,
     );
+}
+
+#[test]
+fn adr0027_i04_cff2_default_boxes_match_harfbuzz() {
+    let font_path = paths::testdata().join("extra-fonts/fonts/source-serif.otf");
+    let exe = paths::hb_dump();
+    paths::require(&font_path, "CFF2 reference font").unwrap();
+    paths::require(&exe, "hb-dump").unwrap();
+    let bytes = std::fs::read(&font_path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let boxes = HbExtents::new(font.default_instance());
+    let output = Command::new(exe)
+        .arg("--extents")
+        .arg(&font_path)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let mut count = 0;
+    for line in stdout.lines().filter(|line| line.starts_with("extents ")) {
+        let fields: Vec<_> = line.split_whitespace().collect();
+        let glyph: u32 = fields[1].parse().unwrap();
+        let actual = boxes.glyph_extents(GlyphId(glyph)).unwrap();
+        let expected: Vec<i32> = fields[3..]
+            .iter()
+            .map(|field| field.parse().unwrap())
+            .collect();
+        assert_eq!(
+            [
+                actual.x_bearing,
+                actual.y_bearing,
+                actual.width,
+                actual.height
+            ],
+            expected.as_slice(),
+            "glyph {glyph}"
+        );
+        count += 1;
+    }
+    assert_eq!(count, usize::try_from(font.num_glyphs()).unwrap());
 }
 
 #[test]
