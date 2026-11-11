@@ -267,44 +267,34 @@ fn properties(b: &UnicodeBuffer, direction: Option<Direction>) -> ResolvedProper
 
 /// sofel's side of a pair: the font, its glyph boxes as HarfBuzz's `ot`
 /// functions take them, and the plans, one per set of properties.
-struct Shaper<'a> {
+struct Shaper<'a, 'loc, 'source> {
     font: Font<'a>,
-    location: Option<Location<'a>>,
-    boxes: HbExtents<'a>,
+    location: &'loc Location<'source>,
+    boxes: HbExtents<'a, 'loc, 'source>,
     scale: Scale,
     plans: Vec<(ResolvedProperties, ShapePlan<'a>)>,
 }
 
-impl<'a> Shaper<'a> {
-    fn new(bytes: &'a [u8]) -> Shaper<'a> {
+impl<'a> Shaper<'a, 'static, 'static> {
+    fn new(bytes: &'a [u8]) -> Self {
+        Self::with_location(bytes, Location::default_ref())
+    }
+}
+
+impl<'a, 'loc, 'source> Shaper<'a, 'loc, 'source> {
+    fn with_location(bytes: &'a [u8], location: &'loc Location<'source>) -> Self {
         let font = Font::new(bytes, 0).expect("sofel opens the font");
         Shaper {
             font,
-            location: None,
-            boxes: HbExtents::new(&font),
+            location,
+            boxes: HbExtents::new(font.instance(location)),
             scale: Scale::unscaled(&font),
             plans: Vec::new(),
         }
     }
 
-    fn at_weight(bytes: &'a [u8], weight: f32) -> Shaper<'a> {
-        let mut shaper = Shaper::new(bytes);
-        shaper.location = Some(Location::new(
-            &shaper.font,
-            None,
-            &[Variation {
-                tag: Tag::new(b"wght"),
-                value: weight,
-            }],
-        ));
-        shaper
-    }
-
-    fn instance(&self) -> Instance<'_, 'a, '_, 'a> {
-        self.location.as_ref().map_or_else(
-            || self.font.default_instance(),
-            |location| self.font.instance(location),
-        )
+    fn instance(&self) -> Instance<'_, 'a, 'loc, 'source> {
+        self.font.instance(self.location)
     }
 
     /// Makes the plan for `props` unless there is one.
@@ -324,24 +314,15 @@ impl<'a> Shaper<'a> {
             .find(|(k, _)| *k == props)
             .expect("a plan for every line")
             .1;
-        let instance = self.instance();
-        let boxes = |g: GlyphId| {
-            if self.location.is_some() {
-                instance
-                    .glyf_extents(g)
-                    .or_else(|| self.boxes.glyph_extents(g))
-            } else {
-                self.boxes.glyph_extents(g)
-            }
-        };
-        sofel_shape::shape_with_extents(instance, &self.scale, plan, b, &boxes)
+        let boxes = |g: GlyphId| self.boxes.glyph_extents(g);
+        sofel_shape::shape_with_extents(self.instance(), &self.scale, plan, b, &boxes)
     }
 }
 
 /// How many lines differ and the first one, as text for the check;
 /// makes the plans of all lines.
 fn first_difference(
-    s: &mut Shaper<'_>,
+    s: &mut Shaper<'_, '_, '_>,
     hb: &HbFont,
     text: &[u8],
     lines: &[(usize, usize)],
@@ -453,7 +434,7 @@ pub fn shape_items(b: &mut Bench, testdata: &Path) {
             first,
             &mut || {
                 let font = Font::new(&bytes, 0).expect("sofel opens the font");
-                let boxes = HbExtents::new(&font);
+                let boxes = HbExtents::new(font.default_instance());
                 let mut u = UnicodeBuffer::new();
                 u.push_utf8(&text[start..], 0, Some(len));
                 let plan =
@@ -491,7 +472,16 @@ pub fn variable_shape_items(b: &mut Bench, testdata: &Path) {
     let hb = HbFont::open(&bytes).expect("HarfBuzz opens the font");
     hb.set_ppem(0);
     hb.set_weight(500.0);
-    let mut shaper = Shaper::at_weight(&bytes, 500.0);
+    let font = Font::new(&bytes, 0).expect("sofel opens the font");
+    let location = Location::new(
+        &font,
+        None,
+        &[Variation {
+            tag: Tag::new(b"wght"),
+            value: 500.0,
+        }],
+    );
+    let mut shaper = Shaper::with_location(&bytes, &location);
     let diff = first_difference(&mut shaper, &hb, &text, &lines, None);
     b.checks.push(Check {
         item: format!("{item} (HarfBuzz, every line)"),
