@@ -75,7 +75,7 @@ pub fn parse(text: &str) -> Result<BTreeMap<u32, FaceOutlines>, String> {
 
 /// The lines sofel produces for one glyph, in the same form.
 pub fn sofel_glyph(
-    outlines: &Outlines<'_>,
+    outlines: &Outlines<'_, '_, '_>,
     glyph: u32,
     scale: Scale,
     scratch: &mut Scratch,

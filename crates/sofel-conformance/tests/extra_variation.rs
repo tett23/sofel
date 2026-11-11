@@ -16,7 +16,8 @@ use sofel_conformance::hb;
 use sofel_conformance::outline::{parse, sofel_glyph};
 use sofel_conformance::paths;
 use sofel_font::Font;
-use sofel_font::read::GlyphId;
+use sofel_font::read::{GlyphId, Tag};
+use sofel_font::var::{Location, Variation};
 use sofel_outline::{Scale, Scratch};
 
 struct Case<'a> {
@@ -105,7 +106,7 @@ fn i05_nondefault_metrics_and_outlines_match_or_named_failure() {
             "advance {}",
             font.default_instance().advance(GlyphId(case.glyph))
         )];
-        let parsed = sofel_outline::Outlines::new(&font);
+        let parsed = sofel_outline::Outlines::new(font.default_instance());
         outline.extend(sofel_glyph(
             &parsed,
             case.glyph,
@@ -138,6 +139,261 @@ fn i05_nondefault_metrics_and_outlines_match_or_named_failure() {
             "conformance/expected-failures-extra-variation.txt"
         )
     );
+}
+
+#[test]
+fn adr0027_i07_gvar_nondefault_outline() {
+    let reference = snapshots(include_str!(
+        "../../../conformance/extra-variation-outline-ft.txt"
+    ));
+    let mut scratch = Scratch::default();
+    for (case_id, filename, glyph, weight) in [
+        ("arabic.wght.max", "arabic.ttf", 15, 900.0),
+        ("amstelvar.wght.max", "amstelvar.ttf", 405, 1000.0),
+    ] {
+        let path = paths::testdata().join("extra-fonts/fonts").join(filename);
+        let bytes = std::fs::read(path).unwrap();
+        let font = Font::new(&bytes, 0).unwrap();
+        let location = Location::new(
+            &font,
+            None,
+            &[Variation {
+                tag: Tag::new(b"wght"),
+                value: weight,
+            }],
+        );
+        let outlines = sofel_outline::Outlines::new(font.instance(&location));
+        let actual = sofel_glyph(&outlines, glyph, Scale::Unscaled, &mut scratch);
+        let expected = &parse(&reference[case_id]).unwrap()[&0].glyphs[&glyph];
+        assert_eq!(&actual, &expected[1..], "{case_id}");
+    }
+}
+
+#[test]
+fn adr0027_i07_gvar_all_sampled_locations() {
+    let reference = snapshots(include_str!(
+        "../../../conformance/extra-variation-outline-ft.txt"
+    ));
+    let mut scratch = Scratch::default();
+    for case in cases()
+        .into_iter()
+        .filter(|case| case.font.ends_with(".ttf") && case.coordinates != "-")
+    {
+        let path = paths::testdata().join("extra-fonts/fonts").join(case.font);
+        let bytes = std::fs::read(path).unwrap();
+        let font = Font::new(&bytes, 0).unwrap();
+        let variations = case
+            .coordinates
+            .split(',')
+            .map(|part| {
+                let (tag, value) = part.split_once('=').unwrap();
+                Variation {
+                    tag: Tag::new(tag.as_bytes().try_into().unwrap()),
+                    value: value.parse().unwrap(),
+                }
+            })
+            .collect::<Vec<_>>();
+        let location = Location::new(&font, None, &variations);
+        let outlines = sofel_outline::Outlines::new(font.instance(&location));
+        let actual = sofel_glyph(&outlines, case.glyph, Scale::Unscaled, &mut scratch);
+        let expected = &parse(&reference[case.id]).unwrap()[&0].glyphs[&case.glyph];
+        assert_eq!(&actual, &expected[1..], "{}", case.id);
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn adr0027_i07_gvar_scaled_outline() {
+    let path = paths::testdata().join("extra-fonts/fonts/arabic.ttf");
+    let bytes = std::fs::read(&path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let location = Location::new(
+        &font,
+        None,
+        &[Variation {
+            tag: Tag::new(b"wght"),
+            value: 900.0,
+        }],
+    );
+    let outlines = sofel_outline::Outlines::new(font.instance(&location));
+    let mut scratch = Scratch::default();
+    let plan = std::env::temp_dir().join(format!("sofel-gvar-scaled-{}.plan", std::process::id()));
+    std::fs::write(&plan, "0 5\n0 6\n0 7\n0 15\n").unwrap();
+    let output = Command::new(paths::ft_dump())
+        .arg("--sampled-outline-var")
+        .arg("16")
+        .arg(&path)
+        .arg(&plan)
+        .arg("wght=900")
+        .output()
+        .unwrap();
+    std::fs::remove_file(plan).unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let reference = String::from_utf8(output.stdout).unwrap();
+    let parsed = parse(&reference).unwrap();
+    for glyph in [5, 6, 7, 15] {
+        let actual = sofel_glyph(&outlines, glyph, Scale::pixels(&font, 16, 16), &mut scratch);
+        let expected = &parsed[&0].glyphs[&glyph];
+        assert_eq!(&actual, &expected[1..], "glyph {glyph}");
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn adr0027_i07_gvar_phantom_advance_without_hvar() {
+    let path = paths::testdata().join("extra-fonts/fonts/arabic.ttf");
+    let mut bytes = std::fs::read(path).unwrap();
+    let count = usize::from(u16::from_be_bytes([bytes[4], bytes[5]]));
+    let directory = &mut bytes[12..12 + count * 16];
+    let record = directory
+        .chunks_exact_mut(16)
+        .find(|record| &record[..4] == b"HVAR")
+        .unwrap();
+    record[..4].copy_from_slice(b"XVAR");
+    let modified = std::env::temp_dir().join(format!("sofel-no-hvar-{}.ttf", std::process::id()));
+    std::fs::write(&modified, &bytes).unwrap();
+    let output = Command::new(paths::hb_dump())
+        .arg("--var-metrics")
+        .arg(&modified)
+        .arg("15")
+        .arg("wght=900")
+        .output()
+        .unwrap();
+    std::fs::remove_file(modified).unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let faces = hb::parse(&String::from_utf8(output.stdout).unwrap()).unwrap();
+    let expected_advance = faces[0].scales[0].glyphs[0].0;
+    let font = Font::new(&bytes, 0).unwrap();
+    let location = Location::new(
+        &font,
+        None,
+        &[Variation {
+            tag: Tag::new(b"wght"),
+            value: 900.0,
+        }],
+    );
+    assert_eq!(
+        font.instance(&location).advance(GlyphId(15)).cast_signed(),
+        expected_advance
+    );
+}
+
+#[test]
+fn adr0027_i07_gvar_vertical_phantoms() {
+    let path = paths::testdata().join("extra-fonts/fonts/amstelvar.ttf");
+    let bytes = std::fs::read(path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let location = Location::new(
+        &font,
+        None,
+        &[Variation {
+            tag: Tag::new(b"wght"),
+            value: 1000.0,
+        }],
+    );
+    let reference = snapshots(include_str!(
+        "../../../conformance/extra-variation-metrics-hb.txt"
+    ));
+    let faces = hb::parse(&reference["amstelvar.wght.max"]).unwrap();
+    let values = faces[0].scales[0].glyphs[0];
+    let instance = font.instance(&location);
+    assert_eq!(instance.v_advance(GlyphId(405)), values.1);
+    assert_eq!(
+        instance
+            .v_origin(GlyphId(405), |g| instance.glyf_extents(g))
+            .1,
+        values.3
+    );
+}
+
+#[test]
+fn adr0027_i07_gvar_sampled_metrics() {
+    let reference = snapshots(include_str!(
+        "../../../conformance/extra-variation-metrics-hb.txt"
+    ));
+    for case in cases()
+        .into_iter()
+        .filter(|case| case.font.ends_with(".ttf") && case.coordinates != "-")
+    {
+        let path = paths::testdata().join("extra-fonts/fonts").join(case.font);
+        let bytes = std::fs::read(path).unwrap();
+        let font = Font::new(&bytes, 0).unwrap();
+        let variations = case
+            .coordinates
+            .split(',')
+            .map(|part| {
+                let (tag, value) = part.split_once('=').unwrap();
+                Variation {
+                    tag: Tag::new(tag.as_bytes().try_into().unwrap()),
+                    value: value.parse().unwrap(),
+                }
+            })
+            .collect::<Vec<_>>();
+        let location = Location::new(&font, None, &variations);
+        let instance = font.instance(&location);
+        let expected = hb::parse(&reference[case.id]).unwrap()[0].scales[0].glyphs[0];
+        let glyph = GlyphId(case.glyph);
+        let origin = instance.v_origin(glyph, |g| instance.glyf_extents(g));
+        let extents = instance
+            .glyf_extents(glyph)
+            .map(|e| [e.x_bearing, e.y_bearing, e.width, e.height]);
+        assert_eq!(
+            instance.advance(glyph).cast_signed(),
+            expected.0,
+            "{}.h_advance",
+            case.id
+        );
+        assert_eq!(
+            instance.v_advance(glyph),
+            expected.1,
+            "{}.v_advance",
+            case.id
+        );
+        assert_eq!(origin, (expected.2, expected.3), "{}.v_origin", case.id);
+        assert_eq!(extents, expected.4, "{}.extents", case.id);
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn adr0027_i07_gvar_composite_extents() {
+    let path = paths::testdata().join("extra-fonts/fonts/arabic.ttf");
+    let bytes = std::fs::read(&path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let location = Location::new(
+        &font,
+        None,
+        &[Variation {
+            tag: Tag::new(b"wght"),
+            value: 900.0,
+        }],
+    );
+    for glyph in [5, 6, 7, 15] {
+        let actual = font.instance(&location).glyf_extents(GlyphId(glyph));
+        let output = Command::new(paths::hb_dump())
+            .arg("--var-metrics")
+            .arg(&path)
+            .arg(glyph.to_string())
+            .arg("wght=900")
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let reference = hb::parse(&String::from_utf8(output.stdout).unwrap()).unwrap();
+        let expected = reference[0].scales[0].glyphs[0].4;
+        assert_eq!(
+            actual.map(|e| [e.x_bearing, e.y_bearing, e.width, e.height]),
+            expected,
+            "glyph {glyph}"
+        );
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]

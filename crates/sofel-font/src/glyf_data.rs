@@ -98,6 +98,10 @@ impl<'a> Glyf<'a> {
         self.num_glyphs
     }
 
+    pub(crate) fn extended(&self) -> bool {
+        self.extended
+    }
+
     fn location(&self, index: u32) -> Option<usize> {
         let i = usize::try_from(index).ok()?;
         if self.short {

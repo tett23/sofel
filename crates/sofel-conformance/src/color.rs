@@ -316,7 +316,7 @@ pub fn split_faces(text: &str) -> Vec<(u32, String)> {
 
 /// The `extents:<glyph>` items of one face of `hb-dump --extents`.
 pub fn compare_extents(font_id: &str, index: u32, font: &Font<'_>, text: &str) -> Vec<Item> {
-    let outlines = Outlines::new(font);
+    let outlines = Outlines::new(font.default_instance());
     let mut scratch = Scratch::default();
     text.lines()
         .filter_map(|l| l.strip_prefix("extents "))
@@ -736,7 +736,7 @@ pub fn compare_color_rasters(
             e.push('\n');
         }
     }
-    let outlines = Outlines::new(font);
+    let outlines = Outlines::new(font.default_instance());
     let mut scratch = sofel_outline::Scratch::default();
     let mut raster = sofel_raster::Rasterizer::new();
     let mut image = sofel_raster::BgraImage::default();
