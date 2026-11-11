@@ -46,7 +46,7 @@
 //!     let mut scratch = Scratch::default();
 //!     let mut commands: Vec<Command> = Vec::new();
 //!     let info = draw(
-//!         &font,
+//!         font.default_instance(),
 //!         glyph,
 //!         Scale::pixels(&font, 16, 16),
 //!         &mut scratch,
@@ -78,6 +78,7 @@ use sofel_font::read::cff::charstring::Work;
 use sofel_font::read::glyf::{self, Component, Glyph, SCALED_COMPONENT_OFFSET, USE_MY_METRICS};
 use sofel_font::read::loca::{self, Loca};
 use sofel_font::read::{GlyphId, Tag};
+use sofel_font::var::Instance;
 use sofel_font::{Cff, CffError, Font};
 use sofel_geom::{Fixed, Matrix, Pen, Point, div_fix, mul_fix, transform, vector_length};
 
@@ -276,13 +277,13 @@ impl Context<'_> {
 /// This picks the outline format at every call ([`Outlines::new`]); a
 /// caller that draws many glyphs of a CFF font keeps an [`Outlines`].
 pub fn draw(
-    font: &Font<'_>,
+    instance: Instance<'_, '_, '_, '_>,
     glyph: GlyphId,
     scale: Scale,
     scratch: &mut Scratch,
     pen: &mut impl Pen,
 ) -> Result<OutlineInfo, OutlineError> {
-    Outlines::new(font).draw(glyph, scale, scratch, pen)
+    Outlines::new(instance).draw(glyph, scale, scratch, pen)
 }
 
 /// How a font's outlines are read: chosen as FreeType chooses its driver.
@@ -301,16 +302,18 @@ enum Format<'a> {
 /// `LOCA`). For glyf fonts it costs nothing over [`draw`]; for CFF fonts
 /// it keeps the opened table.
 #[derive(Clone, Copy, Debug)]
-pub struct Outlines<'a> {
-    font: Font<'a>,
-    format: Format<'a>,
-    extents: HbExtents<'a>,
+pub struct Outlines<'data, 'loc, 'source> {
+    font: Font<'data>,
+    location: &'loc sofel_font::var::Location<'source>,
+    format: Format<'data>,
+    extents: HbExtents<'data, 'loc, 'source>,
 }
 
-impl<'a> Outlines<'a> {
+impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
     /// The outlines of `font`. Also builds HarfBuzz's CFF accelerators
     /// for [`Outlines::glyph_extents`] ([`HbExtents::new`]).
-    pub fn new(font: &Font<'a>) -> Outlines<'a> {
+    pub fn new(instance: Instance<'_, 'data, 'loc, 'source>) -> Self {
+        let font = instance.font();
         let format = if font.sfnt().version() == u32::from_be_bytes(*b"OTTO") {
             match Cff::new(font) {
                 Ok(c) => Format::Cff(c),
@@ -322,8 +325,9 @@ impl<'a> Outlines<'a> {
         };
         Outlines {
             font: *font,
+            location: instance.location(),
             format,
-            extents: HbExtents::new(font),
+            extents: HbExtents::new(instance),
         }
     }
 
@@ -337,17 +341,22 @@ impl<'a> Outlines<'a> {
     }
 
     /// The HarfBuzz glyph boxes this value holds.
-    pub fn hb_extents(&self) -> &HbExtents<'a> {
+    pub fn hb_extents(&self) -> &HbExtents<'data, 'loc, 'source> {
         &self.extents
     }
 
     /// The font.
-    pub fn font(&self) -> &Font<'a> {
+    pub fn font(&self) -> &Font<'data> {
         &self.font
     }
 
+    /// The font and location used by this outline collection.
+    pub fn instance(&self) -> Instance<'_, 'data, 'loc, 'source> {
+        self.font.instance(self.location)
+    }
+
     /// The opened CFF or CFF2 table, for CFF fonts.
-    pub fn cff(&self) -> Option<&Cff<'a>> {
+    pub fn cff(&self) -> Option<&Cff<'data>> {
         match &self.format {
             Format::Cff(c) => Some(c),
             _ => None,
@@ -383,7 +392,7 @@ impl<'a> Outlines<'a> {
     ) -> Result<OutlineInfo, OutlineError> {
         match &self.format {
             Format::Glyf => load_glyf(&self.font, glyph, scale, scratch),
-            Format::Cff(c) => load_cff(&self.font, c, glyph, scale, scratch),
+            Format::Cff(c) => load_cff_at(&self.font, self.location, c, glyph, scale, scratch),
             Format::Unsupported(e) => {
                 scratch.clear();
                 Err(*e)
@@ -402,12 +411,12 @@ impl<'a> Outlines<'a> {
 ///
 /// This picks the outline format at every call; see [`Outlines`].
 pub fn load(
-    font: &Font<'_>,
+    instance: Instance<'_, '_, '_, '_>,
     glyph: GlyphId,
     scale: Scale,
     scratch: &mut Scratch,
 ) -> Result<OutlineInfo, OutlineError> {
-    Outlines::new(font).load(glyph, scale, scratch)
+    Outlines::new(instance).load(glyph, scale, scratch)
 }
 
 fn load_glyf(
@@ -827,4 +836,4 @@ fn decompose(
 }
 
 mod cff;
-use cff::load_cff;
+use cff::load_cff_at;

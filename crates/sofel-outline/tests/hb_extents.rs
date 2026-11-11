@@ -48,7 +48,7 @@ fn cff_font(charstrings: Vec<Vec<u8>>, lsubrs: Vec<Vec<u8>>) -> Vec<u8> {
 
 fn boxes(data: &[u8]) -> Vec<Option<GlyphExtents>> {
     let font = Font::new(data, 0).unwrap();
-    let e = HbExtents::new(&font);
+    let e = HbExtents::new(font.default_instance());
     (0..font.num_glyphs())
         .map(|g| e.glyph_extents(GlyphId(g)))
         .collect()

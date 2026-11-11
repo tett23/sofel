@@ -131,7 +131,7 @@ let (extents, from_base) = font.layout_font_extents(Direction::Horizontal, Tag::
 use sofel_geom::{Command, FnPen};
 use sofel_outline::{Outlines, Scale, Scratch};
 
-let outlines = Outlines::new(&font); // フォントごとに一度作り、持ち続ける
+let outlines = Outlines::new(font.default_instance()); // フォントと位置ごとに一度作る
 let mut scratch = Scratch::default(); // 使い回す
 let scale = Scale::pixels(&font, 48, 48); // FT_Set_Pixel_Sizes(face, 0, 48) と同じ倍率
 let mut pen = FnPen(|c: Command| println!("{c:?}"));
@@ -140,11 +140,11 @@ let info = outlines.draw(gid, scale, &mut scratch, &mut pen)?;
 // info.overlap: FT_OUTLINE_OVERLAP（重なりの印）
 ```
 
-- `Outlines::new` は、FreeTypeと同じく、sfntの版が `OTTO` ならCFFかCFF2（`sofel_font::Cff`）、それ以外ならglyfを選ぶ（[ADR 0021](adr/0021-cff-outlines.md)）。glyfのフォントでは費用は無く、CFFのフォントでは開いた表を持つ。`sofel_outline::draw(&font, …)` と `load(&font, …)` は毎回 `Outlines::new` を呼ぶ。CFFの点はフォントの単位の整数に切り捨てられ、FontMatrixをかけてから拡大縮小される。`overlap` は常に偽。
+- `Outlines::new` は、FreeTypeと同じく、sfntの版が `OTTO` ならCFFかCFF2（`sofel_font::Cff`）、それ以外ならglyfを選ぶ（[ADR 0021](adr/0021-cff-outlines.md)）。glyfのフォントでは費用は無く、CFFのフォントでは開いた表を持つ。`sofel_outline::draw(instance, …)` と `load(instance, …)` は毎回 `Outlines::new` を呼ぶ。CFF2の `blend` とPrivate DICTは位置ごとに評価する。CFFの点はフォントの単位の整数に切り捨てられ、FontMatrixをかけてから拡大縮小される。`overlap` は常に偽。
 - `Scale::Unscaled` はフォントの単位のまま（`FT_LOAD_NO_SCALE`）、`Scale::Scaled { x, y }` は16.16の倍率で26.6の座標にする。
 - 点は、FreeTypeと同じく幻の点のpp1.x（見出しの `xMin` − `Instance::ft_left_side_bearing` を拡大縮小した値）だけ左に動かしてある。合成グリフでは、USE_MY_METRICSの部品があればその部品のpp1.xを使う（[ADR 0018](adr/0018-phantom-point-shift.md)）。
 - `draw` は `load`（点を `Scratch` に読む）と `Scratch::decompose`（命令を送る）を続けたもの。輪郭を移動してから分解したいとき（ラスタライズ）は、2つを分けて呼ぶ。`decompose(offset, multiplier, pen)` は、`FT_Outline_Translate` で `offset` だけ動かし、各点を `multiplier` 倍してから分解する。暗黙のon-curveの点（2点の中点、0へ切り捨て）がこの順に依存するので、FreeTypeと一致させるには同じ順で行う。
-- HarfBuzzのグリフの箱は `HbExtents`（[ADR 0021](adr/0021-cff-outlines.md)）：`HbExtents::new(&font)` でHarfBuzzのCFFとCFF2のアクセラレータ（`sofel_font::HbCff1`、`HbCff2`）を一度だけ作り、`glyph_extents(g)` で `hb_font_get_glyph_extents` と同じ箱（glyf、CFF2、CFFの順。拡大縮小なし）を、`scaled_glyph_extents(g, &scale)` で `HbScale` の拡大縮小をした箱を返す。CFFの箱はHarfBuzzの解釈器と同じく制御点を含み、FreeTypeの輪郭の `cbox` とは違うことがある。
+- HarfBuzzのグリフの箱は `HbExtents`（[ADR 0021](adr/0021-cff-outlines.md)）：`HbExtents::new(instance)` でHarfBuzzのCFFとCFF2のアクセラレータ（`sofel_font::HbCff1`、`HbCff2`）を一度だけ作り、`glyph_extents(g)` で `hb_font_get_glyph_extents` と同じ箱（glyf、CFF2、CFFの順。拡大縮小なし）を、`scaled_glyph_extents(g, &scale)` で `HbScale` の拡大縮小をした箱を返す。CFF2の箱はHarfBuzzと同じく位置の係数を `f32`、charstringの値と積和を `f64` で計算する。CFFの箱はHarfBuzzの解釈器と同じく制御点を含み、FreeTypeの輪郭の `cbox` とは違うことがある。
 - `OutlineError`：グリフIDが範囲外（`InvalidGlyphIndex`）、glyfとlocaが無い（`NoGlyphData`）、グリフのデータが壊れている（`InvalidOutline`）、複合グリフが壊れている・循環している・深すぎる（`InvalidComposite`）、`OTTO` でCFFもCFF2も無い（`UnsupportedFormat`）、FreeTypeが開けないCFF（`InvalidCff`）、解読できないcharstring（`InvalidCharString`）。エラーの前に送った命令は取り消されない。
 
 ## ラスタライズする（`sofel-raster`）

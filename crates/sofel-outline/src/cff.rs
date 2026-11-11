@@ -118,17 +118,6 @@ fn mul_fix(a: i32, b: i64) -> i32 {
     ft::to_i32(ft::mul_fix(i64::from(a), b))
 }
 
-/// `cff_slot_load` without hinting.
-pub(crate) fn load_cff(
-    font: &Font<'_>,
-    cff: &Cff<'_>,
-    glyph: GlyphId,
-    scale: Scale,
-    s: &mut Scratch,
-) -> Result<OutlineInfo, OutlineError> {
-    load_cff_at(font, Location::default_ref(), cff, glyph, scale, s)
-}
-
 /// `cff_slot_load` with the Private DICT and charstring blend at `location`.
 pub(crate) fn load_cff_at(
     font: &Font<'_>,

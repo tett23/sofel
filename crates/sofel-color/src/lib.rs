@@ -286,7 +286,7 @@ fn to_f32(v: i32) -> f32 {
 /// largest strikes) or `COLR`, else from the outlines
 /// ([`Outlines::glyph_extents`]). In font units.
 pub fn glyph_extents(
-    outlines: &Outlines<'_>,
+    outlines: &Outlines<'_, '_, '_>,
     glyph: u32,
     scratch: &mut Scratch,
 ) -> Option<GlyphExtents> {
@@ -300,7 +300,7 @@ pub fn glyph_extents(
 
 /// [`glyph_extents`] at `scale` (HarfBuzz's font scale).
 pub fn scaled_glyph_extents(
-    outlines: &Outlines<'_>,
+    outlines: &Outlines<'_, '_, '_>,
     glyph: u32,
     scale: &HbScale,
     scratch: &mut Scratch,
@@ -322,7 +322,7 @@ pub fn scaled_glyph_extents(
 
 /// HarfBuzz's `COLR::get_extents`: the clip box, else the painted box.
 fn colr_extents(
-    outlines: &Outlines<'_>,
+    outlines: &Outlines<'_, '_, '_>,
     glyph: u32,
     scale: &HbScale,
     scratch: &mut Scratch,

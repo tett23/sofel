@@ -48,36 +48,41 @@ const ONE: i64 = 0x1_0000;
 /// HarfBuzz's glyph boxes of one font: the CFF and CFF2 accelerators,
 /// built once with [`HbExtents::new`] and kept by the caller (ADR 0003).
 #[derive(Clone, Copy, Debug)]
-pub struct HbExtents<'a> {
-    font: Font<'a>,
-    cff2: Option<HbCff2<'a>>,
-    cff1: Option<HbCff1<'a>>,
+pub struct HbExtents<'data, 'loc, 'source> {
+    font: Font<'data>,
+    location: &'loc sofel_font::var::Location<'source>,
+    cff2: Option<HbCff2<'data>>,
+    cff1: Option<HbCff1<'data>>,
 }
 
-impl<'a> HbExtents<'a> {
+impl<'data, 'loc, 'source> HbExtents<'data, 'loc, 'source> {
     /// The glyph boxes of `font`. Builds HarfBuzz's CFF2 and CFF
     /// accelerators ([`HbCff2::new`], [`HbCff1::new`]), which takes time
     /// in proportion to their charsets and Font DICTs.
-    pub fn new(font: &Font<'a>) -> HbExtents<'a> {
+    pub fn new(
+        instance: sofel_font::var::Instance<'_, 'data, 'loc, 'source>,
+    ) -> HbExtents<'data, 'loc, 'source> {
+        let font = instance.font();
         HbExtents {
             font: *font,
+            location: instance.location(),
             cff2: HbCff2::new(font),
             cff1: HbCff1::new(font),
         }
     }
 
     /// The font.
-    pub fn font(&self) -> &Font<'a> {
+    pub fn font(&self) -> &Font<'data> {
         &self.font
     }
 
     /// HarfBuzz's CFF2 accelerator, if valid.
-    pub fn cff2(&self) -> Option<&HbCff2<'a>> {
+    pub fn cff2(&self) -> Option<&HbCff2<'data>> {
         self.cff2.as_ref()
     }
 
     /// HarfBuzz's CFF accelerator, if valid.
-    pub fn cff1(&self) -> Option<&HbCff1<'a>> {
+    pub fn cff1(&self) -> Option<&HbCff1<'data>> {
         self.cff1.as_ref()
     }
 
@@ -94,12 +99,16 @@ impl<'a> HbExtents<'a> {
     /// [`HbExtents::glyph_extents`] at `scale` (HarfBuzz's
     /// `scale_glyph_extents` of the unscaled box).
     pub fn scaled_glyph_extents(&self, glyph: GlyphId, scale: &HbScale) -> Option<GlyphExtents> {
-        if let Some(e) = scale.glyf_extents(&self.font, glyph) {
+        let instance = self.font.instance(self.location);
+        if let Some(e) = instance
+            .glyf_extents(glyph)
+            .map(|e| scale.scale_glyph_extents(e))
+        {
             return Some(e);
         }
         self.cff2
             .as_ref()
-            .and_then(|c| cff2_extents(c, glyph.0))
+            .and_then(|c| cff2_extents_at(c, glyph.0, &instance))
             .or_else(|| self.cff1.as_ref().and_then(|c| cff1_extents(c, glyph.0)))
             .map(|e| scale.scale_glyph_extents(e))
     }
