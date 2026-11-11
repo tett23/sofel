@@ -918,9 +918,9 @@ fn gpos_pair_variation_index_combines_with_gdef_caret() {
 }
 
 #[test]
-fn gdef_store_with_math_variation_index_remains_unsupported() {
-    let gdef = gdef_with_unused_store(class_def2(&[(1, 5, 1)]));
-    let varidx = Buf::new().u16(0).u16(0).u16(0x8000).done();
+fn gdef_store_with_math_constant_variation_index_is_remapped() {
+    let gdef = gdef_with_referenced_store(&[0]);
+    let varidx = Buf::new().u16(0).u16(2).u16(0x8000).done();
     let constants = link(vec![0; 214], vec![(10, 2, varidx)]);
     let math = link(
         Buf::new().u32(0x0001_0000).u16(0).u16(0).u16(0).done(),
@@ -928,9 +928,17 @@ fn gdef_store_with_math_variation_index_remains_unsupported() {
     );
     let data = font_with(vec![(b"GDEF", gdef), (b"MATH", math)]);
     let font = Font::new(&data, 0).unwrap();
-    assert!(
-        matches!(subset(&font, &chars("A")), Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF"))
-    );
+    let out = subset(&font, &chars("A")).unwrap();
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    let store = sofel_font::read::gdef::Gdef::new(&gdef)
+        .unwrap()
+        .variation_store()
+        .unwrap()
+        .unwrap();
+    assert_eq!(store.item_data(0).unwrap().item_count, 2);
+    let math = out_table(&out, b"MATH").unwrap();
+    let device = follow(follow(&math, 4), 10);
+    assert_eq!(&device[..6], &[0, 0, 0, 1, 0x80, 0]);
     let copied_math_without_gdef = chars("A")
         .map_set(SetKind::NoSubsetTables, |set| {
             set.add(Tag::new(b"MATH").to_u32())
@@ -941,6 +949,44 @@ fn gdef_store_with_math_variation_index_remains_unsupported() {
     let out = subset(&font, &copied_math_without_gdef).unwrap();
     assert!(out_table(&out, b"GDEF").is_none());
     assert_eq!(out_table(&out, b"MATH"), out_table(&data, b"MATH"));
+}
+
+#[test]
+fn gdef_store_with_invalid_math_constant_index_is_rejected() {
+    let gdef = gdef_with_referenced_store(&[0]);
+    let varidx = Buf::new().u16(0).u16(3).u16(0x8000).done();
+    let constants = link(vec![0; 214], vec![(10, 2, varidx)]);
+    let math = link(
+        Buf::new().u32(0x0001_0000).u16(0).u16(0).u16(0).done(),
+        vec![(4, 2, constants)],
+    );
+    let data = font_with(vec![(b"GDEF", gdef), (b"MATH", math)]);
+    let font = Font::new(&data, 0).unwrap();
+    assert!(matches!(
+        subset(&font, &chars("A")),
+        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF")
+    ));
+}
+
+#[test]
+fn gdef_store_with_math_glyph_info_variation_index_remains_unsupported() {
+    let gdef = gdef_with_referenced_store(&[0]);
+    let varidx = Buf::new().u16(0).u16(0).u16(0x8000).done();
+    let value_table = link(
+        Buf::new().u16(0).u16(1).i16(10).u16(0).done(),
+        vec![(0, 2, coverage1(&[1])), (6, 2, varidx)],
+    );
+    let glyph_info = link(vec![0; 8], vec![(0, 2, value_table)]);
+    let math = link(
+        Buf::new().u32(0x0001_0000).u16(0).u16(0).u16(0).done(),
+        vec![(6, 2, glyph_info)],
+    );
+    let data = font_with(vec![(b"GDEF", gdef), (b"MATH", math)]);
+    let font = Font::new(&data, 0).unwrap();
+    assert!(matches!(
+        subset(&font, &chars("A")),
+        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF")
+    ));
 }
 
 #[test]
