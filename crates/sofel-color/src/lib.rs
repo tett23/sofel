@@ -113,7 +113,13 @@ pub fn paint<'a>(
     scratch: &mut Scratch,
     painter: &mut impl Painter,
 ) -> Painted {
-    paint_any(font, glyph, options, scratch, &mut Direct(painter))
+    paint_any(
+        font.default_instance(),
+        glyph,
+        options,
+        scratch,
+        &mut Direct(painter),
+    )
 }
 
 /// [`paint`] into a [`Recording`], which keeps images (their data
@@ -125,7 +131,18 @@ pub fn paint_recording<'a>(
     scratch: &mut Scratch,
     recording: &mut Recording<'a>,
 ) -> Painted {
-    paint_any(font, glyph, options, scratch, recording)
+    paint_any(font.default_instance(), glyph, options, scratch, recording)
+}
+
+/// Records color glyph commands at the supplied variation location.
+pub fn paint_recording_at<'a>(
+    instance: sofel_outline::font::var::Instance<'_, 'a, '_, '_>,
+    glyph: u32,
+    options: &PaintOptions<'a>,
+    scratch: &mut Scratch,
+    recording: &mut Recording<'a>,
+) -> Painted {
+    paint_any(instance, glyph, options, scratch, recording)
 }
 
 /// The `COLR` version 0 layers of `glyph`: each layer's glyph and its
