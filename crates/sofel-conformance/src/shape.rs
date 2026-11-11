@@ -4,7 +4,7 @@
 //!
 //! The categories are those of ADR 0020: `shaper:<name>` (the shaper of
 //! ADR 0024 HarfBuzz's plan picks), `variations`, `aat`, `synthetic`,
-//! `cff`, `color`, `out-of-scope:<name>`; and, pending a decision, `dfont`
+//! `cff`, `color`, `out-of-scope:<name>`; and, for the cases in ADR 0044, `dfont`
 //! and `sanitize` (see conformance/expected-failures.txt).
 
 use std::collections::BTreeMap;

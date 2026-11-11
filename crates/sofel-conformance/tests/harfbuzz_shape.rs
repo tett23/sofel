@@ -21,7 +21,7 @@
 //! other than `ot`. `conformance/expected-failures.txt` lists the
 //! failures, each with one category as its comment (ADR 0020):
 //! `shaper:<name>`, `variations`, `aat`, `synthetic`, `cff`, `color`,
-//! `out-of-scope:<name>`; and, pending a decision, `dfont` and
+//! `out-of-scope:<name>`; and, for the cases in ADR 0044, `dfont` and
 //! `sanitize` (see the list). The test checks that each category fits the
 //! line: the plan's shaper for `shaper:`, the line's shaper for
 //! `out-of-scope:`, the options for `synthetic`, and the tables of the
