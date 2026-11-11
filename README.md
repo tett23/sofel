@@ -78,6 +78,7 @@ cargo run --release --bin sofel-paint -- --palette 0 --foreground 000000ff --cha
 ### `sofel-subset`
 
 HarfBuzzの `hb-subset` と同じオプションでサブセット化する（[ADR 0022](docs/adr/0022-subsetting.md)）。出力は `hb-subset` 15.1.0とバイト単位で一致させる。まだ書けない表（CFF2、gvar、HVARなど）や、変化量の表を持つCOLRを持つフォントは、その表を `--drop-tables` で捨てないかぎり誤りとなる（gvar、HVARなどの可変フォントの表は、すべての軸を既定の値に固定すれば捨てられる）。`--variations` は、すべての軸を既定の値に固定する指定（`*=drop`、各軸の `drop` か既定の値）だけを受け付ける。`--preprocess` はフォントを前処理してから計画を作る（出力は同じ）。`--glyphs` はグリフ名（postとCFFの名前、`gidDDD`、`uniXXXX`）で指定し、`--gids` などとはコマンドラインの順に働く。
+適合テストで出力が違えば、表ごとに最初の差の位置を示す。片方だけにある表は、どちらに欠けているかも示す。
 
 ```sh
 sofel-subset --font-file=Roboto.ttf --unicodes=41-5A -o out.ttf
