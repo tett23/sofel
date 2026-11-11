@@ -4,8 +4,8 @@
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 
+use sofel_font::Font;
 use sofel_font::read::Tag;
-use sofel_font::{Font, HbCff2};
 
 use crate::bits::BitSet;
 use crate::cmap_accel::CmapAccel;
@@ -313,26 +313,7 @@ impl Plan {
             }
         }
 
-        // CFF2 is written only as a full instance (stage 7); with its
-        // variations kept it is stage 10.
-        let cff2 = Tag::new(b"CFF2");
         let full_instance = pinned && !norm.normalized_coords.is_empty();
-        let cff2_without_subroutines = HbCff2::new(font).is_some_and(|cff| {
-            cff.global_subrs().is_empty()
-                && (0..cff.fd_array().len()).all(|fd| cff.private(fd).0.is_empty())
-        });
-        if font.table(cff2).is_some()
-            && !drop.contains(cff2.to_u32())
-            && !no_subset.contains(cff2.to_u32())
-            && !full_instance
-            && !input.flags().has(Flags::DESUBROUTINIZE)
-            && !cff2_without_subroutines
-        {
-            return Err(SubsetError::Unsupported {
-                tag: cff2,
-                reason: "CFF2 subsetting without pinning every axis (ADR 0022 stage 10)",
-            });
-        }
         layout_unsupported(font, drop, no_subset, pinned)?;
         let colr_table = font.table(Tag::new(b"COLR"));
         let colr_kept = !drop.contains(Tag::new(b"COLR").to_u32())
@@ -533,6 +514,19 @@ impl Plan {
                 n
             };
         p.glyphs = GlyphMap::new(new_to_old, num_glyphs);
+        let cff2 = Tag::new(b"CFF2");
+        if font.table(cff2).is_some()
+            && !drop.contains(cff2.to_u32())
+            && !no_subset.contains(cff2.to_u32())
+            && !full_instance
+            && !flags.has(Flags::DESUBROUTINIZE)
+            && crate::tables::cff::uses_subroutines(font, p.glyphs.new_to_old.as_slice())
+        {
+            return Err(SubsetError::Unsupported {
+                tag: cff2,
+                reason: "CFF2 subroutines used by retained glyphs (ADR 0022 stage 10)",
+            });
+        }
         // _create_glyph_map_gsub
         let flat = match p.layout.glyphset_gsub.max() {
             INVALID => 0,
