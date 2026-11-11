@@ -69,6 +69,8 @@ cargo run --release --bin sofel-shape -- --direction=ttb --features=vrt2 --outpu
 言語は `--language`、無ければ `--default-language` で、どちらも無ければ「言語なし」とする（`hb-shape` は `$LANG` を読む）。終了コードは、成功が0、フォントか文字列のファイルを読めなければ1、使い方の誤りと解釈しないオプション（`--variations`、`--font-ptem`、`--font-bold` など）が2、`--verify` の検査の失敗が3。オプションの一覧は `sofel-shape --help` で示す。
 ### `sofel-paint`
 
+可変フォントの色の描画には、たとえば `--variations=wght=500` を指定する。`--named-instance=0` は先頭の名前つきインスタンスを選ぶ。
+
 カラーグリフの塗りの命令を、HarfBuzzの `test/api/test-paint.c` と同じ字下げのテキストで標準出力に書く（[ADR 0023](docs/adr/0023-color-glyphs.md)）。数はCの `%.3g`、`--exact` では `f32` のビットの16進。カラーでないグリフは終了コード1。
 
 ```sh

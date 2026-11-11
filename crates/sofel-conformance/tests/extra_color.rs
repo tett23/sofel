@@ -9,7 +9,6 @@
 )]
 
 use sofel_conformance::color::{self, compare_color, compare_paint};
-use sofel_conformance::expect;
 use sofel_conformance::paths;
 use sofel_font::Font;
 use sofel_font::read::{Tag, fvar::Fvar};
@@ -97,65 +96,30 @@ fn i05_variable_colr_cases_cover_each_axis_and_change_paint() {
 }
 
 #[test]
-fn i06_variable_colr_matches_reference_or_named_failure() {
-    let bytes = variable_color_font();
-    let font = Font::new(&bytes, 0).unwrap();
+fn i06_variable_colr_cli_matches_reference() {
     let file =
         paths::testdata().join("harfbuzz/test/api/fonts/test_glyphs-glyf_colr_1_variable.ttf");
     let cases = variable_color_cases();
-    let expected = expect::parse(include_str!(
-        "../../../conformance/expected-failures-extra-color-var.txt"
-    ));
-    let reasons = expect::parse_reasons(include_str!(
-        "../../../conformance/expected-failures-extra-color-var.txt"
-    ));
-    let mut scratch = sofel_color::Scratch::default();
-    let mut results = Vec::new();
-    for case in &cases {
-        let (ok, code, err) = if case.coordinates == "-" {
-            let actual = color::sofel_paint_text(&font, case.glyph, 0, 0, 0.0, &mut scratch);
-            (
-                digest(actual.as_bytes()) == case.reference,
-                0,
-                String::new(),
-            )
-        } else {
-            let args = [
-                OsString::from("--glyph"),
-                OsString::from(case.glyph.to_string()),
-                OsString::from("--variations"),
-                OsString::from(case.coordinates),
-                file.as_os_str().to_os_string(),
-            ];
-            let mut out = Vec::new();
-            let mut err = Vec::new();
-            let code = sofel_cli::paint::run(&args, &mut out, &mut err);
-            (
-                code == 0 && digest(&out) == case.reference,
-                code,
-                String::from_utf8(err).unwrap(),
-            )
-        };
-        if !ok && reasons.contains_key(case.id) {
-            assert_eq!(code, 2, "{}: {err}", case.id);
-            assert!(
-                err.contains("unknown option --variations"),
-                "{}: {err}",
-                case.id
-            );
-            assert!(reasons[case.id].starts_with("variations:"), "{}", case.id);
+    for case in cases {
+        let mut args = vec![
+            OsString::from("--glyph"),
+            OsString::from(case.glyph.to_string()),
+        ];
+        if case.coordinates != "-" {
+            args.push(OsString::from(format!("--variations={}", case.coordinates)));
         }
-        results.push((case.id, ok));
+        args.push(file.as_os_str().to_os_string());
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        assert_eq!(
+            sofel_cli::paint::run(&args, &mut out, &mut err),
+            0,
+            "{}: {}",
+            case.id,
+            String::from_utf8_lossy(&err)
+        );
+        assert_eq!(digest(&out), case.reference, "{}", case.id);
     }
-    let problems = expect::judge(results, &expected);
-    assert!(
-        problems.is_empty(),
-        "{}",
-        expect::report(
-            &problems,
-            "conformance/expected-failures-extra-color-var.txt"
-        )
-    );
 }
 
 #[cfg(not(target_arch = "wasm32"))]
