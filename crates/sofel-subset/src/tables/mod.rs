@@ -1,7 +1,7 @@
 //! Writing the tables (`hb_subset_plan_execute_or_fail` and the tables'
 //! `subset` functions).
 
-mod base;
+pub(crate) mod base;
 mod cblc;
 pub(crate) mod cff;
 pub(crate) mod cmap;
@@ -11,6 +11,7 @@ pub(crate) mod glyf;
 mod gvar;
 mod hdmx;
 pub(crate) mod hmtx;
+mod hvar;
 pub(crate) mod math;
 mod maxp;
 mod name;
@@ -167,6 +168,7 @@ impl Plan {
             b"glyf" | b"GLYF" => Some(|p, f, tag, _, s, out| glyf::subset(p, f, tag, s, out)),
             b"gvar" | b"GVAR" => Some(gvar::subset),
             b"hdmx" => Some(hdmx::subset),
+            b"HVAR" | b"VVAR" => Some(hvar::subset),
             b"name" => Some(name::subset),
             b"hmtx" | b"HMTX" | b"vmtx" | b"VMTX" => Some(hmtx::subset),
             b"maxp" | b"MAXP" => Some(maxp::subset),

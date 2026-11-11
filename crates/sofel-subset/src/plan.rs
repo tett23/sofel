@@ -24,11 +24,7 @@ use crate::tables::glyf::GlyfAccel;
 /// The tables whose subsetting or closure this version does not write
 /// yet: present and kept, they make [`Plan::new`] return
 /// [`SubsetError::Unsupported`].
-const PENDING: [(&[u8; 4], &str); 3] = [
-    (b"HVAR", "variable font tables (ADR 0022 stage 10)"),
-    (b"VVAR", "variable font tables (ADR 0022 stage 10)"),
-    (b"VARC", "variable composites (ADR 0022 stage 10)"),
-];
+const PENDING: [(&[u8; 4], &str); 1] = [(b"VARC", "variable composites (ADR 0022 stage 10)")];
 
 /// The tables `_should_drop_table` drops when every axis is pinned.
 pub(crate) const PINNED_DROP: [&[u8; 4]; 8] = [
@@ -202,9 +198,12 @@ fn layout_unsupported(
             reason: "MATH with a GDEF item variation store (ADR 0022 stage 10)",
         });
     }
-    if let Some(d) = kept(b"BASE") {
+    if let Some(d) = kept(b"BASE").filter(|_| !pinned) {
         let v = sofel_font::read::be::u32_at(d, 0).unwrap_or(0);
-        if v >= 0x0001_0001 && sofel_font::read::be::u32_at(d, 8).unwrap_or(0) != 0 {
+        if v >= 0x0001_0001
+            && sofel_font::read::be::u32_at(d, 8).unwrap_or(0) != 0
+            && !crate::tables::base::unused_variation_store(d)
+        {
             return Err(SubsetError::Unsupported {
                 tag: Tag::new(b"BASE"),
                 reason: "the BASE item variation store (ADR 0022 stage 10)",
