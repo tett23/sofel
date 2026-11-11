@@ -45,10 +45,12 @@ cmap のフォーマット2と8は、通常のグリフ検索では読み、シ�
 
 ## dfont の読み取りと HarfBuzz のサニタイザの移植
 
-[ADR 0044](adr/0044-shaping-conformance-exceptions.md) で認めた差は、次の実装で解消する。各項目の設計は着手前に個別の ADR にまとめる。
+[ADR 0044](adr/0044-shaping-conformance-exceptions.md) で認めた適合テストの差を解消するため、次の2件を採択した。いずれも未実装である。
 
-- Mac のリソースフォークに入った sfnt を読み取る。[ADR 0001](adr/0001-project-goal-and-scope.md) の第8段階で `in-house/collections.tests:1` のグリフ列を HarfBuzz と照合し、通ったら `dfont` の期待失敗を削除する。
-- HarfBuzz が破損したレイアウト表のオフセットを無効にし、表を捨てるサニタイザの処理を移植する。GSUB、GPOS、GDEF の扱いを確かめ、`in-house/harfbust.tests:4`、レイアウト選択の3件、無作為な文字列のシェーピングの3件を比較する。一致した項目から `sanitize` の一覧から削除する。
+- [ADR 0058](adr/0058-dfont-face-selection.md) に従い、第8段階で、渡された dfont のバイト列から `sfnt` を取り出す。参照リストの順に既存のゼロ始まりのフェイス番号で選べるようにする。`in-house/collections.tests:1` のグリフ列が HarfBuzz と一致したら、`dfont` の期待失敗を削除する。
+- [ADR 0059](adr/0059-layout-sanitizer-diagnostics.md) に従い、GSUB、GPOS、GDEF のサニタイズを HarfBuzz 15.1.0 に合わせる。シェーピング、レイアウト選択、検証器で表の採否を共有する。`in-house/harfbust.tests:4`、レイアウト選択の3件、無作為な文字列のシェーピングの3件を照合し、一致した項目から `sanitize` の期待失敗を削除する。
+
+`sofel-validate` は、表を破棄しても元のデータの検証を続ける。1回の検証で確認できたすべての破損箇所について、フェイス、表タグ、バイト位置、理由をテキストと JSON に出し、同じ箇所を重複させずに数える。未検査範囲があれば、件数が下限であることと、その範囲と理由を示す。シェーピングが表を無視することは、破損箇所数に含めず、破棄した表ごとに警告する。
 
 ## v1 リリース時の性能比較
 
