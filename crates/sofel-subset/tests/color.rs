@@ -246,20 +246,52 @@ fn colr_variation_store_is_stage_10() {
     colr.extend_from_slice(&item_variation_store(1, &[], &[]));
     let data = font_with(vec![(b"COLR", colr), (b"CPAL", cpal_table(false))]);
     let font = Font::new(&data, 0).unwrap();
-    assert!(matches!(
-        subset(&font, &chars("A")),
-        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"COLR")
-    ));
+    let static_paints = subset(&font, &chars("AB")).unwrap();
+    let table = out_table(&static_paints, b"COLR").unwrap();
+    assert_eq!(&table[26..34], &[0; 8]);
     let v0 = subset(&font, &chars("C")).unwrap();
     let table = out_table(&v0, b"COLR").unwrap();
     assert_eq!(&table[..2], &[0, 0]);
     let without_store = font_with(vec![(b"COLR", colr1()), (b"CPAL", cpal_table(false))]);
     let without_store = Font::new(&without_store, 0).unwrap();
+    assert_eq!(static_paints, subset(&without_store, &chars("AB")).unwrap());
     assert_eq!(v0, subset(&without_store, &chars("C")).unwrap());
     // Dropping COLR leaves CPAL without palette entries to keep.
     let input = chars("A").map_set(SetKind::DropTables, |s| s.add(Tag::new(b"COLR").to_u32()));
     let out = subset(&font, &input).unwrap();
     assert!(out_table(&out, b"CPAL").is_none());
+}
+
+#[test]
+fn retained_variable_paint_or_clip_needs_the_colr_store() {
+    let variable = Buf::new().u8(3).u16(0).u16(0x4000).u32(0).done();
+    let clip = Buf::new()
+        .u8(2)
+        .u16(0)
+        .u16(0)
+        .u16(100)
+        .u16(100)
+        .u32(1)
+        .done();
+    let mut colr = colr_v1(
+        &[],
+        &[],
+        &[solid(0), variable],
+        &[(g('A'), 0), (g('B'), 1), (g('C'), 0)],
+        &[],
+        &[(g('C'), g('C'), clip)],
+    );
+    let offset = colr.len() as u32;
+    colr[30..34].copy_from_slice(&offset.to_be_bytes());
+    colr.extend_from_slice(&item_variation_store(1, &[], &[]));
+    let data = font_with(vec![(b"COLR", colr), (b"CPAL", cpal_table(false))]);
+    let font = Font::new(&data, 0).unwrap();
+    assert!(subset(&font, &chars("A")).is_ok());
+    for selected in ["B", "C"] {
+        assert!(
+            matches!(subset(&font, &chars(selected)), Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"COLR"))
+        );
+    }
 }
 
 /// CBDT with 3 image blocks for 'A', 'B' and 'C', and CBLC with one strike

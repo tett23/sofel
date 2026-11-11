@@ -41,11 +41,6 @@ fn sanitized(data: &[u8]) -> Option<Colr<'_>> {
     Colr::new(data).ok().filter(|_| !data.is_empty())
 }
 
-/// The header fields of version 1 (0 for version 0).
-fn v1_offset(t: D<'_>, version: u16, at: usize) -> u32 {
-    if version == 0 { 0 } else { t.u32(at) }
-}
-
 fn retains_no_v1_paints(colr: &Colr<'_>, glyphset: &RangeSet) -> bool {
     (0..colr.num_base_glyph_paints())
         .filter_map(|i| colr.base_glyph_paint_record(i))
@@ -55,16 +50,22 @@ fn retains_no_v1_paints(colr: &Colr<'_>, glyphset: &RangeSet) -> bool {
 /// Whether a kept COLR table needs the variation store subsetting of
 /// ADR 0022 stage 10: version 1 with an ItemVariationStore or a
 /// DeltaSetIndexMap.
-pub(crate) fn needs_var_store(data: &[u8], glyphset: &RangeSet) -> bool {
-    let t = D(data);
-    sanitized(data).is_some_and(|c| {
-        c.version() >= 1
-            && (v1_offset(t, 1, 26) != 0 || v1_offset(t, 1, 30) != 0)
-            && !(retains_no_v1_paints(&c, glyphset)
-                && glyphset
-                    .iter()
-                    .any(|g| c.find_base_glyph(g).is_some_and(|r| r.num_layers != 0)))
-    })
+pub(crate) fn needs_var_store(data: &[u8], glyphset: &RangeSet, static_paints: bool) -> bool {
+    let Some(colr) = sanitized(data) else {
+        return false;
+    };
+    if colr.var_store_offset() == 0 && colr.var_index_map_offset() == 0 {
+        return false;
+    }
+    if retains_no_v1_paints(&colr, glyphset) {
+        return !glyphset
+            .iter()
+            .any(|g| colr.find_base_glyph(g).is_some_and(|r| r.num_layers != 0));
+    }
+    !static_paints
+        || glyphset
+            .iter()
+            .any(|g| colr.clip_box(g).is_some_and(|b| b.var_index_base.is_some()))
 }
 
 /// The layer index range `[first, first + count)` of a base glyph
@@ -80,9 +81,9 @@ fn layer_range(first: u16, count: u16, num_layers: usize) -> (usize, usize) {
 pub(crate) fn closure(
     data: &[u8],
     glyphs: &mut RangeSet,
-) -> (BTreeMap<u32, u32>, BTreeMap<u32, u32>) {
+) -> (BTreeMap<u32, u32>, BTreeMap<u32, u32>, bool) {
     let Some(colr) = sanitized(data) else {
-        return (BTreeMap::new(), BTreeMap::new());
+        return (BTreeMap::new(), BTreeMap::new(), true);
     };
     let t = D(data);
     // closure_glyphs (version 0)
@@ -111,10 +112,12 @@ pub(crate) fn closure(
     // closure_forV1
     let mut layer_indices = RangeSet::new();
     let mut palette_indices = RangeSet::new();
+    let mut static_paints = true;
     if colr.version() >= 1 {
         let mut c = Closure {
             t,
             visited: BTreeSet::new(),
+            static_paints: true,
             glyphs: RangeSet::new(),
             layers: &mut layer_indices,
             palettes: &mut palette_indices,
@@ -134,6 +137,13 @@ pub(crate) fn closure(
         }
         let visited = c.glyphs;
         glyphs.union(&visited);
+        // PaintGlyph may add a glyph with its own base paint to the output.
+        // Accept the store only when every retained base paint was inspected.
+        static_paints = (colr.var_store_offset() == 0 && colr.var_index_map_offset() == 0)
+            || c.static_paints
+                && (0..colr.num_base_glyph_paints())
+                    .filter_map(|i| colr.base_glyph_paint_record(i))
+                    .all(|(g, at)| !glyphs.contains(u32::from(g)) || c.visited.contains(&at));
     }
     // closure_V0palette_indices
     if colr.num_base_glyphs() != 0 && num_layers != 0 {
@@ -165,7 +175,7 @@ pub(crate) fn closure(
             next = next.saturating_add(1);
         }
     }
-    (layers, palettes)
+    (layers, palettes, static_paints)
 }
 
 /// `hb_colrv1_closure_context_t`, without the variation indices (only
@@ -173,6 +183,7 @@ pub(crate) fn closure(
 struct Closure<'a, 'c> {
     t: D<'a>,
     visited: BTreeSet<usize>,
+    static_paints: bool,
     glyphs: RangeSet,
     layers: &'c mut RangeSet,
     palettes: &'c mut RangeSet,
@@ -184,10 +195,20 @@ impl Closure<'_, '_> {
     /// (from the start of the table).
     fn dispatch(&mut self, at: usize) {
         let format = self.t.u8(at);
-        if !matches!(format, 1..=33) || self.nesting_left == 0 || !self.visited.insert(at) {
+        if !matches!(format, 1..=33) || self.nesting_left == 0 {
+            self.static_paints = false;
+            return;
+        }
+        if !self.visited.insert(at) {
             return;
         }
         self.nesting_left = self.nesting_left.saturating_sub(1);
+        if matches!(
+            format,
+            3 | 5 | 7 | 9 | 13 | 15 | 17 | 19 | 21 | 23 | 25 | 27 | 29 | 31
+        ) {
+            self.static_paints = false;
+        }
         self.closurev1(format, at);
         self.nesting_left = self.nesting_left.saturating_add(1);
     }
