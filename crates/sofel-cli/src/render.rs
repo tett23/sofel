@@ -167,7 +167,7 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
     }
     let mut scratch = Scratch::default();
     let mut raster = Rasterizer::new();
-    let outlines = Outlines::new(&font);
+    let outlines = Outlines::new(font.default_instance());
     let rendered = if args.color {
         let options = color_options(&font, args.palette);
         let mut image = sofel_raster::BgraImage::default();

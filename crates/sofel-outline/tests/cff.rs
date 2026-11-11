@@ -30,7 +30,7 @@ fn draw_with(
 ) -> Result<Vec<String>, OutlineError> {
     let bytes = otto_font(3, vec![table]);
     let font = Font::new(&bytes, 0).unwrap();
-    let o = Outlines::new(&font);
+    let o = Outlines::new(font.default_instance());
     let mut scratch = Scratch::default();
     let mut out = Vec::new();
     let info = o.draw(
@@ -234,7 +234,11 @@ fn scaled_and_errors() {
     let none = otto_font(3, vec![]);
     let font = Font::new(&none, 0).unwrap();
     assert_eq!(
-        Outlines::new(&font).load(GlyphId(0), Scale::Unscaled, &mut Scratch::default()),
+        Outlines::new(font.default_instance()).load(
+            GlyphId(0),
+            Scale::Unscaled,
+            &mut Scratch::default()
+        ),
         Err(OutlineError::UnsupportedFormat)
     );
 }
