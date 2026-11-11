@@ -2017,7 +2017,7 @@ typedef struct sofel_paint_commands_t {
  * the largest. Returns SOFEL_PAINTED_* (SOFEL_PAINTED_NONE with no
  * commands for a glyph that is not a color glyph) or an error.
  *
- * Rust: sofel_color::paint, sofel_color::paint_recording, sofel_color::Recording::new, sofel_color::Recording::commands, sofel_color::Recording::stops, sofel_color::Recording::brush, sofel_color::Recording::clear, sofel_color::Recording::replay
+ * Rust: sofel_color::paint, sofel_color::paint_recording, sofel_color::paint_recording_at, sofel_color::Recording::new, sofel_color::Recording::commands, sofel_color::Recording::stops, sofel_color::Recording::brush, sofel_color::Recording::clear, sofel_color::Recording::replay
  * HarfBuzz: hb_font_paint_glyph_or_fail
  * FreeType: none
  */
