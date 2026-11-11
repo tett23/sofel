@@ -12,7 +12,7 @@ fn parses_identifiers_and_comments() {
 }
 
 #[test]
-fn unlisted_failures_and_listed_passes_both_fail() {
+fn i2_i3_unlisted_failures_and_listed_passes_both_fail() {
     let expected = parse("listed-fails\nlisted-passes\nnever-ran\n");
     let results = [
         ("passes", true),
@@ -33,6 +33,7 @@ fn unlisted_failures_and_listed_passes_both_fail() {
 
 #[test]
 fn nothing_to_report() {
+    assert!(judge([("x", true)], &parse("")).is_empty());
     let expected = parse("x\n");
     assert!(judge([("x", false), ("y", true)], &expected).is_empty());
 }
