@@ -284,3 +284,51 @@ fn pinning_drops_the_variation_tables_and_filters_stat() {
     assert_eq!(names, vec![258, 260]);
     assert_eq!(stat.design_axis_count(), 2);
 }
+
+#[test]
+fn pinning_removes_the_base_store_even_with_no_remaining_axes() {
+    // BASE 1.1, no horizontal or vertical Axis, and an empty two-axis store.
+    let base = vec![
+        0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 12, 0, 1, 0, 0, 0, 8, 0, 0, 0, 2, 0, 0,
+    ];
+    let data = font_with(vec![(b"fvar", fvar(&AXES)), (b"BASE", base)]);
+    let font = Font::new(&data, 0).unwrap();
+    let pinned = unicodes().with_all_axes_pinned_to_default(&font).unwrap();
+    let out = subset(&font, &pinned).unwrap();
+    let sfnt = Sfnt::new(&out).unwrap();
+    assert_eq!(
+        sfnt.table(Tag::new(b"BASE")).unwrap(),
+        &[0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0]
+    );
+}
+
+#[test]
+fn pinning_preserves_the_base_coordinate_and_removes_its_variation_index() {
+    let words = [
+        1u16, 1, 12, 0, 0, 54, // BASE 1.1, horizontal Axis and store
+        4, 10, 1, 0x726f, 0x6d6e, // Axis, BaseTagList: romn
+        1, 0x4446, 0x4c54, 8, // BaseScriptList: DFLT
+        6, 0, 0, // BaseScript
+        0, 1, 6, // BaseValues with one BaseCoord
+        3, 123, 6, 0, 0, 0x8000, // BaseCoord and VariationIndex (0, 0)
+        1, 0, 12, 1, 0, 28, // ItemVariationStore
+        2, 1, 0, 0x4000, 0x4000, 0, 0, 0, // one region, two axes
+        1, 1, 1, 0, 21, // one item
+    ];
+    let base = words.into_iter().flat_map(u16::to_be_bytes).collect();
+    let data = font_with(vec![(b"fvar", fvar(&AXES)), (b"BASE", base)]);
+    let font = Font::new(&data, 0).unwrap();
+    let pinned = unicodes().with_all_axes_pinned_to_default(&font).unwrap();
+    let out = subset(&font, &pinned).unwrap();
+    let sfnt = Sfnt::new(&out).unwrap();
+    // hb-subset 15.1.0, --unicodes=41 --variations=*=drop.
+    let expected = [
+        1u16, 1, 12, 0, 0, 0, // version, axes, null variation store
+        30, 4, 1, 0x4446, 0x4c54, 8, // Axis and BaseScriptList
+        6, 0, 0, 0, 1, 6, // BaseScript and BaseValues
+        3, 123, 0, // BaseCoord, null VariationIndex
+        1, 0x726f, 0x6d6e, // BaseTagList
+    ];
+    let expected: Vec<_> = expected.into_iter().flat_map(u16::to_be_bytes).collect();
+    assert_eq!(sfnt.table(Tag::new(b"BASE")).unwrap(), expected);
+}
