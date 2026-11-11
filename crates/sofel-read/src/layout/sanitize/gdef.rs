@@ -1,17 +1,23 @@
 //! GDEF load-time checks, following HarfBuzz's GDEF sanitizer (ADR 0059).
 
-use super::{children::Budget, classes, target};
+use super::{children::Budget, lookups::class_bytes, target};
 use crate::ReadError;
 use crate::be;
 use crate::device::Device;
 use crate::gdef::{Gdef, VERSION_1_2, VERSION_1_3, VERSION_1_4};
 use crate::layout::{Coverage, counted, uint};
 
-fn coverage(data: &[u8]) -> bool {
-    matches!(
-        Coverage::new(data),
-        Ok(_) | Err(ReadError::UnknownFormat(_))
-    )
+fn coverage(data: &[u8], budget: &mut Budget) -> bool {
+    match Coverage::new(data) {
+        Ok(view) => budget.take(view.num_records().saturating_mul(match view.format() {
+            1 => 2,
+            2 => 6,
+            3 => 3,
+            _ => 9,
+        })),
+        Err(ReadError::UnknownFormat(_)) => true,
+        Err(_) => false,
+    }
 }
 
 fn offsets(
@@ -25,8 +31,8 @@ fn offsets(
     Some((0..count).filter_map(move |i| uint(data, at.checked_add(i.checked_mul(width)?)?, width)))
 }
 
-fn attachment_points(data: &[u8]) -> bool {
-    counted(data, 0, 2, 2).is_ok()
+fn attachment_points(data: &[u8], budget: &mut Budget) -> bool {
+    counted(data, 0, 2, 2).is_ok_and(|(_, records)| budget.take(records.len()))
 }
 
 fn attach_list(data: &[u8], budget: &mut Budget) -> bool {
@@ -34,13 +40,15 @@ fn attach_list(data: &[u8], budget: &mut Budget) -> bool {
         return false;
     };
     let count = records.len() / 2;
-    target(data, u32::from(be::u16_at(data, 0).unwrap_or(0)), coverage)
-        && budget.take(count)
-        && offsets(data, 4, count, 2)
-            .is_some_and(|mut items| items.all(|off| target(data, off, attachment_points)))
+    target(data, u32::from(be::u16_at(data, 0).unwrap_or(0)), |d| {
+        coverage(d, budget)
+    }) && budget.take(records.len())
+        && offsets(data, 4, count, 2).is_some_and(|mut items| {
+            items.all(|off| target(data, off, |d| attachment_points(d, budget)))
+        })
 }
 
-fn caret(data: &[u8]) -> bool {
+fn caret(data: &[u8], budget: &mut Budget) -> bool {
     let Some(format) = be::u16_at(data, 0) else {
         return false;
     };
@@ -50,7 +58,11 @@ fn caret(data: &[u8]) -> bool {
             let Some(offset) = be::u16_at(data, 4) else {
                 return false;
             };
-            target(data, u32::from(offset), |d| Device::new(d).is_ok())
+            target(data, u32::from(offset), |d| {
+                Device::new(d).is_ok_and(|view| {
+                    !(1..=3).contains(&view.delta_format()) || budget.take(view.data().len())
+                })
+            })
         }
         _ => true,
     }
@@ -61,9 +73,9 @@ fn lig_glyph(data: &[u8], budget: &mut Budget) -> bool {
         return false;
     };
     let count = records.len() / 2;
-    budget.take(count)
+    budget.take(records.len())
         && offsets(data, 2, count, 2)
-            .is_some_and(|mut items| items.all(|off| target(data, off, caret)))
+            .is_some_and(|mut items| items.all(|off| target(data, off, |d| caret(d, budget))))
 }
 
 fn lig_caret_list(data: &[u8], wide: bool, budget: &mut Budget) -> bool {
@@ -75,8 +87,8 @@ fn lig_caret_list(data: &[u8], wide: bool, budget: &mut Budget) -> bool {
     let Some(coverage_offset) = uint(data, 0, if wide { 4 } else { 2 }) else {
         return false;
     };
-    target(data, coverage_offset, coverage)
-        && budget.take(count)
+    target(data, coverage_offset, |d| coverage(d, budget))
+        && budget.take(records.len())
         && offsets(data, first, count, width)
             .is_some_and(|mut items| items.all(|off| target(data, off, |d| lig_glyph(d, budget))))
 }
@@ -92,12 +104,12 @@ fn mark_sets(data: &[u8], budget: &mut Budget) -> bool {
         return false;
     };
     let count = records.len() / 4;
-    budget.take(count)
+    budget.take(records.len())
         && offsets(data, 4, count, 4)
-            .is_some_and(|mut items| items.all(|off| target(data, off, coverage)))
+            .is_some_and(|mut items| items.all(|off| target(data, off, |d| coverage(d, budget))))
 }
 
-fn var_region_list(data: &[u8]) -> bool {
+fn var_region_list(data: &[u8], budget: &mut Budget) -> bool {
     let (Some(axes), Some(regions)) = (be::u16_at(data, 0), be::u16_at(data, 2)) else {
         return false;
     };
@@ -105,10 +117,10 @@ fn var_region_list(data: &[u8]) -> bool {
         .checked_mul(usize::from(regions))
         .and_then(|n| n.checked_mul(6))
         .and_then(|n| n.checked_add(4));
-    size.is_some_and(|size| data.get(..size).is_some())
+    size.is_some_and(|size| data.get(..size).is_some() && budget.take(size.saturating_sub(4)))
 }
 
-fn var_data(data: &[u8]) -> bool {
+fn var_data(data: &[u8], budget: &mut Budget) -> bool {
     let (Some(rows), Some(word_count), Some(regions)) = (
         be::u16_at(data, 0),
         be::u16_at(data, 2),
@@ -141,7 +153,14 @@ fn var_data(data: &[u8]) -> bool {
                 .and_then(|row| row.checked_mul(usize::from(rows)))
                 .and_then(|all| header.checked_add(all))
         });
-    size.is_some_and(|size| data.get(..size).is_some())
+    size.is_some_and(|size| {
+        data.get(..size).is_some()
+            && budget.take(regions.saturating_mul(2))
+            && budget.take(
+                size.saturating_sub(6)
+                    .saturating_sub(regions.saturating_mul(2)),
+            )
+    })
 }
 
 fn variation_store(data: &[u8], budget: &mut Budget) -> bool {
@@ -152,10 +171,13 @@ fn variation_store(data: &[u8], budget: &mut Budget) -> bool {
         return false;
     };
     let count = usize::from(count);
-    if !budget.take(count) || !target(data, regions, var_region_list) {
+    if !target(data, regions, |d| var_region_list(d, budget))
+        || !budget.take(count.saturating_mul(4))
+    {
         return false;
     }
-    offsets(data, 8, count, 4).is_some_and(|mut items| items.all(|off| target(data, off, var_data)))
+    offsets(data, 8, count, 4)
+        .is_some_and(|mut items| items.all(|off| target(data, off, |d| var_data(d, budget))))
 }
 
 fn reference(
@@ -166,8 +188,17 @@ fn reference(
     mut check: impl FnMut(&[u8]) -> bool,
 ) -> bool {
     let narrow_offset = u32::from(be::u16_at(data, narrow).unwrap_or(0));
-    target(data, narrow_offset, &mut check)
-        && (version < VERSION_1_4 || target(data, be::u32_at(data, wide).unwrap_or(0), check))
+    let narrow_ok = target(data, narrow_offset, &mut check);
+    let wide_offset = if version >= VERSION_1_4 {
+        be::u32_at(data, wide).unwrap_or(0)
+    } else {
+        0
+    };
+    if wide_offset != 0 {
+        target(data, wide_offset, &mut check)
+    } else {
+        narrow_ok
+    }
 }
 
 /// Whether HarfBuzz can use this GDEF table during shaping.
@@ -177,18 +208,42 @@ pub(super) fn assess(data: &[u8]) -> bool {
     };
     let version = header.version();
     let mut budget = Budget::new(data.len());
-    reference(data, 4, 18, version, classes)
-        && reference(data, 6, 22, version, |d| attach_list(d, &mut budget))
-        && target(data, u32::from(be::u16_at(data, 8).unwrap_or(0)), |d| {
-            lig_caret_list(d, false, &mut budget)
-        })
-        && (version < VERSION_1_4
-            || target(data, be::u32_at(data, 26).unwrap_or(0), |d| {
-                lig_caret_list(d, true, &mut budget)
-            }))
-        && reference(data, 10, 30, version, classes)
-        && (version < VERSION_1_2
-            || reference(data, 12, 34, version, |d| mark_sets(d, &mut budget)))
+    let header_bytes = if version >= VERSION_1_4 {
+        38
+    } else if version >= VERSION_1_3 {
+        18
+    } else if version >= VERSION_1_2 {
+        14
+    } else {
+        12
+    };
+    if !budget.take(header_bytes) {
+        return false;
+    }
+    let glyph_class_def_ok = reference(data, 4, 18, version, |d| class_bytes(d, &mut budget));
+    let attach_list_ok = reference(data, 6, 22, version, |d| attach_list(d, &mut budget));
+    let narrow_lig = target(data, u32::from(be::u16_at(data, 8).unwrap_or(0)), |d| {
+        lig_caret_list(d, false, &mut budget)
+    });
+    let wide_offset = if version >= VERSION_1_4 {
+        be::u32_at(data, 26).unwrap_or(0)
+    } else {
+        0
+    };
+    let lig_caret_list_ok = if wide_offset != 0 {
+        target(data, wide_offset, |d| lig_caret_list(d, true, &mut budget))
+    } else {
+        narrow_lig
+    };
+    let mark_attach_class_def_ok =
+        reference(data, 10, 30, version, |d| class_bytes(d, &mut budget));
+    let mark_sets_ok =
+        version < VERSION_1_2 || reference(data, 12, 34, version, |d| mark_sets(d, &mut budget));
+    glyph_class_def_ok
+        && attach_list_ok
+        && lig_caret_list_ok
+        && mark_attach_class_def_ok
+        && mark_sets_ok
         && (version < VERSION_1_3
             || target(data, header.item_var_store_offset().unwrap_or(0), |d| {
                 variation_store(d, &mut budget)
