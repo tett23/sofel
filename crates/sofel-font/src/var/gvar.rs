@@ -730,46 +730,57 @@ mod tests {
     #[test]
     fn adr0030_i07_all_points_and_phantom_only_match() {
         let bytes = one_all_points_tuple();
-        let gvar = Gvar::new(&bytes, TAG).unwrap();
+        let parsed = Gvar::new(&bytes, TAG);
+        assert!(parsed.is_ok());
+        let Some(gvar) = parsed.ok() else { return };
         let mut all = [Point::default(); 4];
         let mut only = all;
         let mut scratch = HbScratch::default();
         let mut budget = 4;
-        apply_hb(
-            &gvar,
-            0,
-            &[0x2000],
-            &[],
-            &mut all,
-            &mut scratch,
-            false,
-            &mut budget,
-        )
-        .unwrap();
+        assert_eq!(
+            apply_hb(
+                &gvar,
+                0,
+                &[0x2000],
+                &[],
+                &mut all,
+                &mut scratch,
+                false,
+                &mut budget,
+            ),
+            Ok(true)
+        );
         let mut budget = 4;
-        apply_hb(
-            &gvar,
-            0,
-            &[0x2000],
-            &[],
-            &mut only,
-            &mut scratch,
-            true,
-            &mut budget,
-        )
-        .unwrap();
+        assert_eq!(
+            apply_hb(
+                &gvar,
+                0,
+                &[0x2000],
+                &[],
+                &mut only,
+                &mut scratch,
+                true,
+                &mut budget,
+            ),
+            Ok(true)
+        );
         assert_eq!(all, only);
         assert_eq!(all.map(|point| point.x), [5.0, 10.0, 15.0, 20.0]);
 
         let mut ft = [Point::default(); 4];
-        apply_ft(&gvar, 0, &[0x8000], &[], &mut ft, &mut FtScratch::default()).unwrap();
+        assert_eq!(
+            apply_ft(&gvar, 0, &[0x8000], &[], &mut ft, &mut FtScratch::default()),
+            Ok(true)
+        );
         assert_eq!(ft.map(|point| point.x), [5, 10, 15, 20].map(|x| x << 16));
     }
 
     #[test]
     fn adr0030_i10_gvar_budget_is_exact() {
         let bytes = one_all_points_tuple();
-        let gvar = Gvar::new(&bytes, TAG).unwrap();
+        let parsed = Gvar::new(&bytes, TAG);
+        assert!(parsed.is_ok());
+        let Some(gvar) = parsed.ok() else { return };
         let mut points = [Point::default(); 4];
         let mut budget = 3;
         assert!(
