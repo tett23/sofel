@@ -13,10 +13,12 @@ use std::process::Command;
 
 use sofel_conformance::outline::{parse, scale_for, sofel_glyph};
 use sofel_conformance::paths;
+use sofel_conformance::raster::sofel_glyph as sofel_raster_glyph;
 use sofel_font::read::{GlyphId, Tag};
 use sofel_font::var::{Location, Variation};
 use sofel_font::{Font, HbCff2};
 use sofel_outline::{Outlines, Scratch, cff2_extents_at};
+use sofel_raster::Rasterizer;
 
 fn compare(font_path: &Path, positions: &[(&str, &[u8; 4], f32)]) -> usize {
     let exe = paths::hb_dump();
@@ -157,6 +159,56 @@ fn adr0027_i04_cff2_outlines_match_freetype() {
                     sofel_glyph(&outlines, glyph, scale_for(&font, size), &mut scratch),
                     *face.glyphs.get(&glyph).unwrap(),
                     "{label} {size} glyph {glyph}"
+                );
+                checked += 1;
+            }
+        }
+    }
+    assert_eq!(checked, 54);
+}
+
+#[test]
+fn adr0027_i04_cff2_rasters_match_freetype() {
+    let font_path = paths::testdata()
+        .join("harfbuzz/test/subset/data/fonts/SourceSerif4Variable-Roman-HelloWorld.otf");
+    let exe = paths::ft_dump();
+    paths::require(&font_path, "CFF2 reference font").unwrap();
+    paths::require(&exe, "ft-dump").unwrap();
+    let bytes = std::fs::read(&font_path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let mut scratch = Scratch::default();
+    let mut raster = Rasterizer::new();
+    let mut checked = 0;
+    for &(label, tag, value) in &[
+        ("wght=200", b"wght", 200.0),
+        ("wght=900", b"wght", 900.0),
+        ("opsz=72", b"opsz", 72.0),
+    ] {
+        let location = Location::new(
+            &font,
+            None,
+            &[Variation {
+                tag: Tag::new(tag),
+                value,
+            }],
+        );
+        let outlines = Outlines::new(font.instance(&location));
+        for ppem in [16u16, 48] {
+            let output = Command::new(&exe)
+                .args(["--raster", &ppem.to_string()])
+                .arg(format!("--variations={label}"))
+                .arg(&font_path)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "ft-dump failed for {label} {ppem}");
+            let expected = parse(&String::from_utf8(output.stdout).unwrap()).unwrap();
+            let face = expected.get(&0).unwrap();
+            assert_eq!(face.num_glyphs, font.num_glyphs());
+            for glyph in 0..font.num_glyphs() {
+                assert_eq!(
+                    sofel_raster_glyph(&outlines, glyph, ppem, &mut scratch, &mut raster),
+                    *face.glyphs.get(&glyph).unwrap(),
+                    "{label} {ppem}px glyph {glyph}"
                 );
                 checked += 1;
             }
