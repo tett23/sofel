@@ -634,8 +634,12 @@ fn adr0036_i01_missing_default_counts_tail_without_names() {
 
 #[test]
 fn adr0036_i02_missing_names_leave_zero_tail() {
+    let mut fvar = fvar_one_named();
+    fvar.get_mut(24..28)
+        .unwrap()
+        .copy_from_slice(&0x4000i32.to_be_bytes());
     let mut tables = sample_tables_with_glyf();
-    tables.push((b"fvar", fvar_one_named()));
+    tables.push((b"fvar", fvar));
     tables.sort_by_key(|(tag, _)| **tag);
     let bytes = sfnt(&tables);
     let font = Font::new(&bytes, 0).unwrap();

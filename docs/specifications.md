@@ -10,8 +10,8 @@ C ABIは [ADR 0027](adr/0027-variable-fonts.md) の位置の作成、座標の�
 メトリクスではHVARとVVARの送り幅、VORGとVVARの縦原点、MVARのフォント全体のメトリクス、FreeTypeの縦送り幅に位置を適用する。
 基準線とレイアウトのフォント全体の値では、BASEのVariationIndexに位置を適用する。
 gvarの幻の点による送り幅と箱、輪郭、シェーピング、塗りの変化量は未実装である。
-FreeTypeが合成する既定の名前つきインスタンスは必要なnameレコードがある場合に実装済みである。
-必要なnameレコードがない場合の扱いは未決定であり、上記以外の位置による値の変更とCLIから位置を指定する機能は未実装である。
+FreeTypeが合成する既定の名前つきインスタンスは、必要なnameレコードが欠ける場合も件数と既定番号に含める。nameレコードが欠けた末尾のスタイルは名前IDと全座標がゼロである（[ADR 0036](adr/0036-freetype-missing-default-named-style.md)）。
+上記以外の位置による値の変更とCLIから位置を指定する機能は未実装である。
 追加フォントの検証は [ADR 0031](adr/0031-diverse-font-corpus.md) に従って実装した。
 文書だけの変更でCIを省く方針は [ADR 0032](adr/0032-documentation-only-ci.md) と [ADR 0034](adr/0034-ci-document-input-classification.md) に従って実装している。
 以下の実装済みの機能の記述は、各実装の PR で更新する。
