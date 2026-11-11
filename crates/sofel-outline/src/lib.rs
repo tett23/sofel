@@ -79,6 +79,7 @@ use sofel_font::read::glyf::{self, Component, Glyph, SCALED_COMPONENT_OFFSET, US
 use sofel_font::read::loca::{self, Loca};
 use sofel_font::read::{GlyphId, Tag};
 use sofel_font::var::Instance;
+use sofel_font::var::gvar::{self, FtScratch};
 use sofel_font::{Cff, CffError, Font};
 use sofel_geom::{Fixed, Matrix, Pen, Point, div_fix, mul_fix, transform, vector_length};
 
@@ -192,6 +193,9 @@ pub struct Scratch {
     stack: Vec<u32>,
     /// The work area of the Type 2 charstring decoder (ADR 0021).
     cff: Work,
+    /// FreeType's reusable gvar buffers.
+    gvar: FtScratch,
+    varied: Vec<gvar::Point<i32>>,
 }
 
 const TAG_ON: u8 = 1;
@@ -199,8 +203,9 @@ const TAG_CUBIC: u8 = 2;
 /// FreeType fails composites nested deeper than this.
 const MAX_RECURSION: usize = 100;
 
-struct Context<'a> {
+struct Context<'a, 'loc, 'source> {
     font: &'a Font<'a>,
+    location: &'loc sofel_font::var::Location<'source>,
     glyf: &'a [u8],
     loca: Loca<'a>,
     num_glyphs: u32,
@@ -208,7 +213,7 @@ struct Context<'a> {
     scale: Scale,
 }
 
-impl Context<'_> {
+impl Context<'_, '_, '_> {
     /// `tt_face_get_location`: the byte range of a glyph.
     fn location(&self, glyph: u32) -> (usize, usize) {
         let len = self.glyf.len();
@@ -248,9 +253,12 @@ impl Context<'_> {
     fn pp1_x(&self, glyph: u32, x_min: i16) -> i32 {
         let x = i32::from(x_min).saturating_sub(i32::from(
             self.font
-                .default_instance()
+                .instance(self.location)
                 .ft_left_side_bearing(GlyphId(glyph)),
         ));
+        if !self.location.ft_default() {
+            return x;
+        }
         match self.scale {
             Scale::Unscaled => x,
             Scale::Scaled { x: sx, .. } => mul_fix(x, sx.0),
@@ -391,7 +399,7 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
         scratch: &mut Scratch,
     ) -> Result<OutlineInfo, OutlineError> {
         match &self.format {
-            Format::Glyf => load_glyf(&self.font, glyph, scale, scratch),
+            Format::Glyf => load_glyf(self.instance(), glyph, scale, scratch),
             Format::Cff(c) => load_cff(&self.font, c, glyph, scale, scratch),
             Format::Unsupported(e) => {
                 scratch.clear();
@@ -420,11 +428,12 @@ pub fn load(
 }
 
 fn load_glyf(
-    font: &Font<'_>,
+    instance: Instance<'_, '_, '_, '_>,
     glyph: GlyphId,
     scale: Scale,
     scratch: &mut Scratch,
 ) -> Result<OutlineInfo, OutlineError> {
+    let font = instance.font();
     let extended = font.table(glyf::TAG_WIDE).is_some();
     let (glyf_tag, loca_tag): (Tag, Tag) = if extended {
         (glyf::TAG_WIDE, loca::TAG_WIDE)
@@ -436,6 +445,7 @@ fn load_glyf(
         .map_err(|_| OutlineError::NoGlyphData)?;
     let ctx = Context {
         font,
+        location: instance.location(),
         glyf: font.table(glyf_tag).unwrap_or(&[]),
         loca,
         num_glyphs: font.num_glyphs(),
@@ -528,7 +538,7 @@ fn control_box(points: &[Point]) -> CBox {
 /// `load_truetype_glyph` without hinting, variations and metrics other
 /// than `pp1.x`, which it sets for `glyph`.
 fn load_glyph(
-    ctx: &Context<'_>,
+    ctx: &Context<'_, '_, '_>,
     s: &mut Scratch,
     glyph: u32,
     depth: usize,
@@ -556,22 +566,31 @@ fn load_glyph(
     }
     *pp1_x = ctx.pp1_x(glyph, g.x_min());
     if n > 0 {
-        load_simple(ctx, s, &g, overlap)
+        load_simple(ctx, s, &g, glyph, pp1_x, overlap)
     } else {
         load_composite(ctx, s, &g, glyph, depth, overlap, pp1_x)
     }
 }
 
+#[allow(clippy::arithmetic_side_effects, clippy::indexing_slicing)]
+// The slice bounds are lengths recorded immediately above from the same vectors.
 fn load_simple(
-    ctx: &Context<'_>,
+    ctx: &Context<'_, '_, '_>,
     s: &mut Scratch,
     g: &Glyph<'_>,
+    glyph: u32,
+    pp1_x: &mut i32,
     overlap: &mut bool,
 ) -> Result<(), OutlineError> {
     let simple = g.simple().map_err(|_| OutlineError::InvalidOutline)?;
     let base = s.points.len();
+    let varied = !ctx.location.ft_default();
     for p in simple.points(ctx.extended) {
-        s.points.push(ctx.scale_point(p.x, p.y));
+        s.points.push(if varied {
+            Point { x: p.x, y: p.y }
+        } else {
+            ctx.scale_point(p.x, p.y)
+        });
         s.tags
             .push(if p.on_curve { TAG_ON } else { 0 } | if p.cubic { TAG_CUBIC } else { 0 });
     }
@@ -583,14 +602,80 @@ fn load_simple(
             .end_points()
             .map(|e| base.saturating_add(usize::from(e))),
     );
+    if varied {
+        let outline_len = s.points.len() - base;
+        s.varied.clear();
+        for (index, point) in s.points[base..].iter().enumerate() {
+            s.varied.push(gvar::Point {
+                x: point.x.wrapping_shl(16),
+                y: point.y.wrapping_shl(16),
+                end: s.ends[0..].contains(&(base + index)),
+            });
+        }
+        let initial_pp1 = *pp1_x;
+        let phantoms = [
+            gvar::Point {
+                x: initial_pp1.wrapping_shl(16),
+                y: 0,
+                end: false,
+            },
+            gvar::Point {
+                x: initial_pp1.wrapping_shl(16),
+                y: 0,
+                end: false,
+            },
+            gvar::Point {
+                x: 0,
+                y: 0,
+                end: false,
+            },
+            gvar::Point {
+                x: 0,
+                y: 0,
+                end: false,
+            },
+        ];
+        s.varied.extend(phantoms);
+        ctx.font
+            .instance(ctx.location)
+            .apply_gvar_ft(glyph, &mut s.varied, &mut s.gvar)
+            .map_err(|_| OutlineError::InvalidOutline)?;
+        if ctx.font.table(Tag::new(b"HVAR")).is_none() {
+            *pp1_x = (s.varied[outline_len].x.wrapping_add(0x8000)) >> 16;
+        }
+        for (point, varied) in s.points[base..].iter_mut().zip(&s.varied[..outline_len]) {
+            let scale = |original: i32, fixed: i32, factor: Fixed| {
+                let delta = fixed.wrapping_sub(original.wrapping_shl(16));
+                let unrounded = original
+                    .wrapping_shl(6)
+                    .wrapping_add(delta.wrapping_add(0x200) >> 10);
+                (mul_fix(unrounded, factor.0).wrapping_add(32)) >> 6
+            };
+            match ctx.scale {
+                Scale::Unscaled => {
+                    point.x = varied.x.wrapping_add(0x8000) >> 16;
+                    point.y = varied.y.wrapping_add(0x8000) >> 16;
+                }
+                Scale::Scaled { x, y } => {
+                    point.x = scale(point.x, varied.x, x);
+                    point.y = scale(point.y, varied.y, y);
+                }
+            }
+        }
+        if let Scale::Scaled { x, .. } = ctx.scale {
+            *pp1_x = mul_fix(*pp1_x, x.0);
+        }
+    }
     if simple.overlap() {
         *overlap = true;
     }
     Ok(())
 }
 
+#[allow(clippy::arithmetic_side_effects, clippy::indexing_slicing)]
+// Component and phantom indexes are bounded by the vectors built in this function.
 fn load_composite(
-    ctx: &Context<'_>,
+    ctx: &Context<'_, '_, '_>,
     s: &mut Scratch,
     g: &Glyph<'_>,
     glyph: u32,
@@ -618,8 +703,58 @@ fn load_composite(
     {
         *overlap = true;
     }
+    if !ctx.location.ft_default() {
+        let count = end_component - first_component;
+        s.varied.clear();
+        for component in &s.components[first_component..end_component] {
+            s.varied.push(gvar::Point {
+                x: component.arg1.wrapping_shl(16),
+                y: component.arg2.wrapping_shl(16),
+                end: true,
+            });
+        }
+        s.varied.extend([
+            gvar::Point {
+                x: pp1_x.wrapping_shl(16),
+                y: 0,
+                end: false,
+            },
+            gvar::Point {
+                x: pp1_x.wrapping_shl(16),
+                y: 0,
+                end: false,
+            },
+            gvar::Point {
+                x: 0,
+                y: 0,
+                end: false,
+            },
+            gvar::Point {
+                x: 0,
+                y: 0,
+                end: false,
+            },
+        ]);
+        ctx.font
+            .instance(ctx.location)
+            .apply_gvar_ft(glyph, &mut s.varied, &mut s.gvar)
+            .map_err(|_| OutlineError::InvalidOutline)?;
+        for (component, varied) in s.components[first_component..end_component]
+            .iter_mut()
+            .zip(&s.varied[..count])
+        {
+            if component.args_are_xy() {
+                component.arg1 = i32::from((varied.x.wrapping_add(0x8000) >> 16) as i16);
+                component.arg2 = i32::from((varied.y.wrapping_add(0x8000) >> 16) as i16);
+            }
+        }
+        if ctx.font.table(Tag::new(b"HVAR")).is_none() {
+            *pp1_x = s.varied[count].x.wrapping_add(0x8000) >> 16;
+        }
+    }
     s.stack.push(glyph);
     let start_point = s.points.len();
+    let mut metrics_component = false;
     for i in first_component..end_component {
         let Some(c) = s.components.get(i).copied() else {
             break;
@@ -631,6 +766,8 @@ fn load_composite(
         // its offset and transform do not move them.
         if c.flags & USE_MY_METRICS == 0 {
             *pp1_x = saved;
+        } else {
+            metrics_component = true;
         }
         if s.points.len() == base {
             continue;
@@ -639,12 +776,18 @@ fn load_composite(
     }
     s.stack.pop();
     s.components.truncate(first_component);
+    if !ctx.location.ft_default()
+        && !metrics_component
+        && let Scale::Scaled { x, .. } = ctx.scale
+    {
+        *pp1_x = mul_fix(*pp1_x, x.0);
+    }
     Ok(())
 }
 
 /// `TT_Process_Composite_Component` without hinting.
 fn place_component(
-    ctx: &Context<'_>,
+    ctx: &Context<'_, '_, '_>,
     s: &mut Scratch,
     c: &Component,
     start_point: usize,
