@@ -157,6 +157,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "variation_store"
+path = "fuzz_targets/variation_store.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "feature_variations"
 path = "fuzz_targets/feature_variations.rs"
 test = false
