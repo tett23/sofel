@@ -7,6 +7,7 @@ mod ffi;
 mod shape;
 mod subset;
 mod variation;
+mod variation_deltas;
 
 use std::path::PathBuf;
 
@@ -1267,7 +1268,9 @@ fn main() {
 
         outline_items(&mut b, name, &font, &ft, &hb);
     }
+    variation_deltas::items(&mut b, &a.testdata);
     shape::shape_items(&mut b, &a.testdata);
+    shape::variable_shape_items(&mut b, &a.testdata);
     subset::subset_items(&mut b, &a.testdata);
     subset::unicode_range_items(&mut b, &a.testdata);
     let failed = report_checks(&b.checks);
