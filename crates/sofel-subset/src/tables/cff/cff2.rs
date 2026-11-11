@@ -8,7 +8,7 @@
 //! `src/hb-subset-plan-var.cc`).
 //!
 //! CFF2 kept with its variations (no axis pinned) is stage 10 of ADR 0022.
-//! The default subroutine-preserving path remains unsupported.
+//! Retained glyphs that call subroutines still need the subroutine-preserving path.
 
 use alloc::vec;
 use alloc::vec::Vec;
@@ -106,6 +106,26 @@ impl<'a> Fonts<'a> {
             },
         )
     }
+}
+
+/// Whether the CFF2 variation-preserving writer must retain a called
+/// subroutine for the selected glyphs.
+pub(crate) fn uses_subroutines(font: &Font<'_>, glyphs: &[(u32, u32)]) -> bool {
+    let Some(hb) = HbCff2::new(font) else {
+        return true;
+    };
+    if hb.global_subrs().is_empty()
+        && (0..hb.fd_array().len()).all(|fd| hb.private(fd).0.is_empty())
+    {
+        return false;
+    }
+    let fonts = Fonts::new(hb);
+    glyphs.iter().any(|&(_, old)| {
+        let fd = fonts.fd(old);
+        let mut env = Env::new(fonts.char_string(old), fonts.programs(fd), &[]);
+        let mut usage = Usage::default();
+        !cs2::interpret(&mut env, &mut usage) || env.called_subr()
+    })
 }
 
 /// HarfBuzz's subset accelerator (`OT::cff2::accelerator_subset_t`):
@@ -208,6 +228,12 @@ fn create(plan: &Plan, acc: &Acc<'_>, tag: Tag) -> Result<Cff2Plan, SubsetError>
         };
         if !cs2::interpret(&mut env, &mut u) {
             return Err(fail);
+        }
+        if keep_variations && !plan.flags.has(Flags::DESUBROUTINIZE) && env.called_subr() {
+            return Err(SubsetError::Unsupported {
+                tag,
+                reason: "CFF2 subroutines used by retained glyphs (ADR 0022 stage 10)",
+            });
         }
         if let Some(r) = round.get_mut(i as usize) {
             *r = !keep_variations && u.has_blend && !u.has_flex1;
