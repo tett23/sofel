@@ -1,4 +1,4 @@
-//! Variable metrics at every corpus location against HarfBuzz (ADR 0027).
+//! Variable metrics at every corpus location against HarfBuzz and FreeType (ADRs 0027 and 0048).
 
 #![allow(
     clippy::unwrap_used,
@@ -229,7 +229,7 @@ fn adr0027_i03_harfbuzz_metrics_at_all_corpus_locations() {
 }
 
 #[test]
-fn adr0027_i03_freetype_bearings_and_face_metrics_at_all_corpus_locations() {
+fn adr0027_i03_adr0048_i02_freetype_metrics_at_all_corpus_locations() {
     let data = paths::testdata();
     let exe = paths::ft_dump();
     paths::require(&exe, "ft-dump").unwrap();
@@ -331,6 +331,33 @@ fn adr0027_i03_freetype_bearings_and_face_metrics_at_all_corpus_locations() {
                         failures += 1;
                     }
                 }
+                let mut scratch = sofel_font::FtAdvanceScratch::default();
+                for &(glyph, reference) in &face.advances {
+                    let glyph = GlyphId(glyph);
+                    let expected = reference.and_then(|n| u16::try_from(n).ok());
+                    let regular = instance.ft_h_advance(glyph);
+                    let reused = instance.ft_h_advance_with_scratch(glyph, &mut scratch);
+                    assert_eq!(
+                        (regular, reused),
+                        (expected, expected),
+                        "{id}#{index}@{}:ft:h_advance:{}",
+                        position.id,
+                        glyph.0
+                    );
+                }
+                for &(glyph, reference) in &face.v_advances {
+                    let glyph = GlyphId(glyph);
+                    let expected = u16::try_from(reference).ok();
+                    let regular = instance.ft_v_advance(glyph);
+                    let reused = instance.ft_v_advance_with_scratch(glyph, &mut scratch);
+                    assert_eq!(
+                        (regular, reused),
+                        (expected, expected),
+                        "{id}#{index}@{}:ft:v_advance:{}",
+                        position.id,
+                        glyph.0
+                    );
+                }
                 checked += 1;
             }
         }
@@ -341,68 +368,62 @@ fn adr0027_i03_freetype_bearings_and_face_metrics_at_all_corpus_locations() {
 }
 
 #[test]
-#[ignore = "FreeType's slow glyph loading advances await ADR 0048"]
-fn adr0027_i03_freetype_advances_at_all_corpus_locations() {
+fn adr0048_i01_first_single_and_batch_advances_match() {
     let data = paths::testdata();
     let exe = paths::ft_dump();
     paths::require(&exe, "ft-dump").unwrap();
-    let filter = std::env::var("SOFEL_METRICS_FILTER").ok();
+    let names = [
+        "harfbuzz/test/api/fonts/Mada-VF.ttf",
+        "harfbuzz/test/subset/data/fonts/RobotoFlex-Variable.ttf",
+    ];
     let mut checked = 0usize;
-    let mut refused = 0usize;
-    let mut failures = 0usize;
-    for path in corpus_paths(&data) {
-        let id = fonts::id(&path, &data);
-        if filter.as_ref().is_some_and(|filter| !id.contains(filter)) {
-            continue;
-        }
+    let mut differences = 0usize;
+    for name in names {
+        let path = data.join(name);
         let bytes = std::fs::read(&path).unwrap();
-        let faces = match sofel_read::sfnt::FontFile::new(&bytes) {
-            Ok(sofel_read::sfnt::FontFile::Sfnt(_)) => 1,
-            Ok(sofel_read::sfnt::FontFile::Collection(collection)) => collection.num_fonts(),
-            Err(_) => continue,
-        };
-        for index in 0..faces {
-            let Ok(font) = Font::new(&bytes, index) else {
-                continue;
+        let font = Font::new(&bytes, 0).unwrap();
+        let position = variation_locations::positions(&font)
+            .into_iter()
+            .find(|position| position.id == "named:0")
+            .unwrap();
+        let location = position.location(&font);
+        let instance = font.instance(&location);
+        let output = Command::new(&exe)
+            .arg("--advances")
+            .args(position.args())
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let text = String::from_utf8(output.stdout).unwrap();
+        let mut scratch = sofel_font::FtAdvanceScratch::default();
+        for line in text.lines().filter(|line| line.starts_with("advance ")) {
+            let fields = line.split_whitespace().collect::<Vec<_>>();
+            let glyph = fields[3].parse::<u32>().unwrap();
+            let error = fields[4].parse::<u32>().unwrap();
+            let value = fields[5].parse::<i64>().unwrap();
+            let expected = (error == 0)
+                .then_some(value)
+                .and_then(|value| u16::try_from(value).ok());
+            let actual = if fields[1] == "h" {
+                instance.ft_h_advance_with_scratch(GlyphId(glyph), &mut scratch)
+            } else {
+                instance.ft_v_advance_with_scratch(GlyphId(glyph), &mut scratch)
             };
-            if font.var_axes().next().is_none() {
-                continue;
+            if expected != actual {
+                if differences < 20 {
+                    eprintln!("{name}: {line}: sofel {actual:?}");
+                }
+                differences += 1;
             }
-            for position in variation_locations::positions(&font) {
-                let output = Command::new(&exe)
-                    .arg("--metrics")
-                    .args(position.args())
-                    .arg(&path)
-                    .output()
-                    .unwrap();
-                if !output.status.success() {
-                    refused += 1;
-                    continue;
-                }
-                let reference =
-                    dump::parse_ft_dump(&String::from_utf8(output.stdout).unwrap()).unwrap();
-                let face = &reference[index as usize];
-                if face.error.is_some() {
-                    refused += 1;
-                    continue;
-                }
-                let location = position.location(&font);
-                let instance = font.instance(&location);
-                for &(glyph, reference) in &face.advances {
-                    if instance.ft_h_advance(GlyphId(glyph)).map(i64::from) != reference {
-                        failures += 1;
-                    }
-                }
-                for &(glyph, reference) in &face.v_advances {
-                    if instance.ft_v_advance(GlyphId(glyph)).map(i64::from) != Some(reference) {
-                        failures += 1;
-                    }
-                }
-                checked += 1;
-            }
+            checked += 1;
         }
     }
-    eprintln!("checked {checked} face-locations, {refused} refused, {failures} differences");
-    assert!(checked > 0);
-    assert_eq!(failures, 0);
+    eprintln!("checked {checked} advances, {differences} differences");
+    assert_eq!(checked, 5904);
+    assert_eq!(differences, 0);
 }
