@@ -22,7 +22,7 @@ use sofel_color::{
     palette_name_id, svg_document,
 };
 use sofel_font::Font;
-use sofel_font::geom::{Brush, Color, CompositeMode, Image, Painter, Rect, Solid, Transform};
+use sofel_font::geom::{Color, Painter, Solid, Transform};
 use sofel_outline::Outlines;
 
 use crate::compare::Item;
@@ -62,85 +62,7 @@ pub fn color_fonts(testdata: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// Writes what HarfBuzz writes around sofel's commands (see the module
-/// documentation).
-pub struct HbCompat<'t> {
-    pub inner: &'t mut PaintText,
-    /// The glyph is a `COLR` version 1 glyph.
-    pub v1: bool,
-    clips: Vec<bool>,
-}
-
-impl<'t> HbCompat<'t> {
-    pub fn new(inner: &'t mut PaintText, v1: bool) -> HbCompat<'t> {
-        HbCompat {
-            inner,
-            v1,
-            clips: Vec::new(),
-        }
-    }
-    fn identity(&mut self) {
-        if self.v1 {
-            self.inner.push_transform(Transform::IDENTITY);
-        }
-    }
-    fn end(&mut self) {
-        if self.v1 {
-            self.inner.pop_transform();
-        }
-    }
-}
-
-impl Painter for HbCompat<'_> {
-    fn push_transform(&mut self, t: Transform) {
-        self.inner.push_transform(t);
-    }
-    fn pop_transform(&mut self) {
-        self.inner.pop_transform();
-    }
-    fn push_clip_glyph(&mut self, glyph: u32) {
-        self.identity();
-        self.inner.push_clip_glyph(glyph);
-        self.identity();
-        self.clips.push(true);
-    }
-    fn push_clip_rectangle(&mut self, r: Rect) {
-        self.inner.push_clip_rectangle(r);
-        self.clips.push(false);
-    }
-    fn pop_clip(&mut self) {
-        if self.clips.pop() == Some(true) {
-            self.end();
-            self.inner.pop_clip();
-            self.end();
-        } else {
-            self.inner.pop_clip();
-        }
-    }
-    fn fill(&mut self, brush: &Brush<'_>) {
-        self.inner.fill(brush);
-    }
-    fn fill_glyph(&mut self, glyph: u32, color: &Solid) {
-        self.identity();
-        self.inner.fill_glyph(glyph, color);
-        self.end();
-    }
-    fn image(&mut self, image: &Image<'_>) -> bool {
-        self.inner.image(image)
-    }
-    fn push_group(&mut self, mode: CompositeMode) {
-        self.inner.push_group(mode);
-    }
-    fn pop_group(&mut self, mode: CompositeMode) {
-        self.inner.pop_group(mode);
-    }
-    fn color_glyph(&mut self, glyph: u32) -> bool {
-        self.identity();
-        let r = self.inner.color_glyph(glyph);
-        self.end();
-        r
-    }
-}
+pub use sofel_cli::paint::HbCompat;
 
 /// The text HarfBuzz's test writes for `hb_font_paint_glyph` of `glyph`
 /// with the foreground black, at the default scale, with a synthetic
