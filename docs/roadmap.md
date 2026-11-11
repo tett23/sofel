@@ -39,7 +39,6 @@ FreeType の丸めの順序、係数のキャッシュの同一性、空の座�
 - [ADR 0053](adr/0053-preserve-buffer-settings-after-glyph-deserialization.md)：C API でグリフ列を読み込んだ後も、バッファをクリアして再利用するときは通常のクリアと同じ設定を引き継ぐ。
 - [ADR 0054](adr/0054-wide-metrics-header-count.md)：大文字の HHEA と VHEA のメトリクス件数を32ビットで読む。件数の欄が3バイトで途切れた場合はデータ不足とする。
 - [ADR 0055](adr/0055-rewrite-cli-color-rendering.md)：CLI の COLRv0 描画制御を独自実装に書き直し、sofel-cli の MIT 表記を維持する。画素の合成には sofel-raster の既存実装を使う。
-- [ADR 0056](adr/0056-cff2-fdselect-format4-warning.md)：CFF2 の FDSelect 形式4は互換性の警告とし、ほかにエラーがなければ検証を成功とする。辞書の割り当てを保って形式0か3で再生成できるフォントは、生成側でその形式を使う。
 - [ADR 0057](adr/0057-record-unexcluded-phantom-point-check.md)：[ADR 0018](adr/0018-phantom-point-shift.md) は採択を維持する。ネイティブと wasm の両方で、グリフを除外せずに `--once` の照合を行い、結果を新しい計測記録に残す。
 
 cmap のフォーマット2と8は、通常のグリフ検索では読み、シェーピングでは HarfBuzz に合わせて対応なしとする処理を実装済みである。[仕様書](specifications.md) に両方の検索規則を記載している。
