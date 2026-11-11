@@ -18,6 +18,7 @@ pub(crate) mod gpos;
 pub(crate) mod gsub;
 pub(crate) mod map;
 pub(crate) mod variations;
+pub(crate) mod would;
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
