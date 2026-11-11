@@ -8,6 +8,7 @@ WOFFとWOFF2、Type1やBDFなどの古い形式、AAT、絵文字（COLR、埋�
 - wasm（`wasm32-unknown-unknown`）へのビルドを前提とし、ライブラリは `no_std` で書く（[ADR 0004](docs/adr/0004-wasm-and-no-std.md)）。
 - 外部のクレートに依存せず、すべて自分で書く。正しさは、HarfBuzzとFreeTypeの出力と突き合わせて確かめる（[ADR 0005](docs/adr/0005-conformance-tests.md)）。
 
+シェーピングの適合テストでは、dfont と破損したレイアウト表に由来する既知の差を [ADR 0044](docs/adr/0044-shaping-conformance-exceptions.md) の入力に限って認める。対応予定は[ロードマップ](docs/roadmap.md)に記す。
 対応範囲を広げる段階と今後の実装予定は[ロードマップ](docs/roadmap.md)に記す。現在の実装を支えるクレート、適合テスト、性能計測の完了条件は [ADR 0045](docs/adr/0045-foundation-completion-criteria.md) を参照。
 
 ## 状態
