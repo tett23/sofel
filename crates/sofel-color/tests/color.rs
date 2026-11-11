@@ -417,7 +417,7 @@ fn formats_and_raw_values() {
 fn glyph_boxes() {
     let bytes = font_bytes();
     let font = Font::new(&bytes, 0).unwrap();
-    let outlines = Outlines::new(&font);
+    let outlines = Outlines::new(font.default_instance());
     let mut s = Scratch::default();
     // COLRv0: the union of the layers.
     assert_eq!(
