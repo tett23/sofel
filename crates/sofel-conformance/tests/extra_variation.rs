@@ -44,6 +44,21 @@ fn cases() -> Vec<Case<'static>> {
         .collect()
 }
 
+fn case_location<'a>(font: &Font<'a>, coordinates: &str) -> Location<'a> {
+    let variations = coordinates
+        .split(',')
+        .filter(|part| *part != "-")
+        .map(|part| {
+            let (tag, value) = part.split_once('=').unwrap();
+            Variation {
+                tag: Tag::new(tag.as_bytes().try_into().unwrap()),
+                value: value.parse().unwrap(),
+            }
+        })
+        .collect::<Vec<_>>();
+    Location::new(font, None, &variations)
+}
+
 fn snapshots(text: &'static str) -> BTreeMap<&'static str, String> {
     let mut out = BTreeMap::new();
     let mut current = None;
@@ -88,23 +103,22 @@ fn i05_nondefault_metrics_and_outlines_match_or_named_failure() {
         let path = paths::testdata().join("extra-fonts/fonts").join(case.font);
         let bytes = std::fs::read(&path).unwrap();
         let font = Font::new(&bytes, 0).unwrap();
+        let location = case_location(&font, case.coordinates);
+        let instance = font.instance(&location);
 
         let hb_reference = hb::parse(&metrics[case.id]).unwrap();
         assert_eq!(hb_reference.len(), 1);
         assert_eq!(hb_reference[0].scales.len(), 1);
         assert_eq!(hb_reference[0].scales[0].glyphs.len(), 1);
-        let ours = hb::sofel_face_sampled(&font, &hb_reference[0], &[case.glyph]);
+        let ours = hb::sofel_face_sampled_at(&font, instance, &hb_reference[0], &[case.glyph]);
         let metric_items = hb::compare(case.id, &hb_reference[0], &ours);
         let metric_ok = metric_items.iter().all(|item| item.ok);
         results.push((format!("{}.metrics", case.id), metric_ok));
 
         let ft_reference = parse(&outlines[case.id]).unwrap();
         let ft_glyph = &ft_reference[&0].glyphs[&case.glyph];
-        let mut outline = vec![format!(
-            "advance {}",
-            font.default_instance().advance(GlyphId(case.glyph))
-        )];
-        let parsed = sofel_outline::Outlines::new(font.default_instance());
+        let mut outline = vec![format!("advance {}", instance.advance(GlyphId(case.glyph)))];
+        let parsed = sofel_outline::Outlines::new(instance);
         outline.extend(sofel_glyph(
             &parsed,
             case.glyph,
