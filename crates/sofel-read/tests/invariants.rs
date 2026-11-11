@@ -488,7 +488,14 @@ fn layout_walks(data: &[u8], extension: u16, sub: impl Fn(&Lookup<'_>, usize) ->
             ok(l.lookup(i), |lk| {
                 lk.extension_types_agree(extension)
                     && (0..lk.num_subtables())
-                        .all(|j| lk.subtable_offset(j) == Some(0) || sub(&lk, j))
+                        .all(|j| {
+                            // Null offsets have no target for the view to walk.
+                            let null_extension = lk.lookup_type() == extension && matches!(
+                                lk.subtable_data(j),
+                                Some([0, 1, hi, lo, 0, 0, 0, 0, ..]) if (1..extension).contains(&u16::from_be_bytes([*hi, *lo]))
+                            );
+                            lk.subtable_offset(j) == Some(0) || null_extension || sub(&lk, j)
+                        })
             })
         })
     });
@@ -808,6 +815,20 @@ fn gdef_base() -> Vec<u8> {
             (12, 2, sets),
         ],
     )
+}
+
+#[test]
+fn null_extension_target_has_no_subtable_to_walk() {
+    // GPOS fuzz regression 7ea7de07: extension format 1, type 4, null target.
+    let mut table = [
+        0, 1, 0, 1, 0, 0, 0, 2, 0, 6, 0, 0, 0, 9, 0, 0, 0, 1, 0, 4, 0, 0, 0, 0, 4, 0, 0, 17, 0, 0,
+        1, 1,
+    ];
+    assert!(!has_error(|r| gpos::validate(&table, Some(1986), r)));
+    assert!(gpos_walks(&table));
+    table[23] = 64;
+    assert!(has_error(|r| gpos::validate(&table, Some(1986), r)));
+    assert!(!gpos_walks(&table));
 }
 
 #[test]
