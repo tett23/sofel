@@ -305,6 +305,28 @@ fn wide_metrics_win() {
 }
 
 #[test]
+fn inv1_font_metrics() {
+    let wide_header = |count: u32| {
+        let mut bytes = hhea(0);
+        bytes.truncate(34);
+        bytes.extend_from_slice(&count.to_be_bytes());
+        bytes
+    };
+    let data = with(
+        sample_tables(),
+        &[
+            (b"HHEA", wide_header(1)),
+            (b"HMTX", hmtx(&[(700, 0)], &[0; 27])),
+            (b"VHEA", wide_header(1)),
+            (b"VMTX", hmtx(&[(900, 0)], &[0; 27])),
+        ],
+    );
+    let font = Font::new(&data, 0).unwrap();
+    assert_eq!(font.default_instance().advance(GlyphId(5)), 700);
+    assert_eq!(font.default_instance().v_advance(GlyphId(5)), -900);
+}
+
+#[test]
 fn fonts_are_plain_shareable_values() {
     fn check<T: Send + Sync + Copy>() {}
     check::<Font<'static>>();

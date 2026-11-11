@@ -13,7 +13,7 @@ use crate::{CountWidth, Diagnostic, Tag};
 
 /// The `vhea` tag.
 pub const TAG: Tag = Tag::new(b"vhea");
-/// The `VHEA` tag, the variant with 24-bit counts.
+/// The `VHEA` tag, the variant with a 32-bit metric count.
 pub const TAG_WIDE: Tag = Tag::new(b"VHEA");
 
 /// A view over the `vhea` or `VHEA` table: the `hhea` view.

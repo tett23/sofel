@@ -56,6 +56,7 @@ fn adr0048_i02_freetype_advances_at_all_corpus_locations() {
         let faces = match FontFile::new(&bytes) {
             Ok(FontFile::Sfnt(_)) => 1,
             Ok(FontFile::Collection(collection)) => collection.num_fonts(),
+            Ok(FontFile::Dfont(dfont)) => dfont.num_fonts(),
             Err(_) => continue,
         };
         for index in 0..faces {
