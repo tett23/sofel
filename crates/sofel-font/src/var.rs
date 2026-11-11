@@ -616,6 +616,7 @@ pub struct Location<'data> {
 
 impl Location<'static> {
     /// The static default location, usable with any font.
+    #[inline]
     pub fn default_ref() -> &'static Self {
         static DEFAULT: Location<'static> = Location {
             hb_coords: Vec::new(),
@@ -1157,17 +1158,26 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
     }
 
     /// Horizontal advance in font units at this location.
+    #[inline]
     pub fn advance(&self, glyph: GlyphId) -> u32 {
+        if !self.location.hb_nonzero {
+            return self.base_advance(glyph);
+        }
         self.advance_with_scratch(glyph, &mut crate::GlyphScratch::default())
+    }
+
+    #[inline]
+    fn base_advance(&self, glyph: GlyphId) -> u32 {
+        u32::from(
+            self.font
+                .metrics
+                .advance(glyph, self.font.hb_units_per_em() / 2),
+        )
     }
 
     /// Horizontal advance using a reusable glyf variation work area.
     pub fn advance_with_scratch(&self, glyph: GlyphId, scratch: &mut crate::GlyphScratch) -> u32 {
-        let base = u32::from(
-            self.font
-                .metrics
-                .advance(glyph, self.font.hb_units_per_em() / 2),
-        );
+        let base = self.base_advance(glyph);
         if !self.font.metrics.has_data() || !self.location.hb_nonzero {
             return base;
         }
@@ -1218,6 +1228,9 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
 
     /// Horizontal font extents at a HarfBuzz scale.
     pub fn scaled_h_extents(&self, scale: &HbScale) -> FontExtents {
+        if !self.font.has_variable_h_extents {
+            return scale.h_extents(self.font);
+        }
         let get = |tag| self.scaled_metrics_position(scale, tag);
         match (
             get(MetricsTag::HorizontalAscender),
@@ -1257,6 +1270,9 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
 
     /// Vertical advance in font units at this location.
     pub fn v_advance(&self, glyph: GlyphId) -> i32 {
+        if !self.location.hb_nonzero && !self.font.has_variable_h_extents {
+            return HbScale::unscaled(self.font).v_advance(self.font, glyph);
+        }
         self.v_advance_with_scratch(glyph, &mut crate::GlyphScratch::default())
     }
 
@@ -1778,6 +1794,7 @@ impl<'data> Font<'data> {
     }
 
     /// Pair this font with the static default location.
+    #[inline]
     pub fn default_instance(&self) -> Instance<'_, 'data, 'static, 'static> {
         self.instance(Location::default_ref())
     }
