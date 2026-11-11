@@ -42,7 +42,7 @@
     clippy::panic
 )]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -188,14 +188,25 @@ struct Line {
     want: String,
 }
 
-fn judge(lines: &[Line], list: &str, what: &str, elapsed: std::time::Duration) {
-    let verbose = std::env::var_os("SOFEL_SHAPE_VERBOSE").is_some();
-    let suggest = std::env::var_os("SOFEL_SHAPE_SUGGEST").is_some();
-    let fonts: BTreeMap<&Path, Vec<u8>> = lines
+fn failure_fonts(
+    lines: &[Line],
+    mut read: impl FnMut(&Path) -> std::io::Result<Vec<u8>>,
+) -> BTreeMap<&Path, Vec<u8>> {
+    let paths: BTreeSet<_> = lines
         .iter()
         .filter(|l| !l.passed)
-        .filter_map(|l| Some((l.font.as_path(), std::fs::read(&l.font).ok()?)))
+        .map(|l| l.font.as_path())
         .collect();
+    paths
+        .into_iter()
+        .filter_map(|path| read(path).ok().map(|bytes| (path, bytes)))
+        .collect()
+}
+
+fn judge(lines: &[Line], count: usize, list: &str, what: &str, elapsed: std::time::Duration) {
+    let verbose = std::env::var_os("SOFEL_SHAPE_VERBOSE").is_some();
+    let suggest = std::env::var_os("SOFEL_SHAPE_SUGGEST").is_some();
+    let fonts = failure_fonts(lines, |p| std::fs::read(p));
     let options = Vec::new();
     let subject = |i: usize| {
         let l = lines.get(i)?;
@@ -212,12 +223,9 @@ fn judge(lines: &[Line], list: &str, what: &str, elapsed: std::time::Duration) {
         })
     };
     let results: Vec<(String, bool)> = lines.iter().map(|l| (l.id.clone(), l.passed)).collect();
-    let passes = lines.iter().filter(|l| l.passed).count();
-    println!(
-        "{what}: {} cases, {passes} passed, {} failed, in {elapsed:.1?}",
-        lines.len(),
-        lines.len() - passes
-    );
+    let failed = lines.iter().filter(|l| !l.passed).count();
+    let passes = count - failed;
+    println!("{what}: {count} cases, {passes} passed, {failed} failed, in {elapsed:.1?}");
     if verbose {
         for l in lines.iter().filter(|l| !l.passed) {
             let text: Vec<String> = l.text.iter().map(|u| format!("{u:04X}")).collect();
@@ -238,6 +246,63 @@ fn judge(lines: &[Line], list: &str, what: &str, elapsed: std::time::Duration) {
     assert!(report.is_empty(), "{report}");
 }
 
+/// Preserve each failure for its category and verbose report. All successful
+/// lines of the same pair contribute just one identifier to the group verdict.
+fn pair_cases(
+    id: &str,
+    font: &Path,
+    direction: Option<Direction>,
+    input: &str,
+    got: &str,
+    want: &str,
+) -> Result<(usize, Vec<Line>), String> {
+    let mut texts = input.split_terminator('\n');
+    let mut got = got.lines();
+    let mut want = want.lines();
+    let mut count = 0;
+    let mut lines = Vec::new();
+    loop {
+        match (texts.next(), got.next(), want.next()) {
+            (None, None, None) => break,
+            (Some(text), Some(g), Some(w)) => {
+                count += 1;
+                if g != w {
+                    lines.push(Line {
+                        id: id.to_owned(),
+                        line: count,
+                        passed: false,
+                        font: font.to_owned(),
+                        face: 0,
+                        text: text.chars().map(u32::from).collect(),
+                        direction,
+                        got: g.to_owned(),
+                        want: w.to_owned(),
+                    });
+                }
+            }
+            _ => {
+                return Err(format!(
+                    "{id}: input, sofel and HarfBuzz line counts differ after {count} lines"
+                ));
+            }
+        }
+    }
+    if count > 0 && lines.is_empty() {
+        lines.push(Line {
+            id: id.to_owned(),
+            line: 0,
+            passed: true,
+            font: font.to_owned(),
+            face: 0,
+            text: Vec::new(),
+            direction,
+            got: String::new(),
+            want: String::new(),
+        });
+    }
+    Ok((count, lines))
+}
+
 #[test]
 fn shape_pairs_agree_with_harfbuzz() {
     let hb = paths::testdata().join("harfbuzz");
@@ -250,7 +315,7 @@ fn shape_pairs_agree_with_harfbuzz() {
             }
         }
     }
-    let lines: Vec<Line> = parallel(jobs, |(font, text, dir, feat)| {
+    let pairs = parallel(jobs, |(font, text, dir, feat)| {
         let font_path = hb.join(font);
         let text_path = hb.join(text);
         let want = hb_dump(&[
@@ -281,30 +346,12 @@ fn shape_pairs_agree_with_harfbuzz() {
         let texts = std::fs::read_to_string(&text_path).unwrap();
         let direction = Direction::from_bytes(dir.as_bytes()).filter(|_| dir != "auto");
         let feat_id = if feat.is_empty() { "-" } else { feat };
-        let mut got_lines = got.lines();
-        want.lines()
-            .zip(texts.split('\n'))
-            .enumerate()
-            .map(|(i, (w, t))| {
-                let g = got_lines.next().unwrap_or("<missing>");
-                Line {
-                    id: format!("{}+{}:{dir}:{feat_id}", name(font), name(text)),
-                    line: i + 1,
-                    passed: g == w,
-                    font: font_path.clone(),
-                    face: 0,
-                    text: t.chars().map(u32::from).collect(),
-                    direction,
-                    got: g.to_string(),
-                    want: w.to_string(),
-                }
-            })
-            .collect::<Vec<_>>()
-    })
-    .into_iter()
-    .flatten()
-    .collect();
-    judge(&lines, PAIRS_LIST, "--shape", started.elapsed());
+        let id = format!("{}+{}:{dir}:{feat_id}", name(font), name(text));
+        pair_cases(&id, &font_path, direction, &texts, &got, &want).unwrap()
+    });
+    let count = pairs.iter().map(|(count, _)| count).sum();
+    let lines: Vec<_> = pairs.into_iter().flat_map(|(_, lines)| lines).collect();
+    judge(&lines, count, PAIRS_LIST, "--shape", started.elapsed());
 }
 
 /// The generator of `hb-dump --shape-random`: the C standard's example
@@ -469,7 +516,13 @@ fn shape_random_agrees_with_harfbuzz() {
     .into_iter()
     .flatten()
     .collect();
-    judge(&lines, RANDOM_LIST, "--shape-random", started.elapsed());
+    judge(
+        &lines,
+        lines.len(),
+        RANDOM_LIST,
+        "--shape-random",
+        started.elapsed(),
+    );
 }
 
 #[test]
@@ -544,5 +597,98 @@ fn layout_map_agrees_with_harfbuzz() {
     .into_iter()
     .flatten()
     .collect();
-    judge(&lines, LAYOUT_LIST, "--layout-map", started.elapsed());
+    judge(
+        &lines,
+        lines.len(),
+        LAYOUT_LIST,
+        "--layout-map",
+        started.elapsed(),
+    );
+}
+
+#[test]
+fn adr0041_i1_i2_compacts_passes_and_keeps_each_failure() {
+    let font = Path::new("example.ttf");
+    let compress = |input, got, want| pair_cases("pair", font, None, input, got, want).unwrap();
+    let empty = compress("", "", "");
+    assert_eq!(empty.0, 0);
+    assert!(empty.1.is_empty());
+    let (count, all_ok) = compress("\na\n", "[]\n[a]\n", "[]\n[a]\n");
+    assert_eq!(count, 2);
+    assert_eq!(all_ok.len(), 1);
+    assert_eq!((all_ok[0].id.as_str(), all_ok[0].passed), ("pair", true));
+    assert!(all_ok[0].got.is_empty() && all_ok[0].want.is_empty() && all_ok[0].text.is_empty());
+    let (count, failures) = compress("一\n𠮷\n二\n三", "a\nb\nc\nd\n", "a\nX\nc\nY\n");
+    assert_eq!(count, 4);
+    let details: Vec<_> = failures
+        .iter()
+        .map(|l| {
+            (
+                l.line,
+                l.got.as_str(),
+                l.want.as_str(),
+                l.text.clone(),
+                l.passed,
+            )
+        })
+        .collect();
+    assert_eq!(
+        details,
+        [
+            (2, "b", "X", vec![0x20bb7], false),
+            (4, "d", "Y", vec![0x4e09], false)
+        ]
+    );
+    let (count, failures) = compress("x\ny", "A\nB", "C\nD");
+    assert_eq!((count, failures.len()), (2, 2));
+}
+
+#[test]
+fn adr0041_i3_requires_one_result_for_each_source_line() {
+    let check = |input, got, want| pair_cases("pair", Path::new("font"), None, input, got, want);
+    assert!(check("\n", "[]\n", "[]\n").is_ok());
+    assert!(check("x", "x", "x\n").is_ok());
+    for (input, got, want) in [
+        ("x\ny", "x", "x\ny"),
+        ("x\ny", "x\ny", "x"),
+        ("x", "x\ny", "x"),
+        ("x", "x", "x\ny"),
+        ("", "x", "x"),
+        ("x", "", ""),
+    ] {
+        assert!(
+            check(input, got, want).is_err(),
+            "{input:?} {got:?} {want:?}"
+        );
+    }
+}
+
+#[test]
+fn adr0041_i4_reads_each_failing_font_once() {
+    let mut all = Vec::new();
+    for (name, got) in [
+        ("pass", "x"),
+        ("bad", "z"),
+        ("bad", "q"),
+        ("absent", "n"),
+        ("absent", "m"),
+    ] {
+        all.extend(
+            pair_cases(name, Path::new(name), None, "x", got, "x")
+                .unwrap()
+                .1,
+        );
+    }
+    let mut calls = Vec::new();
+    let data = failure_fonts(&all, |path| {
+        calls.push(path.to_owned());
+        if path == Path::new("absent") {
+            Err(std::io::ErrorKind::NotFound.into())
+        } else {
+            Ok(vec![7])
+        }
+    });
+    assert_eq!(calls, [PathBuf::from("absent"), PathBuf::from("bad")]);
+    assert_eq!(data.len(), 1);
+    assert_eq!(data[Path::new("bad")], [7]);
 }
