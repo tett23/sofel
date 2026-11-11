@@ -4,5 +4,3 @@
 # line, <font>+<text>:<direction>:<features>, with one category of
 # conformance/expected-failures.txt as its comment; the category must fit
 # every line of the pair that differs. Remove an entry when it passes.
-NotoSansDevanagari-Regular.ttf+hi-words.txt:auto:-  # shaper:indic
-NotoSansDuployan-Regular.otf+duployan.txt:auto:-  # shaper:use

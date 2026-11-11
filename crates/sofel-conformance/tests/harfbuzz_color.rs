@@ -450,3 +450,145 @@ fn adr0027_variable_clip_rounds_each_edge_outward() {
         assert_eq!(rect, Some(expected));
     }
 }
+
+#[test]
+fn adr0027_colr_paints_at_axis_named_and_random_locations() {
+    let root = paths::testdata().join("harfbuzz/test");
+    for (directory, names) in [
+        (
+            "api/fonts",
+            &[
+                "test_glyphs-glyf_colr_1_variable.ttf",
+                "colr-clip-rounding.ttf",
+                "colr-wide-scale.ttf",
+                "colr-var-overflow.ttf",
+                "colr-negative-radii.ttf",
+                "colr-negative-radii-precision.ttf",
+                "colr-null-store-sentinel-map.ttf",
+                "colr-affine-values.ttf",
+                "colr-empty-store-sentinel-map.ttf",
+            ][..],
+        ),
+        (
+            "subset/data/fonts",
+            &[
+                "sixtyfour_subset.ttf",
+                "KalniaGlaze.ttf",
+                "Foldit.ttf",
+                "COLRv1-alpha.ttf",
+            ][..],
+        ),
+    ] {
+        for name in names {
+            check_color_locations(name, &root.join(directory).join(name));
+        }
+    }
+}
+
+fn check_color_locations(name: &str, path: &Path) {
+    use sofel_font::var::{Location, Variation};
+    let bytes = std::fs::read(path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let mut positions = vec![("default".to_string(), None, Vec::new())];
+    for i in 0..font.ft_mm_var().unwrap().named_styles().count() {
+        positions.push((format!("named:{i}"), Some(i as u16), Vec::new()));
+    }
+    for axis in font.var_axes() {
+        for (edge, value) in [("min", axis.min), ("max", axis.max)] {
+            positions.push((
+                format!("{}:{edge}", axis.tag),
+                None,
+                vec![Variation {
+                    tag: axis.tag,
+                    value,
+                }],
+            ));
+        }
+    }
+    let mut state = 1u32;
+    for sample in 0..8 {
+        let settings = font
+            .var_axes()
+            .map(|axis| {
+                state = state.wrapping_mul(1103515245).wrapping_add(12345);
+                let t = ((state >> 16) & 0x7fff) as f32 / 32767.0;
+                Variation {
+                    tag: axis.tag,
+                    value: axis.min + (axis.max - axis.min) * t,
+                }
+            })
+            .collect();
+        positions.push((format!("rand:{sample}"), None, settings));
+    }
+    let mut records = 0;
+    let samples = positions.len();
+    let mut scratch = Scratch::default();
+    for (id, named, variations) in positions {
+        let location = Location::new(&font, named, &variations);
+        let mut args = Vec::new();
+        if let Some(index) = named {
+            args.push(format!("--named-instance={index}"));
+        }
+        if !variations.is_empty() {
+            let values: Vec<_> = variations
+                .iter()
+                .map(|v| format!("{}={}", v.tag, v.value))
+                .collect();
+            args.push(format!("--variations={}", values.join(",")));
+        }
+        let ft = Command::new(paths::ft_dump())
+            .arg("--colr")
+            .args(&args)
+            .arg(path)
+            .output()
+            .unwrap();
+        assert!(ft.status.success(), "{name}@{id}");
+        let raw = String::from_utf8(ft.stdout).unwrap();
+        let faces = color::split_faces(&raw);
+        assert_eq!(faces.len(), 1);
+        let items = color::compare_colr_at(name, 0, font.instance(&location), &faces[0].1);
+        assert!(!items.is_empty(), "{name}@{id}");
+        for item in items.iter().filter(|item| item.id.contains(":colr:")) {
+            assert!(item.ok, "{}@{id}: {}", item.id, item.detail);
+        }
+
+        let mut command = Command::new(paths::hb_dump());
+        command.arg("--paint").args(&args).arg(path);
+        let count = read_paint_command(&mut command, 0usize, |count, face, p, pp, g, body| {
+            assert_eq!(face, 0);
+            let result =
+                color::sofel_paint_text_at(font.instance(&location), g, p, pp, 0.0, &mut scratch);
+            if result != body {
+                assert_eq!(
+                    canonical_paint(&result),
+                    canonical_paint(body),
+                    "{name}#{face}:paint:{p}:{pp}:{g}@{id}"
+                );
+            }
+            *count += 1;
+        })
+        .unwrap()
+        .unwrap();
+        assert!(count > 0, "{name}@{id}");
+        records += count;
+    }
+    eprintln!("{name}: {samples} positions, {records} paint records");
+}
+
+// Darwin printf can keep a trailing zero on a tie (1105 as 1.10e+03).
+// Preserve whitespace and compare the same decimal digits on every host.
+fn canonical_paint(text: &str) -> String {
+    text.split_inclusive(char::is_whitespace)
+        .map(|word| {
+            let token = word.trim_end();
+            if let Some((mantissa, exponent)) = token.split_once('e')
+                && mantissa.contains('.')
+                && token.parse::<f32>().is_ok()
+            {
+                let significant = mantissa.trim_end_matches('0').trim_end_matches('.');
+                return format!("{significant}e{exponent}{}", &word[token.len()..]);
+            }
+            word.to_owned()
+        })
+        .collect()
+}
