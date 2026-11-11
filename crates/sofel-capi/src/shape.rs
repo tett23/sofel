@@ -13,9 +13,9 @@ use core::ffi::c_char;
 use sofel_font::read::{GlyphId, Tag};
 use sofel_font::{GlyphExtents, GlyphNames, HbScale};
 use sofel_shape::{
-    BufferFlags, ClusterLevel, DiffFlags, Direction, Feature, GlyphBuffer, GlyphInfo,
-    GlyphPosition, Language, ResolvedProperties, Scale, Script, SegmentProperties, SerializeFlags,
-    SerializeFont, SerializeFormat, ShapePlan, Shaper, UnicodeBuffer,
+    BufferFlags, ClusterLevel, DiffFlags, Direction, Feature, GlyphBuffer, Language,
+    ResolvedProperties, Scale, Script, SegmentProperties, SerializeFlags, SerializeFont,
+    SerializeFormat, ShapePlan, Shaper, UnicodeBuffer,
 };
 
 use crate::{
@@ -1566,13 +1566,20 @@ fn deserialize_glyphs(
     let invalid = |e| (e, 0);
     let format = format_from_c(format).ok_or(invalid(ERROR_INVALID_ARGUMENT))?;
     let direction = direction_from_c(direction).ok_or(invalid(ERROR_INVALID_ARGUMENT))?;
-    let (mut infos, mut positions): (Vec<GlyphInfo>, Vec<GlyphPosition>) = match &b.content {
-        Content::Glyphs(g) => (g.glyph_infos().to_vec(), g.glyph_positions().to_vec()),
-        Content::Unicode(u) if u.is_empty() => (Vec::new(), Vec::new()),
-        Content::Unicode(_) => return Err(invalid(ERROR_BUFFER_CONTENT)),
+    if matches!(&b.content, Content::Unicode(u) if !u.is_empty()) {
+        return Err(invalid(ERROR_BUFFER_CONTENT));
+    }
+    let original = core::mem::replace(&mut b.content, Content::Unicode(UnicodeBuffer::new()));
+    let (spare, mut infos, mut positions) = match original {
+        Content::Unicode(u) => (u, Vec::new(), Vec::new()),
+        Content::Glyphs(g) => {
+            let infos = g.glyph_infos().to_vec();
+            let positions = g.glyph_positions().to_vec();
+            (g.into_unicode(), infos, positions)
+        }
     };
     let read = sofel_shape::deserialize_glyphs(text, format, font, &mut infos, &mut positions);
-    b.content = Content::Glyphs(GlyphBuffer::from_parts(direction, infos, positions));
+    b.content = Content::Glyphs(spare.into_glyphs(direction, infos, positions));
     read.map(|()| text.len())
         .map_err(|e| (ERROR_INVALID_ARGUMENT, e.consumed))
 }

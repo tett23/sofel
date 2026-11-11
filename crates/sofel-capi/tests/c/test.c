@@ -1893,6 +1893,98 @@ static void test_shape_buffers(void) {
   sofel_language_destroy(ja);
 }
 
+static sofel_buffer_t *configured_buffer(void) {
+  sofel_buffer_t *b = sofel_buffer_create();
+  CHECK(b != NULL);
+  CHECK(sofel_buffer_set_flags(b, SOFEL_BUFFER_FLAG_BOT) == SOFEL_OK);
+  CHECK(sofel_buffer_set_cluster_level(b, SOFEL_CLUSTER_LEVEL_CHARACTERS) == SOFEL_OK);
+  CHECK(sofel_buffer_set_replacement_codepoint(b, 63) == SOFEL_OK);
+  CHECK(sofel_buffer_set_invisible_glyph(b, 3) == SOFEL_OK);
+  CHECK(sofel_buffer_set_not_found_glyph(b, 4) == SOFEL_OK);
+  CHECK(sofel_buffer_set_not_found_variation_selector_glyph(b, 5) == SOFEL_OK);
+  CHECK(sofel_buffer_set_random_state(b, 6) == SOFEL_OK);
+  return b;
+}
+
+static void check_reusable_buffer(sofel_buffer_t *b) {
+  sofel_buffer_t *control = configured_buffer();
+  uint32_t got, want;
+  int32_t level, control_level;
+  size_t n;
+  CHECK(sofel_buffer_clear(control) == SOFEL_OK);
+  CHECK(sofel_buffer_clear(b) == SOFEL_OK);
+  CHECK(sofel_buffer_length(b, &n) == SOFEL_OK && n == 0);
+  CHECK(sofel_buffer_get_flags(control, &want) == SOFEL_OK);
+  CHECK(sofel_buffer_get_flags(b, &got) == SOFEL_OK && got == want);
+  CHECK(sofel_buffer_get_cluster_level(control, &control_level) == SOFEL_OK);
+  CHECK(sofel_buffer_get_cluster_level(b, &level) == SOFEL_OK && level == control_level);
+  CHECK(sofel_buffer_get_replacement_codepoint(control, &want) == SOFEL_OK);
+  CHECK(sofel_buffer_get_replacement_codepoint(b, &got) == SOFEL_OK && got == want);
+  CHECK(sofel_buffer_get_invisible_glyph(control, &want) == SOFEL_OK);
+  CHECK(sofel_buffer_get_invisible_glyph(b, &got) == SOFEL_OK && got == want);
+  CHECK(sofel_buffer_get_not_found_glyph(control, &want) == SOFEL_OK);
+  CHECK(sofel_buffer_get_not_found_glyph(b, &got) == SOFEL_OK && got == want);
+  CHECK(sofel_buffer_get_not_found_variation_selector_glyph(control, &want) == SOFEL_OK);
+  CHECK(sofel_buffer_get_not_found_variation_selector_glyph(b, &got) == SOFEL_OK && got == want);
+  CHECK(sofel_buffer_get_random_state(control, &want) == SOFEL_OK);
+  CHECK(sofel_buffer_get_random_state(b, &got) == SOFEL_OK && got == want);
+  CHECK(got == 1);
+  CHECK(sofel_buffer_add(b, 0x41, 0) == SOFEL_OK);
+  sofel_buffer_destroy(control);
+  sofel_buffer_destroy(b);
+}
+
+static void inv1_clear_after_deserialize(const sofel_font_t *font) {
+  const uint32_t formats[] = {SOFEL_SERIALIZE_FORMAT_TEXT, SOFEL_SERIALIZE_FORMAT_JSON};
+  const char *items[] = {"[gid1]", "[{\"g\":1}]"};
+  sofel_segment_t seg = {SOFEL_DIRECTION_LTR, 0, NULL};
+  for (size_t f = 0; f < 2; ++f) {
+    for (int mode = 0; mode < 3; ++mode) {
+      sofel_buffer_t *b = configured_buffer();
+      if (mode == 2) {
+        CHECK(sofel_buffer_add(b, 0x41, 0) == SOFEL_OK);
+        CHECK(sofel_shape_fallback(font, NULL, NULL, &seg, b) == SOFEL_OK);
+      }
+      for (int i = 0; i < (mode == 1 ? 2 : 1); ++i) {
+        size_t consumed;
+        CHECK(sofel_buffer_deserialize_glyphs(b, items[f], strlen(items[f]), &consumed, NULL,
+                                              NULL, seg.direction, formats[f]) == SOFEL_OK);
+        CHECK(consumed == strlen(items[f]));
+      }
+      check_reusable_buffer(b);
+    }
+  }
+}
+
+static void inv2_clear_after_parse_error(void) {
+  const struct {
+    uint32_t format;
+    const char *input;
+    size_t consumed, glyphs;
+  } cases[] = {
+      {SOFEL_SERIALIZE_FORMAT_TEXT, "", 0, 0},
+      {SOFEL_SERIALIZE_FORMAT_TEXT, ",", 0, 0},
+      {SOFEL_SERIALIZE_FORMAT_TEXT, "[1=0|2=?]", 7, 1},
+      {SOFEL_SERIALIZE_FORMAT_JSON, "", 0, 0},
+      {SOFEL_SERIALIZE_FORMAT_JSON, "!", 0, 0},
+      {SOFEL_SERIALIZE_FORMAT_JSON, "[{\"g\":1},?]", 9, 1},
+  };
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    sofel_buffer_t *b = configured_buffer();
+    size_t consumed, n;
+    CHECK(sofel_buffer_deserialize_glyphs(b, cases[i].input, strlen(cases[i].input), &consumed,
+                                          NULL, NULL, SOFEL_DIRECTION_LTR, cases[i].format) ==
+          SOFEL_ERROR_INVALID_ARGUMENT);
+    CHECK(consumed == cases[i].consumed);
+    CHECK(sofel_buffer_length(b, &n) == SOFEL_OK && n == cases[i].glyphs);
+    if (n) {
+      uint32_t gid;
+      CHECK(sofel_buffer_glyphs(b, &gid, NULL, NULL, NULL, 1) == 1 && gid == 1);
+    }
+    check_reusable_buffer(b);
+  }
+}
+
 /* Glyphs read from their serialization, written back and compared. */
 static void test_shape_glyph_buffers(const sofel_font_t *font) {
   static const char glyphs_text[] = "[gid1=0+500|gid2=1@10,20+0]";
@@ -2746,6 +2838,8 @@ int main(void) {
   test_color();
   test_shape_values();
   test_shape_buffers();
+  inv1_clear_after_deserialize(font);
+  inv2_clear_after_parse_error();
   test_shape_glyph_buffers(font);
   test_shape_fixture_font(font);
   test_shape_ppem();
