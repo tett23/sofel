@@ -248,16 +248,10 @@ fn i06_shape_cases_match_harfbuzz() {
     let reasons = expect::parse_reasons(include_str!(
         "../../../conformance/expected-failures-extra-fonts.txt"
     ));
-    for (id, ok, code, stderr, _) in &results {
+    for (id, ok, code, _, _) in &results {
         if !ok {
             let reason = reasons.get(id).map(String::as_str).unwrap_or("");
-            if reason.starts_with("variations:") {
-                assert_eq!(*code, 2, "{id}: expected unsupported variation option");
-                assert!(
-                    stderr.contains("--variations is not supported"),
-                    "{id}: {stderr}"
-                );
-            } else if reason.starts_with("shaper:") {
+            if reason.starts_with("shaper:") {
                 assert_eq!(*code, 0, "{id}: expected a shaper difference");
             }
         }

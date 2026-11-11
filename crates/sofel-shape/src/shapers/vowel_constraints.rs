@@ -63,7 +63,11 @@ pub(crate) fn preprocess_vowel_constraints(buffer: &mut Buffer) {
 }
 
 /// [`preprocess_vowel_constraints`] as a shaper's `preprocess_text`.
-pub(crate) fn preprocess_text(_: &ShapePlan<'_>, buffer: &mut Buffer, _: &ShapeFont<'_, '_>) {
+pub(crate) fn preprocess_text(
+    _: &ShapePlan<'_>,
+    buffer: &mut Buffer,
+    _: &ShapeFont<'_, '_, '_, '_>,
+) {
     preprocess_vowel_constraints(buffer);
 }
 

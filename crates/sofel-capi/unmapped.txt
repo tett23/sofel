@@ -19,6 +19,8 @@ sofel_font::var::Instance::v_advance_with_scratch Rust work-area variant of the 
 sofel_font::var::Instance::scaled_v_advance_with_scratch Rust work-area variant of the C scaled vertical advance query (ADR 0027).
 sofel_font::var::Instance::scaled_v_origin_with_scratch Rust work-area variant of the C vertical origin query (ADR 0027).
 sofel_font::var::Instance::glyf_extents_with_scratch Rust work-area variant of the C glyph extents query (ADR 0027).
+sofel_font::var::Instance::ft_h_advance_with_scratch Rust work-area variant of sofel_font_ft_h_advance; the C query uses the ordinary Rust entry (ADR 0048).
+sofel_font::var::Instance::ft_v_advance_with_scratch Rust work-area variant of sofel_font_ft_v_advance; the C query uses the ordinary Rust entry (ADR 0048).
 sofel_font::var::gvar::apply_hb Internal HarfBuzz gvar point evaluation; C gets the resulting font values through coordinate-dependent queries (ADR 0030).
 sofel_font::var::gvar::apply_ft Internal FreeType gvar point evaluation; C gets the resulting outline through sofel_outline_load and sofel_outline_draw (ADR 0030).
 sofel_font::var::Location::default_ref The NULL location argument will represent the static default for C coordinate-dependent queries in the ADR 0027 query PR.
@@ -195,6 +197,6 @@ sofel_subset::RangeSet::max The last member, found with sofel_subset_input_set_n
 sofel_subset::RangeSet::remove_range A loop of sofel_subset_input_set_remove over the members found with sofel_subset_input_set_next (ADR 0022).
 sofel_subset::RangeSet::truncate As sofel_subset::RangeSet::remove_range, for every member from a value on (ADR 0022).
 sofel_subset::RangeSet::union A loop of sofel_subset_input_set_add over the other set's members (ADR 0022).
-sofel_font::var::Instance::font C callers already hold the font paired with the location.
+sofel_shape::ShapePlan::variations_index_for C creates a plan with sofel_shape_plan_create for the chosen location; this Rust helper is for plan-cache keys.
 sofel_color::RawPaintGraph::* The reusable raw paint table view; C reads the bytes with sofel_font_table.
 sofel_color::FtPaintGraph::* The location-resolved raw COLR tree; the C paint API exposes the walked commands.
