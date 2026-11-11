@@ -25,10 +25,6 @@ FreeType の丸めの順序、係数のキャッシュの同一性、空の座�
 [ADR 0027](adr/0027-variable-fonts.md) と [ADR 0029](adr/0029-variation-deltas.md) の本文は変更していない。
 
 
-### [ADR 0020](adr/0020-shaping-foundation.md): シェーピングの土台
-
-[ADR 0024](adr/0024-complex-shapers.md) の全シェーパーを実装し、期待失敗の一覧から `shaper:*` が消えた。残る470件は [ADR 0020](adr/0020-shaping-foundation.md) と [ADR 0044](adr/0044-shaping-conformance-exceptions.md) で認めた分類に含まれる。
-
 ### [ADR 0022](adr/0022-subsetting.md): サブセット化
 
 [ADR 0022](adr/0022-subsetting.md) は採択（未実装）で、段階ごとに実装している。PR #42 までで、レイアウトの段階などが main に入った。10段階目（gvar、GVAR、HVAR、VVAR、ピン留めなしの CFF2、GDEF、BASE、COLR の項目の変化量の記憶）は、可変フォントの [ADR 0027](adr/0027-variable-fonts.md) の読み取り部分を使って実装する。VARC は13段階目まで待つ。[ADR 0022](adr/0022-subsetting.md) のステータスを採択にする条件は、[ADR 0027](adr/0027-variable-fonts.md) の採択と、10段階目の実装である。
