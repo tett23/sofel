@@ -4,8 +4,8 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-use sofel_font::Font;
 use sofel_font::read::Tag;
+use sofel_font::{Font, HbCff2};
 
 use crate::bits::BitSet;
 use crate::cmap_accel::CmapAccel;
@@ -297,10 +297,16 @@ impl Plan {
         // variations kept it is stage 10.
         let cff2 = Tag::new(b"CFF2");
         let full_instance = pinned && !norm.normalized_coords.is_empty();
+        let cff2_without_subroutines = HbCff2::new(font).is_some_and(|cff| {
+            cff.global_subrs().is_empty()
+                && (0..cff.fd_array().len()).all(|fd| cff.private(fd).0.is_empty())
+        });
         if font.table(cff2).is_some()
             && !drop.contains(cff2.to_u32())
             && !no_subset.contains(cff2.to_u32())
             && !full_instance
+            && !input.flags().has(Flags::DESUBROUTINIZE)
+            && !cff2_without_subroutines
         {
             return Err(SubsetError::Unsupported {
                 tag: cff2,
