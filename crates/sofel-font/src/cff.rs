@@ -551,6 +551,15 @@ impl<'a> Cff<'a> {
     /// The Private DICT of Font DICT `fd` (of the Top DICT without an
     /// FDArray), at the default instance; all zero when there is none.
     pub fn private_dict(&self, fd: u32) -> Option<PrivateDict> {
+        self.private_dict_with_blend(fd, &self.default_blend())
+    }
+
+    /// The Private DICT evaluated with the CFF2 weights of one location.
+    pub fn private_dict_with_blend(
+        &self,
+        fd: u32,
+        blend: &dyn BlendWeights,
+    ) -> Option<PrivateDict> {
         let (size, offset, cid_stop) = match self.fd_array {
             Some(_) => {
                 let f = self.font_dict(fd)?;
@@ -562,18 +571,27 @@ impl<'a> Cff<'a> {
             return Some(PrivateDict::default());
         }
         let d = private_slice(self.data, size, offset).ok()?;
-        PrivateDict::parse(d, self.version, &self.default_blend()).ok()
+        PrivateDict::parse(d, self.version, blend).ok()
     }
 
     /// The subfont of `glyph` (`cff_decoder_prepare`): `None` for a glyph
     /// id not below the glyph count, an FDSelect index not below the
     /// Font DICT count, or a Font or Private DICT that cannot be read.
     pub fn subfont(&self, glyph: GlyphId) -> Option<Subfont<'a>> {
+        self.subfont_with_blend(glyph, &self.default_blend())
+    }
+
+    /// The subfont of `glyph` with the Private DICT evaluated at one location.
+    pub fn subfont_with_blend(
+        &self,
+        glyph: GlyphId,
+        blend: &dyn BlendWeights,
+    ) -> Option<Subfont<'a>> {
         if glyph.0 >= self.num_glyphs() {
             return None;
         }
         let Some(fda) = self.fd_array else {
-            return self.subfont_of(0);
+            return self.subfont_of_with_blend(0, blend);
         };
         let fd = self
             .fd_select
@@ -581,14 +599,18 @@ impl<'a> Cff<'a> {
         if fd >= fda.len() {
             return None;
         }
-        self.subfont_of(fd)
+        self.subfont_of_with_blend(fd, blend)
     }
 
     /// The subfont of Font DICT `fd` (of the Top DICT without an
     /// FDArray).
     fn subfont_of(&self, fd: u32) -> Option<Subfont<'a>> {
+        self.subfont_of_with_blend(fd, &self.default_blend())
+    }
+
+    fn subfont_of_with_blend(&self, fd: u32, blend: &dyn BlendWeights) -> Option<Subfont<'a>> {
         if self.fd_array.is_none() {
-            let private = self.private_dict(0)?;
+            let private = self.private_dict_with_blend(0, blend)?;
             let local_subrs = self.local_subrs(&private, self.top.private_offset)?;
             return Some(Subfont {
                 fd: 0,
@@ -598,7 +620,7 @@ impl<'a> Cff<'a> {
             });
         }
         let f = self.font_dict(fd)?;
-        let private = self.private_dict(fd)?;
+        let private = self.private_dict_with_blend(fd, blend)?;
         let local_subrs = if f.cid_registry == NO_SID {
             self.local_subrs(&private, f.private_offset)?
         } else {

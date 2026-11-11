@@ -8,6 +8,82 @@ mod build;
 use build::{Buf, name, sample_tables_with_glyf, sfnt, utf16be};
 use sofel_capi::*;
 
+#[test]
+fn adr0030_i06_cff2_blend_vector_c_abi_preserves_columns_and_short_buffer() {
+    let store = build::item_variation_store(
+        1,
+        &[vec![(0, 0x4000, 0x4000)], vec![(0, 0, 0)]],
+        &[vec![0, 1, 0]],
+    );
+    let table = build::cff2(&build::Cff2Spec {
+        charstrings: vec![Vec::new()],
+        fds: vec![(Vec::new(), Vec::new())],
+        vstore: Some(store),
+        ..build::Cff2Spec::default()
+    });
+    let bytes = build::otto_font(1, vec![(b"CFF2", table), (b"fvar", fvar_one_axis())]);
+    let mut error = -99;
+    // SAFETY: font bytes remain live through handle destruction.
+    let font = unsafe { sofel_font_create(bytes.as_ptr(), bytes.len(), 0, &mut error) };
+    assert_eq!(error, OK);
+    let mut len = 0;
+    // SAFETY: font and len are live; NULL output with zero capacity is valid.
+    assert_eq!(
+        unsafe {
+            sofel_cff2_blend_vector(
+                font,
+                core::ptr::null(),
+                0,
+                core::ptr::null_mut(),
+                0,
+                &mut len,
+            )
+        },
+        ERROR_BUFFER_TOO_SMALL
+    );
+    assert_eq!(len, 4);
+    let mut out = [7; 4];
+    // SAFETY: font and output are live and writable.
+    assert_eq!(
+        unsafe {
+            sofel_cff2_blend_vector(font, core::ptr::null(), 0, out.as_mut_ptr(), 3, &mut len)
+        },
+        ERROR_BUFFER_TOO_SMALL
+    );
+    assert_eq!(out, [7; 4]);
+    // SAFETY: font and output are live and writable.
+    assert_eq!(
+        unsafe {
+            sofel_cff2_blend_vector(font, core::ptr::null(), 0, out.as_mut_ptr(), 4, &mut len)
+        },
+        OK
+    );
+    assert_eq!((out, len), ([0x10000, 0, 0, 0], 4));
+    let coords = [1.0f32];
+    let mut location = core::ptr::null_mut();
+    // SAFETY: font, coordinates and output are live.
+    assert_eq!(
+        unsafe { sofel_location_create_design(font, coords.as_ptr(), 1, &mut location) },
+        OK
+    );
+    // SAFETY: font, location and output are live.
+    assert_eq!(
+        unsafe { sofel_cff2_blend_vector(font, location, 0, out.as_mut_ptr(), 4, &mut len) },
+        OK
+    );
+    assert_eq!((out, len), ([0x10000; 4], 4));
+    // SAFETY: font, location and output are live.
+    assert_eq!(
+        unsafe { sofel_cff2_blend_vector(font, location, 1, out.as_mut_ptr(), 4, &mut len) },
+        ERROR_INVALID_ARGUMENT
+    );
+    // SAFETY: handles are owned and no longer used.
+    unsafe {
+        sofel_location_destroy(location);
+        sofel_font_destroy(font);
+    }
+}
+
 fn fvar_one_axis() -> Vec<u8> {
     let mut fvar = vec![0, 1, 0, 0, 0, 16, 0, 2, 0, 1, 0, 20, 0, 0, 0, 8];
     fvar.extend_from_slice(b"wght");
