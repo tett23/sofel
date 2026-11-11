@@ -411,7 +411,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target/bench-c
-          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-${{ runner.arch }}-benchmark-libraries-${{ steps.native-toolchain.outputs.key }}-${{ hashFiles('.github/workflows/ci.yml', 'testdata.lock', 'bench/build-c.sh', 'scripts/build-bench-c.sh', 'bench/c/**', 'bench/fetch-wasi-sdk.sh', 'bench/wasi-sdk.lock', 'tools/ft-dump/ftmodule.h') }}
+          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-${{ runner.arch }}-benchmark-libraries-${{ steps.native-toolchain.outputs.key }}-${{ hashFiles('.github/workflows/ci.yml', 'testdata.lock', 'bench/build-c.sh', 'bench/split-harfbuzz.awk', 'scripts/build-bench-c.sh', 'bench/c/**', 'bench/fetch-wasi-sdk.sh', 'bench/wasi-sdk.lock', 'tools/ft-dump/ftmodule.h') }}
       - name: Build FreeType and HarfBuzz
         if: steps.benchmark-libraries.outputs.cache-hit != 'true'
         run: sh scripts/measure-process-tree.sh sh scripts/build-bench-c.sh

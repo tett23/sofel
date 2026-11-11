@@ -64,12 +64,16 @@ do
     -c "$ft/src/$f" -o "$obj/ft/$(echo "$f" | tr / _).o"
 done
 
-# HarfBuzz: the single translation unit with the subsetter
-# (harfbuzz-subset.cc: harfbuzz.cc and the hb-subset files, ADR 0022), as
-# HarfBuzz's own build flags it.
-# shellcheck disable=SC2086
-$cxx $flags $fpflags $hbflags -std=c++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -w \
-  -I "$hb/src" -c "$hb/src/harfbuzz-subset.cc" -o "$obj/hb/harfbuzz.o"
+# HarfBuzz: compile the upstream subset include list in four ordered
+# translation units using the same flags (ADR 0038).
+mkdir "$obj/hb/units"
+awk -v out="$obj/hb/units" -f "$here/split-harfbuzz.awk" "$hb/src/harfbuzz-subset.cc"
+for unit in "$obj"/hb/units/part-*.cc; do
+  name=${unit##*/}
+  # shellcheck disable=SC2086
+  $cxx $flags $fpflags $hbflags -std=c++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -w \
+    -I "$hb/src" -c "$unit" -o "$obj/hb/${name%.cc}.o"
+done
 
 # shellcheck disable=SC2086
 $cc $flags -I "$ft/include" -I "$hb/src" -c "$here/c/shim.c" -o "$obj/shim/shim.o"
