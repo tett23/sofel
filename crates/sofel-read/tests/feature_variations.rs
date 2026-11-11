@@ -165,6 +165,13 @@ fn adr0046_i1_lookup_variation_views_and_version_boundary() {
     assert_eq!(indices.len(), 2);
     assert_eq!(indices.get(0), Some(4));
     assert_eq!(indices.get(1), Some(5));
+    assert_eq!(
+        FeatureVariations::new(&[0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0])
+            .unwrap()
+            .lookup_record_count(),
+        0
+    );
+    assert!(FeatureVariations::new(&data[..17]).is_err());
 
     data[3] = 0;
     assert_eq!(
