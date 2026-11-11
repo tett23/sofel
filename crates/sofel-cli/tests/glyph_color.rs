@@ -169,9 +169,11 @@ fn inv3_gray_fallback() {
             &mut image,
         )
         .unwrap();
-        let ColorGlyph::Gray(bitmap) = actual else {
-            panic!("expected grayscale fallback")
+        let gray = match actual {
+            ColorGlyph::Gray(bitmap) => Some(bitmap),
+            _ => None,
         };
+        let bitmap = gray.unwrap();
         assert_eq!(
             (bitmap.left, bitmap.top, bitmap.width, bitmap.rows),
             expected_box

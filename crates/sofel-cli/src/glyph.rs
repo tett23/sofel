@@ -156,9 +156,11 @@ pub fn render_color<'r>(
     }
     let palette: Vec<Color> = match options.palette {
         Palette::Font(index) => {
-            let selected = (index < sofel_color::palette_count(font))
-                .then_some(index)
-                .unwrap_or(0);
+            let selected = if index < sofel_color::palette_count(font) {
+                index
+            } else {
+                0
+            };
             sofel_color::palette_colors(font, selected).collect()
         }
         Palette::Custom(colors) => colors.to_vec(),
