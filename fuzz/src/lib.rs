@@ -6,6 +6,7 @@ use sofel_read::cmap::Cmap;
 use sofel_read::head::Head;
 use sofel_read::hhea::Hhea;
 use sofel_read::hmtx::Hmtx;
+use sofel_read::item_variation::ItemVariationStore;
 use sofel_read::maxp::Maxp;
 use sofel_read::sfnt::{FontFile, Sfnt};
 use sofel_read::feature_variations::FeatureVariations;
@@ -173,31 +174,150 @@ pub fn check_variation_store(input: &[u8]) {
     };
     let cached = font.instance(&location);
     let live = other.instance(&location);
-    for outer in 0..4 {
-        for inner in 0..8 {
-            let h = cached.item_delta::<sofel_font::var::HbF32>(
-                sofel_font::var::StoreKind::Hvar,
-                outer,
-                inner,
-            );
-            let h_live = live.item_delta::<sofel_font::var::HbF32>(
-                sofel_font::var::StoreKind::Hvar,
-                outer,
-                inner,
-            );
-            assert_eq!(h.map(f32::to_bits), h_live.map(f32::to_bits));
-            let f = cached.item_delta::<sofel_font::var::Ft>(
-                sofel_font::var::StoreKind::Hvar,
-                outer,
-                inner,
-            );
-            let f_live = live.item_delta::<sofel_font::var::Ft>(
-                sofel_font::var::StoreKind::Hvar,
-                outer,
-                inner,
-            );
-            assert_eq!(f, f_live);
+    for (outer, inner) in variation_rows(store, u16::from_be_bytes(*coordinate)) {
+        let h = cached.item_delta::<sofel_font::var::HbF32>(
+            sofel_font::var::StoreKind::Hvar,
+            outer,
+            inner,
+        );
+        let h_live = live.item_delta::<sofel_font::var::HbF32>(
+            sofel_font::var::StoreKind::Hvar,
+            outer,
+            inner,
+        );
+        assert_eq!(h.map(f32::to_bits), h_live.map(f32::to_bits));
+        let f = cached.item_delta::<sofel_font::var::Ft>(
+            sofel_font::var::StoreKind::Hvar,
+            outer,
+            inner,
+        );
+        let f_live = live.item_delta::<sofel_font::var::Ft>(
+            sofel_font::var::StoreKind::Hvar,
+            outer,
+            inner,
+        );
+        assert_eq!(f, f_live);
+    }
+}
+
+fn variation_rows(store: &[u8], seed: u16) -> Vec<(u16, u16)> {
+    // Compare every declared row in small stores. Larger stores use at most
+    // 256 disjoint strata plus three out-of-range probes per fuzz input.
+    const MAX_VALID_ROWS: usize = 256;
+    let Ok(store) = ItemVariationStore::new(store) else {
+        return vec![(0, 0), (u16::MAX, u16::MAX)];
+    };
+    let data: Vec<_> = (0..store.data_count())
+        .filter_map(|outer| {
+            store
+                .item_data(outer)
+                .filter(|item| item.item_count != 0)
+                .map(|item| (outer, item.item_count))
+        })
+        .collect();
+    let total: u64 = data.iter().map(|(_, count)| u64::from(*count)).sum();
+    let mut rows = Vec::new();
+    if total <= MAX_VALID_ROWS as u64 {
+        for &(outer, count) in &data {
+            rows.extend((0..count).map(|inner| (outer, inner)));
         }
+    } else {
+        let mut state = u64::from(seed) | 1;
+        for slot in 0..MAX_VALID_ROWS {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let start = slot as u64 * total / MAX_VALID_ROWS as u64;
+            let end = (slot as u64 + 1) * total / MAX_VALID_ROWS as u64;
+            let index = if slot == 0 {
+                0
+            } else if slot + 1 == MAX_VALID_ROWS {
+                total - 1
+            } else {
+                start + state % (end - start)
+            };
+            let mut remaining = index;
+            for &(outer, count) in &data {
+                if remaining < u64::from(count) {
+                    rows.push((outer, remaining as u16));
+                    break;
+                }
+                remaining -= u64::from(count);
+            }
+        }
+    }
+    rows.push((0, 0));
+    if let Some(&(outer, count)) = data.first() {
+        rows.push((outer, count));
+    }
+    rows.push((store.data_count(), 0));
+    rows.push((u16::MAX, u16::MAX));
+    rows.sort_unstable();
+    rows.dedup();
+    rows
+}
+
+#[cfg(test)]
+mod variation_row_tests {
+    use super::{check_variation_store, variation_rows};
+
+    fn store(outer_count: u16, item_count: u16) -> Vec<u8> {
+        let regions_at = 8 + usize::from(outer_count) * 4;
+        let data_at = regions_at + 10;
+        let mut data = Vec::new();
+        data.extend_from_slice(&1u16.to_be_bytes());
+        data.extend_from_slice(&u32::try_from(regions_at).unwrap().to_be_bytes());
+        data.extend_from_slice(&outer_count.to_be_bytes());
+        for _ in 0..outer_count {
+            data.extend_from_slice(&u32::try_from(data_at).unwrap().to_be_bytes());
+        }
+        data.extend_from_slice(&[0, 1, 0, 1, 0, 0, 0x40, 0, 0x40, 0]);
+        data.extend_from_slice(&item_count.to_be_bytes());
+        data.extend_from_slice(&0u16.to_be_bytes());
+        data.extend_from_slice(&1u16.to_be_bytes());
+        data.extend_from_slice(&0u16.to_be_bytes());
+        data.extend(std::iter::repeat_n(1u8, usize::from(item_count).min(300)));
+        data
+    }
+
+    #[test]
+    fn adr0029_fuzz_checks_all_moderate_rows_beyond_old_prefix() {
+        let store = store(5, 9);
+        let rows = variation_rows(&store, 0x5eed);
+        for outer in 0..5 {
+            for inner in 0..9 {
+                assert!(rows.contains(&(outer, inner)), "missing ({outer}, {inner})");
+            }
+        }
+        assert_eq!(rows.len(), 48);
+        let mut input = 0x5eedu16.to_be_bytes().to_vec();
+        input.extend_from_slice(&store);
+        check_variation_store(&input);
+    }
+
+    #[test]
+    fn adr0030_fuzz_large_declared_rows_are_bounded_and_reach_edges() {
+        let store = store(1, u16::MAX);
+        let rows = variation_rows(&store, 0x5eed);
+        assert_eq!(rows.len(), 259);
+        assert_eq!(rows, variation_rows(&store, 0x5eed));
+        assert_ne!(rows, variation_rows(&store, 0x5eee));
+        assert!(rows.contains(&(0, 0)));
+        assert!(rows.contains(&(0, u16::MAX - 1)));
+        assert!(rows.contains(&(0, u16::MAX)));
+        assert!(rows.contains(&(u16::MAX, u16::MAX)));
+        assert!(rows.iter().any(|&(outer, inner)| outer == 0 && inner > 8));
+        let mut input = 0x5eedu16.to_be_bytes().to_vec();
+        input.extend_from_slice(&store);
+        check_variation_store(&input);
+    }
+
+    #[test]
+    fn adr0030_fuzz_row_limit_exact_and_one_over() {
+        let exact = variation_rows(&store(4, 64), 0x5eed);
+        assert_eq!(exact.len(), 259);
+        assert!(exact.contains(&(3, 63)));
+        let over = variation_rows(&store(1, 257), 0x5eed);
+        assert_eq!(over.len(), 259);
+        assert!(over.contains(&(0, 256)));
     }
 }
 
