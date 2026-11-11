@@ -501,12 +501,12 @@ impl Plan {
             && !full_instance
             && !flags.has(Flags::DESUBROUTINIZE)
             && crate::tables::cff::uses_subroutines(font, p.glyphs.new_to_old.as_slice())
-            && (flags.has(Flags::NO_HINTING)
-                || !crate::tables::cff::supports_subroutines(
-                    font,
-                    p.glyphs.new_to_old.as_slice(),
-                    p.num_output_glyphs,
-                ))
+            && !crate::tables::cff::supports_subroutines(
+                font,
+                p.glyphs.new_to_old.as_slice(),
+                p.num_output_glyphs,
+                flags.has(Flags::NO_HINTING),
+            )
         {
             return Err(SubsetError::Unsupported {
                 tag: cff2,
