@@ -79,6 +79,10 @@ static void check_declarations(void) {
       sofel_font_h_advance;
   int32_t (*ft_bearing)(const sofel_font_t *, const sofel_location_t *, uint32_t, int16_t *) =
       sofel_font_ft_left_side_bearing;
+  int32_t (*ft_h_advance)(const sofel_font_t *, const sofel_location_t *, uint32_t, uint16_t *) =
+      sofel_font_ft_h_advance;
+  int32_t (*ft_top_bearing)(const sofel_font_t *, const sofel_location_t *, uint32_t, int16_t,
+                            int16_t *) = sofel_font_ft_top_side_bearing;
   int32_t (*table)(const sofel_font_t *, uint32_t, const uint8_t **, size_t *) =
       sofel_font_table;
   sofel_outline_scratch_t *(*scratch_create)(void) = sofel_outline_scratch_create;
@@ -172,6 +176,7 @@ static void check_declarations(void) {
       (const void *)nominal_glyph,   (const void *)variation_glyph,
       (const void *)h_advance,       (const void *)table,
       (const void *)ft_bearing,
+      (const void *)ft_h_advance,    (const void *)ft_top_bearing,
       (const void *)scratch_create,  (const void *)scratch_destroy,
       (const void *)pixel_scale,     (const void *)load,
       (const void *)decompose,       (const void *)draw,
@@ -330,7 +335,16 @@ static int run_queries(const sofel_font_t *font, sofel_outline_scratch_t *scratc
   }
   for (i = 0; i < COUNT(advances); i++) {
     uint32_t a = 0;
+    uint16_t ft_a = 0;
     bad += sofel_font_h_advance(font, NULL, (uint32_t)i, &a) != SOFEL_OK || a != advances[i];
+    int32_t ft_status = sofel_font_ft_h_advance(font, NULL, (uint32_t)i, &ft_a);
+    bad += i < FIXTURE_NUM_GLYPHS
+               ? ft_status != SOFEL_OK || ft_a != (uint16_t)advances[i]
+               : ft_status != SOFEL_ERROR_INVALID_GLYPH;
+  }
+  {
+    int16_t top = 0;
+    bad += sofel_font_ft_top_side_bearing(font, NULL, 0, 0, &top) != SOFEL_OK;
   }
   for (i = 0; i < COUNT(ft_bearings); i++) {
     int16_t b = 12345;

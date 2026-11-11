@@ -628,6 +628,7 @@ pub struct Location<'data> {
 
 impl Location<'static> {
     /// The static default location, usable with any font.
+    #[inline]
     pub fn default_ref() -> &'static Self {
         static DEFAULT: Location<'static> = Location {
             hb_coords: Vec::new(),
@@ -1180,12 +1181,32 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
     }
 
     /// Horizontal advance in font units at this location.
+    #[inline]
     pub fn advance(&self, glyph: GlyphId) -> u32 {
-        let base = u32::from(
+        if !self.location.hb_nonzero {
+            return self.base_advance(glyph);
+        }
+        self.varied_advance(glyph)
+    }
+
+    // Keep the owned work area off the default caller's stack frame.
+    #[inline(never)]
+    fn varied_advance(&self, glyph: GlyphId) -> u32 {
+        self.advance_with_scratch(glyph, &mut crate::GlyphScratch::default())
+    }
+
+    #[inline]
+    fn base_advance(&self, glyph: GlyphId) -> u32 {
+        u32::from(
             self.font
                 .metrics
                 .advance(glyph, self.font.hb_units_per_em() / 2),
-        );
+        )
+    }
+
+    /// Horizontal advance using a reusable glyf variation work area.
+    pub fn advance_with_scratch(&self, glyph: GlyphId, scratch: &mut crate::GlyphScratch) -> u32 {
+        let base = self.base_advance(glyph);
         if !self.font.metrics.has_data() || !self.location.hb_nonzero {
             return base;
         }
@@ -1194,7 +1215,12 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
             .table(Tag::new(b"HVAR"))
             .and_then(|data| Hvar::new(data).ok())
         else {
-            return base;
+            let Some(phantoms) = crate::hb_glyf::phantoms(*self, glyph, scratch) else {
+                return base;
+            };
+            let value = hb_roundf32(phantoms[1].x - phantoms[0].x);
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            return value.clamp(0.0, f64::from(u32::MAX)) as u32;
         };
         self.advance_with_delta(glyph, base, StoreKind::Hvar, hvar.advance_map())
     }
@@ -1231,6 +1257,9 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
 
     /// Horizontal font extents at a HarfBuzz scale.
     pub fn scaled_h_extents(&self, scale: &HbScale) -> FontExtents {
+        if !self.font.has_variable_h_extents {
+            return scale.h_extents(self.font);
+        }
         let get = |tag| self.scaled_metrics_position(scale, tag);
         match (
             get(MetricsTag::HorizontalAscender),
@@ -1269,9 +1298,24 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
     }
 
     /// Vertical advance in font units at this location.
+    #[inline]
     pub fn v_advance(&self, glyph: GlyphId) -> i32 {
-        if !self.font.vmetrics.has_data() {
+        if !self.location.hb_nonzero && !self.font.has_variable_h_extents {
             return HbScale::unscaled(self.font).v_advance(self.font, glyph);
+        }
+        self.varied_v_advance(glyph)
+    }
+
+    #[inline(never)]
+    fn varied_v_advance(&self, glyph: GlyphId) -> i32 {
+        self.v_advance_with_scratch(glyph, &mut crate::GlyphScratch::default())
+    }
+
+    /// Vertical advance using a reusable glyf variation work area.
+    pub fn v_advance_with_scratch(&self, glyph: GlyphId, scratch: &mut crate::GlyphScratch) -> i32 {
+        if !self.font.vmetrics.has_data() {
+            let extents = self.h_extents();
+            return extents.descender.wrapping_sub(extents.ascender);
         }
         let base = u32::from(
             self.font
@@ -1282,9 +1326,20 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
             self.font
                 .table(Tag::new(b"VVAR"))
                 .and_then(|data| Vvar::new(data).ok())
-                .map_or(base, |vvar| {
-                    self.advance_with_delta(glyph, base, StoreKind::Vvar, vvar.advance_map())
-                })
+                .map_or_else(
+                    || {
+                        let Some(phantoms) = crate::hb_glyf::phantoms(*self, glyph, scratch) else {
+                            return base;
+                        };
+                        let value = hb_roundf32(phantoms[2].y - phantoms[3].y);
+                        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                        let result = value.clamp(0.0, f64::from(u32::MAX)) as u32;
+                        result
+                    },
+                    |vvar| {
+                        self.advance_with_delta(glyph, base, StoreKind::Vvar, vvar.advance_map())
+                    },
+                )
         } else {
             base
         };
@@ -1295,10 +1350,21 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
 
     /// Vertical advance at a HarfBuzz scale, including the font-extents fallback.
     pub fn scaled_v_advance(&self, scale: &HbScale, glyph: GlyphId) -> i32 {
+        self.scaled_v_advance_with_scratch(scale, glyph, &mut crate::GlyphScratch::default())
+    }
+
+    /// Scaled vertical advance using a reusable glyf variation work area.
+    pub fn scaled_v_advance_with_scratch(
+        &self,
+        scale: &HbScale,
+        glyph: GlyphId,
+        scratch: &mut crate::GlyphScratch,
+    ) -> i32 {
         if !self.font.vmetrics.has_data() {
-            return scale.v_advance(self.font, glyph);
+            let extents = self.scaled_h_extents(scale);
+            return extents.descender.wrapping_sub(extents.ascender);
         }
-        scale.em_scale_y(self.v_advance(glyph))
+        scale.em_scale_y(self.v_advance_with_scratch(glyph, scratch))
     }
 
     /// Vertical origin in font units at this location.
@@ -1319,6 +1385,22 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
         scale: &HbScale,
         glyph: GlyphId,
         extents: impl Fn(GlyphId) -> Option<GlyphExtents>,
+    ) -> (i32, i32) {
+        self.scaled_v_origin_with_scratch(
+            scale,
+            glyph,
+            extents,
+            &mut crate::GlyphScratch::default(),
+        )
+    }
+
+    /// Scaled vertical origin using a reusable glyf variation work area.
+    pub fn scaled_v_origin_with_scratch(
+        &self,
+        scale: &HbScale,
+        glyph: GlyphId,
+        extents: impl Fn(GlyphId) -> Option<GlyphExtents>,
+        scratch: &mut crate::GlyphScratch,
     ) -> (i32, i32) {
         #[allow(clippy::cast_possible_wrap)]
         // HarfBuzz passes its unsigned advance as hb_position_t.
@@ -1343,12 +1425,42 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
             };
             return (x, scale.em_scalef_y(base + delta));
         }
+        if self.location.hb_nonzero
+            && self.font.vmetrics.has_data()
+            && let Some(phantoms) = crate::hb_glyf::phantoms(*self, glyph, scratch)
+        {
+            return (x, scale.em_scalef_y(phantoms[2].y));
+        }
+        if !self.font.vmetrics.has_data() {
+            let h = self.scaled_h_extents(scale);
+            let advance = i64::from(h.ascender).saturating_sub(i64::from(h.descender));
+            let y = extents(glyph).map_or(h.ascender, |bounds| {
+                let value = i64::from(bounds.y_bearing)
+                    .saturating_add(advance.saturating_add(i64::from(bounds.height)) >> 1);
+                i32::try_from(value.clamp(i64::from(i32::MIN), i64::from(i32::MAX))).unwrap_or(0)
+            });
+            return (x, y);
+        }
         let (_, y) = scale.v_origin_scaled(self.font, glyph, extents);
         (x, y)
     }
 
     /// The glyf glyph box in font units at this location.
     pub fn glyf_extents(&self, glyph: GlyphId) -> Option<GlyphExtents> {
+        self.glyf_extents_with_scratch(glyph, &mut crate::GlyphScratch::default())
+    }
+
+    /// The glyf glyph box using a reusable glyf variation work area.
+    pub fn glyf_extents_with_scratch(
+        &self,
+        glyph: GlyphId,
+        scratch: &mut crate::GlyphScratch,
+    ) -> Option<GlyphExtents> {
+        if self.location.hb_nonzero
+            && let Some(extents) = crate::hb_glyf::extents(*self, glyph, scratch)
+        {
+            return Some(extents);
+        }
         HbScale::unscaled(self.font).glyf_extents(self.font, glyph)
     }
 
@@ -1522,6 +1634,40 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
     /// FreeType's left side bearing in font units at this location.
     pub fn ft_left_side_bearing(&self, glyph: GlyphId) -> i16 {
         self.font.ft_metrics.left_side_bearing(glyph)
+    }
+
+    /// FreeType's unscaled horizontal advance after HVAR adjustment.
+    pub fn ft_h_advance(&self, glyph: GlyphId) -> Option<u16> {
+        let base = self.font.ft_h_advance_default(glyph)?;
+        if self.location.ft_default() {
+            return Some(base);
+        }
+        let Some(hvar) = self
+            .font
+            .table(Tag::new(b"HVAR"))
+            .and_then(|data| Hvar::new(data).ok())
+        else {
+            return Some(base);
+        };
+        let index = match hvar.advance_map() {
+            Ok(Some(map)) => map.map(glyph.0),
+            Ok(None) if glyph.0 <= u32::from(u16::MAX) => glyph.0,
+            _ => return Some(base),
+        };
+        let outer = u16::try_from(index >> 16).unwrap_or(0);
+        let inner = u16::try_from(index & 0xffff).unwrap_or(0);
+        let delta = self
+            .item_delta::<Ft>(StoreKind::Hvar, outer, inner)
+            .unwrap_or(0);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        // `tt_face_get_metrics` stores the adjusted FT_Int as FT_UShort.
+        let advance = i32::from(base).wrapping_add(delta) as u16;
+        Some(advance)
+    }
+
+    /// FreeType's unscaled top side bearing; its VVAR callback is absent.
+    pub fn ft_top_side_bearing(&self, glyph: GlyphId, y_max: i16) -> Option<i16> {
+        self.font.ft_top_side_bearing_default(glyph, y_max)
     }
 
     /// FreeType's face metrics at this location.
@@ -1706,6 +1852,7 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
 
 impl<'data> Font<'data> {
     /// Pair this font with a location. The location may originate from another font.
+    #[inline]
     pub fn instance<'font, 'loc, 'source>(
         &'font self,
         location: &'loc Location<'source>,
@@ -1717,6 +1864,7 @@ impl<'data> Font<'data> {
     }
 
     /// Pair this font with the static default location.
+    #[inline]
     pub fn default_instance(&self) -> Instance<'_, 'data, 'static, 'static> {
         self.instance(Location::default_ref())
     }
