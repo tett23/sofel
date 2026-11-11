@@ -172,7 +172,7 @@ fn write_corpus<B: AsRef<[u8]>>(
 struct SofelFont<'a, 'b> {
     font: Font<'a>,
     names: Option<GlyphNames<'a, 'b>>,
-    extents: HbExtents<'a>,
+    extents: HbExtents<'a, 'static, 'static>,
 }
 
 impl SerializeFont for SofelFont<'_, '_> {
@@ -599,7 +599,7 @@ fn serialization_agrees_with_harfbuzz() {
         let sofel = SofelFont {
             font,
             names: font.glyph_names(&mut buf),
-            extents: HbExtents::new(&font),
+            extents: HbExtents::new(font.default_instance()),
         };
         let mut results = Results::default();
         hb_dump("--serialize", &path, &text_file, &sofel, &mut results);

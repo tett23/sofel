@@ -165,7 +165,7 @@ fn outline(font: &Font<'_>, glyph: u32) -> Result<Vec<sofel_geom::Command>, Stri
     let mut pen = Record::default();
     let mut scratch = sofel_outline::Scratch::default();
     sofel_outline::draw(
-        font,
+        font.default_instance(),
         sofel_read::GlyphId(glyph),
         sofel_outline::Scale::Unscaled,
         &mut scratch,
