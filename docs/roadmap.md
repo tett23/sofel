@@ -34,7 +34,6 @@ FreeType の丸めの順序、係数のキャッシュの同一性、空の座�
 各項目の実装状況はリンク先の ADR に記す。
 
 - [ADR 0050](adr/0050-preserve-opentype-script-values.md)：OpenType タグからスクリプトを求める二つの API で、HarfBuzz が返す4バイトを保持する。
-- [ADR 0053](adr/0053-preserve-buffer-settings-after-glyph-deserialization.md)：C API でグリフ列を読み込んだ後も、バッファをクリアして再利用するときは通常のクリアと同じ設定を引き継ぐ。
 
 cmap のフォーマット2と8は、通常のグリフ検索では読み、シェーピングでは HarfBuzz に合わせて対応なしとする処理を実装済みである。[仕様書](specifications.md) に両方の検索規則を記載している。
 
