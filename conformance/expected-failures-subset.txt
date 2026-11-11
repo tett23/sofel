@@ -744,10 +744,6 @@ retain-num-glyphs.tests/NotoSansJP-VF.subset.retain-num-glyphs.all.otf:bytes  # 
 retain-num-glyphs.tests/NotoSansJP-VF.subset.retain-num-glyphs.all.otf+prepared:bytes  # stage:var
 retain-num-glyphs.tests/NotoSansJP-VF.subset.retain-num-glyphs.all.otf:validate  # stage:var
 retain-num-glyphs.tests/NotoSansJP-VF.subset.retain-num-glyphs.all.otf+prepared:validate  # stage:var
-subset_gvar_padding.tests/google_symbols_subset_test.default.all.ttf:bytes  # stage:var
-subset_gvar_padding.tests/google_symbols_subset_test.default.all.ttf+prepared:bytes  # stage:var
-subset_gvar_padding.tests/google_symbols_subset_test.default.all.ttf:validate  # stage:var
-subset_gvar_padding.tests/google_symbols_subset_test.default.all.ttf+prepared:validate  # stage:var
 sync_vmetrics.tests/playwrite_mm.subset.default.all.SPED=25,YEXT=520,wght=100-400,slnt=18.iup_optimize.ttf:bytes  # deferred:iup
 sync_vmetrics.tests/playwrite_mm.subset.default.all.SPED=25,YEXT=520,wght=100-400,slnt=18.iup_optimize.ttf+prepared:bytes  # deferred:iup
 sync_vmetrics.tests/playwrite_mm.subset.default.all.SPED=25,YEXT=520,wght=100-400,slnt=18.iup_optimize.ttf:validate  # deferred:iup

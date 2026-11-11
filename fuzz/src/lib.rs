@@ -147,6 +147,65 @@ pub fn check_gvar(input: &[u8]) {
     }
 }
 
+/// Arbitrary ItemVariationStore bytes in HVAR. Compare a location's cached
+/// scalars with the same coordinates evaluated against a copied font.
+/// The two-byte prefix is a signed 2.14 coordinate; the store is bounded so
+/// one fuzz case cannot allocate unbounded region or delta arrays.
+pub fn check_variation_store(input: &[u8]) {
+    let Some((coordinate, rest)) = input.split_first_chunk::<2>() else {
+        return;
+    };
+    let store = &rest[..rest.len().min(4096)];
+    let mut hvar = vec![0, 1, 0, 0, 0, 0, 0, 20];
+    hvar.extend_from_slice(&[0; 12]);
+    hvar.extend_from_slice(store);
+    let mut tables = vec![
+        (*b"HVAR", hvar),
+        (*b"fvar", fvar_one_axis()),
+        (*b"head", head_table()),
+        (*b"maxp", vec![0, 1, 0, 0, 0, 0, 0, 1]),
+    ];
+    tables.sort();
+    let file = sfnt_otto(&tables);
+    let Ok(font) = sofel_font::Font::new(&file, 0) else {
+        return;
+    };
+    let coord = i32::from(i16::from_be_bytes(*coordinate)).clamp(-0x4000, 0x4000);
+    let location = sofel_font::var::Location::from_normalized_2_14(&font, &[coord]);
+    let copy = file.clone();
+    let Ok(other) = sofel_font::Font::new(&copy, 0) else {
+        return;
+    };
+    let cached = font.instance(&location);
+    let live = other.instance(&location);
+    for outer in 0..4 {
+        for inner in 0..8 {
+            let h = cached.item_delta::<sofel_font::var::HbF32>(
+                sofel_font::var::StoreKind::Hvar,
+                outer,
+                inner,
+            );
+            let h_live = live.item_delta::<sofel_font::var::HbF32>(
+                sofel_font::var::StoreKind::Hvar,
+                outer,
+                inner,
+            );
+            assert_eq!(h.map(f32::to_bits), h_live.map(f32::to_bits));
+            let f = cached.item_delta::<sofel_font::var::Ft>(
+                sofel_font::var::StoreKind::Hvar,
+                outer,
+                inner,
+            );
+            let f_live = live.item_delta::<sofel_font::var::Ft>(
+                sofel_font::var::StoreKind::Hvar,
+                outer,
+                inner,
+            );
+            assert_eq!(f, f_live);
+        }
+    }
+}
+
 /// A standalone FeatureVariations condition-tree reader and validator.
 pub fn check_feature_variations(data: &[u8]) {
     feature_variations::validate(data, Tag::new(b"GSUB"), 0, None, &mut |_| {});
@@ -477,7 +536,7 @@ pub fn check_cff(input: &[u8]) {
         (*tag, table.to_vec()),
     ];
     if flags & 2 != 0 {
-        tables.push((*b"fvar", vec![0, 1, 0, 0, 0, 16, 0, 2, 0, 1, 0, 20, 0, 0, 0, 0]));
+        tables.push((*b"fvar", fvar_one_axis()));
     }
     tables.sort();
     let file = sfnt_otto(&tables);
@@ -541,6 +600,32 @@ pub fn check_cff(input: &[u8]) {
         }
     }
     draw_all(&font);
+    if flags & 3 == 3 {
+        for design in [0.0, 0.5, 1.0] {
+            let location = sofel_font::var::Location::from_design(&font, &[design]);
+            let instance = font.instance(&location);
+            if let Ok(cff) = sofel_font::Cff::new(&font) {
+                for vsindex in 0..4 {
+                    let _ = instance.blend_scalars::<sofel_font::var::HbF64>(vsindex);
+                    let _ = instance.blend_scalars::<sofel_font::var::Ft>(vsindex);
+                }
+                let weights = instance.ft_blend_weights(&cff);
+                for fd in 0..cff.num_font_dicts().max(1).min(4) {
+                    let _ = cff.private_dict_with_blend(fd, &weights);
+                }
+            }
+            let outlines = sofel_outline::Outlines::new(instance);
+            let mut scratch = sofel_outline::Scratch::default();
+            for glyph in 0..font.num_glyphs().min(16) {
+                let _ = outlines.draw(
+                    GlyphId(glyph),
+                    sofel_outline::Scale::Unscaled,
+                    &mut scratch,
+                    &mut sofel_geom::FnPen(|_| {}),
+                );
+            }
+        }
+    }
 }
 
 fn head_table() -> Vec<u8> {
@@ -549,6 +634,16 @@ fn head_table() -> Vec<u8> {
     h[12..16].copy_from_slice(&0x5F0F_3CF5u32.to_be_bytes());
     h[18..20].copy_from_slice(&1000u16.to_be_bytes());
     h
+}
+
+fn fvar_one_axis() -> Vec<u8> {
+    let mut fvar = vec![0, 1, 0, 0, 0, 16, 0, 2, 0, 1, 0, 20, 0, 0, 0, 8];
+    fvar.extend_from_slice(b"wght");
+    for value in [0i32, 0, 0x10000] {
+        fvar.extend_from_slice(&value.to_be_bytes());
+    }
+    fvar.extend_from_slice(&[0, 0, 1, 0]);
+    fvar
 }
 
 /// An `OTTO` sfnt of `tables` (sorted by tag).

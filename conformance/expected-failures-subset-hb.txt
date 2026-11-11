@@ -91,8 +91,6 @@ hb-dump/golem/SourceSerif4Variable-Roman_subset.otf:keep+prepared  # stage:var
 hb-dump/golem/SourceSerifVariable-Roman.ttf:keep  # stage:var
 hb-dump/golem/SourceSerifVariable-Roman.ttf:keep+prepared  # stage:var
 hb-dump/golem/bad-gsub.otf:keep+prepared  # upstream:preprocess-malformed
-hb-dump/golem/google_symbols_subset_test.ttf:keep  # stage:var
-hb-dump/golem/google_symbols_subset_test.ttf:keep+prepared  # stage:var
 hb-dump/golem/googlesansflex_subset.ttf:keep  # stage:var
 hb-dump/golem/googlesansflex_subset.ttf:keep+prepared  # stage:var
 hb-dump/golem/playwrite_mm.subset.ttf:keep  # stage:var

@@ -168,7 +168,7 @@ pub struct HbScratch {
 }
 
 /// Reused FreeType work area.
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 pub struct FtScratch {
     coords: Vec<i32>,
     original: Vec<Point<i32>>,
