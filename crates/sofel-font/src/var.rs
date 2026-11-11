@@ -1,5 +1,7 @@
 //! Variable-font coordinates and variation arithmetic (ADR 0027, ADR 0030).
 
+mod cff2;
+pub use cff2::{BlendError, BlendScalars};
 pub mod gvar;
 
 use alloc::vec::Vec;
