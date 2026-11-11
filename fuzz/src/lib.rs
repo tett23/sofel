@@ -107,6 +107,11 @@ pub fn check_font(data: &[u8]) {
                 }
             }
         }
+        Ok(FontFile::Dfont(d)) => {
+            for i in 0..d.num_fonts().min(64) {
+                if let Ok(s) = d.font(i) { check_sfnt(&s); }
+            }
+        }
         Err(_) => {}
     }
 }

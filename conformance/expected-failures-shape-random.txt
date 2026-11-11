@@ -21,7 +21,6 @@ harfbuzz/test/shape/data/in-house/fonts/33f889c2024c188e23bec1c16a74ebb0c717bd7f
 harfbuzz/test/shape/data/in-house/fonts/33f889c2024c188e23bec1c16a74ebb0c717bd7f.ttf#0:Zinh  # aat
 harfbuzz/test/shape/data/in-house/fonts/3503b8963831c2381809884633f483b7361baa97.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/in-house/fonts/36f8d640bc42f35a59e607bcf7c4aa70b63d4ef4.ttf#0:Latn  # aat
-harfbuzz/test/shape/data/in-house/fonts/36f8e7f3b4f54efaa6bfd8225893022dc0041915.ttf#0:Arab  # sanitize
 harfbuzz/test/shape/data/in-house/fonts/4856acb0edc382fd8044d3d822760fed7b0b500e.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/in-house/fonts/561bf77de7a26a5519dc384eddebfdff04c46c39.ttf#0:Arab  # aat
 harfbuzz/test/shape/data/in-house/fonts/561bf77de7a26a5519dc384eddebfdff04c46c39.ttf#0:Zinh  # aat
@@ -36,7 +35,6 @@ harfbuzz/test/shape/data/in-house/fonts/7ac4822ace9d0c1ebdb3dd52f15408c1be9582e0
 harfbuzz/test/shape/data/in-house/fonts/882a555639995ed746c7575416acb689ecb9549d.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/in-house/fonts/9882e955795520416cc62be2e4b29648121fd57f.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/in-house/fonts/9f0def61bfa49ffb44ba45c8703eee567c5bb816.ttf#0:Latn  # aat
-harfbuzz/test/shape/data/in-house/fonts/HarfBust.ttf#0:Latn  # sanitize
 harfbuzz/test/shape/data/in-house/fonts/MORXTwentyeight.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/in-house/fonts/MORXTwentyeight.ttf#0:Zyyy  # aat
 harfbuzz/test/shape/data/in-house/fonts/TRAK.ttf#0:Latn  # aat
@@ -63,7 +61,6 @@ harfbuzz/test/shape/data/in-house/fonts/e6185e88b04432fbf373594d5971686bb7dd698d
 harfbuzz/test/shape/data/in-house/fonts/e6185e88b04432fbf373594d5971686bb7dd698d.ttf#0:Taml  # aat
 harfbuzz/test/shape/data/in-house/fonts/e6185e88b04432fbf373594d5971686bb7dd698d.ttf#0:Zinh  # aat
 harfbuzz/test/shape/data/in-house/fonts/e6185e88b04432fbf373594d5971686bb7dd698d.ttf#0:Zyyy  # aat
-harfbuzz/test/shape/data/in-house/fonts/ecc344a5fa31c4d69350231bb3b96cc693646089.ttf#0:Arab  # sanitize
 harfbuzz/test/shape/data/in-house/fonts/ed2cc6cbd6f0b7c387a672a66d8e3e0be439fa64.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/in-house/fonts/f25a8432cd33bdd82904d99f6040c799ce935473.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestAATMort.ttf#0:Latn  # aat
