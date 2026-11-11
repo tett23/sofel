@@ -644,7 +644,12 @@ impl<'data> Location<'data> {
             .table(Tag::new(b"fvar"))
             .and_then(|d| Fvar::new(d).ok())
         else {
-            return Self::from_coords(font, Vec::new(), Vec::new(), false);
+            let mut location = Self::from_coords(font, Vec::new(), Vec::new(), false);
+            location.named_instance = named_instance;
+            if named_instance.is_some() {
+                location.ft_error = Some(FtLocationError::InvalidArgument);
+            }
+            return location;
         };
         let mut design: Vec<f32> = fvar.axes().map(|axis| fixed_to_f32(axis.default)).collect();
         let named = named_instance.and_then(|i| fvar.instance(usize::from(i)));

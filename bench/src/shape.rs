@@ -84,7 +84,7 @@ const PAIRS: [Pair; 12] = [
         DEVANAGARI,
         "hi-words.txt",
         None,
-        Some("indic"),
+        None,
     ),
     pair("Amiri-Regular", AMIRI, "fa-thelittleprince.txt", None, None),
     pair(
@@ -143,7 +143,7 @@ const EXTRA_PAIRS: [Pair; 9] = [
         text: "role-default-und",
         direction: Some(Direction::Ltr),
         literal: Some("क्‍ष\n"),
-        waits_for: Some("indic"),
+        waits_for: None,
     },
     Pair {
         font: "extra/khmer",
@@ -151,7 +151,7 @@ const EXTRA_PAIRS: [Pair; 9] = [
         text: "role-default-und",
         direction: Some(Direction::Ltr),
         literal: Some("ក្រ\n"),
-        waits_for: Some("khmer"),
+        waits_for: None,
     },
     Pair {
         font: "extra/myanmar",
@@ -159,7 +159,7 @@ const EXTRA_PAIRS: [Pair; 9] = [
         text: "role-default-und",
         direction: Some(Direction::Ltr),
         literal: Some("င်္ကိ\n"),
-        waits_for: Some("myanmar"),
+        waits_for: None,
     },
     Pair {
         font: "extra/balinese",
