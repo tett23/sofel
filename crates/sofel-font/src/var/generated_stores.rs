@@ -120,3 +120,43 @@ fn adr0029_i02_cached_and_live_generated_rows_match_bitwise() {
         compare::<Ft, _>(&view, &ft, |value| value);
     }
 }
+
+#[test]
+fn adr0029_ft_item_delta_is_independent_of_column_order() {
+    let mut generator = Generator(29);
+    for _ in 0..1000 {
+        let mut columns = Vec::new();
+        for _ in 0..(1 + generator.below(12)) {
+            let index = generator.below(3);
+            let delta = i32::from_be_bytes(generator.next().to_be_bytes());
+            columns.push((index, delta));
+        }
+        let coord = Fixed(i32::from(generator.below(32769)) - 16384);
+        let evaluate = |columns: &[(u16, i32)]| {
+            let mut bytes = Vec::from([
+                0, 1, 0, 0, 0, 12, 0, 1, 0, 0, 0, 34, // store and data offsets
+                0, 1, 0, 3, // one axis, three regions
+                0, 0, 0x10, 0, 0x40, 0, // positive peak
+                0xc0, 0, 0xf0, 0, 0, 0, // negative peak
+                0, 0, 0, 0, 0, 0, // neutral axis
+            ]);
+            let count = u16::try_from(columns.len()).unwrap();
+            bytes.extend(1u16.to_be_bytes());
+            bytes.extend((0x8000 | count).to_be_bytes());
+            bytes.extend(count.to_be_bytes());
+            for (index, _) in columns {
+                bytes.extend(index.to_be_bytes());
+            }
+            for (_, delta) in columns {
+                bytes.extend(delta.to_be_bytes());
+            }
+            let view = ItemVariationStore::new(&bytes).unwrap();
+            let coords = [coord];
+            let source = OnTheFly::<Ft>::new(&view, &coords, true);
+            item_delta::<Ft>(&view, &source, 0, 0)
+        };
+        let forward = evaluate(&columns);
+        columns.reverse();
+        assert_eq!(forward, evaluate(&columns));
+    }
+}
