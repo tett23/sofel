@@ -12,4 +12,5 @@ pub(crate) mod khmer;
 pub(crate) mod myanmar;
 pub(crate) mod syllabic;
 pub(crate) mod thai;
+pub(crate) mod use_;
 pub(crate) mod vowel_constraints;
