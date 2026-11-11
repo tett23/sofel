@@ -221,6 +221,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 - `ShapePlan::new(font, props, features)` が、`hb_ot_shape_plan_t` と同じ判断を一度だけ行う（[ADR 0020](adr/0020-shaping-foundation.md)）。`GSUB` と `GPOS` の文字体系と言語の選択（`hb_ot_layout_table_select_script` の `DFLT`、`dflt`、`latn` への後退と `hb_ot_layout_script_select_language`）、シェーパー（`Shaper`、`hb_ot_shaper_categorize`）、`hb_ot_shape_collect_features` の順の機能、`hb_ot_map_builder_t::compile` と同じマスクのビットの割り当て（大域の値1の機能は31ビット目、ほかはグリフのフラグの後の4ビット目から。足りなければ機能を捨てる）、必須の機能、`F_GLOBAL_SEARCH`、`F_HAS_FALLBACK`、段ごとにlookupの番号の順に並べて重複をまとめたlookupの列、位置の決め方（`GPOS` の有無、マークの幅の0化、フォールバックのマークの配置）である。AATの表と古い `kern` 表は無いものとして判定する。
 - 計画は `GDEF` のグリフのクラス（HarfBuzzの拒否の一覧に載る表は無いものとする）とマークのグリフの集合、`GSUB` と `GPOS` のすべてのlookupについて、拡張をたどったサブテーブルのビューと、それぞれの最初のグリフのCoverageの要約（`hb_set_digest_t` と同じ3つの64ビットのマスク）を持つ。拡張の型がそろわないlookupと、読めないサブテーブルは、HarfBuzzと同じく無いものとする。
+  GSUBとGPOSのCoverageを三つの64 bitマスクに要約するときは、全ビットが立った時点でそのCoverageの走査を終える。どのグリフが照合の候補になるかは全範囲を読んだ場合と一致する（[ADR 0042](adr/0042-stop-at-saturated-coverage-digest.md)）。
 - `ShapePlan::key` は計画を作った区間の性質と機能を返す。計画は不変で、`Send` と `Sync` を満たす。
 - `layout_selection(font, script_tags, language_tags)` は、計画と同じ文字体系と言語の選択の結果を返す。
 - [ADR 0024](adr/0024-complex-shapers.md) のシェーパーのうち、hebrew、hangul、thai、arabicを実装した（下の「文字体系ごとのシェーパー」）。まだ実装していないシェーパーは、defaultのシェーパーの手順で処理する。シェーパーの差しこみ口（`collect_features`、`override_features`、`data_create`、`preprocess_text`、`postprocess_glyphs`、`decompose`、`compose`、`setup_masks`、`reorder_marks`、`gpos_tag`、正規化の方式、マークの幅の0化の時期、フォールバックの配置、段の間の関数）は、HarfBuzzの `hb_ot_shaper_t` と同じ位置に置く。

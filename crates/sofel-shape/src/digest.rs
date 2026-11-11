@@ -31,9 +31,6 @@ impl Digest {
     }
     /// Adds the glyphs `a..=b`.
     pub(crate) fn add_range(&mut self, a: u32, b: u32) {
-        if self.masks.iter().all(|&m| m == u64::MAX) {
-            return;
-        }
         for (m, s) in self.masks.iter_mut().zip(SHIFTS) {
             if (b >> s).wrapping_sub(a >> s) >= 63 {
                 *m = u64::MAX;
@@ -43,6 +40,22 @@ impl Digest {
                 *m |= mb
                     .wrapping_add(mb.wrapping_sub(ma))
                     .wrapping_sub(u64::from(mb < ma));
+            }
+        }
+    }
+    /// Stops fetching coverage records once every glyph may match.
+    pub(crate) fn add_ranges(&mut self, ranges: impl IntoIterator<Item = (u32, u32)>) {
+        if *self == Self::full() {
+            return;
+        }
+        for (first, last) in ranges {
+            if first == last {
+                self.add(first);
+            } else {
+                self.add_range(first, last);
+            }
+            if *self == Self::full() {
+                break;
             }
         }
     }
@@ -62,5 +75,39 @@ impl Digest {
     /// Whether the sets may share a glyph.
     pub(crate) fn may_intersect(&self, o: &Digest) -> bool {
         self.masks.iter().zip(o.masks).all(|(&m, n)| m & n != 0)
+    }
+}
+
+#[cfg(test)]
+mod saturation_tests {
+    use super::Digest;
+
+    #[test]
+    fn adr0042_i1_ranges_match_full_traversal() {
+        for end in [0, 1, 62, 63, 64, 1023, 4031, 4095, 65535] {
+            let ranges = [(0, end), (63, 63), (64, 65), (end, end)];
+            let mut expected = Digest::default();
+            for (a, b) in ranges {
+                expected.add_range(a, b);
+            }
+            let mut actual = Digest::default();
+            actual.add_ranges(ranges);
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn adr0042_i2_stop_before_reading_after_saturation() {
+        let mut d = Digest::default();
+        let mut n = 0;
+        d.add_ranges(
+            [(0, 4031), (4032, 4095), (4096, 4096)]
+                .into_iter()
+                .inspect(|_| n += 1),
+        );
+        assert_eq!(d, Digest::full());
+        assert_eq!(n, 2);
+        d.add_ranges([(0, 0)].into_iter().inspect(|_| n += 1));
+        assert_eq!(n, 2);
     }
 }
