@@ -15,7 +15,10 @@ use super::map::MAX_VALUE;
 use crate::buffer::gprops;
 
 /// Applies a subtable at the current glyph.
-pub(crate) fn apply<'a>(c: &mut ApplyContext<'_, 'a, '_, '_, '_>, s: &SubstSubtable<'a>) -> bool {
+pub(crate) fn apply<'a>(
+    c: &mut ApplyContext<'_, 'a, '_, '_, '_, '_, '_>,
+    s: &SubstSubtable<'a>,
+) -> bool {
     let glyph = c.buffer.cur(0).codepoint;
     let g = GlyphId(glyph);
     match s {
@@ -127,7 +130,10 @@ pub(crate) fn apply<'a>(c: &mut ApplyContext<'_, 'a, '_, '_, '_>, s: &SubstSubta
 }
 
 /// `Sequence::apply`.
-fn apply_sequence(c: &mut ApplyContext<'_, '_, '_, '_, '_>, seq: Option<GlyphArray<'_>>) -> bool {
+fn apply_sequence(
+    c: &mut ApplyContext<'_, '_, '_, '_, '_, '_, '_>,
+    seq: Option<GlyphArray<'_>>,
+) -> bool {
     let count = seq.map_or(0, |s| s.len());
     if count == 1 {
         let g = seq.and_then(|s| s.get(0)).unwrap_or(0);
@@ -158,7 +164,10 @@ fn apply_sequence(c: &mut ApplyContext<'_, '_, '_, '_, '_>, seq: Option<GlyphArr
 }
 
 /// `AlternateSet::apply`.
-fn apply_alternates(c: &mut ApplyContext<'_, '_, '_, '_, '_>, set: Option<GlyphArray<'_>>) -> bool {
+fn apply_alternates(
+    c: &mut ApplyContext<'_, '_, '_, '_, '_, '_, '_>,
+    set: Option<GlyphArray<'_>>,
+) -> bool {
     let Some(set) = set else { return false };
     let count = u32::try_from(set.len()).unwrap_or(0);
     if count == 0 {
@@ -187,7 +196,10 @@ fn apply_alternates(c: &mut ApplyContext<'_, '_, '_, '_, '_>, set: Option<GlyphA
 }
 
 /// `Ligature::apply`.
-fn apply_ligature<'a>(c: &mut ApplyContext<'_, 'a, '_, '_, '_>, lig: &Ligature<'a>) -> bool {
+fn apply_ligature<'a>(
+    c: &mut ApplyContext<'_, 'a, '_, '_, '_, '_, '_>,
+    lig: &Ligature<'a>,
+) -> bool {
     let count = lig.components.len().wrapping_add(1);
     if count == 1 {
         c.replace_glyph(lig.glyph.0);
@@ -212,11 +224,12 @@ fn apply_ligature<'a>(c: &mut ApplyContext<'_, 'a, '_, '_, '_>, lig: &Ligature<'
 /// `LigatureSet::apply`, with HarfBuzz's fast path for more than one
 /// ligature.
 fn apply_ligature_set<'a>(
-    c: &mut ApplyContext<'_, 'a, '_, '_, '_>,
+    c: &mut ApplyContext<'_, 'a, '_, '_, '_, '_, '_>,
     ligs: impl Iterator<Item = Ligature<'a>> + Clone,
 ) -> bool {
-    let slow =
-        |c: &mut ApplyContext<'_, 'a, '_, '_, '_>| ligs.clone().any(|l| apply_ligature(c, &l));
+    let slow = |c: &mut ApplyContext<'_, 'a, '_, '_, '_, '_, '_>| {
+        ligs.clone().any(|l| apply_ligature(c, &l))
+    };
     // The fast path depends on the number of readable ligatures, not on
     // the raw offset count. Inspect only two; do not allocate or parse
     // the unused tail for every glyph (ADR 0033).

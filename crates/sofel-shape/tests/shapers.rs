@@ -46,10 +46,10 @@ fn shape_cps(data: &[u8], script: &[u8; 4], direction: Direction, text: &[u32]) 
         script: Script::from_iso15924(script),
         language: None,
     };
-    let plan = ShapePlan::new(&font, props, &[]);
+    let plan = ShapePlan::new(font.default_instance(), props, &[]);
     let mut b = UnicodeBuffer::new();
     b.push_codepoints(text, 0, None);
-    shape(&font, &Scale::unscaled(&font), &plan, b)
+    shape(font.default_instance(), &Scale::unscaled(&font), &plan, b)
 }
 
 fn glyphs(g: &GlyphBuffer) -> Vec<u32> {
@@ -67,7 +67,7 @@ fn plan_shaper(data: &[u8], script: &[u8; 4]) -> Shaper {
         script: Script::from_iso15924(script),
         language: None,
     };
-    ShapePlan::new(&font, props, &[]).shaper()
+    ShapePlan::new(font.default_instance(), props, &[]).shaper()
 }
 
 // Hebrew.
@@ -226,11 +226,11 @@ fn shape_arabic(data: &[u8], pre: usize, text: &[u32]) -> GlyphBuffer {
         script: Script::from_iso15924(b"Arab"),
         language: None,
     };
-    let plan = ShapePlan::new(&font, props, &[]);
+    let plan = ShapePlan::new(font.default_instance(), props, &[]);
     assert_eq!(plan.shaper(), Shaper::Arabic);
     let mut b = UnicodeBuffer::new();
     b.push_codepoints(text, pre, Some(text.len() - pre));
-    shape(&font, &Scale::unscaled(&font), &plan, b)
+    shape(font.default_instance(), &Scale::unscaled(&font), &plan, b)
 }
 
 #[test]
@@ -490,11 +490,11 @@ fn indic_dotted_circle_and_vowel_constraints() {
         script: Script::from_iso15924(b"Deva"),
         language: None,
     };
-    let plan = ShapePlan::new(&font, props, &[]);
+    let plan = ShapePlan::new(font.default_instance(), props, &[]);
     let mut b = UnicodeBuffer::new();
     b.set_flags(sofel_shape::BufferFlags::DO_NOT_INSERT_DOTTED_CIRCLE);
     b.push_codepoints(&[A, AA, I], 0, None);
-    let out = shape(&font, &Scale::unscaled(&font), &plan, b);
+    let out = shape(font.default_instance(), &Scale::unscaled(&font), &plan, b);
     assert_eq!(glyphs(&out), [g(&chars, I), g(&chars, A), g(&chars, AA)]);
 }
 

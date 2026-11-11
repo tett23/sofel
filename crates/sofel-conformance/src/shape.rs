@@ -76,7 +76,9 @@ impl Subject<'_> {
             buffer.push(u, i);
         }
         let props = self.props.clone().guess(&buffer, None);
-        Some(shaper_name(ShapePlan::new(&font, props, &[]).shaper()))
+        Some(shaper_name(
+            ShapePlan::new(font.default_instance(), props, &[]).shaper(),
+        ))
     }
 
     fn has_table(&self, tag: &[u8; 4]) -> bool {

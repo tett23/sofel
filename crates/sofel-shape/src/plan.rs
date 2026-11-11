@@ -12,6 +12,8 @@ use alloc::vec::Vec;
 
 use sofel_font::Font;
 use sofel_font::read::Tag;
+use sofel_font::read::layout::LayoutTable;
+use sofel_font::var::{HbF64, Instance, StoreKind};
 use sofel_unicode::Script;
 
 use crate::buffer::{Buffer, Mask};
@@ -88,12 +90,12 @@ pub(crate) enum ShaperData {
 }
 
 /// A hook that runs on the buffer.
-pub(crate) type BufferHook = fn(&ShapePlan<'_>, &mut Buffer, &ShapeFont<'_, '_>);
+pub(crate) type BufferHook = fn(&ShapePlan<'_>, &mut Buffer, &ShapeFont<'_, '_, '_, '_>);
 
 /// A shaper's decomposition (`decompose`).
-pub(crate) type DecomposeFn = fn(&NormalizeContext<'_, '_, '_>, u32) -> Option<(u32, u32)>;
+pub(crate) type DecomposeFn = fn(&NormalizeContext<'_, '_, '_, '_, '_>, u32) -> Option<(u32, u32)>;
 /// A shaper's composition (`compose`).
-pub(crate) type ComposeFn = fn(&NormalizeContext<'_, '_, '_>, u32, u32) -> Option<u32>;
+pub(crate) type ComposeFn = fn(&NormalizeContext<'_, '_, '_, '_, '_>, u32, u32) -> Option<u32>;
 
 /// The hooks and settings of a shaper (`hb_ot_shaper_t`), at the places
 /// HarfBuzz calls them.
@@ -262,6 +264,7 @@ pub fn layout_selection(
 pub struct ShapePlan<'a> {
     pub(crate) props: ResolvedProperties,
     pub(crate) user_features: Vec<Feature>,
+    variations_index: [Option<u32>; 2],
     pub(crate) shaper: Shaper,
     pub(crate) map: Map,
     pub(crate) layout: Layout<'a>,
@@ -371,11 +374,18 @@ impl<'a> ShapePlan<'a> {
     /// `hb_ot_shape_planner_t::compile`, with the AAT tables and the
     /// `kern` table taken as absent). The lookups' subtables are read
     /// and their digests built here, once.
-    pub fn new(font: &Font<'a>, props: ResolvedProperties, features: &[Feature]) -> ShapePlan<'a> {
+    pub fn new(
+        instance: Instance<'_, 'a, '_, '_>,
+        props: ResolvedProperties,
+        features: &[Feature],
+    ) -> ShapePlan<'a> {
+        let font = instance.font();
         let layout = Layout::new(font);
+        let variations_index = Self::variations_index_for(instance);
         let (script_tags, language_tags) =
             ot_tags_from_script_and_language(props.script, props.language.as_ref());
-        let builder = MapBuilder::new(&layout, &script_tags, &language_tags);
+        let mut builder = MapBuilder::new(&layout, &script_tags, &language_tags);
+        builder.variations_index = variations_index;
         let shaper = Shaper::categorize(props.script, props.direction, builder.chosen_script[GSUB]);
         let funcs = shaper.funcs();
         let mut planner = Planner {
@@ -406,6 +416,7 @@ impl<'a> ShapePlan<'a> {
             fallback_glyph_classes: !layout.gdef.has_glyph_classes(),
             props,
             user_features: features.to_vec(),
+            variations_index,
             shaper,
             frac_mask,
             numr_mask,
@@ -438,8 +449,39 @@ impl<'a> ShapePlan<'a> {
 
     /// What the plan was made from, for the caller to compare when it
     /// keeps plans: the segment properties and the features.
-    pub fn key(&self) -> (ResolvedProperties, Vec<Feature>) {
-        (self.props.clone(), self.user_features.clone())
+    pub fn key(&self) -> (ResolvedProperties, Vec<Feature>, [Option<u32>; 2]) {
+        (
+            self.props.clone(),
+            self.user_features.clone(),
+            self.variations_index,
+        )
+    }
+
+    /// The GSUB and GPOS FeatureVariations record indices for an instance.
+    pub fn variations_index_for(instance: Instance<'_, '_, '_, '_>) -> [Option<u32>; 2] {
+        let font = instance.font();
+        let location = instance.location();
+        let delta = |outer, inner| {
+            if !location.hb_nonzero() {
+                0.0
+            } else {
+                instance
+                    .item_delta::<HbF64>(StoreKind::Gdef, outer, inner)
+                    .unwrap_or(0.0)
+            }
+        };
+        [Tag(*b"GSUB"), Tag(*b"GPOS")].map(|tag| {
+            font.table(tag)
+                .and_then(|data| LayoutTable::new(data).ok())
+                .and_then(|table| table.feature_variations().ok().flatten())
+                .and_then(|variations| {
+                    crate::layout::variations::find_index(
+                        variations,
+                        location.coords_normalized(),
+                        delta,
+                    )
+                })
+        })
     }
 
     /// The hooks of the plan's shaper.
