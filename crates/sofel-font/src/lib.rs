@@ -165,6 +165,7 @@ impl<'a> Metrics<'a> {
 
     /// HarfBuzz's `get_advance_without_var_unscaled`; `default` when the
     /// table gives no advances at all.
+    #[inline]
     fn advance(&self, glyph: GlyphId, default: u16) -> u16 {
         if glyph.0 < self.num_bearings {
             return self.hmtx.and_then(|h| h.advance(glyph)).unwrap_or(0);
@@ -663,6 +664,7 @@ impl<'a> Font<'a> {
     }
 
     /// `unitsPerEm` as stored, even outside 16..=16384.
+    #[inline]
     pub fn units_per_em(&self) -> u16 {
         self.head.units_per_em()
     }
@@ -747,6 +749,7 @@ impl<'a> Font<'a> {
 
     /// `unitsPerEm` as HarfBuzz uses it (`hb_face_get_upem`): 1000 when
     /// the stored value is outside 16..=16384.
+    #[inline]
     pub fn hb_units_per_em(&self) -> u16 {
         let upem = self.units_per_em();
         if (16..=16384).contains(&upem) {
