@@ -1042,6 +1042,60 @@ fn gdef_store_with_math_top_accent_variation_index_is_remapped() {
 }
 
 #[test]
+fn gdef_store_with_math_kern_variation_index_is_remapped() {
+    let gdef = gdef_with_referenced_store(&[0]);
+    let varidx = Buf::new().u16(0).u16(2).u16(0x8000).done();
+    let kern = link(
+        Buf::new().u16(0).i16(10).u16(0).done(),
+        vec![(4, 2, varidx)],
+    );
+    let dropped_varidx = Buf::new().u16(0).u16(1).u16(0x8000).done();
+    let second_kern = link(
+        Buf::new().u16(0).i16(20).u16(0).done(),
+        vec![(4, 2, dropped_varidx)],
+    );
+    let kern_info = link(
+        Buf::new()
+            .u16(0)
+            .u16(2)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .done(),
+        vec![
+            (0, 2, coverage1(&[1, 2])),
+            (4, 2, kern),
+            (12, 2, second_kern),
+        ],
+    );
+    let glyph_info = link(vec![0; 8], vec![(6, 2, kern_info)]);
+    let math = link(
+        Buf::new().u32(0x0001_0000).u16(0).u16(0).u16(0).done(),
+        vec![(6, 2, glyph_info)],
+    );
+    let data = font_with(vec![(b"GDEF", gdef), (b"MATH", math)]);
+    let font = Font::new(&data, 0).unwrap();
+    for (text, retained_index, item_count) in [("A", 1, 2), ("B", 0, 1)] {
+        let out = subset(&font, &chars(text)).unwrap();
+        let gdef = out_table(&out, b"GDEF").unwrap();
+        let store = sofel_font::read::gdef::Gdef::new(&gdef)
+            .unwrap()
+            .variation_store()
+            .unwrap()
+            .unwrap();
+        assert_eq!(store.item_data(0).unwrap().item_count, item_count);
+        let math = out_table(&out, b"MATH").unwrap();
+        let device = follow(follow(follow(follow(&math, 6), 6), 4), 4);
+        assert_eq!(&device[..6], &[0, 0, 0, retained_index, 0x80, 0]);
+    }
+}
+
+#[test]
 fn gdef_store_with_gsub_feature_variations_remains_unsupported() {
     let gdef = gdef_with_unused_store(class_def2(&[(1, 5, 1)]));
     let gsub = Buf::new()
