@@ -357,8 +357,7 @@ enum Target {
 
 struct Args {
     face: u32,
-    variations: Vec<sofel_outline::font::var::Variation>,
-    named: Option<u16>,
+    location: crate::variation_options::LocationOptions,
     palette: u16,
     foreground: Color,
     ppem: u16,
@@ -370,8 +369,7 @@ struct Args {
 fn parse(args: &[OsString]) -> Result<Option<Args>, String> {
     let mut a = Args {
         face: 0,
-        variations: Vec::new(),
-        named: None,
+        location: Default::default(),
         palette: 0,
         foreground: Color::new(0, 0, 0, 255),
         ppem: 0,
@@ -389,24 +387,7 @@ fn parse(args: &[OsString]) -> Result<Option<Args>, String> {
                 .ok_or_else(|| format!("{name} needs a value"))
         };
         let argument = arg.to_str();
-        let (name, inline) = argument
-            .and_then(|s| s.split_once('='))
-            .map_or((argument, None), |(n, v)| (Some(n), Some(v)));
-        if let Some(option @ ("--variations" | "--named-instance")) = name {
-            let text = match inline {
-                Some(s) => s.to_string(),
-                None => value(option)?,
-            };
-            if option == "--variations" {
-                a.variations.extend(
-                    crate::variation_options::parse_variations(&text).ok_or("bad --variations")?,
-                );
-            } else {
-                a.named = Some(
-                    crate::variation_options::parse_named_instance(&text)
-                        .ok_or("bad --named-instance")?,
-                );
-            }
+        if a.location.consume(argument, &mut value)? {
             continue;
         }
         match argument {
@@ -498,7 +479,7 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
         ppem: a.ppem,
     };
     let mut text = PaintText::new(a.exact);
-    let location = sofel_outline::font::var::Location::new(&font, a.named, &a.variations);
+    let location = a.location.resolve(&font);
     let mut recording = Recording::new();
     let painted = paint_recording_at(
         font.instance(&location),

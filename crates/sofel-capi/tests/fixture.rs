@@ -235,7 +235,7 @@ fn metrics_tables() -> Vec<(&'static [u8; 4], Vec<u8>)> {
 
 /// The baseline cases of ADR 0017 at one scale.
 fn baseline_cases(out: &mut String, prefix: &str, font: &Font<'_>, scale: HbScale) {
-    let extents = HbExtents::new(font);
+    let extents = HbExtents::new(font.default_instance());
     let boxes = |g: GlyphId| extents.glyph_extents(g);
     let dirs = [(0, Direction::Horizontal), (1, Direction::Vertical)];
     let scripts = [*b"hani", *b"latn", *b"deva", *b"DFLT"];
@@ -435,7 +435,7 @@ fn ext4(e: GlyphExtents) -> [i32; 4] {
 
 /// The metrics cases at one scale (`None`: the sofel_font_* functions).
 fn metrics_cases(out: &mut String, prefix: &str, font: &Font<'_>, scale: HbScale) {
-    let extents = HbExtents::new(font);
+    let extents = HbExtents::new(font.default_instance());
     let boxes = |g: GlyphId| extents.glyph_extents(g);
     let h = scale.h_extents(font);
     let v = scale.v_extents(font);
@@ -902,7 +902,7 @@ fn generate() -> String {
         for (i, (mode, scale)) in modes.iter().enumerate() {
             let mut log = Vec::new();
             let r = draw(
-                &font,
+                font.default_instance(),
                 GlyphId(g),
                 *scale,
                 &mut scratch,
@@ -946,7 +946,13 @@ fn generate() -> String {
     .unwrap();
 
     // Decomposing a loaded outline with an offset and a multiplier.
-    load(&font, GlyphId(1), modes[1].1, &mut scratch).unwrap();
+    load(
+        font.default_instance(),
+        GlyphId(1),
+        modes[1].1,
+        &mut scratch,
+    )
+    .unwrap();
     let mut log = Vec::new();
     scratch
         .decompose(Point { x: 100, y: -50 }, 4, &mut FnPen(|c| log.push(c)))
@@ -956,7 +962,7 @@ fn generate() -> String {
     // Rendering every glyph and one past the end.
     let mut cases = Vec::new();
     let mut raster = Rasterizer::new();
-    let outlines = sofel_outline::Outlines::new(&font);
+    let outlines = sofel_outline::Outlines::new(font.default_instance());
     for g in 0..=font.num_glyphs() {
         for ppem in [16u16, 41] {
             let r =
@@ -1027,7 +1033,7 @@ fn generate() -> String {
     // render_placed: glyph 2 (overlap) at 41 ppem with the even-odd rule,
     // composed from load, pixel_box and decompose.
     let info = load(
-        &font,
+        font.default_instance(),
         GlyphId(2),
         Scale::pixels(&font, 41, 41),
         &mut scratch,
@@ -1568,7 +1574,7 @@ fn shape_case(
 ) -> (Vec<sofel_shape::GlyphInfo>, Vec<sofel_shape::GlyphPosition>) {
     use sofel_shape::{Direction, Feature, Language, Scale, SegmentProperties, ShapePlan};
     let font = Font::new(bytes, 0).unwrap();
-    let outlines = sofel_outline::Outlines::new(&font);
+    let outlines = sofel_outline::Outlines::new(font.default_instance());
     let mut buffer = sofel_shape::UnicodeBuffer::new();
     buffer.push_utf8(text.as_bytes(), 0, None);
     let mut tag = [b' '; 4];

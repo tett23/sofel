@@ -53,7 +53,7 @@ impl std::error::Error for RenderError {}
 /// `outlines` is the font's [`Outlines`], which the caller makes once per
 /// font.
 pub fn render<'r>(
-    outlines: &Outlines<'_>,
+    outlines: &Outlines<'_, '_, '_>,
     glyph: GlyphId,
     ppem: u16,
     scratch: &mut Scratch,
@@ -136,7 +136,7 @@ pub fn color_layers(font: &sofel_font::Font<'_>, glyph: u32) -> Vec<(u32, Option
 /// As [`render`], when the glyph's own outline cannot be loaded or (in
 /// the gray fallback) rendered.
 pub fn render_color<'r>(
-    outlines: &Outlines<'_>,
+    outlines: &Outlines<'_, '_, '_>,
     glyph: GlyphId,
     ppem: u16,
     options: &PaintOptions<'_>,

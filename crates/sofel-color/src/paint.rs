@@ -157,21 +157,14 @@ fn bitmap_extents(font: &Font<'_>, glyph: u32, ppem: u16) -> Option<GlyphExtents
 /// Only the `COLR` part of [`paint_any`] (HarfBuzz's
 /// `COLR::paint_glyph`, which `COLR::get_extents` uses).
 pub(crate) fn paint_colr_only<'a>(
-    font: &Font<'a>,
+    instance: sofel_outline::font::var::Instance<'_, 'a, '_, '_>,
     glyph: u32,
     options: &PaintOptions<'a>,
     scratch: &mut Scratch,
     sink: &mut impl Sink<'a>,
 ) -> Option<Painted> {
-    let colors = Colors::new(font, options);
-    paint_colr(
-        font.default_instance(),
-        glyph,
-        &colors,
-        scratch,
-        false,
-        sink,
-    )
+    let colors = Colors::new(instance.font(), options);
+    paint_colr(instance, glyph, &colors, scratch, false, sink)
 }
 
 pub(crate) fn paint_any<'a>(

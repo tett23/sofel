@@ -1,6 +1,6 @@
 # ADR 0006: 性能の基準と計測の方法
 
-ステータス: 採択（未実装）
+ステータス: 採択→完了条件は [ADR 0045](0045-foundation-completion-criteria.md)
 
 ## 文脈
 

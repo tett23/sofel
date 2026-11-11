@@ -16,9 +16,11 @@
 mod build;
 
 use build::*;
+use sofel_font::HbCff2;
 use sofel_font::read::GlyphId;
+use sofel_font::var::Location;
 use sofel_font::{Font, GlyphExtents};
-use sofel_outline::HbExtents;
+use sofel_outline::{HbExtents, cff2_extents_at};
 
 pub const RMOVETO: u16 = 21;
 pub const RLINETO: u16 = 5;
@@ -46,7 +48,7 @@ fn cff_font(charstrings: Vec<Vec<u8>>, lsubrs: Vec<Vec<u8>>) -> Vec<u8> {
 
 fn boxes(data: &[u8]) -> Vec<Option<GlyphExtents>> {
     let font = Font::new(data, 0).unwrap();
-    let e = HbExtents::new(&font);
+    let e = HbExtents::new(font.default_instance());
     (0..font.num_glyphs())
         .map(|g| e.glyph_extents(GlyphId(g)))
         .collect()
@@ -289,4 +291,91 @@ fn cff2_ends_without_endchar_and_falls_back_to_cff() {
     ])]));
     let b = boxes(&cff2_font(&bad, vec![(b"CFF ", cff)]));
     assert_eq!(b[0], Some(ext(0, 4, 3, -4)));
+}
+
+#[test]
+fn adr0027_i04_cff2_blend_changes_harfbuzz_box() {
+    use Cs::*;
+    let store = item_variation_store(1, &[vec![(0, 0x4000, 0x4000)]], &[vec![0]]);
+    let glyph = charstring(&[
+        I(0),
+        I(0),
+        Op(RMOVETO),
+        I(100),
+        I(50),
+        I(1),
+        Op(16),
+        I(100),
+        Op(RLINETO),
+    ]);
+    let spec = Cff2Spec {
+        charstrings: vec![glyph],
+        fds: vec![(Vec::new(), Vec::new())],
+        vstore: Some(store),
+        ..Default::default()
+    };
+    let mut fvar = vec![0, 1, 0, 0, 0, 16, 0, 2, 0, 1, 0, 20, 0, 0, 0, 8];
+    fvar.extend_from_slice(b"wght");
+    for value in [0i32, 0, 0x10000] {
+        fvar.extend_from_slice(&value.to_be_bytes());
+    }
+    fvar.extend_from_slice(&[0, 0, 1, 0]);
+    let data = cff2_font(&spec, vec![(b"fvar", fvar)]);
+    let font = Font::new(&data, 0).unwrap();
+    let cff = HbCff2::new(&font).unwrap();
+    let default = Location::from_design(&font, &[0.0]);
+    let max = Location::from_design(&font, &[1.0]);
+    assert_eq!(
+        cff2_extents_at(&cff, 0, &font.instance(&default)),
+        Some(ext(0, 100, 100, -100))
+    );
+    assert_eq!(
+        cff2_extents_at(&cff, 0, &font.instance(&max)),
+        Some(ext(0, 100, 150, -100))
+    );
+}
+
+#[test]
+fn adr0030_i04_cff2_harfbuzz_default_evaluates_zero_peak() {
+    use Cs::*;
+    let store = item_variation_store(1, &[vec![(0, 0, 0)]], &[vec![0]]);
+    let glyph = charstring(&[
+        I(0),
+        I(0),
+        Op(RMOVETO),
+        I(100),
+        I(50),
+        I(1),
+        Op(16),
+        I(100),
+        Op(RLINETO),
+    ]);
+    let spec = Cff2Spec {
+        charstrings: vec![glyph],
+        fds: vec![(Vec::new(), Vec::new())],
+        vstore: Some(store),
+        ..Default::default()
+    };
+    let mut fvar = vec![0, 1, 0, 0, 0, 16, 0, 2, 0, 1, 0, 20, 0, 0, 0, 8];
+    fvar.extend_from_slice(b"wght");
+    for value in [0i32, 0, 0x10000] {
+        fvar.extend_from_slice(&value.to_be_bytes());
+    }
+    fvar.extend_from_slice(&[0, 0, 1, 0]);
+    let data = cff2_font(&spec, vec![(b"fvar", fvar)]);
+    let font = Font::new(&data, 0).unwrap();
+    let cff = HbCff2::new(&font).unwrap();
+    let zero = Location::from_design(&font, &[0.0]);
+    assert_eq!(
+        cff2_extents_at(&cff, 0, &font.default_instance()),
+        Some(ext(0, 100, 150, -100))
+    );
+    assert_eq!(
+        HbExtents::new(font.default_instance()).glyph_extents(GlyphId(0)),
+        Some(ext(0, 100, 150, -100))
+    );
+    assert_eq!(
+        cff2_extents_at(&cff, 0, &font.instance(&zero)),
+        Some(ext(0, 100, 150, -100))
+    );
 }
