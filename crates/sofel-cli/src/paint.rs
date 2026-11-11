@@ -5,7 +5,7 @@ use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::io::Write;
 
-use sofel_color::{PaintOptions, Painted, Palette, Scratch, paint};
+use sofel_color::{PaintOptions, Painted, Palette, Recording, Scratch, paint_recording_at};
 use sofel_outline::font::Font;
 use sofel_outline::font::geom::{
     Brush, Color, ColorLine, CompositeMode, Extend, Image, ImageFormat, Painter, Rect, Solid,
@@ -27,6 +27,8 @@ with --exact, each f32 is written as its bits in hex (0x%08x).
   --foreground C    the foreground color as hex RRGGBBAA (default 000000ff)
   --ppem P          the pixels per em for bitmap strikes (default 0: the
                     largest)
+  --variations LIST design coordinates, e.g. wght=500,wdth=90
+  --named-instance N  start at named instance N (zero-based)
   --exact           write numbers exactly
   --glyph G         the glyph id
   --char U+XXXX     the character, mapped through the font's cmap
@@ -267,6 +269,87 @@ impl Painter for PaintText {
     }
 }
 
+/// Writes what HarfBuzz writes around sofel's commands.
+pub struct HbCompat<'t> {
+    /// Destination for the formatted commands.
+    pub inner: &'t mut PaintText,
+    /// The glyph is a `COLR` version 1 glyph.
+    pub v1: bool,
+    clips: Vec<bool>,
+}
+
+impl<'t> HbCompat<'t> {
+    /// Starts a new command stream.
+    pub fn new(inner: &'t mut PaintText, v1: bool) -> HbCompat<'t> {
+        HbCompat {
+            inner,
+            v1,
+            clips: Vec::new(),
+        }
+    }
+    fn identity(&mut self) {
+        if self.v1 {
+            self.inner.push_transform(Transform::IDENTITY);
+        }
+    }
+    fn end(&mut self) {
+        if self.v1 {
+            self.inner.pop_transform();
+        }
+    }
+}
+
+impl Painter for HbCompat<'_> {
+    fn push_transform(&mut self, t: Transform) {
+        self.inner.push_transform(t);
+    }
+    fn pop_transform(&mut self) {
+        self.inner.pop_transform();
+    }
+    fn push_clip_glyph(&mut self, glyph: u32) {
+        self.identity();
+        self.inner.push_clip_glyph(glyph);
+        self.identity();
+        self.clips.push(true);
+    }
+    fn push_clip_rectangle(&mut self, r: Rect) {
+        self.inner.push_clip_rectangle(r);
+        self.clips.push(false);
+    }
+    fn pop_clip(&mut self) {
+        if self.clips.pop() == Some(true) {
+            self.end();
+            self.inner.pop_clip();
+            self.end();
+        } else {
+            self.inner.pop_clip();
+        }
+    }
+    fn fill(&mut self, brush: &Brush<'_>) {
+        self.inner.fill(brush);
+    }
+    fn fill_glyph(&mut self, glyph: u32, color: &Solid) {
+        self.identity();
+        self.inner.fill_glyph(glyph, color);
+        self.end();
+    }
+    fn image(&mut self, image: &Image<'_>) -> bool {
+        self.inner.image(image)
+    }
+    fn push_group(&mut self, mode: CompositeMode) {
+        self.inner.push_group(mode);
+    }
+    fn pop_group(&mut self, mode: CompositeMode) {
+        self.inner.pop_group(mode);
+    }
+    fn color_glyph(&mut self, glyph: u32) -> bool {
+        self.identity();
+        let r = self.inner.color_glyph(glyph);
+        self.end();
+        r
+    }
+}
+
 enum Target {
     Glyph(u32),
     Char(u32),
@@ -274,6 +357,8 @@ enum Target {
 
 struct Args {
     face: u32,
+    variations: Vec<sofel_outline::font::var::Variation>,
+    named: Option<u16>,
     palette: u16,
     foreground: Color,
     ppem: u16,
@@ -285,6 +370,8 @@ struct Args {
 fn parse(args: &[OsString]) -> Result<Option<Args>, String> {
     let mut a = Args {
         face: 0,
+        variations: Vec::new(),
+        named: None,
         palette: 0,
         foreground: Color::new(0, 0, 0, 255),
         ppem: 0,
@@ -301,7 +388,28 @@ fn parse(args: &[OsString]) -> Result<Option<Args>, String> {
                 .map(str::to_string)
                 .ok_or_else(|| format!("{name} needs a value"))
         };
-        match arg.to_str() {
+        let argument = arg.to_str();
+        let (name, inline) = argument
+            .and_then(|s| s.split_once('='))
+            .map_or((argument, None), |(n, v)| (Some(n), Some(v)));
+        if let Some(option @ ("--variations" | "--named-instance")) = name {
+            let text = match inline {
+                Some(s) => s.to_string(),
+                None => value(option)?,
+            };
+            if option == "--variations" {
+                a.variations.extend(
+                    crate::variation_options::parse_variations(&text).ok_or("bad --variations")?,
+                );
+            } else {
+                a.named = Some(
+                    crate::variation_options::parse_named_instance(&text)
+                        .ok_or("bad --named-instance")?,
+                );
+            }
+            continue;
+        }
+        match argument {
             Some("--help" | "-h") => return Ok(None),
             Some("--exact") => a.exact = true,
             Some("--face") => a.face = value("--face")?.parse().map_err(|_| "bad --face")?,
@@ -390,7 +498,19 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
         ppem: a.ppem,
     };
     let mut text = PaintText::new(a.exact);
-    let painted = paint(&font, glyph, &options, &mut Scratch::default(), &mut text);
+    let location = sofel_outline::font::var::Location::new(&font, a.named, &a.variations);
+    let mut recording = Recording::new();
+    let painted = paint_recording_at(
+        font.instance(&location),
+        glyph,
+        &options,
+        &mut Scratch::default(),
+        &mut recording,
+    );
+    let mut compat = HbCompat::new(&mut text, painted == Painted::ColrV1);
+    compat.identity();
+    recording.replay(&mut compat);
+    compat.end();
     if painted == Painted::None {
         let _ = writeln!(err, "sofel-paint: glyph {glyph} is not a color glyph");
         return 1;
