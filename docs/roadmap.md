@@ -31,7 +31,7 @@ FreeType の丸めの順序、係数のキャッシュの同一性、空の座�
 
 ### シェーピング、フォントの検証と描画、照合の記録
 
-次の8件は採択（未実装）である。
+各項目の実装状況はリンク先の ADR に記す。
 
 - [ADR 0050](adr/0050-preserve-opentype-script-values.md)：OpenType タグからスクリプトを求める二つの API で、HarfBuzz が返す4バイトを保持する。
 - [ADR 0051](adr/0051-shaping-buffer-item-size.md)：作業バッファの要素は現在の28バイトを認め、仕様書のサイズを訂正する。将来の縮小案は同じ入力で計測して判断する。
@@ -40,7 +40,7 @@ FreeType の丸めの順序、係数のキャッシュの同一性、空の座�
 - [ADR 0054](adr/0054-wide-metrics-header-count.md)：大文字の HHEA と VHEA のメトリクス件数を32ビットで読む。件数の欄が3バイトで途切れた場合はデータ不足とする。
 - [ADR 0055](adr/0055-rewrite-cli-color-rendering.md)：CLI の COLRv0 描画制御を独自実装に書き直し、sofel-cli の MIT 表記を維持する。画素の合成には sofel-raster の既存実装を使う。
 - [ADR 0056](adr/0056-cff2-fdselect-format4-warning.md)：CFF2 の FDSelect 形式4は互換性の警告とし、ほかにエラーがなければ検証を成功とする。辞書の割り当てを保って形式0か3で再生成できるフォントは、生成側でその形式を使う。
-- [ADR 0057](adr/0057-record-unexcluded-phantom-point-check.md)：[ADR 0018](adr/0018-phantom-point-shift.md) は採択を維持する。ネイティブと wasm の両方で、グリフを除外せずに `--once` の照合を行い、結果を新しい計測記録に残す。
+- [ADR 0057](adr/0057-record-unexcluded-phantom-point-check.md)：[ADR 0018](adr/0018-phantom-point-shift.md) は採択を維持する。ネイティブと wasm の両方で、グリフを除外せずに照合した。[4サイズの照合結果](benchmarks/2026-11-11-unexcluded-phantom-point-check.md)を記録した。
 
 cmap のフォーマット2と8は、通常のグリフ検索では読み、シェーピングでは HarfBuzz に合わせて対応なしとする処理を実装済みである。[仕様書](specifications.md) に両方の検索規則を記載している。
 
