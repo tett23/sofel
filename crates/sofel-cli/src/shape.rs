@@ -1180,7 +1180,9 @@ fn line_output<'a>(
     let shape_one = |b: UnicodeBuffer| -> GlyphBuffer {
         match o.shaper {
             Shaper::Ot => shape_with_extents(instance, &cx.scale, plan, b, &|g| {
-                cx.font.extents.glyph_extents(g)
+                instance
+                    .glyf_extents(g)
+                    .or_else(|| cx.font.extents.glyph_extents(g))
             }),
             Shaper::Fallback => shape_fallback(instance, &cx.scale, &props, b),
         }
