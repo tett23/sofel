@@ -1273,10 +1273,16 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
     }
 
     /// Vertical advance in font units at this location.
+    #[inline]
     pub fn v_advance(&self, glyph: GlyphId) -> i32 {
         if !self.location.hb_nonzero && !self.font.has_variable_h_extents {
             return HbScale::unscaled(self.font).v_advance(self.font, glyph);
         }
+        self.varied_v_advance(glyph)
+    }
+
+    #[inline(never)]
+    fn varied_v_advance(&self, glyph: GlyphId) -> i32 {
         self.v_advance_with_scratch(glyph, &mut crate::GlyphScratch::default())
     }
 
