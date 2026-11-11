@@ -70,7 +70,7 @@ uint32_t sofel_version(void);
 #define SOFEL_OK 0
 /* A pointer argument is NULL. */
 #define SOFEL_ERROR_NULL (-1)
-/* The data is not a readable sfnt or collection. */
+/* The data is not a readable sfnt, collection, or dfont. */
 #define SOFEL_ERROR_INVALID_FONT (-2)
 /* The font has no readable head table. */
 #define SOFEL_ERROR_NO_HEAD (-3)
@@ -199,7 +199,7 @@ typedef struct sofel_font sofel_font_t;
 
 /*
  * Opens font `index` of `len` bytes at `data`: 0 for a single sfnt, any
- * index of a TTC/OTC collection. The data is not copied: keep it alive
+ * index of a TTC/OTC collection or dfont resource fork. The data is not copied: keep it alive
  * and unchanged until the font and every location made from it are
  * destroyed. A location may outlive the font handle while these bytes
  * remain valid.
@@ -1717,15 +1717,15 @@ typedef struct sofel_diagnostic sofel_diagnostic_t;
 typedef void (*sofel_diagnostic_func_t)(void *user, const sofel_diagnostic_t *diagnostic);
 
 /*
- * Validates the sfnt or collection of `len` bytes at `data`: the table
- * directory and every table that has a validator, then, for a
- * collection, each of its fonts. Calls `report` once per problem; the
+ * Validates the sfnt, TTC/OTC collection, or dfont of `len` bytes at
+ * `data`: every selected font's table directory and tables that have
+ * validators. Calls `report` once per problem; the
  * problems are the lines `sofel-validate` writes.
  *
  * Returns SOFEL_ERROR_INVALID_FONT, reporting nothing, when the data is
- * neither an sfnt nor a collection.
+ * neither an sfnt nor a supported container.
  *
- * Rust: sofel_read::sfnt::FontFile::new, sofel_read::sfnt::Collection::num_fonts, sofel_read::sfnt::Collection::font, sofel_read::validate::sfnt, sofel_read::validate::collection
+ * Rust: sofel_read::sfnt::FontFile::new, sofel_read::sfnt::Collection::num_fonts, sofel_read::sfnt::Collection::font, sofel_read::sfnt::Dfont::num_fonts, sofel_read::sfnt::Dfont::font, sofel_read::validate::sfnt, sofel_read::validate::collection
  * HarfBuzz: hb_sanitize (internal)
  * FreeType: none (FT_Open_Face checks while loading)
  */
@@ -1733,7 +1733,7 @@ int32_t sofel_validate(const uint8_t *data, size_t len, sofel_diagnostic_func_t 
                        void *user);
 
 /*
- * The index of the font in the collection the problem is in;
+ * The index of the font in the collection or dfont the problem is in;
  * SOFEL_ERROR_NOT_FOUND for a single sfnt and for the collection header.
  *
  * Rust: none

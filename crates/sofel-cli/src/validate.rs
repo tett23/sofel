@@ -103,6 +103,13 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
                     }
                 }
             }
+            Ok(FontFile::Dfont(d)) => {
+                for i in 0..d.num_fonts() {
+                    if let Ok(s) = d.font(i) {
+                        validate::sfnt(&s, &mut |problem| emit(Some(i), problem));
+                    }
+                }
+            }
         }
     }
     if unreadable {

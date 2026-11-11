@@ -50,18 +50,20 @@ fn i05_every_face_opens_and_validates() {
         let count = match file {
             FontFile::Sfnt(_) => 1,
             FontFile::Collection(c) => c.num_fonts(),
+            FontFile::Dfont(d) => d.num_fonts(),
         };
         assert_eq!(count, if entry.id == "source-han" { 45 } else { 1 });
         for face in 0..count {
             let sfnt = match file {
                 FontFile::Sfnt(s) => s,
                 FontFile::Collection(c) => c.font(face).unwrap(),
+                FontFile::Dfont(d) => d.font(face).unwrap(),
             };
             let font = Font::new(&bytes, face).unwrap();
             assert!(font.num_glyphs() > 0, "{}#{face}", entry.id);
             for record in sfnt.records() {
                 assert!(
-                    record.data(&bytes).is_some(),
+                    record.data(sfnt.file()).is_some(),
                     "{}#{face} table {:?}",
                     entry.id,
                     record.tag

@@ -3159,6 +3159,11 @@ fn validate_data(data: Option<&[u8]>, report: DiagnosticFunc, user: *mut c_void)
                 .filter_map(|i| c.font(i).ok().map(|s| (i, s)))
                 .for_each(|(i, s)| validate::sfnt(&s, &mut |d| emit(Some(i), d)));
         }
+        FontFile::Dfont(d) => {
+            (0..d.num_fonts())
+                .filter_map(|i| d.font(i).ok().map(|s| (i, s)))
+                .for_each(|(i, s)| validate::sfnt(&s, &mut |problem| emit(Some(i), problem)));
+        }
     }
     Ok(())
 }

@@ -510,6 +510,10 @@ impl<'a> Font<'a> {
                 c.font(index).map_err(FontError::Read)?
             }
             FontFile::Collection(_) => return Err(FontError::IndexOutOfRange),
+            FontFile::Dfont(d) if index < d.num_fonts() => {
+                d.font(index).map_err(FontError::Read)?
+            }
+            FontFile::Dfont(_) => return Err(FontError::IndexOutOfRange),
         };
         // FreeType reads Apple's `bhed` instead of `head` for fonts
         // without outlines, unless they have `sbix` (sfobjs.c).

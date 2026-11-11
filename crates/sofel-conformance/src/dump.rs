@@ -158,6 +158,9 @@ pub fn sofel_faces(file: &[u8], glyphs_for: &dyn Fn(u32) -> Option<u32>) -> Vec<
         Ok(FontFile::Collection(c)) => (0..c.num_fonts())
             .map(|i| c.font(i).map_err(|e| e.to_string()))
             .collect(),
+        Ok(FontFile::Dfont(d)) => (0..d.num_fonts())
+            .map(|i| d.font(i).map_err(|e| e.to_string()))
+            .collect(),
     };
     fonts
         .into_iter()
