@@ -4,16 +4,9 @@
 
 各項は、何が残っているか、どこに由来するか、何があれば進められるかの順に書く。節と項は、ほかの項が依存するものを先に置いた。確認できなかった事項には「未確認」と書いた。
 
-[ADR 0027](adr/0027-variable-fonts.md)（可変フォント）、[ADR 0029](adr/0029-variation-deltas.md)（変化量の扱い）は、利用者のレビューを経て採択（未実装）になった。[ADR 0028](adr/0028-ptem-is-not-opsz.md) の `--font-ptem` の分類訂正は実装済みである。[ADR 0029](adr/0029-variation-deltas.md) の調査の記録は、手元の `target/handoff/variation-deltas-research.md` にある（コミットしていない）。
-[ADR 0027](adr/0027-variable-fonts.md) の作業1の表の読み取りと検証器は実装済みである。
-作業2のうち、座標の正規化と [ADR 0029](adr/0029-variation-deltas.md) と [ADR 0030](adr/0030-variation-evaluation-corrections.md) のItemVariationStoreの評価の核も実装した。
-C ABIには位置の作成、座標の取得、Variationの文字列変換を実装した。
-軸と名前つきインスタンスの問い合わせ、FreeTypeが名前を持つときの合成既定インスタンス、位置ごとのPostScript名と対応するC ABIは実装した。
-HVARとVVARの送り幅、VORGとVVARの縦原点、MVARのフォント全体のメトリクス、FreeTypeの縦送り幅には座標を適用した。
-BASEのVariationIndexによる基準線とレイアウトのフォント全体の値の変化量を実装した。
-次はgvarの幻の点による送り幅と箱、輪郭、シェーピング、塗りの変化量とCLIから位置を指定する機能を実装する。
-FreeTypeが必要なnameレコードを持たないときの末尾スタイルの扱いは未決定である。
-FeatureVariationsの条件評価の単独ファジングは、評価を実装する作業5に残す。
+[ADR 0027](adr/0027-variable-fonts.md)（可変フォント）と [ADR 0029](adr/0029-variation-deltas.md)（変化量の扱い）は採択（未実装）である。座標の正規化、表の読み取りと検証、ItemVariationStoreの評価の核、名前つきインスタンス、PostScript名、HVARとVVARのメトリクス、gvarとCFF2の輪郭、FeatureVariationsとGPOSの変化量を使うシェーピング、COLRv1の可変の塗り、C ABI、CLI、計測を段階ごとに実装した。[ADR 0028](adr/0028-ptem-is-not-opsz.md) の分類訂正は実装済みで、[ADR 0030](adr/0030-variation-evaluation-corrections.md) の変化量評価の修正は段階ごとに進めている。[ADR 0029](adr/0029-variation-deltas.md) の調査記録は、手元の `target/handoff/variation-deltas-research.md` にある（コミットしていない）。
+
+[ADR 0027](adr/0027-variable-fonts.md) の全位置でのCFF2輪郭・ラスタの比較と、追加フォントの非既定位置でのメトリクス・輪郭の比較は、CIとマージを待っている。`ft_left_side_bearing` と `ft_top_side_bearing` にHVAR・VVARの差分を適用するという決定は、固定版FreeTypeの公開値と異なる。合成フォントで送り幅だけが変わり、サイドベアリングが変わらないことを確認したため、修正ADRをレビュー用に起草した。
 
 ## 未実装の ADR
 
