@@ -132,7 +132,9 @@ pub fn cff2_extents_at(
     glyph: u32,
     instance: &Instance<'_, '_, '_, '_>,
 ) -> Option<GlyphExtents> {
-    let scalars = if instance.coords_normalized().iter().any(|&coord| coord != 0) {
+    // hb_font_create initializes one zero coordinate per fvar axis, even
+    // when the caller supplied no variations.
+    let scalars = if instance.font().var_axes().next().is_some() {
         cff.variation_store().map(|store| {
             StoreScalars::from_store::<HbF64>(&store, instance.coords_normalized(), true)
         })

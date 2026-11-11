@@ -20,6 +20,73 @@ use sofel_font::{Font, HbCff2};
 use sofel_outline::{Outlines, Scratch, cff2_extents_at};
 use sofel_raster::Rasterizer;
 
+#[path = "../../sofel-read/tests/support/build.rs"]
+mod build;
+
+#[test]
+fn adr0030_i04_cff2_zero_coordinates_match_harfbuzz() {
+    use build::Cs::{I, Op};
+    let store = build::item_variation_store(1, &[vec![(0, 0, 0)]], &[vec![0]]);
+    let glyph = build::charstring(&[
+        I(0),
+        I(0),
+        Op(21),
+        I(100),
+        I(50),
+        I(1),
+        Op(16),
+        I(100),
+        Op(5),
+    ]);
+    let table = build::cff2(&build::Cff2Spec {
+        charstrings: vec![glyph],
+        fds: vec![(Vec::new(), Vec::new())],
+        vstore: Some(store),
+        ..build::Cff2Spec::default()
+    });
+    let mut fvar = vec![0, 1, 0, 0, 0, 16, 0, 2, 0, 1, 0, 20, 0, 0, 0, 8];
+    fvar.extend_from_slice(b"wght");
+    for value in [0i32, 0, 0x10000] {
+        fvar.extend_from_slice(&value.to_be_bytes());
+    }
+    fvar.extend_from_slice(&[0, 0, 1, 0]);
+    let bytes = build::otto_font(1, vec![(b"CFF2", table), (b"fvar", fvar)]);
+    let path = std::env::temp_dir().join(format!("sofel-cff2-zero-{}.otf", std::process::id()));
+    std::fs::write(&path, &bytes).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let cff = HbCff2::new(&font).unwrap();
+    let zero = Location::from_design(&font, &[0.0]);
+    let exe = paths::hb_dump();
+    paths::require(&exe, "hb-dump").unwrap();
+    for (variation, instance) in [
+        (None, font.default_instance()),
+        (Some("wght=0"), font.instance(&zero)),
+    ] {
+        let mut command = Command::new(&exe);
+        command.arg("--extents");
+        if let Some(value) = variation {
+            command.arg(format!("--variations={value}"));
+        }
+        let output = command.arg(&path).output().unwrap();
+        assert!(output.status.success());
+        let line = String::from_utf8(output.stdout)
+            .unwrap()
+            .lines()
+            .find(|line| line.starts_with("extents 0 "))
+            .unwrap()
+            .to_string();
+        let extents = cff2_extents_at(&cff, 0, &instance).unwrap();
+        assert_eq!(
+            line,
+            format!(
+                "extents 0 1 {} {} {} {}",
+                extents.x_bearing, extents.y_bearing, extents.width, extents.height
+            )
+        );
+    }
+    let _ = std::fs::remove_file(&path);
+}
+
 fn compare(font_path: &Path, positions: &[(&str, &[u8; 4], f32)]) -> usize {
     let exe = paths::hb_dump();
     paths::require(font_path, "CFF2 reference font").unwrap();
