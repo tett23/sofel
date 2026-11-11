@@ -870,12 +870,16 @@ static int dump_advance_queries(const char *path)
   FT_Long face_count, index, glyph;
   FT_Error error;
   int vertical;
+  FT_Long size = 0;
+  FT_Byte *bytes;
 
   if (FT_Init_FreeType(&library) != 0) return 1;
-  error = open_seeded(library, path, -1, &face);
+  bytes = read_font(path, &size);
+  if (!bytes) { FT_Done_FreeType(library); return 1; }
+  error = open_seeded(library, path, bytes, size, -1, &face);
   if (error != 0) {
     fprintf(stderr, "ft-dump: %s: FreeType error %d\n", path, (int)error);
-    FT_Done_FreeType(library);
+    free(bytes); FT_Done_FreeType(library);
     return 1;
   }
   face_count = face->num_faces;
@@ -884,7 +888,7 @@ static int dump_advance_queries(const char *path)
   for (index = 0; index < face_count; index++) {
     FT_Long count;
     printf("face %ld\n", (long)index);
-    error = open_seeded(library, path, index, &face);
+    error = open_seeded(library, path, bytes, size, index, &face);
     if (error != 0) {
       printf("error %d\nend\n", (int)error);
       continue;
@@ -893,7 +897,7 @@ static int dump_advance_queries(const char *path)
     FT_Done_Face(face);
     printf("num_glyphs %ld\n", (long)count);
     if (count < 0 || (FT_Long)(FT_UInt)count != count) {
-      FT_Done_FreeType(library);
+      free(bytes); FT_Done_FreeType(library);
       return 1;
     }
     for (vertical = 0; vertical <= 1; vertical++) {
@@ -902,11 +906,11 @@ static int dump_advance_queries(const char *path)
       FT_Fixed *values;
       for (glyph = 0; glyph < count; glyph++) {
         FT_Fixed value = 0;
-        error = open_seeded(library, path, index, &face);
+        error = open_seeded(library, path, bytes, size, index, &face);
         if (error == 0) {
           if (set_reference_location(library, face, reference_variations) != 0) {
             FT_Done_Face(face);
-            FT_Done_FreeType(library);
+            free(bytes); FT_Done_FreeType(library);
             return 2;
           }
           error = FT_Get_Advance(face, (FT_UInt)glyph, flags, &value);
@@ -917,13 +921,13 @@ static int dump_advance_queries(const char *path)
       }
       if (count == 0) continue;
       values = (FT_Fixed *)calloc((size_t)count, sizeof(*values));
-      if (!values) { FT_Done_FreeType(library); return 1; }
-      error = open_seeded(library, path, index, &face);
+      if (!values) { free(bytes); FT_Done_FreeType(library); return 1; }
+      error = open_seeded(library, path, bytes, size, index, &face);
       if (error == 0) {
         if (set_reference_location(library, face, reference_variations) != 0) {
           FT_Done_Face(face);
           free(values);
-          FT_Done_FreeType(library);
+          free(bytes); FT_Done_FreeType(library);
           return 2;
         }
         error = FT_Get_Advances(face, 0, (FT_UInt)count, flags, values);
@@ -936,7 +940,7 @@ static int dump_advance_queries(const char *path)
     }
     printf("end\n");
   }
-  FT_Done_FreeType(library);
+  free(bytes); FT_Done_FreeType(library);
   return 0;
 }
 
