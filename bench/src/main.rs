@@ -1262,8 +1262,16 @@ fn main() {
 mod variation_bench_tests {
     use super::*;
 
+    // The C shim holds one process-wide FreeType library without locking.
+    static FFI_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    pub(super) fn lock_ffi() -> std::sync::MutexGuard<'static, ()> {
+        FFI_LOCK.lock().unwrap()
+    }
+
     #[test]
     fn adr0027_weight_advances_match_for_every_glyph() {
+        let _ffi = lock_ffi();
         let mut bench = Bench {
             once: true,
             filter: Some("advance wght=500".into()),
@@ -1280,6 +1288,7 @@ mod variation_bench_tests {
 
     #[test]
     fn adr0027_weight_location_matches_both_references_on_three_fonts() {
+        let _ffi = lock_ffi();
         let mut bench = Bench {
             once: true,
             filter: Some("location wght=500".into()),
