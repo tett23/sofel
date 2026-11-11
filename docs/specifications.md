@@ -271,6 +271,8 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 ### 手書きのUnicodeの関数
 
 - `sofel_shape::unicode` に、HarfBuzzが手で書いた `modified_combining_class`、`is_default_ignorable`、`space_fallback_type`、`vertical_char_for`、`is_variation_selector`、`is_regional_indicator` を置く（[ADR 0019](adr/0019-unicode-character-data.md)、[ADR 0020](adr/0020-shaping-foundation.md)）。全文字の値を `hb-dump --unicode` と比べる。
+`sofel-render` は設計座標と名前つきインスタンスを受け付ける。FreeTypeで既定以外のインスタンスになるときは埋め込みビットマップを省き、指定位置の輪郭を描く（[ADR 0027](adr/0027-variable-fonts.md)）。
+
 ## カラーグリフ（`sofel-color`、`sofel-bitmap`、`Painter`）
 
 [ADR 0023](adr/0023-color-glyphs.md) の5a段階（`Painter`、CPAL、COLRv0、CBDTとsbixのデータ、SVGの文書、グリフの箱、フォールバックの問い合わせ）、5b段階（COLRv1）、5c段階（EBDTとビットマップだけのフォント）、5d段階（COLRv0の画像）を実装している。

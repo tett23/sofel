@@ -55,6 +55,8 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 
 ### `sofel-render`
 
+可変フォントの輪郭には `--variations=wght=500` や `--named-instance=0` で位置を指定できる。既定以外の位置では埋め込みビットマップを使わず、輪郭を描く。
+
 1グリフをヒンティングなしで描き、PGM（P5、白地に黒）を標準出力に書く（[ADR 0012](docs/adr/0012-antialiased-rasterizer.md)）。FreeTypeの `FT_Render_Glyph` と同じ画像になる。そのppemの埋め込みビットマップがあれば、FreeTypeと同じく `--no-bitmap` が無いかぎりそれを書く（32bitはPAM。[ADR 0023](docs/adr/0023-color-glyphs.md)）。`--color` では、COLRv0のグリフをFreeTypeの `FT_LOAD_COLOR` と同じ色の画像にしてPAMで書く（`--palette N` でパレットを選ぶ）。
 
 ```sh
