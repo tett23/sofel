@@ -130,11 +130,27 @@ fn bitmap_font(name: &str, depth: u8, pixels: &[u8]) -> PathBuf {
             ..SizeSpec::default()
         }],
     );
+    // A weight axis with design range 0..1 and default 0.
+    let fvar = Buf::new()
+        .u32(0x10000)
+        .u16(16)
+        .u16(2)
+        .u16(1)
+        .u16(20)
+        .u16(0)
+        .u16(8)
+        .bytes(b"wght")
+        .i32(0)
+        .i32(0)
+        .i32(65536)
+        .u16(0)
+        .u16(256)
+        .done();
     let font = glyph_font_with(
         &[Vec::new(), square, Vec::new()],
         true,
         false,
-        vec![(b"EBDT", data), (b"EBLC", loc)],
+        vec![(b"EBDT", data), (b"EBLC", loc), (b"fvar", fvar)],
     );
     let base = std::env::var_os("TMPDIR")
         .map(PathBuf::from)
@@ -154,6 +170,9 @@ fn bitmaps_win_at_their_size() {
     let header = b"P5\n# left 1 top 2\n3 2\n255\n";
     assert_eq!(&out[..header.len()], header);
     assert_eq!(&out[header.len()..], &[0, 255, 0, 255, 0, 255]);
+    let (code, varied, err) = run(&["--variations=wght=1", "--ppem", "12", "--glyph", "1", path]);
+    assert_eq!(code, 0, "{err}");
+    assert!(varied.starts_with(b"P5\n# left 0 top 12\n12 12\n"));
     // --no-bitmap and other sizes draw the outline.
     let (_, out, _) = run(&["--ppem", "12", "--no-bitmap", "--glyph", "1", path]);
     assert!(out.starts_with(b"P5\n# left 0 top 12\n12 12\n"));
@@ -269,5 +288,31 @@ fn color_layers_as_pam() {
         path,
     ]);
     assert_eq!(code, 2);
+    let _ = std::fs::remove_file(f);
+}
+
+#[test]
+fn adr0027_render_accepts_design_settings_and_rejects_invalid_named_instances() {
+    let f = font_file("locations");
+    let path = f.to_str().unwrap();
+    let default = run(&["--ppem", "12", "--glyph", "1", path]);
+    for options in [
+        vec!["--variations=wght=500"],
+        vec!["--variations", "wght=500"],
+    ] {
+        let mut args = options;
+        args.extend(["--ppem", "12", "--glyph", "1", path]);
+        let actual = run(&args);
+        assert_eq!(actual.0, 0, "{}", actual.2);
+        assert_eq!(actual.1, default.1);
+    }
+    assert_eq!(
+        run(&["--ppem", "12", "--glyph", "1", "--named-instance=5", path]).0,
+        1
+    );
+    assert_eq!(
+        run(&["--ppem", "12", "--glyph", "1", "--named-instance=bad", path]).0,
+        2
+    );
     let _ = std::fs::remove_file(f);
 }
