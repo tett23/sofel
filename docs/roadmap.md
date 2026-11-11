@@ -24,29 +24,21 @@ FreeType の丸めの順序、係数のキャッシュの同一性、空の座�
 ステータスは採択（未実装）である。
 [ADR 0027](adr/0027-variable-fonts.md) と [ADR 0029](adr/0029-variation-deltas.md) の本文は変更していない。
 
-### [ADR 0024](adr/0024-complex-shapers.md): 文字体系ごとのシェーパー
-
-[ADR 0024](adr/0024-complex-shapers.md) は採択（未実装）で、実装の途中である。段階3までは main に入っている（[PR #40](https://github.com/tett23/sofel/pull/40)）。残りの3つのプルリクエストは、CI が通った状態で開いている。indic は [PR #41](https://github.com/tett23/sofel/pull/41)、khmer と myanmar は [PR #43](https://github.com/tett23/sofel/pull/43)、USE は [PR #44](https://github.com/tett23/sofel/pull/44) である。PR #44 が [ADR 0024](adr/0024-complex-shapers.md) の最後の段階で、これを含めてステータスを採択にする。これらをマージすれば、[ADR 0019](adr/0019-unicode-character-data.md) が定めたシェーパーの表（indic、USE、arabic、母音の制約）も使われる。[ADR 0020](adr/0020-shaping-foundation.md) の適合テストの `shaper:<name>` に分類された期待する失敗の一覧（`conformance/expected-failures.txt`）が、これらのマージで減る。
-
-### [ADR 0020](adr/0020-shaping-foundation.md): シェーピングの土台
-
-[ADR 0020](adr/0020-shaping-foundation.md) のステータスは採択（未実装）のままである。[ADR 0024](adr/0024-complex-shapers.md) がマージされ、適合テストの期待する失敗の一覧に残る項目が、[ADR 0020](adr/0020-shaping-foundation.md) の分類（`variations`、`aat`、`synthetic`、`cff`、`color`、`out-of-scope`）だけになれば、採択にできる。そのとき、ADR の分類にない `dfont` と `sanitize` が残っているので、この2つを後述の「利用者の判断を待つこと」で決める必要がある。決まらない限り、[ADR 0020](adr/0020-shaping-foundation.md) は採択にならない。
 
 ### [ADR 0022](adr/0022-subsetting.md): サブセット化
 
 [ADR 0022](adr/0022-subsetting.md) は採択（未実装）で、段階ごとに実装している。PR #42 までで、レイアウトの段階などが main に入った。10段階目（gvar、GVAR、HVAR、VVAR、ピン留めなしの CFF2、GDEF、BASE、COLR の項目の変化量の記憶）は、可変フォントの [ADR 0027](adr/0027-variable-fonts.md) の読み取り部分を使って実装する。VARC は13段階目まで待つ。[ADR 0022](adr/0022-subsetting.md) のステータスを採択にする条件は、[ADR 0027](adr/0027-variable-fonts.md) の採択と、10段階目の実装である。
 
+## dfont の読み取りと HarfBuzz のサニタイザの移植
+
+[ADR 0044](adr/0044-shaping-conformance-exceptions.md) で認めた差は、次の実装で解消する。各項目の設計は着手前に個別の ADR にまとめる。
+
+- Mac のリソースフォークに入った sfnt を読み取る。[ADR 0001](adr/0001-project-goal-and-scope.md) の第8段階で `in-house/collections.tests:1` のグリフ列を HarfBuzz と照合し、通ったら `dfont` の期待失敗を削除する。
+- HarfBuzz が破損したレイアウト表のオフセットを無効にし、表を捨てるサニタイザの処理を移植する。GSUB、GPOS、GDEF の扱いを確かめ、`in-house/harfbust.tests:4`、レイアウト選択の3件、無作為な文字列のシェーピングの3件を比較する。一致した項目から `sanitize` の一覧から削除する。
+
 ## 利用者の判断を待つこと
 
 次の項は、利用者の決定がないと進まない。決まれば、必要に応じて新しい ADR にする。ADR を直接書き換えない。
-
-### [ADR 0020](adr/0020-shaping-foundation.md) の分類にない2つの失敗
-
-`conformance/expected-failures.txt` の見出しに、「[ADR 0020](adr/0020-shaping-foundation.md) の分類ではなく、判断待ち」と書かれた分類が2つある。
-
-`dfont` は、Mac のリソースフォークにあるフォントである。`in-house/collections.tests:1` の1件がこれに当たる。[ADR 0007](adr/0007-sfnt-read-foundation.md) と [ADR 0001](adr/0001-project-goal-and-scope.md) の8段階目が、読めないままにすると決めている。この項目の選択肢は、8段階目まで期待する失敗に残すか、先に実装するかである。
-
-`sanitize` は、HarfBuzz のサニタイザが、オフセットを無効にした後に GSUB や GPOS の全体を捨てる動作である。sofel は有効な部分を読む。`in-house/harfbust.tests:4`、`--layout-map` の3つのフォント（`conformance/expected-failures-layout-map.txt`）、`--shape-random` の3件（`conformance/expected-failures-shape-random.txt`）が当たる。HarfBuzz と同じ結果にするには、GSUB、GPOS、GDEF の「無効にして捨てる」サニタイズを移植する必要がある。選択肢は、移植するか、期待する失敗に残して仕様に書くかである。
 
 ### [ADR 0020](adr/0020-shaping-foundation.md) の細部
 

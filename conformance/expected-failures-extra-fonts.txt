@@ -1,8 +1,2 @@
 # Expected failures of fixed extra-font shaping cases (ADR 0031).
 # Each entry was observed against the pinned HarfBuzz result; success is a test failure.
-balinese.0.default # shaper:use (ADR 0024 pending)
-balinese.0.blwf-off # shaper:use (ADR 0024 pending)
-balinese.0.axis.wght.min # shaper:use (ADR 0024 pending; variation position is accepted)
-balinese.0.axis.wght.max # shaper:use (ADR 0024 pending; variation position is accepted)
-balinese.0.all-min # shaper:use (ADR 0024 pending; variation position is accepted)
-balinese.0.all-max # shaper:use (ADR 0024 pending; variation position is accepted)
