@@ -117,6 +117,25 @@ impl Map {
     pub(crate) fn feature_stage(&self, table: usize, tag: Tag) -> Option<usize> {
         self.feature(tag).and_then(|f| f.stage.get(table).copied())
     }
+    /// `get_stage_lookups`: the lookups of stage `stage` of `table`;
+    /// none for `None` (HarfBuzz's `UINT_MAX` of a missing feature) or a
+    /// stage past the end.
+    pub(crate) fn stage_lookups(&self, table: usize, stage: Option<usize>) -> &[LookupMap] {
+        let (Some(stage), Some(stages), Some(lookups)) =
+            (stage, self.stages.get(table), self.lookups.get(table))
+        else {
+            return &[];
+        };
+        if stage > stages.len() {
+            return &[];
+        }
+        let start = stage
+            .checked_sub(1)
+            .and_then(|s| stages.get(s))
+            .map_or(0, |s| s.last_lookup);
+        let end = stages.get(stage).map_or(lookups.len(), |s| s.last_lookup);
+        lookups.get(start..end).unwrap_or_default()
+    }
 }
 
 /// `feature_info_t`.
