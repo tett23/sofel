@@ -75,6 +75,25 @@ fn opens_fonts_and_collections() {
 }
 
 #[test]
+fn inv2_dfont_face_index() {
+    let mut second = sample_tables();
+    for (tag, data) in &mut second {
+        if *tag == b"maxp" {
+            *data = maxp05(9);
+        }
+    }
+    let d = dfont(&[(b"sfnt", vec![(14116, sample_font()), (3, sfnt(&second))])]);
+    assert_eq!(Font::new(&d, 0).unwrap().num_glyphs(), 28);
+    assert_eq!(Font::new(&d, 1).unwrap().num_glyphs(), 9);
+    assert!(matches!(Font::new(&d, 2), Err(FontError::IndexOutOfRange)));
+    let empty = dfont(&[(b"FOND", vec![(4, vec![1])])]);
+    assert!(matches!(
+        Font::new(&empty, 0),
+        Err(FontError::IndexOutOfRange)
+    ));
+}
+
+#[test]
 fn glyph_count_prefers_maxp_wide() {
     assert_eq!(Font::new(&without(b"maxp"), 0).unwrap().num_glyphs(), 0);
     let both = with(sample_tables(), &[(b"MAXP", maxp_wide05(70_000))]);

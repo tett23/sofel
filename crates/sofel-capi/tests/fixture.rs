@@ -715,6 +715,13 @@ fn diagnostics(out: &mut String, name: &str, data: &[u8]) {
                 }
             }
         }
+        FontFile::Dfont(d) => {
+            for i in 0..d.num_fonts() {
+                if let Ok(s) = d.font(i) {
+                    validate::sfnt(&s, &mut |problem| emit(Some(i), problem));
+                }
+            }
+        }
     }
     assert!(!rows.is_empty(), "{name} has no problems to report");
     writeln!(

@@ -15,9 +15,6 @@
 #   cff, color          glyph names and boxes of CFF (ADR 0021) and color
 #                       glyphs (ADR 0023)
 #   out-of-scope:<name> shapers sofel does not have (ADR 0001)
-#   dfont               a font in a Mac resource fork, which sofel-read
-#                       does not open yet (ADR 0007, ADR 0001 stage 8);
-#                       restricted to the case identified by ADR 0044
 #   sanitize            HarfBuzz's sanitizer rejects the whole GSUB/GPOS
 #                       (after neutering offsets), sofel reads the valid
 #                       parts; restricted to the cases identified by ADR 0044
@@ -102,7 +99,6 @@ in-house/anchor-variations.tests:9  # variations
 in-house/anchor-variations.tests:10  # variations
 in-house/anchor-variations.tests:11  # variations
 in-house/anchor-variations.tests:12  # variations
-in-house/collections.tests:1  # dfont
 in-house/coretext.tests:2@coretext  # out-of-scope:coretext
 in-house/directwrite.tests:2@directwrite  # out-of-scope:directwrite
 in-house/directwrite.tests:3@directwrite  # out-of-scope:directwrite
