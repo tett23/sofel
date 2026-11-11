@@ -2,7 +2,9 @@
 //! variation store when every axis is pinned to its default.
 
 use sofel_font::Font;
+use sofel_font::read::ReadError;
 use sofel_font::read::Tag;
+use sofel_font::read::base::{Base, BaseCoord, MinMax};
 use sofel_write::Serializer;
 
 use super::Tables;
@@ -10,6 +12,76 @@ use crate::error::SubsetError;
 use crate::layout::common::Sub;
 use crate::layout::data::D;
 use crate::plan::Plan;
+
+fn coord_uses_variations(coord: Option<BaseCoord<'_>>) -> Result<bool, ReadError> {
+    match coord {
+        // Unknown Device formats also block this shortcut.
+        Some(coord) => Ok(coord
+            .device()?
+            .is_some_and(|device| !matches!(device.delta_format(), 1..=3))),
+        None => Ok(false),
+    }
+}
+
+fn min_max_uses_variations(min_max: MinMax<'_>) -> Result<bool, ReadError> {
+    if coord_uses_variations(min_max.min_coord()?)? || coord_uses_variations(min_max.max_coord()?)?
+    {
+        return Ok(true);
+    }
+    for index in 0..min_max.num_features() {
+        if coord_uses_variations(min_max.feature_min_coord(index)?)?
+            || coord_uses_variations(min_max.feature_max_coord(index)?)?
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// A BASE store can be removed without remapping indices only when no
+/// coordinate in either axis references a VariationIndex.
+pub(crate) fn unused_variation_store(src: &[u8]) -> bool {
+    let inspect = || -> Result<bool, ReadError> {
+        let base = Base::new(src)?;
+        if base.variation_store()?.is_none() {
+            return Ok(false);
+        }
+        for vertical in [false, true] {
+            let Some(axis) = base.axis(vertical)? else {
+                continue;
+            };
+            let Some(scripts) = axis.base_script_list()? else {
+                continue;
+            };
+            for index in 0..scripts.len() {
+                let Some(script) = scripts.script(index)? else {
+                    continue;
+                };
+                if let Some(values) = script.base_values()? {
+                    for index in 0..values.len() {
+                        if coord_uses_variations(values.coord(index)?)? {
+                            return Ok(false);
+                        }
+                    }
+                }
+                if let Some(min_max) = script.default_min_max()?
+                    && min_max_uses_variations(min_max)?
+                {
+                    return Ok(false);
+                }
+                for index in 0..script.num_lang_sys() {
+                    if let Some(min_max) = script.lang_sys_min_max(index)?
+                        && min_max_uses_variations(min_max)?
+                    {
+                        return Ok(false);
+                    }
+                }
+            }
+        }
+        Ok(true)
+    };
+    inspect().unwrap_or(false)
+}
 
 fn device_copy(s: &mut Sub<'_, '_>, dev: D<'_>) -> bool {
     if !matches!(dev.u16(4), 1..=3) {
@@ -198,7 +270,7 @@ pub(crate) fn subset(
     let mut ret = false;
     if version >= 0x0001_0001 {
         c.s.u32(0);
-        if p.var.instancing() && p.var.all_axes_pinned() {
+        if (p.var.instancing() && p.var.all_axes_pinned()) || unused_variation_store(src) {
             // BASE::subset_varstore keeps the null offset, even with no Axis.
             ret = true;
         } else if d.u32(8) != 0 {

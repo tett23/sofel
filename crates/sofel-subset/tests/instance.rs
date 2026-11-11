@@ -1,6 +1,5 @@
-//! Pinning the axes to their defaults on hand-made fonts (ADR 0022,
-//! 既定の値への固定): the axis functions of the input, what the plan
-//! accepts, and the tables pinning drops or rewrites.
+//! Variation subsetting on hand-made fonts (ADR 0022): axis functions,
+//! full pinning, and dropping an unused BASE variation store.
 
 #![allow(
     clippy::all,
@@ -331,4 +330,80 @@ fn pinning_preserves_the_base_coordinate_and_removes_its_variation_index() {
     ];
     let expected: Vec<_> = expected.into_iter().flat_map(u16::to_be_bytes).collect();
     assert_eq!(sfnt.table(Tag::new(b"BASE")).unwrap(), expected);
+}
+
+#[test]
+fn unpinned_base_store_without_variation_index_is_removed() {
+    let words = [
+        1u16, 1, 12, 0, 0, 54, 4, 10, 1, 0x726f, 0x6d6e, 1, 0x4446, 0x4c54, 8, 6, 0, 0, 0, 1, 6, 3,
+        123, 0, 0, 0, 0x8000, 1, 0, 12, 1, 0, 28, 2, 1, 0, 0x4000, 0x4000, 0, 0, 0, 1, 1, 1, 0, 21,
+    ];
+    let base = words.into_iter().flat_map(u16::to_be_bytes).collect();
+    let data = font_with(vec![(b"fvar", fvar(&AXES)), (b"BASE", base)]);
+    let font = Font::new(&data, 0).unwrap();
+    let output = subset(&font, &unicodes()).unwrap();
+    let sfnt = Sfnt::new(&output).unwrap();
+    let result = sfnt.table(Tag::new(b"BASE")).unwrap();
+    assert_eq!(result.len(), 48);
+    assert_eq!(&result[8..12], &[0, 0, 0, 0]);
+    assert_eq!(&result[36..42], &[0, 3, 0, 123, 0, 0]);
+}
+
+#[test]
+fn unpinned_base_store_with_variation_index_is_unsupported() {
+    let words = [
+        1u16, 1, 12, 0, 0, 54, 4, 10, 1, 0x726f, 0x6d6e, 1, 0x4446, 0x4c54, 8, 6, 0, 0, 0, 1, 6, 3,
+        123, 6, 0, 0, 0x8000, 1, 0, 12, 1, 0, 28, 2, 1, 0, 0x4000, 0x4000, 0, 0, 0, 1, 1, 1, 0, 21,
+    ];
+    let base: Vec<u8> = words.into_iter().flat_map(u16::to_be_bytes).collect();
+    let data = font_with(vec![(b"fvar", fvar(&AXES)), (b"BASE", base.clone())]);
+    let font = Font::new(&data, 0).unwrap();
+    assert!(matches!(
+        subset(&font, &unicodes()),
+        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"BASE")
+    ));
+
+    let mut min_max = base.clone();
+    min_max[31] = 0;
+    min_max[33] = 6;
+    min_max[37] = 6;
+    min_max[39] = 0;
+    min_max[41] = 0;
+    let view = sofel_font::read::base::Base::new(&min_max).unwrap();
+    let min = view
+        .horiz_axis()
+        .unwrap()
+        .unwrap()
+        .base_script_list()
+        .unwrap()
+        .unwrap()
+        .script(0)
+        .unwrap()
+        .unwrap()
+        .default_min_max()
+        .unwrap()
+        .unwrap()
+        .min_coord()
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        min.device().unwrap().unwrap().variation_index(),
+        Some((0, 0))
+    );
+    let data = font_with(vec![(b"fvar", fvar(&AXES)), (b"BASE", min_max)]);
+    let font = Font::new(&data, 0).unwrap();
+    assert!(matches!(
+        subset(&font, &unicodes()),
+        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"BASE")
+    ));
+
+    let mut vertical = base;
+    vertical[5] = 0;
+    vertical[7] = 12;
+    let data = font_with(vec![(b"fvar", fvar(&AXES)), (b"BASE", vertical)]);
+    let font = Font::new(&data, 0).unwrap();
+    assert!(matches!(
+        subset(&font, &unicodes()),
+        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"BASE")
+    ));
 }

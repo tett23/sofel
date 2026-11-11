@@ -344,6 +344,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 軸を指定しないgvarとGVARは、残すグリフの変化量のデータを新しいグリフIDの順に書き、短いオフセットでは奇数長のデータを0で埋める。`IFTB_REQUIREMENTS` では長いオフセットを使い、埋めない。
 - 軸を指定しない HVAR と VVAR は、元の表が暗黙の送り幅マップだけを使い、残すグリフIDが16bitに収まる場合に書き出す。残したグリフに対応する行と使う領域を詰め、全ての値が0の列を除く。出力のグリフIDと行番号が異なるときは明示マップを加える。元の表が明示マップを持つ場合は `Unsupported` とする（[ADR 0022](adr/0022-subsetting.md)）。
 - まだ書かない表：HVAR、VVAR、VARC（軸をすべて固定したときに捨てるものを除く）と、軸をすべて固定しないときのCFF2（10段階目）。これらを持ち、捨てる表にも写す表にも入れないフォントは `Unsupported` とする。名前の表の上書きも `Unsupported` とする。
+- 軸を指定しない BASE 1.1 に ItemVariationStore があっても、横と縦の全 BaseCoord を調べて VariationIndex の参照が0件なら、HarfBuzzと同じくストアを除いて座標を残す。BaseValues、既定の MinMax、言語別とフィーチャ別の MinMax を調べ、壊れた参照はこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
 - レイアウトの表のうち、GDEFとBASEの変化量の表（ItemVariationStore。軸を指定しないときに残す番号へ詰めなおすのは10段階目。GDEFとBASEのものは全軸を既定値に固定すれば除く）、GSUBとGPOSの版1.2とGDEFの版1.4、FeatureVariationsの版1.1と形式1でない条件、65536を超えるグリフのフォントの24bitの形式も `Unsupported` とする。
 
 ## 道具
