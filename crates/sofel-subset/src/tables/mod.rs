@@ -1,7 +1,7 @@
 //! Writing the tables (`hb_subset_plan_execute_or_fail` and the tables'
 //! `subset` functions).
 
-mod base;
+pub(crate) mod base;
 mod cblc;
 pub(crate) mod cff;
 pub(crate) mod cmap;
