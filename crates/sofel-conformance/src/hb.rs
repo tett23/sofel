@@ -147,7 +147,7 @@ pub fn sofel_face_sampled(font: &Font<'_>, hb: &HbFace, glyphs: &[u32]) -> HbFac
 }
 
 fn sofel_face_for<I: Iterator<Item = u32> + Clone>(font: &Font<'_>, hb: &HbFace, ids: I) -> HbFace {
-    let outlines = Outlines::new(font);
+    let outlines = Outlines::new(font.default_instance());
     let scratch = RefCell::new(sofel_color::Scratch::default());
     let scales = hb
         .scales
@@ -712,7 +712,7 @@ fn dir_of(d: char) -> Direction {
 
 /// sofel's values for the calls `hb-dump --baselines` made.
 pub fn sofel_baselines(font: &Font<'_>, hb: &HbBaselines) -> HbBaselines {
-    let outlines = Outlines::new(font);
+    let outlines = Outlines::new(font.default_instance());
     let scratch = RefCell::new(sofel_color::Scratch::default());
     let scales = hb
         .scales

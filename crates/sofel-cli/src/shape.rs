@@ -904,7 +904,7 @@ fn split_lines(text: &[u8], single_par: bool) -> Vec<&[u8]> {
 struct CliFont<'a, 'b> {
     font: Font<'a>,
     names: Option<GlyphNames<'a, 'b>>,
-    extents: HbExtents<'a>,
+    extents: HbExtents<'a, 'static, 'static>,
     scale: HbScale,
 }
 
@@ -1059,7 +1059,7 @@ pub fn run_with_input(
         font: CliFont {
             font,
             names,
-            extents: HbExtents::new(&font),
+            extents: HbExtents::new(font.default_instance()),
             scale: hb_scale,
         },
         scale,

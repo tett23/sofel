@@ -423,7 +423,7 @@ fn parse_random(text: &str) -> RandomDump {
 /// sofel's result for a string, as `hb-dump` writes it.
 fn sofel_random<'a>(
     font: &Font<'a>,
-    extents: &HbExtents<'_>,
+    extents: &HbExtents<'_, '_, '_>,
     plans: &mut Vec<ShapePlan<'a>>,
     text: &[u32],
 ) -> String {
@@ -489,7 +489,7 @@ fn shape_random_agrees_with_harfbuzz() {
                 hb_tags, our_tags,
                 "{id}#{face}: the scripts of the cmap differ"
             );
-            let extents = HbExtents::new(&font);
+            let extents = HbExtents::new(font.default_instance());
             let mut plans = Vec::new();
             for ((tag, strings), (_, our_strings)) in scripts.iter().zip(&ours) {
                 let script = String::from_utf8_lossy(&tag.to_be_bytes()).into_owned();

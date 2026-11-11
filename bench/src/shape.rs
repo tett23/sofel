@@ -268,7 +268,7 @@ fn properties(b: &UnicodeBuffer, direction: Option<Direction>) -> ResolvedProper
 /// functions take them, and the plans, one per set of properties.
 struct Shaper<'a> {
     font: Font<'a>,
-    boxes: HbExtents<'a>,
+    boxes: HbExtents<'a, 'static, 'static>,
     scale: Scale,
     plans: Vec<(ResolvedProperties, ShapePlan<'a>)>,
 }
@@ -278,7 +278,7 @@ impl<'a> Shaper<'a> {
         let font = Font::new(bytes, 0).expect("sofel opens the font");
         Shaper {
             font,
-            boxes: HbExtents::new(&font),
+            boxes: HbExtents::new(font.default_instance()),
             scale: Scale::unscaled(&font),
             plans: Vec::new(),
         }
@@ -421,7 +421,7 @@ pub fn shape_items(b: &mut Bench, testdata: &Path) {
             first,
             &mut || {
                 let font = Font::new(&bytes, 0).expect("sofel opens the font");
-                let boxes = HbExtents::new(&font);
+                let boxes = HbExtents::new(font.default_instance());
                 let mut u = UnicodeBuffer::new();
                 u.push_utf8(&text[start..], 0, Some(len));
                 let plan =
