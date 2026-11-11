@@ -96,10 +96,6 @@ avar2_null_varstore_partial_instance.tests/RobotoDelta-NullVarStore-VF.default.a
 avar2_null_varstore_partial_instance.tests/RobotoDelta-NullVarStore-VF.default.all.wght=300-400-600.iup_optimize.ttf+prepared:bytes  # deferred:iup
 avar2_null_varstore_partial_instance.tests/RobotoDelta-NullVarStore-VF.default.all.wght=300-400-600.iup_optimize.ttf:validate  # deferred:iup
 avar2_null_varstore_partial_instance.tests/RobotoDelta-NullVarStore-VF.default.all.wght=300-400-600.iup_optimize.ttf+prepared:validate  # deferred:iup
-collect_name_ids.tests/SourceSerif4Variable-Roman_subset.keep-all-layout-features.all.otf:bytes  # stage:var
-collect_name_ids.tests/SourceSerif4Variable-Roman_subset.keep-all-layout-features.all.otf+prepared:bytes  # stage:var
-collect_name_ids.tests/SourceSerif4Variable-Roman_subset.keep-all-layout-features.all.otf:validate  # stage:var
-collect_name_ids.tests/SourceSerif4Variable-Roman_subset.keep-all-layout-features.all.otf+prepared:validate  # stage:var
 colrv1.notoemoji.tests/NotoColrEmojiGlyf-Regular.subset.default.1f696.ttf:bytes  # upstream:disabled
 colrv1.notoemoji.tests/NotoColrEmojiGlyf-Regular.subset.default.1f696.ttf+prepared:bytes  # upstream:disabled
 colrv1.notoemoji.tests/NotoColrEmojiGlyf-Regular.subset.default.1f696.ttf:validate  # upstream:disabled
@@ -730,12 +726,8 @@ post_apply_mvar_delta.tests/Recursive-ABC.no-layout.all.wght=500,CASL=0,CRSV=0,M
 post_apply_mvar_delta.tests/Recursive-ABC.no-layout.all.wght=500,CASL=0,CRSV=0,MONO=0,slnt=0.ttf+prepared:validate  # deferred:instance
 retain-num-glyphs.tests/NotoSansJP-VF.subset.retain-num-glyphs.61,63,5009.otf:bytes  # stage:var
 retain-num-glyphs.tests/NotoSansJP-VF.subset.retain-num-glyphs.61,63,5009.otf+prepared:bytes  # stage:var
-retain-num-glyphs.tests/NotoSansJP-VF.subset.retain-num-glyphs.61,63,5009.otf:validate  # stage:var
-retain-num-glyphs.tests/NotoSansJP-VF.subset.retain-num-glyphs.61,63,5009.otf+prepared:validate  # stage:var
 retain-num-glyphs.tests/NotoSansJP-VF.subset.retain-num-glyphs.all.otf:bytes  # stage:var
 retain-num-glyphs.tests/NotoSansJP-VF.subset.retain-num-glyphs.all.otf+prepared:bytes  # stage:var
-retain-num-glyphs.tests/NotoSansJP-VF.subset.retain-num-glyphs.all.otf:validate  # stage:var
-retain-num-glyphs.tests/NotoSansJP-VF.subset.retain-num-glyphs.all.otf+prepared:validate  # stage:var
 sync_vmetrics.tests/playwrite_mm.subset.default.all.SPED=25,YEXT=520,wght=100-400,slnt=18.iup_optimize.ttf:bytes  # deferred:iup
 sync_vmetrics.tests/playwrite_mm.subset.default.all.SPED=25,YEXT=520,wght=100-400,slnt=18.iup_optimize.ttf+prepared:bytes  # deferred:iup
 sync_vmetrics.tests/playwrite_mm.subset.default.all.SPED=25,YEXT=520,wght=100-400,slnt=18.iup_optimize.ttf:validate  # deferred:iup
