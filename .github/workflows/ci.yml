@@ -256,6 +256,8 @@ jobs:
       # x86-64 (rust job) and wasm32 (wasm job); macos-latest is aarch64.
       - name: Hash the trigonometry natively
         run: cargo test --release -p sofel-geom --test paint -- trigonometry_and_transforms_are_deterministic
+      - name: Hash variation arithmetic natively
+        run: cargo test --release -p sofel-font --test variation_arithmetic_digest
       # docs/adr/0020, docs/adr/0022: the C shaping and Golem subsetting
       # tests on real fonts of the test data, and their expected values from
       # the Rust API, the subsetting ones checked against hb-dump --subset
@@ -344,7 +346,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [cmap, metrics, font, outline, os2, name, post, vorg, base, math, gdef, gsub, gpos, cff, shape, deserialize, repack, gvar, feature_variations, variation_store]
+        target: [cmap, metrics, font, outline, os2, name, post, vorg, base, math, gdef, gsub, gpos, cff, shape, deserialize, repack, gvar, feature_variations, location, variation_store]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
