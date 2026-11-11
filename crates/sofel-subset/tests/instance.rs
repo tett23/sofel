@@ -1,6 +1,5 @@
-//! Pinning the axes to their defaults on hand-made fonts (ADR 0022,
-//! 既定の値への固定): the axis functions of the input, what the plan
-//! accepts, and the tables pinning drops or rewrites.
+//! Variation subsetting on hand-made fonts (ADR 0022): axis functions,
+//! full pinning, and dropping an unused BASE variation store.
 
 #![allow(
     clippy::all,
