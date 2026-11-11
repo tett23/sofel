@@ -226,12 +226,35 @@ enum Kind {
     Local,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Source {
+    Glyph,
+    Global(u32),
+    Local(u32),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CallTrace {
+    pub source: Source,
+    pub start: usize,
+    pub end: usize,
+    pub target: Source,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct MaskTrace {
+    pub source: Source,
+    pub at: usize,
+    pub size: u32,
+}
+
 /// A program and the position in it; an offset past the end is the error
 /// state.
 #[derive(Clone, Copy, Debug)]
 struct Ctx<'a> {
     bytes: &'a [u8],
     off: usize,
+    source: Source,
 }
 
 /// The fonts' parts an interpreter reads.
@@ -250,6 +273,11 @@ pub(crate) struct Env<'a, 'c> {
     calls: Vec<Ctx<'a>>,
     call_error: bool,
     called_subr: bool,
+    trace_calls: bool,
+    trace_valid: bool,
+    last_literal: Option<(Source, usize, usize)>,
+    call_trace: Vec<CallTrace>,
+    mask_trace: Vec<MaskTrace>,
     pub args: Vec<Arg>,
     arg_error: bool,
     endchar: bool,
@@ -282,10 +310,16 @@ impl<'a, 'c> Env<'a, 'c> {
             ctx: Ctx {
                 bytes: charstring,
                 off: 0,
+                source: Source::Glyph,
             },
             calls: Vec::new(),
             call_error: false,
             called_subr: false,
+            trace_calls: false,
+            trace_valid: true,
+            last_literal: None,
+            call_trace: Vec::new(),
+            mask_trace: Vec::new(),
             args: Vec::new(),
             arg_error: false,
             endchar: false,
@@ -314,6 +348,18 @@ impl<'a, 'c> Env<'a, 'c> {
 
     pub(crate) fn called_subr(&self) -> bool {
         self.called_subr
+    }
+
+    pub(crate) fn enable_call_trace(&mut self) {
+        self.trace_calls = true;
+    }
+
+    pub(crate) fn call_trace(&self) -> Option<&[CallTrace]> {
+        self.trace_valid.then_some(&self.call_trace)
+    }
+
+    pub(crate) fn mask_trace(&self) -> &[MaskTrace] {
+        &self.mask_trace
     }
 
     pub fn set_error(&mut self) {
@@ -431,21 +477,48 @@ impl<'a, 'c> Env<'a, 'c> {
             self.set_error();
             return;
         };
+        let target = if kind == Kind::Local {
+            Source::Local(num)
+        } else {
+            Source::Global(num)
+        };
+        if self.trace_calls {
+            let op_start = self.ctx.off.saturating_sub(1);
+            match self.last_literal {
+                Some((source, start, end)) if source == self.ctx.source && end == op_start => {
+                    self.call_trace.push(CallTrace {
+                        source,
+                        start,
+                        end: self.ctx.off,
+                        target,
+                    });
+                }
+                _ => self.trace_valid = false,
+            }
+        }
         self.calls.push(self.ctx);
         self.ctx = Ctx {
             bytes: subrs.get(num).unwrap_or(&[]),
             off: 0,
+            source: target,
         };
     }
 
     fn return_from_subr(&mut self) {
+        if self.trace_calls && self.ctx.off < self.ctx.bytes.len() {
+            self.trace_valid = false;
+        }
         // HarfBuzz marks the returning program in error when it is, and
         // then replaces it with the caller's.
         match self.calls.pop() {
             Some(c) => self.ctx = c,
             None => {
                 self.call_error = true;
-                self.ctx = Ctx { bytes: &[], off: 0 };
+                self.ctx = Ctx {
+                    bytes: &[],
+                    off: 0,
+                    source: Source::Glyph,
+                };
             }
         }
     }
@@ -466,6 +539,7 @@ impl<'a, 'c> Env<'a, 'c> {
     /// `opset_t::process_op`: numbers are pushed, unknown operators clear
     /// the arguments.
     fn process_number(&mut self, op: u32) {
+        let start = self.ctx.off.saturating_sub(1);
         match op {
             SHORTINT => {
                 let v = u16::from_be_bytes([self.byte(0), self.byte(1)]);
@@ -499,16 +573,23 @@ impl<'a, 'c> Env<'a, 'c> {
             }
             _ => self.clear_args(),
         }
+        if self.trace_calls && matches!(op, SHORTINT | 247..=254 | 32..=246) {
+            self.last_literal = Some((self.ctx.source, start, self.ctx.off));
+        }
     }
 
     /// `push_fixed_from_substr`.
     fn push_fixed(&mut self) {
+        let start = self.ctx.off.saturating_sub(1);
         if !self.avail(4) {
             return;
         }
         let v = u32::from_be_bytes([self.byte(0), self.byte(1), self.byte(2), self.byte(3)]);
         self.push(f64::from(i32::from_ne_bytes(v.to_ne_bytes())) / 65536.0);
         self.inc(4);
+        if self.trace_calls {
+            self.last_literal = Some((self.ctx.source, start, self.ctx.off));
+        }
     }
 
     /// `cff2_cs_interp_env_t::process_blend`.
@@ -640,6 +721,9 @@ fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
     match op {
         RETURN => env.return_from_subr(),
         ENDCHAR => {
+            if env.trace_calls && env.ctx.off < env.ctx.bytes.len() {
+                env.trace_valid = false;
+            }
             env.endchar = true;
             o.flush_args_and_op(op, env);
         }
@@ -659,6 +743,13 @@ fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
         HINTMASK | CNTRMASK => {
             env.determine_hintmask_size();
             let size = env.hintmask_size as usize;
+            if env.trace_calls {
+                env.mask_trace.push(MaskTrace {
+                    source: env.ctx.source,
+                    at: env.ctx.off.saturating_sub(1),
+                    size: env.hintmask_size,
+                });
+            }
             if env.avail(size) {
                 o.flush_hintmask(op, env);
                 env.inc(size);
