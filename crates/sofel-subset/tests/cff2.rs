@@ -102,7 +102,7 @@ fn private() -> Vec<u8> {
     p
 }
 
-fn font() -> Vec<u8> {
+fn font_with_subrs(gsubrs: Vec<Vec<u8>>) -> Vec<u8> {
     let mut top = Vec::new();
     for r in [".001", "0", "0", ".001", "0", "0"] {
         top.extend(d_real(r));
@@ -115,12 +115,17 @@ fn font() -> Vec<u8> {
     );
     let t = cff2(&Cff2Spec {
         top,
+        gsubrs,
         charstrings: charstrings(),
         fds: vec![(private(), Vec::new())],
         vstore: Some(vstore),
         ..Cff2Spec::default()
     });
     otto_font(4, vec![(b"CFF2", t), (b"fvar", fvar())])
+}
+
+fn font() -> Vec<u8> {
+    font_with_subrs(Vec::new())
 }
 
 fn glyphs(ids: &[u32]) -> Input {
@@ -155,20 +160,67 @@ fn cff2_private(out: &[u8]) -> Vec<u8> {
 }
 
 #[test]
-fn cff2_with_its_variations_is_unsupported() {
+fn cff2_without_subroutines_keeps_variations() {
     let bytes = font();
     let f = Font::new(&bytes, 0).unwrap();
-    let r = subset(&f, &glyphs(&[1]));
-    assert!(
-        matches!(r, Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"CFF2")),
-        "{r:?}"
-    );
+    let out = subset(&f, &glyphs(&[1])).unwrap();
+    let result = Font::new(&out, 0).unwrap();
+    let cff2 = HbCff2::new(&result).unwrap();
+    assert!(cff2.var_store().is_some());
+    assert_eq!(cff2.num_glyphs(), 2);
+    assert!(cff2.char_string(1).unwrap().contains(&16));
     let drop = glyphs(&[1]).map_set(SetKind::DropTables, |s| {
         s.add(Tag::new(b"CFF2").to_u32());
         s.add(Tag::new(b"fvar").to_u32());
     });
     let out = subset(&f, &drop).unwrap();
     assert!(table(&out, b"CFF2").is_none());
+}
+
+#[test]
+fn cff2_with_subroutines_remains_unsupported_without_desubroutinize() {
+    let bytes = font_with_subrs(vec![vec![11]]);
+    let font = Font::new(&bytes, 0).unwrap();
+    let result = subset(&font, &glyphs(&[1]));
+    assert!(
+        matches!(result, Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"CFF2"))
+    );
+}
+
+#[test]
+fn cff2_keep_variations_with_desubroutinize() {
+    let bytes = font();
+    let f = Font::new(&bytes, 0).unwrap();
+    let input = glyphs(&[1]).with_flags(Flags::DESUBROUTINIZE);
+    let out = subset(&f, &input).unwrap();
+    let result = Font::new(&out, 0).unwrap();
+    let cff2 = HbCff2::new(&result).unwrap();
+    assert!(cff2.var_store().is_some());
+    assert!(cff2.global_subrs().is_empty());
+    assert_eq!(cff2.num_glyphs(), 2);
+    assert!(cff2.char_string(1).unwrap().contains(&16));
+    assert_eq!(cff2_private(&out), private());
+}
+
+#[test]
+fn cff2_without_variation_store_can_be_desubroutinized() {
+    let bytes = otto_font(
+        2,
+        vec![(
+            b"CFF2",
+            cff2(&Cff2Spec {
+                charstrings: vec![Vec::new(), charstring(&[Cs::I(1), Cs::I(2), Cs::Op(21)])],
+                fds: vec![(Vec::new(), Vec::new())],
+                ..Cff2Spec::default()
+            }),
+        )],
+    );
+    let font = Font::new(&bytes, 0).unwrap();
+    let out = subset(&font, &glyphs(&[1]).with_flags(Flags::DESUBROUTINIZE)).unwrap();
+    let result = Font::new(&out, 0).unwrap();
+    let cff2 = HbCff2::new(&result).unwrap();
+    assert_eq!(cff2.var_store(), None);
+    assert_eq!(cff2.char_string(1).unwrap(), &[140, 141, 21]);
 }
 
 #[test]

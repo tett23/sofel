@@ -742,13 +742,25 @@ fn extents4(e: GlyphExtents) -> [i32; 4] {
 /// The box of a glyph at `scale` for the queries that need one, as
 /// HarfBuzz gives it: sbix, CBDT and COLR, then glyf, CFF2 and CFF
 /// (ADR 0023). The work memory is made for each glyph.
+fn outlines_at<'a>(
+    font: &SofelFont,
+    location: Option<&'a SofelLocation>,
+) -> Outlines<'static, 'a, 'static> {
+    match location {
+        Some(loc) => font.outlines.with_location(&loc.location),
+        None => font.outlines.clone(),
+    }
+}
+
 fn glyph_box<'f>(
     font: &'f SofelFont,
+    location: Option<&'f SofelLocation>,
     scale: &'f HbScale,
 ) -> impl Fn(GlyphId) -> Option<GlyphExtents> + 'f {
-    |g| {
+    let outlines = outlines_at(font, location);
+    move |g| {
         sofel_color::scaled_glyph_extents(
-            &font.outlines,
+            &outlines,
             g.0,
             scale,
             &mut sofel_color::Scratch::default(),
@@ -882,12 +894,12 @@ pub unsafe extern "C" fn sofel_font_v_origin(
     let (font, location, origin) = unsafe { (sofel_ref(font), r(location), ints::<2>(origin)) };
     status(font.ok_or(ERROR_NULL).and_then(|sf| {
         get(Some(&sf.font), origin, |f| {
-            let location =
+            let location_ref =
                 location.map_or_else(sofel_font::var::Location::default_ref, |v| &v.location);
             let s = HbScale::unscaled(f);
             let (x, y) = f
-                .instance(location)
-                .v_origin(GlyphId(glyph), glyph_box(sf, &s));
+                .instance(location_ref)
+                .v_origin(GlyphId(glyph), glyph_box(sf, location, &s));
             [x, y]
         })
     }))
@@ -911,10 +923,12 @@ pub unsafe extern "C" fn sofel_font_glyph_extents(
     let (font, location, extents) = unsafe { (sofel_ref(font), r(location), ints::<4>(extents)) };
     status(font.ok_or(ERROR_NULL).and_then(|sf| {
         find(Some(&sf.font), extents, |_| {
-            let _location =
-                location.map_or_else(sofel_font::var::Location::default_ref, |v| &v.location);
-            sofel_color::glyph_extents(&sf.outlines, glyph, &mut sofel_color::Scratch::default())
-                .map(extents4)
+            sofel_color::glyph_extents(
+                &outlines_at(sf, location),
+                glyph,
+                &mut sofel_color::Scratch::default(),
+            )
+            .map(extents4)
         })
     }))
 }
@@ -931,16 +945,16 @@ fn metrics_position(
     let font = &sf.font;
     let tag = MetricsTag::from_tag(Tag::from_u32(tag)).ok_or(ERROR_INVALID_ARGUMENT)?;
     let s = scale_of(scale, font);
-    let location = match location {
+    let location_ref = match location {
         Some(value) => &value.location,
         None => sofel_font::var::Location::default_ref(),
     };
-    let instance = font.instance(location);
+    let instance = font.instance(location_ref);
     *position = if fallback {
         if scale.is_some() {
-            instance.scaled_metrics_position_with_fallback(&s, tag, glyph_box(sf, &s))
+            instance.scaled_metrics_position_with_fallback(&s, tag, glyph_box(sf, location, &s))
         } else {
-            instance.metrics_position_with_fallback(tag, glyph_box(sf, &s))
+            instance.metrics_position_with_fallback(tag, glyph_box(sf, location, &s))
         }
     } else {
         if scale.is_some() {
@@ -1229,12 +1243,13 @@ pub unsafe extern "C" fn sofel_scale_v_origin(
     let (scale, font, location, origin) =
         unsafe { (r(scale), sofel_ref(font), r(location), ints::<2>(origin)) };
     status(scaled(scale, font, origin, |s, f| {
-        let location =
+        let location_ref =
             location.map_or_else(sofel_font::var::Location::default_ref, |v| &v.location);
-        let (x, y) = f
-            .font
-            .instance(location)
-            .scaled_v_origin(s, GlyphId(glyph), glyph_box(f, s));
+        let (x, y) = f.font.instance(location_ref).scaled_v_origin(
+            s,
+            GlyphId(glyph),
+            glyph_box(f, location, s),
+        );
         Some([x, y])
     }))
 }
@@ -1249,15 +1264,16 @@ pub unsafe extern "C" fn sofel_scale_v_origin(
 pub unsafe extern "C" fn sofel_scale_glyph_extents_of(
     scale: *const SofelScale,
     font: *const SofelFont,
-    _location: *const SofelLocation,
+    location: *const SofelLocation,
     glyph: u32,
     extents: *mut i32,
 ) -> i32 {
     // SAFETY: the caller's conditions.
-    let (scale, font, extents) = unsafe { (r(scale), sofel_ref(font), ints::<4>(extents)) };
+    let (scale, font, location, extents) =
+        unsafe { (r(scale), sofel_ref(font), r(location), ints::<4>(extents)) };
     status(scaled(scale, font, extents, |s, f| {
         sofel_color::scaled_glyph_extents(
-            &f.outlines,
+            &outlines_at(f, location),
             glyph,
             s,
             &mut sofel_color::Scratch::default(),
@@ -1333,15 +1349,15 @@ fn baseline(
     let font = &sf.font;
     let (tag, dir, script) = (Tag::from_u32(tag), direction(dir)?, Tag::from_u32(script));
     let s = scale_of(scale, font);
-    let location = match location {
+    let location_ref = match location {
         Some(v) => &v.location,
         None => sofel_font::var::Location::default_ref(),
     };
-    let instance = font.instance(location);
+    let instance = font.instance(location_ref);
     *coord = if fallback && scale.is_none() {
-        instance.baseline_with_fallback(tag, dir, script, glyph_box(sf, &s))
+        instance.baseline_with_fallback(tag, dir, script, glyph_box(sf, location, &s))
     } else if fallback {
-        instance.scaled_baseline_with_fallback(&s, tag, dir, script, glyph_box(sf, &s))
+        instance.scaled_baseline_with_fallback(&s, tag, dir, script, glyph_box(sf, location, &s))
     } else if scale.is_none() {
         instance.baseline(tag, dir, script).ok_or(ERROR_NOT_FOUND)?
     } else {
@@ -1985,6 +2001,61 @@ pub unsafe extern "C" fn sofel_font_ft_v_advance(
     })())
 }
 
+/// `sofel_font_ft_h_advance`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `location` is NULL for the default or live;
+/// `advance` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_ft_h_advance(
+    font: *const SofelFont,
+    location: *const SofelLocation,
+    glyph: u32,
+    advance: *mut u16,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, location, advance) = unsafe { (font_ref(font), r(location), w(advance)) };
+    status((|| {
+        let (font, advance) = (some(font)?, some(advance)?);
+        let location =
+            location.map_or_else(sofel_font::var::Location::default_ref, |v| &v.location);
+        *advance = font
+            .instance(location)
+            .ft_h_advance(GlyphId(glyph))
+            .ok_or(ERROR_INVALID_GLYPH)?;
+        Ok(())
+    })())
+}
+
+/// `sofel_font_ft_top_side_bearing`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `location` is NULL for the default or live;
+/// `bearing` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_ft_top_side_bearing(
+    font: *const SofelFont,
+    location: *const SofelLocation,
+    glyph: u32,
+    y_max: i16,
+    bearing: *mut i16,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, location, bearing) = unsafe { (font_ref(font), r(location), w(bearing)) };
+    status((|| {
+        let (font, bearing) = (some(font)?, some(bearing)?);
+        let location =
+            location.map_or_else(sofel_font::var::Location::default_ref, |v| &v.location);
+        *bearing = font
+            .instance(location)
+            .ft_top_side_bearing(GlyphId(glyph), y_max)
+            .ok_or(ERROR_INVALID_GLYPH)?;
+        Ok(())
+    })())
+}
+
 // ---------------------------------------------------------------- CFF
 
 /// `sofel_font_is_cff`.
@@ -2313,6 +2384,7 @@ fn put_info(info: OutlineInfo, cbox: &mut [i32; 4], overlap: &mut u32) {
 
 fn outline_load(
     font: Option<&SofelFont>,
+    location: Option<&SofelLocation>,
     glyph: u32,
     scale: Result<Scale, i32>,
     scratch: Option<&mut SofelOutlineScratch>,
@@ -2320,8 +2392,7 @@ fn outline_load(
     overlap: Option<&mut u32>,
 ) -> Status {
     let (font, scratch, cbox, overlap) = (some(font)?, some(scratch)?, some(cbox)?, some(overlap)?);
-    let info = font
-        .outlines
+    let info = outlines_at(font, location)
         .load(GlyphId(glyph), scale?, &mut scratch.scratch)
         .map_err(outline_error)?;
     put_info(info, cbox, overlap);
@@ -2338,7 +2409,7 @@ fn outline_load(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sofel_outline_load(
     font: *const SofelFont,
-    _location: *const SofelLocation,
+    location: *const SofelLocation,
     glyph: u32,
     mode: u32,
     x_scale: i32,
@@ -2348,10 +2419,18 @@ pub unsafe extern "C" fn sofel_outline_load(
     overlap: *mut u32,
 ) -> i32 {
     // SAFETY: the caller's conditions.
-    let (font, scratch, cbox, overlap) =
-        unsafe { (r(font), w(scratch), ints::<4>(cbox), w(overlap)) };
+    let (font, location, scratch, cbox, overlap) = unsafe {
+        (
+            r(font),
+            r(location),
+            w(scratch),
+            ints::<4>(cbox),
+            w(overlap),
+        )
+    };
     status(outline_load(
         font,
+        location,
         glyph,
         scale(mode, x_scale, y_scale),
         scratch,
@@ -2405,6 +2484,7 @@ pub unsafe extern "C" fn sofel_outline_decompose(
 
 fn outline_draw(
     font: Option<&SofelFont>,
+    location: Option<&SofelLocation>,
     glyph: u32,
     scale: Result<Scale, i32>,
     scratch: Option<&mut SofelOutlineScratch>,
@@ -2414,8 +2494,7 @@ fn outline_draw(
 ) -> Status {
     let (font, scratch, cbox, overlap) = (some(font)?, some(scratch)?, some(cbox)?, some(overlap)?);
     let (scale, mut pen) = (scale?, pen?);
-    let info = font
-        .outlines
+    let info = outlines_at(font, location)
         .draw(GlyphId(glyph), scale, &mut scratch.scratch, &mut pen)
         .map_err(outline_error)?;
     put_info(info, cbox, overlap);
@@ -2430,7 +2509,7 @@ fn outline_draw(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sofel_outline_draw(
     font: *const SofelFont,
-    _location: *const SofelLocation,
+    location: *const SofelLocation,
     glyph: u32,
     mode: u32,
     x_scale: i32,
@@ -2446,11 +2525,19 @@ pub unsafe extern "C" fn sofel_outline_draw(
     overlap: *mut u32,
 ) -> i32 {
     // SAFETY: the caller's conditions.
-    let (font, scratch, cbox, overlap) =
-        unsafe { (r(font), w(scratch), ints::<4>(cbox), w(overlap)) };
+    let (font, location, scratch, cbox, overlap) = unsafe {
+        (
+            r(font),
+            r(location),
+            w(scratch),
+            ints::<4>(cbox),
+            w(overlap),
+        )
+    };
     let pen = CPen::new(move_to, line_to, quad_to, cubic_to, close, user);
     status(outline_draw(
         font,
+        location,
         glyph,
         scale(mode, x_scale, y_scale),
         scratch,
@@ -2777,6 +2864,7 @@ pub unsafe extern "C" fn sofel_rasterizer_render_placed(
 
 fn render_glyph(
     font: Option<&SofelFont>,
+    location: Option<&SofelLocation>,
     glyph: u32,
     ppem: u16,
     scratch: Option<&mut SofelOutlineScratch>,
@@ -2786,7 +2874,7 @@ fn render_glyph(
     let (font, scratch, r) = (some(font)?, some(scratch)?, some(rasterizer)?);
     out.check()?;
     let bitmap = sofel_cli::glyph::render(
-        &font.outlines,
+        &outlines_at(font, location),
         GlyphId(glyph),
         ppem,
         &mut scratch.scratch,
@@ -2809,7 +2897,7 @@ fn render_glyph(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sofel_render_glyph(
     font: *const SofelFont,
-    _location: *const SofelLocation,
+    location: *const SofelLocation,
     glyph: u32,
     ppem: u16,
     scratch: *mut SofelOutlineScratch,
@@ -2820,9 +2908,10 @@ pub unsafe extern "C" fn sofel_render_glyph(
     box_: *mut i32,
 ) -> i32 {
     // SAFETY: the caller's conditions.
-    let (font, scratch, rasterizer, pixels, len, b) = unsafe {
+    let (font, location, scratch, rasterizer, pixels, len, b) = unsafe {
         (
             r(font),
+            r(location),
             w(scratch),
             w(rasterizer),
             out_array(pixels, capacity),
@@ -2831,7 +2920,9 @@ pub unsafe extern "C" fn sofel_render_glyph(
         )
     };
     let out = BitmapOut { pixels, len, b };
-    status(render_glyph(font, glyph, ppem, scratch, rasterizer, out))
+    status(render_glyph(
+        font, location, glyph, ppem, scratch, rasterizer, out,
+    ))
 }
 
 fn image_out(image: &sofel_raster::BgraImage, out: BitmapOut<'_>) -> Status {
@@ -2858,6 +2949,7 @@ struct ColorRequest<'a> {
 
 fn render_color_glyph(
     font: Option<&SofelFont>,
+    location: Option<&SofelLocation>,
     glyph: u32,
     ppem: u16,
     request: ColorRequest<'_>,
@@ -2883,7 +2975,7 @@ fn render_color_glyph(
     };
     let mut image = sofel_raster::BgraImage::default();
     let drawn = render_color(
-        &font.outlines,
+        &outlines_at(font, location),
         GlyphId(glyph),
         ppem,
         &options,
@@ -2916,7 +3008,7 @@ fn render_color_glyph(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sofel_render_color_glyph(
     font: *const SofelFont,
-    _location: *const SofelLocation,
+    location: *const SofelLocation,
     glyph: u32,
     ppem: u16,
     palette: u16,
@@ -2932,9 +3024,10 @@ pub unsafe extern "C" fn sofel_render_color_glyph(
     is_color: *mut u32,
 ) -> i32 {
     // SAFETY: the caller's conditions.
-    let (font, scratch, rasterizer, pixels, len, b, is_color) = unsafe {
+    let (font, location, scratch, rasterizer, pixels, len, b, is_color) = unsafe {
         (
             r(font),
+            r(location),
             w(scratch),
             w(rasterizer),
             out_array(pixels, capacity),
@@ -2956,7 +3049,7 @@ pub unsafe extern "C" fn sofel_render_color_glyph(
         foreground,
     };
     status(render_color_glyph(
-        font, glyph, ppem, request, scratch, rasterizer, out, is_color,
+        font, location, glyph, ppem, request, scratch, rasterizer, out, is_color,
     ))
 }
 
