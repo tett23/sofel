@@ -14,6 +14,7 @@ use alloc::vec::Vec;
 use sofel_font::read::GlyphId;
 use sofel_font::read::cff::charstring::{self, Context, PathSink};
 use sofel_font::read::cff::ft;
+use sofel_font::var::Location;
 use sofel_font::{Cff, Font};
 use sofel_geom::Point;
 
@@ -125,6 +126,18 @@ pub(crate) fn load_cff(
     scale: Scale,
     s: &mut Scratch,
 ) -> Result<OutlineInfo, OutlineError> {
+    load_cff_at(font, Location::default_ref(), cff, glyph, scale, s)
+}
+
+/// `cff_slot_load` with the Private DICT and charstring blend at `location`.
+pub(crate) fn load_cff_at(
+    font: &Font<'_>,
+    location: &Location<'_>,
+    cff: &Cff<'_>,
+    glyph: GlyphId,
+    scale: Scale,
+    s: &mut Scratch,
+) -> Result<OutlineInfo, OutlineError> {
     s.clear();
     if glyph.0 >= cff.num_glyphs() {
         return Err(OutlineError::InvalidGlyphIndex);
@@ -135,14 +148,17 @@ pub(crate) fn load_cff(
     if scaled && font.units_per_em() > 0x7FFF {
         return Err(OutlineError::InvalidOutline);
     }
-    let sub = cff.subfont(glyph).ok_or(OutlineError::InvalidCharString)?;
+    let instance = font.instance(location);
+    let blend = instance.ft_blend_weights(cff);
+    let sub = cff
+        .subfont_with_blend(glyph, &blend)
+        .ok_or(OutlineError::InvalidCharString)?;
     let data = cff
         .char_strings()
         .ft_element(glyph.0)
         .ok_or(OutlineError::InvalidGlyphIndex)?;
     let (global_subrs, global_subrs_sorted) = cff.global_subrs();
     let top = cff.top_dict();
-    let blend = cff.default_blend();
     let p = &sub.private;
     let ctx = Context {
         version: cff.version(),

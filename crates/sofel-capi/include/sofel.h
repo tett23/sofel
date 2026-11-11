@@ -461,6 +461,25 @@ int32_t sofel_location_create_named_instance(const sofel_font_t *font, uint32_t 
 void sofel_location_destroy(sofel_location_t *location);
 
 /*
+ * Copies a CFF2 FreeType blend vector at `location` and `vsindex`.
+ * NULL location selects the static default. The first value is 65536
+ * (16.16 unity); the remaining values keep every delta column in order,
+ * including zero coefficients. `*len` receives the required total length.
+ * NULL out with capacity zero queries the length and returns
+ * SOFEL_ERROR_BUFFER_TOO_SMALL when the vector is nonempty. A short array
+ * is left untouched. NULL font, len, or out with positive capacity is
+ * SOFEL_ERROR_NULL. Missing stores and invalid vsindex values are
+ * SOFEL_ERROR_INVALID_ARGUMENT; malformed stores are SOFEL_ERROR_INVALID_FONT.
+ *
+ * Rust: sofel_font::var::Instance::blend_scalars::<Ft>
+ * HarfBuzz: none
+ * FreeType: cff_blend_build_vector
+ */
+int32_t sofel_cff2_blend_vector(const sofel_font_t *font,
+                                const sofel_location_t *location, uint16_t vsindex,
+                                int32_t *out, size_t capacity, size_t *len);
+
+/*
  * Copies the HarfBuzz 2.14 normalized coordinates into the caller's array.
  * When capacity is too small, writes the required count to *len and returns
  * SOFEL_ERROR_BUFFER_TOO_SMALL without writing the array.

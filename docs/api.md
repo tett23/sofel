@@ -58,6 +58,8 @@ let advance: u16 = font.default_instance().advance(gid.unwrap_or(GlyphId(0))); /
 
 位置を持つ問い合わせは `Instance` の関数として公開する。`font.default_instance()` は既定位置の `Instance` を返す。
 
+CFF2の係数列は `Instance::blend_scalars::<Ft>(vsindex)` または `::<HbF64>` で取り出す。返り値は既定成分を含まず、係数が0の列も元の順で含む。ストアの欠落、読めないストア、軸数の不一致、範囲外の番号、FreeTypeの位置のエラーは `BlendError` で区別する。C ABIの `sofel_cff2_blend_vector` はFreeTypeの16.16の係数列を返し、先頭に既定成分の65536を加える。必要な長さだけを調べるときは、出力ポインタにNULL、容量に0を渡す。
+
 | sofel | HarfBuzz／FreeType |
 |---|---|
 | `Font::new(data, index)` | `hb_face_create` + `hb_font_create`／`FT_New_Memory_Face` |

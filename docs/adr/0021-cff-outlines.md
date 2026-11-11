@@ -1,6 +1,6 @@
 # ADR 0021: CFFとCFF2（`sofel-read` の表、`sofel-font` のCIDとグリフ名とフォントの情報、`sofel-outline` のType 2 charstringの輪郭と箱）
 
-ステータス: 採択→箱の丸めは [ADR 0026](0026-harfbuzz-rounding.md)
+ステータス: 採択→箱の丸めは [ADR 0026](0026-harfbuzz-rounding.md)、座標つきのCFF2と箱の数の型は [ADR 0027](0027-variable-fonts.md)
 
 ## 文脈
 

@@ -2,11 +2,62 @@
 
 use super::*;
 use sofel_font::read::Fixed as ReadFixed;
-use sofel_font::var::{FtAxisInfo, FtLocationError, Location, VarAxisInfo, Variation};
+use sofel_font::var::{
+    BlendError, Ft, FtAxisInfo, FtLocationError, Location, VarAxisInfo, Variation,
+};
 
 /// `sofel_location_t`: immutable coordinates and cached variation scalars.
 pub struct SofelLocation {
     pub(crate) location: Location<'static>,
+}
+
+/// `sofel_cff2_blend_vector`: FreeType's BV, including the leading 1.0.
+///
+/// # Safety
+///
+/// `font` and `location` are NULL or live handles. `out` is NULL with
+/// capacity zero or has `capacity` writable elements; `len` is writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_cff2_blend_vector(
+    font: *const SofelFont,
+    location: *const SofelLocation,
+    vsindex: u16,
+    out: *mut i32,
+    capacity: usize,
+    len: *mut usize,
+) -> i32 {
+    // SAFETY: the caller's pointer conditions match these helpers.
+    let (font, location, out, len) = unsafe {
+        (
+            font_ref(font),
+            r(location),
+            out_array(out, capacity),
+            w(len),
+        )
+    };
+    status((|| {
+        let (font, out, len) = (some(font)?, some(out)?, some(len)?);
+        let default = Location::default_ref();
+        let location = location.map_or(default, |value| &value.location);
+        let columns = font
+            .instance(location)
+            .blend_scalars::<Ft>(vsindex)
+            .map_err(|error| match error {
+                BlendError::NoStore | BlendError::VsindexOutOfRange => ERROR_INVALID_ARGUMENT,
+                BlendError::InvalidStore
+                | BlendError::AxisCountMismatch
+                | BlendError::RegionOutOfRange => ERROR_INVALID_FONT,
+                BlendError::FtLocation(_) => ERROR_INVALID_ARGUMENT,
+            })?;
+        *len = columns.len().saturating_add(1);
+        let dst = out.get_mut(..*len).ok_or(ERROR_BUFFER_TOO_SMALL)?;
+        let (first, columns_out) = dst.split_first_mut().ok_or(ERROR_BUFFER_TOO_SMALL)?;
+        *first = 0x10000;
+        for (slot, scalar) in columns_out.iter_mut().zip(columns.iter()) {
+            *slot = scalar;
+        }
+        Ok(())
+    })())
 }
 
 /// `sofel_variation_t`.

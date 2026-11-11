@@ -1,5 +1,8 @@
 //! Variable-font coordinates and variation arithmetic (ADR 0027, ADR 0030).
 
+mod cff2;
+pub use cff2::{BlendError, BlendScalars};
+
 use alloc::vec::Vec;
 use alloc::{format, string::String};
 use sofel_geom::float::{hb_clamp_to_i32, hb_roundf32, i32_to_f32};

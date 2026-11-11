@@ -69,7 +69,7 @@ mod hb_cff;
 
 pub use sofel_font as font;
 
-pub use hb_cff::{HbExtents, cff1_extents, cff2_extents};
+pub use hb_cff::{HbExtents, cff1_extents, cff2_extents, cff2_extents_at};
 
 use alloc::vec::Vec;
 use core::fmt;
