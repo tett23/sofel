@@ -456,10 +456,10 @@ fn validate_subtable(w: &mut Walker<'_, '_>, field: usize, at: usize, ty: u16) {
                 let f = count_at
                     .saturating_add(gw)
                     .saturating_add(i.saturating_mul(gw));
-                let Some((set_at, set)) = w.follow(f, at, gw, |d| LigatureSet::new(d, gw)) else {
+                let Some((set_at, _, available)) = w.offset_prefix(f, at, gw, 0, gw) else {
                     continue;
                 };
-                for j in 0..set.len() {
+                for j in 0..available {
                     let f = set_at
                         .saturating_add(2)
                         .saturating_add(j.saturating_mul(gw));

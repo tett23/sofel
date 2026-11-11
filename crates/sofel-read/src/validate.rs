@@ -229,7 +229,7 @@ fn sfnt_inner(
     color_tables(sfnt, glyphs_wide.or(glyphs_narrow), report);
     let gdef_data = table(sfnt, gdef::TAG);
     if let Some(d) = gdef_data {
-        validate_layout(gdef::TAG, d, None, report, &mut damage);
+        validate_layout(gdef::TAG, d, None, axes, report, &mut damage);
     }
     // Lookups may only use mark glyph sets that GDEF defines.
     let mark_sets = Some(
@@ -239,12 +239,10 @@ fn sfnt_inner(
             .map_or(0, |s| u16::try_from(s.len()).unwrap_or(u16::MAX)),
     );
     if let Some(d) = table(sfnt, gsub::TAG) {
-        validate_layout(gsub::TAG, d, mark_sets, report, &mut damage);
-        layout_variations(d, gsub::TAG, axes, report);
+        validate_layout(gsub::TAG, d, mark_sets, axes, report, &mut damage);
     }
     if let Some(d) = table(sfnt, gpos::TAG) {
-        validate_layout(gpos::TAG, d, mark_sets, report, &mut damage);
-        layout_variations(d, gpos::TAG, axes, report);
+        validate_layout(gpos::TAG, d, mark_sets, axes, report, &mut damage);
     }
     // GLYF and LOCA replace glyf and loca when GLYF is present (ADR 0011).
     let extended = table(sfnt, glyf::TAG_WIDE).is_some();
@@ -291,6 +289,7 @@ fn validate_layout(
     tag: Tag,
     data: &[u8],
     mark_sets: Option<u16>,
+    axes: Option<u16>,
     report: &mut dyn FnMut(Diagnostic),
     damage: &mut Option<&mut dyn FnMut(DamageEvent)>,
 ) {
@@ -303,16 +302,24 @@ fn validate_layout(
         ));
     }
     if let Some(extra) = damage.as_deref_mut() {
-        inspect_damage(tag, data, mark_sets, &mut |event| match event {
+        let mut emit = |event| match event {
             DamageEvent::Diagnostic(diagnostic) => report(diagnostic),
             other => extra(other),
-        });
+        };
+        inspect_damage(tag, data, mark_sets, &mut emit);
+        if tag != gdef::TAG {
+            layout_variations(data, tag, axes, &mut |diagnostic| {
+                crate::layout::damage::forward(diagnostic, &mut emit)
+            });
+        }
     } else if tag == gdef::TAG {
         gdef::validate(data, report);
     } else if tag == gsub::TAG {
         gsub::validate(data, mark_sets, report);
+        layout_variations(data, tag, axes, report);
     } else if tag == gpos::TAG {
         gpos::validate(data, mark_sets, report);
+        layout_variations(data, tag, axes, report);
     }
 }
 

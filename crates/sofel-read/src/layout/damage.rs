@@ -60,7 +60,7 @@ pub fn inspect_damage(
     }
 }
 
-fn forward(diagnostic: Diagnostic, report: &mut dyn FnMut(DamageEvent)) {
+pub(crate) fn forward(diagnostic: Diagnostic, report: &mut dyn FnMut(DamageEvent)) {
     let kind = diagnostic.kind;
     let source = diagnostic.offset;
     report(DamageEvent::Diagnostic(diagnostic));
@@ -68,6 +68,7 @@ fn forward(diagnostic: Diagnostic, report: &mut dyn FnMut(DamageEvent)) {
         Kind::OffsetOutOfBounds { .. }
         | Kind::Truncated { .. }
         | Kind::UnknownFormat { .. }
+        | Kind::UnknownConditionFormat { .. }
         | Kind::UnknownVersion { .. } => {
             report(DamageEvent::Unchecked {
                 table: diagnostic.table,

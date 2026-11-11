@@ -18,9 +18,6 @@
 #   dfont               a font in a Mac resource fork, which sofel-read
 #                       does not open yet (ADR 0007, ADR 0001 stage 8);
 #                       restricted to the case identified by ADR 0044
-#   sanitize            HarfBuzz's sanitizer rejects the whole GSUB/GPOS
-#                       (after neutering offsets), sofel reads the valid
-#                       parts; restricted to the cases identified by ADR 0044
 # Remove an entry when it passes; the test fails until you do.
 in-house/aat-kerx.tests:5  # aat
 in-house/aat-kerx.tests:6  # aat

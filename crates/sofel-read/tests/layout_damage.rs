@@ -278,3 +278,62 @@ fn inv4_partial_feature_list_walks_valid_child_descendants() {
         "{found:?}"
     );
 }
+
+#[test]
+fn inv4_partial_script_list_walks_valid_child_descendants() {
+    let mut bytes = vec![0; 23];
+    bytes
+        .get_mut(0..4)
+        .unwrap()
+        .copy_from_slice(&0x0001_0000u32.to_be_bytes());
+    bytes
+        .get_mut(4..6)
+        .unwrap()
+        .copy_from_slice(&10u16.to_be_bytes());
+    bytes
+        .get_mut(10..12)
+        .unwrap()
+        .copy_from_slice(&4u16.to_be_bytes());
+    bytes.get_mut(12..16).unwrap().copy_from_slice(b"abcd");
+    bytes
+        .get_mut(16..18)
+        .unwrap()
+        .copy_from_slice(&9u16.to_be_bytes());
+    bytes
+        .get_mut(19..21)
+        .unwrap()
+        .copy_from_slice(&0xffffu16.to_be_bytes());
+    assert!(!original(gsub::TAG, &bytes).iter().any(|d| d.offset == 19));
+    let found = events(gsub::TAG, &bytes);
+    assert!(
+        found
+            .iter()
+            .any(|e| matches!(e, DamageEvent::Diagnostic(d) if d.offset == 19)),
+        "{found:?}"
+    );
+    assert!(
+        found
+            .iter()
+            .any(|e| matches!(e, DamageEvent::Unchecked { source: 19, .. })),
+        "{found:?}"
+    );
+}
+
+#[test]
+fn inv4_partial_attach_and_ligature_sets_report_readable_offsets() {
+    let gdef = [1u16, 0, 0, 12, 0, 0, 0, 2, 0xffff];
+    let gsub = [1u16, 0, 0, 0, 10, 1, 4, 4, 0, 1, 8, 1, 0, 1, 8, 2, 0xffff];
+    for (tag, words, field) in [
+        (gdef::TAG, gdef.as_slice(), 16),
+        (gsub::TAG, gsub.as_slice(), 32),
+    ] {
+        let bytes: Vec<_> = words.iter().copied().flat_map(u16::to_be_bytes).collect();
+        let found = events(tag, &bytes);
+        assert!(
+            found
+                .iter()
+                .any(|e| matches!(e,DamageEvent::Unchecked{source,..} if *source==field)),
+            "{found:?}"
+        );
+    }
+}

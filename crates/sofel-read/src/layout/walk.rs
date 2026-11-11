@@ -150,6 +150,40 @@ impl<'d, 'r> Walker<'d, 'r> {
     }
 
     /// Checks an offset of `width` bytes at `field` to a table of at
+    /// Follow an array of offsets, also returning the complete prefix of a
+    /// truncated array after reporting the missing bytes at its source.
+    pub(crate) fn offset_prefix(
+        &mut self,
+        field: usize,
+        base: usize,
+        width: usize,
+        count_at: usize,
+        item_width: usize,
+    ) -> Option<(usize, usize, usize)> {
+        let (at, data) = self.follow(field, base, width, Ok)?;
+        let header = count_at.saturating_add(2);
+        let Some(count) = be::u16_at(data, count_at).map(usize::from) else {
+            self.error(field, at, ReadError::truncated(header, data.len()));
+            return None;
+        };
+        let available = data
+            .len()
+            .saturating_sub(header)
+            .checked_div(item_width)?
+            .min(count);
+        if available < count {
+            self.error(
+                field,
+                at,
+                ReadError::truncated(
+                    header.saturating_add(count.saturating_mul(item_width)),
+                    data.len(),
+                ),
+            );
+        }
+        Some((at, count, available))
+    }
+
     /// least `length` bytes that is not read further.
     pub(crate) fn opaque(&mut self, field: usize, base: usize, width: usize, length: usize) {
         self.follow(field, base, width, |d| super::need(d, length));

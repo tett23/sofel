@@ -107,12 +107,11 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
                 });
                 let mut faces = Vec::new();
                 for i in 0..c.num_fonts() {
-                    if let Ok(s) = c.font(i) {
-                        if let Some(summary) =
+                    if let Ok(s) = c.font(i)
+                        && let Some(summary) =
                             validate_face(&s, &name, Some(i), as_json, out, &mut errors)
-                        {
-                            faces.push((i, summary));
-                        }
+                    {
+                        faces.push((i, summary));
                     }
                 }
                 if !faces.is_empty() {
@@ -527,9 +526,15 @@ mod tests {
         });
         summary.extra(DamageEvent::WorkLimit { table: gsub::TAG });
         assert_eq!(summary.locations.len(), 1);
-        assert_eq!(summary.locations[&(gsub::TAG, 4)].len(), 2);
+        assert_eq!(
+            summary.locations.get(&(gsub::TAG, 4)).map(Vec::len),
+            Some(2)
+        );
         assert_eq!(summary.unchecked.len(), 1);
-        assert_eq!(summary.unchecked[&(gsub::TAG, 4)].len(), 2);
+        assert_eq!(
+            summary.unchecked.get(&(gsub::TAG, 4)).map(Vec::len),
+            Some(2)
+        );
         assert_eq!(summary.limits.len(), 1);
         assert!(!summary.complete());
     }
