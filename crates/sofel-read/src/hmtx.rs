@@ -54,6 +54,7 @@ impl<'a> Hmtx<'a> {
     /// `advanceWidth` of `glyph`, in font units. Glyphs past the last long
     /// metric take the advance of the last one. `None` if `glyph` is not
     /// below `num_glyphs`.
+    #[inline]
     pub fn advance(&self, glyph: GlyphId) -> Option<u16> {
         if glyph.0 >= self.num_glyphs {
             return None;
