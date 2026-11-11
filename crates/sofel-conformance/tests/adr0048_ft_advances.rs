@@ -37,7 +37,6 @@ fn corpus_paths(data: &Path) -> Vec<std::path::PathBuf> {
     font_paths
 }
 #[test]
-#[ignore = "the full variable-font corpus is run explicitly"]
 fn adr0048_i02_freetype_advances_at_all_corpus_locations() {
     let data = paths::testdata();
     let exe = paths::ft_dump();
@@ -155,7 +154,6 @@ fn adr0048_i02_freetype_advances_at_all_corpus_locations() {
 }
 
 #[test]
-#[ignore = "requires the ADR 0030 --advances reference tool and testdata"]
 fn adr0048_i01_first_single_and_batch_advances_match() {
     let data = paths::testdata();
     let exe = paths::ft_dump();
