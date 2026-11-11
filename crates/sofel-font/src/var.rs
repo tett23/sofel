@@ -1470,7 +1470,7 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
 
     /// A font-wide metric at a HarfBuzz scale.
     pub fn scaled_metrics_position(&self, scale: &HbScale, tag: MetricsTag) -> Option<i32> {
-        scale.metrics_position_with_var(self.font, tag, self.hb_mvar_delta(tag.tag()))
+        scale.metrics_position_with_var(self.font, tag, self.metrics_variation(tag.tag()))
     }
 
     /// A font-wide metric with HarfBuzz's fallback at a scale.
@@ -1485,7 +1485,8 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
         })
     }
 
-    fn hb_mvar_delta(&self, tag: Tag) -> f32 {
+    /// Unscaled MVAR delta, as returned by HarfBuzz's hb_ot_metrics_get_variation.
+    pub fn metrics_variation(&self, tag: Tag) -> f32 {
         let record = self
             .font
             .table(Tag::new(b"MVAR"))
@@ -1495,6 +1496,16 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
             self.item_delta::<HbF32>(StoreKind::Mvar, record.outer, record.inner)
                 .unwrap_or(0.0)
         })
+    }
+
+    /// The MVAR delta at the horizontal font scale.
+    pub fn metrics_x_variation(&self, scale: &HbScale, tag: Tag) -> i32 {
+        scale.em_scalef_x(self.metrics_variation(tag))
+    }
+
+    /// The MVAR delta at the vertical font scale.
+    pub fn metrics_y_variation(&self, scale: &HbScale, tag: Tag) -> i32 {
+        scale.em_scalef_y(self.metrics_variation(tag))
     }
 
     /// A font-wide metric with HarfBuzz's fallback at this location.
