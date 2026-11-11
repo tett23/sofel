@@ -1469,6 +1469,19 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
         HbScale::unscaled(self.font).glyf_extents(self.font, glyph)
     }
 
+    /// Unrounded control box for painting an outline at nonzero HarfBuzz coordinates.
+    pub fn varied_glyf_control_box(
+        &self,
+        glyph: GlyphId,
+        scratch: &mut crate::GlyphScratch,
+    ) -> Option<sofel_geom::Rect> {
+        if self.location.hb_nonzero {
+            crate::hb_glyf::control_box(*self, glyph, scratch)
+        } else {
+            None
+        }
+    }
+
     /// A font-wide metric in font units at this location.
     pub fn metrics_position(&self, tag: MetricsTag) -> Option<i32> {
         self.scaled_metrics_position(&HbScale::unscaled(self.font), tag)

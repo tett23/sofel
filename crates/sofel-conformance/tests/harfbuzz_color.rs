@@ -555,3 +555,20 @@ fn canonical_paint(text: &str) -> String {
 
 #[path = "support/variation_locations.rs"]
 mod variation_locations;
+
+#[test]
+fn adr0027_i03_colr_layer_control_points_keep_fractional_coordinates() {
+    let path = paths::testdata().join("harfbuzz/test/api/fonts/RocherColorGX.abc.ttf");
+    let bytes = std::fs::read(path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let location = sofel_font::var::Location::named_instance(&font, 0);
+    let outlines = sofel_outline::Outlines::new(font.instance(&location));
+    let scale = sofel_font::HbScale::for_font(&font, 2000, 2000);
+    let e =
+        sofel_color::scaled_glyph_extents(&outlines, 0, &scale, &mut Scratch::default()).unwrap();
+    // hb-dump --metrics --named-instance=0, scale 2000x2000, glyph 0.
+    assert_eq!(
+        [e.x_bearing, e.y_bearing, e.width, e.height],
+        [52, 1671, 1360, -2097]
+    );
+}
