@@ -1277,6 +1277,29 @@ int32_t sofel_font_ft_face_metrics(const sofel_font_t *font, const sofel_locatio
 int32_t sofel_font_ft_v_advance(const sofel_font_t *font, const sofel_location_t *location,
                                uint32_t glyph, uint16_t *advance);
 
+/*
+ * The unscaled horizontal advance after FreeType's HVAR adjustment.
+ * SOFEL_ERROR_INVALID_GLYPH for glyph ids not below the glyph count.
+ *
+ * Rust: sofel_font::var::Instance::ft_h_advance
+ * HarfBuzz: none
+ * FreeType: TT_Get_HMetrics
+ */
+int32_t sofel_font_ft_h_advance(const sofel_font_t *font, const sofel_location_t *location,
+                               uint32_t glyph, uint16_t *advance);
+
+/*
+ * FreeType's unscaled top side bearing. `y_max` is the glyf header's yMax
+ * for fonts without vmtx. SOFEL_ERROR_INVALID_GLYPH for an invalid glyph.
+ *
+ * Rust: sofel_font::var::Instance::ft_top_side_bearing
+ * HarfBuzz: none
+ * FreeType: TT_Get_VMetrics
+ */
+int32_t sofel_font_ft_top_side_bearing(const sofel_font_t *font,
+                                       const sofel_location_t *location, uint32_t glyph,
+                                       int16_t y_max, int16_t *bearing);
+
 /* ----------------------------------------------------------- outlines */
 
 /*

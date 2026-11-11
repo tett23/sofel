@@ -267,6 +267,7 @@ jobs:
           SOFEL_REQUIRE_TESTDATA: '1'
         run: |
           cargo test -p sofel-capi --test fixture
+          cargo test -p sofel-capi --test variation adr0027_i03_location_changes_glyf_outline_and_box
           sh scripts/test-capi.sh native
 
   # docs/adr/0004, docs/adr/0007
@@ -346,7 +347,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [cmap, metrics, font, outline, os2, name, post, vorg, base, math, gdef, gsub, gpos, cff, shape, deserialize, repack, gvar, feature_variations, location]
+        target: [cmap, metrics, font, outline, os2, name, post, vorg, base, math, gdef, gsub, gpos, cff, shape, deserialize, repack, gvar, feature_variations, location, variation_store]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
