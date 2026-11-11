@@ -6,8 +6,6 @@ arabic.0.axis.wdth.min # variations: sofel-shape rejects --variations (exit 2; A
 arabic.0.axis.wdth.max # variations: sofel-shape rejects --variations (exit 2; ADR 0027 pending)
 arabic.0.all-min # variations: sofel-shape rejects --variations (exit 2; ADR 0027 pending)
 arabic.0.all-max # variations: sofel-shape rejects --variations (exit 2; ADR 0027 pending)
-devanagari.0.default # shaper:indic (ADR 0024 pending)
-devanagari.0.half-off # shaper:indic (ADR 0024 pending)
 devanagari.0.axis.wght.min # variations: sofel-shape rejects --variations (exit 2; ADR 0027 pending)
 devanagari.0.axis.wght.max # variations: sofel-shape rejects --variations (exit 2; ADR 0027 pending)
 devanagari.0.axis.wdth.min # variations: sofel-shape rejects --variations (exit 2; ADR 0027 pending)
