@@ -16,6 +16,7 @@
 #include "sofel.h"
 #include "fixture.h"
 #include "fixture_shape.h"
+#include "fixture_ppem.h"
 #include "fixture_subset.h"
 
 #if !defined(__wasi__)
@@ -1495,6 +1496,8 @@ static void test_color(void) {
 /* The shaping functions of sofel.h (ADR 0020) against their declared
  * types, as check_declarations does for the others. */
 static void check_shape_declarations(void) {
+  sofel_scale_t *(*scale_with_ppem)(const sofel_font_t *, int32_t, int32_t, uint32_t,
+                                     uint32_t, int32_t *) = sofel_scale_create_with_ppem;
   int32_t (*direction_from_string)(const char *, size_t) = sofel_direction_from_string;
   const char *(*direction_to_string)(int32_t) = sofel_direction_to_string;
   int32_t (*script_from_string)(const char *, size_t, uint32_t *) = sofel_script_from_string;
@@ -1595,6 +1598,7 @@ static void check_shape_declarations(void) {
   uint8_t (*space)(uint32_t) = sofel_unicode_space_fallback_type;
   uint32_t (*vertical)(uint32_t) = sofel_unicode_vertical_char_for;
   const void *all[] = {
+      (const void *)scale_with_ppem,
       (const void *)direction_from_string, (const void *)direction_to_string,
       (const void *)script_from_string, (const void *)script_direction,
       (const void *)language_create, (const void *)language_destroy,
@@ -2003,6 +2007,79 @@ static void test_shape_fixture_font(const sofel_font_t *font) {
   CHECK(sofel_shape_plan_create(NULL, NULL, &seg, NULL, 0, &e) == NULL && e == SOFEL_ERROR_NULL);
   sofel_shape_plan_destroy(NULL);
   sofel_buffer_destroy(b);
+}
+
+static void check_ppem_shape(const sofel_font_t *font, const sofel_scale_t *scale,
+                             const sofel_shape_plan_t *plan, const sofel_segment_t *seg,
+                             const int32_t normal[4], const int32_t fallback[4]) {
+  sofel_buffer_t *buffer = sofel_buffer_create();
+  uint32_t glyphs[1];
+  int32_t positions[4];
+  size_t i;
+  CHECK(buffer != NULL);
+  CHECK(sofel_buffer_add_utf8(buffer, "A", 1, 0, 1) == SOFEL_OK);
+  CHECK(sofel_shape(font, NULL, scale, plan, buffer) == SOFEL_OK);
+  CHECK(sofel_buffer_glyphs(buffer, glyphs, NULL, NULL, positions, 1) == 1);
+  CHECK(glyphs[0] == 1);
+  for (i = 0; i < 4; i++) CHECK(positions[i] == normal[i]);
+  CHECK(sofel_buffer_clear(buffer) == SOFEL_OK);
+  CHECK(sofel_buffer_add_utf8(buffer, "A", 1, 0, 1) == SOFEL_OK);
+  CHECK(sofel_shape_fallback(font, NULL, scale, seg, buffer) == SOFEL_OK);
+  CHECK(sofel_buffer_glyphs(buffer, glyphs, NULL, NULL, positions, 1) == 1);
+  CHECK(glyphs[0] == 1);
+  for (i = 0; i < 4; i++) CHECK(positions[i] == fallback[i]);
+  sofel_buffer_destroy(buffer);
+}
+
+static void inv1_legacy_scale(const sofel_font_t *font, const sofel_shape_plan_t *plan,
+                               const sofel_segment_t *seg) {
+  int32_t error = -1;
+  sofel_scale_t *legacy = sofel_scale_create(font, 1000, 2000, &error);
+  CHECK(legacy != NULL && error == SOFEL_OK);
+  if (legacy != NULL) {
+    check_ppem_shape(font, legacy, plan, seg, ppem_cases[0].normal, ppem_cases[0].fallback);
+    sofel_scale_destroy(legacy);
+  }
+}
+
+static void inv2_axis_ppem(const sofel_font_t *font, const sofel_shape_plan_t *plan,
+                            const sofel_segment_t *seg) {
+  int32_t error = -1;
+  size_t i;
+  for (i = 0; i < COUNT(ppem_cases); i++) {
+    const struct ppem_case *c = &ppem_cases[i];
+    sofel_scale_t *scale = sofel_scale_create_with_ppem(font, 1000, 2000, c->x, c->y, &error);
+    CHECK(scale != NULL && error == SOFEL_OK);
+    if (scale != NULL) {
+      check_ppem_shape(font, scale, plan, seg, c->normal, c->fallback);
+      sofel_scale_destroy(scale);
+    }
+  }
+  CHECK(sofel_scale_create_with_ppem(NULL, 1, 1, 12, 16, &error) == NULL &&
+        error == SOFEL_ERROR_NULL);
+  CHECK(sofel_scale_create_with_ppem(font, 1, 1, 12, 16, NULL) == NULL);
+}
+
+static void inv3_null_scale(const sofel_font_t *font, const sofel_shape_plan_t *plan,
+                            const sofel_segment_t *seg) {
+  check_ppem_shape(font, NULL, plan, seg, ppem_null_normal, ppem_null_fallback);
+}
+
+static void test_shape_ppem(void) {
+  int32_t error = -1;
+  sofel_font_t *font = sofel_font_create(ppem_font_data, sizeof ppem_font_data, 0, &error);
+  sofel_segment_t seg = {SOFEL_DIRECTION_LTR, SOFEL_TAG('L', 'a', 't', 'n'), NULL};
+  sofel_shape_plan_t *plan;
+  CHECK(font != NULL && error == SOFEL_OK);
+  if (font == NULL) return;
+  plan = sofel_shape_plan_create(font, NULL, &seg, NULL, 0, &error);
+  CHECK(plan != NULL && error == SOFEL_OK);
+  if (plan == NULL) { sofel_font_destroy(font); return; }
+  inv1_legacy_scale(font, plan, &seg);
+  inv2_axis_ppem(font, plan, &seg);
+  inv3_null_scale(font, plan, &seg);
+  sofel_shape_plan_destroy(plan);
+  sofel_font_destroy(font);
 }
 
 /* Golem's golem_font_shape (modules/golem-font/cbits/golem/golem_font.c)
@@ -2657,6 +2734,7 @@ int main(void) {
   test_shape_buffers();
   test_shape_glyph_buffers(font);
   test_shape_fixture_font(font);
+  test_shape_ppem();
   test_golem_shape();
   test_subset_input();
   test_axis_strings();

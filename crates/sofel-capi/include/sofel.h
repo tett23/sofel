@@ -886,6 +886,20 @@ sofel_scale_t *sofel_scale_create(const sofel_font_t *font, int32_t x_scale, int
                                   int32_t *error);
 
 /*
+ * A scale with separate horizontal and vertical pixels per em for Device
+ * adjustments during shaping. A zero ppem disables Device adjustments on
+ * that axis. The ownership and error rules match sofel_scale_create.
+ *
+ * Rust: sofel_shape::Scale::new
+ * HarfBuzz: hb_font_set_scale, hb_font_set_ppem
+ * FreeType: none
+ */
+sofel_scale_t *sofel_scale_create_with_ppem(const sofel_font_t *font,
+                                            int32_t x_scale, int32_t y_scale,
+                                            uint32_t x_ppem, uint32_t y_ppem,
+                                            int32_t *error);
+
+/*
  * Frees a scale. NULL does nothing.
  *
  * Rust: none

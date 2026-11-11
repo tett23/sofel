@@ -29,6 +29,7 @@ FreeTypeが合成する既定の名前つきスタイルは、名前が欠ける
 C ABIには位置の作成、座標の取得、Variationの文字列変換、軸と名前つきインスタンスの問い合わせ、位置ごとのPostScript名を追加した。
 さらに、CFF2の `blend` は指定した位置の係数で評価し、輪郭とグリフの箱に反映する。Private DICTも位置ごとに読みなおす。C ABIの `sofel_cff2_blend_vector` は、既定成分と0の列を含む係数列を返す。
 さらに、メトリクス、基準線、輪郭、シェーピング、塗りの既存関数には位置の引数を追加した。
+C API の `sofel_scale_create_with_ppem` は、シェーピング用スケールに横と縦の ppem を指定する（[ADR 0052](docs/adr/0052-c-shaping-ppem.md)）。従来の `sofel_scale_create` と NULL のスケールでは両軸とも 0 になる。
 位置による値の変更は、HVARとVVARの送り幅、VORGとVVARの縦原点、MVARのフォント全体のメトリクス、FreeTypeの縦送り幅、BASEのVariationIndexまで実装した。
 gvarの幻の点による送り幅と箱、輪郭、シェーピング、塗りの変化量と、コマンドラインから位置を指定する機能は未実装である。
 ライセンスと取得元を固定した追加フォントの検証は [ADR 0031](docs/adr/0031-diverse-font-corpus.md) に従って実装した。
