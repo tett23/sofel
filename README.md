@@ -10,6 +10,8 @@ WOFFとWOFF2、Type1やBDFなどの古い形式、AAT、絵文字（COLR、埋�
 
 `wght=500` での位置の生成時間は[可変フォントの計測記録](docs/benchmarks/2026-11-11-variable-location-creation.md)にある。
 
+対応範囲を広げる段階と今後の実装予定は[ロードマップ](docs/roadmap.md)に記す。現在の実装を支えるクレート、適合テスト、性能計測の完了条件は [ADR 0045](docs/adr/0045-foundation-completion-criteria.md) を参照。
+
 ## 状態
 
 2段階目（glyfの輪郭とアンチエイリアスのラスタライズ）まで実装し、6段階目のCFFとCFF2の輪郭、CIDの問い合わせ、PostScriptのフォントの情報（[ADR 0021](docs/adr/0021-cff-outlines.md)）と、CIDとグリフ名を速く引くcharsetの索引（[ADR 0025](docs/adr/0025-cff-charset-index.md)）を実装している。CFF2の輪郭は可変フォントの指定した位置でも取り出せる。
