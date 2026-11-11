@@ -1143,6 +1143,12 @@ pub struct Instance<'font, 'data, 'loc, 'source> {
     location: &'loc Location<'source>,
 }
 
+impl<'font, 'data> From<&'font Font<'data>> for Instance<'font, 'data, 'static, 'static> {
+    fn from(font: &'font Font<'data>) -> Self {
+        font.default_instance()
+    }
+}
+
 impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
     /// The font whose tables this instance reads.
     pub fn font(&self) -> &'font Font<'data> {
