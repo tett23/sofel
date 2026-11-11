@@ -359,7 +359,7 @@ fn i02_named_instance_inquiries_copy_design_coordinates() {
 }
 
 #[test]
-fn i02_freetype_mm_var_inquiries_use_fixed_coordinates() {
+fn adr0036_i01_i02_i03_freetype_mm_var_inquiries_include_zero_style() {
     let bytes = named_font_bytes();
     let mut error = -99;
     // SAFETY: bytes stay alive until the font is destroyed.
@@ -384,7 +384,7 @@ fn i02_freetype_mm_var_inquiries_use_fixed_coordinates() {
         unsafe { sofel_font_ft_mm_var_named_style_count(font, &mut count) },
         OK
     );
-    assert_eq!(count, 1);
+    assert_eq!(count, 2);
     let mut style = SofelFtNamedStyleInfo::default();
     // SAFETY: font is live and style is writable.
     assert_eq!(
@@ -402,13 +402,27 @@ fn i02_freetype_mm_var_inquiries_use_fixed_coordinates() {
         OK
     );
     assert_eq!((coords, needed), ([0xC000], 1));
+    // SAFETY: font is live and style is writable.
+    assert_eq!(
+        unsafe { sofel_font_ft_mm_var_named_style(font, 1, &mut style) },
+        OK
+    );
+    assert_eq!((style.strid, style.psid), (0, 0));
+    // SAFETY: font is live and outputs are writable.
+    assert_eq!(
+        unsafe {
+            sofel_font_ft_mm_var_named_style_coords(font, 1, coords.as_mut_ptr(), 1, &mut needed)
+        },
+        OK
+    );
+    assert_eq!((coords, needed), ([0], 1));
     let mut default_index = u32::MAX;
     // SAFETY: font is live and output is writable.
     assert_eq!(
         unsafe { sofel_font_ft_default_named_instance(font, &mut default_index) },
         OK
     );
-    assert_eq!(default_index, 0);
+    assert_eq!(default_index, 2);
     // SAFETY: font is owned and no longer used.
     unsafe { sofel_font_destroy(font) };
 }
