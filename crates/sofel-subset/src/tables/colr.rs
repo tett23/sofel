@@ -46,13 +46,22 @@ fn v1_offset(t: D<'_>, version: u16, at: usize) -> u32 {
     if version == 0 { 0 } else { t.u32(at) }
 }
 
+fn retains_no_v1_paints(colr: &Colr<'_>, glyphset: &RangeSet) -> bool {
+    (0..colr.num_base_glyph_paints())
+        .filter_map(|i| colr.base_glyph_paint_record(i))
+        .all(|(g, _)| !glyphset.contains(u32::from(g)))
+}
+
 /// Whether a kept COLR table needs the variation store subsetting of
 /// ADR 0022 stage 10: version 1 with an ItemVariationStore or a
 /// DeltaSetIndexMap.
-pub(crate) fn needs_var_store(data: &[u8]) -> bool {
+pub(crate) fn needs_var_store(data: &[u8], glyphset: &RangeSet) -> bool {
     let t = D(data);
-    sanitized(data)
-        .is_some_and(|c| c.version() >= 1 && (v1_offset(t, 1, 26) != 0 || v1_offset(t, 1, 30) != 0))
+    sanitized(data).is_some_and(|c| {
+        c.version() >= 1
+            && !retains_no_v1_paints(&c, glyphset)
+            && (v1_offset(t, 1, 26) != 0 || v1_offset(t, 1, 30) != 0)
+    })
 }
 
 /// The layer index range `[first, first + count)` of a base glyph
@@ -658,10 +667,7 @@ pub(crate) fn subset(
         return Ok(false);
     }
     s.zeros(14);
-    let downgrade = (0..colr.num_base_glyph_paints())
-        .filter_map(|i| colr.base_glyph_paint_record(i))
-        .all(|(g, _)| !glyphset.contains(u32::from(g)));
-    if version == 0 || downgrade {
+    if version == 0 || retains_no_v1_paints(&colr, glyphset) {
         return Ok(serialize_v0(s, 0, &base, &layers));
     }
     s.zeros(20);
