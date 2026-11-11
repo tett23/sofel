@@ -11,7 +11,7 @@ use crate::outline::GlyphLines;
 /// The lines sofel produces for one glyph at `ppem`, in the same form
 /// as `ft-dump --raster` (error codes dropped).
 pub fn sofel_glyph(
-    outlines: &Outlines<'_>,
+    outlines: &Outlines<'_, '_, '_>,
     glyph: u32,
     ppem: u16,
     scratch: &mut Scratch,

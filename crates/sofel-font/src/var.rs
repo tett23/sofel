@@ -1,5 +1,7 @@
 //! Variable-font coordinates and variation arithmetic (ADR 0027, ADR 0030).
 
+pub mod gvar;
+
 use alloc::vec::Vec;
 use alloc::{format, string::String};
 use sofel_geom::float::{hb_clamp_to_i32, hb_roundf32, i32_to_f32};
@@ -606,6 +608,8 @@ pub struct Location<'data> {
     source: Option<SourceFont<'data>>,
     hb_scalars: [Option<StoreScalars<f32>>; STORE_COUNT],
     ft_scalars: [Option<StoreScalars<i32>>; STORE_COUNT],
+    gvar_hb: Vec<f32>,
+    gvar_ft: Vec<i32>,
 }
 
 impl Location<'static> {
@@ -624,6 +628,8 @@ impl Location<'static> {
             source: None,
             hb_scalars: [const { None }; STORE_COUNT],
             ft_scalars: [const { None }; STORE_COUNT],
+            gvar_hb: Vec::new(),
+            gvar_ft: Vec::new(),
         };
         &DEFAULT
     }
@@ -871,6 +877,19 @@ impl<'data> Location<'data> {
         });
         let hb_nonzero = hb_coords.iter().any(|c| *c != 0);
         let ft_default = ft_coords.iter().all(|c| c.0 == 0);
+        let gvar = gvar::table(font);
+        let gvar_hb = gvar
+            .as_ref()
+            .map(|table| gvar::shared_hb(table, &hb_coords))
+            .unwrap_or_default();
+        let gvar_ft = gvar
+            .as_ref()
+            .filter(|_| supplied)
+            .map(|table| {
+                let coords: Vec<i32> = ft_coords.iter().map(|coord| coord.0).collect();
+                gvar::shared_ft(table, &coords)
+            })
+            .unwrap_or_default();
         Self {
             hb_coords,
             hb_design: Vec::new(),
@@ -884,6 +903,8 @@ impl<'data> Location<'data> {
             source,
             hb_scalars,
             ft_scalars,
+            gvar_hb,
+            gvar_ft,
         }
     }
 
@@ -1123,6 +1144,16 @@ pub struct Instance<'font, 'data, 'loc, 'source> {
 }
 
 impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
+    /// The font whose tables this instance reads.
+    pub fn font(&self) -> &'font Font<'data> {
+        self.font
+    }
+
+    /// The normalized location used by this instance.
+    pub fn location(&self) -> &'loc Location<'source> {
+        self.location
+    }
+
     /// Horizontal advance in font units at this location.
     pub fn advance(&self, glyph: GlyphId) -> u32 {
         let base = u32::from(

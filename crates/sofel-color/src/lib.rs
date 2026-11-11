@@ -113,7 +113,13 @@ pub fn paint<'a>(
     scratch: &mut Scratch,
     painter: &mut impl Painter,
 ) -> Painted {
-    paint_any(font, glyph, options, scratch, &mut Direct(painter))
+    paint_any(
+        font.default_instance(),
+        glyph,
+        options,
+        scratch,
+        &mut Direct(painter),
+    )
 }
 
 /// [`paint`] into a [`Recording`], which keeps images (their data
@@ -125,7 +131,18 @@ pub fn paint_recording<'a>(
     scratch: &mut Scratch,
     recording: &mut Recording<'a>,
 ) -> Painted {
-    paint_any(font, glyph, options, scratch, recording)
+    paint_any(font.default_instance(), glyph, options, scratch, recording)
+}
+
+/// Records color glyph commands at the supplied variation location.
+pub fn paint_recording_at<'a>(
+    instance: sofel_outline::font::var::Instance<'_, 'a, '_, '_>,
+    glyph: u32,
+    options: &PaintOptions<'a>,
+    scratch: &mut Scratch,
+    recording: &mut Recording<'a>,
+) -> Painted {
+    paint_any(instance, glyph, options, scratch, recording)
 }
 
 /// The `COLR` version 0 layers of `glyph`: each layer's glyph and its
@@ -286,7 +303,7 @@ fn to_f32(v: i32) -> f32 {
 /// largest strikes) or `COLR`, else from the outlines
 /// ([`Outlines::glyph_extents`]). In font units.
 pub fn glyph_extents(
-    outlines: &Outlines<'_>,
+    outlines: &Outlines<'_, '_, '_>,
     glyph: u32,
     scratch: &mut Scratch,
 ) -> Option<GlyphExtents> {
@@ -300,7 +317,7 @@ pub fn glyph_extents(
 
 /// [`glyph_extents`] at `scale` (HarfBuzz's font scale).
 pub fn scaled_glyph_extents(
-    outlines: &Outlines<'_>,
+    outlines: &Outlines<'_, '_, '_>,
     glyph: u32,
     scale: &HbScale,
     scratch: &mut Scratch,
@@ -322,7 +339,7 @@ pub fn scaled_glyph_extents(
 
 /// HarfBuzz's `COLR::get_extents`: the clip box, else the painted box.
 fn colr_extents(
-    outlines: &Outlines<'_>,
+    outlines: &Outlines<'_, '_, '_>,
     glyph: u32,
     scale: &HbScale,
     scratch: &mut Scratch,
