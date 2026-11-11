@@ -297,19 +297,71 @@ fn referenced_gdef_variation_store_remains_unsupported() {
 }
 
 #[test]
-fn gdef_store_with_kept_gpos_remains_unsupported() {
+fn gdef_store_with_gpos_without_variation_index_is_subset() {
     let gdef = gdef_with_unused_store(class_def2(&[(1, 5, 1)]));
     let gpos = layout_table(&[], &[]);
+    let data = font_with(vec![(b"GDEF", gdef), (b"GPOS", gpos)]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("A")).unwrap();
+    assert!(out_table(&out, b"GDEF").is_some());
+    let copied_gpos = chars("A").map_set(SetKind::NoSubsetTables, |set| {
+        set.add(Tag::new(b"GPOS").to_u32());
+    });
+    let out = subset(&font, &copied_gpos).unwrap();
+    assert_eq!(out_table(&out, b"GPOS"), Some(layout_table(&[], &[])));
+}
+
+#[test]
+fn gdef_store_with_math_without_variation_index_is_subset() {
+    let gdef = gdef_with_unused_store(class_def2(&[(1, 5, 1)]));
+    let math = Buf::new().u32(0x0001_0000).u16(0).u16(0).u16(0).done();
+    let data = font_with(vec![(b"GDEF", gdef), (b"MATH", math)]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("A")).unwrap();
+    assert!(out_table(&out, b"GDEF").is_some());
+}
+
+#[test]
+fn gdef_store_with_gpos_variation_index_remains_unsupported() {
+    let gdef = gdef_with_unused_store(class_def2(&[(1, 5, 1)]));
+    let varidx = Buf::new().u16(0).u16(0).u16(0x8000).done();
+    let single = link(
+        Buf::new().u16(1).u16(0).u16(0x0040).u16(0).done(),
+        vec![(2, 2, coverage1(&[1])), (6, 2, varidx)],
+    );
+    let gpos = layout_table(&[(b"kern", &[0])], &[(1, single)]);
     let data = font_with(vec![(b"GDEF", gdef), (b"GPOS", gpos)]);
     let font = Font::new(&data, 0).unwrap();
     assert!(
         matches!(subset(&font, &chars("A")), Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF"))
     );
-    let copied_gpos = chars("A").map_set(SetKind::NoSubsetTables, |set| {
-        set.add(Tag::new(b"GPOS").to_u32());
-    });
+    let copied_gpos_without_gdef = chars("A")
+        .map_set(SetKind::NoSubsetTables, |set| set.add(Tag::new(b"GPOS").to_u32()))
+        .map_set(SetKind::DropTables, |set| set.add(Tag::new(b"GDEF").to_u32()));
     assert!(
-        matches!(subset(&font, &copied_gpos), Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF"))
+        matches!(subset(&font, &copied_gpos_without_gdef), Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GPOS"))
+    );
+}
+
+#[test]
+fn gdef_store_with_math_variation_index_remains_unsupported() {
+    let gdef = gdef_with_unused_store(class_def2(&[(1, 5, 1)]));
+    let varidx = Buf::new().u16(0).u16(0).u16(0x8000).done();
+    let constants = link(vec![0; 214], vec![(10, 2, varidx)]);
+    let math = link(
+        Buf::new().u32(0x0001_0000).u16(0).u16(0).u16(0).done(),
+        vec![(4, 2, constants)],
+    );
+    let data = font_with(vec![(b"GDEF", gdef), (b"MATH", math)]);
+    let font = Font::new(&data, 0).unwrap();
+    assert!(
+        matches!(subset(&font, &chars("A")), Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF"))
+    );
+    let copied_math_without_gdef = chars("A")
+        .map_set(SetKind::NoSubsetTables, |set| set.add(Tag::new(b"MATH").to_u32()))
+        .map_set(SetKind::DropTables, |set| set.add(Tag::new(b"GDEF").to_u32()));
+    assert!(
+        matches!(subset(&font, &copied_math_without_gdef), Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"MATH"))
     );
 }
 
