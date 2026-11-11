@@ -186,22 +186,32 @@ fn layout_unsupported(
             sofel_font::read::be::u32_at(d, 0).unwrap_or(0) >= 0x0001_0001
                 && sofel_font::read::be::u32_at(d, 10) != Some(0)
         });
-    let gdef_store_is_unused = kept(b"GDEF").is_some_and(layout::gdef::unused_variation_store)
-        && !retained(b"GPOS")
-        && !retained(b"MATH")
-        && !gsub_feature_variations_retained;
-    if !pinned && kept(b"GDEF").is_some_and(layout::gdef::has_var_store) && !gdef_store_is_unused {
+    // A VariationIndex Device necessarily contains the format word 0x8000.
+    // Scan the whole retained table so an unknown or malformed subtable
+    // cannot make a real reference look absent. Other 0x8000 words may
+    // conservatively keep the table unsupported.
+    let may_reference_gdef_store = |d: &[u8]| d.windows(2).any(|word| word == [0x80, 0x00]);
+    let gpos_may_reference_store = retained(b"GPOS")
+        && font
+            .table(Tag::new(b"GPOS"))
+            .is_some_and(may_reference_gdef_store);
+    let math_may_reference_store = retained(b"MATH")
+        && font
+            .table(Tag::new(b"MATH"))
+            .is_some_and(may_reference_gdef_store);
+    let gdef_store_is_local =
+        !gpos_may_reference_store && !math_may_reference_store && !gsub_feature_variations_retained;
+    if !pinned && kept(b"GDEF").is_some_and(layout::gdef::has_var_store) && !gdef_store_is_local {
         return Err(SubsetError::Unsupported {
             tag: Tag::new(b"GDEF"),
             reason: "the GDEF item variation store (ADR 0022 stage 10)",
         });
     }
-    // collect_layout_variation_indices remaps MATH's VariationIndex
-    // tables with the GDEF store even when GDEF itself is dropped.
-    let math_kept = font.table(Tag::new(b"MATH")).is_some()
-        && !drop.contains(Tag::new(b"MATH").to_u32())
-        && !no_subset.contains(Tag::new(b"MATH").to_u32());
-    if math_kept
+    // A copied MATH table needs no remapping even when GDEF is dropped.
+    let math_subset = retained(b"MATH") && !no_subset.contains(Tag::new(b"MATH").to_u32());
+    if !pinned
+        && math_subset
+        && math_may_reference_store
         && font
             .table(Tag::new(b"GDEF"))
             .is_some_and(layout::gdef::has_var_store)
@@ -210,18 +220,6 @@ fn layout_unsupported(
             tag: Tag::new(b"MATH"),
             reason: "MATH with a GDEF item variation store (ADR 0022 stage 10)",
         });
-    }
-    if let Some(d) = kept(b"BASE").filter(|_| !pinned) {
-        let v = sofel_font::read::be::u32_at(d, 0).unwrap_or(0);
-        if v >= 0x0001_0001
-            && sofel_font::read::be::u32_at(d, 8).unwrap_or(0) != 0
-            && !crate::tables::base::unused_variation_store(d)
-        {
-            return Err(SubsetError::Unsupported {
-                tag: Tag::new(b"BASE"),
-                reason: "the BASE item variation store (ADR 0022 stage 10)",
-            });
-        }
     }
     Ok(())
 }

@@ -297,20 +297,80 @@ fn referenced_gdef_variation_store_remains_unsupported() {
 }
 
 #[test]
-fn gdef_store_with_kept_gpos_remains_unsupported() {
+fn gdef_store_with_gpos_without_variation_index_is_subset() {
     let gdef = gdef_with_unused_store(class_def2(&[(1, 5, 1)]));
     let gpos = layout_table(&[], &[]);
+    let data = font_with(vec![(b"GDEF", gdef), (b"GPOS", gpos)]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("A")).unwrap();
+    assert!(out_table(&out, b"GDEF").is_some());
+    let copied_gpos = chars("A").map_set(SetKind::NoSubsetTables, |set| {
+        set.add(Tag::new(b"GPOS").to_u32());
+    });
+    let out = subset(&font, &copied_gpos).unwrap();
+    assert_eq!(out_table(&out, b"GPOS"), Some(layout_table(&[], &[])));
+}
+
+#[test]
+fn gdef_store_with_math_without_variation_index_is_subset() {
+    let gdef = gdef_with_unused_store(class_def2(&[(1, 5, 1)]));
+    let math = Buf::new().u32(0x0001_0000).u16(0).u16(0).u16(0).done();
+    let data = font_with(vec![(b"GDEF", gdef), (b"MATH", math)]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("A")).unwrap();
+    assert!(out_table(&out, b"GDEF").is_some());
+}
+
+#[test]
+fn gdef_store_with_gpos_variation_index_remains_unsupported() {
+    let gdef = gdef_with_unused_store(class_def2(&[(1, 5, 1)]));
+    let varidx = Buf::new().u16(0).u16(0).u16(0x8000).done();
+    let single = link(
+        Buf::new().u16(1).u16(0).u16(0x0040).u16(0).done(),
+        vec![(2, 2, coverage1(&[1])), (6, 2, varidx)],
+    );
+    let gpos = layout_table(&[(b"kern", &[0])], &[(1, single)]);
     let data = font_with(vec![(b"GDEF", gdef), (b"GPOS", gpos)]);
     let font = Font::new(&data, 0).unwrap();
     assert!(
         matches!(subset(&font, &chars("A")), Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF"))
     );
-    let copied_gpos = chars("A").map_set(SetKind::NoSubsetTables, |set| {
-        set.add(Tag::new(b"GPOS").to_u32());
-    });
-    assert!(
-        matches!(subset(&font, &copied_gpos), Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF"))
+    let copied_gpos_without_gdef = chars("A")
+        .map_set(SetKind::NoSubsetTables, |set| {
+            set.add(Tag::new(b"GPOS").to_u32())
+        })
+        .map_set(SetKind::DropTables, |set| {
+            set.add(Tag::new(b"GDEF").to_u32())
+        });
+    let out = subset(&font, &copied_gpos_without_gdef).unwrap();
+    assert!(out_table(&out, b"GDEF").is_none());
+    assert_eq!(out_table(&out, b"GPOS"), out_table(&data, b"GPOS"));
+}
+
+#[test]
+fn gdef_store_with_math_variation_index_remains_unsupported() {
+    let gdef = gdef_with_unused_store(class_def2(&[(1, 5, 1)]));
+    let varidx = Buf::new().u16(0).u16(0).u16(0x8000).done();
+    let constants = link(vec![0; 214], vec![(10, 2, varidx)]);
+    let math = link(
+        Buf::new().u32(0x0001_0000).u16(0).u16(0).u16(0).done(),
+        vec![(4, 2, constants)],
     );
+    let data = font_with(vec![(b"GDEF", gdef), (b"MATH", math)]);
+    let font = Font::new(&data, 0).unwrap();
+    assert!(
+        matches!(subset(&font, &chars("A")), Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF"))
+    );
+    let copied_math_without_gdef = chars("A")
+        .map_set(SetKind::NoSubsetTables, |set| {
+            set.add(Tag::new(b"MATH").to_u32())
+        })
+        .map_set(SetKind::DropTables, |set| {
+            set.add(Tag::new(b"GDEF").to_u32())
+        });
+    let out = subset(&font, &copied_math_without_gdef).unwrap();
+    assert!(out_table(&out, b"GDEF").is_none());
+    assert_eq!(out_table(&out, b"MATH"), out_table(&data, b"MATH"));
 }
 
 #[test]
@@ -324,6 +384,152 @@ fn gdef_store_with_gsub_feature_variations_remains_unsupported() {
         .u32(14)
         .done();
     let data = font_with(vec![(b"GDEF", gdef), (b"GSUB", gsub)]);
+    let font = Font::new(&data, 0).unwrap();
+    assert!(
+        matches!(subset(&font, &chars("A")), Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF"))
+    );
+}
+
+fn gdef_with_referenced_store(indices: &[u16]) -> Vec<u8> {
+    gdef_with_referenced_store_at(0, indices)
+}
+
+fn gdef_with_referenced_store_at(outer: u16, indices: &[u16]) -> Vec<u8> {
+    let mut glyph = Buf::new().u16(u16::try_from(indices.len()).unwrap());
+    for _ in indices {
+        glyph = glyph.u16(0);
+    }
+    let glyph = link(
+        glyph.done(),
+        indices
+            .iter()
+            .enumerate()
+            .map(|(i, &inner)| {
+                let varidx = Buf::new().u16(outer).u16(inner).u16(0x8000).done();
+                let caret = link(
+                    Buf::new().u16(3).i16(10).u16(0).done(),
+                    vec![(4, 2, varidx)],
+                );
+                (2 + 2 * i, 2, caret)
+            })
+            .collect(),
+    );
+    let carets = link(
+        Buf::new().u16(0).u16(1).u16(0).done(),
+        vec![(0, 2, coverage1(&[1])), (4, 2, glyph)],
+    );
+    let regions = Buf::new()
+        .u16(1)
+        .u16(1)
+        .i16(0)
+        .i16(0x4000)
+        .i16(0x4000)
+        .done();
+    let items = Buf::new()
+        .u16(3)
+        .u16(1)
+        .u16(1)
+        .u16(0)
+        .i16(5)
+        .i16(7)
+        .i16(9)
+        .done();
+    let store = if outer == 0 {
+        link(
+            Buf::new().u16(1).u32(0).u16(1).u32(0).done(),
+            vec![(2, 4, regions), (8, 4, items)],
+        )
+    } else {
+        let other = Buf::new()
+            .u16(3)
+            .u16(1)
+            .u16(1)
+            .u16(0)
+            .i16(11)
+            .i16(13)
+            .i16(15)
+            .done();
+        link(
+            Buf::new().u16(1).u32(0).u16(2).u32(0).u32(0).done(),
+            vec![(2, 4, regions), (8, 4, items), (12, 4, other)],
+        )
+    };
+    link(
+        Buf::new()
+            .u32(0x0001_0003)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u32(0)
+            .done(),
+        vec![
+            (4, 2, class_def2(&[(1, 1, 1)])),
+            (8, 2, carets),
+            (14, 4, store),
+        ],
+    )
+}
+
+#[test]
+fn referenced_gdef_store_renumbers_retained_caret_index() {
+    let data = font_with(vec![(b"GDEF", gdef_with_referenced_store(&[2]))]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("A")).unwrap();
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    let actual = gdef.iter().map(|b| format!("{b:02x}")).collect::<String>();
+    assert_eq!(
+        actual,
+        "00010003002e00000012000000000000003600060001000c000100010001000100040003000a0006000000008000000100010001000100010000001500010000000c00010000000100000900010001000040004000"
+    );
+}
+
+#[test]
+fn gdef_store_keeps_two_referenced_rows_in_index_order() {
+    let data = font_with(vec![(b"GDEF", gdef_with_referenced_store(&[2, 0]))]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("A")).unwrap();
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    let actual = gdef.iter().map(|b| format!("{b:02x}")).collect::<String>();
+    assert_eq!(
+        actual,
+        "00010003003c00000012000000000000004400060001000c0001000100010002001200060003000a00060000000080000003000a0006000000018000000100010001000100010000001600010000000c0002000000010000050900010001000040004000"
+    );
+}
+
+#[test]
+fn gdef_store_drops_when_no_referenced_caret_is_retained() {
+    let data = font_with(vec![(b"GDEF", gdef_with_referenced_store(&[2]))]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("B")).unwrap();
+    assert!(out_table(&out, b"GDEF").is_none());
+}
+
+#[test]
+fn gdef_store_remaps_second_outer_subtable_to_zero() {
+    let data = font_with(vec![(b"GDEF", gdef_with_referenced_store_at(1, &[2]))]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("A")).unwrap();
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    let actual = gdef.iter().map(|b| format!("{b:02x}")).collect::<String>();
+    assert_eq!(
+        actual,
+        "00010003002e00000012000000000000003600060001000c000100010001000100040003000a0006000000008000000100010001000100010000001500010000000c00010000000100000f00010001000040004000"
+    );
+}
+
+#[test]
+fn gdef_store_with_unknown_caret_device_remains_unsupported() {
+    let mut gdef = gdef_with_referenced_store(&[2]);
+    let at = gdef
+        .windows(6)
+        .position(|bytes| bytes == [0, 0, 0, 2, 0x80, 0])
+        .unwrap();
+    gdef.get_mut(at + 4..at + 6)
+        .unwrap()
+        .copy_from_slice(&4u16.to_be_bytes());
+    let data = font_with(vec![(b"GDEF", gdef)]);
     let font = Font::new(&data, 0).unwrap();
     assert!(
         matches!(subset(&font, &chars("A")), Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF"))

@@ -349,19 +349,121 @@ fn unpinned_base_store_without_variation_index_is_removed() {
     assert_eq!(&result[36..42], &[0, 3, 0, 123, 0, 0]);
 }
 
-#[test]
-fn unpinned_base_store_with_variation_index_is_unsupported() {
+fn base_with_variation_index() -> Vec<u8> {
     let words = [
         1u16, 1, 12, 0, 0, 54, 4, 10, 1, 0x726f, 0x6d6e, 1, 0x4446, 0x4c54, 8, 6, 0, 0, 0, 1, 6, 3,
         123, 6, 0, 0, 0x8000, 1, 0, 12, 1, 0, 28, 2, 1, 0, 0x4000, 0x4000, 0, 0, 0, 1, 1, 1, 0, 21,
     ];
-    let base: Vec<u8> = words.into_iter().flat_map(u16::to_be_bytes).collect();
+    words.into_iter().flat_map(u16::to_be_bytes).collect()
+}
+
+fn base_with_feature_variation_index() -> Vec<u8> {
+    let varidx = Buf::new().u16(0).u16(1).u16(0x8000).done();
+    let coord = link(
+        Buf::new().u16(3).i16(123).u16(0).done(),
+        vec![(4, 2, varidx)],
+    );
+    let min_max = link(
+        Buf::new()
+            .u16(0)
+            .u16(0)
+            .u16(1)
+            .tag(b"kern")
+            .u16(0)
+            .u16(0)
+            .done(),
+        vec![(10, 2, coord)],
+    );
+    let script = link(
+        Buf::new().u16(0).u16(0).u16(0).done(),
+        vec![(2, 2, min_max)],
+    );
+    let scripts = link(
+        Buf::new().u16(1).tag(b"DFLT").u16(0).done(),
+        vec![(6, 2, script)],
+    );
+    let tags = Buf::new().u16(1).tag(b"romn").done();
+    let axis = link(
+        Buf::new().u16(0).u16(0).done(),
+        vec![(0, 2, tags), (2, 2, scripts)],
+    );
+    let mut store = base_with_variation_index()[54..].to_vec();
+    store[29] = 2;
+    store.extend(34u16.to_be_bytes());
+    link(
+        Buf::new().u32(0x0001_0001).u16(0).u16(0).u32(0).done(),
+        vec![(4, 2, axis), (8, 4, store)],
+    )
+}
+
+fn base_with_language_variation_index() -> Vec<u8> {
+    let varidx = Buf::new().u16(0).u16(0).u16(0x8000).done();
+    let coord = link(
+        Buf::new().u16(3).i16(123).u16(0).done(),
+        vec![(4, 2, varidx)],
+    );
+    let min_max = link(Buf::new().u16(0).u16(0).u16(0).done(), vec![(0, 2, coord)]);
+    let script = link(
+        Buf::new().u16(0).u16(0).u16(1).tag(b"ENG ").u16(0).done(),
+        vec![(10, 2, min_max)],
+    );
+    let scripts = link(
+        Buf::new().u16(1).tag(b"DFLT").u16(0).done(),
+        vec![(6, 2, script)],
+    );
+    let tags = Buf::new().u16(1).tag(b"romn").done();
+    let axis = link(
+        Buf::new().u16(0).u16(0).done(),
+        vec![(0, 2, tags), (2, 2, scripts)],
+    );
+    link(
+        Buf::new().u32(0x0001_0001).u16(0).u16(0).u32(0).done(),
+        vec![
+            (4, 2, axis),
+            (8, 4, base_with_variation_index()[54..].to_vec()),
+        ],
+    )
+}
+
+#[test]
+fn unpinned_base_store_with_variation_index_is_remapped() {
+    let base = base_with_variation_index();
     let data = font_with(vec![(b"fvar", fvar(&AXES)), (b"BASE", base.clone())]);
     let font = Font::new(&data, 0).unwrap();
-    assert!(matches!(
-        subset(&font, &unicodes()),
-        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"BASE")
-    ));
+    let out = subset(&font, &unicodes()).unwrap();
+    let sfnt = Sfnt::new(&out).unwrap();
+    let result = sofel_font::read::base::Base::new(sfnt.table(Tag::new(b"BASE")).unwrap()).unwrap();
+    let script = result
+        .horiz_axis()
+        .unwrap()
+        .unwrap()
+        .base_script_list()
+        .unwrap()
+        .unwrap()
+        .script(0)
+        .unwrap()
+        .unwrap();
+    let coord = script
+        .base_values()
+        .unwrap()
+        .unwrap()
+        .coord(0)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        coord.device().unwrap().unwrap().variation_index(),
+        Some((0, 0))
+    );
+    assert_eq!(
+        result
+            .variation_store()
+            .unwrap()
+            .unwrap()
+            .item_data(0)
+            .unwrap()
+            .delta(0, 0),
+        Some(21)
+    );
 
     let mut min_max = base.clone();
     min_max[31] = 0;
@@ -392,18 +494,185 @@ fn unpinned_base_store_with_variation_index_is_unsupported() {
     );
     let data = font_with(vec![(b"fvar", fvar(&AXES)), (b"BASE", min_max)]);
     let font = Font::new(&data, 0).unwrap();
-    assert!(matches!(
-        subset(&font, &unicodes()),
-        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"BASE")
-    ));
+    let out = subset(&font, &unicodes()).unwrap();
+    let sfnt = Sfnt::new(&out).unwrap();
+    let result = sofel_font::read::base::Base::new(sfnt.table(Tag::new(b"BASE")).unwrap()).unwrap();
+    let script = result
+        .horiz_axis()
+        .unwrap()
+        .unwrap()
+        .base_script_list()
+        .unwrap()
+        .unwrap()
+        .script(0)
+        .unwrap()
+        .unwrap();
+    let coord = script
+        .default_min_max()
+        .unwrap()
+        .unwrap()
+        .min_coord()
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        coord.device().unwrap().unwrap().variation_index(),
+        Some((0, 0))
+    );
+    assert_eq!(
+        result
+            .variation_store()
+            .unwrap()
+            .unwrap()
+            .item_data(0)
+            .unwrap()
+            .delta(0, 0),
+        Some(21)
+    );
 
     let mut vertical = base;
     vertical[5] = 0;
     vertical[7] = 12;
     let data = font_with(vec![(b"fvar", fvar(&AXES)), (b"BASE", vertical)]);
     let font = Font::new(&data, 0).unwrap();
-    assert!(matches!(
-        subset(&font, &unicodes()),
-        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"BASE")
-    ));
+    let out = subset(&font, &unicodes()).unwrap();
+    let sfnt = Sfnt::new(&out).unwrap();
+    let result = sofel_font::read::base::Base::new(sfnt.table(Tag::new(b"BASE")).unwrap()).unwrap();
+    let script = result
+        .vert_axis()
+        .unwrap()
+        .unwrap()
+        .base_script_list()
+        .unwrap()
+        .unwrap()
+        .script(0)
+        .unwrap()
+        .unwrap();
+    let coord = script
+        .base_values()
+        .unwrap()
+        .unwrap()
+        .coord(0)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        coord.device().unwrap().unwrap().variation_index(),
+        Some((0, 0))
+    );
+    assert_eq!(
+        result
+            .variation_store()
+            .unwrap()
+            .unwrap()
+            .item_data(0)
+            .unwrap()
+            .delta(0, 0),
+        Some(21)
+    );
+}
+
+#[test]
+fn unpinned_base_store_compacts_second_item_to_first() {
+    let mut base = base_with_variation_index();
+    base[51] = 1; // BaseCoord's VariationIndex: old inner 1.
+    base[83] = 2; // ItemVariationData has two rows.
+    base.extend(34u16.to_be_bytes());
+    let data = font_with(vec![(b"fvar", fvar(&AXES)), (b"BASE", base)]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &unicodes()).unwrap();
+    let sfnt = Sfnt::new(&out).unwrap();
+    let base = sofel_font::read::base::Base::new(sfnt.table(Tag::new(b"BASE")).unwrap()).unwrap();
+    let coord = base
+        .horiz_axis()
+        .unwrap()
+        .unwrap()
+        .base_script_list()
+        .unwrap()
+        .unwrap()
+        .script(0)
+        .unwrap()
+        .unwrap()
+        .base_values()
+        .unwrap()
+        .unwrap()
+        .coord(0)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        coord.device().unwrap().unwrap().variation_index(),
+        Some((0, 0))
+    );
+    assert_eq!(
+        base.variation_store()
+            .unwrap()
+            .unwrap()
+            .item_data(0)
+            .unwrap()
+            .delta(0, 0),
+        Some(34)
+    );
+}
+
+#[test]
+fn unpinned_base_store_with_filtered_script_has_no_retained_index() {
+    let data = font_with(vec![
+        (b"fvar", fvar(&AXES)),
+        (b"BASE", base_with_variation_index()),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let input = unicodes().map_set(SetKind::LayoutScripts, |set| set.clear());
+    let out = subset(&font, &input).unwrap();
+    assert!(Sfnt::new(&out).unwrap().table(Tag::new(b"BASE")).is_some());
+}
+
+#[test]
+fn unpinned_base_store_feature_filter_removes_unreferenced_row() {
+    let data = font_with(vec![
+        (b"fvar", fvar(&AXES)),
+        (b"BASE", base_with_feature_variation_index()),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &unicodes()).unwrap();
+    let base = sofel_font::read::base::Base::new(
+        Sfnt::new(&out).unwrap().table(Tag::new(b"BASE")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        base.variation_store()
+            .unwrap()
+            .unwrap()
+            .item_data(0)
+            .unwrap()
+            .delta(0, 0),
+        Some(34)
+    );
+    let filtered = unicodes().map_set(SetKind::LayoutFeatures, |set| set.clear());
+    let out = subset(&font, &filtered).unwrap();
+    let base = sofel_font::read::base::Base::new(
+        Sfnt::new(&out).unwrap().table(Tag::new(b"BASE")).unwrap(),
+    )
+    .unwrap();
+    assert!(base.variation_store().unwrap().is_none());
+}
+
+#[test]
+fn unpinned_base_store_collects_language_min_max() {
+    let data = font_with(vec![
+        (b"fvar", fvar(&AXES)),
+        (b"BASE", base_with_language_variation_index()),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &unicodes()).unwrap();
+    let base = sofel_font::read::base::Base::new(
+        Sfnt::new(&out).unwrap().table(Tag::new(b"BASE")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        base.variation_store()
+            .unwrap()
+            .unwrap()
+            .item_data(0)
+            .unwrap()
+            .delta(0, 0),
+        Some(21)
+    );
 }
