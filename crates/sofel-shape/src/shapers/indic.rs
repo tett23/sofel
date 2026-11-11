@@ -823,7 +823,11 @@ fn initial_reordering_syllable(
 }
 
 /// `initial_reordering_indic`.
-fn initial_reordering(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut Buffer) -> bool {
+fn initial_reordering(
+    plan: &ShapePlan<'_>,
+    font: &ShapeFont<'_, '_, '_, '_>,
+    buffer: &mut Buffer,
+) -> bool {
     let Some(ip) = indic_plan(plan) else {
         return false;
     };
@@ -1136,7 +1140,11 @@ fn final_reordering_syllable(
 }
 
 /// `final_reordering_indic`.
-fn final_reordering(plan: &ShapePlan<'_>, _: &ShapeFont<'_, '_, '_, '_>, buffer: &mut Buffer) -> bool {
+fn final_reordering(
+    plan: &ShapePlan<'_>,
+    _: &ShapeFont<'_, '_, '_, '_>,
+    buffer: &mut Buffer,
+) -> bool {
     if buffer.len == 0 {
         return false;
     }

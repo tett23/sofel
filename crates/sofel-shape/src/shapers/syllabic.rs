@@ -106,7 +106,11 @@ fn insert_dotted_circle_glyphs(
 /// longer needed. HarfBuzz frees the buffer variable; the named field
 /// keeps its values, which the later per-syllable lookups still see, as
 /// in HarfBuzz.
-pub(crate) fn clear_syllables(_: &ShapePlan<'_>, _: &ShapeFont<'_, '_, '_, '_>, _: &mut Buffer) -> bool {
+pub(crate) fn clear_syllables(
+    _: &ShapePlan<'_>,
+    _: &ShapeFont<'_, '_, '_, '_>,
+    _: &mut Buffer,
+) -> bool {
     false
 }
 
