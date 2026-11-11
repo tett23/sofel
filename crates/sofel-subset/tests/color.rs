@@ -298,6 +298,71 @@ fn retained_variable_paint_or_clip_needs_the_colr_store() {
     }
 }
 
+#[test]
+fn colr_implicit_store_renumbers_alpha_and_discards_unused_rows() {
+    let solid = |idx| Buf::new().u8(3).u16(0).u16(0x4000).u32(idx).done();
+    let mut colr = colr_v1(
+        &[],
+        &[],
+        &[solid(2), solid(0)],
+        &[(g('A'), 0), (g('B'), 1)],
+        &[],
+        &[],
+    );
+    let offset = colr.len() as u32;
+    colr[30..34].copy_from_slice(&offset.to_be_bytes());
+    let store = link(
+        Buf::new().u16(1).u32(0).u16(1).u32(0).done(),
+        vec![
+            (
+                2,
+                4,
+                Buf::new()
+                    .u16(1)
+                    .u16(1)
+                    .i16(0)
+                    .i16(0x4000)
+                    .i16(0x4000)
+                    .done(),
+            ),
+            (
+                8,
+                4,
+                Buf::new()
+                    .u16(3)
+                    .u16(1)
+                    .u16(1)
+                    .u16(0)
+                    .i16(5)
+                    .i16(7)
+                    .i16(9)
+                    .done(),
+            ),
+        ],
+    );
+    colr.extend_from_slice(&store);
+    let data = font_with(vec![(b"COLR", colr), (b"CPAL", cpal_table(false))]);
+    let font = Font::new(&data, 0).unwrap();
+    let result = subset(&font, &chars("A")).unwrap();
+    let table = out_table(&result, b"COLR").unwrap();
+    // HarfBuzz 15.1.0, hb-subset --unicodes=U+0041.
+    let bytes: String = table.iter().map(|b| format!("{b:02x}")).collect();
+    assert_eq!(
+        bytes,
+        "000100000000000000000000000000000022000000000000000000000000000000350000000100010000000a03000040000000000000010000001500010000000c00010000000100000900010001000040004000"
+    );
+    let colr = Colr::new(&table).unwrap();
+    let paint = colr.base_glyph_paint(1).unwrap();
+    assert_eq!(&table[paint + 5..paint + 9], &[0, 0, 0, 0]);
+    let vardata = colr
+        .variation_store()
+        .unwrap()
+        .unwrap()
+        .item_data(0)
+        .unwrap();
+    assert_eq!(vardata.item_count, 1);
+}
+
 /// CBDT with 3 image blocks for 'A', 'B' and 'C', and CBLC with one strike
 /// whose format `index_format` subtable covers them, plus a strike for
 /// 'Z' only.
