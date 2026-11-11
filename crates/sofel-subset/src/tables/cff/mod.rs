@@ -10,7 +10,7 @@ mod cs2;
 mod dict;
 mod specialize;
 
-pub(crate) use cff2::{instance_metrics, subset as subset2};
+pub(crate) use cff2::{instance_metrics, subset as subset2, uses_subroutines};
 
 use alloc::borrow::Cow;
 use alloc::collections::{BTreeMap, BTreeSet};
