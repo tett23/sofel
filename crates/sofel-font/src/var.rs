@@ -1674,8 +1674,30 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
         self.font.ft_metrics.left_side_bearing(glyph)
     }
 
-    /// FreeType's unscaled horizontal advance after HVAR adjustment.
+    /// FreeType's first unscaled horizontal advance on a fresh face.
     pub fn ft_h_advance(&self, glyph: GlyphId) -> Option<u16> {
+        self.ft_h_advance_with_scratch(glyph, &mut crate::FtAdvanceScratch::default())
+    }
+
+    /// Reuse gvar storage across FreeType horizontal advance queries.
+    pub fn ft_h_advance_with_scratch(
+        &self,
+        glyph: GlyphId,
+        scratch: &mut crate::FtAdvanceScratch,
+    ) -> Option<u16> {
+        if self.font.glyf.is_some() && !self.location.ft_default() && self.ft_hvar_supported() {
+            let source = crate::ft_glyf::metrics_source_glyph(*self, glyph)?;
+            return self.ft_h_advance_before_gvar(source);
+        }
+        if self.font.glyf.is_some() && !self.location.ft_default() {
+            return crate::ft_glyf::advances(*self, glyph, scratch)?.0;
+        }
+        self.ft_h_advance_before_gvar(glyph)
+    }
+
+    /// Horizontal metric used to initialize the outline's gvar phantom points.
+    #[doc(hidden)]
+    pub fn ft_h_advance_before_gvar(&self, glyph: GlyphId) -> Option<u16> {
         let base = self.font.ft_h_advance_default(glyph)?;
         if self.location.ft_default() {
             return Some(base);
@@ -1753,11 +1775,56 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
         short
     }
 
-    /// FreeType's unscaled vertical advance at this location.
+    /// FreeType's first unscaled vertical advance on a fresh face.
     pub fn ft_v_advance(&self, glyph: GlyphId) -> Option<u16> {
+        self.ft_v_advance_with_scratch(glyph, &mut crate::FtAdvanceScratch::default())
+    }
+
+    /// Reuse gvar storage across FreeType vertical advance queries.
+    pub fn ft_v_advance_with_scratch(
+        &self,
+        glyph: GlyphId,
+        scratch: &mut crate::FtAdvanceScratch,
+    ) -> Option<u16> {
+        if self.font.glyf.is_some() && !self.location.ft_default() && self.ft_vvar_supported() {
+            let source = crate::ft_glyf::metrics_source_glyph(*self, glyph)?;
+            return self.ft_v_advance_before_gvar(source);
+        }
+        if self.font.glyf.is_some()
+            && self.font.ft_vertical().is_some()
+            && !self.location.ft_default()
+        {
+            return crate::ft_glyf::advances(*self, glyph, scratch)?.1;
+        }
+        self.ft_v_advance_before_gvar(glyph)
+    }
+
+    pub(crate) fn ft_hvar_supported(&self) -> bool {
+        self.font
+            .table(Tag::new(b"HVAR"))
+            .and_then(|data| Hvar::new(data).ok())
+            .is_some_and(|hvar| hvar.store().is_ok() && hvar.advance_map().is_ok())
+    }
+
+    pub(crate) fn ft_vvar_supported(&self) -> bool {
+        self.font
+            .table(Tag::new(b"VVAR"))
+            .and_then(|data| Vvar::new(data).ok())
+            .is_some_and(|vvar| vvar.store().is_ok() && vvar.advance_map().is_ok())
+    }
+
+    /// Vertical metric used to initialize the outline's gvar phantom points.
+    #[doc(hidden)]
+    pub fn ft_v_advance_before_gvar(&self, glyph: GlyphId) -> Option<u16> {
         let base = self.font.ft_v_advance_default(glyph)?;
         if self.font.ft_vertical().is_none() {
-            return Some(base);
+            let ascender = self.ft_mvar_delta(Tag::new(b"hasc"));
+            let descender = self.ft_mvar_delta(Tag::new(b"hdsc"));
+            let adjusted = i32::from(base)
+                .wrapping_add(i32::from(ascender))
+                .wrapping_sub(i32::from(descender));
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            return Some(adjusted as u16);
         }
         let vvar = self
             .font

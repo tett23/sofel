@@ -240,6 +240,92 @@ impl Instance<'_, '_, '_, '_> {
         scratch.coords = coords;
         result
     }
+
+    /// Apply only FreeType's four gvar phantom-point deltas.
+    pub(crate) fn apply_gvar_ft_phantoms(
+        &self,
+        glyph: u32,
+        outline_count: usize,
+        phantoms: &mut [Point<i32>; 4],
+        scratch: &mut FtScratch,
+    ) -> Result<bool, GvarError> {
+        if self.location.ft_error.is_some() {
+            return Err(GvarError::InvalidLocation);
+        }
+        if !self.location.ft_coords_supplied
+            || self.location.ft_coords.iter().all(|coord| coord.0 == 0)
+        {
+            return Ok(false);
+        }
+        let Some(table) = table(self.font) else {
+            return Ok(false);
+        };
+        let shared = self
+            .location
+            .source
+            .filter(|source| source.matches(self.font.sfnt.file(), self.font.face_index))
+            .map_or(&[][..], |_| self.location.gvar_ft.as_slice());
+        let mut coords = core::mem::take(&mut scratch.coords);
+        coords.clear();
+        coords.extend(self.location.ft_coords.iter().map(|coord| coord.0));
+        let result = apply_ft_phantoms(&table, glyph, &coords, shared, outline_count, phantoms);
+        scratch.coords = coords;
+        result
+    }
+}
+
+fn apply_ft_phantoms(
+    table: &Gvar<'_>,
+    glyph: u32,
+    coords: &[i32],
+    shared: &[i32],
+    outline_count: usize,
+    phantoms: &mut [Point<i32>; 4],
+) -> Result<bool, GvarError> {
+    let Some(data) = glyph_data(table, glyph)? else {
+        return Ok(false);
+    };
+    let total = outline_count.checked_add(4).ok_or(GvarError::InvalidData)?;
+    let mut deltas = [Point::<i32>::default(); 4];
+    for tuple in data.tuples() {
+        let tuple = tuple.ok_or(GvarError::InvalidData)?;
+        let scalar = scalar_ft(table, &tuple, coords, shared)?;
+        if scalar == 0 {
+            continue;
+        }
+        let shared_points = data.shared_points();
+        let (x, y) = tuple
+            .deltas(total, shared_points)
+            .ok_or(GvarError::InvalidData)?;
+        let points = tuple.points().or(shared_points);
+        if let Some(points) = points.filter(|points| !points.is_all()) {
+            for ((index, dx), dy) in points.iter().zip(x.iter()).zip(y.iter()) {
+                let index = usize::try_from(index).map_err(|_| GvarError::InvalidData)?;
+                if index >= outline_count {
+                    let delta = deltas
+                        .get_mut(index - outline_count)
+                        .ok_or(GvarError::InvalidData)?;
+                    delta.x = delta.x.wrapping_add(mul_fix(i32::from(dx) << 16, scalar));
+                    delta.y = delta.y.wrapping_add(mul_fix(i32::from(dy) << 16, scalar));
+                }
+            }
+        } else {
+            for ((index, dx), dy) in x.iter().enumerate().zip(y.iter()) {
+                if index >= outline_count {
+                    let delta = deltas
+                        .get_mut(index - outline_count)
+                        .ok_or(GvarError::InvalidData)?;
+                    delta.x = delta.x.wrapping_add(mul_fix(i32::from(dx) << 16, scalar));
+                    delta.y = delta.y.wrapping_add(mul_fix(i32::from(dy) << 16, scalar));
+                }
+            }
+        }
+    }
+    for (point, delta) in phantoms.iter_mut().zip(deltas) {
+        point.x = point.x.wrapping_add(delta.x);
+        point.y = point.y.wrapping_add(delta.y);
+    }
+    Ok(true)
 }
 
 fn tuple_peak(table: &Gvar<'_>, tuple: &TupleVariation<'_>) -> Result<Vec<i16>, GvarError> {
@@ -374,8 +460,9 @@ pub fn apply_hb(
         return Err(GvarError::InvalidData);
     }
     let start = if phantom_only { count - 4 } else { 0 };
-    let private_any =
-        (0..data.tuple_count()).any(|i| data.tuple(i).is_some_and(|tuple| tuple.private_points()));
+    let private_any = data
+        .tuples()
+        .any(|tuple| tuple.is_some_and(|tuple| tuple.private_points()));
     scratch.working.clear();
     scratch.working.extend_from_slice(points);
     scratch.original.clear();
@@ -384,8 +471,8 @@ pub fn apply_hb(
     scratch.explicit.clear();
     scratch.explicit.resize(count, false);
     let mut flush = false;
-    for index in 0..data.tuple_count() {
-        let tuple = data.tuple(index).ok_or(GvarError::InvalidData)?;
+    for tuple in data.tuples() {
+        let tuple = tuple.ok_or(GvarError::InvalidData)?;
         let scalar = scalar_hb(table, &tuple, coords, shared)?;
         if scalar == 0.0 {
             continue;
@@ -473,8 +560,8 @@ pub fn apply_ft(
     scratch.deltas.resize(count, Point::default());
     scratch.explicit.clear();
     scratch.explicit.resize(count, false);
-    for index in 0..data.tuple_count() {
-        let tuple = data.tuple(index).ok_or(GvarError::InvalidData)?;
+    for tuple in data.tuples() {
+        let tuple = tuple.ok_or(GvarError::InvalidData)?;
         let scalar = scalar_ft(table, &tuple, coords, shared)?;
         if scalar == 0 {
             continue;
@@ -686,8 +773,8 @@ fn infer_ft_axis(
 #[cfg(test)]
 mod tests {
     use super::{
-        FtScratch, HbScratch, Point, apply_ft, apply_hb, infer_ft, infer_hb, tuple_scalar_ft,
-        tuple_scalar_hb,
+        FtScratch, HbScratch, Point, apply_ft, apply_ft_phantoms, apply_hb, infer_ft, infer_hb,
+        tuple_scalar_ft, tuple_scalar_hb,
     };
     use alloc::{vec, vec::Vec};
     use sofel_read::gvar::{Gvar, TAG};
@@ -707,6 +794,58 @@ mod tests {
         assert_eq!(data.len(), 40);
         data.shrink_to_fit();
         data
+    }
+
+    #[test]
+    fn adr0047_i03_active_private_and_zero_scalar_tuples_preserve_deltas() {
+        let bytes = [
+            0, 1, 0, 0, 0, 1, 0, 0, // version and one axis
+            0, 0, 0, 24, 0, 1, 0, 0, // shared tuple offset and glyph count
+            0, 0, 0, 24, 0, 0, 0, 21, // glyph data offset and 42-byte glyph
+            0, 3, 0, 22, // three tuples, data after 18 header bytes
+            0, 6, 0x80, 0, 0x40, 0, // all points, positive peak
+            0, 7, 0xa0, 0, 0x40, 0, // private points, positive peak
+            0, 7, 0xa0, 0, 0xc0, 0, // private points, negative peak
+            3, 10, 20, 30, 40, 0x83, // first x and zero y deltas
+            0, 3, 1, 1, 1, 1, 0x83, // private all points, positive deltas
+            0, 3, 99, 99, 99, 99, 0x83, // zero-scalar tuple must not apply
+            0,    // short-offset padding
+        ];
+        let parsed = Gvar::new(&bytes, TAG);
+        assert!(parsed.is_ok());
+        let Some(table) = parsed.ok() else { return };
+        let mut hb = [Point::default(); 4];
+        let mut budget = 8;
+        assert_eq!(
+            apply_hb(
+                &table,
+                0,
+                &[0x2000],
+                &[],
+                &mut hb,
+                &mut HbScratch::default(),
+                false,
+                &mut budget,
+            ),
+            Ok(true)
+        );
+        assert_eq!(hb.map(|point| point.x), [5.5, 10.5, 15.5, 20.5]);
+        let mut ft = [Point::default(); 4];
+        assert_eq!(
+            apply_ft(
+                &table,
+                0,
+                &[0x8000],
+                &[],
+                &mut ft,
+                &mut FtScratch::default()
+            ),
+            Ok(true)
+        );
+        assert_eq!(
+            ft.map(|point| point.x),
+            [5, 10, 15, 20].map(|x| (x << 16) + 0x8000)
+        );
     }
 
     #[test]
@@ -775,6 +914,32 @@ mod tests {
             Ok(true)
         );
         assert_eq!(ft.map(|point| point.x), [5, 10, 15, 20].map(|x| x << 16));
+    }
+
+    #[test]
+    fn adr0048_i02_ft_phantom_only_matches_full_at_zero_outline_points() {
+        let bytes = one_all_points_tuple();
+        let Ok(gvar) = Gvar::new(&bytes, TAG) else {
+            return;
+        };
+        let mut full = [Point::default(); 4];
+        let mut only = full;
+        assert_eq!(
+            apply_ft(
+                &gvar,
+                0,
+                &[0x8000],
+                &[],
+                &mut full,
+                &mut FtScratch::default()
+            ),
+            Ok(true)
+        );
+        assert_eq!(
+            apply_ft_phantoms(&gvar, 0, &[0x8000], &[], 0, &mut only),
+            Ok(true)
+        );
+        assert_eq!(full, only);
     }
 
     #[test]
