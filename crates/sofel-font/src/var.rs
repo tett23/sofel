@@ -1,5 +1,9 @@
 //! Variable-font coordinates and variation arithmetic (ADR 0027, ADR 0030).
 
+mod cff2;
+pub use cff2::{BlendError, BlendScalars};
+pub mod gvar;
+
 use alloc::vec::Vec;
 use alloc::{format, string::String};
 use sofel_geom::float::{hb_clamp_to_i32, hb_roundf32, i32_to_f32};
@@ -592,6 +596,18 @@ fn format_g6(value: f32) -> String {
 }
 
 /// A normalized location and its cached variation-region coefficients.
+///
+/// A location borrows the font bytes, so they must outlive it (ADR 0030 I03).
+/// The font handle itself can be dropped first.
+///
+/// ```compile_fail,E0515
+/// use sofel_font::{Font, var::Location};
+/// fn invalid() -> Location<'static> {
+///     let bytes = Vec::from([0u8; 64]);
+///     let font = Font::new(&bytes, 0).unwrap();
+///     Location::new(&font, None, &[])
+/// }
+/// ```
 #[derive(Clone, Debug)]
 pub struct Location<'data> {
     hb_coords: Vec<i32>,
@@ -606,6 +622,8 @@ pub struct Location<'data> {
     source: Option<SourceFont<'data>>,
     hb_scalars: [Option<StoreScalars<f32>>; STORE_COUNT],
     ft_scalars: [Option<StoreScalars<i32>>; STORE_COUNT],
+    gvar_hb: Vec<f32>,
+    gvar_ft: Vec<i32>,
 }
 
 impl Location<'static> {
@@ -624,6 +642,8 @@ impl Location<'static> {
             source: None,
             hb_scalars: [const { None }; STORE_COUNT],
             ft_scalars: [const { None }; STORE_COUNT],
+            gvar_hb: Vec::new(),
+            gvar_ft: Vec::new(),
         };
         &DEFAULT
     }
@@ -636,7 +656,12 @@ impl<'data> Location<'data> {
             .table(Tag::new(b"fvar"))
             .and_then(|d| Fvar::new(d).ok())
         else {
-            return Self::from_coords(font, Vec::new(), Vec::new(), false);
+            let mut location = Self::from_coords(font, Vec::new(), Vec::new(), false);
+            location.named_instance = named_instance;
+            if named_instance.is_some() {
+                location.ft_error = Some(FtLocationError::InvalidArgument);
+            }
+            return location;
         };
         let mut design: Vec<f32> = fvar.axes().map(|axis| fixed_to_f32(axis.default)).collect();
         let named = named_instance.and_then(|i| fvar.instance(usize::from(i)));
@@ -871,6 +896,19 @@ impl<'data> Location<'data> {
         });
         let hb_nonzero = hb_coords.iter().any(|c| *c != 0);
         let ft_default = ft_coords.iter().all(|c| c.0 == 0);
+        let gvar = gvar::table(font);
+        let gvar_hb = gvar
+            .as_ref()
+            .map(|table| gvar::shared_hb(table, &hb_coords))
+            .unwrap_or_default();
+        let gvar_ft = gvar
+            .as_ref()
+            .filter(|_| supplied)
+            .map(|table| {
+                let coords: Vec<i32> = ft_coords.iter().map(|coord| coord.0).collect();
+                gvar::shared_ft(table, &coords)
+            })
+            .unwrap_or_default();
         Self {
             hb_coords,
             hb_design: Vec::new(),
@@ -884,6 +922,8 @@ impl<'data> Location<'data> {
             source,
             hb_scalars,
             ft_scalars,
+            gvar_hb,
+            gvar_ft,
         }
     }
 
@@ -1122,10 +1162,21 @@ pub struct Instance<'font, 'data, 'loc, 'source> {
     location: &'loc Location<'source>,
 }
 
+impl<'font, 'data> From<&'font Font<'data>> for Instance<'font, 'data, 'static, 'static> {
+    fn from(font: &'font Font<'data>) -> Self {
+        font.default_instance()
+    }
+}
+
 impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
-    /// The font paired with this location.
+    /// The font whose tables this instance reads.
     pub fn font(&self) -> &'font Font<'data> {
         self.font
+    }
+
+    /// The normalized location used by this instance.
+    pub fn location(&self) -> &'loc Location<'source> {
+        self.location
     }
 
     /// Horizontal advance in font units at this location.
@@ -2092,16 +2143,76 @@ mod tests {
         assert_eq!(item_delta::<HbF32>(&cut, &scalars, 0, 0), 0.0);
     }
 
+    fn compare_sources<A: Arith>(
+        view: &ItemVariationStore<'_>,
+        coords: &[A::Coord],
+        supplied: bool,
+        outer: u16,
+        inner: u16,
+    ) where
+        A::Delta: core::fmt::Debug + PartialEq,
+    {
+        let cached = StoreScalars::<A::Scalar>::from_store::<A>(view, coords, supplied);
+        let live = OnTheFly::<A>::new(view, coords, supplied);
+        assert_eq!(
+            item_delta::<A>(view, &cached, outer, inner),
+            item_delta::<A>(view, &live, outer, inner)
+        );
+    }
+
     #[test]
     fn i02_cached_equals_on_the_fly() {
-        let bytes = store(&7i16.to_be_bytes());
-        let view = ItemVariationStore::new(&bytes).unwrap();
-        let cached = StoreScalars::<f32>::from_store::<HbF32>(&view, &[4], true);
-        let live = OnTheFly::<HbF32>::new(&view, &[4], true);
-        assert_eq!(
-            item_delta::<HbF32>(&view, &cached, 0, 0),
-            item_delta::<HbF32>(&view, &live, 0, 0)
-        );
+        let mut seed = 27_u32;
+        for i in 0..1000 {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let octets = seed.to_le_bytes();
+            let mut bytes = store(&octets[..2]);
+            if i % 7 == 0 {
+                bytes
+                    .get_mut(16..22)
+                    .unwrap()
+                    .copy_from_slice(&[0xff, 0xff, 0, 8, 0, 16]);
+            }
+            if i % 11 == 0 {
+                bytes
+                    .get_mut(28..30)
+                    .unwrap()
+                    .copy_from_slice(&u16::MAX.to_be_bytes());
+            }
+            let view = ItemVariationStore::new(&bytes).unwrap();
+            let coord = match i % 5 {
+                0 | 1 => 0,
+                _ => i32::from(octets[2] % 24) - 4,
+            };
+            let hb = [coord];
+            let ft = [Fixed(coord * 4)];
+            let empty = i % 5 == 0;
+            let outer = if i % 17 == 0 { u16::MAX } else { 0 };
+            let inner = if i % 19 == 0 { 1 } else { 0 };
+            compare_sources::<HbF32>(&view, if empty { &[] } else { &hb }, !empty, outer, inner);
+            compare_sources::<HbF64>(&view, if empty { &[] } else { &hb }, !empty, outer, inner);
+            compare_sources::<Ft>(&view, if empty { &[] } else { &ft }, !empty, outer, inner);
+        }
+    }
+
+    #[test]
+    fn i09_shared_data_memory() {
+        let single = store(&7i16.to_be_bytes());
+        for count in [1_u16, u16::MAX] {
+            let regions_offset = 8 + 4 * u32::from(count);
+            let mut bytes = Vec::from(1u16.to_be_bytes());
+            bytes.extend_from_slice(&regions_offset.to_be_bytes());
+            bytes.extend_from_slice(&count.to_be_bytes());
+            let data_offset = (regions_offset + 10).to_be_bytes();
+            for _ in 0..count {
+                bytes.extend_from_slice(&data_offset);
+            }
+            bytes.extend_from_slice(single.get(12..).unwrap());
+            let view = ItemVariationStore::new(&bytes).unwrap();
+            let scalars = StoreScalars::<f32>::from_store::<HbF32>(&view, &[4], true);
+            assert_eq!(scalars.regions(), &[0.5]);
+            assert_eq!(item_delta::<HbF32>(&view, &scalars, count - 1, 0), 3.5);
+        }
     }
 
     #[test]

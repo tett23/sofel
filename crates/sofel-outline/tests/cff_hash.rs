@@ -44,7 +44,7 @@ fn outline_hash() {
             return;
         };
         let font = Font::new(&bytes, 0).unwrap();
-        let o = Outlines::new(&font);
+        let o = Outlines::new(font.default_instance());
         let mut scratch = Scratch::default();
         for scale in [Scale::Unscaled, Scale::pixels(&font, 48, 48)] {
             for g in 0..font.num_glyphs() {
