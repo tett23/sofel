@@ -52,6 +52,8 @@ pub mod baseline;
 mod cff;
 mod ft;
 mod glyf_data;
+mod hb_glyf;
+pub use hb_glyf::GlyphScratch;
 mod hb_cff;
 mod layout;
 mod metrics;
@@ -163,9 +165,14 @@ impl<'a> Metrics<'a> {
 
     /// HarfBuzz's `get_advance_without_var_unscaled`; `default` when the
     /// table gives no advances at all.
+    #[inline]
     fn advance(&self, glyph: GlyphId, default: u16) -> u16 {
         if glyph.0 < self.num_bearings {
-            return self.hmtx.and_then(|h| h.advance(glyph)).unwrap_or(0);
+            return self
+                .hmtx
+                .as_ref()
+                .and_then(|h| h.advance(glyph))
+                .unwrap_or(0);
         }
         if self.num_advances == 0 {
             return default;
@@ -234,31 +241,7 @@ impl<'a> FtMetrics<'a> {
 
     /// `tt_face_get_metrics` for the bearing, without variations.
     fn left_side_bearing(&self, glyph: GlyphId) -> i16 {
-        let read = |pos: u64| {
-            let at = usize::try_from(pos).ok()?;
-            let b = self.hmtx.get(at..at.checked_add(2)?)?;
-            Some(i16::from_be_bytes([*b.first()?, *b.get(1)?]))
-        };
-        let size = u64::try_from(self.hmtx.len()).unwrap_or(u64::MAX);
-        let (g, k) = (u64::from(glyph.0), u64::from(self.long_metrics));
-        let bearing = if k == 0 {
-            None
-        } else if g < k {
-            // The whole long metric must be in the table.
-            let pos = g.saturating_mul(4);
-            (pos.saturating_add(4) <= size)
-                .then(|| read(pos.saturating_add(2)))
-                .flatten()
-        } else if k.saturating_sub(1).saturating_mul(4).saturating_add(2) > size {
-            // The last advance is not readable.
-            None
-        } else {
-            read(
-                k.saturating_mul(4)
-                    .saturating_add(g.saturating_sub(k).saturating_mul(2)),
-            )
-        };
-        bearing.unwrap_or(0)
+        crate::ft::ft_metrics_bearing(self.hmtx, self.long_metrics, glyph)
     }
 }
 
@@ -284,6 +267,7 @@ pub struct Font<'a> {
     num_glyphs: u32,
     metrics: Metrics<'a>,
     vmetrics: Metrics<'a>,
+    has_variable_h_extents: bool,
     ft_metrics: FtMetrics<'a>,
     cmap: Option<Subtable<'a>>,
     remap: Remap,
@@ -591,6 +575,15 @@ impl<'a> Font<'a> {
                 )
             });
 
+        let has_variable_h_extents = sfnt
+            .table(sofel_read::mvar::TAG)
+            .and_then(|data| sofel_read::mvar::Mvar::new(data).ok())
+            .is_some_and(|mvar| {
+                [b"hasc", b"hdsc", b"hlgp"]
+                    .iter()
+                    .any(|tag| mvar.find(Tag::new(tag)).is_some())
+            });
+
         Ok(Font {
             sfnt,
             face_index: index,
@@ -598,6 +591,7 @@ impl<'a> Font<'a> {
             num_glyphs,
             metrics,
             vmetrics,
+            has_variable_h_extents,
             ft_metrics: FtMetrics::new(&sfnt),
             cmap,
             remap,
@@ -650,6 +644,7 @@ impl<'a> Font<'a> {
     }
 
     /// `unitsPerEm` as stored, even outside 16..=16384.
+    #[inline]
     pub fn units_per_em(&self) -> u16 {
         self.head.units_per_em()
     }
@@ -734,6 +729,7 @@ impl<'a> Font<'a> {
 
     /// `unitsPerEm` as HarfBuzz uses it (`hb_face_get_upem`): 1000 when
     /// the stored value is outside 16..=16384.
+    #[inline]
     pub fn hb_units_per_em(&self) -> u16 {
         let upem = self.units_per_em();
         if (16..=16384).contains(&upem) {
