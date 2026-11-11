@@ -69,7 +69,7 @@ fn variation_store<'a>(font: &Font<'a>, kind: StoreKind) -> Option<ItemVariation
             .table(Tag::new(b"MVAR"))
             .and_then(|d| Mvar::new(d).ok()?.store().ok()),
         StoreKind::Gdef => font
-            .table(Tag::new(b"GDEF"))
+            .shaping_table(Tag::new(b"GDEF"))
             .and_then(|d| Gdef::new(d).ok()?.variation_store().ok().flatten()),
         StoreKind::Base => font
             .table(Tag::new(b"BASE"))

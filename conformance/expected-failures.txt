@@ -115,7 +115,6 @@ in-house/directwrite.tests:11@directwrite  # out-of-scope:directwrite
 in-house/graphite2-clusters.tests:1@graphite2  # out-of-scope:graphite2
 in-house/graphite2-clusters.tests:2@graphite2  # out-of-scope:graphite2
 in-house/graphite2-clusters.tests:3@graphite2  # out-of-scope:graphite2
-in-house/harfbust.tests:4  # sanitize
 in-house/harfbust.tests:4@coretext  # out-of-scope:coretext
 in-house/harfbust.tests:6@harfrust  # out-of-scope:harfrust
 in-house/harfbust.tests:6@uniscribe  # out-of-scope:uniscribe

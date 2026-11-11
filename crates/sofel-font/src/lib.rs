@@ -659,6 +659,13 @@ impl<'a> Font<'a> {
         self.sfnt.table(tag)
     }
 
+    /// Raw layout bytes retained by HarfBuzz's shaping-time checks.
+    pub fn shaping_table(&self, tag: Tag) -> Option<&'a [u8]> {
+        use sofel_read::layout::sanitize::{Admission, assess};
+        self.table(tag)
+            .filter(|d| assess(tag, Some(d)) == Admission::Accepted)
+    }
+
     /// The glyph for a character, from the chosen cmap subtable (in
     /// HarfBuzz's order of preference, `find_best_subtable`), looked up
     /// as HarfBuzz does (ADR 0016): in a symbol font ((3, 0)), a

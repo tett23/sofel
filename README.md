@@ -107,6 +107,8 @@ cargo run --release --bin sofel-validate -- font.ttf
 cargo run --release --bin sofel-validate -- --json font.ttf
 ```
 
+GSUB、GPOS、GDEF に破損があると、その表をシェーピングで無視する場合は警告を出す。元の表を検査して、フェイス、表タグ、バイト位置ごとに破損を数える。参照先を検査できなかった場合は、確認できた件数を下限として示し、未検査の理由を添える（[ADR 0059](docs/adr/0059-layout-sanitizer-diagnostics.md)）。
+
 終了コードは、`Error` が無ければ0、あれば1、使い方の誤りか読めないファイルがあれば2。出力の形とJSONのキーは `sofel-validate --help` で示す。
 
 ## 開発
