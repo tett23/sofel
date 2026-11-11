@@ -626,7 +626,15 @@ fn cff_items(b: &mut Bench, testdata: &std::path::Path) {
 /// HarfBuzz's drawing, not compared); rendering (ADR 0012) at 12, 24, 48
 /// and 96 px against FreeType.
 fn outline_items(b: &mut Bench, name: &str, font: &Font<'_>, ft: &FtFace, hb: &HbFont) {
-    geometry_items(b, name, font.default_instance(), ft, hb, "", &[12, 24, 48, 96]);
+    geometry_items(
+        b,
+        name,
+        font.default_instance(),
+        ft,
+        hb,
+        "",
+        &[12, 24, 48, 96],
+    );
 }
 
 fn geometry_items(
