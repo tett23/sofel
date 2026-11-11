@@ -40,7 +40,7 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-read`](crates/sofel-read) | sfntの表の読み取りと検証。コピーも確保もせず、どの入力でもpanicしない |
 | [`sofel-font`](crates/sofel-font) | フォントを一度だけ読み、グリフの数、文字からグリフへの対応、送り幅、フォント全体と縦書きのメトリクス、BASEの基準線とその代わりの値、名前とグリフ名（postとCFFのcharset）をHarfBuzzの方針で返し、HarfBuzzと同じ拡大縮小（`HbScale`）をする。HarfBuzzのCFFとCFF2のアクセラレータ（`HbCff1`、`HbCff2`）を持つ。PostScript名と `FT_Face` の値はFreeTypeの方針 |
 | [`sofel-outline`](crates/sofel-outline) | glyfとGLYFの輪郭を、ヒンティングなしでFreeTypeと同じ座標で `Pen` に渡す。HarfBuzzと同じグリフの箱（glyf、CFF2、CFF。`HbExtents`、[ADR 0021](docs/adr/0021-cff-outlines.md)）を求める |
-| [`sofel-shape`](crates/sofel-shape) | HarfBuzz 15.1.0のOTシェーパーと同じシェーピング（バッファ、区間の性質、計画、正規化、`GSUB` と `GPOS`、フォールバックの位置。[ADR 0020](docs/adr/0020-shaping-foundation.md)）、機能の文字列、直列化、言語と文字体系のタグ。文字体系ごとのシェーパー（[ADR 0024](docs/adr/0024-complex-shapers.md)）は未実装で、defaultの手順で処理する |
+| [`sofel-shape`](crates/sofel-shape) | HarfBuzz 15.1.0のOTシェーパーと同じシェーピング（バッファ、区間の性質、計画、正規化、`GSUB` と `GPOS`、フォールバックの位置。[ADR 0020](docs/adr/0020-shaping-foundation.md)）、機能の文字列、直列化、言語と文字体系のタグ。文字体系ごとのシェーパー（[ADR 0024](docs/adr/0024-complex-shapers.md)）は、hebrew、hangul、thai、arabic、indicを実装し、残り（khmer、myanmar、USE）はdefaultの手順で処理する |
 | [`sofel-bitmap`](crates/sofel-bitmap) | 埋め込みビットマップ（CBLC/CBDT、EBLC/EBDT、`bloc`/`bdat`、sbix）のストライク、その選び方（HarfBuzzとFreeTypeの両方）、グリフの画像のデータとメトリクス、EBDTの画素のFreeTypeと同じ書き込み（PNGは展開しない。[ADR 0023](docs/adr/0023-color-glyphs.md)） |
 | [`sofel-color`](crates/sofel-color) | カラーグリフ：CPALのパレット、COLR（版0と版1）、SVG、CBDT、sbixをHarfBuzzと同じ命令で `Painter` に渡す。命令の記録（`Recording`）、カラーグリフを含むグリフの箱、フォールバックのための問い合わせ（[ADR 0023](docs/adr/0023-color-glyphs.md)） |
 | [`sofel-write`](crates/sofel-write) | sfntの組み立てと、HarfBuzzと同じ詰め方のオブジェクトの直列化（[ADR 0022](docs/adr/0022-subsetting.md)） |
@@ -214,7 +214,7 @@ CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=$PWD::$PWD" cargo test --relea
 
 HarfBuzz と同じ文字数でサブセット化を計るには、計測の引数に `--filter 'subset unicode range'` を渡す。静的フォント7個について、既定の設定とグリフIDを保つ設定の両方を計る。
 
-追加フォントは `--filter extra` で選べる。cmap・advanceに加え、輪郭、縦advance、MATH定数、カラー形式、シェーピングの代表ケースを比較する（[ADR 0031](docs/adr/0031-diverse-font-corpus.md)）。未実装シェーパーの4ケースは期待する失敗として照合し、速度は計らない。条件と計測値は [追加フォントの役割別計測](docs/benchmarks/2026-11-11-extra-font-roles.md) に記す。
+追加フォントは `--filter extra` で選べる。cmap・advanceに加え、輪郭、縦advance、MATH定数、カラー形式、シェーピングの代表ケースを比較する（[ADR 0031](docs/adr/0031-diverse-font-corpus.md)）。未実装のKhmer、Myanmar、USEの代表ケースは期待する失敗として照合し、速度は計らない。条件と計測値は [追加フォントの役割別計測](docs/benchmarks/2026-11-11-extra-font-roles.md) に記す。
 
 ```sh
 sh bench/build-c.sh
