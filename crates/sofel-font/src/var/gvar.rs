@@ -285,8 +285,8 @@ fn apply_ft_phantoms(
     };
     let total = outline_count.checked_add(4).ok_or(GvarError::InvalidData)?;
     let mut deltas = [Point::<i32>::default(); 4];
-    for index in 0..data.tuple_count() {
-        let tuple = data.tuple(index).ok_or(GvarError::InvalidData)?;
+    for tuple in data.tuples() {
+        let tuple = tuple.ok_or(GvarError::InvalidData)?;
         let scalar = scalar_ft(table, &tuple, coords, shared)?;
         if scalar == 0 {
             continue;

@@ -66,7 +66,10 @@ fn adr0048_phantom_width_font(base: u16, delta: i8) -> Vec<u8> {
     let mut tables = sample_tables_with_glyf();
     for (tag, bytes) in &mut tables {
         if *tag == b"hmtx" {
-            bytes.get_mut(0..2).unwrap().copy_from_slice(&base.to_be_bytes());
+            bytes
+                .get_mut(0..2)
+                .unwrap()
+                .copy_from_slice(&base.to_be_bytes());
         }
     }
     tables.push((b"fvar", fvar_one_axis()));
