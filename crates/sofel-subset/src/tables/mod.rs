@@ -11,7 +11,7 @@ pub(crate) mod glyf;
 mod gvar;
 mod hdmx;
 pub(crate) mod hmtx;
-mod hvar;
+pub(crate) mod hvar;
 pub(crate) mod math;
 mod maxp;
 mod name;

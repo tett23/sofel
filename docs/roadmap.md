@@ -1,12 +1,30 @@
 # ロードマップ（放置していること）
 
-この文書は、2026-11-11 時点で sofel に残っている作業と、利用者の判断を待っている事項を一か所にまとめたものである。利用者と、Claude Code や Codex のような道具が、次に何をするかを選ぶために使う。仕様ではないので、決まったことは [docs/specifications.md](specifications.md) と各 ADR に書く。この文書は、作業が済むたびに該当する項を消す。
+この文書は、2026-11-12 時点で sofel に残っている作業と、利用者の判断を待っている事項を一か所にまとめたものである。利用者と、Claude Code や Codex のような道具が、次に何をするかを選ぶために使う。仕様ではないので、決まったことは [docs/specifications.md](specifications.md) と各 ADR に書く。この文書は、作業が済むたびに該当する項を消す。
 
 各項は、何が残っているか、どこに由来するか、何があれば進められるかの順に書く。節と項は、ほかの項が依存するものを先に置いた。確認できなかった事項には「未確認」と書いた。
 
 [ADR 0027](adr/0027-variable-fonts.md)（可変フォント）と [ADR 0029](adr/0029-variation-deltas.md)（変化量の扱い）は採択（未実装）である。座標の正規化、表の読み取りと検証、ItemVariationStoreの評価の核、名前つきインスタンス、PostScript名、HVARとVVARのメトリクス、gvarとCFF2の輪郭、FeatureVariationsとGPOSの変化量を使うシェーピング、COLRv1の可変の塗り、C ABI、CLI、計測を段階ごとに実装した。[ADR 0028](adr/0028-ptem-is-not-opsz.md) の分類訂正は実装済みで、[ADR 0030](adr/0030-variation-evaluation-corrections.md) の変化量評価の修正は段階ごとに進めている。[ADR 0029](adr/0029-variation-deltas.md) の調査記録は、手元の `target/handoff/variation-deltas-research.md` にある（コミットしていない）。
 
 [ADR 0027](adr/0027-variable-fonts.md) の全位置でのCFF2輪郭・ラスタの比較と、追加フォントの非既定位置でのメトリクス・輪郭の比較は、CIとマージを待っている。`ft_left_side_bearing` と `ft_top_side_bearing` にHVAR・VVARの差分を適用するという決定は、固定版FreeTypeの公開値と異なる。合成フォントで送り幅だけが変わり、サイドベアリングが変わらないことを確認したため、修正ADRをレビュー用に起草した。
+
+## HarfBuzz・FreeType 互換に必要な機能
+
+ここでいう互換は、[ADR 0001](adr/0001-project-goal-and-scope.md) が対象にした機能で、同じ入力と設定から参照実装と同じ結果を得ることを指す。次の表には実装済みの機能も含む。C の呼び出し口は [ADR 0015](adr/0015-c-abi.md) の sofel 独自 ABI を使う。
+
+| 照合先 | 機能 | 照合する結果 |
+| --- | --- | --- |
+| HarfBuzz | OpenType シェーピング。Unicode 正規化、文字体系別の処理、GSUB・GPOS、縦書き、フォールバック、表のサニタイズ | グリフ ID、クラスタ、送り幅、オフセット、グリフフラグ |
+| HarfBuzz | AAT シェーピング。morx・mort の置換、kerx・kern のカーニング、trak の字間調整 | 指定した機能と文字サイズでのグリフ列と位置 |
+| HarfBuzz | レイアウトの問い合わせ。BASE の基準線、GDEF の合字キャレット、MATH、スタイル値、ppem に応じた Device 補正 | 指定した文字体系、軸座標、サイズでの値 |
+| HarfBuzz | サブセット化と可変フォントのインスタンス化。軸の固定と範囲制限 | 出力フォントの表、グリフの対応、残した文字のシェーピング結果 |
+| FreeType | sfnt とコレクション、dfont、WOFF・WOFF2、PostScript 系、PFR、BDF・PCF・FNT・FON、圧縮フォントの読み取り | フェイスの選択、文字とグリフの対応、メトリクス、輪郭またはビットマップ |
+| FreeType | glyf・CFF・CFF2・VARC、Type1・CID・PFR の輪郭と、TrueType v35・v40、PostScript 系、自動ヒンタによるヒンティング | 指定したサイズとロードフラグでの輪郭点、送り幅、境界 |
+| FreeType | グレースケール・モノクロ・LCD・SDF のラスタライズ、埋め込みビットマップ | ビットマップの寸法、原点、画素値 |
+| 両方 | 可変フォントの軸と名前つきインスタンス、メトリクス・輪郭・配置・色への変化量の適用、合成太字・斜体 | 同じ軸座標と変形条件で各参照実装が返す値 |
+| 両方 | COLRv0・COLRv1、CPAL、CBDT・sbix、OT-SVG のカラーグリフ | パレット、描画命令、復号した画像、合成後の画素 |
+
+すべての機能の実装が終わってから高速化に着手する。実装中は [ADR 0005](adr/0005-conformance-tests.md) に従って出力を照合し、[ADR 0006](adr/0006-performance-measurement.md) に従って性能を記録する。下記の性能差の原因調査と最適化は実装完了後に行う。
 
 ## 未実装の ADR
 
