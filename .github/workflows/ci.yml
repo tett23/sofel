@@ -95,8 +95,8 @@ jobs:
           sh scripts/test-capi.sh tsan
           sh scripts/test-capi.sh asan
 
-  # docs/adr/0005, docs/adr/0008
-  conformance:
+  # ADR 0039: reproduce the committed tables on each host.
+  generators:
     needs: changes
     if: needs.changes.outputs.docs_only == 'false'
     strategy:
@@ -114,13 +114,12 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target/release
             tools/gen-unicode/target
             tools/gen-ot-tag/target
             tools/gen-machine/target
-          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-${{ runner.arch }}-conformance-v2-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'tools/*/Cargo.lock') }}-${{ github.sha }}
+          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-${{ runner.arch }}-generators-v1-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'tools/*/Cargo.lock') }}-${{ github.sha }}
           restore-keys: |
-            ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-${{ runner.arch }}-conformance-v2-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'tools/*/Cargo.lock') }}-
+            ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-${{ runner.arch }}-generators-v1-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'tools/*/Cargo.lock') }}-
       - id: testdata
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -133,15 +132,6 @@ jobs:
         env:
           SOFEL_TESTDATA_OFFLINE: ${{ steps.testdata.outputs.cache-hit == 'true' && '1' || '0' }}
         run: sh scripts/fetch-testdata.sh
-      - id: extra_fonts
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: target/testdata/extra-fonts
-          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-extra-fonts-${{ hashFiles('fonts.lock', 'conformance/fonts.tsv') }}
-      - name: Fetch extra fonts and licenses
-        env:
-          SOFEL_FONTS_OFFLINE: ${{ steps.extra_fonts.outputs.cache-hit == 'true' && '1' || '0' }}
-        run: sh scripts/fetch-fonts.sh
       # docs/adr/0019: the UCD files, pinned by SHA-256 in ucd.lock.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -176,6 +166,58 @@ jobs:
         run: |
           cargo run --release --manifest-path tools/gen-machine/Cargo.toml
           git diff --exit-code
+
+  # docs/adr/0005, docs/adr/0008
+  conformance:
+    needs: changes
+    if: needs.changes.outputs.docs_only == 'false'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/release
+          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-${{ runner.arch }}-conformance-v2-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'tools/*/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-${{ runner.arch }}-conformance-v2-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'tools/*/Cargo.lock') }}-
+      - id: testdata
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            target/testdata/harfbuzz
+            target/testdata/freetype
+          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-testdata-${{ hashFiles('testdata.lock') }}
+      # With a cache hit, the offline mode fails if the cache is incomplete.
+      - name: Fetch test data
+        env:
+          SOFEL_TESTDATA_OFFLINE: ${{ steps.testdata.outputs.cache-hit == 'true' && '1' || '0' }}
+        run: sh scripts/fetch-testdata.sh
+      - id: extra_fonts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/testdata/extra-fonts
+          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-extra-fonts-${{ hashFiles('fonts.lock', 'conformance/fonts.tsv') }}
+      - name: Fetch extra fonts and licenses
+        env:
+          SOFEL_FONTS_OFFLINE: ${{ steps.extra_fonts.outputs.cache-hit == 'true' && '1' || '0' }}
+        run: sh scripts/fetch-fonts.sh
+      # docs/adr/0019: the UCD files, pinned by SHA-256 in ucd.lock.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/ucd
+          key: ${{ env.SOFEL_CACHE_GENERATION }}-ucd-${{ hashFiles('ucd.lock') }}
+      - name: Fetch the UCD files
+        run: sh scripts/fetch-ucd.sh
       # ADR 0033: only an exact compiler, runner image and source match
       # reuses the C reference executables; the comparisons always run.
       - name: Identify the native toolchain
@@ -439,7 +481,7 @@ jobs:
 
   ci-result:
     if: always()
-    needs: [changes, adr, rust, conformance, wasm, fuzz, bench, capi-wasm]
+    needs: [changes, adr, rust, generators, conformance, wasm, fuzz, bench, capi-wasm]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -451,6 +493,7 @@ jobs:
           ADR_RESULT: ${{ needs.adr.result }}
           DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
           RUST_RESULT: ${{ needs.rust.result }}
+          GENERATORS_RESULT: ${{ needs.generators.result }}
           CONFORMANCE_RESULT: ${{ needs.conformance.result }}
           WASM_RESULT: ${{ needs.wasm.result }}
           FUZZ_RESULT: ${{ needs.fuzz.result }}

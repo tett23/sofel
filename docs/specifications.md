@@ -422,14 +422,16 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   - `hb-dump --serialize FONT TEXTFILE` は、`conformance/serialize-text.txt` の各行をHarfBuzzで形にした生の結果（グリフ、クラスタ、マスク、送り幅、ずれ）と、その直列化をテキストとJSONの全64の指定の組で書き、それぞれをHarfBuzzで読みなおした結果（成否、終わりの位置、項目）を書く。続けて `test/api/test-buffer.c` の読み込みの入力とそのすべての接頭辞を読んだ結果を書く。`hb-dump --deserialize FONT CORPUS` は、与えた文字列の集まりを読んだ結果を書く。テストは生の結果を `GlyphInfo` と `GlyphPosition` に読み（sofelのシェーパーに依らない）、sofelで書いてバイトごとに比べ、すべての文字列をsofelで読んで比べる。集まりは、書き出した文字列の接頭辞、1バイトを除いたものと区切りの文字を各位置に挿したもの、手で書いた例である。フォントは、postの名前を持つglyf（adwaita）、名前の無いglyf（Roboto）、CFF（SourceSansPro）、マークの位置を持つglyf（OpenSans、NotoNastaliqUrdu）とする（`tests/harfbuzz_serialize.rs`）。項目は `<フォント>:<種類>` で、期待する失敗は `conformance/expected-failures-serialize.txt` に書く。
 - 適合テストは `cargo test -p sofel-conformance` で走らせる。期待する失敗の一覧に無い失敗と、一覧にあるテストの成功は、ともにテストの失敗とする。
 - ネイティブの適合テストの runner は `scripts/test-conformance.sh [JOBS]` とする（[ADR 0033](adr/0033-ci-latency-and-ligature-iteration.md)）。`JOBS` の既定値と CI の値は2で、正の整数以外は終了コード2となる。Cargo がビルドしたすべてのテストの実行ファイルを最大 `JOBS` 本で実行し、各実行ファイルの libtest のスレッド数は1とする。テスト自身が作るスレッドと子プロセスは変えない。doctest も実行し、ビルドやテストの失敗は非ゼロの終了コードで伝える。
-- CI の `conformance` は Rust の release の成果物と生成ツールのビルド成果物をキャッシュし、更新の判定は Cargo に任せる（[ADR 0033](adr/0033-ci-latency-and-ligature-iteration.md)）。C の参照ツールと計測用ライブラリは、OS、アーキテクチャ、runner image、コンパイラ、固定した外部ソースとビルド入力が一致するキーだけを復元する。キャッシュの有無によってテストや照合を省かない。
+- CI の `conformance` はRustのrelease成果物を、`generators` は生成ツールのビルド成果物をそれぞれキャッシュし、更新の判定は Cargo に任せる（[ADR 0033](adr/0033-ci-latency-and-ligature-iteration.md)）。C の参照ツールと計測用ライブラリは、OS、アーキテクチャ、runner image、コンパイラ、固定した外部ソースとビルド入力が一致するキーだけを復元する。キャッシュの有無によってテストや照合を省かない。
 - CI の参照ツールのビルド、適合テストと計測用 C ビルドは、`scripts/measure-process-tree.sh` で起動する（[ADR 0033](adr/0033-ci-latency-and-ligature-iteration.md)）。起動したコマンドと子孫の RSS の合計を採取し、取得の後に0.1秒待って繰り返す。`peak_tree_rss_kib` に最大観測値、`samples` に取得回数を出力する。共有ページも各プロセスで数えるため、物理メモリの使用量や瞬間的な最大値とは限らない。計測に失敗しなければ、起動したコマンドの終了コードをそのまま返す。
 
+生成表の再現検査はLinuxとmacOSで適合テストと並列に実行する（[ADR 0039](adr/0039-generator-ci-parallelism.md)）。
+
 CI の文書だけの変更は、比較起点の `ci/documentation-only.rules` で判定する（[ADR 0032](adr/0032-documentation-only-ci.md)、[ADR 0034](adr/0034-ci-document-input-classification.md)）。
-`document` にだけ一致するパスの変更では、Rust、適合テスト、wasm、fuzz、ベンチマーク、C ABI の六つのビルドとテストのジョブを省く。
-`input` に一致するパス、未知のパス、規則の変更では、六つとも実行する。
+`document` にだけ一致するパスの変更では、Rust、生成器、適合テスト、wasm、fuzz、ベンチマーク、C ABI の七つのビルドとテストのジョブを省く。
+`input` に一致するパス、未知のパス、規則の変更では、七つとも実行する。
 文書だけでも `adr` は変更禁止の ADR、監査、計測記録と文書を検査する。
-`ci-result` は判定と保護の成功、および六つのジョブの結果を確認する。
+`ci-result` は判定と保護の成功、および七つのジョブの結果を確認する。
 文書をプログラムの入力にする変更には `input` 規則を追加する。
 
 ## 性能の計測

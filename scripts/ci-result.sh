@@ -9,7 +9,7 @@ case ${DOCS_ONLY:-} in
   false) want=success ;;
   *) echo 'ci-result: docs_only is missing or invalid' >&2; exit 1 ;;
 esac
-for job in RUST CONFORMANCE WASM FUZZ BENCH CAPI_WASM; do
+for job in RUST GENERATORS CONFORMANCE WASM FUZZ BENCH CAPI_WASM; do
   key=${job}_RESULT
   if [[ ${!key:-} != "$want" ]]; then
     echo "ci-result: $job is ${!key:-missing}, expected $want" >&2
