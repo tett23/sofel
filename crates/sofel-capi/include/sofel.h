@@ -232,6 +232,37 @@ void sofel_font_destroy(sofel_font_t *font);
 /* A location keeps coordinates and variation scalars (ADR 0027). */
 typedef struct sofel_location sofel_location_t;
 
+/* Item Variation Store selector for sofel_instance_item_delta_*. */
+typedef int32_t sofel_var_store_t;
+#define SOFEL_VAR_STORE_HVAR 0
+#define SOFEL_VAR_STORE_VVAR 1
+#define SOFEL_VAR_STORE_MVAR 2
+#define SOFEL_VAR_STORE_GDEF 3
+#define SOFEL_VAR_STORE_BASE 4
+#define SOFEL_VAR_STORE_COLR 5
+#define SOFEL_VAR_STORE_CFF2 6
+
+/* Evaluates a store row with HarfBuzz's f32 arithmetic. A missing store,
+ * out-of-range row, or unreadable row returns zero. NULL location selects
+ * the static default location. An invalid selector returns
+ * SOFEL_ERROR_INVALID_ARGUMENT and leaves out unchanged.
+ * Rust: sofel_font::var::Instance::item_delta
+ */
+int32_t sofel_instance_item_delta_hb(const sofel_font_t *font,
+                                     const sofel_location_t *location,
+                                     sofel_var_store_t store, uint16_t outer,
+                                     uint16_t inner, float *out);
+
+/* Evaluates a store row with FreeType's fixed-point arithmetic. A FreeType
+ * location error returns SOFEL_ERROR_INVALID_ARGUMENT and leaves out unchanged.
+ * NULL location selects the static default location.
+ * Rust: sofel_font::var::Instance::item_delta
+ */
+int32_t sofel_instance_item_delta_ft(const sofel_font_t *font,
+                                     const sofel_location_t *location,
+                                     sofel_var_store_t store, uint16_t outer,
+                                     uint16_t inner, int32_t *out);
+
 /* A design-space axis setting, like hb_variation_t. */
 typedef struct {
   uint32_t tag;
