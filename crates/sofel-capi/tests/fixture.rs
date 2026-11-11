@@ -1753,13 +1753,14 @@ fn generate_ppem() -> String {
         language: None::<Language>,
     }
     .guess(&buffer(), None);
-    let plan = ShapePlan::new(&font, props.clone(), &[]);
+    let instance = font.default_instance();
+    let plan = ShapePlan::new(instance, props.clone(), &[]);
     let position = |x_ppem, y_ppem, fallback| {
         let scale = Scale::new(HbScale::for_font(&font, 1000, 2000), x_ppem, y_ppem);
         let glyphs = if fallback {
-            sofel_shape::shape_fallback(&font, &scale, &props, buffer())
+            sofel_shape::shape_fallback(instance, &scale, &props, buffer())
         } else {
-            sofel_shape::shape(&font, &scale, &plan, buffer())
+            sofel_shape::shape(instance, &scale, &plan, buffer())
         };
         let positions = glyphs.glyph_positions();
         assert_eq!(positions.len(), 1);
@@ -1792,9 +1793,9 @@ fn generate_ppem() -> String {
     out.push_str("};\n");
     let null_position = |fallback| {
         let glyphs = if fallback {
-            sofel_shape::shape_fallback(&font, &Scale::unscaled(&font), &props, buffer())
+            sofel_shape::shape_fallback(instance, &Scale::unscaled(&font), &props, buffer())
         } else {
-            sofel_shape::shape(&font, &Scale::unscaled(&font), &plan, buffer())
+            sofel_shape::shape(instance, &Scale::unscaled(&font), &plan, buffer())
         };
         let p = glyphs.glyph_positions()[0];
         [p.x_advance, p.y_advance, p.x_offset, p.y_offset]
