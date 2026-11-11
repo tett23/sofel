@@ -1,5 +1,7 @@
 //! Variable-font coordinates and variation arithmetic (ADR 0027, ADR 0030).
 
+mod cff2;
+pub use cff2::{BlendError, BlendScalars};
 pub mod gvar;
 
 use alloc::vec::Vec;
@@ -1158,6 +1160,12 @@ pub enum VarError {
 pub struct Instance<'font, 'data, 'loc, 'source> {
     font: &'font Font<'data>,
     location: &'loc Location<'source>,
+}
+
+impl<'font, 'data> From<&'font Font<'data>> for Instance<'font, 'data, 'static, 'static> {
+    fn from(font: &'font Font<'data>) -> Self {
+        font.default_instance()
+    }
 }
 
 impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {

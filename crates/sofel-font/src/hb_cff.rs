@@ -29,6 +29,7 @@ use sofel_read::cff::hb::{
     sanitize_cff2_var_store, sanitize_charset, sanitize_encoding, var_store_region_count,
 };
 use sofel_read::cff::{self, NUM_STANDARD_STRINGS, STANDARD_STRINGS, Version};
+use sofel_read::item_variation::ItemVariationStore;
 
 use crate::Font;
 
@@ -335,6 +336,7 @@ pub struct HbCff2<'a> {
     fd_select: HbFdSelect<'a>,
     fd_count: u32,
     var_store: Option<i64>,
+    parsed_store: Option<ItemVariationStore<'a>>,
     last_subrs: HbIndex<'a>,
     last_ivs: u32,
 }
@@ -371,6 +373,10 @@ impl<'a> HbCff2<'a> {
         let var_store = sc
             .struct_at(0, top.vstore)
             .filter(|&p| sanitize_cff2_var_store(data, p, &mut sc));
+        let parsed_store = var_store.and_then(|p| {
+            let start = usize::try_from(p).ok()?.checked_add(2)?;
+            ItemVariationStore::new(data.get(start..)?).ok()
+        });
         let char_strings = sc
             .struct_at(0, top.char_strings)
             .and_then(|p| HbIndex::sanitize(data, p, Version::Cff2, &mut sc));
@@ -420,6 +426,7 @@ impl<'a> HbCff2<'a> {
             fd_select,
             fd_count,
             var_store,
+            parsed_store,
             last_subrs: last.0,
             last_ivs: last.1,
         })
@@ -472,6 +479,11 @@ impl<'a> HbCff2<'a> {
     /// [`HbCff2::data`]; `None` without a valid one.
     pub fn var_store(&self) -> Option<i64> {
         self.var_store
+    }
+
+    /// The sanitized CFF2 ItemVariationStore for blend coefficients.
+    pub fn variation_store(&self) -> Option<ItemVariationStore<'a>> {
+        self.parsed_store
     }
 
     /// The FDArray INDEX.
