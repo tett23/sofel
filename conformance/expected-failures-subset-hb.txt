@@ -45,8 +45,6 @@ hb-dump/golem/Fraunces.ttf:keep  # stage:var
 hb-dump/golem/Fraunces.ttf:keep+prepared  # stage:var
 hb-dump/golem/Handjet.ttf:keep  # stage:var
 hb-dump/golem/Handjet.ttf:keep+prepared  # stage:var
-hb-dump/golem/IUP-large-contour.ttf:keep  # stage:var
-hb-dump/golem/IUP-large-contour.ttf:keep+prepared  # stage:var
 hb-dump/golem/ImplicitHVAR.ttf:keep  # stage:var
 hb-dump/golem/ImplicitHVAR.ttf:keep+prepared  # stage:var
 hb-dump/golem/KalniaGlaze.ttf:keep  # stage:var
