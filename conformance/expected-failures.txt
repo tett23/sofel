@@ -731,14 +731,12 @@ in-house/use.tests:13  # shaper:use
 in-house/use.tests:14  # shaper:use
 in-house/use.tests:15  # shaper:use
 in-house/use.tests:17  # shaper:use
-in-house/variations.tests:4  # variations
 in-house/variations.tests:7  # variations
 in-house/variations.tests:8  # variations
 in-house/variations.tests:9  # variations
 in-house/variations.tests:10  # variations
 in-house/variations.tests:11  # variations
 in-house/variations.tests:12  # variations
-in-house/vertical.tests:22  # variations
 text-rendering-tests/KERN-1.tests:2  # aat
 text-rendering-tests/KERN-2.tests:2  # aat
 text-rendering-tests/MORT-1.tests:2  # aat

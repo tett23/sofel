@@ -4,9 +4,11 @@
 //! Ported from HarfBuzz 15.1.0 `src/hb-font.hh` and `src/hb-ot-font.cc`,
 //! MIT; see THIRD_PARTY_NOTICES.md.
 
+use core::cell::RefCell;
+
 use sofel_font::read::{GlyphId, device::Device};
 use sofel_font::{
-    GlyphExtents,
+    GlyphExtents, GlyphScratch,
     var::{HbF32, Instance, StoreKind},
 };
 
@@ -20,6 +22,7 @@ pub(crate) struct ShapeFont<'f, 'a, 'l, 's> {
     x_multf: f32,
     y_multf: f32,
     extents: &'f dyn Fn(GlyphId) -> Option<GlyphExtents>,
+    glyph_scratch: RefCell<GlyphScratch>,
 }
 
 pub(crate) use sofel_geom::float::i32_to_f32;
@@ -45,6 +48,7 @@ impl<'f, 'a, 'l, 's> ShapeFont<'f, 'a, 'l, 's> {
             x_multf: i32_to_f32(scale.scale.x_scale()) / upem,
             y_multf: i32_to_f32(scale.scale.y_scale()) / upem,
             extents,
+            glyph_scratch: RefCell::new(GlyphScratch::default()),
         }
     }
 
@@ -72,21 +76,28 @@ impl<'f, 'a, 'l, 's> ShapeFont<'f, 'a, 'l, 's> {
     }
     /// `get_glyph_h_advance`.
     pub(crate) fn h_advance(&self, glyph: u32) -> i32 {
-        self.scale
-            .scale
-            .em_scale_x(self.instance.advance(GlyphId(glyph)).cast_signed())
+        let mut scratch = self.glyph_scratch.borrow_mut();
+        self.scale.scale.em_scale_x(
+            self.instance
+                .advance_with_scratch(GlyphId(glyph), &mut scratch)
+                .cast_signed(),
+        )
     }
     /// `get_glyph_v_advance`.
     pub(crate) fn v_advance(&self, glyph: u32) -> i32 {
+        let mut scratch = self.glyph_scratch.borrow_mut();
         self.instance
-            .scaled_v_advance(&self.scale.scale, GlyphId(glyph))
+            .scaled_v_advance_with_scratch(&self.scale.scale, GlyphId(glyph), &mut scratch)
     }
     /// `get_glyph_v_origin`.
     pub(crate) fn v_origin(&self, glyph: u32) -> (i32, i32) {
-        self.instance
-            .scaled_v_origin(&self.scale.scale, GlyphId(glyph), |g| {
-                (self.extents)(g).map(|e| self.scale.scale.scale_glyph_extents(e))
-            })
+        let mut scratch = self.glyph_scratch.borrow_mut();
+        self.instance.scaled_v_origin_with_scratch(
+            &self.scale.scale,
+            GlyphId(glyph),
+            |g| (self.extents)(g).map(|e| self.scale.scale.scale_glyph_extents(e)),
+            &mut scratch,
+        )
     }
     /// `get_glyph_extents`, scaled.
     pub(crate) fn glyph_extents(&self, glyph: u32) -> Option<GlyphExtents> {
