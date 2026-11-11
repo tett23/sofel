@@ -1163,6 +1163,12 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
         if !self.location.hb_nonzero {
             return self.base_advance(glyph);
         }
+        self.varied_advance(glyph)
+    }
+
+    // Keep the owned work area off the default caller's stack frame.
+    #[inline(never)]
+    fn varied_advance(&self, glyph: GlyphId) -> u32 {
         self.advance_with_scratch(glyph, &mut crate::GlyphScratch::default())
     }
 
