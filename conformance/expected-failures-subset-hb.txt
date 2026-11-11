@@ -15,14 +15,10 @@ hb-dump/glyphs/Comfortaa-Regular-new.ttf  # stage:var
 hb-dump/glyphs/Fraunces.ttf  # stage:var
 hb-dump/glyphs/MPLUS1-Variable.ttf  # stage:var
 hb-dump/glyphs/RobotoFlex-Variable.ttf  # stage:var
-hb-dump/golem/32bit_var_store.otf:keep  # stage:var
-hb-dump/golem/32bit_var_store.otf:keep+prepared  # stage:var
 hb-dump/golem/AdobeVFPrototype.otf:keep  # stage:var
 hb-dump/golem/AdobeVFPrototype.otf:keep+prepared  # stage:var
 hb-dump/golem/COLRv1-alpha.ttf:pin  # stage:var
 hb-dump/golem/COLRv1-alpha.ttf:pin+prepared  # stage:var
-hb-dump/golem/Cantarell-VF-ABC.otf:keep  # stage:var
-hb-dump/golem/Cantarell-VF-ABC.otf:keep+prepared  # stage:var
 hb-dump/golem/Comfortaa-Regular-new.ttf:keep  # stage:var
 hb-dump/golem/Comfortaa-Regular-new.ttf:keep+prepared  # stage:var
 hb-dump/golem/Foldit.ttf:pin  # stage:var
@@ -35,8 +31,6 @@ hb-dump/golem/MPLUS1-Variable.ttf:keep  # stage:var
 hb-dump/golem/MPLUS1-Variable.ttf:keep+prepared  # stage:var
 hb-dump/golem/NotoSansJP-VF.subset.otf:keep  # stage:var
 hb-dump/golem/NotoSansJP-VF.subset.otf:keep+prepared  # stage:var
-hb-dump/golem/NotoSerifHK-subset.ttf:keep  # stage:var
-hb-dump/golem/NotoSerifHK-subset.ttf:keep+prepared  # stage:var
 hb-dump/golem/Roboto-Variable.ABC.ttf:keep  # stage:var
 hb-dump/golem/Roboto-Variable.ABC.ttf:keep+prepared  # stage:var
 hb-dump/golem/Roboto-Variable.ttf:keep  # stage:var
