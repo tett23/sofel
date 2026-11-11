@@ -157,11 +157,11 @@ fn outline_at(
             let component_positions = points;
             let mut outline: Vec<Point<f32>> = Vec::new();
             for (component, position) in components.into_iter().zip(component_positions) {
-                let Some((mut child, child_phantoms)) =
-                    outline_at(instance, component.glyph, scratch, budget)
-                else {
+                if scratch.stack.contains(&component.glyph.0) {
                     continue;
-                };
+                }
+                let (mut child, child_phantoms) =
+                    outline_at(instance, component.glyph, scratch, budget)?;
                 if component.flags & USE_MY_METRICS != 0 {
                     phantoms = child_phantoms;
                 }
@@ -290,14 +290,16 @@ fn phantoms_at(
         .ok()?;
     if data.contours < 0 {
         scratch.stack.push(glyph.0);
-        for (flags, component) in components {
-            if flags & USE_MY_METRICS != 0
-                && let Some(child) = phantoms_at(instance, GlyphId(component), scratch, budget)
-            {
-                phantoms = child;
-            }
-        }
+        // Earlier USE_MY_METRICS components are overwritten by the last one.
+        let selected = components.into_iter().rev().find(|(flags, component)| {
+            flags & USE_MY_METRICS != 0 && !scratch.stack.contains(component)
+        });
+        let child = selected
+            .map(|(_, component)| phantoms_at(instance, GlyphId(component), scratch, budget));
         scratch.stack.pop();
+        if let Some(child) = child {
+            phantoms = child?;
+        }
     }
     Some(phantoms)
 }
