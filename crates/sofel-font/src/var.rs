@@ -1807,9 +1807,20 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
                     .nth(usize::from(index))
             })
             .filter(|style| {
-                style
-                    .design_coords()
-                    .eq(self.location.ft_design.iter().copied())
+                // FreeType retains the selected name when the blend stays at
+                // the named position or returns to the all-zero blend.
+                self.location.ft_coords.iter().all(|value| value.0 == 0)
+                    || style
+                        .design_coords()
+                        .eq(self.location.ft_design.iter().copied())
+                    || Location::design_location(
+                        self.font,
+                        &fvar,
+                        &[],
+                        Some(style.design_coords().collect()),
+                    )
+                    .ft_coords
+                        == self.location.ft_coords
             });
         let named_part = named.and_then(|style| {
             if (style.psid == 6 || (256..32768).contains(&style.psid))

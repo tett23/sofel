@@ -326,6 +326,28 @@ fn adr0027_i2_named_and_overridden_design_coordinates() {
             vec!["--named-instance=0", "--variations=wght=900"],
             Location::new(&font, Some(0), &[variation]),
         ),
+        (
+            vec!["--named-instance=0", "--variations=wght=389.34425354003906"],
+            Location::new(
+                &font,
+                Some(0),
+                &[Variation {
+                    value: 389.34425,
+                    ..variation
+                }],
+            ),
+        ),
+        (
+            vec!["--named-instance=0", "--variations=wght=100"],
+            Location::new(
+                &font,
+                Some(0),
+                &[Variation {
+                    value: 100.0,
+                    ..variation
+                }],
+            ),
+        ),
     ] {
         let mut options = vec!["--var"];
         options.extend_from_slice(&args);
