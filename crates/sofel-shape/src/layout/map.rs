@@ -13,7 +13,7 @@ use sofel_font::read::Tag;
 use super::{GPOS, GSUB, Layout};
 use crate::buffer::{Buffer, Mask};
 use crate::font::ShapeFont;
-use crate::plan::ShapePlan;
+use crate::plan::{ShapePlan, VariationSelection};
 
 /// `HB_OT_MAP_MAX_BITS`.
 pub(crate) const MAX_BITS: u32 = 8;
@@ -165,7 +165,7 @@ pub(crate) struct MapBuilder<'l, 'a> {
     pub(crate) found_script: [bool; 2],
     pub(crate) script_index: [Option<usize>; 2],
     pub(crate) language_index: [Option<usize>; 2],
-    pub(crate) variations_index: [Option<u32>; 2],
+    pub(crate) variations_index: [VariationSelection; 2],
     current_stage: [usize; 2],
     feature_infos: Vec<FeatureInfo>,
     stages: [Vec<StageInfo>; 2],
@@ -197,7 +197,7 @@ impl<'l, 'a> MapBuilder<'l, 'a> {
                 layout.gsub.select_language(script0, language_tags),
                 layout.gpos.select_language(script1, language_tags),
             ],
-            variations_index: [None, None],
+            variations_index: [VariationSelection::default(), VariationSelection::default()],
             current_stage: [0, 0],
             feature_infos: Vec::new(),
             stages: [Vec::new(), Vec::new()],
@@ -276,15 +276,36 @@ impl<'l, 'a> MapBuilder<'l, 'a> {
     }
 
     fn feature_lookups(&self, table: usize, index: u16) -> Vec<u16> {
-        if table == GSUB {
-            self.layout
-                .gsub
-                .feature_lookups(index, self.variations_index[GSUB])
+        let Some(selected) = self.variations_index.get(table) else {
+            return Vec::new();
+        };
+        let (base, variations) = if table == GSUB {
+            (
+                self.layout.gsub.feature_lookups(index, selected.index),
+                self.layout.gsub.variations,
+            )
         } else {
-            self.layout
-                .gpos
-                .feature_lookups(index, self.variations_index[GPOS])
-        }
+            (
+                self.layout.gpos.feature_lookups(index, selected.index),
+                self.layout.gpos.variations,
+            )
+        };
+        let mut result = match variations.and_then(|fv| {
+            super::variations::lookup_variation_lookups(fv, index, &selected.lookup_conditions)
+        }) {
+            Some((include_base, mut extra)) => {
+                if include_base {
+                    extra.extend(base);
+                }
+                extra
+            }
+            None => base,
+        };
+        let count = self.lookup_count(table);
+        result.retain(|&lookup| usize::from(lookup) < count);
+        result.sort_unstable();
+        result.dedup();
+        result
     }
 
     fn lookup_count(&self, table: usize) -> usize {

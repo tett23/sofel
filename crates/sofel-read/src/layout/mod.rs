@@ -20,6 +20,8 @@
 //! Specification: <https://learn.microsoft.com/typography/opentype/spec/chapter2>
 
 pub(crate) mod context;
+pub mod damage;
+pub mod sanitize;
 pub(crate) mod walk;
 
 use core::cmp::Ordering;

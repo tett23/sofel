@@ -64,6 +64,7 @@ fn plan(
     let count = match FontFile::new(bytes).unwrap() {
         FontFile::Sfnt(_) => 1,
         FontFile::Collection(c) => c.num_fonts(),
+        FontFile::Dfont(d) => d.num_fonts(),
     };
     let mut text = String::new();
     let mut all = Vec::new();
