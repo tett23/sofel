@@ -1815,6 +1815,41 @@ fn validator_cff2() {
 }
 
 #[test]
+fn inv1_fdselect_format4_severity() {
+    let make = |sentinel: u32| {
+        let mut fd_select = vec![4];
+        fd_select.extend(2u32.to_be_bytes());
+        fd_select.extend(0u32.to_be_bytes());
+        fd_select.extend(0u16.to_be_bytes());
+        fd_select.extend(1u32.to_be_bytes());
+        fd_select.extend(1u16.to_be_bytes());
+        fd_select.extend(sentinel.to_be_bytes());
+        cff2(&Cff2Spec {
+            charstrings: vec![
+                Vec::new(),
+                charstring(&[I(0), Op(22)]),
+                charstring(&[I(0), Op(22)]),
+            ],
+            fds: vec![(Vec::new(), Vec::new()); 2],
+            fd_select,
+            ..Default::default()
+        })
+    };
+    let valid = diags(|r| sofel_read::cff::validate2(&make(3), None, None, r));
+    assert_eq!(valid.len(), 1);
+    assert_eq!(valid[0].kind, Kind::FdSelectFormat4);
+    assert_eq!(valid[0].severity, Severity::Warning);
+
+    let malformed = diags(|r| sofel_read::cff::validate2(&make(4), None, None, r));
+    assert!(
+        malformed
+            .iter()
+            .any(|d| d.kind == Kind::FdSelectFormat4 && d.severity == Severity::Warning)
+    );
+    assert!(malformed.iter().any(|d| d.severity == Severity::Error));
+}
+
+#[test]
 fn validate_sfnt_runs_cff_validators() {
     let mut spec = simple_cff();
     spec.charstrings.push(charstring(&[Op(21)]));

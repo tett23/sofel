@@ -158,3 +158,63 @@ fn i04_gvar_embedded_intermediate_and_shared_points() {
     assert_eq!(x.iter().collect::<Vec<_>>(), vec![5]);
     assert_eq!(y.iter().collect::<Vec<_>>(), vec![7]);
 }
+
+#[test]
+fn adr0047_i01_i02_tuples_keep_order_and_data_boundaries() {
+    let glyph_bytes = [
+        0, 2, 0, 12, // two tuples, serialized data starts after the headers
+        0, 2, 0, 0, // first tuple uses shared peak zero
+        0, 2, 0, 0, // second tuple uses shared peak zero
+        0xaa, 0xbb, 0xcc, 0xdd,
+    ];
+    let mut data = header(gvar::TAG, 1, false);
+    data[22..24].copy_from_slice(&8u16.to_be_bytes());
+    data.extend_from_slice(&glyph_bytes);
+    let glyph = Gvar::new(&data, gvar::TAG).unwrap().glyph_data(0).unwrap();
+    let tuples = glyph.tuples().collect::<Option<Vec<_>>>().unwrap();
+    assert_eq!(tuples.len(), 2);
+    for (index, tuple) in tuples.iter().enumerate() {
+        let indexed = glyph.tuple(u16::try_from(index).unwrap()).unwrap();
+        assert_eq!(tuple.shared_peak_index(), indexed.shared_peak_index());
+        assert_eq!(tuple.data(), indexed.data());
+    }
+    assert_eq!(tuples[0].data(), &[0xaa, 0xbb]);
+    assert_eq!(tuples[1].data(), &[0xcc, 0xdd]);
+
+    let mut one = header(gvar::TAG, 1, false);
+    one[22..24].copy_from_slice(&5u16.to_be_bytes());
+    one.extend_from_slice(&[0, 1, 0, 8, 0, 2, 0, 0, 0xaa, 0xbb]);
+    let glyph = Gvar::new(&one, gvar::TAG).unwrap().glyph_data(0).unwrap();
+    assert_eq!(
+        glyph.tuples().next().unwrap().unwrap().data(),
+        &[0xaa, 0xbb]
+    );
+    assert_eq!(glyph.tuples().count(), 1);
+
+    let mut empty = header(gvar::TAG, 1, false);
+    empty[22..24].copy_from_slice(&2u16.to_be_bytes());
+    empty.extend_from_slice(&[0, 0, 0, 4]);
+    let glyph = Gvar::new(&empty, gvar::TAG).unwrap().glyph_data(0).unwrap();
+    assert_eq!(glyph.tuples().count(), 0);
+}
+
+#[test]
+fn adr0047_i04_broken_tuple_bounds_still_reject_glyph_data() {
+    let mut data = header(gvar::TAG, 1, false);
+    data[22..24].copy_from_slice(&8u16.to_be_bytes());
+    data.extend_from_slice(&[0, 2, 0, 12, 0, 2, 0, 0, 0, 3, 0, 0, 0xaa, 0xbb, 0xcc, 0xdd]);
+    assert!(Gvar::new(&data, gvar::TAG).unwrap().glyph_data(0).is_none());
+    data[34..36].copy_from_slice(&2u16.to_be_bytes());
+    data[26..28].copy_from_slice(&3u16.to_be_bytes());
+    assert!(Gvar::new(&data, gvar::TAG).unwrap().glyph_data(0).is_none());
+
+    let mut short_header = header(gvar::TAG, 1, false);
+    short_header[22..24].copy_from_slice(&4u16.to_be_bytes());
+    short_header.extend_from_slice(&[0, 2, 0, 8, 0, 0, 0, 0]);
+    assert!(
+        Gvar::new(&short_header, gvar::TAG)
+            .unwrap()
+            .glyph_data(0)
+            .is_none()
+    );
+}

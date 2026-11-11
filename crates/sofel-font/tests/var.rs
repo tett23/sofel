@@ -202,6 +202,22 @@ fn i03_hvar_advance_retains_unsigned_range_above_u16() {
 }
 
 #[test]
+fn adr0027_i07_freetype_phantom_metrics_use_hvar_and_vmtx() {
+    let bytes = font_with_hvar(500, true);
+    let font = Font::new(&bytes, 0).unwrap();
+    let max = Location::from_design(&font, &[1.0]);
+    assert_eq!(font.default_instance().ft_h_advance(GlyphId(0)), Some(500));
+    assert_eq!(font.instance(&max).ft_h_advance(GlyphId(0)), Some(521));
+
+    let bytes = font_with_vvar();
+    let font = Font::new(&bytes, 0).unwrap();
+    assert_eq!(
+        font.default_instance().ft_top_side_bearing(GlyphId(0), 123),
+        Some(0)
+    );
+}
+
+#[test]
 fn i03_hvar_does_not_adjust_missing_horizontal_metrics() {
     let bytes = font_with_hvar(500, false);
     let font = Font::new(&bytes, 0).unwrap();
