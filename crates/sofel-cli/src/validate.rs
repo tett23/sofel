@@ -1,11 +1,16 @@
 //! `sofel-validate`: validate sfnt fonts and collections (ADR 0008).
 
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::io::Write;
 use std::path::Path;
 
-use sofel_read::sfnt::FontFile;
-use sofel_read::{DetailValue, Diagnostic, Kind, ReadError, Severity, validate};
+use sofel_read::layout::damage::DamageEvent;
+use sofel_read::sfnt::{FontFile, Sfnt};
+use sofel_read::{
+    DetailValue, Diagnostic, Kind, ReadError, Severity, Tag, gdef, gpos, gsub, validate,
+};
 
 use crate::json;
 
@@ -37,7 +42,15 @@ directory or file).
   details   an object with the values of the problem, e.g. expected and
             found values
 
-Nothing is written for a file without problems.
+For GDEF, GSUB and GPOS, validation ends with a layout damage summary
+for each font containing those tables. It counts distinct table offsets
+with structural errors or warnings. If a reference cannot be followed or the walk limit is
+reached, the count is a lower bound (at least N). JSON summaries have
+kind layout_damage_summary, damage_count, complete, locations,
+unchecked and work_limit_tables. Each location retains all its reasons.
+Collections also end with a layout_damage_total summary across faces.
+
+Nothing is written for a file without problems or layout tables.
 
 Exit status:
   0  no errors (warnings may have been written)
@@ -83,25 +96,31 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
             }
         };
         let name = path.display().to_string();
-        let mut emit = |font: Option<u32>, d: Diagnostic| {
-            errors |= d.severity == Severity::Error;
-            let line = if as_json {
-                json_line(&name, font, &d)
-            } else {
-                text_line(&name, font, &d)
-            };
-            let _ = writeln!(out, "{line}");
-        };
         match FontFile::new(&bytes) {
-            Err(e) => emit(None, file_diagnostic(e)),
-            Ok(FontFile::Sfnt(s)) => validate::sfnt(&s, &mut |d| emit(None, d)),
+            Err(e) => emit_diagnostic(&name, None, file_diagnostic(e), as_json, out, &mut errors),
+            Ok(FontFile::Sfnt(s)) => {
+                validate_face(&s, &name, None, as_json, out, &mut errors);
+            }
             Ok(FontFile::Collection(c)) => {
-                validate::collection(&c, &mut |d| emit(None, d));
-                for i in 0..c.num_fonts() {
-                    if let Ok(s) = c.font(i) {
-                        validate::sfnt(&s, &mut |d| emit(Some(i), d));
-                    }
-                }
+                validate::collection(&c, &mut |d| {
+                    emit_diagnostic(&name, None, d, as_json, out, &mut errors)
+                });
+                validate_faces(
+                    (0..c.num_fonts()).filter_map(|i| c.font(i).ok().map(|s| (i, s))),
+                    &name,
+                    as_json,
+                    out,
+                    &mut errors,
+                );
+            }
+            Ok(FontFile::Dfont(d)) => {
+                validate_faces(
+                    (0..d.num_fonts()).filter_map(|i| d.font(i).ok().map(|s| (i, s))),
+                    &name,
+                    as_json,
+                    out,
+                    &mut errors,
+                );
             }
         }
     }
@@ -112,6 +131,297 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
     } else {
         0
     }
+}
+
+fn validate_faces<'a>(
+    faces: impl Iterator<Item = (u32, Sfnt<'a>)>,
+    name: &str,
+    as_json: bool,
+    out: &mut dyn Write,
+    errors: &mut bool,
+) {
+    let summaries: Vec<_> = faces
+        .filter_map(|(i, face)| {
+            validate_face(&face, name, Some(i), as_json, out, errors).map(|summary| (i, summary))
+        })
+        .collect();
+    if !summaries.is_empty() {
+        let line = if as_json {
+            total_json(name, &summaries)
+        } else {
+            total_text(name, &summaries)
+        };
+        let _ = writeln!(out, "{line}");
+    }
+}
+
+fn emit_diagnostic(
+    path: &str,
+    font: Option<u32>,
+    diagnostic: Diagnostic,
+    as_json: bool,
+    out: &mut dyn Write,
+    errors: &mut bool,
+) {
+    *errors |= diagnostic.severity == Severity::Error;
+    let line = if as_json {
+        json_line(path, font, &diagnostic)
+    } else {
+        text_line(path, font, &diagnostic)
+    };
+    let _ = writeln!(out, "{line}");
+}
+
+fn target(tag: Tag) -> bool {
+    tag == gdef::TAG || tag == gsub::TAG || tag == gpos::TAG
+}
+
+#[derive(Default)]
+struct DamageSummary {
+    locations: BTreeMap<(Tag, u32), Vec<Kind>>,
+    unchecked: BTreeMap<(Tag, u32), Vec<Kind>>,
+    limits: BTreeSet<Tag>,
+}
+
+impl DamageSummary {
+    fn record(&mut self, d: Diagnostic) {
+        if target(d.table)
+            && !matches!(
+                d.kind,
+                Kind::LayoutTableDiscarded { .. } | Kind::WorkLimitExceeded
+            )
+        {
+            let reasons = self.locations.entry((d.table, d.offset)).or_default();
+            if !reasons.contains(&d.kind) {
+                reasons.push(d.kind);
+            }
+        }
+    }
+
+    fn extra(&mut self, event: DamageEvent) {
+        match event {
+            DamageEvent::Unchecked {
+                table,
+                source,
+                reason,
+            } => {
+                let reasons = self.unchecked.entry((table, source)).or_default();
+                if !reasons.contains(&reason) {
+                    reasons.push(reason);
+                }
+            }
+            DamageEvent::WorkLimit { table } => {
+                self.limits.insert(table);
+            }
+            DamageEvent::Diagnostic(_) => {}
+        }
+    }
+
+    fn complete(&self) -> bool {
+        self.unchecked.is_empty() && self.limits.is_empty()
+    }
+
+    fn text(&self, path: &str, font: Option<u32>) -> String {
+        let face = font.map(|n| format!("#{n}")).unwrap_or_default();
+        let count = self.locations.len();
+        let status = if self.complete() {
+            format!("{count}")
+        } else {
+            format!("at least {count}")
+        };
+        let mut line = format!(
+            "{path}{face}: layout damage: {status} location(s); {}",
+            if self.complete() {
+                "complete"
+            } else {
+                "incomplete"
+            }
+        );
+        for ((tag, source), reasons) in &self.unchecked {
+            for reason in reasons {
+                line.push_str(&format!("; unchecked {tag}+{source:#x}: {reason}"));
+            }
+        }
+        for tag in &self.limits {
+            line.push_str(&format!("; unchecked {tag}: work limit exceeded"));
+        }
+        line
+    }
+
+    fn json(&self, path: &str, font: Option<u32>) -> String {
+        let reasons = |items: &[Kind]| {
+            format!(
+                "[{}]",
+                items
+                    .iter()
+                    .map(|reason| json::object([
+                        ("kind", json::string(reason.id())),
+                        ("message", json::string(&reason.to_string())),
+                    ]))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )
+        };
+        let locations = self
+            .locations
+            .iter()
+            .map(|(&(tag, offset), kinds)| {
+                json::object([
+                    ("table", json::string(&tag.to_string())),
+                    ("offset", offset.to_string()),
+                    ("reasons", reasons(kinds)),
+                ])
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        let unchecked = self
+            .unchecked
+            .iter()
+            .map(|(&(tag, offset), kinds)| {
+                json::object([
+                    ("table", json::string(&tag.to_string())),
+                    ("offset", offset.to_string()),
+                    ("reasons", reasons(kinds)),
+                ])
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        let limits = self
+            .limits
+            .iter()
+            .map(|tag| json::string(&tag.to_string()))
+            .collect::<Vec<_>>()
+            .join(",");
+        json::object([
+            ("path", json::string(path)),
+            (
+                "font",
+                font.map_or_else(|| "null".to_string(), |n| n.to_string()),
+            ),
+            ("kind", json::string("layout_damage_summary")),
+            ("damage_count", self.locations.len().to_string()),
+            ("complete", self.complete().to_string()),
+            ("locations", format!("[{locations}]")),
+            ("unchecked", format!("[{unchecked}]")),
+            ("work_limit_tables", format!("[{limits}]")),
+        ])
+    }
+}
+
+fn validate_face(
+    sfnt: &Sfnt<'_>,
+    path: &str,
+    font: Option<u32>,
+    as_json: bool,
+    out: &mut dyn Write,
+    errors: &mut bool,
+) -> Option<DamageSummary> {
+    let has_layout = [gdef::TAG, gsub::TAG, gpos::TAG]
+        .iter()
+        .any(|&tag| sfnt.table(tag).is_some());
+    let summary = RefCell::new(DamageSummary::default());
+    validate::sfnt_with_layout_damage(
+        sfnt,
+        &mut |d| {
+            summary.borrow_mut().record(d);
+            emit_diagnostic(path, font, d, as_json, out, errors);
+        },
+        &mut |event| summary.borrow_mut().extra(event),
+    );
+    if has_layout {
+        let summary = summary.into_inner();
+        let line = if as_json {
+            summary.json(path, font)
+        } else {
+            summary.text(path, font)
+        };
+        let _ = writeln!(out, "{line}");
+        Some(summary)
+    } else {
+        None
+    }
+}
+
+fn total_text(path: &str, faces: &[(u32, DamageSummary)]) -> String {
+    let count: usize = faces.iter().map(|(_, s)| s.locations.len()).sum();
+    let complete = faces.iter().all(|(_, s)| s.complete());
+    let amount = if complete {
+        count.to_string()
+    } else {
+        format!("at least {count}")
+    };
+    let mut line = format!(
+        "{path}: layout damage total: {amount} location(s) across {} face(s); {}",
+        faces.len(),
+        if complete { "complete" } else { "incomplete" }
+    );
+    for (face, summary) in faces {
+        for ((tag, source), reasons) in &summary.unchecked {
+            for reason in reasons {
+                line.push_str(&format!("; unchecked #{face} {tag}+{source:#x}: {reason}"));
+            }
+        }
+        for tag in &summary.limits {
+            line.push_str(&format!("; unchecked #{face} {tag}: work limit exceeded"));
+        }
+    }
+    line
+}
+
+fn total_json(path: &str, faces: &[(u32, DamageSummary)]) -> String {
+    let count: usize = faces.iter().map(|(_, s)| s.locations.len()).sum();
+    let complete = faces.iter().all(|(_, s)| s.complete());
+    let reasons = |items: &[Kind]| {
+        format!(
+            "[{}]",
+            items
+                .iter()
+                .map(|reason| json::object([
+                    ("kind", json::string(reason.id())),
+                    ("message", json::string(&reason.to_string())),
+                ]))
+                .collect::<Vec<_>>()
+                .join(",")
+        )
+    };
+    let mut locations = Vec::new();
+    let mut unchecked = Vec::new();
+    let mut limits = Vec::new();
+    for (face, summary) in faces {
+        for (&(tag, offset), kinds) in &summary.locations {
+            locations.push(json::object([
+                ("font", face.to_string()),
+                ("table", json::string(&tag.to_string())),
+                ("offset", offset.to_string()),
+                ("reasons", reasons(kinds)),
+            ]));
+        }
+        for (&(tag, offset), kinds) in &summary.unchecked {
+            unchecked.push(json::object([
+                ("font", face.to_string()),
+                ("table", json::string(&tag.to_string())),
+                ("offset", offset.to_string()),
+                ("reasons", reasons(kinds)),
+            ]));
+        }
+        for tag in &summary.limits {
+            limits.push(json::object([
+                ("font", face.to_string()),
+                ("table", json::string(&tag.to_string())),
+            ]));
+        }
+    }
+    json::object([
+        ("path", json::string(path)),
+        ("font", "null".to_string()),
+        ("kind", json::string("layout_damage_total")),
+        ("damage_count", count.to_string()),
+        ("complete", complete.to_string()),
+        ("faces", faces.len().to_string()),
+        ("locations", format!("[{}]", locations.join(","))),
+        ("unchecked", format!("[{}]", unchecked.join(","))),
+        ("work_limit_faces", format!("[{}]", limits.join(","))),
+    ])
 }
 
 /// A diagnostic for a file that is neither an sfnt nor a collection.
@@ -179,4 +489,74 @@ fn json_line(path: &str, font: Option<u32>, d: &Diagnostic) -> String {
         ("message", json::string(&d.kind.to_string())),
         ("details", json::object(details)),
     ])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn inv4_structural_warnings_count_as_damage() {
+        let mut summary = DamageSummary::default();
+        for kind in [
+            Kind::ReservedBitsSet { found: 0x20 },
+            Kind::LayoutTableDiscarded { table: gsub::TAG },
+        ] {
+            summary.record(Diagnostic {
+                table: gsub::TAG,
+                offset: 0,
+                severity: kind.severity(),
+                kind,
+            });
+        }
+        assert_eq!(
+            summary.locations.get(&(gsub::TAG, 0)),
+            Some(&vec![Kind::ReservedBitsSet { found: 0x20 }])
+        );
+    }
+
+    #[test]
+    fn inv4_damage_summary_deduplicates_locations_and_reasons() {
+        let mut summary = DamageSummary::default();
+        for kind in [
+            Kind::UnknownFormat { found: 3 },
+            Kind::UnknownFormat { found: 3 },
+            Kind::OffsetOutOfBounds {
+                offset: 50,
+                length: 2,
+                available: 10,
+            },
+        ] {
+            summary.record(Diagnostic {
+                table: gsub::TAG,
+                offset: 4,
+                severity: kind.severity(),
+                kind,
+            });
+            summary.extra(DamageEvent::Unchecked {
+                table: gsub::TAG,
+                source: 4,
+                reason: kind,
+            });
+        }
+        summary.record(Diagnostic {
+            table: gsub::TAG,
+            offset: 0,
+            severity: Severity::Error,
+            kind: Kind::WorkLimitExceeded,
+        });
+        summary.extra(DamageEvent::WorkLimit { table: gsub::TAG });
+        assert_eq!(summary.locations.len(), 1);
+        assert_eq!(
+            summary.locations.get(&(gsub::TAG, 4)).map(Vec::len),
+            Some(2)
+        );
+        assert_eq!(summary.unchecked.len(), 1);
+        assert_eq!(
+            summary.unchecked.get(&(gsub::TAG, 4)).map(Vec::len),
+            Some(2)
+        );
+        assert_eq!(summary.limits.len(), 1);
+        assert!(!summary.complete());
+    }
 }

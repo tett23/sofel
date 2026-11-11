@@ -487,3 +487,125 @@ impl P<'_> {
         }
     }
 }
+
+fn damaged_layout_font() -> Vec<u8> {
+    let mut tables = sample_tables();
+    tables.push((b"GSUB", vec![0, 1, 0, 0, 0, 255, 0, 254, 0, 0]));
+    tables.push((b"GPOS", vec![0, 1, 0, 0, 0, 253, 0, 0, 0, 0]));
+    tables.sort_by_key(|(tag, _)| **tag);
+    sfnt(&tables)
+}
+
+#[test]
+fn inv2_layout_discard_diagnostic() {
+    let d = Dir::new("layout-discard");
+    let p = d.file("damaged.ttf", &damaged_layout_font());
+    for output in [run(&[os(&p)]), run(&["--json".as_ref(), os(&p)])] {
+        for tag in ["GSUB", "GPOS"] {
+            let msg = format!("shaping ignores the {tag} table after sanitization failed");
+            assert_eq!(output.stdout.matches(&msg).count(), 1, "{}", output.stdout);
+        }
+    }
+}
+
+#[test]
+fn inv3_original_layout_diagnostics() {
+    let d = Dir::new("original-layout");
+    let p = d.file("damaged.ttf", &damaged_layout_font());
+    let out = run(&["--json".as_ref(), os(&p)]);
+    assert_eq!(out.code, 1);
+    assert!(
+        out.stdout.contains("offset_out_of_bounds"),
+        "{}",
+        out.stdout
+    );
+}
+
+#[test]
+fn inv4_all_layout_damage() {
+    let d = Dir::new("layout-damage");
+    let p = d.file("damaged.ttf", &damaged_layout_font());
+    let out = run(&["--json".as_ref(), os(&p)]);
+    assert!(out.stdout.contains("\"damage_count\":3"), "{}", out.stdout);
+    assert!(out.stdout.contains("\"complete\":false"));
+    let summary = parse(out.stdout.lines().last().unwrap());
+    assert_eq!(summary["kind"], J::Str("layout_damage_summary".into()));
+    assert_eq!(summary["damage_count"], J::Num(3.0));
+    assert_eq!(summary["complete"], J::Bool(false));
+    let J::Arr(locations) = &summary["locations"] else {
+        panic!("locations is not an array")
+    };
+    assert_eq!(locations.len(), 3);
+    let J::Arr(unchecked) = &summary["unchecked"] else {
+        panic!("unchecked is not an array")
+    };
+    assert_eq!(unchecked.len(), 3);
+    for location in locations {
+        let J::Obj(fields) = location else {
+            panic!("location is not an object")
+        };
+        assert!(matches!(&fields["table"], J::Str(t) if t == "GSUB" || t == "GPOS"));
+        assert!(matches!(&fields["reasons"], J::Arr(r) if !r.is_empty()));
+    }
+    let out = run(&[os(&p)]);
+    assert!(out.stdout.contains("at least 3"), "{}", out.stdout);
+}
+
+#[test]
+fn inv4_layout_damage_is_per_face() {
+    let mut damaged = sample_tables();
+    damaged.push((b"GSUB", vec![0, 1, 0, 0, 0, 255, 0, 0, 0, 0]));
+    damaged.sort_by_key(|(tag, _)| **tag);
+    let d = Dir::new("layout-damage-faces");
+    let p = d.file("faces.ttc", &ttc(false, &[sample_tables(), damaged]));
+    let out = run(&["--json".as_ref(), os(&p)]);
+    let summary = out
+        .stdout
+        .lines()
+        .map(parse)
+        .find(|line| line["kind"] == J::Str("layout_damage_summary".into()))
+        .unwrap();
+    assert_eq!(summary["font"], J::Num(1.0));
+    assert_eq!(summary["damage_count"], J::Num(1.0));
+}
+
+#[test]
+fn inv4_layout_damage_total_counts_two_faces() {
+    let mut damaged = sample_tables();
+    damaged.push((b"GSUB", vec![0, 1, 0, 0, 0, 255, 0, 0, 0, 0]));
+    damaged.sort_by_key(|(tag, _)| **tag);
+    let d = Dir::new("layout-damage-total");
+    let face = sfnt(&damaged);
+    let resources = dfont(&[(b"sfnt", vec![(12, face.clone()), (3, face)])]);
+    let collection = ttc(false, &[damaged.clone(), damaged]);
+    for p in [
+        d.file("faces.ttc", &collection),
+        d.file("faces.dfont", &resources),
+    ] {
+        let out = run(&["--json".as_ref(), os(&p)]);
+        let total = parse(out.stdout.lines().last().unwrap());
+        assert_eq!(total["kind"], J::Str("layout_damage_total".into()));
+        assert_eq!(total["damage_count"], J::Num(2.0));
+        assert_eq!(total["complete"], J::Bool(false));
+        let J::Arr(locations) = &total["locations"] else {
+            panic!("locations is not an array")
+        };
+        assert_eq!(locations.len(), 2);
+        let font_ids: Vec<_> = locations
+            .iter()
+            .map(|location| {
+                let J::Obj(fields) = location else {
+                    panic!("location is not an object")
+                };
+                fields["font"].clone()
+            })
+            .collect();
+        assert_eq!(font_ids, [J::Num(0.0), J::Num(1.0)]);
+        let text = run(&[os(&p)]);
+        assert!(
+            text.stdout.lines().last().unwrap().contains("at least 2"),
+            "{}",
+            text.stdout
+        );
+    }
+}

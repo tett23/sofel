@@ -15,10 +15,13 @@ sofel_font::var::Instance::location Gives Rust callers the normalized location; 
 sofel_font::var::Instance::apply_gvar_hb Internal HarfBuzz glyph point evaluation; C gets the resulting coordinate-dependent font values (ADR 0030).
 sofel_font::var::Instance::apply_gvar_ft Internal FreeType glyph point evaluation; C gets the resulting coordinate-dependent outline (ADR 0030).
 sofel_font::var::Instance::advance_with_scratch Rust work-area variant of the C glyph advance query; the C query uses the ordinary Rust entry (ADR 0027).
+sofel_font::var::AdvanceCache::new Rust caller-owned cache for one Instance; ADR 0049 adds no persistent C cache handle.
+sofel_font::var::AdvanceCache::advance_with_scratch Rust caller-owned cached advance; the C ABI uses its existing location-dependent advance query (ADR 0049).
 sofel_font::var::Instance::v_advance_with_scratch Rust work-area variant of the C vertical advance query; the C query uses the ordinary Rust entry (ADR 0027).
 sofel_font::var::Instance::scaled_v_advance_with_scratch Rust work-area variant of the C scaled vertical advance query (ADR 0027).
 sofel_font::var::Instance::scaled_v_origin_with_scratch Rust work-area variant of the C vertical origin query (ADR 0027).
 sofel_font::var::Instance::glyf_extents_with_scratch Rust work-area variant of the C glyph extents query (ADR 0027).
+sofel_font::var::Instance::varied_glyf_control_box Unrounded internal outline for COLR layer clipping; C receives the painted glyph extents (ADR 0027).
 sofel_font::var::Instance::ft_h_advance_with_scratch Rust work-area variant of sofel_font_ft_h_advance; the C query uses the ordinary Rust entry (ADR 0048).
 sofel_font::var::Instance::ft_v_advance_with_scratch Rust work-area variant of sofel_font_ft_v_advance; the C query uses the ordinary Rust entry (ADR 0048).
 sofel_font::var::gvar::apply_hb Internal HarfBuzz gvar point evaluation; C gets the resulting font values through coordinate-dependent queries (ADR 0030).
@@ -57,7 +60,9 @@ sofel_read::mvar::* Zero-copy Rust views and validator of MVAR (ADR 0027); C rea
 sofel_read::name::* Zero-copy Rust views and per-table validators; C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::os2::* Zero-copy Rust views and per-table validators; C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::post::* Zero-copy Rust views and per-table validators; C reads the bytes with sofel_font_table and validates with sofel_validate.
-sofel_read::sfnt::* Views of the table directory and collection header; C opens a font of a collection by index with sofel_font_create and reads tables with sofel_font_table.
+sofel_read::sfnt::* Views of the table directory and container headers; C opens a font of a collection or dfont by index with sofel_font_create and reads tables with sofel_font_table.
+sofel_font::Font::shaping_table The C shaping entry points select these tables internally; sofel_font_table exposes the original input.
+sofel_read::validate::sfnt_with_layout_damage The Rust event interface supplies the detailed sofel-validate CLI summary; sofel_validate reports individual diagnostics.
 sofel_read::validate::checksum Part of the directory validation that sofel_validate runs.
 sofel_read::validate::directory Part of sofel_read::validate::sfnt, which sofel_validate runs.
 sofel_read::vhea::* The hhea view and validator under the vhea tags; C reads the bytes with sofel_font_table and validates with sofel_validate.

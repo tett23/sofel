@@ -40,6 +40,7 @@ fn i06_all_scalar_nominal_glyphs_match_harfbuzz() {
         let count = match FontFile::new(&bytes).unwrap() {
             FontFile::Sfnt(_) => 1,
             FontFile::Collection(c) => c.num_fonts(),
+            FontFile::Dfont(d) => d.num_fonts(),
         };
         assert_eq!(
             count,

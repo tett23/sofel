@@ -107,6 +107,11 @@ pub fn check_font(data: &[u8]) {
                 }
             }
         }
+        Ok(FontFile::Dfont(d)) => {
+            for i in 0..d.num_fonts().min(64) {
+                if let Ok(s) = d.font(i) { check_sfnt(&s); }
+            }
+        }
         Err(_) => {}
     }
 }
@@ -203,7 +208,7 @@ pub fn check_variation_store(input: &[u8]) {
 
 /// A standalone FeatureVariations condition-tree reader and validator.
 pub fn check_feature_variations(data: &[u8]) {
-    feature_variations::validate(data, Tag::new(b"GSUB"), 0, None, &mut |_| {});
+    feature_variations::validate(data, Tag::new(b"GSUB"), 0, None, Some(32), Some(32), &mut |_| {});
     if let Ok(table) = FeatureVariations::new(data) {
         for i in 0..table.len().min(32) {
             if let Some(record) = table.record(i) {
@@ -214,6 +219,24 @@ pub fn check_feature_variations(data: &[u8]) {
                             let _ = condition.value();
                             for k in 0..condition.children_len().unwrap_or(0).min(32) {
                                 let _ = condition.child(k);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for i in 0..table.lookup_record_count().min(32) {
+            if let Some(record) = table.lookup_record(i) {
+                let _ = record.feature_index();
+                if let Ok(Some(lookups)) = record.feature_lookups() {
+                    let _ = lookups.flags();
+                    for j in 0..lookups.len().min(32) {
+                        if let Some(condition) = lookups.record(j) {
+                            let _ = condition.condition();
+                            if let Ok(Some(indices)) = condition.lookup_indices() {
+                                for k in 0..indices.len().min(32) {
+                                    let _ = indices.get(k);
+                                }
                             }
                         }
                     }

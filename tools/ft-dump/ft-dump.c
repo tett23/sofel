@@ -176,6 +176,14 @@
  *                                       FT_Get_PS_Font_Extra is not public)
  *   end
  *
+ * Usage: ft-dump --cff2-private [--named-instance=N | --variations=TAG=value,...] FILE
+ *
+ * For each CFF2 face and Font DICT, prints the location-evaluated Private
+ * DICT scalar fields as `private`, followed by its six array fields as
+ * `private_array`. The reference accesses the CFF driver's internal load
+ * service from the pinned FreeType source; no public CFF2 Private DICT
+ * query exists. Non-CFF2 faces have no `private` lines.
+ *
  * --outline and --raster open each face with the random seed 0
  * (FT_PARAM_TAG_RANDOM_SEED), so that the CFF `random` operator starts
  * from the font's initialRandomSeed instead of an address (ADR 0021).
@@ -257,6 +265,8 @@
 #include FT_PARAMETER_TAGS_H
 #include FT_OPENTYPE_VALIDATE_H
 #include FT_COLOR_H
+#include <freetype/internal/cffotypes.h>
+#include <freetype/internal/services/svcfftl.h>
 
 static FT_UInt reference_named;
 static int reference_has_named;
@@ -783,6 +793,7 @@ static int faces(const char *path, void (*dump)(FT_Face))
   }
   num_faces = face->num_faces;
   FT_Done_Face(face);
+
   for (i = 0; i < num_faces; i++) {
     FT_Error error;
 
@@ -1220,7 +1231,7 @@ static void print_hex(const unsigned char *s, unsigned long n)
     printf("%02x", s[i]);
 }
 
-static void dump_names_and_metrics(FT_Face face)
+static void dump_names_and_metrics(FT_Face face, int with_bearings)
 {
   FT_Long n = face->num_glyphs, g;
   FT_UInt i, count;
@@ -1256,6 +1267,45 @@ static void dump_names_and_metrics(FT_Face face)
         printf("v_advance %ld %ld\n", (long)g, (long)advances[g]);
     free(advances);
   }
+  /* The glyph slot bearing is recomputed from the outline's CBox.  Read the
+   * metric tables instead: this is the input of tt_face_get_metrics. */
+  if (with_bearings) {
+    TT_HoriHeader *h = (TT_HoriHeader *)FT_Get_Sfnt_Table(face, FT_SFNT_HHEA);
+    TT_VertHeader *v = (TT_VertHeader *)FT_Get_Sfnt_Table(face, FT_SFNT_VHEA);
+    FT_ULong hlen = 0, vlen = 0;
+    FT_Byte *hmtx = NULL, *vmtx = NULL;
+    if (h && FT_Load_Sfnt_Table(face, FT_MAKE_TAG('h','m','t','x'), 0, NULL, &hlen) == 0 &&
+        (hmtx = (FT_Byte *)malloc((size_t)hlen)) != NULL &&
+        FT_Load_Sfnt_Table(face, FT_MAKE_TAG('h','m','t','x'), 0, hmtx, &hlen) != 0) {
+      free(hmtx);
+      hmtx = NULL;
+    }
+    if (v && FT_Load_Sfnt_Table(face, FT_MAKE_TAG('v','m','t','x'), 0, NULL, &vlen) == 0 &&
+        (vmtx = (FT_Byte *)malloc((size_t)vlen)) != NULL &&
+        FT_Load_Sfnt_Table(face, FT_MAKE_TAG('v','m','t','x'), 0, vmtx, &vlen) != 0) {
+      free(vmtx);
+      vmtx = NULL;
+    }
+    for (g = 0; g < n && hmtx; g++) {
+      FT_ULong hm = h->number_Of_HMetrics;
+      FT_ULong hoff = (FT_ULong)g < hm ? (FT_ULong)g * 4 + 2 : hm * 4 + ((FT_ULong)g - hm) * 2;
+      if (hoff + 2 <= hlen) {
+        FT_Short lsb = (FT_Short)((hmtx[hoff] << 8) | hmtx[hoff + 1]);
+        if (vmtx) {
+          FT_ULong vm = v->number_Of_VMetrics;
+          FT_ULong voff = (FT_ULong)g < vm ? (FT_ULong)g * 4 + 2 : vm * 4 + ((FT_ULong)g - vm) * 2;
+          if (voff + 2 <= vlen) {
+            FT_Short tsb = (FT_Short)((vmtx[voff] << 8) | vmtx[voff + 1]);
+            printf("bearing %ld %d %d\n", (long)g, (int)lsb, (int)tsb);
+            continue;
+          }
+        }
+        printf("bearing %ld %d -\n", (long)g, (int)lsb);
+      }
+    }
+    free(hmtx);
+    free(vmtx);
+  }
   for (g = 0; g < n; g++) {
     char buf[256];
     FT_Error error = FT_Get_Glyph_Name(face, (FT_UInt)g, buf, sizeof buf);
@@ -1266,6 +1316,71 @@ static void dump_names_and_metrics(FT_Face face)
     if (!error && len)
       printf("name_index %ld %u\n", (long)g, FT_Get_Name_Index(face, buf));
   }
+}
+
+/* Test-only access to FreeType's CFF load service.  The public Type 1
+ * private-DICT query is absent for the CFF driver; this uses the same
+ * load_private_dict callback as cff_slot_load, once for each Font DICT. */
+static void dump_cff2_private(FT_Face face)
+{
+  FT_ULong table_len = 0;
+  CFF_Face cff_face;
+  CFF_Font cff;
+  const FT_Service_CFFLoadRec *service;
+  FT_Fixed *coords = NULL;
+  FT_UInt axes, count, fd;
+
+  if (FT_Load_Sfnt_Table(face, FT_MAKE_TAG('C','F','F','2'), 0, NULL, &table_len) != 0)
+    return;
+  cff_face = (CFF_Face)face;
+  cff = (CFF_Font)cff_face->extra.data;
+  if (!cff || !cff->cff2 || !cff->cffload)
+    return;
+  service = (const FT_Service_CFFLoadRec *)cff->cffload;
+  if (!service->load_private_dict)
+    return;
+  axes = cff->vstore.axisCount;
+  if (axes) {
+    coords = (FT_Fixed *)calloc(axes, sizeof(*coords));
+    if (!coords || FT_Get_Var_Blend_Coordinates(face, axes, coords) != 0) {
+      free(coords);
+      printf("private_error coords\n");
+      return;
+    }
+  }
+  count = cff->num_subfonts ? cff->num_subfonts : 1;
+  for (fd = 0; fd < count; fd++) {
+    CFF_SubFont sub = cff->num_subfonts ? cff->subfonts[fd] : &cff->top_font;
+    CFF_Private priv = &sub->private_dict;
+    FT_Error error = service->load_private_dict(cff, sub, axes, coords);
+    if (error) {
+      printf("private_error %u %d\n", (unsigned)fd, (int)error);
+      continue;
+    }
+    printf("private %u %u %ld %ld %ld %ld %ld %ld %ld %ld %ld %u %ld %d %d %lu\n",
+           (unsigned)fd, (unsigned)priv->vsindex,
+           (long)priv->standard_width, (long)priv->standard_height,
+           (long)priv->blue_scale, (long)priv->blue_shift,
+           (long)priv->blue_fuzz, (long)priv->expansion_factor,
+           (long)priv->initial_random_seed, (long)priv->default_width,
+           (long)priv->nominal_width, (unsigned)priv->force_bold,
+           (long)priv->force_bold_threshold, (int)priv->lenIV,
+           (int)priv->language_group, (unsigned long)priv->local_subrs_offset);
+#define DUMP_ARRAY(name, count, values) do {                                  \
+      FT_UInt j;                                                               \
+      printf("private_array %u %s %u", (unsigned)fd, name, (unsigned)(count)); \
+      for (j = 0; j < (FT_UInt)(count); j++) printf(" %ld", (long)(values)[j]); \
+      printf("\n");                                                         \
+    } while (0)
+    DUMP_ARRAY("blue_values", priv->num_blue_values, priv->blue_values);
+    DUMP_ARRAY("other_blues", priv->num_other_blues, priv->other_blues);
+    DUMP_ARRAY("family_blues", priv->num_family_blues, priv->family_blues);
+    DUMP_ARRAY("family_other_blues", priv->num_family_other_blues, priv->family_other_blues);
+    DUMP_ARRAY("stem_snap_h", priv->num_snap_widths, priv->snap_widths);
+    DUMP_ARRAY("stem_snap_v", priv->num_snap_heights, priv->snap_heights);
+#undef DUMP_ARRAY
+  }
+  free(coords);
 }
 
 /* ADR 0027 task 2: public FreeType variation queries and normalization. */
@@ -1460,7 +1575,6 @@ static int otvalid(const char *path)
   }
   num_faces = face->num_faces;
   FT_Done_Face(face);
-
   for (i = 0; i < num_faces; i++) {
     FT_UInt gdef_flags = FT_VALIDATE_GDEF;
 
@@ -1496,6 +1610,9 @@ int main(int argc, char **argv)
   FT_Library library;
   FT_Face face;
   FT_Long num_faces, i;
+  FT_Long byte_count = 0;
+  FT_Byte *bytes = NULL;
+  int metrics_mode = 0;
   FT_Error error;
 
   if (argc >= 2 && (strcmp(argv[1], "--var") == 0 ||
@@ -1520,6 +1637,8 @@ int main(int argc, char **argv)
     return faces(argv[2], dump_cid);
   if (argc == 3 && strcmp(argv[1], "--ps-info") == 0)
     return faces(argv[2], dump_ps_info);
+  if (argc == 3 && strcmp(argv[1], "--cff2-private") == 0)
+    return faces(argv[2], dump_cff2_private);
   if (argc == 3 && strcmp(argv[1], "--colr") == 0)
     return faces(argv[2], dump_colr);
   if (argc == 3 && strcmp(argv[1], "--sbit") == 0)
@@ -1527,11 +1646,12 @@ int main(int argc, char **argv)
   if (argc == 3 && strcmp(argv[1], "--otvalid") == 0)
     return otvalid(argv[2]);
   if (argc == 3 && strcmp(argv[1], "--metrics") == 0) {
+    metrics_mode = 1;
     argv[1] = argv[2];
     argc = 2;
   }
   if (argc != 2) {
-    fprintf(stderr, "usage: ft-dump FILE | ft-dump --advances [--named-instance=N] [--variations=TAG=value,...] FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --sampled-outline SIZE FILE PLAN | ft-dump --sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...] | ft-dump --raster PPEM [--color] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
+    fprintf(stderr, "usage: ft-dump FILE | ft-dump --advances [--named-instance=N] [--variations=TAG=value,...] FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --sampled-outline SIZE FILE PLAN | ft-dump --sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...] | ft-dump --raster PPEM [--color] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --cff2-private FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
     return 2;
   }
   if (FT_Init_FreeType(&library) != 0) {
@@ -1546,18 +1666,24 @@ int main(int argc, char **argv)
   }
   num_faces = face->num_faces;
   FT_Done_Face(face);
+  if (reference_has_named && !(bytes = read_font(argv[1], &byte_count))) {
+    FT_Done_FreeType(library);
+    return 1;
+  }
 
   for (i = 0; i < num_faces; i++) {
     void *table;
 
     printf("face %ld\n", (long)i);
-    error = FT_New_Face(library, argv[1], i, &face);
+    error = bytes ? FT_New_Memory_Face(library, bytes, byte_count, i, &face)
+                  : FT_New_Face(library, argv[1], i, &face);
     if (error != 0) {
       printf("error %d\nend\n", (int)error);
       continue;
     }
     if (set_reference_location(library, face, reference_variations) != 0) {
       FT_Done_Face(face);
+      free(bytes);
       FT_Done_FreeType(library);
       return 2;
     }
@@ -1570,10 +1696,11 @@ int main(int argc, char **argv)
       dump_maxp((const TT_MaxProfile *)table);
     dump_charmaps(face);
     dump_advances(face);
-    dump_names_and_metrics(face);
+    dump_names_and_metrics(face, metrics_mode);
     printf("end\n");
     FT_Done_Face(face);
   }
+  free(bytes);
   FT_Done_FreeType(library);
   return 0;
 }
