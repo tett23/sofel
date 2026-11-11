@@ -286,7 +286,7 @@ fn extra_items(b: &mut Bench, testdata: &std::path::Path) {
                 Compare::Yes,
             )),
         );
-        let outlines = Outlines::new(&font);
+        let outlines = Outlines::new(font.default_instance());
         let mut scratch = Scratch::default();
         b.item(
             name,
@@ -520,7 +520,7 @@ fn cff_items(b: &mut Bench, testdata: &std::path::Path) {
             )),
             None,
         );
-        let extents = HbExtents::new(&font);
+        let extents = HbExtents::new(font.default_instance());
         b.item(
             name,
             "glyph extents".into(),
@@ -546,7 +546,7 @@ fn cff_items(b: &mut Bench, testdata: &std::path::Path) {
             "open (HarfBuzz)".into(),
             &mut || {
                 let f = Font::new(&bytes, 0).expect("sofel opens the font");
-                box_sum(HbExtents::new(&f).glyph_extents(GlyphId(first)))
+                box_sum(HbExtents::new(f.default_instance()).glyph_extents(GlyphId(first)))
             },
             None,
             Some((
@@ -626,7 +626,7 @@ fn cff_items(b: &mut Bench, testdata: &std::path::Path) {
 /// and 96 px against FreeType.
 fn outline_items(b: &mut Bench, name: &str, font: &Font<'_>, ft: &FtFace, hb: &HbFont) {
     let n = font.num_glyphs();
-    let outlines = Outlines::new(font);
+    let outlines = Outlines::new(font.default_instance());
     // Outlines: the number of commands (without closes) of every glyph.
     for ppem in [0u16, 48] {
         let scale = if ppem == 0 {
@@ -957,7 +957,7 @@ fn color_items(b: &mut Bench, testdata: &std::path::Path) {
         }
         if formats.has(F::COLR_V0) {
             // ADR 0023 (5d): COLRv0 glyphs in color as FT_LOAD_COLOR.
-            let outlines = Outlines::new(&font);
+            let outlines = Outlines::new(font.default_instance());
             let options = PaintOptions::default();
             for ppem in [12u16, 24, 48] {
                 ft.set_ppem(u32::from(ppem));
@@ -1096,7 +1096,7 @@ fn color_items(b: &mut Bench, testdata: &std::path::Path) {
                 )),
             );
         }
-        let outlines = Outlines::new(&font);
+        let outlines = Outlines::new(font.default_instance());
         let mut scratch = Scratch::default();
         b.item(
             name,
@@ -1221,7 +1221,7 @@ fn main() {
                 Compare::Yes,
             )),
         );
-        let v_boxes = HbExtents::new(&font);
+        let v_boxes = HbExtents::new(font.default_instance());
         b.item(
             name,
             "v origin".into(),
