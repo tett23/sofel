@@ -177,7 +177,20 @@ fn layout_unsupported(
         }
     }
     // Pinning every axis drops the GDEF variation store.
-    if !pinned && kept(b"GDEF").is_some_and(layout::gdef::has_var_store) {
+    let retained = |t: &[u8; 4]| {
+        let tag = Tag::new(t);
+        font.table(tag).is_some() && !drop.contains(tag.to_u32())
+    };
+    let gsub_feature_variations_retained = retained(b"GSUB")
+        && font.table(Tag::new(b"GSUB")).is_some_and(|d| {
+            sofel_font::read::be::u32_at(d, 0).unwrap_or(0) >= 0x0001_0001
+                && sofel_font::read::be::u32_at(d, 10) != Some(0)
+        });
+    let gdef_store_is_unused = kept(b"GDEF").is_some_and(layout::gdef::unused_variation_store)
+        && !retained(b"GPOS")
+        && !retained(b"MATH")
+        && !gsub_feature_variations_retained;
+    if !pinned && kept(b"GDEF").is_some_and(layout::gdef::has_var_store) && !gdef_store_is_unused {
         return Err(SubsetError::Unsupported {
             tag: Tag::new(b"GDEF"),
             reason: "the GDEF item variation store (ADR 0022 stage 10)",

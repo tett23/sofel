@@ -17,7 +17,7 @@ WOFFとWOFF2、Type1やBDFなどの古い形式、AAT、絵文字（COLR、埋�
 シェーピングの作業バッファは、[ADR 0051](docs/adr/0051-shaping-buffer-item-size.md) に従い、グリフ情報を1要素28バイト、位置を1要素20バイトで保持する。
 
 2段階目（glyfの輪郭とアンチエイリアスのラスタライズ）まで実装し、6段階目のCFFとCFF2の輪郭、CIDの問い合わせ、PostScriptのフォントの情報（[ADR 0021](docs/adr/0021-cff-outlines.md)）と、CIDとグリフ名を速く引くcharsetの索引（[ADR 0025](docs/adr/0025-cff-charset-index.md)）を実装している。CFF2の輪郭は可変フォントの指定した位置でも取り出せる。
-サブセット化（[ADR 0022](docs/adr/0022-subsetting.md)）は、sfntの組み立てと直列化、オフセットのあふれを解く再配置、glyf系の表、cmap、name、OS/2、post、hdmx、CFF（名前のキーとCIDのキー）、VORG、GDEF、GSUB、GPOS、BASEとレイアウトの閉包、COLR（版0、変化量の表を持たない版1、版1の塗りが残らず版0にできるもの、残す版1の塗りとクリップがすべて静的なもの、軸を固定せず変化量ストアを直接またはマップを介して参照するもの）、CPAL、CBLC、CBDT、sbixとCOLRの閉包、MATHとその閉包、軸を指定しないgvarとGVARの書き出し、glyfとCFF2の可変フォントのすべての軸の既定の値への固定（fvar、avar、STATの読み取りと、CFF2をCFFに変換する `DOWNGRADE_CFF2` を含む）、同じフォントを繰り返しサブセット化するための前処理（`Prepared`）、CFFのcharstringの取り出し、グリフ名での指定（`--glyphs`）と、これらのC ABI（`sofel_subset` など）までを実装し、HarfBuzzのサブセット化のテストのうちこれらの表だけを持つ組でバイト単位で一致する。Golemの使い方（グリフIDと `RETAIN_GIDS`）は、HarfBuzzのテストのフォントのうちこれらの表だけを持つものすべてで `hb-subset` と同じバイト列を出す。軸を指定しない HVAR と VVAR は、複数のItemVariationDataから使う行と領域だけを残し、暗黙・明示の送り幅とサイドベアリングのマップを書ける。明示マップの末尾で繰り返す行番号は1項目にまとめる。残りの可変フォントの表（軸を固定しないCFF2、GDEF、BASE、COLRの変化量の表）は、10段階目で書く。
+サブセット化（[ADR 0022](docs/adr/0022-subsetting.md)）は、sfntの組み立てと直列化、オフセットのあふれを解く再配置、glyf系の表、cmap、name、OS/2、post、hdmx、CFF（名前のキーとCIDのキー）、VORG、GDEF、GSUB、GPOS、BASEとレイアウトの閉包、COLR（版0、変化量の表を持たない版1、版1の塗りが残らず版0にできるもの、残す版1の塗りとクリップがすべて静的なもの、軸を固定せず変化量ストアを直接またはマップを介して参照するもの）、CPAL、CBLC、CBDT、sbixとCOLRの閉包、MATHとその閉包、軸を指定しないgvarとGVARの書き出し、glyfとCFF2の可変フォントのすべての軸の既定の値への固定（fvar、avar、STATの読み取りと、CFF2をCFFに変換する `DOWNGRADE_CFF2` を含む）、同じフォントを繰り返しサブセット化するための前処理（`Prepared`）、CFFのcharstringの取り出し、グリフ名での指定（`--glyphs`）と、これらのC ABI（`sofel_subset` など）までを実装し、HarfBuzzのサブセット化のテストのうちこれらの表だけを持つ組でバイト単位で一致する。Golemの使い方（グリフIDと `RETAIN_GIDS`）は、HarfBuzzのテストのフォントのうちこれらの表だけを持つものすべてで `hb-subset` と同じバイト列を出す。軸を指定しない HVAR と VVAR は、複数のItemVariationDataから使う行と領域だけを残し、暗黙・明示の送り幅とサイドベアリングのマップを書ける。明示マップの末尾で繰り返す行番号は1項目にまとめる。軸を指定しないGDEF 1.3のItemVariationStoreは、GDEF内にVariationIndexの参照がなく、GPOSとMATHを保持せず、GSUBのFeatureVariationsも保持しない場合に除く。参照を持つGDEFやGPOS・MATHを保持するGDEFと、軸を固定しないCFF2、BASEの変化量の表は、10段階目で書く。
 `sofel-read` は、sfntの目録、TTC/OTC、dfont（[ADR 0058](docs/adr/0058-dfont-face-selection.md)）、head、maxp/MAXP、hhea/HHEA、hmtx/HMTX、cmap（フォーマット0〜15）、loca、glyf（[ADR 0007](docs/adr/0007-sfnt-read-foundation.md)、[0011](docs/adr/0011-glyf-outlines.md)）と、OS/2、name、post、vhea/VHEA、vmtx/VMTX、VORG（[ADR 0016](docs/adr/0016-font-and-vertical-metrics.md)）、BASE（[ADR 0017](docs/adr/0017-base-baselines.md)）、CFFとCFF2（[ADR 0021](docs/adr/0021-cff-outlines.md)）、GDEF、GSUB、GPOS（[ADR 0020](docs/adr/0020-shaping-foundation.md)）、MATH、fvar、avar、STAT（[ADR 0022](docs/adr/0022-subsetting.md)）を読み、各表の検証器を持つ。
 
 大文字の HHEA と VHEA は、32ビットのメトリクス件数を読む（[ADR 0054](docs/adr/0054-wide-metrics-header-count.md)）。
@@ -25,7 +25,6 @@ WOFFとWOFF2、Type1やBDFなどの古い形式、AAT、絵文字（COLR、埋�
 COLRv1の描画は、Rustの `paint`・`paint_recording` とCの `sofel_paint_glyph` に可変フォントの位置を渡して記録できる。
 MVARのメトリクス差分は、Rustの `Instance::metrics_variation` とCの `sofel_instance_metrics_variation` で丸める前の値を取得できる。
 さらに、[ADR 0027](docs/adr/0027-variable-fonts.md) の可変フォントの表（ItemVariationStore、DeltaSetIndexMap、HVAR、VVAR、MVAR、gvar、GVAR、avar版2、FeatureVariations）を読み、検証する。`sofel-subset` はFeatureVariationsをこのビューから読む。glyfのFreeType互換の送り幅は、位置設定後の初回 `FT_Get_Advances` の値に合わせる（[ADR 0048](docs/adr/0048-freetype-advance-query-state.md)）。
-FeatureVariations版1.1以降のlookup条件も読み、軸の位置に合うlookupをシェーピング計画に加える（[ADR 0046](docs/adr/0046-harfbuzz-lookup-variations.md)）。
 範囲と実装の順序は [ADR 0001](docs/adr/0001-project-goal-and-scope.md)、クレートの構成は [ADR 0003](docs/adr/0003-crate-layers.md) を参照。
 仕様は [docs/specifications.md](docs/specifications.md) にまとめる。フォントの用語と sofel の型名は[用語集](docs/glossary.md)で引ける。
 シェーピング計画の生成時間は、[Coverageの走査を打ち切る計測](docs/benchmarks/2026-11-11-shape-coverage-digest.md) に記録している。
@@ -37,7 +36,6 @@ C ABIには位置の作成、座標の取得、Variationの文字列変換、軸
 さらに、メトリクス、基準線、輪郭、シェーピング、塗りの既存関数には位置の引数を追加した。
 C API の `sofel_scale_create_with_ppem` は、シェーピング用スケールに横と縦の ppem を指定する（[ADR 0052](docs/adr/0052-c-shaping-ppem.md)）。従来の `sofel_scale_create` と NULL のスケールでは両軸とも 0 になる。
 可変フォントの位置を指定すると、HVARとVVARの送り幅、gvarの幻の点から求める送り幅とグリフの箱、VORGとVVARの縦原点、MVARのメトリクス、BASEのVariationIndexを評価する。FreeTypeの方針ではgvarの輪郭とCFF2の輪郭を位置に応じて描き、HarfBuzzの方針ではFeatureVariationsとGPOSのVariationIndexをシェーピングに適用する。COLRv1の塗りとクリップの箱にも位置を反映する。
-非既定位置のシェーピングでは、水平送り幅を1回の呼び出し内で128枠のキャッシュに保存する。既定位置ではキャッシュを作らない。Rustの呼び出し側も、特定の `Instance` に結びつく `AdvanceCache` を保持できる（[ADR 0049](docs/adr/0049-hvar-advance-cache.md)）。計測結果は [HVAR送り幅キャッシュ](docs/benchmarks/2026-11-11-hvar-advance-cache.md) に記録する。
 `sofel-shape`、`sofel-render`、`sofel-paint` は `--variations` と `--named-instance` で位置を受け付ける。
 ライセンスと取得元を固定した追加フォントの検証は [ADR 0031](docs/adr/0031-diverse-font-corpus.md) に従って実装した。
 文書だけの変更でCIを省く方針は [ADR 0032](docs/adr/0032-documentation-only-ci.md) と [ADR 0034](docs/adr/0034-ci-document-input-classification.md) に従って実装している。
@@ -68,8 +66,6 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 可変フォントの輪郭には `--variations=wght=500` や `--named-instance=0` で位置を指定できる。既定以外の位置では埋め込みビットマップを使わず、輪郭を描く。
 
 1グリフをヒンティングなしで描き、PGM（P5、白地に黒）を標準出力に書く（[ADR 0012](docs/adr/0012-antialiased-rasterizer.md)）。FreeTypeの `FT_Render_Glyph` と同じ画像になる。そのppemの埋め込みビットマップがあれば、FreeTypeと同じく `--no-bitmap` が無いかぎりそれを書く（32bitはPAM。[ADR 0023](docs/adr/0023-color-glyphs.md)）。`--color` では、COLRv0のグリフをFreeTypeの `FT_LOAD_COLOR` と同じ色の画像にしてPAMで書く（`--palette N` でパレットを選ぶ）。
-
-CLI のレイヤー選択と描画制御は独自実装で、画素合成には `sofel-raster` を使う（[ADR 0055](docs/adr/0055-rewrite-cli-color-rendering.md)）。
 
 ```sh
 cargo run --release --bin sofel-render -- --ppem 48 --char U+0041 font.ttf > a.pgm
@@ -113,14 +109,12 @@ sofel-subset --font-file=Roboto.ttf --unicodes=41-5A -o out.ttf
 
 ### `sofel-validate`
 
-sfnt、TTC/OTC、dfontの各表を検証する（[ADR 0008](docs/adr/0008-validate-command-and-freetype-comparison.md)、[ADR 0058](docs/adr/0058-dfont-face-selection.md)）。誤りを1件1行で出し、`--json` ではJSON Linesで出す。
+sfntとTTC/OTCの各表を検証する（[ADR 0008](docs/adr/0008-validate-command-and-freetype-comparison.md)）。誤りを1件1行で出し、`--json` ではJSON Linesで出す。
 
 ```sh
 cargo run --release --bin sofel-validate -- font.ttf
 cargo run --release --bin sofel-validate -- --json font.ttf
 ```
-
-GSUB、GPOS、GDEF に破損があると、その表をシェーピングで無視する場合は警告を出す。元の表を検査して、フェイス、表タグ、バイト位置ごとに破損を数える。参照先を検査できなかった場合は、確認できた件数を下限として示し、未検査の理由を添える（[ADR 0059](docs/adr/0059-layout-sanitizer-diagnostics.md)）。
 
 終了コードは、`Error` が無ければ0、あれば1、使い方の誤りか読めないファイルがあれば2。出力の形とJSONのキーは `sofel-validate --help` で示す。
 
@@ -169,7 +163,7 @@ sh scripts/check-capi.sh       # ライブラリの公開の関数がすべてC 
 
 FreeTypeとの突き合わせ（[ADR 0005](docs/adr/0005-conformance-tests.md)、[0008](docs/adr/0008-validate-command-and-freetype-comparison.md)）には、固定したコミットのHarfBuzzとFreeTypeの取得と、`ft-dump` のビルド（Cのコンパイラが要る）が要る。Vertical_Orientationの照合には、`scripts/fetch-ucd.sh` で取得したUCDのファイルが要る。HarfBuzzとのメトリクスとUnicodeの文字の性質の突き合わせ（[ADR 0016](docs/adr/0016-font-and-vertical-metrics.md)、[ADR 0019](docs/adr/0019-unicode-character-data.md)）、丸めの突き合わせ（[ADR 0026](docs/adr/0026-harfbuzz-rounding.md)）には、HarfBuzzの `src/harfbuzz.cc` を取りこんだ `hb-dump` のビルド（C++のコンパイラが要る）が要る。期待する失敗は `conformance/expected-failures-freetype.txt`、`conformance/expected-failures-otvalid.txt`（[ADR 0020](docs/adr/0020-shaping-foundation.md) のotvalidとの照合）、`conformance/expected-failures-harfbuzz.txt` と `conformance/expected-failures-serialize.txt`（[ADR 0020](docs/adr/0020-shaping-foundation.md) の直列化の照合）に理由を添えて書く。
 シェーピングの適合テスト（HarfBuzzの `test/shape` のすべての行と、`hb-dump --shape`、`--shape-random`、`--layout-map` との突き合わせ。[ADR 0020](docs/adr/0020-shaping-foundation.md)）の期待する失敗は、`conformance/expected-failures.txt`、`expected-failures-shape-pairs.txt`、`expected-failures-shape-random.txt`、`expected-failures-layout-map.txt` に、分類（`shaper:<名前>`、`variations`、`aat`、`synthetic`、`cff`、`color`、`out-of-scope:<名前>`）を1つずつ添えて書く。テストは分類がフォントと計画に合うことも確かめる。`--font-ptem` 単独の `trak` は `aat` とし、`variations` に含めない（[ADR 0028](docs/adr/0028-ptem-is-not-opsz.md)）。`SOFEL_SHAPE_VERBOSE=1` で違いを、`SOFEL_SHAPE_SUGGEST=1` で一覧に無い失敗の分類の候補を出す。
-シェーピングの適合テストでは、dfont と破損したレイアウト表の固定ケースが HarfBuzz と一致する（[ADR 0058](docs/adr/0058-dfont-face-selection.md)、[ADR 0059](docs/adr/0059-layout-sanitizer-diagnostics.md)）。残る期待失敗は[ロードマップ](docs/roadmap.md)に記す。
+シェーピングの適合テストでは、dfont と破損したレイアウト表に由来する既知の差を [ADR 0044](docs/adr/0044-shaping-conformance-exceptions.md) の入力に限って認める。対応予定は[ロードマップ](docs/roadmap.md)に記す。
 
 追加フォントの適合テスト（[ADR 0031](docs/adr/0031-diverse-font-corpus.md)）は、OFL 1.1またはApache-2.0の13ファイルを固定し、TTCを含む57フェイスを調べる。バイナリはリポジトリに含めず、`fonts.lock` のSHA-256とバイト数で取得する。各フォントの取得元、著作権表示とライセンス全文は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) に記録する。`conformance/fonts.tsv` はファイル、ライセンス、検証する機能を結び、`conformance/font-cases.tsv` は可変フォントの各軸の最小・最大を含むシェーピングの入力と座標を固定する。機能がまだ実装されていないケースの理由は `conformance/expected-failures-extra-fonts.txt` にケースIDごとに記す。非既定座標のメトリクスと輪郭は、Arabic、Source Serif、Amstelvarの代表ケースを別に比較し、位置をまだ渡せない結果を `conformance/expected-failures-extra-variation.txt` に記す。既定座標の一致と区別する。
 
