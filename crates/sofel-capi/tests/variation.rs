@@ -385,6 +385,10 @@ fn vvar_font_bytes() -> Vec<u8> {
 }
 
 fn mvar_font_bytes() -> Vec<u8> {
+    mvar_font_bytes_with_peak(16384)
+}
+
+fn mvar_font_bytes_with_peak(peak: i16) -> Vec<u8> {
     let store = Buf::new()
         .u16(1)
         .u32(12)
@@ -393,8 +397,8 @@ fn mvar_font_bytes() -> Vec<u8> {
         .u16(1)
         .u16(1)
         .i16(0)
-        .i16(16384)
-        .i16(16384)
+        .i16(peak)
+        .i16(peak)
         .u16(1)
         .u16(1)
         .u16(1)
@@ -417,6 +421,64 @@ fn mvar_font_bytes() -> Vec<u8> {
     tables.push((b"MVAR", mvar));
     tables.sort_by_key(|(tag, _)| **tag);
     sfnt(&tables)
+}
+
+#[test]
+fn adr0030_i08_null_location_keeps_hb_mvar_default_region() {
+    use sofel_font::var::{Ft, HbF32, Location, StoreKind};
+    let bytes = mvar_font_bytes_with_peak(0);
+    let rust_font = sofel_font::Font::new(&bytes, 0).unwrap();
+    let rust_default = rust_font.instance(Location::default_ref());
+    let mut error = -99;
+    // SAFETY: font bytes remain live through handle destruction.
+    let font = unsafe { sofel_font_create(bytes.as_ptr(), bytes.len(), 0, &mut error) };
+    assert_eq!(error, OK);
+    let mut hb = -1.0f32;
+    let mut ft = -1i32;
+    // SAFETY: font and outputs are live; NULL location denotes static default.
+    assert_eq!(
+        unsafe {
+            sofel_instance_item_delta_hb(
+                font,
+                core::ptr::null(),
+                SOFEL_VAR_STORE_MVAR,
+                0,
+                0,
+                &mut hb,
+            )
+        },
+        OK
+    );
+    assert_eq!(
+        hb,
+        rust_default
+            .item_delta::<HbF32>(StoreKind::Mvar, 0, 0)
+            .unwrap()
+    );
+    assert_eq!(hb, 21.0);
+    // SAFETY: font and outputs are live; NULL location denotes static default.
+    assert_eq!(
+        unsafe {
+            sofel_instance_item_delta_ft(
+                font,
+                core::ptr::null(),
+                SOFEL_VAR_STORE_MVAR,
+                0,
+                0,
+                &mut ft,
+            )
+        },
+        OK
+    );
+    assert_eq!(
+        ft,
+        rust_default
+            .item_delta::<Ft>(StoreKind::Mvar, 0, 0)
+            .unwrap()
+    );
+    assert_eq!(ft, 0);
+    // SAFETY: font handle is owned and no longer used.
+    unsafe { sofel_font_destroy(font) };
 }
 
 fn named_font_bytes() -> Vec<u8> {
