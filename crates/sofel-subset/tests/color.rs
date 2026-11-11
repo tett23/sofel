@@ -273,13 +273,16 @@ fn retained_variable_paint_or_clip_needs_the_colr_store() {
         .u16(100)
         .u32(1)
         .done();
+    let no_delta = Buf::new().u8(3).u16(0).u16(0x4000).u32(u32::MAX).done();
+    let mut no_clip_delta = clip.clone();
+    no_clip_delta[9..].copy_from_slice(&u32::MAX.to_be_bytes());
     let mut colr = colr_v1(
         &[],
         &[],
-        &[solid(0), variable],
-        &[(g('A'), 0), (g('B'), 1), (g('C'), 0)],
+        &[solid(0), variable, no_delta],
+        &[(g('A'), 0), (g('B'), 1), (g('C'), 0), (g('D'), 2)],
         &[],
-        &[(g('C'), g('C'), clip)],
+        &[(g('C'), g('C'), clip), (g('D'), g('D'), no_clip_delta)],
     );
     let offset = colr.len() as u32;
     colr[30..34].copy_from_slice(&offset.to_be_bytes());
@@ -287,6 +290,7 @@ fn retained_variable_paint_or_clip_needs_the_colr_store() {
     let data = font_with(vec![(b"COLR", colr), (b"CPAL", cpal_table(false))]);
     let font = Font::new(&data, 0).unwrap();
     assert!(subset(&font, &chars("A")).is_ok());
+    assert!(subset(&font, &chars("D")).is_ok());
     for selected in ["B", "C"] {
         assert!(
             matches!(subset(&font, &chars(selected)), Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"COLR"))

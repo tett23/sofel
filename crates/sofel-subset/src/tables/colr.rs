@@ -50,7 +50,12 @@ fn retains_no_v1_paints(colr: &Colr<'_>, glyphset: &RangeSet) -> bool {
 /// Whether a kept COLR table needs the variation store subsetting of
 /// ADR 0022 stage 10: version 1 with an ItemVariationStore or a
 /// DeltaSetIndexMap.
-pub(crate) fn needs_var_store(data: &[u8], glyphset: &RangeSet, static_paints: bool) -> bool {
+pub(crate) fn needs_var_store(
+    data: &[u8],
+    glyphset: &RangeSet,
+    static_paints: bool,
+    pinned: bool,
+) -> bool {
     let Some(colr) = sanitized(data) else {
         return false;
     };
@@ -63,9 +68,12 @@ pub(crate) fn needs_var_store(data: &[u8], glyphset: &RangeSet, static_paints: b
             .any(|g| colr.find_base_glyph(g).is_some_and(|r| r.num_layers != 0));
     }
     !static_paints
-        || glyphset
-            .iter()
-            .any(|g| colr.clip_box(g).is_some_and(|b| b.var_index_base.is_some()))
+        || glyphset.iter().any(|g| {
+            colr.clip_box(g).is_some_and(|b| {
+                b.var_index_base
+                    .is_some_and(|idx| pinned || idx != NO_VARIATION)
+            })
+        })
 }
 
 /// The layer index range `[first, first + count)` of a base glyph
@@ -81,6 +89,7 @@ fn layer_range(first: u16, count: u16, num_layers: usize) -> (usize, usize) {
 pub(crate) fn closure(
     data: &[u8],
     glyphs: &mut RangeSet,
+    pinned: bool,
 ) -> (BTreeMap<u32, u32>, BTreeMap<u32, u32>, bool) {
     let Some(colr) = sanitized(data) else {
         return (BTreeMap::new(), BTreeMap::new(), true);
@@ -118,6 +127,7 @@ pub(crate) fn closure(
             t,
             visited: BTreeSet::new(),
             static_paints: true,
+            pinned,
             glyphs: RangeSet::new(),
             layers: &mut layer_indices,
             palettes: &mut palette_indices,
@@ -184,6 +194,7 @@ struct Closure<'a, 'c> {
     t: D<'a>,
     visited: BTreeSet<usize>,
     static_paints: bool,
+    pinned: bool,
     glyphs: RangeSet,
     layers: &'c mut RangeSet,
     palettes: &'c mut RangeSet,
@@ -203,11 +214,11 @@ impl Closure<'_, '_> {
             return;
         }
         self.nesting_left = self.nesting_left.saturating_sub(1);
-        if matches!(
-            format,
-            3 | 5 | 7 | 9 | 13 | 15 | 17 | 19 | 21 | 23 | 25 | 27 | 29 | 31
-        ) {
-            self.static_paints = false;
+        if let Some((size, true)) = paint_size(format) {
+            self.check_var_index(at.saturating_add(size));
+        } else if format == 13 {
+            let offset = u24(self.t, at.saturating_add(4)) as usize;
+            self.check_var_index(at.saturating_add(offset).saturating_add(24));
         }
         self.closurev1(format, at);
         self.nesting_left = self.nesting_left.saturating_add(1);
@@ -222,6 +233,12 @@ impl Closure<'_, '_> {
         }
     }
 
+    fn check_var_index(&mut self, at: usize) {
+        if self.pinned || self.t.u32(at) != NO_VARIATION {
+            self.static_paints = false;
+        }
+    }
+
     fn color_line(&mut self, at: usize, var: bool) {
         let off = u24(self.t, at.saturating_add(1));
         if off == 0 {
@@ -233,6 +250,13 @@ impl Closure<'_, '_> {
             let stop = 3usize.saturating_add(i.saturating_mul(size));
             self.palettes
                 .add(u32::from(line.u16(stop.saturating_add(2))));
+            if var {
+                self.check_var_index(
+                    at.saturating_add(off as usize)
+                        .saturating_add(stop)
+                        .saturating_add(6),
+                );
+            }
         }
     }
 

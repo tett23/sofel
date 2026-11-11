@@ -422,12 +422,14 @@ impl Plan {
         // _colr_closure
         if tag_kept(b"COLR") {
             let (layers, palettes, static_paints) =
-                colr::closure(colr_table.unwrap_or(&[]), &mut cur);
+                colr::closure(colr_table.unwrap_or(&[]), &mut cur, full_instance);
             cur.truncate(num_glyphs);
             p.color.layers = layers;
             p.color.palettes = palettes;
             if colr_kept
-                && colr_table.is_some_and(|data| colr::needs_var_store(data, &cur, static_paints))
+                && colr_table.is_some_and(|data| {
+                    colr::needs_var_store(data, &cur, static_paints, full_instance)
+                })
             {
                 return Err(SubsetError::Unsupported {
                     tag: Tag::new(b"COLR"),
