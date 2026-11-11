@@ -39,6 +39,19 @@
  *                                         for every non-empty name)
  *   end
  *
+ * Usage: ft-dump --advances [--named-instance=N] [--variations=TAG=value,...] FILE
+ *
+ * For each face, query every glyph's horizontal and vertical advance with
+ * FT_Get_Advance (a fresh face for each glyph) and FT_Get_Advances (one
+ * fresh face for the entire range).  Each face starts at the same location
+ * with FT_LOAD_NO_SCALE; a failed query reports its error and value 0:
+ *
+ *   face <i>
+ *   error <code>                        (the face cannot be opened)
+ *   num_glyphs <n>
+ *   advance <h|v> <single|batch> <glyph> <error> <value>
+ *   end
+ *
  * Field names and order:
  *   head: version font_revision checksum_adjustment magic_number flags
  *         units_per_em created (two numbers: high and low 32 bits)
@@ -847,6 +860,89 @@ static int set_reference_location(FT_Library library, FT_Face face, const char *
   return set_design_coordinates(library, face, variations);
 }
 
+/* A new face is required for each single query: the first query can
+ * initialize HVAR/VVAR and change the result of later queries. */
+static int dump_advance_queries(const char *path)
+{
+  FT_Library library;
+  FT_Face face;
+  FT_Long face_count, index, glyph;
+  FT_Error error;
+  int vertical;
+  FT_Long size = 0;
+  FT_Byte *bytes;
+
+  if (FT_Init_FreeType(&library) != 0) return 1;
+  bytes = read_font(path, &size);
+  if (!bytes) { FT_Done_FreeType(library); return 1; }
+  error = open_seeded(library, path, bytes, size, -1, &face);
+  if (error != 0) {
+    fprintf(stderr, "ft-dump: %s: FreeType error %d\n", path, (int)error);
+    free(bytes); FT_Done_FreeType(library);
+    return 1;
+  }
+  face_count = face->num_faces;
+  FT_Done_Face(face);
+
+  for (index = 0; index < face_count; index++) {
+    FT_Long count;
+    printf("face %ld\n", (long)index);
+    error = open_seeded(library, path, bytes, size, index, &face);
+    if (error != 0) {
+      printf("error %d\nend\n", (int)error);
+      continue;
+    }
+    count = face->num_glyphs;
+    FT_Done_Face(face);
+    printf("num_glyphs %ld\n", (long)count);
+    if (count < 0 || (FT_Long)(FT_UInt)count != count) {
+      free(bytes); FT_Done_FreeType(library);
+      return 1;
+    }
+    for (vertical = 0; vertical <= 1; vertical++) {
+      const char *direction = vertical ? "v" : "h";
+      FT_Int32 flags = FT_LOAD_NO_SCALE | (vertical ? FT_LOAD_VERTICAL_LAYOUT : 0);
+      FT_Fixed *values;
+      for (glyph = 0; glyph < count; glyph++) {
+        FT_Fixed value = 0;
+        error = open_seeded(library, path, bytes, size, index, &face);
+        if (error == 0) {
+          if (set_reference_location(library, face, reference_variations) != 0) {
+            FT_Done_Face(face);
+            free(bytes); FT_Done_FreeType(library);
+            return 2;
+          }
+          error = FT_Get_Advance(face, (FT_UInt)glyph, flags, &value);
+          FT_Done_Face(face);
+        }
+        printf("advance %s single %ld %d %ld\n", direction, (long)glyph,
+               (int)error, error ? 0L : (long)value);
+      }
+      if (count == 0) continue;
+      values = (FT_Fixed *)calloc((size_t)count, sizeof(*values));
+      if (!values) { free(bytes); FT_Done_FreeType(library); return 1; }
+      error = open_seeded(library, path, bytes, size, index, &face);
+      if (error == 0) {
+        if (set_reference_location(library, face, reference_variations) != 0) {
+          FT_Done_Face(face);
+          free(values);
+          free(bytes); FT_Done_FreeType(library);
+          return 2;
+        }
+        error = FT_Get_Advances(face, 0, (FT_UInt)count, flags, values);
+        FT_Done_Face(face);
+      }
+      for (glyph = 0; glyph < count; glyph++)
+        printf("advance %s batch %ld %d %ld\n", direction, (long)glyph,
+               (int)error, error ? 0L : (long)values[glyph]);
+      free(values);
+    }
+    printf("end\n");
+  }
+  free(bytes); FT_Done_FreeType(library);
+  return 0;
+}
+
 /* raster: 0 for --outline, 1 for --raster, 2 for --raster --color.
  * plan: sorted "face glyph" pairs for --sampled-outline, or NULL. */
 static int outlines(const char *size, const char *path, int raster, const char *plan,
@@ -1406,6 +1502,8 @@ int main(int argc, char **argv)
                     strcmp(argv[1], "--var-normalize") == 0))
     return dump_var_reference(argc, argv);
   if (argc >= 2 && !reference_options(&argc, argv)) return 2;
+  if (argc == 3 && strcmp(argv[1], "--advances") == 0)
+    return dump_advance_queries(argv[2]);
   if (argc == 2 && strcmp(argv[1], "--calc") == 0)
     return calc();
   if (argc == 4 && strcmp(argv[1], "--outline") == 0)
@@ -1433,7 +1531,7 @@ int main(int argc, char **argv)
     argc = 2;
   }
   if (argc != 2) {
-    fprintf(stderr, "usage: ft-dump FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --sampled-outline SIZE FILE PLAN | ft-dump --sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...] | ft-dump --raster PPEM [--color] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
+    fprintf(stderr, "usage: ft-dump FILE | ft-dump --advances [--named-instance=N] [--variations=TAG=value,...] FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --sampled-outline SIZE FILE PLAN | ft-dump --sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...] | ft-dump --raster PPEM [--color] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
     return 2;
   }
   if (FT_Init_FreeType(&library) != 0) {
