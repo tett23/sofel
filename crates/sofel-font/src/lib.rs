@@ -168,7 +168,11 @@ impl<'a> Metrics<'a> {
     #[inline]
     fn advance(&self, glyph: GlyphId, default: u16) -> u16 {
         if glyph.0 < self.num_bearings {
-            return self.hmtx.and_then(|h| h.advance(glyph)).unwrap_or(0);
+            return self
+                .hmtx
+                .as_ref()
+                .and_then(|h| h.advance(glyph))
+                .unwrap_or(0);
         }
         if self.num_advances == 0 {
             return default;
