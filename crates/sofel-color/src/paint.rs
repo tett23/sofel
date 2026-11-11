@@ -110,16 +110,16 @@ fn has_svg_list(font: &Font<'_>) -> bool {
 
 /// `COLR`: version 1 paint first, then version 0 layers.
 fn paint_colr<'a>(
-    font: &Font<'a>,
+    instance: sofel_outline::font::var::Instance<'_, 'a, '_, '_>,
     glyph: u32,
     colors: &Colors<'a>,
     scratch: &mut Scratch,
     spend: bool,
     sink: &mut impl Sink<'a>,
 ) -> Option<Painted> {
-    let c = colr(font)?;
+    let c = colr(instance.font())?;
     if c.version() >= 1 && c.base_glyph_paint(glyph).is_some() && scratch.v1_fits(&c) {
-        return crate::v1::paint(font, &c, glyph, colors, scratch, spend, sink)
+        return crate::v1::paint(instance, &c, glyph, colors, scratch, spend, sink)
             .then_some(Painted::ColrV1);
     }
     let record = c.find_base_glyph(glyph)?;
@@ -164,18 +164,26 @@ pub(crate) fn paint_colr_only<'a>(
     sink: &mut impl Sink<'a>,
 ) -> Option<Painted> {
     let colors = Colors::new(font, options);
-    paint_colr(font, glyph, &colors, scratch, false, sink)
+    paint_colr(
+        font.default_instance(),
+        glyph,
+        &colors,
+        scratch,
+        false,
+        sink,
+    )
 }
 
 pub(crate) fn paint_any<'a>(
-    font: &Font<'a>,
+    instance: sofel_outline::font::var::Instance<'_, 'a, '_, '_>,
     glyph: u32,
     options: &PaintOptions<'a>,
     scratch: &mut Scratch,
     sink: &mut impl Sink<'a>,
 ) -> Painted {
+    let font = instance.font();
     let colors = Colors::new(font, options);
-    if let Some(p) = paint_colr(font, glyph, &colors, scratch, true, sink) {
+    if let Some(p) = paint_colr(instance, glyph, &colors, scratch, true, sink) {
         return p;
     }
     if let Some((_, doc)) = svg_doc(font, glyph) {

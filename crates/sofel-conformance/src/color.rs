@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use sofel_cli::paint::{PaintText, format_g3};
 use sofel_color::{
     ColorFormat, PaintOptions, Painted, Palette, Recording, Scratch, glyph_color_format, layers,
-    paint_recording, palette_color_name_id, palette_colors, palette_count, palette_flags,
+    paint_recording_at, palette_color_name_id, palette_colors, palette_count, palette_flags,
     palette_name_id, svg_document,
 };
 use sofel_font::Font;
@@ -153,6 +153,25 @@ pub fn sofel_paint_text(
     slant: f32,
     scratch: &mut Scratch,
 ) -> String {
+    sofel_paint_text_at(
+        font.default_instance(),
+        glyph,
+        palette,
+        ppem,
+        slant,
+        scratch,
+    )
+}
+
+/// Formats the HarfBuzz paint commands at the supplied location.
+pub fn sofel_paint_text_at(
+    instance: sofel_font::var::Instance<'_, '_, '_, '_>,
+    glyph: u32,
+    palette: u16,
+    ppem: u16,
+    slant: f32,
+    scratch: &mut Scratch,
+) -> String {
     let mut text = PaintText::new(false);
     let foreground = Color::new(0, 0, 0, 255);
     let slanted = Transform {
@@ -168,7 +187,7 @@ pub fn sofel_paint_text(
         ppem,
     };
     let mut rec = Recording::new();
-    let painted = paint_recording(font, glyph, &options, scratch, &mut rec);
+    let painted = paint_recording_at(instance, glyph, &options, scratch, &mut rec);
     let v1 = painted == Painted::ColrV1;
     {
         let mut compat = HbCompat::new(&mut text, v1);

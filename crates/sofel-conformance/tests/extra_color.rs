@@ -295,3 +295,27 @@ fn i06_color_references_match_pinned_harfbuzz() {
         );
     }
 }
+
+#[test]
+fn adr0027_named_paint_samples_match_harfbuzz_at_each_location() {
+    let bytes = variable_color_font();
+    let font = Font::new(&bytes, 0).unwrap();
+    for case in variable_color_cases() {
+        let variations: Vec<_> = case
+            .coordinates
+            .split(',')
+            .filter(|v| *v != "-")
+            .map(|v| sofel_font::var::Variation::parse(v).unwrap())
+            .collect();
+        let location = sofel_font::var::Location::new(&font, None, &variations);
+        let actual = color::sofel_paint_text_at(
+            font.instance(&location),
+            case.glyph,
+            0,
+            0,
+            0.0,
+            &mut sofel_color::Scratch::default(),
+        );
+        assert_eq!(digest(actual.as_bytes()), case.reference, "{}", case.id);
+    }
+}
