@@ -1292,6 +1292,24 @@ mod variation_bench_tests {
     }
 
     #[test]
+    fn adr0029_warm_location_checks_both_references() {
+        let _ffi = lock_ffi();
+        let mut bench = Bench {
+            once: true,
+            filter: Some("location with reference queries".into()),
+            rows: Vec::new(),
+            checks: Vec::new(),
+        };
+        variation::items(
+            &mut bench,
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/testdata"),
+        );
+        assert_eq!(bench.rows.len(), 3);
+        assert_eq!(bench.checks.len(), 6);
+        assert!(bench.checks.iter().all(|check| check.ok));
+    }
+
+    #[test]
     fn adr0027_weight_advances_match_for_every_glyph() {
         let _ffi = lock_ffi();
         let mut bench = Bench {
