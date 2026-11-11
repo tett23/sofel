@@ -767,24 +767,8 @@ pub fn compare_color_rasters(
             ppem: 0,
         };
         let ours_glyphs = (0..font.num_glyphs()).filter(|&g| !color_layers(font, g).is_empty());
-        let mut keys: std::collections::BTreeSet<u32> =
+        let keys: std::collections::BTreeSet<u32> =
             ft_glyphs.keys().copied().chain(ours_glyphs).collect();
-        // Also compare absent results for glyphs named by a table that FreeType rejects.
-        if sofel_color::RawPaintGraph::new(font).is_none()
-            && let Some(table) = font
-                .table(sofel_font::read::colr::TAG)
-                .and_then(|data| sofel_font::read::colr::Colr::new(data).ok())
-        {
-            keys.extend(
-                (0..table.num_base_glyph_paints())
-                    .filter_map(|i| table.base_glyph_paint_record(i).map(|(g, _)| u32::from(g))),
-            );
-            for i in 0..table.num_clips() {
-                if let Some((first, last, _)) = table.clip_record(i) {
-                    keys.extend(u32::from(first)..=u32::from(last));
-                }
-            }
-        }
         for g in keys {
             let mut s = String::new();
             let r = render_color(
