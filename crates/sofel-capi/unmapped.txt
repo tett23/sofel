@@ -15,6 +15,8 @@ sofel_font::var::Instance::location Gives Rust callers the normalized location; 
 sofel_font::var::Instance::apply_gvar_hb Internal HarfBuzz glyph point evaluation; C gets the resulting coordinate-dependent font values (ADR 0030).
 sofel_font::var::Instance::apply_gvar_ft Internal FreeType glyph point evaluation; C gets the resulting coordinate-dependent outline (ADR 0030).
 sofel_font::var::Instance::advance_with_scratch Rust work-area variant of the C glyph advance query; the C query uses the ordinary Rust entry (ADR 0027).
+sofel_font::var::AdvanceCache::new Rust caller-owned cache for one Instance; ADR 0049 adds no persistent C cache handle.
+sofel_font::var::AdvanceCache::advance_with_scratch Rust caller-owned cached advance; the C ABI uses its existing location-dependent advance query (ADR 0049).
 sofel_font::var::Instance::v_advance_with_scratch Rust work-area variant of the C vertical advance query; the C query uses the ordinary Rust entry (ADR 0027).
 sofel_font::var::Instance::scaled_v_advance_with_scratch Rust work-area variant of the C scaled vertical advance query (ADR 0027).
 sofel_font::var::Instance::scaled_v_origin_with_scratch Rust work-area variant of the C vertical origin query (ADR 0027).
