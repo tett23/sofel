@@ -129,10 +129,10 @@ pub(crate) enum Which {
 }
 
 /// The apply context (`hb_ot_apply_context_t`).
-pub(crate) struct ApplyContext<'p, 'a, 'b, 'f, 'g> {
+pub(crate) struct ApplyContext<'p, 'a, 'b, 'f, 'g, 'l, 's> {
     pub(crate) table: usize,
     pub(crate) plan: &'p ShapePlan<'a>,
-    pub(crate) font: &'f ShapeFont<'f, 'g>,
+    pub(crate) font: &'f ShapeFont<'f, 'g, 'l, 's>,
     pub(crate) buffer: &'b mut Buffer,
     pub(crate) direction: Direction,
     pub(crate) lookup_mask: Mask,
@@ -151,13 +151,13 @@ pub(crate) struct ApplyContext<'p, 'a, 'b, 'f, 'g> {
     pub(crate) iter_context: Iter<'a>,
 }
 
-impl<'p, 'a, 'b, 'f, 'g> ApplyContext<'p, 'a, 'b, 'f, 'g> {
+impl<'p, 'a, 'b, 'f, 'g, 'l, 's> ApplyContext<'p, 'a, 'b, 'f, 'g, 'l, 's> {
     pub(crate) fn new(
         table: usize,
         plan: &'p ShapePlan<'a>,
-        font: &'f ShapeFont<'f, 'g>,
+        font: &'f ShapeFont<'f, 'g, 'l, 's>,
         buffer: &'b mut Buffer,
-    ) -> ApplyContext<'p, 'a, 'b, 'f, 'g> {
+    ) -> ApplyContext<'p, 'a, 'b, 'f, 'g, 'l, 's> {
         let direction = buffer.direction;
         let mut c = ApplyContext {
             table,
@@ -500,7 +500,7 @@ impl<'p, 'a, 'b, 'f, 'g> ApplyContext<'p, 'a, 'b, 'f, 'g> {
 /// `index` in order, the first that applies winning; each is tried only
 /// when its digest may have the current glyph, except the only one.
 pub(crate) fn accel_apply(
-    c: &mut ApplyContext<'_, '_, '_, '_, '_>,
+    c: &mut ApplyContext<'_, '_, '_, '_, '_, '_, '_>,
     index: usize,
     _use_cache: bool,
 ) -> bool {
@@ -532,7 +532,7 @@ pub(crate) fn accel_apply(
 /// `count - 1` values. `Ok((end, total_component_count))` on a match;
 /// `Err(unsafe_to)` otherwise.
 pub(crate) fn match_input<'a>(
-    c: &mut ApplyContext<'_, 'a, '_, '_, '_>,
+    c: &mut ApplyContext<'_, 'a, '_, '_, '_, '_, '_>,
     count: usize,
     matcher: MatchFn<'a>,
 ) -> Result<(usize, u32), usize> {
@@ -603,7 +603,7 @@ pub(crate) fn match_input<'a>(
 
 /// `ligate_input`.
 pub(crate) fn ligate_input(
-    c: &mut ApplyContext<'_, '_, '_, '_, '_>,
+    c: &mut ApplyContext<'_, '_, '_, '_, '_, '_, '_>,
     count: usize,
     match_end: usize,
     lig_glyph: u32,
@@ -688,7 +688,7 @@ pub(crate) fn ligate_input(
 
 /// `match_backtrack`: `Ok(start)` or `Err(unsafe_from)`.
 pub(crate) fn match_backtrack<'a>(
-    c: &mut ApplyContext<'_, 'a, '_, '_, '_>,
+    c: &mut ApplyContext<'_, 'a, '_, '_, '_, '_, '_>,
     count: usize,
     matcher: MatchFn<'a>,
 ) -> Result<usize, usize> {
@@ -706,7 +706,7 @@ pub(crate) fn match_backtrack<'a>(
 
 /// `match_lookahead`: `Ok(end)` or `Err(unsafe_to)`.
 pub(crate) fn match_lookahead<'a>(
-    c: &mut ApplyContext<'_, 'a, '_, '_, '_>,
+    c: &mut ApplyContext<'_, 'a, '_, '_, '_, '_, '_>,
     count: usize,
     matcher: MatchFn<'a>,
     start: usize,
@@ -724,7 +724,7 @@ pub(crate) fn match_lookahead<'a>(
 
 /// `apply_lookup`: applies the nested lookups of a matched rule.
 pub(crate) fn apply_lookup(
-    c: &mut ApplyContext<'_, '_, '_, '_, '_>,
+    c: &mut ApplyContext<'_, '_, '_, '_, '_, '_, '_>,
     count: usize,
     records: LookupRecords<'_>,
     match_end: usize,
@@ -869,7 +869,7 @@ impl<'a> RuleMatch<'a> {
 
 /// `context_apply_lookup`.
 fn context_apply_lookup<'a>(
-    c: &mut ApplyContext<'_, 'a, '_, '_, '_>,
+    c: &mut ApplyContext<'_, 'a, '_, '_, '_, '_, '_>,
     count: usize,
     input: MatchFn<'a>,
     records: LookupRecords<'_>,
@@ -894,7 +894,7 @@ fn context_apply_lookup<'a>(
 
 /// `Rule::apply`.
 fn rule_apply<'a>(
-    c: &mut ApplyContext<'_, 'a, '_, '_, '_>,
+    c: &mut ApplyContext<'_, 'a, '_, '_, '_, '_, '_>,
     r: &Rule<'a>,
     m: RuleMatch<'a>,
 ) -> bool {
@@ -910,7 +910,7 @@ fn rule_apply<'a>(
 /// `None` to take the slow path, else `(first, unsafe_to1, second,
 /// unsafe_to2)`; `first` is `None` when no glyph follows.
 fn fast_path_glyphs(
-    c: &mut ApplyContext<'_, '_, '_, '_, '_>,
+    c: &mut ApplyContext<'_, '_, '_, '_, '_, '_, '_>,
 ) -> Option<(Option<Info>, usize, Option<Info>, usize)> {
     let idx = c.buffer.idx;
     c.iter_reset(Which::Context, idx);
@@ -945,7 +945,7 @@ fn fast_path_glyphs(
 
 /// `RuleSet::apply`, with HarfBuzz's fast path for more than four rules.
 fn rule_set_apply<'a>(
-    c: &mut ApplyContext<'_, 'a, '_, '_, '_>,
+    c: &mut ApplyContext<'_, 'a, '_, '_, '_, '_, '_>,
     sets: &RuleSets<'a>,
     index: usize,
     m: RuleMatch<'a>,
@@ -956,7 +956,9 @@ fn rule_set_apply<'a>(
     let rules: Vec<Rule<'a>> = (0..set.len())
         .filter_map(|i| set.get(i).ok().flatten())
         .collect();
-    let slow = |c: &mut ApplyContext<'_, 'a, '_, '_, '_>| rules.iter().any(|r| rule_apply(c, r, m));
+    let slow = |c: &mut ApplyContext<'_, 'a, '_, '_, '_, '_, '_>| {
+        rules.iter().any(|r| rule_apply(c, r, m))
+    };
     if set.len() <= 4 {
         return slow(c);
     }
@@ -1028,7 +1030,7 @@ fn rule_set_apply<'a>(
 
 /// `ContextFormat1`..`ContextFormat5` and the coverage formats 3 and 6.
 pub(crate) fn apply_context<'a>(
-    c: &mut ApplyContext<'_, 'a, '_, '_, '_>,
+    c: &mut ApplyContext<'_, 'a, '_, '_, '_, '_, '_>,
     s: &SequenceContext<'a>,
 ) -> bool {
     let glyph = GlyphId(c.buffer.cur(0).codepoint);
@@ -1085,7 +1087,7 @@ pub(crate) fn apply_context<'a>(
 
 /// `chain_context_apply_lookup`.
 fn chain_context_apply_lookup<'a>(
-    c: &mut ApplyContext<'_, 'a, '_, '_, '_>,
+    c: &mut ApplyContext<'_, 'a, '_, '_, '_, '_, '_>,
     backtrack: (usize, MatchFn<'a>),
     input: (usize, MatchFn<'a>),
     lookahead: (usize, MatchFn<'a>),
@@ -1129,7 +1131,7 @@ fn chain_context_apply_lookup<'a>(
 
 /// `ChainRule::apply`.
 fn chain_rule_apply<'a>(
-    c: &mut ApplyContext<'_, 'a, '_, '_, '_>,
+    c: &mut ApplyContext<'_, 'a, '_, '_, '_, '_, '_>,
     r: &ChainRule<'a>,
     m: RuleMatch<'a>,
 ) -> bool {
@@ -1145,7 +1147,7 @@ fn chain_rule_apply<'a>(
 /// `ChainRuleSet::apply`, with HarfBuzz's fast path for more than four
 /// rules.
 fn chain_rule_set_apply<'a>(
-    c: &mut ApplyContext<'_, 'a, '_, '_, '_>,
+    c: &mut ApplyContext<'_, 'a, '_, '_, '_, '_, '_>,
     sets: &ChainRuleSets<'a>,
     index: usize,
     m: RuleMatch<'a>,
@@ -1156,8 +1158,9 @@ fn chain_rule_set_apply<'a>(
     let rules: Vec<ChainRule<'a>> = (0..set.len())
         .filter_map(|i| set.get(i).ok().flatten())
         .collect();
-    let slow =
-        |c: &mut ApplyContext<'_, 'a, '_, '_, '_>| rules.iter().any(|r| chain_rule_apply(c, r, m));
+    let slow = |c: &mut ApplyContext<'_, 'a, '_, '_, '_, '_, '_>| {
+        rules.iter().any(|r| chain_rule_apply(c, r, m))
+    };
     if set.len() <= 4 {
         return slow(c);
     }
@@ -1245,7 +1248,7 @@ fn chain_rule_set_apply<'a>(
 
 /// `ChainContextFormat1`..`ChainContextFormat5`.
 pub(crate) fn apply_chain_context<'a>(
-    c: &mut ApplyContext<'_, 'a, '_, '_, '_>,
+    c: &mut ApplyContext<'_, 'a, '_, '_, '_, '_, '_>,
     s: &ChainedSequenceContext<'a>,
 ) -> bool {
     let glyph = GlyphId(c.buffer.cur(0).codepoint);
@@ -1309,7 +1312,7 @@ pub(crate) fn apply_chain_context<'a>(
 }
 
 /// `apply_forward`.
-fn apply_forward(c: &mut ApplyContext<'_, '_, '_, '_, '_>, index: usize) -> bool {
+fn apply_forward(c: &mut ApplyContext<'_, '_, '_, '_, '_, '_, '_>, index: usize) -> bool {
     let plan = c.plan;
     let digest = if c.table == GSUB {
         plan.layout.gsub.lookup(index).map(|l| l.digest)
@@ -1346,7 +1349,7 @@ fn apply_forward(c: &mut ApplyContext<'_, '_, '_, '_, '_>, index: usize) -> bool
 }
 
 /// `apply_backward`.
-fn apply_backward(c: &mut ApplyContext<'_, '_, '_, '_, '_>, index: usize) -> bool {
+fn apply_backward(c: &mut ApplyContext<'_, '_, '_, '_, '_, '_, '_>, index: usize) -> bool {
     let plan = c.plan;
     let Some(digest) = plan.layout.gsub.lookup(index).map(|l| l.digest) else {
         return false;
@@ -1369,7 +1372,7 @@ fn apply_backward(c: &mut ApplyContext<'_, '_, '_, '_, '_>, index: usize) -> boo
 }
 
 /// `apply_string`.
-fn apply_string(c: &mut ApplyContext<'_, '_, '_, '_, '_>, index: usize) -> bool {
+fn apply_string(c: &mut ApplyContext<'_, '_, '_, '_, '_, '_, '_>, index: usize) -> bool {
     if c.buffer.len == 0 || c.lookup_mask == 0 {
         return false;
     }
@@ -1411,7 +1414,7 @@ fn apply_string(c: &mut ApplyContext<'_, '_, '_, '_, '_>, index: usize) -> bool 
 /// context applies it as HarfBuzz's with an empty `GDEF`
 /// (`has_glyph_classes` cleared by the caller).
 pub(crate) fn apply_synthesized_gsub<'a>(
-    c: &mut ApplyContext<'_, 'a, '_, '_, '_>,
+    c: &mut ApplyContext<'_, 'a, '_, '_, '_, '_, '_>,
     props: u32,
     subtables: &[(
         sofel_font::read::gsub::SubstSubtable<'a>,
@@ -1465,7 +1468,7 @@ pub(crate) fn apply_synthesized_gsub<'a>(
 pub(crate) fn apply_map(
     table: usize,
     plan: &ShapePlan<'_>,
-    font: &ShapeFont<'_, '_>,
+    font: &ShapeFont<'_, '_, '_, '_>,
     buffer: &mut Buffer,
 ) {
     let (Some(stages), Some(lookups)) = (plan.map.stages.get(table), plan.map.lookups.get(table))

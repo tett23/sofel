@@ -8,7 +8,7 @@
 use alloc::vec::Vec;
 
 use sofel_font::read::GlyphId;
-use sofel_font::{Font, GlyphExtents};
+use sofel_font::{GlyphExtents, var::Instance};
 use sofel_unicode::GeneralCategory;
 
 use crate::buffer::{
@@ -34,21 +34,19 @@ use crate::unicode;
 ///
 /// The buffer's direction and script are the plan's.
 pub fn shape(
-    font: &Font<'_>,
+    instance: Instance<'_, '_, '_, '_>,
     scale: &Scale,
     plan: &ShapePlan<'_>,
     buffer: UnicodeBuffer,
 ) -> GlyphBuffer {
-    shape_with_extents(font, scale, plan, buffer, &|g| {
-        font.default_instance().glyf_extents(g)
-    })
+    shape_with_extents(instance, scale, plan, buffer, &|g| instance.glyf_extents(g))
 }
 
 /// [`shape`] with glyph boxes in font units from `extents`, for fonts
 /// whose boxes do not come from `glyf` (CFF outlines, color glyphs). The
 /// boxes are scaled with `HbScale::scale_glyph_extents`.
 pub fn shape_with_extents(
-    font: &Font<'_>,
+    instance: Instance<'_, '_, '_, '_>,
     scale: &Scale,
     plan: &ShapePlan<'_>,
     buffer: UnicodeBuffer,
@@ -57,7 +55,7 @@ pub fn shape_with_extents(
     let mut buf = buffer.buf;
     buf.direction = plan.props.direction;
     buf.script = plan.props.script;
-    let sf = ShapeFont::new(font, *scale, extents);
+    let sf = ShapeFont::new(instance, *scale, extents);
     buf.enter();
     if buf.len > 0 {
         shape_internal(plan, &sf, &mut buf);
@@ -103,7 +101,7 @@ fn into_glyph_buffer(mut buf: Buffer) -> GlyphBuffer {
 }
 
 /// `hb_ot_shape_internal`.
-fn shape_internal(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_>, buffer: &mut Buffer) {
+fn shape_internal(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut Buffer) {
     let target_direction = buffer.direction;
     set_unicode_props_all(buffer, plan.map.global_mask);
     insert_dotted_circle(buffer, font);
@@ -181,7 +179,7 @@ fn set_unicode_props_all(buffer: &mut Buffer, global_mask: Mask) {
 }
 
 /// `hb_insert_dotted_circle`.
-fn insert_dotted_circle(buffer: &mut Buffer, font: &ShapeFont<'_, '_>) {
+fn insert_dotted_circle(buffer: &mut Buffer, font: &ShapeFont<'_, '_, '_, '_>) {
     if buffer
         .flags
         .contains(BufferFlags::DO_NOT_INSERT_DOTTED_CIRCLE)
@@ -260,7 +258,7 @@ fn ensure_native_direction(buffer: &mut Buffer) {
 /// `hb_ot_rotate_chars`.
 fn rotate_chars(
     plan: &ShapePlan<'_>,
-    font: &ShapeFont<'_, '_>,
+    font: &ShapeFont<'_, '_, '_, '_>,
     buffer: &mut Buffer,
     target: Direction,
 ) {
@@ -341,7 +339,7 @@ fn setup_masks_fraction(plan: &ShapePlan<'_>, buffer: &mut Buffer) {
 }
 
 /// `hb_ot_shape_setup_masks`.
-fn setup_masks(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_>, buffer: &mut Buffer) {
+fn setup_masks(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut Buffer) {
     setup_masks_fraction(plan, buffer);
     if let Some(f) = plan.funcs().setup_masks {
         f(plan, buffer, font);
@@ -370,7 +368,7 @@ fn synthesize_glyph_classes(buffer: &mut Buffer) {
 /// `hb_ot_substitute_pre`.
 fn substitute_pre(
     plan: &ShapePlan<'_>,
-    font: &ShapeFont<'_, '_>,
+    font: &ShapeFont<'_, '_, '_, '_>,
     buffer: &mut Buffer,
     target: Direction,
 ) {
@@ -421,7 +419,7 @@ fn deal_with_variation_selectors(buffer: &mut Buffer) {
 }
 
 /// `hb_ot_hide_default_ignorables`.
-fn hide_default_ignorables(buffer: &mut Buffer, font: &ShapeFont<'_, '_>) {
+fn hide_default_ignorables(buffer: &mut Buffer, font: &ShapeFont<'_, '_, '_, '_>) {
     if buffer.scratch_flags & scratch::HAS_DEFAULT_IGNORABLES == 0
         || buffer
             .flags
@@ -451,7 +449,7 @@ fn hide_default_ignorables(buffer: &mut Buffer, font: &ShapeFont<'_, '_>) {
 }
 
 /// `hb_ot_substitute_post`.
-fn substitute_post(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_>, buffer: &mut Buffer) {
+fn substitute_post(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut Buffer) {
     deal_with_variation_selectors(buffer);
     hide_default_ignorables(buffer, font);
     if let Some(f) = plan.funcs().postprocess_glyphs {
@@ -502,7 +500,7 @@ fn zero_width_default_ignorables(buffer: &mut Buffer) {
 }
 
 /// `hb_ot_position`.
-fn position(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_>, buffer: &mut Buffer) {
+fn position(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut Buffer) {
     buffer.clear_positions();
     // hb_ot_position_default
     let horizontal = buffer.direction.is_horizontal();
@@ -580,7 +578,7 @@ fn propagate_flags(buffer: &mut Buffer) {
 /// default-ignorables), its advance and vertical origin, the clusters
 /// reversed for backward text, and no layout tables.
 pub fn shape_fallback(
-    font: &Font<'_>,
+    instance: Instance<'_, '_, '_, '_>,
     scale: &Scale,
     props: &ResolvedProperties,
     buffer: UnicodeBuffer,
@@ -588,8 +586,8 @@ pub fn shape_fallback(
     let mut buf = buffer.buf;
     buf.direction = props.direction;
     buf.script = props.script;
-    let extents = |g: GlyphId| font.default_instance().glyf_extents(g);
-    let sf = ShapeFont::new(font, *scale, &extents);
+    let extents = |g: GlyphId| instance.glyf_extents(g);
+    let sf = ShapeFont::new(instance, *scale, &extents);
     let space = sf.nominal_glyph(0x20);
     buf.clear_positions();
     let direction = buf.direction;

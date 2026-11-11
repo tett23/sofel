@@ -246,7 +246,6 @@ harfbuzz/test/shape/data/in-house/fonts/f70f345188472b93f565d1d7fae8c668dd6a3244
 harfbuzz/test/shape/data/in-house/fonts/f75c4b05a0a4d67c1a808081ae3d74a9c66509e8.ttf#0:Guru  # shaper:indic
 harfbuzz/test/shape/data/in-house/fonts/fbb6c84c9e1fe0c39e152fbe845e51fd81f6748e.ttf#0:Bali  # shaper:use
 harfbuzz/test/shape/data/in-house/fonts/fd07ea46e4d8368ada1776208c07fd596f727852.ttf#0:Mlym  # shaper:indic
-harfbuzz/test/shape/data/text-rendering-tests/fonts/AdobeVFPrototype-Subset.otf#0:Zyyy  # variations
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Adlm  # shaper:use
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Ahom  # shaper:use
 harfbuzz/test/shape/data/text-rendering-tests/fonts/FDArrayTest257.otf#0:Bali  # shaper:use
@@ -590,15 +589,12 @@ harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Tutg  # shaper:use
 harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Wcho  # shaper:use
 harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Yezi  # shaper:use
 harfbuzz/test/subset/data/fonts/AdobeBlank-Regular.ttf#0:Zanb  # shaper:use
-harfbuzz/test/subset/data/fonts/Fraunces.ttf#0:Latn  # variations
-harfbuzz/test/subset/data/fonts/Fraunces.ttf#0:Zyyy  # variations
 harfbuzz/test/subset/data/fonts/IndicTestHowrah-Regular.ttf#0:Beng  # shaper:indic
 harfbuzz/test/subset/data/fonts/IndicTestJalandhar-Regular.ttf#0:Guru  # shaper:indic
 harfbuzz/test/subset/data/fonts/Khmer.ttf#0:Khmr  # shaper:khmer
 harfbuzz/test/subset/data/fonts/Khmer.ttf#0:Zyyy  # aat
 harfbuzz/test/subset/data/fonts/NotoSansDevanagari-Regular.ttf#0:Deva  # shaper:indic
 harfbuzz/test/subset/data/fonts/NotoSansNewa-Regular.ttf#0:Newa  # shaper:use
-harfbuzz/test/subset/data/fonts/NotoSansOriya-subset.ttf#0:Orya  # variations
 harfbuzz/test/subset/data/fonts/NotoSerifMyanmar-Regular.otf#0:Mymr  # shaper:myanmar
 harfbuzz/test/subset/data/fonts/SreeKrushnadevaraya-Regular.ttf#0:Telu  # shaper:indic
 harfbuzz/test/subset/data/fonts/Tinos-Italic.ttf#0:Hebr  # aat

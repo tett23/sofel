@@ -14,3 +14,28 @@ pub fn parse_variations(input: &str) -> Option<Vec<Variation>> {
 pub fn parse_named_instance(input: &str) -> Option<u16> {
     input.parse().ok()
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
+mod tests {
+    use super::{parse_named_instance, parse_variations};
+
+    #[test]
+    fn adr0027_i_cli_variations_keep_order_and_reject_invalid_values() {
+        let variations = parse_variations("wght=500,wdth=75,wght=700").unwrap();
+        assert_eq!(variations.len(), 3);
+        assert_eq!(variations[0].value, 500.0);
+        assert_eq!(variations[2].value, 700.0);
+        assert_eq!(parse_variations("").unwrap().len(), 0);
+        assert!(parse_variations("wght=500,").is_none());
+        assert!(parse_variations("wght=bad").is_none());
+    }
+
+    #[test]
+    fn adr0027_i_cli_named_instance_boundaries() {
+        assert_eq!(parse_named_instance("0"), Some(0));
+        assert_eq!(parse_named_instance("65535"), Some(u16::MAX));
+        assert_eq!(parse_named_instance("65536"), None);
+        assert_eq!(parse_named_instance("-1"), None);
+    }
+}

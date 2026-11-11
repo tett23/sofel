@@ -184,3 +184,5 @@ sofel_subset::RangeSet::remove_range A loop of sofel_subset_input_set_remove ove
 sofel_subset::RangeSet::truncate As sofel_subset::RangeSet::remove_range, for every member from a value on (ADR 0022).
 sofel_subset::RangeSet::union A loop of sofel_subset_input_set_add over the other set's members (ADR 0022).
 sofel_font::var::Instance::font C callers already hold the font paired with the location.
+sofel_font::var::Instance::location C callers already hold the location passed to sofel_shape_plan_create or sofel_shape.
+sofel_shape::ShapePlan::variations_index_for C creates a plan with sofel_shape_plan_create for the chosen location; this Rust helper is for plan-cache keys.

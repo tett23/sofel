@@ -84,13 +84,13 @@ fn is_hangul_tone(u: u32) -> bool {
 }
 
 /// `is_zero_width_char`.
-fn is_zero_width_char(font: &ShapeFont<'_, '_>, u: u32) -> bool {
+fn is_zero_width_char(font: &ShapeFont<'_, '_, '_, '_>, u: u32) -> bool {
     font.nominal_glyph(u)
         .is_some_and(|g| font.h_advance(g) == 0)
 }
 
 /// `preprocess_text_hangul`.
-fn preprocess_text(_: &ShapePlan<'_>, buffer: &mut Buffer, font: &ShapeFont<'_, '_>) {
+fn preprocess_text(_: &ShapePlan<'_>, buffer: &mut Buffer, font: &ShapeFont<'_, '_, '_, '_>) {
     buffer.clear_output();
     // The most recent syllable, valid only if start < end.
     let mut start = 0usize;
@@ -253,7 +253,7 @@ fn preprocess_text(_: &ShapePlan<'_>, buffer: &mut Buffer, font: &ShapeFont<'_, 
 }
 
 /// `setup_masks_hangul`.
-fn setup_masks(plan: &ShapePlan<'_>, buffer: &mut Buffer, _: &ShapeFont<'_, '_>) {
+fn setup_masks(plan: &ShapePlan<'_>, buffer: &mut Buffer, _: &ShapeFont<'_, '_, '_, '_>) {
     let ShaperData::Hangul(hp) = &plan.data else {
         return;
     };

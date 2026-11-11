@@ -12,7 +12,7 @@ C ABIは [ADR 0027](adr/0027-variable-fonts.md) の位置の作成、座標の�
 基準線とレイアウトのフォント全体の値では、BASEのVariationIndexに位置を適用する。
 gvarの幻の点による送り幅と箱、輪郭、シェーピング、塗りの変化量は未実装である。
 FreeTypeが合成する既定の名前つきインスタンスは、必要なnameレコードが欠ける場合も件数と既定番号に含める。nameレコードが欠けた末尾のスタイルは名前IDと全座標がゼロである（[ADR 0036](adr/0036-freetype-missing-default-named-style.md)）。
-上記以外の位置による値の変更とCLIから位置を指定する機能は未実装である。
+`sofel-shape` は位置によるFeatureVariations、GPOSのVariationIndex、送り幅と縦原点を使う。`sofel-shape` のCLIは `--variations` と `--named-instance` で位置を指定する。これらと上記以外の位置による値の変更は未実装である。
 追加フォントの検証は [ADR 0031](adr/0031-diverse-font-corpus.md) に従って実装した。
 文書だけの変更でCIを省く方針は [ADR 0032](adr/0032-documentation-only-ci.md) と [ADR 0034](adr/0034-ci-document-input-classification.md) に従って実装している。
 以下の実装済みの機能の記述は、各実装の PR で更新する。
@@ -220,16 +220,16 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 ### 計画
 
-- `ShapePlan::new(font, props, features)` が、`hb_ot_shape_plan_t` と同じ判断を一度だけ行う（[ADR 0020](adr/0020-shaping-foundation.md)）。`GSUB` と `GPOS` の文字体系と言語の選択（`hb_ot_layout_table_select_script` の `DFLT`、`dflt`、`latn` への後退と `hb_ot_layout_script_select_language`）、シェーパー（`Shaper`、`hb_ot_shaper_categorize`）、`hb_ot_shape_collect_features` の順の機能、`hb_ot_map_builder_t::compile` と同じマスクのビットの割り当て（大域の値1の機能は31ビット目、ほかはグリフのフラグの後の4ビット目から。足りなければ機能を捨てる）、必須の機能、`F_GLOBAL_SEARCH`、`F_HAS_FALLBACK`、段ごとにlookupの番号の順に並べて重複をまとめたlookupの列、位置の決め方（`GPOS` の有無、マークの幅の0化、フォールバックのマークの配置）である。AATの表と古い `kern` 表は無いものとして判定する。
+- `ShapePlan::new(instance, props, features)` が、`hb_ot_shape_plan_t` と同じ判断を一度だけ行う（[ADR 0020](adr/0020-shaping-foundation.md)）。`GSUB` と `GPOS` の文字体系と言語の選択（`hb_ot_layout_table_select_script` の `DFLT`、`dflt`、`latn` への後退と `hb_ot_layout_script_select_language`）、シェーパー（`Shaper`、`hb_ot_shaper_categorize`）、`hb_ot_shape_collect_features` の順の機能、`hb_ot_map_builder_t::compile` と同じマスクのビットの割り当て（大域の値1の機能は31ビット目、ほかはグリフのフラグの後の4ビット目から。足りなければ機能を捨てる）、必須の機能、`F_GLOBAL_SEARCH`、`F_HAS_FALLBACK`、段ごとにlookupの番号の順に並べて重複をまとめたlookupの列、位置の決め方（`GPOS` の有無、マークの幅の0化、フォールバックのマークの配置）である。AATの表と古い `kern` 表は無いものとして判定する。
 - 計画は `GDEF` のグリフのクラス（HarfBuzzの拒否の一覧に載る表は無いものとする）とマークのグリフの集合、`GSUB` と `GPOS` のすべてのlookupについて、拡張をたどったサブテーブルのビューと、それぞれの最初のグリフのCoverageの要約（`hb_set_digest_t` と同じ3つの64ビットのマスク）を持つ。拡張の型がそろわないlookupと、読めないサブテーブルは、HarfBuzzと同じく無いものとする。
   GSUBとGPOSのCoverageを三つの64 bitマスクに要約するときは、全ビットが立った時点でそのCoverageの走査を終える。どのグリフが照合の候補になるかは全範囲を読んだ場合と一致する（[ADR 0042](adr/0042-stop-at-saturated-coverage-digest.md)）。
-- `ShapePlan::key` は計画を作った区間の性質と機能を返す。計画は不変で、`Send` と `Sync` を満たす。
+- `ShapePlan::key` は計画を作った区間の性質、機能、GSUBとGPOSで選んだFeatureVariationsの記録番号を返す。計画は不変で、`Send` と `Sync` を満たす。
 - `layout_selection(font, script_tags, language_tags)` は、計画と同じ文字体系と言語の選択の結果を返す。
 - [ADR 0024](adr/0024-complex-shapers.md) のシェーパーのうち、hebrew、hangul、thai、arabicを実装した（下の「文字体系ごとのシェーパー」）。まだ実装していないシェーパーは、defaultのシェーパーの手順で処理する。シェーパーの差しこみ口（`collect_features`、`override_features`、`data_create`、`preprocess_text`、`postprocess_glyphs`、`decompose`、`compose`、`setup_masks`、`reorder_marks`、`gpos_tag`、正規化の方式、マークの幅の0化の時期、フォールバックの配置、段の間の関数）は、HarfBuzzの `hb_ot_shaper_t` と同じ位置に置く。
 
 ### 手順
 
-- `shape(font, scale, plan, buffer)` と、グリフの箱をフォントの単位で返す関数を受け取る `shape_with_extents` が、`hb_ot_shape_internal` の順に処理する（[ADR 0020](adr/0020-shaping-foundation.md)）。`shape` は `Font::glyf_extents` を使う。`Scale` は `HbScale` とppemで、ppemが0ならDevice表は使わない。
+- `shape(instance, scale, plan, buffer)` と、グリフの箱をフォントの単位で返す関数を受け取る `shape_with_extents` が、`hb_ot_shape_internal` の順に処理する（[ADR 0020](adr/0020-shaping-foundation.md)）。`shape` は位置に応じたグリフの箱を使う。`Scale` は `HbScale` とppemを持つ。ppemが0ならヒンティングのDevice表を使わないが、VariationIndexは位置に応じて評価する。
   - Unicodeの性質と書記素の続き、点線の円（U+25CC）の挿入、書記素のクラスタへのまとめ、本来の方向への調整（RTLの文字体系の数字の列と地域指示子）、鏡像と、`vert` の無い縦書きでの `unicode::vertical_char_for`。
   - 正規化（`_hb_ot_shape_normalize`）：分解（フォントにある短い形を選ぶ短絡、異体字セレクタ、空白と U+2011 の代わり）、結合クラスでの並べかえ（32個まで）、CGJの扱い、合成。default のシェーパーの `AUTO` は `COMPOSED_DIACRITICS` になる。
   - 分数（U+2044 の前後の数字への `numr`、`frac`、`dnom`）と利用者の機能の範囲のマスク、`GDEF` のクラスか一般カテゴリからの合成。
