@@ -98,15 +98,50 @@ fn push(sink: &mut dyn Painter, mut t: Transform) {
     sink.push_transform(t);
 }
 
-fn clip_rect(b: &colr::ClipBox, delta: &dyn Fn(Option<u32>, u16) -> f32) -> Rect {
+pub(crate) fn deltas<'f, 'd, 'l, 's>(
+    instance: Instance<'f, 'd, 'l, 's>,
+    colr: &Colr<'d>,
+) -> impl Fn(Option<u32>, u16) -> f32 + use<'f, 'd, 'l, 's> {
+    let map = colr.var_index_map().ok().flatten();
+    let active = instance.location().hb_nonzero();
+    move |base: Option<u32>, offset: u16| {
+        let Some(index) = base.and_then(|v| v.checked_add(u32::from(offset))) else {
+            return 0.0;
+        };
+        if !active || index == u32::MAX {
+            return 0.0;
+        }
+        let index = map.map_or(index, |map| map.map(index));
+        let [a, b, c, d] = index.to_be_bytes();
+        instance
+            .item_delta::<HbF32>(
+                StoreKind::Colr,
+                u16::from_be_bytes([a, b]),
+                u16::from_be_bytes([c, d]),
+            )
+            .unwrap_or(0.0)
+    }
+}
+
+pub(crate) fn clip_edges(b: &colr::ClipBox, delta: &dyn Fn(Option<u32>, u16) -> f32) -> [i32; 4] {
     use sofel_outline::font::geom::float::{ceilf, floorf};
     #[allow(clippy::cast_possible_truncation)]
-    let edge = |v: i16, adjustment: f32| i32_f32(i32::from(v).saturating_add(adjustment as i32));
+    let edge = |v: i16, adjustment: f32| i32::from(v).saturating_add(adjustment as i32);
+    [
+        edge(b.x_min, floorf(delta(b.var_index_base, 0))),
+        edge(b.y_min, floorf(delta(b.var_index_base, 1))),
+        edge(b.x_max, ceilf(delta(b.var_index_base, 2))),
+        edge(b.y_max, ceilf(delta(b.var_index_base, 3))),
+    ]
+}
+
+fn clip_rect(b: &colr::ClipBox, delta: &dyn Fn(Option<u32>, u16) -> f32) -> Rect {
+    let [x_min, y_min, x_max, y_max] = clip_edges(b, delta).map(i32_f32);
     Rect {
-        x_min: edge(b.x_min, floorf(delta(b.var_index_base, 0))),
-        y_min: edge(b.y_min, floorf(delta(b.var_index_base, 1))),
-        x_max: edge(b.x_max, ceilf(delta(b.var_index_base, 2))),
-        y_max: edge(b.y_max, ceilf(delta(b.var_index_base, 3))),
+        x_min,
+        y_min,
+        x_max,
+        y_max,
     }
 }
 
@@ -499,25 +534,7 @@ pub(crate) fn paint<'a>(
     let Some(paint) = colr.base_glyph_paint(glyph) else {
         return false;
     };
-    let map = colr.var_index_map().ok().flatten();
-    let active = instance.coords_normalized().iter().any(|&v| v != 0);
-    let delta = |base: Option<u32>, offset: u16| {
-        let Some(index) = base.and_then(|v| v.checked_add(u32::from(offset))) else {
-            return 0.0;
-        };
-        if !active || index == u32::MAX {
-            return 0.0;
-        }
-        let index = map.map_or(index, |map| map.map(index));
-        let [a, b, c, d] = index.to_be_bytes();
-        instance
-            .item_delta::<HbF32>(
-                StoreKind::Colr,
-                u16::from_be_bytes([a, b]),
-                u16::from_be_bytes([c, d]),
-            )
-            .unwrap_or(0.0)
-    };
+    let delta = deltas(instance, colr);
     let s = &mut scratch.v1;
     let clip = colr.clip_box(glyph);
     let bounded = clip.is_some() || {
