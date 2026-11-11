@@ -1036,10 +1036,12 @@ fn adr0027_i03_location_changes_glyf_outline_and_box() {
             std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/testdata")
         });
     let path = root.join("extra-fonts/fonts/arabic.ttf");
-    let bytes = match std::fs::read(&path) {
-        Ok(bytes) => bytes,
-        Err(_) if std::env::var_os("SOFEL_REQUIRE_TESTDATA").is_none() => return,
-        Err(error) => panic!("{}: {error}", path.display()),
+    let bytes = if std::env::var_os("SOFEL_REQUIRE_TESTDATA").is_some() {
+        std::fs::read(&path).unwrap()
+    } else if let Ok(bytes) = std::fs::read(&path) {
+        bytes
+    } else {
+        return;
     };
     let mut error = -99;
     // SAFETY: bytes live through both handle destructions.
