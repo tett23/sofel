@@ -471,7 +471,7 @@ CI の文書だけの変更は、比較起点の `ci/documentation-only.rules` �
 - 比較の相手は、HarfBuzz 15.1.0とFreeType 2.15.0とする（[ADR 0006](adr/0006-performance-measurement.md)）。シェーピング、サブセット化、COLRv1の描画はHarfBuzzと、輪郭、ラスタライズ、埋め込みビットマップ、WOFF2の展開、sfnt以外の形式はFreeTypeと比べる。
 - 計測はワークスペースの外の `bench/` で行い、ネイティブとwasm（wasmtime）の両方で計測する。HarfBuzzとFreeTypeは、取得したソースから `bench/build-c.sh` で静的ライブラリにする。wasmにはwasi-sdk（`bench/wasi-sdk.lock` で版とSHA-256を固定）を使う（[ADR 0013](adr/0013-benchmark-harness.md)）。
 - 1回の標本を10ミリ秒以上にまとめ、ウォームアップを3つ捨てて30個の標本を取り、中央値と中央絶対偏差を出す。計測の前に、相手と同じ結果を出していることを確かめる。
-  - ラスタライズの照合は、すべてのグリフで行う（[ADR 0018](adr/0018-phantom-point-shift.md) で、FreeTypeと同じく輪郭をpp1.xだけずらすようになったため）。
+  - ラスタライズの照合は、すべてのグリフで行う（[ADR 0018](adr/0018-phantom-point-shift.md) で、FreeTypeと同じく輪郭をpp1.xだけずらすようになったため）。Roboto と Comfortaa の[除外なしの照合結果](benchmarks/2026-11-11-unexcluded-phantom-point-check.md)を記録した。
   - HarfBuzzの輪郭は、glyfを分解する命令の列がFreeTypeと違うため、命令の数を照合せず、時間だけを計る。
 - FreeTypeはcmapの検証に `setjmp` を使うため、wasmでは例外処理の提案（`-mllvm -wasm-enable-sjlj`、`wasmtime -W exceptions=y`）でビルドし、走らせる。
 - 2段階目の項目：文字からグリフ（FreeType、HarfBuzz）、送り幅（FreeType、HarfBuzz）、輪郭（拡大縮小なしと48画素。FreeType、HarfBuzz）、ラスタライズ（12、24、48、96画素。FreeType）。
@@ -484,6 +484,7 @@ CI の文書だけの変更は、比較起点の `ci/documentation-only.rules` �
 - サブセット化の項目（HarfBuzz。[ADR 0022](adr/0022-subsetting.md)）：`Roboto-Regular.ttf`（glyf）、`SourceHanSans-Regular_subset.otf`（CIDキーのCFF）、`NotoNastaliqUrdu-Bold.ttf`（大きなGSUBとGPOS）を、グリフIDと `RETAIN_GIDS`（Golemの使い方）、文字と既定のフラグでサブセット化する。グリフと文字は `hb-dump` の突き合わせと同じく `ja-runs.txt` と `en-paragraph.txt` から作る。sofelは `Input` を作って `subset` を呼び、HarfBuzzは `hb_subset_input_t` を作って `hb_subset_or_fail` と `hb_face_reference_blob` を呼ぶ。どちらも出力のFNV-1aのハッシュを求め、計測の前に一致を確かめる。HarfBuzz は、`bench/build-c.sh` が `harfbuzz-subset.cc` の include の内容と順序を保って最大4個の翻訳単位に分割し、同じフラグでコンパイルしてビルドする（[ADR 0038](adr/0038-partition-benchmark-harfbuzz-units.md)）。native と wasm は並列のまま、ターゲット内のコンパイルは一つずつ実行する。前処理つきの項目は、前処理の段階で足す。
 - CIでは、ネイティブとwasmの両方を `--once` で走らせ、落ちないことと結果の照合だけを確かめる。
 - 目標は、各項目でsofelの時間が比較の相手以下であること。
+- [ADR 0030](adr/0030-variation-evaluation-corrections.md) の HVAR の項目は、RobotoFlex-Variable、SourceSerifVariable-Roman、AdobeVFPrototype の全グリフの送り幅に対応する変化量を `HbF32` で評価する。位置の作成時に `wght=500` を指定し、同じフォント、同じ内容の別コピー、別フォントで作った位置の3通りを計る。別フォントの場合は、この3フォントを順に並べて次のフォントで位置を作り、末尾から先頭に戻る。計測前に、同じ正規化座標のキャッシュを使った値と各グリフの差分を照合する。MVAR を持つ後ろの2フォントでは、各レコードの変化量を静的な既定位置で HarfBuzz と照合し、その位置での問い合わせを計る。表のインデックスを集める時間は含めない。 [計測結果](benchmarks/2026-11-11-item-variation-deltas.md)。
 - 追加フォントの代表項目（[ADR 0031](adr/0031-diverse-font-corpus.md)）は13ファイルのフェイス0・既定座標を使う。10文字のcmapと先頭最大128グリフの横advance・輪郭コマンド数、Source Hanの縦advance、STIXのMATH全56定数、3カラー形式、9フォントの短いシェーピング入力を含む。MATH定数は個別にも照合し、COLRv1は固定HarfBuzzの正規化済みpaint列も照合する。シェーピングはscriptを推定し、言語なし・既定featureとする。具体的な入力と計測値は [役割別計測記録](benchmarks/2026-11-11-extra-font-roles.md) に記す。
 - 結果は `docs/benchmarks/` に記録し、コミット後は変更しない。
 
