@@ -6,6 +6,7 @@
 //! locations after collecting the events for one face.
 
 use crate::be::{self, to_u32, to_usize};
+use crate::layout::walk::{Walker, one_feature, one_script};
 use crate::layout::{Feature, LayoutTable, Lookup, Script, uint};
 use crate::{Diagnostic, Kind, ReadError, Tag, gdef, gpos, gsub};
 
@@ -55,7 +56,7 @@ pub fn inspect_damage(
         gdef::validate(data, &mut forward);
     }
     if tag == gsub::TAG || tag == gpos::TAG {
-        scan_partial_lists(tag, data, report);
+        scan_partial_lists(tag, data, mark_sets, report);
     }
 }
 
@@ -113,7 +114,12 @@ impl PartialList {
     }
 }
 
-fn scan_partial_lists(tag: Tag, data: &[u8], report: &mut dyn FnMut(DamageEvent)) {
+fn scan_partial_lists(
+    tag: Tag,
+    data: &[u8],
+    mark_sets: Option<u16>,
+    report: &mut dyn FnMut(DamageEvent),
+) {
     let Ok(header) = LayoutTable::new(data) else {
         return;
     };
@@ -128,7 +134,7 @@ fn scan_partial_lists(tag: Tag, data: &[u8], report: &mut dyn FnMut(DamageEvent)
         ),
     ] {
         if offset != 0 {
-            scan_partial_list(tag, data, to_usize(offset), kind, report);
+            scan_partial_list(tag, data, to_usize(offset), kind, mark_sets, report);
         }
     }
 }
@@ -138,6 +144,7 @@ fn scan_partial_list(
     data: &[u8],
     at: usize,
     kind: PartialList,
+    mark_sets: Option<u16>,
     report: &mut dyn FnMut(DamageEvent),
 ) {
     let Some(count) = be::u16_at(data, at).map(usize::from) else {
@@ -149,7 +156,11 @@ fn scan_partial_list(
     if needed <= data.len() {
         return;
     }
-    let readable = data.len().saturating_sub(first) / width;
+    let readable = data
+        .len()
+        .saturating_sub(first)
+        .checked_div(width)
+        .unwrap_or(0);
     let scanned = readable.min(count).min(EXTRA_LIMIT);
     for i in 0..scanned {
         let field = first
@@ -189,6 +200,43 @@ fn scan_partial_list(
                 },
             };
             forward(Diagnostic::new(tag, to_u32(field), problem), report);
+        } else if let Some(tail) = data.get(child_at..) {
+            let mut child_report = |diagnostic| forward(diagnostic, report);
+            match kind {
+                PartialList::Scripts => {
+                    if let Ok(script) = Script::new(tail) {
+                        let mut walker = Walker::new(tag, data, &mut child_report);
+                        one_script(&mut walker, child_at, &script, usize::MAX);
+                    }
+                }
+                PartialList::Features => {
+                    if let Ok(feature) = Feature::new(tail) {
+                        let mut walker = Walker::new(tag, data, &mut child_report);
+                        one_feature(&mut walker, child_at, &feature);
+                    }
+                }
+                PartialList::Lookups { .. } => {
+                    if let Ok(lookup) = Lookup::new(tail) {
+                        if tag == gsub::TAG {
+                            gsub::inspect_partial_lookup(
+                                data,
+                                child_at,
+                                &lookup,
+                                mark_sets,
+                                &mut child_report,
+                            );
+                        } else {
+                            gpos::inspect_partial_lookup(
+                                data,
+                                child_at,
+                                &lookup,
+                                mark_sets,
+                                &mut child_report,
+                            );
+                        }
+                    }
+                }
+            }
         }
     }
     let unreadable = first.saturating_add(scanned.saturating_mul(width));

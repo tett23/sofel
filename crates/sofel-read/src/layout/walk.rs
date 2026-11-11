@@ -587,28 +587,32 @@ fn features(w: &mut Walker<'_, '_>, field: usize, width: usize) -> usize {
         else {
             continue;
         };
-        if feature.feature_params_offset() != 0 {
-            w.opaque(fat, fat, 2, 1);
-        }
-        if !w.spend(feature.num_lookups()) {
-            continue;
-        }
-        if let Some(count) = w.lookup_count {
-            for j in 0..feature.num_lookups() {
-                let index = usize::from(feature.lookup_index(j).unwrap_or(0));
-                if index >= count {
-                    w.emit(
-                        fat.saturating_add(4).saturating_add(j.saturating_mul(2)),
-                        Kind::LookupIndexOutOfRange {
-                            index: to_u32(index),
-                            count: to_u32(count),
-                        },
-                    );
-                }
+        one_feature(w, fat, &feature);
+    }
+    list.len()
+}
+
+pub(crate) fn one_feature(w: &mut Walker<'_, '_>, fat: usize, feature: &super::Feature<'_>) {
+    if feature.feature_params_offset() != 0 {
+        w.opaque(fat, fat, 2, 1);
+    }
+    if !w.spend(feature.num_lookups()) {
+        return;
+    }
+    if let Some(count) = w.lookup_count {
+        for j in 0..feature.num_lookups() {
+            let index = usize::from(feature.lookup_index(j).unwrap_or(0));
+            if index >= count {
+                w.emit(
+                    fat.saturating_add(4).saturating_add(j.saturating_mul(2)),
+                    Kind::LookupIndexOutOfRange {
+                        index: to_u32(index),
+                        count: to_u32(count),
+                    },
+                );
             }
         }
     }
-    list.len()
 }
 
 fn sorted_tags(w: &mut Walker<'_, '_>, first: usize, tags: impl Iterator<Item = Tag>) {
@@ -640,22 +644,31 @@ fn scripts(w: &mut Walker<'_, '_>, field: usize, width: usize, features: usize) 
         else {
             continue;
         };
-        if !w.spend(script.num_lang_sys()) {
-            return;
-        }
-        sorted_tags(
-            w,
-            sat.saturating_add(4),
-            (0..script.num_lang_sys()).filter_map(|i| script.lang_sys_tag(i)),
-        );
-        lang_sys(w, sat, sat, features);
-        for j in 0..script.num_lang_sys() {
-            let field = sat
-                .saturating_add(4)
-                .saturating_add(j.saturating_mul(6))
-                .saturating_add(4);
-            lang_sys(w, field, sat, features);
-        }
+        one_script(w, sat, &script, features);
+    }
+}
+
+pub(crate) fn one_script(
+    w: &mut Walker<'_, '_>,
+    sat: usize,
+    script: &super::Script<'_>,
+    features: usize,
+) {
+    if !w.spend(script.num_lang_sys()) {
+        return;
+    }
+    sorted_tags(
+        w,
+        sat.saturating_add(4),
+        (0..script.num_lang_sys()).filter_map(|i| script.lang_sys_tag(i)),
+    );
+    lang_sys(w, sat, sat, features);
+    for j in 0..script.num_lang_sys() {
+        let field = sat
+            .saturating_add(4)
+            .saturating_add(j.saturating_mul(6))
+            .saturating_add(4);
+        lang_sys(w, field, sat, features);
     }
 }
 
@@ -690,7 +703,12 @@ fn lang_sys(w: &mut Walker<'_, '_>, field: usize, base: usize, features: usize) 
     }
 }
 
-fn one_lookup(w: &mut Walker<'_, '_>, at: usize, lookup: &Lookup<'_>, spec: &mut Layout<'_>) {
+pub(crate) fn one_lookup(
+    w: &mut Walker<'_, '_>,
+    at: usize,
+    lookup: &Lookup<'_>,
+    spec: &mut Layout<'_>,
+) {
     let flag = lookup.flag();
     if flag & lookup_flag::RESERVED != 0 {
         w.emit(

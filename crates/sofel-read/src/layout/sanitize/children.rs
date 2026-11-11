@@ -99,7 +99,7 @@ pub(super) fn subst(value: SubstSubtable<'_>, fmt: u16, budget: &mut Budget) -> 
                 return false;
             }
             let population = if matches!(coverage.format(), 1 | 3) {
-                coverage.num_records() as u32
+                u32::try_from(coverage.num_records()).unwrap_or(u32::MAX)
             } else {
                 coverage.ranges().fold(0u32, |n, (first, last)| {
                     n.wrapping_add(last.0.saturating_sub(first.0).saturating_add(1))

@@ -258,8 +258,8 @@ fn adr0033_i4_ligature_candidate_order_and_unreadable_candidates() {
     assert_eq!(glyphs(&shape_ligs(many, "f")), [(F, 0)]);
 
     // More than one offset does not mean more than one valid candidate.
-    // Null and out-of-bounds offsets must leave the single-candidate
-    // path's glyphs, positions and unsafe flags unchanged.
+    // A null offset leaves one candidate. An out-of-bounds offset
+    // discards GSUB before matching any candidates (ADR 0059).
     for bad in [0u16, u16::MAX] {
         for position in [0usize, 1] {
             let mut subtable = ligature_subst(
@@ -270,8 +270,9 @@ fn adr0033_i4_ligature_candidate_order_and_unreadable_candidates() {
             let at = set + 2 + position * 2;
             subtable[at..at + 2].copy_from_slice(&bad.to_be_bytes());
             let actual = shape_ligs(subtable, "fi");
-            assert_eq!(actual.glyph_infos(), expected.glyph_infos());
-            assert_eq!(actual.glyph_positions(), expected.glyph_positions());
+            let reference = if bad == 0 { &expected } else { &empty };
+            assert_eq!(actual.glyph_infos(), reference.glyph_infos());
+            assert_eq!(actual.glyph_positions(), reference.glyph_positions());
         }
     }
 }

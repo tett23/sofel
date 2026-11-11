@@ -44,7 +44,7 @@ directory or file).
 
 For GDEF, GSUB and GPOS, validation ends with a layout damage summary
 for each font containing those tables. It counts distinct table offsets
-with errors. If a reference cannot be followed or the walk limit is
+with structural errors or warnings. If a reference cannot be followed or the walk limit is
 reached, the count is a lower bound (at least N). JSON summaries have
 kind layout_damage_summary, damage_count, complete, locations,
 unchecked and work_limit_tables. Each location retains all its reasons.
@@ -108,13 +108,19 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
                 let mut faces = Vec::new();
                 for i in 0..c.num_fonts() {
                     if let Ok(s) = c.font(i) {
-                        if let Some(summary) = validate_face(&s, &name, Some(i), as_json, out, &mut errors) {
+                        if let Some(summary) =
+                            validate_face(&s, &name, Some(i), as_json, out, &mut errors)
+                        {
                             faces.push((i, summary));
                         }
                     }
                 }
                 if !faces.is_empty() {
-                    let line = if as_json { total_json(&name, &faces) } else { total_text(&name, &faces) };
+                    let line = if as_json {
+                        total_json(&name, &faces)
+                    } else {
+                        total_text(&name, &faces)
+                    };
                     let _ = writeln!(out, "{line}");
                 }
             }
@@ -136,7 +142,7 @@ fn emit_diagnostic(
     as_json: bool,
     out: &mut dyn Write,
     errors: &mut bool,
-) -> Option<DamageSummary> {
+) {
     *errors |= diagnostic.severity == Severity::Error;
     let line = if as_json {
         json_line(path, font, &diagnostic)
@@ -159,7 +165,12 @@ struct DamageSummary {
 
 impl DamageSummary {
     fn record(&mut self, d: Diagnostic) {
-        if target(d.table) && d.severity == Severity::Error && d.kind != Kind::WorkLimitExceeded {
+        if target(d.table)
+            && !matches!(
+                d.kind,
+                Kind::LayoutTableDiscarded { .. } | Kind::WorkLimitExceeded
+            )
+        {
             let reasons = self.locations.entry((d.table, d.offset)).or_default();
             if !reasons.contains(&d.kind) {
                 reasons.push(d.kind);
@@ -284,7 +295,7 @@ fn validate_face(
     as_json: bool,
     out: &mut dyn Write,
     errors: &mut bool,
-) {
+) -> Option<DamageSummary> {
     let has_layout = [gdef::TAG, gsub::TAG, gpos::TAG]
         .iter()
         .any(|&tag| sfnt.table(tag).is_some());
@@ -314,8 +325,16 @@ fn validate_face(
 fn total_text(path: &str, faces: &[(u32, DamageSummary)]) -> String {
     let count: usize = faces.iter().map(|(_, s)| s.locations.len()).sum();
     let complete = faces.iter().all(|(_, s)| s.complete());
-    let amount = if complete { count.to_string() } else { format!("at least {count}") };
-    let mut line = format!("{path}: layout damage total: {amount} location(s) across {} face(s); {}", faces.len(), if complete { "complete" } else { "incomplete" });
+    let amount = if complete {
+        count.to_string()
+    } else {
+        format!("at least {count}")
+    };
+    let mut line = format!(
+        "{path}: layout damage total: {amount} location(s) across {} face(s); {}",
+        faces.len(),
+        if complete { "complete" } else { "incomplete" }
+    );
     for (face, summary) in faces {
         for ((tag, source), reasons) in &summary.unchecked {
             for reason in reasons {
@@ -332,10 +351,19 @@ fn total_text(path: &str, faces: &[(u32, DamageSummary)]) -> String {
 fn total_json(path: &str, faces: &[(u32, DamageSummary)]) -> String {
     let count: usize = faces.iter().map(|(_, s)| s.locations.len()).sum();
     let complete = faces.iter().all(|(_, s)| s.complete());
-    let reasons = |items: &[Kind]| format!("[{}]", items.iter().map(|reason| json::object([
-        ("kind", json::string(reason.id())),
-        ("message", json::string(&reason.to_string())),
-    ])).collect::<Vec<_>>().join(","));
+    let reasons = |items: &[Kind]| {
+        format!(
+            "[{}]",
+            items
+                .iter()
+                .map(|reason| json::object([
+                    ("kind", json::string(reason.id())),
+                    ("message", json::string(&reason.to_string())),
+                ]))
+                .collect::<Vec<_>>()
+                .join(",")
+        )
+    };
     let mut locations = Vec::new();
     let mut unchecked = Vec::new();
     let mut limits = Vec::new();
@@ -446,6 +474,26 @@ fn json_line(path: &str, font: Option<u32>, d: &Diagnostic) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inv4_structural_warnings_count_as_damage() {
+        let mut summary = DamageSummary::default();
+        for kind in [
+            Kind::ReservedBitsSet { found: 0x20 },
+            Kind::LayoutTableDiscarded { table: gsub::TAG },
+        ] {
+            summary.record(Diagnostic {
+                table: gsub::TAG,
+                offset: 0,
+                severity: kind.severity(),
+                kind,
+            });
+        }
+        assert_eq!(
+            summary.locations.get(&(gsub::TAG, 0)),
+            Some(&vec![Kind::ReservedBitsSet { found: 0x20 }])
+        );
+    }
 
     #[test]
     fn inv4_damage_summary_deduplicates_locations_and_reasons() {

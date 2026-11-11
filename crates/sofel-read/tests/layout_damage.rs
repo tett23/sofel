@@ -189,3 +189,92 @@ fn inv4_partial_lookup_list_keeps_readable_sibling() {
         |e| matches!(e, DamageEvent::Unchecked { table, source: 14, .. } if *table == gsub::TAG)
     ));
 }
+
+#[test]
+fn inv4_partial_lookup_list_walks_valid_child_descendants() {
+    let mut bytes = vec![0; 29];
+    bytes
+        .get_mut(0..4)
+        .unwrap()
+        .copy_from_slice(&0x0001_0000u32.to_be_bytes());
+    bytes
+        .get_mut(8..10)
+        .unwrap()
+        .copy_from_slice(&10u16.to_be_bytes());
+    bytes
+        .get_mut(10..12)
+        .unwrap()
+        .copy_from_slice(&20u16.to_be_bytes());
+    bytes
+        .get_mut(12..14)
+        .unwrap()
+        .copy_from_slice(&11u16.to_be_bytes());
+    bytes
+        .get_mut(21..23)
+        .unwrap()
+        .copy_from_slice(&1u16.to_be_bytes());
+    bytes
+        .get_mut(25..27)
+        .unwrap()
+        .copy_from_slice(&1u16.to_be_bytes());
+    bytes
+        .get_mut(27..29)
+        .unwrap()
+        .copy_from_slice(&0xffffu16.to_be_bytes());
+    let original = original(gsub::TAG, &bytes);
+    assert!(original.iter().any(|d| d.offset == 8));
+    assert!(!original.iter().any(|d| d.offset == 27));
+    let found = events(gsub::TAG, &bytes);
+    assert!(
+        found
+            .iter()
+            .any(|e| matches!(e, DamageEvent::Diagnostic(d) if d.offset == 27)),
+        "{found:?}"
+    );
+    assert!(
+        found
+            .iter()
+            .any(|e| matches!(e, DamageEvent::Unchecked { source: 27, .. })),
+        "{found:?}"
+    );
+}
+
+#[test]
+fn inv4_partial_feature_list_walks_valid_child_descendants() {
+    let mut bytes = vec![0; 23];
+    bytes
+        .get_mut(0..4)
+        .unwrap()
+        .copy_from_slice(&0x0001_0000u32.to_be_bytes());
+    bytes
+        .get_mut(6..8)
+        .unwrap()
+        .copy_from_slice(&10u16.to_be_bytes());
+    bytes
+        .get_mut(10..12)
+        .unwrap()
+        .copy_from_slice(&4u16.to_be_bytes());
+    bytes.get_mut(12..16).unwrap().copy_from_slice(b"abcd");
+    bytes
+        .get_mut(16..18)
+        .unwrap()
+        .copy_from_slice(&9u16.to_be_bytes());
+    bytes
+        .get_mut(19..21)
+        .unwrap()
+        .copy_from_slice(&0xffffu16.to_be_bytes());
+    assert!(!original(gsub::TAG, &bytes).iter().any(|d| d.offset == 19));
+    let found = events(gsub::TAG, &bytes);
+    assert!(
+        found
+            .iter()
+            .any(|e| matches!(e, DamageEvent::Diagnostic(d) if d.offset == 19)),
+        "{found:?}"
+    );
+    assert!(
+        found
+            .iter()
+            .any(|e| matches!(e, DamageEvent::Unchecked { source: 19, .. })),
+        "{found:?}"
+    );
+}

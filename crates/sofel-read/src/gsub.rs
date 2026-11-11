@@ -397,6 +397,23 @@ pub fn validate(data: &[u8], mark_sets: Option<u16>, report: &mut dyn FnMut(Diag
     );
 }
 
+pub(crate) fn inspect_partial_lookup(
+    data: &[u8],
+    at: usize,
+    lookup: &Lookup<'_>,
+    mark_sets: Option<u16>,
+    report: &mut dyn FnMut(Diagnostic),
+) {
+    let mut walker = Walker::new(TAG, data, report);
+    let mut spec = Layout {
+        extension: EXTENSION,
+        max_type: REVERSE_CHAIN_SINGLE,
+        mark_sets,
+        subtable: &mut validate_subtable,
+    };
+    crate::layout::walk::one_lookup(&mut walker, at, lookup, &mut spec);
+}
+
 fn validate_subtable(w: &mut Walker<'_, '_>, field: usize, at: usize, ty: u16) {
     match ty {
         CONTEXT => return w.context(field, at),
