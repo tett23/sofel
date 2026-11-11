@@ -286,9 +286,9 @@ pub fn hhea(num_long_metrics: u16) -> Vec<u8> {
     hhea_fields(Buf::new()).u16(num_long_metrics).done()
 }
 
-/// HHEA (24-bit numberOfHMetrics).
+/// HHEA (32-bit numberOfHMetrics).
 pub fn hhea_wide(num_long_metrics: u32) -> Vec<u8> {
-    hhea_fields(Buf::new()).u24(num_long_metrics).done()
+    hhea_fields(Buf::new()).u32(num_long_metrics).done()
 }
 
 fn hhea_fields(b: Buf) -> Buf {
