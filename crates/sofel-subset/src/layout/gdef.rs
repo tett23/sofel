@@ -2,10 +2,11 @@
 //! without a variation store, and the mark glyph sets the plan keeps
 //! (`remap_used_mark_sets`).
 
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 
 use sofel_font::read::Severity;
+use sofel_font::read::Tag;
 use sofel_font::read::gdef::{CaretValue, Gdef};
 use sofel_write::Whence;
 
@@ -72,6 +73,62 @@ pub(crate) fn unused_variation_store(src: &[u8]) -> bool {
     inspect().unwrap_or(false)
 }
 
+type RetainedVariations = (Vec<(u16, Vec<u32>)>, BTreeMap<u32, u32>);
+
+fn retained_variation_indices(src: &[u8], glyphs: &BitSet) -> Option<RetainedVariations> {
+    let gdef = Gdef::new(src).ok()?;
+    let store = gdef.variation_store().ok()??;
+    let mut invalid = false;
+    sofel_font::read::gdef::validate(src, &mut |d| {
+        invalid |= d.severity == Severity::Error;
+    });
+    if invalid {
+        return None;
+    }
+    let mut selected = BTreeSet::new();
+    if let Some(list) = gdef.lig_caret_list().ok()? {
+        let coverage = Cov(D(src).off16(8).off16(0));
+        for (i, glyph) in coverage.glyphs().into_iter().take(list.len()).enumerate() {
+            if !glyphs.has(glyph) {
+                continue;
+            }
+            let Some(ligature) = list.lig_glyph(i).ok()? else {
+                continue;
+            };
+            for j in 0..ligature.len() {
+                if let Some(CaretValue::Device(_, Some(device))) = ligature.caret(j).ok()?
+                    && device.delta_format() == 0x8000
+                {
+                    let index =
+                        (u32::from(device.start_size()) << 16) | u32::from(device.end_size());
+                    let outer = u16::try_from(index >> 16).ok()?;
+                    let inner = u16::try_from(index & 0xffff).ok()?;
+                    let data = store.item_data(outer)?;
+                    if inner >= data.item_count {
+                        return None;
+                    }
+                    selected.insert(index);
+                }
+            }
+        }
+    }
+    let mut grouped: BTreeMap<u16, Vec<u32>> = BTreeMap::new();
+    for index in selected {
+        let outer = u16::try_from(index >> 16).ok()?;
+        grouped.entry(outer).or_default().push(index & 0xffff);
+    }
+    let old_items: Vec<_> = grouped.into_iter().collect();
+    let mut remap = BTreeMap::new();
+    for (new_outer, (old_outer, rows)) in old_items.iter().enumerate() {
+        for (new_inner, old_inner) in rows.iter().enumerate() {
+            let old = (u32::from(*old_outer) << 16) | *old_inner;
+            let new = (u32::try_from(new_outer).ok()? << 16) | u32::try_from(new_inner).ok()?;
+            remap.insert(old, new);
+        }
+    }
+    Some((old_items, remap))
+}
+
 fn attach_list(s: &mut Sub<'_, '_>, al: D<'_>) -> bool {
     let cov = Cov(al.off16(0));
     let cov_at = s.s.u16(0);
@@ -104,7 +161,7 @@ pub(crate) fn is_variation_device(dev: D<'_>) -> bool {
     !dev.is_null() && dev.u16(4) == 0x8000
 }
 
-fn caret_value(s: &mut Sub<'_, '_>, c: D<'_>) -> bool {
+fn caret_value(s: &mut Sub<'_, '_>, c: D<'_>, remap: &BTreeMap<u32, u32>) -> bool {
     match c.u16(0) {
         1 | 2 => {
             s.s.extend(c.slice(0, 4));
@@ -120,6 +177,17 @@ fn caret_value(s: &mut Sub<'_, '_>, c: D<'_>) -> bool {
             }
             let at = s.s.u16(0);
             s.serialize_copy(at, 2, dev, |s| {
+                if is_variation_device(dev) {
+                    let old = (u32::from(dev.u16(0)) << 16) | u32::from(dev.u16(2));
+                    let Some(&new) = remap.get(&old) else {
+                        s.unsupported("the GDEF variation index (ADR 0022 stage 10)");
+                        return false;
+                    };
+                    s.s.u16(u16::try_from(new >> 16).unwrap_or(0));
+                    s.s.u16(u16::try_from(new & 0xffff).unwrap_or(0));
+                    s.s.u16(0x8000);
+                    return true;
+                }
                 if matches!(dev.u16(4), 1..=3) {
                     let start = dev.u16(0);
                     let end = dev.u16(2);
@@ -142,7 +210,7 @@ fn caret_value(s: &mut Sub<'_, '_>, c: D<'_>) -> bool {
     }
 }
 
-fn lig_caret_list(s: &mut Sub<'_, '_>, lcl: D<'_>) -> bool {
+fn lig_caret_list(s: &mut Sub<'_, '_>, lcl: D<'_>, remap: &BTreeMap<u32, u32>) -> bool {
     let cov = Cov(lcl.off16(0));
     let cov_at = s.s.u16(0);
     let count_at = s.s.u16(0);
@@ -164,7 +232,7 @@ fn lig_caret_list(s: &mut Sub<'_, '_>, lcl: D<'_>) -> bool {
                 if c.is_null() {
                     continue;
                 }
-                if s.offset_append(2, |s| caret_value(s, c)) {
+                if s.offset_append(2, |s| caret_value(s, c, remap)) {
                     k = k.wrapping_add(1);
                 }
             }
@@ -216,6 +284,37 @@ pub(crate) fn subset(s: &mut Sub<'_, '_>, gdef: &[u8]) -> bool {
         s.unsupported("GDEF 1.4 (ADR 0022 stage 3)");
         return false;
     }
+    let mut remap = BTreeMap::new();
+    let mut store_bytes = None;
+    if version >= 0x0001_0003
+        && d.u32(14) != 0
+        && !s.p.var.all_axes_pinned()
+        && !unused_variation_store(gdef)
+    {
+        let Some((old_items, new_indices)) =
+            retained_variation_indices(gdef, &s.p.layout.glyphset_gsub)
+        else {
+            s.unsupported("the GDEF item variation store (ADR 0022 stage 10)");
+            return false;
+        };
+        remap = new_indices;
+        if !old_items.is_empty() {
+            let Some(store) = Gdef::new(gdef)
+                .ok()
+                .and_then(|view| view.variation_store().ok().flatten())
+            else {
+                s.unsupported("the GDEF item variation store (ADR 0022 stage 10)");
+                return false;
+            };
+            match crate::tables::hvar::subset_store(store, &old_items, Tag::new(b"GDEF")) {
+                Ok(bytes) => store_bytes = Some(bytes),
+                Err(_) => {
+                    s.unsupported("the GDEF item variation store (ADR 0022 stage 10)");
+                    return false;
+                }
+            }
+        }
+    }
     s.s.zeros(12);
     let snapshot0 = s.s.snapshot();
     if version >= 0x0001_0002 {
@@ -224,14 +323,15 @@ pub(crate) fn subset(s: &mut Sub<'_, '_>, gdef: &[u8]) -> bool {
     let snapshot2 = s.s.snapshot();
     if version >= 0x0001_0003 {
         s.s.u32(d.u32(14));
-        // Pinning every axis drops the store (`out->varStore = 0`).
-        if d.u32(14) != 0 && !s.p.var.all_axes_pinned() && !unused_variation_store(gdef) {
-            s.unsupported("the GDEF item variation store (ADR 0022 stage 10)");
-            return false;
-        }
     }
     s.s.set_u32(0, version);
-    if version >= 0x0001_0002 {
+    let subset_varstore = store_bytes.is_some_and(|bytes| {
+        s.serialize_serialize(14, 4, |s| {
+            s.s.extend(&bytes);
+            true
+        })
+    });
+    if !subset_varstore && version >= 0x0001_0002 {
         s.s.revert(snapshot2);
     }
     let mut sets = false;
@@ -239,7 +339,9 @@ pub(crate) fn subset(s: &mut Sub<'_, '_>, gdef: &[u8]) -> bool {
         let m = d.off16(12);
         sets = s.serialize_subset_opt(12, 2, m, |s| mark_glyph_sets(s, m));
     }
-    if sets {
+    if subset_varstore {
+        s.s.set_u32(0, 0x0001_0003);
+    } else if sets {
         s.s.set_u32(0, 0x0001_0002);
     } else {
         s.s.set_u32(0, 0x0001_0000);
@@ -256,6 +358,6 @@ pub(crate) fn subset(s: &mut Sub<'_, '_>, gdef: &[u8]) -> bool {
         s.class_def_subset(Cls(macd), None, false, true, None)
     });
     let lcl = d.off16(8);
-    let carets = s.serialize_subset_opt(8, 2, lcl, |s| lig_caret_list(s, lcl));
+    let carets = s.serialize_subset_opt(8, 2, lcl, |s| lig_caret_list(s, lcl, &remap));
     glyph_classes || attach || carets || mark_attach || sets
 }

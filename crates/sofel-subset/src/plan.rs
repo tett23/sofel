@@ -186,11 +186,9 @@ fn layout_unsupported(
             sofel_font::read::be::u32_at(d, 0).unwrap_or(0) >= 0x0001_0001
                 && sofel_font::read::be::u32_at(d, 10) != Some(0)
         });
-    let gdef_store_is_unused = kept(b"GDEF").is_some_and(layout::gdef::unused_variation_store)
-        && !retained(b"GPOS")
-        && !retained(b"MATH")
-        && !gsub_feature_variations_retained;
-    if !pinned && kept(b"GDEF").is_some_and(layout::gdef::has_var_store) && !gdef_store_is_unused {
+    let gdef_store_is_local =
+        !retained(b"GPOS") && !retained(b"MATH") && !gsub_feature_variations_retained;
+    if !pinned && kept(b"GDEF").is_some_and(layout::gdef::has_var_store) && !gdef_store_is_local {
         return Err(SubsetError::Unsupported {
             tag: Tag::new(b"GDEF"),
             reason: "the GDEF item variation store (ADR 0022 stage 10)",

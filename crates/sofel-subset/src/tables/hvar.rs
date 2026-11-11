@@ -196,7 +196,7 @@ fn index_map(
     Ok(Some(output))
 }
 
-fn subset_store(
+pub(crate) fn subset_store(
     store: ItemVariationStore<'_>,
     old_items: &[(u16, Vec<u32>)],
     tag: Tag,
