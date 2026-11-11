@@ -182,3 +182,4 @@ sofel_subset::RangeSet::max The last member, found with sofel_subset_input_set_n
 sofel_subset::RangeSet::remove_range A loop of sofel_subset_input_set_remove over the members found with sofel_subset_input_set_next (ADR 0022).
 sofel_subset::RangeSet::truncate As sofel_subset::RangeSet::remove_range, for every member from a value on (ADR 0022).
 sofel_subset::RangeSet::union A loop of sofel_subset_input_set_add over the other set's members (ADR 0022).
+sofel_font::var::Instance::font C callers already hold the font paired with the location.

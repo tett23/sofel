@@ -2,7 +2,95 @@
 
 use super::*;
 use sofel_font::read::Fixed as ReadFixed;
-use sofel_font::var::{FtAxisInfo, FtLocationError, Location, VarAxisInfo, Variation};
+use sofel_font::var::{
+    Ft, FtAxisInfo, FtLocationError, HbF32, Location, StoreKind, VarAxisInfo, Variation,
+};
+
+/// `SOFEL_VAR_STORE_HVAR`.
+pub const SOFEL_VAR_STORE_HVAR: i32 = 0;
+/// `SOFEL_VAR_STORE_VVAR`.
+pub const SOFEL_VAR_STORE_VVAR: i32 = 1;
+/// `SOFEL_VAR_STORE_MVAR`.
+pub const SOFEL_VAR_STORE_MVAR: i32 = 2;
+/// `SOFEL_VAR_STORE_GDEF`.
+pub const SOFEL_VAR_STORE_GDEF: i32 = 3;
+/// `SOFEL_VAR_STORE_BASE`.
+pub const SOFEL_VAR_STORE_BASE: i32 = 4;
+/// `SOFEL_VAR_STORE_COLR`.
+pub const SOFEL_VAR_STORE_COLR: i32 = 5;
+/// `SOFEL_VAR_STORE_CFF2`.
+pub const SOFEL_VAR_STORE_CFF2: i32 = 6;
+
+fn store_kind(value: i32) -> Result<StoreKind, i32> {
+    match value {
+        SOFEL_VAR_STORE_HVAR => Ok(StoreKind::Hvar),
+        SOFEL_VAR_STORE_VVAR => Ok(StoreKind::Vvar),
+        SOFEL_VAR_STORE_MVAR => Ok(StoreKind::Mvar),
+        SOFEL_VAR_STORE_GDEF => Ok(StoreKind::Gdef),
+        SOFEL_VAR_STORE_BASE => Ok(StoreKind::Base),
+        SOFEL_VAR_STORE_COLR => Ok(StoreKind::Colr),
+        SOFEL_VAR_STORE_CFF2 => Ok(StoreKind::Cff2),
+        _ => Err(ERROR_INVALID_ARGUMENT),
+    }
+}
+
+/// `sofel_instance_item_delta_hb`.
+///
+/// # Safety
+///
+/// `font` is NULL or live; `location` is NULL for the default or live;
+/// `out` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_instance_item_delta_hb(
+    font: *const SofelFont,
+    location: *const SofelLocation,
+    store: i32,
+    outer: u16,
+    inner: u16,
+    out: *mut f32,
+) -> i32 {
+    // SAFETY: the caller guarantees the input and output pointers.
+    let (font, location, out) = unsafe { (font_ref(font), r(location), w(out)) };
+    status((|| {
+        let (font, out) = (some(font)?, some(out)?);
+        let kind = store_kind(store)?;
+        let location = location.map_or_else(Location::default_ref, |value| &value.location);
+        *out = font
+            .instance(location)
+            .item_delta::<HbF32>(kind, outer, inner)
+            .map_err(|_| ERROR_INVALID_ARGUMENT)?;
+        Ok(())
+    })())
+}
+
+/// `sofel_instance_item_delta_ft`.
+///
+/// # Safety
+///
+/// `font` is NULL or live; `location` is NULL for the default or live;
+/// `out` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_instance_item_delta_ft(
+    font: *const SofelFont,
+    location: *const SofelLocation,
+    store: i32,
+    outer: u16,
+    inner: u16,
+    out: *mut i32,
+) -> i32 {
+    // SAFETY: the caller guarantees the input and output pointers.
+    let (font, location, out) = unsafe { (font_ref(font), r(location), w(out)) };
+    status((|| {
+        let (font, out) = (some(font)?, some(out)?);
+        let kind = store_kind(store)?;
+        let location = location.map_or_else(Location::default_ref, |value| &value.location);
+        *out = font
+            .instance(location)
+            .item_delta::<Ft>(kind, outer, inner)
+            .map_err(|_| ERROR_INVALID_ARGUMENT)?;
+        Ok(())
+    })())
+}
 
 /// `sofel_location_t`: immutable coordinates and cached variation scalars.
 pub struct SofelLocation {
