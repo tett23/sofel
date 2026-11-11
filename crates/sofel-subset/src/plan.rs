@@ -199,9 +199,8 @@ fn layout_unsupported(
         && font
             .table(Tag::new(b"MATH"))
             .is_some_and(may_reference_gdef_store);
-    let gdef_store_is_local = !gpos_may_reference_store
-        && !math_may_reference_store
-        && !gsub_feature_variations_retained;
+    let gdef_store_is_local =
+        !gpos_may_reference_store && !math_may_reference_store && !gsub_feature_variations_retained;
     if !pinned && kept(b"GDEF").is_some_and(layout::gdef::has_var_store) && !gdef_store_is_local {
         return Err(SubsetError::Unsupported {
             tag: Tag::new(b"GDEF"),
