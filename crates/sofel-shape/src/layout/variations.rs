@@ -239,6 +239,26 @@ mod tests {
     }
 
     #[test]
+    fn adr0046_i3_shared_table_evaluates_value_once() {
+        use core::cell::Cell;
+
+        let mut data = vec![0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2];
+        data.extend_from_slice(&[0, 1, 0, 0, 0, 24, 0, 2, 0, 0, 0, 24]);
+        data.extend_from_slice(&[0, 1, 0, 0, 0, 0, 0, 0, 0, 1]);
+        data.extend_from_slice(&[0, 0, 0, 18, 0, 0, 0, 0]);
+        data.extend_from_slice(&[0, 2, 0, 1, 0, 1, 0, 2]);
+        let fv = FeatureVariations::new(&data).unwrap();
+        let calls = Cell::new(0);
+        let state = collect_lookup_conditions(fv, &[], &|outer, inner| {
+            assert_eq!((outer, inner), (1, 2));
+            calls.set(calls.get() + 1);
+            0.0
+        });
+        assert_eq!(state, vec![42]);
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
     fn adr0027_i_plan_axis_range_boundaries_and_first_record() {
         let mut data = vec![0, 1, 0, 0, 0, 0, 0, 2];
         data.extend_from_slice(&[0, 0, 0, 24, 0, 0, 0, 0]);
