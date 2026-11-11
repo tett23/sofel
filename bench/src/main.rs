@@ -169,7 +169,9 @@ struct Bench {
 
 impl Bench {
     fn adr0049_enabled(&self) -> bool {
-        self.filter.as_deref().is_some_and(|f| f.contains("ADR0049"))
+        self.filter
+            .as_deref()
+            .is_some_and(|f| f.contains("ADR0049"))
     }
 
     fn wanted(&self, font: &str, item: &str) -> bool {

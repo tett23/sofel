@@ -461,19 +461,25 @@ pub fn adr0049_items(b: &mut Bench, testdata: &Path) {
                 if !b.wanted(name, &item) {
                     continue;
                 }
-                let bytes = std::fs::read(
-                    testdata.join("harfbuzz/test/subset/data/fonts").join(file),
-                )
-                .unwrap();
-                let text = std::fs::read(testdata.join("harfbuzz/perf/texts").join(text_name))
-                    .unwrap();
+                let bytes =
+                    std::fs::read(testdata.join("harfbuzz/test/subset/data/fonts").join(file))
+                        .unwrap();
+                let text =
+                    std::fs::read(testdata.join("harfbuzz/perf/texts").join(text_name)).unwrap();
                 let font = Font::new(&bytes, 0).unwrap();
                 let location = Location::new(
                     &font,
                     None,
-                    &[Variation { tag: Tag::new(b"wght"), value: 500.0 }],
+                    &[Variation {
+                        tag: Tag::new(b"wght"),
+                        value: 500.0,
+                    }],
                 );
-                let instance = font.instance(if varied { &location } else { Location::default_ref() });
+                let instance = font.instance(if varied {
+                    &location
+                } else {
+                    Location::default_ref()
+                });
                 let scale = Scale::unscaled(&font);
                 let boxes = HbExtents::new(instance);
                 let hb = HbFont::open(&bytes).unwrap();
@@ -487,7 +493,10 @@ pub fn adr0049_items(b: &mut Bench, testdata: &Path) {
                     let mut u = UnicodeBuffer::new();
                     u.push_utf8(&text[start..], 0, Some(len));
                     let props = properties(&u, None);
-                    if !plans.iter().any(|(known, _): &(ResolvedProperties, ShapePlan<'_>)| *known == props) {
+                    if !plans
+                        .iter()
+                        .any(|(known, _): &(ResolvedProperties, ShapePlan<'_>)| *known == props)
+                    {
                         plans.push((props.clone(), ShapePlan::new(instance, props, &[])));
                     }
                 }
@@ -504,7 +513,9 @@ pub fn adr0049_items(b: &mut Bench, testdata: &Path) {
                             let props = properties(&u, None);
                             let plan = &plans.iter().find(|(known, _)| *known == props).unwrap().1;
                             let extents = |g: GlyphId| boxes.glyph_extents(g);
-                            let g = sofel_shape::shape_with_extents(instance, &scale, plan, u, &extents);
+                            let g = sofel_shape::shape_with_extents(
+                                instance, &scale, plan, u, &extents,
+                            );
                             sum = sum.wrapping_add(checksum(&g));
                             spare = Some(g.into_unicode());
                         }
