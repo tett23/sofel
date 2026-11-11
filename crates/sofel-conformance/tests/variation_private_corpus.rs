@@ -48,6 +48,7 @@ fn adr0030_i06_cff2_private_blend_matches_freetype_at_all_locations() {
         let faces = match FontFile::new(&bytes) {
             Ok(FontFile::Sfnt(_)) => 1,
             Ok(FontFile::Collection(collection)) => collection.num_fonts(),
+            Ok(FontFile::Dfont(dfont)) => dfont.num_fonts(),
             Err(_) => continue,
         };
         for index in 0..faces {

@@ -6,6 +6,7 @@ use sofel_read::cmap::Cmap;
 use sofel_read::head::Head;
 use sofel_read::hhea::Hhea;
 use sofel_read::hmtx::Hmtx;
+use sofel_read::item_variation::ItemVariationStore;
 use sofel_read::maxp::Maxp;
 use sofel_read::sfnt::{FontFile, Sfnt};
 use sofel_read::feature_variations::FeatureVariations;
@@ -107,6 +108,11 @@ pub fn check_font(data: &[u8]) {
                 }
             }
         }
+        Ok(FontFile::Dfont(d)) => {
+            for i in 0..d.num_fonts().min(64) {
+                if let Ok(s) = d.font(i) { check_sfnt(&s); }
+            }
+        }
         Err(_) => {}
     }
 }
@@ -121,11 +127,23 @@ fn check_sfnt(s: &Sfnt<'_>) {
 /// A standalone packed gvar decoder. The prefix selects the table format
 /// and a bounded point count; remaining bytes are an arbitrary table.
 pub fn check_gvar(input: &[u8]) {
-    let Some((prefix, data)) = input.split_first_chunk::<3>() else { return };
+    let Some((prefix, rest)) = input.split_first_chunk::<3>() else { return };
     let tag = if prefix[0] & 1 == 0 { gvar::TAG } else { gvar::GVAR_TAG };
     let points = usize::from(u16::from_be_bytes([prefix[1], prefix[2]])).min(4096);
+    let data = if prefix[0] & 0x80 != 0 {
+        let payload_len = 16 + points.clamp(4, 64) * 5;
+        let Some(data) = rest.get(payload_len..) else { return };
+        data
+    } else {
+        rest
+    };
     gvar::validate_with_points(data, tag, None, None, |_| Some(points), &mut |_| {});
     if let Ok(table) = Gvar::new(data, tag) {
+        let glyph = u32::from(prefix[0] >> 3);
+        let coordinate = if prefix[0] & 4 == 0 { 0x4000 } else { -0x4000 };
+        check_gvar_budget(
+            &table, glyph, points.clamp(4, 64), coordinate, prefix[0] & 2 != 0,
+        );
         for glyph in 0..table.glyph_count().min(32) {
             if let Some(glyph_data) = table.glyph_data(glyph) {
                 let shared = glyph_data.shared_points();
@@ -140,6 +158,153 @@ pub fn check_gvar(input: &[u8]) {
             }
         }
     }
+    if prefix[0] & 0x80 != 0 {
+        let _ = run_gvar_ft(input);
+    }
+}
+
+type FtGvarApplyResult = (
+    Result<bool, sofel_font::var::gvar::GvarError>,
+    Vec<sofel_font::var::gvar::Point<i32>>,
+);
+
+/// Extended gvar corpus format: eight 16-bit axis coordinates, up to 64
+/// arbitrary five-byte points, then the gvar table. Exercise both
+/// arithmetic paths with the same points and a bounded budget.
+fn run_gvar_ft(input: &[u8]) -> Option<FtGvarApplyResult> {
+    use sofel_font::var::gvar::{FtScratch, HbScratch, Point, apply_ft, apply_hb};
+
+    let (prefix, rest) = input.split_first_chunk::<3>()?;
+    if prefix[0] & 0x80 == 0 {
+        return None;
+    }
+    let count = usize::from(u16::from_be_bytes([prefix[1], prefix[2]])).clamp(4, 64);
+    let (axis_bytes, rest) = rest.split_first_chunk::<16>()?;
+    let (point_bytes, data) = rest.split_at_checked(count * 5)?;
+    let tag = if prefix[0] & 1 == 0 {
+        gvar::TAG
+    } else {
+        gvar::GVAR_TAG
+    };
+    let table = Gvar::new(data, tag).ok()?;
+    let glyph = u32::from((prefix[0] >> 3) & 0x0f);
+    let glyph_data = table.glyph_data(glyph)?;
+    if table.axis_count() > 8 || glyph_data.tuple_count() > 16 {
+        return None;
+    }
+    let axis_values: Vec<i16> = axis_bytes
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|bytes| i16::from_be_bytes([bytes[0], bytes[1]]))
+        .collect();
+    let ft_coords: Vec<i32> = axis_values
+        .iter()
+        .take(usize::from(table.axis_count()))
+        .map(|&coord| i32::from(coord) << 2)
+        .collect();
+    let hb_coords: Vec<i32> = axis_values
+        .iter()
+        .take(usize::from(table.axis_count()))
+        .map(|&coord| i32::from(coord))
+        .collect();
+    let mut points: Vec<Point<i32>> = point_bytes
+        .as_chunks::<5>()
+        .0
+        .iter()
+        .map(|bytes| Point {
+            x: i32::from(i16::from_be_bytes([bytes[0], bytes[1]])) << 16,
+            y: i32::from(i16::from_be_bytes([bytes[2], bytes[3]])) << 16,
+            end: bytes[4] & 1 != 0,
+        })
+        .collect();
+    let initial = points.clone();
+    let result = apply_ft(
+        &table,
+        glyph,
+        &ft_coords,
+        &[],
+        &mut points,
+        &mut FtScratch::default(),
+    );
+    if result.is_err() {
+        assert_eq!(points, initial, "failed FT gvar application changed points");
+    }
+    let mut hb_points: Vec<Point<f32>> = initial
+        .iter()
+        .map(|p| Point {
+            x: p.x as f32 / 65536.0,
+            y: p.y as f32 / 65536.0,
+            end: p.end,
+        })
+        .collect();
+    let mut budget = i64::from(glyph_data.tuple_count()) * count as i64;
+    let _ = apply_hb(
+        &table,
+        glyph,
+        &hb_coords,
+        &[],
+        &mut hb_points,
+        &mut HbScratch::default(),
+        false,
+        &mut budget,
+    );
+    Some((result, points))
+}
+
+/// Replay a successful application at its exact cost and one unit below it.
+/// Bound the work per input, including the axis and tuple scans.
+fn check_gvar_budget(
+    table: &Gvar<'_>,
+    glyph: u32,
+    count: usize,
+    coordinate: i32,
+    phantom_only: bool,
+) -> Option<i64> {
+    use sofel_font::var::gvar::{GvarError, HbScratch, Point, apply_hb};
+
+    let glyph_data = table.glyph_data(glyph)?;
+    if table.axis_count() > 8 || glyph_data.tuple_count() > 16 {
+        return None;
+    }
+    let coords = vec![coordinate; usize::from(table.axis_count())];
+    let initial = vec![
+        Point {
+            x: 1.0,
+            y: -2.0,
+            end: false
+        };
+        count
+    ];
+    let mut scratch = HbScratch::default();
+    let mut run = |limit| {
+        let mut points = initial.clone();
+        let mut remaining = limit;
+        let result = apply_hb(
+            table,
+            glyph,
+            &coords,
+            &[],
+            &mut points,
+            &mut scratch,
+            phantom_only,
+            &mut remaining,
+        );
+        if result.is_err() {
+            assert_eq!(points, initial);
+        }
+        (result, points, remaining)
+    };
+    let upper_bound = i64::from(glyph_data.tuple_count()) * count as i64;
+    let (result, expected, remaining) = run(upper_bound);
+    assert_ne!(result, Err(GvarError::BudgetExceeded));
+    result.ok()?;
+    let cost = upper_bound - remaining;
+    assert_eq!(run(cost), (result, expected, 0));
+    if cost > 0 {
+        assert_eq!(run(cost - 1).0, Err(GvarError::BudgetExceeded));
+    }
+    Some(cost)
 }
 
 /// Arbitrary ItemVariationStore bytes in HVAR. Compare a location's cached
@@ -173,37 +338,187 @@ pub fn check_variation_store(input: &[u8]) {
     };
     let cached = font.instance(&location);
     let live = other.instance(&location);
-    for outer in 0..4 {
-        for inner in 0..8 {
-            let h = cached.item_delta::<sofel_font::var::HbF32>(
-                sofel_font::var::StoreKind::Hvar,
-                outer,
-                inner,
-            );
-            let h_live = live.item_delta::<sofel_font::var::HbF32>(
-                sofel_font::var::StoreKind::Hvar,
-                outer,
-                inner,
-            );
-            assert_eq!(h.map(f32::to_bits), h_live.map(f32::to_bits));
-            let f = cached.item_delta::<sofel_font::var::Ft>(
-                sofel_font::var::StoreKind::Hvar,
-                outer,
-                inner,
-            );
-            let f_live = live.item_delta::<sofel_font::var::Ft>(
-                sofel_font::var::StoreKind::Hvar,
-                outer,
-                inner,
-            );
-            assert_eq!(f, f_live);
+    for (outer, inner) in variation_rows(store, u16::from_be_bytes(*coordinate)) {
+        let h = cached.item_delta::<sofel_font::var::HbF32>(
+            sofel_font::var::StoreKind::Hvar,
+            outer,
+            inner,
+        );
+        let h_live = live.item_delta::<sofel_font::var::HbF32>(
+            sofel_font::var::StoreKind::Hvar,
+            outer,
+            inner,
+        );
+        assert_eq!(h.map(f32::to_bits), h_live.map(f32::to_bits));
+        let f = cached.item_delta::<sofel_font::var::Ft>(
+            sofel_font::var::StoreKind::Hvar,
+            outer,
+            inner,
+        );
+        let f_live = live.item_delta::<sofel_font::var::Ft>(
+            sofel_font::var::StoreKind::Hvar,
+            outer,
+            inner,
+        );
+        assert_eq!(f, f_live);
+    }
+}
+
+fn variation_rows(store: &[u8], seed: u16) -> Vec<(u16, u16)> {
+    // Compare every declared row in small stores. Larger stores use at most
+    // 256 disjoint strata, leaving room for out-of-range boundary probes.
+    const MAX_VALID_ROWS: usize = 256;
+    let Ok(store) = ItemVariationStore::new(store) else {
+        return vec![(0, 0), (u16::MAX, u16::MAX)];
+    };
+    let data: Vec<_> = (0..store.data_count())
+        .filter_map(|outer| {
+            store
+                .item_data(outer)
+                .filter(|item| item.item_count != 0)
+                .map(|item| (outer, item.item_count))
+        })
+        .collect();
+    let total: u64 = data.iter().map(|(_, count)| u64::from(*count)).sum();
+    let first_is_outer_zero = data.first().is_some_and(|&(outer, _)| outer == 0);
+    let mut rows = Vec::new();
+    if total <= MAX_VALID_ROWS as u64 {
+        for &(outer, count) in &data {
+            rows.extend((0..count).map(|inner| (outer, inner)));
+        }
+    } else {
+        let strata = if first_is_outer_zero {
+            MAX_VALID_ROWS
+        } else {
+            MAX_VALID_ROWS - 1
+        };
+        let mut state = u64::from(seed) | 1;
+        for slot in 0..strata {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let start = slot as u64 * total / strata as u64;
+            let end = (slot as u64 + 1) * total / strata as u64;
+            let index = if slot == 0 {
+                0
+            } else if slot + 1 == strata {
+                total - 1
+            } else {
+                start + state % (end - start)
+            };
+            let mut remaining = index;
+            for &(outer, count) in &data {
+                if remaining < u64::from(count) {
+                    rows.push((outer, remaining as u16));
+                    break;
+                }
+                remaining -= u64::from(count);
+            }
+        }
+    }
+    rows.push((0, 0));
+    if let Some(&(outer, count)) = data.first() {
+        rows.push((outer, count));
+    }
+    rows.push((store.data_count(), 0));
+    rows.push((u16::MAX, u16::MAX));
+    rows.sort_unstable();
+    rows.dedup();
+    if rows.len() > MAX_VALID_ROWS + 3 {
+        // At exactly 256 valid rows, keep them all and omit this optional
+        // probe when outer zero has no valid rows.
+        rows.retain(|&row| row != (0, 0));
+    }
+    rows
+}
+
+#[cfg(test)]
+mod variation_row_tests {
+    use super::{check_variation_store, variation_rows};
+
+    fn store(outer_count: u16, item_count: u16) -> Vec<u8> {
+        let regions_at = 8 + usize::from(outer_count) * 4;
+        let data_at = regions_at + 10;
+        let mut data = Vec::new();
+        data.extend_from_slice(&1u16.to_be_bytes());
+        data.extend_from_slice(&u32::try_from(regions_at).unwrap().to_be_bytes());
+        data.extend_from_slice(&outer_count.to_be_bytes());
+        for _ in 0..outer_count {
+            data.extend_from_slice(&u32::try_from(data_at).unwrap().to_be_bytes());
+        }
+        data.extend_from_slice(&[0, 1, 0, 1, 0, 0, 0x40, 0, 0x40, 0]);
+        data.extend_from_slice(&item_count.to_be_bytes());
+        data.extend_from_slice(&0u16.to_be_bytes());
+        data.extend_from_slice(&1u16.to_be_bytes());
+        data.extend_from_slice(&0u16.to_be_bytes());
+        data.extend(std::iter::repeat_n(1u8, usize::from(item_count).min(300)));
+        data
+    }
+
+    #[test]
+    fn adr0029_fuzz_checks_all_moderate_rows_beyond_old_prefix() {
+        let store = store(5, 9);
+        let rows = variation_rows(&store, 0x5eed);
+        for outer in 0..5 {
+            for inner in 0..9 {
+                assert!(rows.contains(&(outer, inner)), "missing ({outer}, {inner})");
+            }
+        }
+        assert_eq!(rows.len(), 48);
+        let mut input = 0x5eedu16.to_be_bytes().to_vec();
+        input.extend_from_slice(&store);
+        check_variation_store(&input);
+    }
+
+    #[test]
+    fn adr0030_fuzz_large_declared_rows_are_bounded_and_reach_edges() {
+        let store = store(1, u16::MAX);
+        let rows = variation_rows(&store, 0x5eed);
+        assert_eq!(rows.len(), 259);
+        assert_eq!(rows, variation_rows(&store, 0x5eed));
+        assert_ne!(rows, variation_rows(&store, 0x5eee));
+        assert!(rows.contains(&(0, 0)));
+        assert!(rows.contains(&(0, u16::MAX - 1)));
+        assert!(rows.contains(&(0, u16::MAX)));
+        assert!(rows.contains(&(u16::MAX, u16::MAX)));
+        assert!(rows.iter().any(|&(outer, inner)| outer == 0 && inner > 8));
+        let mut input = 0x5eedu16.to_be_bytes().to_vec();
+        input.extend_from_slice(&store);
+        check_variation_store(&input);
+    }
+
+    #[test]
+    fn adr0030_fuzz_row_limit_exact_and_one_over() {
+        let exact = variation_rows(&store(4, 64), 0x5eed);
+        assert_eq!(exact.len(), 259);
+        assert!(exact.contains(&(3, 63)));
+        let over = variation_rows(&store(1, 257), 0x5eed);
+        assert_eq!(over.len(), 259);
+        assert!(over.contains(&(0, 256)));
+    }
+
+    #[test]
+    fn adr0030_fuzz_empty_first_outer_keeps_limit() {
+        for count in [256, u16::MAX] {
+            let mut store = store(2, count);
+            let first_at = 8 + 2 * 4 + 10;
+            store.splice(first_at..first_at, [0, 0, 0, 0, 0, 0]);
+            store[12..16].copy_from_slice(&u32::try_from(first_at + 6).unwrap().to_be_bytes());
+            let rows = variation_rows(&store, 0x5eed);
+            assert_eq!(rows.len(), 259, "itemCount={count}");
+            assert!(rows.contains(&(1, 0)));
+            assert!(rows.contains(&(1, count - 1)));
+            if count == 256 {
+                assert!((0..count).all(|inner| rows.contains(&(1, inner))));
+                assert!(!rows.contains(&(0, 0)));
+            } else {
+                assert!(rows.contains(&(0, 0)));
+            }
         }
     }
 }
 
 /// A standalone FeatureVariations condition-tree reader and validator.
 pub fn check_feature_variations(data: &[u8]) {
-    feature_variations::validate(data, Tag::new(b"GSUB"), 0, None, &mut |_| {});
+    feature_variations::validate(data, Tag::new(b"GSUB"), 0, None, Some(32), Some(32), &mut |_| {});
     if let Ok(table) = FeatureVariations::new(data) {
         for i in 0..table.len().min(32) {
             if let Some(record) = table.record(i) {
@@ -214,6 +529,24 @@ pub fn check_feature_variations(data: &[u8]) {
                             let _ = condition.value();
                             for k in 0..condition.children_len().unwrap_or(0).min(32) {
                                 let _ = condition.child(k);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for i in 0..table.lookup_record_count().min(32) {
+            if let Some(record) = table.lookup_record(i) {
+                let _ = record.feature_index();
+                if let Ok(Some(lookups)) = record.feature_lookups() {
+                    let _ = lookups.flags();
+                    for j in 0..lookups.len().min(32) {
+                        if let Some(condition) = lookups.record(j) {
+                            let _ = condition.condition();
+                            if let Ok(Some(indices)) = condition.lookup_indices() {
+                                for k in 0..indices.len().min(32) {
+                                    let _ = indices.get(k);
+                                }
                             }
                         }
                     }
@@ -793,8 +1126,14 @@ mod layout {
                 ok(l.lookup(i), |lk| {
                     let _ = (lk.mark_filtering_set(), lk.effective_type(extension));
                     lk.extension_types_agree(extension)
-                        && (0..lk.num_subtables().min(N))
-                            .all(|j| lk.subtable_offset(j) == Some(0) || sub(&lk, j))
+                        && (0..lk.num_subtables().min(N)).all(|j| {
+                            // A null extension target has no subtable to walk,
+                            // just like a null entry in the lookup offset array.
+                            let null_target = lk.lookup_type() == extension
+                                && matches!(lk.subtable_data(j), Some([0, 1, 0, ty, 0, 0, 0, 0, ..])
+                                    if (1..=8).contains(ty) && u16::from(*ty) != extension);
+                            lk.subtable_offset(j) == Some(0) || null_target || sub(&lk, j)
+                        })
                 })
             })
         });
@@ -1246,3 +1585,77 @@ pub fn check_repack(data: &[u8]) {
 
 mod location;
 pub use location::check_location;
+
+#[cfg(test)]
+mod gvar_budget_tests {
+    use super::*;
+
+    #[test]
+    fn adr0030_i10_two_active_tuples_charge_outline_or_phantom_points() {
+        let seed = include_bytes!("../corpus/gvar/two-active-budget");
+        let table = Gvar::new(&seed[3..], gvar::TAG).unwrap();
+        for (phantom_only, cost) in [(false, 12), (true, 8)] {
+            assert_eq!(
+                check_gvar_budget(&table, 0, 6, 0x4000, phantom_only),
+                Some(cost)
+            );
+        }
+        check_gvar(seed);
+    }
+}
+
+#[cfg(test)]
+mod gvar_ft_apply_tests {
+    use super::*;
+
+    fn valid_input() -> Vec<u8> {
+        include_bytes!("../corpus/gvar/ft-apply-two-active").to_vec()
+    }
+
+    #[test]
+    fn adr0029_ft_gvar_fixed_seed_reaches_apply() {
+        let input = valid_input();
+        let (result, points) = run_gvar_ft(&input).expect("valid gvar and point payload");
+        assert_eq!(result, Ok(true));
+        assert_ne!(points[0].x, 0);
+    }
+
+    #[test]
+    fn adr0029_ft_gvar_truncation_and_fixed_mutations_do_not_panic() {
+        let input = valid_input();
+        for len in 0..input.len() {
+            check_gvar(&input[..len]);
+        }
+        let mut state = 0x29u32;
+        for _ in 0..512 {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let mut changed = input.clone();
+            let at = state as usize % changed.len();
+            changed[at] ^= (state >> 16) as u8;
+            check_gvar(&changed);
+        }
+    }
+
+    #[test]
+    fn adr0029_ft_gvar_point_and_coordinate_boundaries_reach_apply() {
+        let seed = valid_input();
+        let table = &seed[49..];
+        for count in [0u16, 1, 4, 6, 64, 65, u16::MAX] {
+            let bounded = usize::from(count).clamp(4, 64);
+            let mut input = seed[..19].to_vec();
+            input[1..3].copy_from_slice(&count.to_be_bytes());
+            for i in 0..bounded {
+                input.extend_from_slice(&seed[19 + (i % 6) * 5..24 + (i % 6) * 5]);
+            }
+            input.extend_from_slice(table);
+            assert!(run_gvar_ft(&input).is_some(), "point count {count}");
+            check_gvar(&input);
+            input[3..5].copy_from_slice(&(-0x4000i16).to_be_bytes());
+            assert!(
+                run_gvar_ft(&input).is_some(),
+                "negative coordinate, count {count}"
+            );
+            check_gvar(&input);
+        }
+    }
+}

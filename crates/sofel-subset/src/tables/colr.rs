@@ -33,6 +33,9 @@ pub(crate) struct ColorPlan {
     /// Old palette entry index to new; 0xFFFF maps to itself
     /// (`colr_palettes`).
     pub palettes: BTreeMap<u32, u32>,
+    variation_indices: BTreeMap<u32, u32>,
+    variation_store: Vec<u8>,
+    index_map: Vec<u8>,
 }
 
 /// The COLR table HarfBuzz's sanitizer accepts, as far as the views
@@ -41,30 +44,115 @@ fn sanitized(data: &[u8]) -> Option<Colr<'_>> {
     Colr::new(data).ok().filter(|_| !data.is_empty())
 }
 
-/// The header fields of version 1 (0 for version 0).
-fn v1_offset(t: D<'_>, version: u16, at: usize) -> u32 {
-    if version == 0 { 0 } else { t.u32(at) }
-}
-
 fn retains_no_v1_paints(colr: &Colr<'_>, glyphset: &RangeSet) -> bool {
     (0..colr.num_base_glyph_paints())
         .filter_map(|i| colr.base_glyph_paint_record(i))
         .all(|(g, _)| !glyphset.contains(u32::from(g)))
 }
 
-/// Whether a kept COLR table needs the variation store subsetting of
-/// ADR 0022 stage 10: version 1 with an ItemVariationStore or a
-/// DeltaSetIndexMap.
-pub(crate) fn needs_var_store(data: &[u8], glyphset: &RangeSet) -> bool {
-    let t = D(data);
-    sanitized(data).is_some_and(|c| {
-        c.version() >= 1
-            && (v1_offset(t, 1, 26) != 0 || v1_offset(t, 1, 30) != 0)
-            && !(retains_no_v1_paints(&c, glyphset)
-                && glyphset
-                    .iter()
-                    .any(|g| c.find_base_glyph(g).is_some_and(|r| r.num_layers != 0)))
-    })
+const TAG: Tag = Tag::new(b"COLR");
+
+fn unsupported_store() -> SubsetError {
+    SubsetError::Unsupported {
+        tag: TAG,
+        reason: "the COLR item variation store (ADR 0022 stage 10)",
+    }
+}
+
+fn collect_variations(indices: &mut BTreeSet<u32>, base: u32, count: u32) {
+    indices.extend(base..base.saturating_add(count));
+}
+
+fn plan_store(
+    colr: &Colr<'_>,
+    glyphset: &RangeSet,
+    complete: bool,
+    pinned: bool,
+    mut indices: BTreeSet<u32>,
+    plan: &mut ColorPlan,
+) -> Result<(), SubsetError> {
+    if colr.var_store_offset() == 0 && colr.var_index_map_offset() == 0 {
+        return Ok(());
+    }
+    if retains_no_v1_paints(colr, glyphset) {
+        // A valid v1 table can downgrade even when no color glyph remains.
+        colr.variation_store().map_err(|_| unsupported_store())?;
+        colr.var_index_map().map_err(|_| unsupported_store())?;
+        return Ok(());
+    }
+    for g in glyphset.iter() {
+        if let Some(base) = colr.clip_box(g).and_then(|b| b.var_index_base) {
+            if pinned {
+                return Err(unsupported_store());
+            }
+            collect_variations(&mut indices, base, 4);
+        }
+    }
+    if !complete {
+        return Err(unsupported_store());
+    }
+    if indices.is_empty() {
+        return Ok(());
+    }
+    if pinned {
+        return Err(unsupported_store());
+    }
+    let map = colr
+        .var_index_map()
+        .map_err(|_| unsupported_store())?
+        .filter(|m| !m.is_empty());
+    let store = colr.variation_store().map_err(|_| unsupported_store())?;
+    let rows: BTreeSet<_> = indices
+        .iter()
+        .map(|&idx| map.map_or(idx, |m| m.map(idx)))
+        .filter(|&idx| idx != NO_VARIATION)
+        .collect();
+    let mut groups: BTreeMap<u16, Vec<u32>> = BTreeMap::new();
+    for idx in rows {
+        let outer = u16::try_from(idx >> 16).map_err(|_| unsupported_store())?;
+        let inner = idx & 0xffff;
+        if !store
+            .and_then(|s| s.item_data(outer))
+            .is_some_and(|data| inner < u32::from(data.item_count))
+        {
+            return Err(unsupported_store());
+        }
+        groups.entry(outer).or_default().push(inner);
+    }
+    let groups: Vec<_> = groups.into_iter().collect();
+    for (major, (outer, rows)) in groups.iter().enumerate() {
+        for (minor, inner) in rows.iter().enumerate() {
+            let old = (u32::from(*outer) << 16) | inner;
+            let new = (u32::try_from(major).map_err(|_| unsupported_store())? << 16)
+                | u32::try_from(minor).map_err(|_| unsupported_store())?;
+            plan.variation_indices.insert(old, new);
+        }
+    }
+    if let Some(store) = store {
+        plan.variation_store = super::hvar::subset_store(store, &groups, TAG)?;
+    }
+    if let Some(map) = map {
+        let rows = core::mem::take(&mut plan.variation_indices);
+        let mut entries = Vec::new();
+        for idx in indices {
+            let source = map.map(idx);
+            let target = if source == NO_VARIATION {
+                source
+            } else {
+                *rows.get(&source).ok_or_else(unsupported_store)?
+            };
+            let new = u32::try_from(entries.len()).map_err(|_| unsupported_store())?;
+            plan.variation_indices.insert(idx, new);
+            entries.push(target);
+        }
+        // Indices beyond the stored map repeat its last entry.
+        if let Some(&last) = entries.last() {
+            let suffix = entries.iter().rev().take_while(|&&v| v == last).count();
+            entries.truncate(entries.len().saturating_sub(suffix.saturating_sub(1)));
+        }
+        plan.index_map = super::hvar::encode_index_map(&entries, TAG)?;
+    }
+    Ok(())
 }
 
 /// The layer index range `[first, first + count)` of a base glyph
@@ -80,9 +168,12 @@ fn layer_range(first: u16, count: u16, num_layers: usize) -> (usize, usize) {
 pub(crate) fn closure(
     data: &[u8],
     glyphs: &mut RangeSet,
-) -> (BTreeMap<u32, u32>, BTreeMap<u32, u32>) {
+    pinned: bool,
+    subset_table: bool,
+    num_glyphs: u32,
+) -> Result<ColorPlan, SubsetError> {
     let Some(colr) = sanitized(data) else {
-        return (BTreeMap::new(), BTreeMap::new());
+        return Ok(ColorPlan::default());
     };
     let t = D(data);
     // closure_glyphs (version 0)
@@ -111,10 +202,15 @@ pub(crate) fn closure(
     // closure_forV1
     let mut layer_indices = RangeSet::new();
     let mut palette_indices = RangeSet::new();
+    let mut can_subset_store = true;
+    let mut indices = BTreeSet::new();
     if colr.version() >= 1 {
         let mut c = Closure {
             t,
             visited: BTreeSet::new(),
+            can_subset_store: true,
+            indices: &mut indices,
+            pinned,
             glyphs: RangeSet::new(),
             layers: &mut layer_indices,
             palettes: &mut palette_indices,
@@ -134,6 +230,13 @@ pub(crate) fn closure(
         }
         let visited = c.glyphs;
         glyphs.union(&visited);
+        // PaintGlyph may add a glyph with its own base paint to the output.
+        // Accept the store only when every retained base paint was inspected.
+        can_subset_store = (colr.var_store_offset() == 0 && colr.var_index_map_offset() == 0)
+            || c.can_subset_store
+                && (0..colr.num_base_glyph_paints())
+                    .filter_map(|i| colr.base_glyph_paint_record(i))
+                    .all(|(g, at)| !glyphs.contains(u32::from(g)) || c.visited.contains(&at));
     }
     // closure_V0palette_indices
     if colr.num_base_glyphs() != 0 && num_layers != 0 {
@@ -165,14 +268,25 @@ pub(crate) fn closure(
             next = next.saturating_add(1);
         }
     }
-    (layers, palettes)
+    glyphs.truncate(num_glyphs);
+    let mut plan = ColorPlan {
+        layers,
+        palettes,
+        ..ColorPlan::default()
+    };
+    if subset_table {
+        plan_store(&colr, glyphs, can_subset_store, pinned, indices, &mut plan)?;
+    }
+    Ok(plan)
 }
 
-/// `hb_colrv1_closure_context_t`, without the variation indices (only
-/// used with a variation store).
+/// Collects glyphs, layers, palette entries and variation indices reached by retained paints.
 struct Closure<'a, 'c> {
     t: D<'a>,
     visited: BTreeSet<usize>,
+    can_subset_store: bool,
+    indices: &'c mut BTreeSet<u32>,
+    pinned: bool,
     glyphs: RangeSet,
     layers: &'c mut RangeSet,
     palettes: &'c mut RangeSet,
@@ -184,10 +298,27 @@ impl Closure<'_, '_> {
     /// (from the start of the table).
     fn dispatch(&mut self, at: usize) {
         let format = self.t.u8(at);
-        if !matches!(format, 1..=33) || self.nesting_left == 0 || !self.visited.insert(at) {
+        if !matches!(format, 1..=33) || self.nesting_left == 0 {
+            self.can_subset_store = false;
+            return;
+        }
+        if !self.visited.insert(at) {
             return;
         }
         self.nesting_left = self.nesting_left.saturating_sub(1);
+        if let Some((size, true)) = paint_size(format) {
+            let count = match format {
+                3 | 21 | 25 => 1,
+                15 | 17 | 29 => 2,
+                23 | 27 => 3,
+                9 | 19 | 31 => 4,
+                _ => 6,
+            };
+            self.check_var_index(at.saturating_add(size), count);
+        } else if format == 13 {
+            let offset = u24(self.t, at.saturating_add(4)) as usize;
+            self.check_var_index(at.saturating_add(offset).saturating_add(24), 6);
+        }
         self.closurev1(format, at);
         self.nesting_left = self.nesting_left.saturating_add(1);
     }
@@ -198,6 +329,13 @@ impl Closure<'_, '_> {
         let off = u24(self.t, at.saturating_add(field));
         if off != 0 {
             self.dispatch(at.saturating_add(off as usize));
+        }
+    }
+
+    fn check_var_index(&mut self, at: usize, count: u32) {
+        collect_variations(self.indices, self.t.u32(at), count);
+        if self.pinned {
+            self.can_subset_store = false;
         }
     }
 
@@ -212,6 +350,14 @@ impl Closure<'_, '_> {
             let stop = 3usize.saturating_add(i.saturating_mul(size));
             self.palettes
                 .add(u32::from(line.u16(stop.saturating_add(2))));
+            if var {
+                self.check_var_index(
+                    at.saturating_add(off as usize)
+                        .saturating_add(stop)
+                        .saturating_add(6),
+                    2,
+                );
+            }
         }
     }
 
@@ -372,13 +518,18 @@ impl Sub<'_, '_> {
             .check_assign_u16(out, u64::from(v), Errors::INT_OVERFLOW)
     }
 
-    /// `Variable::subset`'s variation index without a variation store:
-    /// only `NO_VARIATION` is kept.
+    /// `Variable::subset`'s variation index:
+    /// retains the sentinel or rewrites a collected index.
     fn var_index(&mut self, at: usize) -> bool {
-        if self.t.u32(at) != NO_VARIATION {
+        let old = self.t.u32(at);
+        let new = if old == NO_VARIATION {
+            old
+        } else if let Some(&new) = self.p.color.variation_indices.get(&old) {
+            new
+        } else {
             return false;
-        }
-        self.s.u32(NO_VARIATION);
+        };
+        self.s.u32(new);
         true
     }
 
@@ -677,6 +828,12 @@ pub(crate) fn subset(
     if !serialize_v0(s, version, &base, &layers) {
         return Ok(false);
     }
+    if !plan.color.variation_store.is_empty() {
+        s.push();
+        s.extend(&plan.color.variation_store);
+        let idx = s.pop_pack(true);
+        s.link32(30, idx);
+    }
     let mut c = Sub {
         p: plan,
         t,
@@ -692,6 +849,12 @@ pub(crate) fn subset(
     }
     c.serialize_subset(18, 4, off(18), |c, at| c.layer_list(at));
     c.serialize_subset(22, 4, off(22), |c, at| c.clip_list(at));
+    if !plan.color.index_map.is_empty() {
+        s.push();
+        s.extend(&plan.color.index_map);
+        let idx = s.pop_pack(true);
+        s.link32(26, idx);
+    }
     Ok(true)
 }
 

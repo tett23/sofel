@@ -24,7 +24,7 @@ pub(super) fn subset(
     _tables: &mut Tables,
 ) -> Result<bool, SubsetError> {
     let vertical = tag == Tag::new(b"VVAR");
-    let (store, maps) = if vertical {
+    let (store, mut maps) = if vertical {
         let table = Vvar::new(src).map_err(|_| SubsetError::Malformed { tag })?;
         (
             table.store().map_err(|_| SubsetError::Malformed { tag })?,
@@ -61,6 +61,11 @@ pub(super) fn subset(
             ],
         )
     };
+    // Only advances use implicit glyph indexing. Empty optional maps
+    // contribute no side-bearing or vertical-origin deltas.
+    for map in maps.iter_mut().skip(1) {
+        *map = map.filter(|m| !m.is_empty());
+    }
     let mut old_items: BTreeMap<u16, BTreeSet<u32>> = BTreeMap::new();
     for (map_index, map) in maps.iter().enumerate() {
         if map_index != 0 && map.is_none() {
@@ -125,13 +130,29 @@ fn index_map(
     source: Option<DeltaSetIndexMap<'_>>,
     tag: Tag,
 ) -> Result<Option<Vec<u8>>, SubsetError> {
-    let Some(&(last_gid, _)) = plan.new_to_old_glyphs().last() else {
+    let glyphs = plan.new_to_old_glyphs();
+    let Some(&(last_gid, last_old_gid)) = glyphs.last() else {
         return Ok(None);
     };
-    let map_count = last_gid.checked_add(1).ok_or(SubsetError::Limit { tag })?;
+    // A map repeats its final entry for higher glyph IDs. Walk retained
+    // glyphs only: gaps introduced by RETAIN_GIDS do not end the run.
+    let last_entry = if let Some(source) = source {
+        let last_value = source.map(last_old_gid);
+        glyphs
+            .iter()
+            .rev()
+            .take_while(|&&(_, old)| source.map(old) == last_value)
+            .last()
+            .map_or(last_gid, |&(gid, _)| gid)
+    } else {
+        last_gid
+    };
+    let map_count = last_entry
+        .checked_add(1)
+        .ok_or(SubsetError::Limit { tag })?;
     let count = usize::try_from(map_count).map_err(|_| SubsetError::Limit { tag })?;
     let mut values = alloc::vec![0u32; count];
-    for &(new_gid, old_gid) in plan.new_to_old_glyphs() {
+    for &(new_gid, old_gid) in glyphs.iter().take_while(|&&(gid, _)| gid <= last_entry) {
         let index = usize::try_from(new_gid).map_err(|_| SubsetError::Limit { tag })?;
         let old_item = source.map_or(old_gid, |map| map.map(old_gid));
         let outer = u16::try_from(old_item >> 16).map_err(|_| SubsetError::Limit { tag })?;
@@ -159,6 +180,12 @@ fn index_map(
     {
         return Ok(None);
     }
+    encode_index_map(&values, tag).map(Some)
+}
+
+/// Encodes an already remapped DeltaSetIndexMap, preserving the caller's entry count.
+pub(super) fn encode_index_map(values: &[u32], tag: Tag) -> Result<Vec<u8>, SubsetError> {
+    let count = values.len();
     let max_inner = values.iter().map(|value| value & 0xffff).max().unwrap_or(0);
     let max_outer = values.iter().map(|value| value >> 16).max().unwrap_or(0);
     let inner_bits = u32::BITS.saturating_sub(max_inner.leading_zeros()).max(1);
@@ -183,7 +210,11 @@ fn index_map(
                 .to_be_bytes(),
         );
     } else {
-        output.extend(map_count.to_be_bytes());
+        output.extend(
+            u32::try_from(count)
+                .map_err(|_| SubsetError::Limit { tag })?
+                .to_be_bytes(),
+        );
     }
     for value in values {
         let bytes = (((value >> 16) << inner_bits) | (value & 0xffff)).to_be_bytes();
@@ -193,10 +224,10 @@ fn index_map(
                 .ok_or(SubsetError::Limit { tag })?,
         );
     }
-    Ok(Some(output))
+    Ok(output)
 }
 
-fn subset_store(
+pub(crate) fn subset_store(
     store: ItemVariationStore<'_>,
     old_items: &[(u16, Vec<u32>)],
     tag: Tag,

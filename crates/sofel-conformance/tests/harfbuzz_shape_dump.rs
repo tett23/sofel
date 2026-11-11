@@ -557,6 +557,7 @@ fn additional_variable_fonts(testdata: &Path) -> Vec<PathBuf> {
             let faces = match FontFile::new(&data) {
                 Ok(FontFile::Sfnt(_)) => 1,
                 Ok(FontFile::Collection(c)) => c.num_fonts(),
+                Ok(FontFile::Dfont(d)) => d.num_fonts(),
                 Err(_) => continue,
             };
             if (0..faces).any(|i| Font::new(&data, i).is_ok_and(|f| f.var_axes().next().is_some()))

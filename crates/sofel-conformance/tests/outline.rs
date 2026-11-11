@@ -212,6 +212,7 @@ fn adr0027_variable_geometry_matches_freetype_at_corpus_positions() {
         let faces = match FontFile::new(&bytes) {
             Ok(FontFile::Sfnt(_)) => 1,
             Ok(FontFile::Collection(c)) => c.num_fonts(),
+            Ok(FontFile::Dfont(d)) => d.num_fonts(),
             Err(_) => continue,
         };
         for index in 0..faces {

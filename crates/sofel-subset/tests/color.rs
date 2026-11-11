@@ -246,20 +246,174 @@ fn colr_variation_store_is_stage_10() {
     colr.extend_from_slice(&item_variation_store(1, &[], &[]));
     let data = font_with(vec![(b"COLR", colr), (b"CPAL", cpal_table(false))]);
     let font = Font::new(&data, 0).unwrap();
-    assert!(matches!(
-        subset(&font, &chars("A")),
-        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"COLR")
-    ));
+    let static_paints = subset(&font, &chars("AB")).unwrap();
+    let table = out_table(&static_paints, b"COLR").unwrap();
+    assert_eq!(&table[26..34], &[0; 8]);
     let v0 = subset(&font, &chars("C")).unwrap();
     let table = out_table(&v0, b"COLR").unwrap();
     assert_eq!(&table[..2], &[0, 0]);
     let without_store = font_with(vec![(b"COLR", colr1()), (b"CPAL", cpal_table(false))]);
     let without_store = Font::new(&without_store, 0).unwrap();
+    assert_eq!(static_paints, subset(&without_store, &chars("AB")).unwrap());
     assert_eq!(v0, subset(&without_store, &chars("C")).unwrap());
     // Dropping COLR leaves CPAL without palette entries to keep.
     let input = chars("A").map_set(SetKind::DropTables, |s| s.add(Tag::new(b"COLR").to_u32()));
     let out = subset(&font, &input).unwrap();
     assert!(out_table(&out, b"CPAL").is_none());
+}
+
+#[test]
+fn retained_variable_paint_or_clip_needs_the_colr_store() {
+    let variable = Buf::new().u8(3).u16(0).u16(0x4000).u32(0).done();
+    let clip = Buf::new()
+        .u8(2)
+        .u16(0)
+        .u16(0)
+        .u16(100)
+        .u16(100)
+        .u32(1)
+        .done();
+    let no_delta = Buf::new().u8(3).u16(0).u16(0x4000).u32(u32::MAX).done();
+    let mut no_clip_delta = clip.clone();
+    no_clip_delta[9..].copy_from_slice(&u32::MAX.to_be_bytes());
+    let mut colr = colr_v1(
+        &[],
+        &[],
+        &[solid(0), variable, no_delta],
+        &[(g('A'), 0), (g('B'), 1), (g('C'), 0), (g('D'), 2)],
+        &[],
+        &[(g('C'), g('C'), clip), (g('D'), g('D'), no_clip_delta)],
+    );
+    let offset = colr.len() as u32;
+    colr[30..34].copy_from_slice(&offset.to_be_bytes());
+    colr.extend_from_slice(&item_variation_store(1, &[], &[]));
+    let data = font_with(vec![(b"COLR", colr), (b"CPAL", cpal_table(false))]);
+    let font = Font::new(&data, 0).unwrap();
+    assert!(subset(&font, &chars("A")).is_ok());
+    assert!(subset(&font, &chars("D")).is_ok());
+    for selected in ["B", "C"] {
+        assert!(
+            matches!(subset(&font, &chars(selected)), Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"COLR"))
+        );
+    }
+}
+
+fn colr_with_alpha_store() -> Vec<u8> {
+    let solid = |idx| Buf::new().u8(3).u16(0).u16(0x4000).u32(idx).done();
+    let mut colr = colr_v1(
+        &[],
+        &[],
+        &[solid(2), solid(0)],
+        &[(g('A'), 0), (g('B'), 1)],
+        &[],
+        &[],
+    );
+    let offset = colr.len() as u32;
+    colr[30..34].copy_from_slice(&offset.to_be_bytes());
+    let store = link(
+        Buf::new().u16(1).u32(0).u16(1).u32(0).done(),
+        vec![
+            (
+                2,
+                4,
+                Buf::new()
+                    .u16(1)
+                    .u16(1)
+                    .i16(0)
+                    .i16(0x4000)
+                    .i16(0x4000)
+                    .done(),
+            ),
+            (
+                8,
+                4,
+                Buf::new()
+                    .u16(3)
+                    .u16(1)
+                    .u16(1)
+                    .u16(0)
+                    .i16(5)
+                    .i16(7)
+                    .i16(9)
+                    .done(),
+            ),
+        ],
+    );
+    colr.extend_from_slice(&store);
+    colr
+}
+
+#[test]
+fn colr_implicit_store_renumbers_alpha_and_discards_unused_rows() {
+    let colr = colr_with_alpha_store();
+    let data = font_with(vec![(b"COLR", colr), (b"CPAL", cpal_table(false))]);
+    let font = Font::new(&data, 0).unwrap();
+    let result = subset(&font, &chars("A")).unwrap();
+    let table = out_table(&result, b"COLR").unwrap();
+    // HarfBuzz 15.1.0, hb-subset --unicodes=U+0041.
+    let bytes: String = table.iter().map(|b| format!("{b:02x}")).collect();
+    assert_eq!(
+        bytes,
+        "000100000000000000000000000000000022000000000000000000000000000000350000000100010000000a03000040000000000000010000001500010000000c00010000000100000900010001000040004000"
+    );
+    let colr = Colr::new(&table).unwrap();
+    let paint = colr.base_glyph_paint(1).unwrap();
+    assert_eq!(&table[paint + 5..paint + 9], &[0, 0, 0, 0]);
+    let vardata = colr
+        .variation_store()
+        .unwrap()
+        .unwrap()
+        .item_data(0)
+        .unwrap();
+    assert_eq!(vardata.item_count, 1);
+}
+
+#[test]
+fn colr_mapped_store_renumbers_alpha_and_writes_the_output_map() {
+    let mut table = colr_with_alpha_store();
+    let offset = table.len() as u32;
+    table[26..30].copy_from_slice(&offset.to_be_bytes());
+    table.extend_from_slice(&[0, 1, 0, 3, 2, 1, 0]);
+    let input = font_with(vec![(b"COLR", table), (b"CPAL", cpal_table(false))]);
+    let font = Font::new(&input, 0).unwrap();
+    let result = subset(&font, &chars("AB")).unwrap();
+    let table = out_table(&result, b"COLR").unwrap();
+    let colr = Colr::new(&table).unwrap();
+    let map = colr.var_index_map().unwrap().unwrap();
+    assert_eq!((map.len(), map.map(0), map.map(1)), (2, 1, 0));
+    let store = colr.variation_store().unwrap().unwrap();
+    assert_eq!(store.item_data(0).unwrap().item_count, 2);
+}
+
+#[test]
+fn colr_sentinel_only_map_repeats_its_last_entry_without_a_store() {
+    let mut table = colr_with_alpha_store();
+    table[30..34].fill(0);
+    let offset = table.len() as u32;
+    table[26..30].copy_from_slice(&offset.to_be_bytes());
+    // A single 32-bit entry maps every source index to NO_VARIATION.
+    table.extend_from_slice(&[0, 0x3f, 0, 1, 255, 255, 255, 255]);
+    let input = font_with(vec![(b"COLR", table), (b"CPAL", cpal_table(false))]);
+    let font = Font::new(&input, 0).unwrap();
+    let result = subset(&font, &chars("AB")).unwrap();
+    let table = out_table(&result, b"COLR").unwrap();
+    let colr = Colr::new(&table).unwrap();
+    assert!(colr.variation_store().unwrap().is_none());
+    let map = colr.var_index_map().unwrap().unwrap();
+    assert_eq!((map.len(), map.map(0), map.map(1)), (1, u32::MAX, u32::MAX));
+}
+
+#[test]
+fn colr_empty_selection_drops_valid_variation_data() {
+    let mut table = colr_with_alpha_store();
+    let input = font_with(vec![(b"COLR", table.clone()), (b"CPAL", cpal_table(false))]);
+    let font = Font::new(&input, 0).unwrap();
+    let result = subset(&font, &chars("Z")).unwrap();
+    assert_eq!(out_table(&result, b"COLR").unwrap(), vec![0; 14]);
+    table[30..34].copy_from_slice(&u32::MAX.to_be_bytes());
+    let malformed = font_with(vec![(b"COLR", table), (b"CPAL", cpal_table(false))]);
+    let font = Font::new(&malformed, 0).unwrap();
+    assert!(subset(&font, &chars("Z")).is_err());
 }
 
 /// CBDT with 3 image blocks for 'A', 'B' and 'C', and CBLC with one strike
