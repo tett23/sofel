@@ -318,18 +318,17 @@ fn adr0027_i03_freetype_bearings_and_face_metrics_at_all_corpus_locations() {
                         }
                         failures += 1;
                     }
-                    if let Some(reference_tsb) = reference_tsb {
-                        if let Some(actual_tsb) = instance.ft_top_side_bearing(glyph, 0) {
-                            if i64::from(actual_tsb) != reference_tsb {
-                                if verbose || failures < 100 {
-                                    eprintln!(
-                                        "{id}#{index}@{}:ft:top_side_bearing:{}: FT {reference_tsb}, sofel {actual_tsb}",
-                                        position.id, glyph.0
-                                    );
-                                }
-                                failures += 1;
-                            }
+                    if let Some(reference_tsb) = reference_tsb
+                        && let Some(actual_tsb) = instance.ft_top_side_bearing(glyph, 0)
+                        && i64::from(actual_tsb) != reference_tsb
+                    {
+                        if verbose || failures < 100 {
+                            eprintln!(
+                                "{id}#{index}@{}:ft:top_side_bearing:{}: FT {reference_tsb}, sofel {actual_tsb}",
+                                position.id, glyph.0
+                            );
                         }
+                        failures += 1;
                     }
                 }
                 checked += 1;
