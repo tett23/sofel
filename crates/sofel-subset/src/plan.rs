@@ -208,20 +208,10 @@ fn layout_unsupported(
             reason: "the GDEF item variation store (ADR 0022 stage 10)",
         });
     }
-    // GPOS and MATH VariationIndex values still refer to the GDEF store
-    // when GDEF is explicitly dropped, including when copied unchanged.
+    // A copied MATH table needs no remapping even when GDEF is dropped.
+    let math_subset = retained(b"MATH") && !no_subset.contains(Tag::new(b"MATH").to_u32());
     if !pinned
-        && gpos_may_reference_store
-        && font
-            .table(Tag::new(b"GDEF"))
-            .is_some_and(layout::gdef::has_var_store)
-    {
-        return Err(SubsetError::Unsupported {
-            tag: Tag::new(b"GPOS"),
-            reason: "GPOS with a GDEF item variation store (ADR 0022 stage 10)",
-        });
-    }
-    if !pinned
+        && math_subset
         && math_may_reference_store
         && font
             .table(Tag::new(b"GDEF"))

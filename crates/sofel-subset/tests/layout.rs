@@ -338,9 +338,9 @@ fn gdef_store_with_gpos_variation_index_remains_unsupported() {
     let copied_gpos_without_gdef = chars("A")
         .map_set(SetKind::NoSubsetTables, |set| set.add(Tag::new(b"GPOS").to_u32()))
         .map_set(SetKind::DropTables, |set| set.add(Tag::new(b"GDEF").to_u32()));
-    assert!(
-        matches!(subset(&font, &copied_gpos_without_gdef), Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GPOS"))
-    );
+    let out = subset(&font, &copied_gpos_without_gdef).unwrap();
+    assert!(out_table(&out, b"GDEF").is_none());
+    assert_eq!(out_table(&out, b"GPOS"), out_table(&data, b"GPOS"));
 }
 
 #[test]
@@ -360,9 +360,9 @@ fn gdef_store_with_math_variation_index_remains_unsupported() {
     let copied_math_without_gdef = chars("A")
         .map_set(SetKind::NoSubsetTables, |set| set.add(Tag::new(b"MATH").to_u32()))
         .map_set(SetKind::DropTables, |set| set.add(Tag::new(b"GDEF").to_u32()));
-    assert!(
-        matches!(subset(&font, &copied_math_without_gdef), Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"MATH"))
-    );
+    let out = subset(&font, &copied_math_without_gdef).unwrap();
+    assert!(out_table(&out, b"GDEF").is_none());
+    assert_eq!(out_table(&out, b"MATH"), out_table(&data, b"MATH"));
 }
 
 #[test]
