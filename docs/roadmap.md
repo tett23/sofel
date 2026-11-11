@@ -24,9 +24,6 @@ FreeType の丸めの順序、係数のキャッシュの同一性、空の座�
 ステータスは採択（未実装）である。
 [ADR 0027](adr/0027-variable-fonts.md) と [ADR 0029](adr/0029-variation-deltas.md) の本文は変更していない。
 
-### 土台となる [ADR 0001](adr/0001-project-goal-and-scope.md)、[0003](adr/0003-crate-layers.md)、[0005](adr/0005-conformance-tests.md)、[0006](adr/0006-performance-measurement.md)
-
-[ADR 0001](adr/0001-project-goal-and-scope.md)、[ADR 0003](adr/0003-crate-layers.md)、[ADR 0005](adr/0005-conformance-tests.md)、[ADR 0006](adr/0006-performance-measurement.md) のステータスは、いまも採択（未実装）である。[ADR 0001](adr/0001-project-goal-and-scope.md) と [ADR 0003](adr/0003-crate-layers.md) は、プロジェクト全体の目標とクレートの層を定めており、段階が進むたびに部分的に実装されてきた。ステータスを採択に変える条件は、ADR にまだ書かれていない。ほかの項のうち、段階の番号（4段階目、7段階目、8段階目など）で参照しているものは、すべて [ADR 0001](adr/0001-project-goal-and-scope.md) の段階を指す。これらを採択にするには、どの段階まで終えたら完了とするかを、利用者が決める必要がある。
 
 ### [ADR 0020](adr/0020-shaping-foundation.md): シェーピングの土台
 

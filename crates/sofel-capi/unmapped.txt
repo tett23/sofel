@@ -9,6 +9,13 @@ sofel_font::Font::head Returns a sofel-read view of head; C reads the table with
 sofel_font::Font::instance C coordinate-dependent queries pair a font and location argument directly; those queries follow in the ADR 0027 query PR.
 sofel_font::Font::default_instance A NULL location will select the static default in C coordinate-dependent queries in the ADR 0027 query PR.
 sofel_font::var::Arith::* Generic arithmetic policy used internally to evaluate variation tables, without a direct C operation (ADR 0029).
+sofel_font::var::Instance::item_delta Generic variation-table evaluation is an internal building block; the C API will expose coordinate-dependent font values rather than a raw store row (ADR 0029).
+sofel_font::var::Instance::font Gives Rust callers the font paired with an Instance; C receives that font as sofel_font_t.
+sofel_font::var::Instance::location Gives Rust callers the normalized location; C passes its sofel_location_t to coordinate-dependent queries.
+sofel_font::var::Instance::apply_gvar_hb Internal HarfBuzz glyph point evaluation; C gets the resulting coordinate-dependent font values (ADR 0030).
+sofel_font::var::Instance::apply_gvar_ft Internal FreeType glyph point evaluation; C gets the resulting coordinate-dependent outline (ADR 0030).
+sofel_font::var::gvar::apply_hb Internal HarfBuzz gvar point evaluation; C gets the resulting font values through coordinate-dependent queries (ADR 0030).
+sofel_font::var::gvar::apply_ft Internal FreeType gvar point evaluation; C gets the resulting outline through sofel_outline_load and sofel_outline_draw (ADR 0030).
 sofel_font::var::Location::default_ref The NULL location argument will represent the static default for C coordinate-dependent queries in the ADR 0027 query PR.
 sofel_font::var::StoreScalars::* Internal cached variation-region coefficients, without a direct C operation (ADR 0029).
 sofel_font::var::map_float Internal avar interpolation helper, without a direct C operation (ADR 0027).
@@ -176,3 +183,5 @@ sofel_subset::RangeSet::remove_range A loop of sofel_subset_input_set_remove ove
 sofel_subset::RangeSet::truncate As sofel_subset::RangeSet::remove_range, for every member from a value on (ADR 0022).
 sofel_subset::RangeSet::union A loop of sofel_subset_input_set_add over the other set's members (ADR 0022).
 sofel_font::var::Instance::font C callers already hold the font paired with the location.
+sofel_color::RawPaintGraph::* The reusable raw paint table view; C reads the bytes with sofel_font_table.
+sofel_color::FtPaintGraph::* The location-resolved raw COLR tree; the C paint API exposes the walked commands.
