@@ -187,3 +187,42 @@ fn adr0040_i1_i2_error_then_normal_outline() {
         "face 0\nnum_glyphs 2\nglyph 0\nerror 8\nglyph 1\nM 1 2\nZ\noverlap 0\ncbox 1 2 1 2\nend\n",
     );
 }
+
+#[test]
+fn adr0027_variable_benchmark_outlines_match_every_coordinate() {
+    let root = paths::testdata().join("harfbuzz/test/subset/data/fonts");
+    for name in [
+        "RobotoFlex-Variable.ttf",
+        "SourceSerifVariable-Roman.ttf",
+        "AdobeVFPrototype.otf",
+    ] {
+        let path = root.join(name);
+        let bytes = std::fs::read(&path).unwrap();
+        let font = Font::new(&bytes, 0).unwrap();
+        let weight = sofel_font::var::Variation::parse("wght=500").unwrap();
+        let location = sofel_font::var::Location::new(&font, None, &[weight]);
+        let outlines = sofel_outline::Outlines::new(font.instance(&location));
+        let mut scratch = Scratch::default();
+        for size in SIZES {
+            let scale = scale_for(&font, size);
+            let mut glyphs = 0;
+            let ran = ft_stream::reference(
+                Command::new(paths::ft_dump())
+                    .args(["--outline", size, "--variations=wght=500"])
+                    .arg(&path),
+                |face, glyph, expected| {
+                    assert_eq!(face, 0);
+                    let ours = sofel_glyph(&outlines, glyph, scale, &mut scratch);
+                    assert_eq!(
+                        ours, expected,
+                        "{name}#{face}:outline:{size}:{glyph}@wght=500"
+                    );
+                    glyphs += 1;
+                },
+            )
+            .unwrap();
+            assert!(ran);
+            assert_eq!(glyphs, font.num_glyphs(), "{name} at {size}");
+        }
+    }
+}
