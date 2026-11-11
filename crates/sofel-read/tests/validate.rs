@@ -92,6 +92,31 @@ fn maxp_and_hhea_diagnostics() {
 }
 
 #[test]
+fn inv2_truncated_wide_metric_count_diagnostics() {
+    for (tag, validate) in [
+        (
+            b"HHEA",
+            hhea::validate as fn(&[u8], CountWidth, &mut dyn FnMut(Diagnostic)),
+        ),
+        (
+            b"VHEA",
+            sofel_read::vhea::validate as fn(&[u8], CountWidth, &mut dyn FnMut(Diagnostic)),
+        ),
+    ] {
+        for len in 34..38 {
+            let mut bytes = hhea(0);
+            bytes.resize(len, 0);
+            let ds = collect(|report| validate(&bytes, CountWidth::U24, report));
+            assert_eq!(ds.len(), 1);
+            assert_eq!(ds[0].table, Tag::new(tag));
+            assert!(
+                matches!(ds[0].kind, sofel_read::Kind::Truncated { needed: 38, available } if available == len as u32)
+            );
+        }
+    }
+}
+
+#[test]
 fn hmtx_diagnostics() {
     let data = hmtx(&[(500, 1)], &[2]);
     let ds = collect(|r| hmtx::validate(&data, 0, 2, r));

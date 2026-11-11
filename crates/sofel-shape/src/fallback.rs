@@ -110,7 +110,7 @@ fn clamp(v: i64) -> i32 {
 
 /// `position_mark`.
 fn position_mark(
-    font: &ShapeFont<'_, '_>,
+    font: &ShapeFont<'_, '_, '_, '_>,
     buffer: &mut Buffer,
     base: &mut GlyphExtents,
     i: usize,
@@ -187,7 +187,7 @@ fn position_mark(
 /// `position_around_base`.
 fn position_around_base(
     plan: &ShapePlan<'_>,
-    font: &ShapeFont<'_, '_>,
+    font: &ShapeFont<'_, '_, '_, '_>,
     buffer: &mut Buffer,
     base: usize,
     end: usize,
@@ -282,7 +282,7 @@ fn position_around_base(
 /// `position_cluster`.
 fn position_cluster(
     plan: &ShapePlan<'_>,
-    font: &ShapeFont<'_, '_>,
+    font: &ShapeFont<'_, '_, '_, '_>,
     buffer: &mut Buffer,
     start: usize,
     end: usize,
@@ -317,7 +317,7 @@ fn position_cluster(
 /// `_hb_ot_shape_fallback_mark_position`.
 pub(crate) fn position_marks(
     plan: &ShapePlan<'_>,
-    font: &ShapeFont<'_, '_>,
+    font: &ShapeFont<'_, '_, '_, '_>,
     buffer: &mut Buffer,
     adjust: bool,
 ) {
@@ -334,7 +334,7 @@ pub(crate) fn position_marks(
 }
 
 /// `_hb_ot_shape_fallback_spaces`.
-pub(crate) fn fallback_spaces(font: &ShapeFont<'_, '_>, buffer: &mut Buffer) {
+pub(crate) fn fallback_spaces(font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut Buffer) {
     let horizontal = buffer.direction.is_horizontal();
     let invisible = buffer.invisible;
     let (xs, ys) = (i64::from(font.x_scale()), i64::from(font.y_scale()));
