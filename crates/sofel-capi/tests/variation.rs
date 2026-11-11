@@ -565,6 +565,13 @@ fn i03_h_advance_accepts_location() {
         OK
     );
     assert_eq!(advance, 500);
+    let mut ft_advance = u16::MAX;
+    // SAFETY: font and location are live; advance is writable.
+    assert_eq!(
+        unsafe { sofel_font_ft_h_advance(font, location, 0, &mut ft_advance) },
+        OK
+    );
+    assert_eq!(ft_advance, 500);
     let mut bearing = i16::MIN;
     // SAFETY: font and location are live; bearing is writable.
     assert_eq!(
@@ -613,6 +620,13 @@ fn i03_hvar_advance_preserves_unsigned_range_in_c_abi() {
         OK
     );
     assert_eq!(advance, 65_556);
+    let mut ft_advance = u16::MAX;
+    // SAFETY: font and location are live; advance is writable.
+    assert_eq!(
+        unsafe { sofel_font_ft_h_advance(font, location, 0, &mut ft_advance) },
+        OK
+    );
+    assert_eq!(ft_advance, 20);
     // SAFETY: font remains live until scale destruction.
     let scale = unsafe { sofel_scale_create(font, 1000, 1000, &mut error) };
     assert_eq!(error, OK);
@@ -659,6 +673,13 @@ fn i03_vvar_advance_uses_location_in_c_abi() {
         OK
     );
     assert_eq!(ft_advance, 511);
+    let mut top = i16::MIN;
+    // SAFETY: font and location are live; top is writable.
+    assert_eq!(
+        unsafe { sofel_font_ft_top_side_bearing(font, location, 0, 123, &mut top) },
+        OK
+    );
+    assert_eq!(top, 0);
     let mut origin = [i32::MIN; 2];
     // SAFETY: font and location are live; origin is writable.
     assert_eq!(
@@ -1149,12 +1170,12 @@ fn adr0027_i03_location_changes_glyf_outline_and_box() {
         (
             default_len,
             default_bitmap_box,
-            &default_pixels[..default_len]
+            default_pixels.get(..default_len)
         ),
         (
             located_len,
             located_bitmap_box,
-            &located_pixels[..located_len]
+            located_pixels.get(..located_len)
         )
     );
     // SAFETY: handles are live and owned.
