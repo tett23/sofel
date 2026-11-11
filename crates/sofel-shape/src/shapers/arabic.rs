@@ -315,19 +315,23 @@ pub(crate) fn setup_masks_plan(ap: &ArabicPlan, buffer: &mut Buffer) {
 }
 
 /// `setup_masks_arabic`.
-fn setup_masks(plan: &ShapePlan<'_>, buffer: &mut Buffer, _: &ShapeFont<'_, '_>) {
+fn setup_masks(plan: &ShapePlan<'_>, buffer: &mut Buffer, _: &ShapeFont<'_, '_, '_, '_>) {
     if let ShaperData::Arabic(ap) = &plan.data {
         setup_masks_plan(ap, buffer);
     }
 }
 
 /// `deallocate_buffer_var`: nothing to do with named fields.
-fn deallocate_buffer_var(_: &ShapePlan<'_>, _: &ShapeFont<'_, '_>, _: &mut Buffer) -> bool {
+fn deallocate_buffer_var(_: &ShapePlan<'_>, _: &ShapeFont<'_, '_, '_, '_>, _: &mut Buffer) -> bool {
     false
 }
 
 /// `arabic_fallback_shape`.
-fn fallback_shape(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_>, buffer: &mut Buffer) -> bool {
+fn fallback_shape(
+    plan: &ShapePlan<'_>,
+    font: &ShapeFont<'_, '_, '_, '_>,
+    buffer: &mut Buffer,
+) -> bool {
     let ShaperData::Arabic(ap) = &plan.data else {
         return false;
     };
@@ -342,7 +346,7 @@ fn fallback_shape(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_>, buffer: &mut B
 
 /// `record_stch`: after `stch`, the multiplied glyphs are tiles, odd
 /// components repeating.
-fn record_stch(plan: &ShapePlan<'_>, _: &ShapeFont<'_, '_>, buffer: &mut Buffer) -> bool {
+fn record_stch(plan: &ShapePlan<'_>, _: &ShapeFont<'_, '_, '_, '_>, buffer: &mut Buffer) -> bool {
     let ShaperData::Arabic(ap) = &plan.data else {
         return false;
     };
@@ -393,7 +397,7 @@ const STCH_MAX_GLYPHS: u32 = 256;
 
 /// `apply_stch`: the tiles of each stretch repeated to fill the rest of
 /// the word, in two passes (measure, then cut).
-fn apply_stch(buffer: &mut Buffer, font: &ShapeFont<'_, '_>) {
+fn apply_stch(buffer: &mut Buffer, font: &ShapeFont<'_, '_, '_, '_>) {
     if buffer.scratch_flags & HAS_STCH == 0 {
         return;
     }
@@ -570,7 +574,7 @@ fn apply_stch(buffer: &mut Buffer, font: &ShapeFont<'_, '_>) {
 }
 
 /// `postprocess_glyphs_arabic`.
-fn postprocess_glyphs(_: &ShapePlan<'_>, buffer: &mut Buffer, font: &ShapeFont<'_, '_>) {
+fn postprocess_glyphs(_: &ShapePlan<'_>, buffer: &mut Buffer, font: &ShapeFont<'_, '_, '_, '_>) {
     apply_stch(buffer, font);
 }
 

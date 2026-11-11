@@ -1602,12 +1602,17 @@ fn shape_case(
         .split(',')
         .filter_map(|f| Feature::parse(f.as_bytes()))
         .collect();
-    let plan = ShapePlan::new(&font, props, &features);
+    let plan = ShapePlan::new(font.default_instance(), props, &features);
     let boxes = |g: GlyphId| {
         sofel_color::glyph_extents(&outlines, g.0, &mut sofel_color::Scratch::default())
     };
-    let glyphs =
-        sofel_shape::shape_with_extents(&font, &Scale::unscaled(&font), &plan, buffer, &boxes);
+    let glyphs = sofel_shape::shape_with_extents(
+        font.default_instance(),
+        &Scale::unscaled(&font),
+        &plan,
+        buffer,
+        &boxes,
+    );
     (
         glyphs.glyph_infos().to_vec(),
         glyphs.glyph_positions().to_vec(),

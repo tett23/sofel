@@ -100,7 +100,7 @@ const RD: [(u32, u32, u32); 2] = [
 ];
 
 /// `thai_pua_shape`.
-fn pua_shape(u: u32, action: Action, font: &ShapeFont<'_, '_>) -> u32 {
+fn pua_shape(u: u32, action: Action, font: &ShapeFont<'_, '_, '_, '_>) -> u32 {
     let mappings: &[(u32, u32, u32)] = match action {
         Action::Nop => return u,
         Action::Sd => &SD,
@@ -183,7 +183,7 @@ fn below_edge(s: Below, m: Mark) -> (Action, Below) {
 }
 
 /// `do_thai_pua_shaping`.
-fn pua_shaping(buffer: &mut Buffer, font: &ShapeFont<'_, '_>) {
+fn pua_shaping(buffer: &mut Buffer, font: &ShapeFont<'_, '_, '_, '_>) {
     let mut above = above_start(Consonant::None);
     let mut below = below_start(Consonant::None);
     let mut base = 0usize;
@@ -220,7 +220,7 @@ fn is_above_base_mark(u: u32) -> bool {
 }
 
 /// `preprocess_text_thai`.
-fn preprocess_text(plan: &ShapePlan<'_>, buffer: &mut Buffer, font: &ShapeFont<'_, '_>) {
+fn preprocess_text(plan: &ShapePlan<'_>, buffer: &mut Buffer, font: &ShapeFont<'_, '_, '_, '_>) {
     buffer.clear_output();
     buffer.idx = 0;
     let count = buffer.len;

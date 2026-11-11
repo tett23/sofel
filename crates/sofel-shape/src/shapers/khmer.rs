@@ -122,7 +122,7 @@ fn khmer_plan<'p>(plan: &'p ShapePlan<'_>) -> Option<&'p KhmerPlan> {
 
 /// `setup_masks_khmer`: the category of each character; the masks are
 /// set when reordering.
-fn setup_masks(_: &ShapePlan<'_>, buffer: &mut Buffer, _: &ShapeFont<'_, '_>) {
+fn setup_masks(_: &ShapePlan<'_>, buffer: &mut Buffer, _: &ShapeFont<'_, '_, '_, '_>) {
     for info in buffer.infos_mut() {
         let [category, _] = indic_categories(info.codepoint).to_le_bytes();
         info.shaper_category = category;
@@ -148,7 +148,7 @@ fn find_syllables(buffer: &mut Buffer) {
 }
 
 /// `setup_syllables_khmer`.
-fn setup_syllables(_: &ShapePlan<'_>, _: &ShapeFont<'_, '_>, buffer: &mut Buffer) -> bool {
+fn setup_syllables(_: &ShapePlan<'_>, _: &ShapeFont<'_, '_, '_, '_>, buffer: &mut Buffer) -> bool {
     find_syllables(buffer);
     for_each_syllable(buffer, |b, start, end| b.unsafe_to_break(start, end));
     false
@@ -199,7 +199,7 @@ fn reorder_consonant_syllable(kp: &KhmerPlan, buffer: &mut Buffer, start: usize,
 
 /// `reorder_khmer`: the dotted circles, then each consonant syllable
 /// and broken cluster reordered.
-fn reorder(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_>, buffer: &mut Buffer) -> bool {
+fn reorder(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut Buffer) -> bool {
     let ret = insert_dotted_circles(
         font,
         buffer,
@@ -223,7 +223,7 @@ fn reorder(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_>, buffer: &mut Buffer) 
 
 /// `decompose_khmer`: the split vowels without a Unicode decomposition
 /// start with U+17C1.
-fn decompose(_: &NormalizeContext<'_, '_, '_>, ab: u32) -> Option<(u32, u32)> {
+fn decompose(_: &NormalizeContext<'_, '_, '_, '_, '_>, ab: u32) -> Option<(u32, u32)> {
     match ab {
         0x17BE | 0x17BF | 0x17C0 | 0x17C4 | 0x17C5 => Some((0x17C1, ab)),
         _ => sofel_unicode::decompose(ab),
@@ -231,7 +231,7 @@ fn decompose(_: &NormalizeContext<'_, '_, '_>, ab: u32) -> Option<(u32, u32)> {
 }
 
 /// `compose_khmer`: split vowels are not recomposed.
-fn compose(_: &NormalizeContext<'_, '_, '_>, a: u32, b: u32) -> Option<u32> {
+fn compose(_: &NormalizeContext<'_, '_, '_, '_, '_>, a: u32, b: u32) -> Option<u32> {
     if crate::unicode::is_mark_category(sofel_unicode::general_category(a)) {
         return None;
     }
