@@ -14,7 +14,6 @@ hb-dump/glyphs/AdobeVFPrototype.otf  # stage:var
 hb-dump/glyphs/COLRv1-alpha.ttf  # stage:var
 hb-dump/glyphs/Comfortaa-Regular-new.ttf  # stage:var
 hb-dump/glyphs/Fraunces.ttf  # stage:var
-hb-dump/glyphs/ImplicitHVAR.ttf  # stage:var
 hb-dump/glyphs/MPLUS1-Variable.ttf  # stage:var
 hb-dump/glyphs/RobotoFlex-Variable.ttf  # stage:var
 hb-dump/golem/32bit_var_store.otf:keep  # stage:var
@@ -45,10 +44,6 @@ hb-dump/golem/Fraunces.ttf:keep  # stage:var
 hb-dump/golem/Fraunces.ttf:keep+prepared  # stage:var
 hb-dump/golem/Handjet.ttf:keep  # stage:var
 hb-dump/golem/Handjet.ttf:keep+prepared  # stage:var
-hb-dump/golem/IUP-large-contour.ttf:keep  # stage:var
-hb-dump/golem/IUP-large-contour.ttf:keep+prepared  # stage:var
-hb-dump/golem/ImplicitHVAR.ttf:keep  # stage:var
-hb-dump/golem/ImplicitHVAR.ttf:keep+prepared  # stage:var
 hb-dump/golem/KalniaGlaze.ttf:keep  # stage:var
 hb-dump/golem/KalniaGlaze.ttf:keep+prepared  # stage:var
 hb-dump/golem/KalniaGlaze.ttf:pin  # stage:var
@@ -91,8 +86,6 @@ hb-dump/golem/RobotoFlex-Variable.ABC.ttf:keep  # stage:var
 hb-dump/golem/RobotoFlex-Variable.ABC.ttf:keep+prepared  # stage:var
 hb-dump/golem/RobotoFlex-Variable.ttf:keep  # stage:var
 hb-dump/golem/RobotoFlex-Variable.ttf:keep+prepared  # stage:var
-hb-dump/golem/RobotoMono.ttf:keep  # stage:var
-hb-dump/golem/RobotoMono.ttf:keep+prepared  # stage:var
 hb-dump/golem/SourceSerif4Variable-Roman-HelloWorld.otf:keep  # stage:var
 hb-dump/golem/SourceSerif4Variable-Roman-HelloWorld.otf:keep+prepared  # stage:var
 hb-dump/golem/SourceSerif4Variable-Roman_subset.otf:keep  # stage:var
