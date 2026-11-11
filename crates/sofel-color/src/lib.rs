@@ -45,6 +45,8 @@
 extern crate alloc;
 
 mod extents;
+mod ft_paint;
+pub use ft_paint::{FtPaint, FtPaintGraph};
 mod paint;
 mod palette;
 mod raw;
@@ -64,7 +66,7 @@ pub use palette::{
     PaintOptions, Palette, find_palette, palette_color_name_id, palette_colors, palette_count,
     palette_entry_count, palette_flags, palette_name_id,
 };
-pub use raw::{PaintRef, base_paint, clip_box, layer_paint, layer_paint_count};
+pub use raw::{PaintRef, RawPaintGraph, base_paint, clip_box, layer_paint, layer_paint_count};
 pub use record::{PaintCommand, RecordedBrush, Recording};
 pub use sofel_outline::font::read::colr::{
     Affine, ClipBox, ColorLine as RawColorLine, ColorStop as RawColorStop, Paint,
