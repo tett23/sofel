@@ -403,6 +403,19 @@ fn colr_sentinel_only_map_repeats_its_last_entry_without_a_store() {
     assert_eq!((map.len(), map.map(0), map.map(1)), (1, u32::MAX, u32::MAX));
 }
 
+#[test]
+fn colr_empty_selection_drops_valid_variation_data() {
+    let mut table = colr_with_alpha_store();
+    let input = font_with(vec![(b"COLR", table.clone()), (b"CPAL", cpal_table(false))]);
+    let font = Font::new(&input, 0).unwrap();
+    let result = subset(&font, &chars("Z")).unwrap();
+    assert_eq!(out_table(&result, b"COLR").unwrap(), vec![0; 14]);
+    table[30..34].copy_from_slice(&u32::MAX.to_be_bytes());
+    let malformed = font_with(vec![(b"COLR", table), (b"CPAL", cpal_table(false))]);
+    let font = Font::new(&malformed, 0).unwrap();
+    assert!(subset(&font, &chars("Z")).is_err());
+}
+
 /// CBDT with 3 image blocks for 'A', 'B' and 'C', and CBLC with one strike
 /// whose format `index_format` subtable covers them, plus a strike for
 /// 'Z' only.
