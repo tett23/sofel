@@ -162,7 +162,6 @@ sofel_shape::Feature::new A struct literal in C: sofel_feature_t with start SOFE
 sofel_shape::Feature::is_global Two comparisons in C, with SOFEL_FEATURE_GLOBAL_START and SOFEL_FEATURE_GLOBAL_END.
 sofel_shape::UnicodeBuffer::is_empty sofel_buffer_length gives 0.
 sofel_shape::GlyphBuffer::is_empty sofel_buffer_length gives 0.
-sofel_shape::Scale::new The pixel sizes for Device tables; sofel_shape takes the sofel_scale_t of sofel_scale_create without them (x_ppem and y_ppem 0, HarfBuzz's default when hb_font_set_ppem is not called), and Golem, the first C caller, shapes in font units.
 sofel_shape::ShapePlan::key What the caller passed to sofel_shape_plan_create, which a C caller keeps to find its plans again.
 sofel_shape::ShapePlan::chosen_scripts The plan's map, for sofel's conformance tests against hb-dump; HarfBuzz keeps it in the internal hb_ot_shape_plan_t.
 sofel_shape::ShapePlan::feature_masks The plan's map, for sofel's conformance tests against hb-dump; HarfBuzz keeps it in the internal hb_ot_map_t.
