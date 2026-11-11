@@ -1,5 +1,5 @@
-//! BASE subsetting (`hb-ot-layout-base-table.hh`), without a variation
-//! store.
+//! BASE subsetting (`hb-ot-layout-base-table.hh`), including removal of the
+//! variation store when every axis is pinned to its default.
 
 use sofel_font::Font;
 use sofel_font::read::Tag;
@@ -198,7 +198,10 @@ pub(crate) fn subset(
     let mut ret = false;
     if version >= 0x0001_0001 {
         c.s.u32(0);
-        if d.u32(8) != 0 {
+        if p.var.instancing() && p.var.all_axes_pinned() {
+            // BASE::subset_varstore keeps the null offset, even with no Axis.
+            ret = true;
+        } else if d.u32(8) != 0 {
             return Err(SubsetError::Unsupported {
                 tag,
                 reason: "the BASE item variation store (ADR 0022 stage 10)",
