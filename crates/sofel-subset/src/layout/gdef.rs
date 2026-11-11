@@ -96,9 +96,13 @@ fn retained_variation_indices(src: &[u8], glyphs: &BitSet) -> Option<RetainedVar
                 continue;
             };
             for j in 0..ligature.len() {
-                if let Some(CaretValue::Device(_, Some(device))) = ligature.caret(j).ok()?
-                    && device.delta_format() == 0x8000
-                {
+                if let Some(CaretValue::Device(_, Some(device))) = ligature.caret(j).ok()? {
+                    if matches!(device.delta_format(), 1..=3) {
+                        continue;
+                    }
+                    if device.delta_format() != 0x8000 {
+                        return None;
+                    }
                     let index =
                         (u32::from(device.start_size()) << 16) | u32::from(device.end_size());
                     let outer = u16::try_from(index >> 16).ok()?;

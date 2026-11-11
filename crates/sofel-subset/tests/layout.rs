@@ -459,6 +459,23 @@ fn gdef_store_remaps_second_outer_subtable_to_zero() {
     );
 }
 
+#[test]
+fn gdef_store_with_unknown_caret_device_remains_unsupported() {
+    let mut gdef = gdef_with_referenced_store(&[2]);
+    let at = gdef
+        .windows(6)
+        .position(|bytes| bytes == [0, 0, 0, 2, 0x80, 0])
+        .unwrap();
+    gdef.get_mut(at + 4..at + 6)
+        .unwrap()
+        .copy_from_slice(&4u16.to_be_bytes());
+    let data = font_with(vec![(b"GDEF", gdef)]);
+    let font = Font::new(&data, 0).unwrap();
+    assert!(
+        matches!(subset(&font, &chars("A")), Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF"))
+    );
+}
+
 fn glyph_class_def(out: &[u8]) -> Vec<u8> {
     let gdef = out_table(out, b"GDEF").unwrap();
     let cd = follow(&gdef, 4);
