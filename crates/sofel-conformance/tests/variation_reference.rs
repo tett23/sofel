@@ -615,3 +615,89 @@ fn assert_location(path: &Path, index: u32, font: &Font<'_>, loc: &Location<'_>,
         }
     }
 }
+
+fn delta_indices(font: &Font<'_>) -> Vec<(sofel_font::var::StoreKind, u16, u16)> {
+    use sofel_font::var::StoreKind;
+    use sofel_read::{gdef::Gdef, hvar::Hvar, mvar::Mvar};
+    let mut indices = Vec::new();
+    if let Some(mvar) = font
+        .table(Tag::new(b"MVAR"))
+        .and_then(|bytes| Mvar::new(bytes).ok())
+    {
+        for record in (0..mvar.record_count()).filter_map(|i| mvar.record(i)) {
+            indices.push((StoreKind::Mvar, record.outer, record.inner));
+        }
+    }
+    if let Some(map) = font
+        .table(Tag::new(b"HVAR"))
+        .and_then(|bytes| Hvar::new(bytes).ok()?.advance_map().ok())
+    {
+        for glyph in 0..font.num_glyphs() {
+            let index = map.map_or(glyph, |map| map.map(glyph));
+            let [a, b, c, d] = index.to_be_bytes();
+            indices.push((
+                StoreKind::Hvar,
+                u16::from_be_bytes([a, b]),
+                u16::from_be_bytes([c, d]),
+            ));
+        }
+    }
+    if let Some(store) = font
+        .table(Tag::new(b"GDEF"))
+        .and_then(|bytes| Gdef::new(bytes).ok()?.variation_store().ok().flatten())
+    {
+        for outer in 0..store.data_count() {
+            if let Some(data) = store.item_data(outer) {
+                indices.extend((0..data.item_count).map(|inner| (StoreKind::Gdef, outer, inner)));
+            }
+        }
+    }
+    indices
+}
+
+#[test]
+fn adr0029_corpus_delta_digest() {
+    use sofel_font::var::{Ft, HbF32};
+    use sofel_read::sfnt::FontFile;
+    let mut digest = 0xcbf2_9ce4_8422_2325u64;
+    let mut rows = 0u64;
+    for path in variable_font_paths(&paths::testdata()) {
+        let bytes = std::fs::read(path).unwrap();
+        let faces = match FontFile::new(&bytes) {
+            Ok(FontFile::Collection(c)) => c.num_fonts(),
+            Ok(FontFile::Sfnt(_)) => 1,
+            Err(_) => continue,
+        };
+        for index in 0..faces {
+            let Ok(font) = Font::new(&bytes, index) else {
+                continue;
+            };
+            if font.var_axes().next().is_none() {
+                continue;
+            }
+            let indices = delta_indices(&font);
+            for pos in variation_locations::positions(&font) {
+                let location = pos.location(&font);
+                let instance = font.instance(&location);
+                for &(kind, outer, inner) in &indices {
+                    let hb = instance.item_delta::<HbF32>(kind, outer, inner).unwrap();
+                    let bits = if hb.is_nan() {
+                        0x7fc0_0000
+                    } else {
+                        hb.to_bits()
+                    };
+                    let ft = instance.item_delta::<Ft>(kind, outer, inner).unwrap();
+                    for byte in bits.to_le_bytes().into_iter().chain(ft.to_le_bytes()) {
+                        digest = (digest ^ u64::from(byte)).wrapping_mul(0x100_0000_01b3);
+                    }
+                    rows += 1;
+                }
+            }
+        }
+    }
+    assert!(rows > 0);
+    assert_eq!(
+        format!("{digest:016x} {rows}"),
+        include_str!("../../../conformance/var-deltas.digest").trim()
+    );
+}
