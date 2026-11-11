@@ -182,8 +182,8 @@ fn subsetting_agrees_with_harfbuzz() {
             ],
         ));
     }
-    let no_subrs = paths::testdata()
-        .join("harfbuzz/test/api/fonts/AdobeVFPrototype.ac.nosubrs.otf");
+    let no_subrs =
+        paths::testdata().join("harfbuzz/test/api/fonts/AdobeVFPrototype.ac.nosubrs.otf");
     cases.push((
         "hb-dump/cff2/AdobeVFPrototype.ac.nosubrs.otf:keep".to_string(),
         vec![

@@ -4,8 +4,8 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-use sofel_font::{Font, HbCff2};
 use sofel_font::read::Tag;
+use sofel_font::{Font, HbCff2};
 
 use crate::bits::BitSet;
 use crate::cmap_accel::CmapAccel;

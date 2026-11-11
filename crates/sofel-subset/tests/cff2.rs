@@ -182,7 +182,9 @@ fn cff2_with_subroutines_remains_unsupported_without_desubroutinize() {
     let bytes = font_with_subrs(vec![vec![11]]);
     let font = Font::new(&bytes, 0).unwrap();
     let result = subset(&font, &glyphs(&[1]));
-    assert!(matches!(result, Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"CFF2")));
+    assert!(
+        matches!(result, Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"CFF2"))
+    );
 }
 
 #[test]
