@@ -49,6 +49,80 @@ fn fvar_one_axis() -> Vec<u8> {
     fvar
 }
 
+fn adr0048_phantom_width_font(base: u16, delta: i8) -> Vec<u8> {
+    let gvar = vec![
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0, // version and one axis
+        0,
+        0,
+        0,
+        24,
+        0,
+        1,
+        0,
+        0, // shared tuple offset and one glyph
+        0,
+        0,
+        0,
+        24,
+        0,
+        0,
+        0,
+        8, // glyph data offset and 16-byte glyph
+        0,
+        1,
+        0,
+        10, // one tuple and serialized data at 10
+        0,
+        6,
+        0x80,
+        0,
+        0x40,
+        0, // embedded peak at maximum weight
+        3,
+        0,
+        delta.cast_unsigned(),
+        0,
+        0,
+        0x83, // four x deltas, four zero y deltas
+    ];
+    let mut tables = sample_tables_with_glyf();
+    for (tag, bytes) in &mut tables {
+        if *tag == b"hmtx" {
+            bytes
+                .get_mut(0..2)
+                .unwrap()
+                .copy_from_slice(&base.to_be_bytes());
+        }
+    }
+    tables.push((b"fvar", fvar_one_axis()));
+    tables.push((b"gvar", gvar));
+    tables.sort_by_key(|(tag, _)| **tag);
+    sfnt(&tables)
+}
+
+#[test]
+fn adr0048_i01_i04_phantom_width_is_order_independent_and_checked() {
+    for (base, delta, expected) in [(0, -1, None), (u16::MAX, 1, None)] {
+        let bytes = adr0048_phantom_width_font(base, delta);
+        let font = Font::new(&bytes, 0).unwrap();
+        let max = Location::from_design(&font, &[1.0]);
+        let instance = font.instance(&max);
+        let first = instance.ft_h_advance(GlyphId(0));
+        let _ = instance.ft_v_advance(GlyphId(0));
+        assert_eq!(instance.ft_h_advance(GlyphId(0)), first);
+        assert_eq!(first, expected);
+        assert_eq!(font.default_instance().ft_h_advance(GlyphId(0)), Some(base));
+        assert_eq!(instance.ft_h_advance(GlyphId(28)), None);
+    }
+}
+
 #[test]
 fn adr0027_duplicate_axis_tags_keep_hb_and_ft_design_coordinates_separate() {
     let axis = fvar_one_axis().get(16..36).unwrap().to_vec();

@@ -29,38 +29,27 @@ FreeType の丸めの順序、係数のキャッシュの同一性、空の座�
 
 [ADR 0022](adr/0022-subsetting.md) は採択（未実装）で、段階ごとに実装している。PR #42 までで、レイアウトの段階などが main に入った。10段階目（gvar、GVAR、HVAR、VVAR、ピン留めなしの CFF2、GDEF、BASE、COLR の項目の変化量の記憶）は、可変フォントの [ADR 0027](adr/0027-variable-fonts.md) の読み取り部分を使って実装する。VARC は13段階目まで待つ。[ADR 0022](adr/0022-subsetting.md) のステータスを採択にする条件は、[ADR 0027](adr/0027-variable-fonts.md) の採択と、10段階目の実装である。
 
+### シェーピング、フォントの検証と描画、照合の記録
+
+次の7件は採択（未実装）である。
+
+- [ADR 0050](adr/0050-preserve-opentype-script-values.md)：OpenType タグからスクリプトを求める二つの API で、HarfBuzz が返す4バイトを保持する。
+- [ADR 0052](adr/0052-c-shaping-ppem.md)：C API で横と縦の ppem を指定できるスケール構築子を追加する。既存の呼び出しでは両軸とも0を使う。
+- [ADR 0053](adr/0053-preserve-buffer-settings-after-glyph-deserialization.md)：C API でグリフ列を読み込んだ後も、バッファをクリアして再利用するときは通常のクリアと同じ設定を引き継ぐ。
+- [ADR 0054](adr/0054-wide-metrics-header-count.md)：大文字の HHEA と VHEA のメトリクス件数を32ビットで読む。件数の欄が3バイトで途切れた場合はデータ不足とする。
+- [ADR 0055](adr/0055-rewrite-cli-color-rendering.md)：CLI の COLRv0 描画制御を独自実装に書き直し、sofel-cli の MIT 表記を維持する。画素の合成には sofel-raster の既存実装を使う。
+- [ADR 0057](adr/0057-record-unexcluded-phantom-point-check.md)：[ADR 0018](adr/0018-phantom-point-shift.md) は採択を維持する。ネイティブと wasm の両方で、グリフを除外せずに `--once` の照合を行い、結果を新しい計測記録に残す。
+
+cmap のフォーマット2と8は、通常のグリフ検索では読み、シェーピングでは HarfBuzz に合わせて対応なしとする処理を実装済みである。[仕様書](specifications.md) に両方の検索規則を記載している。
+
 ## dfont の読み取りと HarfBuzz のサニタイザの移植
 
-[ADR 0044](adr/0044-shaping-conformance-exceptions.md) で認めた差は、次の実装で解消する。各項目の設計は着手前に個別の ADR にまとめる。
+[ADR 0044](adr/0044-shaping-conformance-exceptions.md) で認めた適合テストの差を解消するため、次の2件を採択した。いずれも未実装である。
 
-- Mac のリソースフォークに入った sfnt を読み取る。[ADR 0001](adr/0001-project-goal-and-scope.md) の第8段階で `in-house/collections.tests:1` のグリフ列を HarfBuzz と照合し、通ったら `dfont` の期待失敗を削除する。
-- HarfBuzz が破損したレイアウト表のオフセットを無効にし、表を捨てるサニタイザの処理を移植する。GSUB、GPOS、GDEF の扱いを確かめ、`in-house/harfbust.tests:4`、レイアウト選択の3件、無作為な文字列のシェーピングの3件を比較する。一致した項目から `sanitize` の一覧から削除する。
+- [ADR 0058](adr/0058-dfont-face-selection.md) に従い、第8段階で、渡された dfont のバイト列から `sfnt` を取り出す。参照リストの順に既存のゼロ始まりのフェイス番号で選べるようにする。`in-house/collections.tests:1` のグリフ列が HarfBuzz と一致したら、`dfont` の期待失敗を削除する。
+- [ADR 0059](adr/0059-layout-sanitizer-diagnostics.md) に従い、GSUB、GPOS、GDEF のサニタイズを HarfBuzz 15.1.0 に合わせる。シェーピング、レイアウト選択、検証器で表の採否を共有する。`in-house/harfbust.tests:4`、レイアウト選択の3件、無作為な文字列のシェーピングの3件を照合し、一致した項目から `sanitize` の期待失敗を削除する。
 
-## 利用者の判断を待つこと
-
-次の項は、利用者の決定がないと進まない。決まれば、必要に応じて新しい ADR にする。ADR を直接書き換えない。
-
-### [ADR 0020](adr/0020-shaping-foundation.md) の細部
-
-以下は、[ADR 0020](adr/0020-shaping-foundation.md) を実装した際に、ADR と食い違った点である。どれも新しい ADR で訂正するか、実装を ADR に合わせるかを、利用者が決める。
-
-- `ot_tag_to_script` が、`Script` で表せないタグに `Script::UNKNOWN` を返す。HarfBuzz は元のタグを返す。合わせるには、`sofel-unicode` に生のタグから作る構築子が要る。
-- バッファの1要素が24バイトで、ADR の20バイトと違う（正規化が持つグリフの番号の欄が別にあるため）。[ADR 0020](adr/0020-shaping-foundation.md) の167行目の記述と実装の差を、[ADR 0020](adr/0020-shaping-foundation.md) で確かめられていない（未確認）。
-- C の `sofel_shape` は ppem を受け取らず、ppem を0として扱う。`sofel_buffer_deserialize_glyphs` はバッファの設定をリセットする。
-
-これらは、手元の報告にあった内容で、この文書の作成時にコードで再確認していない（未確認）。
-
-### [ADR 0016](adr/0016-font-and-vertical-metrics.md) と [ADR 0007](adr/0007-sfnt-read-foundation.md) の読み方
-
-cmap のフォーマット2と8について、HarfBuzz は引かないが、sofel は FreeType と同じく読む（[ADR 0010](adr/0010-font-foundation.md) の subtable の選び方）。aots のフォント2つが期待する失敗になっている。HarfBuzz に合わせるには ADR が要る。
-
-HHEA と VHEA の `numberOfLongMetrics` は、[ADR 0007](adr/0007-sfnt-read-foundation.md) に従い 24 bit で読んでいる。HarfBuzz と FreeType は 32 bit で読む。HHEA を持つテスト用フォントはない。どちらを正とするかを決める。
-
-### そのほかの判断
-
-- [ADR 0023](adr/0023-color-glyphs.md): `sofel-cli` のライセンスは MIT のままだが、`render_color` が FreeType の `FT_Render_Glyph_Internal` と `tt_face_get_colr_layer` の制御の流れをなぞっている。移植した算術は `sofel-raster`（MIT AND FTL）にある。ライセンスを変えるか、いまのまま続けるかを決める。
-- [ADR 0021](adr/0021-cff-outlines.md): CFF2 の FDSelect フォーマット4は、FreeType が開けないが、検証器では警告にしている。FreeType に合わせてエラーにするかどうかを決める。
-- [ADR 0018](adr/0018-phantom-point-shift.md): ステータスが採択になっているが、ベンチマークの記録が `docs/benchmarks/` にない。計測して記録を足すまで、ステータスを戻すか、そのまま置くかを決める。
+`sofel-validate` は、表を破棄しても元のデータの検証を続ける。1回の検証で確認できたすべての破損箇所について、フェイス、表タグ、バイト位置、理由をテキストと JSON に出し、同じ箇所を重複させずに数える。未検査範囲があれば、件数が下限であることと、その範囲と理由を示す。シェーピングが表を無視することは、破損箇所数に含めず、破棄した表ごとに警告する。
 
 ## v1 リリース時の性能比較
 
@@ -92,7 +81,7 @@ Unicode の性質の引きが HarfBuzz の 1.24 倍である。2段または3段
 
 ### 負荷の高いマシンで取った記録
 
-負荷平均が最大 280 のマシンで取った記録がある。負荷のないマシンで取り直すべきものは、[ADR 0013](adr/0013-benchmark-harness.md) の2段階目の記録（[docs/benchmarks/2026-11-10-stage2.md](benchmarks/2026-11-10-stage2.md)）、[ADR 0018](adr/0018-phantom-point-shift.md) の記録（まだない）、[ADR 0019](adr/0019-unicode-character-data.md)、[ADR 0021](adr/0021-cff-outlines.md)（[docs/benchmarks/2026-11-10-cff.md](benchmarks/2026-11-10-cff.md)）、[ADR 0023](adr/0023-color-glyphs.md)、[ADR 0025](adr/0025-cff-charset-index.md)（[docs/benchmarks/2026-11-10-cff-charset-index.md](benchmarks/2026-11-10-cff-charset-index.md)）、[ADR 0020](adr/0020-shaping-foundation.md)、[ADR 0022](adr/0022-subsetting.md) である。どの記録が高負荷で取られたかを、記録の本文では確かめていない（未確認）。
+負荷平均が最大 280 のマシンで取った記録がある。負荷のないマシンで取り直すべきものは、[ADR 0013](adr/0013-benchmark-harness.md) の2段階目の記録（[docs/benchmarks/2026-11-10-stage2.md](benchmarks/2026-11-10-stage2.md)）、[ADR 0019](adr/0019-unicode-character-data.md)、[ADR 0021](adr/0021-cff-outlines.md)（[docs/benchmarks/2026-11-10-cff.md](benchmarks/2026-11-10-cff.md)）、[ADR 0023](adr/0023-color-glyphs.md)、[ADR 0025](adr/0025-cff-charset-index.md)（[docs/benchmarks/2026-11-10-cff-charset-index.md](benchmarks/2026-11-10-cff-charset-index.md)）、[ADR 0020](adr/0020-shaping-foundation.md)、[ADR 0022](adr/0022-subsetting.md) である。どの記録が高負荷で取られたかを、記録の本文では確かめていない（未確認）。
 
 ## 実装のあとに起こす ADR
 
@@ -112,7 +101,6 @@ Unicode の性質の引きが HarfBuzz の 1.24 倍である。2段または3段
 - C ABI。HarfBuzz と FreeType の互換層（`hb_*` と `FT_*` の shim）と、バインディングジェネレータ向けのヘッダの規約。[ADR 0015](adr/0015-c-abi.md) による。
 - フォントの関数の差し替え（`hb_font_funcs_t` とサブフォント）。[ADR 0016](adr/0016-font-and-vertical-metrics.md) による。
 - VARC（13段階目）。
-- 利用者の判断を待つ項のうち、cmap のフォーマット2と8の HarfBuzz の動作、HHEA の 24 bit と 32 bit は、決まれば ADR になる。
 
 ## 監査とテストの改善
 
