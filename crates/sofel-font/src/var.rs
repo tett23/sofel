@@ -1262,7 +1262,10 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
         let outer = u16::try_from(index >> 16).unwrap_or(0);
         let inner = u16::try_from(index & 0xffff).unwrap_or(0);
         let delta = self.item_delta::<HbF32>(kind, outer, inner).unwrap_or(0.0);
-        let value = f64::from(base) + hb_roundf32(delta);
+        // HarfBuzz's `_hb_roundf(float)` returns float, so the unsigned
+        // advance and rounded delta are added in float precision.
+        #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+        let value = f64::from(base as f32 + hb_roundf32(delta) as f32);
         if value.is_nan() {
             return 0;
         }
