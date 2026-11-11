@@ -287,7 +287,7 @@ impl<'a> Shaper<'a> {
     /// Makes the plan for `props` unless there is one.
     fn plan_for(&mut self, props: &ResolvedProperties) {
         if !self.plans.iter().any(|(k, _)| k == props) {
-            let plan = ShapePlan::new(&self.font, props.clone(), &[]);
+            let plan = ShapePlan::new(self.font.default_instance(), props.clone(), &[]);
             self.plans.push((props.clone(), plan));
         }
     }
@@ -302,7 +302,7 @@ impl<'a> Shaper<'a> {
             .expect("a plan for every line")
             .1;
         let boxes = |g: GlyphId| self.boxes.glyph_extents(g);
-        sofel_shape::shape_with_extents(&self.font, &self.scale, plan, b, &boxes)
+        sofel_shape::shape_with_extents(self.font.default_instance(), &self.scale, plan, b, &boxes)
     }
 }
 
@@ -424,9 +424,9 @@ pub fn shape_items(b: &mut Bench, testdata: &Path) {
                 let boxes = HbExtents::new(&font);
                 let mut u = UnicodeBuffer::new();
                 u.push_utf8(&text[start..], 0, Some(len));
-                let plan = ShapePlan::new(&font, properties(&u, p.direction), &[]);
+                let plan = ShapePlan::new(font.default_instance(), properties(&u, p.direction), &[]);
                 let g = sofel_shape::shape_with_extents(
-                    &font,
+                    font.default_instance(),
                     &Scale::unscaled(&font),
                     &plan,
                     u,

@@ -1123,6 +1123,16 @@ pub struct Instance<'font, 'data, 'loc, 'source> {
 }
 
 impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
+    /// The font whose tables this instance reads.
+    pub fn font(&self) -> &'font Font<'data> {
+        self.font
+    }
+
+    /// The normalized location used by this instance.
+    pub fn location(&self) -> &'loc Location<'source> {
+        self.location
+    }
+
     /// Horizontal advance in font units at this location.
     pub fn advance(&self, glyph: GlyphId) -> u32 {
         let base = u32::from(

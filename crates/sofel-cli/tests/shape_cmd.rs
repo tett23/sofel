@@ -251,8 +251,8 @@ fn rewrites_glyph_strings() {
 fn unsupported_options_and_bad_usage_exit_with_2() {
     let f = font_file("usage", true);
     for args in [
-        &["--variations=wght=500", "A"][..],
-        &["--named-instance=1", "A"],
+        &["--variations=wght=bad", "A"][..],
+        &["--named-instance=65536", "A"],
         &["--font-ptem=12", "A"],
         &["--font-slant=0.2", "A"],
         &["--font-bold=0.1", "A"],
@@ -269,6 +269,8 @@ fn unsupported_options_and_bad_usage_exit_with_2() {
         assert_eq!(code, 2, "{args:?}: {out} {err}");
         assert!(out.is_empty() && !err.is_empty(), "{args:?}");
     }
+    assert_eq!(ok(&f, &["--variations=wght=500", "A"]), "[A=0+500]\n");
+    assert_eq!(ok(&f, &["--named-instance=1", "A"]), "[A=0+500]\n");
     let (code, _, _) = shape(&PathBuf::from("/nonexistent/font.ttf"), &["A"]);
     assert_eq!(code, 1);
 }
@@ -289,5 +291,5 @@ fn the_binary_runs() {
         .arg(&f)
         .output()
         .unwrap();
-    assert_eq!(o.status.code(), Some(2));
+    assert_eq!(o.status.code(), Some(0));
 }
