@@ -80,7 +80,7 @@ pub struct SofelFont {
     font: Font<'static>,
     /// The outline format, the opened CFF and HarfBuzz's glyph boxes
     /// (ADR 0021); a broken CFF does not fail the font.
-    outlines: Outlines<'static>,
+    outlines: Outlines<'static, 'static, 'static>,
     /// FreeType's CFF view, when FreeType can open the face as CFF.
     cff: Option<Cff<'static>>,
     /// The index of the CFF charset (ADR 0025), over `starts`; `None`
@@ -342,7 +342,7 @@ pub extern "C" fn sofel_vector_length(x: i32, y: i32) -> i32 {
 
 fn font_create(data: Option<&'static [u8]>, index: u32) -> Result<SofelFont, i32> {
     let font = Font::new(some(data)?, index).map_err(font_error)?;
-    let outlines = Outlines::new(&font);
+    let outlines = Outlines::new(font.default_instance());
     let cff = outlines.cff().copied();
     let ranges = cff.and_then(|c| c.charset()).map_or(0, |c| c.num_ranges());
     let starts = Box::into_raw(vec![0u32; ranges].into_boxed_slice());
