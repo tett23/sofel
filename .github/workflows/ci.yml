@@ -267,6 +267,7 @@ jobs:
           SOFEL_REQUIRE_TESTDATA: '1'
         run: |
           cargo test -p sofel-capi --test fixture
+          cargo test -p sofel-capi --test variation adr0027_i03_location_changes_glyf_outline_and_box
           sh scripts/test-capi.sh native
 
   # docs/adr/0004, docs/adr/0007

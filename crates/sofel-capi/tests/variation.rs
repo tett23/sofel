@@ -1167,6 +1167,151 @@ fn i03_location_keeps_default_outline_and_metrics_until_values_are_applied() {
 }
 
 #[test]
+fn adr0027_i03_location_changes_glyf_outline_and_box() {
+    let root = std::env::var_os("SOFEL_TESTDATA")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/testdata")
+        });
+    let path = root.join("extra-fonts/fonts/arabic.ttf");
+    let bytes = if std::env::var_os("SOFEL_REQUIRE_TESTDATA").is_some() {
+        std::fs::read(&path).unwrap()
+    } else if let Ok(bytes) = std::fs::read(&path) {
+        bytes
+    } else {
+        return;
+    };
+    let mut error = -99;
+    // SAFETY: bytes live through both handle destructions.
+    let font = unsafe { sofel_font_create(bytes.as_ptr(), bytes.len(), 0, &mut error) };
+    assert_eq!(error, OK);
+    let mut location = core::ptr::null_mut();
+    let coords = [900.0f32];
+    // SAFETY: font and output pointer are live; one coordinate is readable.
+    assert_eq!(
+        unsafe { sofel_location_create_design(font, coords.as_ptr(), 1, &mut location) },
+        OK
+    );
+    let scratch = sofel_outline_scratch_create();
+    let mut default_box = [0; 4];
+    let mut located_box = [0; 4];
+    let mut overlap = 0;
+    // SAFETY: handles are live; outputs are writable.
+    assert_eq!(
+        unsafe {
+            sofel_outline_load(
+                font,
+                core::ptr::null(),
+                5,
+                0,
+                0,
+                0,
+                scratch,
+                default_box.as_mut_ptr(),
+                &mut overlap,
+            )
+        },
+        OK
+    );
+    // SAFETY: handles are live; outputs are writable.
+    assert_eq!(
+        unsafe {
+            sofel_outline_load(
+                font,
+                location,
+                5,
+                0,
+                0,
+                0,
+                scratch,
+                located_box.as_mut_ptr(),
+                &mut overlap,
+            )
+        },
+        OK
+    );
+    assert_ne!(located_box, default_box);
+    let mut default_extents = [0; 4];
+    let mut located_extents = [0; 4];
+    // SAFETY: handles are live; output is writable.
+    assert_eq!(
+        unsafe {
+            sofel_font_glyph_extents(font, core::ptr::null(), 5, default_extents.as_mut_ptr())
+        },
+        OK
+    );
+    // SAFETY: handles are live; output is writable.
+    assert_eq!(
+        unsafe { sofel_font_glyph_extents(font, location, 5, located_extents.as_mut_ptr()) },
+        OK
+    );
+    assert_ne!(located_extents, default_extents);
+    assert_eq!(located_extents, [10, 589, 470, -529]);
+    let rasterizer = sofel_rasterizer_create();
+    let mut default_pixels = vec![0u8; 65536];
+    let mut located_pixels = vec![0u8; 65536];
+    let mut default_len = 0;
+    let mut located_len = 0;
+    let mut default_bitmap_box = [0; 4];
+    let mut located_bitmap_box = [0; 4];
+    // SAFETY: all handles are live; buffers and output pointers are writable.
+    assert_eq!(
+        unsafe {
+            sofel_render_glyph(
+                font,
+                core::ptr::null(),
+                5,
+                24,
+                scratch,
+                rasterizer,
+                default_pixels.as_mut_ptr(),
+                default_pixels.len(),
+                &mut default_len,
+                default_bitmap_box.as_mut_ptr(),
+            )
+        },
+        OK
+    );
+    // SAFETY: all handles are live; buffers and output pointers are writable.
+    assert_eq!(
+        unsafe {
+            sofel_render_glyph(
+                font,
+                location,
+                5,
+                24,
+                scratch,
+                rasterizer,
+                located_pixels.as_mut_ptr(),
+                located_pixels.len(),
+                &mut located_len,
+                located_bitmap_box.as_mut_ptr(),
+            )
+        },
+        OK
+    );
+    assert_ne!(
+        (
+            default_len,
+            default_bitmap_box,
+            default_pixels.get(..default_len)
+        ),
+        (
+            located_len,
+            located_bitmap_box,
+            located_pixels.get(..located_len)
+        )
+    );
+    // SAFETY: handles are live and owned.
+    unsafe {
+        sofel_rasterizer_destroy(rasterizer);
+        sofel_outline_scratch_destroy(scratch);
+        sofel_location_destroy(location);
+        sofel_font_destroy(font);
+    }
+}
+
+#[test]
 fn i01_location_owns_coordinates_after_font_handle_is_destroyed() {
     let bytes = font_bytes();
     let mut error = -99;
