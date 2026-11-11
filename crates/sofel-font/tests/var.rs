@@ -424,10 +424,13 @@ fn fvar_one_named_with_psid() -> Vec<u8> {
 }
 
 fn font_with_mvar() -> Vec<u8> {
-    // A valid region whose peak is zero evaluates to one in HarfBuzz.
+    sfnt(&mvar_tables(0))
+}
+
+fn mvar_tables(peak: u8) -> Vec<(&'static [u8; 4], Vec<u8>)> {
     let store = [
-        0, 1, 0, 0, 0, 12, 0, 1, 0, 0, 0, 22, 0, 1, 0, 1, 0, 0, 0, 0, 0, 16, 0, 1, 0, 1, 0, 1, 0,
-        0, 0, 7,
+        0, 1, 0, 0, 0, 12, 0, 1, 0, 0, 0, 22, 0, 1, 0, 1, 0, 0, 0, peak, 0, 16, 0, 1, 0, 1, 0, 1,
+        0, 0, 0, 7,
     ];
     let mut mvar = vec![0, 1, 0, 0, 0, 0, 0, 8, 0, 0, 0, 12];
     mvar.extend_from_slice(&store);
@@ -435,7 +438,7 @@ fn font_with_mvar() -> Vec<u8> {
     tables.push((b"MVAR", mvar));
     tables.push((b"fvar", fvar_one_axis()));
     tables.sort_by_key(|(tag, _)| **tag);
-    sfnt(&tables)
+    tables
 }
 
 fn font_with_avar() -> Vec<u8> {
@@ -479,6 +482,46 @@ fn font_with_avar2_map() -> Vec<u8> {
     tables.push((b"avar", avar));
     tables.sort_by_key(|(tag, _)| **tag);
     sfnt(&tables)
+}
+
+#[test]
+fn i03_source_identity_uses_target_regions_for_distinct_collection_faces() {
+    let bytes = build::ttc(false, &[mvar_tables(8), mvar_tables(16)]);
+    let first = Font::new(&bytes, 0).unwrap();
+    let second = Font::new(&bytes, 1).unwrap();
+    let location = Location::from_normalized_2_14(&first, &[4]);
+    assert_eq!(
+        first
+            .instance(&location)
+            .item_delta::<HbF32>(StoreKind::Mvar, 0, 0),
+        Ok(3.5)
+    );
+    assert_eq!(
+        second
+            .instance(&location)
+            .item_delta::<HbF32>(StoreKind::Mvar, 0, 0),
+        Ok(1.75)
+    );
+    assert_eq!(
+        second
+            .instance(&location)
+            .item_delta::<Ft>(StoreKind::Mvar, 0, 0),
+        Ok(2)
+    );
+}
+
+#[test]
+fn i03_location_borrow_outlives_font_handle() {
+    let bytes = font_with_mvar();
+    let location = {
+        let font = Font::new(&bytes, 0).unwrap();
+        Location::from_normalized_2_14(&font, &[4])
+    };
+    let reopened = Font::new(&bytes, 0).unwrap();
+    assert_eq!(
+        reopened.instance(&location).location().coords_normalized(),
+        &[4]
+    );
 }
 
 #[test]
