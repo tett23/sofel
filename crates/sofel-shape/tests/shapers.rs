@@ -718,11 +718,11 @@ fn use_dotted_circle() {
         script: Script::from_iso15924(b"Bali"),
         language: None,
     };
-    let plan = ShapePlan::new(&font, props, &[]);
+    let plan = ShapePlan::new(font.default_instance(), props, &[]);
     let mut b = UnicodeBuffer::new();
     b.set_flags(sofel_shape::BufferFlags::DO_NOT_INSERT_DOTTED_CIRCLE);
     b.push_codepoints(&[TALING], 0, None);
-    let out = shape(&font, &Scale::unscaled(&font), &plan, b);
+    let out = shape(font.default_instance(), &Scale::unscaled(&font), &plan, b);
     assert_eq!(glyphs(&out), [g(&chars, TALING)]);
 }
 
