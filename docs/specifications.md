@@ -351,7 +351,8 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 軸を指定しない HVAR と VVAR は、複数のItemVariationDataから残したグリフに対応する行と使う領域を詰め、全ての値が0の列を除いて書き出す。使わないItemVariationDataを除き、暗黙・明示の送り幅とサイドベアリングのマップを新しいグリフIDに合わせて書く（[ADR 0022](adr/0022-subsetting.md)）。 明示マップの末尾で複数のグリフが同じ行を参照する場合は、その最初の項目までを書き、残りは最後の値を繰り返して読む。空のサイドベアリングと縦の原点のマップは出力しない。
 - まだ書かない表：HVAR、VVAR、VARC（軸をすべて固定したときに捨てるものを除く）と、軸をすべて固定しないときのCFF2（10段階目）。これらを持ち、捨てる表にも写す表にも入れないフォントは `Unsupported` とする。名前の表の上書きも `Unsupported` とする。
 - 軸を指定しない BASE 1.1 に ItemVariationStore があっても、横と縦の全 BaseCoord を調べて VariationIndex の参照が0件なら、HarfBuzzと同じくストアを除いて座標を残す。BaseValues、既定の MinMax、言語別とフィーチャ別の MinMax を調べ、壊れた参照はこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
-- レイアウトの表のうち、GDEFとBASEの変化量の表（ItemVariationStore。軸を指定しないときに残す番号へ詰めなおすのは10段階目。GDEFとBASEのものは全軸を既定値に固定すれば除く）、GSUBとGPOSの版1.2とGDEFの版1.4、FeatureVariationsの版1.1と形式1でない条件、65536を超えるグリフのフォントの24bitの形式も `Unsupported` とする。
+- 軸を指定しないGDEF 1.3にItemVariationStoreがあっても、GDEFのLigCaretListにVariationIndexの参照がなく、GPOSとMATHを保持せず、GSUBのFeatureVariationsも保持しない場合は、HarfBuzzと同じくストアを除く。壊れたGDEFはこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
+- レイアウトの表のうち、参照を持つGDEF、GPOSかMATHまたはGSUBのFeatureVariationsを保持するGDEF、BASEの変化量の表（ItemVariationStore。軸を指定しないときに残す番号へ詰めなおすのは10段階目。GDEFとBASEのものは全軸を既定値に固定すれば除く）、GSUBとGPOSの版1.2とGDEFの版1.4、FeatureVariationsの版1.1と形式1でない条件、65536を超えるグリフのフォントの24bitの形式も `Unsupported` とする。
 
 ## 道具
 

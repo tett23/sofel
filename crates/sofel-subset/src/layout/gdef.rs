@@ -5,6 +5,8 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
+use sofel_font::read::Severity;
+use sofel_font::read::gdef::{CaretValue, Gdef};
 use sofel_write::Whence;
 
 use super::common::Sub;
@@ -35,6 +37,39 @@ pub(crate) fn used_mark_sets(gdef: &[u8], glyphs: &BitSet) -> BTreeMap<u32, u32>
 pub(crate) fn has_var_store(gdef: &[u8]) -> bool {
     let d = D(gdef);
     d.u32(0) >= 0x0001_0003 && d.u32(14) != 0
+}
+
+/// A store with no references can be omitted without remapping indices.
+/// Other layout tables are checked by the plan before this shortcut is used.
+pub(crate) fn unused_variation_store(src: &[u8]) -> bool {
+    let inspect = || -> Result<bool, sofel_font::read::ReadError> {
+        let gdef = Gdef::new(src)?;
+        if gdef.variation_store()?.is_none() {
+            return Ok(false);
+        }
+        let mut invalid = false;
+        sofel_font::read::gdef::validate(src, &mut |d| {
+            invalid |= d.severity == Severity::Error;
+        });
+        if invalid {
+            return Ok(false);
+        }
+        if let Some(list) = gdef.lig_caret_list()? {
+            for i in 0..list.len() {
+                if let Some(glyph) = list.lig_glyph(i)? {
+                    for j in 0..glyph.len() {
+                        if let Some(CaretValue::Device(_, Some(device))) = glyph.caret(j)?
+                            && !matches!(device.delta_format(), 1..=3)
+                        {
+                            return Ok(false);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(true)
+    };
+    inspect().unwrap_or(false)
 }
 
 fn attach_list(s: &mut Sub<'_, '_>, al: D<'_>) -> bool {
@@ -190,7 +225,7 @@ pub(crate) fn subset(s: &mut Sub<'_, '_>, gdef: &[u8]) -> bool {
     if version >= 0x0001_0003 {
         s.s.u32(d.u32(14));
         // Pinning every axis drops the store (`out->varStore = 0`).
-        if d.u32(14) != 0 && !s.p.var.all_axes_pinned() {
+        if d.u32(14) != 0 && !s.p.var.all_axes_pinned() && !unused_variation_store(gdef) {
             s.unsupported("the GDEF item variation store (ADR 0022 stage 10)");
             return false;
         }
