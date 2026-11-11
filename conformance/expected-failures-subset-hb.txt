@@ -11,7 +11,6 @@
 # latter both times; ADR 0022 does not match HarfBuzz on malformed
 # tables).
 hb-dump/glyphs/AdobeVFPrototype.otf  # stage:var
-hb-dump/glyphs/COLRv1-alpha.ttf  # stage:var
 hb-dump/glyphs/Comfortaa-Regular-new.ttf  # stage:var
 hb-dump/glyphs/Fraunces.ttf  # stage:var
 hb-dump/glyphs/MPLUS1-Variable.ttf  # stage:var
@@ -22,12 +21,8 @@ hb-dump/golem/AdobeVFPrototype.otf:keep  # stage:var
 hb-dump/golem/AdobeVFPrototype.otf:keep+prepared  # stage:var
 hb-dump/golem/AnekBangla-subset.ttf:keep  # stage:var
 hb-dump/golem/AnekBangla-subset.ttf:keep+prepared  # stage:var
-hb-dump/golem/COLRv1-alpha.ttf:keep  # stage:var
-hb-dump/golem/COLRv1-alpha.ttf:keep+prepared  # stage:var
 hb-dump/golem/COLRv1-alpha.ttf:pin  # stage:var
 hb-dump/golem/COLRv1-alpha.ttf:pin+prepared  # stage:var
-hb-dump/golem/Cantarell-VF-ABC.otf:keep  # stage:var
-hb-dump/golem/Cantarell-VF-ABC.otf:keep+prepared  # stage:var
 hb-dump/golem/Comfortaa-Regular-new.ttf:keep  # stage:var
 hb-dump/golem/Comfortaa-Regular-new.ttf:keep+prepared  # stage:var
 hb-dump/golem/Foldit.ttf:keep  # stage:var
