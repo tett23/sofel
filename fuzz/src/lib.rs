@@ -126,6 +126,11 @@ pub fn check_gvar(input: &[u8]) {
     let points = usize::from(u16::from_be_bytes([prefix[1], prefix[2]])).min(4096);
     gvar::validate_with_points(data, tag, None, None, |_| Some(points), &mut |_| {});
     if let Ok(table) = Gvar::new(data, tag) {
+        let glyph = u32::from(prefix[0] >> 3);
+        let coordinate = if prefix[0] & 4 == 0 { 0x4000 } else { -0x4000 };
+        check_gvar_budget(
+            &table, glyph, points.clamp(4, 64), coordinate, prefix[0] & 2 != 0,
+        );
         for glyph in 0..table.glyph_count().min(32) {
             if let Some(glyph_data) = table.glyph_data(glyph) {
                 let shared = glyph_data.shared_points();
@@ -140,6 +145,61 @@ pub fn check_gvar(input: &[u8]) {
             }
         }
     }
+}
+
+/// Replay a successful application at its exact cost and one unit below it.
+/// Bound the work per input, including the axis and tuple scans.
+fn check_gvar_budget(
+    table: &Gvar<'_>,
+    glyph: u32,
+    count: usize,
+    coordinate: i32,
+    phantom_only: bool,
+) -> Option<i64> {
+    use sofel_font::var::gvar::{GvarError, HbScratch, Point, apply_hb};
+
+    let glyph_data = table.glyph_data(glyph)?;
+    if table.axis_count() > 8 || glyph_data.tuple_count() > 16 {
+        return None;
+    }
+    let coords = vec![coordinate; usize::from(table.axis_count())];
+    let initial = vec![
+        Point {
+            x: 1.0,
+            y: -2.0,
+            end: false
+        };
+        count
+    ];
+    let mut scratch = HbScratch::default();
+    let mut run = |limit| {
+        let mut points = initial.clone();
+        let mut remaining = limit;
+        let result = apply_hb(
+            table,
+            glyph,
+            &coords,
+            &[],
+            &mut points,
+            &mut scratch,
+            phantom_only,
+            &mut remaining,
+        );
+        if result.is_err() {
+            assert_eq!(points, initial);
+        }
+        (result, points, remaining)
+    };
+    let upper_bound = i64::from(glyph_data.tuple_count()) * count as i64;
+    let (result, expected, remaining) = run(upper_bound);
+    assert_ne!(result, Err(GvarError::BudgetExceeded));
+    result.ok()?;
+    let cost = upper_bound - remaining;
+    assert_eq!(run(cost), (result, expected, 0));
+    if cost > 0 {
+        assert_eq!(run(cost - 1).0, Err(GvarError::BudgetExceeded));
+    }
+    Some(cost)
 }
 
 /// Arbitrary ItemVariationStore bytes in HVAR. Compare a location's cached
@@ -1246,3 +1306,21 @@ pub fn check_repack(data: &[u8]) {
 
 mod location;
 pub use location::check_location;
+
+#[cfg(test)]
+mod gvar_budget_tests {
+    use super::*;
+
+    #[test]
+    fn adr0030_i10_two_active_tuples_charge_outline_or_phantom_points() {
+        let seed = include_bytes!("../corpus/gvar/two-active-budget");
+        let table = Gvar::new(&seed[3..], gvar::TAG).unwrap();
+        for (phantom_only, cost) in [(false, 12), (true, 8)] {
+            assert_eq!(
+                check_gvar_budget(&table, 0, 6, 0x4000, phantom_only),
+                Some(cost)
+            );
+        }
+        check_gvar(seed);
+    }
+}
