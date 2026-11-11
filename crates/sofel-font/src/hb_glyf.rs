@@ -1,7 +1,7 @@
 //! HarfBuzz's gvar phantom-point path for glyf metrics (ADR 0027).
 
 use alloc::vec::Vec;
-use sofel_geom::float::{hb_clamp_to_i32, hb_roundf32};
+use sofel_geom::float::{hb_clamp_to_i32, hb_roundf32, i32_to_f32};
 use sofel_read::{GlyphId, glyf};
 
 use crate::var::gvar::{HbScratch, Point};
@@ -9,6 +9,7 @@ use crate::{GlyphExtents, var::Instance};
 
 const MAX_DEPTH: usize = 64;
 const USE_MY_METRICS: u16 = glyf::USE_MY_METRICS;
+type OutlineWithPhantoms = (Vec<Point<f32>>, [Point<f32>; 4]);
 
 /// Reused point and gvar buffers for glyph metric queries.
 #[derive(Default)]
@@ -32,84 +33,27 @@ pub(crate) fn extents(
     glyph: GlyphId,
     scratch: &mut GlyphScratch,
 ) -> Option<GlyphExtents> {
-    let font = instance.font();
-    let glyf = font.glyf?;
-    if glyph.0 >= glyf.num_glyphs() {
-        return None;
-    }
-    let data = glyf.glyph(glyph);
-    if data.contours == 0 {
-        return Some(GlyphExtents::default());
-    }
-    if data.contours < 0 {
-        return None;
-    }
-    let parsed = glyf::Glyph::new(data.bytes).ok()?;
-    let simple = parsed.simple().ok()?;
-    scratch.points.clear();
-    let mut ends = simple.end_points().map(usize::from).peekable();
-    for (index, point) in simple.points(glyf.extended()).enumerate() {
-        scratch.points.push(Point {
-            x: point.x as f32,
-            y: point.y as f32,
-            end: ends.next_if(|end| *end == index).is_some(),
-        });
-    }
-    let count = scratch.points.len();
-    if count != usize::try_from(simple.num_points()).ok()? {
-        return None;
-    }
-    let left = f32::from(data.x_min) - f32::from(font.metrics.bearing(glyph));
-    let right = left + f32::from(font.metrics.advance(glyph, font.hb_units_per_em() / 2));
-    let top = f32::from(data.y_max) + f32::from(font.vmetrics.bearing(glyph));
-    let bottom = top - f32::from(font.vmetrics.advance(glyph, font.hb_units_per_em()));
-    scratch.points.extend([
-        Point {
-            x: left,
-            y: 0.0,
-            end: false,
-        },
-        Point {
-            x: right,
-            y: 0.0,
-            end: false,
-        },
-        Point {
-            x: 0.0,
-            y: top,
-            end: false,
-        },
-        Point {
-            x: 0.0,
-            y: bottom,
-            end: false,
-        },
-    ]);
     let mut budget = 1 << 24;
-    instance
-        .apply_gvar_hb(
-            glyph.0,
-            &mut scratch.points,
-            &mut scratch.gvar,
-            false,
-            &mut budget,
-        )
-        .ok()?;
-    let shift = scratch.points.get(count)?.x;
-    let mut points = scratch.points.get(..count)?.iter();
-    let first = points.next()?;
-    let (mut min_x, mut max_x, mut min_y, mut max_y) = (first.x, first.x, first.y, first.y);
+    let (outline, phantoms) = outline_at(instance, glyph, scratch, &mut budget)?;
+    let mut points = outline.iter();
+    let Some(first) = points.next() else {
+        return Some(GlyphExtents::default());
+    };
+    let shift = phantoms[0].x;
+    let first_x = first.x - shift;
+    let (mut min_x, mut max_x, mut min_y, mut max_y) = (first_x, first_x, first.y, first.y);
     for point in points {
-        min_x = min_x.min(point.x);
-        max_x = max_x.max(point.x);
+        let x = point.x - shift;
+        min_x = min_x.min(x);
+        max_x = max_x.max(x);
         min_y = min_y.min(point.y);
         max_y = max_y.max(point.y);
     }
     if min_x >= max_x || min_y >= max_y {
         return Some(GlyphExtents::default());
     }
-    let x_min = hb_roundf32(min_x - shift);
-    let x_max = hb_roundf32(max_x - shift);
+    let x_min = hb_roundf32(min_x);
+    let x_max = hb_roundf32(max_x);
     let y_min = hb_roundf32(min_y);
     let y_max = hb_roundf32(max_y);
     Some(GlyphExtents {
@@ -118,6 +62,157 @@ pub(crate) fn extents(
         width: hb_clamp_to_i32(x_max - x_min),
         height: hb_clamp_to_i32(y_min - y_max),
     })
+}
+
+fn outline_at(
+    instance: Instance<'_, '_, '_, '_>,
+    glyph: GlyphId,
+    scratch: &mut GlyphScratch,
+    budget: &mut i64,
+) -> Option<OutlineWithPhantoms> {
+    if scratch.stack.len() > MAX_DEPTH || scratch.stack.contains(&glyph.0) || *budget < 16 {
+        return None;
+    }
+    *budget = budget.saturating_sub(16);
+    scratch.stack.push(glyph.0);
+    let result = (|| {
+        let font = instance.font();
+        let glyf = font.glyf?;
+        if glyph.0 >= glyf.num_glyphs() {
+            return None;
+        }
+        let data = glyf.glyph(glyph);
+        let mut components = Vec::new();
+        let mut points = Vec::new();
+        if data.contours > 0 {
+            let parsed = glyf::Glyph::new(data.bytes).ok()?;
+            let simple = parsed.simple().ok()?;
+            let mut ends = simple.end_points().map(usize::from).peekable();
+            for (index, point) in simple.points(glyf.extended()).enumerate() {
+                points.push(Point {
+                    x: i32_to_f32(point.x),
+                    y: i32_to_f32(point.y),
+                    end: ends.next_if(|end| *end == index).is_some(),
+                });
+            }
+            if points.len() != usize::try_from(simple.num_points()).ok()? {
+                return None;
+            }
+        } else if data.contours < 0 {
+            let parsed = glyf::Glyph::new(data.bytes).ok()?;
+            components = parsed
+                .components(glyf.extended())
+                .collect::<Result<Vec<_>, _>>()
+                .ok()?;
+            for component in &components {
+                points.push(Point {
+                    x: if component.args_are_xy() {
+                        i32_to_f32(component.arg1)
+                    } else {
+                        0.0
+                    },
+                    y: if component.args_are_xy() {
+                        i32_to_f32(component.arg2)
+                    } else {
+                        0.0
+                    },
+                    end: true,
+                });
+            }
+        }
+        let count = points.len();
+        let left = f32::from(data.x_min) - f32::from(font.metrics.bearing(glyph));
+        let right = left + f32::from(font.metrics.advance(glyph, font.hb_units_per_em() / 2));
+        let top = f32::from(data.y_max) + f32::from(font.vmetrics.bearing(glyph));
+        let bottom = top - f32::from(font.vmetrics.advance(glyph, font.hb_units_per_em()));
+        points.extend([
+            Point {
+                x: left,
+                y: 0.0,
+                end: false,
+            },
+            Point {
+                x: right,
+                y: 0.0,
+                end: false,
+            },
+            Point {
+                x: 0.0,
+                y: top,
+                end: false,
+            },
+            Point {
+                x: 0.0,
+                y: bottom,
+                end: false,
+            },
+        ]);
+        instance
+            .apply_gvar_hb(glyph.0, &mut points, &mut scratch.gvar, false, budget)
+            .ok()?;
+        let mut phantoms: [Point<f32>; 4] =
+            points.get(count..count.checked_add(4)?)?.try_into().ok()?;
+        points.truncate(count);
+        if data.contours < 0 {
+            let component_positions = points;
+            let mut outline: Vec<Point<f32>> = Vec::new();
+            for (component, position) in components.into_iter().zip(component_positions) {
+                let Some((mut child, child_phantoms)) =
+                    outline_at(instance, component.glyph, scratch, budget)
+                else {
+                    continue;
+                };
+                if component.flags & USE_MY_METRICS != 0 {
+                    phantoms = child_phantoms;
+                }
+                let xx = f32::from(component.xx) / 16384.0;
+                let yx = f32::from(component.yx) / 16384.0;
+                let xy = f32::from(component.xy) / 16384.0;
+                let yy = f32::from(component.yy) / 16384.0;
+                let scaled_offset = component.flags
+                    & (glyf::SCALED_COMPONENT_OFFSET | glyf::UNSCALED_COMPONENT_OFFSET)
+                    == glyf::SCALED_COMPONENT_OFFSET;
+                for point in &mut child {
+                    if scaled_offset {
+                        point.x += position.x;
+                        point.y += position.y;
+                    }
+                    let x = point.x * xx + point.y * xy;
+                    let y = point.x * yx + point.y * yy;
+                    point.x = x;
+                    point.y = y;
+                    if !scaled_offset {
+                        point.x += position.x;
+                        point.y += position.y;
+                    }
+                }
+                if !component.args_are_xy() {
+                    let parent = usize::try_from(component.arg1)
+                        .ok()
+                        .and_then(|i| outline.get(i))
+                        .copied();
+                    let anchor = usize::try_from(component.arg2)
+                        .ok()
+                        .and_then(|i| child.get(i))
+                        .copied();
+                    if let (Some(parent), Some(anchor)) = (parent, anchor) {
+                        let dx = parent.x - anchor.x;
+                        let dy = parent.y - anchor.y;
+                        for point in &mut child {
+                            point.x += dx;
+                            point.y += dy;
+                        }
+                    }
+                }
+                outline.extend(child);
+            }
+            Some((outline, phantoms))
+        } else {
+            Some((points, phantoms))
+        }
+    })();
+    scratch.stack.pop();
+    result
 }
 
 fn phantoms_at(
