@@ -16,9 +16,19 @@ use sofel_conformance::compare::{Item, compare};
 use sofel_conformance::dump::{add_font_values, parse_ft_dump, sofel_faces};
 use sofel_conformance::{expect, paths};
 
+#[path = "../../sofel-read/tests/support/build.rs"]
+mod build;
+
 const LIST: &str = "expected-failures-freetype.txt";
 
-const SFNT_MAGIC: [[u8; 4]; 5] = [*b"\x00\x01\x00\x00", *b"OTTO", *b"true", *b"typ1", *b"ttcf"];
+const SFNT_MAGIC: [[u8; 4]; 6] = [
+    *b"\x00\x01\x00\x00",
+    *b"OTTO",
+    *b"true",
+    *b"typ1",
+    *b"ttcf",
+    *b"\x00\x00\x01\x00",
+];
 
 /// The sfnt fonts and collections among HarfBuzz's test fonts, sorted.
 fn fonts(testdata: &Path) -> Vec<PathBuf> {
@@ -70,6 +80,49 @@ fn items_for(font: &Path, testdata: &Path, ft_dump: &Path) -> Vec<Item> {
         }
     }
     compare(&id, &ft, &ours)
+}
+
+#[test]
+fn inv1_dfont_faces_match_freetype() {
+    let ft_dump = std::env::var_os("SOFEL_FT_DUMP")
+        .map(PathBuf::from)
+        .unwrap_or_else(paths::ft_dump);
+    paths::require(&ft_dump, "ft-dump").unwrap();
+    let first = build::glyph_font(&[vec![], vec![]], true, false);
+    let second = build::glyph_font(&[vec![], vec![], vec![]], true, false);
+    let data = build::dfont(&[(b"sfnt", vec![(14116, first), (3, second)])]);
+    let path = std::env::temp_dir().join(format!("sofel-dfont-{}.dfont", std::process::id()));
+    std::fs::write(&path, &data).unwrap();
+    let output = Command::new(ft_dump).arg(&path).output().unwrap();
+    std::fs::remove_file(&path).unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let ft = parse_ft_dump(&String::from_utf8(output.stdout).unwrap()).unwrap();
+    assert_eq!(ft.len(), 2);
+    let glyphs_for = |face| {
+        ft.iter()
+            .find(|f| f.index == face)
+            .and_then(|f| f.num_glyphs)
+    };
+    let ours = sofel_faces(&data, &glyphs_for);
+    assert_eq!(ours.len(), 2);
+    let items = compare("generated-dfont", &ft, &ours);
+    let selected: Vec<_> = items
+        .iter()
+        .filter(|i| i.id.contains(":cmap:") || i.id.ends_with(":hmtx"))
+        .collect();
+    assert!(!selected.is_empty(), "no cmap or metrics were compared");
+    for item in &selected {
+        assert!(item.ok, "{}: {}", item.id, item.detail);
+    }
+    eprintln!(
+        "generated dfont: {} faces, {} cmap/metrics items matched",
+        ft.len(),
+        selected.len()
+    );
 }
 
 #[test]

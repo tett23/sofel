@@ -32,6 +32,8 @@ pub struct Face {
     pub sfnt_names: Vec<(u32, u32, u32, u32, String)>,
     /// `(glyph, vertical advance)`.
     pub v_advances: Vec<(u32, i64)>,
+    /// Raw hmtx/vmtx side bearings read from the face's SFNT tables.
+    pub bearings: Vec<(u32, i64, Option<i64>)>,
     /// `(glyph, error, hex)`.
     pub glyph_names: Vec<(u32, i64, String)>,
     /// `(glyph, FT_Get_Name_Index of its name)`.
@@ -128,6 +130,15 @@ pub fn parse_ft_dump(text: &str) -> Result<Vec<Face>, String> {
             "v_advance" => face
                 .v_advances
                 .push((num(words.next(), line)?, num(words.next(), line)?)),
+            "bearing" => face.bearings.push((
+                num(words.next(), line)?,
+                num(words.next(), line)?,
+                words
+                    .next()
+                    .filter(|value| *value != "-")
+                    .map(|value| num(Some(value), line))
+                    .transpose()?,
+            )),
             "glyph_name" => face.glyph_names.push((
                 num(words.next(), line)?,
                 num(words.next(), line)?,
@@ -157,6 +168,9 @@ pub fn sofel_faces(file: &[u8], glyphs_for: &dyn Fn(u32) -> Option<u32>) -> Vec<
         Ok(FontFile::Sfnt(s)) => vec![Ok(s)],
         Ok(FontFile::Collection(c)) => (0..c.num_fonts())
             .map(|i| c.font(i).map_err(|e| e.to_string()))
+            .collect(),
+        Ok(FontFile::Dfont(d)) => (0..d.num_fonts())
+            .map(|i| d.font(i).map_err(|e| e.to_string()))
             .collect(),
     };
     fonts

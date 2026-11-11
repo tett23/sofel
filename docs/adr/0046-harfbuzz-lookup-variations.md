@@ -1,6 +1,6 @@
 # ADR 0046: FeatureVariations v1.1のlookup条件を計画に含める
 
-ステータス: 採択（未実装）
+ステータス: 採択
 
 ## 文脈
 

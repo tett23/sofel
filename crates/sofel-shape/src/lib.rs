@@ -53,7 +53,7 @@ pub use direction::Direction;
 pub use feature::Feature;
 pub use glyph::{GlyphFlags, GlyphInfo, GlyphPosition};
 pub use language::Language;
-pub use plan::{LayoutSelection, ShapePlan, Shaper, layout_selection};
+pub use plan::{LayoutSelection, ShapePlan, Shaper, VariationSelection, layout_selection};
 pub use props::{ResolvedProperties, SegmentProperties, script_horizontal_direction};
 pub use scale::Scale;
 pub use serialize::{

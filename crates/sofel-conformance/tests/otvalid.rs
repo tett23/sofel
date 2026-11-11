@@ -59,6 +59,11 @@ fn sofel_rejects(bytes: &[u8], face: u32, tag: &str) -> bool {
                 validate::sfnt(&s, &mut report);
             }
         }
+        Ok(FontFile::Dfont(d)) => {
+            if let Ok(s) = d.font(face) {
+                validate::sfnt(&s, &mut report);
+            }
+        }
         Err(_) => {}
     }
     error
