@@ -1,4 +1,4 @@
-//! CFF2 with every axis pinned (`src/hb-subset-cff2.cc`,
+//! CFF2 with every axis pinned or with subroutines flattened (`src/hb-subset-cff2.cc`,
 //! `src/hb-subset-cff2-to-cff1.hh`, `src/hb-ot-cff2-table.hh`): the
 //! subsetting plan (`cff2_subset_plan::create` on its instancing path),
 //! the serialization as CFF2 (`accelerator_subset_t::serialize`) and as
@@ -7,8 +7,8 @@
 //! instances (`update_instance_metrics_map_from_cff2` of
 //! `src/hb-subset-plan-var.cc`).
 //!
-//! CFF2 kept with its variations (no axis pinned) is stage 10 of ADR 0022;
-//! [`crate::Plan::new`] reports it as unsupported.
+//! CFF2 kept with its variations (no axis pinned) is stage 10 of ADR 0022.
+//! The default subroutine-preserving path remains unsupported.
 
 use alloc::vec;
 use alloc::vec::Vec;
@@ -156,7 +156,8 @@ impl<'a> Acc<'a> {
     }
 }
 
-/// The subsetting plan (`cff2_subset_plan`) when every axis is pinned.
+/// The subsetting plan (`cff2_subset_plan`) for a full instance or a
+/// variation-preserving desubroutinized font.
 struct Cff2Plan {
     num_glyphs: u32,
     drop_hints: bool,
@@ -169,9 +170,10 @@ struct Cff2Plan {
     /// `(format, ranges)` of the FDSelect, when the font has one.
     fdselect: Option<(u8, Vec<(u32, u32)>)>,
     fdmap: FdMap,
+    keep_variations: bool,
 }
 
-/// `cff2_subset_plan::create` on the path of a full instance.
+/// `cff2_subset_plan::create` on the full-instance or desubroutinized path.
 fn create(plan: &Plan, acc: &Acc<'_>, tag: Tag) -> Result<Cff2Plan, SubsetError> {
     let fail = SubsetError::Failed { tag };
     if plan.glyphs.old_gid(0) != Some(0) {
@@ -180,6 +182,7 @@ fn create(plan: &Plan, acc: &Acc<'_>, tag: Tag) -> Result<Cff2Plan, SubsetError>
     let num_glyphs = plan.num_output_glyphs;
     let drop_hints = plan.flags.has(Flags::NO_HINTING);
     let coords = plan.var.n.normalized_coords.as_slice();
+    let keep_variations = coords.is_empty();
     let fonts = &acc.fonts;
     let glyph = |i: u32| -> Result<Option<(u32, u32)>, SubsetError> {
         let Some(old) = plan.glyphs.old_gid(i) else {
@@ -207,7 +210,7 @@ fn create(plan: &Plan, acc: &Acc<'_>, tag: Tag) -> Result<Cff2Plan, SubsetError>
             return Err(fail);
         }
         if let Some(r) = round.get_mut(i as usize) {
-            *r = u.has_blend && !u.has_flex1;
+            *r = !keep_variations && u.has_blend && !u.has_flex1;
         }
     }
     let mut charstrings = vec![Vec::new(); num_glyphs as usize];
@@ -256,6 +259,7 @@ fn create(plan: &Plan, acc: &Acc<'_>, tag: Tag) -> Result<Cff2Plan, SubsetError>
         subset_fdcount,
         fdselect,
         fdmap,
+        keep_variations,
     })
 }
 
@@ -550,16 +554,17 @@ fn process_blend(stack: &mut Vec<f64>, param: &mut BlendParam<'_, '_>) -> bool {
     true
 }
 
-/// A Private DICT when pinned (`PrivateDict::serialize` with
+/// A Private DICT (`PrivateDict::serialize` with
 /// `cff2_private_dict_op_serializer_t`): hints dropped with
-/// `drop_hints`, no `Subrs` (the charstrings are desubroutinized), the
-/// blends evaluated.
+/// `drop_hints`, no `Subrs` (the charstrings are desubroutinized), and
+/// blends evaluated only for a pinned instance.
 fn private_dict(
     s: &mut Serializer,
     acc: &Acc<'_>,
     fd: usize,
     drop_hints: bool,
     coords: &[i32],
+    keep_variations: bool,
 ) -> bool {
     let Some((d, bytes)) = acc.privates.get(fd) else {
         return false;
@@ -577,6 +582,10 @@ fn private_dict(
             continue;
         }
         if o.op == dict::SUBRS {
+            continue;
+        }
+        if keep_variations {
+            s.extend(bytes.get(o.start..o.end).unwrap_or(&[]));
             continue;
         }
         let mut out = Vec::new();
@@ -609,7 +618,7 @@ fn privates(
             continue;
         }
         s.push();
-        if !private_dict(s, acc, i, p.drop_hints, coords) {
+        if !private_dict(s, acc, i, p.drop_hints, coords, p.keep_variations) {
             s.pop_discard();
             return None;
         }
@@ -658,8 +667,8 @@ fn fd_array(
     Some(s.pop_pack(false))
 }
 
-/// `accelerator_subset_t::serialize` for a full instance: no Variation
-/// Store, no subroutines.
+/// `accelerator_subset_t::serialize` without subroutines, preserving the
+/// Variation Store when no axes are pinned.
 fn serialize2(s: &mut Serializer, acc: &Acc<'_>, p: &Cff2Plan, coords: &[i32]) -> bool {
     s.push();
     if !index_n(s, &p.charstrings, p.min_charstrings_off_size, true) {
@@ -679,10 +688,31 @@ fn serialize2(s: &mut Serializer, acc: &Acc<'_>, p: &Cff2Plan, coords: &[i32]) -
     let Some(fd_array_link) = fd_array(s, acc, p, &infos, true) else {
         return false;
     };
+    let var_store_link = if p.keep_variations
+        && let Some(at) = acc.fonts.store.at
+    {
+        let size = usize::from(acc.fonts.store.size());
+        let Some(data) = acc
+            .fonts
+            .store
+            .data
+            .get(at..at.saturating_add(2).saturating_add(size))
+        else {
+            return false;
+        };
+        s.push();
+        s.extend(data);
+        s.pop_pack(false)
+    } else {
+        0
+    };
     let header = s.extend(&[2, 0, 5, 0, 0]);
     let start = s.len();
     for o in &acc.top.ops {
         match o.op {
+            dict::VSTORE if p.keep_variations => {
+                link4_op(s, o.op, var_store_link, Whence::Absolute)
+            }
             dict::VSTORE => {}
             dict::CHAR_STRINGS => link4_op(s, o.op, char_strings, Whence::Absolute),
             dict::FD_ARRAY => link4_op(s, o.op, fd_array_link, Whence::Absolute),
@@ -839,7 +869,8 @@ fn serialize1(s: &mut Serializer, acc: &Acc<'_>, p: &Cff2Plan, plan: &Plan) -> b
     index_header(s, &[top_size], 0) && !s.in_error()
 }
 
-/// `cff2::accelerator_subset_t::subset` with every axis pinned. With
+/// `cff2::accelerator_subset_t::subset` with every axis pinned or all
+/// subroutines flattened. With
 /// `DOWNGRADE_CFF2` the CFF table is added to `tables` and CFF2 is not
 /// needed.
 pub(crate) fn subset(

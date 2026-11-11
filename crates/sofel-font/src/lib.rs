@@ -236,31 +236,7 @@ impl<'a> FtMetrics<'a> {
 
     /// `tt_face_get_metrics` for the bearing, without variations.
     fn left_side_bearing(&self, glyph: GlyphId) -> i16 {
-        let read = |pos: u64| {
-            let at = usize::try_from(pos).ok()?;
-            let b = self.hmtx.get(at..at.checked_add(2)?)?;
-            Some(i16::from_be_bytes([*b.first()?, *b.get(1)?]))
-        };
-        let size = u64::try_from(self.hmtx.len()).unwrap_or(u64::MAX);
-        let (g, k) = (u64::from(glyph.0), u64::from(self.long_metrics));
-        let bearing = if k == 0 {
-            None
-        } else if g < k {
-            // The whole long metric must be in the table.
-            let pos = g.saturating_mul(4);
-            (pos.saturating_add(4) <= size)
-                .then(|| read(pos.saturating_add(2)))
-                .flatten()
-        } else if k.saturating_sub(1).saturating_mul(4).saturating_add(2) > size {
-            // The last advance is not readable.
-            None
-        } else {
-            read(
-                k.saturating_mul(4)
-                    .saturating_add(g.saturating_sub(k).saturating_mul(2)),
-            )
-        };
-        bearing.unwrap_or(0)
+        crate::ft::ft_metrics_bearing(self.hmtx, self.long_metrics, glyph)
     }
 }
 

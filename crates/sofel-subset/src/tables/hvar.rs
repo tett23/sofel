@@ -5,6 +5,7 @@ use alloc::vec::Vec;
 
 use sofel_font::Font;
 use sofel_font::read::Tag;
+use sofel_font::read::delta_set_index_map::DeltaSetIndexMap;
 use sofel_font::read::hvar::{Hvar, Vvar};
 use sofel_font::read::item_variation::{ItemVariationData, ItemVariationStore};
 use sofel_write::Serializer;
@@ -23,87 +24,113 @@ pub(super) fn subset(
     _tables: &mut Tables,
 ) -> Result<bool, SubsetError> {
     let vertical = tag == Tag::new(b"VVAR");
-    let store = if vertical {
+    let (store, maps) = if vertical {
         let table = Vvar::new(src).map_err(|_| SubsetError::Malformed { tag })?;
-        if table
-            .advance_map()
-            .map_err(|_| SubsetError::Malformed { tag })?
-            .is_some()
-            || table
-                .tsb_map()
-                .map_err(|_| SubsetError::Malformed { tag })?
-                .is_some()
-            || table
-                .bsb_map()
-                .map_err(|_| SubsetError::Malformed { tag })?
-                .is_some()
-            || table
-                .vorg_map()
-                .map_err(|_| SubsetError::Malformed { tag })?
-                .is_some()
-        {
-            return Err(SubsetError::Unsupported {
-                tag,
-                reason: "HVAR/VVAR index maps (ADR 0022 stage 10)",
-            });
-        }
-        table.store().map_err(|_| SubsetError::Malformed { tag })?
+        (
+            table.store().map_err(|_| SubsetError::Malformed { tag })?,
+            [
+                table
+                    .advance_map()
+                    .map_err(|_| SubsetError::Malformed { tag })?,
+                table
+                    .tsb_map()
+                    .map_err(|_| SubsetError::Malformed { tag })?,
+                table
+                    .bsb_map()
+                    .map_err(|_| SubsetError::Malformed { tag })?,
+                table
+                    .vorg_map()
+                    .map_err(|_| SubsetError::Malformed { tag })?,
+            ],
+        )
     } else {
         let table = Hvar::new(src).map_err(|_| SubsetError::Malformed { tag })?;
-        if table
-            .advance_map()
-            .map_err(|_| SubsetError::Malformed { tag })?
-            .is_some()
-            || table
-                .lsb_map()
-                .map_err(|_| SubsetError::Malformed { tag })?
-                .is_some()
-            || table
-                .rsb_map()
-                .map_err(|_| SubsetError::Malformed { tag })?
-                .is_some()
-        {
-            return Err(SubsetError::Unsupported {
-                tag,
-                reason: "HVAR/VVAR index maps (ADR 0022 stage 10)",
-            });
-        }
-        table.store().map_err(|_| SubsetError::Malformed { tag })?
+        (
+            table.store().map_err(|_| SubsetError::Malformed { tag })?,
+            [
+                table
+                    .advance_map()
+                    .map_err(|_| SubsetError::Malformed { tag })?,
+                table
+                    .lsb_map()
+                    .map_err(|_| SubsetError::Malformed { tag })?,
+                table
+                    .rsb_map()
+                    .map_err(|_| SubsetError::Malformed { tag })?,
+                None,
+            ],
+        )
     };
     let data = store.item_data(0).ok_or(SubsetError::Malformed { tag })?;
-    let mut old_gids: Vec<u32> = plan
-        .new_to_old_glyphs()
-        .iter()
-        .map(|&(_, old)| old)
-        .collect();
-    if old_gids.iter().any(|&gid| gid > u32::from(u16::MAX)) {
+    let mut old_items = BTreeSet::new();
+    for (map_index, map) in maps.iter().enumerate() {
+        if map_index != 0 && map.is_none() {
+            continue;
+        }
+        for &(_, old_gid) in plan.new_to_old_glyphs() {
+            let index = map.map_or(old_gid, |map| map.map(old_gid));
+            if index >> 16 != 0 {
+                return Err(SubsetError::Unsupported {
+                    tag,
+                    reason: "HVAR/VVAR indices using more than one outer index",
+                });
+            }
+            old_items.insert(index);
+        }
+    }
+    if old_items.len() > usize::from(u16::MAX) {
         return Err(SubsetError::Unsupported {
             tag,
-            reason: "implicit HVAR/VVAR indices using more than one outer index",
+            reason: "HVAR/VVAR indices using more than one outer index",
         });
     }
-    old_gids.sort_unstable();
-    let store_bytes = subset_store(store, data, &old_gids, tag)?;
-    let advance_map = advance_map(plan, &old_gids, tag)?;
+    let old_items: Vec<_> = old_items.into_iter().collect();
+    let store_bytes = subset_store(store, data, &old_items, tag)?;
+    let mut rewritten_maps = Vec::new();
+    for (index, map) in maps
+        .into_iter()
+        .enumerate()
+        .take(if vertical { 4 } else { 3 })
+    {
+        rewritten_maps.push(if index == 0 || map.is_some() {
+            index_map(plan, &old_items, map, tag)?
+        } else {
+            None
+        });
+    }
 
     let header_len = if vertical { 24u32 } else { 20u32 };
-    let map = advance_map.as_deref().unwrap_or(&[]);
-    let store_offset = u32::try_from(map.len())
-        .ok()
-        .and_then(|n| header_len.checked_add(n))
-        .ok_or(SubsetError::Limit { tag })?;
-    serializer.u32(0x0001_0000);
-    serializer.u32(store_offset);
-    serializer.u32(if map.is_empty() { 0 } else { header_len });
-    for _ in 0..if vertical { 3 } else { 2 } {
-        serializer.u32(0);
+    let mut offset = header_len;
+    let mut map_offsets = alloc::vec![0; rewritten_maps.len()];
+    for (index, map) in rewritten_maps.iter().enumerate().rev() {
+        *map_offsets
+            .get_mut(index)
+            .ok_or(SubsetError::Limit { tag })? = if map.is_some() { offset } else { 0 };
+        offset = offset
+            .checked_add(
+                u32::try_from(map.as_ref().map_or(0, Vec::len))
+                    .map_err(|_| SubsetError::Limit { tag })?,
+            )
+            .ok_or(SubsetError::Limit { tag })?;
     }
-    serializer.extend(map);
+    serializer.u32(0x0001_0000);
+    serializer.u32(offset);
+    for map_offset in map_offsets {
+        serializer.u32(map_offset);
+    }
+    for map in rewritten_maps.into_iter().rev().flatten() {
+        serializer.extend(&map);
+    }
     serializer.extend(&store_bytes);
     Ok(true)
 }
 
-fn advance_map(plan: &Plan, old_gids: &[u32], tag: Tag) -> Result<Option<Vec<u8>>, SubsetError> {
+fn index_map(
+    plan: &Plan,
+    old_items: &[u32],
+    source: Option<DeltaSetIndexMap<'_>>,
+    tag: Tag,
+) -> Result<Option<Vec<u8>>, SubsetError> {
     let Some(&(last_gid, _)) = plan.new_to_old_glyphs().last() else {
         return Ok(None);
     };
@@ -112,23 +139,24 @@ fn advance_map(plan: &Plan, old_gids: &[u32], tag: Tag) -> Result<Option<Vec<u8>
     let mut values = alloc::vec![0u16; count];
     for &(new_gid, old_gid) in plan.new_to_old_glyphs() {
         let index = usize::try_from(new_gid).map_err(|_| SubsetError::Limit { tag })?;
-        let inner = old_gids
-            .binary_search(&old_gid)
+        let old_item = source.map_or(old_gid, |map| map.map(old_gid));
+        let inner = old_items
+            .binary_search(&old_item)
             .map_err(|_| SubsetError::Malformed { tag })?;
         *values
             .get_mut(index)
             .ok_or(SubsetError::Malformed { tag })? =
             u16::try_from(inner).map_err(|_| SubsetError::Limit { tag })?;
     }
-    if values
-        .iter()
-        .enumerate()
-        .all(|(index, &value)| usize::from(value) == index)
+    if source.is_none()
+        && values
+            .iter()
+            .enumerate()
+            .all(|(index, &value)| usize::from(value) == index)
     {
         return Ok(None);
     }
-    let max_inner =
-        u16::try_from(old_gids.len().saturating_sub(1)).map_err(|_| SubsetError::Limit { tag })?;
+    let max_inner = values.iter().copied().max().unwrap_or(0);
     let inner_bits = u16::BITS.saturating_sub(max_inner.leading_zeros()).max(1);
     let width = usize::try_from(inner_bits.saturating_add(1).div_ceil(8))
         .map_err(|_| SubsetError::Limit { tag })?;
