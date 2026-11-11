@@ -24,9 +24,7 @@ use crate::tables::glyf::GlyfAccel;
 /// The tables whose subsetting or closure this version does not write
 /// yet: present and kept, they make [`Plan::new`] return
 /// [`SubsetError::Unsupported`].
-const PENDING: [(&[u8; 4], &str); 5] = [
-    (b"gvar", "variable font tables (ADR 0022 stage 10)"),
-    (b"GVAR", "variable font tables (ADR 0022 stage 10)"),
+const PENDING: [(&[u8; 4], &str); 3] = [
     (b"HVAR", "variable font tables (ADR 0022 stage 10)"),
     (b"VVAR", "variable font tables (ADR 0022 stage 10)"),
     (b"VARC", "variable composites (ADR 0022 stage 10)"),

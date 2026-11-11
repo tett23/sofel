@@ -3,16 +3,16 @@
 //! `src/hb-paint.hh`, the cycle detection of `src/hb-decycler.hh` and the
 //! boundedness check of `src/hb-paint-bounded.hh`.
 //!
-//! Variable paints are painted with their default values (no deltas).
+//! Variable paint fields use HarfBuzz variation-store arithmetic.
 
 use alloc::vec::Vec;
 
-use sofel_outline::font::Font;
 use sofel_outline::font::geom::{
     Brush, ColorLine, ColorStop, CompositeMode, Extend, Image, Painter, PointF, Rect, Transform,
 };
 use sofel_outline::font::read::colr::{self, Colr, Paint};
 use sofel_outline::font::read::{F2Dot14, Fixed};
+use sofel_outline::font::var::{HbF32, Instance, StoreKind};
 
 use crate::Scratch;
 use crate::paint::{Direct, Sink};
@@ -39,13 +39,13 @@ fn i32_f32(v: i32) -> f32 {
 }
 
 /// `F2DOT14::to_float`.
-fn f2(v: F2Dot14) -> f32 {
-    f32::from(v.0) / 16384.0
+fn f2(v: F2Dot14, delta: f32) -> f32 {
+    (f32::from(v.0) + delta) / 16384.0
 }
 
 /// `F16DOT16::to_float`.
-fn fixed(v: Fixed) -> f32 {
-    i32_f32(v.0) / 65536.0
+fn fixed(v: Fixed, delta: f32) -> f32 {
+    (i32_f32(v.0) + delta) / 65536.0
 }
 
 /// The work memory of the walk: the decyclers and the color stops.
@@ -74,6 +74,7 @@ fn visit(stack: &mut [u32], value: u32) -> bool {
 
 struct Ctx<'c, 'a> {
     colr: &'c Colr<'a>,
+    delta: &'c dyn Fn(Option<u32>, u16) -> f32,
     colors: &'c Colors<'a>,
     depth_left: i32,
     edge_count: i32,
@@ -97,16 +98,15 @@ fn push(sink: &mut dyn Painter, mut t: Transform) {
     sink.push_transform(t);
 }
 
-fn clip_rect(b: &colr::ClipBox) -> Rect {
-    let x_bearing = i32::from(b.x_min);
-    let y_bearing = i32::from(b.y_max);
-    let width = i32::from(b.x_max).saturating_sub(i32::from(b.x_min));
-    let height = i32::from(b.y_min).saturating_sub(i32::from(b.y_max));
+fn clip_rect(b: &colr::ClipBox, delta: &dyn Fn(Option<u32>, u16) -> f32) -> Rect {
+    use sofel_outline::font::geom::float::{ceilf, floorf};
+    #[allow(clippy::cast_possible_truncation)]
+    let edge = |v: i16, adjustment: f32| i32_f32(i32::from(v).saturating_add(adjustment as i32));
     Rect {
-        x_min: i32_f32(x_bearing),
-        y_min: i32_f32(y_bearing.wrapping_add(height)),
-        x_max: i32_f32(x_bearing.wrapping_add(width)),
-        y_max: i32_f32(y_bearing),
+        x_min: edge(b.x_min, floorf(delta(b.var_index_base, 0))),
+        y_min: edge(b.y_min, floorf(delta(b.var_index_base, 1))),
+        x_max: edge(b.x_max, ceilf(delta(b.var_index_base, 2))),
+        y_max: edge(b.y_max, ceilf(delta(b.var_index_base, 3))),
     }
 }
 
@@ -131,8 +131,11 @@ impl<'c, 'a> Ctx<'c, 'a> {
         let n = line.len();
         self.stops
             .extend((0..n).filter_map(|i| line.stop(i)).map(|s| ColorStop {
-                offset: f2(s.offset),
-                color: self.colors.solid(s.palette_index, f2(s.alpha)),
+                offset: f2(s.offset, (self.delta)(s.var_index_base, 0)),
+                color: self.colors.solid(
+                    s.palette_index,
+                    f2(s.alpha, (self.delta)(s.var_index_base, 1)),
+                ),
             }));
         if self.spend {
             let cost = BUDGET_STOP.saturating_mul(i64::try_from(n).unwrap_or(i64::MAX));
@@ -149,7 +152,13 @@ impl<'c, 'a> Ctx<'c, 'a> {
         let Some(paint) = self.colr.paint(offset) else {
             return;
         };
-        let pt = |x: i16, y: i16| PointF::new(f32::from(x), f32::from(y));
+        let delta = self.delta;
+        let point = |base, index, x: i16, y: i16| {
+            PointF::new(
+                f32::from(x) + delta(base, index),
+                f32::from(y) + delta(base, index.saturating_add(1)),
+            )
+        };
         match paint {
             Paint::ColrLayers {
                 num_layers,
@@ -171,15 +180,17 @@ impl<'c, 'a> Ctx<'c, 'a> {
             Paint::Solid {
                 palette_index,
                 alpha,
-                ..
+                var_index_base,
             } => {
-                let s = self.colors.solid(palette_index, f2(alpha));
+                let s = self
+                    .colors
+                    .solid(palette_index, f2(alpha, delta(var_index_base, 0)));
                 sink.fill(&Brush::Solid(s));
             }
             Paint::LinearGradient {
                 color_line,
                 points: [x0, y0, x1, y1, x2, y2],
-                ..
+                var_index_base,
             } => {
                 let extend = self.line(color_line);
                 sink.fill(&Brush::Linear {
@@ -187,9 +198,9 @@ impl<'c, 'a> Ctx<'c, 'a> {
                         stops: self.stops,
                         extend,
                     },
-                    p0: pt(x0, y0),
-                    p1: pt(x1, y1),
-                    p2: pt(x2, y2),
+                    p0: point(var_index_base, 0, x0, y0),
+                    p1: point(var_index_base, 2, x1, y1),
+                    p2: point(var_index_base, 4, x2, y2),
                 });
             }
             Paint::RadialGradient {
@@ -198,7 +209,7 @@ impl<'c, 'a> Ctx<'c, 'a> {
                 r0,
                 c1,
                 r1,
-                ..
+                var_index_base,
             } => {
                 let extend = self.line(color_line);
                 sink.fill(&Brush::Radial {
@@ -206,10 +217,10 @@ impl<'c, 'a> Ctx<'c, 'a> {
                         stops: self.stops,
                         extend,
                     },
-                    c0: pt(c0.0, c0.1),
-                    r0: f32::from(r0),
-                    c1: pt(c1.0, c1.1),
-                    r1: f32::from(r1),
+                    c0: point(var_index_base, 0, c0.0, c0.1),
+                    r0: f32::from(r0) + delta(var_index_base, 2),
+                    c1: point(var_index_base, 3, c1.0, c1.1),
+                    r1: f32::from(r1) + delta(var_index_base, 5),
                 });
             }
             Paint::SweepGradient {
@@ -217,7 +228,7 @@ impl<'c, 'a> Ctx<'c, 'a> {
                 center,
                 start_angle,
                 end_angle,
-                ..
+                var_index_base,
             } => {
                 let extend = self.line(color_line);
                 sink.fill(&Brush::Sweep {
@@ -225,9 +236,9 @@ impl<'c, 'a> Ctx<'c, 'a> {
                         stops: self.stops,
                         extend,
                     },
-                    center: pt(center.0, center.1),
-                    start: (f2(start_angle) + 1.0) * PI,
-                    end: (f2(end_angle) + 1.0) * PI,
+                    center: point(var_index_base, 0, center.0, center.1),
+                    start: (f2(start_angle, delta(var_index_base, 2)) + 1.0) * PI,
+                    end: (f2(end_angle, delta(var_index_base, 3)) + 1.0) * PI,
                 });
             }
             Paint::Glyph { paint, glyph } => {
@@ -235,8 +246,11 @@ impl<'c, 'a> Ctx<'c, 'a> {
                     Some(Paint::Solid {
                         palette_index,
                         alpha,
-                        ..
-                    }) => Some(self.colors.solid(palette_index, f2(alpha))),
+                        var_index_base,
+                    }) => Some(
+                        self.colors
+                            .solid(palette_index, f2(alpha, delta(var_index_base, 0))),
+                    ),
                     _ => None,
                 });
                 if self.depth_left > 0
@@ -258,7 +272,7 @@ impl<'c, 'a> Ctx<'c, 'a> {
                     let paint = self.colr.base_glyph_paint(glyph);
                     let clip = self.colr.clip_box(glyph);
                     if let Some(b) = &clip {
-                        sink.push_clip_rectangle(clip_rect(b));
+                        sink.push_clip_rectangle(clip_rect(b, self.delta));
                     }
                     if paint.is_some() {
                         self.recurse(paint, sink);
@@ -271,21 +285,28 @@ impl<'c, 'a> Ctx<'c, 'a> {
             }
             Paint::Transform { paint, transform } => {
                 let t = transform.map_or(Transform::scale(0.0, 0.0), |a| Transform {
-                    xx: fixed(a.xx),
-                    yx: fixed(a.yx),
-                    xy: fixed(a.xy),
-                    yy: fixed(a.yy),
-                    dx: fixed(a.dx),
-                    dy: fixed(a.dy),
+                    xx: fixed(a.xx, delta(a.var_index_base, 0)),
+                    yx: fixed(a.yx, delta(a.var_index_base, 1)),
+                    xy: fixed(a.xy, delta(a.var_index_base, 2)),
+                    yy: fixed(a.yy, delta(a.var_index_base, 3)),
+                    dx: fixed(a.dx, delta(a.var_index_base, 4)),
+                    dy: fixed(a.dy, delta(a.var_index_base, 5)),
                 });
                 push(sink, t);
                 self.recurse(paint, sink);
                 sink.pop_transform();
             }
-            Paint::Translate { paint, delta, .. } => {
+            Paint::Translate {
+                paint,
+                delta: shift,
+                var_index_base,
+            } => {
                 push(
                     sink,
-                    Transform::translate(f32::from(delta.0), f32::from(delta.1)),
+                    Transform::translate(
+                        f32::from(shift.0) + delta(var_index_base, 0),
+                        f32::from(shift.1) + delta(var_index_base, 1),
+                    ),
                 );
                 self.recurse(paint, sink);
                 sink.pop_transform();
@@ -294,12 +315,22 @@ impl<'c, 'a> Ctx<'c, 'a> {
                 paint,
                 scale,
                 center,
-                ..
+                var_index_base,
             } => {
-                let (sx, sy) = (f2(scale.0), f2(scale.1));
+                let uniform = matches!(self.colr.paint_format(offset), Some(20..=23));
+                let y_index = u16::from(!uniform);
+                let (sx, sy) = (
+                    f2(scale.0, delta(var_index_base, 0)),
+                    f2(scale.1, delta(var_index_base, y_index)),
+                );
                 let t = match center {
                     None => Transform::scale(sx, sy),
-                    Some((cx, cy)) => Transform::scale_around(sx, sy, f32::from(cx), f32::from(cy)),
+                    Some((cx, cy)) => Transform::scale_around(
+                        sx,
+                        sy,
+                        f32::from(cx) + delta(var_index_base, y_index.saturating_add(1)),
+                        f32::from(cy) + delta(var_index_base, y_index.saturating_add(2)),
+                    ),
                 };
                 push(sink, t);
                 self.recurse(paint, sink);
@@ -309,12 +340,16 @@ impl<'c, 'a> Ctx<'c, 'a> {
                 paint,
                 angle,
                 center,
-                ..
+                var_index_base,
             } => {
-                let a = f2(angle) * PI;
+                let a = f2(angle, delta(var_index_base, 0)) * PI;
                 let t = match center {
                     None => Transform::rotate(a),
-                    Some((cx, cy)) => Transform::rotate_around(a, f32::from(cx), f32::from(cy)),
+                    Some((cx, cy)) => Transform::rotate_around(
+                        a,
+                        f32::from(cx) + delta(var_index_base, 1),
+                        f32::from(cy) + delta(var_index_base, 2),
+                    ),
                 };
                 push(sink, t);
                 self.recurse(paint, sink);
@@ -324,12 +359,20 @@ impl<'c, 'a> Ctx<'c, 'a> {
                 paint,
                 angles,
                 center,
-                ..
+                var_index_base,
             } => {
-                let (sx, sy) = (-f2(angles.0) * PI, f2(angles.1) * PI);
+                let (sx, sy) = (
+                    -f2(angles.0, delta(var_index_base, 0)) * PI,
+                    f2(angles.1, delta(var_index_base, 1)) * PI,
+                );
                 let t = match center {
                     None => Transform::skew(sx, sy),
-                    Some((cx, cy)) => Transform::skew_around(sx, sy, f32::from(cx), f32::from(cy)),
+                    Some((cx, cy)) => Transform::skew_around(
+                        sx,
+                        sy,
+                        f32::from(cx) + delta(var_index_base, 2),
+                        f32::from(cy) + delta(var_index_base, 3),
+                    ),
                 };
                 push(sink, t);
                 self.recurse(paint, sink);
@@ -409,6 +452,7 @@ impl Painter for Bounded {
 /// Walks `paint` of a root glyph into `sink` with a fresh context.
 #[allow(clippy::too_many_arguments)]
 fn walk<'a>(
+    delta: &dyn Fn(Option<u32>, u16) -> f32,
     colr: &Colr<'a>,
     colors: &Colors<'a>,
     glyph: u32,
@@ -424,6 +468,7 @@ fn walk<'a>(
     glyphs.push(0);
     visit(glyphs, glyph);
     let mut ctx = Ctx {
+        delta,
         colr,
         colors,
         depth_left: MAX_NESTING_LEVEL,
@@ -443,7 +488,7 @@ fn walk<'a>(
 /// when the glyph has no version 1 paint. With `spend`, color stops cost
 /// work as when HarfBuzz's receiver fetches them.
 pub(crate) fn paint<'a>(
-    _font: &Font<'a>,
+    instance: Instance<'_, 'a, '_, '_>,
     colr: &Colr<'a>,
     glyph: u32,
     colors: &Colors<'a>,
@@ -454,6 +499,25 @@ pub(crate) fn paint<'a>(
     let Some(paint) = colr.base_glyph_paint(glyph) else {
         return false;
     };
+    let map = colr.var_index_map().ok().flatten();
+    let active = instance.coords_normalized().iter().any(|&v| v != 0);
+    let delta = |base: Option<u32>, offset: u16| {
+        let Some(index) = base.and_then(|v| v.checked_add(u32::from(offset))) else {
+            return 0.0;
+        };
+        if !active || index == u32::MAX {
+            return 0.0;
+        }
+        let index = map.map_or(index, |map| map.map(index));
+        let [a, b, c, d] = index.to_be_bytes();
+        instance
+            .item_delta::<HbF32>(
+                StoreKind::Colr,
+                u16::from_be_bytes([a, b]),
+                u16::from_be_bytes([c, d]),
+            )
+            .unwrap_or(0.0)
+    };
     let s = &mut scratch.v1;
     let clip = colr.clip_box(glyph);
     let bounded = clip.is_some() || {
@@ -462,6 +526,7 @@ pub(crate) fn paint<'a>(
             ..Bounded::default()
         };
         walk(
+            &delta,
             colr,
             colors,
             glyph,
@@ -475,10 +540,11 @@ pub(crate) fn paint<'a>(
         b.bounded
     };
     if let Some(b) = &clip {
-        sink.push_clip_rectangle(clip_rect(b));
+        sink.push_clip_rectangle(clip_rect(b, &delta));
     }
     if bounded {
         walk(
+            &delta,
             colr,
             colors,
             glyph,
