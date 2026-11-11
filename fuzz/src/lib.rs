@@ -811,8 +811,14 @@ mod layout {
                 ok(l.lookup(i), |lk| {
                     let _ = (lk.mark_filtering_set(), lk.effective_type(extension));
                     lk.extension_types_agree(extension)
-                        && (0..lk.num_subtables().min(N))
-                            .all(|j| lk.subtable_offset(j) == Some(0) || sub(&lk, j))
+                        && (0..lk.num_subtables().min(N)).all(|j| {
+                            // A null extension target has no subtable to walk,
+                            // just like a null entry in the lookup offset array.
+                            let null_target = lk.lookup_type() == extension
+                                && matches!(lk.subtable_data(j), Some([0, 1, 0, ty, 0, 0, 0, 0, ..])
+                                    if (1..=8).contains(ty) && u16::from(*ty) != extension);
+                            lk.subtable_offset(j) == Some(0) || null_target || sub(&lk, j)
+                        })
                 })
             })
         });
