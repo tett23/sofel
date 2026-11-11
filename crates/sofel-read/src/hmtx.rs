@@ -54,12 +54,16 @@ impl<'a> Hmtx<'a> {
     /// `advanceWidth` of `glyph`, in font units. Glyphs past the last long
     /// metric take the advance of the last one. `None` if `glyph` is not
     /// below `num_glyphs`.
+    #[inline]
     pub fn advance(&self, glyph: GlyphId) -> Option<u16> {
         if glyph.0 >= self.num_glyphs {
             return None;
         }
-        let i = to_usize(glyph.0).min(self.long.len().checked_sub(1)?);
-        self.long.get(i).map(|m| u16::from_be_bytes([m[0], m[1]]))
+        let metric = self
+            .long
+            .get(to_usize(glyph.0))
+            .or_else(|| self.long.last())?;
+        Some(u16::from_be_bytes([metric[0], metric[1]]))
     }
 
     /// `lsb` of `glyph`, in font units, from its long metric or from the

@@ -168,7 +168,7 @@ pub struct HbScratch {
 }
 
 /// Reused FreeType work area.
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 pub struct FtScratch {
     coords: Vec<i32>,
     original: Vec<Point<i32>>,
@@ -220,7 +220,9 @@ impl Instance<'_, '_, '_, '_> {
         if self.location.ft_error.is_some() {
             return Err(GvarError::InvalidLocation);
         }
-        if !self.location.ft_coords_supplied {
+        if !self.location.ft_coords_supplied
+            || self.location.ft_coords.iter().all(|coord| coord.0 == 0)
+        {
             return Ok(false);
         }
         let Some(table) = table(self.font) else {

@@ -492,6 +492,25 @@ int32_t sofel_location_create_named_instance(const sofel_font_t *font, uint32_t 
 void sofel_location_destroy(sofel_location_t *location);
 
 /*
+ * Copies a CFF2 FreeType blend vector at `location` and `vsindex`.
+ * NULL location selects the static default. The first value is 65536
+ * (16.16 unity); the remaining values keep every delta column in order,
+ * including zero coefficients. `*len` receives the required total length.
+ * NULL out with capacity zero queries the length and returns
+ * SOFEL_ERROR_BUFFER_TOO_SMALL when the vector is nonempty. A short array
+ * is left untouched. NULL font, len, or out with positive capacity is
+ * SOFEL_ERROR_NULL. Missing stores and invalid vsindex values are
+ * SOFEL_ERROR_INVALID_ARGUMENT; malformed stores are SOFEL_ERROR_INVALID_FONT.
+ *
+ * Rust: sofel_font::var::Instance::blend_scalars, sofel_font::var::BlendScalars::len, sofel_font::var::BlendScalars::is_empty, sofel_font::var::BlendScalars::iter
+ * HarfBuzz: none
+ * FreeType: cff_blend_build_vector
+ */
+int32_t sofel_cff2_blend_vector(const sofel_font_t *font,
+                                const sofel_location_t *location, uint16_t vsindex,
+                                int32_t *out, size_t capacity, size_t *len);
+
+/*
  * Copies the HarfBuzz 2.14 normalized coordinates into the caller's array.
  * When capacity is too small, writes the required count to *len and returns
  * SOFEL_ERROR_BUFFER_TOO_SMALL without writing the array.
@@ -1243,6 +1262,29 @@ int32_t sofel_font_ft_face_metrics(const sofel_font_t *font, const sofel_locatio
  */
 int32_t sofel_font_ft_v_advance(const sofel_font_t *font, const sofel_location_t *location,
                                uint32_t glyph, uint16_t *advance);
+
+/*
+ * The unscaled horizontal advance after FreeType's HVAR adjustment.
+ * SOFEL_ERROR_INVALID_GLYPH for glyph ids not below the glyph count.
+ *
+ * Rust: sofel_font::var::Instance::ft_h_advance
+ * HarfBuzz: none
+ * FreeType: TT_Get_HMetrics
+ */
+int32_t sofel_font_ft_h_advance(const sofel_font_t *font, const sofel_location_t *location,
+                               uint32_t glyph, uint16_t *advance);
+
+/*
+ * FreeType's unscaled top side bearing. `y_max` is the glyf header's yMax
+ * for fonts without vmtx. SOFEL_ERROR_INVALID_GLYPH for an invalid glyph.
+ *
+ * Rust: sofel_font::var::Instance::ft_top_side_bearing
+ * HarfBuzz: none
+ * FreeType: TT_Get_VMetrics
+ */
+int32_t sofel_font_ft_top_side_bearing(const sofel_font_t *font,
+                                       const sofel_location_t *location, uint32_t glyph,
+                                       int16_t y_max, int16_t *bearing);
 
 /* ----------------------------------------------------------- outlines */
 

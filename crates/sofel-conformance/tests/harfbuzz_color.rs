@@ -422,6 +422,17 @@ fn adr0027_variable_clip_rounds_each_edge_outward() {
     let font = Font::new(&bytes, 0).unwrap();
     for (weight, expected) in [(0.0, [50., 50., 500., 500.]), (0.5, [49., 49., 501., 501.])] {
         let location = sofel_font::var::Location::from_design(&font, &[weight, 0.0]);
+        let outlines = sofel_outline::Outlines::new(font.instance(&location));
+        let e = sofel_color::glyph_extents(&outlines, 1, &mut Scratch::default()).unwrap();
+        assert_eq!(
+            [
+                e.x_bearing,
+                e.y_bearing + e.height,
+                e.x_bearing + e.width,
+                e.y_bearing
+            ],
+            expected.map(|v| v as i32)
+        );
         let mut recording = sofel_color::Recording::new();
         sofel_color::paint_recording_at(
             font.instance(&location),
@@ -438,4 +449,126 @@ fn adr0027_variable_clip_rounds_each_edge_outward() {
         });
         assert_eq!(rect, Some(expected));
     }
+}
+
+#[test]
+fn adr0027_colr_paints_at_axis_named_and_random_locations() {
+    let root = paths::testdata().join("harfbuzz/test");
+    for (directory, names) in [
+        (
+            "api/fonts",
+            &[
+                "test_glyphs-glyf_colr_1_variable.ttf",
+                "colr-clip-rounding.ttf",
+                "colr-wide-scale.ttf",
+                "colr-var-overflow.ttf",
+                "colr-negative-radii.ttf",
+                "colr-negative-radii-precision.ttf",
+                "colr-null-store-sentinel-map.ttf",
+                "colr-affine-values.ttf",
+                "colr-empty-store-sentinel-map.ttf",
+            ][..],
+        ),
+        (
+            "subset/data/fonts",
+            &[
+                "sixtyfour_subset.ttf",
+                "KalniaGlaze.ttf",
+                "Foldit.ttf",
+                "COLRv1-alpha.ttf",
+            ][..],
+        ),
+    ] {
+        for name in names {
+            check_color_locations(name, &root.join(directory).join(name));
+        }
+    }
+}
+
+fn check_color_locations(name: &str, path: &Path) {
+    let bytes = std::fs::read(path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let positions = variation_locations::positions(&font);
+    let mut records = 0;
+    let samples = positions.len();
+    let mut scratch = Scratch::default();
+    for pos in positions {
+        let id = &pos.id;
+        let location = pos.location(&font);
+        let args = pos.args();
+        let ft = Command::new(paths::ft_dump())
+            .arg("--colr")
+            .args(&args)
+            .arg(path)
+            .output()
+            .unwrap();
+        assert!(ft.status.success(), "{name}@{id}");
+        let raw = String::from_utf8(ft.stdout).unwrap();
+        let faces = color::split_faces(&raw);
+        assert_eq!(faces.len(), 1);
+        let items = color::compare_colr_at(name, 0, font.instance(&location), &faces[0].1);
+        assert!(!items.is_empty(), "{name}@{id}");
+        for item in items.iter().filter(|item| item.id.contains(":colr:")) {
+            assert!(item.ok, "{}@{id}: {}", item.id, item.detail);
+        }
+
+        let mut command = Command::new(paths::hb_dump());
+        command.arg("--paint").args(&args).arg(path);
+        let count = read_paint_command(&mut command, 0usize, |count, face, p, pp, g, body| {
+            assert_eq!(face, 0);
+            let result =
+                color::sofel_paint_text_at(font.instance(&location), g, p, pp, 0.0, &mut scratch);
+            if result != body {
+                assert_eq!(
+                    canonical_paint(&result),
+                    canonical_paint(body),
+                    "{name}#{face}:paint:{p}:{pp}:{g}@{id}"
+                );
+            }
+            *count += 1;
+        })
+        .unwrap()
+        .unwrap();
+        assert!(count > 0, "{name}@{id}");
+        records += count;
+    }
+    eprintln!("{name}: {samples} positions, {records} paint records");
+}
+
+// Darwin printf can keep a trailing zero on a tie (1105 as 1.10e+03).
+// Preserve whitespace and compare the same decimal digits on every host.
+fn canonical_paint(text: &str) -> String {
+    text.split_inclusive(char::is_whitespace)
+        .map(|word| {
+            let token = word.trim_end();
+            if let Some((mantissa, exponent)) = token.split_once('e')
+                && mantissa.contains('.')
+                && token.parse::<f32>().is_ok()
+            {
+                let significant = mantissa.trim_end_matches('0').trim_end_matches('.');
+                return format!("{significant}e{exponent}{}", &word[token.len()..]);
+            }
+            word.to_owned()
+        })
+        .collect()
+}
+
+#[path = "support/variation_locations.rs"]
+mod variation_locations;
+
+#[test]
+fn adr0027_i03_colr_layer_control_points_keep_fractional_coordinates() {
+    let path = paths::testdata().join("harfbuzz/test/api/fonts/RocherColorGX.abc.ttf");
+    let bytes = std::fs::read(path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let location = sofel_font::var::Location::named_instance(&font, 0);
+    let outlines = sofel_outline::Outlines::new(font.instance(&location));
+    let scale = sofel_font::HbScale::for_font(&font, 2000, 2000);
+    let e =
+        sofel_color::scaled_glyph_extents(&outlines, 0, &scale, &mut Scratch::default()).unwrap();
+    // hb-dump --metrics --named-instance=0, scale 2000x2000, glyph 0.
+    assert_eq!(
+        [e.x_bearing, e.y_bearing, e.width, e.height],
+        [52, 1671, 1360, -2097]
+    );
 }
