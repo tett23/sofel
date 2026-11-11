@@ -41,8 +41,6 @@ hb-dump/golem/MPLUS1-Variable.ttf:keep  # stage:var
 hb-dump/golem/MPLUS1-Variable.ttf:keep+prepared  # stage:var
 hb-dump/golem/Muli-ABC.ttf:keep  # stage:var
 hb-dump/golem/Muli-ABC.ttf:keep+prepared  # stage:var
-hb-dump/golem/NotoSansJP-VF.subset.otf:keep  # stage:var
-hb-dump/golem/NotoSansJP-VF.subset.otf:keep+prepared  # stage:var
 hb-dump/golem/NotoSerifHK-subset.ttf:keep  # stage:var
 hb-dump/golem/NotoSerifHK-subset.ttf:keep+prepared  # stage:var
 hb-dump/golem/Recursive-ABC.ttf:keep  # stage:var
