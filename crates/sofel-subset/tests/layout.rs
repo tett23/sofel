@@ -461,19 +461,19 @@ fn gpos_pair2_variation_index_drops_with_class_two() {
 }
 
 #[test]
-fn copied_gdef_with_subset_pair_variation_index_is_unsupported() {
+fn copied_gdef_uses_pair_index_remap_like_harfbuzz() {
     let data = font_with(vec![
         (b"GDEF", gdef_with_referenced_store(&[2])),
-        (b"GPOS", pairpos2_with_variation_index(2)),
+        (b"GPOS", pairpos_with_variation_index(2)),
     ]);
     let font = Font::new(&data, 0).unwrap();
     let input = chars("BC").map_set(SetKind::NoSubsetTables, |set| {
         set.add(Tag::new(b"GDEF").to_u32());
     });
-    assert!(matches!(
-        subset(&font, &input),
-        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF")
-    ));
+    let out = subset(&font, &input).unwrap();
+    assert_eq!(out_table(&out, b"GDEF"), out_table(&data, b"GDEF"));
+    let gpos = out_table(&out, b"GPOS").unwrap();
+    assert!(gpos.windows(6).any(|w| w == [0, 0, 0, 0, 0x80, 0]));
 }
 
 #[test]

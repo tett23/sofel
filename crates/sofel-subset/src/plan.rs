@@ -199,21 +199,6 @@ fn layout_unsupported(
         && font
             .table(Tag::new(b"GPOS"))
             .is_some_and(may_reference_gdef_store);
-    let copied_gdef = no_subset.contains(Tag::new(b"GDEF").to_u32())
-        && retained(b"GDEF")
-        && font
-            .table(Tag::new(b"GDEF"))
-            .is_some_and(layout::gdef::has_var_store);
-    if !pinned
-        && copied_gdef
-        && gpos_may_reference_store
-        && !no_subset.contains(Tag::new(b"GPOS").to_u32())
-    {
-        return Err(SubsetError::Unsupported {
-            tag: Tag::new(b"GDEF"),
-            reason: "copied GDEF with subset GPOS variation indices (ADR 0022 stage 10)",
-        });
-    }
     let math_may_reference_store = retained(b"MATH")
         && font
             .table(Tag::new(b"MATH"))
@@ -587,15 +572,14 @@ impl Plan {
             && let Some(gdef) = font.table(Tag::new(b"GDEF"))
         {
             p.layout.used_mark_sets = layout::gdef::used_mark_sets(gdef, &p.layout.glyphset_gsub);
-            if !pinned
-                && !no_subset.contains(Tag::new(b"GDEF").to_u32())
-                && layout::gdef::has_var_store(gdef)
+            let copied_gdef = no_subset.contains(Tag::new(b"GDEF").to_u32());
+            let gpos_data = font.table(Tag::new(b"GPOS")).unwrap_or(&[]);
+            let gpos_has_var_format = tag_kept(b"GPOS")
+                && !no_subset.contains(Tag::new(b"GPOS").to_u32())
+                && gpos_data.windows(2).any(|word| word == [0x80, 0x00]);
+            if !pinned && layout::gdef::has_var_store(gdef) && (!copied_gdef || gpos_has_var_format)
             {
-                let gpos_data = font.table(Tag::new(b"GPOS")).unwrap_or(&[]);
-                let gpos_indices = if tag_kept(b"GPOS")
-                    && !no_subset.contains(Tag::new(b"GPOS").to_u32())
-                    && gpos_data.windows(2).any(|word| word == [0x80, 0x00])
-                {
+                let gpos_indices = if gpos_has_var_format {
                     layout::gpos::retained_pair_variation_indices(
                         gpos_data,
                         &p.layout.gpos,
@@ -605,20 +589,30 @@ impl Plan {
                 } else {
                     Some(BTreeSet::new())
                 };
-                let Some((items, map)) = gpos_indices.and_then(|indices| {
-                    layout::gdef::retained_variation_indices(
-                        gdef,
-                        &p.layout.glyphset_gsub,
-                        &indices,
-                    )
-                }) else {
+                let Some(indices) = gpos_indices else {
                     return Err(SubsetError::Unsupported {
                         tag: Tag::new(b"GDEF"),
                         reason: "the GDEF item variation store (ADR 0022 stage 10)",
                     });
                 };
-                p.layout.gdef_var_items = items;
-                p.layout.gdef_var_map = map;
+                let Some((items, map)) = layout::gdef::retained_variation_indices(
+                    gdef,
+                    &p.layout.glyphset_gsub,
+                    &indices,
+                ) else {
+                    return Err(SubsetError::Unsupported {
+                        tag: Tag::new(b"GDEF"),
+                        reason: "the GDEF item variation store (ADR 0022 stage 10)",
+                    });
+                };
+                if copied_gdef {
+                    // HarfBuzz remaps subset GPOS references even when it
+                    // copies the original GDEF table unchanged.
+                    p.layout.gdef_var_map = map;
+                } else {
+                    p.layout.gdef_var_items = items;
+                    p.layout.gdef_var_map = map;
+                }
             }
         }
         p.instance_metrics(font)?;
