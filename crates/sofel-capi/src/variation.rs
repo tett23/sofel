@@ -34,6 +34,78 @@ fn store_kind(value: i32) -> Result<StoreKind, i32> {
     }
 }
 
+/// `sofel_instance_metrics_variation`.
+///
+/// # Safety
+///
+/// Input handles must be live or NULL. The output must be writable or NULL.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_instance_metrics_variation(
+    font: *const SofelFont,
+    location: *const SofelLocation,
+    tag: u32,
+    out: *mut f32,
+) -> i32 {
+    // SAFETY: the caller guarantees the input and output pointers.
+    let (font, loc, out) = unsafe { (font_ref(font), r(location), w(out)) };
+    status((|| {
+        let instance =
+            some(font)?.instance(loc.map_or_else(Location::default_ref, |l| &l.location));
+        *some(out)? = instance.metrics_variation(Tag::from_u32(tag));
+        Ok(())
+    })())
+}
+
+/// `sofel_scale_metrics_x_variation`.
+///
+/// # Safety
+///
+/// Input handles must be live or NULL. The output must be writable or NULL.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_scale_metrics_x_variation(
+    scale: *const SofelScale,
+    font: *const SofelFont,
+    location: *const SofelLocation,
+    tag: u32,
+    out: *mut i32,
+) -> i32 {
+    // SAFETY: the caller guarantees the input and output pointers.
+    let (font, loc, out) = unsafe { (font_ref(font), r(location), w(out)) };
+    // SAFETY: the caller guarantees the scale pointer.
+    let scale = unsafe { r(scale) };
+    status((|| {
+        let instance =
+            some(font)?.instance(loc.map_or_else(Location::default_ref, |l| &l.location));
+        *some(out)? = instance.metrics_x_variation(&some(scale)?.scale, Tag::from_u32(tag));
+        Ok(())
+    })())
+}
+
+/// `sofel_scale_metrics_y_variation`.
+///
+/// # Safety
+///
+/// Input handles must be live or NULL. The output must be writable or NULL.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_scale_metrics_y_variation(
+    scale: *const SofelScale,
+    font: *const SofelFont,
+    location: *const SofelLocation,
+    tag: u32,
+    out: *mut i32,
+) -> i32 {
+    // SAFETY: the caller guarantees the input and output pointers.
+    let (font, loc, out) = unsafe { (font_ref(font), r(location), w(out)) };
+    // SAFETY: the caller guarantees the scale pointer.
+    let scale = unsafe { r(scale) };
+    status((|| {
+        let instance =
+            some(font)?.instance(loc.map_or_else(Location::default_ref, |l| &l.location));
+        *some(out)? = instance.metrics_y_variation(&some(scale)?.scale, Tag::from_u32(tag));
+        Ok(())
+    })())
+}
+
 /// `sofel_instance_item_delta_hb`.
 ///
 /// # Safety

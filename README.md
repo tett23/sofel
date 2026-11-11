@@ -17,18 +17,19 @@ WOFFとWOFF2、Type1やBDFなどの古い形式、AAT、絵文字（COLR、埋�
 シェーピングの作業バッファは、[ADR 0051](docs/adr/0051-shaping-buffer-item-size.md) に従い、グリフ情報を1要素28バイト、位置を1要素20バイトで保持する。
 
 2段階目（glyfの輪郭とアンチエイリアスのラスタライズ）まで実装し、6段階目のCFFとCFF2の輪郭、CIDの問い合わせ、PostScriptのフォントの情報（[ADR 0021](docs/adr/0021-cff-outlines.md)）と、CIDとグリフ名を速く引くcharsetの索引（[ADR 0025](docs/adr/0025-cff-charset-index.md)）を実装している。CFF2の輪郭は可変フォントの指定した位置でも取り出せる。
-サブセット化（[ADR 0022](docs/adr/0022-subsetting.md)）は、sfntの組み立てと直列化、オフセットのあふれを解く再配置、glyf系の表、cmap、name、OS/2、post、hdmx、CFF（名前のキーとCIDのキー）、VORG、GDEF、GSUB、GPOS、BASEとレイアウトの閉包、COLR（版0、変化量の表を持たない版1、版0の層だけが残るもの）、CPAL、CBLC、CBDT、sbixとCOLRの閉包、MATHとその閉包、軸を指定しないgvarとGVARの書き出し、glyfとCFF2の可変フォントのすべての軸の既定の値への固定（fvar、avar、STATの読み取りと、CFF2をCFFに変換する `DOWNGRADE_CFF2` を含む）、同じフォントを繰り返しサブセット化するための前処理（`Prepared`）、CFFのcharstringの取り出し、グリフ名での指定（`--glyphs`）と、これらのC ABI（`sofel_subset` など）までを実装し、HarfBuzzのサブセット化のテストのうちこれらの表だけを持つ組でバイト単位で一致する。Golemの使い方（グリフIDと `RETAIN_GIDS`）は、HarfBuzzのテストのフォントのうちこれらの表だけを持つものすべてで `hb-subset` と同じバイト列を出す。軸を指定しない HVAR と VVAR は、複数のItemVariationDataから使う行と領域だけを残し、暗黙・明示の送り幅とサイドベアリングのマップを書ける。軸を指定しないGDEF 1.3のItemVariationStoreは、GDEF内にVariationIndexの参照がなく、GPOSとMATHを保持せず、GSUBのFeatureVariationsも保持しない場合に除く。参照を持つGDEFやGPOS・MATHを保持するGDEFと、軸を固定しないCFF2、BASE、COLRの変化量の表は、10段階目で書く。
+サブセット化（[ADR 0022](docs/adr/0022-subsetting.md)）は、sfntの組み立てと直列化、オフセットのあふれを解く再配置、glyf系の表、cmap、name、OS/2、post、hdmx、CFF（名前のキーとCIDのキー）、VORG、GDEF、GSUB、GPOS、BASEとレイアウトの閉包、COLR（版0、変化量の表を持たない版1、版0の層だけが残るもの、残す版1の塗りとクリップがすべて静的なもの、軸を固定せず変化量ストアを直接またはマップを介して参照するもの）、CPAL、CBLC、CBDT、sbixとCOLRの閉包、MATHとその閉包、軸を指定しないgvarとGVARの書き出し、glyfとCFF2の可変フォントのすべての軸の既定の値への固定（fvar、avar、STATの読み取りと、CFF2をCFFに変換する `DOWNGRADE_CFF2` を含む）、同じフォントを繰り返しサブセット化するための前処理（`Prepared`）、CFFのcharstringの取り出し、グリフ名での指定（`--glyphs`）と、これらのC ABI（`sofel_subset` など）までを実装し、HarfBuzzのサブセット化のテストのうちこれらの表だけを持つ組でバイト単位で一致する。Golemの使い方（グリフIDと `RETAIN_GIDS`）は、HarfBuzzのテストのフォントのうちこれらの表だけを持つものすべてで `hb-subset` と同じバイト列を出す。軸を指定しない HVAR と VVAR は、複数のItemVariationDataから使う行と領域だけを残し、暗黙・明示の送り幅とサイドベアリングのマップを書ける。軸を指定しないGDEF 1.3のItemVariationStoreは、GDEF内にVariationIndexの参照がなく、GPOSとMATHを保持せず、GSUBのFeatureVariationsも保持しない場合に除く。参照を持つGDEFやGPOS・MATHを保持するGDEFと、軸を固定しないCFF2、BASE、COLRの変化量の表は、10段階目で書く。
 `sofel-read` は、sfntの目録、TTC/OTC、head、maxp/MAXP、hhea/HHEA、hmtx/HMTX、cmap（フォーマット0〜15）、loca、glyf（[ADR 0007](docs/adr/0007-sfnt-read-foundation.md)、[0011](docs/adr/0011-glyf-outlines.md)）と、OS/2、name、post、vhea/VHEA、vmtx/VMTX、VORG（[ADR 0016](docs/adr/0016-font-and-vertical-metrics.md)）、BASE（[ADR 0017](docs/adr/0017-base-baselines.md)）、CFFとCFF2（[ADR 0021](docs/adr/0021-cff-outlines.md)）、GDEF、GSUB、GPOS（[ADR 0020](docs/adr/0020-shaping-foundation.md)）、MATH、fvar、avar、STAT（[ADR 0022](docs/adr/0022-subsetting.md)）を読み、各表の検証器を持つ。
 
 大文字の HHEA と VHEA は、32ビットのメトリクス件数を読む（[ADR 0054](docs/adr/0054-wide-metrics-header-count.md)）。
 可変フォントの位置でFreeType互換の生の塗り、停止点、クリップ矩形を読むには `FtPaintGraph` を使う。FreeType互換のCOLRの生の塗りを複数グリフで調べるときは、`RawPaintGraph::new` の結果を再利用できる。
 COLRv1の描画は、Rustの `paint`・`paint_recording` とCの `sofel_paint_glyph` に可変フォントの位置を渡して記録できる。
+MVARのメトリクス差分は、Rustの `Instance::metrics_variation` とCの `sofel_instance_metrics_variation` で丸める前の値を取得できる。
 さらに、[ADR 0027](docs/adr/0027-variable-fonts.md) の可変フォントの表（ItemVariationStore、DeltaSetIndexMap、HVAR、VVAR、MVAR、gvar、GVAR、avar版2、FeatureVariations）を読み、検証する。`sofel-subset` はFeatureVariationsをこのビューから読む。glyfのFreeType互換の送り幅は、位置設定後の初回 `FT_Get_Advances` の値に合わせる（[ADR 0048](docs/adr/0048-freetype-advance-query-state.md)）。
 範囲と実装の順序は [ADR 0001](docs/adr/0001-project-goal-and-scope.md)、クレートの構成は [ADR 0003](docs/adr/0003-crate-layers.md) を参照。
 仕様は [docs/specifications.md](docs/specifications.md) にまとめる。フォントの用語と sofel の型名は[用語集](docs/glossary.md)で引ける。
 シェーピング計画の生成時間は、[Coverageの走査を打ち切る計測](docs/benchmarks/2026-11-11-shape-coverage-digest.md) に記録している。
 可変フォントの座標と問い合わせは [ADR 0027](docs/adr/0027-variable-fonts.md)、変化量の評価は [ADR 0029](docs/adr/0029-variation-deltas.md)、評価の修正は [ADR 0030](docs/adr/0030-variation-evaluation-corrections.md) で採択している。C API は位置ごとの ItemVariationStore の行の差分も返す。
-`sofel-font::var` には、設計座標と正規化座標からの位置の構築、座標の正規化、ItemVariationStoreの差分の評価の核、軸と名前つきインスタンスの問い合わせ、FreeTypeのMMVarの読み取り、位置ごとのPostScript名を実装した。
+`sofel-font::var` には、設計座標と正規化座標からの位置の構築、座標の正規化、ItemVariationStoreの差分の評価の核、軸と名前つきインスタンスの問い合わせ、FreeTypeのMMVarの読み取り、位置ごとのPostScript名を実装した。名前つきインスタンスに専用のPostScript名がない場合は、FreeTypeと同じ規則で名前を組み立てる。
 FreeTypeが合成する既定の名前つきスタイルは、名前が欠ける場合も件数と既定番号を再現する（[ADR 0036](docs/adr/0036-freetype-missing-default-named-style.md)）。
 C ABIには位置の作成、座標の取得、Variationの文字列変換、軸と名前つきインスタンスの問い合わせ、位置ごとのPostScript名を追加した。
 さらに、CFF2の `blend` は指定した位置の係数で評価し、輪郭とグリフの箱に反映する。Private DICTも位置ごとに読みなおす。C ABIの `sofel_cff2_blend_vector` は、既定成分と0の列を含む係数列を返す。
@@ -94,7 +95,7 @@ cargo run --release --bin sofel-paint -- --palette 0 --foreground 000000ff --cha
 
 ### `sofel-subset`
 
-HarfBuzzの `hb-subset` と同じオプションでサブセット化する（[ADR 0022](docs/adr/0022-subsetting.md)）。出力は `hb-subset` 15.1.0とバイト単位で一致させる。まだ書けない表（サブルーチンを持つCFF2、gvar、HVARなど）や、変化量の表を持つCOLRを含むフォント（版0の層だけが残る場合を除く）は、その表を `--drop-tables` で捨てないかぎり誤りとなる（可変フォントの表は、すべての軸を既定の値に固定すれば捨てられる）。`--variations` は、すべての軸を既定の値に固定する指定（`*=drop`、各軸の `drop` か既定の値）だけを受け付ける。`--preprocess` はフォントを前処理してから計画を作る（出力は同じ）。`--glyphs` はグリフ名（postとCFFの名前、`gidDDD`、`uniXXXX`）で指定し、`--gids` などとはコマンドラインの順に働く。
+HarfBuzzの `hb-subset` と同じオプションでサブセット化する（[ADR 0022](docs/adr/0022-subsetting.md)）。出力は `hb-subset` 15.1.0とバイト単位で一致させる。まだ書けない表（サブルーチンを持つCFF2、gvar、HVARなど）や、変化量の表を持つCOLRを含むフォント（版0の層だけが残る場合と、残す版1の塗りとクリップがすべて静的な場合、および軸を固定せず変化量ストアを直接またはマップを介して参照する場合を除く）は、その表を `--drop-tables` で捨てないかぎり誤りとなる（可変フォントの表は、すべての軸を既定の値に固定すれば捨てられる）。`--variations` は、すべての軸を既定の値に固定する指定（`*=drop`、各軸の `drop` か既定の値）だけを受け付ける。`--preprocess` はフォントを前処理してから計画を作る（出力は同じ）。`--glyphs` はグリフ名（postとCFFの名前、`gidDDD`、`uniXXXX`）で指定し、`--gids` などとはコマンドラインの順に働く。
 全軸を既定値に固定すると、BASE のベースライン座標を保ち、変化量の表とその参照を除く。
 軸を固定しない場合も、BASE の座標に VariationIndex の参照がなければ、使われない変化量の表を除く。
 適合テストで出力が違えば、表ごとに最初の差の位置を示す。片方だけにある表は、どちらに欠けているかも示す。
@@ -230,6 +231,8 @@ CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=$PWD::$PWD" cargo test --relea
 Roboto と Comfortaa のラスタライズについて、12、24、48、96 ppem で全グリフを FreeType と比較した[照合記録](docs/benchmarks/2026-11-11-unexcluded-phantom-point-check.md)がある。
 
 性能の計測（[ADR 0013](docs/adr/0013-benchmark-harness.md)）は、ワークスペースの外の `bench/` で行う。テストのデータの取得のあと、FreeTypeとHarfBuzzを静的ライブラリにビルドする（C++のコンパイラが要る。wasmでは `bench/fetch-wasi-sdk.sh` がwasi-sdkを取得する）。`--once` は各項目を1回だけ走らせ、結果の照合だけを行う。シェーピングの項目（[ADR 0020](docs/adr/0020-shaping-foundation.md)）は、計測の前に全行の結果をHarfBuzzと比べる。サブセット化の項目（[ADR 0022](docs/adr/0022-subsetting.md)）は、計測の前に出力のバイト列のハッシュをHarfBuzzと比べる。記録は `docs/benchmarks/` に置く。
+
+SourceSerifVariable-Romanの `wght=500` でのシェーピングは `--filter 'shaping react-dom.txt wght=500'` で選ぶ。全行の照合とnative・wasmの測定値は [可変位置のシェーピング計測](docs/benchmarks/2026-11-11-variable-shaping.md) に記録した。
 
 可変フォントの変化量は `--filter 'item delta'` で計れる。HVAR の係数を再利用できる場合と計算し直す場合、および既定位置の MVAR を個別に表示する。
 
