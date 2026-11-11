@@ -397,6 +397,23 @@ pub fn validate(data: &[u8], mark_sets: Option<u16>, report: &mut dyn FnMut(Diag
     );
 }
 
+pub(crate) fn inspect_partial_lookup(
+    data: &[u8],
+    at: usize,
+    lookup: &Lookup<'_>,
+    mark_sets: Option<u16>,
+    report: &mut dyn FnMut(Diagnostic),
+) {
+    let mut walker = Walker::new(TAG, data, report);
+    let mut spec = Layout {
+        extension: EXTENSION,
+        max_type: REVERSE_CHAIN_SINGLE,
+        mark_sets,
+        subtable: &mut validate_subtable,
+    };
+    crate::layout::walk::one_lookup(&mut walker, at, lookup, &mut spec);
+}
+
 fn validate_subtable(w: &mut Walker<'_, '_>, field: usize, at: usize, ty: u16) {
     match ty {
         CONTEXT => return w.context(field, at),
@@ -439,10 +456,10 @@ fn validate_subtable(w: &mut Walker<'_, '_>, field: usize, at: usize, ty: u16) {
                 let f = count_at
                     .saturating_add(gw)
                     .saturating_add(i.saturating_mul(gw));
-                let Some((set_at, set)) = w.follow(f, at, gw, |d| LigatureSet::new(d, gw)) else {
+                let Some((set_at, _, available)) = w.offset_prefix(f, at, gw, 0, gw) else {
                     continue;
                 };
-                for j in 0..set.len() {
+                for j in 0..available {
                     let f = set_at
                         .saturating_add(2)
                         .saturating_add(j.saturating_mul(gw));

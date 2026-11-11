@@ -44,10 +44,10 @@ cmap のフォーマット2と8は、通常のグリフ検索では読み、シ�
 
 ## HarfBuzz のサニタイザの移植
 
-[ADR 0044](adr/0044-shaping-conformance-exceptions.md) で認めた dfont の差は、[ADR 0058](adr/0058-dfont-face-selection.md) に従って解消した。残るサニタイザの差は次の ADR で扱う。
-固定した `in-house/collections.tests:1` は HarfBuzz と一致した。シェーピングの全5850件では5631件が通り、残る219件は期待する失敗である。dfont を含めた FreeType の654ファイルでは9113項目が一致し、生成した2フェイスの dfont でも cmap とメトリクスの4項目が一致した。
+[ADR 0044](adr/0044-shaping-conformance-exceptions.md) で認めた dfont の差は、[ADR 0058](adr/0058-dfont-face-selection.md) に従って解消した。
+固定した `in-house/collections.tests:1` は HarfBuzz と一致した。シェーピングの全5850件では5632件が通り、残る218件は期待する失敗である。dfont を含めた FreeType の654ファイルでは9113項目が一致し、生成した2フェイスの dfont でも cmap とメトリクスの4項目が一致した。
 
-- [ADR 0059](adr/0059-layout-sanitizer-diagnostics.md) に従い、GSUB、GPOS、GDEF のサニタイズを HarfBuzz 15.1.0 に合わせる。シェーピング、レイアウト選択、検証器で表の採否を共有する。`in-house/harfbust.tests:4`、レイアウト選択の3件、無作為な文字列のシェーピングの3件を照合し、一致した項目から `sanitize` の期待失敗を削除する。
+- [ADR 0059](adr/0059-layout-sanitizer-diagnostics.md) に従い、GSUB、GPOS、GDEF のサニタイズを HarfBuzz 15.1.0 に合わせた。シェーピング、レイアウト選択、検証器で表の採否を共有する。`in-house/harfbust.tests:4`、レイアウト選択の3件、無作為な文字列のシェーピングの3件を照合し、7件すべてで HarfBuzz と一致し、`sanitize` の期待失敗を削除した。
 
 `sofel-validate` は、表を破棄しても元のデータの検証を続ける。1回の検証で確認できたすべての破損箇所について、フェイス、表タグ、バイト位置、理由をテキストと JSON に出し、同じ箇所を重複させずに数える。未検査範囲があれば、件数が下限であることと、その範囲と理由を示す。シェーピングが表を無視することは、破損箇所数に含めず、破棄した表ごとに警告する。
 
