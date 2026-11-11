@@ -1096,6 +1096,62 @@ fn gdef_store_with_math_kern_variation_index_is_remapped() {
 }
 
 #[test]
+fn gdef_store_with_math_assembly_variation_index_is_remapped() {
+    let gdef = gdef_with_referenced_store(&[0]);
+    let varidx = Buf::new().u16(0).u16(2).u16(0x8000).done();
+    let assembly = link(
+        Buf::new().i16(10).u16(0).u16(0).done(),
+        vec![(2, 2, varidx)],
+    );
+    let construction = link(Buf::new().u16(0).u16(0).done(), vec![(0, 2, assembly)]);
+    let second_varidx = Buf::new().u16(0).u16(1).u16(0x8000).done();
+    let second_assembly = link(
+        Buf::new().i16(20).u16(0).u16(0).done(),
+        vec![(2, 2, second_varidx)],
+    );
+    let second_construction = link(
+        Buf::new().u16(0).u16(0).done(),
+        vec![(0, 2, second_assembly)],
+    );
+    let variants = link(
+        Buf::new()
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u16(1)
+            .u16(1)
+            .u16(0)
+            .u16(0)
+            .done(),
+        vec![
+            (2, 2, coverage1(&[1])),
+            (4, 2, coverage1(&[2])),
+            (10, 2, construction),
+            (12, 2, second_construction),
+        ],
+    );
+    let math = link(
+        Buf::new().u32(0x0001_0000).u16(0).u16(0).u16(0).done(),
+        vec![(8, 2, variants)],
+    );
+    let data = font_with(vec![(b"GDEF", gdef), (b"MATH", math)]);
+    let font = Font::new(&data, 0).unwrap();
+    for (text, retained_index, item_count) in [("A", 1, 2), ("B", 0, 1)] {
+        let out = subset(&font, &chars(text)).unwrap();
+        let gdef = out_table(&out, b"GDEF").unwrap();
+        let store = sofel_font::read::gdef::Gdef::new(&gdef)
+            .unwrap()
+            .variation_store()
+            .unwrap()
+            .unwrap();
+        assert_eq!(store.item_data(0).unwrap().item_count, item_count);
+        let math = out_table(&out, b"MATH").unwrap();
+        let device = follow(follow(follow(follow(&math, 8), 10), 0), 2);
+        assert_eq!(&device[..6], &[0, 0, 0, retained_index, 0x80, 0]);
+    }
+}
+
+#[test]
 fn gdef_store_with_gsub_feature_variations_remains_unsupported() {
     let gdef = gdef_with_unused_store(class_def2(&[(1, 5, 1)]));
     let gsub = Buf::new()
