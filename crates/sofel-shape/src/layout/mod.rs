@@ -17,12 +17,14 @@ pub(crate) mod apply;
 pub(crate) mod gpos;
 pub(crate) mod gsub;
 pub(crate) mod map;
+pub(crate) mod variations;
 pub(crate) mod would;
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use sofel_font::Font;
+use sofel_font::read::feature_variations::FeatureVariations;
 use sofel_font::read::gdef::{self, Gdef as GdefView, MarkGlyphSets};
 use sofel_font::read::gpos::{self as gpos_view, PosSubtable};
 use sofel_font::read::gsub::{self as gsub_view, SubstSubtable};
@@ -213,6 +215,7 @@ pub(crate) struct Table<'a, S> {
     pub(crate) has_data: bool,
     scripts: Option<ScriptList<'a>>,
     features: Option<FeatureList<'a>>,
+    pub(crate) variations: Option<FeatureVariations<'a>>,
     lookup_count: usize,
     pub(crate) lookups: Vec<LookupAccel<S>>,
 }
@@ -224,6 +227,7 @@ impl<'a, S> Table<'a, S> {
             has_data: false,
             scripts: None,
             features: None,
+            variations: None,
             lookup_count: 0,
             lookups: Vec::new(),
         }
@@ -281,6 +285,7 @@ impl<'a, S> Table<'a, S> {
             has_data: true,
             scripts: t.script_list().ok().flatten(),
             features: t.feature_list().ok().flatten(),
+            variations: t.feature_variations().ok().flatten(),
             lookup_count,
             lookups,
         }
@@ -390,11 +395,15 @@ impl<'a, S> Table<'a, S> {
 
     /// The lookup indices of feature `index` (none for an index past the
     /// list or a feature that cannot be read).
-    pub(crate) fn feature_lookups(&self, index: u16) -> Vec<u16> {
-        let Some(f) = self
-            .features
-            .and_then(|l| l.feature(usize::from(index)).ok().flatten())
-        else {
+    pub(crate) fn feature_lookups(&self, index: u16, variation_index: Option<u32>) -> Vec<u16> {
+        let replacement = self.variations.and_then(|variations| {
+            variation_index
+                .and_then(|selected| variations::substituted_feature(variations, selected, index))
+        });
+        let Some(f) = replacement.or_else(|| {
+            self.features
+                .and_then(|l| l.feature(usize::from(index)).ok().flatten())
+        }) else {
             return Vec::new();
         };
         (0..f.num_lookups())

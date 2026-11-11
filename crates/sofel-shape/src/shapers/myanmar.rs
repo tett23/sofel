@@ -84,7 +84,7 @@ fn collect_features(planner: &mut Planner<'_, '_>) {
 }
 
 /// `setup_masks_myanmar`: the category of each character, no masks.
-fn setup_masks(_: &ShapePlan<'_>, buffer: &mut Buffer, _: &ShapeFont<'_, '_>) {
+fn setup_masks(_: &ShapePlan<'_>, buffer: &mut Buffer, _: &ShapeFont<'_, '_, '_, '_>) {
     for info in buffer.infos_mut() {
         let [category, _] = indic_categories(info.codepoint).to_le_bytes();
         info.shaper_category = category;
@@ -110,7 +110,7 @@ fn find_syllables(buffer: &mut Buffer) {
 }
 
 /// `setup_syllables_myanmar`.
-fn setup_syllables(_: &ShapePlan<'_>, _: &ShapeFont<'_, '_>, buffer: &mut Buffer) -> bool {
+fn setup_syllables(_: &ShapePlan<'_>, _: &ShapeFont<'_, '_, '_, '_>, buffer: &mut Buffer) -> bool {
     find_syllables(buffer);
     for_each_syllable(buffer, |b, start, end| b.unsafe_to_break(start, end));
     false
@@ -201,7 +201,7 @@ fn initial_reordering_consonant_syllable(buffer: &mut Buffer, start: usize, end:
 
 /// `reorder_myanmar`: the dotted circles, then each consonant syllable
 /// and broken cluster reordered.
-fn reorder(_: &ShapePlan<'_>, font: &ShapeFont<'_, '_>, buffer: &mut Buffer) -> bool {
+fn reorder(_: &ShapePlan<'_>, font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut Buffer) -> bool {
     let ret = insert_dotted_circles(
         font,
         buffer,

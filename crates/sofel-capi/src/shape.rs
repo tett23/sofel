@@ -516,7 +516,7 @@ pub unsafe extern "C" fn sofel_segment_guess(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sofel_shape_plan_create(
     font: *const SofelFont,
-    _location: *const SofelLocation,
+    location: *const SofelLocation,
     segment: *const CSegment,
     features: *const CFeature,
     n: usize,
@@ -524,8 +524,15 @@ pub unsafe extern "C" fn sofel_shape_plan_create(
 ) -> *mut SofelShapePlan {
     // SAFETY: the caller's conditions; the plan borrows the font's data,
     // which the caller keeps alive while the plan lives.
-    let (font, seg, features, error) =
-        unsafe { (r(font), r(segment), slice(features, n), w(error)) };
+    let (font, location, seg, features, error) = unsafe {
+        (
+            r(font),
+            r(location),
+            r(segment),
+            slice(features, n),
+            w(error),
+        )
+    };
     // SAFETY: the segment's language is NULL or live.
     let language = seg.and_then(|s| unsafe { r(s.language) });
     let Some(error) = error else {
@@ -535,7 +542,14 @@ pub unsafe extern "C" fn sofel_shape_plan_create(
         let (font, seg, features) = (some(font)?, some(seg)?, some(features)?);
         let props = resolved_from_c(seg, language)?;
         let features: Vec<Feature> = features.iter().map(feature_from_c).collect();
-        Ok(ShapePlan::new(&font.font, props, &features))
+        let location = location
+            .map(|v| &v.location)
+            .unwrap_or(sofel_font::var::Location::default_ref());
+        Ok(ShapePlan::new(
+            font.font.instance(location),
+            props,
+            &features,
+        ))
     })();
     match plan {
         Ok(plan) => {
@@ -1136,6 +1150,7 @@ fn font_box(font: &SofelFont, glyph: GlyphId) -> Option<GlyphExtents> {
 
 fn shape(
     font: Option<&SofelFont>,
+    location: Option<&SofelLocation>,
     scale: Option<&SofelScale>,
     plan: Option<&SofelShapePlan>,
     b: Option<&mut SofelBuffer>,
@@ -1147,9 +1162,13 @@ fn shape(
         scale.map_or(0, |s| s.x_ppem),
         scale.map_or(0, |s| s.y_ppem),
     );
-    let boxes = |g: GlyphId| font_box(font, g);
+    let location = location
+        .map(|v| &v.location)
+        .unwrap_or(sofel_font::var::Location::default_ref());
+    let instance = font.font.instance(location);
+    let boxes = |g: GlyphId| instance.glyf_extents(g).or_else(|| font_box(font, g));
     b.content = Content::Glyphs(sofel_shape::shape_with_extents(
-        &font.font, &s, &plan.plan, u, &boxes,
+        instance, &s, &plan.plan, u, &boxes,
     ));
     Ok(())
 }
@@ -1163,14 +1182,15 @@ fn shape(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sofel_shape(
     font: *const SofelFont,
-    _location: *const SofelLocation,
+    location: *const SofelLocation,
     scale: *const SofelScale,
     plan: *const SofelShapePlan,
     buffer: *mut SofelBuffer,
 ) -> i32 {
     // SAFETY: the caller's conditions.
-    let (font, scale, plan, b) = unsafe { (r(font), r(scale), r(plan), w(buffer)) };
-    status(shape(font, scale, plan, b))
+    let (font, location, scale, plan, b) =
+        unsafe { (r(font), r(location), r(scale), r(plan), w(buffer)) };
+    status(shape(font, location, scale, plan, b))
 }
 
 /// `sofel_shape_fallback`.
@@ -1183,13 +1203,14 @@ pub unsafe extern "C" fn sofel_shape(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sofel_shape_fallback(
     font: *const SofelFont,
-    _location: *const SofelLocation,
+    location: *const SofelLocation,
     scale: *const SofelScale,
     segment: *const CSegment,
     buffer: *mut SofelBuffer,
 ) -> i32 {
     // SAFETY: the caller's conditions.
-    let (font, scale, seg, b) = unsafe { (r(font), r(scale), r(segment), w(buffer)) };
+    let (font, location, scale, seg, b) =
+        unsafe { (r(font), r(location), r(scale), r(segment), w(buffer)) };
     // SAFETY: the segment's language is NULL or live.
     let language = seg.and_then(|s| unsafe { r(s.language) });
     status((|| {
@@ -1201,7 +1222,15 @@ pub unsafe extern "C" fn sofel_shape_fallback(
             scale.map_or(0, |s| s.x_ppem),
             scale.map_or(0, |s| s.y_ppem),
         );
-        b.content = Content::Glyphs(sofel_shape::shape_fallback(&font.font, &s, &props, u));
+        let location = location
+            .map(|v| &v.location)
+            .unwrap_or(sofel_font::var::Location::default_ref());
+        b.content = Content::Glyphs(sofel_shape::shape_fallback(
+            font.font.instance(location),
+            &s,
+            &props,
+            u,
+        ));
         Ok(())
     })())
 }

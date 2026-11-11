@@ -177,7 +177,7 @@ fn use_plan<'p>(plan: &'p ShapePlan<'_>) -> Option<&'p UsePlan> {
 /// `setup_masks_use`: the joining of a joining script, then the USE
 /// category of each character. The other masks are set up in the
 /// [`setup_syllables`] pause.
-fn setup_masks(plan: &ShapePlan<'_>, buffer: &mut Buffer, _: &ShapeFont<'_, '_>) {
+fn setup_masks(plan: &ShapePlan<'_>, buffer: &mut Buffer, _: &ShapeFont<'_, '_, '_, '_>) {
     if let Some(ap) = use_plan(plan).and_then(|up| up.arabic_plan.as_ref()) {
         setup_masks_plan(ap, buffer);
     }
@@ -290,7 +290,11 @@ fn find_syllables(buffer: &mut Buffer) {
 }
 
 /// `setup_syllables_use`.
-fn setup_syllables(plan: &ShapePlan<'_>, _: &ShapeFont<'_, '_>, buffer: &mut Buffer) -> bool {
+fn setup_syllables(
+    plan: &ShapePlan<'_>,
+    _: &ShapeFont<'_, '_, '_, '_>,
+    buffer: &mut Buffer,
+) -> bool {
     find_syllables(buffer);
     for_each_syllable(buffer, |b, start, end| b.unsafe_to_break(start, end));
     if let Some(up) = use_plan(plan) {
@@ -301,7 +305,11 @@ fn setup_syllables(plan: &ShapePlan<'_>, _: &ShapeFont<'_, '_>, buffer: &mut Buf
 }
 
 /// `_hb_clear_substitution_flags`.
-fn clear_substitution_flags(_: &ShapePlan<'_>, _: &ShapeFont<'_, '_>, buffer: &mut Buffer) -> bool {
+fn clear_substitution_flags(
+    _: &ShapePlan<'_>,
+    _: &ShapeFont<'_, '_, '_, '_>,
+    buffer: &mut Buffer,
+) -> bool {
     for info in buffer.infos_mut() {
         info.clear_substituted();
     }
@@ -309,7 +317,7 @@ fn clear_substitution_flags(_: &ShapePlan<'_>, _: &ShapeFont<'_, '_>, buffer: &m
 }
 
 /// `record_rphf_use`: a repha that `rphf` substituted becomes `R`.
-fn record_rphf(plan: &ShapePlan<'_>, _: &ShapeFont<'_, '_>, buffer: &mut Buffer) -> bool {
+fn record_rphf(plan: &ShapePlan<'_>, _: &ShapeFont<'_, '_, '_, '_>, buffer: &mut Buffer) -> bool {
     let Some(up) = use_plan(plan) else {
         return false;
     };
@@ -330,7 +338,7 @@ fn record_rphf(plan: &ShapePlan<'_>, _: &ShapeFont<'_, '_>, buffer: &mut Buffer)
 
 /// `record_pref_use`: a glyph that `pref` substituted becomes `VPre`,
 /// which behaves the same.
-fn record_pref(_: &ShapePlan<'_>, _: &ShapeFont<'_, '_>, buffer: &mut Buffer) -> bool {
+fn record_pref(_: &ShapePlan<'_>, _: &ShapeFont<'_, '_, '_, '_>, buffer: &mut Buffer) -> bool {
     for_each_syllable(buffer, |b, start, end| {
         if let Some(i) = (start..end).find(|&i| b.info[i].substituted()) {
             b.info[i].shaper_category = cat::VPRE;
@@ -426,14 +434,14 @@ fn reorder_syllable(buffer: &mut Buffer, start: usize, end: usize) {
 
 /// `reorder_use`: the dotted circles of broken clusters, then the
 /// reordering of each syllable.
-fn reorder(_: &ShapePlan<'_>, font: &ShapeFont<'_, '_>, buffer: &mut Buffer) -> bool {
+fn reorder(_: &ShapePlan<'_>, font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut Buffer) -> bool {
     let ret = insert_dotted_circles(font, buffer, syllable::BROKEN, cat::B, Some(cat::R), None);
     for_each_syllable(buffer, reorder_syllable);
     ret
 }
 
 /// `compose_use`: split matras are not recomposed.
-fn compose(_: &NormalizeContext<'_, '_, '_>, a: u32, b: u32) -> Option<u32> {
+fn compose(_: &NormalizeContext<'_, '_, '_, '_, '_>, a: u32, b: u32) -> Option<u32> {
     if crate::unicode::is_mark_category(sofel_unicode::general_category(a)) {
         return None;
     }

@@ -15,9 +15,9 @@ const MAX_COMBINING_MARKS: usize = 32;
 
 /// `hb_ot_shape_normalize_context_t`: what a shaper's `decompose` and
 /// `compose` see.
-pub(crate) struct NormalizeContext<'p, 'f, 'a> {
+pub(crate) struct NormalizeContext<'p, 'f, 'a, 'l, 's> {
     pub(crate) plan: &'p ShapePlan<'a>,
-    pub(crate) font: &'f ShapeFont<'f, 'a>,
+    pub(crate) font: &'f ShapeFont<'f, 'a, 'l, 's>,
 }
 
 /// `decompose_unicode`.
@@ -30,7 +30,7 @@ fn compose_unicode(a: u32, b: u32) -> Option<u32> {
     sofel_unicode::compose(a, b)
 }
 
-impl NormalizeContext<'_, '_, '_> {
+impl NormalizeContext<'_, '_, '_, '_, '_> {
     fn decompose(&self, ab: u32) -> Option<(u32, u32)> {
         match self.plan.funcs().decompose {
             Some(f) => f(self, ab),
@@ -94,7 +94,7 @@ fn next_char(buffer: &mut Buffer, glyph: u32) {
 
 /// `decompose`: the number of characters output.
 fn decompose(
-    c: &NormalizeContext<'_, '_, '_>,
+    c: &NormalizeContext<'_, '_, '_, '_, '_>,
     buffer: &mut Buffer,
     shortest: bool,
     ab: u32,
@@ -140,7 +140,7 @@ fn decompose(
 
 /// `decompose_current_character`.
 fn decompose_current_character(
-    c: &NormalizeContext<'_, '_, '_>,
+    c: &NormalizeContext<'_, '_, '_, '_, '_>,
     buffer: &mut Buffer,
     shortest: bool,
 ) {
@@ -191,14 +191,14 @@ fn decompose_current_character(
 }
 
 /// `set_glyph`.
-fn set_glyph(buffer: &mut Buffer, font: &ShapeFont<'_, '_>) {
+fn set_glyph(buffer: &mut Buffer, font: &ShapeFont<'_, '_, '_, '_>) {
     let u = buffer.cur(0).codepoint;
     buffer.cur_mut(0).glyph_index = font.nominal_glyph(u).unwrap_or(0);
 }
 
 /// `handle_variation_selector_cluster`.
 fn handle_variation_selector_cluster(
-    c: &NormalizeContext<'_, '_, '_>,
+    c: &NormalizeContext<'_, '_, '_, '_, '_>,
     buffer: &mut Buffer,
     end: usize,
 ) {
@@ -240,7 +240,7 @@ fn handle_variation_selector_cluster(
 
 /// `decompose_multi_char_cluster`.
 fn decompose_multi_char_cluster(
-    c: &NormalizeContext<'_, '_, '_>,
+    c: &NormalizeContext<'_, '_, '_, '_, '_>,
     buffer: &mut Buffer,
     end: usize,
     short_circuit: bool,
@@ -257,7 +257,11 @@ fn decompose_multi_char_cluster(
 }
 
 /// `_hb_ot_shape_normalize`.
-pub(crate) fn normalize(plan: &ShapePlan<'_>, buffer: &mut Buffer, font: &ShapeFont<'_, '_>) {
+pub(crate) fn normalize(
+    plan: &ShapePlan<'_>,
+    buffer: &mut Buffer,
+    font: &ShapeFont<'_, '_, '_, '_>,
+) {
     if buffer.len == 0 {
         return;
     }
