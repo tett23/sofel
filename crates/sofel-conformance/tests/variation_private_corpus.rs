@@ -41,6 +41,7 @@ fn adr0030_i06_cff2_private_blend_matches_freetype_at_all_locations() {
     paths::require(&exe, "ft-dump").unwrap();
     let mut checked = 0usize;
     let mut dictionaries = 0usize;
+    let mut arrays = 0usize;
     let mut failures = 0usize;
     for path in corpus_paths(&data) {
         let bytes = std::fs::read(&path).unwrap();
@@ -83,6 +84,8 @@ fn adr0030_i06_cff2_private_blend_matches_freetype_at_all_locations() {
                 let location = position.location(&font);
                 let instance = font.instance(&location);
                 let blend = instance.ft_blend_weights(&cff);
+                let mut private_count = 0usize;
+                let mut array_count = 0usize;
                 for line in block.lines() {
                     if line.starts_with("private_error") {
                         failures += 1;
@@ -113,6 +116,8 @@ fn adr0030_i06_cff2_private_blend_matches_freetype_at_all_locations() {
                                 position.id
                             );
                         }
+                        array_count += 1;
+                        arrays += 1;
                         continue;
                     }
                     let Some(values) = line.strip_prefix("private ") else {
@@ -151,13 +156,26 @@ fn adr0030_i06_cff2_private_blend_matches_freetype_at_all_locations() {
                         );
                     }
                     dictionaries += 1;
+                    private_count += 1;
                 }
+                assert_eq!(
+                    private_count,
+                    usize::try_from(cff.num_font_dicts().max(1)).unwrap(),
+                    "{id}#{index}@{}",
+                    position.id
+                );
+                assert_eq!(
+                    array_count,
+                    private_count * 6,
+                    "{id}#{index}@{}",
+                    position.id
+                );
                 checked += 1;
             }
         }
     }
     eprintln!(
-        "checked {checked} CFF2 face-locations, {dictionaries} Private DICTs, {failures} differences"
+        "checked {checked} CFF2 face-locations, {dictionaries} Private DICTs, {arrays} arrays, {failures} differences"
     );
     assert!(checked > 0);
     assert!(dictionaries > 0);
