@@ -575,3 +575,60 @@ fn adr0027_i_gpos_variation_index_applies_without_ppem() {
     let glyphs = shape(font.instance(&loc), &scale, &plan, b);
     assert_eq!(advances(&glyphs), [541]);
 }
+
+#[test]
+fn adr0049_i4_variable_shape_matches_uncached_advance_and_default_fields() {
+    use sofel_font::var::Location;
+
+    let mut fvar = vec![0, 1, 0, 0, 0, 16, 0, 2, 0, 1, 0, 20, 0, 0, 0, 8];
+    fvar.extend_from_slice(b"wght");
+    for value in [0i32, 0, 0x10000] {
+        fvar.extend_from_slice(&value.to_be_bytes());
+    }
+    fvar.extend_from_slice(&[0, 0, 1, 0]);
+    let store = [
+        0, 1, 0, 0, 0, 12, 0, 1, 0, 0, 0, 22, 0, 1, 0, 1, 0, 0, 0x40, 0, 0x40, 0, 0, 2, 0, 1, 0, 1,
+        0, 0, 0, 21, 0xff, 0xe1,
+    ];
+    let mut hvar = vec![0, 1, 0, 0, 0, 0, 0, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    hvar.extend_from_slice(&store);
+    let gsub = simple_layout(
+        &[b"liga"],
+        vec![lookup(
+            4,
+            0,
+            vec![ligature_subst(F as u16, &[(&[I as u16], FI as u16)])],
+        )],
+    );
+    let bytes = make_font(
+        false,
+        vec![(b"fvar", fvar), (b"HVAR", hvar), (b"GSUB", gsub)],
+    );
+    let font = Font::new(&bytes, 0).unwrap();
+    let location = Location::from_design(&font, &[1.0]);
+    let scale = Scale::unscaled(&font);
+    for text in ["", "a", "aaaaaaaaaaaaaaaa", "fi", "afia"] {
+        let run = |instance| {
+            let plan = ShapePlan::new(instance, props(Direction::Ltr), &[]);
+            let mut buffer = UnicodeBuffer::new();
+            buffer.push_utf8(text.as_bytes(), 0, None);
+            shape(instance, &scale, &plan, buffer)
+        };
+        let default = run(font.default_instance());
+        let instance = font.instance(&location);
+        let varied = run(instance);
+        assert_eq!(varied.glyph_infos(), default.glyph_infos(), "{text}");
+        for (info, position) in varied.glyph_infos().iter().zip(varied.glyph_positions()) {
+            assert_eq!(
+                position.x_advance,
+                instance.advance(GlyphId(info.glyph)).cast_signed(),
+                "{text}"
+            );
+            assert_eq!(
+                (position.y_advance, position.x_offset, position.y_offset),
+                (0, 0, 0),
+                "{text}"
+            );
+        }
+    }
+}

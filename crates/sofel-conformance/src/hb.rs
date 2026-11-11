@@ -20,6 +20,7 @@
 //! COLR, then glyf, CFF2 and CFF (ADR 0021).
 
 use sofel_font::read::{GlyphId, Tag};
+use sofel_font::var::Instance;
 use sofel_font::{Direction, Font, FontExtents, GlyphExtents, HbScale, MetricsTag};
 use std::cell::RefCell;
 
@@ -712,7 +713,16 @@ fn dir_of(d: char) -> Direction {
 
 /// sofel's values for the calls `hb-dump --baselines` made.
 pub fn sofel_baselines(font: &Font<'_>, hb: &HbBaselines) -> HbBaselines {
-    let outlines = Outlines::new(font.default_instance());
+    sofel_baselines_at(font, font.default_instance(), hb)
+}
+
+/// Baselines and script extents at a variable-font location.
+pub fn sofel_baselines_at(
+    font: &Font<'_>,
+    instance: Instance<'_, '_, '_, '_>,
+    hb: &HbBaselines,
+) -> HbBaselines {
+    let outlines = Outlines::new(instance);
     let scratch = RefCell::new(sofel_color::Scratch::default());
     let scales = hb
         .scales
@@ -725,9 +735,9 @@ pub fn sofel_baselines(font: &Font<'_>, hb: &HbBaselines) -> HbBaselines {
                 .map(|&(d, script, tag, _, _, _)| {
                     let (dir, script_tag, t) =
                         (dir_of(d), Tag::from_u32(script), Tag::from_u32(tag));
-                    let found = scale.baseline(font, t, dir, script_tag);
+                    let found = instance.scaled_baseline(&scale, t, dir, script_tag);
                     let fallback =
-                        scale.baseline_with_fallback_scaled(font, t, dir, script_tag, |g| {
+                        instance.scaled_baseline_with_fallback(&scale, t, dir, script_tag, |g| {
                             sofel_color::scaled_glyph_extents(
                                 &outlines,
                                 g.0,
@@ -749,8 +759,8 @@ pub fn sofel_baselines(font: &Font<'_>, hb: &HbBaselines) -> HbBaselines {
                 .extents
                 .iter()
                 .map(|&(d, script, lang, _, _)| {
-                    let (e, found) = scale.layout_font_extents(
-                        font,
+                    let (e, found) = instance.scaled_layout_font_extents(
+                        &scale,
                         dir_of(d),
                         Tag::from_u32(script),
                         Tag::from_u32(lang),

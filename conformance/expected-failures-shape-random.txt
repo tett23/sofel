@@ -1,9 +1,19 @@
 # Scripts of the test fonts for which hb-dump --shape-random (ADR 0020,
 # HarfBuzzとの突き合わせ) gives a string sofel-shape shapes differently,
 # checked by crates/sofel-conformance/tests/harfbuzz_shape_dump.rs. One
-# item per line, <font>#<face>:<script>, with one category of
+# item per line, <font>#<face>:<script>[@<position>], with one category of
 # conformance/expected-failures.txt as its comment; the category must fit
 # the first string that differs. Remove an entry when it passes.
+harfbuzz/test/api/fonts/TestGVAREight.ttf#0:Latn@default  # aat
+harfbuzz/test/api/fonts/TestGVAREight.ttf#0:Latn@rand:0  # aat
+harfbuzz/test/api/fonts/TestGVAREight.ttf#0:Latn@rand:1  # aat
+harfbuzz/test/api/fonts/TestGVAREight.ttf#0:Latn@rand:2  # aat
+harfbuzz/test/api/fonts/TestGVAREight.ttf#0:Latn@rand:3  # aat
+harfbuzz/test/api/fonts/TestGVAREight.ttf#0:Zyyy@default  # aat
+harfbuzz/test/api/fonts/TestGVAREight.ttf#0:Zyyy@rand:0  # aat
+harfbuzz/test/api/fonts/TestGVAREight.ttf#0:Zyyy@rand:1  # aat
+harfbuzz/test/api/fonts/TestGVAREight.ttf#0:Zyyy@rand:2  # aat
+harfbuzz/test/api/fonts/TestGVAREight.ttf#0:Zyyy@rand:3  # aat
 harfbuzz/test/shape/data/in-house/fonts/007e2c13e6baf28a7f1e8f981c2db0cb850b1f1f.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/in-house/fonts/053b0fbe96e1a6ac02e1febd48dc9f28464f5d33.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/in-house/fonts/1bfb8aab9b49ef30e8deae3db271ca3dbc6208a1.ttf#0:Latn  # aat
@@ -12,7 +22,6 @@ harfbuzz/test/shape/data/in-house/fonts/33f889c2024c188e23bec1c16a74ebb0c717bd7f
 harfbuzz/test/shape/data/in-house/fonts/3503b8963831c2381809884633f483b7361baa97.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/in-house/fonts/36f8d640bc42f35a59e607bcf7c4aa70b63d4ef4.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/in-house/fonts/4856acb0edc382fd8044d3d822760fed7b0b500e.ttf#0:Latn  # aat
-harfbuzz/test/shape/data/in-house/fonts/4e9f0bc6a8f25b5fd3547bbc17423ce8cedb915f.ttf#0:Latn  # variations
 harfbuzz/test/shape/data/in-house/fonts/561bf77de7a26a5519dc384eddebfdff04c46c39.ttf#0:Arab  # aat
 harfbuzz/test/shape/data/in-house/fonts/561bf77de7a26a5519dc384eddebfdff04c46c39.ttf#0:Zinh  # aat
 harfbuzz/test/shape/data/in-house/fonts/59e9061302a5ad5b85f9d7c2f702e194fa1d5fce.ttf#0:Latn  # aat
@@ -58,8 +67,16 @@ harfbuzz/test/shape/data/text-rendering-tests/fonts/TestAATMort.ttf#0:Latn  # aa
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestAATMort.ttf#0:Zyyy  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestAATMorx.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestAATMorx.ttf#0:Zyyy  # aat
-harfbuzz/test/shape/data/text-rendering-tests/fonts/TestGVAREight.ttf#0:Latn  # aat
-harfbuzz/test/shape/data/text-rendering-tests/fonts/TestGVAREight.ttf#0:Zyyy  # aat
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestGVAREight.ttf#0:Latn@default  # aat
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestGVAREight.ttf#0:Latn@rand:0  # aat
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestGVAREight.ttf#0:Latn@rand:1  # aat
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestGVAREight.ttf#0:Latn@rand:2  # aat
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestGVAREight.ttf#0:Latn@rand:3  # aat
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestGVAREight.ttf#0:Zyyy@default  # aat
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestGVAREight.ttf#0:Zyyy@rand:0  # aat
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestGVAREight.ttf#0:Zyyy@rand:1  # aat
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestGVAREight.ttf#0:Zyyy@rand:2  # aat
+harfbuzz/test/shape/data/text-rendering-tests/fonts/TestGVAREight.ttf#0:Zyyy@rand:3  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestKERNOne.otf#0:Latn  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestKERNOne.otf#0:Zyyy  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXEight.ttf#0:Latn  # aat

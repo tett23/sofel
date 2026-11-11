@@ -362,8 +362,85 @@ fn adr0027_i_plan_key_tracks_selected_record_not_exact_coords() {
         .key()
         .2
     };
-    assert_eq!(key(0.0)[0], None);
-    assert_eq!(key(0.5)[0], Some(0));
-    assert_eq!(key(0.75)[0], Some(0));
+    assert_eq!(key(0.0)[0].index, None);
+    assert_eq!(key(0.5)[0].index, Some(0));
+    assert_eq!(key(0.75)[0].index, Some(0));
     assert_ne!(key(0.0), key(0.5));
+}
+
+#[test]
+fn adr0046_i2_i4_plan_key_and_lookups_follow_condition_state() {
+    use sofel_font::var::{Location, Variation};
+
+    let mut gsub = layout(
+        &[(b"latn", vec![lang(None, &[0])])],
+        &[(b"liga", vec![0])],
+        &[
+            lookup(1, 0, vec![single_subst(&[(1, 2)])]),
+            lookup(1, 0, vec![single_subst(&[(1, 3)])]),
+        ],
+    );
+    let old_len = gsub.len();
+    for at in [4usize, 6, 8] {
+        let offset = u16::from_be_bytes([gsub[at], gsub[at + 1]]) + 4;
+        gsub[at..at + 2].copy_from_slice(&offset.to_be_bytes());
+    }
+    gsub[0..4].copy_from_slice(&0x0001_0001u32.to_be_bytes());
+    gsub.splice(10..10, (old_len as u32 + 4).to_be_bytes());
+    gsub.extend_from_slice(&[
+        0, 1, 0, 1, 0, 0, 0, 0, // FeatureVariations 1.1, no standard records
+        0, 0, 0, 1, 0, 0, 0, 0, 0, 18, // one lookup variation record, feature 0
+        0, 1, 0, 0, 0, 0, 0, 0, 0, 2, // FeatureLookupsTable, flags 0, two conditions
+        0, 0, 0, 26, 0, 0, 0, 34, // first condition and lookup list offsets
+        0, 0, 0, 38, 0, 0, 0, 46, // second condition and lookup list offsets
+        0, 1, 0, 0, 0x10, 0, 0x30, 0, // axis 0 in [0.25, 0.75]
+        0, 1, 0, 1, // lookup index 1
+        0, 1, 0, 0, 0x20, 0, 0x40, 0, // axis 0 in [0.5, 1]
+        0, 1, 0, 1, // same lookup despite a distinct condition state
+    ]);
+    let mut fvar = vec![0, 1, 0, 0, 0, 16, 0, 2, 0, 1, 0, 20, 0, 0, 0, 8];
+    fvar.extend_from_slice(b"wght");
+    for value in [0i32, 0, 0x10000] {
+        fvar.extend_from_slice(&value.to_be_bytes());
+    }
+    fvar.extend_from_slice(&[0, 0, 1, 0]);
+    let data = support::font(
+        10,
+        &[(0x61, 1)],
+        &[500],
+        vec![(b"GSUB", gsub), (b"fvar", fvar)],
+    );
+    let font = Font::new(&data, 0).unwrap();
+    let plan = |value: &str| {
+        let loc = Location::new(&font, None, &[Variation::parse(value).unwrap()]);
+        ShapePlan::new(
+            font.instance(&loc),
+            props(Direction::Ltr, Some(b"Latn"), None),
+            &[],
+        )
+    };
+    let zero = plan("wght=0");
+    let middle = plan("wght=0.3");
+    let nearby = plan("wght=0.4");
+    let later = plan("wght=0.6");
+    let last = plan("wght=0.8");
+    assert!(zero.key().2[0].lookup_conditions.is_empty());
+    assert_eq!(middle.key().2[0].lookup_conditions, vec![44]);
+    assert_eq!(middle.key().2, nearby.key().2);
+    assert_ne!(zero.key().2, middle.key().2);
+    assert_eq!(later.key().2[0].lookup_conditions, vec![44, 56]);
+    assert_eq!(last.key().2[0].lookup_conditions, vec![56]);
+    assert_ne!(middle.key().2, later.key().2);
+    assert_ne!(later.key().2, last.key().2);
+    assert_eq!(middle.stage_lookups(0), later.stage_lookups(0));
+    assert!(zero.stage_lookups(0).concat().is_empty());
+    assert_eq!(
+        middle
+            .stage_lookups(0)
+            .concat()
+            .iter()
+            .map(|(i, _)| *i)
+            .collect::<Vec<_>>(),
+        vec![1]
+    );
 }
