@@ -413,3 +413,29 @@ fn adr0043_i4_nonzero_reference_discards_all_partial_results() {
     assert_eq!(run("printf 'bad\\n'; exit 9").unwrap(), None);
     assert!(run("printf 'face 0\\npaint 0 0 9 0\\n'").is_err());
 }
+
+#[test]
+fn adr0027_variable_clip_rounds_each_edge_outward() {
+    let bytes =
+        std::fs::read(paths::testdata().join("harfbuzz/test/api/fonts/colr-clip-rounding.ttf"))
+            .unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    for (weight, expected) in [(0.0, [50., 50., 500., 500.]), (0.5, [49., 49., 501., 501.])] {
+        let location = sofel_font::var::Location::from_design(&font, &[weight, 0.0]);
+        let mut recording = sofel_color::Recording::new();
+        sofel_color::paint_recording_at(
+            font.instance(&location),
+            1,
+            &Default::default(),
+            &mut Scratch::default(),
+            &mut recording,
+        );
+        let rect = recording.commands().iter().find_map(|c| match c {
+            sofel_color::PaintCommand::PushClipRectangle(r) => {
+                Some([r.x_min, r.y_min, r.x_max, r.y_max])
+            }
+            _ => None,
+        });
+        assert_eq!(rect, Some(expected));
+    }
+}
