@@ -165,9 +165,14 @@ impl<'a> Metrics<'a> {
 
     /// HarfBuzz's `get_advance_without_var_unscaled`; `default` when the
     /// table gives no advances at all.
+    #[inline]
     fn advance(&self, glyph: GlyphId, default: u16) -> u16 {
         if glyph.0 < self.num_bearings {
-            return self.hmtx.and_then(|h| h.advance(glyph)).unwrap_or(0);
+            return self
+                .hmtx
+                .as_ref()
+                .and_then(|h| h.advance(glyph))
+                .unwrap_or(0);
         }
         if self.num_advances == 0 {
             return default;
@@ -262,6 +267,7 @@ pub struct Font<'a> {
     num_glyphs: u32,
     metrics: Metrics<'a>,
     vmetrics: Metrics<'a>,
+    has_variable_h_extents: bool,
     ft_metrics: FtMetrics<'a>,
     cmap: Option<Subtable<'a>>,
     remap: Remap,
@@ -569,6 +575,15 @@ impl<'a> Font<'a> {
                 )
             });
 
+        let has_variable_h_extents = sfnt
+            .table(sofel_read::mvar::TAG)
+            .and_then(|data| sofel_read::mvar::Mvar::new(data).ok())
+            .is_some_and(|mvar| {
+                [b"hasc", b"hdsc", b"hlgp"]
+                    .iter()
+                    .any(|tag| mvar.find(Tag::new(tag)).is_some())
+            });
+
         Ok(Font {
             sfnt,
             face_index: index,
@@ -576,6 +591,7 @@ impl<'a> Font<'a> {
             num_glyphs,
             metrics,
             vmetrics,
+            has_variable_h_extents,
             ft_metrics: FtMetrics::new(&sfnt),
             cmap,
             remap,
@@ -628,6 +644,7 @@ impl<'a> Font<'a> {
     }
 
     /// `unitsPerEm` as stored, even outside 16..=16384.
+    #[inline]
     pub fn units_per_em(&self) -> u16 {
         self.head.units_per_em()
     }
@@ -712,6 +729,7 @@ impl<'a> Font<'a> {
 
     /// `unitsPerEm` as HarfBuzz uses it (`hb_face_get_upem`): 1000 when
     /// the stored value is outside 16..=16384.
+    #[inline]
     pub fn hb_units_per_em(&self) -> u16 {
         let upem = self.units_per_em();
         if (16..=16384).contains(&upem) {
