@@ -107,7 +107,7 @@ fn run(dir: &Path, line: &str) -> Option<(String, String)> {
     buffer.set_flags(bflags);
     buffer.set_cluster_level(level);
     let resolved = props.guess(&buffer, None);
-    let plan = ShapePlan::new(&font, resolved, &features);
+    let plan = ShapePlan::new(font.default_instance(), resolved, &features);
     if std::env::var_os("SMOKE_DEFAULT_ONLY").is_some()
         && plan.shaper() != sofel_shape::Shaper::Default
     {
@@ -117,7 +117,7 @@ fn run(dir: &Path, line: &str) -> Option<(String, String)> {
         Some(s) => Scale::new(HbScale::for_font(&font, s, s), ppem, ppem),
         None => Scale::new(HbScale::unscaled(&font), ppem, ppem),
     };
-    let glyphs = shape(&font, &scale, &plan, buffer);
+    let glyphs = shape(font.default_instance(), &scale, &plan, buffer);
     let mut out = Vec::new();
     serialize_glyphs(
         glyphs.glyph_infos(),

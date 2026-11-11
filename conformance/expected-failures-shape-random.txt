@@ -57,7 +57,6 @@ harfbuzz/test/shape/data/in-house/fonts/e6185e88b04432fbf373594d5971686bb7dd698d
 harfbuzz/test/shape/data/in-house/fonts/ecc344a5fa31c4d69350231bb3b96cc693646089.ttf#0:Arab  # sanitize
 harfbuzz/test/shape/data/in-house/fonts/ed2cc6cbd6f0b7c387a672a66d8e3e0be439fa64.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/in-house/fonts/f25a8432cd33bdd82904d99f6040c799ce935473.ttf#0:Latn  # aat
-harfbuzz/test/shape/data/text-rendering-tests/fonts/AdobeVFPrototype-Subset.otf#0:Zyyy  # variations
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestAATMort.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestAATMort.ttf#0:Zyyy  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestAATMorx.ttf#0:Latn  # aat
@@ -140,9 +139,6 @@ harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXTwentytwo.ttf#0:Latn
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXTwentytwo.ttf#0:Zyyy  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXTwo.ttf#0:Latn  # aat
 harfbuzz/test/shape/data/text-rendering-tests/fonts/TestMORXTwo.ttf#0:Zyyy  # aat
-harfbuzz/test/subset/data/fonts/Fraunces.ttf#0:Latn  # variations
-harfbuzz/test/subset/data/fonts/Fraunces.ttf#0:Zyyy  # variations
 harfbuzz/test/subset/data/fonts/Khmer.ttf#0:Khmr  # aat
 harfbuzz/test/subset/data/fonts/Khmer.ttf#0:Zyyy  # aat
-harfbuzz/test/subset/data/fonts/NotoSansOriya-subset.ttf#0:Orya  # variations
 harfbuzz/test/subset/data/fonts/Tinos-Italic.ttf#0:Hebr  # aat

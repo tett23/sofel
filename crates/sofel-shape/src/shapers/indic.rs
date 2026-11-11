@@ -412,7 +412,7 @@ fn consonant_position_from_face(
 }
 
 /// `setup_masks_indic`: the category and position of each character.
-fn setup_masks(_: &ShapePlan<'_>, buffer: &mut Buffer, _: &ShapeFont<'_, '_>) {
+fn setup_masks(_: &ShapePlan<'_>, buffer: &mut Buffer, _: &ShapeFont<'_, '_, '_, '_>) {
     for info in buffer.infos_mut() {
         let [category, position] = indic_categories(info.codepoint).to_le_bytes();
         info.shaper_category = category;
@@ -439,7 +439,7 @@ pub(crate) fn find_syllables(buffer: &mut Buffer) {
 }
 
 /// `setup_syllables_indic`.
-fn setup_syllables(_: &ShapePlan<'_>, _: &ShapeFont<'_, '_>, buffer: &mut Buffer) -> bool {
+fn setup_syllables(_: &ShapePlan<'_>, _: &ShapeFont<'_, '_, '_, '_>, buffer: &mut Buffer) -> bool {
     find_syllables(buffer);
     for_each_syllable(buffer, |b, start, end| b.unsafe_to_break(start, end));
     false
@@ -823,7 +823,11 @@ fn initial_reordering_syllable(
 }
 
 /// `initial_reordering_indic`.
-fn initial_reordering(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_>, buffer: &mut Buffer) -> bool {
+fn initial_reordering(
+    plan: &ShapePlan<'_>,
+    font: &ShapeFont<'_, '_, '_, '_>,
+    buffer: &mut Buffer,
+) -> bool {
     let Some(ip) = indic_plan(plan) else {
         return false;
     };
@@ -1136,7 +1140,11 @@ fn final_reordering_syllable(
 }
 
 /// `final_reordering_indic`.
-fn final_reordering(plan: &ShapePlan<'_>, _: &ShapeFont<'_, '_>, buffer: &mut Buffer) -> bool {
+fn final_reordering(
+    plan: &ShapePlan<'_>,
+    _: &ShapeFont<'_, '_, '_, '_>,
+    buffer: &mut Buffer,
+) -> bool {
     if buffer.len == 0 {
         return false;
     }
@@ -1149,7 +1157,7 @@ fn final_reordering(plan: &ShapePlan<'_>, _: &ShapeFont<'_, '_>, buffer: &mut Bu
 }
 
 /// `decompose_indic`: some letters stay whole.
-fn decompose(_: &NormalizeContext<'_, '_, '_>, ab: u32) -> Option<(u32, u32)> {
+fn decompose(_: &NormalizeContext<'_, '_, '_, '_, '_>, ab: u32) -> Option<(u32, u32)> {
     match ab {
         // DEVANAGARI LETTER RRA, BENGALI LETTER RRA and RHA, TAMIL
         // LETTER AU.
@@ -1160,7 +1168,7 @@ fn decompose(_: &NormalizeContext<'_, '_, '_>, ab: u32) -> Option<(u32, u32)> {
 
 /// `compose_indic`: split matras are not recomposed; BENGALI LETTER YYA
 /// is, despite the composition exclusion.
-fn compose(_: &NormalizeContext<'_, '_, '_>, a: u32, b: u32) -> Option<u32> {
+fn compose(_: &NormalizeContext<'_, '_, '_, '_, '_>, a: u32, b: u32) -> Option<u32> {
     if crate::unicode::is_mark_category(sofel_unicode::general_category(a)) {
         return None;
     }
