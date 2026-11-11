@@ -1,0 +1,14 @@
+# id	source file id	archive member (- for direct)	font path	SHA-256	license id	features
+arabic	arabic	-	fonts/arabic.ttf	63111b5b2e074dd48cc67692e0a2726d86ee94c1c37fe8598257b7b4e87e869e	arabic-license	shape,rtl,variable,metrics,outline
+devanagari	devanagari	-	fonts/devanagari.ttf	14ec4af41f27482216d1c2229f417ff9b1425e1babb014e57d1d40d03229853e	devanagari-license	shape,indic,variable,metrics,outline
+khmer	khmer	-	fonts/khmer.ttf	f37a8431a0c5d5ed2f81a767417546aca576a81fb7eff9c924d46aecf828f2ca	khmer-license	shape,indic,variable,metrics,outline
+myanmar	myanmar	-	fonts/myanmar.ttf	7abbbfbe2514105d7ce94937aee3feb2ba89b73a256c8b77b5866bd9b83e32ec	myanmar-license	shape,indic,variable,metrics,outline
+balinese	balinese	-	fonts/balinese.ttf	ccca9d3492b86930d8e0272d1e06d9e2e11147489b04d9858aa58e766cc30374	balinese-license	shape,use,variable,metrics,outline
+hebrew	hebrew	-	fonts/hebrew.ttf	7ef36a2c3593758cdb622e1bdef4f84523e92fbc3ccc667438dd80ff54c2de88	hebrew-license	shape,rtl,variable,metrics,outline
+source-serif	source-serif	-	fonts/source-serif.otf	867b73c6a954a4a64616906d179f94572a748790a1d022ebeeff07f56ea0221a	source-serif-license	shape,cff2,variable,metrics,outline
+stix-math	stix-math	-	fonts/stix-math.otf	56cc42241cccc86d6d570134aa918fe8ac714f4b340d9916282fcc53c592d546	stix-license	math,cff,metrics,outline
+source-han	source-han-archive	SourceHanSans.ttc	fonts/source-han.ttc	1382ea173f57af2ef9de32b41ce24d9c33fe69b8f4f2eae7cf05e64a4efd8aef	source-han-license	ttc,cjk,vertical,shape,cff,metrics,outline
+amstelvar	amstelvar	-	fonts/amstelvar.ttf	86386aa8d3daa442899b2cd6a76bb4e186002b9e9eacbde79986993a0de616d0	amstelvar-license	avar2,variable,shape,metrics,outline
+color-cff	color-cff	-	fonts/color-cff.otf	57761c533abdfec9d0fa8f35a5633209bcc3bf7536011d6836e9c6f8038392c7	color-license	colr,cff,outline
+color-sbix	color-sbix	-	fonts/color-sbix.ttf	0fd0a23379b0e982db8bef5f9a50cf7960a6ee3504778a9a9c039bde4d2f573d	color-license	sbix,metrics
+color-svg	color-svg	-	fonts/color-svg.ttf	ab86aec653bdd9d412e2d6670ba9485fd56a4e89dcd3c034ae43abca921c7e25	color-license	svg

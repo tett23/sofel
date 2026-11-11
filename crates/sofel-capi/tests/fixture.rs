@@ -403,7 +403,9 @@ fn name_cases(out: &mut String, font: &Font<'_>) {
                 s(ft),
                 back(hb, false),
                 back(ft, true),
-                font.ft_v_advance(g).map_or(-1, i64::from)
+                font.default_instance()
+                    .ft_v_advance(g)
+                    .map_or(-1, i64::from)
             )
         })
         .collect();
@@ -413,7 +415,7 @@ fn name_cases(out: &mut String, font: &Font<'_>) {
         rows.join(", ")
     )
     .unwrap();
-    let m = font.ft_face_metrics();
+    let m = font.default_instance().ft_face_metrics();
     let mut v = vec![
         m.ascender,
         m.descender,
@@ -840,12 +842,12 @@ fn generate() -> String {
     .unwrap();
 
     // Advances, two glyphs past the end included.
-    let advances: Vec<u16> = (0..font.num_glyphs() + 2)
-        .map(|g| font.advance(GlyphId(g)))
+    let advances: Vec<u32> = (0..font.num_glyphs() + 2)
+        .map(|g| font.default_instance().advance(GlyphId(g)))
         .collect();
-    ints(&mut out, "uint16_t", "advances", &advances);
+    ints(&mut out, "uint32_t", "advances", &advances);
     let bearings: Vec<i16> = (0..font.num_glyphs() + 2)
-        .map(|g| font.ft_left_side_bearing(GlyphId(g)))
+        .map(|g| font.default_instance().ft_left_side_bearing(GlyphId(g)))
         .collect();
     ints(&mut out, "int16_t", "ft_bearings", &bearings);
 

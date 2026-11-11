@@ -222,8 +222,8 @@ fn pinned_outlines_and_advances() {
                 "{name}: outline of glyph {g}"
             );
             assert_eq!(
-                pinned.advance(gid),
-                font.advance(gid),
+                pinned.default_instance().advance(gid),
+                font.default_instance().advance(gid),
                 "{name}: advance of glyph {g}"
             );
         }

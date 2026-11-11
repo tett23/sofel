@@ -19,6 +19,7 @@ mod build;
 
 use build::*;
 use sofel_font::read::{GlyphId, Tag};
+use sofel_font::var::Location;
 use sofel_font::{Direction, Font, FontExtents, GlyphExtents, HbScale, baseline};
 
 const H: Direction = Direction::Horizontal;
@@ -75,6 +76,93 @@ fn ext(ascender: i32, descender: i32, line_gap: i32) -> FontExtents {
         descender,
         line_gap,
     }
+}
+
+#[test]
+fn i03_base_variation_index_changes_baseline_at_location() {
+    let mut fvar = vec![0, 1, 0, 0, 0, 16, 0, 2, 0, 1, 0, 20, 0, 0, 0, 8];
+    fvar.extend_from_slice(b"wght");
+    for value in [0i32, 0, 0x10000] {
+        fvar.extend_from_slice(&value.to_be_bytes());
+    }
+    fvar.extend_from_slice(&[0, 0, 1, 0]);
+    let store = Buf::new()
+        .u16(1)
+        .u32(12)
+        .u16(1)
+        .u32(22)
+        .u16(1)
+        .u16(1)
+        .i16(0)
+        .i16(16384)
+        .i16(16384)
+        .u16(1)
+        .u16(1)
+        .u16(1)
+        .u16(0)
+        .i16(21)
+        .done();
+    let axis = AxisSpec {
+        tags: Some(vec![*b"ideo", *b"romn"]),
+        scripts: Some(vec![(
+            *b"DFLT",
+            Some(ScriptSpec {
+                values: Some((
+                    0,
+                    vec![
+                        Some(Coord::F3(101, Some(device(0, 0, 0x8000, &[])))),
+                        Some(Coord::F3(101, Some(device(0, 0, 0x8000, &[])))),
+                    ],
+                )),
+                default_min_max: Some(MinMaxSpec {
+                    min: Some(Coord::F3(10, Some(device(0, 0, 0x8000, &[])))),
+                    max: Some(Coord::F3(101, Some(device(0, 0, 0x8000, &[])))),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+        )]),
+    };
+    let bytes = font_with(
+        Some(base11(Some(&axis), None, Some(&store))),
+        &[],
+        &[(b"fvar", fvar)],
+        &[],
+    );
+    let font = Font::new(&bytes, 0).unwrap();
+    let location = Location::from_normalized_2_14(&font, &[8192]);
+    assert_eq!(
+        font.default_instance()
+            .baseline(baseline::ROMAN, H, t(b"DFLT")),
+        Some(101)
+    );
+    assert_eq!(
+        font.instance(&location)
+            .baseline(baseline::ROMAN, H, t(b"DFLT")),
+        Some(112)
+    );
+    let full = Location::from_normalized_2_14(&font, &[16384]);
+    let scale = HbScale::for_font(&font, 500, 500);
+    assert_eq!(
+        font.instance(&full)
+            .scaled_baseline(&scale, baseline::ROMAN, H, t(b"DFLT")),
+        Some(62)
+    );
+    assert_eq!(
+        font.instance(&full).scaled_baseline_with_fallback(
+            &scale,
+            baseline::IDEO_EMBOX_TOP_OR_RIGHT,
+            H,
+            t(b"DFLT"),
+            no_boxes,
+        ),
+        562
+    );
+    assert_eq!(
+        font.instance(&full)
+            .scaled_layout_font_extents(&scale, H, t(b"DFLT"), t(b"dflt")),
+        (ext(62, 16, 0), true)
+    );
 }
 
 // --------------------------------------------------------------- lookup
@@ -139,36 +227,71 @@ fn baseline_lookup_by_script_with_dflt_fallback() {
     let data = lookup_font();
     let f = Font::new(&data, 0).unwrap();
     // deva: formats 2, 3 and 4 use the coordinate only.
-    assert_eq!(f.baseline(baseline::HANGING, H, t(b"deva")), Some(600));
     assert_eq!(
-        f.baseline(baseline::IDEO_EMBOX_BOTTOM_OR_LEFT, H, t(b"deva")),
+        f.default_instance()
+            .baseline(baseline::HANGING, H, t(b"deva")),
+        Some(600)
+    );
+    assert_eq!(
+        f.default_instance()
+            .baseline(baseline::IDEO_EMBOX_BOTTOM_OR_LEFT, H, t(b"deva")),
         Some(-120)
     );
     assert_eq!(
-        f.baseline(baseline::IDEO_EMBOX_TOP_OR_RIGHT, H, t(b"deva")),
+        f.default_instance()
+            .baseline(baseline::IDEO_EMBOX_TOP_OR_RIGHT, H, t(b"deva")),
         Some(880)
     );
     // Past deva's three coordinates.
-    assert_eq!(f.baseline(baseline::ROMAN, H, t(b"deva")), None);
+    assert_eq!(
+        f.default_instance()
+            .baseline(baseline::ROMAN, H, t(b"deva")),
+        None
+    );
     // latn is not there: DFLT.
     assert_eq!(
-        f.baseline(baseline::IDEO_EMBOX_BOTTOM_OR_LEFT, H, t(b"latn")),
+        f.default_instance()
+            .baseline(baseline::IDEO_EMBOX_BOTTOM_OR_LEFT, H, t(b"latn")),
         Some(-110)
     );
-    assert_eq!(f.baseline(baseline::ROMAN, H, t(b"latn")), Some(0));
+    assert_eq!(
+        f.default_instance()
+            .baseline(baseline::ROMAN, H, t(b"latn")),
+        Some(0)
+    );
     // A null coordinate, and a tag the axis does not have.
-    assert_eq!(f.baseline(baseline::HANGING, H, t(b"latn")), None);
-    assert_eq!(f.baseline(baseline::MATH, H, t(b"latn")), None);
+    assert_eq!(
+        f.default_instance()
+            .baseline(baseline::HANGING, H, t(b"latn")),
+        None
+    );
+    assert_eq!(
+        f.default_instance().baseline(baseline::MATH, H, t(b"latn")),
+        None
+    );
     // hani has no BaseValues: no baseline, and no DFLT either.
-    assert_eq!(f.baseline(baseline::ROMAN, H, t(b"hani")), None);
+    assert_eq!(
+        f.default_instance()
+            .baseline(baseline::ROMAN, H, t(b"hani")),
+        None
+    );
     // kana's record has a null BaseScript: likewise.
-    assert_eq!(f.baseline(baseline::ROMAN, H, t(b"kana")), None);
+    assert_eq!(
+        f.default_instance()
+            .baseline(baseline::ROMAN, H, t(b"kana")),
+        None
+    );
     // The vertical axis.
     assert_eq!(
-        f.baseline(baseline::IDEO_EMBOX_TOP_OR_RIGHT, V, t(b"hani")),
+        f.default_instance()
+            .baseline(baseline::IDEO_EMBOX_TOP_OR_RIGHT, V, t(b"hani")),
         Some(500)
     );
-    assert_eq!(f.baseline(baseline::HANGING, V, t(b"deva")), None);
+    assert_eq!(
+        f.default_instance()
+            .baseline(baseline::HANGING, V, t(b"deva")),
+        None
+    );
 }
 
 #[test]
@@ -201,13 +324,18 @@ fn baseline_ignores_a_base_harfbuzz_rejects() {
     assert_eq!(
         Font::new(&good, 0)
             .unwrap()
+            .default_instance()
             .baseline(baseline::ROMAN, H, t(b"latn")),
         Some(7)
     );
     bad[6..8].copy_from_slice(&500u16.to_be_bytes());
     let data = font_with(Some(bad), &[], &[], &[]);
     let f = Font::new(&data, 0).unwrap();
-    assert_eq!(f.baseline(baseline::ROMAN, H, t(b"latn")), None);
+    assert_eq!(
+        f.default_instance()
+            .baseline(baseline::ROMAN, H, t(b"latn")),
+        None
+    );
     // An unknown BaseCoord format anywhere, likewise.
     let axis = AxisSpec {
         tags: Some(vec![*b"ideo", *b"romn"]),
@@ -224,7 +352,11 @@ fn baseline_ignores_a_base_harfbuzz_rejects() {
     };
     let data = font_with(Some(base(Some(&axis), None)), &[], &[], &[]);
     let f = Font::new(&data, 0).unwrap();
-    assert_eq!(f.baseline(baseline::ROMAN, H, t(b"latn")), None);
+    assert_eq!(
+        f.default_instance()
+            .baseline(baseline::ROMAN, H, t(b"latn")),
+        None
+    );
     // A Device table that does not fit, likewise; one with an unknown
     // delta format is accepted.
     for (dev, found) in [
@@ -243,7 +375,11 @@ fn baseline_ignores_a_base_harfbuzz_rejects() {
         };
         let data = font_with(Some(base(Some(&axis), None)), &[], &[], &[]);
         let f = Font::new(&data, 0).unwrap();
-        assert_eq!(f.baseline(baseline::ROMAN, H, t(b"latn")), found);
+        assert_eq!(
+            f.default_instance()
+                .baseline(baseline::ROMAN, H, t(b"latn")),
+            found
+        );
     }
     // Version 2.
     let mut v2 = base(Some(&simple_axis(b"DFLT", &[(*b"romn", 7)])), None);
@@ -252,6 +388,7 @@ fn baseline_ignores_a_base_harfbuzz_rejects() {
     assert_eq!(
         Font::new(&data, 0)
             .unwrap()
+            .default_instance()
             .baseline(baseline::ROMAN, H, t(b"latn")),
         None
     );
@@ -277,6 +414,7 @@ fn baseline_checks_the_item_variation_store_of_version_1_1() {
     assert_eq!(
         Font::new(&data, 0)
             .unwrap()
+            .default_instance()
             .baseline(baseline::ROMAN, H, t(b"latn")),
         Some(7)
     );
@@ -286,6 +424,7 @@ fn baseline_checks_the_item_variation_store_of_version_1_1() {
     assert_eq!(
         Font::new(&data, 0)
             .unwrap()
+            .default_instance()
             .baseline(baseline::ROMAN, H, t(b"latn")),
         None
     );
@@ -296,6 +435,7 @@ fn baseline_checks_the_item_variation_store_of_version_1_1() {
     assert_eq!(
         Font::new(&data, 0)
             .unwrap()
+            .default_instance()
             .baseline(baseline::ROMAN, H, t(b"latn")),
         None
     );
@@ -304,6 +444,7 @@ fn baseline_checks_the_item_variation_store_of_version_1_1() {
     assert_eq!(
         Font::new(&data, 0)
             .unwrap()
+            .default_instance()
             .baseline(baseline::ROMAN, H, t(b"latn")),
         Some(7)
     );
@@ -315,13 +456,19 @@ fn baseline_checks_the_item_variation_store_of_version_1_1() {
 fn fallback_roman_and_unknown_tags_are_zero() {
     let data = font_with(None, &[], &[], &[]);
     let f = Font::new(&data, 0).unwrap();
-    assert_eq!(f.baseline(baseline::ROMAN, H, t(b"latn")), None);
     assert_eq!(
-        f.baseline_with_fallback(baseline::ROMAN, H, t(b"latn"), no_boxes),
+        f.default_instance()
+            .baseline(baseline::ROMAN, H, t(b"latn")),
+        None
+    );
+    assert_eq!(
+        f.default_instance()
+            .baseline_with_fallback(baseline::ROMAN, H, t(b"latn"), no_boxes),
         0
     );
     assert_eq!(
-        f.baseline_with_fallback(t(b"xxxx"), V, t(b"latn"), no_boxes),
+        f.default_instance()
+            .baseline_with_fallback(t(b"xxxx"), V, t(b"latn"), no_boxes),
         0
     );
 }
@@ -334,19 +481,26 @@ fn fallback_math_from_the_minus_sign_box() {
     let map = [(5, bx(300, -61)), (6, bx(280, -40)), (7, bx(480, -480))];
     // y_bearing + height / 2, the division toward zero.
     assert_eq!(
-        f.baseline_with_fallback(baseline::MATH, H, t(b"latn"), boxes(&map)),
+        f.default_instance()
+            .baseline_with_fallback(baseline::MATH, H, t(b"latn"), boxes(&map)),
         270
     );
     // Without a box for U+2212, HarfBuzz does not try '-': x-height / 2
     // (no OS/2 and no box for 'x': upem / 2).
     let only_hyphen = [(6, bx(280, -40))];
     assert_eq!(
-        f.baseline_with_fallback(baseline::MATH, H, t(b"latn"), boxes(&only_hyphen)),
+        f.default_instance().baseline_with_fallback(
+            baseline::MATH,
+            H,
+            t(b"latn"),
+            boxes(&only_hyphen)
+        ),
         250
     );
     // Vertical: x-height / 2 (the top of 'x').
     assert_eq!(
-        f.baseline_with_fallback(baseline::MATH, V, t(b"latn"), boxes(&map)),
+        f.default_instance()
+            .baseline_with_fallback(baseline::MATH, V, t(b"latn"), boxes(&map)),
         240
     );
 
@@ -354,7 +508,8 @@ fn fallback_math_from_the_minus_sign_box() {
     let data = font_with(None, &chars[1..], &[], &[]);
     let f = Font::new(&data, 0).unwrap();
     assert_eq!(
-        f.baseline_with_fallback(baseline::MATH, H, t(b"latn"), boxes(&map)),
+        f.default_instance()
+            .baseline_with_fallback(baseline::MATH, H, t(b"latn"), boxes(&map)),
         260
     );
 }
@@ -370,11 +525,13 @@ fn fallback_math_from_the_x_height() {
     let f = Font::new(&data, 0).unwrap();
     let map = [(7, bx(481, -481))];
     assert_eq!(
-        f.baseline_with_fallback(baseline::MATH, H, t(b"latn"), boxes(&map)),
+        f.default_instance()
+            .baseline_with_fallback(baseline::MATH, H, t(b"latn"), boxes(&map)),
         240
     );
     assert_eq!(
-        f.baseline_with_fallback(baseline::MATH, H, t(b"latn"), no_boxes),
+        f.default_instance()
+            .baseline_with_fallback(baseline::MATH, H, t(b"latn"), no_boxes),
         250
     );
     let s = HbScale::for_font(&f, 768, -1536);
@@ -389,7 +546,10 @@ fn fallback_embox_edges_from_each_other_or_the_font_extents() {
     let data = font_with(None, &[], &[], &[]);
     let f = Font::new(&data, 0).unwrap();
     // hhea 800 / -200; no vhea: 500 / -500.
-    let wf = |tag, dir| f.baseline_with_fallback(tag, dir, t(b"hani"), no_boxes);
+    let wf = |tag, dir| {
+        f.default_instance()
+            .baseline_with_fallback(tag, dir, t(b"hani"), no_boxes)
+    };
     assert_eq!(wf(baseline::IDEO_EMBOX_TOP_OR_RIGHT, H), 800);
     assert_eq!(wf(baseline::IDEO_EMBOX_BOTTOM_OR_LEFT, H), -200);
     assert_eq!(wf(baseline::IDEO_EMBOX_TOP_OR_RIGHT, V), 500);
@@ -406,7 +566,10 @@ fn fallback_embox_edges_from_each_other_or_the_font_extents() {
     let v = simple_axis(b"DFLT", &[(*b"idtp", 501)]);
     let data = font_with(Some(base(Some(&h), Some(&v))), &[], &[], &[]);
     let f = Font::new(&data, 0).unwrap();
-    let wf = |tag, dir| f.baseline_with_fallback(tag, dir, t(b"hani"), no_boxes);
+    let wf = |tag, dir| {
+        f.default_instance()
+            .baseline_with_fallback(tag, dir, t(b"hani"), no_boxes)
+    };
     assert_eq!(wf(baseline::IDEO_EMBOX_TOP_OR_RIGHT, H), 879);
     assert_eq!(wf(baseline::IDEO_EMBOX_BOTTOM_OR_LEFT, H), -121);
     assert_eq!(wf(baseline::IDEO_EMBOX_BOTTOM_OR_LEFT, V), -499);
@@ -423,12 +586,22 @@ fn fallback_embox_edges_from_each_other_or_the_font_extents() {
     let data = font_with(Some(base(Some(&h), None)), &[], &[], &[]);
     let f = Font::new(&data, 0).unwrap();
     assert_eq!(
-        f.baseline_with_fallback(baseline::IDEO_EMBOX_CENTRAL, H, t(b"hani"), no_boxes),
+        f.default_instance().baseline_with_fallback(
+            baseline::IDEO_EMBOX_CENTRAL,
+            H,
+            t(b"hani"),
+            no_boxes
+        ),
         -1
     );
     // Both edges in BASE: the face uses them.
     assert_eq!(
-        f.baseline_with_fallback(baseline::IDEO_FACE_TOP_OR_RIGHT, H, t(b"hani"), no_boxes),
+        f.default_instance().baseline_with_fallback(
+            baseline::IDEO_FACE_TOP_OR_RIGHT,
+            H,
+            t(b"hani"),
+            no_boxes
+        ),
         -1
     );
 }
@@ -439,7 +612,12 @@ fn fallback_central_comes_from_base_when_there() {
     let data = font_with(Some(base(Some(&h), None)), &[], &[], &[]);
     let f = Font::new(&data, 0).unwrap();
     assert_eq!(
-        f.baseline_with_fallback(baseline::IDEO_EMBOX_CENTRAL, H, t(b"hani"), no_boxes),
+        f.default_instance().baseline_with_fallback(
+            baseline::IDEO_EMBOX_CENTRAL,
+            H,
+            t(b"hani"),
+            no_boxes
+        ),
         333
     );
 }
@@ -451,7 +629,8 @@ fn fallback_hanging_from_the_script_character() {
     let f = Font::new(&data, 0).unwrap();
     let map = [(3, bx(640, -640)), (4, bx(650, -650))];
     let hang = |script: &[u8; 4], dir| {
-        f.baseline_with_fallback(baseline::HANGING, dir, t(script), boxes(&map))
+        f.default_instance()
+            .baseline_with_fallback(baseline::HANGING, dir, t(script), boxes(&map))
     };
     // Old and new tags of a script, as hb_ot_tag_to_script maps them.
     assert_eq!(hang(b"deva", H), 640);
@@ -467,7 +646,8 @@ fn fallback_hanging_from_the_script_character() {
     assert_eq!(hang(b"deva", V), 600);
     // No box for the character.
     assert_eq!(
-        f.baseline_with_fallback(baseline::HANGING, H, t(b"deva"), no_boxes),
+        f.default_instance()
+            .baseline_with_fallback(baseline::HANGING, H, t(b"deva"), no_boxes),
         600
     );
     let s = HbScale::for_font(&f, 768, -1536);
@@ -558,7 +738,10 @@ fn min_max_font() -> Vec<u8> {
 fn layout_font_extents_from_min_max() {
     let data = min_max_font();
     let f = Font::new(&data, 0).unwrap();
-    let get = |script: &[u8; 4], lang: &[u8; 4]| f.layout_font_extents(H, t(script), t(lang));
+    let get = |script: &[u8; 4], lang: &[u8; 4]| {
+        f.default_instance()
+            .layout_font_extents(H, t(script), t(lang))
+    };
     // The default MinMax; FeatMinMax is not used.
     assert_eq!(get(b"latn", b"dflt"), (ext(1100, -300, 0), true));
     // A language's MinMax; a null coordinate is 0.
@@ -575,7 +758,8 @@ fn layout_font_extents_from_min_max() {
     assert_eq!(get(b"grek", b"dflt"), (ext(800, -200, 90), false));
     // No vertical axis.
     assert_eq!(
-        f.layout_font_extents(V, t(b"latn"), t(b"dflt")),
+        f.default_instance()
+            .layout_font_extents(V, t(b"latn"), t(b"dflt")),
         (ext(500, -500, 0), false)
     );
 
@@ -591,11 +775,13 @@ fn layout_font_extents_without_base() {
     let data = font_with(None, &[], &[], &[]);
     let f = Font::new(&data, 0).unwrap();
     assert_eq!(
-        f.layout_font_extents(H, t(b"latn"), t(b"dflt")),
-        (f.h_extents(), false)
+        f.default_instance()
+            .layout_font_extents(H, t(b"latn"), t(b"dflt")),
+        (f.default_instance().h_extents(), false)
     );
     assert_eq!(
-        f.layout_font_extents(V, t(b"latn"), t(b"dflt")),
-        (f.v_extents(), false)
+        f.default_instance()
+            .layout_font_extents(V, t(b"latn"), t(b"dflt")),
+        (f.default_instance().v_extents(), false)
     );
 }

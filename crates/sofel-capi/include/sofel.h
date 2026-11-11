@@ -7,14 +7,17 @@
  * Conventions
  *
  * - Every name starts with `sofel_` (functions, types) or `SOFEL_`
- *   (macros). Types are opaque structs behind pointers and fixed-width
- *   integers.
+ *   (macros). Object types are opaque structs behind pointers. Value types
+ *   are fixed-width integers and explicitly declared value structs.
  * - A function that can fail returns an `int32_t`: SOFEL_OK (0) on
  *   success, a negative SOFEL_ERROR_* otherwise. Results go to output
  *   arguments, which are written only on success unless said otherwise.
  * - A NULL pointer argument is an error (SOFEL_ERROR_NULL), except the
- *   `user` pointers, which are passed through untouched, and the
- *   `*_destroy` functions, which do nothing for NULL.
+ *   `user` pointers, which are passed through untouched, the
+ *   `const sofel_location_t *location` arguments, where NULL selects
+ *   the default instance, and the `*_destroy` functions, which do
+ *   nothing for NULL. The location
+ *   constructors also accept a NULL input array when its count is 0.
  * - Variable-length output goes to an array the caller gives with its
  *   capacity. When the array is too small, the function writes the
  *   needed length, writes nothing to the array, and returns
@@ -197,7 +200,9 @@ typedef struct sofel_font sofel_font_t;
 /*
  * Opens font `index` of `len` bytes at `data`: 0 for a single sfnt, any
  * index of a TTC/OTC collection. The data is not copied: keep it alive
- * and unchanged until sofel_font_destroy.
+ * and unchanged until the font and every location made from it are
+ * destroyed. A location may outlive the font handle while these bytes
+ * remain valid.
  *
  * Returns the font, or NULL with an error number in *error
  * (SOFEL_ERROR_NULL, SOFEL_ERROR_INVALID_FONT, SOFEL_ERROR_NO_HEAD,
@@ -221,6 +226,342 @@ sofel_font_t *sofel_font_create(const uint8_t *data, size_t len, uint32_t index,
  * FreeType: FT_Done_Face
  */
 void sofel_font_destroy(sofel_font_t *font);
+
+/* ---------------------------------------------------------- variations */
+
+/* A location keeps coordinates and variation scalars (ADR 0027). */
+typedef struct sofel_location sofel_location_t;
+
+/* A design-space axis setting, like hb_variation_t. */
+typedef struct {
+  uint32_t tag;
+  float value;
+} sofel_variation_t;
+
+/* A HarfBuzz-compatible fvar design axis (ADR 0027). */
+typedef struct {
+  uint32_t index;
+  uint32_t tag;
+  uint16_t name_id;
+  uint16_t flags;
+  float min;
+  float default_value;
+  float max;
+} sofel_var_axis_info_t;
+
+/*
+ * Reads the number of fvar design axes. A font without fvar has zero axes.
+ *
+ * Rust: sofel_font::Font::var_axes
+ * HarfBuzz: hb_ot_var_get_axis_count
+ * FreeType: FT_Get_MM_Var
+ */
+int32_t sofel_font_var_axis_count(const sofel_font_t *font, size_t *count);
+
+/*
+ * Reads a zero-based fvar axis. An out-of-range index returns NOT_FOUND.
+ *
+ * Rust: sofel_font::Font::var_axes
+ * HarfBuzz: hb_ot_var_get_axis_infos
+ * FreeType: FT_Get_MM_Var
+ */
+int32_t sofel_font_var_axis(const sofel_font_t *font, size_t index,
+                            sofel_var_axis_info_t *axis);
+
+/*
+ * Finds the first fvar axis with the given four-byte tag.
+ *
+ * Rust: sofel_font::Font::find_var_axis
+ * HarfBuzz: hb_ot_var_find_axis_info
+ * FreeType: none
+ */
+int32_t sofel_font_find_var_axis(const sofel_font_t *font, uint32_t tag,
+                                 sofel_var_axis_info_t *axis);
+
+/* An fvar named instance, excluding FreeType's synthetic default style. */
+typedef struct {
+  uint16_t subfamily_name_id;
+  uint16_t postscript_name_id; /* 0xFFFF when absent. */
+} sofel_named_instance_info_t;
+
+/*
+ * Reads the count of named instances stored in fvar.
+ *
+ * Rust: sofel_font::Font::named_instances
+ * HarfBuzz: hb_ot_var_get_named_instance_count
+ * FreeType: FT_Get_MM_Var
+ */
+int32_t sofel_font_named_instance_count(const sofel_font_t *font, size_t *count);
+
+/*
+ * Reads a zero-based fvar named instance, or NOT_FOUND for an invalid index.
+ *
+ * Rust: sofel_font::Font::named_instances
+ * HarfBuzz: hb_ot_var_named_instance_get_subfamily_name_id, hb_ot_var_named_instance_get_postscript_name_id
+ * FreeType: FT_Get_MM_Var
+ */
+int32_t sofel_font_named_instance(const sofel_font_t *font, size_t index,
+                                  sofel_named_instance_info_t *info);
+
+/*
+ * Copies a named instance's design coordinates in fvar axis order. On a
+ * short array, writes the required length without modifying the array.
+ *
+ * Rust: sofel_font::var::NamedInstanceInfo::design_coords
+ * HarfBuzz: hb_ot_var_named_instance_get_design_coords
+ * FreeType: FT_Get_MM_Var
+ */
+int32_t sofel_font_named_instance_coords(const sofel_font_t *font, size_t index,
+                                         float *out, size_t capacity, size_t *len);
+
+/* A FreeType MM axis with 16.16 design values. */
+typedef struct {
+  uint32_t tag;
+  uint16_t name_id;
+  uint16_t flags;
+  int32_t min;
+  int32_t default_value;
+  int32_t max;
+} sofel_ft_axis_info_t;
+
+/* A FreeType MM named style. */
+typedef struct {
+  uint16_t strid;
+  uint16_t psid; /* 0xFFFF when absent. */
+} sofel_ft_named_style_info_t;
+
+/*
+ * Reads the FreeType MM axis count; NOT_FOUND if fvar is absent or rejected.
+ *
+ * Rust: sofel_font::Font::ft_mm_var, sofel_font::var::FtMmVar::axes
+ * HarfBuzz: none
+ * FreeType: FT_Get_MM_Var
+ */
+int32_t sofel_font_ft_mm_var_axis_count(const sofel_font_t *font, size_t *count);
+
+/*
+ * Reads one FreeType MM axis, including the invalid-range collapse.
+ *
+ * Rust: sofel_font::var::FtMmVar::axes
+ * HarfBuzz: none
+ * FreeType: FT_Get_MM_Var, FT_Get_Var_Axis_Flags
+ */
+int32_t sofel_font_ft_mm_var_axis(const sofel_font_t *font, size_t index,
+                                  sofel_ft_axis_info_t *axis);
+
+/*
+ * Reads the FreeType MM named style count, including a synthetic default.
+ *
+ * Rust: sofel_font::var::FtMmVar::named_styles
+ * HarfBuzz: none
+ * FreeType: FT_Get_MM_Var
+ */
+int32_t sofel_font_ft_mm_var_named_style_count(const sofel_font_t *font, size_t *count);
+
+/*
+ * Reads one FreeType MM named style's name IDs.
+ *
+ * Rust: sofel_font::var::FtMmVar::named_styles
+ * HarfBuzz: none
+ * FreeType: FT_Get_MM_Var
+ */
+int32_t sofel_font_ft_mm_var_named_style(const sofel_font_t *font, size_t index,
+                                         sofel_ft_named_style_info_t *style);
+
+/*
+ * Copies one FreeType MM named style's 16.16 design coordinates. A short
+ * array is not modified; *len receives the required axis count.
+ *
+ * Rust: sofel_font::var::FtNamedStyle::design_coords
+ * HarfBuzz: none
+ * FreeType: FT_Get_MM_Var
+ */
+int32_t sofel_font_ft_mm_var_named_style_coords(const sofel_font_t *font, size_t index,
+                                                int32_t *out, size_t capacity, size_t *len);
+
+/*
+ * Reads FreeType's one-based default named instance index, or zero if none.
+ *
+ * Rust: sofel_font::Font::ft_default_named_instance, sofel_font::var::FtMmVar::default_named_instance
+ * HarfBuzz: none
+ * FreeType: FT_Get_Default_Named_Instance
+ */
+int32_t sofel_font_ft_default_named_instance(const sofel_font_t *font, uint32_t *index);
+
+/*
+ * Constructs a location by selecting a zero-based fvar named instance,
+ * then applying the variations in order. UINT32_MAX means no named
+ * instance. An invalid fvar index leaves HarfBuzz at the default design
+ * coordinates and is reported by sofel_location_ft_error for FreeType.
+ * `variations` may be NULL only when `count` is 0. Keep the source font
+ * bytes alive and unchanged until sofel_location_destroy; the font handle
+ * itself may be destroyed first.
+ *
+ * Rust: sofel_font::var::Location::new
+ * HarfBuzz: hb_font_set_var_named_instance, hb_font_set_variations
+ * FreeType: FT_Set_Named_Instance, FT_Set_Var_Design_Coordinates
+ */
+int32_t sofel_location_create(const sofel_font_t *font, uint32_t named_instance,
+                              const sofel_variation_t *variations, size_t count,
+                              sofel_location_t **out);
+
+/*
+ * Constructs a location from design coordinates. Keep source font bytes
+ * alive and unchanged until the location is destroyed.
+ *
+ * Rust: sofel_font::var::Location::from_design
+ * HarfBuzz: hb_font_set_var_coords_design
+ * FreeType: FT_Set_Var_Design_Coordinates
+ */
+int32_t sofel_location_create_design(const sofel_font_t *font, const float *coords,
+                                     size_t count, sofel_location_t **out);
+
+/*
+ * Constructs a location from HarfBuzz 2.14 normalized coordinates.
+ * Keep source font bytes alive and unchanged until destroy.
+ *
+ * Rust: sofel_font::var::Location::from_normalized_2_14
+ * HarfBuzz: hb_font_set_var_coords_normalized
+ * FreeType: FT_Set_Var_Blend_Coordinates after multiplying by 4
+ */
+int32_t sofel_location_create_normalized_2_14(const sofel_font_t *font,
+                                               const int32_t *coords, size_t count,
+                                               sofel_location_t **out);
+
+/*
+ * Constructs a location from FreeType 16.16 normalized coordinates.
+ * Keep source font bytes alive and unchanged until destroy.
+ *
+ * Rust: sofel_font::var::Location::from_normalized_16_16
+ * HarfBuzz: hb_ft_font_changed
+ * FreeType: FT_Set_Var_Blend_Coordinates
+ */
+int32_t sofel_location_create_normalized_16_16(const sofel_font_t *font,
+                                                const int32_t *coords, size_t count,
+                                                sofel_location_t **out);
+
+/*
+ * Constructs a location from one zero-based fvar named instance.
+ * Keep source font bytes alive and unchanged until destroy.
+ *
+ * Rust: sofel_font::var::Location::named_instance
+ * HarfBuzz: hb_font_set_var_named_instance
+ * FreeType: FT_Set_Named_Instance
+ */
+int32_t sofel_location_create_named_instance(const sofel_font_t *font, uint32_t index,
+                                              sofel_location_t **out);
+
+/*
+ * Frees a location. The source font bytes may be freed afterwards.
+ *
+ * Rust: none
+ * HarfBuzz: hb_font_destroy
+ * FreeType: FT_Done_Face
+ */
+void sofel_location_destroy(sofel_location_t *location);
+
+/*
+ * Copies the HarfBuzz 2.14 normalized coordinates into the caller's array.
+ * When capacity is too small, writes the required count to *len and returns
+ * SOFEL_ERROR_BUFFER_TOO_SMALL without writing the array.
+ *
+ * Rust: sofel_font::var::Location::coords_normalized, sofel_font::var::Instance::coords_normalized
+ * HarfBuzz: hb_font_get_var_coords_normalized
+ * FreeType: none
+ */
+int32_t sofel_location_coords_normalized(const sofel_location_t *location,
+                                          int32_t *out, size_t capacity, size_t *len);
+
+/*
+ * Copies the HarfBuzz design coordinates into the caller's array.
+ * Normalized-coordinate constructors return NaN design coordinates.
+ *
+ * Rust: sofel_font::var::Location::coords_design, sofel_font::var::Instance::coords_design
+ * HarfBuzz: hb_font_get_var_coords_design
+ * FreeType: none
+ */
+int32_t sofel_location_coords_design(const sofel_location_t *location,
+                                     float *out, size_t capacity, size_t *len);
+
+/*
+ * Copies the FreeType 16.16 normalized coordinates into the caller's array.
+ *
+ * Rust: sofel_font::var::Location::ft_coords, sofel_font::var::Instance::ft_coords
+ * HarfBuzz: none
+ * FreeType: FT_Get_Var_Blend_Coordinates
+ */
+int32_t sofel_location_ft_coords(const sofel_location_t *location,
+                                 int32_t *out, size_t capacity, size_t *len);
+
+/*
+ * Copies the FreeType 16.16 design coordinates into the caller's array.
+ *
+ * Rust: sofel_font::var::Location::ft_design_coords, sofel_font::var::Instance::ft_design_coords
+ * HarfBuzz: none
+ * FreeType: FT_Get_Var_Design_Coordinates
+ */
+int32_t sofel_location_ft_design_coords(const sofel_location_t *location,
+                                        int32_t *out, size_t capacity, size_t *len);
+
+/*
+ * Returns the FreeType coordinate-setting result: SOFEL_OK or
+ * SOFEL_ERROR_INVALID_ARGUMENT. This function itself returns SOFEL_OK.
+ *
+ * Rust: sofel_font::var::Location::ft_error
+ * HarfBuzz: none
+ * FreeType: FT_Set_Var_Blend_Coordinates, FT_Set_Named_Instance
+ */
+int32_t sofel_location_ft_error(const sofel_location_t *location, int32_t *error);
+
+/*
+ * Returns the zero-based selected fvar index, or UINT32_MAX when none.
+ *
+ * Rust: sofel_font::var::Location::named_instance_index
+ * HarfBuzz: none
+ * FreeType: FT_Face->face_index, upper 16 bits
+ */
+int32_t sofel_location_named_instance_index(const sofel_location_t *location,
+                                             uint32_t *index);
+
+/*
+ * Returns 1 when HarfBuzz has any nonzero normalized coordinate.
+ *
+ * Rust: sofel_font::var::Location::hb_nonzero
+ * HarfBuzz: hb_font_t::has_nonzero_coords
+ * FreeType: none
+ */
+int32_t sofel_location_hb_nonzero(const sofel_location_t *location, uint8_t *nonzero);
+
+/*
+ * Returns 1 when FreeType treats the location as the default instance.
+ *
+ * Rust: sofel_font::var::Location::ft_default
+ * HarfBuzz: none
+ * FreeType: IS_DEFAULT_INSTANCE
+ */
+int32_t sofel_location_ft_default(const sofel_location_t *location, uint8_t *is_default);
+
+/*
+ * Parses one hb-variation or CSS variation string. Invalid UTF-8 and
+ * invalid variation syntax return SOFEL_ERROR_INVALID_ARGUMENT.
+ *
+ * Rust: sofel_font::var::Variation::parse
+ * HarfBuzz: hb_variation_from_string
+ * FreeType: none
+ */
+int32_t sofel_variation_parse(const char *input, size_t len, sofel_variation_t *out);
+
+/*
+ * Formats one variation as tag=value. The output is NUL-terminated.
+ * A short buffer receives no bytes, *len gets the required length, and
+ * the function returns SOFEL_ERROR_BUFFER_TOO_SMALL.
+ *
+ * Rust: sofel_font::var::Variation::format
+ * HarfBuzz: hb_variation_to_string
+ * FreeType: none
+ */
+int32_t sofel_variation_format(const sofel_variation_t *variation, char *out,
+                               size_t capacity, size_t *len);
 
 /*
  * unitsPerEm of the head table, as stored.
@@ -278,25 +619,27 @@ int32_t sofel_font_variation_glyph_raw(const sofel_font_t *font, uint32_t codepo
                                        uint32_t selector, uint32_t *glyph);
 
 /*
- * The horizontal advance of a glyph in font units, as HarfBuzz gives it
- * (0 for glyphs beyond the metrics).
+ * The unsigned horizontal advance of a glyph in font units, as HarfBuzz gives it.
+ * It is 0 for glyphs beyond the metrics. NULL location selects the default.
  *
- * Rust: sofel_font::Font::advance
+ * Rust: sofel_font::var::Instance::advance
  * HarfBuzz: hb_font_get_glyph_h_advance (with the scale at unitsPerEm)
  * FreeType: FT_Get_Advance (FT_LOAD_NO_SCALE)
  */
-int32_t sofel_font_h_advance(const sofel_font_t *font, uint32_t glyph, uint16_t *advance);
+int32_t sofel_font_h_advance(const sofel_font_t *font, const sofel_location_t *location,
+                             uint32_t glyph, uint32_t *advance);
 
 /*
  * The left side bearing of a glyph in font units, as FreeType reads it
  * for outlines (tt_face_get_metrics), which sofel_font_h_advance does not
  * follow (ADR 0018).
  *
- * Rust: sofel_font::Font::ft_left_side_bearing
+ * Rust: sofel_font::var::Instance::ft_left_side_bearing
  * HarfBuzz: none
  * FreeType: FT_Get_Glyph_Metrics (horiBearingX with FT_LOAD_NO_SCALE)
  */
-int32_t sofel_font_ft_left_side_bearing(const sofel_font_t *font, uint32_t glyph,
+int32_t sofel_font_ft_left_side_bearing(const sofel_font_t *font,
+                                        const sofel_location_t *location, uint32_t glyph,
                                         int16_t *bearing);
 
 /*
@@ -399,42 +742,46 @@ int32_t sofel_font_fs_type(const sofel_font_t *font, uint16_t *fs_type);
  * The horizontal ascender, descender (negative) and line gap, with
  * HarfBuzz's fallback, in extents[0..2].
  *
- * Rust: sofel_font::Font::h_extents
+ * Rust: sofel_font::var::Instance::h_extents
  * HarfBuzz: hb_font_get_extents_for_direction (HB_DIRECTION_LTR)
  * FreeType: none
  */
-int32_t sofel_font_h_extents(const sofel_font_t *font, int32_t extents[3]);
+int32_t sofel_font_h_extents(const sofel_font_t *font, const sofel_location_t *location,
+                             int32_t extents[3]);
 
 /*
  * The vertical ascender, descender and line gap, with HarfBuzz's
  * fallback, in extents[0..2].
  *
- * Rust: sofel_font::Font::v_extents
+ * Rust: sofel_font::var::Instance::v_extents
  * HarfBuzz: hb_font_get_extents_for_direction (HB_DIRECTION_TTB)
  * FreeType: none
  */
-int32_t sofel_font_v_extents(const sofel_font_t *font, int32_t extents[3]);
+int32_t sofel_font_v_extents(const sofel_font_t *font, const sofel_location_t *location,
+                             int32_t extents[3]);
 
 /*
  * The vertical advance, negative downward as in HarfBuzz.
  *
- * Rust: sofel_font::Font::v_advance
+ * Rust: sofel_font::var::Instance::v_advance
  * HarfBuzz: hb_font_get_glyph_v_advance
  * FreeType: none (FT_Get_Advance with FT_LOAD_VERTICAL_LAYOUT is positive
  *           and falls back differently)
  */
-int32_t sofel_font_v_advance(const sofel_font_t *font, uint32_t glyph, int32_t *advance);
+int32_t sofel_font_v_advance(const sofel_font_t *font, const sofel_location_t *location,
+                             uint32_t glyph, int32_t *advance);
 
 /*
  * The vertical origin (x, y) in origin[0..1]: VORG, else glyf's top
  * phantom point (with vmtx), else centered on the glyph box of
  * sofel_font_glyph_extents.
  *
- * Rust: sofel_font::Font::v_origin, sofel_font::HbScale::v_origin_scaled
+ * Rust: sofel_font::var::Instance::v_origin, sofel_font::HbScale::v_origin_scaled
  * HarfBuzz: hb_font_get_glyph_v_origin
  * FreeType: none
  */
-int32_t sofel_font_v_origin(const sofel_font_t *font, uint32_t glyph, int32_t origin[2]);
+int32_t sofel_font_v_origin(const sofel_font_t *font, const sofel_location_t *location,
+                            uint32_t glyph, int32_t origin[2]);
 
 /*
  * The glyph box (x_bearing, y_bearing, width, height) in extents[0..3];
@@ -442,33 +789,37 @@ int32_t sofel_font_v_origin(const sofel_font_t *font, uint32_t glyph, int32_t or
  * HarfBuzz gives it from glyf, else CFF2, else CFF (ADR 0021); color
  * glyphs come with ADR 0023.
  *
- * Rust: sofel_color::glyph_extents, sofel_outline::HbExtents::glyph_extents, sofel_outline::Outlines::glyph_extents, sofel_font::Font::glyf_extents, sofel_bitmap::sbix_extents, sofel_bitmap::cbdt_extents
+ * Rust: sofel_color::glyph_extents, sofel_outline::HbExtents::glyph_extents, sofel_outline::Outlines::glyph_extents, sofel_font::var::Instance::glyf_extents, sofel_bitmap::sbix_extents, sofel_bitmap::cbdt_extents
  * HarfBuzz: hb_font_get_glyph_extents
  * FreeType: none (FT_Outline_Get_CBox of the loaded outline)
  */
-int32_t sofel_font_glyph_extents(const sofel_font_t *font, uint32_t glyph, int32_t extents[4]);
+int32_t sofel_font_glyph_extents(const sofel_font_t *font, const sofel_location_t *location,
+                                 uint32_t glyph, int32_t extents[4]);
 
 /*
  * A font-wide metric by its hb_ot_metrics_tag_t tag ('hasc', 'xhgt',
  * ...). SOFEL_ERROR_NOT_FOUND when the font does not have it,
  * SOFEL_ERROR_INVALID_ARGUMENT for an unknown tag.
  *
- * Rust: sofel_font::Font::metrics_position, sofel_font::MetricsTag::from_tag, sofel_font::MetricsTag::tag
+ * Rust: sofel_font::var::Instance::metrics_position, sofel_font::MetricsTag::from_tag, sofel_font::MetricsTag::tag
  * HarfBuzz: hb_ot_metrics_get_position
  * FreeType: none
  */
-int32_t sofel_font_metrics_position(const sofel_font_t *font, uint32_t tag, int32_t *position);
+int32_t sofel_font_metrics_position(const sofel_font_t *font,
+                                    const sofel_location_t *location, uint32_t tag,
+                                    int32_t *position);
 
 /*
  * Like sofel_font_metrics_position, made up from other metrics when the
  * font does not have it.
  *
- * Rust: sofel_font::Font::metrics_position_with_fallback, sofel_font::HbScale::metrics_position_with_fallback_scaled
+ * Rust: sofel_font::var::Instance::metrics_position_with_fallback, sofel_font::HbScale::metrics_position_with_fallback_scaled
  * HarfBuzz: hb_ot_metrics_get_position_with_fallback
  * FreeType: none
  */
-int32_t sofel_font_metrics_position_with_fallback(const sofel_font_t *font, uint32_t tag,
-                                                  int32_t *position);
+int32_t sofel_font_metrics_position_with_fallback(const sofel_font_t *font,
+                                                  const sofel_location_t *location,
+                                                  uint32_t tag, int32_t *position);
 
 /* HarfBuzz's scale of a font (x_scale, y_scale). Immutable. */
 typedef struct sofel_scale_t sofel_scale_t;
@@ -523,43 +874,48 @@ int32_t sofel_scale_glyph_extents(const sofel_scale_t *scale, int32_t extents[4]
 /*
  * sofel_font_h_extents at this scale (the fallback is computed at it).
  *
- * Rust: sofel_font::HbScale::h_extents
+ * Rust: sofel_font::HbScale::h_extents, sofel_font::var::Instance::scaled_h_extents
  * HarfBuzz: hb_font_get_extents_for_direction (HB_DIRECTION_LTR)
  * FreeType: none
  */
 int32_t sofel_scale_h_extents(const sofel_scale_t *scale, const sofel_font_t *font,
+                              const sofel_location_t *location,
                               int32_t extents[3]);
 
 /*
- * Rust: sofel_font::HbScale::v_extents
+ * Rust: sofel_font::HbScale::v_extents, sofel_font::var::Instance::scaled_v_extents
  * HarfBuzz: hb_font_get_extents_for_direction (HB_DIRECTION_TTB)
  * FreeType: none
  */
 int32_t sofel_scale_v_extents(const sofel_scale_t *scale, const sofel_font_t *font,
+                              const sofel_location_t *location,
                               int32_t extents[3]);
 
 /*
- * Rust: sofel_font::HbScale::h_advance
+ * Rust: sofel_font::HbScale::h_advance, sofel_font::var::Instance::advance
  * HarfBuzz: hb_font_get_glyph_h_advance
  * FreeType: none
  */
 int32_t sofel_scale_h_advance(const sofel_scale_t *scale, const sofel_font_t *font,
+                              const sofel_location_t *location,
                               uint32_t glyph, int32_t *advance);
 
 /*
- * Rust: sofel_font::HbScale::v_advance
+ * Rust: sofel_font::HbScale::v_advance, sofel_font::var::Instance::scaled_v_advance
  * HarfBuzz: hb_font_get_glyph_v_advance
  * FreeType: none
  */
 int32_t sofel_scale_v_advance(const sofel_scale_t *scale, const sofel_font_t *font,
+                              const sofel_location_t *location,
                               uint32_t glyph, int32_t *advance);
 
 /*
- * Rust: sofel_font::HbScale::v_origin
+ * Rust: sofel_font::HbScale::v_origin, sofel_font::var::Instance::scaled_v_origin
  * HarfBuzz: hb_font_get_glyph_v_origin
  * FreeType: none
  */
 int32_t sofel_scale_v_origin(const sofel_scale_t *scale, const sofel_font_t *font,
+                             const sofel_location_t *location,
                              uint32_t glyph, int32_t origin[2]);
 
 /*
@@ -568,23 +924,26 @@ int32_t sofel_scale_v_origin(const sofel_scale_t *scale, const sofel_font_t *fon
  * FreeType: none
  */
 int32_t sofel_scale_glyph_extents_of(const sofel_scale_t *scale, const sofel_font_t *font,
+                                     const sofel_location_t *location,
                                      uint32_t glyph, int32_t extents[4]);
 
 /*
- * Rust: sofel_font::HbScale::metrics_position
+ * Rust: sofel_font::HbScale::metrics_position, sofel_font::var::Instance::scaled_metrics_position
  * HarfBuzz: hb_ot_metrics_get_position
  * FreeType: none
  */
 int32_t sofel_scale_metrics_position(const sofel_scale_t *scale, const sofel_font_t *font,
+                                     const sofel_location_t *location,
                                      uint32_t tag, int32_t *position);
 
 /*
- * Rust: sofel_font::HbScale::metrics_position_with_fallback
+ * Rust: sofel_font::HbScale::metrics_position_with_fallback, sofel_font::var::Instance::scaled_metrics_position_with_fallback
  * HarfBuzz: hb_ot_metrics_get_position_with_fallback
  * FreeType: none
  */
 int32_t sofel_scale_metrics_position_with_fallback(const sofel_scale_t *scale,
-                                                   const sofel_font_t *font, uint32_t tag,
+                                                   const sofel_font_t *font,
+                                                   const sofel_location_t *location, uint32_t tag,
                                                    int32_t *position);
 
 /* ---------------------------------------------------------- baselines */
@@ -610,24 +969,26 @@ int32_t sofel_scale_metrics_position_with_fallback(const sofel_scale_t *scale,
  * `script`, else of DFLT). SOFEL_ERROR_NOT_FOUND when the font does not
  * have it; SOFEL_ERROR_INVALID_ARGUMENT for an unknown direction.
  *
- * Rust: sofel_font::Font::baseline
+ * Rust: sofel_font::var::Instance::baseline
  * HarfBuzz: hb_ot_layout_get_baseline
  * FreeType: none
  */
-int32_t sofel_font_baseline(const sofel_font_t *font, uint32_t tag, int32_t direction,
+int32_t sofel_font_baseline(const sofel_font_t *font, const sofel_location_t *location,
+                            uint32_t tag, int32_t direction,
                             uint32_t script, int32_t *coord);
 
 /*
  * Like sofel_font_baseline, synthesized when the font does not have it.
  * The em box center for Han in horizontal text, for example, is
- * sofel_font_baseline_with_fallback (font, SOFEL_BASELINE_IDEO_EMBOX_CENTRAL,
+ * sofel_font_baseline_with_fallback (font, NULL, SOFEL_BASELINE_IDEO_EMBOX_CENTRAL,
  * SOFEL_DIRECTION_HORIZONTAL, SOFEL_TAG('h', 'a', 'n', 'i'), &coord).
  *
- * Rust: sofel_font::Font::baseline_with_fallback, sofel_font::HbScale::baseline_with_fallback_scaled
+ * Rust: sofel_font::var::Instance::baseline_with_fallback, sofel_font::HbScale::baseline_with_fallback_scaled, sofel_font::var::Instance::scaled_baseline_with_fallback
  * HarfBuzz: hb_ot_layout_get_baseline_with_fallback
  * FreeType: none
  */
-int32_t sofel_font_baseline_with_fallback(const sofel_font_t *font, uint32_t tag,
+int32_t sofel_font_baseline_with_fallback(const sofel_font_t *font,
+                                          const sofel_location_t *location, uint32_t tag,
                                           int32_t direction, uint32_t script, int32_t *coord);
 
 /*
@@ -635,37 +996,41 @@ int32_t sofel_font_baseline_with_fallback(const sofel_font_t *font, uint32_t tag
  * system tag from BASE's MinMax tables in extents[0..2], with *found 1;
  * without them, the font's extents for the direction with *found 0.
  *
- * Rust: sofel_font::Font::layout_font_extents
+ * Rust: sofel_font::var::Instance::layout_font_extents
  * HarfBuzz: hb_ot_layout_get_font_extents
  * FreeType: none
  */
-int32_t sofel_font_layout_font_extents(const sofel_font_t *font, int32_t direction,
+int32_t sofel_font_layout_font_extents(const sofel_font_t *font, const sofel_location_t *location,
+                                       int32_t direction,
                                        uint32_t script, uint32_t language, int32_t extents[3],
                                        int32_t *found);
 
 /*
- * Rust: sofel_font::HbScale::baseline
+ * Rust: sofel_font::HbScale::baseline, sofel_font::var::Instance::scaled_baseline
  * HarfBuzz: hb_ot_layout_get_baseline
  * FreeType: none
  */
 int32_t sofel_scale_baseline(const sofel_scale_t *scale, const sofel_font_t *font,
+                             const sofel_location_t *location,
                              uint32_t tag, int32_t direction, uint32_t script, int32_t *coord);
 
 /*
- * Rust: sofel_font::HbScale::baseline_with_fallback
+ * Rust: sofel_font::HbScale::baseline_with_fallback, sofel_font::var::Instance::scaled_baseline_with_fallback
  * HarfBuzz: hb_ot_layout_get_baseline_with_fallback
  * FreeType: none
  */
 int32_t sofel_scale_baseline_with_fallback(const sofel_scale_t *scale, const sofel_font_t *font,
+                                           const sofel_location_t *location,
                                            uint32_t tag, int32_t direction, uint32_t script,
                                            int32_t *coord);
 
 /*
- * Rust: sofel_font::HbScale::layout_font_extents
+ * Rust: sofel_font::HbScale::layout_font_extents, sofel_font::var::Instance::scaled_layout_font_extents
  * HarfBuzz: hb_ot_layout_get_font_extents
  * FreeType: none
  */
 int32_t sofel_scale_layout_font_extents(const sofel_scale_t *scale, const sofel_font_t *font,
+                                        const sofel_location_t *location,
                                         int32_t direction, uint32_t script, uint32_t language,
                                         int32_t extents[3], int32_t *found);
 
@@ -748,15 +1113,16 @@ int32_t sofel_font_sfnt_name(const sofel_font_t *font, size_t index, uint16_t id
                              const uint8_t **string, size_t *len);
 
 /*
- * The PostScript name as FreeType finds it (not NUL-terminated).
- * SOFEL_ERROR_NOT_FOUND when there is none.
+ * The PostScript name as FreeType finds it at `location` (not NUL-terminated).
+ * NULL selects the default location. SOFEL_ERROR_NOT_FOUND when there is none.
  *
- * Rust: sofel_font::Font::postscript_name
+ * Rust: sofel_font::Font::postscript_name, sofel_font::var::Instance::postscript_name
  * HarfBuzz: none
  * FreeType: FT_Get_Postscript_Name
  */
-int32_t sofel_font_postscript_name(const sofel_font_t *font, char *name, size_t capacity,
-                                   size_t *len);
+int32_t sofel_font_postscript_name(const sofel_font_t *font,
+                                   const sofel_location_t *location, char *name,
+                                   size_t capacity, size_t *len);
 
 /*
  * The name of a glyph as HarfBuzz gives it from post, else from the
@@ -829,21 +1195,23 @@ int32_t sofel_glyph_names_ft_glyph_from_name(const sofel_glyph_names_t *names, c
  * height, max_advance_width, max_advance_height, underline_position,
  * underline_thickness, bbox xMin, yMin, xMax, yMax.
  *
- * Rust: sofel_font::Font::ft_face_metrics
+ * Rust: sofel_font::var::Instance::ft_face_metrics
  * HarfBuzz: none
  * FreeType: the FT_Face fields
  */
-int32_t sofel_font_ft_face_metrics(const sofel_font_t *font, int32_t values[11]);
+int32_t sofel_font_ft_face_metrics(const sofel_font_t *font, const sofel_location_t *location,
+                                  int32_t values[11]);
 
 /*
  * The vertical advance as FreeType gives it (positive).
  * SOFEL_ERROR_INVALID_GLYPH for glyph ids not below the glyph count.
  *
- * Rust: sofel_font::Font::ft_v_advance
+ * Rust: sofel_font::var::Instance::ft_v_advance
  * HarfBuzz: none
  * FreeType: FT_Get_Advance (FT_LOAD_VERTICAL_LAYOUT | FT_LOAD_NO_SCALE)
  */
-int32_t sofel_font_ft_v_advance(const sofel_font_t *font, uint32_t glyph, uint16_t *advance);
+int32_t sofel_font_ft_v_advance(const sofel_font_t *font, const sofel_location_t *location,
+                               uint32_t glyph, uint16_t *advance);
 
 /* ----------------------------------------------------------- outlines */
 
@@ -1048,7 +1416,8 @@ int32_t sofel_outline_pixel_scale(const sofel_font_t *font, uint16_t x_ppem,
  * HarfBuzz: none
  * FreeType: FT_Load_Glyph (FT_LOAD_NO_HINTING), FT_Outline_Get_CBox
  */
-int32_t sofel_outline_load(const sofel_font_t *font, uint32_t glyph, uint32_t mode,
+int32_t sofel_outline_load(const sofel_font_t *font, const sofel_location_t *location,
+                           uint32_t glyph, uint32_t mode,
                            int32_t x_scale, int32_t y_scale,
                            sofel_outline_scratch_t *scratch, int32_t *cbox,
                            uint32_t *overlap);
@@ -1077,7 +1446,8 @@ int32_t sofel_outline_decompose(const sofel_outline_scratch_t *scratch, int32_t 
  * HarfBuzz: hb_font_draw_glyph
  * FreeType: FT_Load_Glyph (FT_LOAD_NO_HINTING), FT_Outline_Decompose
  */
-int32_t sofel_outline_draw(const sofel_font_t *font, uint32_t glyph, uint32_t mode,
+int32_t sofel_outline_draw(const sofel_font_t *font, const sofel_location_t *location,
+                           uint32_t glyph, uint32_t mode,
                            int32_t x_scale, int32_t y_scale,
                            sofel_outline_scratch_t *scratch, sofel_move_to_func_t move_to,
                            sofel_line_to_func_t line_to, sofel_quad_to_func_t quad_to,
@@ -1244,7 +1614,8 @@ int32_t sofel_rasterizer_render_placed(sofel_rasterizer_t *rasterizer, int32_t l
  * HarfBuzz: none
  * FreeType: FT_Set_Pixel_Sizes, FT_Load_Glyph, FT_Render_Glyph
  */
-int32_t sofel_render_glyph(const sofel_font_t *font, uint32_t glyph, uint16_t ppem,
+int32_t sofel_render_glyph(const sofel_font_t *font, const sofel_location_t *location,
+                           uint32_t glyph, uint16_t ppem,
                            sofel_outline_scratch_t *scratch, sofel_rasterizer_t *rasterizer,
                            uint8_t *pixels, size_t capacity, size_t *len, int32_t *box);
 
@@ -1619,7 +1990,8 @@ typedef struct sofel_paint_commands_t {
  * HarfBuzz: hb_font_paint_glyph_or_fail
  * FreeType: none
  */
-int32_t sofel_paint_glyph(const sofel_font_t *font, uint32_t glyph, uint16_t palette,
+int32_t sofel_paint_glyph(const sofel_font_t *font, const sofel_location_t *location,
+                          uint32_t glyph, uint16_t palette,
                           const sofel_color_t *custom_colors, size_t n_custom,
                           sofel_color_t foreground, uint16_t ppem,
                           sofel_paint_commands_t *out);
@@ -1857,7 +2229,8 @@ int32_t sofel_font_has_bitmaps(const sofel_font_t *font, uint8_t *has);
  * HarfBuzz: none
  * FreeType: FT_Load_Glyph (FT_LOAD_COLOR), FT_Render_Glyph, FT_Get_Color_Glyph_Layer
  */
-int32_t sofel_render_color_glyph(const sofel_font_t *font, uint32_t glyph, uint16_t ppem,
+int32_t sofel_render_color_glyph(const sofel_font_t *font, const sofel_location_t *location,
+                                 uint32_t glyph, uint16_t ppem,
                                  uint16_t palette, const sofel_color_t *custom_colors,
                                  size_t n_custom, sofel_color_t foreground,
                                  sofel_outline_scratch_t *scratch,
@@ -2190,6 +2563,7 @@ typedef struct sofel_shape_plan_t sofel_shape_plan_t;
  * FreeType: none
  */
 sofel_shape_plan_t *sofel_shape_plan_create(const sofel_font_t *font,
+                                            const sofel_location_t *location,
                                             const sofel_segment_t *segment,
                                             const sofel_feature_t *features, size_t n,
                                             int32_t *error);
@@ -2408,7 +2782,8 @@ int32_t sofel_buffer_set_random_state(sofel_buffer_t *buffer, uint32_t state);
  * HarfBuzz: hb_shape_plan_execute
  * FreeType: none
  */
-int32_t sofel_shape(const sofel_font_t *font, const sofel_scale_t *scale,
+int32_t sofel_shape(const sofel_font_t *font, const sofel_location_t *location,
+                    const sofel_scale_t *scale,
                     const sofel_shape_plan_t *plan, sofel_buffer_t *buffer);
 
 /*
@@ -2420,7 +2795,8 @@ int32_t sofel_shape(const sofel_font_t *font, const sofel_scale_t *scale,
  * HarfBuzz: hb_shape_full with the shaper list {"fallback"}
  * FreeType: none
  */
-int32_t sofel_shape_fallback(const sofel_font_t *font, const sofel_scale_t *scale,
+int32_t sofel_shape_fallback(const sofel_font_t *font, const sofel_location_t *location,
+                             const sofel_scale_t *scale,
                              const sofel_segment_t *segment, sofel_buffer_t *buffer);
 
 /*

@@ -160,8 +160,21 @@ impl<'a> Gdef<'a> {
     pub fn mark_glyph_sets(&self) -> Result<Option<MarkGlyphSets<'a>>, ReadError> {
         follow(self.data, self.mark_glyph_sets_offset(), MarkGlyphSets::new)
     }
-    /// `itemVarStoreOffset` (version 1.3 on); `None` before. The store is
-    /// not read (ADR 0020).
+    /// Opens the optional ItemVariationStore (ADR 0027).
+    /// Null offsets return `None`; malformed non-null stores return an error.
+    pub fn variation_store(
+        &self,
+    ) -> Result<Option<crate::item_variation::ItemVariationStore<'a>>, ReadError> {
+        let offset = self.item_var_store_offset().unwrap_or(0);
+        if offset == 0 {
+            return Ok(None);
+        }
+        let data = crate::be::tail_at(self.data, crate::be::to_usize(offset))
+            .ok_or(ReadError::OutOfBounds)?;
+        crate::item_variation::ItemVariationStore::new(data).map(Some)
+    }
+
+    /// `itemVarStoreOffset` (version 1.3 on); `None` before.
     pub fn item_var_store_offset(&self) -> Option<u32> {
         if self.version >= VERSION_1_3 {
             be::u32_at(self.data, 14)
@@ -486,6 +499,14 @@ pub fn validate(data: &[u8], report: &mut dyn FnMut(Diagnostic)) {
             ));
         }
     };
+    crate::validate::variation_store(
+        data,
+        gdef.item_var_store_offset().unwrap_or(0),
+        14,
+        TAG,
+        None,
+        report,
+    );
     let mut w = Walker::new(TAG, data, report);
     let v = gdef.version();
     let wide = v >= VERSION_1_4;
@@ -507,9 +528,6 @@ pub fn validate(data: &[u8], report: &mut dyn FnMut(Diagnostic)) {
     if v >= VERSION_1_2 {
         let (f, fw) = field(12, 34);
         mark_glyph_sets(&mut w, f, fw);
-    }
-    if v >= VERSION_1_3 {
-        w.opaque(14, 0, 4, 8);
     }
 }
 

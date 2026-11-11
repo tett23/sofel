@@ -16,6 +16,7 @@ use alloc::collections::BTreeMap;
 
 use crate::bits::BitSet;
 use data::D;
+use sofel_font::read::feature_variations::FeatureVariations;
 
 /// HarfBuzz's limits (`src/hb-limits.hh`) used by the layout code.
 pub(crate) mod limits {
@@ -142,6 +143,11 @@ impl<'a> Gsubgpos<'a> {
         } else {
             D(&[])
         }
+    }
+
+    /// The checked view of FeatureVariations, if present and readable.
+    pub fn feature_variations_view(self) -> Option<FeatureVariations<'a>> {
+        FeatureVariations::new(self.feature_variations().0).ok()
     }
 
     /// The number of scripts.

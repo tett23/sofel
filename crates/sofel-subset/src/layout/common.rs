@@ -7,6 +7,9 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
+use sofel_font::read::feature_variations::{
+    ConditionSet, FeatureTableSubstitution, FeatureVariations,
+};
 use sofel_write::{Errors, Serializer, Whence};
 
 use super::data::{Cls, Cov, D, lo16, n16, n32};
@@ -681,54 +684,57 @@ impl<'p, 's> Sub<'p, 's> {
     // -----------------------------------------------------------------
     // FeatureVariations (version 1.0, without instancing).
 
-    fn feature_variations(&mut self, t: Gsubgpos<'_>, fv: D<'_>) -> bool {
-        if fv.u16(0) != 1 {
-            return false;
-        }
-        if fv.u16(2) != 0 {
+    fn feature_variations(&mut self, t: Gsubgpos<'_>, fv: FeatureVariations<'_>) -> bool {
+        if fv.version() != 0x0001_0000 {
             self.unsupported("FeatureVariations 1.1 (ADR 0022 stage 3)");
             return false;
         }
-        self.s.u32(fv.u32(0));
+        self.s.u32(fv.version());
         let count_at = self.s.u32(0);
-        let n = fv.u32(4) as usize;
         let map = &self.lp().features_w_dups;
-        let record = |i: usize| 8usize.saturating_add(i.saturating_mul(8));
-        let keep = (0..n).rev().find(|&i| {
-            let subs = fv.off32(record(i).saturating_add(4));
-            (0..usize::from(subs.u16(4))).any(|j| {
-                map.contains_key(&u32::from(
-                    subs.u16(6usize.saturating_add(j.saturating_mul(6))),
-                ))
+        let keep = (0..fv.len()).rev().find(|&i| {
+            let subs = fv.record(i).and_then(|r| r.substitutions().ok().flatten());
+            subs.is_some_and(|s| {
+                (0..s.len()).any(|j| {
+                    s.record(j)
+                        .is_some_and(|r| map.contains_key(&u32::from(r.feature_index())))
+                })
             })
         });
-        let count = keep.map_or(0, |k| k.wrapping_add(1));
+        let count = keep.map_or(0, |k| k.saturating_add(1));
         let mut out = 0u32;
         for i in 0..count {
-            let at = record(i);
             let cond_at = self.s.u32(0);
             let subs_at = self.s.u32(0);
-            let conds = fv.off32(at);
-            self.serialize_subset_opt(cond_at, 4, conds, |s| s.condition_set(conds));
-            let subs = fv.off32(at.saturating_add(4));
-            self.serialize_subset_opt(subs_at, 4, subs, |s| s.feature_substitution(t, subs));
+            let Some(record) = fv.record(i) else { continue };
+            if let Some(conds) = record.conditions().ok().flatten() {
+                self.serialize_subset_opt(cond_at, 4, D(conds.data()), |s| s.condition_set(conds));
+            }
+            if let Some(subs) = record.substitutions().ok().flatten() {
+                self.serialize_subset_opt(subs_at, 4, D(subs.data()), |s| {
+                    s.feature_substitution(t, subs)
+                });
+            }
             out = out.wrapping_add(1);
         }
         self.s.set_u32(count_at, out);
         out != 0
     }
 
-    fn condition_set(&mut self, cs: D<'_>) -> bool {
+    fn condition_set(&mut self, cs: ConditionSet<'_>) -> bool {
         let count_at = self.s.u16(0);
-        for i in 0..usize::from(cs.u16(0)) {
-            let c = cs.off32(2usize.saturating_add(i.saturating_mul(4)));
-            if c.u16(0) != 1 {
+        for i in 0..cs.len() {
+            let Some(c) = cs.condition(i).ok().flatten() else {
+                self.unsupported("FeatureVariations conditions other than format 1");
+                return false;
+            };
+            if c.format() != 1 {
                 self.unsupported("FeatureVariations conditions other than format 1");
                 return false;
             }
             if self.offset_append(4, |s| {
-                s.s.extend(c.slice(0, 8));
-                c.0.len() >= 8
+                s.s.extend(D(c.data()).slice(0, 8));
+                c.data().len() >= 8
             }) {
                 self.bump_u16(count_at, 1);
             }
@@ -736,13 +742,15 @@ impl<'p, 's> Sub<'p, 's> {
         D(self.s.current()).u16(count_at) != 0
     }
 
-    fn feature_substitution(&mut self, t: Gsubgpos<'_>, fts: D<'_>) -> bool {
-        self.s.u32(fts.u32(0));
+    fn feature_substitution(&mut self, t: Gsubgpos<'_>, fts: FeatureTableSubstitution<'_>) -> bool {
+        self.s.u32(fts.version());
         let count_at = self.s.u16(0);
         let map = &self.lp().features_w_dups;
-        for j in 0..usize::from(fts.u16(4)) {
-            let rec = 6usize.saturating_add(j.saturating_mul(6));
-            let index = u32::from(fts.u16(rec));
+        for j in 0..fts.len() {
+            let Some(record) = fts.record(j) else {
+                continue;
+            };
+            let index = u32::from(record.feature_index());
             let Some(&new) = map.get(&index) else {
                 continue;
             };
@@ -750,7 +758,7 @@ impl<'p, 's> Sub<'p, 's> {
             self.s.u16((new & 0xFFFF) as u16);
             let at = self.s.u32(0);
             let tag = t.feature_tag(index as usize);
-            let f = fts.off32(rec.saturating_add(2));
+            let f = D(record.feature().ok().flatten().unwrap_or(&[]));
             if self.serialize_subset_opt(at, 4, f, |s| s.feature(f, Some(tag))) {
                 self.bump_u16(count_at, 1);
             } else {
@@ -786,10 +794,12 @@ impl<'p, 's> Sub<'p, 's> {
         if version >= 0x0001_0001 {
             let snap = self.s.snapshot();
             let at = self.s.u32(0);
-            let fv = t.feature_variations();
+            let fv = t.feature_variations_view();
             // Pinning every axis drops the feature variations.
             let ret = !self.p.var.all_axes_pinned()
-                && self.serialize_subset_opt(at, 4, fv, |s| s.feature_variations(t, fv));
+                && fv.is_some_and(|fv| {
+                    self.serialize_subset_opt(at, 4, D(fv.data()), |s| s.feature_variations(t, fv))
+                });
             if !ret {
                 self.s.revert(snap);
                 self.s.set_u32(0, 0x0001_0000);

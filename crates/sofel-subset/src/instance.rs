@@ -7,9 +7,10 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use sofel_font::Font;
-use sofel_font::read::avar::{Avar, SegmentMap};
+use sofel_font::read::avar::Avar;
 use sofel_font::read::fvar::Fvar;
 use sofel_font::read::{Fixed, Tag};
+use sofel_font::var::{map_float, normalize_axis_value};
 use sofel_geom::float::{hb_roundf, hb_roundf32, i32_to_f32};
 
 use crate::input::AxisRange;
@@ -103,83 +104,9 @@ pub(crate) fn clamp_f64(v: f64, lo: f64, hi: f64) -> f64 {
     if m <= hi { m } else { hi }
 }
 
-/// `AxisRecord::normalize_axis_value`.
-fn normalize_axis_value(a: &AxisInfo, v: f32) -> f32 {
-    let v = clamp_f32(v, a.min, a.max);
-    if v == a.default {
-        0.0
-    } else if v < a.default {
-        (v - a.default) / (a.default - a.min)
-    } else {
-        (v - a.default) / (a.max - a.default)
-    }
-}
-
 /// `roundf (v * 16384.f) / 16384.f`: rounded to 2.14.
 fn round_2_14(v: f32) -> f32 {
     f64_to_f32(hb_roundf32(v * 16384.0) / 16384.0)
-}
-
-/// `SegmentMaps::map_float`.
-pub(crate) fn map_float(map: &SegmentMap<'_>, value: f32) -> f32 {
-    let len = map.len();
-    let pair = |i: usize| {
-        map.pair(i).map_or((0.0, 0.0), |(f, t)| {
-            (f2dot14_to_f32(f.0), f2dot14_to_f32(t.0))
-        })
-    };
-    let from = |i: usize| pair(i).0;
-    let to = |i: usize| pair(i).1;
-    if len < 2 {
-        return if len == 0 {
-            value
-        } else {
-            value - from(0) + to(0)
-        };
-    }
-    let mut start = 0usize;
-    let mut end = len;
-    if from(start) == -1.0 && to(start) == -1.0 && from(start.saturating_add(1)) == -1.0 {
-        start = start.saturating_add(1);
-    }
-    let last = end.saturating_sub(1);
-    if from(last) == 1.0 && to(last) == 1.0 && from(end.saturating_sub(2)) == 1.0 {
-        end = last;
-    }
-    if let Some(i) = (start..end).find(|&i| value == from(i)) {
-        let mut j = i;
-        while j.saturating_add(1) < end && value == from(j.saturating_add(1)) {
-            j = j.saturating_add(1);
-        }
-        if i == j {
-            return to(i);
-        }
-        if i.saturating_add(2) == j {
-            return to(i.saturating_add(1));
-        }
-        if value < 0.0 {
-            return to(j);
-        }
-        if value > 0.0 {
-            return to(i);
-        }
-        return if to(i).abs() < to(j).abs() {
-            to(i)
-        } else {
-            to(j)
-        };
-    }
-    let i = (start..end).find(|&i| value < from(i)).unwrap_or(end);
-    if i == start {
-        return value - from(start) + to(start);
-    }
-    if i == end {
-        let e = end.saturating_sub(1);
-        return value - from(e) + to(e);
-    }
-    let b = i.saturating_sub(1);
-    let denom = from(i) - from(b);
-    to(b) + ((to(i) - to(b)) * (value - from(b))) / denom
 }
 
 /// `avar::map_coords_2_14` of version 1 maps: each of the first
@@ -317,9 +244,9 @@ pub(crate) fn normalize(font: &Font<'_>, user: &BTreeMap<Tag, AxisRange>) -> Nor
         let Some(r) = range else {
             continue;
         };
-        let min = round_2_14(normalize_axis_value(a, r.min));
-        let def = round_2_14(normalize_axis_value(a, r.default));
-        let max = round_2_14(normalize_axis_value(a, r.max));
+        let min = round_2_14(normalize_axis_value(a.min, a.default, a.max, r.min));
+        let def = round_2_14(normalize_axis_value(a.min, a.default, a.max, r.default));
+        let max = round_2_14(normalize_axis_value(a.min, a.default, a.max, r.max));
         if avar.is_some() {
             if let (Some(m), Some(d), Some(x)) =
                 (mins.get_mut(i), defaults.get_mut(i), maxs.get_mut(i))
@@ -397,10 +324,10 @@ mod tests {
     #[test]
     fn normalizes_as_harfbuzz() {
         let a = axis(100.0, 400.0, 900.0);
-        assert_eq!(normalize_axis_value(&a, 400.0), 0.0);
-        assert_eq!(normalize_axis_value(&a, 100.0), -1.0);
-        assert_eq!(normalize_axis_value(&a, 50.0), -1.0);
-        assert_eq!(normalize_axis_value(&a, 650.0), 0.5);
+        assert_eq!(normalize_axis_value(a.min, a.default, a.max, 400.0), 0.0);
+        assert_eq!(normalize_axis_value(a.min, a.default, a.max, 100.0), -1.0);
+        assert_eq!(normalize_axis_value(a.min, a.default, a.max, 50.0), -1.0);
+        assert_eq!(normalize_axis_value(a.min, a.default, a.max, 650.0), 0.5);
         assert_eq!(round_2_14(1.0 / 3.0), 5461.0 / 16384.0);
     }
 }

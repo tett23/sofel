@@ -105,8 +105,7 @@ impl Subject<'_> {
         } else {
             match category {
                 "variations" => {
-                    self.has_option(&["--variations", "--named-instance", "--font-ptem"])
-                        || has(b"fvar")
+                    self.has_option(&["--variations", "--named-instance"]) || has(b"fvar")
                 }
                 "aat" => ["morx", "mort", "kerx", "kern", "trak", "ankr"]
                     .iter()
@@ -131,7 +130,7 @@ impl Subject<'_> {
         if self.misfit("synthetic").is_none() {
             return "synthetic".into();
         }
-        if self.has_option(&["--variations", "--named-instance", "--font-ptem"]) {
+        if self.has_option(&["--variations", "--named-instance"]) {
             return "variations".into();
         }
         if Font::new(self.data, self.face).is_err() {

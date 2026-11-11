@@ -266,7 +266,7 @@ fn ft_face_metrics_like_freetype() {
     let data = font_with(&base, &[]);
     let f = Font::new(&data, 0).unwrap();
     assert_eq!(
-        f.ft_face_metrics(),
+        f.default_instance().ft_face_metrics(),
         FtFaceMetrics {
             ascender: 800,
             descender: -200,
@@ -290,7 +290,10 @@ fn ft_face_metrics_like_freetype() {
     t.push((b"vhea", hhea(1)));
     t.push((b"vmtx", hmtx(&[(1100, 0)], &[])));
     let data = font_with(&t, &[]);
-    let m = Font::new(&data, 0).unwrap().ft_face_metrics();
+    let m = Font::new(&data, 0)
+        .unwrap()
+        .default_instance()
+        .ft_face_metrics();
     assert_eq!((m.ascender, m.descender, m.height), (750, -250, 1100));
     assert_eq!(m.max_advance_height, 1200);
     assert_eq!((m.underline_position, m.underline_thickness), (-100, 50));
@@ -307,12 +310,18 @@ fn ft_face_metrics_like_freetype() {
         }),
     ));
     let data = font_with(&t, &[]);
-    let m = Font::new(&data, 0).unwrap().ft_face_metrics();
+    let m = Font::new(&data, 0)
+        .unwrap()
+        .default_instance()
+        .ft_face_metrics();
     assert_eq!((m.ascender, m.descender, m.height), (900, -300, 1200));
     // Without outlines, FreeType leaves the values at 0.
     let data = font_with(&[], &[]);
     assert_eq!(
-        Font::new(&data, 0).unwrap().ft_face_metrics(),
+        Font::new(&data, 0)
+            .unwrap()
+            .default_instance()
+            .ft_face_metrics(),
         FtFaceMetrics::default()
     );
 }
@@ -327,17 +336,23 @@ fn ft_v_advance_like_freetype() {
         &[],
     );
     let f = Font::new(&data, 0).unwrap();
-    assert_eq!(f.ft_v_advance(GlyphId(0)), Some(1100));
-    assert_eq!(f.ft_v_advance(GlyphId(20)), Some(900));
-    assert_eq!(f.ft_v_advance(GlyphId(28)), None);
+    assert_eq!(f.default_instance().ft_v_advance(GlyphId(0)), Some(1100));
+    assert_eq!(f.default_instance().ft_v_advance(GlyphId(20)), Some(900));
+    assert_eq!(f.default_instance().ft_v_advance(GlyphId(28)), None);
     let data = font_with(&[(b"OS/2", os2(Os2Spec::default()))], &[]);
     assert_eq!(
-        Font::new(&data, 0).unwrap().ft_v_advance(GlyphId(1)),
+        Font::new(&data, 0)
+            .unwrap()
+            .default_instance()
+            .ft_v_advance(GlyphId(1)),
         Some(1000)
     );
     let data = font_with(&[], &[]);
     assert_eq!(
-        Font::new(&data, 0).unwrap().ft_v_advance(GlyphId(1)),
+        Font::new(&data, 0)
+            .unwrap()
+            .default_instance()
+            .ft_v_advance(GlyphId(1)),
         Some(1000)
     );
 }

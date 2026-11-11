@@ -916,7 +916,9 @@ pub(crate) fn instance_metrics(
         }
         if vmtx.has_data() {
             let tsb = if has_bounds {
-                let (_, vorg_y) = font.v_origin(GlyphId(old), |g| fonts.extents(g.0, coords));
+                let (_, vorg_y) = font
+                    .default_instance()
+                    .v_origin(GlyphId(old), |g| fonts.extents(g.0, coords));
                 vorg_y.saturating_sub(e.y_bearing)
             } else {
                 vmtx.side_bearing(old)

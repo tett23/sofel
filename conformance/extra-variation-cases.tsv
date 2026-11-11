@@ -1,0 +1,11 @@
+# id	font file	glyph	design coordinates
+arabic.default	arabic.ttf	15	-
+arabic.wght.max	arabic.ttf	15	wght=900
+arabic.wdth.min	arabic.ttf	15	wdth=62.5
+source-serif.default	source-serif.otf	42	-
+source-serif.wght.max	source-serif.otf	42	wght=900
+source-serif.opsz.max	source-serif.otf	42	opsz=60
+amstelvar.default	amstelvar.ttf	405	-
+amstelvar.wght.max	amstelvar.ttf	405	wght=1000
+amstelvar.XTSP.max	amstelvar.ttf	405	XTSP=100
+amstelvar.wght-XTSP.max	amstelvar.ttf	405	wght=1000,XTSP=100
