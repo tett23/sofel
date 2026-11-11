@@ -770,6 +770,7 @@ static int faces(const char *path, void (*dump)(FT_Face))
   }
   num_faces = face->num_faces;
   FT_Done_Face(face);
+
   for (i = 0; i < num_faces; i++) {
     FT_Error error;
 
@@ -1124,7 +1125,7 @@ static void print_hex(const unsigned char *s, unsigned long n)
     printf("%02x", s[i]);
 }
 
-static void dump_names_and_metrics(FT_Face face)
+static void dump_names_and_metrics(FT_Face face, int with_bearings)
 {
   FT_Long n = face->num_glyphs, g;
   FT_UInt i, count;
@@ -1159,6 +1160,45 @@ static void dump_names_and_metrics(FT_Face face)
       for (g = 0; g < n; g++)
         printf("v_advance %ld %ld\n", (long)g, (long)advances[g]);
     free(advances);
+  }
+  /* The glyph slot bearing is recomputed from the outline's CBox.  Read the
+   * metric tables instead: this is the input of tt_face_get_metrics. */
+  if (with_bearings) {
+    TT_HoriHeader *h = (TT_HoriHeader *)FT_Get_Sfnt_Table(face, FT_SFNT_HHEA);
+    TT_VertHeader *v = (TT_VertHeader *)FT_Get_Sfnt_Table(face, FT_SFNT_VHEA);
+    FT_ULong hlen = 0, vlen = 0;
+    FT_Byte *hmtx = NULL, *vmtx = NULL;
+    if (h && FT_Load_Sfnt_Table(face, FT_MAKE_TAG('h','m','t','x'), 0, NULL, &hlen) == 0 &&
+        (hmtx = (FT_Byte *)malloc((size_t)hlen)) != NULL &&
+        FT_Load_Sfnt_Table(face, FT_MAKE_TAG('h','m','t','x'), 0, hmtx, &hlen) != 0) {
+      free(hmtx);
+      hmtx = NULL;
+    }
+    if (v && FT_Load_Sfnt_Table(face, FT_MAKE_TAG('v','m','t','x'), 0, NULL, &vlen) == 0 &&
+        (vmtx = (FT_Byte *)malloc((size_t)vlen)) != NULL &&
+        FT_Load_Sfnt_Table(face, FT_MAKE_TAG('v','m','t','x'), 0, vmtx, &vlen) != 0) {
+      free(vmtx);
+      vmtx = NULL;
+    }
+    for (g = 0; g < n && hmtx; g++) {
+      FT_ULong hm = h->number_Of_HMetrics;
+      FT_ULong hoff = (FT_ULong)g < hm ? (FT_ULong)g * 4 + 2 : hm * 4 + ((FT_ULong)g - hm) * 2;
+      if (hoff + 2 <= hlen) {
+        FT_Short lsb = (FT_Short)((hmtx[hoff] << 8) | hmtx[hoff + 1]);
+        if (vmtx) {
+          FT_ULong vm = v->number_Of_VMetrics;
+          FT_ULong voff = (FT_ULong)g < vm ? (FT_ULong)g * 4 + 2 : vm * 4 + ((FT_ULong)g - vm) * 2;
+          if (voff + 2 <= vlen) {
+            FT_Short tsb = (FT_Short)((vmtx[voff] << 8) | vmtx[voff + 1]);
+            printf("bearing %ld %d %d\n", (long)g, (int)lsb, (int)tsb);
+            continue;
+          }
+        }
+        printf("bearing %ld %d -\n", (long)g, (int)lsb);
+      }
+    }
+    free(hmtx);
+    free(vmtx);
   }
   for (g = 0; g < n; g++) {
     char buf[256];
@@ -1364,7 +1404,6 @@ static int otvalid(const char *path)
   }
   num_faces = face->num_faces;
   FT_Done_Face(face);
-
   for (i = 0; i < num_faces; i++) {
     FT_UInt gdef_flags = FT_VALIDATE_GDEF;
 
@@ -1400,6 +1439,9 @@ int main(int argc, char **argv)
   FT_Library library;
   FT_Face face;
   FT_Long num_faces, i;
+  FT_Long byte_count = 0;
+  FT_Byte *bytes = NULL;
+  int metrics_mode = 0;
   FT_Error error;
 
   if (argc >= 2 && (strcmp(argv[1], "--var") == 0 ||
@@ -1429,6 +1471,7 @@ int main(int argc, char **argv)
   if (argc == 3 && strcmp(argv[1], "--otvalid") == 0)
     return otvalid(argv[2]);
   if (argc == 3 && strcmp(argv[1], "--metrics") == 0) {
+    metrics_mode = 1;
     argv[1] = argv[2];
     argc = 2;
   }
@@ -1448,18 +1491,24 @@ int main(int argc, char **argv)
   }
   num_faces = face->num_faces;
   FT_Done_Face(face);
+  if (reference_has_named && !(bytes = read_font(argv[1], &byte_count))) {
+    FT_Done_FreeType(library);
+    return 1;
+  }
 
   for (i = 0; i < num_faces; i++) {
     void *table;
 
     printf("face %ld\n", (long)i);
-    error = FT_New_Face(library, argv[1], i, &face);
+    error = bytes ? FT_New_Memory_Face(library, bytes, byte_count, i, &face)
+                  : FT_New_Face(library, argv[1], i, &face);
     if (error != 0) {
       printf("error %d\nend\n", (int)error);
       continue;
     }
     if (set_reference_location(library, face, reference_variations) != 0) {
       FT_Done_Face(face);
+      free(bytes);
       FT_Done_FreeType(library);
       return 2;
     }
@@ -1472,10 +1521,11 @@ int main(int argc, char **argv)
       dump_maxp((const TT_MaxProfile *)table);
     dump_charmaps(face);
     dump_advances(face);
-    dump_names_and_metrics(face);
+    dump_names_and_metrics(face, metrics_mode);
     printf("end\n");
     FT_Done_Face(face);
   }
+  free(bytes);
   FT_Done_FreeType(library);
   return 0;
 }
