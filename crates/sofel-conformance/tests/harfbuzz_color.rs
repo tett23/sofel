@@ -442,19 +442,41 @@ fn adr0027_variable_clip_rounds_each_edge_outward() {
 
 #[test]
 fn adr0027_colr_paints_at_axis_named_and_random_locations() {
-    for name in [
-        "test_glyphs-glyf_colr_1_variable.ttf",
-        "colr-clip-rounding.ttf",
-        "colr-wide-scale.ttf",
+    let root = paths::testdata().join("harfbuzz/test");
+    for (directory, names) in [
+        (
+            "api/fonts",
+            &[
+                "test_glyphs-glyf_colr_1_variable.ttf",
+                "colr-clip-rounding.ttf",
+                "colr-wide-scale.ttf",
+                "colr-var-overflow.ttf",
+                "colr-negative-radii.ttf",
+                "colr-negative-radii-precision.ttf",
+                "colr-null-store-sentinel-map.ttf",
+                "colr-affine-values.ttf",
+                "colr-empty-store-sentinel-map.ttf",
+            ][..],
+        ),
+        (
+            "subset/data/fonts",
+            &[
+                "sixtyfour_subset.ttf",
+                "KalniaGlaze.ttf",
+                "Foldit.ttf",
+                "COLRv1-alpha.ttf",
+            ][..],
+        ),
     ] {
-        check_color_locations(name);
+        for name in names {
+            check_color_locations(name, &root.join(directory).join(name));
+        }
     }
 }
 
-fn check_color_locations(name: &str) {
+fn check_color_locations(name: &str, path: &Path) {
     use sofel_font::var::{Location, Variation};
-    let path = paths::testdata().join("harfbuzz/test/api/fonts").join(name);
-    let bytes = std::fs::read(&path).unwrap();
+    let bytes = std::fs::read(path).unwrap();
     let font = Font::new(&bytes, 0).unwrap();
     let mut positions = vec![("default".to_string(), None, Vec::new())];
     for i in 0..font.ft_mm_var().unwrap().named_styles().count() {
@@ -487,6 +509,8 @@ fn check_color_locations(name: &str) {
             .collect();
         positions.push((format!("rand:{sample}"), None, settings));
     }
+    let mut records = 0;
+    let samples = positions.len();
     let mut scratch = Scratch::default();
     for (id, named, variations) in positions {
         let location = Location::new(&font, named, &variations);
@@ -504,7 +528,7 @@ fn check_color_locations(name: &str) {
         let ft = Command::new(paths::ft_dump())
             .arg("--colr")
             .args(&args)
-            .arg(&path)
+            .arg(path)
             .output()
             .unwrap();
         assert!(ft.status.success(), "{name}@{id}");
@@ -512,15 +536,13 @@ fn check_color_locations(name: &str) {
         let faces = color::split_faces(&raw);
         assert_eq!(faces.len(), 1);
         let items = color::compare_colr_at(name, 0, font.instance(&location), &faces[0].1);
-        let mut paints = 0;
+        assert!(!items.is_empty(), "{name}@{id}");
         for item in items.iter().filter(|item| item.id.contains(":colr:")) {
             assert!(item.ok, "{}@{id}: {}", item.id, item.detail);
-            paints += 1;
         }
-        assert!(paints > 0, "{name}@{id}");
 
         let mut command = Command::new(paths::hb_dump());
-        command.arg("--paint").args(&args).arg(&path);
+        command.arg("--paint").args(&args).arg(path);
         let count = read_paint_command(&mut command, 0usize, |count, face, p, pp, g, body| {
             assert_eq!(face, 0);
             let result =
@@ -537,7 +559,9 @@ fn check_color_locations(name: &str) {
         .unwrap()
         .unwrap();
         assert!(count > 0, "{name}@{id}");
+        records += count;
     }
+    eprintln!("{name}: {samples} positions, {records} paint records");
 }
 
 // Darwin printf can keep a trailing zero on a tie (1105 as 1.10e+03).
