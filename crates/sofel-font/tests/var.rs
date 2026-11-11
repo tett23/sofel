@@ -10,6 +10,35 @@ use sofel_font::Font;
 use sofel_font::read::{Fixed, GlyphId};
 use sofel_font::var::{Ft, FtLocationError, HbF32, Location, StoreKind, VarError, Variation};
 
+#[test]
+fn adr0027_zero_normalized_coordinates_disable_ft_gvar_blending() {
+    let gvar = vec![
+        0, 1, 0, 0, 0, 1, 0, 0, // version and one axis
+        0, 0, 0, 24, 0, 1, 0, 0, // shared tuple offset and one glyph
+        0, 0, 0, 24, 0, 0, 0, 8, // glyph data offset and 16-byte glyph
+        0, 1, 0, 10, // one tuple and serialized data at 10
+        0, 6, 0x80, 0, 0, 0, // embedded zero peak
+        3, 10, 20, 30, 40, 0x83, // x deltas and zero y deltas
+    ];
+    let mut tables = sample_tables_with_glyf();
+    tables.push((b"fvar", fvar_one_axis()));
+    tables.push((b"gvar", gvar));
+    tables.sort_by_key(|(tag, _)| **tag);
+    let bytes = sfnt(&tables);
+    let font = Font::new(&bytes, 0).unwrap();
+    let location = Location::from_normalized_16_16(&font, &[Fixed(0)]);
+    let mut points = [sofel_font::var::gvar::Point::default(); 4];
+    assert_eq!(
+        font.instance(&location).apply_gvar_ft(
+            0,
+            &mut points,
+            &mut sofel_font::var::gvar::FtScratch::default()
+        ),
+        Ok(false)
+    );
+    assert_eq!(points, [sofel_font::var::gvar::Point::default(); 4]);
+}
+
 fn fvar_one_axis() -> Vec<u8> {
     let mut fvar = vec![0, 1, 0, 0, 0, 16, 0, 2, 0, 1, 0, 20, 0, 0, 0, 8];
     fvar.extend_from_slice(b"wght");
