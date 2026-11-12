@@ -21,6 +21,77 @@ pub struct EmboldenedBitmap {
     pub buffer: Vec<u8>,
 }
 
+/// The metrics and bitmap placement of a FreeType bitmap glyph slot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BitmapSlotMetrics {
+    /// Horizontal vector advance in 26.6 units.
+    pub advance_x: i32,
+    /// Vertical vector advance in 26.6 units.
+    pub advance_y: i32,
+    /// Glyph metric width in 26.6 units.
+    pub width: i32,
+    /// Glyph metric height in 26.6 units.
+    pub height: i32,
+    /// Horizontal left bearing in 26.6 units.
+    pub hori_bearing_x: i32,
+    /// Horizontal top bearing in 26.6 units.
+    pub hori_bearing_y: i32,
+    /// Horizontal advance metric in 26.6 units.
+    pub hori_advance: i32,
+    /// Vertical left bearing in 26.6 units.
+    pub vert_bearing_x: i32,
+    /// Vertical top bearing in 26.6 units.
+    pub vert_bearing_y: i32,
+    /// Vertical advance metric in 26.6 units.
+    pub vert_advance: i32,
+    /// Pixel coordinate of the bitmap's left edge.
+    pub bitmap_left: i32,
+    /// Pixel coordinate of the bitmap's top edge.
+    pub bitmap_top: i32,
+}
+
+/// Result of emboldening a FreeType bitmap glyph slot.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EmboldenedBitmapSlot {
+    /// The enlarged bitmap.
+    pub bitmap: EmboldenedBitmap,
+    /// The adjusted slot metrics and bitmap placement.
+    pub metrics: BitmapSlotMetrics,
+}
+
+/// Apply FreeType's `FT_GlyphSlot_Embolden` to a bitmap and its slot metrics.
+///
+/// The pixel sizes determine the 26.6 strengths. Bitmap strengths round down
+/// to whole pixels, and horizontal strength has a one-pixel minimum.
+pub fn embolden_bitmap_slot(
+    source: BitmapView<'_>,
+    x_ppem: u16,
+    y_ppem: u16,
+    mut metrics: BitmapSlotMetrics,
+) -> Result<EmboldenedBitmapSlot, ConvertError> {
+    let mut x_strength = i32::from(x_ppem).saturating_mul(0x0AAA) / 1024;
+    let mut y_strength = i32::from(y_ppem).saturating_mul(0x0AAA) / 1024;
+    x_strength &= !63;
+    if x_strength == 0 {
+        x_strength = 64;
+    }
+    y_strength &= !63;
+    let bitmap = embolden_bitmap(source, x_strength, y_strength)?;
+    if metrics.advance_x != 0 {
+        metrics.advance_x = metrics.advance_x.wrapping_add(x_strength);
+    }
+    if metrics.advance_y != 0 {
+        metrics.advance_y = metrics.advance_y.wrapping_add(y_strength);
+    }
+    metrics.width = metrics.width.wrapping_add(x_strength);
+    metrics.height = metrics.height.wrapping_add(y_strength);
+    metrics.hori_advance = metrics.hori_advance.wrapping_add(x_strength);
+    metrics.vert_advance = metrics.vert_advance.wrapping_add(y_strength);
+    metrics.hori_bearing_y = metrics.hori_bearing_y.wrapping_add(y_strength);
+    metrics.bitmap_top = metrics.bitmap_top.wrapping_add(y_strength / 64);
+    Ok(EmboldenedBitmapSlot { bitmap, metrics })
+}
+
 /// Enlarge a bitmap using FreeType's 26.6 pixel strengths.
 ///
 /// Positive strengths round to whole pixels. MONO caps horizontal
@@ -234,4 +305,98 @@ fn row_start(row: usize, rows: usize, stride: usize, reverse: bool) -> Result<us
         row
     };
     physical.checked_mul(stride).ok_or(ConvertError::TooLarge)
+}
+
+#[cfg(test)]
+mod slot_tests {
+    use super::{BitmapSlotMetrics, BitmapView, ConvertError, PixelMode, embolden_bitmap_slot};
+
+    #[test]
+    fn adr0063_i2_bitmap_slot_matches_freetype() -> Result<(), ConvertError> {
+        let source = BitmapView {
+            width: 2,
+            rows: 2,
+            pitch: 2,
+            pixel_mode: PixelMode::Gray,
+            buffer: &[64, 128, 32, 255],
+        };
+        let metrics = BitmapSlotMetrics {
+            advance_x: 576,
+            advance_y: 0,
+            width: 576,
+            height: 768,
+            hori_bearing_x: 0,
+            hori_bearing_y: 768,
+            hori_advance: 576,
+            vert_bearing_x: -320,
+            vert_bearing_y: 256,
+            vert_advance: 1408,
+            bitmap_left: 1,
+            bitmap_top: 2,
+        };
+        let result = embolden_bitmap_slot(source, 16, 16, metrics)?;
+        assert_eq!(
+            (result.bitmap.width, result.bitmap.rows, result.bitmap.pitch),
+            (3, 2, 3)
+        );
+        assert_eq!(result.bitmap.buffer, [64, 192, 128, 32, 255, 255]);
+        assert_eq!(
+            result.metrics,
+            BitmapSlotMetrics {
+                advance_x: 640,
+                width: 640,
+                hori_advance: 640,
+                ..metrics
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn adr0063_i2_bitmap_slot_vertical_growth_matches_freetype() -> Result<(), ConvertError> {
+        let source = BitmapView {
+            width: 2,
+            rows: 2,
+            pitch: 2,
+            pixel_mode: PixelMode::Gray,
+            buffer: &[64, 128, 32, 255],
+        };
+        let metrics = BitmapSlotMetrics {
+            advance_x: 1088,
+            advance_y: 0,
+            width: 896,
+            height: 1472,
+            hori_bearing_x: 128,
+            hori_bearing_y: 1472,
+            hori_advance: 1088,
+            vert_bearing_x: -448,
+            vert_bearing_y: 512,
+            vert_advance: 2688,
+            bitmap_left: 1,
+            bitmap_top: 2,
+        };
+        let result = embolden_bitmap_slot(source, 32, 32, metrics)?;
+        assert_eq!(
+            (result.bitmap.width, result.bitmap.rows, result.bitmap.pitch),
+            (3, 3, 3)
+        );
+        assert_eq!(
+            result.bitmap.buffer,
+            [64, 192, 128, 96, 255, 255, 32, 255, 255]
+        );
+        assert_eq!(
+            result.metrics,
+            BitmapSlotMetrics {
+                advance_x: 1152,
+                width: 960,
+                height: 1536,
+                hori_bearing_y: 1536,
+                hori_advance: 1152,
+                vert_advance: 2752,
+                bitmap_top: 3,
+                ..metrics
+            }
+        );
+        Ok(())
+    }
 }
