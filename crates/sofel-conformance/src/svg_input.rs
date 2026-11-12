@@ -1,4 +1,6 @@
 //! OT-SVG input observations for ADR 0074.
+mod references;
+
 use sofel_cli::glyph::{ColorGlyph, render_color};
 use sofel_color::{PaintOptions, Painted, Scratch};
 use sofel_font::Font;
@@ -19,6 +21,8 @@ pub fn observe(feature: &str, case: &str, observation: &str) -> Option<Result<()
         }
         ("in-style", _, _) => style_pixel(case, observation),
         ("in-gradient", _, _) => gradient_observation(case, observation),
+        ("in-reference", _, _) => references::reference_observation(case, observation),
+        ("in-restrictions", _, _) => references::restriction_observation(case, observation),
         _ => None,
     }
 }
