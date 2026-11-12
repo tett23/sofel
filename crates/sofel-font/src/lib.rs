@@ -634,6 +634,11 @@ impl<'a> Font<'a> {
             .any(|t| self.sfnt.table(Tag::new(t)).is_some())
     }
 
+    /// Whether HarfBuzz can read vertical advances from `vmtx` or `VMTX`.
+    pub fn has_vertical_metrics(&self) -> bool {
+        self.vmetrics.has_data()
+    }
+
     /// The sfnt the font was opened from: for a collection, the one font
     /// chosen by the index.
     pub fn sfnt(&self) -> Sfnt<'a> {
