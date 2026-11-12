@@ -2015,6 +2015,37 @@ typedef struct sofel_color_t {
   uint8_t r, g, b, a;
 } sofel_color_t;
 
+/* A positioned solid glyph. The affine matrix has coefficients
+ * xx, yx, xy, yy, dx, dy. Coordinates and glyph outlines are y-up. */
+typedef struct sofel_vector_glyph_t {
+  uint32_t glyph;
+  float transform[6];
+  sofel_color_t color;
+} sofel_vector_glyph_t;
+
+#define SOFEL_VECTOR_SVG 0u
+#define SOFEL_VECTOR_PDF 1u
+
+/*
+ * Writes a page of solid outlines in glyph order. For SVG, x and y are
+ * the viewBox origin in y-down coordinates. For PDF, they are the
+ * lower-left corner of the media box in y-up coordinates. A NULL
+ * background is transparent. A NULL location selects the default face
+ * coordinates. The result contains *len bytes without a terminating NUL.
+ * On SOFEL_ERROR_BUFFER_TOO_SMALL, *len holds the required byte count.
+ *
+ * Rust: sofel_vector::SvgPage::new, sofel_vector::SvgPage::fill_path, sofel_vector::SvgPage::finish
+ * Rust: sofel_vector::PdfPage::new, sofel_vector::PdfPage::fill_path, sofel_vector::PdfPage::finish
+ * HarfBuzz: hb_vector_paint_t
+ * FreeType: none
+ */
+int32_t sofel_vector_page(const sofel_font_t *font, const sofel_location_t *location,
+                          uint32_t format, int32_t x, int32_t y, uint32_t width,
+                          uint32_t height, const sofel_color_t *background,
+                          const sofel_vector_glyph_t *glyphs, size_t count,
+                          uint8_t *output, size_t capacity, size_t *len);
+
+
 /* A color stop: palette_index is -1 for the foreground; alpha is the
  * font's alpha, clamped to 0..1, that color was resolved with. */
 typedef struct sofel_color_stop_t {

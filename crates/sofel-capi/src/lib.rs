@@ -17,6 +17,7 @@ mod color;
 mod shape;
 mod subset;
 mod variation;
+mod vector;
 
 pub use variation::*;
 
