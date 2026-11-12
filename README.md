@@ -65,6 +65,27 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 
 `sofel-validate` は CFF2 の FDSelect フォーマット4を互換性の警告として報告する。ほかにエラーがなければ検証は成功する（[ADR 0056](docs/adr/0056-cff2-fdselect-format4-warning.md)）。
 
+### `sofel` で文字列を描く
+
+リポジトリのルートで次のコマンドを実行すると、`sofel` をインストールできます。
+
+```sh
+cargo install --path crates/sofel-cli --bin sofel
+sofel help
+```
+
+手元のアウトラインフォントを `font.ttf` に指定すると、一行の文字列を白地に黒の PGM 画像に書き出せます。
+同じ見本を繰り返し使うときは UTF-8 のテキストファイルで渡せます。
+
+```sh
+sofel render --ppem 48 --text "office & affix" font.ttf > sample.pgm
+sofel render --ppem 48 --text-file sample.txt font.ttf > sample.pgm
+```
+
+合字の効果は `--features=-liga` を付けた画像と比較できます。
+グリフ番号と配置は `sofel shape`、カラーグリフの描画命令は `sofel paint` で調べられます。
+各操作の引数と使用例は `sofel help render` のように操作名を指定して表示します。
+
 ### `sofel-render`
 
 可変フォントの輪郭には `--variations=wght=500` や `--named-instance=0` で位置を指定できる。既定以外の位置では埋め込みビットマップを使わず、輪郭を描く。
