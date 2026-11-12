@@ -206,3 +206,5 @@ sofel_color::RawPaintGraph::* The reusable raw paint table view; C reads the byt
 sofel_color::FtPaintGraph::* The location-resolved raw COLR tree; the C paint API exposes the walked commands.
 sofel_unicode::Script::from_raw_tag C represents the four script bytes directly as a big-endian uint32_t tag.
 sofel_woff::encode ADR 0070 exposes encoding through the Rust API and the standalone sofel-woff command.
+sofel_png::* Embedded PNG decoding is exposed through the C bitmap layout and draw functions.
+sofel_inflate::* Bounded decompression is an implementation detail of the C bitmap drawing path.
