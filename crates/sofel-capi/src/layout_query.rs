@@ -113,13 +113,14 @@ pub unsafe extern "C" fn sofel_math_has_data(font: *const SofelFont, has_data: *
 pub unsafe extern "C" fn sofel_style_value(
     font: *const SofelFont,
     location: *const SofelLocation,
+    scale: *const SofelScale,
     tag: u32,
     value: *mut f32,
 ) -> i32 {
     // SAFETY: the caller supplies live handles and a writable output.
-    let (font, location, value) = unsafe { (r(font), r(location), w(value)) };
+    let (font, location, scale, value) = unsafe { (r(font), r(location), r(scale), w(value)) };
     status((|| -> Status {
-        *some(value)? = query(some(font)?, location, None).style_value(Tag::from_u32(tag));
+        *some(value)? = query(some(font)?, location, scale).style_value(Tag::from_u32(tag));
         Ok(())
     })())
 }

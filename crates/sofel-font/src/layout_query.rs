@@ -224,6 +224,9 @@ impl<'font, 'data, 'loc, 'source> LayoutQueries<'font, 'data, 'loc, 'source> {
                 .and_then(|index| self.instance.location().coords_design().get(index).copied())
                 .unwrap_or(axis.default);
         }
+        if tag == Tag::new(b"opsz") && self.scale.ptem() != 0.0 {
+            return self.scale.ptem();
+        }
         if let Some(value) = self.stat_value(tag) {
             return value;
         }

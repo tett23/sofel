@@ -918,6 +918,21 @@ sofel_scale_t *sofel_scale_create_with_ppem(const sofel_font_t *font,
                                             int32_t *error);
 
 /*
+ * A scale with a point size for optical style queries. A zero point size
+ * preserves table-derived optical size. The ownership and error rules match
+ * sofel_scale_create.
+ *
+ * Rust: sofel_font::HbScale::with_ptem
+ * Rust: sofel_font::HbScale::ptem
+ * HarfBuzz: hb_font_set_ptem
+ * FreeType: none
+ */
+sofel_scale_t *sofel_scale_create_with_ptem(const sofel_font_t *font,
+                                            int32_t x_scale, int32_t y_scale,
+                                            uint32_t x_ppem, uint32_t y_ppem,
+                                            float ptem, int32_t *error);
+
+/*
  * Frees a scale. NULL does nothing.
  *
  * Rust: none
@@ -1219,12 +1234,12 @@ int32_t sofel_math_assembly(const sofel_font_t *font, const sofel_location_t *lo
                             size_t start, sofel_math_glyph_part_t *parts, size_t capacity,
                             size_t *stored, size_t *total, int32_t *italics_correction);
 
-/* hb_style_get_value at the same variation location. */
+/* hb_style_get_value at the same variation location and point size. */
 /*
  * Rust: sofel_font::layout_query::LayoutQueries::style_value
  */
 int32_t sofel_style_value(const sofel_font_t *font, const sofel_location_t *location,
-                          uint32_t tag, float *value);
+                          const sofel_scale_t *scale, uint32_t tag, float *value);
 
 /* -------------------------------------------------------------- names */
 

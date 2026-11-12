@@ -275,6 +275,10 @@ fn i1_device_query_style_optical_size_reads_gpos_size_feature() {
         .default_instance()
         .layout_queries(HbScale::unscaled(&font), 0, 0);
     assert_eq!(query.style_value(Tag::new(b"opsz")), 18.0);
+    let point_size_query =
+        font.default_instance()
+            .layout_queries(HbScale::unscaled(&font).with_ptem(23.5), 0, 0);
+    assert_eq!(point_size_query.style_value(Tag::new(b"opsz")), 23.5);
 }
 
 #[test]

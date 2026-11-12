@@ -2810,8 +2810,15 @@ static void test_layout_queries(const sofel_font_t *font) {
   sofel_math_glyph_variant_t variants[1] = {{91, -92}};
   sofel_math_glyph_part_t parts[1] = {{91, -92, -93, -94, 7}};
   CHECK(sofel_math_has_data(font, &value) == SOFEL_OK && value == 0);
-  CHECK(sofel_style_value(font, NULL, SOFEL_TAG('w', 'g', 'h', 't'), &style_value) == SOFEL_OK && style_value == 700.0f);
-  CHECK(sofel_style_value(font, NULL, SOFEL_TAG('w', 'd', 't', 'h'), &style_value) == SOFEL_OK && style_value == 100.0f);
+  CHECK(sofel_style_value(font, NULL, NULL, SOFEL_TAG('w', 'g', 'h', 't'), &style_value) == SOFEL_OK && style_value == 700.0f);
+  CHECK(sofel_style_value(font, NULL, NULL, SOFEL_TAG('w', 'd', 't', 'h'), &style_value) == SOFEL_OK && style_value == 100.0f);
+  int32_t scale_error = -1;
+  sofel_scale_t *point_scale = sofel_scale_create_with_ptem(font, 1000, 1000, 0, 0, 23.5f, &scale_error);
+  CHECK(point_scale != NULL && scale_error == SOFEL_OK);
+  if (point_scale != NULL) {
+    CHECK(sofel_style_value(font, NULL, point_scale, SOFEL_TAG('o', 'p', 's', 'z'), &style_value) == SOFEL_OK && style_value == 23.5f);
+    sofel_scale_destroy(point_scale);
+  }
   CHECK(sofel_math_constant(font, NULL, NULL, 4, &value) == SOFEL_OK && value == 0);
   CHECK(sofel_math_italics_correction(font, NULL, NULL, 3, &value) == SOFEL_OK && value == 0);
   CHECK(sofel_math_top_accent_attachment(font, NULL, NULL, 3, &value) == SOFEL_OK);
@@ -2908,7 +2915,7 @@ static void test_layout_queries(const sofel_font_t *font) {
   CHECK(sofel_location_create_design(variable_font, &design_coord, 1, &location) == SOFEL_OK);
   if (location != NULL) {
     CHECK(sofel_math_constant(variable_font, location, NULL, 4, &value) == SOFEL_OK && value == 21);
-    CHECK(sofel_style_value(variable_font, location, SOFEL_TAG('w', 'g', 'h', 't'),
+    CHECK(sofel_style_value(variable_font, location, NULL, SOFEL_TAG('w', 'g', 'h', 't'),
                              &style_value) == SOFEL_OK && style_value == 1.0f);
     sofel_location_destroy(location);
   }

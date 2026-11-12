@@ -1058,6 +1058,31 @@ pub unsafe extern "C" fn sofel_scale_create_with_ppem(
     }
 }
 
+/// `sofel_scale_create_with_ptem`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `error` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_scale_create_with_ptem(
+    font: *const SofelFont,
+    x_scale: i32,
+    y_scale: i32,
+    x_ppem: u32,
+    y_ppem: u32,
+    ptem: f32,
+    error: *mut i32,
+) -> *mut SofelScale {
+    // SAFETY: the caller's conditions are those of the delegated constructor.
+    let scale =
+        unsafe { sofel_scale_create_with_ppem(font, x_scale, y_scale, x_ppem, y_ppem, error) };
+    if !scale.is_null() {
+        // SAFETY: the constructor returned a uniquely owned scale.
+        unsafe { (*scale).scale = (*scale).scale.with_ptem(ptem) };
+    }
+    scale
+}
+
 /// `sofel_scale_destroy`.
 ///
 /// # Safety
