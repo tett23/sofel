@@ -207,6 +207,10 @@ sofel_shape::ShapePlan::variations_index_for C creates a plan with sofel_shape_p
 sofel_color::RawPaintGraph::* The reusable raw paint table view; C reads the bytes with sofel_font_table.
 sofel_color::FtPaintGraph::* The location-resolved raw COLR tree; the C paint API exposes the walked commands.
 sofel_unicode::Script::from_raw_tag C represents the four script bytes directly as a big-endian uint32_t tag.
+sofel_raster::blend_sampled Rust closure-based gradient blending into a caller-owned BGRA surface; the C ABI does not expose a raster surface handle (ADR 0072).
+sofel_svg::parse_shapes Rust view of the rect/circle SVG subset; the C ABI exposes the original document through sofel_svg_document (ADR 0072).
+sofel_svg::Shape::draw Rust Pen adapter for SVG geometry; C gets the original document with sofel_svg_document (ADR 0072).
+sofel_svg::Scene::sample Rust gradient sampler for the raster surface; the C ABI exposes the original document with sofel_svg_document (ADR 0072).
 sofel_png::* Embedded PNG decoding is exposed through the C bitmap layout and draw functions.
 sofel_inflate::* Bounded decompression is an implementation detail of the C bitmap drawing path.
 sofel_svg::document The C paint commands expose the expanded SVG document.
@@ -232,5 +236,7 @@ sofel_read::aat_lookup::* Zero-copy AAT substitution lookups used by the C shapi
 sofel_read::trak::* Zero-copy AAT tracking views used by the C shaping API; C reads the source bytes with sofel_font_table.
 sofel_read::ltag::* Zero-copy language tag ranges used by C name lookup and shaping; C reads the bytes with sofel_font_table.
 sofel_woff::encode ADR 0070 exposes encoding through the Rust API and the standalone sofel-woff command.
+sofel_raster::ColorGradient::* The C entry point sofel_render_color_glyph evaluates the glyph's gradient on the color surface.
+sofel_raster::PaintMask::* The C entry point sofel_render_color_glyph applies outline coverage to the color surface.
 sofel_read::feat::* A validated feature-name view used by the C shaping functions; C reads the table with sofel_font_table.
 sofel_woff::decode_woff The font input commands reconstruct WOFF tables into an sfnt buffer.
