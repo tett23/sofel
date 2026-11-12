@@ -454,3 +454,22 @@ fn i1_aat_ltag_matches_whole_language_subtags() {
         assert_eq!(run(case), Ok(()), "{id}");
     }
 }
+
+#[test]
+fn i1_legacy_kern_pairs_classes_and_script_selection() {
+    for (file, lines) in [
+        ("kern-format2", &[1, 2, 3][..]),
+        ("per-script-kern-fallback", &[13, 15][..]),
+        ("tt-kern-gpos", &[1][..]),
+    ] {
+        let path = paths::testdata().join(format!(
+            "harfbuzz/test/shape/data/in-house/tests/{file}.tests"
+        ));
+        let suite = cases("in-house", &path, &mut 0);
+        for line in lines {
+            let id = format!("in-house/{file}.tests:{line}");
+            let case = suite.iter().find(|case| case.id == id).unwrap();
+            assert_eq!(run(case), Ok(()), "{id}");
+        }
+    }
+}

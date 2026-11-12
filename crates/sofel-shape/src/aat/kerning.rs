@@ -16,6 +16,7 @@ pub(crate) struct Subtable<'a> {
 enum Kern<'a> {
     Pairs(&'a [[u8; 6]]),
     Classes(AatLookup<'a>, AatLookup<'a>, &'a [u8]),
+    LegacyClasses(ClassOffsets<'a>, ClassOffsets<'a>, usize),
     History(StateTable<'a>, &'a [u8]),
     Attachment(StateTable<'a>, u32, &'a [u8], Option<Anchors<'a>>),
 }
@@ -119,6 +120,98 @@ pub(crate) fn read<'a>(
         }
     }
     Some(result)
+}
+#[derive(Clone, Debug)]
+struct ClassOffsets<'a> {
+    first: u16,
+    offsets: &'a [[u8; 2]],
+}
+impl<'a> ClassOffsets<'a> {
+    fn read(data: &'a [u8], at: usize) -> Option<Self> {
+        let first = be::u16_at(data, at)?;
+        let count = usize::from(be::u16_at(data, at.checked_add(2)?)?);
+        Some(Self {
+            first,
+            offsets: be::chunks_at(data, at.checked_add(4)?, count)?,
+        })
+    }
+    fn offset(&self, glyph: u32) -> Option<usize> {
+        let i = glyph.checked_sub(u32::from(self.first))?;
+        Some(usize::from(u16::from_be_bytes(
+            *self.offsets.get(i as usize)?,
+        )))
+    }
+}
+
+/// Legacy OT and Apple kern headers use distinct coverage bits and 16-bit class offsets.
+pub(crate) fn legacy(data: &[u8]) -> Option<Vec<Subtable<'_>>> {
+    let (apple, count, mut tail) = match be::u16_at(data, 0)? {
+        0 => (false, u32::from(be::u16_at(data, 2)?), data.get(4..)?),
+        1 if be::u32_at(data, 0)? == 0x10000 => (true, be::u32_at(data, 4)?, data.get(8..)?),
+        _ => return None,
+    };
+    let header = if apple { 8 } else { 6 };
+    let mut tables = Vec::new();
+    for i in 0..count {
+        let (len, format, vertical, cross, variation) = if apple {
+            let flags = be::u8_at(tail, 4)?;
+            (
+                be::u32_at(tail, 0)? as usize,
+                be::u8_at(tail, 5)?,
+                flags & 128 != 0,
+                flags & 64 != 0,
+                flags & 32 != 0,
+            )
+        } else {
+            let flags = be::u8_at(tail, 5)?;
+            (
+                usize::from(be::u16_at(tail, 2)?),
+                be::u8_at(tail, 4)?,
+                flags & 1 == 0,
+                flags & 4 != 0,
+                false,
+            )
+        };
+        if len < header {
+            return None;
+        }
+        let (declared, next) = tail.split_at_checked(len)?;
+        let current = if i.saturating_add(1) == count {
+            tail
+        } else {
+            declared
+        };
+        tail = next;
+        if variation {
+            continue;
+        }
+        let body = current.get(header..)?;
+        let action = match format {
+            0 => Kern::Pairs(be::chunks_at(body, 8, usize::from(be::u16_at(body, 0)?))?),
+            2 => {
+                let offset = |at| be::u16_at(body, at).map(usize::from);
+                let array = offset(6)?;
+                current.get(array..)?;
+                Kern::LegacyClasses(
+                    ClassOffsets::read(current, offset(2)?)?,
+                    ClassOffsets::read(current, offset(4)?)?,
+                    array,
+                )
+            }
+            _ => continue,
+        };
+        tables.push(Subtable {
+            coverage: (u32::from(vertical) << 31) | (u32::from(cross) << 30),
+            tuples: 0,
+            data: current,
+            action,
+        });
+    }
+    (!tables.is_empty()).then_some(tables)
+}
+
+pub(crate) fn cross_stream(tables: &[Subtable<'_>]) -> bool {
+    tables.iter().any(|t| t.coverage & 0x4000_0000 != 0)
 }
 pub(crate) fn apply(tables: &[Subtable<'_>], buf: &mut Buffer, scale: &HbScale, mask: Mask) {
     buf.unsafe_to_concat(0, buf.len);
@@ -287,6 +380,12 @@ impl Subtable<'_> {
             Kern::Classes(left, right, values) => {
                 left.get(l).zip(right.get(r)).and_then(|(a, b)| {
                     be::i16_at(values, usize::from(a).saturating_add(usize::from(b)))
+                })
+            }
+            Kern::LegacyClasses(ref left, ref right, array) => {
+                left.offset(l).zip(right.offset(r)).and_then(|(a, b)| {
+                    let offset = a.checked_add(b)?.checked_sub(array)?;
+                    be::i16_at(self.data.get(array..)?, offset & !1)
                 })
             }
             Kern::History(..) | Kern::Attachment(..) => None,

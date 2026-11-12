@@ -289,6 +289,7 @@ pub struct ShapePlan<'a> {
     pub(crate) fallback_glyph_classes: bool,
     pub(crate) morx: Option<Vec<crate::aat::Chain<'a>>>,
     pub(crate) kerx: Option<Vec<crate::aat::kerning::Subtable<'a>>>,
+    pub(crate) legacy_kern: Option<Vec<crate::aat::kerning::Subtable<'a>>>,
     pub(crate) tracking: Option<sofel_font::read::trak::Trak<'a>>,
     pub(crate) apply_gpos: bool,
     pub(crate) apply_fallback_kern: bool,
@@ -442,10 +443,25 @@ impl<'a> ShapePlan<'a> {
         let kerx = candidate.filter(|_| !apply_gpos || map.feature_index(GPOS, kern_tag).is_none());
         let has_kerx = kerx.is_some();
         let script_fallback_position = funcs.fallback_position;
-        let adjust = !apply_gpos && !has_kerx;
+        let legacy_kern = (script_fallback_position
+            && !has_kerx
+            && (!apply_gpos || map.feature_index(GPOS, kern_tag).is_none()))
+        .then(|| {
+            font.table(Tag(*b"kern"))
+                .and_then(crate::aat::kerning::legacy)
+        })
+        .flatten();
+        let apply_fallback_kern =
+            script_fallback_position && !apply_gpos && !has_kerx && legacy_kern.is_none();
+        let adjust = !apply_gpos
+            && !has_kerx
+            && !legacy_kern
+                .as_deref()
+                .is_some_and(crate::aat::kerning::cross_stream);
         let mut plan = ShapePlan {
             morx,
             kerx,
+            legacy_kern,
             tracking: font
                 .table(Tag(*b"STAT"))
                 .and_then(|t| sofel_font::read::stat::Stat::new(t).ok())
@@ -465,7 +481,7 @@ impl<'a> ShapePlan<'a> {
             kern_mask,
             requested_kerning: kern_mask != 0,
             apply_gpos,
-            apply_fallback_kern: script_fallback_position && adjust,
+            apply_fallback_kern,
             zero_marks: !has_kerx && funcs.zero_width_marks != ZeroWidthMarks::None,
             has_gpos_mark: map.one_mask(Tag(*b"mark")) != 0,
             adjust_mark_positioning_when_zeroing: adjust,
