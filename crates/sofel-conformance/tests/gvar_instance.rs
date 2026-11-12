@@ -443,3 +443,48 @@ fn adr0061_i1_two_pins_keep_the_remaining_gvar_axis() {
     }
     std::fs::remove_file(output).unwrap();
 }
+
+#[test]
+fn adr0061_i1_restricted_gvar_axis_matches_harfbuzz() {
+    let path = paths::testdata().join("harfbuzz/test/subset/data/fonts/Handjet.ttf");
+    let data = std::fs::read(&path).unwrap();
+    let font = Font::new(&data, 0).unwrap();
+    let output = std::env::temp_dir().join(format!("sofel-gvar-range-{}.ttf", std::process::id()));
+    for (min, default, max) in [(200.0, 400.0, 650.0), (450.0, 500.0, 700.0)] {
+        let input = Input::new()
+            .map_set(SetKind::Unicodes, |s| s.add_range(0, 0x10ffff))
+            .map_set(SetKind::DropTables, |s| {
+                for tag in [b"GDEF", b"GPOS", b"GSUB", b"HVAR", b"STAT"] {
+                    s.add(Tag::new(tag).to_u32());
+                }
+            })
+            .with_axis_range(
+                Tag::new(b"wght"),
+                Some(min),
+                Some(max),
+                Some(default),
+                &font,
+            )
+            .unwrap();
+        let actual = subset(&font, &input).unwrap();
+        assert!(
+            Command::new(paths::hb_dump())
+                .arg("--subset")
+                .arg(format!("--font-file={}", path.display()))
+                .arg("--unicodes=*")
+                .arg("--drop-tables+=GDEF,GPOS,GSUB,HVAR,STAT")
+                .arg(format!("--variations=wght={min}:{default}:{max}"))
+                .arg(format!("--output-file={}", output.display()))
+                .status()
+                .unwrap()
+                .success()
+        );
+        let expected = std::fs::read(&output).unwrap();
+        assert!(
+            actual == expected,
+            "{}",
+            sofel_conformance::subset::diff(&expected, &actual)
+        );
+    }
+    std::fs::remove_file(output).unwrap();
+}

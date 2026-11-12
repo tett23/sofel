@@ -335,7 +335,7 @@ impl Plan {
                 }
                 b"HVAR" | b"VVAR" => pinned_glyf,
                 b"cvar" | b"MVAR" => norm.all_axes_pinned,
-                b"gvar" => inert_gvar || avar2_range || point_pins || pinned_glyf,
+                b"gvar" => !norm.avar2 || inert_gvar || avar2_range || point_pins || pinned_glyf,
                 b"GVAR" => inert_gvar,
                 _ => false,
             };
