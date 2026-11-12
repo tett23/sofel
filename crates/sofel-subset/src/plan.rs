@@ -317,8 +317,18 @@ impl Plan {
             });
         let avar2_range = identity_avar2 && norm.user.values().any(|r| r.min < r.max);
         let single_pin = norm.user.len() == 1 && norm.user.values().all(|r| r.min == r.max);
+        // During a complete glyf instance, HarfBuzz writes hmtx/vmtx from
+        // the four instanced phantom points and drops HVAR/VVAR.
+        let pinned_glyf = norm.all_axes_pinned
+            && font.table(Tag::new(b"glyf")).is_some()
+            && !drop.contains(Tag::new(b"glyf").to_u32())
+            && !input
+                .set(SetKind::NoSubsetTables)
+                .contains(Tag::new(b"glyf").to_u32())
+            && font.table(Tag::new(b"CFF2")).is_none();
         let needs_rebase = |tag: &&[u8; 4]| {
-            !(norm.all_axes_pinned && **tag == *b"cvar")
+            !(pinned_glyf && matches!(*tag, b"HVAR" | b"VVAR"))
+                && !(norm.all_axes_pinned && **tag == *b"cvar")
                 && (!inert_gvar || (**tag != *b"gvar" && **tag != *b"GVAR"))
                 && !((avar2_range || single_pin) && **tag == *b"gvar")
                 && font.table(Tag::new(tag)).is_some()

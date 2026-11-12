@@ -343,7 +343,7 @@ fn adr0061_i1_pinning_cvar_updates_control_values() {
             let input = Input::new()
                 .map_set(SetKind::Unicodes, |s| s.add(65))
                 .map_set(SetKind::DropTables, |s| {
-                    for t in [b"HVAR", b"GDEF", b"GPOS", b"GSUB", b"STAT"] {
+                    for t in [b"GDEF", b"GPOS", b"GSUB"] {
                         s.add(Tag::new(t).to_u32());
                     }
                 })
@@ -355,7 +355,7 @@ fn adr0061_i1_pinning_cvar_updates_control_values() {
                     .arg("--subset")
                     .arg(format!("--font-file={}", path.display()))
                     .arg("--unicodes=U+0041")
-                    .arg("--drop-tables+=HVAR,GDEF,GPOS,GSUB,STAT")
+                    .arg("--drop-tables+=GDEF,GPOS,GSUB")
                     .arg(format!("--variations=wght={value}"))
                     .arg(format!("--output-file={}", out.display()))
                     .status()
@@ -366,6 +366,13 @@ fn adr0061_i1_pinning_cvar_updates_control_values() {
             assert_eq!(
                 Font::new(&ours, 0).unwrap().table(Tag::new(b"cvt ")),
                 Font::new(&reference, 0).unwrap().table(Tag::new(b"cvt "))
+            );
+            let actual = Font::new(&ours, 0).unwrap();
+            let expected = Font::new(&reference, 0).unwrap();
+            let gid = actual.nominal_glyph(65).unwrap();
+            assert_eq!(
+                actual.default_instance().advance(gid),
+                expected.default_instance().advance(gid)
             );
             assert_eq!(ours, reference);
         }
