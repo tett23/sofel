@@ -133,6 +133,7 @@ fn render(case: &str) -> Result<(&'static str, String), String> {
                 data: include_bytes!("../../../conformance/svg-page/red.png"),
                 width: 1,
                 height: 1,
+                slant: 0.0,
                 extents: Some(GlyphExtents {
                     x_bearing: 0,
                     y_bearing: 4,

@@ -193,6 +193,7 @@ pub unsafe extern "C" fn sofel_svg_page_layers(
                     data: some(data)?,
                     width: png.width,
                     height: png.height,
+                    slant: 0.0,
                     extents: Some(GlyphExtents {
                         x_bearing,
                         y_bearing,
