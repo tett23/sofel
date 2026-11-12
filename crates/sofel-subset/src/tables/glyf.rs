@@ -1286,14 +1286,28 @@ pub(crate) fn instance(
     flags: Flags,
     num_output_glyphs: u32,
     font: &Font<'_>,
-    coords: &[i32],
+    axes: &crate::instance::Normalized,
 ) -> Option<(Vec<Vec<u8>>, crate::instance::Metrics)> {
     let accel = GlyfAccel::new(font);
     let hmtx = crate::tables::hmtx::MetricsAccel::dual(font, false);
     let vmtx = crate::tables::hmtx::MetricsAccel::dual(font, true);
     let notdef_outline = flags.has(Flags::NOTDEF_OUTLINE);
     let no_hinting = flags.has(Flags::NO_HINTING);
-    let location = sofel_font::var::Location::from_normalized_2_14(font, coords);
+    use sofel_font::var::{Location, Variation};
+    let location = if axes.avar2 {
+        Location::from_normalized_2_14(font, &axes.normalized_coords)
+    } else {
+        let design = axes
+            .user
+            .iter()
+            .map(|(&tag, range)| Variation {
+                tag,
+                value: range.default,
+            })
+            .collect::<Vec<_>>();
+        Location::new(font, None, &design)
+    };
+    let varied = location.coords_normalized().iter().any(|&c| c != 0);
     let instance = font.instance(&location);
     let mut gvar_scratch = sofel_font::var::gvar::HbScratch::default();
     let mut m = crate::instance::Metrics {
@@ -1317,7 +1331,7 @@ pub(crate) fn instance(
             accel: &accel,
             hmtx: &hmtx,
             vmtx: &vmtx,
-            variation: coords.iter().any(|&c| c != 0).then_some(&instance),
+            variation: varied.then_some(&instance),
             scratch: &mut gvar_scratch,
             budget: 1 << 24,
             decycler: Decycler::default(),

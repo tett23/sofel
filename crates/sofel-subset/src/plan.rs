@@ -339,7 +339,7 @@ impl Plan {
                 }
                 b"HVAR" | b"VVAR" => pinned_glyf,
                 b"cvar" => norm.all_axes_pinned,
-                b"gvar" => inert_gvar || avar2_range || single_pin,
+                b"gvar" => inert_gvar || avar2_range || single_pin || pinned_glyf,
                 b"GVAR" => inert_gvar,
                 _ => false,
             };
@@ -929,7 +929,7 @@ impl Plan {
                 self.flags,
                 self.num_output_glyphs,
                 font,
-                &self.var.n.normalized_coords,
+                &self.var.n,
             )
             .ok_or(SubsetError::Failed { tag })?;
             self.var.metrics = metrics;
