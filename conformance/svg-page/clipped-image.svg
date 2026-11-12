@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 -2048 2048 2048" width="2048" height="2048">
+<defs>
+<clipPath id="c0"><rect x="2" y="4" width="10" height="10"/></clipPath>
+</defs>
+<g transform="scale(1,-1)">
+<g clip-path="url(#c0)">
+<g transform="matrix(2,0,0,3,1,2)">
+<g transform="translate(0,4) scale(4,-4)">
+<image href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==" width="1" height="1"/>
+</g>
+</g>
+</g>
+</g>
+</svg>

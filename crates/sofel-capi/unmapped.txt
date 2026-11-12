@@ -129,6 +129,7 @@ sofel_outline::Outlines::font Returns the Rust font; C keeps the sofel_font_t.
 sofel_outline::Outlines::instance Returns the Rust font and location pair; C passes sofel_font_t and sofel_location_t to coordinate-dependent queries (ADR 0027).
 sofel_outline::Outlines::with_location Reuses the Rust CFF outline accelerator for coordinate-dependent C drawing.
 sofel_outline::Outlines::hb_extents Returns the Rust boxes value; C gets boxes with sofel_font_glyph_extents.
+sofel_outline::Outlines::varc_glyph_path Rust-only floating-point VARC path for HarfBuzz conformance (ADR 0067); C uses the existing integer outline callbacks.
 sofel_read::cff::Charset::num_ranges The length of the caller's array for the charset index (ADR 0025); sofel_font_t builds and keeps the index inside, so C needs no array.
 sofel_read::cff::Charset::index_into Builds the charset index over the caller's array (ADR 0025); sofel_font_create builds it inside sofel_font_t, which sofel_font_cid and sofel_font_ft_glyph_name use.
 sofel_read::cff::CharsetIndex::charset A Rust view of the charset index that sofel_font_t keeps inside (ADR 0025).
@@ -233,7 +234,9 @@ sofel_outline::Scratch::points Rust access to the outline scratch points; C obta
 sofel_outline::Scratch::slant_slot Rust mutable outline synthesis helper; C obtains the unsynthesized outline through sofel_outline_draw.
 sofel_read::aat_lookup::* Zero-copy AAT substitution lookups used by the C shaping API; C reads the source bytes with sofel_font_table.
 sofel_read::trak::* Zero-copy AAT tracking views used by the C shaping API; C reads the source bytes with sofel_font_table.
+sofel_read::ltag::* Zero-copy language tag ranges used by C name lookup and shaping; C reads the bytes with sofel_font_table.
 sofel_woff::encode ADR 0070 exposes encoding through the Rust API and the standalone sofel-woff command.
 sofel_raster::ColorGradient::* The C entry point sofel_render_color_glyph evaluates the glyph's gradient on the color surface.
 sofel_raster::PaintMask::* The C entry point sofel_render_color_glyph applies outline coverage to the color surface.
+sofel_read::feat::* A validated feature-name view used by the C shaping functions; C reads the table with sofel_font_table.
 sofel_woff::decode_woff The font input commands reconstruct WOFF tables into an sfnt buffer.

@@ -444,3 +444,30 @@ fn adr0046_i2_i4_plan_key_and_lookups_follow_condition_state() {
         vec![1]
     );
 }
+
+#[test]
+fn i1_aat_complex_shaper_uses_dumber_only_when_morx_is_selected() {
+    // One valid chain with default flags and no substitutions.
+    let morx: Vec<_> = [0x0002_0000u32, 1, 0, 16, 0, 0]
+        .into_iter()
+        .flat_map(u32::to_be_bytes)
+        .collect();
+    let data = support::font(
+        10,
+        &[(0x61, 1)],
+        &[500],
+        vec![
+            (b"morx", morx),
+            (
+                b"GSUB",
+                layout(&[(b"DFLT", vec![lang(None, &[])])], &[], &[]),
+            ),
+        ],
+    );
+    let font = Font::new(&data, 0).unwrap();
+    let selected =
+        |d, s| ShapePlan::new(font.default_instance(), props(d, Some(s), None), &[]).shaper();
+    assert_eq!(selected(Direction::Rtl, b"Arab"), Shaper::Dumber);
+    assert_eq!(selected(Direction::Ltr, b"Latn"), Shaper::Default);
+    assert_eq!(selected(Direction::Ttb, b"Arab"), Shaper::Default);
+}

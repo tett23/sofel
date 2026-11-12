@@ -3,7 +3,7 @@ use super::{AatLookup, MachineKind, StateTable, be};
 use crate::buffer::{Buffer, Mask, scratch};
 use crate::layout::gpos::{ATTACH_TYPE_CURSIVE, ATTACH_TYPE_MARK, resolve_cross_offset};
 use alloc::vec::Vec;
-use sofel_font::HbScale;
+use sofel_font::{HbScale, read::aat_lookup::AatIndexLookup};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Subtable<'a> {
@@ -15,9 +15,39 @@ pub(crate) struct Subtable<'a> {
 #[derive(Clone, Debug)]
 enum Kern<'a> {
     Pairs(&'a [[u8; 6]]),
+    Matrix(ClassMatrix<'a>),
     Classes(AatLookup<'a>, AatLookup<'a>, &'a [u8]),
+    CompactClasses(CompactClasses<'a>),
+    LegacyClasses(ClassOffsets<'a>, ClassOffsets<'a>, usize),
+    LegacyHistory(StateTable<'a>, &'a [u8], usize),
     History(StateTable<'a>, &'a [u8]),
     Attachment(StateTable<'a>, u32, &'a [u8], Option<Anchors<'a>>),
+}
+
+#[derive(Clone, Debug)]
+struct ClassMatrix<'a> {
+    long: bool,
+    rows: AatIndexLookup<'a>,
+    columns: AatIndexLookup<'a>,
+    array: &'a [u8],
+    vector: Option<&'a [u8]>,
+}
+
+impl ClassMatrix<'_> {
+    fn value(&self, left: u32, right: u32, tuples: u32) -> Option<i32> {
+        let index = self.rows.get(left)?.checked_add(self.columns.get(right)?)?;
+        let value = if self.long {
+            be::i32_at(self.array, index.checked_mul(4)? as usize)?
+        } else {
+            i32::from(be::i16_at(self.array, index.checked_mul(2)? as usize)?)
+        };
+        if tuples == 0 {
+            return Some(value);
+        }
+        let entries =
+            be::chunks_at::<2>(self.vector?, usize::try_from(value).ok()?, tuples as usize)?;
+        entries.first().map(|v| i32::from(i16::from_be_bytes(*v)))
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -106,6 +136,17 @@ pub(crate) fn read<'a>(
                     ankr.and_then(|s| Anchors::read(s, glyphs)),
                 )
             }
+            6 => {
+                let long = be::u32_at(current, 12)? & 1 != 0;
+                be::u32_at(current, 32)?;
+                Kern::Matrix(ClassMatrix {
+                    long,
+                    rows: AatIndexLookup::new(offset(20)?, glyphs, long)?,
+                    columns: AatIndexLookup::new(offset(24)?, glyphs, long)?,
+                    array: offset(28)?,
+                    vector: if tuples == 0 { None } else { Some(offset(32)?) },
+                })
+            }
             _ => return None,
         };
         result.push(Subtable {
@@ -119,6 +160,161 @@ pub(crate) fn read<'a>(
         }
     }
     Some(result)
+}
+#[derive(Clone, Debug)]
+struct ClassOffsets<'a> {
+    first: u16,
+    offsets: &'a [[u8; 2]],
+}
+impl<'a> ClassOffsets<'a> {
+    fn read(data: &'a [u8], at: usize) -> Option<Self> {
+        let first = be::u16_at(data, at)?;
+        let count = usize::from(be::u16_at(data, at.checked_add(2)?)?);
+        Some(Self {
+            first,
+            offsets: be::chunks_at(data, at.checked_add(4)?, count)?,
+        })
+    }
+    fn offset(&self, glyph: u32) -> Option<usize> {
+        let i = glyph.checked_sub(u32::from(self.first))?;
+        Some(usize::from(u16::from_be_bytes(
+            *self.offsets.get(i as usize)?,
+        )))
+    }
+}
+
+#[derive(Clone, Debug)]
+struct CompactClasses<'a> {
+    values: &'a [[u8; 2]],
+    left: &'a [u8],
+    right: &'a [u8],
+    indices: &'a [u8],
+    columns: usize,
+}
+
+impl<'a> CompactClasses<'a> {
+    fn read(body: &'a [u8]) -> Option<Self> {
+        let glyphs = usize::from(be::u16_at(body, 0)?);
+        let count = usize::from(be::u8_at(body, 2)?);
+        let rows = usize::from(be::u8_at(body, 3)?);
+        let columns = usize::from(be::u8_at(body, 4)?);
+        let values = be::chunks_at(body, 6, count)?;
+        let classes = body.get(6usize.checked_add(count.checked_mul(2)?)?..)?;
+        let (left, rest) = classes.split_at_checked(glyphs)?;
+        let (right, rest) = rest.split_at_checked(glyphs)?;
+        let indices = rest.get(..rows.checked_mul(columns)?)?;
+        Some(Self {
+            values,
+            left,
+            right,
+            indices,
+            columns,
+        })
+    }
+
+    fn value(&self, left: u32, right: u32) -> Option<i16> {
+        if self.left.is_empty() {
+            return None;
+        }
+        let row = usize::from(self.left.get(left as usize).copied().unwrap_or(0));
+        let column = usize::from(self.right.get(right as usize).copied().unwrap_or(0));
+        if column >= self.columns {
+            return None;
+        }
+        let index = self
+            .indices
+            .get(row.checked_mul(self.columns)?.checked_add(column)?)?;
+        self.values
+            .get(usize::from(*index))
+            .copied()
+            .map(i16::from_be_bytes)
+    }
+}
+
+/// Legacy OT and Apple kern headers use distinct coverage bits and 16-bit class offsets.
+pub(crate) fn legacy(data: &[u8]) -> Option<Vec<Subtable<'_>>> {
+    let (apple, count, mut tail) = match be::u16_at(data, 0)? {
+        0 => (false, u32::from(be::u16_at(data, 2)?), data.get(4..)?),
+        1 if be::u32_at(data, 0)? == 0x10000 => (true, be::u32_at(data, 4)?, data.get(8..)?),
+        _ => return None,
+    };
+    let header = if apple { 8 } else { 6 };
+    let mut tables = Vec::new();
+    for i in 0..count {
+        let (len, format, vertical, cross, variation) = if apple {
+            let flags = be::u8_at(tail, 4)?;
+            (
+                be::u32_at(tail, 0)? as usize,
+                be::u8_at(tail, 5)?,
+                flags & 128 != 0,
+                flags & 64 != 0,
+                flags & 32 != 0,
+            )
+        } else {
+            let flags = be::u8_at(tail, 5)?;
+            (
+                usize::from(be::u16_at(tail, 2)?),
+                be::u8_at(tail, 4)?,
+                flags & 1 == 0,
+                flags & 4 != 0,
+                false,
+            )
+        };
+        if len < header {
+            return None;
+        }
+        let (declared, next) = tail.split_at_checked(len)?;
+        let current = if i.saturating_add(1) == count {
+            tail
+        } else {
+            declared
+        };
+        tail = next;
+        if variation {
+            continue;
+        }
+        let body = current.get(header..)?;
+        let action = match format {
+            0 => Kern::Pairs(be::chunks_at(body, 8, usize::from(be::u16_at(body, 0)?))?),
+            1 => {
+                let base = usize::from(be::u16_at(body, 8)?);
+                Kern::LegacyHistory(
+                    StateTable::legacy(body, MachineKind::Kerning)?,
+                    body.get(base..)?,
+                    base,
+                )
+            }
+            2 => {
+                let offset = |at| be::u16_at(body, at).map(usize::from);
+                let array = offset(6)?;
+                current.get(array..)?;
+                Kern::LegacyClasses(
+                    ClassOffsets::read(current, offset(2)?)?,
+                    ClassOffsets::read(current, offset(4)?)?,
+                    array,
+                )
+            }
+            3 => Kern::CompactClasses(CompactClasses::read(body)?),
+            _ => continue,
+        };
+        tables.push(Subtable {
+            coverage: (u32::from(vertical) << 31) | (u32::from(cross) << 30),
+            tuples: 0,
+            data: current,
+            action,
+        });
+    }
+    (!tables.is_empty()).then_some(tables)
+}
+
+pub(crate) fn has_machine(tables: &[Subtable<'_>]) -> bool {
+    tables
+        .iter()
+        .any(|t| matches!(t.action, Kern::LegacyHistory(..)))
+}
+
+pub(crate) fn cross_stream(tables: &[Subtable<'_>]) -> bool {
+    tables.iter().any(|t| t.coverage & 0x4000_0000 != 0)
 }
 pub(crate) fn apply(tables: &[Subtable<'_>], buf: &mut Buffer, scale: &HbScale, mask: Mask) {
     buf.unsafe_to_concat(0, buf.len);
@@ -160,6 +356,8 @@ pub(crate) fn apply(tables: &[Subtable<'_>], buf: &mut Buffer, scale: &HbScale, 
                 mask,
                 cross,
             );
+        } else if let Kern::LegacyHistory(machine, actions, base) = &t.action {
+            legacy_history(machine, actions, *base, buf, scale, mask, cross);
         } else if let Kern::Attachment(machine, kind, actions, anchors) = &t.action {
             let mut marked = None;
             walk(machine, buf, |b, idx, e| {
@@ -273,6 +471,7 @@ pub(crate) fn apply(tables: &[Subtable<'_>], buf: &mut Buffer, scale: &HbScale, 
 impl Subtable<'_> {
     fn value(&self, l: u32, r: u32) -> i32 {
         let value = match self.action {
+            Kern::Matrix(ref matrix) => return matrix.value(l, r, self.tuples).unwrap_or(0),
             Kern::Pairs(pairs) => pairs
                 .binary_search_by(|row| {
                     let [a, b, c, d, _, _] = *row;
@@ -289,7 +488,14 @@ impl Subtable<'_> {
                     be::i16_at(values, usize::from(a).saturating_add(usize::from(b)))
                 })
             }
-            Kern::History(..) | Kern::Attachment(..) => None,
+            Kern::CompactClasses(ref classes) => classes.value(l, r),
+            Kern::LegacyClasses(ref left, ref right, array) => {
+                left.offset(l).zip(right.offset(r)).and_then(|(a, b)| {
+                    let offset = a.checked_add(b)?.checked_sub(array)?;
+                    be::i16_at(self.data.get(array..)?, offset & !1)
+                })
+            }
+            Kern::History(..) | Kern::LegacyHistory(..) | Kern::Attachment(..) => None,
         };
         value
             .and_then(|v| {
@@ -317,7 +523,6 @@ fn history(
     let mut positions = [0usize; 8];
     let mut cursor = 0usize;
     let mut pushed = false;
-    let horizontal = b.direction.is_horizontal();
     walk(machine, b, |b, idx, e| {
         if e.flags & 0x8000 != 0 {
             if let Some(p) = positions.get_mut(cursor) {
@@ -349,35 +554,87 @@ fn history(
                     continue;
                 }
                 b.unsafe_to_break(at, idx.saturating_add(1));
-                let enabled = b.infos().get(at).is_some_and(|g| g.mask & mask != 0);
-                if let Some(p) = b.positions_mut().get_mut(at) {
-                    let delta = i32::from(v);
-                    if cross {
-                        if v == i16::MIN {
-                            p.attach_type = 0;
-                            p.attach_chain = 0;
-                            if horizontal {
-                                p.y_offset = 0;
-                            } else {
-                                p.x_offset = 0;
-                            }
-                        } else if p.attach_type != 0 {
-                            if horizontal {
-                                p.y_offset = p.y_offset.saturating_add(scale.em_scale_y(delta));
-                            } else {
-                                p.x_offset = p.x_offset.saturating_add(scale.em_scale_x(delta));
-                            }
-                            b.scratch_flags |= scratch::HAS_GPOS_ATTACHMENT;
-                        }
-                    } else if enabled && horizontal {
-                        let v = scale.em_scale_x(delta);
-                        p.x_advance = p.x_advance.saturating_add(v);
-                        p.x_offset = p.x_offset.saturating_add(v);
-                    } else if enabled {
-                        let v = scale.em_scale_y(delta);
-                        p.y_advance = p.y_advance.saturating_add(v);
-                        p.y_offset = p.y_offset.saturating_add(v);
-                    }
+                apply_delta(b, at, v, scale, mask, cross);
+            }
+        }
+    });
+}
+
+fn apply_delta(b: &mut Buffer, at: usize, v: i16, scale: &HbScale, mask: Mask, cross: bool) {
+    let horizontal = b.direction.is_horizontal();
+    let enabled = b.infos().get(at).is_some_and(|g| g.mask & mask != 0);
+    if let Some(p) = b.positions_mut().get_mut(at) {
+        let delta = i32::from(v);
+        if cross {
+            if v == i16::MIN {
+                p.attach_type = 0;
+                p.attach_chain = 0;
+                if horizontal {
+                    p.y_offset = 0;
+                } else {
+                    p.x_offset = 0;
+                }
+            } else if p.attach_type != 0 {
+                if horizontal {
+                    p.y_offset = p.y_offset.saturating_add(scale.em_scale_y(delta));
+                } else {
+                    p.x_offset = p.x_offset.saturating_add(scale.em_scale_x(delta));
+                }
+                b.scratch_flags |= scratch::HAS_GPOS_ATTACHMENT;
+            }
+        } else if enabled && horizontal {
+            let v = scale.em_scale_x(delta);
+            p.x_advance = p.x_advance.saturating_add(v);
+            p.x_offset = p.x_offset.saturating_add(v);
+        } else if enabled {
+            let v = scale.em_scale_y(delta);
+            p.y_advance = p.y_advance.saturating_add(v);
+            p.y_offset = p.y_offset.saturating_add(v);
+        }
+    }
+}
+
+fn legacy_history(
+    machine: &StateTable<'_>,
+    actions: &[u8],
+    base: usize,
+    b: &mut Buffer,
+    scale: &HbScale,
+    mask: Mask,
+    cross: bool,
+) {
+    let mut stack = [0usize; 8];
+    let mut depth = 0usize;
+    walk(machine, b, |b, idx, e| {
+        if e.flags & 0x8000 != 0 {
+            if let Some(slot) = stack.get_mut(depth) {
+                *slot = idx;
+                depth = depth.saturating_add(1);
+            } else {
+                depth = 0;
+            }
+        }
+        let raw = e.substitutions[0];
+        if raw == 0xffff || depth == 0 {
+            return;
+        }
+        let words = usize::from(raw)
+            .checked_sub(base)
+            .and_then(|offset| be::chunks_at::<2>(actions, offset & !1, depth));
+        let Some(words) = words else {
+            depth = 0;
+            return;
+        };
+        for word in words {
+            depth = depth.saturating_sub(1);
+            let Some(&at) = stack.get(depth) else {
+                break;
+            };
+            if at < b.len {
+                let value = i16::from_be_bytes(*word);
+                apply_delta(b, at, value & !1, scale, mask, cross);
+                if value & 1 != 0 {
+                    break;
                 }
             }
         }
@@ -389,7 +646,7 @@ fn walk(
     b: &mut Buffer,
     mut transition: impl FnMut(&mut Buffer, usize, super::Entry),
 ) {
-    let mut state = 0;
+    let mut state = usize::from(machine.start_state());
     let mut idx = 0usize;
     while idx <= b.len && b.successful {
         let class = machine.class(b.infos().get(idx));

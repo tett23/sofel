@@ -158,3 +158,33 @@ impl Scratch {
         Ok(())
     }
 }
+
+/// Decomposes unrounded HarfBuzz glyf points, including gvar fractions.
+#[allow(clippy::arithmetic_side_effects)] // HarfBuzz scales each point in f32.
+pub(crate) fn decompose_float_points(
+    points: &[PointF],
+    tags: &[u8],
+    ends: &[usize],
+    x_factor: f32,
+    y_factor: f32,
+    mut emit: impl FnMut(HbOutlineCommand),
+) -> Result<(), OutlineError> {
+    let mut first = 0;
+    for &last in ends {
+        let contour = points
+            .get(first..=last)
+            .ok_or(OutlineError::InvalidOutline)?;
+        let contour_tags = tags.get(first..=last).ok_or(OutlineError::InvalidOutline)?;
+        let mut builder = Builder::default();
+        for (&point, &tag) in contour.iter().zip(contour_tags) {
+            builder.point(
+                PointF::new(point.x * x_factor, point.y * y_factor),
+                tag,
+                &mut emit,
+            );
+        }
+        builder.end(&mut emit);
+        first = last.saturating_add(1);
+    }
+    Ok(())
+}
