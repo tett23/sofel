@@ -3,10 +3,12 @@
 
 extern crate alloc;
 mod pdf;
+mod svg_paint;
 use alloc::string::String;
 use core::fmt::Write as _;
 pub use pdf::{PdfPage, PdfPen};
 use sofel_geom::{Color, Image, ImageFormat, Pen, Point, PointF, Rect, Transform};
+pub use svg_paint::SvgPainter;
 
 /// A page whose view box uses SVG coordinates. Glyph outlines use y-up coordinates.
 pub struct SvgPage {
@@ -15,6 +17,8 @@ pub struct SvgPage {
     body: String,
     clips: String,
     clip_count: usize,
+    path_count: usize,
+    gradient_count: usize,
     has_image: bool,
 }
 
@@ -27,6 +31,8 @@ impl SvgPage {
             body: String::new(),
             clips: String::new(),
             clip_count: 0,
+            path_count: 0,
+            gradient_count: 0,
             has_image: false,
         }
     }

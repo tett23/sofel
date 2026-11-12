@@ -135,6 +135,49 @@ pub unsafe extern "C" fn sofel_vector_page(
                     }
                 }
             }
+            if let Page::Svg(svg) = &mut page
+                && sofel_color::glyph_color_format(&font.font, g.glyph)
+                    == Some(sofel_color::ColorFormat::ColrV1)
+            {
+                recording.clear();
+                sofel_color::paint_recording_at(
+                    instance,
+                    g.glyph,
+                    &options,
+                    &mut color_scratch,
+                    &mut recording,
+                );
+                let scale = sofel_font::HbScale::unscaled(&font.font);
+                let rendered = svg.paint(
+                    Transform {
+                        xx,
+                        yx,
+                        xy,
+                        yy,
+                        dx,
+                        dy,
+                    },
+                    |gid, pen| {
+                        let glyph = GlyphId(gid);
+                        if let Some(commands) = outlines
+                            .varc_glyph_path(glyph, scale)
+                            .or_else(|| outlines.hb_extents().cff_glyph_path(glyph, &scale))
+                        {
+                            for cmd in commands {
+                                pen.command(cmd);
+                            }
+                            true
+                        } else {
+                            outlines.load(glyph, Scale::Unscaled, &mut scratch).is_ok()
+                                && scratch.hb_decompose(1., 1., |cmd| pen.command(cmd)).is_ok()
+                        }
+                    },
+                    |painter| recording.replay(painter),
+                );
+                if rendered {
+                    continue;
+                }
+            }
             let mut fill = |gid, c| {
                 if let Some(commands) = outlines
                     .varc_glyph_path(GlyphId(gid), sofel_font::HbScale::unscaled(&font.font))

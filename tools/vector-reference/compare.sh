@@ -46,3 +46,12 @@ check_page conditional-wght840p3 varc-ac01-conditional.ttf -16 -839 952 1055 tex
 "$work/positioned" "$root/fuzzing/fonts/noto_handwriting-sbix.ttf" \
     -16 -966 1307 1235 text=✍ > "$work/handwriting-sbix.svg"
 cmp "$work/handwriting-sbix.svg" "$root/vector/data/expected/basic/handwriting-sbix.svg"
+for outline in glyf cff cff2; do
+    case $outline in
+        glyf) ext=ttf; expected=glyf ;;
+        *) ext=otf; expected=cff ;;
+    esac
+    "$work/positioned" "$root/fuzzing/fonts/noto_handwriting-${outline}_colr_1.$ext" \
+        -16 -966 1307 1232 text=✍ > "$work/handwriting.svg"
+    cmp "$work/handwriting.svg" "$root/vector/data/expected/basic/handwriting-$expected-colr-1.svg"
+done
