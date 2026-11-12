@@ -16,6 +16,7 @@ pub(crate) mod hmtx;
 pub(crate) mod hvar;
 pub(crate) mod math;
 mod maxp;
+mod mvar;
 mod name;
 mod os2;
 mod post;
@@ -262,7 +263,10 @@ impl Plan {
         let mut s = Serializer::new();
         let needed = f(self, font, tag, src, &mut s, tables)?;
         let room = self.room_after(font, tag, src, room, s.peak_len())?;
-        if let Some(bytes) = finish_table(tag, s, needed)? {
+        if let Some(mut bytes) = finish_table(tag, s, needed)? {
+            if matches!(&tag.0, b"OS/2" | b"post") {
+                mvar::apply(self, font, tag, &mut bytes)?;
+            }
             tables.insert(tag, bytes);
         }
         Ok(room)

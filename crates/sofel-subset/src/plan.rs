@@ -338,7 +338,7 @@ impl Plan {
                             .contains(Tag::new(tag).to_u32())
                 }
                 b"HVAR" | b"VVAR" => pinned_glyf,
-                b"cvar" => norm.all_axes_pinned,
+                b"cvar" | b"MVAR" => norm.all_axes_pinned,
                 b"gvar" => inert_gvar || avar2_range || single_pin || pinned_glyf,
                 b"GVAR" => inert_gvar,
                 _ => false,
