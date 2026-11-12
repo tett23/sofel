@@ -24,6 +24,16 @@ fn has_color(image: &Image) -> bool {
 #[test]
 #[ignore = "requires a generated gallery and renderer binaries"]
 fn i4_i5_published_sbix_card_matches_both_glyphs() {
+    check_card("color-sbix");
+}
+
+#[test]
+#[ignore = "requires a generated gallery and renderer binaries"]
+fn i4_i5_published_svg_card_matches_both_glyphs() {
+    check_card("color-svg");
+}
+
+fn check_card(id: &str) {
     let output = PathBuf::from(std::env::var_os("SOFEL_GALLERY_OUTPUT").expect("output path"));
     let binaries =
         PathBuf::from(std::env::var_os("SOFEL_GALLERY_BINARIES").expect("binaries path"));
@@ -42,7 +52,7 @@ fn i4_i5_published_sbix_card_matches_both_glyphs() {
     .unwrap();
     let index = cases
         .iter()
-        .position(|s| s.id == "color-sbix" && s.face == 0)
+        .position(|s| s.id == id && s.face == 0)
         .unwrap();
     let sample = &cases[index];
     assert!(!sample.unsupported_empty);
@@ -56,10 +66,12 @@ fn i4_i5_published_sbix_card_matches_both_glyphs() {
     assert_eq!(rendered.glyph_ids, [26]);
     let solo = rendered.solo.unwrap();
     let glyph = rendered.glyphs[0].image.as_ref().unwrap();
-    assert_eq!(
-        (solo.width, solo.height, glyph.width, glyph.height),
-        (128, 128, 128, 128)
-    );
+    if id == "color-sbix" {
+        assert_eq!(
+            (solo.width, solo.height, glyph.width, glyph.height),
+            (128, 128, 128, 128)
+        );
+    }
     assert!(has_color(&solo) && has_color(glyph));
     let png = fs::read(output.join("all-samples.png")).unwrap();
     let decoded = sofel_png::decode(&png, 10_000_000).unwrap();
@@ -67,9 +79,10 @@ fn i4_i5_published_sbix_card_matches_both_glyphs() {
     let x = (index % sheet::COLUMNS) * sheet::WIDTH;
     let y = (index / sheet::COLUMNS) * sheet::HEIGHT;
     for (image, dx, over_white) in [(&solo, sheet::PADDING, false), (glyph, sheet::RUN_X, true)] {
-        for row in 0..128 {
-            for col in 0..128 {
-                let src = &image.pixels[(row * 128 + col) * 4..][..4];
+        let top = sheet::SAMPLE_TOP + (sheet::SAMPLE_HEIGHT - image.height) / 2;
+        for row in 0..image.height {
+            for col in 0..image.width {
+                let src = &image.pixels[(row * image.width + col) * 4..][..4];
                 let [r, g, b, a] = [src[0], src[1], src[2], src[3]];
                 let expected = if over_white {
                     let over = |c: u8| {
@@ -80,7 +93,7 @@ fn i4_i5_published_sbix_card_matches_both_glyphs() {
                 } else {
                     [premul(b, a), premul(g, a), premul(r, a), a]
                 };
-                let at = ((y + sheet::SAMPLE_TOP + row) * width + x + dx + col) * 4;
+                let at = ((y + top + row) * width + x + dx + col) * 4;
                 assert_eq!(
                     &decoded.bgra[at..at + 4],
                     &expected,
@@ -98,6 +111,5 @@ fn i4_i5_published_sbix_card_matches_both_glyphs() {
         );
     }
     let html = fs::read_to_string(output.join("index.html")).unwrap();
-    assert!(html.contains("<tr><td>color-sbix / face 0</td>"));
-    assert!(html.contains("<td>描画済み</td></tr>"));
+    assert!(html.contains(&format!("<tr><td>{id} / face 0</td><td>glyph 19</td><td>simple_linear</td><td>{}</td><td>描画済み</td></tr>", sample.ppem)));
 }

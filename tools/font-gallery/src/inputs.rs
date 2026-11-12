@@ -127,7 +127,7 @@ pub fn cases(
                 text,
                 lang,
                 color: id.starts_with("color-") || id == "hb-variable-colr",
-                unsupported_empty: matches!(id.as_str(), "color-cff" | "color-svg"),
+                unsupported_empty: id == "color-cff",
             });
         }
     }
