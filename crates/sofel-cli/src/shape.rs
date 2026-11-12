@@ -1010,6 +1010,10 @@ pub fn run_with_input(
             Err(e) => return fail(err, format!("{}: {e}", font_file.to_string_lossy())),
         }
     };
+    let data = match crate::font_input::unpack(data) {
+        Ok(data) => data,
+        Err(d) => return fail(err, format!("{} at byte {}", d.kind, d.offset)),
+    };
     let font = match Font::new(&data, o.face_index) {
         Ok(f) => f,
         Err(e) => {

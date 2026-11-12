@@ -217,3 +217,4 @@ sofel_svg::document The C paint commands expose the expanded SVG document.
 sofel_read::aat_lookup::* Zero-copy AAT substitution lookups used by the C shaping API; C reads the source bytes with sofel_font_table.
 sofel_read::trak::* Zero-copy AAT tracking views used by the C shaping API; C reads the source bytes with sofel_font_table.
 sofel_woff::encode ADR 0070 exposes encoding through the Rust API and the standalone sofel-woff command.
+sofel_woff::decode_woff The font input commands reconstruct WOFF tables into an sfnt buffer.
