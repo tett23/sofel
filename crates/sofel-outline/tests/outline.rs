@@ -852,3 +852,51 @@ fn adr0064_i1_shpix_matches_freetype_on_a_diagonal_negative_distance() {
     assert_eq!(scratch.points()[1], Point { x: -60, y: 944 });
     assert_eq!(scratch.point_tags(), &[5, 24, 0, 1]);
 }
+
+#[test]
+fn adr0064_i1_isect_uses_the_crossing_or_parallel_midpoint() {
+    for (indices, expected) in [
+        ([0, 2, 1, 3], Point { x: 512, y: 512 }),
+        ([0, 1, 0, 1], Point { x: 0, y: 512 }),
+    ] {
+        let [a0, a1, b0, b1] = indices;
+        let scratch = hinted_square(&[0xb4, 3, a0, a1, b0, b1, 0x0f]);
+        assert_eq!(scratch.points()[3], expected);
+        assert_eq!(scratch.point_tags()[3], 25);
+    }
+}
+
+#[test]
+fn adr0064_i1_gx_instructions_read_the_selected_location() {
+    use sofel_font::var::Location;
+    let glyph = simple_glyph(
+        &[&[Pt::On(0, 0), Pt::On(40, 0), Pt::On(0, 40)]],
+        false,
+        &[0x01, 0xb0, 1, 0x91, 0x48, 0x00, 0xb0, 1, 0x92, 0x48],
+    );
+    let mut fvar = vec![0, 1, 0, 0, 0, 16, 0, 2, 0, 1, 0, 20, 0, 0, 0, 8];
+    fvar.extend_from_slice(b"wght");
+    for value in [-65536i32, 0, 65536] {
+        fvar.extend_from_slice(&value.to_be_bytes());
+    }
+    fvar.extend_from_slice(&[0, 0, 1, 0]);
+    let gvar = vec![
+        0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 26, 0, 2, 0, 0, 0, 0, 0, 26, 0, 0, 0, 0, 0, 0,
+    ];
+    let bytes = glyph_font_with(
+        &[vec![], glyph],
+        false,
+        false,
+        vec![(b"fvar", fvar), (b"gvar", gvar)],
+    );
+    let font = Font::new(&bytes, 0).unwrap();
+    for (raw, expected) in [(0, 0), (67, 16), (-67, -17)] {
+        let location = Location::from_normalized_16_16(&font, &[sofel_font::read::Fixed(raw)]);
+        let outlines = sofel_outline::Outlines::new(font.instance(&location));
+        let mut scratch = Scratch::default();
+        outlines
+            .load_truetype_mono(GlyphId(1), 16, &mut scratch)
+            .unwrap();
+        assert_eq!(scratch.points()[1], Point { x: expected, y: 17 });
+    }
+}
