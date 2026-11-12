@@ -16,6 +16,7 @@ pub(crate) struct Subtable<'a> {
 enum Kern<'a> {
     Pairs(&'a [[u8; 6]]),
     Classes(AatLookup<'a>, AatLookup<'a>, &'a [u8]),
+    CompactClasses(CompactClasses<'a>),
     LegacyClasses(ClassOffsets<'a>, ClassOffsets<'a>, usize),
     LegacyHistory(StateTable<'a>, &'a [u8], usize),
     History(StateTable<'a>, &'a [u8]),
@@ -144,6 +145,54 @@ impl<'a> ClassOffsets<'a> {
     }
 }
 
+#[derive(Clone, Debug)]
+struct CompactClasses<'a> {
+    values: &'a [[u8; 2]],
+    left: &'a [u8],
+    right: &'a [u8],
+    indices: &'a [u8],
+    columns: usize,
+}
+
+impl<'a> CompactClasses<'a> {
+    fn read(body: &'a [u8]) -> Option<Self> {
+        let glyphs = usize::from(be::u16_at(body, 0)?);
+        let count = usize::from(be::u8_at(body, 2)?);
+        let rows = usize::from(be::u8_at(body, 3)?);
+        let columns = usize::from(be::u8_at(body, 4)?);
+        let values = be::chunks_at(body, 6, count)?;
+        let classes = body.get(6usize.checked_add(count.checked_mul(2)?)?..)?;
+        let (left, rest) = classes.split_at_checked(glyphs)?;
+        let (right, rest) = rest.split_at_checked(glyphs)?;
+        let indices = rest.get(..rows.checked_mul(columns)?)?;
+        Some(Self {
+            values,
+            left,
+            right,
+            indices,
+            columns,
+        })
+    }
+
+    fn value(&self, left: u32, right: u32) -> Option<i16> {
+        if self.left.is_empty() {
+            return None;
+        }
+        let row = usize::from(self.left.get(left as usize).copied().unwrap_or(0));
+        let column = usize::from(self.right.get(right as usize).copied().unwrap_or(0));
+        if column >= self.columns {
+            return None;
+        }
+        let index = self
+            .indices
+            .get(row.checked_mul(self.columns)?.checked_add(column)?)?;
+        self.values
+            .get(usize::from(*index))
+            .copied()
+            .map(i16::from_be_bytes)
+    }
+}
+
 /// Legacy OT and Apple kern headers use distinct coverage bits and 16-bit class offsets.
 pub(crate) fn legacy(data: &[u8]) -> Option<Vec<Subtable<'_>>> {
     let (apple, count, mut tail) = match be::u16_at(data, 0)? {
@@ -207,6 +256,7 @@ pub(crate) fn legacy(data: &[u8]) -> Option<Vec<Subtable<'_>>> {
                     array,
                 )
             }
+            3 => Kern::CompactClasses(CompactClasses::read(body)?),
             _ => continue,
         };
         tables.push(Subtable {
@@ -399,6 +449,7 @@ impl Subtable<'_> {
                     be::i16_at(values, usize::from(a).saturating_add(usize::from(b)))
                 })
             }
+            Kern::CompactClasses(ref classes) => classes.value(l, r),
             Kern::LegacyClasses(ref left, ref right, array) => {
                 left.offset(l).zip(right.offset(r)).and_then(|(a, b)| {
                     let offset = a.checked_add(b)?.checked_sub(array)?;

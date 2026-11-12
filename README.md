@@ -112,7 +112,7 @@ cargo run --release --bin sofel-shape -- --direction=ttb --features=vrt2 --outpu
 cargo run --release --bin sofel-shape -- --variations=wght=700 --text=Hello variable.ttf
 ```
 
-AAT の `morx` と旧 `mort` による非文脈置換、並べ替え、マークしたグリフと現在のグリフの文脈置換、挿入、合字に対応する。`feat` を持つフォントでは、指定した OpenType 機能を AAT のセレクターへ変換し、クラスタの範囲ごとに置換を選ぶ。`ltag` を持つフォントでは、指定言語に対応する `morx` の置換を選ぶ。AAT 置換を選ぶ文字体系では、専用の OT シェーパーを HarfBuzz の `dumber` に切り替える。旧 `kern` の形式 0・1・2 では、グリフ対、状態機械、クラスによる位置調整にも対応する。
+AAT の `morx` と旧 `mort` による非文脈置換、並べ替え、マークしたグリフと現在のグリフの文脈置換、挿入、合字に対応する。`feat` を持つフォントでは、指定した OpenType 機能を AAT のセレクターへ変換し、クラスタの範囲ごとに置換を選ぶ。`ltag` を持つフォントでは、指定言語に対応する `morx` の置換を選ぶ。AAT 置換を選ぶ文字体系では、専用の OT シェーパーを HarfBuzz の `dumber` に切り替える。旧 `kern` の形式 0〜3 では、グリフ対、状態機械、クラスによる位置調整にも対応する。
 `--font-ptem` でポイントサイズを指定すると、`STAT` と `trak` を持つフォントではそのサイズに応じて字間を調整する。
 `--variations` は軸のタグと設計座標を、`--named-instance` は0から数える名前つきインスタンスを指定する（[ADR 0027](docs/adr/0027-variable-fonts.md)）。言語は `--language`、無ければ `--default-language` で、どちらも無ければ「言語なし」とする（`hb-shape` は `$LANG` を読む）。終了コードは、成功が0、フォントか文字列のファイルを読めなければ1、使い方の誤りと解釈しないオプション（`--font-bold` など）が2、`--verify` の検査の失敗が3。オプションの一覧は `sofel-shape --help` で示す。
 ### `sofel-paint`

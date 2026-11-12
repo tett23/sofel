@@ -729,3 +729,14 @@ fn i2_aat_state_stops_at_a_nonadvancing_cycle_and_rejects_a_short_entry() {
     morx.pop();
     check(morx, sofel_shape::Shaper::Arabic);
 }
+
+#[test]
+fn adr0060_i1_legacy_kern_format3_class_matrix() {
+    let mut kern = vec![0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 28, 0, 3, 0, 0];
+    kern.extend_from_slice(&[
+        0, 3, 2, 2, 2, 0, 0, 0, 0xff, 0xd8, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1,
+    ]);
+    let data = make_font(false, vec![(b"kern", kern)]);
+    assert_eq!(advances(&run(&data, "ab", Run::default())), [490, 500]);
+    assert_eq!(advances(&run(&data, "ba", Run::default())), [520, 510]);
+}
