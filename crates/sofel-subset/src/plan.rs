@@ -824,6 +824,7 @@ impl Plan {
         let glyf_tag = crate::tables::glyf::instanced_tag(self, font);
         if let Some(tag) = glyf_tag {
             if !self.var.n.pinned_at_default
+                && !self.inert_gvar
                 && let Some(data) = font.table(Tag::new(b"gvar"))
             {
                 let accel = crate::tables::glyf::GlyfAccel::new(font);
