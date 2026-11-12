@@ -443,3 +443,14 @@ fn i1_aat_kerx_attaches_marks_in_both_directions() {
         assert_eq!(run(case), Ok(()), "{id}");
     }
 }
+
+#[test]
+fn i1_aat_ltag_matches_whole_language_subtags() {
+    let path = paths::testdata().join("harfbuzz/test/shape/data/in-house/tests/aat-morx.tests");
+    let suite = cases("in-house", &path, &mut 0);
+    for line in 9..=17 {
+        let id = format!("in-house/aat-morx.tests:{line}");
+        let case = suite.iter().find(|case| case.id == id).unwrap();
+        assert_eq!(run(case), Ok(()), "{id}");
+    }
+}

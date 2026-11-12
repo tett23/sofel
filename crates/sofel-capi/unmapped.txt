@@ -207,3 +207,4 @@ sofel_color::FtPaintGraph::* The location-resolved raw COLR tree; the C paint AP
 sofel_unicode::Script::from_raw_tag C represents the four script bytes directly as a big-endian uint32_t tag.
 sofel_read::aat_lookup::* Zero-copy AAT substitution lookups used by the C shaping API; C reads the source bytes with sofel_font_table.
 sofel_read::trak::* Zero-copy AAT tracking views used by the C shaping API; C reads the source bytes with sofel_font_table.
+sofel_read::ltag::* Zero-copy language tag ranges used by C name lookup and shaping; C reads the bytes with sofel_font_table.

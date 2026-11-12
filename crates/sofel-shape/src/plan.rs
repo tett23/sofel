@@ -422,8 +422,15 @@ impl<'a> ShapePlan<'a> {
         let has_gpos = !disable_gpos && layout.gpos.has_data;
         let morx =
             if (props.direction.is_horizontal() || !layout.gsub.has_data) && features.is_empty() {
-                font.table(Tag(*b"morx"))
-                    .and_then(|data| crate::aat::chains(data, font.num_glyphs()))
+                font.table(Tag(*b"morx")).and_then(|data| {
+                    crate::aat::chains(
+                        data,
+                        font.num_glyphs(),
+                        font.table(Tag(*b"ltag"))
+                            .and_then(sofel_font::read::ltag::Ltag::new),
+                        props.language.as_ref(),
+                    )
+                })
             } else {
                 None
             };

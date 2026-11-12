@@ -22,7 +22,12 @@ pub struct Chain<'a> {
 }
 /// Reads morx version 2 chains of supported operations.
 /// Other subtable types require their own state machine.
-pub fn chains(data: &[u8], glyphs: u32) -> Option<alloc::vec::Vec<Chain<'_>>> {
+pub fn chains<'a>(
+    data: &'a [u8],
+    glyphs: u32,
+    tags: Option<sofel_font::read::ltag::Ltag<'_>>,
+    language: Option<&crate::Language>,
+) -> Option<alloc::vec::Vec<Chain<'a>>> {
     if be::u16_at(data, 0)? != 2 {
         return None;
     }
@@ -31,10 +36,30 @@ pub fn chains(data: &[u8], glyphs: u32) -> Option<alloc::vec::Vec<Chain<'_>>> {
     let mut chains = alloc::vec::Vec::new();
     for _ in 0..count {
         let (chain, tail) = rest.split_at_checked(be::u32_at(rest, 4)? as usize)?;
-        let flags = be::u32_at(chain, 0)?;
+        let mut flags = be::u32_at(chain, 0)?;
         let n = be::u32_at(chain, 8)? as usize;
         let tables = be::u32_at(chain, 12)?;
-        be::chunks_at::<12>(chain, 16, n)?;
+        let features = be::chunks_at::<12>(chain, 16, n)?;
+        if let (Some(tags), Some(language)) = (tags, language) {
+            for feature in features {
+                if be::u16_at(feature, 0)? != 39 {
+                    continue;
+                }
+                let Some(index) = be::u16_at(feature, 2)?.checked_sub(1) else {
+                    continue;
+                };
+                let Some(tag) = tags.tag(index).and_then(sofel_font::Language::new) else {
+                    continue;
+                };
+                let mut specific = language.as_str().bytes();
+                if !tag.is_empty()
+                    && tag.bytes().all(|b| specific.next() == Some(b))
+                    && matches!(specific.next(), None | Some(b'-'))
+                {
+                    flags = (flags & be::u32_at(feature, 8)?) | be::u32_at(feature, 4)?;
+                }
+            }
+        }
         let mut body = chain.get(16usize.checked_add(n.checked_mul(12)?)?..)?;
         let mut substitutions = alloc::vec::Vec::new();
         for _ in 0..tables {

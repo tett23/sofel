@@ -61,6 +61,7 @@ pub mod hvar;
 pub mod item_variation;
 pub mod layout;
 pub mod loca;
+pub mod ltag;
 pub mod math;
 pub mod maxp;
 pub mod mvar;
