@@ -376,7 +376,6 @@ impl<'p> SubFont<'p> {
     }
 
     /// Query the glyph box through this font's functions and synthetic settings.
-    /// A root without a box function has no box to return.
     pub fn glyph_extents(&self, glyph: u32) -> Option<GlyphExtents> {
         self.glyph_extents_with_base(glyph, &|_, _| None)
     }
@@ -386,13 +385,14 @@ impl<'p> SubFont<'p> {
         glyph: u32,
         base: &dyn Fn(Scale, u32) -> Option<GlyphExtents>,
     ) -> Option<GlyphExtents> {
-        if (self.slant != 0.0 || self.x_embolden != 0.0 || self.y_embolden != 0.0)
-            && let Some(outline) = self.glyph_outline(glyph)
-        {
+        let raw = self.raw_glyph_extents(glyph, base);
+        if self.slant == 0.0 && self.x_embolden == 0.0 && self.y_embolden == 0.0 {
+            return raw.or_else(|| self.glyph_outline(glyph).map(|outline| outline.extents()));
+        }
+        if let Some(outline) = self.glyph_outline(glyph) {
             return Some(outline.extents());
         }
-        self.raw_glyph_extents(glyph, base)
-            .map(|extents| self.synthetic_glyph_extents(extents))
+        raw.map(|extents| self.synthetic_glyph_extents(extents))
     }
 
     #[allow(clippy::arithmetic_side_effects)] // HarfBuzz negates the signed strength.

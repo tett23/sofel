@@ -32,6 +32,29 @@ fn adr0063_i1_subfont_is_send_and_sync() {
     assert_send_sync::<SubFont<'static>>();
 }
 
+#[test]
+fn adr0063_i1_outline_supplies_box_without_box_callback() {
+    let scale = Scale::new(HbScale::new(1000, 1000, 1000), 0, 0);
+    let mut font = SubFont::new(scale);
+    font.set_outline_func(|_| {
+        let mut outline = sofel_shape::GlyphOutline::new();
+        outline.move_to(sofel_geom::PointF::new(20.0, 30.0));
+        outline.line_to(sofel_geom::PointF::new(120.0, 30.0));
+        outline.line_to(sofel_geom::PointF::new(120.0, 230.0));
+        outline.close();
+        Some(outline)
+    });
+    assert_eq!(
+        font.glyph_extents(1),
+        Some(GlyphExtents {
+            x_bearing: 20,
+            y_bearing: 230,
+            width: 100,
+            height: -200,
+        })
+    );
+}
+
 /// The glyphs of the test fonts.
 const NOTDEF: u32 = 0;
 const A: u32 = 1;
