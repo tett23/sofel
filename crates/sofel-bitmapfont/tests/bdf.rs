@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
 use sofel_bitmapfont::BdfFont;
 
-const ORDER: &str = "STARTFONT 2.1\nFONT -misc-test-medium-r-normal--8-80-72-72-c-80-iso10646-1\nSIZE 8 72 72\nFONTBOUNDINGBOX 8 8 0 0\nSTARTPROPERTIES 3\nFONT_ASCENT 8\nFONT_DESCENT 0\nDEFAULT_CHAR 66\nENDPROPERTIES\nCHARS 2\nSTARTCHAR B\nENCODING 66\nSWIDTH 1000 0\nDWIDTH 8 0\nBBX 8 8 0 0\nBITMAP\nFF\n00\n00\n00\n00\n00\n00\n00\nENDCHAR\nSTARTCHAR A\nENCODING 65\nSWIDTH 1000 0\nDWIDTH 8 0\nBBX 8 8 0 0\nBITMAP\n18\n24\n42\n7E\n42\n42\n42\n00\nENDCHAR\nENDFONT\n";
+const ORDER: &str = include_str!("data/order.bdf");
 
 #[test]
 fn adr0065_i1_bdf_sorts_encoding_and_uses_default_char() {

@@ -5,8 +5,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 
-const BDF: &str = "STARTFONT 2.1\nFONT -misc-test-medium-r-normal--8-80-72-72-c-80-iso10646-1\nSIZE 8 72 72\nFONTBOUNDINGBOX 8 8 0 0\nSTARTPROPERTIES 2\nFONT_ASCENT 8\nFONT_DESCENT 0\nENDPROPERTIES\nCHARS 1\nSTARTCHAR A\nENCODING 65\nSWIDTH 1000 0\nDWIDTH 8 0\nBBX 8 8 0 0\nBITMAP\n18\n24\n42\n7E\n42\n42\n42\n00\nENDCHAR\nENDFONT\n";
-const GRAY2: &str = "STARTFONT 2.1\nFONT -misc-test-medium-r-normal--8-80-72-72-c-80-iso10646-1\nSIZE 8 72 72 2\nFONTBOUNDINGBOX 4 2 0 0\nSTARTPROPERTIES 2\nFONT_ASCENT 2\nFONT_DESCENT 0\nENDPROPERTIES\nCHARS 1\nSTARTCHAR A\nENCODING 65\nSWIDTH 1000 0\nDWIDTH 4 0\nBBX 4 2 0 0\nBITMAP\n1B\nE4\nENDCHAR\nENDFONT\n";
+const BDF: &str = include_str!("../../sofel-bitmapfont/tests/data/mono.bdf");
+const GRAY2: &str = include_str!("../../sofel-bitmapfont/tests/data/gray2.bdf");
 
 fn run(extra: &[&str]) -> (i32, Vec<u8>) {
     run_data(BDF, extra)
@@ -39,14 +39,19 @@ fn adr0065_i1_bdf_gray2_matches_freetype_bitmap() {
 
 #[test]
 fn adr0065_i1_bdf_gray4_and_gray8_match_freetype_bitmap() {
-    for (bits, row, expected_pixels) in [
-        (4, "1FA0", &[238, 0, 85, 255][..]),
-        (8, "00FF8040", &[255, 0, 127, 191][..]),
+    for (bits, bdf, expected_pixels) in [
+        (
+            4,
+            include_str!("../../sofel-bitmapfont/tests/data/gray4.bdf"),
+            &[238, 0, 85, 255][..],
+        ),
+        (
+            8,
+            include_str!("../../sofel-bitmapfont/tests/data/gray8.bdf"),
+            &[255, 0, 127, 191][..],
+        ),
     ] {
-        let bdf = format!(
-            "STARTFONT 2.1\nFONT -misc-test-medium-r-normal--8-80-72-72-c-80-iso10646-1\nSIZE 8 72 72 {bits}\nFONTBOUNDINGBOX 4 1 0 0\nSTARTPROPERTIES 2\nFONT_ASCENT 1\nFONT_DESCENT 0\nENDPROPERTIES\nCHARS 1\nSTARTCHAR A\nENCODING 65\nSWIDTH 1000 0\nDWIDTH 4 0\nBBX 4 1 0 0\nBITMAP\n{row}\nENDCHAR\nENDFONT\n"
-        );
-        let (status, image) = run_data(&bdf, &["--ppem", "8", "--glyph", "1"]);
+        let (status, image) = run_data(bdf, &["--ppem", "8", "--glyph", "1"]);
         assert_eq!(status, 0, "{bits} bit");
         let mut expected = b"P5\n# left 0 top 1\n4 1\n255\n".to_vec();
         expected.extend_from_slice(expected_pixels);
