@@ -717,3 +717,71 @@ fn empty_glyphs_do_not_move() {
     assert!(log.is_empty());
     assert_eq!(r.unwrap().cbox, CBox::default());
 }
+
+#[test]
+fn adr0064_i1_mono_loader_executes_the_glyph_program() {
+    let bytes = one(simple_glyph(
+        &[&[Pt::On(0, 0), Pt::On(100, 101), Pt::On(200, 0)]],
+        false,
+        &[0x00, 0xb1, 1, 128, 0x48],
+    ));
+    let font = Font::new(&bytes, 0).unwrap();
+    let outlines = sofel_outline::Outlines::new(font.default_instance());
+    let mut scratch = Scratch::default();
+    outlines
+        .load_truetype_mono(GlyphId(1), 16, &mut scratch)
+        .unwrap();
+    assert_eq!(scratch.points()[1].y, 128);
+}
+
+#[test]
+fn adr0064_i1_small_ppem_prep_disables_glyph_hinting() {
+    let g = simple_glyph(
+        &[&[Pt::On(0, 0), Pt::On(100, 101), Pt::On(200, 0)]],
+        false,
+        &[0x00, 0xb1, 1, 128, 0x48],
+    );
+    let bytes = glyph_font_with(
+        &[Vec::new(), g],
+        false,
+        false,
+        vec![(
+            b"prep",
+            vec![0x4b, 0xb0, 9, 0x50, 0x58, 0xb1, 1, 1, 0x8e, 0x59],
+        )],
+    );
+    let font = Font::new(&bytes, 0).unwrap();
+    let outlines = sofel_outline::Outlines::new(font.default_instance());
+    for ppem in [8, 9] {
+        let mut s = Scratch::default();
+        outlines
+            .load(GlyphId(1), Scale::pixels(&font, ppem, ppem), &mut s)
+            .unwrap();
+        let unhinted = s.points()[1].y;
+        outlines
+            .load_truetype_mono(GlyphId(1), ppem, &mut s)
+            .unwrap();
+        assert_eq!(s.points()[1].y, if ppem == 8 { unhinted } else { 128 });
+    }
+}
+
+#[test]
+fn adr0064_i1_composite_runs_after_hinted_children_are_placed() {
+    let child = simple_glyph(
+        &[&[Pt::On(0, 0), Pt::On(70, 90), Pt::On(100, 0)]],
+        false,
+        &[0, 0xb1, 1, 64, 0x48],
+    );
+    let mut second = comp(1, Args::Xy(200, 0));
+    second.flags = sofel_font::read::glyf::WE_HAVE_INSTRUCTIONS;
+    let mut parent = composite_glyph(&[comp(1, Args::Xy(0, 0)), second], [0, 0, 300, 90], false);
+    parent.extend_from_slice(&[0, 5, 0, 0xb1, 4, 150, 0x48]);
+    let data = glyph_font(&[vec![], child, parent], false, false);
+    let font = Font::new(&data, 0).unwrap();
+    let mut scratch = Scratch::default();
+    sofel_outline::Outlines::new(font.default_instance())
+        .load_truetype_mono(GlyphId(2), 16, &mut scratch)
+        .unwrap();
+    assert_eq!(scratch.points()[1].y, 64);
+    assert_eq!(scratch.points()[4].y, 150);
+}
