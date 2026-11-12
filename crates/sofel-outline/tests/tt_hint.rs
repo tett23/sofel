@@ -180,3 +180,30 @@ fn adr0064_i1_v35_uses_hdmx_device_width() {
         .unwrap();
     assert_eq!(width, 42 * 64);
 }
+
+#[test]
+fn adr0064_i1_tinos_italic_matches_freetype_in_every_target() {
+    for target in [
+        HintTarget::Normal,
+        HintTarget::Light,
+        HintTarget::Mono,
+        HintTarget::Lcd,
+        HintTarget::VerticalLcd,
+    ] {
+        for v40 in [false, true] {
+            let expected = if v40 && target != HintTarget::Mono {
+                0xc129_177b_c2bc_23e8
+            } else {
+                0x52ed_c78d_6c86_0f7e
+            };
+            check_sizes(
+                "harfbuzz/test/subset/data/fonts/Tinos-Italic.ttf".into(),
+                None,
+                16..=16,
+                expected,
+                target,
+                v40,
+            );
+        }
+    }
+}

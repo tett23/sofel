@@ -793,7 +793,6 @@ impl Interpreter {
         let Some(point) = self.points[target_zone].get_mut(usize::from(index)) else {
             return;
         };
-        let original_axis = usize::from(self.dual_projection[0] == 0);
         let mut requested = if let Some(entry) = cvt {
             match entry {
                 -1 => 0,
@@ -803,10 +802,10 @@ impl Interpreter {
                 },
             }
         } else if base_zone == 0 || target_zone == 0 {
-            point.original[original_axis].wrapping_sub(base.original[original_axis])
+            projected_distance(point.original, base.original, self.dual_projection)
         } else {
             sofel_font::read::cff::ft::mul_fix(
-                point.unscaled[original_axis].wrapping_sub(base.unscaled[original_axis]),
+                projected_distance(point.unscaled, base.unscaled, self.dual_projection),
                 if self.composite { 65536 } else { self.scale },
             )
         };
@@ -821,12 +820,13 @@ impl Interpreter {
         }
         let original = if cvt.is_some() {
             if target_zone == 0 {
-                let axis = usize::from(self.freedom[0] == 0);
-                point.original = base.original;
-                point.original[axis] = point.original[axis].wrapping_add(requested);
+                point.original = core::array::from_fn(|axis| {
+                    base.original[axis]
+                        .wrapping_add(project([requested, 0], [self.freedom[axis], 0]))
+                });
                 point.current = point.original;
             }
-            let measured = point.original[original_axis].wrapping_sub(base.original[original_axis]);
+            let measured = projected_distance(point.original, base.original, self.dual_projection);
             if self.auto_flip && (measured ^ requested) < 0 {
                 requested = requested.wrapping_neg();
             }
@@ -852,15 +852,14 @@ impl Interpreter {
                 distance.min(min_distance.wrapping_neg())
             };
         }
-        let axis = usize::from(self.projection[0] == 0);
-        if self.freedom[axis] != 0 {
-            move_axis(
-                point,
-                axis,
-                base.current[axis].wrapping_add(distance),
-                self.backward_compatibility,
-            );
-        }
+        let current = projected_distance(point.current, base.current, self.projection);
+        move_point(
+            point,
+            distance.wrapping_sub(current),
+            self.projection,
+            self.freedom,
+            self.backward_compatibility,
+        );
     }
 
     fn reference_shift(&self, op: u8) -> Option<(usize, usize, [i64; 2])> {
