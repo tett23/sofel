@@ -14,6 +14,7 @@
 #![allow(clippy::too_many_arguments)]
 
 mod color;
+mod gpu;
 mod layout_query;
 mod shape;
 mod subset;
@@ -342,8 +343,7 @@ pub extern "C" fn sofel_vector_length(x: i32, y: i32) -> i32 {
 
 // --------------------------------------------------------------- fonts
 
-fn font_create(data: Option<&'static [u8]>, index: u32) -> Result<SofelFont, i32> {
-    let font = Font::new(some(data)?, index).map_err(font_error)?;
+fn font_handle(font: Font<'static>) -> SofelFont {
     let outlines = Outlines::new(font.default_instance());
     let cff = outlines.cff().copied();
     let ranges = cff.and_then(|c| c.charset()).map_or(0, |c| c.num_ranges());
@@ -354,13 +354,13 @@ fn font_create(data: Option<&'static [u8]>, index: u32) -> Result<SofelFont, i32
     let charset = cff
         .and_then(|c| c.charset())
         .and_then(|c| c.index_into(array).ok());
-    Ok(SofelFont {
+    SofelFont {
         font,
         outlines,
         cff,
         charset,
         starts,
-    })
+    }
 }
 
 /// `sofel_font_create`.
@@ -377,6 +377,32 @@ pub unsafe extern "C" fn sofel_font_create(
     index: u32,
     error: *mut i32,
 ) -> *mut SofelFont {
+    // SAFETY: the pointers meet the constructor's documented requirements.
+    unsafe { open_font(data, len, index, error, Font::new) }
+}
+
+/// Opens the same borrowed bytes using HarfBuzz's shaping header defaults.
+///
+/// # Safety
+/// Pointer and lifetime requirements are identical to `sofel_font_create`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_create_for_shaping(
+    data: *const u8,
+    len: usize,
+    index: u32,
+    error: *mut i32,
+) -> *mut SofelFont {
+    // SAFETY: the pointers meet the constructor's documented requirements.
+    unsafe { open_font(data, len, index, error, Font::for_shaping) }
+}
+
+unsafe fn open_font(
+    data: *const u8,
+    len: usize,
+    index: u32,
+    error: *mut i32,
+    open: fn(&'static [u8], u32) -> Result<Font<'static>, FontError>,
+) -> *mut SofelFont {
     // SAFETY: the caller keeps the data alive and unchanged until
     // sofel_font_destroy and every location made from the font has been
     // destroyed; `error` is NULL or writable.
@@ -384,10 +410,10 @@ pub unsafe extern "C" fn sofel_font_create(
     let Some(error) = error else {
         return core::ptr::null_mut();
     };
-    match font_create(data, index) {
+    match some(data).and_then(|bytes| open(bytes, index).map_err(font_error)) {
         Ok(f) => {
             *error = OK;
-            Box::into_raw(Box::new(f))
+            Box::into_raw(Box::new(font_handle(f)))
         }
         Err(e) => {
             *error = e;
@@ -2453,19 +2479,29 @@ fn put_info(info: OutlineInfo, cbox: &mut [i32; 4], overlap: &mut u32) {
     *overlap = u32::from(info.overlap);
 }
 
+enum OutlineLoad {
+    Unhinted(Result<Scale, i32>),
+    Mono(u16),
+}
+
 fn outline_load(
     font: Option<&SofelFont>,
     location: Option<&SofelLocation>,
     glyph: u32,
-    scale: Result<Scale, i32>,
+    load: OutlineLoad,
     scratch: Option<&mut SofelOutlineScratch>,
     cbox: Option<&mut [i32; 4]>,
     overlap: Option<&mut u32>,
 ) -> Status {
     let (font, scratch, cbox, overlap) = (some(font)?, some(scratch)?, some(cbox)?, some(overlap)?);
-    let info = outlines_at(font, location)
-        .load(GlyphId(glyph), scale?, &mut scratch.scratch)
-        .map_err(outline_error)?;
+    let outlines = outlines_at(font, location);
+    let info = match load {
+        OutlineLoad::Unhinted(scale) => outlines.load(GlyphId(glyph), scale?, &mut scratch.scratch),
+        OutlineLoad::Mono(ppem) => {
+            outlines.load_truetype_mono(GlyphId(glyph), ppem, &mut scratch.scratch)
+        }
+    }
+    .map_err(outline_error)?;
     put_info(info, cbox, overlap);
     Ok(())
 }
@@ -2503,11 +2539,40 @@ pub unsafe extern "C" fn sofel_outline_load(
         font,
         location,
         glyph,
-        scale(mode, x_scale, y_scale),
+        OutlineLoad::Unhinted(scale(mode, x_scale, y_scale)),
         scratch,
         cbox,
         overlap,
     ))
+}
+
+/// Loads a monochrome TrueType outline into a reusable work area.
+///
+/// # Safety
+///
+/// The pointer requirements are those of [`sofel_outline_load`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_outline_load_truetype_mono(
+    font: *const SofelFont,
+    location: *const SofelLocation,
+    glyph: u32,
+    ppem: u16,
+    scratch: *mut SofelOutlineScratch,
+    cbox: *mut i32,
+    overlap: *mut u32,
+) -> i32 {
+    // SAFETY: the caller supplies the same handles and output buffers as for outline_load.
+    unsafe {
+        status(outline_load(
+            r(font),
+            r(location),
+            glyph,
+            OutlineLoad::Mono(ppem),
+            w(scratch),
+            ints::<4>(cbox),
+            w(overlap),
+        ))
+    }
 }
 
 fn outline_decompose(
@@ -2760,9 +2825,12 @@ fn to_i32(v: u32) -> i32 {
     i32::try_from(v).unwrap_or(i32::MAX)
 }
 
-fn pixel_box(c: [i32; 4], b: Option<&mut [i32; 4]>, shift: Option<&mut [i32; 2]>) -> Status {
+fn write_pixel_box(
+    pb: sofel_raster::PixelBox,
+    b: Option<&mut [i32; 4]>,
+    shift: Option<&mut [i32; 2]>,
+) -> Status {
     let (b, shift) = (some(b)?, some(shift)?);
-    let pb = sofel_raster::pixel_box(c[0], c[1], c[2], c[3]);
     *b = [pb.left, pb.top, to_i32(pb.width), to_i32(pb.rows)];
     let s = pb.shift();
     *shift = [s.x, s.y];
@@ -2785,7 +2853,34 @@ pub unsafe extern "C" fn sofel_pixel_box(
 ) -> i32 {
     // SAFETY: the caller's conditions.
     let (b, shift) = unsafe { (ints::<4>(box_), ints::<2>(shift)) };
-    status(pixel_box([x_min, y_min, x_max, y_max], b, shift))
+    status(write_pixel_box(
+        sofel_raster::pixel_box(x_min, y_min, x_max, y_max),
+        b,
+        shift,
+    ))
+}
+
+/// `sofel_mono_pixel_box`.
+///
+/// # Safety
+///
+/// `box_` is NULL or writable for 4 integers, `shift` for 2.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_mono_pixel_box(
+    x_min: i32,
+    y_min: i32,
+    x_max: i32,
+    y_max: i32,
+    box_: *mut i32,
+    shift: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (b, shift) = unsafe { (ints::<4>(box_), ints::<2>(shift)) };
+    status(write_pixel_box(
+        sofel_raster::mono_pixel_box(x_min, y_min, x_max, y_max),
+        b,
+        shift,
+    ))
 }
 
 /// Where a bitmap goes: the caller's array, the length and the box.
@@ -2805,21 +2900,152 @@ impl BitmapOut<'_> {
 
     /// Writes the length and box, then the pixels if they fit.
     fn put(self, bitmap: Result<Bitmap<'_>, i32>) -> Status {
-        let (pixels, len, b) = (some(self.pixels)?, some(self.len)?, some(self.b)?);
         let bitmap = bitmap?;
-        *len = bitmap.pixels.len();
+        self.put_bytes(
+            PixelBox {
+                left: bitmap.left,
+                top: bitmap.top,
+                width: bitmap.width,
+                rows: bitmap.rows,
+            },
+            bitmap.pixels,
+        )
+    }
+
+    fn put_bytes(self, bounds: PixelBox, bytes: &[u8]) -> Status {
+        let (pixels, len, b) = (some(self.pixels)?, some(self.len)?, some(self.b)?);
+        *len = bytes.len();
         *b = [
-            bitmap.left,
-            bitmap.top,
-            to_i32(bitmap.width),
-            to_i32(bitmap.rows),
+            bounds.left,
+            bounds.top,
+            to_i32(bounds.width),
+            to_i32(bounds.rows),
         ];
         let dest = pixels
-            .get_mut(..bitmap.pixels.len())
+            .get_mut(..bytes.len())
             .ok_or(ERROR_BUFFER_TOO_SMALL)?;
-        dest.copy_from_slice(bitmap.pixels);
+        dest.copy_from_slice(bytes);
         Ok(())
     }
+}
+
+/// Compute an SDF from tightly packed, top-down grayscale coverage.
+///
+/// # Safety
+///
+/// The source must be readable for `source_len` bytes or NULL with zero
+/// length. Outputs must be disjoint from the input and each other and
+/// satisfy the requirements of [`sofel_rasterizer_render`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_bitmap_sdf(
+    left: i32,
+    top: i32,
+    width: u32,
+    rows: u32,
+    source: *const u8,
+    source_len: usize,
+    spread: u8,
+    pixels: *mut u8,
+    capacity: usize,
+    len: *mut usize,
+    box_: *mut i32,
+) -> i32 {
+    // SAFETY: the caller supplies valid, disjoint buffers.
+    let (input, pixels, len, b) = unsafe {
+        (
+            if source_len == 0 {
+                Some(&[][..])
+            } else {
+                bytes(source, source_len)
+            },
+            out_array(pixels, capacity),
+            w(len),
+            ints::<4>(box_),
+        )
+    };
+    status((|| {
+        let out = BitmapOut { pixels, len, b };
+        out.check()?;
+        let bitmap = Bitmap {
+            left,
+            top,
+            width,
+            rows,
+            pixels: some(input)?,
+        };
+        let mut buffer = Vec::new();
+        let result = sofel_raster::bitmap_sdf(bitmap, spread, &mut buffer).map_err(|e| match e {
+            sofel_raster::BitmapSdfError::TooLarge => ERROR_TOO_LARGE,
+            sofel_raster::BitmapSdfError::InvalidBitmap
+            | sofel_raster::BitmapSdfError::InvalidSpread => ERROR_INVALID_ARGUMENT,
+        });
+        out.put(result)
+    })())
+}
+
+/// Get the fill orientation of a loaded outline.
+///
+/// # Safety
+/// Scratch must be live or NULL and fill_left writable or NULL.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_outline_fill_left(
+    scratch: *const SofelOutlineScratch,
+    fill_left: *mut u32,
+) -> i32 {
+    // SAFETY: the caller supplies a live handle and writable output.
+    let (scratch, out) = unsafe { (r(scratch), w(fill_left)) };
+    status((|| {
+        *some(out)? = u32::from(some(scratch)?.scratch.fill_left());
+        Ok(())
+    })())
+}
+
+/// Render a prepositioned outline into a signed distance field.
+///
+/// # Safety
+/// As [`sofel_rasterizer_render`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_rasterizer_render_outline_sdf_placed(
+    rasterizer: *mut SofelRasterizer,
+    left: i32,
+    top: i32,
+    width: u32,
+    rows: u32,
+    spread: u8,
+    fill_left: u32,
+    pixels: *mut u8,
+    capacity: usize,
+    len: *mut usize,
+    box_: *mut i32,
+) -> i32 {
+    // SAFETY: the caller supplies valid disjoint output buffers.
+    let (raster, pixels, len, b) = unsafe {
+        (
+            w(rasterizer),
+            out_array(pixels, capacity),
+            w(len),
+            ints::<4>(box_),
+        )
+    };
+    status((|| {
+        let raster = some(raster)?;
+        let out = BitmapOut { pixels, len, b };
+        out.check()?;
+        let bounds = PixelBox {
+            left,
+            top,
+            width,
+            rows,
+        };
+        let bitmap = raster
+            .raster
+            .render_outline_sdf_placed(bounds, spread, fill_left != 0)
+            .map_err(|e| match e {
+                sofel_raster::BitmapSdfError::TooLarge => ERROR_TOO_LARGE,
+                _ => ERROR_INVALID_ARGUMENT,
+            });
+        out.put(bitmap)
+    })())
 }
 
 fn options(fill: u32, overlap: u32, x_ppem: u16, y_ppem: u16) -> Result<RenderOptions, i32> {
@@ -2839,6 +3065,7 @@ enum RasterTarget {
     Normal,
     Placed(PixelBox),
     Harmony(sofel_raster::LcdMode),
+    Filtered(sofel_raster::LcdMode, [u8; 5]),
 }
 
 fn rasterizer_render(
@@ -2854,6 +3081,7 @@ fn rasterizer_render(
         RasterTarget::Normal => r.raster.render(options),
         RasterTarget::Placed(b) => r.raster.render_placed(b, options),
         RasterTarget::Harmony(lcd) => r.raster.render_harmony(lcd, options),
+        RasterTarget::Filtered(lcd, weights) => r.raster.render_filtered_lcd(lcd, weights, options),
     };
     out.put(bitmap.map_err(raster_error))
 }
@@ -2935,6 +3163,158 @@ pub unsafe extern "C" fn sofel_rasterizer_render_harmony(
         options(fill, 0, x_ppem, y_ppem),
         out,
     ))
+}
+
+/// `sofel_rasterizer_render_filtered_lcd`.
+///
+/// # Safety
+///
+/// `rasterizer` is NULL or a live rasterizer no other thread uses;
+/// `pixels` is NULL or writable for `capacity` bytes; `len` is NULL or
+/// writable; `weights` is NULL or readable for five bytes; `box_` is NULL or writable for 4 integers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_rasterizer_render_filtered_lcd(
+    rasterizer: *mut SofelRasterizer,
+    fill: u32,
+    direction: u32,
+    weights: *const u8,
+    x_ppem: u16,
+    y_ppem: u16,
+    pixels: *mut u8,
+    capacity: usize,
+    len: *mut usize,
+    box_: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (rasterizer, pixels, len, b) = unsafe {
+        (
+            w(rasterizer),
+            out_array(pixels, capacity),
+            w(len),
+            ints::<4>(box_),
+        )
+    };
+    // SAFETY: the caller provides five readable weights or NULL.
+    let Some(weights) = (unsafe { weights.cast::<[u8; 5]>().as_ref() }) else {
+        return ERROR_INVALID_ARGUMENT;
+    };
+    let lcd = match direction {
+        0 => sofel_raster::LcdMode::Horizontal,
+        1 => sofel_raster::LcdMode::Vertical,
+        _ => return ERROR_INVALID_ARGUMENT,
+    };
+    let out = BitmapOut { pixels, len, b };
+    status(rasterizer_render(
+        rasterizer,
+        RasterTarget::Filtered(lcd, *weights),
+        options(fill, 0, x_ppem, y_ppem),
+        out,
+    ))
+}
+
+/// Render packed monochrome rows.
+///
+/// # Safety
+///
+/// As [`sofel_rasterizer_render`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_rasterizer_render_mono(
+    rasterizer: *mut SofelRasterizer,
+    flags: u32,
+    x_ppem: u16,
+    y_ppem: u16,
+    pixels: *mut u8,
+    capacity: usize,
+    len: *mut usize,
+    box_: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (r, pixels, len, b) = unsafe {
+        (
+            w(rasterizer),
+            out_array(pixels, capacity),
+            w(len),
+            ints::<4>(box_),
+        )
+    };
+    let out = BitmapOut { pixels, len, b };
+    render_mono_output(r, flags, x_ppem, y_ppem, None, out)
+}
+
+/// Render packed monochrome rows.
+///
+/// # Safety
+///
+/// As [`sofel_rasterizer_render`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_rasterizer_render_mono_placed(
+    rasterizer: *mut SofelRasterizer,
+    left: i32,
+    top: i32,
+    width: u32,
+    rows: u32,
+    flags: u32,
+    x_ppem: u16,
+    y_ppem: u16,
+    pixels: *mut u8,
+    capacity: usize,
+    len: *mut usize,
+    box_: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (r, pixels, len, b) = unsafe {
+        (
+            w(rasterizer),
+            out_array(pixels, capacity),
+            w(len),
+            ints::<4>(box_),
+        )
+    };
+    let out = BitmapOut { pixels, len, b };
+    render_mono_output(
+        r,
+        flags,
+        x_ppem,
+        y_ppem,
+        Some(PixelBox {
+            left,
+            top,
+            width,
+            rows,
+        }),
+        out,
+    )
+}
+
+fn render_mono_output(
+    r: Option<&mut SofelRasterizer>,
+    flags: u32,
+    x_ppem: u16,
+    y_ppem: u16,
+    bounds: Option<PixelBox>,
+    out: BitmapOut<'_>,
+) -> i32 {
+    if flags & !31 != 0 {
+        return ERROR_INVALID_ARGUMENT;
+    }
+    status((|| {
+        let r = some(r)?;
+        out.check()?;
+        let options = sofel_raster::MonoOptions {
+            high_precision: flags & 1 != 0,
+            single_pass: flags & 2 != 0,
+            ignore_dropouts: flags & 4 != 0,
+            smart_dropouts: flags & 8 != 0,
+            include_stubs: flags & 16 != 0,
+        };
+        let ppem = (x_ppem != 0 || y_ppem != 0).then_some((x_ppem, y_ppem));
+        let image = match bounds {
+            Some(b) => r.raster.render_mono_placed(b, options, ppem),
+            None => r.raster.render_mono(options, ppem),
+        }
+        .map_err(raster_error)?;
+        out.put_bytes(image.bounds, image.pixels)
+    })())
 }
 
 /// `sofel_rasterizer_render_placed`.
@@ -3602,6 +3982,27 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
 
     use super::*;
+
+    #[test]
+    fn adr0060_i1_shaping_constructor_supplies_missing_header() {
+        let mut tables = test_build::sample_tables();
+        tables.retain(|(tag, _)| *tag != b"head");
+        let data = test_build::sfnt(&tables);
+        let mut error = OK;
+        // SAFETY: the input stays alive, the outputs are writable, and the
+        // successful handle is destroyed once.
+        unsafe {
+            let strict = sofel_font_create(data.as_ptr(), data.len(), 0, &mut error);
+            assert!(strict.is_null());
+            assert_eq!(error, ERROR_NO_HEAD);
+            let shaping = sofel_font_create_for_shaping(data.as_ptr(), data.len(), 0, &mut error);
+            assert_eq!(error, OK);
+            let mut upem = 0;
+            assert_eq!(sofel_font_units_per_em(shaping, &mut upem), OK);
+            assert_eq!(upem, 1000);
+            sofel_font_destroy(shaping);
+        }
+    }
 
     #[test]
     fn inv2_axis_ppem_values() {

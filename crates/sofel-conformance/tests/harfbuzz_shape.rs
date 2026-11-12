@@ -492,3 +492,115 @@ fn i1_legacy_mort_chain_runs_all_five_operations() {
     assert_eq!(suite.len(), 1);
     assert_eq!(run(&suite[0]), Ok(()));
 }
+
+#[test]
+fn adr0060_i1_aat_shape_without_head() {
+    let dir = paths::testdata().join("harfbuzz/test/shape/data/in-house/tests");
+    for (file, lines) in [
+        ("aat-morx.tests", &[6, 7][..]),
+        ("aat-trak.tests", &[9][..]),
+    ] {
+        let inputs = cases("in-house", &dir.join(file), &mut 0);
+        for line in lines {
+            let id = format!("in-house/{file}:{line}");
+            let case = inputs.iter().find(|c| c.id == id).unwrap();
+            assert_eq!(run(case), Ok(()), "{id}");
+        }
+    }
+}
+
+#[test]
+fn i1_aat_shape_all_glyph_fields_match_native_harfbuzz() {
+    let root = paths::testdata().join("harfbuzz/test/shape/data");
+    let mut compared = 0;
+    let mut differences = Vec::new();
+    for (suite, prefix) in [
+        ("in-house", "aat-"),
+        ("in-house", "kern-format"),
+        ("text-rendering-tests", "MORX-"),
+        ("text-rendering-tests", "MORT-"),
+    ] {
+        let dir = root.join(suite).join("tests");
+        let mut files = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| {
+                path.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with(prefix)
+            })
+            .collect::<Vec<_>>();
+        files.sort();
+        for file in files {
+            for case in cases(suite, &file, &mut 0) {
+                let value = |key| option(&case.options, key).unwrap_or("-");
+                let flags = if case
+                    .options
+                    .iter()
+                    .any(|s| s == "--remove-default-ignorables")
+                {
+                    "remove"
+                } else {
+                    "-"
+                };
+                let hex = case.unicodes.replace("U+", "");
+                let native = std::process::Command::new(paths::hb_dump())
+                    .arg("--aat-corpus-shape")
+                    .arg(&case.font)
+                    .args([
+                        "0",
+                        &hex,
+                        "-",
+                        value("--language"),
+                        "-",
+                        value("--features"),
+                        "-",
+                        value("--font-size"),
+                        value("--font-ptem"),
+                        flags,
+                    ])
+                    .output()
+                    .unwrap();
+                assert!(native.status.success(), "{}", case.id);
+                let expected = String::from_utf8(native.stdout).unwrap();
+                let mut args = vec![
+                    case.font.to_string_lossy().into_owned(),
+                    "--unicodes".into(),
+                    case.unicodes.clone(),
+                ];
+                args.extend(
+                    case.options
+                        .iter()
+                        .filter(|s| {
+                            !matches!(s.as_str(), "--no-positions" | "--no-clusters" | "--ned")
+                        })
+                        .cloned(),
+                );
+                args.extend(
+                    [
+                        "--no-glyph-names",
+                        "--show-flags",
+                        "--unsafe-to-concat",
+                        "--safe-to-insert-tatweel",
+                    ]
+                    .map(String::from),
+                );
+                let actual = shape(&args);
+                if actual != expected.trim_end() {
+                    differences.push(format!("{}\n{}\n{}", case.id, expected.trim_end(), actual));
+                }
+                compared += 1;
+            }
+        }
+    }
+    eprintln!("Compared {compared} AAT cases with native HarfBuzz");
+    assert!(compared >= 254);
+    assert!(
+        differences.is_empty(),
+        "{}/{} differ\n{}",
+        differences.len(),
+        compared,
+        differences.join("\n")
+    );
+}

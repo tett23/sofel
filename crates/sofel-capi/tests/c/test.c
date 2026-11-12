@@ -568,6 +568,10 @@ static void test_outlines(const sofel_font_t *font) {
     CHECK(same_commands(&rec, c->commands, c->len));
   }
 
+  CHECK(sofel_outline_load_truetype_mono(font, NULL, 1, 16, scratch, cbox, &overlap) == SOFEL_OK);
+  CHECK(cbox[0] <= cbox[2] && cbox[1] <= cbox[3]);
+  CHECK(sofel_outline_load_truetype_mono(NULL, NULL, 1, 16, scratch, cbox, &overlap) == SOFEL_ERROR_NULL);
+
   /* An offset and a multiplier. */
   CHECK(sofel_outline_load(font, NULL, 1, SOFEL_SCALE_FIXED, scale_cases[0].x_scale,
                            scale_cases[0].y_scale, scratch, cbox, &overlap) == SOFEL_OK);
@@ -679,6 +683,9 @@ static void test_raster(const sofel_font_t *font) {
     CHECK(memcmp(box, c->box, sizeof box) == 0);
     CHECK(memcmp(shift, c->shift, sizeof shift) == 0);
   }
+  CHECK(sofel_mono_pixel_box(-32, 33, 32, 95, box, shift) == SOFEL_OK);
+  CHECK(box[0] == -1 && box[1] == 2 && box[2] == 2 && box[3] == 1);
+  CHECK(shift[0] == 64 && shift[1] == -64);
   CHECK(sofel_pixel_box(0, 0, 64, 64, NULL, shift) == SOFEL_ERROR_NULL);
   CHECK(sofel_pixel_box(0, 0, 64, 64, box, NULL) == SOFEL_ERROR_NULL);
 
@@ -696,6 +703,36 @@ static void test_raster(const sofel_font_t *font) {
     check_bitmap(s, c, buf, len, box);
   }
   draw_shape(r);
+  {
+    const uint8_t square[1] = {255};
+    uint8_t sdf[25] = {0};
+    CHECK(sofel_bitmap_sdf(3, 7, 1, 1, square, 1, 2, NULL, 0, &len, box) == SOFEL_ERROR_BUFFER_TOO_SMALL);
+    CHECK(len == 25 && box[0] == 1 && box[1] == 9 && box[2] == 5 && box[3] == 5);
+    CHECK(sofel_bitmap_sdf(3, 7, 1, 1, square, 1, 2, sdf, sizeof sdf, &len, box) == SOFEL_OK);
+    CHECK(sdf[12] == 128 && sdf[0] == 0);
+    CHECK(sofel_bitmap_sdf(3, 7, 2, 1, square, 1, 2, sdf, sizeof sdf, &len, box) == SOFEL_ERROR_INVALID_ARGUMENT);
+    CHECK(sofel_bitmap_sdf(3, 7, 1, 1, square, 1, 1, sdf, sizeof sdf, &len, box) == SOFEL_ERROR_INVALID_ARGUMENT);
+    uint8_t sdf_pixels[64];
+    uint32_t fill_left = 9;
+    CHECK(sofel_outline_fill_left(scratch, &fill_left) == SOFEL_OK && fill_left <= 1);
+    CHECK(sofel_rasterizer_render_outline_sdf_placed(r, 0, 8, 8, 8, 2, 0, sdf_pixels, 64,
+                                                     &len, box) == SOFEL_OK);
+    CHECK(len == 64 && box[2] == 8 && box[3] == 8);
+    CHECK(sofel_rasterizer_render_mono(r, SOFEL_MONO_HIGH_PRECISION, 0, 0, NULL, 0, &len, box) ==
+          SOFEL_ERROR_BUFFER_TOO_SMALL);
+    CHECK(sofel_rasterizer_render_mono(r, SOFEL_MONO_HIGH_PRECISION, 0, 0, buf, sizeof buf, &len, box) == SOFEL_OK);
+    CHECK(len > 0 && len == ((size_t)box[2] + 7) / 8 * (size_t)box[3]);
+    CHECK(sofel_rasterizer_render_mono(r, 32, 0, 0, buf, sizeof buf, &len, box) == SOFEL_ERROR_INVALID_ARGUMENT);
+    CHECK(sofel_rasterizer_render_mono_placed(r, -1, 2, 9, 2, 0, 0, 0,
+                                              buf, sizeof buf, &len, box) == SOFEL_OK);
+    CHECK(len == 4 && box[0] == -1 && box[1] == 2 && box[2] == 9 && box[3] == 2);
+    const uint8_t weights[5] = {8, 77, 86, 77, 8};
+    CHECK(sofel_rasterizer_render_filtered_lcd(r, 0, SOFEL_LCD_HORIZONTAL, weights, 0, 0,
+                                               buf, sizeof buf, &len, box) == SOFEL_OK);
+    CHECK(len > 0 && len == (size_t)box[2] * (size_t)box[3]);
+    CHECK(sofel_rasterizer_render_filtered_lcd(r, 0, SOFEL_LCD_HORIZONTAL, NULL, 0, 0,
+                                               buf, sizeof buf, &len, box) == SOFEL_ERROR_INVALID_ARGUMENT);
+  }
   CHECK(sofel_rasterizer_render_harmony(r, 0, 2, 0, 0, buf, sizeof buf, &len, box) ==
         SOFEL_ERROR_INVALID_ARGUMENT);
   CHECK(sofel_rasterizer_render_harmony(NULL, 0, SOFEL_LCD_VERTICAL, 0, 0, buf, sizeof buf, &len, box) ==
@@ -1430,6 +1467,21 @@ static void test_color(void) {
             SOFEL_OK);
       CHECK(memcmp(page, format == SOFEL_VECTOR_SVG ? "<svg" : "%PDF", 4) == 0);
     }
+  }
+  {
+    const sofel_gpu_path_command_t triangle[] = {
+      {SOFEL_GPU_MOVE, {0, 0}}, {SOFEL_GPU_LINE, {1, 0}},
+      {SOFEL_GPU_LINE, {0, 1}}, {SOFEL_GPU_CLOSE, {0}}
+    };
+    size_t shader_size = 0;
+    CHECK(sofel_gpu_shader_source(SOFEL_GPU_WGSL, SOFEL_GPU_FRAGMENT, NULL, 0, &shader_size) ==
+          SOFEL_ERROR_BUFFER_TOO_SMALL && shader_size > 0);
+    int16_t records[36][4];
+    size_t count = 0;
+    CHECK(sofel_gpu_outline(NULL, 0, 0, 0, NULL, 0, &count) == SOFEL_OK && count == 0);
+    CHECK(sofel_gpu_outline(triangle, 4, 0, 0, NULL, 0, &count) == SOFEL_ERROR_BUFFER_TOO_SMALL && count == 36);
+    CHECK(sofel_gpu_outline(triangle, 4, 0, 0, records, 36, &count) == SOFEL_OK);
+    CHECK(records[0][0] == 0 && records[0][2] == 4 && records[1][0] == 3);
   }
   for (i = 0; i < COUNT(paint_cases); i++) {
     sofel_paint_commands_t cmds;

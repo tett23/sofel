@@ -239,6 +239,7 @@ pub(crate) struct CallTrace {
     pub start: usize,
     pub end: usize,
     pub target: Source,
+    caller_arguments: Option<(usize, usize)>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -253,7 +254,8 @@ pub(crate) struct HintTrace {
     pub source: Source,
     pub start: usize,
     pub end: usize,
-    pub terminal: bool,
+    pub can_follow_call: bool,
+    pub mask_at: Option<usize>,
 }
 
 /// A program and the position in it; an offset past the end is the error
@@ -401,11 +403,12 @@ impl<'a, 'c> Env<'a, 'c> {
         };
     }
 
-    fn record_hint(&mut self, end: usize) {
+    fn record_hint(&mut self, end: usize, mask: bool) {
         if !self.trace_drop_hints {
             return;
         }
-        if self.path_started || !self.args.len().is_multiple_of(2) {
+        let independent_mask = mask && self.path_started && self.args.is_empty();
+        if (self.path_started && !independent_mask) || !self.args.len().is_multiple_of(2) {
             self.trace_valid = false;
         }
         let start = if self.args.is_empty() {
@@ -417,6 +420,32 @@ impl<'a, 'c> Env<'a, 'c> {
                 {
                     start
                 }
+                _ if self.ctx.off == 1 => {
+                    // An initial stem can consume literals pushed before the call.
+                    let Some(call) = self
+                        .call_trace
+                        .last()
+                        .filter(|c| c.target == self.ctx.source)
+                    else {
+                        self.trace_valid = false;
+                        return;
+                    };
+                    let Some((start, _)) = call
+                        .caller_arguments
+                        .filter(|&(_, count)| count == self.args.len())
+                    else {
+                        self.trace_valid = false;
+                        return;
+                    };
+                    self.hint_trace.push(HintTrace {
+                        source: call.source,
+                        start,
+                        end: call.start,
+                        can_follow_call: false,
+                        mask_at: None,
+                    });
+                    0
+                }
                 _ => {
                     self.trace_valid = false;
                     return;
@@ -427,7 +456,8 @@ impl<'a, 'c> Env<'a, 'c> {
             source: self.ctx.source,
             start,
             end,
-            terminal: false,
+            can_follow_call: independent_mask,
+            mask_at: mask.then_some(self.ctx.off.saturating_sub(1)),
         });
     }
 
@@ -562,6 +592,12 @@ impl<'a, 'c> Env<'a, 'c> {
                         start,
                         end: self.ctx.off,
                         target,
+                        caller_arguments: self.literal_run.and_then(
+                            |(owner, first, end, count)| {
+                                (owner == source && end == op_start && count > 1)
+                                    .then_some((first, count.saturating_sub(1)))
+                            },
+                        ),
                     });
                 }
                 _ => self.trace_valid = false,
@@ -581,7 +617,8 @@ impl<'a, 'c> Env<'a, 'c> {
                 source: self.ctx.source,
                 start: self.ctx.off.saturating_sub(1),
                 end: self.ctx.off,
-                terminal: true,
+                can_follow_call: true,
+                mask_at: None,
             });
         }
         if self.trace_calls && self.ctx.off < self.ctx.bytes.len() {
@@ -829,7 +866,8 @@ fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
                     source: env.ctx.source,
                     start: env.ctx.off.saturating_sub(1),
                     end: env.ctx.off,
-                    terminal: true,
+                    can_follow_call: true,
+                    mask_at: None,
                 });
             }
             if env.trace_calls && env.ctx.off < env.ctx.bytes.len() {
@@ -842,13 +880,13 @@ fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
         CALLSUBR => env.call_subr(Kind::Local),
         CALLGSUBR => env.call_subr(Kind::Global),
         HSTEM | HSTEMHM => {
-            env.record_hint(env.ctx.off);
+            env.record_hint(env.ctx.off, false);
             let n = u32::try_from(env.args.len() / 2).unwrap_or(u32::MAX);
             env.hstem_count = env.hstem_count.saturating_add(n);
             o.flush_args_and_op(op, env);
         }
         VSTEM | VSTEMHM => {
-            env.record_hint(env.ctx.off);
+            env.record_hint(env.ctx.off, false);
             let n = u32::try_from(env.args.len() / 2).unwrap_or(u32::MAX);
             env.vstem_count = env.vstem_count.saturating_add(n);
             o.flush_args_and_op(op, env);
@@ -856,7 +894,7 @@ fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
         HINTMASK | CNTRMASK => {
             env.determine_hintmask_size();
             let size = env.hintmask_size as usize;
-            env.record_hint(env.ctx.off.saturating_add(size));
+            env.record_hint(env.ctx.off.saturating_add(size), true);
             if env.trace_calls {
                 env.mask_trace.push(MaskTrace {
                     source: env.ctx.source,

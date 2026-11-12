@@ -2606,9 +2606,27 @@ static int dump_corpus_shape (int argc, char **argv)
     begin = end + 1;
   }
   hb_buffer_add_utf32 (buffer, points.data (), (int) points.size (), 0, (int) points.size ());
-  hb_buffer_set_script (buffer, hb_script_from_string (argv[5], -1));
-  hb_buffer_set_language (buffer, hb_language_from_string (argv[6], -1));
-  hb_buffer_set_direction (buffer, hb_direction_from_string (argv[7], -1));
+  if (argc == 13) /* AAT corpus comparisons also check the optional glyph flags. */
+  {
+    if (strcmp (argv[10], "-") != 0)
+    {
+      int scale = atoi (argv[10]);
+      hb_font_set_scale (font, scale, scale);
+    }
+    hb_font_set_ptem (font, strtof (argv[11], nullptr));
+    unsigned flags = HB_BUFFER_FLAG_PRODUCE_UNSAFE_TO_CONCAT | HB_BUFFER_FLAG_PRODUCE_SAFE_TO_INSERT_TATWEEL;
+    if (strcmp (argv[12], "remove") == 0) flags |= HB_BUFFER_FLAG_REMOVE_DEFAULT_IGNORABLES;
+    hb_buffer_set_flags (buffer, (hb_buffer_flags_t) flags);
+    if (strcmp (argv[6], "-") != 0)
+      hb_buffer_set_language (buffer, hb_language_from_string (argv[6], -1));
+    hb_buffer_guess_segment_properties (buffer);
+  }
+  else
+  {
+    hb_buffer_set_script (buffer, hb_script_from_string (argv[5], -1));
+    hb_buffer_set_language (buffer, hb_language_from_string (argv[6], -1));
+    hb_buffer_set_direction (buffer, hb_direction_from_string (argv[7], -1));
+  }
   hb_shape (font, buffer, features.data (), (unsigned) features.size ());
   print_shaped (buffer, font);
   hb_buffer_destroy (buffer);
@@ -3388,6 +3406,7 @@ struct args_mode_t
 static const args_mode_t args_modes[] = {
   {"--shape", 6, dump_shape},
   {"--corpus-shape", 10, dump_corpus_shape},
+  {"--aat-corpus-shape", 13, dump_corpus_shape},
   {"--shape-random", 5, dump_shape_random},
   {"--syllables", 6, dump_syllables},
   {"--png-digest", 3, dump_png_digest},

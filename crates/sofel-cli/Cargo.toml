@@ -17,6 +17,7 @@ sofel-outline = { path = "../sofel-outline" }
 sofel-raster = { path = "../sofel-raster" }
 sofel-shape = { path = "../sofel-shape" }
 sofel-bitmap = { path = "../sofel-bitmap" }
+sofel-bitmapfont = { path = "../sofel-bitmapfont" }
 sofel-color = { path = "../sofel-color" }
 sofel-svg = { path = "../sofel-svg" }
 sofel-subset = { path = "../sofel-subset" }
