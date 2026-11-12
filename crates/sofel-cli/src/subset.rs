@@ -1499,6 +1499,17 @@ fn run_one(
             &format!("{font_path}: Failed loading font face"),
         );
     };
+    let data = match crate::font_input::unpack(data) {
+        Ok(data) => data,
+        Err(d) => {
+            return fail(
+                err,
+                true,
+                2,
+                &format!("{font_path}: {} at byte {}", d.kind, d.offset),
+            );
+        }
+    };
     let Ok(font) = Font::new(&data, options.face_index) else {
         return fail(
             err,

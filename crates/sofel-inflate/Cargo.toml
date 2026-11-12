@@ -1,0 +1,11 @@
+[package]
+name = "sofel-inflate"
+description = "Bounded DEFLATE, zlib and gzip decoding"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true

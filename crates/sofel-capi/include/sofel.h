@@ -2274,7 +2274,7 @@ typedef struct sofel_color_stop_t {
 #define SOFEL_PAINTED_SBIX 5
 
 /* One paint command; the fields a kind does not use are 0 (palette_index
- * -1). Image data points into the font's data; stops into the list. */
+ * -1). Image data borrows the font, except expanded SVG data owned by the command list. Stops also borrow the list. */
 typedef struct sofel_paint_command_t {
   uint32_t kind;
   uint32_t glyph;

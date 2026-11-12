@@ -56,8 +56,10 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-font`](crates/sofel-font) | フォントを一度だけ読み、グリフの数、文字からグリフへの対応、送り幅、フォント全体と縦書きのメトリクス、BASEの基準線とその代わりの値、名前とグリフ名（postとCFFのcharset）をHarfBuzzの方針で返し、HarfBuzzと同じ拡大縮小（`HbScale`）をする。HarfBuzzのCFFとCFF2のアクセラレータ（`HbCff1`、`HbCff2`）を持つ。PostScript名と `FT_Face` の値はFreeTypeの方針 |
 | [`sofel-outline`](crates/sofel-outline) | glyfとGLYFの輪郭を、ヒンティングなしでFreeTypeと同じ座標で `Pen` に渡す。HarfBuzzと同じグリフの箱（glyf、CFF2、CFF。`HbExtents`、[ADR 0021](docs/adr/0021-cff-outlines.md)）を求める |
 | [`sofel-shape`](crates/sofel-shape) | HarfBuzz 15.1.0のOTシェーパーと同じシェーピング（バッファ、区間の性質、計画、正規化、`GSUB` と `GPOS`、フォールバックの位置。[ADR 0020](docs/adr/0020-shaping-foundation.md)）、機能の文字列、直列化、言語と文字体系のタグ。文字体系ごとのシェーパー（hebrew、hangul、thai、arabic、indic、khmer、myanmar、USE。[ADR 0024](docs/adr/0024-complex-shapers.md)）もすべて実装した |
-| [`sofel-bitmap`](crates/sofel-bitmap) | 埋め込みビットマップ（CBLC/CBDT、EBLC/EBDT、`bloc`/`bdat`、sbix）のストライク、その選び方（HarfBuzzとFreeTypeの両方）、グリフの画像のデータとメトリクス、EBDTの画素のFreeTypeと同じ書き込み（PNGは展開しない。[ADR 0023](docs/adr/0023-color-glyphs.md)） |
-| [`sofel-color`](crates/sofel-color) | カラーグリフ：CPALのパレット、COLR（版0と版1）、SVG、CBDT、sbixをHarfBuzzと同じ命令で `Painter` に渡す。命令の記録（`Recording`）、カラーグリフを含むグリフの箱、フォールバックのための問い合わせ（[ADR 0023](docs/adr/0023-color-glyphs.md)） |
+| [`sofel-inflate`](crates/sofel-inflate) | 出力上限を指定した DEFLATE・zlib・gzip の展開 |
+| [`sofel-png`](crates/sofel-png) | PNG の各色型と Adam7 をアルファ乗算済み BGRA に復号する（[ADR 0066](docs/adr/0066-color-glyph-pixels.md)） |
+| [`sofel-bitmap`](crates/sofel-bitmap) | 埋め込みビットマップ（CBLC/CBDT、EBLC/EBDT、`bloc`/`bdat`、sbix）のストライク、その選び方（HarfBuzzとFreeTypeの両方）、グリフの画像のデータとメトリクス、EBDTの画素のFreeTypeと同じ書き込み、CBDT と sbix の PNG の復号（[ADR 0023](docs/adr/0023-color-glyphs.md)） |
+| [`sofel-color`](crates/sofel-color) | カラーグリフ：CPALのパレット、COLR（版0と版1）、SVG、CBDT、sbixをHarfBuzzと同じ命令で `Painter` に渡す。gzip 圧縮された SVG は展開して渡す。命令の記録（`Recording`）、カラーグリフを含むグリフの箱、フォールバックのための問い合わせ（[ADR 0023](docs/adr/0023-color-glyphs.md)） |
 | [`sofel-write`](crates/sofel-write) | sfntの組み立てと、HarfBuzzと同じ詰め方のオブジェクトの直列化（[ADR 0022](docs/adr/0022-subsetting.md)） |
 | [`sofel-subset`](crates/sofel-subset) | HarfBuzzの `hb-subset` とバイト単位で同じ出力のサブセット化（[ADR 0022](docs/adr/0022-subsetting.md)。書ける表はglyf系、cmap、name、OS/2、post、hdmx、CFF、VORG、GDEF、GSUB、GPOS、BASE、COLR、CPAL、CBLC、CBDT、sbix、MATH、STAT、軸をすべて固定したCFF2など。軸はすべて既定の値に固定できる。前処理（`Prepared`）で同じフォントの計画を速く作れる） |
 | [`sofel-gpu`](crates/sofel-gpu) | 輪郭とカラーグリフの塗りを GPU で描くための RGBA16I レコードに変換し、WGSL、GLSL、MSL、HLSL のシェーダーを提供する（[ADR 0068](docs/adr/0068-vector-and-gpu-output.md)） |
@@ -144,6 +146,8 @@ HarfBuzzの `hb-subset` と同じオプションでサブセット化する（[A
 ```sh
 sofel-subset --font-file=Roboto.ttf --unicodes=41-5A -o out.ttf
 ```
+
+フォントを読むコマンド（`sofel-shape`、`sofel-render`、`sofel-paint`、`sofel-subset`、`sofel-validate`）は WOFF 1.0、gzip および UNIX compress（LZW）で包んだ入力を署名から識別する。[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)
 
 ### `sofel-woff`
 
@@ -323,5 +327,6 @@ FreeTypeの計算を移植した部分を含むクレート（`sofel-geom` な�
 リポジトリ直下で `sh scripts/render-font-gallery.sh` を実行し、`target/font-gallery/index.html` をブラウザーで開く。
 Ruby と Rust のほか、適合テストと同じフォント取得環境を使う。
 各フェイスの単字と、その書体に合う文字列を一枚の PNG で見比べられる。
+sbix の見本は 109 ppem のストライクを使い、グリフ 19 の単字と `simple_linear` の合字 26 をそれぞれ 128 × 128 画素で表示する。
 CI では Actions の対象の実行からコミット SHA 付きのフォントギャラリーをダウンロードし、展開したディレクトリの `index.html` を開く。
 保存期間は14日間である（[sofel ADR 0069](docs/adr/0069-font-render-gallery.md)）。
