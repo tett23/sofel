@@ -62,6 +62,7 @@ pub use blend::{BgraImage, blend_layer};
 
 mod harmony;
 mod bitmap_sdf;
+pub use bitmap_sdf::{BitmapSdfError, bitmap_sdf};
 pub use harmony::LcdMode;
 
 use alloc::vec::Vec;

@@ -109,3 +109,223 @@ fn encode(distance: i32, alpha: u8, spread: u8) -> u8 {
         (128 + magnitude.min(127)) as u8
     }
 }
+
+#[cfg(test)]
+mod edge_tests {
+    use super::edge_vector;
+
+    #[test]
+    fn adr0064_i2_bitmap_sdf_fractional_edges_match_freetype() {
+        assert_eq!(
+            edge_vector([0, 0, 0, 0, 190, 255, 0, 255, 255]),
+            (-9238, -9238)
+        );
+        assert_eq!(edge_vector([255, 255, 255, 255, 128, 0, 0, 0, 0]), (0, 0));
+        assert_eq!(
+            edge_vector([0, 64, 255, 0, 64, 255, 0, 64, 255]),
+            (16384, 0)
+        );
+    }
+}
+
+// FT_Vector_NormLen's reciprocal-length iteration. Intermediate products
+// intentionally wrap in 32 bits, as in the pinned FreeType implementation.
+fn unit_gradient(x: i32, y: i32) -> (i32, i32) {
+    if x == 0 || y == 0 {
+        return (x.signum() * ONE, y.signum() * ONE);
+    }
+    let (mut u, mut v) = (x.unsigned_abs(), y.unsigned_abs());
+    let estimate = |u: u32, v: u32| u.max(v) + (u.min(v) >> 1);
+    let mut length = estimate(u, v);
+    let zeros = length.leading_zeros();
+    let shift = zeros as i32 - 15 - i32::from(length >= (0xaaaa_aaaa >> zeros));
+    if shift > 0 {
+        u <<= shift;
+        v <<= shift;
+        length = estimate(u, v);
+    } else {
+        u >>= -shift;
+        v >>= -shift;
+        length >>= -shift;
+    }
+    let (u, v) = (u as i32, v as i32);
+    let mut b = ONE - length as i32;
+    loop {
+        let nx = u + (u.wrapping_mul(b) >> 16);
+        let ny = v + (v.wrapping_mul(b) >> 16);
+        let residual = nx
+            .wrapping_mul(nx)
+            .wrapping_add(ny.wrapping_mul(ny))
+            .wrapping_neg()
+            / 512;
+        let update = residual.wrapping_mul((ONE + b) >> 8) / ONE;
+        if update <= 0 {
+            return (nx * x.signum(), ny * y.signum());
+        }
+        b += update;
+    }
+}
+
+fn sqrt_fixed(value: i32) -> i32 {
+    if value == 0 {
+        return 0;
+    }
+    let n = ((value as u64) << 16) - 1;
+    let mut q = 1u64 << ((17 + value.ilog2()) >> 1);
+    loop {
+        let next = (q + n / q + 1) >> 1;
+        if next == q {
+            return q as i32;
+        }
+        q = next;
+    }
+}
+
+// compute_edge_distance samples the centered 3x3 coverage neighborhood.
+// Coverage 255 represents 255/256 here, including fully covered pixels.
+fn edge_vector(pixels: [u8; 9]) -> (i32, i32) {
+    use sofel_geom::{div_fix, mul_fix};
+    let [a, b, c, d, alpha, f, g, h, i] = pixels.map(|a| i32::from(a) * 256);
+    let (x, y) = unit_gradient(
+        c + i - a - g + mul_fix(f, 92681) - mul_fix(d, 92681),
+        g + i - a - c + mul_fix(h, 92681) - mul_fix(b, 92681),
+    );
+    let distance = if x == 0 || y == 0 {
+        ONE / 2 - alpha
+    } else {
+        let major = x.abs().max(y.abs());
+        let minor = x.abs().min(y.abs());
+        let threshold = div_fix(minor, major) / 2;
+        let corner = |coverage| sqrt_fixed(2 * mul_fix(major, mul_fix(minor, coverage)));
+        if alpha < threshold {
+            (major + minor) / 2 - corner(alpha)
+        } else if alpha < ONE - threshold {
+            mul_fix(ONE / 2 - alpha, major)
+        } else {
+            -(major + minor) / 2 + corner(ONE - alpha)
+        }
+    };
+    (mul_fix(x, distance), mul_fix(y, distance))
+}
+
+#[test]
+fn adr0064_i2_square_bitmap_sdf_matches_freetype() {
+    let source = super::Bitmap {
+        left: 0,
+        top: 7,
+        width: 7,
+        rows: 7,
+        pixels: &[255; 49],
+    };
+    let mut output = alloc::vec::Vec::new();
+    let result = bitmap_sdf(source, 8, &mut output).unwrap();
+    assert_eq!(
+        (result.left, result.top, result.width, result.rows),
+        (-8, 15, 23, 23)
+    );
+    assert_eq!(
+        &result.pixels[11 * 23..12 * 23],
+        &[
+            8, 24, 40, 56, 72, 88, 104, 120, 135, 151, 167, 183, 167, 151, 135, 120, 104, 88, 72,
+            56, 40, 24, 0
+        ]
+    );
+}
+
+/// Errors converting a top-down grayscale bitmap to a signed distance field.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BitmapSdfError {
+    /// Spread must be between two and 32 pixels, inclusive.
+    InvalidSpread,
+    /// The source buffer length differs from width times rows.
+    InvalidBitmap,
+    /// Dimensions, origin or temporary storage exceed the supported range.
+    TooLarge,
+}
+
+/// Compute FreeType's bitmap-input signed distance field with the given spread.
+/// Output rows are tightly packed, in the same top-down order as the input.
+///
+/// # Errors
+/// Returns an error for invalid input or an unrepresentable result.
+pub fn bitmap_sdf<'a>(
+    source: super::Bitmap<'_>,
+    spread: u8,
+    output: &'a mut alloc::vec::Vec<u8>,
+) -> Result<super::Bitmap<'a>, BitmapSdfError> {
+    use BitmapSdfError::{InvalidBitmap, InvalidSpread, TooLarge};
+    if !(2..=32).contains(&spread) {
+        return Err(InvalidSpread);
+    }
+    let (w, h) = (source.width as usize, source.rows as usize);
+    if w.checked_mul(h) != Some(source.pixels.len()) {
+        return Err(InvalidBitmap);
+    }
+    if w == 0 || h == 0 {
+        output.clear();
+        return Ok(super::Bitmap {
+            pixels: output,
+            ..source
+        });
+    }
+    let pad = usize::from(spread);
+    let width = source
+        .width
+        .checked_add(u32::from(spread) * 2)
+        .ok_or(TooLarge)?;
+    let rows = source
+        .rows
+        .checked_add(u32::from(spread) * 2)
+        .ok_or(TooLarge)?;
+    let left = source.left.checked_sub(i32::from(spread)).ok_or(TooLarge)?;
+    let top = source.top.checked_add(i32::from(spread)).ok_or(TooLarge)?;
+    let stride = width as usize;
+    let len = stride.checked_mul(rows as usize).ok_or(TooLarge)?;
+    let mut map = alloc::vec::Vec::new();
+    map.try_reserve_exact(len).map_err(|_| TooLarge)?;
+    map.resize(len, Distance::FAR);
+    output.clear();
+    output.try_reserve_exact(len).map_err(|_| TooLarge)?;
+    output.resize(len, 0);
+    for (y, src) in source.pixels.chunks_exact(w).enumerate() {
+        let start = (y + pad) * stride + pad;
+        output[start..start + w].copy_from_slice(src);
+    }
+    for y in pad..pad + h {
+        for x in pad..pad + w {
+            let index = y * stride + x;
+            if output[index] == 0 {
+                continue;
+            }
+            let above = index - stride;
+            let below = index + stride;
+            let neighborhood = [
+                above - 1,
+                above,
+                above + 1,
+                index - 1,
+                index,
+                index + 1,
+                below - 1,
+                below,
+                below + 1,
+            ]
+            .map(|i| output[i]);
+            if output[index] < 255 || neighborhood.contains(&0) {
+                let (gx, gy) = edge_vector(neighborhood);
+                map[index] = Distance::new(gx, gy);
+            }
+        }
+    }
+    transform(&mut map, stride, rows as usize);
+    for (a, d) in output.iter_mut().zip(map) {
+        *a = encode(d.length, *a, spread);
+    }
+    Ok(super::Bitmap {
+        left,
+        top,
+        width,
+        rows,
+        pixels: output,
+    })
+}
