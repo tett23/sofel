@@ -268,6 +268,27 @@ fn project([x, y]: [i64; 2], vector: [i64; 2]) -> i64 {
     dot.wrapping_add(if dot < 0 { 0x1fff } else { 0x2000 }) >> 14
 }
 
+// Both vectors contain normalized F2Dot14 components.
+#[allow(clippy::arithmetic_side_effects)]
+fn move_point(point: &mut HintPoint, distance: i64, projection: [i64; 2], freedom: [i64; 2]) {
+    let dot = (projection[0] * freedom[0] + projection[1] * freedom[1] + 0x2000) >> 14;
+    if (-0x1554..0x1555).contains(&dot) {
+        return;
+    }
+    for (axis, component) in freedom.into_iter().enumerate() {
+        let factor = if dot >= 0x3ffe {
+            component * 4
+        } else {
+            component * 65536 / dot
+        };
+        if factor != 0 {
+            let delta = sofel_font::read::cff::ft::mul_fix(distance, factor);
+            point.current[axis] = point.current[axis].wrapping_add(delta);
+            point.touched[axis] = true;
+        }
+    }
+}
+
 #[allow(clippy::arithmetic_side_effects)]
 fn interpolate_contour(points: &mut [HintPoint], axis: usize) {
     let Some(first) = points.iter().position(|p| p.touched[axis]) else {
@@ -1059,11 +1080,9 @@ impl Interpreter {
                     let index = stack.pop().ok_or(Error::StackUnderflow)? as u16;
                     let zone = usize::from(self.zones[2]);
                     if let Some(point) = self.points[zone].get_mut(usize::from(index)) {
-                        let axis = usize::from(self.projection[0] == 0);
-                        if self.freedom[axis] != 0 {
-                            point.current[axis] = coordinate;
-                            point.touched[axis] = true;
-                        }
+                        let distance =
+                            coordinate.wrapping_sub(project(point.current, self.projection));
+                        move_point(point, distance, self.projection, self.freedom);
                         if zone == 0 {
                             point.original = point.current;
                         }
@@ -1887,4 +1906,22 @@ fn adr0064_i1_gc_projects_both_coordinates_for_diagonal_vectors() {
     vm.execute(&[0x0a, 0xb0, 0, 0x46, 0xb0, 0, 0x47], &mut stack, 2)
         .unwrap();
     assert_eq!(stack, [141, -141]);
+}
+
+#[test]
+fn adr0064_i1_scfs_moves_along_freedom_and_marks_each_moved_axis() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    vm.points[1].push(HintPoint::default());
+    for (projection, expected, touched) in [
+        ([9830, 13107], [60, 80], [true, true]),
+        ([16384, 0], [100, 133], [true, true]),
+        ([-13107, 9830], [0, 0], [false, false]),
+    ] {
+        vm.points[1][0] = HintPoint::default();
+        vm.projection = projection;
+        vm.freedom = [9830, 13107];
+        vm.execute(&[0x48], &mut alloc::vec![0, 100], 2).unwrap();
+        assert_eq!(vm.points[1][0].current, expected);
+        assert_eq!(vm.points[1][0].touched, touched);
+    }
 }
