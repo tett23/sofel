@@ -412,6 +412,7 @@ pub(crate) struct Interpreter {
     auto_flip: bool,
     minimum_distance: i64,
     backward_compatibility: u8,
+    blend_coords: alloc::vec::Vec<i32>,
     composite: bool,
     loop_count: u16,
     points: [alloc::vec::Vec<HintPoint>; 2],
@@ -452,6 +453,7 @@ impl Interpreter {
             reference: [0; 3],
             loop_count: 1,
             backward_compatibility: 0,
+            blend_coords: alloc::vec::Vec::new(),
             composite: false,
             auto_flip: true,
             minimum_distance: 64,
@@ -609,8 +611,11 @@ impl Interpreter {
             ppem,
             scale,
             engine,
-            font.table(Tag::new(b"fpgm")).unwrap_or_default(),
-            font.table(Tag::new(b"prep")).unwrap_or_default(),
+            instance.ft_coords(),
+            (
+                font.table(Tag::new(b"fpgm")).unwrap_or_default(),
+                font.table(Tag::new(b"prep")).unwrap_or_default(),
+            ),
         )
     }
 
@@ -621,8 +626,8 @@ impl Interpreter {
         ppem: u16,
         scale: i64,
         engine: EngineInfo,
-        font_program: &[u8],
-        prep: &[u8],
+        coords: &[sofel_font::read::Fixed],
+        (font_program, prep): (&[u8], &[u8]),
     ) -> Result<(Self, usize), Error> {
         let declared = usize::from(maxima.max_stack_elements);
         let limit = declared + (declared / 2).max(128);
@@ -631,6 +636,8 @@ impl Interpreter {
             .min(cvt.len().saturating_mul(2).max(30));
         let mut vm = Self::new(maxima.max_storage, cvt, scale);
         vm.engine = engine;
+        vm.blend_coords
+            .extend(coords.iter().map(|coord| coord.0 >> 2));
         vm.points[0].resize(twilight, HintPoint::default());
         let mut font_vm = vm.clone();
         font_vm.cvt.fill(0);
@@ -1397,6 +1404,13 @@ impl Interpreter {
                         self.scan_type = mode as u16;
                     }
                 }
+                0x91 if !self.blend_coords.is_empty() => {
+                    if self.blend_coords.len() > max_stack.saturating_sub(stack.len()) {
+                        return Err(Error::StackOverflow);
+                    }
+                    stack.extend(self.blend_coords.iter().copied().map(i64::from));
+                }
+                0x92 if !self.blend_coords.is_empty() => push(stack, 17, max_stack)?,
                 0x88 => {
                     let selector = stack.last_mut().ok_or(Error::StackUnderflow)?;
                     *selector = self.engine.query(*selector);
@@ -2100,8 +2114,11 @@ fn adr0064_i1_prep_retains_font_functions_and_reinitializes_storage() {
         16,
         65536,
         engine,
-        &[0xb1, 0, 99, 0x42, 0xb0, 1, 0x2c, 0xb0, 4, 0x60, 0x2d],
-        &[0xb1, 0, 0, 0x43, 0xb0, 1, 0x2b, 0x44],
+        &[],
+        (
+            &[0xb1, 0, 99, 0x42, 0xb0, 1, 0x2c, 0xb0, 4, 0x60, 0x2d],
+            &[0xb1, 0, 0, 0x43, 0xb0, 1, 0x2b, 0x44],
+        ),
     )
     .unwrap();
     assert_eq!(vm.cvt, [4]);
@@ -2338,4 +2355,22 @@ fn adr0064_i1_shpix_uses_freedom_and_consumes_loop_indices() {
         assert_eq!(vm.loop_count, 1);
         assert_eq!(stack, [77]);
     }
+}
+
+#[test]
+fn adr0064_i1_getvariation_pushes_all_axes_within_the_stack_limit() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    assert_eq!(
+        vm.execute(&[0x91], &mut alloc::vec![], 4),
+        Err(Error::InvalidOpcode)
+    );
+    vm.blend_coords = alloc::vec![-16384, 0, 8192];
+    let mut stack = alloc::vec![7];
+    assert_eq!(
+        vm.execute(&[0x91], &mut stack, 3),
+        Err(Error::StackOverflow)
+    );
+    assert_eq!(stack, [7]);
+    vm.execute(&[0x91], &mut stack, 4).unwrap();
+    assert_eq!(stack, [7, -16384, 0, 8192]);
 }
