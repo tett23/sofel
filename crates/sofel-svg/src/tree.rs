@@ -4,8 +4,9 @@
 use super::xml::{Document, Node};
 use super::{
     ClipElement, ClipPath, GlyphScene, Gradient, GradientKind, IDENTITY, ParseError, Scene, Shape,
-    ShapeKind, Stop, attr, color, gradient, number, transform,
+    Stop, color, gradient, number, transform,
 };
+use super::{compose, shape_kind};
 use alloc::string::String;
 use alloc::{collections::BTreeMap, format, vec::Vec};
 
@@ -23,18 +24,6 @@ pub fn parse_glyph(
     foreground: [u8; 4],
 ) -> Result<GlyphScene, ParseError> {
     parse(data, glyph, Some(upem), foreground)
-}
-
-// SVG matrix multiplication, applying the local transform before the parent.
-fn compose([a, b, c, d, e, f]: Matrix, [g, h, i, j, k, l]: Matrix) -> Matrix {
-    [
-        a * g + c * h,
-        b * g + d * h,
-        a * i + c * j,
-        b * i + d * j,
-        a * k + c * l + e,
-        b * k + d * l + f,
-    ]
 }
 
 fn viewport(node: &Node<'_>, upem: u16) -> Result<Matrix, ParseError> {
@@ -218,24 +207,6 @@ impl Builder<'_> {
     }
 }
 
-fn shape_kind(name: &str, attrs: &[(&str, &str)]) -> Option<ShapeKind> {
-    let n = |key| number(attr(attrs, key), 0.0);
-    match name {
-        "rect" if n("width") > 0.0 && n("height") > 0.0 => Some(ShapeKind::Rect {
-            x: n("x"),
-            y: n("y"),
-            width: n("width"),
-            height: n("height"),
-        }),
-        "circle" if n("r") > 0.0 => Some(ShapeKind::Circle {
-            cx: n("cx"),
-            cy: n("cy"),
-            r: n("r"),
-        }),
-        _ => None,
-    }
-}
-
 struct Placed {
     shape: Shape,
     even_odd: bool,
@@ -305,7 +276,16 @@ fn walk<'a>(
                 return Ok(());
             }
             for child in doc.children(i) {
-                walk(doc, child, &style, b, placed, clipping, active, depth.saturating_add(1))?;
+                walk(
+                    doc,
+                    child,
+                    &style,
+                    b,
+                    placed,
+                    clipping,
+                    active,
+                    depth.saturating_add(1),
+                )?;
             }
         }
         "use" => {
@@ -330,7 +310,16 @@ fn walk<'a>(
                     ],
                 );
                 active.push(target);
-                walk(doc, target, &style, b, placed, clipping, active, depth.saturating_add(1))?;
+                walk(
+                    doc,
+                    target,
+                    &style,
+                    b,
+                    placed,
+                    clipping,
+                    active,
+                    depth.saturating_add(1),
+                )?;
                 active.pop();
             }
         }
