@@ -224,6 +224,7 @@ fn pin_records(
             points = bytes.get(..length).ok_or(bad)?;
         }
         let mut tuples = Vec::new();
+        let mut regions = BTreeMap::new();
         for tuple in glyph.tuples() {
             let tuple = tuple.ok_or(bad)?;
             let peak = tuple
@@ -245,15 +246,15 @@ fn pin_records(
                 let active = !valid_region
                     || pinned_coord == pin_peak
                     || (start < pinned_coord && pinned_coord < end);
-                if active && projected.iter().any(|&b| b != 0) {
+                if !active || projected.iter().all(|&b| b == 0) {
+                    continue;
+                }
+                if valid_region && pinned_coord != pin_peak {
                     return Err(SubsetError::Unsupported {
                         tag,
-                        reason: "rebasing a gvar tuple shared by pinned and retained axes",
+                        reason: "scaling a mixed gvar tuple at a fractional pin",
                     });
                 }
-                // Mixed tuples vanish at the default. A pinned-only contribution
-                // at another coordinate is already in glyf and the phantom points.
-                continue;
             }
             let intermediate = tuple
                 .intermediate()
@@ -263,6 +264,14 @@ fn pin_records(
                     Ok(region)
                 })
                 .transpose()?;
+            let mixed = pin_peak != 0;
+            let previous = regions.insert((projected.clone(), intermediate.clone()), mixed);
+            if previous.is_some_and(|was_mixed| was_mixed || mixed) {
+                return Err(SubsetError::Unsupported {
+                    tag,
+                    reason: "combining gvar tuples with the same projected support",
+                });
+            }
             let count = frequencies.entry(projected.clone()).or_default();
             *count = count.saturating_add(1);
             let (points, deltas) = if tuple.private_points() {
