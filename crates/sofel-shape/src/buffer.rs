@@ -1506,6 +1506,14 @@ impl Buffer {
         );
     }
 
+    /// HarfBuzz's argument-free unsafe_to_concat covers the entire buffer,
+    /// including runs longer than the limit for explicit lookup ranges.
+    pub(crate) fn unsafe_to_concat_all(&mut self) {
+        if self.flags.contains(BufferFlags::PRODUCE_UNSAFE_TO_CONCAT) {
+            self.set_glyph_flags(GlyphFlags::UNSAFE_TO_CONCAT.0, 0, None, false, false);
+        }
+    }
+
     /// `unsafe_to_concat`.
     pub(crate) fn unsafe_to_concat(&mut self, start: usize, end: usize) {
         if !self.flags.contains(BufferFlags::PRODUCE_UNSAFE_TO_CONCAT) {

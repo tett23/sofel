@@ -939,6 +939,14 @@ fn gdef_store_with_math_constant_variation_index_is_remapped() {
     let math = out_table(&out, b"MATH").unwrap();
     let device = follow(follow(&math, 4), 10);
     assert_eq!(&device[..6], &[0, 0, 0, 1, 0x80, 0]);
+    // The MATH writer still remaps its device indices when GDEF is copied.
+    let copy_gdef = chars("A").map_set(SetKind::NoSubsetTables, |set| {
+        set.add(Tag::new(b"GDEF").to_u32());
+    });
+    let out = subset(&font, &copy_gdef).unwrap();
+    assert_eq!(out_table(&out, b"GDEF"), out_table(&data, b"GDEF"));
+    let math = out_table(&out, b"MATH").unwrap();
+    assert_eq!(&follow(follow(&math, 4), 10)[..6], &[0, 0, 0, 1, 0x80, 0]);
     let copied_math_without_gdef = chars("A")
         .map_set(SetKind::NoSubsetTables, |set| {
             set.add(Tag::new(b"MATH").to_u32())
@@ -949,6 +957,46 @@ fn gdef_store_with_math_constant_variation_index_is_remapped() {
     let out = subset(&font, &copied_math_without_gdef).unwrap();
     assert!(out_table(&out, b"GDEF").is_none());
     assert_eq!(out_table(&out, b"MATH"), out_table(&data, b"MATH"));
+}
+
+#[test]
+fn copied_math_with_an_unchanged_variation_index_keeps_its_gdef_row() {
+    let input = chars("A").map_set(SetKind::NoSubsetTables, |set| {
+        set.add(Tag::new(b"MATH").to_u32());
+    });
+    for inner in [1, 2] {
+        let device = Buf::new().u16(0).u16(inner).u16(0x8000).done();
+        let constants = link(vec![0; 214], vec![(10, 2, device)]);
+        let math = link(
+            Buf::new().u32(0x0001_0000).u16(0).u16(0).u16(0).done(),
+            vec![(4, 2, constants)],
+        );
+        let data = font_with(vec![
+            (b"GDEF", gdef_with_referenced_store(&[0])),
+            (b"MATH", math),
+        ]);
+        let font = Font::new(&data, 0).unwrap();
+        let result = subset(&font, &input);
+        if inner == 2 {
+            assert!(
+                matches!(result, Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF"))
+            );
+            continue;
+        }
+        let out = result.unwrap();
+        assert_eq!(out_table(&out, b"MATH"), out_table(&data, b"MATH"));
+        let gdef = out_table(&out, b"GDEF").unwrap();
+        let gdef = sofel_font::read::gdef::Gdef::new(&gdef).unwrap();
+        assert_eq!(
+            gdef.variation_store()
+                .unwrap()
+                .unwrap()
+                .item_data(0)
+                .unwrap()
+                .item_count,
+            2
+        );
+    }
 }
 
 #[test]
@@ -1004,6 +1052,15 @@ fn adr0022_gsub_axis_range_can_survive_gdef_store_subsetting() {
     gsub.extend(fv);
     let data = font_with(vec![(b"GDEF", gdef), (b"GSUB", gsub)]);
     let font = Font::new(&data, 0).unwrap();
+    let copied = chars("ABC").map_set(SetKind::NoSubsetTables, |set| {
+        set.add(Tag::new(b"GSUB").to_u32());
+    });
+    let copied_out = subset(&font, &copied).unwrap();
+    assert_eq!(out_table(&copied_out, b"GSUB"), out_table(&data, b"GSUB"));
+    assert_eq!(
+        &out_table(&copied_out, b"GDEF").unwrap()[..4],
+        &0x10000u32.to_be_bytes()
+    );
     let out = subset(&font, &chars("ABC")).unwrap();
     let gsub = out_table(&out, b"GSUB").unwrap();
     let offset = u32::from_be_bytes(gsub[10..14].try_into().unwrap()) as usize;
@@ -1061,6 +1118,14 @@ fn gdef_store_with_math_glyph_info_variation_index_follows_kept_glyphs() {
     );
     let data = font_with(vec![(b"GDEF", gdef), (b"MATH", math)]);
     let font = Font::new(&data, 0).unwrap();
+    // The copied correction for glyph B would point beyond the two retained rows.
+    let copy_math = chars("A").map_set(SetKind::NoSubsetTables, |set| {
+        set.add(Tag::new(b"MATH").to_u32());
+    });
+    assert!(matches!(
+        subset(&font, &copy_math),
+        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF")
+    ));
     for (text, retained_index, item_count) in [("A", 1, 2), ("B", 0, 1)] {
         let out = subset(&font, &chars(text)).unwrap();
         let gdef = out_table(&out, b"GDEF").unwrap();

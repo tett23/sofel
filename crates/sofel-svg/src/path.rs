@@ -169,6 +169,9 @@ fn push_arc(
 }
 
 impl Path {
+    pub(crate) fn segment_count(&self) -> usize {
+        self.segments.len()
+    }
     pub(crate) fn parse(mut input: &str) -> Option<Self> {
         let mut segments = Vec::new();
         let mut bounds = Bounds::default();

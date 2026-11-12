@@ -32,6 +32,24 @@ pub(crate) const PINNED_DROP: [&[u8; 4]; 8] = [
     b"avar", b"fvar", b"gvar", b"GVAR", b"HVAR", b"VVAR", b"MVAR", b"cvar",
 ];
 
+/// An identity avar v1 map needs no rebasing when an axis range changes.
+fn avar_v1_identity(table: &sofel_font::read::avar::Avar<'_>, axis_count: usize) -> bool {
+    table.major_version() == 1
+        && table.axis_count() == axis_count
+        && (0..axis_count).all(|axis| {
+            table.segment_map(axis).is_some_and(|map| {
+                map.len() == 3
+                    && [-16384, 0, 16384]
+                        .iter()
+                        .enumerate()
+                        .all(|(index, &value)| {
+                            map.pair(index)
+                                .is_some_and(|(from, to)| from.0 == value && to.0 == value)
+                        })
+            })
+        })
+}
+
 /// The glyph mapping: new ids in ascending order with their old ids, and
 /// the reverse lookup (ADR 0022's `GlyphMap`).
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
@@ -200,8 +218,9 @@ fn layout_unsupported(
             // reference GDEF. A copied GSUB bypasses that writer.
             table.version() >= 0x0001_0001
                 && sofel_font::read::be::u32_at(d, 10) != Some(0)
-                && (no_subset.contains(Tag::new(b"GSUB").to_u32())
-                    || table.feature_variations_view().is_none())
+                && (table.feature_variations_view().is_none()
+                    || (no_subset.contains(Tag::new(b"GSUB").to_u32())
+                        && !table.has_only_axis_range_conditions()))
         });
     // A VariationIndex Device necessarily contains the format word 0x8000.
     // Scan the whole retained table so an unknown or malformed subtable
@@ -212,38 +231,15 @@ fn layout_unsupported(
         && font
             .table(Tag::new(b"GPOS"))
             .is_some_and(may_reference_gdef_store);
-    let math_may_reference_store = retained(b"MATH")
-        && font
-            .table(Tag::new(b"MATH"))
-            .is_some_and(may_reference_gdef_store);
     let copied_gpos_may_reference_store =
         gpos_may_reference_store && no_subset.contains(Tag::new(b"GPOS").to_u32());
     if !pinned
         && kept(b"GDEF").is_some_and(layout::gdef::has_var_store)
-        && (copied_gpos_may_reference_store
-            || (math_may_reference_store
-                && no_subset.contains(Tag::new(b"MATH").to_u32())
-                && !no_subset.contains(Tag::new(b"GDEF").to_u32()))
-            || gsub_may_reference_store)
+        && (copied_gpos_may_reference_store || gsub_may_reference_store)
     {
         return Err(SubsetError::Unsupported {
             tag: Tag::new(b"GDEF"),
             reason: "the GDEF item variation store (ADR 0022 stage 10)",
-        });
-    }
-    // A copied MATH table needs no remapping when GDEF is also copied or dropped.
-    let math_subset = retained(b"MATH") && !no_subset.contains(Tag::new(b"MATH").to_u32());
-    if !pinned
-        && math_subset
-        && math_may_reference_store
-        && no_subset.contains(Tag::new(b"GDEF").to_u32())
-        && font
-            .table(Tag::new(b"GDEF"))
-            .is_some_and(layout::gdef::has_var_store)
-    {
-        return Err(SubsetError::Unsupported {
-            tag: Tag::new(b"MATH"),
-            reason: "MATH with a GDEF item variation store (ADR 0022 stage 10)",
         });
     }
     Ok(())
@@ -394,18 +390,19 @@ impl Plan {
                 || (norm.avar2 && norm.all_axes_pinned)
                 || font.table(Tag::new(b"avar")).is_none_or(|data| {
                     sofel_font::read::avar::Avar::new(data).is_ok_and(|table| {
-                        table.major_version() == 1
-                            && (norm.pinned_at_default
-                                || (norm.all_axes_pinned
-                                    && (0..table.axis_count()).all(|axis| {
-                                        table.segment_map(axis).is_some_and(|map| {
-                                            sofel_font::var::map_float(&map, 0.0) == 0.0
-                                        })
-                                    })))
-                    }) && norm
-                        .user
-                        .values()
-                        .all(|range| range.min == range.default && range.default == range.max)
+                        avar_v1_identity(&table, norm.axis_tags.len())
+                            || (table.major_version() == 1
+                                && (norm.pinned_at_default
+                                    || (norm.all_axes_pinned
+                                        && (0..table.axis_count()).all(|axis| {
+                                            table.segment_map(axis).is_some_and(|map| {
+                                                sofel_font::var::map_float(&map, 0.0) == 0.0
+                                            })
+                                        })))
+                                && norm.user.values().all(|range| {
+                                    range.min == range.default && range.default == range.max
+                                }))
+                    })
                 });
             let metadata_only = no_other_variation_data && varc_safe && simple_avar;
             let gvar_full_pin = norm.all_axes_pinned
@@ -739,8 +736,9 @@ impl Plan {
                 && !no_subset.contains(Tag::new(b"GPOS").to_u32())
                 && gpos_data.windows(2).any(|word| word == [0x80, 0x00]);
             let math_data = font.table(Tag::new(b"MATH")).unwrap_or(&[]);
+            let copied_math = no_subset.contains(Tag::new(b"MATH").to_u32());
             let math_has_var_format = tag_kept(b"MATH")
-                && !no_subset.contains(Tag::new(b"MATH").to_u32())
+                && (!copied_gdef || !copied_math)
                 && math_data.windows(2).any(|word| word == [0x80, 0x00]);
             if (!pinned || !p.var.n.pinned_at_default)
                 && layout::gdef::has_var_store(gdef)
@@ -785,6 +783,21 @@ impl Plan {
                         reason: "the GDEF item variation store (ADR 0022 stage 10)",
                     });
                 };
+                if copied_math && !copied_gdef && math_has_var_format {
+                    // Even records for glyphs outside the subset survive in a
+                    // copied MATH. Every original index must still address its row.
+                    let all = RangeSet::all();
+                    let all_indices =
+                        crate::tables::math::retained_variation_indices(math_data, &all, &all);
+                    if !all_indices.is_some_and(|indices| {
+                        indices.iter().all(|index| map.get(index) == Some(index))
+                    }) {
+                        return Err(SubsetError::Unsupported {
+                            tag: Tag::new(b"GDEF"),
+                            reason: "copied MATH needs unchanged GDEF variation indices",
+                        });
+                    }
+                }
                 if pinned {
                     p.layout.pinned_layout_deltas = p.pinned_deltas(
                         font,
@@ -793,7 +806,7 @@ impl Plan {
                         &map,
                     )?;
                 } else if copied_gdef {
-                    // HarfBuzz remaps subset GPOS references even when it
+                    // HarfBuzz remaps subset GPOS and MATH references even when it
                     // copies the original GDEF table unchanged.
                     p.layout.gdef_var_map = map;
                 } else {

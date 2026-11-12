@@ -58,14 +58,22 @@ extern crate alloc;
 
 mod blend;
 mod color_gradient;
+mod composite;
+pub use composite::composite_pixel;
 mod paint_mask;
 pub use color_gradient::ColorGradient;
 pub use paint_mask::PaintMask;
 
 pub use blend::{BgraImage, blend_layer, blend_sampled};
 
+mod bitmap_sdf;
 mod harmony;
+mod outline_sdf;
+mod sdf_math;
+pub use bitmap_sdf::{BitmapSdfError, bitmap_sdf};
+mod mono;
 pub use harmony::LcdMode;
+pub use mono::{MonoBitmap, MonoOptions, mono_pixel_box};
 
 use alloc::vec::Vec;
 use core::fmt;
@@ -680,7 +688,7 @@ impl Rasterizer {
         };
         let shift = b.shift();
         let mul = if options.overlap { 4 } else { 1 };
-        self.render_box(b, shift, mul, options)
+        self.render_box(b, shift, Point { x: mul, y: mul }, options)
     }
 
     /// Renders into `pixel_box` an outline that the caller recorded
@@ -706,7 +714,7 @@ impl Rasterizer {
         ) {
             return Err(RasterError::TooLarge);
         }
-        self.render_box(pixel_box, Point::default(), 1, options)
+        self.render_box(pixel_box, Point::default(), Point { x: 1, y: 1 }, options)
     }
 
     /// Renders with every recorded point moved by `shift` and multiplied
@@ -715,7 +723,7 @@ impl Rasterizer {
         &mut self,
         b: PixelBox,
         shift: Point,
-        mul: i32,
+        mul: Point,
         options: RenderOptions,
     ) -> Result<Bitmap<'_>, RasterError> {
         let (w, h) = (b.width as usize, b.rows as usize);
@@ -749,7 +757,7 @@ impl Rasterizer {
         &mut self,
         dx: i32,
         dy: i32,
-        mul: i32,
+        mul: Point,
         scale: i32,
         w: usize,
         h: usize,
@@ -791,8 +799,8 @@ impl Rasterizer {
                 y: 0,
             };
             let tr = |p: Point| Point {
-                x: p.x.wrapping_add(dx).wrapping_mul(mul),
-                y: p.y.wrapping_add(dy).wrapping_mul(mul),
+                x: p.x.wrapping_add(dx).wrapping_mul(mul.x),
+                y: p.y.wrapping_add(dy).wrapping_mul(mul.y),
             };
             for c in &self.commands {
                 match *c {

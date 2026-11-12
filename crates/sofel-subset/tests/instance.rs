@@ -398,6 +398,87 @@ fn i1_subset_instance_default_pin_keeps_avar_and_filters_stat() {
 }
 
 #[test]
+fn i1_subset_instance_nondefault_pin_with_identity_avar() {
+    let identity = [(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)];
+    let data = font_with(vec![
+        (b"fvar", fvar(&AXES)),
+        (b"avar", avar(1, &[&identity, &identity])),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let input = unicodes()
+        .with_axis_pinned(Tag::new(b"wght"), 900.0, &font)
+        .unwrap();
+    let output = subset(&font, &input).unwrap();
+    // HarfBuzz 3df40d9, hb-dump --subset --unicodes=41 --instance=wght=900.
+    assert_eq!(output, include_bytes!("data/adr0061-avar-pin-hb15.ttf"));
+}
+
+#[test]
+fn i1_subset_instance_range_with_identity_avar() {
+    let identity = [(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)];
+    let data = font_with(vec![
+        (b"fvar", fvar(&AXES)),
+        (b"avar", avar(1, &[&identity, &identity])),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let input = unicodes()
+        .with_axis_range(
+            Tag::new(b"wght"),
+            Some(300.0),
+            Some(500.0),
+            Some(400.0),
+            &font,
+        )
+        .unwrap();
+    let output = subset(&font, &input).unwrap();
+    // HarfBuzz 3df40d9, hb-dump --subset --unicodes=41 --instance=wght=300:400:500.
+    assert_eq!(output, include_bytes!("data/adr0061-avar-range-hb15.ttf"));
+}
+
+#[test]
+fn i1_subset_instance_one_sided_range_with_identity_avar() {
+    let identity = [(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)];
+    let data = font_with(vec![
+        (b"fvar", fvar(&AXES)),
+        (b"avar", avar(1, &[&identity, &identity])),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let input = unicodes()
+        .with_axis_range(
+            Tag::new(b"wght"),
+            Some(400.0),
+            Some(500.0),
+            Some(400.0),
+            &font,
+        )
+        .unwrap();
+    let output = subset(&font, &input).unwrap();
+    // HarfBuzz 3df40d9, hb-dump --subset --unicodes=41 --instance=wght=400:400:500.
+    assert_eq!(
+        output,
+        include_bytes!("data/adr0061-avar-one-sided-hb15.ttf")
+    );
+}
+
+#[test]
+fn i1_subset_instance_nonidentity_avar_rejects_nondefault_pin() {
+    let shifted = [(-1.0, -1.0), (0.0, 0.0), (0.5, 0.75), (1.0, 1.0)];
+    let identity = [(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)];
+    let data = font_with(vec![
+        (b"fvar", fvar(&AXES)),
+        (b"avar", avar(1, &[&shifted, &identity])),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let input = unicodes()
+        .with_axis_pinned(Tag::new(b"wght"), 900.0, &font)
+        .unwrap();
+    assert!(matches!(
+        subset(&font, &input),
+        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"fvar")
+    ));
+}
+
+#[test]
 fn i1_subset_instance_keeps_unmodified_avar_map_of_remaining_axis() {
     let wght_map = [(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)];
     let wdth_map = [(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)];

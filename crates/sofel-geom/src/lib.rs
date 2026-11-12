@@ -23,6 +23,7 @@ pub mod float;
 mod paint;
 mod paint_util;
 mod pen;
+pub mod sort;
 mod trig;
 mod trigf;
 
@@ -33,7 +34,9 @@ pub use paint::{
     Brush, Color, ColorLine, ColorRef, ColorStop, CompositeMode, Extend, GlyphExtents, Image,
     ImageFormat, Painter, PointF, Rect, Solid, Transform,
 };
-pub use paint_util::{normalize_color_line, reduce_linear_anchors, sweep_gradient_tiles};
-pub use pen::{Command, FnPen, Pen};
+pub use paint_util::{
+    interpolate_sweep_color, normalize_color_line, reduce_linear_anchors, sweep_gradient_tiles,
+};
+pub use pen::{Command, FloatCommand, FnPen, Pen};
 pub use trig::vector_length;
 pub use trigf::{cos, sin, sin_cos, tan};
