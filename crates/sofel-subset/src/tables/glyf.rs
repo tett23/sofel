@@ -1106,7 +1106,11 @@ impl PointsCx<'_, '_> {
                 true
             }
             Kind::Empty => {
-                all.extend(self.phantoms(gid, g));
+                let mut points = self.phantoms(gid, g);
+                if !self.apply_variation(gid, g, &mut points) {
+                    return false;
+                }
+                all.extend(points);
                 comp.truncate(old_length);
                 true
             }

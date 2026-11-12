@@ -267,3 +267,55 @@ fn compare_mixed_tuple_pin(duplicate: bool, sparse: bool) {
     std::fs::remove_file(source).unwrap();
     std::fs::remove_file(output).unwrap();
 }
+
+#[test]
+fn adr0061_i1_empty_glyph_keeps_instanced_phantom_metrics() {
+    let path = paths::testdata().join("harfbuzz/test/api/fonts/glyf-default-instance-bounds.ttf");
+    let mut data = std::fs::read(path).unwrap();
+    let offset = |tag: &[u8]| {
+        let r = data[12..]
+            .chunks_exact(16)
+            .find(|r| &r[..4] == tag)
+            .unwrap();
+        u32::from_be_bytes(r[8..12].try_into().unwrap()) as usize
+    };
+    let loca = offset(b"loca");
+    let gvar = offset(b"gvar");
+    // Give glyph 1 no outline and a +20 X delta on its right phantom point.
+    data.copy_within(loca + 2..loca + 4, loca + 4);
+    data[gvar + 32..gvar + 46]
+        .copy_from_slice(&[0x80, 1, 0, 8, 0, 5, 0, 0, 0, 0x80, 0, 20, 0x81, 0x83]);
+    let font = Font::new(&data, 0).unwrap();
+    let src = std::env::temp_dir().join(format!("sofel-empty-phantom-{}.ttf", std::process::id()));
+    let out = src.with_extension("out.ttf");
+    std::fs::write(&src, &data).unwrap();
+    let gid = sofel_font::read::GlyphId(1);
+    let advance = font.default_instance().advance(gid);
+    for (value, delta) in [(0.25, 5), (0.5, 10), (1.0, 20)] {
+        let input = Input::new()
+            .map_set(SetKind::Glyphs, |s| s.add(1))
+            .with_axis_pinned(Tag::new(b"wght"), value, &font)
+            .unwrap()
+            .with_axis_pinned(Tag::new(b"wdth"), 0.0, &font)
+            .unwrap();
+        let ours = subset(&font, &input).unwrap();
+        assert!(
+            Command::new(paths::hb_dump())
+                .arg("--subset")
+                .arg(format!("--font-file={}", src.display()))
+                .arg("--gids=1")
+                .arg(format!("--variations=wght={value},wdth=0"))
+                .arg(format!("--output-file={}", out.display()))
+                .status()
+                .unwrap()
+                .success()
+        );
+        assert_eq!(ours, std::fs::read(&out).unwrap());
+        assert_eq!(
+            Font::new(&ours, 0).unwrap().default_instance().advance(gid),
+            advance + delta
+        );
+    }
+    std::fs::remove_file(src).unwrap();
+    std::fs::remove_file(out).unwrap();
+}

@@ -844,25 +844,6 @@ impl Plan {
         );
         let glyf_tag = crate::tables::glyf::instanced_tag(self, font);
         if let Some(tag) = glyf_tag {
-            if !self.var.n.pinned_at_default
-                && !self.inert_gvar
-                && let Some(data) = font.table(Tag::new(b"gvar"))
-            {
-                let accel = crate::tables::glyf::GlyfAccel::new(font);
-                let variations = sofel_font::read::gvar::Gvar::new(data, Tag::new(b"gvar"))
-                    .map_err(|_| SubsetError::Malformed {
-                        tag: Tag::new(b"gvar"),
-                    })?;
-                if self.glyphs.new_to_old.iter().any(|&(_, old)| {
-                    let kind = accel.glyph(old, true).kind;
-                    kind == crate::tables::glyf::Kind::Empty && variations.glyph_data(old).is_some()
-                }) {
-                    return Err(SubsetError::Unsupported {
-                        tag: Tag::new(b"gvar"),
-                        reason: "nondefault gvar pinning of empty glyphs",
-                    });
-                }
-            }
             let (glyphs, metrics) = crate::tables::glyf::instance(
                 &self.glyphs.new_to_old,
                 self.flags,
