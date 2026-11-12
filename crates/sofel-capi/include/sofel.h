@@ -1623,6 +1623,17 @@ typedef struct sofel_outline_scratch sofel_outline_scratch_t;
 sofel_outline_scratch_t *sofel_outline_scratch_create(void);
 
 /*
+ * Borrows the tags and inclusive contour ends of the last loaded outline.
+ * The arrays remain valid until the scratch is modified or destroyed.
+ * Rust: sofel_outline::Scratch::point_tags, sofel_outline::Scratch::contour_ends
+ * HarfBuzz: none
+ * FreeType: FT_Outline.tags, FT_Outline.contours
+ */
+int32_t sofel_outline_tags_and_contours(const sofel_outline_scratch_t *scratch,
+                                        const uint8_t **tags, size_t *num_points,
+                                        const size_t **ends, size_t *num_contours);
+
+/*
  * Frees a work area. Does nothing for NULL.
  *
  * Rust: none

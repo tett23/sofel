@@ -577,6 +577,15 @@ static void test_outlines(const sofel_font_t *font) {
   }
   CHECK(sofel_outline_load_truetype_v35(font, NULL, 1, 16, 5, scratch, cbox, &overlap) == SOFEL_ERROR_INVALID_ARGUMENT);
 
+  const uint8_t *point_tags;
+  const size_t *contour_ends;
+  size_t num_points, num_contours;
+  CHECK(sofel_outline_tags_and_contours(scratch, &point_tags, &num_points,
+                                        &contour_ends, &num_contours) == SOFEL_OK);
+  CHECK(num_points > 0 && num_contours > 0 && contour_ends[num_contours - 1] == num_points - 1);
+  CHECK(sofel_outline_tags_and_contours(NULL, &point_tags, &num_points,
+                                        &contour_ends, &num_contours) == SOFEL_ERROR_NULL);
+
   /* An offset and a multiplier. */
   CHECK(sofel_outline_load(font, NULL, 1, SOFEL_SCALE_FIXED, scale_cases[0].x_scale,
                            scale_cases[0].y_scale, scratch, cbox, &overlap) == SOFEL_OK);

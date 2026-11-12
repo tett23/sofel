@@ -244,6 +244,7 @@ struct HintPoint {
     original: [i64; 2],
     current: [i64; 2],
     touched: [bool; 2],
+    on_curve: bool,
 }
 
 #[allow(clippy::arithmetic_side_effects)]
@@ -395,6 +396,7 @@ impl Interpreter {
     pub(super) fn hint_composite(
         &self,
         outline: &mut [super::Point],
+        tags: &mut [u8],
         phantoms: &mut [super::Point; 4],
         ends: &[usize],
         code: &[u8],
@@ -404,13 +406,23 @@ impl Interpreter {
         composite.composite = true;
         let originals: alloc::vec::Vec<_> =
             outline.iter().chain(phantoms.iter()).copied().collect();
-        composite.hint_outline(originals.into_iter(), outline, phantoms, ends, code, limit)
+        composite.hint_outline(
+            originals.into_iter(),
+            outline,
+            tags,
+            phantoms,
+            ends,
+            code,
+            limit,
+        )
     }
 
+    #[allow(clippy::too_many_arguments)] // Parallel point and tag buffers share the glyph zone.
     pub(super) fn hint_outline(
         &self,
         unscaled: impl Iterator<Item = super::Point>,
         outline: &mut [super::Point],
+        tags: &mut [u8],
         phantoms: &mut [super::Point; 4],
         ends: &[usize],
         code: &[u8],
@@ -418,19 +430,32 @@ impl Interpreter {
     ) -> Result<(), super::OutlineError> {
         let points = unscaled
             .zip(outline.iter().chain(phantoms.iter()))
-            .map(|(raw, p)| {
+            .enumerate()
+            .map(|(i, (raw, p))| {
                 let scaled = [i64::from(p.x), i64::from(p.y)];
                 HintPoint {
                     unscaled: [i64::from(raw.x), i64::from(raw.y)],
                     original: scaled,
                     current: scaled,
                     touched: [false; 2],
+                    on_curve: tags.get(i).is_some_and(|tag| tag & 1 != 0),
                 }
             })
             .collect();
-        let result = self
+        let (result, scan_type) = self
             .execute_glyph(points, ends, code, limit)
             .map_err(|_| super::OutlineError::InvalidOutline)?;
+        for (point, tag) in result.iter().zip(tags.iter_mut()) {
+            *tag = (*tag & !0x19)
+                | u8::from(point.on_curve)
+                | (u8::from(point.touched[0]) << 3)
+                | (u8::from(point.touched[1]) << 4);
+        }
+        if !code.is_empty()
+            && let Some(tag) = tags.first_mut()
+        {
+            *tag |= ((scan_type as u8) << 5) | 4;
+        }
         for (point, out) in result
             .iter()
             .zip(outline.iter_mut().chain(phantoms.iter_mut()))
@@ -520,7 +545,7 @@ impl Interpreter {
         contour_ends: &[usize],
         program: &[u8],
         max_stack: usize,
-    ) -> Result<alloc::vec::Vec<HintPoint>, Error> {
+    ) -> Result<(alloc::vec::Vec<HintPoint>, u16), Error> {
         let mut glyph = self.clone();
         if self.instruction_control & 2 != 0 {
             glyph.minimum_distance = 64;
@@ -549,7 +574,7 @@ impl Interpreter {
         glyph.loop_count = 1;
         glyph.rounding = Rounding::Grid;
         glyph.execute(program, &mut alloc::vec::Vec::new(), max_stack)?;
-        Ok(core::mem::take(&mut glyph.points[1]))
+        Ok((core::mem::take(&mut glyph.points[1]), glyph.scan_type))
     }
 
     fn move_relative(&mut self, op: u8, index: u16, cvt: Option<i64>) {
@@ -993,6 +1018,30 @@ impl Interpreter {
                     }
                 }
                 0x1a => self.minimum_distance = stack.pop().ok_or(Error::StackUnderflow)?,
+                0x80 => {
+                    let count = usize::from(core::mem::replace(&mut self.loop_count, 1));
+                    let Some(first) = stack.len().checked_sub(count) else {
+                        continue;
+                    };
+                    *remaining = remaining.checked_sub(count).ok_or(Error::ExecutionLimit)?;
+                    for index in stack.drain(first..).rev() {
+                        if let Some(point) = self.points[1].get_mut(usize::from(index as u16)) {
+                            point.on_curve = !point.on_curve;
+                        }
+                    }
+                }
+                op @ (0x81 | 0x82) => {
+                    let last = usize::from(stack.pop().ok_or(Error::StackUnderflow)? as u16);
+                    let first = usize::from(stack.pop().ok_or(Error::StackUnderflow)? as u16);
+                    if let Some(range) = self.points[1].get_mut(first..=last) {
+                        *remaining = remaining
+                            .checked_sub(range.len())
+                            .ok_or(Error::ExecutionLimit)?;
+                        for point in range {
+                            point.on_curve = op == 0x81;
+                        }
+                    }
+                }
                 0x4d => self.auto_flip = true,
                 0x4e => self.auto_flip = false,
                 op @ 0xc0..=0xff => {
@@ -1676,7 +1725,7 @@ fn adr0064_i1_glyph_starts_with_default_vectors_but_keeps_prepared_cvt() {
     )
     .unwrap();
     let points = alloc::vec![HintPoint::default()];
-    let result = vm
+    let (result, _) = vm
         .execute_glyph(points, &[], &[0xb1, 0, 0, 0x3f, 0xb1, 0, 17, 0x44], 2)
         .unwrap();
     assert_eq!(result[0].current, [64, 0]);
@@ -1721,8 +1770,9 @@ fn adr0064_i1_iup_wraps_each_contour_and_excludes_phantoms() {
         unscaled: [x, 0],
         current: [c, 0],
         touched: [t, false],
+        ..Default::default()
     });
-    let out = vm
+    let (out, _) = vm
         .execute_glyph(points.to_vec(), &[4, 6], &[0x31], 0)
         .unwrap();
     assert_eq!(
@@ -1737,7 +1787,7 @@ fn adr0064_i1_iup_wraps_each_contour_and_excludes_phantoms() {
 fn adr0064_i1_rounds_phantom_coordinates_before_glyph_program() {
     let vm = Interpreter::new(0, &[], 65536);
     let points = alloc::vec![HintPoint{current:[95,-33],original:[95,-33],..Default::default()};5];
-    let result = vm.execute_glyph(points, &[0], &[], 0).unwrap();
+    let (result, _) = vm.execute_glyph(points, &[0], &[], 0).unwrap();
     assert_eq!(
         result
             .iter()

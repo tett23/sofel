@@ -631,6 +631,16 @@ impl Scratch {
         &self.points
     }
 
+    /// FreeType point tags in the same order as [`Self::points`].
+    pub fn point_tags(&self) -> &[u8] {
+        &self.tags
+    }
+
+    /// Inclusive final point index of each loaded contour.
+    pub fn contour_ends(&self) -> &[usize] {
+        &self.ends
+    }
+
     /// Apply FreeType's `FT_GlyphSlot_Oblique` to the loaded outline.
     /// The slot advance and metrics are unchanged.
     pub fn oblique_slot(&mut self) -> CBox {
@@ -914,6 +924,7 @@ fn load_simple(
         vm.hint_outline(
             raw.chain(raw_phantoms),
             &mut s.points[base..],
+            &mut s.tags[base..],
             &mut s.phantoms,
             &s.ends[contour_base..]
                 .iter()
@@ -1057,6 +1068,7 @@ fn load_composite(
                 .collect();
             vm.hint_composite(
                 &mut s.points[start_point..],
+                &mut s.tags[start_point..],
                 &mut s.phantoms,
                 &ends,
                 code,

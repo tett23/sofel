@@ -16,9 +16,9 @@ fn adr0064_i1_native_v35_load_targets_match_freetype() {
         HintTarget::VerticalLcd,
     ] {
         let expected = if target == HintTarget::Mono {
-            0x0669_0115_d204_3f9e
+            0x67c3_ef45_e494_26a6
         } else {
-            0xe97b_de6f_9327_90bc
+            0xd38e_020e_b16e_6420
         };
         check_target("Roboto-Regular.abc.ttf", 1..4, expected, target);
     }
@@ -26,12 +26,12 @@ fn adr0064_i1_native_v35_load_targets_match_freetype() {
 
 #[test]
 fn adr0064_i1_roboto_mono_points_match_freetype() {
-    check_glyphs("Roboto-Regular.abc.ttf", 1..4, 0x0669_0115_d204_3f9e);
+    check_glyphs("Roboto-Regular.abc.ttf", 1..4, 0x67c3_ef45_e494_26a6);
 }
 
 #[test]
 fn adr0064_i1_composite_mono_points_match_freetype() {
-    check_glyphs("Roboto-Regular.abcAE.ttf", 7..8, 0xdcd1cf4ee1a62177);
+    check_glyphs("Roboto-Regular.abcAE.ttf", 7..8, 0xce92_1611_1d00_726f);
 }
 
 fn check_glyphs(name: &str, glyphs: core::ops::Range<u32>, expected: u64) {
@@ -54,8 +54,8 @@ fn check_target(name: &str, glyphs: core::ops::Range<u32>, expected: u64, target
     let font = Font::new(&data, 0).unwrap();
     let outlines = Outlines::new(font.default_instance());
     let mut scratch = Scratch::default();
-    // FNV-1a of the size, glyph ID, point count, then interleaved x/y
-    // coordinates from FT_Load_Glyph, all encoded as little-endian i32.
+    // FNV-1a of the size, glyph ID, point count, then x/y/tag
+    // for each point and count/end indices for the contours (little-endian i32).
     let mut hash = 0xcbf2_9ce4_8422_2325u64;
     let mut add = |v: i32| {
         for byte in v.to_le_bytes() {
@@ -71,9 +71,15 @@ fn check_target(name: &str, glyphs: core::ops::Range<u32>, expected: u64, target
             add(i32::from(ppem));
             add(i32::try_from(glyph).unwrap());
             add(i32::try_from(scratch.points().len()).unwrap());
-            for point in scratch.points() {
+            assert_eq!(scratch.point_tags().len(), scratch.points().len());
+            for (point, &tag) in scratch.points().iter().zip(scratch.point_tags()) {
                 add(point.x);
                 add(point.y);
+                add(i32::from(tag));
+            }
+            add(i32::try_from(scratch.contour_ends().len()).unwrap());
+            for &end in scratch.contour_ends() {
+                add(i32::try_from(end).unwrap());
             }
         }
     }

@@ -2390,6 +2390,40 @@ pub extern "C" fn sofel_outline_scratch_create() -> *mut SofelOutlineScratch {
     }))
 }
 
+/// Borrows the point tags and inclusive contour ends of the last loaded outline.
+///
+/// # Safety
+///
+/// `scratch` is NULL or a live work area. Output pointers are NULL or distinct
+/// writable locations. The returned arrays are valid until the next mutation
+/// or destruction of `scratch`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_outline_tags_and_contours(
+    scratch: *const SofelOutlineScratch,
+    tags: *mut *const u8,
+    num_points: *mut usize,
+    ends: *mut *const usize,
+    num_contours: *mut usize,
+) -> i32 {
+    // SAFETY: each pointer satisfies the caller's conditions.
+    let (scratch, tags, num_points, ends, num_contours) =
+        unsafe { (r(scratch), w(tags), w(num_points), w(ends), w(num_contours)) };
+    status((|| {
+        let scratch = &some(scratch)?.scratch;
+        let (tags, num_points, ends, num_contours) = (
+            some(tags)?,
+            some(num_points)?,
+            some(ends)?,
+            some(num_contours)?,
+        );
+        let point_tags = scratch.point_tags();
+        let contour_ends = scratch.contour_ends();
+        (*tags, *num_points) = (point_tags.as_ptr(), point_tags.len());
+        (*ends, *num_contours) = (contour_ends.as_ptr(), contour_ends.len());
+        Ok(())
+    })())
+}
+
 /// `sofel_outline_scratch_destroy`.
 ///
 /// # Safety
