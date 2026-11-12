@@ -66,10 +66,15 @@
 extern crate alloc;
 
 mod hb_cff;
+mod hb_draw;
+mod slot_synth;
+mod varc_draw;
 
 pub use sofel_font as font;
 
 pub use hb_cff::{HbExtents, cff1_extents, cff2_extents, cff2_extents_at};
+pub use hb_draw::HbOutlineCommand;
+pub use slot_synth::SlotMetrics;
 
 use alloc::vec::Vec;
 use core::fmt;
@@ -390,10 +395,29 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
 
     /// HarfBuzz's glyph box of `glyph`, unscaled
     /// (`hb_ot_get_glyph_extents` without color and bitmap glyphs, in the
-    /// order VARC (none yet), glyf, CFF2, CFF; ADR 0021). It comes from
+    /// order VARC (component-only records), glyf, CFF2, CFF; ADR 0021 and
+    /// sofel ADR 0067). It comes from
     /// HarfBuzz's own interpreter and may differ from the control box of
     /// [`Outlines::draw`], which follows FreeType.
     pub fn glyph_extents(&self, glyph: GlyphId) -> Option<sofel_font::GlyphExtents> {
+        if let Some(varc) = self
+            .font
+            .table(Tag::new(b"VARC"))
+            .and_then(|data| sofel_font::read::varc::Varc::new(data).ok())
+            && varc.record(glyph).is_some()
+        {
+            let mut scratch = Scratch::default();
+            let mut pen = sofel_geom::FnPen(|_: sofel_geom::Command| {});
+            let info = varc_draw::draw(self, &varc, glyph, Scale::Unscaled, &mut scratch, &mut pen)
+                .ok()?;
+            let b = info.cbox;
+            return Some(sofel_font::GlyphExtents {
+                x_bearing: b.x_min,
+                y_bearing: b.y_max,
+                width: b.x_max.saturating_sub(b.x_min),
+                height: b.y_min.saturating_sub(b.y_max),
+            });
+        }
         self.extents.glyph_extents(glyph)
     }
 
@@ -431,6 +455,14 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
         scratch: &mut Scratch,
         pen: &mut impl Pen,
     ) -> Result<OutlineInfo, OutlineError> {
+        if let Some(varc) = self
+            .font
+            .table(Tag::new(b"VARC"))
+            .and_then(|data| sofel_font::read::varc::Varc::new(data).ok())
+            && varc.record(glyph).is_some()
+        {
+            return varc_draw::draw(self, &varc, glyph, scale, scratch, pen);
+        }
         let info = self.load(glyph, scale, scratch)?;
         scratch.decompose(Point::default(), 1, pen)?;
         Ok(info)
@@ -535,6 +567,31 @@ fn load_glyf(
 }
 
 impl Scratch {
+    /// The points of the last loaded outline, including slot synthesis.
+    pub fn points(&self) -> &[Point] {
+        &self.points
+    }
+
+    /// Apply FreeType's `FT_GlyphSlot_Oblique` to the loaded outline.
+    /// The slot advance and metrics are unchanged.
+    pub fn oblique_slot(&mut self) -> CBox {
+        self.slant_slot(Fixed(0x0366A), Fixed(0))
+    }
+
+    /// Apply FreeType's `FT_GlyphSlot_Slant` 16.16 shear factors.
+    /// The slot advance and metrics are unchanged.
+    pub fn slant_slot(&mut self, xslant: Fixed, yslant: Fixed) -> CBox {
+        let matrix = Matrix {
+            xx: Fixed::ONE,
+            xy: xslant,
+            yx: Fixed(yslant.0.wrapping_neg()),
+            yy: Fixed::ONE,
+        };
+        for point in &mut self.points {
+            *point = transform(*point, &matrix);
+        }
+        control_box(&self.points)
+    }
     fn clear(&mut self) {
         self.points.clear();
         self.tags.clear();

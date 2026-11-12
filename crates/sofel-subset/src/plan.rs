@@ -6,11 +6,12 @@ use alloc::vec::Vec;
 
 use sofel_font::Font;
 use sofel_font::read::Tag;
+use sofel_font::read::varc::Varc;
 
 use crate::bits::BitSet;
 use crate::cmap_accel::CmapAccel;
 use crate::error::SubsetError;
-use crate::input::{Flags, Input, SetKind};
+use crate::input::{AxisRange, Flags, Input, SetKind};
 use crate::instance::{self, VarPlan};
 use crate::layout::{self, Gsubgpos, LayoutPlan};
 use crate::limits;
@@ -120,6 +121,8 @@ pub struct Plan {
     pub(crate) glyphset_cmaped: RangeSet,
     /// The glyphs after the MATH closure (`_glyphset_mathed`).
     pub(crate) glyphset_mathed: RangeSet,
+    /// Glyphs after recursive VARC component closure.
+    pub(crate) glyphset_varced: RangeSet,
     pub(crate) color: ColorPlan,
     /// The preprocessed data the plan was made with (`accelerator`).
     pub(crate) prepared: Option<Prepared>,
@@ -185,10 +188,15 @@ fn layout_unsupported(
         let tag = Tag::new(t);
         font.table(tag).is_some() && !drop.contains(tag.to_u32())
     };
-    let gsub_feature_variations_retained = retained(b"GSUB")
+    let gsub_may_reference_store = retained(b"GSUB")
         && font.table(Tag::new(b"GSUB")).is_some_and(|d| {
-            sofel_font::read::be::u32_at(d, 0).unwrap_or(0) >= 0x0001_0001
+            let table = layout::Gsubgpos::new(d, true);
+            // The GSUB writer only emits format-1 axis ranges, which never
+            // reference GDEF. A copied GSUB bypasses that writer.
+            table.version() >= 0x0001_0001
                 && sofel_font::read::be::u32_at(d, 10) != Some(0)
+                && (no_subset.contains(Tag::new(b"GSUB").to_u32())
+                    || table.feature_variations_view().is_none())
         });
     // A VariationIndex Device necessarily contains the format word 0x8000.
     // Scan the whole retained table so an unknown or malformed subtable
@@ -208,19 +216,22 @@ fn layout_unsupported(
     if !pinned
         && kept(b"GDEF").is_some_and(layout::gdef::has_var_store)
         && (copied_gpos_may_reference_store
-            || math_may_reference_store
-            || gsub_feature_variations_retained)
+            || (math_may_reference_store
+                && no_subset.contains(Tag::new(b"MATH").to_u32())
+                && !no_subset.contains(Tag::new(b"GDEF").to_u32()))
+            || gsub_may_reference_store)
     {
         return Err(SubsetError::Unsupported {
             tag: Tag::new(b"GDEF"),
             reason: "the GDEF item variation store (ADR 0022 stage 10)",
         });
     }
-    // A copied MATH table needs no remapping even when GDEF is dropped.
+    // A copied MATH table needs no remapping when GDEF is also copied or dropped.
     let math_subset = retained(b"MATH") && !no_subset.contains(Tag::new(b"MATH").to_u32());
     if !pinned
         && math_subset
         && math_may_reference_store
+        && no_subset.contains(Tag::new(b"GDEF").to_u32())
         && font
             .table(Tag::new(b"GDEF"))
             .is_some_and(layout::gdef::has_var_store)
@@ -288,10 +299,25 @@ impl Plan {
                     reason: "pinning the axes of avar version 2 (deferred by ADR 0022)",
                 });
             }
-            if !(norm.all_axes_pinned && norm.pinned_at_default) {
+            let no_variation_data = ![
+                b"gvar", b"GVAR", b"HVAR", b"VVAR", b"MVAR", b"cvar", b"CFF2", b"GDEF", b"GSUB",
+                b"GPOS", b"BASE", b"MATH", b"COLR", b"VARC", b"STAT",
+            ]
+            .iter()
+            .any(|tag| font.table(Tag::new(tag)).is_some());
+            let simple_avar = font.table(Tag::new(b"avar")).is_none_or(|data| {
+                sofel_font::read::avar::Avar::new(data)
+                    .is_ok_and(|table| table.major_version() == 1 && norm.pinned_at_default)
+                    && norm
+                        .user
+                        .values()
+                        .all(|range| range.min == range.default && range.default == range.max)
+            });
+            let metadata_only = no_variation_data && simple_avar;
+            if !(norm.all_axes_pinned && norm.pinned_at_default) && !metadata_only {
                 return Err(SubsetError::Unsupported {
                     tag: Tag::new(b"fvar"),
-                    reason: "instancing other than pinning every axis to its default (deferred by ADR 0022)",
+                    reason: "instancing variation data needs ADR 0061",
                 });
             }
         }
@@ -309,6 +335,11 @@ impl Plan {
             let passthrough = no_subset.contains(t.to_u32());
             let dropped = drop.contains(t.to_u32()) || (pinned && PINNED_DROP.contains(&tag));
             if font.table(t).is_some() && !dropped && !passthrough {
+                if tag == b"VARC" && norm.user.is_empty() {
+                    let source = font.table(t).unwrap_or(&[]);
+                    Varc::new(source).map_err(|_| SubsetError::Malformed { tag: t })?;
+                    continue;
+                }
                 return Err(SubsetError::Unsupported { tag: t, reason });
             }
         }
@@ -348,6 +379,7 @@ impl Plan {
             },
             glyphset_cmaped: RangeSet::new(),
             glyphset_mathed: RangeSet::new(),
+            glyphset_varced: RangeSet::new(),
             color: ColorPlan::default(),
             prepared: prepared.cloned(),
         };
@@ -431,6 +463,31 @@ impl Plan {
             )?;
         }
         p.color.glyphset_colred = cur.clone();
+        if tag_kept(b"VARC")
+            && let Some(data) = font.table(Tag::new(b"VARC"))
+        {
+            let varc = Varc::new(data).map_err(|_| SubsetError::Malformed {
+                tag: Tag::new(b"VARC"),
+            })?;
+            let mut pending: Vec<u32> = cur.iter().collect();
+            let mut next = 0usize;
+            while let Some(&glyph) = pending.get(next) {
+                next = next.saturating_add(1);
+                if let Some(components) = varc.components(sofel_font::read::GlyphId(glyph)) {
+                    for component in components {
+                        let component = component.ok_or(SubsetError::Malformed {
+                            tag: Tag::new(b"VARC"),
+                        })?;
+                        let child = component.glyph.0;
+                        if !cur.contains(child) {
+                            cur.add(child);
+                            pending.push(child);
+                        }
+                    }
+                }
+            }
+        }
+        p.glyphset_varced = cur.clone();
         // _nameid_closure
         if tag_kept(b"STAT") {
             stat_name_ids(
@@ -442,6 +499,7 @@ impl Plan {
         if !pinned {
             fvar_name_ids(
                 font.table(Tag::new(b"fvar")).unwrap_or(&[]),
+                p.var.user(),
                 &mut p.name_ids,
             );
         }
@@ -565,10 +623,16 @@ impl Plan {
             let gpos_has_var_format = tag_kept(b"GPOS")
                 && !no_subset.contains(Tag::new(b"GPOS").to_u32())
                 && gpos_data.windows(2).any(|word| word == [0x80, 0x00]);
-            if !pinned && layout::gdef::has_var_store(gdef) && (!copied_gdef || gpos_has_var_format)
+            let math_data = font.table(Tag::new(b"MATH")).unwrap_or(&[]);
+            let math_has_var_format = tag_kept(b"MATH")
+                && !no_subset.contains(Tag::new(b"MATH").to_u32())
+                && math_data.windows(2).any(|word| word == [0x80, 0x00]);
+            if !pinned
+                && layout::gdef::has_var_store(gdef)
+                && (!copied_gdef || gpos_has_var_format || math_has_var_format)
             {
-                let gpos_indices = if gpos_has_var_format {
-                    layout::gpos::retained_pair_variation_indices(
+                let mut indices = if gpos_has_var_format {
+                    layout::gpos::retained_variation_indices(
                         gpos_data,
                         &p.layout.gpos,
                         &p.layout.glyphset_gsub,
@@ -577,16 +641,29 @@ impl Plan {
                 } else {
                     Some(BTreeSet::new())
                 };
-                let Some(indices) = gpos_indices else {
+                let Some(ref mut selected) = indices else {
                     return Err(SubsetError::Unsupported {
                         tag: Tag::new(b"GDEF"),
                         reason: "the GDEF item variation store (ADR 0022 stage 10)",
                     });
                 };
+                if math_has_var_format {
+                    let Some(math_indices) = crate::tables::math::retained_variation_indices(
+                        math_data,
+                        &p.glyphset_mathed,
+                        &p.glyphset_cmaped,
+                    ) else {
+                        return Err(SubsetError::Unsupported {
+                            tag: Tag::new(b"GDEF"),
+                            reason: "unsupported MATH VariationIndex (ADR 0022 stage 10)",
+                        });
+                    };
+                    selected.extend(math_indices);
+                }
                 let Some((items, map)) = layout::gdef::retained_variation_indices(
                     gdef,
                     &p.layout.glyphset_gsub,
-                    &indices,
+                    selected,
                 ) else {
                     return Err(SubsetError::Unsupported {
                         tag: Tag::new(b"GDEF"),
@@ -717,32 +794,29 @@ fn stat_name_ids(stat: &[u8], user: &BTreeMap<Tag, crate::input::AxisRange>, nam
     names.add(u32::from(stat.elided_fallback_name_id()));
 }
 
-/// `fvar::collect_name_ids` without axis limits: the axes' names and
-/// the instances' subfamily and PostScript names.
-fn fvar_name_ids(fvar: &[u8], names: &mut RangeSet) {
-    let d = layout::data::D(fvar);
-    let axis_count = usize::from(d.u16(8));
-    let instance_size = usize::from(d.u16(14));
-    let ok = fvar.len() >= 16
-        && d.u16(0) == 1
-        && d.u16(10) == 20
-        && instance_size >= axis_count.saturating_mul(4).saturating_add(4);
-    if !ok {
+/// `fvar::collect_name_ids` for the axes and named instances that remain.
+fn fvar_name_ids(fvar: &[u8], user: &BTreeMap<Tag, AxisRange>, names: &mut RangeSet) {
+    let Ok(fvar) = sofel_font::read::fvar::Fvar::new(fvar) else {
         return;
+    };
+    for axis in fvar.axes() {
+        let pinned = user
+            .get(&axis.tag)
+            .is_some_and(|range| range.min == range.default && range.default == range.max);
+        if !pinned {
+            names.add(u32::from(axis.name_id));
+        }
     }
-    let axes = d.follow(u32::from(d.u16(4)));
-    for i in 0..axis_count {
-        names.add(u32::from(axes.u16(i.saturating_mul(20).saturating_add(18))));
-    }
-    let instances = axes.at(axis_count.saturating_mul(20));
-    for i in 0..usize::from(d.u16(12)) {
-        let inst = instances.at(i.saturating_mul(instance_size));
-        names.add(u32::from(inst.u16(0)));
-        if instance_size >= axis_count.saturating_mul(4).saturating_add(6) {
-            let ps = inst.u16(axis_count.saturating_mul(4).saturating_add(4));
-            if ps != 0xFFFF {
-                names.add(u32::from(ps));
-            }
+    for index in 0..fvar.instance_count() {
+        if !crate::instance::fvar_instance_kept(&fvar, index, user) {
+            continue;
+        }
+        let Some(instance) = fvar.instance(index) else {
+            continue;
+        };
+        names.add(u32::from(instance.subfamily_name_id));
+        if let Some(postscript) = instance.postscript_name_id.filter(|id| *id != 0xFFFF) {
+            names.add(u32::from(postscript));
         }
     }
 }

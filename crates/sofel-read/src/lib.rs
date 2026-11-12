@@ -77,6 +77,7 @@ pub mod svg;
 pub mod trak;
 mod types;
 pub mod validate;
+pub mod varc;
 pub mod vhea;
 pub mod vmtx;
 pub mod vorg;

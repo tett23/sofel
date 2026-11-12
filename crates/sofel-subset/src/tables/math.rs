@@ -5,6 +5,7 @@
 //! offset to a table that does not fit reads as null (HarfBuzz neuters
 //! it), and a table whose header does not sanitize fails the subset.
 
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use sofel_font::Font;
@@ -17,6 +18,127 @@ use crate::layout::common::Sub;
 use crate::layout::data::{Cov, D, n16};
 use crate::plan::Plan;
 use crate::set::{INVALID, RangeSet};
+
+fn collect_variation_index(
+    src: &[u8],
+    dev: D<'_>,
+    keep: bool,
+    formats: &mut BTreeSet<usize>,
+    indices: &mut BTreeSet<u32>,
+) -> Option<()> {
+    if dev.is_null() || dev.u16(4) != 0x8000 {
+        return Some(());
+    }
+    let at = src.len().checked_sub(dev.0.len())?.checked_add(4)?;
+    formats.insert(at);
+    if keep {
+        indices.insert((u32::from(dev.u16(0)) << 16) | u32::from(dev.u16(2)));
+    }
+    Some(())
+}
+
+/// VariationIndex references in MathConstants, retained glyph values and
+/// MathKern records, and retained MathVariants assemblies.
+pub(crate) fn retained_variation_indices(
+    src: &[u8],
+    glyphs: &RangeSet,
+    cmap_glyphs: &RangeSet,
+) -> Option<BTreeSet<u32>> {
+    let m = header(src)?;
+    let k = constants(m.off16(4));
+    let mut formats = BTreeSet::new();
+    let mut indices = BTreeSet::new();
+    for i in 0..51usize {
+        let record = i.saturating_mul(4).saturating_add(8);
+        collect_variation_index(
+            src,
+            device(k.off16(record.saturating_add(2))),
+            true,
+            &mut formats,
+            &mut indices,
+        )?;
+    }
+    let gi = glyph_info(m.off16(6));
+    for offset in [0, 2] {
+        let table = value_table(gi.off16(offset));
+        for (i, glyph) in coverage(table.off16(0))
+            .glyphs()
+            .into_iter()
+            .take(usize::from(table.u16(2)))
+            .enumerate()
+        {
+            let record = i.saturating_mul(4).saturating_add(4);
+            collect_variation_index(
+                src,
+                device(table.off16(record.saturating_add(2))),
+                glyphs.contains(glyph),
+                &mut formats,
+                &mut indices,
+            )?;
+        }
+    }
+    let ki = kern_info(gi.off16(6));
+    let mut visited_kerns = BTreeSet::new();
+    for (i, glyph) in coverage(ki.off16(0))
+        .glyphs()
+        .into_iter()
+        .take(usize::from(ki.u16(2)))
+        .enumerate()
+    {
+        let keep = glyphs.contains(glyph);
+        let record = i.saturating_mul(8).saturating_add(4);
+        for corner in 0..4usize {
+            let k = kern(ki.off16(record.saturating_add(corner.saturating_mul(2))));
+            if k.is_null() {
+                continue;
+            }
+            let at = src.len().checked_sub(k.0.len())?;
+            if !visited_kerns.insert((at, keep)) {
+                continue;
+            }
+            let records = usize::from(k.u16(0)).saturating_mul(2).saturating_add(1);
+            for j in 0..records {
+                collect_variation_index(
+                    src,
+                    device(k.off16(j.saturating_mul(4).saturating_add(4))),
+                    keep,
+                    &mut formats,
+                    &mut indices,
+                )?;
+            }
+        }
+    }
+    let v = variants(m.off16(8));
+    let vert = usize::from(v.u16(6));
+    let horiz = usize::from(v.u16(8));
+    for (coverage_at, first, count) in [(2, 0, vert), (4, vert, horiz)] {
+        for (i, glyph) in coverage(v.off16(coverage_at))
+            .glyphs()
+            .into_iter()
+            .take(count)
+            .enumerate()
+        {
+            let at = first.saturating_add(i).saturating_mul(2).saturating_add(10);
+            let c = construction(v.off16(at));
+            let a = assembly(c.off16(0));
+            collect_variation_index(
+                src,
+                device(a.off16(2)),
+                cmap_glyphs.contains(glyph),
+                &mut formats,
+                &mut indices,
+            )?;
+        }
+    }
+    if src
+        .windows(2)
+        .enumerate()
+        .any(|(at, word)| word == [0x80, 0x00] && !formats.contains(&at))
+    {
+        return None;
+    }
+    Some(indices)
+}
 
 /// `d`, or the Null table when it has fewer than `n` bytes.
 fn sized(d: D<'_>, n: usize) -> D<'_> {
@@ -154,9 +276,19 @@ fn map(s: &Sub<'_, '_>, g: u32) -> u32 {
     s.p.glyphs.new_gid(g).unwrap_or(INVALID)
 }
 
-/// `Device::copy` without a variation map: hinting devices are copied,
-/// variation devices are dropped.
+/// `Device::copy`: keep hinting devices and remap retained VariationIndex
+/// devices through the GDEF store's subset map.
 fn device_copy(s: &mut Sub<'_, '_>, dev: D<'_>) -> bool {
+    if dev.u16(4) == 0x8000 {
+        let old = (u32::from(dev.u16(0)) << 16) | u32::from(dev.u16(2));
+        if let Some(&new) = s.p.layout.gdef_var_map.get(&old) {
+            s.s.u16((new >> 16) as u16);
+            s.s.u16(u16::try_from(new & 0xffff).unwrap_or_default());
+            s.s.u16(0x8000);
+            return true;
+        }
+        return false;
+    }
     if !matches!(dev.u16(4), 1..=3) {
         return false;
     }

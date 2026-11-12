@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8">
+  <g id="glyph1" fill="red"><rect x="1" y="1" width="4" height="4"/></g>
+  <g id="glyph2" fill="red"><rect x="1" y="1" width="4" height="4" fill="blue"/></g>
+  <rect id="glyph3" x="1" y="1" width="4" height="4" fill="context-fill"/>
+  <g id="glyph4">
+    <rect x="1" y="1" width="4" height="4" fill="red"/>
+    <rect x="2" y="2" width="4" height="4" fill="blue" fill-opacity="0.5"/>
+  </g>
+  <g id="glyph5">
+    <rect x="2" y="2" width="4" height="4" fill="blue" fill-opacity="0.5"/>
+    <rect x="1" y="1" width="4" height="4" fill="red"/>
+  </g>
+</svg>

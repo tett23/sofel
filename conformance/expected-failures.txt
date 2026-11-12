@@ -46,6 +46,4 @@ in-house/kbts.tests:9@kbts  # out-of-scope:kbts
 in-house/kbts.tests:10@kbts  # out-of-scope:kbts
 in-house/kbts.tests:11@kbts  # out-of-scope:kbts
 in-house/kbts.tests:12@kbts  # out-of-scope:kbts
-in-house/synthetic.tests:2  # synthetic
-in-house/synthetic.tests:3  # synthetic
 in-house/uniscribe.tests:2@uniscribe  # out-of-scope:uniscribe

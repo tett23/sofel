@@ -672,6 +672,10 @@ static void test_raster(const sofel_font_t *font) {
     check_bitmap(s, c, buf, len, box);
   }
   draw_shape(r);
+  CHECK(sofel_rasterizer_render_harmony(r, 0, 2, 0, 0, buf, sizeof buf, &len, box) ==
+        SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_rasterizer_render_harmony(NULL, 0, SOFEL_LCD_VERTICAL, 0, 0, buf, sizeof buf, &len, box) ==
+        SOFEL_ERROR_NULL);
   CHECK(sofel_rasterizer_render(r, 2, 0, 0, 0, buf, sizeof buf, &len, box) ==
         SOFEL_ERROR_INVALID_ARGUMENT);
   CHECK(sofel_rasterizer_render(NULL, 0, 0, 0, 0, buf, sizeof buf, &len, box) ==
@@ -1390,6 +1394,19 @@ static void test_color(void) {
   uint32_t idx, range[2];
 
   CHECK(error == SOFEL_OK);
+  {
+    uint8_t page[1024];
+    size_t n = 0;
+    uint32_t format;
+    for (format = SOFEL_VECTOR_SVG; format <= SOFEL_VECTOR_PDF; format++) {
+      CHECK(sofel_vector_page(font, NULL, format, 0, 0, 20, 30, &fg, NULL, 0, NULL, 0, &n) ==
+            SOFEL_ERROR_BUFFER_TOO_SMALL);
+      CHECK(n > 4 && n <= sizeof(page));
+      CHECK(sofel_vector_page(font, NULL, format, 0, 0, 20, 30, &fg, NULL, 0, page, sizeof(page), &n) ==
+            SOFEL_OK);
+      CHECK(memcmp(page, format == SOFEL_VECTOR_SVG ? "<svg" : "%PDF", 4) == 0);
+    }
+  }
   for (i = 0; i < COUNT(paint_cases); i++) {
     sofel_paint_commands_t cmds;
     int32_t painted = sofel_paint_glyph(font, NULL, paint_cases[i].glyph, paint_cases[i].palette, NULL, 0,
