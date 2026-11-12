@@ -1,6 +1,8 @@
 //! A single PDF page containing positioned, solid-filled outlines.
+mod paint;
 use alloc::{format, string::String, vec::Vec};
 use core::fmt::Write as _;
+pub use paint::PdfPainter;
 use sofel_geom::{Color, CompositeMode, Pen, Point, PointF, Transform};
 
 /// A PDF page in y-up user space. Text is drawn as paths.
@@ -8,6 +10,8 @@ pub struct PdfPage {
     bounds: [i64; 4],
     stream: String,
     images: Vec<PdfImage>,
+    shadings: Vec<String>,
+    soft_masks: Vec<String>,
     states: Vec<(&'static str, u8)>,
 }
 
@@ -52,6 +56,8 @@ impl PdfPage {
             bounds,
             stream: String::new(),
             states: Vec::new(),
+            shadings: Vec::new(),
+            soft_masks: Vec::new(),
             images: Vec::new(),
         };
         if let Some(color) = background {
@@ -156,13 +162,26 @@ impl PdfPage {
                 "/GS{i} << /Type /ExtGState /BM /{mode} /ca {alpha} >> "
             );
         }
+        for i in 0..self.soft_masks.len() {
+            let object_id = i.saturating_add(5);
+            let _ = write!(
+                states,
+                "/Mask{i} << /Type /ExtGState /SMask << /Type /Mask /S /Luminosity /G {object_id} 0 R >> >> "
+            );
+        }
         let mut images = String::new();
         for i in 0..self.images.len() {
             let _ = write!(
                 images,
                 "/Im{i} {} 0 R ",
-                i.saturating_mul(2).saturating_add(6)
+                i.saturating_mul(2)
+                    .saturating_add(6)
+                    .saturating_add(self.soft_masks.len())
             );
+        }
+        let mut shadings = String::new();
+        for (i, shading) in self.shadings.iter().enumerate() {
+            let _ = writeln!(shadings, "/SH{i} {shading}");
         }
         let mut offsets = Vec::new();
         let mut object = |content: &str| {
@@ -172,13 +191,16 @@ impl PdfPage {
         object("<< /Type /Catalog /Pages 2 0 R >>");
         object("<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
         object(&format!(
-            "<< /Type /Page /Parent 2 0 R /MediaBox [{x0} {y0} {x1} {y1}] /Resources << /ExtGState << {states}>> /XObject << {images}>> >> /Contents 4 0 R >>"
+            "<< /Type /Page /Parent 2 0 R /MediaBox [{x0} {y0} {x1} {y1}] /Resources << /ExtGState << {states}>> /XObject << {images}>> /Shading << {shadings}>> >> /Contents 4 0 R >>"
         ));
         object(&format!(
             "<< /Length {} >>\nstream\n{}endstream",
             self.stream.len(),
             self.stream
         ));
+        for form in self.soft_masks {
+            object(&form);
+        }
         let mut bytes = output.into_bytes();
         for image in self.images {
             let pixels = image.rgba.as_chunks::<4>().0;

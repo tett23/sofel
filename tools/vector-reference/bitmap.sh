@@ -21,6 +21,9 @@ compare() {
 }
 compare fuzzing/fonts/noto_handwriting-sbix.ttf 270d
 compare api/fonts/NotoColorEmoji.subset.default.2049.ttf 2049
+compare fuzzing/fonts/noto_handwriting-glyf_colr_1.ttf 270d
+compare fuzzing/fonts/noto_handwriting-cff_colr_1.otf 270d
+compare fuzzing/fonts/noto_handwriting-cff2_colr_1.otf 270d
 
 # Compare the rendered sweep paths, including their colors and clipping.
 font=$data/harfbuzz/test/api/fonts/test_glyphs-glyf_colr_1.ttf
@@ -30,4 +33,12 @@ for glyph in 12 13 14 15 16 17 18 19 20 24 28 30 40; do
         "${RSVG_CONVERT:-rsvg-convert}" -w 640 -h 640 -o "$work/$name.png" "$work/$name.svg"
     done
     cmp "$work/reference.png" "$work/actual.png"
+done
+# Axial and radial shadings with varying alpha need luminosity soft masks.
+for glyph in 149 151; do
+    "$work/bitmap" "$font" "$work/reference.pdf" "$work/actual.pdf" "$glyph" pdf-gid
+    for name in actual reference; do
+        pdftoppm -singlefile -scale-to 640 "$work/$name.pdf" "$work/$name"
+    done
+    cmp "$work/reference.ppm" "$work/actual.ppm"
 done

@@ -16,7 +16,7 @@ int main(int argc, char **argv) {
   hb_font_t *font = hb_font_create(face);
   hb_ot_font_set_funcs(font);
   hb_codepoint_t gid;
-  if (svg) gid = std::strtoul(argv[4], nullptr, 10);
+  if (argc == 6) gid = std::strtoul(argv[4], nullptr, 10);
   else if (!hb_font_get_nominal_glyph(font, std::strtoul(argv[4], nullptr, 16), &gid)) return 1;
   auto *paint = hb_vector_paint_create_or_fail(svg ? HB_VECTOR_FORMAT_SVG : HB_VECTOR_FORMAT_PDF);
   hb_glyph_extents_t ink;

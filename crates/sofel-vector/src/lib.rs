@@ -7,7 +7,7 @@ mod svg_paint;
 mod sweep;
 use alloc::string::String;
 use core::fmt::Write as _;
-pub use pdf::{PdfPage, PdfPen};
+pub use pdf::{PdfPage, PdfPainter, PdfPen};
 use sofel_geom::{Color, Image, ImageFormat, Pen, Point, PointF, Rect, Transform};
 pub use svg_paint::SvgPainter;
 

@@ -135,9 +135,8 @@ pub unsafe extern "C" fn sofel_vector_page(
                     }
                 }
             }
-            if let Page::Svg(svg) = &mut page
-                && sofel_color::glyph_color_format(&font.font, g.glyph)
-                    == Some(sofel_color::ColorFormat::ColrV1)
+            if sofel_color::glyph_color_format(&font.font, g.glyph)
+                == Some(sofel_color::ColorFormat::ColrV1)
             {
                 recording.clear();
                 sofel_color::paint_recording_at(
@@ -148,32 +147,41 @@ pub unsafe extern "C" fn sofel_vector_page(
                     &mut recording,
                 );
                 let scale = sofel_font::HbScale::unscaled(&font.font);
-                let rendered = svg.paint(
-                    Transform {
-                        xx,
-                        yx,
-                        xy,
-                        yy,
-                        dx,
-                        dy,
-                    },
-                    |gid, pen| {
-                        let glyph = GlyphId(gid);
-                        if let Some(commands) = outlines
-                            .varc_glyph_path(glyph, scale)
-                            .or_else(|| outlines.hb_extents().cff_glyph_path(glyph, &scale))
-                        {
-                            for cmd in commands {
-                                pen.command(cmd);
-                            }
-                            true
-                        } else {
-                            outlines.load(glyph, Scale::Unscaled, &mut scratch).is_ok()
-                                && scratch.hb_decompose(1., 1., |cmd| pen.command(cmd)).is_ok()
+                let placement = Transform {
+                    xx,
+                    yx,
+                    xy,
+                    yy,
+                    dx,
+                    dy,
+                };
+                let mut draw = |gid, emit: &mut dyn FnMut(sofel_geom::FloatCommand)| {
+                    let glyph = GlyphId(gid);
+                    if let Some(commands) = outlines
+                        .varc_glyph_path(glyph, scale)
+                        .or_else(|| outlines.hb_extents().cff_glyph_path(glyph, &scale))
+                    {
+                        for cmd in commands {
+                            emit(cmd);
                         }
-                    },
-                    |painter| recording.replay(painter),
-                );
+                        true
+                    } else {
+                        outlines.load(glyph, Scale::Unscaled, &mut scratch).is_ok()
+                            && scratch.hb_decompose(1., 1., emit).is_ok()
+                    }
+                };
+                let rendered = match &mut page {
+                    Page::Svg(svg) => svg.paint(
+                        placement,
+                        |gid, pen| draw(gid, &mut |cmd| pen.command(cmd)),
+                        |p| recording.replay(p),
+                    ),
+                    Page::Pdf(pdf) => pdf.paint(
+                        placement,
+                        |gid, pen| draw(gid, &mut |cmd| pen.command(cmd)),
+                        |p| recording.replay(p),
+                    ),
+                };
                 if rendered {
                     continue;
                 }
