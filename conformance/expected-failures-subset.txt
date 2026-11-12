@@ -4,10 +4,6 @@
 # upstream:disabled for a suite HarfBuzz's meson.build leaves out and has
 # no expected files for. A case run with --preprocess (id suffixed
 # +prepared) fails for the same reason as the case without it.
-avar2_full_instance.tests/RobotoDelta-Roman-VF-subset.default.all.opsz=70,wght=600,wdth=120,slnt=-6,GRAD=-150,XTSP=50.iup_optimize.ttf:bytes  # deferred:iup
-avar2_full_instance.tests/RobotoDelta-Roman-VF-subset.default.all.opsz=70,wght=600,wdth=120,slnt=-6,GRAD=-150,XTSP=50.iup_optimize.ttf+prepared:bytes  # deferred:iup
-avar2_full_instance.tests/RobotoDelta-Roman-VF-subset.default.all.opsz=70,wght=600,wdth=120,slnt=-6,GRAD=-150,XTSP=50.iup_optimize.ttf:validate  # deferred:iup
-avar2_full_instance.tests/RobotoDelta-Roman-VF-subset.default.all.opsz=70,wght=600,wdth=120,slnt=-6,GRAD=-150,XTSP=50.iup_optimize.ttf+prepared:validate  # deferred:iup
 avar2_null_varstore_partial_instance.tests/RobotoDelta-NullVarStore-VF.default.all.wght=300-400-600.iup_optimize.ttf:bytes  # deferred:iup
 avar2_null_varstore_partial_instance.tests/RobotoDelta-NullVarStore-VF.default.all.wght=300-400-600.iup_optimize.ttf+prepared:bytes  # deferred:iup
 avar2_null_varstore_partial_instance.tests/RobotoDelta-NullVarStore-VF.default.all.wght=300-400-600.iup_optimize.ttf:validate  # deferred:iup
