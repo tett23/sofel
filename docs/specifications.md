@@ -399,6 +399,10 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 `sofel_woff::decode_woff` は出力サイズの上限を受け取り、WOFF 1.0 の表を物理順に展開して sfnt を返す。フォントを読み込む CLI は gzip、UNIX compress（LZW）、bzip2 を先に展開してから WOFF の署名を検査する。検証器は WOFF の不正なフィールドか圧縮表の入力オフセットを報告する。bzip2 はブロックとメンバーの CRC を検査し、破損を検出した入力オフセットを報告する。gzip の破損はメンバーを含むコンテナ先頭で報告する。[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)
 
+## BDF フェイス
+
+`sofel-bitmapfont::BdfFont` は BDF の文字対応、送り、単一の固定サイズの 1、2、4、8 bit 画像を読む。符号位置でグリフを並べ、グリフ番号 0 には `DEFAULT_CHAR` が指定する画像を使う。`sofel-render` は BDF を通常のファイル入力から開き、`--char` と `--glyph` のどちらでも PGM を出す。宣言した文字数、画像の行数、16 進数と画像の長さを検査する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+
 ## Web フォントの書き出し（`sofel-woff`）
 
 `sofel_woff::encode` は単一フェイスの sfnt と出力形式を受け取り、WOFF または WOFF2 のバイト列を返す。表のタグ、範囲、パディング、チェックサムとフォント全体のチェックサムを検査する。コマンドは変換を終えてから出力先を開く。[ADR 0070](adr/0070-webfont-encoding.md)
