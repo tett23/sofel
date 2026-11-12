@@ -203,15 +203,20 @@ fn adr0061_i1_axis_pin_projects_roboto_mixed_tuples() {
 
 #[test]
 fn adr0061_i1_pinning_a_mixed_tuple_scales_the_retained_axis() {
-    compare_mixed_tuple_pin(false);
+    compare_mixed_tuple_pin(false, false);
 }
 
 #[test]
 fn adr0061_i1_merge_projected_gvar_tuples_before_rounding() {
-    compare_mixed_tuple_pin(true);
+    compare_mixed_tuple_pin(true, false);
 }
 
-fn compare_mixed_tuple_pin(duplicate: bool) {
+#[test]
+fn adr0061_i1_expand_sparse_gvar_deltas_before_serializing() {
+    compare_mixed_tuple_pin(false, true);
+}
+
+fn compare_mixed_tuple_pin(duplicate: bool, sparse: bool) {
     let path = paths::testdata().join("harfbuzz/test/api/fonts/glyf-default-instance-bounds.ttf");
     let mut bytes = std::fs::read(path).unwrap();
     // The fixture has one shared peak (1, 0). Give it support on both axes.
@@ -222,6 +227,11 @@ fn compare_mixed_tuple_pin(duplicate: bool) {
     let table = u32::from_be_bytes(record[8..12].try_into().unwrap()) as usize;
     let shared = u32::from_be_bytes(bytes[table + 8..table + 12].try_into().unwrap()) as usize;
     bytes[table + shared + 2..table + shared + 4].copy_from_slice(&16384i16.to_be_bytes());
+    if sparse {
+        // Glyph 1 has one reference at point zero, with X delta 8.
+        bytes[table + 32..table + 46]
+            .copy_from_slice(&[0x80, 1, 0, 8, 0, 3, 0, 0, 1, 0, 0, 0, 8, 0x80]);
+    }
     if duplicate {
         // Replace glyph 1 with two identical mixed tuples sharing all points.
         let pos = table + 32;
@@ -243,7 +253,7 @@ fn compare_mixed_tuple_pin(duplicate: bool) {
     }
     let font = Font::new(&bytes, 0).unwrap();
     let source = std::env::temp_dir().join(format!(
-        "sofel-mixed-peak-{duplicate}-{}.ttf",
+        "sofel-mixed-peak-{duplicate}-{sparse}-{}.ttf",
         std::process::id()
     ));
     let output = source.with_extension("out.ttf");

@@ -525,7 +525,7 @@ pub fn apply_hb(
             }
         }
         if !all && !phantom_only {
-            infer_hb(&scratch.original, &mut scratch.pending, &scratch.explicit);
+            infer_hb(&scratch.original, &mut scratch.pending, &scratch.explicit)?;
         }
         flush = true;
     }
@@ -625,7 +625,15 @@ fn contour_ranges<T>(
     })
 }
 
-fn infer_hb(original: &[Point<f32>], deltas: &mut [Point<f32>], explicit: &[bool]) {
+/// Infer omitted contour deltas from the explicitly referenced points.
+pub fn infer_hb(
+    original: &[Point<f32>],
+    deltas: &mut [Point<f32>],
+    explicit: &[bool],
+) -> Result<(), GvarError> {
+    if original.len() != deltas.len() || original.len() != explicit.len() {
+        return Err(GvarError::InvalidData);
+    }
     for range in contour_ranges(original) {
         let indices: Vec<usize> = range.clone().filter(|&index| explicit[index]).collect();
         if indices.len() == 1 {
@@ -669,6 +677,7 @@ fn infer_hb(original: &[Point<f32>], deltas: &mut [Point<f32>], explicit: &[bool
             }
         }
     }
+    Ok(())
 }
 
 fn infer_hb_axis(value: f32, prev: f32, next: f32, prev_delta: f32, next_delta: f32) -> f32 {
@@ -1092,11 +1101,11 @@ mod tests {
                 ..Point::default()
             },
         ];
-        infer_hb(&hb_original, &mut hb_deltas, &[true, false, true]);
+        assert!(infer_hb(&hb_original, &mut hb_deltas, &[true, false, true]).is_ok());
         assert_eq!(hb_deltas[1].x, 15.0);
         hb_deltas.fill(Point::default());
         hb_deltas[1].x = 7.0;
-        infer_hb(&hb_original, &mut hb_deltas, &[false, true, false]);
+        assert!(infer_hb(&hb_original, &mut hb_deltas, &[false, true, false]).is_ok());
         assert_eq!(hb_deltas.map(|point| point.x), [7.0; 3]);
 
         let ft_original = [

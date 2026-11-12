@@ -340,8 +340,11 @@ fn pin_records(
             } else {
                 (points, tuple.data())
             };
-            let deltas = if contributors.len() == 1 && scalar == 1.0 {
-                Cow::Borrowed(deltas)
+            let (points, deltas) = if contributors.len() == 1
+                && scalar == 1.0
+                && PackedPoints::parse(points).ok_or(bad)?.0.is_all()
+            {
+                (points, Cow::Borrowed(deltas))
             } else {
                 let outline = outlines.glyph(old, false);
                 let simple = sofel_font::read::glyf::Glyph::new(outline.bytes)
@@ -355,18 +358,46 @@ fn pin_records(
                     .and_then(|n| n.checked_add(4))
                     .ok_or(bad)?;
                 let mut sums = [alloc::vec![0.0; n], alloc::vec![0.0; n]];
+                let mut original = Vec::new();
                 for (part, scale) in contributors {
-                    if part
+                    let (x, y) = part.deltas(n, glyph.shared_points()).ok_or(bad)?;
+                    if let Some(indices) = part
                         .points()
                         .or(glyph.shared_points())
-                        .is_some_and(|p| !p.is_all())
+                        .filter(|p| !p.is_all())
                     {
-                        return Err(SubsetError::Unsupported {
-                            tag,
-                            reason: "interpolating sparse gvar points before scaling",
-                        });
+                        use sofel_font::var::gvar::{Point, infer_hb};
+                        if original.is_empty() {
+                            original.extend(simple.points(outline.extended).map(|p| Point {
+                                x: sofel_geom::float::i32_to_f32(p.x),
+                                y: sofel_geom::float::i32_to_f32(p.y),
+                                end: false,
+                            }));
+                            if original.len().checked_add(4) != Some(n) {
+                                return Err(bad);
+                            }
+                            for end in simple.end_points() {
+                                original.get_mut(usize::from(end)).ok_or(bad)?.end = true;
+                            }
+                            original.resize(n, Point::default());
+                        }
+                        let mut expanded = alloc::vec![Point::default(); n];
+                        let mut explicit = alloc::vec![false; n];
+                        for ((i, dx), dy) in indices.iter().zip(x.iter()).zip(y.iter()) {
+                            let i = usize::try_from(i).map_err(|_| bad)?;
+                            let point = expanded.get_mut(i).ok_or(bad)?;
+                            point.x = f32::from(dx) * scale;
+                            point.y = f32::from(dy) * scale;
+                            *explicit.get_mut(i).ok_or(bad)? = true;
+                        }
+                        infer_hb(&original, &mut expanded, &explicit).map_err(|_| bad)?;
+                        let [xs, ys] = &mut sums;
+                        for ((x, y), d) in xs.iter_mut().zip(ys).zip(expanded) {
+                            *x += d.x;
+                            *y += d.y;
+                        }
+                        continue;
                     }
-                    let (x, y) = part.deltas(n, glyph.shared_points()).ok_or(bad)?;
                     for (sum, axis) in sums.iter_mut().zip([x, y]) {
                         for (value, delta) in sum.iter_mut().zip(axis.iter()) {
                             *value += f32::from(delta) * scale;
@@ -385,7 +416,7 @@ fn pin_records(
                         .collect::<Result<Vec<_>, _>>()?;
                     pack_deltas(&values, &mut encoded);
                 }
-                Cow::Owned(encoded)
+                (&[0u8][..], Cow::Owned(encoded))
             };
             tuples.push(PinnedTuple {
                 peak: projected,
