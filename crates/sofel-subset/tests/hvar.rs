@@ -252,6 +252,29 @@ fn adr0022_vvar_explicit_advance_and_side_maps_follow_retained_glyphs() {
 }
 
 #[test]
+fn adr0022_vvar_shared_advance_and_vertical_origin_map_is_serialized_once() {
+    let mut data = font_with_explicit_maps(b"VVAR", false);
+    let directory = sofel_font::read::sfnt::Sfnt::new(&data).unwrap();
+    let table = directory.record(Tag::new(b"VVAR")).unwrap().offset as usize;
+    let advance_offset = data[table + 8..table + 12].to_vec();
+    data[table + 20..table + 24].copy_from_slice(&advance_offset);
+    let font = Font::new(&data, 0).unwrap();
+    let input = Input::new().map_set(SetKind::Glyphs, |glyphs| glyphs.add(2));
+    let output = subset(&font, &input).unwrap();
+    let output = Font::new(&output, 0).unwrap();
+    let vvar = output.table(Tag::new(b"VVAR")).unwrap();
+    assert_ne!(&vvar[8..12], &[0; 4]);
+    assert_eq!(&vvar[8..12], &vvar[20..24]);
+    let vvar = Vvar::new(vvar).unwrap();
+    let advance = vvar.advance_map().unwrap().unwrap();
+    let origin = vvar.vorg_map().unwrap().unwrap();
+    assert_eq!(
+        (advance.map(0), advance.map(1)),
+        (origin.map(0), origin.map(1))
+    );
+}
+
+#[test]
 fn adr0022_hvar_explicit_side_map_is_kept_when_identity() {
     let data = font_with_explicit_maps(b"HVAR", true);
     let font = Font::new(&data, 0).unwrap();
