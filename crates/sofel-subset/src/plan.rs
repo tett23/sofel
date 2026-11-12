@@ -311,7 +311,7 @@ impl Plan {
             && font.table(Tag::new(b"CFF2")).is_none();
         let needs_rebase = |tag: &&[u8; 4]| {
             let handled = match *tag {
-                b"GSUB" | b"GPOS" | b"GDEF" | b"BASE" => {
+                b"GSUB" | b"GPOS" | b"GDEF" | b"BASE" | b"COLR" => {
                     let static_table = font.table(Tag::new(tag)).is_some_and(|data| match *tag {
                         b"GSUB" | b"GPOS" => can_instance_layout_conditions(
                             data,

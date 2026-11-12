@@ -2,6 +2,8 @@
 #![no_std]
 
 extern crate alloc;
+mod paint;
+pub use paint::{OutlinePainter, sample_brush};
 mod path;
 mod transform;
 mod tree;
@@ -395,7 +397,16 @@ impl Scene {
         let Some((x, y)) = inverse(gradient.transform, x, y) else {
             return [0; 4];
         };
-        let fraction = match gradient.kind {
+        sample_stops(
+            gradient.kind.fraction(x, y),
+            gradient.stops.iter().map(|s| (s.offset, s.rgba)),
+        )
+    }
+}
+impl GradientKind {
+    #[allow(clippy::arithmetic_side_effects)]
+    fn fraction(&self, x: f32, y: f32) -> f32 {
+        match *self {
             GradientKind::Linear { x1, y1, x2, y2 } => {
                 let dx = x2 - x1;
                 let dy = y2 - y1;
@@ -413,24 +424,32 @@ impl Scene {
                     sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy)) / r
                 }
             }
-        };
-        let Some(first) = gradient.stops.first() else {
-            return [0; 4];
-        };
-        if fraction <= first.offset {
-            return first.rgba;
         }
-        for pair in gradient.stops.windows(2) {
-            let a = pair[0];
-            let b = pair[1];
-            if fraction <= b.offset {
-                let t = ((fraction - a.offset) / (b.offset - a.offset)).clamp(0.0, 1.0);
-                return core::array::from_fn(|i| {
-                    (f32::from(a.rgba[i]) + (f32::from(b.rgba[i]) - f32::from(a.rgba[i])) * t + 0.5)
-                        as u8
-                });
-            }
-        }
-        gradient.stops.last().map_or([0; 4], |stop| stop.rgba)
     }
+}
+
+#[allow(
+    clippy::arithmetic_side_effects,
+    clippy::indexing_slicing,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
+fn sample_stops(fraction: f32, mut stops: impl Iterator<Item = (f32, [u8; 4])>) -> [u8; 4] {
+    let Some((mut offset, mut color)) = stops.next() else {
+        return [0; 4];
+    };
+    if fraction <= offset {
+        return color;
+    }
+    for (next, b) in stops {
+        if fraction <= next {
+            let t = ((fraction - offset) / (next - offset)).clamp(0., 1.);
+            return core::array::from_fn(|i| {
+                (f32::from(color[i]) + (f32::from(b[i]) - f32::from(color[i])) * t + 0.5) as u8
+            });
+        }
+        offset = next;
+        color = b;
+    }
+    color
 }
