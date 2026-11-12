@@ -114,6 +114,8 @@ pub struct Plan {
     pub(crate) force_long_loca: bool,
     /// The axis location and what instancing recomputes.
     pub(crate) var: VarPlan,
+    /// Source gvar/GVAR has no shared tuple or glyph variation records.
+    pub(crate) inert_gvar: bool,
     /// The number of glyphs of the source font.
     pub(crate) source_glyphs: u32,
     pub(crate) layout: PlanLayout,
@@ -297,9 +299,21 @@ impl Plan {
             b"gvar", b"GVAR", b"HVAR", b"VVAR", b"MVAR", b"cvar", b"CFF2", b"GDEF", b"GSUB",
             b"GPOS", b"BASE", b"MATH", b"COLR", b"STAT",
         ];
-        let no_source_other_variation_data = !other_variation_tags
-            .iter()
-            .any(|tag| font.table(Tag::new(tag)).is_some());
+        // A gvar/GVAR with no shared tuples and no glyph records has no
+        // deltas to rebase. Its axis range can change as metadata alone.
+        let inert_gvar = [b"gvar", b"GVAR"].iter().all(|tag| {
+            font.table(Tag::new(tag)).is_none_or(|data| {
+                sofel_font::read::gvar::Gvar::new(data, Tag::new(tag)).is_ok_and(|table| {
+                    table.shared_tuple_count() == 0
+                        && (0..=table.glyph_count()).all(|gid| table.glyph_offset(gid) == Some(0))
+                })
+            })
+        });
+        let needs_rebase = |tag: &&[u8; 4]| {
+            (!inert_gvar || (**tag != *b"gvar" && **tag != *b"GVAR"))
+                && font.table(Tag::new(tag)).is_some()
+        };
+        let no_source_other_variation_data = !other_variation_tags.iter().any(needs_rebase);
         let varc_unrelated_axis_change = if norm.user.len() == 1
             && (norm.pinned_at_default || no_source_other_variation_data)
         {
@@ -323,10 +337,13 @@ impl Plan {
                     reason: "pinning the axes of avar version 2 (deferred by ADR 0022)",
                 });
             }
-            let no_other_variation_data = !other_variation_tags.iter().any(|tag| {
-                let tag = Tag::new(tag);
-                font.table(tag).is_some() && !drop.contains(tag.to_u32())
-            });
+            let no_other_variation_data = !other_variation_tags
+                .iter()
+                .filter(|tag| needs_rebase(tag))
+                .any(|tag| {
+                    let tag = Tag::new(tag);
+                    !drop.contains(tag.to_u32())
+                });
             let varc_safe = font.table(Tag::new(b"VARC")).is_none_or(|_| {
                 drop.contains(Tag::new(b"VARC").to_u32()) || varc_unrelated_axis_change
             });
@@ -406,6 +423,7 @@ impl Plan {
                 n: norm,
                 ..VarPlan::default()
             },
+            inert_gvar,
             source_glyphs: num_glyphs,
             layout: PlanLayout {
                 layout_features: input.set(SetKind::LayoutFeatures).clone(),
