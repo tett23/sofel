@@ -58,6 +58,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   sofel-svg    → sofel-inflate, sofel-geom
   sofel-raster → sofel-geom
   sofel-gpu    → sofel-geom
+  sofel-gpu → sofel-geom
   sofel-vector → sofel-geom
 
 フォントの形式を読むクレート
@@ -299,7 +300,11 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 ## ベクトル出力
 
-`sofel-vector` の `SvgPage` と `PdfPage` は、呼び出し側が配置した輪郭を指定色で入力順に塗る。SVG は y 軸を反転したグループにパスを書き、PDF は二次曲線を三次曲線に変換してページに書く。`SvgPage::draw_image` はグリフの配置先に PNG を埋め込み、指定された変換を適用する。矩形クリップは親の座標系で指定する。[ADR 0074](adr/0074-svg-feature-conformance.md) の出力検査では、空ページ、単独のグリフ、半透明のグリフが重なるページ、変換とクリップを指定した画像を固定版 HarfBuzz の SVG と照合する。C の `sofel_svg_page_layers` は各要素の変換を使い、輪郭と PNG を配列順に配置する。`sofel_vector_page` にはフォント、軸座標と、グリフごとの変換・色を渡す（[ADR 0068](adr/0068-vector-and-gpu-output.md)）。
+`sofel-gpu` の `Outline` と C の `sofel_gpu_outline` は、直線と2次・3次ベジェ曲線からなる輪郭を、Slug 方式のシェーダーが読む RGBA16I レコードに変換する。`shader_source` と `sofel_gpu_shader_source` は WGSL、GLSL、MSL、HLSL の頂点・フラグメントシェーダー用の関数を返す。WGSL の呼び出し側は `hb_gpu_atlas` を読み取り専用の `array<vec4<i32>>` としてストレージにバインドし、各成分に16ビット値を符号拡張して格納する。呼び出し側は頂点用の `hb_gpu_dilate` とフラグメント用の `hb_gpu_draw` を自身のエントリーポイントから使う。各レコードは符号付き16ビット整数4個で、外接矩形、水平・垂直のバンド、バンドごとの曲線番号、端点を共有する2次曲線の順に並ぶ。空の輪郭は0件を返し、座標やレコードのアドレスが表現範囲を超えるとエラーを返す（[ADR 0068](adr/0068-vector-and-gpu-output.md)）。
+
+`Paint` は `Painter` の命令から、クリップする輪郭、単色、線形・放射・スイープグラデーション、合成グループをレコードにまとめる。`sofel_gpu_paint_glyph` は位置を指定したフェイスからこのレコード列を返す。1つのレイヤーで交差させられる輪郭クリップは3段、合成グループは4段までで、上限超過と画像を含むグリフはエラーを返す。矩形クリップは HarfBuzz と同じく、その内側の輪郭クリップに影響しない。前景色はフラグメントシェーダーの `hb_gpu_paint` に渡す（[ADR 0068](adr/0068-vector-and-gpu-output.md)）。
+
+`sofel-vector` の `SvgPage` と `PdfPage` は、呼び出し側が配置した輪郭を指定色で入力順に塗る。SVG は y 軸を反転したグループにパスを書き、PDF は二次曲線を三次曲線に変換してページに書く。COLRv0 はパレットの色で各レイヤーを順に描く。SVG では COLRv1 の単色、線形・放射・スイープグラデーション、輪郭・矩形クリップ、変換と合成グループを出力する。PDF は線形・放射グラデーションに軸方向・放射状のシェーディングを、スイープグラデーションに Coons パッチメッシュを使い、色停止点に透明度がある場合はグレースケールのソフトマスクを重ねる。PDF では sbix・CBDT の PNG をグリフの位置と寸法に合わせて配置し、RGB とアルファを画像とソフトマスクに分けて格納する。`SvgPage::draw_image` はグリフの配置先に PNG を埋め込み、指定された変換を適用する。矩形クリップは親の座標系で指定する。[ADR 0074](adr/0074-svg-feature-conformance.md) の出力検査では、空ページ、単独のグリフ、半透明のグリフが重なるページ、変換とクリップを指定した画像を固定版 HarfBuzz の SVG と照合する。C の `sofel_svg_page_layers` は各要素の変換を使い、輪郭と PNG を配列順に配置する。`sofel_vector_page` にはフォント、軸座標と、グリフごとの変換・色を渡す（[ADR 0068](adr/0068-vector-and-gpu-output.md)）。
 
 ## カラーグリフ（`sofel-color`、`sofel-bitmap`、`Painter`）
 
@@ -381,7 +386,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 軸を指定しない HVAR と VVAR は、複数のItemVariationDataから残したグリフに対応する行と使う領域を詰め、全ての値が0の列を除いて書き出す。使わないItemVariationDataを除き、暗黙・明示の送り幅とサイドベアリングのマップを新しいグリフIDに合わせて書く（[ADR 0022](adr/0022-subsetting.md)）。 明示マップの末尾で複数のグリフが同じ行を参照する場合は、その最初の項目までを書き、残りは最後の値を繰り返して読む。空のサイドベアリングと縦の原点のマップは出力しない。
 - VARC のサブセット化（[ADR 0067](adr/0067-varc-components.md)）は、残す部品を再帰的に集め、グリフ ID と参照、条件、部品の軸座標、変化量ストアの番号を再配置する。VARC が参照しない1軸を既定値に固定し、gvar、GVAR、HVAR、VVAR、MVAR、cvar、CFF2、GDEF、GSUB、GPOS、BASE、MATH、COLR、STAT が存在しないか捨てられ、avar が版2でない場合は、残る軸の番号を書き直す。これらの表と avar が元のフォントにない場合は、非既定値への固定と範囲の指定でも VARC の軸番号を写す。参照される軸の固定と対象外の変化量表を持つフォントの部分軸固定は `Unsupported` とする。VARC を `NoSubsetTables` でそのまま写す場合は、`RETAIN_GIDS` を指定して軸を変えないことを要し、満たさなければ `Unsupported` とする。名前の表の上書きも `Unsupported` とする。
 - 軸を指定しない BASE 1.1 の ItemVariationStore は、残すスクリプトとフィーチャに属する横と縦の BaseCoord の VariationIndex を集め、使う行と領域だけを詰めて番号を振りなおす。参照が0件なら、HarfBuzzと同じくストアを除いて座標を残す。BaseValues、既定の MinMax、言語別とフィーチャ別の MinMax を調べ、壊れた参照はこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
-- 軸を指定しないGDEF 1.3のItemVariationStoreは、コピーするGSUBのFeatureVariationsがバージョン1.0で軸範囲の条件だけを持つ場合も含めて、残すLigCaretList、値の記録、アンカー、MATHの定数・斜体補正・上アクセント・カーニング・組み立てのVariationIndexに合わせて行と領域を詰めて書く。参照が0件ならストアを除く。GPOSの値の記録とアンカーをたどってVariationIndexを集める。送り幅などの値に現れる `0x8000` は参照に数えない。MATHだけをコピーして参照番号を合わせられない場合と、同じバイト列があるGPOSをそのままコピーする場合は拒否する。GDEFだけをコピーしてGPOSやMATHをサブセット化するとき、HarfBuzzと同じくそれらの参照番号を詰め、GDEFのストアは元のバイト列のまま写す。壊れたGDEFはこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
+- 軸を指定しないGDEF 1.3のItemVariationStoreは、コピーするGSUBのFeatureVariationsがバージョン1.0で軸範囲の条件だけを持つ場合も含めて、残すLigCaretList、値の記録、アンカー、MATHの定数・斜体補正・上アクセント・カーニング・組み立てのVariationIndexに合わせて行と領域を詰めて書く。参照が0件ならストアを除く。GPOSの値の記録とアンカーをたどってVariationIndexを集める。送り幅などの値に現れる `0x8000` は参照に数えない。MATHだけをコピーするときは、除去したグリフの記録も含め、すべてのVariationIndexがGDEFの再配置後に元の行を指すことを確かめる。MATHだけをコピーして参照番号を合わせられない場合と、同じバイト列があるGPOSをそのままコピーする場合は拒否する。GDEFだけをコピーしてGPOSやMATHをサブセット化するとき、HarfBuzzと同じくそれらの参照番号を詰め、GDEFのストアは元のバイト列のまま写す。壊れたGDEFはこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
 - レイアウトの表のうち、FeatureVariationsを持つGSUBをそのままコピーする場合のGDEF、GSUBとGPOSの版1.2とGDEFの版1.4、FeatureVariationsの版1.1と形式1でない条件、65536を超えるグリフのフォントの24bitの形式も `Unsupported` とする。
 
 ## WOFF と圧縮フォントの読み込み

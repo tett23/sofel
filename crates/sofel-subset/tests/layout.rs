@@ -960,6 +960,46 @@ fn gdef_store_with_math_constant_variation_index_is_remapped() {
 }
 
 #[test]
+fn copied_math_with_an_unchanged_variation_index_keeps_its_gdef_row() {
+    let input = chars("A").map_set(SetKind::NoSubsetTables, |set| {
+        set.add(Tag::new(b"MATH").to_u32());
+    });
+    for inner in [1, 2] {
+        let device = Buf::new().u16(0).u16(inner).u16(0x8000).done();
+        let constants = link(vec![0; 214], vec![(10, 2, device)]);
+        let math = link(
+            Buf::new().u32(0x0001_0000).u16(0).u16(0).u16(0).done(),
+            vec![(4, 2, constants)],
+        );
+        let data = font_with(vec![
+            (b"GDEF", gdef_with_referenced_store(&[0])),
+            (b"MATH", math),
+        ]);
+        let font = Font::new(&data, 0).unwrap();
+        let result = subset(&font, &input);
+        if inner == 2 {
+            assert!(
+                matches!(result, Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF"))
+            );
+            continue;
+        }
+        let out = result.unwrap();
+        assert_eq!(out_table(&out, b"MATH"), out_table(&data, b"MATH"));
+        let gdef = out_table(&out, b"GDEF").unwrap();
+        let gdef = sofel_font::read::gdef::Gdef::new(&gdef).unwrap();
+        assert_eq!(
+            gdef.variation_store()
+                .unwrap()
+                .unwrap()
+                .item_data(0)
+                .unwrap()
+                .item_count,
+            2
+        );
+    }
+}
+
+#[test]
 fn adr0022_negative_gpos_advance_is_not_a_variation_index() {
     let gdef = gdef_with_unused_store(class_def2(&[(1, 5, 1)]));
     let position = link(
@@ -1078,6 +1118,14 @@ fn gdef_store_with_math_glyph_info_variation_index_follows_kept_glyphs() {
     );
     let data = font_with(vec![(b"GDEF", gdef), (b"MATH", math)]);
     let font = Font::new(&data, 0).unwrap();
+    // The copied correction for glyph B would point beyond the two retained rows.
+    let copy_math = chars("A").map_set(SetKind::NoSubsetTables, |set| {
+        set.add(Tag::new(b"MATH").to_u32());
+    });
+    assert!(matches!(
+        subset(&font, &copy_math),
+        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF")
+    ));
     for (text, retained_index, item_count) in [("A", 1, 2), ("B", 0, 1)] {
         let out = subset(&font, &chars(text)).unwrap();
         let gdef = out_table(&out, b"GDEF").unwrap();

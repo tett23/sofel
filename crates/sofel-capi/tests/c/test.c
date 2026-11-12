@@ -1454,6 +1454,21 @@ static void test_color(void) {
       CHECK(memcmp(page, format == SOFEL_VECTOR_SVG ? "<svg" : "%PDF", 4) == 0);
     }
   }
+  {
+    const sofel_gpu_path_command_t triangle[] = {
+      {SOFEL_GPU_MOVE, {0, 0}}, {SOFEL_GPU_LINE, {1, 0}},
+      {SOFEL_GPU_LINE, {0, 1}}, {SOFEL_GPU_CLOSE, {0}}
+    };
+    size_t shader_size = 0;
+    CHECK(sofel_gpu_shader_source(SOFEL_GPU_WGSL, SOFEL_GPU_FRAGMENT, NULL, 0, &shader_size) ==
+          SOFEL_ERROR_BUFFER_TOO_SMALL && shader_size > 0);
+    int16_t records[36][4];
+    size_t count = 0;
+    CHECK(sofel_gpu_outline(NULL, 0, 0, 0, NULL, 0, &count) == SOFEL_OK && count == 0);
+    CHECK(sofel_gpu_outline(triangle, 4, 0, 0, NULL, 0, &count) == SOFEL_ERROR_BUFFER_TOO_SMALL && count == 36);
+    CHECK(sofel_gpu_outline(triangle, 4, 0, 0, records, 36, &count) == SOFEL_OK);
+    CHECK(records[0][0] == 0 && records[0][2] == 4 && records[1][0] == 3);
+  }
   for (i = 0; i < COUNT(paint_cases); i++) {
     sofel_paint_commands_t cmds;
     int32_t painted = sofel_paint_glyph(font, NULL, paint_cases[i].glyph, paint_cases[i].palette, NULL, 0,
