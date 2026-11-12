@@ -26,6 +26,12 @@ use support::{
     single_pos_device, single_subst,
 };
 
+#[test]
+fn adr0063_i1_subfont_is_send_and_sync() {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<SubFont<'static>>();
+}
+
 /// The glyphs of the test fonts.
 const NOTDEF: u32 = 0;
 const A: u32 = 1;
