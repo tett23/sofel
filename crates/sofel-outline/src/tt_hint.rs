@@ -218,6 +218,8 @@ struct HintPoint {
 
 #[derive(Clone)]
 struct Interpreter {
+    backward_compatibility: u8,
+    composite: bool,
     loop_count: u16,
     points: [alloc::vec::Vec<HintPoint>; 2],
     reference: [u16; 3],
@@ -256,6 +258,8 @@ impl Interpreter {
             points: Default::default(),
             reference: [0; 3],
             loop_count: 1,
+            backward_compatibility: 0,
+            composite: false,
             delta_base: 9,
             delta_shift: 3,
             zones: [1; 3],
@@ -406,7 +410,7 @@ impl Interpreter {
                     }
                     self.delta_shift = shift as u8;
                 }
-                op @ 0x73..=0x75 => {
+                op @ (0x5d | 0x71..=0x75) => {
                     let count = stack.pop().ok_or(Error::StackUnderflow)?;
                     let pairs = usize::try_from(count)
                         .unwrap_or(usize::MAX)
@@ -414,18 +418,35 @@ impl Interpreter {
                     let first = stack.len() - 2 * pairs;
                     let band = self.projected_ppem()
                         - i64::from(self.delta_base)
-                        - 16 * i64::from(op - 0x73);
+                        - match op {
+                            0x71 | 0x74 => 16,
+                            0x72 | 0x75 => 32,
+                            _ => 0,
+                        };
                     for pair in stack[first..].rchunks_exact(2) {
                         let argument = pair[0];
-                        if (argument & 0xf0) >> 4 == band {
+                        if (argument & 0xf0) >> 4 != band {
+                            continue;
+                        }
+                        let step = (argument & 15) - 8;
+                        let delta = (step + i64::from(step >= 0)) << (6 - self.delta_shift);
+                        if op >= 0x73 {
                             if let Some(value) = usize::try_from(pair[1])
                                 .ok()
                                 .and_then(|i| self.cvt.get_mut(i))
                             {
-                                let step = (argument & 15) - 8;
-                                *value = value.wrapping_add(
-                                    (step + i64::from(step >= 0)) << (6 - self.delta_shift),
-                                );
+                                *value = value.wrapping_add(delta);
+                            }
+                        } else if let Some(point) = self.points[usize::from(self.zones[0])]
+                            .get_mut(usize::from(pair[1] as u16))
+                        {
+                            let axis = usize::from(self.freedom[0] == 0);
+                            let allowed = self.backward_compatibility == 0
+                                || (self.backward_compatibility != 7
+                                    && ((self.composite && axis == 1) || point.touched[1]));
+                            if allowed && self.projection[axis] != 0 {
+                                point.current[axis] = point.current[axis].wrapping_add(delta);
+                                point.touched[axis] = true;
                             }
                         }
                     }
@@ -1103,5 +1124,27 @@ fn adr0064_i1_mdap_rounds_only_when_requested_and_sets_references() {
         assert_eq!(vm.points[1][1].current, [expected, 9]);
         assert_eq!(vm.points[1][1].touched, [true, false]);
         assert_eq!(vm.reference, [1, 1, 0]);
+    }
+}
+
+#[test]
+fn adr0064_i1_deltap_selects_zone_point_and_obeys_compatibility() {
+    for (op, ppem) in [(0x5d, 9), (0x71, 25), (0x72, 41)] {
+        let mut vm = Interpreter::new(0, &[], 65536);
+        vm.points[1].resize(1, HintPoint::default());
+        vm.ppem = [ppem; 2];
+        for (compat, composite, expected) in [
+            (1, false, 0),
+            (1, true, 8),
+            (1, false, 16),
+            (7, true, 16),
+            (0, false, 24),
+        ] {
+            vm.backward_compatibility = compat;
+            vm.composite = composite;
+            vm.execute(&[0, 0xb2, 8, 0, 1, op], &mut alloc::vec::Vec::new(), 3)
+                .unwrap();
+            assert_eq!(vm.points[1][0].current, [0, expected]);
+        }
     }
 }
