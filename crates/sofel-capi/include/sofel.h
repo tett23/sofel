@@ -1144,6 +1144,24 @@ int32_t sofel_scale_layout_font_extents(const sofel_scale_t *scale, const sofel_
 
 /* ------------------------------------------------------ layout queries */
 
+/*
+ * Copy a page of GSUB or GPOS FeatureList tags in record order, retaining
+ * duplicates. table_tag is SOFEL_TAG('G','S','U','B') or
+ * SOFEL_TAG('G','P','O','S'). *total is independent of start; *written is
+ * the number copied. This function returns SOFEL_OK even when capacity is
+ * smaller than the remaining tags, unlike the general variable-output
+ * convention. tags may be NULL when capacity is 0. A required NULL pointer
+ * returns SOFEL_ERROR_NULL before an invalid table tag is checked; errors
+ * leave tags, *written and *total unchanged (sofel ADR 0075).
+ *
+ * Rust: sofel_font::Font::feature_tags
+ * HarfBuzz: hb_ot_layout_table_get_feature_tags
+ * FreeType: none
+ */
+int32_t sofel_font_feature_tags(const sofel_font_t *font, uint32_t table_tag,
+                                uint32_t start, uint32_t *tags, uint32_t capacity,
+                                uint32_t *written, uint32_t *total);
+
 /* ADR 0062: pass NULL scale for font units and no pixel-size Device delta. */
 /* The shared evaluator also supplies GPOS positioning and BASE queries.
  * Rust: sofel_font::var::Instance::layout_queries
