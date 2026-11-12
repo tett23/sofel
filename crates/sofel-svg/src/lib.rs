@@ -263,6 +263,8 @@ pub fn parse_shapes(data: &[u8], glyph: u32) -> Result<Scene, ParseError> {
     let mut scene = Scene::default();
     let mut at = 0;
     let mut selected = false;
+    let mut in_group = false;
+    let mut in_defs = false;
     let mut group_transform = IDENTITY;
     let wanted = alloc::format!("glyph{glyph}");
     let mut current_gradient = None;
@@ -289,8 +291,16 @@ pub fn parse_shapes(data: &[u8], glyph: u32) -> Result<Scene, ParseError> {
             current_gradient = None;
             continue;
         }
+        if tag.starts_with("/defs") {
+            in_defs = false;
+            current_gradient = None;
+            continue;
+        }
         if tag.starts_with("/g") {
             selected = false;
+            in_group = false;
+            in_defs = false;
+            current_gradient = None;
             group_transform = IDENTITY;
             continue;
         }
@@ -304,14 +314,16 @@ pub fn parse_shapes(data: &[u8], glyph: u32) -> Result<Scene, ParseError> {
         let attrs = attributes(tag);
         match name {
             "g" => {
+                in_group = true;
                 selected = attr(&attrs, "id") == Some(wanted.as_str());
                 group_transform = transform(attr(&attrs, "transform"));
             }
-            "linearGradient" | "radialGradient" => {
+            "defs" => in_defs = selected || !in_group,
+            "linearGradient" | "radialGradient" if in_defs => {
                 scene.gradients.push(gradient(name, &attrs));
                 current_gradient = Some(scene.gradients.len() - 1);
             }
-            "stop" => {
+            "stop" if in_defs => {
                 if let Some(g) = current_gradient.and_then(|i| scene.gradients.get_mut(i)) {
                     let rgb = attr(&attrs, "stop-color")
                         .and_then(color)
