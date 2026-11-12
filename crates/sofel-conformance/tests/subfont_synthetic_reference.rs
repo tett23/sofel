@@ -18,6 +18,20 @@ fn font_outline(font: &Font<'_>, glyph: u32, scale: Scale) -> Option<GlyphOutlin
     let x = (scale.scale.x_scale() as f32) / f32::from(font.hb_units_per_em());
     let y = (scale.scale.y_scale() as f32) / f32::from(font.hb_units_per_em());
     let mut outline = GlyphOutline::new();
+    if let Some(path) = sofel_outline::HbExtents::new(font.default_instance())
+        .cff_glyph_path(GlyphId(glyph), &scale.scale)
+    {
+        for command in path {
+            match command {
+                sofel_outline::HbOutlineCommand::MoveTo(p) => outline.move_to(p),
+                sofel_outline::HbOutlineCommand::LineTo(p) => outline.line_to(p),
+                sofel_outline::HbOutlineCommand::QuadTo(c, p) => outline.quad_to(c, p),
+                sofel_outline::HbOutlineCommand::CubicTo(c1, c2, p) => outline.cubic_to(c1, c2, p),
+                sofel_outline::HbOutlineCommand::Close => outline.close(),
+            }
+        }
+        return Some(outline);
+    }
     let mut scratch = sofel_outline::Scratch::default();
     sofel_outline::load(
         font.default_instance(),
@@ -36,6 +50,35 @@ fn font_outline(font: &Font<'_>, glyph: u32, scale: Scale) -> Option<GlyphOutlin
         })
         .ok()?;
     Some(outline)
+}
+
+#[test]
+fn adr0063_i2_cff_synthetic_outline_matches_harfbuzz() {
+    let path =
+        paths::testdata().join("harfbuzz/test/subset/data/fonts/SourceHanSans-Regular_subset.otf");
+    let bytes = std::fs::read(path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let scale = Scale::new(HbScale::new(4096, 2048, font.hb_units_per_em()), 0, 0);
+    let mut subfont = SubFont::new(scale);
+    subfont.set_outline_func(|glyph| font_outline(&font, glyph, scale));
+    subfont.set_synthetic_bold(0.1, 0.1, false);
+    let outline = subfont.glyph_outline(71).unwrap();
+    assert_eq!(
+        outline.extents(),
+        GlyphExtents {
+            x_bearing: 135,
+            y_bearing: 1862,
+            width: 1847,
+            height: -1862,
+        }
+    );
+    let first = outline.points()[0];
+    assert!((first.x - 1982.449).abs() < 0.01);
+    assert!((first.y - 1793.467).abs() < 0.01);
+    let last = *outline.points().last().unwrap();
+    assert!((last.x - 1982.449).abs() < 0.01);
+    assert!((last.y - 1793.467).abs() < 0.01);
+    assert_eq!(outline.contours().len(), 1);
 }
 
 fn shape_a(font: &Font<'_>, subfont: &SubFont<'_>) -> (u32, i32) {

@@ -63,9 +63,9 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-capi`](crates/sofel-capi) | C ABI（ヘッダは [`sofel.h`](crates/sofel-capi/include/sofel.h)、[ADR 0015](docs/adr/0015-c-abi.md)） |
 | [`sofel-conformance`](crates/sofel-conformance) | FreeTypeとHarfBuzzとの突き合わせのテスト（`cargo test` では走らない） |
 
-シェーピングのフォント関数を差し替えるときは、`sofel-shape::SubFont` で親からの継承と問い合わせ別の上書きを指定する。子の送り、原点、グリフの箱、輪郭は親子のスケールを換算する。合成太字と斜体はシェーピングと輪郭に反映する（[ADR 0063](docs/adr/0063-font-functions-and-synthesis.md)）。
+シェーピングのフォント関数を差し替えるときは、`sofel-shape::SubFont` で親からの継承と問い合わせ別の上書きを指定する。子の送り、原点、グリフの箱、輪郭は親子のスケールを換算する。合成太字と斜体はシェーピングと輪郭に反映する。`sofel-shape` コマンドでは `--font-slant`、`--font-bold`、`--font-grade` を指定できる（[ADR 0063](docs/adr/0063-font-functions-and-synthesis.md)）。
 
-FreeTypeの合成操作には、`sofel-outline::Scratch` のスロット用の斜体と太字、`sofel-bitmap` の画素形式変換と太字を使う。画像を含むカラーグリフの合成斜体は、`sofel-color::paint_recording_at_with_slant` が描画命令を変換で包む（[ADR 0063](docs/adr/0063-font-functions-and-synthesis.md)）。
+FreeTypeの合成操作には、`sofel-outline::Scratch` のスロット用の斜体と太字、`sofel-bitmap` の画素形式変換と太字を使う。ビットマップの太字では `embolden_bitmap_slot` が画像とスロットのメトリクス、配置を合わせて更新する。HarfBuzzに合わせた輪郭の命令は、glyfを `Scratch::hb_decompose`、CFFとCFF2を `HbExtents::cff_glyph_path` から得る。画像を含むカラーグリフの合成斜体は、`sofel-color::paint_recording_at_with_slant` が描画命令を変換で包む（[ADR 0063](docs/adr/0063-font-functions-and-synthesis.md)）。
 
 `sofel-validate` は CFF2 の FDSelect フォーマット4を互換性の警告として報告する。ほかにエラーがなければ検証は成功する（[ADR 0056](docs/adr/0056-cff2-fdselect-format4-warning.md)）。
 

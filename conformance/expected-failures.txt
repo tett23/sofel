@@ -119,8 +119,6 @@ in-house/kern-format2.tests:1  # aat
 in-house/kern-format2.tests:3  # aat
 in-house/per-script-kern-fallback.tests:13  # aat
 in-house/per-script-kern-fallback.tests:15  # aat
-in-house/synthetic.tests:2  # synthetic
-in-house/synthetic.tests:3  # synthetic
 in-house/tt-kern-gpos.tests:1  # aat
 in-house/uniscribe.tests:2@uniscribe  # out-of-scope:uniscribe
 text-rendering-tests/KERN-1.tests:2  # aat
