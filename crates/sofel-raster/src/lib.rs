@@ -60,6 +60,9 @@ mod blend;
 
 pub use blend::{BgraImage, blend_layer, blend_sampled};
 
+mod harmony;
+pub use harmony::LcdMode;
+
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -147,6 +150,7 @@ pub struct Rasterizer {
     /// Per pixel: the sum of the 4x4 supersamples (overlap only).
     sums: Vec<u16>,
     pixels: Vec<u8>,
+    lcd_pixels: Vec<u8>,
     band_cells: usize,
     /// Sweep every cell as ADR 0012 did (the reference for tests).
     reference: bool,
@@ -625,6 +629,7 @@ impl Rasterizer {
             extent: Vec::new(),
             sums: Vec::new(),
             pixels: Vec::new(),
+            lcd_pixels: Vec::new(),
             band_cells: cells.max(1),
             reference: false,
         }
