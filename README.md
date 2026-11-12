@@ -110,6 +110,8 @@ sofel render --ppem 48 --text-file sample.txt font.ttf > sample.pgm
 
 COLRv1 の矩形クリップは、回転・せん断・反転した場合にも変換後の四辺で切り抜く。
 
+要求した ppem に一致するストライクがなくても、`--color` は sbix と CBDT の PNG を双線形補間して描く。`--no-bitmap` はこれらの画像を除く。
+
 CLI のレイヤー選択と描画制御は独自実装で、画素合成には `sofel-raster` を使う（[ADR 0055](docs/adr/0055-rewrite-cli-color-rendering.md)）。
 
 ```sh

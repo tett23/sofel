@@ -5,7 +5,7 @@
     clippy::cast_sign_loss,
     clippy::arithmetic_side_effects
 )]
-use sofel_color::{PaintCommand, PaintOptions, Painted, RawPaintGraph, Recording};
+use sofel_color::{PaintCommand, PaintOptions, Painted, Recording};
 use sofel_geom::{Brush, CompositeMode, Pen, PointF, Rect, Transform};
 use sofel_outline::{HbOutlineCommand, Outlines, Scale, Scratch};
 use sofel_raster::{BgraImage, ColorGradient, PaintMask, composite_pixel};
@@ -124,20 +124,33 @@ pub(crate) fn render(
     options: &PaintOptions<'_>,
     scratch: &mut Scratch,
 ) -> Option<BgraImage> {
-    RawPaintGraph::new(outlines.font())?.base_paint(glyph.0)?;
+    if !matches!(
+        sofel_color::glyph_color_format(outlines.font(), glyph.0),
+        Some(
+            sofel_color::ColorFormat::ColrV1
+                | sofel_color::ColorFormat::Cbdt
+                | sofel_color::ColorFormat::Sbix
+        )
+    ) {
+        return None;
+    }
     let mut paint_scratch = sofel_color::Scratch::default();
-    let ext = sofel_color::glyph_extents(outlines, glyph.0, &mut paint_scratch)?;
     let mut rec = Recording::new();
-    if sofel_color::paint_recording_at(
+    let painted = sofel_color::paint_recording_at(
         outlines.instance(),
         glyph.0,
         options,
         &mut paint_scratch,
         &mut rec,
-    ) != Painted::ColrV1
-    {
-        return None;
-    }
+    );
+    let ext = match painted {
+        Painted::ColrV1 => sofel_color::glyph_extents(outlines, glyph.0, &mut paint_scratch)?,
+        Painted::Cbdt | Painted::Sbix => rec.commands().iter().find_map(|cmd| match cmd {
+            PaintCommand::Image(image) => image.extents,
+            _ => None,
+        })?,
+        _ => return None,
+    };
     let scale = f32::from(ppem) / f32::from(outlines.font().units_per_em());
     let left = (ext.x_bearing as f32 * scale).floor() as i32;
     let top = (ext.y_bearing as f32 * scale).ceil() as i32;
@@ -166,6 +179,19 @@ pub(crate) fn render(
     for command in rec.commands() {
         let t = *matrices.last()?;
         match command {
+            PaintCommand::Image(encoded) if encoded.format == sofel_geom::ImageFormat::Png => {
+                budget = budget.checked_sub(n)?;
+                let decoded =
+                    sofel_png::decode_for_paint(encoded.data, budget.min(4096 * 4096)).ok()?;
+                budget = budget.checked_sub(decoded.bgra.len() / 4)?;
+                let src = BgraImage {
+                    width: decoded.width,
+                    rows: decoded.height,
+                    pixels: decoded.bgra,
+                    ..Default::default()
+                };
+                image.paint_bitmap(&src, encoded.extents?, t, clips.last()?)?;
+            }
             PaintCommand::PushTransform(other) => matrices.push(t.multiply(other)),
             PaintCommand::PopTransform => {
                 matrices.pop()?;

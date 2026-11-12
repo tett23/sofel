@@ -239,7 +239,9 @@ jobs:
       - name: Compare gallery sbix glyphs with FreeType
         if: runner.os == 'Linux'
         run: SOFEL_FT_DUMP="$RUNNER_TEMP/ft-dump-png" cargo test --release -p sofel-conformance --test freetype_sbit i2_sbix_gallery -- --ignored
-      - name: Compare gallery COLRv1 glyphs with HarfBuzz raster
+      - name: Compare color glyphs with HarfBuzz raster
+        env:
+          SOFEL_HB_RASTER_PNG: '1'
         if: runner.os == 'Linux'
         run: |
           sh tools/hb-raster-reference/build.sh target/testdata/harfbuzz "$RUNNER_TEMP/hb-raster-reference"
