@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use crate::pixels::{self, Glyph, Image};
+use crate::pixels::{self, Fixed26Dot6, Glyph, Image};
 
 #[derive(Clone, Debug)]
 pub enum SoloInput {
@@ -162,10 +162,10 @@ fn check_empty(out: &Output, glyph: u32, sample: &Sample) -> Result<(), String> 
 pub struct ShapeRecord {
     pub g: u32,
     pub cl: usize,
-    pub dx: i32,
-    pub dy: i32,
-    pub ax: i32,
-    pub ay: i32,
+    pub dx: Fixed26Dot6,
+    pub dy: Fixed26Dot6,
+    pub ax: Fixed26Dot6,
+    pub ay: Fixed26Dot6,
 }
 
 fn number(object: &str, key: &str) -> Result<i32, String> {
@@ -195,10 +195,10 @@ pub fn shape_records(bytes: &[u8]) -> Result<Vec<ShapeRecord>, String> {
         out.push(ShapeRecord {
             g: number(body, "g")?.try_into().map_err(|_| "invalid g")?,
             cl: number(body, "cl")?.try_into().map_err(|_| "invalid cl")?,
-            dx: number(body, "dx")?,
-            dy: number(body, "dy")?,
-            ax: number(body, "ax")?,
-            ay: number(body, "ay")?,
+            dx: Fixed26Dot6(number(body, "dx")?),
+            dy: Fixed26Dot6(number(body, "dy")?),
+            ax: Fixed26Dot6(number(body, "ax")?),
+            ay: Fixed26Dot6(number(body, "ay")?),
         });
     }
     Ok(out)

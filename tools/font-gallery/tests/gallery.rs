@@ -1,4 +1,5 @@
 use font_gallery::{inputs, pixels, sheet};
+use pixels::Fixed26Dot6 as F;
 
 #[test]
 fn i1_rust_gallery_parity_pixels() {
@@ -50,17 +51,17 @@ fn i1_rust_gallery_parity_composition_and_sheet() {
     let ink = pixels::compose(&[
         pixels::Glyph {
             image: Some(gray.clone()),
-            dx: 0,
-            dy: 0,
-            ax: 0,
-            ay: 0,
+            dx: F(0),
+            dy: F(0),
+            ax: F(0),
+            ay: F(0),
         },
         pixels::Glyph {
             image: Some(gray),
-            dx: 64,
-            dy: 0,
-            ax: 0,
-            ay: 0,
+            dx: F(64),
+            dy: F(0),
+            ax: F(0),
+            ay: F(0),
         },
     ])
     .unwrap()

@@ -10,13 +10,17 @@ pub struct Image {
     pub pgm: bool,
 }
 
+/// A signed 26.6 font position; it is not an integer pixel coordinate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Fixed26Dot6(pub i32);
+
 #[derive(Clone, Debug)]
 pub struct Glyph {
     pub image: Option<Image>,
-    pub dx: i32,
-    pub dy: i32,
-    pub ax: i32,
-    pub ay: i32,
+    pub dx: Fixed26Dot6,
+    pub dy: Fixed26Dot6,
+    pub ax: Fixed26Dot6,
+    pub ay: Fixed26Dot6,
 }
 
 fn line<'a>(bytes: &'a [u8], cursor: &mut usize) -> Result<&'a str, String> {
@@ -217,10 +221,10 @@ pub fn compose(glyphs: &[Glyph]) -> Result<Option<Image>, String> {
     let (mut pen_x, mut pen_y) = (0i64, 0i64);
     let mut positioned = Vec::new();
     for glyph in glyphs {
-        let x = ((pen_x + glyph.dx as i64) as f64 / 64.0).round() as i32;
-        let y = -(((pen_y + glyph.dy as i64) as f64 / 64.0).round() as i32);
-        pen_x += glyph.ax as i64;
-        pen_y += glyph.ay as i64;
+        let x = ((pen_x + i64::from(glyph.dx.0)) as f64 / 64.0).round() as i32;
+        let y = -(((pen_y + i64::from(glyph.dy.0)) as f64 / 64.0).round() as i32);
+        pen_x += i64::from(glyph.ax.0);
+        pen_y += i64::from(glyph.ay.0);
         if let Some(image) = &glyph.image {
             positioned.push((image, x + image.left, y - image.top));
         }
