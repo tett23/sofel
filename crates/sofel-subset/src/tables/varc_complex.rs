@@ -3,7 +3,7 @@
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 
-use sofel_font::read::varc::Varc;
+use sofel_font::read::varc::{TupleValues, Varc};
 use sofel_font::read::{GlyphId, Tag};
 use sofel_write::{Errors, Serializer};
 
@@ -24,6 +24,51 @@ fn u32_at(data: &[u8], at: usize) -> Option<u32> {
     ))
 }
 
+fn mapped_axis(plan: &Plan, old: u16) -> Option<u16> {
+    if plan.var.user().is_empty() {
+        return Some(old);
+    }
+    plan.var
+        .n
+        .retained_axis_indices
+        .iter()
+        .position(|&index| index == usize::from(old))
+        .and_then(|index| u16::try_from(index).ok())
+}
+
+fn remap_axis_tuple(bytes: &mut [u8], plan: &Plan) -> Option<()> {
+    let mut at = 0usize;
+    while at < bytes.len() {
+        let control = *bytes.get(at)?;
+        at = at.checked_add(1)?;
+        let count = usize::from(control & 0x3f).checked_add(1)?;
+        let width = match control & 0xc0 {
+            0x80 => 0,
+            0x00 => 1,
+            0x40 => 2,
+            _ => 4,
+        };
+        for _ in 0..count {
+            if width == 0 {
+                (mapped_axis(plan, 0)? == 0).then_some(())?;
+                continue;
+            }
+            let end = at.checked_add(width)?;
+            let source = bytes.get(at..end)?;
+            let old = source.iter().fold(0u32, |value, &byte| {
+                value.saturating_mul(256).saturating_add(u32::from(byte))
+            });
+            let old = u16::try_from(old).ok()?;
+            let new = u32::from(mapped_axis(plan, old)?).to_be_bytes();
+            bytes
+                .get_mut(at..end)?
+                .copy_from_slice(new.get(4usize.checked_sub(width)?..)?);
+            at = end;
+        }
+    }
+    Some(())
+}
+
 fn put_u32(data: &mut [u8], at: usize, value: usize) -> Option<()> {
     let bytes = u32::try_from(value).ok()?.to_be_bytes();
     data.get_mut(at..at.checked_add(4)?)?
@@ -39,6 +84,50 @@ fn u24_at(data: &[u8], at: usize) -> Option<usize> {
                 value.saturating_mul(256).saturating_add(usize::from(byte))
             }),
     )
+}
+
+fn condition_uses_axis(data: &[u8], at: usize, axis: u16, depth: usize) -> Option<bool> {
+    if depth == 0 {
+        return None;
+    }
+    match u16_at(data, at)? {
+        1 => Some(u16_at(data, at.checked_add(2)?)? == axis),
+        2 => {
+            data.get(at..at.checked_add(8)?)?;
+            Some(false)
+        }
+        3 | 4 => {
+            let count = usize::from(*data.get(at.checked_add(2)?)?);
+            let mut used = false;
+            for index in 0..count {
+                let field = at.checked_add(3)?.checked_add(index.checked_mul(3)?)?;
+                let relative = u24_at(data, field)?;
+                if relative != 0 {
+                    used |= condition_uses_axis(
+                        data,
+                        at.checked_add(relative)?,
+                        axis,
+                        depth.saturating_sub(1),
+                    )?;
+                }
+            }
+            Some(used)
+        }
+        5 => {
+            let relative = u24_at(data, at.checked_add(2)?)?;
+            if relative == 0 {
+                Some(false)
+            } else {
+                condition_uses_axis(
+                    data,
+                    at.checked_add(relative)?,
+                    axis,
+                    depth.saturating_sub(1),
+                )
+            }
+        }
+        _ => None,
+    }
 }
 
 fn put_u24(data: &mut [u8], at: usize, value: usize) -> Option<()> {
@@ -57,6 +146,7 @@ fn append_condition(
     at: usize,
     output: &mut Vec<u8>,
     var_map: &BTreeMap<u32, u32>,
+    plan: &Plan,
     depth: usize,
 ) -> Option<usize> {
     if depth == 0 {
@@ -64,7 +154,13 @@ fn append_condition(
     }
     let start = output.len();
     match u16_at(source, at)? {
-        1 => output.extend_from_slice(source.get(at..at.checked_add(8)?)?),
+        1 => {
+            output.extend_from_slice(source.get(at..at.checked_add(8)?)?);
+            let old = u16_at(source, at.checked_add(2)?)?;
+            output
+                .get_mut(start.checked_add(2)?..start.checked_add(4)?)?
+                .copy_from_slice(&mapped_axis(plan, old)?.to_be_bytes());
+        }
         2 => {
             output.extend_from_slice(source.get(at..at.checked_add(8)?)?);
             let old = u32_at(source, at.checked_add(4)?)?;
@@ -92,6 +188,7 @@ fn append_condition(
                     at.checked_add(relative)?,
                     output,
                     var_map,
+                    plan,
                     depth.saturating_sub(1),
                 )?;
                 let new_field = start.checked_add(3)?.checked_add(child.checked_mul(3)?)?;
@@ -107,6 +204,7 @@ fn append_condition(
                     at.checked_add(relative)?,
                     output,
                     var_map,
+                    plan,
                     depth.saturating_sub(1),
                 )?;
                 put_u24(output, start.checked_add(2)?, child.checked_sub(start)?)?;
@@ -121,6 +219,7 @@ fn subset_conditions(
     src: &[u8],
     selected: &BTreeSet<u32>,
     var_map: &BTreeMap<u32, u32>,
+    plan: &Plan,
 ) -> Option<(Vec<u8>, BTreeMap<u32, u32>)> {
     if selected.is_empty() {
         return Some((Vec::new(), BTreeMap::new()));
@@ -147,7 +246,7 @@ fn subset_conditions(
         if offset == 0 {
             continue;
         }
-        let new_offset = append_condition(source, offset, &mut output, var_map, 64)?;
+        let new_offset = append_condition(source, offset, &mut output, var_map, plan, 64)?;
         let target = 4usize.checked_add(usize::try_from(new).ok()?.checked_mul(4)?)?;
         put_u32(&mut output, target, new_offset)?;
     }
@@ -308,6 +407,51 @@ fn region_axes(store: &[u8], list: usize, index: usize) -> Option<Vec<[u8; 8]>> 
     Some(axes)
 }
 
+/// Conservative check that an fvar axis contributes to no VARC record.
+/// Every axis-bearing record is inspected, including records later removed by
+/// glyph subsetting, so an undecodable reference never permits instancing.
+pub(crate) fn axis_unused(src: &[u8], axis: u16) -> bool {
+    let Some(varc) = Varc::new(src).ok() else {
+        return false;
+    };
+    let check = || -> Option<bool> {
+        let axes_at = usize::try_from(u32_at(src, 16)?).ok()?;
+        if axes_at != 0 {
+            for item in index_items(src, axes_at)? {
+                if TupleValues::new(&item)?.any(|value| value == i32::from(axis)) {
+                    return Some(false);
+                }
+            }
+        }
+        if let Some(conditions) = varc.condition_list() {
+            let at = usize::try_from(u32_at(src, 12)?).ok()?;
+            let data = src.get(at..)?;
+            for index in 0..conditions.len() {
+                let field = 4usize.checked_add(index.checked_mul(4)?)?;
+                let relative = usize::try_from(u32_at(data, field)?).ok()?;
+                if relative != 0 && condition_uses_axis(data, relative, axis, 64)? {
+                    return Some(false);
+                }
+            }
+        }
+        if varc.variation_store().is_some() {
+            let at = usize::try_from(u32_at(src, 8)?).ok()?;
+            let store = src.get(at..)?;
+            let list = usize::try_from(u32_at(store, 2)?).ok()?;
+            let count = usize::try_from(u32_at(store, list)?).ok()?;
+            for region_index in 0..count {
+                for record in region_axes(store, list, region_index)? {
+                    if u16::from_be_bytes(record.get(..2)?.try_into().ok()?) == axis {
+                        return Some(false);
+                    }
+                }
+            }
+        }
+        Some(true)
+    };
+    check().unwrap_or(false)
+}
+
 /// HarfBuzz's last-packed-first layout for sparse regions, with shared axis
 /// objects emitted after their last referring region in reverse order.
 #[allow(clippy::indexing_slicing)] // All positions are made from the checked region and axis counts.
@@ -366,7 +510,11 @@ fn region_list_bytes(regions: &[Vec<[u8; 8]>]) -> Option<Vec<u8>> {
 }
 
 #[allow(clippy::indexing_slicing)] // Selected indices are checked against parsed arrays before indexing.
-fn subset_store(src: &[u8], indices: &BTreeSet<u32>) -> Option<(Vec<u8>, BTreeMap<u32, u32>)> {
+fn subset_store(
+    src: &[u8],
+    indices: &BTreeSet<u32>,
+    plan: &Plan,
+) -> Option<(Vec<u8>, BTreeMap<u32, u32>)> {
     if indices.is_empty() {
         return Some((Vec::new(), BTreeMap::new()));
     }
@@ -417,7 +565,13 @@ fn subset_store(src: &[u8], indices: &BTreeSet<u32>) -> Option<(Vec<u8>, BTreeMa
             return None;
         }
         region_map.insert(old_index, u16::try_from(new_index).ok()?);
-        regions.push(region_axes(store, list, usize::from(old_index))?);
+        let mut axes = region_axes(store, list, usize::from(old_index))?;
+        for axis in &mut axes {
+            let old = u16::from_be_bytes(axis.get(..2)?.try_into().ok()?);
+            axis.get_mut(..2)?
+                .copy_from_slice(&mapped_axis(plan, old)?.to_be_bytes());
+        }
+        regions.push(axes);
     }
     let mut out = alloc::vec![0; 8usize.checked_add(selected.len().checked_mul(4)?)?];
     out.get_mut(0..2)?.copy_from_slice(&1u16.to_be_bytes());
@@ -584,16 +738,16 @@ pub(super) fn subset(
     let mut selected_axes = Vec::new();
     for (new, &old) in axis_indices.iter().enumerate() {
         axis_map.insert(old, u32::try_from(new).map_err(|_| failed())?);
-        selected_axes.push(
-            axis_items
-                .get(usize::try_from(old).map_err(|_| malformed())?)
-                .ok_or_else(malformed)?
-                .clone(),
-        );
+        let mut item = axis_items
+            .get(usize::try_from(old).map_err(|_| malformed())?)
+            .ok_or_else(malformed)?
+            .clone();
+        remap_axis_tuple(&mut item, plan).ok_or_else(unsupported)?;
+        selected_axes.push(item);
     }
-    let (store, var_map) = subset_store(src, &var_indices).ok_or_else(unsupported)?;
+    let (store, var_map) = subset_store(src, &var_indices, plan).ok_or_else(unsupported)?;
     let (condition, condition_map) =
-        subset_conditions(src, &conditions, &var_map).ok_or_else(unsupported)?;
+        subset_conditions(src, &conditions, &var_map, plan).ok_or_else(unsupported)?;
     let mut records = Vec::new();
     for old in old_gids {
         records.push(
