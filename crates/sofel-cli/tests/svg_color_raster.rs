@@ -15,6 +15,52 @@ use sofel_raster::{BgraImage, FillRule, Rasterizer, RenderOptions};
 use sofel_svg::{Gradient, GradientKind, Scene, Shape, ShapeKind, Stop};
 use std::process::Command;
 
+fn gzip_stored(data: &[u8]) -> Vec<u8> {
+    let len = u16::try_from(data.len()).unwrap();
+    let mut out = vec![31, 139, 8, 0, 0, 0, 0, 0, 0, 255, 1];
+    out.extend_from_slice(&len.to_le_bytes());
+    out.extend_from_slice(&(!len).to_le_bytes());
+    out.extend_from_slice(data);
+    out.extend_from_slice(&sofel_inflate::crc32(data).to_le_bytes());
+    out.extend_from_slice(&u32::from(len).to_le_bytes());
+    out
+}
+
+#[test]
+fn adr0066_i3_plain_and_gzip_two_glyphs_have_identical_pixels() {
+    let xml = br##"<svg viewBox="0 0 10 10"><g id="glyph1"><rect width="10" height="10" fill="red"/></g><g id="glyph2"><rect width="10" height="10" fill="blue"/></g></svg>"##;
+    let gzip = gzip_stored(xml);
+    let mut rendered = Vec::new();
+    for source in [xml.as_slice(), gzip.as_slice()] {
+        let document = sofel_svg::document(source, 4096).unwrap();
+        for glyph in [1, 2] {
+            let scene = sofel_svg::parse_glyph(&document, glyph, 10, [0, 0, 0, 255]).unwrap();
+            let mut raster = Rasterizer::new();
+            let mut image = BgraImage::default();
+            assert!(sofel_cli::color_raster::render_glyph_scene(
+                &scene,
+                10,
+                10,
+                &mut raster,
+                &mut image
+            ));
+            assert_eq!((image.width, image.rows), (10, 10));
+            let expected = if glyph == 1 {
+                [0, 0, 255, 255]
+            } else {
+                [255, 0, 0, 255]
+            };
+            let (pixels, tail) = image.pixels.as_chunks::<4>();
+            assert!(tail.is_empty());
+            assert!(pixels.iter().all(|pixel| *pixel == expected));
+            rendered.push(image);
+        }
+    }
+    assert_eq!(rendered[0], rendered[2]);
+    assert_eq!(rendered[1], rendered[3]);
+    assert_ne!(rendered[0], rendered[1]);
+}
+
 // Independent I3 oracle for the two source SVG documents. It uses the
 // numeric rect/circle/stop declarations, without calling the SVG parser,
 // its gradient sampler, or the production BGRA blending function.

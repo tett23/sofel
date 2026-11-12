@@ -1294,7 +1294,7 @@ pub(crate) fn instance(
     let notdef_outline = flags.has(Flags::NOTDEF_OUTLINE);
     let no_hinting = flags.has(Flags::NO_HINTING);
     use sofel_font::var::{Location, Variation};
-    let location = if axes.avar2 {
+    let location = if axes.avar2 && !axes.all_axes_pinned {
         Location::from_normalized_2_14(font, &axes.normalized_coords)
     } else {
         let design = axes

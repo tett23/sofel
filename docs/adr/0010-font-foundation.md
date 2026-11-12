@@ -1,6 +1,6 @@
 # ADR 0010: `sofel-font` の土台（sfntのフォント、文字からグリフ、メトリクスの方針）
 
-ステータス: 採択
+ステータス: 採択→可変フォントの座標と `sofel-font` の `alloc` は [ADR 0027](0027-variable-fonts.md)
 
 ## 文脈
 

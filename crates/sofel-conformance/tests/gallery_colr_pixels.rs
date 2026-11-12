@@ -9,16 +9,32 @@ use sofel_raster::{BgraImage, Rasterizer};
 use sofel_read::GlyphId;
 
 fn compare(font_path: &str, glyph: u32, reference: &[u8], require_color: bool) {
+    compare_at(font_path, glyph, reference, require_color, 48, 0, &[]);
+}
+
+fn compare_at(
+    font_path: &str,
+    glyph: u32,
+    reference: &[u8],
+    require_color: bool,
+    ppem: u16,
+    palette: u16,
+    coords: &[f32],
+) {
     let bytes = std::fs::read(paths::testdata().join(font_path)).unwrap();
     let font = Font::new(&bytes, 0).unwrap();
-    let outlines = Outlines::new(font.default_instance());
+    let location = sofel_font::var::Location::from_design(&font, coords);
+    let outlines = Outlines::new(font.instance(&location));
     let mut image = BgraImage::default();
     let mut raster = Rasterizer::new();
     let result = render_color(
         &outlines,
         GlyphId(glyph),
-        48,
-        &PaintOptions::default(),
+        ppem,
+        &PaintOptions {
+            palette: sofel_color::Palette::Font(palette),
+            ..Default::default()
+        },
         &mut Scratch::default(),
         &mut raster,
         &mut image,
@@ -110,6 +126,28 @@ fn i1_variable_colr_93() {
 }
 
 #[test]
+fn i2_colr_pixels_sweep() {
+    compare(
+        VARIABLE,
+        27,
+        include_bytes!("../../../conformance/color-raster/variable-27.bgra"),
+        true,
+    );
+    compare(
+        VARIABLE,
+        38,
+        include_bytes!("../../../conformance/color-raster/variable-38.bgra"),
+        true,
+    );
+    compare(
+        VARIABLE,
+        12,
+        include_bytes!("../../../conformance/color-raster/variable-12.bgra"),
+        true,
+    );
+}
+
+#[test]
 fn i2_colr_pixels_all_28_composite_modes() {
     let mut references: &[u8] = include_bytes!("../../../conformance/color-raster/composites.bgra");
     for glyph in 120..=147 {
@@ -134,23 +172,38 @@ fn i2_colr_pixels_all_28_composite_modes() {
 }
 
 #[test]
-fn i2_colr_pixels_sweep() {
-    compare(
-        VARIABLE,
-        27,
-        include_bytes!("../../../conformance/color-raster/variable-27.bgra"),
-        true,
-    );
-    compare(
-        VARIABLE,
-        38,
-        include_bytes!("../../../conformance/color-raster/variable-38.bgra"),
-        true,
-    );
-    compare(
-        VARIABLE,
-        12,
-        include_bytes!("../../../conformance/color-raster/variable-12.bgra"),
-        true,
-    );
+#[ignore = "requires the pinned HarfBuzz raster reference executable"]
+fn i2_all_colrv1_pixel_glyphs_match_harfbuzz_raster() {
+    let helper = std::env::var_os("SOFEL_HB_RASTER_REFERENCE").unwrap();
+    let font = paths::testdata().join(VARIABLE);
+    let mut checked = 0;
+    for glyph in 8..=220 {
+        // The other glyphs provide monochrome geometry; 168 is the COLRv0 control.
+        if matches!(glyph, 161..=165 | 168 | 170..=176) {
+            continue;
+        }
+        let result = std::process::Command::new(&helper)
+            .arg(&font)
+            .arg(glyph.to_string())
+            .arg("48")
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "HarfBuzz reference unavailable for glyph {glyph}"
+        );
+        compare(VARIABLE, glyph, &result.stdout, false);
+        checked += 1;
+    }
+    assert_eq!(checked, 200);
+    for glyph in [12, 27, 38] {
+        let reference = std::process::Command::new(&helper)
+            .arg(&font)
+            .arg(glyph.to_string())
+            .args(["96", "1", "SWPS=45"])
+            .output()
+            .unwrap();
+        assert!(reference.status.success());
+        compare_at(VARIABLE, glyph, &reference.stdout, true, 96, 1, &[45.]);
+    }
 }
