@@ -27,6 +27,8 @@ VARC の輪郭は、部品の表示条件、軸座標、変形を評価して指
 
 また、gvar または GVAR があっても、共有 tuple と全グリフの変化記録が空なら、非既定値への固定と軸の範囲指定を受け付ける。軸を指定した出力から空の gvar または GVAR を除く。
 
+さらに、gvar の変化記録があるフォントでも、輪郭を残すグリフが単純グリフだけで、ほかの変化量表と avar がなければ、全軸を非既定値に固定できる。単純グリフの点と幻の点に gvar の変化量を適用し、固定した出力から gvar を除く。合成グリフを含む場合は `Unsupported` とする。
+
 VARC のサブセット化は、残す部品の閉包と参照の再採番、条件と変化量ストアの再配置を行う（[ADR 0067](docs/adr/0067-varc-components.md)）。VARC が参照しない1軸を既定値に固定する場合は、gvar、GDEF、GSUB などの対象表が存在しないか捨てられ、avar が版2でなければ部分軸固定できる。これらの対象表と avar が最初からない場合は、同じ軸を既定値以外に固定するか範囲を指定することもできる。VARC をそのまま写す指定は、グリフ ID を保持し、軸を変えない場合だけ受け付ける。
 
 `sofel-read` は、sfntの目録、TTC/OTC、dfont（[ADR 0058](docs/adr/0058-dfont-face-selection.md)）、head、maxp/MAXP、hhea/HHEA、hmtx/HMTX、cmap（フォーマット0〜15）、loca、glyf（[ADR 0007](docs/adr/0007-sfnt-read-foundation.md)、[0011](docs/adr/0011-glyf-outlines.md)）と、OS/2、name、post、vhea/VHEA、vmtx/VMTX、VORG（[ADR 0016](docs/adr/0016-font-and-vertical-metrics.md)）、BASE（[ADR 0017](docs/adr/0017-base-baselines.md)）、CFFとCFF2（[ADR 0021](docs/adr/0021-cff-outlines.md)）、GDEF、GSUB、GPOS（[ADR 0020](docs/adr/0020-shaping-foundation.md)）、MATH、fvar、avar、STAT（[ADR 0022](docs/adr/0022-subsetting.md)）を読み、各表の検証器を持つ。VARC は版1のヘッダ、部品記録、条件、変化量ストアを検査しながら読む（[ADR 0067](docs/adr/0067-varc-components.md)）。

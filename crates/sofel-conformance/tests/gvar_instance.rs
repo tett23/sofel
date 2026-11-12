@@ -98,3 +98,64 @@ fn adr0061_i1_inert_gvar_nondefault_pin_and_range_match_harfbuzz() {
     let _ = std::fs::remove_file(source);
     let _ = std::fs::remove_file(output);
 }
+
+#[test]
+fn adr0061_i1_simple_gvar_full_pin_matches_harfbuzz() {
+    let path = paths::testdata().join("harfbuzz/test/api/fonts/glyf-default-instance-bounds.ttf");
+    let data = std::fs::read(&path).unwrap();
+    let font = Font::new(&data, 0).unwrap();
+    let output =
+        std::env::temp_dir().join(format!("sofel-gvar-full-pin-{}.ttf", std::process::id()));
+    for retain in [false, true] {
+        for value in [0.25, 0.5, 1.0] {
+            let input = Input::new()
+                .with_flags(if retain {
+                    Flags::RETAIN_GIDS
+                } else {
+                    Flags::DEFAULT
+                })
+                .map_set(SetKind::Glyphs, |set| {
+                    set.add(1);
+                })
+                .with_axis_pinned(Tag::new(b"wght"), value, &font)
+                .unwrap()
+                .with_axis_pinned(Tag::new(b"wdth"), value, &font)
+                .unwrap();
+            let ours = subset(&font, &input).unwrap();
+            let mut command = Command::new(paths::hb_dump());
+            command
+                .arg("--subset")
+                .arg(format!("--font-file={}", path.display()))
+                .arg("--gids=1")
+                .arg(format!("--variations=wght={value},wdth={value}"))
+                .arg(format!("--output-file={}", output.display()));
+            if retain {
+                command.arg("--retain-gids");
+            }
+            assert!(command.status().unwrap().success());
+            assert_eq!(
+                ours,
+                std::fs::read(&output).unwrap(),
+                "value={value}, retain={retain}"
+            );
+        }
+    }
+    let _ = std::fs::remove_file(output);
+}
+
+#[test]
+fn adr0061_i1_nondefault_gvar_composite_remains_unsupported() {
+    let path = paths::testdata().join("harfbuzz/test/api/fonts/glyf-default-instance-bounds.ttf");
+    let data = std::fs::read(path).unwrap();
+    let font = Font::new(&data, 0).unwrap();
+    let input = Input::new()
+        .map_set(SetKind::Glyphs, |set| set.add(2))
+        .with_axis_pinned(Tag::new(b"wght"), 0.5, &font)
+        .unwrap()
+        .with_axis_pinned(Tag::new(b"wdth"), 0.5, &font)
+        .unwrap();
+    assert!(matches!(
+        subset(&font, &input),
+        Err(sofel_subset::SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"gvar")
+    ));
+}
