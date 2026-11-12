@@ -328,13 +328,13 @@ fn apply_ft_phantoms(
     Ok(true)
 }
 
-fn tuple_peak(table: &Gvar<'_>, tuple: &TupleVariation<'_>) -> Result<Vec<i16>, GvarError> {
+fn tuple_peak(table: Option<&Gvar<'_>>, tuple: &TupleVariation<'_>) -> Result<Vec<i16>, GvarError> {
     let peak = tuple
         .embedded_peak()
         .or_else(|| {
             tuple
                 .shared_peak_index()
-                .and_then(|index| table.shared_tuple(index))
+                .and_then(|index| table?.shared_tuple(index))
         })
         .ok_or(GvarError::InvalidData)?;
     Ok(peak_values(peak).collect())
@@ -360,7 +360,7 @@ fn scalar_hb(
     {
         return Ok(*value);
     }
-    let peak = tuple_peak(table, tuple)?;
+    let peak = tuple_peak(Some(table), tuple)?;
     let middle = tuple_intermediate(tuple);
     Ok(tuple_scalar_hb(
         coords,
@@ -385,7 +385,7 @@ fn scalar_ft(
     {
         return Ok(*value);
     }
-    let peak = tuple_peak(table, tuple)?;
+    let peak = tuple_peak(Some(table), tuple)?;
     let middle = tuple_intermediate(tuple);
     Ok(tuple_scalar_ft(
         coords,
@@ -1126,5 +1126,110 @@ mod tests {
         ft_out[1].x += 7 << 16;
         infer_ft(&ft_original, &mut ft_out, &[false, true, false]);
         assert_eq!(ft_out.map(|point| point.x), [7 << 16, 57 << 16, 107 << 16]);
+    }
+}
+
+/// Load the TrueType CVT in unscaled 26.6 font units, as tt_face_vary_cvt
+/// does before the size-specific scaling step.
+fn varied_cvt(
+    cvt: &[u8],
+    store: Option<gvar::GlyphVariationData<'_>>,
+    gvar: Option<&Gvar<'_>>,
+    coords: &[i32],
+) -> Option<Vec<i32>> {
+    let mut values: Vec<_> = cvt
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|v| i32::from(i16::from_be_bytes([v[0], v[1]])) << 6)
+        .collect();
+    let Some(store) = store else {
+        return Some(values);
+    };
+    let mut adjustments = alloc::vec![0i64; values.len()];
+    let shared = store.shared_points();
+    for tuple in store.tuples() {
+        let tuple = tuple?;
+        let peak = tuple_peak(gvar, &tuple).ok()?;
+        let middle = tuple_intermediate(&tuple);
+        let scalar = tuple_scalar_ft(
+            coords,
+            &peak,
+            middle.as_ref().map(|(a, b)| (a.as_slice(), b.as_slice())),
+        );
+        if scalar == 0 {
+            continue;
+        }
+        let points = if tuple.private_points() {
+            tuple.points()
+        } else {
+            shared
+        };
+        let Some(points) = points else { continue };
+        let Some(deltas) = tuple.cvt_deltas(values.len(), shared) else {
+            continue;
+        };
+        if points.is_all() {
+            for (sum, delta) in adjustments.iter_mut().zip(deltas.iter()) {
+                *sum += i64::from(delta) * i64::from(scalar);
+            }
+        } else {
+            for (index, delta) in points.iter().zip(deltas.iter()) {
+                if let Some(sum) = adjustments.get_mut(index as usize) {
+                    *sum += i64::from(delta) * i64::from(scalar);
+                }
+            }
+        }
+    }
+    for (value, sum) in values.iter_mut().zip(adjustments) {
+        *value = value.checked_add(i32::try_from((sum + 512) >> 10).ok()?)?;
+    }
+    Some(values)
+}
+
+impl Instance<'_, '_, '_, '_> {
+    /// TrueType control values at the instance location, before ppem scaling,
+    /// in 26.6 font units. Returns None for absent control values or an
+    /// invalid tuple header.
+    pub fn ft_control_values(&self) -> Option<Vec<i32>> {
+        use sofel_read::{Tag, fvar};
+        let font = self.font();
+        let cvt = font.table(Tag::new(b"cvt "))?;
+        let coords: Vec<_> = self.ft_coords().iter().map(|v| v.0).collect();
+        if coords.iter().all(|v| *v == 0) {
+            return varied_cvt(cvt, None, None, &coords);
+        }
+        let store = match font.table(Tag::new(b"cvar")) {
+            Some(bytes) if bytes.starts_with(&[0, 1, 0, 0]) => {
+                let axes = fvar::Fvar::new(font.table(fvar::TAG)?).ok()?.axis_count();
+                Some(gvar::GlyphVariationData::from_cvar(
+                    bytes,
+                    u16::try_from(axes).ok()?,
+                )?)
+            }
+            _ => None,
+        };
+        varied_cvt(cvt, store, table(font).as_ref(), &coords)
+    }
+}
+
+#[cfg(test)]
+mod cvt_tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+
+    #[test]
+    fn adr0064_i1_cvt_rounds_after_combining_active_tuples() {
+        // Two identical tuples at 1/128 of the peak. Each gives half of
+        // one 26.6 unit, so their sum must be rounded only once.
+        let bytes = [
+            0, 1, 0, 0, 0, 2, 0, 20, 0, 4, 0xa0, 0, 0x40, 0, 0, 4, 0xa0, 0, 0x40, 0, 0, 1, 1, 255,
+            0, 1, 1, 255,
+        ];
+        let store = gvar::GlyphVariationData::from_cvar(&bytes, 1).unwrap();
+        assert_eq!(
+            varied_cvt(&[0, 10, 255, 246], Some(store), None, &[512]),
+            Some(alloc::vec![641, -641])
+        );
     }
 }
