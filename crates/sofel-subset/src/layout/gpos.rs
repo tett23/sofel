@@ -394,24 +394,30 @@ fn pair_effective_format(s: &Sub<'_, '_>, format: u16, base: D<'_>, values: D<'_
     out
 }
 
-fn value_delta(s: &Sub<'_, '_>, format: u16, base: D<'_>, values: D<'_>, bit: u16) -> i32 {
-    let device_flag = 0x10u16 << bit;
-    if format & device_flag == 0 || s.p.layout.gdef_deltas.is_empty() {
+/// `ValueFormat::get_effective_format` when instancing: the device
+/// flags dropped (their variation indices map to no variations, or are
+/// not mapped) and nothing else.
+fn pinned_value_delta(s: &Sub<'_, '_>, format: u16, base: D<'_>, values: D<'_>, bit: u16) -> i32 {
+    let flag = 0x10u16 << bit;
+    if format & flag == 0 {
         return 0;
     }
-    let index = (format & device_flag.wrapping_sub(1)).count_ones() as usize;
-    super::gdef::pinned_delta(s.p, base.follow(u32::from(values.u16_at(0, index))))
+    let index = (format & flag.wrapping_sub(1)).count_ones() as usize;
+    let off = values.u16_at(0, index);
+    if off == 0 {
+        return 0;
+    }
+    super::gdef::pinned_delta(s.p, base.follow(u32::from(off)))
 }
 
-/// A device-only nonzero delta needs a base field in the pinned output.
 fn instanced_format(s: &Sub<'_, '_>, format: u16, base: D<'_>, values: D<'_>) -> u16 {
-    (0..4).fold(format & 0x0f, |result, bit| {
-        if value_delta(s, format, base, values, bit) != 0 {
-            result | (1 << bit)
-        } else {
-            result
+    let mut result = format & 0xf;
+    for bit in 0..4 {
+        if pinned_value_delta(s, format, base, values, bit) != 0 {
+            result |= 1 << bit;
         }
-    })
+    }
+    result
 }
 
 /// Whether `NO_HINTING` strips hinting Devices from value records.
@@ -472,7 +478,7 @@ fn copy_values(s: &mut Sub<'_, '_>, src_format: u16, new_format: u16, base: D<'_
             0
         };
         if new_format & flag != 0 {
-            s.s.u16(v.wrapping_add(crate::instance::lo16(value_delta(
+            s.s.u16(v.wrapping_add(crate::instance::lo16(pinned_value_delta(
                 s, src_format, base, values, bit,
             ))));
         }
@@ -521,9 +527,10 @@ fn anchor(s: &mut Sub<'_, '_>, a: D<'_>) -> bool {
             s.s.extend(a.slice(0, 6));
             let x = a.off16(6);
             let y = a.off16(8);
-            for (at, dev) in [(2, x), (4, y)] {
-                let delta = super::gdef::pinned_delta(s.p, dev);
-                s.s.set_u16(at, a.u16(at).wrapping_add(crate::instance::lo16(delta)));
+            if !super::gdef::adjust_coordinate(s, 2, a.u16(2), x)
+                || !super::gdef::adjust_coordinate(s, 4, a.u16(4), y)
+            {
+                return false;
             }
             let is_var = super::gdef::is_variation_device;
             let mapped = |dev: D<'_>| {
