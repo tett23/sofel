@@ -268,7 +268,10 @@ fn adr0022_vvar_shared_advance_and_vertical_origin_map_is_serialized_once() {
     let vvar = Vvar::new(vvar).unwrap();
     let advance = vvar.advance_map().unwrap().unwrap();
     let origin = vvar.vorg_map().unwrap().unwrap();
-    assert_eq!((advance.map(0), advance.map(1)), (origin.map(0), origin.map(1)));
+    assert_eq!(
+        (advance.map(0), advance.map(1)),
+        (origin.map(0), origin.map(1))
+    );
 }
 
 #[test]
