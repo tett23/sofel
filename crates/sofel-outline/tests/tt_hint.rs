@@ -170,9 +170,9 @@ fn adr0064_i1_v35_uses_hdmx_device_width() {
     let font = Font::new(&data, 0).unwrap();
     let table = font.table(sofel_font::read::Tag::new(b"hdmx")).unwrap();
     let offset = table.as_ptr() as usize - data.as_ptr() as usize;
-    assert_eq!(table[8], 9);
-    data[offset + 9] = 42; // Maximum width in the 9 ppem record.
-    data[offset + 11] = 42; // Width for glyph 1.
+    assert_eq!(table.get(8), Some(&9));
+    *data.get_mut(offset + 9).unwrap() = 42; // Maximum width in the 9 ppem record.
+    *data.get_mut(offset + 11).unwrap() = 42; // Width for glyph 1.
     let font = Font::new(&data, 0).unwrap();
     let outline = Outlines::new(font.default_instance());
     let (_, width) = outline
