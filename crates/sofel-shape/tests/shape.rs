@@ -33,6 +33,17 @@ fn adr0063_i1_subfont_is_send_and_sync() {
 }
 
 #[test]
+fn adr0063_i1_unset_horizontal_origin_inherits_harfbuzz_nil_origin() {
+    let scale = Scale::new(HbScale::new(1000, 1000, 1000), 0, 0);
+    let root = SubFont::new(scale);
+    assert_eq!(root.horizontal_origin(1), Some((0, 0)));
+
+    let mut child = root.child();
+    child.set_scale(Scale::new(HbScale::new(2000, 3000, 1000), 0, 0));
+    assert_eq!(child.horizontal_origin(1), Some((0, 0)));
+}
+
+#[test]
 fn adr0063_i1_outline_supplies_box_without_box_callback() {
     let scale = Scale::new(HbScale::new(1000, 1000, 1000), 0, 0);
     let mut font = SubFont::new(scale);
