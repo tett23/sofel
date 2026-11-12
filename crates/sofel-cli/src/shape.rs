@@ -615,6 +615,12 @@ fn set_unicodes_after(o: &mut Options, v: &[u8]) -> Result<(), String> {
 /// `parse_features`: the list without surrounding quotes, split at `,`
 /// and ` `; items that do not parse are dropped.
 fn set_features(o: &mut Options, v: &[u8]) -> Result<(), String> {
+    o.features = parse_feature_list(v);
+    Ok(())
+}
+
+/// Parse a feature list with the same forgiving syntax as `sofel shape`.
+pub fn parse_feature_list(v: &[u8]) -> Vec<Feature> {
     let mut s = v;
     if let (Some(&first), Some(&last)) = (s.first(), s.last())
         && first == last
@@ -622,15 +628,14 @@ fn set_features(o: &mut Options, v: &[u8]) -> Result<(), String> {
     {
         s = s.get(1..s.len().saturating_sub(1)).unwrap_or_default();
     }
-    o.features = if s.is_empty() {
+    if s.is_empty() {
         Vec::new()
     } else {
         s.split(|&c| c == b',' || c == b' ')
             .filter(|f| !f.is_empty())
             .filter_map(Feature::parse)
             .collect()
-    };
-    Ok(())
+    }
 }
 
 /// `parse_shapers`: every name must be a shaper sofel has; the first
