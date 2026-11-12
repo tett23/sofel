@@ -142,7 +142,8 @@ fn alpha(value: u8, opacity: f32) -> u8 {
 
 struct Builder<'a> {
     scene: Scene,
-    gradient_ids: BTreeMap<&'a str, usize>,
+    gradient_ids: BTreeMap<(Option<usize>, &'a str), usize>,
+    glyph: usize,
     solids: BTreeMap<[u8; 4], usize>,
     translucent: BTreeMap<(usize, u8), usize>,
     clip_paths: Vec<ClipPath>,
@@ -158,7 +159,11 @@ impl Builder<'_> {
 
     fn paint(&mut self, style: &Style<'_>) -> Result<Option<usize>, ParseError> {
         if let Some(id) = local_fragment(style.fill) {
-            let Some(&source) = self.gradient_ids.get(id) else {
+            let Some(&source) = self
+                .gradient_ids
+                .get(&(Some(self.glyph), id))
+                .or_else(|| self.gradient_ids.get(&(None, id)))
+            else {
                 return Ok(None);
             };
             let opacity = alpha(255, style.opacity);
@@ -213,32 +218,25 @@ struct Placed {
     clips: Vec<usize>,
 }
 
-#[allow(clippy::too_many_arguments)] // The same recursion handles referenced shapes and clipping outlines.
-fn walk<'a>(
+fn enter<'a>(
     doc: &Document<'a>,
-    i: usize,
+    node: &Node<'a>,
     parent: &Style<'a>,
     b: &mut Builder<'a>,
-    placed: &mut Vec<Placed>,
     clipping: bool,
     active: &mut Vec<usize>,
     depth: usize,
-) -> Result<(), ParseError> {
-    if depth >= 64 {
-        return Err(ParseError);
-    }
-    b.charge(1)?;
-    let node = doc.nodes.get(i).ok_or(ParseError)?;
+) -> Result<Option<Style<'a>>, ParseError> {
     let mut style = parent.enter(node);
     if node.property("display") == Some("none") {
-        return Ok(());
+        return Ok(None);
     }
     if let Some(value) = node.property("clip-path").filter(|v| *v != "none") {
         if clipping {
             return Err(ParseError);
         }
-        let Some(&clip) = local_fragment(value).and_then(|id| doc.ids.get(id)) else {
-            return Ok(());
+        let Some(clip) = local_fragment(value).and_then(|id| doc.lookup(Some(b.glyph), id)) else {
+            return Ok(None);
         };
         let clip_node = doc.nodes.get(clip).ok_or(ParseError)?;
         if clip_node.name != "clipPath"
@@ -270,6 +268,28 @@ fn walk<'a>(
                 .collect(),
         );
     }
+    Ok(Some(style))
+}
+
+#[allow(clippy::too_many_arguments)] // The same recursion handles referenced shapes and clipping outlines.
+fn walk<'a>(
+    doc: &Document<'a>,
+    i: usize,
+    parent: &Style<'a>,
+    b: &mut Builder<'a>,
+    placed: &mut Vec<Placed>,
+    clipping: bool,
+    active: &mut Vec<usize>,
+    depth: usize,
+) -> Result<(), ParseError> {
+    if depth >= 64 {
+        return Err(ParseError);
+    }
+    let node = doc.nodes.get(i).ok_or(ParseError)?;
+    b.charge(node.content_len)?;
+    let Some(mut style) = enter(doc, node, parent, b, clipping, active, depth)? else {
+        return Ok(());
+    };
     match node.name {
         "svg" | "g" | "clipPath" => {
             if node.name == "clipPath" && !clipping {
@@ -289,11 +309,11 @@ fn walk<'a>(
             }
         }
         "use" => {
-            let Some(&target) = node
+            let Some(target) = node
                 .attr("href")
                 .or_else(|| node.attr("xlink:href"))
                 .and_then(|v| v.strip_prefix('#'))
-                .and_then(|id| doc.ids.get(id))
+                .and_then(|id| doc.lookup(Some(b.glyph), id))
             else {
                 return Ok(());
             };
@@ -350,20 +370,24 @@ pub(crate) fn parse(
     foreground: [u8; 4],
 ) -> Result<GlyphScene, ParseError> {
     let doc = Document::parse(data)?;
-    let Some(&target) = doc.ids.get(format!("glyph{glyph}").as_str()) else {
+    let Some(target) = doc.lookup(None, format!("glyph{glyph}").as_str()) else {
         return Ok(GlyphScene::default());
     };
     let mut b = Builder {
         scene: Scene::default(),
         gradient_ids: BTreeMap::new(),
+        glyph: target,
         solids: BTreeMap::new(),
         translucent: BTreeMap::new(),
         clip_paths: Vec::new(),
-        remaining: 65_536,
+        remaining: data.len().saturating_mul(8).max(65_536),
         foreground,
     };
     for (i, node) in doc.nodes.iter().enumerate() {
-        if !matches!(node.name, "linearGradient" | "radialGradient") {
+        if !node.accessible
+            || node.glyph_scope.is_some_and(|scope| scope != target)
+            || !matches!(node.name, "linearGradient" | "radialGradient")
+        {
             continue;
         }
         let Some(id) = node.attr("id") else {
@@ -385,7 +409,8 @@ pub(crate) fn parse(
                 rgba: [r, gc, bc, a],
             });
         }
-        b.gradient_ids.insert(id, b.scene.gradients.len());
+        b.gradient_ids
+            .insert((node.glyph_scope, id), b.scene.gradients.len());
         b.scene.gradients.push(g);
     }
     let root = doc.nodes.first().ok_or(ParseError)?;
@@ -406,7 +431,10 @@ pub(crate) fn parse(
         next = n.parent;
     }
     for n in ancestors.into_iter().rev() {
-        style = style.enter(n);
+        let Some(next) = enter(&doc, n, &style, &mut b, false, &mut Vec::new(), 0)? else {
+            return Ok(GlyphScene::default());
+        };
+        style = next;
     }
     let mut placed = Vec::new();
     walk(
@@ -423,7 +451,17 @@ pub(crate) fn parse(
     for p in placed {
         let mut shape_clips = Vec::new();
         for i in p.clips {
-            let count = b.clip_paths.get(i).ok_or(ParseError)?.len();
+            let count =
+                b.clip_paths
+                    .get(i)
+                    .ok_or(ParseError)?
+                    .iter()
+                    .fold(0usize, |cost, element| {
+                        cost.saturating_add(match &element.shape.kind {
+                            super::ShapeKind::Path(path) => path.segment_count().saturating_add(1),
+                            _ => 1,
+                        })
+                    });
             b.charge(count.saturating_add(1))?;
             shape_clips.push(b.clip_paths.get(i).ok_or(ParseError)?.clone());
         }

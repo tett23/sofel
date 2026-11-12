@@ -15,6 +15,83 @@ use sofel_raster::{BgraImage, FillRule, Rasterizer, RenderOptions};
 use sofel_svg::{Gradient, GradientKind, Scene, Shape, ShapeKind, Stop};
 use std::process::Command;
 
+// Independent I3 oracle for the two source SVG documents. It uses the
+// numeric rect/circle/stop declarations, without calling the SVG parser,
+// its gradient sampler, or the production BGRA blending function.
+fn reference_anchor(glyph: u32, local_x: f64, local_y: f64) -> [u8; 4] {
+    let pixel_size = 1024.0 / (48.0 * 120.0);
+    let half = pixel_size / 2.0;
+    let coverage = |x0: f64, y0: f64, x1: f64, y1: f64| -> u8 {
+        let x = (x1.min(local_x + half) - x0.max(local_x - half)).max(0.0);
+        let y = (y1.min(local_y + half) - y0.max(local_y - half)).max(0.0);
+        ((x * y / (pixel_size * pixel_size)) * 255.0).round() as u8
+    };
+    let interpolate = |start: [u8; 4], end: [u8; 4], t: f64| -> [u8; 4] {
+        let t = t.clamp(0.0, 1.0);
+        std::array::from_fn(|channel| {
+            (f64::from(start[channel]) + (f64::from(end[channel]) - f64::from(start[channel])) * t)
+                .round() as u8
+        })
+    };
+    let mut premul = [0u8; 4]; // BGRA, premultiplied.
+    let mut over = |rgba: [u8; 4], cover: u8| {
+        let alpha = (u32::from(rgba[3]) * u32::from(cover) + 127) / 255;
+        let remain = 255 - alpha;
+        for (channel, source) in [rgba[2], rgba[1], rgba[0]].into_iter().enumerate() {
+            let foreground = (u32::from(source) * alpha + 127) / 255;
+            let background = (u32::from(premul[channel]) * remain + 127) / 255;
+            premul[channel] = (foreground + background).min(255) as u8;
+        }
+        premul[3] = (alpha + (u32::from(premul[3]) * remain + 127) / 255).min(255) as u8;
+    };
+
+    let horizontal_t = ((local_x - 1.0) / 8.0 - 0.05) / 0.90;
+    let h_alpha = if glyph == 19 { 128 } else { 255 };
+    let h = interpolate([255, 215, 0, h_alpha], [255, 0, 0, 255], horizontal_t);
+    over(h, coverage(1.0, 4.5, 9.0, 5.5));
+
+    // rotate(90) turns the default horizontal gradient into the vertical
+    // direction in each rectangle's object-bounding-box coordinates.
+    let vertical_t = ((local_y - 1.0) / 8.0 - 0.05) / 0.90;
+    let v_alpha = if glyph == 19 { 128 } else { 255 };
+    let v = interpolate([255, 215, 0, 255], [255, 0, 0, v_alpha], vertical_t);
+    over(v, coverage(4.5, 1.0, 5.5, 9.0));
+
+    if glyph == 19 {
+        let dx = (local_x - 5.0).abs();
+        let dy = (local_y - 5.0).abs();
+        let far = ((dx + half).powi(2) + (dy + half).powi(2)).sqrt();
+        let near = ((dx - half).max(0.0).powi(2) + (dy - half).max(0.0).powi(2)).sqrt();
+        assert!(
+            far <= 2.0 || near >= 2.0,
+            "I3 anchor lies on the circle boundary"
+        );
+        let circle_coverage = if far <= 2.0 { 255 } else { 0 };
+        let distance = ((local_x - 5.0).powi(2) + (local_y - 5.0).powi(2)).sqrt() / 2.0;
+        let c = if distance <= 0.85 {
+            interpolate([255, 215, 0, 255], [255, 0, 0, 128], distance / 0.85)
+        } else {
+            interpolate(
+                [255, 0, 0, 128],
+                [255, 255, 255, 179],
+                (distance - 0.85) / 0.15,
+            )
+        };
+        over(c, circle_coverage);
+    }
+
+    let a = u32::from(premul[3]);
+    let channel = |value: u8| -> u8 {
+        ((u32::from(value) * 255 + a / 2).checked_div(a).unwrap_or(0)).min(255) as u8
+    };
+    [
+        channel(premul[2]),
+        channel(premul[1]),
+        channel(premul[0]),
+        premul[3],
+    ]
+}
+
 #[test]
 fn adr0072_i3_linear_rect_raster_anchor_colors() {
     let scene = Scene {
@@ -158,7 +235,7 @@ fn adr0072_i3_real_svg_glyphs_render_as_color() {
         );
         return;
     }
-    for glyph in [19, 26] {
+    for glyph in [19u32, 26] {
         let output = Command::new(env!("CARGO_BIN_EXE_sofel-render"))
             .args(["--ppem", "48", "--color", "--glyph", &glyph.to_string()])
             .arg(&font)
@@ -170,5 +247,15 @@ fn adr0072_i3_real_svg_glyphs_render_as_color() {
             String::from_utf8_lossy(&output.stderr)
         );
         color_svg::check_cli_pixels(glyph, &output.stdout).unwrap();
+        for ((x, y), rgba) in color_svg::samples(glyph).unwrap() {
+            let scale = 48.0 / 1024.0;
+            let local_x = ((f64::from(x) + 0.5) / scale - 37.5) / 120.0;
+            let local_y = (950.0 - (f64::from(y) + 0.5) / scale) / 120.0;
+            assert_eq!(
+                reference_anchor(glyph, local_x, local_y),
+                rgba,
+                "independent glyph {glyph} pixel ({x}, {y})"
+            );
+        }
     }
 }
