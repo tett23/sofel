@@ -263,6 +263,7 @@ fn pin_records(
         }
         let mut tuples = Vec::new();
         let mut regions = BTreeMap::new();
+        let mut groups: Vec<(_, _, Vec<_>)> = Vec::new();
         for tuple in glyph.tuples() {
             let tuple = tuple.ok_or(bad)?;
             let peak = tuple
@@ -301,15 +302,36 @@ fn pin_records(
                     region.extend(project(end)?);
                     Ok(region)
                 })
-                .transpose()?;
-            let mixed = pin_peak != 0;
-            let previous = regions.insert((projected.clone(), intermediate.clone()), mixed);
-            if previous.is_some_and(|was_mixed| was_mixed || mixed) {
-                return Err(SubsetError::Unsupported {
-                    tag,
-                    reason: "combining gvar tuples with the same projected support",
+                .transpose()?
+                .filter(|region| {
+                    let (starts, ends) = region.split_at(projected.len());
+                    projected
+                        .as_chunks::<2>()
+                        .0
+                        .iter()
+                        .zip(
+                            starts
+                                .as_chunks::<2>()
+                                .0
+                                .iter()
+                                .zip(ends.as_chunks::<2>().0.iter()),
+                        )
+                        .any(|(peak, (start, end))| {
+                            let peak = i16::from_be_bytes(*peak);
+                            *start != peak.min(0).to_be_bytes() || *end != peak.max(0).to_be_bytes()
+                        })
                 });
-            }
+            let index = *regions
+                .entry((projected.clone(), intermediate.clone()))
+                .or_insert_with(|| {
+                    let index = groups.len();
+                    groups.push((projected, intermediate, Vec::new()));
+                    index
+                });
+            groups.get_mut(index).ok_or(bad)?.2.push((tuple, scalar));
+        }
+        for (projected, intermediate, contributors) in groups {
+            let &(tuple, scalar) = contributors.first().ok_or(bad)?;
             let count = frequencies.entry(projected.clone()).or_default();
             *count = count.saturating_add(1);
             let (points, deltas) = if tuple.private_points() {
@@ -318,7 +340,7 @@ fn pin_records(
             } else {
                 (points, tuple.data())
             };
-            let deltas = if scalar == 1.0 {
+            let deltas = if contributors.len() == 1 && scalar == 1.0 {
                 Cow::Borrowed(deltas)
             } else {
                 let outline = outlines.glyph(old, false);
@@ -332,20 +354,33 @@ fn pin_records(
                     .ok()
                     .and_then(|n| n.checked_add(4))
                     .ok_or(bad)?;
-                if !PackedPoints::parse(points).ok_or(bad)?.0.is_all() {
-                    return Err(SubsetError::Unsupported {
-                        tag,
-                        reason: "interpolating sparse gvar points before scaling",
-                    });
+                let mut sums = [alloc::vec![0.0; n], alloc::vec![0.0; n]];
+                for (part, scale) in contributors {
+                    if part
+                        .points()
+                        .or(glyph.shared_points())
+                        .is_some_and(|p| !p.is_all())
+                    {
+                        return Err(SubsetError::Unsupported {
+                            tag,
+                            reason: "interpolating sparse gvar points before scaling",
+                        });
+                    }
+                    let (x, y) = part.deltas(n, glyph.shared_points()).ok_or(bad)?;
+                    for (sum, axis) in sums.iter_mut().zip([x, y]) {
+                        for (value, delta) in sum.iter_mut().zip(axis.iter()) {
+                            *value += f32::from(delta) * scale;
+                        }
+                    }
                 }
-                let (x, y) = tuple.deltas(n, glyph.shared_points()).ok_or(bad)?;
                 let mut encoded = Vec::new();
-                for axis in [x, y] {
-                    let values = axis
-                        .iter()
-                        .map(|d| {
-                            let rounded = sofel_geom::float::hb_roundf32(f32::from(d) * scalar);
-                            i16::try_from(crate::instance::f64_to_i32(rounded)).map_err(|_| bad)
+                for sum in sums {
+                    let values = sum
+                        .into_iter()
+                        .map(|value| {
+                            let rounded = sofel_geom::float::hb_roundf32(value);
+                            i16::try_from(crate::instance::f64_to_i32(rounded))
+                                .map_err(|_| SubsetError::Limit { tag })
                         })
                         .collect::<Result<Vec<_>, _>>()?;
                     pack_deltas(&values, &mut encoded);

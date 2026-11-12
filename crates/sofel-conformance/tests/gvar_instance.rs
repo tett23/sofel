@@ -161,7 +161,7 @@ fn adr0061_i1_nondefault_gvar_composite_remains_unsupported() {
 }
 
 #[test]
-fn adr0061_i1_axis_pin_discards_inactive_mixed_tuples() {
+fn adr0061_i1_axis_pin_projects_roboto_mixed_tuples() {
     let path = paths::testdata().join("harfbuzz/test/subset/data/fonts/Roboto-Variable.ABC.ttf");
     let bytes = std::fs::read(&path).unwrap();
     let font = Font::new(&bytes, 0).unwrap();
@@ -178,6 +178,9 @@ fn adr0061_i1_axis_pin_discards_inactive_mixed_tuples() {
         (b"wght", 400.0, "wght=400"),
         (b"wdth", 100.0, "wdth=100"),
         (b"wght", 900.0, "wght=900"),
+        (b"wght", 650.0, "wght=650"),
+        (b"wght", 250.0, "wght=250"),
+        (b"wdth", 75.0, "wdth=75"),
     ] {
         let input = base.with_axis_pinned(Tag::new(axis), value, &font).unwrap();
         let ours = subset(&font, &input).unwrap();
@@ -200,6 +203,15 @@ fn adr0061_i1_axis_pin_discards_inactive_mixed_tuples() {
 
 #[test]
 fn adr0061_i1_pinning_a_mixed_tuple_scales_the_retained_axis() {
+    compare_mixed_tuple_pin(false);
+}
+
+#[test]
+fn adr0061_i1_merge_projected_gvar_tuples_before_rounding() {
+    compare_mixed_tuple_pin(true);
+}
+
+fn compare_mixed_tuple_pin(duplicate: bool) {
     let path = paths::testdata().join("harfbuzz/test/api/fonts/glyf-default-instance-bounds.ttf");
     let mut bytes = std::fs::read(path).unwrap();
     // The fixture has one shared peak (1, 0). Give it support on both axes.
@@ -210,8 +222,30 @@ fn adr0061_i1_pinning_a_mixed_tuple_scales_the_retained_axis() {
     let table = u32::from_be_bytes(record[8..12].try_into().unwrap()) as usize;
     let shared = u32::from_be_bytes(bytes[table + 8..table + 12].try_into().unwrap()) as usize;
     bytes[table + shared + 2..table + shared + 4].copy_from_slice(&16384i16.to_be_bytes());
+    if duplicate {
+        // Replace glyph 1 with two identical mixed tuples sharing all points.
+        let pos = table + 32;
+        let mut record = vec![0x80, 2, 0, 12];
+        record.extend_from_slice(&bytes[pos + 4..pos + 8]);
+        record.extend_from_slice(&bytes[pos + 4..pos + 8]);
+        record.push(0);
+        record.extend_from_slice(&bytes[pos + 9..pos + 14]);
+        record.extend_from_slice(&bytes[pos + 9..pos + 14]);
+        record.push(0);
+        bytes.splice(pos..pos + 14, record);
+        bytes[table + 24..table + 28].copy_from_slice(&[0, 12, 0, 19]);
+        let index = bytes[12..]
+            .chunks_exact(16)
+            .position(|r| &r[..4] == b"gvar")
+            .unwrap();
+        let len = 12 + index * 16 + 12;
+        bytes[len..len + 4].copy_from_slice(&70u32.to_be_bytes());
+    }
     let font = Font::new(&bytes, 0).unwrap();
-    let source = std::env::temp_dir().join(format!("sofel-mixed-peak-{}.ttf", std::process::id()));
+    let source = std::env::temp_dir().join(format!(
+        "sofel-mixed-peak-{duplicate}-{}.ttf",
+        std::process::id()
+    ));
     let output = source.with_extension("out.ttf");
     std::fs::write(&source, &bytes).unwrap();
     for value in [0.25, 0.5, 0.75, 1.0] {
