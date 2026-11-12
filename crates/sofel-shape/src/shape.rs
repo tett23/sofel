@@ -394,7 +394,31 @@ fn substitute_pre(
     if plan.fallback_glyph_classes {
         synthesize_glyph_classes(buffer);
     }
-    apply_map(GSUB, plan, font, buffer);
+    if let Some(chains) = &plan.morx {
+        let horizontal = plan.props.direction.is_horizontal();
+        for chain in chains {
+            for table in &chain.substitutions {
+                if table.flags & chain.default_flags == 0
+                    || (table.coverage & 0x2000_0000 == 0
+                        && (table.coverage & 0x8000_0000 == 0) != horizontal)
+                {
+                    continue;
+                }
+                for info in buffer.infos_mut() {
+                    if let Some(glyph) = table.lookup.get(info.codepoint) {
+                        info.codepoint = u32::from(glyph);
+                        if !plan.fallback_glyph_classes {
+                            info.glyph_props = gdef.glyph_props(info.codepoint);
+                        }
+                        digest.add(info.codepoint);
+                    }
+                }
+            }
+        }
+        buffer.digest = digest;
+    } else {
+        apply_map(GSUB, plan, font, buffer);
+    }
 }
 
 /// `hb_ot_deal_with_variation_selectors`.
@@ -450,6 +474,9 @@ fn hide_default_ignorables(buffer: &mut Buffer, font: &ShapeFont<'_, '_, '_, '_>
 
 /// `hb_ot_substitute_post`.
 fn substitute_post(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut Buffer) {
+    if plan.morx.is_some() {
+        buffer.delete_glyphs_inplace(|info| info.codepoint == 0xffff);
+    }
     deal_with_variation_selectors(buffer);
     hide_default_ignorables(buffer, font);
     if let Some(f) = plan.funcs().postprocess_glyphs {
@@ -529,6 +556,29 @@ fn position(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut
     }
     if plan.apply_gpos {
         apply_map(GPOS, plan, font, buffer);
+    }
+    if let Some(tracking) = plan.tracking {
+        let scale = font.scale.scale;
+        let horizontal = buffer.direction.is_horizontal();
+        let ptem = if scale.ptem() > 0. { scale.ptem() } else { 12. };
+        let delta = tracking.tracking(horizontal, ptem);
+        let advance = if horizontal {
+            scale.em_scalef_x(delta)
+        } else {
+            scale.em_scalef_y(delta)
+        };
+        if advance != 0 {
+            for (start, _) in buffer.groups(grapheme_group) {
+                if let Some(p) = buffer.positions_mut().get_mut(start) {
+                    let value = if horizontal {
+                        &mut p.x_advance
+                    } else {
+                        &mut p.y_advance
+                    };
+                    *value = value.saturating_add(advance);
+                }
+            }
+        }
     }
     // The `ot` font functions have no kerning: fallback kerning does
     // nothing.

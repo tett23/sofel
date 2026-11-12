@@ -89,7 +89,8 @@ cargo run --release --bin sofel-shape -- --direction=ttb --features=vrt2 --outpu
 cargo run --release --bin sofel-shape -- --variations=wght=700 --text=Hello variable.ttf
 ```
 
-`--variations` は軸のタグと設計座標を、`--named-instance` は0から数える名前つきインスタンスを指定する（[ADR 0027](docs/adr/0027-variable-fonts.md)）。言語は `--language`、無ければ `--default-language` で、どちらも無ければ「言語なし」とする（`hb-shape` は `$LANG` を読む）。終了コードは、成功が0、フォントか文字列のファイルを読めなければ1、使い方の誤りと解釈しないオプション（`--font-ptem`、`--font-bold` など）が2、`--verify` の検査の失敗が3。オプションの一覧は `sofel-shape --help` で示す。
+`--font-ptem` でポイントサイズを指定すると、`STAT` と `trak` を持つフォントではそのサイズに応じて字間を調整する。
+`--variations` は軸のタグと設計座標を、`--named-instance` は0から数える名前つきインスタンスを指定する（[ADR 0027](docs/adr/0027-variable-fonts.md)）。言語は `--language`、無ければ `--default-language` で、どちらも無ければ「言語なし」とする（`hb-shape` は `$LANG` を読む）。終了コードは、成功が0、フォントか文字列のファイルを読めなければ1、使い方の誤りと解釈しないオプション（`--font-bold` など）が2、`--verify` の検査の失敗が3。オプションの一覧は `sofel-shape --help` で示す。
 ### `sofel-paint`
 
 可変フォントの色の描画には、たとえば `--variations=wght=500` を指定する。`--named-instance=0` は先頭の名前つきインスタンスを選ぶ。FreeTypeの輪郭とラスタライズでは、FreeTypeが末尾に補った既定インスタンスの番号も指定できる。
