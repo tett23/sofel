@@ -223,6 +223,9 @@ pub(crate) fn legacy(data: &[u8]) -> Option<Vec<Subtable<'_>>> {
         1 if be::u32_at(data, 0)? == 0x10000 => (true, be::u32_at(data, 4)?, data.get(8..)?),
         _ => return None,
     };
+    if count > super::MAX_SUBTABLES {
+        return None;
+    }
     let header = if apple { 8 } else { 6 };
     let mut tables = Vec::new();
     for i in 0..count {
