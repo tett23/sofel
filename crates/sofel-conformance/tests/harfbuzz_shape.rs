@@ -443,3 +443,52 @@ fn i1_aat_kerx_attaches_marks_in_both_directions() {
         assert_eq!(run(case), Ok(()), "{id}");
     }
 }
+
+#[test]
+fn i1_aat_ltag_matches_whole_language_subtags() {
+    let path = paths::testdata().join("harfbuzz/test/shape/data/in-house/tests/aat-morx.tests");
+    let suite = cases("in-house", &path, &mut 0);
+    for line in 9..=17 {
+        let id = format!("in-house/aat-morx.tests:{line}");
+        let case = suite.iter().find(|case| case.id == id).unwrap();
+        assert_eq!(run(case), Ok(()), "{id}");
+    }
+}
+
+#[test]
+fn i1_legacy_kern_pairs_classes_and_script_selection() {
+    for (file, lines) in [
+        ("kern-format2", &[1, 2, 3][..]),
+        ("per-script-kern-fallback", &[13, 15][..]),
+        ("tt-kern-gpos", &[1][..]),
+    ] {
+        let path = paths::testdata().join(format!(
+            "harfbuzz/test/shape/data/in-house/tests/{file}.tests"
+        ));
+        let suite = cases("in-house", &path, &mut 0);
+        for line in lines {
+            let id = format!("in-house/{file}.tests:{line}");
+            let case = suite.iter().find(|case| case.id == id).unwrap();
+            assert_eq!(run(case), Ok(()), "{id}");
+        }
+    }
+}
+
+#[test]
+fn i1_legacy_kern_machine_pops_positions_until_the_low_bit() {
+    let path = paths::testdata().join("harfbuzz/test/shape/data/in-house/tests/kern-format1.tests");
+    let suite = cases("in-house", &path, &mut 0);
+    assert!(!suite.is_empty());
+    for case in suite {
+        assert_eq!(run(&case), Ok(()), "{}", case.id);
+    }
+}
+
+#[test]
+fn i1_legacy_mort_chain_runs_all_five_operations() {
+    let path =
+        paths::testdata().join("harfbuzz/test/shape/data/text-rendering-tests/tests/MORT-1.tests");
+    let suite = cases("text-rendering-tests", &path, &mut 0);
+    assert_eq!(suite.len(), 1);
+    assert_eq!(run(&suite[0]), Ok(()));
+}

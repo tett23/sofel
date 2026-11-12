@@ -602,6 +602,7 @@ pub unsafe extern "C" fn sofel_shape_plan_shaper(
             Shaper::MyanmarZawgyi => 7,
             Shaper::Thai => 8,
             Shaper::Use => 9,
+            Shaper::Dumber => 10,
         };
         Ok(())
     })())
