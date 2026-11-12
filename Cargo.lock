@@ -38,7 +38,9 @@ dependencies = [
  "sofel-color",
  "sofel-font",
  "sofel-geom",
+ "sofel-gpu",
  "sofel-outline",
+ "sofel-png",
  "sofel-raster",
  "sofel-read",
  "sofel-shape",
@@ -109,6 +111,13 @@ dependencies = [
 [[package]]
 name = "sofel-geom"
 version = "0.0.0"
+
+[[package]]
+name = "sofel-gpu"
+version = "0.0.0"
+dependencies = [
+ "sofel-geom",
+]
 
 [[package]]
 name = "sofel-inflate"
