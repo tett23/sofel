@@ -316,6 +316,21 @@ fn cff2_no_hinting_removes_calls_to_empty_subroutines() {
 }
 
 #[test]
+fn cff2_no_hinting_removes_subroutines_containing_only_stems() {
+    let mut programs = charstrings();
+    programs[2] = charstring(&[Cs::I(-107), Cs::Op(29)]);
+    let subroutine = charstring(&[Cs::I(0), Cs::I(10), Cs::Op(1), Cs::Op(11)]);
+    let bytes = font_with_programs(vec![subroutine], Vec::new(), programs);
+    let font = Font::new(&bytes, 0).unwrap();
+    let out = subset(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)).unwrap();
+    assert_eq!(out, include_bytes!("data/cff2-no-hint-empty-subr-hb15.otf"));
+    let result = Font::new(&out, 0).unwrap();
+    let cff2 = HbCff2::new(&result).unwrap();
+    assert!(cff2.global_subrs().is_empty());
+    assert_eq!(cff2.char_string(1), Some([].as_slice()));
+}
+
+#[test]
 fn cff2_no_hinting_removes_stem_args_supplied_by_caller() {
     let mut programs = charstrings();
     programs[2] = charstring(&[Cs::I(0), Cs::I(10), Cs::I(-107), Cs::Op(29)]);
