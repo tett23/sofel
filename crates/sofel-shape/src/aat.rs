@@ -30,7 +30,8 @@ pub fn chains<'a>(
     language: Option<&crate::Language>,
     selections: &features::Selections,
 ) -> Option<alloc::vec::Vec<Chain<'a>>> {
-    if be::u16_at(data, 0)? != if legacy { 1 } else { 2 } {
+    let version = be::u16_at(data, 0)?;
+    if !matches!((legacy, version), (true, 1) | (false, 2 | 3)) {
         return None;
     }
     let count = be::u32_at(data, 4)?;
@@ -80,6 +81,15 @@ pub fn chains<'a>(
                 flags: be::u32_at(st, flags_at)?,
                 action,
             });
+        }
+        if version == 3 {
+            let bitmap_bytes = glyphs.div_ceil(8) as usize;
+            for field in be::chunks_at::<4>(body, 0, tables as usize)? {
+                let offset = u32::from_be_bytes(*field);
+                if offset != 0 && offset != u32::MAX {
+                    body.get(offset as usize..)?.get(..bitmap_bytes)?;
+                }
+            }
         }
         chains.push(Chain {
             ranges,
@@ -718,6 +728,40 @@ impl Ligature<'_> {
 #[cfg(test)]
 mod chain_tests {
     use super::chains;
+
+    #[test]
+    fn i2_morx_v3_checks_glyph_coverage_bounds() {
+        for (offset, bytes, valid) in [
+            (4u32, 2u8, true),
+            (4, 1, false),
+            (0, 0, true),
+            (u32::MAX, 0, true),
+            (5, 2, false),
+        ] {
+            let words = [
+                0x00030000u32,
+                1,
+                1,
+                40 + u32::from(bytes),
+                0,
+                1,
+                20,
+                4,
+                1,
+                0x00080001,
+                0x00010002,
+                offset,
+            ];
+            let mut data: alloc::vec::Vec<u8> =
+                words.into_iter().flat_map(u32::to_be_bytes).collect();
+            data.resize(data.len() + usize::from(bytes), 0);
+            let parsed = chains(&data, 9, false, None, None, &Default::default());
+            assert_eq!(parsed.is_some(), valid, "offset {offset}, bytes {bytes}");
+            if let Some(chains) = parsed {
+                assert_eq!(chains.first().map(|c| c.substitutions.len()), Some(1));
+            }
+        }
+    }
 
     #[test]
     fn i2_unknown_type_skips_only_its_bounded_subtable() {
