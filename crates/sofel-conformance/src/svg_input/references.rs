@@ -68,18 +68,26 @@ fn check_control(image: &BgraImage) -> Result<(), String> {
     check_samples(image, &[(6, 6, RED), (16, 6, [0; 4])])
 }
 
-fn measure_external(observation: &str) -> Result<(), String> {
+pub(super) fn external_image() -> Result<(BgraImage, usize), String> {
     let (image, requests) = with_resource_probe(|url| {
         let document = EXTERNAL.replace("http://127.0.0.1:PORT/forbidden.svg", url);
         rendered(document.as_bytes(), 1, 1, RED)
     })?;
+    Ok((
+        image.map_err(|e| format!("{requests} resource requests; {e}"))?,
+        requests,
+    ))
+}
+
+fn measure_external(observation: &str) -> Result<(), String> {
+    let (image, requests) = external_image()?;
     if observation == "resource-requests" && requests != 0 {
         return Err(format!(
             "expected 0 external resource requests, got {requests}"
         ));
     }
     // Zero requests from a skipped render do not establish compliance.
-    check_control(&image.map_err(|e| format!("{requests} resource requests; {e}"))?)
+    check_control(&image)
 }
 
 // The SVG points at a fresh loopback endpoint for this observation. Answer

@@ -202,13 +202,6 @@ jobs:
         env:
           SOFEL_TESTDATA_OFFLINE: ${{ steps.testdata.outputs.cache-hit == 'true' && '1' || '0' }}
         run: sh scripts/fetch-testdata.sh
-      - name: Compare embedded PNG pixels with FreeType
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y libpng-dev
-          SOFEL_FT_PNG=1 sh tools/ft-dump/build.sh target/testdata/freetype "$RUNNER_TEMP/ft-dump-png"
-          SOFEL_FT_DUMP="$RUNNER_TEMP/ft-dump-png" cargo test --release -p sofel-conformance --test freetype_sbit i1_sbit_png -- --ignored
       - name: Compare rendered PDF pages
         if: runner.os == 'Linux'
         run: |
@@ -218,6 +211,13 @@ jobs:
           fi
           cargo test --release -p sofel-conformance --test vector_page -- --ignored
           sh tools/vector-reference/compare.sh
+      - name: Compare embedded PNG pixels with FreeType
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libpng-dev
+          SOFEL_FT_PNG=1 sh tools/ft-dump/build.sh target/testdata/freetype "$RUNNER_TEMP/ft-dump-png"
+          SOFEL_FT_DUMP="$RUNNER_TEMP/ft-dump-png" cargo test --release -p sofel-conformance --test freetype_sbit i1_sbit_png -- --ignored
       - name: Compare WOFF and WOFF2 tables with FreeType
         if: runner.os == 'Linux'
         run: |
@@ -244,12 +244,11 @@ jobs:
           sh tools/hb-raster-reference/build.sh target/testdata/harfbuzz "$RUNNER_TEMP/hb-raster-reference"
           sh tools/hb-raster-reference/check.sh target/testdata conformance/color-raster "$RUNNER_TEMP/hb-raster-reference"
       # sofel ADR 0069: render the same local gallery and keep the image.
-      - name: Render font gallery
-        if: matrix.os == 'ubuntu-latest'
+      - name: Render font gallery and check SVG feature conformance
         env:
           SOFEL_TESTDATA_OFFLINE: '1'
           SOFEL_FONTS_OFFLINE: '1'
-        run: sh scripts/render-font-gallery.sh
+        run: sh scripts/test-svg-conformance.sh
       - name: Upload font gallery
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
