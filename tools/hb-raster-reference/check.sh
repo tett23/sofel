@@ -22,3 +22,9 @@ while [ "$glyph" -le 147 ]; do
   glyph=$((glyph + 1))
 done > "$tmp/composites.bgra"
 cmp "$tmp/composites.bgra" "$reference/composites.bgra"
+if [ "${SOFEL_HB_RASTER_PNG:-0}" = 1 ]; then
+  "$helper" "$data/extra-fonts/fonts/color-sbix.ttf" 19 31 > "$tmp/scaled-sbix-19.bgra"
+  "$helper" "$data/harfbuzz/test/subset/data/fonts/NotoColorEmoji.subset.ttf" 1 31 > "$tmp/scaled-cbdt-1.bgra"
+  cmp "$tmp/scaled-sbix-19.bgra" "$reference/scaled-sbix-19.bgra"
+  cmp "$tmp/scaled-cbdt-1.bgra" "$reference/scaled-cbdt-1.bgra"
+fi

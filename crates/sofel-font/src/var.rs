@@ -982,6 +982,24 @@ pub fn normalize_axis_value(min: f32, default: f32, max: f32, value: f32) -> f32
     }
 }
 
+/// Apply the avar version 2 store to segment-mapped 2.14 coordinates.
+pub fn apply_avar2_2_14(avar: &Avar<'_>, coords: &mut [i32]) {
+    let Some(store) = avar.variation_store().ok().flatten() else {
+        return;
+    };
+    let map = avar.axis_index_map().ok().flatten();
+    let scalars = StoreScalars::from_store::<HbF32>(&store, coords, true);
+    for (axis, coord) in coords.iter_mut().enumerate() {
+        let axis = u32::try_from(axis).unwrap_or(u32::MAX);
+        let index = map.as_ref().map_or(axis, |m| m.map(axis));
+        let outer = u16::try_from(index >> 16).unwrap_or(u16::MAX);
+        let inner = u16::try_from(index & 0xffff).unwrap_or(u16::MAX);
+        let delta = item_delta::<HbF32>(&store, &scalars, outer, inner);
+        let delta = hb_clamp_to_i32(hb_roundf32(delta)).clamp(-32768, 32768);
+        *coord = coord.saturating_add(delta).clamp(-16384, 16384);
+    }
+}
+
 fn apply_avar2(avar: &Avar<'_>, hb: &mut [i32], ft: &mut [Fixed], ft_enabled: bool) {
     let Some(store) = avar.variation_store().ok().flatten() else {
         return;

@@ -545,11 +545,11 @@ fn i2_unknown_axis_preserves_previous_axis_range_and_output() {
 }
 
 #[test]
-fn avar_that_moves_the_default_or_version_2_is_unsupported() {
+fn full_pin_accepts_identity_avar_versions_and_rejects_a_moved_v1_default() {
     let moved = avar(1, &[&[(-1.0, -1.0), (0.0, 0.25), (1.0, 1.0)], &[]]);
     let identity = avar(1, &[&[(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)], &[]]);
     let v2 = avar(2, &[&[], &[]]);
-    for (avar, ok) in [(identity, true), (moved, false), (v2, false)] {
+    for (avar, ok) in [(identity, true), (moved, false), (v2, true)] {
         let data = font_with(vec![(b"fvar", fvar(&AXES)), (b"avar", avar)]);
         let font = Font::new(&data, 0).unwrap();
         let i = unicodes().with_all_axes_pinned_to_default(&font).unwrap();
