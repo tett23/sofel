@@ -68,7 +68,9 @@ pub use paint_mask::PaintMask;
 pub use blend::{BgraImage, blend_layer, blend_sampled};
 
 mod harmony;
+mod mono;
 pub use harmony::LcdMode;
+pub use mono::{MonoBitmap, MonoOptions, mono_pixel_box};
 
 use alloc::vec::Vec;
 use core::fmt;
