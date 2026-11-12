@@ -148,8 +148,6 @@ glyf_partial_instancing_iup.tests/Roboto-Variable.ABC.default.all.wght=200-300-5
 glyf_partial_instancing_iup.tests/Roboto-Variable.ABC.default.all.wght=200-300-500,wdth=80-90.iup_optimize.ttf+prepared:bytes  # deferred:iup
 glyf_partial_instancing_iup.tests/Roboto-Variable.ABC.default.all.wght=200-300-500,wdth=80-90.iup_optimize.ttf:validate  # deferred:iup
 glyf_partial_instancing_iup.tests/Roboto-Variable.ABC.default.all.wght=200-300-500,wdth=80-90.iup_optimize.ttf+prepared:validate  # deferred:iup
-glyf_partial_instancing_iup.tests/Roboto-Variable.composite.default.all.wght=300-600,wdth=85.iup_optimize.ttf:bytes  # deferred:iup
-glyf_partial_instancing_iup.tests/Roboto-Variable.composite.default.all.wght=300-600,wdth=85.iup_optimize.ttf+prepared:bytes  # deferred:iup
 glyf_partial_instancing_iup.tests/Roboto-Variable.composite.default.all.wght=200-300-500,wdth=80-90.ttf:bytes  # deferred:instance
 glyf_partial_instancing_iup.tests/Roboto-Variable.composite.default.all.wght=200-300-500,wdth=80-90.ttf+prepared:bytes  # deferred:instance
 glyf_partial_instancing_iup.tests/Roboto-Variable.composite.default.all.wght=200-300-500,wdth=80-90.iup_optimize.ttf:bytes  # deferred:iup
@@ -290,12 +288,6 @@ layout.feature_dedup_instance.tests/LayoutFeatureDedup.layout-feature-dedup.all.
 layout.feature_dedup_instance.tests/LayoutFeatureDedup.layout-feature-dedup.all.wght=500-650-900.ttf+prepared:bytes  # deferred:instance
 layout.feature_dedup_instance.tests/LayoutFeatureDedup.layout-feature-dedup.all.wght=500-650-900.ttf:validate  # deferred:instance
 layout.feature_dedup_instance.tests/LayoutFeatureDedup.layout-feature-dedup.all.wght=500-650-900.ttf+prepared:validate  # deferred:instance
-mvar_partial_instance.tests/NotoSans-VF.abc.default.all.wght=300-600.iup_optimize.ttf:bytes  # deferred:iup
-mvar_partial_instance.tests/NotoSans-VF.abc.default.all.wght=300-600.iup_optimize.ttf+prepared:bytes  # deferred:iup
-mvar_partial_instance.tests/NotoSans-VF.abc.default.all.wght=500-800.iup_optimize.ttf:bytes  # deferred:iup
-mvar_partial_instance.tests/NotoSans-VF.abc.default.all.wght=500-800.iup_optimize.ttf+prepared:bytes  # deferred:iup
-mvar_partial_instance.tests/NotoSans-VF.abc.default.all.wght=200-600,wdth=80-90,CTGR=20-60.iup_optimize.ttf:bytes  # deferred:iup
-mvar_partial_instance.tests/NotoSans-VF.abc.default.all.wght=200-600,wdth=80-90,CTGR=20-60.iup_optimize.ttf+prepared:bytes  # deferred:iup
 update_def_wght.tests/SourceSerifVariable-Roman.default.all.wght=300-600.iup_optimize.ttf:bytes  # deferred:iup
 update_def_wght.tests/SourceSerifVariable-Roman.default.all.wght=300-600.iup_optimize.ttf+prepared:bytes  # deferred:iup
 update_def_wght.tests/SourceSerifVariable-Roman.default.all.wght=300-600.iup_optimize.ttf:validate  # deferred:iup
