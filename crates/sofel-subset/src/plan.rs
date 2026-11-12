@@ -210,19 +210,11 @@ fn layout_unsupported(
         && font
             .table(Tag::new(b"GPOS"))
             .is_some_and(may_reference_gdef_store);
-    let math_may_reference_store = retained(b"MATH")
-        && font
-            .table(Tag::new(b"MATH"))
-            .is_some_and(may_reference_gdef_store);
     let copied_gpos_may_reference_store =
         gpos_may_reference_store && no_subset.contains(Tag::new(b"GPOS").to_u32());
     if !pinned
         && kept(b"GDEF").is_some_and(layout::gdef::has_var_store)
-        && (copied_gpos_may_reference_store
-            || (math_may_reference_store
-                && no_subset.contains(Tag::new(b"MATH").to_u32())
-                && !no_subset.contains(Tag::new(b"GDEF").to_u32()))
-            || gsub_may_reference_store)
+        && (copied_gpos_may_reference_store || gsub_may_reference_store)
     {
         return Err(SubsetError::Unsupported {
             tag: Tag::new(b"GDEF"),
@@ -345,7 +337,17 @@ impl Plan {
                         .all(|range| range.min == range.default && range.default == range.max)
             });
             let metadata_only = no_other_variation_data && varc_safe && simple_avar;
-            if !(norm.all_axes_pinned && norm.pinned_at_default) && !metadata_only {
+            let gvar_full_pin = norm.all_axes_pinned
+                && font.table(Tag::new(b"gvar")).is_some()
+                && font.table(Tag::new(b"GVAR")).is_none()
+                && font.table(Tag::new(b"glyf")).is_some()
+                && font.table(Tag::new(b"avar")).is_none()
+                && varc_safe
+                && !other_variation_tags.iter().any(|tag| {
+                    **tag != *b"gvar" && **tag != *b"GVAR" && font.table(Tag::new(tag)).is_some()
+                });
+            if !(norm.all_axes_pinned && norm.pinned_at_default) && !metadata_only && !gvar_full_pin
+            {
                 return Err(SubsetError::Unsupported {
                     tag: Tag::new(b"fvar"),
                     reason: "instancing variation data needs ADR 0061",
@@ -666,8 +668,9 @@ impl Plan {
                 && !no_subset.contains(Tag::new(b"GPOS").to_u32())
                 && gpos_data.windows(2).any(|word| word == [0x80, 0x00]);
             let math_data = font.table(Tag::new(b"MATH")).unwrap_or(&[]);
+            let copied_math = no_subset.contains(Tag::new(b"MATH").to_u32());
             let math_has_var_format = tag_kept(b"MATH")
-                && !no_subset.contains(Tag::new(b"MATH").to_u32())
+                && (!copied_gdef || !copied_math)
                 && math_data.windows(2).any(|word| word == [0x80, 0x00]);
             if !pinned
                 && layout::gdef::has_var_store(gdef)
@@ -712,6 +715,21 @@ impl Plan {
                         reason: "the GDEF item variation store (ADR 0022 stage 10)",
                     });
                 };
+                if copied_math && !copied_gdef && math_has_var_format {
+                    // Even records for glyphs outside the subset survive in a
+                    // copied MATH. Every original index must still address its row.
+                    let all = RangeSet::all();
+                    let all_indices =
+                        crate::tables::math::retained_variation_indices(math_data, &all, &all);
+                    if !all_indices.is_some_and(|indices| {
+                        indices.iter().all(|index| map.get(index) == Some(index))
+                    }) {
+                        return Err(SubsetError::Unsupported {
+                            tag: Tag::new(b"GDEF"),
+                            reason: "copied MATH needs unchanged GDEF variation indices",
+                        });
+                    }
+                }
                 if copied_gdef {
                     // HarfBuzz remaps subset GPOS and MATH references even when it
                     // copies the original GDEF table unchanged.
@@ -802,11 +820,33 @@ impl Plan {
         );
         let glyf_tag = crate::tables::glyf::instanced_tag(self, font);
         if let Some(tag) = glyf_tag {
+            if !self.var.n.pinned_at_default
+                && !self.inert_gvar
+                && let Some(data) = font.table(Tag::new(b"gvar"))
+            {
+                let accel = crate::tables::glyf::GlyfAccel::new(font);
+                let variations = sofel_font::read::gvar::Gvar::new(data, Tag::new(b"gvar"))
+                    .map_err(|_| SubsetError::Malformed {
+                        tag: Tag::new(b"gvar"),
+                    })?;
+                if self.glyphs.new_to_old.iter().any(|&(_, old)| {
+                    let kind = accel.glyph(old, true).kind;
+                    kind == crate::tables::glyf::Kind::Composite
+                        || (kind == crate::tables::glyf::Kind::Empty
+                            && variations.glyph_data(old).is_some())
+                }) {
+                    return Err(SubsetError::Unsupported {
+                        tag: Tag::new(b"gvar"),
+                        reason: "nondefault gvar pinning of composite or empty glyphs",
+                    });
+                }
+            }
             let (glyphs, metrics) = crate::tables::glyf::instance(
                 &self.glyphs.new_to_old,
                 self.flags,
                 self.num_output_glyphs,
                 font,
+                &self.var.n.normalized_coords,
             )
             .ok_or(SubsetError::Failed { tag })?;
             self.var.metrics = metrics;

@@ -14,6 +14,7 @@
 #![allow(clippy::too_many_arguments)]
 
 mod color;
+mod gpu;
 mod layout_query;
 mod shape;
 mod subset;
