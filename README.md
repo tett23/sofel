@@ -69,6 +69,10 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-capi`](crates/sofel-capi) | C ABI（ヘッダは [`sofel.h`](crates/sofel-capi/include/sofel.h)、[ADR 0015](docs/adr/0015-c-abi.md)） |
 | [`sofel-conformance`](crates/sofel-conformance) | FreeTypeとHarfBuzzとの突き合わせのテスト（`cargo test` では走らない） |
 
+シェーピングのフォント関数を差し替えるときは、`sofel-shape::SubFont` で親からの継承と問い合わせ別の上書きを指定する。子の送り、原点、グリフの箱、輪郭は親子のスケールを換算する。合成太字と斜体はシェーピングと輪郭に反映する。`sofel-shape` コマンドでは `--font-slant`、`--font-bold`、`--font-grade` を指定できる（[ADR 0063](docs/adr/0063-font-functions-and-synthesis.md)）。
+
+FreeTypeの合成操作には、`sofel-outline::Scratch` のスロット用の斜体と太字、`sofel-bitmap` の画素形式変換と太字を使う。ビットマップの太字では `embolden_bitmap_slot` が画像とスロットのメトリクス、配置を合わせて更新する。HarfBuzzに合わせた輪郭の命令は、glyfを `Scratch::hb_decompose`、CFFとCFF2を `HbExtents::cff_glyph_path` から得る。画像を含むカラーグリフの合成斜体は、`sofel-color::paint_recording_at_with_slant` が描画命令を変換で包む（[ADR 0063](docs/adr/0063-font-functions-and-synthesis.md)）。
+
 `sofel-validate` は CFF2 の FDSelect フォーマット4を互換性の警告として報告する。ほかにエラーがなければ検証は成功する（[ADR 0056](docs/adr/0056-cff2-fdselect-format4-warning.md)）。
 
 ### `sofel` で文字列を描く
@@ -96,7 +100,7 @@ sofel render --ppem 48 --text-file sample.txt font.ttf > sample.pgm
 
 可変フォントの輪郭には `--variations=wght=500` や `--named-instance=0` で位置を指定できる。既定以外の位置では埋め込みビットマップを使わず、輪郭を描く。
 
-1グリフをヒンティングなしで描き、PGM（P5、白地に黒）を標準出力に書く（[ADR 0012](docs/adr/0012-antialiased-rasterizer.md)）。FreeTypeの `FT_Render_Glyph` と同じ画像になる。そのppemの埋め込みビットマップがあれば、FreeTypeと同じく `--no-bitmap` が無いかぎりそれを書く（32bitはPAM。[ADR 0023](docs/adr/0023-color-glyphs.md)）。`--color` では、COLRv0と、矩形・円を線形・放射グラデーションで塗る OT-SVG のグリフをPAMで書く（[ADR 0072](docs/adr/0072-color-gallery-acceptance.md)）。COLRv0の色はFreeTypeの `FT_LOAD_COLOR` と同じで、`--palette N` でパレットを選ぶ。
+1グリフをヒンティングなしで描き、PGM（P5、白地に黒）を標準出力に書く（[ADR 0012](docs/adr/0012-antialiased-rasterizer.md)）。FreeTypeの `FT_Render_Glyph` と同じ画像になる。そのppemの埋め込みビットマップがあれば、FreeTypeと同じく `--no-bitmap` が無いかぎりそれを書く（32bitはPAM。[ADR 0023](docs/adr/0023-color-glyphs.md)）。`--color` では、COLRv0と、矩形、円、パスを線形・放射グラデーションで塗る OT-SVG のグリフをPAMで書く（[ADR 0072](docs/adr/0072-color-gallery-acceptance.md)）。COLRv0の色はFreeTypeの `FT_LOAD_COLOR` と同じで、`--palette N` でパレットを選ぶ。
 
 CLI のレイヤー選択と描画制御は独自実装で、画素合成には `sofel-raster` を使う（[ADR 0055](docs/adr/0055-rewrite-cli-color-rendering.md)）。
 

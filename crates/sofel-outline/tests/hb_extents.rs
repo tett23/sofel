@@ -20,7 +20,8 @@ use sofel_font::HbCff2;
 use sofel_font::read::GlyphId;
 use sofel_font::var::Location;
 use sofel_font::{Font, GlyphExtents};
-use sofel_outline::{HbExtents, cff2_extents_at};
+use sofel_geom::PointF;
+use sofel_outline::{HbExtents, HbOutlineCommand, cff2_extents_at};
 
 pub const RMOVETO: u16 = 21;
 pub const RLINETO: u16 = 5;
@@ -163,10 +164,28 @@ fn seac_merges_base_and_moved_accent() {
     cs[35] = charstring(&[I(0), I(0), I(65), I(193), Op(ENDCHAR)]);
     // A code without a glyph fails.
     cs[3] = charstring(&[I(0), I(0), I(65), I(0), Op(ENDCHAR)]);
-    let b = boxes(&cff_font(cs, vec![]));
+    let data = cff_font(cs, vec![]);
+    let b = boxes(&data);
     assert_eq!(b[1], Some(ext(0, 210, 100, -210)));
     assert_eq!(b[2], None);
     assert_eq!(b[3], None);
+    let font = Font::new(&data, 0).unwrap();
+    let path = HbExtents::new(font.default_instance())
+        .cff_glyph_path(GlyphId(1), &sofel_font::HbScale::unscaled(&font))
+        .unwrap();
+    assert_eq!(
+        path,
+        vec![
+            HbOutlineCommand::MoveTo(PointF::new(0.0, 0.0)),
+            HbOutlineCommand::LineTo(PointF::new(100.0, 100.0)),
+            HbOutlineCommand::LineTo(PointF::new(0.0, 0.0)),
+            HbOutlineCommand::Close,
+            HbOutlineCommand::MoveTo(PointF::new(50.0, 200.0)),
+            HbOutlineCommand::LineTo(PointF::new(60.0, 210.0)),
+            HbOutlineCommand::LineTo(PointF::new(50.0, 200.0)),
+            HbOutlineCommand::Close,
+        ]
+    );
 }
 
 #[test]

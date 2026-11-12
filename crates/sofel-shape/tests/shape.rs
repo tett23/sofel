@@ -18,13 +18,42 @@ use sofel_font::read::GlyphId;
 use sofel_font::{Font, GlyphExtents, HbScale};
 use sofel_shape::{
     BufferFlags, ClusterLevel, Direction, Feature, GlyphBuffer, GlyphFlags, Language,
-    ResolvedProperties, Scale, Script, ShapePlan, UnicodeBuffer, shape, shape_fallback,
-    shape_with_extents,
+    ResolvedProperties, Scale, Script, ShapePlan, SubFont, UnicodeBuffer, shape, shape_fallback,
+    shape_with_extents, shape_with_subfont,
 };
 use support::{
     gdef, ligature_subst, lookup, mark_base, multiple_subst, pair_pos, simple_layout, single_pos,
     single_pos_device, single_subst,
 };
+
+#[test]
+fn adr0063_i1_subfont_is_send_and_sync() {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<SubFont<'static>>();
+}
+
+#[test]
+fn adr0063_i1_outline_supplies_box_without_box_callback() {
+    let scale = Scale::new(HbScale::new(1000, 1000, 1000), 0, 0);
+    let mut font = SubFont::new(scale);
+    font.set_outline_func(|_| {
+        let mut outline = sofel_shape::GlyphOutline::new();
+        outline.move_to(sofel_geom::PointF::new(20.0, 30.0));
+        outline.line_to(sofel_geom::PointF::new(120.0, 30.0));
+        outline.line_to(sofel_geom::PointF::new(120.0, 230.0));
+        outline.close();
+        Some(outline)
+    });
+    assert_eq!(
+        font.glyph_extents(1),
+        Some(GlyphExtents {
+            x_bearing: 20,
+            y_bearing: 230,
+            width: 100,
+            height: -200,
+        })
+    );
+}
 
 /// The glyphs of the test fonts.
 const NOTDEF: u32 = 0;
@@ -129,6 +158,93 @@ fn glyphs(g: &GlyphBuffer) -> Vec<(u32, u32)> {
 
 fn advances(g: &GlyphBuffer) -> Vec<i32> {
     g.glyph_positions().iter().map(|p| p.x_advance).collect()
+}
+
+#[test]
+fn adr0063_i1_subfont_inherits_only_unset_functions_and_scales_parent_advance() {
+    let data = make_font(false, vec![]);
+    let font = Font::new(&data, 0).unwrap();
+    let instance = font.default_instance();
+    let plan = ShapePlan::new(instance, props(Direction::Ltr), &[]);
+    let buffer = || {
+        let mut b = UnicodeBuffer::new();
+        b.push_utf8(b"a", 0, None);
+        b
+    };
+
+    let plain = SubFont::new(Scale::unscaled(&font));
+    let result = shape_with_subfont(instance, &plain, &plan, buffer());
+    assert_eq!(glyphs(&result), [(A, 0)]);
+    assert_eq!(advances(&result), [510]);
+
+    let mut parent = SubFont::new(Scale::unscaled(&font));
+    parent.set_h_advance_func(|_| 777);
+    parent.set_h_origin_func(|_| Some((11, 13)));
+    let mut child = parent.child();
+    child.set_scale(Scale::new(
+        HbScale::new(2000, 1000, font.hb_units_per_em()),
+        0,
+        0,
+    ));
+    child.set_nominal_glyph_func(|cp| (cp == u32::from(b'a')).then_some(B));
+    let result = shape_with_subfont(instance, &child, &plan, buffer());
+    assert_eq!(glyphs(&result), [(B, 0)]);
+    assert_eq!(advances(&result), [1554]);
+    assert_eq!(child.horizontal_origin(B), Some((22, 13)));
+}
+
+#[test]
+fn adr0063_i2_synthetic_bold_changes_advance_only_out_of_place() {
+    let data = make_font(false, vec![]);
+    let font = Font::new(&data, 0).unwrap();
+    let instance = font.default_instance();
+    let plan = ShapePlan::new(instance, props(Direction::Ltr), &[]);
+    let buffer = || {
+        let mut b = UnicodeBuffer::new();
+        b.push_utf8(b"a", 0, None);
+        b
+    };
+    let mut subfont = SubFont::new(Scale::unscaled(&font));
+    subfont.set_h_origin_func(|_| Some((12, 15)));
+    subfont.set_synthetic_bold(0.1, 0.0, false);
+    let out_of_place = shape_with_subfont(instance, &subfont, &plan, buffer());
+    assert_eq!(advances(&out_of_place), [610]);
+    assert_eq!(subfont.horizontal_origin(A), Some((112, 15)));
+    subfont.set_synthetic_bold(0.1, 0.0, true);
+    let in_place = shape_with_subfont(instance, &subfont, &plan, buffer());
+    assert_eq!(advances(&in_place), [510]);
+    assert_eq!(subfont.horizontal_origin(A), Some((12, 15)));
+}
+
+#[test]
+fn adr0063_i1_child_scales_parent_outline() {
+    let data = make_font(false, vec![]);
+    let font = Font::new(&data, 0).unwrap();
+    let mut parent = SubFont::new(Scale::unscaled(&font));
+    parent.set_outline_func(|_| {
+        let mut outline = sofel_shape::GlyphOutline::new();
+        outline.move_to(sofel_geom::PointF::new(0.0, 0.0));
+        outline.line_to(sofel_geom::PointF::new(10.0, 0.0));
+        outline.line_to(sofel_geom::PointF::new(10.0, 20.0));
+        outline.close();
+        Some(outline)
+    });
+    let mut child = parent.child();
+    child.set_scale(Scale::new(
+        HbScale::new(2000, 3000, font.hb_units_per_em()),
+        0,
+        0,
+    ));
+    let outline = child.glyph_outline(A).unwrap();
+    assert_eq!(
+        outline.extents(),
+        sofel_font::GlyphExtents {
+            x_bearing: 0,
+            y_bearing: 60,
+            width: 20,
+            height: -60,
+        }
+    );
 }
 
 #[test]
