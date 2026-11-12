@@ -1,3 +1,4 @@
+#![allow(clippy::expect_used)]
 //! The selected SVG glyph sends outlines, transforms and resolved fills to a Painter (sofel ADR 0066 I3).
 use sofel_geom::{Brush, Color, CompositeMode, Image, Painter, Rect, Transform};
 use sofel_svg::{ClipPath, OutlinePainter, Shape, parse_glyph};
@@ -13,16 +14,19 @@ struct Trace {
 impl<'a> OutlinePainter<'a> for Trace {
     fn push_svg_clip(&mut self, _: &'a Shape, paths: &'a [ClipPath]) {
         self.path_counts.push(paths.len());
-        self.depth += 1;
+        self.depth = self.depth.checked_add(1).expect("test counter overflow");
     }
 }
 impl Painter for Trace {
     fn push_transform(&mut self, _: Transform) {
-        self.depth += 1;
-        self.transforms += 1;
+        self.depth = self.depth.checked_add(1).expect("test counter overflow");
+        self.transforms = self
+            .transforms
+            .checked_add(1)
+            .expect("test counter overflow");
     }
     fn pop_transform(&mut self) {
-        self.depth -= 1;
+        self.depth = self.depth.checked_sub(1).expect("unbalanced SVG commands");
     }
     fn push_clip_glyph(&mut self, _: u32) {
         unreachable!()
@@ -31,7 +35,7 @@ impl Painter for Trace {
         unreachable!()
     }
     fn pop_clip(&mut self) {
-        self.depth -= 1;
+        self.depth = self.depth.checked_sub(1).expect("unbalanced SVG commands");
     }
     fn fill(&mut self, b: &Brush<'_>) {
         match b {
