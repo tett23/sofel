@@ -10,39 +10,18 @@
 # --preprocess differs from its output without it (sofel gives the
 # latter both times; ADR 0022 does not match HarfBuzz on malformed
 # tables).
-hb-dump/glyphs/AdobeVFPrototype.otf  # stage:var
-hb-dump/glyphs/Comfortaa-Regular-new.ttf  # stage:var
-hb-dump/glyphs/Fraunces.ttf  # stage:var
-hb-dump/glyphs/MPLUS1-Variable.ttf  # stage:var
-hb-dump/glyphs/RobotoFlex-Variable.ttf  # stage:var
-hb-dump/golem/AdobeVFPrototype.otf:keep  # stage:var
-hb-dump/golem/AdobeVFPrototype.otf:keep+prepared  # stage:var
 hb-dump/golem/COLRv1-alpha.ttf:pin  # stage:var
 hb-dump/golem/COLRv1-alpha.ttf:pin+prepared  # stage:var
-hb-dump/golem/Comfortaa-Regular-new.ttf:keep  # stage:var
-hb-dump/golem/Comfortaa-Regular-new.ttf:keep+prepared  # stage:var
 hb-dump/golem/Foldit.ttf:pin  # stage:var
 hb-dump/golem/Foldit.ttf:pin+prepared  # stage:var
-hb-dump/golem/Fraunces.ttf:keep  # stage:var
-hb-dump/golem/Fraunces.ttf:keep+prepared  # stage:var
 hb-dump/golem/KalniaGlaze.ttf:pin  # stage:var
 hb-dump/golem/KalniaGlaze.ttf:pin+prepared  # stage:var
-hb-dump/golem/MPLUS1-Variable.ttf:keep  # stage:var
-hb-dump/golem/MPLUS1-Variable.ttf:keep+prepared  # stage:var
 hb-dump/golem/NotoSansJP-VF.subset.otf:keep  # stage:var
 hb-dump/golem/NotoSansJP-VF.subset.otf:keep+prepared  # stage:var
-hb-dump/golem/Roboto-Variable.ABC.ttf:keep  # stage:var
-hb-dump/golem/Roboto-Variable.ABC.ttf:keep+prepared  # stage:var
-hb-dump/golem/Roboto-Variable.ttf:keep  # stage:var
-hb-dump/golem/Roboto-Variable.ttf:keep+prepared  # stage:var
 hb-dump/golem/RobotoDelta-NullVarStore-VF.ttf:pin  # deferred:instance
 hb-dump/golem/RobotoDelta-NullVarStore-VF.ttf:pin+prepared  # deferred:instance
 hb-dump/golem/RobotoDelta-Roman-VF-subset.ttf:pin  # deferred:instance
 hb-dump/golem/RobotoDelta-Roman-VF-subset.ttf:pin+prepared  # deferred:instance
-hb-dump/golem/RobotoFlex-Variable.ttf:keep  # stage:var
-hb-dump/golem/RobotoFlex-Variable.ttf:keep+prepared  # stage:var
-hb-dump/golem/SourceSerifVariable-Roman.ttf:keep  # stage:var
-hb-dump/golem/SourceSerifVariable-Roman.ttf:keep+prepared  # stage:var
 hb-dump/golem/bad-gsub.otf:keep+prepared  # upstream:preprocess-malformed
 hb-dump/golem/sixtyfour_subset.ttf:pin  # stage:var
 hb-dump/golem/sixtyfour_subset.ttf:pin+prepared  # stage:var

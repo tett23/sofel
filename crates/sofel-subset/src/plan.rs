@@ -185,10 +185,15 @@ fn layout_unsupported(
         let tag = Tag::new(t);
         font.table(tag).is_some() && !drop.contains(tag.to_u32())
     };
-    let gsub_feature_variations_retained = retained(b"GSUB")
+    let gsub_may_reference_store = retained(b"GSUB")
         && font.table(Tag::new(b"GSUB")).is_some_and(|d| {
-            sofel_font::read::be::u32_at(d, 0).unwrap_or(0) >= 0x0001_0001
+            let table = layout::Gsubgpos::new(d, true);
+            // The GSUB writer only emits format-1 axis ranges, which never
+            // reference GDEF. A copied GSUB bypasses that writer.
+            table.version() >= 0x0001_0001
                 && sofel_font::read::be::u32_at(d, 10) != Some(0)
+                && (no_subset.contains(Tag::new(b"GSUB").to_u32())
+                    || table.feature_variations_view().is_none())
         });
     // A VariationIndex Device necessarily contains the format word 0x8000.
     // Scan the whole retained table so an unknown or malformed subtable
@@ -211,7 +216,7 @@ fn layout_unsupported(
             || (math_may_reference_store
                 && no_subset.contains(Tag::new(b"MATH").to_u32())
                 && !no_subset.contains(Tag::new(b"GDEF").to_u32()))
-            || gsub_feature_variations_retained)
+            || gsub_may_reference_store)
     {
         return Err(SubsetError::Unsupported {
             tag: Tag::new(b"GDEF"),

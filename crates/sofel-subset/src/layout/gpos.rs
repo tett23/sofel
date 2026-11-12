@@ -17,12 +17,10 @@ fn value_len(format: u16) -> usize {
 }
 
 fn collect_value_devices(
-    data: &[u8],
     base: D<'_>,
     values: D<'_>,
     vf: [u16; 2],
     keep: bool,
-    formats: &mut BTreeSet<usize>,
     selected: &mut BTreeSet<u32>,
 ) -> Option<()> {
     let mut start = 0usize;
@@ -41,7 +39,7 @@ fn collect_value_devices(
             if dev.0.len() < 6 {
                 return None;
             }
-            formats.insert(data.len().checked_sub(dev.0.len())?.saturating_add(4));
+
             if keep {
                 selected.insert((u32::from(dev.u16(0)) << 16) | u32::from(dev.u16(2)));
             }
@@ -51,13 +49,7 @@ fn collect_value_devices(
     Some(())
 }
 
-fn collect_anchor_devices(
-    data: &[u8],
-    anchor: D<'_>,
-    keep: bool,
-    formats: &mut BTreeSet<usize>,
-    selected: &mut BTreeSet<u32>,
-) -> Option<()> {
+fn collect_anchor_devices(anchor: D<'_>, keep: bool, selected: &mut BTreeSet<u32>) -> Option<()> {
     if anchor.is_null() || anchor.u16(0) != 3 {
         return Some(());
     }
@@ -72,7 +64,7 @@ fn collect_anchor_devices(
         if dev.0.len() < 6 {
             return None;
         }
-        formats.insert(data.len().checked_sub(dev.0.len())?.saturating_add(4));
+
         if keep {
             selected.insert((u32::from(dev.u16(0)) << 16) | u32::from(dev.u16(2)));
         }
@@ -81,12 +73,9 @@ fn collect_anchor_devices(
 }
 
 fn collect_mark_anchors(
-    data: &[u8],
     marks: D<'_>,
     coverage: Cov<'_>,
-    keep_lookup: bool,
     glyphs: &BitSet,
-    formats: &mut BTreeSet<usize>,
     selected: &mut BTreeSet<u32>,
 ) -> Option<()> {
     let n = usize::from(marks.u16(0));
@@ -95,23 +84,15 @@ fn collect_mark_anchors(
     }
     for (i, glyph) in coverage.glyphs().into_iter().take(n).enumerate() {
         let anchor = marks.off16(4usize.saturating_add(i.saturating_mul(4)));
-        collect_anchor_devices(
-            data,
-            anchor,
-            keep_lookup && glyphs.has(glyph),
-            formats,
-            selected,
-        )?;
+        collect_anchor_devices(anchor, glyphs.has(glyph), selected)?;
     }
     Some(())
 }
 
 fn collect_anchor_matrix(
-    data: &[u8],
     matrix: D<'_>,
     class_count: usize,
     kept: &BTreeSet<usize>,
-    formats: &mut BTreeSet<usize>,
     selected: &mut BTreeSet<u32>,
 ) -> Option<()> {
     let cells = usize::from(matrix.u16(0)).checked_mul(class_count)?;
@@ -120,17 +101,14 @@ fn collect_anchor_matrix(
     }
     for i in 0..cells {
         let anchor = matrix.off16(2usize.saturating_add(i.saturating_mul(2)));
-        collect_anchor_devices(data, anchor, kept.contains(&i), formats, selected)?;
+        collect_anchor_devices(anchor, kept.contains(&i), selected)?;
     }
     Some(())
 }
 
 fn collect_mark_base_like_anchors(
-    data: &[u8],
     st: D<'_>,
-    keep_lookup: bool,
     glyphs: &BitSet,
-    formats: &mut BTreeSet<usize>,
     selected: &mut BTreeSet<u32>,
 ) -> Option<()> {
     let mark_cov = Cov(st.off16(2));
@@ -145,15 +123,7 @@ fn collect_mark_base_like_anchors(
     {
         return None;
     }
-    collect_mark_anchors(
-        data,
-        marks,
-        mark_cov,
-        keep_lookup,
-        glyphs,
-        formats,
-        selected,
-    )?;
+    collect_mark_anchors(marks, mark_cov, glyphs, selected)?;
     let classes = mark_classes(mark_cov, marks, glyphs);
     let mut kept = BTreeSet::new();
     for (row, glyph) in base_cov
@@ -162,7 +132,7 @@ fn collect_mark_base_like_anchors(
         .take(usize::from(bases.u16(0)))
         .enumerate()
     {
-        if !keep_lookup || !glyphs.has(glyph) {
+        if !glyphs.has(glyph) {
             continue;
         }
         let at = |col: usize| row.saturating_mul(class_count).saturating_add(col);
@@ -176,15 +146,12 @@ fn collect_mark_base_like_anchors(
             );
         }
     }
-    collect_anchor_matrix(data, bases, class_count, &kept, formats, selected)
+    collect_anchor_matrix(bases, class_count, &kept, selected)
 }
 
 fn collect_mark_lig_anchors(
-    data: &[u8],
     st: D<'_>,
-    keep_lookup: bool,
     glyphs: &BitSet,
-    formats: &mut BTreeSet<usize>,
     selected: &mut BTreeSet<u32>,
 ) -> Option<()> {
     let mark_cov = Cov(st.off16(2));
@@ -192,15 +159,7 @@ fn collect_mark_lig_anchors(
     let class_count = usize::from(st.u16(6));
     let marks = st.off16(8);
     let ligs = st.off16(10);
-    collect_mark_anchors(
-        data,
-        marks,
-        mark_cov,
-        keep_lookup,
-        glyphs,
-        formats,
-        selected,
-    )?;
+    collect_mark_anchors(marks, mark_cov, glyphs, selected)?;
     let classes = mark_classes(mark_cov, marks, glyphs);
     let n = usize::from(ligs.u16(0));
     if n.checked_mul(2)? > ligs.0.len().saturating_sub(2) {
@@ -219,18 +178,16 @@ fn collect_mark_lig_anchors(
             cell.checked_rem(class_count)
                 .is_some_and(|class| classes.contains_key(&n32(class)))
         };
-        let keep = keep_lookup
-            && glyphs.has(glyph)
+        let keep = glyphs.has(glyph)
             && (0..cells).any(|cell| in_class(cell) && attach.u16_at(2, cell) != 0);
         let kept = (0..cells).filter(|&cell| keep && in_class(cell)).collect();
-        collect_anchor_matrix(data, attach, class_count, &kept, formats, selected)?;
+        collect_anchor_matrix(attach, class_count, &kept, selected)?;
     }
     Some(())
 }
 
-/// Indices used by retained ValueRecords and format 3 Anchors. Every 0x8000 word
-/// in the source GPOS must be a parsed Device format; this keeps
-/// other GPOS variation Devices and unparsed formats unsupported.
+/// Collect only Devices reached through a retained ValueRecord or Anchor.
+/// Context lookups invoke other lookups and contain no Devices themselves.
 pub(crate) fn retained_variation_indices(
     data: &[u8],
     plan: &LayoutPlan,
@@ -238,12 +195,13 @@ pub(crate) fn retained_variation_indices(
     num_glyphs: u32,
 ) -> Option<BTreeSet<u32>> {
     let t = Gsubgpos::new(data, false);
-    let mut formats = BTreeSet::new();
     let mut selected = BTreeSet::new();
     let list = t.lookup_list();
     for i in 0..usize::from(list.u16(0)) {
         let lookup = list.off16(2usize.saturating_add(i.saturating_mul(2)));
-        let keep_lookup = plan.lookups.contains_key(&n32(i));
+        if !plan.lookups.contains_key(&n32(i)) {
+            continue;
+        }
         let ty = lookup.u16(0);
         for j in 0..usize::from(lookup.u16(4)) {
             let st = lookup.off16(6usize.saturating_add(j.saturating_mul(2)));
@@ -256,12 +214,10 @@ pub(crate) fn retained_variation_indices(
                 match subtable.u16(0) {
                     1 => {
                         collect_value_devices(
-                            data,
                             subtable,
                             subtable.at(6),
                             [vf, 0],
-                            keep_lookup && cov.intersects(glyphs),
-                            &mut formats,
+                            cov.intersects(glyphs),
                             &mut selected,
                         )?;
                     }
@@ -273,17 +229,15 @@ pub(crate) fn retained_variation_indices(
                         }
                         for (k, glyph) in cov.glyphs().into_iter().take(n).enumerate() {
                             collect_value_devices(
-                                data,
                                 subtable,
                                 subtable.at(8usize.saturating_add(k.saturating_mul(record_len))),
                                 [vf, 0],
-                                keep_lookup && glyphs.has(glyph),
-                                &mut formats,
+                                glyphs.has(glyph),
                                 &mut selected,
                             )?;
                         }
                     }
-                    _ => {}
+                    _ => return None,
                 }
                 continue;
             }
@@ -295,47 +249,33 @@ pub(crate) fn retained_variation_indices(
                 let cov = Cov(subtable.off16(2));
                 for (k, glyph) in cov.glyphs().into_iter().take(n).enumerate() {
                     let rec = 6usize.saturating_add(k.saturating_mul(4));
-                    let keep = keep_lookup && glyphs.has(glyph);
+                    let keep = glyphs.has(glyph);
                     for at in [rec, rec.saturating_add(2)] {
-                        collect_anchor_devices(
-                            data,
-                            subtable.off16(at),
-                            keep,
-                            &mut formats,
-                            &mut selected,
-                        )?;
+                        collect_anchor_devices(subtable.off16(at), keep, &mut selected)?;
                     }
                 }
                 continue;
             }
             if matches!(kind, Kind::MarkBasePos | Kind::MarkMarkPos) && subtable.u16(0) == 1 {
-                collect_mark_base_like_anchors(
-                    data,
-                    subtable,
-                    keep_lookup,
-                    glyphs,
-                    &mut formats,
-                    &mut selected,
-                )?;
+                collect_mark_base_like_anchors(subtable, glyphs, &mut selected)?;
                 continue;
             }
             if kind == Kind::MarkLigPos && subtable.u16(0) == 1 {
-                collect_mark_lig_anchors(
-                    data,
-                    subtable,
-                    keep_lookup,
-                    glyphs,
-                    &mut formats,
-                    &mut selected,
-                )?;
+                collect_mark_lig_anchors(subtable, glyphs, &mut selected)?;
+                continue;
+            }
+            if matches!(kind, Kind::Context | Kind::ChainContext) {
                 continue;
             }
             if kind != Kind::PairPos {
-                continue;
+                return None;
             }
             let pair = subtable;
             let cov = Cov(pair.off16(2));
             let vf = [pair.u16(4), pair.u16(6)];
+            if (vf[0] | vf[1]) & 0x00f0 == 0 {
+                continue;
+            }
             let lengths = [value_len(vf[0]), value_len(vf[1])];
             match pair.u16(0) {
                 1 => {
@@ -353,17 +293,8 @@ pub(crate) fn retained_variation_indices(
                         }
                         for m in 0..usize::from(ps.u16(0)) {
                             let r = ps.at(2usize.saturating_add(m.saturating_mul(record_len)));
-                            let keep =
-                                keep_lookup && glyphs.has(first) && glyphs.has(u32::from(r.u16(0)));
-                            collect_value_devices(
-                                data,
-                                ps,
-                                r.at(2),
-                                vf,
-                                keep,
-                                &mut formats,
-                                &mut selected,
-                            )?;
+                            let keep = glyphs.has(first) && glyphs.has(u32::from(r.u16(0)));
+                            collect_value_devices(ps, r.at(2), vf, keep, &mut selected)?;
                         }
                     }
                 }
@@ -396,8 +327,7 @@ pub(crate) fn retained_variation_indices(
                     );
                     let mut cols: BTreeSet<u32> = classes2.iter().collect();
                     cols.insert(0);
-                    let keep_subtable =
-                        keep_lookup && cov.intersects(glyphs) && cd2.intersects(glyphs);
+                    let keep_subtable = cov.intersects(glyphs) && cd2.intersects(glyphs);
                     for c1 in 0..c1_count {
                         for c2 in 0..c2_count {
                             let at = 16usize.saturating_add(
@@ -407,28 +337,13 @@ pub(crate) fn retained_variation_indices(
                             );
                             let keep =
                                 keep_subtable && rows.contains(&n32(c1)) && cols.contains(&n32(c2));
-                            collect_value_devices(
-                                data,
-                                pair,
-                                pair.at(at),
-                                vf,
-                                keep,
-                                &mut formats,
-                                &mut selected,
-                            )?;
+                            collect_value_devices(pair, pair.at(at), vf, keep, &mut selected)?;
                         }
                     }
                 }
-                _ => {}
+                _ => return None,
             }
         }
-    }
-    if data
-        .windows(2)
-        .enumerate()
-        .any(|(at, bytes)| bytes == [0x80, 0x00] && !formats.contains(&at))
-    {
-        return None;
     }
     Some(selected)
 }
