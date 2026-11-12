@@ -86,7 +86,7 @@ fn max(a: f32, b: f32) -> f32 {
 
 /// `hb_color_lerp`: componentwise, rounded; out-of-range and NaN `t`
 /// stay defined.
-fn lerp(c0: Color, c1: Color, t: f32) -> Color {
+pub fn interpolate_sweep_color(c0: Color, c1: Color, t: f32) -> Color {
     let one = |v0: u8, v1: u8| {
         let v = f32::from(v0) + t * (f32::from(v1) - f32::from(v0)) + 0.5;
         if v > 255.0 {
@@ -101,10 +101,11 @@ fn lerp(c0: Color, c1: Color, t: f32) -> Color {
         }
     };
     Color::new(
-        one(c0.r, c1.r),
+        // hb_color_lerp passes shifts 0, 8, 16, 24 into HB_COLOR(b,g,r,a).
         one(c0.g, c1.g),
-        one(c0.b, c1.b),
+        one(c0.r, c1.r),
         one(c0.a, c1.a),
+        one(c0.b, c1.b),
     )
 }
 
@@ -157,10 +158,10 @@ pub fn sweep_gradient_tiles(
         let (mut d0, mut d1) = (c0, c1);
         if c0 != c1 {
             if t0 != a0 {
-                d0 = lerp(c0, c1, (t0 - a0) / (a1 - a0));
+                d0 = interpolate_sweep_color(c0, c1, (t0 - a0) / (a1 - a0));
             }
             if t1 != a1 {
-                d1 = lerp(c0, c1, (t1 - a0) / (a1 - a0));
+                d1 = interpolate_sweep_color(c0, c1, (t1 - a0) / (a1 - a0));
             }
         }
         emit(t0, d0, t1, d1);
@@ -208,7 +209,7 @@ pub fn sweep_gradient_tiles(
         if pos > 0 {
             let p = pos.saturating_sub(1);
             let f = (0.0 - angle(p)) / (angle(pos) - angle(p));
-            color0 = lerp(color(p), color(pos), f);
+            color0 = interpolate_sweep_color(color(p), color(pos), f);
         }
         clip(0.0, color0, angle(pos), color(pos));
         pos = pos.saturating_add(1);
@@ -218,7 +219,7 @@ pub fn sweep_gradient_tiles(
                 clip(angle(p), color(p), angle(pos), color(pos));
             } else {
                 let f = (TWO_PI - angle(p)) / (angle(pos) - angle(p));
-                let c1 = lerp(color(p), color(pos), f);
+                let c1 = interpolate_sweep_color(color(p), color(pos), f);
                 clip(angle(p), color(p), TWO_PI, c1);
                 break;
             }
@@ -296,10 +297,10 @@ pub fn sweep_gradient_tiles(
             tiles = tiles.saturating_add(1);
             if a0 < 0.0 {
                 let f = (0.0 - a0) / (a1 - a0);
-                clip(0.0, lerp(col0, col1, f), a1, col1);
+                clip(0.0, interpolate_sweep_color(col0, col1, f), a1, col1);
             } else if a1 >= TWO_PI {
                 let f = (TWO_PI - a0) / (a1 - a0);
-                clip(a0, col0, TWO_PI, lerp(col0, col1, f));
+                clip(a0, col0, TWO_PI, interpolate_sweep_color(col0, col1, f));
                 return;
             } else {
                 clip(a0, col0, a1, col1);

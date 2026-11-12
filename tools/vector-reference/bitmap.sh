@@ -35,7 +35,7 @@ for glyph in 12 13 14 15 16 17 18 19 20 24 28 30 40; do
     cmp "$work/reference.png" "$work/actual.png"
 done
 # Axial and radial shadings with varying alpha need luminosity soft masks.
-for glyph in 149 151; do
+for glyph in 12 13 14 20 40 149 151 153; do
     "$work/bitmap" "$font" "$work/reference.pdf" "$work/actual.pdf" "$glyph" pdf-gid
     for name in actual reference; do
         pdftoppm -singlefile -scale-to 640 "$work/$name.pdf" "$work/$name"

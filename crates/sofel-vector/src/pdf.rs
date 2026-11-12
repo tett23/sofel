@@ -1,4 +1,5 @@
 //! A single PDF page containing positioned, solid-filled outlines.
+mod mesh;
 mod paint;
 use alloc::{format, string::String, vec::Vec};
 use core::fmt::Write as _;
@@ -12,6 +13,7 @@ pub struct PdfPage {
     images: Vec<PdfImage>,
     shadings: Vec<String>,
     soft_masks: Vec<String>,
+    meshes: Vec<Vec<u8>>,
     states: Vec<(&'static str, u8)>,
 }
 
@@ -58,6 +60,7 @@ impl PdfPage {
             states: Vec::new(),
             shadings: Vec::new(),
             soft_masks: Vec::new(),
+            meshes: Vec::new(),
             images: Vec::new(),
         };
         if let Some(color) = background {
@@ -163,7 +166,7 @@ impl PdfPage {
             );
         }
         for i in 0..self.soft_masks.len() {
-            let object_id = i.saturating_add(5);
+            let object_id = i.saturating_add(5).saturating_add(self.meshes.len());
             let _ = write!(
                 states,
                 "/Mask{i} << /Type /ExtGState /SMask << /Type /Mask /S /Luminosity /G {object_id} 0 R >> >> "
@@ -177,6 +180,7 @@ impl PdfPage {
                 i.saturating_mul(2)
                     .saturating_add(6)
                     .saturating_add(self.soft_masks.len())
+                    .saturating_add(self.meshes.len())
             );
         }
         let mut shadings = String::new();
@@ -198,10 +202,17 @@ impl PdfPage {
             self.stream.len(),
             self.stream
         ));
-        for form in self.soft_masks {
-            object(&form);
-        }
         let mut bytes = output.into_bytes();
+        for obj in self
+            .meshes
+            .into_iter()
+            .chain(self.soft_masks.into_iter().map(String::into_bytes))
+        {
+            offsets.push(bytes.len());
+            bytes.extend_from_slice(format!("{} 0 obj\n", offsets.len()).as_bytes());
+            bytes.extend_from_slice(&obj);
+            bytes.extend_from_slice(b"\nendobj\n");
+        }
         for image in self.images {
             let pixels = image.rgba.as_chunks::<4>().0;
             let mask_id = offsets.len().saturating_add(1);

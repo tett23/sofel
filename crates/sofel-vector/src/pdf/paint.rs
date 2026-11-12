@@ -31,6 +31,7 @@ impl PdfPage {
             self.states.len(),
             self.shadings.len(),
             self.soft_masks.len(),
+            self.meshes.len(),
         );
         let mut p = PdfPainter {
             page: self,
@@ -46,6 +47,7 @@ impl PdfPage {
             p.page.states.truncate(start.1);
             p.page.shadings.truncate(start.2);
             p.page.soft_masks.truncate(start.3);
+            p.page.meshes.truncate(start.4);
         }
         p.complete
     }
@@ -233,7 +235,12 @@ impl<F: FnMut(u32, &mut PdfPen<'_>) -> bool> Painter for PdfPainter<'_, F> {
                     .stream
                     .push_str("-32767 -32767 65534 65534 re f\nQ\n");
             }
-            Brush::Sweep { .. } => self.complete = false,
+            Brush::Sweep {
+                line,
+                center,
+                start,
+                end,
+            } => self.complete &= self.page.sweep(line, center, start, end),
         }
     }
     fn image(&mut self, _: &Image<'_>) -> bool {

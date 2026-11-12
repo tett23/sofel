@@ -2662,7 +2662,7 @@ typedef void (*sofel_sweep_tile_func_t)(void *user, float a0, sofel_color_t c0, 
  * The segments within 0..2π of a sweep gradient of sorted, normalized
  * stops, from start to end (radians), passed to emit; at most 4096.
  *
- * Rust: sofel_geom::sweep_gradient_tiles
+ * Rust: sofel_geom::interpolate_sweep_color, sofel_geom::sweep_gradient_tiles
  * HarfBuzz: hb_paint_sweep_gradient_tiles
  * FreeType: none
  */
