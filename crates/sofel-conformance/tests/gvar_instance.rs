@@ -201,40 +201,56 @@ fn adr0061_i1_expand_sparse_gvar_deltas_before_serializing() {
     compare_mixed_tuple_pin(false, true);
 }
 
+fn table_entry(data: &[u8], tag: &[u8; 4]) -> usize {
+    let count = sofel_font::read::be::u16_at(data, 4).unwrap();
+    (0..usize::from(count))
+        .map(|index| 12 + 16 * index)
+        .find(|&at| data.get(at..at + 4) == Some(tag))
+        .unwrap()
+}
+
+fn table_offset(data: &[u8], entry: usize) -> usize {
+    sofel_font::read::be::u32_at(data, entry + 8).unwrap() as usize
+}
+
 fn compare_mixed_tuple_pin(duplicate: bool, sparse: bool) {
     let path = paths::testdata().join("harfbuzz/test/api/fonts/glyf-default-instance-bounds.ttf");
     let mut bytes = std::fs::read(path).unwrap();
     // The fixture has one shared peak (1, 0). Give it support on both axes.
-    let record = bytes[12..]
-        .chunks_exact(16)
-        .find(|r| &r[..4] == b"gvar")
-        .unwrap();
-    let table = u32::from_be_bytes(record[8..12].try_into().unwrap()) as usize;
-    let shared = u32::from_be_bytes(bytes[table + 8..table + 12].try_into().unwrap()) as usize;
-    bytes[table + shared + 2..table + shared + 4].copy_from_slice(&16384i16.to_be_bytes());
+    let entry = table_entry(&bytes, b"gvar");
+    let table = table_offset(&bytes, entry);
+    let shared = sofel_font::read::be::u32_at(&bytes, table + 8).unwrap() as usize;
+    bytes
+        .get_mut(table + shared + 2..table + shared + 4)
+        .unwrap()
+        .copy_from_slice(&16384i16.to_be_bytes());
     if sparse {
         // Glyph 1 has one reference at point zero, with X delta 8.
-        bytes[table + 32..table + 46]
+        bytes
+            .get_mut(table + 32..table + 46)
+            .unwrap()
             .copy_from_slice(&[0x80, 1, 0, 8, 0, 3, 0, 0, 1, 0, 0, 0, 8, 0x80]);
     }
     if duplicate {
         // Replace glyph 1 with two identical mixed tuples sharing all points.
         let pos = table + 32;
         let mut record = vec![0x80, 2, 0, 12];
-        record.extend_from_slice(&bytes[pos + 4..pos + 8]);
-        record.extend_from_slice(&bytes[pos + 4..pos + 8]);
+        record.extend_from_slice(bytes.get(pos + 4..pos + 8).unwrap());
+        record.extend_from_slice(bytes.get(pos + 4..pos + 8).unwrap());
         record.push(0);
-        record.extend_from_slice(&bytes[pos + 9..pos + 14]);
-        record.extend_from_slice(&bytes[pos + 9..pos + 14]);
+        record.extend_from_slice(bytes.get(pos + 9..pos + 14).unwrap());
+        record.extend_from_slice(bytes.get(pos + 9..pos + 14).unwrap());
         record.push(0);
         bytes.splice(pos..pos + 14, record);
-        bytes[table + 24..table + 28].copy_from_slice(&[0, 12, 0, 19]);
-        let index = bytes[12..]
-            .chunks_exact(16)
-            .position(|r| &r[..4] == b"gvar")
-            .unwrap();
-        let len = 12 + index * 16 + 12;
-        bytes[len..len + 4].copy_from_slice(&70u32.to_be_bytes());
+        bytes
+            .get_mut(table + 24..table + 28)
+            .unwrap()
+            .copy_from_slice(&[0, 12, 0, 19]);
+        let len = entry + 12;
+        bytes
+            .get_mut(len..len + 4)
+            .unwrap()
+            .copy_from_slice(&70u32.to_be_bytes());
     }
     let font = Font::new(&bytes, 0).unwrap();
     let source = std::env::temp_dir().join(format!(
@@ -272,18 +288,12 @@ fn compare_mixed_tuple_pin(duplicate: bool, sparse: bool) {
 fn adr0061_i1_empty_glyph_keeps_instanced_phantom_metrics() {
     let path = paths::testdata().join("harfbuzz/test/api/fonts/glyf-default-instance-bounds.ttf");
     let mut data = std::fs::read(path).unwrap();
-    let offset = |tag: &[u8]| {
-        let r = data[12..]
-            .chunks_exact(16)
-            .find(|r| &r[..4] == tag)
-            .unwrap();
-        u32::from_be_bytes(r[8..12].try_into().unwrap()) as usize
-    };
-    let loca = offset(b"loca");
-    let gvar = offset(b"gvar");
+    let loca = table_offset(&data, table_entry(&data, b"loca"));
+    let gvar = table_offset(&data, table_entry(&data, b"gvar"));
     // Give glyph 1 no outline and a +20 X delta on its right phantom point.
     data.copy_within(loca + 2..loca + 4, loca + 4);
-    data[gvar + 32..gvar + 46]
+    data.get_mut(gvar + 32..gvar + 46)
+        .unwrap()
         .copy_from_slice(&[0x80, 1, 0, 8, 0, 5, 0, 0, 0, 0x80, 0, 20, 0x81, 0x83]);
     let font = Font::new(&data, 0).unwrap();
     let src = std::env::temp_dir().join(format!("sofel-empty-phantom-{}.ttf", std::process::id()));
