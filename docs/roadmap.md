@@ -4,7 +4,7 @@
 
 各項は、何が残っているか、どこに由来するか、何があれば進められるかの順に書く。節と項は、ほかの項が依存するものを先に置いた。確認できなかった事項には「未確認」と書いた。
 
-[ADR 0027](adr/0027-variable-fonts.md)（可変フォント）は採択（未実装）で、[ADR 0029](adr/0029-variation-deltas.md)（変化量の扱い）は採択済みである。座標の正規化、表の読み取りと検証、ItemVariationStoreの評価の核、名前つきインスタンス、PostScript名、HVARとVVARのメトリクス、gvarとCFF2の輪郭、FeatureVariationsとGPOSの変化量を使うシェーピング、COLRv1の可変の塗り、C ABI、CLI、計測を段階ごとに実装した。[ADR 0028](adr/0028-ptem-is-not-opsz.md) の分類訂正は実装済みで、[ADR 0030](adr/0030-variation-evaluation-corrections.md) の変化量評価の修正は段階ごとに進めている。[ADR 0029](adr/0029-variation-deltas.md) の調査記録は、手元の `target/handoff/variation-deltas-research.md` にある（コミットしていない）。
+[ADR 0027](adr/0027-variable-fonts.md)（可変フォント）は採択（未実装）である。[ADR 0029](adr/0029-variation-deltas.md) の変化量評価と、[ADR 0030](adr/0030-variation-evaluation-corrections.md) の修正は実装済みである。座標の正規化、表の読み取りと検証、ItemVariationStoreの評価の核、名前つきインスタンス、PostScript名、HVARとVVARのメトリクス、gvarとCFF2の輪郭、FeatureVariationsとGPOSの変化量を使うシェーピング、COLRv1の可変の塗り、C ABI、CLI、計測を段階ごとに実装した。[ADR 0028](adr/0028-ptem-is-not-opsz.md) の分類訂正も実装済みである。
 
 [ADR 0027](adr/0027-variable-fonts.md) の CFF2 輪郭とラスタをコーパスに列挙された各位置で比較する検査と、追加フォントの非既定位置でメトリクスと輪郭を比較する検査は main に入った。`ft_left_side_bearing` と `ft_top_side_bearing` に HVAR・VVAR の差分を適用するという決定は、固定版 FreeType の公開値と異なる。合成フォントで送り幅だけが変わり、サイドベアリングが変わらないことを確認したため、修正 ADR をレビュー用に起草した。
 
@@ -31,14 +31,6 @@
 [ADR 0070](adr/0070-webfont-encoding.md) で、単一フェイスの sfnt とサブセット化した sfnt を WOFF または WOFF2 に書き出す機能を採択した。実装はこれから行う。
 
 ## 未実装の ADR
-
-### 変化量の評価の修正案
-
-[ADR 0029](adr/0029-variation-deltas.md) の引き継ぎ調査による修正案を、[ADR 0030](adr/0030-variation-evaluation-corrections.md) にまとめた。
-FreeType の丸めの順序、係数のキャッシュの同一性、空の座標と明示した0座標、CFF2 の列数とエラー、gvar の適用手順を扱う。
-ステータスは採択（未実装）である。
-[ADR 0027](adr/0027-variable-fonts.md) と [ADR 0029](adr/0029-variation-deltas.md) の本文は変更していない。
-
 
 ### [ADR 0022](adr/0022-subsetting.md): サブセット化
 
@@ -112,7 +104,6 @@ Unicode の性質の引きが HarfBuzz の 1.24 倍である。2段または3段
 - GDEF のリガチャのキャレットの API。[ADR 0027](adr/0027-variable-fonts.md) の一覧にある。
 - スタイルの値 `hb_style_get_value`。[ADR 0027](adr/0027-variable-fonts.md) の一覧にある。
 - MATH の問い合わせ（`hb_ot_math_*`）と、JSTF の扱いの決定。[ADR 0017](adr/0017-base-baselines.md) による。MATH のビューは [ADR 0022](adr/0022-subsetting.md) で入っている。
-- 送り幅の cache（HarfBuzz の `advance_cache` に当たるもの）。領域の係数は [ADR 0029](adr/0029-variation-deltas.md) が `Location` に持つ。送り幅の cache は、計測で遅い項目が出たときに ADR を書く。
 - AAT のシェーピング（10段階目）。morx、mort、kerx、ankr、trak、feat、ltag、dumber シェーパー、旧 `kern` 表、`--font-ptem` による trak。[ADR 0020](adr/0020-shaping-foundation.md) による。適合テストの `aat` 分類の期待する失敗が、これで消える。
 - ヒンティング（7段階目）。TrueType バイトコード（v35、v40）、cvar、幻の点の丸め（[ADR 0018](adr/0018-phantom-point-shift.md)）、CFF のヒンターとステムの太らせ（[ADR 0021](adr/0021-cff-outlines.md)）、オートヒンター、mono と LCD と SDF のラスタライズ。
 - 合成の太字と斜体。HarfBuzz の `hb_font_set_synthetic_*`、FreeType の `FT_GlyphSlot_Embolden`、`FT_GlyphSlot_Oblique`、`FT_Bitmap_Embolden`。[ADR 0016](adr/0016-font-and-vertical-metrics.md)、[ADR 0020](adr/0020-shaping-foundation.md)、[ADR 0023](adr/0023-color-glyphs.md) による。適合テストの `synthetic` 分類が消える。
