@@ -141,44 +141,6 @@ mod edge_tests {
     }
 }
 
-// FT_Vector_NormLen's reciprocal-length iteration. Intermediate products
-// intentionally wrap in 32 bits, as in the pinned FreeType implementation.
-fn unit_gradient(x: i32, y: i32) -> (i32, i32) {
-    if x == 0 || y == 0 {
-        return (x.signum() * ONE, y.signum() * ONE);
-    }
-    let (mut u, mut v) = (x.unsigned_abs(), y.unsigned_abs());
-    let estimate = |u: u32, v: u32| u.max(v) + (u.min(v) >> 1);
-    let mut length = estimate(u, v);
-    let zeros = length.leading_zeros();
-    let shift = zeros as i32 - 15 - i32::from(length >= (0xaaaa_aaaa >> zeros));
-    if shift > 0 {
-        u <<= shift;
-        v <<= shift;
-        length = estimate(u, v);
-    } else {
-        u >>= -shift;
-        v >>= -shift;
-        length >>= -shift;
-    }
-    let (u, v) = (u as i32, v as i32);
-    let mut b = ONE - length as i32;
-    loop {
-        let nx = u + (u.wrapping_mul(b) >> 16);
-        let ny = v + (v.wrapping_mul(b) >> 16);
-        let residual = nx
-            .wrapping_mul(nx)
-            .wrapping_add(ny.wrapping_mul(ny))
-            .wrapping_neg()
-            / 512;
-        let update = residual.wrapping_mul((ONE + b) >> 8) / ONE;
-        if update <= 0 {
-            return (nx * x.signum(), ny * y.signum());
-        }
-        b += update;
-    }
-}
-
 fn sqrt_fixed(value: i32) -> i32 {
     if value == 0 {
         return 0;
@@ -199,7 +161,7 @@ fn sqrt_fixed(value: i32) -> i32 {
 fn edge_vector(pixels: [u8; 9]) -> (i32, i32) {
     use sofel_geom::{div_fix, mul_fix};
     let [a, b, c, d, alpha, f, g, h, i] = pixels.map(|a| i32::from(a) * 256);
-    let (x, y) = unit_gradient(
+    let (x, y) = super::sdf_math::unit_vector(
         c + i - a - g + mul_fix(f, 92681) - mul_fix(d, 92681),
         g + i - a - c + mul_fix(h, 92681) - mul_fix(b, 92681),
     );
