@@ -199,7 +199,7 @@ fn adr0061_i1_axis_pin_discards_inactive_mixed_tuples() {
 }
 
 #[test]
-fn adr0061_i1_pinning_a_mixed_tuple_at_its_peak_preserves_the_other_axis() {
+fn adr0061_i1_pinning_a_mixed_tuple_scales_the_retained_axis() {
     let path = paths::testdata().join("harfbuzz/test/api/fonts/glyf-default-instance-bounds.ttf");
     let mut bytes = std::fs::read(path).unwrap();
     // The fixture has one shared peak (1, 0). Give it support on both axes.
@@ -211,26 +211,28 @@ fn adr0061_i1_pinning_a_mixed_tuple_at_its_peak_preserves_the_other_axis() {
     let shared = u32::from_be_bytes(bytes[table + 8..table + 12].try_into().unwrap()) as usize;
     bytes[table + shared + 2..table + shared + 4].copy_from_slice(&16384i16.to_be_bytes());
     let font = Font::new(&bytes, 0).unwrap();
-    let input = Input::new()
-        .map_set(SetKind::Glyphs, |s| s.add(1))
-        .with_axis_pinned(Tag::new(b"wdth"), 1.0, &font)
-        .unwrap();
-    let ours = subset(&font, &input).unwrap();
     let source = std::env::temp_dir().join(format!("sofel-mixed-peak-{}.ttf", std::process::id()));
     let output = source.with_extension("out.ttf");
     std::fs::write(&source, &bytes).unwrap();
-    assert!(
-        Command::new(paths::hb_dump())
-            .arg("--subset")
-            .arg(format!("--font-file={}", source.display()))
-            .arg("--gids=1")
-            .arg("--variations=wdth=1")
-            .arg(format!("--output-file={}", output.display()))
-            .status()
-            .unwrap()
-            .success()
-    );
-    assert_eq!(ours, std::fs::read(&output).unwrap());
+    for value in [0.25, 0.5, 0.75, 1.0] {
+        let input = Input::new()
+            .map_set(SetKind::Glyphs, |s| s.add(1))
+            .with_axis_pinned(Tag::new(b"wdth"), value, &font)
+            .unwrap();
+        let ours = subset(&font, &input).unwrap();
+        assert!(
+            Command::new(paths::hb_dump())
+                .arg("--subset")
+                .arg(format!("--font-file={}", source.display()))
+                .arg("--gids=1")
+                .arg(format!("--variations=wdth={value}"))
+                .arg(format!("--output-file={}", output.display()))
+                .status()
+                .unwrap()
+                .success()
+        );
+        assert_eq!(ours, std::fs::read(&output).unwrap());
+    }
     std::fs::remove_file(source).unwrap();
     std::fs::remove_file(output).unwrap();
 }
