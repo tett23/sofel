@@ -290,7 +290,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 ## ベクトル出力
 
-`sofel-vector` の `SvgPage` と `PdfPage` は、呼び出し側が配置した輪郭を指定色で入力順に塗る。SVG は y 軸を反転したグループにパスを書き、PDF は二次曲線を三次曲線に変換してページに書く。C の `sofel_vector_page` にはフォント、軸座標と、グリフごとの変換・色を渡す（[ADR 0068](adr/0068-vector-and-gpu-output.md)）。
+`sofel-vector` の `SvgPage` と `PdfPage` は、呼び出し側が配置した輪郭を指定色で入力順に塗る。SVG は y 軸を反転したグループにパスを書き、PDF は二次曲線を三次曲線に変換してページに書く。`SvgPage::draw_image` はグリフの配置先に PNG を埋め込み、指定された変換を適用する。矩形クリップは親の座標系で指定する。[ADR 0074](adr/0074-svg-feature-conformance.md) の出力検査では、空ページ、単独のグリフ、半透明のグリフが重なるページ、変換とクリップを指定した画像を固定版 HarfBuzz の SVG と照合する。C の `sofel_svg_page_layers` は各要素の変換を使い、輪郭と PNG を配列順に配置する。`sofel_vector_page` にはフォント、軸座標と、グリフごとの変換・色を渡す（[ADR 0068](adr/0068-vector-and-gpu-output.md)）。
 
 ## カラーグリフ（`sofel-color`、`sofel-bitmap`、`Painter`）
 
@@ -311,6 +311,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   - 生の塗りの木（`base_paint`、`PaintRef`、`clip_box`、`layer_paint`）は、FreeTypeの `FT_Get_Color_Glyph_Paint` などと同じ値を返す。基本のグリフの探索はFreeTypeの二分探索による。
 - `sofel-bitmap`：`strikes` はFreeTypeの `available_sizes`（CBLC、EBLC、`bloc`、sbixの順に最初の表、ppemが0のストライクは除く）、`match_strike` は `FT_Match_Size`、`choose_strike` はHarfBuzzの選び方（`max(x, y)` が要求以上で最小、無ければ最大、0は最大）、`glyph_bitmap` はFreeTypeの読み込み（sbixの `dupe` と `flip` を4回まで）で画像のデータとメトリクスを返す。PNGを塗るための `cbdt_png`、`sbix_png` とその箱はHarfBuzzの読み方（CBDTは索引の形式1と3、画像の形式17と18、sbixは `dupe` を8回まで）による。
 - `Rasterizer::render_mono` と C の `sofel_rasterizer_render_mono` は、輪郭をモノクロで描く。各行は上から順に並び、左端の画素が最初のバイトの最上位ビットに対応する。行のバイト数は幅を8で割って切り上げた値である。`sofel_cli::glyph::render_mono` は、ヒンティングなしの TrueType 輪郭を画素中心に合わせて移動し、暗黙の点を求めてから描く（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
+- `Instance::ft_control_values` と C の `sofel_font_ft_control_values` は、指定した軸位置の `cvar` 差分を `cvt ` 表に適用し、ピクセルサイズで拡大縮小する前の制御値を 26.6 形式で返す（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
 - `Rasterizer::render_harmony` と C の `sofel_rasterizer_render_harmony` は、記録した輪郭を FreeType Harmony の既定 RGB 配置で描く。フィルタを使う構成では、`render_filtered_lcd` と C の `sofel_rasterizer_render_filtered_lcd` が5個の重みを受け取り、中央の重みが0ならフィルタを無効にする。水平 LCD の幅と垂直 LCD の行数はサブピクセル単位で、カバレッジは上の行からパディングなしで返す（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
 - `sofel-bitmap` の `bitmap_layout` と `draw_bitmap` は、EBDT、CBDT、`bdat` の画像の形式1、2、5、6、7と成分の形式8、9を、1、2、4、8、32bitの深さで、FreeTypeの `tt_sbit_decoder_load_image`（索引の形式1〜5、形式2と7のバイト単位とビット単位の判定、成分のメトリクスの戻し方）と同じ画素とメトリクスにして、呼び出し側の領域（`pitch × rows` バイト、上の行から）に書く。32bitは `FT_LOAD_COLOR` と同じくBGRAのまま書く。CBDT と sbix の PNG はアルファ乗算済み BGRA に展開する。sbix の flip は各行を左右に反転し、単純輪郭を持つグリフでは FreeType の水平方向ロードに合わせて左サイドベアリングと輪郭の下端で原点を補正する（[ADR 0066](adr/0066-color-glyph-pixels.md)）。
 - [ADR 0063](adr/0063-font-functions-and-synthesis.md) の `convert_bitmap` はFreeTypeの `FT_Bitmap_Convert` と同じくMONO、GRAY2、GRAY4、GRAY、LCD、LCD_V、BGRAを8bitの行へ変え、行の整列と負のpitchを保つ。`embolden_bitmap` はFreeTypeの `FT_Bitmap_Embolden` と同じく画素を太らせ、GRAY2とGRAY4を先に8bitへ変え、BGRAは変更しない。`embolden_bitmap_slot` は太字にした画像とともに、FreeTypeの `FT_GlyphSlot_Embolden` と同じスロットの送り、幅、高さ、上端を返す。
@@ -543,5 +544,6 @@ CI の文書だけの変更は、比較起点の `ci/documentation-only.rules` �
 
 [sofel ADR 0069](adr/0069-font-render-gallery.md) に従い、追加フォント台帳の全フェイスと固定版 HarfBuzz の可変 COLR フォントを描画する。
 `sh scripts/render-font-gallery.sh` は各フェイスの単字とシェーピング済みの固定文字列を等倍で一枚の PNG に配置し、入力、ppem、未対応の理由をローカルの HTML から確認できるようにする。
+生成器は [sofel ADR 0073](adr/0073-rust-font-gallery.md) に従う Rust の開発用バイナリとし、Unicode スカラー値とグリフ ID、26.6 固定小数点の位置と整数画素、描画結果と登録済みの未対応状態を型で区別する。シェルの入口は Rust のテストを実行してから生成器を起動する。
 sbix の単字 19 と合字 26 は固定版 FreeType と全画素を照合し、一覧の各欄に等倍で配置する（[sofel ADR 0072](adr/0072-color-gallery-acceptance.md)）。
 文書だけの変更を除き、CI はプルリクエストと main への push で HTML と PNG を生成し、検査したコミット SHA 付きのアーティファクトを14日間保存する。
