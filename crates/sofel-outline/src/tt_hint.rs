@@ -380,6 +380,21 @@ impl Interpreter {
         .map_err(|_| super::OutlineError::InvalidOutline)
     }
 
+    pub(super) fn hint_composite(
+        &self,
+        outline: &mut [super::Point],
+        phantoms: &mut [super::Point; 4],
+        ends: &[usize],
+        code: &[u8],
+        limit: usize,
+    ) -> Result<(), super::OutlineError> {
+        let mut composite = self.clone();
+        composite.composite = true;
+        let originals: alloc::vec::Vec<_> =
+            outline.iter().chain(phantoms.iter()).copied().collect();
+        composite.hint_outline(originals.into_iter(), outline, phantoms, ends, code, limit)
+    }
+
     pub(super) fn hint_outline(
         &self,
         unscaled: impl Iterator<Item = super::Point>,
@@ -553,7 +568,7 @@ impl Interpreter {
         } else {
             sofel_font::read::cff::ft::mul_fix(
                 point.unscaled[original_axis].wrapping_sub(base.unscaled[original_axis]),
-                self.scale,
+                if self.composite { 65536 } else { self.scale },
             )
         };
         if self.single_width_cutin > 0

@@ -494,7 +494,7 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
         Ok(info)
     }
 
-    /// Loads a simple TrueType outline with the v35 interpreter and monochrome target.
+    /// Loads a TrueType outline with the v35 interpreter and monochrome target.
     pub fn load_truetype_mono(
         &self,
         glyph: GlyphId,
@@ -735,8 +735,10 @@ fn load_glyph(
     if n > 0 {
         load_simple(ctx, s, &g, glyph, pp1_x, overlap)
     } else {
-        if ctx.hint.is_some() {
-            return Err(OutlineError::UnsupportedFormat);
+        if ctx.hint.is_some() && ctx.location.ft_default() {
+            s.phantoms = ctx
+                .design_phantoms(glyph, g.x_min(), g.y_max())
+                .map(|p| ctx.scale_point(p.x, p.y));
         }
         load_composite(ctx, s, &g, glyph, depth, overlap, pp1_x)
     }
@@ -792,6 +794,7 @@ fn load_simple(
 ) -> Result<(), OutlineError> {
     let simple = g.simple().map_err(|_| OutlineError::InvalidOutline)?;
     let base = s.points.len();
+    let contour_base = s.ends.len();
     let varied = !ctx.location.ft_default();
     for p in simple.points(ctx.extended) {
         s.points.push(if varied {
@@ -899,7 +902,10 @@ fn load_simple(
             raw.chain(raw_phantoms),
             &mut s.points[base..],
             &mut s.phantoms,
-            &s.ends,
+            &s.ends[contour_base..]
+                .iter()
+                .map(|end| end - base)
+                .collect::<Vec<_>>(),
             simple.instructions(),
             *limit,
         )?;
@@ -988,6 +994,7 @@ fn load_composite(
     }
     s.stack.push(glyph);
     let start_point = s.points.len();
+    let start_contour = s.ends.len();
     let mut metrics_component = false;
     for i in first_component..end_component {
         let Some(c) = s.components.get(i).copied() else {
@@ -1001,6 +1008,7 @@ fn load_composite(
         // its offset and transform do not move them.
         if c.flags & USE_MY_METRICS == 0 {
             if ctx.location.ft_default() {
+                s.phantoms = saved;
                 *pp1_x = saved_pp1;
             } else {
                 s.phantoms = saved;
@@ -1024,6 +1032,25 @@ fn load_composite(
             }
         }
         *pp1_x = s.phantoms.first().map_or(0, |p| p.x);
+    }
+    if let Some((vm, limit)) = &ctx.hint {
+        let code = g
+            .composite_instructions(ctx.extended)
+            .map_err(|_| OutlineError::InvalidComposite)?;
+        if !code.is_empty() && s.points.len() > start_point {
+            let ends: Vec<_> = s.ends[start_contour..]
+                .iter()
+                .map(|end| end - start_point)
+                .collect();
+            vm.hint_composite(
+                &mut s.points[start_point..],
+                &mut s.phantoms,
+                &ends,
+                code,
+                *limit,
+            )?;
+            *pp1_x = s.phantoms[0].x;
+        }
     }
     Ok(())
 }
@@ -1078,6 +1105,10 @@ fn place_component(
         if let Scale::Scaled { x: sx, y: sy } = ctx.scale {
             x = mul_fix(x, sx.0);
             y = mul_fix(y, sy.0);
+            if ctx.hint.is_some() && c.flags & glyf::ROUND_XY_TO_GRID != 0 {
+                x = x.wrapping_add(32) & !63;
+                y = y.wrapping_add(32) & !63;
+            }
         }
         (x, y)
     };
