@@ -218,8 +218,16 @@ typedef struct sofel_font sofel_font_t;
 sofel_font_t *sofel_font_create(const uint8_t *data, size_t len, uint32_t index,
                                 int32_t *error);
 
+/* Opens a shaping face with the same buffer lifetime as sofel_font_create.
+ * A missing or unreadable header uses 1000 units per em.
+ * Rust: sofel_font::Font::for_shaping
+ * HarfBuzz: hb_face_create, hb_face_get_upem
+ */
+sofel_font_t *sofel_font_create_for_shaping(const uint8_t *data, size_t len,
+                                            uint32_t index, int32_t *error);
+
 /*
- * Frees a font made by sofel_font_create. Does nothing for NULL.
+ * Frees a font made by either font constructor. Does nothing for NULL.
  *
  * Rust: none
  * HarfBuzz: hb_font_destroy, hb_face_destroy
@@ -2260,6 +2268,10 @@ typedef struct sofel_vector_glyph_t {
  * On SOFEL_ERROR_BUFFER_TOO_SMALL, *len holds the required byte count.
  *
  * Rust: sofel_vector::SvgPage::new, sofel_vector::SvgPage::fill_path, sofel_vector::SvgPage::finish
+ * Rust: sofel_vector::SvgPage::paint, sofel_vector::PdfPage::paint
+ * Rust: sofel_vector::SvgPen::command, sofel_vector::PdfPen::command
+ * Rust: sofel_vector::PdfPage::paint_with_images
+ * Rust: sofel_vector::PdfPage::draw_rgba, sofel_png::decode_rgba
  * Rust: sofel_vector::PdfPage::new, sofel_vector::PdfPage::fill_path, sofel_vector::PdfPage::finish
  * HarfBuzz: hb_vector_paint_t
  * FreeType: none
@@ -2270,6 +2282,49 @@ int32_t sofel_vector_page(const sofel_font_t *font, const sofel_location_t *loca
                           const sofel_vector_glyph_t *glyphs, size_t count,
                           uint8_t *output, size_t capacity, size_t *len);
 
+
+/* Coordinates are x/y pairs, in path order. Close uses no coordinates. */
+#define SOFEL_GPU_MOVE 0
+#define SOFEL_GPU_LINE 1
+#define SOFEL_GPU_QUAD 2
+#define SOFEL_GPU_CUBIC 3
+#define SOFEL_GPU_CLOSE 4
+typedef struct sofel_gpu_path_command_t {
+  uint32_t kind;
+  float coordinates[6];
+} sofel_gpu_path_command_t;
+
+/* Encode outline records for a Slug shader. Capacity and len count RGBA16I
+ * texels, each four native-endian signed 16-bit values. An empty outline
+ * produces zero records. A short buffer returns the required count in len.
+ * Rust: sofel_gpu::Outline::move_to, sofel_gpu::Outline::line_to, sofel_gpu::Outline::quad_to, sofel_gpu::Outline::cubic_to, sofel_gpu::Outline::close, sofel_gpu::Outline::encode
+ */
+int32_t sofel_gpu_outline(const sofel_gpu_path_command_t *commands, size_t count,
+                          int32_t x_scale, int32_t y_scale, int16_t (*records)[4],
+                          size_t capacity, size_t *len);
+
+#define SOFEL_GPU_WGSL 0
+#define SOFEL_GPU_GLSL 1
+#define SOFEL_GPU_MSL 2
+#define SOFEL_GPU_HLSL 3
+#define SOFEL_GPU_VERTEX 0
+#define SOFEL_GPU_FRAGMENT 1
+
+/* Copy the stage helpers as UTF-8 without a trailing NUL. The caller supplies
+ * the stage entry point and atlas bindings. len counts bytes.
+ * Rust: sofel_gpu::shader_source
+ */
+int32_t sofel_gpu_shader_source(uint32_t language, uint32_t stage, uint8_t *output,
+                                size_t capacity, size_t *len);
+
+/* Encode a glyph's clipped color layers, or its foreground outline, in font
+ * units. Capacity and len count RGBA16I texels. The optional location uses
+ * the same convention as sofel_paint_glyph.
+ * Rust: sofel_gpu::Paint::new, sofel_gpu::Paint::encode
+ */
+int32_t sofel_gpu_paint_glyph(const sofel_font_t *font, const sofel_location_t *location,
+                              uint32_t glyph, uint16_t palette,
+                              int16_t (*records)[4], size_t capacity, size_t *len);
 
 /* A borrowed PNG. Extents are x bearing, y bearing, width and height
  * in font units. The optional clip points to [xmin, ymin, xmax, ymax]
@@ -2685,7 +2740,7 @@ typedef void (*sofel_sweep_tile_func_t)(void *user, float a0, sofel_color_t c0, 
  * The segments within 0..2π of a sweep gradient of sorted, normalized
  * stops, from start to end (radians), passed to emit; at most 4096.
  *
- * Rust: sofel_geom::sweep_gradient_tiles
+ * Rust: sofel_geom::interpolate_sweep_color, sofel_geom::sweep_gradient_tiles
  * HarfBuzz: hb_paint_sweep_gradient_tiles
  * FreeType: none
  */

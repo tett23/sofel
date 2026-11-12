@@ -254,7 +254,7 @@ pub(crate) struct HintTrace {
     pub source: Source,
     pub start: usize,
     pub end: usize,
-    pub terminal: bool,
+    pub can_follow_call: bool,
 }
 
 /// A program and the position in it; an offset past the end is the error
@@ -402,11 +402,12 @@ impl<'a, 'c> Env<'a, 'c> {
         };
     }
 
-    fn record_hint(&mut self, end: usize) {
+    fn record_hint(&mut self, end: usize, mask: bool) {
         if !self.trace_drop_hints {
             return;
         }
-        if self.path_started || !self.args.len().is_multiple_of(2) {
+        let independent_mask = mask && self.path_started && self.args.is_empty();
+        if (self.path_started && !independent_mask) || !self.args.len().is_multiple_of(2) {
             self.trace_valid = false;
         }
         let start = if self.args.is_empty() {
@@ -439,7 +440,7 @@ impl<'a, 'c> Env<'a, 'c> {
                         source: call.source,
                         start,
                         end: call.start,
-                        terminal: false,
+                        can_follow_call: false,
                     });
                     0
                 }
@@ -453,7 +454,7 @@ impl<'a, 'c> Env<'a, 'c> {
             source: self.ctx.source,
             start,
             end,
-            terminal: false,
+            can_follow_call: independent_mask,
         });
     }
 
@@ -613,7 +614,7 @@ impl<'a, 'c> Env<'a, 'c> {
                 source: self.ctx.source,
                 start: self.ctx.off.saturating_sub(1),
                 end: self.ctx.off,
-                terminal: true,
+                can_follow_call: true,
             });
         }
         if self.trace_calls && self.ctx.off < self.ctx.bytes.len() {
@@ -861,7 +862,7 @@ fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
                     source: env.ctx.source,
                     start: env.ctx.off.saturating_sub(1),
                     end: env.ctx.off,
-                    terminal: true,
+                    can_follow_call: true,
                 });
             }
             if env.trace_calls && env.ctx.off < env.ctx.bytes.len() {
@@ -874,13 +875,13 @@ fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
         CALLSUBR => env.call_subr(Kind::Local),
         CALLGSUBR => env.call_subr(Kind::Global),
         HSTEM | HSTEMHM => {
-            env.record_hint(env.ctx.off);
+            env.record_hint(env.ctx.off, false);
             let n = u32::try_from(env.args.len() / 2).unwrap_or(u32::MAX);
             env.hstem_count = env.hstem_count.saturating_add(n);
             o.flush_args_and_op(op, env);
         }
         VSTEM | VSTEMHM => {
-            env.record_hint(env.ctx.off);
+            env.record_hint(env.ctx.off, false);
             let n = u32::try_from(env.args.len() / 2).unwrap_or(u32::MAX);
             env.vstem_count = env.vstem_count.saturating_add(n);
             o.flush_args_and_op(op, env);
@@ -888,7 +889,7 @@ fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
         HINTMASK | CNTRMASK => {
             env.determine_hintmask_size();
             let size = env.hintmask_size as usize;
-            env.record_hint(env.ctx.off.saturating_add(size));
+            env.record_hint(env.ctx.off.saturating_add(size), true);
             if env.trace_calls {
                 env.mask_trace.push(MaskTrace {
                     source: env.ctx.source,

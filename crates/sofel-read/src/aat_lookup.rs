@@ -21,6 +21,31 @@ impl<'a> AatLookup<'a> {
         let lookup = AatIndexLookup::new(data, glyphs, false)?;
         Some(Self(lookup))
     }
+    pub(crate) fn check_offsets(&self, mut check: impl FnMut(u16) -> Option<()>) -> Option<()> {
+        let t = self.0;
+        let mut budget = t.data.len().saturating_mul(64).clamp(16384, 0x3fff_ffff);
+        for row in t.records.chunks_exact(t.stride) {
+            match t.format {
+                0 | 8 => check(be::u16_at(row, 0)?)?,
+                2 => check(be::u16_at(row, 4)?)?,
+                6 => check(be::u16_at(row, 2)?)?,
+                4 => {
+                    let count = usize::from(be::u16_at(row, 0)?.checked_sub(be::u16_at(row, 2)?)?)
+                        .checked_add(1)?;
+                    // Multiple segments may reference the same input. Bound
+                    // repeated visits as in the HarfBuzz sanitizer.
+                    budget = budget.checked_sub(count)?;
+                    let at = usize::from(be::u16_at(row, 4)?);
+                    for value in be::chunks_at::<2>(t.data, at, count)? {
+                        check(u16::from_be_bytes(*value))?;
+                    }
+                }
+                _ => return None,
+            }
+        }
+        (t.format != 10).then_some(())
+    }
+
     /// Returns the glyph's pointer-addressable 16-bit value.
     pub fn get(&self, glyph: u32) -> Option<u16> {
         if self.0.format == 10 {
