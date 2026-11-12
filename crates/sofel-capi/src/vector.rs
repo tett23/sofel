@@ -21,6 +21,14 @@ enum Page {
     Pdf(PdfPage),
 }
 
+fn decode_image(image: &Image<'_>) -> Option<(u32, u32, Vec<u8>)> {
+    let limit = (image.width as usize)
+        .saturating_mul(image.height as usize)
+        .min((16 << 20) / 4);
+    let decoded = sofel_png::decode_rgba(image.data, limit).ok()?;
+    Some((decoded.width, decoded.height, decoded.rgba))
+}
+
 /// Writes a complete page in the requested format.
 ///
 /// # Safety
@@ -115,20 +123,12 @@ pub unsafe extern "C" fn sofel_vector_page(
                     };
                     let painted = match &mut page {
                         Page::Svg(svg) => svg.draw_image(image, placement, None),
-                        Page::Pdf(pdf) => image.extents.is_some_and(|extents| {
-                            let limit = (image.width as usize)
-                                .saturating_mul(image.height as usize)
-                                .min((16 << 20) / 4);
-                            sofel_png::decode_rgba(image.data, limit).is_ok_and(|decoded| {
-                                pdf.draw_rgba(
-                                    decoded.width,
-                                    decoded.height,
-                                    decoded.rgba,
-                                    extents,
-                                    placement,
-                                )
-                            })
-                        }),
+                        Page::Pdf(pdf) => pdf.paint_with_images(
+                            placement,
+                            |_, _| false,
+                            decode_image,
+                            |p| recording.replay(p),
+                        ),
                     };
                     if painted {
                         continue;
@@ -176,9 +176,10 @@ pub unsafe extern "C" fn sofel_vector_page(
                         |gid, pen| draw(gid, &mut |cmd| pen.command(cmd)),
                         |p| recording.replay(p),
                     ),
-                    Page::Pdf(pdf) => pdf.paint(
+                    Page::Pdf(pdf) => pdf.paint_with_images(
                         placement,
                         |gid, pen| draw(gid, &mut |cmd| pen.command(cmd)),
+                        decode_image,
                         |p| recording.replay(p),
                     ),
                 };

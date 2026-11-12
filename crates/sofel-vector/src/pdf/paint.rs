@@ -7,10 +7,13 @@ use sofel_geom::{
     Transform, normalize_color_line, reduce_linear_anchors,
 };
 
+type DecodeImage<'a> = dyn FnMut(&Image<'_>) -> Option<(u32, u32, Vec<u8>)> + 'a;
+
 /// Receives paint commands and resolves glyph clips against caller-supplied paths.
 pub struct PdfPainter<'a, F> {
     page: &'a mut PdfPage,
     outline: F,
+    decode: &'a mut DecodeImage<'a>,
     complete: bool,
     groups: Vec<CompositeMode>,
 }
@@ -26,16 +29,32 @@ impl PdfPage {
     where
         F: FnMut(u32, &mut PdfPen<'_>) -> bool,
     {
+        self.paint_with_images(placement, outline, |_| None, draw)
+    }
+
+    /// Renders a paint graph with a caller-supplied decoder for embedded images.
+    pub fn paint_with_images<F>(
+        &mut self,
+        placement: Transform,
+        outline: F,
+        mut decode: impl FnMut(&Image<'_>) -> Option<(u32, u32, Vec<u8>)>,
+        draw: impl FnOnce(&mut PdfPainter<'_, F>),
+    ) -> bool
+    where
+        F: FnMut(u32, &mut PdfPen<'_>) -> bool,
+    {
         let start = (
             self.stream.len(),
             self.states.len(),
             self.shadings.len(),
             self.soft_masks.len(),
             self.meshes.len(),
+            self.images.len(),
         );
         let mut p = PdfPainter {
             page: self,
             outline,
+            decode: &mut decode,
             complete: true,
             groups: Vec::new(),
         };
@@ -48,6 +67,7 @@ impl PdfPage {
             p.page.shadings.truncate(start.2);
             p.page.soft_masks.truncate(start.3);
             p.page.meshes.truncate(start.4);
+            p.page.images.truncate(start.5);
         }
         p.complete
     }
@@ -243,9 +263,15 @@ impl<F: FnMut(u32, &mut PdfPen<'_>) -> bool> Painter for PdfPainter<'_, F> {
             } => self.complete &= self.page.sweep(line, center, start, end),
         }
     }
-    fn image(&mut self, _: &Image<'_>) -> bool {
-        self.complete = false;
-        false
+    fn image(&mut self, image: &Image<'_>) -> bool {
+        let rendered = image.extents.is_some_and(|extents| {
+            (self.decode)(image).is_some_and(|(width, height, rgba)| {
+                self.page
+                    .draw_rgba(width, height, rgba, extents, Transform::IDENTITY)
+            })
+        });
+        self.complete &= rendered;
+        rendered
     }
     fn push_group(&mut self, mode: CompositeMode) {
         self.groups.push(mode);
