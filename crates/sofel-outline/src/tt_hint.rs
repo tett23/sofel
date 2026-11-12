@@ -162,8 +162,54 @@ impl Rounding {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HintTarget {
+    Mono,
+    Gray,
+    HorizontalLcd,
+    VerticalLcd,
+}
+
+#[derive(Clone, Copy)]
+struct EngineInfo {
+    version: u8,
+    target: HintTarget,
+    rotated: bool,
+    stretched: bool,
+    variation: bool,
+    symmetric_smoothing: bool,
+}
+
+impl EngineInfo {
+    fn query(self, selector: i64) -> i64 {
+        let subpixel = self.version == 40 && self.target != HintTarget::Mono;
+        let mut result = if selector & 1 != 0 {
+            i64::from(self.version)
+        } else {
+            0
+        };
+        for (bit, enabled) in [
+            (1, self.rotated),
+            (2, self.stretched),
+            (3, self.variation),
+            (5, self.version == 35 && self.target != HintTarget::Mono),
+            (6, subpixel),
+            (8, subpixel && self.target == HintTarget::VerticalLcd),
+            (10, subpixel),
+            (11, subpixel && self.symmetric_smoothing),
+            (12, subpixel && self.target == HintTarget::Gray),
+        ] {
+            if enabled && selector & (1 << bit) != 0 {
+                result |= 1 << (bit + 7);
+            }
+        }
+        result
+    }
+}
+
 #[derive(Clone)]
 struct Interpreter {
+    engine: EngineInfo,
     projection: [i64; 2],
     dual_projection: [i64; 2],
     freedom: [i64; 2],
@@ -177,6 +223,14 @@ struct Interpreter {
 impl Interpreter {
     fn new(max_storage: u16, varied_cvt: &[i32], scale: i64) -> Self {
         Self {
+            engine: EngineInfo {
+                version: 40,
+                target: HintTarget::Gray,
+                rotated: false,
+                stretched: false,
+                variation: false,
+                symmetric_smoothing: false,
+            },
             projection: [16384, 0],
             dual_projection: [16384, 0],
             freedom: [16384, 0],
@@ -233,6 +287,10 @@ impl Interpreter {
                     });
                 }
                 0x0e => self.freedom = self.projection,
+                0x88 => {
+                    let selector = stack.last_mut().ok_or(Error::StackUnderflow)?;
+                    *selector = self.engine.query(*selector);
+                }
                 0x2c => {
                     let id = u16::try_from(stack.pop().ok_or(Error::StackUnderflow)?)
                         .map_err(|_| Error::InvalidReference)?;
@@ -585,4 +643,37 @@ fn adr0064_i1_axis_vectors_can_be_set_independently() {
     )
     .unwrap();
     assert_eq!(stack, [16384, 0, 0, 16384, 16384, 0, 0, 16384]);
+}
+
+#[test]
+fn adr0064_i1_getinfo_reports_only_requested_interpreter_features() {
+    let mut vm = Interpreter::new(0, &[], 0x10000);
+    vm.engine = EngineInfo {
+        version: 40,
+        target: HintTarget::VerticalLcd,
+        rotated: true,
+        stretched: false,
+        variation: true,
+        symmetric_smoothing: true,
+    };
+    for (selector, expected) in [
+        (1, 40),
+        (2, 256),
+        (4, 0),
+        (8, 1024),
+        (32, 0),
+        (64, 8192),
+        (256, 32768),
+        (1024, 131072),
+        (2048, 262144),
+        (4096, 0),
+    ] {
+        let mut stack = alloc::vec![selector];
+        vm.execute(&[0x88], &mut stack, 1).unwrap();
+        assert_eq!(stack, [expected]);
+    }
+    vm.engine.version = 35;
+    assert_eq!(vm.engine.query(32 | 64 | 4096), 4096);
+    vm.engine.target = HintTarget::Mono;
+    assert_eq!(vm.engine.query(32 | 64 | 4096), 0);
 }
