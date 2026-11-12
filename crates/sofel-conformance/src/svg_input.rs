@@ -431,6 +431,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn i3_shared_svg_glyphs_match_in_plain_and_gzip_storage() -> Result<(), String> {
+        let first = rendered(DOCUMENT, 2, 1, RED)?;
+        let second = rendered(DOCUMENT, 2, 2, RED)?;
+        assert_ne!(first, second);
+        assert_eq!(rendered(GZIP, 2, 1, RED)?, first);
+        assert_eq!(rendered(GZIP, 2, 2, RED)?, second);
+        Ok(())
+    }
+
+    #[test]
     fn i2_svg_observations_check_painted_document_bytes() {
         assert_eq!(check_document(DOCUMENT, DOCUMENT), Ok(()));
         assert!(check_document(b"<svg/>", DOCUMENT).is_err());
