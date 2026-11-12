@@ -4,6 +4,9 @@
 #![forbid(unsafe_code)]
 extern crate alloc;
 
+/// PCF bitmap faces.
+pub mod pcf;
+
 use alloc::vec::Vec;
 use core::fmt;
 

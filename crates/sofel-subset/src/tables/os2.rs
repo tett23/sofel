@@ -76,7 +76,6 @@ pub(crate) fn subset(
     }
     s.extend(src.get(..n).unwrap_or(&[]));
     if plan.var.instancing() {
-        // The MVAR deltas are 0 at the default location.
         let avg = avg_char_width(&plan.var.metrics.hmtx);
         let v = i16::try_from(avg).map_err(|_| SubsetError::Failed { tag })?;
         s.set_u16(2, v.cast_unsigned());

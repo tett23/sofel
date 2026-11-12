@@ -26,6 +26,14 @@
 
 すべての機能の実装が終わってから高速化に着手する。実装中は [ADR 0005](adr/0005-conformance-tests.md) に従って出力を照合し、[ADR 0006](adr/0006-performance-measurement.md) に従って性能を記録する。下記の性能差の原因調査と最適化は実装完了後に行う。
 
+### Golem が使う OpenType 機能タグの列挙
+
+Golem はフォントを開くときに GSUB と GPOS の機能タグをすべて読み、指定した機能を持つフォントがない場合に診断を出す。[ADR 0020](adr/0020-shaping-foundation.md) の FeatureList は Rust からタグを読める。Golem の Haskell バインディングからも使えるよう、サニタイズ後の各表のタグを列挙する C API を [ADR 0075](adr/0075-layout-feature-tags.md) で採択した。表がない場合、複数のタグがある場合、同じタグが繰り返される場合の件数と順序を HarfBuzz の `hb_ot_layout_table_get_feature_tags` と照合する。
+
+### FreeType のグリフの縁取り
+
+縁取りした文字を描く用途では、FreeType のグリフストローカが元の輪郭から線幅、端点、接合部の指定に応じて内側と外側の輪郭を作る。閉じたグリフ輪郭を対象に、この操作を [ADR 0076](adr/0076-glyph-outline-stroking.md) で採択した。`FT_Glyph_Stroke` と `FT_Glyph_StrokeBorder` を照合先とする。[FreeType の Glyph Stroker](https://freetype.org/freetype2/docs/reference/ft2-glyph_stroker.html)
+
 ## 未実装の ADR
 
 ### [ADR 0022](adr/0022-subsetting.md): サブセット化
@@ -120,3 +128,4 @@ Unicode の性質の引きが HarfBuzz の 1.24 倍である。2段または3段
 - ディスクが逼迫している。2026-11-10 の時点で 98% が埋まり、空きは約 18 GiB だった。`target/wt` の worktree とビルドの出力が容量を使う。使い終えた worktree を消す。
 - 共有のツール `target/ft-dump`、`target/hb-dump`、`target/bench-c` は、ツールを変えると古くなる。`tools/*/build.sh` と `bench/build-c.sh` で作りなおす。
 - Golem への移行。切り替えの前後で Golem の出力を比べる。Golem は HarfBuzz 14.6.0 と FreeType 2.14.3 を使い、sofel は 15.1.0 と 2.15.0 を目標にしている。メトリクスは HarfBuzz に従うので、Golem での FreeType 由来の値は変わる可能性がある。GHC のランタイムのロケールの動作は、確かめていない（言語の推定に影響する）。
+- PDF の移行では、[ADR 0022](adr/0022-subsetting.md) のサブセットを Golem の PDF ライターに渡す。[ADR 0068](adr/0068-vector-and-gpu-output.md) の PDF 出力は文字を輪郭で描く。Golem の横書きと縦書きの原稿で、改行・改ページ、グリフの位置、フォントの埋め込み、ToUnicode と ActualText によるテキスト抽出を切り替え前後で比べる。

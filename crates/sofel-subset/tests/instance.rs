@@ -545,11 +545,11 @@ fn i2_unknown_axis_preserves_previous_axis_range_and_output() {
 }
 
 #[test]
-fn avar_that_moves_the_default_or_version_2_is_unsupported() {
+fn full_pin_accepts_identity_avar_versions_and_rejects_a_moved_v1_default() {
     let moved = avar(1, &[&[(-1.0, -1.0), (0.0, 0.25), (1.0, 1.0)], &[]]);
     let identity = avar(1, &[&[(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)], &[]]);
     let v2 = avar(2, &[&[], &[]]);
-    for (avar, ok) in [(identity, true), (moved, false), (v2, false)] {
+    for (avar, ok) in [(identity, true), (moved, false), (v2, true)] {
         let data = font_with(vec![(b"fvar", fvar(&AXES)), (b"avar", avar)]);
         let font = Font::new(&data, 0).unwrap();
         let i = unicodes().with_all_axes_pinned_to_default(&font).unwrap();
@@ -644,6 +644,18 @@ fn pinning_preserves_the_base_coordinate_and_removes_its_variation_index() {
     ];
     let expected: Vec<_> = expected.into_iter().flat_map(u16::to_be_bytes).collect();
     assert_eq!(sfnt.table(Tag::new(b"BASE")).unwrap(), expected);
+    for (weight, baseline) in [(650.0, 134u16), (900.0, 144)] {
+        let input = pinned
+            .with_axis_pinned(Tag::new(b"wght"), weight, &font)
+            .unwrap();
+        let out = subset(&font, &input).unwrap();
+        let mut varied = expected.clone();
+        varied[38..40].copy_from_slice(&baseline.to_be_bytes());
+        assert_eq!(
+            Sfnt::new(&out).unwrap().table(Tag::new(b"BASE")).unwrap(),
+            varied
+        );
+    }
 }
 
 #[test]

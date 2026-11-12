@@ -871,6 +871,9 @@ struct PointsCx<'a, 'f> {
     accel: &'f GlyfAccel<'a>,
     hmtx: &'f crate::tables::hmtx::MetricsAccel<'a>,
     vmtx: &'f crate::tables::hmtx::MetricsAccel<'a>,
+    variation: Option<&'f sofel_font::var::Instance<'f, 'a, 'f, 'f>>,
+    scratch: &'f mut sofel_font::var::gvar::HbScratch,
+    budget: i64,
     decycler: Decycler,
     edge_count: u32,
     /// `head_maxp_info` when the glyph counts toward it.
@@ -919,7 +922,51 @@ impl PointsCx<'_, '_> {
         ]
     }
 
-    /// `Glyph::get_points` without variations, horizontal shift or
+    fn apply_variation(&mut self, gid: u32, g: &Glyph<'_>, points: &mut [Pt]) -> bool {
+        let Some(instance) = self.variation else {
+            return true;
+        };
+        let mut ends = (0..if g.kind == Kind::Simple {
+            g.contours()
+        } else {
+            0
+        })
+            .filter_map(|contour| {
+                u16_at(
+                    g.bytes,
+                    HEADER_SIZE.saturating_add(contour.saturating_mul(2)),
+                )
+            })
+            .peekable();
+        let mut varied: Vec<sofel_font::var::gvar::Point<f32>> = points
+            .iter()
+            .enumerate()
+            .map(|(index, point)| {
+                let end = ends.peek().is_some_and(|&last| usize::from(last) == index);
+                if end {
+                    ends.next();
+                }
+                sofel_font::var::gvar::Point {
+                    x: point.x,
+                    y: point.y,
+                    end,
+                }
+            })
+            .collect();
+        if instance
+            .apply_gvar_hb(gid, &mut varied, self.scratch, false, &mut self.budget)
+            .is_err()
+        {
+            return false;
+        }
+        for (point, adjusted) in points.iter_mut().zip(varied) {
+            point.x = adjusted.x;
+            point.y = adjusted.y;
+        }
+        true
+    }
+
+    /// `Glyph::get_points` without horizontal shift or
     /// USE_MY_METRICS (as `compile_bytes_with_deltas` calls it).
     fn get_points(
         &mut self,
@@ -958,6 +1005,12 @@ impl PointsCx<'_, '_> {
                     return false;
                 }
                 all.extend(self.phantoms(gid, g));
+                if !all
+                    .get_mut(before..)
+                    .is_some_and(|points| self.apply_variation(gid, g, points))
+                {
+                    return false;
+                }
                 if depth == 0
                     && let Some(h) = self.head.as_deref_mut()
                 {
@@ -971,6 +1024,12 @@ impl PointsCx<'_, '_> {
                     comp.push(transformation(g.bytes, &c, g.extended).1);
                 }
                 comp.extend(self.phantoms(gid, g));
+                if !comp
+                    .get_mut(old_length..)
+                    .is_some_and(|points| self.apply_variation(gid, g, points))
+                {
+                    return false;
+                }
                 if depth == 0 {
                     self.points_with_deltas = comp.get(old_length..).unwrap_or(&[]).to_vec();
                 }
@@ -1047,7 +1106,11 @@ impl PointsCx<'_, '_> {
                 true
             }
             Kind::Empty => {
-                all.extend(self.phantoms(gid, g));
+                let mut points = self.phantoms(gid, g);
+                if !self.apply_variation(gid, g, &mut points) {
+                    return false;
+                }
+                all.extend(points);
                 comp.truncate(old_length);
                 true
             }
@@ -1223,14 +1286,28 @@ pub(crate) fn instance(
     flags: Flags,
     num_output_glyphs: u32,
     font: &Font<'_>,
-    coords: &[i32],
+    axes: &crate::instance::Normalized,
 ) -> Option<(Vec<Vec<u8>>, crate::instance::Metrics)> {
     let accel = GlyfAccel::new(font);
     let hmtx = crate::tables::hmtx::MetricsAccel::dual(font, false);
     let vmtx = crate::tables::hmtx::MetricsAccel::dual(font, true);
     let notdef_outline = flags.has(Flags::NOTDEF_OUTLINE);
     let no_hinting = flags.has(Flags::NO_HINTING);
-    let location = sofel_font::var::Location::from_normalized_2_14(font, coords);
+    use sofel_font::var::{Location, Variation};
+    let location = if axes.avar2 && !axes.all_axes_pinned {
+        Location::from_normalized_2_14(font, &axes.normalized_coords)
+    } else {
+        let design = axes
+            .user
+            .iter()
+            .map(|(&tag, range)| Variation {
+                tag,
+                value: range.default,
+            })
+            .collect::<Vec<_>>();
+        Location::new(font, None, &design)
+    };
+    let varied = location.coords_normalized().iter().any(|&c| c != 0);
     let instance = font.instance(&location);
     let mut gvar_scratch = sofel_font::var::gvar::HbScratch::default();
     let mut m = crate::instance::Metrics {
@@ -1254,6 +1331,9 @@ pub(crate) fn instance(
             accel: &accel,
             hmtx: &hmtx,
             vmtx: &vmtx,
+            variation: varied.then_some(&instance),
+            scratch: &mut gvar_scratch,
+            budget: 1 << 24,
             decycler: Decycler::default(),
             edge_count: 0,
             head: counts.then_some(&mut head),
@@ -1264,39 +1344,6 @@ pub(crate) fn instance(
         let mut comp = Vec::new();
         if !cx.get_points(old, &g, &mut all, &mut comp, 0) {
             return None;
-        }
-        if g.kind == Kind::Simple && coords.iter().any(|coord| *coord != 0) {
-            let mut ends = (0..g.contours())
-                .filter_map(|contour| {
-                    u16_at(
-                        g.bytes,
-                        HEADER_SIZE.saturating_add(contour.saturating_mul(2)),
-                    )
-                })
-                .peekable();
-            let mut varied: Vec<sofel_font::var::gvar::Point<f32>> = all
-                .iter()
-                .enumerate()
-                .map(|(index, point)| {
-                    let end = ends.peek().is_some_and(|&last| usize::from(last) == index);
-                    if end {
-                        ends.next();
-                    }
-                    sofel_font::var::gvar::Point {
-                        x: point.x,
-                        y: point.y,
-                        end,
-                    }
-                })
-                .collect();
-            let mut budget = 1 << 24;
-            instance
-                .apply_gvar_hb(old, &mut varied, &mut gvar_scratch, false, &mut budget)
-                .ok()?;
-            for (point, adjusted) in all.iter_mut().zip(varied) {
-                point.x = adjusted.x;
-                point.y = adjusted.y;
-            }
         }
         let pwd = core::mem::take(&mut cx.points_with_deltas);
         drop(cx);
