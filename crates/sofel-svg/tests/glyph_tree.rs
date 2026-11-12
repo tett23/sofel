@@ -37,3 +37,46 @@ fn i2_svg_use_cycles_and_script_subtrees_do_not_render() {
         1
     );
 }
+
+#[test]
+fn i2_selected_glyph_keeps_ancestor_visibility_and_clips() {
+    for element in ["script", "metadata", "foreignObject"] {
+        let document = format!(
+            r#"<svg><{element}><rect id="glyph1" width="3" height="2"/></{element}></svg>"#
+        );
+        assert!(
+            parse_glyph(document.as_bytes(), 1, 1000, [0; 4])
+                .unwrap()
+                .scene
+                .shapes
+                .is_empty()
+        );
+    }
+    let hidden = br#"<svg><g display="none"><rect id="glyph1" width="3" height="2"/></g></svg>"#;
+    assert!(
+        parse_glyph(hidden, 1, 1000, [0; 4])
+            .unwrap()
+            .scene
+            .shapes
+            .is_empty()
+    );
+    let clipped=br##"<svg><defs><clipPath id="window"><rect width="1" height="2"/></clipPath></defs><g clip-path="url(#window)"><rect id="glyph1" width="3" height="2"/></g></svg>"##;
+    let glyph = parse_glyph(clipped, 1, 1000, [0; 4]).unwrap();
+    assert_eq!(glyph.clips[0].len(), 1);
+}
+
+#[test]
+fn i2_repeated_use_is_bounded_even_without_a_cycle() {
+    let mut svg = String::from(
+        r##"<svg><g id="glyph1"><use href="#n20"/></g><defs><rect id="n0" width="1" height="1"/>"##,
+    );
+    for i in 1..=20 {
+        svg.push_str(&format!(
+            r##"<g id="n{i}"><use href="#n{}"/><use href="#n{}"/></g>"##,
+            i - 1,
+            i - 1
+        ));
+    }
+    svg.push_str("</defs></svg>");
+    assert!(parse_glyph(svg.as_bytes(), 1, 1000, [0; 4]).is_err());
+}

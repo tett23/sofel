@@ -213,32 +213,25 @@ struct Placed {
     clips: Vec<usize>,
 }
 
-#[allow(clippy::too_many_arguments)] // The same recursion handles referenced shapes and clipping outlines.
-fn walk<'a>(
+fn enter<'a>(
     doc: &Document<'a>,
-    i: usize,
+    node: &Node<'a>,
     parent: &Style<'a>,
     b: &mut Builder<'a>,
-    placed: &mut Vec<Placed>,
     clipping: bool,
     active: &mut Vec<usize>,
     depth: usize,
-) -> Result<(), ParseError> {
-    if depth >= 64 {
-        return Err(ParseError);
-    }
-    b.charge(1)?;
-    let node = doc.nodes.get(i).ok_or(ParseError)?;
+) -> Result<Option<Style<'a>>, ParseError> {
     let mut style = parent.enter(node);
     if node.property("display") == Some("none") {
-        return Ok(());
+        return Ok(None);
     }
     if let Some(value) = node.property("clip-path").filter(|v| *v != "none") {
         if clipping {
             return Err(ParseError);
         }
         let Some(&clip) = local_fragment(value).and_then(|id| doc.ids.get(id)) else {
-            return Ok(());
+            return Ok(None);
         };
         let clip_node = doc.nodes.get(clip).ok_or(ParseError)?;
         if clip_node.name != "clipPath"
@@ -270,6 +263,28 @@ fn walk<'a>(
                 .collect(),
         );
     }
+    Ok(Some(style))
+}
+
+#[allow(clippy::too_many_arguments)] // The same recursion handles referenced shapes and clipping outlines.
+fn walk<'a>(
+    doc: &Document<'a>,
+    i: usize,
+    parent: &Style<'a>,
+    b: &mut Builder<'a>,
+    placed: &mut Vec<Placed>,
+    clipping: bool,
+    active: &mut Vec<usize>,
+    depth: usize,
+) -> Result<(), ParseError> {
+    if depth >= 64 {
+        return Err(ParseError);
+    }
+    let node = doc.nodes.get(i).ok_or(ParseError)?;
+    b.charge(node.content_len)?;
+    let Some(mut style) = enter(doc, node, parent, b, clipping, active, depth)? else {
+        return Ok(());
+    };
     match node.name {
         "svg" | "g" | "clipPath" => {
             if node.name == "clipPath" && !clipping {
@@ -359,11 +374,11 @@ pub(crate) fn parse(
         solids: BTreeMap::new(),
         translucent: BTreeMap::new(),
         clip_paths: Vec::new(),
-        remaining: 65_536,
+        remaining: data.len().saturating_mul(8).max(65_536),
         foreground,
     };
     for (i, node) in doc.nodes.iter().enumerate() {
-        if !matches!(node.name, "linearGradient" | "radialGradient") {
+        if !node.accessible || !matches!(node.name, "linearGradient" | "radialGradient") {
             continue;
         }
         let Some(id) = node.attr("id") else {
@@ -406,7 +421,10 @@ pub(crate) fn parse(
         next = n.parent;
     }
     for n in ancestors.into_iter().rev() {
-        style = style.enter(n);
+        let Some(next) = enter(&doc, n, &style, &mut b, false, &mut Vec::new(), 0)? else {
+            return Ok(GlyphScene::default());
+        };
+        style = next;
     }
     let mut placed = Vec::new();
     walk(
@@ -423,7 +441,17 @@ pub(crate) fn parse(
     for p in placed {
         let mut shape_clips = Vec::new();
         for i in p.clips {
-            let count = b.clip_paths.get(i).ok_or(ParseError)?.len();
+            let count =
+                b.clip_paths
+                    .get(i)
+                    .ok_or(ParseError)?
+                    .iter()
+                    .fold(0usize, |cost, element| {
+                        cost.saturating_add(match &element.shape.kind {
+                            super::ShapeKind::Path(path) => path.segment_count().saturating_add(1),
+                            _ => 1,
+                        })
+                    });
             b.charge(count.saturating_add(1))?;
             shape_clips.push(b.clip_paths.get(i).ok_or(ParseError)?.clone());
         }

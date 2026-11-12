@@ -6,6 +6,8 @@ pub(crate) struct Node<'a> {
     pub name: &'a str,
     pub attrs: Vec<(&'a str, &'a str)>,
     pub parent: Option<usize>,
+    pub content_len: usize,
+    pub accessible: bool,
     end: usize,
 }
 
@@ -91,13 +93,31 @@ impl<'a> Document<'a> {
             let name = content.split_ascii_whitespace().next().ok_or(ParseError)?;
             let attrs = attributes(content);
             let i = nodes.len();
-            if let Some(id) = attr(&attrs, "id")
+            // Descendants of script, metadata and foreign content do not
+            // provide glyphs or resources, even when addressed by ID.
+            let accessible = parent.is_none_or(|n| {
+                nodes[n].accessible
+                    && matches!(
+                        nodes[n].name,
+                        "svg"
+                            | "g"
+                            | "defs"
+                            | "symbol"
+                            | "clipPath"
+                            | "linearGradient"
+                            | "radialGradient"
+                    )
+            });
+            if accessible
+                && let Some(id) = attr(&attrs, "id")
                 && ids.insert(id, i).is_some()
             {
                 return Err(ParseError);
             }
             nodes.push(Node {
                 name,
+                accessible,
+                content_len: content.len(),
                 attrs,
                 parent,
                 end: i + 1,
