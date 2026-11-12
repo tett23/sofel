@@ -595,7 +595,7 @@ pub unsafe extern "C" fn sofel_font_ft_default_named_instance(
 /// # Safety
 ///
 /// Non-NULL `ptr` is valid for reads of `len` elements.
-unsafe fn input_array<'a, T>(ptr: *const T, len: usize) -> Option<&'a [T]> {
+pub(crate) unsafe fn input_array<'a, T>(ptr: *const T, len: usize) -> Option<&'a [T]> {
     if ptr.is_null() {
         return (len == 0).then_some(&[]);
     }
