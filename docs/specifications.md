@@ -353,6 +353,16 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 ## 道具
 
+統一 CLI `sofel` は render、shape、paint、validate、subset を受け付ける（[ADR 0071](adr/0071-unified-sofel-cli.md)）。
+引数なし、`help`、`-h`、`--help` は操作一覧を、`help NAME`、`NAME -h`、`NAME --help` は使用例を含む詳細を標準出力に書く。
+未知の操作やヘルプ対象は終了コード 2 で診断する。
+
+`sofel render --ppem P (--text TEXT | --text-file PATH) FONT` は一行を一つのランとしてシェーピングし、アウトラインを白地に黒の PGM に描いて標準出力に書く。
+フェイス、可変軸と OpenType フィーチャーを指定できる。
+UTF-8 ファイルの末尾から LF または CRLF を一組だけ除き、前後の空白も送り幅に含める。
+空文字は白い 1 × 1 画素になる。
+入力指定の重複、不正な UTF-8、残った CR や LF は終了コード 2、ファイルの読み込み失敗は終了コード 1 で診断する。
+
 - `sofel-paint [--face N] [--palette P] [--foreground RRGGBBAA] [--ppem P] [--exact] (--glyph G | --char U+XXXX) FILE`：カラーグリフの塗りの命令を、HarfBuzzの `test/api/test-paint.c` と同じ字下げのテキストで書く。数はCの `%.3g`、`--exact` では `f32` のビットの16進。カラーでないグリフは終了コード1、使い方の誤りは2（[ADR 0023](adr/0023-color-glyphs.md)）。
 - `sofel-render [--face N] --ppem P [--no-bitmap] [--color [--palette N]] (--glyph G | --char U+XXXX) FILE`：1グリフをヒンティングなしで描き、PGM（P5）を標準出力に書く。位置は注釈の行 `# left <x> top <y>` に書く（[ADR 0012](adr/0012-antialiased-rasterizer.md)）。そのppemのビットマップがあれば、`--no-bitmap` が無いかぎりそれを書く（32bitはPAM。[ADR 0023](adr/0023-color-glyphs.md)）。`--color` では、COLRv0のグリフを層の色で描いてPAMで書く。
 - `sofel-shape [オプション] <フォント> [<文字列>]`：HarfBuzz 15.1.0の `hb-shape` と同じオプションと出力で文字列を形にする（[ADR 0020](adr/0020-shaping-foundation.md)）。オプションはGLibと同じく `--名前=値` と `--名前 値` の形で、数はCの `strtol`（基数0）と `sscanf` と同じに読む。文字列（`--text`、`--text-file`、`--unicodes`/`-u`、`--unicodes-before`、`--unicodes-after`、`--text-before`、`--text-after`、`--single-par`。どれも無ければ標準入力）、区間（`--direction`、`--script`、`--language`、`--default-language`）、機能（`--features`）、フォント（`--face-index`/`-y`、`--font-size`、`--font-ppem`）、バッファ（`--bot`、`--eot`、`--preserve-default-ignorables`、`--remove-default-ignorables`、`--invisible-glyph`、`--not-found-glyph`、`--not-found-variation-selector-glyph`、`--cluster-level`、`--utf8-clusters`、`--unsafe-to-concat`、`--safe-to-insert-tatweel`、`--verify`、`--normalize-glyphs`、`--glyphs`）、出力（`--output-format`/`-O` の `text` と `json`、`--no-glyph-names`、`--no-positions`、`--no-advances`、`--no-clusters`、`--show-text`、`--show-unicode`、`--show-line-num`、`--show-flags`、`--show-extents`、`--ned`）、シェーパー（`--shaper`、`--shapers` の `ot` と `fallback`）を解釈する。`--font-funcs` と `--face-loader` は受け付けて無視する。
