@@ -90,3 +90,18 @@ fn i1_case_source_identifies_input_selection_and_render_settings() {
     let (_, output) = run(&INVENTORY.replace("conformance/svg/geometry.svg", ""));
     assert!(output.contains("missing input: in-geometry/circle"));
 }
+
+#[test]
+fn i3_checked_in_local_measurements_cover_every_case() {
+    let reference = include_str!("../../../conformance/svg-measurements.tsv");
+    fn keys(s: &str) -> std::collections::BTreeSet<(&str, &str)> {
+        s.lines()
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .map(|l| {
+                let mut parts = l.split('\t');
+                (parts.next().unwrap(), parts.next().unwrap())
+            })
+            .collect()
+    }
+    assert_eq!(keys(reference), keys(INVENTORY));
+}

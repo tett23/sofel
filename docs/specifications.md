@@ -428,7 +428,7 @@ SVG の検査器は [ADR 0074](adr/0074-svg-feature-conformance.md) の必須ケ
 
 SVG ページ出力では、空のページ、単字、半透明の重なり、クリップした画像の寸法と描画順を、[固定版 HarfBuzz で生成した参照](../conformance/svg-page/reference.cc) と比較する。XML の属性順と要素間の空白は比較から除く。
 
-検査器は必須ケースの集計に続いて、[OpenType 1.9.1 の SVG 要求項目](../conformance/svg-opentype.tsv)ごとに、対応するケース ID または対象外・未決の理由を表示する。
+検査器は必須ケースの集計に続いて、[OpenType 1.9.1 の SVG 要求項目](../conformance/svg-opentype.tsv)ごとに、対応するケース ID または対象外・未決の理由を表示する。必須ケースがすべて成功すると、画像の寸法・原点・画素列と正規化した出力 XML を、[ローカルで得た実測値](../conformance/svg-measurements.tsv) と照合する。Linux と macOS の CI はローカルと同じコマンドで一覧 PNG を生成して照合する。
 
 - 追加フォントの集合は [ADR 0031](adr/0031-diverse-font-corpus.md) の13ファイル、57フェイスと既存の可変COLRフォントで構成する。`fonts.lock` は取得ファイルとライセンスをHTTPS URL、SHA-256、バイト数、保存先で固定し、`conformance/fonts.tsv` はフォントとライセンスと対象機能を結ぶ。`scripts/fetch-fonts.sh` は保存済みのファイルも再検証し、欠落とハッシュ不一致を失敗にする。フォントのバイナリをリポジトリに含めず、著作権表示とライセンス全文を `THIRD_PARTY_NOTICES.md` に記録する。
 - 追加フォントの各フェイスでは表の読み取り、検証器、全Unicodeスカラー値の既定座標のnominal glyph ID、最大128グリフの横・縦メトリクスとFreeTypeの非ヒンティング輪郭・advanceを照合する。サンプル集合にはグリフ0と末尾と登録した全座標のシェーピング出力を必ず入れ、[ADR 0031](adr/0031-diverse-font-corpus.md) の等間隔の式で補う。HarfBuzzのメトリクスとFreeTypeの輪郭・advanceは別々の参照値と比較する。
@@ -532,6 +532,7 @@ CI の文書だけの変更は、比較起点の `ci/documentation-only.rules` �
 
 [sofel ADR 0069](adr/0069-font-render-gallery.md) に従い、追加フォント台帳の全フェイスと固定版 HarfBuzz の可変 COLR フォントを描画する。
 `sh scripts/render-font-gallery.sh` は各フェイスの単字とシェーピング済みの固定文字列を等倍で一枚の PNG に配置し、入力、ppem、未対応の理由をローカルの HTML から確認できるようにする。
+color-svg の単字19と文字列から得たグリフ26は48 ppemで描画する。検査器は、固定した色を確認した CLI の画像と、一覧 PNG の両方の欄を全画素で照合する（[sofel ADR 0072](adr/0072-color-gallery-acceptance.md)、[sofel ADR 0074](adr/0074-svg-feature-conformance.md)）。
 生成器は [sofel ADR 0073](adr/0073-rust-font-gallery.md) に従う Rust の開発用バイナリとし、Unicode スカラー値とグリフ ID、26.6 固定小数点の位置と整数画素、描画結果と登録済みの未対応状態を型で区別する。シェルの入口は Rust のテストを実行してから生成器を起動する。
 sbix の単字 19 と合字 26 は固定版 FreeType と全画素を照合し、一覧の各欄に等倍で配置する（[sofel ADR 0072](adr/0072-color-gallery-acceptance.md)）。
 文書だけの変更を除き、CI はプルリクエストと main への push で HTML と PNG を生成し、検査したコミット SHA 付きのアーティファクトを14日間保存する。

@@ -9,6 +9,8 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+font-gallery = { path = "../../tools/font-gallery" }
+sofel-png = { path = "../sofel-png" }
 quick-xml = "0.42"
 sofel-vector = { path = "../sofel-vector" }
 sofel-read = { path = "../sofel-read" }

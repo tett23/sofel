@@ -238,12 +238,11 @@ jobs:
         if: runner.os == 'Linux'
         run: SOFEL_FT_DUMP="$RUNNER_TEMP/ft-dump-png" cargo test --release -p sofel-conformance --test freetype_sbit i2_sbix_gallery -- --ignored
       # sofel ADR 0069: render the same local gallery and keep the image.
-      - name: Render font gallery
-        if: matrix.os == 'ubuntu-latest'
+      - name: Render font gallery and check SVG feature conformance
         env:
           SOFEL_TESTDATA_OFFLINE: '1'
           SOFEL_FONTS_OFFLINE: '1'
-        run: sh scripts/render-font-gallery.sh
+        run: sh scripts/test-svg-conformance.sh
       - name: Upload font gallery
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

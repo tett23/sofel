@@ -1,0 +1,34 @@
+# Local observations after the mandatory references matched.
+# Bitmap origins are left/top in baseline coordinates. FNV-1a covers top-down pixels or normalized XML events.
+# feature	case	measurement
+in-document	plain	BGRA 0,0 16x16; fnv1a64=1f8732193a3f4d25
+in-document	gzip	BGRA 0,0 16x16; fnv1a64=1f8732193a3f4d25
+in-document	shared-first	BGRA 0,0 16x16; fnv1a64=1f8732193a3f4d25
+in-document	shared-second	BGRA 20,-20 8x8; fnv1a64=eb51029bfbb97b13
+in-document	out-of-range	SVG document present=false
+in-geometry	path-line	BGRA 4,-4 8x8; fnv1a64=68b40e5eba32bea5
+in-geometry	path-curve	BGRA 4,0 12x12; fnv1a64=277cc5e7001fcf4d
+in-geometry	rect	BGRA 4,-4 12x8; fnv1a64=062cd595814e97a5
+in-geometry	circle	BGRA 4,-4 8x8; fnv1a64=4020472529deec29
+in-geometry	nested-transform	BGRA 8,-4 8x4; fnv1a64=030b69b790b63aa5
+in-style	inherited-fill	BGRA 4,-4 16x16; fnv1a64=1f8732193a3f4d25
+in-style	override-fill	BGRA 4,-4 16x16; fnv1a64=34d266fea2f7a525
+in-style	context-fill-red	BGRA 4,-4 16x16; fnv1a64=1f8732193a3f4d25
+in-style	context-fill-blue	BGRA 4,-4 16x16; fnv1a64=34d266fea2f7a525
+in-style	overlap	BGRA 4,-4 20x20; fnv1a64=cd6b2f0442470a25
+in-style	reversed-overlap	BGRA 4,-4 20x20; fnv1a64=9a055b12957db425
+in-reference	use-transform	BGRA 8,-7 2x3; fnv1a64=14c3ce0540df6d69
+in-reference	clip-transform	BGRA 4,-4 8x8; fnv1a64=2c910b90fbbdc989
+in-gradient	linear	BGRA 0,0 20x16; fnv1a64=9855384663fcc725
+in-gradient	radial	BGRA 0,0 20x16; fnv1a64=e71428c76f91bd05
+in-gradient	aspect-ratio	BGRA 2,-3 17x9; fnv1a64=fbe655512b92872e
+in-gradient	stop-opacity	BGRA 0,0 20x16; fnv1a64=ca085521f80b0785
+in-gradient	transformed	BGRA 0,0 20x16; fnv1a64=453e84ea6f4c9f25
+in-gradient	color-svg-19	RGBA 7,39 46x46; fnv1a64=3cd9b1bd5d565690
+in-gradient	color-svg-26	RGBA 7,39 46x46; fnv1a64=644ee5a1e536f0a7
+in-restrictions	external	BGRA 4,-5 6x3; fnv1a64=fe1f3846c2340471; requests=0
+in-restrictions	script	BGRA 4,-5 6x3; fnv1a64=fe1f3846c2340471
+out-page	empty	2 XML events; fnv1a64=ca44660dc66d2c76
+out-page	single	6 XML events; fnv1a64=2ab1521c6fa5836b
+out-page	translucent-overlap	8 XML events; fnv1a64=359516c2e5986249
+out-page	clipped-image	18 XML events; fnv1a64=38d0707abd416a6a

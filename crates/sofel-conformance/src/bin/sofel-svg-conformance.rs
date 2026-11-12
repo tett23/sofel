@@ -231,6 +231,53 @@ fn verify(
     show_scope() && ok
 }
 
+// The geometric/colour/XML references decide correctness. This additional
+// record compares local and CI measurements from the same fixed cases.
+fn reproduce(ledger: &str) -> bool {
+    let baseline = include_str!("../../../../conformance/svg-measurements.tsv");
+    let mut expected: BTreeSet<_> = baseline
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .collect();
+    let mut ok = true;
+    println!("Local/CI measurements:");
+    for row in ledger
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+    {
+        let fields = row.split('\t').collect::<Vec<_>>();
+        let [feature, case, _, _, input, selection, _, foreground] = fields.as_slice() else {
+            return false;
+        };
+        let actual = if *feature == "out-page" {
+            sofel_conformance::svg_page::measurement(case)
+        } else {
+            sofel_conformance::svg_input::measurement(input, selection, foreground)
+        };
+        match actual {
+            Ok(value) => {
+                let measured = format!("{feature}\t{case}\t{value}");
+                println!("{measured}");
+                if !expected.remove(measured.as_str()) {
+                    ok = false;
+                }
+            }
+            Err(reason) => {
+                println!("{feature}\t{case}\t{reason}");
+                ok = false;
+            }
+        }
+    }
+    for missed in expected {
+        println!("missing local measurement: {missed}");
+        ok = false;
+    }
+    if !ok {
+        println!("local and current measurements differ");
+    }
+    ok
+}
+
 fn main() -> ExitCode {
     let mut args = std::env::args_os().skip(1);
     let mut input = String::new();
@@ -248,7 +295,7 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    if verify(ledger, observation) {
+    if verify(ledger, observation) && reproduce(ledger) {
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE
