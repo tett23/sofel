@@ -518,7 +518,7 @@ fn adr0067_i2_unrelated_axis_pin_with_gvar_dropped_matches_harfbuzz() {
 #[test]
 fn adr0067_i2_referenced_axis_pin_remains_unsupported() {
     let path = paths::testdata().join("harfbuzz/test/api/fonts/varc-unrelated-axis.ttf");
-    let bytes = std::fs::read(path).unwrap();
+    let bytes = std::fs::read(&path).unwrap();
     let font = Font::new(&bytes, 0).unwrap();
     let input = Input::new()
         .map_set(SetKind::Unicodes, |set| set.add(0xAC01))
@@ -528,4 +528,13 @@ fn adr0067_i2_referenced_axis_pin_remains_unsupported() {
         .with_axis_pinned_to_default(Tag::new(b"wght"), &font)
         .unwrap();
     assert!(subset(&font, &input).is_err());
+    let output = ProcessCommand::new(paths::hb_dump())
+        .arg("--subset")
+        .arg(format!("--font-file={}", path.display()))
+        .arg("--unicodes=U+AC01")
+        .arg("--variations=wght=356.5")
+        .arg("--drop-tables+=gvar")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
 }
