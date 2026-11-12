@@ -223,7 +223,7 @@ fn keep_subrs(
         let mut direct_drops = BTreeMap::new();
         if drop_hints {
             for &hint in env.hint_trace() {
-                if !hint.terminal
+                if !hint.can_follow_call
                     && env
                         .call_trace()?
                         .iter()
@@ -262,7 +262,7 @@ fn keep_subrs(
                         source: trace.source,
                         start: trace.start,
                         end: trace.end,
-                        terminal: false,
+                        can_follow_call: false,
                     },
                 );
                 continue;
