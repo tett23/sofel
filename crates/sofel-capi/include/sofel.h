@@ -2179,6 +2179,7 @@ typedef struct sofel_vector_glyph_t {
  * On SOFEL_ERROR_BUFFER_TOO_SMALL, *len holds the required byte count.
  *
  * Rust: sofel_vector::SvgPage::new, sofel_vector::SvgPage::fill_path, sofel_vector::SvgPage::finish
+ * Rust: sofel_vector::PdfPage::draw_rgba, sofel_png::decode_rgba
  * Rust: sofel_vector::PdfPage::new, sofel_vector::PdfPage::fill_path, sofel_vector::PdfPage::finish
  * HarfBuzz: hb_vector_paint_t
  * FreeType: none
