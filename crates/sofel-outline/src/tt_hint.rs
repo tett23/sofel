@@ -209,6 +209,10 @@ impl EngineInfo {
 
 #[derive(Clone)]
 struct Interpreter {
+    zones: [u8; 3],
+    control_value_cutin: i64,
+    single_width_cutin: i64,
+    single_width: i64,
     scan_control: bool,
     scan_type: u16,
     ppem: [u16; 2],
@@ -235,6 +239,10 @@ impl Interpreter {
                 variation: false,
                 symmetric_smoothing: false,
             },
+            zones: [1; 3],
+            control_value_cutin: 68,
+            single_width_cutin: 0,
+            single_width: 0,
             scan_control: false,
             scan_type: 0,
             ppem: [0; 2],
@@ -304,6 +312,27 @@ impl Interpreter {
                         i64::from(self.ppem[0])
                     };
                     push(stack, value, max_stack)?;
+                }
+                op @ 0x13..=0x16 => {
+                    let zone = stack.pop().ok_or(Error::StackUnderflow)? as i32;
+                    if matches!(zone, 0 | 1) {
+                        if op == 0x16 {
+                            self.zones.fill(zone as u8);
+                        } else {
+                            self.zones[usize::from(op - 0x13)] = zone as u8;
+                        }
+                    }
+                }
+                op @ 0x1d..=0x1f => {
+                    let value = stack.pop().ok_or(Error::StackUnderflow)?;
+                    match op {
+                        0x1d => self.control_value_cutin = value,
+                        0x1e => self.single_width_cutin = value,
+                        _ => {
+                            self.single_width =
+                                sofel_font::read::cff::ft::mul_fix(value, self.scale)
+                        }
+                    }
                 }
                 0x85 => {
                     let flags = stack.pop().ok_or(Error::StackUnderflow)?;
@@ -757,4 +786,31 @@ fn adr0064_i1_scan_control_prioritizes_disable_and_remembers_unmatched_settings(
         vm.execute(&[0x8d], &mut alloc::vec![value], 1).unwrap();
         assert_eq!(vm.scan_type, 5);
     }
+}
+
+#[test]
+fn adr0064_i1_zone_selection_and_cutins_preserve_instruction_units() {
+    let mut vm = Interpreter::new(0, &[], 32768);
+    let mut stack = alloc::vec::Vec::new();
+    vm.execute(
+        &[0xb0, 0, 0x16, 0xb0, 1, 0x14, 0xb0, 2, 0x16],
+        &mut stack,
+        1,
+    )
+    .unwrap();
+    assert_eq!(vm.zones, [0, 1, 0]);
+    vm.execute(
+        &[0xb0, 17, 0x1d, 0xb0, 19, 0x1e, 0xb0, 21, 0x1f],
+        &mut stack,
+        1,
+    )
+    .unwrap();
+    assert_eq!(
+        (
+            vm.control_value_cutin,
+            vm.single_width_cutin,
+            vm.single_width
+        ),
+        (17, 19, 11)
+    );
 }
