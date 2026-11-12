@@ -185,10 +185,15 @@ fn layout_unsupported(
         let tag = Tag::new(t);
         font.table(tag).is_some() && !drop.contains(tag.to_u32())
     };
-    let gsub_feature_variations_retained = retained(b"GSUB")
+    let gsub_may_reference_store = retained(b"GSUB")
         && font.table(Tag::new(b"GSUB")).is_some_and(|d| {
-            sofel_font::read::be::u32_at(d, 0).unwrap_or(0) >= 0x0001_0001
+            let table = layout::Gsubgpos::new(d, true);
+            // The GSUB writer only emits format-1 axis ranges, which never
+            // reference GDEF. A copied GSUB bypasses that writer.
+            table.version() >= 0x0001_0001
                 && sofel_font::read::be::u32_at(d, 10) != Some(0)
+                && (no_subset.contains(Tag::new(b"GSUB").to_u32())
+                    || table.feature_variations_view().is_none())
         });
     // A VariationIndex Device necessarily contains the format word 0x8000.
     // Scan the whole retained table so an unknown or malformed subtable
@@ -208,19 +213,22 @@ fn layout_unsupported(
     if !pinned
         && kept(b"GDEF").is_some_and(layout::gdef::has_var_store)
         && (copied_gpos_may_reference_store
-            || math_may_reference_store
-            || gsub_feature_variations_retained)
+            || (math_may_reference_store
+                && no_subset.contains(Tag::new(b"MATH").to_u32())
+                && !no_subset.contains(Tag::new(b"GDEF").to_u32()))
+            || gsub_may_reference_store)
     {
         return Err(SubsetError::Unsupported {
             tag: Tag::new(b"GDEF"),
             reason: "the GDEF item variation store (ADR 0022 stage 10)",
         });
     }
-    // A copied MATH table needs no remapping even when GDEF is dropped.
+    // A copied MATH table needs no remapping when GDEF is also copied or dropped.
     let math_subset = retained(b"MATH") && !no_subset.contains(Tag::new(b"MATH").to_u32());
     if !pinned
         && math_subset
         && math_may_reference_store
+        && no_subset.contains(Tag::new(b"GDEF").to_u32())
         && font
             .table(Tag::new(b"GDEF"))
             .is_some_and(layout::gdef::has_var_store)
@@ -581,10 +589,16 @@ impl Plan {
             let gpos_has_var_format = tag_kept(b"GPOS")
                 && !no_subset.contains(Tag::new(b"GPOS").to_u32())
                 && gpos_data.windows(2).any(|word| word == [0x80, 0x00]);
-            if !pinned && layout::gdef::has_var_store(gdef) && (!copied_gdef || gpos_has_var_format)
+            let math_data = font.table(Tag::new(b"MATH")).unwrap_or(&[]);
+            let math_has_var_format = tag_kept(b"MATH")
+                && !no_subset.contains(Tag::new(b"MATH").to_u32())
+                && math_data.windows(2).any(|word| word == [0x80, 0x00]);
+            if !pinned
+                && layout::gdef::has_var_store(gdef)
+                && (!copied_gdef || gpos_has_var_format || math_has_var_format)
             {
-                let gpos_indices = if gpos_has_var_format {
-                    layout::gpos::retained_pair_variation_indices(
+                let mut indices = if gpos_has_var_format {
+                    layout::gpos::retained_variation_indices(
                         gpos_data,
                         &p.layout.gpos,
                         &p.layout.glyphset_gsub,
@@ -593,16 +607,29 @@ impl Plan {
                 } else {
                     Some(BTreeSet::new())
                 };
-                let Some(indices) = gpos_indices else {
+                let Some(ref mut selected) = indices else {
                     return Err(SubsetError::Unsupported {
                         tag: Tag::new(b"GDEF"),
                         reason: "the GDEF item variation store (ADR 0022 stage 10)",
                     });
                 };
+                if math_has_var_format {
+                    let Some(math_indices) = crate::tables::math::retained_variation_indices(
+                        math_data,
+                        &p.glyphset_mathed,
+                        &p.glyphset_cmaped,
+                    ) else {
+                        return Err(SubsetError::Unsupported {
+                            tag: Tag::new(b"GDEF"),
+                            reason: "unsupported MATH VariationIndex (ADR 0022 stage 10)",
+                        });
+                    };
+                    selected.extend(math_indices);
+                }
                 let Some((items, map)) = layout::gdef::retained_variation_indices(
                     gdef,
                     &p.layout.glyphset_gsub,
-                    &indices,
+                    selected,
                 ) else {
                     return Err(SubsetError::Unsupported {
                         tag: Tag::new(b"GDEF"),
