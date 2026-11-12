@@ -10,7 +10,7 @@ fn i1_rust_gallery_parity_pixels() {
     );
     assert_eq!(image.pixels, [0, 0, 0, 255, 128, 128, 128, 255]);
     let card = sheet::card(Some(&image), None, &[]).unwrap();
-    assert_eq!((card.width, card.height), (490, 200));
+    assert_eq!((card.width, card.height), (490, 232));
 }
 
 #[test]
@@ -69,8 +69,8 @@ fn i1_rust_gallery_parity_composition_and_sheet() {
     assert_eq!(ink.pixels, [0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255, 255]);
     let card = sheet::card(Some(&ink), None, &[]).unwrap();
     let full = sheet::layout(&[card.clone(), card]).unwrap();
-    assert_eq!((full.width, full.height), (980, 200));
-    assert_eq!(full.pixels.len(), 980 * 200 * 4);
+    assert_eq!((full.width, full.height), (980, 232));
+    assert_eq!(full.pixels.len(), 980 * 232 * 4);
     assert_eq!(&pixels::png(&full)[..8], b"\x89PNG\r\n\x1a\n");
 }
 

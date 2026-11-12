@@ -12,3 +12,6 @@ members = ["."]
 [[bin]]
 name = "font-gallery"
 path = "src/main.rs"
+
+[dev-dependencies]
+sofel-png = { path = "../../crates/sofel-png" }

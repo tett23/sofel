@@ -160,11 +160,11 @@ fn sample_card(
     };
     let mut captions = vec![
         (heading.clone(), 9),
-        (info, 141),
-        (format!("{} ppem", sample.ppem), 160),
+        (info, 170),
+        (format!("{} ppem", sample.ppem), 189),
     ];
     if let Some(note) = note {
-        captions.push((note.into(), 179));
+        captions.push((note.into(), 208));
     }
     let mut images = Vec::new();
     for (line, y) in captions {

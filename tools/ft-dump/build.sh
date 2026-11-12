@@ -6,6 +6,8 @@
 # Usage: tools/ft-dump/build.sh [FREETYPE_SOURCE [OUTPUT]]
 #   FREETYPE_SOURCE  default: target/testdata/freetype
 #   OUTPUT           default: target/ft-dump/ft-dump
+# A third argument --webfont-reference builds the table comparison tool
+# with WOFF2 enabled and requires Brotli decoder headers and library.
 # The C compiler is $CC (default: cc).
 
 set -eu
@@ -15,6 +17,13 @@ root=$(cd "$here/../.." && pwd)
 src=${1:-$root/target/testdata/freetype}
 out=${2:-$root/target/ft-dump/ft-dump}
 cc=${CC:-cc}
+driver=$here/ft-dump.c
+if [ "${3:-}" = "--webfont-reference" ]; then
+  driver=$root/tools/webfont-reference/compare.c
+  set -- -DFT_CONFIG_OPTION_USE_BROTLI -lbrotlidec
+else
+  set --
+fi
 
 if [ ! -f "$src/include/ft2build.h" ]; then
   echo "build.sh: no FreeType source in $src; run scripts/fetch-testdata.sh first" >&2
@@ -39,12 +48,16 @@ for f in $files; do
   sources="$sources $src/src/$f"
 done
 
+png_flags=
+if [ "${SOFEL_FT_PNG:-0}" = 1 ]; then
+  png_flags="-DFT_CONFIG_OPTION_USE_PNG -lpng"
+fi
 mkdir -p "$(dirname "$out")"
 # shellcheck disable=SC2086 # $sources is a list of paths without spaces
 "$cc" -O2 -w \
   -DFT2_BUILD_LIBRARY \
   '-DFT_CONFIG_MODULES_H=<ftmodule.h>' \
   -I "$here" -I "$src/include" \
-  "$here/ft-dump.c" $sources \
+  "$driver" $sources $png_flags "$@" \
   -o "$out"
 echo "$out"

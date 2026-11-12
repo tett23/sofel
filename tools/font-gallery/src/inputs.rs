@@ -50,6 +50,7 @@ pub enum Status {
 pub struct Rendered {
     pub solo: Option<Image>,
     pub glyphs: Vec<Glyph>,
+    pub glyph_ids: Vec<u32>,
     pub status: Status,
 }
 
@@ -126,7 +127,7 @@ pub fn cases(
                 text,
                 lang,
                 color: id.starts_with("color-") || id == "hb-variable-colr",
-                unsupported_empty: matches!(id.as_str(), "color-cff" | "color-sbix" | "color-svg"),
+                unsupported_empty: matches!(id.as_str(), "color-cff" | "color-svg"),
             });
         }
     }
@@ -271,7 +272,9 @@ pub fn render_case(
     }
     let chars: Vec<_> = sample.text.chars().collect();
     let mut glyphs = Vec::new();
+    let mut glyph_ids = Vec::new();
     for record in records {
+        glyph_ids.push(record.g);
         let mut args = base.clone();
         args.extend(["--glyph".into(), record.g.to_string(), path.clone()]);
         let output = run(render_bin, &args)?;
@@ -328,6 +331,7 @@ pub fn render_case(
             Some(pixels::parse(&solo.stdout)?)
         },
         glyphs,
+        glyph_ids,
         status,
     })
 }

@@ -5,3 +5,17 @@ version = 4
 [[package]]
 name = "font-gallery"
 version = "0.0.0"
+dependencies = [
+ "sofel-png",
+]
+
+[[package]]
+name = "sofel-inflate"
+version = "0.0.0"
+
+[[package]]
+name = "sofel-png"
+version = "0.0.0"
+dependencies = [
+ "sofel-inflate",
+]

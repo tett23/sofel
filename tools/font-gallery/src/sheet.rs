@@ -4,10 +4,10 @@ use crate::pixels::{self, Image};
 
 pub const PADDING: usize = 12;
 pub const WIDTH: usize = 490;
-pub const HEIGHT: usize = 200;
+pub const HEIGHT: usize = 232;
 pub const SAMPLE_TOP: usize = 35;
-pub const SAMPLE_HEIGHT: usize = 99;
-pub const RUN_X: usize = 130;
+pub const SAMPLE_HEIGHT: usize = 128;
+pub const RUN_X: usize = 152;
 pub const COLUMNS: usize = 3;
 
 pub fn card(

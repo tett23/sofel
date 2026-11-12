@@ -75,6 +75,8 @@ pub enum PaintCommand<'a> {
     FillGlyph(u32, Solid),
     /// [`Painter::image`]; the data borrows the font.
     Image(Image<'a>),
+    /// SVG document expanded from a gzip member, owned by this recording.
+    ExpandedSvg(Vec<u8>),
     /// [`Painter::push_group`].
     PushGroup(CompositeMode),
     /// [`Painter::pop_group`].
@@ -172,6 +174,9 @@ impl<'a> Recording<'a> {
                 PaintCommand::PopClip => painter.pop_clip(),
                 PaintCommand::Fill(b) => painter.fill(&self.brush(b)),
                 PaintCommand::FillGlyph(g, s) => painter.fill_glyph(*g, s),
+                PaintCommand::ExpandedSvg(data) => {
+                    painter.image(&crate::paint::svg_image(data));
+                }
                 PaintCommand::Image(i) => {
                     painter.image(i);
                 }
@@ -188,6 +193,10 @@ impl<'a> Recording<'a> {
         let start = self.stops.len();
         self.stops.extend_from_slice(line.stops);
         start..self.stops.len()
+    }
+
+    pub(crate) fn push_expanded_svg(&mut self, data: Vec<u8>) {
+        self.commands.push(PaintCommand::ExpandedSvg(data));
     }
 
     /// Records an image whose data borrows the font.

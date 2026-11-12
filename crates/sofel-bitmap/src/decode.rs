@@ -32,7 +32,7 @@ pub enum BitmapError {
     /// The data is broken (`Invalid_File_Format`, `Invalid_Table`,
     /// `Invalid_Argument`).
     Invalid,
-    /// A PNG image, which is not decoded (`Unimplemented_Feature`).
+    /// An image format unsupported by this decoding path (`Unimplemented_Feature`).
     Png,
     /// The caller's buffer is shorter than this many bytes.
     BufferTooSmall(usize),
