@@ -234,6 +234,8 @@ sofel_outline::Scratch::hb_decompose Rust HarfBuzz glyf path for a caller's outl
 sofel_outline::Scratch::oblique_slot Rust mutable outline synthesis helper; C obtains the unsynthesized outline through sofel_outline_draw.
 sofel_outline::Scratch::points Rust access to the outline scratch points; C obtains path commands through sofel_outline_draw.
 sofel_outline::Scratch::slant_slot Rust mutable outline synthesis helper; C obtains the unsynthesized outline through sofel_outline_draw.
+sofel_read::ankr::* Zero-copy anchor coordinates used by C shaping; C reads the table bytes with sofel_font_table.
+sofel_read::kerx::* The C shaping and validation APIs share this zero-copy subtable directory; C reads the bytes with sofel_font_table.
 sofel_read::aat_lookup::* Zero-copy AAT substitution lookups used by the C shaping API; C reads the source bytes with sofel_font_table.
 sofel_read::trak::* Zero-copy AAT tracking views used by the C shaping API; C reads the source bytes with sofel_font_table.
 sofel_read::ltag::* Zero-copy language tag ranges used by C name lookup and shaping; C reads the bytes with sofel_font_table.
@@ -241,6 +243,7 @@ sofel_woff::encode ADR 0070 exposes encoding through the Rust API and the standa
 sofel_geom::sort::harfbuzz_sort Internal tie ordering for C glyph-name and GPU record operations.
 sofel_gpu::Paint::push_clip_path Rust callers can provide a clip path directly; the C glyph encoder resolves clip glyphs from its font.
 sofel_raster::ColorGradient::* The C entry point sofel_render_color_glyph evaluates the glyph's gradient on the color surface.
+sofel_raster::composite_pixel The C entry point sofel_render_color_glyph composites the recorded COLRv1 groups.
 sofel_raster::PaintMask::* The C entry point sofel_render_color_glyph applies outline coverage to the color surface.
 sofel_read::feat::* A validated feature-name view used by the C shaping functions; C reads the table with sofel_font_table.
 sofel_woff::decode_woff The font input commands reconstruct WOFF tables into an sfnt buffer.

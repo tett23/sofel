@@ -6,9 +6,9 @@
     clippy::arithmetic_side_effects
 )]
 use sofel_color::{PaintCommand, PaintOptions, Painted, Recording};
-use sofel_geom::{Pen, PointF, Transform};
+use sofel_geom::{Brush, CompositeMode, Pen, PointF, Transform};
 use sofel_outline::{HbOutlineCommand, Outlines, Scale, Scratch};
-use sofel_raster::{BgraImage, ColorGradient, PaintMask};
+use sofel_raster::{BgraImage, ColorGradient, PaintMask, composite_pixel};
 use sofel_read::GlyphId;
 
 fn inverse(t: Transform) -> Option<Transform> {
@@ -28,6 +28,13 @@ fn inverse(t: Transform) -> Option<Transform> {
 }
 fn mul(a: u8, b: u8) -> u8 {
     ((u32::from(a) * u32::from(b) + 255) >> 8) as u8
+}
+fn fill_solid(pixels: &mut [u8], mask: &[u8], c: sofel_geom::Color) {
+    let color = [mul(c.b, c.a), mul(c.g, c.a), mul(c.r, c.a), c.a];
+    for (dst, &coverage) in pixels.as_chunks_mut::<4>().0.iter_mut().zip(mask) {
+        let src = color.map(|v| mul(v, coverage));
+        *dst = composite_pixel(src, *dst, CompositeMode::SrcOver, f32::sqrt);
+    }
 }
 /// Returns a complete image only when every command can be executed.
 pub(crate) fn render(
@@ -83,6 +90,7 @@ pub(crate) fn render(
         pixels: vec![0; n.checked_mul(4)?],
     };
     let width = usize::try_from(width).ok()?;
+    let mut groups = Vec::new();
     let mut clips = vec![vec![255u8; n]];
     let mut matrices = vec![Transform::scale(scale, scale)];
     // HarfBuzz hb-limits.hh: HB_BUDGET_RASTER_PIXELS and HB_BUDGET_RASTER_PAINT_PASSES.
@@ -132,7 +140,7 @@ pub(crate) fn render(
                 }
                 clips.push(mask);
             }
-            PaintCommand::PushClipGlyph(id) => {
+            PaintCommand::PushClipGlyph(id) | PaintCommand::FillGlyph(id, _) => {
                 budget = budget.checked_sub(n)?;
                 outlines.load(GlyphId(*id), Scale::Unscaled, scratch).ok()?;
                 let mut pen = PaintMask::new(t, outline_budget.min(1 << 20));
@@ -148,11 +156,40 @@ pub(crate) fn render(
                 outline_budget = outline_budget.checked_sub(pen.work_used())?;
                 let mut mask = clips.last()?.clone();
                 pen.intersect(left, top, width, &mut mask, &mut budget)?;
-                clips.push(mask);
+                if let PaintCommand::FillGlyph(_, solid) = command {
+                    budget = budget.checked_sub(n)?;
+                    fill_solid(&mut image.pixels, &mask, solid.color);
+                } else {
+                    clips.push(mask);
+                }
+            }
+            PaintCommand::PushGroup(_) => {
+                budget = budget.checked_sub(n)?;
+                groups.push(core::mem::replace(
+                    &mut image.pixels,
+                    vec![0; n.checked_mul(4)?],
+                ));
+            }
+            PaintCommand::PopGroup(mode) => {
+                budget = budget.checked_sub(n)?;
+                let mut backdrop = groups.pop()?;
+                for (dst, src) in backdrop
+                    .as_chunks_mut::<4>()
+                    .0
+                    .iter_mut()
+                    .zip(image.pixels.as_chunks::<4>().0)
+                {
+                    *dst = composite_pixel(*src, *dst, *mode, f32::sqrt);
+                }
+                image.pixels = backdrop;
             }
             PaintCommand::Fill(brush) => {
                 budget = budget.checked_sub(n)?;
                 let brush = rec.brush(brush);
+                if let Brush::Solid(solid) = brush {
+                    fill_solid(&mut image.pixels, clips.last()?, solid.color);
+                    continue;
+                }
                 let inv = inverse(t)?;
                 let mask = clips.last()?;
                 let mut first = width;

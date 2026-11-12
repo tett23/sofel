@@ -59,6 +59,8 @@ extern crate alloc;
 mod bitmap_paint;
 mod blend;
 mod color_gradient;
+mod composite;
+pub use composite::composite_pixel;
 mod paint_mask;
 pub use color_gradient::ColorGradient;
 pub use paint_mask::PaintMask;

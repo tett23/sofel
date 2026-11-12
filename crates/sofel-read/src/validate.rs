@@ -149,6 +149,11 @@ fn sfnt_inner(
         .and_then(|d| Maxp::new(d, CountWidth::U24).ok())
         .map(|m| m.num_glyphs());
 
+    if let Some(data) = table(sfnt, crate::kerx::TAG)
+        && let Err(d) = crate::kerx::Kerx::new(data, glyphs_wide.or(glyphs_narrow).unwrap_or(0))
+    {
+        report(d);
+    }
     let pairs = [
         (hhea::TAG, hmtx::TAG, CountWidth::U16, glyphs_narrow),
         (

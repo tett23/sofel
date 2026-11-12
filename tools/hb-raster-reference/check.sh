@@ -16,6 +16,12 @@ for entry in cff-19 cff-26 variable-12 variable-27 variable-38 variable-92 varia
   cmp "$tmp/$entry.bgra" "$reference/$entry.bgra"
 done
 
+glyph=120
+while [ "$glyph" -le 147 ]; do
+  "$helper" "$data/harfbuzz/test/api/fonts/test_glyphs-glyf_colr_1_variable.ttf" "$glyph" 48
+  glyph=$((glyph + 1))
+done > "$tmp/composites.bgra"
+cmp "$tmp/composites.bgra" "$reference/composites.bgra"
 if [ "${SOFEL_HB_RASTER_PNG:-0}" = 1 ]; then
   "$helper" "$data/extra-fonts/fonts/color-sbix.ttf" 19 31 > "$tmp/scaled-sbix-19.bgra"
   "$helper" "$data/harfbuzz/test/subset/data/fonts/NotoColorEmoji.subset.ttf" 1 31 > "$tmp/scaled-cbdt-1.bgra"
