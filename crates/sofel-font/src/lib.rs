@@ -504,6 +504,25 @@ impl<'a> Font<'a> {
     /// [`FontError::IndexOutOfRange`] if there is no font `index`, and
     /// [`FontError::NoHead`] if the font has no readable `head`.
     pub fn new(data: &'a [u8], index: u32) -> Result<Font<'a>, FontError> {
+        Self::open(data, index, None)
+    }
+
+    /// Opens a shaping face. When the header is unavailable, HarfBuzz uses
+    /// 1000 design units per em. Table queries still return the source bytes.
+    pub fn for_shaping(data: &'a [u8], index: u32) -> Result<Self, FontError> {
+        // Only the typed header view needs a default. Other tables continue
+        // to be read and validated independently from the original directory.
+        const HEADER: [u8; 54] = {
+            let mut bytes = [0; 54];
+            bytes[1] = 1;
+            bytes[18] = 3;
+            bytes[19] = 232;
+            bytes
+        };
+        Self::open(data, index, Head::new(&HEADER).ok())
+    }
+
+    fn open(data: &'a [u8], index: u32, fallback: Option<Head<'a>>) -> Result<Self, FontError> {
         let sfnt = match FontFile::new(data).map_err(FontError::Read)? {
             FontFile::Sfnt(s) if index == 0 => s,
             FontFile::Sfnt(_) => return Err(FontError::IndexOutOfRange),
@@ -523,6 +542,7 @@ impl<'a> Font<'a> {
             .then(|| sfnt.table(head::TAG_BHED).and_then(|d| Head::new(d).ok()))
             .flatten()
             .or_else(|| sfnt.table(head::TAG).and_then(|d| Head::new(d).ok()))
+            .or(fallback)
             .ok_or(FontError::NoHead)?;
 
         let glyphs = |tag, width| {
@@ -645,7 +665,7 @@ impl<'a> Font<'a> {
         self.sfnt
     }
 
-    /// The `head` table, which [`Font::new`] requires.
+    /// The effective header. [`Font::for_shaping`] supplies a default when needed.
     pub fn head(&self) -> Head<'a> {
         self.head
     }

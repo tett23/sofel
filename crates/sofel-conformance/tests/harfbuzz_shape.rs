@@ -492,3 +492,19 @@ fn i1_legacy_mort_chain_runs_all_five_operations() {
     assert_eq!(suite.len(), 1);
     assert_eq!(run(&suite[0]), Ok(()));
 }
+
+#[test]
+fn adr0060_i1_aat_shape_without_head() {
+    let dir = paths::testdata().join("harfbuzz/test/shape/data/in-house/tests");
+    for (file, lines) in [
+        ("aat-morx.tests", &[6, 7][..]),
+        ("aat-trak.tests", &[9][..]),
+    ] {
+        let inputs = cases("in-house", &dir.join(file), &mut 0);
+        for line in lines {
+            let id = format!("in-house/{file}:{line}");
+            let case = inputs.iter().find(|c| c.id == id).unwrap();
+            assert_eq!(run(case), Ok(()), "{id}");
+        }
+    }
+}
