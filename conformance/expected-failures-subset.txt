@@ -612,10 +612,6 @@ post_apply_mvar_delta.tests/Recursive-ABC.no-layout.all.wght=500,CASL=0,CRSV=0,M
 post_apply_mvar_delta.tests/Recursive-ABC.no-layout.all.wght=500,CASL=0,CRSV=0,MONO=0,slnt=0.ttf+prepared:bytes  # deferred:instance
 post_apply_mvar_delta.tests/Recursive-ABC.no-layout.all.wght=500,CASL=0,CRSV=0,MONO=0,slnt=0.ttf:validate  # deferred:instance
 post_apply_mvar_delta.tests/Recursive-ABC.no-layout.all.wght=500,CASL=0,CRSV=0,MONO=0,slnt=0.ttf+prepared:validate  # deferred:instance
-retain-num-glyphs.tests/NotoSansJP-VF.subset.retain-num-glyphs.61,63,5009.otf:bytes  # stage:var
-retain-num-glyphs.tests/NotoSansJP-VF.subset.retain-num-glyphs.61,63,5009.otf+prepared:bytes  # stage:var
-retain-num-glyphs.tests/NotoSansJP-VF.subset.retain-num-glyphs.all.otf:bytes  # stage:var
-retain-num-glyphs.tests/NotoSansJP-VF.subset.retain-num-glyphs.all.otf+prepared:bytes  # stage:var
 sync_vmetrics.tests/playwrite_mm.subset.default.all.SPED=25,YEXT=520,wght=100-400,slnt=18.iup_optimize.ttf:bytes  # deferred:iup
 sync_vmetrics.tests/playwrite_mm.subset.default.all.SPED=25,YEXT=520,wght=100-400,slnt=18.iup_optimize.ttf+prepared:bytes  # deferred:iup
 sync_vmetrics.tests/playwrite_mm.subset.default.all.SPED=25,YEXT=520,wght=100-400,slnt=18.iup_optimize.ttf:validate  # deferred:iup
