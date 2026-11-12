@@ -210,19 +210,11 @@ fn layout_unsupported(
         && font
             .table(Tag::new(b"GPOS"))
             .is_some_and(may_reference_gdef_store);
-    let math_may_reference_store = retained(b"MATH")
-        && font
-            .table(Tag::new(b"MATH"))
-            .is_some_and(may_reference_gdef_store);
     let copied_gpos_may_reference_store =
         gpos_may_reference_store && no_subset.contains(Tag::new(b"GPOS").to_u32());
     if !pinned
         && kept(b"GDEF").is_some_and(layout::gdef::has_var_store)
-        && (copied_gpos_may_reference_store
-            || (math_may_reference_store
-                && no_subset.contains(Tag::new(b"MATH").to_u32())
-                && !no_subset.contains(Tag::new(b"GDEF").to_u32()))
-            || gsub_may_reference_store)
+        && (copied_gpos_may_reference_store || gsub_may_reference_store)
     {
         return Err(SubsetError::Unsupported {
             tag: Tag::new(b"GDEF"),
@@ -676,8 +668,9 @@ impl Plan {
                 && !no_subset.contains(Tag::new(b"GPOS").to_u32())
                 && gpos_data.windows(2).any(|word| word == [0x80, 0x00]);
             let math_data = font.table(Tag::new(b"MATH")).unwrap_or(&[]);
+            let copied_math = no_subset.contains(Tag::new(b"MATH").to_u32());
             let math_has_var_format = tag_kept(b"MATH")
-                && !no_subset.contains(Tag::new(b"MATH").to_u32())
+                && (!copied_gdef || !copied_math)
                 && math_data.windows(2).any(|word| word == [0x80, 0x00]);
             if !pinned
                 && layout::gdef::has_var_store(gdef)
@@ -722,6 +715,21 @@ impl Plan {
                         reason: "the GDEF item variation store (ADR 0022 stage 10)",
                     });
                 };
+                if copied_math && !copied_gdef && math_has_var_format {
+                    // Even records for glyphs outside the subset survive in a
+                    // copied MATH. Every original index must still address its row.
+                    let all = RangeSet::all();
+                    let all_indices =
+                        crate::tables::math::retained_variation_indices(math_data, &all, &all);
+                    if !all_indices.is_some_and(|indices| {
+                        indices.iter().all(|index| map.get(index) == Some(index))
+                    }) {
+                        return Err(SubsetError::Unsupported {
+                            tag: Tag::new(b"GDEF"),
+                            reason: "copied MATH needs unchanged GDEF variation indices",
+                        });
+                    }
+                }
                 if copied_gdef {
                     // HarfBuzz remaps subset GPOS and MATH references even when it
                     // copies the original GDEF table unchanged.
