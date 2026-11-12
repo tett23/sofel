@@ -575,16 +575,24 @@ fn zero_width_default_ignorables(buffer: &mut Buffer) {
     }
 }
 
-fn adjust_horizontal_origins(
+fn adjust_origins(
     font: &ShapeFont<'_, '_, '_, '_>,
     buffer: &mut Buffer,
+    horizontal: bool,
     adjust: fn(i32, i32) -> i32,
 ) {
     let (infos, positions) = buffer.infos_and_pos_mut();
-    for (info, pos) in infos.iter().zip(positions) {
-        let (x, y) = font.h_origin(info.codepoint);
-        pos.x_offset = adjust(pos.x_offset, x);
-        pos.y_offset = adjust(pos.y_offset, y);
+    let mut origins = [(0, 0); 32];
+    for (chunk, positions) in infos.chunks(32).zip(positions.chunks_mut(32)) {
+        font.origins(
+            chunk.iter().map(|info| info.codepoint),
+            horizontal,
+            &mut origins,
+        );
+        for (pos, &(x, y)) in positions.iter_mut().zip(origins.iter()) {
+            pos.x_offset = adjust(pos.x_offset, x);
+            pos.y_offset = adjust(pos.y_offset, y);
+        }
     }
 }
 
@@ -600,15 +608,12 @@ fn position(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut
                 p.x_advance = font.h_advance(info.codepoint);
             } else {
                 p.y_advance = font.v_advance(info.codepoint);
-                let (x, y) = font.v_origin(info.codepoint);
-                p.x_offset = p.x_offset.wrapping_sub(x);
-                p.y_offset = p.y_offset.wrapping_sub(y);
             }
         }
     }
     let has_h_origin = font.has_h_origin();
-    if horizontal && has_h_origin {
-        adjust_horizontal_origins(font, buffer, i32::wrapping_sub);
+    if !horizontal || has_h_origin {
+        adjust_origins(font, buffer, horizontal, i32::wrapping_sub);
     }
     if buffer.scratch_flags & scratch::HAS_SPACE_FALLBACK != 0 {
         fallback::fallback_spaces(font, buffer);
@@ -616,7 +621,7 @@ fn position(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut
     // hb_ot_position_plan
     let adjust = plan.adjust_mark_positioning_when_zeroing && buffer.direction.is_forward();
     if has_h_origin {
-        adjust_horizontal_origins(font, buffer, i32::wrapping_add);
+        adjust_origins(font, buffer, true, i32::wrapping_add);
     }
     gpos::position_start(buffer);
     let zwm = plan.funcs().zero_width_marks;
@@ -662,7 +667,7 @@ fn position(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut
     zero_width_default_ignorables(buffer);
     gpos::position_finish_offsets(buffer);
     if has_h_origin {
-        adjust_horizontal_origins(font, buffer, i32::wrapping_sub);
+        adjust_origins(font, buffer, true, i32::wrapping_sub);
     }
     if plan.fallback_mark_positioning {
         fallback::position_marks(plan, font, buffer, adjust);
@@ -751,15 +756,17 @@ fn fallback_with_font(
         info.codepoint = sf.nominal_glyph(info.codepoint).unwrap_or(0);
         if direction.is_horizontal() {
             p.x_advance = sf.h_advance(info.codepoint);
-            let (x, y) = sf.h_origin(info.codepoint);
-            p.x_offset = x.wrapping_neg();
-            p.y_offset = y.wrapping_neg();
         } else {
             p.y_advance = sf.v_advance(info.codepoint);
-            let (x, y) = sf.v_origin(info.codepoint);
-            p.x_offset = p.x_offset.wrapping_sub(x);
-            p.y_offset = p.y_offset.wrapping_sub(y);
         }
+        let mut origin = [(0, 0)];
+        sf.origins(
+            core::iter::once(info.codepoint),
+            direction.is_horizontal(),
+            &mut origin,
+        );
+        p.x_offset = origin[0].0.wrapping_neg();
+        p.y_offset = origin[0].1.wrapping_neg();
     }
     if direction.is_backward() {
         buf.reverse();

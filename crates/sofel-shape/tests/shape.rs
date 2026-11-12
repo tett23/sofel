@@ -207,6 +207,29 @@ fn adr0063_i1_subfont_inherits_only_unset_functions_and_scales_parent_advance() 
 }
 
 #[test]
+fn adr0063_i1_unavailable_origin_uses_the_other_direction_for_one_batch() {
+    let data = make_font(false, vec![]);
+    let font = Font::new(&data, 0).unwrap();
+    let instance = font.default_instance();
+    let scale = Scale::unscaled(&font);
+    let mut child = SubFont::new(scale);
+    child.set_h_origin_func(|glyph| (glyph == A).then_some((11, 13)));
+    child.set_v_origin_func(|_| Some((30, 40)));
+    child.set_h_advance_func(|_| 100);
+    let mut buffer = UnicodeBuffer::new();
+    let text = format!("{}ba", "a".repeat(31));
+    buffer.push_utf8(text.as_bytes(), 0, None);
+    let plan = ShapePlan::new(instance, props(Direction::Ltr), &[]);
+    let output = shape_with_subfont(instance, &child, &plan, buffer);
+    let ascender = instance.scaled_h_extents(&scale.scale).ascender;
+    for pos in &output.glyph_positions()[..32] {
+        assert_eq!((pos.x_offset, pos.y_offset), (20, ascender - 40));
+    }
+    let last = output.glyph_positions()[32];
+    assert_eq!((last.x_offset, last.y_offset), (-11, -13));
+}
+
+#[test]
 fn adr0063_i2_synthetic_bold_changes_advance_only_out_of_place() {
     let data = make_font(false, vec![]);
     let font = Font::new(&data, 0).unwrap();
