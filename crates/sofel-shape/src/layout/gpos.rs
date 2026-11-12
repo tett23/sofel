@@ -503,7 +503,12 @@ fn mark_array_apply(
 }
 
 /// `resolve_cross_offset`.
-fn resolve_cross_offset(pos: &[Pos], glyph_pos: usize, direction: Direction) -> i32 {
+pub(crate) fn resolve_cross_offset(
+    pos: &[Pos],
+    glyph_pos: usize,
+    direction: Direction,
+    reversed: bool,
+) -> i32 {
     let horizontal = direction.is_horizontal();
     let cross = |p: &Pos| if horizontal { p.y_offset } else { p.x_offset };
     let len = pos.len();
@@ -516,9 +521,11 @@ fn resolve_cross_offset(pos: &[Pos], glyph_pos: usize, direction: Direction) -> 
         if p.attach_type & ATTACH_TYPE_CURSIVE == 0 || p.attach_chain == 0 {
             break;
         }
-        let parent = isize::try_from(g)
-            .unwrap_or(0)
-            .wrapping_add(isize::from(p.attach_chain));
+        let parent = isize::try_from(g).unwrap_or(0).wrapping_add(if reversed {
+            isize::from(p.attach_chain).wrapping_neg()
+        } else {
+            isize::from(p.attach_chain)
+        });
         let Ok(parent) = usize::try_from(parent) else {
             break;
         };
@@ -545,7 +552,7 @@ fn apply_mark_attachment(
     let (base_x, base_y) = get_anchor(c, glyph_anchor);
     let direction = c.buffer.direction;
     let len = c.buffer.len;
-    let base_offset = resolve_cross_offset(c.buffer.pos.range(0, len), glyph_pos, direction);
+    let base_offset = resolve_cross_offset(c.buffer.pos.range(0, len), glyph_pos, direction, false);
     let chain = i64::try_from(glyph_pos)
         .unwrap_or(0)
         .wrapping_sub(i64::try_from(idx).unwrap_or(0));

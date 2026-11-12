@@ -18,6 +18,7 @@
 
 extern crate alloc;
 
+mod aat;
 mod buffer;
 mod diff;
 mod digest;

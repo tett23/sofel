@@ -64,6 +64,7 @@ Font:
   -y, --face-index=N            the font in a collection (default 0)
   --font-size=N[,M]|upem        the scale (default: upem, font units)
   --font-ppem=N[,M]             the pixels per em (default 0, none)
+  --font-ptem=PT                point size for AAT tracking
   --variations=LIST             comma-separated design coordinates
   --named-instance=N            zero-based named instance
   --font-slant=R                synthetic slant ratio
@@ -100,7 +101,7 @@ Exit status:
   0  the text was shaped
   1  the font or the text file cannot be read
   2  wrong usage, or an option sofel-shape does not support
-     (--font-ptem, other shapers, ...)
+     (other shapers, ...)
   3  shaping failed (--verify found a problem)
 ";
 
@@ -117,6 +118,7 @@ enum Shaper {
 struct Options {
     font_file: Option<OsString>,
     face_index: u32,
+    ptem: f32,
     font_size: Option<(f64, f64)>,
     ppem: (i32, i32),
     variations: Vec<Variation>,
@@ -168,6 +170,7 @@ impl Default for Options {
         Options {
             font_file: None,
             face_index: 0,
+            ptem: 0.,
             font_size: None,
             ppem: (0, 0),
             variations: Vec::new(),
@@ -426,7 +429,7 @@ const OPTIONS: &[(&str, Option<u8>, Kind)] = &[
             Ok(())
         }),
     ),
-    ("font-ptem", None, Kind::Unsupported),
+    ("font-ptem", None, Kind::Value(set_font_ptem)),
     ("font-slant", None, Kind::Value(set_font_slant)),
     ("font-bold", None, Kind::Value(set_font_bold)),
     ("font-grade", None, Kind::Value(set_font_grade)),
@@ -615,6 +618,12 @@ fn set_unicodes_after(o: &mut Options, v: &[u8]) -> Result<(), String> {
 /// `parse_features`: the list without surrounding quotes, split at `,`
 /// and ` `; items that do not parse are dropped.
 fn set_features(o: &mut Options, v: &[u8]) -> Result<(), String> {
+    o.features = parse_feature_list(v);
+    Ok(())
+}
+
+/// Parse a feature list with the same forgiving syntax as `sofel shape`.
+pub fn parse_feature_list(v: &[u8]) -> Vec<Feature> {
     let mut s = v;
     if let (Some(&first), Some(&last)) = (s.first(), s.last())
         && first == last
@@ -622,15 +631,14 @@ fn set_features(o: &mut Options, v: &[u8]) -> Result<(), String> {
     {
         s = s.get(1..s.len().saturating_sub(1)).unwrap_or_default();
     }
-    o.features = if s.is_empty() {
+    if s.is_empty() {
         Vec::new()
     } else {
         s.split(|&c| c == b',' || c == b' ')
             .filter(|f| !f.is_empty())
             .filter_map(Feature::parse)
             .collect()
-    };
-    Ok(())
+    }
 }
 
 /// `parse_shapers`: every name must be a shaper sofel has; the first
@@ -668,6 +676,14 @@ fn set_font_size(o: &mut Options, v: &[u8]) -> Result<(), String> {
 }
 
 /// `parse_font_ppem`: `sscanf ("%d%*[ ,]%d")`.
+fn set_font_ptem(o: &mut Options, v: &[u8]) -> Result<(), String> {
+    o.ptem = core::str::from_utf8(v)
+        .ok()
+        .and_then(|s| s.parse::<f32>().ok())
+        .ok_or_else(|| "invalid font point size".to_string())?;
+    Ok(())
+}
+
 fn set_font_ppem(o: &mut Options, v: &[u8]) -> Result<(), String> {
     let (x, y) = scan_pair(v, scan_int).ok_or_else(|| {
         "--font-ppem argument should be one or two space-separated numbers".to_string()
@@ -1130,7 +1146,7 @@ pub fn run_with_input(
     let (sx, sy) = o.font_size.map_or((upem, upem), |(x, y)| {
         (font_size_to_scale(x), font_size_to_scale(y))
     });
-    let hb_scale = HbScale::for_font(&font, sx, sy);
+    let hb_scale = HbScale::for_font(&font, sx, sy).with_ptem(o.ptem);
     let ppem = |v: i32| u32::from_ne_bytes(v.to_ne_bytes());
     let scale = Scale::new(hb_scale, ppem(o.ppem.0), ppem(o.ppem.1));
     let mut names_buf = vec![0u32; font.glyph_names_len()];
