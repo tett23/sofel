@@ -16,15 +16,6 @@
 #                       glyphs (ADR 0023)
 #   out-of-scope:<name> shapers sofel does not have (ADR 0001)
 # Remove an entry when it passes; the test fails until you do.
-in-house/aat-kerx.tests:13  # aat
-in-house/aat-kerx.tests:14  # aat
-in-house/aat-kerx.tests:15  # aat
-in-house/aat-kerx.tests:16  # aat
-in-house/aat-kerx.tests:19  # aat
-in-house/aat-kerx.tests:20  # aat
-in-house/aat-kerx.tests:24  # aat
-in-house/aat-kerx.tests:98  # aat
-in-house/aat-kerx.tests:100  # aat
 in-house/aat-morx.tests:6  # aat
 in-house/aat-morx.tests:7  # aat
 in-house/aat-morx.tests:9  # aat

@@ -184,6 +184,26 @@ impl<'a> StateTable<'a> {
             }
         }
     }
+    fn class(&self, glyph: Option<&crate::buffer::Info>) -> usize {
+        glyph.map_or(0, |g| {
+            if g.codepoint == 0xffff {
+                return 2;
+            }
+            let c = usize::from(self.classes.get(g.codepoint).unwrap_or(1));
+            if c < self.num_classes { c } else { 1 }
+        })
+    }
+    fn safe_boundary(&self, state: usize, class: usize, entry: Entry) -> bool {
+        !self.actionable(entry)
+            && (state == 0
+                || (entry.flags & 0x4000 != 0 && entry.next == 0)
+                || self.entry(0, class).is_some_and(|e| {
+                    e.next == entry.next
+                        && !self.actionable(e)
+                        && (e.flags ^ entry.flags) & 0x4000 == 0
+                }))
+            && self.entry(state, 0).is_some_and(|e| !self.actionable(e))
+    }
     pub fn drive(
         &self,
         buffer: &mut crate::buffer::Buffer,
@@ -202,13 +222,7 @@ impl<'a> StateTable<'a> {
         let mut last = 0;
         while buffer.successful {
             let (idx, len) = (buffer.idx, buffer.len);
-            let class = buffer.infos().get(idx).map_or(0, |g| {
-                if g.codepoint == 0xffff {
-                    return 2;
-                }
-                let c = usize::from(self.classes.get(g.codepoint).unwrap_or(1));
-                if c < self.num_classes { c } else { 1 }
-            });
+            let class = self.class(buffer.infos().get(idx));
             let Some(entry) = self.entry(state, class) else {
                 break;
             };
@@ -218,13 +232,7 @@ impl<'a> StateTable<'a> {
                 substitutions,
             } = entry;
             let dont_advance = flags & 0x4000 != 0;
-            let safe = !self.actionable(entry)
-                && (state == 0
-                    || (dont_advance && next == 0)
-                    || self.entry(0, class).is_some_and(|e| {
-                        e.next == next && !self.actionable(e) && (e.flags ^ flags) & 0x4000 == 0
-                    }))
-                && self.entry(state, 0).is_some_and(|e| !self.actionable(e));
+            let safe = self.safe_boundary(state, class, entry);
             let back = buffer.backtrack_len();
             if !safe && back > 0 && idx < len {
                 buffer

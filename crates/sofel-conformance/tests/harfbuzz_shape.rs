@@ -432,3 +432,14 @@ fn i1_aat_kerx_pairs_and_history_match_reference() {
         assert_eq!(run(case), Ok(()), "{id}");
     }
 }
+
+#[test]
+fn i1_aat_kerx_attaches_marks_in_both_directions() {
+    let path = paths::testdata().join("harfbuzz/test/shape/data/in-house/tests/aat-kerx.tests");
+    let suite = cases("in-house", &path, &mut 0);
+    for line in [13, 14, 19, 20] {
+        let id = format!("in-house/aat-kerx.tests:{line}");
+        let case = suite.iter().find(|case| case.id == id).unwrap();
+        assert_eq!(run(case), Ok(()), "{id}");
+    }
+}

@@ -427,9 +427,9 @@ impl<'a> ShapePlan<'a> {
             } else {
                 None
             };
-        let candidate = font
-            .table(Tag(*b"kerx"))
-            .and_then(|t| crate::aat::kerning::read(t, font.num_glyphs()));
+        let candidate = font.table(Tag(*b"kerx")).and_then(|t| {
+            crate::aat::kerning::read(t, font.table(Tag(*b"ankr")), font.num_glyphs())
+        });
         let apply_gpos =
             has_gpos && (candidate.is_none() || (morx.is_none() && layout.gsub.has_data));
         let kerx = candidate.filter(|_| !apply_gpos || map.feature_index(GPOS, kern_tag).is_none());
