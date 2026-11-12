@@ -2569,6 +2569,52 @@ mod tests {
     }
 
     #[test]
+    fn i01_mixed_width_rows_keep_column_order_and_ft_rounding() {
+        // All columns use the same region at its peak. The first word is
+        // followed by short deltas (16/8 bits, or 32/16 with LONG_WORDS).
+        for (words, row, sum) in [
+            (1u16, &[0xff, 0x00, 0xff, 2][..], -255),
+            (0x8001, &[0, 1, 0, 0, 0xff, 0xff, 0, 2][..], 65_537),
+        ] {
+            let mut bytes = store(&[]);
+            bytes.truncate(24);
+            bytes.extend_from_slice(&words.to_be_bytes());
+            bytes.extend_from_slice(&[0, 3, 0, 0, 0, 0, 0, 0]);
+            bytes.extend_from_slice(row);
+            let view = ItemVariationStore::new(&bytes).unwrap();
+            let full = OnTheFly::<HbF64>::new(&view, &[8], true);
+            assert_eq!(item_delta::<HbF64>(&view, &full, 0, 0), f64::from(sum));
+            let fixed = OnTheFly::<Ft>::new(&view, &[Fixed(32)], true);
+            assert_eq!(
+                item_delta::<Ft>(&view, &fixed, 0, 0),
+                if words == 1 { -255 } else { 1 }
+            );
+        }
+        let mut bytes = store(&[]);
+        bytes.truncate(24);
+        bytes.extend_from_slice(&[0x80, 3, 0, 3, 0, 0, 0, 0, 0, 0]);
+        for delta in [100_000_000i32, 1, -100_000_000] {
+            bytes.extend_from_slice(&delta.to_be_bytes());
+        }
+        let view = ItemVariationStore::new(&bytes).unwrap();
+        let single = OnTheFly::<HbF32>::new(&view, &[8], true);
+        let double = OnTheFly::<HbF64>::new(&view, &[8], true);
+        assert_eq!(item_delta::<HbF32>(&view, &single, 0, 0), 0.0);
+        assert_eq!(item_delta::<HbF64>(&view, &double, 0, 0), 1.0);
+
+        for (acc, expected) in [
+            (0x7fff, 0),
+            (0x8000, 1),
+            (0x8001, 1),
+            (-0x8001, -1),
+            (-0x8000, 0),
+            (0x7fff_8000, -32768),
+        ] {
+            assert_eq!(Ft::finish(acc), expected);
+        }
+    }
+
+    #[test]
     fn i05_delta_boundaries_and_i09_dense_regions() {
         let bytes = store(&7i16.to_be_bytes());
         let view = ItemVariationStore::new(&bytes).unwrap();
