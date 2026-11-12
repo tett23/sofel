@@ -1421,6 +1421,18 @@ int32_t sofel_font_ft_v_advance(const sofel_font_t *font, const sofel_location_t
                                uint32_t glyph, uint16_t *advance);
 
 /*
+ * TrueType control values after cvar adjustment, in unscaled 26.6 font units.
+ * On SOFEL_ERROR_BUFFER_TOO_SMALL, len receives the required element count.
+ * SOFEL_ERROR_NOT_FOUND if the table cannot be read.
+ *
+ * Rust: sofel_font::var::Instance::ft_control_values
+ * HarfBuzz: none
+ * FreeType: tt_face_vary_cvt
+ */
+int32_t sofel_font_ft_control_values(const sofel_font_t *font, const sofel_location_t *location,
+                                    int32_t *out, size_t capacity, size_t *len);
+
+/*
  * The unscaled horizontal advance after FreeType's HVAR adjustment.
  * SOFEL_ERROR_INVALID_GLYPH for glyph ids not below the glyph count.
  *
@@ -2236,6 +2248,37 @@ int32_t sofel_vector_page(const sofel_font_t *font, const sofel_location_t *loca
                           const sofel_vector_glyph_t *glyphs, size_t count,
                           uint8_t *output, size_t capacity, size_t *len);
 
+
+/* A borrowed PNG. Extents are x bearing, y bearing, width and height
+ * in font units. The optional clip points to [xmin, ymin, xmax, ymax]
+ * in the parent coordinate system. */
+typedef struct sofel_svg_png_t {
+  const uint8_t *data;
+  size_t len;
+  uint32_t width, height;
+  int32_t extents[4];
+  const float *clip;
+} sofel_svg_png_t;
+
+typedef struct sofel_svg_layer_t {
+  sofel_vector_glyph_t glyph;
+  const sofel_svg_png_t *png;
+} sofel_svg_layer_t;
+
+/*
+ * Writes SVG layers in array order. With png == NULL a layer draws its
+ * glyph outline. With a PNG it uses the glyph transform on the image and
+ * ignores the glyph ID and color. The font may be NULL for image-only
+ * pages. The viewport, background and output contract follow sofel_vector_page.
+ *
+ * Rust: sofel_vector::SvgPage::draw_image
+ * HarfBuzz: hb_paint_image
+ * FreeType: none
+ */
+int32_t sofel_svg_page_layers(const sofel_font_t *font, const sofel_location_t *location,
+                              int32_t x, int32_t y, uint32_t width, uint32_t height,
+                              const sofel_color_t *background, const sofel_svg_layer_t *layers,
+                              size_t count, uint8_t *output, size_t capacity, size_t *len);
 
 /* A color stop: palette_index is -1 for the foreground; alpha is the
  * font's alpha, clamped to 0..1, that color was resolved with. */

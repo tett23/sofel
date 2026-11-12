@@ -18,10 +18,11 @@ if SOFEL_FONTS_OFFLINE=1 sh "$root/scripts/fetch-fonts.sh" "$tmp/fonts.lock" "$t
   exit 1
 fi
 
-test -f "$root/tools/font-gallery/gallery.rb"
+test -f "$root/tools/font-gallery/src/main.rs"
+CARGO_TARGET_DIR="$root/target" cargo build --locked --manifest-path "$root/tools/font-gallery/Cargo.toml" --bin font-gallery
 # The gallery generator must reject a path whose parent is a regular file.
 printf block > "$tmp/block"
-error=$(ruby "$root/tools/font-gallery/gallery.rb" "$tmp/block/gallery" "$tmp" 2>&1 >/dev/null) && {
+error=$("$root/target/debug/font-gallery" "$tmp/block/gallery" "$tmp" 2>&1 >/dev/null) && {
   echo 'unwritable output unexpectedly accepted' >&2
   exit 1
 }
@@ -46,17 +47,15 @@ fi
 # A glyph failure after the build must likewise leave no old output.
 printf '#!/bin/sh\nexit 0\n' > "$tmp/project/scripts/fetch-testdata.sh"
 cp "$tmp/project/scripts/fetch-testdata.sh" "$tmp/project/scripts/fetch-fonts.sh"
-mkdir -p "$tmp/bin" "$tmp/project/target/font-gallery"
+mkdir -p "$tmp/bin" "$tmp/project/target/font-gallery" "$tmp/project/target/release"
 printf stale > "$tmp/project/target/font-gallery/index.html"
 printf '#!/bin/sh\nexit 0\n' > "$tmp/bin/cargo"
-cat > "$tmp/bin/ruby" <<'RUBY'
+cat > "$tmp/project/target/release/font-gallery" <<'RUST'
 #!/bin/sh
-case "$1" in
-  */gallery.rb) echo 'missing glyph' >&2; exit 1 ;;
-  *) exit 0 ;;
-esac
-RUBY
-chmod +x "$tmp/bin/cargo" "$tmp/bin/ruby"
+echo 'missing glyph' >&2
+exit 1
+RUST
+chmod +x "$tmp/bin/cargo" "$tmp/project/target/release/font-gallery"
 if PATH="$tmp/bin:$PATH" sh "$tmp/project/scripts/render-font-gallery.sh" >/dev/null 2>&1; then
   echo 'missing glyph unexpectedly accepted' >&2
   exit 1

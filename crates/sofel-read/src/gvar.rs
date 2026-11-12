@@ -181,6 +181,29 @@ impl<'a> GlyphVariationData<'a> {
         } else {
             usize::from(be::u16_at(bytes, 2)?)
         };
+        Self::from_offsets(bytes, axes, count_flags, header_at, data_at)
+    }
+
+    /// Read the tuple store from a complete version 1.0 control value
+    /// variation table. Its data offset includes the four version bytes.
+    pub fn from_cvar(bytes: &'a [u8], axes: u16) -> Option<Self> {
+        (be::u32_at(bytes, 0)? == 0x0001_0000).then_some(())?;
+        Self::from_offsets(
+            bytes,
+            axes,
+            be::u16_at(bytes, 4)?,
+            8,
+            usize::from(be::u16_at(bytes, 6)?),
+        )
+    }
+
+    fn from_offsets(
+        bytes: &'a [u8],
+        axes: u16,
+        count_flags: u16,
+        header_at: usize,
+        data_at: usize,
+    ) -> Option<Self> {
         be::tail_at(bytes, data_at)?;
         let this = Self {
             bytes,
@@ -411,6 +434,27 @@ impl<'a> TupleVariation<'a> {
         self.private_points()
             .then(|| PackedPoints::parse(self.bytes).map(|p| p.0))
             .flatten()
+    }
+
+    /// Decode the single delta run used for control values. A private
+    /// point list overrides the list shared by all tuples.
+    pub fn cvt_deltas(
+        &self,
+        cvt_count: usize,
+        shared: Option<PackedPoints<'a>>,
+    ) -> Option<PackedDeltas<'a>> {
+        let (points, start) = if self.private_points() {
+            let (points, used) = PackedPoints::parse(self.bytes)?;
+            (Some(points), used)
+        } else {
+            (shared, 0)
+        };
+        let count = points
+            .filter(|p| !p.is_all())
+            .map_or(cvt_count, |p| p.len());
+        let bytes = be::tail_at(self.bytes, start)?;
+        let (values, used) = PackedDeltas::parse(bytes, count)?;
+        (bytes.len() == used).then_some(values)
     }
 
     /// Decode the x and y delta runs for a glyph with `point_count` outline
@@ -823,5 +867,24 @@ pub fn validate_with_points(
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod cvar_tests {
+    #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
+    use super::GlyphVariationData;
+
+    #[test]
+    fn adr0064_i1_cvar_offsets_are_relative_to_the_table() {
+        let table = [
+            0, 1, 0, 0, 0, 1, 0, 14, 0, 4, 0xa0, 0, 0x40, 0, 0, 1, 7, 249,
+        ];
+        let store = GlyphVariationData::from_cvar(&table, 1).unwrap();
+        let tuple = store.tuples().next().flatten().unwrap();
+        let values = tuple.cvt_deltas(2, store.shared_points()).unwrap();
+        assert!(values.iter().eq([7, -7]));
+        assert!(tuple.cvt_deltas(3, None).is_none());
+        assert!(GlyphVariationData::from_cvar(&table[..17], 1).is_none());
     }
 }
