@@ -5,20 +5,7 @@ use sofel_geom::float::i32_to_f32;
 
 use crate::{OutlineError, Scratch, TAG_CUBIC, TAG_ON};
 
-/// A HarfBuzz glyf drawing command with f32 coordinates.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum HbOutlineCommand {
-    /// Start a contour.
-    MoveTo(PointF),
-    /// Add a straight segment.
-    LineTo(PointF),
-    /// Add a quadratic Bézier segment.
-    QuadTo(PointF, PointF),
-    /// Add a cubic Bézier segment.
-    CubicTo(PointF, PointF, PointF),
-    /// End a contour.
-    Close,
-}
+use crate::HbOutlineCommand;
 
 #[derive(Default)]
 struct Builder {

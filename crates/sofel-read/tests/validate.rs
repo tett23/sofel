@@ -343,3 +343,25 @@ fn single_subtables() {
         vec![("offset_out_of_bounds", Severity::Error, 0)]
     );
 }
+
+#[test]
+fn adr0060_i2_kerx_reports_invalid_subtable_length_and_coverage_offset() {
+    for (version, length, coverage, at) in [
+        (2, 11u32, Vec::new(), 8),
+        (2, 13, Vec::new(), 8),
+        (3, 12, vec![0, 0, 0, 8], 20),
+    ] {
+        let mut kerx = vec![0, version, 0, 0, 0, 0, 0, 1];
+        kerx.extend_from_slice(&length.to_be_bytes());
+        kerx.extend_from_slice(&[0, 0, 0, 255, 0, 0, 0, 0]);
+        kerx.extend_from_slice(&coverage);
+        let font = sfnt(&[(b"kerx", kerx)]);
+        let face = Sfnt::new(&font).unwrap();
+        let ds = collect(|report| validate::sfnt(&face, report));
+        assert!(
+            ds.iter()
+                .any(|d| d.table == Tag(*b"kerx") && d.offset == at),
+            "{ds:?}"
+        );
+    }
+}

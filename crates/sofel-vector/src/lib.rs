@@ -3,10 +3,13 @@
 
 extern crate alloc;
 mod pdf;
+mod svg_paint;
+mod sweep;
 use alloc::string::String;
 use core::fmt::Write as _;
-pub use pdf::{PdfPage, PdfPen};
+pub use pdf::{PdfPage, PdfPainter, PdfPen};
 use sofel_geom::{Color, Image, ImageFormat, Pen, Point, PointF, Rect, Transform};
+pub use svg_paint::SvgPainter;
 
 /// A page whose view box uses SVG coordinates. Glyph outlines use y-up coordinates.
 pub struct SvgPage {
@@ -15,6 +18,8 @@ pub struct SvgPage {
     body: String,
     clips: String,
     clip_count: usize,
+    path_count: usize,
+    gradient_count: usize,
     has_image: bool,
 }
 
@@ -27,6 +32,8 @@ impl SvgPage {
             body: String::new(),
             clips: String::new(),
             clip_count: 0,
+            path_count: 0,
+            gradient_count: 0,
             has_image: false,
         }
     }
@@ -52,19 +59,8 @@ impl SvgPage {
             self.body.truncate(start);
             return result;
         }
-        let Color { r, g, b, a } = fill;
-        if [r, g, b].iter().all(|v| v >> 4 == v & 15) {
-            let _ = write!(
-                self.body,
-                "\" fill=\"#{:X}{:X}{:X}\"",
-                r & 15,
-                g & 15,
-                b & 15
-            );
-        } else {
-            let _ = write!(self.body, "\" fill=\"#{r:02X}{g:02X}{b:02X}\"");
-        }
-        opacity(&mut self.body, a);
+        self.body.push('"');
+        fill_color(&mut self.body, fill);
         self.body.push_str("/>\n");
         Ok(())
     }
@@ -122,8 +118,8 @@ impl SvgPage {
             r#"<g transform="translate({},{}) scale({},{})">"#,
             extents.x_bearing,
             extents.y_bearing,
-            extents.width as f32 / image.width as f32,
-            extents.height as f32 / image.height as f32
+            pdf::number(extents.width as f32 / image.width as f32, 2),
+            pdf::number(extents.height as f32 / image.height as f32, 2)
         );
         self.body.push_str(r#"<image href="data:image/png;base64,"#);
         write_base64(&mut self.body, image.data);
@@ -197,9 +193,23 @@ fn write_base64(out: &mut String, bytes: &[u8]) {
     }
 }
 
+fn fill_color(out: &mut String, fill: Color) {
+    let Color { r, g, b, a } = fill;
+    if [r, g, b].iter().all(|v| v >> 4 == v & 15) {
+        let _ = write!(*out, " fill=\"#{:X}{:X}{:X}\"", r & 15, g & 15, b & 15);
+    } else {
+        let _ = write!(*out, " fill=\"#{r:02X}{g:02X}{b:02X}\"");
+    }
+    opacity(out, a);
+}
+
 fn opacity(out: &mut String, alpha: u8) {
     if alpha != 255 {
-        let _ = write!(out, " fill-opacity=\"{}\"", f32::from(alpha) / 255.0);
+        let _ = write!(
+            out,
+            " fill-opacity=\"{}\"",
+            pdf::number(f32::from(alpha) / 255.0, 4)
+        );
     }
 }
 
@@ -210,6 +220,33 @@ pub struct SvgPen<'a> {
 }
 
 impl SvgPen<'_> {
+    /// Appends a floating-point outline command at the page transform.
+    pub fn command(&mut self, cmd: sofel_geom::FloatCommand) {
+        use sofel_geom::FloatCommand::*;
+        match cmd {
+            MoveTo(p) => self.float_point('M', p),
+            LineTo(p) => self.float_point('L', p),
+            QuadTo(c, p) => {
+                self.float_point('Q', c);
+                self.float_point(' ', p);
+            }
+            CubicTo(a, b, p) => {
+                self.float_point('C', a);
+                self.float_point(' ', b);
+                self.float_point(' ', p);
+            }
+            Close => self.close(),
+        }
+    }
+    fn float_point(&mut self, prefix: char, point: PointF) {
+        let p = self.transform.apply(point);
+        let _ = write!(
+            self.body,
+            "{prefix}{},{}",
+            pdf::number(p.x, 2),
+            pdf::number(p.y, 2)
+        );
+    }
     #[allow(clippy::cast_precision_loss)] // HarfBuzz vector paths use single-precision coordinates.
     fn point(&mut self, prefix: char, p: Point) {
         let p = self.transform.apply(PointF::new(p.x as f32, p.y as f32));

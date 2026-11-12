@@ -74,8 +74,8 @@ mod varc_draw;
 pub use sofel_font as font;
 
 pub use hb_cff::{HbExtents, cff1_extents, cff2_extents, cff2_extents_at};
-pub use hb_draw::HbOutlineCommand;
 pub use slot_synth::SlotMetrics;
+pub use sofel_geom::FloatCommand as HbOutlineCommand;
 
 use alloc::vec::Vec;
 use core::fmt;
