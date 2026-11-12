@@ -2725,9 +2725,12 @@ fn to_i32(v: u32) -> i32 {
     i32::try_from(v).unwrap_or(i32::MAX)
 }
 
-fn pixel_box(c: [i32; 4], b: Option<&mut [i32; 4]>, shift: Option<&mut [i32; 2]>) -> Status {
+fn write_pixel_box(
+    pb: sofel_raster::PixelBox,
+    b: Option<&mut [i32; 4]>,
+    shift: Option<&mut [i32; 2]>,
+) -> Status {
     let (b, shift) = (some(b)?, some(shift)?);
-    let pb = sofel_raster::pixel_box(c[0], c[1], c[2], c[3]);
     *b = [pb.left, pb.top, to_i32(pb.width), to_i32(pb.rows)];
     let s = pb.shift();
     *shift = [s.x, s.y];
@@ -2750,7 +2753,34 @@ pub unsafe extern "C" fn sofel_pixel_box(
 ) -> i32 {
     // SAFETY: the caller's conditions.
     let (b, shift) = unsafe { (ints::<4>(box_), ints::<2>(shift)) };
-    status(pixel_box([x_min, y_min, x_max, y_max], b, shift))
+    status(write_pixel_box(
+        sofel_raster::pixel_box(x_min, y_min, x_max, y_max),
+        b,
+        shift,
+    ))
+}
+
+/// `sofel_mono_pixel_box`.
+///
+/// # Safety
+///
+/// `box_` is NULL or writable for 4 integers, `shift` for 2.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_mono_pixel_box(
+    x_min: i32,
+    y_min: i32,
+    x_max: i32,
+    y_max: i32,
+    box_: *mut i32,
+    shift: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (b, shift) = unsafe { (ints::<4>(box_), ints::<2>(shift)) };
+    status(write_pixel_box(
+        sofel_raster::mono_pixel_box(x_min, y_min, x_max, y_max),
+        b,
+        shift,
+    ))
 }
 
 /// Where a bitmap goes: the caller's array, the length and the box.

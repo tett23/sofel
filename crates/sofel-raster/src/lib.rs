@@ -61,7 +61,9 @@ mod blend;
 pub use blend::{BgraImage, blend_layer};
 
 mod harmony;
+mod mono;
 pub use harmony::LcdMode;
+pub use mono::mono_pixel_box;
 
 use alloc::vec::Vec;
 use core::fmt;

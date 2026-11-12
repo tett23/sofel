@@ -655,6 +655,9 @@ static void test_raster(const sofel_font_t *font) {
     CHECK(memcmp(box, c->box, sizeof box) == 0);
     CHECK(memcmp(shift, c->shift, sizeof shift) == 0);
   }
+  CHECK(sofel_mono_pixel_box(-32, 33, 32, 95, box, shift) == SOFEL_OK);
+  CHECK(box[0] == -1 && box[1] == 2 && box[2] == 2 && box[3] == 1);
+  CHECK(shift[0] == 64 && shift[1] == -64);
   CHECK(sofel_pixel_box(0, 0, 64, 64, NULL, shift) == SOFEL_ERROR_NULL);
   CHECK(sofel_pixel_box(0, 0, 64, 64, box, NULL) == SOFEL_ERROR_NULL);
 

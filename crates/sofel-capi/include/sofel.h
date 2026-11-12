@@ -1791,6 +1791,17 @@ int32_t sofel_pixel_box(int32_t x_min, int32_t y_min, int32_t x_max, int32_t y_m
                         int32_t *box, int32_t *shift);
 
 /*
+ * The monochrome bitmap box and bottom-left translation for a 26.6
+ * control box, with the same output layout as sofel_pixel_box.
+ *
+ * Rust: sofel_raster::mono_pixel_box
+ * HarfBuzz: none
+ * FreeType: ft_glyphslot_preset_bitmap (FT_RENDER_MODE_MONO)
+ */
+int32_t sofel_mono_pixel_box(int32_t x_min, int32_t y_min, int32_t x_max, int32_t y_max,
+                             int32_t *box, int32_t *shift);
+
+/*
  * Renders the recorded outline into an 8-bit coverage bitmap, finding
  * the bitmap box from the recorded points. `fill` is SOFEL_FILL_*;
  * `overlap` nonzero renders with 4x4 supersampling (FT_OUTLINE_OVERLAP);
