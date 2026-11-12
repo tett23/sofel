@@ -26,5 +26,6 @@ pub mod paths;
 pub mod raster;
 pub mod shape;
 pub mod subset;
+pub mod svg_page;
 pub mod syllables;
 pub mod unicode;
