@@ -52,9 +52,36 @@ impl Painter for SvgImagePainter<'_> {
     fn pop_group(&mut self, _mode: CompositeMode) {}
 }
 
+mod clip;
+
 /// Sends SVG paths to the shared rasterizer and samples their gradients.
 pub fn render_scene(
     scene: &Scene,
+    ppem: u16,
+    upem: u16,
+    raster: &mut Rasterizer,
+    image: &mut BgraImage,
+) -> bool {
+    render_shapes(scene, None, ppem, upem, raster, image)
+}
+
+/// Renders a selected SVG glyph, intersecting every shape with its clip stack.
+pub fn render_glyph_scene(
+    glyph: &sofel_svg::GlyphScene,
+    ppem: u16,
+    upem: u16,
+    raster: &mut Rasterizer,
+    image: &mut BgraImage,
+) -> bool {
+    if glyph.clips.len() != glyph.scene.shapes.len() {
+        return false;
+    }
+    render_shapes(&glyph.scene, Some(&glyph.clips), ppem, upem, raster, image)
+}
+
+fn render_shapes(
+    scene: &Scene,
+    clips: Option<&[Vec<sofel_svg::ClipPath>]>,
     ppem: u16,
     upem: u16,
     raster: &mut Rasterizer,
@@ -64,7 +91,8 @@ pub fn render_scene(
         return false;
     }
     let scale = f32::from(ppem) / f32::from(upem);
-    for shape in &scene.shapes {
+    let mut clip_raster = None;
+    for (index, shape) in scene.shapes.iter().enumerate() {
         raster.clear();
         shape.draw(scale, raster);
         let Ok(bitmap) = raster.render(RenderOptions {
@@ -73,6 +101,28 @@ pub fn render_scene(
             ppem: Some((ppem, ppem)),
         }) else {
             return false;
+        };
+        let paths = clips
+            .and_then(|stacks| stacks.get(index))
+            .map_or(&[][..], Vec::as_slice);
+        let pixels;
+        let bitmap = if paths.is_empty() {
+            bitmap
+        } else {
+            let Ok(mask) = clip::coverage(
+                &bitmap,
+                paths,
+                clip_raster.get_or_insert_with(Rasterizer::new),
+                scale,
+                ppem,
+            ) else {
+                return false;
+            };
+            pixels = mask;
+            sofel_raster::Bitmap {
+                pixels: &pixels,
+                ..bitmap
+            }
         };
         blend_sampled(image, &bitmap, |x, y| scene.sample(shape, x, y, scale));
     }
