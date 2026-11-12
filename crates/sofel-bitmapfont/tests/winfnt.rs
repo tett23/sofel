@@ -44,4 +44,10 @@ fn adr0065_i2_fnt_and_fon_bounds() {
     bad = FON.to_vec();
     bad[0x80] = 0xff; // invalid NE resource alignment shift
     assert!(WinFont::parse(&bad, 0).is_err());
+    for end in 0..FNT.len() {
+        assert!(WinFont::parse(&FNT[..end], 0).is_err(), "FNT prefix {end}");
+    }
+    for end in 0..FON.len() {
+        assert!(WinFont::parse(&FON[..end], 1).is_err(), "FON prefix {end}");
+    }
 }
