@@ -285,6 +285,36 @@ fn i1_subset_instance_keeps_unmodified_avar_map_of_remaining_axis() {
 }
 
 #[test]
+fn i1_subset_instance_drops_names_of_removed_axes() {
+    let names = name(
+        0,
+        &[
+            (3, 1, 0x409, 256, b"W"),
+            (3, 1, 0x409, 257, b"D"),
+            (3, 1, 0x409, 300, b"I"),
+            (3, 1, 0x409, 301, b"P"),
+        ],
+        &[],
+    );
+    let data = font_with(vec![(b"fvar", fvar(&AXES)), (b"name", names)]);
+    let font = Font::new(&data, 0).unwrap();
+    let input = unicodes()
+        .with_axis_pinned_to_default(Tag::new(b"wdth"), &font)
+        .unwrap();
+    let output = subset(&font, &input).unwrap();
+    let sfnt = Sfnt::new(&output).unwrap();
+    let names = sfnt.table(Tag::new(b"name")).unwrap();
+    let count = usize::from(u16::from_be_bytes([names[2], names[3]]));
+    let ids: Vec<u16> = (0..count)
+        .map(|i| {
+            let at = 12 + i * 12;
+            u16::from_be_bytes([names[at], names[at + 1]])
+        })
+        .collect();
+    assert_eq!(ids, vec![256, 300, 301]);
+}
+
+#[test]
 fn i2_unknown_axis_preserves_previous_axis_range_and_output() {
     let data = font_with(vec![(b"fvar", fvar(&AXES))]);
     let font = Font::new(&data, 0).unwrap();

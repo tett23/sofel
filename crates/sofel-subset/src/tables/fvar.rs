@@ -6,7 +6,7 @@ use sofel_font::read::{Tag, be, fvar::Fvar};
 use sofel_geom::float::hb_roundf32;
 
 use crate::error::SubsetError;
-use crate::instance::{f64_to_i32, fixed_to_f32};
+use crate::instance::{f64_to_i32, fvar_instance_kept};
 use crate::plan::Plan;
 
 const TAG: Tag = Tag::new(b"fvar");
@@ -70,21 +70,7 @@ pub(crate) fn subset(plan: &Plan, src: &[u8]) -> Result<Vec<u8>, SubsetError> {
         let record = src
             .get(at..at.saturating_add(old_instance_size))
             .ok_or(SubsetError::Malformed { tag: TAG })?;
-        let selected = (0..fvar.axis_count()).all(|old| {
-            let Some(axis) = fvar.axis(old) else {
-                return false;
-            };
-            let Some(range) = plan.var.user().get(&axis.tag) else {
-                return true;
-            };
-            let coord_at = 4usize.saturating_add(old.saturating_mul(4));
-            let Some(value) = be::i32_at(record, coord_at) else {
-                return false;
-            };
-            let value = fixed_to_f32(sofel_font::read::Fixed(value));
-            value >= range.min && value <= range.max
-        });
-        if !selected {
+        if !fvar_instance_kept(&fvar, index, plan.var.user()) {
             continue;
         }
         out.extend_from_slice(record.get(..4).ok_or(SubsetError::Malformed { tag: TAG })?);

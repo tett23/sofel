@@ -310,6 +310,27 @@ fn retained_axis_indices(axes: &[AxisInfo], user: &BTreeMap<Tag, AxisRange>) -> 
         .collect()
 }
 
+/// Whether a named fvar instance survives the requested axis limits.
+pub(crate) fn fvar_instance_kept(
+    fvar: &Fvar<'_>,
+    index: usize,
+    user: &BTreeMap<Tag, AxisRange>,
+) -> bool {
+    let Some(instance) = fvar.instance(index) else {
+        return false;
+    };
+    fvar.axes().enumerate().all(|(axis_index, axis)| {
+        let Some(range) = user.get(&axis.tag) else {
+            return true;
+        };
+        let Some(value) = instance.coordinate(axis_index) else {
+            return false;
+        };
+        let value = fixed_to_f32(value);
+        value >= range.min && value <= range.max
+    })
+}
+
 /// The default of axis `i` set into `normalized_coords`, and
 /// `pinned_at_default` updated.
 fn set_coord(n: &mut Normalized, i: usize, def: f32) {
