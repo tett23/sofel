@@ -193,6 +193,8 @@ pub(crate) struct Normalized {
     pub normalized_coords: Vec<i32>,
     /// `axes_old_index_tag_map`: the tag of each `fvar` axis.
     pub axis_tags: Vec<Tag>,
+    /// Old `fvar` indices retained in the output, in source order.
+    pub retained_axis_indices: Vec<usize>,
     pub all_axes_pinned: bool,
     pub pinned_at_default: bool,
     /// Whether `avar` is version 2 (HarfBuzz's `has_v2_data`).
@@ -213,6 +215,7 @@ pub(crate) fn normalize(font: &Font<'_>, user: &BTreeMap<Tag, AxisRange>) -> Nor
         return n;
     }
     let axes = axis_infos(font);
+    n.retained_axis_indices = retained_axis_indices(&axes, &n.user);
     for a in &axes {
         let same = n.user.get(&a.tag).is_some_and(|r| {
             !(r.min == r.default && r.default == r.max)
@@ -294,6 +297,40 @@ pub(crate) fn normalize(font: &Font<'_>, user: &BTreeMap<Tag, AxisRange>) -> Nor
     n
 }
 
+/// `axes_index_map`'s source indices in the order used by the output fvar.
+fn retained_axis_indices(axes: &[AxisInfo], user: &BTreeMap<Tag, AxisRange>) -> Vec<usize> {
+    axes.iter()
+        .enumerate()
+        .filter_map(|(index, axis)| {
+            let pinned = user
+                .get(&axis.tag)
+                .is_some_and(|range| range.min == range.default && range.default == range.max);
+            (!pinned).then_some(index)
+        })
+        .collect()
+}
+
+/// Whether a named fvar instance survives the requested axis limits.
+pub(crate) fn fvar_instance_kept(
+    fvar: &Fvar<'_>,
+    index: usize,
+    user: &BTreeMap<Tag, AxisRange>,
+) -> bool {
+    let Some(instance) = fvar.instance(index) else {
+        return false;
+    };
+    fvar.axes().enumerate().all(|(axis_index, axis)| {
+        let Some(range) = user.get(&axis.tag) else {
+            return true;
+        };
+        let Some(value) = instance.coordinate(axis_index) else {
+            return false;
+        };
+        let value = fixed_to_f32(value);
+        value >= range.min && value <= range.max
+    })
+}
+
 /// The default of axis `i` set into `normalized_coords`, and
 /// `pinned_at_default` updated.
 fn set_coord(n: &mut Normalized, i: usize, def: f32) {
@@ -329,6 +366,40 @@ mod tests {
         assert_eq!(normalize_axis_value(a.min, a.default, a.max, 50.0), -1.0);
         assert_eq!(normalize_axis_value(a.min, a.default, a.max, 650.0), 0.5);
         assert_eq!(round_2_14(1.0 / 3.0), 5461.0 / 16384.0);
+    }
+
+    #[test]
+    fn i1_subset_instance_maps_old_axis_indices_after_partial_pin() {
+        let axes = [
+            axis(100.0, 400.0, 900.0),
+            AxisInfo {
+                tag: Tag::new(b"wdth"),
+                ..axis(75.0, 100.0, 125.0)
+            },
+            AxisInfo {
+                tag: Tag::new(b"opsz"),
+                ..axis(8.0, 12.0, 72.0)
+            },
+        ];
+        let user = BTreeMap::from([
+            (
+                Tag::new(b"wght"),
+                AxisRange {
+                    min: 400.0,
+                    default: 400.0,
+                    max: 400.0,
+                },
+            ),
+            (
+                Tag::new(b"wdth"),
+                AxisRange {
+                    min: 80.0,
+                    default: 100.0,
+                    max: 120.0,
+                },
+            ),
+        ]);
+        assert_eq!(retained_axis_indices(&axes, &user), alloc::vec![1, 2]);
     }
 }
 

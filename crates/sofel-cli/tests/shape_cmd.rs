@@ -293,3 +293,22 @@ fn the_binary_runs() {
         .unwrap();
     assert_eq!(o.status.code(), Some(0));
 }
+
+#[test]
+fn i1_gzip_input_uses_the_same_shaping_path_as_sfnt() {
+    let source = font_file("gzip-input", true);
+    let bytes = std::fs::read(&source).unwrap();
+    let length = u16::try_from(bytes.len()).unwrap();
+    // One final, stored DEFLATE block inside a gzip member.
+    let mut member = vec![31, 139, 8, 0, 0, 0, 0, 0, 0, 255, 1];
+    member.extend(length.to_le_bytes());
+    member.extend((!length).to_le_bytes());
+    member.extend_from_slice(&bytes);
+    member.extend(sofel_inflate::crc32(&bytes).to_le_bytes());
+    member.extend(u32::from(length).to_le_bytes());
+    let wrapped = source.with_extension("gz");
+    std::fs::write(&wrapped, member).unwrap();
+    assert_eq!(ok(&wrapped, &["AVB"]), ok(&source, &["AVB"]));
+    std::fs::remove_file(wrapped).unwrap();
+    std::fs::remove_file(source).unwrap();
+}

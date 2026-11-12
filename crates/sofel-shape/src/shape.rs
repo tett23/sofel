@@ -404,13 +404,37 @@ fn substitute_pre(
                 {
                     continue;
                 }
-                for info in buffer.infos_mut() {
-                    if let Some(glyph) = table.lookup.get(info.codepoint) {
-                        info.codepoint = u32::from(glyph);
-                        if !plan.fallback_glyph_classes {
-                            info.glyph_props = gdef.glyph_props(info.codepoint);
+                buffer.charge(buffer.len);
+                if buffer.max_ops < 0 {
+                    buffer.successful = false;
+                    break;
+                }
+                let mut replace = |info: &mut crate::buffer::Info, glyph: u16| {
+                    info.codepoint = u32::from(glyph);
+                    if !plan.fallback_glyph_classes {
+                        info.glyph_props = gdef.glyph_props(info.codepoint);
+                    }
+                    digest.add(info.codepoint);
+                };
+                match &table.action {
+                    crate::aat::Action::Machine(machine) => {
+                        let backwards = table.coverage & 0x4000_0000 != 0;
+                        let logical = table.coverage & 0x1000_0000 != 0;
+                        let reverse = backwards != (!logical && buffer.direction.is_backward());
+                        if reverse {
+                            buffer.reverse();
                         }
-                        digest.add(info.codepoint);
+                        machine.drive(buffer, &mut replace);
+                        if reverse {
+                            buffer.reverse();
+                        }
+                    }
+                    crate::aat::Action::Replace(lookup) => {
+                        for info in buffer.infos_mut() {
+                            if let Some(glyph) = lookup.get(info.codepoint) {
+                                replace(info, glyph);
+                            }
+                        }
                     }
                 }
             }
@@ -556,6 +580,8 @@ fn position(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut
     }
     if plan.apply_gpos {
         apply_map(GPOS, plan, font, buffer);
+    } else if let Some(tables) = &plan.kerx {
+        crate::aat::kerning::apply(tables, buffer, &font.scale.scale, plan.kern_mask);
     }
     if let Some(tracking) = plan.tracking {
         let scale = font.scale.scale;

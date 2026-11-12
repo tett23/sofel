@@ -52,6 +52,11 @@ pub enum DetailValue {
 /// contract (ADR 0008).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Kind {
+    /// A compressed font container cannot be opened.
+    InvalidFontContainer {
+        /// The reason reported by the container decoder.
+        reason: &'static str,
+    },
     /// The data ends before a structure is complete.
     Truncated {
         /// Bytes needed.
@@ -687,7 +692,8 @@ impl Kind {
     pub fn severity(&self) -> Severity {
         use Kind::*;
         match self {
-            Truncated { .. }
+            InvalidFontContainer { .. }
+            | Truncated { .. }
             | UnknownVersion { .. }
             | UnknownFormat { .. }
             | OffsetOutOfBounds { .. }
@@ -802,6 +808,7 @@ impl Kind {
     pub fn id(&self) -> &'static str {
         use Kind::*;
         match self {
+            InvalidFontContainer { .. } => "invalid_font_container",
             Truncated { .. } => "truncated",
             UnknownVersion { .. } => "unknown_version",
             UnknownFormat { .. } => "unknown_format",
@@ -919,6 +926,7 @@ impl Kind {
         use DetailValue::{Int, Uint};
         use Kind::*;
         match *self {
+            InvalidFontContainer { .. } => {}
             Truncated { needed, available } => {
                 f("needed", Uint(needed));
                 f("available", Uint(available));
@@ -1220,6 +1228,7 @@ impl fmt::Display for Kind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Kind::*;
         match self {
+            InvalidFontContainer { reason } => write!(f,"invalid font container: {reason}"),
             Truncated { needed, available } => {
                 write!(
                     f,

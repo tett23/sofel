@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="horizontal" gradientUnits="userSpaceOnUse" x1="0.5" y1="0" x2="16.5" y2="0">
+      <stop offset="0" stop-color="#0000f0"/><stop offset="1" stop-color="#f00000"/>
+    </linearGradient>
+    <radialGradient id="round" gradientUnits="userSpaceOnUse" cx="8.5" cy="8.5" r="8">
+      <stop offset="0" stop-color="#0000f0"/><stop offset="1" stop-color="#f00000"/>
+    </radialGradient>
+    <linearGradient id="diagonal" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0" stop-color="#0000f0"/><stop offset="1" stop-color="#f00000"/>
+    </linearGradient>
+    <linearGradient id="alpha" gradientUnits="userSpaceOnUse" x1="0.5" y1="0" x2="16.5" y2="0">
+      <stop offset="0" stop-color="#ff0000" stop-opacity="0.2"/><stop offset="1" stop-color="#ff0000" stop-opacity="1"/>
+    </linearGradient>
+    <linearGradient id="moved" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="4" y2="0" gradientTransform="translate(2.5 0) scale(2 1)">
+      <stop offset="0" stop-color="#0000f0"/><stop offset="1" stop-color="#f00000"/>
+    </linearGradient>
+  </defs>
+  <rect id="glyph1" x="0" y="0" width="20" height="16" fill="url(#horizontal)"/>
+  <rect id="glyph2" x="0" y="0" width="20" height="16" fill="url(#round)"/>
+  <rect id="glyph3" x="2.5" y="3.5" width="16" height="8" fill="url(#diagonal)"/>
+  <rect id="glyph4" x="0" y="0" width="20" height="16" fill="url(#alpha)"/>
+  <rect id="glyph5" x="0" y="0" width="20" height="16" fill="url(#moved)"/>
+</svg>

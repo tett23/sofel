@@ -227,6 +227,8 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 ### 計画
 
+- `morx` の並べ替えは状態表の先頭からグリフを分類し、指定された両端のグリフを、クラスタを統合して並べ替える。文脈置換は状態遷移に従い、マークしたグリフと現在のグリフにそれぞれ置換表を適用する。挿入はマークと現在位置の前後に指定グリフを加える。合字は部品のスタックから置換先を引き、消費したグリフのクラスタを統合する（[ADR 0060](adr/0060-aat-shaping.md)）。
+- `kerx` の形式 0 はグリフ対、形式 2 は左右のクラスからカーニング量を引く。形式 1 は状態遷移に従い、直近 8 個の位置を参照して調整する。形式 4 はアンカーテーブルまたは直接指定された座標を使い、マークしたグリフに現在のグリフを配置する（[ADR 0060](adr/0060-aat-shaping.md)）。
 - `--font-ptem` でポイントサイズを指定すると、`STAT` と `trak` を持つフォントではそのサイズに応じて字間を調整する。
 - `ShapePlan::new(instance, props, features)` が、`hb_ot_shape_plan_t` と同じ判断を一度だけ行う（[ADR 0020](adr/0020-shaping-foundation.md)）。`GSUB` と `GPOS` の文字体系と言語の選択（`hb_ot_layout_table_select_script` の `DFLT`、`dflt`、`latn` への後退と `hb_ot_layout_script_select_language`）、シェーパー（`Shaper`、`hb_ot_shaper_categorize`）、`hb_ot_shape_collect_features` の順の機能、`hb_ot_map_builder_t::compile` と同じマスクのビットの割り当て（大域の値1の機能は31ビット目、ほかはグリフのフラグの後の4ビット目から。足りなければ機能を捨てる）、必須の機能、`F_GLOBAL_SEARCH`、`F_HAS_FALLBACK`、段ごとにlookupの番号の順に並べて重複をまとめたlookupの列、位置の決め方（`GPOS` の有無、マークの幅の0化、フォールバックのマークの配置）である。AATの表と古い `kern` 表は無いものとして判定する。
 - 計画は `GDEF` のグリフのクラス（HarfBuzzの拒否の一覧に載る表は無いものとする）とマークのグリフの集合、`GSUB` と `GPOS` のすべてのlookupについて、拡張をたどったサブテーブルのビューと、それぞれの最初のグリフのCoverageの要約（`hb_set_digest_t` と同じ3つの64ビットのマスク）を持つ。拡張の型がそろわないlookupと、読めないサブテーブルは、HarfBuzzと同じく無いものとする。
@@ -282,6 +284,10 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 - `sofel_shape::unicode` に、HarfBuzzが手で書いた `modified_combining_class`、`is_default_ignorable`、`space_fallback_type`、`vertical_char_for`、`is_variation_selector`、`is_regional_indicator` を置く（[ADR 0019](adr/0019-unicode-character-data.md)、[ADR 0020](adr/0020-shaping-foundation.md)）。全文字の値を `hb-dump --unicode` と比べる。
 `sofel-render` は設計座標と名前つきインスタンスを受け付ける。FreeTypeで既定以外のインスタンスになるときは埋め込みビットマップを省き、指定位置の輪郭を描く（[ADR 0027](adr/0027-variable-fonts.md)）。
+
+## ベクトル出力
+
+`sofel-vector` の `SvgPage` と `PdfPage` は、呼び出し側が配置した輪郭を指定色で入力順に塗る。SVG は y 軸を反転したグループにパスを書き、PDF は二次曲線を三次曲線に変換してページに書く。C の `sofel_vector_page` にはフォント、軸座標と、グリフごとの変換・色を渡す（[ADR 0068](adr/0068-vector-and-gpu-output.md)）。
 
 ## カラーグリフ（`sofel-color`、`sofel-bitmap`、`Painter`）
 
@@ -347,13 +353,17 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - CPALは、COLRが使う色の番号だけを残し、残す色が同じパレットは同じ色の記録を指す。版1では、パレットのフラグとラベルを写し、色のラベルは残す番号のものを残す。
 - CBLCとCBDTは、残すグリフのうち画像を持つものを、新しいグリフIDの順に索引の部分表（形式1と3。ほかの形式の部分表を含む大きさの表は除く）へまとめなおし、画像のデータを新しいCBDTへ写す。同じ形式、データ、グリフごとの長さの塊は前のものを共有する。写す量は元のCBDTの長さの `HB_SUBSET_CBDT_MAX_COPY_FACTOR`（64）倍までとする。残すグリフを持たない大きさの表は除く。
 - sbixは、各大きさの表で新しいグリフIDの順にグリフのデータを写し、残すグリフのデータを持たない大きさの表を除く。
-- 軸の固定（`Input::with_all_axes_pinned_to_default`、`with_axis_pinned_to_default`、`with_axis_pinned`、`with_axis_range`、`axis_range`。`hb_subset_input_pin_all_axes_to_default` などと同じく、fvarの無いフォントや無い軸では失敗して値を変えない）：`Plan::new` は `normalize_axes_location` のとおりに軸の位置を正規化する（fvarと同じ範囲の指定を除き、2.14に丸め、avarの版1の写像を通す。浮動小数点はHarfBuzzと同じ `f32` と `roundf`）。実行できるのは、すべての軸を既定の値に固定したときだけで、それ以外の位置と範囲、avarの版2、avarが既定の値を0以外に写すフォントは `Unsupported` とする（[ADR 0022](adr/0022-subsetting.md) の後回しにしたもの）。固定したときは、fvar、avar、gvar、GVAR、HVAR、VVAR、MVAR、cvarを捨て、CFF2を上のとおりに書き、glyfのグリフを点から符号化しなおし（`compile_bytes_with_deltas`）、そこから求めた値でheadの箱と `flags` のビット1、hmtxとvmtxのサイドベアリング、hheaとvheaの最大の送り幅、最小のサイドベアリング、最大の広がり、maxpの点と輪郭と成分の数、OS/2の `xAvgCharWidth` を書きなおす。OS/2の `usWeightClass` と `usWidthClass`、postの `italicAngle` は軸の値から、STATは軸の範囲の外の軸の値を除いて書く。名前IDの閉包はfvarの名前を足さない。GSUBとGPOSは、FeatureVariationsを既定の位置で評価して最初に当たる記録の置きかえのフィーチャを使い、FeatureVariationsを除いて版1.0とする。GDEFの変化量の表を除き、値の記録とアンカーとキャレットの変化量の番号のDeviceを除く（値の記録の形式からはDeviceのビットを除く）。fvar、avar、STATのビューと検証器は `sofel-read` にある。
+- 軸の固定（`Input::with_all_axes_pinned_to_default`、`with_axis_pinned_to_default`、`with_axis_pinned`、`with_axis_range`、`axis_range`。`hb_subset_input_pin_all_axes_to_default` などと同じく、fvarの無いフォントや無い軸では失敗して値を変えない）：`Plan::new` は `normalize_axes_location` のとおりに軸の位置を正規化する（fvarと同じ範囲の指定を除き、2.14に丸め、avarの版1の写像を通す。浮動小数点はHarfBuzzと同じ `f32` と `roundf`）。すべての軸を既定の値に固定する場合に加え、fvarとavar版1以外の変化量表、CFF2、GDEF、GSUB、GPOS、BASE、MATH、COLR、VARC、STATを持たないフォントでは [ADR 0061](adr/0061-subset-axis-instancing.md) に従い、固定した軸を除き、残る軸の範囲と名前つきインスタンスを書き直す。avar版1がある場合は、既定位置への固定に限り、残る軸の写像を保つ。それ以外の位置と範囲、avarの版2、avarが既定の値を0以外に写すフォントは `Unsupported` とする（[ADR 0022](adr/0022-subsetting.md) の後回しにしたもの）。固定したときは、fvar、avar、gvar、GVAR、HVAR、VVAR、MVAR、cvarを捨て、CFF2を上のとおりに書き、glyfのグリフを点から符号化しなおし（`compile_bytes_with_deltas`）、そこから求めた値でheadの箱と `flags` のビット1、hmtxとvmtxのサイドベアリング、hheaとvheaの最大の送り幅、最小のサイドベアリング、最大の広がり、maxpの点と輪郭と成分の数、OS/2の `xAvgCharWidth` を書きなおす。OS/2の `usWeightClass` と `usWidthClass`、postの `italicAngle` は軸の値から、STATは軸の範囲の外の軸の値を除いて書く。名前IDの閉包はfvarの名前を足さない。GSUBとGPOSは、FeatureVariationsを既定の位置で評価して最初に当たる記録の置きかえのフィーチャを使い、FeatureVariationsを除いて版1.0とする。GDEFの変化量の表を除き、値の記録とアンカーとキャレットの変化量の番号のDeviceを除く（値の記録の形式からはDeviceのビットを除く）。fvar、avar、STATのビューと検証器は `sofel-read` にある。
 - 軸を指定しないgvarとGVARは、残すグリフの変化量のデータを新しいグリフIDの順に書き、短いオフセットでは奇数長のデータを0で埋める。`IFTB_REQUIREMENTS` では長いオフセットを使い、埋めない。
 - 軸を指定しない HVAR と VVAR は、複数のItemVariationDataから残したグリフに対応する行と使う領域を詰め、全ての値が0の列を除いて書き出す。使わないItemVariationDataを除き、暗黙・明示の送り幅とサイドベアリングのマップを新しいグリフIDに合わせて書く（[ADR 0022](adr/0022-subsetting.md)）。 明示マップの末尾で複数のグリフが同じ行を参照する場合は、その最初の項目までを書き、残りは最後の値を繰り返して読む。空のサイドベアリングと縦の原点のマップは出力しない。
 - まだ書かない表：HVAR、VVAR、VARC（軸をすべて固定したときに捨てるものを除く）と、軸をすべて固定しないときのCFF2（10段階目）。これらを持ち、捨てる表にも写す表にも入れないフォントは `Unsupported` とする。名前の表の上書きも `Unsupported` とする。
 - 軸を指定しない BASE 1.1 の ItemVariationStore は、残すスクリプトとフィーチャに属する横と縦の BaseCoord の VariationIndex を集め、使う行と領域だけを詰めて番号を振りなおす。参照が0件なら、HarfBuzzと同じくストアを除いて座標を残す。BaseValues、既定の MinMax、言語別とフィーチャ別の MinMax を調べ、壊れた参照はこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
 - 軸を指定しないGDEF 1.3のItemVariationStoreは、GSUBのFeatureVariationsが軸範囲の条件だけを持つ場合も含めて、残すLigCaretList、値の記録、アンカー、MATHの定数・斜体補正・上アクセント・カーニング・組み立てのVariationIndexに合わせて行と領域を詰めて書く。参照が0件ならストアを除く。GPOSの値の記録とアンカーをたどってVariationIndexを集める。送り幅などの値に現れる `0x8000` は参照に数えない。MATHとGDEFの一方だけをコピーして参照番号を合わせられない場合と、同じバイト列があるGPOSをそのままコピーする場合は拒否する。GDEFだけをコピーしてGPOSをサブセット化するとき、HarfBuzzと同じくGPOSの参照番号は詰めるが、GDEFのストアは元のバイト列のまま写す。壊れたGDEFはこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
 - レイアウトの表のうち、FeatureVariationsを持つGSUBをそのままコピーする場合のGDEF、GSUBとGPOSの版1.2とGDEFの版1.4、FeatureVariationsの版1.1と形式1でない条件、65536を超えるグリフのフォントの24bitの形式も `Unsupported` とする。
+
+## WOFF と圧縮フォントの読み込み
+
+`sofel_woff::decode_woff` は出力サイズの上限を受け取り、WOFF 1.0 の表を物理順に展開して sfnt を返す。フォントを読み込む CLI は gzip または UNIX compress（LZW）を先に展開してから WOFF の署名を検査する。検証器は WOFF の不正なフィールドか圧縮表の入力オフセットを報告する。gzip の破損はメンバーを含むコンテナ先頭で報告する。[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)
 
 ## Web フォントの書き出し（`sofel-woff`）
 
@@ -420,6 +430,10 @@ UTF-8 ファイルの末尾から LF または CRLF を一組だけ除き、前�
 - `sofel-capi` は `wasm32-wasip1` の静的ライブラリとしてwasi-sdkのCのプログラムとリンクでき、`wasm32-unknown-unknown` にはビルドだけを確かめる（[ADR 0015](adr/0015-c-abi.md)）。
 
 ## 正しさの検査
+
+SVG の検査器は [ADR 0074](adr/0074-svg-feature-conformance.md) の必須ケースと観測を [台帳](../conformance/svg-cases.tsv) と照合する。欠落、重複、未知の項目を報告し、ケースごとに期待値の出典と結果を出す。共有文書の平文のバイト列と範囲外のグリフを検査し、検査器を実装していない観測は未実行として扱う。
+
+検査器は必須ケースの集計に続いて、[OpenType 1.9.1 の SVG 要求項目](../conformance/svg-opentype.tsv)ごとに、対応するケース ID または対象外・未決の理由を表示する。
 
 - 追加フォントの集合は [ADR 0031](adr/0031-diverse-font-corpus.md) の13ファイル、57フェイスと既存の可変COLRフォントで構成する。`fonts.lock` は取得ファイルとライセンスをHTTPS URL、SHA-256、バイト数、保存先で固定し、`conformance/fonts.tsv` はフォントとライセンスと対象機能を結ぶ。`scripts/fetch-fonts.sh` は保存済みのファイルも再検証し、欠落とハッシュ不一致を失敗にする。フォントのバイナリをリポジトリに含めず、著作権表示とライセンス全文を `THIRD_PARTY_NOTICES.md` に記録する。
 - 追加フォントの各フェイスでは表の読み取り、検証器、全Unicodeスカラー値の既定座標のnominal glyph ID、最大128グリフの横・縦メトリクスとFreeTypeの非ヒンティング輪郭・advanceを照合する。サンプル集合にはグリフ0と末尾と登録した全座標のシェーピング出力を必ず入れ、[ADR 0031](adr/0031-diverse-font-corpus.md) の等間隔の式で補う。HarfBuzzのメトリクスとFreeTypeの輪郭・advanceは別々の参照値と比較する。

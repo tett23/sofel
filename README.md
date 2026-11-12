@@ -20,6 +20,7 @@ OpenType タグから得るスクリプト値は、[ADR 0050](docs/adr/0050-pres
 
 2段階目（glyfの輪郭とアンチエイリアスのラスタライズ）まで実装し、6段階目のCFFとCFF2の輪郭、CIDの問い合わせ、PostScriptのフォントの情報（[ADR 0021](docs/adr/0021-cff-outlines.md)）と、CIDとグリフ名を速く引くcharsetの索引（[ADR 0025](docs/adr/0025-cff-charset-index.md)）を実装している。CFF2の輪郭は可変フォントの指定した位置でも取り出せる。
 サブセット化（[ADR 0022](docs/adr/0022-subsetting.md)）は、sfntの組み立てと直列化、オフセットのあふれを解く再配置、glyf系の表、cmap、name、OS/2、post、hdmx、CFF（名前のキーとCIDのキー）、VORG、GDEF、GSUB、GPOS、BASEとレイアウトの閉包、COLR（版0、変化量の表を持たない版1、版1の塗りが残らず版0にできるもの、残す版1の塗りとクリップがすべて静的なもの、軸を固定せず変化量ストアを直接またはマップを介して参照するもの、全軸を既定位置に固定したもの）、CPAL、CBLC、CBDT、sbixとCOLRの閉包、MATHとその閉包、軸を指定しないgvarとGVARの書き出し、glyfとCFF2の可変フォントのすべての軸の既定の値への固定（fvar、avar、STATの読み取りと、CFF2をCFFに変換する `DOWNGRADE_CFF2` を含む）、同じフォントを繰り返しサブセット化するための前処理（`Prepared`）、CFFのcharstringの取り出し、グリフ名での指定（`--glyphs`）と、これらのC ABI（`sofel_subset` など）までを実装し、HarfBuzzのサブセット化のテストのうちこれらの表だけを持つ組でバイト単位で一致する。Golemの使い方（グリフIDと `RETAIN_GIDS`）は、HarfBuzzのテストのフォントのうちこれらの表だけを持つものすべてで `hb-subset` と同じバイト列を出す。軸を指定しない HVAR と VVAR は、複数のItemVariationDataから使う行と領域だけを残し、暗黙・明示の送り幅とサイドベアリングのマップを書ける。明示マップの末尾で繰り返す行番号は1項目にまとめる。軸を指定しないGDEF 1.3のItemVariationStoreは、GSUBのFeatureVariationsが軸範囲の条件だけを持つ場合も含めて、残すキャレット、値の記録、アンカー、MATHの定数・斜体補正・上アクセント・カーニング・組み立てが参照する番号と領域を詰めて書く。参照が0件ならストアを除く。MATHだけをコピーして参照番号を詰め直せない場合とFeatureVariationsを持つGSUBをそのままコピーする場合のGDEFの変化量の表と、軸を固定しないCFF2の変化量の表は、10段階目で書く。
+[ADR 0061](docs/adr/0061-subset-axis-instancing.md) の部分実装では、fvarとavar版1以外の変化量表、レイアウト・色・STATの表を持たないフォントについて、固定した軸を除き、残る軸の範囲と名前つきインスタンスを更新して書く。avar版1がある場合は、既定位置に固定した軸の写像を除き、残る軸の写像を保つ。ほかの表を持つフォントの部分軸固定は引き続き `Unsupported` とする。
 `sofel-read` は、sfntの目録、TTC/OTC、dfont（[ADR 0058](docs/adr/0058-dfont-face-selection.md)）、head、maxp/MAXP、hhea/HHEA、hmtx/HMTX、cmap（フォーマット0〜15）、loca、glyf（[ADR 0007](docs/adr/0007-sfnt-read-foundation.md)、[0011](docs/adr/0011-glyf-outlines.md)）と、OS/2、name、post、vhea/VHEA、vmtx/VMTX、VORG（[ADR 0016](docs/adr/0016-font-and-vertical-metrics.md)）、BASE（[ADR 0017](docs/adr/0017-base-baselines.md)）、CFFとCFF2（[ADR 0021](docs/adr/0021-cff-outlines.md)）、GDEF、GSUB、GPOS（[ADR 0020](docs/adr/0020-shaping-foundation.md)）、MATH、fvar、avar、STAT（[ADR 0022](docs/adr/0022-subsetting.md)）を読み、各表の検証器を持つ。
 
 大文字の HHEA と VHEA は、32ビットのメトリクス件数を読む（[ADR 0054](docs/adr/0054-wide-metrics-header-count.md)）。
@@ -61,6 +62,7 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-color`](crates/sofel-color) | カラーグリフ：CPALのパレット、COLR（版0と版1）、SVG、CBDT、sbixをHarfBuzzと同じ命令で `Painter` に渡す。gzip 圧縮された SVG は展開して渡す。命令の記録（`Recording`）、カラーグリフを含むグリフの箱、フォールバックのための問い合わせ（[ADR 0023](docs/adr/0023-color-glyphs.md)） |
 | [`sofel-write`](crates/sofel-write) | sfntの組み立てと、HarfBuzzと同じ詰め方のオブジェクトの直列化（[ADR 0022](docs/adr/0022-subsetting.md)） |
 | [`sofel-subset`](crates/sofel-subset) | HarfBuzzの `hb-subset` とバイト単位で同じ出力のサブセット化（[ADR 0022](docs/adr/0022-subsetting.md)。書ける表はglyf系、cmap、name、OS/2、post、hdmx、CFF、VORG、GDEF、GSUB、GPOS、BASE、COLR、CPAL、CBLC、CBDT、sbix、MATH、STAT、軸をすべて固定したCFF2など。軸はすべて既定の値に固定できる。前処理（`Prepared`）で同じフォントの計画を速く作れる） |
+| [`sofel-vector`](crates/sofel-vector) | 配置した単色の輪郭を SVG または PDF のページに書く（[ADR 0068](docs/adr/0068-vector-and-gpu-output.md)） |
 | [`sofel-raster`](crates/sofel-raster) | FreeTypeのsmoothのラスタライザと同じ計算で、8bitのアンチエイリアスの画像を作る。COLRv0の層をFreeTypeと同じ整数の計算でBGRAの画像に重ねる（`blend_layer`）。Harmony の水平・垂直 LCD のカバレッジも取得できる |
 | [`sofel-woff`](crates/sofel-woff) | 単一フェイスの sfnt を WOFF・WOFF2 に変換するライブラリとコマンド |
 | [`sofel-cli`](crates/sofel-cli) | 小さな道具（`sofel-validate`、`sofel-render`、`sofel-paint`、`sofel-shape`、`sofel-subset`） |
@@ -114,6 +116,7 @@ cargo run --release --bin sofel-shape -- --direction=ttb --features=vrt2 --outpu
 cargo run --release --bin sofel-shape -- --variations=wght=700 --text=Hello variable.ttf
 ```
 
+AAT の `morx` による非文脈置換、並べ替え、マークしたグリフと現在のグリフの文脈置換、挿入、合字に対応する。
 `--font-ptem` でポイントサイズを指定すると、`STAT` と `trak` を持つフォントではそのサイズに応じて字間を調整する。
 `--variations` は軸のタグと設計座標を、`--named-instance` は0から数える名前つきインスタンスを指定する（[ADR 0027](docs/adr/0027-variable-fonts.md)）。言語は `--language`、無ければ `--default-language` で、どちらも無ければ「言語なし」とする（`hb-shape` は `$LANG` を読む）。終了コードは、成功が0、フォントか文字列のファイルを読めなければ1、使い方の誤りと解釈しないオプション（`--font-bold` など）が2、`--verify` の検査の失敗が3。オプションの一覧は `sofel-shape --help` で示す。
 ### `sofel-paint`
@@ -138,6 +141,8 @@ HarfBuzzの `hb-subset` と同じオプションでサブセット化する（[A
 ```sh
 sofel-subset --font-file=Roboto.ttf --unicodes=41-5A -o out.ttf
 ```
+
+フォントを読むコマンド（`sofel-shape`、`sofel-render`、`sofel-paint`、`sofel-subset`、`sofel-validate`）は WOFF 1.0、gzip および UNIX compress（LZW）で包んだ入力を署名から識別する。[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)
 
 ### `sofel-woff`
 
@@ -237,6 +242,7 @@ cargo test --release -p sofel-conformance
 CI ではこの runner を使い、参照ツールと計測用の C ライブラリは入力とツールチェーンが一致する場合にキャッシュから復元する。
 直列化の適合テストは、入力を一行ずつ書き、HarfBuzz の参照出力も一行ずつ比較して、全文の重複保持を避ける（[ADR 0035](docs/adr/0035-stream-serialization-reference-output.md)）。
 カラーグリフの適合テストはHarfBuzzの塗りをグリフごとに読み、各本文を比較する（[ADR 0043](docs/adr/0043-stream-harfbuzz-paint-records.md)）。
+SVG の機能別の検査は `sh scripts/test-svg-conformance.sh` で実行する。入力と出力の全必須ケースを表示し、失敗や未実行の観測が残っていれば終了コード 1 を返す（[ADR 0074](docs/adr/0074-svg-feature-conformance.md)）。
 シェーピングの適合テストではフォントと文章の組ごとに一致行の数を集計し、不一致行の詳細をカテゴリ判定に使う（[ADR 0041](docs/adr/0041-compact-shape-comparison-results.md)）。
 テストと結果の照合は、キャッシュがある場合も実行する。
 CI の参照ツールのビルド、適合テストと計測用 C ビルドは、子プロセスを含む合計 RSS の最大観測値をログへ書く。
