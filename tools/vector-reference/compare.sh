@@ -32,6 +32,9 @@ check_page() {
     "$work/positioned" "$root/api/fonts/$font" "$@" > "$work/$name.svg"
     cmp "$work/$name.svg" "$root/vector/data/expected/$suite/$name.svg"
 }
+check_page upem-default Roboto-Regular.abc.ttf -16 -1916 3367 2432
+check_page multiline Roboto-Regular.abc.ttf -16 -1916 2253 4832 line-height=2400 'text=a
+bc'
 check_page cff1 SourceSansPro-Regular.abc.otf -16 -1000 1545 1289
 check_page cff2-var-wght900 TestCFF2VF.otf -16 -1000 1832 1289 wght=900
 check_page cff2-var-cntr AdobeVFPrototype.abc.otf -16 -934 1728 1285 wght=900 CNTR=100

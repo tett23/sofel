@@ -5,6 +5,8 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <sstream>
+#include <string>
 #include <vector>
 
 int main(int argc, char **argv) {
@@ -17,6 +19,7 @@ int main(int argc, char **argv) {
   sofel_location_t *location = nullptr;
   std::vector<sofel_variation_t> axes;
   sofel_segment_t requested = {SOFEL_DIRECTION_LTR, 0, nullptr}, segment;
+  float line_height = 0;
   const char *text = "abc";
   for (int i = 6; i < argc; ++i) {
     if (!std::strcmp(argv[i], "ttb")) requested.direction = SOFEL_DIRECTION_TTB;
@@ -25,32 +28,41 @@ int main(int argc, char **argv) {
     else if (!std::strcmp(argv[i], "CNTR=100")) axes.push_back({SOFEL_TAG('C', 'N', 'T', 'R'), 100});
     else if (!std::strcmp(argv[i], "wght=840.3")) axes.push_back({SOFEL_TAG('w', 'g', 'h', 't'), 840.3f});
     else if (!std::strncmp(argv[i], "text=", 5)) text = argv[i] + 5;
+    else if (!std::strncmp(argv[i], "line-height=", 12)) line_height = std::strtof(argv[i] + 12, nullptr);
     else return 2;
   }
   if (!axes.empty() && sofel_location_create(font, UINT32_MAX, axes.data(), axes.size(), &location)) return 1;
   std::vector<sofel_vector_glyph_t> glyphs;
-  auto *buffer = sofel_buffer_create();
-  const size_t length = std::strlen(text);
-  if (sofel_buffer_add_utf8(buffer, text, length, 0, length) ||
-      sofel_segment_guess(text, length, &requested, nullptr, &segment)) return 1;
-  auto *plan = sofel_shape_plan_create(font, location, &segment, nullptr, 0, &status);
-  uint16_t upem;
-  if (sofel_font_units_per_em(font, &upem)) return 1;
-  auto *scale = sofel_scale_create(font, upem * 64, upem * 64, &status);
-  if (!plan || !scale || sofel_shape(font, location, scale, plan, buffer)) return 1;
-  std::vector<uint32_t> gids(length);
-  std::vector<int32_t> pos(4 * length);
-  const auto count = sofel_buffer_glyphs(buffer, gids.data(), nullptr, nullptr, pos.data(), length);
-  if (count <= 0 || size_t(count) > length) return 1;
-  float x = 0, y = 0;
-  for (int i = 0; i < count; ++i) {
-    glyphs.push_back({gids[i], {1, 0, 0, 1, (x + pos[4*i+2]) / 64, (y + pos[4*i+3]) / 64}, {0, 0, 0, 255}});
-    x += pos[4*i];
-    y += pos[4*i+1];
+  std::istringstream input(text);
+  std::string line;
+  float baseline = 0;
+  while (std::getline(input, line)) {
+    if (!line.empty()) {
+      auto *buffer = sofel_buffer_create();
+      const size_t length = line.size();
+      if (sofel_buffer_add_utf8(buffer, line.data(), length, 0, length) ||
+          sofel_segment_guess(line.data(), length, &requested, nullptr, &segment)) return 1;
+      auto *plan = sofel_shape_plan_create(font, location, &segment, nullptr, 0, &status);
+      uint16_t upem;
+      if (sofel_font_units_per_em(font, &upem)) return 1;
+      auto *scale = sofel_scale_create(font, upem * 64, upem * 64, &status);
+      if (!plan || !scale || sofel_shape(font, location, scale, plan, buffer)) return 1;
+      std::vector<uint32_t> gids(length);
+      std::vector<int32_t> pos(4 * length);
+      const auto count = sofel_buffer_glyphs(buffer, gids.data(), nullptr, nullptr, pos.data(), length);
+      if (count <= 0 || size_t(count) > length) return 1;
+      float x = 0, y = baseline * 64;
+      for (int i = 0; i < count; ++i) {
+        glyphs.push_back({gids[i], {1, 0, 0, 1, (x + pos[4*i+2]) / 64, (y + pos[4*i+3]) / 64}, {0, 0, 0, 255}});
+        x += pos[4*i];
+        y += pos[4*i+1];
+      }
+      sofel_scale_destroy(scale);
+      sofel_shape_plan_destroy(plan);
+      sofel_buffer_destroy(buffer);
+    }
+    baseline -= line_height;
   }
-  sofel_scale_destroy(scale);
-  sofel_shape_plan_destroy(plan);
-  sofel_buffer_destroy(buffer);
   const sofel_color_t white = {255, 255, 255, 255};
   size_t size = 0;
   auto render = [&](uint8_t *out, size_t capacity) {

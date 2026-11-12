@@ -33,6 +33,8 @@ compare fuzzing/fonts/noto_handwriting-cff2_colr_1.otf 270d
 
 # Compare the rendered sweep paths, including their colors and clipping.
 font=$data/harfbuzz/test/api/fonts/test_glyphs-glyf_colr_1.ttf
+"$work/bitmap" "$font" "$work/reference.pdf" "$work/actual.pdf" 0 empty
+compare_pdf
 for glyph in 12 13 14 15 16 17 18 19 20 24 28 30 40; do
     "$work/bitmap" "$font" "$work/reference.svg" "$work/actual.svg" "$glyph" svg-gid
     for name in actual reference; do

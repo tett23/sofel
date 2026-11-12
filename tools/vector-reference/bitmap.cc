@@ -9,6 +9,7 @@
 
 int main(int argc, char **argv) {
   if (argc != 5 && argc != 6) return 2;
+  const bool empty = argc == 6 && !std::strcmp(argv[5], "empty");
   const bool svg = argc == 6 && !std::strcmp(argv[5], "svg-gid");
   hb_blob_t *blob = hb_blob_create_from_file_or_fail(argv[1]);
   if (!blob) return 1;
@@ -20,7 +21,8 @@ int main(int argc, char **argv) {
   else if (!hb_font_get_nominal_glyph(font, std::strtoul(argv[4], nullptr, 16), &gid)) return 1;
   auto *paint = hb_vector_paint_create_or_fail(svg ? HB_VECTOR_FORMAT_SVG : HB_VECTOR_FORMAT_PDF);
   hb_glyph_extents_t ink;
-  if (!hb_font_get_glyph_extents(font, gid, &ink) || ink.width <= 0 || ink.height >= 0) return 1;
+  if (empty) ink = {8, 48, 80, -48};
+  else if (!hb_font_get_glyph_extents(font, gid, &ink) || ink.width <= 0 || ink.height >= 0) return 1;
   const hb_vector_extents_t extents = {float(ink.x_bearing - 16),
       float(ink.y_bearing + ink.height - 16), float(ink.width + 32), float(32 - ink.height)};
   if (svg) {
@@ -32,8 +34,15 @@ int main(int argc, char **argv) {
       extents.x * 64, -(extents.y + extents.height) * 64, extents.width * 64, extents.height * 64} : extents;
   hb_vector_paint_set_extents(paint, &viewport);
   hb_vector_paint_set_background(paint, HB_COLOR(255, 255, 255, 255));
-  if (!hb_vector_paint_glyph_or_fail(paint, font, gid, HB_VECTOR_EXTENTS_MODE_NONE)) return 1;
+  // HarfBuzz returns null for a blank content stream. An empty graphics-state
+  // scope creates a PDF with the requested background and no painted glyphs.
+  if (empty) {
+    auto *funcs = hb_vector_paint_get_funcs(paint);
+    hb_paint_push_transform(funcs, paint, 1, 0, 0, 1, 1, 0);
+    hb_paint_pop_transform(funcs, paint);
+  } else if (!hb_vector_paint_glyph_or_fail(paint, font, gid, HB_VECTOR_EXTENTS_MODE_NONE)) return 1;
   auto *pdf = hb_vector_paint_render(paint);
+  if (!pdf) return 1;
   unsigned length;
   const char *data = hb_blob_get_data(pdf, &length);
   std::ofstream reference(argv[2], std::ios::binary);
@@ -53,7 +62,7 @@ int main(int argc, char **argv) {
   auto render = [&](uint8_t *out, size_t capacity) {
     return sofel_vector_page(sf, nullptr, svg ? SOFEL_VECTOR_SVG : SOFEL_VECTOR_PDF, extents.x, extents.y,
                              extents.width, extents.height,
-                             &white, &glyph, 1, out, capacity, &n);
+                             &white, empty ? nullptr : &glyph, empty ? 0 : 1, out, capacity, &n);
   };
   if (render(nullptr, 0) != SOFEL_ERROR_BUFFER_TOO_SMALL) return 1;
   std::vector<uint8_t> bytes(n);
