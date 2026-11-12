@@ -49,6 +49,7 @@ enum Error {
     InvalidOpcode,
     DivideByZero,
     InvalidReference,
+    InvalidArgument,
     ExecutionLimit,
 }
 
@@ -209,6 +210,8 @@ impl EngineInfo {
 
 #[derive(Clone)]
 struct Interpreter {
+    delta_base: u16,
+    delta_shift: u8,
     zones: [u8; 3],
     control_value_cutin: i64,
     single_width_cutin: i64,
@@ -239,6 +242,8 @@ impl Interpreter {
                 variation: false,
                 symmetric_smoothing: false,
             },
+            delta_base: 9,
+            delta_shift: 3,
             zones: [1; 3],
             control_value_cutin: 68,
             single_width_cutin: 0,
@@ -259,6 +264,10 @@ impl Interpreter {
                 .collect(),
             storage: alloc::vec![0; usize::from(max_storage)],
         }
+    }
+
+    fn projected_ppem(&self) -> i64 {
+        i64::from(self.ppem[usize::from(self.projection[0] == 0)])
     }
 
     fn execute(
@@ -306,10 +315,8 @@ impl Interpreter {
                 op @ (0x4b | 0x4c) => {
                     let value = if op == 0x4c && self.engine.version == 40 {
                         self.point_size
-                    } else if self.projection[0] == 0 {
-                        i64::from(self.ppem[1])
                     } else {
-                        i64::from(self.ppem[0])
+                        self.projected_ppem()
                     };
                     push(stack, value, max_stack)?;
                 }
@@ -333,6 +340,39 @@ impl Interpreter {
                                 sofel_font::read::cff::ft::mul_fix(value, self.scale)
                         }
                     }
+                }
+                0x5e => self.delta_base = stack.pop().ok_or(Error::StackUnderflow)? as u16,
+                0x5f => {
+                    let shift = stack.pop().ok_or(Error::StackUnderflow)?;
+                    if !(0..=6).contains(&shift) {
+                        return Err(Error::InvalidArgument);
+                    }
+                    self.delta_shift = shift as u8;
+                }
+                op @ 0x73..=0x75 => {
+                    let count = stack.pop().ok_or(Error::StackUnderflow)?;
+                    let pairs = usize::try_from(count)
+                        .unwrap_or(usize::MAX)
+                        .min(stack.len() / 2);
+                    let first = stack.len() - 2 * pairs;
+                    let band = self.projected_ppem()
+                        - i64::from(self.delta_base)
+                        - 16 * i64::from(op - 0x73);
+                    for pair in stack[first..].rchunks_exact(2) {
+                        let argument = pair[0];
+                        if (argument & 0xf0) >> 4 == band {
+                            if let Some(value) = usize::try_from(pair[1])
+                                .ok()
+                                .and_then(|i| self.cvt.get_mut(i))
+                            {
+                                let step = (argument & 15) - 8;
+                                *value = value.wrapping_add(
+                                    (step + i64::from(step >= 0)) << (6 - self.delta_shift),
+                                );
+                            }
+                        }
+                    }
+                    stack.truncate(first);
                 }
                 0x85 => {
                     let flags = stack.pop().ok_or(Error::StackUnderflow)?;
@@ -813,4 +853,24 @@ fn adr0064_i1_zone_selection_and_cutins_preserve_instruction_units() {
         ),
         (17, 19, 11)
     );
+}
+
+#[test]
+fn adr0064_i1_delta_control_values_obey_ppem_bands_and_signed_steps() {
+    for (op, base) in [(0x73, 10), (0x74, 26), (0x75, 42)] {
+        for (ppem, expected) in [(base - 1, 0), (base, 4), (base + 15, -4), (base + 16, 0)] {
+            let mut vm = Interpreter::new(0, &[0], 65536);
+            vm.ppem = [ppem; 2];
+            let mut stack = alloc::vec::Vec::new();
+            vm.execute(
+                &[0xb0, 10, 0x5e, 0xb0, 4, 0x5f, 0xb4, 8, 0, 0xf7, 0, 2, op],
+                &mut stack,
+                5,
+            )
+            .unwrap();
+            assert!(stack.is_empty());
+            assert_eq!(vm.cvt, [expected]);
+            assert!(vm.execute(&[0xb0, 7, 0x5f], &mut stack, 5).is_err());
+        }
+    }
 }
