@@ -281,6 +281,123 @@ fn i1_subset_instance_endpoint_pin_removes_outside_named_instance() {
 }
 
 #[test]
+fn i1_subset_instance_endpoint_pin_filters_stat_without_variation_data() {
+    let data = font_with(vec![
+        (b"fvar", fvar(&AXES)),
+        (
+            b"STAT",
+            stat(&[
+                (0, 258, 100.0),
+                (0, 259, 400.0),
+                (0, 260, 900.0),
+                (1, 261, 75.0),
+            ]),
+        ),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let input = unicodes()
+        .with_axis_pinned(Tag::new(b"wght"), 900.0, &font)
+        .unwrap();
+    let output = subset(&font, &input).unwrap();
+    // hb-dump --subset from HarfBuzz 3df40d9, --instance=wght=900.
+    assert_eq!(
+        output,
+        include_bytes!("data/adr0061-stat-endpoint-hb15.ttf")
+    );
+    let sfnt = Sfnt::new(&output).unwrap();
+    let stat = sfnt.table(Tag::new(b"STAT")).unwrap();
+    assert_eq!(u16::from_be_bytes([stat[12], stat[13]]), 2);
+}
+
+#[test]
+fn i1_subset_instance_range_filters_stat_without_variation_data() {
+    let data = font_with(vec![
+        (b"fvar", fvar(&AXES)),
+        (
+            b"STAT",
+            stat(&[
+                (0, 258, 100.0),
+                (0, 259, 400.0),
+                (0, 260, 900.0),
+                (1, 261, 75.0),
+            ]),
+        ),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let input = unicodes()
+        .with_axis_range(
+            Tag::new(b"wght"),
+            Some(300.0),
+            Some(500.0),
+            Some(400.0),
+            &font,
+        )
+        .unwrap();
+    let output = subset(&font, &input).unwrap();
+    // hb-dump --subset from HarfBuzz 3df40d9, --instance=wght=300:400:500.
+    assert_eq!(output, include_bytes!("data/adr0061-stat-range-hb15.ttf"));
+    let sfnt = Sfnt::new(&output).unwrap();
+    let stat = sfnt.table(Tag::new(b"STAT")).unwrap();
+    assert_eq!(u16::from_be_bytes([stat[12], stat[13]]), 2);
+}
+
+#[test]
+fn i1_subset_instance_all_axes_pinned_filters_stat_without_variation_data() {
+    let data = font_with(vec![
+        (b"fvar", fvar(&AXES)),
+        (
+            b"STAT",
+            stat(&[
+                (0, 258, 100.0),
+                (0, 259, 400.0),
+                (0, 260, 900.0),
+                (1, 261, 75.0),
+            ]),
+        ),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let input = unicodes()
+        .with_axis_pinned(Tag::new(b"wght"), 900.0, &font)
+        .unwrap()
+        .with_axis_pinned_to_default(Tag::new(b"wdth"), &font)
+        .unwrap();
+    let output = subset(&font, &input).unwrap();
+    // hb-dump --subset from HarfBuzz 3df40d9, --instance=wght=900,wdth=drop.
+    assert_eq!(output, include_bytes!("data/adr0061-stat-all-hb15.ttf"));
+    let sfnt = Sfnt::new(&output).unwrap();
+    let stat = sfnt.table(Tag::new(b"STAT")).unwrap();
+    assert_eq!(u16::from_be_bytes([stat[12], stat[13]]), 1);
+}
+
+#[test]
+fn i1_subset_instance_default_pin_keeps_avar_and_filters_stat() {
+    let map = [(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)];
+    let data = font_with(vec![
+        (b"fvar", fvar(&AXES)),
+        (b"avar", avar(1, &[&map, &map])),
+        (
+            b"STAT",
+            stat(&[
+                (0, 258, 100.0),
+                (0, 259, 400.0),
+                (0, 260, 900.0),
+                (1, 261, 75.0),
+            ]),
+        ),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let input = unicodes()
+        .with_axis_pinned_to_default(Tag::new(b"wdth"), &font)
+        .unwrap();
+    let output = subset(&font, &input).unwrap();
+    // hb-dump --subset from HarfBuzz 3df40d9, --instance=wdth=drop.
+    assert_eq!(output, include_bytes!("data/adr0061-stat-avar-hb15.ttf"));
+    let sfnt = Sfnt::new(&output).unwrap();
+    let stat = sfnt.table(Tag::new(b"STAT")).unwrap();
+    assert_eq!(u16::from_be_bytes([stat[12], stat[13]]), 3);
+}
+
+#[test]
 fn i1_subset_instance_keeps_unmodified_avar_map_of_remaining_axis() {
     let wght_map = [(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)];
     let wdth_map = [(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)];

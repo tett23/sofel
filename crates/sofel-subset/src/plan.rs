@@ -301,7 +301,7 @@ impl Plan {
             }
             let no_variation_data = ![
                 b"gvar", b"GVAR", b"HVAR", b"VVAR", b"MVAR", b"cvar", b"CFF2", b"GDEF", b"GSUB",
-                b"GPOS", b"BASE", b"MATH", b"COLR", b"VARC", b"STAT",
+                b"GPOS", b"BASE", b"MATH", b"COLR", b"VARC",
             ]
             .iter()
             .any(|tag| font.table(Tag::new(tag)).is_some());
