@@ -65,3 +65,17 @@ fn i2_separates_required_results_from_opentype_scope() {
     assert!(report.contains("ot-animations\tanimations\tOUT OF SCOPE"));
     assert!(report.contains("ot-current-color\tcolors\tUNDECIDED"));
 }
+
+#[test]
+fn i2_verifier_runs_each_positioned_page() {
+    let (_, report) = run(INVENTORY);
+    for case in ["empty", "single", "translucent-overlap", "clipped-image"] {
+        let prefix = format!("out-page\t{case}\toutput\t");
+        assert!(
+            report
+                .lines()
+                .any(|line| line.starts_with(&prefix) && line.ends_with("\tPASS")),
+            "{case}"
+        );
+    }
+}
