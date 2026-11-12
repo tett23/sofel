@@ -48,6 +48,8 @@ enum Error {
     StackOverflow,
     InvalidOpcode,
     DivideByZero,
+    InvalidReference,
+    ExecutionLimit,
 }
 
 struct Instruction<'a> {
@@ -162,6 +164,7 @@ impl Rounding {
 
 #[derive(Clone)]
 struct Interpreter {
+    functions: alloc::collections::BTreeMap<u16, alloc::rc::Rc<[u8]>>,
     rounding: Rounding,
     storage: alloc::vec::Vec<i64>,
     cvt: alloc::vec::Vec<i64>,
@@ -171,6 +174,7 @@ struct Interpreter {
 impl Interpreter {
     fn new(max_storage: u16, varied_cvt: &[i32], scale: i64) -> Self {
         Self {
+            functions: alloc::collections::BTreeMap::new(),
             rounding: Rounding::Grid,
             scale,
             cvt: varied_cvt
@@ -183,13 +187,64 @@ impl Interpreter {
 
     fn execute(
         &mut self,
-        mut code: &[u8],
+        code: &[u8],
         stack: &mut alloc::vec::Vec<i64>,
         max_stack: usize,
     ) -> Result<(), Error> {
+        self.execute_frame(code, stack, max_stack, 0, &mut 1_000_000)
+    }
+
+    fn execute_frame(
+        &mut self,
+        mut code: &[u8],
+        stack: &mut alloc::vec::Vec<i64>,
+        max_stack: usize,
+        depth: usize,
+        remaining: &mut usize,
+    ) -> Result<(), Error> {
         while !code.is_empty() {
+            *remaining = remaining.checked_sub(1).ok_or(Error::ExecutionLimit)?;
             let instruction = next(&mut code)?;
             match instruction.opcode {
+                0x2c => {
+                    let id = u16::try_from(stack.pop().ok_or(Error::StackUnderflow)?)
+                        .map_err(|_| Error::InvalidReference)?;
+                    let start = code;
+                    loop {
+                        let size = start.len() - code.len();
+                        match next(&mut code)?.opcode {
+                            0x2d => {
+                                self.functions
+                                    .insert(id, alloc::rc::Rc::from(&start[..size]));
+                                break;
+                            }
+                            0x2c | 0x89 => return Err(Error::InvalidOpcode),
+                            _ => {}
+                        }
+                    }
+                }
+                op @ (0x2a | 0x2b) => {
+                    let id = u16::try_from(stack.pop().ok_or(Error::StackUnderflow)?)
+                        .map_err(|_| Error::InvalidReference)?;
+                    let count = if op == 0x2a {
+                        stack.pop().ok_or(Error::StackUnderflow)?
+                    } else {
+                        1
+                    };
+                    let body = self
+                        .functions
+                        .get(&id)
+                        .cloned()
+                        .ok_or(Error::InvalidReference)?;
+                    if depth >= 32 {
+                        return Err(Error::StackOverflow);
+                    }
+                    for _ in 0..count {
+                        // ENDF consumes an instruction even for an empty body.
+                        *remaining = remaining.checked_sub(1).ok_or(Error::ExecutionLimit)?;
+                        self.execute_frame(&body, stack, max_stack, depth + 1, remaining)?;
+                    }
+                }
                 0x40 | 0x41 | 0xb0..=0xbf => {
                     let data = instruction.immediate;
                     let count = if instruction.words {
@@ -473,4 +528,22 @@ fn adr0064_i1_control_values_scale_font_units_and_preserve_pixel_units() {
     )
     .unwrap();
     assert_eq!(stack, [11, -11, 5, 9]);
+}
+
+#[test]
+fn adr0064_i1_font_functions_share_the_operand_stack_and_bound_recursion() {
+    let mut vm = Interpreter::new(0, &[], 0x10000);
+    let mut stack = alloc::vec::Vec::new();
+    // Function 7 adds 45. Its literal byte is also the ENDF opcode.
+    vm.execute(&[0xb0, 7, 0x2c, 0xb0, 0x2d, 0x60, 0x2d], &mut stack, 8)
+        .unwrap();
+    vm.execute(&[0xb2, 1, 3, 7, 0x2a, 0xb0, 7, 0x2b], &mut stack, 8)
+        .unwrap();
+    assert_eq!(stack, [181]);
+    vm.execute(&[0xb0, 8, 0x2c, 0xb0, 8, 0x2b, 0x2d], &mut stack, 8)
+        .unwrap();
+    assert_eq!(
+        vm.execute(&[0xb0, 8, 0x2b], &mut stack, 8),
+        Err(Error::StackOverflow)
+    );
 }
