@@ -141,6 +141,7 @@ fn visit(
     glyph: GlyphId,
     scale: Scale,
     transform: Transform,
+    coords: &[i32],
     depth_left: u32,
     scratch: &mut Scratch,
     pen: &mut impl Pen,
@@ -157,9 +158,30 @@ fn visit(
         state.path.push(glyph.0);
         for component in components {
             let component = component.ok_or(OutlineError::InvalidComposite)?;
-            if component.flags & 0x8e != 0 {
+            if component.flags & 0x0e != 0 {
                 state.path.pop();
                 return Err(OutlineError::InvalidComposite);
+            }
+            if let Some(index) = component.condition_index {
+                let Some(condition) = varc.condition_list() else {
+                    state.path.pop();
+                    return Err(OutlineError::InvalidComposite);
+                };
+                let store = varc.variation_store();
+                let delta = |var_index| {
+                    let mut value = [0.0];
+                    store
+                        .and_then(|store| store.add_delta(var_index, coords, &mut value))
+                        .map_or(0.0, |_| value[0])
+                };
+                match condition.evaluate(index as usize, coords, &delta) {
+                    Some(true) => {}
+                    Some(false) => continue,
+                    None => {
+                        state.path.pop();
+                        return Err(OutlineError::InvalidComposite);
+                    }
+                }
             }
             let child = transform.multiply(&component_transform(component));
             let result = visit(
@@ -168,6 +190,7 @@ fn visit(
                 component.glyph,
                 scale,
                 child,
+                coords,
                 depth_left.saturating_sub(1),
                 scratch,
                 pen,
@@ -216,6 +239,7 @@ pub(super) fn draw(
         glyph,
         scale,
         Transform::IDENTITY,
+        outlines.instance().coords_normalized(),
         64,
         scratch,
         pen,

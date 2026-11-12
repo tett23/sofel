@@ -13,6 +13,10 @@ fn source() -> Vec<u8> {
 }
 
 fn synthetic(records: &[(u16, Vec<u8>)]) -> Vec<u8> {
+    synthetic_with_condition(records, None)
+}
+
+fn synthetic_with_condition(records: &[(u16, Vec<u8>)], condition: Option<(i16, i16)>) -> Vec<u8> {
     let data = source();
     let font = Font::new(&data, 0).unwrap();
     let mut varc = vec![0u8; 24];
@@ -38,6 +42,16 @@ fn synthetic(records: &[(u16, Vec<u8>)]) -> Vec<u8> {
     for (glyph, _) in records {
         varc.extend_from_slice(&glyph.to_be_bytes());
     }
+    if let Some((min, max)) = condition {
+        let offset = u32::try_from(varc.len()).unwrap();
+        varc[12..16].copy_from_slice(&offset.to_be_bytes());
+        varc.extend_from_slice(&1u32.to_be_bytes()); // one condition
+        varc.extend_from_slice(&8u32.to_be_bytes()); // offset from the list
+        varc.extend_from_slice(&1u16.to_be_bytes()); // axis-range format
+        varc.extend_from_slice(&0u16.to_be_bytes()); // axis 0
+        varc.extend_from_slice(&min.to_be_bytes());
+        varc.extend_from_slice(&max.to_be_bytes());
+    }
     let tables: Vec<_> = font
         .sfnt()
         .records()
@@ -51,6 +65,31 @@ fn synthetic(records: &[(u16, Vec<u8>)]) -> Vec<u8> {
         })
         .collect();
     sofel_write::build_sfnt(&tables).unwrap()
+}
+
+#[test]
+fn adr0067_i1_component_condition_at_boundary() {
+    let data = source();
+    let font = Font::new(&data, 0).unwrap();
+    let mut record = Varc::new(font.table(Tag::new(b"VARC")).unwrap())
+        .unwrap()
+        .record(GlyphId(3))
+        .unwrap()
+        .to_vec();
+    record[1] |= 0x80; // HAVE_CONDITION in the two-byte flags
+    record.insert(4, 0); // condition-list entry 0
+    let shown = synthetic_with_condition(&[(3, record.clone())], Some((0, 0)));
+    let hidden = synthetic_with_condition(&[(3, record)], Some((1, 1)));
+    assert!(
+        !draw(&Font::new(&shown, 0).unwrap(), 3, &mut Scratch::default())
+            .1
+            .is_empty()
+    );
+    assert!(
+        draw(&Font::new(&hidden, 0).unwrap(), 3, &mut Scratch::default())
+            .1
+            .is_empty()
+    );
 }
 
 fn draw(font: &Font<'_>, glyph: u32, scratch: &mut Scratch) -> (CBox, Vec<Command>) {
