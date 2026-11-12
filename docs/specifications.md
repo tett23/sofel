@@ -323,6 +323,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   - `color_formats`、`glyph_color_format`（塗りの木をたどらない。`v1_fits` も見ない）、`layers`、`svg_document` を持つ。
   - 生の塗りの木（`base_paint`、`PaintRef`、`clip_box`、`layer_paint`）は、FreeTypeの `FT_Get_Color_Glyph_Paint` などと同じ値を返す。基本のグリフの探索はFreeTypeの二分探索による。
 - `sofel-bitmap`：`strikes` はFreeTypeの `available_sizes`（CBLC、EBLC、`bloc`、sbixの順に最初の表、ppemが0のストライクは除く）、`match_strike` は `FT_Match_Size`、`choose_strike` はHarfBuzzの選び方（`max(x, y)` が要求以上で最小、無ければ最大、0は最大）、`glyph_bitmap` はFreeTypeの読み込み（sbixの `dupe` と `flip` を4回まで）で画像のデータとメトリクスを返す。PNGを塗るための `cbdt_png`、`sbix_png` とその箱はHarfBuzzの読み方（CBDTは索引の形式1と3、画像の形式17と18、sbixは `dupe` を8回まで）による。
+- `Rasterizer::render_mono` と C の `sofel_rasterizer_render_mono` は、輪郭をモノクロで描く。各行は上から順に並び、左端の画素が最初のバイトの最上位ビットに対応する。行のバイト数は幅を8で割って切り上げた値である。`sofel_cli::glyph::render_mono` は、ヒンティングなしの TrueType 輪郭を画素中心に合わせて移動し、暗黙の点を求めてから描く（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
 - `Instance::ft_control_values` と C の `sofel_font_ft_control_values` は、指定した軸位置の `cvar` 差分を `cvt ` 表に適用し、ピクセルサイズで拡大縮小する前の制御値を 26.6 形式で返す（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
 - `Rasterizer::render_harmony` と C の `sofel_rasterizer_render_harmony` は、記録した輪郭を FreeType Harmony の既定 RGB 配置で描く。フィルタを使う構成では、`render_filtered_lcd` と C の `sofel_rasterizer_render_filtered_lcd` が5個の重みを受け取り、中央の重みが0ならフィルタを無効にする。水平 LCD の幅と垂直 LCD の行数はサブピクセル単位で、カバレッジは上の行からパディングなしで返す（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
 - `sofel-bitmap` の `bitmap_layout` と `draw_bitmap` は、EBDT、CBDT、`bdat` の画像の形式1、2、5、6、7と成分の形式8、9を、1、2、4、8、32bitの深さで、FreeTypeの `tt_sbit_decoder_load_image`（索引の形式1〜5、形式2と7のバイト単位とビット単位の判定、成分のメトリクスの戻し方）と同じ画素とメトリクスにして、呼び出し側の領域（`pitch × rows` バイト、上の行から）に書く。32bitは `FT_LOAD_COLOR` と同じくBGRAのまま書く。CBDT と sbix の PNG はアルファ乗算済み BGRA に展開する。sbix の flip は各行を左右に反転し、単純輪郭を持つグリフでは FreeType の水平方向ロードに合わせて左サイドベアリングと輪郭の下端で原点を補正する（[ADR 0066](adr/0066-color-glyph-pixels.md)）。
@@ -332,7 +333,8 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 検査：テストのデータにEBLCや `bloc` のフォントが無いため、画像の形式1、2、5、6、7、8、9、深さ1、2、4、8、32、索引の形式1〜5の組み合わせを、EBLC/EBDTと `bloc`/`bdat`/`bhed` で組み立てた110個のフォントと、glyfの輪郭とCBLC/CBDTを両方持つフォントを、`ft-dump --sbit`（`FT_Select_Size` と `FT_LOAD_COLOR` の画素とメトリクス）と比べ、すべて一致する。
 - `sofel-raster` の `blend_layer` は、8bitの被覆率の画像を色で重ねて乗算済みのBGRAの画像（`BgraImage`）に足す。FreeTypeの `tt_face_colr_blend_layer` と同じく、最初の画素のある層で画像の箱を決め（画素の無い層では箱を決めず、次の層が決めなおす）、以後の層で箱を広げて写しなおし、画素ごとに整数で重ねる（`fa = alpha × coverage / 255`、`dst × (255 − fa) / 255 + color × fa / 255`）。
 - `sofel_cli::glyph::render_color` は、FreeTypeの `FT_LOAD_COLOR | FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP` と `FT_RENDER_MODE_NORMAL` の描画と同じく、グリフ自身の輪郭を読んでから、COLRv0の層をそれぞれ `glyph::render` で描いて `blend_layer` で重ねる。層は `color_layers`（FreeTypeの `FT_Get_Color_Glyph_Layer` と同じく、基本のグリフの記録が層の記録を越えれば無し、グリフの番号がグリフの数以上か、パレットの番号が前景色（0xFFFF）以外でパレットの項目の数以上の層で打ち切り）による。色は `PaintOptions` のパレットと前景色から取る。層が無いか、層のどれかが描けなければ、グリフ自身の輪郭を灰色で描く（`ColorGlyph::Gray`）。
-- `sofel-render --color [--palette N]` は、COLRv0、輪郭と矩形でクリップした COLRv1 の線形・放射グラデーションと、`rect`、`circle`、`path` と線形・放射グラデーションからなる OT-SVG のグリフをPAM（乗算済みでない値に直す）で書く。OT-SVG では対象グリフの要素を選び、`defs` の停止点、`stop-opacity`、図形の境界ボックス、`gradientTransform`、グループの `transform` を適用し、図形の順に重ねる（[ADR 0072](adr/0072-color-gallery-acceptance.md)）。前景色は、パレットに暗い背景向けの印があれば白、無ければ黒とする。
+- `sofel-render --color [--palette N]` は、COLRv0、輪郭と矩形でクリップした COLRv1 の線形・放射グラデーションと、`rect`、`circle`、`path` と単色または線形・放射グラデーションからなる OT-SVG のグリフをPAM（乗算済みでない値に直す）で書く。OT-SVG では対象グリフの要素を選び、`defs` の停止点、`stop-opacity`、図形の境界ボックス、`gradientTransform`、グループの `transform` を適用し、図形の順に重ねる（[ADR 0072](adr/0072-color-gallery-acceptance.md)）。前景色は、パレットに暗い背景向けの印があれば白、無ければ黒とする。
+- OT-SVG は対象グリフの ID を持つ要素を選び、文書の `viewBox` をフォントの em 正方形に写す。図形は親から塗りを引き継ぎ、子の `fill` で色を変えられる。`context-fill` には呼び出し元の前景色を使う。文書内の `use` は参照先の変換と呼び出し側の変換を順に適用する。`clipPathUnits="userSpaceOnUse"` では同じクリップ内の図形を和集合、祖先のクリップとの重なりを積集合として塗る。スクリプトは実行せず、外部画像は取得しない（[ADR 0074](adr/0074-svg-feature-conformance.md)）。
 - OT-SVG のパスは絶対座標と相対座標の直線、2次・3次ベジェ曲線、楕円弧を描く。楕円弧は最大90度ずつ3次ベジェ曲線で近似する。グループと図形には平行移動、拡大縮小、中心を指定した回転、せん断と行列の変換を適用する（[ADR 0066](adr/0066-color-glyph-pixels.md)）。
 - 検査（5d）：`ft-dump --raster PPEM --color` で、HarfBuzzのテストのカラーのフォントのCOLRv0のグリフを、12、24、48画素、パレット0と最後のパレットでFreeTypeと比べる（1818項目）。前景色はFreeTypeと同じく、FreeTypeが16bitずつ読んだ `paletteTypes` の暗い背景の印で決める。期待する失敗は、FreeTypeが読み込まないCOLRを持つ2つのフォントの12項目だけで、ほかは画素まで完全に一致する。
 - `sofel-paint` は塗りの命令をHarfBuzzの `test/api/test-paint.c` の字下げのテキストで書く。
@@ -378,7 +380,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 軸を指定しない HVAR と VVAR は、複数のItemVariationDataから残したグリフに対応する行と使う領域を詰め、全ての値が0の列を除いて書き出す。使わないItemVariationDataを除き、暗黙・明示の送り幅とサイドベアリングのマップを新しいグリフIDに合わせて書く（[ADR 0022](adr/0022-subsetting.md)）。 明示マップの末尾で複数のグリフが同じ行を参照する場合は、その最初の項目までを書き、残りは最後の値を繰り返して読む。空のサイドベアリングと縦の原点のマップは出力しない。
 - VARC のサブセット化（[ADR 0067](adr/0067-varc-components.md)）は、残す部品を再帰的に集め、グリフ ID と参照、条件、部品の軸座標、変化量ストアの番号を再配置する。VARC が参照しない1軸を既定値に固定し、gvar、GVAR、HVAR、VVAR、MVAR、cvar、CFF2、GDEF、GSUB、GPOS、BASE、MATH、COLR、STAT が存在しないか捨てられ、avar が版2でない場合は、残る軸の番号を書き直す。これらの表と avar が元のフォントにない場合は、非既定値への固定と範囲の指定でも VARC の軸番号を写す。参照される軸の固定と対象外の変化量表を持つフォントの部分軸固定は `Unsupported` とする。VARC を `NoSubsetTables` でそのまま写す場合は、`RETAIN_GIDS` を指定して軸を変えないことを要し、満たさなければ `Unsupported` とする。名前の表の上書きも `Unsupported` とする。
 - 軸を指定しない BASE 1.1 の ItemVariationStore は、残すスクリプトとフィーチャに属する横と縦の BaseCoord の VariationIndex を集め、使う行と領域だけを詰めて番号を振りなおす。参照が0件なら、HarfBuzzと同じくストアを除いて座標を残す。BaseValues、既定の MinMax、言語別とフィーチャ別の MinMax を調べ、壊れた参照はこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
-- 軸を指定しないGDEF 1.3のItemVariationStoreは、GSUBのFeatureVariationsが軸範囲の条件だけを持つ場合も含めて、残すLigCaretList、値の記録、アンカー、MATHの定数・斜体補正・上アクセント・カーニング・組み立てのVariationIndexに合わせて行と領域を詰めて書く。参照が0件ならストアを除く。GPOSの値の記録とアンカーをたどってVariationIndexを集める。送り幅などの値に現れる `0x8000` は参照に数えない。MATHとGDEFの一方だけをコピーして参照番号を合わせられない場合と、同じバイト列があるGPOSをそのままコピーする場合は拒否する。GDEFだけをコピーしてGPOSをサブセット化するとき、HarfBuzzと同じくGPOSの参照番号は詰めるが、GDEFのストアは元のバイト列のまま写す。壊れたGDEFはこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
+- 軸を指定しないGDEF 1.3のItemVariationStoreは、コピーするGSUBのFeatureVariationsがバージョン1.0で軸範囲の条件だけを持つ場合も含めて、残すLigCaretList、値の記録、アンカー、MATHの定数・斜体補正・上アクセント・カーニング・組み立てのVariationIndexに合わせて行と領域を詰めて書く。参照が0件ならストアを除く。GPOSの値の記録とアンカーをたどってVariationIndexを集める。送り幅などの値に現れる `0x8000` は参照に数えない。MATHだけをコピーして参照番号を合わせられない場合と、同じバイト列があるGPOSをそのままコピーする場合は拒否する。GDEFだけをコピーしてGPOSやMATHをサブセット化するとき、HarfBuzzと同じくそれらの参照番号を詰め、GDEFのストアは元のバイト列のまま写す。壊れたGDEFはこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
 - レイアウトの表のうち、FeatureVariationsを持つGSUBをそのままコピーする場合のGDEF、GSUBとGPOSの版1.2とGDEFの版1.4、FeatureVariationsの版1.1と形式1でない条件、65536を超えるグリフのフォントの24bitの形式も `Unsupported` とする。
 
 ## WOFF と圧縮フォントの読み込み
@@ -451,9 +453,11 @@ UTF-8 ファイルの末尾から LF または CRLF を一組だけ除き、前�
 
 ## 正しさの検査
 
-SVG の検査器は [ADR 0074](adr/0074-svg-feature-conformance.md) の必須ケースと観測を [台帳](../conformance/svg-cases.tsv) と照合する。欠落、重複、未知の項目を報告し、ケースごとに期待値の出典と結果を出す。共有文書の平文のバイト列と範囲外のグリフを検査し、検査器を実装していない観測は未実行として扱う。
+SVG の検査器は [ADR 0074](adr/0074-svg-feature-conformance.md) の必須ケースと観測を [台帳](../conformance/svg-cases.tsv) と照合する。欠落、重複、未知の項目を報告し、ケースごとに期待値の出典と結果を出す。OT-SVG 入力では共有文書、選択したグリフの描画、変換後の輪郭、前景色、グラデーション、参照と制限を調べる。図形の描画境界は同じ輪郭を直接ラスタライザーに渡した結果と比較する。検査器を実装していない観測は未実行として扱う。
 
-検査器は必須ケースの集計に続いて、[OpenType 1.9.1 の SVG 要求項目](../conformance/svg-opentype.tsv)ごとに、対応するケース ID または対象外・未決の理由を表示する。
+SVG ページ出力では、空のページ、単字、半透明の重なり、クリップした画像の寸法と描画順を、[固定版 HarfBuzz で生成した参照](../conformance/svg-page/reference.cc) と比較する。XML の属性順と要素間の空白は比較から除く。
+
+検査器は必須ケースの集計に続いて、[OpenType 1.9.1 の SVG 要求項目](../conformance/svg-opentype.tsv)ごとに、対応するケース ID または対象外・未決の理由を表示する。必須ケースがすべて成功すると、画像の寸法・原点・画素列と正規化した出力 XML を、[ローカルで得た実測値](../conformance/svg-measurements.tsv) と照合する。Linux と macOS の CI はローカルと同じコマンドで一覧 PNG を生成して照合する。
 
 - 追加フォントの集合は [ADR 0031](adr/0031-diverse-font-corpus.md) の13ファイル、57フェイスと既存の可変COLRフォントで構成する。`fonts.lock` は取得ファイルとライセンスをHTTPS URL、SHA-256、バイト数、保存先で固定し、`conformance/fonts.tsv` はフォントとライセンスと対象機能を結ぶ。`scripts/fetch-fonts.sh` は保存済みのファイルも再検証し、欠落とハッシュ不一致を失敗にする。フォントのバイナリをリポジトリに含めず、著作権表示とライセンス全文を `THIRD_PARTY_NOTICES.md` に記録する。
 - 追加フォントの各フェイスでは表の読み取り、検証器、全Unicodeスカラー値の既定座標のnominal glyph ID、最大128グリフの横・縦メトリクスとFreeTypeの非ヒンティング輪郭・advanceを照合する。サンプル集合にはグリフ0と末尾と登録した全座標のシェーピング出力を必ず入れ、[ADR 0031](adr/0031-diverse-font-corpus.md) の等間隔の式で補う。HarfBuzzのメトリクスとFreeTypeの輪郭・advanceは別々の参照値と比較する。
@@ -557,6 +561,7 @@ CI の文書だけの変更は、比較起点の `ci/documentation-only.rules` �
 
 [sofel ADR 0069](adr/0069-font-render-gallery.md) に従い、追加フォント台帳の全フェイスと固定版 HarfBuzz の可変 COLR フォントを描画する。
 `sh scripts/render-font-gallery.sh` は各フェイスの単字とシェーピング済みの固定文字列を等倍で一枚の PNG に配置し、入力、ppem、未対応の理由をローカルの HTML から確認できるようにする。
+color-svg の単字19と文字列から得たグリフ26は48 ppemで描画する。検査器は、固定した色を確認した CLI の画像と、一覧 PNG の両方の欄を全画素で照合する（[sofel ADR 0072](adr/0072-color-gallery-acceptance.md)、[sofel ADR 0074](adr/0074-svg-feature-conformance.md)）。
 生成器は [sofel ADR 0073](adr/0073-rust-font-gallery.md) に従う Rust の開発用バイナリとし、Unicode スカラー値とグリフ ID、26.6 固定小数点の位置と整数画素、描画結果と登録済みの未対応状態を型で区別する。シェルの入口は Rust のテストを実行してから生成器を起動する。
 sbix の単字 19 と合字 26 は固定版 FreeType と全画素を照合し、一覧の各欄に等倍で配置する（[sofel ADR 0072](adr/0072-color-gallery-acceptance.md)）。
 CFF の 19・26 と可変 COLRv1 の 92・93 は固定版 HarfBuzz raster と原点・寸法・乗算済み BGRA の全画素を照合する。一覧 PNG の検査では、これらの2書体、sbix、OT-SVG の単字と文字列を個別に比較する。

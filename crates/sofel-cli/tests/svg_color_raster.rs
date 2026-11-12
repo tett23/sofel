@@ -6,6 +6,9 @@
     clippy::cast_sign_loss
 )]
 
+#[path = "../../../conformance/svg/color_svg.rs"]
+mod color_svg;
+
 use sofel_cli::color_raster::render_scene;
 use sofel_font::geom::{Pen, Point};
 use sofel_raster::{BgraImage, FillRule, Rasterizer, RenderOptions};
@@ -243,77 +246,15 @@ fn adr0072_i3_real_svg_glyphs_render_as_color() {
             "glyph {glyph}: {}",
             String::from_utf8_lossy(&output.stderr)
         );
-        assert!(
-            output.stdout.starts_with(b"P7\n"),
-            "glyph {glyph}: grayscale output"
-        );
-        let split = b"ENDHDR\n";
-        let header_end = output
-            .stdout
-            .windows(split.len())
-            .position(|w| w == split)
-            .unwrap();
-        let header = std::str::from_utf8(&output.stdout[..header_end]).unwrap();
-        let value = |label: &str| -> i32 {
-            header
-                .lines()
-                .find_map(|line| line.strip_prefix(label))
-                .unwrap()
-                .parse()
-                .unwrap()
-        };
-        let pos = header
-            .lines()
-            .find(|line| line.starts_with("# left "))
-            .unwrap();
-        let parts: Vec<_> = pos.split_whitespace().collect();
-        let left: i32 = parts[2].parse().unwrap();
-        let top: i32 = parts[4].parse().unwrap();
-        let width = value("WIDTH ");
-        let rows = value("HEIGHT ");
-        let pixels = &output.stdout[header_end + split.len()..];
-        assert_eq!(pixels.len(), (width * rows * 4) as usize);
-        let expected: &[(f64, f64, [u8; 4])] = if glyph == 19 {
-            &[
-                (2.0, 5.0, [255, 195, 0, 140]),
-                (8.0, 5.0, [255, 19, 0, 244]),
-                (5.0, 2.0, [255, 198, 0, 245]),
-                (5.0, 8.0, [255, 18, 0, 138]),
-                (5.0, 5.0, [255, 204, 0, 255]),
-                (6.7, 5.6, [255, 70, 57, 183]),
-                (2.0, 2.0, [0, 0, 0, 0]),
-            ]
-        } else {
-            &[
-                (2.0, 5.0, [255, 194, 0, 255]),
-                (8.0, 5.0, [255, 19, 0, 255]),
-                (5.0, 2.0, [255, 198, 0, 255]),
-                (5.0, 8.0, [255, 18, 0, 255]),
-                (5.0, 5.0, [255, 108, 0, 255]),
-                (6.7, 5.6, [255, 56, 0, 104]),
-                (2.0, 2.0, [0, 0, 0, 0]),
-            ]
-        };
-        // Map each SVG anchor to the nearest output pixel center, as the ADR specifies.
-        for &(x, y, rgba) in expected {
+        color_svg::check_cli_pixels(glyph, &output.stdout).unwrap();
+        for ((x, y), rgba) in color_svg::samples(glyph).unwrap() {
             let scale = 48.0 / 1024.0;
-            let column = ((120.0 * x + 37.5) * scale - 0.5).round() as i32 - left;
-            let row = top - 1 - ((950.0 - 120.0 * y) * scale - 0.5).round() as i32;
-            assert!(column >= 0 && column < width && row >= 0 && row < rows);
-            let pixel_x = f64::from(column + left) + 0.5;
-            let pixel_y = f64::from(top - row) - 0.5;
-            let local_x = (pixel_x / scale - 37.5) / 120.0;
-            let local_y = (-pixel_y / scale + 950.0) / 120.0;
+            let local_x = ((f64::from(x) + 0.5) / scale - 37.5) / 120.0;
+            let local_y = (950.0 - (f64::from(y) + 0.5) / scale) / 120.0;
             assert_eq!(
                 reference_anchor(glyph, local_x, local_y),
                 rgba,
-                "independent glyph {glyph} anchor ({x}, {y})"
-            );
-            let at = ((row * width + column) * 4) as usize;
-            assert_eq!(
-                &pixels[at..at + 4],
-                &rgba,
-                "glyph {glyph} anchor ({x}, {y})"
+                "independent glyph {glyph} pixel ({x}, {y})"
             );
         }
     }
