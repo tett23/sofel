@@ -1,7 +1,7 @@
 //! The subsetting plan ([`Plan`]): the closure and the glyph mapping, as
 //! HarfBuzz's `src/hb-subset-plan.cc`.
 
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 
 use sofel_font::Font;
@@ -145,6 +145,10 @@ pub(crate) struct PlanLayout {
     /// variation indices map to `HB_OT_LAYOUT_NO_VARIATIONS_INDEX` with
     /// no delta (`layout_variation_idx_delta_map`).
     pub varidx_pinned: bool,
+    /// Used rows and remapped indices of an unpinned GDEF store, shared
+    /// by GDEF caret values and retained GPOS PairPos records.
+    pub gdef_var_items: Vec<(u16, Vec<u32>)>,
+    pub gdef_var_map: BTreeMap<u32, u32>,
 }
 
 /// The checks of the layout tables this version cannot write yet.
@@ -177,18 +181,46 @@ fn layout_unsupported(
         }
     }
     // Pinning every axis drops the GDEF variation store.
-    if !pinned && kept(b"GDEF").is_some_and(layout::gdef::has_var_store) {
+    let retained = |t: &[u8; 4]| {
+        let tag = Tag::new(t);
+        font.table(tag).is_some() && !drop.contains(tag.to_u32())
+    };
+    let gsub_feature_variations_retained = retained(b"GSUB")
+        && font.table(Tag::new(b"GSUB")).is_some_and(|d| {
+            sofel_font::read::be::u32_at(d, 0).unwrap_or(0) >= 0x0001_0001
+                && sofel_font::read::be::u32_at(d, 10) != Some(0)
+        });
+    // A VariationIndex Device necessarily contains the format word 0x8000.
+    // Scan the whole retained table so an unknown or malformed subtable
+    // cannot make a real reference look absent. Other 0x8000 words may
+    // conservatively keep the table unsupported.
+    let may_reference_gdef_store = |d: &[u8]| d.windows(2).any(|word| word == [0x80, 0x00]);
+    let gpos_may_reference_store = retained(b"GPOS")
+        && font
+            .table(Tag::new(b"GPOS"))
+            .is_some_and(may_reference_gdef_store);
+    let math_may_reference_store = retained(b"MATH")
+        && font
+            .table(Tag::new(b"MATH"))
+            .is_some_and(may_reference_gdef_store);
+    let copied_gpos_may_reference_store =
+        gpos_may_reference_store && no_subset.contains(Tag::new(b"GPOS").to_u32());
+    if !pinned
+        && kept(b"GDEF").is_some_and(layout::gdef::has_var_store)
+        && (copied_gpos_may_reference_store
+            || math_may_reference_store
+            || gsub_feature_variations_retained)
+    {
         return Err(SubsetError::Unsupported {
             tag: Tag::new(b"GDEF"),
             reason: "the GDEF item variation store (ADR 0022 stage 10)",
         });
     }
-    // collect_layout_variation_indices remaps MATH's VariationIndex
-    // tables with the GDEF store even when GDEF itself is dropped.
-    let math_kept = font.table(Tag::new(b"MATH")).is_some()
-        && !drop.contains(Tag::new(b"MATH").to_u32())
-        && !no_subset.contains(Tag::new(b"MATH").to_u32());
-    if math_kept
+    // A copied MATH table needs no remapping even when GDEF is dropped.
+    let math_subset = retained(b"MATH") && !no_subset.contains(Tag::new(b"MATH").to_u32());
+    if !pinned
+        && math_subset
+        && math_may_reference_store
         && font
             .table(Tag::new(b"GDEF"))
             .is_some_and(layout::gdef::has_var_store)
@@ -197,18 +229,6 @@ fn layout_unsupported(
             tag: Tag::new(b"MATH"),
             reason: "MATH with a GDEF item variation store (ADR 0022 stage 10)",
         });
-    }
-    if let Some(d) = kept(b"BASE").filter(|_| !pinned) {
-        let v = sofel_font::read::be::u32_at(d, 0).unwrap_or(0);
-        if v >= 0x0001_0001
-            && sofel_font::read::be::u32_at(d, 8).unwrap_or(0) != 0
-            && !crate::tables::base::unused_variation_store(d)
-        {
-            return Err(SubsetError::Unsupported {
-                tag: Tag::new(b"BASE"),
-                reason: "the BASE item variation store (ADR 0022 stage 10)",
-            });
-        }
     }
     Ok(())
 }
@@ -501,6 +521,12 @@ impl Plan {
             && !full_instance
             && !flags.has(Flags::DESUBROUTINIZE)
             && crate::tables::cff::uses_subroutines(font, p.glyphs.new_to_old.as_slice())
+            && !crate::tables::cff::supports_subroutines(
+                font,
+                p.glyphs.new_to_old.as_slice(),
+                p.num_output_glyphs,
+                flags.has(Flags::NO_HINTING),
+            )
         {
             return Err(SubsetError::Unsupported {
                 tag: cff2,
@@ -534,6 +560,48 @@ impl Plan {
             && let Some(gdef) = font.table(Tag::new(b"GDEF"))
         {
             p.layout.used_mark_sets = layout::gdef::used_mark_sets(gdef, &p.layout.glyphset_gsub);
+            let copied_gdef = no_subset.contains(Tag::new(b"GDEF").to_u32());
+            let gpos_data = font.table(Tag::new(b"GPOS")).unwrap_or(&[]);
+            let gpos_has_var_format = tag_kept(b"GPOS")
+                && !no_subset.contains(Tag::new(b"GPOS").to_u32())
+                && gpos_data.windows(2).any(|word| word == [0x80, 0x00]);
+            if !pinned && layout::gdef::has_var_store(gdef) && (!copied_gdef || gpos_has_var_format)
+            {
+                let gpos_indices = if gpos_has_var_format {
+                    layout::gpos::retained_pair_variation_indices(
+                        gpos_data,
+                        &p.layout.gpos,
+                        &p.layout.glyphset_gsub,
+                        num_glyphs,
+                    )
+                } else {
+                    Some(BTreeSet::new())
+                };
+                let Some(indices) = gpos_indices else {
+                    return Err(SubsetError::Unsupported {
+                        tag: Tag::new(b"GDEF"),
+                        reason: "the GDEF item variation store (ADR 0022 stage 10)",
+                    });
+                };
+                let Some((items, map)) = layout::gdef::retained_variation_indices(
+                    gdef,
+                    &p.layout.glyphset_gsub,
+                    &indices,
+                ) else {
+                    return Err(SubsetError::Unsupported {
+                        tag: Tag::new(b"GDEF"),
+                        reason: "the GDEF item variation store (ADR 0022 stage 10)",
+                    });
+                };
+                if copied_gdef {
+                    // HarfBuzz remaps subset GPOS references even when it
+                    // copies the original GDEF table unchanged.
+                    p.layout.gdef_var_map = map;
+                } else {
+                    p.layout.gdef_var_items = items;
+                    p.layout.gdef_var_map = map;
+                }
+            }
         }
         p.instance_metrics(font)?;
         Ok(p)

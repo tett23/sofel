@@ -74,18 +74,23 @@ pub(super) fn subset(
     let shared_at = header_len
         .checked_add(offsets_len)
         .ok_or(SubsetError::Limit { tag })?;
-    let data_at = shared_at
-        .checked_add(shared_len)
-        .ok_or(SubsetError::Limit { tag })?;
     let source_shared_at = usize::try_from(u32::from_be_bytes(
         src.get(8..12)
             .and_then(|data| data.try_into().ok())
             .ok_or(SubsetError::Malformed { tag })?,
     ))
     .map_err(|_| SubsetError::Malformed { tag })?;
-    let shared = src
-        .get(source_shared_at..source_shared_at.saturating_add(shared_len))
-        .ok_or(SubsetError::Malformed { tag })?;
+    // HarfBuzz preserves the count but emits no shared tuple bytes for
+    // a zero offset. Copying from offset zero would copy the gvar header.
+    let shared = if source_shared_at == 0 {
+        &[][..]
+    } else {
+        src.get(source_shared_at..source_shared_at.saturating_add(shared_len))
+            .ok_or(SubsetError::Malformed { tag })?
+    };
+    let data_at = shared_at
+        .checked_add(shared.len())
+        .ok_or(SubsetError::Limit { tag })?;
 
     serializer.u32(0x0001_0000);
     serializer.u16(table.axis_count());

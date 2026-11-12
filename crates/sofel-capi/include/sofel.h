@@ -2560,8 +2560,9 @@ int32_t sofel_ot_tags_to_script_and_language(uint32_t script_tag, uint32_t langu
                                              uint32_t *script, sofel_language_t **language);
 
 /*
- * The script of an OpenType script tag; 0 for `DFLT`, 'Zzzz' for a tag
- * of no script.
+ * The script of an OpenType script tag. Returns 0 for `DFLT` and 'Zzzz'
+ * for unrecognized version 2 or 3 tags. Other results preserve HarfBuzz's
+ * four output bytes, including non-letters.
  *
  * Rust: sofel_shape::ot_tag_to_script
  * HarfBuzz: hb_ot_tag_to_script
@@ -3027,7 +3028,9 @@ int32_t sofel_buffer_serialize(const sofel_buffer_t *buffer, size_t start, size_
  * text does not read to its end, is empty, or the format or direction
  * is unknown.
  *
- * Rust: sofel_shape::deserialize_glyphs, sofel_shape::GlyphBuffer::from_parts
+ * Clearing the result reuses the original buffer settings, including after a parse error.
+ *
+ * Rust: sofel_shape::deserialize_glyphs, sofel_shape::GlyphBuffer::from_parts, sofel_shape::UnicodeBuffer::into_glyphs
  * HarfBuzz: hb_buffer_deserialize_glyphs
  * FreeType: none
  */

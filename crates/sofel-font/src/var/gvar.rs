@@ -869,6 +869,102 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::indexing_slicing,
+        clippy::arithmetic_side_effects,
+        clippy::unwrap_used
+    )]
+    fn adr0029_generated_phantom_deltas_and_ft_tuple_order() {
+        // Two contour points followed by four phantoms. The first tuple
+        // names every point; the second names only points 1, 2, and 5.
+        let all_header = [0, 14, 0x80, 0, 0x40, 0];
+        let private_header = [0, 13, 0xa0, 0, 0x40, 0];
+        let mut seed = 29u32;
+        let mut next = || {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            seed.to_be_bytes()[0]
+        };
+        for case in 0..1000 {
+            let mut all_data = Vec::new();
+            let mut private_data = vec![3, 2, 1, 1, 3];
+            for _ in 0..2 {
+                all_data.push(5);
+                all_data.extend((0..6).map(|_| next()));
+                private_data.push(2);
+                private_data.extend((0..3).map(|_| next()));
+            }
+            let coord = match case % 4 {
+                0 => 0,
+                1 => 16384,
+                _ => i32::from(u16::from_be_bytes([next(), next()]) % 16385),
+            };
+            let bytes = |reverse| {
+                let mut data = one_all_points_tuple();
+                data.truncate(24);
+                data[23] = 22; // 44 bytes of glyph data
+                data.extend([0, 2, 0, 16]);
+                let mut tuples = [(all_header, &all_data), (private_header, &private_data)];
+                if reverse {
+                    tuples.reverse();
+                }
+                for (header, _) in &tuples {
+                    data.extend(header);
+                }
+                for (_, deltas) in tuples {
+                    data.extend(deltas);
+                }
+                data.push(0);
+                data
+            };
+
+            let forward = bytes(false);
+            let table = Gvar::new(&forward, TAG).unwrap();
+            let mut full_hb = [Point::default(); 6];
+            full_hb[1].end = true;
+            let mut only_hb = full_hb;
+            for (points, only) in [(&mut full_hb, false), (&mut only_hb, true)] {
+                apply_hb(
+                    &table,
+                    0,
+                    &[coord],
+                    &[],
+                    points,
+                    &mut HbScratch::default(),
+                    only,
+                    &mut 12,
+                )
+                .unwrap();
+            }
+            assert_eq!(full_hb[2..], only_hb[2..], "case {case}");
+
+            let full_ft = |table: &Gvar<'_>| {
+                let mut points = [Point::default(); 6];
+                points[1].end = true;
+                apply_ft(
+                    table,
+                    0,
+                    &[coord * 4],
+                    &[],
+                    &mut points,
+                    &mut FtScratch::default(),
+                )
+                .unwrap();
+                points
+            };
+            let full = full_ft(&table);
+            let mut only = [Point::default(); 4];
+            apply_ft_phantoms(&table, 0, &[coord * 4], &[], 2, &mut only).unwrap();
+            assert_eq!(full[2..], only, "case {case}");
+            let reversed = bytes(true);
+            assert_eq!(
+                full,
+                full_ft(&Gvar::new(&reversed, TAG).unwrap()),
+                "case {case}"
+            );
+        }
+    }
+
+    #[test]
     fn adr0030_i07_all_points_and_phantom_only_match() {
         let bytes = one_all_points_tuple();
         let parsed = Gvar::new(&bytes, TAG);

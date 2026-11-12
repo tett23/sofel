@@ -1,15 +1,1 @@
-# ADR 0031: non-default position is not yet passed into glyph metrics or outlines (ADR 0027 stage 4).
-arabic.wght.max.metrics # variations: HVAR and gvar metrics at wght=900 require Location
-arabic.wght.max.outline # variations: gvar outline at wght=900 requires Location
-arabic.wdth.min.metrics # variations: HVAR and gvar metrics at wdth=62.5 require Location
-arabic.wdth.min.outline # variations: gvar outline at wdth=62.5 requires Location
-source-serif.wght.max.metrics # variations: HVAR and CFF2 metrics at wght=900 require Location
-source-serif.wght.max.outline # variations: CFF2 blend at wght=900 requires Location
-source-serif.opsz.max.metrics # variations: HVAR and CFF2 metrics at opsz=60 require Location
-source-serif.opsz.max.outline # variations: CFF2 blend at opsz=60 requires Location
-amstelvar.wght.max.metrics # variations: avar2, HVAR and gvar metrics at wght=1000 require Location
-amstelvar.wght.max.outline # variations: avar2 and gvar outline at wght=1000 require Location
-amstelvar.XTSP.max.metrics # variations: avar2, HVAR and gvar metrics at XTSP=100 require Location
-amstelvar.XTSP.max.outline # variations: avar2 and gvar outline at XTSP=100 require Location
-amstelvar.wght-XTSP.max.metrics # variations: avar2 cross-axis metrics require Location
-amstelvar.wght-XTSP.max.outline # variations: avar2 cross-axis outline requires Location
+# ADR 0031: all 10 sampled locations match the pinned HarfBuzz metrics and FreeType outlines.
