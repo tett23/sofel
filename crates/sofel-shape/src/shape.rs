@@ -394,7 +394,55 @@ fn substitute_pre(
     if plan.fallback_glyph_classes {
         synthesize_glyph_classes(buffer);
     }
-    apply_map(GSUB, plan, font, buffer);
+    if let Some(chains) = &plan.morx {
+        let horizontal = plan.props.direction.is_horizontal();
+        for chain in chains {
+            for table in &chain.substitutions {
+                if table.flags & chain.default_flags == 0
+                    || (table.coverage & 0x2000_0000 == 0
+                        && (table.coverage & 0x8000_0000 == 0) != horizontal)
+                {
+                    continue;
+                }
+                buffer.charge(buffer.len);
+                if buffer.max_ops < 0 {
+                    buffer.successful = false;
+                    break;
+                }
+                let mut replace = |info: &mut crate::buffer::Info, glyph: u16| {
+                    info.codepoint = u32::from(glyph);
+                    if !plan.fallback_glyph_classes {
+                        info.glyph_props = gdef.glyph_props(info.codepoint);
+                    }
+                    digest.add(info.codepoint);
+                };
+                match &table.action {
+                    crate::aat::Action::Machine(machine) => {
+                        let backwards = table.coverage & 0x4000_0000 != 0;
+                        let logical = table.coverage & 0x1000_0000 != 0;
+                        let reverse = backwards != (!logical && buffer.direction.is_backward());
+                        if reverse {
+                            buffer.reverse();
+                        }
+                        machine.drive(buffer, &mut replace);
+                        if reverse {
+                            buffer.reverse();
+                        }
+                    }
+                    crate::aat::Action::Replace(lookup) => {
+                        for info in buffer.infos_mut() {
+                            if let Some(glyph) = lookup.get(info.codepoint) {
+                                replace(info, glyph);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        buffer.digest = digest;
+    } else {
+        apply_map(GSUB, plan, font, buffer);
+    }
 }
 
 /// `hb_ot_deal_with_variation_selectors`.
@@ -450,6 +498,9 @@ fn hide_default_ignorables(buffer: &mut Buffer, font: &ShapeFont<'_, '_, '_, '_>
 
 /// `hb_ot_substitute_post`.
 fn substitute_post(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut Buffer) {
+    if plan.morx.is_some() {
+        buffer.delete_glyphs_inplace(|info| info.codepoint == 0xffff);
+    }
     deal_with_variation_selectors(buffer);
     hide_default_ignorables(buffer, font);
     if let Some(f) = plan.funcs().postprocess_glyphs {
@@ -529,6 +580,31 @@ fn position(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut
     }
     if plan.apply_gpos {
         apply_map(GPOS, plan, font, buffer);
+    } else if let Some(tables) = &plan.kerx {
+        crate::aat::kerning::apply(tables, buffer, &font.scale.scale, plan.kern_mask);
+    }
+    if let Some(tracking) = plan.tracking {
+        let scale = font.scale.scale;
+        let horizontal = buffer.direction.is_horizontal();
+        let ptem = if scale.ptem() > 0. { scale.ptem() } else { 12. };
+        let delta = tracking.tracking(horizontal, ptem);
+        let advance = if horizontal {
+            scale.em_scalef_x(delta)
+        } else {
+            scale.em_scalef_y(delta)
+        };
+        if advance != 0 {
+            for (start, _) in buffer.groups(grapheme_group) {
+                if let Some(p) = buffer.positions_mut().get_mut(start) {
+                    let value = if horizontal {
+                        &mut p.x_advance
+                    } else {
+                        &mut p.y_advance
+                    };
+                    *value = value.saturating_add(advance);
+                }
+            }
+        }
     }
     // The `ot` font functions have no kerning: fallback kerning does
     // nothing.
