@@ -50,3 +50,37 @@ pub unsafe extern "C" fn sofel_gpu_outline(
         copy_out(&data, records, len)
     })())
 }
+
+/// Copies the requested UTF-8 shader source without a trailing NUL.
+///
+/// # Safety
+/// The output covers `capacity` bytes. `len` is writable and does not alias output.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_gpu_shader_source(
+    language: u32,
+    stage: u32,
+    output: *mut u8,
+    capacity: usize,
+    len: *mut usize,
+) -> i32 {
+    use sofel_gpu::{ShaderLanguage, ShaderStage, shader_source};
+    let language = match language {
+        0 => ShaderLanguage::Wgsl,
+        1 => ShaderLanguage::Glsl,
+        2 => ShaderLanguage::Msl,
+        3 => ShaderLanguage::Hlsl,
+        _ => return ERROR_INVALID_ARGUMENT,
+    };
+    let stage = match stage {
+        0 => ShaderStage::Vertex,
+        1 => ShaderStage::Fragment,
+        _ => return ERROR_INVALID_ARGUMENT,
+    };
+    // SAFETY: caller supplies a writable buffer and a separate length.
+    let (out, len) = unsafe { (out_array(output, capacity), w(len)) };
+    status(copy_out(
+        shader_source(language, stage).as_bytes(),
+        out,
+        len,
+    ))
+}

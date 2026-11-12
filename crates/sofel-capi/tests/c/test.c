@@ -1412,6 +1412,9 @@ static void test_color(void) {
       {SOFEL_GPU_MOVE, {0, 0}}, {SOFEL_GPU_LINE, {1, 0}},
       {SOFEL_GPU_LINE, {0, 1}}, {SOFEL_GPU_CLOSE, {0}}
     };
+    size_t shader_size = 0;
+    CHECK(sofel_gpu_shader_source(SOFEL_GPU_WGSL, SOFEL_GPU_FRAGMENT, NULL, 0, &shader_size) ==
+          SOFEL_ERROR_BUFFER_TOO_SMALL && shader_size > 0);
     int16_t records[36][4];
     size_t count = 0;
     CHECK(sofel_gpu_outline(NULL, 0, 0, 0, NULL, 0, &count) == SOFEL_OK && count == 0);

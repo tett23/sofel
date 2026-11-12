@@ -2210,6 +2210,20 @@ int32_t sofel_gpu_outline(const sofel_gpu_path_command_t *commands, size_t count
                           int32_t x_scale, int32_t y_scale, int16_t (*records)[4],
                           size_t capacity, size_t *len);
 
+#define SOFEL_GPU_WGSL 0
+#define SOFEL_GPU_GLSL 1
+#define SOFEL_GPU_MSL 2
+#define SOFEL_GPU_HLSL 3
+#define SOFEL_GPU_VERTEX 0
+#define SOFEL_GPU_FRAGMENT 1
+
+/* Copy the stage helpers as UTF-8 without a trailing NUL. The caller supplies
+ * the stage entry point and atlas bindings. len counts bytes.
+ * Rust: sofel_gpu::shader_source
+ */
+int32_t sofel_gpu_shader_source(uint32_t language, uint32_t stage, uint8_t *output,
+                                size_t capacity, size_t *len);
+
 /* A color stop: palette_index is -1 for the foreground; alpha is the
  * font's alpha, clamped to 0..1, that color was resolved with. */
 typedef struct sofel_color_stop_t {

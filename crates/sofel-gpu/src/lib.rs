@@ -286,3 +286,6 @@ impl sofel_geom::Pen for Outline {
         Outline::close(self);
     }
 }
+
+mod shaders;
+pub use shaders::{ShaderLanguage, ShaderStage, shader_source};

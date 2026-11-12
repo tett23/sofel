@@ -291,7 +291,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 ## ベクトル出力
 
-`sofel-gpu` の `Outline` と C の `sofel_gpu_outline` は、直線と2次・3次ベジェ曲線からなる輪郭を、Slug 方式のシェーダーが読む RGBA16I レコードに変換する。各レコードは符号付き16ビット整数4個で、外接矩形、水平・垂直のバンド、バンドごとの曲線番号、端点を共有する2次曲線の順に並ぶ。空の輪郭は0件を返し、座標やレコードのアドレスが表現範囲を超えるとエラーを返す（[ADR 0068](adr/0068-vector-and-gpu-output.md)）。
+`sofel-gpu` の `Outline` と C の `sofel_gpu_outline` は、直線と2次・3次ベジェ曲線からなる輪郭を、Slug 方式のシェーダーが読む RGBA16I レコードに変換する。`shader_source` と `sofel_gpu_shader_source` は WGSL、GLSL、MSL、HLSL の頂点・フラグメントシェーダー用の関数を返す。WGSL の呼び出し側は `hb_gpu_atlas` を読み取り専用の `array<vec4<i32>>` としてストレージにバインドし、各成分に16ビット値を符号拡張して格納する。呼び出し側は頂点用の `hb_gpu_dilate` とフラグメント用の `hb_gpu_draw` を自身のエントリーポイントから使う。各レコードは符号付き16ビット整数4個で、外接矩形、水平・垂直のバンド、バンドごとの曲線番号、端点を共有する2次曲線の順に並ぶ。空の輪郭は0件を返し、座標やレコードのアドレスが表現範囲を超えるとエラーを返す（[ADR 0068](adr/0068-vector-and-gpu-output.md)）。
 
 `sofel-vector` の `SvgPage` と `PdfPage` は、呼び出し側が配置した輪郭を指定色で入力順に塗る。SVG は y 軸を反転したグループにパスを書き、PDF は二次曲線を三次曲線に変換してページに書く。C の `sofel_vector_page` にはフォント、軸座標と、グリフごとの変換・色を渡す（[ADR 0068](adr/0068-vector-and-gpu-output.md)）。
 
