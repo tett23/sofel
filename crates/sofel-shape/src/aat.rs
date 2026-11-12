@@ -30,13 +30,15 @@ pub fn chains<'a>(
     language: Option<&crate::Language>,
     selections: &features::Selections,
 ) -> Option<alloc::vec::Vec<Chain<'a>>> {
-    if be::u16_at(data, 0)? != if legacy { 1 } else { 2 } {
+    let version = be::u16_at(data, 0)?;
+    if version == 0 {
         return None;
     }
     let count = be::u32_at(data, 4)?;
     let mut rest = data.get(8..)?;
     let mut chains = alloc::vec::Vec::new();
     let mut map_budget = 1usize << 24;
+    let mut remaining_subtables = 1024u32;
     for _ in 0..count {
         let (chain, tail) = rest.split_at_checked(be::u32_at(rest, 4)? as usize)?;
         let flags = be::u32_at(chain, 0)?;
@@ -49,6 +51,7 @@ pub fn chains<'a>(
         } else {
             (16, be::u32_at(chain, 8)? as usize, be::u32_at(chain, 12)?)
         };
+        remaining_subtables = remaining_subtables.checked_sub(tables)?;
         let features = be::chunks_at::<12>(chain, header, n)?;
         let ranges =
             features::compile(flags, features, tags, language, selections, &mut map_budget);
@@ -80,6 +83,15 @@ pub fn chains<'a>(
                 flags: be::u32_at(st, flags_at)?,
                 action,
             });
+        }
+        if version >= 3 {
+            let bytes = usize::try_from(glyphs.div_ceil(8)).ok()?;
+            for offset in be::chunks_at::<4>(body, 0, tables as usize)? {
+                let offset = u32::from_be_bytes(*offset);
+                if offset != 0 && offset != u32::MAX {
+                    body.get(offset as usize..)?.get(..bytes)?;
+                }
+            }
         }
         chains.push(Chain {
             ranges,

@@ -14,6 +14,7 @@ pub(crate) struct Subtable<'a> {
 }
 #[derive(Clone, Debug)]
 enum Kern<'a> {
+    Unknown,
     Pairs(&'a [[u8; 6]]),
     Matrix(ClassMatrix<'a>),
     Classes(AatLookup<'a>, AatLookup<'a>, &'a [u8]),
@@ -100,10 +101,14 @@ pub(crate) fn read<'a>(
     let mut result = Vec::new();
     for i in 0..n {
         let length = be::u32_at(tail, 0)? as usize;
+        let declared = tail.get(..length)?;
+        if declared.len() < 12 {
+            return None;
+        }
         let current = if i.saturating_add(1) == n {
             tail
         } else {
-            tail.get(..length)?
+            declared
         };
         let coverage = be::u32_at(current, 4)?;
         let tuples = be::u32_at(current, 8)?;
@@ -147,7 +152,7 @@ pub(crate) fn read<'a>(
                     vector: if tuples == 0 { None } else { Some(offset(32)?) },
                 })
             }
-            _ => return None,
+            _ => Kern::Unknown,
         };
         result.push(Subtable {
             coverage,
@@ -321,7 +326,7 @@ pub(crate) fn apply(tables: &[Subtable<'_>], buf: &mut Buffer, scale: &HbScale, 
     let horizontal = buf.direction.is_horizontal();
     let mut attached = false;
     for t in tables {
-        if horizontal != (t.coverage & 0x8000_0000 == 0) {
+        if matches!(t.action, Kern::Unknown) || horizontal != (t.coverage & 0x8000_0000 == 0) {
             continue;
         }
         buf.charge(buf.len);
@@ -495,7 +500,9 @@ impl Subtable<'_> {
                     be::i16_at(self.data.get(array..)?, offset & !1)
                 })
             }
-            Kern::History(..) | Kern::LegacyHistory(..) | Kern::Attachment(..) => None,
+            Kern::Unknown | Kern::History(..) | Kern::LegacyHistory(..) | Kern::Attachment(..) => {
+                None
+            }
         };
         value
             .and_then(|v| {

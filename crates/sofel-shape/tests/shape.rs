@@ -906,3 +906,34 @@ fn adr0060_i1_kerx6_word_width_and_tuple_offsets() {
         }
     }
 }
+
+#[test]
+fn adr0060_i1_i2_unknown_kerx_does_not_hide_valid_pair() {
+    let mut pair = vec![0; 28];
+    pair[..4].copy_from_slice(&34u32.to_be_bytes());
+    pair[15] = 1;
+    pair.extend_from_slice(&[0, 1, 0, 2, 0xff, 0xd8]);
+    for length in [11, 12, 13] {
+        let mut unknown = [0; 12];
+        unknown[3] = length;
+        unknown[7] = 255;
+        for first in [true, false] {
+            let mut table = vec![0, 2, 0, 0, 0, 0, 0, 2];
+            for sub in if first {
+                [&unknown[..], &pair]
+            } else {
+                [&pair[..], &unknown]
+            } {
+                table.extend_from_slice(sub);
+            }
+            let data = make_font(false, vec![(b"kerx", table)]);
+            let glyphs = run(&data, "ab", Run::default());
+            let offset = if length == 12 { -20 } else { 0 };
+            assert_eq!(
+                glyphs.glyph_positions()[1].x_offset,
+                offset,
+                "{length} {first}"
+            );
+        }
+    }
+}
