@@ -297,14 +297,22 @@ mod tests {
 
     #[test]
     #[allow(clippy::arithmetic_side_effects)] // Bounded deterministic inputs.
-    fn adr0063_i2_hypotf_matches_host_for_outline_deltas() {
+    fn adr0063_i2_hypotf_matches_rounded_length_for_outline_deltas() {
+        // These bounded, binary-fraction deltas have exact squares and sums in f64.
+        // Platform hypotf implementations can differ by one f32 ULP.
+        #[allow(clippy::cast_possible_truncation)]
+        let reference = |x: f32, y: f32| {
+            let (x, y) = (f64::from(x), f64::from(y));
+            (x * x + y * y).sqrt() as f32
+        };
         for (x, y) in [
+            (-1966.5, 911.375),
             (219.0, -152.0),
             (408.0, 0.0),
             (219.0, -152.5),
             (109.5, -76.0),
         ] {
-            assert_eq!(hypotf(x, y).to_bits(), x.hypot(y).to_bits(), "{x} {y}");
+            assert_eq!(hypotf(x, y).to_bits(), reference(x, y).to_bits(), "{x} {y}");
         }
         let mut state = 0x9E37_79B9u32;
         for _ in 0..10_000 {
@@ -312,7 +320,7 @@ mod tests {
             let x = i32_to_f32((state & 0x7FFF).cast_signed()) / 8.0 - 2048.0;
             state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
             let y = i32_to_f32((state & 0x7FFF).cast_signed()) / 8.0 - 2048.0;
-            assert_eq!(hypotf(x, y).to_bits(), x.hypot(y).to_bits(), "{x} {y}");
+            assert_eq!(hypotf(x, y).to_bits(), reference(x, y).to_bits(), "{x} {y}");
         }
     }
 }
