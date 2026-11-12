@@ -37,8 +37,8 @@ fn collect_variation_index(
     Some(())
 }
 
-/// VariationIndex references in MathConstants, italics corrections, and top
-/// accent attachments. Other MATH references remain unsupported.
+/// VariationIndex references in MathConstants, glyph values, and retained
+/// MathKern records. MathVariants references remain unsupported.
 pub(crate) fn retained_variation_indices(src: &[u8], glyphs: &RangeSet) -> Option<BTreeSet<u32>> {
     let m = header(src)?;
     let k = constants(m.off16(4));
@@ -71,6 +71,37 @@ pub(crate) fn retained_variation_indices(src: &[u8], glyphs: &RangeSet) -> Optio
                 &mut formats,
                 &mut indices,
             )?;
+        }
+    }
+    let ki = kern_info(gi.off16(6));
+    let mut visited_kerns = BTreeSet::new();
+    for (i, glyph) in coverage(ki.off16(0))
+        .glyphs()
+        .into_iter()
+        .take(usize::from(ki.u16(2)))
+        .enumerate()
+    {
+        let keep = glyphs.contains(glyph);
+        let record = i.saturating_mul(8).saturating_add(4);
+        for corner in 0..4usize {
+            let k = kern(ki.off16(record.saturating_add(corner.saturating_mul(2))));
+            if k.is_null() {
+                continue;
+            }
+            let at = src.len().checked_sub(k.0.len())?;
+            if !visited_kerns.insert((at, keep)) {
+                continue;
+            }
+            let records = usize::from(k.u16(0)).saturating_mul(2).saturating_add(1);
+            for j in 0..records {
+                collect_variation_index(
+                    src,
+                    device(k.off16(j.saturating_mul(4).saturating_add(4))),
+                    keep,
+                    &mut formats,
+                    &mut indices,
+                )?;
+            }
         }
     }
     if src
