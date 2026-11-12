@@ -297,7 +297,7 @@ fn unsupported_options_and_bad_usage_exit_with_2() {
     for args in [
         &["--variations=wght=bad", "A"][..],
         &["--named-instance=65536", "A"],
-        &["--font-ptem=12", "A"],
+        &["--font-ptem=bad", "A"],
         &["--font-slant=bad", "A"],
         &["--font-bold=bad", "A"],
         &["--font-grade=bad", "A"],

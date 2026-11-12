@@ -15,6 +15,8 @@ sofel-vector sofel-geom
 # (sofel-read, sofel-type1, sofel-pfr, sofel-bitmapfont)
 
 # Crates that handle fonts
+sofel-woff sofel-read
+sofel-woff sofel-write
 sofel-woff sofel-inflate
 sofel-woff sofel-brotli
 sofel-font sofel-read

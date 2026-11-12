@@ -14,6 +14,7 @@
 #![allow(clippy::too_many_arguments)]
 
 mod color;
+mod layout_query;
 mod shape;
 mod subset;
 mod variation;
@@ -1057,6 +1058,31 @@ pub unsafe extern "C" fn sofel_scale_create_with_ppem(
     }
 }
 
+/// `sofel_scale_create_with_ptem`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `error` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_scale_create_with_ptem(
+    font: *const SofelFont,
+    x_scale: i32,
+    y_scale: i32,
+    x_ppem: u32,
+    y_ppem: u32,
+    ptem: f32,
+    error: *mut i32,
+) -> *mut SofelScale {
+    // SAFETY: the caller's conditions are those of the delegated constructor.
+    let scale =
+        unsafe { sofel_scale_create_with_ppem(font, x_scale, y_scale, x_ppem, y_ppem, error) };
+    if !scale.is_null() {
+        // SAFETY: the constructor returned a uniquely owned scale.
+        unsafe { (*scale).scale = (*scale).scale.with_ptem(ptem) };
+    }
+    scale
+}
+
 /// `sofel_scale_destroy`.
 ///
 /// # Safety
@@ -1376,16 +1402,12 @@ fn baseline(
         None => sofel_font::var::Location::default_ref(),
     };
     let instance = font.instance(location_ref);
-    *coord = if fallback && scale.is_none() {
-        instance.baseline_with_fallback(tag, dir, script, glyph_box(sf, location, &s))
-    } else if fallback {
-        instance.scaled_baseline_with_fallback(&s, tag, dir, script, glyph_box(sf, location, &s))
-    } else if scale.is_none() {
-        instance.baseline(tag, dir, script).ok_or(ERROR_NOT_FOUND)?
+    let (x_ppem, y_ppem) = scale.map_or((0, 0), |scale| (scale.x_ppem, scale.y_ppem));
+    let query = instance.layout_queries(s, x_ppem, y_ppem);
+    *coord = if fallback {
+        query.baseline_with_fallback(tag, dir, script, glyph_box(sf, location, &s))
     } else {
-        instance
-            .scaled_baseline(&s, tag, dir, script)
-            .ok_or(ERROR_NOT_FOUND)?
+        query.baseline(tag, dir, script).ok_or(ERROR_NOT_FOUND)?
     };
     Ok(())
 }
@@ -1508,20 +1530,11 @@ fn layout_font_extents(
         Some(v) => &v.location,
         None => sofel_font::var::Location::default_ref(),
     };
-    let (e, f) = if let Some(scale) = scale {
-        font.instance(location).scaled_layout_font_extents(
-            &scale.scale,
-            dir,
-            Tag::from_u32(script),
-            Tag::from_u32(language),
-        )
-    } else {
-        font.instance(location).layout_font_extents(
-            dir,
-            Tag::from_u32(script),
-            Tag::from_u32(language),
-        )
-    };
+    let (x_ppem, y_ppem) = scale.map_or((0, 0), |scale| (scale.x_ppem, scale.y_ppem));
+    let query = font
+        .instance(location)
+        .layout_queries(scale_of(scale, font), x_ppem, y_ppem);
+    let (e, f) = query.layout_font_extents(dir, Tag::from_u32(script), Tag::from_u32(language));
     *extents = extents3(e);
     *found = i32::from(f);
     Ok(())
@@ -2786,18 +2799,25 @@ fn options(fill: u32, overlap: u32, x_ppem: u16, y_ppem: u16) -> Result<RenderOp
     })
 }
 
+enum RasterTarget {
+    Normal,
+    Placed(PixelBox),
+    Harmony(sofel_raster::LcdMode),
+}
+
 fn rasterizer_render(
     rasterizer: Option<&mut SofelRasterizer>,
-    pixel_box: Option<PixelBox>,
+    mode: RasterTarget,
     options: Result<RenderOptions, i32>,
     out: BitmapOut<'_>,
 ) -> Status {
     let r = some(rasterizer)?;
     out.check()?;
     let options = options?;
-    let bitmap = match pixel_box {
-        None => r.raster.render(options),
-        Some(b) => r.raster.render_placed(b, options),
+    let bitmap = match mode {
+        RasterTarget::Normal => r.raster.render(options),
+        RasterTarget::Placed(b) => r.raster.render_placed(b, options),
+        RasterTarget::Harmony(lcd) => r.raster.render_harmony(lcd, options),
     };
     out.put(bitmap.map_err(raster_error))
 }
@@ -2833,8 +2853,50 @@ pub unsafe extern "C" fn sofel_rasterizer_render(
     let out = BitmapOut { pixels, len, b };
     status(rasterizer_render(
         rasterizer,
-        None,
+        RasterTarget::Normal,
         options(fill, overlap, x_ppem, y_ppem),
+        out,
+    ))
+}
+
+/// `sofel_rasterizer_render_harmony`.
+///
+/// # Safety
+///
+/// `rasterizer` is NULL or a live rasterizer no other thread uses;
+/// `pixels` is NULL or writable for `capacity` bytes; `len` is NULL or
+/// writable; `box_` is NULL or writable for 4 integers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_rasterizer_render_harmony(
+    rasterizer: *mut SofelRasterizer,
+    fill: u32,
+    direction: u32,
+    x_ppem: u16,
+    y_ppem: u16,
+    pixels: *mut u8,
+    capacity: usize,
+    len: *mut usize,
+    box_: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (rasterizer, pixels, len, b) = unsafe {
+        (
+            w(rasterizer),
+            out_array(pixels, capacity),
+            w(len),
+            ints::<4>(box_),
+        )
+    };
+    let lcd = match direction {
+        0 => sofel_raster::LcdMode::Horizontal,
+        1 => sofel_raster::LcdMode::Vertical,
+        _ => return ERROR_INVALID_ARGUMENT,
+    };
+    let out = BitmapOut { pixels, len, b };
+    status(rasterizer_render(
+        rasterizer,
+        RasterTarget::Harmony(lcd),
+        options(fill, 0, x_ppem, y_ppem),
         out,
     ))
 }
@@ -2878,7 +2940,7 @@ pub unsafe extern "C" fn sofel_rasterizer_render_placed(
     };
     status(rasterizer_render(
         rasterizer,
-        Some(pb),
+        RasterTarget::Placed(pb),
         options(fill, overlap, x_ppem, y_ppem),
         out,
     ))
