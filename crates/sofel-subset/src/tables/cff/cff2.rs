@@ -198,6 +198,7 @@ fn keep_subrs(
     let mut subr_drops: BTreeMap<(usize, Source), BTreeMap<usize, HintTrace>> = BTreeMap::new();
     let mut visited = BTreeSet::new();
     let mut mask_sizes = BTreeMap::new();
+    let mut contextual_masks = BTreeSet::new();
     for &(new, old) in glyphs {
         let fd = usize::try_from(fonts.fd(old)).ok()?;
         let p = fonts.programs(u32::try_from(fd).ok()?);
@@ -212,14 +213,17 @@ fn keep_subrs(
                     .insert((fd, mask.source, mask.at), mask.size)
                     .is_some_and(|old| old != mask.size)
             {
-                return None;
+                if drop_hints {
+                    return None;
+                }
+                contextual_masks.insert((fd, mask.source));
             }
         }
         let mut direct = BTreeMap::new();
         let mut direct_drops = BTreeMap::new();
         if drop_hints {
             for &hint in env.hint_trace() {
-                if !hint.terminal
+                if !hint.can_follow_call
                     && env
                         .call_trace()?
                         .iter()
@@ -258,7 +262,7 @@ fn keep_subrs(
                         source: trace.source,
                         start: trace.start,
                         end: trace.end,
-                        terminal: false,
+                        can_follow_call: false,
                     },
                 );
                 continue;
@@ -300,6 +304,14 @@ fn keep_subrs(
             direct.into_values().collect::<Vec<_>>(),
             direct_drops.into_values().collect::<Vec<_>>(),
         ));
+    }
+    // An unchanged program can keep both interpretations. Rewriting a call
+    // could replace bytes consumed as mask data by another invocation.
+    if contextual_masks
+        .iter()
+        .any(|key| subr_sites.contains_key(key))
+    {
+        return None;
     }
     let gmap: BTreeMap<_, _> = global_used.iter().copied().zip(0u32..).collect();
     let lmaps: Vec<BTreeMap<_, _>> = local_used
