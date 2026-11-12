@@ -248,3 +248,4 @@ sofel_raster::PaintMask::* The C entry point sofel_render_color_glyph applies ou
 sofel_read::feat::* A validated feature-name view used by the C shaping functions; C reads the table with sofel_font_table.
 sofel_woff::decode_woff The font input commands reconstruct WOFF tables into an sfnt buffer.
 sofel_bitmapfont::BdfFont::* BDF parsing and fixed bitmap queries are Rust and sofel-render operations; the C font handle still accepts sfnt data only (sofel ADR 0065).
+sofel_bitmapfont::pcf::PcfFont::* PCF parsing and fixed bitmap queries are Rust and sofel-render operations; the C font handle still accepts sfnt data only (sofel ADR 0065).
