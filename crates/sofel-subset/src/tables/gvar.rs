@@ -347,16 +347,19 @@ fn pin_records(
                 (points, Cow::Borrowed(deltas))
             } else {
                 let outline = outlines.glyph(old, false);
-                let simple = sofel_font::read::glyf::Glyph::new(outline.bytes)
-                    .and_then(|glyph| glyph.simple())
-                    .map_err(|_| SubsetError::Unsupported {
-                        tag,
-                        reason: "scaling a non-simple gvar glyph",
-                    })?;
-                let n = usize::try_from(simple.num_points())
-                    .ok()
-                    .and_then(|n| n.checked_add(4))
-                    .ok_or(bad)?;
+                let simple = (outline.kind == super::glyf::Kind::Simple)
+                    .then(|| {
+                        sofel_font::read::glyf::Glyph::new(outline.bytes)
+                            .and_then(|glyph| glyph.simple())
+                    })
+                    .transpose()
+                    .map_err(|_| bad)?;
+                let count = if let Some(ref simple) = simple {
+                    usize::try_from(simple.num_points()).map_err(|_| bad)?
+                } else {
+                    outline.components().count()
+                };
+                let n = count.checked_add(4).ok_or(bad)?;
                 let mut sums = [alloc::vec![0.0; n], alloc::vec![0.0; n]];
                 let mut original = Vec::new();
                 for (part, scale) in contributors {
@@ -367,7 +370,9 @@ fn pin_records(
                         .filter(|p| !p.is_all())
                     {
                         use sofel_font::var::gvar::{Point, infer_hb};
-                        if original.is_empty() {
+                        if let Some(ref simple) = simple
+                            && original.is_empty()
+                        {
                             original.extend(simple.points(outline.extended).map(|p| Point {
                                 x: sofel_geom::float::i32_to_f32(p.x),
                                 y: sofel_geom::float::i32_to_f32(p.y),
@@ -390,7 +395,9 @@ fn pin_records(
                             point.y = f32::from(dy) * scale;
                             *explicit.get_mut(i).ok_or(bad)? = true;
                         }
-                        infer_hb(&original, &mut expanded, &explicit).map_err(|_| bad)?;
+                        if simple.is_some() {
+                            infer_hb(&original, &mut expanded, &explicit).map_err(|_| bad)?;
+                        }
                         let [xs, ys] = &mut sums;
                         for ((x, y), d) in xs.iter_mut().zip(ys).zip(expanded) {
                             *x += d.x;

@@ -855,13 +855,11 @@ impl Plan {
                     })?;
                 if self.glyphs.new_to_old.iter().any(|&(_, old)| {
                     let kind = accel.glyph(old, true).kind;
-                    kind == crate::tables::glyf::Kind::Composite
-                        || (kind == crate::tables::glyf::Kind::Empty
-                            && variations.glyph_data(old).is_some())
+                    kind == crate::tables::glyf::Kind::Empty && variations.glyph_data(old).is_some()
                 }) {
                     return Err(SubsetError::Unsupported {
                         tag: Tag::new(b"gvar"),
-                        reason: "nondefault gvar pinning of composite or empty glyphs",
+                        reason: "nondefault gvar pinning of empty glyphs",
                     });
                 }
             }

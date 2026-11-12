@@ -100,64 +100,49 @@ fn adr0061_i1_inert_gvar_nondefault_pin_and_range_match_harfbuzz() {
 }
 
 #[test]
-fn adr0061_i1_simple_gvar_full_pin_matches_harfbuzz() {
+fn adr0061_i1_simple_and_composite_gvar_full_pin_matches_harfbuzz() {
     let path = paths::testdata().join("harfbuzz/test/api/fonts/glyf-default-instance-bounds.ttf");
     let data = std::fs::read(&path).unwrap();
     let font = Font::new(&data, 0).unwrap();
     let output =
         std::env::temp_dir().join(format!("sofel-gvar-full-pin-{}.ttf", std::process::id()));
     for retain in [false, true] {
-        for value in [0.25, 0.5, 1.0] {
-            let input = Input::new()
-                .with_flags(if retain {
-                    Flags::RETAIN_GIDS
-                } else {
-                    Flags::DEFAULT
-                })
-                .map_set(SetKind::Glyphs, |set| {
-                    set.add(1);
-                })
-                .with_axis_pinned(Tag::new(b"wght"), value, &font)
-                .unwrap()
-                .with_axis_pinned(Tag::new(b"wdth"), value, &font)
-                .unwrap();
-            let ours = subset(&font, &input).unwrap();
-            let mut command = Command::new(paths::hb_dump());
-            command
-                .arg("--subset")
-                .arg(format!("--font-file={}", path.display()))
-                .arg("--gids=1")
-                .arg(format!("--variations=wght={value},wdth={value}"))
-                .arg(format!("--output-file={}", output.display()));
-            if retain {
-                command.arg("--retain-gids");
+        for gid in [1, 2] {
+            for value in [0.25, 0.5, 1.0] {
+                let input = Input::new()
+                    .with_flags(if retain {
+                        Flags::RETAIN_GIDS
+                    } else {
+                        Flags::DEFAULT
+                    })
+                    .map_set(SetKind::Glyphs, |set| {
+                        set.add(gid);
+                    })
+                    .with_axis_pinned(Tag::new(b"wght"), value, &font)
+                    .unwrap()
+                    .with_axis_pinned(Tag::new(b"wdth"), value, &font)
+                    .unwrap();
+                let ours = subset(&font, &input).unwrap();
+                let mut command = Command::new(paths::hb_dump());
+                command
+                    .arg("--subset")
+                    .arg(format!("--font-file={}", path.display()))
+                    .arg(format!("--gids={gid}"))
+                    .arg(format!("--variations=wght={value},wdth={value}"))
+                    .arg(format!("--output-file={}", output.display()));
+                if retain {
+                    command.arg("--retain-gids");
+                }
+                assert!(command.status().unwrap().success());
+                assert_eq!(
+                    ours,
+                    std::fs::read(&output).unwrap(),
+                    "gid={gid}, value={value}, retain={retain}"
+                );
             }
-            assert!(command.status().unwrap().success());
-            assert_eq!(
-                ours,
-                std::fs::read(&output).unwrap(),
-                "value={value}, retain={retain}"
-            );
         }
     }
     let _ = std::fs::remove_file(output);
-}
-
-#[test]
-fn adr0061_i1_nondefault_gvar_composite_remains_unsupported() {
-    let path = paths::testdata().join("harfbuzz/test/api/fonts/glyf-default-instance-bounds.ttf");
-    let data = std::fs::read(path).unwrap();
-    let font = Font::new(&data, 0).unwrap();
-    let input = Input::new()
-        .map_set(SetKind::Glyphs, |set| set.add(2))
-        .with_axis_pinned(Tag::new(b"wght"), 0.5, &font)
-        .unwrap()
-        .with_axis_pinned(Tag::new(b"wdth"), 0.5, &font)
-        .unwrap();
-    assert!(matches!(
-        subset(&font, &input),
-        Err(sofel_subset::SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"gvar")
-    ));
 }
 
 #[test]
@@ -258,24 +243,26 @@ fn compare_mixed_tuple_pin(duplicate: bool, sparse: bool) {
     ));
     let output = source.with_extension("out.ttf");
     std::fs::write(&source, &bytes).unwrap();
-    for value in [0.25, 0.5, 0.75, 1.0] {
-        let input = Input::new()
-            .map_set(SetKind::Glyphs, |s| s.add(1))
-            .with_axis_pinned(Tag::new(b"wdth"), value, &font)
-            .unwrap();
-        let ours = subset(&font, &input).unwrap();
-        assert!(
-            Command::new(paths::hb_dump())
-                .arg("--subset")
-                .arg(format!("--font-file={}", source.display()))
-                .arg("--gids=1")
-                .arg(format!("--variations=wdth={value}"))
-                .arg(format!("--output-file={}", output.display()))
-                .status()
-                .unwrap()
-                .success()
-        );
-        assert_eq!(ours, std::fs::read(&output).unwrap());
+    for gid in [1, 2] {
+        for value in [0.25, 0.5, 0.75, 1.0] {
+            let input = Input::new()
+                .map_set(SetKind::Glyphs, |s| s.add(gid))
+                .with_axis_pinned(Tag::new(b"wdth"), value, &font)
+                .unwrap();
+            let ours = subset(&font, &input).unwrap();
+            assert!(
+                Command::new(paths::hb_dump())
+                    .arg("--subset")
+                    .arg(format!("--font-file={}", source.display()))
+                    .arg(format!("--gids={gid}"))
+                    .arg(format!("--variations=wdth={value}"))
+                    .arg(format!("--output-file={}", output.display()))
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+            assert_eq!(ours, std::fs::read(&output).unwrap());
+        }
     }
     std::fs::remove_file(source).unwrap();
     std::fs::remove_file(output).unwrap();
