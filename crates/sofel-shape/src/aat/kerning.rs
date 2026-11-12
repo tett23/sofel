@@ -191,7 +191,11 @@ pub(crate) fn legacy(data: &[u8]) -> Option<Vec<Subtable<'_>>> {
             0 => Kern::Pairs(be::chunks_at(body, 8, usize::from(be::u16_at(body, 0)?))?),
             1 => {
                 let base = usize::from(be::u16_at(body, 8)?);
-                Kern::LegacyHistory(StateTable::legacy_kern(body)?, body.get(base..)?, base)
+                Kern::LegacyHistory(
+                    StateTable::legacy(body, MachineKind::Kerning)?,
+                    body.get(base..)?,
+                    base,
+                )
             }
             2 => {
                 let offset = |at| be::u16_at(body, at).map(usize::from);

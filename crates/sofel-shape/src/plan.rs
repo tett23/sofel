@@ -392,8 +392,7 @@ impl<'a> ShapePlan<'a> {
     /// the `GSUB` and `GPOS` script and language system, the shaper,
     /// the features and their mask bits, the lookups of each stage, and
     /// how to position (`hb_ot_shape_plan_t::init0` and
-    /// `hb_ot_shape_planner_t::compile`, with the AAT tables and the
-    /// `kern` table taken as absent). The lookups' subtables are read
+    /// `hb_ot_shape_planner_t::compile`, including AAT substitution and positioning). The lookups' subtables are read
     /// and their digests built here, once.
     pub fn new(
         instance: Instance<'_, 'a, '_, '_>,
@@ -409,15 +408,19 @@ impl<'a> ShapePlan<'a> {
         builder.variations_index = variations_index.clone();
         let morx =
             if (props.direction.is_horizontal() || !layout.gsub.has_data) && features.is_empty() {
-                font.table(Tag(*b"morx")).and_then(|data| {
-                    crate::aat::chains(
-                        data,
-                        font.num_glyphs(),
-                        font.table(Tag(*b"ltag"))
-                            .and_then(sofel_font::read::ltag::Ltag::new),
-                        props.language.as_ref(),
-                    )
-                })
+                [(Tag(*b"morx"), false), (Tag(*b"mort"), true)]
+                    .into_iter()
+                    .find_map(|(tag, legacy)| {
+                        let data = font.table(tag)?;
+                        crate::aat::chains(
+                            data,
+                            font.num_glyphs(),
+                            legacy,
+                            font.table(Tag(*b"ltag"))
+                                .and_then(sofel_font::read::ltag::Ltag::new),
+                            props.language.as_ref(),
+                        )
+                    })
             } else {
                 None
             };

@@ -20,15 +20,15 @@ pub struct Chain<'a> {
     /// Subtables in application order.
     pub substitutions: alloc::vec::Vec<Subtable<'a>>,
 }
-/// Reads morx version 2 chains of supported operations.
-/// Other subtable types require their own state machine.
+/// Reads extended morx or legacy mort substitution chains.
 pub fn chains<'a>(
     data: &'a [u8],
     glyphs: u32,
+    legacy: bool,
     tags: Option<sofel_font::read::ltag::Ltag<'_>>,
     language: Option<&crate::Language>,
 ) -> Option<alloc::vec::Vec<Chain<'a>>> {
-    if be::u16_at(data, 0)? != 2 {
+    if be::u16_at(data, 0)? != if legacy { 1 } else { 2 } {
         return None;
     }
     let count = be::u32_at(data, 4)?;
@@ -37,9 +37,16 @@ pub fn chains<'a>(
     for _ in 0..count {
         let (chain, tail) = rest.split_at_checked(be::u32_at(rest, 4)? as usize)?;
         let mut flags = be::u32_at(chain, 0)?;
-        let n = be::u32_at(chain, 8)? as usize;
-        let tables = be::u32_at(chain, 12)?;
-        let features = be::chunks_at::<12>(chain, 16, n)?;
+        let (header, n, tables) = if legacy {
+            (
+                12usize,
+                usize::from(be::u16_at(chain, 8)?),
+                u32::from(be::u16_at(chain, 10)?),
+            )
+        } else {
+            (16, be::u32_at(chain, 8)? as usize, be::u32_at(chain, 12)?)
+        };
+        let features = be::chunks_at::<12>(chain, header, n)?;
         if let (Some(tags), Some(language)) = (tags, language) {
             for feature in features {
                 if be::u16_at(feature, 0)? != 39 {
@@ -60,21 +67,32 @@ pub fn chains<'a>(
                 }
             }
         }
-        let mut body = chain.get(16usize.checked_add(n.checked_mul(12)?)?..)?;
+        let mut body = chain.get(header.checked_add(n.checked_mul(12)?)?..)?;
         let mut substitutions = alloc::vec::Vec::new();
         for _ in 0..tables {
-            let (st, tail) = body.split_at_checked(be::u32_at(body, 0)? as usize)?;
-            let coverage = be::u32_at(st, 4)?;
+            let (length, coverage, flags_at) = if legacy {
+                let c = u32::from(be::u16_at(body, 2)?);
+                (
+                    usize::from(be::u16_at(body, 0)?),
+                    ((c & 0xff00) << 16) | (c & 255),
+                    4usize,
+                )
+            } else {
+                (be::u32_at(body, 0)? as usize, be::u32_at(body, 4)?, 8usize)
+            };
+            let (st, tail) = body.split_at_checked(length)?;
             body = tail;
-            let payload = st.get(12..)?;
-            let action = match coverage & 255 {
-                0 | 1 | 2 | 5 => Action::Machine(StateTable::new(payload, glyphs, coverage & 255)?),
+            let payload = st.get(flags_at.checked_add(4)?..)?;
+            let kind = coverage & 255;
+            let action = match kind {
+                0 | 1 | 2 | 5 if legacy => Action::Machine(StateTable::mort(payload, kind)?),
+                0 | 1 | 2 | 5 => Action::Machine(StateTable::new(payload, glyphs, kind)?),
                 4 => Action::Replace(AatLookup::new(payload, glyphs)?),
                 _ => continue,
             };
             substitutions.push(Subtable {
                 coverage,
-                flags: be::u32_at(st, 8)?,
+                flags: be::u32_at(st, flags_at)?,
                 action,
             });
         }
@@ -117,6 +135,7 @@ enum MachineKind<'a> {
     Rearrange,
     Kerning,
     Contextual(alloc::vec::Vec<AatLookup<'a>>),
+    LegacyContext(&'a [u8], usize),
     Insert(&'a [u8]),
     Ligature(Ligature<'a>),
 }
@@ -135,6 +154,7 @@ impl<'a> StateTable<'a> {
             0 => MachineKind::Rearrange,
             1 => MachineKind::Contextual(alloc::vec::Vec::new()),
             2 => MachineKind::Ligature(Ligature {
+                legacy_bases: None,
                 actions: offset(16)?,
                 components: offset(20)?,
                 glyphs: offset(24)?,
@@ -184,7 +204,29 @@ impl<'a> StateTable<'a> {
         }
         Some(table)
     }
-    fn legacy_kern(data: &'a [u8]) -> Option<Self> {
+    fn mort(data: &'a [u8], kind: u32) -> Option<Self> {
+        let offset = |at| be::u16_at(data, at).map(usize::from);
+        let kind = match kind {
+            0 => MachineKind::Rearrange,
+            1 => {
+                let base = offset(8)?;
+                MachineKind::LegacyContext(data.get(base..)?, base)
+            }
+            2 => {
+                let bases = [offset(8)?, offset(10)?, offset(12)?];
+                MachineKind::Ligature(Ligature {
+                    actions: data.get(bases[0]..)?,
+                    components: data.get(bases[1]..)?,
+                    glyphs: data.get(bases[2]..)?,
+                    legacy_bases: Some(bases),
+                })
+            }
+            5 => MachineKind::Insert(data.get(offset(8)?..)?),
+            _ => return None,
+        };
+        Self::legacy(data, kind)
+    }
+    fn legacy(data: &'a [u8], kind: MachineKind<'a>) -> Option<Self> {
         let num_classes = usize::from(be::u16_at(data, 0)?);
         if num_classes < 4 {
             return None;
@@ -200,7 +242,7 @@ impl<'a> StateTable<'a> {
             num_classes,
             states: data,
             entries: data.get(usize::from(be::u16_at(data, 6)?)..)?,
-            kind: MachineKind::Kerning,
+            kind,
         };
         let mut seen = alloc::collections::BTreeSet::new();
         let mut pending = alloc::vec![state_origin];
@@ -220,7 +262,11 @@ impl<'a> StateTable<'a> {
             // Unlike morx row indices, kern entries point to byte offsets.
             // Rows can precede the start row; the quotient rounds toward zero.
             let cell = state.checked_add(class)?;
-            let row = usize::from(be::u8_at(self.states, cell)?).checked_mul(4)?;
+            let stride = match self.kind {
+                MachineKind::LegacyContext(..) | MachineKind::Insert(_) => 8,
+                _ => 4,
+            };
+            let row = usize::from(be::u8_at(self.states, cell)?).checked_mul(stride)?;
             let origin = i32::from(state_origin);
             let raw = i32::from(be::u16_at(self.entries, row)?);
             let width = i32::try_from(self.num_classes).ok()?;
@@ -234,7 +280,14 @@ impl<'a> StateTable<'a> {
             return Some(Entry {
                 next,
                 flags,
-                substitutions: [if offset == 0 { 0xffff } else { offset }, 0xffff],
+                substitutions: if stride == 8 {
+                    [
+                        be::u16_at(self.entries, row.checked_add(4)?)?,
+                        be::u16_at(self.entries, row.checked_add(6)?)?,
+                    ]
+                } else {
+                    [if offset == 0 { 0xffff } else { offset }, 0xffff]
+                },
             });
         }
         let cell = state
@@ -263,7 +316,8 @@ impl<'a> StateTable<'a> {
     fn actionable(&self, entry: Entry) -> bool {
         match self.kind {
             MachineKind::Kerning => entry.substitutions[0] != 0xffff,
-            MachineKind::Ligature(_) => entry.flags & 0x2000 != 0,
+            MachineKind::Ligature(ref t) => t.actionable(entry),
+            MachineKind::LegacyContext(..) => entry.substitutions != [0; 2],
             MachineKind::Rearrange => entry.flags & 15 != 0,
             MachineKind::Contextual(_) => entry.substitutions != [0xffff; 2],
             MachineKind::Insert(_) => {
@@ -316,7 +370,7 @@ impl<'a> StateTable<'a> {
         buffer: &mut crate::buffer::Buffer,
         replace: &mut impl FnMut(&mut crate::buffer::Info, u16),
     ) {
-        let mut state = 0;
+        let mut state = usize::from(self.start_state());
         let separate = matches!(self.kind, MachineKind::Insert(_) | MachineKind::Ligature(_));
         let mut stack = Components::default();
         if separate {
@@ -360,16 +414,27 @@ impl<'a> StateTable<'a> {
                 if !insert(buffer, data, first, entry, false, replace) {
                     break;
                 }
-            } else if let MachineKind::Contextual(lookups) = &self.kind {
+            } else if matches!(
+                self.kind,
+                MachineKind::Contextual(_) | MachineKind::LegacyContext(..)
+            ) {
                 if idx < len || marked {
                     for (index, slot, is_mark) in [
                         (substitutions[0], first, true),
                         (substitutions[1], idx.min(len.saturating_sub(1)), false),
                     ] {
-                        let glyph = buffer
-                            .infos()
-                            .get(slot)
-                            .and_then(|g| lookups.get(usize::from(index))?.get(g.codepoint));
+                        let glyph = buffer.infos().get(slot).and_then(|g| match &self.kind {
+                            MachineKind::Contextual(lookups) => {
+                                lookups.get(usize::from(index))?.get(g.codepoint)
+                            }
+                            MachineKind::LegacyContext(data, base) if index != 0 => {
+                                let signed = i32::from(i16::from_be_bytes(index.to_be_bytes()));
+                                let glyph = g.codepoint.checked_add_signed(signed)? as usize;
+                                let at = glyph.checked_mul(2)?.checked_sub(*base)?;
+                                be::u16_at(data, at).filter(|value| *value != 0)
+                            }
+                            _ => None,
+                        });
                         if let Some(glyph) = glyph {
                             if is_mark {
                                 buffer.unsafe_to_break(first, idx.saturating_add(1).min(len));
@@ -525,6 +590,7 @@ fn insert(
 
 #[derive(Clone, Debug)]
 struct Ligature<'a> {
+    legacy_bases: Option<[usize; 3]>,
     actions: &'a [u8],
     components: &'a [u8],
     glyphs: &'a [u8],
@@ -557,6 +623,13 @@ impl Components {
     }
 }
 impl Ligature<'_> {
+    fn actionable(&self, entry: Entry) -> bool {
+        if self.legacy_bases.is_some() {
+            entry.flags & 0x3fff != 0
+        } else {
+            entry.flags & 0x2000 != 0
+        }
+    }
     fn transition(
         &self,
         buffer: &mut crate::buffer::Buffer,
@@ -568,12 +641,19 @@ impl Ligature<'_> {
         if entry.flags & 0x8000 != 0 {
             stack.push(end);
         }
-        if entry.flags & 0x2000 == 0 || stack.len == 0 || buffer.idx >= buffer.len {
+        if !self.actionable(entry) || stack.len == 0 || buffer.idx >= buffer.len {
             return true;
         }
         let mut cursor = stack.len;
         let mut ligature = 0usize;
-        let mut action_at = usize::from(entry.substitutions[0]).saturating_mul(4);
+        let mut action_at = if let Some([base, _, _]) = self.legacy_bases {
+            let Some(offset) = usize::from(entry.flags & 0x3fff).checked_sub(base) else {
+                return true;
+            };
+            offset & !3
+        } else {
+            usize::from(entry.substitutions[0]).saturating_mul(4)
+        };
         loop {
             if cursor == 0 {
                 stack.len = 0;
@@ -591,11 +671,22 @@ impl Ligature<'_> {
                 delta |= 0xc000_0000;
             }
             let component = buffer.cur(0).codepoint.wrapping_add(delta) as usize;
-            let Some(index) = be::u16_at(self.components, component.saturating_mul(2)) else {
+            let component_base = self.legacy_bases.map_or(0, |b| b[1]);
+            let Some(index) = component
+                .checked_mul(2)
+                .and_then(|v| v.checked_sub(component_base))
+                .and_then(|at| be::u16_at(self.components, at & !1))
+            else {
                 break;
             };
             ligature = ligature.saturating_add(usize::from(index));
             if action & 0xc000_0000 != 0 {
+                if let Some([_, _, base]) = self.legacy_bases {
+                    let Some(relative) = ligature.checked_sub(base) else {
+                        break;
+                    };
+                    ligature = relative / 2;
+                }
                 let Some(glyph) = be::u16_at(self.glyphs, ligature.saturating_mul(2)) else {
                     break;
                 };
@@ -635,10 +726,10 @@ mod chain_tests {
             0x00020000, 1, 1, 48, 0, 2, 12, 3, 1, 20, 4, 1, 0x00080001, 0x00010002,
         ];
         let mut data: alloc::vec::Vec<u8> = words.into_iter().flat_map(u32::to_be_bytes).collect();
-        let count =
-            chains(&data, 3, None, None).and_then(|c| c.first().map(|c| c.substitutions.len()));
+        let count = chains(&data, 3, false, None, None)
+            .and_then(|c| c.first().map(|c| c.substitutions.len()));
         assert_eq!(count, Some(1));
         data.pop();
-        assert!(chains(&data, 3, None, None).is_none());
+        assert!(chains(&data, 3, false, None, None).is_none());
     }
 }

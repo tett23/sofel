@@ -483,3 +483,12 @@ fn i1_legacy_kern_machine_pops_positions_until_the_low_bit() {
         assert_eq!(run(&case), Ok(()), "{}", case.id);
     }
 }
+
+#[test]
+fn i1_legacy_mort_chain_runs_all_five_operations() {
+    let path =
+        paths::testdata().join("harfbuzz/test/shape/data/text-rendering-tests/tests/MORT-1.tests");
+    let suite = cases("text-rendering-tests", &path, &mut 0);
+    assert_eq!(suite.len(), 1);
+    assert_eq!(run(&suite[0]), Ok(()));
+}

@@ -49,4 +49,3 @@ in-house/kbts.tests:12@kbts  # out-of-scope:kbts
 in-house/synthetic.tests:2  # synthetic
 in-house/synthetic.tests:3  # synthetic
 in-house/uniscribe.tests:2@uniscribe  # out-of-scope:uniscribe
-text-rendering-tests/MORT-1.tests:2  # aat
