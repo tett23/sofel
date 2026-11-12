@@ -73,6 +73,7 @@ pub mod stat;
 pub mod svg;
 mod types;
 pub mod validate;
+pub mod varc;
 pub mod vhea;
 pub mod vmtx;
 pub mod vorg;
