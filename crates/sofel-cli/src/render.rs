@@ -321,9 +321,21 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
     let mut raster = Rasterizer::new();
     let outlines = Outlines::new(font.instance(&location));
     let rendered = if args.color {
-        let options = color_options(&font, args.palette);
+        let options = sofel_color::PaintOptions {
+            ppem: args.ppem,
+            ..color_options(&font, args.palette)
+        };
         let mut image = sofel_raster::BgraImage::default();
-        match glyph::render_color(
+        let render = if args.no_bitmap
+            && matches!(
+                sofel_color::glyph_color_format(&font, glyph.0),
+                Some(sofel_color::ColorFormat::Sbix | sofel_color::ColorFormat::Cbdt)
+            ) {
+            glyph::render_colr_v0
+        } else {
+            glyph::render_color
+        };
+        match render(
             &outlines,
             glyph,
             args.ppem,
