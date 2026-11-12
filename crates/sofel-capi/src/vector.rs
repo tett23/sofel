@@ -131,6 +131,34 @@ pub unsafe extern "C" fn sofel_vector_page(
                 }
             }
             let mut fill = |gid, c| {
+                if let Some(commands) = outlines
+                    .varc_glyph_path(GlyphId(gid), sofel_font::HbScale::unscaled(&font.font))
+                {
+                    let placement = Transform {
+                        xx,
+                        yx,
+                        xy,
+                        yy,
+                        dx,
+                        dy,
+                    };
+                    return match &mut page {
+                        Page::Svg(page) => page.fill_path(placement, c, |pen| {
+                            for cmd in commands {
+                                pen.command(cmd);
+                            }
+                            Ok(())
+                        }),
+                        Page::Pdf(page) => {
+                            page.fill_path(placement, c, CompositeMode::SrcOver, |pen| {
+                                for cmd in commands {
+                                    pen.command(cmd);
+                                }
+                                Ok(())
+                            })
+                        }
+                    };
+                }
                 outlines
                     .load(GlyphId(gid), Scale::Unscaled, &mut scratch)
                     .map_err(outline_error)?;

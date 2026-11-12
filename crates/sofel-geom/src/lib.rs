@@ -35,6 +35,6 @@ pub use paint::{
     ImageFormat, Painter, PointF, Rect, Solid, Transform,
 };
 pub use paint_util::{normalize_color_line, reduce_linear_anchors, sweep_gradient_tiles};
-pub use pen::{Command, FnPen, Pen};
+pub use pen::{Command, FloatCommand, FnPen, Pen};
 pub use trig::vector_length;
 pub use trigf::{cos, sin, sin_cos, tan};

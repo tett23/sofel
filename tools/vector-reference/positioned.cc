@@ -17,27 +17,32 @@ int main(int argc, char **argv) {
   sofel_location_t *location = nullptr;
   std::vector<sofel_variation_t> axes;
   sofel_segment_t requested = {SOFEL_DIRECTION_LTR, 0, nullptr}, segment;
+  const char *text = "abc";
   for (int i = 6; i < argc; ++i) {
     if (!std::strcmp(argv[i], "ttb")) requested.direction = SOFEL_DIRECTION_TTB;
     else if (!std::strcmp(argv[i], "wght=900")) axes.push_back({SOFEL_TAG('w', 'g', 'h', 't'), 900});
     else if (!std::strcmp(argv[i], "CNTR=100")) axes.push_back({SOFEL_TAG('C', 'N', 'T', 'R'), 100});
+    else if (!std::strcmp(argv[i], "wght=840.3")) axes.push_back({SOFEL_TAG('w', 'g', 'h', 't'), 840.3f});
+    else if (!std::strncmp(argv[i], "text=", 5)) text = argv[i] + 5;
     else return 2;
   }
   if (!axes.empty() && sofel_location_create(font, UINT32_MAX, axes.data(), axes.size(), &location)) return 1;
   std::vector<sofel_vector_glyph_t> glyphs;
   auto *buffer = sofel_buffer_create();
-  if (sofel_buffer_add_utf8(buffer, "abc", 3, 0, 3) ||
-      sofel_segment_guess("abc", 3, &requested, nullptr, &segment)) return 1;
+  const size_t length = std::strlen(text);
+  if (sofel_buffer_add_utf8(buffer, text, length, 0, length) ||
+      sofel_segment_guess(text, length, &requested, nullptr, &segment)) return 1;
   auto *plan = sofel_shape_plan_create(font, location, &segment, nullptr, 0, &status);
   uint16_t upem;
   if (sofel_font_units_per_em(font, &upem)) return 1;
   auto *scale = sofel_scale_create(font, upem * 64, upem * 64, &status);
   if (!plan || !scale || sofel_shape(font, location, scale, plan, buffer)) return 1;
-  uint32_t gids[3];
-  int32_t pos[12];
-  if (sofel_buffer_glyphs(buffer, gids, nullptr, nullptr, pos, 3) != 3) return 1;
+  std::vector<uint32_t> gids(length);
+  std::vector<int32_t> pos(4 * length);
+  const auto count = sofel_buffer_glyphs(buffer, gids.data(), nullptr, nullptr, pos.data(), length);
+  if (count <= 0 || size_t(count) > length) return 1;
   float x = 0, y = 0;
-  for (int i = 0; i < 3; ++i) {
+  for (int i = 0; i < count; ++i) {
     glyphs.push_back({gids[i], {1, 0, 0, 1, (x + pos[4*i+2]) / 64, (y + pos[4*i+3]) / 64}, {0, 0, 0, 255}});
     x += pos[4*i];
     y += pos[4*i+1];

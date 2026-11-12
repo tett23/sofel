@@ -24,12 +24,13 @@ cmp "$work/expected.ppm" "$work/actual.ppm"
 c++ -std=c++11 -Icrates/sofel-capi/include tools/vector-reference/positioned.cc \
     "${CARGO_TARGET_DIR:-target}/release/libsofel_capi.a" -o "$work/positioned"
 root=${SOFEL_HARFBUZZ:-target/testdata/harfbuzz}/test
+suite=basic
 check_page() {
     name=$1
     font=$2
     shift 2
     "$work/positioned" "$root/api/fonts/$font" "$@" > "$work/$name.svg"
-    cmp "$work/$name.svg" "$root/vector/data/expected/basic/$name.svg"
+    cmp "$work/$name.svg" "$root/vector/data/expected/$suite/$name.svg"
 }
 check_page cff1 SourceSansPro-Regular.abc.otf -16 -1000 1545 1289
 check_page cff2-var-wght900 TestCFF2VF.otf -16 -1000 1832 1289 wght=900
@@ -37,3 +38,8 @@ check_page cff2-var-cntr AdobeVFPrototype.abc.otf -16 -934 1728 1285 wght=900 CN
 check_page glyf-var-wght900 Roboto-Variable.abc.ttf -16 -1916 3338 2432 wght=900
 check_page ttb Roboto-Regular.abc.ttf -1040 -16 2080 7232 ttb
 check_page glyf-vvar-ttb-wght900 SourceSerifVariable-Roman-VVAR.abc.ttf -516 -16 1032 3095 ttb wght=900
+suite=varc
+check_page default varc-ac00-ac01.ttf -16 -819 1872 1035 text=가각
+check_page wght840p3 varc-ac00-ac01.ttf -16 -839 1872 1055 text=가각 wght=840.3
+check_page conditional-default varc-ac01-conditional.ttf -16 -816 952 1032 text=각
+check_page conditional-wght840p3 varc-ac01-conditional.ttf -16 -839 952 1055 text=각 wght=840.3

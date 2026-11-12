@@ -225,7 +225,7 @@ pub struct PdfPen<'a> {
     current: PointF,
 }
 
-fn number(v: f32, precision: usize) -> String {
+pub(super) fn number(v: f32, precision: usize) -> String {
     if !v.is_finite() {
         return String::from("0");
     }
@@ -247,6 +247,29 @@ impl PdfPen<'_> {
     #[allow(clippy::cast_precision_loss)]
     fn map(&self, p: Point) -> PointF {
         self.transform.apply(PointF::new(p.x as f32, p.y as f32))
+    }
+    /// Appends a floating-point outline command at the page transform.
+    pub fn command(&mut self, cmd: sofel_geom::FloatCommand) {
+        use sofel_geom::FloatCommand::*;
+        let t = self.transform;
+        match cmd {
+            MoveTo(p) | LineTo(p) => {
+                let p = t.apply(p);
+                let op = if matches!(cmd, MoveTo(_)) { 'm' } else { 'l' };
+                let _ = writeln!(self.stream, "{} {} {op}", number(p.x, 2), number(p.y, 2));
+                self.current = p;
+            }
+            QuadTo(c, p) => self.quadratic(t.apply(c), t.apply(p)),
+            CubicTo(a, b, p) => self.cubic(t.apply(a), t.apply(b), t.apply(p)),
+            Close => self.close(),
+        }
+    }
+    fn quadratic(&mut self, c: PointF, p: PointF) {
+        #[allow(clippy::cast_possible_truncation)]
+        let interpolate =
+            |v: f32, c: f32| (f64::from(v) + (f64::from(c) - f64::from(v)) * (2.0 / 3.0)) as f32;
+        let control = |v: PointF| PointF::new(interpolate(v.x, c.x), interpolate(v.y, c.y));
+        self.cubic(control(self.current), control(p), p);
     }
     fn cubic(&mut self, a: PointF, b: PointF, p: PointF) {
         let _ = writeln!(
@@ -277,11 +300,7 @@ impl Pen for PdfPen<'_> {
     fn quad_to(&mut self, c: Point, p: Point) {
         let c = self.map(c);
         let p = self.map(p);
-        #[allow(clippy::cast_possible_truncation)]
-        let interpolate =
-            |v: f32, c: f32| (f64::from(v) + (f64::from(c) - f64::from(v)) * (2.0 / 3.0)) as f32;
-        let control = |v: PointF| PointF::new(interpolate(v.x, c.x), interpolate(v.y, c.y));
-        self.cubic(control(self.current), control(p), p);
+        self.quadratic(c, p);
     }
     fn cubic_to(&mut self, a: Point, b: Point, p: Point) {
         self.cubic(self.map(a), self.map(b), self.map(p));

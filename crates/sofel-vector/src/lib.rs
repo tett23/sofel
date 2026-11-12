@@ -90,6 +90,33 @@ pub struct SvgPen<'a> {
 }
 
 impl SvgPen<'_> {
+    /// Appends a floating-point outline command at the page transform.
+    pub fn command(&mut self, cmd: sofel_geom::FloatCommand) {
+        use sofel_geom::FloatCommand::*;
+        match cmd {
+            MoveTo(p) => self.float_point('M', p),
+            LineTo(p) => self.float_point('L', p),
+            QuadTo(c, p) => {
+                self.float_point('Q', c);
+                self.float_point(' ', p);
+            }
+            CubicTo(a, b, p) => {
+                self.float_point('C', a);
+                self.float_point(' ', b);
+                self.float_point(' ', p);
+            }
+            Close => self.close(),
+        }
+    }
+    fn float_point(&mut self, prefix: char, point: PointF) {
+        let p = self.transform.apply(point);
+        let _ = write!(
+            self.body,
+            "{prefix}{},{}",
+            pdf::number(p.x, 2),
+            pdf::number(p.y, 2)
+        );
+    }
     #[allow(clippy::cast_precision_loss)] // HarfBuzz vector paths use single-precision coordinates.
     fn point(&mut self, prefix: char, p: Point) {
         let p = self.transform.apply(PointF::new(p.x as f32, p.y as f32));
