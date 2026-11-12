@@ -69,6 +69,7 @@ mod hb_cff;
 mod hb_draw;
 mod slot_synth;
 mod tt_hint;
+mod tt_policy;
 pub use tt_hint::HintTarget;
 mod varc_draw;
 
@@ -221,6 +222,7 @@ struct Context<'a, 'loc, 'source> {
     extended: bool,
     hint: Option<(tt_hint::Interpreter, usize)>,
     scale: Scale,
+    native_metrics: bool,
 }
 
 impl Context<'_, '_, '_> {
@@ -514,15 +516,46 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
         target: HintTarget,
         scratch: &mut Scratch,
     ) -> Result<OutlineInfo, OutlineError> {
+        self.load_native_truetype(glyph, ppem, target, scratch, 35)
+            .map(|(info, _)| info)
+    }
+
+    /// Loads a native TrueType v40 outline and its grid-fitted horizontal advance in 26.6 pixels.
+    pub fn load_truetype_v40(
+        &self,
+        glyph: GlyphId,
+        ppem: u16,
+        target: HintTarget,
+        scratch: &mut Scratch,
+    ) -> Result<(OutlineInfo, i32), OutlineError> {
+        self.load_native_truetype(glyph, ppem, target, scratch, 40)
+    }
+
+    fn load_native_truetype(
+        &self,
+        glyph: GlyphId,
+        ppem: u16,
+        target: HintTarget,
+        scratch: &mut Scratch,
+        version: u8,
+    ) -> Result<(OutlineInfo, i32), OutlineError> {
         scratch.clear();
-        let hint = tt_hint::Interpreter::v35(self.instance(), ppem, target)?;
-        load_glyf(
+        let hint = tt_hint::Interpreter::native(self.instance(), ppem, target, version)?;
+        let device_width = (version == 40 && hint.0.device_width_allowed())
+            .then(|| tt_policy::device_width(&self.font, glyph.0, ppem))
+            .flatten();
+        let info = load_glyf(
             self.instance(),
             glyph,
             Scale::pixels(&self.font, ppem, ppem),
             scratch,
-            (!hint.0.disables_hinting()).then_some(hint),
-        )
+            Some(hint),
+        )?;
+        let [left, right, _, _] = scratch.phantoms;
+        Ok((
+            info,
+            device_width.unwrap_or_else(|| right.x.wrapping_sub(left.x).wrapping_add(32) & !63),
+        ))
     }
 
     /// Loads the points of `glyph` into `scratch` as `FT_Load_Glyph` with
@@ -589,7 +622,8 @@ fn load_glyf(
         loca,
         num_glyphs: font.num_glyphs(),
         extended,
-        hint,
+        native_metrics: hint.is_some(),
+        hint: hint.filter(|(vm, _)| !vm.disables_hinting()),
         scale,
     };
     scratch.points.clear();
@@ -729,6 +763,11 @@ fn load_glyph(
     }
     let (offset, len) = ctx.location(glyph);
     if len == 0 {
+        if ctx.native_metrics && ctx.location.ft_default() {
+            s.phantoms = ctx
+                .design_phantoms(glyph, 0, 0)
+                .map(|p| ctx.scale_point(p.x, p.y));
+        }
         // An empty glyph's box is all zero.
         *pp1_x = ctx.pp1_x(glyph, 0);
         if !ctx.location.ft_default() {
@@ -744,6 +783,11 @@ fn load_glyph(
     let g = Glyph::new(data).map_err(|_| OutlineError::InvalidOutline)?;
     let n = g.number_of_contours();
     if n == 0 {
+        if ctx.native_metrics && ctx.location.ft_default() {
+            s.phantoms = ctx
+                .design_phantoms(glyph, 0, 0)
+                .map(|p| ctx.scale_point(p.x, p.y));
+        }
         *pp1_x = ctx.pp1_x(glyph, 0);
         if !ctx.location.ft_default() {
             s.phantoms = ctx.phantoms(glyph, 0, 0);
@@ -755,14 +799,14 @@ fn load_glyph(
     if !ctx.location.ft_default() {
         s.phantoms = ctx.phantoms(glyph, g.x_min(), g.y_max());
     }
+    if ctx.native_metrics && ctx.location.ft_default() {
+        s.phantoms = ctx
+            .design_phantoms(glyph, g.x_min(), g.y_max())
+            .map(|p| ctx.scale_point(p.x, p.y));
+    }
     if n > 0 {
         load_simple(ctx, s, &g, glyph, pp1_x, overlap)
     } else {
-        if ctx.hint.is_some() && ctx.location.ft_default() {
-            s.phantoms = ctx
-                .design_phantoms(glyph, g.x_min(), g.y_max())
-                .map(|p| ctx.scale_point(p.x, p.y));
-        }
         load_composite(ctx, s, &g, glyph, depth, overlap, pp1_x)
     }
 }
@@ -1130,8 +1174,12 @@ fn place_component(
         if let Scale::Scaled { x: sx, y: sy } = ctx.scale {
             x = mul_fix(x, sx.0);
             y = mul_fix(y, sy.0);
-            if ctx.hint.is_some() && c.flags & glyf::ROUND_XY_TO_GRID != 0 {
-                x = x.wrapping_add(32) & !63;
+            if let Some((vm, _)) = &ctx.hint
+                && c.flags & glyf::ROUND_XY_TO_GRID != 0
+            {
+                if !vm.subpixel() {
+                    x = x.wrapping_add(32) & !63;
+                }
                 y = y.wrapping_add(32) & !63;
             }
         }

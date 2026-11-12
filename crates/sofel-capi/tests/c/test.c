@@ -575,6 +575,9 @@ static void test_outlines(const sofel_font_t *font) {
   for (uint32_t target = SOFEL_HINT_TARGET_NORMAL; target <= SOFEL_HINT_TARGET_LCD_V; target++) {
     CHECK(sofel_outline_load_truetype_v35(font, NULL, 1, 16, target, scratch, cbox, &overlap) == SOFEL_OK);
   }
+  int32_t hinted_advance;
+  CHECK(sofel_outline_load_truetype_v40(font, NULL, 1, 16, 0, scratch, cbox, &overlap, &hinted_advance) == SOFEL_OK);
+  CHECK(sofel_outline_load_truetype_v40(font, NULL, 1, 16, 5, scratch, cbox, &overlap, &hinted_advance) == SOFEL_ERROR_INVALID_ARGUMENT);
   CHECK(sofel_outline_load_truetype_v35(font, NULL, 1, 16, 5, scratch, cbox, &overlap) == SOFEL_ERROR_INVALID_ARGUMENT);
 
   const uint8_t *point_tags;

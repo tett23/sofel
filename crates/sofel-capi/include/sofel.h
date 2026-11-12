@@ -1709,6 +1709,18 @@ int32_t sofel_outline_load_truetype_v35(const sofel_font_t *font, const sofel_lo
                                         uint32_t *overlap);
 
 /*
+ * Loads a native v40 TrueType outline at square ppem with the selected load
+ * target and writes the grid-fitted horizontal advance in 26.6 pixels.
+ * Rust: sofel_outline::Outlines::load_truetype_v40
+ * HarfBuzz: none
+ * FreeType: FT_Load_Glyph
+ */
+int32_t sofel_outline_load_truetype_v40(const sofel_font_t *font, const sofel_location_t *location,
+                                        uint32_t glyph, uint16_t ppem, uint32_t target,
+                                        sofel_outline_scratch_t *scratch, int32_t *cbox,
+                                        uint32_t *overlap, int32_t *advance);
+
+/*
  * Sends the outline last loaded into `scratch` to the pen, after moving
  * it by (dx, dy) and multiplying every point by `multiplier`, as
  * FT_Outline_Translate followed by FT_Outline_Decompose would.

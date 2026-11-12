@@ -20,7 +20,7 @@ fn adr0064_i1_native_v35_load_targets_match_freetype() {
         } else {
             0xd38e_020e_b16e_6420
         };
-        check_target("Roboto-Regular.abc.ttf", 1..4, expected, target);
+        check_target("Roboto-Regular.abc.ttf", 1..4, expected, target, false);
     }
 }
 
@@ -35,10 +35,16 @@ fn adr0064_i1_composite_mono_points_match_freetype() {
 }
 
 fn check_glyphs(name: &str, glyphs: core::ops::Range<u32>, expected: u64) {
-    check_target(name, glyphs, expected, HintTarget::Mono);
+    check_target(name, glyphs, expected, HintTarget::Mono, false);
 }
 
-fn check_target(name: &str, glyphs: core::ops::Range<u32>, expected: u64, target: HintTarget) {
+fn check_target(
+    name: &str,
+    glyphs: core::ops::Range<u32>,
+    expected: u64,
+    target: HintTarget,
+    v40: bool,
+) {
     let dir = std::env::var_os("SOFEL_TESTDATA")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/testdata"));
@@ -65,9 +71,19 @@ fn check_target(name: &str, glyphs: core::ops::Range<u32>, expected: u64, target
     };
     for ppem in 1..=96 {
         for glyph in glyphs.clone() {
-            outlines
-                .load_truetype_v35(GlyphId(glyph), ppem, target, &mut scratch)
-                .unwrap();
+            let advance = if v40 {
+                Some(
+                    outlines
+                        .load_truetype_v40(GlyphId(glyph), ppem, target, &mut scratch)
+                        .unwrap()
+                        .1,
+                )
+            } else {
+                outlines
+                    .load_truetype_v35(GlyphId(glyph), ppem, target, &mut scratch)
+                    .unwrap();
+                None
+            };
             add(i32::from(ppem));
             add(i32::try_from(glyph).unwrap());
             add(i32::try_from(scratch.points().len()).unwrap());
@@ -77,6 +93,9 @@ fn check_target(name: &str, glyphs: core::ops::Range<u32>, expected: u64, target
                 add(point.y);
                 add(i32::from(tag));
             }
+            if let Some(advance) = advance {
+                add(advance);
+            }
             add(i32::try_from(scratch.contour_ends().len()).unwrap());
             for &end in scratch.contour_ends() {
                 add(i32::try_from(end).unwrap());
@@ -84,4 +103,28 @@ fn check_target(name: &str, glyphs: core::ops::Range<u32>, expected: u64, target
         }
     }
     assert_eq!(hash, expected);
+}
+
+#[test]
+fn adr0064_i1_native_v40_load_targets_match_freetype() {
+    for target in [
+        HintTarget::Normal,
+        HintTarget::Light,
+        HintTarget::Mono,
+        HintTarget::Lcd,
+        HintTarget::VerticalLcd,
+    ] {
+        let expected = if target == HintTarget::Mono {
+            0x574c_9134_3a56_d1c3
+        } else {
+            0xeb5c_a042_4c4b_d436
+        };
+        let composite = match target {
+            HintTarget::Mono => 0x7ff2_198e_1634_dd43,
+            HintTarget::Normal | HintTarget::Light => 0x0181_6453_fe1d_548e,
+            _ => 0x4db1_d897_a0d3_f126,
+        };
+        check_target("Roboto-Regular.abcAE.ttf", 7..8, composite, target, true);
+        check_target("Roboto-Regular.abc.ttf", 1..4, expected, target, true);
+    }
 }

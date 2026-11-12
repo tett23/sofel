@@ -219,6 +219,7 @@ struct EngineInfo {
     stretched: bool,
     variation: bool,
     symmetric_smoothing: bool,
+    tricky: bool,
 }
 
 impl EngineInfo {
@@ -261,6 +262,12 @@ struct HintPoint {
     on_curve: bool,
 }
 
+fn move_axis(point: &mut HintPoint, axis: usize, value: i64, compatibility: u8) {
+    if compatibility == 0 || (axis == 1 && compatibility != 7) {
+        point.current[axis] = value;
+    }
+    point.touched[axis] = true;
+}
 fn project([x, y]: [i64; 2], vector: [i64; 2]) -> i64 {
     let dot = x
         .wrapping_mul(vector[0])
@@ -270,7 +277,13 @@ fn project([x, y]: [i64; 2], vector: [i64; 2]) -> i64 {
 
 // Both vectors contain normalized F2Dot14 components.
 #[allow(clippy::arithmetic_side_effects)]
-fn move_point(point: &mut HintPoint, distance: i64, projection: [i64; 2], freedom: [i64; 2]) {
+fn move_point(
+    point: &mut HintPoint,
+    distance: i64,
+    projection: [i64; 2],
+    freedom: [i64; 2],
+    compatibility: u8,
+) {
     let dot = (projection[0] * freedom[0] + projection[1] * freedom[1] + 0x2000) >> 14;
     if (-0x1554..0x1555).contains(&dot) {
         return;
@@ -283,8 +296,12 @@ fn move_point(point: &mut HintPoint, distance: i64, projection: [i64; 2], freedo
         };
         if factor != 0 {
             let delta = sofel_font::read::cff::ft::mul_fix(distance, factor);
-            point.current[axis] = point.current[axis].wrapping_add(delta);
-            point.touched[axis] = true;
+            move_axis(
+                point,
+                axis,
+                point.current[axis].wrapping_add(delta),
+                compatibility,
+            );
         }
     }
 }
@@ -340,6 +357,7 @@ fn interpolate_contour(points: &mut [HintPoint], axis: usize) {
 #[derive(Clone)]
 pub(crate) struct Interpreter {
     in_prep: bool,
+    in_glyph: bool,
     instruction_control: u8,
     contour_ends: alloc::vec::Vec<usize>,
     auto_flip: bool,
@@ -380,6 +398,7 @@ impl Interpreter {
                 stretched: false,
                 variation: false,
                 symmetric_smoothing: false,
+                tricky: false,
             },
             points: Default::default(),
             reference: [0; 3],
@@ -390,6 +409,7 @@ impl Interpreter {
             minimum_distance: 64,
             contour_ends: alloc::vec::Vec::new(),
             in_prep: false,
+            in_glyph: false,
             instruction_control: 0,
             delta_base: 9,
             delta_shift: 3,
@@ -415,21 +435,23 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn v35(
+    pub(super) fn native(
         instance: sofel_font::var::Instance<'_, '_, '_, '_>,
         ppem: u16,
         target: HintTarget,
+        version: u8,
     ) -> Result<(Self, usize), super::OutlineError> {
         Self::prepare(
             instance,
             ppem,
             EngineInfo {
-                version: 35,
+                version,
                 target,
                 rotated: false,
                 stretched: false,
                 variation: !instance.location().ft_default(),
                 symmetric_smoothing: false,
+                tricky: false,
             },
         )
         .map_err(|_| super::OutlineError::InvalidOutline)
@@ -484,7 +506,7 @@ impl Interpreter {
                 }
             })
             .collect();
-        let (result, scan_type) = self
+        let (result, scan_type, compatibility) = self
             .execute_glyph(points, ends, code, limit)
             .map_err(|_| super::OutlineError::InvalidOutline)?;
         for (point, tag) in result.iter().zip(tags.iter_mut()) {
@@ -498,10 +520,15 @@ impl Interpreter {
         {
             *tag |= ((scan_type as u8) << 5) | 4;
         }
-        for (point, out) in result
-            .iter()
-            .zip(outline.iter_mut().chain(phantoms.iter_mut()))
-        {
+        for (point, out) in result.iter().zip(
+            outline
+                .iter_mut()
+                .chain(
+                    phantoms
+                        .iter_mut()
+                        .take(if compatibility == 0 { 4 } else { 0 }),
+                ),
+        ) {
             out.x = point.current[0] as i32;
             out.y = point.current[1] as i32;
         }
@@ -512,7 +539,7 @@ impl Interpreter {
     fn prepare(
         instance: sofel_font::var::Instance<'_, '_, '_, '_>,
         ppem: u16,
-        engine: EngineInfo,
+        mut engine: EngineInfo,
     ) -> Result<(Self, usize), Error> {
         use sofel_font::read::{CountWidth, Tag, maxp};
         let font = instance.font();
@@ -525,6 +552,17 @@ impl Interpreter {
             .map_err(|_| Error::InvalidReference)?
             .truetype()
             .unwrap_or_default();
+        let mut grid_fit = true;
+        if engine.version == 40 {
+            engine.tricky = super::tt_policy::tricky(font);
+            if let Some(flags) = font
+                .table(Tag::new(b"gasp"))
+                .and_then(|data| super::tt_policy::gasp(data, ppem))
+            {
+                engine.symmetric_smoothing = flags & 8 != 0;
+                grid_fit = flags & 4 != 0;
+            }
+        }
         let cvt = if font.table(Tag::new(b"cvt ")).is_some() {
             instance
                 .ft_control_values()
@@ -536,7 +574,7 @@ impl Interpreter {
             i64::from(ppem) * 64,
             i64::from(font.units_per_em()),
         );
-        Self::prepare_programs(
+        let (mut vm, limit) = Self::prepare_programs(
             maxima,
             &cvt,
             ppem,
@@ -544,7 +582,11 @@ impl Interpreter {
             engine,
             font.table(Tag::new(b"fpgm")).unwrap_or_default(),
             font.table(Tag::new(b"prep")).unwrap_or_default(),
-        )
+        )?;
+        if engine.version == 40 && engine.target == HintTarget::Lcd && !engine.tricky && !grid_fit {
+            vm.instruction_control |= 1;
+        }
+        Ok((vm, limit))
     }
 
     #[allow(clippy::arithmetic_side_effects)]
@@ -577,6 +619,22 @@ impl Interpreter {
         Ok((vm, limit))
     }
 
+    pub(super) fn subpixel(&self) -> bool {
+        self.engine.version == 40 && self.engine.target != HintTarget::Mono && !self.engine.tricky
+    }
+
+    fn native_horizontal(&self) -> bool {
+        self.in_glyph
+            && self.subpixel()
+            && self.backward_compatibility == 0
+            && self.freedom[1] == 0
+            && self.projection[1] == 0
+    }
+
+    pub(super) fn device_width_allowed(&self) -> bool {
+        !self.disables_hinting() && (!self.subpixel() || self.instruction_control & 4 != 0)
+    }
+
     pub(super) fn disables_hinting(&self) -> bool {
         self.instruction_control & 1 != 0
     }
@@ -587,8 +645,9 @@ impl Interpreter {
         contour_ends: &[usize],
         program: &[u8],
         max_stack: usize,
-    ) -> Result<(alloc::vec::Vec<HintPoint>, u16), Error> {
+    ) -> Result<(alloc::vec::Vec<HintPoint>, u16, u8), Error> {
         let mut glyph = self.clone();
+        glyph.in_glyph = true;
         if self.instruction_control & 2 != 0 {
             glyph.minimum_distance = 64;
             glyph.control_value_cutin = 68;
@@ -599,6 +658,9 @@ impl Interpreter {
             glyph.auto_flip = true;
             glyph.scan_control = false;
             glyph.scan_type = 0;
+        }
+        if self.subpixel() {
+            glyph.backward_compatibility = (self.instruction_control & 4) ^ 4;
         }
         glyph.points[1] = points;
         let outline_len = contour_ends.last().map_or(0, |end| end.saturating_add(1));
@@ -616,10 +678,25 @@ impl Interpreter {
         glyph.loop_count = 1;
         glyph.rounding = Rounding::Grid;
         glyph.execute(program, &mut alloc::vec::Vec::new(), max_stack)?;
-        Ok((core::mem::take(&mut glyph.points[1]), glyph.scan_type))
+        Ok((
+            core::mem::take(&mut glyph.points[1]),
+            glyph.scan_type,
+            glyph.backward_compatibility,
+        ))
     }
 
     fn move_relative(&mut self, op: u8, index: u16, cvt: Option<i64>) {
+        let native = self.native_horizontal();
+        let cutin = if native {
+            self.control_value_cutin >> 4
+        } else {
+            self.control_value_cutin
+        };
+        let min_distance = if native {
+            self.minimum_distance >> 1
+        } else {
+            self.minimum_distance
+        };
         let base_index = self.reference[0];
         self.reference[1] = base_index;
         self.reference[2] = index;
@@ -672,7 +749,7 @@ impl Interpreter {
             }
             if op & 4 != 0
                 && base_zone == target_zone
-                && i128::from(measured.abs_diff(requested)) > i128::from(self.control_value_cutin)
+                && i128::from(measured.abs_diff(requested)) > i128::from(cutin)
             {
                 requested = measured;
             }
@@ -680,22 +757,26 @@ impl Interpreter {
         } else {
             requested
         };
-        let mut distance = if op & 4 != 0 {
+        let mut distance = if op & 4 != 0 && !native {
             self.rounding.apply(requested)
         } else {
             requested
         };
         if op & 8 != 0 {
             distance = if original >= 0 {
-                distance.max(self.minimum_distance)
+                distance.max(min_distance)
             } else {
-                distance.min(self.minimum_distance.wrapping_neg())
+                distance.min(min_distance.wrapping_neg())
             };
         }
         let axis = usize::from(self.projection[0] == 0);
         if self.freedom[axis] != 0 {
-            point.current[axis] = base.current[axis].wrapping_add(distance);
-            point.touched[axis] = true;
+            move_axis(
+                point,
+                axis,
+                base.current[axis].wrapping_add(distance),
+                self.backward_compatibility,
+            );
         }
     }
 
@@ -729,8 +810,12 @@ impl Interpreter {
                         sofel_font::read::cff::ft::mul_div(offset, new_range, old_range)
                     };
                     if self.freedom[axis] != 0 {
-                        p.current[axis] = base.current[axis].wrapping_add(distance);
-                        p.touched[axis] = true;
+                        move_axis(
+                            p,
+                            axis,
+                            base.current[axis].wrapping_add(distance),
+                            self.backward_compatibility,
+                        );
                     }
                 }
             }
@@ -880,8 +965,12 @@ impl Interpreter {
                                 || (self.backward_compatibility != 7
                                     && ((self.composite && axis == 1) || point.touched[1]));
                             if allowed && self.projection[axis] != 0 {
-                                point.current[axis] = point.current[axis].wrapping_add(delta);
-                                point.touched[axis] = true;
+                                move_axis(
+                                    point,
+                                    axis,
+                                    point.current[axis].wrapping_add(delta),
+                                    self.backward_compatibility,
+                                );
                             }
                         }
                     }
@@ -911,8 +1000,12 @@ impl Interpreter {
                             if let Some(p) =
                                 self.points[usize::from(self.zones[2])].get_mut(id as u32 as usize)
                             {
-                                p.current[axis] = p.current[axis].wrapping_add(delta);
-                                p.touched[axis] = true;
+                                move_axis(
+                                    p,
+                                    axis,
+                                    p.current[axis].wrapping_add(delta),
+                                    self.backward_compatibility,
+                                );
                             }
                         }
                     }
@@ -955,8 +1048,12 @@ impl Interpreter {
                         .ok_or(Error::InvalidReference)?;
                     for (offset, p) in points.iter_mut().enumerate() {
                         if usize::from(zone) != target || offset + start != usize::from(reference) {
-                            p.current[axis] = p.current[axis].wrapping_add(delta);
-                            p.touched[axis] = true;
+                            move_axis(
+                                p,
+                                axis,
+                                p.current[axis].wrapping_add(delta),
+                                self.backward_compatibility,
+                            );
                         }
                     }
                 }
@@ -980,8 +1077,12 @@ impl Interpreter {
                         p.current = p.original;
                     }
                     if self.freedom[axis] != 0 {
-                        p.current[axis] = base.current[axis].wrapping_add(distance);
-                        p.touched[axis] = true;
+                        move_axis(
+                            p,
+                            axis,
+                            base.current[axis].wrapping_add(distance),
+                            self.backward_compatibility,
+                        );
                     }
                     self.reference[1] = self.reference[0];
                     self.reference[2] = index;
@@ -1002,12 +1103,17 @@ impl Interpreter {
                     }
                 }
                 op @ (0x2e | 0x2f) => {
+                    let native = self.native_horizontal();
                     let index = stack.pop().ok_or(Error::StackUnderflow)? as u16;
                     let zone = usize::from(self.zones[0]);
                     if let Some(point) = self.points[zone].get_mut(usize::from(index)) {
                         let axis = usize::from(self.projection[0] == 0);
                         if self.freedom[axis] != 0 {
-                            if op == 0x2f {
+                            if op == 0x2f
+                                && !native
+                                && (self.backward_compatibility == 0
+                                    || (axis == 1 && self.backward_compatibility != 7))
+                            {
                                 point.current[axis] = self.rounding.apply(point.current[axis]);
                             }
                             point.touched[axis] = true;
@@ -1016,6 +1122,12 @@ impl Interpreter {
                     }
                 }
                 op @ (0x3e | 0x3f) => {
+                    let native = self.native_horizontal();
+                    let cutin = if native {
+                        self.control_value_cutin >> 4
+                    } else {
+                        self.control_value_cutin
+                    };
                     let cvt = stack.pop().ok_or(Error::StackUnderflow)?;
                     let index = stack.pop().ok_or(Error::StackUnderflow)? as u16;
                     self.reference[..2].fill(index);
@@ -1038,19 +1150,15 @@ impl Interpreter {
                     let distance = if op == 0x3e {
                         value
                     } else {
-                        self.rounding.apply(
-                            if i128::from(value.abs_diff(current))
-                                > i128::from(self.control_value_cutin)
-                            {
-                                current
-                            } else {
-                                value
-                            },
-                        )
+                        let v = if i128::from(value.abs_diff(current)) > i128::from(cutin) {
+                            current
+                        } else {
+                            value
+                        };
+                        if native { v } else { self.rounding.apply(v) }
                     };
                     if freedom == projection {
-                        point.current[freedom] = distance;
-                        point.touched[freedom] = true;
+                        move_axis(point, freedom, distance, self.backward_compatibility);
                     }
                 }
                 0x17 => {
@@ -1082,7 +1190,13 @@ impl Interpreter {
                     if let Some(point) = self.points[zone].get_mut(usize::from(index)) {
                         let distance =
                             coordinate.wrapping_sub(project(point.current, self.projection));
-                        move_point(point, distance, self.projection, self.freedom);
+                        move_point(
+                            point,
+                            distance,
+                            self.projection,
+                            self.freedom,
+                            self.backward_compatibility,
+                        );
                         if zone == 0 {
                             point.original = point.current;
                         }
@@ -1096,7 +1210,9 @@ impl Interpreter {
                     };
                     *remaining = remaining.checked_sub(count).ok_or(Error::ExecutionLimit)?;
                     for index in stack.drain(first..).rev() {
-                        if let Some(point) = self.points[1].get_mut(usize::from(index as u16)) {
+                        if self.backward_compatibility != 7
+                            && let Some(point) = self.points[1].get_mut(usize::from(index as u16))
+                        {
                             point.on_curve = !point.on_curve;
                         }
                     }
@@ -1104,7 +1220,9 @@ impl Interpreter {
                 op @ (0x81 | 0x82) => {
                     let last = usize::from(stack.pop().ok_or(Error::StackUnderflow)? as u16);
                     let first = usize::from(stack.pop().ok_or(Error::StackUnderflow)? as u16);
-                    if let Some(range) = self.points[1].get_mut(first..=last) {
+                    if self.backward_compatibility != 7
+                        && let Some(range) = self.points[1].get_mut(first..=last)
+                    {
                         *remaining = remaining
                             .checked_sub(range.len())
                             .ok_or(Error::ExecutionLimit)?;
@@ -1144,6 +1262,13 @@ impl Interpreter {
                 0x8e => {
                     let selector = stack.pop().ok_or(Error::StackUnderflow)?;
                     let value = stack.pop().ok_or(Error::StackUnderflow)?;
+                    if self.in_glyph
+                        && self.engine.version == 40
+                        && selector == 3
+                        && (value == 0 || value == 4)
+                    {
+                        self.backward_compatibility = (value as u8 & 4) ^ 4;
+                    }
                     if self.in_prep && (1..=3).contains(&selector) {
                         let flag = 1u8 << (selector - 1);
                         if value == 0 {
@@ -1260,7 +1385,7 @@ impl Interpreter {
                     *value = match op {
                         0x56 => i64::from(self.rounding.apply(*value) & 64 != 0),
                         0x57 => i64::from(self.rounding.apply(*value) & 64 == 0),
-                        0x68..=0x6b => self.rounding.apply(*value),
+                        0x68..=0x6b if !self.native_horizontal() => self.rounding.apply(*value),
                         _ => *value,
                     };
                 }
@@ -1553,6 +1678,7 @@ fn adr0064_i1_getinfo_reports_only_requested_interpreter_features() {
         stretched: false,
         variation: true,
         symmetric_smoothing: true,
+        tricky: false,
     };
     for (selector, expected) in [
         (1, 40),
@@ -1789,6 +1915,7 @@ fn adr0064_i1_mdrp_measures_before_scaling_and_updates_references() {
 #[test]
 fn adr0064_i1_glyph_starts_with_default_vectors_but_keeps_prepared_cvt() {
     let mut vm = Interpreter::new(0, &[0], 65536);
+    vm.engine.target = HintTarget::Mono;
     vm.execute(
         &[0, 0x7a, 0xb1, 0, 38, 0x44, 0xb0, 0, 0x16],
         &mut alloc::vec::Vec::new(),
@@ -1796,7 +1923,7 @@ fn adr0064_i1_glyph_starts_with_default_vectors_but_keeps_prepared_cvt() {
     )
     .unwrap();
     let points = alloc::vec![HintPoint::default()];
-    let (result, _) = vm
+    let (result, _, _) = vm
         .execute_glyph(points, &[], &[0xb1, 0, 0, 0x3f, 0xb1, 0, 17, 0x44], 2)
         .unwrap();
     assert_eq!(result[0].current, [64, 0]);
@@ -1843,7 +1970,7 @@ fn adr0064_i1_iup_wraps_each_contour_and_excludes_phantoms() {
         touched: [t, false],
         ..Default::default()
     });
-    let (out, _) = vm
+    let (out, _, _) = vm
         .execute_glyph(points.to_vec(), &[4, 6], &[0x31], 0)
         .unwrap();
     assert_eq!(
@@ -1858,7 +1985,7 @@ fn adr0064_i1_iup_wraps_each_contour_and_excludes_phantoms() {
 fn adr0064_i1_rounds_phantom_coordinates_before_glyph_program() {
     let vm = Interpreter::new(0, &[], 65536);
     let points = alloc::vec![HintPoint{current:[95,-33],original:[95,-33],..Default::default()};5];
-    let (result, _) = vm.execute_glyph(points, &[0], &[], 0).unwrap();
+    let (result, _, _) = vm.execute_glyph(points, &[0], &[], 0).unwrap();
     assert_eq!(
         result
             .iter()
@@ -1924,4 +2051,30 @@ fn adr0064_i1_scfs_moves_along_freedom_and_marks_each_moved_axis() {
         assert_eq!(vm.points[1][0].current, expected);
         assert_eq!(vm.points[1][0].touched, touched);
     }
+}
+
+#[test]
+fn adr0064_i1_v40_glyph_waiver_rounds_horizontal_on_the_fine_grid() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    // Select x, waive compatibility in this glyph, then ROUND 38 and SCFS point 0.
+    let points = alloc::vec![HintPoint::default();5];
+    let (result, _, _) = vm
+        .execute_glyph(
+            points,
+            &[0],
+            &[1, 0xb1, 4, 3, 0x8e, 0xb1, 0, 38, 0x68, 0x48],
+            4,
+        )
+        .unwrap();
+    assert_eq!(result[0].current, [38, 0]);
+    vm.engine.target = HintTarget::Mono;
+    let (mono, _, _) = vm
+        .execute_glyph(
+            alloc::vec![HintPoint::default();5],
+            &[0],
+            &[1, 0xb1, 0, 38, 0x68, 0x48],
+            4,
+        )
+        .unwrap();
+    assert_eq!(mono[0].current, [64, 0]);
 }
