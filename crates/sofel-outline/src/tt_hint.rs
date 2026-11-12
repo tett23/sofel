@@ -90,6 +90,7 @@ fn skip_block(code: &mut &[u8], stop_at_else: bool) -> Result<(), Error> {
     }
 }
 
+#[derive(Clone, Copy)]
 enum Rounding {
     Grid,
     HalfGrid,
@@ -159,109 +160,151 @@ impl Rounding {
     }
 }
 
-fn run(mut code: &[u8], stack: &mut alloc::vec::Vec<i64>, max_stack: usize) -> Result<(), Error> {
-    let mut rounding = Rounding::Grid;
-    while !code.is_empty() {
-        let instruction = next(&mut code)?;
-        match instruction.opcode {
-            0x40 | 0x41 | 0xb0..=0xbf => {
-                let data = instruction.immediate;
-                let count = if instruction.words {
-                    data.len() / 2
-                } else {
-                    data.len()
-                };
-                if count > max_stack.saturating_sub(stack.len()) {
-                    return Err(Error::StackOverflow);
-                }
-                if instruction.words {
-                    stack.extend(
-                        data.as_chunks::<2>()
-                            .0
-                            .iter()
-                            .map(|v| i64::from(i16::from_be_bytes(*v))),
-                    );
-                } else {
-                    stack.extend(data.iter().copied().map(i64::from));
-                }
-            }
-            op @ (0x76 | 0x77) => {
-                let selector = stack.pop().ok_or(Error::StackUnderflow)?;
-                rounding = Rounding::super_round(selector, op == 0x77);
-            }
-            0x18 => rounding = Rounding::Grid,
-            0x19 => rounding = Rounding::HalfGrid,
-            0x3d => rounding = Rounding::DoubleGrid,
-            0x7a => rounding = Rounding::Off,
-            0x7c => rounding = Rounding::Up,
-            0x7d => rounding = Rounding::Down,
-            op @ (0x56..=0x57 | 0x68..=0x6f) => {
-                let value = stack.last_mut().ok_or(Error::StackUnderflow)?;
-                *value = match op {
-                    0x56 => i64::from(rounding.apply(*value) & 64 != 0),
-                    0x57 => i64::from(rounding.apply(*value) & 64 == 0),
-                    0x68..=0x6b => rounding.apply(*value),
-                    _ => *value,
-                };
-            }
-            0x20 => {
-                let value = *stack.last().ok_or(Error::StackUnderflow)?;
-                push(stack, value, max_stack)?;
-            }
-            0x21 => {
-                stack.pop().ok_or(Error::StackUnderflow)?;
-            }
-            0x22 => stack.clear(),
-            0x23 | 0x8a => {
-                let count = if instruction.opcode == 0x23 { 2 } else { 3 };
-                let start = stack
-                    .len()
-                    .checked_sub(count)
-                    .ok_or(Error::StackUnderflow)?;
-                stack[start..].rotate_left(1);
-            }
-            0x24 => push(stack, stack.len() as i64, max_stack)?,
-            0x25 | 0x26 => {
-                let index = stack.pop().ok_or(Error::StackUnderflow)?;
-                let start = usize::try_from(index)
-                    .ok()
-                    .filter(|&n| n != 0)
-                    .and_then(|n| stack.len().checked_sub(n));
-                if instruction.opcode == 0x25 {
-                    let value = start.and_then(|i| stack.get(i)).copied().unwrap_or(0);
-                    stack.push(value);
-                } else if let Some(i) = start {
-                    stack[i..].rotate_left(1);
-                }
-            }
-            op @ (0x50..=0x55 | 0x5a..=0x5b | 0x60..=0x63 | 0x8b..=0x8c) => {
-                let [.., left, right] = stack.as_mut_slice() else {
-                    return Err(Error::StackUnderflow);
-                };
-                *left = binary(op, *left, *right)?;
-                stack.pop();
-            }
-            op @ (0x5c | 0x64..=0x67) => {
-                let value = stack.last_mut().ok_or(Error::StackUnderflow)?;
-                *value = match op {
-                    0x5c => i64::from(*value == 0),
-                    0x64 => value.wrapping_abs(),
-                    0x65 => value.wrapping_neg(),
-                    0x66 => *value & !63,
-                    _ => value.wrapping_add(63) & !63,
-                };
-            }
-            0x58 => {
-                if stack.pop().ok_or(Error::StackUnderflow)? == 0 {
-                    skip_block(&mut code, true)?;
-                }
-            }
-            0x1b => skip_block(&mut code, false)?,
-            0x59 => {}
-            _ => return Err(Error::InvalidOpcode),
+#[derive(Clone)]
+struct Interpreter {
+    rounding: Rounding,
+    storage: alloc::vec::Vec<i64>,
+}
+
+impl Interpreter {
+    fn new(max_storage: u16) -> Self {
+        Self {
+            rounding: Rounding::Grid,
+            storage: alloc::vec![0; usize::from(max_storage)],
         }
     }
-    Ok(())
+
+    fn execute(
+        &mut self,
+        mut code: &[u8],
+        stack: &mut alloc::vec::Vec<i64>,
+        max_stack: usize,
+    ) -> Result<(), Error> {
+        while !code.is_empty() {
+            let instruction = next(&mut code)?;
+            match instruction.opcode {
+                0x40 | 0x41 | 0xb0..=0xbf => {
+                    let data = instruction.immediate;
+                    let count = if instruction.words {
+                        data.len() / 2
+                    } else {
+                        data.len()
+                    };
+                    if count > max_stack.saturating_sub(stack.len()) {
+                        return Err(Error::StackOverflow);
+                    }
+                    if instruction.words {
+                        stack.extend(
+                            data.as_chunks::<2>()
+                                .0
+                                .iter()
+                                .map(|v| i64::from(i16::from_be_bytes(*v))),
+                        );
+                    } else {
+                        stack.extend(data.iter().copied().map(i64::from));
+                    }
+                }
+                op @ (0x76 | 0x77) => {
+                    let selector = stack.pop().ok_or(Error::StackUnderflow)?;
+                    self.rounding = Rounding::super_round(selector, op == 0x77);
+                }
+                0x18 => self.rounding = Rounding::Grid,
+                0x19 => self.rounding = Rounding::HalfGrid,
+                0x3d => self.rounding = Rounding::DoubleGrid,
+                0x7a => self.rounding = Rounding::Off,
+                0x7c => self.rounding = Rounding::Up,
+                0x7d => self.rounding = Rounding::Down,
+                op @ (0x56..=0x57 | 0x68..=0x6f) => {
+                    let value = stack.last_mut().ok_or(Error::StackUnderflow)?;
+                    *value = match op {
+                        0x56 => i64::from(self.rounding.apply(*value) & 64 != 0),
+                        0x57 => i64::from(self.rounding.apply(*value) & 64 == 0),
+                        0x68..=0x6b => self.rounding.apply(*value),
+                        _ => *value,
+                    };
+                }
+                0x42 => {
+                    let value = stack.pop().ok_or(Error::StackUnderflow)?;
+                    let index = stack.pop().ok_or(Error::StackUnderflow)?;
+                    if let Some(slot) = usize::try_from(index)
+                        .ok()
+                        .and_then(|i| self.storage.get_mut(i))
+                    {
+                        *slot = value;
+                    }
+                }
+                0x43 => {
+                    let index = stack.last_mut().ok_or(Error::StackUnderflow)?;
+                    *index = usize::try_from(*index)
+                        .ok()
+                        .and_then(|i| self.storage.get(i))
+                        .copied()
+                        .unwrap_or(0);
+                }
+                0x20 => {
+                    let value = *stack.last().ok_or(Error::StackUnderflow)?;
+                    push(stack, value, max_stack)?;
+                }
+                0x21 => {
+                    stack.pop().ok_or(Error::StackUnderflow)?;
+                }
+                0x22 => stack.clear(),
+                0x23 | 0x8a => {
+                    let count = if instruction.opcode == 0x23 { 2 } else { 3 };
+                    let start = stack
+                        .len()
+                        .checked_sub(count)
+                        .ok_or(Error::StackUnderflow)?;
+                    stack[start..].rotate_left(1);
+                }
+                0x24 => push(stack, stack.len() as i64, max_stack)?,
+                0x25 | 0x26 => {
+                    let index = stack.pop().ok_or(Error::StackUnderflow)?;
+                    let start = usize::try_from(index)
+                        .ok()
+                        .filter(|&n| n != 0)
+                        .and_then(|n| stack.len().checked_sub(n));
+                    if instruction.opcode == 0x25 {
+                        let value = start.and_then(|i| stack.get(i)).copied().unwrap_or(0);
+                        stack.push(value);
+                    } else if let Some(i) = start {
+                        stack[i..].rotate_left(1);
+                    }
+                }
+                op @ (0x50..=0x55 | 0x5a..=0x5b | 0x60..=0x63 | 0x8b..=0x8c) => {
+                    let [.., left, right] = stack.as_mut_slice() else {
+                        return Err(Error::StackUnderflow);
+                    };
+                    *left = binary(op, *left, *right)?;
+                    stack.pop();
+                }
+                op @ (0x5c | 0x64..=0x67) => {
+                    let value = stack.last_mut().ok_or(Error::StackUnderflow)?;
+                    *value = match op {
+                        0x5c => i64::from(*value == 0),
+                        0x64 => value.wrapping_abs(),
+                        0x65 => value.wrapping_neg(),
+                        0x66 => *value & !63,
+                        _ => value.wrapping_add(63) & !63,
+                    };
+                }
+                0x58 => {
+                    if stack.pop().ok_or(Error::StackUnderflow)? == 0 {
+                        skip_block(&mut code, true)?;
+                    }
+                }
+                0x1b => skip_block(&mut code, false)?,
+                0x59 => {}
+                _ => return Err(Error::InvalidOpcode),
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+fn run(code: &[u8], stack: &mut alloc::vec::Vec<i64>, max_stack: usize) -> Result<(), Error> {
+    Interpreter::new(0).execute(code, stack, max_stack)
 }
 
 #[test]
@@ -380,4 +423,22 @@ fn adr0064_i1_super_rounding_keeps_phase_and_diagonal_period() {
         run(&[op, 0x68], &mut stack, 2).unwrap();
         assert_eq!(stack, [expected]);
     }
+}
+
+#[test]
+fn adr0064_i1_glyph_storage_writes_are_private_and_bounded() {
+    let mut prep = Interpreter::new(2);
+    let mut stack = alloc::vec![1, -42];
+    prep.execute(&[0x42], &mut stack, 4).unwrap();
+    let mut glyph = prep.clone();
+    glyph
+        .execute(
+            &[0xb1, 1, 99, 0x42, 0xb1, 2, 7, 0x42, 0xb0, 2, 0x43],
+            &mut stack,
+            4,
+        )
+        .unwrap();
+    assert_eq!(stack, [0]);
+    prep.execute(&[0xb0, 1, 0x43], &mut stack, 4).unwrap();
+    assert_eq!(stack, [0, -42]);
 }
