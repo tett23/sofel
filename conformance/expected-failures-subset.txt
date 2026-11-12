@@ -4,22 +4,6 @@
 # upstream:disabled for a suite HarfBuzz's meson.build leaves out and has
 # no expected files for. A case run with --preprocess (id suffixed
 # +prepared) fails for the same reason as the case without it.
-apply_cvar_delta.tests/Comfortaa-Regular-new.default.all.wght=700.ttf:bytes  # deferred:instance
-apply_cvar_delta.tests/Comfortaa-Regular-new.default.all.wght=700.ttf+prepared:bytes  # deferred:instance
-apply_cvar_delta.tests/Comfortaa-Regular-new.default.all.wght=700.ttf:validate  # deferred:instance
-apply_cvar_delta.tests/Comfortaa-Regular-new.default.all.wght=700.ttf+prepared:validate  # deferred:instance
-apply_cvar_delta.tests/Comfortaa-Regular-new.default.all.wght=300.ttf:bytes  # deferred:instance
-apply_cvar_delta.tests/Comfortaa-Regular-new.default.all.wght=300.ttf+prepared:bytes  # deferred:instance
-apply_cvar_delta.tests/Comfortaa-Regular-new.default.all.wght=300.ttf:validate  # deferred:instance
-apply_cvar_delta.tests/Comfortaa-Regular-new.default.all.wght=300.ttf+prepared:validate  # deferred:instance
-apply_cvar_delta.tests/Muli-ABC.default.all.wght=700.ttf:bytes  # deferred:instance
-apply_cvar_delta.tests/Muli-ABC.default.all.wght=700.ttf+prepared:bytes  # deferred:instance
-apply_cvar_delta.tests/Muli-ABC.default.all.wght=700.ttf:validate  # deferred:instance
-apply_cvar_delta.tests/Muli-ABC.default.all.wght=700.ttf+prepared:validate  # deferred:instance
-apply_cvar_delta.tests/Muli-ABC.default.all.wght=300.ttf:bytes  # deferred:instance
-apply_cvar_delta.tests/Muli-ABC.default.all.wght=300.ttf+prepared:bytes  # deferred:instance
-apply_cvar_delta.tests/Muli-ABC.default.all.wght=300.ttf:validate  # deferred:instance
-apply_cvar_delta.tests/Muli-ABC.default.all.wght=300.ttf+prepared:validate  # deferred:instance
 avar2_full_instance.tests/RobotoDelta-Roman-VF-subset.default.all.opsz=70,wght=600,wdth=120,slnt=-6,GRAD=-150,XTSP=50.iup_optimize.ttf:bytes  # deferred:iup
 avar2_full_instance.tests/RobotoDelta-Roman-VF-subset.default.all.opsz=70,wght=600,wdth=120,slnt=-6,GRAD=-150,XTSP=50.iup_optimize.ttf+prepared:bytes  # deferred:iup
 avar2_full_instance.tests/RobotoDelta-Roman-VF-subset.default.all.opsz=70,wght=600,wdth=120,slnt=-6,GRAD=-150,XTSP=50.iup_optimize.ttf:validate  # deferred:iup
@@ -236,14 +220,6 @@ hvar_partial_instance_implicit_map.tests/ImplicitHVAR.default.41,42,43.wght=200-
 hvar_partial_instance_implicit_map.tests/ImplicitHVAR.default.41,42,43.wght=200-400-800.ttf+prepared:bytes  # deferred:instance
 hvar_partial_instance_implicit_map.tests/ImplicitHVAR.default.41,42,43.wght=200-400-800.ttf:validate  # deferred:instance
 hvar_partial_instance_implicit_map.tests/ImplicitHVAR.default.41,42,43.wght=200-400-800.ttf+prepared:validate  # deferred:instance
-instance_comp_glyph_empty_child.tests/RobotoMono.default.all.wght=700.ttf:bytes  # deferred:instance
-instance_comp_glyph_empty_child.tests/RobotoMono.default.all.wght=700.ttf+prepared:bytes  # deferred:instance
-instance_comp_glyph_empty_child.tests/RobotoMono.default.all.wght=700.ttf:validate  # deferred:instance
-instance_comp_glyph_empty_child.tests/RobotoMono.default.all.wght=700.ttf+prepared:validate  # deferred:instance
-instance_feature_variations.tests/MPLUS1-Variable.default.30DD.wght=400.ttf:bytes  # deferred:instance
-instance_feature_variations.tests/MPLUS1-Variable.default.30DD.wght=400.ttf+prepared:bytes  # deferred:instance
-instance_feature_variations.tests/MPLUS1-Variable.default.30DD.wght=400.ttf:validate  # deferred:instance
-instance_feature_variations.tests/MPLUS1-Variable.default.30DD.wght=400.ttf+prepared:validate  # deferred:instance
 instance_no_double_free.tests/Handjet.default.all.wght=100,ELGR=1,ELSH=2.ttf:bytes  # deferred:instance
 instance_no_double_free.tests/Handjet.default.all.wght=100,ELGR=1,ELSH=2.ttf+prepared:bytes  # deferred:instance
 instance_no_double_free.tests/Handjet.default.all.wght=100,ELGR=1,ELSH=2.ttf:validate  # deferred:instance
@@ -252,10 +228,6 @@ instance_no_double_free.tests/Handjet.notdef-outline.all.wght=100,ELGR=1,ELSH=2.
 instance_no_double_free.tests/Handjet.notdef-outline.all.wght=100,ELGR=1,ELSH=2.ttf+prepared:bytes  # deferred:instance
 instance_no_double_free.tests/Handjet.notdef-outline.all.wght=100,ELGR=1,ELSH=2.ttf:validate  # deferred:instance
 instance_no_double_free.tests/Handjet.notdef-outline.all.wght=100,ELGR=1,ELSH=2.ttf+prepared:validate  # deferred:instance
-instantiate_base.tests/NotoSerifHK-subset.default.all.wght=500.ttf:bytes  # deferred:instance
-instantiate_base.tests/NotoSerifHK-subset.default.all.wght=500.ttf+prepared:bytes  # deferred:instance
-instantiate_base.tests/NotoSerifHK-subset.default.all.wght=500.ttf:validate  # deferred:instance
-instantiate_base.tests/NotoSerifHK-subset.default.all.wght=500.ttf+prepared:validate  # deferred:instance
 instantiate_base.tests/NotoSerifHK-subset.default.all.wght=400-600.ttf:bytes  # deferred:instance
 instantiate_base.tests/NotoSerifHK-subset.default.all.wght=400-600.ttf+prepared:bytes  # deferred:instance
 instantiate_base.tests/NotoSerifHK-subset.default.all.wght=400-600.ttf:validate  # deferred:instance

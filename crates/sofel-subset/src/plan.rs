@@ -150,6 +150,8 @@ pub(crate) struct PlanLayout {
     /// variation indices map to `HB_OT_LAYOUT_NO_VARIATIONS_INDEX` with
     /// no delta (`layout_variation_idx_delta_map`).
     pub varidx_pinned: bool,
+    /// Rounded GDEF variation deltas at a fully pinned location.
+    pub pinned_layout_deltas: BTreeMap<u32, i32>,
     /// Used rows and remapped indices of an unpinned GDEF store, shared
     /// by GDEF caret values and retained GPOS PairPos records.
     pub gdef_var_items: Vec<(u16, Vec<u32>)>,
@@ -328,7 +330,7 @@ impl Plan {
             && font.table(Tag::new(b"CFF2")).is_none();
         let needs_rebase = |tag: &&[u8; 4]| {
             let handled = match *tag {
-                b"GSUB" => {
+                b"GSUB" | b"GPOS" | b"GDEF" => {
                     norm.all_axes_pinned
                         && !input
                             .set(SetKind::NoSubsetTables)
@@ -732,7 +734,7 @@ impl Plan {
             let math_has_var_format = tag_kept(b"MATH")
                 && !no_subset.contains(Tag::new(b"MATH").to_u32())
                 && math_data.windows(2).any(|word| word == [0x80, 0x00]);
-            if !pinned
+            if (!pinned || !p.var.n.pinned_at_default)
                 && layout::gdef::has_var_store(gdef)
                 && (!copied_gdef || gpos_has_var_format || math_has_var_format)
             {
@@ -775,7 +777,27 @@ impl Plan {
                         reason: "the GDEF item variation store (ADR 0022 stage 10)",
                     });
                 };
-                if copied_gdef {
+                if pinned {
+                    use sofel_font::var::{HbF32, Location, StoreKind};
+                    let location = Location::from_normalized_2_14(font, &p.var.n.normalized_coords);
+                    let instance = font.instance(&location);
+                    for index in map.keys().copied() {
+                        let [a, b, c, d] = index.to_be_bytes();
+                        let delta = instance
+                            .item_delta::<HbF32>(
+                                StoreKind::Gdef,
+                                u16::from_be_bytes([a, b]),
+                                u16::from_be_bytes([c, d]),
+                            )
+                            .map_err(|_| SubsetError::Malformed {
+                                tag: Tag::new(b"GDEF"),
+                            })?;
+                        let rounded = sofel_geom::float::hb_roundf32(delta);
+                        p.layout
+                            .pinned_layout_deltas
+                            .insert(index, crate::instance::f64_to_i32(rounded));
+                    }
+                } else if copied_gdef {
                     // HarfBuzz remaps subset GPOS references even when it
                     // copies the original GDEF table unchanged.
                     p.layout.gdef_var_map = map;

@@ -341,12 +341,7 @@ fn adr0061_i1_pinning_cvar_updates_control_values() {
         let out = std::env::temp_dir().join(format!("sofel-cvar-pin-{}.ttf", std::process::id()));
         for value in [300.0, 700.0] {
             let input = Input::new()
-                .map_set(SetKind::Unicodes, |s| s.add(65))
-                .map_set(SetKind::DropTables, |s| {
-                    for t in [b"GDEF", b"GPOS", b"GSUB"] {
-                        s.add(Tag::new(t).to_u32());
-                    }
-                })
+                .map_set(SetKind::Unicodes, |s| s.add_range(0, 0x10ffff))
                 .with_axis_pinned(Tag::new(b"wght"), value, &font)
                 .unwrap();
             let ours = subset(&font, &input).unwrap();
@@ -354,8 +349,7 @@ fn adr0061_i1_pinning_cvar_updates_control_values() {
                 Command::new(paths::hb_dump())
                     .arg("--subset")
                     .arg(format!("--font-file={}", path.display()))
-                    .arg("--unicodes=U+0041")
-                    .arg("--drop-tables+=GDEF,GPOS,GSUB")
+                    .arg("--unicodes=*")
                     .arg(format!("--variations=wght={value}"))
                     .arg(format!("--output-file={}", out.display()))
                     .status()
