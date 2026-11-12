@@ -218,6 +218,9 @@ jobs:
         env:
           SOFEL_FONTS_OFFLINE: ${{ steps.extra_fonts.outputs.cache-hit == 'true' && '1' || '0' }}
         run: sh scripts/fetch-fonts.sh
+      - name: Compare gallery sbix glyphs with FreeType
+        if: runner.os == 'Linux'
+        run: SOFEL_FT_DUMP="$RUNNER_TEMP/ft-dump-png" cargo test --release -p sofel-conformance --test freetype_sbit i2_sbix_gallery -- --ignored
       # sofel ADR 0069: render the same local gallery and keep the image.
       - name: Render font gallery
         if: matrix.os == 'ubuntu-latest'
