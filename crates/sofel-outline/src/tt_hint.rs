@@ -292,17 +292,25 @@ fn projected_distance(a: [i64; 2], b: [i64; 2], vector: [i64; 2]) -> i64 {
 
 // Both vectors contain normalized F2Dot14 components.
 #[allow(clippy::arithmetic_side_effects)]
-fn move_point(point: &mut HintPoint, distance: i64, projection: [i64; 2], freedom: [i64; 2]) {
+fn movement_factors(projection: [i64; 2], freedom: [i64; 2]) -> [i64; 2] {
     let dot = (projection[0] * freedom[0] + projection[1] * freedom[1] + 0x2000) >> 14;
     if (-0x1554..0x1555).contains(&dot) {
-        return;
+        return [0, 0];
     }
-    for (axis, component) in freedom.into_iter().enumerate() {
-        let factor = if dot >= 0x3ffe {
+    freedom.map(|component| {
+        if dot >= 0x3ffe {
             component * 4
         } else {
             component * 65536 / dot
-        };
+        }
+    })
+}
+
+fn move_point(point: &mut HintPoint, distance: i64, projection: [i64; 2], freedom: [i64; 2]) {
+    for (axis, factor) in movement_factors(projection, freedom)
+        .into_iter()
+        .enumerate()
+    {
         if factor != 0 {
             let delta = sofel_font::read::cff::ft::mul_fix(distance, factor);
             point.current[axis] = point.current[axis].wrapping_add(delta);
@@ -1000,6 +1008,38 @@ impl Interpreter {
                         if usize::from(zone) != target || offset + start != usize::from(reference) {
                             p.current[axis] = p.current[axis].wrapping_add(delta);
                             p.touched[axis] = true;
+                        }
+                    }
+                }
+                op @ (0x36 | 0x37) => {
+                    let target = stack.pop().ok_or(Error::StackUnderflow)? as i32;
+                    if !matches!(target, 0 | 1) {
+                        continue;
+                    }
+                    let target = target as usize;
+                    let (zone, reference) = if op == 0x36 {
+                        (self.zones[1], self.reference[2])
+                    } else {
+                        (self.zones[0], self.reference[1])
+                    };
+                    let zone = usize::from(zone);
+                    let reference = usize::from(reference);
+                    let Some(base) = self.points[zone].get(reference) else {
+                        continue;
+                    };
+                    let distance = projected_distance(base.current, base.original, self.projection);
+                    let delta = movement_factors(self.projection, self.freedom)
+                        .map(|factor| sofel_font::read::cff::ft::mul_fix(distance, factor));
+                    let points = &mut self.points[target];
+                    let limit = if target == 1 {
+                        points.len().saturating_sub(4)
+                    } else {
+                        points.len()
+                    };
+                    for (i, point) in points.iter_mut().take(limit).enumerate() {
+                        if target != zone || i != reference {
+                            point.current[0] = point.current[0].wrapping_add(delta[0]);
+                            point.current[1] = point.current[1].wrapping_add(delta[1]);
                         }
                     }
                 }
@@ -2173,4 +2213,27 @@ fn adr0064_i1_mdap_and_msirp_move_in_the_projected_direction() {
     assert_eq!(vm.points[0][0].original, [60, 80]);
     assert_eq!(vm.points[0][0].current, [98, 131]);
     assert_eq!(vm.points[0][0].touched, [true, true]);
+}
+
+#[test]
+fn adr0064_i1_zone_shift_excludes_reference_and_phantoms_and_preserves_tags() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    vm.points[1].resize(7, HintPoint::default());
+    vm.points[0].resize(2, HintPoint::default());
+    vm.points[1][1].current = [30, 40];
+    vm.reference[2] = 1;
+    vm.projection = [9830, 13107];
+    vm.freedom = vm.projection;
+    vm.execute(&[0x36], &mut alloc::vec![1], 1).unwrap();
+    for (i, p) in vm.points[1].iter().enumerate() {
+        assert_eq!(p.current, if i < 3 { [30, 40] } else { [0, 0] });
+        assert_eq!(p.touched, [false, false]);
+    }
+    vm.reference[1] = 1;
+    vm.execute(&[0x37], &mut alloc::vec![0], 1).unwrap();
+    assert!(
+        vm.points[0]
+            .iter()
+            .all(|p| p.current == [30, 40] && p.touched == [false, false])
+    );
 }
