@@ -239,6 +239,7 @@ pub(crate) struct CallTrace {
     pub start: usize,
     pub end: usize,
     pub target: Source,
+    caller_arguments: Option<(usize, usize)>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -417,6 +418,31 @@ impl<'a, 'c> Env<'a, 'c> {
                 {
                     start
                 }
+                _ if self.ctx.off == 1 => {
+                    // An initial stem can consume literals pushed before the call.
+                    let Some(call) = self
+                        .call_trace
+                        .last()
+                        .filter(|c| c.target == self.ctx.source)
+                    else {
+                        self.trace_valid = false;
+                        return;
+                    };
+                    let Some((start, _)) = call
+                        .caller_arguments
+                        .filter(|&(_, count)| count == self.args.len())
+                    else {
+                        self.trace_valid = false;
+                        return;
+                    };
+                    self.hint_trace.push(HintTrace {
+                        source: call.source,
+                        start,
+                        end: call.start,
+                        terminal: false,
+                    });
+                    0
+                }
                 _ => {
                     self.trace_valid = false;
                     return;
@@ -562,6 +588,12 @@ impl<'a, 'c> Env<'a, 'c> {
                         start,
                         end: self.ctx.off,
                         target,
+                        caller_arguments: self.literal_run.and_then(
+                            |(owner, first, end, count)| {
+                                (owner == source && end == op_start && count > 1)
+                                    .then_some((first, count.saturating_sub(1)))
+                            },
+                        ),
                     });
                 }
                 _ => self.trace_valid = false,
