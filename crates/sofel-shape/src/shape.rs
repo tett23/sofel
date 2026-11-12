@@ -404,13 +404,29 @@ fn substitute_pre(
                 {
                     continue;
                 }
-                for info in buffer.infos_mut() {
-                    if let Some(glyph) = table.lookup.get(info.codepoint) {
-                        info.codepoint = u32::from(glyph);
-                        if !plan.fallback_glyph_classes {
-                            info.glyph_props = gdef.glyph_props(info.codepoint);
+                match table.action {
+                    crate::aat::Action::Rearrange(machine) => {
+                        let backwards = table.coverage & 0x4000_0000 != 0;
+                        let logical = table.coverage & 0x1000_0000 != 0;
+                        let reverse = backwards != (!logical && buffer.direction.is_backward());
+                        if reverse {
+                            buffer.reverse();
                         }
-                        digest.add(info.codepoint);
+                        machine.rearrange(buffer);
+                        if reverse {
+                            buffer.reverse();
+                        }
+                    }
+                    crate::aat::Action::Replace(lookup) => {
+                        for info in buffer.infos_mut() {
+                            if let Some(glyph) = lookup.get(info.codepoint) {
+                                info.codepoint = u32::from(glyph);
+                                if !plan.fallback_glyph_classes {
+                                    info.glyph_props = gdef.glyph_props(info.codepoint);
+                                }
+                                digest.add(info.codepoint);
+                            }
+                        }
                     }
                 }
             }

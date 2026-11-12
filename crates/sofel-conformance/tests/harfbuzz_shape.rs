@@ -377,3 +377,15 @@ fn harfbuzz_shaping_tests() {
     }
     assert!(report.is_empty(), "{report}");
 }
+
+#[test]
+fn i1_aat_morx_rearranges_all_sixteen_verbs() {
+    let data =
+        paths::testdata().join("harfbuzz/test/shape/data/text-rendering-tests/tests/MORX-2.tests");
+    let mut skipped = 0;
+    let suite = cases("text-rendering-tests", &data, &mut skipped);
+    assert_eq!(suite.len(), 16);
+    for case in suite {
+        assert_eq!(run(&case), Ok(()), "{}", case.id);
+    }
+}

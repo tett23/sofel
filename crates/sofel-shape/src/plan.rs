@@ -427,7 +427,7 @@ impl<'a> ShapePlan<'a> {
                 && features.is_empty()
             {
                 font.table(Tag(*b"morx"))
-                    .and_then(|data| crate::aat::noncontextual_chains(data, font.num_glyphs()))
+                    .and_then(|data| crate::aat::chains(data, font.num_glyphs()))
             } else {
                 None
             },
