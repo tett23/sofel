@@ -85,7 +85,7 @@ fn true_type_orientation(points: &[Point], ends: &[usize]) -> Option<bool> {
 /// Its integer Newton steps matter at sharp joins; dividing by
 /// `FT_Vector_Length` changes individual synthesized outline points.
 #[allow(clippy::arithmetic_side_effects)] // The pinned C implementation uses 32-bit wrapping arithmetic.
-fn normalize(point: Point) -> (Point, i32) {
+pub(crate) fn normalize(point: Point) -> (Point, i32) {
     let sx = if point.x < 0 { -1i32 } else { 1 };
     let sy = if point.y < 0 { -1i32 } else { 1 };
     let mut x = point.x.unsigned_abs();

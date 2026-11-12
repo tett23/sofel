@@ -17,6 +17,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn adr0064_i1_stack_vectors_normalize_and_preserve_zero() {
+        let mut stack = alloc::vec![3, 4];
+        run(
+            &[
+                0x0a, 0xb1, 0, 0, 0x0a, 0xb9, 0xff, 0xff, 0, 0, 0x0b, 0x0c, 0x0d,
+            ],
+            &mut stack,
+            4,
+        )
+        .unwrap();
+        assert_eq!(stack, [9830, 13107, -16384, 0]);
+    }
+
+    #[test]
     fn adr0064_i1_branches_skip_nested_blocks_and_push_payloads() {
         let mut stack = alloc::vec::Vec::new();
         // Both halves contain opcode-looking payload bytes. The nested
@@ -730,6 +744,25 @@ impl Interpreter {
                     }
                     if op & 2 == 0 {
                         self.freedom = axis;
+                    }
+                }
+                op @ (0x0a | 0x0b) => {
+                    let y = stack.pop().ok_or(Error::StackUnderflow)? as i16;
+                    let x = stack.pop().ok_or(Error::StackUnderflow)? as i16;
+                    let vector = if op == 0x0a {
+                        &mut self.projection
+                    } else {
+                        &mut self.freedom
+                    };
+                    if x != 0 || y != 0 {
+                        let (unit, _) = crate::slot_synth::normalize(sofel_geom::Point {
+                            x: i32::from(x),
+                            y: i32::from(y),
+                        });
+                        *vector = [i64::from(unit.x / 4), i64::from(unit.y / 4)];
+                    }
+                    if op == 0x0a {
+                        self.dual_projection = self.projection;
                     }
                 }
                 op @ (0x0c | 0x0d) => {
