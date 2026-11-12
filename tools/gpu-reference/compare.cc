@@ -7,7 +7,7 @@
 #include <vector>
 
 int main(int argc, char **argv) {
-  if (argc != 2) return 2;
+  if (argc < 2 || argc > 3) return 2;
   auto *source = hb_blob_create_from_file_or_fail(argv[1]);
   if (!source) return 1;
   unsigned size = 0;
@@ -17,6 +17,14 @@ int main(int argc, char **argv) {
   if (!ours) return 1;
   auto *face = hb_face_create(source, 0);
   auto *font = hb_font_create(face);
+  sofel_location_t *location = nullptr;
+  if (argc == 3) {
+    hb_variation_t axis;
+    if (!hb_variation_from_string(argv[2], -1, &axis)) return 2;
+    hb_font_set_variations(font, &axis, 1);
+    const sofel_variation_t setting = {axis.tag, axis.value};
+    if (sofel_location_create(ours, UINT32_MAX, &setting, 1, &location)) return 1;
+  }
   auto *paint = hb_gpu_paint_create_or_fail();
   if (!paint) return 1;
   unsigned checked = 0, rejected = 0, failed = 0;
@@ -25,7 +33,7 @@ int main(int argc, char **argv) {
     hb_gpu_paint_glyph(paint,font,gid);
     auto *ref = hb_gpu_paint_encode(paint,nullptr);
     size_t n = 0;
-    error = sofel_gpu_paint_glyph(ours,nullptr,gid,0,nullptr,0,&n);
+    error = sofel_gpu_paint_glyph(ours,location,gid,0,nullptr,0,&n);
     if (!ref) {
       if (error == SOFEL_ERROR_INVALID_ARGUMENT) { ++rejected; continue; }
       std::fprintf(stderr,"glyph %u: expected encoding error, got %d\n",gid,error);
@@ -34,7 +42,7 @@ int main(int argc, char **argv) {
     unsigned len = 0;
     auto *bytes = hb_blob_get_data(ref,&len);
     std::vector<std::array<int16_t,4>> records(n);
-    error = sofel_gpu_paint_glyph(ours,nullptr,gid,0,reinterpret_cast<int16_t (*)[4]>(records.data()),n,&n);
+    error = sofel_gpu_paint_glyph(ours,location,gid,0,reinterpret_cast<int16_t (*)[4]>(records.data()),n,&n);
     if (error || n*8 != len) {
       std::fprintf(stderr,"glyph %u: %zu records, expected %u, status %d\n",gid,n,len/8,error);
       ++failed;
@@ -51,7 +59,7 @@ int main(int argc, char **argv) {
     hb_blob_destroy(ref);
   }
   hb_gpu_paint_destroy(paint); hb_font_destroy(font); hb_face_destroy(face);
-  hb_blob_destroy(source); sofel_font_destroy(ours);
+  sofel_location_destroy(location); sofel_font_destroy(ours); hb_blob_destroy(source);
   std::printf("%s: %u matching counts, %zu records, %u matching rejections, %u differences\n",
               argv[1], checked, total, rejected, failed);
   return failed ? 1 : 0;

@@ -139,7 +139,10 @@ pub unsafe extern "C" fn sofel_gpu_paint_glyph(
                     Cmd::CubicTo(a, b, p) => path.cubic_to(point(a), point(b), point(p)),
                     Cmd::Close => path.close(),
                 };
-                if let Some(commands) = hb.cff_glyph_path(GlyphId(gid), &scale) {
+                if let Some(commands) = outlines
+                    .varc_glyph_path(GlyphId(gid), scale)
+                    .or_else(|| hb.cff_glyph_path(GlyphId(gid), &scale))
+                {
                     for cmd in commands {
                         emit(cmd);
                     }
