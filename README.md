@@ -49,6 +49,7 @@ C ABIには位置の作成、座標の取得、Variationの文字列変換、軸
 さらに、CFF2の `blend` は指定した位置の係数で評価し、輪郭とグリフの箱に反映する。Private DICTも位置ごとに読みなおす。C ABIの `sofel_cff2_blend_vector` は、既定成分と0の列を含む係数列を返す。
 さらに、メトリクス、基準線、輪郭、シェーピング、塗りの既存関数には位置の引数を追加した。
 C API の `sofel_scale_create_with_ppem` は、シェーピング用スケールに横と縦の ppem を指定する（[ADR 0052](docs/adr/0052-c-shaping-ppem.md)）。従来の `sofel_scale_create` と NULL のスケールでは両軸とも 0 になる。
+Rust の `Font::feature_tags` と C の `sofel_font_feature_tags` は、GSUB と GPOS の機能タグを表ごとに、レコード順と重複を保って部分取得する。C では容量 0 と NULL の配列で総数だけを取得できる（[ADR 0075](docs/adr/0075-layout-feature-tags.md)）。
 レイアウト問い合わせ（[ADR 0062](docs/adr/0062-layout-query-device-adjustments.md)）は、Rust の `Instance::layout_queries` に位置、スケール、横と縦の ppem を渡す。GPOS、GDEF の合字キャレット、BASE、MATH は同じ Device 評価を使い、MATH の定数、グリフの値、カーニング、異体グリフと組み立て部品を取得する。C ABI の `sofel_layout_ligature_carets` と `sofel_math_*` は列の開始位置、容量、格納件数、総数を分けて返す。`HbScale::with_ptem` と `sofel_scale_create_with_ptem` は、スタイルの光学サイズを問い合わせるためのポイントサイズを渡す。
 可変フォントの位置を指定すると、HVARとVVARの送り幅、gvarの幻の点から求める送り幅とグリフの箱、VORGとVVARの縦原点、MVARのメトリクス、BASEのVariationIndexを評価する。FreeTypeの方針ではgvarの輪郭とCFF2の輪郭を位置に応じて描き、HarfBuzzの方針ではFeatureVariationsとGPOSのVariationIndexをシェーピングに適用する。COLRv1の塗りとクリップの箱にも位置を反映する。
 `sofel-shape`、`sofel-render`、`sofel-paint` は `--variations` と `--named-instance` で位置を受け付ける。

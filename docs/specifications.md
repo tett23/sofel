@@ -211,6 +211,8 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 ## シェーピング（`sofel-shape`）
 
+`sofel_font::Font::feature_tags` は、シェーピングが採用した GSUB または GPOS の FeatureList から機能タグを表ごとに列挙する。`LayoutTable::{Gsub, Gpos}` で表を選び、開始位置と出力配列を渡すと格納数と総数を返す。文字体系や言語で絞らず、レコード順と重複を保つ。表がない場合や検査で表全体を破棄した場合は空列となる。C ABI の `sofel_font_feature_tags` は容量が残数より小さくても部分列を返して成功し、必須ポインタと表タグのエラーでは出力を変えない（[ADR 0075](adr/0075-layout-feature-tags.md)）。
+
 [ADR 0063](adr/0063-font-functions-and-synthesis.md) の `SubFont` は親への参照と問い合わせ別の関数を持つ。子に関数がなければ親へ委ね、送り、原点、箱と輪郭の座標を子のスケールへ換算する。`shape_with_subfont` はこの関数で文字からのグリフ検索と配置を行い、合成太字の送りへの加算を `in_place` の指定に従って切り替える。輪郭はルートの `set_outline_func` で供給する。合成斜体と太字は、HarfBuzzと同じ順にその輪郭へ適用する。`sofel-shape` コマンドは `ot` と `fallback` の両方で `--font-slant`、`--font-bold`、`--font-grade` を受け、glyfとCFF/CFF2の輪郭を供給する。縦メトリクスがないフォントでは、HarfBuzzの合成した横方向のフォントの箱から縦送りと縦原点を求める。
 
 ### 機能の文字列

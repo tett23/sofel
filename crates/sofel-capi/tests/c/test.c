@@ -39,6 +39,40 @@ static int failures;
     }                                                                      \
   } while (0)
 
+/* sofel ADR 0075 I2: partial feature tag pages and untouched error outputs. */
+static void inv2_feature_tags_outputs(void) {
+  int32_t error = 0;
+  sofel_font_t *font = sofel_font_create(feature_tags_data, sizeof feature_tags_data, 0, &error);
+  uint32_t tags[4] = {0x11111111, 0x22222222, 0x33333333, 0x44444444};
+  uint32_t written = 91, total = 92;
+  CHECK(error == SOFEL_OK && font != NULL);
+  if (font == NULL) return;
+  CHECK(sofel_font_feature_tags(font, SOFEL_TAG('G', 'S', 'U', 'B'), 0,
+                                &tags[1], 2, &written, &total) == SOFEL_OK);
+  CHECK(written == 2 && total == 3);
+  CHECK(tags[0] == 0x11111111 && tags[1] == SOFEL_TAG('k', 'e', 'r', 'n'));
+  CHECK(tags[2] == SOFEL_TAG('k', 'e', 'r', 'n') && tags[3] == 0x44444444);
+  CHECK(sofel_font_feature_tags(font, SOFEL_TAG('G', 'S', 'U', 'B'), 2,
+                                &tags[1], 1, &written, &total) == SOFEL_OK);
+  CHECK(written == 1 && total == 3 && tags[1] == SOFEL_TAG('v', 'e', 'r', 't'));
+  CHECK(sofel_font_feature_tags(font, SOFEL_TAG('G', 'P', 'O', 'S'), 0,
+                                NULL, 0, &written, &total) == SOFEL_OK);
+  CHECK(written == 0 && total == 1);
+  written = 91; total = 92; tags[1] = 0x22222222;
+  CHECK(sofel_font_feature_tags(NULL, SOFEL_TAG('G', 'S', 'U', 'B'), 0,
+                                &tags[1], 2, &written, &total) == SOFEL_ERROR_NULL);
+  CHECK(sofel_font_feature_tags(font, SOFEL_TAG('G', 'S', 'U', 'B'), 0,
+                                NULL, 1, &written, &total) == SOFEL_ERROR_NULL);
+  CHECK(sofel_font_feature_tags(font, SOFEL_TAG('G', 'S', 'U', 'B'), 0,
+                                &tags[1], 2, NULL, &total) == SOFEL_ERROR_NULL);
+  CHECK(sofel_font_feature_tags(font, SOFEL_TAG('G', 'S', 'U', 'B'), 0,
+                                &tags[1], 2, &written, NULL) == SOFEL_ERROR_NULL);
+  CHECK(sofel_font_feature_tags(font, SOFEL_TAG('h', 'e', 'a', 'd'), 0,
+                                &tags[1], 2, &written, &total) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(written == 91 && total == 92 && tags[1] == 0x22222222);
+  sofel_font_destroy(font);
+}
+
 /* --------------------------------------------- declarations vs. types */
 
 /*
@@ -86,6 +120,8 @@ static void check_declarations(void) {
                             int16_t *) = sofel_font_ft_top_side_bearing;
   int32_t (*table)(const sofel_font_t *, uint32_t, const uint8_t **, size_t *) =
       sofel_font_table;
+  int32_t (*feature_tags)(const sofel_font_t *, uint32_t, uint32_t, uint32_t *, uint32_t,
+                          uint32_t *, uint32_t *) = sofel_font_feature_tags;
   sofel_outline_scratch_t *(*scratch_create)(void) = sofel_outline_scratch_create;
   void (*scratch_destroy)(sofel_outline_scratch_t *) = sofel_outline_scratch_destroy;
   int32_t (*pixel_scale)(const sofel_font_t *, uint16_t, uint16_t, int32_t *, int32_t *) =
@@ -176,6 +212,7 @@ static void check_declarations(void) {
       (const void *)units_per_em,    (const void *)num_glyphs,
       (const void *)nominal_glyph,   (const void *)variation_glyph,
       (const void *)h_advance,       (const void *)table,
+      (const void *)feature_tags,
       (const void *)ft_bearing,
       (const void *)ft_h_advance,    (const void *)ft_top_bearing,
       (const void *)scratch_create,  (const void *)scratch_destroy,
@@ -3069,6 +3106,7 @@ int main(void) {
 
   test_font(font);
   test_layout_queries(font);
+  inv2_feature_tags_outputs();
   test_variation_abi(font);
   test_collection();
   test_outlines(font);
