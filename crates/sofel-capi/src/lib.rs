@@ -2841,6 +2841,71 @@ pub unsafe extern "C" fn sofel_bitmap_sdf(
     })())
 }
 
+/// Get the fill orientation of a loaded outline.
+///
+/// # Safety
+/// Scratch must be live or NULL and fill_left writable or NULL.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_outline_fill_left(
+    scratch: *const SofelOutlineScratch,
+    fill_left: *mut u32,
+) -> i32 {
+    // SAFETY: the caller supplies a live handle and writable output.
+    let (scratch, out) = unsafe { (r(scratch), w(fill_left)) };
+    status((|| {
+        *some(out)? = u32::from(some(scratch)?.scratch.fill_left());
+        Ok(())
+    })())
+}
+
+/// Render a prepositioned outline into a signed distance field.
+///
+/// # Safety
+/// As [`sofel_rasterizer_render`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_rasterizer_render_outline_sdf_placed(
+    rasterizer: *mut SofelRasterizer,
+    left: i32,
+    top: i32,
+    width: u32,
+    rows: u32,
+    spread: u8,
+    fill_left: u32,
+    pixels: *mut u8,
+    capacity: usize,
+    len: *mut usize,
+    box_: *mut i32,
+) -> i32 {
+    // SAFETY: the caller supplies valid disjoint output buffers.
+    let (raster, pixels, len, b) = unsafe {
+        (
+            w(rasterizer),
+            out_array(pixels, capacity),
+            w(len),
+            ints::<4>(box_),
+        )
+    };
+    status((|| {
+        let raster = some(raster)?;
+        let out = BitmapOut { pixels, len, b };
+        out.check()?;
+        let bounds = PixelBox {
+            left,
+            top,
+            width,
+            rows,
+        };
+        let bitmap = raster
+            .raster
+            .render_outline_sdf_placed(bounds, spread, fill_left != 0)
+            .map_err(|e| match e {
+                sofel_raster::BitmapSdfError::TooLarge => ERROR_TOO_LARGE,
+                _ => ERROR_INVALID_ARGUMENT,
+            });
+        out.put(bitmap)
+    })())
+}
+
 fn options(fill: u32, overlap: u32, x_ppem: u16, y_ppem: u16) -> Result<RenderOptions, i32> {
     let fill = match fill {
         0 => FillRule::NonZero,
