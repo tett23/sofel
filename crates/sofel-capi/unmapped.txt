@@ -206,6 +206,9 @@ sofel_shape::ShapePlan::variations_index_for C creates a plan with sofel_shape_p
 sofel_color::RawPaintGraph::* The reusable raw paint table view; C reads the bytes with sofel_font_table.
 sofel_color::FtPaintGraph::* The location-resolved raw COLR tree; the C paint API exposes the walked commands.
 sofel_unicode::Script::from_raw_tag C represents the four script bytes directly as a big-endian uint32_t tag.
+sofel_png::* Embedded PNG decoding is exposed through the C bitmap layout and draw functions.
+sofel_inflate::* Bounded decompression is an implementation detail of the C bitmap drawing path.
+sofel_svg::document The C paint commands expose the expanded SVG document.
 
 # sofel ADR 0063 adds Rust font-function callbacks and synthesis helpers. The
 # ADR does not specify a C callback ABI; the existing C queries keep their
@@ -227,3 +230,4 @@ sofel_outline::Scratch::slant_slot Rust mutable outline synthesis helper; C obta
 sofel_read::aat_lookup::* Zero-copy AAT substitution lookups used by the C shaping API; C reads the source bytes with sofel_font_table.
 sofel_read::trak::* Zero-copy AAT tracking views used by the C shaping API; C reads the source bytes with sofel_font_table.
 sofel_woff::encode ADR 0070 exposes encoding through the Rust API and the standalone sofel-woff command.
+sofel_woff::decode_woff The font input commands reconstruct WOFF tables into an sfnt buffer.

@@ -218,3 +218,42 @@ fn bitmap_only_fonts_open() {
     let bytes = glyph_font(&[Vec::new()], false, false);
     assert!(Font::new(&bytes, 0).unwrap().has_outlines());
 }
+
+#[test]
+fn i1_sbit_png_decodes_pixels_and_flips_logical_row() {
+    let png = vec![
+        137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 2, 0, 0, 0, 1, 8, 6,
+        0, 0, 0, 244, 34, 127, 138, 0, 0, 0, 17, 73, 68, 65, 84, 120, 156, 99, 248, 207, 192, 208,
+        192, 240, 159, 225, 63, 0, 14, 125, 3, 126, 234, 246, 147, 192, 0, 0, 0, 0, 73, 69, 78, 68,
+        174, 66, 96, 130,
+    ];
+    let sb = sbix(
+        1,
+        &[(
+            20,
+            72,
+            vec![
+                None,
+                Some((1, -2, *b"png ", png)),
+                Some((0, 0, *b"flip", vec![0, 1])),
+            ],
+        )],
+    );
+    let bytes = glyph_font_with(&vec![Vec::new(); 3], false, false, vec![(b"sbix", sb)]);
+    let font = Font::new(&bytes, 0).unwrap();
+    let strike = strikes(&font).next().unwrap();
+    for (id, expected) in [
+        (1, [0, 0, 128, 128, 0, 255, 0, 255]),
+        (2, [0, 255, 0, 255, 0, 0, 128, 128]),
+    ] {
+        let layout = sofel_bitmap::bitmap_layout(&font, &strike, id).unwrap();
+        assert_eq!((layout.width, layout.rows, layout.pitch), (2, 1, 8));
+        let mut out = [99; 9];
+        assert_eq!(
+            sofel_bitmap::draw_bitmap(&font, &strike, id, &mut out).unwrap(),
+            layout
+        );
+        assert_eq!(out[..8], expected);
+        assert_eq!(out[8], 99);
+    }
+}

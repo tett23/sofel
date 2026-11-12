@@ -25,7 +25,7 @@ module GalleryInputs
     'hb-variable-colr' => ['92', [0xF0502, 0xF0503].pack('U*'), 'und']
   }.freeze
 
-  COLOR_EMPTY = %w[color-cff color-sbix color-svg].freeze
+  COLOR_EMPTY = %w[color-cff color-svg].freeze
 
   def self.cases(repo:, manifest: File.join(repo, 'conformance/fonts.tsv'),
                  font_dir: File.join(repo, 'target/testdata/extra-fonts'),
