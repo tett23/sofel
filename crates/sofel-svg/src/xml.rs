@@ -8,6 +8,7 @@ pub(crate) struct Node<'a> {
     pub parent: Option<usize>,
     pub content_len: usize,
     pub accessible: bool,
+    pub glyph_scope: Option<usize>,
     end: usize,
 }
 
@@ -31,7 +32,7 @@ impl<'a> Node<'a> {
 
 pub(crate) struct Document<'a> {
     pub nodes: Vec<Node<'a>>,
-    pub ids: BTreeMap<&'a str, usize>,
+    ids: BTreeMap<(Option<usize>, &'a str), usize>,
 }
 
 impl<'a> Document<'a> {
@@ -108,15 +109,22 @@ impl<'a> Document<'a> {
                             | "radialGradient"
                     )
             });
-            if accessible
-                && let Some(id) = attr(&attrs, "id")
-                && ids.insert(id, i).is_some()
-            {
-                return Err(ParseError);
+            let id = attr(&attrs, "id");
+            let is_glyph = id
+                .and_then(|v| v.strip_prefix("glyph"))
+                .is_some_and(|v| !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit()));
+            let inherited_scope = parent.and_then(|n| nodes[n].glyph_scope);
+            let glyph_scope = if is_glyph { Some(i) } else { inherited_scope };
+            if accessible && let Some(id) = id {
+                let scope = if is_glyph { None } else { glyph_scope };
+                if ids.insert((scope, id), i).is_some() {
+                    return Err(ParseError);
+                }
             }
             nodes.push(Node {
                 name,
                 accessible,
+                glyph_scope,
                 content_len: content.len(),
                 attrs,
                 parent,
@@ -130,6 +138,13 @@ impl<'a> Document<'a> {
             return Err(ParseError);
         }
         Ok(Self { nodes, ids })
+    }
+
+    pub fn lookup(&self, scope: Option<usize>, id: &str) -> Option<usize> {
+        self.ids
+            .get(&(scope, id))
+            .or_else(|| self.ids.get(&(None, id)))
+            .copied()
     }
 
     #[allow(clippy::indexing_slicing, clippy::arithmetic_side_effects)] // Indices and subtree ends come from the parser.

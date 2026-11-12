@@ -51,3 +51,13 @@ fn adr0072_i3_only_selected_glyph_group() {
     let scene = parse_shapes(DOCUMENT.as_bytes(), 26).unwrap();
     assert!(scene.shapes.is_empty());
 }
+
+#[test]
+fn adr0072_i3_selected_group_uses_its_own_defs() {
+    let xml = r##"<svg><g id="glyph19"><defs><linearGradient id="g"><stop offset="0" stop-color="red"/></linearGradient></defs><rect width="10" height="10" fill="url(#g)"/></g><g id="glyph26"><defs><linearGradient id="g"><stop offset="0" stop-color="gold"/></linearGradient></defs><circle cx="5" cy="5" r="2" fill="url(#g)"/></g></svg>"##;
+    let scene = parse_shapes(xml.as_bytes(), 26).unwrap();
+    assert_eq!(scene.gradients.len(), 1);
+    assert_eq!(scene.shapes.len(), 1);
+    assert_eq!(scene.gradients[0].stops[0].rgba, [255, 215, 0, 255]);
+    assert!(matches!(scene.shapes[0].kind, ShapeKind::Circle { .. }));
+}

@@ -142,7 +142,8 @@ fn alpha(value: u8, opacity: f32) -> u8 {
 
 struct Builder<'a> {
     scene: Scene,
-    gradient_ids: BTreeMap<&'a str, usize>,
+    gradient_ids: BTreeMap<(Option<usize>, &'a str), usize>,
+    glyph: usize,
     solids: BTreeMap<[u8; 4], usize>,
     translucent: BTreeMap<(usize, u8), usize>,
     clip_paths: Vec<ClipPath>,
@@ -158,7 +159,11 @@ impl Builder<'_> {
 
     fn paint(&mut self, style: &Style<'_>) -> Result<Option<usize>, ParseError> {
         if let Some(id) = local_fragment(style.fill) {
-            let Some(&source) = self.gradient_ids.get(id) else {
+            let Some(&source) = self
+                .gradient_ids
+                .get(&(Some(self.glyph), id))
+                .or_else(|| self.gradient_ids.get(&(None, id)))
+            else {
                 return Ok(None);
             };
             let opacity = alpha(255, style.opacity);
@@ -230,7 +235,7 @@ fn enter<'a>(
         if clipping {
             return Err(ParseError);
         }
-        let Some(&clip) = local_fragment(value).and_then(|id| doc.ids.get(id)) else {
+        let Some(clip) = local_fragment(value).and_then(|id| doc.lookup(Some(b.glyph), id)) else {
             return Ok(None);
         };
         let clip_node = doc.nodes.get(clip).ok_or(ParseError)?;
@@ -304,11 +309,11 @@ fn walk<'a>(
             }
         }
         "use" => {
-            let Some(&target) = node
+            let Some(target) = node
                 .attr("href")
                 .or_else(|| node.attr("xlink:href"))
                 .and_then(|v| v.strip_prefix('#'))
-                .and_then(|id| doc.ids.get(id))
+                .and_then(|id| doc.lookup(Some(b.glyph), id))
             else {
                 return Ok(());
             };
@@ -365,12 +370,13 @@ pub(crate) fn parse(
     foreground: [u8; 4],
 ) -> Result<GlyphScene, ParseError> {
     let doc = Document::parse(data)?;
-    let Some(&target) = doc.ids.get(format!("glyph{glyph}").as_str()) else {
+    let Some(target) = doc.lookup(None, format!("glyph{glyph}").as_str()) else {
         return Ok(GlyphScene::default());
     };
     let mut b = Builder {
         scene: Scene::default(),
         gradient_ids: BTreeMap::new(),
+        glyph: target,
         solids: BTreeMap::new(),
         translucent: BTreeMap::new(),
         clip_paths: Vec::new(),
@@ -378,7 +384,10 @@ pub(crate) fn parse(
         foreground,
     };
     for (i, node) in doc.nodes.iter().enumerate() {
-        if !node.accessible || !matches!(node.name, "linearGradient" | "radialGradient") {
+        if !node.accessible
+            || node.glyph_scope.is_some_and(|scope| scope != target)
+            || !matches!(node.name, "linearGradient" | "radialGradient")
+        {
             continue;
         }
         let Some(id) = node.attr("id") else {
@@ -400,7 +409,8 @@ pub(crate) fn parse(
                 rgba: [r, gc, bc, a],
             });
         }
-        b.gradient_ids.insert(id, b.scene.gradients.len());
+        b.gradient_ids
+            .insert((node.glyph_scope, id), b.scene.gradients.len());
         b.scene.gradients.push(g);
     }
     let root = doc.nodes.first().ok_or(ParseError)?;
