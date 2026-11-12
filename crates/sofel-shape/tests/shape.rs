@@ -740,3 +740,42 @@ fn adr0060_i1_legacy_kern_format3_class_matrix() {
     assert_eq!(advances(&run(&data, "ab", Run::default())), [490, 500]);
     assert_eq!(advances(&run(&data, "ba", Run::default())), [520, 510]);
 }
+
+#[test]
+fn adr0060_i1_kerx6_word_width_and_tuple_offsets() {
+    for long in [false, true] {
+        for tuple in [false, true] {
+            let width = if long { 4 } else { 2 };
+            let mut sub = vec![0; 36];
+            sub[7] = 6;
+            sub[11] = u8::from(tuple);
+            sub[15] = u8::from(long);
+            sub[17] = 2;
+            sub[19] = 2;
+            for (field, glyph, value) in [(20, 1, 2u32), (24, 2, 1)] {
+                let offset = sub.len() as u32;
+                sub[field..field + 4].copy_from_slice(&offset.to_be_bytes());
+                sub.extend_from_slice(&[0, 8, 0, glyph, 0, 1]);
+                sub.extend_from_slice(&value.to_be_bytes()[4 - width..]);
+            }
+            let offset = sub.len() as u32;
+            sub[28..32].copy_from_slice(&offset.to_be_bytes());
+            for value in [0i32, 0, 0, if tuple { 2 } else { -40 }] {
+                sub.extend_from_slice(&value.to_be_bytes()[4 - width..]);
+            }
+            if tuple {
+                let offset = sub.len() as u32;
+                sub[32..36].copy_from_slice(&offset.to_be_bytes());
+                sub.extend_from_slice(&[0, 0, 0xff, 0xd8]);
+            }
+            let len = sub.len() as u32;
+            sub[..4].copy_from_slice(&len.to_be_bytes());
+            let mut kerx = vec![0, 2, 0, 0, 0, 0, 0, 1];
+            kerx.extend_from_slice(&sub);
+            let data = make_font(false, vec![(b"kerx", kerx)]);
+            let glyphs = run(&data, "ab", Run::default());
+            assert_eq!(advances(&glyphs), [490, 500], "{long} {tuple}");
+            assert_eq!(glyphs.glyph_positions()[1].x_offset, -20);
+        }
+    }
+}

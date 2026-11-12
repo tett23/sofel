@@ -3,7 +3,7 @@ use super::{AatLookup, MachineKind, StateTable, be};
 use crate::buffer::{Buffer, Mask, scratch};
 use crate::layout::gpos::{ATTACH_TYPE_CURSIVE, ATTACH_TYPE_MARK, resolve_cross_offset};
 use alloc::vec::Vec;
-use sofel_font::HbScale;
+use sofel_font::{HbScale, read::aat_lookup::AatIndexLookup};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Subtable<'a> {
@@ -15,12 +15,39 @@ pub(crate) struct Subtable<'a> {
 #[derive(Clone, Debug)]
 enum Kern<'a> {
     Pairs(&'a [[u8; 6]]),
+    Matrix(ClassMatrix<'a>),
     Classes(AatLookup<'a>, AatLookup<'a>, &'a [u8]),
     CompactClasses(CompactClasses<'a>),
     LegacyClasses(ClassOffsets<'a>, ClassOffsets<'a>, usize),
     LegacyHistory(StateTable<'a>, &'a [u8], usize),
     History(StateTable<'a>, &'a [u8]),
     Attachment(StateTable<'a>, u32, &'a [u8], Option<Anchors<'a>>),
+}
+
+#[derive(Clone, Debug)]
+struct ClassMatrix<'a> {
+    long: bool,
+    rows: AatIndexLookup<'a>,
+    columns: AatIndexLookup<'a>,
+    array: &'a [u8],
+    vector: Option<&'a [u8]>,
+}
+
+impl ClassMatrix<'_> {
+    fn value(&self, left: u32, right: u32, tuples: u32) -> Option<i32> {
+        let index = self.rows.get(left)?.checked_add(self.columns.get(right)?)?;
+        let value = if self.long {
+            be::i32_at(self.array, index.checked_mul(4)? as usize)?
+        } else {
+            i32::from(be::i16_at(self.array, index.checked_mul(2)? as usize)?)
+        };
+        if tuples == 0 {
+            return Some(value);
+        }
+        let entries =
+            be::chunks_at::<2>(self.vector?, usize::try_from(value).ok()?, tuples as usize)?;
+        entries.first().map(|v| i32::from(i16::from_be_bytes(*v)))
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -108,6 +135,17 @@ pub(crate) fn read<'a>(
                     state.get((flags & 0x00ff_ffff) as usize..)?,
                     ankr.and_then(|s| Anchors::read(s, glyphs)),
                 )
+            }
+            6 => {
+                let long = be::u32_at(current, 12)? & 1 != 0;
+                be::u32_at(current, 32)?;
+                Kern::Matrix(ClassMatrix {
+                    long,
+                    rows: AatIndexLookup::new(offset(20)?, glyphs, long)?,
+                    columns: AatIndexLookup::new(offset(24)?, glyphs, long)?,
+                    array: offset(28)?,
+                    vector: if tuples == 0 { None } else { Some(offset(32)?) },
+                })
             }
             _ => return None,
         };
@@ -433,6 +471,7 @@ pub(crate) fn apply(tables: &[Subtable<'_>], buf: &mut Buffer, scale: &HbScale, 
 impl Subtable<'_> {
     fn value(&self, l: u32, r: u32) -> i32 {
         let value = match self.action {
+            Kern::Matrix(ref matrix) => return matrix.value(l, r, self.tuples).unwrap_or(0),
             Kern::Pairs(pairs) => pairs
                 .binary_search_by(|row| {
                     let [a, b, c, d, _, _] = *row;
