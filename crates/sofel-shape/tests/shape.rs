@@ -632,3 +632,100 @@ fn adr0049_i4_variable_shape_matches_uncached_advance_and_default_fields() {
         }
     }
 }
+
+#[test]
+fn i1_aat_feat_selector_range_uses_the_input_clusters() {
+    // The chain's one noncontextual lookup replaces glyph 1 with 2 when liga is on.
+    let words = [
+        0x0002_0000u32,
+        1,
+        0,
+        48,
+        1,
+        1,
+        0x0001_0002,
+        1,
+        u32::MAX,
+        20,
+        4,
+        1,
+        0x0008_0001,
+        0x0001_0002,
+    ];
+    let morx = words
+        .into_iter()
+        .flat_map(u32::to_be_bytes)
+        .collect::<Vec<_>>();
+    // feat version, one feature, feature type 1, one selector at offset 24.
+    let feat = [0x10000u32, 0x10000, 0, 0x10001, 24, 0, 0x20000]
+        .into_iter()
+        .flat_map(u32::to_be_bytes)
+        .collect::<Vec<_>>();
+    let data = make_font(false, vec![(b"morx", morx), (b"feat", feat)]);
+    for (feature, expected) in [
+        (b"liga[1:3]=1".as_slice(), vec![A, B, B, A]),
+        (b"liga=1", vec![B; 4]),
+        (b"liga=0", vec![A; 4]),
+        (b"liga[2:2]=1", vec![A; 4]),
+    ] {
+        let glyphs = run(
+            &data,
+            "aaaa",
+            Run {
+                features: vec![Feature::parse(feature).unwrap()],
+                ..Run::default()
+            },
+        );
+        assert_eq!(
+            glyphs
+                .glyph_infos()
+                .iter()
+                .map(|i| i.glyph)
+                .collect::<Vec<_>>(),
+            expected
+        );
+    }
+}
+
+#[test]
+fn i2_aat_state_stops_at_a_nonadvancing_cycle_and_rejects_a_short_entry() {
+    // Extended rearrangement machine: the only row loops without consuming a glyph.
+    let words = [
+        0x0002_0000u32,
+        1,
+        1,
+        64,
+        0,
+        1,
+        48,
+        0,
+        1,
+        4,
+        16,
+        24,
+        32,
+        0x0008_0001,
+        0x0001_0001,
+        0,
+        0,
+        0x0000_4000,
+    ];
+    let mut morx: Vec<_> = words.into_iter().flat_map(u32::to_be_bytes).collect();
+    let check = |table, expected| {
+        let data = make_font(false, vec![(b"morx", table)]);
+        let font = Font::new(&data, 0).unwrap();
+        let properties = ResolvedProperties {
+            direction: Direction::Rtl,
+            script: Script::from_iso15924(b"Arab"),
+            language: None,
+        };
+        assert_eq!(
+            ShapePlan::new(font.default_instance(), properties, &[]).shaper(),
+            expected
+        );
+        assert_eq!(glyphs(&run(&data, "a", Run::default())), [(A, 0)]);
+    };
+    check(morx.clone(), sofel_shape::Shaper::Dumber);
+    morx.pop();
+    check(morx, sofel_shape::Shaper::Arabic);
+}

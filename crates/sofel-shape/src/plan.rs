@@ -406,24 +406,24 @@ impl<'a> ShapePlan<'a> {
             ot_tags_from_script_and_language(props.script, props.language.as_ref());
         let mut builder = MapBuilder::new(&layout, &script_tags, &language_tags);
         builder.variations_index = variations_index.clone();
-        let morx =
-            if (props.direction.is_horizontal() || !layout.gsub.has_data) && features.is_empty() {
-                [(Tag(*b"morx"), false), (Tag(*b"mort"), true)]
-                    .into_iter()
-                    .find_map(|(tag, legacy)| {
-                        let data = font.table(tag)?;
-                        crate::aat::chains(
-                            data,
-                            font.num_glyphs(),
-                            legacy,
-                            font.table(Tag(*b"ltag"))
-                                .and_then(sofel_font::read::ltag::Ltag::new),
-                            props.language.as_ref(),
-                        )
-                    })
-            } else {
-                None
-            };
+        let morx = if props.direction.is_horizontal() || !layout.gsub.has_data {
+            [(Tag(*b"morx"), false), (Tag(*b"mort"), true)]
+                .into_iter()
+                .find_map(|(tag, legacy)| {
+                    let data = font.table(tag)?;
+                    crate::aat::chains(
+                        data,
+                        font.num_glyphs(),
+                        legacy,
+                        font.table(Tag(*b"ltag"))
+                            .and_then(sofel_font::read::ltag::Ltag::new),
+                        props.language.as_ref(),
+                        &crate::aat::features::Selections::new(features, font.table(Tag(*b"feat"))),
+                    )
+                })
+        } else {
+            None
+        };
         let shaper = Shaper::categorize(props.script, props.direction, builder.chosen_script[GSUB]);
         let script_funcs = shaper.funcs();
         let use_morx = morx.is_some();

@@ -47,6 +47,7 @@ pub mod delta_set_index_map;
 pub mod device;
 mod diag;
 mod error;
+pub mod feat;
 pub mod feature_variations;
 pub mod fvar;
 pub mod gdef;

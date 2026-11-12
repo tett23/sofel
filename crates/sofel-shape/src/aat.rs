@@ -1,4 +1,5 @@
 //! Extended AAT metamorphosis chains and state-driven rearrangement.
+pub(crate) mod features;
 pub(crate) mod kerning;
 use sofel_font::read::{aat_lookup::AatLookup, be};
 
@@ -16,7 +17,7 @@ pub struct Subtable<'a> {
 #[derive(Debug, Clone)]
 pub struct Chain<'a> {
     /// Initially enabled feature flags.
-    pub default_flags: u32,
+    pub(super) ranges: features::Ranges,
     /// Subtables in application order.
     pub substitutions: alloc::vec::Vec<Subtable<'a>>,
 }
@@ -27,6 +28,7 @@ pub fn chains<'a>(
     legacy: bool,
     tags: Option<sofel_font::read::ltag::Ltag<'_>>,
     language: Option<&crate::Language>,
+    selections: &features::Selections,
 ) -> Option<alloc::vec::Vec<Chain<'a>>> {
     if be::u16_at(data, 0)? != if legacy { 1 } else { 2 } {
         return None;
@@ -34,9 +36,10 @@ pub fn chains<'a>(
     let count = be::u32_at(data, 4)?;
     let mut rest = data.get(8..)?;
     let mut chains = alloc::vec::Vec::new();
+    let mut map_budget = 1usize << 24;
     for _ in 0..count {
         let (chain, tail) = rest.split_at_checked(be::u32_at(rest, 4)? as usize)?;
-        let mut flags = be::u32_at(chain, 0)?;
+        let flags = be::u32_at(chain, 0)?;
         let (header, n, tables) = if legacy {
             (
                 12usize,
@@ -47,26 +50,8 @@ pub fn chains<'a>(
             (16, be::u32_at(chain, 8)? as usize, be::u32_at(chain, 12)?)
         };
         let features = be::chunks_at::<12>(chain, header, n)?;
-        if let (Some(tags), Some(language)) = (tags, language) {
-            for feature in features {
-                if be::u16_at(feature, 0)? != 39 {
-                    continue;
-                }
-                let Some(index) = be::u16_at(feature, 2)?.checked_sub(1) else {
-                    continue;
-                };
-                let Some(tag) = tags.tag(index).and_then(sofel_font::Language::new) else {
-                    continue;
-                };
-                let mut specific = language.as_str().bytes();
-                if !tag.is_empty()
-                    && tag.bytes().all(|b| specific.next() == Some(b))
-                    && matches!(specific.next(), None | Some(b'-'))
-                {
-                    flags = (flags & be::u32_at(feature, 8)?) | be::u32_at(feature, 4)?;
-                }
-            }
-        }
+        let ranges =
+            features::compile(flags, features, tags, language, selections, &mut map_budget);
         let mut body = chain.get(header.checked_add(n.checked_mul(12)?)?..)?;
         let mut substitutions = alloc::vec::Vec::new();
         for _ in 0..tables {
@@ -97,7 +82,7 @@ pub fn chains<'a>(
             });
         }
         chains.push(Chain {
-            default_flags: flags,
+            ranges,
             substitutions,
         });
         rest = tail;
@@ -369,6 +354,7 @@ impl<'a> StateTable<'a> {
         &self,
         buffer: &mut crate::buffer::Buffer,
         replace: &mut impl FnMut(&mut crate::buffer::Info, u16),
+        enabled: impl Fn(u32) -> bool,
     ) {
         let mut state = usize::from(self.start_state());
         let separate = matches!(self.kind, MachineKind::Insert(_) | MachineKind::Ligature(_));
@@ -381,8 +367,22 @@ impl<'a> StateTable<'a> {
         let mut first = 0;
         let mut marked = false;
         let mut last = 0;
+        let mut cluster = 0;
         while buffer.successful {
             let (idx, len) = (buffer.idx, buffer.len);
+            if let Some(info) = buffer.infos().get(idx) {
+                cluster = info.cluster;
+            }
+            if !enabled(cluster) {
+                if idx == len {
+                    break;
+                }
+                state = usize::from(self.start_state());
+                if !buffer.next_glyph() {
+                    break;
+                }
+                continue;
+            }
             let class = self.class(buffer.infos().get(idx));
             let Some(entry) = self.entry(state, class) else {
                 break;
@@ -726,10 +726,27 @@ mod chain_tests {
             0x00020000, 1, 1, 48, 0, 2, 12, 3, 1, 20, 4, 1, 0x00080001, 0x00010002,
         ];
         let mut data: alloc::vec::Vec<u8> = words.into_iter().flat_map(u32::to_be_bytes).collect();
-        let count = chains(&data, 3, false, None, None)
-            .and_then(|c| c.first().map(|c| c.substitutions.len()));
+        let count = chains(
+            &data,
+            3,
+            false,
+            None,
+            None,
+            &super::features::Selections::default(),
+        )
+        .and_then(|c| c.first().map(|c| c.substitutions.len()));
         assert_eq!(count, Some(1));
         data.pop();
-        assert!(chains(&data, 3, false, None, None).is_none());
+        assert!(
+            chains(
+                &data,
+                3,
+                false,
+                None,
+                None,
+                &super::features::Selections::default()
+            )
+            .is_none()
+        );
     }
 }
