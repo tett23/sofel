@@ -301,37 +301,43 @@ fn i2_render_mode_harmony_agrees_with_freetype() {
         raster.line_to(Point { x, y });
     }
     raster.close();
-    for (flag, mode) in [
-        ("--lcd", LcdMode::Horizontal),
-        ("--lcd-v", LcdMode::Vertical),
+    for (filtered, reference) in [
+        (false, paths::ft_dump()),
+        (true, paths::root().join("target/ft-dump/ft-dump-filtered")),
     ] {
-        let out = Command::new(paths::ft_dump())
-            .args(["--raster", "12", flag])
-            .arg(&path)
-            .output()
+        for (flag, mode) in [
+            ("--lcd", LcdMode::Horizontal),
+            ("--lcd-v", LcdMode::Vertical),
+        ] {
+            let out = Command::new(&reference)
+                .args(["--raster", "12", flag])
+                .arg(&path)
+                .output()
+                .unwrap();
+            assert!(out.status.success());
+            let dump = parse(&String::from_utf8(out.stdout).unwrap()).unwrap();
+            let glyph = &dump[&0].glyphs[&1];
+            let options = RenderOptions {
+                fill: FillRule::NonZero,
+                overlap: false,
+                ppem: Some((12, 12)),
+            };
+            let b = if filtered {
+                raster.render_filtered_lcd(mode, [8, 77, 86, 77, 8], options)
+            } else {
+                raster.render_harmony(mode, options)
+            }
             .unwrap();
-        assert!(out.status.success());
-        let dump = parse(&String::from_utf8(out.stdout).unwrap()).unwrap();
-        let glyph = &dump[&0].glyphs[&1];
-        let b = raster
-            .render_harmony(
-                mode,
-                RenderOptions {
-                    fill: FillRule::NonZero,
-                    overlap: false,
-                    ppem: Some((12, 12)),
-                },
-            )
-            .unwrap();
-        assert_eq!(
-            glyph[0],
-            format!("bitmap {} {} {} {}", b.left, b.top, b.width, b.rows)
-        );
-        assert!(b.width > 0 && b.rows > 0);
-        assert_eq!(glyph.len(), 1 + b.rows as usize);
-        for (y, row) in b.pixels.chunks_exact(b.width as usize).enumerate() {
-            let hex: String = row.iter().map(|v| format!("{v:02x}")).collect();
-            assert_eq!(glyph[1 + y], hex, "{flag} row {y}");
+            assert_eq!(
+                glyph[0],
+                format!("bitmap {} {} {} {}", b.left, b.top, b.width, b.rows)
+            );
+            assert!(b.width > 0 && b.rows > 0);
+            assert_eq!(glyph.len(), 1 + b.rows as usize);
+            for (y, row) in b.pixels.chunks_exact(b.width as usize).enumerate() {
+                let hex: String = row.iter().map(|v| format!("{v:02x}")).collect();
+                assert_eq!(glyph[1 + y], hex, "{flag} row {y}");
+            }
         }
     }
     std::fs::remove_file(path).unwrap();
