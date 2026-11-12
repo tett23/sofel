@@ -57,6 +57,10 @@
 extern crate alloc;
 
 mod blend;
+mod color_gradient;
+mod paint_mask;
+pub use color_gradient::ColorGradient;
+pub use paint_mask::PaintMask;
 
 pub use blend::{BgraImage, blend_layer, blend_sampled};
 

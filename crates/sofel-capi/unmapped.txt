@@ -235,4 +235,6 @@ sofel_outline::Scratch::slant_slot Rust mutable outline synthesis helper; C obta
 sofel_read::aat_lookup::* Zero-copy AAT substitution lookups used by the C shaping API; C reads the source bytes with sofel_font_table.
 sofel_read::trak::* Zero-copy AAT tracking views used by the C shaping API; C reads the source bytes with sofel_font_table.
 sofel_woff::encode ADR 0070 exposes encoding through the Rust API and the standalone sofel-woff command.
+sofel_raster::ColorGradient::* The C entry point sofel_render_color_glyph evaluates the glyph's gradient on the color surface.
+sofel_raster::PaintMask::* The C entry point sofel_render_color_glyph applies outline coverage to the color surface.
 sofel_woff::decode_woff The font input commands reconstruct WOFF tables into an sfnt buffer.

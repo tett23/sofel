@@ -100,7 +100,7 @@ sofel render --ppem 48 --text-file sample.txt font.ttf > sample.pgm
 
 可変フォントの輪郭には `--variations=wght=500` や `--named-instance=0` で位置を指定できる。既定以外の位置では埋め込みビットマップを使わず、輪郭を描く。
 
-1グリフをヒンティングなしで描き、PGM（P5、白地に黒）を標準出力に書く（[ADR 0012](docs/adr/0012-antialiased-rasterizer.md)）。FreeTypeの `FT_Render_Glyph` と同じ画像になる。そのppemの埋め込みビットマップがあれば、FreeTypeと同じく `--no-bitmap` が無いかぎりそれを書く（32bitはPAM。[ADR 0023](docs/adr/0023-color-glyphs.md)）。`--color` では、COLRv0と、矩形、円、パスを単色や線形・放射グラデーションで塗る OT-SVG のグリフをPAMで書く（[ADR 0072](docs/adr/0072-color-gallery-acceptance.md)）。COLRv0の色はFreeTypeの `FT_LOAD_COLOR` と同じで、`--palette N` でパレットを選ぶ。OT-SVG では同じ文書内の図形を `use` で再利用し、`clipPath` で塗る範囲を指定できる（[ADR 0074](docs/adr/0074-svg-feature-conformance.md)）。
+1グリフをヒンティングなしで描き、PGM（P5、白地に黒）を標準出力に書く（[ADR 0012](docs/adr/0012-antialiased-rasterizer.md)）。FreeTypeの `FT_Render_Glyph` と同じ画像になる。そのppemの埋め込みビットマップがあれば、FreeTypeと同じく `--no-bitmap` が無いかぎりそれを書く（32bitはPAM。[ADR 0023](docs/adr/0023-color-glyphs.md)）。`--color` では、COLRv0、輪郭でクリップした COLRv1 の線形・放射グラデーションと、矩形、円、パスを単色や線形・放射グラデーションで塗る OT-SVG のグリフをPAMで書く（[ADR 0072](docs/adr/0072-color-gallery-acceptance.md)）。COLRv0の色はFreeTypeの `FT_LOAD_COLOR` と同じで、`--palette N` でパレットを選ぶ。OT-SVG では同じ文書内の図形を `use` で再利用し、`clipPath` で塗る範囲を指定できる（[ADR 0074](docs/adr/0074-svg-feature-conformance.md)）。
 
 CLI のレイヤー選択と描画制御は独自実装で、画素合成には `sofel-raster` を使う（[ADR 0055](docs/adr/0055-rewrite-cli-color-rendering.md)）。
 
@@ -327,5 +327,6 @@ FreeTypeの計算を移植した部分を含むクレート（`sofel-geom` な�
 Rust のツールチェーンと、適合テストと同じフォント取得環境を使う。生成器とそのテストは `tools/font-gallery` の Rust プログラムである。
 各フェイスの単字と、その書体に合う文字列を一枚の PNG で見比べられる。
 sbix の見本は 109 ppem のストライクを使い、グリフ 19 の単字と `simple_linear` の合字 26 をそれぞれ 128 × 128 画素で表示する。
+CFF の COLRv1、OT-SVG、可変 COLRv1 の見本は 48 ppem で表示する。カラーの4書体は単字と文字列の両方を検査する。
 CI では Actions の対象の実行からコミット SHA 付きのフォントギャラリーをダウンロードし、展開したディレクトリの `index.html` を開く。
 保存期間は14日間である（[sofel ADR 0069](docs/adr/0069-font-render-gallery.md)）。

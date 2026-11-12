@@ -647,7 +647,7 @@ pub fn freetype_foreground(font: &Font<'_>, palette: u16) -> Color {
 }
 
 /// The `colr-raster:<ppem>:<palette>:<glyph>` items of one face of
-/// `ft-dump --raster PPEM --color`: `sofel_cli::glyph::render_color`
+/// `ft-dump --raster PPEM --color`: `sofel_cli::glyph::render_colr_v0`
 /// with FreeType's palette and foreground.
 pub fn compare_color_rasters(
     font_id: &str,
@@ -656,7 +656,7 @@ pub fn compare_color_rasters(
     ppem: u16,
     ft: &str,
 ) -> Vec<Item> {
-    use sofel_cli::glyph::{ColorGlyph, color_layers, render_color};
+    use sofel_cli::glyph::{ColorGlyph, color_layers, render_colr_v0};
     use std::fmt::Write as _;
     // palette -> glyph -> lines
     let mut theirs: Vec<(u16, std::collections::BTreeMap<u32, String>)> = Vec::new();
@@ -693,7 +693,7 @@ pub fn compare_color_rasters(
             ft_glyphs.keys().copied().chain(ours_glyphs).collect();
         for g in keys {
             let mut s = String::new();
-            let r = render_color(
+            let r = render_colr_v0(
                 &outlines,
                 sofel_font::read::GlyphId(g),
                 ppem,

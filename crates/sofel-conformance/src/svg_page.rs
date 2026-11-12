@@ -129,7 +129,6 @@ fn render(case: &str) -> Result<(&'static str, String), String> {
         }
         "clipped-image" => {
             let image = Image {
-                slant: 0.0,
                 format: ImageFormat::Png,
                 data: include_bytes!("../../../conformance/svg-page/red.png"),
                 width: 1,
