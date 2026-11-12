@@ -313,8 +313,22 @@ pub(crate) fn normalize(font: &Font<'_>, user: &BTreeMap<Tag, AxisRange>) -> Nor
     n.all_axes_pinned = !not_pinned;
     if let Some(avar) = avar {
         let len = last.saturating_add(1);
-        for v in [&mut mins, &mut defaults, &mut maxs] {
-            map_coords_2_14(&avar, v.get_mut(..len).unwrap_or(&mut []));
+        if n.avar2 && n.all_axes_pinned {
+            map_coords_2_14(&avar, &mut defaults);
+            let mut coords: Vec<i32> = defaults
+                .iter()
+                .map(|&v| f64_to_i32(f64::from(v) * 16384.0))
+                .collect();
+            sofel_font::var::apply_avar2_2_14(&avar, &mut coords);
+            for (dest, coord) in defaults.iter_mut().zip(coords) {
+                *dest = i32_to_f32(coord) / 16384.0;
+            }
+            mins.copy_from_slice(&defaults);
+            maxs.copy_from_slice(&defaults);
+        } else {
+            for v in [&mut mins, &mut defaults, &mut maxs] {
+                map_coords_2_14(&avar, v.get_mut(..len).unwrap_or(&mut []));
+            }
         }
         for (i, a) in axes.iter().enumerate() {
             if !n.user.contains_key(&a.tag) {

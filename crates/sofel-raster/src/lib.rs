@@ -56,6 +56,7 @@
 
 extern crate alloc;
 
+mod bitmap_paint;
 mod blend;
 mod color_gradient;
 mod composite;
