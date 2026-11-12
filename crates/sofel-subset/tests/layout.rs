@@ -939,6 +939,14 @@ fn gdef_store_with_math_constant_variation_index_is_remapped() {
     let math = out_table(&out, b"MATH").unwrap();
     let device = follow(follow(&math, 4), 10);
     assert_eq!(&device[..6], &[0, 0, 0, 1, 0x80, 0]);
+    // The MATH writer still remaps its device indices when GDEF is copied.
+    let copy_gdef = chars("A").map_set(SetKind::NoSubsetTables, |set| {
+        set.add(Tag::new(b"GDEF").to_u32());
+    });
+    let out = subset(&font, &copy_gdef).unwrap();
+    assert_eq!(out_table(&out, b"GDEF"), out_table(&data, b"GDEF"));
+    let math = out_table(&out, b"MATH").unwrap();
+    assert_eq!(&follow(follow(&math, 4), 10)[..6], &[0, 0, 0, 1, 0x80, 0]);
     let copied_math_without_gdef = chars("A")
         .map_set(SetKind::NoSubsetTables, |set| {
             set.add(Tag::new(b"MATH").to_u32())
