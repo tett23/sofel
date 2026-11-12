@@ -65,6 +65,7 @@ sofel_font::Font::shaping_table The C shaping entry points select these tables i
 sofel_read::validate::sfnt_with_layout_damage The Rust event interface supplies the detailed sofel-validate CLI summary; sofel_validate reports individual diagnostics.
 sofel_read::validate::checksum Part of the directory validation that sofel_validate runs.
 sofel_read::validate::directory Part of sofel_read::validate::sfnt, which sofel_validate runs.
+sofel_read::varc::* Zero-copy Rust views and validators of VARC (ADR 0067); C gets outlines with sofel_outline_*, reads the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::vhea::* The hhea view and validator under the vhea tags; C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::vmtx::* The hmtx view and validator under the vmtx tags; C reads the bytes with sofel_font_table and validates with sofel_validate.
 sofel_read::vorg::* Zero-copy Rust views and per-table validators; C reads the bytes with sofel_font_table and validates with sofel_validate.
@@ -217,3 +218,4 @@ sofel_read::trak::* Zero-copy AAT tracking views used by the C shaping API; C re
 sofel_woff::encode ADR 0070 exposes encoding through the Rust API and the standalone sofel-woff command.
 sofel_raster::ColorGradient::* The C entry point sofel_render_color_glyph evaluates the glyph's gradient on the color surface.
 sofel_raster::PaintMask::* The C entry point sofel_render_color_glyph applies outline coverage to the color surface.
+sofel_woff::decode_woff The font input commands reconstruct WOFF tables into an sfnt buffer.

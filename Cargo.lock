@@ -25,6 +25,7 @@ dependencies = [
  "sofel-shape",
  "sofel-subset",
  "sofel-unicode",
+ "sofel-vector",
  "sofel-write",
 ]
 
@@ -36,12 +37,14 @@ dependencies = [
  "sofel-color",
  "sofel-font",
  "sofel-geom",
+ "sofel-inflate",
  "sofel-outline",
  "sofel-raster",
  "sofel-read",
  "sofel-shape",
  "sofel-subset",
  "sofel-svg",
+ "sofel-woff",
 ]
 
 [[package]]
@@ -68,6 +71,7 @@ dependencies = [
  "sofel-shape",
  "sofel-subset",
  "sofel-unicode",
+ "sofel-vector",
  "sofel-write",
 ]
 
@@ -145,9 +149,17 @@ name = "sofel-unicode"
 version = "0.0.0"
 
 [[package]]
+name = "sofel-vector"
+version = "0.0.0"
+dependencies = [
+ "sofel-geom",
+]
+
+[[package]]
 name = "sofel-woff"
 version = "0.0.0"
 dependencies = [
+ "sofel-inflate",
  "sofel-read",
  "sofel-write",
 ]

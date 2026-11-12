@@ -209,6 +209,14 @@ jobs:
           sudo apt-get install -y libpng-dev
           SOFEL_FT_PNG=1 sh tools/ft-dump/build.sh target/testdata/freetype "$RUNNER_TEMP/ft-dump-png"
           SOFEL_FT_DUMP="$RUNNER_TEMP/ft-dump-png" cargo test --release -p sofel-conformance --test freetype_sbit i1_sbit_png -- --ignored
+      - name: Compare rendered PDF pages
+        if: runner.os == 'Linux'
+        run: |
+          if ! command -v pdftoppm >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y poppler-utils
+          fi
+          cargo test --release -p sofel-conformance --test vector_page -- --ignored
       - name: Compare WOFF and WOFF2 tables with FreeType
         if: runner.os == 'Linux'
         run: |
