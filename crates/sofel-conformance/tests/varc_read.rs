@@ -1,6 +1,7 @@
 //! VARC table views over HarfBuzz's fixed reference fonts (sofel ADR 0067).
 
 #![allow(clippy::all)]
+#![allow(clippy::unwrap_used)]
 
 use sofel_conformance::paths;
 use sofel_font::Font;
