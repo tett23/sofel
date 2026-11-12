@@ -189,6 +189,7 @@ pub unsafe extern "C" fn sofel_svg_page_layers(
                 let (data, clip) = unsafe { (input_array(png.data, png.len), r(png.clip)) };
                 let [x_bearing, y_bearing, width, height] = png.extents;
                 let image = Image {
+                    slant: 0.0,
                     format: ImageFormat::Png,
                     data: some(data)?,
                     width: png.width,
