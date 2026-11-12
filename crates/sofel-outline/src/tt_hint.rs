@@ -477,6 +477,35 @@ impl Interpreter {
                     self.loop_count = count.min(65535) as u16;
                 }
                 0x39 => self.interpolate(stack),
+                op @ (0x46 | 0x47) => {
+                    let index = stack.last_mut().ok_or(Error::StackUnderflow)?;
+                    let zone = &self.points[usize::from(self.zones[2])];
+                    *index = usize::try_from(*index)
+                        .ok()
+                        .and_then(|i| zone.get(i))
+                        .map_or(0, |point| {
+                            if op == 0x47 {
+                                point.original[usize::from(self.dual_projection[0] == 0)]
+                            } else {
+                                point.current[usize::from(self.projection[0] == 0)]
+                            }
+                        });
+                }
+                0x48 => {
+                    let coordinate = stack.pop().ok_or(Error::StackUnderflow)?;
+                    let index = stack.pop().ok_or(Error::StackUnderflow)? as u16;
+                    let zone = usize::from(self.zones[2]);
+                    if let Some(point) = self.points[zone].get_mut(usize::from(index)) {
+                        let axis = usize::from(self.projection[0] == 0);
+                        if self.freedom[axis] != 0 {
+                            point.current[axis] = coordinate;
+                            point.touched[axis] = true;
+                        }
+                        if zone == 0 {
+                            point.original = point.current;
+                        }
+                    }
+                }
                 0x85 => {
                     let flags = stack.pop().ok_or(Error::StackUnderflow)?;
                     let limit = flags & 255;
@@ -1019,4 +1048,27 @@ fn adr0064_i1_ip_interpolates_all_selected_twilight_points() {
     assert_eq!(vm.points[0][2].current, [60, 0]);
     assert_eq!(vm.points[0][3].current, [160, 0]);
     assert_eq!(vm.loop_count, 1);
+}
+
+#[test]
+fn adr0064_i1_gc_reads_original_and_current_scfs_updates_twilight() {
+    for zone in [0, 1] {
+        let mut vm = Interpreter::new(0, &[], 65536);
+        vm.zones[2] = zone;
+        vm.points[usize::from(zone)].push(HintPoint {
+            original: [13, 7],
+            current: [25, 8],
+            ..Default::default()
+        });
+        let mut stack = alloc::vec::Vec::new();
+        vm.execute(
+            &[
+                0xb0, 0, 0x47, 0xb0, 0, 0x46, 0xb1, 0, 11, 0x48, 0xb0, 0, 0x47, 0xb0, 0, 0x46,
+            ],
+            &mut stack,
+            4,
+        )
+        .unwrap();
+        assert_eq!(stack, [13, 25, if zone == 0 { 11 } else { 13 }, 11]);
+    }
 }
