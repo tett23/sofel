@@ -107,7 +107,7 @@ Unicode の性質の引きが HarfBuzz の 1.24 倍である。2段または3段
 
 先に、可変フォントの [ADR 0027](adr/0027-variable-fonts.md) に依存する項を並べる。
 
-- 任意の位置への可変フォントのインスタンス化と、軸の範囲を絞る部分的なインスタンス化。[ADR 0022](adr/0022-subsetting.md) の「後回しにしたもの」にある。[ADR 0027](adr/0027-variable-fonts.md) の採択と実装の後に書く。解消すると、サブセット化のテストの期待する失敗のうち、インスタンスの91件と IUP の23件が消える。
+- 任意の位置への可変フォントのインスタンス化と、軸の範囲を絞る部分的なインスタンス化。[ADR 0022](adr/0022-subsetting.md) の「後回しにしたもの」にある。[ADR 0027](adr/0027-variable-fonts.md) の実装後に [ADR 0061](adr/0061-subset-axis-instancing.md) に従って進める。解消すると、サブセット化のテストの期待する失敗のうち、インスタンスの91件と IUP の23件が消える。
 - ppem を使った Device 表の補正（ヒンティングの Device）。GPOS、GDEF のキャレット、BASE、MATH が対象である。[ADR 0017](adr/0017-base-baselines.md) による。変化量の部分は [ADR 0027](adr/0027-variable-fonts.md) に入る。
 - GDEF のリガチャのキャレットの API。[ADR 0027](adr/0027-variable-fonts.md) の一覧にある。
 - スタイルの値 `hb_style_get_value`。[ADR 0027](adr/0027-variable-fonts.md) の一覧にある。
