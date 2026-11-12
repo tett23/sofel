@@ -12,6 +12,6 @@ fn i1_aat_shape_sparse_gid_lookups_are_exact() {
 fn i2_aat_state_lookup_does_not_cross_input() {
     let bytes = [0, 8, 0, 2, 0, 1, 0, 5];
     for n in 0..bytes.len() {
-        assert!(AatLookup::new(&bytes[..n], 10).is_none());
+        assert!(AatLookup::new(bytes.get(..n).unwrap(), 10).is_none());
     }
 }
