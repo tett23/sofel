@@ -10,7 +10,7 @@ use sofel_font::read::Tag;
 use crate::bits::BitSet;
 use crate::cmap_accel::CmapAccel;
 use crate::error::SubsetError;
-use crate::input::{Flags, Input, SetKind};
+use crate::input::{AxisRange, Flags, Input, SetKind};
 use crate::instance::{self, VarPlan};
 use crate::layout::{self, Gsubgpos, LayoutPlan};
 use crate::limits;
@@ -296,10 +296,25 @@ impl Plan {
                     reason: "pinning the axes of avar version 2 (deferred by ADR 0022)",
                 });
             }
-            if !(norm.all_axes_pinned && norm.pinned_at_default) {
+            let no_variation_data = ![
+                b"gvar", b"GVAR", b"HVAR", b"VVAR", b"MVAR", b"cvar", b"CFF2", b"GDEF", b"GSUB",
+                b"GPOS", b"BASE", b"MATH", b"COLR", b"VARC", b"STAT",
+            ]
+            .iter()
+            .any(|tag| font.table(Tag::new(tag)).is_some());
+            let simple_avar = font.table(Tag::new(b"avar")).is_none_or(|data| {
+                sofel_font::read::avar::Avar::new(data)
+                    .is_ok_and(|table| table.major_version() == 1 && norm.pinned_at_default)
+                    && norm
+                        .user
+                        .values()
+                        .all(|range| range.min == range.default && range.default == range.max)
+            });
+            let metadata_only = no_variation_data && simple_avar;
+            if !(norm.all_axes_pinned && norm.pinned_at_default) && !metadata_only {
                 return Err(SubsetError::Unsupported {
                     tag: Tag::new(b"fvar"),
-                    reason: "instancing other than pinning every axis to its default (deferred by ADR 0022)",
+                    reason: "instancing variation data needs ADR 0061",
                 });
             }
         }
@@ -450,6 +465,7 @@ impl Plan {
         if !pinned {
             fvar_name_ids(
                 font.table(Tag::new(b"fvar")).unwrap_or(&[]),
+                p.var.user(),
                 &mut p.name_ids,
             );
         }
@@ -744,32 +760,29 @@ fn stat_name_ids(stat: &[u8], user: &BTreeMap<Tag, crate::input::AxisRange>, nam
     names.add(u32::from(stat.elided_fallback_name_id()));
 }
 
-/// `fvar::collect_name_ids` without axis limits: the axes' names and
-/// the instances' subfamily and PostScript names.
-fn fvar_name_ids(fvar: &[u8], names: &mut RangeSet) {
-    let d = layout::data::D(fvar);
-    let axis_count = usize::from(d.u16(8));
-    let instance_size = usize::from(d.u16(14));
-    let ok = fvar.len() >= 16
-        && d.u16(0) == 1
-        && d.u16(10) == 20
-        && instance_size >= axis_count.saturating_mul(4).saturating_add(4);
-    if !ok {
+/// `fvar::collect_name_ids` for the axes and named instances that remain.
+fn fvar_name_ids(fvar: &[u8], user: &BTreeMap<Tag, AxisRange>, names: &mut RangeSet) {
+    let Ok(fvar) = sofel_font::read::fvar::Fvar::new(fvar) else {
         return;
+    };
+    for axis in fvar.axes() {
+        let pinned = user
+            .get(&axis.tag)
+            .is_some_and(|range| range.min == range.default && range.default == range.max);
+        if !pinned {
+            names.add(u32::from(axis.name_id));
+        }
     }
-    let axes = d.follow(u32::from(d.u16(4)));
-    for i in 0..axis_count {
-        names.add(u32::from(axes.u16(i.saturating_mul(20).saturating_add(18))));
-    }
-    let instances = axes.at(axis_count.saturating_mul(20));
-    for i in 0..usize::from(d.u16(12)) {
-        let inst = instances.at(i.saturating_mul(instance_size));
-        names.add(u32::from(inst.u16(0)));
-        if instance_size >= axis_count.saturating_mul(4).saturating_add(6) {
-            let ps = inst.u16(axis_count.saturating_mul(4).saturating_add(4));
-            if ps != 0xFFFF {
-                names.add(u32::from(ps));
-            }
+    for index in 0..fvar.instance_count() {
+        if !crate::instance::fvar_instance_kept(&fvar, index, user) {
+            continue;
+        }
+        let Some(instance) = fvar.instance(index) else {
+            continue;
+        };
+        names.add(u32::from(instance.subfamily_name_id));
+        if let Some(postscript) = instance.postscript_name_id.filter(|id| *id != 0xFFFF) {
+            names.add(u32::from(postscript));
         }
     }
 }
