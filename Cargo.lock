@@ -65,6 +65,7 @@ dependencies = [
  "sofel-geom",
  "sofel-inflate",
  "sofel-outline",
+ "sofel-png",
  "sofel-raster",
  "sofel-read",
  "sofel-shape",

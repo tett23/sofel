@@ -27,9 +27,9 @@ VARC の輪郭は、部品の表示条件、軸座標、変形を評価して指
 
 また、gvar または GVAR があっても、共有 tuple と全グリフの変化記録が空なら、非既定値への固定と軸の範囲指定を受け付ける。軸を指定した出力から空の gvar または GVAR を除く。
 
-さらに、gvar の変化記録があるフォントでも、輪郭を残すグリフが単純グリフだけで、ほかの変化量表と avar がなければ、全軸を非既定値に固定できる。単純グリフの点と幻の点に gvar の変化量を適用し、固定した出力から gvar を除く。合成グリフを含む場合は `Unsupported` とする。
+glyf と gvar を持つフォントの全軸を固定すると、単純グリフの輪郭点、合成グリフの部品の位置、送り幅を決める幻の点に変化量を適用する。空のグリフでも送り幅を更新する。avar 版2を持つフォントの全軸固定では、軸間の補正も適用する。MVAR の差分を OS/2、水平・垂直メトリクスのヘッダー、post の対応する値に適用する。cvar の差分は TrueType の制御値に、GDEF・GPOS・BASE の差分はキャレット、字形の配置、基準線の座標に反映する。GSUB の字形置換には固定した位置で有効な条件を使う。
 
-VARC のサブセット化は、残す部品の閉包と参照の再採番、条件と変化量ストアの再配置を行う（[ADR 0067](docs/adr/0067-varc-components.md)）。VARC が参照しない1軸を既定値に固定する場合は、gvar、GDEF、GSUB などの対象表が存在しないか捨てられ、avar が版2でなければ部分軸固定できる。これらの対象表と avar が最初からない場合は、同じ軸を既定値以外に固定するか範囲を指定することもできる。元のフォントに gvar だけが加わる場合も、gvar を出力から除けば、単純グリフの輪郭とメトリクスに新しい既定位置の変化量を反映する。CFF2 がなく、avar 版2の全軸が恒等写像で軸インデックスマップと変化量ストアが空なら、軸固定時に avar を省く。同じ条件で1軸の範囲を変更すると、元の輪郭とメトリクスを保ち、座標の補正量を avar に書く。この範囲変更では gvar を出力に残せる。VARC が参照しない1軸を固定する場合も、gvar の各タプルが固定軸と残る軸にまたがらなければ、単純グリフの変化量を反映し、残るタプルを再配置する。既定位置に固定した軸でピーク座標が0以外なら、複数の軸にまたがるタプルも除く。VARC をそのまま写す指定は、グリフ ID を保持し、軸を変えない場合だけ受け付ける。
+VARC のサブセット化は、残す部品の閉包と参照の再採番、条件と変化量ストアの再配置を行う（[ADR 0067](docs/adr/0067-varc-components.md)）。VARC が参照しない1軸を既定値に固定する場合は、gvar、GDEF、GSUB などの対象表が存在しないか捨てられ、avar が版2でなければ部分軸固定できる。これらの対象表と avar が最初からない場合は、同じ軸を既定値以外に固定するか範囲を指定することもできる。元のフォントに gvar だけが加わる場合も、gvar を出力から除けば、単純グリフの輪郭とメトリクスに新しい既定位置の変化量を反映する。CFF2 がなく、avar 版2の全軸が恒等写像で軸インデックスマップと変化量ストアが空なら、軸固定時に avar を省く。同じ条件で1軸の範囲を変更すると、元の輪郭とメトリクスを保ち、座標の補正量を avar に書く。この範囲変更では gvar を出力に残せる。VARC が参照しない1軸を固定すると、その座標で寄与する gvar タプルの差分を残る軸に写す。差分を持つ点が一部だけの輪郭では補間を行い、同じ軸範囲に写るタプルの差分を合計してから丸める。VARC をそのまま写す指定は、グリフ ID を保持し、軸を変えない場合だけ受け付ける。
 
 `sofel-read` は、sfntの目録、TTC/OTC、dfont（[ADR 0058](docs/adr/0058-dfont-face-selection.md)）、head、maxp/MAXP、hhea/HHEA、hmtx/HMTX、cmap（フォーマット0〜15）、loca、glyf（[ADR 0007](docs/adr/0007-sfnt-read-foundation.md)、[0011](docs/adr/0011-glyf-outlines.md)）と、OS/2、name、post、vhea/VHEA、vmtx/VMTX、VORG（[ADR 0016](docs/adr/0016-font-and-vertical-metrics.md)）、BASE（[ADR 0017](docs/adr/0017-base-baselines.md)）、CFFとCFF2（[ADR 0021](docs/adr/0021-cff-outlines.md)）、GDEF、GSUB、GPOS（[ADR 0020](docs/adr/0020-shaping-foundation.md)）、MATH、fvar、avar、STAT（[ADR 0022](docs/adr/0022-subsetting.md)）を読み、各表の検証器を持つ。VARC は版1のヘッダ、部品記録、条件、変化量ストアを検査しながら読む（[ADR 0067](docs/adr/0067-varc-components.md)）。
 
@@ -69,7 +69,7 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-inflate`](crates/sofel-inflate) | 出力上限を指定した DEFLATE・zlib・gzip の展開 |
 | [`sofel-png`](crates/sofel-png) | PNG の各色型と Adam7 をアルファ乗算済み BGRA に復号する（[ADR 0066](docs/adr/0066-color-glyph-pixels.md)） |
 | [`sofel-bitmap`](crates/sofel-bitmap) | 埋め込みビットマップ（CBLC/CBDT、EBLC/EBDT、`bloc`/`bdat`、sbix）のストライク、その選び方（HarfBuzzとFreeTypeの両方）、グリフの画像のデータとメトリクス、EBDTの画素のFreeTypeと同じ書き込み、CBDT と sbix の PNG の復号（[ADR 0023](docs/adr/0023-color-glyphs.md)） |
-| [`sofel-bitmapfont`](crates/sofel-bitmapfont) | BDF の文字対応、送り幅、固定サイズの 1、2、4、8 bit 画像を読む（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)） |
+| [`sofel-bitmapfont`](crates/sofel-bitmapfont) | BDF と PCF の文字対応、送り幅、固定サイズの画像を読む。BDF は 1、2、4、8 bit、PCF は 1 bit（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)） |
 | [`sofel-color`](crates/sofel-color) | カラーグリフ：CPALのパレット、COLR（版0と版1）、SVG、CBDT、sbixをHarfBuzzと同じ命令で `Painter` に渡す。gzip 圧縮された SVG は展開して渡す。命令の記録（`Recording`）、カラーグリフを含むグリフの箱、フォールバックのための問い合わせ（[ADR 0023](docs/adr/0023-color-glyphs.md)） |
 | [`sofel-write`](crates/sofel-write) | sfntの組み立てと、HarfBuzzと同じ詰め方のオブジェクトの直列化（[ADR 0022](docs/adr/0022-subsetting.md)） |
 | [`sofel-subset`](crates/sofel-subset) | HarfBuzzの `hb-subset` とバイト単位で同じ出力のサブセット化（[ADR 0022](docs/adr/0022-subsetting.md)。書ける表はglyf系、cmap、name、OS/2、post、hdmx、CFF、VORG、GDEF、GSUB、GPOS、BASE、COLR、CPAL、CBLC、CBDT、sbix、MATH、STAT、軸をすべて固定したCFF2など。軸はすべて既定の値に固定できる。前処理（`Prepared`）で同じフォントの計画を速く作れる） |
@@ -114,10 +114,13 @@ sofel render --ppem 48 --text-file sample.txt font.ttf > sample.pgm
 
 BDF の固定サイズの画像は `--ppem`、`--char` または `--glyph` を指定して描ける。画素の深さは 1、2、4、8 bit で、PGM に変換する。BDF は 1 フェイスで、指定サイズのストライクがない場合と `--no-bitmap` を指定した場合は描画に失敗する（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
 
+PCF の固定サイズの 1 bit 画像も同じ引数で PGM に変換する。PCF は 1 フェイスで、指定サイズのストライクがない場合と `--no-bitmap` を指定した場合は描画に失敗する（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
+
 可変フォントの輪郭には `--variations=wght=500` や `--named-instance=0` で位置を指定できる。既定以外の位置では埋め込みビットマップを使わず、輪郭を描く。
 
 1グリフをヒンティングなしで描き、PGM（P5、白地に黒）を標準出力に書く（[ADR 0012](docs/adr/0012-antialiased-rasterizer.md)）。FreeTypeの `FT_Render_Glyph` と同じ画像になる。そのppemの埋め込みビットマップがあれば、FreeTypeと同じく `--no-bitmap` が無いかぎりそれを書く（32bitはPAM。[ADR 0023](docs/adr/0023-color-glyphs.md)）。`--color` では、COLRv0、輪郭でクリップした COLRv1 の線形・放射・扇形グラデーションと、矩形、円、パスを単色や線形・放射グラデーションで塗る OT-SVG のグリフをPAMで書く（[ADR 0072](docs/adr/0072-color-gallery-acceptance.md)）。COLRv1 の単色やグラデーションは、グループを重ねる28種の合成モードで描く。COLRv0の色はFreeTypeの `FT_LOAD_COLOR` と同じで、`--palette N` でパレットを選ぶ。OT-SVG では同じ文書内の図形を `use` で再利用し、`clipPath` で塗る範囲を指定できる（[ADR 0074](docs/adr/0074-svg-feature-conformance.md)）。
 
+要求した ppem に一致するストライクがなくても、`--color` は sbix と CBDT の PNG を双線形補間して描く。`--no-bitmap` はこれらの画像を除く。
 COLRv1 の矩形クリップは、回転・せん断・反転した場合にも変換後の四辺で切り抜く。
 
 CLI のレイヤー選択と描画制御は独自実装で、画素合成には `sofel-raster` を使う（[ADR 0055](docs/adr/0055-rewrite-cli-color-rendering.md)）。
