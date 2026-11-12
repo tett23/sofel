@@ -60,8 +60,8 @@ mod blend;
 
 pub use blend::{BgraImage, blend_layer};
 
-mod harmony;
 mod bitmap_sdf;
+mod harmony;
 pub use bitmap_sdf::{BitmapSdfError, bitmap_sdf};
 pub use harmony::LcdMode;
 
