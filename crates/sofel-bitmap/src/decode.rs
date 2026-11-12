@@ -17,6 +17,10 @@ pub enum PixelMode {
     Gray4,
     /// 8 bits per pixel (`FT_PIXEL_MODE_GRAY`).
     Gray,
+    /// Three horizontal subpixel values per pixel (`FT_PIXEL_MODE_LCD`).
+    Lcd,
+    /// Three vertical subpixel values per pixel (`FT_PIXEL_MODE_LCD_V`).
+    LcdV,
     /// 32 bits per pixel, blue, green, red, alpha, premultiplied
     /// (`FT_PIXEL_MODE_BGRA`).
     Bgra,

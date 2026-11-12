@@ -11,6 +11,7 @@ rust-version.workspace = true
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
+sofel-vector = { path = "../sofel-vector" }
 sofel-read = { path = "../sofel-read" }
 sofel-geom = { path = "../sofel-geom" }
 sofel-font = { path = "../sofel-font" }

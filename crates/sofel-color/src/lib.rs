@@ -141,6 +141,30 @@ pub fn paint_recording_at<'a>(
     paint_any(instance, glyph, options, scratch, recording)
 }
 
+/// Paint with HarfBuzz's synthetic slant around the glyph commands.
+/// The image callback's deprecated slant argument stays zero; the
+/// surrounding transform carries the shear for every paint format.
+pub fn paint_recording_at_with_slant<'a>(
+    instance: sofel_outline::font::var::Instance<'_, 'a, '_, '_>,
+    glyph: u32,
+    options: &PaintOptions<'a>,
+    slant_xy: f32,
+    scratch: &mut Scratch,
+    recording: &mut Recording<'a>,
+) -> Painted {
+    if slant_xy != 0.0 {
+        recording.push_transform(Transform {
+            xy: slant_xy,
+            ..Transform::IDENTITY
+        });
+    }
+    let painted = paint_any(instance, glyph, options, scratch, recording);
+    if slant_xy != 0.0 {
+        recording.pop_transform();
+    }
+    painted
+}
+
 /// The `COLR` version 0 layers of `glyph`: each layer's glyph and its
 /// palette entry, `None` for the foreground color
 /// (`hb_ot_color_glyph_get_layers`, `FT_Get_Color_Glyph_Layer`).
