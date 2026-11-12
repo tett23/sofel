@@ -152,6 +152,7 @@ pub(crate) struct PlanLayout {
     pub varidx_pinned: bool,
     /// Rounded GDEF variation deltas at a fully pinned location.
     pub pinned_layout_deltas: BTreeMap<u32, i32>,
+    pub pinned_base_deltas: BTreeMap<u32, i32>,
     /// Used rows and remapped indices of an unpinned GDEF store, shared
     /// by GDEF caret values and retained GPOS PairPos records.
     pub gdef_var_items: Vec<(u16, Vec<u32>)>,
@@ -330,7 +331,7 @@ impl Plan {
             && font.table(Tag::new(b"CFF2")).is_none();
         let needs_rebase = |tag: &&[u8; 4]| {
             let handled = match *tag {
-                b"GSUB" | b"GPOS" | b"GDEF" => {
+                b"GSUB" | b"GPOS" | b"GDEF" | b"BASE" => {
                     norm.all_axes_pinned
                         && !input
                             .set(SetKind::NoSubsetTables)
@@ -393,7 +394,13 @@ impl Plan {
                 || font.table(Tag::new(b"avar")).is_none_or(|data| {
                     sofel_font::read::avar::Avar::new(data).is_ok_and(|table| {
                         table.major_version() == 1
-                            && (norm.pinned_at_default || norm.all_axes_pinned)
+                            && (norm.pinned_at_default
+                                || (norm.all_axes_pinned
+                                    && (0..table.axis_count()).all(|axis| {
+                                        table.segment_map(axis).is_some_and(|map| {
+                                            sofel_font::var::map_float(&map, 0.0) == 0.0
+                                        })
+                                    })))
                     }) && norm
                         .user
                         .values()
@@ -778,25 +785,12 @@ impl Plan {
                     });
                 };
                 if pinned {
-                    use sofel_font::var::{HbF32, Location, StoreKind};
-                    let location = Location::from_normalized_2_14(font, &p.var.n.normalized_coords);
-                    let instance = font.instance(&location);
-                    for index in map.keys().copied() {
-                        let [a, b, c, d] = index.to_be_bytes();
-                        let delta = instance
-                            .item_delta::<HbF32>(
-                                StoreKind::Gdef,
-                                u16::from_be_bytes([a, b]),
-                                u16::from_be_bytes([c, d]),
-                            )
-                            .map_err(|_| SubsetError::Malformed {
-                                tag: Tag::new(b"GDEF"),
-                            })?;
-                        let rounded = sofel_geom::float::hb_roundf32(delta);
-                        p.layout
-                            .pinned_layout_deltas
-                            .insert(index, crate::instance::f64_to_i32(rounded));
-                    }
+                    p.layout.pinned_layout_deltas = p.pinned_deltas(
+                        font,
+                        Tag::new(b"GDEF"),
+                        sofel_font::var::StoreKind::Gdef,
+                        &map,
+                    )?;
                 } else if copied_gdef {
                     // HarfBuzz remaps subset GPOS references even when it
                     // copies the original GDEF table unchanged.
@@ -807,8 +801,51 @@ impl Plan {
                 }
             }
         }
+        if pinned
+            && !p.var.n.pinned_at_default
+            && tag_kept(b"BASE")
+            && !no_subset.contains(Tag::new(b"BASE").to_u32())
+            && let Some(data) = font.table(Tag::new(b"BASE"))
+            && sofel_font::read::base::Base::new(data)
+                .is_ok_and(|base| base.variation_store().ok().flatten().is_some())
+        {
+            let tag = Tag::new(b"BASE");
+            let (_, indices) = crate::tables::base::retained_variation_indices(data, &p)
+                .ok_or(SubsetError::Malformed { tag })?;
+            p.layout.pinned_base_deltas =
+                p.pinned_deltas(font, tag, sofel_font::var::StoreKind::Base, &indices)?;
+        }
         p.instance_metrics(font)?;
         Ok(p)
+    }
+
+    fn pinned_deltas(
+        &self,
+        font: &Font<'_>,
+        tag: Tag,
+        kind: sofel_font::var::StoreKind,
+        indices: &BTreeMap<u32, u32>,
+    ) -> Result<BTreeMap<u32, i32>, SubsetError> {
+        use sofel_font::var::{HbF32, Location};
+        let location = Location::from_normalized_2_14(font, &self.var.n.normalized_coords);
+        let instance = font.instance(&location);
+        indices
+            .keys()
+            .map(|&index| {
+                let [a, b, c, d] = index.to_be_bytes();
+                let delta = instance
+                    .item_delta::<HbF32>(
+                        kind,
+                        u16::from_be_bytes([a, b]),
+                        u16::from_be_bytes([c, d]),
+                    )
+                    .map_err(|_| SubsetError::Malformed { tag })?;
+                Ok((
+                    index,
+                    crate::instance::f64_to_i32(sofel_geom::float::hb_roundf32(delta)),
+                ))
+            })
+            .collect()
     }
 
     /// The number of glyphs of the subset font.

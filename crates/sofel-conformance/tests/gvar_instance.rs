@@ -383,11 +383,6 @@ fn adr0061_i1_substitute_features_at_pinned_coordinates() {
     for value in [100.0, 400.0, 900.0] {
         let input = Input::new()
             .map_set(SetKind::Unicodes, |s| s.add(0x30dd))
-            .map_set(SetKind::DropTables, |s| {
-                for t in [b"GDEF", b"GPOS", b"BASE"] {
-                    s.add(Tag::new(t).to_u32());
-                }
-            })
             .with_axis_pinned(Tag::new(b"wght"), value, &font)
             .unwrap();
         let ours = subset(&font, &input).unwrap();
@@ -396,7 +391,6 @@ fn adr0061_i1_substitute_features_at_pinned_coordinates() {
                 .arg("--subset")
                 .arg(format!("--font-file={}", path.display()))
                 .arg("--unicodes=U+30DD")
-                .arg("--drop-tables+=GDEF,GPOS,BASE")
                 .arg(format!("--variations=wght={value}"))
                 .arg(format!("--output-file={}", out.display()))
                 .status()

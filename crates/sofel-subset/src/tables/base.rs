@@ -117,7 +117,7 @@ fn collect_min_max(m: MinMax<'_>, p: &Plan, indices: &mut BTreeSet<u32>) -> Opti
     Some(())
 }
 
-fn retained_variation_indices(src: &[u8], p: &Plan) -> Option<RetainedVariations> {
+pub(crate) fn retained_variation_indices(src: &[u8], p: &Plan) -> Option<RetainedVariations> {
     let base = Base::new(src).ok()?;
     let store = base.variation_store().ok()??;
     let mut selected = BTreeSet::new();
@@ -217,6 +217,17 @@ fn base_coord(s: &mut Sub<'_, '_>, c: D<'_>, remap: &BTreeMap<u32, u32>) -> bool
         3 => {
             s.s.extend(c.slice(0, 4));
             let dev = c.off16(4);
+            if s.p.var.all_axes_pinned() && !s.p.var.n.pinned_at_default && dev.u16(4) == 0x8000 {
+                let index = (u32::from(dev.u16(0)) << 16) | u32::from(dev.u16(2));
+                let Some(&delta) = s.p.layout.pinned_base_deltas.get(&index) else {
+                    return false;
+                };
+                let value = i32::from(c.u16(2).cast_signed()).saturating_add(delta);
+                let Ok(value) = i16::try_from(value) else {
+                    return s.s.err(sofel_write::Errors::INT_OVERFLOW);
+                };
+                s.s.set_u16(2, value.cast_unsigned());
+            }
             let at = s.s.u16(0);
             s.serialize_copy(at, 2, dev, |s| device_copy(s, dev, remap));
             true
