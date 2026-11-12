@@ -150,6 +150,21 @@ impl<'a> Gsubgpos<'a> {
         FeatureVariations::new(self.feature_variations().0).ok()
     }
 
+    /// Whether all copied conditions are axis ranges, with no GDEF store indices.
+    pub fn has_only_axis_range_conditions(self) -> bool {
+        self.feature_variations_view().is_some_and(|fv| {
+            fv.version() == 0x0001_0000 && (0..fv.len()).all(|i| {
+                fv.record(i).is_some_and(|record| match record.conditions() {
+                    Ok(None) => true,
+                    Ok(Some(set)) => (0..set.len()).all(|j| {
+                        matches!(set.condition(j), Ok(Some(condition)) if condition.axis_range().is_some())
+                    }),
+                    Err(_) => false,
+                })
+            })
+        })
+    }
+
     /// The number of scripts.
     pub fn script_count(self) -> usize {
         usize::from(self.script_list().u16(0))
