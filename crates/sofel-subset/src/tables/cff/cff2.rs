@@ -184,6 +184,25 @@ fn rewrite_calls(
     Some(out)
 }
 
+/// Only complete number operands may change interpretation from data to code:
+/// operators in the disputed bytes can otherwise create a different call or hint.
+fn mask_difference_is_operands(mut bytes: &[u8]) -> bool {
+    while let Some((&first, rest)) = bytes.split_first() {
+        let extra = match first {
+            32..=246 => 0,
+            247..=254 => 1,
+            28 => 2,
+            255 => 4,
+            _ => return false,
+        };
+        let Some(tail) = rest.get(extra..) else {
+            return false;
+        };
+        bytes = tail;
+    }
+    true
+}
+
 fn keep_subrs(
     fonts: &Fonts<'_>,
     glyphs: &[(u32, u32)],
@@ -208,21 +227,43 @@ fn keep_subrs(
             return None;
         }
         for mask in env.mask_trace() {
-            if mask.source != Source::Glyph
-                && mask_sizes
-                    .insert((fd, mask.source, mask.at), mask.size)
-                    .is_some_and(|old| old != mask.size)
-            {
-                if drop_hints {
-                    return None;
+            if mask.source != Source::Glyph {
+                let first = mask_sizes
+                    .entry((fd, mask.source, mask.at))
+                    .or_insert(mask.size);
+                if *first != mask.size {
+                    if drop_hints {
+                        let program = match mask.source {
+                            Source::Global(old) => p.gsubrs.get(old)?,
+                            Source::Local(old) => p.lsubrs.get(old)?,
+                            Source::Glyph => return None,
+                        };
+                        let bytes = program.get(mask.at.checked_add(1)?..)?;
+                        let lo = usize::try_from((*first).min(mask.size)).ok()?;
+                        let hi = usize::try_from((*first).max(mask.size)).ok()?;
+                        if !mask_difference_is_operands(bytes.get(lo..hi)?) {
+                            return None;
+                        }
+                    }
+                    contextual_masks.insert((fd, mask.source));
                 }
-                contextual_masks.insert((fd, mask.source));
             }
         }
         let mut direct = BTreeMap::new();
         let mut direct_drops = BTreeMap::new();
         if drop_hints {
-            for &hint in env.hint_trace() {
+            for mut hint in env.hint_trace().iter().copied() {
+                // HarfBuzz caches the first parse of a subroutine. Its first
+                // caller fixes the mask width used when encoding without hints.
+                if hint.source != Source::Glyph
+                    && let Some(at) = hint.mask_at
+                {
+                    let size = *mask_sizes.get(&(fd, hint.source, at))?;
+                    hint.end = at
+                        .checked_add(1)?
+                        .checked_add(usize::try_from(size).ok()?)?;
+                }
+
                 if !hint.can_follow_call
                     && env
                         .call_trace()?
@@ -269,6 +310,7 @@ fn keep_subrs(
                         start: trace.start,
                         end: trace.end,
                         can_follow_call: false,
+                        mask_at: None,
                     },
                 );
                 continue;

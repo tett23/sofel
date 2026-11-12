@@ -255,6 +255,7 @@ pub(crate) struct HintTrace {
     pub start: usize,
     pub end: usize,
     pub can_follow_call: bool,
+    pub mask_at: Option<usize>,
 }
 
 /// A program and the position in it; an offset past the end is the error
@@ -441,6 +442,7 @@ impl<'a, 'c> Env<'a, 'c> {
                         start,
                         end: call.start,
                         can_follow_call: false,
+                        mask_at: None,
                     });
                     0
                 }
@@ -455,6 +457,7 @@ impl<'a, 'c> Env<'a, 'c> {
             start,
             end,
             can_follow_call: independent_mask,
+            mask_at: mask.then_some(self.ctx.off.saturating_sub(1)),
         });
     }
 
@@ -615,6 +618,7 @@ impl<'a, 'c> Env<'a, 'c> {
                 start: self.ctx.off.saturating_sub(1),
                 end: self.ctx.off,
                 can_follow_call: true,
+                mask_at: None,
             });
         }
         if self.trace_calls && self.ctx.off < self.ctx.bytes.len() {
@@ -863,6 +867,7 @@ fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
                     start: env.ctx.off.saturating_sub(1),
                     end: env.ctx.off,
                     can_follow_call: true,
+                    mask_at: None,
                 });
             }
             if env.trace_calls && env.ctx.off < env.ctx.bytes.len() {
