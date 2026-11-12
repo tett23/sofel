@@ -3,6 +3,10 @@
 version = 4
 
 [[package]]
+name = "font-gallery"
+version = "0.0.0"
+
+[[package]]
 name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -75,6 +79,7 @@ dependencies = [
 name = "sofel-conformance"
 version = "0.0.0"
 dependencies = [
+ "font-gallery",
  "quick-xml",
  "sofel-bitmap",
  "sofel-cli",
@@ -82,10 +87,12 @@ dependencies = [
  "sofel-font",
  "sofel-geom",
  "sofel-outline",
+ "sofel-png",
  "sofel-raster",
  "sofel-read",
  "sofel-shape",
  "sofel-subset",
+ "sofel-svg",
  "sofel-unicode",
  "sofel-vector",
  "sofel-write",

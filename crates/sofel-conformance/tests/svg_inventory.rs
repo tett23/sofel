@@ -65,3 +65,43 @@ fn i2_separates_required_results_from_opentype_scope() {
     assert!(report.contains("ot-animations\tanimations\tOUT OF SCOPE"));
     assert!(report.contains("ot-current-color\tcolors\tUNDECIDED"));
 }
+
+#[test]
+fn i2_verifier_runs_each_positioned_page() {
+    let (_, report) = run(INVENTORY);
+    for case in ["empty", "single", "translucent-overlap", "clipped-image"] {
+        let prefix = format!("out-page\t{case}\toutput\t");
+        assert!(
+            report
+                .lines()
+                .any(|line| line.starts_with(&prefix) && line.ends_with("\tPASS")),
+            "{case}"
+        );
+    }
+}
+
+#[test]
+fn i1_case_source_identifies_input_selection_and_render_settings() {
+    let row = INVENTORY
+        .lines()
+        .find(|line| line.starts_with("in-geometry\tcircle\t"))
+        .unwrap();
+    assert!(row.contains("conformance/svg/geometry.svg\tglyph4\t32\t#ffffffff"));
+    let (_, output) = run(&INVENTORY.replace("conformance/svg/geometry.svg", ""));
+    assert!(output.contains("missing input: in-geometry/circle"));
+}
+
+#[test]
+fn i3_checked_in_local_measurements_cover_every_case() {
+    let reference = include_str!("../../../conformance/svg-measurements.tsv");
+    fn keys(s: &str) -> std::collections::BTreeSet<(&str, &str)> {
+        s.lines()
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .map(|l| {
+                let mut parts = l.split('\t');
+                (parts.next().unwrap(), parts.next().unwrap())
+            })
+            .collect()
+    }
+    assert_eq!(keys(reference), keys(INVENTORY));
+}

@@ -301,38 +301,165 @@ fn i2_render_mode_harmony_agrees_with_freetype() {
         raster.line_to(Point { x, y });
     }
     raster.close();
-    for (flag, mode) in [
-        ("--lcd", LcdMode::Horizontal),
-        ("--lcd-v", LcdMode::Vertical),
+    for (filtered, reference) in [
+        (false, paths::ft_dump()),
+        (true, paths::root().join("target/ft-dump/ft-dump-filtered")),
     ] {
-        let out = Command::new(paths::ft_dump())
-            .args(["--raster", "12", flag])
-            .arg(&path)
-            .output()
+        for (flag, mode) in [
+            ("--lcd", LcdMode::Horizontal),
+            ("--lcd-v", LcdMode::Vertical),
+        ] {
+            let out = Command::new(&reference)
+                .args(["--raster", "12", flag])
+                .arg(&path)
+                .output()
+                .unwrap();
+            assert!(out.status.success());
+            let dump = parse(&String::from_utf8(out.stdout).unwrap()).unwrap();
+            let glyph = &dump[&0].glyphs[&1];
+            let options = RenderOptions {
+                fill: FillRule::NonZero,
+                overlap: false,
+                ppem: Some((12, 12)),
+            };
+            let b = if filtered {
+                raster.render_filtered_lcd(mode, [8, 77, 86, 77, 8], options)
+            } else {
+                raster.render_harmony(mode, options)
+            }
             .unwrap();
-        assert!(out.status.success());
-        let dump = parse(&String::from_utf8(out.stdout).unwrap()).unwrap();
-        let glyph = &dump[&0].glyphs[&1];
-        let b = raster
-            .render_harmony(
-                mode,
-                RenderOptions {
-                    fill: FillRule::NonZero,
-                    overlap: false,
-                    ppem: Some((12, 12)),
-                },
-            )
-            .unwrap();
-        assert_eq!(
-            glyph[0],
-            format!("bitmap {} {} {} {}", b.left, b.top, b.width, b.rows)
-        );
-        assert!(b.width > 0 && b.rows > 0);
-        assert_eq!(glyph.len(), 1 + b.rows as usize);
-        for (y, row) in b.pixels.chunks_exact(b.width as usize).enumerate() {
-            let hex: String = row.iter().map(|v| format!("{v:02x}")).collect();
-            assert_eq!(glyph[1 + y], hex, "{flag} row {y}");
+            assert_eq!(
+                glyph[0],
+                format!("bitmap {} {} {} {}", b.left, b.top, b.width, b.rows)
+            );
+            assert!(b.width > 0 && b.rows > 0);
+            assert_eq!(glyph.len(), 1 + b.rows as usize);
+            for (y, row) in b.pixels.chunks_exact(b.width as usize).enumerate() {
+                let hex: String = row.iter().map(|v| format!("{v:02x}")).collect();
+                assert_eq!(glyph[1 + y], hex, "{flag} row {y}");
+            }
         }
     }
     std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn adr0064_i2_reference_renders_mono_and_both_sdf_inputs() {
+    let square = simple_glyph(
+        &[&[
+            Pt::On(0, 0),
+            Pt::On(0, 1000),
+            Pt::On(1000, 1000),
+            Pt::On(1000, 0),
+        ]],
+        false,
+        &[],
+    );
+    let path = std::env::temp_dir().join(format!("sofel-mono-sdf-{}.ttf", std::process::id()));
+    std::fs::write(&path, glyph_font(&[Vec::new(), square], true, false)).unwrap();
+    for size in [7usize, 8, 9] {
+        for flag in ["--mono", "--sdf", "--bitmap-sdf"] {
+            let out = Command::new(paths::ft_dump())
+                .args(["--raster", &size.to_string(), flag])
+                .arg(&path)
+                .output()
+                .unwrap();
+            assert!(out.status.success());
+            let dump = parse(&String::from_utf8(out.stdout).unwrap()).unwrap();
+            let glyph = &dump[&0].glyphs[&1];
+            if flag == "--mono" {
+                assert_eq!(glyph[0], format!("bitmap 0 {size} {size} {size}"));
+                let row = match size {
+                    7 => "fe",
+                    8 => "ff",
+                    9 => "ff80",
+                    _ => unreachable!(),
+                };
+                assert_eq!(glyph.len(), 1 + size);
+                assert!(glyph[1..].iter().all(|actual| actual == row));
+            } else {
+                // The reference defaults to an eight-pixel distance spread.
+                let width = size + 16;
+                assert_eq!(glyph[0], format!("bitmap -8 {} {width} {width}", size + 8));
+                assert_eq!(glyph.len(), width + 1);
+                assert!(glyph[1..].iter().all(|row| row.len() == width * 2));
+                let middle = &glyph[1 + width / 2];
+                assert!(
+                    u8::from_str_radix(&middle[width / 2 * 2..width / 2 * 2 + 2], 16).unwrap()
+                        > 128
+                );
+                assert!(u8::from_str_radix(&middle[..2], 16).unwrap() < 128);
+            }
+        }
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn adr0064_i2_selawik_monochrome_bitmaps_match_freetype() {
+    use sofel_font::read::GlyphId;
+    use sofel_outline::Outlines;
+    let path = paths::testdata()
+        .join("harfbuzz/test/shape/data/text-rendering-tests/fonts/Selawik-variable.ttf");
+    let data = std::fs::read(&path).unwrap();
+    let font = Font::new(&data, 0).unwrap();
+    let outlines = Outlines::new(font.default_instance());
+    let mut scratch = Scratch::default();
+    let mut raster = Rasterizer::new();
+    let mut mismatches = Vec::new();
+    let mut count = 0;
+    for ppem in [12, 24, 48] {
+        let reference = Command::new(paths::ft_dump())
+            .args(["--raster", &ppem.to_string(), "--mono"])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(reference.status.success());
+        let faces = parse(&String::from_utf8(reference.stdout).unwrap()).unwrap();
+        for (&gid, expected) in &faces[&0].glyphs {
+            let bitmap = sofel_cli::glyph::render_mono(
+                &outlines,
+                GlyphId(gid),
+                ppem,
+                &mut scratch,
+                &mut raster,
+            )
+            .unwrap();
+            let b = bitmap.bounds;
+            let mut actual = vec![format!(
+                "bitmap {} {} {} {}",
+                b.left, b.top, b.width, b.rows
+            )];
+            actual.extend(
+                bitmap
+                    .pixels
+                    .chunks_exact(bitmap.stride)
+                    .map(|row| row.iter().map(|v| format!("{v:02x}")).collect::<String>()),
+            );
+            if &actual != expected {
+                eprintln!(
+                    "gid {gid} size {ppem}: {:?}",
+                    actual
+                        .iter()
+                        .zip(expected)
+                        .enumerate()
+                        .filter(|(_, (a, b))| a != b)
+                        .take(3)
+                        .collect::<Vec<_>>()
+                );
+                mismatches.push((ppem, gid));
+            }
+            count += 1;
+        }
+    }
+    assert!(count > 0);
+    eprintln!(
+        "{} mismatched of {count} monochrome glyphs",
+        mismatches.len()
+    );
+    assert!(
+        mismatches.is_empty(),
+        "{:?}",
+        mismatches.iter().take(20).collect::<Vec<_>>()
+    );
 }

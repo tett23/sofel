@@ -213,8 +213,9 @@ fn layout_unsupported(
             // reference GDEF. A copied GSUB bypasses that writer.
             table.version() >= 0x0001_0001
                 && sofel_font::read::be::u32_at(d, 10) != Some(0)
-                && (no_subset.contains(Tag::new(b"GSUB").to_u32())
-                    || table.feature_variations_view().is_none())
+                && (table.feature_variations_view().is_none()
+                    || (no_subset.contains(Tag::new(b"GSUB").to_u32())
+                        && !table.has_only_axis_range_conditions()))
         });
     // A VariationIndex Device necessarily contains the format word 0x8000.
     // Scan the whole retained table so an unknown or malformed subtable
@@ -242,21 +243,6 @@ fn layout_unsupported(
         return Err(SubsetError::Unsupported {
             tag: Tag::new(b"GDEF"),
             reason: "the GDEF item variation store (ADR 0022 stage 10)",
-        });
-    }
-    // A copied MATH table needs no remapping when GDEF is also copied or dropped.
-    let math_subset = retained(b"MATH") && !no_subset.contains(Tag::new(b"MATH").to_u32());
-    if !pinned
-        && math_subset
-        && math_may_reference_store
-        && no_subset.contains(Tag::new(b"GDEF").to_u32())
-        && font
-            .table(Tag::new(b"GDEF"))
-            .is_some_and(layout::gdef::has_var_store)
-    {
-        return Err(SubsetError::Unsupported {
-            tag: Tag::new(b"MATH"),
-            reason: "MATH with a GDEF item variation store (ADR 0022 stage 10)",
         });
     }
     Ok(())
@@ -729,7 +715,7 @@ impl Plan {
                     });
                 };
                 if copied_gdef {
-                    // HarfBuzz remaps subset GPOS references even when it
+                    // HarfBuzz remaps subset GPOS and MATH references even when it
                     // copies the original GDEF table unchanged.
                     p.layout.gdef_var_map = map;
                 } else {

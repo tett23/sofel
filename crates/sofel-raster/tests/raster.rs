@@ -255,3 +255,22 @@ fn i2_render_mode_harmony_separates_horizontal_and_vertical_subpixels() {
     );
     assert_eq!(vertical.pixels, &[0, 0, 84, 172, 255, 172, 84, 0, 0]);
 }
+
+#[test]
+fn i2_filtered_lcd_covers_a_pixel_in_both_orientations() {
+    use sofel_raster::LcdMode;
+    let mut raster = Rasterizer::new();
+    rect(&mut raster, 0, 0, 64, 64);
+    for (mode, bounds) in [
+        (LcdMode::Horizontal, (-1, 1, 9, 1)),
+        (LcdMode::Vertical, (0, 2, 1, 9)),
+    ] {
+        let bitmap = raster
+            .render_filtered_lcd(mode, [8, 77, 86, 77, 8], opts())
+            .unwrap();
+        assert_eq!((bitmap.left, bitmap.top, bitmap.width, bitmap.rows), bounds);
+        assert_eq!(bitmap.pixels, &[0, 8, 85, 170, 239, 170, 85, 8, 0]);
+        let raw = raster.render_filtered_lcd(mode, [0; 5], opts()).unwrap();
+        assert_eq!(raw.pixels, &[0, 0, 0, 255, 255, 255, 0, 0, 0]);
+    }
+}
