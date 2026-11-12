@@ -268,6 +268,25 @@ fn move_axis(point: &mut HintPoint, axis: usize, value: i64, compatibility: u8) 
     }
     point.touched[axis] = true;
 }
+
+fn line_vector(a: [i64; 2], b: [i64; 2], perpendicular: bool) -> [i64; 2] {
+    if a == b {
+        return [16384, 0];
+    }
+    let dx = a[0].wrapping_sub(b[0]);
+    let dy = a[1].wrapping_sub(b[1]);
+    let [x, y] = if perpendicular {
+        [dy.wrapping_neg(), dx]
+    } else {
+        [dx, dy]
+    };
+    let (unit, _) = crate::slot_synth::normalize(sofel_geom::Point {
+        x: x as i32,
+        y: y as i32,
+    });
+    [i64::from(unit.x / 4), i64::from(unit.y / 4)]
+}
+
 fn project([x, y]: [i64; 2], vector: [i64; 2]) -> i64 {
     let dot = x
         .wrapping_mul(vector[0])
@@ -275,8 +294,37 @@ fn project([x, y]: [i64; 2], vector: [i64; 2]) -> i64 {
     dot.wrapping_add(if dot < 0 { 0x1fff } else { 0x2000 }) >> 14
 }
 
+fn projected_distance(a: [i64; 2], b: [i64; 2], vector: [i64; 2]) -> i64 {
+    project([a[0].wrapping_sub(b[0]), a[1].wrapping_sub(b[1])], vector)
+}
+
+fn shift_point(point: &mut HintPoint, delta: [i64; 2], freedom: [i64; 2], compatibility: u8) {
+    for axis in 0..2 {
+        if freedom[axis] != 0 {
+            if compatibility == 0 || (axis == 1 && compatibility != 7) {
+                point.current[axis] = point.current[axis].wrapping_add(delta[axis]);
+            }
+            point.touched[axis] = true;
+        }
+    }
+}
+
 // Both vectors contain normalized F2Dot14 components.
 #[allow(clippy::arithmetic_side_effects)]
+fn movement_factors(projection: [i64; 2], freedom: [i64; 2]) -> [i64; 2] {
+    let dot = (projection[0] * freedom[0] + projection[1] * freedom[1] + 0x2000) >> 14;
+    if (-0x1554..0x1555).contains(&dot) {
+        return [0, 0];
+    }
+    freedom.map(|component| {
+        if dot >= 0x3ffe {
+            component * 4
+        } else {
+            component * 65536 / dot
+        }
+    })
+}
+
 fn move_point(
     point: &mut HintPoint,
     distance: i64,
@@ -284,16 +332,10 @@ fn move_point(
     freedom: [i64; 2],
     compatibility: u8,
 ) {
-    let dot = (projection[0] * freedom[0] + projection[1] * freedom[1] + 0x2000) >> 14;
-    if (-0x1554..0x1555).contains(&dot) {
-        return;
-    }
-    for (axis, component) in freedom.into_iter().enumerate() {
-        let factor = if dot >= 0x3ffe {
-            component * 4
-        } else {
-            component * 65536 / dot
-        };
+    for (axis, factor) in movement_factors(projection, freedom)
+        .into_iter()
+        .enumerate()
+    {
         if factor != 0 {
             let delta = sofel_font::read::cff::ft::mul_fix(distance, factor);
             move_axis(
@@ -780,6 +822,21 @@ impl Interpreter {
         }
     }
 
+    fn reference_shift(&self, op: u8) -> Option<(usize, usize, [i64; 2])> {
+        let (zone, reference) = if op & 1 == 0 {
+            (self.zones[1], self.reference[2])
+        } else {
+            (self.zones[0], self.reference[1])
+        };
+        let zone = usize::from(zone);
+        let reference = usize::from(reference);
+        let base = self.points[zone].get(reference)?;
+        let distance = projected_distance(base.current, base.original, self.projection);
+        let delta = movement_factors(self.projection, self.freedom)
+            .map(|factor| sofel_font::read::cff::ft::mul_fix(distance, factor));
+        Some((zone, reference, delta))
+    }
+
     fn interpolate(&mut self, stack: &mut alloc::vec::Vec<i64>) {
         let count = usize::from(core::mem::replace(&mut self.loop_count, 1));
         let Some(first) = stack.len().checked_sub(count) else {
@@ -788,35 +845,31 @@ impl Interpreter {
         let [z0, z1, z2] = self.zones.map(usize::from);
         let base = self.points[z0].get(usize::from(self.reference[1])).copied();
         let end = self.points[z1].get(usize::from(self.reference[2])).copied();
-        let axis = usize::from(self.projection[0] == 0);
-        let original_axis = usize::from(self.dual_projection[0] == 0);
         let twilight = self.zones.contains(&0);
-        let original = |p: HintPoint| {
-            if twilight {
-                p.original[original_axis]
-            } else {
-                p.unscaled[original_axis]
-            }
-        };
+        let original = |p: HintPoint| if twilight { p.original } else { p.unscaled };
         if let Some(base) = base {
-            let old_range = end.map_or(0, |p| original(p).wrapping_sub(original(base)));
-            let new_range = end.map_or(0, |p| p.current[axis].wrapping_sub(base.current[axis]));
+            let original_offset =
+                |p| projected_distance(original(p), original(base), self.dual_projection);
+            let current_offset =
+                |p: HintPoint| projected_distance(p.current, base.current, self.projection);
+            let old_range = end.map_or(0, original_offset);
+            let new_range = end.map_or(0, current_offset);
             for &index in stack[first..].iter().rev() {
                 if let Some(p) = self.points[z2].get_mut(index as u32 as usize) {
-                    let offset = original(*p).wrapping_sub(original(base));
+                    let offset = original_offset(*p);
                     let distance = if old_range == 0 {
                         offset
                     } else {
                         sofel_font::read::cff::ft::mul_div(offset, new_range, old_range)
                     };
-                    if self.freedom[axis] != 0 {
-                        move_axis(
-                            p,
-                            axis,
-                            base.current[axis].wrapping_add(distance),
-                            self.backward_compatibility,
-                        );
-                    }
+                    let delta = distance.wrapping_sub(current_offset(*p));
+                    move_point(
+                        p,
+                        delta,
+                        self.projection,
+                        self.freedom,
+                        self.backward_compatibility,
+                    );
                 }
             }
         }
@@ -857,6 +910,33 @@ impl Interpreter {
                     }
                     if op & 2 == 0 {
                         self.freedom = axis;
+                    }
+                }
+                op @ (0x06..=0x09 | 0x86 | 0x87) => {
+                    let second = stack.pop().ok_or(Error::StackUnderflow)? as u16;
+                    let first = stack.pop().ok_or(Error::StackUnderflow)? as u16;
+                    let Some((a, b)) = self.points[usize::from(self.zones[1])]
+                        .get(usize::from(first))
+                        .zip(self.points[usize::from(self.zones[2])].get(usize::from(second)))
+                    else {
+                        continue;
+                    };
+                    let dual = matches!(op, 0x86 | 0x87);
+                    let perpendicular = op & 1 != 0;
+                    let current = line_vector(
+                        a.current,
+                        b.current,
+                        perpendicular && (!dual || a.original != b.original),
+                    );
+                    if matches!(op, 0x08 | 0x09) {
+                        self.freedom = current;
+                    } else {
+                        self.projection = current;
+                        self.dual_projection = if dual {
+                            line_vector(a.original, b.original, perpendicular)
+                        } else {
+                            current
+                        };
                     }
                 }
                 op @ (0x0a | 0x0b) => {
@@ -981,31 +1061,12 @@ impl Interpreter {
                     let Some(first) = stack.len().checked_sub(count) else {
                         continue;
                     };
-                    let (zone, reference) = if op == 0x32 {
-                        (self.zones[1], self.reference[2])
-                    } else {
-                        (self.zones[0], self.reference[1])
-                    };
-                    let base = self.points[usize::from(zone)]
-                        .get(usize::from(reference))
-                        .copied();
-                    if let Some(base) = base {
-                        let axis = usize::from(self.freedom[0] == 0);
-                        let delta = if self.projection[axis] != 0 {
-                            base.current[axis].wrapping_sub(base.original[axis])
-                        } else {
-                            0
-                        };
+                    if let Some((_, _, delta)) = self.reference_shift(op) {
                         for &id in stack[first..].iter().rev() {
                             if let Some(p) =
                                 self.points[usize::from(self.zones[2])].get_mut(id as u32 as usize)
                             {
-                                move_axis(
-                                    p,
-                                    axis,
-                                    p.current[axis].wrapping_add(delta),
-                                    self.backward_compatibility,
-                                );
+                                shift_point(p, delta, self.freedom, self.backward_compatibility);
                             }
                         }
                     }
@@ -1026,34 +1087,62 @@ impl Interpreter {
                     } else {
                         continue;
                     };
-                    let (zone, reference) = if op == 0x34 {
-                        (self.zones[1], self.reference[2])
-                    } else {
-                        (self.zones[0], self.reference[1])
-                    };
-                    let Some(base) = self.points[usize::from(zone)]
-                        .get(usize::from(reference))
-                        .copied()
-                    else {
+                    let Some((zone, reference, delta)) = self.reference_shift(op) else {
                         continue;
-                    };
-                    let axis = usize::from(self.freedom[0] == 0);
-                    let delta = if self.projection[axis] != 0 {
-                        base.current[axis].wrapping_sub(base.original[axis])
-                    } else {
-                        0
                     };
                     let points = self.points[target]
                         .get_mut(start..end)
                         .ok_or(Error::InvalidReference)?;
                     for (offset, p) in points.iter_mut().enumerate() {
-                        if usize::from(zone) != target || offset + start != usize::from(reference) {
-                            move_axis(
-                                p,
-                                axis,
-                                p.current[axis].wrapping_add(delta),
-                                self.backward_compatibility,
-                            );
+                        if zone != target || offset + start != reference {
+                            shift_point(p, delta, self.freedom, self.backward_compatibility);
+                        }
+                    }
+                }
+                op @ (0x36 | 0x37) => {
+                    let target = stack.pop().ok_or(Error::StackUnderflow)? as i32;
+                    if !matches!(target, 0 | 1) {
+                        continue;
+                    }
+                    let target = target as usize;
+                    let Some((zone, reference, delta)) = self.reference_shift(op) else {
+                        continue;
+                    };
+                    let points = &mut self.points[target];
+                    let limit = if target == 1 {
+                        points.len().saturating_sub(4)
+                    } else {
+                        points.len()
+                    };
+                    for (i, point) in points.iter_mut().take(limit).enumerate() {
+                        if target != zone || i != reference {
+                            point.current[0] = point.current[0].wrapping_add(delta[0]);
+                            point.current[1] = point.current[1].wrapping_add(delta[1]);
+                        }
+                    }
+                }
+                0x38 => {
+                    let distance = stack.pop().ok_or(Error::StackUnderflow)?;
+                    let count = usize::from(core::mem::replace(&mut self.loop_count, 1));
+                    let Some(start) = stack.len().checked_sub(count) else {
+                        continue;
+                    };
+                    let delta = self
+                        .freedom
+                        .map(|component| project([distance, 0], [component, 0]));
+                    let twilight = self.zones.contains(&0);
+                    let zone = usize::from(self.zones[2]);
+                    for index in stack.drain(start..).rev() {
+                        let Some(point) = self.points[zone].get_mut(index as u32 as usize) else {
+                            continue;
+                        };
+                        let compatibility = self.backward_compatibility;
+                        if compatibility == 0
+                            || twilight
+                            || (compatibility != 7
+                                && ((self.composite && self.freedom[1] != 0) || point.touched[1]))
+                        {
+                            shift_point(point, delta, self.freedom, compatibility);
                         }
                     }
                 }
@@ -1068,26 +1157,78 @@ impl Interpreter {
                     let Some(p) = self.points[z1].get_mut(usize::from(index)) else {
                         continue;
                     };
-                    let axis = usize::from(self.projection[0] == 0);
                     if z1 == 0 {
-                        p.original = base.original;
-                        if self.freedom[axis] != 0 {
-                            p.original[axis] = base.original[axis].wrapping_add(distance);
-                        }
-                        p.current = p.original;
-                    }
-                    if self.freedom[axis] != 0 {
-                        move_axis(
+                        p.current = base.original;
+                        move_point(
                             p,
-                            axis,
-                            base.current[axis].wrapping_add(distance),
+                            distance,
+                            self.projection,
+                            self.freedom,
                             self.backward_compatibility,
                         );
+                        p.original = p.current;
                     }
+                    let current = projected_distance(p.current, base.current, self.projection);
+                    move_point(
+                        p,
+                        distance.wrapping_sub(current),
+                        self.projection,
+                        self.freedom,
+                        self.backward_compatibility,
+                    );
                     self.reference[1] = self.reference[0];
                     self.reference[2] = index;
                     if op == 0x3b {
                         self.reference[0] = index;
+                    }
+                }
+                0x27 => {
+                    let second = usize::from(stack.pop().ok_or(Error::StackUnderflow)? as u16);
+                    let first = usize::from(stack.pop().ok_or(Error::StackUnderflow)? as u16);
+                    let [z0, z1, _] = self.zones.map(usize::from);
+                    let Some((a, b)) = self.points[z0].get(second).zip(self.points[z1].get(first))
+                    else {
+                        continue;
+                    };
+                    let distance = projected_distance(a.current, b.current, self.projection) / 2;
+                    move_point(
+                        &mut self.points[z1][first],
+                        distance,
+                        self.projection,
+                        self.freedom,
+                        self.backward_compatibility,
+                    );
+                    move_point(
+                        &mut self.points[z0][second],
+                        distance.wrapping_neg(),
+                        self.projection,
+                        self.freedom,
+                        self.backward_compatibility,
+                    );
+                }
+                0x3c => {
+                    let count = usize::from(core::mem::replace(&mut self.loop_count, 1));
+                    let Some(start) = stack.len().checked_sub(count) else {
+                        continue;
+                    };
+                    let [z0, z1, _] = self.zones.map(usize::from);
+                    for index in stack.drain(start..).rev() {
+                        let Some(base) = self.points[z0]
+                            .get(usize::from(self.reference[0]))
+                            .map(|p| p.current)
+                        else {
+                            break;
+                        };
+                        if let Some(point) = self.points[z1].get_mut(usize::from(index as u16)) {
+                            let distance = projected_distance(point.current, base, self.projection);
+                            move_point(
+                                point,
+                                distance.wrapping_neg(),
+                                self.projection,
+                                self.freedom,
+                                self.backward_compatibility,
+                            );
+                        }
                     }
                 }
                 0x29 => {
@@ -1107,17 +1248,19 @@ impl Interpreter {
                     let index = stack.pop().ok_or(Error::StackUnderflow)? as u16;
                     let zone = usize::from(self.zones[0]);
                     if let Some(point) = self.points[zone].get_mut(usize::from(index)) {
-                        let axis = usize::from(self.projection[0] == 0);
-                        if self.freedom[axis] != 0 {
-                            if op == 0x2f
-                                && !native
-                                && (self.backward_compatibility == 0
-                                    || (axis == 1 && self.backward_compatibility != 7))
-                            {
-                                point.current[axis] = self.rounding.apply(point.current[axis]);
-                            }
-                            point.touched[axis] = true;
-                        }
+                        let delta = if op == 0x2f && !native {
+                            let current = project(point.current, self.projection);
+                            self.rounding.apply(current).wrapping_sub(current)
+                        } else {
+                            0
+                        };
+                        move_point(
+                            point,
+                            delta,
+                            self.projection,
+                            self.freedom,
+                            self.backward_compatibility,
+                        );
                         self.reference[..2].fill(index);
                     }
                 }
@@ -1182,6 +1325,33 @@ impl Interpreter {
                                 project(point.current, self.projection)
                             }
                         });
+                }
+                op @ (0x49 | 0x4a) => {
+                    let second = stack.pop().ok_or(Error::StackUnderflow)? as u16;
+                    let first = stack.last_mut().ok_or(Error::StackUnderflow)?;
+                    let [z0, z1, _] = self.zones.map(usize::from);
+                    let pair = self.points[z0]
+                        .get(usize::from(*first as u16))
+                        .zip(self.points[z1].get(usize::from(second)));
+                    *first = pair.map_or(0, |(a, b)| {
+                        let (left, right, vector, scale) = if op == 0x49 {
+                            (a.current, b.current, self.projection, 65536)
+                        } else if z0 == 0 || z1 == 0 {
+                            (a.original, b.original, self.dual_projection, 65536)
+                        } else {
+                            (
+                                a.unscaled,
+                                b.unscaled,
+                                self.dual_projection,
+                                if self.composite { 65536 } else { self.scale },
+                            )
+                        };
+                        let delta = [
+                            left[0].wrapping_sub(right[0]),
+                            left[1].wrapping_sub(right[1]),
+                        ];
+                        sofel_font::read::cff::ft::mul_fix(project(delta, vector), scale)
+                    });
                 }
                 0x48 => {
                     let coordinate = stack.pop().ok_or(Error::StackUnderflow)?;
@@ -2077,4 +2247,202 @@ fn adr0064_i1_v40_glyph_waiver_rounds_horizontal_on_the_fine_grid() {
         )
         .unwrap();
     assert_eq!(mono[0].current, [64, 0]);
+}
+
+#[test]
+fn adr0064_i1_md_uses_current_original_or_unscaled_points_and_selected_zones() {
+    let mut vm = Interpreter::new(0, &[], 131072);
+    let source = HintPoint {
+        current: [10, 20],
+        original: [30, 40],
+        unscaled: [50, 60],
+        ..HintPoint::default()
+    };
+    vm.points[0].push(source);
+    vm.points[1].extend([source, HintPoint::default()]);
+    vm.projection = [0, 16384];
+    vm.dual_projection = [-16384, 0];
+    for (op, zone, index, expected) in [
+        (0x49, 1, 1, 20),
+        (0x4a, 1, 1, -100),
+        (0x4a, 0, 1, -30),
+        (0x49, 1, 2, 0),
+    ] {
+        vm.zones[0] = zone;
+        let mut stack = alloc::vec![0, index];
+        vm.execute(&[op], &mut stack, 2).unwrap();
+        assert_eq!(stack, [expected]);
+    }
+}
+
+#[test]
+fn adr0064_i1_line_vectors_use_zones_rotation_and_original_positions() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    vm.zones = [1, 0, 1];
+    vm.points[0].push(HintPoint {
+        current: [3, 4],
+        original: [0, 4],
+        ..HintPoint::default()
+    });
+    vm.points[1].push(HintPoint::default());
+    for (op, expected) in [
+        (0x06, [9830, 13107]),
+        (0x07, [-13107, 9830]),
+        (0x08, [9830, 13107]),
+        (0x09, [-13107, 9830]),
+        (0x86, [9830, 13107]),
+        (0x87, [-13107, 9830]),
+    ] {
+        vm.execute(&[op], &mut alloc::vec![0, 0], 2).unwrap();
+        if matches!(op, 0x08 | 0x09) {
+            assert_eq!(vm.freedom, expected);
+        } else {
+            assert_eq!(vm.projection, expected);
+            assert_eq!(
+                vm.dual_projection,
+                match op {
+                    0x86 => [0, 16384],
+                    0x87 => [-16384, 0],
+                    _ => expected,
+                }
+            );
+        }
+    }
+    vm.points[0][0].original = [0, 0];
+    vm.execute(&[0x87], &mut alloc::vec![0, 0], 2).unwrap();
+    assert_eq!(vm.dual_projection, [16384, 0]);
+    assert_eq!(vm.projection, [9830, 13107]);
+}
+
+#[test]
+fn adr0064_i1_alignpts_and_alignrp_move_selected_points_and_reset_loop() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    vm.zones = [0, 1, 1];
+    vm.points[0].push(HintPoint {
+        current: [15, 5],
+        ..HintPoint::default()
+    });
+    vm.points[1].resize(3, HintPoint::default());
+    vm.execute(&[0x27], &mut alloc::vec![0, 0], 2).unwrap();
+    assert_eq!(vm.points[0][0].current, [8, 5]);
+    assert_eq!(vm.points[1][0].current, [7, 0]);
+    vm.loop_count = 3;
+    let mut stack = alloc::vec![77, 1, 99, 2];
+    vm.execute(&[0x3c], &mut stack, 4).unwrap();
+    assert_eq!(vm.loop_count, 1);
+    assert_eq!(stack, [77]);
+    for point in &vm.points[1][1..] {
+        assert_eq!(point.current, [8, 0]);
+        assert_eq!(point.touched, [true, false]);
+    }
+}
+
+#[test]
+fn adr0064_i1_ip_projects_original_and_current_ranges_before_moving() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    vm.points[1].extend([
+        HintPoint::default(),
+        HintPoint {
+            unscaled: [0, 100],
+            current: [60, 80],
+            ..HintPoint::default()
+        },
+        HintPoint {
+            unscaled: [0, 50],
+            current: [0, 0],
+            ..HintPoint::default()
+        },
+    ]);
+    vm.reference = [0, 0, 1];
+    vm.dual_projection = [0, 16384];
+    vm.projection = [9830, 13107];
+    vm.freedom = vm.projection;
+    vm.execute(&[0x39], &mut alloc::vec![2], 1).unwrap();
+    assert_eq!(vm.points[1][2].current, [30, 40]);
+    assert_eq!(vm.points[1][2].touched, [true, true]);
+}
+
+#[test]
+fn adr0064_i1_mdap_and_msirp_move_in_the_projected_direction() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    vm.projection = [9830, 13107];
+    vm.freedom = vm.projection;
+    vm.points[1].push(HintPoint {
+        current: [30, 40],
+        ..HintPoint::default()
+    });
+    vm.execute(&[0x2f], &mut alloc::vec![0], 1).unwrap();
+    assert_eq!(vm.points[1][0].current, [38, 51]);
+    assert_eq!(vm.points[1][0].touched, [true, true]);
+    vm.points[0].push(HintPoint::default());
+    vm.zones[1] = 0;
+    vm.execute(&[0x3b], &mut alloc::vec![0, 100], 2).unwrap();
+    assert_eq!(vm.points[0][0].original, [60, 80]);
+    assert_eq!(vm.points[0][0].current, [98, 131]);
+    assert_eq!(vm.points[0][0].touched, [true, true]);
+}
+
+#[test]
+fn adr0064_i1_zone_shift_excludes_reference_and_phantoms_and_preserves_tags() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    vm.points[1].resize(7, HintPoint::default());
+    vm.points[0].resize(2, HintPoint::default());
+    vm.points[1][1].current = [30, 40];
+    vm.reference[2] = 1;
+    vm.projection = [9830, 13107];
+    vm.freedom = vm.projection;
+    vm.execute(&[0x36], &mut alloc::vec![1], 1).unwrap();
+    for (i, p) in vm.points[1].iter().enumerate() {
+        assert_eq!(p.current, if i < 3 { [30, 40] } else { [0, 0] });
+        assert_eq!(p.touched, [false, false]);
+    }
+    vm.reference[1] = 1;
+    vm.execute(&[0x37], &mut alloc::vec![0], 1).unwrap();
+    assert!(
+        vm.points[0]
+            .iter()
+            .all(|p| p.current == [30, 40] && p.touched == [false, false])
+    );
+}
+
+#[test]
+fn adr0064_i1_shp_and_shc_shift_both_axes_with_diagonal_freedom() {
+    for op in [0x32, 0x33, 0x34, 0x35] {
+        let mut vm = Interpreter::new(0, &[], 65536);
+        vm.points[1].resize(3, HintPoint::default());
+        vm.points[1][0].current = [30, 40];
+        vm.contour_ends.push(2);
+        vm.projection = [9830, 13107];
+        vm.freedom = vm.projection;
+        vm.execute(&[op], &mut alloc::vec![if op < 0x34 { 1 } else { 0 }], 1)
+            .unwrap();
+        assert_eq!(vm.points[1][1].current, [30, 40]);
+        assert_eq!(vm.points[1][1].touched, [true, true]);
+        assert_eq!(vm.points[1][0].touched, [false, false]);
+        assert_eq!(vm.points[1][2].touched, [op >= 0x34; 2]);
+    }
+}
+
+#[test]
+fn adr0064_i1_shpix_uses_freedom_and_consumes_loop_indices() {
+    for (compat, twilight, touched, expected) in [
+        (0, false, false, [-60, -80]),
+        (4, false, false, [0, 0]),
+        (4, false, true, [0, -80]),
+        (4, true, false, [0, -80]),
+        (7, true, false, [0, 0]),
+    ] {
+        let mut vm = Interpreter::new(0, &[], 65536);
+        vm.points[1].resize(2, HintPoint::default());
+        vm.points[1][1].touched[1] = touched;
+        vm.zones[0] = u8::from(!twilight);
+        vm.backward_compatibility = compat;
+        vm.freedom = [9830, 13107];
+        vm.loop_count = 2;
+        let mut stack = alloc::vec![77, 1, 99, -100];
+        vm.execute(&[0x38], &mut stack, 4).unwrap();
+        assert_eq!(vm.points[1][1].current, expected);
+        assert_eq!(vm.loop_count, 1);
+        assert_eq!(stack, [77]);
+    }
 }

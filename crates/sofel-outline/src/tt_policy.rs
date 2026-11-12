@@ -91,8 +91,9 @@ pub(super) fn tricky(font: &Font<'_>) -> bool {
         if lengths != id.map(|(_, len)| len) {
             return false;
         }
-        let actual =
-            sums.get_or_insert_with(|| tags.map(|tag| checksum(tag, font.table(tag))));
+        let actual = sums.get_or_insert_with(|| {
+            tags.map(|tag| checksum(tag, font.table(tag).unwrap_or_default()))
+        });
         *actual == id.map(|(sum, _)| sum)
     })
 }
