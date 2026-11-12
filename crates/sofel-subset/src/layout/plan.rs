@@ -176,13 +176,13 @@ fn substitutions(fv: Option<FeatureVariations<'_>>) -> Vec<Vec<(u32, D<'_>)>> {
 }
 
 /// The FeatureVariations record that applies when every axis is pinned
-/// to its default (`collect_feature_substitutes_with_variations` with
+/// to its requested location (`collect_feature_substitutes_with_variations` with
 /// `all_axes_pinned`): the first record whose conditions all hold at the
-/// normalized location 0. Only conditions of format 1 (axis ranges) are
+/// normalized location. Only conditions of format 1 (axis ranges) are
 /// evaluated by this version.
 fn applied_record(
     fv: Option<FeatureVariations<'_>>,
-    axis_count: usize,
+    coords: &[i32],
 ) -> Result<Option<usize>, &'static str> {
     let Some(fv) = fv else {
         return Ok(None);
@@ -201,7 +201,10 @@ fn applied_record(
                         "pinning FeatureVariations conditions other than format 1 (deferred by ADR 0022)",
                     );
                 };
-                if usize::from(axis) >= axis_count || min > 0 || max < 0 {
+                if coords
+                    .get(usize::from(axis))
+                    .is_none_or(|&coord| coord < i32::from(min) || coord > i32::from(max))
+                {
                     applies = false;
                     break;
                 }
@@ -219,11 +222,11 @@ fn applied_record(
 fn pinned_substitutes(
     t: Gsubgpos<'_>,
     features: &BitSet,
-    axis_count: usize,
+    coords: &[i32],
 ) -> Result<BTreeMap<u32, usize>, &'static str> {
     let fv = t.feature_variations_view();
     let mut out = BTreeMap::new();
-    if let Some(i) = applied_record(fv, axis_count)? {
+    if let Some(i) = applied_record(fv, coords)? {
         let subs = fv
             .and_then(|f| f.record(u32::try_from(i).ok()?))
             .and_then(|r| r.substitutions().ok().flatten());
@@ -246,12 +249,12 @@ fn pinned_substitutes(
 }
 
 /// The axes pinned for a layout plan: `None` without pinning, else the
-/// number of axes of `fvar`.
-pub(crate) type Pinned = Option<usize>;
+/// normalized 2.14 coordinates in fvar axis order.
+pub(crate) type Pinned<'a> = Option<&'a [i32]>;
 
 /// `_closure_glyphs_lookups_features`: what to keep of GSUB or GPOS;
 /// for GSUB also grows `glyphs` by the substitution closure. With every
-/// axis pinned to its default, FeatureVariations is evaluated there and
+/// axis pinned, FeatureVariations is evaluated there and
 /// its substitutes replace the features.
 pub(crate) fn closure_glyphs_lookups_features(
     t: Gsubgpos<'_>,
@@ -260,7 +263,7 @@ pub(crate) fn closure_glyphs_lookups_features(
     layout_features: &RangeSet,
     layout_scripts: &RangeSet,
     glyphs: &mut BitSet,
-    pinned: Pinned,
+    pinned: Pinned<'_>,
 ) -> LayoutPlan {
     // _collect_layout_indices
     let feature_tags: Vec<u32> = (0..t.feature_count()).map(|i| t.feature_tag(i)).collect();

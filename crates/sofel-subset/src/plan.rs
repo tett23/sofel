@@ -327,11 +327,20 @@ impl Plan {
                 .contains(Tag::new(b"glyf").to_u32())
             && font.table(Tag::new(b"CFF2")).is_none();
         let needs_rebase = |tag: &&[u8; 4]| {
-            !(pinned_glyf && matches!(*tag, b"HVAR" | b"VVAR"))
-                && !(norm.all_axes_pinned && **tag == *b"cvar")
-                && (!inert_gvar || (**tag != *b"gvar" && **tag != *b"GVAR"))
-                && !((avar2_range || single_pin) && **tag == *b"gvar")
-                && font.table(Tag::new(tag)).is_some()
+            let handled = match *tag {
+                b"GSUB" => {
+                    norm.all_axes_pinned
+                        && !input
+                            .set(SetKind::NoSubsetTables)
+                            .contains(Tag::new(tag).to_u32())
+                }
+                b"HVAR" | b"VVAR" => pinned_glyf,
+                b"cvar" => norm.all_axes_pinned,
+                b"gvar" => inert_gvar || avar2_range || single_pin,
+                b"GVAR" => inert_gvar,
+                _ => false,
+            };
+            !handled && font.table(Tag::new(tag)).is_some()
         };
         let no_other_varc_rebase = !other_variation_tags.iter().any(|tag| {
             needs_rebase(tag) && (**tag != *b"gvar" || !drop.contains(Tag::new(tag).to_u32()))
@@ -515,7 +524,7 @@ impl Plan {
         let table =
             |t: &[u8; 4], gsub: bool| Gsubgpos::new(font.table(Tag::new(t)).unwrap_or(&[]), gsub);
         let no_closure = flags.has(Flags::NO_LAYOUT_CLOSURE);
-        let pinned_axes = pinned.then_some(p.var.n.axis_tags.len());
+        let pinned_axes = pinned.then_some(p.var.n.normalized_coords.as_slice());
         if tag_kept(b"GSUB") {
             p.layout.gsub = layout::plan::closure_glyphs_lookups_features(
                 table(b"GSUB", true),
