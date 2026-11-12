@@ -124,7 +124,7 @@ cargo run --release --bin sofel-render -- --ppem 48 --color --char U+1F600 emoji
 
 ### `sofel-shape`
 
-HarfBuzz 15.1.0の `hb-shape` と同じオプションと出力で文字列を形にする（[ADR 0020](docs/adr/0020-shaping-foundation.md)）。文字列は行ごとに形にし、1行に1行を書く。
+HarfBuzz 15.1.0の `hb-shape` と同じオプションと出力で文字列を形にする（[ADR 0020](docs/adr/0020-shaping-foundation.md)）。文字列は行ごとに形にし、1行に1行を書く。シェーピングでは、読み取れるフォントヘッダーがない場合も 1 em を 1000 単位として置換と位置調整を行う。
 
 ```sh
 cargo run --release --bin sofel-shape -- font.ttf 'Hello'
