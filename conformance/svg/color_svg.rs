@@ -35,13 +35,18 @@ const GLYPH26: [[u8; 4]; 7] = [
     [0, 0, 0, 0],
 ];
 
-/// Checks the exact pixels written by sofel-render for one reference glyph.
-pub fn check_cli_pixels(glyph: u32, pam: &[u8]) -> Result<(), String> {
+/// Fixed baseline coordinates and straight RGBA for the two reference glyphs.
+pub fn samples(glyph: u32) -> Result<impl Iterator<Item = ((i32, i32), [u8; 4])>, String> {
     let expected = match glyph {
         19 => GLYPH19,
         26 => GLYPH26,
         _ => return Err(format!("no color-svg reference for glyph {glyph}")),
     };
+    Ok(POSITIONS.into_iter().zip(expected))
+}
+
+/// Checks the exact pixels written by sofel-render for one reference glyph.
+pub fn check_cli_pixels(glyph: u32, pam: &[u8]) -> Result<(), String> {
     if !pam.starts_with(b"P7\n") {
         return Err(format!("glyph {glyph}: expected RGBA PAM"));
     }
@@ -77,7 +82,7 @@ pub fn check_cli_pixels(glyph: u32, pam: &[u8]) -> Result<(), String> {
     if width.checked_mul(rows).and_then(|n| n.checked_mul(4)) != Some(pixels.len()) {
         return Err("PAM pixel count does not match its dimensions".into());
     }
-    for ((x, y), rgba) in POSITIONS.into_iter().zip(expected) {
+    for ((x, y), rgba) in samples(glyph)? {
         let col = usize::try_from(i64::from(x) - i64::from(left))
             .ok()
             .filter(|&col| col < width);
