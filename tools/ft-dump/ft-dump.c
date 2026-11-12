@@ -390,7 +390,7 @@ static void dump_outlines(FT_Face face, int unscaled, int ppem,
   }
 }
 
-static void dump_rasters(FT_Face face, int ppem)
+static void dump_rasters(FT_Face face, int ppem, FT_Render_Mode mode)
 {
   FT_Long g;
 
@@ -406,7 +406,7 @@ static void dump_rasters(FT_Face face, int ppem)
     printf("glyph %ld\n", (long)g);
     error = FT_Load_Glyph(face, (FT_UInt)g, FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP);
     if (error == 0)
-      error = FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
+      error = FT_Render_Glyph(face->glyph, mode);
     if (error != 0) {
       printf("error %d\n", (int)error);
       continue;
@@ -1083,7 +1083,8 @@ static int outlines(const char *size, const char *path, int raster, const char *
     if (raster == 2)
       dump_color_rasters(face, ppem);
     else if (raster)
-      dump_rasters(face, ppem);
+      dump_rasters(face, ppem, raster == 3 ? FT_RENDER_MODE_LCD :
+                               raster == 4 ? FT_RENDER_MODE_LCD_V : FT_RENDER_MODE_NORMAL);
     else
       dump_outlines(face, unscaled, ppem, plan ? selected + begin : NULL, cursor - begin);
     printf("end\n");
@@ -1631,6 +1632,10 @@ int main(int argc, char **argv)
     return outlines(argv[2], argv[3], 0, argv[4], argv[5]);
   if (argc == 4 && strcmp(argv[1], "--raster") == 0)
     return outlines(argv[2], argv[3], 1, NULL, NULL);
+  if (argc == 5 && strcmp(argv[1], "--raster") == 0 && strcmp(argv[3], "--lcd") == 0)
+    return outlines(argv[2], argv[4], 3, NULL, NULL);
+  if (argc == 5 && strcmp(argv[1], "--raster") == 0 && strcmp(argv[3], "--lcd-v") == 0)
+    return outlines(argv[2], argv[4], 4, NULL, NULL);
   if (argc == 5 && strcmp(argv[1], "--raster") == 0 && strcmp(argv[3], "--color") == 0)
     return outlines(argv[2], argv[4], 2, NULL, NULL);
   if (argc == 3 && strcmp(argv[1], "--cid") == 0)
@@ -1651,7 +1656,7 @@ int main(int argc, char **argv)
     argc = 2;
   }
   if (argc != 2) {
-    fprintf(stderr, "usage: ft-dump FILE | ft-dump --advances [--named-instance=N] [--variations=TAG=value,...] FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --sampled-outline SIZE FILE PLAN | ft-dump --sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...] | ft-dump --raster PPEM [--color] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --cff2-private FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
+    fprintf(stderr, "usage: ft-dump FILE | ft-dump --advances [--named-instance=N] [--variations=TAG=value,...] FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --sampled-outline SIZE FILE PLAN | ft-dump --sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...] | ft-dump --raster PPEM [--color|--lcd|--lcd-v] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --cff2-private FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
     return 2;
   }
   if (FT_Init_FreeType(&library) != 0) {

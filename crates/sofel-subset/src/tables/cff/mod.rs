@@ -1257,7 +1257,7 @@ pub(super) fn index(s: &mut Serializer, items: &[Vec<u8>], min_off_size: u32) ->
 }
 
 /// `CFFIndex::serialize` with a 32-bit count (CFF2) when `wide`.
-pub(super) fn index_n(
+pub(crate) fn index_n(
     s: &mut Serializer,
     items: &[Vec<u8>],
     min_off_size: u32,

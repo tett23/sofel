@@ -53,3 +53,15 @@ fn i2_partial_cases_fail_and_i3_results_repeat() {
     assert!(result.1.contains("missing expectation source"));
     assert_eq!(result, run(&missing_reference));
 }
+
+#[test]
+fn i2_separates_required_results_from_opentype_scope() {
+    let (_, report) = run(INVENTORY);
+    assert!(report.contains("required cases: "));
+    assert!(report.contains("OpenType 1.9.1 SVG requirements"));
+    assert!(report.contains(
+        "ot-glyph-id\tglyph-identifiers\tCASES\tin-document/shared-first,in-document/shared-second"
+    ));
+    assert!(report.contains("ot-animations\tanimations\tOUT OF SCOPE"));
+    assert!(report.contains("ot-current-color\tcolors\tUNDECIDED"));
+}
