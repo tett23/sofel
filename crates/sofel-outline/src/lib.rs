@@ -288,12 +288,11 @@ impl Context<'_, '_, '_> {
     }
 
     fn design_phantoms(&self, glyph: u32, x_min: i16, y_max: i16) -> [Point; 4] {
-        let left = i32::from(x_min)
-            - i32::from(
-                self.font
-                    .instance(self.location)
-                    .ft_left_side_bearing(GlyphId(glyph)),
-            );
+        let left = i32::from(x_min).wrapping_sub(i32::from(
+            self.font
+                .instance(self.location)
+                .ft_left_side_bearing(GlyphId(glyph)),
+        ));
         let instance = self.font.instance(self.location);
         let right = left.wrapping_add(i32::from(
             instance

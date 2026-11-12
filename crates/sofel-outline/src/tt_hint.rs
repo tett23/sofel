@@ -1,4 +1,16 @@
 //! TrueType bytecode execution (sofel ADR 0064).
+//! Based on the opcode handlers in FreeType's src/truetype/ttinterp.c.
+//! See THIRD_PARTY_NOTICES.md for the FreeType Project License.
+
+// Register banks and axes have fixed sizes. Variable-size zones are checked
+// before access; instruction-stack ranges are derived from available operands.
+// TrueType register and point-index conversions follow the driver integer widths.
+#![allow(
+    clippy::indexing_slicing,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
+#![cfg_attr(test, allow(clippy::unwrap_used))]
 
 #[cfg(test)]
 mod tests {
@@ -70,7 +82,11 @@ fn next<'a>(code: &mut &'a [u8]) -> Result<Instruction<'a>, Error> {
         0xb0..=0xbf => (usize::from(opcode & 7) + 1, rest),
         _ => (0, rest),
     };
-    let bytes = if words { count * 2 } else { count };
+    let bytes = if words {
+        count.saturating_mul(2)
+    } else {
+        count
+    };
     let (immediate, remaining) = rest.split_at_checked(bytes).ok_or(Error::CodeOverflow)?;
     *code = remaining;
     Ok(Instruction {
@@ -80,6 +96,7 @@ fn next<'a>(code: &mut &'a [u8]) -> Result<Instruction<'a>, Error> {
     })
 }
 
+#[allow(clippy::arithmetic_side_effects)]
 fn skip_block(code: &mut &[u8], stop_at_else: bool) -> Result<(), Error> {
     let mut depth = 0usize;
     loop {
@@ -110,6 +127,7 @@ enum Rounding {
 }
 
 impl Rounding {
+    #[allow(clippy::arithmetic_side_effects)]
     fn super_round(selector: i64, diagonal: bool) -> Self {
         let grid = if diagonal { 0x2d41 } else { 0x4000 };
         let period = match selector & 0xc0 {
@@ -130,6 +148,7 @@ impl Rounding {
         }
     }
 
+    #[allow(clippy::arithmetic_side_effects)]
     fn apply(&self, distance: i64) -> i64 {
         let magnitude = distance.wrapping_abs();
         let rounded = match self {
@@ -167,7 +186,6 @@ impl Rounding {
 enum HintTarget {
     Mono,
     Gray,
-    HorizontalLcd,
     VerticalLcd,
 }
 
@@ -182,6 +200,7 @@ struct EngineInfo {
 }
 
 impl EngineInfo {
+    #[allow(clippy::arithmetic_side_effects)]
     fn query(self, selector: i64) -> i64 {
         let subpixel = self.version == 40 && self.target != HintTarget::Mono;
         let mut result = if selector & 1 != 0 {
@@ -216,6 +235,7 @@ struct HintPoint {
     touched: [bool; 2],
 }
 
+#[allow(clippy::arithmetic_side_effects)]
 fn interpolate_contour(points: &mut [HintPoint], axis: usize) {
     let Some(first) = points.iter().position(|p| p.touched[axis]) else {
         return;
@@ -390,6 +410,7 @@ impl Interpreter {
         Ok(())
     }
 
+    #[allow(clippy::arithmetic_side_effects)]
     fn prepare(
         instance: sofel_font::var::Instance<'_, '_, '_, '_>,
         ppem: u16,
@@ -428,6 +449,7 @@ impl Interpreter {
         )
     }
 
+    #[allow(clippy::arithmetic_side_effects)]
     fn prepare_programs(
         maxima: sofel_font::read::maxp::TrueTypeMaxima,
         cvt: &[i32],
@@ -441,7 +463,7 @@ impl Interpreter {
         let limit = declared + (declared / 2).max(128);
         let twilight = (usize::from(maxima.max_twilight_points) + 4)
             .min(65535)
-            .min((2 * cvt.len()).max(30));
+            .min(cvt.len().saturating_mul(2).max(30));
         let mut vm = Self::new(maxima.max_storage, cvt, scale);
         vm.engine = engine;
         vm.points[0].resize(twilight, HintPoint::default());
@@ -614,6 +636,7 @@ impl Interpreter {
         self.execute_frame(code, stack, max_stack, 0, &mut 1_000_000)
     }
 
+    #[allow(clippy::arithmetic_side_effects)]
     fn execute_frame(
         &mut self,
         mut code: &[u8],
@@ -1000,7 +1023,11 @@ impl Interpreter {
                         .ok_or(Error::StackUnderflow)?;
                     stack[start..].rotate_left(1);
                 }
-                0x24 => push(stack, stack.len() as i64, max_stack)?,
+                0x24 => push(
+                    stack,
+                    i64::try_from(stack.len()).map_err(|_| Error::StackOverflow)?,
+                    max_stack,
+                )?,
                 0x25 | 0x26 => {
                     let index = stack.pop().ok_or(Error::StackUnderflow)?;
                     let start = usize::try_from(index)
