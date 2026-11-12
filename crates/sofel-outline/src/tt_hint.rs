@@ -431,6 +431,20 @@ impl Interpreter {
                     }
                     stack.truncate(first);
                 }
+                op @ (0x2e | 0x2f) => {
+                    let index = stack.pop().ok_or(Error::StackUnderflow)? as u16;
+                    let zone = usize::from(self.zones[0]);
+                    if let Some(point) = self.points[zone].get_mut(usize::from(index)) {
+                        let axis = usize::from(self.projection[0] == 0);
+                        if self.freedom[axis] != 0 {
+                            if op == 0x2f {
+                                point.current[axis] = self.rounding.apply(point.current[axis]);
+                            }
+                            point.touched[axis] = true;
+                        }
+                        self.reference[..2].fill(index);
+                    }
+                }
                 op @ (0x3e | 0x3f) => {
                     let cvt = stack.pop().ok_or(Error::StackUnderflow)?;
                     let index = stack.pop().ok_or(Error::StackUnderflow)? as u16;
@@ -1070,5 +1084,24 @@ fn adr0064_i1_gc_reads_original_and_current_scfs_updates_twilight() {
         )
         .unwrap();
         assert_eq!(stack, [13, 25, if zone == 0 { 11 } else { 13 }, 11]);
+    }
+}
+
+#[test]
+fn adr0064_i1_mdap_rounds_only_when_requested_and_sets_references() {
+    for (opcode, expected) in [(0x2e, 37), (0x2f, 64)] {
+        let mut vm = Interpreter::new(0, &[], 65536);
+        vm.points[1].resize(
+            2,
+            HintPoint {
+                current: [37, 9],
+                ..Default::default()
+            },
+        );
+        vm.execute(&[0xb0, 1, opcode], &mut alloc::vec::Vec::new(), 1)
+            .unwrap();
+        assert_eq!(vm.points[1][1].current, [expected, 9]);
+        assert_eq!(vm.points[1][1].touched, [true, false]);
+        assert_eq!(vm.reference, [1, 1, 0]);
     }
 }
