@@ -1075,6 +1075,33 @@ impl Interpreter {
                             }
                         });
                 }
+                op @ (0x49 | 0x4a) => {
+                    let second = stack.pop().ok_or(Error::StackUnderflow)? as u16;
+                    let first = stack.last_mut().ok_or(Error::StackUnderflow)?;
+                    let [z0, z1, _] = self.zones.map(usize::from);
+                    let pair = self.points[z0]
+                        .get(usize::from(*first as u16))
+                        .zip(self.points[z1].get(usize::from(second)));
+                    *first = pair.map_or(0, |(a, b)| {
+                        let (left, right, vector, scale) = if op == 0x49 {
+                            (a.current, b.current, self.projection, 65536)
+                        } else if z0 == 0 || z1 == 0 {
+                            (a.original, b.original, self.dual_projection, 65536)
+                        } else {
+                            (
+                                a.unscaled,
+                                b.unscaled,
+                                self.dual_projection,
+                                if self.composite { 65536 } else { self.scale },
+                            )
+                        };
+                        let delta = [
+                            left[0].wrapping_sub(right[0]),
+                            left[1].wrapping_sub(right[1]),
+                        ];
+                        sofel_font::read::cff::ft::mul_fix(project(delta, vector), scale)
+                    });
+                }
                 0x48 => {
                     let coordinate = stack.pop().ok_or(Error::StackUnderflow)?;
                     let index = stack.pop().ok_or(Error::StackUnderflow)? as u16;
@@ -1923,5 +1950,31 @@ fn adr0064_i1_scfs_moves_along_freedom_and_marks_each_moved_axis() {
         vm.execute(&[0x48], &mut alloc::vec![0, 100], 2).unwrap();
         assert_eq!(vm.points[1][0].current, expected);
         assert_eq!(vm.points[1][0].touched, touched);
+    }
+}
+
+#[test]
+fn adr0064_i1_md_uses_current_original_or_unscaled_points_and_selected_zones() {
+    let mut vm = Interpreter::new(0, &[], 131072);
+    let source = HintPoint {
+        current: [10, 20],
+        original: [30, 40],
+        unscaled: [50, 60],
+        ..HintPoint::default()
+    };
+    vm.points[0].push(source);
+    vm.points[1].extend([source, HintPoint::default()]);
+    vm.projection = [0, 16384];
+    vm.dual_projection = [-16384, 0];
+    for (op, zone, index, expected) in [
+        (0x49, 1, 1, 20),
+        (0x4a, 1, 1, -100),
+        (0x4a, 0, 1, -30),
+        (0x49, 1, 2, 0),
+    ] {
+        vm.zones[0] = zone;
+        let mut stack = alloc::vec![0, index];
+        vm.execute(&[op], &mut stack, 2).unwrap();
+        assert_eq!(stack, [expected]);
     }
 }
