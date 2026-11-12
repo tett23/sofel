@@ -190,6 +190,8 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 ## 輪郭（`sofel-outline`）
 
+- `Outlines::load_truetype_mono` は指定した ppem で TrueType の単純グリフと複合グリフを読み、v35 のモノクロ用ヒンティングを適用する。フォントプログラムと準備プログラムを実行し、グリフ命令が更新した輪郭を `Scratch::points` で返す。複合グリフでは、各成分にヒンティングを適用して配置した後、複合グリフ自身の命令を実行する。未対応の命令は `InvalidOutline` を返す（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
+
 - glyfと `GLYF` の単純なグリフと合成グリフの輪郭を、ヒンティングをせずに、FreeTypeと同じ座標で `Pen` に渡す（[ADR 0011](adr/0011-glyf-outlines.md)）。`GLYF` があれば `GLYF` と `LOCA` を使い、そのときだけフラグ0x80を三次曲線、0x2000を24bitの成分のグリフIDとして扱う。
 - 倍率は `FT_Set_Pixel_Sizes` と同じく `div_fix(ppem << 6, unitsPerEm)` で、点は `mul_fix` で拡大縮小し、丸めない。locaの解釈と合成の位置の計算はFreeTypeに合わせる。
 - 作業領域（`Scratch`）は呼び出し側が持つ。
@@ -322,6 +324,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   - `color_formats`、`glyph_color_format`（塗りの木をたどらない。`v1_fits` も見ない）、`layers`、`svg_document` を持つ。
   - 生の塗りの木（`base_paint`、`PaintRef`、`clip_box`、`layer_paint`）は、FreeTypeの `FT_Get_Color_Glyph_Paint` などと同じ値を返す。基本のグリフの探索はFreeTypeの二分探索による。
 - `sofel-bitmap`：`strikes` はFreeTypeの `available_sizes`（CBLC、EBLC、`bloc`、sbixの順に最初の表、ppemが0のストライクは除く）、`match_strike` は `FT_Match_Size`、`choose_strike` はHarfBuzzの選び方（`max(x, y)` が要求以上で最小、無ければ最大、0は最大）、`glyph_bitmap` はFreeTypeの読み込み（sbixの `dupe` と `flip` を4回まで）で画像のデータとメトリクスを返す。PNGを塗るための `cbdt_png`、`sbix_png` とその箱はHarfBuzzの読み方（CBDTは索引の形式1と3、画像の形式17と18、sbixは `dupe` を8回まで）による。
+- `Rasterizer::render_mono` と C の `sofel_rasterizer_render_mono` は、輪郭をモノクロで描く。各行は上から順に並び、左端の画素が最初のバイトの最上位ビットに対応する。行のバイト数は幅を8で割って切り上げた値である。`sofel_cli::glyph::render_mono` は、ヒンティングなしの TrueType 輪郭を画素中心に合わせて移動し、暗黙の点を求めてから描く（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
 - `Instance::ft_control_values` と C の `sofel_font_ft_control_values` は、指定した軸位置の `cvar` 差分を `cvt ` 表に適用し、ピクセルサイズで拡大縮小する前の制御値を 26.6 形式で返す（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
 - `Rasterizer::render_harmony` と C の `sofel_rasterizer_render_harmony` は、記録した輪郭を FreeType Harmony の既定 RGB 配置で描く。フィルタを使う構成では、`render_filtered_lcd` と C の `sofel_rasterizer_render_filtered_lcd` が5個の重みを受け取り、中央の重みが0ならフィルタを無効にする。水平 LCD の幅と垂直 LCD の行数はサブピクセル単位で、カバレッジは上の行からパディングなしで返す（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
 - `sofel-bitmap` の `bitmap_layout` と `draw_bitmap` は、EBDT、CBDT、`bdat` の画像の形式1、2、5、6、7と成分の形式8、9を、1、2、4、8、32bitの深さで、FreeTypeの `tt_sbit_decoder_load_image`（索引の形式1〜5、形式2と7のバイト単位とビット単位の判定、成分のメトリクスの戻し方）と同じ画素とメトリクスにして、呼び出し側の領域（`pitch × rows` バイト、上の行から）に書く。32bitは `FT_LOAD_COLOR` と同じくBGRAのまま書く。CBDT と sbix の PNG はアルファ乗算済み BGRA に展開する。sbix の flip は各行を左右に反転し、単純輪郭を持つグリフでは FreeType の水平方向ロードに合わせて左サイドベアリングと輪郭の下端で原点を補正する（[ADR 0066](adr/0066-color-glyph-pixels.md)）。
@@ -378,7 +381,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 軸を指定しない HVAR と VVAR は、複数のItemVariationDataから残したグリフに対応する行と使う領域を詰め、全ての値が0の列を除いて書き出す。使わないItemVariationDataを除き、暗黙・明示の送り幅とサイドベアリングのマップを新しいグリフIDに合わせて書く（[ADR 0022](adr/0022-subsetting.md)）。 明示マップの末尾で複数のグリフが同じ行を参照する場合は、その最初の項目までを書き、残りは最後の値を繰り返して読む。空のサイドベアリングと縦の原点のマップは出力しない。
 - VARC のサブセット化（[ADR 0067](adr/0067-varc-components.md)）は、残す部品を再帰的に集め、グリフ ID と参照、条件、部品の軸座標、変化量ストアの番号を再配置する。VARC が参照しない1軸を既定値に固定し、gvar、GVAR、HVAR、VVAR、MVAR、cvar、CFF2、GDEF、GSUB、GPOS、BASE、MATH、COLR、STAT が存在しないか捨てられ、avar が版2でない場合は、残る軸の番号を書き直す。これらの表と avar が元のフォントにない場合は、非既定値への固定と範囲の指定でも VARC の軸番号を写す。参照される軸の固定と対象外の変化量表を持つフォントの部分軸固定は `Unsupported` とする。VARC を `NoSubsetTables` でそのまま写す場合は、`RETAIN_GIDS` を指定して軸を変えないことを要し、満たさなければ `Unsupported` とする。名前の表の上書きも `Unsupported` とする。
 - 軸を指定しない BASE 1.1 の ItemVariationStore は、残すスクリプトとフィーチャに属する横と縦の BaseCoord の VariationIndex を集め、使う行と領域だけを詰めて番号を振りなおす。参照が0件なら、HarfBuzzと同じくストアを除いて座標を残す。BaseValues、既定の MinMax、言語別とフィーチャ別の MinMax を調べ、壊れた参照はこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
-- 軸を指定しないGDEF 1.3のItemVariationStoreは、GSUBのFeatureVariationsが軸範囲の条件だけを持つ場合も含めて、残すLigCaretList、値の記録、アンカー、MATHの定数・斜体補正・上アクセント・カーニング・組み立てのVariationIndexに合わせて行と領域を詰めて書く。参照が0件ならストアを除く。GPOSの値の記録とアンカーをたどってVariationIndexを集める。送り幅などの値に現れる `0x8000` は参照に数えない。MATHとGDEFの一方だけをコピーして参照番号を合わせられない場合と、同じバイト列があるGPOSをそのままコピーする場合は拒否する。GDEFだけをコピーしてGPOSをサブセット化するとき、HarfBuzzと同じくGPOSの参照番号は詰めるが、GDEFのストアは元のバイト列のまま写す。壊れたGDEFはこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
+- 軸を指定しないGDEF 1.3のItemVariationStoreは、コピーするGSUBのFeatureVariationsがバージョン1.0で軸範囲の条件だけを持つ場合も含めて、残すLigCaretList、値の記録、アンカー、MATHの定数・斜体補正・上アクセント・カーニング・組み立てのVariationIndexに合わせて行と領域を詰めて書く。参照が0件ならストアを除く。GPOSの値の記録とアンカーをたどってVariationIndexを集める。送り幅などの値に現れる `0x8000` は参照に数えない。MATHだけをコピーして参照番号を合わせられない場合と、同じバイト列があるGPOSをそのままコピーする場合は拒否する。GDEFだけをコピーしてGPOSやMATHをサブセット化するとき、HarfBuzzと同じくそれらの参照番号を詰め、GDEFのストアは元のバイト列のまま写す。壊れたGDEFはこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
 - レイアウトの表のうち、FeatureVariationsを持つGSUBをそのままコピーする場合のGDEF、GSUBとGPOSの版1.2とGDEFの版1.4、FeatureVariationsの版1.1と形式1でない条件、65536を超えるグリフのフォントの24bitの形式も `Unsupported` とする。
 
 ## WOFF と圧縮フォントの読み込み

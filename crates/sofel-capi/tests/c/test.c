@@ -568,6 +568,10 @@ static void test_outlines(const sofel_font_t *font) {
     CHECK(same_commands(&rec, c->commands, c->len));
   }
 
+  CHECK(sofel_outline_load_truetype_mono(font, NULL, 1, 16, scratch, cbox, &overlap) == SOFEL_OK);
+  CHECK(cbox[0] <= cbox[2] && cbox[1] <= cbox[3]);
+  CHECK(sofel_outline_load_truetype_mono(NULL, NULL, 1, 16, scratch, cbox, &overlap) == SOFEL_ERROR_NULL);
+
   /* An offset and a multiplier. */
   CHECK(sofel_outline_load(font, NULL, 1, SOFEL_SCALE_FIXED, scale_cases[0].x_scale,
                            scale_cases[0].y_scale, scratch, cbox, &overlap) == SOFEL_OK);
@@ -679,6 +683,9 @@ static void test_raster(const sofel_font_t *font) {
     CHECK(memcmp(box, c->box, sizeof box) == 0);
     CHECK(memcmp(shift, c->shift, sizeof shift) == 0);
   }
+  CHECK(sofel_mono_pixel_box(-32, 33, 32, 95, box, shift) == SOFEL_OK);
+  CHECK(box[0] == -1 && box[1] == 2 && box[2] == 2 && box[3] == 1);
+  CHECK(shift[0] == 64 && shift[1] == -64);
   CHECK(sofel_pixel_box(0, 0, 64, 64, NULL, shift) == SOFEL_ERROR_NULL);
   CHECK(sofel_pixel_box(0, 0, 64, 64, box, NULL) == SOFEL_ERROR_NULL);
 
@@ -697,6 +704,14 @@ static void test_raster(const sofel_font_t *font) {
   }
   draw_shape(r);
   {
+    CHECK(sofel_rasterizer_render_mono(r, SOFEL_MONO_HIGH_PRECISION, 0, 0, NULL, 0, &len, box) ==
+          SOFEL_ERROR_BUFFER_TOO_SMALL);
+    CHECK(sofel_rasterizer_render_mono(r, SOFEL_MONO_HIGH_PRECISION, 0, 0, buf, sizeof buf, &len, box) == SOFEL_OK);
+    CHECK(len > 0 && len == ((size_t)box[2] + 7) / 8 * (size_t)box[3]);
+    CHECK(sofel_rasterizer_render_mono(r, 32, 0, 0, buf, sizeof buf, &len, box) == SOFEL_ERROR_INVALID_ARGUMENT);
+    CHECK(sofel_rasterizer_render_mono_placed(r, -1, 2, 9, 2, 0, 0, 0,
+                                              buf, sizeof buf, &len, box) == SOFEL_OK);
+    CHECK(len == 4 && box[0] == -1 && box[1] == 2 && box[2] == 9 && box[3] == 2);
     const uint8_t weights[5] = {8, 77, 86, 77, 8};
     CHECK(sofel_rasterizer_render_filtered_lcd(r, 0, SOFEL_LCD_HORIZONTAL, weights, 0, 0,
                                                buf, sizeof buf, &len, box) == SOFEL_OK);
