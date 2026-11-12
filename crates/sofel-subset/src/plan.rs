@@ -195,8 +195,9 @@ fn layout_unsupported(
             // reference GDEF. A copied GSUB bypasses that writer.
             table.version() >= 0x0001_0001
                 && sofel_font::read::be::u32_at(d, 10) != Some(0)
-                && (no_subset.contains(Tag::new(b"GSUB").to_u32())
-                    || table.feature_variations_view().is_none())
+                && (table.feature_variations_view().is_none()
+                    || (no_subset.contains(Tag::new(b"GSUB").to_u32())
+                        && !table.has_only_axis_range_conditions()))
         });
     // A VariationIndex Device necessarily contains the format word 0x8000.
     // Scan the whole retained table so an unknown or malformed subtable

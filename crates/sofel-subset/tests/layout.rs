@@ -1012,6 +1012,15 @@ fn adr0022_gsub_axis_range_can_survive_gdef_store_subsetting() {
     gsub.extend(fv);
     let data = font_with(vec![(b"GDEF", gdef), (b"GSUB", gsub)]);
     let font = Font::new(&data, 0).unwrap();
+    let copied = chars("ABC").map_set(SetKind::NoSubsetTables, |set| {
+        set.add(Tag::new(b"GSUB").to_u32());
+    });
+    let copied_out = subset(&font, &copied).unwrap();
+    assert_eq!(out_table(&copied_out, b"GSUB"), out_table(&data, b"GSUB"));
+    assert_eq!(
+        &out_table(&copied_out, b"GDEF").unwrap()[..4],
+        &0x10000u32.to_be_bytes()
+    );
     let out = subset(&font, &chars("ABC")).unwrap();
     let gsub = out_table(&out, b"GSUB").unwrap();
     let offset = u32::from_be_bytes(gsub[10..14].try_into().unwrap()) as usize;
