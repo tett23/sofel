@@ -1014,18 +1014,18 @@ impl Interpreter {
                     let Some(p) = self.points[z1].get_mut(usize::from(index)) else {
                         continue;
                     };
-                    let axis = usize::from(self.projection[0] == 0);
                     if z1 == 0 {
-                        p.original = base.original;
-                        if self.freedom[axis] != 0 {
-                            p.original[axis] = base.original[axis].wrapping_add(distance);
-                        }
-                        p.current = p.original;
+                        p.current = base.original;
+                        move_point(p, distance, self.projection, self.freedom);
+                        p.original = p.current;
                     }
-                    if self.freedom[axis] != 0 {
-                        p.current[axis] = base.current[axis].wrapping_add(distance);
-                        p.touched[axis] = true;
-                    }
+                    let current = projected_distance(p.current, base.current, self.projection);
+                    move_point(
+                        p,
+                        distance.wrapping_sub(current),
+                        self.projection,
+                        self.freedom,
+                    );
                     self.reference[1] = self.reference[0];
                     self.reference[2] = index;
                     if op == 0x3b {
@@ -1094,13 +1094,13 @@ impl Interpreter {
                     let index = stack.pop().ok_or(Error::StackUnderflow)? as u16;
                     let zone = usize::from(self.zones[0]);
                     if let Some(point) = self.points[zone].get_mut(usize::from(index)) {
-                        let axis = usize::from(self.projection[0] == 0);
-                        if self.freedom[axis] != 0 {
-                            if op == 0x2f {
-                                point.current[axis] = self.rounding.apply(point.current[axis]);
-                            }
-                            point.touched[axis] = true;
-                        }
+                        let delta = if op == 0x2f {
+                            let current = project(point.current, self.projection);
+                            self.rounding.apply(current).wrapping_sub(current)
+                        } else {
+                            0
+                        };
+                        move_point(point, delta, self.projection, self.freedom);
                         self.reference[..2].fill(index);
                     }
                 }
@@ -2153,4 +2153,24 @@ fn adr0064_i1_ip_projects_original_and_current_ranges_before_moving() {
     vm.execute(&[0x39], &mut alloc::vec![2], 1).unwrap();
     assert_eq!(vm.points[1][2].current, [30, 40]);
     assert_eq!(vm.points[1][2].touched, [true, true]);
+}
+
+#[test]
+fn adr0064_i1_mdap_and_msirp_move_in_the_projected_direction() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    vm.projection = [9830, 13107];
+    vm.freedom = vm.projection;
+    vm.points[1].push(HintPoint {
+        current: [30, 40],
+        ..HintPoint::default()
+    });
+    vm.execute(&[0x2f], &mut alloc::vec![0], 1).unwrap();
+    assert_eq!(vm.points[1][0].current, [38, 51]);
+    assert_eq!(vm.points[1][0].touched, [true, true]);
+    vm.points[0].push(HintPoint::default());
+    vm.zones[1] = 0;
+    vm.execute(&[0x3b], &mut alloc::vec![0, 100], 2).unwrap();
+    assert_eq!(vm.points[0][0].original, [60, 80]);
+    assert_eq!(vm.points[0][0].current, [98, 131]);
+    assert_eq!(vm.points[0][0].touched, [true, true]);
 }

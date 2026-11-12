@@ -827,3 +827,21 @@ fn hinted_square(code: &[u8]) -> Scratch {
         .unwrap();
     scratch
 }
+
+#[test]
+fn adr0064_i1_diagonal_mdap_msirp_match_freetype_v35_outline() {
+    let scratch = hinted_square(&[
+        0x01, 0xb1, 1, 30, 0x48, 0x00, 0xb1, 1, 40, 0x48, 0xb1, 3, 4, 0x0a, 0x0e, 0xb0, 1, 0x2f,
+        0xb1, 2, 100, 0x3b,
+    ]);
+    assert_eq!(
+        scratch.points(),
+        &[
+            Point { x: 0, y: 0 },
+            Point { x: 38, y: 51 },
+            Point { x: 262, y: 8 },
+            Point { x: 1024, y: 0 }
+        ]
+    );
+    assert_eq!(scratch.point_tags(), &[5, 24, 24, 1]);
+}
