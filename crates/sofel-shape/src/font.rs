@@ -612,6 +612,12 @@ impl<'f, 'a, 'l, 's> ShapeFont<'f, 'a, 'l, 's> {
             },
         )
     }
+    pub(crate) fn h_origin(&self, glyph: u32) -> (i32, i32) {
+        self.subfont
+            .and_then(|font| font.horizontal_origin(glyph))
+            .unwrap_or((0, 0))
+    }
+
     /// `get_glyph_v_origin`.
     pub(crate) fn v_origin(&self, glyph: u32) -> (i32, i32) {
         let base = |scale: Scale, glyph: u32| {

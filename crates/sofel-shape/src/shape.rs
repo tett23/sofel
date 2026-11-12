@@ -687,11 +687,31 @@ pub fn shape_fallback(
     props: &ResolvedProperties,
     buffer: UnicodeBuffer,
 ) -> GlyphBuffer {
+    let extents = |g: GlyphId| instance.glyf_extents(g);
+    let sf = ShapeFont::new(instance, *scale, &extents, None);
+    fallback_with_font(&sf, props, buffer)
+}
+
+/// Shape without layout tables using a child font's functions and synthetic settings.
+pub fn shape_fallback_with_subfont<'f>(
+    instance: Instance<'f, '_, '_, '_>,
+    subfont: &'f SubFont<'f>,
+    props: &ResolvedProperties,
+    buffer: UnicodeBuffer,
+) -> GlyphBuffer {
+    let extents = |g: GlyphId| instance.glyf_extents(g);
+    let sf = ShapeFont::new(instance, subfont.scale(), &extents, Some(subfont));
+    fallback_with_font(&sf, props, buffer)
+}
+
+fn fallback_with_font(
+    sf: &ShapeFont<'_, '_, '_, '_>,
+    props: &ResolvedProperties,
+    buffer: UnicodeBuffer,
+) -> GlyphBuffer {
     let mut buf = buffer.buf;
     buf.direction = props.direction;
     buf.script = props.script;
-    let extents = |g: GlyphId| instance.glyf_extents(g);
-    let sf = ShapeFont::new(instance, *scale, &extents, None);
     let space = sf.nominal_glyph(0x20);
     buf.clear_positions();
     let direction = buf.direction;
@@ -708,6 +728,9 @@ pub fn shape_fallback(
         info.codepoint = sf.nominal_glyph(info.codepoint).unwrap_or(0);
         if direction.is_horizontal() {
             p.x_advance = sf.h_advance(info.codepoint);
+            let (x, y) = sf.h_origin(info.codepoint);
+            p.x_offset = x.wrapping_neg();
+            p.y_offset = y.wrapping_neg();
         } else {
             p.y_advance = sf.v_advance(info.codepoint);
             let (x, y) = sf.v_origin(info.codepoint);
