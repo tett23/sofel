@@ -287,6 +287,8 @@ pub struct ShapePlan<'a> {
     pub(crate) kern_mask: Mask,
     pub(crate) requested_kerning: bool,
     pub(crate) fallback_glyph_classes: bool,
+    pub(crate) morx: Option<Vec<crate::aat::Chain<'a>>>,
+    pub(crate) tracking: Option<sofel_font::read::trak::Trak<'a>>,
     pub(crate) apply_gpos: bool,
     pub(crate) apply_fallback_kern: bool,
     pub(crate) zero_marks: bool,
@@ -421,6 +423,19 @@ impl<'a> ShapePlan<'a> {
         let script_fallback_position = funcs.fallback_position;
         let adjust = !apply_gpos;
         let mut plan = ShapePlan {
+            morx: if (props.direction.is_horizontal() || !layout.gsub.has_data)
+                && features.is_empty()
+            {
+                font.table(Tag(*b"morx"))
+                    .and_then(|data| crate::aat::noncontextual_chains(data, font.num_glyphs()))
+            } else {
+                None
+            },
+            tracking: font
+                .table(Tag(*b"STAT"))
+                .and_then(|t| sofel_font::read::stat::Stat::new(t).ok())
+                .and_then(|_| font.table(Tag(*b"trak")))
+                .and_then(sofel_font::read::trak::Trak::new),
             fallback_glyph_classes: !layout.gdef.has_glyph_classes(),
             props,
             user_features: features.to_vec(),
