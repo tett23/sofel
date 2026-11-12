@@ -309,7 +309,7 @@ impl<'p> SubFont<'p> {
 
     /// Query a glyph's horizontal origin with parent delegation and scale conversion.
     pub fn horizontal_origin(&self, glyph: u32) -> Option<(i32, i32)> {
-        self.raw_h_origin(glyph, &|_, _| None)
+        self.raw_h_origin(glyph, &|_, _| Some((0, 0)))
             .map(|origin| self.synthetic_origin(origin))
     }
 
