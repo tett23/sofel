@@ -1110,7 +1110,7 @@ pub fn run_with_input(
         Ok(data) => data,
         Err(d) => return fail(err, format!("{} at byte {}", d.kind, d.offset)),
     };
-    let font = match Font::new(&data, o.face_index) {
+    let font = match Font::for_shaping(&data, o.face_index) {
         Ok(f) => f,
         Err(e) => {
             return fail(

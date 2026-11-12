@@ -416,6 +416,7 @@ fn substitute_pre(
         synthesize_glyph_classes(buffer);
     }
     if let Some(chains) = &plan.morx {
+        buffer.unsafe_to_concat_all();
         let horizontal = plan.props.direction.is_horizontal();
         for chain in chains {
             for table in &chain.substitutions {

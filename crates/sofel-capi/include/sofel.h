@@ -218,8 +218,16 @@ typedef struct sofel_font sofel_font_t;
 sofel_font_t *sofel_font_create(const uint8_t *data, size_t len, uint32_t index,
                                 int32_t *error);
 
+/* Opens a shaping face with the same buffer lifetime as sofel_font_create.
+ * A missing or unreadable header uses 1000 units per em.
+ * Rust: sofel_font::Font::for_shaping
+ * HarfBuzz: hb_face_create, hb_face_get_upem
+ */
+sofel_font_t *sofel_font_create_for_shaping(const uint8_t *data, size_t len,
+                                            uint32_t index, int32_t *error);
+
 /*
- * Frees a font made by sofel_font_create. Does nothing for NULL.
+ * Frees a font made by either font constructor. Does nothing for NULL.
  *
  * Rust: none
  * HarfBuzz: hb_font_destroy, hb_face_destroy

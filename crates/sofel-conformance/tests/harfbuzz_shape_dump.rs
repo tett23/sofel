@@ -595,9 +595,7 @@ fn shape_random_agrees_with_harfbuzz() {
         let data = std::fs::read(&path).unwrap();
         let mut lines = Vec::new();
         for (face, scripts) in parse_random(&dump) {
-            // Faces sofel does not open (no `head`, ADR 0010) are not
-            // compared.
-            let Ok(font) = Font::new(&data, face) else {
+            let Ok(font) = Font::for_shaping(&data, face) else {
                 continue;
             };
             let variable = font.var_axes().next().is_some();

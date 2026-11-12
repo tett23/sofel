@@ -485,34 +485,65 @@ fn adr0067_i1_varc_float_cff2_matches_harfbuzz() {
 
 #[test]
 fn adr0067_i2_unrelated_axis_pin_with_gvar_dropped_matches_harfbuzz() {
-    let path = paths::testdata().join("harfbuzz/test/api/fonts/varc-unrelated-axis.ttf");
-    let bytes = std::fs::read(&path).unwrap();
-    let font = Font::new(&bytes, 0).unwrap();
-    let input = Input::new()
-        .map_set(SetKind::Unicodes, |set| set.add(0xAC01))
-        .map_set(SetKind::DropTables, |set| {
-            set.add(Tag::new(b"gvar").to_u32())
-        })
-        .with_axis_pinned(Tag::new(b"DUMY"), 0.0, &font)
-        .unwrap();
-    let ours = subset(&font, &input).unwrap();
-    let reference = std::env::temp_dir().join(format!(
-        "sofel-varc-unrelated-pin-{}.ttf",
-        std::process::id()
-    ));
-    let output = ProcessCommand::new(paths::hb_dump())
-        .arg("--subset")
-        .arg(format!("--font-file={}", path.display()))
-        .arg("--unicodes=U+AC01")
-        .arg("--variations=DUMY=0")
-        .arg("--drop-tables+=gvar")
-        .arg(format!("--output-file={}", reference.display()))
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let expected = std::fs::read(&reference).unwrap();
-    assert_eq!(ours, expected);
-    let _ = std::fs::remove_file(reference);
+    for file in ["varc-unrelated-axis.ttf", "varc-unrelated-axis-avar2.ttf"] {
+        let path = paths::testdata().join("harfbuzz/test/api/fonts").join(file);
+        let bytes = std::fs::read(&path).unwrap();
+        let font = Font::new(&bytes, 0).unwrap();
+        let base = Input::new()
+            .map_set(SetKind::Unicodes, |set| set.add(0xAC01))
+            .map_set(SetKind::DropTables, |set| {
+                set.add(Tag::new(b"gvar").to_u32())
+            });
+        let axis = Tag::new(b"DUMY");
+        for (variation, input) in [
+            ("0", base.with_axis_pinned(axis, 0.0, &font)),
+            ("0.5", base.with_axis_pinned(axis, 0.5, &font)),
+            (
+                "0:0.5:1",
+                base.with_axis_range(axis, Some(0.0), Some(1.0), Some(0.5), &font),
+            ),
+            (
+                "-1:0.5:1",
+                base.with_axis_range(axis, Some(-1.0), Some(1.0), Some(0.5), &font),
+            ),
+            (
+                "-0.75:0:0.75",
+                base.with_axis_range(axis, Some(-0.75), Some(0.75), Some(0.0), &font),
+            ),
+            (
+                "0:0:1",
+                base.with_axis_range(axis, Some(0.0), Some(1.0), Some(0.0), &font),
+            ),
+            (
+                "-1:0:0",
+                base.with_axis_range(axis, Some(-1.0), Some(0.0), Some(0.0), &font),
+            ),
+            (
+                "-0.8:-0.3:0.4",
+                base.with_axis_range(axis, Some(-0.8), Some(0.4), Some(-0.3), &font),
+            ),
+        ] {
+            let input = input.unwrap();
+            let ours = subset(&font, &input).unwrap();
+            let reference = std::env::temp_dir().join(format!(
+                "sofel-varc-unrelated-pin-{}.ttf",
+                std::process::id()
+            ));
+            let output = ProcessCommand::new(paths::hb_dump())
+                .arg("--subset")
+                .arg(format!("--font-file={}", path.display()))
+                .arg("--unicodes=U+AC01")
+                .arg(format!("--variations=DUMY={variation}"))
+                .arg("--drop-tables+=gvar")
+                .arg(format!("--output-file={}", reference.display()))
+                .output()
+                .unwrap();
+            assert!(output.status.success());
+            let expected = std::fs::read(&reference).unwrap();
+            assert_eq!(ours, expected);
+            let _ = std::fs::remove_file(reference);
+        }
+    }
 }
 
 #[test]
@@ -625,4 +656,38 @@ fn adr0067_i2_varc_passthrough_requires_retained_gids() {
         .with_axis_pinned_to_default(Tag::new(b"0005"), &font)
         .unwrap();
     assert!(subset(&font, &pinned).is_err());
+}
+
+#[test]
+fn adr0067_i2_avar2_range_preserves_gvar_matches_harfbuzz() {
+    let path = paths::testdata().join("harfbuzz/test/api/fonts/varc-unrelated-axis-avar2.ttf");
+    let bytes = std::fs::read(&path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let base = Input::new().map_set(SetKind::Unicodes, |set| set.add(0xAC01));
+    let axis = Tag::new(b"DUMY");
+    for (variation, input) in [
+        (
+            "0:0.5:1",
+            base.with_axis_range(axis, Some(0.0), Some(1.0), Some(0.5), &font),
+        ),
+        ("0.5", base.with_axis_pinned(axis, 0.5, &font)),
+        ("0", base.with_axis_pinned_to_default(axis, &font)),
+    ] {
+        let input = input.unwrap();
+        let ours = subset(&font, &input).unwrap();
+        let output =
+            std::env::temp_dir().join(format!("sofel-avar2-keep-gvar-{}.ttf", std::process::id()));
+        let reference = ProcessCommand::new(paths::hb_dump())
+            .arg("--subset")
+            .arg(format!("--font-file={}", path.display()))
+            .arg("--unicodes=U+AC01")
+            .arg(format!("--variations=DUMY={variation}"))
+            .arg(format!("--output-file={}", output.display()))
+            .output()
+            .unwrap();
+        assert!(reference.status.success());
+        let expected = std::fs::read(&output).unwrap();
+        std::fs::remove_file(output).unwrap();
+        assert_eq!(ours, expected);
+    }
 }
