@@ -4,6 +4,7 @@ use std::io::{self, Read};
 use std::process::ExitCode;
 
 const INVENTORY: &str = include_str!("../../../../conformance/svg-cases.tsv");
+const SCOPE: &str = include_str!("../../../../conformance/svg-opentype.tsv");
 const DOCUMENT: &[u8] = include_bytes!("../../../../conformance/svg/two-glyphs.svg");
 const REQUIRED: &[(&str, &str, &str)] = &[
     ("in-document", "plain", "document-bytes,target-element,rgba"),
@@ -83,6 +84,41 @@ fn document_observation(case: &str, observation: &str) -> Option<Result<(), Stri
     })
 }
 
+fn show_scope() -> bool {
+    println!("OpenType 1.9.1 SVG requirements (CASES identifies mapped cases, not a pass):");
+    println!("https://learn.microsoft.com/en-us/typography/opentype/spec/svg");
+    let mut ids = BTreeSet::new();
+    let mut valid = true;
+    for line in SCOPE
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+    {
+        println!("{line}");
+        let fields = line.split('\t').collect::<Vec<_>>();
+        let [id, section, disposition, detail] = fields.as_slice() else {
+            println!("invalid scope row: {line}");
+            valid = false;
+            continue;
+        };
+        let mapped = match *disposition {
+            "CASES" => detail.split(',').all(|item| {
+                item.split_once('/').is_some_and(|(f, c)| {
+                    REQUIRED
+                        .iter()
+                        .any(|&(feature, case, _)| feature == f && case == c)
+                })
+            }),
+            "UNDECIDED" | "OUT OF SCOPE" => !detail.trim().is_empty(),
+            _ => false,
+        };
+        if !mapped || section.is_empty() || id.is_empty() || !ids.insert(*id) {
+            println!("invalid requirement: {id}");
+            valid = false;
+        }
+    }
+    valid && !ids.is_empty()
+}
+
 fn verify(text: &str) -> bool {
     let mut rows = BTreeMap::new();
     let mut ok = true;
@@ -111,6 +147,7 @@ fn verify(text: &str) -> bool {
             ok = false;
         }
     }
+    let mut passed = 0_usize;
     for &(feature, case, required) in REQUIRED {
         let Some((mut names, source)) = rows.remove(&(feature, case)) else {
             println!("missing case: {feature}/{case}");
@@ -147,6 +184,7 @@ fn verify(text: &str) -> bool {
             "input"
         };
         let result = if failures.is_empty() {
+            passed = passed.saturating_add(1);
             "PASS".into()
         } else {
             ok = false;
@@ -158,7 +196,8 @@ fn verify(text: &str) -> bool {
         println!("unknown case: {feature}/{case}");
         ok = false;
     }
-    ok
+    println!("required cases: {passed}/{} passed", REQUIRED.len());
+    show_scope() && ok
 }
 
 fn main() -> ExitCode {
