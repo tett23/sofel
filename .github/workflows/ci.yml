@@ -126,7 +126,8 @@ jobs:
           path: |
             target/testdata/harfbuzz
             target/testdata/freetype
-          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-testdata-${{ hashFiles('testdata.lock') }}
+            target/testdata/wuffs
+          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-testdata-v2-${{ hashFiles('testdata.lock') }}
       # With a cache hit, the offline mode fails if the cache is incomplete.
       - name: Fetch test data
         env:
@@ -196,7 +197,8 @@ jobs:
           path: |
             target/testdata/harfbuzz
             target/testdata/freetype
-          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-testdata-${{ hashFiles('testdata.lock') }}
+            target/testdata/wuffs
+          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-testdata-v2-${{ hashFiles('testdata.lock') }}
       # With a cache hit, the offline mode fails if the cache is incomplete.
       - name: Fetch test data
         env:
@@ -351,7 +353,8 @@ jobs:
           path: |
             target/testdata/harfbuzz
             target/testdata/freetype
-          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-testdata-${{ hashFiles('testdata.lock') }}
+            target/testdata/wuffs
+          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-testdata-v2-${{ hashFiles('testdata.lock') }}
       - name: Fetch test data
         env:
           SOFEL_TESTDATA_OFFLINE: ${{ steps.testdata.outputs.cache-hit == 'true' && '1' || '0' }}
@@ -437,7 +440,8 @@ jobs:
           path: |
             target/testdata/harfbuzz
             target/testdata/freetype
-          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-testdata-${{ hashFiles('testdata.lock') }}
+            target/testdata/wuffs
+          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-testdata-v2-${{ hashFiles('testdata.lock') }}
       - name: Fetch test data
         env:
           SOFEL_TESTDATA_OFFLINE: ${{ steps.testdata.outputs.cache-hit == 'true' && '1' || '0' }}
@@ -511,7 +515,8 @@ jobs:
           path: |
             target/testdata/harfbuzz
             target/testdata/freetype
-          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-testdata-${{ hashFiles('testdata.lock') }}
+            target/testdata/wuffs
+          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-testdata-v2-${{ hashFiles('testdata.lock') }}
       - name: Fetch test data
         env:
           SOFEL_TESTDATA_OFFLINE: ${{ steps.testdata.outputs.cache-hit == 'true' && '1' || '0' }}
