@@ -288,10 +288,16 @@ impl Plan {
                     reason: "pinning the axes of avar version 2 (deferred by ADR 0022)",
                 });
             }
-            if !(norm.all_axes_pinned && norm.pinned_at_default) {
+            let metadata_only = ![
+                b"avar", b"gvar", b"GVAR", b"HVAR", b"VVAR", b"MVAR", b"cvar", b"CFF2", b"GDEF",
+                b"GSUB", b"GPOS", b"BASE", b"MATH", b"COLR", b"VARC", b"STAT",
+            ]
+            .iter()
+            .any(|tag| font.table(Tag::new(tag)).is_some());
+            if !(norm.all_axes_pinned && norm.pinned_at_default) && !metadata_only {
                 return Err(SubsetError::Unsupported {
                     tag: Tag::new(b"fvar"),
-                    reason: "instancing other than pinning every axis to its default (deferred by ADR 0022)",
+                    reason: "instancing variation data needs ADR 0061",
                 });
             }
         }

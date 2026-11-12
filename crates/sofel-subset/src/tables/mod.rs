@@ -7,6 +7,7 @@ pub(crate) mod cff;
 pub(crate) mod cmap;
 pub(crate) mod colr;
 pub(crate) mod cpal;
+mod fvar;
 pub(crate) mod glyf;
 mod gvar;
 mod hdmx;
@@ -195,6 +196,13 @@ impl Plan {
                 return Ok(room);
             }
             b"STAT" => Some(stat::subset),
+            b"fvar" if !self.var.user().is_empty() => {
+                let src = font.table(tag).unwrap_or(&[]);
+                let bytes = fvar::subset(self, src)?;
+                let room = self.room_after(font, tag, src, room, bytes.len())?;
+                tables.insert(tag, bytes);
+                return Ok(room);
+            }
             b"head" => {
                 let present = |t: Tag| font.table(t).is_some() && !self.should_drop(t);
                 if present(Tag::new(b"glyf")) || present(Tag::new(b"GLYF")) {
