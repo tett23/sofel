@@ -286,6 +286,25 @@ impl Interpreter {
         }
     }
 
+    fn execute_glyph(
+        &self,
+        points: alloc::vec::Vec<HintPoint>,
+        program: &[u8],
+        max_stack: usize,
+    ) -> Result<alloc::vec::Vec<HintPoint>, Error> {
+        let mut glyph = self.clone();
+        glyph.points[1] = points;
+        glyph.reference = [0; 3];
+        glyph.zones = [1; 3];
+        glyph.projection = [16384, 0];
+        glyph.dual_projection = glyph.projection;
+        glyph.freedom = glyph.projection;
+        glyph.loop_count = 1;
+        glyph.rounding = Rounding::Grid;
+        glyph.execute(program, &mut alloc::vec::Vec::new(), max_stack)?;
+        Ok(core::mem::take(&mut glyph.points[1]))
+    }
+
     fn move_direct_relative(&mut self, op: u8, index: u16) {
         let base_index = self.reference[0];
         self.reference[1] = base_index;
@@ -1226,4 +1245,21 @@ fn adr0064_i1_mdrp_measures_before_scaling_and_updates_references() {
         assert_eq!(vm.points[1][1].current, [expected, 0]);
         assert_eq!(vm.reference, [rp0, 0, 1]);
     }
+}
+
+#[test]
+fn adr0064_i1_glyph_starts_with_default_vectors_but_keeps_prepared_cvt() {
+    let mut vm = Interpreter::new(0, &[0], 65536);
+    vm.execute(
+        &[0, 0x7a, 0xb1, 0, 38, 0x44, 0xb0, 0, 0x16],
+        &mut alloc::vec::Vec::new(),
+        2,
+    )
+    .unwrap();
+    let points = alloc::vec![HintPoint::default()];
+    let result = vm
+        .execute_glyph(points, &[0xb1, 0, 0, 0x3f, 0xb1, 0, 17, 0x44], 2)
+        .unwrap();
+    assert_eq!(result[0].current, [64, 0]);
+    assert_eq!(vm.cvt, [38]);
 }
