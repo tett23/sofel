@@ -1,6 +1,7 @@
 //! HarfBuzz byte equality for VARC records without auxiliary data.
 
 #![allow(clippy::all)]
+#![allow(clippy::unwrap_used)]
 
 use sofel_conformance::paths;
 use sofel_font::Font;
