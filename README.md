@@ -315,7 +315,8 @@ FreeTypeの計算を移植した部分を含むクレート（`sofel-geom` な�
 ### フォントごとの描画見本
 
 リポジトリ直下で `sh scripts/render-font-gallery.sh` を実行し、`target/font-gallery/index.html` をブラウザーで開く。
-Ruby と Rust のほか、適合テストと同じフォント取得環境を使う。
+Rust のツールチェーンと、適合テストと同じフォント取得環境を使う。生成器とそのテストは `tools/font-gallery` の Rust プログラムである。
 各フェイスの単字と、その書体に合う文字列を一枚の PNG で見比べられる。
+sbix の見本は 109 ppem のストライクを使い、グリフ 19 の単字と `simple_linear` の合字 26 をそれぞれ 128 × 128 画素で表示する。
 CI では Actions の対象の実行からコミット SHA 付きのフォントギャラリーをダウンロードし、展開したディレクトリの `index.html` を開く。
 保存期間は14日間である（[sofel ADR 0069](docs/adr/0069-font-render-gallery.md)）。
