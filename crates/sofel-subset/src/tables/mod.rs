@@ -19,6 +19,7 @@ mod os2;
 mod post;
 mod sbix;
 pub(crate) mod stat;
+mod varc;
 mod vorg;
 
 use alloc::collections::{BTreeMap, BTreeSet};
@@ -183,6 +184,7 @@ impl Plan {
             b"CFF " => Some(cff::subset),
             b"CFF2" => Some(cff::subset2),
             b"VORG" => Some(vorg::subset),
+            b"VARC" => Some(varc::subset),
             b"COLR" => Some(colr::subset),
             b"CPAL" => Some(cpal::subset),
             b"CBLC" => Some(cblc::subset),

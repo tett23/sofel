@@ -186,7 +186,7 @@ fn invalid_inputs() {
 }
 
 #[test]
-fn pending_tables_are_unsupported_unless_dropped() {
+fn malformed_varc_is_rejected_unless_dropped() {
     let mut t = sample_tables();
     t.push((b"VARC", vec![0, 1, 0, 0, 0, 0, 0, 0, 0, 0]));
     t.sort_by_key(|(t, _)| **t);
@@ -195,7 +195,7 @@ fn pending_tables_are_unsupported_unless_dropped() {
     let input = Input::new().map_set(SetKind::Unicodes, |s| s.add(0x41));
     assert!(matches!(
         subset(&font, &input),
-        Err(SubsetError::Unsupported { .. })
+        Err(SubsetError::Malformed { tag }) if tag == Tag::new(b"VARC")
     ));
     let dropped = input.map_set(SetKind::DropTables, |s| s.add(Tag::new(b"VARC").to_u32()));
     let out = subset(&font, &dropped).unwrap();
