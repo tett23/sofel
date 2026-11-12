@@ -58,3 +58,216 @@ mod tests {
         }
     }
 }
+
+// Line_Up and Line_Down sample in traversal order. Inputs have already
+// been translated by half a pixel, as in FreeType's SCALED macro.
+#[allow(
+    clippy::arithmetic_side_effects,
+    reason = "coordinates come from scaled i32 outline points and precision is 64 or 4096"
+)]
+fn line_profile(
+    (x1, y1): (i64, i64),
+    (x2, y2): (i64, i64),
+    (bottom, top): (i64, i64),
+    precision: i64,
+    mut visit: impl FnMut(i64, i64),
+) {
+    if y1 == y2 {
+        return;
+    }
+    let ascending = y1 < y2;
+    let (start, end, low, high) = if ascending {
+        (y1, y2, bottom, top)
+    } else {
+        (-y1, -y2, -top, -bottom)
+    };
+    let first = (start.div_euclid(precision) + 1).max(low);
+    let last = end.div_euclid(precision).min(high);
+    for row in first..=last {
+        let offset =
+            i128::from(row * precision - start) * i128::from(x2 - x1) / i128::from(end - start);
+        // The intersection is between the two original x coordinates.
+        let x = (i128::from(x1) + offset) as i64;
+        visit(if ascending { row } else { -row }, x);
+    }
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::line_profile;
+
+    #[test]
+    fn adr0064_i2_lines_exclude_the_start_include_the_end_and_clip_rows() {
+        let samples = |from, to, clip| {
+            let mut values = alloc::vec::Vec::new();
+            line_profile(from, to, clip, 64, |row, x| values.push((row, x)));
+            values
+        };
+        assert_eq!(
+            samples((0, 0), (100, 192), (0, 3)),
+            [(1, 33), (2, 66), (3, 100)]
+        );
+        assert_eq!(
+            samples((100, 192), (0, 0), (0, 3)),
+            [(2, 67), (1, 34), (0, 0)]
+        );
+        assert_eq!(samples((10, -32), (-90, 160), (0, 1)), [(0, -6), (1, -40)]);
+        assert!(samples((0, 64), (128, 64), (0, 3)).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod curve_tests {
+    use super::{Arc, curve_profile};
+
+    #[test]
+    fn adr0064_i2_curves_match_reference_intersections_in_both_directions() {
+        let mut samples = alloc::vec::Vec::new();
+        curve_profile(
+            Arc::Quad([(-23, -65), (115, 13), (19, 130)]),
+            (-3, 3),
+            64,
+            |row, x| samples.push((row, x)),
+        );
+        assert_eq!(samples, [(-1, -21), (0, 48), (1, 53), (2, 20)]);
+        samples.clear();
+        curve_profile(
+            Arc::Cubic([(-35, 155), (105, 123), (-73, 33), (11, -100)]),
+            (-3, 3),
+            64,
+            |row, x| samples.push((row, x)),
+        );
+        assert_eq!(samples, [(2, 14), (1, 8), (0, -13), (-1, -6)]);
+    }
+}
+
+type MonoPoint = (i64, i64);
+
+#[derive(Clone, Copy)]
+enum Arc {
+    Quad([MonoPoint; 3]),
+    Cubic([MonoPoint; 4]),
+}
+
+impl Arc {
+    fn ends(self) -> (MonoPoint, MonoPoint) {
+        match self {
+            Self::Quad([a, _, b]) | Self::Cubic([a, _, _, b]) => (a, b),
+        }
+    }
+
+    // Conic_To and Cubic_To allow the control points to extend to the
+    // neighboring grid line before subdividing the arc at its midpoint.
+    fn directed(self, precision: i64, mut visit: impl FnMut(Self)) {
+        let mut pending = alloc::vec![self];
+        while let Some(arc) = pending.pop() {
+            let (start, end) = arc.ends();
+            let low = start.1.min(end.1) & -precision;
+            let high = (start.1.max(end.1) + precision - 1) & -precision;
+            let outside = |point: MonoPoint| !(low..=high).contains(&point.1);
+            let turns = match arc {
+                Self::Quad([_, control, _]) => outside(control),
+                Self::Cubic([_, first, second, _]) => outside(first) || outside(second),
+            };
+            if turns {
+                let (first, second) = arc.split();
+                pending.push(second);
+                pending.push(first);
+            } else if start.1 != end.1 {
+                visit(arc);
+            }
+        }
+    }
+
+    fn flip_y(self) -> Self {
+        let flip = |(x, y): MonoPoint| (x, -y);
+        match self {
+            Self::Quad(p) => Self::Quad(p.map(flip)),
+            Self::Cubic(p) => Self::Cubic(p.map(flip)),
+        }
+    }
+
+    // Accumulate the Bernstein coefficients before shifting. Rounding
+    // intermediate midpoints separately changes the intersection by one.
+    fn split(self) -> (Self, Self) {
+        let add = |a: MonoPoint, b: MonoPoint| (a.0 + b.0, a.1 + b.1);
+        let shift = |p: MonoPoint, n: u32| (p.0 >> n, p.1 >> n);
+        match self {
+            Self::Quad([a, b, c]) => {
+                let (ab, bc) = (add(a, b), add(b, c));
+                let mid = shift(add(ab, bc), 2);
+                (
+                    Self::Quad([a, shift(ab, 1), mid]),
+                    Self::Quad([mid, shift(bc, 1), c]),
+                )
+            }
+            Self::Cubic([a, b, c, d]) => {
+                let (ab, bc, cd) = (add(a, b), add(b, c), add(c, d));
+                let (abc, bcd) = (add(ab, bc), add(bc, cd));
+                let mid = shift(add(abc, bcd), 3);
+                (
+                    Self::Cubic([a, shift(ab, 1), shift(abc, 2), mid]),
+                    Self::Cubic([mid, shift(bcd, 2), shift(cd, 1), d]),
+                )
+            }
+        }
+    }
+}
+
+// FreeType's Bezier_Up/Down, for one directed arc after extrema splitting.
+fn curve_profile(
+    arc: Arc,
+    (bottom, top): (i64, i64),
+    precision: i64,
+    mut visit: impl FnMut(i64, i64),
+) {
+    let (start, end) = arc.ends();
+    let down = start.1 > end.1;
+    let (arc, low, high) = if down {
+        (arc.flip_y(), -top, -bottom)
+    } else {
+        (arc, bottom, top)
+    };
+    let (start, end) = arc.ends();
+    let mut row = (start.1.div_euclid(precision) + 1).max(low);
+    let last = end.1.div_euclid(precision).min(high);
+    let step = if precision == 64 { 32 } else { 256 };
+    let mut pending = alloc::vec![arc];
+    while row <= last {
+        let Some(segment) = pending.pop() else { break };
+        let ((x1, y1), (x2, y2)) = segment.ends();
+        let y = row * precision;
+        if y2 < y {
+            continue;
+        }
+        let x = if y2 == y {
+            x2
+        } else {
+            let (dx, dy) = (x2 - x1, y2 - y1);
+            if dy > step || dx.abs() > step {
+                let (first, second) = segment.split();
+                pending.push(second);
+                pending.push(first);
+                continue;
+            }
+            x2 - (y2 - y) * dx / dy
+        };
+        visit(if down { -row } else { row }, x);
+        row += 1;
+    }
+}
+
+#[cfg(test)]
+mod turning_tests {
+    use super::{Arc, curve_profile};
+
+    #[test]
+    fn adr0064_i2_curve_returning_to_its_start_height_visits_both_slopes() {
+        let arc = Arc::Quad([(0, 0), (128, 256), (256, 0)]);
+        let mut crossings = alloc::vec::Vec::new();
+        arc.directed(64, |part| {
+            curve_profile(part, (0, 3), 64, |row, x| crossings.push((row, x)));
+        });
+        assert_eq!(crossings, [(1, 38), (2, 128), (1, 219), (0, 256)]);
+    }
+}
