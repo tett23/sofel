@@ -28,7 +28,7 @@ CARGO_TARGET_DIR="$root/target" cargo build --locked --release --manifest-path t
 "$root/target/release/font-gallery" "$staging" "$root/target/release"
 
 SOFEL_GALLERY_OUTPUT="$staging" SOFEL_GALLERY_BINARIES="$root/target/release" CARGO_TARGET_DIR="$root/target" \
-  cargo test --locked --release --manifest-path tools/font-gallery/Cargo.toml --test sbix_gallery -- --ignored
+  cargo test --locked --release --manifest-path tools/font-gallery/Cargo.toml --test color_gallery -- --ignored
 
 test -s "$staging/index.html"
 test -s "$staging/all-samples.png"

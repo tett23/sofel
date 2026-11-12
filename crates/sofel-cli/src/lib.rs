@@ -4,8 +4,8 @@
 
 #![warn(missing_docs)]
 
-mod colr_raster;
 pub mod color_raster;
+mod colr_raster;
 pub mod glyph;
 pub mod json;
 pub mod paint;
