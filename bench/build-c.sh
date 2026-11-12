@@ -56,7 +56,7 @@ for f in \
   type1/type1.c type42/type42.c pfr/pfr.c winfonts/winfnt.c \
   pcf/pcf.c bdf/bdf.c psaux/psaux.c psnames/psnames.c \
   pshinter/pshinter.c autofit/autofit.c smooth/smooth.c \
-  raster/raster.c gzip/ftgzip.c lzw/ftlzw.c otvalid/otvalid.c
+  raster/raster.c sdf/sdf.c gzip/ftgzip.c lzw/ftlzw.c otvalid/otvalid.c
 do
   # shellcheck disable=SC2086 # $cc and $flags are word lists
   $cc $flags $fpflags -w -DFT2_BUILD_LIBRARY '-DFT_CONFIG_MODULES_H=<ftmodule.h>' \
