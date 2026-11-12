@@ -305,3 +305,31 @@ fn adr0072_i3_real_svg_glyphs_render_as_color() {
         }
     }
 }
+
+#[test]
+fn adr0066_i3_clipped_foreground_overlapping_a_background_matches_each_pixel() {
+    let xml = br##"<svg viewBox="0 0 4 4"><defs><clipPath id="clip"><rect x="1" y="1" width="2" height="2"/></clipPath></defs><g id="glyph1"><path d="M0 0H4V4H0Z" fill="#123456"/><path d="M0 0H3V4H0Z" clip-path="url(#clip)" fill="context-fill"/></g></svg>"##;
+    let compressed = gzip_stored(xml);
+    for source in [xml.as_slice(), compressed.as_slice()] {
+        let document = sofel_svg::document(source, 4096).unwrap();
+        let scene = sofel_svg::parse_glyph(&document, 1, 4, [9, 27, 81, 255]).unwrap();
+        let mut image = BgraImage::default();
+        assert!(sofel_cli::color_raster::render_glyph_scene(
+            &scene,
+            4,
+            4,
+            &mut Rasterizer::new(),
+            &mut image,
+        ));
+        assert_eq!((image.width, image.rows), (4, 4));
+        for (index, pixel) in image.pixels.chunks_exact(4).enumerate() {
+            let (x, y) = (index % 4, index / 4);
+            let expected = if (1..3).contains(&x) && (1..3).contains(&y) {
+                [81, 27, 9, 255]
+            } else {
+                [0x56, 0x34, 0x12, 255]
+            };
+            assert_eq!(pixel, expected, "pixel ({x}, {y})");
+        }
+    }
+}
