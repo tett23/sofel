@@ -962,3 +962,38 @@ fn adr0060_i2_kerx_v3_requires_valid_glyph_coverage() {
         assert_eq!(glyphs.glyph_positions()[1].x_offset, offset, "{coverage:?}");
     }
 }
+
+#[test]
+fn adr0060_i1_aat_selects_kerx_and_gpos_per_feature() {
+    for morx in [false, true] {
+        for feature in [b"kern", b"dist"] {
+            let gpos = simple_layout(&[feature], vec![lookup(2, 0, vec![pair_pos(1, 2, -50)])]);
+            let gsub = simple_layout(
+                &[b"liga"],
+                vec![lookup(1, 0, vec![single_subst(&[(1, 1)])])],
+            );
+            let mut kerx = vec![0, 2, 0, 0, 0, 0, 0, 1];
+            kerx.extend(kerx_ab_pair());
+            let mut tables = vec![(b"GPOS", gpos), (b"GSUB", gsub), (b"kerx", kerx)];
+            if morx {
+                tables.push((
+                    b"morx",
+                    [0x0002_0000u32, 1, 0, 16, 0, 0]
+                        .into_iter()
+                        .flat_map(u32::to_be_bytes)
+                        .collect(),
+                ));
+            }
+            let data = make_font(false, tables);
+            let glyphs = run(&data, "ab", Run::default());
+            let (adv, offset) = if morx {
+                ([490, 500], -20)
+            } else {
+                ([460, 520], 0)
+            };
+            assert_eq!(advances(&glyphs), adv);
+            assert_eq!(glyphs.glyph_positions()[1].x_offset, offset);
+            assert_eq!(glyphs.glyph_infos()[1].flags.0, 1);
+        }
+    }
+}
