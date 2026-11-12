@@ -10,6 +10,8 @@ use sofel_font::var::Location;
 use sofel_geom::{Command, FnPen};
 use sofel_outline::{CBox, Outlines, Scale, Scratch};
 use sofel_read::{GlyphId, Tag, varc::Varc};
+use sofel_subset::{Flags, Input, SetKind, subset};
+use std::process::Command as ProcessCommand;
 
 fn source() -> Vec<u8> {
     std::fs::read(paths::testdata().join("harfbuzz/test/api/fonts/varc-short-cff2.otf")).unwrap()
@@ -116,6 +118,59 @@ fn adr0067_i1_component_axes_and_variations_draw_at_two_locations() {
     assert!(!default.is_empty());
     assert!(!heavy.is_empty());
     assert_ne!(default, heavy);
+}
+
+#[test]
+fn adr0067_i2_condition_only_subset_matches_harfbuzz() {
+    let data = source();
+    let font = Font::new(&data, 0).unwrap();
+    let mut record = Varc::new(font.table(Tag::new(b"VARC")).unwrap())
+        .unwrap()
+        .record(GlyphId(3))
+        .unwrap()
+        .to_vec();
+    record[1] |= 0x80;
+    record.insert(4, 0);
+    let data = synthetic_with_condition(&[(3, record)], Some((0, 0)));
+    let source_path = std::env::temp_dir().join(format!(
+        "sofel-varc-condition-source-{}.otf",
+        std::process::id()
+    ));
+    std::fs::write(&source_path, &data).unwrap();
+    for retain in [false, true] {
+        let reference = std::env::temp_dir().join(format!(
+            "sofel-varc-condition-{retain}-hb-{}.otf",
+            std::process::id()
+        ));
+        let mut command = ProcessCommand::new(paths::hb_dump());
+        command
+            .arg("--subset")
+            .arg(format!("--font-file={}", source_path.display()))
+            .arg("--gids=3")
+            .arg(format!("--output-file={}", reference.display()));
+        if retain {
+            command.arg("--retain-gids");
+        }
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let flags = if retain {
+            Flags::RETAIN_GIDS
+        } else {
+            Flags::DEFAULT
+        };
+        let input = Input::new()
+            .with_flags(flags)
+            .map_set(SetKind::Glyphs, |glyphs| glyphs.add(3));
+        let ours = subset(&Font::new(&data, 0).unwrap(), &input).unwrap();
+        let expected = std::fs::read(&reference).unwrap();
+        assert_eq!(ours, expected, "retain={retain}");
+        let _ = std::fs::remove_file(reference);
+    }
+    let _ = std::fs::remove_file(source_path);
 }
 
 fn draw(font: &Font<'_>, glyph: u32, scratch: &mut Scratch) -> (CBox, Vec<Command>) {

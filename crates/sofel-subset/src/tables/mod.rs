@@ -19,7 +19,7 @@ mod os2;
 mod post;
 mod sbix;
 pub(crate) mod stat;
-mod varc;
+pub(crate) mod varc;
 mod vorg;
 
 use alloc::collections::{BTreeMap, BTreeSet};
