@@ -38,6 +38,9 @@ check_page cff2-var-cntr AdobeVFPrototype.abc.otf -16 -934 1728 1285 wght=900 CN
 check_page glyf-var-wght900 Roboto-Variable.abc.ttf -16 -1916 3338 2432 wght=900
 check_page ttb Roboto-Regular.abc.ttf -1040 -16 2080 7232 ttb
 check_page glyf-vvar-ttb-wght900 SourceSerifVariable-Roman-VVAR.abc.ttf -516 -16 1032 3095 ttb wght=900
+nastaliq=$root/vector/data/fonts/2db082c6c462d5056544e56e7ea13bf58c33a832.ttf
+"$work/positioned" "$nastaliq" -16 -2216 2442 3632 rtl text=نستعلیق > "$work/nastaliq.svg"
+cmp "$work/nastaliq.svg" "$root/vector/data/expected/basic/iran-nastaliq-y-offsets.svg"
 suite=varc
 check_page default varc-ac00-ac01.ttf -16 -819 1872 1035 text=가각
 check_page wght840p3 varc-ac00-ac01.ttf -16 -839 1872 1055 text=가각 wght=840.3

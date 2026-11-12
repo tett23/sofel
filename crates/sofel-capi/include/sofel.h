@@ -2193,6 +2193,7 @@ typedef struct sofel_vector_glyph_t {
  * Rust: sofel_vector::SvgPage::new, sofel_vector::SvgPage::fill_path, sofel_vector::SvgPage::finish
  * Rust: sofel_vector::SvgPage::paint, sofel_vector::PdfPage::paint
  * Rust: sofel_vector::SvgPen::command, sofel_vector::PdfPen::command
+ * Rust: sofel_vector::PdfPage::paint_with_images
  * Rust: sofel_vector::PdfPage::draw_rgba, sofel_png::decode_rgba
  * Rust: sofel_vector::PdfPage::new, sofel_vector::PdfPage::fill_path, sofel_vector::PdfPage::finish
  * HarfBuzz: hb_vector_paint_t

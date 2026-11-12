@@ -20,6 +20,7 @@ int main(int argc, char **argv) {
   const char *text = "abc";
   for (int i = 6; i < argc; ++i) {
     if (!std::strcmp(argv[i], "ttb")) requested.direction = SOFEL_DIRECTION_TTB;
+    else if (!std::strcmp(argv[i], "rtl")) requested.direction = SOFEL_DIRECTION_RTL;
     else if (!std::strcmp(argv[i], "wght=900")) axes.push_back({SOFEL_TAG('w', 'g', 'h', 't'), 900});
     else if (!std::strcmp(argv[i], "CNTR=100")) axes.push_back({SOFEL_TAG('C', 'N', 'T', 'R'), 100});
     else if (!std::strcmp(argv[i], "wght=840.3")) axes.push_back({SOFEL_TAG('w', 'g', 'h', 't'), 840.3f});
