@@ -118,6 +118,27 @@ impl<'a> Glyph<'a> {
         parse_simple(self.data).map_err(|e| e.to_read_error())
     }
 
+    /// Reads the instruction stream following the last component. A composite
+    /// without WE_HAVE_INSTRUCTIONS has an empty program.
+    pub fn composite_instructions(&self, extended: bool) -> Result<&'a [u8], ReadError> {
+        let mut records = self.components(extended);
+        let mut flags = 0;
+        for record in records.by_ref() {
+            flags = record?.flags;
+        }
+        if flags & WE_HAVE_INSTRUCTIONS == 0 {
+            return Ok(&[]);
+        }
+        let offset = records.position();
+        let start = offset.saturating_add(2);
+        let length =
+            be::u16_at(self.data, offset).ok_or(ReadError::truncated(start, self.data.len()))?;
+        be::slice_at(self.data, start, usize::from(length)).ok_or(ReadError::truncated(
+            start.saturating_add(usize::from(length)),
+            self.data.len(),
+        ))
+    }
+
     /// The component records (for `number_of_contours() < 0`). The
     /// iterator ends after the record without MORE_COMPONENTS, or after
     /// the first error.

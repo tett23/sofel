@@ -14,6 +14,7 @@ pub(crate) struct Subtable<'a> {
 }
 #[derive(Clone, Debug)]
 enum Kern<'a> {
+    Unknown,
     Pairs(&'a [[u8; 6]]),
     Matrix(ClassMatrix<'a>),
     Classes(AatLookup<'a>, AatLookup<'a>, &'a [u8]),
@@ -21,7 +22,12 @@ enum Kern<'a> {
     LegacyClasses(ClassOffsets<'a>, ClassOffsets<'a>, usize),
     LegacyHistory(StateTable<'a>, &'a [u8], usize),
     History(StateTable<'a>, &'a [u8]),
-    Attachment(StateTable<'a>, u32, &'a [u8], Option<Anchors<'a>>),
+    Attachment(
+        StateTable<'a>,
+        u32,
+        &'a [u8],
+        Option<sofel_font::read::ankr::Ankr<'a>>,
+    ),
 }
 
 #[derive(Clone, Debug)]
@@ -50,33 +56,6 @@ impl ClassMatrix<'_> {
     }
 }
 
-#[derive(Clone, Debug)]
-struct Anchors<'a> {
-    glyphs: AatLookup<'a>,
-    coordinates: &'a [u8],
-}
-impl<'a> Anchors<'a> {
-    fn read(data: &'a [u8], count: u32) -> Option<Self> {
-        if be::u16_at(data, 0)? != 0 {
-            return None;
-        }
-        let offset = be::u32_at(data, 8)? as usize;
-        Some(Self {
-            glyphs: AatLookup::new(data.get(be::u32_at(data, 4)? as usize..offset)?, count)?,
-            coordinates: data.get(offset..)?,
-        })
-    }
-    fn get(&self, glyph: u32, index: u16) -> Option<(i32, i32)> {
-        let list = self
-            .coordinates
-            .get(usize::from(self.glyphs.get(glyph)?)..)?;
-        if u32::from(index) >= be::u32_at(list, 0)? {
-            return None;
-        }
-        point(list, (usize::from(index) * 4).checked_add(4)?)
-    }
-}
-
 fn point(data: &[u8], at: usize) -> Option<(i32, i32)> {
     Some((
         i32::from(be::i16_at(data, at)?),
@@ -89,22 +68,10 @@ pub(crate) fn read<'a>(
     ankr: Option<&'a [u8]>,
     glyphs: u32,
 ) -> Option<Vec<Subtable<'a>>> {
-    if be::u16_at(data, 0)? < 2 {
-        return None;
-    }
-    let n = be::u32_at(data, 4)?;
-    if n == 0 || n > 1024 {
-        return None;
-    }
-    let mut tail = data.get(8..)?;
+    let kerx = sofel_font::read::kerx::Kerx::new(data, glyphs).ok()?;
+    let anchors = core::cell::OnceCell::new();
     let mut result = Vec::new();
-    for i in 0..n {
-        let length = be::u32_at(tail, 0)? as usize;
-        let current = if i.saturating_add(1) == n {
-            tail
-        } else {
-            tail.get(..length)?
-        };
+    for current in kerx.subtables() {
         let coverage = be::u32_at(current, 4)?;
         let tuples = be::u32_at(current, 8)?;
         let offset = |at| current.get(be::u32_at(current, at)? as usize..);
@@ -133,7 +100,9 @@ pub(crate) fn read<'a>(
                     StateTable::from_kind(state, glyphs, MachineKind::Kerning)?,
                     flags >> 30,
                     state.get((flags & 0x00ff_ffff) as usize..)?,
-                    ankr.and_then(|s| Anchors::read(s, glyphs)),
+                    *anchors.get_or_init(|| {
+                        ankr.and_then(|s| sofel_font::read::ankr::Ankr::new(s, glyphs))
+                    }),
                 )
             }
             6 => {
@@ -147,7 +116,7 @@ pub(crate) fn read<'a>(
                     vector: if tuples == 0 { None } else { Some(offset(32)?) },
                 })
             }
-            _ => return None,
+            _ => Kern::Unknown,
         };
         result.push(Subtable {
             coverage,
@@ -155,11 +124,8 @@ pub(crate) fn read<'a>(
             data: current,
             action,
         });
-        if i.saturating_add(1) < n {
-            tail = tail.get(length..)?;
-        }
     }
-    Some(result)
+    (!result.is_empty()).then_some(result)
 }
 #[derive(Clone, Debug)]
 struct ClassOffsets<'a> {
@@ -238,6 +204,9 @@ pub(crate) fn legacy(data: &[u8]) -> Option<Vec<Subtable<'_>>> {
         1 if be::u32_at(data, 0)? == 0x10000 => (true, be::u32_at(data, 4)?, data.get(8..)?),
         _ => return None,
     };
+    if count > super::MAX_SUBTABLES {
+        return None;
+    }
     let header = if apple { 8 } else { 6 };
     let mut tables = Vec::new();
     for i in 0..count {
@@ -317,11 +286,21 @@ pub(crate) fn cross_stream(tables: &[Subtable<'_>]) -> bool {
     tables.iter().any(|t| t.coverage & 0x4000_0000 != 0)
 }
 pub(crate) fn apply(tables: &[Subtable<'_>], buf: &mut Buffer, scale: &HbScale, mask: Mask) {
-    buf.unsafe_to_concat(0, buf.len);
+    buf.unsafe_to_concat_all();
     let horizontal = buf.direction.is_horizontal();
     let mut attached = false;
     for t in tables {
-        if horizontal != (t.coverage & 0x8000_0000 == 0) {
+        if matches!(t.action, Kern::Unknown) || horizontal != (t.coverage & 0x8000_0000 == 0) {
+            continue;
+        }
+        if let Kern::History(machine, _)
+        | Kern::LegacyHistory(machine, _, _)
+        | Kern::Attachment(machine, _, _, _) = &t.action
+            && !buf
+                .infos()
+                .iter()
+                .any(|info| machine.can_start(info.codepoint))
+        {
             continue;
         }
         buf.charge(buf.len);
@@ -385,6 +364,12 @@ pub(crate) fn apply(tables: &[Subtable<'_>], buf: &mut Buffer, scale: &HbScale, 
                     };
                     if let Some(((mx, my), (cx, cy))) = coords {
                         let dir = b.direction;
+                        // The marked glyph's cursive chain may pass through idx.
+                        // HarfBuzz installs the new anchor delta before walking it.
+                        if let Some(p) = b.positions_mut().get_mut(idx) {
+                            p.x_offset = scale.em_scale_x(mx).saturating_sub(scale.em_scale_x(cx));
+                            p.y_offset = scale.em_scale_y(my).saturating_sub(scale.em_scale_y(cy));
+                        }
                         let cross = resolve_cross_offset(b.positions_mut(), mark, dir, reverse);
                         let chain = if reverse {
                             idx.checked_signed_diff(mark)
@@ -392,8 +377,6 @@ pub(crate) fn apply(tables: &[Subtable<'_>], buf: &mut Buffer, scale: &HbScale, 
                             mark.checked_signed_diff(idx)
                         };
                         if let Some(p) = b.positions_mut().get_mut(idx) {
-                            p.x_offset = scale.em_scale_x(mx).saturating_sub(scale.em_scale_x(cx));
-                            p.y_offset = scale.em_scale_y(my).saturating_sub(scale.em_scale_y(cy));
                             if horizontal {
                                 p.y_offset = p.y_offset.saturating_add(cross);
                             } else {
@@ -495,7 +478,9 @@ impl Subtable<'_> {
                     be::i16_at(self.data.get(array..)?, offset & !1)
                 })
             }
-            Kern::History(..) | Kern::LegacyHistory(..) | Kern::Attachment(..) => None,
+            Kern::Unknown | Kern::History(..) | Kern::LegacyHistory(..) | Kern::Attachment(..) => {
+                None
+            }
         };
         value
             .and_then(|v| {

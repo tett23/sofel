@@ -8,6 +8,12 @@ use sofel_geom::{
 };
 
 enum Geometry {
+    Sweep {
+        center: PointF,
+        start: f32,
+        inverse_range: f32,
+        atan2: fn(f32, f32) -> f32,
+    },
     Linear(PointF, f32, f32, f32),
     Radial(PointF, f32, f32, f32, f32, f32),
 }
@@ -44,13 +50,44 @@ fn byte(v: f32) -> u8 {
 impl ColorGradient {
     /// Prepare a linear or radial brush for repeated pixel samples.
     pub fn new(brush: &Brush<'_>, clip_pixels: usize) -> Option<Self> {
+        Self::prepare(brush, clip_pixels, None)
+    }
+
+    /// Prepare any gradient, using the supplied single-precision angle function for sweeps.
+    pub fn with_atan2(
+        brush: &Brush<'_>,
+        clip_pixels: usize,
+        atan2: fn(f32, f32) -> f32,
+    ) -> Option<Self> {
+        Self::prepare(brush, clip_pixels, Some(atan2))
+    }
+
+    fn prepare(
+        brush: &Brush<'_>,
+        clip_pixels: usize,
+        atan2: Option<fn(f32, f32) -> f32>,
+    ) -> Option<Self> {
         let line = match brush {
-            Brush::Linear { line, .. } | Brush::Radial { line, .. } => line,
+            Brush::Linear { line, .. } | Brush::Radial { line, .. } | Brush::Sweep { line, .. } => {
+                line
+            }
             _ => return None,
         };
         let mut stops = line.stops.to_vec();
         let (min, max) = normalize_color_line(&mut stops);
         let geometry = match *brush {
+            Brush::Sweep {
+                center, start, end, ..
+            } => {
+                let a = lerp(start, end, min);
+                let range = lerp(start, end, max) - a;
+                Geometry::Sweep {
+                    center,
+                    start: a,
+                    inverse_range: if range.abs() < 1e-10 { 0. } else { 1. / range },
+                    atan2: atan2?,
+                }
+            }
             Brush::Linear { p0, p1, p2, .. } => {
                 let (a, b) = reduce_linear_anchors(p0, p1, p2);
                 let dx = b.x - a.x;
@@ -82,6 +119,23 @@ impl ColorGradient {
     /// Sample at a glyph-space point. The callback supplies IEEE single-precision square root.
     pub fn sample(&self, p: PointF, sqrt: impl Fn(f32) -> f32) -> [u8; 4] {
         let t = match self.geometry {
+            Geometry::Sweep {
+                center,
+                start,
+                inverse_range,
+                atan2,
+            } => {
+                if inverse_range == 0. {
+                    return [0; 4];
+                }
+                let angle = atan2(p.y - center.y, p.x - center.x);
+                let positive = if angle < 0. {
+                    angle + core::f32::consts::TAU
+                } else {
+                    angle
+                };
+                (positive - start) * inverse_range
+            }
             Geometry::Linear(start, dx, dy, inv) => {
                 ((p.x - start.x) * dx + (p.y - start.y) * dy) * inv
             }

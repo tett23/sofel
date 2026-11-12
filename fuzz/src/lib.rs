@@ -1329,7 +1329,7 @@ pub fn check_shape(input: &[u8]) {
     };
     let n = usize::from(u16::from_be_bytes([a, b])).min(rest.len());
     let (font_data, rest) = rest.split_at(n);
-    let Ok(font) = sofel_font::Font::new(font_data, 0) else { return };
+    let Ok(font) = sofel_font::Font::for_shaping(font_data, 0) else { return };
     let (text, features) = match rest.iter().position(|&c| c == 0) {
         Some(i) => (&rest[..i], &rest[i + 1..]),
         None => (rest, &rest[rest.len()..]),

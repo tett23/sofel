@@ -32,6 +32,40 @@ type Result<T> = core::result::Result<T, Error>;
 /// # Errors
 /// Returns an error for corrupt data, unsupported critical chunks or excess output.
 pub fn decode(input: &[u8], max_pixels: usize) -> Result<Image> {
+    let mut image = decode_rgba(input, max_pixels)?;
+    for pixel in image.rgba.as_chunks_mut::<4>().0 {
+        let [r, g, b, a] = *pixel;
+        // FreeType pngshim.c rounds multiplication by alpha/255.
+        let premul = |c: u8| {
+            let t = u32::from(c)
+                .saturating_mul(u32::from(a))
+                .saturating_add(128);
+            u8::try_from(t.saturating_add(t >> 8) >> 8).unwrap_or_default()
+        };
+        *pixel = [premul(b), premul(g), premul(r), a];
+    }
+    Ok(Image {
+        width: image.width,
+        height: image.height,
+        bgra: image.rgba,
+    })
+}
+
+/// A decoded PNG with unassociated color channels, suitable for a PDF soft mask.
+pub struct RgbaImage {
+    /// Width in pixels.
+    pub width: u32,
+    /// Height in pixels.
+    pub height: u32,
+    /// Top-down RGBA samples without row padding.
+    pub rgba: Vec<u8>,
+}
+
+/// Decodes a static PNG while preserving straight RGB values even at low alpha.
+///
+/// # Errors
+/// Returns an error for invalid PNG data or dimensions exceeding the given limit.
+pub fn decode_rgba(input: &[u8], max_pixels: usize) -> Result<RgbaImage> {
     let mut rest = input
         .strip_prefix(b"\x89PNG\r\n\x1a\n")
         .ok_or(Error::Invalid)?;
@@ -130,9 +164,9 @@ pub fn decode(input: &[u8], max_pixels: usize) -> Result<Image> {
         )?;
         rest = tail;
     }
-    Ok(Image {
+    Ok(RgbaImage {
         width: header.width,
         height: header.height,
-        bgra: out,
+        rgba: out,
     })
 }
