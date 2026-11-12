@@ -130,6 +130,7 @@ pub fn observe(case: &str, observation: &str) -> Result<(), String> {
         }
         "clipped-image" => {
             let image = Image {
+                slant: 0.0,
                 format: ImageFormat::Png,
                 data: include_bytes!("../../../conformance/svg-page/red.png"),
                 width: 1,
