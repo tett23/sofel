@@ -40,6 +40,7 @@ dependencies = [
  "sofel-read",
  "sofel-shape",
  "sofel-subset",
+ "sofel-svg",
 ]
 
 [[package]]
@@ -134,6 +135,7 @@ dependencies = [
 name = "sofel-svg"
 version = "0.0.0"
 dependencies = [
+ "sofel-geom",
  "sofel-inflate",
 ]
 

@@ -4,6 +4,7 @@
 
 #![warn(missing_docs)]
 
+pub mod color_raster;
 pub mod glyph;
 pub mod json;
 pub mod paint;

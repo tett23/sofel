@@ -25,9 +25,10 @@ bitmap in it, the bitmap is written instead, as FreeType loads it
 (ADR 0023): 1, 2, 4 and 8-bit bitmaps as PGM, 32-bit ones as PAM (P7,
 TUPLTYPE RGB_ALPHA, not premultiplied).
 
-With --color, a glyph with COLR version 0 layers is drawn in color as
-FreeType's FT_LOAD_COLOR does (ADR 0023) and written as PAM; the color
-of palette entry 0xFFFF is white when the palette is marked for dark
+With --color, COLR version 0 layers are drawn in color as FreeType's
+FT_LOAD_COLOR does (ADR 0023). OT-SVG rect and circle gradients are
+drawn in color (ADR 0072). The image is written as PAM; the color of
+palette entry 0xFFFF is white when the palette is marked for dark
 backgrounds, else black.
 
   --variations LIST   design coordinates, e.g. wght=500
@@ -36,7 +37,7 @@ backgrounds, else black.
   --ppem P      the size in pixels per em
   --no-bitmap   draw the outline even when there is a bitmap
                 (FT_LOAD_NO_BITMAP)
-  --color       draw the COLR version 0 layers in color
+  --color       draw supported color glyphs in color
   --palette N   the CPAL palette for --color (default 0)
   --glyph G     the glyph id
   --char U+XXXX the character, mapped through the font's cmap
