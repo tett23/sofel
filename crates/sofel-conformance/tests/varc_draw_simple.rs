@@ -518,6 +518,10 @@ fn adr0067_i2_unrelated_axis_pin_with_gvar_dropped_matches_harfbuzz() {
                 "-1:0:0",
                 base.with_axis_range(axis, Some(-1.0), Some(0.0), Some(0.0), &font),
             ),
+            (
+                "-0.8:-0.3:0.4",
+                base.with_axis_range(axis, Some(-0.8), Some(0.4), Some(-0.3), &font),
+            ),
         ] {
             let input = input.unwrap();
             let ours = subset(&font, &input).unwrap();

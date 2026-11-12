@@ -83,6 +83,31 @@ fn subset_identity_range(
     let old_default =
         sofel_font::var::normalize_axis_value(range.min, range.default, range.max, info.default);
     let old_default = i16::try_from(fixed(old_default)).map_err(|_| failed)?;
+    // The v1 map is renormalized in rounded intermediate coordinates,
+    // while avar2 also retains the old default in user coordinates.
+    let negative = info.default - info.min;
+    let positive = info.max - info.default;
+    let distance = |v: f32| v * if v < 0.0 { negative } else { positive };
+    let mapped = sofel_font::var::normalize_axis_value(
+        distance(original.min),
+        distance(original.default),
+        distance(original.max),
+        0.0,
+    );
+    let mapped = i16::try_from(fixed(mapped)).map_err(|_| failed)?;
+    let z = f64::from(mapped) / 16384.0;
+    let default_user = f64::from(range.default);
+    let user_at_knot = default_user
+        + z * if z < 0.0 {
+            default_user - f64::from(range.min)
+        } else {
+            f64::from(range.max) - default_user
+        };
+    let old = normalized(user_at_knot, [info.min, info.default, info.max]);
+    let extra = (
+        mapped,
+        fixed(map_identity(old)).saturating_sub(i32::from(mapped)),
+    );
     let regions = compensation_regions(
         [
             fixed(original.min),
@@ -90,6 +115,11 @@ fn subset_identity_range(
             fixed(original.max),
         ],
         old_default,
+        Some((
+            extra,
+            [info.min, info.default, info.max],
+            [range.min, range.default, range.max],
+        )),
     );
     let count = u16::try_from(regions.len()).map_err(|_| failed)?;
     let axes_count = u16::try_from(axes.len()).map_err(|_| failed)?;
@@ -150,8 +180,8 @@ fn subset_identity_range(
     let mut output = src.get(..8).ok_or(failed)?.to_vec();
     for i in 0..axes.len() {
         let mut knots = alloc::vec![-16384i16, 0, 16384];
-        if i == axis && !knots.contains(&old_default) {
-            knots.insert(knots.partition_point(|&v| v < old_default), old_default);
+        if i == axis && !knots.contains(&mapped) {
+            knots.insert(knots.partition_point(|&v| v < mapped), mapped);
         }
         output.extend(
             u16::try_from(knots.len())
@@ -179,9 +209,78 @@ fn subset_identity_range(
     Ok(output)
 }
 
+// SegmentMaps::map_float interpolates from the lower knot in f32, even
+// on an identity segment. Preserve its rounding near the zero knot.
+fn map_identity(value: f64) -> f32 {
+    let value = crate::instance::f64_to_f32(value);
+    if value < 0.0 {
+        (value + 1.0) - 1.0
+    } else {
+        value
+    }
+}
+
+fn normalized(user: f64, [min, default, max]: [f32; 3]) -> f64 {
+    let [min, default, max] = [min, default, max].map(f64::from);
+    let value = user.clamp(min, max) - default;
+    if value == 0.0 {
+        0.0
+    } else {
+        value
+            / if value < 0.0 {
+                default - min
+            } else {
+                max - default
+            }
+    }
+}
+
+type MappingBreakpoint = ((i16, i32), [f32; 3], [f32; 3]);
+
+fn residual(knots: &[(i16, i32)], old: [f32; 3], new: [f32; 3], mapped: i16) -> f64 {
+    let [min, default, max] = new.map(f64::from);
+    let user_at = |v: i16| {
+        default + f64::from(v) / 16384.0 * if v < 0 { default - min } else { max - default }
+    };
+    let mut largest = 0.0f64;
+    let grid = (0..=256).map(|i| min + (max - min) * f64::from(i) / 256.0);
+    for user in grid
+        .chain(old.map(f64::from))
+        .chain([user_at(mapped)])
+        .chain(knots.iter().map(|k| user_at(k.0)))
+    {
+        if !(min..=max).contains(&user) {
+            continue;
+        }
+        let z = normalized(user, new) * 16384.0;
+        let Some(pair) = knots
+            .windows(2)
+            .find(|p| p.last().is_some_and(|k| f64::from(k.0) >= z))
+        else {
+            continue;
+        };
+        if let [a, b] = pair {
+            let offset = f64::from(a.1)
+                + (z - f64::from(a.0)) / (f64::from(b.0) - f64::from(a.0))
+                    * (f64::from(b.1) - f64::from(a.1));
+            let round = |v| sofel_geom::float::hb_roundf32(crate::instance::f64_to_f32(v));
+            largest = largest.max(
+                (round(f64::from(map_identity(normalized(user, old))) * 16384.0)
+                    - round(z + offset))
+                .abs(),
+            );
+        }
+    }
+    largest
+}
+
 /// Builds the bias and single-axis tent deltas in F2Dot14 units for
 /// an identity segment map whose user range has changed.
-fn compensation_regions([min, default, max]: [i32; 3], old_default: i16) -> Vec<([i16; 3], i32)> {
+fn compensation_regions(
+    [min, default, max]: [i32; 3],
+    old_default: i16,
+    mapping: Option<MappingBreakpoint>,
+) -> Vec<([i16; 3], i32)> {
     const UNIT: i16 = 16384;
     let mut knots = alloc::vec![
         (-UNIT, min.saturating_add(i32::from(UNIT))),
@@ -194,6 +293,15 @@ fn compensation_regions([min, default, max]: [i32; 3], old_default: i16) -> Vec<
             index,
             (old_default, i32::from(old_default).saturating_neg()),
         );
+    }
+    if let Some((extra, old, new)) = mapping
+        && let Err(at) = knots.binary_search_by_key(&extra.0, |k| k.0)
+    {
+        let mut candidate = knots.clone();
+        candidate.insert(at, extra);
+        if residual(&candidate, old, new, extra.0) <= residual(&knots, old, new, extra.0) {
+            knots = candidate;
+        }
     }
     let mut regions = Vec::new();
     if default != 0 {
@@ -220,7 +328,7 @@ mod tests {
     #[test]
     fn i2_identity_range_compensation_uses_old_default_as_an_interior_knot() {
         assert_eq!(
-            compensation_regions([-16384, 8192, 16384], -8192),
+            compensation_regions([-16384, 8192, 16384], -8192, None),
             [
                 ([0, 0, 0], 8192),
                 ([-16384, -16384, -8192], -8192),
@@ -228,7 +336,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            compensation_regions([0, 8192, 16384], -16384),
+            compensation_regions([0, 8192, 16384], -16384, None),
             [
                 ([0, 0, 0], 8192),
                 ([-16384, -16384, 0], 8192),
