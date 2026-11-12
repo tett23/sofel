@@ -32,7 +32,10 @@ use sofel_font::read::cff::hb::HbIndex;
 use sofel_font::read::cff::subr_bias;
 use sofel_font::var::{Instance, Location};
 use sofel_font::{Font, GlyphExtents, HbCff1, HbCff2, HbScale};
+use sofel_geom::PointF;
 use sofel_geom::float::hb_roundf;
+
+use crate::HbOutlineCommand;
 
 /// `HB_CFF_MAX_OPS`.
 const MAX_OPS: u32 = 200_000;
@@ -54,6 +57,7 @@ trait CsNumber: Copy + Default + PartialOrd {
     fn abs(self) -> Self;
     fn to_int(self) -> i64;
     fn round(self) -> i64;
+    fn to_real(self) -> f32;
     fn blend(self, scalar: f32, delta: Self) -> Self;
 }
 
@@ -78,6 +82,10 @@ impl CsNumber for i64 {
     }
     fn round(self) -> i64 {
         self.saturating_add(ONE / 2) >> 16
+    }
+    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+    fn to_real(self) -> f32 {
+        (self as f64 / SCALE) as f32
     }
     fn blend(self, _: f32, _: Self) -> Self {
         self
@@ -107,6 +115,10 @@ impl CsNumber for f64 {
     #[allow(clippy::cast_possible_truncation)]
     fn round(self) -> i64 {
         hb_roundf(self / SCALE) as i64
+    }
+    #[allow(clippy::cast_possible_truncation)]
+    fn to_real(self) -> f32 {
+        (self / SCALE) as f32
     }
     fn blend(self, scalar: f32, delta: Self) -> Self {
         self + f64::from(scalar) * delta
@@ -209,6 +221,107 @@ impl<'data, 'loc, 'source> HbExtents<'data, 'loc, 'source> {
             .or_else(|| self.cff1.as_ref().and_then(|c| cff1_extents(c, glyph.0)))
             .map(|e| scale.scale_glyph_extents(e))
     }
+
+    /// Draw a CFF or CFF2 glyph as HarfBuzz's `get_path` does, before
+    /// synthetic transformations. Glyf paths use [`crate::Scratch::hb_decompose`].
+    pub fn cff_glyph_path(&self, glyph: GlyphId, scale: &HbScale) -> Option<Vec<HbOutlineCommand>> {
+        let x_factor = (scale.x_scale() as f32) / f32::from(self.font.hb_units_per_em());
+        let y_factor = (scale.y_scale() as f32) / f32::from(self.font.hb_units_per_em());
+        if let Some(cff) = self.cff2.as_ref() {
+            let scalars = self.cff2_scalars.as_deref();
+            let path = if scalars.is_none_or(|values| values.iter().all(|&value| value == 0.0)) {
+                path2::<i64>(cff, glyph.0, None).map(|path| convert_path(path, x_factor, y_factor))
+            } else {
+                path2::<f64>(cff, glyph.0, scalars)
+                    .map(|path| convert_path(path, x_factor, y_factor))
+            };
+            if path.is_some() {
+                return path;
+            }
+        }
+        self.cff1.as_ref().and_then(|cff| {
+            path1::<i64>(cff, glyph.0, false).map(|path| convert_path(path, x_factor, y_factor))
+        })
+    }
+}
+
+fn convert_path<N: CsNumber>(
+    path: Vec<PathCommand<N>>,
+    x_factor: f32,
+    y_factor: f32,
+) -> Vec<HbOutlineCommand> {
+    path.into_iter()
+        .map(|command| command.scaled(x_factor, y_factor))
+        .collect()
+}
+
+#[derive(Clone, Copy)]
+enum PathCommand<N: CsNumber> {
+    Move(Point<N>),
+    Line(Point<N>),
+    Cubic(Point<N>, Point<N>, Point<N>),
+    Close,
+}
+
+impl<N: CsNumber> PathCommand<N> {
+    fn scaled(self, x: f32, y: f32) -> HbOutlineCommand {
+        let point = |p: Point<N>| PointF::new(p.x.to_real() * x, p.y.to_real() * y);
+        match self {
+            Self::Move(p) => HbOutlineCommand::MoveTo(point(p)),
+            Self::Line(p) => HbOutlineCommand::LineTo(point(p)),
+            Self::Cubic(a, b, p) => HbOutlineCommand::CubicTo(point(a), point(b), point(p)),
+            Self::Close => HbOutlineCommand::Close,
+        }
+    }
+
+    fn offset(self, delta: Point<N>) -> Self {
+        let moved = |p: Point<N>| p.moved(delta.x, delta.y);
+        match self {
+            Self::Move(p) => Self::Move(moved(p)),
+            Self::Line(p) => Self::Line(moved(p)),
+            Self::Cubic(a, b, p) => Self::Cubic(moved(a), moved(b), moved(p)),
+            Self::Close => Self::Close,
+        }
+    }
+}
+
+fn path2<N: CsNumber>(
+    cff: &HbCff2<'_>,
+    glyph: u32,
+    scalars: Option<&[f32]>,
+) -> Option<Vec<PathCommand<N>>> {
+    if glyph >= cff.num_glyphs() {
+        return None;
+    }
+    let fd = cff.fd(glyph);
+    let (local, ivs) = cff.private(fd);
+    let mut env = Env::<N>::new(
+        cff.char_string(glyph).unwrap_or_default(),
+        cff.global_subrs(),
+        local,
+        Kind::Cff2 { cff, ivs },
+        scalars,
+    );
+    env.record_path = true;
+    env.run()?;
+    Some(env.path)
+}
+
+fn path1<N: CsNumber>(cff: &HbCff1<'_>, glyph: u32, in_seac: bool) -> Option<Vec<PathCommand<N>>> {
+    if glyph >= cff.num_glyphs() {
+        return None;
+    }
+    let local = cff.local_subrs(cff.fd(glyph));
+    let mut env = Env::<N>::new(
+        cff.char_string(glyph).unwrap_or_default(),
+        cff.global_subrs(),
+        local,
+        Kind::Cff1 { cff, in_seac },
+        None,
+    );
+    env.record_path = true;
+    env.run()?;
+    Some(env.path)
 }
 
 /// The box of `glyph` from HarfBuzz's CFF accelerator, before scaling
@@ -469,7 +582,10 @@ struct Env<'a, 'c, 's, N: CsNumber> {
     region_scalars: Option<&'s [f32]>,
     weights: Vec<f32>,
     path_open: bool,
+    path_start: Point<N>,
     bounds: Bounds<N>,
+    record_path: bool,
+    path: Vec<PathCommand<N>>,
 }
 
 impl<'a, 'c, 's, N: CsNumber> Env<'a, 'c, 's, N> {
@@ -509,7 +625,10 @@ impl<'a, 'c, 's, N: CsNumber> Env<'a, 'c, 's, N> {
             region_scalars,
             weights: Vec::new(),
             path_open: false,
+            path_start: Point::default(),
             bounds: Bounds::new(),
+            record_path: false,
+            path: Vec::new(),
         }
     }
 
@@ -615,6 +734,7 @@ impl<'a, 'c, 's, N: CsNumber> Env<'a, 'c, 's, N> {
                 if !cff2 && self.len >= 4 {
                     self.seac();
                 }
+                self.close_path();
                 self.clear();
                 self.endchar = true;
             }
@@ -762,14 +882,30 @@ impl<'a, 'c, 's, N: CsNumber> Env<'a, 'c, 's, N> {
 
     /// The extents path procedures' `moveto`.
     fn moveto(&mut self, p: Point<N>) {
-        self.path_open = false;
+        self.close_path();
         self.pt = p;
     }
 
     fn open(&mut self) {
         if !self.path_open {
             self.path_open = true;
+            self.path_start = self.pt;
             self.bounds.update(self.pt);
+            if self.record_path {
+                self.path.push(PathCommand::Move(self.pt));
+            }
+        }
+    }
+
+    fn close_path(&mut self) {
+        if self.path_open {
+            if self.record_path {
+                if self.pt != self.path_start {
+                    self.path.push(PathCommand::Line(self.path_start));
+                }
+                self.path.push(PathCommand::Close);
+            }
+            self.path_open = false;
         }
     }
 
@@ -777,6 +913,9 @@ impl<'a, 'c, 's, N: CsNumber> Env<'a, 'c, 's, N> {
         self.open();
         self.pt = p;
         self.bounds.update(p);
+        if self.record_path {
+            self.path.push(PathCommand::Line(p));
+        }
     }
 
     fn curve(&mut self, p1: Point<N>, p2: Point<N>, p3: Point<N>) {
@@ -785,6 +924,9 @@ impl<'a, 'c, 's, N: CsNumber> Env<'a, 'c, 's, N> {
         self.bounds.update(p2);
         self.pt = p3;
         self.bounds.update(p3);
+        if self.record_path {
+            self.path.push(PathCommand::Cubic(p1, p2, p3));
+        }
     }
 
     /// `path_procs_t`: the lines, curves and flexes.
@@ -1041,6 +1183,19 @@ impl<'a, 'c, 's, N: CsNumber> Env<'a, 'c, 's, N> {
                 self.bounds.merge(&b);
                 a.offset(delta);
                 self.bounds.merge(&a);
+                if self.record_path {
+                    let paths = path1::<N>(cff, base, true).and_then(|base_path| {
+                        path1::<N>(cff, accent, true).map(|a| (base_path, a))
+                    });
+                    if let Some((base_path, accent_path)) = paths {
+                        self.close_path();
+                        self.path.extend(base_path);
+                        self.path
+                            .extend(accent_path.into_iter().map(|command| command.offset(delta)));
+                    } else {
+                        self.s.set_error();
+                    }
+                }
             }
             None => self.s.set_error(),
         }

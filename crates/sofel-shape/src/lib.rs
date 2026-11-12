@@ -32,6 +32,7 @@ mod layout;
 #[allow(dead_code)] // Used by the shapers of ADR 0024 as they land.
 mod machine;
 mod normalize;
+mod outline;
 mod plan;
 mod props;
 mod scale;
@@ -52,8 +53,10 @@ pub use buffer::{
 pub use diff::{DiffFlags, diff, diff_unicode};
 pub use direction::Direction;
 pub use feature::Feature;
+pub use font::SubFont;
 pub use glyph::{GlyphFlags, GlyphInfo, GlyphPosition};
 pub use language::Language;
+pub use outline::{GlyphOutline, OutlinePoint};
 pub use plan::{LayoutSelection, ShapePlan, Shaper, VariationSelection, layout_selection};
 pub use props::{ResolvedProperties, SegmentProperties, script_horizontal_direction};
 pub use scale::Scale;
@@ -62,7 +65,7 @@ pub use serialize::{
     deserialize_glyphs, deserialize_unicode, glyph_from_string, glyph_to_string, serialize_glyphs,
     serialize_glyphs_range, serialize_invalid, serialize_unicode, serialize_unicode_range,
 };
-pub use shape::{shape, shape_fallback, shape_with_extents};
+pub use shape::{shape, shape_fallback, shape_with_extents, shape_with_subfont};
 pub use sofel_unicode::Script;
 pub use tag::{
     MAX_TAGS_PER_LANGUAGE, MAX_TAGS_PER_SCRIPT, OT_TAG_DEFAULT_LANGUAGE, OT_TAG_DEFAULT_SCRIPT,

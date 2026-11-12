@@ -66,11 +66,15 @@
 extern crate alloc;
 
 mod hb_cff;
+mod hb_draw;
+mod slot_synth;
 mod varc_draw;
 
 pub use sofel_font as font;
 
 pub use hb_cff::{HbExtents, cff1_extents, cff2_extents, cff2_extents_at};
+pub use hb_draw::HbOutlineCommand;
+pub use slot_synth::SlotMetrics;
 
 use alloc::vec::Vec;
 use core::fmt;
@@ -563,6 +567,31 @@ fn load_glyf(
 }
 
 impl Scratch {
+    /// The points of the last loaded outline, including slot synthesis.
+    pub fn points(&self) -> &[Point] {
+        &self.points
+    }
+
+    /// Apply FreeType's `FT_GlyphSlot_Oblique` to the loaded outline.
+    /// The slot advance and metrics are unchanged.
+    pub fn oblique_slot(&mut self) -> CBox {
+        self.slant_slot(Fixed(0x0366A), Fixed(0))
+    }
+
+    /// Apply FreeType's `FT_GlyphSlot_Slant` 16.16 shear factors.
+    /// The slot advance and metrics are unchanged.
+    pub fn slant_slot(&mut self, xslant: Fixed, yslant: Fixed) -> CBox {
+        let matrix = Matrix {
+            xx: Fixed::ONE,
+            xy: xslant,
+            yx: Fixed(yslant.0.wrapping_neg()),
+            yy: Fixed::ONE,
+        };
+        for point in &mut self.points {
+            *point = transform(*point, &matrix);
+        }
+        control_box(&self.points)
+    }
     fn clear(&mut self) {
         self.points.clear();
         self.tags.clear();

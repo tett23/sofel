@@ -14,6 +14,474 @@ use sofel_font::{
 };
 
 use crate::scale::Scale;
+use sofel_geom::float::{ceilf, floorf, hb_clamp_to_i32};
+
+use crate::outline::GlyphOutline;
+
+type VariationGlyphFn<'a> = dyn Fn(u32, u32) -> Option<u32> + Send + Sync + 'a;
+type OriginFn<'a> = dyn Fn(u32) -> Option<(i32, i32)> + Send + Sync + 'a;
+
+/// Per-query font functions and scale, with an optional parent font.
+///
+/// A child inherits the parent's settings at creation. An unset function
+/// delegates to the parent; a set function supplies a value in this font's
+/// scale, as with HarfBuzz's `hb_font_create_sub_font`.
+pub struct SubFont<'p> {
+    parent: Option<&'p SubFont<'p>>,
+    scale: Scale,
+    nominal_glyph: Option<Box<dyn Fn(u32) -> Option<u32> + Send + Sync + 'p>>,
+    variation_glyph: Option<Box<VariationGlyphFn<'p>>>,
+    h_advance: Option<Box<dyn Fn(u32) -> i32 + Send + Sync + 'p>>,
+    v_advance: Option<Box<dyn Fn(u32) -> i32 + Send + Sync + 'p>>,
+    h_origin: Option<Box<OriginFn<'p>>>,
+    v_origin: Option<Box<OriginFn<'p>>>,
+    glyph_extents: Option<Box<dyn Fn(u32) -> Option<GlyphExtents> + Send + Sync + 'p>>,
+    outline: Option<Box<dyn Fn(u32) -> Option<GlyphOutline> + Send + Sync + 'p>>,
+    x_embolden: f32,
+    y_embolden: f32,
+    embolden_in_place: bool,
+    slant: f32,
+}
+
+impl<'p> SubFont<'p> {
+    /// A root font using the built-in OpenType functions for unset queries.
+    pub fn new(scale: Scale) -> Self {
+        Self {
+            parent: None,
+            scale,
+            nominal_glyph: None,
+            variation_glyph: None,
+            h_advance: None,
+            v_advance: None,
+            h_origin: None,
+            v_origin: None,
+            glyph_extents: None,
+            outline: None,
+            x_embolden: 0.0,
+            y_embolden: 0.0,
+            embolden_in_place: false,
+            slant: 0.0,
+        }
+    }
+
+    /// Create a child, copying the scale and synthetic settings.
+    pub fn child(&'p self) -> Self {
+        Self {
+            parent: Some(self),
+            scale: self.scale,
+            nominal_glyph: None,
+            variation_glyph: None,
+            h_advance: None,
+            v_advance: None,
+            h_origin: None,
+            v_origin: None,
+            glyph_extents: None,
+            outline: None,
+            x_embolden: self.x_embolden,
+            y_embolden: self.y_embolden,
+            embolden_in_place: self.embolden_in_place,
+            slant: self.slant,
+        }
+    }
+
+    /// Set the scale and pixels per em used by this font.
+    pub fn set_scale(&mut self, scale: Scale) {
+        self.scale = scale;
+    }
+
+    /// The current scale and pixels per em.
+    pub fn scale(&self) -> Scale {
+        self.scale
+    }
+
+    /// Override the nominal Unicode-to-glyph lookup.
+    pub fn set_nominal_glyph_func(&mut self, func: impl Fn(u32) -> Option<u32> + Send + Sync + 'p) {
+        self.nominal_glyph = Some(Box::new(func));
+    }
+
+    /// Override the variation-selector glyph lookup.
+    pub fn set_variation_glyph_func(
+        &mut self,
+        func: impl Fn(u32, u32) -> Option<u32> + Send + Sync + 'p,
+    ) {
+        self.variation_glyph = Some(Box::new(func));
+    }
+
+    /// Override the horizontal advance in this font's scaled units.
+    pub fn set_h_advance_func(&mut self, func: impl Fn(u32) -> i32 + Send + Sync + 'p) {
+        self.h_advance = Some(Box::new(func));
+    }
+
+    /// Override the vertical advance in this font's scaled units.
+    pub fn set_v_advance_func(&mut self, func: impl Fn(u32) -> i32 + Send + Sync + 'p) {
+        self.v_advance = Some(Box::new(func));
+    }
+
+    /// Override the horizontal origin in this font's scaled units.
+    pub fn set_h_origin_func(
+        &mut self,
+        func: impl Fn(u32) -> Option<(i32, i32)> + Send + Sync + 'p,
+    ) {
+        self.h_origin = Some(Box::new(func));
+    }
+
+    /// Override the vertical origin in this font's scaled units.
+    pub fn set_v_origin_func(
+        &mut self,
+        func: impl Fn(u32) -> Option<(i32, i32)> + Send + Sync + 'p,
+    ) {
+        self.v_origin = Some(Box::new(func));
+    }
+
+    /// Override the glyph box in this font's scaled units.
+    pub fn set_glyph_extents_func(
+        &mut self,
+        func: impl Fn(u32) -> Option<GlyphExtents> + Send + Sync + 'p,
+    ) {
+        self.glyph_extents = Some(Box::new(func));
+    }
+
+    /// Override the glyph outline in this font's scaled units.
+    pub fn set_outline_func(
+        &mut self,
+        func: impl Fn(u32) -> Option<GlyphOutline> + Send + Sync + 'p,
+    ) {
+        self.outline = Some(Box::new(func));
+    }
+
+    /// Draw a glyph through this font's outline function, then apply
+    /// HarfBuzz's synthetic slant and bold settings.
+    pub fn glyph_outline(&self, glyph: u32) -> Option<GlyphOutline> {
+        let mut outline = self.raw_outline(glyph)?;
+        let x_scale = self.scale.scale.x_scale();
+        let y_scale = self.scale.scale.y_scale();
+        let slant_xy = if y_scale == 0 {
+            0.0
+        } else {
+            self.slant * (x_scale as f32) / (y_scale as f32)
+        };
+        if slant_xy != 0.0 {
+            let (xo, yo) = self.raw_h_origin(glyph, &|_, _| None).unwrap_or((0, 0));
+            outline.translate(-(xo as f32), -(yo as f32));
+            outline.slant(slant_xy);
+            outline.translate(xo as f32, yo as f32);
+        }
+        let x_strength = round_to_i32((x_scale.saturating_abs() as f32) * self.x_embolden);
+        let y_strength = round_to_i32((y_scale.saturating_abs() as f32) * self.y_embolden);
+        if x_strength != 0 || y_strength != 0 {
+            let mut x_shift = if self.embolden_in_place {
+                0.0
+            } else {
+                (x_strength as f32) / 2.0
+            };
+            let mut y_shift = (y_strength as f32) / 2.0;
+            if x_scale < 0 {
+                x_shift = -x_shift;
+            }
+            if y_scale < 0 {
+                y_shift = -y_shift;
+            }
+            outline.embolden(x_strength as f32, y_strength as f32, x_shift, y_shift);
+        }
+        Some(outline)
+    }
+
+    #[allow(clippy::arithmetic_side_effects)] // HarfBuzz scales draw coordinates by f32 ratios.
+    fn raw_outline(&self, glyph: u32) -> Option<GlyphOutline> {
+        if let Some(func) = &self.outline {
+            return func(glyph);
+        }
+        if let Some(parent) = self.parent {
+            let mut outline = parent.raw_outline(glyph)?;
+            let x = if parent.scale.scale.x_scale() == 0 {
+                0.0
+            } else {
+                (self.scale.scale.x_scale() as f32) / (parent.scale.scale.x_scale() as f32)
+            };
+            let y = if parent.scale.scale.y_scale() == 0 {
+                0.0
+            } else {
+                (self.scale.scale.y_scale() as f32) / (parent.scale.scale.y_scale() as f32)
+            };
+            outline.scale(x, y);
+            return Some(outline);
+        }
+        None
+    }
+
+    /// Set HarfBuzz's synthetic bold fractions and in-place setting.
+    pub fn set_synthetic_bold(&mut self, x: f32, y: f32, in_place: bool) {
+        self.x_embolden = x;
+        self.y_embolden = y;
+        self.embolden_in_place = in_place;
+    }
+
+    /// Set HarfBuzz's synthetic slant ratio.
+    pub fn set_synthetic_slant(&mut self, slant: f32) {
+        self.slant = slant;
+    }
+
+    fn nominal(&self, cp: u32, base: &dyn Fn(u32) -> Option<u32>) -> Option<u32> {
+        if let Some(func) = &self.nominal_glyph {
+            func(cp)
+        } else if let Some(parent) = self.parent {
+            parent.nominal(cp, base)
+        } else {
+            base(cp)
+        }
+    }
+
+    fn variation(
+        &self,
+        cp: u32,
+        selector: u32,
+        base: &dyn Fn(u32, u32) -> Option<u32>,
+    ) -> Option<u32> {
+        if let Some(func) = &self.variation_glyph {
+            func(cp, selector)
+        } else if let Some(parent) = self.parent {
+            parent.variation(cp, selector, base)
+        } else {
+            base(cp, selector)
+        }
+    }
+
+    fn raw_h_advance(&self, glyph: u32, base: &dyn Fn(Scale, u32) -> i32) -> i32 {
+        if let Some(func) = &self.h_advance {
+            func(glyph)
+        } else if let Some(parent) = self.parent {
+            let value = parent.raw_h_advance(glyph, base);
+            parent_scale_distance(
+                value,
+                parent.scale.scale.x_scale(),
+                self.scale.scale.x_scale(),
+            )
+        } else {
+            base(self.scale, glyph)
+        }
+    }
+
+    fn raw_v_advance(&self, glyph: u32, base: &dyn Fn(Scale, u32) -> i32) -> i32 {
+        if let Some(func) = &self.v_advance {
+            func(glyph)
+        } else if let Some(parent) = self.parent {
+            let value = parent.raw_v_advance(glyph, base);
+            parent_scale_distance(
+                value,
+                parent.scale.scale.y_scale(),
+                self.scale.scale.y_scale(),
+            )
+        } else {
+            base(self.scale, glyph)
+        }
+    }
+
+    fn has_v_advance_override(&self) -> bool {
+        self.v_advance.is_some() || self.parent.is_some_and(SubFont::has_v_advance_override)
+    }
+
+    fn raw_v_origin(
+        &self,
+        glyph: u32,
+        base: &dyn Fn(Scale, u32) -> Option<(i32, i32)>,
+    ) -> Option<(i32, i32)> {
+        if let Some(func) = &self.v_origin {
+            func(glyph)
+        } else if let Some(parent) = self.parent {
+            parent.raw_v_origin(glyph, base).map(|(x, y)| {
+                (
+                    parent_scale_distance(
+                        x,
+                        parent.scale.scale.x_scale(),
+                        self.scale.scale.x_scale(),
+                    ),
+                    parent_scale_distance(
+                        y,
+                        parent.scale.scale.y_scale(),
+                        self.scale.scale.y_scale(),
+                    ),
+                )
+            })
+        } else {
+            base(self.scale, glyph)
+        }
+    }
+
+    /// Query a glyph's horizontal origin with parent delegation and scale conversion.
+    pub fn horizontal_origin(&self, glyph: u32) -> Option<(i32, i32)> {
+        self.raw_h_origin(glyph, &|_, _| None)
+            .map(|origin| self.synthetic_origin(origin))
+    }
+
+    fn raw_h_origin(
+        &self,
+        glyph: u32,
+        base: &dyn Fn(Scale, u32) -> Option<(i32, i32)>,
+    ) -> Option<(i32, i32)> {
+        if let Some(func) = &self.h_origin {
+            func(glyph)
+        } else if let Some(parent) = self.parent {
+            parent.raw_h_origin(glyph, base).map(|(x, y)| {
+                (
+                    parent_scale_distance(
+                        x,
+                        parent.scale.scale.x_scale(),
+                        self.scale.scale.x_scale(),
+                    ),
+                    parent_scale_distance(
+                        y,
+                        parent.scale.scale.y_scale(),
+                        self.scale.scale.y_scale(),
+                    ),
+                )
+            })
+        } else {
+            base(self.scale, glyph)
+        }
+    }
+
+    fn raw_glyph_extents(
+        &self,
+        glyph: u32,
+        base: &dyn Fn(Scale, u32) -> Option<GlyphExtents>,
+    ) -> Option<GlyphExtents> {
+        if let Some(func) = &self.glyph_extents {
+            func(glyph)
+        } else if let Some(parent) = self.parent {
+            parent.raw_glyph_extents(glyph, base).map(|e| GlyphExtents {
+                x_bearing: parent_scale_distance(
+                    e.x_bearing,
+                    parent.scale.scale.x_scale(),
+                    self.scale.scale.x_scale(),
+                ),
+                y_bearing: parent_scale_distance(
+                    e.y_bearing,
+                    parent.scale.scale.y_scale(),
+                    self.scale.scale.y_scale(),
+                ),
+                width: parent_scale_distance(
+                    e.width,
+                    parent.scale.scale.x_scale(),
+                    self.scale.scale.x_scale(),
+                ),
+                height: parent_scale_distance(
+                    e.height,
+                    parent.scale.scale.y_scale(),
+                    self.scale.scale.y_scale(),
+                ),
+            })
+        } else {
+            base(self.scale, glyph)
+        }
+    }
+
+    /// Query the glyph box through this font's functions and synthetic settings.
+    pub fn glyph_extents(&self, glyph: u32) -> Option<GlyphExtents> {
+        self.glyph_extents_with_base(glyph, &|_, _| None)
+    }
+
+    fn glyph_extents_with_base(
+        &self,
+        glyph: u32,
+        base: &dyn Fn(Scale, u32) -> Option<GlyphExtents>,
+    ) -> Option<GlyphExtents> {
+        let raw = self.raw_glyph_extents(glyph, base);
+        if self.slant == 0.0 && self.x_embolden == 0.0 && self.y_embolden == 0.0 {
+            return raw.or_else(|| self.glyph_outline(glyph).map(|outline| outline.extents()));
+        }
+        if let Some(outline) = self.glyph_outline(glyph) {
+            return Some(outline.extents());
+        }
+        raw.map(|extents| self.synthetic_glyph_extents(extents))
+    }
+
+    #[allow(clippy::arithmetic_side_effects)] // HarfBuzz negates the signed strength.
+    fn synthetic_h_advance(&self, advance: i32) -> i32 {
+        if self.embolden_in_place || self.x_embolden == 0.0 || advance == 0 {
+            return advance;
+        }
+        let x_scale = self.scale.scale.x_scale();
+        let strength = round_to_i32((x_scale.saturating_abs() as f32) * self.x_embolden);
+        advance.wrapping_add(if x_scale < 0 { -strength } else { strength })
+    }
+
+    #[allow(clippy::arithmetic_side_effects)] // HarfBuzz negates the signed strength.
+    fn synthetic_v_advance(&self, advance: i32) -> i32 {
+        if self.embolden_in_place || self.y_embolden == 0.0 || advance == 0 {
+            return advance;
+        }
+        let y_scale = self.scale.scale.y_scale();
+        let strength = round_to_i32((y_scale.saturating_abs() as f32) * self.y_embolden);
+        advance.wrapping_add(if y_scale < 0 { -strength } else { strength })
+    }
+
+    #[allow(clippy::arithmetic_side_effects)] // HarfBuzz applies signed strengths to the two coordinates.
+    fn synthetic_origin(&self, (x, y): (i32, i32)) -> (i32, i32) {
+        if self.embolden_in_place {
+            return (x, y);
+        }
+        let x_scale = self.scale.scale.x_scale();
+        let y_scale = self.scale.scale.y_scale();
+        let x_strength = round_to_i32((x_scale.saturating_abs() as f32) * self.x_embolden);
+        let y_strength = round_to_i32((y_scale.saturating_abs() as f32) * self.y_embolden);
+        (
+            x.wrapping_add(if x_scale < 0 { -x_strength } else { x_strength }),
+            y.wrapping_add(if y_scale < 0 { -y_strength } else { y_strength }),
+        )
+    }
+
+    #[allow(clippy::arithmetic_side_effects, clippy::cast_possible_truncation)] // HarfBuzz floorf/ceilf and bounded i32 coordinates.
+    fn synthetic_glyph_extents(&self, mut extents: GlyphExtents) -> GlyphExtents {
+        let x_scale = self.scale.scale.x_scale();
+        let y_scale = self.scale.scale.y_scale();
+        let slant_xy = if y_scale == 0 {
+            0.0
+        } else {
+            self.slant * (x_scale as f32) / (y_scale as f32)
+        };
+        if slant_xy != 0.0 {
+            let y1 = i64::from(extents.y_bearing);
+            let y2 = y1 + i64::from(extents.height);
+            let a = (y1 as f32) * slant_xy;
+            let b = (y2 as f32) * slant_xy;
+            let x1 = i64::from(extents.x_bearing) + floorf(a.min(b)) as i64;
+            let x2 =
+                i64::from(extents.x_bearing) + i64::from(extents.width) + ceilf(a.max(b)) as i64;
+            extents.x_bearing = hb_clamp_to_i32(x1 as f64);
+            extents.width = hb_clamp_to_i32((x2 - x1) as f64);
+        }
+        let x_strength = round_to_i32((x_scale.saturating_abs() as f32) * self.x_embolden);
+        let y_strength = round_to_i32((y_scale.saturating_abs() as f32) * self.y_embolden);
+        if x_strength != 0 || y_strength != 0 {
+            let y_shift = if y_scale < 0 { -y_strength } else { y_strength };
+            extents.y_bearing =
+                hb_clamp_to_i32((i64::from(extents.y_bearing) + i64::from(y_shift)) as f64);
+            extents.height =
+                hb_clamp_to_i32((i64::from(extents.height) - i64::from(y_shift)) as f64);
+            let x_shift = if x_scale < 0 { -x_strength } else { x_strength };
+            if self.embolden_in_place {
+                extents.x_bearing =
+                    hb_clamp_to_i32((i64::from(extents.x_bearing) - i64::from(x_shift / 2)) as f64);
+            }
+            extents.width = hb_clamp_to_i32((i64::from(extents.width) + i64::from(x_shift)) as f64);
+        }
+        extents
+    }
+}
+
+/// `hb_font_t::parent_scale_x_distance`: multiply before division and
+/// truncate toward zero, except when the parent scale is zero.
+#[allow(clippy::arithmetic_side_effects)] // parent != 0 and i32*i32 fits i64.
+fn parent_scale_distance(value: i32, parent: i32, child: i32) -> i32 {
+    if parent == 0 || parent == child {
+        return value;
+    }
+    let scaled = i64::from(value)
+        .wrapping_mul(i64::from(child))
+        .wrapping_div(i64::from(parent));
+    let b = scaled.to_le_bytes();
+    i32::from_le_bytes([b[0], b[1], b[2], b[3]])
+}
 
 /// A font with its scale and a source of glyph boxes in font units.
 pub(crate) struct ShapeFont<'f, 'a, 'l, 's> {
@@ -25,6 +493,7 @@ pub(crate) struct ShapeFont<'f, 'a, 'l, 's> {
     extents: &'f dyn Fn(GlyphId) -> Option<GlyphExtents>,
     glyph_scratch: RefCell<GlyphScratch>,
     advance_cache: Option<Box<AdvanceCache<'f, 'a, 'l, 's>>>,
+    subfont: Option<&'f SubFont<'f>>,
 }
 
 pub(crate) use sofel_geom::float::i32_to_f32;
@@ -40,6 +509,7 @@ impl<'f, 'a, 'l, 's> ShapeFont<'f, 'a, 'l, 's> {
         instance: Instance<'f, 'a, 'l, 's>,
         scale: Scale,
         extents: &'f dyn Fn(GlyphId) -> Option<GlyphExtents>,
+        subfont: Option<&'f SubFont<'f>>,
     ) -> ShapeFont<'f, 'a, 'l, 's> {
         let font = instance.font();
         let upem = f32::from(font.hb_units_per_em());
@@ -56,6 +526,7 @@ impl<'f, 'a, 'l, 's> ShapeFont<'f, 'a, 'l, 's> {
             extents,
             glyph_scratch: RefCell::new(GlyphScratch::default()),
             advance_cache,
+            subfont,
         }
     }
 
@@ -71,45 +542,137 @@ impl<'f, 'a, 'l, 's> ShapeFont<'f, 'a, 'l, 's> {
     /// `get_nominal_glyph`: glyph ids not below the glyph count
     /// included, as HarfBuzz's `ot` font functions give them.
     pub(crate) fn nominal_glyph(&self, c: u32) -> Option<u32> {
-        self.font.nominal_glyph_raw(c).map(|g| g.0)
+        self.subfont.map_or_else(
+            || self.font.nominal_glyph_raw(c).map(|g| g.0),
+            |subfont| subfont.nominal(c, &|cp| self.font.nominal_glyph_raw(cp).map(|g| g.0)),
+        )
     }
     /// `has_glyph`.
     pub(crate) fn has_glyph(&self, c: u32) -> bool {
-        self.font.nominal_glyph_raw(c).is_some()
+        self.nominal_glyph(c).is_some()
     }
     /// `get_variation_glyph`, as [`Self::nominal_glyph`].
     pub(crate) fn variation_glyph(&self, c: u32, selector: u32) -> Option<u32> {
-        self.font.variation_glyph_raw(c, selector).map(|g| g.0)
+        self.subfont.map_or_else(
+            || self.font.variation_glyph_raw(c, selector).map(|g| g.0),
+            |subfont| {
+                subfont.variation(c, selector, &|cp, vs| {
+                    self.font.variation_glyph_raw(cp, vs).map(|g| g.0)
+                })
+            },
+        )
     }
     /// `get_glyph_h_advance`.
     pub(crate) fn h_advance(&self, glyph: u32) -> i32 {
-        let advance = self.advance_cache.as_ref().map_or_else(
-            || self.instance.advance(GlyphId(glyph)),
-            |cache| {
-                cache.advance_with_scratch(GlyphId(glyph), &mut self.glyph_scratch.borrow_mut())
-            },
-        );
-        self.scale.scale.em_scale_x(advance.cast_signed())
+        let base = |scale: Scale, glyph: u32| {
+            let advance = self.advance_cache.as_ref().map_or_else(
+                || self.instance.advance(GlyphId(glyph)),
+                |cache| {
+                    cache.advance_with_scratch(GlyphId(glyph), &mut self.glyph_scratch.borrow_mut())
+                },
+            );
+            scale.scale.em_scale_x(advance.cast_signed())
+        };
+        self.subfont.map_or_else(
+            || base(self.scale, glyph),
+            |subfont| subfont.synthetic_h_advance(subfont.raw_h_advance(glyph, &base)),
+        )
     }
     /// `get_glyph_v_advance`.
     pub(crate) fn v_advance(&self, glyph: u32) -> i32 {
-        let mut scratch = self.glyph_scratch.borrow_mut();
-        self.instance
-            .scaled_v_advance_with_scratch(&self.scale.scale, GlyphId(glyph), &mut scratch)
+        let base = |scale: Scale, glyph: u32| {
+            let mut scratch = self.glyph_scratch.borrow_mut();
+            self.instance
+                .scaled_v_advance_with_scratch(&scale.scale, GlyphId(glyph), &mut scratch)
+        };
+        self.subfont.map_or_else(
+            || base(self.scale, glyph),
+            |subfont| {
+                let advance = subfont.raw_v_advance(glyph, &base);
+                if !self.font.has_vertical_metrics() && !subfont.has_v_advance_override() {
+                    // The OpenType fallback derives its raw advance from
+                    // synthetic horizontal font extents. For bold, the
+                    // added height cancels the outer synthetic advance;
+                    // grade keeps the smaller advance.
+                    if subfont.embolden_in_place {
+                        let y_scale = subfont.scale.scale.y_scale();
+                        let strength =
+                            round_to_i32((y_scale.saturating_abs() as f32) * subfont.y_embolden);
+                        advance.wrapping_sub(if y_scale < 0 {
+                            strength.wrapping_neg()
+                        } else {
+                            strength
+                        })
+                    } else {
+                        advance
+                    }
+                } else {
+                    subfont.synthetic_v_advance(advance)
+                }
+            },
+        )
     }
     /// `get_glyph_v_origin`.
     pub(crate) fn v_origin(&self, glyph: u32) -> (i32, i32) {
-        let mut scratch = self.glyph_scratch.borrow_mut();
-        self.instance.scaled_v_origin_with_scratch(
-            &self.scale.scale,
-            GlyphId(glyph),
-            |g| (self.extents)(g).map(|e| self.scale.scale.scale_glyph_extents(e)),
-            &mut scratch,
-        )
+        let base = |scale: Scale, glyph: u32| {
+            let (mut x, mut y) = {
+                let mut scratch = self.glyph_scratch.borrow_mut();
+                self.instance.scaled_v_origin_with_scratch(
+                    &scale.scale,
+                    GlyphId(glyph),
+                    |g| (self.extents)(g).map(|e| scale.scale.scale_glyph_extents(e)),
+                    &mut scratch,
+                )
+            };
+            if let Some(subfont) = self.subfont {
+                // HarfBuzz's OpenType vertical origin asks the font for
+                // synthetic horizontal advances before halving them.
+                x = self.h_advance(glyph) / 2;
+                if !self.font.has_vertical_metrics() {
+                    let mut font_extents = self.instance.scaled_h_extents(&scale.scale);
+                    let y_scale = scale.scale.y_scale();
+                    let y_strength =
+                        round_to_i32((y_scale.saturating_abs() as f32) * subfont.y_embolden);
+                    font_extents.ascender = font_extents.ascender.wrapping_add(if y_scale < 0 {
+                        y_strength.wrapping_neg()
+                    } else {
+                        y_strength
+                    });
+                    let advance = i64::from(font_extents.ascender)
+                        .saturating_sub(i64::from(font_extents.descender));
+                    let extents = subfont.glyph_extents_with_base(glyph, &|s, g| {
+                        (self.extents)(GlyphId(g)).map(|value| s.scale.scale_glyph_extents(value))
+                    });
+                    y = extents.map_or(font_extents.ascender, |value| {
+                        let result = i64::from(value.y_bearing)
+                            .saturating_add(advance.saturating_add(i64::from(value.height)) >> 1);
+                        i32::try_from(result.clamp(i64::from(i32::MIN), i64::from(i32::MAX)))
+                            .unwrap_or(0)
+                    });
+                }
+            }
+            Some((x, y))
+        };
+        self.subfont
+            .map_or_else(
+                || base(self.scale, glyph),
+                |subfont| {
+                    subfont
+                        .raw_v_origin(glyph, &base)
+                        .map(|origin| subfont.synthetic_origin(origin))
+                },
+            )
+            .unwrap_or((0, 0))
     }
     /// `get_glyph_extents`, scaled.
     pub(crate) fn glyph_extents(&self, glyph: u32) -> Option<GlyphExtents> {
-        (self.extents)(GlyphId(glyph)).map(|e| self.scale.scale.scale_glyph_extents(e))
+        let base = |scale: Scale, glyph: u32| {
+            (self.extents)(GlyphId(glyph)).map(|e| scale.scale.scale_glyph_extents(e))
+        };
+        self.subfont.map_or_else(
+            || base(self.scale, glyph),
+            |subfont| subfont.glyph_extents_with_base(glyph, &base),
+        )
     }
     pub(crate) fn x_device_delta(&self, device: Option<&Device<'_>>) -> i32 {
         self.instance

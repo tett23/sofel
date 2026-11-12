@@ -2467,7 +2467,7 @@ int32_t sofel_glyph_bitmap(const sofel_font_t *font, uint32_t strike_index, uint
                            sofel_glyph_bitmap_t *bitmap);
 
 /* A decoded bitmap: pixel_mode is FreeType's (1 mono, 2 gray, 3 gray2,
- * 4 gray4, 7 BGRA); rows top first, pitch bytes each. */
+ * 4 gray4, 5 LCD, 6 LCD_V, 7 BGRA); rows top first, pitch bytes each. */
 typedef struct sofel_bitmap_layout_t {
   uint16_t width;
   uint16_t rows;
