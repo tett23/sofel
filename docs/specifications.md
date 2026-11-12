@@ -12,6 +12,7 @@ C ABIは [ADR 0027](adr/0027-variable-fonts.md) の位置の作成、座標の�
 メトリクス、基準線、輪郭、シェーピング、塗りの既存C ABI関数は位置の引数を受け取る。
 メトリクスではHVARとVVARの送り幅、VORGとVVARの縦原点、MVARのフォント全体のメトリクス、FreeTypeの縦送り幅に位置を適用する。
 基準線とレイアウトのフォント全体の値では、BASEのVariationIndexに位置を適用する。
+レイアウトの問い合わせでは [ADR 0062](adr/0062-layout-query-device-adjustments.md) に従い、GPOS、GDEF、BASE、MATH の Device 補正に対象方向の ppem または位置の座標を使う。Rust と C ABI は合字キャレットと MATH の値・列を公開する。
 gvarの幻の点による送り幅と箱、輪郭、シェーピング、塗りの変化量は未実装である。
 FreeTypeが合成する既定の名前つきインスタンスは、必要なnameレコードが欠ける場合も件数と既定番号に含める。nameレコードが欠けた末尾のスタイルは名前IDと全座標がゼロである（[ADR 0036](adr/0036-freetype-missing-default-named-style.md)）。
 `sofel-shape` は位置によるFeatureVariations、GPOSのVariationIndex、送り幅と縦原点を使う。`sofel-shape` のCLIは `--variations` と `--named-instance` で位置を指定する。これらと上記以外の位置による値の変更は未実装である。
@@ -182,6 +183,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   - `baseline` はHarfBuzzの `hb_ot_layout_get_baseline`：方向の軸のBaseScriptListから文字体系のタグを、無ければ `DFLT` を引き、BaseValuesが無ければ（記録のBaseScriptが空でも）引けない。BaseTagListで基準線のタグを引き、その位置のBaseCoordの `coordinate` を、横書きは `em_scale_y`、縦書きは `em_scale_x` で拡大縮小する。形式2と4の参照のグリフの点は使わず、形式3のDeviceの差分は、ppemと可変フォントの座標を持たないため0とする。言語のタグは使わない。
   - `baseline_with_fallback` はHarfBuzzの `hb_ot_layout_get_baseline_with_fallback`：`romn` は0。`math` は横書きでU+2212（無ければ `-`）のグリフの箱があれば `y_bearing + height / 2`、無ければx-height（`metrics_position_with_fallback`）の半分。`idtp` と `ideo` は、反対側の端がBASEにあればそれに±1 em（横は `y_scale`、縦は `x_scale`）、無ければその方向の `h_extents` か `v_extents` のアセンダとディセンダ。`icft` と `icfb` は仮想ボディの上下から高さの10分の1だけ内側。`Idce` と `Icfc` は上下の和の半分（64bitで足し、0へ切り捨て）。`hang` は横書きで、HarfBuzzの `hb_ot_tag_to_script` で写した文字体系の文字（デーヴァナーガリーのU+0915など21個）のグリフの箱の `y_bearing`、無ければ `x_scale` か `y_scale` の6/10。ほかのタグは0。グリフの箱は呼び出し側が渡す関数で求める。文字体系の表は、[ADR 0019](adr/0019-unicode-character-data.md) の文字体系の型ができるまでの一時のもの。
   - `layout_font_extents` はHarfBuzzの `hb_ot_layout_get_font_extents`：BaseScriptが既定のMinMaxかBaseLangSysの記録を持てば、言語のMinMax（無ければ既定のMinMax。空のMinMaxと空の座標は0）の最大をアセンダ、最小をディセンダ、行間を0として `true`。持たなければその方向の `h_extents` か `v_extents` と `false`。FeatMinMaxは使わない。
+- レイアウトの問い合わせ（[ADR 0062](adr/0062-layout-query-device-adjustments.md)）では、`Instance::layout_queries` に `HbScale` と横・縦の ppem を渡す。Device のピクセル補正は対象方向の ppem とスケールを使い、VariationIndex は GDEF または BASE の ItemVariationStore と位置の座標を使う。基準線と MinMax の値は横書きで縦方向、縦書きで横方向の補正を受ける。合字キャレットは GDEF の列を返し、MATH の定数、イタリック補正、アクセント、伸長形、カーニング、異体グリフ、組み立て部品、最小重なりを取得する。対象グリフのアクセントの記録がなければ、横送り幅の半分を返す。`style_value` は同じ位置の fvar、STAT、OS/2、head、post と GPOS の `size` feature を参照し、fvar に軸がない光学サイズでは `HbScale` のポイントサイズを STAT より優先する。
 - hheaの代わりに `HHEA` を使う条件と `HHEA` の `numberOfLongMetrics` の幅（24bit）は、[ADR 0007](adr/0007-sfnt-read-foundation.md) の読み方のままとする（HarfBuzzとFreeTypeは32bitで読む）。
 
 ## 輪郭（`sofel-outline`）
@@ -339,7 +341,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - HarfBuzzは、すべての表を1つの直列化の作業領域（`hb_subset_plan_execute_or_fail` の `buf`）に書く。表ごとに作業領域を大きさの見積もり（`_hb_subset_estimate_table_size`）まで広げ、足りなければ倍にして書きなおし（`allocated * 2 + 16`）、元の表の長さの256倍を超えるところで失敗する。sofelの `Serializer` は必要なだけ伸びるので、表を書くあいだに保持した最大のバイト数（`Serializer::peak_len`）と、表から表へ引き継ぐ作業領域の大きさ（`hb_vector_t::alloc` と同じ伸ばし方）から、HarfBuzzが書けたかを求め、書けなければ `SubsetError::Limit` とする。例えば、形式13のcmapを持つ `AdobeBlank-Regular.ttf` で多くのグリフを残すと、形式12のcmapが元の256倍を超え、HarfBuzzと同じく失敗する。
 - MATHは、HarfBuzzの `hb-ot-math-table.hh` の `closure_glyphs` と `subset` のとおりに扱う。閉包は、cmapの閉包の後のグリフの集合が持つ縦と横の構成（MathGlyphConstruction）の変種と部品のグリフを1回だけ足す（足したグリフの構成はたどらない）。書くときは、MathConstantsを写し、MathGlyphInfoの各表はMATHの閉包の後の集合（`_glyphset_mathed`）のグリフの記録を残し、MathVariantsはHarfBuzzと同じくcmapの閉包の後の集合（`_glyphset_cmaped`）のグリフの構成だけを残す。Deviceはヒンティングの形式だけを写し、VariationIndexは捨てる。GDEFが変化量の表を持ち、MATHに `0x8000` のバイト列がある場合は `Unsupported` とする（番号の詰めなおしは10段階目）。
 - COLRの閉包は `_colr_closure` のとおり、版0の基底グリフの層のグリフを足し、版1の塗りを `HB_MAX_NESTING_LEVEL` の深さまでたどって、PaintGlyphのグリフ、PaintColrGlyphの基底グリフ、PaintColrLayersの層、色の番号を集める。その後、残すグリフの版0の層の色の番号を足す。層は集めた順に0から、色の番号は昇順に0から振りなおす（前景色の0xFFFFはそのまま）。
-- COLRは `COLR::subset` のとおりに書く。版0の基底グリフの記録を新しいグリフIDの順に並べ、層をグリフごとに複製して振りなおす。版1の塗りを持つグリフが残らなければ版0として書く。版1では、BaseGlyphList、LayerList（残す層）、ClipList（新しいグリフIDの連続する範囲で同じクリップの箱を持つものをまとめる）を書き、塗りは各形式の静的な大きさを写して、グリフID、層、色の番号を書きかえる。変化量の表がない場合、変化量の番号は `NO_VARIATION` だけを残せる（それ以外の塗りは書けず、含む部分を除く）。版0に落とすときは変化量の表を読み取り、ItemVariationStoreとDeltaSetIndexMapを取り除く。色のグリフを1つも残さない場合も、空の版0の表を書く。版1のままでも、閉包が残す基底グリフの塗りをすべてたどり、塗りとクリップがどれも静的であれば、この2つの表を取り除く。軸を固定しない場合、塗り、勾配の停止点、変換、クリップの変化量インデックスがすべて `NO_VARIATION` なら、値は静的であり、この番号を出力に保つ。軸を固定せずに塗りとクリップがItemVariationStoreを参照するときは、使う行と領域だけを残し、参照番号を振り直す。DeltaSetIndexMapを通して参照する場合は、使うマップ項目を元の番号順に詰め、末尾で同じ行に対応する項目を1つにまとめる。それ以外でItemVariationStoreかDeltaSetIndexMapを持つCOLRは `Unsupported` とする。
+- COLRは `COLR::subset` のとおりに書く。版0の基底グリフの記録を新しいグリフIDの順に並べ、層をグリフごとに複製して振りなおす。版1の塗りを持つグリフが残らなければ版0として書く。版1では、BaseGlyphList、LayerList（残す層）、ClipList（新しいグリフIDの連続する範囲で同じクリップの箱を持つものをまとめる）を書き、塗りは各形式の静的な大きさを写して、グリフID、層、色の番号を書きかえる。変化量の表がない場合、変化量の番号は `NO_VARIATION` だけを残せる（それ以外の塗りは書けず、含む部分を除く）。版0に落とすときは変化量の表を読み取り、ItemVariationStoreとDeltaSetIndexMapを取り除く。色のグリフを1つも残さない場合も、空の版0の表を書く。版1のままでも、閉包が残す基底グリフの塗りをすべてたどり、塗りとクリップがどれも静的であれば、この2つの表を取り除く。軸を固定しない場合、塗り、勾配の停止点、変換、クリップの変化量インデックスがすべて `NO_VARIATION` なら、値は静的であり、この番号を出力に保つ。軸を固定せずに塗りとクリップがItemVariationStoreを参照するときは、使う行と領域だけを残し、参照番号を振り直す。DeltaSetIndexMapを通して参照する場合は、使うマップ項目を元の番号順に詰め、末尾で同じ行に対応する項目を1つにまとめる。全軸を既定位置に固定すると、可変の塗り、勾配の停止点、変換、クリップの箱は既定値を持つ静的な形式で書く。この場合は変化量の番号と両方の表を取り除く。それ以外でItemVariationStoreかDeltaSetIndexMapを持つCOLRは `Unsupported` とする。
 - CPALは、COLRが使う色の番号だけを残し、残す色が同じパレットは同じ色の記録を指す。版1では、パレットのフラグとラベルを写し、色のラベルは残す番号のものを残す。
 - CBLCとCBDTは、残すグリフのうち画像を持つものを、新しいグリフIDの順に索引の部分表（形式1と3。ほかの形式の部分表を含む大きさの表は除く）へまとめなおし、画像のデータを新しいCBDTへ写す。同じ形式、データ、グリフごとの長さの塊は前のものを共有する。写す量は元のCBDTの長さの `HB_SUBSET_CBDT_MAX_COPY_FACTOR`（64）倍までとする。残すグリフを持たない大きさの表は除く。
 - sbixは、各大きさの表で新しいグリフIDの順にグリフのデータを写し、残すグリフのデータを持たない大きさの表を除く。
@@ -351,7 +353,23 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 軸を指定しないGDEF 1.3のItemVariationStoreは、GPOSの `0x8000` がPairPos形式1・2のVariationIndexに限られ、MATHに `0x8000` がなく、GSUBのFeatureVariationsも保持しない場合、残すLigCaretListとPairPosのVariationIndexに合わせて行と領域を詰めて書く。参照が0件ならストアを除く。GPOSのPairPos以外かMATHに同じバイト列が現れる場合と、GPOSをコピーするときは、安全側に倒して拒否する。GDEFだけをコピーしてGPOSをサブセット化するとき、HarfBuzzと同じくGPOSの参照番号は詰めるが、GDEFのストアは元のバイト列のまま写す。壊れたGDEFはこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
 - レイアウトの表のうち、PairPos以外のGPOSかMATHに `0x8000` のバイト列があるGDEF、GSUBのFeatureVariationsを保持するGDEF、GSUBとGPOSの版1.2とGDEFの版1.4、FeatureVariationsの版1.1と形式1でない条件、65536を超えるグリフのフォントの24bitの形式も `Unsupported` とする。
 
+## Web フォントの書き出し（`sofel-woff`）
+
+`sofel_woff::encode` は単一フェイスの sfnt と出力形式を受け取り、WOFF または WOFF2 のバイト列を返す。表のタグ、範囲、パディング、チェックサムとフォント全体のチェックサムを検査する。コマンドは変換を終えてから出力先を開く。[ADR 0070](adr/0070-webfont-encoding.md)
+
+WOFF は表を元の物理順に並べ、zlib で短くなる表だけを圧縮する。WOFF2 は DSIG を除き、head.flags のビット11を立て、全表を変換なしで一つの Brotli ストリームに格納する。
+
 ## 道具
+
+統一 CLI `sofel` は render、shape、paint、validate、subset を受け付ける（[ADR 0071](adr/0071-unified-sofel-cli.md)）。
+引数なし、`help`、`-h`、`--help` は操作一覧を、`help NAME`、`NAME -h`、`NAME --help` は使用例を含む詳細を標準出力に書く。
+未知の操作やヘルプ対象は終了コード 2 で診断する。
+
+`sofel render --ppem P (--text TEXT | --text-file PATH) FONT` は一行を一つのランとしてシェーピングし、アウトラインを白地に黒の PGM に描いて標準出力に書く。
+フェイス、可変軸と OpenType フィーチャーを指定できる。
+UTF-8 ファイルの末尾から LF または CRLF を一組だけ除き、前後の空白も送り幅に含める。
+空文字は白い 1 × 1 画素になる。
+入力指定の重複、不正な UTF-8、残った CR や LF は終了コード 2、ファイルの読み込み失敗は終了コード 1 で診断する。
 
 - `sofel-paint [--face N] [--palette P] [--foreground RRGGBBAA] [--ppem P] [--exact] (--glyph G | --char U+XXXX) FILE`：カラーグリフの塗りの命令を、HarfBuzzの `test/api/test-paint.c` と同じ字下げのテキストで書く。数はCの `%.3g`、`--exact` では `f32` のビットの16進。カラーでないグリフは終了コード1、使い方の誤りは2（[ADR 0023](adr/0023-color-glyphs.md)）。
 - `sofel-render [--face N] --ppem P [--no-bitmap] [--color [--palette N]] (--glyph G | --char U+XXXX) FILE`：1グリフをヒンティングなしで描き、PGM（P5）を標準出力に書く。位置は注釈の行 `# left <x> top <y>` に書く（[ADR 0012](adr/0012-antialiased-rasterizer.md)）。そのppemのビットマップがあれば、`--no-bitmap` が無いかぎりそれを書く（32bitはPAM。[ADR 0023](adr/0023-color-glyphs.md)）。`--color` では、COLRv0のグリフを層の色で描いてPAMで書く。
@@ -380,6 +398,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - シェーピング（[ADR 0020](adr/0020-shaping-foundation.md)）：機能（`sofel_feature_t` は `tag`、`value`、`start`、`end` の構造体。`sofel_feature_parse`、`sofel_feature_format`）、方向（`SOFEL_DIRECTION_*` はHarfBuzzの `hb_direction_t` と同じ値で、0は不明）、文字体系（`sofel_unicode_script` と同じ形の32ビットのタグ、0は不明。`sofel_script_from_string`）、言語（`sofel_language_t`、`sofel_language_create`、`destroy`）、OpenTypeのタグの変換、区間の性質（`sofel_segment_t` は方向、文字体系、言語のポインタの構造体。`sofel_segment_guess(utf8, len, in, default_language, out)`）、計画（`sofel_shape_plan_create(font, segment, features, n, error)`、`destroy`、`shaper`。不変で、スレッドの間で共有してよい。フォントより先に捨てる）、バッファ（`sofel_buffer_t`。作成、`clear`、`add_utf8` などの文字の追加、設定の `get` と `set`。スレッドごとに持つ）を持つ。
   - バッファは文字かグリフのどちらかを持つ。`sofel_shape(font, scale, plan, buf)` は文字をシェーピングして同じバッファの値にグリフを置き（`shape_with_extents`）、`sofel_buffer_clear` は設定とメモリを保ったまま文字の空のバッファに戻す（`GlyphBuffer::into_unicode`）。違う種類を渡された関数は `SOFEL_ERROR_BUFFER_CONTENT` を返す。`scale` がNULLならフォントの単位で、ppemは0（Device表は効かない）とする。グリフの箱は、HarfBuzzの `ot` の関数と同じく、sbix、CBDT、COLR、glyf、CFF、CFF2の順に最初に得たものを使う。
   - `sofel_scale_create_with_ppem(font, x_scale, y_scale, x_ppem, y_ppem, error)` は横と縦の ppem を保持し、`sofel_shape` と `sofel_shape_fallback` に渡す。Device 表の補正はそれぞれの軸の ppem に従う（[ADR 0052](adr/0052-c-shaping-ppem.md)）。従来の `sofel_scale_create` と NULL のスケールは両軸とも 0 を使う。
+  - レイアウト問い合わせ（[ADR 0062](adr/0062-layout-query-device-adjustments.md)）の `sofel_scale_baseline*` と `sofel_scale_layout_font_extents` は、渡したスケールの横・縦の ppem を Device の評価に使う。`sofel_layout_ligature_carets`、`sofel_math_kernings`、`sofel_math_variants`、`sofel_math_assembly` は、開始位置から容量まで格納し、格納件数と列の総数を別々に返す。容量0では出力配列を NULL にでき、容量外の要素は書き換えない。`sofel_math_*` の単一値と `sofel_style_value` も位置を受け取る。`sofel_scale_create_with_ptem` で作ったスケールを `sofel_style_value` に渡すと、光学サイズの問い合わせにポイントサイズを使う。
   - `sofel_buffer_glyphs(buf, gids, clusters, flags, pos4, cap)` は、グリフID、クラスタ、フラグと、1グリフ4つの位置（x送り幅、y送り幅、xずれ、yずれ）を書き、グリフの数を返す。数が `cap` より大きければ何も書かない（Golemの `golem_font_shape` の形）。誤りは負の値で返す。
   - 直列化は `sofel_buffer_serialize`（`hb_buffer_serialize` と同じく、入る項目だけをNUL終端で書き、書いた項目の数とバイト数を返す）、`sofel_buffer_deserialize_glyphs`、`sofel_buffer_deserialize_unicode`、`sofel_font_glyph_to_string`、`sofel_font_glyph_from_string` で、比べるのは `sofel_buffer_diff` で行う。HarfBuzzの手書きの文字の性質も `sofel_unicode_modified_combining_class` などで公開する。
   - [ADR 0053](adr/0053-preserve-buffer-settings-after-glyph-deserialization.md) に従い、グリフ列を読み込んだ後の `sofel_buffer_clear` は通常のクリアと同じ設定を引き継ぐ。初回の読み込み、追記、パースエラーのいずれでも乱数状態は1に戻る。
@@ -497,3 +516,9 @@ CI の文書だけの変更は、比較起点の `ci/documentation-only.rules` �
 - sofelはMITとする。FreeTypeのコードを流用する場合はFTLを選び、文書でFreeType Projectを明示する（[ADR 0002](adr/0002-license-and-reuse.md)）。Slugを流用する場合は、READMEにクレジットを載せる。
 - 流用元の著作権表示とライセンスは `THIRD_PARTY_NOTICES.md` に載せ、流用したファイルの先頭に流用元を書く。
 - UCDから生成した表を含む `sofel-unicode` と `sofel-shape` は、Unicode License v3にも従う（`MIT AND Unicode-3.0`）。
+
+## フォント描画見本
+
+[sofel ADR 0069](adr/0069-font-render-gallery.md) に従い、追加フォント台帳の全フェイスと固定版 HarfBuzz の可変 COLR フォントを描画する。
+`sh scripts/render-font-gallery.sh` は各フェイスの単字とシェーピング済みの固定文字列を等倍で一枚の PNG に配置し、入力、ppem、未対応の理由をローカルの HTML から確認できるようにする。
+文書だけの変更を除き、CI はプルリクエストと main への push で HTML と PNG を生成し、検査したコミット SHA 付きのアーティファクトを14日間保存する。

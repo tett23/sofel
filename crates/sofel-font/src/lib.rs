@@ -58,6 +58,7 @@ pub use ft_glyf::FtAdvanceScratch;
 pub use hb_glyf::GlyphScratch;
 mod hb_cff;
 mod layout;
+pub mod layout_query;
 mod metrics;
 mod name_language;
 mod names;

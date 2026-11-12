@@ -1657,29 +1657,8 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
         direction: Direction,
         coord: BaseCoord<'_>,
     ) -> i32 {
-        let base = match direction {
-            Direction::Horizontal => scale.em_scale_y(i32::from(coord.coordinate())),
-            Direction::Vertical => scale.em_scale_x(i32::from(coord.coordinate())),
-        };
-        if !self.location.hb_nonzero {
-            return base;
-        }
-        let index = coord
-            .device()
-            .ok()
-            .flatten()
-            .and_then(|device| device.variation_index());
-        let Some((outer, inner)) = index else {
-            return base;
-        };
-        let delta = self
-            .item_delta::<HbF32>(StoreKind::Base, outer, inner)
-            .unwrap_or(0.0);
-        let scaled = match direction {
-            Direction::Horizontal => scale.em_scalef_y(delta),
-            Direction::Vertical => scale.em_scalef_x(delta),
-        };
-        base.saturating_add(scaled)
+        self.layout_queries(*scale, 0, 0)
+            .base_coord(coord, direction)
     }
 
     /// BASE baseline with HarfBuzz's fallback at this location.

@@ -17,16 +17,10 @@ hb-dump/glyphs/MPLUS1-Variable.ttf  # stage:var
 hb-dump/glyphs/RobotoFlex-Variable.ttf  # stage:var
 hb-dump/golem/AdobeVFPrototype.otf:keep  # stage:var
 hb-dump/golem/AdobeVFPrototype.otf:keep+prepared  # stage:var
-hb-dump/golem/COLRv1-alpha.ttf:pin  # stage:var
-hb-dump/golem/COLRv1-alpha.ttf:pin+prepared  # stage:var
 hb-dump/golem/Comfortaa-Regular-new.ttf:keep  # stage:var
 hb-dump/golem/Comfortaa-Regular-new.ttf:keep+prepared  # stage:var
-hb-dump/golem/Foldit.ttf:pin  # stage:var
-hb-dump/golem/Foldit.ttf:pin+prepared  # stage:var
 hb-dump/golem/Fraunces.ttf:keep  # stage:var
 hb-dump/golem/Fraunces.ttf:keep+prepared  # stage:var
-hb-dump/golem/KalniaGlaze.ttf:pin  # stage:var
-hb-dump/golem/KalniaGlaze.ttf:pin+prepared  # stage:var
 hb-dump/golem/MPLUS1-Variable.ttf:keep  # stage:var
 hb-dump/golem/MPLUS1-Variable.ttf:keep+prepared  # stage:var
 hb-dump/golem/Roboto-Variable.ABC.ttf:keep  # stage:var
@@ -42,5 +36,3 @@ hb-dump/golem/RobotoFlex-Variable.ttf:keep+prepared  # stage:var
 hb-dump/golem/SourceSerifVariable-Roman.ttf:keep  # stage:var
 hb-dump/golem/SourceSerifVariable-Roman.ttf:keep+prepared  # stage:var
 hb-dump/golem/bad-gsub.otf:keep+prepared  # upstream:preprocess-malformed
-hb-dump/golem/sixtyfour_subset.ttf:pin  # stage:var
-hb-dump/golem/sixtyfour_subset.ttf:pin+prepared  # stage:var
