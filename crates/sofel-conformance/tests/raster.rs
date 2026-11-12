@@ -394,3 +394,72 @@ fn adr0064_i2_reference_renders_mono_and_both_sdf_inputs() {
     }
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn adr0064_i2_selawik_monochrome_bitmaps_match_freetype() {
+    use sofel_font::read::GlyphId;
+    use sofel_outline::Outlines;
+    let path = paths::testdata()
+        .join("harfbuzz/test/shape/data/text-rendering-tests/fonts/Selawik-variable.ttf");
+    let data = std::fs::read(&path).unwrap();
+    let font = Font::new(&data, 0).unwrap();
+    let outlines = Outlines::new(font.default_instance());
+    let mut scratch = Scratch::default();
+    let mut raster = Rasterizer::new();
+    let mut mismatches = Vec::new();
+    let mut count = 0;
+    for ppem in [12, 24, 48] {
+        let reference = Command::new(paths::ft_dump())
+            .args(["--raster", &ppem.to_string(), "--mono"])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(reference.status.success());
+        let faces = parse(&String::from_utf8(reference.stdout).unwrap()).unwrap();
+        for (&gid, expected) in &faces[&0].glyphs {
+            let bitmap = sofel_cli::glyph::render_mono(
+                &outlines,
+                GlyphId(gid),
+                ppem,
+                &mut scratch,
+                &mut raster,
+            )
+            .unwrap();
+            let b = bitmap.bounds;
+            let mut actual = vec![format!(
+                "bitmap {} {} {} {}",
+                b.left, b.top, b.width, b.rows
+            )];
+            actual.extend(
+                bitmap
+                    .pixels
+                    .chunks_exact(bitmap.stride)
+                    .map(|row| row.iter().map(|v| format!("{v:02x}")).collect::<String>()),
+            );
+            if &actual != expected {
+                eprintln!(
+                    "gid {gid} size {ppem}: {:?}",
+                    actual
+                        .iter()
+                        .zip(expected)
+                        .enumerate()
+                        .filter(|(_, (a, b))| a != b)
+                        .take(3)
+                        .collect::<Vec<_>>()
+                );
+                mismatches.push((ppem, gid));
+            }
+            count += 1;
+        }
+    }
+    assert!(count > 0);
+    eprintln!(
+        "{} mismatched of {count} monochrome glyphs",
+        mismatches.len()
+    );
+    assert!(
+        mismatches.is_empty(),
+        "{:?}",
+        mismatches.iter().take(20).collect::<Vec<_>>()
+    );
+}
