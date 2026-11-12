@@ -276,6 +276,10 @@ impl<'p> SubFont<'p> {
         }
     }
 
+    fn has_v_advance_override(&self) -> bool {
+        self.v_advance.is_some() || self.parent.is_some_and(SubFont::has_v_advance_override)
+    }
+
     fn raw_v_origin(
         &self,
         glyph: u32,
@@ -563,19 +567,74 @@ impl<'f, 'a, 'l, 's> ShapeFont<'f, 'a, 'l, 's> {
         };
         self.subfont.map_or_else(
             || base(self.scale, glyph),
-            |subfont| subfont.synthetic_v_advance(subfont.raw_v_advance(glyph, &base)),
+            |subfont| {
+                let advance = subfont.raw_v_advance(glyph, &base);
+                if !self.font.has_vertical_metrics() && !subfont.has_v_advance_override() {
+                    // The OpenType fallback derives its raw advance from
+                    // synthetic horizontal font extents. For bold, the
+                    // added height cancels the outer synthetic advance;
+                    // grade keeps the smaller advance.
+                    if subfont.embolden_in_place {
+                        let y_scale = subfont.scale.scale.y_scale();
+                        let strength =
+                            round_to_i32((y_scale.saturating_abs() as f32) * subfont.y_embolden);
+                        advance.wrapping_sub(if y_scale < 0 {
+                            strength.wrapping_neg()
+                        } else {
+                            strength
+                        })
+                    } else {
+                        advance
+                    }
+                } else {
+                    subfont.synthetic_v_advance(advance)
+                }
+            },
         )
     }
     /// `get_glyph_v_origin`.
     pub(crate) fn v_origin(&self, glyph: u32) -> (i32, i32) {
         let base = |scale: Scale, glyph: u32| {
-            let mut scratch = self.glyph_scratch.borrow_mut();
-            Some(self.instance.scaled_v_origin_with_scratch(
-                &scale.scale,
-                GlyphId(glyph),
-                |g| (self.extents)(g).map(|e| scale.scale.scale_glyph_extents(e)),
-                &mut scratch,
-            ))
+            let (mut x, mut y) = {
+                let mut scratch = self.glyph_scratch.borrow_mut();
+                self.instance.scaled_v_origin_with_scratch(
+                    &scale.scale,
+                    GlyphId(glyph),
+                    |g| (self.extents)(g).map(|e| scale.scale.scale_glyph_extents(e)),
+                    &mut scratch,
+                )
+            };
+            if let Some(subfont) = self.subfont {
+                // HarfBuzz's OpenType vertical origin asks the font for
+                // synthetic horizontal advances before halving them.
+                x = self.h_advance(glyph) / 2;
+                if !self.font.has_vertical_metrics() {
+                    let mut font_extents = self.instance.scaled_h_extents(&scale.scale);
+                    let y_scale = scale.scale.y_scale();
+                    let y_strength =
+                        round_to_i32((y_scale.saturating_abs() as f32) * subfont.y_embolden);
+                    font_extents.ascender = font_extents.ascender.wrapping_add(if y_scale < 0 {
+                        y_strength.wrapping_neg()
+                    } else {
+                        y_strength
+                    });
+                    let advance = i64::from(font_extents.ascender)
+                        .saturating_sub(i64::from(font_extents.descender));
+                    let extents = subfont
+                        .raw_glyph_extents(glyph, &|s, g| {
+                            (self.extents)(GlyphId(g))
+                                .map(|value| s.scale.scale_glyph_extents(value))
+                        })
+                        .map(|value| subfont.synthetic_glyph_extents(value));
+                    y = extents.map_or(font_extents.ascender, |value| {
+                        let result = i64::from(value.y_bearing)
+                            .saturating_add(advance.saturating_add(i64::from(value.height)) >> 1);
+                        i32::try_from(result.clamp(i64::from(i32::MIN), i64::from(i32::MAX)))
+                            .unwrap_or(0)
+                    });
+                }
+            }
+            Some((x, y))
         };
         self.subfont
             .map_or_else(

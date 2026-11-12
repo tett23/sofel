@@ -70,6 +70,36 @@ fn shape(font: &PathBuf, args: &[&str]) -> (i32, String, String) {
     )
 }
 
+#[test]
+fn adr0063_i2_synthetic_vertical_shape_matches_harfbuzz() {
+    let dir = std::env::var_os("SOFEL_TESTDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/testdata"));
+    let font = dir.join("harfbuzz/test/shape/data/in-house/fonts/NotoSans-VF.abc.ttf");
+    if !font.exists() {
+        assert!(std::env::var_os("SOFEL_REQUIRE_TESTDATA").is_none());
+        return;
+    }
+    for (option, expected) in [
+        (
+            "--font-slant=0.5",
+            "[gid1=0@-280,-948+0,-1362|gid2=1@-307,-1056+0,-1362|gid3=2@-240,-949+0,-1362]",
+        ),
+        (
+            "--font-bold=0.1",
+            "[gid1=0@-430,-1148+0,-1362|gid2=1@-457,-1256+0,-1362|gid3=2@-390,-1149+0,-1362]",
+        ),
+        (
+            "--font-grade=0.1",
+            "[gid1=0@-280,-1048+0,-1462|gid2=1@-307,-1156+0,-1462|gid3=2@-240,-1049+0,-1462]",
+        ),
+    ] {
+        let (code, out, err) = shape(&font, &[option, "--direction=ttb", "--unicodes=61,62,63"]);
+        assert_eq!(code, 0, "{option}: {err}");
+        assert_eq!(out.trim(), expected, "{option}");
+    }
+}
+
 fn ok(font: &PathBuf, args: &[&str]) -> String {
     let (code, out, err) = shape(font, args);
     assert_eq!(code, 0, "{err}");
@@ -254,9 +284,9 @@ fn unsupported_options_and_bad_usage_exit_with_2() {
         &["--variations=wght=bad", "A"][..],
         &["--named-instance=65536", "A"],
         &["--font-ptem=12", "A"],
-        &["--font-slant=0.2", "A"],
-        &["--font-bold=0.1", "A"],
-        &["--font-grade=0.1", "A"],
+        &["--font-slant=bad", "A"],
+        &["--font-bold=bad", "A"],
+        &["--font-grade=bad", "A"],
         &["--shaper=coretext", "A"],
         &["--shapers=ot,graphite2", "A"],
         &["--no-such-option", "A"],
