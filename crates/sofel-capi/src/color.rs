@@ -129,6 +129,7 @@ struct Owned {
     commands: Vec<CPaintCommand>,
     /// The stops the gradient commands point into, kept alive.
     _stops: Vec<CColorStop>,
+    _expanded_svg: Vec<Vec<u8>>,
 }
 
 const KIND_PUSH_TRANSFORM: u32 = 0;
@@ -188,6 +189,7 @@ fn convert(rec: &Recording<'_>) -> Owned {
     let base = stops.as_ptr();
     let at = |r: &core::ops::Range<usize>| (base.wrapping_add(r.start), r.len());
     let p = |p: &PointF| [p.x, p.y];
+    let mut expanded_svg = Vec::new();
     let commands = rec
         .commands()
         .iter()
@@ -260,6 +262,14 @@ fn convert(rec: &Recording<'_>) -> Owned {
                     c.glyph = *g;
                     solid_into(&mut c, s);
                 }
+                PaintCommand::ExpandedSvg(data) => {
+                    let bytes = data.clone();
+                    c.kind = KIND_IMAGE;
+                    c.mode = 1;
+                    c.data = bytes.as_ptr();
+                    c.len = bytes.len();
+                    expanded_svg.push(bytes);
+                }
                 PaintCommand::Image(i) => {
                     c.kind = KIND_IMAGE;
                     c.mode = match i.format {
@@ -295,6 +305,7 @@ fn convert(rec: &Recording<'_>) -> Owned {
     Owned {
         commands,
         _stops: stops,
+        _expanded_svg: expanded_svg,
     }
 }
 
