@@ -205,6 +205,8 @@ fn mode(m: PixelMode) -> u32 {
         PixelMode::Gray => 2,
         PixelMode::Gray2 => 3,
         PixelMode::Gray4 => 4,
+        PixelMode::Lcd => 5,
+        PixelMode::LcdV => 6,
         PixelMode::Bgra => 7,
     }
 }
