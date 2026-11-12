@@ -126,18 +126,11 @@ pub fn color_layers(font: &sofel_font::Font<'_>, glyph: u32) -> Vec<(u32, Option
         .collect()
 }
 
-/// Renders the usable COLR version 0 layers of `glyph` at `ppem` pixels
-/// (ADR 0023). Each layer is rendered with [`render`] and combined in
-/// record order with [`blend_layer`]. `options.ppem` is not used.
-///
-/// `image` is cleared first. When the glyph has no layers, or a layer
-/// cannot be rendered, the glyph's own outline is rendered in gray
-/// instead.
+/// Renders a supported COLRv1, OT-SVG or COLRv0 glyph, falling back to its outline.
 ///
 /// # Errors
 ///
-/// As [`render`], when the glyph's own outline cannot be loaded or (in
-/// the gray fallback) rendered.
+/// Returns the outline or raster error when the fallback cannot be rendered.
 pub fn render_color<'r>(
     outlines: &Outlines<'_, '_, '_>,
     glyph: GlyphId,
@@ -168,6 +161,32 @@ pub fn render_color<'r>(
         }
         image.clear();
     }
+    render_colr_v0(outlines, glyph, ppem, options, scratch, raster, image)
+}
+
+/// Renders the usable COLR version 0 layers of `glyph` at `ppem` pixels
+/// (ADR 0023). Each layer is rendered with [`render`] and combined in
+/// record order with [`blend_layer`]. `options.ppem` is not used.
+///
+/// `image` is cleared first. When the glyph has no layers, or a layer
+/// cannot be rendered, the glyph's own outline is rendered in gray
+/// instead.
+///
+/// # Errors
+///
+/// As [`render`], when the glyph's own outline cannot be loaded or (in
+/// the gray fallback) rendered.
+pub fn render_colr_v0<'r>(
+    outlines: &Outlines<'_, '_, '_>,
+    glyph: GlyphId,
+    ppem: u16,
+    options: &PaintOptions<'_>,
+    scratch: &mut Scratch,
+    raster: &'r mut Rasterizer,
+    image: &mut BgraImage,
+) -> Result<ColorGlyph<'r>, RenderError> {
+    let font = outlines.font();
+    image.clear();
     let layers = color_layers(font, glyph.0);
     if layers.is_empty() {
         return render(outlines, glyph, ppem, scratch, raster).map(ColorGlyph::Gray);
