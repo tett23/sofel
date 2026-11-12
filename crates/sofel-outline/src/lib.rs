@@ -426,6 +426,21 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
         &self.extents
     }
 
+    /// Draw a VARC-covered glyph with HarfBuzz's floating-point coordinates.
+    /// Returns `None` when the glyph has no VARC record or the record is invalid.
+    pub fn varc_glyph_path(
+        &self,
+        glyph: GlyphId,
+        scale: sofel_font::HbScale,
+    ) -> Option<Vec<HbOutlineCommand>> {
+        let varc = self
+            .font
+            .table(Tag::new(b"VARC"))
+            .and_then(|data| sofel_font::read::varc::Varc::new(data).ok())?;
+        varc.record(glyph)?;
+        varc_draw::draw_float(self, &varc, glyph, scale, &mut Scratch::default()).ok()
+    }
+
     /// The font.
     pub fn font(&self) -> &Font<'data> {
         &self.font
