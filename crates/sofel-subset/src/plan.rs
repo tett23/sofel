@@ -6,6 +6,7 @@ use alloc::vec::Vec;
 
 use sofel_font::Font;
 use sofel_font::read::Tag;
+use sofel_font::read::varc::Varc;
 
 use crate::bits::BitSet;
 use crate::cmap_accel::CmapAccel;
@@ -120,6 +121,8 @@ pub struct Plan {
     pub(crate) glyphset_cmaped: RangeSet,
     /// The glyphs after the MATH closure (`_glyphset_mathed`).
     pub(crate) glyphset_mathed: RangeSet,
+    /// Glyphs after recursive VARC component closure.
+    pub(crate) glyphset_varced: RangeSet,
     pub(crate) color: ColorPlan,
     /// The preprocessed data the plan was made with (`accelerator`).
     pub(crate) prepared: Option<Prepared>,
@@ -332,6 +335,19 @@ impl Plan {
             let passthrough = no_subset.contains(t.to_u32());
             let dropped = drop.contains(t.to_u32()) || (pinned && PINNED_DROP.contains(&tag));
             if font.table(t).is_some() && !dropped && !passthrough {
+                if tag == b"VARC" && norm.user.is_empty() {
+                    let varc = Varc::new(font.table(t).unwrap_or(&[]))
+                        .map_err(|_| SubsetError::Malformed { tag: t })?;
+                    let simple = (0..varc.record_count()).all(|index| {
+                        varc.record_at(index).is_some_and(|record| {
+                            sofel_font::read::varc::Components::new(record, None)
+                                .all(|part| part.is_some_and(|part| part.flags & 0x8e == 0))
+                        })
+                    });
+                    if simple {
+                        continue;
+                    }
+                }
                 return Err(SubsetError::Unsupported { tag: t, reason });
             }
         }
@@ -371,6 +387,7 @@ impl Plan {
             },
             glyphset_cmaped: RangeSet::new(),
             glyphset_mathed: RangeSet::new(),
+            glyphset_varced: RangeSet::new(),
             color: ColorPlan::default(),
             prepared: prepared.cloned(),
         };
@@ -454,6 +471,31 @@ impl Plan {
             )?;
         }
         p.color.glyphset_colred = cur.clone();
+        if tag_kept(b"VARC")
+            && let Some(data) = font.table(Tag::new(b"VARC"))
+        {
+            let varc = Varc::new(data).map_err(|_| SubsetError::Malformed {
+                tag: Tag::new(b"VARC"),
+            })?;
+            let mut pending: Vec<u32> = cur.iter().collect();
+            let mut next = 0usize;
+            while let Some(&glyph) = pending.get(next) {
+                next = next.saturating_add(1);
+                if let Some(components) = varc.components(sofel_font::read::GlyphId(glyph)) {
+                    for component in components {
+                        let component = component.ok_or(SubsetError::Malformed {
+                            tag: Tag::new(b"VARC"),
+                        })?;
+                        let child = component.glyph.0;
+                        if !cur.contains(child) {
+                            cur.add(child);
+                            pending.push(child);
+                        }
+                    }
+                }
+            }
+        }
+        p.glyphset_varced = cur.clone();
         // _nameid_closure
         if tag_kept(b"STAT") {
             stat_name_ids(
