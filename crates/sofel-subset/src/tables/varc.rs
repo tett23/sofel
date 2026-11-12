@@ -118,7 +118,8 @@ pub(crate) fn subset(
     _out: &mut Tables,
 ) -> Result<bool, SubsetError> {
     let varc = Varc::new(src).map_err(|_| SubsetError::Malformed { tag })?;
-    if simple_condition_bytes(src).is_none()
+    if !plan.var.user().is_empty()
+        || simple_condition_bytes(src).is_none()
         || (0..varc.record_count()).any(|index| {
             varc.record_at(index).is_some_and(|record| {
                 sofel_font::read::varc::Components::new(record, None)

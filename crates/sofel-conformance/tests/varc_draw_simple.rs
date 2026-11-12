@@ -8,7 +8,7 @@ use sofel_conformance::paths;
 use sofel_font::Font;
 use sofel_font::var::Location;
 use sofel_geom::{Command, FnPen};
-use sofel_outline::{CBox, Outlines, Scale, Scratch};
+use sofel_outline::{CBox, HbOutlineCommand, Outlines, Scale, Scratch};
 use sofel_read::{GlyphId, Tag, varc::Varc};
 use sofel_subset::{Flags, Input, SetKind, subset};
 use std::process::Command as ProcessCommand;
@@ -395,4 +395,228 @@ fn adr0067_i3_depth_budget_at_boundary() {
             "normal glyph after {covered_count} covered glyphs"
         );
     }
+}
+
+fn hb_path_line(command: HbOutlineCommand) -> String {
+    let point = |p: sofel_geom::PointF| format!("{:08x} {:08x}", p.x.to_bits(), p.y.to_bits());
+    match command {
+        HbOutlineCommand::MoveTo(p) => format!("M {}", point(p)),
+        HbOutlineCommand::LineTo(p) => format!("L {}", point(p)),
+        HbOutlineCommand::QuadTo(c, p) => format!("Q {} {}", point(c), point(p)),
+        HbOutlineCommand::CubicTo(c1, c2, p) => {
+            format!("C {} {} {}", point(c1), point(c2), point(p))
+        }
+        HbOutlineCommand::Close => "Z".to_string(),
+    }
+}
+
+#[test]
+fn adr0067_i1_varc_float_paths_match_harfbuzz() {
+    let cases = [
+        (
+            "varc-ac00-ac01.ttf",
+            0xAC00,
+            false,
+            include_str!("../../../conformance/varc-paths/ac00-default.txt"),
+        ),
+        (
+            "varc-ac00-ac01.ttf",
+            0xAC00,
+            true,
+            include_str!("../../../conformance/varc-paths/ac00-wght840p3.txt"),
+        ),
+        (
+            "varc-ac01-conditional.ttf",
+            0xAC01,
+            false,
+            include_str!("../../../conformance/varc-paths/ac01-conditional-default.txt"),
+        ),
+        (
+            "varc-ac01-conditional.ttf",
+            0xAC01,
+            true,
+            include_str!("../../../conformance/varc-paths/ac01-conditional-wght840p3.txt"),
+        ),
+    ];
+    for (name, unicode, heavy, expected) in cases {
+        let bytes =
+            std::fs::read(paths::testdata().join("harfbuzz/test/api/fonts").join(name)).unwrap();
+        let font = Font::new(&bytes, 0).unwrap();
+        let glyph = font.nominal_glyph_raw(unicode).unwrap();
+        let location = if heavy {
+            Location::from_design(&font, &[840.3])
+        } else {
+            Location::from_design(&font, &[])
+        };
+        let outlines = Outlines::new(font.instance(&location));
+        let path = outlines
+            .varc_glyph_path(glyph, sofel_font::HbScale::unscaled(&font))
+            .unwrap();
+        let actual: Vec<_> = path.into_iter().map(hb_path_line).collect();
+        let expected: Vec<_> = expected.lines().collect();
+        assert_eq!(
+            actual.len(),
+            expected.len(),
+            "{name} U+{unicode:04X} heavy={heavy}"
+        );
+        for (index, (actual, expected)) in actual.iter().zip(expected).enumerate() {
+            assert_eq!(
+                actual, expected,
+                "{name} U+{unicode:04X} heavy={heavy} command {index}"
+            );
+        }
+    }
+}
+
+#[test]
+fn adr0067_i1_varc_float_cff2_matches_harfbuzz() {
+    let bytes = source();
+    let font = Font::new(&bytes, 0).unwrap();
+    let outlines = Outlines::new(font.default_instance());
+    let path = outlines
+        .varc_glyph_path(sofel_read::GlyphId(3), sofel_font::HbScale::unscaled(&font))
+        .unwrap();
+    let actual: Vec<_> = path.into_iter().map(hb_path_line).collect();
+    let expected: Vec<_> = include_str!("../../../conformance/varc-paths/short-cff2.txt")
+        .lines()
+        .collect();
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn adr0067_i2_unrelated_axis_pin_with_gvar_dropped_matches_harfbuzz() {
+    let path = paths::testdata().join("harfbuzz/test/api/fonts/varc-unrelated-axis.ttf");
+    let bytes = std::fs::read(&path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let input = Input::new()
+        .map_set(SetKind::Unicodes, |set| set.add(0xAC01))
+        .map_set(SetKind::DropTables, |set| {
+            set.add(Tag::new(b"gvar").to_u32())
+        })
+        .with_axis_pinned(Tag::new(b"DUMY"), 0.0, &font)
+        .unwrap();
+    let ours = subset(&font, &input).unwrap();
+    let reference = std::env::temp_dir().join(format!(
+        "sofel-varc-unrelated-pin-{}.ttf",
+        std::process::id()
+    ));
+    let output = ProcessCommand::new(paths::hb_dump())
+        .arg("--subset")
+        .arg(format!("--font-file={}", path.display()))
+        .arg("--unicodes=U+AC01")
+        .arg("--variations=DUMY=0")
+        .arg("--drop-tables+=gvar")
+        .arg(format!("--output-file={}", reference.display()))
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let expected = std::fs::read(&reference).unwrap();
+    assert_eq!(ours, expected);
+    let _ = std::fs::remove_file(reference);
+}
+
+#[test]
+fn adr0067_i2_unrelated_nondefault_axis_changes_without_gvar_match_harfbuzz() {
+    let original = paths::testdata().join("harfbuzz/test/api/fonts/varc-unrelated-axis.ttf");
+    let source =
+        std::env::temp_dir().join(format!("sofel-varc-no-gvar-{}.ttf", std::process::id()));
+    let reference =
+        std::env::temp_dir().join(format!("sofel-varc-no-gvar-pin-{}.ttf", std::process::id()));
+    let strip = ProcessCommand::new(paths::hb_dump())
+        .arg("--subset")
+        .arg(format!("--font-file={}", original.display()))
+        .arg("--unicodes=U+AC01")
+        .arg("--drop-tables+=gvar")
+        .arg(format!("--output-file={}", source.display()))
+        .output()
+        .unwrap();
+    assert!(strip.status.success());
+    let bytes = std::fs::read(&source).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    assert!(font.table(Tag::new(b"VARC")).is_some());
+    assert!(font.table(Tag::new(b"gvar")).is_none());
+    for retain in [false, true] {
+        let base = Input::new()
+            .with_flags(if retain {
+                Flags::RETAIN_GIDS
+            } else {
+                Flags::DEFAULT
+            })
+            .map_set(SetKind::Unicodes, |set| set.add(0xAC01));
+        for (variation, input) in [
+            (
+                "DUMY=0.5",
+                base.with_axis_pinned(Tag::new(b"DUMY"), 0.5, &font)
+                    .unwrap(),
+            ),
+            (
+                "DUMY=0:0.5:1",
+                base.with_axis_range(Tag::new(b"DUMY"), Some(0.0), Some(1.0), Some(0.5), &font)
+                    .unwrap(),
+            ),
+        ] {
+            let ours = subset(&font, &input).unwrap();
+            let mut command = ProcessCommand::new(paths::hb_dump());
+            command
+                .arg("--subset")
+                .arg(format!("--font-file={}", source.display()))
+                .arg("--unicodes=U+AC01")
+                .arg(format!("--variations={variation}"))
+                .arg(format!("--output-file={}", reference.display()));
+            if retain {
+                command.arg("--retain-gids");
+            }
+            let output = command.output().unwrap();
+            assert!(output.status.success());
+            let expected = std::fs::read(&reference).unwrap();
+            assert_eq!(ours, expected, "{variation}, retain={retain}");
+        }
+    }
+    let _ = std::fs::remove_file(source);
+    let _ = std::fs::remove_file(reference);
+}
+
+#[test]
+fn adr0067_i2_referenced_axis_pin_remains_unsupported() {
+    let path = paths::testdata().join("harfbuzz/test/api/fonts/varc-unrelated-axis.ttf");
+    let bytes = std::fs::read(&path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let input = Input::new()
+        .map_set(SetKind::Unicodes, |set| set.add(0xAC01))
+        .map_set(SetKind::DropTables, |set| {
+            set.add(Tag::new(b"gvar").to_u32())
+        })
+        .with_axis_pinned_to_default(Tag::new(b"wght"), &font)
+        .unwrap();
+    assert!(subset(&font, &input).is_err());
+    let output = ProcessCommand::new(paths::hb_dump())
+        .arg("--subset")
+        .arg(format!("--font-file={}", path.display()))
+        .arg("--unicodes=U+AC01")
+        .arg("--variations=wght=356.5")
+        .arg("--drop-tables+=gvar")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+}
+
+#[test]
+fn adr0067_i2_varc_passthrough_requires_retained_gids() {
+    let path = paths::testdata().join("harfbuzz/test/api/fonts/varc-ac00-ac01.ttf");
+    let bytes = std::fs::read(path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let base = Input::new()
+        .map_set(SetKind::Unicodes, |set| set.add(0xAC00))
+        .map_set(SetKind::NoSubsetTables, |set| {
+            set.add(Tag::new(b"VARC").to_u32())
+        });
+    assert!(subset(&font, &base).is_err());
+    let retained = base.with_flags(Flags::RETAIN_GIDS);
+    let output = subset(&font, &retained).unwrap();
+    let output = Font::new(&output, 0).unwrap();
+    assert!(output.table(Tag::new(b"VARC")).is_some());
+    let pinned = retained
+        .with_axis_pinned_to_default(Tag::new(b"0005"), &font)
+        .unwrap();
+    assert!(subset(&font, &pinned).is_err());
 }
