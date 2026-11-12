@@ -35,11 +35,13 @@ dependencies = [
  "sofel-bitmap",
  "sofel-color",
  "sofel-font",
+ "sofel-inflate",
  "sofel-outline",
  "sofel-raster",
  "sofel-read",
  "sofel-shape",
  "sofel-subset",
+ "sofel-woff",
 ]
 
 [[package]]
@@ -137,6 +139,7 @@ version = "0.0.0"
 name = "sofel-woff"
 version = "0.0.0"
 dependencies = [
+ "sofel-inflate",
  "sofel-read",
  "sofel-write",
 ]

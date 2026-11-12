@@ -154,6 +154,10 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
         Ok(b) => b,
         Err(e) => return fail(err, format!("{}: {e}", args.file.to_string_lossy())),
     };
+    let bytes = match crate::font_input::unpack(bytes) {
+        Ok(data) => data,
+        Err(d) => return fail(err, format!("{} at byte {}", d.kind, d.offset)),
+    };
     let font = match Font::new(&bytes, args.face) {
         Ok(f) => f,
         Err(e) => return fail(err, format!("{}: {e}", args.file.to_string_lossy())),

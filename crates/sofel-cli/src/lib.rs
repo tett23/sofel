@@ -4,6 +4,7 @@
 
 #![warn(missing_docs)]
 
+mod font_input;
 pub mod glyph;
 pub mod json;
 pub mod paint;

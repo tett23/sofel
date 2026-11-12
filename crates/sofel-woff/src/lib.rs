@@ -11,6 +11,8 @@ use sofel_read::{
 use sofel_write::checksum;
 
 mod compress;
+mod decode;
+pub use decode::{DecodeError, decode_woff};
 mod woff;
 mod woff2;
 
