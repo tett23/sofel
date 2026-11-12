@@ -17,6 +17,7 @@ enum Kern<'a> {
     Pairs(&'a [[u8; 6]]),
     Classes(AatLookup<'a>, AatLookup<'a>, &'a [u8]),
     LegacyClasses(ClassOffsets<'a>, ClassOffsets<'a>, usize),
+    LegacyHistory(StateTable<'a>, &'a [u8], usize),
     History(StateTable<'a>, &'a [u8]),
     Attachment(StateTable<'a>, u32, &'a [u8], Option<Anchors<'a>>),
 }
@@ -188,6 +189,10 @@ pub(crate) fn legacy(data: &[u8]) -> Option<Vec<Subtable<'_>>> {
         let body = current.get(header..)?;
         let action = match format {
             0 => Kern::Pairs(be::chunks_at(body, 8, usize::from(be::u16_at(body, 0)?))?),
+            1 => {
+                let base = usize::from(be::u16_at(body, 8)?);
+                Kern::LegacyHistory(StateTable::legacy_kern(body)?, body.get(base..)?, base)
+            }
             2 => {
                 let offset = |at| be::u16_at(body, at).map(usize::from);
                 let array = offset(6)?;
@@ -208,6 +213,12 @@ pub(crate) fn legacy(data: &[u8]) -> Option<Vec<Subtable<'_>>> {
         });
     }
     (!tables.is_empty()).then_some(tables)
+}
+
+pub(crate) fn has_machine(tables: &[Subtable<'_>]) -> bool {
+    tables
+        .iter()
+        .any(|t| matches!(t.action, Kern::LegacyHistory(..)))
 }
 
 pub(crate) fn cross_stream(tables: &[Subtable<'_>]) -> bool {
@@ -253,6 +264,8 @@ pub(crate) fn apply(tables: &[Subtable<'_>], buf: &mut Buffer, scale: &HbScale, 
                 mask,
                 cross,
             );
+        } else if let Kern::LegacyHistory(machine, actions, base) = &t.action {
+            legacy_history(machine, actions, *base, buf, scale, mask, cross);
         } else if let Kern::Attachment(machine, kind, actions, anchors) = &t.action {
             let mut marked = None;
             walk(machine, buf, |b, idx, e| {
@@ -388,7 +401,7 @@ impl Subtable<'_> {
                     be::i16_at(self.data.get(array..)?, offset & !1)
                 })
             }
-            Kern::History(..) | Kern::Attachment(..) => None,
+            Kern::History(..) | Kern::LegacyHistory(..) | Kern::Attachment(..) => None,
         };
         value
             .and_then(|v| {
@@ -416,7 +429,6 @@ fn history(
     let mut positions = [0usize; 8];
     let mut cursor = 0usize;
     let mut pushed = false;
-    let horizontal = b.direction.is_horizontal();
     walk(machine, b, |b, idx, e| {
         if e.flags & 0x8000 != 0 {
             if let Some(p) = positions.get_mut(cursor) {
@@ -448,35 +460,87 @@ fn history(
                     continue;
                 }
                 b.unsafe_to_break(at, idx.saturating_add(1));
-                let enabled = b.infos().get(at).is_some_and(|g| g.mask & mask != 0);
-                if let Some(p) = b.positions_mut().get_mut(at) {
-                    let delta = i32::from(v);
-                    if cross {
-                        if v == i16::MIN {
-                            p.attach_type = 0;
-                            p.attach_chain = 0;
-                            if horizontal {
-                                p.y_offset = 0;
-                            } else {
-                                p.x_offset = 0;
-                            }
-                        } else if p.attach_type != 0 {
-                            if horizontal {
-                                p.y_offset = p.y_offset.saturating_add(scale.em_scale_y(delta));
-                            } else {
-                                p.x_offset = p.x_offset.saturating_add(scale.em_scale_x(delta));
-                            }
-                            b.scratch_flags |= scratch::HAS_GPOS_ATTACHMENT;
-                        }
-                    } else if enabled && horizontal {
-                        let v = scale.em_scale_x(delta);
-                        p.x_advance = p.x_advance.saturating_add(v);
-                        p.x_offset = p.x_offset.saturating_add(v);
-                    } else if enabled {
-                        let v = scale.em_scale_y(delta);
-                        p.y_advance = p.y_advance.saturating_add(v);
-                        p.y_offset = p.y_offset.saturating_add(v);
-                    }
+                apply_delta(b, at, v, scale, mask, cross);
+            }
+        }
+    });
+}
+
+fn apply_delta(b: &mut Buffer, at: usize, v: i16, scale: &HbScale, mask: Mask, cross: bool) {
+    let horizontal = b.direction.is_horizontal();
+    let enabled = b.infos().get(at).is_some_and(|g| g.mask & mask != 0);
+    if let Some(p) = b.positions_mut().get_mut(at) {
+        let delta = i32::from(v);
+        if cross {
+            if v == i16::MIN {
+                p.attach_type = 0;
+                p.attach_chain = 0;
+                if horizontal {
+                    p.y_offset = 0;
+                } else {
+                    p.x_offset = 0;
+                }
+            } else if p.attach_type != 0 {
+                if horizontal {
+                    p.y_offset = p.y_offset.saturating_add(scale.em_scale_y(delta));
+                } else {
+                    p.x_offset = p.x_offset.saturating_add(scale.em_scale_x(delta));
+                }
+                b.scratch_flags |= scratch::HAS_GPOS_ATTACHMENT;
+            }
+        } else if enabled && horizontal {
+            let v = scale.em_scale_x(delta);
+            p.x_advance = p.x_advance.saturating_add(v);
+            p.x_offset = p.x_offset.saturating_add(v);
+        } else if enabled {
+            let v = scale.em_scale_y(delta);
+            p.y_advance = p.y_advance.saturating_add(v);
+            p.y_offset = p.y_offset.saturating_add(v);
+        }
+    }
+}
+
+fn legacy_history(
+    machine: &StateTable<'_>,
+    actions: &[u8],
+    base: usize,
+    b: &mut Buffer,
+    scale: &HbScale,
+    mask: Mask,
+    cross: bool,
+) {
+    let mut stack = [0usize; 8];
+    let mut depth = 0usize;
+    walk(machine, b, |b, idx, e| {
+        if e.flags & 0x8000 != 0 {
+            if let Some(slot) = stack.get_mut(depth) {
+                *slot = idx;
+                depth = depth.saturating_add(1);
+            } else {
+                depth = 0;
+            }
+        }
+        let raw = e.substitutions[0];
+        if raw == 0xffff || depth == 0 {
+            return;
+        }
+        let words = usize::from(raw)
+            .checked_sub(base)
+            .and_then(|offset| be::chunks_at::<2>(actions, offset & !1, depth));
+        let Some(words) = words else {
+            depth = 0;
+            return;
+        };
+        for word in words {
+            depth = depth.saturating_sub(1);
+            let Some(&at) = stack.get(depth) else {
+                break;
+            };
+            if at < b.len {
+                let value = i16::from_be_bytes(*word);
+                apply_delta(b, at, value & !1, scale, mask, cross);
+                if value & 1 != 0 {
+                    break;
                 }
             }
         }
@@ -488,7 +552,7 @@ fn walk(
     b: &mut Buffer,
     mut transition: impl FnMut(&mut Buffer, usize, super::Entry),
 ) {
-    let mut state = 0;
+    let mut state = usize::from(machine.start_state());
     let mut idx = 0usize;
     while idx <= b.len && b.successful {
         let class = machine.class(b.infos().get(idx));

@@ -474,6 +474,9 @@ impl<'a> ShapePlan<'a> {
             && !legacy_kern
                 .as_deref()
                 .is_some_and(crate::aat::kerning::cross_stream);
+        let has_legacy_machine = legacy_kern
+            .as_deref()
+            .is_some_and(crate::aat::kerning::has_machine);
         let mut plan = ShapePlan {
             morx,
             kerx,
@@ -498,7 +501,9 @@ impl<'a> ShapePlan<'a> {
             requested_kerning: kern_mask != 0,
             apply_gpos,
             apply_fallback_kern,
-            zero_marks: !has_kerx && script_funcs.zero_width_marks != ZeroWidthMarks::None,
+            zero_marks: !has_kerx
+                && !has_legacy_machine
+                && script_funcs.zero_width_marks != ZeroWidthMarks::None,
             has_gpos_mark: map.one_mask(Tag(*b"mark")) != 0,
             adjust_mark_positioning_when_zeroing: adjust && !use_morx,
             fallback_mark_positioning: adjust && script_fallback_position,

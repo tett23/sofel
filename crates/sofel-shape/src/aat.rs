@@ -95,11 +95,21 @@ pub enum Action<'a> {
 
 #[derive(Clone, Debug)]
 pub struct StateTable<'a> {
-    classes: AatLookup<'a>,
+    classes: StateClasses<'a>,
     num_classes: usize,
     states: &'a [u8],
     entries: &'a [u8],
     kind: MachineKind<'a>,
+}
+
+#[derive(Clone, Debug)]
+enum StateClasses<'a> {
+    Extended(AatLookup<'a>),
+    Legacy {
+        first_glyph: u16,
+        classes: &'a [u8],
+        state_origin: u16,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -141,7 +151,7 @@ impl<'a> StateTable<'a> {
         }
         let offset = |at| data.get(be::u32_at(data, at)? as usize..);
         let mut table = Self {
-            classes: AatLookup::new(offset(4)?, glyphs)?,
+            classes: StateClasses::Extended(AatLookup::new(offset(4)?, glyphs)?),
             num_classes,
             states: offset(8)?,
             entries: offset(12)?,
@@ -174,7 +184,59 @@ impl<'a> StateTable<'a> {
         }
         Some(table)
     }
+    fn legacy_kern(data: &'a [u8]) -> Option<Self> {
+        let num_classes = usize::from(be::u16_at(data, 0)?);
+        if num_classes < 4 {
+            return None;
+        }
+        let class = data.get(usize::from(be::u16_at(data, 2)?)..)?;
+        let state_origin = be::u16_at(data, 4)?;
+        let table = Self {
+            classes: StateClasses::Legacy {
+                first_glyph: be::u16_at(class, 0)?,
+                classes: be::slice_at(class, 4, usize::from(be::u16_at(class, 2)?))?,
+                state_origin,
+            },
+            num_classes,
+            states: data,
+            entries: data.get(usize::from(be::u16_at(data, 6)?)..)?,
+            kind: MachineKind::Kerning,
+        };
+        let mut seen = alloc::collections::BTreeSet::new();
+        let mut pending = alloc::vec![state_origin];
+        seen.insert(state_origin);
+        while let Some(state) = pending.pop() {
+            for c in 0..num_classes {
+                let next = table.entry(usize::from(state), c)?.next;
+                if seen.insert(next) {
+                    pending.push(next);
+                }
+            }
+        }
+        Some(table)
+    }
     fn entry(&self, state: usize, class: usize) -> Option<Entry> {
+        if let StateClasses::Legacy { state_origin, .. } = self.classes {
+            // Unlike morx row indices, kern entries point to byte offsets.
+            // Rows can precede the start row; the quotient rounds toward zero.
+            let cell = state.checked_add(class)?;
+            let row = usize::from(be::u8_at(self.states, cell)?).checked_mul(4)?;
+            let origin = i32::from(state_origin);
+            let raw = i32::from(be::u16_at(self.entries, row)?);
+            let width = i32::try_from(self.num_classes).ok()?;
+            let delta = raw
+                .checked_sub(origin)?
+                .checked_div(width)?
+                .checked_mul(width)?;
+            let next = u16::try_from(origin.checked_add(delta)?).ok()?;
+            let flags = be::u16_at(self.entries, row.checked_add(2)?)?;
+            let offset = flags & 0x3fff;
+            return Some(Entry {
+                next,
+                flags,
+                substitutions: [if offset == 0 { 0xffff } else { offset }, 0xffff],
+            });
+        }
         let cell = state
             .checked_mul(self.num_classes)?
             .checked_add(class)?
@@ -214,19 +276,39 @@ impl<'a> StateTable<'a> {
             if g.codepoint == 0xffff {
                 return 2;
             }
-            let c = usize::from(self.classes.get(g.codepoint).unwrap_or(1));
+            let c = match &self.classes {
+                StateClasses::Extended(lookup) => usize::from(lookup.get(g.codepoint).unwrap_or(1)),
+                StateClasses::Legacy {
+                    first_glyph,
+                    classes,
+                    ..
+                } => g
+                    .codepoint
+                    .checked_sub(u32::from(*first_glyph))
+                    .and_then(|i| classes.get(i as usize))
+                    .copied()
+                    .map_or(1, usize::from),
+            };
             if c < self.num_classes { c } else { 1 }
         })
     }
+    fn start_state(&self) -> u16 {
+        match self.classes {
+            StateClasses::Extended(_) => 0,
+            StateClasses::Legacy { state_origin, .. } => state_origin,
+        }
+    }
     fn safe_boundary(&self, state: usize, class: usize, entry: Entry) -> bool {
         !self.actionable(entry)
-            && (state == 0
-                || (entry.flags & 0x4000 != 0 && entry.next == 0)
-                || self.entry(0, class).is_some_and(|e| {
-                    e.next == entry.next
-                        && !self.actionable(e)
-                        && (e.flags ^ entry.flags) & 0x4000 == 0
-                }))
+            && (state == usize::from(self.start_state())
+                || (entry.flags & 0x4000 != 0 && entry.next == self.start_state())
+                || self
+                    .entry(usize::from(self.start_state()), class)
+                    .is_some_and(|e| {
+                        e.next == entry.next
+                            && !self.actionable(e)
+                            && (e.flags ^ entry.flags) & 0x4000 == 0
+                    }))
             && self.entry(state, 0).is_some_and(|e| !self.actionable(e))
     }
     pub fn drive(

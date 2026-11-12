@@ -473,3 +473,13 @@ fn i1_legacy_kern_pairs_classes_and_script_selection() {
         }
     }
 }
+
+#[test]
+fn i1_legacy_kern_machine_pops_positions_until_the_low_bit() {
+    let path = paths::testdata().join("harfbuzz/test/shape/data/in-house/tests/kern-format1.tests");
+    let suite = cases("in-house", &path, &mut 0);
+    assert!(!suite.is_empty());
+    for case in suite {
+        assert_eq!(run(&case), Ok(()), "{}", case.id);
+    }
+}
