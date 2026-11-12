@@ -286,6 +286,10 @@ fn project([x, y]: [i64; 2], vector: [i64; 2]) -> i64 {
     dot.wrapping_add(if dot < 0 { 0x1fff } else { 0x2000 }) >> 14
 }
 
+fn projected_distance(a: [i64; 2], b: [i64; 2], vector: [i64; 2]) -> i64 {
+    project([a[0].wrapping_sub(b[0]), a[1].wrapping_sub(b[1])], vector)
+}
+
 // Both vectors contain normalized F2Dot14 components.
 #[allow(clippy::arithmetic_side_effects)]
 fn move_point(point: &mut HintPoint, distance: i64, projection: [i64; 2], freedom: [i64; 2]) {
@@ -1032,6 +1036,52 @@ impl Interpreter {
                     self.reference[2] = index;
                     if op == 0x3b {
                         self.reference[0] = index;
+                    }
+                }
+                0x27 => {
+                    let second = usize::from(stack.pop().ok_or(Error::StackUnderflow)? as u16);
+                    let first = usize::from(stack.pop().ok_or(Error::StackUnderflow)? as u16);
+                    let [z0, z1, _] = self.zones.map(usize::from);
+                    let Some((a, b)) = self.points[z0].get(second).zip(self.points[z1].get(first))
+                    else {
+                        continue;
+                    };
+                    let distance = projected_distance(a.current, b.current, self.projection) / 2;
+                    move_point(
+                        &mut self.points[z1][first],
+                        distance,
+                        self.projection,
+                        self.freedom,
+                    );
+                    move_point(
+                        &mut self.points[z0][second],
+                        distance.wrapping_neg(),
+                        self.projection,
+                        self.freedom,
+                    );
+                }
+                0x3c => {
+                    let count = usize::from(core::mem::replace(&mut self.loop_count, 1));
+                    let Some(start) = stack.len().checked_sub(count) else {
+                        continue;
+                    };
+                    let [z0, z1, _] = self.zones.map(usize::from);
+                    for index in stack.drain(start..).rev() {
+                        let Some(base) = self.points[z0]
+                            .get(usize::from(self.reference[0]))
+                            .map(|p| p.current)
+                        else {
+                            break;
+                        };
+                        if let Some(point) = self.points[z1].get_mut(usize::from(index as u16)) {
+                            let distance = projected_distance(point.current, base, self.projection);
+                            move_point(
+                                point,
+                                distance.wrapping_neg(),
+                                self.projection,
+                                self.freedom,
+                            );
+                        }
                     }
                 }
                 0x29 => {
@@ -2061,4 +2111,27 @@ fn adr0064_i1_line_vectors_use_zones_rotation_and_original_positions() {
     vm.execute(&[0x87], &mut alloc::vec![0, 0], 2).unwrap();
     assert_eq!(vm.dual_projection, [16384, 0]);
     assert_eq!(vm.projection, [9830, 13107]);
+}
+
+#[test]
+fn adr0064_i1_alignpts_and_alignrp_move_selected_points_and_reset_loop() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    vm.zones = [0, 1, 1];
+    vm.points[0].push(HintPoint {
+        current: [15, 5],
+        ..HintPoint::default()
+    });
+    vm.points[1].resize(3, HintPoint::default());
+    vm.execute(&[0x27], &mut alloc::vec![0, 0], 2).unwrap();
+    assert_eq!(vm.points[0][0].current, [8, 5]);
+    assert_eq!(vm.points[1][0].current, [7, 0]);
+    vm.loop_count = 3;
+    let mut stack = alloc::vec![77, 1, 99, 2];
+    vm.execute(&[0x3c], &mut stack, 4).unwrap();
+    assert_eq!(vm.loop_count, 1);
+    assert_eq!(stack, [77]);
+    for point in &vm.points[1][1..] {
+        assert_eq!(point.current, [8, 0]);
+        assert_eq!(point.touched, [true, false]);
+    }
 }
