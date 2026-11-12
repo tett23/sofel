@@ -141,6 +141,9 @@ pub(super) fn optimize(
         }
         let mut unique = Vec::new();
         for (inner, row) in rows.into_iter().enumerate() {
+            if tag == Tag::new(b"MVAR") && row.iter().all(|&delta| delta == 0) {
+                continue;
+            }
             let index = variation_index(outer, inner, tag)?;
             let source = sources.entry(row.clone()).or_default();
             if source.is_empty() {

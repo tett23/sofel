@@ -446,7 +446,12 @@ fn adr0061_i1_two_pins_keep_the_remaining_gvar_axis() {
 
 #[test]
 fn adr0061_i1_restricted_gvar_axis_matches_harfbuzz() {
-    for name in ["Handjet.ttf", "Fraunces.ttf", "Roboto-Variable.ABC.ttf"] {
+    for name in [
+        "Handjet.ttf",
+        "Fraunces.ttf",
+        "Roboto-Variable.ABC.ttf",
+        "NotoSans-VF.abc.ttf",
+    ] {
         let path = paths::testdata()
             .join("harfbuzz/test/subset/data/fonts")
             .join(name);

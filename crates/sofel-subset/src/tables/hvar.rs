@@ -1,6 +1,6 @@
 //! HVAR and VVAR with implicit advance maps (ADR 0022 stage 10).
 
-mod instance;
+pub(super) mod instance;
 mod optimize;
 
 use alloc::collections::{BTreeMap, BTreeSet};
