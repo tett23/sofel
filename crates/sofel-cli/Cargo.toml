@@ -8,6 +8,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+sofel-geom = { path = "../sofel-geom" }
 sofel-inflate = {path="../sofel-inflate"}
 sofel-woff = {path="../sofel-woff"}
 sofel-read = { path = "../sofel-read" }
