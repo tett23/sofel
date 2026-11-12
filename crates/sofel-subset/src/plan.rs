@@ -309,8 +309,16 @@ impl Plan {
                 })
             })
         });
+        let identity_avar2 = norm.avar2
+            && font.table(Tag::new(b"CFF2")).is_none()
+            && (norm.user.len() == 1 || norm.user.values().all(|r| r.min == r.max))
+            && font.table(Tag::new(b"avar")).is_some_and(|data| {
+                crate::tables::avar::is_empty_identity_v2(data, norm.axis_tags.len())
+            });
+        let avar2_range = identity_avar2 && norm.user.values().any(|r| r.min < r.max);
         let needs_rebase = |tag: &&[u8; 4]| {
             (!inert_gvar || (**tag != *b"gvar" && **tag != *b"GVAR"))
+                && !(avar2_range && **tag == *b"gvar")
                 && font.table(Tag::new(tag)).is_some()
         };
         let no_other_varc_rebase = !other_variation_tags.iter().any(|tag| {
@@ -333,19 +341,13 @@ impl Plan {
             false
         };
         if !norm.user.is_empty() {
-            let identity_avar2 = norm.avar2
-                && font.table(Tag::new(b"CFF2")).is_none()
-                && (norm.user.len() == 1 || norm.user.values().all(|r| r.min == r.max))
-                && font.table(Tag::new(b"avar")).is_some_and(|data| {
-                    crate::tables::avar::is_empty_identity_v2(data, norm.axis_tags.len())
-                });
             if norm.avar2 && !identity_avar2 {
                 return Err(SubsetError::Unsupported {
                     tag: Tag::new(b"avar"),
                     reason: "pinning the axes of avar version 2 (deferred by ADR 0022)",
                 });
             }
-            if identity_avar2 && norm.user.values().any(|r| r.min < r.max) {
+            if avar2_range {
                 // An avar2 restriction stays in the output mapping. Only
                 // self-contained pins apply deltas to the source outlines.
                 norm.normalized_coords.clear();
