@@ -759,3 +759,150 @@ fn adr0049_i4_variable_shape_matches_uncached_advance_and_default_fields() {
         }
     }
 }
+
+#[test]
+fn i1_aat_feat_selector_range_uses_the_input_clusters() {
+    // The chain's one noncontextual lookup replaces glyph 1 with 2 when liga is on.
+    let words = [
+        0x0002_0000u32,
+        1,
+        0,
+        48,
+        1,
+        1,
+        0x0001_0002,
+        1,
+        u32::MAX,
+        20,
+        4,
+        1,
+        0x0008_0001,
+        0x0001_0002,
+    ];
+    let morx = words
+        .into_iter()
+        .flat_map(u32::to_be_bytes)
+        .collect::<Vec<_>>();
+    // feat version, one feature, feature type 1, one selector at offset 24.
+    let feat = [0x10000u32, 0x10000, 0, 0x10001, 24, 0, 0x20000]
+        .into_iter()
+        .flat_map(u32::to_be_bytes)
+        .collect::<Vec<_>>();
+    let data = make_font(false, vec![(b"morx", morx), (b"feat", feat)]);
+    for (feature, expected) in [
+        (b"liga[1:3]=1".as_slice(), vec![A, B, B, A]),
+        (b"liga=1", vec![B; 4]),
+        (b"liga=0", vec![A; 4]),
+        (b"liga[2:2]=1", vec![A; 4]),
+    ] {
+        let glyphs = run(
+            &data,
+            "aaaa",
+            Run {
+                features: vec![Feature::parse(feature).unwrap()],
+                ..Run::default()
+            },
+        );
+        assert_eq!(
+            glyphs
+                .glyph_infos()
+                .iter()
+                .map(|i| i.glyph)
+                .collect::<Vec<_>>(),
+            expected
+        );
+    }
+}
+
+#[test]
+fn i2_aat_state_stops_at_a_nonadvancing_cycle_and_rejects_a_short_entry() {
+    // Extended rearrangement machine: the only row loops without consuming a glyph.
+    let words = [
+        0x0002_0000u32,
+        1,
+        1,
+        64,
+        0,
+        1,
+        48,
+        0,
+        1,
+        4,
+        16,
+        24,
+        32,
+        0x0008_0001,
+        0x0001_0001,
+        0,
+        0,
+        0x0000_4000,
+    ];
+    let mut morx: Vec<_> = words.into_iter().flat_map(u32::to_be_bytes).collect();
+    let check = |table, expected| {
+        let data = make_font(false, vec![(b"morx", table)]);
+        let font = Font::new(&data, 0).unwrap();
+        let properties = ResolvedProperties {
+            direction: Direction::Rtl,
+            script: Script::from_iso15924(b"Arab"),
+            language: None,
+        };
+        assert_eq!(
+            ShapePlan::new(font.default_instance(), properties, &[]).shaper(),
+            expected
+        );
+        assert_eq!(glyphs(&run(&data, "a", Run::default())), [(A, 0)]);
+    };
+    check(morx.clone(), sofel_shape::Shaper::Dumber);
+    morx.pop();
+    check(morx, sofel_shape::Shaper::Arabic);
+}
+
+#[test]
+fn adr0060_i1_legacy_kern_format3_class_matrix() {
+    let mut kern = vec![0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 28, 0, 3, 0, 0];
+    kern.extend_from_slice(&[
+        0, 3, 2, 2, 2, 0, 0, 0, 0xff, 0xd8, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1,
+    ]);
+    let data = make_font(false, vec![(b"kern", kern)]);
+    assert_eq!(advances(&run(&data, "ab", Run::default())), [490, 500]);
+    assert_eq!(advances(&run(&data, "ba", Run::default())), [520, 510]);
+}
+
+#[test]
+fn adr0060_i1_kerx6_word_width_and_tuple_offsets() {
+    for long in [false, true] {
+        for tuple in [false, true] {
+            let width = if long { 4 } else { 2 };
+            let mut sub = vec![0; 36];
+            sub[7] = 6;
+            sub[11] = u8::from(tuple);
+            sub[15] = u8::from(long);
+            sub[17] = 2;
+            sub[19] = 2;
+            for (field, glyph, value) in [(20, 1, 2u32), (24, 2, 1)] {
+                let offset = sub.len() as u32;
+                sub[field..field + 4].copy_from_slice(&offset.to_be_bytes());
+                sub.extend_from_slice(&[0, 8, 0, glyph, 0, 1]);
+                sub.extend_from_slice(&value.to_be_bytes()[4 - width..]);
+            }
+            let offset = sub.len() as u32;
+            sub[28..32].copy_from_slice(&offset.to_be_bytes());
+            for value in [0i32, 0, 0, if tuple { 2 } else { -40 }] {
+                sub.extend_from_slice(&value.to_be_bytes()[4 - width..]);
+            }
+            if tuple {
+                let offset = sub.len() as u32;
+                sub[32..36].copy_from_slice(&offset.to_be_bytes());
+                sub.extend_from_slice(&[0, 0, 0xff, 0xd8]);
+            }
+            let len = sub.len() as u32;
+            sub[..4].copy_from_slice(&len.to_be_bytes());
+            let mut kerx = vec![0, 2, 0, 0, 0, 0, 0, 1];
+            kerx.extend_from_slice(&sub);
+            let data = make_font(false, vec![(b"kerx", kerx)]);
+            let glyphs = run(&data, "ab", Run::default());
+            assert_eq!(advances(&glyphs), [490, 500], "{long} {tuple}");
+            assert_eq!(glyphs.glyph_positions()[1].x_offset, -20);
+        }
+    }
+}

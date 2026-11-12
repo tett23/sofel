@@ -419,7 +419,7 @@ fn substitute_pre(
         let horizontal = plan.props.direction.is_horizontal();
         for chain in chains {
             for table in &chain.substitutions {
-                if table.flags & chain.default_flags == 0
+                if !chain.ranges.any(table.flags)
                     || (table.coverage & 0x2000_0000 == 0
                         && (table.coverage & 0x8000_0000 == 0) != horizontal)
                 {
@@ -445,14 +445,18 @@ fn substitute_pre(
                         if reverse {
                             buffer.reverse();
                         }
-                        machine.drive(buffer, &mut replace);
+                        machine.drive(buffer, &mut replace, |cluster| {
+                            chain.ranges.contains(cluster, table.flags)
+                        });
                         if reverse {
                             buffer.reverse();
                         }
                     }
                     crate::aat::Action::Replace(lookup) => {
                         for info in buffer.infos_mut() {
-                            if let Some(glyph) = lookup.get(info.codepoint) {
+                            if chain.ranges.contains(info.cluster, table.flags)
+                                && let Some(glyph) = lookup.get(info.codepoint)
+                            {
                                 replace(info, glyph);
                             }
                         }
@@ -602,6 +606,9 @@ fn position(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut
     if plan.apply_gpos {
         apply_map(GPOS, plan, font, buffer);
     } else if let Some(tables) = &plan.kerx {
+        crate::aat::kerning::apply(tables, buffer, &font.scale.scale, plan.kern_mask);
+    }
+    if let Some(tables) = &plan.legacy_kern {
         crate::aat::kerning::apply(tables, buffer, &font.scale.scale, plan.kern_mask);
     }
     if let Some(tracking) = plan.tracking {
