@@ -35,6 +35,7 @@ pub enum Painted {
 /// the font for `'a` (so that a [`Recording`] can keep them).
 pub(crate) trait Sink<'a>: Painter {
     fn image_of(&mut self, image: Image<'a>) -> bool;
+    fn expanded_svg(&mut self, data: alloc::vec::Vec<u8>) -> bool;
 }
 
 /// Any [`Painter`], passing images on as they are.
@@ -77,12 +78,19 @@ impl<P: Painter + ?Sized> Painter for Direct<'_, P> {
 }
 
 impl<'a, P: Painter + ?Sized> Sink<'a> for Direct<'_, P> {
+    fn expanded_svg(&mut self, data: alloc::vec::Vec<u8>) -> bool {
+        self.0.image(&svg_image(&data))
+    }
     fn image_of(&mut self, image: Image<'a>) -> bool {
         self.0.image(&image)
     }
 }
 
 impl<'a> Sink<'a> for Recording<'a> {
+    fn expanded_svg(&mut self, data: alloc::vec::Vec<u8>) -> bool {
+        self.push_expanded_svg(data);
+        true
+    }
     fn image_of(&mut self, image: Image<'a>) -> bool {
         self.push_image(image);
         true
@@ -141,11 +149,6 @@ pub(crate) fn svg_doc<'a>(font: &Font<'a>, glyph: u32) -> Option<(usize, &'a [u8
     Some((i, s.document(i)?))
 }
 
-/// Whether `data` starts with the gzip magic number.
-pub(crate) fn is_gzip(data: &[u8]) -> bool {
-    data.starts_with(&[0x1f, 0x8b])
-}
-
 /// HarfBuzz's glyph box for painting bitmap glyphs
 /// (`font->get_glyph_extents` at the default scale): `sbix`, then
 /// `CBDT`.
@@ -167,6 +170,17 @@ pub(crate) fn paint_colr_only<'a>(
     paint_colr(instance, glyph, &colors, scratch, false, sink)
 }
 
+pub(crate) fn svg_image(data: &[u8]) -> Image<'_> {
+    Image {
+        format: ImageFormat::Svg { gzip: false },
+        data,
+        width: 0,
+        height: 0,
+        slant: 0.0,
+        extents: None,
+    }
+}
+
 pub(crate) fn paint_any<'a>(
     instance: sofel_outline::font::var::Instance<'_, 'a, '_, '_>,
     glyph: u32,
@@ -180,15 +194,12 @@ pub(crate) fn paint_any<'a>(
         return p;
     }
     if let Some((_, doc)) = svg_doc(font, glyph) {
-        let image = Image {
-            format: ImageFormat::Svg { gzip: is_gzip(doc) },
-            data: doc,
-            width: 0,
-            height: 0,
-            slant: 0.0,
-            extents: None,
+        let painted = match sofel_svg::document(doc, i32::MAX as usize) {
+            Ok(alloc::borrow::Cow::Owned(data)) => sink.expanded_svg(data),
+            Ok(alloc::borrow::Cow::Borrowed(data)) => sink.image_of(svg_image(data)),
+            Err(_) => false,
         };
-        if sink.image_of(image) {
+        if painted {
             return Painted::Svg;
         }
     }

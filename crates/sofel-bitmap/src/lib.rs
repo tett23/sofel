@@ -1,6 +1,6 @@
 //! Embedded bitmap glyphs (ADR 0023): the strikes of `CBLC`, `EBLC`,
 //! `bloc` and `sbix`, their selection, and each glyph's image data and
-//! metrics, without decoding PNG.
+//! metrics, including premultiplied BGRA from embedded PNG images.
 //!
 //! [`strikes`], [`match_strike`] and [`glyph_bitmap`] follow FreeType
 //! 2.15.0; they are ported from `src/sfnt/ttsbit.c`
@@ -490,12 +490,18 @@ pub fn glyph_bitmap<'a>(font: &Font<'a>, strike: &Strike, glyph: u32) -> Option<
 /// The layout and metrics of `glyph`'s bitmap in `strike`, as FreeType's
 /// `FT_Load_Glyph` with `FT_LOAD_BITMAP_METRICS_ONLY` gives them for
 /// `EBDT`, `CBDT` and `bdat` (`tt_sbit_decoder_load_image`), compound
-/// glyphs included. `sbix` strikes give [`BitmapError::Png`].
+/// glyphs included. Embedded PNG images use premultiplied BGRA.
 pub fn bitmap_layout(
     font: &Font<'_>,
     strike: &Strike,
     glyph: u32,
 ) -> Result<BitmapLayout, BitmapError> {
+    if let Some(image) = glyph_bitmap(font, strike, glyph)
+        && (matches!(image.format, BitmapFormat::Ebdt(17..=19))
+            || image.format == BitmapFormat::Sbix(Tag::new(b"png ")))
+    {
+        return png_bitmap(font, strike, glyph, &image, None);
+    }
     match ft_source(font) {
         Some(Source::Eblc(_, view, data)) => decode::decode(
             &view,
@@ -514,13 +520,19 @@ pub fn bitmap_layout(
 /// bytes, rows top first, `pitch` bytes each; 1, 2 and 4-bit pixels
 /// most significant bit first, 32-bit pixels as stored (BGRA). Image
 /// formats 1, 2, 5, 6, 7 and the compound formats 8 and 9; PNG images
-/// give [`BitmapError::Png`]. [`bitmap_layout`] gives the size first.
+/// are written as premultiplied BGRA. [`bitmap_layout`] gives the size first.
 pub fn draw_bitmap(
     font: &Font<'_>,
     strike: &Strike,
     glyph: u32,
     out: &mut [u8],
 ) -> Result<BitmapLayout, BitmapError> {
+    if let Some(image) = glyph_bitmap(font, strike, glyph)
+        && (matches!(image.format, BitmapFormat::Ebdt(17..=19))
+            || image.format == BitmapFormat::Sbix(Tag::new(b"png ")))
+    {
+        return png_bitmap(font, strike, glyph, &image, Some(out));
+    }
     match ft_source(font) {
         Some(Source::Eblc(_, view, data)) => decode::decode(
             &view,
@@ -532,6 +544,78 @@ pub fn draw_bitmap(
         Some(Source::Sbix(_)) => Err(BitmapError::Png),
         None => Err(BitmapError::Missing),
     }
+}
+
+// ttgload.c shifts a horizontal sbix bitmap for simple outline glyphs.
+fn sbix_origin_shift(font: &Font<'_>, strike: &Strike, glyph: u32) -> Option<(i16, i16)> {
+    use sofel_font::geom::{div_fix, mul_fix};
+    use sofel_font::read::{GlyphId, glyf, loca};
+    let offsets =
+        loca::Loca::new(font.table(loca::TAG)?, font.head().index_to_loc_format()).ok()?;
+    let index = usize::try_from(glyph).ok()?;
+    let bytes = font
+        .table(glyf::TAG)?
+        .get(offsets.offset(index)? as usize..offsets.offset(index.checked_add(1)?)? as usize)?;
+    let header = glyf::Glyph::new(bytes).ok()?;
+    if header.number_of_contours() <= 0 {
+        return None;
+    }
+    let units = i32::from(font.head().units_per_em());
+    let bearing = font.default_instance().ft_left_side_bearing(GlyphId(glyph));
+    let shift = |v: i16, ppem: u16| {
+        i16::try_from(mul_fix(i32::from(v), div_fix(i32::from(ppem) << 6, units)) >> 6).ok()
+    };
+    Some((
+        shift(bearing, strike.x_ppem)?,
+        shift(header.y_min(), strike.y_ppem)?,
+    ))
+}
+
+fn png_bitmap(
+    font: &Font<'_>,
+    strike: &Strike,
+    glyph: u32,
+    image: &GlyphBitmap<'_>,
+    out: Option<&mut [u8]>,
+) -> Result<BitmapLayout, BitmapError> {
+    let (width, rows) = png_size(image.data);
+    if width == 0
+        || rows == 0
+        || width > 0x7fff
+        || rows > 0x7fff
+        || width != u32::from(image.metrics.width)
+        || rows != u32::from(image.metrics.height)
+    {
+        return Err(BitmapError::Invalid);
+    }
+    let mut metrics = image.metrics;
+    if matches!(image.format, BitmapFormat::Sbix(_))
+        && let Some((x, y)) = sbix_origin_shift(font, strike, glyph)
+    {
+        metrics.hori_bearing_x = metrics.hori_bearing_x.saturating_add(x);
+        metrics.hori_bearing_y = metrics.hori_bearing_y.saturating_add(y);
+    }
+    let layout = BitmapLayout {
+        width: image.metrics.width,
+        rows: image.metrics.height,
+        pitch: width.saturating_mul(4),
+        pixel_mode: PixelMode::Bgra,
+        metrics,
+    };
+    if let Some(out) = out {
+        let bytes = out
+            .get_mut(..layout.len())
+            .ok_or(BitmapError::BufferTooSmall(layout.len()))?;
+        let decoded =
+            sofel_png::decode(image.data, layout.len() / 4).map_err(|_| BitmapError::Invalid)?;
+        bytes.copy_from_slice(&decoded.bgra);
+        if image.flipped {
+            for row in bytes.chunks_exact_mut(layout.pitch as usize) {
+                row.as_chunks_mut::<4>().0.reverse();
+            }
+        }
+    }
+    Ok(layout)
 }
 
 /// The width and height in a PNG header (IHDR at its fixed position);

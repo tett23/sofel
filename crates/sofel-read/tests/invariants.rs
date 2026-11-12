@@ -888,3 +888,11 @@ fn layout_table_invariants() {
         }
     }
 }
+
+#[test]
+fn gpos_mixed_extension_offsets_report_or_walk() {
+    let table = [
+        0, 1, 0, 1, 0, 0, 0, 2, 0, 6, 0, 0, 0, 9, 0, 1, 0, 3, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1, 1,
+    ];
+    assert!(has_error(|report| gpos::validate(&table, Some(0x07c2), report)) || gpos_walks(&table));
+}

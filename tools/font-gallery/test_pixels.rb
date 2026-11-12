@@ -1,26 +1,10 @@
 require 'minitest/autorun'
 require 'zlib'
 require_relative 'pixels'
+require_relative 'test_png_reader'
 
 class TestPixels < Minitest::Test
-  def decode_png(bytes)
-    assert_equal "\x89PNG\r\n\x1a\n".b, bytes.byteslice(0, 8)
-    offset = 8
-    data = ''.b
-    width = height = nil
-    until offset == bytes.bytesize
-      length = bytes.byteslice(offset, 4).unpack1('N')
-      type = bytes.byteslice(offset + 4, 4)
-      payload = bytes.byteslice(offset + 8, length)
-      assert_equal Zlib.crc32(type + payload), bytes.byteslice(offset + 8 + length, 4).unpack1('N')
-      width, height = payload.unpack('NN') if type == 'IHDR'
-      data << payload if type == 'IDAT'
-      offset += length + 12
-    end
-    rows = Zlib.inflate(data).bytes.each_slice(width * 4 + 1).to_a
-    assert_equal height, rows.length
-    [width, height, rows.flat_map { |row| assert_equal 0, row.shift; row }.pack('C*')]
-  end
+  include GalleryPngReader
 
   def test_inv2_gallery_pixels
     gray = GalleryPixels.parse("P5\n# left -2 top 3\n2 1\n255\n".b + [0, 128].pack('C*'))
