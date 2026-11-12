@@ -24,10 +24,13 @@ sofel_font::var::Instance::glyf_extents_with_scratch Rust work-area variant of t
 sofel_font::var::Instance::varied_glyf_control_box Unrounded internal outline for COLR layer clipping; C receives the painted glyph extents (ADR 0027).
 sofel_font::var::Instance::ft_h_advance_with_scratch Rust work-area variant of sofel_font_ft_h_advance; the C query uses the ordinary Rust entry (ADR 0048).
 sofel_font::var::Instance::ft_v_advance_with_scratch Rust work-area variant of sofel_font_ft_v_advance; the C query uses the ordinary Rust entry (ADR 0048).
+sofel_font::var::gvar::infer_hb Internal contour interpolation shared by outline evaluation and subset instancing. C receives the resulting outline or subset font (ADR 0030, ADR 0061).
+sofel_font::var::gvar::apply_cvar_hb Internal CVT instancing for the subset writer. C callers receive the adjusted cvt table in the subset font (ADR 0061).
 sofel_font::var::gvar::apply_hb Internal HarfBuzz gvar point evaluation; C gets the resulting font values through coordinate-dependent queries (ADR 0030).
 sofel_font::var::gvar::apply_ft Internal FreeType gvar point evaluation; C gets the resulting outline through sofel_outline_load and sofel_outline_draw (ADR 0030).
 sofel_font::var::Location::default_ref The NULL location argument will represent the static default for C coordinate-dependent queries in the ADR 0027 query PR.
 sofel_font::var::StoreScalars::* Internal cached variation-region coefficients, without a direct C operation (ADR 0029).
+sofel_font::var::apply_avar2_2_14 Internal subset coordinate mapping helper (ADR 0061).
 sofel_font::var::map_float Internal avar interpolation helper, without a direct C operation (ADR 0027).
 sofel_font::var::normalize_axis_value Internal fvar normalization helper, without a direct C operation (ADR 0027).
 sofel_geom::Command::apply Replays a recorded Rust Command into a Rust Pen; C pens receive the commands directly.
