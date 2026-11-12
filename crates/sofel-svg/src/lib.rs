@@ -93,6 +93,27 @@ pub struct Scene {
     pub shapes: Vec<Shape>,
 }
 
+/// One filled outline in a clip path, already placed in glyph coordinates.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClipElement {
+    /// Only the outline and transform participate in clipping.
+    pub shape: Shape,
+    /// Use even-odd winding rather than nonzero winding.
+    pub even_odd: bool,
+}
+
+/// Children of one clip path are combined by union.
+pub type ClipPath = Vec<ClipElement>;
+
+/// A glyph scene with a stack of clip paths per shape, in paint order.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct GlyphScene {
+    /// Shapes, paint servers and their paint order.
+    pub scene: Scene,
+    /// For each shape, intersect the listed clip paths.
+    pub clips: Vec<Vec<ClipPath>>,
+}
+
 /// Invalid or unsupported XML in the supported SVG subset.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ParseError;
