@@ -250,7 +250,13 @@ fn keep_subrs(
                 Source::Local(old) => p.lsubrs.get(old)?,
                 Source::Glyph => return None,
             };
-            if drop_hints && matches!(target, [] | [11]) {
+            let drops_cover_target = subr_drops.get(&(fd, trace.target)).is_some_and(|drops| {
+                drops
+                    .values()
+                    .try_fold(0, |cursor, drop| (drop.start == cursor).then_some(drop.end))
+                    == Some(target.len())
+            });
+            if drop_hints && (target.is_empty() || drops_cover_target) {
                 let drops = if trace.source == Source::Glyph {
                     &mut direct_drops
                 } else {
