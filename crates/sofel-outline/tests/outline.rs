@@ -852,3 +852,16 @@ fn adr0064_i1_shpix_matches_freetype_on_a_diagonal_negative_distance() {
     assert_eq!(scratch.points()[1], Point { x: -60, y: 944 });
     assert_eq!(scratch.point_tags(), &[5, 24, 0, 1]);
 }
+
+#[test]
+fn adr0064_i1_isect_uses_the_crossing_or_parallel_midpoint() {
+    for (indices, expected) in [
+        ([0, 2, 1, 3], Point { x: 512, y: 512 }),
+        ([0, 1, 0, 1], Point { x: 0, y: 512 }),
+    ] {
+        let [a0, a1, b0, b1] = indices;
+        let scratch = hinted_square(&[0xb4, 3, a0, a1, b0, b1, 0x0f]);
+        assert_eq!(scratch.points()[3], expected);
+        assert_eq!(scratch.point_tags()[3], 25);
+    }
+}

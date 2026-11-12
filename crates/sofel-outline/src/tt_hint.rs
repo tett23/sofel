@@ -290,6 +290,32 @@ fn projected_distance(a: [i64; 2], b: [i64; 2], vector: [i64; 2]) -> i64 {
     project([a[0].wrapping_sub(b[0]), a[1].wrapping_sub(b[1])], vector)
 }
 
+fn intersection(a0: [i64; 2], a1: [i64; 2], b0: [i64; 2], b1: [i64; 2]) -> [i64; 2] {
+    use sofel_font::read::cff::ft::mul_div;
+    let dx = a1[0].wrapping_sub(a0[0]);
+    let dy = a1[1].wrapping_sub(a0[1]);
+    let ex = b1[0].wrapping_sub(b0[0]);
+    let ey = b1[1].wrapping_sub(b0[1]);
+    let cross = |x, y| mul_div(x, ey.wrapping_neg(), 64).wrapping_add(mul_div(y, ex, 64));
+    let det = cross(dx, dy);
+    let dot = mul_div(dx, ex, 64).wrapping_add(mul_div(dy, ey, 64));
+    if det.wrapping_abs().wrapping_mul(19) > dot.wrapping_abs() {
+        let numerator = cross(b0[0].wrapping_sub(a0[0]), b0[1].wrapping_sub(a0[1]));
+        [
+            a0[0].wrapping_add(mul_div(numerator, dx, det)),
+            a0[1].wrapping_add(mul_div(numerator, dy, det)),
+        ]
+    } else {
+        [0, 1].map(|axis| {
+            a0[axis]
+                .wrapping_add(a1[axis])
+                .wrapping_add(b0[axis])
+                .wrapping_add(b1[axis])
+                / 4
+        })
+    }
+}
+
 fn shift_point(point: &mut HintPoint, delta: [i64; 2], freedom: [i64; 2], compatibility: u8) {
     for axis in 0..2 {
         if freedom[axis] != 0 {
@@ -879,6 +905,29 @@ impl Interpreter {
                     } else {
                         self.freedom
                     });
+                }
+                0x0f => {
+                    let start = stack.len().checked_sub(5).ok_or(Error::StackUnderflow)?;
+                    let [target, a0, a1, b0, b1] = *stack[start..]
+                        .first_chunk::<5>()
+                        .ok_or(Error::StackUnderflow)?;
+                    stack.truncate(start);
+                    let [z0, z1, z2] = self.zones.map(usize::from);
+                    let coords = |zone: usize, index: i64| {
+                        self.points[zone]
+                            .get(usize::from(index as u16))
+                            .map(|point| point.current)
+                    };
+                    if let (Some(a0), Some(a1), Some(b0), Some(b1)) = (
+                        coords(z1, a0),
+                        coords(z1, a1),
+                        coords(z0, b0),
+                        coords(z0, b1),
+                    ) && let Some(point) = self.points[z2].get_mut(usize::from(target as u16))
+                    {
+                        point.current = intersection(a0, a1, b0, b1);
+                        point.touched = [true; 2];
+                    }
                 }
                 0x0e => self.freedom = self.projection,
                 op @ (0x4b | 0x4c) => {
