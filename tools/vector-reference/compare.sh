@@ -20,3 +20,20 @@ cmp "$work/expected.svg" "$work/actual.svg"
 pdftoppm -scale-to 640 -singlefile "$expected.pdf" "$work/expected"
 pdftoppm -scale-to 640 -singlefile "$work/page.pdf" "$work/actual"
 cmp "$work/expected.ppm" "$work/actual.ppm"
+
+c++ -std=c++11 -Icrates/sofel-capi/include tools/vector-reference/positioned.cc \
+    "${CARGO_TARGET_DIR:-target}/release/libsofel_capi.a" -o "$work/positioned"
+root=${SOFEL_HARFBUZZ:-target/testdata/harfbuzz}/test
+check_page() {
+    name=$1
+    font=$2
+    shift 2
+    "$work/positioned" "$root/api/fonts/$font" "$@" > "$work/$name.svg"
+    cmp "$work/$name.svg" "$root/vector/data/expected/basic/$name.svg"
+}
+check_page cff1 SourceSansPro-Regular.abc.otf -16 -1000 1545 1289
+check_page cff2-var-wght900 TestCFF2VF.otf -16 -1000 1832 1289 wght=900
+check_page cff2-var-cntr AdobeVFPrototype.abc.otf -16 -934 1728 1285 wght=900 CNTR=100
+check_page glyf-var-wght900 Roboto-Variable.abc.ttf -16 -1916 3338 2432 wght=900
+check_page ttb Roboto-Regular.abc.ttf -1040 -16 2080 7232 ttb
+check_page glyf-vvar-ttb-wght900 SourceSerifVariable-Roman-VVAR.abc.ttf -516 -16 1032 3095 ttb wght=900
