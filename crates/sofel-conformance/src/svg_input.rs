@@ -1,6 +1,7 @@
 //! OT-SVG input observations for ADR 0074.
 #[path = "../../../conformance/svg/color_svg.rs"]
 mod color_svg;
+mod gallery;
 mod references;
 
 use sofel_cli::glyph::{ColorGlyph, render_color};
@@ -32,6 +33,8 @@ pub fn observe(feature: &str, case: &str, observation: &str) -> Option<Result<()
         ("in-style", _, _) => style_pixel(case, observation),
         ("in-gradient", "color-svg-19", "cli-rgba") => Some(real_cli(19)),
         ("in-gradient", "color-svg-26", "cli-rgba") => Some(real_cli(26)),
+        ("in-gradient", "color-svg-19", "gallery-rgba") => Some(gallery::observe(19)),
+        ("in-gradient", "color-svg-26", "gallery-rgba") => Some(gallery::observe(26)),
         ("in-gradient", _, _) => gradient_observation(case, observation),
         ("in-reference", _, _) => references::reference_observation(case, observation),
         ("in-restrictions", _, _) => references::restriction_observation(case, observation),
@@ -164,7 +167,7 @@ const BLUE: [u8; 4] = [0, 0, 255, 255];
 // At 32 ppem the SVG 8-by-8 viewBox maps one user unit to four pixels.
 // Pixel coordinates below denote columns and rows from the baseline origin,
 // increasing right/down. Their centers are (column + 0.5, row + 0.5).
-fn rendered(
+pub(crate) fn rendered(
     stored: &[u8],
     last: u16,
     glyph: u32,
@@ -264,7 +267,7 @@ fn style_pixel(case: &str, name: &str) -> Option<Result<(), String>> {
     )
 }
 
-fn real_cli(glyph: u32) -> Result<(), String> {
+fn real_pam(glyph: u32) -> Result<Vec<u8>, String> {
     let font = crate::paths::testdata().join("extra-fonts/fonts/color-svg.ttf");
     if !font.is_file() {
         return Err("missing fixed font extra-fonts/fonts/color-svg.ttf".into());
@@ -285,7 +288,84 @@ fn real_cli(glyph: u32) -> Result<(), String> {
             "color-svg glyph {glyph}: sofel-render exited {exit}"
         ));
     }
-    color_svg::check_cli_pixels(glyph, &output)
+    color_svg::check_cli_pixels(glyph, &output)?;
+    Ok(output)
+}
+
+fn real_cli(glyph: u32) -> Result<(), String> {
+    real_pam(glyph).map(drop)
+}
+
+pub(crate) fn fingerprint(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf29ce484222325, |h, &byte| {
+        (h ^ u64::from(byte)).wrapping_mul(0x100000001b3)
+    })
+}
+
+/// Measures the fixed input selected by one case for cross-run comparison.
+pub fn measurement(input: &str, selection: &str, foreground: &str) -> Result<String, String> {
+    let gid = selection
+        .strip_prefix("glyph")
+        .and_then(|n| n.parse::<u32>().ok())
+        .ok_or("invalid glyph selection")?;
+    if input == "fonts.lock#color-svg" {
+        let pam = real_pam(gid)?;
+        let img = font_gallery::pixels::parse(&pam)?;
+        return Ok(format!(
+            "RGBA {},{} {}x{}; fnv1a64={:016x}",
+            img.left,
+            img.top,
+            img.width,
+            img.height,
+            fingerprint(&img.pixels)
+        ));
+    }
+    let (data, last): (&[u8], u16) = match input {
+        "conformance/svg/two-glyphs.svg" => (DOCUMENT, 2),
+        "conformance/svg/two-glyphs.svg.gz" => (GZIP, 2),
+        "conformance/svg/geometry.svg" => {
+            (include_bytes!("../../../conformance/svg/geometry.svg"), 5)
+        }
+        "conformance/svg/style.svg" => (STYLE, 5),
+        "conformance/svg/gradients.svg" => {
+            (include_bytes!("../../../conformance/svg/gradients.svg"), 5)
+        }
+        "conformance/svg/references.svg" => {
+            (include_bytes!("../../../conformance/svg/references.svg"), 2)
+        }
+        "conformance/svg/external.svg" => {
+            (include_bytes!("../../../conformance/svg/external.svg"), 1)
+        }
+        "conformance/svg/script.svg" => (include_bytes!("../../../conformance/svg/script.svg"), 1),
+        other => return Err(format!("unknown input {other}")),
+    };
+    if gid > u32::from(last) {
+        let bytes = glyph_font(data, last)?;
+        let font = Font::new(&bytes, 0).map_err(|e| format!("{e:?}"))?;
+        return Ok(format!(
+            "SVG document present={}",
+            sofel_color::svg_document(&font, gid).is_some()
+        ));
+    }
+    let (image, requests) = if input == "conformance/svg/external.svg" {
+        let (image, count) = references::external_image()?;
+        (image, format!("; requests={count}"))
+    } else {
+        let rgba = foreground
+            .strip_prefix('#')
+            .and_then(|hex| u32::from_str_radix(hex, 16).ok())
+            .ok_or("invalid foreground RGBA")?
+            .to_be_bytes();
+        (rendered(data, last, gid, rgba)?, String::new())
+    };
+    Ok(format!(
+        "BGRA {},{} {}x{}; fnv1a64={:016x}{requests}",
+        image.left,
+        image.top,
+        image.width,
+        image.rows,
+        fingerprint(&image.pixels)
+    ))
 }
 
 type Sample = (i32, i32, [u8; 4]);

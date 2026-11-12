@@ -119,7 +119,20 @@ fn show_scope() -> bool {
     valid && !ids.is_empty()
 }
 
-fn verify(text: &str) -> bool {
+fn observation(feature: &str, case: &str, name: &str) -> Option<Result<(), String>> {
+    match feature {
+        "in-document" => document_observation(case, name)
+            .or_else(|| sofel_conformance::svg_input::observe(feature, case, name)),
+        "in-geometry" => sofel_conformance::svg_geometry::observe(case, name),
+        "out-page" => Some(sofel_conformance::svg_page::observe(case, name)),
+        _ => sofel_conformance::svg_input::observe(feature, case, name),
+    }
+}
+
+fn verify(
+    text: &str,
+    mut observe: impl FnMut(&str, &str, &str) -> Option<Result<(), String>>,
+) -> bool {
     let mut rows = BTreeMap::new();
     let mut ok = true;
     for (line, record) in text.lines().enumerate() {
@@ -127,11 +140,32 @@ fn verify(text: &str) -> bool {
             continue;
         }
         let fields = record.split('\t').collect::<Vec<_>>();
-        let [feature, case, names, source] = fields.as_slice() else {
+        let [
+            feature,
+            case,
+            names,
+            source,
+            input,
+            selection,
+            ppem,
+            foreground,
+        ] = fields.as_slice()
+        else {
             println!("invalid inventory row {}", line.saturating_add(1));
             ok = false;
             continue;
         };
+        for (field, value) in [
+            ("input", input),
+            ("selection", selection),
+            ("ppem", ppem),
+            ("foreground", foreground),
+        ] {
+            if value.trim().is_empty() {
+                println!("missing {field}: {feature}/{case}");
+                ok = false;
+            }
+        }
         let mut observations = BTreeSet::new();
         for name in names.split(',') {
             if name.is_empty() || !observations.insert(name) {
@@ -163,11 +197,7 @@ fn verify(text: &str) -> bool {
                 failures.push(format!("missing observation: {feature}/{case}/{name}"));
                 continue;
             }
-            let result = match feature {
-                "in-document" => document_observation(case, name)
-                    .or_else(|| sofel_conformance::svg_input::observe(feature, case, name)),
-                _ => sofel_conformance::svg_input::observe(feature, case, name),
-            };
+            let result = observe(feature, case, name);
             match result {
                 None => failures.push(format!("{name}: NOT RUN (verifier pending)")),
                 Some(Err(reason)) => failures.push(format!("{name}: {reason}")),
@@ -201,6 +231,53 @@ fn verify(text: &str) -> bool {
     show_scope() && ok
 }
 
+// The geometric/colour/XML references decide correctness. This additional
+// record compares local and CI measurements from the same fixed cases.
+fn reproduce(ledger: &str) -> bool {
+    let baseline = include_str!("../../../../conformance/svg-measurements.tsv");
+    let mut expected: BTreeSet<_> = baseline
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .collect();
+    let mut ok = true;
+    println!("Local/CI measurements:");
+    for row in ledger
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+    {
+        let fields = row.split('\t').collect::<Vec<_>>();
+        let [feature, case, _, _, input, selection, _, foreground] = fields.as_slice() else {
+            return false;
+        };
+        let actual = if *feature == "out-page" {
+            sofel_conformance::svg_page::measurement(case)
+        } else {
+            sofel_conformance::svg_input::measurement(input, selection, foreground)
+        };
+        match actual {
+            Ok(value) => {
+                let measured = format!("{feature}\t{case}\t{value}");
+                println!("{measured}");
+                if !expected.remove(measured.as_str()) {
+                    ok = false;
+                }
+            }
+            Err(reason) => {
+                println!("{feature}\t{case}\t{reason}");
+                ok = false;
+            }
+        }
+    }
+    for missed in expected {
+        println!("missing local measurement: {missed}");
+        ok = false;
+    }
+    if !ok {
+        println!("local and current measurements differ");
+    }
+    ok
+}
+
 fn main() -> ExitCode {
     let mut args = std::env::args_os().skip(1);
     let mut input = String::new();
@@ -218,9 +295,43 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    if verify(ledger) {
+    if verify(ledger, observation) && reproduce(ledger) {
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn i2_all_required_observations_pass_even_with_out_of_scope_requirements() {
+        let mut seen = BTreeSet::new();
+        assert!(verify(INVENTORY, |feature, case, name| {
+            assert!(seen.insert((feature.to_owned(), case.to_owned(), name.to_owned())));
+            Some(Ok(()))
+        }));
+        assert_eq!(
+            seen.len(),
+            REQUIRED
+                .iter()
+                .map(|row| row.2.split(',').count())
+                .sum::<usize>()
+        );
+    }
+
+    #[test]
+    fn i2_one_missing_or_failed_observation_fails_the_case() {
+        for probe in [None, Some(Err("pixel (2, 3) has wrong RGBA".to_owned()))] {
+            assert!(!verify(INVENTORY, |feature, case, name| {
+                if (feature, case, name) == ("in-gradient", "linear", "rgba") {
+                    probe.clone()
+                } else {
+                    Some(Ok(()))
+                }
+            }));
+        }
     }
 }
