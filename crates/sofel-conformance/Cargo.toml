@@ -9,6 +9,8 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+font-gallery = { path = "../../tools/font-gallery" }
+sofel-png = { path = "../sofel-png" }
 quick-xml = "0.42"
 sofel-vector = { path = "../sofel-vector" }
 sofel-read = { path = "../sofel-read" }
@@ -20,6 +22,7 @@ sofel-cli = { path = "../sofel-cli" }
 sofel-subset = { path = "../sofel-subset" }
 sofel-write = { path = "../sofel-write" }
 sofel-bitmap = { path = "../sofel-bitmap" }
+sofel-svg = { path = "../sofel-svg" }
 sofel-color = { path = "../sofel-color" }
 sofel-unicode = { path = "../sofel-unicode" }
 sofel-shape = { path = "../sofel-shape" }

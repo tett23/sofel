@@ -89,8 +89,7 @@ pub fn compare(expected: &str, actual: &str, observation: &str) -> Result<(), St
     Ok(())
 }
 
-/// Renders the requested page and checks it against a committed reference.
-pub fn observe(case: &str, observation: &str) -> Result<(), String> {
+fn render(case: &str) -> Result<(&'static str, String), String> {
     let mut page = SvgPage::new(0, -2048, 2048, 2048, None);
     let expected = match case {
         "empty" => include_str!("../../../conformance/svg-page/empty.svg"),
@@ -130,11 +129,11 @@ pub fn observe(case: &str, observation: &str) -> Result<(), String> {
         }
         "clipped-image" => {
             let image = Image {
-                slant: 0.0,
                 format: ImageFormat::Png,
                 data: include_bytes!("../../../conformance/svg-page/red.png"),
                 width: 1,
                 height: 1,
+                slant: 0.0,
                 extents: Some(GlyphExtents {
                     x_bearing: 0,
                     y_bearing: 4,
@@ -160,5 +159,22 @@ pub fn observe(case: &str, observation: &str) -> Result<(), String> {
         }
         other => return Err(format!("unknown output-page case {other}")),
     };
-    compare(expected, &page.finish(), observation)
+    Ok((expected, page.finish()))
+}
+
+/// Renders the requested page and checks it against a committed reference.
+pub fn observe(case: &str, observation: &str) -> Result<(), String> {
+    let (reference, actual) = render(case)?;
+    compare(reference, &actual, observation)
+}
+
+/// Element and attribute values in paint order, independent of XML indentation.
+pub fn measurement(case: &str) -> Result<String, String> {
+    let (_, actual) = render(case)?;
+    let normalized = nodes(&actual)?;
+    Ok(format!(
+        "{} XML events; fnv1a64={:016x}",
+        normalized.len(),
+        crate::svg_input::fingerprint(format!("{normalized:?}").as_bytes())
+    ))
 }

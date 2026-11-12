@@ -2453,19 +2453,29 @@ fn put_info(info: OutlineInfo, cbox: &mut [i32; 4], overlap: &mut u32) {
     *overlap = u32::from(info.overlap);
 }
 
+enum OutlineLoad {
+    Unhinted(Result<Scale, i32>),
+    Mono(u16),
+}
+
 fn outline_load(
     font: Option<&SofelFont>,
     location: Option<&SofelLocation>,
     glyph: u32,
-    scale: Result<Scale, i32>,
+    load: OutlineLoad,
     scratch: Option<&mut SofelOutlineScratch>,
     cbox: Option<&mut [i32; 4]>,
     overlap: Option<&mut u32>,
 ) -> Status {
     let (font, scratch, cbox, overlap) = (some(font)?, some(scratch)?, some(cbox)?, some(overlap)?);
-    let info = outlines_at(font, location)
-        .load(GlyphId(glyph), scale?, &mut scratch.scratch)
-        .map_err(outline_error)?;
+    let outlines = outlines_at(font, location);
+    let info = match load {
+        OutlineLoad::Unhinted(scale) => outlines.load(GlyphId(glyph), scale?, &mut scratch.scratch),
+        OutlineLoad::Mono(ppem) => {
+            outlines.load_truetype_mono(GlyphId(glyph), ppem, &mut scratch.scratch)
+        }
+    }
+    .map_err(outline_error)?;
     put_info(info, cbox, overlap);
     Ok(())
 }
@@ -2503,11 +2513,40 @@ pub unsafe extern "C" fn sofel_outline_load(
         font,
         location,
         glyph,
-        scale(mode, x_scale, y_scale),
+        OutlineLoad::Unhinted(scale(mode, x_scale, y_scale)),
         scratch,
         cbox,
         overlap,
     ))
+}
+
+/// Loads a monochrome TrueType outline into a reusable work area.
+///
+/// # Safety
+///
+/// The pointer requirements are those of [`sofel_outline_load`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_outline_load_truetype_mono(
+    font: *const SofelFont,
+    location: *const SofelLocation,
+    glyph: u32,
+    ppem: u16,
+    scratch: *mut SofelOutlineScratch,
+    cbox: *mut i32,
+    overlap: *mut u32,
+) -> i32 {
+    // SAFETY: the caller supplies the same handles and output buffers as for outline_load.
+    unsafe {
+        status(outline_load(
+            r(font),
+            r(location),
+            glyph,
+            OutlineLoad::Mono(ppem),
+            w(scratch),
+            ints::<4>(cbox),
+            w(overlap),
+        ))
+    }
 }
 
 fn outline_decompose(
@@ -2760,9 +2799,12 @@ fn to_i32(v: u32) -> i32 {
     i32::try_from(v).unwrap_or(i32::MAX)
 }
 
-fn pixel_box(c: [i32; 4], b: Option<&mut [i32; 4]>, shift: Option<&mut [i32; 2]>) -> Status {
+fn write_pixel_box(
+    pb: sofel_raster::PixelBox,
+    b: Option<&mut [i32; 4]>,
+    shift: Option<&mut [i32; 2]>,
+) -> Status {
     let (b, shift) = (some(b)?, some(shift)?);
-    let pb = sofel_raster::pixel_box(c[0], c[1], c[2], c[3]);
     *b = [pb.left, pb.top, to_i32(pb.width), to_i32(pb.rows)];
     let s = pb.shift();
     *shift = [s.x, s.y];
@@ -2785,7 +2827,34 @@ pub unsafe extern "C" fn sofel_pixel_box(
 ) -> i32 {
     // SAFETY: the caller's conditions.
     let (b, shift) = unsafe { (ints::<4>(box_), ints::<2>(shift)) };
-    status(pixel_box([x_min, y_min, x_max, y_max], b, shift))
+    status(write_pixel_box(
+        sofel_raster::pixel_box(x_min, y_min, x_max, y_max),
+        b,
+        shift,
+    ))
+}
+
+/// `sofel_mono_pixel_box`.
+///
+/// # Safety
+///
+/// `box_` is NULL or writable for 4 integers, `shift` for 2.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_mono_pixel_box(
+    x_min: i32,
+    y_min: i32,
+    x_max: i32,
+    y_max: i32,
+    box_: *mut i32,
+    shift: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (b, shift) = unsafe { (ints::<4>(box_), ints::<2>(shift)) };
+    status(write_pixel_box(
+        sofel_raster::mono_pixel_box(x_min, y_min, x_max, y_max),
+        b,
+        shift,
+    ))
 }
 
 /// Where a bitmap goes: the caller's array, the length and the box.
@@ -2805,19 +2874,31 @@ impl BitmapOut<'_> {
 
     /// Writes the length and box, then the pixels if they fit.
     fn put(self, bitmap: Result<Bitmap<'_>, i32>) -> Status {
-        let (pixels, len, b) = (some(self.pixels)?, some(self.len)?, some(self.b)?);
         let bitmap = bitmap?;
-        *len = bitmap.pixels.len();
+        self.put_bytes(
+            PixelBox {
+                left: bitmap.left,
+                top: bitmap.top,
+                width: bitmap.width,
+                rows: bitmap.rows,
+            },
+            bitmap.pixels,
+        )
+    }
+
+    fn put_bytes(self, bounds: PixelBox, bytes: &[u8]) -> Status {
+        let (pixels, len, b) = (some(self.pixels)?, some(self.len)?, some(self.b)?);
+        *len = bytes.len();
         *b = [
-            bitmap.left,
-            bitmap.top,
-            to_i32(bitmap.width),
-            to_i32(bitmap.rows),
+            bounds.left,
+            bounds.top,
+            to_i32(bounds.width),
+            to_i32(bounds.rows),
         ];
         let dest = pixels
-            .get_mut(..bitmap.pixels.len())
+            .get_mut(..bytes.len())
             .ok_or(ERROR_BUFFER_TOO_SMALL)?;
-        dest.copy_from_slice(bitmap.pixels);
+        dest.copy_from_slice(bytes);
         Ok(())
     }
 }
@@ -3103,6 +3184,111 @@ pub unsafe extern "C" fn sofel_rasterizer_render_filtered_lcd(
         options(fill, 0, x_ppem, y_ppem),
         out,
     ))
+}
+
+/// Render packed monochrome rows.
+///
+/// # Safety
+///
+/// As [`sofel_rasterizer_render`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_rasterizer_render_mono(
+    rasterizer: *mut SofelRasterizer,
+    flags: u32,
+    x_ppem: u16,
+    y_ppem: u16,
+    pixels: *mut u8,
+    capacity: usize,
+    len: *mut usize,
+    box_: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (r, pixels, len, b) = unsafe {
+        (
+            w(rasterizer),
+            out_array(pixels, capacity),
+            w(len),
+            ints::<4>(box_),
+        )
+    };
+    let out = BitmapOut { pixels, len, b };
+    render_mono_output(r, flags, x_ppem, y_ppem, None, out)
+}
+
+/// Render packed monochrome rows.
+///
+/// # Safety
+///
+/// As [`sofel_rasterizer_render`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_rasterizer_render_mono_placed(
+    rasterizer: *mut SofelRasterizer,
+    left: i32,
+    top: i32,
+    width: u32,
+    rows: u32,
+    flags: u32,
+    x_ppem: u16,
+    y_ppem: u16,
+    pixels: *mut u8,
+    capacity: usize,
+    len: *mut usize,
+    box_: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (r, pixels, len, b) = unsafe {
+        (
+            w(rasterizer),
+            out_array(pixels, capacity),
+            w(len),
+            ints::<4>(box_),
+        )
+    };
+    let out = BitmapOut { pixels, len, b };
+    render_mono_output(
+        r,
+        flags,
+        x_ppem,
+        y_ppem,
+        Some(PixelBox {
+            left,
+            top,
+            width,
+            rows,
+        }),
+        out,
+    )
+}
+
+fn render_mono_output(
+    r: Option<&mut SofelRasterizer>,
+    flags: u32,
+    x_ppem: u16,
+    y_ppem: u16,
+    bounds: Option<PixelBox>,
+    out: BitmapOut<'_>,
+) -> i32 {
+    if flags & !31 != 0 {
+        return ERROR_INVALID_ARGUMENT;
+    }
+    status((|| {
+        let r = some(r)?;
+        out.check()?;
+        let options = sofel_raster::MonoOptions {
+            high_precision: flags & 1 != 0,
+            single_pass: flags & 2 != 0,
+            ignore_dropouts: flags & 4 != 0,
+            smart_dropouts: flags & 8 != 0,
+            include_stubs: flags & 16 != 0,
+        };
+        let ppem = (x_ppem != 0 || y_ppem != 0).then_some((x_ppem, y_ppem));
+        let image = match bounds {
+            Some(b) => r.raster.render_mono_placed(b, options, ppem),
+            None => r.raster.render_mono(options, ppem),
+        }
+        .map_err(raster_error)?;
+        out.put_bytes(image.bounds, image.pixels)
+    })())
 }
 
 /// `sofel_rasterizer_render_placed`.

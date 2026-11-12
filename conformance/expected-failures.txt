@@ -18,11 +18,6 @@
 # Remove an entry when it passes; the test fails until you do.
 in-house/aat-morx.tests:6  # aat
 in-house/aat-morx.tests:7  # aat
-in-house/aat-morx.tests:9  # aat
-in-house/aat-morx.tests:10  # aat
-in-house/aat-morx.tests:11  # aat
-in-house/aat-morx.tests:15  # aat
-in-house/aat-morx.tests:16  # aat
 in-house/aat-trak.tests:9  # aat
 in-house/coretext.tests:2@coretext  # out-of-scope:coretext
 in-house/directwrite.tests:2@directwrite  # out-of-scope:directwrite
@@ -51,13 +46,4 @@ in-house/kbts.tests:9@kbts  # out-of-scope:kbts
 in-house/kbts.tests:10@kbts  # out-of-scope:kbts
 in-house/kbts.tests:11@kbts  # out-of-scope:kbts
 in-house/kbts.tests:12@kbts  # out-of-scope:kbts
-in-house/kern-format1.tests:1  # aat
-in-house/kern-format2.tests:1  # aat
-in-house/kern-format2.tests:3  # aat
-in-house/per-script-kern-fallback.tests:13  # aat
-in-house/per-script-kern-fallback.tests:15  # aat
-in-house/tt-kern-gpos.tests:1  # aat
 in-house/uniscribe.tests:2@uniscribe  # out-of-scope:uniscribe
-text-rendering-tests/KERN-1.tests:2  # aat
-text-rendering-tests/KERN-2.tests:2  # aat
-text-rendering-tests/MORT-1.tests:2  # aat

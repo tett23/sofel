@@ -6,6 +6,9 @@ use std::process::{Command, Output};
 
 use crate::pixels::{self, Fixed26Dot6, Glyph, Image};
 
+const EXPECTED_EMPTY: &[&str] = &[];
+const EXPECTED_GRAYSCALE: &[&str] = &[];
+
 #[derive(Clone, Debug)]
 pub enum SoloInput {
     Scalar(&'static str),
@@ -127,7 +130,7 @@ pub fn cases(
                 text,
                 lang,
                 color: id.starts_with("color-") || id == "hb-variable-colr",
-                unsupported_empty: matches!(id.as_str(), "color-cff" | "color-svg"),
+                unsupported_empty: EXPECTED_EMPTY.contains(&id.as_str()),
             });
         }
     }
@@ -393,7 +396,7 @@ pub fn render_case(
     }
     let status = if sample.unsupported_empty {
         Status::Empty
-    } else if sample.id == "hb-variable-colr" {
+    } else if EXPECTED_GRAYSCALE.contains(&sample.id.as_str()) {
         if !solo.stdout.starts_with(b"P5\n")
             || glyphs
                 .iter()

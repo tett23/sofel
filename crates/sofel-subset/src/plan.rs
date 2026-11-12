@@ -114,6 +114,8 @@ pub struct Plan {
     pub(crate) force_long_loca: bool,
     /// The axis location and what instancing recomputes.
     pub(crate) var: VarPlan,
+    /// Source gvar/GVAR has no shared tuple or glyph variation records.
+    pub(crate) inert_gvar: bool,
     /// The number of glyphs of the source font.
     pub(crate) source_glyphs: u32,
     pub(crate) layout: PlanLayout,
@@ -195,8 +197,9 @@ fn layout_unsupported(
             // reference GDEF. A copied GSUB bypasses that writer.
             table.version() >= 0x0001_0001
                 && sofel_font::read::be::u32_at(d, 10) != Some(0)
-                && (no_subset.contains(Tag::new(b"GSUB").to_u32())
-                    || table.feature_variations_view().is_none())
+                && (table.feature_variations_view().is_none()
+                    || (no_subset.contains(Tag::new(b"GSUB").to_u32())
+                        && !table.has_only_axis_range_conditions()))
         });
     // A VariationIndex Device necessarily contains the format word 0x8000.
     // Scan the whole retained table so an unknown or malformed subtable
@@ -224,21 +227,6 @@ fn layout_unsupported(
         return Err(SubsetError::Unsupported {
             tag: Tag::new(b"GDEF"),
             reason: "the GDEF item variation store (ADR 0022 stage 10)",
-        });
-    }
-    // A copied MATH table needs no remapping when GDEF is also copied or dropped.
-    let math_subset = retained(b"MATH") && !no_subset.contains(Tag::new(b"MATH").to_u32());
-    if !pinned
-        && math_subset
-        && math_may_reference_store
-        && no_subset.contains(Tag::new(b"GDEF").to_u32())
-        && font
-            .table(Tag::new(b"GDEF"))
-            .is_some_and(layout::gdef::has_var_store)
-    {
-        return Err(SubsetError::Unsupported {
-            tag: Tag::new(b"MATH"),
-            reason: "MATH with a GDEF item variation store (ADR 0022 stage 10)",
         });
     }
     Ok(())
@@ -290,8 +278,44 @@ impl Plan {
             return Err(SubsetError::NoGlyphs);
         }
         let flags = input.flags();
+        let drop = input.set(SetKind::DropTables);
         // normalize_axes_location
         let norm = instance::normalize(font, input.axes());
+        let other_variation_tags = [
+            b"gvar", b"GVAR", b"HVAR", b"VVAR", b"MVAR", b"cvar", b"CFF2", b"GDEF", b"GSUB",
+            b"GPOS", b"BASE", b"MATH", b"COLR", b"STAT",
+        ];
+        // A gvar/GVAR with no shared tuples and no glyph records has no
+        // deltas to rebase. Its axis range can change as metadata alone.
+        let inert_gvar = [b"gvar", b"GVAR"].iter().all(|tag| {
+            font.table(Tag::new(tag)).is_none_or(|data| {
+                sofel_font::read::gvar::Gvar::new(data, Tag::new(tag)).is_ok_and(|table| {
+                    table.shared_tuple_count() == 0
+                        && (0..=table.glyph_count()).all(|gid| table.glyph_offset(gid) == Some(0))
+                })
+            })
+        });
+        let needs_rebase = |tag: &&[u8; 4]| {
+            (!inert_gvar || (**tag != *b"gvar" && **tag != *b"GVAR"))
+                && font.table(Tag::new(tag)).is_some()
+        };
+        let no_source_other_variation_data = !other_variation_tags.iter().any(needs_rebase);
+        let varc_unrelated_axis_change = if norm.user.len() == 1
+            && (norm.pinned_at_default || no_source_other_variation_data)
+        {
+            let axes = instance::axis_infos(font);
+            axes.iter().enumerate().any(|(index, info)| {
+                norm.user.get(&info.tag).is_some_and(|range| {
+                    no_source_other_variation_data
+                        || (range.min == range.default && range.default == range.max)
+                }) && u16::try_from(index).ok().is_some_and(|index| {
+                    font.table(Tag::new(b"VARC"))
+                        .is_some_and(|data| crate::tables::varc_complex::axis_unused(data, index))
+                })
+            })
+        } else {
+            false
+        };
         if !norm.user.is_empty() {
             if norm.avar2 {
                 return Err(SubsetError::Unsupported {
@@ -299,12 +323,19 @@ impl Plan {
                     reason: "pinning the axes of avar version 2 (deferred by ADR 0022)",
                 });
             }
-            let no_variation_data = ![
-                b"gvar", b"GVAR", b"HVAR", b"VVAR", b"MVAR", b"cvar", b"CFF2", b"GDEF", b"GSUB",
-                b"GPOS", b"BASE", b"MATH", b"COLR", b"VARC", b"STAT",
-            ]
-            .iter()
-            .any(|tag| font.table(Tag::new(tag)).is_some());
+            let varc_tag = Tag::new(b"VARC");
+            let varc_retained = font.table(varc_tag).is_some() && !drop.contains(varc_tag.to_u32());
+            let no_other_variation_data = !other_variation_tags.iter().any(|tag| {
+                if *tag == b"STAT" && !varc_retained {
+                    return false;
+                }
+                if !needs_rebase(tag) {
+                    return false;
+                }
+                let tag = Tag::new(tag);
+                !drop.contains(tag.to_u32())
+            });
+            let varc_safe = !varc_retained || varc_unrelated_axis_change;
             let simple_avar = font.table(Tag::new(b"avar")).is_none_or(|data| {
                 sofel_font::read::avar::Avar::new(data)
                     .is_ok_and(|table| table.major_version() == 1 && norm.pinned_at_default)
@@ -313,7 +344,7 @@ impl Plan {
                         .values()
                         .all(|range| range.min == range.default && range.default == range.max)
             });
-            let metadata_only = no_variation_data && simple_avar;
+            let metadata_only = no_other_variation_data && varc_safe && simple_avar;
             if !(norm.all_axes_pinned && norm.pinned_at_default) && !metadata_only {
                 return Err(SubsetError::Unsupported {
                     tag: Tag::new(b"fvar"),
@@ -328,14 +359,24 @@ impl Plan {
                 reason: "name overrides",
             });
         }
-        let drop = input.set(SetKind::DropTables);
         let no_subset = input.set(SetKind::NoSubsetTables);
+        let varc_tag = Tag::new(b"VARC");
+        if font.table(varc_tag).is_some()
+            && !drop.contains(varc_tag.to_u32())
+            && no_subset.contains(varc_tag.to_u32())
+            && (!flags.has(Flags::RETAIN_GIDS) || !norm.user.is_empty())
+        {
+            return Err(SubsetError::Unsupported {
+                tag: varc_tag,
+                reason: "VARC passthrough needs retained glyph IDs and unchanged axes",
+            });
+        }
         for (tag, reason) in PENDING {
             let t = Tag::new(tag);
             let passthrough = no_subset.contains(t.to_u32());
             let dropped = drop.contains(t.to_u32()) || (pinned && PINNED_DROP.contains(&tag));
             if font.table(t).is_some() && !dropped && !passthrough {
-                if tag == b"VARC" && norm.user.is_empty() {
+                if tag == b"VARC" && (norm.user.is_empty() || varc_unrelated_axis_change) {
                     let source = font.table(t).unwrap_or(&[]);
                     Varc::new(source).map_err(|_| SubsetError::Malformed { tag: t })?;
                     continue;
@@ -371,6 +412,7 @@ impl Plan {
                 n: norm,
                 ..VarPlan::default()
             },
+            inert_gvar,
             source_glyphs: num_glyphs,
             layout: PlanLayout {
                 layout_features: input.set(SetKind::LayoutFeatures).clone(),
@@ -671,7 +713,7 @@ impl Plan {
                     });
                 };
                 if copied_gdef {
-                    // HarfBuzz remaps subset GPOS references even when it
+                    // HarfBuzz remaps subset GPOS and MATH references even when it
                     // copies the original GDEF table unchanged.
                     p.layout.gdef_var_map = map;
                 } else {

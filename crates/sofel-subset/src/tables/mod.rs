@@ -22,7 +22,7 @@ mod post;
 mod sbix;
 pub(crate) mod stat;
 pub(crate) mod varc;
-mod varc_complex;
+pub(crate) mod varc_complex;
 mod vorg;
 
 use alloc::collections::{BTreeMap, BTreeSet};
@@ -61,7 +61,8 @@ impl Plan {
         match &tag.0 {
             b"cvar" => pinned || self.flags.has(Flags::NO_HINTING),
             b"cvt " | b"fpgm" | b"prep" | b"hdmx" | b"VDMX" => self.flags.has(Flags::NO_HINTING),
-            b"avar" | b"fvar" | b"gvar" | b"GVAR" | b"HVAR" | b"VVAR" | b"MVAR" => pinned,
+            b"gvar" | b"GVAR" => pinned || (self.var.instancing() && self.inert_gvar),
+            b"avar" | b"fvar" | b"HVAR" | b"VVAR" | b"MVAR" => pinned,
             _ => false,
         }
     }

@@ -57,15 +57,21 @@
 extern crate alloc;
 
 mod blend;
+mod color_gradient;
+mod paint_mask;
+pub use color_gradient::ColorGradient;
+pub use paint_mask::PaintMask;
 
-pub use blend::{BgraImage, blend_layer};
+pub use blend::{BgraImage, blend_layer, blend_sampled};
 
 mod bitmap_sdf;
 mod harmony;
 mod outline_sdf;
 mod sdf_math;
 pub use bitmap_sdf::{BitmapSdfError, bitmap_sdf};
+mod mono;
 pub use harmony::LcdMode;
+pub use mono::{MonoBitmap, MonoOptions, mono_pixel_box};
 
 use alloc::vec::Vec;
 use core::fmt;

@@ -9,6 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 sofel-inflate = { path = "../sofel-inflate" }
+sofel-geom = { path = "../sofel-geom" }
 
 [lints]
 workspace = true

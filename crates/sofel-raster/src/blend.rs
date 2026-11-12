@@ -133,3 +133,54 @@ pub fn blend_layer(dst: &mut BgraImage, src: &Bitmap<'_>, bgra: [u8; 4]) {
         }
     }
 }
+
+/// Blends a coverage mask with a color sampled at each output pixel center.
+/// `sample` receives the x and y of the pixel center in pixels from the glyph origin.
+/// The color is straight RGBA; the surface keeps premultiplied BGRA.
+#[allow(clippy::arithmetic_side_effects, clippy::indexing_slicing)] // The pixel slice is exactly four channels and products are bounded by 255².
+pub fn blend_sampled(
+    dst: &mut BgraImage,
+    src: &Bitmap<'_>,
+    mut sample: impl FnMut(f32, f32) -> [u8; 4],
+) {
+    // Also expands the surface to the mask's box.
+    blend_layer(dst, src, [0, 0, 0, 0]);
+    let pitch = usize_of(dst.width).saturating_mul(4);
+    for row in 0..usize_of(src.rows) {
+        for col in 0..usize_of(src.width) {
+            let from = row.saturating_mul(usize_of(src.width)).saturating_add(col);
+            let Some(&coverage) = src.pixels.get(from) else {
+                continue;
+            };
+            if coverage == 0 {
+                continue;
+            }
+            let x = i64::from(src.left).saturating_add(i64::try_from(col).unwrap_or(i64::MAX));
+            let y = i64::from(src.top).saturating_sub(i64::try_from(row).unwrap_or(i64::MAX));
+            let ox = x.saturating_sub(i64::from(dst.left));
+            let oy = i64::from(dst.top).saturating_sub(y);
+            let Ok(ox) = usize::try_from(ox) else {
+                continue;
+            };
+            let Ok(oy) = usize::try_from(oy) else {
+                continue;
+            };
+            let at = oy
+                .saturating_mul(pitch)
+                .saturating_add(ox.saturating_mul(4));
+            let Some(pixel) = dst.pixels.get_mut(at..at.saturating_add(4)) else {
+                continue;
+            };
+            let rgba = sample(x as f32 + 0.5, y as f32 - 0.5);
+            let alpha = (u32::from(rgba[3]) * u32::from(coverage) + 127) / 255;
+            let remain = 255 - alpha;
+            for (channel, &source) in [rgba[2], rgba[1], rgba[0]].iter().enumerate() {
+                let foreground = (u32::from(source) * alpha + 127) / 255;
+                let background = (u32::from(pixel[channel]) * remain + 127) / 255;
+                pixel[channel] = u8::try_from((foreground + background).min(255)).unwrap_or(255);
+            }
+            let background = (u32::from(pixel[3]) * remain + 127) / 255;
+            pixel[3] = u8::try_from((alpha + background).min(255)).unwrap_or(255);
+        }
+    }
+}
