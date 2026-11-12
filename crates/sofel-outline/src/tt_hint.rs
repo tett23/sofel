@@ -216,8 +216,56 @@ struct HintPoint {
     touched: [bool; 2],
 }
 
+fn interpolate_contour(points: &mut [HintPoint], axis: usize) {
+    let Some(first) = points.iter().position(|p| p.touched[axis]) else {
+        return;
+    };
+    let mut left = first;
+    loop {
+        let mut right = (left + 1) % points.len();
+        while !points[right].touched[axis] {
+            right = (right + 1) % points.len();
+        }
+        let (mut lo, mut hi) = (points[left], points[right]);
+        if lo.unscaled[axis] > hi.unscaled[axis] {
+            core::mem::swap(&mut lo, &mut hi);
+        }
+        let mut i = (left + 1) % points.len();
+        while i != right {
+            let p = &mut points[i];
+            let x = p.original[axis];
+            p.current[axis] = if left == right {
+                p.current[axis].wrapping_add(lo.current[axis].wrapping_sub(lo.original[axis]))
+            } else if x <= lo.original[axis] {
+                x.wrapping_add(lo.current[axis].wrapping_sub(lo.original[axis]))
+            } else if x >= hi.original[axis] {
+                x.wrapping_add(hi.current[axis].wrapping_sub(hi.original[axis]))
+            } else if lo.current[axis] == hi.current[axis] || lo.unscaled[axis] == hi.unscaled[axis]
+            {
+                lo.current[axis]
+            } else {
+                use sofel_font::read::cff::ft::{div_fix, mul_fix};
+                let scale = div_fix(
+                    hi.current[axis].wrapping_sub(lo.current[axis]),
+                    hi.unscaled[axis].wrapping_sub(lo.unscaled[axis]),
+                );
+                lo.current[axis].wrapping_add(mul_fix(
+                    p.unscaled[axis].wrapping_sub(lo.unscaled[axis]),
+                    scale,
+                ))
+            };
+            i = (i + 1) % points.len();
+        }
+        if right == first {
+            break;
+        }
+        left = right;
+    }
+}
+
 #[derive(Clone)]
 struct Interpreter {
+    contour_ends: alloc::vec::Vec<usize>,
     auto_flip: bool,
     minimum_distance: i64,
     backward_compatibility: u8,
@@ -264,6 +312,7 @@ impl Interpreter {
             composite: false,
             auto_flip: true,
             minimum_distance: 64,
+            contour_ends: alloc::vec::Vec::new(),
             delta_base: 9,
             delta_shift: 3,
             zones: [1; 3],
@@ -291,11 +340,13 @@ impl Interpreter {
     fn execute_glyph(
         &self,
         points: alloc::vec::Vec<HintPoint>,
+        contour_ends: &[usize],
         program: &[u8],
         max_stack: usize,
     ) -> Result<alloc::vec::Vec<HintPoint>, Error> {
         let mut glyph = self.clone();
         glyph.points[1] = points;
+        glyph.contour_ends = contour_ends.to_vec();
         glyph.reference = [0; 3];
         glyph.zones = [1; 3];
         glyph.projection = [16384, 0];
@@ -655,6 +706,23 @@ impl Interpreter {
                     };
                     let index = stack.pop().ok_or(Error::StackUnderflow)? as u16;
                     self.move_relative(op, index, cvt);
+                }
+                op @ (0x30 | 0x31) => {
+                    if self.backward_compatibility == 7 {
+                        continue;
+                    }
+                    if self.backward_compatibility != 0 {
+                        self.backward_compatibility |= 1 << (op & 1);
+                    }
+                    let axis = usize::from(op == 0x30);
+                    let mut start = 0;
+                    for &end in &self.contour_ends {
+                        let contour = self.points[1]
+                            .get_mut(start..=end)
+                            .ok_or(Error::InvalidReference)?;
+                        interpolate_contour(contour, axis);
+                        start = end + 1;
+                    }
                 }
                 0x85 => {
                     let flags = stack.pop().ok_or(Error::StackUnderflow)?;
@@ -1296,7 +1364,7 @@ fn adr0064_i1_glyph_starts_with_default_vectors_but_keeps_prepared_cvt() {
     .unwrap();
     let points = alloc::vec![HintPoint::default()];
     let result = vm
-        .execute_glyph(points, &[0xb1, 0, 0, 0x3f, 0xb1, 0, 17, 0x44], 2)
+        .execute_glyph(points, &[], &[0xb1, 0, 0, 0x3f, 0xb1, 0, 17, 0x44], 2)
         .unwrap();
     assert_eq!(result[0].current, [64, 0]);
     assert_eq!(vm.cvt, [38]);
@@ -1320,4 +1388,34 @@ fn adr0064_i1_mirp_flips_control_distance_and_observes_cut_in() {
             .unwrap();
         assert_eq!(vm.points[1][1].current, [expected, 0]);
     }
+}
+
+#[test]
+fn adr0064_i1_iup_wraps_each_contour_and_excludes_phantoms() {
+    let vm = Interpreter::new(0, &[], 65536);
+    let points = [
+        (25, 25, false),
+        (0, 10, true),
+        (50, 50, false),
+        (100, 210, true),
+        (120, 120, false),
+        (0, 7, true),
+        (20, 20, false),
+        (18, 18, false),
+    ]
+    .map(|(x, c, t)| HintPoint {
+        original: [x, 0],
+        unscaled: [x, 0],
+        current: [c, 0],
+        touched: [t, false],
+    });
+    let out = vm
+        .execute_glyph(points.to_vec(), &[4, 6], &[0x31], 0)
+        .unwrap();
+    assert_eq!(
+        out.iter()
+            .map(|p| p.current[0])
+            .collect::<alloc::vec::Vec<_>>(),
+        [60, 10, 110, 210, 230, 7, 27, 18]
+    );
 }
