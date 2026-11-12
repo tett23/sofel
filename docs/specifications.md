@@ -284,7 +284,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 ## ベクトル出力
 
-`sofel-vector` の `SvgPage` と `PdfPage` は、呼び出し側が配置した輪郭を指定色で入力順に塗る。SVG は y 軸を反転したグループにパスを書き、PDF は二次曲線を三次曲線に変換してページに書く。`SvgPage::draw_image` はグリフの配置先に PNG を埋め込み、指定された変換を適用する。矩形クリップは親の座標系で指定する。[ADR 0074](adr/0074-svg-feature-conformance.md) の出力検査では、空ページ、単独のグリフ、半透明のグリフが重なるページ、変換とクリップを指定した画像を固定版 HarfBuzz の SVG と照合する。C の `sofel_vector_page` にはフォント、軸座標と、グリフごとの変換・色を渡す（[ADR 0068](adr/0068-vector-and-gpu-output.md)）。
+`sofel-vector` の `SvgPage` と `PdfPage` は、呼び出し側が配置した輪郭を指定色で入力順に塗る。SVG は y 軸を反転したグループにパスを書き、PDF は二次曲線を三次曲線に変換してページに書く。`SvgPage::draw_image` はグリフの配置先に PNG を埋め込み、指定された変換を適用する。矩形クリップは親の座標系で指定する。[ADR 0074](adr/0074-svg-feature-conformance.md) の出力検査では、空ページ、単独のグリフ、半透明のグリフが重なるページ、変換とクリップを指定した画像を固定版 HarfBuzz の SVG と照合する。C の `sofel_svg_page_layers` は各要素の変換を使い、輪郭と PNG を配列順に配置する。`sofel_vector_page` にはフォント、軸座標と、グリフごとの変換・色を渡す（[ADR 0068](adr/0068-vector-and-gpu-output.md)）。
 
 ## カラーグリフ（`sofel-color`、`sofel-bitmap`、`Painter`）
 
