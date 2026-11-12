@@ -3,8 +3,9 @@
 use alloc::vec::Vec;
 
 use sofel_font::read::GlyphId;
-use sofel_font::read::varc::{Component, Varc};
-use sofel_geom::float::{hb_clamp_to_i32, hb_roundf32};
+use sofel_font::read::varc::{TupleValues, Varc};
+use sofel_font::var::Location;
+use sofel_geom::float::{hb_clamp_to_i32, hb_roundf, hb_roundf32};
 use sofel_geom::{Pen, Point, PointF, Transform};
 
 use crate::{CBox, OutlineError, OutlineInfo, Outlines, Scale, Scratch};
@@ -16,54 +17,36 @@ struct DrawState {
     overlap: bool,
 }
 
-fn component_transform(component: Component) -> Transform {
-    let flags = component.flags;
-    let raw = component.transform;
-    let tx = if flags & (1 << 4) != 0 {
-        f32::from(raw[0])
-    } else {
-        0.0
-    };
-    let ty = if flags & (1 << 5) != 0 {
-        f32::from(raw[1])
-    } else {
-        0.0
-    };
+fn component_transform(flags: u32, raw: [f32; 9]) -> Transform {
+    let tx = if flags & (1 << 4) != 0 { raw[0] } else { 0.0 };
+    let ty = if flags & (1 << 5) != 0 { raw[1] } else { 0.0 };
     let rotation = if flags & (1 << 6) != 0 {
-        f32::from(raw[2]) * core::f32::consts::PI / 4096.0
+        raw[2] * core::f32::consts::PI / 4096.0
     } else {
         0.0
     };
     let sx = if flags & (1 << 8) != 0 {
-        f32::from(raw[3]) / 1024.0
+        raw[3] / 1024.0
     } else {
         1.0
     };
     let sy = if flags & (1 << 9) != 0 {
-        f32::from(raw[4]) / 1024.0
+        raw[4] / 1024.0
     } else {
         sx
     };
     let skew_x = if flags & (1 << 13) != 0 {
-        f32::from(raw[5]) * core::f32::consts::PI / 4096.0
+        raw[5] * core::f32::consts::PI / 4096.0
     } else {
         0.0
     };
     let skew_y = if flags & (1 << 14) != 0 {
-        f32::from(raw[6]) * core::f32::consts::PI / 4096.0
+        raw[6] * core::f32::consts::PI / 4096.0
     } else {
         0.0
     };
-    let cx = if flags & (1 << 10) != 0 {
-        f32::from(raw[7])
-    } else {
-        0.0
-    };
-    let cy = if flags & (1 << 11) != 0 {
-        f32::from(raw[8])
-    } else {
-        0.0
-    };
+    let cx = if flags & (1 << 10) != 0 { raw[7] } else { 0.0 };
+    let cy = if flags & (1 << 11) != 0 { raw[8] } else { 0.0 };
     Transform::translate(tx + cx, ty + cy)
         .multiply(&Transform::rotate(rotation))
         .multiply(&Transform::scale(sx, sy))
@@ -156,12 +139,15 @@ fn visit(
         }
         state.edges_left = state.edges_left.saturating_sub(1);
         state.path.push(glyph.0);
+        let record = varc.record(glyph).ok_or(OutlineError::InvalidComposite)?;
+        let mut at = 0usize;
         for component in components {
             let component = component.ok_or(OutlineError::InvalidComposite)?;
-            if component.flags & 0x0e != 0 {
-                state.path.pop();
-                return Err(OutlineError::InvalidComposite);
-            }
+            let end = at
+                .checked_add(component.size)
+                .ok_or(OutlineError::InvalidComposite)?;
+            let encoded = record.get(at..end).ok_or(OutlineError::InvalidComposite)?;
+            at = end;
             if let Some(index) = component.condition_index {
                 let Some(condition) = varc.condition_list() else {
                     state.path.pop();
@@ -183,14 +169,74 @@ fn visit(
                     }
                 }
             }
-            let child = transform.multiply(&component_transform(component));
+            let mut child_coords = if component.flags & 1 != 0 {
+                outlines.instance().coords_normalized().to_vec()
+            } else {
+                coords.to_vec()
+            };
+            if let Some(index) = component.axis_indices_index {
+                let indices = varc
+                    .axis_indices(index)
+                    .ok_or(OutlineError::InvalidComposite)?;
+                let values = encoded
+                    .get(
+                        component.axis_values_offset.unwrap_or(0)
+                            ..component.axis_values_end.unwrap_or(0),
+                    )
+                    .ok_or(OutlineError::InvalidComposite)?;
+                let mut values: Vec<f64> = TupleValues::new(values)
+                    .ok_or(OutlineError::InvalidComposite)?
+                    .map(f64::from)
+                    .collect();
+                if let Some(var_index) = component.axis_values_var_index {
+                    varc.variation_store()
+                        .and_then(|store| store.add_delta(var_index, coords, &mut values))
+                        .ok_or(OutlineError::InvalidComposite)?;
+                }
+                for (axis, value) in TupleValues::new(indices)
+                    .ok_or(OutlineError::InvalidComposite)?
+                    .zip(values)
+                {
+                    let axis = usize::try_from(axis).map_err(|_| OutlineError::InvalidComposite)?;
+                    if axis < 64 {
+                        child_coords.resize(child_coords.len().max(axis.saturating_add(1)), 0);
+                        *child_coords
+                            .get_mut(axis)
+                            .ok_or(OutlineError::InvalidComposite)? =
+                            hb_clamp_to_i32(hb_roundf(value));
+                    }
+                }
+            }
+            let mut raw = component.transform.map(f32::from);
+            if let Some(var_index) = component.transform_var_index {
+                let bits = [4, 5, 6, 8, 9, 13, 14, 10, 11];
+                let mut values: Vec<f64> = bits
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, bit)| component.flags & (1 << *bit) != 0)
+                    .filter_map(|(index, _)| raw.get(index).map(|value| f64::from(*value)))
+                    .collect();
+                varc.variation_store()
+                    .and_then(|store| store.add_delta(var_index, coords, &mut values))
+                    .ok_or(OutlineError::InvalidComposite)?;
+                let mut values = values.into_iter();
+                for (index, bit) in bits.iter().enumerate() {
+                    if component.flags & (1 << bit) != 0 {
+                        #[allow(clippy::cast_possible_truncation)]
+                        // HarfBuzz stores varied transforms as float.
+                        let value = values.next().ok_or(OutlineError::InvalidComposite)? as f32;
+                        *raw.get_mut(index).ok_or(OutlineError::InvalidComposite)? = value;
+                    }
+                }
+            }
+            let child = transform.multiply(&component_transform(component.flags, raw));
             let result = visit(
                 outlines,
                 varc,
                 component.glyph,
                 scale,
                 child,
-                coords,
+                &child_coords,
                 depth_left.saturating_sub(1),
                 scratch,
                 pen,
@@ -204,7 +250,14 @@ fn visit(
         state.path.pop();
         return Ok(());
     }
-    let info = outlines.load(glyph, scale, scratch)?;
+    let info = if coords == outlines.instance().coords_normalized() {
+        outlines.load(glyph, scale, scratch)?
+    } else {
+        let location = Location::from_normalized_2_14(&outlines.font, coords);
+        outlines
+            .with_location(&location)
+            .load(glyph, scale, scratch)?
+    };
     state.overlap |= info.overlap;
     scratch.decompose(
         Point::default(),

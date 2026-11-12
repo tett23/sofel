@@ -6,6 +6,7 @@
 
 use sofel_conformance::paths;
 use sofel_font::Font;
+use sofel_font::var::Location;
 use sofel_geom::{Command, FnPen};
 use sofel_outline::{CBox, Outlines, Scale, Scratch};
 use sofel_read::{GlyphId, Tag, varc::Varc};
@@ -92,6 +93,29 @@ fn adr0067_i1_component_condition_at_boundary() {
             .1
             .is_empty()
     );
+}
+
+#[test]
+fn adr0067_i1_component_axes_and_variations_draw_at_two_locations() {
+    let data = std::fs::read(paths::testdata().join("harfbuzz/test/api/fonts/varc-ac00-ac01.ttf"))
+        .unwrap();
+    let font = Font::new(&data, 0).unwrap();
+    let mut scratch = Scratch::default();
+    let default = draw(&font, 3, &mut scratch).1;
+    let location = Location::from_normalized_2_14(&font, &[16_384]);
+    let outlines = Outlines::new(font.instance(&location));
+    let mut heavy = Vec::new();
+    outlines
+        .draw(
+            GlyphId(3),
+            Scale::Unscaled,
+            &mut scratch,
+            &mut FnPen(|command| heavy.push(command)),
+        )
+        .unwrap();
+    assert!(!default.is_empty());
+    assert!(!heavy.is_empty());
+    assert_ne!(default, heavy);
 }
 
 fn draw(font: &Font<'_>, glyph: u32, scratch: &mut Scratch) -> (CBox, Vec<Command>) {
