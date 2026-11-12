@@ -16,7 +16,7 @@ use crate::buffer::{
 };
 use crate::direction::Direction;
 use crate::fallback;
-use crate::font::ShapeFont;
+use crate::font::{ShapeFont, SubFont};
 use crate::glyph::{GlyphFlags, GlyphInfo, GlyphPosition};
 use crate::layout::apply::apply_map;
 use crate::layout::gpos;
@@ -55,7 +55,28 @@ pub fn shape_with_extents(
     let mut buf = buffer.buf;
     buf.direction = plan.props.direction;
     buf.script = plan.props.script;
-    let sf = ShapeFont::new(instance, *scale, extents);
+    let sf = ShapeFont::new(instance, *scale, extents, None);
+    buf.enter();
+    if buf.len > 0 {
+        shape_internal(plan, &sf, &mut buf);
+    }
+    buf.leave();
+    into_glyph_buffer(buf)
+}
+
+/// Shape with a child font's per-query functions and synthetic settings.
+/// Unset functions use its parent, then the built-in OpenType functions.
+pub fn shape_with_subfont<'f, 'a, 'l, 's>(
+    instance: Instance<'f, 'a, 'l, 's>,
+    subfont: &'f SubFont<'f>,
+    plan: &ShapePlan<'_>,
+    buffer: UnicodeBuffer,
+) -> GlyphBuffer {
+    let mut buf = buffer.buf;
+    buf.direction = plan.props.direction;
+    buf.script = plan.props.script;
+    let extents = |g| instance.glyf_extents(g);
+    let sf = ShapeFont::new(instance, subfont.scale(), &extents, Some(subfont));
     buf.enter();
     if buf.len > 0 {
         shape_internal(plan, &sf, &mut buf);
@@ -663,7 +684,7 @@ pub fn shape_fallback(
     buf.direction = props.direction;
     buf.script = props.script;
     let extents = |g: GlyphId| instance.glyf_extents(g);
-    let sf = ShapeFont::new(instance, *scale, &extents);
+    let sf = ShapeFont::new(instance, *scale, &extents, None);
     let space = sf.nominal_glyph(0x20);
     buf.clear_positions();
     let direction = buf.direction;

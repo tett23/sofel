@@ -509,6 +509,23 @@ fn bitmaps_and_svg() {
         panic!()
     };
     assert_eq!((i.width, i.height), (20, 30));
+    assert_eq!(i.slant.to_bits(), 0.0f32.to_bits());
+    let mut slanted = Recording::new();
+    assert_eq!(
+        sofel_color::paint_recording_at_with_slant(
+            font.default_instance(),
+            1,
+            &PaintOptions::default(),
+            0.3,
+            &mut Scratch::default(),
+            &mut slanted,
+        ),
+        Painted::Cbdt
+    );
+    assert!(
+        matches!(slanted.commands(), [PaintCommand::PushTransform(t), PaintCommand::Image(image), PaintCommand::PopTransform]
+        if t.xy.to_bits() == 0.3f32.to_bits() && image.slant.to_bits() == 0.0f32.to_bits())
+    );
     // 1000 / 109 per pixel.
     assert_eq!(
         i.extents,
