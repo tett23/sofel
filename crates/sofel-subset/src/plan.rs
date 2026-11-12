@@ -293,17 +293,25 @@ impl Plan {
         let drop = input.set(SetKind::DropTables);
         // normalize_axes_location
         let norm = instance::normalize(font, input.axes());
-        let varc_unrelated_pin = if norm.user.len() == 1 && norm.pinned_at_default {
+        let other_variation_tags = [
+            b"gvar", b"GVAR", b"HVAR", b"VVAR", b"MVAR", b"cvar", b"CFF2", b"GDEF", b"GSUB",
+            b"GPOS", b"BASE", b"MATH", b"COLR", b"STAT",
+        ];
+        let no_source_other_variation_data = !other_variation_tags
+            .iter()
+            .any(|tag| font.table(Tag::new(tag)).is_some());
+        let varc_unrelated_axis_change = if norm.user.len() == 1
+            && (norm.pinned_at_default || no_source_other_variation_data)
+        {
             let axes = instance::axis_infos(font);
             axes.iter().enumerate().any(|(index, info)| {
-                norm.user
-                    .get(&info.tag)
-                    .is_some_and(|range| range.min == range.default && range.default == range.max)
-                    && u16::try_from(index).ok().is_some_and(|index| {
-                        font.table(Tag::new(b"VARC")).is_some_and(|data| {
-                            crate::tables::varc_complex::axis_unused(data, index)
-                        })
-                    })
+                norm.user.get(&info.tag).is_some_and(|range| {
+                    no_source_other_variation_data
+                        || (range.min == range.default && range.default == range.max)
+                }) && u16::try_from(index).ok().is_some_and(|index| {
+                    font.table(Tag::new(b"VARC"))
+                        .is_some_and(|data| crate::tables::varc_complex::axis_unused(data, index))
+                })
             })
         } else {
             false
@@ -315,18 +323,13 @@ impl Plan {
                     reason: "pinning the axes of avar version 2 (deferred by ADR 0022)",
                 });
             }
-            let no_other_variation_data = ![
-                b"gvar", b"GVAR", b"HVAR", b"VVAR", b"MVAR", b"cvar", b"CFF2", b"GDEF", b"GSUB",
-                b"GPOS", b"BASE", b"MATH", b"COLR", b"STAT",
-            ]
-            .iter()
-            .any(|tag| {
+            let no_other_variation_data = !other_variation_tags.iter().any(|tag| {
                 let tag = Tag::new(tag);
                 font.table(tag).is_some() && !drop.contains(tag.to_u32())
             });
-            let varc_safe = font
-                .table(Tag::new(b"VARC"))
-                .is_none_or(|_| drop.contains(Tag::new(b"VARC").to_u32()) || varc_unrelated_pin);
+            let varc_safe = font.table(Tag::new(b"VARC")).is_none_or(|_| {
+                drop.contains(Tag::new(b"VARC").to_u32()) || varc_unrelated_axis_change
+            });
             let simple_avar = font.table(Tag::new(b"avar")).is_none_or(|data| {
                 sofel_font::read::avar::Avar::new(data)
                     .is_ok_and(|table| table.major_version() == 1 && norm.pinned_at_default)
@@ -351,12 +354,23 @@ impl Plan {
             });
         }
         let no_subset = input.set(SetKind::NoSubsetTables);
+        let varc_tag = Tag::new(b"VARC");
+        if font.table(varc_tag).is_some()
+            && !drop.contains(varc_tag.to_u32())
+            && no_subset.contains(varc_tag.to_u32())
+            && (!flags.has(Flags::RETAIN_GIDS) || !norm.user.is_empty())
+        {
+            return Err(SubsetError::Unsupported {
+                tag: varc_tag,
+                reason: "VARC passthrough needs retained glyph IDs and unchanged axes",
+            });
+        }
         for (tag, reason) in PENDING {
             let t = Tag::new(tag);
             let passthrough = no_subset.contains(t.to_u32());
             let dropped = drop.contains(t.to_u32()) || (pinned && PINNED_DROP.contains(&tag));
             if font.table(t).is_some() && !dropped && !passthrough {
-                if tag == b"VARC" && (norm.user.is_empty() || varc_unrelated_pin) {
+                if tag == b"VARC" && (norm.user.is_empty() || varc_unrelated_axis_change) {
                     let source = font.table(t).unwrap_or(&[]);
                     Varc::new(source).map_err(|_| SubsetError::Malformed { tag: t })?;
                     continue;

@@ -516,6 +516,67 @@ fn adr0067_i2_unrelated_axis_pin_with_gvar_dropped_matches_harfbuzz() {
 }
 
 #[test]
+fn adr0067_i2_unrelated_nondefault_axis_changes_without_gvar_match_harfbuzz() {
+    let original = paths::testdata().join("harfbuzz/test/api/fonts/varc-unrelated-axis.ttf");
+    let source =
+        std::env::temp_dir().join(format!("sofel-varc-no-gvar-{}.ttf", std::process::id()));
+    let reference =
+        std::env::temp_dir().join(format!("sofel-varc-no-gvar-pin-{}.ttf", std::process::id()));
+    let strip = ProcessCommand::new(paths::hb_dump())
+        .arg("--subset")
+        .arg(format!("--font-file={}", original.display()))
+        .arg("--unicodes=U+AC01")
+        .arg("--drop-tables+=gvar")
+        .arg(format!("--output-file={}", source.display()))
+        .output()
+        .unwrap();
+    assert!(strip.status.success());
+    let bytes = std::fs::read(&source).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    assert!(font.table(Tag::new(b"VARC")).is_some());
+    assert!(font.table(Tag::new(b"gvar")).is_none());
+    for retain in [false, true] {
+        let base = Input::new()
+            .with_flags(if retain {
+                Flags::RETAIN_GIDS
+            } else {
+                Flags::DEFAULT
+            })
+            .map_set(SetKind::Unicodes, |set| set.add(0xAC01));
+        for (variation, input) in [
+            (
+                "DUMY=0.5",
+                base.with_axis_pinned(Tag::new(b"DUMY"), 0.5, &font)
+                    .unwrap(),
+            ),
+            (
+                "DUMY=0:0.5:1",
+                base.with_axis_range(Tag::new(b"DUMY"), Some(0.0), Some(1.0), Some(0.5), &font)
+                    .unwrap(),
+            ),
+        ] {
+            let ours = subset(&font, &input).unwrap();
+            let mut command = ProcessCommand::new(paths::hb_dump());
+            command
+                .arg("--subset")
+                .arg(format!("--font-file={}", source.display()))
+                .arg("--unicodes=U+AC01")
+                .arg(format!("--variations={variation}"))
+                .arg(format!("--output-file={}", reference.display()));
+            if retain {
+                command.arg("--retain-gids");
+            }
+            let output = command.output().unwrap();
+            assert!(output.status.success());
+            let expected = std::fs::read(&reference).unwrap();
+            assert_eq!(ours, expected, "{variation}, retain={retain}");
+        }
+    }
+    let _ = std::fs::remove_file(source);
+    let _ = std::fs::remove_file(reference);
+}
+
+#[test]
 fn adr0067_i2_referenced_axis_pin_remains_unsupported() {
     let path = paths::testdata().join("harfbuzz/test/api/fonts/varc-unrelated-axis.ttf");
     let bytes = std::fs::read(&path).unwrap();
@@ -537,4 +598,25 @@ fn adr0067_i2_referenced_axis_pin_remains_unsupported() {
         .output()
         .unwrap();
     assert!(!output.status.success());
+}
+
+#[test]
+fn adr0067_i2_varc_passthrough_requires_retained_gids() {
+    let path = paths::testdata().join("harfbuzz/test/api/fonts/varc-ac00-ac01.ttf");
+    let bytes = std::fs::read(path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let base = Input::new()
+        .map_set(SetKind::Unicodes, |set| set.add(0xAC00))
+        .map_set(SetKind::NoSubsetTables, |set| {
+            set.add(Tag::new(b"VARC").to_u32())
+        });
+    assert!(subset(&font, &base).is_err());
+    let retained = base.with_flags(Flags::RETAIN_GIDS);
+    let output = subset(&font, &retained).unwrap();
+    let output = Font::new(&output, 0).unwrap();
+    assert!(output.table(Tag::new(b"VARC")).is_some());
+    let pinned = retained
+        .with_axis_pinned_to_default(Tag::new(b"0005"), &font)
+        .unwrap();
+    assert!(subset(&font, &pinned).is_err());
 }
