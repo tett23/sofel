@@ -47,6 +47,7 @@ enum Error {
     StackUnderflow,
     StackOverflow,
     InvalidOpcode,
+    DivideByZero,
 }
 
 struct Instruction<'a> {
@@ -144,6 +145,23 @@ fn run(mut code: &[u8], stack: &mut alloc::vec::Vec<i64>, max_stack: usize) -> R
                     stack[i..].rotate_left(1);
                 }
             }
+            op @ (0x50..=0x55 | 0x5a..=0x5b | 0x60..=0x63 | 0x8b..=0x8c) => {
+                let [.., left, right] = stack.as_mut_slice() else {
+                    return Err(Error::StackUnderflow);
+                };
+                *left = binary(op, *left, *right)?;
+                stack.pop();
+            }
+            op @ (0x5c | 0x64..=0x67) => {
+                let value = stack.last_mut().ok_or(Error::StackUnderflow)?;
+                *value = match op {
+                    0x5c => i64::from(*value == 0),
+                    0x64 => value.wrapping_abs(),
+                    0x65 => value.wrapping_neg(),
+                    0x66 => *value & !63,
+                    _ => value.wrapping_add(63) & !63,
+                };
+            }
             0x58 => {
                 if stack.pop().ok_or(Error::StackUnderflow)? == 0 {
                     skip_block(&mut code, true)?;
@@ -177,4 +195,65 @@ fn push(stack: &mut alloc::vec::Vec<i64>, value: i64, limit: usize) -> Result<()
     }
     stack.push(value);
     Ok(())
+}
+
+#[test]
+fn adr0064_i1_arithmetic_rounds_multiply_and_truncates_division() {
+    for (op, a, b, expected) in [
+        (0x63, -1, 32, -1),
+        (0x63, 1, 31, 0),
+        (0x62, -5, 3, -106),
+        (0x62, 5, -3, -106),
+        (0x50, -7, 2, 1),
+        (0x5b, 0, -5, 1),
+        (0x8b, -20, -4, -4),
+    ] {
+        let mut stack = alloc::vec![a, b];
+        run(&[op], &mut stack, 2).unwrap();
+        assert_eq!(stack, [expected]);
+    }
+    assert_eq!(
+        run(&[0x62], &mut alloc::vec![1, 0], 2),
+        Err(Error::DivideByZero)
+    );
+    for (op, input, expected) in [(0x66, -65, -128), (0x67, -65, -64), (0x5c, -1, 0)] {
+        let mut stack = alloc::vec![input];
+        run(&[op], &mut stack, 1).unwrap();
+        assert_eq!(stack, [expected]);
+    }
+}
+
+fn binary(op: u8, a: i64, b: i64) -> Result<i64, Error> {
+    Ok(match op {
+        0x50 => i64::from(a < b),
+        0x51 => i64::from(a <= b),
+        0x52 => i64::from(a > b),
+        0x53 => i64::from(a >= b),
+        0x54 => i64::from(a == b),
+        0x55 => i64::from(a != b),
+        0x5a => i64::from(a != 0 && b != 0),
+        0x5b => i64::from(a != 0 || b != 0),
+        0x60 => a.wrapping_add(b),
+        0x61 => a.wrapping_sub(b),
+        0x62 | 0x63 => {
+            // FreeType computes unsigned magnitudes, then restores the sign.
+            let (x, y) = (a.unsigned_abs(), b.unsigned_abs());
+            let magnitude = if op == 0x62 {
+                x.wrapping_mul(64)
+                    .checked_div(y)
+                    .ok_or(Error::DivideByZero)?
+            } else {
+                x.wrapping_mul(y).wrapping_add(32) >> 6
+            }
+            .cast_signed();
+            if (a < 0) != (b < 0) {
+                magnitude.wrapping_neg()
+            } else {
+                magnitude
+            }
+        }
+        0x8b => a.max(b),
+        0x8c => a.min(b),
+        _ => return Err(Error::InvalidOpcode),
+    })
 }
