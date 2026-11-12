@@ -189,6 +189,8 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 ## 輪郭（`sofel-outline`）
 
+- `Outlines::load_truetype_mono` は指定した ppem で TrueType の単純グリフと複合グリフを読み、v35 のモノクロ用ヒンティングを適用する。フォントプログラムと準備プログラムを実行し、グリフ命令が更新した輪郭を `Scratch::points` で返す。複合グリフでは、各成分にヒンティングを適用して配置した後、複合グリフ自身の命令を実行する。未対応の命令は `InvalidOutline` を返す（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
+
 - glyfと `GLYF` の単純なグリフと合成グリフの輪郭を、ヒンティングをせずに、FreeTypeと同じ座標で `Pen` に渡す（[ADR 0011](adr/0011-glyf-outlines.md)）。`GLYF` があれば `GLYF` と `LOCA` を使い、そのときだけフラグ0x80を三次曲線、0x2000を24bitの成分のグリフIDとして扱う。
 - 倍率は `FT_Set_Pixel_Sizes` と同じく `div_fix(ppem << 6, unitsPerEm)` で、点は `mul_fix` で拡大縮小し、丸めない。locaの解釈と合成の位置の計算はFreeTypeに合わせる。
 - 作業領域（`Scratch`）は呼び出し側が持つ。
@@ -377,6 +379,8 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - sbixは、各大きさの表で新しいグリフIDの順にグリフのデータを写し、残すグリフのデータを持たない大きさの表を除く。
 - 軸の固定（`Input::with_all_axes_pinned_to_default`、`with_axis_pinned_to_default`、`with_axis_pinned`、`with_axis_range`、`axis_range`。`hb_subset_input_pin_all_axes_to_default` などと同じく、fvarの無いフォントや無い軸では失敗して値を変えない）：`Plan::new` は `normalize_axes_location` のとおりに軸の位置を正規化する（fvarと同じ範囲の指定を除き、2.14に丸め、avarの版1の写像を通す。浮動小数点はHarfBuzzと同じ `f32` と `roundf`）。すべての軸を既定の値に固定する場合に加え、fvarとavar版1以外の変化量表、CFF2、GDEF、GSUB、GPOS、BASE、MATH、COLR、VARCを持たないフォントでは [ADR 0061](adr/0061-subset-axis-instancing.md) に従い、固定した軸を除き、残る軸の範囲と名前つきインスタンスを書き直す。STATがある場合は、軸範囲の外の軸値を除いて残す。avar版1がある場合は、既定位置への固定に限り、残る軸の写像を保つ。それ以外の位置と範囲、avarの版2、avarが既定の値を0以外に写すフォントは `Unsupported` とする（[ADR 0022](adr/0022-subsetting.md) の後回しにしたもの）。固定したときは、fvar、avar、gvar、GVAR、HVAR、VVAR、MVAR、cvarを捨て、CFF2を上のとおりに書き、glyfのグリフを点から符号化しなおし（`compile_bytes_with_deltas`）、そこから求めた値でheadの箱と `flags` のビット1、hmtxとvmtxのサイドベアリング、hheaとvheaの最大の送り幅、最小のサイドベアリング、最大の広がり、maxpの点と輪郭と成分の数、OS/2の `xAvgCharWidth` を書きなおす。OS/2の `usWeightClass` と `usWidthClass`、postの `italicAngle` は軸の値から、STATは軸の範囲の外の軸の値を除いて書く。名前IDの閉包はfvarの名前を足さない。GSUBとGPOSは、FeatureVariationsを既定の位置で評価して最初に当たる記録の置きかえのフィーチャを使い、FeatureVariationsを除いて版1.0とする。GDEFの変化量の表を除き、値の記録とアンカーとキャレットの変化量の番号のDeviceを除く（値の記録の形式からはDeviceのビットを除く）。fvar、avar、STATのビューと検証器は `sofel-read` にある。
 - 軸を指定しないgvarとGVARは、残すグリフの変化量のデータを新しいグリフIDの順に書き、短いオフセットでは奇数長のデータを0で埋める。`IFTB_REQUIREMENTS` では長いオフセットを使い、埋めない。
+- [ADR 0061](adr/0061-subset-axis-instancing.md) の軸指定で、gvar または GVAR の共有 tuple が0件かつ全グリフの変化記録のオフセットが0の場合は、非既定値への固定と範囲指定を受け付ける。軸を指定した出力からこの空の表を除く。
+- [ADR 0061](adr/0061-subset-axis-instancing.md) の gvar に変化記録があるフォントでも、全軸を非既定値に固定し、輪郭を残すグリフが単純グリフだけなら、`sofel-font::var::gvar::apply_gvar_hb` による点と幻の点の差分を glyf とメトリクスへ反映する。この経路は avar と、ほかの変化量表を持たない入力に限定する。合成グリフを残す場合は `Unsupported` とする。
 - 軸を指定しない HVAR と VVAR は、複数のItemVariationDataから残したグリフに対応する行と使う領域を詰め、全ての値が0の列を除いて書き出す。使わないItemVariationDataを除き、暗黙・明示の送り幅とサイドベアリングのマップを新しいグリフIDに合わせて書く（[ADR 0022](adr/0022-subsetting.md)）。 明示マップの末尾で複数のグリフが同じ行を参照する場合は、その最初の項目までを書き、残りは最後の値を繰り返して読む。空のサイドベアリングと縦の原点のマップは出力しない。
 - VARC のサブセット化（[ADR 0067](adr/0067-varc-components.md)）は、残す部品を再帰的に集め、グリフ ID と参照、条件、部品の軸座標、変化量ストアの番号を再配置する。VARC が参照しない1軸を既定値に固定し、gvar、GVAR、HVAR、VVAR、MVAR、cvar、CFF2、GDEF、GSUB、GPOS、BASE、MATH、COLR、STAT が存在しないか捨てられ、avar が版2でない場合は、残る軸の番号を書き直す。これらの表と avar が元のフォントにない場合は、非既定値への固定と範囲の指定でも VARC の軸番号を写す。参照される軸の固定と対象外の変化量表を持つフォントの部分軸固定は `Unsupported` とする。VARC を `NoSubsetTables` でそのまま写す場合は、`RETAIN_GIDS` を指定して軸を変えないことを要し、満たさなければ `Unsupported` とする。名前の表の上書きも `Unsupported` とする。
 - 軸を指定しない BASE 1.1 の ItemVariationStore は、残すスクリプトとフィーチャに属する横と縦の BaseCoord の VariationIndex を集め、使う行と領域だけを詰めて番号を振りなおす。参照が0件なら、HarfBuzzと同じくストアを除いて座標を残す。BaseValues、既定の MinMax、言語別とフィーチャ別の MinMax を調べ、壊れた参照はこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。

@@ -1673,6 +1673,19 @@ int32_t sofel_outline_load(const sofel_font_t *font, const sofel_location_t *loc
                            uint32_t *overlap);
 
 /*
+ * Loads a TrueType outline at a square pixel size using v35 monochrome
+ * hinting. The scratch, cbox, overlap and location arguments follow
+ * sofel_outline_load. Unsupported instructions return SOFEL_ERROR_INVALID_OUTLINE.
+ *
+ * Rust: sofel_outline::Outlines::load_truetype_mono
+ * HarfBuzz: none
+ * FreeType: FT_Load_Glyph (FT_LOAD_TARGET_MONO)
+ */
+int32_t sofel_outline_load_truetype_mono(const sofel_font_t *font, const sofel_location_t *location,
+                                         uint32_t glyph, uint16_t ppem, sofel_outline_scratch_t *scratch,
+                                         int32_t *cbox, uint32_t *overlap);
+
+/*
  * Sends the outline last loaded into `scratch` to the pen, after moving
  * it by (dx, dy) and multiplying every point by `multiplier`, as
  * FT_Outline_Translate followed by FT_Outline_Decompose would.

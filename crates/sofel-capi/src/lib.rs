@@ -2478,19 +2478,29 @@ fn put_info(info: OutlineInfo, cbox: &mut [i32; 4], overlap: &mut u32) {
     *overlap = u32::from(info.overlap);
 }
 
+enum OutlineLoad {
+    Unhinted(Result<Scale, i32>),
+    Mono(u16),
+}
+
 fn outline_load(
     font: Option<&SofelFont>,
     location: Option<&SofelLocation>,
     glyph: u32,
-    scale: Result<Scale, i32>,
+    load: OutlineLoad,
     scratch: Option<&mut SofelOutlineScratch>,
     cbox: Option<&mut [i32; 4]>,
     overlap: Option<&mut u32>,
 ) -> Status {
     let (font, scratch, cbox, overlap) = (some(font)?, some(scratch)?, some(cbox)?, some(overlap)?);
-    let info = outlines_at(font, location)
-        .load(GlyphId(glyph), scale?, &mut scratch.scratch)
-        .map_err(outline_error)?;
+    let outlines = outlines_at(font, location);
+    let info = match load {
+        OutlineLoad::Unhinted(scale) => outlines.load(GlyphId(glyph), scale?, &mut scratch.scratch),
+        OutlineLoad::Mono(ppem) => {
+            outlines.load_truetype_mono(GlyphId(glyph), ppem, &mut scratch.scratch)
+        }
+    }
+    .map_err(outline_error)?;
     put_info(info, cbox, overlap);
     Ok(())
 }
@@ -2528,11 +2538,40 @@ pub unsafe extern "C" fn sofel_outline_load(
         font,
         location,
         glyph,
-        scale(mode, x_scale, y_scale),
+        OutlineLoad::Unhinted(scale(mode, x_scale, y_scale)),
         scratch,
         cbox,
         overlap,
     ))
+}
+
+/// Loads a monochrome TrueType outline into a reusable work area.
+///
+/// # Safety
+///
+/// The pointer requirements are those of [`sofel_outline_load`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_outline_load_truetype_mono(
+    font: *const SofelFont,
+    location: *const SofelLocation,
+    glyph: u32,
+    ppem: u16,
+    scratch: *mut SofelOutlineScratch,
+    cbox: *mut i32,
+    overlap: *mut u32,
+) -> i32 {
+    // SAFETY: the caller supplies the same handles and output buffers as for outline_load.
+    unsafe {
+        status(outline_load(
+            r(font),
+            r(location),
+            glyph,
+            OutlineLoad::Mono(ppem),
+            w(scratch),
+            ints::<4>(cbox),
+            w(overlap),
+        ))
+    }
 }
 
 fn outline_decompose(
