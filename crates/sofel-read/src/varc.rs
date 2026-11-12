@@ -4,10 +4,27 @@ use crate::be;
 use crate::cff::Version;
 use crate::cff::hb::{HbIndex, Sanitizer};
 use crate::layout::Coverage;
-use crate::{GlyphId, ReadError, Tag};
+use crate::{Diagnostic, GlyphId, Kind, ReadError, Tag};
 
 /// The VARC table tag.
 pub const TAG: Tag = Tag::new(b"VARC");
+
+/// Validates a VARC table, including its referenced stores and components.
+pub fn validate(data: &[u8], report: &mut dyn FnMut(Diagnostic)) {
+    let (offset, kind) = match Varc::new(data) {
+        Ok(_) => return,
+        Err(ReadError::UnknownVersion(found)) => (0, Kind::UnknownVersion { found }),
+        Err(ReadError::Truncated { needed, available }) => (
+            0,
+            Kind::Truncated {
+                needed: u32::try_from(needed).unwrap_or(u32::MAX),
+                available: u32::try_from(available).unwrap_or(u32::MAX),
+            },
+        ),
+        Err(_) => (0, Kind::InvalidVarc),
+    };
+    report(Diagnostic::new(TAG, offset, kind));
+}
 
 /// A checked view of a VARC table.
 #[derive(Clone, Copy)]

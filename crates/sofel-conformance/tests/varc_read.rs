@@ -5,8 +5,48 @@
 
 use sofel_conformance::paths;
 use sofel_font::Font;
-use sofel_read::Tag;
-use sofel_read::varc::Varc;
+use sofel_read::sfnt::Sfnt;
+use sofel_read::varc::{self, Varc};
+use sofel_read::{Kind, Tag, validate};
+
+#[test]
+fn adr0067_i3_varc_validator_reports_bad_header() {
+    let mut diagnostics = Vec::new();
+    varc::validate(&[0; 23], &mut |d| diagnostics.push(d));
+    assert!(
+        matches!(diagnostics.as_slice(), [d] if d.table == varc::TAG && matches!(d.kind, Kind::Truncated { needed: 24, available: 23 }))
+    );
+
+    let path = paths::testdata().join("harfbuzz/test/api/fonts/varc-ac00-ac01.ttf");
+    let mut bytes = std::fs::read(path).unwrap();
+    let original = Sfnt::new(&bytes).unwrap();
+    let offset = original
+        .records()
+        .find(|r| r.tag == varc::TAG)
+        .unwrap()
+        .offset as usize;
+    diagnostics.clear();
+    varc::validate(original.table(varc::TAG).unwrap(), &mut |d| {
+        diagnostics.push(d)
+    });
+    assert!(diagnostics.is_empty());
+    let mut invalid = original.table(varc::TAG).unwrap().to_vec();
+    invalid.get_mut(4..8).unwrap().fill(0);
+    varc::validate(&invalid, &mut |d| diagnostics.push(d));
+    assert!(
+        matches!(diagnostics.as_slice(), [d] if d.table == varc::TAG && d.kind.id() == "invalid_varc" && matches!(d.kind, Kind::InvalidVarc))
+    );
+    bytes
+        .get_mut(offset..offset + 4)
+        .unwrap()
+        .copy_from_slice(&0x0002_0000u32.to_be_bytes());
+    let changed = Sfnt::new(&bytes).unwrap();
+    diagnostics.clear();
+    validate::sfnt(&changed, &mut |d| diagnostics.push(d));
+    assert!(diagnostics.iter().any(|d| d.table == varc::TAG
+        && d.offset == 0
+        && matches!(d.kind, Kind::UnknownVersion { found: 0x0002_0000 })));
+}
 
 #[test]
 fn adr0067_i3_varc_reference_records_are_bounded() {
