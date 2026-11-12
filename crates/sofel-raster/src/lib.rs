@@ -58,7 +58,7 @@ extern crate alloc;
 
 mod blend;
 
-pub use blend::{BgraImage, blend_layer};
+pub use blend::{BgraImage, blend_layer, blend_sampled};
 
 use alloc::vec::Vec;
 use core::fmt;
