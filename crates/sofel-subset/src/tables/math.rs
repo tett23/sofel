@@ -19,22 +19,59 @@ use crate::layout::data::{Cov, D, n16};
 use crate::plan::Plan;
 use crate::set::{INVALID, RangeSet};
 
-/// VariationIndex references in MathConstants. Other MATH references remain
-/// unsupported until their retained glyph records can be collected as well.
-pub(crate) fn constant_variation_indices(src: &[u8]) -> Option<BTreeSet<u32>> {
+fn collect_variation_index(
+    src: &[u8],
+    dev: D<'_>,
+    keep: bool,
+    formats: &mut BTreeSet<usize>,
+    indices: &mut BTreeSet<u32>,
+) -> Option<()> {
+    if dev.is_null() || dev.u16(4) != 0x8000 {
+        return Some(());
+    }
+    let at = src.len().checked_sub(dev.0.len())?.checked_add(4)?;
+    formats.insert(at);
+    if keep {
+        indices.insert((u32::from(dev.u16(0)) << 16) | u32::from(dev.u16(2)));
+    }
+    Some(())
+}
+
+/// VariationIndex references in MathConstants, italics corrections, and top
+/// accent attachments. Other MATH references remain unsupported.
+pub(crate) fn retained_variation_indices(src: &[u8], glyphs: &RangeSet) -> Option<BTreeSet<u32>> {
     let m = header(src)?;
     let k = constants(m.off16(4));
     let mut formats = BTreeSet::new();
     let mut indices = BTreeSet::new();
     for i in 0..51usize {
         let record = i.saturating_mul(4).saturating_add(8);
-        let dev = device(k.off16(record.saturating_add(2)));
-        if dev.is_null() || dev.u16(4) != 0x8000 {
-            continue;
+        collect_variation_index(
+            src,
+            device(k.off16(record.saturating_add(2))),
+            true,
+            &mut formats,
+            &mut indices,
+        )?;
+    }
+    let gi = glyph_info(m.off16(6));
+    for offset in [0, 2] {
+        let table = value_table(gi.off16(offset));
+        for (i, glyph) in coverage(table.off16(0))
+            .glyphs()
+            .into_iter()
+            .take(usize::from(table.u16(2)))
+            .enumerate()
+        {
+            let record = i.saturating_mul(4).saturating_add(4);
+            collect_variation_index(
+                src,
+                device(table.off16(record.saturating_add(2))),
+                glyphs.contains(glyph),
+                &mut formats,
+                &mut indices,
+            )?;
         }
-        let at = src.len().checked_sub(dev.0.len())?.checked_add(4)?;
-        formats.insert(at);
-        indices.insert((u32::from(dev.u16(0)) << 16) | u32::from(dev.u16(2)));
     }
     if src
         .windows(2)

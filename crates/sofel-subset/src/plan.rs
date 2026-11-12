@@ -593,12 +593,13 @@ impl Plan {
                     });
                 };
                 if math_has_var_format {
-                    let Some(math_indices) =
-                        crate::tables::math::constant_variation_indices(math_data)
-                    else {
+                    let Some(math_indices) = crate::tables::math::retained_variation_indices(
+                        math_data,
+                        &p.glyphset_mathed,
+                    ) else {
                         return Err(SubsetError::Unsupported {
                             tag: Tag::new(b"GDEF"),
-                            reason: "MATH VariationIndex outside MathConstants (ADR 0022 stage 10)",
+                            reason: "unsupported MATH VariationIndex (ADR 0022 stage 10)",
                         });
                     };
                     selected.extend(math_indices);
