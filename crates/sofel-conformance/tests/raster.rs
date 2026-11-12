@@ -396,6 +396,110 @@ fn adr0064_i2_reference_renders_mono_and_both_sdf_inputs() {
 }
 
 #[test]
+fn adr0064_i2_selawik_bitmap_sdf_matches_freetype() {
+    let path = paths::testdata()
+        .join("harfbuzz/test/shape/data/text-rendering-tests/fonts/Selawik-variable.ttf");
+    let bytes = std::fs::read(&path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let outlines = sofel_outline::Outlines::new(font.default_instance());
+    let mut scratch = Scratch::default();
+    let mut raster = Rasterizer::new();
+    let mut output = Vec::new();
+    let mut count = 0;
+    for ppem in [12, 24, 48] {
+        let reference = Command::new(paths::ft_dump())
+            .args(["--raster", &ppem.to_string(), "--bitmap-sdf"])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(reference.status.success());
+        let faces = parse(&String::from_utf8(reference.stdout).unwrap()).unwrap();
+        for (&gid, expected) in &faces[&0].glyphs {
+            let source = sofel_cli::glyph::render(
+                &outlines,
+                sofel_font::read::GlyphId(gid),
+                ppem,
+                &mut scratch,
+                &mut raster,
+            )
+            .unwrap();
+            let b = sofel_raster::bitmap_sdf(source, 8, &mut output).unwrap();
+            let mut actual = vec![format!(
+                "bitmap {} {} {} {}",
+                b.left, b.top, b.width, b.rows
+            )];
+            if b.width > 0 {
+                actual.extend(
+                    b.pixels
+                        .chunks_exact(b.width as usize)
+                        .map(|row| row.iter().map(|v| format!("{v:02x}")).collect::<String>()),
+                );
+            }
+            assert_eq!(&actual, expected, "{gid} at {ppem} ppem");
+            count += 1;
+        }
+    }
+    assert_eq!(count, 1152);
+}
+
+#[test]
+fn adr0064_i2_selawik_outline_sdf_matches_freetype() {
+    let path = paths::testdata()
+        .join("harfbuzz/test/shape/data/text-rendering-tests/fonts/Selawik-variable.ttf");
+    let bytes = std::fs::read(&path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let outlines = sofel_outline::Outlines::new(font.default_instance());
+    let mut scratch = Scratch::default();
+    let mut raster = Rasterizer::new();
+    let mut count = 0;
+    for ppem in [12, 24, 48] {
+        let reference = Command::new(paths::ft_dump())
+            .args(["--raster", &ppem.to_string(), "--sdf"])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(reference.status.success());
+        let faces = parse(&String::from_utf8(reference.stdout).unwrap()).unwrap();
+        for (&gid, expected) in &faces[&0].glyphs {
+            let info = outlines
+                .load(
+                    sofel_font::read::GlyphId(gid),
+                    sofel_outline::Scale::pixels(&font, ppem, ppem),
+                    &mut scratch,
+                )
+                .unwrap();
+            let c = info.cbox;
+            let mut bounds = sofel_raster::pixel_box(c.x_min, c.y_min, c.x_max, c.y_max);
+            if bounds.width > 0 && bounds.rows > 0 {
+                bounds.width += 16;
+                bounds.rows += 16;
+                bounds.left -= 8;
+                bounds.top += 8;
+            }
+            raster.clear();
+            scratch.decompose(bounds.shift(), 1, &mut raster).unwrap();
+            let b = raster
+                .render_outline_sdf_placed(bounds, 8, scratch.fill_left())
+                .unwrap();
+            let mut actual = vec![format!(
+                "bitmap {} {} {} {}",
+                b.left, b.top, b.width, b.rows
+            )];
+            if b.width > 0 {
+                actual.extend(
+                    b.pixels
+                        .chunks_exact(b.width as usize)
+                        .map(|row| row.iter().map(|v| format!("{v:02x}")).collect::<String>()),
+                );
+            }
+            assert_eq!(&actual, expected, "{gid} at {ppem} ppem");
+            count += 1;
+        }
+    }
+    assert_eq!(count, 1152);
+}
+
+#[test]
 fn adr0064_i2_selawik_monochrome_bitmaps_match_freetype() {
     use sofel_font::read::GlyphId;
     use sofel_outline::Outlines;

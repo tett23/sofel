@@ -3,6 +3,7 @@
 use std::ffi::OsString;
 use std::io::Write;
 
+use sofel_bitmapfont::BdfFont;
 use sofel_font::Font;
 use sofel_font::read::GlyphId;
 use sofel_outline::{Outlines, Scratch};
@@ -275,6 +276,9 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
         Ok(data) => data,
         Err(d) => return fail(err, format!("{} at byte {}", d.kind, d.offset)),
     };
+    if BdfFont::is_bdf(&bytes) {
+        return render_bdf(&bytes, &args, out, err);
+    }
     let font = match Font::new(&bytes, args.face) {
         Ok(f) => f,
         Err(e) => return fail(err, format!("{}: {e}", args.file.to_string_lossy())),
@@ -367,6 +371,73 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
     image.extend(b.pixels.iter().map(|v| !v));
     if out.write_all(&image).is_err() {
         return fail(err, "cannot write the image".into());
+    }
+    0
+}
+
+fn render_bdf(bytes: &[u8], args: &Args, out: &mut dyn Write, err: &mut dyn Write) -> i32 {
+    let mut fail = |message: &str| {
+        let _ = writeln!(err, "sofel-render: {message}");
+        1
+    };
+    if args.face != 0 {
+        return fail("BDF has only face 0");
+    }
+    let font = match BdfFont::parse(bytes) {
+        Ok(font) => font,
+        Err(_) => return fail("invalid BDF font"),
+    };
+    let ppem = u32::from(args.ppem);
+    let (x_ppem, y_ppem) = font.ppem_26_6();
+    if (
+        x_ppem.saturating_add(32) / 64,
+        y_ppem.saturating_add(32) / 64,
+    ) != (ppem, ppem)
+    {
+        return fail("BDF has no matching bitmap strike");
+    }
+    if args.no_bitmap {
+        return fail("BDF has no outline");
+    }
+    let glyph_id = match &args.target {
+        Target::Glyph(id) => *id,
+        Target::Char(codepoint) => match font.nominal_glyph(*codepoint) {
+            Some(id) => id,
+            None => return fail("character is not mapped"),
+        },
+        Target::Text(_) | Target::TextFile(_) => return fail("BDF text rendering is unavailable"),
+    };
+    let Some(glyph) = font.glyph(glyph_id) else {
+        return fail("glyph is out of range");
+    };
+    if glyph.width == 0 || glyph.height == 0 {
+        return fail("glyph is empty");
+    }
+    let mut image = format!(
+        "P5\n# left {} top {}\n{} {}\n255\n",
+        glyph.left, glyph.top, glyph.width, glyph.height
+    )
+    .into_bytes();
+    let width = usize::from(glyph.width);
+    let bits = usize::from(font.bits_per_pixel());
+    let pitch = width.saturating_mul(bits).saturating_add(7) / 8;
+    let mask = u8::try_from((1u16 << bits).saturating_sub(1)).unwrap_or(255);
+    let scale = match bits {
+        1 => 255,
+        2 => 85,
+        4 => 17,
+        _ => 1,
+    };
+    for row in glyph.bitmap.chunks_exact(pitch) {
+        for x in 0..width {
+            let bit = x.saturating_mul(bits);
+            let byte = row.get(bit / 8).copied().unwrap_or(0);
+            let shift = 8usize.saturating_sub(bits).saturating_sub(bit % 8);
+            image.push(!(((byte >> shift) & mask).wrapping_mul(scale)));
+        }
+    }
+    if out.write_all(&image).is_err() {
+        return fail("cannot write the image");
     }
     0
 }

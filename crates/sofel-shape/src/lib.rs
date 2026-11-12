@@ -65,7 +65,9 @@ pub use serialize::{
     deserialize_glyphs, deserialize_unicode, glyph_from_string, glyph_to_string, serialize_glyphs,
     serialize_glyphs_range, serialize_invalid, serialize_unicode, serialize_unicode_range,
 };
-pub use shape::{shape, shape_fallback, shape_with_extents, shape_with_subfont};
+pub use shape::{
+    shape, shape_fallback, shape_fallback_with_subfont, shape_with_extents, shape_with_subfont,
+};
 pub use sofel_unicode::Script;
 pub use tag::{
     MAX_TAGS_PER_LANGUAGE, MAX_TAGS_PER_SCRIPT, OT_TAG_DEFAULT_LANGUAGE, OT_TAG_DEFAULT_SCRIPT,

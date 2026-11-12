@@ -316,6 +316,21 @@ fn cff2_no_hinting_removes_calls_to_empty_subroutines() {
 }
 
 #[test]
+fn cff2_no_hinting_removes_subroutines_containing_only_stems() {
+    let mut programs = charstrings();
+    programs[2] = charstring(&[Cs::I(-107), Cs::Op(29)]);
+    let subroutine = charstring(&[Cs::I(0), Cs::I(10), Cs::Op(1), Cs::Op(11)]);
+    let bytes = font_with_programs(vec![subroutine], Vec::new(), programs);
+    let font = Font::new(&bytes, 0).unwrap();
+    let out = subset(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)).unwrap();
+    assert_eq!(out, include_bytes!("data/cff2-no-hint-empty-subr-hb15.otf"));
+    let result = Font::new(&out, 0).unwrap();
+    let cff2 = HbCff2::new(&result).unwrap();
+    assert!(cff2.global_subrs().is_empty());
+    assert_eq!(cff2.char_string(1), Some([].as_slice()));
+}
+
+#[test]
 fn cff2_no_hinting_removes_stem_args_supplied_by_caller() {
     let mut programs = charstrings();
     programs[2] = charstring(&[Cs::I(0), Cs::I(10), Cs::I(-107), Cs::Op(29)]);
@@ -414,14 +429,31 @@ fn cff2_mask_length_counts_stems_added_in_a_subroutine() {
 }
 
 #[test]
-fn cff2_shared_subroutine_with_conflicting_mask_lengths_is_unsupported() {
+fn cff2_shared_subroutine_with_conflicting_mask_lengths_retains_original_bytes() {
     let mut programs = charstrings();
     programs[1] = charstring(&[Cs::I(0), Cs::I(10), Cs::Op(1), Cs::I(-107), Cs::Op(29)]);
     programs[2] = charstring(&[Cs::I(-107), Cs::Op(29)]);
-    let bytes = font_with_programs(vec![vec![19, 139, 11]], Vec::new(), programs);
+    let bytes = font_with_programs(vec![vec![19, 139, 11]], Vec::new(), programs.clone());
+    programs.swap(1, 2);
+    let reversed = font_with_programs(vec![vec![19, 139, 11]], Vec::new(), programs.clone());
+    let mask_or_stem = font_with_programs(vec![vec![19, 1, 11]], Vec::new(), programs);
     let font = Font::new(&bytes, 0).unwrap();
+    let out = subset(&font, &glyphs(&[1, 2])).unwrap();
+    assert_eq!(out, include_bytes!("data/cff2-context-mask-hb15.otf"));
+    let out = subset(&font, &glyphs(&[1, 2]).with_flags(Flags::NO_HINTING)).unwrap();
+    assert_eq!(
+        out,
+        include_bytes!("data/cff2-context-mask-no-hint-hb15.otf")
+    );
+    let font = Font::new(&reversed, 0).unwrap();
+    let out = subset(&font, &glyphs(&[1, 2]).with_flags(Flags::NO_HINTING)).unwrap();
+    assert_eq!(
+        out,
+        include_bytes!("data/cff2-context-mask-reversed-no-hint-hb15.otf")
+    );
+    let font = Font::new(&mask_or_stem, 0).unwrap();
     assert!(matches!(
-        Plan::new(&font, &glyphs(&[1, 2])),
+        subset(&font, &glyphs(&[1, 2]).with_flags(Flags::NO_HINTING)),
         Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"CFF2")
     ));
 }
@@ -476,6 +508,8 @@ fn cff2_no_hinting_removes_masks_and_preserves_used_paths() {
         Cs::Raw(vec![29]),
         Cs::I(-107),
         Cs::Op(29),
+        Cs::Op(19),
+        Cs::Raw(vec![29]),
         Cs::I(10),
         Cs::I(0),
         Cs::Op(5),
@@ -489,6 +523,8 @@ fn cff2_no_hinting_removes_masks_and_preserves_used_paths() {
         Cs::I(0),
         Cs::I(0),
         Cs::Op(21),
+        Cs::Op(20),
+        Cs::Raw(vec![10]),
         Cs::I(5),
         Cs::I(5),
         Cs::Op(5),
