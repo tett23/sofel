@@ -996,8 +996,8 @@ fn color_items(b: &mut Bench, testdata: &std::path::Path) {
                 let mut ours = || {
                     (0..n)
                         .map(|g| {
-                            use sofel_cli::glyph::{ColorGlyph, render_color};
-                            match render_color(
+                            use sofel_cli::glyph::{ColorGlyph, render_colr_v0};
+                            match render_colr_v0(
                                 &outlines,
                                 GlyphId(g),
                                 ppem,

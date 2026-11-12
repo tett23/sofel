@@ -309,13 +309,16 @@ impl Plan {
                     reason: "pinning the axes of avar version 2 (deferred by ADR 0022)",
                 });
             }
+            let varc_tag = Tag::new(b"VARC");
+            let varc_retained = font.table(varc_tag).is_some() && !drop.contains(varc_tag.to_u32());
             let no_other_variation_data = !other_variation_tags.iter().any(|tag| {
+                if *tag == b"STAT" && !varc_retained {
+                    return false;
+                }
                 let tag = Tag::new(tag);
                 font.table(tag).is_some() && !drop.contains(tag.to_u32())
             });
-            let varc_safe = font.table(Tag::new(b"VARC")).is_none_or(|_| {
-                drop.contains(Tag::new(b"VARC").to_u32()) || varc_unrelated_axis_change
-            });
+            let varc_safe = !varc_retained || varc_unrelated_axis_change;
             let simple_avar = font.table(Tag::new(b"avar")).is_none_or(|data| {
                 sofel_font::read::avar::Avar::new(data)
                     .is_ok_and(|table| table.major_version() == 1 && norm.pinned_at_default)
