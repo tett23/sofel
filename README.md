@@ -275,3 +275,11 @@ Unicode Character Databaseから生成した表を含む `sofel-unicode` と `so
 FreeTypeの計算を移植した部分を含むクレート（`sofel-geom` など）は、FreeType License（FTL）にも従う（`MIT AND FTL`）。FTLの求めにより、次の文を載せる。
 
 > Portions of this software are copyright © 2026 The FreeType Project (https://freetype.org). All rights reserved.
+
+### フォントごとの描画見本
+
+リポジトリ直下で `sh scripts/render-font-gallery.sh` を実行し、`target/font-gallery/index.html` をブラウザーで開く。
+Ruby と Rust のほか、適合テストと同じフォント取得環境を使う。
+各フェイスの単字と、その書体に合う文字列を一枚の PNG で見比べられる。
+CI では Actions の対象の実行からコミット SHA 付きのフォントギャラリーをダウンロードし、展開したディレクトリの `index.html` を開く。
+保存期間は14日間である（[sofel ADR 0069](docs/adr/0069-font-render-gallery.md)）。
