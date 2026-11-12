@@ -729,31 +729,25 @@ impl Interpreter {
         let [z0, z1, z2] = self.zones.map(usize::from);
         let base = self.points[z0].get(usize::from(self.reference[1])).copied();
         let end = self.points[z1].get(usize::from(self.reference[2])).copied();
-        let axis = usize::from(self.projection[0] == 0);
-        let original_axis = usize::from(self.dual_projection[0] == 0);
         let twilight = self.zones.contains(&0);
-        let original = |p: HintPoint| {
-            if twilight {
-                p.original[original_axis]
-            } else {
-                p.unscaled[original_axis]
-            }
-        };
+        let original = |p: HintPoint| if twilight { p.original } else { p.unscaled };
         if let Some(base) = base {
-            let old_range = end.map_or(0, |p| original(p).wrapping_sub(original(base)));
-            let new_range = end.map_or(0, |p| p.current[axis].wrapping_sub(base.current[axis]));
+            let original_offset =
+                |p| projected_distance(original(p), original(base), self.dual_projection);
+            let current_offset =
+                |p: HintPoint| projected_distance(p.current, base.current, self.projection);
+            let old_range = end.map_or(0, original_offset);
+            let new_range = end.map_or(0, current_offset);
             for &index in stack[first..].iter().rev() {
                 if let Some(p) = self.points[z2].get_mut(index as u32 as usize) {
-                    let offset = original(*p).wrapping_sub(original(base));
+                    let offset = original_offset(*p);
                     let distance = if old_range == 0 {
                         offset
                     } else {
                         sofel_font::read::cff::ft::mul_div(offset, new_range, old_range)
                     };
-                    if self.freedom[axis] != 0 {
-                        p.current[axis] = base.current[axis].wrapping_add(distance);
-                        p.touched[axis] = true;
-                    }
+                    let delta = distance.wrapping_sub(current_offset(*p));
+                    move_point(p, delta, self.projection, self.freedom);
                 }
             }
         }
@@ -2134,4 +2128,29 @@ fn adr0064_i1_alignpts_and_alignrp_move_selected_points_and_reset_loop() {
         assert_eq!(point.current, [8, 0]);
         assert_eq!(point.touched, [true, false]);
     }
+}
+
+#[test]
+fn adr0064_i1_ip_projects_original_and_current_ranges_before_moving() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    vm.points[1].extend([
+        HintPoint::default(),
+        HintPoint {
+            unscaled: [0, 100],
+            current: [60, 80],
+            ..HintPoint::default()
+        },
+        HintPoint {
+            unscaled: [0, 50],
+            current: [0, 0],
+            ..HintPoint::default()
+        },
+    ]);
+    vm.reference = [0, 0, 1];
+    vm.dual_projection = [0, 16384];
+    vm.projection = [9830, 13107];
+    vm.freedom = vm.projection;
+    vm.execute(&[0x39], &mut alloc::vec![2], 1).unwrap();
+    assert_eq!(vm.points[1][2].current, [30, 40]);
+    assert_eq!(vm.points[1][2].touched, [true, true]);
 }
