@@ -602,3 +602,42 @@ fn nesting_stops_at_64() {
             .any(|c| matches!(c, PaintCommand::FillGlyph(1, _)))
     );
 }
+
+#[test]
+fn i3_svg_pixels_gzip_replays_the_expanded_document() {
+    let xml = b"<svg><path id='glyph1'/></svg>";
+    let member = vec![
+        31, 139, 8, 0, 0, 0, 0, 0, 0, 255, 179, 41, 46, 75, 183, 179, 41, 72, 44, 201, 80, 200, 76,
+        177, 85, 79, 207, 169, 44, 200, 48, 84, 215, 183, 179, 209, 7, 73, 0, 0, 118, 177, 46, 173,
+        30, 0, 0, 0,
+    ];
+    let mut corrupt = member.clone();
+    let crc_offset = corrupt.len() - 8;
+    corrupt[crc_offset] ^= 1;
+    let bytes = glyph_font_with(
+        &[Vec::new(), Vec::new(), Vec::new(), Vec::new()],
+        false,
+        false,
+        vec![(
+            b"SVG ",
+            svg_table(&[(1, 1, member), (2, 2, xml.to_vec()), (3, 3, corrupt)]),
+        )],
+    );
+    let font = Font::new(&bytes, 0).unwrap();
+    let (format, rec) = record(&font, 1, &PaintOptions::default());
+    assert_eq!(format, Painted::Svg);
+    assert!(matches!(rec.commands(), [PaintCommand::ExpandedSvg(data)] if data == xml));
+    let mut log = Log(Vec::new(), false);
+    rec.replay(&mut log);
+    assert_eq!(
+        log.0,
+        [format!("image Svg {{ gzip: false }} {}", xml.len())]
+    );
+    let (_, plain) = record(&font, 2, &PaintOptions::default());
+    let mut plain_log = Log(Vec::new(), false);
+    plain.replay(&mut plain_log);
+    assert_eq!(log.0, plain_log.0);
+    let (invalid, rec) = record(&font, 3, &PaintOptions::default());
+    assert_eq!(invalid, Painted::None);
+    assert!(rec.commands().is_empty());
+}

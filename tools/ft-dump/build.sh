@@ -51,12 +51,16 @@ for f in $files; do
   sources="$sources $src/src/$f"
 done
 
+png_flags=
+if [ "${SOFEL_FT_PNG:-0}" = 1 ]; then
+  png_flags="-DFT_CONFIG_OPTION_USE_PNG -lpng"
+fi
 mkdir -p "$(dirname "$out")"
 # shellcheck disable=SC2086 # $sources is a list of paths without spaces
 "$cc" -O2 -w \
   -DFT2_BUILD_LIBRARY \
   '-DFT_CONFIG_MODULES_H=<ftmodule.h>' \
   -I "$here" -I "$src/include" \
-  "$driver" $sources "$@" \
+  "$driver" $sources $png_flags "$@" \
   -o "$out"
 echo "$out"
