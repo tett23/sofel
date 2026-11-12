@@ -53,12 +53,14 @@ dependencies = [
  "sofel-bitmap",
  "sofel-color",
  "sofel-font",
+ "sofel-geom",
  "sofel-inflate",
  "sofel-outline",
  "sofel-raster",
  "sofel-read",
  "sofel-shape",
  "sofel-subset",
+ "sofel-svg",
  "sofel-woff",
 ]
 
@@ -163,6 +165,7 @@ dependencies = [
 name = "sofel-svg"
 version = "0.0.0"
 dependencies = [
+ "sofel-geom",
  "sofel-inflate",
 ]
 

@@ -331,7 +331,8 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 検査：テストのデータにEBLCや `bloc` のフォントが無いため、画像の形式1、2、5、6、7、8、9、深さ1、2、4、8、32、索引の形式1〜5の組み合わせを、EBLC/EBDTと `bloc`/`bdat`/`bhed` で組み立てた110個のフォントと、glyfの輪郭とCBLC/CBDTを両方持つフォントを、`ft-dump --sbit`（`FT_Select_Size` と `FT_LOAD_COLOR` の画素とメトリクス）と比べ、すべて一致する。
 - `sofel-raster` の `blend_layer` は、8bitの被覆率の画像を色で重ねて乗算済みのBGRAの画像（`BgraImage`）に足す。FreeTypeの `tt_face_colr_blend_layer` と同じく、最初の画素のある層で画像の箱を決め（画素の無い層では箱を決めず、次の層が決めなおす）、以後の層で箱を広げて写しなおし、画素ごとに整数で重ねる（`fa = alpha × coverage / 255`、`dst × (255 − fa) / 255 + color × fa / 255`）。
 - `sofel_cli::glyph::render_color` は、FreeTypeの `FT_LOAD_COLOR | FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP` と `FT_RENDER_MODE_NORMAL` の描画と同じく、グリフ自身の輪郭を読んでから、COLRv0の層をそれぞれ `glyph::render` で描いて `blend_layer` で重ねる。層は `color_layers`（FreeTypeの `FT_Get_Color_Glyph_Layer` と同じく、基本のグリフの記録が層の記録を越えれば無し、グリフの番号がグリフの数以上か、パレットの番号が前景色（0xFFFF）以外でパレットの項目の数以上の層で打ち切り）による。色は `PaintOptions` のパレットと前景色から取る。層が無いか、層のどれかが描けなければ、グリフ自身の輪郭を灰色で描く（`ColorGlyph::Gray`）。
-- `sofel-render --color [--palette N]` は、COLRv0のグリフをPAM（乗算済みでない値に直す）で書く。前景色は、パレットに暗い背景向けの印があれば白、無ければ黒とする。
+- `sofel-render --color [--palette N]` は、COLRv0、輪郭と矩形でクリップした COLRv1 の線形・放射グラデーションと、`rect`、`circle`、`path` と線形・放射グラデーションからなる OT-SVG のグリフをPAM（乗算済みでない値に直す）で書く。OT-SVG では対象グリフの要素を選び、`defs` の停止点、`stop-opacity`、図形の境界ボックス、`gradientTransform`、グループの `transform` を適用し、図形の順に重ねる（[ADR 0072](adr/0072-color-gallery-acceptance.md)）。前景色は、パレットに暗い背景向けの印があれば白、無ければ黒とする。
+- OT-SVG のパスは絶対座標と相対座標の直線、2次・3次ベジェ曲線、楕円弧を描く。楕円弧は最大90度ずつ3次ベジェ曲線で近似する。グループと図形には平行移動、拡大縮小、中心を指定した回転、せん断と行列の変換を適用する（[ADR 0066](adr/0066-color-glyph-pixels.md)）。
 - 検査（5d）：`ft-dump --raster PPEM --color` で、HarfBuzzのテストのカラーのフォントのCOLRv0のグリフを、12、24、48画素、パレット0と最後のパレットでFreeTypeと比べる（1818項目）。前景色はFreeTypeと同じく、FreeTypeが16bitずつ読んだ `paletteTypes` の暗い背景の印で決める。期待する失敗は、FreeTypeが読み込まないCOLRを持つ2つのフォントの12項目だけで、ほかは画素まで完全に一致する。
 - `sofel-paint` は塗りの命令をHarfBuzzの `test/api/test-paint.c` の字下げのテキストで書く。
 - C ABIは `sofel_paint_glyph`（命令の配列。`sofel_paint_commands_free` で解放）、パレット、形式、層、SVGの文書、ストライク、グリフのビットマップ、補助の関数、三角関数、COLRv0の画像（`sofel_render_color_glyph`、`sofel_blend_layer`）を持つ。`sofel_font_glyph_extents` などグリフの箱を使う関数は `sofel_color` の箱を使う。
@@ -557,4 +558,5 @@ CI の文書だけの変更は、比較起点の `ci/documentation-only.rules` �
 `sh scripts/render-font-gallery.sh` は各フェイスの単字とシェーピング済みの固定文字列を等倍で一枚の PNG に配置し、入力、ppem、未対応の理由をローカルの HTML から確認できるようにする。
 生成器は [sofel ADR 0073](adr/0073-rust-font-gallery.md) に従う Rust の開発用バイナリとし、Unicode スカラー値とグリフ ID、26.6 固定小数点の位置と整数画素、描画結果と登録済みの未対応状態を型で区別する。シェルの入口は Rust のテストを実行してから生成器を起動する。
 sbix の単字 19 と合字 26 は固定版 FreeType と全画素を照合し、一覧の各欄に等倍で配置する（[sofel ADR 0072](adr/0072-color-gallery-acceptance.md)）。
+CFF の 19・26 と可変 COLRv1 の 92・93 は固定版 HarfBuzz raster と原点・寸法・乗算済み BGRA の全画素を照合する。一覧 PNG の検査では、これらの2書体、sbix、OT-SVG の単字と文字列を個別に比較する。
 文書だけの変更を除き、CI はプルリクエストと main への push で HTML と PNG を生成し、検査したコミット SHA 付きのアーティファクトを14日間保存する。

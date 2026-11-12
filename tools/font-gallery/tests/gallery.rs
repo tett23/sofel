@@ -112,3 +112,26 @@ fn i2_rust_gallery_publish_rejects_bad_inputs() {
     );
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn adr0072_i4_color_svg_is_registered_for_a_drawn_glyph_and_run() {
+    let root = std::env::temp_dir().join(format!("sofel-color-svg-gallery-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("font.ttf"), b"OTTO").unwrap();
+    std::fs::write(
+        root.join("fonts.tsv"),
+        "color-svg\tcolor-svg\t-\tfont.ttf\n",
+    )
+    .unwrap();
+    let samples = inputs::cases(&root, &root.join("fonts.tsv"), &root, false).unwrap();
+    std::fs::remove_dir_all(root).unwrap();
+    let sample = samples
+        .iter()
+        .find(|s| s.id == "color-svg" && s.face == 0)
+        .unwrap();
+    assert!(!sample.unsupported_empty);
+    assert_eq!(
+        (sample.solo.value(), sample.text, sample.ppem),
+        ("19".into(), "simple_linear", 48)
+    );
+}
