@@ -1,7 +1,5 @@
 //! C ABI for ADR 0062 layout queries.
 
-#![allow(missing_docs)]
-
 use sofel_font::layout_query::{LayoutQueries, MathGlyphPart, MathGlyphVariant, MathKernEntry};
 use sofel_font::read::{GlyphId, Tag, math::Corner};
 
@@ -13,6 +11,7 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
+/// One MATH kern entry in the C ABI.
 pub struct SofelMathKernEntry {
     max_correction_height: i32,
     kern_value: i32,
@@ -20,6 +19,7 @@ pub struct SofelMathKernEntry {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
+/// One MATH glyph variant in the C ABI.
 pub struct SofelMathGlyphVariant {
     glyph: u32,
     advance: i32,
@@ -27,6 +27,7 @@ pub struct SofelMathGlyphVariant {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
+/// One MATH glyph assembly part in the C ABI.
 pub struct SofelMathGlyphPart {
     glyph: u32,
     start_connector_length: i32,
@@ -79,6 +80,11 @@ fn page<T, U>(
 
 macro_rules! scalar {
     ($name:ident ($font:ident, $location:ident, $scale:ident, $($arg:ident : $ty:ty),*) => $body:expr) => {
+        /// A scalar MATH layout query.
+        ///
+        /// # Safety
+        ///
+        /// Handles are NULL or live; a non-NULL output points to writable storage.
         #[unsafe(no_mangle)]
         pub unsafe extern "C" fn $name(font: *const SofelFont, location: *const SofelLocation, scale: *const SofelScale, $($arg: $ty,)* value: *mut i32) -> i32 {
             // SAFETY: the caller supplies live handles and a writable output.
@@ -99,6 +105,11 @@ scalar!(sofel_math_constant(font, location, scale, constant: u32) => query(font,
 scalar!(sofel_math_italics_correction(font, location, scale, glyph: u32) => query(font, location, scale).math_italics_correction(GlyphId(glyph)));
 scalar!(sofel_math_top_accent_attachment(font, location, scale, glyph: u32) => query(font, location, scale).math_top_accent_attachment(GlyphId(glyph)));
 
+/// Whether the font has a readable MATH table.
+///
+/// # Safety
+///
+/// `font` is NULL or live; `has_data` is NULL or writable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sofel_math_has_data(font: *const SofelFont, has_data: *mut i32) -> i32 {
     // SAFETY: the caller supplies a live font and a writable output.
@@ -109,6 +120,11 @@ pub unsafe extern "C" fn sofel_math_has_data(font: *const SofelFont, has_data: *
     })())
 }
 
+/// Query a style value at the specified location and point size.
+///
+/// # Safety
+///
+/// Handles are NULL or live; `value` is NULL or writable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sofel_style_value(
     font: *const SofelFont,
@@ -125,6 +141,11 @@ pub unsafe extern "C" fn sofel_style_value(
     })())
 }
 
+/// Whether a glyph is marked as an extended MATH shape.
+///
+/// # Safety
+///
+/// `font` is NULL or live; `is_extended` is NULL or writable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sofel_math_is_extended_shape(
     font: *const SofelFont,
@@ -140,6 +161,11 @@ pub unsafe extern "C" fn sofel_math_is_extended_shape(
     })())
 }
 
+/// Query the MATH kern at a correction height.
+///
+/// # Safety
+///
+/// Handles are NULL or live; `value` is NULL or writable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sofel_math_kerning(
     font: *const SofelFont,
@@ -162,6 +188,11 @@ pub unsafe extern "C" fn sofel_math_kerning(
     })())
 }
 
+/// Query the minimum overlap for MATH assembly parts.
+///
+/// # Safety
+///
+/// Handles are NULL or live; `value` is NULL or writable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sofel_math_min_connector_overlap(
     font: *const SofelFont,
@@ -179,6 +210,11 @@ pub unsafe extern "C" fn sofel_math_min_connector_overlap(
     })())
 }
 
+/// Copy a page of GDEF ligature caret positions.
+///
+/// # Safety
+///
+/// Handles are NULL or live; outputs point to writable storage of their given capacity.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sofel_layout_ligature_carets(
     font: *const SofelFont,
@@ -218,6 +254,11 @@ pub unsafe extern "C" fn sofel_layout_ligature_carets(
     })())
 }
 
+/// Copy a page of MATH kern entries.
+///
+/// # Safety
+///
+/// Handles are NULL or live; outputs point to writable storage of their given capacity.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sofel_math_kernings(
     font: *const SofelFont,
@@ -263,6 +304,11 @@ pub unsafe extern "C" fn sofel_math_kernings(
     })())
 }
 
+/// Copy a page of MATH glyph variants.
+///
+/// # Safety
+///
+/// Handles are NULL or live; outputs point to writable storage of their given capacity.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sofel_math_variants(
     font: *const SofelFont,
@@ -305,6 +351,11 @@ pub unsafe extern "C" fn sofel_math_variants(
     })())
 }
 
+/// Copy a page of MATH glyph assembly parts and its italic correction.
+///
+/// # Safety
+///
+/// Handles are NULL or live; outputs point to writable storage of their given capacity.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sofel_math_assembly(
     font: *const SofelFont,
