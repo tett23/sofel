@@ -405,6 +405,10 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 `sofel-bitmapfont::BdfFont` は BDF の文字対応、送り、単一の固定サイズの 1、2、4、8 bit 画像を読む。符号位置でグリフを並べ、グリフ番号 0 には `DEFAULT_CHAR` が指定する画像を使う。`sofel-render` は BDF を通常のファイル入力から開き、`--char` と `--glyph` のどちらでも PGM を出す。宣言した文字数、画像の行数、16 進数と画像の長さを検査する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
+## PCF フェイス
+
+`sofel-bitmapfont::pcf::PcfFont` は PCF の文字対応、送り、単一の固定サイズの 1 bit 画像を読む。文字表のグリフ番号は FreeType と同じく 1 から始まり、グリフ番号 0 には既定文字の画像を使う。`sofel-render` は PCF を通常のファイル入力から開き、`--char` と `--glyph` のどちらでも PGM を出す。表の範囲、文字表、ビットマップのオフセットと長さを検査する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+
 ## Web フォントの書き出し（`sofel-woff`）
 
 `sofel_woff::encode` は単一フェイスの sfnt と出力形式を受け取り、WOFF または WOFF2 のバイト列を返す。表のタグ、範囲、パディング、チェックサムとフォント全体のチェックサムを検査する。コマンドは変換を終えてから出力先を開く。[ADR 0070](adr/0070-webfont-encoding.md)
