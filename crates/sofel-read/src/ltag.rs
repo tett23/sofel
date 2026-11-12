@@ -45,9 +45,9 @@ mod tests {
         let data = [
             0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 20, 0, 2, 0, 22, 0, 2, b's', b'r', b'z', b'h',
         ];
-        let tags = Ltag::new(&data).expect("two complete strings");
-        assert_eq!(tags.tag(1), Some(&b"zh"[..]));
-        assert_eq!(tags.tag(2), None);
+        let tags = Ltag::new(&data);
+        assert_eq!(tags.and_then(|tags| tags.tag(1)), Some(&b"zh"[..]));
+        assert_eq!(tags.and_then(|tags| tags.tag(2)), None);
         assert!(Ltag::new(&data[..23]).is_none());
     }
 }
