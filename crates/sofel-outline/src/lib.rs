@@ -68,6 +68,7 @@ extern crate alloc;
 mod hb_cff;
 mod hb_draw;
 mod slot_synth;
+mod tt_hint;
 mod varc_draw;
 
 pub use sofel_font as font;
