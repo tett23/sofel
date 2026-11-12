@@ -64,9 +64,15 @@ fn document_observation(case: &str, observation: &str) -> Option<Result<(), Stri
         _ => return None,
     };
     let mut table = vec![0, 0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 1, 0, 1, 0, 2, 0, 0, 0, 14];
-    table.extend_from_slice(&u32::try_from(DOCUMENT.len()).unwrap().to_be_bytes());
+    let Ok(length) = u32::try_from(DOCUMENT.len()) else {
+        return Some(Err("fixture exceeds the SVG document length field".into()));
+    };
+    table.extend_from_slice(&length.to_be_bytes());
     table.extend_from_slice(DOCUMENT);
-    let svg = sofel_read::svg::Svg::new(&table).expect("valid fixed SVG table");
+    let svg = match sofel_read::svg::Svg::new(&table) {
+        Ok(svg) => svg,
+        Err(error) => return Some(Err(format!("unreadable test table: {error:?}"))),
+    };
     let actual = svg.find(glyph).and_then(|entry| svg.document(entry));
     Some(if actual == expected {
         Ok(())
@@ -86,7 +92,7 @@ fn verify(text: &str) -> bool {
         }
         let fields = record.split('\t').collect::<Vec<_>>();
         let [feature, case, names, source] = fields.as_slice() else {
-            println!("invalid inventory row {}", line + 1);
+            println!("invalid inventory row {}", line.saturating_add(1));
             ok = false;
             continue;
         };

@@ -1,4 +1,6 @@
 //! Required observations and the result of a partial verification (ADR 0074).
+#![allow(clippy::unwrap_used)]
+
 use std::process::Command;
 
 const INVENTORY: &str = include_str!("../../../conformance/svg-cases.tsv");
