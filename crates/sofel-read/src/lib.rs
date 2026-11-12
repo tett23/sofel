@@ -33,6 +33,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod aat_lookup;
 pub mod avar;
 pub mod base;
 pub mod be;
@@ -71,8 +72,10 @@ mod search;
 pub mod sfnt;
 pub mod stat;
 pub mod svg;
+pub mod trak;
 mod types;
 pub mod validate;
+pub mod varc;
 pub mod vhea;
 pub mod vmtx;
 pub mod vorg;
