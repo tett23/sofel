@@ -1,8 +1,8 @@
 [workspace]
 resolver = "3"
-members = ["crates/sofel-geom", "crates/sofel-vector", "crates/sofel-gpu", "crates/sofel-inflate", "crates/sofel-png", "crates/sofel-svg", "crates/sofel-unicode", "crates/sofel-read", "crates/sofel-font", "crates/sofel-write", "crates/sofel-woff", "crates/sofel-subset", "crates/sofel-shape", "crates/sofel-outline", "crates/sofel-bitmap", "crates/sofel-color", "crates/sofel-raster", "crates/sofel-cli", "crates/sofel-capi", "crates/sofel-conformance"]
+members = ["crates/sofel-geom", "crates/sofel-vector", "crates/sofel-gpu", "crates/sofel-inflate", "crates/sofel-png", "crates/sofel-svg", "crates/sofel-unicode", "crates/sofel-read", "crates/sofel-font", "crates/sofel-write", "crates/sofel-woff", "crates/sofel-bitmapfont", "crates/sofel-subset", "crates/sofel-shape", "crates/sofel-outline", "crates/sofel-bitmap", "crates/sofel-color", "crates/sofel-raster", "crates/sofel-cli", "crates/sofel-capi", "crates/sofel-conformance"]
 # sofel-conformance needs fetched test data and ft-dump (ADR 0005, ADR 0008).
-default-members = ["crates/sofel-geom", "crates/sofel-vector", "crates/sofel-gpu", "crates/sofel-inflate", "crates/sofel-png", "crates/sofel-svg", "crates/sofel-unicode", "crates/sofel-read", "crates/sofel-font", "crates/sofel-write", "crates/sofel-woff", "crates/sofel-subset", "crates/sofel-shape", "crates/sofel-outline", "crates/sofel-bitmap", "crates/sofel-color", "crates/sofel-raster", "crates/sofel-cli", "crates/sofel-capi"]
+default-members = ["crates/sofel-geom", "crates/sofel-vector", "crates/sofel-gpu", "crates/sofel-inflate", "crates/sofel-png", "crates/sofel-svg", "crates/sofel-unicode", "crates/sofel-read", "crates/sofel-font", "crates/sofel-write", "crates/sofel-woff", "crates/sofel-bitmapfont", "crates/sofel-subset", "crates/sofel-shape", "crates/sofel-outline", "crates/sofel-bitmap", "crates/sofel-color", "crates/sofel-raster", "crates/sofel-cli", "crates/sofel-capi"]
 exclude = ["fuzz", "tools/font-gallery"]
 
 [workspace.package]
