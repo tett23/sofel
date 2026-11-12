@@ -8,5 +8,6 @@ fn i2_gpu_records_supply_both_shader_stages_in_four_languages() {
         let frag = shader_source(language, ShaderStage::Fragment);
         assert!(frag.contains("hb_gpu_fetch"));
         assert!(frag.contains("hb_gpu_draw"));
+        assert!(frag.contains("hb_gpu_paint"));
     }
 }

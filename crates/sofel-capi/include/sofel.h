@@ -2224,6 +2224,15 @@ int32_t sofel_gpu_outline(const sofel_gpu_path_command_t *commands, size_t count
 int32_t sofel_gpu_shader_source(uint32_t language, uint32_t stage, uint8_t *output,
                                 size_t capacity, size_t *len);
 
+/* Encode a glyph's clipped color layers, or its foreground outline, in font
+ * units. Capacity and len count RGBA16I texels. The optional location uses
+ * the same convention as sofel_paint_glyph.
+ * Rust: sofel_gpu::Paint::new, sofel_gpu::Paint::encode
+ */
+int32_t sofel_gpu_paint_glyph(const sofel_font_t *font, const sofel_location_t *location,
+                              uint32_t glyph, uint16_t palette,
+                              int16_t (*records)[4], size_t capacity, size_t *len);
+
 /* A color stop: palette_index is -1 for the foreground; alpha is the
  * font's alpha, clamped to 0..1, that color was resolved with. */
 typedef struct sofel_color_stop_t {

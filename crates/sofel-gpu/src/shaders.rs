@@ -16,7 +16,7 @@ pub enum ShaderStage {
 }
 
 /// Returns source to prepend to the caller's entry point. The vertex stage
-/// provides `hb_gpu_dilate`; the fragment stage provides `hb_gpu_draw`.
+/// provides `hb_gpu_dilate`; the fragment stage provides `hb_gpu_draw` for outlines and `hb_gpu_paint` for layers.
 /// Language-specific atlas bindings are described in each fragment source.
 pub fn shader_source(language: ShaderLanguage, stage: ShaderStage) -> &'static str {
     use ShaderLanguage::{Glsl, Hlsl, Msl, Wgsl};

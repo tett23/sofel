@@ -289,3 +289,7 @@ impl sofel_geom::Pen for Outline {
 
 mod shaders;
 pub use shaders::{ShaderLanguage, ShaderStage, shader_source};
+
+mod gradient;
+mod paint;
+pub use paint::Paint;

@@ -453,6 +453,8 @@ jobs:
       - name: Build FreeType and HarfBuzz
         if: steps.benchmark-libraries.outputs.cache-hit != 'true'
         run: sh scripts/measure-process-tree.sh sh scripts/build-bench-c.sh
+      - name: Compare GPU glyph records with HarfBuzz
+        run: sh tools/gpu-reference/compare.sh
       - name: Test the harness
         run: |
           cargo fmt --check --manifest-path bench/Cargo.toml

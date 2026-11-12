@@ -14,7 +14,7 @@ const shader = device.createShaderModule({
      return vec4f(points[i],0,1);
    }
    @fragment fn fragment_main(@builtin(position) p:vec4f)->@location(0) vec4f {
-     return vec4f(hb_gpu_draw(p.xy,0u));
+     var coverage:f32; return hb_gpu_paint(p.xy,0u,vec4f(1),&coverage);
    }`,
   ].join("\n"),
 });

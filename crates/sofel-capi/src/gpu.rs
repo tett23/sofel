@@ -84,3 +84,100 @@ pub unsafe extern "C" fn sofel_gpu_shader_source(
         len,
     ))
 }
+
+/// Encodes a glyph in font units at the selected variation location.
+///
+/// # Safety
+/// Handles are live. `records` is writable for `capacity` records, and
+/// `len` is writable and does not alias any other argument.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_gpu_paint_glyph(
+    font: *const crate::SofelFont,
+    location: *const crate::SofelLocation,
+    glyph: u32,
+    palette: u16,
+    records: *mut [i16; 4],
+    capacity: usize,
+    len: *mut usize,
+) -> i32 {
+    use sofel_font::{HbScale, read::GlyphId};
+    use sofel_geom::{ColorRef, Painter, PointF, Solid, Transform};
+    use sofel_outline::{HbExtents, HbOutlineCommand as Cmd, Scale};
+    // SAFETY: caller supplies the live handles and writable ranges above.
+    let (font, location, records, len) = unsafe {
+        (
+            crate::r(font),
+            crate::r(location),
+            out_array(records, capacity),
+            w(len),
+        )
+    };
+    status((|| {
+        let font = some(font)?;
+        let loc = location
+            .map(|l| &l.location)
+            .unwrap_or(sofel_font::var::Location::default_ref());
+        let instance = font.font.instance(loc);
+        if glyph >= font.font.num_glyphs() {
+            return Err(crate::ERROR_INVALID_GLYPH);
+        }
+        let scale = HbScale::unscaled(&font.font);
+        let outlines = crate::outlines_at(font, location);
+        let hb = HbExtents::new(instance);
+        let mut scratch = sofel_outline::Scratch::default();
+        let mut paint =
+            sofel_gpu::Paint::new([scale.x_scale(), scale.y_scale()], |gid, t: Transform| {
+                let mut path = Outline::default();
+                let point = |p: PointF| {
+                    let v = t.apply(p);
+                    [v.x, v.y]
+                };
+                let mut emit = |cmd| match cmd {
+                    Cmd::MoveTo(p) => path.move_to(point(p)),
+                    Cmd::LineTo(p) => path.line_to(point(p)),
+                    Cmd::QuadTo(c, p) => path.quad_to(point(c), point(p)),
+                    Cmd::CubicTo(a, b, p) => path.cubic_to(point(a), point(b), point(p)),
+                    Cmd::Close => path.close(),
+                };
+                if let Some(commands) = hb.cff_glyph_path(GlyphId(gid), &scale) {
+                    for cmd in commands {
+                        emit(cmd);
+                    }
+                } else if outlines
+                    .load(GlyphId(gid), Scale::Unscaled, &mut scratch)
+                    .is_ok()
+                {
+                    scratch
+                        .hb_decompose(1., 1., emit)
+                        .map_err(|_| sofel_gpu::OutOfRange)?;
+                }
+                Ok(path)
+            });
+        let options = sofel_color::PaintOptions {
+            palette: sofel_color::Palette::Font(palette),
+            foreground: sofel_geom::Color::new(0, 0, 0, 255),
+            ppem: 0,
+        };
+        if sofel_color::paint(
+            instance,
+            glyph,
+            &options,
+            &mut sofel_color::Scratch::default(),
+            &mut paint,
+        ) == sofel_color::Painted::None
+        {
+            paint.fill_glyph(
+                glyph,
+                &Solid {
+                    color: options.foreground,
+                    source: ColorRef {
+                        index: None,
+                        alpha: 1.,
+                    },
+                },
+            );
+        }
+        let data = paint.encode().map_err(|_| ERROR_INVALID_ARGUMENT)?;
+        copy_out(&data, records, len)
+    })())
+}
