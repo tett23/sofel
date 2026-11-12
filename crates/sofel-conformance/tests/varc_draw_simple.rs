@@ -2,6 +2,7 @@
 
 #![allow(clippy::all)]
 #![allow(clippy::unwrap_used)]
+#![allow(clippy::indexing_slicing)]
 
 use sofel_conformance::paths;
 use sofel_font::Font;
