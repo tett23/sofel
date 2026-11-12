@@ -329,3 +329,75 @@ fn adr0061_i1_empty_glyph_keeps_instanced_phantom_metrics() {
     std::fs::remove_file(src).unwrap();
     std::fs::remove_file(out).unwrap();
 }
+
+#[test]
+fn adr0061_i1_pinning_cvar_updates_control_values() {
+    for name in ["Comfortaa-Regular-new.ttf", "Muli-ABC.ttf"] {
+        let path = paths::testdata()
+            .join("harfbuzz/test/subset/data/fonts")
+            .join(name);
+        let bytes = std::fs::read(&path).unwrap();
+        let font = Font::new(&bytes, 0).unwrap();
+        let out = std::env::temp_dir().join(format!("sofel-cvar-pin-{}.ttf", std::process::id()));
+        for value in [300.0, 700.0] {
+            let input = Input::new()
+                .map_set(SetKind::Unicodes, |s| s.add_range(0, 0x10ffff))
+                .with_axis_pinned(Tag::new(b"wght"), value, &font)
+                .unwrap();
+            let ours = subset(&font, &input).unwrap();
+            assert!(
+                Command::new(paths::hb_dump())
+                    .arg("--subset")
+                    .arg(format!("--font-file={}", path.display()))
+                    .arg("--unicodes=*")
+                    .arg(format!("--variations=wght={value}"))
+                    .arg(format!("--output-file={}", out.display()))
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+            let reference = std::fs::read(&out).unwrap();
+            assert_eq!(
+                Font::new(&ours, 0).unwrap().table(Tag::new(b"cvt ")),
+                Font::new(&reference, 0).unwrap().table(Tag::new(b"cvt "))
+            );
+            let actual = Font::new(&ours, 0).unwrap();
+            let expected = Font::new(&reference, 0).unwrap();
+            let gid = actual.nominal_glyph(65).unwrap();
+            assert_eq!(
+                actual.default_instance().advance(gid),
+                expected.default_instance().advance(gid)
+            );
+            assert_eq!(ours, reference);
+        }
+        std::fs::remove_file(out).unwrap();
+    }
+}
+
+#[test]
+fn adr0061_i1_substitute_features_at_pinned_coordinates() {
+    let path = paths::testdata().join("harfbuzz/test/subset/data/fonts/MPLUS1-Variable.ttf");
+    let bytes = std::fs::read(&path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let out = std::env::temp_dir().join(format!("sofel-feature-pin-{}.ttf", std::process::id()));
+    for value in [100.0, 400.0, 900.0] {
+        let input = Input::new()
+            .map_set(SetKind::Unicodes, |s| s.add(0x30dd))
+            .with_axis_pinned(Tag::new(b"wght"), value, &font)
+            .unwrap();
+        let ours = subset(&font, &input).unwrap();
+        assert!(
+            Command::new(paths::hb_dump())
+                .arg("--subset")
+                .arg(format!("--font-file={}", path.display()))
+                .arg("--unicodes=U+30DD")
+                .arg(format!("--variations=wght={value}"))
+                .arg(format!("--output-file={}", out.display()))
+                .status()
+                .unwrap()
+                .success()
+        );
+        assert_eq!(ours, std::fs::read(&out).unwrap(), "{value}");
+    }
+    std::fs::remove_file(out).unwrap();
+}

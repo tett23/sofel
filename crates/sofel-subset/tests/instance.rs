@@ -563,6 +563,18 @@ fn pinning_preserves_the_base_coordinate_and_removes_its_variation_index() {
     ];
     let expected: Vec<_> = expected.into_iter().flat_map(u16::to_be_bytes).collect();
     assert_eq!(sfnt.table(Tag::new(b"BASE")).unwrap(), expected);
+    for (weight, baseline) in [(650.0, 134u16), (900.0, 144)] {
+        let input = pinned
+            .with_axis_pinned(Tag::new(b"wght"), weight, &font)
+            .unwrap();
+        let out = subset(&font, &input).unwrap();
+        let mut varied = expected.clone();
+        varied[38..40].copy_from_slice(&baseline.to_be_bytes());
+        assert_eq!(
+            Sfnt::new(&out).unwrap().table(Tag::new(b"BASE")).unwrap(),
+            varied
+        );
+    }
 }
 
 #[test]
