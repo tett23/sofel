@@ -356,7 +356,17 @@ impl Plan {
                         .all(|range| range.min == range.default && range.default == range.max)
             });
             let metadata_only = no_other_variation_data && varc_safe && simple_avar;
-            if !(norm.all_axes_pinned && norm.pinned_at_default) && !metadata_only {
+            let gvar_full_pin = norm.all_axes_pinned
+                && font.table(Tag::new(b"gvar")).is_some()
+                && font.table(Tag::new(b"GVAR")).is_none()
+                && font.table(Tag::new(b"glyf")).is_some()
+                && font.table(Tag::new(b"avar")).is_none()
+                && varc_safe
+                && !other_variation_tags.iter().any(|tag| {
+                    **tag != *b"gvar" && **tag != *b"GVAR" && font.table(Tag::new(tag)).is_some()
+                });
+            if !(norm.all_axes_pinned && norm.pinned_at_default) && !metadata_only && !gvar_full_pin
+            {
                 return Err(SubsetError::Unsupported {
                     tag: Tag::new(b"fvar"),
                     reason: "instancing variation data needs ADR 0061",
@@ -813,11 +823,32 @@ impl Plan {
         );
         let glyf_tag = crate::tables::glyf::instanced_tag(self, font);
         if let Some(tag) = glyf_tag {
+            if !self.var.n.pinned_at_default
+                && let Some(data) = font.table(Tag::new(b"gvar"))
+            {
+                let accel = crate::tables::glyf::GlyfAccel::new(font);
+                let variations = sofel_font::read::gvar::Gvar::new(data, Tag::new(b"gvar"))
+                    .map_err(|_| SubsetError::Malformed {
+                        tag: Tag::new(b"gvar"),
+                    })?;
+                if self.glyphs.new_to_old.iter().any(|&(_, old)| {
+                    let kind = accel.glyph(old, true).kind;
+                    kind == crate::tables::glyf::Kind::Composite
+                        || (kind == crate::tables::glyf::Kind::Empty
+                            && variations.glyph_data(old).is_some())
+                }) {
+                    return Err(SubsetError::Unsupported {
+                        tag: Tag::new(b"gvar"),
+                        reason: "nondefault gvar pinning of composite or empty glyphs",
+                    });
+                }
+            }
             let (glyphs, metrics) = crate::tables::glyf::instance(
                 &self.glyphs.new_to_old,
                 self.flags,
                 self.num_output_glyphs,
                 font,
+                &self.var.n.normalized_coords,
             )
             .ok_or(SubsetError::Failed { tag })?;
             self.var.metrics = metrics;
