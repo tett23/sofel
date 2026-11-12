@@ -1,4 +1,5 @@
 //! Extended AAT metamorphosis chains and state-driven rearrangement.
+pub(crate) mod kerning;
 use sofel_font::read::{aat_lookup::AatLookup, be};
 
 /// A chain subtable and its application flags.
@@ -79,6 +80,7 @@ pub struct StateTable<'a> {
 #[derive(Clone, Debug)]
 enum MachineKind<'a> {
     Rearrange,
+    Kerning,
     Contextual(alloc::vec::Vec<AatLookup<'a>>),
     Insert(&'a [u8]),
     Ligature(Ligature<'a>),
@@ -93,6 +95,21 @@ struct Entry {
 
 impl<'a> StateTable<'a> {
     fn new(data: &'a [u8], glyphs: u32, kind: u32) -> Option<Self> {
+        let offset = |at| data.get(be::u32_at(data, at)? as usize..);
+        let kind = match kind {
+            0 => MachineKind::Rearrange,
+            1 => MachineKind::Contextual(alloc::vec::Vec::new()),
+            2 => MachineKind::Ligature(Ligature {
+                actions: offset(16)?,
+                components: offset(20)?,
+                glyphs: offset(24)?,
+            }),
+            5 => MachineKind::Insert(offset(16)?),
+            _ => return None,
+        };
+        Self::from_kind(data, glyphs, kind)
+    }
+    fn from_kind(data: &'a [u8], glyphs: u32, kind: MachineKind<'a>) -> Option<Self> {
         let num_classes = be::u32_at(data, 0)? as usize;
         if num_classes < 4 {
             return None;
@@ -103,17 +120,7 @@ impl<'a> StateTable<'a> {
             num_classes,
             states: offset(8)?,
             entries: offset(12)?,
-            kind: match kind {
-                0 => MachineKind::Rearrange,
-                1 => MachineKind::Contextual(alloc::vec::Vec::new()),
-                2 => MachineKind::Ligature(Ligature {
-                    actions: offset(16)?,
-                    components: offset(20)?,
-                    glyphs: offset(24)?,
-                }),
-                5 => MachineKind::Insert(offset(16)?),
-                _ => return None,
-            },
+            kind,
         };
         // Start at the text entry state and check each reachable row.
         let mut states = 1;
@@ -149,7 +156,7 @@ impl<'a> StateTable<'a> {
             .checked_mul(2)?;
         let stride = match self.kind {
             MachineKind::Rearrange => 4,
-            MachineKind::Ligature(_) => 6,
+            MachineKind::Kerning | MachineKind::Ligature(_) => 6,
             _ => 8,
         };
         let offset = usize::from(be::u16_at(self.states, cell)?).checked_mul(stride)?;
@@ -168,6 +175,7 @@ impl<'a> StateTable<'a> {
     }
     fn actionable(&self, entry: Entry) -> bool {
         match self.kind {
+            MachineKind::Kerning => entry.substitutions[0] != 0xffff,
             MachineKind::Ligature(_) => entry.flags & 0x2000 != 0,
             MachineKind::Rearrange => entry.flags & 15 != 0,
             MachineKind::Contextual(_) => entry.substitutions != [0xffff; 2],

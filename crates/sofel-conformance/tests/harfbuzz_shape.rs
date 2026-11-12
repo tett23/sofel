@@ -422,3 +422,13 @@ fn i1_aat_ligature_uses_the_component_stack() {
         assert_eq!(run(&case), Ok(()), "{}", case.id);
     }
 }
+
+#[test]
+fn i1_aat_kerx_pairs_and_history_match_reference() {
+    let path = paths::testdata().join("harfbuzz/test/shape/data/in-house/tests/aat-kerx.tests");
+    let suite = cases("in-house", &path, &mut 0);
+    for id in ["in-house/aat-kerx.tests:5", "in-house/aat-kerx.tests:23"] {
+        let case = suite.iter().find(|case| case.id == id).unwrap();
+        assert_eq!(run(case), Ok(()), "{id}");
+    }
+}

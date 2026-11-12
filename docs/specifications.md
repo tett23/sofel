@@ -228,6 +228,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 ### 計画
 
 - `morx` の並べ替えは状態表の先頭からグリフを分類し、指定された両端のグリフを、クラスタを統合して並べ替える。文脈置換は状態遷移に従い、マークしたグリフと現在のグリフにそれぞれ置換表を適用する。挿入はマークと現在位置の前後に指定グリフを加える。合字は部品のスタックから置換先を引き、消費したグリフのクラスタを統合する（[ADR 0060](adr/0060-aat-shaping.md)）。
+- `kerx` の形式 0 はグリフ対、形式 2 は左右のクラスからカーニング量を引く。形式 1 は状態遷移に従い、直近 8 個の位置を参照して調整する（[ADR 0060](adr/0060-aat-shaping.md)）。
 - `--font-ptem` でポイントサイズを指定すると、`STAT` と `trak` を持つフォントではそのサイズに応じて字間を調整する。
 - `ShapePlan::new(instance, props, features)` が、`hb_ot_shape_plan_t` と同じ判断を一度だけ行う（[ADR 0020](adr/0020-shaping-foundation.md)）。`GSUB` と `GPOS` の文字体系と言語の選択（`hb_ot_layout_table_select_script` の `DFLT`、`dflt`、`latn` への後退と `hb_ot_layout_script_select_language`）、シェーパー（`Shaper`、`hb_ot_shaper_categorize`）、`hb_ot_shape_collect_features` の順の機能、`hb_ot_map_builder_t::compile` と同じマスクのビットの割り当て（大域の値1の機能は31ビット目、ほかはグリフのフラグの後の4ビット目から。足りなければ機能を捨てる）、必須の機能、`F_GLOBAL_SEARCH`、`F_HAS_FALLBACK`、段ごとにlookupの番号の順に並べて重複をまとめたlookupの列、位置の決め方（`GPOS` の有無、マークの幅の0化、フォールバックのマークの配置）である。AATの表と古い `kern` 表は無いものとして判定する。
 - 計画は `GDEF` のグリフのクラス（HarfBuzzの拒否の一覧に載る表は無いものとする）とマークのグリフの集合、`GSUB` と `GPOS` のすべてのlookupについて、拡張をたどったサブテーブルのビューと、それぞれの最初のグリフのCoverageの要約（`hb_set_digest_t` と同じ3つの64ビットのマスク）を持つ。拡張の型がそろわないlookupと、読めないサブテーブルは、HarfBuzzと同じく無いものとする。

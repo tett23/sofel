@@ -288,6 +288,7 @@ pub struct ShapePlan<'a> {
     pub(crate) requested_kerning: bool,
     pub(crate) fallback_glyph_classes: bool,
     pub(crate) morx: Option<Vec<crate::aat::Chain<'a>>>,
+    pub(crate) kerx: Option<Vec<crate::aat::kerning::Subtable<'a>>>,
     pub(crate) tracking: Option<sofel_font::read::trak::Trak<'a>>,
     pub(crate) apply_gpos: bool,
     pub(crate) apply_fallback_kern: bool,
@@ -419,18 +420,25 @@ impl<'a> ShapePlan<'a> {
             .gpos_tag
             .is_some_and(|t| Some(t) != map.chosen_script[GPOS]);
         let has_gpos = !disable_gpos && layout.gpos.has_data;
-        let apply_gpos = has_gpos;
-        let script_fallback_position = funcs.fallback_position;
-        let adjust = !apply_gpos;
-        let mut plan = ShapePlan {
-            morx: if (props.direction.is_horizontal() || !layout.gsub.has_data)
-                && features.is_empty()
-            {
+        let morx =
+            if (props.direction.is_horizontal() || !layout.gsub.has_data) && features.is_empty() {
                 font.table(Tag(*b"morx"))
                     .and_then(|data| crate::aat::chains(data, font.num_glyphs()))
             } else {
                 None
-            },
+            };
+        let candidate = font
+            .table(Tag(*b"kerx"))
+            .and_then(|t| crate::aat::kerning::read(t, font.num_glyphs()));
+        let apply_gpos =
+            has_gpos && (candidate.is_none() || (morx.is_none() && layout.gsub.has_data));
+        let kerx = candidate.filter(|_| !apply_gpos || map.feature_index(GPOS, kern_tag).is_none());
+        let has_kerx = kerx.is_some();
+        let script_fallback_position = funcs.fallback_position;
+        let adjust = !apply_gpos && !has_kerx;
+        let mut plan = ShapePlan {
+            morx,
+            kerx,
             tracking: font
                 .table(Tag(*b"STAT"))
                 .and_then(|t| sofel_font::read::stat::Stat::new(t).ok())
@@ -450,8 +458,8 @@ impl<'a> ShapePlan<'a> {
             kern_mask,
             requested_kerning: kern_mask != 0,
             apply_gpos,
-            apply_fallback_kern: script_fallback_position && !apply_gpos,
-            zero_marks: funcs.zero_width_marks != ZeroWidthMarks::None,
+            apply_fallback_kern: script_fallback_position && adjust,
+            zero_marks: !has_kerx && funcs.zero_width_marks != ZeroWidthMarks::None,
             has_gpos_mark: map.one_mask(Tag(*b"mark")) != 0,
             adjust_mark_positioning_when_zeroing: adjust,
             fallback_mark_positioning: adjust && script_fallback_position,

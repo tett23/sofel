@@ -580,6 +580,8 @@ fn position(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut
     }
     if plan.apply_gpos {
         apply_map(GPOS, plan, font, buffer);
+    } else if let Some(tables) = &plan.kerx {
+        crate::aat::kerning::apply(tables, buffer, &font.scale.scale, plan.kern_mask);
     }
     if let Some(tracking) = plan.tracking {
         let scale = font.scale.scale;
