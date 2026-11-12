@@ -626,9 +626,10 @@ impl Interpreter {
             .map_err(|_| Error::InvalidReference)?
             .truetype()
             .unwrap_or_default();
-        let mut grid_fit = true;
+        let mut grid_fit = maxima.max_size_of_instructions != 0;
         if engine.version == 40 {
             engine.tricky = super::tt_policy::tricky(font);
+            engine.symmetric_smoothing = !grid_fit || ppem > 20;
             if let Some(flags) = font
                 .table(Tag::new(b"gasp"))
                 .and_then(|data| super::tt_policy::gasp(data, ppem))

@@ -45,10 +45,22 @@ fn check_target(
     target: HintTarget,
     v40: bool,
 ) {
+    let relative_path = PathBuf::from("harfbuzz/test/api/fonts").join(name);
+    check_sizes(relative_path, Some(glyphs), 1..=96, expected, target, v40);
+}
+
+fn check_sizes(
+    relative_path: PathBuf,
+    glyphs: Option<core::ops::Range<u32>>,
+    sizes: core::ops::RangeInclusive<u16>,
+    expected: u64,
+    target: HintTarget,
+    v40: bool,
+) {
     let dir = std::env::var_os("SOFEL_TESTDATA")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/testdata"));
-    let path = dir.join("harfbuzz/test/api/fonts").join(name);
+    let path = dir.join(relative_path);
     let Ok(data) = std::fs::read(&path) else {
         assert!(
             std::env::var_os("SOFEL_REQUIRE_TESTDATA").is_none(),
@@ -69,7 +81,8 @@ fn check_target(
             hash = hash.wrapping_mul(0x100_0000_01b3);
         }
     };
-    for ppem in 1..=96 {
+    let glyphs = glyphs.unwrap_or(0..font.num_glyphs());
+    for ppem in sizes {
         for glyph in glyphs.clone() {
             let advance = if v40 {
                 Some(
@@ -126,5 +139,27 @@ fn adr0064_i1_native_v40_load_targets_match_freetype() {
         };
         check_target("Roboto-Regular.abcAE.ttf", 7..8, composite, target, true);
         check_target("Roboto-Regular.abc.ttf", 1..4, expected, target, true);
+    }
+}
+
+#[test]
+fn adr0064_i1_full_roboto_at_16_ppem_matches_freetype_in_every_target() {
+    for (target, v40_hash) in [
+        (HintTarget::Normal, 0xda26_0ff5_f510_50ea),
+        (HintTarget::Light, 0xda26_0ff5_f510_50ea),
+        (HintTarget::Mono, 0x740a_d04b_e7d6_0ce1),
+        (HintTarget::Lcd, 0x0abe_79a5_0b4c_59d9),
+        (HintTarget::VerticalLcd, 0xda26_0ff5_f510_50ea),
+    ] {
+        for (v40, hash) in [(false, 0x1252_a6d2_d5b3_af01), (true, v40_hash)] {
+            check_sizes(
+                "harfbuzz/perf/fonts/Roboto-Regular.ttf".into(),
+                None,
+                16..=16,
+                hash,
+                target,
+                v40,
+            );
+        }
     }
 }
