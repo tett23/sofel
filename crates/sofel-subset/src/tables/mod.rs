@@ -1,7 +1,7 @@
 //! Writing the tables (`hb_subset_plan_execute_or_fail` and the tables'
 //! `subset` functions).
 
-mod avar;
+pub(crate) mod avar;
 pub(crate) mod base;
 mod cblc;
 pub(crate) mod cff;
@@ -62,6 +62,7 @@ impl Plan {
             b"cvar" => pinned || self.flags.has(Flags::NO_HINTING),
             b"cvt " | b"fpgm" | b"prep" | b"hdmx" | b"VDMX" => self.flags.has(Flags::NO_HINTING),
             b"gvar" | b"GVAR" => pinned || (self.var.instancing() && self.inert_gvar),
+            b"avar" if self.var.n.avar2 && self.var.instancing() => true,
             b"avar" | b"fvar" | b"HVAR" | b"VVAR" | b"MVAR" => pinned,
             _ => false,
         }

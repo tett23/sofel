@@ -333,7 +333,13 @@ impl Plan {
             false
         };
         if !norm.user.is_empty() {
-            if norm.avar2 {
+            let omit_identity_avar2 = norm.avar2
+                && font.table(Tag::new(b"CFF2")).is_none()
+                && norm.user.values().all(|r| r.min == r.max)
+                && font.table(Tag::new(b"avar")).is_some_and(|data| {
+                    crate::tables::avar::is_empty_identity_v2(data, norm.axis_tags.len())
+                });
+            if norm.avar2 && !omit_identity_avar2 {
                 return Err(SubsetError::Unsupported {
                     tag: Tag::new(b"avar"),
                     reason: "pinning the axes of avar version 2 (deferred by ADR 0022)",
@@ -352,14 +358,15 @@ impl Plan {
                 !drop.contains(tag.to_u32())
             });
             let varc_safe = !varc_retained || varc_unrelated_axis_change;
-            let simple_avar = font.table(Tag::new(b"avar")).is_none_or(|data| {
-                sofel_font::read::avar::Avar::new(data)
-                    .is_ok_and(|table| table.major_version() == 1 && norm.pinned_at_default)
-                    && norm
-                        .user
-                        .values()
-                        .all(|range| range.min == range.default && range.default == range.max)
-            });
+            let simple_avar = omit_identity_avar2
+                || font.table(Tag::new(b"avar")).is_none_or(|data| {
+                    sofel_font::read::avar::Avar::new(data)
+                        .is_ok_and(|table| table.major_version() == 1 && norm.pinned_at_default)
+                        && norm
+                            .user
+                            .values()
+                            .all(|range| range.min == range.default && range.default == range.max)
+                });
             let metadata_only = no_other_variation_data && varc_safe && simple_avar;
             let gvar_full_pin = norm.all_axes_pinned
                 && font.table(Tag::new(b"gvar")).is_some()

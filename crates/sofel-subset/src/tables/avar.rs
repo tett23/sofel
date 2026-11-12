@@ -9,6 +9,26 @@ use crate::plan::Plan;
 
 const TAG: Tag = Tag::new(b"avar");
 
+/// Checks for the three identity knots on every axis and both null v2 offsets.
+pub(crate) fn is_empty_identity_v2(data: &[u8], axes: usize) -> bool {
+    Avar::new(data).is_ok_and(|table| {
+        table.v2_offsets() == Some((0, 0))
+            && table.axis_count() == axes
+            && (0..axes).all(|axis| {
+                table.segment_map(axis).is_some_and(|map| {
+                    map.len() == 3
+                        && [-16384, 0, 16384]
+                            .into_iter()
+                            .enumerate()
+                            .all(|(index, value)| {
+                                map.pair(index)
+                                    .is_some_and(|(from, to)| from.0 == value && to.0 == value)
+                            })
+                })
+            })
+    })
+}
+
 /// `avar::subset` for a plan that only pins axes at their defaults.
 pub(crate) fn subset(plan: &Plan, src: &[u8]) -> Result<Vec<u8>, SubsetError> {
     let avar = Avar::new(src).map_err(|_| SubsetError::Malformed { tag: TAG })?;
