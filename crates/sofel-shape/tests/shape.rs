@@ -207,6 +207,32 @@ fn adr0063_i1_subfont_inherits_only_unset_functions_and_scales_parent_advance() 
 }
 
 #[test]
+fn adr0063_i1_vertical_origin_is_computed_at_parent_scale() {
+    let data = make_font(false, vec![]);
+    let font = Font::new(&data, 0).unwrap();
+    let instance = font.default_instance();
+    let root = SubFont::new(Scale::unscaled(&font));
+    let mut child = root.child();
+    child.set_scale(Scale::new(
+        HbScale::new(2000, 1000, font.hb_units_per_em()),
+        0,
+        0,
+    ));
+    let plan = ShapePlan::new(instance, props(Direction::Ttb), &[]);
+    let shape_a = |font: &SubFont| {
+        let mut b = UnicodeBuffer::new();
+        b.push_utf8(b"a", 0, None);
+        shape_with_subfont(instance, font, &plan, b).glyph_positions()[0]
+    };
+    let plain = shape_a(&child);
+    assert_eq!(plain.x_offset, -510);
+    child.set_synthetic_bold(0., 0.1, false);
+    let bold = shape_a(&child);
+    assert_eq!(bold.y_advance, plain.y_advance + 100);
+    assert_eq!(bold.y_offset, plain.y_offset - 100);
+}
+
+#[test]
 fn adr0063_i1_unavailable_origin_uses_the_other_direction_for_one_batch() {
     let data = make_font(false, vec![]);
     let font = Font::new(&data, 0).unwrap();
