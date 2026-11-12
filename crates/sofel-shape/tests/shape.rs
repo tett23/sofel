@@ -907,12 +907,17 @@ fn adr0060_i1_kerx6_word_width_and_tuple_offsets() {
     }
 }
 
-#[test]
-fn adr0060_i1_i2_unknown_kerx_does_not_hide_valid_pair() {
+fn kerx_ab_pair() -> Vec<u8> {
     let mut pair = vec![0; 28];
     pair[..4].copy_from_slice(&34u32.to_be_bytes());
     pair[15] = 1;
     pair.extend_from_slice(&[0, 1, 0, 2, 0xff, 0xd8]);
+    pair
+}
+
+#[test]
+fn adr0060_i1_i2_unknown_kerx_does_not_hide_valid_pair() {
+    let pair = kerx_ab_pair();
     for length in [11, 12, 13] {
         let mut unknown = [0; 12];
         unknown[3] = length;
@@ -935,5 +940,25 @@ fn adr0060_i1_i2_unknown_kerx_does_not_hide_valid_pair() {
                 "{length} {first}"
             );
         }
+    }
+}
+
+#[test]
+fn adr0060_i2_kerx_v3_requires_valid_glyph_coverage() {
+    let mut table = vec![0, 3, 0, 0, 0, 0, 0, 1];
+    let pair = kerx_ab_pair();
+    table.extend_from_slice(&pair);
+    for (coverage, offset) in [
+        (&[][..], 0),
+        (&[0, 0, 0], 0),
+        (&[0, 0, 0, 0], -20),
+        (&[255; 4], -20),
+        (&[0, 0, 0, 4], 0),
+    ] {
+        let mut kerx = table.clone();
+        kerx.extend_from_slice(coverage);
+        let data = make_font(false, vec![(b"kerx", kerx)]);
+        let glyphs = run(&data, "ab", Run::default());
+        assert_eq!(glyphs.glyph_positions()[1].x_offset, offset, "{coverage:?}");
     }
 }

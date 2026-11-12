@@ -90,7 +90,8 @@ pub(crate) fn read<'a>(
     ankr: Option<&'a [u8]>,
     glyphs: u32,
 ) -> Option<Vec<Subtable<'a>>> {
-    if be::u16_at(data, 0)? < 2 {
+    let version = be::u16_at(data, 0)?;
+    if version < 2 {
         return None;
     }
     let n = be::u32_at(data, 4)?;
@@ -160,9 +161,10 @@ pub(crate) fn read<'a>(
             data: current,
             action,
         });
-        if i.saturating_add(1) < n {
-            tail = tail.get(length..)?;
-        }
+        tail = tail.get(length..)?;
+    }
+    if version >= 3 {
+        super::glyph_coverage(tail, n, glyphs)?;
     }
     Some(result)
 }
