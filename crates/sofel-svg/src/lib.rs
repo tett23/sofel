@@ -2,10 +2,13 @@
 #![no_std]
 
 extern crate alloc;
+mod tree;
+mod xml;
 use alloc::borrow::Cow;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use sofel_geom::{Pen, Point};
+pub use tree::parse_glyph;
 
 /// Reads an SVG document, borrowing plain bytes or expanding a gzip member.
 ///
@@ -179,7 +182,7 @@ fn attributes(tag: &str) -> Vec<(&str, &str)> {
     out
 }
 
-fn attr<'a>(attrs: &'a [(&str, &'a str)], name: &str) -> Option<&'a str> {
+fn attr<'a>(attrs: &[(&str, &'a str)], name: &str) -> Option<&'a str> {
     attrs
         .iter()
         .find(|(key, _)| *key == name)
@@ -223,6 +226,8 @@ fn color(value: &str) -> Option<[u8; 3]> {
     match value {
         "gold" => Some([255, 215, 0]),
         "red" => Some([255, 0, 0]),
+        "black" => Some([0, 0, 0]),
+        "blue" => Some([0, 0, 255]),
         "white" => Some([255, 255, 255]),
         "green" => Some([0, 128, 0]),
         "darkblue" => Some([0, 0, 139]),
@@ -273,112 +278,8 @@ fn gradient(kind: &str, attrs: &[(&str, &str)]) -> Gradient {
 ///
 /// # Errors
 /// Returns [`ParseError`] if the document is not UTF-8 or a tag is unterminated.
-#[allow(
-    clippy::indexing_slicing,
-    clippy::arithmetic_side_effects,
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss
-)] // Bounded XML indices and clamped alpha.
 pub fn parse_shapes(data: &[u8], glyph: u32) -> Result<Scene, ParseError> {
-    let xml = core::str::from_utf8(data).map_err(|_| ParseError)?;
-    let mut scene = Scene::default();
-    let mut at = 0;
-    let mut selected = false;
-    let mut group_transform = IDENTITY;
-    let wanted = alloc::format!("glyph{glyph}");
-    let mut current_gradient = None;
-    while let Some(start) = xml[at..].find('<').map(|p| at + p) {
-        let mut end = start + 1;
-        let mut quote = None;
-        while end < xml.len() {
-            let b = xml.as_bytes()[end];
-            if quote == Some(b) {
-                quote = None;
-            } else if quote.is_none() && (b == b'\'' || b == b'"') {
-                quote = Some(b);
-            } else if quote.is_none() && b == b'>' {
-                break;
-            }
-            end += 1;
-        }
-        if end == xml.len() {
-            return Err(ParseError);
-        }
-        let tag = xml[start + 1..end].trim();
-        at = end + 1;
-        if tag.starts_with("/linearGradient") || tag.starts_with("/radialGradient") {
-            current_gradient = None;
-            continue;
-        }
-        if tag.starts_with("/g") {
-            selected = false;
-            group_transform = IDENTITY;
-            continue;
-        }
-        if tag.starts_with('!') || tag.starts_with('?') || tag.starts_with('/') {
-            continue;
-        }
-        let name = tag
-            .split(|c: char| c.is_ascii_whitespace() || c == '/')
-            .next()
-            .unwrap_or("");
-        let attrs = attributes(tag);
-        match name {
-            "g" => {
-                selected = attr(&attrs, "id") == Some(wanted.as_str());
-                group_transform = transform(attr(&attrs, "transform"));
-            }
-            "linearGradient" | "radialGradient" => {
-                scene.gradients.push(gradient(name, &attrs));
-                current_gradient = Some(scene.gradients.len() - 1);
-            }
-            "stop" => {
-                if let Some(g) = current_gradient.and_then(|i| scene.gradients.get_mut(i)) {
-                    let rgb = attr(&attrs, "stop-color")
-                        .and_then(color)
-                        .unwrap_or([0, 0, 0]);
-                    let alpha = (number(attr(&attrs, "stop-opacity"), 1.0).clamp(0.0, 1.0) * 255.0
-                        + 0.5) as u8;
-                    g.stops.push(Stop {
-                        offset: number(attr(&attrs, "offset"), 0.0),
-                        rgba: [rgb[0], rgb[1], rgb[2], alpha],
-                    });
-                }
-            }
-            "rect" | "circle" if selected => {
-                let Some(id) = attr(&attrs, "fill")
-                    .and_then(|v| v.strip_prefix("url(#"))
-                    .and_then(|v| v.strip_suffix(')'))
-                else {
-                    continue;
-                };
-                let Some(index) = scene.gradients.iter().position(|g| g.id == id) else {
-                    continue;
-                };
-                let kind = if name == "rect" {
-                    ShapeKind::Rect {
-                        x: number(attr(&attrs, "x"), 0.0),
-                        y: number(attr(&attrs, "y"), 0.0),
-                        width: number(attr(&attrs, "width"), 0.0),
-                        height: number(attr(&attrs, "height"), 0.0),
-                    }
-                } else {
-                    ShapeKind::Circle {
-                        cx: number(attr(&attrs, "cx"), 0.0),
-                        cy: number(attr(&attrs, "cy"), 0.0),
-                        r: number(attr(&attrs, "r"), 0.0),
-                    }
-                };
-                scene.shapes.push(Shape {
-                    kind,
-                    gradient: index,
-                    transform: group_transform,
-                });
-            }
-            _ => {}
-        }
-    }
-    Ok(scene)
+    Ok(tree::parse(data, glyph, None, [0, 0, 0, 255])?.scene)
 }
 
 fn map(t: [f32; 6], x: f32, y: f32) -> (f32, f32) {

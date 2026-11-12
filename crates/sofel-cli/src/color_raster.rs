@@ -2,11 +2,12 @@
 
 use sofel_font::geom::{Brush, CompositeMode, Image, ImageFormat, Painter, Rect, Transform};
 use sofel_raster::{BgraImage, FillRule, Rasterizer, RenderOptions, blend_sampled};
-use sofel_svg::{Scene, parse_shapes};
+use sofel_svg::{Scene, parse_glyph};
 
 /// A painter that accepts the OT-SVG image for one glyph.
 pub struct SvgImagePainter<'a> {
     glyph: u32,
+    foreground: [u8; 4],
     ppem: u16,
     upem: u16,
     raster: &'a mut Rasterizer,
@@ -24,11 +25,19 @@ impl<'a> SvgImagePainter<'a> {
     ) -> Self {
         Self {
             glyph,
+            foreground: [0, 0, 0, 255],
             ppem,
             upem,
             raster,
             image,
         }
+    }
+}
+
+impl SvgImagePainter<'_> {
+    /// Set the foreground supplied by the font's drawing context.
+    pub fn set_foreground(&mut self, color: sofel_font::geom::Color) {
+        self.foreground = [color.r, color.g, color.b, color.a];
     }
 }
 
@@ -43,10 +52,10 @@ impl Painter for SvgImagePainter<'_> {
         if image.format != (ImageFormat::Svg { gzip: false }) {
             return false;
         }
-        let Ok(scene) = parse_shapes(image.data, self.glyph) else {
+        let Ok(scene) = parse_glyph(image.data, self.glyph, self.upem, self.foreground) else {
             return false;
         };
-        render_scene(&scene, self.ppem, self.upem, self.raster, self.image)
+        render_glyph_scene(&scene, self.ppem, self.upem, self.raster, self.image)
     }
     fn push_group(&mut self, _mode: CompositeMode) {}
     fn pop_group(&mut self, _mode: CompositeMode) {}
