@@ -271,3 +271,44 @@ mod turning_tests {
         assert_eq!(crossings, [(1, 38), (2, 128), (1, 219), (0, 256)]);
     }
 }
+
+#[cfg(test)]
+mod span_tests {
+    use super::paint_span;
+
+    #[test]
+    fn adr0064_i2_mono_spans_clip_pack_and_preserve_existing_ink() {
+        for (width, expected) in [(7usize, &[0xfe][..]), (8, &[0xff]), (9, &[0xff, 0x80])] {
+            let mut row = alloc::vec![0; width.div_ceil(8)];
+            paint_span(&mut row, width, -64, 640, 64);
+            assert_eq!(row, expected);
+        }
+        let mut row = [0x80, 1, 0];
+        paint_span(&mut row, 24, 3 * 4096 + 1, 18 * 4096 - 1, 4096);
+        assert_eq!(row, [0x8f, 0xff, 0xc0]);
+        paint_span(&mut row, 24, 1, 63, 64);
+        assert_eq!(row, [0x8f, 0xff, 0xc0]);
+    }
+}
+
+// Vertical_Sweep_Span. The interval includes both pixel centres and the
+// last partial byte is clipped to the logical width.
+fn paint_span(row: &mut [u8], width: usize, left: i64, right: i64, precision: i64) {
+    let first = ((left + precision - 1).div_euclid(precision)).max(0);
+    let last = right.div_euclid(precision).min(width as i64 - 1);
+    if first > last {
+        return;
+    }
+    let first = first as usize;
+    let last = last as usize;
+    let bytes = &mut row[first / 8..=last / 8];
+    let start_mask = u8::MAX >> (first % 8);
+    let end_mask = u8::MAX << (7 - last % 8);
+    if let [byte] = bytes {
+        *byte |= start_mask & end_mask;
+    } else if let [start, middle @ .., end] = bytes {
+        *start |= start_mask;
+        middle.fill(u8::MAX);
+        *end |= end_mask;
+    }
+}
