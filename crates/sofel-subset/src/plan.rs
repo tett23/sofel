@@ -365,7 +365,7 @@ impl Plan {
             false
         };
         if !norm.user.is_empty() {
-            if norm.avar2 && !identity_avar2 {
+            if norm.avar2 && !norm.all_axes_pinned && !identity_avar2 {
                 return Err(SubsetError::Unsupported {
                     tag: Tag::new(b"avar"),
                     reason: "pinning the axes of avar version 2 (deferred by ADR 0022)",
@@ -391,6 +391,7 @@ impl Plan {
             let varc_safe = !varc_retained || varc_unrelated_axis_change;
             let simple_avar = (single_pin && drop.contains(Tag::new(b"avar").to_u32()))
                 || identity_avar2
+                || (norm.avar2 && norm.all_axes_pinned)
                 || font.table(Tag::new(b"avar")).is_none_or(|data| {
                     sofel_font::read::avar::Avar::new(data).is_ok_and(|table| {
                         table.major_version() == 1

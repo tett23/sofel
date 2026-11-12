@@ -8,10 +8,6 @@ avar2_full_instance.tests/RobotoDelta-Roman-VF-subset.default.all.opsz=70,wght=6
 avar2_full_instance.tests/RobotoDelta-Roman-VF-subset.default.all.opsz=70,wght=600,wdth=120,slnt=-6,GRAD=-150,XTSP=50.iup_optimize.ttf+prepared:bytes  # deferred:iup
 avar2_full_instance.tests/RobotoDelta-Roman-VF-subset.default.all.opsz=70,wght=600,wdth=120,slnt=-6,GRAD=-150,XTSP=50.iup_optimize.ttf:validate  # deferred:iup
 avar2_full_instance.tests/RobotoDelta-Roman-VF-subset.default.all.opsz=70,wght=600,wdth=120,slnt=-6,GRAD=-150,XTSP=50.iup_optimize.ttf+prepared:validate  # deferred:iup
-avar2_full_instance.tests/RobotoDelta-Roman-VF-subset.default.all.opsz=70,wght=600,wdth=120,slnt=-6,GRAD=-150,XTSP=50.ttf:bytes  # deferred:instance
-avar2_full_instance.tests/RobotoDelta-Roman-VF-subset.default.all.opsz=70,wght=600,wdth=120,slnt=-6,GRAD=-150,XTSP=50.ttf+prepared:bytes  # deferred:instance
-avar2_full_instance.tests/RobotoDelta-Roman-VF-subset.default.all.opsz=70,wght=600,wdth=120,slnt=-6,GRAD=-150,XTSP=50.ttf:validate  # deferred:instance
-avar2_full_instance.tests/RobotoDelta-Roman-VF-subset.default.all.opsz=70,wght=600,wdth=120,slnt=-6,GRAD=-150,XTSP=50.ttf+prepared:validate  # deferred:instance
 avar2_null_varstore_partial_instance.tests/RobotoDelta-NullVarStore-VF.default.all.wght=300-400-600.iup_optimize.ttf:bytes  # deferred:iup
 avar2_null_varstore_partial_instance.tests/RobotoDelta-NullVarStore-VF.default.all.wght=300-400-600.iup_optimize.ttf+prepared:bytes  # deferred:iup
 avar2_null_varstore_partial_instance.tests/RobotoDelta-NullVarStore-VF.default.all.wght=300-400-600.iup_optimize.ttf:validate  # deferred:iup
