@@ -164,6 +164,9 @@ impl Rounding {
 
 #[derive(Clone)]
 struct Interpreter {
+    projection: [i64; 2],
+    dual_projection: [i64; 2],
+    freedom: [i64; 2],
     functions: alloc::collections::BTreeMap<u16, alloc::rc::Rc<[u8]>>,
     rounding: Rounding,
     storage: alloc::vec::Vec<i64>,
@@ -174,6 +177,9 @@ struct Interpreter {
 impl Interpreter {
     fn new(max_storage: u16, varied_cvt: &[i32], scale: i64) -> Self {
         Self {
+            projection: [16384, 0],
+            dual_projection: [16384, 0],
+            freedom: [16384, 0],
             functions: alloc::collections::BTreeMap::new(),
             rounding: Rounding::Grid,
             scale,
@@ -206,6 +212,27 @@ impl Interpreter {
             *remaining = remaining.checked_sub(1).ok_or(Error::ExecutionLimit)?;
             let instruction = next(&mut code)?;
             match instruction.opcode {
+                op @ 0x00..=0x05 => {
+                    let axis = if op & 1 == 0 { [0, 16384] } else { [16384, 0] };
+                    if op < 4 {
+                        self.projection = axis;
+                        self.dual_projection = axis;
+                    }
+                    if op & 2 == 0 {
+                        self.freedom = axis;
+                    }
+                }
+                op @ (0x0c | 0x0d) => {
+                    if max_stack.saturating_sub(stack.len()) < 2 {
+                        return Err(Error::StackOverflow);
+                    }
+                    stack.extend(if op == 0x0c {
+                        self.projection
+                    } else {
+                        self.freedom
+                    });
+                }
+                0x0e => self.freedom = self.projection,
                 0x2c => {
                     let id = u16::try_from(stack.pop().ok_or(Error::StackUnderflow)?)
                         .map_err(|_| Error::InvalidReference)?;
@@ -546,4 +573,16 @@ fn adr0064_i1_font_functions_share_the_operand_stack_and_bound_recursion() {
         vm.execute(&[0xb0, 8, 0x2b], &mut stack, 8),
         Err(Error::StackOverflow)
     );
+}
+
+#[test]
+fn adr0064_i1_axis_vectors_can_be_set_independently() {
+    let mut stack = alloc::vec::Vec::new();
+    run(
+        &[0x00, 0x03, 0x0c, 0x0d, 0x0e, 0x0d, 0x04, 0x0d],
+        &mut stack,
+        8,
+    )
+    .unwrap();
+    assert_eq!(stack, [16384, 0, 0, 16384, 16384, 0, 0, 16384]);
 }
