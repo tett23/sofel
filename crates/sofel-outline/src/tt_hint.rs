@@ -218,6 +218,7 @@ struct HintPoint {
 
 #[derive(Clone)]
 struct Interpreter {
+    minimum_distance: i64,
     backward_compatibility: u8,
     composite: bool,
     loop_count: u16,
@@ -260,6 +261,7 @@ impl Interpreter {
             loop_count: 1,
             backward_compatibility: 0,
             composite: false,
+            minimum_distance: 64,
             delta_base: 9,
             delta_shift: 3,
             zones: [1; 3],
@@ -281,6 +283,57 @@ impl Interpreter {
                 .map(|v| sofel_font::read::cff::ft::mul_fix(i64::from(v / 64), scale))
                 .collect(),
             storage: alloc::vec![0; usize::from(max_storage)],
+        }
+    }
+
+    fn move_direct_relative(&mut self, op: u8, index: u16) {
+        let base_index = self.reference[0];
+        self.reference[1] = base_index;
+        self.reference[2] = index;
+        if op & 16 != 0 {
+            self.reference[0] = index;
+        }
+        let [base_zone, target_zone, _] = self.zones.map(usize::from);
+        let Some(base) = self.points[base_zone].get(usize::from(base_index)).copied() else {
+            return;
+        };
+        let Some(point) = self.points[target_zone].get_mut(usize::from(index)) else {
+            return;
+        };
+        let original_axis = usize::from(self.dual_projection[0] == 0);
+        let mut original = if base_zone == 0 || target_zone == 0 {
+            point.original[original_axis].wrapping_sub(base.original[original_axis])
+        } else {
+            sofel_font::read::cff::ft::mul_fix(
+                point.unscaled[original_axis].wrapping_sub(base.unscaled[original_axis]),
+                self.scale,
+            )
+        };
+        if self.single_width_cutin > 0
+            && original.abs_diff(self.single_width) < self.single_width_cutin as u64
+        {
+            original = if original >= 0 {
+                self.single_width
+            } else {
+                self.single_width.wrapping_neg()
+            };
+        }
+        let mut distance = if op & 4 != 0 {
+            self.rounding.apply(original)
+        } else {
+            original
+        };
+        if op & 8 != 0 {
+            distance = if original >= 0 {
+                distance.max(self.minimum_distance)
+            } else {
+                distance.min(self.minimum_distance.wrapping_neg())
+            };
+        }
+        let axis = usize::from(self.projection[0] == 0);
+        if self.freedom[axis] != 0 {
+            point.current[axis] = base.current[axis].wrapping_add(distance);
+            point.touched[axis] = true;
         }
     }
 
@@ -540,6 +593,11 @@ impl Interpreter {
                             point.original = point.current;
                         }
                     }
+                }
+                0x1a => self.minimum_distance = stack.pop().ok_or(Error::StackUnderflow)?,
+                op @ 0xc0..=0xdf => {
+                    let index = stack.pop().ok_or(Error::StackUnderflow)? as u16;
+                    self.move_direct_relative(op, index);
                 }
                 0x85 => {
                     let flags = stack.pop().ok_or(Error::StackUnderflow)?;
@@ -1146,5 +1204,26 @@ fn adr0064_i1_deltap_selects_zone_point_and_obeys_compatibility() {
                 .unwrap();
             assert_eq!(vm.points[1][0].current, [0, expected]);
         }
+    }
+}
+
+#[test]
+fn adr0064_i1_mdrp_measures_before_scaling_and_updates_references() {
+    for (opcode, expected, rp0) in [(0xc0, 18, 0), (0xc4, 10, 0), (0xd8, 74, 1)] {
+        let mut vm = Interpreter::new(0, &[], 32768);
+        vm.points[1].push(HintPoint {
+            unscaled: [1, 0],
+            current: [10, 0],
+            ..Default::default()
+        });
+        vm.points[1].push(HintPoint {
+            unscaled: [16, 0],
+            current: [100, 0],
+            ..Default::default()
+        });
+        vm.execute(&[0xb0, 1, opcode], &mut alloc::vec::Vec::new(), 1)
+            .unwrap();
+        assert_eq!(vm.points[1][1].current, [expected, 0]);
+        assert_eq!(vm.reference, [rp0, 0, 1]);
     }
 }
