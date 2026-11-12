@@ -928,6 +928,18 @@ impl Interpreter {
                         self.reference[0] = index;
                     }
                 }
+                0x29 => {
+                    let index = stack.pop().ok_or(Error::StackUnderflow)? as u16;
+                    if let Some(point) =
+                        self.points[usize::from(self.zones[0])].get_mut(usize::from(index))
+                    {
+                        for (touched, freedom) in point.touched.iter_mut().zip(self.freedom) {
+                            if freedom != 0 {
+                                *touched = false;
+                            }
+                        }
+                    }
+                }
                 op @ (0x2e | 0x2f) => {
                     let index = stack.pop().ok_or(Error::StackUnderflow)? as u16;
                     let zone = usize::from(self.zones[0]);

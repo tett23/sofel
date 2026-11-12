@@ -792,6 +792,23 @@ fn adr0064_i1_flip_instructions_update_outline_curve_tags() {
     let code = [
         0xb1, 1, 2, 0x81, 0xb1, 2, 3, 0x82, 0xb0, 2, 0x17, 0xb1, 0, 3, 0x80,
     ];
+    let scratch = hinted_square(&code);
+    // FreeType v35, 16 ppem, FT_LOAD_TARGET_MONO | FT_LOAD_NO_AUTOHINT.
+    assert_eq!(scratch.point_tags(), &[4, 1, 0, 1]);
+    assert_eq!(scratch.contour_ends(), &[3]);
+}
+
+#[test]
+fn adr0064_i1_untouch_only_clears_the_freedom_vector_axes() {
+    // Set the same control point in x and y, then untouch it along y.
+    let scratch = hinted_square(&[
+        0x01, 0xb1, 1, 64, 0x48, 0x00, 0xb1, 1, 128, 0x48, 0xb0, 1, 0x29,
+    ]);
+    assert_eq!(scratch.point_tags(), &[5, 8, 0, 1]);
+    assert_eq!(scratch.points()[1], Point { x: 64, y: 128 });
+}
+
+fn hinted_square(code: &[u8]) -> Scratch {
     let glyph = simple_glyph(
         &[&[
             Pt::On(0, 0),
@@ -800,7 +817,7 @@ fn adr0064_i1_flip_instructions_update_outline_curve_tags() {
             Pt::On(1000, 0),
         ]],
         false,
-        &code,
+        code,
     );
     let data = glyph_font(&[vec![], glyph], true, false);
     let font = Font::new(&data, 0).unwrap();
@@ -808,7 +825,5 @@ fn adr0064_i1_flip_instructions_update_outline_curve_tags() {
     sofel_outline::Outlines::new(font.default_instance())
         .load_truetype_mono(GlyphId(1), 16, &mut scratch)
         .unwrap();
-    // FreeType v35, 16 ppem, FT_LOAD_TARGET_MONO | FT_LOAD_NO_AUTOHINT.
-    assert_eq!(scratch.point_tags(), &[4, 1, 0, 1]);
-    assert_eq!(scratch.contour_ends(), &[3]);
+    scratch
 }
