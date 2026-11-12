@@ -217,6 +217,7 @@ jobs:
             sudo apt-get install -y poppler-utils
           fi
           cargo test --release -p sofel-conformance --test vector_page -- --ignored
+          sh tools/vector-reference/colrv0.sh
       - name: Compare WOFF and WOFF2 tables with FreeType
         if: runner.os == 'Linux'
         run: |

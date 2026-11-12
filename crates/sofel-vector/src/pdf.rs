@@ -67,7 +67,7 @@ impl PdfPage {
                 });
             let _ = writeln!(self.stream, "/GS{idx} gs");
         }
-        let [r, g, b] = [color.r, color.g, color.b].map(|v| f32::from(v) / 255.0);
+        let [r, g, b] = [color.r, color.g, color.b].map(|v| number(f32::from(v) / 255.0, 4));
         let _ = writeln!(self.stream, "{r} {g} {b} rg");
     }
     /// Fills a path in the given color, transform and composite mode.
@@ -145,6 +145,24 @@ pub struct PdfPen<'a> {
     current: PointF,
 }
 
+fn number(v: f32, precision: usize) -> String {
+    if !v.is_finite() {
+        return String::from("0");
+    }
+    let mut value = format!("{v:.precision$}");
+    while value.ends_with('0') {
+        value.pop();
+    }
+    if value.ends_with('.') {
+        value.pop();
+    }
+    if value == "-0" {
+        String::from("0")
+    } else {
+        value
+    }
+}
+
 impl PdfPen<'_> {
     #[allow(clippy::cast_precision_loss)]
     fn map(&self, p: Point) -> PointF {
@@ -154,7 +172,12 @@ impl PdfPen<'_> {
         let _ = writeln!(
             self.stream,
             "{} {} {} {} {} {} c",
-            a.x, a.y, b.x, b.y, p.x, p.y
+            number(a.x, 2),
+            number(a.y, 2),
+            number(b.x, 2),
+            number(b.y, 2),
+            number(p.x, 2),
+            number(p.y, 2)
         );
         self.current = p;
     }
@@ -163,23 +186,21 @@ impl PdfPen<'_> {
 impl Pen for PdfPen<'_> {
     fn move_to(&mut self, p: Point) {
         let p = self.map(p);
-        let _ = writeln!(self.stream, "{} {} m", p.x, p.y);
+        let _ = writeln!(self.stream, "{} {} m", number(p.x, 2), number(p.y, 2));
         self.current = p;
     }
     fn line_to(&mut self, p: Point) {
         let p = self.map(p);
-        let _ = writeln!(self.stream, "{} {} l", p.x, p.y);
+        let _ = writeln!(self.stream, "{} {} l", number(p.x, 2), number(p.y, 2));
         self.current = p;
     }
     fn quad_to(&mut self, c: Point, p: Point) {
         let c = self.map(c);
         let p = self.map(p);
-        let control = |v: PointF| {
-            PointF::new(
-                v.x + (c.x - v.x) * (2.0 / 3.0),
-                v.y + (c.y - v.y) * (2.0 / 3.0),
-            )
-        };
+        #[allow(clippy::cast_possible_truncation)]
+        let interpolate =
+            |v: f32, c: f32| (f64::from(v) + (f64::from(c) - f64::from(v)) * (2.0 / 3.0)) as f32;
+        let control = |v: PointF| PointF::new(interpolate(v.x, c.x), interpolate(v.y, c.y));
         self.cubic(control(self.current), control(p), p);
     }
     fn cubic_to(&mut self, a: Point, b: Point, p: Point) {
