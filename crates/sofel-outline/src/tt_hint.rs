@@ -209,6 +209,8 @@ impl EngineInfo {
 
 #[derive(Clone)]
 struct Interpreter {
+    scan_control: bool,
+    scan_type: u16,
     ppem: [u16; 2],
     point_size: i64,
     engine: EngineInfo,
@@ -233,6 +235,8 @@ impl Interpreter {
                 variation: false,
                 symmetric_smoothing: false,
             },
+            scan_control: false,
+            scan_type: 0,
             ppem: [0; 2],
             point_size: 0,
             projection: [16384, 0],
@@ -300,6 +304,34 @@ impl Interpreter {
                         i64::from(self.ppem[0])
                     };
                     push(stack, value, max_stack)?;
+                }
+                0x85 => {
+                    let flags = stack.pop().ok_or(Error::StackUnderflow)?;
+                    let limit = flags & 255;
+                    let ppem = i64::from(self.ppem[0].max(self.ppem[1]));
+                    self.scan_control = match limit {
+                        0 => false,
+                        255 => true,
+                        _ if (flags & 0x800 != 0 && ppem > limit)
+                            || (flags & 0x1000 != 0 && self.engine.rotated)
+                            || (flags & 0x2000 != 0 && self.engine.stretched) =>
+                        {
+                            false
+                        }
+                        _ if (flags & 0x100 != 0 && ppem <= limit)
+                            || (flags & 0x200 != 0 && self.engine.rotated)
+                            || (flags & 0x400 != 0 && self.engine.stretched) =>
+                        {
+                            true
+                        }
+                        _ => self.scan_control,
+                    };
+                }
+                0x8d => {
+                    let mode = stack.pop().ok_or(Error::StackUnderflow)?;
+                    if mode >= 0 {
+                        self.scan_type = mode as u16;
+                    }
                 }
                 0x88 => {
                     let selector = stack.last_mut().ok_or(Error::StackUnderflow)?;
@@ -703,4 +735,26 @@ fn adr0064_i1_projected_ppem_and_point_size_use_driver_metrics() {
     vm.engine.version = 35;
     vm.execute(&[0x4c], &mut stack, 4).unwrap();
     assert_eq!(stack, [12, 18, 576, 18]);
+}
+
+#[test]
+fn adr0064_i1_scan_control_prioritizes_disable_and_remembers_unmatched_settings() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    vm.ppem = [12, 18];
+    vm.engine.rotated = true;
+    for (selector, expected) in [
+        (0x111, false),
+        (0x112, true),
+        (1, true),
+        (0x1201, false),
+        (0x20ff, true),
+        (0x200, false),
+    ] {
+        vm.execute(&[0x85], &mut alloc::vec![selector], 1).unwrap();
+        assert_eq!(vm.scan_control, expected);
+    }
+    for value in [0x10005, -1] {
+        vm.execute(&[0x8d], &mut alloc::vec![value], 1).unwrap();
+        assert_eq!(vm.scan_type, 5);
+    }
 }
