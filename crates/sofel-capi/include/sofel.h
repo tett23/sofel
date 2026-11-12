@@ -1631,6 +1631,17 @@ typedef struct sofel_outline_scratch sofel_outline_scratch_t;
 sofel_outline_scratch_t *sofel_outline_scratch_create(void);
 
 /*
+ * Borrows the tags and inclusive contour ends of the last loaded outline.
+ * The arrays remain valid until the scratch is modified or destroyed.
+ * Rust: sofel_outline::Scratch::point_tags, sofel_outline::Scratch::contour_ends
+ * HarfBuzz: none
+ * FreeType: FT_Outline.tags, FT_Outline.contours
+ */
+int32_t sofel_outline_tags_and_contours(const sofel_outline_scratch_t *scratch,
+                                        const uint8_t **tags, size_t *num_points,
+                                        const size_t **ends, size_t *num_contours);
+
+/*
  * Frees a work area. Does nothing for NULL.
  *
  * Rust: none
@@ -1684,6 +1695,26 @@ int32_t sofel_outline_load(const sofel_font_t *font, const sofel_location_t *loc
 int32_t sofel_outline_load_truetype_mono(const sofel_font_t *font, const sofel_location_t *location,
                                          uint32_t glyph, uint16_t ppem, sofel_outline_scratch_t *scratch,
                                          int32_t *cbox, uint32_t *overlap);
+
+enum {
+  SOFEL_HINT_TARGET_NORMAL = 0,
+  SOFEL_HINT_TARGET_LIGHT = 1,
+  SOFEL_HINT_TARGET_MONO = 2,
+  SOFEL_HINT_TARGET_LCD = 3,
+  SOFEL_HINT_TARGET_LCD_V = 4
+};
+
+/*
+ * Loads a TrueType outline with the v35 interpreter and one SOFEL_HINT_TARGET_*.
+ * Rendering the loaded outline is a separate operation.
+ * Rust: sofel_outline::Outlines::load_truetype_v35
+ * HarfBuzz: none
+ * FreeType: FT_Load_Glyph
+ */
+int32_t sofel_outline_load_truetype_v35(const sofel_font_t *font, const sofel_location_t *location,
+                                        uint32_t glyph, uint16_t ppem, uint32_t target,
+                                        sofel_outline_scratch_t *scratch, int32_t *cbox,
+                                        uint32_t *overlap);
 
 /*
  * Sends the outline last loaded into `scratch` to the pen, after moving
