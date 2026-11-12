@@ -1,3 +1,7 @@
+//! Shared 16.16 normalization. Inputs are represented as magnitudes before
+//! normalization, and the Newton iteration reproduces FreeType's wrapping products.
+#![allow(clippy::arithmetic_side_effects, clippy::cast_possible_wrap)]
+
 // FT_Vector_NormLen's reciprocal-length iteration. Intermediate products
 // intentionally wrap in 32 bits, as in the pinned FreeType implementation.
 pub(super) fn unit_vector(x: i32, y: i32) -> (i32, i32) {
