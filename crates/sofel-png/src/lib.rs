@@ -57,6 +57,33 @@ pub fn decode_for_paint(input: &[u8], max_pixels: usize) -> Result<Image> {
 }
 
 fn decode_with(input: &[u8], max_pixels: usize, premultiply: fn(u8, u8) -> u8) -> Result<Image> {
+    let mut image = decode_rgba(input, max_pixels)?;
+    for pixel in image.rgba.as_chunks_mut::<4>().0 {
+        let [r, g, b, a] = *pixel;
+        *pixel = [premultiply(b, a), premultiply(g, a), premultiply(r, a), a];
+    }
+    Ok(Image {
+        width: image.width,
+        height: image.height,
+        bgra: image.rgba,
+    })
+}
+
+/// A decoded PNG with unassociated color channels, suitable for a PDF soft mask.
+pub struct RgbaImage {
+    /// Width in pixels.
+    pub width: u32,
+    /// Height in pixels.
+    pub height: u32,
+    /// Top-down RGBA samples without row padding.
+    pub rgba: Vec<u8>,
+}
+
+/// Decodes a static PNG while preserving straight RGB values even at low alpha.
+///
+/// # Errors
+/// Returns an error for invalid PNG data or dimensions exceeding the given limit.
+pub fn decode_rgba(input: &[u8], max_pixels: usize) -> Result<RgbaImage> {
     let mut rest = input
         .strip_prefix(b"\x89PNG\r\n\x1a\n")
         .ok_or(Error::Invalid)?;
@@ -91,9 +118,7 @@ fn decode_with(input: &[u8], max_pixels: usize, premultiply: fn(u8, u8) -> u8) -
             ended = true;
         }
         match tag {
-            b"IHDR" if header.is_none() => {
-                header = Some(Header::parse(data, max_pixels, premultiply)?)
-            }
+            b"IHDR" if header.is_none() => header = Some(Header::parse(data, max_pixels)?),
             b"PLTE" if !started && palette.is_none() && transparency.is_none() => {
                 let h = header.as_ref().ok_or(Error::Invalid)?;
                 if matches!(h.color, 0 | 4)
@@ -157,9 +182,9 @@ fn decode_with(input: &[u8], max_pixels: usize, premultiply: fn(u8, u8) -> u8) -
         )?;
         rest = tail;
     }
-    Ok(Image {
+    Ok(RgbaImage {
         width: header.width,
         height: header.height,
-        bgra: out,
+        rgba: out,
     })
 }

@@ -1,4 +1,19 @@
-use crate::Point;
+use crate::{Point, PointF};
+
+/// A drawing command with floating-point coordinates.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum FloatCommand {
+    /// Start a contour.
+    MoveTo(PointF),
+    /// Add a straight segment.
+    LineTo(PointF),
+    /// Add a quadratic Bézier segment.
+    QuadTo(PointF, PointF),
+    /// Add a cubic Bézier segment.
+    CubicTo(PointF, PointF, PointF),
+    /// End a contour.
+    Close,
+}
 
 /// Receives an outline as drawing commands (ADR 0009).
 ///

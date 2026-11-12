@@ -5,13 +5,12 @@ pub(super) struct Header {
     pub height: u32,
     pub depth: u8,
     pub color: u8,
-    premultiply: fn(u8, u8) -> u8,
     channels: usize,
     interlaced: bool,
     pub output_bytes: usize,
 }
 impl Header {
-    pub(super) fn parse(data: &[u8], limit: usize, premultiply: fn(u8, u8) -> u8) -> Result<Self> {
+    pub(super) fn parse(data: &[u8], limit: usize) -> Result<Self> {
         let &[a, b, c, d, e, f, g, h, depth, color, 0, 0, interlace] = data else {
             return Err(Error::Invalid);
         };
@@ -38,7 +37,6 @@ impl Header {
             .ok_or(Error::Limit)?;
         let output_bytes = count.checked_mul(4).ok_or(Error::Limit)?;
         Ok(Self {
-            premultiply,
             width,
             height,
             depth,
@@ -127,9 +125,7 @@ impl Header {
             6 => [to_byte(r), to_byte(g), to_byte(b), to_byte(a)],
             _ => return Err(Error::Invalid),
         };
-        let [r, g, b, a] = rgba;
-        let premul = |c| (self.premultiply)(c, a);
-        Ok([premul(b), premul(g), premul(r), a])
+        Ok(rgba)
     }
 }
 
