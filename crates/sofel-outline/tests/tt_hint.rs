@@ -16,9 +16,9 @@ fn adr0064_i1_native_v35_load_targets_match_freetype() {
         HintTarget::VerticalLcd,
     ] {
         let expected = if target == HintTarget::Mono {
-            0x67c3_ef45_e494_26a6
+            0x574c_9134_3a56_d1c3
         } else {
-            0xd38e_020e_b16e_6420
+            0x93e7_1033_6c3d_97e1
         };
         check_target("Roboto-Regular.abc.ttf", 1..4, expected, target, false);
     }
@@ -26,12 +26,12 @@ fn adr0064_i1_native_v35_load_targets_match_freetype() {
 
 #[test]
 fn adr0064_i1_roboto_mono_points_match_freetype() {
-    check_glyphs("Roboto-Regular.abc.ttf", 1..4, 0x67c3_ef45_e494_26a6);
+    check_glyphs("Roboto-Regular.abc.ttf", 1..4, 0x574c_9134_3a56_d1c3);
 }
 
 #[test]
 fn adr0064_i1_composite_mono_points_match_freetype() {
-    check_glyphs("Roboto-Regular.abcAE.ttf", 7..8, 0xce92_1611_1d00_726f);
+    check_glyphs("Roboto-Regular.abcAE.ttf", 7..8, 0x7ff2_198e_1634_dd43);
 }
 
 fn check_glyphs(name: &str, glyphs: core::ops::Range<u32>, expected: u64) {
@@ -73,7 +73,7 @@ fn check_sizes(
     let outlines = Outlines::new(font.default_instance());
     let mut scratch = Scratch::default();
     // FNV-1a of the size, glyph ID, point count, then x/y/tag
-    // for each point and count/end indices for the contours (little-endian i32).
+    // for each point, horizontal advance, and count/end indices for the contours (little-endian i32).
     let mut hash = 0xcbf2_9ce4_8422_2325u64;
     let mut add = |v: i32| {
         for byte in v.to_le_bytes() {
@@ -84,19 +84,12 @@ fn check_sizes(
     let glyphs = glyphs.unwrap_or(0..font.num_glyphs());
     for ppem in sizes {
         for glyph in glyphs.clone() {
-            let advance = if v40 {
-                Some(
-                    outlines
-                        .load_truetype_v40(GlyphId(glyph), ppem, target, &mut scratch)
-                        .unwrap()
-                        .1,
-                )
+            let (_, advance) = if v40 {
+                outlines.load_truetype_v40(GlyphId(glyph), ppem, target, &mut scratch)
             } else {
-                outlines
-                    .load_truetype_v35(GlyphId(glyph), ppem, target, &mut scratch)
-                    .unwrap();
-                None
-            };
+                outlines.load_truetype_v35_with_advance(GlyphId(glyph), ppem, target, &mut scratch)
+            }
+            .unwrap();
             add(i32::from(ppem));
             add(i32::try_from(glyph).unwrap());
             add(i32::try_from(scratch.points().len()).unwrap());
@@ -106,9 +99,7 @@ fn check_sizes(
                 add(point.y);
                 add(i32::from(tag));
             }
-            if let Some(advance) = advance {
-                add(advance);
-            }
+            add(advance);
             add(i32::try_from(scratch.contour_ends().len()).unwrap());
             for &end in scratch.contour_ends() {
                 add(i32::try_from(end).unwrap());
@@ -151,7 +142,7 @@ fn adr0064_i1_full_roboto_at_16_ppem_matches_freetype_in_every_target() {
         (HintTarget::Lcd, 0x0abe_79a5_0b4c_59d9),
         (HintTarget::VerticalLcd, 0xda26_0ff5_f510_50ea),
     ] {
-        for (v40, hash) in [(false, 0x1252_a6d2_d5b3_af01), (true, v40_hash)] {
+        for (v40, hash) in [(false, 0x740a_d04b_e7d6_0ce1), (true, v40_hash)] {
             check_sizes(
                 "harfbuzz/perf/fonts/Roboto-Regular.ttf".into(),
                 None,

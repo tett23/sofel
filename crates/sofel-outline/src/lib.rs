@@ -516,8 +516,19 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
         target: HintTarget,
         scratch: &mut Scratch,
     ) -> Result<OutlineInfo, OutlineError> {
-        self.load_native_truetype(glyph, ppem, target, scratch, 35)
+        self.load_truetype_v35_with_advance(glyph, ppem, target, scratch)
             .map(|(info, _)| info)
+    }
+
+    /// Loads a native TrueType v35 outline and its grid-fitted horizontal advance in 26.6 pixels.
+    pub fn load_truetype_v35_with_advance(
+        &self,
+        glyph: GlyphId,
+        ppem: u16,
+        target: HintTarget,
+        scratch: &mut Scratch,
+    ) -> Result<(OutlineInfo, i32), OutlineError> {
+        self.load_native_truetype(glyph, ppem, target, scratch, 35)
     }
 
     /// Loads a native TrueType v40 outline and its grid-fitted horizontal advance in 26.6 pixels.
