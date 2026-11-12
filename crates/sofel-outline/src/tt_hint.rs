@@ -331,6 +331,10 @@ impl Interpreter {
                     };
                     push(stack, value, max_stack)?;
                 }
+                op @ 0x10..=0x12 => {
+                    self.reference[usize::from(op - 0x10)] =
+                        stack.pop().ok_or(Error::StackUnderflow)? as u16;
+                }
                 op @ 0x13..=0x16 => {
                     let zone = stack.pop().ok_or(Error::StackUnderflow)? as i32;
                     if matches!(zone, 0 | 1) {
@@ -409,7 +413,9 @@ impl Interpreter {
                         value
                     } else {
                         self.rounding.apply(
-                            if value.abs_diff(current) > self.control_value_cutin as u64 {
+                            if i128::from(value.abs_diff(current))
+                                > i128::from(self.control_value_cutin)
+                            {
                                 current
                             } else {
                                 value
@@ -936,4 +942,12 @@ fn adr0064_i1_miap_sets_original_twilight_coordinates_and_reference_points() {
     assert_eq!(vm.points[0][1].current, [64, 0]);
     assert_eq!(vm.points[0][1].touched, [true, false]);
     assert_eq!(vm.reference, [1, 1, 0]);
+}
+
+#[test]
+fn adr0064_i1_reference_point_registers_take_unsigned_short_indices() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    vm.execute(&[0x10, 0x11, 0x12], &mut alloc::vec![-1, 7, 9], 3)
+        .unwrap();
+    assert_eq!(vm.reference, [9, 7, 65535]);
 }
