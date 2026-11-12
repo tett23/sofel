@@ -26,16 +26,18 @@ fn synthetic_with_condition(records: &[(u16, Vec<u8>)], condition: Option<(i16, 
     let font = Font::new(&data, 0).unwrap();
     let mut maxp = font.table(Tag::new(b"maxp")).unwrap().to_vec();
     let highest = records.iter().map(|(glyph, _)| *glyph).max().unwrap_or(0);
-    let glyph_count = u16::from_be_bytes([maxp[4], maxp[5]]).max(highest + 1);
+    let glyph_count = u16::from_be_bytes([maxp[4], maxp[5]]).max(highest.checked_add(1).unwrap());
     maxp[4..6].copy_from_slice(&glyph_count.to_be_bytes());
     let mut varc = vec![0u8; 24];
     varc[..4].copy_from_slice(&[0, 1, 0, 0]);
     varc[20..24].copy_from_slice(&24u32.to_be_bytes());
     varc.extend_from_slice(&u32::try_from(records.len()).unwrap().to_be_bytes());
-    let end_offset = 1 + records
+    let end_offset = records
         .iter()
-        .map(|(_, record)| record.len())
-        .sum::<usize>();
+        .try_fold(1usize, |offset, (_, record)| {
+            offset.checked_add(record.len())
+        })
+        .unwrap();
     let offset_size = if end_offset <= u8::MAX as usize {
         1
     } else if end_offset <= u16::MAX as usize {
@@ -43,12 +45,13 @@ fn synthetic_with_condition(records: &[(u16, Vec<u8>)], condition: Option<(i16, 
     } else {
         3
     };
-    varc.push(offset_size as u8);
+    varc.push(offset_size);
+    let offset_start = 4usize.checked_sub(usize::from(offset_size)).unwrap();
     let mut offset = 1usize;
-    varc.extend_from_slice(&u32::try_from(offset).unwrap().to_be_bytes()[4 - offset_size..]);
+    varc.extend_from_slice(&u32::try_from(offset).unwrap().to_be_bytes()[offset_start..]);
     for (_, record) in records {
         offset = offset.checked_add(record.len()).unwrap();
-        varc.extend_from_slice(&u32::try_from(offset).unwrap().to_be_bytes()[4 - offset_size..]);
+        varc.extend_from_slice(&u32::try_from(offset).unwrap().to_be_bytes()[offset_start..]);
     }
     for (_, record) in records {
         varc.extend_from_slice(record);
@@ -370,7 +373,12 @@ fn adr0067_i3_shared_edge_budget_at_boundary() {
 fn adr0067_i3_depth_budget_at_boundary() {
     for covered_count in [63u16, 64, 65] {
         let records: Vec<_> = (2..covered_count + 2)
-            .map(|glyph| (glyph, [0, 0, (glyph - 1) as u8].to_vec()))
+            .map(|glyph| {
+                (
+                    glyph,
+                    [0, 0, u8::try_from(glyph.checked_sub(1).unwrap()).unwrap()].to_vec(),
+                )
+            })
             .collect();
         let data = synthetic(&records);
         let font = Font::new(&data, 0).unwrap();
