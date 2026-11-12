@@ -90,7 +90,36 @@ fn skip_block(code: &mut &[u8], stop_at_else: bool) -> Result<(), Error> {
     }
 }
 
+enum Rounding {
+    Grid,
+    HalfGrid,
+    DoubleGrid,
+    Off,
+    Up,
+    Down,
+}
+
+impl Rounding {
+    fn apply(&self, distance: i64) -> i64 {
+        let magnitude = distance.wrapping_abs();
+        let rounded = match self {
+            Self::Grid => magnitude.wrapping_add(32) & !63,
+            Self::HalfGrid => (magnitude & !63).wrapping_add(32),
+            Self::DoubleGrid => magnitude.wrapping_add(16) & !31,
+            Self::Off => return distance,
+            Self::Up => magnitude.wrapping_add(63) & !63,
+            Self::Down => magnitude & !63,
+        };
+        if distance < 0 {
+            -rounded.max(0)
+        } else {
+            rounded.max(0)
+        }
+    }
+}
+
 fn run(mut code: &[u8], stack: &mut alloc::vec::Vec<i64>, max_stack: usize) -> Result<(), Error> {
+    let mut rounding = Rounding::Grid;
     while !code.is_empty() {
         let instruction = next(&mut code)?;
         match instruction.opcode {
@@ -114,6 +143,21 @@ fn run(mut code: &[u8], stack: &mut alloc::vec::Vec<i64>, max_stack: usize) -> R
                 } else {
                     stack.extend(data.iter().copied().map(i64::from));
                 }
+            }
+            0x18 => rounding = Rounding::Grid,
+            0x19 => rounding = Rounding::HalfGrid,
+            0x3d => rounding = Rounding::DoubleGrid,
+            0x7a => rounding = Rounding::Off,
+            0x7c => rounding = Rounding::Up,
+            0x7d => rounding = Rounding::Down,
+            op @ (0x56..=0x57 | 0x68..=0x6f) => {
+                let value = stack.last_mut().ok_or(Error::StackUnderflow)?;
+                *value = match op {
+                    0x56 => i64::from(rounding.apply(*value) & 64 != 0),
+                    0x57 => i64::from(rounding.apply(*value) & 64 == 0),
+                    0x68..=0x6b => rounding.apply(*value),
+                    _ => *value,
+                };
             }
             0x20 => {
                 let value = *stack.last().ok_or(Error::StackUnderflow)?;
@@ -256,4 +300,25 @@ fn binary(op: u8, a: i64, b: i64) -> Result<i64, Error> {
         0x8c => a.min(b),
         _ => return Err(Error::InvalidOpcode),
     })
+}
+
+#[test]
+fn adr0064_i1_rounding_state_controls_negative_distances_and_parity() {
+    for (mode, expected) in [
+        (0x18, -64),
+        (0x19, -96),
+        (0x3d, -64),
+        (0x7a, -65),
+        (0x7c, -128),
+        (0x7d, -64),
+    ] {
+        let mut stack = alloc::vec![-65];
+        run(&[mode, 0x68], &mut stack, 1).unwrap();
+        assert_eq!(stack, [expected]);
+    }
+    for (op, expected) in [(0x56, 1), (0x57, 0), (0x6c, -65)] {
+        let mut stack = alloc::vec![-65];
+        run(&[op], &mut stack, 1).unwrap();
+        assert_eq!(stack, [expected]);
+    }
 }
