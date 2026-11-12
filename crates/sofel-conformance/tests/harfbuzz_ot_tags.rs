@@ -68,17 +68,12 @@ fn script(raw: u32) -> Option<Script> {
     Some(s)
 }
 
-/// A script HarfBuzz returns, as sofel gives it.
+/// The exact four-byte script HarfBuzz returns.
 fn expected_script(raw: u32) -> Option<Script> {
     if raw == 0 {
         return None;
     }
-    let b = raw.to_be_bytes();
-    Some(
-        Script::from_iso15924(&b)
-            .filter(|s| s.tag() == b)
-            .unwrap_or(Script::UNKNOWN),
-    )
+    Some(Script::from_raw_tag(raw.to_be_bytes()))
 }
 
 fn fmt_script(s: Option<Script>) -> String {

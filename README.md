@@ -14,6 +14,8 @@ WOFFとWOFF2、Type1やBDFなどの古い形式、AAT、絵文字（COLR、埋�
 
 ## 状態
 
+OpenType タグから得るスクリプト値は、[ADR 0050](docs/adr/0050-preserve-opentype-script-values.md) に従い、HarfBuzz が返す4バイトをそのまま保持する。
+
 シェーピングの作業バッファは、[ADR 0051](docs/adr/0051-shaping-buffer-item-size.md) に従い、グリフ情報を1要素28バイト、位置を1要素20バイトで保持する。
 
 2段階目（glyfの輪郭とアンチエイリアスのラスタライズ）まで実装し、6段階目のCFFとCFF2の輪郭、CIDの問い合わせ、PostScriptのフォントの情報（[ADR 0021](docs/adr/0021-cff-outlines.md)）と、CIDとグリフ名を速く引くcharsetの索引（[ADR 0025](docs/adr/0025-cff-charset-index.md)）を実装している。CFF2の輪郭は可変フォントの指定した位置でも取り出せる。

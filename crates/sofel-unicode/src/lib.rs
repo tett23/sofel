@@ -132,8 +132,8 @@ const GENERAL_CATEGORIES: [GeneralCategory; 30] = {
     ]
 };
 
-/// A script: its ISO 15924 tag, cased as in HarfBuzz (`Latn`). Common,
-/// Inherited and Unknown are `Zyyy`, `Zinh` and `Zzzz`.
+/// A script tag. OpenType conversions can preserve HarfBuzz values outside
+/// ISO 15924, including aliases and non-letter bytes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Script([u8; 4]);
 
@@ -145,9 +145,14 @@ impl Script {
     /// Unknown (`Zzzz`), the script of unassigned code points.
     pub const UNKNOWN: Script = Script(*b"Zzzz");
 
-    /// The ISO 15924 tag.
+    /// The four bytes of the script value, including OpenType-derived values.
     pub const fn tag(self) -> [u8; 4] {
         self.0
+    }
+
+    /// Keeps a converted OpenType script value exactly as HarfBuzz returned it.
+    pub const fn from_raw_tag(tag: [u8; 4]) -> Script {
+        Script(tag)
     }
 
     /// The script of a four-letter ISO 15924 tag, like HarfBuzz's
