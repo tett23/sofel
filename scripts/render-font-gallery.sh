@@ -28,6 +28,8 @@ ruby tools/font-gallery/test_pixels.rb
 ruby tools/font-gallery/test_sheet.rb
 ruby tools/font-gallery/gallery.rb "$staging" "$root/target/release"
 
+ruby tools/font-gallery/test_sbix_gallery.rb "$staging" "$root/target/release"
+
 test -s "$staging/index.html"
 test -s "$staging/all-samples.png"
 mv "$staging" "$output"
