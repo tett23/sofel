@@ -10,16 +10,8 @@
 # --preprocess differs from its output without it (sofel gives the
 # latter both times; ADR 0022 does not match HarfBuzz on malformed
 # tables).
-hb-dump/golem/COLRv1-alpha.ttf:pin  # stage:var
-hb-dump/golem/COLRv1-alpha.ttf:pin+prepared  # stage:var
-hb-dump/golem/Foldit.ttf:pin  # stage:var
-hb-dump/golem/Foldit.ttf:pin+prepared  # stage:var
-hb-dump/golem/KalniaGlaze.ttf:pin  # stage:var
-hb-dump/golem/KalniaGlaze.ttf:pin+prepared  # stage:var
 hb-dump/golem/RobotoDelta-NullVarStore-VF.ttf:pin  # deferred:instance
 hb-dump/golem/RobotoDelta-NullVarStore-VF.ttf:pin+prepared  # deferred:instance
 hb-dump/golem/RobotoDelta-Roman-VF-subset.ttf:pin  # deferred:instance
 hb-dump/golem/RobotoDelta-Roman-VF-subset.ttf:pin+prepared  # deferred:instance
 hb-dump/golem/bad-gsub.otf:keep+prepared  # upstream:preprocess-malformed
-hb-dump/golem/sixtyfour_subset.ttf:pin  # stage:var
-hb-dump/golem/sixtyfour_subset.ttf:pin+prepared  # stage:var
