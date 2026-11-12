@@ -458,6 +458,13 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
             return 1;
         }
     };
+    let data = match crate::font_input::unpack(data) {
+        Ok(data) => data,
+        Err(d) => {
+            let _ = writeln!(err, "sofel-paint: {} at byte {}", d.kind, d.offset);
+            return 1;
+        }
+    };
     let font = match Font::new(&data, a.face) {
         Ok(f) => f,
         Err(e) => {

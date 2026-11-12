@@ -139,6 +139,8 @@ HarfBuzzの `hb-subset` と同じオプションでサブセット化する（[A
 sofel-subset --font-file=Roboto.ttf --unicodes=41-5A -o out.ttf
 ```
 
+フォントを読むコマンド（`sofel-shape`、`sofel-render`、`sofel-paint`、`sofel-subset`、`sofel-validate`）は WOFF 1.0、gzip および UNIX compress（LZW）で包んだ入力を署名から識別する。[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)
+
 ### `sofel-woff`
 
 単一フェイスの TrueType、CFF、CFF2 を Web 配布用に変換する。入力と出力にはファイル名か `-`（標準入力・標準出力）を指定する。[ADR 0070](docs/adr/0070-webfont-encoding.md)
@@ -316,5 +318,6 @@ FreeTypeの計算を移植した部分を含むクレート（`sofel-geom` な�
 リポジトリ直下で `sh scripts/render-font-gallery.sh` を実行し、`target/font-gallery/index.html` をブラウザーで開く。
 Ruby と Rust のほか、適合テストと同じフォント取得環境を使う。
 各フェイスの単字と、その書体に合う文字列を一枚の PNG で見比べられる。
+sbix の見本は 109 ppem のストライクを使い、グリフ 19 の単字と `simple_linear` の合字 26 をそれぞれ 128 × 128 画素で表示する。
 CI では Actions の対象の実行からコミット SHA 付きのフォントギャラリーをダウンロードし、展開したディレクトリの `index.html` を開く。
 保存期間は14日間である（[sofel ADR 0069](docs/adr/0069-font-render-gallery.md)）。

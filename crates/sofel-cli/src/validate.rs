@@ -96,6 +96,13 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
             }
         };
         let name = path.display().to_string();
+        let bytes = match crate::font_input::unpack(bytes) {
+            Ok(bytes) => bytes,
+            Err(d) => {
+                emit_diagnostic(&name, None, d, as_json, out, &mut errors);
+                continue;
+            }
+        };
         match FontFile::new(&bytes) {
             Err(e) => emit_diagnostic(&name, None, file_diagnostic(e), as_json, out, &mut errors),
             Ok(FontFile::Sfnt(s)) => {

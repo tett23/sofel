@@ -355,6 +355,10 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 軸を指定しないGDEF 1.3のItemVariationStoreは、GSUBのFeatureVariationsが軸範囲の条件だけを持つ場合も含めて、残すLigCaretList、値の記録、アンカー、MATHの定数・斜体補正・上アクセント・カーニング・組み立てのVariationIndexに合わせて行と領域を詰めて書く。参照が0件ならストアを除く。GPOSの値の記録とアンカーをたどってVariationIndexを集める。送り幅などの値に現れる `0x8000` は参照に数えない。MATHとGDEFの一方だけをコピーして参照番号を合わせられない場合と、同じバイト列があるGPOSをそのままコピーする場合は拒否する。GDEFだけをコピーしてGPOSをサブセット化するとき、HarfBuzzと同じくGPOSの参照番号は詰めるが、GDEFのストアは元のバイト列のまま写す。壊れたGDEFはこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
 - レイアウトの表のうち、FeatureVariationsを持つGSUBをそのままコピーする場合のGDEF、GSUBとGPOSの版1.2とGDEFの版1.4、FeatureVariationsの版1.1と形式1でない条件、65536を超えるグリフのフォントの24bitの形式も `Unsupported` とする。
 
+## WOFF と圧縮フォントの読み込み
+
+`sofel_woff::decode_woff` は出力サイズの上限を受け取り、WOFF 1.0 の表を物理順に展開して sfnt を返す。フォントを読み込む CLI は gzip または UNIX compress（LZW）を先に展開してから WOFF の署名を検査する。検証器は WOFF の不正なフィールドか圧縮表の入力オフセットを報告する。gzip の破損はメンバーを含むコンテナ先頭で報告する。[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)
+
 ## Web フォントの書き出し（`sofel-woff`）
 
 `sofel_woff::encode` は単一フェイスの sfnt と出力形式を受け取り、WOFF または WOFF2 のバイト列を返す。表のタグ、範囲、パディング、チェックサムとフォント全体のチェックサムを検査する。コマンドは変換を終えてから出力先を開く。[ADR 0070](adr/0070-webfont-encoding.md)
@@ -523,4 +527,5 @@ CI の文書だけの変更は、比較起点の `ci/documentation-only.rules` �
 
 [sofel ADR 0069](adr/0069-font-render-gallery.md) に従い、追加フォント台帳の全フェイスと固定版 HarfBuzz の可変 COLR フォントを描画する。
 `sh scripts/render-font-gallery.sh` は各フェイスの単字とシェーピング済みの固定文字列を等倍で一枚の PNG に配置し、入力、ppem、未対応の理由をローカルの HTML から確認できるようにする。
+sbix の単字 19 と合字 26 は固定版 FreeType と全画素を照合し、一覧の各欄に等倍で配置する（[sofel ADR 0072](adr/0072-color-gallery-acceptance.md)）。
 文書だけの変更を除き、CI はプルリクエストと main への push で HTML と PNG を生成し、検査したコミット SHA 付きのアーティファクトを14日間保存する。
