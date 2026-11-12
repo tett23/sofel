@@ -326,7 +326,8 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 検査：テストのデータにEBLCや `bloc` のフォントが無いため、画像の形式1、2、5、6、7、8、9、深さ1、2、4、8、32、索引の形式1〜5の組み合わせを、EBLC/EBDTと `bloc`/`bdat`/`bhed` で組み立てた110個のフォントと、glyfの輪郭とCBLC/CBDTを両方持つフォントを、`ft-dump --sbit`（`FT_Select_Size` と `FT_LOAD_COLOR` の画素とメトリクス）と比べ、すべて一致する。
 - `sofel-raster` の `blend_layer` は、8bitの被覆率の画像を色で重ねて乗算済みのBGRAの画像（`BgraImage`）に足す。FreeTypeの `tt_face_colr_blend_layer` と同じく、最初の画素のある層で画像の箱を決め（画素の無い層では箱を決めず、次の層が決めなおす）、以後の層で箱を広げて写しなおし、画素ごとに整数で重ねる（`fa = alpha × coverage / 255`、`dst × (255 − fa) / 255 + color × fa / 255`）。
 - `sofel_cli::glyph::render_color` は、FreeTypeの `FT_LOAD_COLOR | FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP` と `FT_RENDER_MODE_NORMAL` の描画と同じく、グリフ自身の輪郭を読んでから、COLRv0の層をそれぞれ `glyph::render` で描いて `blend_layer` で重ねる。層は `color_layers`（FreeTypeの `FT_Get_Color_Glyph_Layer` と同じく、基本のグリフの記録が層の記録を越えれば無し、グリフの番号がグリフの数以上か、パレットの番号が前景色（0xFFFF）以外でパレットの項目の数以上の層で打ち切り）による。色は `PaintOptions` のパレットと前景色から取る。層が無いか、層のどれかが描けなければ、グリフ自身の輪郭を灰色で描く（`ColorGlyph::Gray`）。
-- `sofel-render --color [--palette N]` は、COLRv0、輪郭と矩形でクリップした COLRv1 の線形・放射グラデーションと、`rect`、`circle`、`path` と線形・放射グラデーションからなる OT-SVG のグリフをPAM（乗算済みでない値に直す）で書く。OT-SVG では対象グリフの要素を選び、`defs` の停止点、`stop-opacity`、図形の境界ボックス、`gradientTransform`、グループの `transform` を適用し、図形の順に重ねる（[ADR 0072](adr/0072-color-gallery-acceptance.md)）。前景色は、パレットに暗い背景向けの印があれば白、無ければ黒とする。
+- `sofel-render --color [--palette N]` は、COLRv0、輪郭と矩形でクリップした COLRv1 の線形・放射グラデーションと、`rect`、`circle`、`path` と単色または線形・放射グラデーションからなる OT-SVG のグリフをPAM（乗算済みでない値に直す）で書く。OT-SVG では対象グリフの要素を選び、`defs` の停止点、`stop-opacity`、図形の境界ボックス、`gradientTransform`、グループの `transform` を適用し、図形の順に重ねる（[ADR 0072](adr/0072-color-gallery-acceptance.md)）。前景色は、パレットに暗い背景向けの印があれば白、無ければ黒とする。
+- OT-SVG は対象グリフの ID を持つ要素を選び、文書の `viewBox` をフォントの em 正方形に写す。図形は親から塗りを引き継ぎ、子の `fill` で色を変えられる。`context-fill` には呼び出し元の前景色を使う。文書内の `use` は参照先の変換と呼び出し側の変換を順に適用する。`clipPathUnits="userSpaceOnUse"` では同じクリップ内の図形を和集合、祖先のクリップとの重なりを積集合として塗る。スクリプトは実行せず、外部画像は取得しない（[ADR 0074](adr/0074-svg-feature-conformance.md)）。
 - OT-SVG のパスは絶対座標と相対座標の直線、2次・3次ベジェ曲線、楕円弧を描く。楕円弧は最大90度ずつ3次ベジェ曲線で近似する。グループと図形には平行移動、拡大縮小、中心を指定した回転、せん断と行列の変換を適用する（[ADR 0066](adr/0066-color-glyph-pixels.md)）。
 - 検査（5d）：`ft-dump --raster PPEM --color` で、HarfBuzzのテストのカラーのフォントのCOLRv0のグリフを、12、24、48画素、パレット0と最後のパレットでFreeTypeと比べる（1818項目）。前景色はFreeTypeと同じく、FreeTypeが16bitずつ読んだ `paletteTypes` の暗い背景の印で決める。期待する失敗は、FreeTypeが読み込まないCOLRを持つ2つのフォントの12項目だけで、ほかは画素まで完全に一致する。
 - `sofel-paint` は塗りの命令をHarfBuzzの `test/api/test-paint.c` の字下げのテキストで書く。
@@ -445,9 +446,11 @@ UTF-8 ファイルの末尾から LF または CRLF を一組だけ除き、前�
 
 ## 正しさの検査
 
-SVG の検査器は [ADR 0074](adr/0074-svg-feature-conformance.md) の必須ケースと観測を [台帳](../conformance/svg-cases.tsv) と照合する。欠落、重複、未知の項目を報告し、ケースごとに期待値の出典と結果を出す。共有文書の平文のバイト列と範囲外のグリフを検査し、検査器を実装していない観測は未実行として扱う。
+SVG の検査器は [ADR 0074](adr/0074-svg-feature-conformance.md) の必須ケースと観測を [台帳](../conformance/svg-cases.tsv) と照合する。欠落、重複、未知の項目を報告し、ケースごとに期待値の出典と結果を出す。OT-SVG 入力では共有文書、選択したグリフの描画、変換後の輪郭、前景色、グラデーション、参照と制限を調べる。図形の描画境界は同じ輪郭を直接ラスタライザーに渡した結果と比較する。検査器を実装していない観測は未実行として扱う。
 
-検査器は必須ケースの集計に続いて、[OpenType 1.9.1 の SVG 要求項目](../conformance/svg-opentype.tsv)ごとに、対応するケース ID または対象外・未決の理由を表示する。
+SVG ページ出力では、空のページ、単字、半透明の重なり、クリップした画像の寸法と描画順を、[固定版 HarfBuzz で生成した参照](../conformance/svg-page/reference.cc) と比較する。XML の属性順と要素間の空白は比較から除く。
+
+検査器は必須ケースの集計に続いて、[OpenType 1.9.1 の SVG 要求項目](../conformance/svg-opentype.tsv)ごとに、対応するケース ID または対象外・未決の理由を表示する。必須ケースがすべて成功すると、画像の寸法・原点・画素列と正規化した出力 XML を、[ローカルで得た実測値](../conformance/svg-measurements.tsv) と照合する。Linux と macOS の CI はローカルと同じコマンドで一覧 PNG を生成して照合する。
 
 - 追加フォントの集合は [ADR 0031](adr/0031-diverse-font-corpus.md) の13ファイル、57フェイスと既存の可変COLRフォントで構成する。`fonts.lock` は取得ファイルとライセンスをHTTPS URL、SHA-256、バイト数、保存先で固定し、`conformance/fonts.tsv` はフォントとライセンスと対象機能を結ぶ。`scripts/fetch-fonts.sh` は保存済みのファイルも再検証し、欠落とハッシュ不一致を失敗にする。フォントのバイナリをリポジトリに含めず、著作権表示とライセンス全文を `THIRD_PARTY_NOTICES.md` に記録する。
 - 追加フォントの各フェイスでは表の読み取り、検証器、全Unicodeスカラー値の既定座標のnominal glyph ID、最大128グリフの横・縦メトリクスとFreeTypeの非ヒンティング輪郭・advanceを照合する。サンプル集合にはグリフ0と末尾と登録した全座標のシェーピング出力を必ず入れ、[ADR 0031](adr/0031-diverse-font-corpus.md) の等間隔の式で補う。HarfBuzzのメトリクスとFreeTypeの輪郭・advanceは別々の参照値と比較する。
@@ -551,6 +554,7 @@ CI の文書だけの変更は、比較起点の `ci/documentation-only.rules` �
 
 [sofel ADR 0069](adr/0069-font-render-gallery.md) に従い、追加フォント台帳の全フェイスと固定版 HarfBuzz の可変 COLR フォントを描画する。
 `sh scripts/render-font-gallery.sh` は各フェイスの単字とシェーピング済みの固定文字列を等倍で一枚の PNG に配置し、入力、ppem、未対応の理由をローカルの HTML から確認できるようにする。
+color-svg の単字19と文字列から得たグリフ26は48 ppemで描画する。検査器は、固定した色を確認した CLI の画像と、一覧 PNG の両方の欄を全画素で照合する（[sofel ADR 0072](adr/0072-color-gallery-acceptance.md)、[sofel ADR 0074](adr/0074-svg-feature-conformance.md)）。
 生成器は [sofel ADR 0073](adr/0073-rust-font-gallery.md) に従う Rust の開発用バイナリとし、Unicode スカラー値とグリフ ID、26.6 固定小数点の位置と整数画素、描画結果と登録済みの未対応状態を型で区別する。シェルの入口は Rust のテストを実行してから生成器を起動する。
 sbix の単字 19 と合字 26 は固定版 FreeType と全画素を照合し、一覧の各欄に等倍で配置する（[sofel ADR 0072](adr/0072-color-gallery-acceptance.md)）。
 CFF の 19・26 と可変 COLRv1 の 92・93 は固定版 HarfBuzz raster と原点・寸法・乗算済み BGRA の全画素を照合する。一覧 PNG の検査では、これらの2書体、sbix、OT-SVG の単字と文字列を個別に比較する。

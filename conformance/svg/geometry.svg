@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <defs><linearGradient id="white"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#ffffff"/></linearGradient></defs>
+  <g id="glyph1"><path d="M125 125 L375 125 L250 375 Z" fill="url(#white)"/></g>
+  <g id="glyph2"><path d="M125 375 C125 0 500 0 500 375 Z" fill="url(#white)"/></g>
+  <g id="glyph3"><rect x="125" y="125" width="375" height="250" fill="url(#white)"/></g>
+  <g id="glyph4"><circle cx="250" cy="250" r="125" fill="url(#white)"/></g>
+  <g id="glyph5" transform="translate(125 62.5)"><g transform="scale(2 1)"><rect x="62.5" y="62.5" width="125" height="125" fill="url(#white)"/></g></g>
+</svg>

@@ -152,6 +152,7 @@ pub fn render_color<'r>(
             .load(glyph, Scale::pixels(font, ppem, ppem), scratch)
             .map_err(RenderError::Outline)?;
         let mut painter = SvgImagePainter::new(glyph.0, ppem, font.units_per_em(), raster, image);
+        painter.set_foreground(options.foreground);
         let mut color_scratch = sofel_color::Scratch::default();
         if sofel_color::paint(font, glyph.0, options, &mut color_scratch, &mut painter)
             == sofel_color::Painted::Svg
