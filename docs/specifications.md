@@ -190,6 +190,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - glyfと `GLYF` の単純なグリフと合成グリフの輪郭を、ヒンティングをせずに、FreeTypeと同じ座標で `Pen` に渡す（[ADR 0011](adr/0011-glyf-outlines.md)）。`GLYF` があれば `GLYF` と `LOCA` を使い、そのときだけフラグ0x80を三次曲線、0x2000を24bitの成分のグリフIDとして扱う。
 - 倍率は `FT_Set_Pixel_Sizes` と同じく `div_fix(ppem << 6, unitsPerEm)` で、点は `mul_fix` で拡大縮小し、丸めない。locaの解釈と合成の位置の計算はFreeTypeに合わせる。
 - 作業領域（`Scratch`）は呼び出し側が持つ。
+- [ADR 0063](adr/0063-font-functions-and-synthesis.md) の `Scratch::hb_decompose` は、読み込んだglyfの点をHarfBuzzの経路の命令に変える。連続する曲線外の点の中点を `f32` で計算し、親子のフォント関数へ渡す輪郭の供給に使う。`Scratch::oblique_slot` と `Scratch::embolden_slot` はFreeTypeの輪郭スロットの斜体と太字を適用し、後者は `SlotMetrics` も更新する。
 - HarfBuzzのグリフの箱（`HbExtents`、[ADR 0021](adr/0021-cff-outlines.md)）：`hb_ot_get_glyph_extents` のうちカラーとビットマップを除いた順（VARCはまだ無く、glyf、CFF2、CFF）で、拡大縮小の前の値を返す。CFF2が無効なら、または箱が得られなければCFFへ進む。CFFとCFF2の箱は、HarfBuzzの `cff1_cs_interp_env_t`、`cff2_cs_interp_env_t` と `opset_extents` を移植した解釈器で求める。スタックは513、サブルーチンの入れ子は10、演算子は1グリフ200000まで（200000個目で失敗）。算術の演算子とCFFの `blend`、`vsindex` は未知の演算子としてスタックを捨て、`dotsection` は何もしない。CFFでは `endchar` の無いcharstringは失敗し、`endchar` の引数が4つ以上ならseac（標準のエンコーディングの番号をcharsetで引き、基とアクセントの箱を、アクセントをずらして合わせる。入れ子と、グリフの無い番号は失敗）とする。CFF2は文字列の終わりで `return` か `endchar` とし、`blend` は既定のインスタンスでは差分を捨て、既定の値だけを残す（引数の不足と、`blend` の後の `vsindex` は失敗）。移動で経路を閉じ、線と曲線の始まりで現在の点を、その後に各点（曲線の制御点を含む）を箱に足す。数はHarfBuzzの `double` の代わりに16.16を `i64` で持つ。既定のインスタンスでは和と差しか生じないので、値は同じになる。丸めはHarfBuzz 15.1.0の `roundf` マクロ（`_hb_roundf (double)`）と同じ `floor (x + 0.5)` で、`float` を経ない（[ADR 0026](adr/0026-harfbuzz-rounding.md)）。16.16の値に `0x8000` を足して16bit右へずらす整数の計算で求め、これが `sofel_geom::float::hb_roundf` と常に等しいことをテストで確かめる。最小が最大以上の軸は0とする。拡大縮小は `HbScale::scale_glyph_extents` による。
 - FreeTypeと同じく、読みこんだ輪郭を幻の点の `pp1.x` だけ左に動かす（[ADR 0018](adr/0018-phantom-point-shift.md)）。`pp1.x` は、グリフの見出しの `xMin` からFreeTypeの読み方の左のサイドベアリング（`Font::ft_left_side_bearing`）を引き、点と同じく `mul_fix` で拡大縮小した値で、丸めない。`head` の `flags` のビット1によらない。空のグリフは点が無いので動かない。`OutlineInfo` の `cbox` は動かしたあとの点から求める。
   - 合成グリフは、自身の見出しとサイドベアリングの `pp1.x` を使う。USE_MY_METRICSの部品があれば、最後のその部品の `pp1.x`（部品の見出しとサイドベアリングから求めたもの。部品の変換と位置合わせでは動かない）を使う。入れ子の合成グリフでも同じ規則を部品ごとに当てる。
@@ -203,6 +204,8 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 同じフォントの単純なグリフ（見出しの `xMin` が点の最小のxと等しい4万9225個）で、拡大縮小なしの `cbox.x_min` が、HarfBuzzのグリフの箱の `x_bearing`（可変フォントの変化なし）と等しいことを確かめている。
 
 ## シェーピング（`sofel-shape`）
+
+[ADR 0063](adr/0063-font-functions-and-synthesis.md) の `SubFont` は親への参照と問い合わせ別の関数を持つ。子に関数がなければ親へ委ね、送り、原点、箱と輪郭の座標を子のスケールへ換算する。`shape_with_subfont` はこの関数で文字からのグリフ検索と配置を行い、合成太字の送りへの加算を `in_place` の指定に従って切り替える。輪郭はルートの `set_outline_func` で供給する。合成斜体と太字は、HarfBuzzと同じ順にその輪郭へ適用する。
 
 ### 機能の文字列
 
@@ -288,6 +291,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 - `sofel-geom` の `Painter` は、HarfBuzz 15.1.0の `hb_paint_funcs_t` と同じ順で同じ値の命令を受ける。単色と3種類のグラデーションは `fill(&Brush)` にまとめ、グループの合成の方法は `push_group` と `pop_group` の両方で渡す。単位はフォントの単位でyは上に増え、HarfBuzzの根の拡大の変換と、`PaintGlyph` と `PaintColrGlyph` の周りの逆の変換は出さない。数は `f32` で、HarfBuzzの `float` の計算と同じ順で同じ演算をし、FMAを使わない。
 - `Image` の `extents` は `Option` とする。HarfBuzzはSVGの文書を範囲なし（NULL）で渡すためで、ADRの型（`GlyphExtents`）から変えた。
+- [ADR 0063](adr/0063-font-functions-and-synthesis.md) の `Image::slant` は、HarfBuzzの画像callbackと同じく0とする。`paint_recording_at_with_slant` は画像を含む描画命令の外側に合成斜体の変換を置く。
 - 三角関数（`sin_cos`、`sin`、`cos`、`tan`）はmusl 1.2.6の `sincosf` と `tanf` の移植で、`f64` の四則演算だけで計算する。|x| ≥ 2^28·π/2 の引数の剰余は、muslの `__rem_pio2_large` の代わりに、muslの2/πのビットの表から128bitの整数で求める。テストで、100万個の引数で `f64` の値を丸めたものとの差が1ulp以下であること、三角関数と変換の100万個の結果のハッシュがx86-64、aarch64、wasm32で同じことを確かめる。
 - 補助の関数 `normalize_color_line`（安定な挿入の並べかえ）、`reduce_linear_anchors`、`sweep_gradient_tiles` はHarfBuzzの `hb-paint.cc` の移植である。
 - `sofel-read` に、CPAL（版0と1）、COLR（版0の記録、版1のBaseGlyphList、LayerList、ClipList、塗りの形式1〜33）、CBLC/EBLC/`bloc`（索引の形式1〜5）、CBDT/EBDT/`bdat`、sbix、SVGのビューと検証器を置く。色の線は、停止点がすべて表に収まらなければ停止点なしとして読む（FreeTypeの `FT_Get_Colorline_Stops` と同じ）。`Colr::v1_fits` は、版1の塗りの木が表に収まるかを、HarfBuzzの検査（入れ子64、1バイトあたり64回の作業）と同じ範囲で確かめる。
@@ -300,6 +304,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   - 生の塗りの木（`base_paint`、`PaintRef`、`clip_box`、`layer_paint`）は、FreeTypeの `FT_Get_Color_Glyph_Paint` などと同じ値を返す。基本のグリフの探索はFreeTypeの二分探索による。
 - `sofel-bitmap`：`strikes` はFreeTypeの `available_sizes`（CBLC、EBLC、`bloc`、sbixの順に最初の表、ppemが0のストライクは除く）、`match_strike` は `FT_Match_Size`、`choose_strike` はHarfBuzzの選び方（`max(x, y)` が要求以上で最小、無ければ最大、0は最大）、`glyph_bitmap` はFreeTypeの読み込み（sbixの `dupe` と `flip` を4回まで）で画像のデータとメトリクスを返す。PNGを塗るための `cbdt_png`、`sbix_png` とその箱はHarfBuzzの読み方（CBDTは索引の形式1と3、画像の形式17と18、sbixは `dupe` を8回まで）による。
 - `sofel-bitmap` の `bitmap_layout` と `draw_bitmap` は、EBDT、CBDT、`bdat` の画像の形式1、2、5、6、7と成分の形式8、9を、1、2、4、8、32bitの深さで、FreeTypeの `tt_sbit_decoder_load_image`（索引の形式1〜5、形式2と7のバイト単位とビット単位の判定、成分のメトリクスの戻し方）と同じ画素とメトリクスにして、呼び出し側の領域（`pitch × rows` バイト、上の行から）に書く。32bitは `FT_LOAD_COLOR` と同じくBGRAのまま書く。PNGの画像は展開しない（`BitmapError::Png`）。
+- [ADR 0063](adr/0063-font-functions-and-synthesis.md) の `convert_bitmap` はFreeTypeの `FT_Bitmap_Convert` と同じくMONO、GRAY2、GRAY4、GRAY、LCD、LCD_V、BGRAを8bitの行へ変え、行の整列と負のpitchを保つ。`embolden_bitmap` はFreeTypeの `FT_Bitmap_Embolden` と同じく画素を太らせ、GRAY2とGRAY4を先に8bitへ変え、BGRAは変更しない。
 - `sofel-font` の `Font::new` は、FreeTypeと同じく、輪郭（glyf、GLYF、CFF、CFF2）が無くsbixも無いフォントでは、Appleの `bhed` を `head` の代わりに読む。`Font::has_outlines`（CBLCかCBDTがあれば偽。FreeTypeは輪郭を無視する）と `Font::has_bitmaps`（CBLC、EBLC、`bloc`、sbix）を持つ。`bhed` は `head` の検証器で検証する。Appleのビットマップだけのフォントでは、FreeTypeがOS/2を読まないため、ストライクの `width` は0になる。
 - `sofel-render` は、`--ppem` に等しいストライク（`FT_Match_Size`）があり、グリフのビットマップがあれば、`--no-bitmap` が無いかぎりビットマップを書く。白黒と灰色はPGM（階調を0〜255に広げて反転）、32bitはPAM（`P7`、`TUPLTYPE RGB_ALPHA`、乗算済みでない値に直す）とし、位置は同じ注釈の行に書く。
 - 検査：テストのデータにEBLCや `bloc` のフォントが無いため、画像の形式1、2、5、6、7、8、9、深さ1、2、4、8、32、索引の形式1〜5の組み合わせを、EBLC/EBDTと `bloc`/`bdat`/`bhed` で組み立てた110個のフォントと、glyfの輪郭とCBLC/CBDTを両方持つフォントを、`ft-dump --sbit`（`FT_Select_Size` と `FT_LOAD_COLOR` の画素とメトリクス）と比べ、すべて一致する。

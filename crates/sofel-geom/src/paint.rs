@@ -421,6 +421,9 @@ pub struct Image<'a> {
     pub width: u32,
     /// The height in pixels (0 for SVG).
     pub height: u32,
+    /// HarfBuzz's deprecated image callback slant argument; always 0.0.
+    /// Synthetic slant is a surrounding transform instead.
+    pub slant: f32,
     /// Where the image goes, in font units; `None` for SVG documents,
     /// as HarfBuzz passes none.
     pub extents: Option<GlyphExtents>,

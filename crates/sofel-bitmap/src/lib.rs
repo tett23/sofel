@@ -45,9 +45,15 @@
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
-mod decode;
+extern crate alloc;
 
+mod convert;
+mod decode;
+mod embolden;
+
+pub use convert::{BitmapView, ConvertError, ConvertedBitmap, convert_bitmap};
 pub use decode::{BitmapError, BitmapLayout, PixelMode};
+pub use embolden::{EmboldenedBitmap, embolden_bitmap};
 
 use sofel_font::geom::float::{hb_clamp_to_i32, hb_roundf32, i32_to_f32};
 use sofel_font::geom::{GlyphExtents, mul_div};
