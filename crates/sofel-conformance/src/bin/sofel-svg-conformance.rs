@@ -119,7 +119,19 @@ fn show_scope() -> bool {
     valid && !ids.is_empty()
 }
 
-fn verify(text: &str) -> bool {
+fn observation(feature: &str, case: &str, name: &str) -> Option<Result<(), String>> {
+    match feature {
+        "in-document" => document_observation(case, name)
+            .or_else(|| sofel_conformance::svg_input::observe(feature, case, name)),
+        "out-page" => Some(sofel_conformance::svg_page::observe(case, name)),
+        _ => sofel_conformance::svg_input::observe(feature, case, name),
+    }
+}
+
+fn verify(
+    text: &str,
+    mut observe: impl FnMut(&str, &str, &str) -> Option<Result<(), String>>,
+) -> bool {
     let mut rows = BTreeMap::new();
     let mut ok = true;
     for (line, record) in text.lines().enumerate() {
@@ -163,12 +175,7 @@ fn verify(text: &str) -> bool {
                 failures.push(format!("missing observation: {feature}/{case}/{name}"));
                 continue;
             }
-            let result = match feature {
-                "in-document" => document_observation(case, name)
-                    .or_else(|| sofel_conformance::svg_input::observe(feature, case, name)),
-                "out-page" => Some(sofel_conformance::svg_page::observe(case, name)),
-                _ => sofel_conformance::svg_input::observe(feature, case, name),
-            };
+            let result = observe(feature, case, name);
             match result {
                 None => failures.push(format!("{name}: NOT RUN (verifier pending)")),
                 Some(Err(reason)) => failures.push(format!("{name}: {reason}")),
@@ -219,9 +226,43 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    if verify(ledger) {
+    if verify(ledger, observation) {
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn i2_all_required_observations_pass_even_with_out_of_scope_requirements() {
+        let mut seen = BTreeSet::new();
+        assert!(verify(INVENTORY, |feature, case, name| {
+            assert!(seen.insert((feature.to_owned(), case.to_owned(), name.to_owned())));
+            Some(Ok(()))
+        }));
+        assert_eq!(
+            seen.len(),
+            REQUIRED
+                .iter()
+                .map(|row| row.2.split(',').count())
+                .sum::<usize>()
+        );
+    }
+
+    #[test]
+    fn i2_one_missing_or_failed_observation_fails_the_case() {
+        for probe in [None, Some(Err("pixel (2, 3) has wrong RGBA".to_owned()))] {
+            assert!(!verify(INVENTORY, |feature, case, name| {
+                if (feature, case, name) == ("in-gradient", "linear", "rgba") {
+                    probe.clone()
+                } else {
+                    Some(Ok(()))
+                }
+            }));
+        }
     }
 }
