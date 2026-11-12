@@ -346,6 +346,12 @@ impl Interpreter {
     ) -> Result<alloc::vec::Vec<HintPoint>, Error> {
         let mut glyph = self.clone();
         glyph.points[1] = points;
+        let outline_len = contour_ends.last().map_or(0, |end| end.saturating_add(1));
+        if let Some([left, right, top, bottom]) = glyph.points[1].get_mut(outline_len..) {
+            for (point, axis) in [(left, 0), (right, 0), (top, 1), (bottom, 1)] {
+                point.current[axis] = point.current[axis].wrapping_add(32) & !63;
+            }
+        }
         glyph.contour_ends = contour_ends.to_vec();
         glyph.reference = [0; 3];
         glyph.zones = [1; 3];
@@ -1418,4 +1424,19 @@ fn adr0064_i1_iup_wraps_each_contour_and_excludes_phantoms() {
             .collect::<alloc::vec::Vec<_>>(),
         [60, 10, 110, 210, 230, 7, 27, 18]
     );
+}
+
+#[test]
+fn adr0064_i1_rounds_phantom_coordinates_before_glyph_program() {
+    let vm = Interpreter::new(0, &[], 65536);
+    let points = alloc::vec![HintPoint{current:[95,-33],original:[95,-33],..Default::default()};5];
+    let result = vm.execute_glyph(points, &[0], &[], 0).unwrap();
+    assert_eq!(
+        result
+            .iter()
+            .map(|p| p.current)
+            .collect::<alloc::vec::Vec<_>>(),
+        [[95, -33], [64, -33], [64, -33], [95, -64], [95, -64]]
+    );
+    assert!(result.iter().all(|p| p.original == [95, -33]));
 }
