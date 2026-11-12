@@ -596,6 +596,30 @@ static void test_outlines(const sofel_font_t *font) {
   CHECK(sofel_outline_decompose(scratch, 0, 0, 1, rec_move_to, rec_line_to, rec_quad_to,
                                 rec_cubic_to, NULL, &rec) == SOFEL_ERROR_NULL);
   rec.len = 0;
+  {
+    static const uint8_t png[] = {0x89, 0x50, 0x4e, 0x47, 0xd, 0xa, 0x1a, 0xa, 0x0, 0x0, 0x0, 0xd, 0x49, 0x48, 0x44, 0x52, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x1, 0x8, 0x6, 0x0, 0x0, 0x0, 0x1f, 0x15, 0xc4, 0x89, 0x0, 0x0, 0x0, 0xd, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0xf8, 0xcf, 0xc0, 0xf0, 0x1f, 0x0, 0x5, 0x0, 0x1, 0xff, 0x89, 0x99, 0x3d, 0x1d, 0x0, 0x0, 0x0, 0x0, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82};
+    const float clip[] = {2, 4, 12, 14};
+    sofel_svg_png_t image = {png, sizeof(png), 1, 1, {0, 4, 4, -4}, clip};
+    sofel_svg_layer_t layers[] = {
+        {{1, {1, 0, 0, 1, 0, 0}, {255, 0, 0, 255}}, NULL},
+        {{0, {2, 0, 0, 3, 1, 2}, {0, 0, 0, 0}}, &image},
+    };
+    uint8_t svg[4096] = {0};
+    size_t n = 0;
+    CHECK(sofel_svg_page_layers(font, NULL, 0, -20, 20, 20, NULL, layers, 2, NULL, 0, &n) ==
+          SOFEL_ERROR_BUFFER_TOO_SMALL);
+    CHECK(n < sizeof(svg));
+    CHECK(sofel_svg_page_layers(font, NULL, 0, -20, 20, 20, NULL, layers, 2, svg, n, &n) == SOFEL_OK);
+    const char *path = strstr((const char *)svg, "<path "), *img = strstr((const char *)svg, "<image ");
+    CHECK(path && img && path < img);
+    CHECK(strstr((const char *)svg, "data:image/png;base64,iVBORw0K") != NULL);
+    CHECK(strstr((const char *)svg, "matrix(2,0,0,3,1,2)") != NULL);
+    CHECK(strstr((const char *)svg, "clip-path=\"url(#c0)\"") != NULL);
+    image.width = 0;
+    CHECK(sofel_svg_page_layers(font, NULL, 0, -20, 20, 20, NULL, layers, 2, svg, n, &n) ==
+          SOFEL_ERROR_INVALID_ARGUMENT);
+  }
+
   CHECK(sofel_outline_draw(font, NULL, 1, SOFEL_SCALE_NONE, 0, 0, scratch, rec_move_to, rec_line_to,
                            NULL, rec_cubic_to, rec_close, &rec, cbox,
                            &overlap) == SOFEL_ERROR_NULL);

@@ -43,3 +43,6 @@ check_page default varc-ac00-ac01.ttf -16 -819 1872 1035 text=가각
 check_page wght840p3 varc-ac00-ac01.ttf -16 -839 1872 1055 text=가각 wght=840.3
 check_page conditional-default varc-ac01-conditional.ttf -16 -816 952 1032 text=각
 check_page conditional-wght840p3 varc-ac01-conditional.ttf -16 -839 952 1055 text=각 wght=840.3
+"$work/positioned" "$root/fuzzing/fonts/noto_handwriting-sbix.ttf" \
+    -16 -966 1307 1235 text=✍ > "$work/handwriting-sbix.svg"
+cmp "$work/handwriting-sbix.svg" "$root/vector/data/expected/basic/handwriting-sbix.svg"
