@@ -211,7 +211,7 @@ impl Plan {
             }
             b"avar" if !self.var.user().is_empty() => {
                 let src = font.table(tag).unwrap_or(&[]);
-                let bytes = avar::subset(self, src)?;
+                let bytes = avar::subset(self, font, src)?;
                 let room = self.room_after(font, tag, src, room, bytes.len())?;
                 tables.insert(tag, bytes);
                 return Ok(room);

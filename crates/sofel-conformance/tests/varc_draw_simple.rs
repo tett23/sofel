@@ -502,10 +502,23 @@ fn adr0067_i2_unrelated_axis_pin_with_gvar_dropped_matches_harfbuzz() {
                 "0:0.5:1",
                 base.with_axis_range(axis, Some(0.0), Some(1.0), Some(0.5), &font),
             ),
+            (
+                "-1:0.5:1",
+                base.with_axis_range(axis, Some(-1.0), Some(1.0), Some(0.5), &font),
+            ),
+            (
+                "-0.75:0:0.75",
+                base.with_axis_range(axis, Some(-0.75), Some(0.75), Some(0.0), &font),
+            ),
+            (
+                "0:0:1",
+                base.with_axis_range(axis, Some(0.0), Some(1.0), Some(0.0), &font),
+            ),
+            (
+                "-1:0:0",
+                base.with_axis_range(axis, Some(-1.0), Some(0.0), Some(0.0), &font),
+            ),
         ] {
-            if variation.contains(':') && file.ends_with("-avar2.ttf") {
-                continue;
-            }
             let input = input.unwrap();
             let ours = subset(&font, &input).unwrap();
             let reference = std::env::temp_dir().join(format!(

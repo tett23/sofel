@@ -294,7 +294,7 @@ impl Plan {
         let flags = input.flags();
         let drop = input.set(SetKind::DropTables);
         // normalize_axes_location
-        let norm = instance::normalize(font, input.axes());
+        let mut norm = instance::normalize(font, input.axes());
         let other_variation_tags = [
             b"gvar", b"GVAR", b"HVAR", b"VVAR", b"MVAR", b"cvar", b"CFF2", b"GDEF", b"GSUB",
             b"GPOS", b"BASE", b"MATH", b"COLR", b"STAT",
@@ -333,17 +333,22 @@ impl Plan {
             false
         };
         if !norm.user.is_empty() {
-            let omit_identity_avar2 = norm.avar2
+            let identity_avar2 = norm.avar2
                 && font.table(Tag::new(b"CFF2")).is_none()
-                && norm.user.values().all(|r| r.min == r.max)
+                && (norm.user.len() == 1 || norm.user.values().all(|r| r.min == r.max))
                 && font.table(Tag::new(b"avar")).is_some_and(|data| {
                     crate::tables::avar::is_empty_identity_v2(data, norm.axis_tags.len())
                 });
-            if norm.avar2 && !omit_identity_avar2 {
+            if norm.avar2 && !identity_avar2 {
                 return Err(SubsetError::Unsupported {
                     tag: Tag::new(b"avar"),
                     reason: "pinning the axes of avar version 2 (deferred by ADR 0022)",
                 });
+            }
+            if identity_avar2 && norm.user.values().any(|r| r.min < r.max) {
+                // An avar2 restriction stays in the output mapping. Only
+                // self-contained pins apply deltas to the source outlines.
+                norm.normalized_coords.clear();
             }
             let varc_tag = Tag::new(b"VARC");
             let varc_retained = font.table(varc_tag).is_some() && !drop.contains(varc_tag.to_u32());
@@ -358,7 +363,7 @@ impl Plan {
                 !drop.contains(tag.to_u32())
             });
             let varc_safe = !varc_retained || varc_unrelated_axis_change;
-            let simple_avar = omit_identity_avar2
+            let simple_avar = identity_avar2
                 || font.table(Tag::new(b"avar")).is_none_or(|data| {
                     sofel_font::read::avar::Avar::new(data)
                         .is_ok_and(|table| table.major_version() == 1 && norm.pinned_at_default)
