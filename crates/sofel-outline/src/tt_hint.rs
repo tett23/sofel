@@ -218,6 +218,7 @@ struct HintPoint {
 
 #[derive(Clone)]
 struct Interpreter {
+    auto_flip: bool,
     minimum_distance: i64,
     backward_compatibility: u8,
     composite: bool,
@@ -261,6 +262,7 @@ impl Interpreter {
             loop_count: 1,
             backward_compatibility: 0,
             composite: false,
+            auto_flip: true,
             minimum_distance: 64,
             delta_base: 9,
             delta_shift: 3,
@@ -305,7 +307,7 @@ impl Interpreter {
         Ok(core::mem::take(&mut glyph.points[1]))
     }
 
-    fn move_direct_relative(&mut self, op: u8, index: u16) {
+    fn move_relative(&mut self, op: u8, index: u16, cvt: Option<i64>) {
         let base_index = self.reference[0];
         self.reference[1] = base_index;
         self.reference[2] = index;
@@ -320,7 +322,15 @@ impl Interpreter {
             return;
         };
         let original_axis = usize::from(self.dual_projection[0] == 0);
-        let mut original = if base_zone == 0 || target_zone == 0 {
+        let mut requested = if let Some(entry) = cvt {
+            match entry {
+                -1 => 0,
+                n => match usize::try_from(n).ok().and_then(|i| self.cvt.get(i)) {
+                    Some(&value) => value,
+                    None => return,
+                },
+            }
+        } else if base_zone == 0 || target_zone == 0 {
             point.original[original_axis].wrapping_sub(base.original[original_axis])
         } else {
             sofel_font::read::cff::ft::mul_fix(
@@ -329,18 +339,39 @@ impl Interpreter {
             )
         };
         if self.single_width_cutin > 0
-            && original.abs_diff(self.single_width) < self.single_width_cutin as u64
+            && requested.abs_diff(self.single_width) < self.single_width_cutin as u64
         {
-            original = if original >= 0 {
+            requested = if requested >= 0 {
                 self.single_width
             } else {
                 self.single_width.wrapping_neg()
             };
         }
-        let mut distance = if op & 4 != 0 {
-            self.rounding.apply(original)
+        let original = if cvt.is_some() {
+            if target_zone == 0 {
+                let axis = usize::from(self.freedom[0] == 0);
+                point.original = base.original;
+                point.original[axis] = point.original[axis].wrapping_add(requested);
+                point.current = point.original;
+            }
+            let measured = point.original[original_axis].wrapping_sub(base.original[original_axis]);
+            if self.auto_flip && (measured ^ requested) < 0 {
+                requested = requested.wrapping_neg();
+            }
+            if op & 4 != 0
+                && base_zone == target_zone
+                && i128::from(measured.abs_diff(requested)) > i128::from(self.control_value_cutin)
+            {
+                requested = measured;
+            }
+            measured
         } else {
-            original
+            requested
+        };
+        let mut distance = if op & 4 != 0 {
+            self.rounding.apply(requested)
+        } else {
+            requested
         };
         if op & 8 != 0 {
             distance = if original >= 0 {
@@ -614,9 +645,16 @@ impl Interpreter {
                     }
                 }
                 0x1a => self.minimum_distance = stack.pop().ok_or(Error::StackUnderflow)?,
-                op @ 0xc0..=0xdf => {
+                0x4d => self.auto_flip = true,
+                0x4e => self.auto_flip = false,
+                op @ 0xc0..=0xff => {
+                    let cvt = if op >= 0xe0 {
+                        Some(stack.pop().ok_or(Error::StackUnderflow)?)
+                    } else {
+                        None
+                    };
                     let index = stack.pop().ok_or(Error::StackUnderflow)? as u16;
-                    self.move_direct_relative(op, index);
+                    self.move_relative(op, index, cvt);
                 }
                 0x85 => {
                     let flags = stack.pop().ok_or(Error::StackUnderflow)?;
@@ -1262,4 +1300,24 @@ fn adr0064_i1_glyph_starts_with_default_vectors_but_keeps_prepared_cvt() {
         .unwrap();
     assert_eq!(result[0].current, [64, 0]);
     assert_eq!(vm.cvt, [38]);
+}
+
+#[test]
+fn adr0064_i1_mirp_flips_control_distance_and_observes_cut_in() {
+    for (op, flip, index, expected) in [
+        (0xe0, 0x4d, 0, -80),
+        (0xe0, 0x4e, 0, 80),
+        (0xe4, 0x4d, 0, -64),
+        (0xe0, 0x4d, -1, 0),
+    ] {
+        let mut vm = Interpreter::new(0, &[80 * 64], 65536);
+        vm.points[1].push(HintPoint::default());
+        vm.points[1].push(HintPoint {
+            original: [-50, 0],
+            ..Default::default()
+        });
+        vm.execute(&[flip, op], &mut alloc::vec![1, index], 2)
+            .unwrap();
+        assert_eq!(vm.points[1][1].current, [expected, 0]);
+    }
 }
