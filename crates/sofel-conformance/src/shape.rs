@@ -24,6 +24,7 @@ pub const COMPLEX: [&str; 8] = [
 pub fn shaper_name(s: Shaper) -> &'static str {
     match s {
         Shaper::Default => "default",
+        Shaper::Dumber => "dumber",
         Shaper::Arabic => "arabic",
         Shaper::Hangul => "hangul",
         Shaper::Hebrew => "hebrew",

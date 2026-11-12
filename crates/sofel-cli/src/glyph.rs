@@ -14,6 +14,8 @@ use sofel_raster::{
     BgraImage, Bitmap, FillRule, RasterError, Rasterizer, RenderOptions, blend_layer, pixel_box,
 };
 
+use crate::color_raster::SvgImagePainter;
+
 /// Why [`render`] failed.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum RenderError {
@@ -124,6 +126,45 @@ pub fn color_layers(font: &sofel_font::Font<'_>, glyph: u32) -> Vec<(u32, Option
         .collect()
 }
 
+/// Renders a color glyph using its COLRv1 paint, SVG image or COLRv0 layers,
+/// with the glyph's own gray outline as the fallback.
+///
+/// # Errors
+///
+/// Returns an error when the fallback outline cannot be loaded or rendered.
+pub fn render_color<'r>(
+    outlines: &Outlines<'_, '_, '_>,
+    glyph: GlyphId,
+    ppem: u16,
+    options: &PaintOptions<'_>,
+    scratch: &mut Scratch,
+    raster: &'r mut Rasterizer,
+    image: &mut BgraImage,
+) -> Result<ColorGlyph<'r>, RenderError> {
+    let font = outlines.font();
+    image.clear();
+    if let Some(color) = crate::colr_raster::render(outlines, glyph, ppem, options, scratch) {
+        *image = color;
+        return Ok(ColorGlyph::Color);
+    }
+    if sofel_color::glyph_color_format(font, glyph.0) == Some(sofel_color::ColorFormat::Svg) {
+        outlines
+            .load(glyph, Scale::pixels(font, ppem, ppem), scratch)
+            .map_err(RenderError::Outline)?;
+        let mut painter = SvgImagePainter::new(glyph.0, ppem, font.units_per_em(), raster, image);
+        let mut color_scratch = sofel_color::Scratch::default();
+        if sofel_color::paint(font, glyph.0, options, &mut color_scratch, &mut painter)
+            == sofel_color::Painted::Svg
+            && image.width > 0
+            && image.rows > 0
+        {
+            return Ok(ColorGlyph::Color);
+        }
+        image.clear();
+    }
+    render_colr_v0(outlines, glyph, ppem, options, scratch, raster, image)
+}
+
 /// Renders the usable COLR version 0 layers of `glyph` at `ppem` pixels
 /// (ADR 0023). Each layer is rendered with [`render`] and combined in
 /// record order with [`blend_layer`]. `options.ppem` is not used.
@@ -136,7 +177,7 @@ pub fn color_layers(font: &sofel_font::Font<'_>, glyph: u32) -> Vec<(u32, Option
 ///
 /// As [`render`], when the glyph's own outline cannot be loaded or (in
 /// the gray fallback) rendered.
-pub fn render_color<'r>(
+pub fn render_colr_v0<'r>(
     outlines: &Outlines<'_, '_, '_>,
     glyph: GlyphId,
     ppem: u16,
@@ -145,11 +186,11 @@ pub fn render_color<'r>(
     raster: &'r mut Rasterizer,
     image: &mut BgraImage,
 ) -> Result<ColorGlyph<'r>, RenderError> {
-    let font = outlines.font();
     image.clear();
     outlines
-        .load(glyph, Scale::pixels(font, ppem, ppem), scratch)
+        .load(glyph, Scale::pixels(outlines.font(), ppem, ppem), scratch)
         .map_err(RenderError::Outline)?;
+    let font = outlines.font();
     let layers = color_layers(font, glyph.0);
     if layers.is_empty() {
         return render(outlines, glyph, ppem, scratch, raster).map(ColorGlyph::Gray);
