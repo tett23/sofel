@@ -9,16 +9,32 @@ use sofel_raster::{BgraImage, Rasterizer};
 use sofel_read::GlyphId;
 
 fn compare(font_path: &str, glyph: u32, reference: &[u8], require_color: bool) {
+    compare_at(font_path, glyph, reference, require_color, 48, 0, &[]);
+}
+
+fn compare_at(
+    font_path: &str,
+    glyph: u32,
+    reference: &[u8],
+    require_color: bool,
+    ppem: u16,
+    palette: u16,
+    coords: &[f32],
+) {
     let bytes = std::fs::read(paths::testdata().join(font_path)).unwrap();
     let font = Font::new(&bytes, 0).unwrap();
-    let outlines = Outlines::new(font.default_instance());
+    let location = sofel_font::var::Location::from_design(&font, coords);
+    let outlines = Outlines::new(font.instance(&location));
     let mut image = BgraImage::default();
     let mut raster = Rasterizer::new();
     let result = render_color(
         &outlines,
         GlyphId(glyph),
-        48,
-        &PaintOptions::default(),
+        ppem,
+        &PaintOptions {
+            palette: sofel_color::Palette::Font(palette),
+            ..Default::default()
+        },
         &mut Scratch::default(),
         &mut raster,
         &mut image,
@@ -180,4 +196,14 @@ fn i2_all_colrv1_pixel_glyphs_match_harfbuzz_raster() {
         checked += 1;
     }
     assert_eq!(checked, 200);
+    for glyph in [12, 27, 38] {
+        let reference = std::process::Command::new(&helper)
+            .arg(&font)
+            .arg(glyph.to_string())
+            .args(["96", "1", "SWPS=45"])
+            .output()
+            .unwrap();
+        assert!(reference.status.success());
+        compare_at(VARIABLE, glyph, &reference.stdout, true, 96, 1, &[45.]);
+    }
 }
