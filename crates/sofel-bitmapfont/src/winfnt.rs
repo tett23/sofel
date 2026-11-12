@@ -118,11 +118,12 @@ fn mul_div(value: u32, numerator: u32, denominator: u32) -> Result<u32, WinFontE
     if denominator == 0 {
         return Err(WinFontError);
     }
-    value
-        .checked_mul(numerator)
-        .and_then(|v| v.checked_add(denominator / 2))
-        .and_then(|v| v.checked_div(denominator))
-        .ok_or(WinFontError)
+    let rounded = u64::from(value)
+        .checked_mul(u64::from(numerator))
+        .and_then(|v| v.checked_add(u64::from(denominator / 2)))
+        .and_then(|v| v.checked_div(u64::from(denominator)))
+        .ok_or(WinFontError)?;
+    u32::try_from(rounded).map_err(|_| WinFontError)
 }
 
 impl WinFont {

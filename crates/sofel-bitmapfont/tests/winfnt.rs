@@ -22,6 +22,12 @@ fn adr0065_i1_fnt_and_fon_faces_match_freetype() {
     let fnt3 = WinFont::parse(FNT3, 0).unwrap();
     assert_eq!(fnt3.ppem_26_6(), (512, 512));
     assert_eq!(fnt3.glyph(1).unwrap().bitmap, fnt.glyph(1).unwrap().bitmap);
+    let mut high_dpi = FNT.to_vec();
+    high_dpi[68..74].copy_from_slice(&[255; 6]);
+    assert_eq!(
+        WinFont::parse(&high_dpi, 0).unwrap().ppem_26_6(),
+        (896, 512)
+    );
     let first = WinFont::parse(FON, 0).unwrap();
     let second = WinFont::parse(FON, 1).unwrap();
     assert_eq!(first.num_faces(), 2);
