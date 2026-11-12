@@ -6,8 +6,8 @@
     clippy::arithmetic_side_effects
 )]
 use sofel_color::{PaintCommand, PaintOptions, Painted, Recording};
-use sofel_geom::{Point, PointF, Transform};
-use sofel_outline::{Outlines, Scale, Scratch};
+use sofel_geom::{Pen, PointF, Transform};
+use sofel_outline::{HbOutlineCommand, Outlines, Scale, Scratch};
 use sofel_raster::{BgraImage, ColorGradient, PaintMask};
 use sofel_read::GlyphId;
 
@@ -136,7 +136,15 @@ pub(crate) fn render(
                 budget = budget.checked_sub(n)?;
                 outlines.load(GlyphId(*id), Scale::Unscaled, scratch).ok()?;
                 let mut pen = PaintMask::new(t, outline_budget.min(1 << 20));
-                scratch.decompose(Point::default(), 1, &mut pen).ok()?;
+                scratch
+                    .hb_decompose(1., 1., |cmd| match cmd {
+                        HbOutlineCommand::MoveTo(p) => pen.move_to_float(p),
+                        HbOutlineCommand::LineTo(p) => pen.line_to_float(p),
+                        HbOutlineCommand::QuadTo(a, b) => pen.quad_to_float(a, b),
+                        HbOutlineCommand::CubicTo(a, b, c) => pen.cubic_to_float(a, b, c),
+                        HbOutlineCommand::Close => pen.close(),
+                    })
+                    .ok()?;
                 outline_budget = outline_budget.checked_sub(pen.work_used())?;
                 let mut mask = clips.last()?.clone();
                 pen.intersect(left, top, width, &mut mask, &mut budget)?;
@@ -161,7 +169,8 @@ pub(crate) fn render(
                 if rows == 0 {
                     continue;
                 }
-                let gradient = ColorGradient::new(&brush, (last - first) * rows)?;
+                let gradient =
+                    ColorGradient::with_atan2(&brush, (last - first) * rows, f32::atan2)?;
                 for (j, row) in image.pixels.chunks_exact_mut(width * 4).enumerate() {
                     let alpha = mask.get(j * width..(j + 1) * width)?;
 
