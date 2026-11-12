@@ -293,6 +293,16 @@ pub(crate) fn apply(tables: &[Subtable<'_>], buf: &mut Buffer, scale: &HbScale, 
         if matches!(t.action, Kern::Unknown) || horizontal != (t.coverage & 0x8000_0000 == 0) {
             continue;
         }
+        if let Kern::History(machine, _)
+        | Kern::LegacyHistory(machine, _, _)
+        | Kern::Attachment(machine, _, _, _) = &t.action
+            && !buf
+                .infos()
+                .iter()
+                .any(|info| machine.can_start(info.codepoint))
+        {
+            continue;
+        }
         buf.charge(buf.len);
         if buf.max_ops < 0 {
             buf.successful = false;
@@ -354,6 +364,12 @@ pub(crate) fn apply(tables: &[Subtable<'_>], buf: &mut Buffer, scale: &HbScale, 
                     };
                     if let Some(((mx, my), (cx, cy))) = coords {
                         let dir = b.direction;
+                        // The marked glyph's cursive chain may pass through idx.
+                        // HarfBuzz installs the new anchor delta before walking it.
+                        if let Some(p) = b.positions_mut().get_mut(idx) {
+                            p.x_offset = scale.em_scale_x(mx).saturating_sub(scale.em_scale_x(cx));
+                            p.y_offset = scale.em_scale_y(my).saturating_sub(scale.em_scale_y(cy));
+                        }
                         let cross = resolve_cross_offset(b.positions_mut(), mark, dir, reverse);
                         let chain = if reverse {
                             idx.checked_signed_diff(mark)
@@ -361,8 +377,6 @@ pub(crate) fn apply(tables: &[Subtable<'_>], buf: &mut Buffer, scale: &HbScale, 
                             mark.checked_signed_diff(idx)
                         };
                         if let Some(p) = b.positions_mut().get_mut(idx) {
-                            p.x_offset = scale.em_scale_x(mx).saturating_sub(scale.em_scale_x(cx));
-                            p.y_offset = scale.em_scale_y(my).saturating_sub(scale.em_scale_y(cy));
                             if horizontal {
                                 p.y_offset = p.y_offset.saturating_add(cross);
                             } else {

@@ -4,5 +4,3 @@
 # item per line, <font>#<face>:<script>[@<position>], with one category of
 # conformance/expected-failures.txt as its comment; the category must fit
 # the first string that differs. Remove an entry when it passes.
-harfbuzz/test/shape/data/in-house/fonts/1bfb8aab9b49ef30e8deae3db271ca3dbc6208a1.ttf#0:Latn  # aat
-harfbuzz/test/shape/data/in-house/fonts/cc3a5bc0b7af5ea992fa8aa7810973e294d3b381.ttf#0:Latn  # aat
