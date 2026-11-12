@@ -264,7 +264,7 @@ fn interpolate_contour(points: &mut [HintPoint], axis: usize) {
 }
 
 #[derive(Clone)]
-struct Interpreter {
+pub(crate) struct Interpreter {
     contour_ends: alloc::vec::Vec<usize>,
     auto_flip: bool,
     minimum_distance: i64,
@@ -337,6 +337,59 @@ impl Interpreter {
         }
     }
 
+    pub(super) fn mono(
+        instance: sofel_font::var::Instance<'_, '_, '_, '_>,
+        ppem: u16,
+    ) -> Result<(Self, usize), super::OutlineError> {
+        Self::prepare(
+            instance,
+            ppem,
+            EngineInfo {
+                version: 35,
+                target: HintTarget::Mono,
+                rotated: false,
+                stretched: false,
+                variation: !instance.location().ft_default(),
+                symmetric_smoothing: false,
+            },
+        )
+        .map_err(|_| super::OutlineError::InvalidOutline)
+    }
+
+    pub(super) fn hint_outline(
+        &self,
+        unscaled: impl Iterator<Item = super::Point>,
+        outline: &mut [super::Point],
+        phantoms: &mut [super::Point; 4],
+        ends: &[usize],
+        code: &[u8],
+        limit: usize,
+    ) -> Result<(), super::OutlineError> {
+        let points = unscaled
+            .zip(outline.iter().chain(phantoms.iter()))
+            .map(|(raw, p)| {
+                let scaled = [i64::from(p.x), i64::from(p.y)];
+                HintPoint {
+                    unscaled: [i64::from(raw.x), i64::from(raw.y)],
+                    original: scaled,
+                    current: scaled,
+                    touched: [false; 2],
+                }
+            })
+            .collect();
+        let result = self
+            .execute_glyph(points, ends, code, limit)
+            .map_err(|_| super::OutlineError::InvalidOutline)?;
+        for (point, out) in result
+            .iter()
+            .zip(outline.iter_mut().chain(phantoms.iter_mut()))
+        {
+            out.x = point.current[0] as i32;
+            out.y = point.current[1] as i32;
+        }
+        Ok(())
+    }
+
     fn prepare(
         instance: sofel_font::var::Instance<'_, '_, '_, '_>,
         ppem: u16,
@@ -350,9 +403,9 @@ impl Interpreter {
             .or_else(|| font.table(maxp::TAG).map(|b| (b, CountWidth::U16)))
             .ok_or(Error::InvalidReference)?;
         let maxima = maxp::Maxp::new(bytes, width)
-            .ok()
-            .and_then(|m| m.truetype())
-            .ok_or(Error::InvalidReference)?;
+            .map_err(|_| Error::InvalidReference)?
+            .truetype()
+            .unwrap_or_default();
         let cvt = if font.table(Tag::new(b"cvt ")).is_some() {
             instance
                 .ft_control_values()

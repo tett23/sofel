@@ -717,3 +717,19 @@ fn empty_glyphs_do_not_move() {
     assert!(log.is_empty());
     assert_eq!(r.unwrap().cbox, CBox::default());
 }
+
+#[test]
+fn adr0064_i1_mono_loader_executes_the_glyph_program() {
+    let bytes = one(simple_glyph(
+        &[&[Pt::On(0, 0), Pt::On(100, 101), Pt::On(200, 0)]],
+        false,
+        &[0x00, 0xb1, 1, 128, 0x48],
+    ));
+    let font = Font::new(&bytes, 0).unwrap();
+    let outlines = sofel_outline::Outlines::new(font.default_instance());
+    let mut scratch = Scratch::default();
+    outlines
+        .load_truetype_mono(GlyphId(1), 16, &mut scratch)
+        .unwrap();
+    assert_eq!(scratch.points()[1].y, 128);
+}

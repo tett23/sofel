@@ -218,6 +218,7 @@ struct Context<'a, 'loc, 'source> {
     loca: Loca<'a>,
     num_glyphs: u32,
     extended: bool,
+    hint: Option<(tt_hint::Interpreter, usize)>,
     scale: Scale,
 }
 
@@ -283,6 +284,16 @@ impl Context<'_, '_, '_> {
                 Point::default(),
             ];
         }
+        self.design_phantoms(glyph, x_min, y_max)
+    }
+
+    fn design_phantoms(&self, glyph: u32, x_min: i16, y_max: i16) -> [Point; 4] {
+        let left = i32::from(x_min)
+            - i32::from(
+                self.font
+                    .instance(self.location)
+                    .ft_left_side_bearing(GlyphId(glyph)),
+            );
         let instance = self.font.instance(self.location);
         let right = left.wrapping_add(i32::from(
             instance
@@ -469,6 +480,24 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
         Ok(info)
     }
 
+    /// Loads a simple TrueType outline with the v35 interpreter and monochrome target.
+    pub fn load_truetype_mono(
+        &self,
+        glyph: GlyphId,
+        ppem: u16,
+        scratch: &mut Scratch,
+    ) -> Result<OutlineInfo, OutlineError> {
+        scratch.clear();
+        let hint = tt_hint::Interpreter::mono(self.instance(), ppem)?;
+        load_glyf(
+            self.instance(),
+            glyph,
+            Scale::pixels(&self.font, ppem, ppem),
+            scratch,
+            Some(hint),
+        )
+    }
+
     /// Loads the points of `glyph` into `scratch` as `FT_Load_Glyph` with
     /// `FT_LOAD_NO_HINTING` would; see [`load`] for glyf fonts. CFF and
     /// CFF2 glyphs follow FreeType's Adobe engine without hinting: points
@@ -481,7 +510,7 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
         scratch: &mut Scratch,
     ) -> Result<OutlineInfo, OutlineError> {
         match &self.format {
-            Format::Glyf => load_glyf(self.instance(), glyph, scale, scratch),
+            Format::Glyf => load_glyf(self.instance(), glyph, scale, scratch, None),
             Format::Cff(c) => load_cff_at(&self.font, self.location, c, glyph, scale, scratch),
             Format::Unsupported(e) => {
                 scratch.clear();
@@ -514,6 +543,7 @@ fn load_glyf(
     glyph: GlyphId,
     scale: Scale,
     scratch: &mut Scratch,
+    hint: Option<(tt_hint::Interpreter, usize)>,
 ) -> Result<OutlineInfo, OutlineError> {
     let font = instance.font();
     let extended = font.table(glyf::TAG_WIDE).is_some();
@@ -532,6 +562,7 @@ fn load_glyf(
         loca,
         num_glyphs: font.num_glyphs(),
         extended,
+        hint,
         scale,
     };
     scratch.points.clear();
@@ -690,6 +721,9 @@ fn load_glyph(
     if n > 0 {
         load_simple(ctx, s, &g, glyph, pp1_x, overlap)
     } else {
+        if ctx.hint.is_some() {
+            return Err(OutlineError::UnsupportedFormat);
+        }
         load_composite(ctx, s, &g, glyph, depth, overlap, pp1_x)
     }
 }
@@ -830,6 +864,32 @@ fn load_simple(
                 }
             }
         }
+    }
+    if let Some((vm, limit)) = &ctx.hint {
+        let raw_phantoms = ctx.design_phantoms(glyph, g.x_min(), g.y_max());
+        if !varied {
+            s.phantoms = raw_phantoms.map(|p| ctx.scale_point(p.x, p.y));
+        }
+        let raw = simple.points(ctx.extended).enumerate().map(|(i, p)| {
+            if varied {
+                let v = s.varied[i];
+                Point {
+                    x: v.x.wrapping_add(0x8000) >> 16,
+                    y: v.y.wrapping_add(0x8000) >> 16,
+                }
+            } else {
+                Point { x: p.x, y: p.y }
+            }
+        });
+        vm.hint_outline(
+            raw.chain(raw_phantoms),
+            &mut s.points[base..],
+            &mut s.phantoms,
+            &s.ends,
+            simple.instructions(),
+            *limit,
+        )?;
+        *pp1_x = s.phantoms[0].x;
     }
     if simple.overlap() {
         *overlap = true;
