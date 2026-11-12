@@ -313,8 +313,12 @@ impl Plan {
             let handled = match *tag {
                 b"GSUB" | b"GPOS" | b"GDEF" | b"BASE" => {
                     let static_table = font.table(Tag::new(tag)).is_some_and(|data| match *tag {
-                        b"GSUB" | b"GPOS" => sofel_font::read::layout::LayoutTable::new(data)
-                            .is_ok_and(|t| t.feature_variations_offset().unwrap_or(0) == 0),
+                        b"GSUB" | b"GPOS" => can_instance_layout_conditions(
+                            data,
+                            &norm.axis_tags,
+                            &norm.user,
+                            norm.avar2,
+                        ),
                         b"GDEF" => sofel_font::read::gdef::Gdef::new(data).is_ok_and(|t| {
                             t.item_var_store_offset().unwrap_or(0) == 0
                                 || (!norm.avar2 && t.variation_store().is_ok())
@@ -539,28 +543,44 @@ impl Plan {
         let table =
             |t: &[u8; 4], gsub: bool| Gsubgpos::new(font.table(Tag::new(t)).unwrap_or(&[]), gsub);
         let no_closure = flags.has(Flags::NO_LAYOUT_CLOSURE);
-        let pinned_axes = pinned.then_some(p.var.n.normalized_coords.as_slice());
-        if tag_kept(b"GSUB") {
-            p.layout.gsub = layout::plan::closure_glyphs_lookups_features(
-                table(b"GSUB", true),
+        for (tag, is_gsub, lp) in [
+            (b"GSUB", true, &mut p.layout.gsub),
+            (b"GPOS", false, &mut p.layout.gpos),
+        ] {
+            if !tag_kept(tag) {
+                continue;
+            }
+            let t = table(tag, is_gsub);
+            let fixed = pinned
+                || (!p.var.n.normalized_coords.is_empty()
+                    && t.feature_variations_view().is_some()
+                    && layout_conditions_match(t.d.0, &p.var.n.axis_tags, |axis| {
+                        p.var.n.user.get(axis).is_some_and(|r| r.min == r.max)
+                    }));
+            *lp = layout::plan::closure_glyphs_lookups_features(
+                t,
                 num_glyphs,
                 no_closure,
                 &p.layout.layout_features,
                 &p.layout.layout_scripts,
                 &mut gsub_glyphs,
-                pinned_axes,
+                fixed.then_some(p.var.n.normalized_coords.as_slice()),
             );
-        }
-        if tag_kept(b"GPOS") {
-            p.layout.gpos = layout::plan::closure_glyphs_lookups_features(
-                table(b"GPOS", false),
-                num_glyphs,
-                no_closure,
-                &p.layout.layout_features,
-                &p.layout.layout_scripts,
-                &mut gsub_glyphs,
-                pinned_axes,
-            );
+            if fixed && !pinned {
+                lp.universal_record = layout::plan::applied_record(
+                    t.feature_variations_view(),
+                    &p.var.n.normalized_coords,
+                )
+                .ok()
+                .flatten();
+            }
+            if !fixed && !p.var.n.normalized_coords.is_empty() {
+                let features = BitSet::from_values(lp.features_w_dups.keys().copied());
+                match layout::plan::pinned_substitutes(t, &features, &p.var.n.normalized_coords) {
+                    Ok(map) => lp.substitutes = map,
+                    Err(reason) => lp.unsupported = Some(reason),
+                }
+            }
         }
         for (t, lp) in [(b"GSUB", &p.layout.gsub), (b"GPOS", &p.layout.gpos)] {
             if let Some(reason) = lp.unsupported {
@@ -1242,4 +1262,48 @@ fn glyph_map(
     let list: Vec<(u32, u32)> = keep.iter().map(|o| (o, o)).collect();
     let max = keep.max();
     Ok((list, max.wrapping_add(1)))
+}
+
+fn can_instance_layout_conditions(
+    data: &[u8],
+    axis_tags: &[Tag],
+    user: &BTreeMap<Tag, crate::input::AxisRange>,
+    avar2: bool,
+) -> bool {
+    !avar2
+        && (layout_conditions_match(data, axis_tags, |tag| !user.contains_key(tag))
+            || layout_conditions_match(data, axis_tags, |tag| {
+                user.get(tag).is_some_and(|r| r.min == r.max)
+            }))
+        || sofel_font::read::layout::LayoutTable::new(data)
+            .is_ok_and(|t| t.feature_variations_offset().unwrap_or(0) == 0)
+}
+
+fn layout_conditions_match(data: &[u8], axis_tags: &[Tag], accept: impl Fn(&Tag) -> bool) -> bool {
+    let Ok(variations) =
+        sofel_font::read::layout::LayoutTable::new(data).and_then(|t| t.feature_variations())
+    else {
+        return false;
+    };
+    let Some(fv) = variations else { return true };
+    fv.version() == 0x0001_0000
+        && (0..fv.len()).all(|i| {
+            let Some(record) = fv.record(i) else {
+                return false;
+            };
+            let Ok(conditions) = record.conditions() else {
+                return false;
+            };
+            conditions.is_none_or(|conditions| {
+                (0..conditions.len()).all(|j| {
+                    conditions
+                        .condition(j)
+                        .ok()
+                        .flatten()
+                        .and_then(|c| c.axis_range())
+                        .and_then(|(axis, _, _)| axis_tags.get(usize::from(axis)))
+                        .is_some_and(&accept)
+                })
+            })
+        })
 }

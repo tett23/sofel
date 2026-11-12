@@ -180,7 +180,7 @@ fn substitutions(fv: Option<FeatureVariations<'_>>) -> Vec<Vec<(u32, D<'_>)>> {
 /// `all_axes_pinned`): the first record whose conditions all hold at the
 /// normalized location. Only conditions of format 1 (axis ranges) are
 /// evaluated by this version.
-fn applied_record(
+pub(crate) fn applied_record(
     fv: Option<FeatureVariations<'_>>,
     coords: &[i32],
 ) -> Result<Option<usize>, &'static str> {
@@ -219,7 +219,7 @@ fn applied_record(
 
 /// The substitutes of `features` from the record that applies at the
 /// pinned location: feature index to the offset of the substitute.
-fn pinned_substitutes(
+pub(crate) fn pinned_substitutes(
     t: Gsubgpos<'_>,
     features: &BitSet,
     coords: &[i32],
@@ -427,6 +427,8 @@ pub(crate) fn closure_glyphs_lookups_features(
         }
     }
     LayoutPlan {
+        fixed_conditions: pinned.is_some(),
+        universal_record: None,
         lookups,
         features: features_map,
         features_w_dups: with_dups,

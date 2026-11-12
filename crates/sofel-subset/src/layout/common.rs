@@ -704,10 +704,19 @@ impl<'p, 's> Sub<'p, 's> {
         let count = keep.map_or(0, |k| k.saturating_add(1));
         let mut out = 0u32;
         for i in 0..count {
+            if self
+                .lp()
+                .universal_record
+                .is_some_and(|idx| usize::try_from(i).ok() != Some(idx))
+            {
+                continue;
+            }
             let cond_at = self.s.u32(0);
             let subs_at = self.s.u32(0);
             let Some(record) = fv.record(i) else { continue };
-            if let Some(conds) = record.conditions().ok().flatten() {
+            if self.lp().universal_record.is_none()
+                && let Some(conds) = record.conditions().ok().flatten()
+            {
                 self.serialize_subset_opt(cond_at, 4, D(conds.data()), |s| s.condition_set(conds));
             }
             if let Some(subs) = record.substitutions().ok().flatten() {
@@ -715,6 +724,31 @@ impl<'p, 's> Sub<'p, 's> {
                     s.feature_substitution(t, subs)
                 });
             }
+            out = out.wrapping_add(1);
+        }
+        if out != 0 && !self.lp().fixed_conditions && !self.lp().substitutes.is_empty() {
+            let conditions = self.s.u32(0);
+            let substitutions = self.s.u32(0);
+            self.serialize_subset(conditions, 4, |s| {
+                s.s.u16(0);
+                true
+            });
+            self.serialize_subset(substitutions, 4, |s| {
+                s.s.u32(0x0001_0000);
+                let count = s.s.u16(0);
+                let indices: Vec<_> = s.lp().substitutes.keys().copied().collect();
+                for old in indices {
+                    let Some(&new) = s.lp().features_w_dups.get(&old) else {
+                        continue;
+                    };
+                    s.s.u16((new & 0xffff) as u16);
+                    let at = s.s.u32(0);
+                    let f = t.feature(old as usize);
+                    s.serialize_subset(at, 4, |s| s.feature(f, Some(t.feature_tag(old as usize))));
+                    s.bump_u16(count, 1);
+                }
+                true
+            });
             out = out.wrapping_add(1);
         }
         self.s.set_u32(count_at, out);
@@ -733,8 +767,30 @@ impl<'p, 's> Sub<'p, 's> {
                 return false;
             }
             if self.offset_append(4, |s| {
-                s.s.extend(D(c.data()).slice(0, 8));
-                c.data().len() >= 8
+                let Some((axis, min, max)) = c.axis_range() else {
+                    return false;
+                };
+                let axis = if s.p.var.instancing() {
+                    let Ok(index) =
+                        s.p.var
+                            .n
+                            .retained_axis_indices
+                            .binary_search(&usize::from(axis))
+                    else {
+                        return false;
+                    };
+                    let Ok(index) = u16::try_from(index) else {
+                        return false;
+                    };
+                    index
+                } else {
+                    axis
+                };
+                s.s.u16(1);
+                s.s.u16(axis);
+                s.s.i16(min);
+                s.s.i16(max);
+                true
             }) {
                 self.bump_u16(count_at, 1);
             }
@@ -796,7 +852,7 @@ impl<'p, 's> Sub<'p, 's> {
             let at = self.s.u32(0);
             let fv = t.feature_variations_view();
             // Pinning every axis drops the feature variations.
-            let ret = !self.p.var.all_axes_pinned()
+            let ret = (!self.lp().fixed_conditions || self.lp().universal_record.is_some())
                 && fv.is_some_and(|fv| {
                     self.serialize_subset_opt(at, 4, D(fv.data()), |s| s.feature_variations(t, fv))
                 });
