@@ -346,3 +346,33 @@ fn extended_tables_are_labelled() {
         "{ds:?}"
     );
 }
+
+#[test]
+fn adr0064_i1_composite_program_length_excludes_padding() {
+    for wide in [false, true] {
+        let mut last = comp(2, Args::Xy(300, 2));
+        last.flags = sofel_read::glyf::WE_HAVE_INSTRUCTIONS;
+        let mut data = composite_glyph(&[comp(1, Args::Xy(0, 0)), last], [0; 4], wide);
+        assert!(
+            Glyph::new(&data)
+                .unwrap()
+                .composite_instructions(wide)
+                .is_err()
+        );
+        data.extend_from_slice(&[0, 2, 0x18]);
+        assert!(
+            Glyph::new(&data)
+                .unwrap()
+                .composite_instructions(wide)
+                .is_err()
+        );
+        data.extend_from_slice(&[0x59, 0]);
+        assert_eq!(
+            Glyph::new(&data)
+                .unwrap()
+                .composite_instructions(wide)
+                .unwrap(),
+            &[0x18, 0x59]
+        );
+    }
+}

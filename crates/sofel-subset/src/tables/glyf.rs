@@ -1223,12 +1223,16 @@ pub(crate) fn instance(
     flags: Flags,
     num_output_glyphs: u32,
     font: &Font<'_>,
+    coords: &[i32],
 ) -> Option<(Vec<Vec<u8>>, crate::instance::Metrics)> {
     let accel = GlyfAccel::new(font);
     let hmtx = crate::tables::hmtx::MetricsAccel::dual(font, false);
     let vmtx = crate::tables::hmtx::MetricsAccel::dual(font, true);
     let notdef_outline = flags.has(Flags::NOTDEF_OUTLINE);
     let no_hinting = flags.has(Flags::NO_HINTING);
+    let location = sofel_font::var::Location::from_normalized_2_14(font, coords);
+    let instance = font.instance(&location);
+    let mut gvar_scratch = sofel_font::var::gvar::HbScratch::default();
     let mut m = crate::instance::Metrics {
         bounds_width: alloc::vec![u32::MAX; num_output_glyphs as usize],
         bounds_height: alloc::vec![u32::MAX; num_output_glyphs as usize],
@@ -1260,6 +1264,39 @@ pub(crate) fn instance(
         let mut comp = Vec::new();
         if !cx.get_points(old, &g, &mut all, &mut comp, 0) {
             return None;
+        }
+        if g.kind == Kind::Simple && coords.iter().any(|coord| *coord != 0) {
+            let mut ends = (0..g.contours())
+                .filter_map(|contour| {
+                    u16_at(
+                        g.bytes,
+                        HEADER_SIZE.saturating_add(contour.saturating_mul(2)),
+                    )
+                })
+                .peekable();
+            let mut varied: Vec<sofel_font::var::gvar::Point<f32>> = all
+                .iter()
+                .enumerate()
+                .map(|(index, point)| {
+                    let end = ends.peek().is_some_and(|&last| usize::from(last) == index);
+                    if end {
+                        ends.next();
+                    }
+                    sofel_font::var::gvar::Point {
+                        x: point.x,
+                        y: point.y,
+                        end,
+                    }
+                })
+                .collect();
+            let mut budget = 1 << 24;
+            instance
+                .apply_gvar_hb(old, &mut varied, &mut gvar_scratch, false, &mut budget)
+                .ok()?;
+            for (point, adjusted) in all.iter_mut().zip(varied) {
+                point.x = adjusted.x;
+                point.y = adjusted.y;
+            }
         }
         let pwd = core::mem::take(&mut cx.points_with_deltas);
         drop(cx);
