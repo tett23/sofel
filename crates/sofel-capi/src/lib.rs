@@ -343,8 +343,7 @@ pub extern "C" fn sofel_vector_length(x: i32, y: i32) -> i32 {
 
 // --------------------------------------------------------------- fonts
 
-fn font_create(data: Option<&'static [u8]>, index: u32) -> Result<SofelFont, i32> {
-    let font = Font::new(some(data)?, index).map_err(font_error)?;
+fn font_handle(font: Font<'static>) -> SofelFont {
     let outlines = Outlines::new(font.default_instance());
     let cff = outlines.cff().copied();
     let ranges = cff.and_then(|c| c.charset()).map_or(0, |c| c.num_ranges());
@@ -355,13 +354,13 @@ fn font_create(data: Option<&'static [u8]>, index: u32) -> Result<SofelFont, i32
     let charset = cff
         .and_then(|c| c.charset())
         .and_then(|c| c.index_into(array).ok());
-    Ok(SofelFont {
+    SofelFont {
         font,
         outlines,
         cff,
         charset,
         starts,
-    })
+    }
 }
 
 /// `sofel_font_create`.
@@ -378,6 +377,32 @@ pub unsafe extern "C" fn sofel_font_create(
     index: u32,
     error: *mut i32,
 ) -> *mut SofelFont {
+    // SAFETY: the pointers meet the constructor's documented requirements.
+    unsafe { open_font(data, len, index, error, Font::new) }
+}
+
+/// Opens the same borrowed bytes using HarfBuzz's shaping header defaults.
+///
+/// # Safety
+/// Pointer and lifetime requirements are identical to `sofel_font_create`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_create_for_shaping(
+    data: *const u8,
+    len: usize,
+    index: u32,
+    error: *mut i32,
+) -> *mut SofelFont {
+    // SAFETY: the pointers meet the constructor's documented requirements.
+    unsafe { open_font(data, len, index, error, Font::for_shaping) }
+}
+
+unsafe fn open_font(
+    data: *const u8,
+    len: usize,
+    index: u32,
+    error: *mut i32,
+    open: fn(&'static [u8], u32) -> Result<Font<'static>, FontError>,
+) -> *mut SofelFont {
     // SAFETY: the caller keeps the data alive and unchanged until
     // sofel_font_destroy and every location made from the font has been
     // destroyed; `error` is NULL or writable.
@@ -385,10 +410,10 @@ pub unsafe extern "C" fn sofel_font_create(
     let Some(error) = error else {
         return core::ptr::null_mut();
     };
-    match font_create(data, index) {
+    match some(data).and_then(|bytes| open(bytes, index).map_err(font_error)) {
         Ok(f) => {
             *error = OK;
-            Box::into_raw(Box::new(f))
+            Box::into_raw(Box::new(font_handle(f)))
         }
         Err(e) => {
             *error = e;
@@ -3838,6 +3863,27 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
 
     use super::*;
+
+    #[test]
+    fn adr0060_i1_shaping_constructor_supplies_missing_header() {
+        let mut tables = test_build::sample_tables();
+        tables.retain(|(tag, _)| *tag != b"head");
+        let data = test_build::sfnt(&tables);
+        let mut error = OK;
+        // SAFETY: the input stays alive, the outputs are writable, and the
+        // successful handle is destroyed once.
+        unsafe {
+            let strict = sofel_font_create(data.as_ptr(), data.len(), 0, &mut error);
+            assert!(strict.is_null());
+            assert_eq!(error, ERROR_NO_HEAD);
+            let shaping = sofel_font_create_for_shaping(data.as_ptr(), data.len(), 0, &mut error);
+            assert_eq!(error, OK);
+            let mut upem = 0;
+            assert_eq!(sofel_font_units_per_em(shaping, &mut upem), OK);
+            assert_eq!(upem, 1000);
+            sofel_font_destroy(shaping);
+        }
+    }
 
     #[test]
     fn inv2_axis_ppem_values() {

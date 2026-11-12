@@ -159,3 +159,39 @@ fn adr0061_i1_nondefault_gvar_composite_remains_unsupported() {
         Err(sofel_subset::SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"gvar")
     ));
 }
+
+#[test]
+fn adr0061_i1_default_axis_pin_discards_inactive_mixed_tuples() {
+    let path = paths::testdata().join("harfbuzz/test/subset/data/fonts/Roboto-Variable.ABC.ttf");
+    let bytes = std::fs::read(&path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let dest =
+        std::env::temp_dir().join(format!("sofel-mixed-gvar-pin-{}.ttf", std::process::id()));
+    let base = Input::new()
+        .map_set(SetKind::Unicodes, |s| s.add(0x41))
+        .map_set(SetKind::DropTables, |s| {
+            for tag in [b"HVAR", b"STAT", b"GDEF", b"GSUB", b"GPOS", b"avar"] {
+                s.add(Tag::new(tag).to_u32());
+            }
+        });
+    for (axis, variation) in [(b"wght", "wght=400"), (b"wdth", "wdth=100")] {
+        let input = base
+            .with_axis_pinned_to_default(Tag::new(axis), &font)
+            .unwrap();
+        let ours = subset(&font, &input).unwrap();
+        assert!(
+            Command::new(paths::hb_dump())
+                .arg("--subset")
+                .arg(format!("--font-file={}", path.display()))
+                .arg("--unicodes=U+0041")
+                .arg("--drop-tables+=HVAR,STAT,GDEF,GSUB,GPOS,avar")
+                .arg(format!("--variations={variation}"))
+                .arg(format!("--output-file={}", dest.display()))
+                .status()
+                .unwrap()
+                .success()
+        );
+        assert_eq!(ours, std::fs::read(&dest).unwrap(), "{variation}");
+    }
+    std::fs::remove_file(dest).unwrap();
+}
