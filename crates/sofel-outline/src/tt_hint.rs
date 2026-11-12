@@ -298,6 +298,32 @@ fn projected_distance(a: [i64; 2], b: [i64; 2], vector: [i64; 2]) -> i64 {
     project([a[0].wrapping_sub(b[0]), a[1].wrapping_sub(b[1])], vector)
 }
 
+fn intersection(a0: [i64; 2], a1: [i64; 2], b0: [i64; 2], b1: [i64; 2]) -> [i64; 2] {
+    use sofel_font::read::cff::ft::mul_div;
+    let dx = a1[0].wrapping_sub(a0[0]);
+    let dy = a1[1].wrapping_sub(a0[1]);
+    let ex = b1[0].wrapping_sub(b0[0]);
+    let ey = b1[1].wrapping_sub(b0[1]);
+    let cross = |x, y| mul_div(x, ey.wrapping_neg(), 64).wrapping_add(mul_div(y, ex, 64));
+    let det = cross(dx, dy);
+    let dot = mul_div(dx, ex, 64).wrapping_add(mul_div(dy, ey, 64));
+    if det.wrapping_abs().wrapping_mul(19) > dot.wrapping_abs() {
+        let numerator = cross(b0[0].wrapping_sub(a0[0]), b0[1].wrapping_sub(a0[1]));
+        [
+            a0[0].wrapping_add(mul_div(numerator, dx, det)),
+            a0[1].wrapping_add(mul_div(numerator, dy, det)),
+        ]
+    } else {
+        [0, 1].map(|axis| {
+            a0[axis]
+                .wrapping_add(a1[axis])
+                .wrapping_add(b0[axis])
+                .wrapping_add(b1[axis])
+                / 4
+        })
+    }
+}
+
 fn shift_point(point: &mut HintPoint, delta: [i64; 2], freedom: [i64; 2], compatibility: u8) {
     for axis in 0..2 {
         if freedom[axis] != 0 {
@@ -405,6 +431,7 @@ pub(crate) struct Interpreter {
     auto_flip: bool,
     minimum_distance: i64,
     backward_compatibility: u8,
+    blend_coords: alloc::vec::Vec<i32>,
     composite: bool,
     loop_count: u16,
     points: [alloc::vec::Vec<HintPoint>; 2],
@@ -446,6 +473,7 @@ impl Interpreter {
             reference: [0; 3],
             loop_count: 1,
             backward_compatibility: 0,
+            blend_coords: alloc::vec::Vec::new(),
             composite: false,
             auto_flip: true,
             minimum_distance: 64,
@@ -622,8 +650,11 @@ impl Interpreter {
             ppem,
             scale,
             engine,
-            font.table(Tag::new(b"fpgm")).unwrap_or_default(),
-            font.table(Tag::new(b"prep")).unwrap_or_default(),
+            instance.ft_coords(),
+            (
+                font.table(Tag::new(b"fpgm")).unwrap_or_default(),
+                font.table(Tag::new(b"prep")).unwrap_or_default(),
+            ),
         )?;
         if engine.version == 40 && engine.target == HintTarget::Lcd && !engine.tricky && !grid_fit {
             vm.instruction_control |= 1;
@@ -638,8 +669,8 @@ impl Interpreter {
         ppem: u16,
         scale: i64,
         engine: EngineInfo,
-        font_program: &[u8],
-        prep: &[u8],
+        coords: &[sofel_font::read::Fixed],
+        (font_program, prep): (&[u8], &[u8]),
     ) -> Result<(Self, usize), Error> {
         let declared = usize::from(maxima.max_stack_elements);
         let limit = declared + (declared / 2).max(128);
@@ -648,6 +679,8 @@ impl Interpreter {
             .min(cvt.len().saturating_mul(2).max(30));
         let mut vm = Self::new(maxima.max_storage, cvt, scale);
         vm.engine = engine;
+        vm.blend_coords
+            .extend(coords.iter().map(|coord| coord.0 >> 2));
         vm.points[0].resize(twilight, HintPoint::default());
         let mut font_vm = vm.clone();
         font_vm.cvt.fill(0);
@@ -967,6 +1000,29 @@ impl Interpreter {
                     } else {
                         self.freedom
                     });
+                }
+                0x0f => {
+                    let start = stack.len().checked_sub(5).ok_or(Error::StackUnderflow)?;
+                    let [target, a0, a1, b0, b1] = *stack[start..]
+                        .first_chunk::<5>()
+                        .ok_or(Error::StackUnderflow)?;
+                    stack.truncate(start);
+                    let [z0, z1, z2] = self.zones.map(usize::from);
+                    let coords = |zone: usize, index: i64| {
+                        self.points[zone]
+                            .get(usize::from(index as u16))
+                            .map(|point| point.current)
+                    };
+                    if let (Some(a0), Some(a1), Some(b0), Some(b1)) = (
+                        coords(z1, a0),
+                        coords(z1, a1),
+                        coords(z0, b0),
+                        coords(z0, b1),
+                    ) && let Some(point) = self.points[z2].get_mut(usize::from(target as u16))
+                    {
+                        point.current = intersection(a0, a1, b0, b1);
+                        point.touched = [true; 2];
+                    }
                 }
                 0x0e => self.freedom = self.projection,
                 op @ (0x4b | 0x4c) => {
@@ -1476,6 +1532,13 @@ impl Interpreter {
                         self.scan_type = mode as u16;
                     }
                 }
+                0x91 if !self.blend_coords.is_empty() => {
+                    if self.blend_coords.len() > max_stack.saturating_sub(stack.len()) {
+                        return Err(Error::StackOverflow);
+                    }
+                    stack.extend(self.blend_coords.iter().copied().map(i64::from));
+                }
+                0x92 if !self.blend_coords.is_empty() => push(stack, 17, max_stack)?,
                 0x88 => {
                     let selector = stack.last_mut().ok_or(Error::StackUnderflow)?;
                     *selector = self.engine.query(*selector);
@@ -2181,8 +2244,11 @@ fn adr0064_i1_prep_retains_font_functions_and_reinitializes_storage() {
         16,
         65536,
         engine,
-        &[0xb1, 0, 99, 0x42, 0xb0, 1, 0x2c, 0xb0, 4, 0x60, 0x2d],
-        &[0xb1, 0, 0, 0x43, 0xb0, 1, 0x2b, 0x44],
+        &[],
+        (
+            &[0xb1, 0, 99, 0x42, 0xb0, 1, 0x2c, 0xb0, 4, 0x60, 0x2d],
+            &[0xb1, 0, 0, 0x43, 0xb0, 1, 0x2b, 0x44],
+        ),
     )
     .unwrap();
     assert_eq!(vm.cvt, [4]);
@@ -2445,4 +2511,22 @@ fn adr0064_i1_shpix_uses_freedom_and_consumes_loop_indices() {
         assert_eq!(vm.loop_count, 1);
         assert_eq!(stack, [77]);
     }
+}
+
+#[test]
+fn adr0064_i1_getvariation_pushes_all_axes_within_the_stack_limit() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    assert_eq!(
+        vm.execute(&[0x91], &mut alloc::vec![], 4),
+        Err(Error::InvalidOpcode)
+    );
+    vm.blend_coords = alloc::vec![-16384, 0, 8192];
+    let mut stack = alloc::vec![7];
+    assert_eq!(
+        vm.execute(&[0x91], &mut stack, 3),
+        Err(Error::StackOverflow)
+    );
+    assert_eq!(stack, [7]);
+    vm.execute(&[0x91], &mut stack, 4).unwrap();
+    assert_eq!(stack, [7, -16384, 0, 8192]);
 }
