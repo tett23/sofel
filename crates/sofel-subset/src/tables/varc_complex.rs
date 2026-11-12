@@ -407,7 +407,7 @@ fn region_axes(store: &[u8], list: usize, index: usize) -> Option<Vec<[u8; 8]>> 
     Some(axes)
 }
 
-/// Conservative check for removing an fvar axis without rebasing VARC.
+/// Conservative check that an fvar axis contributes to no VARC record.
 /// Every axis-bearing record is inspected, including records later removed by
 /// glyph subsetting, so an undecodable reference never permits instancing.
 pub(crate) fn axis_unused(src: &[u8], axis: u16) -> bool {
