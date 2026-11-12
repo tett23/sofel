@@ -132,3 +132,25 @@ fn i2_colr_pixels_all_28_composite_modes() {
     }
     assert!(references.is_empty());
 }
+
+#[test]
+fn i2_colr_pixels_sweep() {
+    compare(
+        VARIABLE,
+        27,
+        include_bytes!("../../../conformance/color-raster/variable-27.bgra"),
+        true,
+    );
+    compare(
+        VARIABLE,
+        38,
+        include_bytes!("../../../conformance/color-raster/variable-38.bgra"),
+        true,
+    );
+    compare(
+        VARIABLE,
+        12,
+        include_bytes!("../../../conformance/color-raster/variable-12.bgra"),
+        true,
+    );
+}

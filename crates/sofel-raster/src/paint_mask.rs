@@ -56,9 +56,6 @@ impl PaintMask {
     pub fn work_used(&self) -> usize {
         self.initial_work.saturating_sub(self.work)
     }
-    fn point(&self, p: Point) -> PointF {
-        self.matrix.apply(PointF::new(p.x as f32, p.y as f32))
-    }
     fn edge(&mut self, a: PointF, b: PointF) {
         if self.work == 0 {
             self.exhausted = true;
@@ -199,25 +196,52 @@ impl PaintMask {
         Some(())
     }
 }
-impl Pen for PaintMask {
-    fn move_to(&mut self, p: Point) {
-        self.current = self.point(p);
+impl PaintMask {
+    /// Starts a contour using unrounded glyph coordinates.
+    pub fn move_to_float(&mut self, p: PointF) {
+        self.current = self.matrix.apply(p);
         self.start = self.current;
     }
-    fn line_to(&mut self, p: Point) {
-        let end = self.point(p);
+    /// Adds a line using unrounded glyph coordinates.
+    pub fn line_to_float(&mut self, p: PointF) {
+        let end = self.matrix.apply(p);
         self.edge(self.current, end);
         self.current = end;
     }
-    fn quad_to(&mut self, b: Point, p: Point) {
-        let end = self.point(p);
-        self.quad(self.current, self.point(b), end, 0);
+    /// Adds a quadratic segment using unrounded glyph coordinates.
+    pub fn quad_to_float(&mut self, b: PointF, p: PointF) {
+        let end = self.matrix.apply(p);
+        self.quad(self.current, self.matrix.apply(b), end, 0);
         self.current = end;
     }
-    fn cubic_to(&mut self, b: Point, c: Point, p: Point) {
-        let end = self.point(p);
-        self.cubic(self.current, self.point(b), self.point(c), end, 0);
+    /// Adds a cubic segment using unrounded glyph coordinates.
+    pub fn cubic_to_float(&mut self, b: PointF, c: PointF, p: PointF) {
+        let end = self.matrix.apply(p);
+        self.cubic(
+            self.current,
+            self.matrix.apply(b),
+            self.matrix.apply(c),
+            end,
+            0,
+        );
         self.current = end;
+    }
+}
+fn float(p: Point) -> PointF {
+    PointF::new(p.x as f32, p.y as f32)
+}
+impl Pen for PaintMask {
+    fn move_to(&mut self, p: Point) {
+        self.move_to_float(float(p));
+    }
+    fn line_to(&mut self, p: Point) {
+        self.line_to_float(float(p));
+    }
+    fn quad_to(&mut self, b: Point, p: Point) {
+        self.quad_to_float(float(b), float(p));
+    }
+    fn cubic_to(&mut self, b: Point, c: Point, p: Point) {
+        self.cubic_to_float(float(b), float(c), float(p));
     }
     fn close(&mut self) {
         self.edge(self.current, self.start);

@@ -3,6 +3,9 @@ pub(crate) mod features;
 pub(crate) mod kerning;
 use sofel_font::read::{aat_lookup::AatLookup, be};
 
+// HarfBuzz HB_AAT_MAX_SUBTABLES bounds each complete table.
+const MAX_SUBTABLES: u32 = 1024;
+
 /// A chain subtable and its application flags.
 #[derive(Clone, Debug)]
 pub struct Subtable<'a> {
@@ -30,12 +33,14 @@ pub fn chains<'a>(
     language: Option<&crate::Language>,
     selections: &features::Selections,
 ) -> Option<alloc::vec::Vec<Chain<'a>>> {
-    if be::u16_at(data, 0)? != if legacy { 1 } else { 2 } {
+    let version = be::u16_at(data, 0)?;
+    if !matches!((legacy, version), (true, 1) | (false, 2 | 3)) {
         return None;
     }
     let count = be::u32_at(data, 4)?;
     let mut rest = data.get(8..)?;
     let mut chains = alloc::vec::Vec::new();
+    let mut remaining_subtables = MAX_SUBTABLES;
     let mut map_budget = 1usize << 24;
     for _ in 0..count {
         let (chain, tail) = rest.split_at_checked(be::u32_at(rest, 4)? as usize)?;
@@ -49,6 +54,7 @@ pub fn chains<'a>(
         } else {
             (16, be::u32_at(chain, 8)? as usize, be::u32_at(chain, 12)?)
         };
+        remaining_subtables = remaining_subtables.checked_sub(tables)?;
         let features = be::chunks_at::<12>(chain, header, n)?;
         let ranges =
             features::compile(flags, features, tags, language, selections, &mut map_budget);
@@ -80,6 +86,15 @@ pub fn chains<'a>(
                 flags: be::u32_at(st, flags_at)?,
                 action,
             });
+        }
+        if version == 3 {
+            let bitmap_bytes = glyphs.div_ceil(8) as usize;
+            for field in be::chunks_at::<4>(body, 0, tables as usize)? {
+                let offset = u32::from_be_bytes(*field);
+                if offset != 0 && offset != u32::MAX {
+                    body.get(offset as usize..)?.get(..bitmap_bytes)?;
+                }
+            }
         }
         chains.push(Chain {
             ranges,
@@ -718,6 +733,68 @@ impl Ligature<'_> {
 #[cfg(test)]
 mod chain_tests {
     use super::chains;
+
+    #[test]
+    fn i2_subtable_limit_spans_chains_and_applies_to_legacy_kern() {
+        for count in [1024u16, 1025] {
+            let mut morx = alloc::vec![0, 2, 0, 0, 0, 0, 0, 2];
+            for n in [512, u32::from(count) - 512] {
+                for word in [1, 16 + 12 * n, 0, n] {
+                    morx.extend(word.to_be_bytes());
+                }
+                for _ in 0..n {
+                    for word in [12u32, 3, 1] {
+                        morx.extend(word.to_be_bytes());
+                    }
+                }
+            }
+            let mut kern = alloc::vec![0, 0];
+            kern.extend(count.to_be_bytes());
+            for _ in 0..count {
+                kern.extend([0, 0, 0, 14, 0, 1]);
+                kern.extend([0; 8]);
+            }
+            assert_eq!(
+                chains(&morx, 1, false, None, None, &Default::default()).is_some(),
+                count == 1024
+            );
+            assert_eq!(super::kerning::legacy(&kern).is_some(), count == 1024);
+        }
+    }
+
+    #[test]
+    fn i2_morx_v3_checks_glyph_coverage_bounds() {
+        for (offset, bytes, valid) in [
+            (4u32, 2u8, true),
+            (4, 1, false),
+            (0, 0, true),
+            (u32::MAX, 0, true),
+            (5, 2, false),
+        ] {
+            let words = [
+                0x00030000u32,
+                1,
+                1,
+                40 + u32::from(bytes),
+                0,
+                1,
+                20,
+                4,
+                1,
+                0x00080001,
+                0x00010002,
+                offset,
+            ];
+            let mut data: alloc::vec::Vec<u8> =
+                words.into_iter().flat_map(u32::to_be_bytes).collect();
+            data.resize(data.len() + usize::from(bytes), 0);
+            let parsed = chains(&data, 9, false, None, None, &Default::default());
+            assert_eq!(parsed.is_some(), valid, "offset {offset}, bytes {bytes}");
+            if let Some(chains) = parsed {
+                assert_eq!(chains.first().map(|c| c.substitutions.len()), Some(1));
+            }
+        }
+    }
 
     #[test]
     fn i2_unknown_type_skips_only_its_bounded_subtable() {
