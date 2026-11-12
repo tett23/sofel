@@ -212,6 +212,10 @@ sofel_color::FtPaintGraph::* The location-resolved raw COLR tree; the C paint AP
 sofel_unicode::Script::from_raw_tag C represents the four script bytes directly as a big-endian uint32_t tag.
 sofel_raster::BgraImage::paint_bitmap Rust caller-owned transformed bitmap surface; C renders the sampled glyph with sofel_render_color_glyph (ADR 0066).
 sofel_raster::blend_sampled Rust closure-based gradient blending into a caller-owned BGRA surface; the C ABI does not expose a raster surface handle (ADR 0072).
+sofel_svg::OutlinePainter::* Rust trait for geometry clips used by sofel_render_color_glyph.
+sofel_svg::sample_brush Rust SVG brush sampler used by sofel_render_color_glyph.
+sofel_svg::GlyphScene::paint Rust Painter command adapter for selected SVG glyphs; C renders the same commands through sofel_render_color_glyph.
+sofel_svg::Scene::paint Rust Painter command adapter; C renders the same commands through sofel_render_color_glyph.
 sofel_svg::parse_shapes Rust view of the rect/circle SVG subset; the C ABI exposes the original document through sofel_svg_document (ADR 0072).
 sofel_svg::parse_glyph Rust glyph scene with inherited paint and clipping for the renderer; C can retrieve the original document with sofel_svg_document (ADR 0074).
 sofel_svg::Shape::draw Rust Pen adapter for SVG geometry; C gets the original document with sofel_svg_document (ADR 0072).
@@ -252,3 +256,4 @@ sofel_raster::PaintMask::* The C entry point sofel_render_color_glyph applies ou
 sofel_read::feat::* A validated feature-name view used by the C shaping functions; C reads the table with sofel_font_table.
 sofel_woff::decode_woff The font input commands reconstruct WOFF tables into an sfnt buffer.
 sofel_bitmapfont::BdfFont::* BDF parsing and fixed bitmap queries are Rust and sofel-render operations; the C font handle still accepts sfnt data only (sofel ADR 0065).
+sofel_bitmapfont::pcf::PcfFont::* PCF parsing and fixed bitmap queries are Rust and sofel-render operations; the C font handle still accepts sfnt data only (sofel ADR 0065).

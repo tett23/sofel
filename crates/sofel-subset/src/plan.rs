@@ -327,7 +327,7 @@ impl Plan {
             && font.table(Tag::new(b"CFF2")).is_none();
         let needs_rebase = |tag: &&[u8; 4]| {
             let handled = match *tag {
-                b"GSUB" | b"GPOS" | b"GDEF" | b"BASE" => {
+                b"GSUB" | b"GPOS" | b"GDEF" | b"BASE" | b"COLR" => {
                     norm.all_axes_pinned
                         && !input
                             .set(SetKind::NoSubsetTables)

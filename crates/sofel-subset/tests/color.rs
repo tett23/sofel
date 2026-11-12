@@ -659,3 +659,111 @@ fn adr0022_default_pinned_paint_graph_matches_static_graph() {
     };
     assert_eq!(pinned(&tables(true)), pinned(&tables(false)));
 }
+
+#[test]
+fn adr0061_i1_affine_preserves_low_bits_at_large_coordinates() {
+    let mut affine = [65536i32, 0, 0, 65536, 16_777_217, 0]
+        .into_iter()
+        .flat_map(i32::to_be_bytes)
+        .collect::<Vec<_>>();
+    affine.extend(0u32.to_be_bytes());
+    let transform = link(
+        vec![13, 0, 0, 0, 0, 0, 0],
+        vec![(1, 3, solid(0)), (4, 3, affine)],
+    );
+    let mut colr = colr_v1(&[], &[], &[transform], &[(g('A'), 0)], &[], &[]);
+    let offset = colr.len() as u32;
+    colr[30..34].copy_from_slice(&offset.to_be_bytes());
+    let source = colr_with_alpha_store();
+    let store = u32::from_be_bytes(source[30..34].try_into().unwrap()) as usize;
+    colr.extend_from_slice(&source[store..]);
+    let bytes = font_with(vec![
+        (b"COLR", colr),
+        (b"CPAL", cpal_table(false)),
+        (b"fvar", weight_axis()),
+    ]);
+    let font = Font::new(&bytes, 0).unwrap();
+    let input = chars("A")
+        .with_axis_pinned(Tag::new(b"wght"), 1.0, &font)
+        .unwrap();
+    let output = subset(&font, &input).unwrap();
+    let table = out_table(&output, b"COLR").unwrap();
+    let paint = Colr::new(&table).unwrap().base_glyph_paint(1).unwrap();
+    let affine = paint
+        + u32::from_be_bytes([0, table[paint + 4], table[paint + 5], table[paint + 6]]) as usize;
+    assert_eq!(
+        i32::from_be_bytes(table[affine + 16..affine + 20].try_into().unwrap()),
+        16_777_217
+    );
+}
+
+#[test]
+fn adr0061_i1_negative_radial_radii_reparameterize_or_become_transparent() {
+    for (radius, format) in [(0, 2), (4, 6)] {
+        let mut paint = vec![7, 0, 0, 0];
+        for field in [0i16, 0, 0, 4, 4, radius] {
+            paint.extend(field.to_be_bytes());
+        }
+        paint.extend(0u32.to_be_bytes());
+        let stop = Buf::new()
+            .u8(0)
+            .u16(1)
+            .i16(0)
+            .u16(0)
+            .i16(16384)
+            .u32(u32::MAX)
+            .done();
+        let paint = link(paint, vec![(1, 3, stop)]);
+        let mut colr = colr_v1(&[], &[], &[paint], &[(g('A'), 0)], &[], &[]);
+        let offset = colr.len() as u32;
+        colr[30..34].copy_from_slice(&offset.to_be_bytes());
+        let store = link(
+            Buf::new().u16(1).u32(0).u16(1).u32(0).done(),
+            vec![
+                (
+                    2,
+                    4,
+                    Buf::new().u16(1).u16(1).i16(0).i16(16384).i16(16384).done(),
+                ),
+                (
+                    8,
+                    4,
+                    Buf::new()
+                        .u16(6)
+                        .u16(1)
+                        .u16(1)
+                        .u16(0)
+                        .i16(0)
+                        .i16(0)
+                        .i16(-2)
+                        .i16(0)
+                        .i16(0)
+                        .i16(-2)
+                        .done(),
+                ),
+            ],
+        );
+        colr.extend(store);
+        let bytes = font_with(vec![
+            (b"COLR", colr),
+            (b"CPAL", cpal_table(false)),
+            (b"fvar", weight_axis()),
+        ]);
+        let font = Font::new(&bytes, 0).unwrap();
+        let input = chars("A")
+            .with_axis_pinned(Tag::new(b"wght"), 1.0, &font)
+            .unwrap();
+        let output = subset(&font, &input).unwrap();
+        let table = out_table(&output, b"COLR").unwrap();
+        let at = Colr::new(&table).unwrap().base_glyph_paint(1).unwrap();
+        assert_eq!(table[at], format);
+        if format == 2 {
+            assert_eq!(&table[at..at + 5], &[2, 255, 255, 0, 0]);
+        } else {
+            assert_eq!(
+                &table[at + 4..at + 16],
+                &[0, 4, 0, 4, 0, 2, 0, 8, 0, 8, 0, 6]
+            );
+        }
+    }
+}
