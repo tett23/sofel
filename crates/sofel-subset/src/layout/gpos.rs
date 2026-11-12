@@ -394,11 +394,24 @@ fn pair_effective_format(s: &Sub<'_, '_>, format: u16, base: D<'_>, values: D<'_
     out
 }
 
-/// `ValueFormat::get_effective_format` when instancing: the device
-/// flags dropped (their variation indices map to no variations, or are
-/// not mapped) and nothing else.
-fn instanced_format(format: u16) -> u16 {
-    format & 0x0F
+fn value_delta(s: &Sub<'_, '_>, format: u16, base: D<'_>, values: D<'_>, bit: u16) -> i32 {
+    let device_flag = 0x10u16 << bit;
+    if format & device_flag == 0 || s.p.layout.gdef_deltas.is_empty() {
+        return 0;
+    }
+    let index = (format & device_flag.wrapping_sub(1)).count_ones() as usize;
+    super::gdef::pinned_delta(s.p, base.follow(u32::from(values.u16_at(0, index))))
+}
+
+/// A device-only nonzero delta needs a base field in the pinned output.
+fn instanced_format(s: &Sub<'_, '_>, format: u16, base: D<'_>, values: D<'_>) -> u16 {
+    (0..4).fold(format & 0x0f, |result, bit| {
+        if value_delta(s, format, base, values, bit) != 0 {
+            result | (1 << bit)
+        } else {
+            result
+        }
+    })
 }
 
 /// Whether `NO_HINTING` strips hinting Devices from value records.
@@ -459,7 +472,9 @@ fn copy_values(s: &mut Sub<'_, '_>, src_format: u16, new_format: u16, base: D<'_
             0
         };
         if new_format & flag != 0 {
-            s.s.u16(v);
+            s.s.u16(v.wrapping_add(crate::instance::lo16(value_delta(
+                s, src_format, base, values, bit,
+            ))));
         }
     }
     if src_format & 0xF0 == 0 {
@@ -506,6 +521,10 @@ fn anchor(s: &mut Sub<'_, '_>, a: D<'_>) -> bool {
             s.s.extend(a.slice(0, 6));
             let x = a.off16(6);
             let y = a.off16(8);
+            for (at, dev) in [(2, x), (4, y)] {
+                let delta = super::gdef::pinned_delta(s.p, dev);
+                s.s.set_u16(at, a.u16(at).wrapping_add(crate::instance::lo16(delta)));
+            }
             let is_var = super::gdef::is_variation_device;
             let mapped = |dev: D<'_>| {
                 is_var(dev)
@@ -587,7 +606,7 @@ pub(crate) fn single(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
             let mut inter = BitSet::new();
             cov.intersect_set(gs, &mut inter);
             let new_format = if s.p.var.instancing() {
-                instanced_format(vf)
+                instanced_format(s, vf, st, values)
             } else if strip_hints(s) {
                 effective_format(vf, values, true, true)
             } else {
@@ -613,7 +632,8 @@ pub(crate) fn single(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
                 })
                 .collect();
             let new_format = if s.p.var.instancing() {
-                it.iter().fold(0, |f, _| f | instanced_format(vf))
+                it.iter()
+                    .fold(0, |f, (_, v)| f | instanced_format(s, vf, st, *v))
             } else if strip_hints(s) {
                 it.iter()
                     .fold(0, |f, (_, v)| f | effective_format(vf, *v, true, true))
@@ -700,8 +720,13 @@ fn pair1(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
                     continue;
                 }
                 if instancing {
-                    f1 |= instanced_format(vf[0]);
-                    f2 |= instanced_format(vf[1]);
+                    f1 |= instanced_format(s, vf[0], ps, r.at(2));
+                    f2 |= instanced_format(
+                        s,
+                        vf[1],
+                        ps,
+                        r.at(2usize.saturating_add(len1.saturating_mul(2))),
+                    );
                     continue;
                 }
                 f1 |= pair_effective_format(s, vf[0], ps, r.at(2));
@@ -807,8 +832,8 @@ fn pair2(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
             for &c2 in &cols {
                 let v = value_at(c1, c2);
                 if instancing {
-                    f1 |= instanced_format(vf1);
-                    f2 |= instanced_format(vf2);
+                    f1 |= instanced_format(s, vf1, st, v);
+                    f2 |= instanced_format(s, vf2, st, v.at(len1.saturating_mul(2)));
                     continue;
                 }
                 f1 |= pair_effective_format(s, vf1, st, v);

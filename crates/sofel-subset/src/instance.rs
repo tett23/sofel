@@ -408,12 +408,19 @@ mod tests {
 pub(crate) struct VarPlan {
     pub n: Normalized,
     pub metrics: Metrics,
+    pub mvar: BTreeMap<Tag, f32>,
     /// The glyf glyphs compiled at the default location, by position in
     /// the glyph mapping (when glyf is instanced).
     pub glyf: Option<Vec<Vec<u8>>>,
 }
 
 impl VarPlan {
+    /// Applies the source MVAR delta before HarfBuzz's single rounding.
+    pub fn metric_at(&self, tag: &[u8; 4], value: i32) -> i32 {
+        let delta = self.mvar.get(&Tag::new(tag)).copied().unwrap_or_default();
+        f64_to_i32(hb_roundf32(i32_to_f32(value) + delta))
+    }
+
     /// `plan->normalized_coords` is not empty.
     pub fn instancing(&self) -> bool {
         !self.n.normalized_coords.is_empty()

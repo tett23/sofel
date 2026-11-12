@@ -142,6 +142,18 @@ pub(crate) fn is_variation_device(dev: D<'_>) -> bool {
     !dev.is_null() && dev.u16(4) == 0x8000
 }
 
+pub(crate) fn pinned_delta(plan: &crate::plan::Plan, dev: D<'_>) -> i32 {
+    if !is_variation_device(dev) {
+        return 0;
+    }
+    let index = (u32::from(dev.u16(0)) << 16) | u32::from(dev.u16(2));
+    plan.layout
+        .gdef_deltas
+        .get(&index)
+        .copied()
+        .unwrap_or_default()
+}
+
 fn caret_value(s: &mut Sub<'_, '_>, c: D<'_>, remap: &BTreeMap<u32, u32>) -> bool {
     match c.u16(0) {
         1 | 2 => {
@@ -154,6 +166,11 @@ fn caret_value(s: &mut Sub<'_, '_>, c: D<'_>, remap: &BTreeMap<u32, u32>) -> boo
             if s.p.layout.varidx_pinned && is_variation_device(dev) {
                 // Mapped to no variations: downgraded to format 1.
                 s.s.set_u16(0, 1);
+                s.s.set_u16(
+                    2,
+                    c.u16(2)
+                        .wrapping_add(crate::instance::lo16(pinned_delta(s.p, dev))),
+                );
                 return true;
             }
             let at = s.s.u16(0);

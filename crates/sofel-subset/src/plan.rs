@@ -147,13 +147,14 @@ pub(crate) struct PlanLayout {
     pub layout_features: RangeSet,
     pub layout_scripts: RangeSet,
     /// Every axis is pinned and GDEF has a variation store: its
-    /// variation indices map to `HB_OT_LAYOUT_NO_VARIATIONS_INDEX` with
-    /// no delta (`layout_variation_idx_delta_map`).
+    /// variation indices map to `HB_OT_LAYOUT_NO_VARIATIONS_INDEX`.
     pub varidx_pinned: bool,
     /// Used rows and remapped indices of an unpinned GDEF store, shared
     /// by GDEF caret values and retained GPOS PairPos records.
     pub gdef_var_items: Vec<(u16, Vec<u32>)>,
     pub gdef_var_map: BTreeMap<u32, u32>,
+    /// Rounded deltas from the selected rows when all axes are pinned.
+    pub gdef_deltas: BTreeMap<u32, i32>,
 }
 
 /// The checks of the layout tables this version cannot write yet.
@@ -363,7 +364,29 @@ impl Plan {
                 && !other_variation_tags.iter().any(|tag| {
                     **tag != *b"gvar" && **tag != *b"GVAR" && font.table(Tag::new(tag)).is_some()
                 });
-            if !(norm.all_axes_pinned && norm.pinned_at_default) && !metadata_only && !gvar_full_pin
+            // A separate outline source or a retained BASE/COLR store needs its
+            // own instancing path, even when the CFF2 outlines can be pinned.
+            let kept = |tag: &[u8; 4]| {
+                let tag = Tag::new(tag);
+                font.table(tag).filter(|_| !drop.contains(tag.to_u32()))
+            };
+            let cff2_full_pin = norm.all_axes_pinned
+                && kept(b"CFF2").is_some()
+                && [b"glyf", b"GLYF", b"gvar", b"GVAR", b"cvar", b"VARC"]
+                    .iter()
+                    .all(|t| kept(t).is_none())
+                && kept(b"BASE").is_none_or(|data| {
+                    sofel_font::read::base::Base::new(data)
+                        .is_ok_and(|table| table.item_var_store_offset().unwrap_or(0) == 0)
+                })
+                && kept(b"COLR").is_none_or(|data| {
+                    sofel_font::read::colr::Colr::new(data)
+                        .is_ok_and(|table| table.var_store_offset() == 0)
+                });
+            if !(norm.all_axes_pinned && norm.pinned_at_default)
+                && !metadata_only
+                && !gvar_full_pin
+                && !cff2_full_pin
             {
                 return Err(SubsetError::Unsupported {
                     tag: Tag::new(b"fvar"),
@@ -689,7 +712,8 @@ impl Plan {
             let math_has_var_format = tag_kept(b"MATH")
                 && (!copied_gdef || !copied_math)
                 && math_data.windows(2).any(|word| word == [0x80, 0x00]);
-            if !pinned
+            let bake = pinned && !p.var.n.pinned_at_default;
+            if (!pinned || bake)
                 && layout::gdef::has_var_store(gdef)
                 && (!copied_gdef || gpos_has_var_format || math_has_var_format)
             {
@@ -747,7 +771,26 @@ impl Plan {
                         });
                     }
                 }
-                if copied_gdef {
+                if bake {
+                    use sofel_font::var::{HbF32, Location, StoreKind};
+                    let location = Location::from_normalized_2_14(font, &p.var.n.normalized_coords);
+                    let instance = font.instance(&location);
+                    p.layout.gdef_deltas = map
+                        .keys()
+                        .copied()
+                        .filter_map(|index| {
+                            let outer = u16::try_from(index >> 16).ok()?;
+                            let inner = u16::try_from(index & 0xffff).ok()?;
+                            let delta = instance
+                                .item_delta::<HbF32>(StoreKind::Gdef, outer, inner)
+                                .ok()?;
+                            Some((
+                                index,
+                                instance::f64_to_i32(sofel_geom::float::hb_roundf32(delta)),
+                            ))
+                        })
+                        .collect();
+                } else if copied_gdef {
                     // HarfBuzz remaps subset GPOS and MATH references even when it
                     // copies the original GDEF table unchanged.
                     p.layout.gdef_var_map = map;
@@ -828,6 +871,22 @@ impl Plan {
         self.var.metrics.bounds_height = alloc::vec![u32::MAX; n];
         if !self.var.instancing() {
             return Ok(());
+        }
+        if self.var.all_axes_pinned()
+            && !self.var.n.pinned_at_default
+            && let Some(mvar) = font
+                .table(Tag::new(b"MVAR"))
+                .and_then(|data| sofel_font::read::mvar::Mvar::new(data).ok())
+        {
+            let location = sofel_font::var::Location::from_normalized_2_14(
+                font,
+                &self.var.n.normalized_coords,
+            );
+            let instance = font.instance(&location);
+            self.var.mvar = (0..mvar.record_count())
+                .filter_map(|i| mvar.record(i))
+                .map(|record| (record.tag, instance.metrics_variation(record.tag)))
+                .collect();
         }
         crate::tables::cff::instance_metrics(
             font,

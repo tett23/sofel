@@ -210,6 +210,37 @@ pub(crate) fn subset(
     }
     if plan.var.instancing() {
         update_header(&mut h, map, bounds);
+        if !plan.var.mvar.is_empty() {
+            let caret = if horizontal {
+                [b"hcrs", b"hcrn", b"hcof"]
+            } else {
+                [b"vcrs", b"vcrn", b"vcof"]
+            };
+            let same_extents = horizontal
+                && font.table(Tag::new(b"OS/2")).is_some_and(|data| {
+                    data.get(68..74)
+                        .is_some_and(|metrics| h.get(4..10) == Some(metrics))
+                });
+            for (at, metric) in [
+                (18, caret[0]),
+                (20, caret[1]),
+                (22, caret[2]),
+                (4, b"hasc"),
+                (6, b"hdsc"),
+                (8, b"hlgp"),
+            ] {
+                if at < 18 && !same_extents {
+                    continue;
+                }
+                let value = sofel_font::read::be::i16_at(&h, at)
+                    .ok_or(SubsetError::Malformed { tag: htag })?;
+                let updated = i16::try_from(plan.var.metric_at(metric, i32::from(value)))
+                    .map_err(|_| SubsetError::Failed { tag: htag })?;
+                h.get_mut(at..at.saturating_add(2))
+                    .ok_or(SubsetError::Malformed { tag: htag })?
+                    .copy_from_slice(&updated.to_be_bytes());
+            }
+        }
     }
     tables.insert(htag, h);
     Ok(true)
@@ -217,8 +248,7 @@ pub(crate) fn subset(
 
 /// The instancing part of `subset_update_header`: the maximum advance
 /// and, from the glyphs with bounds, the minimum side bearings and the
-/// maximum extent. (The MVAR deltas and the ascender, descender and line
-/// gap from OS/2 do not change at the default location.)
+/// maximum extent.
 fn update_header(
     h: &mut [u8],
     map: &alloc::collections::BTreeMap<u32, (u32, i32)>,

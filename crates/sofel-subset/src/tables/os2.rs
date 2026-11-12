@@ -76,7 +76,39 @@ pub(crate) fn subset(
     }
     s.extend(src.get(..n).unwrap_or(&[]));
     if plan.var.instancing() {
-        // The MVAR deltas are 0 at the default location.
+        for (offset, metric) in [
+            (10, b"sbxs"),
+            (12, b"sbys"),
+            (14, b"sbxo"),
+            (16, b"sbyo"),
+            (18, b"spxs"),
+            (20, b"spys"),
+            (22, b"spxo"),
+            (24, b"spyo"),
+            (26, b"strs"),
+            (28, b"stro"),
+            (68, b"hasc"),
+            (70, b"hdsc"),
+            (72, b"hlgp"),
+            (74, b"hcla"),
+            (76, b"hcld"),
+            (86, b"xhgt"),
+            (88, b"cpht"),
+        ] {
+            if offset >= n || plan.var.mvar.is_empty() {
+                continue;
+            }
+            let raw = u16_at(src, offset).ok_or(SubsetError::Malformed { tag })?;
+            let value = if matches!(offset, 74 | 76) {
+                u16::try_from(plan.var.metric_at(metric, i32::from(raw))).ok()
+            } else {
+                i16::try_from(plan.var.metric_at(metric, i32::from(raw.cast_signed())))
+                    .ok()
+                    .map(i16::cast_unsigned)
+            }
+            .ok_or(SubsetError::Failed { tag })?;
+            s.set_u16(offset, value);
+        }
         let avg = avg_char_width(&plan.var.metrics.hmtx);
         let v = i16::try_from(avg).map_err(|_| SubsetError::Failed { tag })?;
         s.set_u16(2, v.cast_unsigned());
