@@ -208,8 +208,17 @@ impl EngineInfo {
     }
 }
 
+#[derive(Clone, Copy, Default)]
+struct HintPoint {
+    original: [i64; 2],
+    current: [i64; 2],
+    touched: [bool; 2],
+}
+
 #[derive(Clone)]
 struct Interpreter {
+    points: [alloc::vec::Vec<HintPoint>; 2],
+    reference: [u16; 3],
     delta_base: u16,
     delta_shift: u8,
     zones: [u8; 3],
@@ -242,6 +251,8 @@ impl Interpreter {
                 variation: false,
                 symmetric_smoothing: false,
             },
+            points: Default::default(),
+            reference: [0; 3],
             delta_base: 9,
             delta_shift: 3,
             zones: [1; 3],
@@ -373,6 +384,42 @@ impl Interpreter {
                         }
                     }
                     stack.truncate(first);
+                }
+                op @ (0x3e | 0x3f) => {
+                    let cvt = stack.pop().ok_or(Error::StackUnderflow)?;
+                    let index = stack.pop().ok_or(Error::StackUnderflow)? as u16;
+                    self.reference[..2].fill(index);
+                    let zone = usize::from(self.zones[0]);
+                    let Some(point) = self.points[zone].get_mut(usize::from(index)) else {
+                        continue;
+                    };
+                    let Some(&value) = usize::try_from(cvt).ok().and_then(|i| self.cvt.get(i))
+                    else {
+                        continue;
+                    };
+                    let freedom = usize::from(self.freedom[0] == 0);
+                    let projection = usize::from(self.projection[0] == 0);
+                    if zone == 0 {
+                        point.original = [0; 2];
+                        point.original[freedom] = value;
+                        point.current = point.original;
+                    }
+                    let current = point.current[projection];
+                    let distance = if op == 0x3e {
+                        value
+                    } else {
+                        self.rounding.apply(
+                            if value.abs_diff(current) > self.control_value_cutin as u64 {
+                                current
+                            } else {
+                                value
+                            },
+                        )
+                    };
+                    if freedom == projection {
+                        point.current[freedom] = distance;
+                        point.touched[freedom] = true;
+                    }
                 }
                 0x85 => {
                     let flags = stack.pop().ok_or(Error::StackUnderflow)?;
@@ -873,4 +920,20 @@ fn adr0064_i1_delta_control_values_obey_ppem_bands_and_signed_steps() {
             assert!(vm.execute(&[0xb0, 7, 0x5f], &mut stack, 5).is_err());
         }
     }
+}
+
+#[test]
+fn adr0064_i1_miap_sets_original_twilight_coordinates_and_reference_points() {
+    let mut vm = Interpreter::new(0, &[70 * 64], 65536);
+    vm.points[0].resize(2, HintPoint::default());
+    vm.execute(
+        &[0xb0, 0, 0x16, 0xb1, 1, 0, 0x3f],
+        &mut alloc::vec::Vec::new(),
+        2,
+    )
+    .unwrap();
+    assert_eq!(vm.points[0][1].original, [70, 0]);
+    assert_eq!(vm.points[0][1].current, [64, 0]);
+    assert_eq!(vm.points[0][1].touched, [true, false]);
+    assert_eq!(vm.reference, [1, 1, 0]);
 }
