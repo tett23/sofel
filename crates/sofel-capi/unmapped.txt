@@ -206,6 +206,7 @@ sofel_color::RawPaintGraph::* The reusable raw paint table view; C reads the byt
 sofel_color::FtPaintGraph::* The location-resolved raw COLR tree; the C paint API exposes the walked commands.
 sofel_unicode::Script::from_raw_tag C represents the four script bytes directly as a big-endian uint32_t tag.
 sofel_raster::blend_sampled Rust closure-based gradient blending into a caller-owned BGRA surface; the C ABI does not expose a raster surface handle (ADR 0072).
+sofel_svg::parse_glyph Rust SVG scene used by the glyph rasterizer; C callers render glyphs with sofel_render_glyph and read source documents with sofel_svg_document (ADR 0072).
 sofel_svg::parse_shapes Rust view of the rect/circle SVG subset; the C ABI exposes the original document through sofel_svg_document (ADR 0072).
 sofel_svg::Shape::draw Rust Pen adapter for SVG geometry; C gets the original document with sofel_svg_document (ADR 0072).
 sofel_svg::Scene::sample Rust gradient sampler for the raster surface; the C ABI exposes the original document with sofel_svg_document (ADR 0072).
