@@ -1,6 +1,8 @@
 //! Connects OT-SVG image paint commands to the shared raster surface (sofel ADR 0072).
 
-use sofel_font::geom::{Brush, CompositeMode, Image, ImageFormat, Painter, Rect, Transform};
+use sofel_font::geom::{
+    Brush, CompositeMode, Image, ImageFormat, Painter, PointF, Rect, Transform,
+};
 use sofel_raster::{BgraImage, FillRule, Rasterizer, RenderOptions, blend_sampled};
 use sofel_svg::{Scene, parse_glyph};
 
@@ -71,7 +73,7 @@ pub fn render_scene(
     raster: &mut Rasterizer,
     image: &mut BgraImage,
 ) -> bool {
-    render_shapes(scene, None, ppem, upem, raster, image)
+    render_shapes(ppem, upem, raster, image, |p| scene.paint(p))
 }
 
 /// Renders a selected SVG glyph, intersecting every shape with its clip stack.
@@ -82,38 +84,83 @@ pub fn render_glyph_scene(
     raster: &mut Rasterizer,
     image: &mut BgraImage,
 ) -> bool {
-    if glyph.clips.len() != glyph.scene.shapes.len() {
-        return false;
-    }
-    render_shapes(&glyph.scene, Some(&glyph.clips), ppem, upem, raster, image)
+    render_shapes(ppem, upem, raster, image, |p| glyph.paint(p))
 }
 
-fn render_shapes(
-    scene: &Scene,
-    clips: Option<&[Vec<sofel_svg::ClipPath>]>,
+struct RasterScenePainter<'a, 's> {
+    raster: &'a mut Rasterizer,
+    image: &'a mut BgraImage,
+    ppem: u16,
+    scale: f32,
+    outline: Option<(&'s sofel_svg::Shape, &'s [sofel_svg::ClipPath])>,
+    clip_raster: Option<Rasterizer>,
+    transforms: Vec<Transform>,
+    valid: bool,
+}
+
+fn render_shapes<'s>(
     ppem: u16,
     upem: u16,
     raster: &mut Rasterizer,
     image: &mut BgraImage,
+    emit: impl FnOnce(&mut RasterScenePainter<'_, 's>) -> bool,
 ) -> bool {
-    if ppem == 0 || upem == 0 || scene.shapes.is_empty() {
+    if ppem == 0 || upem == 0 {
         return false;
     }
-    let scale = f32::from(ppem) / f32::from(upem);
-    let mut clip_raster = None;
-    for (index, shape) in scene.shapes.iter().enumerate() {
-        raster.clear();
-        shape.draw(scale, raster);
-        let Ok(bitmap) = raster.render(RenderOptions {
+    let mut p = RasterScenePainter {
+        raster,
+        image,
+        ppem,
+        scale: f32::from(ppem) / f32::from(upem),
+        outline: None,
+        clip_raster: None,
+        transforms: Vec::new(),
+        valid: true,
+    };
+    emit(&mut p) && p.valid && p.image.width > 0 && p.image.rows > 0
+}
+
+impl<'s> sofel_svg::OutlinePainter<'s> for RasterScenePainter<'_, 's> {
+    fn push_svg_clip(&mut self, shape: &'s sofel_svg::Shape, paths: &'s [sofel_svg::ClipPath]) {
+        self.outline = Some((shape, paths));
+    }
+}
+
+#[allow(clippy::arithmetic_side_effects)]
+fn brush_point(transforms: &[Transform], mut p: PointF) -> Option<PointF> {
+    for t in transforms {
+        let x = p.x - t.dx;
+        let y = p.y - t.dy;
+        let det = t.xx * t.yy - t.xy * t.yx;
+        if det == 0. {
+            return None;
+        }
+        p = if t.xy == 0. && t.yx == 0. {
+            PointF::new(x / t.xx, y / t.yy)
+        } else {
+            PointF::new((t.yy * x - t.xy * y) / det, (t.xx * y - t.yx * x) / det)
+        };
+    }
+    Some(p)
+}
+
+impl RasterScenePainter<'_, '_> {
+    fn draw_fill(&mut self, brush: &Brush<'_>) -> bool {
+        let Some((shape, paths)) = self.outline else {
+            return false;
+        };
+        let scale = self.scale;
+        let ppem = self.ppem;
+        self.raster.clear();
+        shape.draw(scale, self.raster);
+        let Ok(bitmap) = self.raster.render(RenderOptions {
             fill: FillRule::NonZero,
             overlap: false,
             ppem: Some((ppem, ppem)),
         }) else {
             return false;
         };
-        let paths = clips
-            .and_then(|stacks| stacks.get(index))
-            .map_or(&[][..], Vec::as_slice);
         let pixels;
         let bitmap = if paths.is_empty() {
             bitmap
@@ -121,7 +168,7 @@ fn render_shapes(
             let Ok(mask) = clip::coverage(
                 &bitmap,
                 paths,
-                clip_raster.get_or_insert_with(Rasterizer::new),
+                self.clip_raster.get_or_insert_with(Rasterizer::new),
                 scale,
                 ppem,
             ) else {
@@ -133,7 +180,40 @@ fn render_shapes(
                 ..bitmap
             }
         };
-        blend_sampled(image, &bitmap, |x, y| scene.sample(shape, x, y, scale));
+        blend_sampled(self.image, &bitmap, |x, y| {
+            brush_point(&self.transforms, PointF::new(x / scale, y / scale))
+                .map_or([0; 4], |point| sofel_svg::sample_brush(brush, point))
+        });
+        true
     }
-    image.width > 0 && image.rows > 0
+}
+
+impl Painter for RasterScenePainter<'_, '_> {
+    fn push_transform(&mut self, t: Transform) {
+        self.transforms.push(t);
+    }
+    fn pop_transform(&mut self) {
+        self.valid &= self.transforms.pop().is_some();
+    }
+    fn push_clip_glyph(&mut self, _: u32) {
+        self.valid = false;
+    }
+    fn push_clip_rectangle(&mut self, _: Rect) {
+        self.valid = false;
+    }
+    fn pop_clip(&mut self) {
+        self.valid &= self.outline.take().is_some();
+    }
+    fn fill(&mut self, brush: &Brush<'_>) {
+        self.valid &= self.draw_fill(brush);
+    }
+    fn image(&mut self, _: &Image<'_>) -> bool {
+        false
+    }
+    fn push_group(&mut self, _: CompositeMode) {
+        self.valid = false;
+    }
+    fn pop_group(&mut self, _: CompositeMode) {
+        self.valid = false;
+    }
 }
