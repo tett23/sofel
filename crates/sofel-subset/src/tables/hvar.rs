@@ -1,5 +1,7 @@
 //! HVAR and VVAR with implicit advance maps (ADR 0022 stage 10).
 
+mod instance;
+
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 
@@ -17,7 +19,7 @@ use super::Tables;
 
 pub(super) fn subset(
     plan: &Plan,
-    _font: &Font<'_>,
+    font: &Font<'_>,
     tag: Tag,
     src: &[u8],
     serializer: &mut Serializer,
@@ -84,7 +86,14 @@ pub(super) fn subset(
         .into_iter()
         .map(|(outer, rows)| (outer, rows.into_iter().collect::<Vec<_>>()))
         .collect();
-    let store_bytes = subset_store(store, &old_items, tag)?;
+    let store_bytes = if plan.var.instancing() && !plan.var.n.normalized_coords.is_empty() {
+        instance::subset(plan, font, store, &old_items, tag)?
+    } else {
+        subset_store(store, &old_items, tag)?
+    };
+    if store_bytes.is_empty() {
+        return Ok(false);
+    }
     let mut rewritten_maps = Vec::new();
     for (index, map) in maps
         .into_iter()

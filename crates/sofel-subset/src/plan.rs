@@ -316,7 +316,17 @@ impl Plan {
                             .set(SetKind::NoSubsetTables)
                             .contains(Tag::new(tag).to_u32())
                 }
-                b"HVAR" | b"VVAR" => pinned_glyf,
+                b"HVAR" | b"VVAR" => {
+                    pinned_glyf
+                        || (!norm.all_axes_pinned
+                            && !norm.avar2
+                            && font.table(Tag::new(tag)).is_some_and(|data| {
+                                sofel_font::read::be::u32_at(data, 8) == Some(0)
+                            })
+                            && !input
+                                .set(SetKind::NoSubsetTables)
+                                .contains(Tag::new(tag).to_u32()))
+                }
                 b"cvar" | b"MVAR" => norm.all_axes_pinned,
                 b"gvar" => !norm.avar2 || inert_gvar || avar2_range || point_pins || pinned_glyf,
                 b"GVAR" => inert_gvar,

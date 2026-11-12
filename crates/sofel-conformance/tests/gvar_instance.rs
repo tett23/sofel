@@ -493,3 +493,49 @@ fn adr0061_i1_restricted_gvar_axis_matches_harfbuzz() {
         std::fs::remove_file(output).unwrap();
     }
 }
+
+#[test]
+fn adr0061_i1_implicit_advances_survive_a_changed_default_and_gid_gaps() {
+    let path = paths::testdata().join("harfbuzz/test/subset/data/fonts/ImplicitHVAR.ttf");
+    let bytes = std::fs::read(&path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let out = std::env::temp_dir().join(format!(
+        "sofel-implicit-advances-{}.ttf",
+        std::process::id()
+    ));
+    for (min, default, max) in [(450.0, 500.0, 700.0), (100.0, 300.0, 300.0)] {
+        for retain in [false, true] {
+            let input = Input::new()
+                .with_flags(if retain {
+                    Flags::RETAIN_GIDS
+                } else {
+                    Flags::DEFAULT
+                })
+                .map_set(SetKind::Unicodes, |s| {
+                    s.add(65);
+                    s.add(67);
+                })
+                .with_axis_range(
+                    Tag::new(b"wght"),
+                    Some(min),
+                    Some(max),
+                    Some(default),
+                    &font,
+                )
+                .unwrap();
+            let actual = subset(&font, &input).unwrap();
+            let mut cmd = Command::new(paths::hb_dump());
+            cmd.arg("--subset")
+                .arg(format!("--font-file={}", path.display()))
+                .arg("--unicodes=41,43")
+                .arg(format!("--variations=wght={min}:{default}:{max}"))
+                .arg(format!("--output-file={}", out.display()));
+            if retain {
+                cmd.arg("--retain-gids");
+            }
+            assert!(cmd.status().unwrap().success());
+            assert_eq!(actual, std::fs::read(&out).unwrap());
+        }
+    }
+    std::fs::remove_file(out).unwrap();
+}

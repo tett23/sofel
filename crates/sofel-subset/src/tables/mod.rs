@@ -24,6 +24,7 @@ mod sbix;
 pub(crate) mod stat;
 pub(crate) mod varc;
 pub(crate) mod varc_complex;
+mod variation_region;
 mod vorg;
 
 use alloc::collections::{BTreeMap, BTreeSet};

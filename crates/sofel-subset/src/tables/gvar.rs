@@ -1,6 +1,6 @@
 //! `gvar` and `GVAR` subsetting without instancing (ADR 0022 stage 10).
 
-mod solver;
+use super::variation_region;
 
 use alloc::borrow::Cow;
 use alloc::collections::BTreeMap;
@@ -235,22 +235,7 @@ fn instance_records(
     let bad = SubsetError::Malformed { tag };
     let kept = &plan.var.n.retained_axis_indices;
     let axes = usize::from(table.axis_count());
-    let axis_infos = crate::instance::axis_infos(font);
-    let changed = plan
-        .var
-        .n
-        .axes_location
-        .iter()
-        .filter_map(|(tag, range)| {
-            let axis = axis_infos.iter().position(|info| info.tag == *tag)?;
-            let info = axis_infos.get(axis)?;
-            Some((
-                axis,
-                [range.min, range.default, range.max],
-                [info.default - info.min, info.max - info.default],
-            ))
-        })
-        .collect::<Vec<_>>();
+    let changed = variation_region::changes(font, plan);
     let outlines = super::glyf::GlyfAccel::new(font);
     let mut glyphs = Vec::new();
     let mut frequencies = BTreeMap::<Vec<u8>, usize>::new();
@@ -285,27 +270,7 @@ fn instance_records(
                 };
                 source.push([lower, peak, upper].map(|v| f32::from(v) / 16384.0));
             }
-            let mut parts = alloc::vec![(source, Vec::<f32>::new())];
-            for &(axis, limits, distances) in &changed {
-                let mut next = Vec::new();
-                for (tents, scales) in parts {
-                    let tent = *tents.get(axis).ok_or(bad)?;
-                    let solutions = solver::rebase(tent, limits, distances);
-                    for (weight, region) in solutions {
-                        if next.len() >= 4095 {
-                            return Err(SubsetError::Limit { tag });
-                        }
-                        let mut tents = tents.clone();
-                        *tents.get_mut(axis).ok_or(bad)? = region;
-                        let mut scales = scales.clone();
-                        if weight != 1.0 {
-                            scales.push(weight);
-                        }
-                        next.push((tents, scales));
-                    }
-                }
-                parts = next;
-            }
+            let parts = variation_region::split(source, &changed, 4095, tag)?;
             for (tents, scales) in parts {
                 let mut projected = Vec::new();
                 let mut starts = Vec::new();
