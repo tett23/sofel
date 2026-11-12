@@ -202,6 +202,8 @@ fn adr0063_i1_subfont_inherits_only_unset_functions_and_scales_parent_advance() 
     assert_eq!(glyphs(&result), [(B, 0)]);
     assert_eq!(advances(&result), [1554]);
     assert_eq!(child.horizontal_origin(B), Some((22, 13)));
+    let position = result.glyph_positions()[0];
+    assert_eq!((position.x_offset, position.y_offset), (-22, -13));
 }
 
 #[test]
