@@ -1052,6 +1052,7 @@ int32_t sofel_scale_metrics_position_with_fallback(const sofel_scale_t *scale,
  * have it; SOFEL_ERROR_INVALID_ARGUMENT for an unknown direction.
  *
  * Rust: sofel_font::var::Instance::baseline
+ * Rust: sofel_font::layout_query::LayoutQueries::baseline
  * HarfBuzz: hb_ot_layout_get_baseline
  * FreeType: none
  */
@@ -1066,6 +1067,7 @@ int32_t sofel_font_baseline(const sofel_font_t *font, const sofel_location_t *lo
  * SOFEL_DIRECTION_HORIZONTAL, SOFEL_TAG('h', 'a', 'n', 'i'), &coord).
  *
  * Rust: sofel_font::var::Instance::baseline_with_fallback, sofel_font::HbScale::baseline_with_fallback_scaled, sofel_font::var::Instance::scaled_baseline_with_fallback
+ * Rust: sofel_font::layout_query::LayoutQueries::baseline_with_fallback
  * HarfBuzz: hb_ot_layout_get_baseline_with_fallback
  * FreeType: none
  */
@@ -1079,6 +1081,7 @@ int32_t sofel_font_baseline_with_fallback(const sofel_font_t *font,
  * without them, the font's extents for the direction with *found 0.
  *
  * Rust: sofel_font::var::Instance::layout_font_extents
+ * Rust: sofel_font::layout_query::LayoutQueries::layout_font_extents
  * HarfBuzz: hb_ot_layout_get_font_extents
  * FreeType: none
  */
@@ -1115,6 +1118,113 @@ int32_t sofel_scale_layout_font_extents(const sofel_scale_t *scale, const sofel_
                                         const sofel_location_t *location,
                                         int32_t direction, uint32_t script, uint32_t language,
                                         int32_t extents[3], int32_t *found);
+
+/* ------------------------------------------------------ layout queries */
+
+/* ADR 0062: pass NULL scale for font units and no pixel-size Device delta. */
+/* The shared evaluator also supplies GPOS positioning and BASE queries.
+ * Rust: sofel_font::var::Instance::layout_queries
+ * Rust: sofel_font::layout_query::LayoutQueries::x_device_delta
+ * Rust: sofel_font::layout_query::LayoutQueries::y_device_delta
+ * Rust: sofel_font::layout_query::LayoutQueries::x_device_fdelta
+ * Rust: sofel_font::layout_query::LayoutQueries::y_device_fdelta
+ */
+typedef struct {
+  int32_t max_correction_height;
+  int32_t kern_value;
+} sofel_math_kern_entry_t;
+
+typedef struct {
+  uint32_t glyph;
+  int32_t advance;
+} sofel_math_glyph_variant_t;
+
+typedef struct {
+  uint32_t glyph;
+  int32_t start_connector_length;
+  int32_t end_connector_length;
+  int32_t full_advance;
+  uint16_t flags;
+} sofel_math_glyph_part_t;
+
+/* MATH values follow hb_ot_math_get_* and hb_ot_math_is_glyph_extended_shape. */
+/*
+ * Rust: sofel_font::layout_query::LayoutQueries::has_math
+ */
+int32_t sofel_math_has_data(const sofel_font_t *font, int32_t *has_data);
+/*
+ * Rust: sofel_font::layout_query::LayoutQueries::math_constant
+ */
+int32_t sofel_math_constant(const sofel_font_t *font, const sofel_location_t *location,
+                            const sofel_scale_t *scale, uint32_t constant, int32_t *value);
+/*
+ * Rust: sofel_font::layout_query::LayoutQueries::math_italics_correction
+ */
+int32_t sofel_math_italics_correction(const sofel_font_t *font,
+                                      const sofel_location_t *location,
+                                      const sofel_scale_t *scale, uint32_t glyph, int32_t *value);
+/*
+ * Rust: sofel_font::layout_query::LayoutQueries::math_top_accent_attachment
+ */
+int32_t sofel_math_top_accent_attachment(const sofel_font_t *font,
+                                         const sofel_location_t *location,
+                                         const sofel_scale_t *scale, uint32_t glyph, int32_t *value);
+/*
+ * Rust: sofel_font::layout_query::LayoutQueries::math_is_extended_shape
+ */
+int32_t sofel_math_is_extended_shape(const sofel_font_t *font, uint32_t glyph,
+                                     int32_t *is_extended);
+/*
+ * Rust: sofel_font::layout_query::LayoutQueries::math_kerning
+ */
+int32_t sofel_math_kerning(const sofel_font_t *font, const sofel_location_t *location,
+                           const sofel_scale_t *scale, uint32_t glyph, int32_t corner,
+                           int32_t correction_height, int32_t *value);
+/*
+ * Rust: sofel_font::layout_query::LayoutQueries::math_min_connector_overlap
+ */
+int32_t sofel_math_min_connector_overlap(const sofel_font_t *font,
+                                          const sofel_location_t *location,
+                                          const sofel_scale_t *scale, int32_t direction,
+                                          int32_t *value);
+
+/* Each page returns *stored entries and *total entries; capacity may be 0. */
+/*
+ * Rust: sofel_font::layout_query::LayoutQueries::ligature_carets
+ */
+int32_t sofel_layout_ligature_carets(const sofel_font_t *font,
+                                     const sofel_location_t *location,
+                                     const sofel_scale_t *scale, uint32_t glyph,
+                                     int32_t direction, size_t start, int32_t *carets,
+                                     size_t capacity, size_t *stored, size_t *total);
+/*
+ * Rust: sofel_font::layout_query::LayoutQueries::math_kernings
+ */
+int32_t sofel_math_kernings(const sofel_font_t *font, const sofel_location_t *location,
+                            const sofel_scale_t *scale, uint32_t glyph, int32_t corner,
+                            size_t start, sofel_math_kern_entry_t *entries,
+                            size_t capacity, size_t *stored, size_t *total);
+/*
+ * Rust: sofel_font::layout_query::LayoutQueries::math_variants
+ */
+int32_t sofel_math_variants(const sofel_font_t *font, const sofel_location_t *location,
+                            const sofel_scale_t *scale, uint32_t glyph, int32_t direction,
+                            size_t start, sofel_math_glyph_variant_t *variants,
+                            size_t capacity, size_t *stored, size_t *total);
+/*
+ * Rust: sofel_font::layout_query::LayoutQueries::math_assembly
+ */
+int32_t sofel_math_assembly(const sofel_font_t *font, const sofel_location_t *location,
+                            const sofel_scale_t *scale, uint32_t glyph, int32_t direction,
+                            size_t start, sofel_math_glyph_part_t *parts, size_t capacity,
+                            size_t *stored, size_t *total, int32_t *italics_correction);
+
+/* hb_style_get_value at the same variation location. */
+/*
+ * Rust: sofel_font::layout_query::LayoutQueries::style_value
+ */
+int32_t sofel_style_value(const sofel_font_t *font, const sofel_location_t *location,
+                          uint32_t tag, float *value);
 
 /* -------------------------------------------------------------- names */
 
