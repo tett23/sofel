@@ -113,7 +113,7 @@ fn transform(map: &mut [Distance], width: usize, rows: usize) {
     }
 }
 
-fn encode(distance: i32, alpha: u8, spread: u8) -> u8 {
+pub(super) fn encode(distance: i32, alpha: u8, spread: u8) -> u8 {
     let limit = i32::from(spread) * ONE;
     let magnitude = sofel_geom::div_fix(distance.clamp(0, limit), limit) >> 9;
     if alpha < 127 {

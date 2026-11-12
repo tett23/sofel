@@ -1860,6 +1860,27 @@ int32_t sofel_bitmap_sdf(int32_t left, int32_t top, uint32_t width, uint32_t row
                         uint8_t *pixels, size_t capacity, size_t *len, int32_t *box);
 
 /*
+ * Report whether the outline last loaded in scratch fills the left side
+ * of its directed edges.
+ * Rust: sofel_outline::Scratch::fill_left
+ * HarfBuzz: none
+ * FreeType: FT_Outline_Get_Orientation
+ */
+int32_t sofel_outline_fill_left(const sofel_outline_scratch_t *scratch, uint32_t *fill_left);
+
+/*
+ * Render a signed distance field from recorded outline commands already
+ * translated to the bottom-left corner of the padded bitmap. Spread is
+ * 2..32 pixels. Buffer sizing follows sofel_rasterizer_render.
+ * Rust: sofel_raster::Rasterizer::render_outline_sdf_placed
+ * HarfBuzz: none
+ * FreeType: FT_Render_Glyph (FT_RENDER_MODE_SDF, outline input)
+ */
+int32_t sofel_rasterizer_render_outline_sdf_placed(sofel_rasterizer_t *rasterizer,
+        int32_t left, int32_t top, uint32_t width, uint32_t rows, uint8_t spread,
+        uint32_t fill_left, uint8_t *pixels, size_t capacity, size_t *len, int32_t *box);
+
+/*
  * Renders into the given box (left, top, width, rows, as from
  * sofel_pixel_box) an outline recorded already moved by the box's shift
  * (and multiplied by 4 after the move when `overlap` is nonzero). The

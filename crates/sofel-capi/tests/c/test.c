@@ -681,6 +681,12 @@ static void test_raster(const sofel_font_t *font) {
     CHECK(sdf[12] == 128 && sdf[0] == 0);
     CHECK(sofel_bitmap_sdf(3, 7, 2, 1, square, 1, 2, sdf, sizeof sdf, &len, box) == SOFEL_ERROR_INVALID_ARGUMENT);
     CHECK(sofel_bitmap_sdf(3, 7, 1, 1, square, 1, 1, sdf, sizeof sdf, &len, box) == SOFEL_ERROR_INVALID_ARGUMENT);
+    uint8_t sdf_pixels[64];
+    uint32_t fill_left = 9;
+    CHECK(sofel_outline_fill_left(scratch, &fill_left) == SOFEL_OK && fill_left <= 1);
+    CHECK(sofel_rasterizer_render_outline_sdf_placed(r, 0, 8, 8, 8, 2, 0, sdf_pixels, 64,
+                                                     &len, box) == SOFEL_OK);
+    CHECK(len == 64 && box[2] == 8 && box[3] == 8);
     const uint8_t weights[5] = {8, 77, 86, 77, 8};
     CHECK(sofel_rasterizer_render_filtered_lcd(r, 0, SOFEL_LCD_HORIZONTAL, weights, 0, 0,
                                                buf, sizeof buf, &len, box) == SOFEL_OK);

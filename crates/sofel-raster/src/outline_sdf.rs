@@ -146,3 +146,173 @@ fn split_curve(curve: Curve, splits: u32, edges: &mut alloc::vec::Vec<(Point, Po
         split_curve(first, splits / 2, edges);
     }
 }
+
+#[test]
+fn adr0064_i2_outline_sdf_known_square_and_interior_saturation() {
+    let p = |x, y| Point { x, y };
+    let edges = [
+        (p(512, 512), p(512, 1792)),
+        (p(512, 1792), p(1792, 1792)),
+        (p(1792, 1792), p(1792, 512)),
+        (p(1792, 512), p(512, 512)),
+    ];
+    let pixels = draw_edges(&edges, 36, 36, 8, false).unwrap();
+    assert_eq!(pixels[18 * 36 + 18], 255);
+    assert_eq!(pixels[18 * 36 + 7], 120);
+    assert_eq!(pixels[18 * 36 + 8], 136);
+    assert_eq!(pixels[0], 0);
+}
+
+fn draw_edges(
+    edges: &[(Point, Point)],
+    width: usize,
+    rows: usize,
+    spread: u8,
+    fill_left: bool,
+) -> Result<alloc::vec::Vec<u8>, super::RasterError> {
+    let len = width
+        .checked_mul(rows)
+        .ok_or(super::RasterError::TooLarge)?;
+    if len > i32::MAX as usize {
+        return Err(super::RasterError::TooLarge);
+    }
+    let limit = i32::from(spread) * 65536;
+    let mut distances = alloc::vec::Vec::<Option<SignedDistance>>::new();
+    distances
+        .try_reserve_exact(len)
+        .map_err(|_| super::RasterError::TooLarge)?;
+    distances.resize_with(len, || None);
+    let interval = |a: i32, b: i32, extent: usize| {
+        let lo = (i64::from(a.min(b)) - 63) / 64 - i64::from(spread);
+        let hi = (i64::from(a.max(b)) + 63) / 64 + i64::from(spread);
+        lo.max(0) as usize..hi.clamp(0, extent as i64) as usize
+    };
+    for &(a, b) in edges {
+        let xs = interval(a.x, b.x, width);
+        for y in interval(a.y, b.y, rows) {
+            for x in xs.clone() {
+                let p = Point {
+                    x: (x as i32) * 64 + 32,
+                    y: (y as i32) * 64 + 32,
+                };
+                let mut d = line_distance(a, b, p);
+                if d.distance > limit {
+                    continue;
+                }
+                if fill_left {
+                    d.sign = -d.sign;
+                }
+                let cell = &mut distances[(rows - 1 - y) * width + x];
+                if cell.as_ref().is_none_or(|previous| {
+                    if previous.distance.abs_diff(d.distance) <= 32 {
+                        previous.cross.abs() <= d.cross.abs()
+                    } else {
+                        previous.distance > d.distance
+                    }
+                }) {
+                    *cell = Some(d);
+                }
+            }
+        }
+    }
+    let mut pixels = alloc::vec::Vec::new();
+    pixels
+        .try_reserve_exact(len)
+        .map_err(|_| super::RasterError::TooLarge)?;
+    for row in distances.chunks(width.max(1)) {
+        let mut inside = false;
+        for value in row {
+            let d = value.as_ref().map_or(limit, |d| {
+                inside = d.sign > 0;
+                d.distance
+            });
+            pixels.push(super::bitmap_sdf::encode(
+                d,
+                if inside { 255 } else { 0 },
+                spread,
+            ));
+        }
+    }
+    Ok(pixels)
+}
+
+impl super::Rasterizer {
+    /// Render an outline translated to the bottom-left of its padded pixel
+    /// box. The caller supplies FreeType's fill orientation and distance spread.
+    ///
+    /// # Errors
+    /// Returns an error for invalid spread, bounds, or insufficient memory.
+    pub fn render_outline_sdf_placed(
+        &mut self,
+        bounds: super::PixelBox,
+        spread: u8,
+        fill_left: bool,
+    ) -> Result<super::Bitmap<'_>, super::BitmapSdfError> {
+        use sofel_geom::Command;
+        if !(2..=32).contains(&spread) {
+            return Err(super::BitmapSdfError::InvalidSpread);
+        }
+        if super::too_large(
+            bounds.left.into(),
+            bounds.top.into(),
+            bounds.width.into(),
+            bounds.rows.into(),
+            None,
+        ) {
+            return Err(super::BitmapSdfError::TooLarge);
+        }
+        let mut edges = alloc::vec::Vec::new();
+        for contour in self
+            .commands
+            .chunk_by(|_, next| !matches!(next, Command::MoveTo(_)))
+        {
+            let Some((&Command::MoveTo(start), commands)) = contour.split_first() else {
+                continue;
+            };
+            let mut last = start;
+            for &command in commands {
+                match command {
+                    Command::LineTo(end) => {
+                        if last != end {
+                            edges.push((last, end));
+                        }
+                        last = end;
+                    }
+                    Command::QuadTo(c, end) => {
+                        if c == last || c == end {
+                            if last != end {
+                                edges.push((last, end));
+                            }
+                        } else {
+                            flatten_curve(Curve::Quad([last, c, end]), &mut edges);
+                        }
+                        last = end;
+                    }
+                    Command::CubicTo(c, d, end) => {
+                        flatten_curve(Curve::Cubic([last, c, d, end]), &mut edges);
+                        last = end;
+                    }
+                    Command::Close | Command::MoveTo(_) => break,
+                }
+            }
+            if last != start {
+                edges.push((last, start));
+            }
+        }
+        self.pixels = draw_edges(
+            &edges,
+            bounds.width as usize,
+            bounds.rows as usize,
+            spread,
+            fill_left,
+        )
+        .map_err(|_| super::BitmapSdfError::TooLarge)?;
+        Ok(super::Bitmap {
+            left: bounds.left,
+            top: bounds.top,
+            width: bounds.width,
+            rows: bounds.rows,
+            pixels: &self.pixels,
+        })
+    }
+}
