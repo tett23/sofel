@@ -79,6 +79,44 @@ pub fn render<'r>(
         .map_err(RenderError::Raster)
 }
 
+/// Render an unhinted TrueType glyph to packed monochrome rows. The
+/// outline is translated and scaled before implicit on-curve points are
+/// computed, as in FreeType's black rasterizer.
+///
+/// # Errors
+/// Returns an error on an invalid outline or unsupported bitmap dimensions.
+pub fn render_mono<'r>(
+    outlines: &Outlines<'_, '_, '_>,
+    glyph: GlyphId,
+    ppem: u16,
+    scratch: &mut Scratch,
+    raster: &'r mut Rasterizer,
+) -> Result<sofel_raster::MonoBitmap<'r>, RenderError> {
+    let info = outlines
+        .load(glyph, Scale::pixels(outlines.font(), ppem, ppem), scratch)
+        .map_err(RenderError::Outline)?;
+    let c = info.cbox;
+    let bounds = sofel_raster::mono_pixel_box(c.x_min, c.y_min, c.x_max, c.y_max);
+    let high_precision = ppem < 24 && bounds.width.saturating_add(bounds.rows) < 258;
+    let multiplier = if high_precision { 64 } else { 1 };
+    let shift = bounds.shift();
+    let offset = sofel_font::geom::Point {
+        x: shift.x.saturating_sub(32),
+        y: shift.y.saturating_sub(32),
+    };
+    raster.clear();
+    scratch
+        .decompose(offset, multiplier, raster)
+        .map_err(RenderError::Outline)?;
+    let options = sofel_raster::MonoOptions {
+        high_precision,
+        ..Default::default()
+    };
+    raster
+        .render_mono_placed(bounds, options, Some((ppem, ppem)))
+        .map_err(RenderError::Raster)
+}
+
 /// What [`render_color`] drew.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ColorGlyph<'r> {

@@ -1879,6 +1879,19 @@ int32_t sofel_rasterizer_render_mono(sofel_rasterizer_t *rasterizer, uint32_t fl
                                     uint8_t *pixels, size_t capacity, size_t *len, int32_t *box);
 
 /*
+ * Monochrome rendering of prepositioned outline commands. Coordinates
+ * are relative to pixel centres, in 1/4096 pixel units with high precision
+ * when width + rows < 258, and 1/64 pixel units otherwise.
+ *
+ * Rust: sofel_raster::Rasterizer::render_mono_placed
+ * HarfBuzz: none
+ * FreeType: FT_Render_Glyph (FT_RENDER_MODE_MONO)
+ */
+int32_t sofel_rasterizer_render_mono_placed(sofel_rasterizer_t *rasterizer, int32_t left,
+        int32_t top, uint32_t width, uint32_t rows, uint32_t flags, uint16_t x_ppem,
+        uint16_t y_ppem, uint8_t *pixels, size_t capacity, size_t *len, int32_t *box);
+
+/*
  * Renders into the given box (left, top, width, rows, as from
  * sofel_pixel_box) an outline recorded already moved by the box's shift
  * (and multiplied by 4 after the move when `overlap` is nonzero). The

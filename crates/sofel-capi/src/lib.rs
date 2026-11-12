@@ -3009,9 +3009,6 @@ pub unsafe extern "C" fn sofel_rasterizer_render_mono(
     len: *mut usize,
     box_: *mut i32,
 ) -> i32 {
-    if flags & !31 != 0 {
-        return ERROR_INVALID_ARGUMENT;
-    }
     // SAFETY: the caller's conditions.
     let (r, pixels, len, b) = unsafe {
         (
@@ -3022,6 +3019,65 @@ pub unsafe extern "C" fn sofel_rasterizer_render_mono(
         )
     };
     let out = BitmapOut { pixels, len, b };
+    render_mono_output(r, flags, x_ppem, y_ppem, None, out)
+}
+
+/// Render packed monochrome rows.
+///
+/// # Safety
+///
+/// As [`sofel_rasterizer_render`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_rasterizer_render_mono_placed(
+    rasterizer: *mut SofelRasterizer,
+    left: i32,
+    top: i32,
+    width: u32,
+    rows: u32,
+    flags: u32,
+    x_ppem: u16,
+    y_ppem: u16,
+    pixels: *mut u8,
+    capacity: usize,
+    len: *mut usize,
+    box_: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (r, pixels, len, b) = unsafe {
+        (
+            w(rasterizer),
+            out_array(pixels, capacity),
+            w(len),
+            ints::<4>(box_),
+        )
+    };
+    let out = BitmapOut { pixels, len, b };
+    render_mono_output(
+        r,
+        flags,
+        x_ppem,
+        y_ppem,
+        Some(PixelBox {
+            left,
+            top,
+            width,
+            rows,
+        }),
+        out,
+    )
+}
+
+fn render_mono_output(
+    r: Option<&mut SofelRasterizer>,
+    flags: u32,
+    x_ppem: u16,
+    y_ppem: u16,
+    bounds: Option<PixelBox>,
+    out: BitmapOut<'_>,
+) -> i32 {
+    if flags & !31 != 0 {
+        return ERROR_INVALID_ARGUMENT;
+    }
     status((|| {
         let r = some(r)?;
         out.check()?;
@@ -3033,7 +3089,11 @@ pub unsafe extern "C" fn sofel_rasterizer_render_mono(
             include_stubs: flags & 16 != 0,
         };
         let ppem = (x_ppem != 0 || y_ppem != 0).then_some((x_ppem, y_ppem));
-        let image = r.raster.render_mono(options, ppem).map_err(raster_error)?;
+        let image = match bounds {
+            Some(b) => r.raster.render_mono_placed(b, options, ppem),
+            None => r.raster.render_mono(options, ppem),
+        }
+        .map_err(raster_error)?;
         out.put_bytes(image.bounds, image.pixels)
     })())
 }

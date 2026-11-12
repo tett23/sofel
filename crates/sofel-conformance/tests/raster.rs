@@ -397,9 +397,8 @@ fn adr0064_i2_reference_renders_mono_and_both_sdf_inputs() {
 
 #[test]
 fn adr0064_i2_selawik_monochrome_bitmaps_match_freetype() {
-    use sofel_font::{geom::Point, read::GlyphId};
-    use sofel_outline::{Outlines, Scale};
-    use sofel_raster::MonoOptions;
+    use sofel_font::read::GlyphId;
+    use sofel_outline::Outlines;
     let path = paths::testdata()
         .join("harfbuzz/test/shape/data/text-rendering-tests/fonts/Selawik-variable.ttf");
     let data = std::fs::read(&path).unwrap();
@@ -418,37 +417,14 @@ fn adr0064_i2_selawik_monochrome_bitmaps_match_freetype() {
         assert!(reference.status.success());
         let faces = parse(&String::from_utf8(reference.stdout).unwrap()).unwrap();
         for (&gid, expected) in &faces[&0].glyphs {
-            let info = outlines
-                .load(GlyphId(gid), Scale::pixels(&font, ppem, ppem), &mut scratch)
-                .unwrap();
-            let c = info.cbox;
-            let bounds = sofel_raster::mono_pixel_box(c.x_min, c.y_min, c.x_max, c.y_max);
-            let shift = bounds.shift();
-            raster.clear();
-            scratch
-                .decompose(
-                    Point {
-                        x: shift.x - 32,
-                        y: shift.y - 32,
-                    },
-                    if ppem < 24 && bounds.width + bounds.rows < 258 {
-                        64
-                    } else {
-                        1
-                    },
-                    &mut raster,
-                )
-                .unwrap();
-            let bitmap = raster
-                .render_mono_placed(
-                    bounds,
-                    MonoOptions {
-                        high_precision: ppem < 24,
-                        ..Default::default()
-                    },
-                    Some((ppem, ppem)),
-                )
-                .unwrap();
+            let bitmap = sofel_cli::glyph::render_mono(
+                &outlines,
+                GlyphId(gid),
+                ppem,
+                &mut scratch,
+                &mut raster,
+            )
+            .unwrap();
             let b = bitmap.bounds;
             let mut actual = vec![format!(
                 "bitmap {} {} {} {}",

@@ -1,5 +1,17 @@
 //! Packed monochrome rasterization (sofel ADR 0064).
 
+// Coordinates originate as i32 and gain at most six fractional bits.
+// Bitmap dimensions pass too_large before conversion or indexing. Span and
+// profile indices are clipped to those dimensions in each sweep.
+#![allow(
+    clippy::arithmetic_side_effects,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::indexing_slicing
+)]
+#![cfg_attr(test, allow(clippy::unwrap_used))]
+
 use super::PixelBox;
 
 // ft_glyphslot_preset_bitmap rounds ties toward the outside. If an
