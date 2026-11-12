@@ -38,6 +38,7 @@ C ABIには位置の作成、座標の取得、Variationの文字列変換、軸
 さらに、CFF2の `blend` は指定した位置の係数で評価し、輪郭とグリフの箱に反映する。Private DICTも位置ごとに読みなおす。C ABIの `sofel_cff2_blend_vector` は、既定成分と0の列を含む係数列を返す。
 さらに、メトリクス、基準線、輪郭、シェーピング、塗りの既存関数には位置の引数を追加した。
 C API の `sofel_scale_create_with_ppem` は、シェーピング用スケールに横と縦の ppem を指定する（[ADR 0052](docs/adr/0052-c-shaping-ppem.md)）。従来の `sofel_scale_create` と NULL のスケールでは両軸とも 0 になる。
+レイアウト問い合わせ（[ADR 0062](docs/adr/0062-layout-query-device-adjustments.md)）は、Rust の `Instance::layout_queries` に位置、スケール、横と縦の ppem を渡す。GPOS、GDEF の合字キャレット、BASE、MATH は同じ Device 評価を使い、MATH の定数、グリフの値、カーニング、異体グリフと組み立て部品を取得する。C ABI の `sofel_layout_ligature_carets` と `sofel_math_*` は列の開始位置、容量、格納件数、総数を分けて返す。`HbScale::with_ptem` と `sofel_scale_create_with_ptem` は、スタイルの光学サイズを問い合わせるためのポイントサイズを渡す。
 可変フォントの位置を指定すると、HVARとVVARの送り幅、gvarの幻の点から求める送り幅とグリフの箱、VORGとVVARの縦原点、MVARのメトリクス、BASEのVariationIndexを評価する。FreeTypeの方針ではgvarの輪郭とCFF2の輪郭を位置に応じて描き、HarfBuzzの方針ではFeatureVariationsとGPOSのVariationIndexをシェーピングに適用する。COLRv1の塗りとクリップの箱にも位置を反映する。
 `sofel-shape`、`sofel-render`、`sofel-paint` は `--variations` と `--named-instance` で位置を受け付ける。
 非既定位置のシェーピングでは、水平送り幅を1回の呼び出し内で128枠のキャッシュに保存する。既定位置ではキャッシュを作らない。Rustの呼び出し側も、特定の `Instance` に結びつく `AdvanceCache` を保持できる（[ADR 0049](docs/adr/0049-hvar-advance-cache.md)）。計測結果は [HVAR送り幅キャッシュ](docs/benchmarks/2026-11-11-hvar-advance-cache.md) に記録する。
@@ -57,7 +58,7 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-inflate`](crates/sofel-inflate) | 出力上限を指定した DEFLATE・zlib・gzip の展開 |
 | [`sofel-png`](crates/sofel-png) | PNG の各色型と Adam7 をアルファ乗算済み BGRA に復号する（[ADR 0066](docs/adr/0066-color-glyph-pixels.md)） |
 | [`sofel-bitmap`](crates/sofel-bitmap) | 埋め込みビットマップ（CBLC/CBDT、EBLC/EBDT、`bloc`/`bdat`、sbix）のストライク、その選び方（HarfBuzzとFreeTypeの両方）、グリフの画像のデータとメトリクス、EBDTの画素のFreeTypeと同じ書き込み、CBDT と sbix の PNG の復号（[ADR 0023](docs/adr/0023-color-glyphs.md)） |
-| [`sofel-color`](crates/sofel-color) | カラーグリフ：CPALのパレット、COLR（版0と版1）、SVG、CBDT、sbixをHarfBuzzと同じ命令で `Painter` に渡す。命令の記録（`Recording`）、カラーグリフを含むグリフの箱、フォールバックのための問い合わせ（[ADR 0023](docs/adr/0023-color-glyphs.md)） |
+| [`sofel-color`](crates/sofel-color) | カラーグリフ：CPALのパレット、COLR（版0と版1）、SVG、CBDT、sbixをHarfBuzzと同じ命令で `Painter` に渡す。gzip 圧縮された SVG は展開して渡す。命令の記録（`Recording`）、カラーグリフを含むグリフの箱、フォールバックのための問い合わせ（[ADR 0023](docs/adr/0023-color-glyphs.md)） |
 | [`sofel-write`](crates/sofel-write) | sfntの組み立てと、HarfBuzzと同じ詰め方のオブジェクトの直列化（[ADR 0022](docs/adr/0022-subsetting.md)） |
 | [`sofel-subset`](crates/sofel-subset) | HarfBuzzの `hb-subset` とバイト単位で同じ出力のサブセット化（[ADR 0022](docs/adr/0022-subsetting.md)。書ける表はglyf系、cmap、name、OS/2、post、hdmx、CFF、VORG、GDEF、GSUB、GPOS、BASE、COLR、CPAL、CBLC、CBDT、sbix、MATH、STAT、軸をすべて固定したCFF2など。軸はすべて既定の値に固定できる。前処理（`Prepared`）で同じフォントの計画を速く作れる） |
 | [`sofel-raster`](crates/sofel-raster) | FreeTypeのsmoothのラスタライザと同じ計算で、8bitのアンチエイリアスの画像を作る。COLRv0の層をFreeTypeと同じ整数の計算でBGRAの画像に重ねる（`blend_layer`） |
