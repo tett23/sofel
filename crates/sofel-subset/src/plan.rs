@@ -32,6 +32,24 @@ pub(crate) const PINNED_DROP: [&[u8; 4]; 8] = [
     b"avar", b"fvar", b"gvar", b"GVAR", b"HVAR", b"VVAR", b"MVAR", b"cvar",
 ];
 
+/// An identity avar v1 map needs no rebasing when an axis range changes.
+fn avar_v1_identity(table: &sofel_font::read::avar::Avar<'_>, axis_count: usize) -> bool {
+    table.major_version() == 1
+        && table.axis_count() == axis_count
+        && (0..axis_count).all(|axis| {
+            table.segment_map(axis).is_some_and(|map| {
+                map.len() == 3
+                    && [-16384, 0, 16384]
+                        .iter()
+                        .enumerate()
+                        .all(|(index, &value)| {
+                            map.pair(index)
+                                .is_some_and(|(from, to)| from.0 == value && to.0 == value)
+                        })
+            })
+        })
+}
+
 /// The glyph mapping: new ids in ascending order with their old ids, and
 /// the reverse lookup (ADR 0022's `GlyphMap`).
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
@@ -347,12 +365,14 @@ impl Plan {
             let varc_safe = !varc_retained || varc_unrelated_axis_change;
             let simple_avar = identity_avar2
                 || font.table(Tag::new(b"avar")).is_none_or(|data| {
-                    sofel_font::read::avar::Avar::new(data)
-                        .is_ok_and(|table| table.major_version() == 1 && norm.pinned_at_default)
-                        && norm
-                            .user
-                            .values()
-                            .all(|range| range.min == range.default && range.default == range.max)
+                    sofel_font::read::avar::Avar::new(data).is_ok_and(|table| {
+                        avar_v1_identity(&table, norm.axis_tags.len())
+                            || (table.major_version() == 1
+                                && norm.pinned_at_default
+                                && norm.user.values().all(|range| {
+                                    range.min == range.default && range.default == range.max
+                                }))
+                    })
                 });
             let metadata_only = no_other_variation_data && varc_safe && simple_avar;
             let gvar_full_pin = norm.all_axes_pinned
