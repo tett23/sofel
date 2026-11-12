@@ -453,11 +453,13 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target/testdata/extra-fonts
-          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-extra-fonts-${{ hashFiles('fonts.lock', 'conformance/fonts.tsv') }}
+          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-extra-fonts-${{ hashFiles('fonts.lock', 'conformance/fonts.tsv', 'gallery-fonts.lock', 'conformance/gallery-fonts.tsv') }}
       - name: Fetch extra fonts and licenses
         env:
           SOFEL_FONTS_OFFLINE: ${{ steps.extra_fonts.outputs.cache-hit == 'true' && '1' || '0' }}
-        run: sh scripts/fetch-fonts.sh
+        run: |
+          sh scripts/fetch-fonts.sh
+          sh scripts/fetch-fonts.sh gallery-fonts.lock conformance/gallery-fonts.tsv
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target/wasi-sdk

@@ -64,13 +64,7 @@ fn i4_i5_published_color_cards_match_solo_and_shaped_glyphs() {
     } else {
         repo.join(output)
     };
-    let cases = inputs::cases(
-        &repo,
-        &repo.join("conformance/fonts.tsv"),
-        &repo.join("target/testdata/extra-fonts"),
-        true,
-    )
-    .unwrap();
+    let cases = inputs::gallery_cases(&repo).unwrap();
     let (width, pixels) = rgba_sheet(&fs::read(output.join("all-samples.png")).unwrap());
     let html = fs::read_to_string(output.join("index.html")).unwrap();
     for (id, side, ids) in [
@@ -149,6 +143,112 @@ fn i4_i5_published_color_cards_match_solo_and_shaped_glyphs() {
                 sample.ppem
             ),
             "{id}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires a generated gallery and renderer binaries"]
+fn i1_i2_noto_color_emoji_pixels_and_published_cards() {
+    let output = PathBuf::from(std::env::var_os("SOFEL_GALLERY_OUTPUT").expect("output path"));
+    let binaries =
+        PathBuf::from(std::env::var_os("SOFEL_GALLERY_BINARIES").expect("binaries path"));
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let output = if output.is_absolute() {
+        output
+    } else {
+        repo.join(output)
+    };
+    let cases = inputs::gallery_cases(&repo).unwrap();
+    let (sheet_width, sheet_pixels) =
+        rgba_sheet(&fs::read(output.join("all-samples.png")).unwrap());
+    let html = fs::read_to_string(output.join("index.html")).unwrap();
+
+    for (id, run_id, solo_size, run_size, solo_crc, run_crc) in [
+        (
+            "color-noto-cbdt",
+            2269,
+            (136, 128),
+            (136, 128),
+            0xf26c_4dc6,
+            0x532b_95b4,
+        ),
+        (
+            "color-noto-colrv1",
+            1205,
+            (121, 117),
+            (124, 123),
+            0x88a3_e34c,
+            0x5824_0de7,
+        ),
+    ] {
+        let index = cases
+            .iter()
+            .position(|sample| sample.id == id && sample.face == 0)
+            .unwrap_or_else(|| panic!("missing {id} gallery case"));
+        let sample = &cases[index];
+        assert_eq!(sample.solo.kind(), "char");
+        assert_eq!(sample.solo.value(), "U+1F600");
+        assert_eq!(sample.text, "👩‍💻");
+        assert_eq!(sample.ppem, 109);
+        let rendered = inputs::render_case(
+            sample,
+            &binaries.join("sofel-render"),
+            &binaries.join("sofel-shape"),
+        )
+        .unwrap();
+        assert_eq!(rendered.status, Status::Drawn, "{id}");
+        assert_eq!(rendered.glyph_ids, [run_id], "{id} ZWJ shaping");
+        assert_eq!(rendered.glyphs.len(), 1, "{id} ZWJ shaping");
+
+        let solo = rendered.solo.as_ref().unwrap();
+        let run_glyph = rendered.glyphs[0].image.as_ref().unwrap();
+        assert_eq!((solo.width, solo.height), solo_size, "{id} U+1F600");
+        assert_eq!(
+            (run_glyph.width, run_glyph.height),
+            run_size,
+            "{id} ZWJ glyph"
+        );
+        assert_eq!(sofel_inflate::crc32(&solo.pixels), solo_crc, "{id} U+1F600");
+        assert_eq!(
+            sofel_inflate::crc32(&run_glyph.pixels),
+            run_crc,
+            "{id} ZWJ glyph"
+        );
+        assert!(has_color(solo), "{id} U+1F600");
+        assert!(has_color(run_glyph), "{id} ZWJ glyph");
+
+        let run = font_gallery::pixels::compose(&rendered.glyphs)
+            .unwrap()
+            .unwrap();
+        assert!(
+            sheet::card(Some(solo), Some(&run), &[]).is_ok(),
+            "{id} card fit"
+        );
+        let card_x = (index % sheet::COLUMNS) * sheet::WIDTH;
+        let card_y = (index / sheet::COLUMNS) * sheet::HEIGHT;
+        for (image, x) in [(solo, sheet::PADDING), (&run, sheet::RUN_X)] {
+            let top = sheet::SAMPLE_TOP + (sheet::SAMPLE_HEIGHT - image.height) / 2;
+            for row in 0..image.height {
+                let source = row * image.width * 4;
+                let at = ((card_y + top + row) * sheet_width + card_x + x) * 4;
+                assert_eq!(
+                    &sheet_pixels[at..at + image.width * 4],
+                    &image.pixels[source..source + image.width * 4],
+                    "{id} card row {row} at x={x}"
+                );
+            }
+        }
+        let row = html
+            .split_once(&format!("<tr><td>{id} / face 0</td>"))
+            .unwrap_or_else(|| panic!("missing {id} HTML row"))
+            .1
+            .split_once("</tr>")
+            .unwrap()
+            .0;
+        assert_eq!(
+            row, "<td>char U+1F600</td><td>👩‍💻</td><td>109</td><td>描画済み</td>",
+            "{id} HTML row"
         );
     }
 }
