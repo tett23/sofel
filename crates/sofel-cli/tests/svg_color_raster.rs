@@ -7,7 +7,8 @@
 )]
 
 use sofel_cli::color_raster::render_scene;
-use sofel_raster::{BgraImage, Rasterizer};
+use sofel_font::geom::{Pen, Point};
+use sofel_raster::{BgraImage, FillRule, Rasterizer, RenderOptions};
 use sofel_svg::{Gradient, GradientKind, Scene, Shape, ShapeKind, Stop};
 use std::process::Command;
 
@@ -60,6 +61,81 @@ fn adr0072_i3_linear_rect_raster_anchor_colors() {
     assert_eq!(
         &image.pixels[(5 * 10 + 7) * 4..(5 * 10 + 7) * 4 + 4],
         &[0, 0, 191, 255]
+    );
+}
+
+#[test]
+fn adr0072_i3_circle_boundary_matches_explicit_path() {
+    let scene = Scene {
+        gradients: vec![Gradient {
+            id: "circle".into(),
+            kind: GradientKind::Radial {
+                cx: 0.5,
+                cy: 0.5,
+                r: 0.5,
+                fx: 0.5,
+                fy: 0.5,
+            },
+            user_space: false,
+            transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+            stops: vec![
+                Stop {
+                    offset: 0.0,
+                    rgba: [255, 255, 255, 255],
+                },
+                Stop {
+                    offset: 1.0,
+                    rgba: [255, 255, 255, 255],
+                },
+            ],
+        }],
+        shapes: vec![Shape {
+            kind: ShapeKind::Circle {
+                cx: 5.0,
+                cy: 5.0,
+                r: 2.0,
+            },
+            gradient: 0,
+            transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+        }],
+    };
+    let mut raster = Rasterizer::new();
+    let mut image = BgraImage::default();
+    assert!(render_scene(&scene, 10, 10, &mut raster, &mut image));
+
+    let mut reference = Rasterizer::new();
+    let p = |x: f32, y: f32| Point {
+        x: (x * 64.0).round() as i32,
+        y: (-y * 64.0).round() as i32,
+    };
+    let k = 0.552_284_8_f32 * 2.0;
+    reference.move_to(p(7.0, 5.0));
+    reference.cubic_to(p(7.0, 5.0 + k), p(5.0 + k, 7.0), p(5.0, 7.0));
+    reference.cubic_to(p(5.0 - k, 7.0), p(3.0, 5.0 + k), p(3.0, 5.0));
+    reference.cubic_to(p(3.0, 5.0 - k), p(5.0 - k, 3.0), p(5.0, 3.0));
+    reference.cubic_to(p(5.0 + k, 3.0), p(7.0, 5.0 - k), p(7.0, 5.0));
+    reference.line_to(p(7.0, 5.0));
+    reference.close();
+    let mask = reference
+        .render(RenderOptions {
+            fill: FillRule::NonZero,
+            overlap: false,
+            ppem: Some((10, 10)),
+        })
+        .unwrap();
+    assert_eq!(
+        (image.left, image.top, image.width, image.rows),
+        (mask.left, mask.top, mask.width, mask.rows)
+    );
+    assert_eq!(
+        image
+            .pixels
+            .iter()
+            .skip(3)
+            .step_by(4)
+            .copied()
+            .collect::<Vec<_>>(),
+        mask.pixels
     );
 }
 
