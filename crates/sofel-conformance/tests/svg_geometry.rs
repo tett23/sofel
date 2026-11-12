@@ -14,3 +14,19 @@ fn i2_geometry_reference_bounds_use_transformed_ink() {
     }
     assert!(reference_bounds("unknown").is_err());
 }
+
+#[test]
+fn i2_geometry_observes_the_transformed_outline_separately_from_ink_bounds() {
+    for case in ["rect", "circle"] {
+        assert_eq!(
+            sofel_conformance::svg_geometry::observe(case, "outline"),
+            Some(Ok(())),
+            "{case}"
+        );
+        assert_eq!(
+            sofel_conformance::svg_geometry::observe(case, "bounds"),
+            Some(Ok(())),
+            "{case}"
+        );
+    }
+}

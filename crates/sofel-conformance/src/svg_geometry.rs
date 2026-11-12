@@ -1,5 +1,5 @@
 //! Transformed outlines and ink bounds for the synthetic SVG glyphs in ADR 0074.
-use sofel_geom::{Pen, Point};
+use sofel_geom::{Command, FnPen, Pen, Point};
 use sofel_raster::{FillRule, Rasterizer, RenderOptions};
 
 const DOCUMENT: &[u8] = include_bytes!("../../../conformance/svg/geometry.svg");
@@ -98,27 +98,93 @@ pub fn reference_bounds(case: &str) -> Result<(i64, i64, i64, i64), String> {
     ink_bounds(mask.left, mask.top, mask.width, mask.pixels.iter().copied())
 }
 
-/// Compares registered geometry observations with independently drawn paths.
+// The Pen contract explicitly closes contours. A line to the current point
+// after the last quarter-circle adds no edge and does not change its outline.
+fn normalize(commands: &mut Vec<Command>) {
+    let mut end = None;
+    commands.retain(|cmd| {
+        let next = match *cmd {
+            Command::LineTo(p) if Some(p) == end => return false,
+            Command::MoveTo(p)
+            | Command::LineTo(p)
+            | Command::QuadTo(_, p)
+            | Command::CubicTo(_, _, p) => Some(p),
+            Command::Close => None,
+        };
+        end = next;
+        true
+    });
+}
+
+fn compare_outline(case: &str, gid: u32, document: &[u8]) -> Result<(), String> {
+    let scene =
+        sofel_svg::parse_shapes(document, gid).map_err(|e| format!("glyph {gid}: {e:?}"))?;
+    let [shape] = scene.shapes.as_slice() else {
+        return Err(format!(
+            "glyph {gid}: expected one outline, got {}",
+            scene.shapes.len()
+        ));
+    };
+    let mut actual = Vec::new();
+    shape.draw(32.0 / 1000.0, &mut FnPen(|cmd| actual.push(cmd)));
+    let mut expected = Vec::new();
+    draw_reference(case, &mut FnPen(|cmd| expected.push(cmd)))?;
+    normalize(&mut actual);
+    normalize(&mut expected);
+    for index in 0..actual.len().max(expected.len()) {
+        if actual.get(index) != expected.get(index) {
+            return Err(format!(
+                "glyph {gid} outline command {index}: expected {:?}, got {:?}",
+                expected.get(index),
+                actual.get(index)
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn compare_bounds(case: &str, gid: u32) -> Result<(), String> {
+    let expected = reference_bounds(case)?;
+    let image = crate::svg_input::rendered(DOCUMENT, 5, gid, [255; 4])?;
+    let actual = ink_bounds(
+        image.left,
+        image.top,
+        image.width,
+        image.pixels.as_chunks::<4>().0.iter().map(|bgra| bgra[3]),
+    )?;
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(format!(
+            "glyph {gid} ink bounds: expected {expected:?}, got {actual:?}"
+        ))
+    }
+}
+
+/// Compares transformed SVG commands or nontransparent ink with an independent path.
 pub fn observe(case: &str, observation: &str) -> Option<Result<(), String>> {
     let gid = glyph(case)?;
-    if observation != "bounds" {
-        return None;
+    match observation {
+        "outline" => Some(compare_outline(case, gid, DOCUMENT)),
+        "bounds" => Some(compare_bounds(case, gid)),
+        _ => None,
     }
-    Some((|| {
-        let expected = reference_bounds(case)?;
-        let image = crate::svg_input::rendered(DOCUMENT, 5, gid, [255; 4])?;
-        let actual = ink_bounds(
-            image.left,
-            image.top,
-            image.width,
-            image.pixels.as_chunks::<4>().0.iter().map(|bgra| bgra[3]),
-        )?;
-        if actual == expected {
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn i2_outline_detects_changed_selection_and_transform_order() {
+        let xml = r##"<svg><defs><linearGradient id="white"><stop stop-color="#fff"/></linearGradient></defs><g id="glyph3" transform="matrix(2 0 0 1 125 62.5)"><rect x="62.5" y="62.5" width="125" height="125" fill="url(#white)"/></g></svg>"##;
+        assert_eq!(
+            compare_outline("nested-transform", 3, xml.as_bytes()),
             Ok(())
-        } else {
-            Err(format!(
-                "glyph {gid} ink bounds: expected {expected:?}, got {actual:?}"
-            ))
-        }
-    })())
+        );
+        // Translating before scaling doubles the x offset in the composed matrix.
+        let wrong = xml.replace("1 125 62.5", "1 250 62.5");
+        assert!(compare_outline("nested-transform", 3, wrong.as_bytes()).is_err());
+        assert!(compare_outline("nested-transform", 4, xml.as_bytes()).is_err());
+    }
 }

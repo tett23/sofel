@@ -83,6 +83,7 @@ dependencies = [
  "sofel-read",
  "sofel-shape",
  "sofel-subset",
+ "sofel-svg",
  "sofel-unicode",
  "sofel-vector",
  "sofel-write",
