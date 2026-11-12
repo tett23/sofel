@@ -192,6 +192,9 @@ pub(crate) fn render(
                 };
                 image.paint_bitmap(&src, encoded.extents?, t, clips.last()?)?;
             }
+            // Recording always declines the nested glyph callback. Its expanded
+            // paint operations immediately follow this notification in the stream.
+            PaintCommand::ColorGlyph(_) => {}
             PaintCommand::PushTransform(other) => matrices.push(t.multiply(other)),
             PaintCommand::PopTransform => {
                 matrices.pop()?;

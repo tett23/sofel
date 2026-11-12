@@ -246,6 +246,7 @@ jobs:
         run: |
           sh tools/hb-raster-reference/build.sh target/testdata/harfbuzz "$RUNNER_TEMP/hb-raster-reference"
           sh tools/hb-raster-reference/check.sh target/testdata conformance/color-raster "$RUNNER_TEMP/hb-raster-reference"
+          SOFEL_HB_RASTER_REFERENCE="$RUNNER_TEMP/hb-raster-reference" cargo test --release -p sofel-conformance --test gallery_colr_pixels i2_all_colrv1 -- --ignored
       # sofel ADR 0069: render the same local gallery and keep the image.
       - name: Render font gallery and check SVG feature conformance
         env:

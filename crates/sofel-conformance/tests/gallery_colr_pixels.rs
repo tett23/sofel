@@ -115,16 +115,19 @@ fn i2_colr_pixels_sweep() {
         VARIABLE,
         27,
         include_bytes!("../../../conformance/color-raster/variable-27.bgra"),
+        true,
     );
     compare(
         VARIABLE,
         38,
         include_bytes!("../../../conformance/color-raster/variable-38.bgra"),
+        true,
     );
     compare(
         VARIABLE,
         12,
         include_bytes!("../../../conformance/color-raster/variable-12.bgra"),
+        true,
     );
 }
 
@@ -150,4 +153,31 @@ fn i2_colr_pixels_all_28_composite_modes() {
         references = rest;
     }
     assert!(references.is_empty());
+}
+
+#[test]
+#[ignore = "requires the pinned HarfBuzz raster reference executable"]
+fn i2_all_colrv1_pixel_glyphs_match_harfbuzz_raster() {
+    let helper = std::env::var_os("SOFEL_HB_RASTER_REFERENCE").unwrap();
+    let font = paths::testdata().join(VARIABLE);
+    let mut checked = 0;
+    for glyph in 8..=220 {
+        // The other glyphs provide monochrome geometry; 168 is the COLRv0 control.
+        if matches!(glyph, 161..=165 | 168 | 170..=176) {
+            continue;
+        }
+        let result = std::process::Command::new(&helper)
+            .arg(&font)
+            .arg(glyph.to_string())
+            .arg("48")
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "HarfBuzz reference unavailable for glyph {glyph}"
+        );
+        compare(VARIABLE, glyph, &result.stdout, false);
+        checked += 1;
+    }
+    assert_eq!(checked, 200);
 }
