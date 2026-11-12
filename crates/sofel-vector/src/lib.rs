@@ -4,6 +4,7 @@
 extern crate alloc;
 mod pdf;
 mod svg_paint;
+mod sweep;
 use alloc::string::String;
 use core::fmt::Write as _;
 pub use pdf::{PdfPage, PdfPen};
@@ -58,19 +59,8 @@ impl SvgPage {
             self.body.truncate(start);
             return result;
         }
-        let Color { r, g, b, a } = fill;
-        if [r, g, b].iter().all(|v| v >> 4 == v & 15) {
-            let _ = write!(
-                self.body,
-                "\" fill=\"#{:X}{:X}{:X}\"",
-                r & 15,
-                g & 15,
-                b & 15
-            );
-        } else {
-            let _ = write!(self.body, "\" fill=\"#{r:02X}{g:02X}{b:02X}\"");
-        }
-        opacity(&mut self.body, a);
+        self.body.push('"');
+        fill_color(&mut self.body, fill);
         self.body.push_str("/>\n");
         Ok(())
     }
@@ -203,9 +193,23 @@ fn write_base64(out: &mut String, bytes: &[u8]) {
     }
 }
 
+fn fill_color(out: &mut String, fill: Color) {
+    let Color { r, g, b, a } = fill;
+    if [r, g, b].iter().all(|v| v >> 4 == v & 15) {
+        let _ = write!(*out, " fill=\"#{:X}{:X}{:X}\"", r & 15, g & 15, b & 15);
+    } else {
+        let _ = write!(*out, " fill=\"#{r:02X}{g:02X}{b:02X}\"");
+    }
+    opacity(out, a);
+}
+
 fn opacity(out: &mut String, alpha: u8) {
     if alpha != 255 {
-        let _ = write!(out, " fill-opacity=\"{}\"", f32::from(alpha) / 255.0);
+        let _ = write!(
+            out,
+            " fill-opacity=\"{}\"",
+            pdf::number(f32::from(alpha) / 255.0, 4)
+        );
     }
 }
 

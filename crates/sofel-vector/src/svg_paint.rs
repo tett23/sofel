@@ -231,7 +231,15 @@ impl<F: FnMut(u32, &mut SvgPen<'_>) -> bool> Painter for SvgPainter<'_, F> {
                 self.page.body.push_str("/>\n");
             }
             Brush::Linear { line, .. } | Brush::Radial { line, .. } => self.gradient(brush, line),
-            Brush::Sweep { .. } => self.complete = false,
+            Brush::Sweep {
+                center,
+                line,
+                start,
+                end,
+            } => {
+                let center = sofel_geom::PointF::new(center.x / SUBPIXEL, center.y / SUBPIXEL);
+                self.complete &= crate::sweep::write(&mut self.page.body, center, line, start, end);
+            }
         }
     }
     fn image(&mut self, image: &Image<'_>) -> bool {
