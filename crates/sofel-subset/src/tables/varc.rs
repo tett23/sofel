@@ -15,6 +15,20 @@ use crate::plan::Plan;
 
 use super::{Tables, cff};
 
+/// The currently supported auxiliary form: one format-1 axis-range
+/// condition with no nested references. An absent list yields an empty slice.
+pub(crate) fn simple_condition_bytes(src: &[u8]) -> Option<&[u8]> {
+    let offset = u32::from_be_bytes(src.get(12..16)?.try_into().ok()?) as usize;
+    if offset == 0 {
+        return Some(&[]);
+    }
+    let bytes = src.get(offset..offset.checked_add(16)?)?;
+    (u32::from_be_bytes(bytes.get(0..4)?.try_into().ok()?) == 1
+        && u32::from_be_bytes(bytes.get(4..8)?.try_into().ok()?) == 8
+        && u16::from_be_bytes(bytes.get(8..10)?.try_into().ok()?) == 1)
+        .then_some(bytes)
+}
+
 #[allow(clippy::cast_possible_truncation)] // Variable-length bytes deliberately keep low octets.
 fn varint(out: &mut Vec<u8>, value: u32) {
     if value < 0x80 {
@@ -100,8 +114,13 @@ pub(crate) fn subset(
     _out: &mut Tables,
 ) -> Result<bool, SubsetError> {
     let varc = Varc::new(src).map_err(|_| SubsetError::Malformed { tag })?;
+    let conditions = simple_condition_bytes(src).ok_or(SubsetError::Unsupported {
+        tag,
+        reason: "VARC condition format",
+    })?;
     let mut gids = Vec::new();
     let mut records = Vec::new();
+    let mut uses_condition = false;
     for (first, last) in varc.coverage().ranges() {
         for old in first.0..=last.0 {
             if plan.glyphset_varced.contains(old) {
@@ -111,6 +130,10 @@ pub(crate) fn subset(
                         .ok_or(SubsetError::Failed { tag })?,
                 );
                 records.push(rewrite_record(&varc, old, plan)?);
+                uses_condition |= varc
+                    .components(GlyphId(old))
+                    .ok_or(SubsetError::Malformed { tag })?
+                    .any(|part| part.is_some_and(|part| part.condition_index.is_some()));
             }
         }
     }
@@ -119,10 +142,22 @@ pub(crate) fn subset(
     }
     s.extend(src.get(..4).ok_or(SubsetError::Malformed { tag })?);
     let coverage_field = s.zeros(4);
-    s.zeros(12); // varStore, conditionList, axisIndicesList absent
+    s.zeros(4); // varStore absent
+    let condition_field = s.zeros(4);
+    s.zeros(4); // axisIndicesList absent
     let records_field = s.u32(24);
     if records_field != 20 || !cff::index_n(s, &records, 1, true) {
         return Err(SubsetError::Failed { tag });
+    }
+    if uses_condition {
+        if conditions.is_empty() {
+            return Err(SubsetError::Malformed { tag });
+        }
+        let at = s.len();
+        if !s.check_assign_u32(condition_field, at as u64, Errors::INT_OVERFLOW) {
+            return Err(SubsetError::OffsetOverflow { tag });
+        }
+        s.extend(conditions);
     }
     let at = s.len();
     if !s.check_assign_u32(coverage_field, at as u64, Errors::INT_OVERFLOW) {
