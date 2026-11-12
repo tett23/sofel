@@ -118,8 +118,9 @@ impl<'a> Varc<'a> {
 
     /// Components of a covered glyph in record order.
     pub fn components(&self, glyph: GlyphId) -> Option<Components<'a>> {
-        self.record(glyph)
-            .map(|record| Components::new(record, self.axis_indices))
+        self.coverage
+            .get(glyph)
+            .map(|index| Components::new(self.records.get(index).unwrap_or(&[]), self.axis_indices))
     }
 
     /// The packed axis indices for one component axis-list index.
