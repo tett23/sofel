@@ -322,7 +322,7 @@ fn adr0066_i3_clipped_foreground_overlapping_a_background_matches_each_pixel() {
             &mut image,
         ));
         assert_eq!((image.width, image.rows), (4, 4));
-        for (index, pixel) in image.pixels.chunks_exact(4).enumerate() {
+        for (index, &pixel) in image.pixels.as_chunks::<4>().0.iter().enumerate() {
             let (x, y) = (index % 4, index / 4);
             let expected = if (1..3).contains(&x) && (1..3).contains(&y) {
                 [81, 27, 9, 255]
