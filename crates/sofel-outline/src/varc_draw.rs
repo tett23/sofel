@@ -2,13 +2,20 @@
 
 use alloc::vec::Vec;
 
+use sofel_font::HbScale;
 use sofel_font::read::GlyphId;
+use sofel_font::read::glyf::Glyph;
+use sofel_font::read::loca::Loca;
 use sofel_font::read::varc::{TupleValues, Varc};
+use sofel_font::read::{glyf, loca};
 use sofel_font::var::Location;
+use sofel_font::var::gvar::{HbScratch, Point as GvarPoint};
 use sofel_geom::float::{hb_clamp_to_i32, hb_roundf, hb_roundf32};
 use sofel_geom::{Pen, Point, PointF, Transform};
 
-use crate::{CBox, OutlineError, OutlineInfo, Outlines, Scale, Scratch};
+use crate::{
+    CBox, HbOutlineCommand, OutlineError, OutlineInfo, Outlines, Scale, Scratch, TAG_CUBIC, TAG_ON,
+};
 
 struct DrawState {
     path: Vec<u32>,
@@ -117,17 +124,199 @@ impl<P: Pen> Pen for TransformPen<'_, P> {
     }
 }
 
+trait LeafSink {
+    fn leaf(
+        &mut self,
+        outlines: &Outlines<'_, '_, '_>,
+        glyph: GlyphId,
+        transform: Transform,
+        coords: &[i32],
+        scratch: &mut Scratch,
+        state: &mut DrawState,
+    ) -> Result<(), OutlineError>;
+}
+
+struct IntegerSink<'a, P> {
+    scale: Scale,
+    pen: &'a mut P,
+}
+
+impl<P: Pen> LeafSink for IntegerSink<'_, P> {
+    fn leaf(
+        &mut self,
+        outlines: &Outlines<'_, '_, '_>,
+        glyph: GlyphId,
+        transform: Transform,
+        coords: &[i32],
+        scratch: &mut Scratch,
+        state: &mut DrawState,
+    ) -> Result<(), OutlineError> {
+        let info = if coords == outlines.instance().coords_normalized() {
+            outlines.load(glyph, self.scale, scratch)?
+        } else {
+            let location = Location::from_normalized_2_14(&outlines.font, coords);
+            outlines
+                .with_location(&location)
+                .load(glyph, self.scale, scratch)?
+        };
+        state.overlap |= info.overlap;
+        scratch.decompose(
+            Point::default(),
+            1,
+            &mut TransformPen {
+                inner: self.pen,
+                transform,
+                scale: self.scale,
+                state,
+            },
+        )
+    }
+}
+
+struct FloatSink {
+    scale: HbScale,
+    commands: Vec<HbOutlineCommand>,
+}
+
+fn simple_float_glyf_path(
+    outlines: &Outlines<'_, '_, '_>,
+    glyph: GlyphId,
+    scratch: &mut Scratch,
+    x_factor: f32,
+    y_factor: f32,
+) -> Option<Vec<HbOutlineCommand>> {
+    let font = &outlines.font;
+    let extended = font.table(glyf::TAG_WIDE).is_some();
+    let glyf_tag = if extended { glyf::TAG_WIDE } else { glyf::TAG };
+    let loca_tag = if extended { loca::TAG_WIDE } else { loca::TAG };
+    let data = font.table(glyf_tag)?;
+    let locations = Loca::new(font.table(loca_tag)?, font.head().index_to_loc_format()).ok()?;
+    let glyph_index = usize::try_from(glyph.0).ok()?;
+    let start = usize::try_from(locations.offset(glyph_index)?).ok()?;
+    let end = usize::try_from(locations.offset(glyph_index.checked_add(1)?)?).ok()?;
+    let raw = data.get(start..end)?;
+    let glyph_data = Glyph::new(raw).ok()?;
+    if glyph_data.number_of_contours() < 0 {
+        return None;
+    }
+    let simple = glyph_data.simple().ok()?;
+    let ends: Vec<usize> = simple.end_points().map(usize::from).collect();
+    let mut last = ends.iter().copied().peekable();
+    let mut tags = Vec::new();
+    let mut points: Vec<GvarPoint<f32>> = simple
+        .points(extended)
+        .enumerate()
+        .map(|(index, point)| {
+            tags.push(
+                (if point.on_curve { TAG_ON } else { 0 }) | if point.cubic { TAG_CUBIC } else { 0 },
+            );
+            GvarPoint {
+                x: point.x as f32,
+                y: point.y as f32,
+                end: last.next_if(|&end| end == index).is_some(),
+            }
+        })
+        .collect();
+    if points.len() != usize::try_from(simple.num_points()).ok()? {
+        return None;
+    }
+    let point_count = points.len();
+    points.extend(
+        [GvarPoint {
+            x: 0.0,
+            y: 0.0,
+            end: false,
+        }; 4],
+    );
+    let mut budget = 1 << 24;
+    outlines
+        .instance()
+        .apply_gvar_hb(
+            glyph.0,
+            &mut points,
+            &mut HbScratch::default(),
+            false,
+            &mut budget,
+        )
+        .ok()?;
+    let glyph_points: Vec<PointF> = points
+        .get(..point_count)?
+        .iter()
+        .map(|point| PointF::new(point.x, point.y))
+        .collect();
+    let mut path = Vec::new();
+    crate::hb_draw::decompose_float_points(
+        &glyph_points,
+        &tags,
+        &ends,
+        x_factor,
+        y_factor,
+        |command| path.push(command),
+    )
+    .ok()?;
+    scratch.clear();
+    Some(path)
+}
+
+fn transform_command(command: HbOutlineCommand, transform: &Transform) -> HbOutlineCommand {
+    match command {
+        HbOutlineCommand::MoveTo(p) => HbOutlineCommand::MoveTo(transform.apply(p)),
+        HbOutlineCommand::LineTo(p) => HbOutlineCommand::LineTo(transform.apply(p)),
+        HbOutlineCommand::QuadTo(c, p) => {
+            HbOutlineCommand::QuadTo(transform.apply(c), transform.apply(p))
+        }
+        HbOutlineCommand::CubicTo(c1, c2, p) => {
+            HbOutlineCommand::CubicTo(transform.apply(c1), transform.apply(c2), transform.apply(p))
+        }
+        HbOutlineCommand::Close => HbOutlineCommand::Close,
+    }
+}
+
+impl LeafSink for FloatSink {
+    fn leaf(
+        &mut self,
+        outlines: &Outlines<'_, '_, '_>,
+        glyph: GlyphId,
+        transform: Transform,
+        coords: &[i32],
+        scratch: &mut Scratch,
+        state: &mut DrawState,
+    ) -> Result<(), OutlineError> {
+        let location = Location::from_normalized_2_14(&outlines.font, coords);
+        let local = outlines.with_location(&location);
+        let mut transform = transform;
+        let upem = f32::from(outlines.font.hb_units_per_em());
+        let x_factor = self.scale.x_scale() as f32 / upem;
+        let y_factor = self.scale.y_scale() as f32 / upem;
+        transform.dx *= x_factor;
+        transform.dy *= y_factor;
+        if let Some(path) = simple_float_glyf_path(&local, glyph, scratch, x_factor, y_factor)
+            .or_else(|| local.hb_extents().cff_glyph_path(glyph, &self.scale))
+        {
+            self.commands.extend(
+                path.into_iter()
+                    .map(|command| transform_command(command, &transform)),
+            );
+            return Ok(());
+        }
+        let info = local.load(glyph, Scale::Unscaled, scratch)?;
+        state.overlap |= info.overlap;
+        scratch.hb_decompose(x_factor, y_factor, |command| {
+            self.commands.push(transform_command(command, &transform));
+        })
+    }
+}
+
 #[allow(clippy::too_many_arguments)] // The recursive frame keeps location and transform explicit.
-fn visit(
+fn visit<S: LeafSink>(
     outlines: &Outlines<'_, '_, '_>,
     varc: &Varc<'_>,
     glyph: GlyphId,
-    scale: Scale,
     transform: Transform,
     coords: &[i32],
     depth_left: u32,
     scratch: &mut Scratch,
-    pen: &mut impl Pen,
+    sink: &mut S,
     state: &mut DrawState,
 ) -> Result<(), OutlineError> {
     if glyph.0 >= outlines.font.num_glyphs() {
@@ -234,12 +423,11 @@ fn visit(
                 outlines,
                 varc,
                 component.glyph,
-                scale,
                 child,
                 &child_coords,
                 depth_left.saturating_sub(1),
                 scratch,
-                pen,
+                sink,
                 state,
             );
             if let Err(error) = result {
@@ -250,25 +438,7 @@ fn visit(
         state.path.pop();
         return Ok(());
     }
-    let info = if coords == outlines.instance().coords_normalized() {
-        outlines.load(glyph, scale, scratch)?
-    } else {
-        let location = Location::from_normalized_2_14(&outlines.font, coords);
-        outlines
-            .with_location(&location)
-            .load(glyph, scale, scratch)?
-    };
-    state.overlap |= info.overlap;
-    scratch.decompose(
-        Point::default(),
-        1,
-        &mut TransformPen {
-            inner: pen,
-            transform,
-            scale,
-            state,
-        },
-    )
+    sink.leaf(outlines, glyph, transform, coords, scratch, state)
 }
 
 pub(super) fn draw(
@@ -286,20 +456,52 @@ pub(super) fn draw(
         bounds: None,
         overlap: false,
     };
+    let mut sink = IntegerSink { scale, pen };
     visit(
         outlines,
         varc,
         glyph,
-        scale,
         Transform::IDENTITY,
         outlines.instance().coords_normalized(),
         64,
         scratch,
-        pen,
+        &mut sink,
         &mut state,
     )?;
     Ok(OutlineInfo {
         overlap: state.overlap,
         cbox: state.bounds.unwrap_or_default(),
     })
+}
+
+pub(super) fn draw_float(
+    outlines: &Outlines<'_, '_, '_>,
+    varc: &Varc<'_>,
+    glyph: GlyphId,
+    scale: HbScale,
+    scratch: &mut Scratch,
+) -> Result<Vec<HbOutlineCommand>, OutlineError> {
+    scratch.clear();
+    let mut state = DrawState {
+        path: Vec::new(),
+        edges_left: 16_384,
+        bounds: None,
+        overlap: false,
+    };
+    let mut sink = FloatSink {
+        scale,
+        commands: Vec::new(),
+    };
+    visit(
+        outlines,
+        varc,
+        glyph,
+        Transform::IDENTITY,
+        outlines.instance().coords_normalized(),
+        64,
+        scratch,
+        &mut sink,
+        &mut state,
+    )?;
+    Ok(sink.commands)
 }

@@ -1,9 +1,14 @@
-//! AAT 16-bit lookup tables as used by noncontextual glyph substitution.
+//! Checked AAT lookup tables for substitution and positioning.
 use crate::be;
 
 /// A validated AAT lookup with 16-bit values (formats 0, 2, 4, 6, 8).
 #[derive(Clone, Copy, Debug)]
-pub struct AatLookup<'a> {
+pub struct AatLookup<'a>(AatIndexLookup<'a>);
+
+/// A lookup whose unsigned values are used as class or matrix indices.
+#[derive(Clone, Copy, Debug)]
+pub struct AatIndexLookup<'a> {
+    width: usize,
     data: &'a [u8],
     records: &'a [u8],
     format: u16,
@@ -13,18 +18,51 @@ pub struct AatLookup<'a> {
 impl<'a> AatLookup<'a> {
     /// Checks every record and all value arrays. Format 0 uses the face glyph count.
     pub fn new(data: &'a [u8], glyphs: u32) -> Option<Self> {
+        let lookup = AatIndexLookup::new(data, glyphs, false)?;
+        Some(Self(lookup))
+    }
+    /// Returns the glyph's pointer-addressable 16-bit value.
+    pub fn get(&self, glyph: u32) -> Option<u16> {
+        if self.0.format == 10 {
+            return None;
+        }
+        u16::try_from(self.0.get(glyph)?).ok()
+    }
+}
+
+impl<'a> AatIndexLookup<'a> {
+    /// Validates a lookup of 16-bit or 32-bit unsigned integers.
+    pub fn new(data: &'a [u8], glyphs: u32, long: bool) -> Option<Self> {
+        let width: usize = if long { 4 } else { 2 };
         let format = be::u16_at(data, 0)?;
         let (at, count, stride, first) = match format {
-            0 => (2, glyphs as usize, 2, 0),
+            0 => (2, glyphs as usize, width, 0),
             8 => (
                 6,
                 usize::from(be::u16_at(data, 4)?),
-                2,
+                width,
                 be::u16_at(data, 2)?,
             ),
+            10 => {
+                let size = usize::from(be::u16_at(data, 2)?);
+                if !(1..=4).contains(&size) {
+                    return None;
+                }
+                (
+                    8,
+                    usize::from(be::u16_at(data, 6)?),
+                    size,
+                    be::u16_at(data, 4)?,
+                )
+            }
             2 | 4 | 6 => {
                 let stride = usize::from(be::u16_at(data, 2)?);
-                if stride < (if format == 6 { 4 } else { 6 }) {
+                let minimum = match format {
+                    2 => width.checked_add(4)?,
+                    6 => width.checked_add(2)?,
+                    _ => 6,
+                };
+                if stride < minimum {
                     return None;
                 }
                 (12, usize::from(be::u16_at(data, 4)?), stride, 0)
@@ -39,28 +77,34 @@ impl<'a> AatLookup<'a> {
                     continue;
                 }
                 let count = usize::from(last.checked_sub(first)?).saturating_add(1);
-                be::chunks_at::<2>(data, usize::from(be::u16_at(r, 4)?), count)?;
+                be::slice_at(
+                    data,
+                    usize::from(be::u16_at(r, 4)?),
+                    count.checked_mul(width)?,
+                )?;
             }
         }
         Some(Self {
             data,
             records,
+            width,
             format,
             first,
             stride,
         })
     }
-    /// Returns the substitution for a glyph, if a record covers it.
-    pub fn get(&self, glyph: u32) -> Option<u16> {
+    /// Returns the value for a covered glyph, including packed format 10 values.
+    pub fn get(&self, glyph: u32) -> Option<u32> {
         let glyph = u16::try_from(glyph).ok()?;
-        if matches!(self.format, 0 | 8) {
-            return self
-                .records
-                .as_chunks::<2>()
-                .0
-                .get(usize::from(glyph.checked_sub(self.first)?))
-                .copied()
-                .map(u16::from_be_bytes);
+        if matches!(self.format, 0 | 8 | 10) {
+            let index = usize::from(glyph.checked_sub(self.first)?);
+            let bytes = be::slice_at(self.records, index.checked_mul(self.stride)?, self.stride)?;
+            let value = bytes.iter().fold(0u32, |v, b| (v << 8) | u32::from(*b));
+            return Some(if self.width == 2 {
+                value & 0xffff
+            } else {
+                value
+            });
         }
         let mut lo = 0usize;
         let mut hi = self.records.len().checked_div(self.stride)?;
@@ -79,17 +123,26 @@ impl<'a> AatLookup<'a> {
                 lo = mid.saturating_add(1);
             } else {
                 return match self.format {
-                    6 => be::u16_at(row, 2),
-                    2 => be::u16_at(row, 4),
-                    4 => be::u16_at(
+                    6 => self.word(row, 2),
+                    2 => self.word(row, 4),
+                    4 => self.word(
                         self.data,
-                        usize::from(be::u16_at(row, 4)?)
-                            .checked_add(2 * usize::from(glyph.checked_sub(first)?))?,
+                        usize::from(be::u16_at(row, 4)?).checked_add(
+                            self.width
+                                .checked_mul(usize::from(glyph.checked_sub(first)?))?,
+                        )?,
                     ),
                     _ => None,
                 };
             }
         }
         None
+    }
+    fn word(&self, bytes: &[u8], at: usize) -> Option<u32> {
+        if self.width == 2 {
+            be::u16_at(bytes, at).map(u32::from)
+        } else {
+            be::u32_at(bytes, at)
+        }
     }
 }
