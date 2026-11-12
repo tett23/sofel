@@ -202,6 +202,11 @@ jobs:
         env:
           SOFEL_TESTDATA_OFFLINE: ${{ steps.testdata.outputs.cache-hit == 'true' && '1' || '0' }}
         run: sh scripts/fetch-testdata.sh
+      - name: Compare embedded PNG pixels with FreeType
+        if: runner.os == 'Linux'
+        run: |
+          SOFEL_FT_PNG=1 sh tools/ft-dump/build.sh target/testdata/freetype "$RUNNER_TEMP/ft-dump-png"
+          SOFEL_FT_DUMP="$RUNNER_TEMP/ft-dump-png" cargo test --release -p sofel-conformance --test freetype_sbit i1_sbit_png -- --ignored
       - id: extra_fonts
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

@@ -364,3 +364,58 @@ fn color_bitmaps_hide_outlines() {
     let ft = ft_dump_sbit("cblc-glyf", &bytes);
     assert_eq!(normalize_ft(&ft), sofel_sbit(&f));
 }
+
+#[test]
+#[ignore = "requires ft-dump built with SOFEL_FT_PNG=1; run by the PNG reference CI step"]
+fn i1_sbit_png_matches_freetype_color_rows() {
+    fn bitmaps(text: &str) -> Vec<(String, Vec<String>)> {
+        let mut result: Vec<(String, Vec<String>)> = Vec::new();
+        let mut size = "";
+        let mut keep = false;
+        for line in text.lines() {
+            if line.starts_with("size ") {
+                size = line;
+                keep = false;
+            } else if line.starts_with("glyph ") {
+                let fields: Vec<_> = line.split_whitespace().collect();
+                keep = fields.len() == 13 && fields[8] == "7" && fields[5] != "0";
+                if keep {
+                    result.push((format!("{size} {}", fields[..9].join(" ")), Vec::new()));
+                }
+            } else if keep && line.bytes().all(|b| b.is_ascii_hexdigit()) {
+                result.last_mut().unwrap().1.push(line.to_owned());
+            }
+        }
+        result
+    }
+    for name in [
+        "NotoColorEmoji.subset.ttf",
+        "NotoColorEmoji.subset.multiple_size_tables.ttf",
+        "sbix.ttf",
+    ] {
+        let bytes = std::fs::read(
+            paths::testdata()
+                .join("harfbuzz/test/subset/data/fonts")
+                .join(name),
+        )
+        .unwrap();
+        let font = Font::new(&bytes, 0).unwrap();
+        let theirs = bitmaps(&ft_dump_sbit(name, &bytes));
+        assert!(
+            !theirs.is_empty(),
+            "{name}: reference did not decode a BGRA glyph"
+        );
+        let ours = bitmaps(&sofel_sbit(&font));
+        assert_eq!(ours.len(), theirs.len(), "{name}");
+        for ((ours, rows), (expected, pixels)) in ours.iter().zip(&theirs) {
+            assert_eq!(
+                ours, expected,
+                "{name}: strike, origin, dimensions, pitch or pixel mode"
+            );
+            assert_eq!(rows.len(), pixels.len(), "{name} {ours}");
+            for (y, (a, b)) in rows.iter().zip(pixels).enumerate() {
+                assert_eq!(a, b, "{name} {ours}, row {y}");
+            }
+        }
+    }
+}
