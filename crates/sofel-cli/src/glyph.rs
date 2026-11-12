@@ -147,6 +147,10 @@ pub fn render_color<'r>(
 ) -> Result<ColorGlyph<'r>, RenderError> {
     let font = outlines.font();
     image.clear();
+    if let Some(color) = crate::colr_raster::render(outlines, glyph, ppem, options, scratch) {
+        *image = color;
+        return Ok(ColorGlyph::Color);
+    }
     outlines
         .load(glyph, Scale::pixels(font, ppem, ppem), scratch)
         .map_err(RenderError::Outline)?;
