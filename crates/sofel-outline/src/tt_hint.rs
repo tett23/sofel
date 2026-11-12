@@ -1029,6 +1029,31 @@ impl Interpreter {
                         }
                     }
                 }
+                0x38 => {
+                    let distance = stack.pop().ok_or(Error::StackUnderflow)?;
+                    let count = usize::from(core::mem::replace(&mut self.loop_count, 1));
+                    let Some(start) = stack.len().checked_sub(count) else {
+                        continue;
+                    };
+                    let delta = self
+                        .freedom
+                        .map(|component| project([distance, 0], [component, 0]));
+                    let twilight = self.zones.contains(&0);
+                    let zone = usize::from(self.zones[2]);
+                    for index in stack.drain(start..).rev() {
+                        let Some(point) = self.points[zone].get_mut(index as u32 as usize) else {
+                            continue;
+                        };
+                        let compatibility = self.backward_compatibility;
+                        if compatibility == 0
+                            || twilight
+                            || (compatibility != 7
+                                && ((self.composite && self.freedom[1] != 0) || point.touched[1]))
+                        {
+                            shift_point(point, delta, self.freedom, compatibility);
+                        }
+                    }
+                }
                 op @ (0x3a | 0x3b) => {
                     let distance = stack.pop().ok_or(Error::StackUnderflow)?;
                     let index = stack.pop().ok_or(Error::StackUnderflow)? as u16;
@@ -2239,5 +2264,29 @@ fn adr0064_i1_shp_and_shc_shift_both_axes_with_diagonal_freedom() {
         assert_eq!(vm.points[1][1].touched, [true, true]);
         assert_eq!(vm.points[1][0].touched, [false, false]);
         assert_eq!(vm.points[1][2].touched, [op >= 0x34; 2]);
+    }
+}
+
+#[test]
+fn adr0064_i1_shpix_uses_freedom_and_consumes_loop_indices() {
+    for (compat, twilight, touched, expected) in [
+        (0, false, false, [-60, -80]),
+        (4, false, false, [0, 0]),
+        (4, false, true, [0, -80]),
+        (4, true, false, [0, -80]),
+        (7, true, false, [0, 0]),
+    ] {
+        let mut vm = Interpreter::new(0, &[], 65536);
+        vm.points[1].resize(2, HintPoint::default());
+        vm.points[1][1].touched[1] = touched;
+        vm.zones[0] = u8::from(!twilight);
+        vm.backward_compatibility = compat;
+        vm.freedom = [9830, 13107];
+        vm.loop_count = 2;
+        let mut stack = alloc::vec![77, 1, 99, -100];
+        vm.execute(&[0x38], &mut stack, 4).unwrap();
+        assert_eq!(vm.points[1][1].current, expected);
+        assert_eq!(vm.loop_count, 1);
+        assert_eq!(stack, [77]);
     }
 }

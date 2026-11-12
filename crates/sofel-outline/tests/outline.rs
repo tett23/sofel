@@ -845,3 +845,10 @@ fn adr0064_i1_diagonal_mdap_msirp_match_freetype_v35_outline() {
     );
     assert_eq!(scratch.point_tags(), &[5, 24, 24, 1]);
 }
+
+#[test]
+fn adr0064_i1_shpix_matches_freetype_on_a_diagonal_negative_distance() {
+    let scratch = hinted_square(&[0xb1, 3, 4, 0x0b, 0xb0, 1, 0xb8, 0xff, 0x9c, 0x38]);
+    assert_eq!(scratch.points()[1], Point { x: -60, y: 944 });
+    assert_eq!(scratch.point_tags(), &[5, 24, 0, 1]);
+}
