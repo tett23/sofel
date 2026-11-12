@@ -57,16 +57,7 @@ fn check_sizes(
     target: HintTarget,
     v40: bool,
 ) {
-    let dir = std::env::var_os("SOFEL_TESTDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/testdata"));
-    let path = dir.join(relative_path);
-    let Ok(data) = std::fs::read(&path) else {
-        assert!(
-            std::env::var_os("SOFEL_REQUIRE_TESTDATA").is_none(),
-            "missing {}",
-            path.display()
-        );
+    let Some(data) = fixture(relative_path) else {
         return;
     };
     let font = Font::new(&data, 0).unwrap();
@@ -153,4 +144,39 @@ fn adr0064_i1_full_roboto_at_16_ppem_matches_freetype_in_every_target() {
             );
         }
     }
+}
+
+fn fixture(relative_path: PathBuf) -> Option<Vec<u8>> {
+    let dir = std::env::var_os("SOFEL_TESTDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/testdata"));
+    let path = dir.join(relative_path);
+    let Ok(data) = std::fs::read(&path) else {
+        assert!(
+            std::env::var_os("SOFEL_REQUIRE_TESTDATA").is_none(),
+            "missing {}",
+            path.display()
+        );
+        return None;
+    };
+    Some(data)
+}
+
+#[test]
+fn adr0064_i1_v35_uses_hdmx_device_width() {
+    let Some(mut data) = fixture("harfbuzz/test/api/fonts/Roboto-Regular.abc.ttf".into()) else {
+        return;
+    };
+    let font = Font::new(&data, 0).unwrap();
+    let table = font.table(sofel_font::read::Tag::new(b"hdmx")).unwrap();
+    let offset = table.as_ptr() as usize - data.as_ptr() as usize;
+    assert_eq!(table[8], 9);
+    data[offset + 9] = 42; // Maximum width in the 9 ppem record.
+    data[offset + 11] = 42; // Width for glyph 1.
+    let font = Font::new(&data, 0).unwrap();
+    let outline = Outlines::new(font.default_instance());
+    let (_, width) = outline
+        .load_truetype_v35_with_advance(GlyphId(1), 9, HintTarget::Mono, &mut Scratch::default())
+        .unwrap();
+    assert_eq!(width, 42 * 64);
 }

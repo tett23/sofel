@@ -552,7 +552,9 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
     ) -> Result<(OutlineInfo, i32), OutlineError> {
         scratch.clear();
         let hint = tt_hint::Interpreter::native(self.instance(), ppem, target, version)?;
-        let device_width = (version == 40 && hint.0.device_width_allowed())
+        let device_width = hint
+            .0
+            .device_width_allowed()
             .then(|| tt_policy::device_width(&self.font, glyph.0, ppem))
             .flatten();
         let info = load_glyf(
