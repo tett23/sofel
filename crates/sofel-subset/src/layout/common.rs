@@ -770,6 +770,25 @@ impl<'p, 's> Sub<'p, 's> {
                 let Some((axis, min, max)) = c.axis_range() else {
                     return false;
                 };
+                let n = &s.p.var.n;
+                let convert = |value: i16| {
+                    let i = usize::from(axis);
+                    let Some(range) = n.axis_tags.get(i).and_then(|tag| n.axes_location.get(tag))
+                    else {
+                        return value;
+                    };
+                    let v = (f32::from(value) / 16384.0).clamp(range.min, range.max);
+                    let mapped = crate::instance::renormalize(
+                        v,
+                        [range.min, range.default, range.max],
+                        n.axis_distances.get(i).copied().unwrap_or([1.0, 1.0]),
+                    );
+                    crate::instance::lo16(crate::instance::f64_to_i32(
+                        sofel_geom::float::hb_roundf32(mapped * 16384.0),
+                    ))
+                    .cast_signed()
+                };
+                let (min, max) = (convert(min), convert(max));
                 let axis = if s.p.var.instancing() {
                     let Ok(index) =
                         s.p.var

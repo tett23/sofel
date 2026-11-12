@@ -316,7 +316,7 @@ impl Plan {
                         b"GSUB" | b"GPOS" => can_instance_layout_conditions(
                             data,
                             &norm.axis_tags,
-                            &norm.user,
+                            &norm.axes_location,
                             norm.avar2,
                         ),
                         b"GDEF" => sofel_font::read::gdef::Gdef::new(data).is_ok_and(|t| {
@@ -554,8 +554,8 @@ impl Plan {
             let fixed = pinned
                 || (!p.var.n.normalized_coords.is_empty()
                     && t.feature_variations_view().is_some()
-                    && layout_conditions_match(t.d.0, &p.var.n.axis_tags, |axis| {
-                        p.var.n.user.get(axis).is_some_and(|r| r.min == r.max)
+                    && layout_conditions_match(t.d.0, &p.var.n.axis_tags, |axis, min, max| {
+                        condition_is_constant(p.var.n.axes_location.get(axis), min, max)
                     }));
             *lp = layout::plan::closure_glyphs_lookups_features(
                 t,
@@ -1264,6 +1264,12 @@ fn glyph_map(
     Ok((list, max.wrapping_add(1)))
 }
 
+fn condition_is_constant(range: Option<&crate::input::AxisRange>, min: i16, max: i16) -> bool {
+    let (low, high) = range.map_or((-1.0, 1.0), |r| (r.min, r.max));
+    let (min, max) = (f32::from(min) / 16384.0, f32::from(max) / 16384.0);
+    high < min || low > max || (min <= low && high <= max)
+}
+
 fn can_instance_layout_conditions(
     data: &[u8],
     axis_tags: &[Tag],
@@ -1271,15 +1277,20 @@ fn can_instance_layout_conditions(
     avar2: bool,
 ) -> bool {
     !avar2
-        && (layout_conditions_match(data, axis_tags, |tag| !user.contains_key(tag))
-            || layout_conditions_match(data, axis_tags, |tag| {
-                user.get(tag).is_some_and(|r| r.min == r.max)
-            }))
+        && (layout_conditions_match(data, axis_tags, |tag, min, max| {
+            !condition_is_constant(user.get(tag), min, max)
+        }) || layout_conditions_match(data, axis_tags, |tag, min, max| {
+            condition_is_constant(user.get(tag), min, max)
+        }))
         || sofel_font::read::layout::LayoutTable::new(data)
             .is_ok_and(|t| t.feature_variations_offset().unwrap_or(0) == 0)
 }
 
-fn layout_conditions_match(data: &[u8], axis_tags: &[Tag], accept: impl Fn(&Tag) -> bool) -> bool {
+fn layout_conditions_match(
+    data: &[u8],
+    axis_tags: &[Tag],
+    accept: impl Fn(&Tag, i16, i16) -> bool,
+) -> bool {
     let Ok(variations) =
         sofel_font::read::layout::LayoutTable::new(data).and_then(|t| t.feature_variations())
     else {
@@ -1301,8 +1312,11 @@ fn layout_conditions_match(data: &[u8], axis_tags: &[Tag], accept: impl Fn(&Tag)
                         .ok()
                         .flatten()
                         .and_then(|c| c.axis_range())
-                        .and_then(|(axis, _, _)| axis_tags.get(usize::from(axis)))
-                        .is_some_and(&accept)
+                        .is_some_and(|(axis, min, max)| {
+                            axis_tags
+                                .get(usize::from(axis))
+                                .is_some_and(|tag| accept(tag, min, max))
+                        })
                 })
             })
         })

@@ -605,11 +605,12 @@ fn adr0061_i1_iup_optimized_partial_instance_matches_harfbuzz() {
 
 #[test]
 fn adr0061_i1_partial_layout_matches_harfbuzz() {
-    for (name, axis, pin) in [
-        ("AnekBangla-subset.ttf", b"wght", 300u16),
-        ("NotoSansOriya-subset.ttf", b"wdth", 75),
-        ("NotoSansOriya-subset.ttf", b"wght", 300),
-        ("NotoSansOriya-subset.ttf", b"wght", 900),
+    for (name, axis, min, default, max) in [
+        ("AnekBangla-subset.ttf", b"wght", 300u16, 300u16, 300u16),
+        ("NotoSansOriya-subset.ttf", b"wdth", 75, 75, 75),
+        ("NotoSansOriya-subset.ttf", b"wght", 300, 300, 300),
+        ("NotoSansOriya-subset.ttf", b"wght", 900, 900, 900),
+        ("NotoSansOriya-subset.ttf", b"wght", 200, 400, 850),
     ] {
         let path = paths::testdata()
             .join("harfbuzz/test/subset/data/fonts")
@@ -620,9 +621,9 @@ fn adr0061_i1_partial_layout_matches_harfbuzz() {
             .map_set(SetKind::Unicodes, |s| s.add_range(0, 0x10ffff))
             .with_axis_range(
                 Tag::new(axis),
-                Some(f32::from(pin)),
-                Some(f32::from(pin)),
-                Some(f32::from(pin)),
+                Some(f32::from(min)),
+                Some(f32::from(max)),
+                Some(f32::from(default)),
                 &font,
             )
             .unwrap();
@@ -635,7 +636,7 @@ fn adr0061_i1_partial_layout_matches_harfbuzz() {
                 .arg(format!("--font-file={}", path.display()))
                 .arg("--unicodes=*")
                 .arg(format!(
-                    "--variations={}={pin}",
+                    "--variations={}={min}:{default}:{max}",
                     std::str::from_utf8(axis).unwrap()
                 ))
                 .arg(format!("--output-file={}", output.display()))
