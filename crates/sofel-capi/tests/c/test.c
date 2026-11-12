@@ -2813,6 +2813,128 @@ static void test_subset_axes(const sofel_font_t *static_font) {
   free(data);
 }
 
+/* ADR 0062 I2: an empty page leaves the caller's sentinel intact. */
+static void test_layout_queries(const sofel_font_t *font) {
+  int32_t value = -7;
+  float style_value = -7.0f;
+  size_t stored = 99, total = 99;
+  int32_t carets[2] = {-91, -92};
+  sofel_math_kern_entry_t kerns[1] = {{-91, -92}};
+  sofel_math_glyph_variant_t variants[1] = {{91, -92}};
+  sofel_math_glyph_part_t parts[1] = {{91, -92, -93, -94, 7}};
+  CHECK(sofel_math_has_data(font, &value) == SOFEL_OK && value == 0);
+  CHECK(sofel_style_value(font, NULL, NULL, SOFEL_TAG('w', 'g', 'h', 't'), &style_value) == SOFEL_OK && style_value == 700.0f);
+  CHECK(sofel_style_value(font, NULL, NULL, SOFEL_TAG('w', 'd', 't', 'h'), &style_value) == SOFEL_OK && style_value == 100.0f);
+  int32_t scale_error = -1;
+  sofel_scale_t *point_scale = sofel_scale_create_with_ptem(font, 1000, 1000, 0, 0, 23.5f, &scale_error);
+  CHECK(point_scale != NULL && scale_error == SOFEL_OK);
+  if (point_scale != NULL) {
+    CHECK(sofel_style_value(font, NULL, point_scale, SOFEL_TAG('o', 'p', 's', 'z'), &style_value) == SOFEL_OK && style_value == 23.5f);
+    sofel_scale_destroy(point_scale);
+  }
+  CHECK(sofel_math_constant(font, NULL, NULL, 4, &value) == SOFEL_OK && value == 0);
+  CHECK(sofel_math_italics_correction(font, NULL, NULL, 3, &value) == SOFEL_OK && value == 0);
+  CHECK(sofel_math_top_accent_attachment(font, NULL, NULL, 3, &value) == SOFEL_OK);
+  CHECK(sofel_math_is_extended_shape(font, 3, &value) == SOFEL_OK && value == 0);
+  CHECK(sofel_math_kerning(font, NULL, NULL, 3, 0, 100, &value) == SOFEL_OK && value == 0);
+  CHECK(sofel_math_min_connector_overlap(font, NULL, NULL, SOFEL_DIRECTION_VERTICAL, &value) == SOFEL_OK && value == 0);
+  CHECK(sofel_layout_ligature_carets(font, NULL, NULL, 3, SOFEL_DIRECTION_HORIZONTAL,
+                                      0, carets, 1, &stored, &total) == SOFEL_OK);
+  CHECK(stored == 0 && total == 0 && carets[0] == -91 && carets[1] == -92);
+  CHECK(sofel_math_kernings(font, NULL, NULL, 3, 0, 0, kerns, 1, &stored, &total) == SOFEL_OK);
+  CHECK(stored == 0 && total == 0 && kerns[0].kern_value == -92);
+  CHECK(sofel_math_variants(font, NULL, NULL, 3, SOFEL_DIRECTION_VERTICAL,
+                             0, variants, 1, &stored, &total) == SOFEL_OK);
+  CHECK(stored == 0 && total == 0 && variants[0].advance == -92);
+  CHECK(sofel_math_assembly(font, NULL, NULL, 3, SOFEL_DIRECTION_VERTICAL,
+                             0, parts, 1, &stored, &total, &value) == SOFEL_OK);
+  CHECK(stored == 0 && total == 0 && value == 0 && parts[0].full_advance == -94);
+
+  int32_t error = -99;
+  sofel_font_t *math_font = sofel_font_create(layout_query_math_data,
+                                              sizeof layout_query_math_data, 0, &error);
+  CHECK(math_font != NULL && error == SOFEL_OK);
+  if (math_font == NULL) return;
+  CHECK(sofel_math_has_data(math_font, &value) == SOFEL_OK && value == 1);
+  CHECK(sofel_math_kernings(math_font, NULL, NULL, 3, 0, 0,
+                            kerns, 1, &stored, &total) == SOFEL_OK);
+  CHECK(stored == 1 && total == 2 && kerns[0].max_correction_height == 100 && kerns[0].kern_value == -10);
+  kerns[0].kern_value = -92;
+  CHECK(sofel_math_kernings(math_font, NULL, NULL, 3, 0, 1,
+                            kerns, 1, &stored, &total) == SOFEL_OK);
+  CHECK(stored == 1 && total == 2 && kerns[0].max_correction_height == INT32_MAX && kerns[0].kern_value == -20);
+  kerns[0].kern_value = -92;
+  CHECK(sofel_math_kernings(math_font, NULL, NULL, 3, 0, 2,
+                            kerns, 1, &stored, &total) == SOFEL_OK);
+  CHECK(stored == 0 && total == 2 && kerns[0].kern_value == -92);
+  CHECK(sofel_math_kernings(math_font, NULL, NULL, 3, 0, 0,
+                            NULL, 0, &stored, &total) == SOFEL_OK);
+  CHECK(stored == 0 && total == 2);
+  sofel_math_kern_entry_t all_kerns[3] = {{-1, -1}, {-1, -1}, {-91, -92}};
+  CHECK(sofel_math_kernings(math_font, NULL, NULL, 3, 0, 0,
+                            all_kerns, 3, &stored, &total) == SOFEL_OK);
+  CHECK(stored == 2 && total == 2 && all_kerns[0].kern_value == -10 &&
+        all_kerns[1].kern_value == -20 && all_kerns[2].kern_value == -92);
+  CHECK(sofel_math_variants(math_font, NULL, NULL, 10, SOFEL_DIRECTION_VERTICAL,
+                             1, variants, 1, &stored, &total) == SOFEL_OK);
+  CHECK(stored == 1 && total == 2 && variants[0].glyph == 13 && variants[0].advance == 1500);
+  sofel_math_glyph_variant_t all_variants[3] = {{0, 0}, {0, 0}, {91, -92}};
+  CHECK(sofel_math_variants(math_font, NULL, NULL, 10, SOFEL_DIRECTION_VERTICAL,
+                             0, all_variants, 3, &stored, &total) == SOFEL_OK);
+  CHECK(stored == 2 && total == 2 && all_variants[0].glyph == 12 &&
+        all_variants[1].glyph == 13 && all_variants[2].advance == -92);
+  CHECK(sofel_math_assembly(math_font, NULL, NULL, 10, SOFEL_DIRECTION_VERTICAL,
+                             1, parts, 1, &stored, &total, &value) == SOFEL_OK);
+  CHECK(stored == 1 && total == 2 && value == 5 && parts[0].glyph == 15 && parts[0].full_advance == 300);
+  sofel_math_glyph_part_t all_parts[3] = {{0}, {0}, {91, -92, -93, -94, 7}};
+  CHECK(sofel_math_assembly(math_font, NULL, NULL, 10, SOFEL_DIRECTION_VERTICAL,
+                             0, all_parts, 3, &stored, &total, &value) == SOFEL_OK);
+  CHECK(stored == 2 && total == 2 && all_parts[0].glyph == 14 &&
+        all_parts[1].glyph == 15 && all_parts[2].full_advance == -94);
+  sofel_font_destroy(math_font);
+
+  sofel_font_t *caret_font = sofel_font_create(layout_query_gdef_data,
+                                               sizeof layout_query_gdef_data, 0, &error);
+  CHECK(caret_font != NULL && error == SOFEL_OK);
+  if (caret_font == NULL) return;
+  sofel_scale_t *caret_scale = sofel_scale_create_with_ppem(caret_font, 1000, 1000, 12, 13, &error);
+  CHECK(caret_scale != NULL && error == SOFEL_OK);
+  if (caret_scale != NULL) {
+    int32_t all_carets[3] = {-91, -92, -93};
+    CHECK(sofel_layout_ligature_carets(caret_font, NULL, caret_scale, 3,
+                                        SOFEL_DIRECTION_HORIZONTAL, 0, all_carets, 3,
+                                        &stored, &total) == SOFEL_OK);
+    CHECK(stored == 2 && total == 2 && all_carets[0] == 100 &&
+          all_carets[1] == 283 && all_carets[2] == -93);
+    CHECK(sofel_layout_ligature_carets(caret_font, NULL, caret_scale, 3,
+                                        SOFEL_DIRECTION_HORIZONTAL, 1, carets, 1,
+                                        &stored, &total) == SOFEL_OK);
+    CHECK(stored == 1 && total == 2 && carets[0] == 283 && carets[1] == -92);
+    carets[0] = -91;
+    CHECK(sofel_layout_ligature_carets(caret_font, NULL, caret_scale, 3,
+                                        SOFEL_DIRECTION_VERTICAL, 2, carets, 1,
+                                        &stored, &total) == SOFEL_OK);
+    CHECK(stored == 0 && total == 2 && carets[0] == -91);
+    sofel_scale_destroy(caret_scale);
+  }
+  sofel_font_destroy(caret_font);
+
+  sofel_font_t *variable_font = sofel_font_create(layout_query_variable_data,
+                                                   sizeof layout_query_variable_data, 0, &error);
+  CHECK(variable_font != NULL && error == SOFEL_OK);
+  if (variable_font == NULL) return;
+  sofel_location_t *location = NULL;
+  float design_coord = 1.0f;
+  CHECK(sofel_location_create_design(variable_font, &design_coord, 1, &location) == SOFEL_OK);
+  if (location != NULL) {
+    CHECK(sofel_math_constant(variable_font, location, NULL, 4, &value) == SOFEL_OK && value == 21);
+    CHECK(sofel_style_value(variable_font, location, NULL, SOFEL_TAG('w', 'g', 'h', 't'),
+                             &style_value) == SOFEL_OK && style_value == 1.0f);
+    sofel_location_destroy(location);
+  }
+  sofel_font_destroy(variable_font);
+}
+
 int main(void) {
   int32_t e = 12345;
   sofel_font_t *font;
@@ -2840,6 +2962,7 @@ int main(void) {
   sofel_outline_scratch_destroy(scratch);
 
   test_font(font);
+  test_layout_queries(font);
   test_variation_abi(font);
   test_collection();
   test_outlines(font);

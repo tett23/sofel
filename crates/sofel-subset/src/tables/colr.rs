@@ -80,22 +80,19 @@ fn plan_store(
         colr.var_index_map().map_err(|_| unsupported_store())?;
         return Ok(());
     }
-    for g in glyphset.iter() {
-        if let Some(base) = colr.clip_box(g).and_then(|b| b.var_index_base) {
-            if pinned {
-                return Err(unsupported_store());
-            }
-            collect_variations(&mut indices, base, 4);
-        }
-    }
     if !complete {
         return Err(unsupported_store());
     }
-    if indices.is_empty() {
+    if pinned {
         return Ok(());
     }
-    if pinned {
-        return Err(unsupported_store());
+    for g in glyphset.iter() {
+        if let Some(base) = colr.clip_box(g).and_then(|b| b.var_index_base) {
+            collect_variations(&mut indices, base, 4);
+        }
+    }
+    if indices.is_empty() {
+        return Ok(());
     }
     let map = colr
         .var_index_map()
@@ -333,9 +330,8 @@ impl Closure<'_, '_> {
     }
 
     fn check_var_index(&mut self, at: usize, count: u32) {
-        collect_variations(self.indices, self.t.u32(at), count);
-        if self.pinned {
-            self.can_subset_store = false;
+        if !self.pinned {
+            collect_variations(self.indices, self.t.u32(at), count);
         }
     }
 
@@ -521,6 +517,9 @@ impl Sub<'_, '_> {
     /// `Variable::subset`'s variation index:
     /// retains the sentinel or rewrites a collected index.
     fn var_index(&mut self, at: usize) -> bool {
+        if self.p.var.instancing() && self.p.var.all_axes_pinned() {
+            return true;
+        }
         let old = self.t.u32(at);
         let new = if old == NO_VARIATION {
             old
@@ -581,6 +580,11 @@ impl Sub<'_, '_> {
         };
         let out = self.embed(at, size);
         let p = self.t.at(at);
+        if (var || format == 13) && self.p.var.instancing() && self.p.var.all_axes_pinned() {
+            // All supported full instances are pinned at the default.
+            // The preceding paint format carries the same base values.
+            self.s.write_at(out, &[format.saturating_sub(1)]);
+        }
         let ok = match format {
             1 => {
                 let v = if p.u8(1) == 0 {
@@ -701,7 +705,11 @@ impl Sub<'_, '_> {
                 true
             }
             2 => {
-                self.embed(at, 9);
+                let out = self.embed(at, 9);
+                if self.p.var.instancing() && self.p.var.all_axes_pinned() {
+                    self.s.write_at(out, &[1]);
+                    return true;
+                }
                 self.var_index(at.saturating_add(9))
             }
             _ => false,

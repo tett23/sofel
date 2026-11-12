@@ -131,6 +131,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sofel-woff"
+version = "0.0.0"
+dependencies = [
+ "sofel-read",
+ "sofel-write",
+]
+
+[[package]]
 name = "sofel-write"
 version = "0.0.0"
 dependencies = [
