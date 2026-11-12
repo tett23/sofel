@@ -127,3 +127,75 @@ fn adr0027_raw_paints_and_clip_boxes_at_design_locations() {
         }
     }
 }
+
+#[path = "support/variation_locations.rs"]
+mod variation_locations;
+
+#[test]
+fn adr0027_i03_raw_colr_at_every_variable_corpus_location() {
+    use sofel_font::read::{Tag, sfnt::FontFile};
+    let data = paths::testdata();
+    let mut paths = fonts::harfbuzz_fonts(&data);
+    for dir in ["harfbuzz/test/api/fonts", "harfbuzz/perf/fonts"] {
+        paths.extend(
+            std::fs::read_dir(data.join(dir))
+                .unwrap()
+                .map(|e| e.unwrap().path())
+                .filter(|p| p.is_file()),
+        );
+    }
+    paths.sort();
+    paths.dedup();
+    let mut locations = 0;
+    let mut glyphs = 0;
+    for path in paths {
+        let bytes = std::fs::read(&path).unwrap();
+        let Ok(file) = FontFile::new(&bytes) else {
+            continue;
+        };
+        let count = match file {
+            FontFile::Sfnt(_) => 1,
+            FontFile::Collection(c) => c.num_fonts(),
+            FontFile::Dfont(d) => d.num_fonts(),
+        };
+        for index in 0..count {
+            let Ok(font) = Font::new(&bytes, index) else {
+                continue;
+            };
+            if font.var_axes().next().is_none() || font.table(Tag::new(b"COLR")).is_none() {
+                continue;
+            }
+            let id = fonts::id(&path, &data);
+            for pos in variation_locations::positions(&font) {
+                let output = Command::new(paths::ft_dump())
+                    .arg("--colr")
+                    .args(pos.args())
+                    .arg(&path)
+                    .output()
+                    .unwrap();
+                assert!(output.status.success(), "{id}#{index}@{}", pos.id);
+                let text = String::from_utf8(output.stdout).unwrap();
+                let (_, face) = color::split_faces(&text)
+                    .into_iter()
+                    .find(|(i, _)| *i == index)
+                    .unwrap();
+                assert!(
+                    !face.lines().any(|s| s.starts_with("error ")),
+                    "{id}#{index}@{}: {face}",
+                    pos.id
+                );
+                let location = pos.location(&font);
+                for item in color::compare_colr_at(&id, index, font.instance(&location), &face) {
+                    if item.id.contains(":colr:") {
+                        assert!(item.ok, "{}@{}: {}", item.id, pos.id, item.detail);
+                        glyphs += 1;
+                    }
+                }
+                locations += 1;
+            }
+        }
+    }
+    eprintln!("checked {locations} face-locations and {glyphs} glyph records");
+    // Coverage of the pinned HarfBuzz corpus, including named instances and all axis endpoints.
+    assert_eq!((locations, glyphs), (307, 22_144));
+}
