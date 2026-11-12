@@ -14,6 +14,8 @@ use sofel_raster::{
     BgraImage, Bitmap, FillRule, RasterError, Rasterizer, RenderOptions, blend_layer, pixel_box,
 };
 
+use crate::color_raster::SvgImagePainter;
+
 /// Why [`render`] failed.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum RenderError {
@@ -154,6 +156,18 @@ pub fn render_color<'r>(
     outlines
         .load(glyph, Scale::pixels(font, ppem, ppem), scratch)
         .map_err(RenderError::Outline)?;
+    if sofel_color::glyph_color_format(font, glyph.0) == Some(sofel_color::ColorFormat::Svg) {
+        let mut painter = SvgImagePainter::new(glyph.0, ppem, font.units_per_em(), raster, image);
+        let mut color_scratch = sofel_color::Scratch::default();
+        if sofel_color::paint(font, glyph.0, options, &mut color_scratch, &mut painter)
+            == sofel_color::Painted::Svg
+            && image.width > 0
+            && image.rows > 0
+        {
+            return Ok(ColorGlyph::Color);
+        }
+        image.clear();
+    }
     let layers = color_layers(font, glyph.0);
     if layers.is_empty() {
         return render(outlines, glyph, ppem, scratch, raster).map(ColorGlyph::Gray);
