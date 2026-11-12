@@ -48,6 +48,7 @@ version = "0.0.0"
 dependencies = [
  "sofel-bitmap",
  "sofel-outline",
+ "sofel-svg",
 ]
 
 [[package]]
@@ -127,6 +128,13 @@ dependencies = [
  "sofel-geom",
  "sofel-unicode",
  "sofel-write",
+]
+
+[[package]]
+name = "sofel-svg"
+version = "0.0.0"
+dependencies = [
+ "sofel-inflate",
 ]
 
 [[package]]
