@@ -31,6 +31,8 @@ use crate::tag::ot_tags_from_script_and_language;
 pub enum Shaper {
     /// `_hb_ot_shaper_default`.
     Default,
+    /// AAT morx replaces the script-specific shaper.
+    Dumber,
     /// `_hb_ot_shaper_arabic` (Arabic and Syriac, horizontal).
     Arabic,
     /// `_hb_ot_shaper_hangul`.
@@ -131,6 +133,12 @@ pub(crate) static DEFAULT_SHAPER: ShaperFuncs = ShaperFuncs {
     fallback_position: true,
 };
 
+static DUMBER_SHAPER: ShaperFuncs = ShaperFuncs {
+    zero_width_marks: ZeroWidthMarks::None,
+    fallback_position: false,
+    ..DEFAULT_SHAPER
+};
+
 impl Shaper {
     /// The hooks of the shaper.
     pub(crate) fn funcs(self) -> &'static ShaperFuncs {
@@ -146,6 +154,7 @@ impl Shaper {
             Shaper::Thai => &shapers::thai::THAI,
             Shaper::Use => &shapers::use_::USE,
             Shaper::Default => &DEFAULT_SHAPER,
+            Shaper::Dumber => &DUMBER_SHAPER,
         }
     }
 
@@ -398,7 +407,28 @@ impl<'a> ShapePlan<'a> {
             ot_tags_from_script_and_language(props.script, props.language.as_ref());
         let mut builder = MapBuilder::new(&layout, &script_tags, &language_tags);
         builder.variations_index = variations_index.clone();
+        let morx =
+            if (props.direction.is_horizontal() || !layout.gsub.has_data) && features.is_empty() {
+                font.table(Tag(*b"morx")).and_then(|data| {
+                    crate::aat::chains(
+                        data,
+                        font.num_glyphs(),
+                        font.table(Tag(*b"ltag"))
+                            .and_then(sofel_font::read::ltag::Ltag::new),
+                        props.language.as_ref(),
+                    )
+                })
+            } else {
+                None
+            };
         let shaper = Shaper::categorize(props.script, props.direction, builder.chosen_script[GSUB]);
+        let script_funcs = shaper.funcs();
+        let use_morx = morx.is_some();
+        let shaper = if use_morx && shaper != Shaper::Default {
+            Shaper::Dumber
+        } else {
+            shaper
+        };
         let funcs = shaper.funcs();
         let mut planner = Planner {
             props: &props,
@@ -421,20 +451,6 @@ impl<'a> ShapePlan<'a> {
             .gpos_tag
             .is_some_and(|t| Some(t) != map.chosen_script[GPOS]);
         let has_gpos = !disable_gpos && layout.gpos.has_data;
-        let morx =
-            if (props.direction.is_horizontal() || !layout.gsub.has_data) && features.is_empty() {
-                font.table(Tag(*b"morx")).and_then(|data| {
-                    crate::aat::chains(
-                        data,
-                        font.num_glyphs(),
-                        font.table(Tag(*b"ltag"))
-                            .and_then(sofel_font::read::ltag::Ltag::new),
-                        props.language.as_ref(),
-                    )
-                })
-            } else {
-                None
-            };
         let candidate = font.table(Tag(*b"kerx")).and_then(|t| {
             crate::aat::kerning::read(t, font.table(Tag(*b"ankr")), font.num_glyphs())
         });
@@ -442,7 +458,7 @@ impl<'a> ShapePlan<'a> {
             has_gpos && (candidate.is_none() || (morx.is_none() && layout.gsub.has_data));
         let kerx = candidate.filter(|_| !apply_gpos || map.feature_index(GPOS, kern_tag).is_none());
         let has_kerx = kerx.is_some();
-        let script_fallback_position = funcs.fallback_position;
+        let script_fallback_position = script_funcs.fallback_position;
         let legacy_kern = (script_fallback_position
             && !has_kerx
             && (!apply_gpos || map.feature_index(GPOS, kern_tag).is_none()))
@@ -482,9 +498,9 @@ impl<'a> ShapePlan<'a> {
             requested_kerning: kern_mask != 0,
             apply_gpos,
             apply_fallback_kern,
-            zero_marks: !has_kerx && funcs.zero_width_marks != ZeroWidthMarks::None,
+            zero_marks: !has_kerx && script_funcs.zero_width_marks != ZeroWidthMarks::None,
             has_gpos_mark: map.one_mask(Tag(*b"mark")) != 0,
-            adjust_mark_positioning_when_zeroing: adjust,
+            adjust_mark_positioning_when_zeroing: adjust && !use_morx,
             fallback_mark_positioning: adjust && script_fallback_position,
             map,
             layout,

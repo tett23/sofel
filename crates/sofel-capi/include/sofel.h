@@ -2779,6 +2779,7 @@ int32_t sofel_segment_guess(const char *utf8, size_t len, const sofel_segment_t 
 #define SOFEL_SHAPER_MYANMAR_ZAWGYI 7
 #define SOFEL_SHAPER_THAI 8
 #define SOFEL_SHAPER_USE 9
+#define SOFEL_SHAPER_DUMBER 10
 
 /* What to do for a font, segment and features. Immutable; the font must
  * outlive it. */
