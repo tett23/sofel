@@ -231,14 +231,11 @@ fn pin_records(
     let bad = SubsetError::Malformed { tag };
     let kept = &plan.var.n.retained_axis_indices;
     let axes = usize::from(table.axis_count());
-    let pin = (0..axes).find(|i| !kept.contains(i)).ok_or(bad)?;
-    if kept.len().checked_add(1) != Some(axes) {
-        return Err(SubsetError::Unsupported {
-            tag,
-            reason: "gvar instancing across multiple pinned axes",
-        });
-    }
-    let pinned_coord = *plan.var.n.normalized_coords.get(pin).ok_or(bad)?;
+    let mut pins = (0..axes)
+        .filter(|axis| !kept.contains(axis))
+        .collect::<Vec<_>>();
+    // HarfBuzz applies each scalar to the deltas in tag order.
+    pins.sort_by_key(|axis| plan.var.n.axis_tags.get(*axis));
     let project = |tuple: Tuple<'_>| -> Result<Vec<u8>, SubsetError> {
         let mut coords = Vec::new();
         for &i in kept {
@@ -264,36 +261,45 @@ fn pin_records(
         let mut tuples = Vec::new();
         let mut regions = BTreeMap::new();
         let mut groups: Vec<(_, _, Vec<_>)> = Vec::new();
-        for tuple in glyph.tuples() {
+        'tuples: for tuple in glyph.tuples() {
             let tuple = tuple.ok_or(bad)?;
             let peak = tuple
                 .embedded_peak()
                 .or_else(|| table.shared_tuple(tuple.shared_peak_index()?))
                 .ok_or(bad)?;
             let projected = project(peak)?;
-            let pin_peak = i32::from(peak.axis(pin).ok_or(bad)?);
-            let mut scalar = 1.0;
-            if pin_peak != 0 {
+            if projected.iter().all(|&b| b == 0) {
+                continue;
+            }
+            let mut scales = Vec::new();
+            for &pin in &pins {
+                let coord = *plan.var.n.normalized_coords.get(pin).ok_or(bad)?;
+                let peak_value = i32::from(peak.axis(pin).ok_or(bad)?);
+                if peak_value == 0 {
+                    continue;
+                }
                 let (start, end) = if let Some((start, end)) = tuple.intermediate() {
                     (
                         i32::from(start.axis(pin).ok_or(bad)?),
                         i32::from(end.axis(pin).ok_or(bad)?),
                     )
                 } else {
-                    (pin_peak.min(0), pin_peak.max(0))
+                    (peak_value.min(0), peak_value.max(0))
                 };
-                let valid_region = start <= pin_peak && pin_peak <= end && !(start < 0 && end > 0);
-                let active = !valid_region
-                    || pinned_coord == pin_peak
-                    || (start < pinned_coord && pinned_coord < end);
-                if !active || projected.iter().all(|&b| b == 0) {
+                if start > peak_value || peak_value > end || (start < 0 && end > 0) {
+                    continue 'tuples;
+                }
+                if coord == peak_value {
                     continue;
                 }
-                if valid_region && pinned_coord != pin_peak {
-                    let edge = if pinned_coord < pin_peak { start } else { end };
-                    scalar = sofel_geom::float::i32_to_f32(pinned_coord.saturating_sub(edge))
-                        / sofel_geom::float::i32_to_f32(pin_peak.saturating_sub(edge));
+                if coord <= start || coord >= end {
+                    continue 'tuples;
                 }
+                let edge = if coord < peak_value { start } else { end };
+                scales.push(
+                    sofel_geom::float::i32_to_f32(coord.saturating_sub(edge))
+                        / sofel_geom::float::i32_to_f32(peak_value.saturating_sub(edge)),
+                );
             }
             let intermediate = tuple
                 .intermediate()
@@ -328,10 +334,10 @@ fn pin_records(
                     groups.push((projected, intermediate, Vec::new()));
                     index
                 });
-            groups.get_mut(index).ok_or(bad)?.2.push((tuple, scalar));
+            groups.get_mut(index).ok_or(bad)?.2.push((tuple, scales));
         }
         for (projected, intermediate, contributors) in groups {
-            let &(tuple, scalar) = contributors.first().ok_or(bad)?;
+            let (tuple, scales) = contributors.first().ok_or(bad)?;
             let count = frequencies.entry(projected.clone()).or_default();
             *count = count.saturating_add(1);
             let (points, deltas) = if tuple.private_points() {
@@ -341,7 +347,7 @@ fn pin_records(
                 (points, tuple.data())
             };
             let (points, deltas) = if contributors.len() == 1
-                && scalar == 1.0
+                && scales.is_empty()
                 && PackedPoints::parse(points).ok_or(bad)?.0.is_all()
             {
                 (points, Cow::Borrowed(deltas))
@@ -362,7 +368,9 @@ fn pin_records(
                 let n = count.checked_add(4).ok_or(bad)?;
                 let mut sums = [alloc::vec![0.0; n], alloc::vec![0.0; n]];
                 let mut original = Vec::new();
-                for (part, scale) in contributors {
+                for (part, scales) in contributors {
+                    let scaled =
+                        |value: i16| scales.iter().fold(f32::from(value), |v, scale| v * scale);
                     let (x, y) = part.deltas(n, glyph.shared_points()).ok_or(bad)?;
                     if let Some(indices) = part
                         .points()
@@ -391,8 +399,8 @@ fn pin_records(
                         for ((i, dx), dy) in indices.iter().zip(x.iter()).zip(y.iter()) {
                             let i = usize::try_from(i).map_err(|_| bad)?;
                             let point = expanded.get_mut(i).ok_or(bad)?;
-                            point.x = f32::from(dx) * scale;
-                            point.y = f32::from(dy) * scale;
+                            point.x = scaled(dx);
+                            point.y = scaled(dy);
                             *explicit.get_mut(i).ok_or(bad)? = true;
                         }
                         if simple.is_some() {
@@ -407,7 +415,7 @@ fn pin_records(
                     }
                     for (sum, axis) in sums.iter_mut().zip([x, y]) {
                         for (value, delta) in sum.iter_mut().zip(axis.iter()) {
-                            *value += f32::from(delta) * scale;
+                            *value += scaled(delta);
                         }
                     }
                 }
