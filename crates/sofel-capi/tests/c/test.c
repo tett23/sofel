@@ -2258,6 +2258,32 @@ static uint8_t *read_testdata(const char *path, size_t *len) {
   return data;
 }
 
+static void test_adr0064_i1_control_values(void) {
+  const float weights[] = {300, 400, 575, 700};
+  const int32_t expected[] = {3008, 4992, 5559, 6464};
+  size_t size = 0, count = 0;
+  uint8_t *data = read_testdata("harfbuzz/test/shape/data/text-rendering-tests/fonts/"
+                                "Selawik-variable.ttf", &size);
+  if (data == NULL) {
+    CHECK(getenv("SOFEL_REQUIRE_TESTDATA") == NULL);
+    return;
+  }
+  int32_t error, values[214];
+  sofel_font_t *font = sofel_font_create(data, size, 0, &error);
+  CHECK(font != NULL && error == SOFEL_OK);
+  CHECK(sofel_font_ft_control_values(font, NULL, NULL, 0, &count) == SOFEL_ERROR_BUFFER_TOO_SMALL);
+  CHECK(count == COUNT(values));
+  for (size_t i = 0; i < COUNT(weights); i++) {
+    sofel_location_t *location = NULL;
+    CHECK(sofel_location_create_design(font, &weights[i], 1, &location) == SOFEL_OK);
+    CHECK(sofel_font_ft_control_values(font, location, values, COUNT(values), &count) == SOFEL_OK);
+    CHECK(count == COUNT(values) && values[40] == expected[i]);
+    sofel_location_destroy(location);
+  }
+  sofel_font_destroy(font);
+  free(data);
+}
+
 /* The shaping cases of fixture_shape.h, called as Golem calls HarfBuzz,
  * on real fonts of the test data; skipped without the test data unless
  * SOFEL_REQUIRE_TESTDATA is set. */
@@ -2970,6 +2996,7 @@ int main(void) {
   test_shape_glyph_buffers(font);
   test_shape_fixture_font(font);
   test_shape_ppem();
+  test_adr0064_i1_control_values();
   test_golem_shape();
   test_subset_input();
   test_axis_strings();

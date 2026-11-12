@@ -1421,6 +1421,18 @@ int32_t sofel_font_ft_v_advance(const sofel_font_t *font, const sofel_location_t
                                uint32_t glyph, uint16_t *advance);
 
 /*
+ * TrueType control values after cvar adjustment, in unscaled 26.6 font units.
+ * On SOFEL_ERROR_BUFFER_TOO_SMALL, len receives the required element count.
+ * SOFEL_ERROR_NOT_FOUND if the table cannot be read.
+ *
+ * Rust: sofel_font::var::Instance::ft_control_values
+ * HarfBuzz: none
+ * FreeType: tt_face_vary_cvt
+ */
+int32_t sofel_font_ft_control_values(const sofel_font_t *font, const sofel_location_t *location,
+                                    int32_t *out, size_t capacity, size_t *len);
+
+/*
  * The unscaled horizontal advance after FreeType's HVAR adjustment.
  * SOFEL_ERROR_INVALID_GLYPH for glyph ids not below the glyph count.
  *
