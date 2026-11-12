@@ -389,3 +389,14 @@ fn i1_aat_morx_rearranges_all_sixteen_verbs() {
         assert_eq!(run(&case), Ok(()), "{}", case.id);
     }
 }
+
+#[test]
+fn i1_aat_contextual_morx_updates_marked_and_current_glyphs() {
+    let data =
+        paths::testdata().join("harfbuzz/test/shape/data/text-rendering-tests/tests/MORX-18.tests");
+    let suite = cases("text-rendering-tests", &data, &mut 0);
+    assert_eq!(suite.len(), 4);
+    for case in suite {
+        assert_eq!(run(&case), Ok(()), "{}", case.id);
+    }
+}
