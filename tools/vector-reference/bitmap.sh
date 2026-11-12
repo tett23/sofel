@@ -12,12 +12,18 @@ cargo build -p sofel-capi
     -I"$src" -Icrates/sofel-capi/include tools/vector-reference/bitmap.cc \
     "$src"/hb-vector*.cc "$hb" "${CARGO_TARGET_DIR:-target}/debug/libsofel_capi.a" \
     -lz -lpthread -ldl -lm -o "$work/bitmap"
-compare() {
-    "$work/bitmap" "$data/harfbuzz/test/$1" "$work/reference.pdf" "$work/actual.pdf" "$2"
+compare_pdf() {
     for name in actual reference; do
+        LC_ALL=C pdfinfo -box "$work/$name.pdf" > "$work/$name.info"
+        grep "^MediaBox:" "$work/$name.info" > "$work/$name.box"
         pdftoppm -singlefile -scale-to 640 "$work/$name.pdf" "$work/$name"
     done
+    cmp "$work/reference.box" "$work/actual.box"
     cmp "$work/reference.ppm" "$work/actual.ppm"
+}
+compare() {
+    "$work/bitmap" "$data/harfbuzz/test/$1" "$work/reference.pdf" "$work/actual.pdf" "$2"
+    compare_pdf
 }
 compare fuzzing/fonts/noto_handwriting-sbix.ttf 270d
 compare api/fonts/NotoColorEmoji.subset.default.2049.ttf 2049
@@ -34,11 +40,8 @@ for glyph in 12 13 14 15 16 17 18 19 20 24 28 30 40; do
     done
     cmp "$work/reference.png" "$work/actual.png"
 done
-# Axial and radial shadings with varying alpha need luminosity soft masks.
-for glyph in 12 13 14 20 40 149 151 153; do
+# Sweep patches, blend groups, and shadings with varying alpha.
+for glyph in 12 13 14 20 40 125 131 132 149 151 153; do
     "$work/bitmap" "$font" "$work/reference.pdf" "$work/actual.pdf" "$glyph" pdf-gid
-    for name in actual reference; do
-        pdftoppm -singlefile -scale-to 640 "$work/$name.pdf" "$work/$name"
-    done
-    cmp "$work/reference.ppm" "$work/actual.ppm"
+    compare_pdf
 done
