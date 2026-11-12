@@ -1,5 +1,6 @@
 //! Rebase a tuple's support on a restricted axis, following HarfBuzz's
 //! hb-subset-instancer-solver.cc (Copyright © 2023 Behdad Esfahbod).
+use crate::instance::renormalize;
 use alloc::vec::Vec;
 
 pub(super) type Tent = [f32; 3];
@@ -18,41 +19,6 @@ fn support(value: f32, [lower, peak, upper]: Tent) -> f32 {
     } else {
         (upper - value) / (upper - peak)
     }
-}
-
-fn normalize(value: f32, limits: Tent, distances: [f32; 2]) -> f32 {
-    let [low, default, high] = limits;
-    let [negative, positive] = distances;
-    if value == default {
-        return 0.0;
-    }
-    if default < 0.0 {
-        return -normalize(-value, reverse(limits), [positive, negative]);
-    }
-    if value > default {
-        return if high == default {
-            1.0
-        } else {
-            (value - default) / (high - default)
-        };
-    }
-    if low >= 0.0 {
-        return if default == low {
-            -1.0
-        } else {
-            (value - default) / (default - low)
-        };
-    }
-    let total = negative * (-low) + positive * default;
-    if total == 0.0 {
-        return 0.0;
-    }
-    let distance = if value >= 0.0 {
-        (default - value) * positive
-    } else {
-        (-value) * negative + positive * default
-    };
-    -distance / total
 }
 
 fn solve(tent: Tent, limits: Tent) -> Vec<(f32, Tent)> {
@@ -124,7 +90,7 @@ pub(super) fn rebase(tent: Tent, limits: Tent, distances: [f32; 2]) -> Vec<(f32,
                 if t == [0.0; 3] {
                     t
                 } else {
-                    t.map(|v| normalize(v, limits, distances))
+                    t.map(|v| renormalize(v, limits, distances))
                 },
             )
         })
@@ -146,7 +112,7 @@ mod tests {
             let parts = rebase(tent, limit, [300.0, 500.0]);
             for step in 0i16..=128 {
                 let value = limit[0] + (limit[2] - limit[0]) * f32::from(step) / 128.0;
-                let mapped = normalize(value, limit, [300.0, 500.0]);
+                let mapped = renormalize(value, limit, [300.0, 500.0]);
                 let actual: f32 = parts
                     .iter()
                     .map(|(scalar, region)| {

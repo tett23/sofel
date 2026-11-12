@@ -49,16 +49,48 @@ pub(crate) fn subset(
         .map_err(|_| SubsetError::Failed { tag: TAG })?;
     let mut out = Vec::from([0, 1, 0, 0, 0, 0]);
     out.extend_from_slice(&count.to_be_bytes());
+    let axes = crate::instance::axis_infos(font);
     for &old in &plan.var.n.retained_axis_indices {
         let map = avar
             .segment_map(old)
             .ok_or(SubsetError::Malformed { tag: TAG })?;
-        let len = u16::try_from(map.len()).map_err(|_| SubsetError::Failed { tag: TAG })?;
-        out.extend_from_slice(&len.to_be_bytes());
-        for index in 0..map.len() {
-            let (from, to) = map.pair(index).ok_or(SubsetError::Malformed { tag: TAG })?;
-            out.extend_from_slice(&from.0.to_be_bytes());
-            out.extend_from_slice(&to.0.to_be_bytes());
+        let info = axes.get(old).ok_or(SubsetError::Malformed { tag: TAG })?;
+        let mut pairs = Vec::with_capacity(map.len());
+        for i in 0..map.len() {
+            let (from, to) = map.pair(i).ok_or(SubsetError::Malformed { tag: TAG })?;
+            pairs.push((from.0, to.0));
+        }
+        if let Some(range) = plan.var.n.axes_location.get(&info.tag) {
+            let mapped = [range.min, range.default, range.max];
+            let unmapped = mapped.map(|value| sofel_font::var::unmap_float(&map, value));
+            let distances = [info.default - info.min, info.max - info.default];
+            let convert = |v, limits| {
+                let n = crate::instance::renormalize(v, limits, distances).clamp(-1.0, 1.0);
+                i16::try_from(crate::instance::f64_to_i32(sofel_geom::float::hb_roundf32(
+                    n * 16384.0,
+                )))
+                .unwrap_or_default()
+            };
+            const REQUIRED: [(i16, i16); 3] = [(-16384, -16384), (0, 0), (16384, 16384)];
+            pairs.retain_mut(|pair| {
+                let from = f32::from(pair.0) / 16384.0;
+                if !(unmapped[0]..=unmapped[2]).contains(&from) {
+                    return false;
+                }
+                *pair = (
+                    convert(from, unmapped),
+                    convert(f32::from(pair.1) / 16384.0, mapped),
+                );
+                !REQUIRED.contains(pair)
+            });
+            pairs.extend(REQUIRED);
+            pairs.sort_unstable();
+        }
+        let len = u16::try_from(pairs.len()).map_err(|_| SubsetError::Limit { tag: TAG })?;
+        out.extend(len.to_be_bytes());
+        for (from, to) in pairs {
+            out.extend(from.to_be_bytes());
+            out.extend(to.to_be_bytes());
         }
     }
     Ok(out)

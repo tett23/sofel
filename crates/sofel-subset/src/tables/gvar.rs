@@ -527,6 +527,9 @@ fn instance_records(
         );
         record.extend(headers);
         record.extend(payload);
+        if record.len() % 2 != 0 {
+            record.push(0);
+        }
         output.push((gid, Cow::Owned(record)));
     }
     serialize_records(

@@ -33,23 +33,6 @@ pub(crate) const PINNED_DROP: [&[u8; 4]; 8] = [
 ];
 
 /// An identity avar v1 map needs no rebasing when an axis range changes.
-fn avar_v1_identity(table: &sofel_font::read::avar::Avar<'_>, axis_count: usize) -> bool {
-    table.major_version() == 1
-        && table.axis_count() == axis_count
-        && (0..axis_count).all(|axis| {
-            table.segment_map(axis).is_some_and(|map| {
-                map.len() == 3
-                    && [-16384, 0, 16384]
-                        .iter()
-                        .enumerate()
-                        .all(|(index, &value)| {
-                            map.pair(index)
-                                .is_some_and(|(from, to)| from.0 == value && to.0 == value)
-                        })
-            })
-        })
-}
-
 /// The glyph mapping: new ids in ascending order with their old ids, and
 /// the reverse lookup (ADR 0022's `GlyphMap`).
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
@@ -389,18 +372,13 @@ impl Plan {
                 || identity_avar2
                 || font.table(Tag::new(b"avar")).is_none_or(|data| {
                     sofel_font::read::avar::Avar::new(data).is_ok_and(|table| {
-                        avar_v1_identity(&table, norm.axis_tags.len())
-                            || (table.major_version() == 1
-                                && (norm.pinned_at_default
-                                    || (norm.all_axes_pinned
-                                        && (0..table.axis_count()).all(|axis| {
-                                            table.segment_map(axis).is_some_and(|map| {
-                                                sofel_font::var::map_float(&map, 0.0) == 0.0
-                                            })
-                                        })))
-                                && norm.user.values().all(|range| {
-                                    range.min == range.default && range.default == range.max
-                                }))
+                        table.major_version() == 1
+                            && table.axis_count() == norm.axis_tags.len()
+                            && (0..table.axis_count()).all(|axis| {
+                                table
+                                    .segment_map(axis)
+                                    .is_some_and(|map| sofel_font::var::map_float(&map, 0.0) == 0.0)
+                            })
                     })
                 });
             let metadata_only = no_other_variation_data && varc_safe && simple_avar;

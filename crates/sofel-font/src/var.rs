@@ -1032,9 +1032,19 @@ fn apply_avar2(avar: &Avar<'_>, hb: &mut [i32], ft: &mut [Fixed], ft_enabled: bo
 
 /// HarfBuzz's `SegmentMaps::map_float`, including its duplicate endpoint rules.
 pub fn map_float(map: &SegmentMap<'_>, value: f32) -> f32 {
+    map_float_direction(map, value, false)
+}
+
+/// Map an avar output coordinate back to its input for axis-range subsetting.
+pub fn unmap_float(map: &SegmentMap<'_>, value: f32) -> f32 {
+    map_float_direction(map, value, true)
+}
+
+fn map_float_direction(map: &SegmentMap<'_>, value: f32, reverse: bool) -> f32 {
     let len = map.len();
     let pair = |i: usize| {
         map.pair(i).map_or((0.0, 0.0), |(f, t)| {
+            let (f, t) = if reverse { (t, f) } else { (f, t) };
             (
                 i32_to_f32(i32::from(f.0)) / 16384.0,
                 i32_to_f32(i32::from(t.0)) / 16384.0,
