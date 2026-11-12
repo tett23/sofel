@@ -344,7 +344,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - HarfBuzzは、すべての表を1つの直列化の作業領域（`hb_subset_plan_execute_or_fail` の `buf`）に書く。表ごとに作業領域を大きさの見積もり（`_hb_subset_estimate_table_size`）まで広げ、足りなければ倍にして書きなおし（`allocated * 2 + 16`）、元の表の長さの256倍を超えるところで失敗する。sofelの `Serializer` は必要なだけ伸びるので、表を書くあいだに保持した最大のバイト数（`Serializer::peak_len`）と、表から表へ引き継ぐ作業領域の大きさ（`hb_vector_t::alloc` と同じ伸ばし方）から、HarfBuzzが書けたかを求め、書けなければ `SubsetError::Limit` とする。例えば、形式13のcmapを持つ `AdobeBlank-Regular.ttf` で多くのグリフを残すと、形式12のcmapが元の256倍を超え、HarfBuzzと同じく失敗する。
 - MATHは、HarfBuzzの `hb-ot-math-table.hh` の `closure_glyphs` と `subset` のとおりに扱う。閉包は、cmapの閉包の後のグリフの集合が持つ縦と横の構成（MathGlyphConstruction）の変種と部品のグリフを1回だけ足す（足したグリフの構成はたどらない）。書くときは、MathConstantsを写し、MathGlyphInfoの各表はMATHの閉包の後の集合（`_glyphset_mathed`）のグリフの記録を残し、MathVariantsはHarfBuzzと同じくcmapの閉包の後の集合（`_glyphset_cmaped`）のグリフの構成だけを残す。Deviceはヒンティングの形式だけを写し、VariationIndexは捨てる。GDEFが変化量の表を持ち、MATHに `0x8000` のバイト列がある場合は `Unsupported` とする（番号の詰めなおしは10段階目）。
 - COLRの閉包は `_colr_closure` のとおり、版0の基底グリフの層のグリフを足し、版1の塗りを `HB_MAX_NESTING_LEVEL` の深さまでたどって、PaintGlyphのグリフ、PaintColrGlyphの基底グリフ、PaintColrLayersの層、色の番号を集める。その後、残すグリフの版0の層の色の番号を足す。層は集めた順に0から、色の番号は昇順に0から振りなおす（前景色の0xFFFFはそのまま）。
-- COLRは `COLR::subset` のとおりに書く。版0の基底グリフの記録を新しいグリフIDの順に並べ、層をグリフごとに複製して振りなおす。版1の塗りを持つグリフが残らなければ版0として書く。版1では、BaseGlyphList、LayerList（残す層）、ClipList（新しいグリフIDの連続する範囲で同じクリップの箱を持つものをまとめる）を書き、塗りは各形式の静的な大きさを写して、グリフID、層、色の番号を書きかえる。変化量の表がない場合、変化量の番号は `NO_VARIATION` だけを残せる（それ以外の塗りは書けず、含む部分を除く）。版0に落とすときは変化量の表を読み取り、ItemVariationStoreとDeltaSetIndexMapを取り除く。色のグリフを1つも残さない場合も、空の版0の表を書く。版1のままでも、閉包が残す基底グリフの塗りをすべてたどり、塗りとクリップがどれも静的であれば、この2つの表を取り除く。軸を固定しない場合、塗り、勾配の停止点、変換、クリップの変化量インデックスがすべて `NO_VARIATION` なら、値は静的であり、この番号を出力に保つ。軸を固定せずに塗りとクリップがItemVariationStoreを参照するときは、使う行と領域だけを残し、参照番号を振り直す。DeltaSetIndexMapを通して参照する場合は、使うマップ項目を元の番号順に詰め、末尾で同じ行に対応する項目を1つにまとめる。それ以外でItemVariationStoreかDeltaSetIndexMapを持つCOLRは `Unsupported` とする。
+- COLRは `COLR::subset` のとおりに書く。版0の基底グリフの記録を新しいグリフIDの順に並べ、層をグリフごとに複製して振りなおす。版1の塗りを持つグリフが残らなければ版0として書く。版1では、BaseGlyphList、LayerList（残す層）、ClipList（新しいグリフIDの連続する範囲で同じクリップの箱を持つものをまとめる）を書き、塗りは各形式の静的な大きさを写して、グリフID、層、色の番号を書きかえる。変化量の表がない場合、変化量の番号は `NO_VARIATION` だけを残せる（それ以外の塗りは書けず、含む部分を除く）。版0に落とすときは変化量の表を読み取り、ItemVariationStoreとDeltaSetIndexMapを取り除く。色のグリフを1つも残さない場合も、空の版0の表を書く。版1のままでも、閉包が残す基底グリフの塗りをすべてたどり、塗りとクリップがどれも静的であれば、この2つの表を取り除く。軸を固定しない場合、塗り、勾配の停止点、変換、クリップの変化量インデックスがすべて `NO_VARIATION` なら、値は静的であり、この番号を出力に保つ。軸を固定せずに塗りとクリップがItemVariationStoreを参照するときは、使う行と領域だけを残し、参照番号を振り直す。DeltaSetIndexMapを通して参照する場合は、使うマップ項目を元の番号順に詰め、末尾で同じ行に対応する項目を1つにまとめる。全軸を既定位置に固定すると、可変の塗り、勾配の停止点、変換、クリップの箱は既定値を持つ静的な形式で書く。この場合は変化量の番号と両方の表を取り除く。それ以外でItemVariationStoreかDeltaSetIndexMapを持つCOLRは `Unsupported` とする。
 - CPALは、COLRが使う色の番号だけを残し、残す色が同じパレットは同じ色の記録を指す。版1では、パレットのフラグとラベルを写し、色のラベルは残す番号のものを残す。
 - CBLCとCBDTは、残すグリフのうち画像を持つものを、新しいグリフIDの順に索引の部分表（形式1と3。ほかの形式の部分表を含む大きさの表は除く）へまとめなおし、画像のデータを新しいCBDTへ写す。同じ形式、データ、グリフごとの長さの塊は前のものを共有する。写す量は元のCBDTの長さの `HB_SUBSET_CBDT_MAX_COPY_FACTOR`（64）倍までとする。残すグリフを持たない大きさの表は除く。
 - sbixは、各大きさの表で新しいグリフIDの順にグリフのデータを写し、残すグリフのデータを持たない大きさの表を除く。
@@ -356,7 +356,23 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 軸を指定しないGDEF 1.3のItemVariationStoreは、GPOSの `0x8000` がPairPos形式1・2のVariationIndexに限られ、MATHに `0x8000` がなく、GSUBのFeatureVariationsも保持しない場合、残すLigCaretListとPairPosのVariationIndexに合わせて行と領域を詰めて書く。参照が0件ならストアを除く。GPOSのPairPos以外かMATHに同じバイト列が現れる場合と、GPOSをコピーするときは、安全側に倒して拒否する。GDEFだけをコピーしてGPOSをサブセット化するとき、HarfBuzzと同じくGPOSの参照番号は詰めるが、GDEFのストアは元のバイト列のまま写す。壊れたGDEFはこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
 - レイアウトの表のうち、PairPos以外のGPOSかMATHに `0x8000` のバイト列があるGDEF、GSUBのFeatureVariationsを保持するGDEF、GSUBとGPOSの版1.2とGDEFの版1.4、FeatureVariationsの版1.1と形式1でない条件、65536を超えるグリフのフォントの24bitの形式も `Unsupported` とする。
 
+## Web フォントの書き出し（`sofel-woff`）
+
+`sofel_woff::encode` は単一フェイスの sfnt と出力形式を受け取り、WOFF または WOFF2 のバイト列を返す。表のタグ、範囲、パディング、チェックサムとフォント全体のチェックサムを検査する。コマンドは変換を終えてから出力先を開く。[ADR 0070](adr/0070-webfont-encoding.md)
+
+WOFF は表を元の物理順に並べ、zlib で短くなる表だけを圧縮する。WOFF2 は DSIG を除き、head.flags のビット11を立て、全表を変換なしで一つの Brotli ストリームに格納する。
+
 ## 道具
+
+統一 CLI `sofel` は render、shape、paint、validate、subset を受け付ける（[ADR 0071](adr/0071-unified-sofel-cli.md)）。
+引数なし、`help`、`-h`、`--help` は操作一覧を、`help NAME`、`NAME -h`、`NAME --help` は使用例を含む詳細を標準出力に書く。
+未知の操作やヘルプ対象は終了コード 2 で診断する。
+
+`sofel render --ppem P (--text TEXT | --text-file PATH) FONT` は一行を一つのランとしてシェーピングし、アウトラインを白地に黒の PGM に描いて標準出力に書く。
+フェイス、可変軸と OpenType フィーチャーを指定できる。
+UTF-8 ファイルの末尾から LF または CRLF を一組だけ除き、前後の空白も送り幅に含める。
+空文字は白い 1 × 1 画素になる。
+入力指定の重複、不正な UTF-8、残った CR や LF は終了コード 2、ファイルの読み込み失敗は終了コード 1 で診断する。
 
 - `sofel-paint [--face N] [--palette P] [--foreground RRGGBBAA] [--ppem P] [--exact] (--glyph G | --char U+XXXX) FILE`：カラーグリフの塗りの命令を、HarfBuzzの `test/api/test-paint.c` と同じ字下げのテキストで書く。数はCの `%.3g`、`--exact` では `f32` のビットの16進。カラーでないグリフは終了コード1、使い方の誤りは2（[ADR 0023](adr/0023-color-glyphs.md)）。
 - `sofel-render [--face N] --ppem P [--no-bitmap] [--color [--palette N]] (--glyph G | --char U+XXXX) FILE`：1グリフをヒンティングなしで描き、PGM（P5）を標準出力に書く。位置は注釈の行 `# left <x> top <y>` に書く（[ADR 0012](adr/0012-antialiased-rasterizer.md)）。そのppemのビットマップがあれば、`--no-bitmap` が無いかぎりそれを書く（32bitはPAM。[ADR 0023](adr/0023-color-glyphs.md)）。`--color` では、COLRv0のグリフを層の色で描いてPAMで書く。
@@ -503,3 +519,9 @@ CI の文書だけの変更は、比較起点の `ci/documentation-only.rules` �
 - sofelはMITとする。FreeTypeのコードを流用する場合はFTLを選び、文書でFreeType Projectを明示する（[ADR 0002](adr/0002-license-and-reuse.md)）。Slugを流用する場合は、READMEにクレジットを載せる。
 - 流用元の著作権表示とライセンスは `THIRD_PARTY_NOTICES.md` に載せ、流用したファイルの先頭に流用元を書く。
 - UCDから生成した表を含む `sofel-unicode` と `sofel-shape` は、Unicode License v3にも従う（`MIT AND Unicode-3.0`）。
+
+## フォント描画見本
+
+[sofel ADR 0069](adr/0069-font-render-gallery.md) に従い、追加フォント台帳の全フェイスと固定版 HarfBuzz の可変 COLR フォントを描画する。
+`sh scripts/render-font-gallery.sh` は各フェイスの単字とシェーピング済みの固定文字列を等倍で一枚の PNG に配置し、入力、ppem、未対応の理由をローカルの HTML から確認できるようにする。
+文書だけの変更を除き、CI はプルリクエストと main への push で HTML と PNG を生成し、検査したコミット SHA 付きのアーティファクトを14日間保存する。
