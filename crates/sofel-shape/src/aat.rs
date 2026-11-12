@@ -65,18 +65,18 @@ pub fn chains<'a>(
         for _ in 0..tables {
             let (st, tail) = body.split_at_checked(be::u32_at(body, 0)? as usize)?;
             let coverage = be::u32_at(st, 4)?;
+            body = tail;
             let payload = st.get(12..)?;
             let action = match coverage & 255 {
                 0 | 1 | 2 | 5 => Action::Machine(StateTable::new(payload, glyphs, coverage & 255)?),
                 4 => Action::Replace(AatLookup::new(payload, glyphs)?),
-                _ => return None,
+                _ => continue,
             };
             substitutions.push(Subtable {
                 coverage,
                 flags: be::u32_at(st, 8)?,
                 action,
             });
-            body = tail;
         }
         chains.push(Chain {
             default_flags: flags,
@@ -539,5 +539,24 @@ impl Ligature<'_> {
             action_at = action_at.saturating_add(4);
         }
         buffer.move_to(end)
+    }
+}
+
+#[cfg(test)]
+mod chain_tests {
+    use super::chains;
+
+    #[test]
+    fn i2_unknown_type_skips_only_its_bounded_subtable() {
+        // morx header, chain header, reserved type 3, then a format 8 lookup.
+        let words: [u32; 14] = [
+            0x00020000, 1, 1, 48, 0, 2, 12, 3, 1, 20, 4, 1, 0x00080001, 0x00010002,
+        ];
+        let mut data: alloc::vec::Vec<u8> = words.into_iter().flat_map(u32::to_be_bytes).collect();
+        let count =
+            chains(&data, 3, None, None).and_then(|c| c.first().map(|c| c.substitutions.len()));
+        assert_eq!(count, Some(1));
+        data.pop();
+        assert!(chains(&data, 3, None, None).is_none());
     }
 }
