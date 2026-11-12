@@ -696,6 +696,14 @@ static void test_raster(const sofel_font_t *font) {
     check_bitmap(s, c, buf, len, box);
   }
   draw_shape(r);
+  {
+    const uint8_t weights[5] = {8, 77, 86, 77, 8};
+    CHECK(sofel_rasterizer_render_filtered_lcd(r, 0, SOFEL_LCD_HORIZONTAL, weights, 0, 0,
+                                               buf, sizeof buf, &len, box) == SOFEL_OK);
+    CHECK(len > 0 && len == (size_t)box[2] * (size_t)box[3]);
+    CHECK(sofel_rasterizer_render_filtered_lcd(r, 0, SOFEL_LCD_HORIZONTAL, NULL, 0, 0,
+                                               buf, sizeof buf, &len, box) == SOFEL_ERROR_INVALID_ARGUMENT);
+  }
   CHECK(sofel_rasterizer_render_harmony(r, 0, 2, 0, 0, buf, sizeof buf, &len, box) ==
         SOFEL_ERROR_INVALID_ARGUMENT);
   CHECK(sofel_rasterizer_render_harmony(NULL, 0, SOFEL_LCD_VERTICAL, 0, 0, buf, sizeof buf, &len, box) ==

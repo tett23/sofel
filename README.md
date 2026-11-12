@@ -23,7 +23,7 @@ OpenType タグから得るスクリプト値は、[ADR 0050](docs/adr/0050-pres
 VARC の輪郭は、部品の表示条件、軸座標、変形を評価して指定位置で描く（[ADR 0067](docs/adr/0067-varc-components.md)）。HarfBuzz との比較には、整数の輪郭 API を保ったまま浮動小数点の描画命令を返す経路を使う。
 
 サブセット化（[ADR 0022](docs/adr/0022-subsetting.md)）は、sfntの組み立てと直列化、オフセットのあふれを解く再配置、glyf系の表、cmap、name、OS/2、post、hdmx、CFF（名前のキーとCIDのキー）、VORG、GDEF、GSUB、GPOS、BASEとレイアウトの閉包、COLR（版0、変化量の表を持たない版1、版1の塗りが残らず版0にできるもの、残す版1の塗りとクリップがすべて静的なもの、軸を固定せず変化量ストアを直接またはマップを介して参照するもの、全軸を既定位置に固定したもの）、CPAL、CBLC、CBDT、sbixとCOLRの閉包、MATHとその閉包、軸を指定しないgvarとGVARの書き出し、glyfとCFF2の可変フォントのすべての軸の既定の値への固定（fvar、avar、STATの読み取りと、CFF2をCFFに変換する `DOWNGRADE_CFF2` を含む）、同じフォントを繰り返しサブセット化するための前処理（`Prepared`）、CFFのcharstringの取り出し、グリフ名での指定（`--glyphs`）と、これらのC ABI（`sofel_subset` など）までを実装し、HarfBuzzのサブセット化のテストのうちこれらの表だけを持つ組でバイト単位で一致する。Golemの使い方（グリフIDと `RETAIN_GIDS`）は、HarfBuzzのテストのフォントのうちこれらの表だけを持つものすべてで `hb-subset` と同じバイト列を出す。軸を指定しない HVAR と VVAR は、複数のItemVariationDataから使う行と領域だけを残し、暗黙・明示の送り幅とサイドベアリングのマップを書ける。明示マップの末尾で繰り返す行番号は1項目にまとめる。軸を指定しないGDEF 1.3のItemVariationStoreは、GSUBのFeatureVariationsが軸範囲の条件だけを持つ場合も含めて、残すキャレット、値の記録、アンカー、MATHの定数・斜体補正・上アクセント・カーニング・組み立てが参照する番号と領域を詰めて書く。参照が0件ならストアを除く。MATHだけをコピーして参照番号を詰め直せない場合とFeatureVariationsを持つGSUBをそのままコピーする場合のGDEFの変化量の表と、軸を固定しないCFF2の変化量の表は、10段階目で書く。
-[ADR 0061](docs/adr/0061-subset-axis-instancing.md) の部分実装では、fvarとavar版1以外の変化量表、レイアウト・色・STATの表を持たないフォントについて、固定した軸を除き、残る軸の範囲と名前つきインスタンスを更新して書く。avar版1がある場合は、既定位置に固定した軸の写像を除き、残る軸の写像を保つ。対象外の表を持つフォントの部分軸固定は、次の VARC の場合を除き引き続き `Unsupported` とする。
+[ADR 0061](docs/adr/0061-subset-axis-instancing.md) の部分実装では、fvarとavar版1以外の変化量表、レイアウト・色の表を持たないフォントについて、固定した軸を除き、残る軸の範囲と名前つきインスタンスを更新して書く。STATがある場合は、指定した軸範囲の外の軸値を除いて残す。avar版1がある場合は、既定位置に固定した軸の写像を除き、残る軸の写像を保つ。対象外の表を持つフォントの部分軸固定は、次の VARC の場合を除き引き続き `Unsupported` とする。
 
 VARC のサブセット化は、残す部品の閉包と参照の再採番、条件と変化量ストアの再配置を行う（[ADR 0067](docs/adr/0067-varc-components.md)）。VARC が参照しない1軸を既定値に固定する場合は、gvar、GDEF、GSUB などの対象表が存在しないか捨てられ、avar が版2でなければ部分軸固定できる。これらの対象表と avar が最初からない場合は、同じ軸を既定値以外に固定するか範囲を指定することもできる。VARC をそのまま写す指定は、グリフ ID を保持し、軸を変えない場合だけ受け付ける。
 
@@ -70,7 +70,7 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-subset`](crates/sofel-subset) | HarfBuzzの `hb-subset` とバイト単位で同じ出力のサブセット化（[ADR 0022](docs/adr/0022-subsetting.md)。書ける表はglyf系、cmap、name、OS/2、post、hdmx、CFF、VORG、GDEF、GSUB、GPOS、BASE、COLR、CPAL、CBLC、CBDT、sbix、MATH、STAT、軸をすべて固定したCFF2など。軸はすべて既定の値に固定できる。前処理（`Prepared`）で同じフォントの計画を速く作れる） |
 | [`sofel-gpu`](crates/sofel-gpu) | 輪郭とカラーグリフの塗りを GPU で描くための RGBA16I レコードに変換し、WGSL、GLSL、MSL、HLSL のシェーダーを提供する（[ADR 0068](docs/adr/0068-vector-and-gpu-output.md)） |
 | [`sofel-vector`](crates/sofel-vector) | 配置した輪郭と COLRv0 のレイヤーを SVG または PDF に書く。ビットマップグリフを埋め込み、PDF では COLRv1 の線形・放射・スイープグラデーションを描画する。SVG では COLRv1 の線形・放射・スイープグラデーションとクリップ付きの PNG にも対応する（[ADR 0068](docs/adr/0068-vector-and-gpu-output.md)） |
-| [`sofel-raster`](crates/sofel-raster) | FreeTypeのsmoothのラスタライザと同じ計算で、8bitのアンチエイリアスの画像を作る。COLRv0の層をFreeTypeと同じ整数の計算でBGRAの画像に重ねる（`blend_layer`）。Harmony の水平・垂直 LCD のカバレッジも取得できる |
+| [`sofel-raster`](crates/sofel-raster) | FreeTypeのsmoothのラスタライザと同じ計算で、8bitのアンチエイリアスの画像を作る。COLRv0の層をFreeTypeと同じ整数の計算でBGRAの画像に重ねる（`blend_layer`）。水平・垂直 LCD は Harmony と5タップフィルタに対応する |
 | [`sofel-woff`](crates/sofel-woff) | 単一フェイスの sfnt を WOFF・WOFF2 に変換するライブラリとコマンド |
 | [`sofel-cli`](crates/sofel-cli) | 小さな道具（`sofel-validate`、`sofel-render`、`sofel-paint`、`sofel-shape`、`sofel-subset`） |
 | [`sofel-capi`](crates/sofel-capi) | C ABI（ヘッダは [`sofel.h`](crates/sofel-capi/include/sofel.h)、[ADR 0015](docs/adr/0015-c-abi.md)） |
@@ -147,7 +147,7 @@ HarfBuzzの `hb-subset` と同じオプションでサブセット化する（[A
 軸を固定しない場合も、BASE の座標に VariationIndex の参照がなければ、使われない変化量の表を除く。
 適合テストで出力が違えば、表ごとに最初の差の位置を示す。片方だけにある表は、どちらに欠けているかも示す。
 
-軸を固定しない CFF2 は `--desubroutinize` を指定するとサブセット化できる。指定しない場合は、残すグリフがサブルーチンを呼ばなければ未使用のサブルーチンを除き、呼ぶ場合は即値の番号で呼ぶ global/local のサブルーチンを必要な分だけ残して番号を詰める。`blend`、`vsindex` と VariationStore を残す。ヒントを保持する場合は `hintmask` と `cntrmask` のデータバイトを解釈器に従って読み飛ばす。`--no-hinting` では、ヒントが描画命令より前にあり、同じ charstring 内で先行する call がなく、引数が同じ charstring 内の連続した数値だけで、使用するサブルーチンがヒント除去後も空にならず、`blend`、`vsindex`、`dotsection` を含まない場合に限ってヒントを除く。同じサブルーチンのマスク長が呼び出しごとに異なる場合は、まだ対応していない。
+軸を固定しない CFF2 は `--desubroutinize` を指定するとサブセット化できる。指定しない場合は、残すグリフがサブルーチンを呼ばなければ未使用のサブルーチンを除き、呼ぶ場合は即値の番号で呼ぶ global/local のサブルーチンを必要な分だけ残して番号を詰める。`blend`、`vsindex` と VariationStore を残す。ヒントを保持する場合は `hintmask` と `cntrmask` のデータバイトを解釈器に従って読み飛ばす。`--no-hinting` では、ヒントが描画命令より前にあり、同じ charstring 内で先行する call がなく、引数が同じ charstring 内の連続した数値だけで、使用するサブルーチンがヒント除去後も空にならず、`blend`、`vsindex`、`dotsection` を含まない場合に限ってヒントを除く。サブルーチン先頭の stem に対しては、呼び出し直前に積んだ連続する数値の引数も除く。命令が空か `return` だけのサブルーチンは、その呼び出しとともに除く。同じサブルーチンのマスク長が呼び出しごとに異なる場合は、まだ対応していない。
 
 ```sh
 sofel-subset --font-file=Roboto.ttf --unicodes=41-5A -o out.ttf
