@@ -261,6 +261,24 @@ struct HintPoint {
     on_curve: bool,
 }
 
+fn line_vector(a: [i64; 2], b: [i64; 2], perpendicular: bool) -> [i64; 2] {
+    if a == b {
+        return [16384, 0];
+    }
+    let dx = a[0].wrapping_sub(b[0]);
+    let dy = a[1].wrapping_sub(b[1]);
+    let [x, y] = if perpendicular {
+        [dy.wrapping_neg(), dx]
+    } else {
+        [dx, dy]
+    };
+    let (unit, _) = crate::slot_synth::normalize(sofel_geom::Point {
+        x: x as i32,
+        y: y as i32,
+    });
+    [i64::from(unit.x / 4), i64::from(unit.y / 4)]
+}
+
 fn project([x, y]: [i64; 2], vector: [i64; 2]) -> i64 {
     let dot = x
         .wrapping_mul(vector[0])
@@ -772,6 +790,33 @@ impl Interpreter {
                     }
                     if op & 2 == 0 {
                         self.freedom = axis;
+                    }
+                }
+                op @ (0x06..=0x09 | 0x86 | 0x87) => {
+                    let second = stack.pop().ok_or(Error::StackUnderflow)? as u16;
+                    let first = stack.pop().ok_or(Error::StackUnderflow)? as u16;
+                    let Some((a, b)) = self.points[usize::from(self.zones[1])]
+                        .get(usize::from(first))
+                        .zip(self.points[usize::from(self.zones[2])].get(usize::from(second)))
+                    else {
+                        continue;
+                    };
+                    let dual = matches!(op, 0x86 | 0x87);
+                    let perpendicular = op & 1 != 0;
+                    let current = line_vector(
+                        a.current,
+                        b.current,
+                        perpendicular && (!dual || a.original != b.original),
+                    );
+                    if matches!(op, 0x08 | 0x09) {
+                        self.freedom = current;
+                    } else {
+                        self.projection = current;
+                        self.dual_projection = if dual {
+                            line_vector(a.original, b.original, perpendicular)
+                        } else {
+                            current
+                        };
                     }
                 }
                 op @ (0x0a | 0x0b) => {
@@ -1977,4 +2022,43 @@ fn adr0064_i1_md_uses_current_original_or_unscaled_points_and_selected_zones() {
         vm.execute(&[op], &mut stack, 2).unwrap();
         assert_eq!(stack, [expected]);
     }
+}
+
+#[test]
+fn adr0064_i1_line_vectors_use_zones_rotation_and_original_positions() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    vm.zones = [1, 0, 1];
+    vm.points[0].push(HintPoint {
+        current: [3, 4],
+        original: [0, 4],
+        ..HintPoint::default()
+    });
+    vm.points[1].push(HintPoint::default());
+    for (op, expected) in [
+        (0x06, [9830, 13107]),
+        (0x07, [-13107, 9830]),
+        (0x08, [9830, 13107]),
+        (0x09, [-13107, 9830]),
+        (0x86, [9830, 13107]),
+        (0x87, [-13107, 9830]),
+    ] {
+        vm.execute(&[op], &mut alloc::vec![0, 0], 2).unwrap();
+        if matches!(op, 0x08 | 0x09) {
+            assert_eq!(vm.freedom, expected);
+        } else {
+            assert_eq!(vm.projection, expected);
+            assert_eq!(
+                vm.dual_projection,
+                match op {
+                    0x86 => [0, 16384],
+                    0x87 => [-16384, 0],
+                    _ => expected,
+                }
+            );
+        }
+    }
+    vm.points[0][0].original = [0, 0];
+    vm.execute(&[0x87], &mut alloc::vec![0, 0], 2).unwrap();
+    assert_eq!(vm.dual_projection, [16384, 0]);
+    assert_eq!(vm.projection, [9830, 13107]);
 }
