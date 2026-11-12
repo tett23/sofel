@@ -773,11 +773,25 @@ pub(crate) fn one_lookup(
             },
         );
     }
-    let mut first = None;
+    // Null extension offsets have type 0 in `Lookup::extension_types_agree`.
+    // Keep the diagnostic walk aligned with that reader invariant.
+    let mut first = (ty == spec.extension).then(|| lookup.extension_type(0, spec.extension));
     for i in 0..n {
         let field = at.saturating_add(6).saturating_add(i.saturating_mul(2));
         let offset = w.uint(field, 2);
-        if offset == 0 || !w.spend(1) {
+        if offset == 0 {
+            if ty == spec.extension && first.is_some_and(|f| f != 0) {
+                w.emit(
+                    field,
+                    Kind::ExtensionTypeMismatch {
+                        expected: u32::from(first.unwrap_or(0)),
+                        found: 0,
+                    },
+                );
+            }
+            continue;
+        }
+        if !w.spend(1) {
             continue;
         }
         let sub = at.saturating_add(to_usize(offset));

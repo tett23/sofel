@@ -845,6 +845,26 @@ fn gsub_null_extension_allows_reverse_chain_single() {
 }
 
 #[test]
+fn gsub_fuzz_regression_lookup_offset_not_silent() {
+    // CI fuzz (gsub), run 43139595946, 43-byte artifact with a mark-set prefix.
+    let input = [
+        42, 61, 0, 1, 0, 0, 0, 6, 0, 0, 0, 4, 0, 14, 0, 0, 0, 4, 0, 0, 0, 7, 0, 1, 0, 5, 0, 0, 0,
+        0, 0, 2, 0, 0, 0, 0, 0, 78, 0, 0, 0, 0, 0,
+    ];
+    let table = &input[2..];
+    let mut diagnostics = Vec::new();
+    gsub::validate(table, Some(0x2a3d), &mut |d| diagnostics.push(d));
+    assert!(diagnostics.iter().any(|d| matches!(
+        d.kind,
+        sofel_read::Kind::ExtensionTypeMismatch {
+            expected: 0,
+            found: 5
+        }
+    )));
+    assert!(has_error(|r| gsub::validate(table, Some(0x2a3d), r)) || gsub_walks(table));
+}
+
+#[test]
 fn layout_table_invariants() {
     let mut rng = XorShift(0x5EED_0020_0020_0020);
     let (gsub_t, gpos_t, gdef_t) = (gsub_base(), gpos_base(), gdef_base());
@@ -867,4 +887,12 @@ fn layout_table_invariants() {
             assert!(gdef_walks(&d), "{d:02x?}");
         }
     }
+}
+
+#[test]
+fn gpos_mixed_extension_offsets_report_or_walk() {
+    let table = [
+        0, 1, 0, 1, 0, 0, 0, 2, 0, 6, 0, 0, 0, 9, 0, 1, 0, 3, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1, 1,
+    ];
+    assert!(has_error(|report| gpos::validate(&table, Some(0x07c2), report)) || gpos_walks(&table));
 }

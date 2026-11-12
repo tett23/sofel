@@ -347,6 +347,387 @@ fn gdef_store_with_gpos_variation_index_remains_unsupported() {
     assert_eq!(out_table(&out, b"GPOS"), out_table(&data, b"GPOS"));
 }
 
+fn singlepos_with_variation_index(format: u16) -> Vec<u8> {
+    let device = |inner| Buf::new().u16(0).u16(inner).u16(0x8000).done();
+    let single = if format == 1 {
+        link(
+            Buf::new().u16(1).u16(0).u16(0x0040).u16(0).done(),
+            vec![(2, 2, coverage1(&[g('B'), g('C')])), (6, 2, device(2))],
+        )
+    } else {
+        link(
+            Buf::new()
+                .u16(2)
+                .u16(0)
+                .u16(0x0040)
+                .u16(2)
+                .u16(0)
+                .u16(0)
+                .done(),
+            vec![
+                (2, 2, coverage1(&[g('A'), g('B')])),
+                (8, 2, device(1)),
+                (10, 2, device(2)),
+            ],
+        )
+    };
+    layout_table(&[(b"kern", &[0])], &[(1, single)])
+}
+
+#[test]
+fn gpos_single1_variation_index_retained_after_glyph_filter_is_remapped() {
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[2])),
+        (b"GPOS", singlepos_with_variation_index(1)),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("BC")).unwrap();
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    let store = sofel_font::read::gdef::Gdef::new(&gdef)
+        .unwrap()
+        .variation_store()
+        .unwrap()
+        .unwrap();
+    assert_eq!(store.item_data(0).unwrap().item_count, 1);
+    let gpos = out_table(&out, b"GPOS").unwrap();
+    assert!(gpos.windows(6).any(|w| w == [0, 0, 0, 0, 0x80, 0]));
+}
+
+#[test]
+fn gpos_single2_variation_index_uses_only_kept_value_record() {
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[2])),
+        (b"GPOS", singlepos_with_variation_index(2)),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("B")).unwrap();
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    let store = sofel_font::read::gdef::Gdef::new(&gdef)
+        .unwrap()
+        .variation_store()
+        .unwrap()
+        .unwrap();
+    assert_eq!(store.item_data(0).unwrap().item_count, 1);
+    let gpos = out_table(&out, b"GPOS").unwrap();
+    assert!(gpos.windows(6).any(|w| w == [0, 0, 0, 0, 0x80, 0]));
+}
+
+#[test]
+fn gpos_single_variation_index_is_removed_by_no_hinting() {
+    for format in [1, 2] {
+        let data = font_with(vec![
+            (b"GDEF", gdef_with_referenced_store(&[2])),
+            (b"GPOS", singlepos_with_variation_index(format)),
+        ]);
+        let font = Font::new(&data, 0).unwrap();
+        let input = chars("B").with_flags(Flags::NO_HINTING);
+        let out = subset(&font, &input).unwrap();
+        let gpos = out_table(&out, b"GPOS").unwrap();
+        assert!(!gpos.windows(6).any(|w| w == [0, 0, 0, 0, 0x80, 0]));
+    }
+}
+
+#[test]
+fn copied_gdef_uses_single_index_remap_like_harfbuzz() {
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[2])),
+        (b"GPOS", singlepos_with_variation_index(1)),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let input = chars("BC").map_set(SetKind::NoSubsetTables, |set| {
+        set.add(Tag::new(b"GDEF").to_u32());
+    });
+    let out = subset(&font, &input).unwrap();
+    assert_eq!(out_table(&out, b"GDEF"), out_table(&data, b"GDEF"));
+    let gpos = out_table(&out, b"GPOS").unwrap();
+    assert!(gpos.windows(6).any(|w| w == [0, 0, 0, 0, 0x80, 0]));
+}
+
+#[test]
+fn gpos_single_variation_index_combines_with_gdef_caret() {
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[0])),
+        (b"GPOS", singlepos_with_variation_index(1)),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("ABC")).unwrap();
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    let store = sofel_font::read::gdef::Gdef::new(&gdef)
+        .unwrap()
+        .variation_store()
+        .unwrap()
+        .unwrap();
+    assert_eq!(store.item_data(0).unwrap().item_count, 2);
+    let gpos = out_table(&out, b"GPOS").unwrap();
+    assert!(gpos.windows(6).any(|w| w == [0, 0, 0, 1, 0x80, 0]));
+}
+
+#[test]
+fn gpos_single_variation_index_drops_with_lookup_or_glyph() {
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[2])),
+        (b"GPOS", singlepos_with_variation_index(1)),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    assert!(out_table(&subset(&font, &chars("D")).unwrap(), b"GDEF").is_none());
+    let input = chars("BC").map_set(SetKind::LayoutFeatures, |set| {
+        set.clear();
+        set.add(Tag::new(b"liga").to_u32());
+    });
+    assert!(out_table(&subset(&font, &input).unwrap(), b"GDEF").is_none());
+}
+
+#[test]
+fn gpos_cursive_variation_index_is_remapped() {
+    let device = Buf::new().u16(0).u16(2).u16(0x8000).done();
+    let anchor = link(
+        Buf::new().u16(3).i16(0).i16(0).u16(0).u16(0).done(),
+        vec![(6, 2, device)],
+    );
+    let cursive = link(
+        Buf::new().u16(1).u16(0).u16(1).u16(0).u16(0).done(),
+        vec![(2, 2, coverage1(&[g('B')])), (6, 2, anchor)],
+    );
+    let gpos = layout_table(&[(b"curs", &[0])], &[(3, cursive)]);
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[2])),
+        (b"GPOS", gpos),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("B")).unwrap();
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    let store = sofel_font::read::gdef::Gdef::new(&gdef)
+        .unwrap()
+        .variation_store()
+        .unwrap()
+        .unwrap();
+    assert_eq!(store.item_data(0).unwrap().item_count, 1);
+}
+
+fn anchor3_varidx(inner: u16) -> Vec<u8> {
+    let device = Buf::new().u16(0).u16(inner).u16(0x8000).done();
+    link(
+        Buf::new().u16(3).i16(10).i16(20).u16(0).u16(0).done(),
+        vec![(6, 2, device)],
+    )
+}
+
+fn anchor3_both_varidx(x: u16, y: u16) -> Vec<u8> {
+    link(
+        Buf::new().u16(3).i16(10).i16(20).u16(0).u16(0).done(),
+        vec![
+            (6, 2, Buf::new().u16(0).u16(x).u16(0x8000).done()),
+            (8, 2, Buf::new().u16(0).u16(y).u16(0x8000).done()),
+        ],
+    )
+}
+
+fn gpos_anchor_lookup(kind: u16) -> Vec<u8> {
+    let subtable = if kind == 3 {
+        link(
+            Buf::new()
+                .u16(1)
+                .u16(0)
+                .u16(2)
+                .u16(0)
+                .u16(0)
+                .u16(0)
+                .u16(0)
+                .done(),
+            vec![
+                (2, 2, coverage1(&[g('A'), g('B')])),
+                (6, 2, anchor3_varidx(1)),
+                (10, 2, anchor3_varidx(2)),
+            ],
+        )
+    } else {
+        let marks = link(
+            Buf::new().u16(2).u16(0).u16(0).u16(0).u16(0).done(),
+            vec![(4, 2, anchor3_varidx(0)), (8, 2, anchor3_varidx(1))],
+        );
+        let bases = if kind == 5 {
+            let attach = |inner| {
+                link(
+                    Buf::new().u16(1).u16(0).done(),
+                    vec![(2, 2, anchor3_varidx(inner))],
+                )
+            };
+            link(
+                Buf::new().u16(2).u16(0).u16(0).done(),
+                vec![(2, 2, attach(0)), (4, 2, attach(2))],
+            )
+        } else {
+            link(
+                Buf::new().u16(2).u16(0).u16(0).done(),
+                vec![(2, 2, anchor3_varidx(0)), (4, 2, anchor3_varidx(2))],
+            )
+        };
+        link(
+            Buf::new().u16(1).u16(0).u16(0).u16(1).u16(0).u16(0).done(),
+            vec![
+                (2, 2, coverage1(&[g('A'), g('B')])),
+                (4, 2, coverage1(&[g('C'), g('D')])),
+                (8, 2, marks),
+                (10, 2, bases),
+            ],
+        )
+    };
+    let feature = if kind == 3 { b"curs" } else { b"mark" };
+    layout_table(&[(feature, &[0])], &[(kind, subtable)])
+}
+
+fn mark_base_two_classes() -> Vec<u8> {
+    let marks = link(
+        Buf::new().u16(2).u16(0).u16(0).u16(1).u16(0).done(),
+        vec![(4, 2, anchor3_varidx(0)), (8, 2, anchor3_varidx(1))],
+    );
+    let bases = link(
+        Buf::new().u16(2).u16(0).u16(0).u16(0).u16(0).done(),
+        vec![(2, 2, anchor3_varidx(0)), (8, 2, anchor3_varidx(2))],
+    );
+    let subtable = link(
+        Buf::new().u16(1).u16(0).u16(0).u16(2).u16(0).u16(0).done(),
+        vec![
+            (2, 2, coverage1(&[g('A'), g('B')])),
+            (4, 2, coverage1(&[g('C'), g('D')])),
+            (8, 2, marks),
+            (10, 2, bases),
+        ],
+    );
+    layout_table(&[(b"mark", &[0])], &[(4, subtable)])
+}
+
+fn assert_anchor_subset(kind: u16, expected_items: u16) {
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[0])),
+        (b"GPOS", gpos_anchor_lookup(kind)),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("BD")).unwrap();
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    let store = sofel_font::read::gdef::Gdef::new(&gdef)
+        .unwrap()
+        .variation_store()
+        .unwrap()
+        .unwrap();
+    assert_eq!(store.item_data(0).unwrap().item_count, expected_items);
+    let gpos = out_table(&out, b"GPOS").unwrap();
+    assert!(gpos.windows(6).any(|w| w == [0, 0, 0, 0, 0x80, 0]));
+}
+
+#[test]
+fn gpos_cursive_anchor_variation_index_follows_kept_glyph() {
+    assert_anchor_subset(3, 1);
+}
+
+#[test]
+fn gpos_cursive_anchor_variation_index_remaps_both_devices() {
+    let cursive = link(
+        Buf::new().u16(1).u16(0).u16(1).u16(0).u16(0).done(),
+        vec![
+            (2, 2, coverage1(&[g('B')])),
+            (6, 2, anchor3_both_varidx(2, 1)),
+        ],
+    );
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[0])),
+        (b"GPOS", layout_table(&[(b"curs", &[0])], &[(3, cursive)])),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("B")).unwrap();
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    let store = sofel_font::read::gdef::Gdef::new(&gdef)
+        .unwrap()
+        .variation_store()
+        .unwrap()
+        .unwrap();
+    assert_eq!(store.item_data(0).unwrap().item_count, 2);
+    let gpos = out_table(&out, b"GPOS").unwrap();
+    assert!(gpos.windows(6).any(|w| w == [0, 0, 0, 1, 0x80, 0]));
+    assert!(gpos.windows(6).any(|w| w == [0, 0, 0, 0, 0x80, 0]));
+}
+
+#[test]
+fn gpos_mark_base_anchor_variation_index_follows_kept_rows() {
+    assert_anchor_subset(4, 2);
+}
+
+#[test]
+fn gpos_mark_lig_anchor_variation_index_follows_kept_rows() {
+    assert_anchor_subset(5, 2);
+}
+
+#[test]
+fn gpos_mark_mark_anchor_variation_index_follows_kept_rows() {
+    assert_anchor_subset(6, 2);
+}
+
+#[test]
+fn gpos_mark_base_anchor_variation_index_follows_kept_class_column() {
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[0])),
+        (b"GPOS", mark_base_two_classes()),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("BD")).unwrap();
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    let store = sofel_font::read::gdef::Gdef::new(&gdef)
+        .unwrap()
+        .variation_store()
+        .unwrap()
+        .unwrap();
+    assert_eq!(store.item_data(0).unwrap().item_count, 2);
+}
+
+#[test]
+fn gpos_anchor_variation_index_survives_no_hinting() {
+    for kind in [3, 4, 5, 6] {
+        let data = font_with(vec![
+            (b"GDEF", gdef_with_referenced_store(&[0])),
+            (b"GPOS", gpos_anchor_lookup(kind)),
+        ]);
+        let font = Font::new(&data, 0).unwrap();
+        let out = subset(&font, &chars("BD").with_flags(Flags::NO_HINTING)).unwrap();
+        let gpos = out_table(&out, b"GPOS").unwrap();
+        assert!(gpos.windows(6).any(|w| w == [0, 0, 0, 0, 0x80, 0]));
+    }
+}
+
+#[test]
+fn copied_gdef_uses_anchor_index_remap_like_harfbuzz() {
+    for kind in [3, 4, 5, 6] {
+        let data = font_with(vec![
+            (b"GDEF", gdef_with_referenced_store(&[0])),
+            (b"GPOS", gpos_anchor_lookup(kind)),
+        ]);
+        let font = Font::new(&data, 0).unwrap();
+        let input = chars("BD").map_set(SetKind::NoSubsetTables, |set| {
+            set.add(Tag::new(b"GDEF").to_u32());
+        });
+        let out = subset(&font, &input).unwrap();
+        assert_eq!(out_table(&out, b"GDEF"), out_table(&data, b"GDEF"));
+        let gpos = out_table(&out, b"GPOS").unwrap();
+        assert!(gpos.windows(6).any(|w| w == [0, 0, 0, 0, 0x80, 0]));
+    }
+}
+
+#[test]
+fn gpos_anchor_variation_index_drops_with_lookup_or_glyph() {
+    for kind in [3, 4, 5, 6] {
+        let data = font_with(vec![
+            (b"GDEF", gdef_with_referenced_store(&[0])),
+            (b"GPOS", gpos_anchor_lookup(kind)),
+        ]);
+        let font = Font::new(&data, 0).unwrap();
+        let filtered_lookup = chars("BD").map_set(SetKind::LayoutFeatures, |set| {
+            set.clear();
+            set.add(Tag::new(b"liga").to_u32());
+        });
+        assert!(out_table(&subset(&font, &filtered_lookup).unwrap(), b"GDEF").is_none());
+        assert!(out_table(&subset(&font, &chars("E")).unwrap(), b"GDEF").is_none());
+    }
+}
+
 #[test]
 fn gpos_pair_variation_index_retained_after_layout_filter_is_remapped() {
     // GDEF's caret on A is dropped. PairPos on B+C keeps row 2.
@@ -537,9 +918,9 @@ fn gpos_pair_variation_index_combines_with_gdef_caret() {
 }
 
 #[test]
-fn gdef_store_with_math_variation_index_remains_unsupported() {
-    let gdef = gdef_with_unused_store(class_def2(&[(1, 5, 1)]));
-    let varidx = Buf::new().u16(0).u16(0).u16(0x8000).done();
+fn gdef_store_with_math_constant_variation_index_is_remapped() {
+    let gdef = gdef_with_referenced_store(&[0]);
+    let varidx = Buf::new().u16(0).u16(2).u16(0x8000).done();
     let constants = link(vec![0; 214], vec![(10, 2, varidx)]);
     let math = link(
         Buf::new().u32(0x0001_0000).u16(0).u16(0).u16(0).done(),
@@ -547,9 +928,17 @@ fn gdef_store_with_math_variation_index_remains_unsupported() {
     );
     let data = font_with(vec![(b"GDEF", gdef), (b"MATH", math)]);
     let font = Font::new(&data, 0).unwrap();
-    assert!(
-        matches!(subset(&font, &chars("A")), Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF"))
-    );
+    let out = subset(&font, &chars("A")).unwrap();
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    let store = sofel_font::read::gdef::Gdef::new(&gdef)
+        .unwrap()
+        .variation_store()
+        .unwrap()
+        .unwrap();
+    assert_eq!(store.item_data(0).unwrap().item_count, 2);
+    let math = out_table(&out, b"MATH").unwrap();
+    let device = follow(follow(&math, 4), 10);
+    assert_eq!(&device[..6], &[0, 0, 0, 1, 0x80, 0]);
     let copied_math_without_gdef = chars("A")
         .map_set(SetKind::NoSubsetTables, |set| {
             set.add(Tag::new(b"MATH").to_u32())
@@ -560,6 +949,272 @@ fn gdef_store_with_math_variation_index_remains_unsupported() {
     let out = subset(&font, &copied_math_without_gdef).unwrap();
     assert!(out_table(&out, b"GDEF").is_none());
     assert_eq!(out_table(&out, b"MATH"), out_table(&data, b"MATH"));
+}
+
+#[test]
+fn adr0022_negative_gpos_advance_is_not_a_variation_index() {
+    let gdef = gdef_with_unused_store(class_def2(&[(1, 5, 1)]));
+    let position = link(
+        Buf::new().u16(1).u16(0).u16(4).i16(i16::MIN).done(),
+        vec![(2, 2, coverage1(&[g('A')]))],
+    );
+    let gpos = layout_table(&[(b"kern", &[0])], &[(1, position)]);
+    let data = font_with(vec![(b"GDEF", gdef), (b"GPOS", gpos)]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("A")).unwrap();
+    let gpos = out_table(&out, b"GPOS").unwrap();
+    let lookup_list = follow(&gpos, 8);
+    let lookup = follow(lookup_list, 2);
+    let single = follow(lookup, 6);
+    assert_eq!(u16_at(single, 6), 0x8000);
+    assert_eq!(
+        &out_table(&out, b"GDEF").unwrap()[..4],
+        &0x10000u32.to_be_bytes()
+    );
+}
+
+#[test]
+fn adr0022_gsub_axis_range_can_survive_gdef_store_subsetting() {
+    let gdef = gdef_with_unused_store(class_def2(&[(1, 5, 1)]));
+    let mut gsub = gsubgpos(
+        0x0001_0001,
+        script_list(vec![(b"DFLT", script(lang_sys(0xffff, &[0]), vec![]))]),
+        feature_list(&[(b"liga", &[0])]),
+        lookup_list(
+            vec![
+                lookup(1, 0, vec![single(&[1], 1)], None),
+                lookup(1, 0, vec![single(&[1], 2)], None),
+            ],
+            false,
+        ),
+    );
+    let fv_at = u32::try_from(gsub.len()).unwrap();
+    gsub[10..14].copy_from_slice(&fv_at.to_be_bytes());
+    let condition = Buf::new().u16(1).u16(0).i16(0).i16(0x4000).done();
+    let conditions = link(Buf::new().u16(1).u32(0).done(), vec![(2, 4, condition)]);
+    let replacement = Buf::new().u16(0).u16(1).u16(1).done();
+    let substitutions = link(
+        Buf::new().u32(0x10000).u16(1).u16(0).u32(0).done(),
+        vec![(8, 4, replacement)],
+    );
+    let fv = link(
+        Buf::new().u32(0x10000).u32(1).u32(0).u32(0).done(),
+        vec![(8, 4, conditions), (12, 4, substitutions)],
+    );
+    gsub.extend(fv);
+    let data = font_with(vec![(b"GDEF", gdef), (b"GSUB", gsub)]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("ABC")).unwrap();
+    let gsub = out_table(&out, b"GSUB").unwrap();
+    let offset = u32::from_be_bytes(gsub[10..14].try_into().unwrap()) as usize;
+    let view =
+        sofel_font::read::feature_variations::FeatureVariations::new(&gsub[offset..]).unwrap();
+    let record = view.record(0).unwrap();
+    let set = record.conditions().unwrap().unwrap();
+    assert_eq!(set.condition(0).unwrap().unwrap().format(), 1);
+    assert_eq!(record.substitutions().unwrap().unwrap().len(), 1);
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    assert_eq!(&gdef[..4], &0x10000u32.to_be_bytes());
+}
+
+#[test]
+fn gdef_store_with_invalid_math_constant_index_is_rejected() {
+    let gdef = gdef_with_referenced_store(&[0]);
+    let varidx = Buf::new().u16(0).u16(3).u16(0x8000).done();
+    let constants = link(vec![0; 214], vec![(10, 2, varidx)]);
+    let math = link(
+        Buf::new().u32(0x0001_0000).u16(0).u16(0).u16(0).done(),
+        vec![(4, 2, constants)],
+    );
+    let data = font_with(vec![(b"GDEF", gdef), (b"MATH", math)]);
+    let font = Font::new(&data, 0).unwrap();
+    assert!(matches!(
+        subset(&font, &chars("A")),
+        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF")
+    ));
+}
+
+#[test]
+fn gdef_store_with_math_glyph_info_variation_index_follows_kept_glyphs() {
+    let gdef = gdef_with_referenced_store(&[0]);
+    let first_varidx = Buf::new().u16(0).u16(1).u16(0x8000).done();
+    let second_varidx = Buf::new().u16(0).u16(2).u16(0x8000).done();
+    let value_table = link(
+        Buf::new()
+            .u16(0)
+            .u16(2)
+            .i16(10)
+            .u16(0)
+            .i16(20)
+            .u16(0)
+            .done(),
+        vec![
+            (0, 2, coverage1(&[1, 2])),
+            (6, 2, first_varidx),
+            (10, 2, second_varidx),
+        ],
+    );
+    let glyph_info = link(vec![0; 8], vec![(0, 2, value_table)]);
+    let math = link(
+        Buf::new().u32(0x0001_0000).u16(0).u16(0).u16(0).done(),
+        vec![(6, 2, glyph_info)],
+    );
+    let data = font_with(vec![(b"GDEF", gdef), (b"MATH", math)]);
+    let font = Font::new(&data, 0).unwrap();
+    for (text, retained_index, item_count) in [("A", 1, 2), ("B", 0, 1)] {
+        let out = subset(&font, &chars(text)).unwrap();
+        let gdef = out_table(&out, b"GDEF").unwrap();
+        let store = sofel_font::read::gdef::Gdef::new(&gdef)
+            .unwrap()
+            .variation_store()
+            .unwrap()
+            .unwrap();
+        assert_eq!(store.item_data(0).unwrap().item_count, item_count);
+        let math = out_table(&out, b"MATH").unwrap();
+        let info = follow(&math, 6);
+        let values = follow(info, 0);
+        assert_eq!(u16_at(values, 2), 1);
+        let device = follow(values, 6);
+        assert_eq!(&device[..6], &[0, 0, 0, retained_index, 0x80, 0]);
+    }
+}
+
+#[test]
+fn gdef_store_with_math_top_accent_variation_index_is_remapped() {
+    let gdef = gdef_with_referenced_store(&[0]);
+    let varidx = Buf::new().u16(0).u16(2).u16(0x8000).done();
+    let value_table = link(
+        Buf::new().u16(0).u16(1).i16(20).u16(0).done(),
+        vec![(0, 2, coverage1(&[2])), (6, 2, varidx)],
+    );
+    let glyph_info = link(vec![0; 8], vec![(2, 2, value_table)]);
+    let math = link(
+        Buf::new().u32(0x0001_0000).u16(0).u16(0).u16(0).done(),
+        vec![(6, 2, glyph_info)],
+    );
+    let data = font_with(vec![(b"GDEF", gdef), (b"MATH", math)]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("B")).unwrap();
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    let store = sofel_font::read::gdef::Gdef::new(&gdef)
+        .unwrap()
+        .variation_store()
+        .unwrap()
+        .unwrap();
+    assert_eq!(store.item_data(0).unwrap().item_count, 1);
+    let math = out_table(&out, b"MATH").unwrap();
+    let device = follow(follow(follow(&math, 6), 2), 6);
+    assert_eq!(&device[..6], &[0, 0, 0, 0, 0x80, 0]);
+}
+
+#[test]
+fn gdef_store_with_math_kern_variation_index_is_remapped() {
+    let gdef = gdef_with_referenced_store(&[0]);
+    let varidx = Buf::new().u16(0).u16(2).u16(0x8000).done();
+    let kern = link(
+        Buf::new().u16(0).i16(10).u16(0).done(),
+        vec![(4, 2, varidx)],
+    );
+    let dropped_varidx = Buf::new().u16(0).u16(1).u16(0x8000).done();
+    let second_kern = link(
+        Buf::new().u16(0).i16(20).u16(0).done(),
+        vec![(4, 2, dropped_varidx)],
+    );
+    let kern_info = link(
+        Buf::new()
+            .u16(0)
+            .u16(2)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .done(),
+        vec![
+            (0, 2, coverage1(&[1, 2])),
+            (4, 2, kern),
+            (12, 2, second_kern),
+        ],
+    );
+    let glyph_info = link(vec![0; 8], vec![(6, 2, kern_info)]);
+    let math = link(
+        Buf::new().u32(0x0001_0000).u16(0).u16(0).u16(0).done(),
+        vec![(6, 2, glyph_info)],
+    );
+    let data = font_with(vec![(b"GDEF", gdef), (b"MATH", math)]);
+    let font = Font::new(&data, 0).unwrap();
+    for (text, retained_index, item_count) in [("A", 1, 2), ("B", 0, 1)] {
+        let out = subset(&font, &chars(text)).unwrap();
+        let gdef = out_table(&out, b"GDEF").unwrap();
+        let store = sofel_font::read::gdef::Gdef::new(&gdef)
+            .unwrap()
+            .variation_store()
+            .unwrap()
+            .unwrap();
+        assert_eq!(store.item_data(0).unwrap().item_count, item_count);
+        let math = out_table(&out, b"MATH").unwrap();
+        let device = follow(follow(follow(follow(&math, 6), 6), 4), 4);
+        assert_eq!(&device[..6], &[0, 0, 0, retained_index, 0x80, 0]);
+    }
+}
+
+#[test]
+fn gdef_store_with_math_assembly_variation_index_is_remapped() {
+    let gdef = gdef_with_referenced_store(&[0]);
+    let varidx = Buf::new().u16(0).u16(2).u16(0x8000).done();
+    let assembly = link(
+        Buf::new().i16(10).u16(0).u16(0).done(),
+        vec![(2, 2, varidx)],
+    );
+    let construction = link(Buf::new().u16(0).u16(0).done(), vec![(0, 2, assembly)]);
+    let second_varidx = Buf::new().u16(0).u16(1).u16(0x8000).done();
+    let second_assembly = link(
+        Buf::new().i16(20).u16(0).u16(0).done(),
+        vec![(2, 2, second_varidx)],
+    );
+    let second_construction = link(
+        Buf::new().u16(0).u16(0).done(),
+        vec![(0, 2, second_assembly)],
+    );
+    let variants = link(
+        Buf::new()
+            .u16(0)
+            .u16(0)
+            .u16(0)
+            .u16(1)
+            .u16(1)
+            .u16(0)
+            .u16(0)
+            .done(),
+        vec![
+            (2, 2, coverage1(&[1])),
+            (4, 2, coverage1(&[2])),
+            (10, 2, construction),
+            (12, 2, second_construction),
+        ],
+    );
+    let math = link(
+        Buf::new().u32(0x0001_0000).u16(0).u16(0).u16(0).done(),
+        vec![(8, 2, variants)],
+    );
+    let data = font_with(vec![(b"GDEF", gdef), (b"MATH", math)]);
+    let font = Font::new(&data, 0).unwrap();
+    for (text, retained_index, item_count) in [("A", 1, 2), ("B", 0, 1)] {
+        let out = subset(&font, &chars(text)).unwrap();
+        let gdef = out_table(&out, b"GDEF").unwrap();
+        let store = sofel_font::read::gdef::Gdef::new(&gdef)
+            .unwrap()
+            .variation_store()
+            .unwrap()
+            .unwrap();
+        assert_eq!(store.item_data(0).unwrap().item_count, item_count);
+        let math = out_table(&out, b"MATH").unwrap();
+        let device = follow(follow(follow(follow(&math, 8), 10), 0), 2);
+        assert_eq!(&device[..6], &[0, 0, 0, retained_index, 0x80, 0]);
+    }
 }
 
 #[test]
