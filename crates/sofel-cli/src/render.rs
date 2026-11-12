@@ -56,20 +56,25 @@ struct Args {
     no_bitmap: bool,
     color: bool,
     palette: u16,
+    palette_given: bool,
     target: Target,
+    features: Vec<sofel_shape::Feature>,
     file: OsString,
 }
 
 enum Target {
     Glyph(u32),
     Char(u32),
+    Text(String),
+    TextFile(OsString),
 }
 
-fn parse(args: &[OsString]) -> Result<Option<Args>, String> {
+fn parse(args: &[OsString], unified: bool) -> Result<Option<Args>, String> {
     let (mut face, mut ppem, mut target, mut file) = (0u32, None, None, None);
     let mut location = crate::variation_options::LocationOptions::default();
     let mut no_bitmap = false;
-    let (mut color, mut palette) = (false, 0u16);
+    let mut features = Vec::new();
+    let (mut color, mut palette, mut palette_given) = (false, 0u16, false);
     let mut it = args.iter();
     while let Some(a) = it.next() {
         let mut value = |name: &str| {
@@ -81,12 +86,40 @@ fn parse(args: &[OsString]) -> Result<Option<Args>, String> {
         if location.consume(a.to_str(), &mut value)? {
             continue;
         }
+        let (name, inline) = a
+            .to_str()
+            .map(|s| s.split_once('=').map_or((s, None), |(k, v)| (k, Some(v))))
+            .unwrap_or(("", None));
+        if unified && matches!(name, "--text" | "--text-file" | "--features") {
+            let raw = match inline {
+                Some(s) => OsString::from(s),
+                None => it
+                    .next()
+                    .cloned()
+                    .ok_or_else(|| format!("{name} needs a value"))?,
+            };
+            if name == "--features" {
+                let s = raw.to_str().ok_or("--features requires UTF-8")?;
+                features = crate::shape::parse_feature_list(s.as_bytes());
+                continue;
+            }
+            if target.is_some() {
+                return Err("give one of --text, --text-file, --glyph and --char".into());
+            }
+            target = Some(if name == "--text" {
+                Target::Text(raw.into_string().map_err(|_| "--text requires UTF-8")?)
+            } else {
+                Target::TextFile(raw)
+            });
+            continue;
+        }
         match a.to_str() {
             Some("--help" | "-h") => return Ok(None),
             Some("--face") => face = value("--face")?.parse().map_err(|_| "bad --face")?,
             Some("--no-bitmap") => no_bitmap = true,
             Some("--color") => color = true,
             Some("--palette") => {
+                palette_given = true;
                 palette = value("--palette")?.parse().map_err(|_| "bad --palette")?;
             }
             Some("--ppem") => {
@@ -127,8 +160,10 @@ fn parse(args: &[OsString]) -> Result<Option<Args>, String> {
         no_bitmap,
         color,
         palette,
+        palette_given,
         ppem: ppem.ok_or("--ppem is required")?,
         target: target.ok_or("give --glyph or --char")?,
+        features,
         file: file.ok_or("no file given")?,
     }))
 }
@@ -136,7 +171,52 @@ fn parse(args: &[OsString]) -> Result<Option<Args>, String> {
 /// Runs the command with `args` (without the program name). Returns the
 /// exit status.
 pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
-    let args = match parse(args) {
+    run_parsed(args, out, err, false)
+}
+
+/// Runs `sofel render`, including shaped text input.
+pub fn run_unified(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
+    if has_text_input(args) {
+        run_parsed(args, out, err, true)
+    } else {
+        run(args, out, err)
+    }
+}
+
+// Identify text input without mistaking another option's value for an option.
+fn has_text_input(args: &[OsString]) -> bool {
+    let mut skip_value = false;
+    for arg in args {
+        if skip_value {
+            skip_value = false;
+            continue;
+        }
+        let Some(s) = arg.to_str() else { continue };
+        let (key, inline) = s.split_once('=').map_or((s, None), |(k, v)| (k, Some(v)));
+        if matches!(key, "--text" | "--text-file") {
+            return true;
+        }
+        if inline.is_none()
+            && matches!(
+                key,
+                "--face"
+                    | "--ppem"
+                    | "--palette"
+                    | "--glyph"
+                    | "--char"
+                    | "--variations"
+                    | "--named-instance"
+                    | "--features"
+            )
+        {
+            skip_value = true;
+        }
+    }
+    false
+}
+
+fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unified: bool) -> i32 {
+    let args = match parse(args, unified) {
         Ok(Some(a)) => a,
         Ok(None) => {
             let _ = out.write_all(HELP.as_bytes());
@@ -151,6 +231,42 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
         let _ = writeln!(err, "sofel-render: {msg}");
         1
     };
+    if matches!(args.target, Target::Text(_) | Target::TextFile(_))
+        && (args.color || args.palette_given)
+    {
+        let _ = writeln!(
+            err,
+            "sofel render: text cannot be combined with color or palette"
+        );
+        return 2;
+    }
+    let text = match &args.target {
+        Target::Text(s) => Some(s.clone()),
+        Target::TextFile(path) => {
+            let bytes = match std::fs::read(path) {
+                Ok(b) => b,
+                Err(e) => return fail(err, format!("{}: {e}", path.to_string_lossy())),
+            };
+            let mut s = match String::from_utf8(bytes) {
+                Ok(s) => s,
+                Err(_) => {
+                    let _ = writeln!(err, "sofel render: text file is not UTF-8");
+                    return 2;
+                }
+            };
+            if s.ends_with("\r\n") {
+                s.truncate(s.len().saturating_sub(2));
+            } else if s.ends_with('\n') {
+                s.pop();
+            }
+            Some(s)
+        }
+        _ => None,
+    };
+    if text.as_deref().is_some_and(|s| s.contains(['\r', '\n'])) {
+        let _ = writeln!(err, "sofel render: text must be one line");
+        return 2;
+    }
     let bytes = match std::fs::read(&args.file) {
         Ok(b) => b,
         Err(e) => return fail(err, format!("{}: {e}", args.file.to_string_lossy())),
@@ -163,12 +279,26 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
     if let Some(error) = location.ft_error() {
         return fail(err, format!("invalid variation location: {error:?}"));
     }
+    if let Some(text) = text {
+        return match crate::text_image::draw(
+            &font,
+            &location,
+            args.ppem,
+            &text,
+            &args.features,
+            out,
+        ) {
+            Ok(()) => 0,
+            Err(e) => fail(err, e),
+        };
+    }
     let glyph = match args.target {
         Target::Glyph(g) => GlyphId(g),
         Target::Char(c) => match font.nominal_glyph(c) {
             Some(g) => g,
             None => return fail(err, format!("no glyph for U+{c:04X}")),
         },
+        Target::Text(_) | Target::TextFile(_) => unreachable!(),
     };
     if !args.no_bitmap
         && location.ft_default()

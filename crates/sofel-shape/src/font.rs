@@ -10,7 +10,7 @@ use core::cell::RefCell;
 use sofel_font::read::{GlyphId, device::Device};
 use sofel_font::{
     GlyphExtents, GlyphScratch,
-    var::{AdvanceCache, HbF32, Instance, StoreKind},
+    var::{AdvanceCache, Instance},
 };
 
 use crate::scale::Scale;
@@ -111,45 +111,28 @@ impl<'f, 'a, 'l, 's> ShapeFont<'f, 'a, 'l, 's> {
     pub(crate) fn glyph_extents(&self, glyph: u32) -> Option<GlyphExtents> {
         (self.extents)(GlyphId(glyph)).map(|e| self.scale.scale.scale_glyph_extents(e))
     }
-    /// VariationIndex uses GDEF ItemVariationStore independently of ppem.
-    fn variation_delta(&self, device: Option<&Device<'_>>) -> Option<f32> {
-        if !self.instance.location().hb_nonzero() {
-            return None;
-        }
-        let (outer, inner) = device?.variation_index()?;
-        Some(
-            self.instance
-                .item_delta::<HbF32>(StoreKind::Gdef, outer, inner)
-                .unwrap_or(0.0),
-        )
-    }
-
     pub(crate) fn x_device_delta(&self, device: Option<&Device<'_>>) -> i32 {
-        self.variation_delta(device).map_or_else(
-            || self.scale.x_delta(device),
-            |delta| self.scale.scale.em_scalef_x(delta),
-        )
+        self.instance
+            .layout_queries(self.scale.scale, self.scale.x_ppem, self.scale.y_ppem)
+            .x_device_delta(device)
     }
 
     pub(crate) fn y_device_delta(&self, device: Option<&Device<'_>>) -> i32 {
-        self.variation_delta(device).map_or_else(
-            || self.scale.y_delta(device),
-            |delta| self.scale.scale.em_scalef_y(delta),
-        )
+        self.instance
+            .layout_queries(self.scale.scale, self.scale.x_ppem, self.scale.y_ppem)
+            .y_device_delta(device)
     }
 
     pub(crate) fn x_device_fdelta(&self, device: Option<&Device<'_>>) -> f32 {
-        self.variation_delta(device).map_or_else(
-            || i32_to_f32(self.scale.x_delta(device)),
-            |delta| delta * self.x_multf,
-        )
+        self.instance
+            .layout_queries(self.scale.scale, self.scale.x_ppem, self.scale.y_ppem)
+            .x_device_fdelta(device)
     }
 
     pub(crate) fn y_device_fdelta(&self, device: Option<&Device<'_>>) -> f32 {
-        self.variation_delta(device).map_or_else(
-            || i32_to_f32(self.scale.y_delta(device)),
-            |delta| delta * self.y_multf,
-        )
+        self.instance
+            .layout_queries(self.scale.scale, self.scale.x_ppem, self.scale.y_ppem)
+            .y_device_fdelta(device)
     }
 
     /// `em_scale_x`.

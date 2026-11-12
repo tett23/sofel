@@ -11,5 +11,6 @@ pub mod paint;
 pub mod render;
 pub mod shape;
 pub mod subset;
+mod text_image;
 pub mod validate;
 pub mod variation_options;
