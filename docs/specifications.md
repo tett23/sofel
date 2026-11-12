@@ -285,6 +285,10 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - `sofel_shape::unicode` に、HarfBuzzが手で書いた `modified_combining_class`、`is_default_ignorable`、`space_fallback_type`、`vertical_char_for`、`is_variation_selector`、`is_regional_indicator` を置く（[ADR 0019](adr/0019-unicode-character-data.md)、[ADR 0020](adr/0020-shaping-foundation.md)）。全文字の値を `hb-dump --unicode` と比べる。
 `sofel-render` は設計座標と名前つきインスタンスを受け付ける。FreeTypeで既定以外のインスタンスになるときは埋め込みビットマップを省き、指定位置の輪郭を描く（[ADR 0027](adr/0027-variable-fonts.md)）。
 
+## ベクトル出力
+
+`sofel-vector` の `SvgPage` と `PdfPage` は、呼び出し側が配置した輪郭を指定色で入力順に塗る。SVG は y 軸を反転したグループにパスを書き、PDF は二次曲線を三次曲線に変換してページに書く。C の `sofel_vector_page` にはフォント、軸座標と、グリフごとの変換・色を渡す（[ADR 0068](adr/0068-vector-and-gpu-output.md)）。
+
 ## カラーグリフ（`sofel-color`、`sofel-bitmap`、`Painter`）
 
 [ADR 0023](adr/0023-color-glyphs.md) の5a段階（`Painter`、CPAL、COLRv0、CBDTとsbixのデータ、SVGの文書、グリフの箱、フォールバックの問い合わせ）、5b段階（COLRv1）、5c段階（EBDTとビットマップだけのフォント）、5d段階（COLRv0の画像）を実装している。
@@ -358,6 +362,10 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 軸を指定しない BASE 1.1 の ItemVariationStore は、残すスクリプトとフィーチャに属する横と縦の BaseCoord の VariationIndex を集め、使う行と領域だけを詰めて番号を振りなおす。参照が0件なら、HarfBuzzと同じくストアを除いて座標を残す。BaseValues、既定の MinMax、言語別とフィーチャ別の MinMax を調べ、壊れた参照はこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
 - 軸を指定しないGDEF 1.3のItemVariationStoreは、GSUBのFeatureVariationsが軸範囲の条件だけを持つ場合も含めて、残すLigCaretList、値の記録、アンカー、MATHの定数・斜体補正・上アクセント・カーニング・組み立てのVariationIndexに合わせて行と領域を詰めて書く。参照が0件ならストアを除く。GPOSの値の記録とアンカーをたどってVariationIndexを集める。送り幅などの値に現れる `0x8000` は参照に数えない。MATHとGDEFの一方だけをコピーして参照番号を合わせられない場合と、同じバイト列があるGPOSをそのままコピーする場合は拒否する。GDEFだけをコピーしてGPOSをサブセット化するとき、HarfBuzzと同じくGPOSの参照番号は詰めるが、GDEFのストアは元のバイト列のまま写す。壊れたGDEFはこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
 - レイアウトの表のうち、FeatureVariationsを持つGSUBをそのままコピーする場合のGDEF、GSUBとGPOSの版1.2とGDEFの版1.4、FeatureVariationsの版1.1と形式1でない条件、65536を超えるグリフのフォントの24bitの形式も `Unsupported` とする。
+
+## WOFF と圧縮フォントの読み込み
+
+`sofel_woff::decode_woff` は出力サイズの上限を受け取り、WOFF 1.0 の表を物理順に展開して sfnt を返す。フォントを読み込む CLI は gzip または UNIX compress（LZW）を先に展開してから WOFF の署名を検査する。検証器は WOFF の不正なフィールドか圧縮表の入力オフセットを報告する。gzip の破損はメンバーを含むコンテナ先頭で報告する。[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)
 
 ## Web フォントの書き出し（`sofel-woff`）
 

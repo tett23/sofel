@@ -8,6 +8,8 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+sofel-inflate = {path="../sofel-inflate"}
+sofel-woff = {path="../sofel-woff"}
 sofel-read = { path = "../sofel-read" }
 sofel-font = { path = "../sofel-font" }
 sofel-outline = { path = "../sofel-outline" }
