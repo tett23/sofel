@@ -938,8 +938,10 @@ impl Interpreter {
         depth: usize,
         remaining: &mut usize,
     ) -> Result<(), Error> {
+        let program = code;
         while !code.is_empty() {
             *remaining = remaining.checked_sub(1).ok_or(Error::ExecutionLimit)?;
+            let offset = program.len() - code.len();
             let instruction = next(&mut code)?;
             match instruction.opcode {
                 op @ 0x00..=0x05 => {
@@ -1724,6 +1726,29 @@ impl Interpreter {
                 0x58 => {
                     if stack.pop().ok_or(Error::StackUnderflow)? == 0 {
                         skip_block(&mut code, true)?;
+                    }
+                }
+                op @ (0x1c | 0x78 | 0x79) => {
+                    let take = if op == 0x1c {
+                        true
+                    } else {
+                        let flag = stack.pop().ok_or(Error::StackUnderflow)?;
+                        (flag != 0) == (op == 0x78)
+                    };
+                    let relative = stack.pop().ok_or(Error::StackUnderflow)?;
+                    if take {
+                        if relative == 0 && stack.is_empty() {
+                            return Err(Error::InvalidArgument);
+                        }
+                        let target = offset
+                            .checked_add_signed(
+                                isize::try_from(relative).map_err(|_| Error::InvalidArgument)?,
+                            )
+                            .ok_or(Error::InvalidArgument)?;
+                        if target > program.len() && depth != 0 {
+                            return Err(Error::InvalidArgument);
+                        }
+                        code = program.get(target..).unwrap_or_default();
                     }
                 }
                 0x1b => skip_block(&mut code, false)?,
@@ -2604,4 +2629,27 @@ fn adr0064_i1_static_idef_can_be_redefined_in_prep_within_maxp_limit() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn adr0064_i1_relative_jumps_count_from_opcode_and_obey_execution_limit() {
+    for (op, flag, expected) in [
+        (0x78, 1, alloc::vec![9]),
+        (0x78, 0, alloc::vec![5, 9]),
+        (0x79, 0, alloc::vec![9]),
+        (0x79, 1, alloc::vec![5, 9]),
+    ] {
+        let mut values = alloc::vec![];
+        run(&[0xb1, 3, flag, op, 0xb0, 5, 0xb0, 9], &mut values, 3).unwrap();
+        assert_eq!(values, expected);
+    }
+    let mut vm = Interpreter::new(0, &[], 65536);
+    let mut values = alloc::vec![];
+    let mut budget = 7;
+    assert_eq!(
+        vm.execute_frame(&[0xb8, 0xff, 0xfd, 0x1c], &mut values, 1, 0, &mut budget),
+        Err(Error::ExecutionLimit)
+    );
+    assert_eq!(budget, 0);
+    assert!(run(&[0xb0, 0, 0x1c], &mut values, 1).is_err());
 }
