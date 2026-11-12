@@ -94,18 +94,59 @@ enum Rounding {
     Grid,
     HalfGrid,
     DoubleGrid,
+    Super {
+        period: i64,
+        phase: i64,
+        threshold: i64,
+        diagonal: bool,
+    },
     Off,
     Up,
     Down,
 }
 
 impl Rounding {
+    fn super_round(selector: i64, diagonal: bool) -> Self {
+        let grid = if diagonal { 0x2d41 } else { 0x4000 };
+        let period = match selector & 0xc0 {
+            0 => grid / 2,
+            0x80 => grid * 2,
+            _ => grid,
+        };
+        let phase = period * ((selector >> 4) & 3) / 4;
+        let threshold = match selector & 15 {
+            0 => period - 1,
+            n => (n - 4) * period / 8,
+        };
+        Self::Super {
+            period: period >> 8,
+            phase: phase >> 8,
+            threshold: threshold >> 8,
+            diagonal,
+        }
+    }
+
     fn apply(&self, distance: i64) -> i64 {
         let magnitude = distance.wrapping_abs();
         let rounded = match self {
             Self::Grid => magnitude.wrapping_add(32) & !63,
             Self::HalfGrid => (magnitude & !63).wrapping_add(32),
             Self::DoubleGrid => magnitude.wrapping_add(16) & !31,
+            Self::Super {
+                period,
+                phase,
+                threshold,
+                diagonal,
+            } => {
+                let shifted = magnitude.wrapping_add(threshold - phase);
+                let base = if *diagonal {
+                    shifted / period * period
+                } else {
+                    shifted & -period
+                };
+                let snapped = base.wrapping_add(*phase);
+                if snapped < 0 { *phase } else { snapped }
+            }
             Self::Off => return distance,
             Self::Up => magnitude.wrapping_add(63) & !63,
             Self::Down => magnitude & !63,
@@ -143,6 +184,10 @@ fn run(mut code: &[u8], stack: &mut alloc::vec::Vec<i64>, max_stack: usize) -> R
                 } else {
                     stack.extend(data.iter().copied().map(i64::from));
                 }
+            }
+            op @ (0x76 | 0x77) => {
+                let selector = stack.pop().ok_or(Error::StackUnderflow)?;
+                rounding = Rounding::super_round(selector, op == 0x77);
             }
             0x18 => rounding = Rounding::Grid,
             0x19 => rounding = Rounding::HalfGrid,
@@ -319,6 +364,20 @@ fn adr0064_i1_rounding_state_controls_negative_distances_and_parity() {
     for (op, expected) in [(0x56, 1), (0x57, 0), (0x6c, -65)] {
         let mut stack = alloc::vec![-65];
         run(&[op], &mut stack, 1).unwrap();
+        assert_eq!(stack, [expected]);
+    }
+}
+
+#[test]
+fn adr0064_i1_super_rounding_keeps_phase_and_diagonal_period() {
+    for (op, selector, input, expected) in [
+        (0x76, 0x54, 0, 16),
+        (0x76, 0x54, -81, -80),
+        (0x77, 0x44, 89, 45),
+        (0x77, 0x44, -90, -90),
+    ] {
+        let mut stack = alloc::vec![input, selector];
+        run(&[op, 0x68], &mut stack, 2).unwrap();
         assert_eq!(stack, [expected]);
     }
 }
