@@ -997,3 +997,50 @@ fn adr0060_i1_aat_selects_kerx_and_gpos_per_feature() {
         }
     }
 }
+
+#[test]
+fn adr0060_i1_trak_point_size_boundaries_with_and_without_stat() {
+    // Horizontal normal track: +60 at 8 pt, -20 at 16 pt.
+    let mut trak = vec![
+        0, 1, 0, 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 1, 0, 2, 0, 0, 0, 28, 0, 0, 0, 0, 0, 0, 0, 36,
+    ];
+    trak.extend((8i32 << 16).to_be_bytes());
+    trak.extend((16i32 << 16).to_be_bytes());
+    trak.extend(60i16.to_be_bytes());
+    trak.extend((-20i16).to_be_bytes());
+    for stat in [false, true] {
+        let mut tables = vec![(b"trak", trak.clone())];
+        if stat {
+            tables.push((
+                b"STAT",
+                vec![0, 1, 0, 1, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+            ));
+        }
+        let bytes = make_font(false, tables);
+        for (size, adjustment) in [
+            (0., 20),
+            (7.9, 60),
+            (8., 60),
+            (8.1, 59),
+            (15.9, -19),
+            (16., -20),
+            (16.1, -20),
+        ] {
+            let scale = Scale::new(HbScale::new(1000, 1000, 1000).with_ptem(size), 0, 0);
+            let result = run(
+                &bytes,
+                "ab",
+                Run {
+                    scale: Some(scale),
+                    ..Run::default()
+                },
+            );
+            let extra = if stat { adjustment } else { 0 };
+            assert_eq!(
+                advances(&result),
+                [510 + extra, 520 + extra],
+                "{stat} {size}"
+            );
+        }
+    }
+}

@@ -22,7 +22,12 @@ enum Kern<'a> {
     LegacyClasses(ClassOffsets<'a>, ClassOffsets<'a>, usize),
     LegacyHistory(StateTable<'a>, &'a [u8], usize),
     History(StateTable<'a>, &'a [u8]),
-    Attachment(StateTable<'a>, u32, &'a [u8], Option<Anchors<'a>>),
+    Attachment(
+        StateTable<'a>,
+        u32,
+        &'a [u8],
+        Option<sofel_font::read::ankr::Ankr<'a>>,
+    ),
 }
 
 #[derive(Clone, Debug)]
@@ -51,33 +56,6 @@ impl ClassMatrix<'_> {
     }
 }
 
-#[derive(Clone, Debug)]
-struct Anchors<'a> {
-    glyphs: AatLookup<'a>,
-    coordinates: &'a [u8],
-}
-impl<'a> Anchors<'a> {
-    fn read(data: &'a [u8], count: u32) -> Option<Self> {
-        if be::u16_at(data, 0)? != 0 {
-            return None;
-        }
-        let offset = be::u32_at(data, 8)? as usize;
-        Some(Self {
-            glyphs: AatLookup::new(data.get(be::u32_at(data, 4)? as usize..offset)?, count)?,
-            coordinates: data.get(offset..)?,
-        })
-    }
-    fn get(&self, glyph: u32, index: u16) -> Option<(i32, i32)> {
-        let list = self
-            .coordinates
-            .get(usize::from(self.glyphs.get(glyph)?)..)?;
-        if u32::from(index) >= be::u32_at(list, 0)? {
-            return None;
-        }
-        point(list, (usize::from(index) * 4).checked_add(4)?)
-    }
-}
-
 fn point(data: &[u8], at: usize) -> Option<(i32, i32)> {
     Some((
         i32::from(be::i16_at(data, at)?),
@@ -91,6 +69,7 @@ pub(crate) fn read<'a>(
     glyphs: u32,
 ) -> Option<Vec<Subtable<'a>>> {
     let kerx = sofel_font::read::kerx::Kerx::new(data, glyphs).ok()?;
+    let anchors = core::cell::OnceCell::new();
     let mut result = Vec::new();
     for current in kerx.subtables() {
         let coverage = be::u32_at(current, 4)?;
@@ -121,7 +100,9 @@ pub(crate) fn read<'a>(
                     StateTable::from_kind(state, glyphs, MachineKind::Kerning)?,
                     flags >> 30,
                     state.get((flags & 0x00ff_ffff) as usize..)?,
-                    ankr.and_then(|s| Anchors::read(s, glyphs)),
+                    *anchors.get_or_init(|| {
+                        ankr.and_then(|s| sofel_font::read::ankr::Ankr::new(s, glyphs))
+                    }),
                 )
             }
             6 => {

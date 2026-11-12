@@ -34,6 +34,7 @@
 #![warn(missing_docs)]
 
 pub mod aat_lookup;
+pub mod ankr;
 pub mod avar;
 pub mod base;
 pub mod be;
