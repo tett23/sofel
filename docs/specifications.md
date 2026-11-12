@@ -190,7 +190,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 ## 輪郭（`sofel-outline`）
 
-- `Outlines::load_truetype_mono` は指定した ppem で TrueType の単純グリフと複合グリフを読み、v35 のモノクロ用ヒンティングを適用する。フォントプログラムと準備プログラムを実行し、グリフ命令が更新した輪郭を `Scratch::points` で返す。複合グリフでは、各成分にヒンティングを適用して配置した後、複合グリフ自身の命令を実行する。未対応の命令は `InvalidOutline` を返す（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
+- `Outlines::load_truetype_v35` は指定した ppem で TrueType の単純グリフと複合グリフを読み、v35 のネイティブヒンティングを適用する。ロード時に NORMAL、LIGHT、MONO、LCD、LCD_V のターゲットを選ぶ。`load_truetype_mono` は MONO を使う。フォントプログラムと準備プログラムを実行し、グリフ命令が更新した輪郭を `Scratch::points` で返す。複合グリフでは、各成分にヒンティングを適用して配置した後、複合グリフ自身の命令を実行する。未対応の命令は `InvalidOutline` を返す（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
 
 - glyfと `GLYF` の単純なグリフと合成グリフの輪郭を、ヒンティングをせずに、FreeTypeと同じ座標で `Pen` に渡す（[ADR 0011](adr/0011-glyf-outlines.md)）。`GLYF` があれば `GLYF` と `LOCA` を使い、そのときだけフラグ0x80を三次曲線、0x2000を24bitの成分のグリフIDとして扱う。
 - 倍率は `FT_Set_Pixel_Sizes` と同じく `div_fix(ppem << 6, unitsPerEm)` で、点は `mul_fix` で拡大縮小し、丸めない。locaの解釈と合成の位置の計算はFreeTypeに合わせる。

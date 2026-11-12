@@ -572,6 +572,11 @@ static void test_outlines(const sofel_font_t *font) {
   CHECK(cbox[0] <= cbox[2] && cbox[1] <= cbox[3]);
   CHECK(sofel_outline_load_truetype_mono(NULL, NULL, 1, 16, scratch, cbox, &overlap) == SOFEL_ERROR_NULL);
 
+  for (uint32_t target = SOFEL_HINT_TARGET_NORMAL; target <= SOFEL_HINT_TARGET_LCD_V; target++) {
+    CHECK(sofel_outline_load_truetype_v35(font, NULL, 1, 16, target, scratch, cbox, &overlap) == SOFEL_OK);
+  }
+  CHECK(sofel_outline_load_truetype_v35(font, NULL, 1, 16, 5, scratch, cbox, &overlap) == SOFEL_ERROR_INVALID_ARGUMENT);
+
   /* An offset and a multiplier. */
   CHECK(sofel_outline_load(font, NULL, 1, SOFEL_SCALE_FIXED, scale_cases[0].x_scale,
                            scale_cases[0].y_scale, scratch, cbox, &overlap) == SOFEL_OK);

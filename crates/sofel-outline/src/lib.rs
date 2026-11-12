@@ -13,7 +13,7 @@
 //! Like FreeType, the loaded outline is moved left by phantom point 1,
 //! `pp1.x = xMin - leftSideBearing` scaled like the points (ADR 0018).
 //! Variable glyf outlines and all four phantom points follow ADR 0027;
-//! hinting remains outside this crate.
+//! [`Outlines::load_truetype_v35`] applies native TrueType hinting at a square pixel size.
 //!
 //! CFF and CFF2 outlines (ADR 0021) are ported from FreeType 2.15.0's
 //! `src/psaux/psft.c` (the builder callbacks), `src/psaux/psobjs.c`
@@ -69,6 +69,7 @@ mod hb_cff;
 mod hb_draw;
 mod slot_synth;
 mod tt_hint;
+pub use tt_hint::HintTarget;
 mod varc_draw;
 
 pub use sofel_font as font;
@@ -501,8 +502,20 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
         ppem: u16,
         scratch: &mut Scratch,
     ) -> Result<OutlineInfo, OutlineError> {
+        self.load_truetype_v35(glyph, ppem, HintTarget::Mono, scratch)
+    }
+
+    /// Loads a grid-fitted outline at a square pixel size using the v35
+    /// TrueType interpreter. The target is independent of subsequent rasterization.
+    pub fn load_truetype_v35(
+        &self,
+        glyph: GlyphId,
+        ppem: u16,
+        target: HintTarget,
+        scratch: &mut Scratch,
+    ) -> Result<OutlineInfo, OutlineError> {
         scratch.clear();
-        let hint = tt_hint::Interpreter::mono(self.instance(), ppem)?;
+        let hint = tt_hint::Interpreter::v35(self.instance(), ppem, target)?;
         load_glyf(
             self.instance(),
             glyph,

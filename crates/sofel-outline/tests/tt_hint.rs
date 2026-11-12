@@ -2,8 +2,27 @@
 #![allow(clippy::unwrap_used)]
 
 use sofel_font::{Font, read::GlyphId};
-use sofel_outline::{Outlines, Scratch};
+use sofel_outline::{HintTarget, Outlines, Scratch};
 use std::path::PathBuf;
+
+#[test]
+fn adr0064_i1_native_v35_load_targets_match_freetype() {
+    // FT_LOAD_NO_AUTOHINT | FT_LOAD_NO_BITMAP with each FT_LOAD_TARGET_*.
+    for target in [
+        HintTarget::Normal,
+        HintTarget::Light,
+        HintTarget::Mono,
+        HintTarget::Lcd,
+        HintTarget::VerticalLcd,
+    ] {
+        let expected = if target == HintTarget::Mono {
+            0x0669_0115_d204_3f9e
+        } else {
+            0xe97b_de6f_9327_90bc
+        };
+        check_target("Roboto-Regular.abc.ttf", 1..4, expected, target);
+    }
+}
 
 #[test]
 fn adr0064_i1_roboto_mono_points_match_freetype() {
@@ -16,6 +35,10 @@ fn adr0064_i1_composite_mono_points_match_freetype() {
 }
 
 fn check_glyphs(name: &str, glyphs: core::ops::Range<u32>, expected: u64) {
+    check_target(name, glyphs, expected, HintTarget::Mono);
+}
+
+fn check_target(name: &str, glyphs: core::ops::Range<u32>, expected: u64, target: HintTarget) {
     let dir = std::env::var_os("SOFEL_TESTDATA")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/testdata"));
@@ -43,7 +66,7 @@ fn check_glyphs(name: &str, glyphs: core::ops::Range<u32>, expected: u64) {
     for ppem in 1..=96 {
         for glyph in glyphs.clone() {
             outlines
-                .load_truetype_mono(GlyphId(glyph), ppem, &mut scratch)
+                .load_truetype_v35(GlyphId(glyph), ppem, target, &mut scratch)
                 .unwrap();
             add(i32::from(ppem));
             add(i32::try_from(glyph).unwrap());

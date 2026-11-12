@@ -34,7 +34,7 @@ use sofel_font::read::sfnt::FontFile;
 use sofel_font::read::{DetailValue, Diagnostic, GlyphId, Severity, Tag, validate};
 use sofel_font::{Cff, CidError, Direction, Font, FontError, GlyphExtents, HbScale, MetricsTag};
 use sofel_geom::{Fixed, Matrix, Pen, Point};
-use sofel_outline::{OutlineError, OutlineInfo, Outlines, Scale, Scratch};
+use sofel_outline::{HintTarget, OutlineError, OutlineInfo, Outlines, Scale, Scratch};
 use sofel_raster::{Bitmap, FillRule, PixelBox, RasterError, Rasterizer, RenderOptions};
 
 /// `SOFEL_VERSION_MAJOR`.
@@ -2456,7 +2456,7 @@ fn put_info(info: OutlineInfo, cbox: &mut [i32; 4], overlap: &mut u32) {
 
 enum OutlineLoad {
     Unhinted(Result<Scale, i32>),
-    Mono(u16),
+    TrueTypeV35(u16, HintTarget),
 }
 
 fn outline_load(
@@ -2472,8 +2472,8 @@ fn outline_load(
     let outlines = outlines_at(font, location);
     let info = match load {
         OutlineLoad::Unhinted(scale) => outlines.load(GlyphId(glyph), scale?, &mut scratch.scratch),
-        OutlineLoad::Mono(ppem) => {
-            outlines.load_truetype_mono(GlyphId(glyph), ppem, &mut scratch.scratch)
+        OutlineLoad::TrueTypeV35(ppem, target) => {
+            outlines.load_truetype_v35(GlyphId(glyph), ppem, target, &mut scratch.scratch)
         }
     }
     .map_err(outline_error)?;
@@ -2542,7 +2542,45 @@ pub unsafe extern "C" fn sofel_outline_load_truetype_mono(
             r(font),
             r(location),
             glyph,
-            OutlineLoad::Mono(ppem),
+            OutlineLoad::TrueTypeV35(ppem, HintTarget::Mono),
+            w(scratch),
+            ints::<4>(cbox),
+            w(overlap),
+        ))
+    }
+}
+
+/// Loads a TrueType outline using the v35 interpreter and the selected load target.
+///
+/// # Safety
+///
+/// The pointer requirements are those of [`sofel_outline_load`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_outline_load_truetype_v35(
+    font: *const SofelFont,
+    location: *const SofelLocation,
+    glyph: u32,
+    ppem: u16,
+    target: u32,
+    scratch: *mut SofelOutlineScratch,
+    cbox: *mut i32,
+    overlap: *mut u32,
+) -> i32 {
+    let target = match target {
+        0 => HintTarget::Normal,
+        1 => HintTarget::Light,
+        2 => HintTarget::Mono,
+        3 => HintTarget::Lcd,
+        4 => HintTarget::VerticalLcd,
+        _ => return ERROR_INVALID_ARGUMENT,
+    };
+    // SAFETY: the caller supplies the handles and output buffers required by outline_load.
+    unsafe {
+        status(outline_load(
+            r(font),
+            r(location),
+            glyph,
+            OutlineLoad::TrueTypeV35(ppem, target),
             w(scratch),
             ints::<4>(cbox),
             w(overlap),

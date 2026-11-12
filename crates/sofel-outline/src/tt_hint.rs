@@ -182,10 +182,18 @@ impl Rounding {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum HintTarget {
+/// Target reported to the native TrueType interpreter while loading an outline.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HintTarget {
+    /// Normal grayscale target.
+    Normal,
+    /// Light grayscale target.
+    Light,
+    /// Monochrome grid fitting.
     Mono,
-    Gray,
+    /// Horizontal LCD target.
+    Lcd,
+    /// Vertical LCD target.
     VerticalLcd,
 }
 
@@ -217,7 +225,10 @@ impl EngineInfo {
             (8, subpixel && self.target == HintTarget::VerticalLcd),
             (10, subpixel),
             (11, subpixel && self.symmetric_smoothing),
-            (12, subpixel && self.target == HintTarget::Gray),
+            (
+                12,
+                subpixel && matches!(self.target, HintTarget::Normal | HintTarget::Light),
+            ),
         ] {
             if enabled && selector & (1 << bit) != 0 {
                 result |= 1 << (bit + 7);
@@ -321,7 +332,7 @@ impl Interpreter {
         Self {
             engine: EngineInfo {
                 version: 40,
-                target: HintTarget::Gray,
+                target: HintTarget::Normal,
                 rotated: false,
                 stretched: false,
                 variation: false,
@@ -361,16 +372,17 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn mono(
+    pub(super) fn v35(
         instance: sofel_font::var::Instance<'_, '_, '_, '_>,
         ppem: u16,
+        target: HintTarget,
     ) -> Result<(Self, usize), super::OutlineError> {
         Self::prepare(
             instance,
             ppem,
             EngineInfo {
                 version: 35,
-                target: HintTarget::Mono,
+                target,
                 rotated: false,
                 stretched: false,
                 variation: !instance.location().ft_default(),

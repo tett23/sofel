@@ -1677,6 +1677,26 @@ int32_t sofel_outline_load_truetype_mono(const sofel_font_t *font, const sofel_l
                                          uint32_t glyph, uint16_t ppem, sofel_outline_scratch_t *scratch,
                                          int32_t *cbox, uint32_t *overlap);
 
+enum {
+  SOFEL_HINT_TARGET_NORMAL = 0,
+  SOFEL_HINT_TARGET_LIGHT = 1,
+  SOFEL_HINT_TARGET_MONO = 2,
+  SOFEL_HINT_TARGET_LCD = 3,
+  SOFEL_HINT_TARGET_LCD_V = 4
+};
+
+/*
+ * Loads a TrueType outline with the v35 interpreter and one SOFEL_HINT_TARGET_*.
+ * Rendering the loaded outline is a separate operation.
+ * Rust: sofel_outline::Outlines::load_truetype_v35
+ * HarfBuzz: none
+ * FreeType: FT_Load_Glyph
+ */
+int32_t sofel_outline_load_truetype_v35(const sofel_font_t *font, const sofel_location_t *location,
+                                        uint32_t glyph, uint16_t ppem, uint32_t target,
+                                        sofel_outline_scratch_t *scratch, int32_t *cbox,
+                                        uint32_t *overlap);
+
 /*
  * Sends the outline last loaded into `scratch` to the pen, after moving
  * it by (dx, dy) and multiplying every point by `multiplier`, as

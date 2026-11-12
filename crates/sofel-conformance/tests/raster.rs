@@ -463,3 +463,66 @@ fn adr0064_i2_selawik_monochrome_bitmaps_match_freetype() {
         mismatches.iter().take(20).collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn adr0064_i2_native_load_target_is_independent_of_lcd_render_mode() {
+    use sofel_font::{geom::Point, read::GlyphId};
+    use sofel_outline::{HintTarget, Outlines};
+    use sofel_raster::{FillRule, LcdMode, RenderOptions};
+
+    let data =
+        std::fs::read(paths::testdata().join("harfbuzz/test/api/fonts/Roboto-Regular.abc.ttf"))
+            .unwrap();
+    let font = Font::new(&data, 0).unwrap();
+    let outlines = Outlines::new(font.default_instance());
+    let mut scratch = Scratch::default();
+    // FreeType v35, FT_LOAD_NO_AUTOHINT | FT_LOAD_NO_BITMAP with the
+    // selected load target; every slot is then rendered in FT_RENDER_MODE_LCD.
+    for target in [HintTarget::Normal, HintTarget::Light, HintTarget::Mono] {
+        let mut hash = 0xcbf2_9ce4_8422_2325u64;
+        let mut add = |value: i32| {
+            for byte in value.to_le_bytes() {
+                hash ^= u64::from(byte);
+                hash = hash.wrapping_mul(0x100_0000_01b3);
+            }
+        };
+        for ppem in 1..=96u16 {
+            for glyph in 1..4u32 {
+                let info = outlines
+                    .load_truetype_v35(GlyphId(glyph), ppem, target, &mut scratch)
+                    .unwrap();
+                let mut raster = Rasterizer::new();
+                scratch.decompose(Point::default(), 1, &mut raster).unwrap();
+                let bitmap = raster
+                    .render_harmony(
+                        LcdMode::Horizontal,
+                        RenderOptions {
+                            fill: FillRule::NonZero,
+                            overlap: info.overlap,
+                            ppem: Some((ppem, ppem)),
+                        },
+                    )
+                    .unwrap();
+                for value in [
+                    i32::from(ppem),
+                    glyph as i32,
+                    bitmap.left,
+                    bitmap.top,
+                    bitmap.width as i32,
+                    bitmap.rows as i32,
+                ] {
+                    add(value);
+                }
+                for &byte in bitmap.pixels {
+                    add(i32::from(byte));
+                }
+            }
+        }
+        let expected = if target == HintTarget::Mono {
+            0x9e77_e751_0bbe_cb6a
+        } else {
+            0xe396_94cd_83ad_1b57
+        };
+        assert_eq!(hash, expected, "{target:?}");
+    }
+}
