@@ -205,3 +205,21 @@ sofel_shape::ShapePlan::variations_index_for C creates a plan with sofel_shape_p
 sofel_color::RawPaintGraph::* The reusable raw paint table view; C reads the bytes with sofel_font_table.
 sofel_color::FtPaintGraph::* The location-resolved raw COLR tree; the C paint API exposes the walked commands.
 sofel_unicode::Script::from_raw_tag C represents the four script bytes directly as a big-endian uint32_t tag.
+
+# sofel ADR 0063 adds Rust font-function callbacks and synthesis helpers. The
+# ADR does not specify a C callback ABI; the existing C queries keep their
+# ordinary font handles and byte-level paint commands.
+sofel_shape::SubFont::* Rust-owned parent links and Send + Sync callbacks; sofel ADR 0063 does not define their C lifetime or callback ABI.
+sofel_shape::GlyphOutline::* Rust callback result and path builder; C receives ordinary outlines through sofel_outline_draw.
+sofel_shape::shape_with_subfont Rust callback-based shaping entry; C uses sofel_shape with its font handle.
+sofel_bitmap::convert_bitmap Rust FT_Bitmap_Convert equivalent; the C bitmap query exposes decoded pixels in its own layout.
+sofel_bitmap::embolden_bitmap Rust mutable bitmap synthesis helper; the C bitmap query returns the font's unsynthesized bitmap.
+sofel_bitmap::embolden_bitmap_slot Rust slot-and-metrics synthesis helper; the C bitmap query returns the font's unsynthesized bitmap and metrics.
+sofel_color::paint_recording_at_with_slant Rust CLI helper for applying slant while recording; C receives the ordinary paint commands from sofel_paint_glyph.
+sofel_font::Font::has_vertical_metrics Rust fallback-shaping helper; C obtains vertical metrics from its font queries.
+sofel_outline::HbExtents::cff_glyph_path Rust HarfBuzz CFF path for a caller's outline callback; C obtains font outlines through sofel_outline_draw.
+sofel_outline::Scratch::embolden_slot Rust mutable outline synthesis helper; C obtains the unsynthesized outline through sofel_outline_draw.
+sofel_outline::Scratch::hb_decompose Rust HarfBuzz glyf path for a caller's outline callback; C obtains font outlines through sofel_outline_draw.
+sofel_outline::Scratch::oblique_slot Rust mutable outline synthesis helper; C obtains the unsynthesized outline through sofel_outline_draw.
+sofel_outline::Scratch::points Rust access to the outline scratch points; C obtains path commands through sofel_outline_draw.
+sofel_outline::Scratch::slant_slot Rust mutable outline synthesis helper; C obtains the unsynthesized outline through sofel_outline_draw.
