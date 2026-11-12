@@ -129,7 +129,7 @@ fn verify(text: &str) -> bool {
             let result = match feature {
                 "in-document" => document_observation(case, name)
                     .or_else(|| sofel_conformance::svg_input::observe(feature, case, name)),
-                _ => None,
+                _ => sofel_conformance::svg_input::observe(feature, case, name),
             };
             match result {
                 None => failures.push(format!("{name}: NOT RUN (verifier pending)")),
