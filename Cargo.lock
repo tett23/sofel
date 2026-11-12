@@ -36,6 +36,7 @@ dependencies = [
  "sofel-bitmap",
  "sofel-color",
  "sofel-font",
+ "sofel-geom",
  "sofel-inflate",
  "sofel-outline",
  "sofel-raster",
