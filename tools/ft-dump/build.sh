@@ -8,6 +8,7 @@
 #   OUTPUT           default: target/ft-dump/ft-dump
 # A third argument --webfont-reference builds the table comparison tool
 # with WOFF2 enabled and requires Brotli decoder headers and library.
+# Use --filtered-lcd as the third argument for the filtered LCD reference.
 # The C compiler is $CC (default: cc).
 
 set -eu
@@ -21,6 +22,8 @@ driver=$here/ft-dump.c
 if [ "${3:-}" = "--webfont-reference" ]; then
   driver=$root/tools/webfont-reference/compare.c
   set -- -DFT_CONFIG_OPTION_USE_BROTLI -lbrotlidec
+elif [ "${3:-}" = "--filtered-lcd" ]; then
+  set -- -DFT_CONFIG_OPTION_SUBPIXEL_RENDERING
 else
   set --
 fi
@@ -39,7 +42,7 @@ files="
   type1/type1.c type42/type42.c pfr/pfr.c winfonts/winfnt.c
   pcf/pcf.c bdf/bdf.c psaux/psaux.c psnames/psnames.c
   pshinter/pshinter.c autofit/autofit.c smooth/smooth.c
-  raster/raster.c gzip/ftgzip.c lzw/ftlzw.c
+  raster/raster.c sdf/sdf.c gzip/ftgzip.c lzw/ftlzw.c
   otvalid/otvalid.c
 "
 

@@ -241,6 +241,28 @@ fn keep_subrs(
             }
         }
         for trace in env.call_trace()? {
+            let target = match trace.target {
+                Source::Global(old) => p.gsubrs.get(old)?,
+                Source::Local(old) => p.lsubrs.get(old)?,
+                Source::Glyph => return None,
+            };
+            if drop_hints && matches!(target, [] | [11]) {
+                let drops = if trace.source == Source::Glyph {
+                    &mut direct_drops
+                } else {
+                    subr_drops.entry((fd, trace.source)).or_default()
+                };
+                drops.insert(
+                    trace.start,
+                    HintTrace {
+                        source: trace.source,
+                        start: trace.start,
+                        end: trace.end,
+                        terminal: false,
+                    },
+                );
+                continue;
+            }
             let (local, old) = match trace.target {
                 Source::Global(old) => {
                     global_used.insert(old);

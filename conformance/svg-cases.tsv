@@ -1,32 +1,32 @@
-# feature	case	observations	expectation source
-in-document	plain	document-bytes,target-element,rgba	OpenType 1.9.1 SVG document list
-in-document	gzip	decompressed-bytes,target-element,rgba	OpenType 1.9.1 SVG document list
-in-document	shared-first	target-element,rgba	OpenType 1.9.1 SVG document list
-in-document	shared-second	target-element,rgba	OpenType 1.9.1 SVG document list
-in-document	out-of-range	absent-glyph	OpenType 1.9.1 SVG document list
-in-geometry	path-line	outline,bounds	SVG 2 shapes and coordinate systems
-in-geometry	path-curve	outline,bounds	SVG 2 shapes and coordinate systems
-in-geometry	rect	outline,bounds	SVG 2 shapes and coordinate systems
-in-geometry	circle	outline,bounds	SVG 2 shapes and coordinate systems
-in-geometry	nested-transform	outline,bounds	SVG 2 shapes and coordinate systems
-in-style	inherited-fill	inside-rgba,outside-rgba	SVG 2 painting
-in-style	override-fill	inside-rgba,outside-rgba	SVG 2 painting
-in-style	context-fill-red	inside-rgba,outside-rgba	SVG 2 painting
-in-style	context-fill-blue	inside-rgba,outside-rgba	SVG 2 painting
-in-style	overlap	intersection-rgba	SVG 2 painting
-in-style	reversed-overlap	intersection-rgba	SVG 2 painting
-in-reference	use-transform	expanded-geometry,transform-order	SVG 2 use element and clipping
-in-reference	clip-transform	inside-rgba,outside-rgba,transform-order	SVG 2 use element and clipping
-in-gradient	linear	sample-position,rgba	SVG 2 paint servers
-in-gradient	radial	sample-position,rgba	SVG 2 paint servers
-in-gradient	aspect-ratio	sample-position,rgba	SVG 2 paint servers
-in-gradient	stop-opacity	sample-position,rgba	SVG 2 paint servers
-in-gradient	transformed	sample-position,rgba	SVG 2 paint servers
-in-gradient	color-svg-19	cli-rgba,gallery-rgba	ADR 0072 color-svg 19
-in-gradient	color-svg-26	cli-rgba,gallery-rgba	ADR 0072 color-svg 26
-in-restrictions	external	resource-requests,control-rgba	OpenType 1.9.1 SVG implementation requirements
-in-restrictions	script	changed-geometry,control-rgba	OpenType 1.9.1 SVG implementation requirements
-out-page	empty	page-size,scene-tree	HarfBuzz 3df40d9 test/vector
-out-page	single	page-size,scene-tree	HarfBuzz 3df40d9 test/vector
-out-page	translucent-overlap	page-size,scene-tree	HarfBuzz 3df40d9 test/vector
-out-page	clipped-image	page-size,scene-tree	HarfBuzz 3df40d9 test/vector
+# feature	case	observations	expectation source	input	glyph or page placement	ppem	foreground RGBA
+in-document	plain	document-bytes,target-element,rgba	OpenType 1.9.1 SVG document list	conformance/svg/two-glyphs.svg	glyph1	32	#ff0000ff
+in-document	gzip	decompressed-bytes,target-element,rgba	OpenType 1.9.1 SVG document list	conformance/svg/two-glyphs.svg.gz	glyph1	32	#ff0000ff
+in-document	shared-first	target-element,rgba	OpenType 1.9.1 SVG document list	conformance/svg/two-glyphs.svg	glyph1	32	#ff0000ff
+in-document	shared-second	target-element,rgba	OpenType 1.9.1 SVG document list	conformance/svg/two-glyphs.svg	glyph2	32	#ff0000ff
+in-document	out-of-range	absent-glyph	OpenType 1.9.1 SVG document list	conformance/svg/two-glyphs.svg	glyph3	n/a	n/a
+in-geometry	path-line	outline,bounds	SVG 2 shapes and coordinate systems	conformance/svg/geometry.svg	glyph1	32	#ffffffff
+in-geometry	path-curve	outline,bounds	SVG 2 shapes and coordinate systems	conformance/svg/geometry.svg	glyph2	32	#ffffffff
+in-geometry	rect	outline,bounds	SVG 2 shapes and coordinate systems	conformance/svg/geometry.svg	glyph3	32	#ffffffff
+in-geometry	circle	outline,bounds	SVG 2 shapes and coordinate systems	conformance/svg/geometry.svg	glyph4	32	#ffffffff
+in-geometry	nested-transform	outline,bounds	SVG 2 shapes and coordinate systems	conformance/svg/geometry.svg	glyph5	32	#ffffffff
+in-style	inherited-fill	inside-rgba,outside-rgba	SVG 2 painting	conformance/svg/style.svg	glyph1	32	#ff0000ff
+in-style	override-fill	inside-rgba,outside-rgba	SVG 2 painting	conformance/svg/style.svg	glyph2	32	#ff0000ff
+in-style	context-fill-red	inside-rgba,outside-rgba	SVG 2 painting	conformance/svg/style.svg	glyph3	32	#ff0000ff
+in-style	context-fill-blue	inside-rgba,outside-rgba	SVG 2 painting	conformance/svg/style.svg	glyph3	32	#0000ffff
+in-style	overlap	intersection-rgba	SVG 2 painting	conformance/svg/style.svg	glyph4	32	#ff0000ff
+in-style	reversed-overlap	intersection-rgba	SVG 2 painting	conformance/svg/style.svg	glyph5	32	#ff0000ff
+in-reference	use-transform	expanded-geometry,transform-order	SVG 2 use element and clipping	conformance/svg/references.svg	glyph1	32	#ff0000ff
+in-reference	clip-transform	inside-rgba,outside-rgba,transform-order	SVG 2 use element and clipping	conformance/svg/references.svg	glyph2	32	#ff0000ff
+in-gradient	linear	sample-position,rgba	SVG 2 paint servers	conformance/svg/gradients.svg	glyph1	32	#ff0000ff
+in-gradient	radial	sample-position,rgba	SVG 2 paint servers	conformance/svg/gradients.svg	glyph2	32	#ff0000ff
+in-gradient	aspect-ratio	sample-position,rgba	SVG 2 paint servers	conformance/svg/gradients.svg	glyph3	32	#ff0000ff
+in-gradient	stop-opacity	sample-position,rgba	SVG 2 paint servers	conformance/svg/gradients.svg	glyph4	32	#ff0000ff
+in-gradient	transformed	sample-position,rgba	SVG 2 paint servers	conformance/svg/gradients.svg	glyph5	32	#ff0000ff
+in-gradient	color-svg-19	cli-rgba,gallery-rgba	ADR 0072 color-svg 19	fonts.lock#color-svg	glyph19	48	default palette 0
+in-gradient	color-svg-26	cli-rgba,gallery-rgba	ADR 0072 color-svg 26	fonts.lock#color-svg	glyph26	48	default palette 0
+in-restrictions	external	resource-requests,control-rgba	OpenType 1.9.1 SVG implementation requirements	conformance/svg/external.svg	glyph1	32	#ff0000ff
+in-restrictions	script	changed-geometry,control-rgba	OpenType 1.9.1 SVG implementation requirements	conformance/svg/script.svg	glyph1	32	#ff0000ff
+out-page	empty	page-size,scene-tree	HarfBuzz 3df40d9 test/vector	conformance/svg-page/reference.cc	empty (0,-2048,2048,2048)	unscaled	n/a
+out-page	single	page-size,scene-tree	HarfBuzz 3df40d9 test/vector	testdata.lock#harfbuzz/test/api/fonts/Roboto-Regular.abc.ttf	a (scale .5, offset 0,0)	unscaled	#ff000033
+out-page	translucent-overlap	page-size,scene-tree	HarfBuzz 3df40d9 test/vector	testdata.lock#harfbuzz/test/api/fonts/Roboto-Regular.abc.ttf	a (scale .5, offset 0,0), b (scale .5, offset 160,64)	unscaled	#ff000033,#0000ff66
+out-page	clipped-image	page-size,scene-tree	HarfBuzz 3df40d9 test/vector	conformance/svg-page/red.png	clip [2,4,12,14], matrix(2,0,0,3,1,2)	unscaled	embedded PNG

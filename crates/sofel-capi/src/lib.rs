@@ -2839,6 +2839,7 @@ enum RasterTarget {
     Normal,
     Placed(PixelBox),
     Harmony(sofel_raster::LcdMode),
+    Filtered(sofel_raster::LcdMode, [u8; 5]),
 }
 
 fn rasterizer_render(
@@ -2854,6 +2855,7 @@ fn rasterizer_render(
         RasterTarget::Normal => r.raster.render(options),
         RasterTarget::Placed(b) => r.raster.render_placed(b, options),
         RasterTarget::Harmony(lcd) => r.raster.render_harmony(lcd, options),
+        RasterTarget::Filtered(lcd, weights) => r.raster.render_filtered_lcd(lcd, weights, options),
     };
     out.put(bitmap.map_err(raster_error))
 }
@@ -2932,6 +2934,53 @@ pub unsafe extern "C" fn sofel_rasterizer_render_harmony(
     status(rasterizer_render(
         rasterizer,
         RasterTarget::Harmony(lcd),
+        options(fill, 0, x_ppem, y_ppem),
+        out,
+    ))
+}
+
+/// `sofel_rasterizer_render_filtered_lcd`.
+///
+/// # Safety
+///
+/// `rasterizer` is NULL or a live rasterizer no other thread uses;
+/// `pixels` is NULL or writable for `capacity` bytes; `len` is NULL or
+/// writable; `weights` is NULL or readable for five bytes; `box_` is NULL or writable for 4 integers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_rasterizer_render_filtered_lcd(
+    rasterizer: *mut SofelRasterizer,
+    fill: u32,
+    direction: u32,
+    weights: *const u8,
+    x_ppem: u16,
+    y_ppem: u16,
+    pixels: *mut u8,
+    capacity: usize,
+    len: *mut usize,
+    box_: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (rasterizer, pixels, len, b) = unsafe {
+        (
+            w(rasterizer),
+            out_array(pixels, capacity),
+            w(len),
+            ints::<4>(box_),
+        )
+    };
+    // SAFETY: the caller provides five readable weights or NULL.
+    let Some(weights) = (unsafe { weights.cast::<[u8; 5]>().as_ref() }) else {
+        return ERROR_INVALID_ARGUMENT;
+    };
+    let lcd = match direction {
+        0 => sofel_raster::LcdMode::Horizontal,
+        1 => sofel_raster::LcdMode::Vertical,
+        _ => return ERROR_INVALID_ARGUMENT,
+    };
+    let out = BitmapOut { pixels, len, b };
+    status(rasterizer_render(
+        rasterizer,
+        RasterTarget::Filtered(lcd, *weights),
         options(fill, 0, x_ppem, y_ppem),
         out,
     ))
