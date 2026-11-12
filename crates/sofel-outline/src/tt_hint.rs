@@ -290,6 +290,17 @@ fn projected_distance(a: [i64; 2], b: [i64; 2], vector: [i64; 2]) -> i64 {
     project([a[0].wrapping_sub(b[0]), a[1].wrapping_sub(b[1])], vector)
 }
 
+fn shift_point(point: &mut HintPoint, delta: [i64; 2], freedom: [i64; 2], compatibility: u8) {
+    for axis in 0..2 {
+        if freedom[axis] != 0 {
+            if compatibility == 0 || (axis == 1 && compatibility != 7) {
+                point.current[axis] = point.current[axis].wrapping_add(delta[axis]);
+            }
+            point.touched[axis] = true;
+        }
+    }
+}
+
 // Both vectors contain normalized F2Dot14 components.
 #[allow(clippy::arithmetic_side_effects)]
 fn movement_factors(projection: [i64; 2], freedom: [i64; 2]) -> [i64; 2] {
@@ -729,6 +740,21 @@ impl Interpreter {
         }
     }
 
+    fn reference_shift(&self, op: u8) -> Option<(usize, usize, [i64; 2])> {
+        let (zone, reference) = if op & 1 == 0 {
+            (self.zones[1], self.reference[2])
+        } else {
+            (self.zones[0], self.reference[1])
+        };
+        let zone = usize::from(zone);
+        let reference = usize::from(reference);
+        let base = self.points[zone].get(reference)?;
+        let distance = projected_distance(base.current, base.original, self.projection);
+        let delta = movement_factors(self.projection, self.freedom)
+            .map(|factor| sofel_font::read::cff::ft::mul_fix(distance, factor));
+        Some((zone, reference, delta))
+    }
+
     fn interpolate(&mut self, stack: &mut alloc::vec::Vec<i64>) {
         let count = usize::from(core::mem::replace(&mut self.loop_count, 1));
         let Some(first) = stack.len().checked_sub(count) else {
@@ -943,27 +969,12 @@ impl Interpreter {
                     let Some(first) = stack.len().checked_sub(count) else {
                         continue;
                     };
-                    let (zone, reference) = if op == 0x32 {
-                        (self.zones[1], self.reference[2])
-                    } else {
-                        (self.zones[0], self.reference[1])
-                    };
-                    let base = self.points[usize::from(zone)]
-                        .get(usize::from(reference))
-                        .copied();
-                    if let Some(base) = base {
-                        let axis = usize::from(self.freedom[0] == 0);
-                        let delta = if self.projection[axis] != 0 {
-                            base.current[axis].wrapping_sub(base.original[axis])
-                        } else {
-                            0
-                        };
+                    if let Some((_, _, delta)) = self.reference_shift(op) {
                         for &id in stack[first..].iter().rev() {
                             if let Some(p) =
                                 self.points[usize::from(self.zones[2])].get_mut(id as u32 as usize)
                             {
-                                p.current[axis] = p.current[axis].wrapping_add(delta);
-                                p.touched[axis] = true;
+                                shift_point(p, delta, self.freedom, self.backward_compatibility);
                             }
                         }
                     }
@@ -984,30 +995,15 @@ impl Interpreter {
                     } else {
                         continue;
                     };
-                    let (zone, reference) = if op == 0x34 {
-                        (self.zones[1], self.reference[2])
-                    } else {
-                        (self.zones[0], self.reference[1])
-                    };
-                    let Some(base) = self.points[usize::from(zone)]
-                        .get(usize::from(reference))
-                        .copied()
-                    else {
+                    let Some((zone, reference, delta)) = self.reference_shift(op) else {
                         continue;
-                    };
-                    let axis = usize::from(self.freedom[0] == 0);
-                    let delta = if self.projection[axis] != 0 {
-                        base.current[axis].wrapping_sub(base.original[axis])
-                    } else {
-                        0
                     };
                     let points = self.points[target]
                         .get_mut(start..end)
                         .ok_or(Error::InvalidReference)?;
                     for (offset, p) in points.iter_mut().enumerate() {
-                        if usize::from(zone) != target || offset + start != usize::from(reference) {
-                            p.current[axis] = p.current[axis].wrapping_add(delta);
-                            p.touched[axis] = true;
+                        if zone != target || offset + start != reference {
+                            shift_point(p, delta, self.freedom, self.backward_compatibility);
                         }
                     }
                 }
@@ -1017,19 +1013,9 @@ impl Interpreter {
                         continue;
                     }
                     let target = target as usize;
-                    let (zone, reference) = if op == 0x36 {
-                        (self.zones[1], self.reference[2])
-                    } else {
-                        (self.zones[0], self.reference[1])
-                    };
-                    let zone = usize::from(zone);
-                    let reference = usize::from(reference);
-                    let Some(base) = self.points[zone].get(reference) else {
+                    let Some((zone, reference, delta)) = self.reference_shift(op) else {
                         continue;
                     };
-                    let distance = projected_distance(base.current, base.original, self.projection);
-                    let delta = movement_factors(self.projection, self.freedom)
-                        .map(|factor| sofel_font::read::cff::ft::mul_fix(distance, factor));
                     let points = &mut self.points[target];
                     let limit = if target == 1 {
                         points.len().saturating_sub(4)
@@ -2236,4 +2222,22 @@ fn adr0064_i1_zone_shift_excludes_reference_and_phantoms_and_preserves_tags() {
             .iter()
             .all(|p| p.current == [30, 40] && p.touched == [false, false])
     );
+}
+
+#[test]
+fn adr0064_i1_shp_and_shc_shift_both_axes_with_diagonal_freedom() {
+    for op in [0x32, 0x33, 0x34, 0x35] {
+        let mut vm = Interpreter::new(0, &[], 65536);
+        vm.points[1].resize(3, HintPoint::default());
+        vm.points[1][0].current = [30, 40];
+        vm.contour_ends.push(2);
+        vm.projection = [9830, 13107];
+        vm.freedom = vm.projection;
+        vm.execute(&[op], &mut alloc::vec![if op < 0x34 { 1 } else { 0 }], 1)
+            .unwrap();
+        assert_eq!(vm.points[1][1].current, [30, 40]);
+        assert_eq!(vm.points[1][1].touched, [true, true]);
+        assert_eq!(vm.points[1][0].touched, [false, false]);
+        assert_eq!(vm.points[1][2].touched, [op >= 0x34; 2]);
+    }
 }
