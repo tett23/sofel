@@ -16,9 +16,6 @@
 #                       glyphs (ADR 0023)
 #   out-of-scope:<name> shapers sofel does not have (ADR 0001)
 # Remove an entry when it passes; the test fails until you do.
-in-house/aat-morx.tests:6  # aat
-in-house/aat-morx.tests:7  # aat
-in-house/aat-trak.tests:9  # aat
 in-house/coretext.tests:2@coretext  # out-of-scope:coretext
 in-house/directwrite.tests:2@directwrite  # out-of-scope:directwrite
 in-house/directwrite.tests:3@directwrite  # out-of-scope:directwrite

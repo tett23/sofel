@@ -73,7 +73,7 @@ impl Rasterizer {
                 let plane = self.render_box(
                     b,
                     shift,
-                    1,
+                    Point { x: 1, y: 1 },
                     RenderOptions {
                         overlap: false,
                         ..options
@@ -107,6 +107,106 @@ impl Rasterizer {
             width,
             rows,
             pixels: &self.lcd_pixels,
+        })
+    }
+}
+
+impl Rasterizer {
+    /// Renders FreeType's filtered LCD configuration. The five weights are
+    /// ordered left to right or top to bottom. A zero center disables filtering.
+    ///
+    /// # Errors
+    /// Returns an error when the bitmap or the direct span coordinates exceed
+    /// FreeType's supported bounds.
+    pub fn render_filtered_lcd(
+        &mut self,
+        mode: LcdMode,
+        weights: [u8; 5],
+        options: RenderOptions,
+    ) -> Result<Bitmap<'_>, RasterError> {
+        let (x0, y0, x1, y1) = control_box(&self.commands).unwrap_or_default();
+        let (px, py, scale) = match mode {
+            LcdMode::Horizontal => (43, 0, Point { x: 3, y: 1 }),
+            LcdMode::Vertical => (0, 43, Point { x: 1, y: 3 }),
+        };
+        let (left, top, width, rows) = pixel_box_wide(
+            x0.saturating_sub(px),
+            y0.saturating_sub(py),
+            x1.saturating_add(px),
+            y1.saturating_add(py),
+        );
+        if too_large(left, top, width, rows, options.ppem) {
+            return Err(RasterError::TooLarge);
+        }
+        let logical = PixelBox {
+            left: i32::try_from(left).map_err(|_| RasterError::TooLarge)?,
+            top: i32::try_from(top).map_err(|_| RasterError::TooLarge)?,
+            width: u32::try_from(width).map_err(|_| RasterError::TooLarge)?,
+            rows: u32::try_from(rows).map_err(|_| RasterError::TooLarge)?,
+        };
+        let b = PixelBox {
+            width: logical.width.saturating_mul(scale.x.cast_unsigned()),
+            rows: logical.rows.saturating_mul(scale.y.cast_unsigned()),
+            ..logical
+        };
+        if weights[2] != 0 && b.width > 0x7fff {
+            return Err(RasterError::TooLarge);
+        }
+        let len = (b.width as usize)
+            .checked_mul(b.rows as usize)
+            .ok_or(RasterError::TooLarge)?;
+        self.pixels.clear();
+        self.pixels
+            .try_reserve(len)
+            .map_err(|_| RasterError::TooLarge)?;
+        self.render_box(
+            b,
+            logical.shift(),
+            scale,
+            RenderOptions {
+                overlap: false,
+                ..options
+            },
+        )?;
+        if weights[2] != 0 && len != 0 {
+            self.lcd_pixels.clear();
+            self.lcd_pixels
+                .try_reserve(len)
+                .map_err(|_| RasterError::TooLarge)?;
+            self.lcd_pixels.resize(len, 0);
+            let width = b.width as usize;
+            let nonzero_width = core::num::NonZeroUsize::new(width).ok_or(RasterError::TooLarge)?;
+            for (i, &coverage) in self.pixels.iter().enumerate().filter(|(_, c)| **c != 0) {
+                let (row, col) = (i / nonzero_width, i % nonzero_width);
+                for (tap, weight) in weights.into_iter().enumerate() {
+                    let offset = tap.cast_signed().wrapping_sub(2);
+                    let dst = match mode {
+                        LcdMode::Horizontal => col
+                            .checked_add_signed(offset)
+                            .filter(|x| *x < width)
+                            .map(|x| row.saturating_mul(width).saturating_add(x)),
+                        LcdMode::Vertical => row
+                            .checked_add_signed(offset)
+                            .filter(|y| *y < b.rows as usize)
+                            .map(|y| y.saturating_mul(width).saturating_add(col)),
+                    };
+                    if let Some(pixel) = dst.and_then(|j| self.lcd_pixels.get_mut(j)) {
+                        let value = u16::from(coverage)
+                            .wrapping_mul(u16::from(weight))
+                            .wrapping_add(85)
+                            >> 8;
+                        *pixel = pixel.wrapping_add(value.to_le_bytes()[0]);
+                    }
+                }
+            }
+            core::mem::swap(&mut self.pixels, &mut self.lcd_pixels);
+        }
+        Ok(Bitmap {
+            left: b.left,
+            top: b.top,
+            width: b.width,
+            rows: b.rows,
+            pixels: &self.pixels,
         })
     }
 }

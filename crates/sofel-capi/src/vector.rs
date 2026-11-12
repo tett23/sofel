@@ -21,6 +21,14 @@ enum Page {
     Pdf(PdfPage),
 }
 
+fn decode_image(image: &Image<'_>) -> Option<(u32, u32, Vec<u8>)> {
+    let limit = (image.width as usize)
+        .saturating_mul(image.height as usize)
+        .min((16 << 20) / 4);
+    let decoded = sofel_png::decode_rgba(image.data, limit).ok()?;
+    Some((decoded.width, decoded.height, decoded.rgba))
+}
+
 /// Writes a complete page in the requested format.
 ///
 /// # Safety
@@ -56,7 +64,12 @@ pub unsafe extern "C" fn sofel_vector_page(
         )
     };
     status((|| {
-        let outlines = outlines_at(some(font)?, location);
+        let font = some(font)?;
+        let outlines = outlines_at(font, location);
+        let loc = location
+            .map(|l| &l.location)
+            .unwrap_or(sofel_font::var::Location::default_ref());
+        let instance = font.font.instance(loc);
         let (glyphs, output, len) = (some(glyphs)?, some(output)?, some(len)?);
         let background = background.copied().map(Color::from);
         let mut page = match format {
@@ -65,8 +78,176 @@ pub unsafe extern "C" fn sofel_vector_page(
             _ => return Err(ERROR_INVALID_ARGUMENT),
         };
         let mut scratch = Scratch::default();
+        let mut color_scratch = sofel_color::Scratch::default();
+        let mut recording = sofel_color::Recording::new();
         for g in glyphs {
-            page.draw_glyph(&outlines, &mut scratch, g)?;
+            if !g.transform.iter().all(|v| v.is_finite()) {
+                return Err(ERROR_INVALID_ARGUMENT);
+            }
+            let [xx, yx, xy, yy, dx, dy] = g.transform;
+            // Decompose at double resolution to preserve implied half-unit points.
+            let t = Transform {
+                xx: xx * 0.5,
+                yx: yx * 0.5,
+                xy: xy * 0.5,
+                yy: yy * 0.5,
+                dx,
+                dy,
+            };
+            let c = g.color.into();
+            let options = sofel_color::PaintOptions {
+                palette: sofel_color::Palette::Font(0),
+                foreground: c,
+                ppem: 0,
+            };
+            if matches!(
+                sofel_color::glyph_color_format(&font.font, g.glyph),
+                Some(sofel_color::ColorFormat::Cbdt | sofel_color::ColorFormat::Sbix)
+            ) {
+                recording.clear();
+                sofel_color::paint_recording_at(
+                    instance,
+                    g.glyph,
+                    &options,
+                    &mut color_scratch,
+                    &mut recording,
+                );
+                if let [sofel_color::PaintCommand::Image(image)] = recording.commands() {
+                    let placement = Transform {
+                        xx,
+                        yx,
+                        xy,
+                        yy,
+                        dx,
+                        dy,
+                    };
+                    let painted = match &mut page {
+                        Page::Svg(svg) => svg.draw_image(image, placement, None),
+                        Page::Pdf(pdf) => pdf.paint_with_images(
+                            placement,
+                            |_, _| false,
+                            decode_image,
+                            |p| recording.replay(p),
+                        ),
+                    };
+                    if painted {
+                        continue;
+                    }
+                }
+            }
+            if sofel_color::glyph_color_format(&font.font, g.glyph)
+                == Some(sofel_color::ColorFormat::ColrV1)
+            {
+                recording.clear();
+                sofel_color::paint_recording_at(
+                    instance,
+                    g.glyph,
+                    &options,
+                    &mut color_scratch,
+                    &mut recording,
+                );
+                let scale = sofel_font::HbScale::unscaled(&font.font);
+                let placement = Transform {
+                    xx,
+                    yx,
+                    xy,
+                    yy,
+                    dx,
+                    dy,
+                };
+                let mut draw = |gid, emit: &mut dyn FnMut(sofel_geom::FloatCommand)| {
+                    let glyph = GlyphId(gid);
+                    if let Some(commands) = outlines
+                        .varc_glyph_path(glyph, scale)
+                        .or_else(|| outlines.hb_extents().cff_glyph_path(glyph, &scale))
+                    {
+                        for cmd in commands {
+                            emit(cmd);
+                        }
+                        true
+                    } else {
+                        outlines.load(glyph, Scale::Unscaled, &mut scratch).is_ok()
+                            && scratch.hb_decompose(1., 1., emit).is_ok()
+                    }
+                };
+                let rendered = match &mut page {
+                    Page::Svg(svg) => svg.paint(
+                        placement,
+                        |gid, pen| draw(gid, &mut |cmd| pen.command(cmd)),
+                        |p| recording.replay(p),
+                    ),
+                    Page::Pdf(pdf) => pdf.paint_with_images(
+                        placement,
+                        |gid, pen| draw(gid, &mut |cmd| pen.command(cmd)),
+                        decode_image,
+                        |p| recording.replay(p),
+                    ),
+                };
+                if rendered {
+                    continue;
+                }
+            }
+            let mut fill = |gid, c| {
+                if let Some(commands) = outlines
+                    .varc_glyph_path(GlyphId(gid), sofel_font::HbScale::unscaled(&font.font))
+                {
+                    let placement = Transform {
+                        xx,
+                        yx,
+                        xy,
+                        yy,
+                        dx,
+                        dy,
+                    };
+                    return match &mut page {
+                        Page::Svg(page) => page.fill_path(placement, c, |pen| {
+                            for cmd in commands {
+                                pen.command(cmd);
+                            }
+                            Ok(())
+                        }),
+                        Page::Pdf(page) => {
+                            page.fill_path(placement, c, CompositeMode::SrcOver, |pen| {
+                                for cmd in commands {
+                                    pen.command(cmd);
+                                }
+                                Ok(())
+                            })
+                        }
+                    };
+                }
+                outlines
+                    .load(GlyphId(gid), Scale::Unscaled, &mut scratch)
+                    .map_err(outline_error)?;
+                match &mut page {
+                    Page::Svg(page) => {
+                        page.fill_path(t, c, |pen| scratch.decompose(Point::default(), 2, pen))
+                    }
+                    Page::Pdf(page) => page.fill_path(t, c, CompositeMode::SrcOver, |pen| {
+                        scratch.decompose(Point::default(), 2, pen)
+                    }),
+                }
+                .map_err(outline_error)
+            };
+            if sofel_color::layers(&font.font, g.glyph).next().is_some() {
+                recording.clear();
+                if sofel_color::paint_recording_at(
+                    instance,
+                    g.glyph,
+                    &options,
+                    &mut color_scratch,
+                    &mut recording,
+                ) == sofel_color::Painted::ColrV0
+                {
+                    for cmd in recording.commands() {
+                        if let sofel_color::PaintCommand::FillGlyph(gid, solid) = cmd {
+                            fill(*gid, solid.color)?;
+                        }
+                    }
+                    continue;
+                }
+            }
+            fill(g.glyph, c)?;
         }
         page.write_to(output, len)
     })())
@@ -189,11 +370,11 @@ pub unsafe extern "C" fn sofel_svg_page_layers(
                 let (data, clip) = unsafe { (input_array(png.data, png.len), r(png.clip)) };
                 let [x_bearing, y_bearing, width, height] = png.extents;
                 let image = Image {
-                    slant: 0.0,
                     format: ImageFormat::Png,
                     data: some(data)?,
                     width: png.width,
                     height: png.height,
+                    slant: 0.0,
                     extents: Some(GlyphExtents {
                         x_bearing,
                         y_bearing,

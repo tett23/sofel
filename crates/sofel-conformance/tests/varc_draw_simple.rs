@@ -620,15 +620,21 @@ fn adr0067_i2_referenced_axis_pin_remains_unsupported() {
         .with_axis_pinned_to_default(Tag::new(b"wght"), &font)
         .unwrap();
     assert!(subset(&font, &input).is_err());
+    let destination = std::env::temp_dir().join(format!(
+        "sofel-varc-referenced-pin-{}.ttf",
+        std::process::id()
+    ));
     let output = ProcessCommand::new(paths::hb_dump())
         .arg("--subset")
         .arg(format!("--font-file={}", path.display()))
+        .arg(format!("--output-file={}", destination.display()))
         .arg("--unicodes=U+AC01")
         .arg("--variations=wght=356.5")
         .arg("--drop-tables+=gvar")
         .output()
         .unwrap();
-    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.stderr, b"hb-dump --subset: subsetting failed\n");
 }
 
 #[test]

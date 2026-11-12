@@ -416,6 +416,7 @@ fn substitute_pre(
         synthesize_glyph_classes(buffer);
     }
     if let Some(chains) = &plan.morx {
+        buffer.unsafe_to_concat_all();
         let horizontal = plan.props.direction.is_horizontal();
         for chain in chains {
             for table in &chain.substitutions {
@@ -575,6 +576,27 @@ fn zero_width_default_ignorables(buffer: &mut Buffer) {
     }
 }
 
+fn adjust_origins(
+    font: &ShapeFont<'_, '_, '_, '_>,
+    buffer: &mut Buffer,
+    horizontal: bool,
+    adjust: fn(i32, i32) -> i32,
+) {
+    let (infos, positions) = buffer.infos_and_pos_mut();
+    let mut origins = [(0, 0); 32];
+    for (chunk, positions) in infos.chunks(32).zip(positions.chunks_mut(32)) {
+        font.origins(
+            chunk.iter().map(|info| info.codepoint),
+            horizontal,
+            &mut origins,
+        );
+        for (pos, &(x, y)) in positions.iter_mut().zip(origins.iter()) {
+            pos.x_offset = adjust(pos.x_offset, x);
+            pos.y_offset = adjust(pos.y_offset, y);
+        }
+    }
+}
+
 /// `hb_ot_position`.
 fn position(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut Buffer) {
     buffer.clear_positions();
@@ -587,17 +609,21 @@ fn position(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut
                 p.x_advance = font.h_advance(info.codepoint);
             } else {
                 p.y_advance = font.v_advance(info.codepoint);
-                let (x, y) = font.v_origin(info.codepoint);
-                p.x_offset = p.x_offset.wrapping_sub(x);
-                p.y_offset = p.y_offset.wrapping_sub(y);
             }
         }
+    }
+    let has_h_origin = font.has_h_origin();
+    if !horizontal || has_h_origin {
+        adjust_origins(font, buffer, horizontal, i32::wrapping_sub);
     }
     if buffer.scratch_flags & scratch::HAS_SPACE_FALLBACK != 0 {
         fallback::fallback_spaces(font, buffer);
     }
     // hb_ot_position_plan
     let adjust = plan.adjust_mark_positioning_when_zeroing && buffer.direction.is_forward();
+    if has_h_origin {
+        adjust_origins(font, buffer, true, i32::wrapping_add);
+    }
     gpos::position_start(buffer);
     let zwm = plan.funcs().zero_width_marks;
     if plan.zero_marks && zwm == ZeroWidthMarks::ByGdefEarly {
@@ -641,6 +667,9 @@ fn position(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut
     }
     zero_width_default_ignorables(buffer);
     gpos::position_finish_offsets(buffer);
+    if has_h_origin {
+        adjust_origins(font, buffer, true, i32::wrapping_sub);
+    }
     if plan.fallback_mark_positioning {
         fallback::position_marks(plan, font, buffer, adjust);
     }
@@ -687,11 +716,31 @@ pub fn shape_fallback(
     props: &ResolvedProperties,
     buffer: UnicodeBuffer,
 ) -> GlyphBuffer {
+    let extents = |g: GlyphId| instance.glyf_extents(g);
+    let sf = ShapeFont::new(instance, *scale, &extents, None);
+    fallback_with_font(&sf, props, buffer)
+}
+
+/// Shape without layout tables using a child font's functions and synthetic settings.
+pub fn shape_fallback_with_subfont<'f>(
+    instance: Instance<'f, '_, '_, '_>,
+    subfont: &'f SubFont<'f>,
+    props: &ResolvedProperties,
+    buffer: UnicodeBuffer,
+) -> GlyphBuffer {
+    let extents = |g: GlyphId| instance.glyf_extents(g);
+    let sf = ShapeFont::new(instance, subfont.scale(), &extents, Some(subfont));
+    fallback_with_font(&sf, props, buffer)
+}
+
+fn fallback_with_font(
+    sf: &ShapeFont<'_, '_, '_, '_>,
+    props: &ResolvedProperties,
+    buffer: UnicodeBuffer,
+) -> GlyphBuffer {
     let mut buf = buffer.buf;
     buf.direction = props.direction;
     buf.script = props.script;
-    let extents = |g: GlyphId| instance.glyf_extents(g);
-    let sf = ShapeFont::new(instance, *scale, &extents, None);
     let space = sf.nominal_glyph(0x20);
     buf.clear_positions();
     let direction = buf.direction;
@@ -710,10 +759,15 @@ pub fn shape_fallback(
             p.x_advance = sf.h_advance(info.codepoint);
         } else {
             p.y_advance = sf.v_advance(info.codepoint);
-            let (x, y) = sf.v_origin(info.codepoint);
-            p.x_offset = p.x_offset.wrapping_sub(x);
-            p.y_offset = p.y_offset.wrapping_sub(y);
         }
+        let mut origin = [(0, 0)];
+        sf.origins(
+            core::iter::once(info.codepoint),
+            direction.is_horizontal(),
+            &mut origin,
+        );
+        p.x_offset = origin[0].0.wrapping_neg();
+        p.y_offset = origin[0].1.wrapping_neg();
     }
     if direction.is_backward() {
         buf.reverse();
