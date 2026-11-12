@@ -37,16 +37,18 @@ pub(crate) fn unpack(mut data: Vec<u8>) -> Result<Vec<u8>, Diagnostic> {
             )
         })?;
     }
-    if data.starts_with(b"wOFF") {
-        return sofel_woff::decode_woff(&data, MAX_FONT_BYTES).map_err(|e| {
-            if gzip || lzw || bzip {
-                diagnostic(0, "invalid WOFF in decompressed font data")
-            } else {
-                diagnostic(e.offset, e.reason)
-            }
-        });
-    }
-    Ok(data)
+    let decoded = match data.get(..4) {
+        Some(b"wOFF") => sofel_woff::decode_woff(&data, MAX_FONT_BYTES),
+        Some(b"wOF2") => sofel_woff::decode_woff2(&data, MAX_FONT_BYTES),
+        _ => return Ok(data),
+    };
+    decoded.map_err(|e| {
+        if gzip || lzw || bzip {
+            diagnostic(0, "invalid WOFF in decompressed font data")
+        } else {
+            diagnostic(e.offset, e.reason)
+        }
+    })
 }
 
 #[cfg(test)]
