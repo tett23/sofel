@@ -288,12 +288,21 @@ impl Plan {
                     reason: "pinning the axes of avar version 2 (deferred by ADR 0022)",
                 });
             }
-            let metadata_only = ![
-                b"avar", b"gvar", b"GVAR", b"HVAR", b"VVAR", b"MVAR", b"cvar", b"CFF2", b"GDEF",
-                b"GSUB", b"GPOS", b"BASE", b"MATH", b"COLR", b"VARC", b"STAT",
+            let no_variation_data = ![
+                b"gvar", b"GVAR", b"HVAR", b"VVAR", b"MVAR", b"cvar", b"CFF2", b"GDEF", b"GSUB",
+                b"GPOS", b"BASE", b"MATH", b"COLR", b"VARC", b"STAT",
             ]
             .iter()
             .any(|tag| font.table(Tag::new(tag)).is_some());
+            let simple_avar = font.table(Tag::new(b"avar")).is_none_or(|data| {
+                sofel_font::read::avar::Avar::new(data)
+                    .is_ok_and(|table| table.major_version() == 1 && norm.pinned_at_default)
+                    && norm
+                        .user
+                        .values()
+                        .all(|range| range.min == range.default && range.default == range.max)
+            });
+            let metadata_only = no_variation_data && simple_avar;
             if !(norm.all_axes_pinned && norm.pinned_at_default) && !metadata_only {
                 return Err(SubsetError::Unsupported {
                     tag: Tag::new(b"fvar"),

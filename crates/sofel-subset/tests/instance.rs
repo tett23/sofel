@@ -266,6 +266,25 @@ fn i1_subset_instance_restricts_remaining_fvar_axis_range() {
 }
 
 #[test]
+fn i1_subset_instance_keeps_unmodified_avar_map_of_remaining_axis() {
+    let wght_map = [(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)];
+    let wdth_map = [(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)];
+    let data = font_with(vec![
+        (b"fvar", fvar(&AXES)),
+        (b"avar", avar(1, &[&wght_map, &wdth_map])),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let input = unicodes()
+        .with_axis_pinned_to_default(Tag::new(b"wdth"), &font)
+        .unwrap();
+    let output = subset(&font, &input).unwrap();
+    let sfnt = Sfnt::new(&output).unwrap();
+    let avar_bytes = sfnt.table(Tag::new(b"avar")).unwrap();
+    assert_eq!(u16::from_be_bytes([avar_bytes[6], avar_bytes[7]]), 1);
+    assert_eq!(&avar_bytes[8..], &avar(1, &[&wght_map])[8..]);
+}
+
+#[test]
 fn i2_unknown_axis_preserves_previous_axis_range_and_output() {
     let data = font_with(vec![(b"fvar", fvar(&AXES))]);
     let font = Font::new(&data, 0).unwrap();

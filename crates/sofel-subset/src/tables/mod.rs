@@ -1,6 +1,7 @@
 //! Writing the tables (`hb_subset_plan_execute_or_fail` and the tables'
 //! `subset` functions).
 
+mod avar;
 pub(crate) mod base;
 mod cblc;
 pub(crate) mod cff;
@@ -199,6 +200,13 @@ impl Plan {
             b"fvar" if !self.var.user().is_empty() => {
                 let src = font.table(tag).unwrap_or(&[]);
                 let bytes = fvar::subset(self, src)?;
+                let room = self.room_after(font, tag, src, room, bytes.len())?;
+                tables.insert(tag, bytes);
+                return Ok(room);
+            }
+            b"avar" if !self.var.user().is_empty() => {
+                let src = font.table(tag).unwrap_or(&[]);
+                let bytes = avar::subset(self, src)?;
                 let room = self.room_after(font, tag, src, room, bytes.len())?;
                 tables.insert(tag, bytes);
                 return Ok(room);
