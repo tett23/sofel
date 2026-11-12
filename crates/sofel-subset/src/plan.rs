@@ -314,24 +314,8 @@ impl Plan {
             if font.table(t).is_some() && !dropped && !passthrough {
                 if tag == b"VARC" && norm.user.is_empty() {
                     let source = font.table(t).unwrap_or(&[]);
-                    let varc = Varc::new(source).map_err(|_| SubsetError::Malformed { tag: t })?;
-                    let conditions = crate::tables::varc::simple_condition_bytes(source);
-                    let simple = (0..varc.record_count()).all(|index| {
-                        varc.record_at(index).is_some_and(|record| {
-                            sofel_font::read::varc::Components::new(record, None).all(|part| {
-                                part.is_some_and(|part| {
-                                    part.flags & 0x0e == 0
-                                        && (part.condition_index.is_none()
-                                            || (part.condition_index == Some(0)
-                                                && conditions
-                                                    .is_some_and(|bytes| !bytes.is_empty())))
-                                })
-                            })
-                        })
-                    });
-                    if simple && conditions.is_some() {
-                        continue;
-                    }
+                    Varc::new(source).map_err(|_| SubsetError::Malformed { tag: t })?;
+                    continue;
                 }
                 return Err(SubsetError::Unsupported { tag: t, reason });
             }
