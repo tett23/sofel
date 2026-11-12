@@ -281,7 +281,9 @@ jobs:
           key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-${{ runner.arch }}-reference-tools-${{ steps.native-toolchain.outputs.key }}-${{ hashFiles('.github/workflows/ci.yml', 'testdata.lock', 'tools/ft-dump/**', 'tools/hb-dump/**') }}
       - name: Build ft-dump
         if: steps.reference-tools.outputs.cache-hit != 'true'
-        run: sh scripts/measure-process-tree.sh sh tools/ft-dump/build.sh
+        run: |
+          sh scripts/measure-process-tree.sh sh tools/ft-dump/build.sh
+          sh scripts/measure-process-tree.sh sh tools/ft-dump/build.sh target/testdata/freetype target/ft-dump/ft-dump-filtered --filtered-lcd
       # docs/adr/0016
       - name: Build hb-dump
         if: steps.reference-tools.outputs.cache-hit != 'true'

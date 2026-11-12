@@ -69,7 +69,7 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-write`](crates/sofel-write) | sfntの組み立てと、HarfBuzzと同じ詰め方のオブジェクトの直列化（[ADR 0022](docs/adr/0022-subsetting.md)） |
 | [`sofel-subset`](crates/sofel-subset) | HarfBuzzの `hb-subset` とバイト単位で同じ出力のサブセット化（[ADR 0022](docs/adr/0022-subsetting.md)。書ける表はglyf系、cmap、name、OS/2、post、hdmx、CFF、VORG、GDEF、GSUB、GPOS、BASE、COLR、CPAL、CBLC、CBDT、sbix、MATH、STAT、軸をすべて固定したCFF2など。軸はすべて既定の値に固定できる。前処理（`Prepared`）で同じフォントの計画を速く作れる） |
 | [`sofel-vector`](crates/sofel-vector) | 配置した単色の輪郭を SVG または PDF のページに書く。SVG には変換と矩形クリップを指定して PNG も配置できる（[ADR 0068](docs/adr/0068-vector-and-gpu-output.md)） |
-| [`sofel-raster`](crates/sofel-raster) | FreeTypeのsmoothのラスタライザと同じ計算で、8bitのアンチエイリアスの画像を作る。COLRv0の層をFreeTypeと同じ整数の計算でBGRAの画像に重ねる（`blend_layer`）。Harmony の水平・垂直 LCD のカバレッジも取得できる |
+| [`sofel-raster`](crates/sofel-raster) | FreeTypeのsmoothのラスタライザと同じ計算で、8bitのアンチエイリアスの画像を作る。COLRv0の層をFreeTypeと同じ整数の計算でBGRAの画像に重ねる（`blend_layer`）。水平・垂直 LCD は Harmony と5タップフィルタに対応する |
 | [`sofel-woff`](crates/sofel-woff) | 単一フェイスの sfnt を WOFF・WOFF2 に変換するライブラリとコマンド |
 | [`sofel-cli`](crates/sofel-cli) | 小さな道具（`sofel-validate`、`sofel-render`、`sofel-paint`、`sofel-shape`、`sofel-subset`） |
 | [`sofel-capi`](crates/sofel-capi) | C ABI（ヘッダは [`sofel.h`](crates/sofel-capi/include/sofel.h)、[ADR 0015](docs/adr/0015-c-abi.md)） |
@@ -146,7 +146,7 @@ HarfBuzzの `hb-subset` と同じオプションでサブセット化する（[A
 軸を固定しない場合も、BASE の座標に VariationIndex の参照がなければ、使われない変化量の表を除く。
 適合テストで出力が違えば、表ごとに最初の差の位置を示す。片方だけにある表は、どちらに欠けているかも示す。
 
-軸を固定しない CFF2 は `--desubroutinize` を指定するとサブセット化できる。指定しない場合は、残すグリフがサブルーチンを呼ばなければ未使用のサブルーチンを除き、呼ぶ場合は即値の番号で呼ぶ global/local のサブルーチンを必要な分だけ残して番号を詰める。`blend`、`vsindex` と VariationStore を残す。ヒントを保持する場合は `hintmask` と `cntrmask` のデータバイトを解釈器に従って読み飛ばす。`--no-hinting` では、ヒントが描画命令より前にあり、同じ charstring 内で先行する call がなく、引数が同じ charstring 内の連続した数値だけで、使用するサブルーチンがヒント除去後も空にならず、`blend`、`vsindex`、`dotsection` を含まない場合に限ってヒントを除く。同じサブルーチンのマスク長が呼び出しごとに異なる場合は、まだ対応していない。
+軸を固定しない CFF2 は `--desubroutinize` を指定するとサブセット化できる。指定しない場合は、残すグリフがサブルーチンを呼ばなければ未使用のサブルーチンを除き、呼ぶ場合は即値の番号で呼ぶ global/local のサブルーチンを必要な分だけ残して番号を詰める。`blend`、`vsindex` と VariationStore を残す。ヒントを保持する場合は `hintmask` と `cntrmask` のデータバイトを解釈器に従って読み飛ばす。`--no-hinting` では、ヒントが描画命令より前にあり、同じ charstring 内で先行する call がなく、引数が同じ charstring 内の連続した数値だけで、使用するサブルーチンがヒント除去後も空にならず、`blend`、`vsindex`、`dotsection` を含まない場合に限ってヒントを除く。サブルーチン先頭の stem に対しては、呼び出し直前に積んだ連続する数値の引数も除く。命令が空か `return` だけのサブルーチンは、その呼び出しとともに除く。同じサブルーチンのマスク長が呼び出しごとに異なる場合は、まだ対応していない。
 
 ```sh
 sofel-subset --font-file=Roboto.ttf --unicodes=41-5A -o out.ttf

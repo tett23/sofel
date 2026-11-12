@@ -291,20 +291,32 @@ fn cff2_called_subroutines_recompute_bias_after_shrinking_index() {
 }
 
 #[test]
-fn cff2_no_hinting_noop_subroutine_remains_unsupported() {
-    let mut programs = charstrings();
-    programs[2] = charstring(&[Cs::Op(19), Cs::I(-107), Cs::Op(29)]);
-    let bytes = font_with_programs(vec![vec![11]], Vec::new(), programs);
-    let font = Font::new(&bytes, 0).unwrap();
-    assert!(Plan::new(&font, &glyphs(&[2])).is_ok());
-    assert!(matches!(
-        Plan::new(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)),
-        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"CFF2")
-    ));
+fn cff2_no_hinting_removes_calls_to_empty_subroutines() {
+    for (call, subroutine) in [(29, vec![11]), (10, vec![11]), (29, vec![]), (10, vec![])] {
+        let mut programs = charstrings();
+        programs[2] = charstring(&[Cs::Op(19), Cs::I(-107), Cs::Op(call)]);
+        let (globals, locals) = if call == 29 {
+            (vec![subroutine], vec![])
+        } else {
+            (vec![], vec![subroutine])
+        };
+        let bytes = font_with_programs(globals, locals, programs);
+        let font = Font::new(&bytes, 0).unwrap();
+        assert!(Plan::new(&font, &glyphs(&[2])).is_ok());
+        let out = subset(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)).unwrap();
+        if call == 29 {
+            assert_eq!(out, include_bytes!("data/cff2-no-hint-empty-subr-hb15.otf"));
+        }
+        let result = Font::new(&out, 0).unwrap();
+        let cff2 = HbCff2::new(&result).unwrap();
+        assert_eq!(cff2.char_string(1), Some([].as_slice()));
+        assert!(cff2.global_subrs().is_empty());
+        assert!(cff2.private(0).0.is_empty());
+    }
 }
 
 #[test]
-fn cff2_no_hinting_caller_supplied_stem_args_remain_unsupported() {
+fn cff2_no_hinting_removes_stem_args_supplied_by_caller() {
     let mut programs = charstrings();
     programs[2] = charstring(&[Cs::I(0), Cs::I(10), Cs::I(-107), Cs::Op(29)]);
     let global = charstring(&[
@@ -319,10 +331,18 @@ fn cff2_no_hinting_caller_supplied_stem_args_remain_unsupported() {
     ]);
     let bytes = font_with_programs(vec![global], Vec::new(), programs);
     let font = Font::new(&bytes, 0).unwrap();
-    assert!(matches!(
-        Plan::new(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)),
-        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"CFF2")
-    ));
+    let out = subset(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)).unwrap();
+    assert_eq!(
+        out,
+        include_bytes!("data/cff2-no-hint-caller-stems-hb15.otf")
+    );
+    let result = Font::new(&out, 0).unwrap();
+    let cff2 = HbCff2::new(&result).unwrap();
+    assert_eq!(cff2.char_string(1), Some([32, 29].as_slice()));
+    assert_eq!(
+        cff2.global_subrs().get(0),
+        Some([139, 139, 21, 144, 144, 5].as_slice())
+    );
 }
 
 #[test]
