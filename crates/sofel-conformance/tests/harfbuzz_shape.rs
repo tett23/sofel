@@ -242,7 +242,8 @@ fn adr0028_trak_ptem_cases_are_aat_not_variations() {
         assert!(subject.misfit("aat").is_none(), "{}", case.id);
         assert!(subject.misfit("variations").is_some(), "{}", case.id);
         assert_eq!(subject.suggest(), "aat?", "{}", case.id);
-        assert_eq!(reasons.get(&case.id).map(String::as_str), Some("aat"));
+        assert!(!reasons.contains_key(&case.id));
+        assert_eq!(run(case), Ok(()), "{}", case.id);
     }
 }
 
