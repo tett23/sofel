@@ -102,3 +102,22 @@ fn i1_variable_colr_93() {
         include_bytes!("../../../conformance/color-raster/variable-93.bgra"),
     );
 }
+
+#[test]
+fn i2_colr_pixels_sweep() {
+    compare(
+        VARIABLE,
+        27,
+        include_bytes!("../../../conformance/color-raster/variable-27.bgra"),
+    );
+    compare(
+        VARIABLE,
+        38,
+        include_bytes!("../../../conformance/color-raster/variable-38.bgra"),
+    );
+    compare(
+        VARIABLE,
+        12,
+        include_bytes!("../../../conformance/color-raster/variable-12.bgra"),
+    );
+}

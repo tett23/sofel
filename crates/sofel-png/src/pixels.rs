@@ -125,15 +125,7 @@ impl Header {
             6 => [to_byte(r), to_byte(g), to_byte(b), to_byte(a)],
             _ => return Err(Error::Invalid),
         };
-        let [r, g, b, a] = rgba;
-        // FreeType pngshim.c uses rounded multiplication by alpha/255.
-        let premul = |c: u8| -> u8 {
-            let t = u32::from(c)
-                .saturating_mul(u32::from(a))
-                .saturating_add(128);
-            u8::try_from(t.saturating_add(t >> 8) >> 8).unwrap_or_default()
-        };
-        Ok([premul(b), premul(g), premul(r), a])
+        Ok(rgba)
     }
 }
 
