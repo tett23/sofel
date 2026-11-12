@@ -312,3 +312,165 @@ fn paint_span(row: &mut [u8], width: usize, left: i64, right: i64, precision: i6
         *end |= end_mask;
     }
 }
+
+#[cfg(test)]
+mod dropout_tests {
+    use super::dropout_pixel;
+
+    #[test]
+    fn adr0064_i2_smart_dropouts_choose_the_nearest_pixel_and_respect_existing_ink() {
+        let pick =
+            |left, right, smart, ink| dropout_pixel(left, right, 64, smart, 2, |p| Some(p) == ink);
+        assert_eq!(pick(39, 60, false, None), Some(0));
+        assert_eq!(pick(39, 60, true, None), Some(1));
+        assert_eq!(pick(39, 60, true, Some(0)), None);
+        assert_eq!(pick(20, 44, true, None), Some(0));
+        assert_eq!(pick(-55, -45, true, None), Some(0));
+        assert_eq!(pick(104, 120, true, None), Some(1));
+        assert_eq!(pick(-120, -110, true, None), None);
+    }
+}
+
+// A span without a pixel centre lies strictly between two neighbours.
+// FreeType handles these after solid spans so existing ink takes precedence.
+fn dropout_pixel(
+    left: i64,
+    right: i64,
+    precision: i64,
+    smart: bool,
+    extent: usize,
+    inked: impl FnOnce(usize) -> bool,
+) -> Option<usize> {
+    let low = right.div_euclid(precision);
+    let high = low + 1;
+    let prefer_high =
+        smart && ((left + right + precision * 63 / 64) >> 1).div_euclid(precision) == high;
+    let (preferred, other) = if prefer_high {
+        (high, low)
+    } else {
+        (low, high)
+    };
+    let inside = |p| usize::try_from(p).ok().filter(|&p| p < extent);
+    let other = inside(other);
+    match inside(preferred) {
+        None => other,
+        Some(_) if other.is_some_and(inked) => None,
+        pixel => pixel,
+    }
+}
+
+#[cfg(test)]
+mod contour_tests {
+    use super::{ContourProfiles, Edge};
+
+    #[test]
+    fn adr0064_i2_profiles_join_at_direction_changes_and_close_once() {
+        let mut contour = ContourProfiles::new((0, 3), 64);
+        for (a, b) in [
+            ((0, 64), (0, 128)),
+            ((0, 128), (128, 128)),
+            ((128, 128), (128, 0)),
+            ((128, 0), (0, 0)),
+            ((0, 0), (0, 64)),
+        ] {
+            contour.edge(Edge::Line(a, b));
+        }
+        let profiles = contour.finish(64);
+        assert_eq!(profiles.len(), 3);
+        assert_eq!(profiles[0].samples, [(1, 0), (2, 0)]);
+        assert_eq!(profiles[1].samples, [(2, 128), (1, 128), (0, 128)]);
+        assert_eq!(profiles[2].samples, [(0, 0)]);
+    }
+}
+
+enum Edge {
+    Line(MonoPoint, MonoPoint),
+    Curve(Arc),
+}
+
+struct Profile {
+    up: bool,
+    start_y: i64,
+    end_y: i64,
+    samples: alloc::vec::Vec<(i64, i64)>,
+}
+
+struct ContourProfiles {
+    profiles: alloc::vec::Vec<Profile>,
+    clip: (i64, i64),
+    precision: i64,
+}
+
+impl ContourProfiles {
+    fn new(clip: (i64, i64), precision: i64) -> Self {
+        Self {
+            profiles: alloc::vec::Vec::new(),
+            clip,
+            precision,
+        }
+    }
+
+    fn edge(&mut self, edge: Edge) {
+        match edge {
+            Edge::Line(a, b) => self.directed(Edge::Line(a, b)),
+            Edge::Curve(arc) => {
+                arc.directed(self.precision, |part| self.directed(Edge::Curve(part)))
+            }
+        }
+    }
+
+    fn directed(&mut self, edge: Edge) {
+        let (start, end) = match edge {
+            Edge::Line(a, b) => (a, b),
+            Edge::Curve(arc) => arc.ends(),
+        };
+        if start.1 == end.1 {
+            return;
+        }
+        let up = start.1 < end.1;
+        if self
+            .profiles
+            .last()
+            .is_none_or(|previous| previous.up != up)
+        {
+            let mut samples = alloc::vec::Vec::new();
+            let row = start.1.div_euclid(self.precision);
+            if start.1.rem_euclid(self.precision) == 0 && (self.clip.0..=self.clip.1).contains(&row)
+            {
+                samples.push((row, start.0));
+            }
+            self.profiles.push(Profile {
+                up,
+                start_y: start.1,
+                end_y: end.1,
+                samples,
+            });
+        }
+        let Some(profile) = self.profiles.last_mut() else {
+            return;
+        };
+        profile.end_y = end.1;
+        let record = |row, x| profile.samples.push((row, x));
+        match edge {
+            Edge::Line(a, b) => line_profile(a, b, self.clip, self.precision, record),
+            Edge::Curve(arc) => curve_profile(arc, self.clip, self.precision, record),
+        }
+    }
+
+    fn finish(mut self, closing_y: i64) -> alloc::vec::Vec<Profile> {
+        let first_up = self
+            .profiles
+            .iter()
+            .find(|p| !p.samples.is_empty())
+            .map(|p| p.up);
+        if let Some(last) = self.profiles.last_mut()
+            && first_up == Some(last.up)
+            && closing_y.rem_euclid(self.precision) == 0
+            && (self.clip.0..=self.clip.1).contains(&closing_y.div_euclid(self.precision))
+        {
+            last.samples.pop();
+        }
+        self.profiles.retain(|p| !p.samples.is_empty());
+        self.profiles
+    }
+}
