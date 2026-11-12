@@ -337,6 +337,71 @@ impl Interpreter {
         }
     }
 
+    fn prepare(
+        instance: sofel_font::var::Instance<'_, '_, '_, '_>,
+        ppem: u16,
+        engine: EngineInfo,
+    ) -> Result<(Self, usize), Error> {
+        use sofel_font::read::{CountWidth, Tag, maxp};
+        let font = instance.font();
+        let (bytes, width) = font
+            .table(maxp::TAG_WIDE)
+            .map(|b| (b, CountWidth::U24))
+            .or_else(|| font.table(maxp::TAG).map(|b| (b, CountWidth::U16)))
+            .ok_or(Error::InvalidReference)?;
+        let maxima = maxp::Maxp::new(bytes, width)
+            .ok()
+            .and_then(|m| m.truetype())
+            .ok_or(Error::InvalidReference)?;
+        let cvt = if font.table(Tag::new(b"cvt ")).is_some() {
+            instance
+                .ft_control_values()
+                .ok_or(Error::InvalidReference)?
+        } else {
+            alloc::vec::Vec::new()
+        };
+        let scale = sofel_font::read::cff::ft::div_fix(
+            i64::from(ppem) * 64,
+            i64::from(font.units_per_em()),
+        );
+        Self::prepare_programs(
+            maxima,
+            &cvt,
+            ppem,
+            scale,
+            engine,
+            font.table(Tag::new(b"fpgm")).unwrap_or_default(),
+            font.table(Tag::new(b"prep")).unwrap_or_default(),
+        )
+    }
+
+    fn prepare_programs(
+        maxima: sofel_font::read::maxp::TrueTypeMaxima,
+        cvt: &[i32],
+        ppem: u16,
+        scale: i64,
+        engine: EngineInfo,
+        font_program: &[u8],
+        prep: &[u8],
+    ) -> Result<(Self, usize), Error> {
+        let declared = usize::from(maxima.max_stack_elements);
+        let limit = declared + (declared / 2).max(128);
+        let twilight = (usize::from(maxima.max_twilight_points) + 4)
+            .min(65535)
+            .min((2 * cvt.len()).max(30));
+        let mut vm = Self::new(maxima.max_storage, cvt, scale);
+        vm.engine = engine;
+        vm.points[0].resize(twilight, HintPoint::default());
+        let mut font_vm = vm.clone();
+        font_vm.cvt.fill(0);
+        font_vm.execute(font_program, &mut alloc::vec::Vec::new(), limit)?;
+        vm.functions = font_vm.functions;
+        vm.ppem = [ppem; 2];
+        vm.point_size = i64::from(ppem) * 64;
+        vm.execute(prep, &mut alloc::vec::Vec::new(), limit)?;
+        Ok((vm, limit))
+    }
+
     fn execute_glyph(
         &self,
         points: alloc::vec::Vec<HintPoint>,
@@ -1439,4 +1504,29 @@ fn adr0064_i1_rounds_phantom_coordinates_before_glyph_program() {
         [[95, -33], [64, -33], [64, -33], [95, -64], [95, -64]]
     );
     assert!(result.iter().all(|p| p.original == [95, -33]));
+}
+
+#[test]
+fn adr0064_i1_prep_retains_font_functions_and_reinitializes_storage() {
+    use sofel_font::read::maxp::TrueTypeMaxima;
+    let maxima = TrueTypeMaxima {
+        max_storage: 1,
+        max_twilight_points: 2,
+        ..Default::default()
+    };
+    let engine = Interpreter::new(0, &[], 0).engine;
+    let (vm, limit) = Interpreter::prepare_programs(
+        maxima,
+        &[4 * 64],
+        16,
+        65536,
+        engine,
+        &[0xb1, 0, 99, 0x42, 0xb0, 1, 0x2c, 0xb0, 4, 0x60, 0x2d],
+        &[0xb1, 0, 0, 0x43, 0xb0, 1, 0x2b, 0x44],
+    )
+    .unwrap();
+    assert_eq!(vm.cvt, [4]);
+    assert_eq!(vm.storage, [0]);
+    assert_eq!(vm.points[0].len(), 6);
+    assert_eq!(limit, 128);
 }
