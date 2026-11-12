@@ -657,22 +657,31 @@ fn adr0067_i2_avar2_range_preserves_gvar_matches_harfbuzz() {
     let path = paths::testdata().join("harfbuzz/test/api/fonts/varc-unrelated-axis-avar2.ttf");
     let bytes = std::fs::read(&path).unwrap();
     let font = Font::new(&bytes, 0).unwrap();
-    let input = Input::new()
-        .map_set(SetKind::Unicodes, |set| set.add(0xAC01))
-        .with_axis_range(Tag::new(b"DUMY"), Some(0.0), Some(1.0), Some(0.5), &font)
-        .unwrap();
-    let ours = subset(&font, &input).unwrap();
-    let output =
-        std::env::temp_dir().join(format!("sofel-avar2-keep-gvar-{}.ttf", std::process::id()));
-    let reference = ProcessCommand::new(paths::hb_dump())
-        .arg("--subset")
-        .arg(format!("--font-file={}", path.display()))
-        .args(["--unicodes=U+AC01", "--variations=DUMY=0:0.5:1"])
-        .arg(format!("--output-file={}", output.display()))
-        .output()
-        .unwrap();
-    assert!(reference.status.success());
-    let expected = std::fs::read(&output).unwrap();
-    std::fs::remove_file(output).unwrap();
-    assert_eq!(ours, expected);
+    let base = Input::new().map_set(SetKind::Unicodes, |set| set.add(0xAC01));
+    let axis = Tag::new(b"DUMY");
+    for (variation, input) in [
+        (
+            "0:0.5:1",
+            base.with_axis_range(axis, Some(0.0), Some(1.0), Some(0.5), &font),
+        ),
+        ("0.5", base.with_axis_pinned(axis, 0.5, &font)),
+        ("0", base.with_axis_pinned_to_default(axis, &font)),
+    ] {
+        let input = input.unwrap();
+        let ours = subset(&font, &input).unwrap();
+        let output =
+            std::env::temp_dir().join(format!("sofel-avar2-keep-gvar-{}.ttf", std::process::id()));
+        let reference = ProcessCommand::new(paths::hb_dump())
+            .arg("--subset")
+            .arg(format!("--font-file={}", path.display()))
+            .arg("--unicodes=U+AC01")
+            .arg(format!("--variations=DUMY={variation}"))
+            .arg(format!("--output-file={}", output.display()))
+            .output()
+            .unwrap();
+        assert!(reference.status.success());
+        let expected = std::fs::read(&output).unwrap();
+        std::fs::remove_file(output).unwrap();
+        assert_eq!(ours, expected);
+    }
 }

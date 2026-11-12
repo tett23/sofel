@@ -316,9 +316,10 @@ impl Plan {
                 crate::tables::avar::is_empty_identity_v2(data, norm.axis_tags.len())
             });
         let avar2_range = identity_avar2 && norm.user.values().any(|r| r.min < r.max);
+        let single_pin = norm.user.len() == 1 && norm.user.values().all(|r| r.min == r.max);
         let needs_rebase = |tag: &&[u8; 4]| {
             (!inert_gvar || (**tag != *b"gvar" && **tag != *b"GVAR"))
-                && !(avar2_range && **tag == *b"gvar")
+                && !((avar2_range || single_pin) && **tag == *b"gvar")
                 && font.table(Tag::new(tag)).is_some()
         };
         let no_other_varc_rebase = !other_variation_tags.iter().any(|tag| {
