@@ -305,14 +305,14 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - `sofel-color`：
   - パレット（`palette_count`、`palette_name_id`、`palette_flags`、`palette_color_name_id`、`palette_colors`、`palette_entry_count`、`find_palette`）はHarfBuzzの読み方による。範囲外の名前は0xFFFF、フラグは0。
   - `paint` は、HarfBuzzの `hb_ot_paint_glyph_or_fail` と同じくCOLR、SVG、CBDT、sbixの順に試す。COLRv1は、`v1_fits` が偽の表では使わない（HarfBuzzは版1のリストを捨てる）。結果は `Scratch` に表ごとに覚える。COLRv1の打ち切り（深さ64、辺の数16384、計算の量2^24で停止点1個に16）、循環の検出（`hb_decycler_t` のtortoise-hareと同じく、深さの半分の位置の値と比べる）、クリップの箱の無い木の有界の判定（`hb_paint_bounded`）はHarfBuzzと同じ。`paint`・`paint_recording` は `Instance` または既定位置を表すフォント参照を受け取る。箱の問い合わせも輪郭と同じ位置でクリップ矩形または塗りを評価する。`paint_recording_at` とC ABIの `sofel_paint_glyph` は、指定位置でCOLRのItemVariationStoreを評価して塗り、色の停止点、変形、クリップ矩形に差分を適用する。クリップ矩形の最小辺は差分を下に、最大辺は上に丸める（[ADR 0027](adr/0027-variable-fonts.md)）。色は `Palette::Font(i)`（範囲外は0番）か `Palette::Custom`（範囲外の番号は透明の黒）から引き、アルファはHarfBuzzの `roundf`（[ADR 0026](adr/0026-harfbuzz-rounding.md)）で丸める。
-  - `Recording` は命令を値の列にし、`replay` で流しなおす。画像のデータはフォントを借りるので、`Recording` へは `paint_recording` で塗る。
+  - `Recording` は命令を値の列にし、`replay` で流しなおす。画像は `paint_recording` で記録する。gzip 圧縮された SVG は展開して `Svg { gzip: false }` として渡し、記録には展開後のバイト列を保持する（[ADR 0066](adr/0066-color-glyph-pixels.md)）。それ以外の画像はフォントから借りる。
   - `glyph_extents` と `scaled_glyph_extents` は `hb_ot_get_glyph_extents` と同じくsbix、CBDT（最大のストライク）、COLR、輪郭（`Outlines`）の順に探す。COLRはクリップの箱か、`hb_paint_extents` と同じ計算の塗りの範囲（層のグリフは読み込んだ輪郭の制御点の箱）とする。`Outlines` と `Scratch` を受け取る（ADRの `(font, glyph)` から、輪郭のアクセラレータと作業領域を呼び出し側が持つ形に変えた）。拡大縮小した箱は、根に拡大の変換を置いて求める。`HbScale` に、この箱を拡大縮小せずに使う `v_origin_scaled`、`metrics_position_with_fallback_scaled`、`baseline_with_fallback_scaled` を足した。
   - `color_formats`、`glyph_color_format`（塗りの木をたどらない。`v1_fits` も見ない）、`layers`、`svg_document` を持つ。
   - 生の塗りの木（`base_paint`、`PaintRef`、`clip_box`、`layer_paint`）は、FreeTypeの `FT_Get_Color_Glyph_Paint` などと同じ値を返す。基本のグリフの探索はFreeTypeの二分探索による。
 - `sofel-bitmap`：`strikes` はFreeTypeの `available_sizes`（CBLC、EBLC、`bloc`、sbixの順に最初の表、ppemが0のストライクは除く）、`match_strike` は `FT_Match_Size`、`choose_strike` はHarfBuzzの選び方（`max(x, y)` が要求以上で最小、無ければ最大、0は最大）、`glyph_bitmap` はFreeTypeの読み込み（sbixの `dupe` と `flip` を4回まで）で画像のデータとメトリクスを返す。PNGを塗るための `cbdt_png`、`sbix_png` とその箱はHarfBuzzの読み方（CBDTは索引の形式1と3、画像の形式17と18、sbixは `dupe` を8回まで）による。
 - `Rasterizer::render_mono` と C の `sofel_rasterizer_render_mono` は、輪郭をモノクロで描く。各行は上から順に並び、左端の画素が最初のバイトの最上位ビットに対応する。行のバイト数は幅を8で割って切り上げた値である。`sofel_cli::glyph::render_mono` は、ヒンティングなしの TrueType 輪郭を画素中心に合わせて移動し、暗黙の点を求めてから描く（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
 - `Rasterizer::render_harmony` と C の `sofel_rasterizer_render_harmony` は、記録した輪郭を FreeType Harmony の既定 RGB 配置で描く。フィルタを使う構成では、`render_filtered_lcd` と C の `sofel_rasterizer_render_filtered_lcd` が5個の重みを受け取り、中央の重みが0ならフィルタを無効にする。水平 LCD の幅と垂直 LCD の行数はサブピクセル単位で、カバレッジは上の行からパディングなしで返す（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
-- `sofel-bitmap` の `bitmap_layout` と `draw_bitmap` は、EBDT、CBDT、`bdat` の画像の形式1、2、5、6、7と成分の形式8、9を、1、2、4、8、32bitの深さで、FreeTypeの `tt_sbit_decoder_load_image`（索引の形式1〜5、形式2と7のバイト単位とビット単位の判定、成分のメトリクスの戻し方）と同じ画素とメトリクスにして、呼び出し側の領域（`pitch × rows` バイト、上の行から）に書く。32bitは `FT_LOAD_COLOR` と同じくBGRAのまま書く。PNGの画像は展開しない（`BitmapError::Png`）。
+- `sofel-bitmap` の `bitmap_layout` と `draw_bitmap` は、EBDT、CBDT、`bdat` の画像の形式1、2、5、6、7と成分の形式8、9を、1、2、4、8、32bitの深さで、FreeTypeの `tt_sbit_decoder_load_image`（索引の形式1〜5、形式2と7のバイト単位とビット単位の判定、成分のメトリクスの戻し方）と同じ画素とメトリクスにして、呼び出し側の領域（`pitch × rows` バイト、上の行から）に書く。32bitは `FT_LOAD_COLOR` と同じくBGRAのまま書く。CBDT と sbix の PNG はアルファ乗算済み BGRA に展開する。sbix の flip は各行を左右に反転し、単純輪郭を持つグリフでは FreeType の水平方向ロードに合わせて左サイドベアリングと輪郭の下端で原点を補正する（[ADR 0066](adr/0066-color-glyph-pixels.md)）。
 - [ADR 0063](adr/0063-font-functions-and-synthesis.md) の `convert_bitmap` はFreeTypeの `FT_Bitmap_Convert` と同じくMONO、GRAY2、GRAY4、GRAY、LCD、LCD_V、BGRAを8bitの行へ変え、行の整列と負のpitchを保つ。`embolden_bitmap` はFreeTypeの `FT_Bitmap_Embolden` と同じく画素を太らせ、GRAY2とGRAY4を先に8bitへ変え、BGRAは変更しない。`embolden_bitmap_slot` は太字にした画像とともに、FreeTypeの `FT_GlyphSlot_Embolden` と同じスロットの送り、幅、高さ、上端を返す。
 - `sofel-font` の `Font::new` は、FreeTypeと同じく、輪郭（glyf、GLYF、CFF、CFF2）が無くsbixも無いフォントでは、Appleの `bhed` を `head` の代わりに読む。`Font::has_outlines`（CBLCかCBDTがあれば偽。FreeTypeは輪郭を無視する）と `Font::has_bitmaps`（CBLC、EBLC、`bloc`、sbix）を持つ。`bhed` は `head` の検証器で検証する。Appleのビットマップだけのフォントでは、FreeTypeがOS/2を読まないため、ストライクの `width` は0になる。
 - `sofel-render` は、`--ppem` に等しいストライク（`FT_Match_Size`）があり、グリフのビットマップがあれば、`--no-bitmap` が無いかぎりビットマップを書く。白黒と灰色はPGM（階調を0〜255に広げて反転）、32bitはPAM（`P7`、`TUPLTYPE RGB_ALPHA`、乗算済みでない値に直す）とし、位置は同じ注釈の行に書く。
@@ -366,6 +366,10 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 軸を指定しない BASE 1.1 の ItemVariationStore は、残すスクリプトとフィーチャに属する横と縦の BaseCoord の VariationIndex を集め、使う行と領域だけを詰めて番号を振りなおす。参照が0件なら、HarfBuzzと同じくストアを除いて座標を残す。BaseValues、既定の MinMax、言語別とフィーチャ別の MinMax を調べ、壊れた参照はこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
 - 軸を指定しないGDEF 1.3のItemVariationStoreは、GSUBのFeatureVariationsが軸範囲の条件だけを持つ場合も含めて、残すLigCaretList、値の記録、アンカー、MATHの定数・斜体補正・上アクセント・カーニング・組み立てのVariationIndexに合わせて行と領域を詰めて書く。参照が0件ならストアを除く。GPOSの値の記録とアンカーをたどってVariationIndexを集める。送り幅などの値に現れる `0x8000` は参照に数えない。MATHとGDEFの一方だけをコピーして参照番号を合わせられない場合と、同じバイト列があるGPOSをそのままコピーする場合は拒否する。GDEFだけをコピーしてGPOSをサブセット化するとき、HarfBuzzと同じくGPOSの参照番号は詰めるが、GDEFのストアは元のバイト列のまま写す。壊れたGDEFはこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
 - レイアウトの表のうち、FeatureVariationsを持つGSUBをそのままコピーする場合のGDEF、GSUBとGPOSの版1.2とGDEFの版1.4、FeatureVariationsの版1.1と形式1でない条件、65536を超えるグリフのフォントの24bitの形式も `Unsupported` とする。
+
+## WOFF と圧縮フォントの読み込み
+
+`sofel_woff::decode_woff` は出力サイズの上限を受け取り、WOFF 1.0 の表を物理順に展開して sfnt を返す。フォントを読み込む CLI は gzip または UNIX compress（LZW）を先に展開してから WOFF の署名を検査する。検証器は WOFF の不正なフィールドか圧縮表の入力オフセットを報告する。gzip の破損はメンバーを含むコンテナ先頭で報告する。[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)
 
 ## Web フォントの書き出し（`sofel-woff`）
 
@@ -539,4 +543,5 @@ CI の文書だけの変更は、比較起点の `ci/documentation-only.rules` �
 
 [sofel ADR 0069](adr/0069-font-render-gallery.md) に従い、追加フォント台帳の全フェイスと固定版 HarfBuzz の可変 COLR フォントを描画する。
 `sh scripts/render-font-gallery.sh` は各フェイスの単字とシェーピング済みの固定文字列を等倍で一枚の PNG に配置し、入力、ppem、未対応の理由をローカルの HTML から確認できるようにする。
+sbix の単字 19 と合字 26 は固定版 FreeType と全画素を照合し、一覧の各欄に等倍で配置する（[sofel ADR 0072](adr/0072-color-gallery-acceptance.md)）。
 文書だけの変更を除き、CI はプルリクエストと main への push で HTML と PNG を生成し、検査したコミット SHA 付きのアーティファクトを14日間保存する。

@@ -1845,11 +1845,9 @@ int32_t sofel_rasterizer_render_harmony(sofel_rasterizer_t *rasterizer, uint32_t
                                        uint8_t *pixels, size_t capacity, size_t *len, int32_t *box);
 
 /*
- * Renders the recorded outline at the three default Harmony subpixel
- * positions. Direction is SOFEL_LCD_HORIZONTAL or SOFEL_LCD_VERTICAL.
- * Returns coverage rows without padding. Width counts subpixels in the
- * horizontal mode and rows count subpixels in the vertical mode.
- * Buffer sizing and errors follow sofel_rasterizer_render.
+ * Renders horizontal or vertical LCD coverage using five filter weights.
+ * A zero centre weight disables filtering. Rows have no padding, and
+ * buffer sizing follows sofel_rasterizer_render.
  *
  * Rust: sofel_raster::Rasterizer::render_filtered_lcd
  * HarfBuzz: none
@@ -2289,7 +2287,7 @@ typedef struct sofel_color_stop_t {
 #define SOFEL_PAINTED_SBIX 5
 
 /* One paint command; the fields a kind does not use are 0 (palette_index
- * -1). Image data points into the font's data; stops into the list. */
+ * -1). Image data borrows the font, except expanded SVG data owned by the command list. Stops also borrow the list. */
 typedef struct sofel_paint_command_t {
   uint32_t kind;
   uint32_t glyph;
