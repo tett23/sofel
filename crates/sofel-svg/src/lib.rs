@@ -2,10 +2,14 @@
 #![no_std]
 
 extern crate alloc;
+mod path;
+mod transform;
 use alloc::borrow::Cow;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
+pub use path::Path;
 use sofel_geom::{Pen, Point};
+use transform::{compose, transform};
 
 /// Reads an SVG document, borrowing plain bytes or expanding a gzip member.
 ///
@@ -59,9 +63,11 @@ pub struct Gradient {
     pub stops: Vec<Stop>,
 }
 
-/// The two SVG shapes required by ADR 0072.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// Geometries that can be drawn to a pen.
+#[derive(Clone, Debug, PartialEq)]
 pub enum ShapeKind {
+    /// Line and Bézier contours from a path element.
+    Path(Path),
     /// A rectangle in SVG coordinates.
     Rect {
         x: f32,
@@ -163,38 +169,6 @@ fn attr<'a>(attrs: &'a [(&str, &'a str)], name: &str) -> Option<&'a str> {
         .iter()
         .find(|(key, _)| *key == name)
         .map(|(_, value)| *value)
-}
-
-#[allow(clippy::indexing_slicing)] // Six values are checked before indexing.
-fn transform(value: Option<&str>) -> [f32; 6] {
-    let Some(value) = value else {
-        return IDENTITY;
-    };
-    if let Some(args) = value
-        .strip_prefix("matrix(")
-        .and_then(|v| v.strip_suffix(')'))
-    {
-        let parts: Vec<_> = args
-            .split(|c: char| c.is_ascii_whitespace() || c == ',')
-            .filter(|p| !p.is_empty())
-            .filter_map(|p| p.parse::<f32>().ok())
-            .collect();
-        if parts.len() == 6 {
-            return [parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]];
-        }
-    }
-    if let Some(args) = value
-        .strip_prefix("rotate(")
-        .and_then(|v| v.strip_suffix(')'))
-    {
-        return match args.trim() {
-            "90" => [0.0, 1.0, -1.0, 0.0, 0.0, 0.0],
-            "-90" | "270" => [0.0, -1.0, 1.0, 0.0, 0.0, 0.0],
-            "180" => [-1.0, 0.0, 0.0, -1.0, 0.0, 0.0],
-            _ => IDENTITY,
-        };
-    }
-    IDENTITY
 }
 
 #[allow(clippy::cast_possible_truncation)] // Hex pairs are each at most 255.
@@ -324,7 +298,7 @@ pub fn parse_shapes(data: &[u8], glyph: u32) -> Result<Scene, ParseError> {
                     });
                 }
             }
-            "rect" | "circle" if selected => {
+            "rect" | "circle" | "path" if selected => {
                 let Some(id) = attr(&attrs, "fill")
                     .and_then(|v| v.strip_prefix("url(#"))
                     .and_then(|v| v.strip_suffix(')'))
@@ -334,30 +308,38 @@ pub fn parse_shapes(data: &[u8], glyph: u32) -> Result<Scene, ParseError> {
                 let Some(index) = scene.gradients.iter().position(|g| g.id == id) else {
                     continue;
                 };
-                let kind = if name == "rect" {
-                    ShapeKind::Rect {
-                        x: number(attr(&attrs, "x"), 0.0),
-                        y: number(attr(&attrs, "y"), 0.0),
-                        width: number(attr(&attrs, "width"), 0.0),
-                        height: number(attr(&attrs, "height"), 0.0),
-                    }
-                } else {
-                    ShapeKind::Circle {
-                        cx: number(attr(&attrs, "cx"), 0.0),
-                        cy: number(attr(&attrs, "cy"), 0.0),
-                        r: number(attr(&attrs, "r"), 0.0),
-                    }
+                let Some(kind) = shape_kind(name, &attrs) else {
+                    continue;
                 };
                 scene.shapes.push(Shape {
                     kind,
                     gradient: index,
-                    transform: group_transform,
+                    transform: compose(group_transform, transform(attr(&attrs, "transform"))),
                 });
             }
             _ => {}
         }
     }
     Ok(scene)
+}
+
+pub(crate) fn shape_kind(name: &str, attrs: &[(&str, &str)]) -> Option<ShapeKind> {
+    let n = |key| number(attr(attrs, key), 0.0);
+    Some(match name {
+        "rect" => ShapeKind::Rect {
+            x: n("x"),
+            y: n("y"),
+            width: n("width"),
+            height: n("height"),
+        },
+        "circle" => ShapeKind::Circle {
+            cx: n("cx"),
+            cy: n("cy"),
+            r: n("r"),
+        },
+        "path" => ShapeKind::Path(Path::parse(attr(attrs, "d")?)?),
+        _ => return None,
+    })
 }
 
 fn map(t: [f32; 6], x: f32, y: f32) -> (f32, f32) {
@@ -374,8 +356,9 @@ fn inverse(t: [f32; 6], x: f32, y: f32) -> Option<(f32, f32)> {
     Some(((t[3] * x - t[2] * y) / det, (-t[1] * x + t[0] * y) / det))
 }
 
-fn shape_box(kind: ShapeKind) -> (f32, f32, f32, f32) {
-    match kind {
+fn shape_box(kind: &ShapeKind) -> (f32, f32, f32, f32) {
+    match *kind {
+        ShapeKind::Path(ref path) => path.bounds,
         ShapeKind::Rect {
             x,
             y,
@@ -417,6 +400,7 @@ impl Shape {
             }
         };
         match self.kind {
+            ShapeKind::Path(ref path) => path.draw(point, pen),
             ShapeKind::Rect {
                 x,
                 y,
@@ -469,7 +453,7 @@ impl Scene {
         let Some((x, y)) = inverse(shape.transform, pixel_x / scale, -pixel_y / scale) else {
             return [0; 4];
         };
-        let (x0, y0, x1, y1) = shape_box(shape.kind);
+        let (x0, y0, x1, y1) = shape_box(&shape.kind);
         let (x, y) = if gradient.user_space {
             (x, y)
         } else {
