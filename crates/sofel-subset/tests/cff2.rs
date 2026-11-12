@@ -433,10 +433,25 @@ fn cff2_shared_subroutine_with_conflicting_mask_lengths_retains_original_bytes()
     let mut programs = charstrings();
     programs[1] = charstring(&[Cs::I(0), Cs::I(10), Cs::Op(1), Cs::I(-107), Cs::Op(29)]);
     programs[2] = charstring(&[Cs::I(-107), Cs::Op(29)]);
-    let bytes = font_with_programs(vec![vec![19, 139, 11]], Vec::new(), programs);
+    let bytes = font_with_programs(vec![vec![19, 139, 11]], Vec::new(), programs.clone());
+    programs.swap(1, 2);
+    let reversed = font_with_programs(vec![vec![19, 139, 11]], Vec::new(), programs.clone());
+    let mask_or_stem = font_with_programs(vec![vec![19, 1, 11]], Vec::new(), programs);
     let font = Font::new(&bytes, 0).unwrap();
     let out = subset(&font, &glyphs(&[1, 2])).unwrap();
     assert_eq!(out, include_bytes!("data/cff2-context-mask-hb15.otf"));
+    let out = subset(&font, &glyphs(&[1, 2]).with_flags(Flags::NO_HINTING)).unwrap();
+    assert_eq!(
+        out,
+        include_bytes!("data/cff2-context-mask-no-hint-hb15.otf")
+    );
+    let font = Font::new(&reversed, 0).unwrap();
+    let out = subset(&font, &glyphs(&[1, 2]).with_flags(Flags::NO_HINTING)).unwrap();
+    assert_eq!(
+        out,
+        include_bytes!("data/cff2-context-mask-reversed-no-hint-hb15.otf")
+    );
+    let font = Font::new(&mask_or_stem, 0).unwrap();
     assert!(matches!(
         subset(&font, &glyphs(&[1, 2]).with_flags(Flags::NO_HINTING)),
         Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"CFF2")
