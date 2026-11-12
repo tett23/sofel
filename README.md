@@ -17,7 +17,7 @@ WOFFとWOFF2、Type1やBDFなどの古い形式、AAT、絵文字（COLR、埋�
 シェーピングの作業バッファは、[ADR 0051](docs/adr/0051-shaping-buffer-item-size.md) に従い、グリフ情報を1要素28バイト、位置を1要素20バイトで保持する。
 
 2段階目（glyfの輪郭とアンチエイリアスのラスタライズ）まで実装し、6段階目のCFFとCFF2の輪郭、CIDの問い合わせ、PostScriptのフォントの情報（[ADR 0021](docs/adr/0021-cff-outlines.md)）と、CIDとグリフ名を速く引くcharsetの索引（[ADR 0025](docs/adr/0025-cff-charset-index.md)）を実装している。CFF2の輪郭は可変フォントの指定した位置でも取り出せる。
-サブセット化（[ADR 0022](docs/adr/0022-subsetting.md)）は、sfntの組み立てと直列化、オフセットのあふれを解く再配置、glyf系の表、cmap、name、OS/2、post、hdmx、CFF（名前のキーとCIDのキー）、VORG、GDEF、GSUB、GPOS、BASEとレイアウトの閉包、COLR（版0、変化量の表を持たない版1、版1の塗りが残らず版0にできるもの、残す版1の塗りとクリップがすべて静的なもの、軸を固定せず変化量ストアを直接またはマップを介して参照するもの）、CPAL、CBLC、CBDT、sbixとCOLRの閉包、MATHとその閉包、軸を指定しないgvarとGVARの書き出し、glyfとCFF2の可変フォントのすべての軸の既定の値への固定（fvar、avar、STATの読み取りと、CFF2をCFFに変換する `DOWNGRADE_CFF2` を含む）、同じフォントを繰り返しサブセット化するための前処理（`Prepared`）、CFFのcharstringの取り出し、グリフ名での指定（`--glyphs`）と、これらのC ABI（`sofel_subset` など）までを実装し、HarfBuzzのサブセット化のテストのうちこれらの表だけを持つ組でバイト単位で一致する。Golemの使い方（グリフIDと `RETAIN_GIDS`）は、HarfBuzzのテストのフォントのうちこれらの表だけを持つものすべてで `hb-subset` と同じバイト列を出す。軸を指定しない HVAR と VVAR は、複数のItemVariationDataから使う行と領域だけを残し、暗黙・明示の送り幅とサイドベアリングのマップを書ける。明示マップの末尾で繰り返す行番号は1項目にまとめる。軸を指定しないGDEF 1.3のItemVariationStoreは、MATHに `0x8000` がなく、GSUBのFeatureVariationsが軸範囲の条件だけを持つ場合も含めて、残すキャレット、値の記録、アンカーが参照する番号と領域を詰めて書く。参照が0件ならストアを除く。MATHに `0x8000` がある場合とFeatureVariationsを持つGSUBをそのままコピーする場合のGDEFの変化量の表と、軸を固定しないCFF2の変化量の表は、10段階目で書く。
+サブセット化（[ADR 0022](docs/adr/0022-subsetting.md)）は、sfntの組み立てと直列化、オフセットのあふれを解く再配置、glyf系の表、cmap、name、OS/2、post、hdmx、CFF（名前のキーとCIDのキー）、VORG、GDEF、GSUB、GPOS、BASEとレイアウトの閉包、COLR（版0、変化量の表を持たない版1、版1の塗りが残らず版0にできるもの、残す版1の塗りとクリップがすべて静的なもの、軸を固定せず変化量ストアを直接またはマップを介して参照するもの）、CPAL、CBLC、CBDT、sbixとCOLRの閉包、MATHとその閉包、軸を指定しないgvarとGVARの書き出し、glyfとCFF2の可変フォントのすべての軸の既定の値への固定（fvar、avar、STATの読み取りと、CFF2をCFFに変換する `DOWNGRADE_CFF2` を含む）、同じフォントを繰り返しサブセット化するための前処理（`Prepared`）、CFFのcharstringの取り出し、グリフ名での指定（`--glyphs`）と、これらのC ABI（`sofel_subset` など）までを実装し、HarfBuzzのサブセット化のテストのうちこれらの表だけを持つ組でバイト単位で一致する。Golemの使い方（グリフIDと `RETAIN_GIDS`）は、HarfBuzzのテストのフォントのうちこれらの表だけを持つものすべてで `hb-subset` と同じバイト列を出す。軸を指定しない HVAR と VVAR は、複数のItemVariationDataから使う行と領域だけを残し、暗黙・明示の送り幅とサイドベアリングのマップを書ける。明示マップの末尾で繰り返す行番号は1項目にまとめる。軸を指定しないGDEF 1.3のItemVariationStoreは、MATHのVariationIndexがMathConstantsに限られ、GSUBのFeatureVariationsが軸範囲の条件だけを持つ場合も含めて、残すキャレット、値の記録、アンカー、MathConstantsが参照する番号と領域を詰めて書く。参照が0件ならストアを除く。MathConstants以外のMATHに `0x8000` がある場合とFeatureVariationsを持つGSUBをそのままコピーする場合のGDEFの変化量の表と、軸を固定しないCFF2の変化量の表は、10段階目で書く。
 `sofel-read` は、sfntの目録、TTC/OTC、dfont（[ADR 0058](docs/adr/0058-dfont-face-selection.md)）、head、maxp/MAXP、hhea/HHEA、hmtx/HMTX、cmap（フォーマット0〜15）、loca、glyf（[ADR 0007](docs/adr/0007-sfnt-read-foundation.md)、[0011](docs/adr/0011-glyf-outlines.md)）と、OS/2、name、post、vhea/VHEA、vmtx/VMTX、VORG（[ADR 0016](docs/adr/0016-font-and-vertical-metrics.md)）、BASE（[ADR 0017](docs/adr/0017-base-baselines.md)）、CFFとCFF2（[ADR 0021](docs/adr/0021-cff-outlines.md)）、GDEF、GSUB、GPOS（[ADR 0020](docs/adr/0020-shaping-foundation.md)）、MATH、fvar、avar、STAT（[ADR 0022](docs/adr/0022-subsetting.md)）を読み、各表の検証器を持つ。
 
 大文字の HHEA と VHEA は、32ビットのメトリクス件数を読む（[ADR 0054](docs/adr/0054-wide-metrics-header-count.md)）。
@@ -101,7 +101,7 @@ HarfBuzzの `hb-subset` と同じオプションでサブセット化する（[A
 軸を固定しない場合も、BASE の座標に VariationIndex の参照がなければ、使われない変化量の表を除く。
 適合テストで出力が違えば、表ごとに最初の差の位置を示す。片方だけにある表は、どちらに欠けているかも示す。
 
-軸を固定しない CFF2 は `--desubroutinize` を指定するとサブセット化できる。指定しない場合は、残すグリフがサブルーチンを呼ばなければ未使用のサブルーチンを除き、呼ぶ場合は即値の番号で呼ぶ global/local のサブルーチンを必要な分だけ残して番号を詰める。`blend`、`vsindex` と VariationStore を残す。ヒントマスクを含む charstring や `--no-hinting` でサブルーチンを呼ぶ場合は、まだ対応していない。
+軸を固定しない CFF2 は `--desubroutinize` を指定するとサブセット化できる。指定しない場合は、残すグリフがサブルーチンを呼ばなければ未使用のサブルーチンを除き、呼ぶ場合は即値の番号で呼ぶ global/local のサブルーチンを必要な分だけ残して番号を詰める。`blend`、`vsindex` と VariationStore を残す。ヒントを保持する場合は `hintmask` と `cntrmask` のデータバイトを解釈器に従って読み飛ばす。`--no-hinting` では、ヒントが描画命令より前にあり、同じ charstring 内で先行する call がなく、引数が同じ charstring 内の連続した数値だけで、使用するサブルーチンがヒント除去後も空にならず、`blend`、`vsindex`、`dotsection` を含まない場合に限ってヒントを除く。同じサブルーチンのマスク長が呼び出しごとに異なる場合は、まだ対応していない。
 
 ```sh
 sofel-subset --font-file=Roboto.ttf --unicodes=41-5A -o out.ttf
@@ -146,6 +146,8 @@ sh scripts/check-deps.sh   # クレートの依存が ADR 0003 の表に沿い�
 sh scripts/run-tests.sh    # シェルのスクリプトのテスト
 RUSTDOCFLAGS="-D warnings" cargo doc --no-deps -p sofel-geom -p sofel-unicode -p sofel-read -p sofel-font -p sofel-write -p sofel-subset -p sofel-outline -p sofel-bitmap -p sofel-color -p sofel-raster -p sofel-cli -p sofel-capi
 ```
+
+C API でテキスト形式や JSON のグリフ列を読み込んだバッファは、パースエラーの後も、クリアすれば元の設定で再利用できる（[ADR 0053](docs/adr/0053-preserve-buffer-settings-after-glyph-deserialization.md)）。
 
 C ABI（[ADR 0015](docs/adr/0015-c-abi.md)）のテストには、Cのコンパイラと `nm` と jq が要る。Cのテストの期待値 `crates/sofel-capi/tests/c/fixture.h`、`fixture_shape.h`、`fixture_subset.h` はRustのAPIから作り、`cargo test` が最新であることを確かめる（`SOFEL_UPDATE_FIXTURE=1 cargo test -p sofel-capi --test fixture` で書きなおす）。シェーピングとGolemのサブセット化のCのテスト（[ADR 0020](docs/adr/0020-shaping-foundation.md)、[ADR 0022](docs/adr/0022-subsetting.md)）はテストのデータのフォントを読み（場所は `SOFEL_TESTDATA`、既定は `target/testdata`）、データが無ければ飛ばす。`SOFEL_REQUIRE_TESTDATA=1` で飛ばさずに失敗させる。
 
