@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 32 32">
+  <defs>
+    <g id="tile" transform="translate(2 1)">
+      <rect x="1" y="1" width="3" height="2" fill="red"/>
+    </g>
+    <clipPath id="window" clipPathUnits="userSpaceOnUse">
+      <rect x="1" y="1" width="3" height="2" transform="translate(2 1)"/>
+    </clipPath>
+  </defs>
+  <g id="glyph1" transform="translate(12 4) rotate(90)"><use xlink:href="#tile"/></g>
+  <g id="glyph2" transform="translate(12 4) rotate(90)">
+    <g clip-path="url(#window)"><rect x="0" y="0" width="8" height="8" fill="red"/></g>
+  </g>
+</svg>
