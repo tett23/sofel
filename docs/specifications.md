@@ -423,6 +423,10 @@ UTF-8 ファイルの末尾から LF または CRLF を一組だけ除き、前�
 
 ## 正しさの検査
 
+SVG の検査器は [ADR 0074](adr/0074-svg-feature-conformance.md) の必須ケースと観測を [台帳](../conformance/svg-cases.tsv) と照合する。欠落、重複、未知の項目を報告し、ケースごとに期待値の出典と結果を出す。共有文書の平文のバイト列と範囲外のグリフを検査し、検査器を実装していない観測は未実行として扱う。
+
+検査器は必須ケースの集計に続いて、[OpenType 1.9.1 の SVG 要求項目](../conformance/svg-opentype.tsv)ごとに、対応するケース ID または対象外・未決の理由を表示する。
+
 - 追加フォントの集合は [ADR 0031](adr/0031-diverse-font-corpus.md) の13ファイル、57フェイスと既存の可変COLRフォントで構成する。`fonts.lock` は取得ファイルとライセンスをHTTPS URL、SHA-256、バイト数、保存先で固定し、`conformance/fonts.tsv` はフォントとライセンスと対象機能を結ぶ。`scripts/fetch-fonts.sh` は保存済みのファイルも再検証し、欠落とハッシュ不一致を失敗にする。フォントのバイナリをリポジトリに含めず、著作権表示とライセンス全文を `THIRD_PARTY_NOTICES.md` に記録する。
 - 追加フォントの各フェイスでは表の読み取り、検証器、全Unicodeスカラー値の既定座標のnominal glyph ID、最大128グリフの横・縦メトリクスとFreeTypeの非ヒンティング輪郭・advanceを照合する。サンプル集合にはグリフ0と末尾と登録した全座標のシェーピング出力を必ず入れ、[ADR 0031](adr/0031-diverse-font-corpus.md) の等間隔の式で補う。HarfBuzzのメトリクスとFreeTypeの輪郭・advanceは別々の参照値と比較する。
 - 追加フォントのシェーピング入力は `conformance/font-cases.tsv` にコードポイント、script、language、direction、feature、座標を固定する。可変フォントはこのシェーピングのケースで各軸単独の最小・最大と全軸の最小・最大を覆う。HarfBuzzの結果を `conformance/font-case-hb.tsv` に固定し、未実装の機能による失敗を `conformance/expected-failures-extra-fonts.txt` にケースIDと理由で記す。

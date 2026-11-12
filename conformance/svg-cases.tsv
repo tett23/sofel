@@ -1,0 +1,32 @@
+# feature	case	observations	expectation source
+in-document	plain	document-bytes,target-element,rgba	OpenType 1.9.1 SVG document list
+in-document	gzip	decompressed-bytes,target-element,rgba	OpenType 1.9.1 SVG document list
+in-document	shared-first	target-element,rgba	OpenType 1.9.1 SVG document list
+in-document	shared-second	target-element,rgba	OpenType 1.9.1 SVG document list
+in-document	out-of-range	absent-glyph	OpenType 1.9.1 SVG document list
+in-geometry	path-line	outline,bounds	SVG 2 shapes and coordinate systems
+in-geometry	path-curve	outline,bounds	SVG 2 shapes and coordinate systems
+in-geometry	rect	outline,bounds	SVG 2 shapes and coordinate systems
+in-geometry	circle	outline,bounds	SVG 2 shapes and coordinate systems
+in-geometry	nested-transform	outline,bounds	SVG 2 shapes and coordinate systems
+in-style	inherited-fill	inside-rgba,outside-rgba	SVG 2 painting
+in-style	override-fill	inside-rgba,outside-rgba	SVG 2 painting
+in-style	context-fill-red	inside-rgba,outside-rgba	SVG 2 painting
+in-style	context-fill-blue	inside-rgba,outside-rgba	SVG 2 painting
+in-style	overlap	intersection-rgba	SVG 2 painting
+in-style	reversed-overlap	intersection-rgba	SVG 2 painting
+in-reference	use-transform	expanded-geometry,transform-order	SVG 2 use element and clipping
+in-reference	clip-transform	inside-rgba,outside-rgba,transform-order	SVG 2 use element and clipping
+in-gradient	linear	sample-position,rgba	SVG 2 paint servers
+in-gradient	radial	sample-position,rgba	SVG 2 paint servers
+in-gradient	aspect-ratio	sample-position,rgba	SVG 2 paint servers
+in-gradient	stop-opacity	sample-position,rgba	SVG 2 paint servers
+in-gradient	transformed	sample-position,rgba	SVG 2 paint servers
+in-gradient	color-svg-19	cli-rgba,gallery-rgba	ADR 0072 color-svg 19
+in-gradient	color-svg-26	cli-rgba,gallery-rgba	ADR 0072 color-svg 26
+in-restrictions	external	resource-requests,control-rgba	OpenType 1.9.1 SVG implementation requirements
+in-restrictions	script	changed-geometry,control-rgba	OpenType 1.9.1 SVG implementation requirements
+out-page	empty	page-size,scene-tree	HarfBuzz 3df40d9 test/vector
+out-page	single	page-size,scene-tree	HarfBuzz 3df40d9 test/vector
+out-page	translucent-overlap	page-size,scene-tree	HarfBuzz 3df40d9 test/vector
+out-page	clipped-image	page-size,scene-tree	HarfBuzz 3df40d9 test/vector

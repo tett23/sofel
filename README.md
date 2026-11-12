@@ -236,6 +236,7 @@ cargo test --release -p sofel-conformance
 CI ではこの runner を使い、参照ツールと計測用の C ライブラリは入力とツールチェーンが一致する場合にキャッシュから復元する。
 直列化の適合テストは、入力を一行ずつ書き、HarfBuzz の参照出力も一行ずつ比較して、全文の重複保持を避ける（[ADR 0035](docs/adr/0035-stream-serialization-reference-output.md)）。
 カラーグリフの適合テストはHarfBuzzの塗りをグリフごとに読み、各本文を比較する（[ADR 0043](docs/adr/0043-stream-harfbuzz-paint-records.md)）。
+SVG の機能別の検査は `sh scripts/test-svg-conformance.sh` で実行する。入力と出力の全必須ケースを表示し、失敗や未実行の観測が残っていれば終了コード 1 を返す（[ADR 0074](docs/adr/0074-svg-feature-conformance.md)）。
 シェーピングの適合テストではフォントと文章の組ごとに一致行の数を集計し、不一致行の詳細をカテゴリ判定に使う（[ADR 0041](docs/adr/0041-compact-shape-comparison-results.md)）。
 テストと結果の照合は、キャッシュがある場合も実行する。
 CI の参照ツールのビルド、適合テストと計測用 C ビルドは、子プロセスを含む合計 RSS の最大観測値をログへ書く。
