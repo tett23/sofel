@@ -492,7 +492,7 @@ fn layout_walks(data: &[u8], extension: u16, sub: impl Fn(&Lookup<'_>, usize) ->
                             // Null offsets have no target for the view to walk.
                             let null_extension = lk.lookup_type() == extension && matches!(
                                 lk.subtable_data(j),
-                                Some([0, 1, hi, lo, 0, 0, 0, 0, ..]) if (1..extension).contains(&u16::from_be_bytes([*hi, *lo]))
+                                Some([0, 1, 0, ty, 0, 0, 0, 0, ..]) if (1..=8).contains(ty) && u16::from(*ty) != extension
                             );
                             lk.subtable_offset(j) == Some(0) || null_extension || sub(&lk, j)
                         })
@@ -829,6 +829,19 @@ fn null_extension_target_has_no_subtable_to_walk() {
     table[23] = 64;
     assert!(has_error(|r| gpos::validate(&table, Some(1986), r)));
     assert!(!gpos_walks(&table));
+}
+
+#[test]
+fn gsub_null_extension_allows_reverse_chain_single() {
+    let seed = include_bytes!("../../../fuzz/corpus/gsub/null-extension-target");
+    assert!(!has_error(|r| gsub::validate(&seed[2..], Some(0x2a3d), r)));
+    assert!(gsub_walks(&seed[2..]));
+    for offset in [0, 255] {
+        let ext = vec![0, 1, 0, 8, 0, 0, 0, offset];
+        let table = layout_with(vec![lookup(7, 0, vec![ext], None)]);
+        assert_eq!(has_error(|r| gsub::validate(&table, None, r)), offset != 0);
+        assert_eq!(gsub_walks(&table), offset == 0);
+    }
 }
 
 #[test]

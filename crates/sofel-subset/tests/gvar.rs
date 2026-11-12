@@ -11,10 +11,14 @@ use sofel_font::read::Tag;
 use sofel_subset::{Flags, Input, SetKind, subset};
 
 fn font_with_gvar(large: bool) -> Vec<u8> {
+    font_with_shared_offset(large, if large { 137 } else { 136 })
+}
+
+fn font_with_shared_offset(large: bool, shared_offset: u32) -> Vec<u8> {
     // Long source offsets allow an odd-length record. The output is short
     // and pads that record to an even length.
     let mut gvar = vec![0, 1, 0, 0, 0, 1, 0, 1];
-    gvar.extend((if large { 137u32 } else { 136u32 }).to_be_bytes());
+    gvar.extend(shared_offset.to_be_bytes());
     if large {
         gvar.extend([0, 0, 28]);
     } else {
@@ -121,4 +125,26 @@ fn adr0022_gvar_supports_extended_glyph_count_header() {
     assert_eq!(&gvar[21..29], &[0, 0, 0, 0, 0, 3, 0, 5]);
     assert_eq!(&gvar[29..31], &[0x40, 0]);
     assert_eq!(&gvar[31..], &[0, 0, 0, 4, 0xAA, 0, 0, 0, 0, 4]);
+}
+
+#[test]
+fn adr0022_gvar_zero_shared_tuple_offset() {
+    for large in [false, true] {
+        let bytes = font_with_shared_offset(large, 0);
+        let font = Font::new(&bytes, 0).unwrap();
+        let input = Input::new().map_set(SetKind::Glyphs, |set| {
+            set.add(1);
+            set.add(2);
+        });
+        let output = subset(&font, &input).unwrap();
+        let font = Font::new(&output, 0).unwrap();
+        let tag = Tag::new(if large { b"GVAR" } else { b"gvar" });
+        let gvar = font.table(tag).unwrap();
+        let header = if large { 21 } else { 20 };
+        let records = u32::try_from(header + 8).unwrap();
+        assert_eq!(&gvar[6..8], &1u16.to_be_bytes());
+        assert_eq!(&gvar[8..12], &records.to_be_bytes());
+        assert_eq!(&gvar[header - 4..header], &records.to_be_bytes());
+        assert_eq!(&gvar[header + 8..], &[0, 0, 0, 4, 0xaa, 0, 0, 0, 0, 4]);
+    }
 }

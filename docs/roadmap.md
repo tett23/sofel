@@ -4,16 +4,9 @@
 
 各項は、何が残っているか、どこに由来するか、何があれば進められるかの順に書く。節と項は、ほかの項が依存するものを先に置いた。確認できなかった事項には「未確認」と書いた。
 
-[ADR 0027](adr/0027-variable-fonts.md)（可変フォント）、[ADR 0029](adr/0029-variation-deltas.md)（変化量の扱い）は、利用者のレビューを経て採択（未実装）になった。[ADR 0028](adr/0028-ptem-is-not-opsz.md) の `--font-ptem` の分類訂正は実装済みである。[ADR 0029](adr/0029-variation-deltas.md) の調査の記録は、手元の `target/handoff/variation-deltas-research.md` にある（コミットしていない）。
-[ADR 0027](adr/0027-variable-fonts.md) の作業1の表の読み取りと検証器は実装済みである。
-作業2のうち、座標の正規化と [ADR 0029](adr/0029-variation-deltas.md) と [ADR 0030](adr/0030-variation-evaluation-corrections.md) のItemVariationStoreの評価の核も実装した。
-C ABIには位置の作成、座標の取得、Variationの文字列変換を実装した。
-軸と名前つきインスタンスの問い合わせ、FreeTypeが名前を持つときの合成既定インスタンス、位置ごとのPostScript名と対応するC ABIは実装した。
-HVARとVVARの送り幅、VORGとVVARの縦原点、MVARのフォント全体のメトリクス、FreeTypeの縦送り幅には座標を適用した。
-BASEのVariationIndexによる基準線とレイアウトのフォント全体の値の変化量を実装した。
-次はgvarの幻の点による送り幅と箱、輪郭、シェーピング、塗りの変化量とCLIから位置を指定する機能を実装する。
-FreeTypeが必要なnameレコードを持たないときの末尾スタイルの扱いは未決定である。
-FeatureVariationsの条件評価の単独ファジングは、評価を実装する作業5に残す。
+[ADR 0027](adr/0027-variable-fonts.md)（可変フォント）と [ADR 0029](adr/0029-variation-deltas.md)（変化量の扱い）は採択（未実装）である。座標の正規化、表の読み取りと検証、ItemVariationStoreの評価の核、名前つきインスタンス、PostScript名、HVARとVVARのメトリクス、gvarとCFF2の輪郭、FeatureVariationsとGPOSの変化量を使うシェーピング、COLRv1の可変の塗り、C ABI、CLI、計測を段階ごとに実装した。[ADR 0028](adr/0028-ptem-is-not-opsz.md) の分類訂正は実装済みで、[ADR 0030](adr/0030-variation-evaluation-corrections.md) の変化量評価の修正は段階ごとに進めている。[ADR 0029](adr/0029-variation-deltas.md) の調査記録は、手元の `target/handoff/variation-deltas-research.md` にある（コミットしていない）。
+
+[ADR 0027](adr/0027-variable-fonts.md) の CFF2 輪郭とラスタをコーパスに列挙された各位置で比較する検査と、追加フォントの非既定位置でメトリクスと輪郭を比較する検査は main に入った。`ft_left_side_bearing` と `ft_top_side_bearing` に HVAR・VVAR の差分を適用するという決定は、固定版 FreeType の公開値と異なる。合成フォントで送り幅だけが変わり、サイドベアリングが変わらないことを確認したため、修正 ADR をレビュー用に起草した。
 
 ## HarfBuzz・FreeType 互換に必要な機能
 
@@ -48,10 +41,6 @@ FreeType の丸めの順序、係数のキャッシュの同一性、空の座�
 [ADR 0022](adr/0022-subsetting.md) は採択（未実装）で、段階ごとに実装している。PR #42 までで、レイアウトの段階などが main に入った。10段階目（gvar、GVAR、HVAR、VVAR、ピン留めなしの CFF2、GDEF、BASE、COLR の項目の変化量の記憶）は、可変フォントの [ADR 0027](adr/0027-variable-fonts.md) の読み取り部分を使って実装する。VARC は13段階目まで待つ。[ADR 0022](adr/0022-subsetting.md) のステータスを採択にする条件は、[ADR 0027](adr/0027-variable-fonts.md) の採択と、10段階目の実装である。
 
 ### シェーピング、フォントの検証と描画、照合の記録
-
-各項目の実装状況はリンク先の ADR に記す。
-
-- [ADR 0050](adr/0050-preserve-opentype-script-values.md)：OpenType タグからスクリプトを求める二つの API で、HarfBuzz が返す4バイトを保持する。
 
 cmap のフォーマット2と8は、通常のグリフ検索では読み、シェーピングでは HarfBuzz に合わせて対応なしとする処理を実装済みである。[仕様書](specifications.md) に両方の検索規則を記載している。
 
