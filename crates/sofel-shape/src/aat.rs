@@ -85,7 +85,7 @@ pub fn chains<'a>(
             });
         }
         if version >= 3 {
-            glyph_coverage(body, tables, glyphs)?;
+            sofel_font::read::kerx::check_glyph_coverage(body, tables, glyphs).ok()?;
         }
         chains.push(Chain {
             ranges,
@@ -94,18 +94,6 @@ pub fn chains<'a>(
         rest = tail;
     }
     Some(chains)
-}
-
-/// Validates the optional per-subtable glyph bitfields used since AAT version 3.
-fn glyph_coverage(data: &[u8], tables: u32, glyphs: u32) -> Option<()> {
-    let bytes = usize::try_from(glyphs.div_ceil(8)).ok()?;
-    for offset in be::chunks_at::<4>(data, 0, tables as usize)? {
-        let offset = u32::from_be_bytes(*offset);
-        if offset != 0 && offset != u32::MAX {
-            data.get(offset as usize..)?.get(..bytes)?;
-        }
-    }
-    Some(())
 }
 
 #[derive(Clone, Debug)]

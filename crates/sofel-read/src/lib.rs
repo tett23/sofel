@@ -60,6 +60,7 @@ pub mod hhea;
 pub mod hmtx;
 pub mod hvar;
 pub mod item_variation;
+pub mod kerx;
 pub mod layout;
 pub mod loca;
 pub mod ltag;

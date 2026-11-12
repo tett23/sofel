@@ -90,27 +90,9 @@ pub(crate) fn read<'a>(
     ankr: Option<&'a [u8]>,
     glyphs: u32,
 ) -> Option<Vec<Subtable<'a>>> {
-    let version = be::u16_at(data, 0)?;
-    if version < 2 {
-        return None;
-    }
-    let n = be::u32_at(data, 4)?;
-    if n == 0 || n > 1024 {
-        return None;
-    }
-    let mut tail = data.get(8..)?;
+    let kerx = sofel_font::read::kerx::Kerx::new(data, glyphs).ok()?;
     let mut result = Vec::new();
-    for i in 0..n {
-        let length = be::u32_at(tail, 0)? as usize;
-        let declared = tail.get(..length)?;
-        if declared.len() < 12 {
-            return None;
-        }
-        let current = if i.saturating_add(1) == n {
-            tail
-        } else {
-            declared
-        };
+    for current in kerx.subtables() {
         let coverage = be::u32_at(current, 4)?;
         let tuples = be::u32_at(current, 8)?;
         let offset = |at| current.get(be::u32_at(current, at)? as usize..);
@@ -161,12 +143,8 @@ pub(crate) fn read<'a>(
             data: current,
             action,
         });
-        tail = tail.get(length..)?;
     }
-    if version >= 3 {
-        super::glyph_coverage(tail, n, glyphs)?;
-    }
-    Some(result)
+    (!result.is_empty()).then_some(result)
 }
 #[derive(Clone, Debug)]
 struct ClassOffsets<'a> {
