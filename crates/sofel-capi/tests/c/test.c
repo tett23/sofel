@@ -568,6 +568,10 @@ static void test_outlines(const sofel_font_t *font) {
     CHECK(same_commands(&rec, c->commands, c->len));
   }
 
+  CHECK(sofel_outline_load_truetype_mono(font, NULL, 1, 16, scratch, cbox, &overlap) == SOFEL_OK);
+  CHECK(cbox[0] <= cbox[2] && cbox[1] <= cbox[3]);
+  CHECK(sofel_outline_load_truetype_mono(NULL, NULL, 1, 16, scratch, cbox, &overlap) == SOFEL_ERROR_NULL);
+
   /* An offset and a multiplier. */
   CHECK(sofel_outline_load(font, NULL, 1, SOFEL_SCALE_FIXED, scale_cases[0].x_scale,
                            scale_cases[0].y_scale, scratch, cbox, &overlap) == SOFEL_OK);
