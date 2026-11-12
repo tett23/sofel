@@ -17,6 +17,8 @@
 
 #[path = "../../sofel-read/tests/support/build.rs"]
 mod build;
+#[path = "../../sofel-font/tests/support/layout_query_fixture.rs"]
+mod layout_query_fixture;
 
 use std::fmt::Write as _;
 
@@ -780,6 +782,27 @@ fn generate() -> String {
     );
 
     bytes(&mut out, "font_data", &font_data);
+    let mut layout_query_tables = sample_tables();
+    layout_query_tables.push((b"MATH", layout_query_fixture::sample()));
+    layout_query_tables.sort_by_key(|(tag, _)| **tag);
+    bytes(
+        &mut out,
+        "layout_query_math_data",
+        &sfnt(&layout_query_tables),
+    );
+    let mut layout_query_gdef_tables = sample_tables();
+    layout_query_gdef_tables.push((b"GDEF", layout_query_fixture::gdef_with_carets()));
+    layout_query_gdef_tables.sort_by_key(|(tag, _)| **tag);
+    bytes(
+        &mut out,
+        "layout_query_gdef_data",
+        &sfnt(&layout_query_gdef_tables),
+    );
+    bytes(
+        &mut out,
+        "layout_query_variable_data",
+        &layout_query_fixture::variable_math_font(),
+    );
     bytes(&mut out, "ttc_data", &ttc_data);
     bytes(&mut out, "invalid_data", &invalid_data);
     bytes(&mut out, "no_head_data", &no_head_data);
