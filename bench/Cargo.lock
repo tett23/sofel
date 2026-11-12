@@ -51,6 +51,7 @@ dependencies = [
  "sofel-font",
  "sofel-geom",
  "sofel-outline",
+ "sofel-png",
  "sofel-raster",
  "sofel-read",
  "sofel-shape",

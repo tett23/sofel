@@ -32,17 +32,35 @@ type Result<T> = core::result::Result<T, Error>;
 /// # Errors
 /// Returns an error for corrupt data, unsupported critical chunks or excess output.
 pub fn decode(input: &[u8], max_pixels: usize) -> Result<Image> {
+    decode_with(input, max_pixels, |color, alpha| {
+        let t = u32::from(color)
+            .saturating_mul(u32::from(alpha))
+            .saturating_add(128);
+        u8::try_from(t.saturating_add(t >> 8) >> 8).unwrap_or_default()
+    })
+}
+
+/// Decode pixels with HarfBuzz raster's premultiplication for image painting.
+///
+/// # Errors
+/// Returns the same validation and resource errors as [`decode`].
+pub fn decode_for_paint(input: &[u8], max_pixels: usize) -> Result<Image> {
+    decode_with(input, max_pixels, |color, alpha| {
+        u8::try_from(
+            u32::from(color)
+                .saturating_mul(u32::from(alpha))
+                .saturating_add(255)
+                >> 8,
+        )
+        .unwrap_or_default()
+    })
+}
+
+fn decode_with(input: &[u8], max_pixels: usize, premultiply: fn(u8, u8) -> u8) -> Result<Image> {
     let mut image = decode_rgba(input, max_pixels)?;
     for pixel in image.rgba.as_chunks_mut::<4>().0 {
         let [r, g, b, a] = *pixel;
-        // FreeType pngshim.c rounds multiplication by alpha/255.
-        let premul = |c: u8| {
-            let t = u32::from(c)
-                .saturating_mul(u32::from(a))
-                .saturating_add(128);
-            u8::try_from(t.saturating_add(t >> 8) >> 8).unwrap_or_default()
-        };
-        *pixel = [premul(b), premul(g), premul(r), a];
+        *pixel = [premultiply(b, a), premultiply(g, a), premultiply(r, a), a];
     }
     Ok(Image {
         width: image.width,
