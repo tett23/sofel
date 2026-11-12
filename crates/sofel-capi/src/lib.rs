@@ -2038,6 +2038,41 @@ pub unsafe extern "C" fn sofel_font_ft_v_advance(
     })())
 }
 
+/// Unscaled TrueType control values in 26.6 font units.
+///
+/// # Safety
+///
+/// `font` and `location` must be live handles or NULL. `out` must be
+/// writable for `capacity` elements or NULL with zero capacity. `len`
+/// must be a writable pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_ft_control_values(
+    font: *const SofelFont,
+    location: *const SofelLocation,
+    out: *mut i32,
+    capacity: usize,
+    len: *mut usize,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (font, location, out, len) = unsafe {
+        (
+            font_ref(font),
+            r(location),
+            out_array(out, capacity),
+            w(len),
+        )
+    };
+    status((|| {
+        let location =
+            location.map_or_else(sofel_font::var::Location::default_ref, |v| &v.location);
+        let values = some(font)?
+            .instance(location)
+            .ft_control_values()
+            .ok_or(ERROR_NOT_FOUND)?;
+        copy_out(&values, out, len)
+    })())
+}
+
 /// `sofel_font_ft_h_advance`.
 ///
 /// # Safety

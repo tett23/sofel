@@ -206,22 +206,7 @@ fn bsearch_code(code: u16, table: &[(u16, &'static str)]) -> Option<&'static str
 
 /// The `ltag` table's tag `i`, if the table passes HarfBuzz's checks.
 fn ltag<'a>(font: &Font<'a>, i: u16) -> Option<&'a [u8]> {
-    let data = font.table(Tag::new(b"ltag"))?;
-    if be::u32_at(data, 0)? < 1 {
-        return None;
-    }
-    let count = be::to_usize(be::u32_at(data, 8)?);
-    let ranges = be::chunks_at::<4>(data, 12, count)?;
-    let range = |r: &[u8; 4]| {
-        let off = usize::from(u16::from_be_bytes([r[0], r[1]]));
-        let len = usize::from(u16::from_be_bytes([r[2], r[3]]));
-        be::slice_at(data, off, len)
-    };
-    // The whole table fails when any range is out of it.
-    if !ranges.iter().all(|r| range(r).is_some()) {
-        return None;
-    }
-    range(ranges.get(usize::from(i))?)
+    crate::read::ltag::Ltag::new(font.table(Tag::new(b"ltag"))?)?.tag(i)
 }
 
 /// `NameRecord::language`.

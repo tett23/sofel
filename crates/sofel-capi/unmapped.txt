@@ -230,7 +230,9 @@ sofel_outline::Scratch::points Rust access to the outline scratch points; C obta
 sofel_outline::Scratch::slant_slot Rust mutable outline synthesis helper; C obtains the unsynthesized outline through sofel_outline_draw.
 sofel_read::aat_lookup::* Zero-copy AAT substitution lookups used by the C shaping API; C reads the source bytes with sofel_font_table.
 sofel_read::trak::* Zero-copy AAT tracking views used by the C shaping API; C reads the source bytes with sofel_font_table.
+sofel_read::ltag::* Zero-copy language tag ranges used by C name lookup and shaping; C reads the bytes with sofel_font_table.
 sofel_woff::encode ADR 0070 exposes encoding through the Rust API and the standalone sofel-woff command.
 sofel_geom::sort::harfbuzz_sort Internal tie ordering for C glyph-name and GPU record operations.
 sofel_gpu::Paint::push_clip_path Rust callers can provide a clip path directly; the C glyph encoder resolves clip glyphs from its font.
+sofel_read::feat::* A validated feature-name view used by the C shaping functions; C reads the table with sofel_font_table.
 sofel_woff::decode_woff The font input commands reconstruct WOFF tables into an sfnt buffer.
