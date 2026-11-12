@@ -1859,6 +1859,25 @@ int32_t sofel_rasterizer_render_filtered_lcd(sofel_rasterizer_t *rasterizer, uin
                                        uint32_t direction, const uint8_t weights[5], uint16_t x_ppem, uint16_t y_ppem,
                                        uint8_t *pixels, size_t capacity, size_t *len, int32_t *box);
 
+#define SOFEL_MONO_HIGH_PRECISION 1u
+#define SOFEL_MONO_SINGLE_PASS 2u
+#define SOFEL_MONO_IGNORE_DROPOUTS 4u
+#define SOFEL_MONO_SMART_DROPOUTS 8u
+#define SOFEL_MONO_INCLUDE_STUBS 16u
+
+/*
+ * Renders a packed monochrome bitmap, top row first, most significant
+ * bit first. Each row takes (width + 7) / 8 bytes. Flags are a bitwise
+ * combination of SOFEL_MONO_* values. Buffer sizing follows sofel_rasterizer_render.
+ *
+ * Rust: sofel_raster::Rasterizer::render_mono
+ * HarfBuzz: none
+ * FreeType: FT_Render_Glyph (FT_RENDER_MODE_MONO)
+ */
+int32_t sofel_rasterizer_render_mono(sofel_rasterizer_t *rasterizer, uint32_t flags,
+                                    uint16_t x_ppem, uint16_t y_ppem,
+                                    uint8_t *pixels, size_t capacity, size_t *len, int32_t *box);
+
 /*
  * Renders into the given box (left, top, width, rows, as from
  * sofel_pixel_box) an outline recorded already moved by the box's shift

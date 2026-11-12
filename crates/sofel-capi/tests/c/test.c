@@ -676,6 +676,11 @@ static void test_raster(const sofel_font_t *font) {
   }
   draw_shape(r);
   {
+    CHECK(sofel_rasterizer_render_mono(r, SOFEL_MONO_HIGH_PRECISION, 0, 0, NULL, 0, &len, box) ==
+          SOFEL_ERROR_BUFFER_TOO_SMALL);
+    CHECK(sofel_rasterizer_render_mono(r, SOFEL_MONO_HIGH_PRECISION, 0, 0, buf, sizeof buf, &len, box) == SOFEL_OK);
+    CHECK(len > 0 && len == ((size_t)box[2] + 7) / 8 * (size_t)box[3]);
+    CHECK(sofel_rasterizer_render_mono(r, 32, 0, 0, buf, sizeof buf, &len, box) == SOFEL_ERROR_INVALID_ARGUMENT);
     const uint8_t weights[5] = {8, 77, 86, 77, 8};
     CHECK(sofel_rasterizer_render_filtered_lcd(r, 0, SOFEL_LCD_HORIZONTAL, weights, 0, 0,
                                                buf, sizeof buf, &len, box) == SOFEL_OK);

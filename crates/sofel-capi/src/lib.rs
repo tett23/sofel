@@ -2800,19 +2800,31 @@ impl BitmapOut<'_> {
 
     /// Writes the length and box, then the pixels if they fit.
     fn put(self, bitmap: Result<Bitmap<'_>, i32>) -> Status {
-        let (pixels, len, b) = (some(self.pixels)?, some(self.len)?, some(self.b)?);
         let bitmap = bitmap?;
-        *len = bitmap.pixels.len();
+        self.put_bytes(
+            PixelBox {
+                left: bitmap.left,
+                top: bitmap.top,
+                width: bitmap.width,
+                rows: bitmap.rows,
+            },
+            bitmap.pixels,
+        )
+    }
+
+    fn put_bytes(self, bounds: PixelBox, bytes: &[u8]) -> Status {
+        let (pixels, len, b) = (some(self.pixels)?, some(self.len)?, some(self.b)?);
+        *len = bytes.len();
         *b = [
-            bitmap.left,
-            bitmap.top,
-            to_i32(bitmap.width),
-            to_i32(bitmap.rows),
+            bounds.left,
+            bounds.top,
+            to_i32(bounds.width),
+            to_i32(bounds.rows),
         ];
         let dest = pixels
-            .get_mut(..bitmap.pixels.len())
+            .get_mut(..bytes.len())
             .ok_or(ERROR_BUFFER_TOO_SMALL)?;
-        dest.copy_from_slice(bitmap.pixels);
+        dest.copy_from_slice(bytes);
         Ok(())
     }
 }
@@ -2979,6 +2991,51 @@ pub unsafe extern "C" fn sofel_rasterizer_render_filtered_lcd(
         options(fill, 0, x_ppem, y_ppem),
         out,
     ))
+}
+
+/// Render packed monochrome rows.
+///
+/// # Safety
+///
+/// As [`sofel_rasterizer_render`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_rasterizer_render_mono(
+    rasterizer: *mut SofelRasterizer,
+    flags: u32,
+    x_ppem: u16,
+    y_ppem: u16,
+    pixels: *mut u8,
+    capacity: usize,
+    len: *mut usize,
+    box_: *mut i32,
+) -> i32 {
+    if flags & !31 != 0 {
+        return ERROR_INVALID_ARGUMENT;
+    }
+    // SAFETY: the caller's conditions.
+    let (r, pixels, len, b) = unsafe {
+        (
+            w(rasterizer),
+            out_array(pixels, capacity),
+            w(len),
+            ints::<4>(box_),
+        )
+    };
+    let out = BitmapOut { pixels, len, b };
+    status((|| {
+        let r = some(r)?;
+        out.check()?;
+        let options = sofel_raster::MonoOptions {
+            high_precision: flags & 1 != 0,
+            single_pass: flags & 2 != 0,
+            ignore_dropouts: flags & 4 != 0,
+            smart_dropouts: flags & 8 != 0,
+            include_stubs: flags & 16 != 0,
+        };
+        let ppem = (x_ppem != 0 || y_ppem != 0).then_some((x_ppem, y_ppem));
+        let image = r.raster.render_mono(options, ppem).map_err(raster_error)?;
+        out.put_bytes(image.bounds, image.pixels)
+    })())
 }
 
 /// `sofel_rasterizer_render_placed`.

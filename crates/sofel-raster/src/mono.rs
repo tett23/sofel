@@ -492,7 +492,7 @@ mod command_tests {
             Command::CubicTo(p(320, 256), p(256, 192), p(192, 192)),
         ];
         for flipped in [false, true] {
-            let profiles = glyph_profiles(&commands, 64, (0, 0), 6, flipped);
+            let profiles = glyph_profiles(&commands, 64, (0, 0), 6, flipped, false);
             assert_eq!(profiles.len(), 2);
             for contour in profiles {
                 assert!(contour.iter().any(|p| p.up));
@@ -508,9 +508,17 @@ fn glyph_profiles(
     origin: MonoPoint,
     scanlines: usize,
     flipped: bool,
+    prescaled: bool,
 ) -> alloc::vec::Vec<alloc::vec::Vec<Profile>> {
     use sofel_geom::{Command, Point};
     let transform = |p: Point| {
+        if prescaled {
+            return if flipped {
+                (i64::from(p.y), i64::from(p.x))
+            } else {
+                (i64::from(p.x), i64::from(p.y))
+            };
+        }
         let x = (i64::from(p.x) - origin.0 * 64) * (precision / 64) - precision / 2;
         let y = (i64::from(p.y) - origin.1 * 64) * (precision / 64) - precision / 2;
         if flipped { (y, x) } else { (x, y) }
@@ -631,6 +639,31 @@ impl super::Rasterizer {
     ) -> Result<MonoBitmap<'_>, super::RasterError> {
         let (x0, y0, x1, y1) = super::control_box(&self.commands).unwrap_or_default();
         let bounds = mono_pixel_box(x0 as i32, y0 as i32, x1 as i32, y1 as i32);
+        self.render_mono_box(bounds, options, ppem, false)
+    }
+
+    /// Draw a prepositioned outline whose coordinates are relative to pixel
+    /// centres in units of 1/4096 pixel (high precision and width + rows < 258)
+    /// or 1/64 pixel otherwise. This preserves implied points created after scaling.
+    ///
+    /// # Errors
+    /// Returns an error for bitmap bounds outside the supported range.
+    pub fn render_mono_placed(
+        &mut self,
+        bounds: PixelBox,
+        options: MonoOptions,
+        ppem: Option<(u16, u16)>,
+    ) -> Result<MonoBitmap<'_>, super::RasterError> {
+        self.render_mono_box(bounds, options, ppem, true)
+    }
+
+    fn render_mono_box(
+        &mut self,
+        bounds: PixelBox,
+        options: MonoOptions,
+        ppem: Option<(u16, u16)>,
+        prescaled: bool,
+    ) -> Result<MonoBitmap<'_>, super::RasterError> {
         if super::too_large(
             bounds.left.into(),
             bounds.top.into(),
@@ -669,7 +702,14 @@ impl super::Rasterizer {
             } else {
                 (rows, width)
             };
-            let contours = glyph_profiles(&self.commands, precision, origin, height, flipped);
+            let contours = glyph_profiles(
+                &self.commands,
+                precision,
+                origin,
+                height,
+                flipped,
+                prescaled,
+            );
             let mut crossings = alloc::vec![(alloc::vec::Vec::new(),alloc::vec::Vec::new());height];
             for (ci, contour) in contours.iter().enumerate() {
                 for (pi, profile) in contour.iter().enumerate() {
