@@ -9,10 +9,10 @@ require_relative 'pixels'
 module GallerySheet
   PADDING = 12
   WIDTH = 490
-  HEIGHT = 200
+  HEIGHT = 232
   SAMPLE_TOP = 35
-  SAMPLE_HEIGHT = 99
-  RUN_X = 130
+  SAMPLE_HEIGHT = 128
+  RUN_X = 152
   COLUMNS = 3
 
   def self.card(solo, run, labels)
@@ -97,8 +97,8 @@ module Gallery
                        when :empty then ['空のグリフ（単字19、文字列26）', 'Unsupported: glyphs 19 and 26 are empty']
                        when :grayscale then ['カラー未対応（グレーの輪郭を表示）', 'Unsupported: color (grayscale outline shown)']
                        end
-        captions = [[heading, 9], [info, 141], ["#{sample.ppem} ppem", 160]]
-        captions << [note, 179] if reason
+        captions = [[heading, 9], [info, 170], ["#{sample.ppem} ppem", 189]]
+        captions << [note, 208] if reason
         rows << [heading, single, sample.text, sample.ppem.to_s, reason ? "未対応: #{reason}" : '描画済み']
         GallerySheet.card(solo, run, captions.map { |line, y| [labels.image(line), GallerySheet::PADDING, y] })
       rescue StandardError => e
