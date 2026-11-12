@@ -419,3 +419,30 @@ fn i1_sbit_png_matches_freetype_color_rows() {
         }
     }
 }
+
+#[test]
+#[ignore = "requires the gallery corpus and PNG-enabled ft-dump"]
+fn i2_sbix_gallery_strike_origin_and_pixels() {
+    let bytes = std::fs::read(paths::testdata().join("extra-fonts/fonts/color-sbix.ttf")).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let ours = sofel_sbit(&font);
+    let reference = ft_dump_sbit("gallery", &bytes);
+    for id in [19, 26] {
+        let prefix = format!("glyph {id} 0 4 101 128 128 512 7 ");
+        let rows = |text: &str| -> Vec<String> {
+            assert!(text.lines().any(|s| s == "size 0"));
+            let mut lines = text.lines().skip_while(|s| !s.starts_with(&prefix));
+            assert!(
+                lines.next().is_some(),
+                "glyph {id} missing or has incorrect origin or format"
+            );
+            lines
+                .take_while(|s| s.len() == 1024 && s.bytes().all(|b| b.is_ascii_hexdigit()))
+                .map(str::to_owned)
+                .collect()
+        };
+        let expected = rows(&reference);
+        assert_eq!(expected.len(), 128, "glyph {id}");
+        assert_eq!(rows(&ours), expected, "glyph {id}");
+    }
+}
