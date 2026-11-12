@@ -15,22 +15,26 @@ use crate::plan::Plan;
 
 use super::{Tables, cff};
 
-/// The currently supported auxiliary form: one format-1 axis-range
-/// condition with no nested references. An absent list yields an empty slice.
+/// The currently supported auxiliary form: one axis-range condition or one
+/// constant format-2 condition, without nested references.
+/// An absent list yields an empty slice.
 pub(crate) fn simple_condition_bytes(src: &[u8]) -> Option<&[u8]> {
     let offset = u32::from_be_bytes(src.get(12..16)?.try_into().ok()?) as usize;
     if offset == 0 {
         return Some(&[]);
     }
     let bytes = src.get(offset..offset.checked_add(16)?)?;
+    let format = u16::from_be_bytes(bytes.get(8..10)?.try_into().ok()?);
     (u32::from_be_bytes(bytes.get(0..4)?.try_into().ok()?) == 1
         && u32::from_be_bytes(bytes.get(4..8)?.try_into().ok()?) == 8
-        && u16::from_be_bytes(bytes.get(8..10)?.try_into().ok()?) == 1)
+        && (format == 1
+            || (format == 2
+                && u32::from_be_bytes(bytes.get(12..16)?.try_into().ok()?) == u32::MAX)))
         .then_some(bytes)
 }
 
 #[allow(clippy::cast_possible_truncation)] // Variable-length bytes deliberately keep low octets.
-fn varint(out: &mut Vec<u8>, value: u32) {
+pub(super) fn varint(out: &mut Vec<u8>, value: u32) {
     if value < 0x80 {
         out.push(value as u8);
     } else if value < 0x4000 {
@@ -114,6 +118,16 @@ pub(crate) fn subset(
     _out: &mut Tables,
 ) -> Result<bool, SubsetError> {
     let varc = Varc::new(src).map_err(|_| SubsetError::Malformed { tag })?;
+    if simple_condition_bytes(src).is_none()
+        || (0..varc.record_count()).any(|index| {
+            varc.record_at(index).is_some_and(|record| {
+                sofel_font::read::varc::Components::new(record, None)
+                    .any(|part| part.is_none_or(|part| part.flags & 0x0e != 0))
+            })
+        })
+    {
+        return super::varc_complex::subset(plan, tag, src, s, _out);
+    }
     let conditions = simple_condition_bytes(src).ok_or(SubsetError::Unsupported {
         tag,
         reason: "VARC condition format",

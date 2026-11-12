@@ -24,19 +24,35 @@ fn synthetic(records: &[(u16, Vec<u8>)]) -> Vec<u8> {
 fn synthetic_with_condition(records: &[(u16, Vec<u8>)], condition: Option<(i16, i16)>) -> Vec<u8> {
     let data = source();
     let font = Font::new(&data, 0).unwrap();
+    let mut maxp = font.table(Tag::new(b"maxp")).unwrap().to_vec();
+    let highest = records.iter().map(|(glyph, _)| *glyph).max().unwrap_or(0);
+    let glyph_count = u16::from_be_bytes([maxp[4], maxp[5]]).max(highest.checked_add(1).unwrap());
+    maxp[4..6].copy_from_slice(&glyph_count.to_be_bytes());
     let mut varc = vec![0u8; 24];
     varc[..4].copy_from_slice(&[0, 1, 0, 0]);
     varc[20..24].copy_from_slice(&24u32.to_be_bytes());
     varc.extend_from_slice(&u32::try_from(records.len()).unwrap().to_be_bytes());
-    varc.push(1);
-    let mut offset = 1u8;
+    let end_offset = records
+        .iter()
+        .try_fold(1usize, |offset, (_, record)| {
+            offset.checked_add(record.len())
+        })
+        .unwrap();
+    let offset_size = if end_offset <= u8::MAX as usize {
+        1
+    } else if end_offset <= u16::MAX as usize {
+        2
+    } else {
+        3
+    };
+    varc.push(offset_size);
+    let offset_start = 4usize.checked_sub(usize::from(offset_size)).unwrap();
+    let mut offset = 1usize;
+    varc.extend_from_slice(&u32::try_from(offset).unwrap().to_be_bytes()[offset_start..]);
     for (_, record) in records {
-        varc.push(offset);
-        offset = offset
-            .checked_add(u8::try_from(record.len()).unwrap())
-            .unwrap();
+        offset = offset.checked_add(record.len()).unwrap();
+        varc.extend_from_slice(&u32::try_from(offset).unwrap().to_be_bytes()[offset_start..]);
     }
-    varc.push(offset);
     for (_, record) in records {
         varc.extend_from_slice(record);
     }
@@ -63,6 +79,8 @@ fn synthetic_with_condition(records: &[(u16, Vec<u8>)], condition: Option<(i16, 
         .map(|record| {
             let bytes = if record.tag == Tag::new(b"VARC") {
                 varc.as_slice()
+            } else if record.tag == Tag::new(b"maxp") {
+                maxp.as_slice()
             } else {
                 font.table(record.tag).unwrap()
             };
@@ -173,6 +191,73 @@ fn adr0067_i2_condition_only_subset_matches_harfbuzz() {
     let _ = std::fs::remove_file(source_path);
 }
 
+#[test]
+fn adr0067_i2_real_varc_subset_matches_harfbuzz() {
+    for (name, unicode) in [
+        ("varc-ac00-ac01.ttf", 0xAC00),
+        ("varc-ac00-ac01.ttf", 0xAC01),
+        ("varc-ac01-conditional.ttf", 0xAC01),
+        ("varc-no-variation-index.ttf", 0xAC00),
+        ("varc-condition-no-variation-index.ttf", 0xAC01),
+        ("varc-coverage-longer.ttf", 0xAC00),
+        ("varc-records-longer.ttf", 0xAC00),
+        ("varc-unrelated-axis.ttf", 0xAC01),
+        ("varc-unrelated-axis-avar2.ttf", 0xAC01),
+        ("varc-6868.ttf", 0x6868),
+        ("varc-delta-precision.ttf", 0x0041),
+        ("varc-delta-precision.ttf", 0x0042),
+        ("varc-delta-precision.ttf", 0x0043),
+        ("varc-static-deltas.ttf", 0x0041),
+        ("varc-static-deltas.ttf", 0x0042),
+        ("varc-static-deltas.ttf", 0x0043),
+        ("varc-static-gvar.ttf", 0x0061),
+    ] {
+        let path = paths::testdata().join("harfbuzz/test/api/fonts").join(name);
+        let data = std::fs::read(&path).unwrap();
+        let font = Font::new(&data, 0).unwrap();
+        for retain in [false, true] {
+            let reference = std::env::temp_dir().join(format!(
+                "sofel-varc-real-{name}-{retain}-hb-{}.ttf",
+                std::process::id()
+            ));
+            let mut command = ProcessCommand::new(paths::hb_dump());
+            command
+                .arg("--subset")
+                .arg(format!("--font-file={}", path.display()))
+                .arg(format!("--unicodes=U+{unicode:04X}"))
+                .arg(format!("--output-file={}", reference.display()));
+            if retain {
+                command.arg("--retain-gids");
+            }
+            let output = command.output().unwrap();
+            assert!(
+                output.status.success(),
+                "{name} {retain}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let flags = if retain {
+                Flags::RETAIN_GIDS
+            } else {
+                Flags::DEFAULT
+            };
+            let input = Input::new()
+                .with_flags(flags)
+                .map_set(SetKind::Unicodes, |unicodes| unicodes.add(unicode));
+            let ours = subset(&font, &input);
+            assert!(ours.is_ok(), "{name} retain={retain}: {ours:?}");
+            let ours = ours.unwrap();
+            let expected = std::fs::read(&reference).unwrap();
+            assert!(
+                ours == expected,
+                "{name} retain={retain}: ours {} bytes, HarfBuzz {} bytes",
+                ours.len(),
+                expected.len()
+            );
+            let _ = std::fs::remove_file(reference);
+        }
+    }
+}
+
 fn draw(font: &Font<'_>, glyph: u32, scratch: &mut Scratch) -> (CBox, Vec<Command>) {
     let outlines = Outlines::new(font.default_instance());
     let mut commands = Vec::new();
@@ -257,4 +342,57 @@ fn adr0067_i3_self_and_two_glyph_cycles_leave_next_glyph_clean() {
         draw(&cycle_font, 1, &mut scratch),
         draw(&cycle_font, 1, &mut Scratch::default())
     );
+}
+
+#[test]
+fn adr0067_i3_shared_edge_budget_at_boundary() {
+    let leaf = vec![0, 0, 1];
+    let mut previous = 0;
+    for count in [16_382usize, 16_383, 16_384] {
+        let parent = [0, 0, 2].repeat(count);
+        let data = synthetic(&[(2, leaf.clone()), (3, parent)]);
+        let font = Font::new(&data, 0).unwrap();
+        let mut scratch = Scratch::default();
+        let moves = draw(&font, 3, &mut scratch)
+            .1
+            .iter()
+            .filter(|command| matches!(command, Command::MoveTo(_)))
+            .count();
+        assert_eq!(moves, count.min(16_383), "{count} covered components");
+        assert!(moves >= previous);
+        previous = moves;
+        assert_eq!(
+            draw(&font, 1, &mut scratch),
+            draw(&font, 1, &mut Scratch::default()),
+            "normal glyph after {count} covered components"
+        );
+    }
+}
+
+#[test]
+fn adr0067_i3_depth_budget_at_boundary() {
+    for covered_count in [63u16, 64, 65] {
+        let records: Vec<_> = (2..covered_count + 2)
+            .map(|glyph| {
+                (
+                    glyph,
+                    [0, 0, u8::try_from(glyph.checked_sub(1).unwrap()).unwrap()].to_vec(),
+                )
+            })
+            .collect();
+        let data = synthetic(&records);
+        let font = Font::new(&data, 0).unwrap();
+        let mut scratch = Scratch::default();
+        let commands = draw(&font, u32::from(covered_count + 1), &mut scratch).1;
+        assert_eq!(
+            !commands.is_empty(),
+            covered_count <= 64,
+            "{covered_count} covered glyphs"
+        );
+        assert_eq!(
+            draw(&font, 1, &mut scratch),
+            draw(&font, 1, &mut Scratch::default()),
+            "normal glyph after {covered_count} covered glyphs"
+        );
+    }
 }
