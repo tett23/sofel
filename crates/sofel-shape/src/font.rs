@@ -18,8 +18,8 @@ use sofel_geom::float::{ceilf, floorf, hb_clamp_to_i32};
 
 use crate::outline::GlyphOutline;
 
-type VariationGlyphFn<'a> = dyn Fn(u32, u32) -> Option<u32> + 'a;
-type OriginFn<'a> = dyn Fn(u32) -> Option<(i32, i32)> + 'a;
+type VariationGlyphFn<'a> = dyn Fn(u32, u32) -> Option<u32> + Send + Sync + 'a;
+type OriginFn<'a> = dyn Fn(u32) -> Option<(i32, i32)> + Send + Sync + 'a;
 
 /// Per-query font functions and scale, with an optional parent font.
 ///
@@ -29,14 +29,14 @@ type OriginFn<'a> = dyn Fn(u32) -> Option<(i32, i32)> + 'a;
 pub struct SubFont<'p> {
     parent: Option<&'p SubFont<'p>>,
     scale: Scale,
-    nominal_glyph: Option<Box<dyn Fn(u32) -> Option<u32> + 'p>>,
+    nominal_glyph: Option<Box<dyn Fn(u32) -> Option<u32> + Send + Sync + 'p>>,
     variation_glyph: Option<Box<VariationGlyphFn<'p>>>,
-    h_advance: Option<Box<dyn Fn(u32) -> i32 + 'p>>,
-    v_advance: Option<Box<dyn Fn(u32) -> i32 + 'p>>,
+    h_advance: Option<Box<dyn Fn(u32) -> i32 + Send + Sync + 'p>>,
+    v_advance: Option<Box<dyn Fn(u32) -> i32 + Send + Sync + 'p>>,
     h_origin: Option<Box<OriginFn<'p>>>,
     v_origin: Option<Box<OriginFn<'p>>>,
-    glyph_extents: Option<Box<dyn Fn(u32) -> Option<GlyphExtents> + 'p>>,
-    outline: Option<Box<dyn Fn(u32) -> Option<GlyphOutline> + 'p>>,
+    glyph_extents: Option<Box<dyn Fn(u32) -> Option<GlyphExtents> + Send + Sync + 'p>>,
+    outline: Option<Box<dyn Fn(u32) -> Option<GlyphOutline> + Send + Sync + 'p>>,
     x_embolden: f32,
     y_embolden: f32,
     embolden_in_place: bool,
@@ -95,42 +95,57 @@ impl<'p> SubFont<'p> {
     }
 
     /// Override the nominal Unicode-to-glyph lookup.
-    pub fn set_nominal_glyph_func(&mut self, func: impl Fn(u32) -> Option<u32> + 'p) {
+    pub fn set_nominal_glyph_func(&mut self, func: impl Fn(u32) -> Option<u32> + Send + Sync + 'p) {
         self.nominal_glyph = Some(Box::new(func));
     }
 
     /// Override the variation-selector glyph lookup.
-    pub fn set_variation_glyph_func(&mut self, func: impl Fn(u32, u32) -> Option<u32> + 'p) {
+    pub fn set_variation_glyph_func(
+        &mut self,
+        func: impl Fn(u32, u32) -> Option<u32> + Send + Sync + 'p,
+    ) {
         self.variation_glyph = Some(Box::new(func));
     }
 
     /// Override the horizontal advance in this font's scaled units.
-    pub fn set_h_advance_func(&mut self, func: impl Fn(u32) -> i32 + 'p) {
+    pub fn set_h_advance_func(&mut self, func: impl Fn(u32) -> i32 + Send + Sync + 'p) {
         self.h_advance = Some(Box::new(func));
     }
 
     /// Override the vertical advance in this font's scaled units.
-    pub fn set_v_advance_func(&mut self, func: impl Fn(u32) -> i32 + 'p) {
+    pub fn set_v_advance_func(&mut self, func: impl Fn(u32) -> i32 + Send + Sync + 'p) {
         self.v_advance = Some(Box::new(func));
     }
 
     /// Override the horizontal origin in this font's scaled units.
-    pub fn set_h_origin_func(&mut self, func: impl Fn(u32) -> Option<(i32, i32)> + 'p) {
+    pub fn set_h_origin_func(
+        &mut self,
+        func: impl Fn(u32) -> Option<(i32, i32)> + Send + Sync + 'p,
+    ) {
         self.h_origin = Some(Box::new(func));
     }
 
     /// Override the vertical origin in this font's scaled units.
-    pub fn set_v_origin_func(&mut self, func: impl Fn(u32) -> Option<(i32, i32)> + 'p) {
+    pub fn set_v_origin_func(
+        &mut self,
+        func: impl Fn(u32) -> Option<(i32, i32)> + Send + Sync + 'p,
+    ) {
         self.v_origin = Some(Box::new(func));
     }
 
     /// Override the glyph box in this font's scaled units.
-    pub fn set_glyph_extents_func(&mut self, func: impl Fn(u32) -> Option<GlyphExtents> + 'p) {
+    pub fn set_glyph_extents_func(
+        &mut self,
+        func: impl Fn(u32) -> Option<GlyphExtents> + Send + Sync + 'p,
+    ) {
         self.glyph_extents = Some(Box::new(func));
     }
 
     /// Override the glyph outline in this font's scaled units.
-    pub fn set_outline_func(&mut self, func: impl Fn(u32) -> Option<GlyphOutline> + 'p) {
+    pub fn set_outline_func(
+        &mut self,
+        func: impl Fn(u32) -> Option<GlyphOutline> + Send + Sync + 'p,
+    ) {
         self.outline = Some(Box::new(func));
     }
 
