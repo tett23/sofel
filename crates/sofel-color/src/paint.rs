@@ -176,6 +176,7 @@ pub(crate) fn svg_image(data: &[u8]) -> Image<'_> {
         data,
         width: 0,
         height: 0,
+        slant: 0.0,
         extents: None,
     }
 }
@@ -207,6 +208,7 @@ pub(crate) fn paint_any<'a>(
         data: p.data,
         width: p.pixel_extents.width.unsigned_abs(),
         height: p.pixel_extents.height.unsigned_abs(),
+        slant: 0.0,
         extents: Some(extents),
     };
     if let Some(e) = bitmap_extents(font, glyph, options.ppem)
