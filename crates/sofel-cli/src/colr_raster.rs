@@ -6,7 +6,7 @@
     clippy::arithmetic_side_effects
 )]
 use sofel_color::{PaintCommand, PaintOptions, Painted, RawPaintGraph, Recording};
-use sofel_geom::{Point, PointF, Transform};
+use sofel_geom::{Point, PointF, Rect, Transform};
 use sofel_outline::{Outlines, Scale, Scratch};
 use sofel_raster::{BgraImage, ColorGradient, PaintMask};
 use sofel_read::GlyphId;
@@ -28,6 +28,86 @@ fn inverse(t: Transform) -> Option<Transform> {
 }
 fn mul(a: u8, b: u8) -> u8 {
     ((u32::from(a) * u32::from(b) + 255) >> 8) as u8
+}
+// HarfBuzz raster rounds an axis-aligned clip outwards. For other transforms
+// it tests pixel centers against the four directed edges in surface coordinates.
+fn intersect_rect(
+    rect: Rect,
+    transform: Transform,
+    left: i32,
+    top: i32,
+    width: usize,
+    mask: &mut [u8],
+) {
+    if rect.x_min >= rect.x_max || rect.y_min >= rect.y_max {
+        mask.fill(0);
+        return;
+    }
+    let rows = mask.len() / width;
+    let bottom = top as f32 - rows as f32;
+    let corners = [
+        PointF::new(rect.x_min, rect.y_min),
+        PointF::new(rect.x_max, rect.y_min),
+        PointF::new(rect.x_max, rect.y_max),
+        PointF::new(rect.x_min, rect.y_max),
+    ]
+    .map(|p| {
+        let p = transform.apply(p);
+        PointF::new(p.x - left as f32, p.y - bottom)
+    });
+    let [a, b, c, d] = corners;
+    let mut twice_area = 0.;
+    let edges = [(a, b), (b, c), (c, d), (d, a)].map(|(a, b)| {
+        twice_area += a.x * b.y - b.x * a.y;
+        let nx = b.y - a.y;
+        let ny = a.x - b.x;
+        (nx, ny, nx * a.x + ny * a.y)
+    });
+    if twice_area == 0. || !twice_area.is_finite() {
+        mask.fill(0);
+        return;
+    }
+    let xmin = corners
+        .iter()
+        .map(|p| p.x)
+        .fold(f32::INFINITY, f32::min)
+        .floor();
+    let xmax = corners
+        .iter()
+        .map(|p| p.x)
+        .fold(f32::NEG_INFINITY, f32::max)
+        .ceil();
+    let ymin = corners
+        .iter()
+        .map(|p| p.y)
+        .fold(f32::INFINITY, f32::min)
+        .floor();
+    let ymax = corners
+        .iter()
+        .map(|p| p.y)
+        .fold(f32::NEG_INFINITY, f32::max)
+        .ceil();
+    let aligned = transform.xy == 0. && transform.yx == 0.;
+    for (i, coverage) in mask.iter_mut().enumerate() {
+        let x = (i % width) as f32 + 0.5;
+        let y = (rows - 1 - i / width) as f32 + 0.5;
+        if x < xmin
+            || y < ymin
+            || x >= xmax
+            || y >= ymax
+            || (!aligned
+                && edges.iter().any(|&(nx, ny, limit)| {
+                    let pos = nx * x + ny * y;
+                    if twice_area > 0. {
+                        pos > limit
+                    } else {
+                        pos < limit
+                    }
+                }))
+        {
+            *coverage = 0;
+        }
+    }
 }
 /// Returns a complete image only when every command can be executed.
 pub(crate) fn render(
@@ -86,24 +166,9 @@ pub(crate) fn render(
                 clips.pop()?;
             }
             PaintCommand::PushClipRectangle(rect) => {
-                if t.xy != 0. || t.yx != 0. {
-                    return None;
-                }
                 budget = budget.checked_sub(n)?;
-                let a = t.apply(PointF::new(rect.x_min, rect.y_min));
-                let b = t.apply(PointF::new(rect.x_max, rect.y_max));
                 let mut mask = clips.last()?.clone();
-                for (i, p) in mask.iter_mut().enumerate() {
-                    let x = left as f32 + (i % width) as f32;
-                    let y = top as f32 - 1. - (i / width) as f32;
-                    if x < a.x.min(b.x).floor()
-                        || x >= a.x.max(b.x).ceil()
-                        || y < a.y.min(b.y).floor()
-                        || y >= a.y.max(b.y).ceil()
-                    {
-                        *p = 0;
-                    }
-                }
+                intersect_rect(*rect, t, left, top, width, &mut mask);
                 clips.push(mask);
             }
             PaintCommand::PushClipGlyph(id) => {
@@ -162,4 +227,38 @@ pub(crate) fn render(
         }
     }
     Some(image)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sofel_geom::Rect;
+
+    #[test]
+    fn i2_rotated_clips_keep_parent_coverage_in_either_winding() {
+        let rect = Rect {
+            x_min: 0.,
+            y_min: 0.,
+            x_max: 2.,
+            y_max: 2.,
+        };
+        for (xy, yy, dx, dy) in [(-1., 1., 2., 0.), (1., -1., 0., 2.)] {
+            let t = Transform {
+                xx: 1.,
+                yx: 1.,
+                xy,
+                yy,
+                dx,
+                dy,
+            };
+            let mut mask = [128; 16];
+            intersect_rect(rect, t, 0, 4, 4, &mut mask);
+            assert_eq!(
+                mask,
+                [
+                    0, 128, 128, 0, 128, 128, 128, 128, 128, 128, 128, 128, 0, 128, 128, 0
+                ]
+            );
+        }
+    }
 }
