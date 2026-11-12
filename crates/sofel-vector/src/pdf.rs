@@ -7,7 +7,14 @@ use sofel_geom::{Color, CompositeMode, Pen, Point, PointF, Transform};
 pub struct PdfPage {
     bounds: [i64; 4],
     stream: String,
+    images: Vec<PdfImage>,
     states: Vec<(&'static str, u8)>,
+}
+
+struct PdfImage {
+    width: u32,
+    height: u32,
+    rgba: Vec<u8>,
 }
 
 fn blend(mode: CompositeMode) -> &'static str {
@@ -45,6 +52,7 @@ impl PdfPage {
             bounds,
             stream: String::new(),
             states: Vec::new(),
+            images: Vec::new(),
         };
         if let Some(color) = background {
             page.begin_fill(color, CompositeMode::SrcOver);
@@ -98,6 +106,44 @@ impl PdfPage {
         self.stream.push_str("f\nQ\n");
         Ok(())
     }
+    /// Positions unassociated top-down RGBA samples using the glyph extents.
+    /// Returns false when their length does not match the pixel dimensions.
+    #[allow(clippy::cast_precision_loss)]
+    pub fn draw_rgba(
+        &mut self,
+        width: u32,
+        height: u32,
+        rgba: Vec<u8>,
+        e: sofel_geom::GlyphExtents,
+        transform: Transform,
+    ) -> bool {
+        let len = (width as usize)
+            .checked_mul(height as usize)
+            .and_then(|n| n.checked_mul(4));
+        if width == 0 || height == 0 || len != Some(rgba.len()) {
+            return false;
+        }
+        let matrix = transform.multiply(&Transform {
+            xx: e.width as f32,
+            yy: -(e.height as f32),
+            dx: e.x_bearing as f32,
+            dy: e.y_bearing as f32 + e.height as f32,
+            ..Transform::IDENTITY
+        });
+        let id = self.images.len();
+        let [a, b, c, d, x, y] = [
+            matrix.xx, matrix.yx, matrix.xy, matrix.yy, matrix.dx, matrix.dy,
+        ]
+        .map(|v| number(v, 2));
+        let _ = writeln!(self.stream, "q\n{a} {b} {c} {d} {x} {y} cm\n/Im{id} Do\nQ");
+        self.images.push(PdfImage {
+            width,
+            height,
+            rgba,
+        });
+        true
+    }
+
     /// Serializes the page and its graphics states with a cross-reference table.
     pub fn finish(self) -> Vec<u8> {
         let mut output = String::from("%PDF-1.4\n");
@@ -110,6 +156,14 @@ impl PdfPage {
                 "/GS{i} << /Type /ExtGState /BM /{mode} /ca {alpha} >> "
             );
         }
+        let mut images = String::new();
+        for i in 0..self.images.len() {
+            let _ = write!(
+                images,
+                "/Im{i} {} 0 R ",
+                i.saturating_mul(2).saturating_add(6)
+            );
+        }
         let mut offsets = Vec::new();
         let mut object = |content: &str| {
             offsets.push(output.len());
@@ -118,23 +172,49 @@ impl PdfPage {
         object("<< /Type /Catalog /Pages 2 0 R >>");
         object("<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
         object(&format!(
-            "<< /Type /Page /Parent 2 0 R /MediaBox [{x0} {y0} {x1} {y1}] /Resources << /ExtGState << {states}>> >> /Contents 4 0 R >>"
+            "<< /Type /Page /Parent 2 0 R /MediaBox [{x0} {y0} {x1} {y1}] /Resources << /ExtGState << {states}>> /XObject << {images}>> >> /Contents 4 0 R >>"
         ));
         object(&format!(
             "<< /Length {} >>\nstream\n{}endstream",
             self.stream.len(),
             self.stream
         ));
-        let xref = output.len();
-        output.push_str("xref\n0 5\n0000000000 65535 f \n");
+        let mut bytes = output.into_bytes();
+        for image in self.images {
+            let pixels = image.rgba.as_chunks::<4>().0;
+            let mask_id = offsets.len().saturating_add(1);
+            for mask in [true, false] {
+                offsets.push(bytes.len());
+                let space = if mask { "DeviceGray" } else { "DeviceRGB" };
+                let mask_ref = if mask {
+                    String::new()
+                } else {
+                    format!("/SMask {mask_id} 0 R ")
+                };
+                let size = pixels.len().saturating_mul(if mask { 1 } else { 3 });
+                bytes.extend_from_slice(format!("{} 0 obj\n<< /Type /XObject /Subtype /Image /Width {} /Height {} /ColorSpace /{space} /BitsPerComponent 8 {mask_ref}/Length {size} >>\nstream\n", offsets.len(), image.width, image.height).as_bytes());
+                for &[r, g, b, a] in pixels {
+                    if mask {
+                        bytes.push(a);
+                    } else {
+                        bytes.extend_from_slice(&[r, g, b]);
+                    }
+                }
+                bytes.extend_from_slice(b"\nendstream\nendobj\n");
+            }
+        }
+        let xref = bytes.len();
+        let count = offsets.len().saturating_add(1);
+        let mut trailer = format!("xref\n0 {count}\n0000000000 65535 f \n");
         for pos in offsets {
-            let _ = writeln!(output, "{pos:010} 00000 n ");
+            let _ = writeln!(trailer, "{pos:010} 00000 n ");
         }
         let _ = writeln!(
-            output,
-            "trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF"
+            trailer,
+            "trailer\n<< /Size {count} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF"
         );
-        output.into_bytes()
+        bytes.extend_from_slice(trailer.as_bytes());
+        bytes
     }
 }
 

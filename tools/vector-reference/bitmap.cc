@@ -1,0 +1,56 @@
+// Compare an embedded bitmap glyph in the HarfBuzz and sofel PDF backends.
+#include "hb-vector.h"
+#include "hb-ot.h"
+#include "sofel.h"
+#include <fstream>
+#include <cstdlib>
+#include <vector>
+
+int main(int argc, char **argv) {
+  if (argc != 5) return 2;
+  hb_blob_t *blob = hb_blob_create_from_file_or_fail(argv[1]);
+  if (!blob) return 1;
+  hb_face_t *face = hb_face_create(blob, 0);
+  hb_font_t *font = hb_font_create(face);
+  hb_ot_font_set_funcs(font);
+  hb_codepoint_t gid;
+  if (!hb_font_get_nominal_glyph(font, std::strtoul(argv[4], nullptr, 16), &gid)) return 1;
+  auto *paint = hb_vector_paint_create_or_fail(HB_VECTOR_FORMAT_PDF);
+  hb_glyph_extents_t ink;
+  if (!hb_font_get_glyph_extents(font, gid, &ink) || ink.width <= 0 || ink.height >= 0) return 1;
+  const hb_vector_extents_t extents = {float(ink.x_bearing - 16),
+      float(ink.y_bearing + ink.height - 16), float(ink.width + 32), float(32 - ink.height)};
+  hb_vector_paint_set_extents(paint, &extents);
+  hb_vector_paint_set_background(paint, HB_COLOR(255, 255, 255, 255));
+  if (!hb_vector_paint_glyph_or_fail(paint, font, gid, HB_VECTOR_EXTENTS_MODE_NONE)) return 1;
+  auto *pdf = hb_vector_paint_render(paint);
+  unsigned length;
+  const char *data = hb_blob_get_data(pdf, &length);
+  std::ofstream reference(argv[2], std::ios::binary);
+  reference.write(data, length);
+  if (!length || !reference) return 1;
+  hb_blob_destroy(pdf);
+  hb_vector_paint_destroy(paint);
+  hb_font_destroy(font);
+  hb_face_destroy(face);
+
+  const char *input = hb_blob_get_data(blob, &length);
+  int32_t status;
+  auto *sf = sofel_font_create(reinterpret_cast<const uint8_t *>(input), length, 0, &status);
+  sofel_vector_glyph_t glyph = {gid, {1, 0, 0, 1, 0, 0}, {0, 0, 0, 255}};
+  sofel_color_t white = {255, 255, 255, 255};
+  size_t n = 0;
+  auto render = [&](uint8_t *out, size_t capacity) {
+    return sofel_vector_page(sf, nullptr, SOFEL_VECTOR_PDF, extents.x, extents.y,
+                             extents.width, extents.height,
+                             &white, &glyph, 1, out, capacity, &n);
+  };
+  if (render(nullptr, 0) != SOFEL_ERROR_BUFFER_TOO_SMALL) return 1;
+  std::vector<uint8_t> bytes(n);
+  if (render(bytes.data(), bytes.size())) return 1;
+  std::ofstream actual(argv[3], std::ios::binary);
+  actual.write(reinterpret_cast<const char *>(bytes.data()), bytes.size());
+  sofel_font_destroy(sf);
+  hb_blob_destroy(blob);
+  return !actual;
+}

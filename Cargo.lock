@@ -21,6 +21,7 @@ dependencies = [
  "sofel-geom",
  "sofel-gpu",
  "sofel-outline",
+ "sofel-png",
  "sofel-raster",
  "sofel-read",
  "sofel-shape",

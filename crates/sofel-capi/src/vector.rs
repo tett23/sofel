@@ -87,6 +87,49 @@ pub unsafe extern "C" fn sofel_vector_page(
                 dy,
             };
             let c = g.color.into();
+            let options = sofel_color::PaintOptions {
+                palette: sofel_color::Palette::Font(0),
+                foreground: c,
+                ppem: 0,
+            };
+            if let Page::Pdf(pdf) = &mut page
+                && matches!(
+                    sofel_color::glyph_color_format(&font.font, g.glyph),
+                    Some(sofel_color::ColorFormat::Cbdt | sofel_color::ColorFormat::Sbix)
+                )
+            {
+                recording.clear();
+                sofel_color::paint_recording_at(
+                    instance,
+                    g.glyph,
+                    &options,
+                    &mut color_scratch,
+                    &mut recording,
+                );
+                if let [sofel_color::PaintCommand::Image(image)] = recording.commands()
+                    && let Some(extents) = image.extents
+                    && let Some(max_pixels) =
+                        (image.width as usize).checked_mul(image.height as usize)
+                    && let Ok(decoded) =
+                        sofel_png::decode_rgba(image.data, max_pixels.min((16 << 20) / 4))
+                    && pdf.draw_rgba(
+                        decoded.width,
+                        decoded.height,
+                        decoded.rgba,
+                        extents,
+                        Transform {
+                            xx,
+                            yx,
+                            xy,
+                            yy,
+                            dx,
+                            dy,
+                        },
+                    )
+                {
+                    continue;
+                }
+            }
             let mut fill = |gid, c| {
                 outlines
                     .load(GlyphId(gid), Scale::Unscaled, &mut scratch)
@@ -103,11 +146,6 @@ pub unsafe extern "C" fn sofel_vector_page(
             };
             if sofel_color::layers(&font.font, g.glyph).next().is_some() {
                 recording.clear();
-                let options = sofel_color::PaintOptions {
-                    palette: sofel_color::Palette::Font(0),
-                    foreground: c,
-                    ppem: 0,
-                };
                 if sofel_color::paint_recording_at(
                     instance,
                     g.glyph,
