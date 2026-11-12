@@ -140,11 +140,32 @@ fn verify(
             continue;
         }
         let fields = record.split('\t').collect::<Vec<_>>();
-        let [feature, case, names, source] = fields.as_slice() else {
+        let [
+            feature,
+            case,
+            names,
+            source,
+            input,
+            selection,
+            ppem,
+            foreground,
+        ] = fields.as_slice()
+        else {
             println!("invalid inventory row {}", line.saturating_add(1));
             ok = false;
             continue;
         };
+        for (field, value) in [
+            ("input", input),
+            ("selection", selection),
+            ("ppem", ppem),
+            ("foreground", foreground),
+        ] {
+            if value.trim().is_empty() {
+                println!("missing {field}: {feature}/{case}");
+                ok = false;
+            }
+        }
         let mut observations = BTreeSet::new();
         for name in names.split(',') {
             if name.is_empty() || !observations.insert(name) {

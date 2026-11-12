@@ -79,3 +79,14 @@ fn i2_verifier_runs_each_positioned_page() {
         );
     }
 }
+
+#[test]
+fn i1_case_source_identifies_input_selection_and_render_settings() {
+    let row = INVENTORY
+        .lines()
+        .find(|line| line.starts_with("in-geometry\tcircle\t"))
+        .unwrap();
+    assert!(row.contains("conformance/svg/geometry.svg\tglyph4\t32\t#ffffffff"));
+    let (_, output) = run(&INVENTORY.replace("conformance/svg/geometry.svg", ""));
+    assert!(output.contains("missing input: in-geometry/circle"));
+}
