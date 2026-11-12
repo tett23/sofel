@@ -450,6 +450,8 @@ pub(crate) struct Interpreter {
     projection: [i64; 2],
     dual_projection: [i64; 2],
     freedom: [i64; 2],
+    instructions: alloc::collections::BTreeMap<u8, alloc::rc::Rc<[u8]>>,
+    instruction_def_limit: Option<u16>,
     functions: alloc::collections::BTreeMap<u16, alloc::rc::Rc<[u8]>>,
     rounding: Rounding,
     storage: alloc::vec::Vec<i64>,
@@ -494,6 +496,8 @@ impl Interpreter {
             projection: [16384, 0],
             dual_projection: [16384, 0],
             freedom: [16384, 0],
+            instructions: alloc::collections::BTreeMap::new(),
+            instruction_def_limit: None,
             functions: alloc::collections::BTreeMap::new(),
             rounding: Rounding::Grid,
             scale,
@@ -679,6 +683,7 @@ impl Interpreter {
             .min(cvt.len().saturating_mul(2).max(30));
         let mut vm = Self::new(maxima.max_storage, cvt, scale);
         vm.engine = engine;
+        vm.instruction_def_limit = Some(maxima.max_instruction_defs);
         vm.blend_coords
             .extend(coords.iter().map(|coord| coord.0 >> 2));
         vm.points[0].resize(twilight, HintPoint::default());
@@ -686,6 +691,7 @@ impl Interpreter {
         font_vm.cvt.fill(0);
         font_vm.execute(font_program, &mut alloc::vec::Vec::new(), limit)?;
         vm.functions = font_vm.functions;
+        vm.instructions = font_vm.instructions;
         vm.ppem = [ppem; 2];
         vm.point_size = i64::from(ppem) * 64;
         vm.in_prep = true;
@@ -723,6 +729,7 @@ impl Interpreter {
     ) -> Result<(alloc::vec::Vec<HintPoint>, u16, u8), Error> {
         let mut glyph = self.clone();
         glyph.in_glyph = true;
+        glyph.instruction_def_limit = None;
         if self.instruction_control & 2 != 0 {
             glyph.minimum_distance = 64;
             glyph.control_value_cutin = 68;
@@ -1543,16 +1550,32 @@ impl Interpreter {
                     let selector = stack.last_mut().ok_or(Error::StackUnderflow)?;
                     *selector = self.engine.query(*selector);
                 }
-                0x2c => {
+                op @ (0x2c | 0x89) => {
                     let id = u16::try_from(stack.pop().ok_or(Error::StackUnderflow)?)
                         .map_err(|_| Error::InvalidReference)?;
+                    let instruction_id = if op == 0x89 {
+                        let opcode = u8::try_from(id).map_err(|_| Error::InvalidReference)?;
+                        let limit = self.instruction_def_limit.ok_or(Error::InvalidOpcode)?;
+                        if !self.instructions.contains_key(&opcode)
+                            && self.instructions.len() >= usize::from(limit)
+                        {
+                            return Err(Error::InvalidReference);
+                        }
+                        Some(opcode)
+                    } else {
+                        None
+                    };
                     let start = code;
                     loop {
                         let size = start.len() - code.len();
                         match next(&mut code)?.opcode {
                             0x2d => {
-                                self.functions
-                                    .insert(id, alloc::rc::Rc::from(&start[..size]));
+                                let body = alloc::rc::Rc::from(&start[..size]);
+                                if let Some(opcode) = instruction_id {
+                                    self.instructions.insert(opcode, body);
+                                } else {
+                                    self.functions.insert(id, body);
+                                }
                                 break;
                             }
                             0x2c | 0x89 => return Err(Error::InvalidOpcode),
@@ -1705,6 +1728,18 @@ impl Interpreter {
                 }
                 0x1b => skip_block(&mut code, false)?,
                 0x59 => {}
+                op @ (0x28 | 0x7b | 0x83 | 0x84 | 0x8f..=0xaf) => {
+                    let body = self
+                        .instructions
+                        .get(&op)
+                        .cloned()
+                        .ok_or(Error::InvalidOpcode)?;
+                    if depth >= 32 {
+                        return Err(Error::StackOverflow);
+                    }
+                    *remaining = remaining.checked_sub(1).ok_or(Error::ExecutionLimit)?;
+                    self.execute_frame(&body, stack, max_stack, depth + 1, remaining)?;
+                }
                 _ => return Err(Error::InvalidOpcode),
             }
         }
@@ -2529,4 +2564,44 @@ fn adr0064_i1_getvariation_pushes_all_axes_within_the_stack_limit() {
     assert_eq!(stack, [7]);
     vm.execute(&[0x91], &mut stack, 4).unwrap();
     assert_eq!(stack, [7, -16384, 0, 8192]);
+}
+
+#[test]
+fn adr0064_i1_static_idef_can_be_redefined_in_prep_within_maxp_limit() {
+    let maxima = sofel_font::read::maxp::TrueTypeMaxima {
+        max_instruction_defs: 1,
+        ..Default::default()
+    };
+    let engine = Interpreter::new(0, &[], 65536).engine;
+    let definition = [0xb0, 0x91, 0x89, 0xb0, 2, 0x2d];
+    let redefine = [0xb0, 0x91, 0x89, 0xb0, 3, 0x2d];
+    let (mut vm, limit) = Interpreter::prepare_programs(
+        maxima,
+        &[],
+        16,
+        65536,
+        engine,
+        &[],
+        (&definition, &redefine),
+    )
+    .unwrap();
+    let mut stack = alloc::vec![];
+    vm.execute(&[0x91], &mut stack, limit).unwrap();
+    assert_eq!(stack, [3]);
+    assert!(
+        vm.execute_glyph(alloc::vec![], &[], &definition, limit)
+            .is_err()
+    );
+    assert!(
+        Interpreter::prepare_programs(
+            maxima,
+            &[],
+            16,
+            65536,
+            engine,
+            &[],
+            (&definition, &[0xb0, 0x92, 0x89, 0x2d])
+        )
+        .is_err()
+    );
 }
