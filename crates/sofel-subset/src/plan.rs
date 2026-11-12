@@ -313,14 +313,16 @@ impl Plan {
             (!inert_gvar || (**tag != *b"gvar" && **tag != *b"GVAR"))
                 && font.table(Tag::new(tag)).is_some()
         };
-        let no_source_other_variation_data = !other_variation_tags.iter().any(needs_rebase);
+        let no_other_varc_rebase = !other_variation_tags.iter().any(|tag| {
+            needs_rebase(tag) && (**tag != *b"gvar" || !drop.contains(Tag::new(tag).to_u32()))
+        });
         let varc_unrelated_axis_change = if norm.user.len() == 1
-            && (norm.pinned_at_default || no_source_other_variation_data)
+            && (norm.pinned_at_default || no_other_varc_rebase)
         {
             let axes = instance::axis_infos(font);
             axes.iter().enumerate().any(|(index, info)| {
                 norm.user.get(&info.tag).is_some_and(|range| {
-                    no_source_other_variation_data
+                    no_other_varc_rebase
                         || (range.min == range.default && range.default == range.max)
                 }) && u16::try_from(index).ok().is_some_and(|index| {
                     font.table(Tag::new(b"VARC"))

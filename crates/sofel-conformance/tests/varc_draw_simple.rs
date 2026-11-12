@@ -488,31 +488,40 @@ fn adr0067_i2_unrelated_axis_pin_with_gvar_dropped_matches_harfbuzz() {
     let path = paths::testdata().join("harfbuzz/test/api/fonts/varc-unrelated-axis.ttf");
     let bytes = std::fs::read(&path).unwrap();
     let font = Font::new(&bytes, 0).unwrap();
-    let input = Input::new()
+    let base = Input::new()
         .map_set(SetKind::Unicodes, |set| set.add(0xAC01))
         .map_set(SetKind::DropTables, |set| {
             set.add(Tag::new(b"gvar").to_u32())
-        })
-        .with_axis_pinned(Tag::new(b"DUMY"), 0.0, &font)
-        .unwrap();
-    let ours = subset(&font, &input).unwrap();
-    let reference = std::env::temp_dir().join(format!(
-        "sofel-varc-unrelated-pin-{}.ttf",
-        std::process::id()
-    ));
-    let output = ProcessCommand::new(paths::hb_dump())
-        .arg("--subset")
-        .arg(format!("--font-file={}", path.display()))
-        .arg("--unicodes=U+AC01")
-        .arg("--variations=DUMY=0")
-        .arg("--drop-tables+=gvar")
-        .arg(format!("--output-file={}", reference.display()))
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let expected = std::fs::read(&reference).unwrap();
-    assert_eq!(ours, expected);
-    let _ = std::fs::remove_file(reference);
+        });
+    let axis = Tag::new(b"DUMY");
+    for (variation, input) in [
+        ("0", base.with_axis_pinned(axis, 0.0, &font)),
+        ("0.5", base.with_axis_pinned(axis, 0.5, &font)),
+        (
+            "0:0.5:1",
+            base.with_axis_range(axis, Some(0.0), Some(1.0), Some(0.5), &font),
+        ),
+    ] {
+        let input = input.unwrap();
+        let ours = subset(&font, &input).unwrap();
+        let reference = std::env::temp_dir().join(format!(
+            "sofel-varc-unrelated-pin-{}.ttf",
+            std::process::id()
+        ));
+        let output = ProcessCommand::new(paths::hb_dump())
+            .arg("--subset")
+            .arg(format!("--font-file={}", path.display()))
+            .arg("--unicodes=U+AC01")
+            .arg(format!("--variations=DUMY={variation}"))
+            .arg("--drop-tables+=gvar")
+            .arg(format!("--output-file={}", reference.display()))
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let expected = std::fs::read(&reference).unwrap();
+        assert_eq!(ours, expected);
+        let _ = std::fs::remove_file(reference);
+    }
 }
 
 #[test]
