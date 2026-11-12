@@ -1,5 +1,7 @@
 //! `gvar` and `GVAR` subsetting without instancing (ADR 0022 stage 10).
 
+mod iup;
+
 use super::variation_region;
 
 use alloc::borrow::Cow;
@@ -183,7 +185,7 @@ fn serialize_records(
 struct PinnedTuple<'a> {
     peak: Vec<u8>,
     intermediate: Option<Vec<u8>>,
-    points: &'a [u8],
+    points: Cow<'a, [u8]>,
     deltas: Cow<'a, [u8]>,
 }
 
@@ -239,7 +241,9 @@ fn instance_records(
     let outlines = super::glyf::GlyfAccel::new(font);
     let mut glyphs = Vec::new();
     let mut frequencies = BTreeMap::<Vec<u8>, usize>::new();
-    for ((gid, raw), &(_, old)) in records.iter().zip(plan.new_to_old_glyphs()) {
+    for (glyph_index, ((gid, raw), &(_, old))) in
+        records.iter().zip(plan.new_to_old_glyphs()).enumerate()
+    {
         if raw.is_empty() {
             continue;
         }
@@ -318,11 +322,12 @@ fn instance_records(
             } else {
                 (points, tuple.data())
             };
-            let (points, deltas) = if contributors.len() == 1
+            let (points, deltas) = if !plan.flags.has(Flags::OPTIMIZE_IUP_DELTAS)
+                && contributors.len() == 1
                 && scales.is_empty()
                 && PackedPoints::parse(points).ok_or(bad)?.0.is_all()
             {
-                (points, Cow::Borrowed(deltas))
+                (Cow::Borrowed(points), Cow::Borrowed(deltas))
             } else {
                 let outline = outlines.glyph(old, false);
                 let simple = (outline.kind == super::glyf::Kind::Simple)
@@ -391,20 +396,87 @@ fn instance_records(
                         }
                     }
                 }
-                let mut encoded = Vec::new();
-                for sum in sums {
-                    let values = sum
-                        .into_iter()
+                let rounded = |sum: Vec<f32>| {
+                    sum.into_iter()
                         .map(|value| {
                             let rounded = sofel_geom::float::hb_roundf32(value);
                             i16::try_from(crate::instance::f64_to_i32(rounded))
                                 .map_err(|_| SubsetError::Limit { tag })
                         })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    pack_deltas(&values, &mut encoded);
+                        .collect::<Result<Vec<_>, _>>()
+                };
+                let [xs, ys] = sums;
+                let xs = rounded(xs)?;
+                let ys = rounded(ys)?;
+                let mut encoded = Vec::new();
+                pack_deltas(&xs, &mut encoded);
+                pack_deltas(&ys, &mut encoded);
+                let mut packed = Cow::Borrowed(&[0u8][..]);
+                if plan.flags.has(Flags::OPTIMIZE_IUP_DELTAS) {
+                    let mut selected = Vec::new();
+                    if let Some(ref simple) = simple {
+                        let mut start = 0;
+                        let compiled = plan
+                            .var
+                            .glyf
+                            .as_ref()
+                            .and_then(|glyphs| glyphs.get(glyph_index))
+                            .filter(|bytes| !bytes.is_empty())
+                            .map(|bytes| {
+                                sofel_font::read::glyf::Glyph::new(bytes)
+                                    .and_then(|glyph| glyph.simple())
+                            })
+                            .transpose()
+                            .map_err(|_| bad)?;
+                        let coords: Vec<_> = compiled
+                            .as_ref()
+                            .unwrap_or(simple)
+                            .points(outline.extended)
+                            .collect();
+                        for last in simple.end_points() {
+                            let end = usize::from(last).saturating_add(1);
+                            let contour = coords.get(start..end).ok_or(bad)?;
+                            let samples: Vec<_> = contour
+                                .iter()
+                                .zip(xs.get(start..end).ok_or(bad)?)
+                                .zip(ys.get(start..end).ok_or(bad)?)
+                                .map(|((point, &x), &y)| iup::Sample {
+                                    position: [f64::from(point.x), f64::from(point.y)],
+                                    delta: [x, y],
+                                })
+                                .collect();
+                            selected.extend(iup::select(&samples));
+                            start = end;
+                        }
+                    }
+                    for (&x, &y) in xs.iter().zip(&ys).skip(selected.len()) {
+                        selected.push(x != 0 || y != 0);
+                    }
+                    if simple.is_none() && !selected.iter().any(|&p| p) {
+                        *selected.first_mut().ok_or(bad)? = true;
+                    }
+                    let sparse_points = iup::pack_points(&selected).ok_or(bad)?;
+                    let mut sparse = Vec::new();
+                    for axis in [&xs, &ys] {
+                        let values: Vec<_> = axis
+                            .iter()
+                            .zip(&selected)
+                            .filter_map(|(&v, &keep)| keep.then_some(v))
+                            .collect();
+                        pack_deltas(&values, &mut sparse);
+                    }
+                    if sparse_points.len().saturating_add(sparse.len())
+                        < encoded.len().saturating_add(1)
+                    {
+                        packed = Cow::Owned(sparse_points);
+                        encoded = sparse;
+                    }
                 }
-                (&[0u8][..], Cow::Owned(encoded))
+                (packed, Cow::Owned(encoded))
             };
+            if points.is_empty() {
+                continue;
+            }
             tuples.push(PinnedTuple {
                 peak: projected,
                 intermediate,
@@ -433,7 +505,7 @@ fn instance_records(
     for (gid, tuples) in glyphs {
         let mut point_counts = BTreeMap::<&[u8], usize>::new();
         for tuple in &tuples {
-            let n = point_counts.entry(tuple.points).or_default();
+            let n = point_counts.entry(tuple.points.as_ref()).or_default();
             *n = n.saturating_add(1);
         }
         let shared_points = if point_counts.values().all(|&n| n > 1) {
@@ -450,9 +522,9 @@ fn instance_records(
             .ok_or(SubsetError::Limit { tag })?;
         let mut headers = Vec::new();
         let mut payload = shared_points.unwrap_or_default().to_vec();
-        for tuple in tuples {
+        for tuple in &tuples {
             let index = indices.get(tuple.peak.as_slice());
-            let private = Some(tuple.points) != shared_points;
+            let private = Some(tuple.points.as_ref()) != shared_points;
             let flags = index.copied().unwrap_or(0x8000)
                 | if tuple.intermediate.is_some() {
                     0x4000
@@ -473,13 +545,13 @@ fn instance_records(
             );
             headers.extend(flags.to_be_bytes());
             if index.is_none() {
-                headers.extend(tuple.peak);
+                headers.extend(&tuple.peak);
             }
-            if let Some(region) = tuple.intermediate {
+            if let Some(region) = &tuple.intermediate {
                 headers.extend(region);
             }
             if private {
-                payload.extend(tuple.points);
+                payload.extend_from_slice(&tuple.points);
             }
             payload.extend_from_slice(&tuple.deltas);
         }

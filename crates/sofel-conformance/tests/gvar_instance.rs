@@ -549,3 +549,56 @@ fn adr0061_i1_implicit_advances_survive_a_changed_default_and_gid_gaps() {
     }
     std::fs::remove_file(out).unwrap();
 }
+
+#[test]
+fn adr0061_i1_iup_optimized_partial_instance_matches_harfbuzz() {
+    let path = paths::testdata().join("harfbuzz/test/subset/data/fonts/NotoSans-VF.abc.ttf");
+    let bytes = std::fs::read(&path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    for ranges in [
+        &[(b"wght", 300u16, 600u16)][..],
+        &[(b"wght", 500, 600)][..],
+        &[(b"wght", 200, 600), (b"wdth", 80, 90), (b"CTGR", 20, 60)][..],
+    ] {
+        let mut input = Input::new()
+            .with_flags(Flags::OPTIMIZE_IUP_DELTAS)
+            .map_set(SetKind::Unicodes, |s| s.add_range(0, 0x10ffff));
+        let mut arguments = Vec::new();
+        for &(tag, minimum, maximum) in ranges {
+            input = input
+                .with_axis_range(
+                    Tag::new(tag),
+                    Some(f32::from(minimum)),
+                    Some(f32::from(maximum)),
+                    None,
+                    &font,
+                )
+                .unwrap();
+            arguments.push(format!(
+                "{}={minimum}:{maximum}",
+                std::str::from_utf8(tag).unwrap()
+            ));
+        }
+        let actual = subset(&font, &input).unwrap();
+        let output =
+            std::env::temp_dir().join(format!("sofel-iup-range-{}.ttf", std::process::id()));
+        assert!(
+            Command::new(paths::hb_dump())
+                .arg("--subset")
+                .arg(format!("--font-file={}", path.display()))
+                .args(["--unicodes=*", "--optimize"])
+                .arg(format!("--variations={}", arguments.join(",")))
+                .arg(format!("--output-file={}", output.display()))
+                .status()
+                .unwrap()
+                .success()
+        );
+        let expected = std::fs::read(&output).unwrap();
+        std::fs::remove_file(output).unwrap();
+        assert!(
+            actual == expected,
+            "{}",
+            sofel_conformance::subset::diff(&expected, &actual)
+        );
+    }
+}
