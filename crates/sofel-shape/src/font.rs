@@ -375,6 +375,26 @@ impl<'p> SubFont<'p> {
         }
     }
 
+    /// Query the glyph box through this font's functions and synthetic settings.
+    /// A root without a box function has no box to return.
+    pub fn glyph_extents(&self, glyph: u32) -> Option<GlyphExtents> {
+        self.glyph_extents_with_base(glyph, &|_, _| None)
+    }
+
+    fn glyph_extents_with_base(
+        &self,
+        glyph: u32,
+        base: &dyn Fn(Scale, u32) -> Option<GlyphExtents>,
+    ) -> Option<GlyphExtents> {
+        if (self.slant != 0.0 || self.x_embolden != 0.0 || self.y_embolden != 0.0)
+            && let Some(outline) = self.glyph_outline(glyph)
+        {
+            return Some(outline.extents());
+        }
+        self.raw_glyph_extents(glyph, base)
+            .map(|extents| self.synthetic_glyph_extents(extents))
+    }
+
     #[allow(clippy::arithmetic_side_effects)] // HarfBuzz negates the signed strength.
     fn synthetic_h_advance(&self, advance: i32) -> i32 {
         if self.embolden_in_place || self.x_embolden == 0.0 || advance == 0 {
@@ -620,12 +640,9 @@ impl<'f, 'a, 'l, 's> ShapeFont<'f, 'a, 'l, 's> {
                     });
                     let advance = i64::from(font_extents.ascender)
                         .saturating_sub(i64::from(font_extents.descender));
-                    let extents = subfont
-                        .raw_glyph_extents(glyph, &|s, g| {
-                            (self.extents)(GlyphId(g))
-                                .map(|value| s.scale.scale_glyph_extents(value))
-                        })
-                        .map(|value| subfont.synthetic_glyph_extents(value));
+                    let extents = subfont.glyph_extents_with_base(glyph, &|s, g| {
+                        (self.extents)(GlyphId(g)).map(|value| s.scale.scale_glyph_extents(value))
+                    });
                     y = extents.map_or(font_extents.ascender, |value| {
                         let result = i64::from(value.y_bearing)
                             .saturating_add(advance.saturating_add(i64::from(value.height)) >> 1);
@@ -654,17 +671,7 @@ impl<'f, 'a, 'l, 's> ShapeFont<'f, 'a, 'l, 's> {
         };
         self.subfont.map_or_else(
             || base(self.scale, glyph),
-            |subfont| {
-                if (subfont.slant != 0.0 || subfont.x_embolden != 0.0 || subfont.y_embolden != 0.0)
-                    && let Some(outline) = subfont.glyph_outline(glyph)
-                {
-                    Some(outline.extents())
-                } else {
-                    subfont
-                        .raw_glyph_extents(glyph, &base)
-                        .map(|e| subfont.synthetic_glyph_extents(e))
-                }
-            },
+            |subfont| subfont.glyph_extents_with_base(glyph, &base),
         )
     }
     /// VariationIndex uses GDEF ItemVariationStore independently of ppem.

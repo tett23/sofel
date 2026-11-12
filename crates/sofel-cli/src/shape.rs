@@ -961,6 +961,26 @@ impl SerializeFont for CliFont<'_, '_> {
     }
 }
 
+struct SyntheticSerializeFont<'a, 'p> {
+    base: &'a dyn SerializeFont,
+    subfont: &'p SubFont<'p>,
+}
+
+impl SerializeFont for SyntheticSerializeFont<'_, '_> {
+    fn glyph_name(&self, glyph: u32) -> Option<&[u8]> {
+        self.base.glyph_name(glyph)
+    }
+    fn glyph_extents(&self, glyph: u32) -> Option<GlyphExtents> {
+        self.subfont.glyph_extents(glyph)
+    }
+    fn glyph_from_name(&self, name: &[u8]) -> Option<u32> {
+        self.base.glyph_from_name(name)
+    }
+    fn nominal_glyph(&self, c: u32) -> Option<u32> {
+        self.base.nominal_glyph(c)
+    }
+}
+
 /// Everything a line is shaped with.
 struct Context<'a, 'b, 'c> {
     o: &'c Options,
@@ -969,6 +989,45 @@ struct Context<'a, 'b, 'c> {
     scale: Scale,
     format: Option<SerializeFormat>,
     flags: SerializeFlags,
+}
+
+fn synthetic_outline(
+    instance: sofel_font::var::Instance<'_, '_, '_, '_>,
+    scale: Scale,
+    extents: &HbExtents<'_, '_, '_>,
+    glyph: u32,
+) -> Option<GlyphOutline> {
+    let mut outline = GlyphOutline::new();
+    let mut emit = |command| match command {
+        HbOutlineCommand::MoveTo(p) => outline.move_to(p),
+        HbOutlineCommand::LineTo(p) => outline.line_to(p),
+        HbOutlineCommand::QuadTo(c, p) => outline.quad_to(c, p),
+        HbOutlineCommand::CubicTo(a, b, p) => outline.cubic_to(a, b, p),
+        HbOutlineCommand::Close => outline.close(),
+    };
+    if let Some(path) = extents.cff_glyph_path(GlyphId(glyph), &scale.scale) {
+        for command in path {
+            emit(command);
+        }
+    } else {
+        let mut scratch = Scratch::default();
+        sofel_outline::load(
+            instance,
+            GlyphId(glyph),
+            sofel_outline::Scale::Unscaled,
+            &mut scratch,
+        )
+        .ok()?;
+        let upem = f32::from(instance.font().hb_units_per_em());
+        scratch
+            .hb_decompose(
+                (scale.scale.x_scale() as f32) / upem,
+                (scale.scale.y_scale() as f32) / upem,
+                emit,
+            )
+            .ok()?;
+    }
+    Some(outline)
 }
 
 /// Runs the command with `args` (without the program name), reading the
@@ -1225,37 +1284,7 @@ fn line_output<'a>(
                     extents.scaled_glyph_extents(GlyphId(glyph), &cx.scale.scale)
                 });
                 subfont.set_outline_func(|glyph| {
-                    let mut outline = GlyphOutline::new();
-                    let mut emit = |command| match command {
-                        HbOutlineCommand::MoveTo(p) => outline.move_to(p),
-                        HbOutlineCommand::LineTo(p) => outline.line_to(p),
-                        HbOutlineCommand::QuadTo(c, p) => outline.quad_to(c, p),
-                        HbOutlineCommand::CubicTo(a, b, p) => outline.cubic_to(a, b, p),
-                        HbOutlineCommand::Close => outline.close(),
-                    };
-                    if let Some(path) = extents.cff_glyph_path(GlyphId(glyph), &cx.scale.scale) {
-                        for command in path {
-                            emit(command);
-                        }
-                    } else {
-                        let mut scratch = Scratch::default();
-                        sofel_outline::load(
-                            instance,
-                            GlyphId(glyph),
-                            sofel_outline::Scale::Unscaled,
-                            &mut scratch,
-                        )
-                        .ok()?;
-                        let upem = f32::from(cx.font.font.hb_units_per_em());
-                        scratch
-                            .hb_decompose(
-                                (cx.scale.scale.x_scale() as f32) / upem,
-                                (cx.scale.scale.y_scale() as f32) / upem,
-                                emit,
-                            )
-                            .ok()?;
-                    }
-                    Some(outline)
+                    synthetic_outline(instance, cx.scale, &extents, glyph)
                 });
                 shape_with_subfont(instance, &subfont, plan, b)
             }
@@ -1379,6 +1408,33 @@ fn serialize_all(
     flags: SerializeFlags,
     out: &mut Vec<u8>,
 ) {
+    if cx.o.slant != 0.0 || cx.o.embolden != (0.0, 0.0) {
+        let instance = cx.font.font.instance(&cx.location);
+        let extents = HbExtents::new(instance);
+        let mut subfont = SubFont::new(cx.scale);
+        subfont.set_synthetic_slant(cx.o.slant);
+        subfont.set_synthetic_bold(cx.o.embolden.0, cx.o.embolden.1, cx.o.embolden_in_place);
+        subfont.set_glyph_extents_func(|glyph| {
+            extents.scaled_glyph_extents(GlyphId(glyph), &cx.scale.scale)
+        });
+        subfont.set_outline_func(|glyph| synthetic_outline(instance, cx.scale, &extents, glyph));
+        let font = SyntheticSerializeFont {
+            base: &cx.font,
+            subfont: &subfont,
+        };
+        serialize_all_with_font(glyphs, format, flags, out, &font);
+    } else {
+        serialize_all_with_font(glyphs, format, flags, out, &cx.font);
+    }
+}
+
+fn serialize_all_with_font(
+    glyphs: &GlyphBuffer,
+    format: SerializeFormat,
+    flags: SerializeFlags,
+    out: &mut Vec<u8>,
+    font: &dyn SerializeFont,
+) {
     let infos = glyphs.glyph_infos();
     let mut start = 0;
     while start < infos.len() {
@@ -1388,7 +1444,7 @@ fn serialize_all(
             start,
             infos.len(),
             32768,
-            &cx.font,
+            font,
             format,
             flags,
             out,

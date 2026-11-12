@@ -98,6 +98,20 @@ fn adr0063_i2_synthetic_vertical_shape_matches_harfbuzz() {
         assert_eq!(code, 0, "{option}: {err}");
         assert_eq!(out.trim(), expected, "{option}");
     }
+    let (code, out, err) = shape(
+        &font,
+        &[
+            "--font-bold=0.1",
+            "--direction=ttb",
+            "--show-extents",
+            "--unicodes=61,62,63",
+        ],
+    );
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(
+        out.trim(),
+        "[gid1=0@-430,-1148+0,-1362<46,645,534,-655>|gid2=1@-457,-1256+0,-1362<85,860,575,-870>|gid3=2@-390,-1149+0,-1362<55,646,504,-656>]"
+    );
 }
 
 fn ok(font: &PathBuf, args: &[&str]) -> String {
