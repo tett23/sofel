@@ -9,6 +9,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+quick-xml = "0.42"
 sofel-vector = { path = "../sofel-vector" }
 sofel-read = { path = "../sofel-read" }
 sofel-geom = { path = "../sofel-geom" }
