@@ -290,8 +290,24 @@ impl Plan {
             return Err(SubsetError::NoGlyphs);
         }
         let flags = input.flags();
+        let drop = input.set(SetKind::DropTables);
         // normalize_axes_location
         let norm = instance::normalize(font, input.axes());
+        let varc_unrelated_pin = if norm.user.len() == 1 && norm.pinned_at_default {
+            let axes = instance::axis_infos(font);
+            axes.iter().enumerate().any(|(index, info)| {
+                norm.user
+                    .get(&info.tag)
+                    .is_some_and(|range| range.min == range.default && range.default == range.max)
+                    && u16::try_from(index).ok().is_some_and(|index| {
+                        font.table(Tag::new(b"VARC")).is_some_and(|data| {
+                            crate::tables::varc_complex::axis_unused(data, index)
+                        })
+                    })
+            })
+        } else {
+            false
+        };
         if !norm.user.is_empty() {
             if norm.avar2 {
                 return Err(SubsetError::Unsupported {
@@ -299,12 +315,18 @@ impl Plan {
                     reason: "pinning the axes of avar version 2 (deferred by ADR 0022)",
                 });
             }
-            let no_variation_data = ![
+            let no_other_variation_data = ![
                 b"gvar", b"GVAR", b"HVAR", b"VVAR", b"MVAR", b"cvar", b"CFF2", b"GDEF", b"GSUB",
-                b"GPOS", b"BASE", b"MATH", b"COLR", b"VARC", b"STAT",
+                b"GPOS", b"BASE", b"MATH", b"COLR", b"STAT",
             ]
             .iter()
-            .any(|tag| font.table(Tag::new(tag)).is_some());
+            .any(|tag| {
+                let tag = Tag::new(tag);
+                font.table(tag).is_some() && !drop.contains(tag.to_u32())
+            });
+            let varc_safe = font
+                .table(Tag::new(b"VARC"))
+                .is_none_or(|_| drop.contains(Tag::new(b"VARC").to_u32()) || varc_unrelated_pin);
             let simple_avar = font.table(Tag::new(b"avar")).is_none_or(|data| {
                 sofel_font::read::avar::Avar::new(data)
                     .is_ok_and(|table| table.major_version() == 1 && norm.pinned_at_default)
@@ -313,7 +335,7 @@ impl Plan {
                         .values()
                         .all(|range| range.min == range.default && range.default == range.max)
             });
-            let metadata_only = no_variation_data && simple_avar;
+            let metadata_only = no_other_variation_data && varc_safe && simple_avar;
             if !(norm.all_axes_pinned && norm.pinned_at_default) && !metadata_only {
                 return Err(SubsetError::Unsupported {
                     tag: Tag::new(b"fvar"),
@@ -328,14 +350,13 @@ impl Plan {
                 reason: "name overrides",
             });
         }
-        let drop = input.set(SetKind::DropTables);
         let no_subset = input.set(SetKind::NoSubsetTables);
         for (tag, reason) in PENDING {
             let t = Tag::new(tag);
             let passthrough = no_subset.contains(t.to_u32());
             let dropped = drop.contains(t.to_u32()) || (pinned && PINNED_DROP.contains(&tag));
             if font.table(t).is_some() && !dropped && !passthrough {
-                if tag == b"VARC" && norm.user.is_empty() {
+                if tag == b"VARC" && (norm.user.is_empty() || varc_unrelated_pin) {
                     let source = font.table(t).unwrap_or(&[]);
                     Varc::new(source).map_err(|_| SubsetError::Malformed { tag: t })?;
                     continue;
