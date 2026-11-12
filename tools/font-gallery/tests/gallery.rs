@@ -2,6 +2,19 @@ use font_gallery::{inputs, pixels, sheet};
 use pixels::Fixed26Dot6 as F;
 
 #[test]
+fn i2_rust_gallery_publish_rejects_malformed_shape_json() {
+    let good = br#"[{"g":26,"cl":0,"dx":0,"dy":0,"ax":64,"ay":0}]"#;
+    assert_eq!(inputs::shape_records(good).unwrap()[0].g, 26);
+    for malformed in [
+        br#"[{"g":26,"cl":0,"dx":0,"dy":0,"ax":64,"ay":0 junk}]"#.as_slice(),
+        br#"[{"g":26,"cl":0,"dx":0,"dy":0,"ax":64,"ay":0]"#,
+        br#"[{"g":26,"cl":0,"dx":0,"dy":0,"ax":64,"ay":0},]"#,
+    ] {
+        assert!(inputs::shape_records(malformed).is_err());
+    }
+}
+
+#[test]
 fn i1_rust_gallery_parity_pixels() {
     let pgm = b"P5\n# left -2 top 3\n2 1\n255\n\x00\x80";
     let image = pixels::parse(pgm).unwrap();

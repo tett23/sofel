@@ -171,38 +171,121 @@ pub struct ShapeRecord {
     pub ay: Fixed26Dot6,
 }
 
-fn number(object: &str, key: &str) -> Result<i32, String> {
-    let needle = format!("\"{key}\":");
-    let value = object
-        .split(&needle)
-        .nth(1)
-        .ok_or_else(|| format!("missing {key}"))?;
-    let end = value
-        .find(|c: char| c != '-' && !c.is_ascii_digit())
-        .unwrap_or(value.len());
-    value[..end]
-        .parse::<i32>()
-        .map_err(|_| format!("invalid {key}"))
+struct JsonCursor<'a> {
+    bytes: &'a [u8],
+    at: usize,
+}
+
+impl<'a> JsonCursor<'a> {
+    fn peek(&mut self) -> Option<u8> {
+        while self.bytes.get(self.at).is_some_and(u8::is_ascii_whitespace) {
+            self.at += 1;
+        }
+        self.bytes.get(self.at).copied()
+    }
+
+    fn expect(&mut self, expected: u8) -> Result<(), String> {
+        if self.peek() != Some(expected) {
+            return Err("invalid shape JSON".into());
+        }
+        self.at += 1;
+        Ok(())
+    }
+
+    fn key(&mut self) -> Result<&'a str, String> {
+        self.expect(b'"')?;
+        let start = self.at;
+        while let Some(&byte) = self.bytes.get(self.at) {
+            if byte == b'"' {
+                let key = std::str::from_utf8(&self.bytes[start..self.at])
+                    .map_err(|_| "invalid shape JSON")?;
+                self.at += 1;
+                return Ok(key);
+            }
+            if byte == b'\\' || byte < 0x20 {
+                return Err("invalid shape JSON".into());
+            }
+            self.at += 1;
+        }
+        Err("invalid shape JSON".into())
+    }
+
+    fn integer(&mut self) -> Result<i32, String> {
+        self.peek();
+        let start = self.at;
+        if self.bytes.get(self.at) == Some(&b'-') {
+            self.at += 1;
+        }
+        let digits = self.at;
+        while self.bytes.get(self.at).is_some_and(u8::is_ascii_digit) {
+            self.at += 1;
+        }
+        if self.at == digits {
+            return Err("invalid shape JSON number".into());
+        }
+        std::str::from_utf8(&self.bytes[start..self.at])
+            .map_err(|_| "invalid shape JSON number".to_string())?
+            .parse()
+            .map_err(|_| "invalid shape JSON number".into())
+    }
 }
 
 pub fn shape_records(bytes: &[u8]) -> Result<Vec<ShapeRecord>, String> {
-    let text = std::str::from_utf8(bytes)
-        .map_err(|_| "invalid shape JSON UTF-8")?
-        .trim();
-    if !text.starts_with('[') || !text.ends_with(']') {
-        return Err("invalid shape JSON".into());
-    }
+    std::str::from_utf8(bytes).map_err(|_| "invalid shape JSON UTF-8")?;
+    let mut cursor = JsonCursor { bytes, at: 0 };
+    cursor.expect(b'[')?;
     let mut out = Vec::new();
-    for object in text.split('{').skip(1) {
-        let body = object.split('}').next().ok_or("invalid shape JSON")?;
-        out.push(ShapeRecord {
-            g: number(body, "g")?.try_into().map_err(|_| "invalid g")?,
-            cl: number(body, "cl")?.try_into().map_err(|_| "invalid cl")?,
-            dx: Fixed26Dot6(number(body, "dx")?),
-            dy: Fixed26Dot6(number(body, "dy")?),
-            ax: Fixed26Dot6(number(body, "ax")?),
-            ay: Fixed26Dot6(number(body, "ay")?),
-        });
+    if cursor.peek() != Some(b']') {
+        loop {
+            cursor.expect(b'{')?;
+            let (mut g, mut cl, mut dx, mut dy, mut ax, mut ay) =
+                (None, None, None, None, None, None);
+            loop {
+                let key = cursor.key()?;
+                cursor.expect(b':')?;
+                let value = cursor.integer()?;
+                let field = match key {
+                    "g" => &mut g,
+                    "cl" => &mut cl,
+                    "dx" => &mut dx,
+                    "dy" => &mut dy,
+                    "ax" => &mut ax,
+                    "ay" => &mut ay,
+                    _ => return Err("unexpected shape JSON field".into()),
+                };
+                if field.replace(value).is_some() {
+                    return Err("duplicate shape JSON field".into());
+                }
+                match cursor.peek() {
+                    Some(b',') => cursor.at += 1,
+                    Some(b'}') => {
+                        cursor.at += 1;
+                        break;
+                    }
+                    _ => return Err("invalid shape JSON".into()),
+                }
+            }
+            out.push(ShapeRecord {
+                g: g.ok_or("missing g")?.try_into().map_err(|_| "invalid g")?,
+                cl: cl
+                    .ok_or("missing cl")?
+                    .try_into()
+                    .map_err(|_| "invalid cl")?,
+                dx: Fixed26Dot6(dx.ok_or("missing dx")?),
+                dy: Fixed26Dot6(dy.ok_or("missing dy")?),
+                ax: Fixed26Dot6(ax.ok_or("missing ax")?),
+                ay: Fixed26Dot6(ay.ok_or("missing ay")?),
+            });
+            match cursor.peek() {
+                Some(b',') => cursor.at += 1,
+                Some(b']') => break,
+                _ => return Err("invalid shape JSON".into()),
+            }
+        }
+    }
+    cursor.expect(b']')?;
+    if cursor.peek().is_some() {
+        return Err("invalid shape JSON".into());
     }
     Ok(out)
 }
