@@ -286,7 +286,7 @@ pub(crate) fn cross_stream(tables: &[Subtable<'_>]) -> bool {
     tables.iter().any(|t| t.coverage & 0x4000_0000 != 0)
 }
 pub(crate) fn apply(tables: &[Subtable<'_>], buf: &mut Buffer, scale: &HbScale, mask: Mask) {
-    buf.unsafe_to_concat(0, buf.len);
+    buf.unsafe_to_concat_all();
     let horizontal = buf.direction.is_horizontal();
     let mut attached = false;
     for t in tables {

@@ -319,26 +319,48 @@ impl<'a> StateTable<'a> {
             }
         }
     }
+    fn covered_class(&self, glyph: u32) -> Option<usize> {
+        match &self.classes {
+            StateClasses::Extended(lookup) => lookup.get(glyph).map(usize::from),
+            StateClasses::Legacy {
+                first_glyph,
+                classes,
+                ..
+            } => glyph
+                .checked_sub(u32::from(*first_glyph))
+                .and_then(|i| classes.get(i as usize))
+                .copied()
+                .map(usize::from),
+        }
+    }
     fn class(&self, glyph: Option<&crate::buffer::Info>) -> usize {
         glyph.map_or(0, |g| {
             if g.codepoint == 0xffff {
-                return 2;
+                2
+            } else {
+                self.covered_class(g.codepoint)
+                    .filter(|&c| c < self.num_classes)
+                    .unwrap_or(1)
             }
-            let c = match &self.classes {
-                StateClasses::Extended(lookup) => usize::from(lookup.get(g.codepoint).unwrap_or(1)),
-                StateClasses::Legacy {
-                    first_glyph,
-                    classes,
-                    ..
-                } => g
-                    .codepoint
-                    .checked_sub(u32::from(*first_glyph))
-                    .and_then(|i| classes.get(i as usize))
-                    .copied()
-                    .map_or(1, usize::from),
-            };
-            if c < self.num_classes { c } else { 1 }
         })
+    }
+    fn can_start(&self, glyph: u32) -> bool {
+        // HarfBuzz collects all covered glyphs when the class filter exceeds
+        // its 512-bit page; otherwise it filters by the start-state entry.
+        if self.num_classes > 512 {
+            return self.covered_class(glyph).is_some();
+        }
+        let class = if glyph == 0xffff {
+            Some(2)
+        } else {
+            self.covered_class(glyph)
+        };
+        class
+            .filter(|&c| c < self.num_classes)
+            .and_then(|c| self.entry(usize::from(self.start_state()), c))
+            .is_some_and(|e| {
+                e.next != self.start_state() || e.flags & 0x8000 != 0 || self.actionable(e)
+            })
     }
     fn start_state(&self) -> u16 {
         match self.classes {
@@ -366,6 +388,9 @@ impl<'a> StateTable<'a> {
         enabled: impl Fn(u32) -> bool,
     ) {
         let mut state = usize::from(self.start_state());
+        if !buffer.infos().iter().any(|g| self.can_start(g.codepoint)) {
+            return;
+        }
         let separate = matches!(self.kind, MachineKind::Insert(_) | MachineKind::Ligature(_));
         let mut stack = Components::default();
         if separate {

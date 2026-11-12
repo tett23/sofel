@@ -1044,3 +1044,33 @@ fn adr0060_i1_trak_point_size_boundaries_with_and_without_stat() {
         }
     }
 }
+
+#[test]
+fn adr0060_i1_aat_marks_the_whole_buffer_unsafe_to_concat() {
+    let morx = [0x0002_0000u32, 1, 0, 16, 0, 0]
+        .into_iter()
+        .flat_map(u32::to_be_bytes)
+        .collect::<Vec<_>>();
+    let mut kerx = vec![0, 2, 0, 0, 0, 0, 0, 1];
+    kerx.extend(kerx_ab_pair());
+    for table in [(b"morx", morx), (b"kerx", kerx)] {
+        let data = make_font(false, vec![table]);
+        for len in [1, 255, 256] {
+            let text = "a".repeat(len);
+            let g = run(
+                &data,
+                &text,
+                Run {
+                    flags: BufferFlags::PRODUCE_UNSAFE_TO_CONCAT,
+                    ..Run::default()
+                },
+            );
+            assert_eq!(g.glyph_infos().len(), len);
+            assert!(
+                g.glyph_infos()
+                    .iter()
+                    .all(|g| g.flags == GlyphFlags::UNSAFE_TO_CONCAT)
+            );
+        }
+    }
+}
