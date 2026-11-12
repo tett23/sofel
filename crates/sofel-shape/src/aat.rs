@@ -3,6 +3,9 @@ pub(crate) mod features;
 pub(crate) mod kerning;
 use sofel_font::read::{aat_lookup::AatLookup, be};
 
+// HarfBuzz HB_AAT_MAX_SUBTABLES bounds each complete table.
+const MAX_SUBTABLES: u32 = 1024;
+
 /// A chain subtable and its application flags.
 #[derive(Clone, Debug)]
 pub struct Subtable<'a> {
@@ -37,6 +40,7 @@ pub fn chains<'a>(
     let count = be::u32_at(data, 4)?;
     let mut rest = data.get(8..)?;
     let mut chains = alloc::vec::Vec::new();
+    let mut remaining_subtables = MAX_SUBTABLES;
     let mut map_budget = 1usize << 24;
     for _ in 0..count {
         let (chain, tail) = rest.split_at_checked(be::u32_at(rest, 4)? as usize)?;
@@ -50,6 +54,7 @@ pub fn chains<'a>(
         } else {
             (16, be::u32_at(chain, 8)? as usize, be::u32_at(chain, 12)?)
         };
+        remaining_subtables = remaining_subtables.checked_sub(tables)?;
         let features = be::chunks_at::<12>(chain, header, n)?;
         let ranges =
             features::compile(flags, features, tags, language, selections, &mut map_budget);
@@ -728,6 +733,34 @@ impl Ligature<'_> {
 #[cfg(test)]
 mod chain_tests {
     use super::chains;
+
+    #[test]
+    fn i2_subtable_limit_spans_chains_and_applies_to_legacy_kern() {
+        for count in [1024u16, 1025] {
+            let mut morx = alloc::vec![0, 2, 0, 0, 0, 0, 0, 2];
+            for n in [512, u32::from(count) - 512] {
+                for word in [1, 16 + 12 * n, 0, n] {
+                    morx.extend(word.to_be_bytes());
+                }
+                for _ in 0..n {
+                    for word in [12u32, 3, 1] {
+                        morx.extend(word.to_be_bytes());
+                    }
+                }
+            }
+            let mut kern = alloc::vec![0, 0];
+            kern.extend(count.to_be_bytes());
+            for _ in 0..count {
+                kern.extend([0, 0, 0, 14, 0, 1]);
+                kern.extend([0; 8]);
+            }
+            assert_eq!(
+                chains(&morx, 1, false, None, None, &Default::default()).is_some(),
+                count == 1024
+            );
+            assert_eq!(super::kerning::legacy(&kern).is_some(), count == 1024);
+        }
+    }
 
     #[test]
     fn i2_morx_v3_checks_glyph_coverage_bounds() {
