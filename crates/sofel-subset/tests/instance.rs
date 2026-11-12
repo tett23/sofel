@@ -269,7 +269,9 @@ fn i1_subset_instance_restricts_remaining_fvar_axis_range() {
 fn i1_subset_instance_endpoint_pin_removes_outside_named_instance() {
     let data = font_with(vec![(b"fvar", fvar(&AXES))]);
     let font = Font::new(&data, 0).unwrap();
-    let input = unicodes().with_axis_pinned(Tag::new(b"wght"), 900.0, &font).unwrap();
+    let input = unicodes()
+        .with_axis_pinned(Tag::new(b"wght"), 900.0, &font)
+        .unwrap();
     let output = subset(&font, &input).unwrap();
     let sfnt = Sfnt::new(&output).unwrap();
     let fvar = sfnt.table(Tag::new(b"fvar")).unwrap();
