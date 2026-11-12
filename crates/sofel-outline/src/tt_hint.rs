@@ -210,6 +210,7 @@ impl EngineInfo {
 
 #[derive(Clone, Copy, Default)]
 struct HintPoint {
+    unscaled: [i64; 2],
     original: [i64; 2],
     current: [i64; 2],
     touched: [bool; 2],
@@ -217,6 +218,7 @@ struct HintPoint {
 
 #[derive(Clone)]
 struct Interpreter {
+    loop_count: u16,
     points: [alloc::vec::Vec<HintPoint>; 2],
     reference: [u16; 3],
     delta_base: u16,
@@ -253,6 +255,7 @@ impl Interpreter {
             },
             points: Default::default(),
             reference: [0; 3],
+            loop_count: 1,
             delta_base: 9,
             delta_shift: 3,
             zones: [1; 3],
@@ -275,6 +278,45 @@ impl Interpreter {
                 .collect(),
             storage: alloc::vec![0; usize::from(max_storage)],
         }
+    }
+
+    fn interpolate(&mut self, stack: &mut alloc::vec::Vec<i64>) {
+        let count = usize::from(core::mem::replace(&mut self.loop_count, 1));
+        let Some(first) = stack.len().checked_sub(count) else {
+            return;
+        };
+        let [z0, z1, z2] = self.zones.map(usize::from);
+        let base = self.points[z0].get(usize::from(self.reference[1])).copied();
+        let end = self.points[z1].get(usize::from(self.reference[2])).copied();
+        let axis = usize::from(self.projection[0] == 0);
+        let original_axis = usize::from(self.dual_projection[0] == 0);
+        let twilight = self.zones.contains(&0);
+        let original = |p: HintPoint| {
+            if twilight {
+                p.original[original_axis]
+            } else {
+                p.unscaled[original_axis]
+            }
+        };
+        if let Some(base) = base {
+            let old_range = end.map_or(0, |p| original(p).wrapping_sub(original(base)));
+            let new_range = end.map_or(0, |p| p.current[axis].wrapping_sub(base.current[axis]));
+            for &index in stack[first..].iter().rev() {
+                if let Some(p) = self.points[z2].get_mut(index as u32 as usize) {
+                    let offset = original(*p).wrapping_sub(original(base));
+                    let distance = if old_range == 0 {
+                        offset
+                    } else {
+                        sofel_font::read::cff::ft::mul_div(offset, new_range, old_range)
+                    };
+                    if self.freedom[axis] != 0 {
+                        p.current[axis] = base.current[axis].wrapping_add(distance);
+                        p.touched[axis] = true;
+                    }
+                }
+            }
+        }
+        stack.truncate(first);
     }
 
     fn projected_ppem(&self) -> i64 {
@@ -427,6 +469,14 @@ impl Interpreter {
                         point.touched[freedom] = true;
                     }
                 }
+                0x17 => {
+                    let count = stack.pop().ok_or(Error::StackUnderflow)?;
+                    if count < 0 {
+                        return Err(Error::InvalidArgument);
+                    }
+                    self.loop_count = count.min(65535) as u16;
+                }
+                0x39 => self.interpolate(stack),
                 0x85 => {
                     let flags = stack.pop().ok_or(Error::StackUnderflow)?;
                     let limit = flags & 255;
@@ -950,4 +1000,23 @@ fn adr0064_i1_reference_point_registers_take_unsigned_short_indices() {
     vm.execute(&[0x10, 0x11, 0x12], &mut alloc::vec![-1, 7, 9], 3)
         .unwrap();
     assert_eq!(vm.reference, [9, 7, 65535]);
+}
+
+#[test]
+fn adr0064_i1_ip_interpolates_all_selected_twilight_points() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    vm.zones = [0; 3];
+    vm.reference = [0, 0, 1];
+    for (original, current) in [(0, 10), (100, 210), (25, 25), (75, 75)] {
+        vm.points[0].push(HintPoint {
+            original: [original, 0],
+            current: [current, 0],
+            ..Default::default()
+        });
+    }
+    vm.execute(&[0xb2, 2, 3, 2, 0x17, 0x39], &mut alloc::vec::Vec::new(), 3)
+        .unwrap();
+    assert_eq!(vm.points[0][2].current, [60, 0]);
+    assert_eq!(vm.points[0][3].current, [160, 0]);
+    assert_eq!(vm.loop_count, 1);
 }
