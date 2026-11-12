@@ -1,0 +1,32 @@
+# OpenType 1.9.1 SVG | https://learn.microsoft.com/en-us/typography/opentype/spec/svg
+# id	section anchor	disposition	cases or reason
+ot-outline-pair	introduction	UNDECIDED	同じグリフに代替輪郭を持つ条件は、図形の描画だけでは検査できない。
+ot-header	svg-table-formats	UNDECIDED	版、予約領域、文書リストの位置と件数に対する不正入力は必須表に含まない。
+ot-record-range	svg-table-formats	CASES	in-document/shared-first,in-document/shared-second,in-document/out-of-range
+ot-record-order	svg-table-formats	UNDECIDED	複数レコードの順序、重複と不連続な範囲を共有するレコードは未検査。
+ot-record-offset-length	svg-table-formats	UNDECIDED	壊れた文書オフセットと長さは必須表に含まない。
+ot-encoding	document-encoding-and-format	CASES	in-document/plain,in-document/gzip
+ot-utf8-xml	document-encoding-and-format	UNDECIDED	UTF-8、XML の大文字小文字、既定の名前空間、XLink 宣言の境界は未検査。
+ot-svg11	svg-specification	UNDECIDED	SVG 1.1 全機能の合否は必須表の図形・スタイル・参照の例だけでは決まらない。
+ot-context-fill	svg-specification	CASES	in-style/context-fill-red,in-style/context-fill-blue
+ot-glyph-id	glyph-identifiers	CASES	in-document/shared-first,in-document/shared-second
+ot-glyph-use	glyph-identifiers	CASES	in-reference/use-transform
+ot-script	svg-capability-requirements-and-restrictions	CASES	in-restrictions/script
+ot-prohibited-elements	svg-capability-requirements-and-restrictions	UNDECIDED	文字・フォント・埋め込み文書・条件分岐・リンク・ビュー要素の無視は未検査。
+ot-prohibited-presentation	svg-capability-requirements-and-restrictions	UNDECIDED	XSL、相対単位、SVG 画像の埋め込み、色プロファイル、スタイル言語指定、システム色は未検査。
+ot-description	svg-capability-requirements-and-restrictions	UNDECIDED	説明、メタデータ、タイトルが表示に影響しないことは未検査。
+ot-style	svg-capability-requirements-and-restrictions	OUT OF SCOPE	内部 CSS、インライン CSS、メディアクエリーと式は必須表の継承・上書きの範囲外。
+ot-optional-effects	svg-capability-requirements-and-restrictions	OUT OF SCOPE	子 SVG、フィルター、パターン、マスク、マーカー、シンボルは必須の描画ケースの対象外。
+ot-entities-images-events	svg-capability-requirements-and-restrictions	OUT OF SCOPE	XML 実体、JPEG・PNG 以外の埋め込み画像、対話機能は必須表の対象外。
+ot-linear-gradient	svg-capability-requirements-and-restrictions	CASES	in-gradient/linear,in-gradient/aspect-ratio,in-gradient/transformed
+ot-radial-gradient	svg-capability-requirements-and-restrictions	CASES	in-gradient/radial,in-gradient/aspect-ratio,in-gradient/transformed
+ot-clip	svg-capability-requirements-and-restrictions	CASES	in-reference/clip-transform
+ot-opacity	svg-capability-requirements-and-restrictions	CASES	in-gradient/stop-opacity,in-style/overlap,in-style/reversed-overlap
+ot-rgb	colors	UNDECIDED	数値色と名前色の全表記、禁じられた RGBA 表記は未検査。
+ot-current-color	colors	UNDECIDED	環境で指定した currentColor と子孫の色の上書きは context-fill のケースと別に必要。
+ot-cpal	color-palettes	OUT OF SCOPE	CPAL、色変数の名前と代替色、パレットのアルファ・継承は必須表の対象外。
+ot-layout	glyph-semantics-and-text-layout-processing	UNDECIDED	代替輪郭との対応、グリフの配置、フォールバックと送りの同一性は未検査。
+ot-axes	coordinate-systems-and-glyph-metrics	UNDECIDED	フォント座標の縦軸変換、原点、基線とデザイン単位は未検査。
+ot-viewport	coordinate-systems-and-glyph-metrics	UNDECIDED	em 正方形、viewBox の拡縮とルートのクリップ・はみ出しは未検査。
+ot-metrics	coordinate-systems-and-glyph-metrics	UNDECIDED	横書き・縦書きの送り、インク境界、GPOS と kern の座標変換は未検査。
+ot-animations	animations	OUT OF SCOPE	アニメーション、静的描画への切り替え、動く描画の境界は必須表の対象外。

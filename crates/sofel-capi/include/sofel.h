@@ -1814,6 +1814,25 @@ int32_t sofel_rasterizer_render(sofel_rasterizer_t *rasterizer, uint32_t fill,
                                 uint8_t *pixels, size_t capacity, size_t *len,
                                 int32_t *box);
 
+/* FreeType Harmony RGB stripe orientations. */
+#define SOFEL_LCD_HORIZONTAL 0u
+#define SOFEL_LCD_VERTICAL 1u
+
+/*
+ * Renders the recorded outline at the three default Harmony subpixel
+ * positions. Direction is SOFEL_LCD_HORIZONTAL or SOFEL_LCD_VERTICAL.
+ * Returns coverage rows without padding. Width counts subpixels in the
+ * horizontal mode and rows count subpixels in the vertical mode.
+ * Buffer sizing and errors follow sofel_rasterizer_render.
+ *
+ * Rust: sofel_raster::Rasterizer::render_harmony
+ * HarfBuzz: none
+ * FreeType: FT_Render_Glyph (FT_RENDER_MODE_LCD, FT_RENDER_MODE_LCD_V)
+ */
+int32_t sofel_rasterizer_render_harmony(sofel_rasterizer_t *rasterizer, uint32_t fill,
+                                       uint32_t direction, uint16_t x_ppem, uint16_t y_ppem,
+                                       uint8_t *pixels, size_t capacity, size_t *len, int32_t *box);
+
 /*
  * Renders into the given box (left, top, width, rows, as from
  * sofel_pixel_box) an outline recorded already moved by the box's shift
