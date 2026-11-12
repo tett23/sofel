@@ -180,6 +180,7 @@ impl MetricsTag {
 /// with each of them.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct HbScale {
+    ptem: f32,
     x_scale: i32,
     y_scale: i32,
     x_mult: i64,
@@ -210,6 +211,16 @@ fn fix_sign(v: f32, tag: MetricsTag) -> f32 {
 }
 
 impl HbScale {
+    /// Sets HarfBuzz's point size independently of pixel sizes and variation axes.
+    pub fn with_ptem(mut self, ptem: f32) -> Self {
+        self.ptem = ptem;
+        self
+    }
+    /// The requested point size, or zero if unset.
+    pub fn ptem(&self) -> f32 {
+        self.ptem
+    }
+
     /// The scale `x_scale` × `y_scale` for a font with `units_per_em`
     /// (HarfBuzz's `hb_font_t::changed`; pass
     /// [`Font::hb_units_per_em`]). `x_multf` is `x_scale / upem` and
@@ -219,6 +230,7 @@ impl HbScale {
         let upem = f32::from(units_per_em);
         let mult = |s: i32| f32_to_i64(i64_to_f32(i64::from(s).saturating_mul(0x10000)) / upem);
         HbScale {
+            ptem: 0.,
             x_scale,
             y_scale,
             x_mult: mult(x_scale),
