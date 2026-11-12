@@ -508,7 +508,7 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
             glyph,
             Scale::pixels(&self.font, ppem, ppem),
             scratch,
-            Some(hint),
+            (!hint.0.disables_hinting()).then_some(hint),
         )
     }
 

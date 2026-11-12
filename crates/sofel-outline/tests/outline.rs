@@ -733,3 +733,34 @@ fn adr0064_i1_mono_loader_executes_the_glyph_program() {
         .unwrap();
     assert_eq!(scratch.points()[1].y, 128);
 }
+
+#[test]
+fn adr0064_i1_small_ppem_prep_disables_glyph_hinting() {
+    let g = simple_glyph(
+        &[&[Pt::On(0, 0), Pt::On(100, 101), Pt::On(200, 0)]],
+        false,
+        &[0x00, 0xb1, 1, 128, 0x48],
+    );
+    let bytes = glyph_font_with(
+        &[Vec::new(), g],
+        false,
+        false,
+        vec![(
+            b"prep",
+            vec![0x4b, 0xb0, 9, 0x50, 0x58, 0xb1, 1, 1, 0x8e, 0x59],
+        )],
+    );
+    let font = Font::new(&bytes, 0).unwrap();
+    let outlines = sofel_outline::Outlines::new(font.default_instance());
+    for ppem in [8, 9] {
+        let mut s = Scratch::default();
+        outlines
+            .load(GlyphId(1), Scale::pixels(&font, ppem, ppem), &mut s)
+            .unwrap();
+        let unhinted = s.points()[1].y;
+        outlines
+            .load_truetype_mono(GlyphId(1), ppem, &mut s)
+            .unwrap();
+        assert_eq!(s.points()[1].y, if ppem == 8 { unhinted } else { 128 });
+    }
+}

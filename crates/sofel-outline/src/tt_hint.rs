@@ -285,6 +285,8 @@ fn interpolate_contour(points: &mut [HintPoint], axis: usize) {
 
 #[derive(Clone)]
 pub(crate) struct Interpreter {
+    in_prep: bool,
+    instruction_control: u8,
     contour_ends: alloc::vec::Vec<usize>,
     auto_flip: bool,
     minimum_distance: i64,
@@ -333,6 +335,8 @@ impl Interpreter {
             auto_flip: true,
             minimum_distance: 64,
             contour_ends: alloc::vec::Vec::new(),
+            in_prep: false,
+            instruction_control: 0,
             delta_base: 9,
             delta_shift: 3,
             zones: [1; 3],
@@ -473,8 +477,14 @@ impl Interpreter {
         vm.functions = font_vm.functions;
         vm.ppem = [ppem; 2];
         vm.point_size = i64::from(ppem) * 64;
+        vm.in_prep = true;
         vm.execute(prep, &mut alloc::vec::Vec::new(), limit)?;
+        vm.in_prep = false;
         Ok((vm, limit))
+    }
+
+    pub(super) fn disables_hinting(&self) -> bool {
+        self.instruction_control & 1 != 0
     }
 
     fn execute_glyph(
@@ -485,6 +495,17 @@ impl Interpreter {
         max_stack: usize,
     ) -> Result<alloc::vec::Vec<HintPoint>, Error> {
         let mut glyph = self.clone();
+        if self.instruction_control & 2 != 0 {
+            glyph.minimum_distance = 64;
+            glyph.control_value_cutin = 68;
+            glyph.single_width_cutin = 0;
+            glyph.single_width = 0;
+            glyph.delta_base = 9;
+            glyph.delta_shift = 3;
+            glyph.auto_flip = true;
+            glyph.scan_control = false;
+            glyph.scan_type = 0;
+        }
         glyph.points[1] = points;
         let outline_len = contour_ends.last().map_or(0, |end| end.saturating_add(1));
         if let Some([left, right, top, bottom]) = glyph.points[1].get_mut(outline_len..) {
@@ -869,6 +890,18 @@ impl Interpreter {
                             .ok_or(Error::InvalidReference)?;
                         interpolate_contour(contour, axis);
                         start = end + 1;
+                    }
+                }
+                0x8e => {
+                    let selector = stack.pop().ok_or(Error::StackUnderflow)?;
+                    let value = stack.pop().ok_or(Error::StackUnderflow)?;
+                    if self.in_prep && (1..=3).contains(&selector) {
+                        let flag = 1u8 << (selector - 1);
+                        if value == 0 {
+                            self.instruction_control &= !flag;
+                        } else if value == i64::from(flag) {
+                            self.instruction_control |= flag;
+                        }
                     }
                 }
                 0x85 => {
