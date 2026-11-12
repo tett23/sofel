@@ -22,8 +22,12 @@ OpenType タグから得るスクリプト値は、[ADR 0050](docs/adr/0050-pres
 
 VARC の輪郭は、部品の表示条件、軸座標、変形を評価して指定位置で描く（[ADR 0067](docs/adr/0067-varc-components.md)）。HarfBuzz との比較には、整数の輪郭 API を保ったまま浮動小数点の描画命令を返す経路を使う。
 
-サブセット化（[ADR 0022](docs/adr/0022-subsetting.md)）は、sfntの組み立てと直列化、オフセットのあふれを解く再配置、glyf系の表、cmap、name、OS/2、post、hdmx、CFF（名前のキーとCIDのキー）、VORG、GDEF、GSUB、GPOS、BASEとレイアウトの閉包、COLR（版0、変化量の表を持たない版1、版1の塗りが残らず版0にできるもの、残す版1の塗りとクリップがすべて静的なもの、軸を固定せず変化量ストアを直接またはマップを介して参照するもの、全軸を既定位置に固定したもの）、CPAL、CBLC、CBDT、sbixとCOLRの閉包、MATHとその閉包、軸を指定しないgvarとGVARの書き出し、glyfとCFF2の可変フォントのすべての軸の既定の値への固定（fvar、avar、STATの読み取りと、CFF2をCFFに変換する `DOWNGRADE_CFF2` を含む）、同じフォントを繰り返しサブセット化するための前処理（`Prepared`）、CFFのcharstringの取り出し、グリフ名での指定（`--glyphs`）と、これらのC ABI（`sofel_subset` など）までを実装し、HarfBuzzのサブセット化のテストのうちこれらの表だけを持つ組でバイト単位で一致する。Golemの使い方（グリフIDと `RETAIN_GIDS`）は、HarfBuzzのテストのフォントのうちこれらの表だけを持つものすべてで `hb-subset` と同じバイト列を出す。軸を指定しない HVAR と VVAR は、複数のItemVariationDataから使う行と領域だけを残し、暗黙・明示の送り幅とサイドベアリングのマップを書ける。明示マップの末尾で繰り返す行番号は1項目にまとめる。軸を指定しないGDEF 1.3のItemVariationStoreは、GSUBのFeatureVariationsが軸範囲の条件だけを持つ場合も含めて、残すキャレット、値の記録、アンカー、MATHの定数・斜体補正・上アクセント・カーニング・組み立てが参照する番号と領域を詰めて書く。参照が0件ならストアを除く。MATHだけをコピーして参照番号を詰め直せない場合とFeatureVariationsを持つGSUBをそのままコピーする場合のGDEFの変化量の表と、軸を固定しないCFF2の変化量の表は、10段階目で書く。
+サブセット化（[ADR 0022](docs/adr/0022-subsetting.md)）は、sfntの組み立てと直列化、オフセットのあふれを解く再配置、glyf系の表、cmap、name、OS/2、post、hdmx、CFF（名前のキーとCIDのキー）、VORG、GDEF、GSUB、GPOS、BASEとレイアウトの閉包、COLR（版0、変化量の表を持たない版1、版1の塗りが残らず版0にできるもの、残す版1の塗りとクリップがすべて静的なもの、軸を固定せず変化量ストアを直接またはマップを介して参照するもの、全軸を既定位置に固定したもの）、CPAL、CBLC、CBDT、sbixとCOLRの閉包、MATHとその閉包、軸を指定しないgvarとGVARの書き出し、glyfとCFF2の可変フォントのすべての軸の既定の値への固定（fvar、avar、STATの読み取りと、CFF2をCFFに変換する `DOWNGRADE_CFF2` を含む）、同じフォントを繰り返しサブセット化するための前処理（`Prepared`）、CFFのcharstringの取り出し、グリフ名での指定（`--glyphs`）と、これらのC ABI（`sofel_subset` など）までを実装し、HarfBuzzのサブセット化のテストのうちこれらの表だけを持つ組でバイト単位で一致する。Golemの使い方（グリフIDと `RETAIN_GIDS`）は、HarfBuzzのテストのフォントのうちこれらの表だけを持つものすべてで `hb-subset` と同じバイト列を出す。軸を指定しない HVAR と VVAR は、複数のItemVariationDataから使う行と領域だけを残し、暗黙・明示の送り幅とサイドベアリングのマップを書ける。明示マップの末尾で繰り返す行番号は1項目にまとめる。軸を指定しないGDEF 1.3のItemVariationStoreは、GSUBのFeatureVariationsが軸範囲の条件だけを持つ場合も含めて、残すキャレット、値の記録、アンカー、MATHの定数・斜体補正・上アクセント・カーニング・組み立てが参照する番号と領域を詰めて書く。参照が0件ならストアを除く。GDEFをそのままコピーするときも、サブセット化するMATHの参照番号を詰める。MATHだけをコピーして参照番号を詰め直せない場合と軸範囲以外の条件を持つFeatureVariationsがあるGSUBをそのままコピーする場合のGDEFの変化量の表と、軸を固定しないCFF2の変化量の表は、10段階目で書く。
 [ADR 0061](docs/adr/0061-subset-axis-instancing.md) の部分実装では、fvarとavar版1以外の変化量表、レイアウト・色の表を持たないフォントについて、固定した軸を除き、残る軸の範囲と名前つきインスタンスを更新して書く。STATがある場合は、指定した軸範囲の外の軸値を除いて残す。avar版1がある場合は、既定位置に固定した軸の写像を除き、残る軸の写像を保つ。対象外の表を持つフォントの部分軸固定は、次の VARC の場合を除き引き続き `Unsupported` とする。
+
+また、gvar または GVAR があっても、共有 tuple と全グリフの変化記録が空なら、非既定値への固定と軸の範囲指定を受け付ける。軸を指定した出力から空の gvar または GVAR を除く。
+
+さらに、gvar の変化記録があるフォントでも、輪郭を残すグリフが単純グリフだけで、ほかの変化量表と avar がなければ、全軸を非既定値に固定できる。単純グリフの点と幻の点に gvar の変化量を適用し、固定した出力から gvar を除く。合成グリフを含む場合は `Unsupported` とする。
 
 VARC のサブセット化は、残す部品の閉包と参照の再採番、条件と変化量ストアの再配置を行う（[ADR 0067](docs/adr/0067-varc-components.md)）。VARC が参照しない1軸を既定値に固定する場合は、gvar、GDEF、GSUB などの対象表が存在しないか捨てられ、avar が版2でなければ部分軸固定できる。これらの対象表と avar が最初からない場合は、同じ軸を既定値以外に固定するか範囲を指定することもできる。VARC をそのまま写す指定は、グリフ ID を保持し、軸を変えない場合だけ受け付ける。
 
@@ -69,13 +73,15 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-write`](crates/sofel-write) | sfntの組み立てと、HarfBuzzと同じ詰め方のオブジェクトの直列化（[ADR 0022](docs/adr/0022-subsetting.md)） |
 | [`sofel-subset`](crates/sofel-subset) | HarfBuzzの `hb-subset` とバイト単位で同じ出力のサブセット化（[ADR 0022](docs/adr/0022-subsetting.md)。書ける表はglyf系、cmap、name、OS/2、post、hdmx、CFF、VORG、GDEF、GSUB、GPOS、BASE、COLR、CPAL、CBLC、CBDT、sbix、MATH、STAT、軸をすべて固定したCFF2など。軸はすべて既定の値に固定できる。前処理（`Prepared`）で同じフォントの計画を速く作れる） |
 | [`sofel-vector`](crates/sofel-vector) | 配置した単色の輪郭を SVG または PDF のページに書く。SVG には変換と矩形クリップを指定して PNG も配置できる（[ADR 0068](docs/adr/0068-vector-and-gpu-output.md)） |
-| [`sofel-raster`](crates/sofel-raster) | FreeTypeのsmoothのラスタライザと同じ計算で、8bitのアンチエイリアスの画像を作る。COLRv0の層をFreeTypeと同じ整数の計算でBGRAの画像に重ねる（`blend_layer`）。水平・垂直 LCD は Harmony と5タップフィルタに対応する |
+| [`sofel-raster`](crates/sofel-raster) | FreeTypeのsmoothのラスタライザと同じ計算で、8bitのアンチエイリアスの画像を作る。COLRv0の層をFreeTypeと同じ整数の計算でBGRAの画像に重ねる（`blend_layer`）。モノクロは1画素1ビットで描き、水平・垂直 LCD は Harmony と5タップフィルタに対応する |
 | [`sofel-woff`](crates/sofel-woff) | 単一フェイスの sfnt を WOFF・WOFF2 に変換するライブラリとコマンド |
 | [`sofel-cli`](crates/sofel-cli) | 小さな道具（`sofel-validate`、`sofel-render`、`sofel-paint`、`sofel-shape`、`sofel-subset`） |
 | [`sofel-capi`](crates/sofel-capi) | C ABI（ヘッダは [`sofel.h`](crates/sofel-capi/include/sofel.h)、[ADR 0015](docs/adr/0015-c-abi.md)） |
 | [`sofel-conformance`](crates/sofel-conformance) | FreeTypeとHarfBuzzとの突き合わせのテスト（`cargo test` では走らない） |
 
 シェーピングのフォント関数を差し替えるときは、`sofel-shape::SubFont` で親からの継承と問い合わせ別の上書きを指定する。子の送り、原点、グリフの箱、輪郭は親子のスケールを換算する。合成太字と斜体はシェーピングと輪郭に反映する。`sofel-shape` コマンドでは `--font-slant`、`--font-bold`、`--font-grade` を指定できる（[ADR 0063](docs/adr/0063-font-functions-and-synthesis.md)）。
+
+TrueType の単純グリフと複合グリフにモノクロ用のヒンティングを適用する Rust API は `Outlines::load_truetype_mono`。対応する命令を FreeType の v35 インタープリターに合わせて実行し、補正後の輪郭を `Scratch` に格納する（[ADR 0064](docs/adr/0064-freetype-hinting-and-render-modes.md)）。
 
 FreeTypeの合成操作には、`sofel-outline::Scratch` のスロット用の斜体と太字、`sofel-bitmap` の画素形式変換と太字を使う。ビットマップの太字では `embolden_bitmap_slot` が画像とスロットのメトリクス、配置を合わせて更新する。HarfBuzzに合わせた輪郭の命令は、glyfを `Scratch::hb_decompose`、CFFとCFF2を `HbExtents::cff_glyph_path` から得る。画像を含むカラーグリフの合成斜体は、`sofel-color::paint_recording_at_with_slant` が描画命令を変換で包む（[ADR 0063](docs/adr/0063-font-functions-and-synthesis.md)）。
 
@@ -106,7 +112,7 @@ sofel render --ppem 48 --text-file sample.txt font.ttf > sample.pgm
 
 可変フォントの輪郭には `--variations=wght=500` や `--named-instance=0` で位置を指定できる。既定以外の位置では埋め込みビットマップを使わず、輪郭を描く。
 
-1グリフをヒンティングなしで描き、PGM（P5、白地に黒）を標準出力に書く（[ADR 0012](docs/adr/0012-antialiased-rasterizer.md)）。FreeTypeの `FT_Render_Glyph` と同じ画像になる。そのppemの埋め込みビットマップがあれば、FreeTypeと同じく `--no-bitmap` が無いかぎりそれを書く（32bitはPAM。[ADR 0023](docs/adr/0023-color-glyphs.md)）。`--color` では、COLRv0、輪郭でクリップした COLRv1 の線形・放射グラデーションと、矩形、円、パスを単色や線形・放射グラデーションで塗る OT-SVG のグリフをPAMで書く（[ADR 0072](docs/adr/0072-color-gallery-acceptance.md)）。COLRv0の色はFreeTypeの `FT_LOAD_COLOR` と同じで、`--palette N` でパレットを選ぶ。OT-SVG では同じ文書内の図形を `use` で再利用し、`clipPath` で塗る範囲を指定できる（[ADR 0074](docs/adr/0074-svg-feature-conformance.md)）。
+1グリフをヒンティングなしで描き、PGM（P5、白地に黒）を標準出力に書く（[ADR 0012](docs/adr/0012-antialiased-rasterizer.md)）。FreeTypeの `FT_Render_Glyph` と同じ画像になる。そのppemの埋め込みビットマップがあれば、FreeTypeと同じく `--no-bitmap` が無いかぎりそれを書く（32bitはPAM。[ADR 0023](docs/adr/0023-color-glyphs.md)）。`--color` では、COLRv0、輪郭でクリップした COLRv1 の線形・放射・扇形グラデーションと、矩形、円、パスを単色や線形・放射グラデーションで塗る OT-SVG のグリフをPAMで書く（[ADR 0072](docs/adr/0072-color-gallery-acceptance.md)）。COLRv0の色はFreeTypeの `FT_LOAD_COLOR` と同じで、`--palette N` でパレットを選ぶ。OT-SVG では同じ文書内の図形を `use` で再利用し、`clipPath` で塗る範囲を指定できる（[ADR 0074](docs/adr/0074-svg-feature-conformance.md)）。
 
 COLRv1 の矩形クリップは、回転・せん断・反転した場合にも変換後の四辺で切り抜く。
 
