@@ -602,3 +602,39 @@ fn adr0061_i1_iup_optimized_partial_instance_matches_harfbuzz() {
         );
     }
 }
+
+#[test]
+fn adr0061_i1_partial_gdef_devices_match_harfbuzz() {
+    let path = paths::testdata().join("harfbuzz/test/subset/data/fonts/AnekBangla-subset.ttf");
+    let bytes = std::fs::read(&path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let input = Input::new()
+        .map_set(SetKind::Unicodes, |s| s.add_range(0, 0x10ffff))
+        .with_axis_range(
+            Tag::new(b"wght"),
+            Some(300.0),
+            Some(300.0),
+            Some(300.0),
+            &font,
+        )
+        .unwrap();
+    let actual = subset(&font, &input).unwrap();
+    let output = std::env::temp_dir().join(format!("sofel-gdef-pin-{}.ttf", std::process::id()));
+    assert!(
+        Command::new(paths::hb_dump())
+            .arg("--subset")
+            .arg(format!("--font-file={}", path.display()))
+            .args(["--unicodes=*", "--variations=wght=300"])
+            .arg(format!("--output-file={}", output.display()))
+            .status()
+            .unwrap()
+            .success()
+    );
+    let expected = std::fs::read(&output).unwrap();
+    std::fs::remove_file(output).unwrap();
+    assert!(
+        expected == actual,
+        "{}",
+        sofel_conformance::subset::diff(&expected, &actual)
+    );
+}

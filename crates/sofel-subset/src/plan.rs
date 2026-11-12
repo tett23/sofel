@@ -156,6 +156,7 @@ pub(crate) struct PlanLayout {
     pub pinned_base_deltas: BTreeMap<u32, i32>,
     /// Used rows and remapped indices of an unpinned GDEF store, shared
     /// by GDEF caret values and retained GPOS PairPos records.
+    pub instanced_gdef_store: Option<Vec<u8>>,
     pub gdef_var_items: Vec<(u16, Vec<u32>)>,
     pub gdef_var_map: BTreeMap<u32, u32>,
 }
@@ -314,8 +315,10 @@ impl Plan {
                     let static_table = font.table(Tag::new(tag)).is_some_and(|data| match *tag {
                         b"GSUB" | b"GPOS" => sofel_font::read::layout::LayoutTable::new(data)
                             .is_ok_and(|t| t.feature_variations_offset().unwrap_or(0) == 0),
-                        b"GDEF" => sofel_font::read::gdef::Gdef::new(data)
-                            .is_ok_and(|t| t.item_var_store_offset().unwrap_or(0) == 0),
+                        b"GDEF" => sofel_font::read::gdef::Gdef::new(data).is_ok_and(|t| {
+                            t.item_var_store_offset().unwrap_or(0) == 0
+                                || (!norm.avar2 && t.variation_store().is_ok())
+                        }),
                         _ => false,
                     });
                     (norm.all_axes_pinned || static_table)
@@ -814,6 +817,29 @@ impl Plan {
                     // HarfBuzz remaps subset GPOS and MATH references even when it
                     // copies the original GDEF table unchanged.
                     p.layout.gdef_var_map = map;
+                } else if p.var.instancing() {
+                    let tag = Tag::new(b"GDEF");
+                    let store = sofel_font::read::gdef::Gdef::new(gdef)
+                        .ok()
+                        .and_then(|table| table.variation_store().ok().flatten())
+                        .ok_or(SubsetError::Malformed { tag })?;
+                    let mut projected = BTreeMap::new();
+                    let bytes = crate::tables::hvar::instance::subset(
+                        &p,
+                        font,
+                        store,
+                        &items,
+                        tag,
+                        true,
+                        &mut projected,
+                    )?;
+                    p.layout.pinned_layout_deltas =
+                        p.pinned_deltas(font, tag, sofel_font::var::StoreKind::Gdef, &map)?;
+                    p.layout.gdef_var_map = map
+                        .into_iter()
+                        .filter_map(|(old, compact)| projected.get(&compact).map(|&new| (old, new)))
+                        .collect();
+                    p.layout.instanced_gdef_store = Some(bytes);
                 } else {
                     p.layout.gdef_var_items = items;
                     p.layout.gdef_var_map = map;

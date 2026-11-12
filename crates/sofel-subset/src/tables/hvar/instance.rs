@@ -16,7 +16,7 @@ fn key(tents: &[[f32; 3]]) -> Region {
         .collect()
 }
 
-pub(in crate::tables) fn subset(
+pub(crate) fn subset(
     plan: &Plan,
     font: &Font<'_>,
     store: ItemVariationStore<'_>,
