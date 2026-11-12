@@ -2929,6 +2929,125 @@ impl BitmapOut<'_> {
     }
 }
 
+/// Compute an SDF from tightly packed, top-down grayscale coverage.
+///
+/// # Safety
+///
+/// The source must be readable for `source_len` bytes or NULL with zero
+/// length. Outputs must be disjoint from the input and each other and
+/// satisfy the requirements of [`sofel_rasterizer_render`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_bitmap_sdf(
+    left: i32,
+    top: i32,
+    width: u32,
+    rows: u32,
+    source: *const u8,
+    source_len: usize,
+    spread: u8,
+    pixels: *mut u8,
+    capacity: usize,
+    len: *mut usize,
+    box_: *mut i32,
+) -> i32 {
+    // SAFETY: the caller supplies valid, disjoint buffers.
+    let (input, pixels, len, b) = unsafe {
+        (
+            if source_len == 0 {
+                Some(&[][..])
+            } else {
+                bytes(source, source_len)
+            },
+            out_array(pixels, capacity),
+            w(len),
+            ints::<4>(box_),
+        )
+    };
+    status((|| {
+        let out = BitmapOut { pixels, len, b };
+        out.check()?;
+        let bitmap = Bitmap {
+            left,
+            top,
+            width,
+            rows,
+            pixels: some(input)?,
+        };
+        let mut buffer = Vec::new();
+        let result = sofel_raster::bitmap_sdf(bitmap, spread, &mut buffer).map_err(|e| match e {
+            sofel_raster::BitmapSdfError::TooLarge => ERROR_TOO_LARGE,
+            sofel_raster::BitmapSdfError::InvalidBitmap
+            | sofel_raster::BitmapSdfError::InvalidSpread => ERROR_INVALID_ARGUMENT,
+        });
+        out.put(result)
+    })())
+}
+
+/// Get the fill orientation of a loaded outline.
+///
+/// # Safety
+/// Scratch must be live or NULL and fill_left writable or NULL.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_outline_fill_left(
+    scratch: *const SofelOutlineScratch,
+    fill_left: *mut u32,
+) -> i32 {
+    // SAFETY: the caller supplies a live handle and writable output.
+    let (scratch, out) = unsafe { (r(scratch), w(fill_left)) };
+    status((|| {
+        *some(out)? = u32::from(some(scratch)?.scratch.fill_left());
+        Ok(())
+    })())
+}
+
+/// Render a prepositioned outline into a signed distance field.
+///
+/// # Safety
+/// As [`sofel_rasterizer_render`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_rasterizer_render_outline_sdf_placed(
+    rasterizer: *mut SofelRasterizer,
+    left: i32,
+    top: i32,
+    width: u32,
+    rows: u32,
+    spread: u8,
+    fill_left: u32,
+    pixels: *mut u8,
+    capacity: usize,
+    len: *mut usize,
+    box_: *mut i32,
+) -> i32 {
+    // SAFETY: the caller supplies valid disjoint output buffers.
+    let (raster, pixels, len, b) = unsafe {
+        (
+            w(rasterizer),
+            out_array(pixels, capacity),
+            w(len),
+            ints::<4>(box_),
+        )
+    };
+    status((|| {
+        let raster = some(raster)?;
+        let out = BitmapOut { pixels, len, b };
+        out.check()?;
+        let bounds = PixelBox {
+            left,
+            top,
+            width,
+            rows,
+        };
+        let bitmap = raster
+            .raster
+            .render_outline_sdf_placed(bounds, spread, fill_left != 0)
+            .map_err(|e| match e {
+                sofel_raster::BitmapSdfError::TooLarge => ERROR_TOO_LARGE,
+                _ => ERROR_INVALID_ARGUMENT,
+            });
+        out.put(bitmap)
+    })())
+}
+
 fn options(fill: u32, overlap: u32, x_ppem: u16, y_ppem: u16) -> Result<RenderOptions, i32> {
     let fill = match fill {
         0 => FillRule::NonZero,

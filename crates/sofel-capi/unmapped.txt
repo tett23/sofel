@@ -222,6 +222,7 @@ sofel_svg::document The C paint commands expose the expanded SVG document.
 # ordinary font handles and byte-level paint commands.
 sofel_shape::SubFont::* Rust-owned parent links and Send + Sync callbacks; sofel ADR 0063 does not define their C lifetime or callback ABI.
 sofel_shape::GlyphOutline::* Rust callback result and path builder; C receives ordinary outlines through sofel_outline_draw.
+sofel_shape::shape_fallback_with_subfont Rust callback-based fallback shaping entry; C uses sofel_shape_fallback with its font handle.
 sofel_shape::shape_with_subfont Rust callback-based shaping entry; C uses sofel_shape with its font handle.
 sofel_bitmap::convert_bitmap Rust FT_Bitmap_Convert equivalent; the C bitmap query exposes decoded pixels in its own layout.
 sofel_bitmap::embolden_bitmap Rust mutable bitmap synthesis helper; the C bitmap query returns the font's unsynthesized bitmap.
@@ -247,3 +248,4 @@ sofel_raster::composite_pixel The C entry point sofel_render_color_glyph composi
 sofel_raster::PaintMask::* The C entry point sofel_render_color_glyph applies outline coverage to the color surface.
 sofel_read::feat::* A validated feature-name view used by the C shaping functions; C reads the table with sofel_font_table.
 sofel_woff::decode_woff The font input commands reconstruct WOFF tables into an sfnt buffer.
+sofel_bitmapfont::BdfFont::* BDF parsing and fixed bitmap queries are Rust and sofel-render operations; the C font handle still accepts sfnt data only (sofel ADR 0065).
