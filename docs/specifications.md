@@ -58,6 +58,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   sofel-svg    → sofel-inflate, sofel-geom
   sofel-raster → sofel-geom
   sofel-gpu    → sofel-geom
+  sofel-gpu → sofel-geom
   sofel-vector → sofel-geom
 
 フォントの形式を読むクレート
@@ -286,6 +287,8 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 `sofel-render` は設計座標と名前つきインスタンスを受け付ける。FreeTypeで既定以外のインスタンスになるときは埋め込みビットマップを省き、指定位置の輪郭を描く（[ADR 0027](adr/0027-variable-fonts.md)）。
 
 ## ベクトル出力
+
+`sofel-gpu` の `Outline` と C の `sofel_gpu_outline` は、直線と2次・3次ベジェ曲線からなる輪郭を、Slug 方式のシェーダーが読む RGBA16I レコードに変換する。各レコードは符号付き16ビット整数4個で、外接矩形、水平・垂直のバンド、バンドごとの曲線番号、端点を共有する2次曲線の順に並ぶ。空の輪郭は0件を返し、座標やレコードのアドレスが表現範囲を超えるとエラーを返す（[ADR 0068](adr/0068-vector-and-gpu-output.md)）。
 
 `sofel-vector` の `SvgPage` と `PdfPage` は、呼び出し側が配置した輪郭を指定色で入力順に塗る。SVG は y 軸を反転したグループにパスを書き、PDF は二次曲線を三次曲線に変換してページに書く。C の `sofel_vector_page` にはフォント、軸座標と、グリフごとの変換・色を渡す（[ADR 0068](adr/0068-vector-and-gpu-output.md)）。
 

@@ -23,6 +23,7 @@ pub mod float;
 mod paint;
 mod paint_util;
 mod pen;
+pub mod sort;
 mod trig;
 mod trigf;
 

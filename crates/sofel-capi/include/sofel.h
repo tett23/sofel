@@ -2190,6 +2190,26 @@ int32_t sofel_vector_page(const sofel_font_t *font, const sofel_location_t *loca
                           uint8_t *output, size_t capacity, size_t *len);
 
 
+/* Coordinates are x/y pairs, in path order. Close uses no coordinates. */
+#define SOFEL_GPU_MOVE 0
+#define SOFEL_GPU_LINE 1
+#define SOFEL_GPU_QUAD 2
+#define SOFEL_GPU_CUBIC 3
+#define SOFEL_GPU_CLOSE 4
+typedef struct sofel_gpu_path_command_t {
+  uint32_t kind;
+  float coordinates[6];
+} sofel_gpu_path_command_t;
+
+/* Encode outline records for a Slug shader. Capacity and len count RGBA16I
+ * texels, each four native-endian signed 16-bit values. An empty outline
+ * produces zero records. A short buffer returns the required count in len.
+ * Rust: sofel_gpu::Outline::move_to, sofel_gpu::Outline::line_to, sofel_gpu::Outline::quad_to, sofel_gpu::Outline::cubic_to, sofel_gpu::Outline::close, sofel_gpu::Outline::encode
+ */
+int32_t sofel_gpu_outline(const sofel_gpu_path_command_t *commands, size_t count,
+                          int32_t x_scale, int32_t y_scale, int16_t (*records)[4],
+                          size_t capacity, size_t *len);
+
 /* A color stop: palette_index is -1 for the foreground; alpha is the
  * font's alpha, clamped to 0..1, that color was resolved with. */
 typedef struct sofel_color_stop_t {

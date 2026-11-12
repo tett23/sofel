@@ -60,6 +60,7 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-color`](crates/sofel-color) | カラーグリフ：CPALのパレット、COLR（版0と版1）、SVG、CBDT、sbixをHarfBuzzと同じ命令で `Painter` に渡す。命令の記録（`Recording`）、カラーグリフを含むグリフの箱、フォールバックのための問い合わせ（[ADR 0023](docs/adr/0023-color-glyphs.md)） |
 | [`sofel-write`](crates/sofel-write) | sfntの組み立てと、HarfBuzzと同じ詰め方のオブジェクトの直列化（[ADR 0022](docs/adr/0022-subsetting.md)） |
 | [`sofel-subset`](crates/sofel-subset) | HarfBuzzの `hb-subset` とバイト単位で同じ出力のサブセット化（[ADR 0022](docs/adr/0022-subsetting.md)。書ける表はglyf系、cmap、name、OS/2、post、hdmx、CFF、VORG、GDEF、GSUB、GPOS、BASE、COLR、CPAL、CBLC、CBDT、sbix、MATH、STAT、軸をすべて固定したCFF2など。軸はすべて既定の値に固定できる。前処理（`Prepared`）で同じフォントの計画を速く作れる） |
+| [`sofel-gpu`](crates/sofel-gpu) | 輪郭を GPU で描くための RGBA16I レコードに変換する（[ADR 0068](docs/adr/0068-vector-and-gpu-output.md)） |
 | [`sofel-vector`](crates/sofel-vector) | 配置した単色の輪郭を SVG または PDF のページに書く（[ADR 0068](docs/adr/0068-vector-and-gpu-output.md)） |
 | [`sofel-raster`](crates/sofel-raster) | FreeTypeのsmoothのラスタライザと同じ計算で、8bitのアンチエイリアスの画像を作る。COLRv0の層をFreeTypeと同じ整数の計算でBGRAの画像に重ねる（`blend_layer`）。Harmony の水平・垂直 LCD のカバレッジも取得できる |
 | [`sofel-woff`](crates/sofel-woff) | 単一フェイスの sfnt を WOFF・WOFF2 に変換するライブラリとコマンド |
