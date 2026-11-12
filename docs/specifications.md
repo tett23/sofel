@@ -355,6 +355,12 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - レイアウトの表のうち、GPOSかMATHに `0x8000` のバイト列があるGDEFと、GSUBのFeatureVariationsを保持するGDEFは `Unsupported` とする。これらのGDEFのItemVariationStoreの番号を詰めなおすのは10段階目とする。全軸を既定値に固定すると、GDEFのストアを除く。
 - GSUBとGPOSの版1.2、GDEFの版1.4、FeatureVariationsの版1.1と形式1でない条件、65536を超えるグリフのフォントの24bitの形式も `Unsupported` とする。
 
+## Web フォントの書き出し（`sofel-woff`）
+
+`sofel_woff::encode` は単一フェイスの sfnt と出力形式を受け取り、WOFF または WOFF2 のバイト列を返す。表のタグ、範囲、パディング、チェックサムとフォント全体のチェックサムを検査する。コマンドは変換を終えてから出力先を開く。[ADR 0070](adr/0070-webfont-encoding.md)
+
+WOFF は表を元の物理順に並べ、zlib で短くなる表だけを圧縮する。WOFF2 は DSIG を除き、head.flags のビット11を立て、全表を変換なしで一つの Brotli ストリームに格納する。
+
 ## 道具
 
 - `sofel-paint [--face N] [--palette P] [--foreground RRGGBBAA] [--ppem P] [--exact] (--glyph G | --char U+XXXX) FILE`：カラーグリフの塗りの命令を、HarfBuzzの `test/api/test-paint.c` と同じ字下げのテキストで書く。数はCの `%.3g`、`--exact` では `f32` のビットの16進。カラーでないグリフは終了コード1、使い方の誤りは2（[ADR 0023](adr/0023-color-glyphs.md)）。
