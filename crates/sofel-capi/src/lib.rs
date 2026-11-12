@@ -2799,18 +2799,25 @@ fn options(fill: u32, overlap: u32, x_ppem: u16, y_ppem: u16) -> Result<RenderOp
     })
 }
 
+enum RasterTarget {
+    Normal,
+    Placed(PixelBox),
+    Harmony(sofel_raster::LcdMode),
+}
+
 fn rasterizer_render(
     rasterizer: Option<&mut SofelRasterizer>,
-    pixel_box: Option<PixelBox>,
+    mode: RasterTarget,
     options: Result<RenderOptions, i32>,
     out: BitmapOut<'_>,
 ) -> Status {
     let r = some(rasterizer)?;
     out.check()?;
     let options = options?;
-    let bitmap = match pixel_box {
-        None => r.raster.render(options),
-        Some(b) => r.raster.render_placed(b, options),
+    let bitmap = match mode {
+        RasterTarget::Normal => r.raster.render(options),
+        RasterTarget::Placed(b) => r.raster.render_placed(b, options),
+        RasterTarget::Harmony(lcd) => r.raster.render_harmony(lcd, options),
     };
     out.put(bitmap.map_err(raster_error))
 }
@@ -2846,8 +2853,50 @@ pub unsafe extern "C" fn sofel_rasterizer_render(
     let out = BitmapOut { pixels, len, b };
     status(rasterizer_render(
         rasterizer,
-        None,
+        RasterTarget::Normal,
         options(fill, overlap, x_ppem, y_ppem),
+        out,
+    ))
+}
+
+/// `sofel_rasterizer_render_harmony`.
+///
+/// # Safety
+///
+/// `rasterizer` is NULL or a live rasterizer no other thread uses;
+/// `pixels` is NULL or writable for `capacity` bytes; `len` is NULL or
+/// writable; `box_` is NULL or writable for 4 integers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_rasterizer_render_harmony(
+    rasterizer: *mut SofelRasterizer,
+    fill: u32,
+    direction: u32,
+    x_ppem: u16,
+    y_ppem: u16,
+    pixels: *mut u8,
+    capacity: usize,
+    len: *mut usize,
+    box_: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (rasterizer, pixels, len, b) = unsafe {
+        (
+            w(rasterizer),
+            out_array(pixels, capacity),
+            w(len),
+            ints::<4>(box_),
+        )
+    };
+    let lcd = match direction {
+        0 => sofel_raster::LcdMode::Horizontal,
+        1 => sofel_raster::LcdMode::Vertical,
+        _ => return ERROR_INVALID_ARGUMENT,
+    };
+    let out = BitmapOut { pixels, len, b };
+    status(rasterizer_render(
+        rasterizer,
+        RasterTarget::Harmony(lcd),
+        options(fill, 0, x_ppem, y_ppem),
         out,
     ))
 }
@@ -2891,7 +2940,7 @@ pub unsafe extern "C" fn sofel_rasterizer_render_placed(
     };
     status(rasterizer_render(
         rasterizer,
-        Some(pb),
+        RasterTarget::Placed(pb),
         options(fill, overlap, x_ppem, y_ppem),
         out,
     ))

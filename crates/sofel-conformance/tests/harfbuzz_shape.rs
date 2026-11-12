@@ -242,7 +242,8 @@ fn adr0028_trak_ptem_cases_are_aat_not_variations() {
         assert!(subject.misfit("aat").is_none(), "{}", case.id);
         assert!(subject.misfit("variations").is_some(), "{}", case.id);
         assert_eq!(subject.suggest(), "aat?", "{}", case.id);
-        assert_eq!(reasons.get(&case.id).map(String::as_str), Some("aat"));
+        assert!(!reasons.contains_key(&case.id));
+        assert_eq!(run(case), Ok(()), "{}", case.id);
     }
 }
 
@@ -375,4 +376,70 @@ fn harfbuzz_shaping_tests() {
         return;
     }
     assert!(report.is_empty(), "{report}");
+}
+
+#[test]
+fn i1_aat_morx_rearranges_all_sixteen_verbs() {
+    let data =
+        paths::testdata().join("harfbuzz/test/shape/data/text-rendering-tests/tests/MORX-2.tests");
+    let mut skipped = 0;
+    let suite = cases("text-rendering-tests", &data, &mut skipped);
+    assert_eq!(suite.len(), 16);
+    for case in suite {
+        assert_eq!(run(&case), Ok(()), "{}", case.id);
+    }
+}
+
+#[test]
+fn i1_aat_contextual_morx_updates_marked_and_current_glyphs() {
+    let data =
+        paths::testdata().join("harfbuzz/test/shape/data/text-rendering-tests/tests/MORX-18.tests");
+    let suite = cases("text-rendering-tests", &data, &mut 0);
+    assert_eq!(suite.len(), 4);
+    for case in suite {
+        assert_eq!(run(&case), Ok(()), "{}", case.id);
+    }
+}
+
+#[test]
+fn i1_aat_insertion_uses_marked_and_current_positions() {
+    let path =
+        paths::testdata().join("harfbuzz/test/shape/data/text-rendering-tests/tests/MORX-29.tests");
+    let suite = cases("text-rendering-tests", &path, &mut 0);
+    assert_eq!(suite.len(), 4);
+    for case in suite {
+        assert_eq!(run(&case), Ok(()), "{}", case.id);
+    }
+}
+
+#[test]
+fn i1_aat_ligature_uses_the_component_stack() {
+    let path =
+        paths::testdata().join("harfbuzz/test/shape/data/text-rendering-tests/tests/MORX-27.tests");
+    let suite = cases("text-rendering-tests", &path, &mut 0);
+    assert_eq!(suite.len(), 3);
+    for case in suite {
+        assert_eq!(run(&case), Ok(()), "{}", case.id);
+    }
+}
+
+#[test]
+fn i1_aat_kerx_pairs_and_history_match_reference() {
+    let path = paths::testdata().join("harfbuzz/test/shape/data/in-house/tests/aat-kerx.tests");
+    let suite = cases("in-house", &path, &mut 0);
+    for id in ["in-house/aat-kerx.tests:5", "in-house/aat-kerx.tests:23"] {
+        let case = suite.iter().find(|case| case.id == id).unwrap();
+        assert_eq!(run(case), Ok(()), "{id}");
+    }
+}
+
+#[test]
+fn i1_aat_kerx_attaches_marks_in_both_directions() {
+    let path = paths::testdata().join("harfbuzz/test/shape/data/in-house/tests/aat-kerx.tests");
+    let suite = cases("in-house", &path, &mut 0);
+    for line in [13, 14, 19, 20] {
+        let id = format!("in-house/aat-kerx.tests:{line}");
+        let case = suite.iter().find(|case| case.id == id).unwrap();
+        assert_eq!(run(case), Ok(()), "{id}");
+    }
 }
