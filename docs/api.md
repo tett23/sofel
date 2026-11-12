@@ -404,7 +404,7 @@ assert_eq!(language.unwrap().as_str(), "mr-x-hbsc-64657632");
 
 - 文字体系の `None` は `HB_SCRIPT_INVALID`、言語の `None` は `HB_LANGUAGE_INVALID` に当たる。言語のタグの `None` は `dflt` と同じに扱う。
 - ライブラリはプロセスのロケールを読まない。HarfBuzzの `hb_language_get_default()` と同じ言語が要るときは、呼び出し側が `setlocale(LC_CTYPE, NULL)` などで読んで `Language::new` に渡す。
-- `ot_tag_to_script` は、ISO 15924の形でない値になるタグ（`LATN`、`abc2` など）に `Script::UNKNOWN` を返す。HarfBuzzはそのままの値を返す。
+- `ot_tag_to_script` は HarfBuzz が変換した4バイトを保持する（[ADR 0050](adr/0050-preserve-opentype-script-values.md)）。`aran` の結果は `Aran`、`LATN` の結果は `LATN`、未知の新しい世代のタグ `abc2` の結果は `Zzzz` となる。
 ## 機能の文字列と直列化（`sofel-shape`）
 
 ```rust

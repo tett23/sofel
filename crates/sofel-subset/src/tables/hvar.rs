@@ -101,24 +101,33 @@ pub(super) fn subset(
     let header_len = if vertical { 24u32 } else { 20u32 };
     let mut offset = header_len;
     let mut map_offsets = alloc::vec![0; rewritten_maps.len()];
+    let mut written_maps: Vec<(&Vec<u8>, u32)> = Vec::new();
     for (index, map) in rewritten_maps.iter().enumerate().rev() {
+        let Some(map) = map else { continue };
+        let map_offset = if let Some((_, prior_offset)) = written_maps
+            .iter()
+            .find(|(prior, _)| prior.as_slice() == map.as_slice())
+        {
+            *prior_offset
+        } else {
+            let map_offset = offset;
+            offset = offset
+                .checked_add(u32::try_from(map.len()).map_err(|_| SubsetError::Limit { tag })?)
+                .ok_or(SubsetError::Limit { tag })?;
+            written_maps.push((map, map_offset));
+            map_offset
+        };
         *map_offsets
             .get_mut(index)
-            .ok_or(SubsetError::Limit { tag })? = if map.is_some() { offset } else { 0 };
-        offset = offset
-            .checked_add(
-                u32::try_from(map.as_ref().map_or(0, Vec::len))
-                    .map_err(|_| SubsetError::Limit { tag })?,
-            )
-            .ok_or(SubsetError::Limit { tag })?;
+            .ok_or(SubsetError::Limit { tag })? = map_offset;
     }
     serializer.u32(0x0001_0000);
     serializer.u32(offset);
     for map_offset in map_offsets {
         serializer.u32(map_offset);
     }
-    for map in rewritten_maps.into_iter().rev().flatten() {
-        serializer.extend(&map);
+    for (map, _) in written_maps {
+        serializer.extend(map);
     }
     serializer.extend(&store_bytes);
     Ok(true)

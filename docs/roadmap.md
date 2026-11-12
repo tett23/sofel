@@ -4,16 +4,9 @@
 
 各項は、何が残っているか、どこに由来するか、何があれば進められるかの順に書く。節と項は、ほかの項が依存するものを先に置いた。確認できなかった事項には「未確認」と書いた。
 
-[ADR 0027](adr/0027-variable-fonts.md)（可変フォント）、[ADR 0029](adr/0029-variation-deltas.md)（変化量の扱い）は、利用者のレビューを経て採択（未実装）になった。[ADR 0028](adr/0028-ptem-is-not-opsz.md) の `--font-ptem` の分類訂正は実装済みである。[ADR 0029](adr/0029-variation-deltas.md) の調査の記録は、手元の `target/handoff/variation-deltas-research.md` にある（コミットしていない）。
-[ADR 0027](adr/0027-variable-fonts.md) の作業1の表の読み取りと検証器は実装済みである。
-作業2のうち、座標の正規化と [ADR 0029](adr/0029-variation-deltas.md) と [ADR 0030](adr/0030-variation-evaluation-corrections.md) のItemVariationStoreの評価の核も実装した。
-C ABIには位置の作成、座標の取得、Variationの文字列変換を実装した。
-軸と名前つきインスタンスの問い合わせ、FreeTypeが名前を持つときの合成既定インスタンス、位置ごとのPostScript名と対応するC ABIは実装した。
-HVARとVVARの送り幅、VORGとVVARの縦原点、MVARのフォント全体のメトリクス、FreeTypeの縦送り幅には座標を適用した。
-BASEのVariationIndexによる基準線とレイアウトのフォント全体の値の変化量を実装した。
-次はgvarの幻の点による送り幅と箱、輪郭、シェーピング、塗りの変化量とCLIから位置を指定する機能を実装する。
-FreeTypeが必要なnameレコードを持たないときの末尾スタイルの扱いは未決定である。
-FeatureVariationsの条件評価の単独ファジングは、評価を実装する作業5に残す。
+[ADR 0027](adr/0027-variable-fonts.md)（可変フォント）は採択（未実装）である。[ADR 0029](adr/0029-variation-deltas.md) の変化量評価と、[ADR 0030](adr/0030-variation-evaluation-corrections.md) の修正は実装済みである。座標の正規化、表の読み取りと検証、ItemVariationStoreの評価の核、名前つきインスタンス、PostScript名、HVARとVVARのメトリクス、gvarとCFF2の輪郭、FeatureVariationsとGPOSの変化量を使うシェーピング、COLRv1の可変の塗り、C ABI、CLI、計測を段階ごとに実装した。[ADR 0028](adr/0028-ptem-is-not-opsz.md) の分類訂正も実装済みである。
+
+[ADR 0027](adr/0027-variable-fonts.md) の CFF2 輪郭とラスタをコーパスに列挙された各位置で比較する検査と、追加フォントの非既定位置でメトリクスと輪郭を比較する検査は main に入った。`ft_left_side_bearing` と `ft_top_side_bearing` に HVAR・VVAR の差分を適用するという決定は、固定版 FreeType の公開値と異なる。合成フォントで送り幅だけが変わり、サイドベアリングが変わらないことを確認したため、修正 ADR をレビュー用に起草した。
 
 ## HarfBuzz・FreeType 互換に必要な機能
 
@@ -33,25 +26,17 @@ FeatureVariationsの条件評価の単独ファジングは、評価を実装す
 
 すべての機能の実装が終わってから高速化に着手する。実装中は [ADR 0005](adr/0005-conformance-tests.md) に従って出力を照合し、[ADR 0006](adr/0006-performance-measurement.md) に従って性能を記録する。下記の性能差の原因調査と最適化は実装完了後に行う。
 
+## Web フォントの書き出し
+
+[ADR 0070](adr/0070-webfont-encoding.md) で、単一フェイスの sfnt とサブセット化した sfnt を WOFF または WOFF2 に書き出す機能を採択した。実装はこれから行う。
+
 ## 未実装の ADR
-
-### 変化量の評価の修正案
-
-[ADR 0029](adr/0029-variation-deltas.md) の引き継ぎ調査による修正案を、[ADR 0030](adr/0030-variation-evaluation-corrections.md) にまとめた。
-FreeType の丸めの順序、係数のキャッシュの同一性、空の座標と明示した0座標、CFF2 の列数とエラー、gvar の適用手順を扱う。
-ステータスは採択（未実装）である。
-[ADR 0027](adr/0027-variable-fonts.md) と [ADR 0029](adr/0029-variation-deltas.md) の本文は変更していない。
-
 
 ### [ADR 0022](adr/0022-subsetting.md): サブセット化
 
 [ADR 0022](adr/0022-subsetting.md) は採択（未実装）で、段階ごとに実装している。PR #42 までで、レイアウトの段階などが main に入った。10段階目（gvar、GVAR、HVAR、VVAR、ピン留めなしの CFF2、GDEF、BASE、COLR の項目の変化量の記憶）は、可変フォントの [ADR 0027](adr/0027-variable-fonts.md) の読み取り部分を使って実装する。VARC は13段階目まで待つ。[ADR 0022](adr/0022-subsetting.md) のステータスを採択にする条件は、[ADR 0027](adr/0027-variable-fonts.md) の採択と、10段階目の実装である。
 
 ### シェーピング、フォントの検証と描画、照合の記録
-
-各項目の実装状況はリンク先の ADR に記す。
-
-- [ADR 0050](adr/0050-preserve-opentype-script-values.md)：OpenType タグからスクリプトを求める二つの API で、HarfBuzz が返す4バイトを保持する。
 
 cmap のフォーマット2と8は、通常のグリフ検索では読み、シェーピングでは HarfBuzz に合わせて対応なしとする処理を実装済みである。[仕様書](specifications.md) に両方の検索規則を記載している。
 
@@ -98,16 +83,27 @@ Unicode の性質の引きが HarfBuzz の 1.24 倍である。2段または3段
 
 負荷平均が最大 280 のマシンで取った記録がある。負荷のないマシンで取り直すべきものは、[ADR 0013](adr/0013-benchmark-harness.md) の2段階目の記録（[docs/benchmarks/2026-11-10-stage2.md](benchmarks/2026-11-10-stage2.md)）、[ADR 0019](adr/0019-unicode-character-data.md)、[ADR 0021](adr/0021-cff-outlines.md)（[docs/benchmarks/2026-11-10-cff.md](benchmarks/2026-11-10-cff.md)）、[ADR 0023](adr/0023-color-glyphs.md)、[ADR 0025](adr/0025-cff-charset-index.md)（[docs/benchmarks/2026-11-10-cff-charset-index.md](benchmarks/2026-11-10-cff-charset-index.md)）、[ADR 0020](adr/0020-shaping-foundation.md)、[ADR 0022](adr/0022-subsetting.md) である。どの記録が高負荷で取られたかを、記録の本文では確かめていない（未確認）。
 
-## 実装のあとに起こす ADR
+## 後続の実装と設計
 
-次の項は、各 ADR の「後回しにしたもの」に挙げられたものと、そこから派生するものである。それぞれ、先行する実装が終わってから ADR を書く。先に、可変フォントの [ADR 0027](adr/0027-variable-fonts.md) に依存する項を並べる。
+次の項は、各 ADR の「後回しにしたもの」に挙げられたものと、そこから派生するものである。互換機能の設計は次の ADR を採択した。
 
-- 任意の位置への可変フォントのインスタンス化と、軸の範囲を絞る部分的なインスタンス化。[ADR 0022](adr/0022-subsetting.md) の「後回しにしたもの」にある。[ADR 0027](adr/0027-variable-fonts.md) の採択と実装の後に書く。解消すると、サブセット化のテストの期待する失敗のうち、インスタンスの91件と IUP の23件が消える。
+- [ADR 0060: AAT の置換と位置調整をシェーピングに組み込む](adr/0060-aat-shaping.md)
+- [ADR 0061: 軸を固定または制限して可変フォントを書き出す](adr/0061-subset-axis-instancing.md)
+- [ADR 0062: レイアウトの問い合わせでサイズと軸座標を引き継ぐ](adr/0062-layout-query-device-adjustments.md)
+- [ADR 0063: サブフォントの関数と合成太字、合成斜体を適用する](adr/0063-font-functions-and-synthesis.md)
+- [ADR 0064: ヒンティングと描画モードを独立に指定する](adr/0064-freetype-hinting-and-render-modes.md)
+- [ADR 0065: 旧形式と Web フォントを既存のフェイスとして開く](adr/0065-legacy-faces-and-webfonts.md)
+- [ADR 0066: カラーグリフの画像を復号し、塗りを画素に合成する](adr/0066-color-glyph-pixels.md)
+- [ADR 0067: VARC の条件付き部品を指定座標で展開する](adr/0067-varc-components.md)
+- [ADR 0068: 配置済みグリフ列を SVG、PDF、GPU に出力する](adr/0068-vector-and-gpu-output.md)
+
+先に、可変フォントの [ADR 0027](adr/0027-variable-fonts.md) に依存する項を並べる。
+
+- 任意の位置への可変フォントのインスタンス化と、軸の範囲を絞る部分的なインスタンス化。[ADR 0022](adr/0022-subsetting.md) の「後回しにしたもの」にある。[ADR 0027](adr/0027-variable-fonts.md) の実装後に [ADR 0061](adr/0061-subset-axis-instancing.md) に従って進める。解消すると、サブセット化のテストの期待する失敗のうち、インスタンスの91件と IUP の23件が消える。
 - ppem を使った Device 表の補正（ヒンティングの Device）。GPOS、GDEF のキャレット、BASE、MATH が対象である。[ADR 0017](adr/0017-base-baselines.md) による。変化量の部分は [ADR 0027](adr/0027-variable-fonts.md) に入る。
 - GDEF のリガチャのキャレットの API。[ADR 0027](adr/0027-variable-fonts.md) の一覧にある。
 - スタイルの値 `hb_style_get_value`。[ADR 0027](adr/0027-variable-fonts.md) の一覧にある。
 - MATH の問い合わせ（`hb_ot_math_*`）と、JSTF の扱いの決定。[ADR 0017](adr/0017-base-baselines.md) による。MATH のビューは [ADR 0022](adr/0022-subsetting.md) で入っている。
-- 送り幅の cache（HarfBuzz の `advance_cache` に当たるもの）。領域の係数は [ADR 0029](adr/0029-variation-deltas.md) が `Location` に持つ。送り幅の cache は、計測で遅い項目が出たときに ADR を書く。
 - AAT のシェーピング（10段階目）。morx、mort、kerx、ankr、trak、feat、ltag、dumber シェーパー、旧 `kern` 表、`--font-ptem` による trak。[ADR 0020](adr/0020-shaping-foundation.md) による。適合テストの `aat` 分類の期待する失敗が、これで消える。
 - ヒンティング（7段階目）。TrueType バイトコード（v35、v40）、cvar、幻の点の丸め（[ADR 0018](adr/0018-phantom-point-shift.md)）、CFF のヒンターとステムの太らせ（[ADR 0021](adr/0021-cff-outlines.md)）、オートヒンター、mono と LCD と SDF のラスタライズ。
 - 合成の太字と斜体。HarfBuzz の `hb_font_set_synthetic_*`、FreeType の `FT_GlyphSlot_Embolden`、`FT_GlyphSlot_Oblique`、`FT_Bitmap_Embolden`。[ADR 0016](adr/0016-font-and-vertical-metrics.md)、[ADR 0020](adr/0020-shaping-foundation.md)、[ADR 0023](adr/0023-color-glyphs.md) による。適合テストの `synthetic` 分類が消える。

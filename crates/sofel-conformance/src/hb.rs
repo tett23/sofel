@@ -138,17 +138,32 @@ fn ext4(e: GlyphExtents) -> [i32; 4] {
 /// sofel's values for the scales HarfBuzz wrote, glyphs below
 /// `num_glyphs`.
 pub fn sofel_face(font: &Font<'_>, hb: &HbFace) -> HbFace {
-    sofel_face_for(font, hb, 0..hb.num_glyphs)
+    sofel_face_for(font, font.default_instance(), hb, 0..hb.num_glyphs)
 }
 
 /// sofel's values at HarfBuzz's scales for the selected glyph IDs.
 /// The reference face still gives the full glyph count.
 pub fn sofel_face_sampled(font: &Font<'_>, hb: &HbFace, glyphs: &[u32]) -> HbFace {
-    sofel_face_for(font, hb, glyphs.iter().copied())
+    sofel_face_for(font, font.default_instance(), hb, glyphs.iter().copied())
 }
 
-fn sofel_face_for<I: Iterator<Item = u32> + Clone>(font: &Font<'_>, hb: &HbFace, ids: I) -> HbFace {
-    let outlines = Outlines::new(font.default_instance());
+/// sofel's values at a chosen variable-font location for selected glyph IDs.
+pub fn sofel_face_sampled_at(
+    font: &Font<'_>,
+    instance: Instance<'_, '_, '_, '_>,
+    hb: &HbFace,
+    glyphs: &[u32],
+) -> HbFace {
+    sofel_face_for(font, instance, hb, glyphs.iter().copied())
+}
+
+fn sofel_face_for<I: Iterator<Item = u32> + Clone>(
+    font: &Font<'_>,
+    instance: Instance<'_, '_, '_, '_>,
+    hb: &HbFace,
+    ids: I,
+) -> HbFace {
+    let outlines = Outlines::new(instance);
     let scratch = RefCell::new(sofel_color::Scratch::default());
     let scales = hb
         .scales
@@ -158,8 +173,8 @@ fn sofel_face_for<I: Iterator<Item = u32> + Clone>(font: &Font<'_>, hb: &HbFace,
             let metrics = MetricsTag::ALL
                 .iter()
                 .map(|&t| {
-                    let found = scale.metrics_position(font, t);
-                    let fallback = scale.metrics_position_with_fallback_scaled(font, t, |g| {
+                    let found = instance.scaled_metrics_position(&scale, t);
+                    let fallback = instance.scaled_metrics_position_with_fallback(&scale, t, |g| {
                         sofel_color::scaled_glyph_extents(
                             &outlines,
                             g.0,
@@ -175,7 +190,7 @@ fn sofel_face_for<I: Iterator<Item = u32> + Clone>(font: &Font<'_>, hb: &HbFace,
                 .clone()
                 .map(|g| {
                     let g = GlyphId(g);
-                    let (ox, oy) = scale.v_origin_scaled(font, g, |g| {
+                    let (ox, oy) = instance.scaled_v_origin(&scale, g, |g| {
                         sofel_color::scaled_glyph_extents(
                             &outlines,
                             g.0,
@@ -184,8 +199,8 @@ fn sofel_face_for<I: Iterator<Item = u32> + Clone>(font: &Font<'_>, hb: &HbFace,
                         )
                     });
                     (
-                        scale.h_advance(font, g),
-                        scale.v_advance(font, g),
+                        scale.em_scale_x(instance.advance(g) as i32),
+                        instance.scaled_v_advance(&scale, g),
                         ox,
                         oy,
                         sofel_color::scaled_glyph_extents(
@@ -201,8 +216,8 @@ fn sofel_face_for<I: Iterator<Item = u32> + Clone>(font: &Font<'_>, hb: &HbFace,
             Scaled {
                 x_scale: s.x_scale,
                 y_scale: s.y_scale,
-                h_extents: ext3(scale.h_extents(font)),
-                v_extents: ext3(scale.v_extents(font)),
+                h_extents: ext3(instance.scaled_h_extents(&scale)),
+                v_extents: ext3(instance.scaled_v_extents(&scale)),
                 metrics,
                 glyphs,
             }
