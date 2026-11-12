@@ -318,7 +318,8 @@ impl Plan {
         let avar2_range = identity_avar2 && norm.user.values().any(|r| r.min < r.max);
         let single_pin = norm.user.len() == 1 && norm.user.values().all(|r| r.min == r.max);
         let needs_rebase = |tag: &&[u8; 4]| {
-            (!inert_gvar || (**tag != *b"gvar" && **tag != *b"GVAR"))
+            !(norm.all_axes_pinned && **tag == *b"cvar")
+                && (!inert_gvar || (**tag != *b"gvar" && **tag != *b"GVAR"))
                 && !((avar2_range || single_pin) && **tag == *b"gvar")
                 && font.table(Tag::new(tag)).is_some()
         };
@@ -369,12 +370,13 @@ impl Plan {
             let simple_avar = (single_pin && drop.contains(Tag::new(b"avar").to_u32()))
                 || identity_avar2
                 || font.table(Tag::new(b"avar")).is_none_or(|data| {
-                    sofel_font::read::avar::Avar::new(data)
-                        .is_ok_and(|table| table.major_version() == 1 && norm.pinned_at_default)
-                        && norm
-                            .user
-                            .values()
-                            .all(|range| range.min == range.default && range.default == range.max)
+                    sofel_font::read::avar::Avar::new(data).is_ok_and(|table| {
+                        table.major_version() == 1
+                            && (norm.pinned_at_default || norm.all_axes_pinned)
+                    }) && norm
+                        .user
+                        .values()
+                        .all(|range| range.min == range.default && range.default == range.max)
                 });
             let metadata_only = no_other_variation_data && varc_safe && simple_avar;
             let gvar_full_pin = norm.all_axes_pinned

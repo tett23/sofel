@@ -228,6 +228,24 @@ impl Plan {
                 tables.insert(tag, bytes);
                 return Ok(room);
             }
+            b"cvt "
+                if !self.var.n.pinned_at_default
+                    && !self.var.n.normalized_coords.is_empty()
+                    && font.table(Tag::new(b"cvar")).is_some() =>
+            {
+                let cvar = font.table(Tag::new(b"cvar")).unwrap_or_default();
+                let mut bytes = font.table(tag).unwrap_or_default().to_vec();
+                sofel_font::var::gvar::apply_cvar_hb(
+                    &mut bytes,
+                    cvar,
+                    &self.var.n.normalized_coords,
+                )
+                .map_err(|_| SubsetError::Malformed {
+                    tag: Tag::new(b"cvar"),
+                })?;
+                tables.insert(tag, bytes);
+                return Ok(room);
+            }
             b"cvt " => {
                 self.passthrough(font, tag, tables);
                 return Ok(room);
