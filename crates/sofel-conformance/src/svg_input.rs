@@ -18,6 +18,7 @@ pub fn observe(feature: &str, case: &str, observation: &str) -> Option<Result<()
             Some(document_pixels(case))
         }
         ("in-style", _, _) => style_pixel(case, observation),
+        ("in-gradient", _, _) => gradient_observation(case, observation),
         _ => None,
     }
 }
@@ -147,7 +148,7 @@ fn rendered(
 }
 
 // Outside the cropped bitmap the original transparent canvas is unchanged.
-fn check_pixel(image: &BgraImage, x: i32, y: i32, expected: [u8; 4]) -> Result<(), String> {
+fn pixel(image: &BgraImage, x: i32, y: i32) -> Result<[u8; 4], String> {
     let column = i64::from(x) - i64::from(image.left);
     let row = i64::from(y) + i64::from(image.top);
     let actual = if (0..i64::from(image.width)).contains(&column)
@@ -165,6 +166,11 @@ fn check_pixel(image: &BgraImage, x: i32, y: i32, expected: [u8; 4]) -> Result<(
     } else {
         [0; 4]
     };
+    Ok(actual)
+}
+
+fn check_pixel(image: &BgraImage, x: i32, y: i32, expected: [u8; 4]) -> Result<(), String> {
+    let actual = pixel(image, x, y)?;
     if actual == expected {
         Ok(())
     } else {
@@ -206,6 +212,64 @@ fn style_pixel(case: &str, name: &str) -> Option<Result<(), String>> {
     )
 }
 
+type Sample = (i32, i32, [u8; 4]);
+
+fn check_samples(image: &BgraImage, samples: &[Sample]) -> Result<(), String> {
+    for &(x, y, expected) in samples {
+        check_pixel(image, x, y, expected)?;
+    }
+    Ok(())
+}
+
+fn gradient_observation(case: &str, observation: &str) -> Option<Result<(), String>> {
+    const GRADIENTS: &[u8] = include_bytes!("../../../conformance/svg/gradients.svg");
+    const QUARTER: [u8; 4] = [60, 0, 180, 255];
+    const HALF: [u8; 4] = [120, 0, 120, 255];
+    // The 32×32 viewBox at 32 ppem has unit scale. For each glyph the second
+    // sample is halfway through the gradient. Scan its row independently to
+    // locate that color; for the radial gradient scan only right of center.
+    let (glyph, scan, samples) = match case {
+        // t = (x + 0.5 - 0.5) / 16.
+        "linear" => (1, 1..=15, [(4, 8, QUARTER), (8, 8, HALF)]),
+        // t = distance from center (8.5, 8.5) / 8.
+        "radial" => (2, 8..=15, [(10, 8, QUARTER), (12, 8, HALF)]),
+        // Project onto the diagonal in bounding-box coordinates, not in
+        // physical pixels: t = ((x - 2) / 16 + (y - 3) / 8) / 2.
+        "aspect-ratio" => (3, 3..=17, [(6, 5, QUARTER), (6, 9, HALF)]),
+        // Straight red at alpha 0.2 + 0.8t, converted to premultiplied RGBA.
+        "stop-opacity" => (
+            4,
+            1..=15,
+            [(4, 8, [102, 0, 0, 102]), (8, 8, [153, 0, 0, 153])],
+        ),
+        // Translate after scaling: t = (x + 0.5 - 2.5) / 8.
+        "transformed" => (5, 3..=9, [(4, 8, QUARTER), (6, 8, HALF)]),
+        _ => return None,
+    };
+    if !matches!(observation, "rgba" | "sample-position") {
+        return None;
+    }
+    Some(rendered(GRADIENTS, 5, glyph, RED).and_then(|image| {
+        if observation == "rgba" {
+            return check_samples(&image, &samples);
+        }
+        let (expected_x, y, color) = samples[1];
+        let mut matches = Vec::new();
+        for x in scan {
+            if pixel(&image, x, y)? == color {
+                matches.push(x);
+            }
+        }
+        if matches == [expected_x] {
+            Ok(())
+        } else {
+            Err(format!(
+                "row {y}: expected RGBA {color:?} at x={expected_x}, got x={matches:?}"
+            ))
+        }
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -239,5 +303,23 @@ mod tests {
         assert_eq!(check_pixel(&image, 1, 3, [0; 4]), Ok(()));
         assert!(check_pixel(&image, 3, 3, [0, 0, 255, 255]).is_err());
         assert!(check_pixel(&image, 2, 4, [0, 0, 255, 255]).is_err());
+    }
+
+    #[test]
+    fn i2_svg_gradient_anchors_reject_a_shifted_or_mutated_stop() {
+        let mut image = BgraImage {
+            left: 2,
+            top: -3,
+            width: 2,
+            rows: 1,
+            pixels: vec![180, 0, 60, 255, 120, 0, 120, 255],
+        };
+        let anchors = [(2, 3, [60, 0, 180, 255]), (3, 3, [120, 0, 120, 255])];
+        assert!(check_samples(&image, &anchors).is_ok());
+        image.left = 3;
+        assert!(check_samples(&image, &anchors).is_err());
+        image.left = 2;
+        image.pixels[2] = 59;
+        assert!(check_samples(&image, &anchors).is_err());
     }
 }
