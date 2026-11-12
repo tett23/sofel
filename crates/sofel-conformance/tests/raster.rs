@@ -342,3 +342,55 @@ fn i2_render_mode_harmony_agrees_with_freetype() {
     }
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn adr0064_i2_reference_renders_mono_and_both_sdf_inputs() {
+    let square = simple_glyph(
+        &[&[
+            Pt::On(0, 0),
+            Pt::On(0, 1000),
+            Pt::On(1000, 1000),
+            Pt::On(1000, 0),
+        ]],
+        false,
+        &[],
+    );
+    let path = std::env::temp_dir().join(format!("sofel-mono-sdf-{}.ttf", std::process::id()));
+    std::fs::write(&path, glyph_font(&[Vec::new(), square], true, false)).unwrap();
+    for size in [7usize, 8, 9] {
+        for flag in ["--mono", "--sdf", "--bitmap-sdf"] {
+            let out = Command::new(paths::ft_dump())
+                .args(["--raster", &size.to_string(), flag])
+                .arg(&path)
+                .output()
+                .unwrap();
+            assert!(out.status.success());
+            let dump = parse(&String::from_utf8(out.stdout).unwrap()).unwrap();
+            let glyph = &dump[&0].glyphs[&1];
+            if flag == "--mono" {
+                assert_eq!(glyph[0], format!("bitmap 0 {size} {size} {size}"));
+                let row = match size {
+                    7 => "fe",
+                    8 => "ff",
+                    9 => "ff80",
+                    _ => unreachable!(),
+                };
+                assert_eq!(glyph.len(), 1 + size);
+                assert!(glyph[1..].iter().all(|actual| actual == row));
+            } else {
+                // The reference defaults to an eight-pixel distance spread.
+                let width = size + 16;
+                assert_eq!(glyph[0], format!("bitmap -8 {} {width} {width}", size + 8));
+                assert_eq!(glyph.len(), width + 1);
+                assert!(glyph[1..].iter().all(|row| row.len() == width * 2));
+                let middle = &glyph[1 + width / 2];
+                assert!(
+                    u8::from_str_radix(&middle[width / 2 * 2..width / 2 * 2 + 2], 16).unwrap()
+                        > 128
+                );
+                assert!(u8::from_str_radix(&middle[..2], 16).unwrap() < 128);
+            }
+        }
+    }
+    std::fs::remove_file(path).unwrap();
+}

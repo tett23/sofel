@@ -42,7 +42,7 @@ files="
   type1/type1.c type42/type42.c pfr/pfr.c winfonts/winfnt.c
   pcf/pcf.c bdf/bdf.c psaux/psaux.c psnames/psnames.c
   pshinter/pshinter.c autofit/autofit.c smooth/smooth.c
-  raster/raster.c gzip/ftgzip.c lzw/ftlzw.c
+  raster/raster.c sdf/sdf.c gzip/ftgzip.c lzw/ftlzw.c
   otvalid/otvalid.c
 "
 

@@ -390,7 +390,7 @@ static void dump_outlines(FT_Face face, int unscaled, int ppem,
   }
 }
 
-static void dump_rasters(FT_Face face, int ppem, FT_Render_Mode mode)
+static void dump_rasters(FT_Face face, int ppem, FT_Render_Mode mode, int from_bitmap)
 {
   FT_Long g;
 
@@ -405,6 +405,8 @@ static void dump_rasters(FT_Face face, int ppem, FT_Render_Mode mode)
 
     printf("glyph %ld\n", (long)g);
     error = FT_Load_Glyph(face, (FT_UInt)g, FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP);
+    if (error == 0 && from_bitmap)
+      error = FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
     if (error == 0)
       error = FT_Render_Glyph(face->glyph, mode);
     if (error != 0) {
@@ -415,8 +417,11 @@ static void dump_rasters(FT_Face face, int ppem, FT_Render_Mode mode)
     printf("bitmap %d %d %u %u\n", face->glyph->bitmap_left, face->glyph->bitmap_top,
            b->width, b->rows);
     for (r = 0; r < b->rows; r++) {
-      const unsigned char *row = b->buffer + (long)r * b->pitch;
-      for (c = 0; c < b->width; c++)
+      const unsigned char *row = b->pitch < 0
+          ? b->buffer - (long)(b->rows - 1 - r) * b->pitch
+          : b->buffer + (long)r * b->pitch;
+      unsigned int bytes = mode == FT_RENDER_MODE_MONO ? (b->width + 7) / 8 : b->width;
+      for (c = 0; c < bytes; c++)
         printf("%02x", row[c]);
       if (b->width)
         printf("\n");
@@ -1084,7 +1089,10 @@ static int outlines(const char *size, const char *path, int raster, const char *
       dump_color_rasters(face, ppem);
     else if (raster)
       dump_rasters(face, ppem, raster == 3 ? FT_RENDER_MODE_LCD :
-                               raster == 4 ? FT_RENDER_MODE_LCD_V : FT_RENDER_MODE_NORMAL);
+                               raster == 4 ? FT_RENDER_MODE_LCD_V :
+                               raster == 5 ? FT_RENDER_MODE_MONO :
+                               raster >= 6 ? FT_RENDER_MODE_SDF : FT_RENDER_MODE_NORMAL,
+                               raster == 7);
     else
       dump_outlines(face, unscaled, ppem, plan ? selected + begin : NULL, cursor - begin);
     printf("end\n");
@@ -1636,6 +1644,12 @@ int main(int argc, char **argv)
     return outlines(argv[2], argv[4], 3, NULL, NULL);
   if (argc == 5 && strcmp(argv[1], "--raster") == 0 && strcmp(argv[3], "--lcd-v") == 0)
     return outlines(argv[2], argv[4], 4, NULL, NULL);
+  if (argc == 5 && strcmp(argv[1], "--raster") == 0 && strcmp(argv[3], "--mono") == 0)
+    return outlines(argv[2], argv[4], 5, NULL, NULL);
+  if (argc == 5 && strcmp(argv[1], "--raster") == 0 && strcmp(argv[3], "--sdf") == 0)
+    return outlines(argv[2], argv[4], 6, NULL, NULL);
+  if (argc == 5 && strcmp(argv[1], "--raster") == 0 && strcmp(argv[3], "--bitmap-sdf") == 0)
+    return outlines(argv[2], argv[4], 7, NULL, NULL);
   if (argc == 5 && strcmp(argv[1], "--raster") == 0 && strcmp(argv[3], "--color") == 0)
     return outlines(argv[2], argv[4], 2, NULL, NULL);
   if (argc == 3 && strcmp(argv[1], "--cid") == 0)
@@ -1656,7 +1670,7 @@ int main(int argc, char **argv)
     argc = 2;
   }
   if (argc != 2) {
-    fprintf(stderr, "usage: ft-dump FILE | ft-dump --advances [--named-instance=N] [--variations=TAG=value,...] FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --sampled-outline SIZE FILE PLAN | ft-dump --sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...] | ft-dump --raster PPEM [--color|--lcd|--lcd-v] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --cff2-private FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
+    fprintf(stderr, "usage: ft-dump FILE | ft-dump --advances [--named-instance=N] [--variations=TAG=value,...] FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --sampled-outline SIZE FILE PLAN | ft-dump --sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...] | ft-dump --raster PPEM [--color|--lcd|--lcd-v|--mono|--sdf|--bitmap-sdf] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --cff2-private FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
     return 2;
   }
   if (FT_Init_FreeType(&library) != 0) {
