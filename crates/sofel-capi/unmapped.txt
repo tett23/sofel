@@ -205,3 +205,4 @@ sofel_shape::ShapePlan::variations_index_for C creates a plan with sofel_shape_p
 sofel_color::RawPaintGraph::* The reusable raw paint table view; C reads the bytes with sofel_font_table.
 sofel_color::FtPaintGraph::* The location-resolved raw COLR tree; the C paint API exposes the walked commands.
 sofel_unicode::Script::from_raw_tag C represents the four script bytes directly as a big-endian uint32_t tag.
+sofel_woff::encode ADR 0070 exposes encoding through the Rust API and the standalone sofel-woff command.
