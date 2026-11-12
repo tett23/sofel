@@ -1,12 +1,14 @@
 //! Writing the tables (`hb_subset_plan_execute_or_fail` and the tables'
 //! `subset` functions).
 
+mod avar;
 pub(crate) mod base;
 mod cblc;
 pub(crate) mod cff;
 pub(crate) mod cmap;
 pub(crate) mod colr;
 pub(crate) mod cpal;
+mod fvar;
 pub(crate) mod glyf;
 mod gvar;
 mod hdmx;
@@ -19,6 +21,8 @@ mod os2;
 mod post;
 mod sbix;
 pub(crate) mod stat;
+pub(crate) mod varc;
+mod varc_complex;
 mod vorg;
 
 use alloc::collections::{BTreeMap, BTreeSet};
@@ -183,6 +187,7 @@ impl Plan {
             b"CFF " => Some(cff::subset),
             b"CFF2" => Some(cff::subset2),
             b"VORG" => Some(vorg::subset),
+            b"VARC" => Some(varc::subset),
             b"COLR" => Some(colr::subset),
             b"CPAL" => Some(cpal::subset),
             b"CBLC" => Some(cblc::subset),
@@ -195,6 +200,20 @@ impl Plan {
                 return Ok(room);
             }
             b"STAT" => Some(stat::subset),
+            b"fvar" if !self.var.user().is_empty() => {
+                let src = font.table(tag).unwrap_or(&[]);
+                let bytes = fvar::subset(self, src)?;
+                let room = self.room_after(font, tag, src, room, bytes.len())?;
+                tables.insert(tag, bytes);
+                return Ok(room);
+            }
+            b"avar" if !self.var.user().is_empty() => {
+                let src = font.table(tag).unwrap_or(&[]);
+                let bytes = avar::subset(self, src)?;
+                let room = self.room_after(font, tag, src, room, bytes.len())?;
+                tables.insert(tag, bytes);
+                return Ok(room);
+            }
             b"head" => {
                 let present = |t: Tag| font.table(t).is_some() && !self.should_drop(t);
                 if present(Tag::new(b"glyf")) || present(Tag::new(b"GLYF")) {

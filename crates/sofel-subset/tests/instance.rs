@@ -199,8 +199,8 @@ fn unicodes() -> Input {
 }
 
 #[test]
-fn only_pinning_every_axis_to_its_default_is_planned() {
-    let data = font_with(vec![(b"fvar", fvar(&AXES))]);
+fn partial_instancing_with_unrebased_variation_data_remains_unsupported() {
+    let data = font_with(vec![(b"fvar", fvar(&AXES)), (b"HVAR", vec![0, 1, 0, 0])]);
     let font = Font::new(&data, 0).unwrap();
     let wght = Tag::new(b"wght");
     let pinned = unicodes().with_all_axes_pinned_to_default(&font).unwrap();
@@ -228,6 +228,122 @@ fn only_pinning_every_axis_to_its_default_is_planned() {
         .with_axis_range(wght, None, None, None, &font)
         .unwrap();
     assert!(Plan::new(&font, &same).is_ok());
+}
+
+#[test]
+fn i1_subset_instance_one_default_axis_keeps_the_other_axis() {
+    let data = font_with(vec![(b"fvar", fvar(&AXES))]);
+    let font = Font::new(&data, 0).unwrap();
+    let input = unicodes()
+        .with_axis_pinned_to_default(Tag::new(b"wdth"), &font)
+        .unwrap();
+    let result = subset(&font, &input);
+    assert!(result.is_ok(), "{result:?}");
+    let output = result.unwrap();
+    let sfnt = Sfnt::new(&output).unwrap();
+    let fvar = sfnt.table(Tag::new(b"fvar")).unwrap();
+    assert_eq!(u16::from_be_bytes([fvar[8], fvar[9]]), 1);
+    assert_eq!(&fvar[16..20], b"wght");
+    assert_eq!(u16::from_be_bytes([fvar[12], fvar[13]]), 1);
+    assert_eq!(&fvar[40..44], &fixed(400.0));
+}
+
+#[test]
+fn i1_subset_instance_restricts_remaining_fvar_axis_range() {
+    let data = font_with(vec![(b"fvar", fvar(&AXES))]);
+    let font = Font::new(&data, 0).unwrap();
+    let input = unicodes()
+        .with_axis_range(Tag::new(b"wght"), Some(300.0), Some(500.0), None, &font)
+        .unwrap()
+        .with_axis_pinned_to_default(Tag::new(b"wdth"), &font)
+        .unwrap();
+    let output = subset(&font, &input).unwrap();
+    let sfnt = Sfnt::new(&output).unwrap();
+    let fvar = sfnt.table(Tag::new(b"fvar")).unwrap();
+    assert_eq!(&fvar[20..24], &fixed(300.0));
+    assert_eq!(&fvar[24..28], &fixed(400.0));
+    assert_eq!(&fvar[28..32], &fixed(500.0));
+}
+
+#[test]
+fn i1_subset_instance_endpoint_pin_removes_outside_named_instance() {
+    let data = font_with(vec![(b"fvar", fvar(&AXES))]);
+    let font = Font::new(&data, 0).unwrap();
+    let input = unicodes()
+        .with_axis_pinned(Tag::new(b"wght"), 900.0, &font)
+        .unwrap();
+    let output = subset(&font, &input).unwrap();
+    let sfnt = Sfnt::new(&output).unwrap();
+    let fvar = sfnt.table(Tag::new(b"fvar")).unwrap();
+    assert_eq!(u16::from_be_bytes([fvar[8], fvar[9]]), 1);
+    assert_eq!(&fvar[16..20], b"wdth");
+    assert_eq!(u16::from_be_bytes([fvar[12], fvar[13]]), 0);
+}
+
+#[test]
+fn i1_subset_instance_keeps_unmodified_avar_map_of_remaining_axis() {
+    let wght_map = [(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)];
+    let wdth_map = [(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)];
+    let data = font_with(vec![
+        (b"fvar", fvar(&AXES)),
+        (b"avar", avar(1, &[&wght_map, &wdth_map])),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let input = unicodes()
+        .with_axis_pinned_to_default(Tag::new(b"wdth"), &font)
+        .unwrap();
+    let output = subset(&font, &input).unwrap();
+    let sfnt = Sfnt::new(&output).unwrap();
+    let avar_bytes = sfnt.table(Tag::new(b"avar")).unwrap();
+    assert_eq!(u16::from_be_bytes([avar_bytes[6], avar_bytes[7]]), 1);
+    assert_eq!(&avar_bytes[8..], &avar(1, &[&wght_map])[8..]);
+}
+
+#[test]
+fn i1_subset_instance_drops_names_of_removed_axes() {
+    let names = name(
+        0,
+        &[
+            (3, 1, 0x409, 256, b"W"),
+            (3, 1, 0x409, 257, b"D"),
+            (3, 1, 0x409, 300, b"I"),
+            (3, 1, 0x409, 301, b"P"),
+        ],
+        &[],
+    );
+    let data = font_with(vec![(b"fvar", fvar(&AXES)), (b"name", names)]);
+    let font = Font::new(&data, 0).unwrap();
+    let input = unicodes()
+        .with_axis_pinned_to_default(Tag::new(b"wdth"), &font)
+        .unwrap();
+    let output = subset(&font, &input).unwrap();
+    let sfnt = Sfnt::new(&output).unwrap();
+    let names = sfnt.table(Tag::new(b"name")).unwrap();
+    let count = usize::from(u16::from_be_bytes([names[2], names[3]]));
+    let ids: Vec<u16> = (0..count)
+        .map(|i| {
+            let at = 12 + i * 12;
+            u16::from_be_bytes([names[at], names[at + 1]])
+        })
+        .collect();
+    assert_eq!(ids, vec![256, 300, 301]);
+}
+
+#[test]
+fn i2_unknown_axis_preserves_previous_axis_range_and_output() {
+    let data = font_with(vec![(b"fvar", fvar(&AXES))]);
+    let font = Font::new(&data, 0).unwrap();
+    let input = unicodes().with_all_axes_pinned_to_default(&font).unwrap();
+    let before = input.axis_range(Tag::new(b"wght"));
+    let output_before = subset(&font, &input).unwrap();
+    assert!(
+        input
+            .with_axis_pinned_to_default(Tag::new(b"opsz"), &font)
+            .is_none()
+    );
+    assert_eq!(input.axis_range(Tag::new(b"wght")), before);
+    assert_eq!(input.axes().len(), 2);
+    assert_eq!(subset(&font, &input).unwrap(), output_before);
 }
 
 #[test]
