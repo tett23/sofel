@@ -105,7 +105,6 @@ pub(crate) fn subset(
     if !glyph_names {
         s.set_u16(0, 3);
     }
-    // The underline MVAR deltas are 0 at the default location.
     if let Some(r) = plan.var.user().get(&Tag::new(b"slnt")) {
         // hb_max (-90.f, hb_min (middle, 90.f))
         let m = if r.default <= 90.0 { r.default } else { 90.0 };

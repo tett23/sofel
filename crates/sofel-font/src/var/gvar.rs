@@ -525,7 +525,7 @@ pub fn apply_hb(
             }
         }
         if !all && !phantom_only {
-            infer_hb(&scratch.original, &mut scratch.pending, &scratch.explicit);
+            infer_hb(&scratch.original, &mut scratch.pending, &scratch.explicit)?;
         }
         flush = true;
     }
@@ -625,7 +625,15 @@ fn contour_ranges<T>(
     })
 }
 
-fn infer_hb(original: &[Point<f32>], deltas: &mut [Point<f32>], explicit: &[bool]) {
+/// Infer omitted contour deltas from the explicitly referenced points.
+pub fn infer_hb(
+    original: &[Point<f32>],
+    deltas: &mut [Point<f32>],
+    explicit: &[bool],
+) -> Result<(), GvarError> {
+    if original.len() != deltas.len() || original.len() != explicit.len() {
+        return Err(GvarError::InvalidData);
+    }
     for range in contour_ranges(original) {
         let indices: Vec<usize> = range.clone().filter(|&index| explicit[index]).collect();
         if indices.len() == 1 {
@@ -669,6 +677,7 @@ fn infer_hb(original: &[Point<f32>], deltas: &mut [Point<f32>], explicit: &[bool
             }
         }
     }
+    Ok(())
 }
 
 fn infer_hb_axis(value: f32, prev: f32, next: f32, prev_delta: f32, next_delta: f32) -> f32 {
@@ -1092,11 +1101,11 @@ mod tests {
                 ..Point::default()
             },
         ];
-        infer_hb(&hb_original, &mut hb_deltas, &[true, false, true]);
+        assert!(infer_hb(&hb_original, &mut hb_deltas, &[true, false, true]).is_ok());
         assert_eq!(hb_deltas[1].x, 15.0);
         hb_deltas.fill(Point::default());
         hb_deltas[1].x = 7.0;
-        infer_hb(&hb_original, &mut hb_deltas, &[false, true, false]);
+        assert!(infer_hb(&hb_original, &mut hb_deltas, &[false, true, false]).is_ok());
         assert_eq!(hb_deltas.map(|point| point.x), [7.0; 3]);
 
         let ft_original = [
@@ -1127,6 +1136,54 @@ mod tests {
         infer_ft(&ft_original, &mut ft_out, &[false, true, false]);
         assert_eq!(ft_out.map(|point| point.x), [7 << 16, 57 << 16, 107 << 16]);
     }
+}
+
+/// Apply HarfBuzz control-value deltas to big-endian FWORD entries.
+pub fn apply_cvar_hb(cvt: &mut [u8], cvar: &[u8], coords: &[i32]) -> Result<(), GvarError> {
+    let axes = u16::try_from(coords.len()).map_err(|_| GvarError::InvalidData)?;
+    let Some(store) = gvar::GlyphVariationData::from_cvar(cvar, axes) else {
+        return Ok(());
+    };
+    let mut sums = alloc::vec![0.0f32; cvt.len()/2];
+    let shared = store.shared_points();
+    for tuple in store.tuples() {
+        let tuple = tuple.ok_or(GvarError::InvalidData)?;
+        let Some(peak) = tuple.embedded_peak() else {
+            continue;
+        };
+        let peak = peak_values(peak).collect::<Vec<_>>();
+        let region = tuple_intermediate(&tuple);
+        let scalar = tuple_scalar_hb(
+            coords,
+            &peak,
+            region.as_ref().map(|(s, e)| (s.as_slice(), e.as_slice())),
+        );
+        if scalar == 0.0 {
+            continue;
+        }
+        let deltas = tuple
+            .cvt_deltas(sums.len(), shared)
+            .ok_or(GvarError::InvalidData)?;
+        if let Some(indices) = tuple.points().or(shared).filter(|p| !p.is_all()) {
+            for (i, d) in indices.iter().zip(deltas.iter()) {
+                if let Some(sum) = sums.get_mut(i as usize) {
+                    *sum += f32::from(d) * scalar;
+                }
+            }
+        } else {
+            for (sum, d) in sums.iter_mut().zip(deltas.iter()) {
+                *sum += f32::from(d) * scalar;
+            }
+        }
+    }
+    for (word, delta) in cvt.as_chunks_mut::<2>().0.iter_mut().zip(sums) {
+        let rounded = sofel_geom::float::hb_clamp_to_i32(sofel_geom::float::hb_roundf32(delta));
+        let [_, _, a, b] = rounded.to_be_bytes();
+        *word = i16::from_be_bytes(*word)
+            .wrapping_add(i16::from_be_bytes([a, b]))
+            .to_be_bytes();
+    }
+    Ok(())
 }
 
 /// Load the TrueType CVT in unscaled 26.6 font units, as tt_face_vary_cvt
