@@ -140,6 +140,15 @@ fn i4_i5_published_color_cards_match_solo_and_shaped_glyphs() {
             .split_once("</tr>")
             .unwrap()
             .0;
-        assert!(row.ends_with("<td>描画済み</td>"), "{id}");
+        assert_eq!(
+            row,
+            format!(
+                "<td>glyph {}</td><td>{}</td><td>{}</td><td>描画済み</td>",
+                sample.solo.value(),
+                sample.text,
+                sample.ppem
+            ),
+            "{id}"
+        );
     }
 }
