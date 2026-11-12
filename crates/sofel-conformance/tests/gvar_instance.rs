@@ -161,7 +161,7 @@ fn adr0061_i1_nondefault_gvar_composite_remains_unsupported() {
 }
 
 #[test]
-fn adr0061_i1_default_axis_pin_discards_inactive_mixed_tuples() {
+fn adr0061_i1_axis_pin_discards_inactive_mixed_tuples() {
     let path = paths::testdata().join("harfbuzz/test/subset/data/fonts/Roboto-Variable.ABC.ttf");
     let bytes = std::fs::read(&path).unwrap();
     let font = Font::new(&bytes, 0).unwrap();
@@ -174,10 +174,12 @@ fn adr0061_i1_default_axis_pin_discards_inactive_mixed_tuples() {
                 s.add(Tag::new(tag).to_u32());
             }
         });
-    for (axis, variation) in [(b"wght", "wght=400"), (b"wdth", "wdth=100")] {
-        let input = base
-            .with_axis_pinned_to_default(Tag::new(axis), &font)
-            .unwrap();
+    for (axis, value, variation) in [
+        (b"wght", 400.0, "wght=400"),
+        (b"wdth", 100.0, "wdth=100"),
+        (b"wght", 900.0, "wght=900"),
+    ] {
+        let input = base.with_axis_pinned(Tag::new(axis), value, &font).unwrap();
         let ours = subset(&font, &input).unwrap();
         assert!(
             Command::new(paths::hb_dump())

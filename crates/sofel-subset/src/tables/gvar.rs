@@ -231,8 +231,21 @@ fn pin_records(
                 .or_else(|| table.shared_tuple(tuple.shared_peak_index()?))
                 .ok_or(bad)?;
             let projected = project(peak)?;
-            if peak.axis(pin).ok_or(bad)? != 0 {
-                if pinned_coord != 0 && projected.iter().any(|&b| b != 0) {
+            let pin_peak = i32::from(peak.axis(pin).ok_or(bad)?);
+            if pin_peak != 0 {
+                let (start, end) = if let Some((start, end)) = tuple.intermediate() {
+                    (
+                        i32::from(start.axis(pin).ok_or(bad)?),
+                        i32::from(end.axis(pin).ok_or(bad)?),
+                    )
+                } else {
+                    (pin_peak.min(0), pin_peak.max(0))
+                };
+                let valid_region = start <= pin_peak && pin_peak <= end && !(start < 0 && end > 0);
+                let active = !valid_region
+                    || pinned_coord == pin_peak
+                    || (start < pinned_coord && pinned_coord < end);
+                if active && projected.iter().any(|&b| b != 0) {
                     return Err(SubsetError::Unsupported {
                         tag,
                         reason: "rebasing a gvar tuple shared by pinned and retained axes",

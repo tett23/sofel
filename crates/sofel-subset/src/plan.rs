@@ -366,7 +366,8 @@ impl Plan {
                 !drop.contains(tag.to_u32())
             });
             let varc_safe = !varc_retained || varc_unrelated_axis_change;
-            let simple_avar = identity_avar2
+            let simple_avar = (single_pin && drop.contains(Tag::new(b"avar").to_u32()))
+                || identity_avar2
                 || font.table(Tag::new(b"avar")).is_none_or(|data| {
                     sofel_font::read::avar::Avar::new(data)
                         .is_ok_and(|table| table.major_version() == 1 && norm.pinned_at_default)
