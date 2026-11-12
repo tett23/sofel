@@ -400,6 +400,8 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 ## WOFF と圧縮フォントの読み込み
 
+`sofel_woff::decode_woff2` は、Brotli の非圧縮ブロックに変換なしの表を格納した単一フェイスの WOFF2 を sfnt に戻す。CLI は外側の圧縮を展開した後に WOFF2 の署名を識別する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+
 `sofel_woff::decode_woff` は出力サイズの上限を受け取り、WOFF 1.0 の表を物理順に展開して sfnt を返す。フォントを読み込む CLI は gzip、UNIX compress（LZW）、bzip2 を先に展開してから WOFF の署名を検査する。検証器は WOFF の不正なフィールドか圧縮表の入力オフセットを報告する。bzip2 はブロックとメンバーの CRC を検査し、破損を検出した入力オフセットを報告する。gzip の破損はメンバーを含むコンテナ先頭で報告する。[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)
 
 ## BDF フェイス

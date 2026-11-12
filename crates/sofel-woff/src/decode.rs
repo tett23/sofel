@@ -20,7 +20,7 @@ type Decoded<T> = core::result::Result<T, DecodeError>;
 fn error(offset: usize, reason: &'static str) -> DecodeError {
     DecodeError { offset, reason }
 }
-fn word(bytes: &[u8], at: usize) -> Decoded<u32> {
+pub(super) fn word(bytes: &[u8], at: usize) -> Decoded<u32> {
     bytes
         .get(at..)
         .and_then(|s| s.first_chunk::<4>())

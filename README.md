@@ -167,7 +167,7 @@ HarfBuzzの `hb-subset` と同じオプションでサブセット化する（[A
 sofel-subset --font-file=Roboto.ttf --unicodes=41-5A -o out.ttf
 ```
 
-フォントを読むコマンド（`sofel-shape`、`sofel-render`、`sofel-paint`、`sofel-subset`、`sofel-validate`）は WOFF 1.0、gzip、UNIX compress（LZW）、bzip2で包んだ入力を署名から識別する。[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)
+フォントを読むコマンド（`sofel-shape`、`sofel-render`、`sofel-paint`、`sofel-subset`、`sofel-validate`）は WOFF 1.0、gzip、UNIX compress（LZW）、bzip2で包んだ入力を署名から識別する。`sofel-woff --format woff2` が書き出す単一フェイスの WOFF2 も読み込める。[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)
 
 ### `sofel-woff`
 
