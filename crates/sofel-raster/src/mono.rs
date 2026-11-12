@@ -474,3 +474,283 @@ impl ContourProfiles {
         self.profiles
     }
 }
+
+#[cfg(test)]
+mod command_tests {
+    use super::glyph_profiles;
+    use sofel_geom::{Command, Point};
+
+    #[test]
+    fn adr0064_i2_separate_contours_close_in_both_sweep_directions() {
+        let p = |x, y| Point { x, y };
+        let commands = [
+            Command::MoveTo(p(0, 0)),
+            Command::LineTo(p(0, 128)),
+            Command::LineTo(p(128, 128)),
+            Command::MoveTo(p(192, 192)),
+            Command::QuadTo(p(192, 320), p(320, 320)),
+            Command::CubicTo(p(320, 256), p(256, 192), p(192, 192)),
+        ];
+        for flipped in [false, true] {
+            let profiles = glyph_profiles(&commands, 64, (0, 0), 6, flipped);
+            assert_eq!(profiles.len(), 2);
+            for contour in profiles {
+                assert!(contour.iter().any(|p| p.up));
+                assert!(contour.iter().any(|p| !p.up));
+            }
+        }
+    }
+}
+
+fn glyph_profiles(
+    commands: &[sofel_geom::Command],
+    precision: i64,
+    origin: MonoPoint,
+    scanlines: usize,
+    flipped: bool,
+) -> alloc::vec::Vec<alloc::vec::Vec<Profile>> {
+    use sofel_geom::{Command, Point};
+    let transform = |p: Point| {
+        let x = (i64::from(p.x) - origin.0 * 64) * (precision / 64) - precision / 2;
+        let y = (i64::from(p.y) - origin.1 * 64) * (precision / 64) - precision / 2;
+        if flipped { (y, x) } else { (x, y) }
+    };
+    let mut contours = alloc::vec::Vec::new();
+    for commands in commands.chunk_by(|_, next| !matches!(next, Command::MoveTo(_))) {
+        let Some((Command::MoveTo(first), edges)) = commands.split_first() else {
+            continue;
+        };
+        let start = transform(*first);
+        let mut last = start;
+        let mut contour = ContourProfiles::new((0, scanlines as i64 - 1), precision);
+        for &command in edges {
+            let end = match command {
+                Command::LineTo(p) => {
+                    let end = transform(p);
+                    contour.edge(Edge::Line(last, end));
+                    end
+                }
+                Command::QuadTo(c, p) => {
+                    let end = transform(p);
+                    contour.edge(Edge::Curve(Arc::Quad([last, transform(c), end])));
+                    end
+                }
+                Command::CubicTo(c1, c2, p) => {
+                    let end = transform(p);
+                    contour.edge(Edge::Curve(Arc::Cubic([
+                        last,
+                        transform(c1),
+                        transform(c2),
+                        end,
+                    ])));
+                    end
+                }
+                Command::Close => break,
+                Command::MoveTo(_) => unreachable!(),
+            };
+            last = end;
+        }
+        contour.edge(Edge::Line(last, start));
+        let profiles = contour.finish(start.1);
+        if !profiles.is_empty() {
+            contours.push(profiles);
+        }
+    }
+    contours
+}
+
+#[cfg(test)]
+mod bitmap_tests {
+    use super::*;
+    use sofel_geom::{Pen, Point};
+
+    #[test]
+    fn adr0064_i2_render_square_to_packed_bitmap() {
+        for size in [7, 8, 9] {
+            let mut raster = super::super::Rasterizer::new();
+            raster.move_to(Point { x: 0, y: 0 });
+            for (x, y) in [(0, size), (size, size), (size, 0)] {
+                raster.line_to(Point {
+                    x: x * 64,
+                    y: y * 64,
+                });
+            }
+            let b = raster.render_mono(MonoOptions::default(), None).unwrap();
+            assert_eq!(
+                (b.bounds.left, b.bounds.top, b.bounds.width, b.bounds.rows),
+                (0, size, size as u32, size as u32)
+            );
+            for row in b.pixels.chunks_exact(b.stride) {
+                assert_eq!(
+                    row,
+                    match size {
+                        7 => &[0xfe][..],
+                        8 => &[0xff],
+                        _ => &[0xff, 0x80],
+                    }
+                );
+            }
+        }
+    }
+}
+
+/// Outline flags used by FreeType's monochrome scan converter.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct MonoOptions {
+    /// Use 12-bit scan precision for small images.
+    pub high_precision: bool,
+    /// Skip the horizontal pass.
+    pub single_pass: bool,
+    /// Suppress dropout pixels.
+    pub ignore_dropouts: bool,
+    /// Select the closest pixel for narrow spans.
+    pub smart_dropouts: bool,
+    /// Include narrow stubs even without an overshoot.
+    pub include_stubs: bool,
+}
+
+/// One bit per pixel, most significant bit first and top row first.
+pub struct MonoBitmap<'a> {
+    /// Origin and logical dimensions.
+    pub bounds: PixelBox,
+    /// Bytes per row without alignment padding.
+    pub stride: usize,
+    /// Packed scanlines.
+    pub pixels: &'a [u8],
+}
+
+impl super::Rasterizer {
+    /// Draw the recorded outline using FreeType monochrome scan conversion.
+    ///
+    /// # Errors
+    /// Returns an error for bitmap bounds outside the supported range.
+    pub fn render_mono(
+        &mut self,
+        options: MonoOptions,
+        ppem: Option<(u16, u16)>,
+    ) -> Result<MonoBitmap<'_>, super::RasterError> {
+        let (x0, y0, x1, y1) = super::control_box(&self.commands).unwrap_or_default();
+        let bounds = mono_pixel_box(x0 as i32, y0 as i32, x1 as i32, y1 as i32);
+        if super::too_large(
+            bounds.left.into(),
+            bounds.top.into(),
+            bounds.width.into(),
+            bounds.rows.into(),
+            ppem,
+        ) {
+            return Err(super::RasterError::TooLarge);
+        }
+        let width = bounds.width as usize;
+        let rows = bounds.rows as usize;
+        let stride = width.div_ceil(8);
+        let len = stride
+            .checked_mul(rows)
+            .ok_or(super::RasterError::TooLarge)?;
+        self.pixels.clear();
+        self.pixels
+            .try_reserve(len)
+            .map_err(|_| super::RasterError::TooLarge)?;
+        self.pixels.resize(len, 0);
+        let origin = (
+            i64::from(bounds.left),
+            i64::from(bounds.top) - i64::from(bounds.rows),
+        );
+        let precision = if options.high_precision && width + rows < 258 {
+            4096
+        } else {
+            64
+        };
+        for flipped in [false, true] {
+            if flipped && options.single_pass {
+                break;
+            }
+            let (height, extent) = if flipped {
+                (width, rows)
+            } else {
+                (rows, width)
+            };
+            let contours = glyph_profiles(&self.commands, precision, origin, height, flipped);
+            let mut crossings = alloc::vec![(alloc::vec::Vec::new(),alloc::vec::Vec::new());height];
+            for (ci, contour) in contours.iter().enumerate() {
+                for (pi, profile) in contour.iter().enumerate() {
+                    for &(row, x) in &profile.samples {
+                        let (up, down) = &mut crossings[row as usize];
+                        (if profile.up { up } else { down }).push((x, ci, pi));
+                    }
+                }
+            }
+            for (row, (mut up, mut down)) in crossings.into_iter().enumerate() {
+                up.sort_by_key(|v| v.0);
+                down.sort_by_key(|v| v.0);
+                let address = |pos: usize| {
+                    let (x, y) = if flipped { (row, pos) } else { (pos, row) };
+                    ((rows - 1 - y) * stride + x / 8, 0x80u8 >> (x % 8))
+                };
+                let mut drops = alloc::vec::Vec::new();
+                for ((a, ci, pi), (b, cj, pj)) in up.into_iter().zip(down) {
+                    let (left, right) = (a.min(b), a.max(b));
+                    if (left + precision - 1).div_euclid(precision) <= right.div_euclid(precision) {
+                        if flipped {
+                            for v in [left, right] {
+                                if v % precision == 0
+                                    && (0..extent as i64).contains(&(v / precision))
+                                {
+                                    let (index, mask) = address((v / precision) as usize);
+                                    self.pixels[index] |= mask;
+                                }
+                            }
+                        } else {
+                            let begin = (rows - 1 - row) * stride;
+                            paint_span(
+                                &mut self.pixels[begin..begin + stride],
+                                width,
+                                left,
+                                right,
+                                precision,
+                            );
+                        }
+                    } else if !options.ignore_dropouts {
+                        let profiles = &contours[ci];
+                        let profile = &profiles[pi];
+                        if !options.include_stubs && ci == cj {
+                            let half = precision / 2;
+                            let wide = right - left >= half;
+                            let upper = (pi + 1) % profiles.len() == pj
+                                && profile.samples.last().is_some_and(|p| p.0 == row as i64);
+                            let lower = (pj + 1) % profiles.len() == pi
+                                && profile.samples.first().is_some_and(|p| p.0 == row as i64);
+                            if (upper && !(wide && profile.end_y.rem_euclid(precision) >= half))
+                                || (lower
+                                    && !(wide && (-profile.start_y).rem_euclid(precision) >= half))
+                            {
+                                continue;
+                            }
+                        }
+                        drops.push((left, right));
+                    }
+                }
+                for (left, right) in drops {
+                    if let Some(pos) = dropout_pixel(
+                        left,
+                        right,
+                        precision,
+                        options.smart_dropouts,
+                        extent,
+                        |pos| {
+                            let (i, m) = address(pos);
+                            self.pixels[i] & m != 0
+                        },
+                    ) {
+                        let (i, m) = address(pos);
+                        self.pixels[i] |= m;
+                    }
+                }
+            }
+        }
+        Ok(MonoBitmap {
+            bounds,
+            stride,
+            pixels: &self.pixels,
+        })
+    }
+}
