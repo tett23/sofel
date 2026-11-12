@@ -207,3 +207,15 @@ fn adr0064_i1_tinos_italic_matches_freetype_in_every_target() {
         }
     }
 }
+
+#[test]
+fn adr0064_i1_large_stix_glyph_uses_its_full_twilight_zone() {
+    check_sizes(
+        "harfbuzz/test/subset/data/fonts/STIXTwoMath-Regular.ttf".into(),
+        Some(2257..2258),
+        16..=16,
+        0x32c3_c8b2_99a5_1497,
+        HintTarget::Mono,
+        false,
+    );
+}

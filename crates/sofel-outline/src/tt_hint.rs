@@ -435,6 +435,7 @@ pub(crate) struct Interpreter {
     composite: bool,
     loop_count: u16,
     points: [alloc::vec::Vec<HintPoint>; 2],
+    twilight_limit: usize,
     reference: [u16; 3],
     delta_base: u16,
     delta_shift: u8,
@@ -472,6 +473,7 @@ impl Interpreter {
                 tricky: false,
             },
             points: Default::default(),
+            twilight_limit: 0,
             reference: [0; 3],
             loop_count: 1,
             backward_compatibility: 0,
@@ -679,11 +681,11 @@ impl Interpreter {
     ) -> Result<(Self, usize), Error> {
         let declared = usize::from(maxima.max_stack_elements);
         let limit = declared + (declared / 2).max(128);
-        let twilight = (usize::from(maxima.max_twilight_points) + 4)
-            .min(65535)
-            .min(cvt.len().saturating_mul(2).max(30));
+        let twilight_limit = (usize::from(maxima.max_twilight_points) + 4).min(65535);
+        let twilight = twilight_limit.min(cvt.len().saturating_mul(2).max(30));
         let mut vm = Self::new(maxima.max_storage, cvt, scale);
         vm.engine = engine;
+        vm.twilight_limit = twilight_limit;
         vm.instruction_def_limit = Some(maxima.max_instruction_defs);
         vm.blend_coords
             .extend(coords.iter().map(|coord| coord.0 >> 2));
@@ -745,6 +747,12 @@ impl Interpreter {
         if self.subpixel() {
             glyph.backward_compatibility = (self.instruction_control & 4) ^ 4;
         }
+        let twilight = points
+            .len()
+            .saturating_add(self.cvt.len())
+            .saturating_mul(2)
+            .max(30);
+        glyph.points[0].resize(twilight.min(self.twilight_limit), HintPoint::default());
         glyph.points[1] = points;
         let outline_len = contour_ends.last().map_or(0, |end| end.saturating_add(1));
         if let Some([left, right, top, bottom]) = glyph.points[1].get_mut(outline_len..) {
