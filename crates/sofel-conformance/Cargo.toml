@@ -21,6 +21,7 @@ sofel-cli = { path = "../sofel-cli" }
 sofel-subset = { path = "../sofel-subset" }
 sofel-write = { path = "../sofel-write" }
 sofel-bitmap = { path = "../sofel-bitmap" }
+sofel-svg = { path = "../sofel-svg" }
 sofel-color = { path = "../sofel-color" }
 sofel-unicode = { path = "../sofel-unicode" }
 sofel-shape = { path = "../sofel-shape" }

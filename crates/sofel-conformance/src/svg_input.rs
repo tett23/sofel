@@ -1,4 +1,6 @@
 //! OT-SVG input observations for ADR 0074.
+#[path = "../../../conformance/svg/color_svg.rs"]
+mod color_svg;
 mod references;
 
 use sofel_cli::glyph::{ColorGlyph, render_color};
@@ -15,11 +17,21 @@ const GZIP: &[u8] = include_bytes!("../../../conformance/svg/two-glyphs.svg.gz")
 /// Returns the measurement for a supported OT-SVG observation.
 pub fn observe(feature: &str, case: &str, observation: &str) -> Option<Result<(), String>> {
     match (feature, case, observation) {
+        ("in-document", "plain" | "gzip" | "shared-first" | "shared-second", "target-element") => {
+            let glyph = if case == "shared-second" { 2 } else { 1 };
+            Some(check_selection(
+                if case == "gzip" { GZIP } else { DOCUMENT },
+                glyph,
+                glyph,
+            ))
+        }
         ("in-document", "gzip", "decompressed-bytes") => Some(check_document(GZIP, DOCUMENT)),
         ("in-document", "plain" | "gzip" | "shared-first" | "shared-second", "rgba") => {
             Some(document_pixels(case))
         }
         ("in-style", _, _) => style_pixel(case, observation),
+        ("in-gradient", "color-svg-19", "cli-rgba") => Some(real_cli(19)),
+        ("in-gradient", "color-svg-26", "cli-rgba") => Some(real_cli(26)),
         ("in-gradient", _, _) => gradient_observation(case, observation),
         ("in-reference", _, _) => references::reference_observation(case, observation),
         ("in-restrictions", _, _) => references::restriction_observation(case, observation),
@@ -73,6 +85,42 @@ fn glyph_font(stored: &[u8], last: u16) -> Result<Vec<u8>, String> {
         (Tag::new(b"loca"), &loca),
     ])
     .map_err(|e| format!("building SVG fixture: {e:?}"))
+}
+
+// These two IDs identify different, unique shapes in the shared fixture.
+// Reading the common SVG table bytes alone cannot distinguish the IDs.
+fn check_selection(stored: &[u8], glyph: u32, expected: u32) -> Result<(), String> {
+    use sofel_svg::ShapeKind;
+    let bytes = glyph_font(stored, 2)?;
+    let font = Font::new(&bytes, 0).map_err(|e| format!("reading SVG fixture: {e:?}"))?;
+    let selected = sofel_color::svg_document(&font, glyph)
+        .ok_or_else(|| format!("glyph {glyph}: no SVG document"))?;
+    let expanded = sofel_svg::document(selected.data, 4096)
+        .map_err(|e| format!("glyph {glyph}: invalid SVG document: {e:?}"))?;
+    let scene = sofel_svg::parse_shapes(&expanded, glyph)
+        .map_err(|e| format!("glyph {glyph}: parsing SVG element: {e:?}"))?;
+    let wanted = match expected {
+        1 => ShapeKind::Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 4.0,
+            height: 4.0,
+        },
+        2 => ShapeKind::Circle {
+            cx: 6.0,
+            cy: 6.0,
+            r: 1.0,
+        },
+        _ => return Err(format!("no reference shape for glyph {expected}")),
+    };
+    let actual: Vec<_> = scene.shapes.iter().map(|shape| shape.kind).collect();
+    if actual == [wanted] {
+        Ok(())
+    } else {
+        Err(format!(
+            "glyph {glyph}: expected element shape {wanted:?}, got {actual:?}"
+        ))
+    }
 }
 
 fn check_document(stored: &[u8], expected: &[u8]) -> Result<(), String> {
@@ -216,6 +264,30 @@ fn style_pixel(case: &str, name: &str) -> Option<Result<(), String>> {
     )
 }
 
+fn real_cli(glyph: u32) -> Result<(), String> {
+    let font = crate::paths::testdata().join("extra-fonts/fonts/color-svg.ttf");
+    if !font.is_file() {
+        return Err("missing fixed font extra-fonts/fonts/color-svg.ttf".into());
+    }
+    let args = [
+        "--ppem".into(),
+        "48".into(),
+        "--color".into(),
+        "--glyph".into(),
+        glyph.to_string().into(),
+        font.into_os_string(),
+    ];
+    let mut output = Vec::new();
+    let mut errors = Vec::new();
+    let exit = sofel_cli::render::run(&args, &mut output, &mut errors);
+    if exit != 0 {
+        return Err(format!(
+            "color-svg glyph {glyph}: sofel-render exited {exit}"
+        ));
+    }
+    color_svg::check_cli_pixels(glyph, &output)
+}
+
 type Sample = (i32, i32, [u8; 4]);
 
 fn check_samples(image: &BgraImage, samples: &[Sample]) -> Result<(), String> {
@@ -288,7 +360,7 @@ mod tests {
     #[test]
     fn i2_svg_observations_do_not_promote_bytes_to_pixels() {
         assert!(observe("in-document", "gzip", "decompressed-bytes").is_some());
-        assert!(observe("in-document", "gzip", "target-element").is_none());
+        assert!(observe("in-document", "gzip", "unlisted").is_none());
     }
 
     #[test]
@@ -325,5 +397,29 @@ mod tests {
         image.left = 2;
         image.pixels[2] = 59;
         assert!(check_samples(&image, &anchors).is_err());
+    }
+}
+#[cfg(test)]
+mod selection_tests {
+    use super::*;
+    #[test]
+    fn i2_svg_selection_rejects_missing_and_adjacent_shapes() {
+        let selected =
+            br##"<svg><defs><linearGradient id="g"><stop stop-color="red"/></linearGradient></defs>
+            <g id="glyph1"><rect width="4" height="4" fill="url(#g)"/></g>
+            <g id="glyph2"><circle cx="6" cy="6" r="1" fill="url(#g)"/></g></svg>"##;
+        assert_eq!(check_selection(selected, 1, 1), Ok(()));
+        assert_eq!(check_selection(selected, 2, 2), Ok(()));
+        assert!(check_selection(selected, 2, 1).is_err());
+        assert!(check_selection(b"<svg/>", 1, 1).is_err());
+    }
+}
+#[cfg(test)]
+mod real_glyph_tests {
+    use super::*;
+    #[test]
+    fn i2_real_glyph_rejects_missing_pixels_and_gray_fallback() {
+        assert!(color_svg::check_cli_pixels(19, b"P5\n1 1\n255\n\x80").is_err());
+        assert!(color_svg::check_cli_pixels(26, b"P7\nENDHDR\n").is_err());
     }
 }
