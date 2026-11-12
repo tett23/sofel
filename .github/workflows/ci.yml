@@ -222,6 +222,21 @@ jobs:
         env:
           SOFEL_FONTS_OFFLINE: ${{ steps.extra_fonts.outputs.cache-hit == 'true' && '1' || '0' }}
         run: sh scripts/fetch-fonts.sh
+      # sofel ADR 0069: render the same local gallery and keep the image.
+      - name: Render font gallery
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          SOFEL_TESTDATA_OFFLINE: '1'
+          SOFEL_FONTS_OFFLINE: '1'
+        run: sh scripts/render-font-gallery.sh
+      - name: Upload font gallery
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: font-gallery-${{ github.sha }}
+          path: target/font-gallery/
+          if-no-files-found: error
+          retention-days: 14
       # docs/adr/0019: the UCD files, pinned by SHA-256 in ucd.lock.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
