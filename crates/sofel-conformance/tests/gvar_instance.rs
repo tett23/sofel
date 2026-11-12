@@ -457,14 +457,19 @@ fn adr0061_i1_restricted_gvar_axis_matches_harfbuzz() {
             .join(name);
         let data = std::fs::read(&path).unwrap();
         let font = Font::new(&data, 0).unwrap();
+        let drops = if name == "NotoSans-VF.abc.ttf" {
+            ""
+        } else {
+            "GDEF,GPOS,GSUB,STAT"
+        };
         let output =
             std::env::temp_dir().join(format!("sofel-gvar-range-{}.ttf", std::process::id()));
         for (min, default, max) in [(200.0, 400.0, 650.0), (450.0, 500.0, 700.0)] {
             let input = Input::new()
                 .map_set(SetKind::Unicodes, |s| s.add_range(0, 0x10ffff))
                 .map_set(SetKind::DropTables, |s| {
-                    for tag in [b"GDEF", b"GPOS", b"GSUB", b"STAT"] {
-                        s.add(Tag::new(tag).to_u32());
+                    for tag in drops.split_terminator(',') {
+                        s.add(Tag::new(tag.as_bytes().try_into().unwrap()).to_u32());
                     }
                 })
                 .with_axis_range(
@@ -481,7 +486,7 @@ fn adr0061_i1_restricted_gvar_axis_matches_harfbuzz() {
                     .arg("--subset")
                     .arg(format!("--font-file={}", path.display()))
                     .arg("--unicodes=*")
-                    .arg("--drop-tables+=GDEF,GPOS,GSUB,STAT")
+                    .args((!drops.is_empty()).then(|| format!("--drop-tables+={drops}")))
                     .arg(format!("--variations=wght={min}:{default}:{max}"))
                     .arg(format!("--output-file={}", output.display()))
                     .status()

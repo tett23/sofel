@@ -311,7 +311,14 @@ impl Plan {
         let needs_rebase = |tag: &&[u8; 4]| {
             let handled = match *tag {
                 b"GSUB" | b"GPOS" | b"GDEF" | b"BASE" => {
-                    norm.all_axes_pinned
+                    let static_table = font.table(Tag::new(tag)).is_some_and(|data| match *tag {
+                        b"GSUB" | b"GPOS" => sofel_font::read::layout::LayoutTable::new(data)
+                            .is_ok_and(|t| t.feature_variations_offset().unwrap_or(0) == 0),
+                        b"GDEF" => sofel_font::read::gdef::Gdef::new(data)
+                            .is_ok_and(|t| t.item_var_store_offset().unwrap_or(0) == 0),
+                        _ => false,
+                    });
+                    (norm.all_axes_pinned || static_table)
                         && !input
                             .set(SetKind::NoSubsetTables)
                             .contains(Tag::new(tag).to_u32())
