@@ -208,4 +208,6 @@ sofel_unicode::Script::from_raw_tag C represents the four script bytes directly 
 sofel_png::* Embedded PNG decoding is exposed through the C bitmap layout and draw functions.
 sofel_inflate::* Bounded decompression is an implementation detail of the C bitmap drawing path.
 sofel_svg::document The C paint commands expose the expanded SVG document.
+sofel_read::aat_lookup::* Zero-copy AAT substitution lookups used by the C shaping API; C reads the source bytes with sofel_font_table.
+sofel_read::trak::* Zero-copy AAT tracking views used by the C shaping API; C reads the source bytes with sofel_font_table.
 sofel_woff::encode ADR 0070 exposes encoding through the Rust API and the standalone sofel-woff command.

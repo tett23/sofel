@@ -231,3 +231,27 @@ fn rasterizers_are_reusable() {
     curvy(&mut r);
     assert_eq!(r.render(opts()).unwrap().pixels, &a[..]);
 }
+
+#[test]
+fn i2_render_mode_harmony_separates_horizontal_and_vertical_subpixels() {
+    use sofel_raster::LcdMode;
+    let mut raster = Rasterizer::new();
+    rect(&mut raster, 0, 0, 64, 64);
+    let horizontal = raster.render_harmony(LcdMode::Horizontal, opts()).unwrap();
+    assert_eq!(
+        (
+            horizontal.left,
+            horizontal.top,
+            horizontal.width,
+            horizontal.rows
+        ),
+        (-1, 1, 9, 1)
+    );
+    assert_eq!(horizontal.pixels, &[0, 0, 84, 172, 255, 172, 84, 0, 0]);
+    let vertical = raster.render_harmony(LcdMode::Vertical, opts()).unwrap();
+    assert_eq!(
+        (vertical.left, vertical.top, vertical.width, vertical.rows),
+        (0, 2, 1, 9)
+    );
+    assert_eq!(vertical.pixels, &[0, 0, 84, 172, 255, 172, 84, 0, 0]);
+}
