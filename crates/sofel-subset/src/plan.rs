@@ -272,7 +272,7 @@ impl Plan {
         let flags = input.flags();
         let drop = input.set(SetKind::DropTables);
         // normalize_axes_location
-        let norm = instance::normalize(font, input.axes());
+        let mut norm = instance::normalize(font, input.axes());
         let other_variation_tags = [
             b"gvar", b"GVAR", b"HVAR", b"VVAR", b"MVAR", b"cvar", b"CFF2", b"GDEF", b"GSUB",
             b"GPOS", b"BASE", b"MATH", b"COLR", b"STAT",
@@ -287,18 +287,29 @@ impl Plan {
                 })
             })
         });
+        let identity_avar2 = norm.avar2
+            && font.table(Tag::new(b"CFF2")).is_none()
+            && (norm.user.len() == 1 || norm.user.values().all(|r| r.min == r.max))
+            && font.table(Tag::new(b"avar")).is_some_and(|data| {
+                crate::tables::avar::is_empty_identity_v2(data, norm.axis_tags.len())
+            });
+        let avar2_range = identity_avar2 && norm.user.values().any(|r| r.min < r.max);
+        let single_pin = norm.user.len() == 1 && norm.user.values().all(|r| r.min == r.max);
         let needs_rebase = |tag: &&[u8; 4]| {
             (!inert_gvar || (**tag != *b"gvar" && **tag != *b"GVAR"))
+                && !((avar2_range || single_pin) && **tag == *b"gvar")
                 && font.table(Tag::new(tag)).is_some()
         };
-        let no_source_other_variation_data = !other_variation_tags.iter().any(needs_rebase);
+        let no_other_varc_rebase = !other_variation_tags.iter().any(|tag| {
+            needs_rebase(tag) && (**tag != *b"gvar" || !drop.contains(Tag::new(tag).to_u32()))
+        });
         let varc_unrelated_axis_change = if norm.user.len() == 1
-            && (norm.pinned_at_default || no_source_other_variation_data)
+            && (norm.pinned_at_default || no_other_varc_rebase)
         {
             let axes = instance::axis_infos(font);
             axes.iter().enumerate().any(|(index, info)| {
                 norm.user.get(&info.tag).is_some_and(|range| {
-                    no_source_other_variation_data
+                    no_other_varc_rebase
                         || (range.min == range.default && range.default == range.max)
                 }) && u16::try_from(index).ok().is_some_and(|index| {
                     font.table(Tag::new(b"VARC"))
@@ -309,11 +320,16 @@ impl Plan {
             false
         };
         if !norm.user.is_empty() {
-            if norm.avar2 {
+            if norm.avar2 && !identity_avar2 {
                 return Err(SubsetError::Unsupported {
                     tag: Tag::new(b"avar"),
                     reason: "pinning the axes of avar version 2 (deferred by ADR 0022)",
                 });
+            }
+            if avar2_range {
+                // An avar2 restriction stays in the output mapping. Only
+                // self-contained pins apply deltas to the source outlines.
+                norm.normalized_coords.clear();
             }
             let varc_tag = Tag::new(b"VARC");
             let varc_retained = font.table(varc_tag).is_some() && !drop.contains(varc_tag.to_u32());
@@ -328,14 +344,15 @@ impl Plan {
                 !drop.contains(tag.to_u32())
             });
             let varc_safe = !varc_retained || varc_unrelated_axis_change;
-            let simple_avar = font.table(Tag::new(b"avar")).is_none_or(|data| {
-                sofel_font::read::avar::Avar::new(data)
-                    .is_ok_and(|table| table.major_version() == 1 && norm.pinned_at_default)
-                    && norm
-                        .user
-                        .values()
-                        .all(|range| range.min == range.default && range.default == range.max)
-            });
+            let simple_avar = identity_avar2
+                || font.table(Tag::new(b"avar")).is_none_or(|data| {
+                    sofel_font::read::avar::Avar::new(data)
+                        .is_ok_and(|table| table.major_version() == 1 && norm.pinned_at_default)
+                        && norm
+                            .user
+                            .values()
+                            .all(|range| range.min == range.default && range.default == range.max)
+                });
             let metadata_only = no_other_variation_data && varc_safe && simple_avar;
             let gvar_full_pin = norm.all_axes_pinned
                 && font.table(Tag::new(b"gvar")).is_some()

@@ -1163,9 +1163,8 @@ fn parse_instancing_spec(arg: &str) -> Result<Option<Vec<AxisSpec>>, String> {
 /// `Failed parsing glyph name: '...'` for a glyph name the font does not
 /// have (outside `--glyphs-file`), HarfBuzz's message for an axis the
 /// font does not have (or `*=drop` on a font without axes) and a range
-/// with the minimum above the maximum. For now, any `--variations` other
-/// than pinning axes to their defaults (deferred by ADR 0022) also gives
-/// an error.
+/// with the minimum above the maximum. The subset plan checks whether the
+/// requested axis changes can be applied to the retained font tables.
 ///
 /// A glyph name is looked up as `hb_font_glyph_from_string` does with
 /// HarfBuzz's OpenType functions: `post` names (versions 1 and 2), then
@@ -1261,29 +1260,13 @@ fn apply_axis_spec(input: Input, spec: &AxisSpec, font: &Font<'_>) -> Result<Inp
             .with_all_axes_pinned_to_default(font)
             .ok_or_else(|| "Failed pinning all axes to default.".to_string());
     };
-    let next = match spec.value {
+    match spec.value {
         AxisValue::Drop => input.with_axis_pinned_to_default(tag, font),
         AxisValue::Range { min, default, max } => {
             input.with_axis_range(tag, min, max, default, font)
         }
     }
-    .ok_or_else(|| not_in_fvar(tag))?;
-    // Only pinning to the default is implemented; HarfBuzz's set_axis_range
-    // gives the same input for a value equal to the default.
-    let pinned = next.axis_range(tag).is_some_and(|r| {
-        let default = input
-            .with_axis_pinned_to_default(tag, font)
-            .and_then(|i| i.axis_range(tag));
-        Some(r) == default
-    });
-    if pinned {
-        Ok(next)
-    } else {
-        Err(format!(
-            "instancing '{}' other than to its default is not supported yet (deferred by ADR 0022)",
-            name(tag)
-        ))
-    }
+    .ok_or_else(|| not_in_fvar(tag))
 }
 
 /// The [`Prepared`] value of `font` when the options ask for

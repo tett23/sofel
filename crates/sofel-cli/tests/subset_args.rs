@@ -728,11 +728,24 @@ fn resolve_variations() {
         axes(&["--variations=wght=400:400:400"]).unwrap(),
         BTreeMap::from([(Tag::new(b"wght"), point(400.0))])
     );
-    // Other locations and ranges wait for the instancing ADR.
-    for v in ["wght=300", "wght=300:600", "wdth=drop,wght=500"] {
-        let e = axes(&[&format!("--variations={v}")]).unwrap_err();
-        assert!(e.contains("deferred by ADR 0022"), "{v}: {e}");
-    }
+    assert_eq!(
+        axes(&["--variations=wdth=drop,wght=500"]).unwrap(),
+        BTreeMap::from([
+            (Tag::new(b"wdth"), point(100.0)),
+            (Tag::new(b"wght"), point(500.0))
+        ])
+    );
+    assert_eq!(
+        axes(&["--variations=wght=300:600"]).unwrap(),
+        BTreeMap::from([(
+            Tag::new(b"wght"),
+            sofel_subset::AxisRange {
+                min: 300.0,
+                default: 400.0,
+                max: 600.0
+            }
+        )])
+    );
     assert_eq!(
         axes(&["--variations=opsz=drop"]).unwrap_err(),
         "Cannot pin axis: 'opsz', not present in fvar"
