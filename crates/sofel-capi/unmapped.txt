@@ -207,6 +207,7 @@ sofel_shape::ShapePlan::variations_index_for C creates a plan with sofel_shape_p
 sofel_color::RawPaintGraph::* The reusable raw paint table view; C reads the bytes with sofel_font_table.
 sofel_color::FtPaintGraph::* The location-resolved raw COLR tree; the C paint API exposes the walked commands.
 sofel_unicode::Script::from_raw_tag C represents the four script bytes directly as a big-endian uint32_t tag.
+sofel_raster::BgraImage::paint_bitmap Rust caller-owned transformed bitmap surface; C renders the sampled glyph with sofel_render_color_glyph (ADR 0066).
 sofel_raster::blend_sampled Rust closure-based gradient blending into a caller-owned BGRA surface; the C ABI does not expose a raster surface handle (ADR 0072).
 sofel_svg::parse_shapes Rust view of the rect/circle SVG subset; the C ABI exposes the original document through sofel_svg_document (ADR 0072).
 sofel_svg::parse_glyph Rust glyph scene with inherited paint and clipping for the renderer; C can retrieve the original document with sofel_svg_document (ADR 0074).

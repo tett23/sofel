@@ -108,6 +108,8 @@ sofel render --ppem 48 --text-file sample.txt font.ttf > sample.pgm
 
 1グリフをヒンティングなしで描き、PGM（P5、白地に黒）を標準出力に書く（[ADR 0012](docs/adr/0012-antialiased-rasterizer.md)）。FreeTypeの `FT_Render_Glyph` と同じ画像になる。そのppemの埋め込みビットマップがあれば、FreeTypeと同じく `--no-bitmap` が無いかぎりそれを書く（32bitはPAM。[ADR 0023](docs/adr/0023-color-glyphs.md)）。`--color` では、COLRv0、輪郭でクリップした COLRv1 の線形・放射グラデーションと、矩形、円、パスを単色や線形・放射グラデーションで塗る OT-SVG のグリフをPAMで書く（[ADR 0072](docs/adr/0072-color-gallery-acceptance.md)）。COLRv0の色はFreeTypeの `FT_LOAD_COLOR` と同じで、`--palette N` でパレットを選ぶ。OT-SVG では同じ文書内の図形を `use` で再利用し、`clipPath` で塗る範囲を指定できる（[ADR 0074](docs/adr/0074-svg-feature-conformance.md)）。
 
+要求した ppem に一致するストライクがなくても、`--color` は sbix と CBDT の PNG を双線形補間して描く。`--no-bitmap` はこれらの画像を除く。
+
 CLI のレイヤー選択と描画制御は独自実装で、画素合成には `sofel-raster` を使う（[ADR 0055](docs/adr/0055-rewrite-cli-color-rendering.md)）。
 
 ```sh

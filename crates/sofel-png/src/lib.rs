@@ -32,6 +32,31 @@ type Result<T> = core::result::Result<T, Error>;
 /// # Errors
 /// Returns an error for corrupt data, unsupported critical chunks or excess output.
 pub fn decode(input: &[u8], max_pixels: usize) -> Result<Image> {
+    decode_with(input, max_pixels, |color, alpha| {
+        let t = u32::from(color)
+            .saturating_mul(u32::from(alpha))
+            .saturating_add(128);
+        u8::try_from(t.saturating_add(t >> 8) >> 8).unwrap_or_default()
+    })
+}
+
+/// Decode pixels with HarfBuzz raster's premultiplication for image painting.
+///
+/// # Errors
+/// Returns the same validation and resource errors as [`decode`].
+pub fn decode_for_paint(input: &[u8], max_pixels: usize) -> Result<Image> {
+    decode_with(input, max_pixels, |color, alpha| {
+        u8::try_from(
+            u32::from(color)
+                .saturating_mul(u32::from(alpha))
+                .saturating_add(255)
+                >> 8,
+        )
+        .unwrap_or_default()
+    })
+}
+
+fn decode_with(input: &[u8], max_pixels: usize, premultiply: fn(u8, u8) -> u8) -> Result<Image> {
     let mut rest = input
         .strip_prefix(b"\x89PNG\r\n\x1a\n")
         .ok_or(Error::Invalid)?;
@@ -66,7 +91,9 @@ pub fn decode(input: &[u8], max_pixels: usize) -> Result<Image> {
             ended = true;
         }
         match tag {
-            b"IHDR" if header.is_none() => header = Some(Header::parse(data, max_pixels)?),
+            b"IHDR" if header.is_none() => {
+                header = Some(Header::parse(data, max_pixels, premultiply)?)
+            }
             b"PLTE" if !started && palette.is_none() && transparency.is_none() => {
                 let h = header.as_ref().ok_or(Error::Invalid)?;
                 if matches!(h.color, 0 | 4)
