@@ -789,6 +789,108 @@ impl Interpreter {
                     }
                     stack.truncate(first);
                 }
+                op @ (0x32 | 0x33) => {
+                    let count = usize::from(core::mem::replace(&mut self.loop_count, 1));
+                    let Some(first) = stack.len().checked_sub(count) else {
+                        continue;
+                    };
+                    let (zone, reference) = if op == 0x32 {
+                        (self.zones[1], self.reference[2])
+                    } else {
+                        (self.zones[0], self.reference[1])
+                    };
+                    let base = self.points[usize::from(zone)]
+                        .get(usize::from(reference))
+                        .copied();
+                    if let Some(base) = base {
+                        let axis = usize::from(self.freedom[0] == 0);
+                        let delta = if self.projection[axis] != 0 {
+                            base.current[axis].wrapping_sub(base.original[axis])
+                        } else {
+                            0
+                        };
+                        for &id in stack[first..].iter().rev() {
+                            if let Some(p) =
+                                self.points[usize::from(self.zones[2])].get_mut(id as u32 as usize)
+                            {
+                                p.current[axis] = p.current[axis].wrapping_add(delta);
+                                p.touched[axis] = true;
+                            }
+                        }
+                    }
+                    stack.truncate(first);
+                }
+                op @ (0x34 | 0x35) => {
+                    let contour = usize::from(stack.pop().ok_or(Error::StackUnderflow)? as u16);
+                    let target = usize::from(self.zones[2]);
+                    let (start, end) = if target == 0 && contour == 0 {
+                        (0, self.points[0].len())
+                    } else if target == 1 && contour < self.contour_ends.len() {
+                        (
+                            contour
+                                .checked_sub(1)
+                                .map_or(0, |i| self.contour_ends[i] + 1),
+                            self.contour_ends[contour] + 1,
+                        )
+                    } else {
+                        continue;
+                    };
+                    let (zone, reference) = if op == 0x34 {
+                        (self.zones[1], self.reference[2])
+                    } else {
+                        (self.zones[0], self.reference[1])
+                    };
+                    let Some(base) = self.points[usize::from(zone)]
+                        .get(usize::from(reference))
+                        .copied()
+                    else {
+                        continue;
+                    };
+                    let axis = usize::from(self.freedom[0] == 0);
+                    let delta = if self.projection[axis] != 0 {
+                        base.current[axis].wrapping_sub(base.original[axis])
+                    } else {
+                        0
+                    };
+                    let points = self.points[target]
+                        .get_mut(start..end)
+                        .ok_or(Error::InvalidReference)?;
+                    for (offset, p) in points.iter_mut().enumerate() {
+                        if usize::from(zone) != target || offset + start != usize::from(reference) {
+                            p.current[axis] = p.current[axis].wrapping_add(delta);
+                            p.touched[axis] = true;
+                        }
+                    }
+                }
+                op @ (0x3a | 0x3b) => {
+                    let distance = stack.pop().ok_or(Error::StackUnderflow)?;
+                    let index = stack.pop().ok_or(Error::StackUnderflow)? as u16;
+                    let [z0, z1, _] = self.zones.map(usize::from);
+                    let Some(base) = self.points[z0].get(usize::from(self.reference[0])).copied()
+                    else {
+                        continue;
+                    };
+                    let Some(p) = self.points[z1].get_mut(usize::from(index)) else {
+                        continue;
+                    };
+                    let axis = usize::from(self.projection[0] == 0);
+                    if z1 == 0 {
+                        p.original = base.original;
+                        if self.freedom[axis] != 0 {
+                            p.original[axis] = base.original[axis].wrapping_add(distance);
+                        }
+                        p.current = p.original;
+                    }
+                    if self.freedom[axis] != 0 {
+                        p.current[axis] = base.current[axis].wrapping_add(distance);
+                        p.touched[axis] = true;
+                    }
+                    self.reference[1] = self.reference[0];
+                    self.reference[2] = index;
+                    if op == 0x3b {
+                        self.reference[0] = index;
+                    }
+                }
                 op @ (0x2e | 0x2f) => {
                     let index = stack.pop().ok_or(Error::StackUnderflow)? as u16;
                     let zone = usize::from(self.zones[0]);
