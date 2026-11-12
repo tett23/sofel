@@ -238,6 +238,7 @@ sofel_read::trak::* Zero-copy AAT tracking views used by the C shaping API; C re
 sofel_read::ltag::* Zero-copy language tag ranges used by C name lookup and shaping; C reads the bytes with sofel_font_table.
 sofel_woff::encode ADR 0070 exposes encoding through the Rust API and the standalone sofel-woff command.
 sofel_raster::ColorGradient::* The C entry point sofel_render_color_glyph evaluates the glyph's gradient on the color surface.
+sofel_raster::composite_pixel The C entry point sofel_render_color_glyph composites the recorded COLRv1 groups.
 sofel_raster::PaintMask::* The C entry point sofel_render_color_glyph applies outline coverage to the color surface.
 sofel_read::feat::* A validated feature-name view used by the C shaping functions; C reads the table with sofel_font_table.
 sofel_woff::decode_woff The font input commands reconstruct WOFF tables into an sfnt buffer.

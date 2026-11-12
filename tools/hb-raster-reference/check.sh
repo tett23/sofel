@@ -15,3 +15,10 @@ for entry in cff-19 cff-26 variable-92 variable-93; do
   "$helper" "$font" "${entry#*-}" 48 > "$tmp/$entry.bgra"
   cmp "$tmp/$entry.bgra" "$reference/$entry.bgra"
 done
+
+glyph=120
+while [ "$glyph" -le 147 ]; do
+  "$helper" "$data/harfbuzz/test/api/fonts/test_glyphs-glyf_colr_1_variable.ttf" "$glyph" 48
+  glyph=$((glyph + 1))
+done > "$tmp/composites.bgra"
+cmp "$tmp/composites.bgra" "$reference/composites.bgra"

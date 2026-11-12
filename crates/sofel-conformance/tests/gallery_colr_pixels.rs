@@ -8,7 +8,7 @@ use sofel_outline::{Outlines, Scratch};
 use sofel_raster::{BgraImage, Rasterizer};
 use sofel_read::GlyphId;
 
-fn compare(font_path: &str, glyph: u32, reference: &[u8]) {
+fn compare(font_path: &str, glyph: u32, reference: &[u8], require_color: bool) {
     let bytes = std::fs::read(paths::testdata().join(font_path)).unwrap();
     let font = Font::new(&bytes, 0).unwrap();
     let outlines = Outlines::new(font.default_instance());
@@ -43,13 +43,15 @@ fn compare(font_path: &str, glyph: u32, reference: &[u8]) {
         header
     );
     assert_eq!(image.pixels.len(), pixels.len());
-    assert!(
-        pixels
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .any(|p| p[3] != 0 && (p[0] != p[1] || p[1] != p[2]))
-    );
+    if require_color {
+        assert!(
+            pixels
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .any(|p| p[3] != 0 && (p[0] != p[1] || p[1] != p[2]))
+        );
+    }
     for (i, (a, b)) in image
         .pixels
         .as_chunks::<4>()
@@ -76,6 +78,7 @@ fn i1_color_cff_19() {
         CFF,
         19,
         include_bytes!("../../../conformance/color-raster/cff-19.bgra"),
+        true,
     );
 }
 #[test]
@@ -84,6 +87,7 @@ fn i1_color_cff_26() {
         CFF,
         26,
         include_bytes!("../../../conformance/color-raster/cff-26.bgra"),
+        true,
     );
 }
 #[test]
@@ -92,6 +96,7 @@ fn i1_variable_colr_92() {
         VARIABLE,
         92,
         include_bytes!("../../../conformance/color-raster/variable-92.bgra"),
+        true,
     );
 }
 #[test]
@@ -100,5 +105,30 @@ fn i1_variable_colr_93() {
         VARIABLE,
         93,
         include_bytes!("../../../conformance/color-raster/variable-93.bgra"),
+        true,
     );
+}
+
+#[test]
+fn i2_colr_pixels_all_28_composite_modes() {
+    let mut references: &[u8] = include_bytes!("../../../conformance/color-raster/composites.bgra");
+    for glyph in 120..=147 {
+        let header = references.iter().position(|b| *b == b'\n').unwrap();
+        let fields: Vec<_> = std::str::from_utf8(references.get(..header).unwrap())
+            .unwrap()
+            .split_whitespace()
+            .collect();
+        let width: usize = fields.get(3).unwrap().parse().unwrap();
+        let rows: usize = fields.get(4).unwrap().parse().unwrap();
+        let (image, rest) = references.split_at(
+            header
+                .checked_add(1)
+                .unwrap()
+                .checked_add(width.checked_mul(rows).unwrap().checked_mul(4).unwrap())
+                .unwrap(),
+        );
+        compare(VARIABLE, glyph, image, false);
+        references = rest;
+    }
+    assert!(references.is_empty());
 }
