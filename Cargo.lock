@@ -66,6 +66,7 @@ dependencies = [
  "sofel-read",
  "sofel-shape",
  "sofel-subset",
+ "sofel-svg",
  "sofel-unicode",
  "sofel-write",
 ]
