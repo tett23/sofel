@@ -37,9 +37,13 @@ fn collect_variation_index(
     Some(())
 }
 
-/// VariationIndex references in MathConstants, glyph values, and retained
-/// MathKern records. MathVariants references remain unsupported.
-pub(crate) fn retained_variation_indices(src: &[u8], glyphs: &RangeSet) -> Option<BTreeSet<u32>> {
+/// VariationIndex references in MathConstants, retained glyph values and
+/// MathKern records, and retained MathVariants assemblies.
+pub(crate) fn retained_variation_indices(
+    src: &[u8],
+    glyphs: &RangeSet,
+    cmap_glyphs: &RangeSet,
+) -> Option<BTreeSet<u32>> {
     let m = header(src)?;
     let k = constants(m.off16(4));
     let mut formats = BTreeSet::new();
@@ -102,6 +106,28 @@ pub(crate) fn retained_variation_indices(src: &[u8], glyphs: &RangeSet) -> Optio
                     &mut indices,
                 )?;
             }
+        }
+    }
+    let v = variants(m.off16(8));
+    let vert = usize::from(v.u16(6));
+    let horiz = usize::from(v.u16(8));
+    for (coverage_at, first, count) in [(2, 0, vert), (4, vert, horiz)] {
+        for (i, glyph) in coverage(v.off16(coverage_at))
+            .glyphs()
+            .into_iter()
+            .take(count)
+            .enumerate()
+        {
+            let at = first.saturating_add(i).saturating_mul(2).saturating_add(10);
+            let c = construction(v.off16(at));
+            let a = assembly(c.off16(0));
+            collect_variation_index(
+                src,
+                device(a.off16(2)),
+                cmap_glyphs.contains(glyph),
+                &mut formats,
+                &mut indices,
+            )?;
         }
     }
     if src

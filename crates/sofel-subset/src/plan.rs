@@ -596,6 +596,7 @@ impl Plan {
                     let Some(math_indices) = crate::tables::math::retained_variation_indices(
                         math_data,
                         &p.glyphset_mathed,
+                        &p.glyphset_cmaped,
                     ) else {
                         return Err(SubsetError::Unsupported {
                             tag: Tag::new(b"GDEF"),
