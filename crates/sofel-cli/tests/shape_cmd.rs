@@ -101,6 +101,20 @@ fn adr0063_i2_synthetic_vertical_shape_matches_harfbuzz() {
     let (code, out, err) = shape(
         &font,
         &[
+            "--shaper=fallback",
+            "--font-grade=0.1",
+            "--direction=ttb",
+            "--unicodes=61,62,63",
+        ],
+    );
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(
+        out.trim(),
+        "[gid1=0@-280,-1048+0,-1462|gid2=1@-307,-1156+0,-1462|gid3=2@-240,-1049+0,-1462]"
+    );
+    let (code, out, err) = shape(
+        &font,
+        &[
             "--font-bold=0.1",
             "--direction=ttb",
             "--show-extents",

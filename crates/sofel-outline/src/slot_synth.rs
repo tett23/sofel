@@ -30,6 +30,11 @@ pub struct SlotMetrics {
 }
 
 impl Scratch {
+    /// Whether FreeType fills the left side of this outline's directed edges.
+    pub fn fill_left(&self) -> bool {
+        true_type_orientation(&self.points, &self.ends) == Some(false)
+    }
+
     /// Apply `FT_GlyphSlot_Embolden` to the loaded outline and slot metrics.
     /// `x_ppem` and `y_ppem` are the slot's current pixel sizes.
     pub fn embolden_slot(
@@ -72,7 +77,8 @@ fn true_type_orientation(points: &[Point], ends: &[usize]) -> Option<bool> {
         let mut previous = points[last];
         for &current in &points[first..=last] {
             area = area.wrapping_add(
-                i64::from(current.y - previous.y) * i64::from(current.x + previous.x),
+                (i64::from(current.y) - i64::from(previous.y))
+                    .wrapping_mul(i64::from(current.x) + i64::from(previous.x)),
             );
             previous = current;
         }

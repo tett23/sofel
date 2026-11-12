@@ -721,6 +721,20 @@ static void test_raster(const sofel_font_t *font) {
   }
   draw_shape(r);
   {
+    const uint8_t square[1] = {255};
+    uint8_t sdf[25] = {0};
+    CHECK(sofel_bitmap_sdf(3, 7, 1, 1, square, 1, 2, NULL, 0, &len, box) == SOFEL_ERROR_BUFFER_TOO_SMALL);
+    CHECK(len == 25 && box[0] == 1 && box[1] == 9 && box[2] == 5 && box[3] == 5);
+    CHECK(sofel_bitmap_sdf(3, 7, 1, 1, square, 1, 2, sdf, sizeof sdf, &len, box) == SOFEL_OK);
+    CHECK(sdf[12] == 128 && sdf[0] == 0);
+    CHECK(sofel_bitmap_sdf(3, 7, 2, 1, square, 1, 2, sdf, sizeof sdf, &len, box) == SOFEL_ERROR_INVALID_ARGUMENT);
+    CHECK(sofel_bitmap_sdf(3, 7, 1, 1, square, 1, 1, sdf, sizeof sdf, &len, box) == SOFEL_ERROR_INVALID_ARGUMENT);
+    uint8_t sdf_pixels[64];
+    uint32_t fill_left = 9;
+    CHECK(sofel_outline_fill_left(scratch, &fill_left) == SOFEL_OK && fill_left <= 1);
+    CHECK(sofel_rasterizer_render_outline_sdf_placed(r, 0, 8, 8, 8, 2, 0, sdf_pixels, 64,
+                                                     &len, box) == SOFEL_OK);
+    CHECK(len == 64 && box[2] == 8 && box[3] == 8);
     CHECK(sofel_rasterizer_render_mono(r, SOFEL_MONO_HIGH_PRECISION, 0, 0, NULL, 0, &len, box) ==
           SOFEL_ERROR_BUFFER_TOO_SMALL);
     CHECK(sofel_rasterizer_render_mono(r, SOFEL_MONO_HIGH_PRECISION, 0, 0, buf, sizeof buf, &len, box) == SOFEL_OK);

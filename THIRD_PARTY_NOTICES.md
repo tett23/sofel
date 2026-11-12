@@ -17,7 +17,7 @@ sofel ports algorithms and arithmetic from FreeType 2.15.0 (commit `37515cf56ba3
 | `sofel-read` | `src/cff/cffparse.c`, `src/cff/cfftoken.h`, `src/cff/cffload.c` (DICT parsing, INDEX access, charset, encoding, FDSelect, the blend vector and the predefined charsets and encodings), `src/base/ftcalc.c` (64-bit `FT_MulFix`, `FT_DivFix`, `FT_MulDiv`, `FT_RoundFix`, `FT_SqrtFixed`, `FT_Matrix_Check`), and the Adobe engine `src/psaux/psintrp.c`, `src/psaux/pshints.c`, `src/psaux/psstack.c`, `src/psaux/psfont.c`, `src/psaux/psft.c`, `src/psaux/psobjs.c` (`cff_random`), `src/psaux/cffdecode.c` (`cff_lookup_glyph_by_stdcharcode`) ([ADR 0021](docs/adr/0021-cff-outlines.md)); the Adobe files carry the patent license below |
 | `sofel-font` | `src/sfnt/ttmtx.c`, `src/sfnt/sfobjs.c` (the left side bearing for phantom point 1; the `FT_Face` values), `src/sfnt/ttload.c` (`tt_face_load_name`, `tt_face_load_post`), `src/sfnt/sfdriver.c` (the PostScript name, `sfnt_get_name_index`), `src/sfnt/ttpost.c`, `src/truetype/ttgload.c` (`TT_Get_VMetrics`); `src/cff/cffload.c`, `src/cff/cffobjs.c` (`cff_face_init`), `src/cff/cffdrivr.c` (CID, glyph names, PostScript font information) and `src/base/ftcalc.c` (`FT_Matrix_Multiply_Scaled`, `FT_Vector_Transform_Scaled`) ([ADR 0021](docs/adr/0021-cff-outlines.md)) |
 | `sofel-outline` | `src/truetype/ttgload.c`, `src/truetype/ttpload.c`, `src/base/ftoutln.c`; for CFF ([ADR 0021](docs/adr/0021-cff-outlines.md)) `src/cff/cffgload.c` (`cff_slot_load`) and the Adobe engine's builder callbacks `src/psaux/psft.c` and `src/psaux/psobjs.c` (`ps_builder_*`), which carry the patent license below |
-| `sofel-raster` | `src/raster/ftraster.c`, `src/smooth/ftgrays.c`, `src/smooth/ftsmooth.c`, `src/base/ftobjs.c`, `src/sfnt/ttcolr.c` (`tt_face_colr_blend_layer`, [ADR 0023](docs/adr/0023-color-glyphs.md)) |
+| `sofel-raster` | `src/sdf/ftsdf.c`, `src/sdf/ftbsdf.c`, `src/sdf/ftsdfcommon.c`, `src/base/ftcalc.c`, `src/raster/ftraster.c`, `src/smooth/ftgrays.c`, `src/smooth/ftsmooth.c`, `src/base/ftobjs.c`, `src/sfnt/ttcolr.c` (`tt_face_colr_blend_layer`, [ADR 0023](docs/adr/0023-color-glyphs.md)) |
 | `sofel-bitmap` | `src/sfnt/ttsbit.c` (`tt_face_load_sbit`, `tt_face_load_strike_metrics`, `tt_sbit_decoder_load_image`, `tt_sbit_decoder_load_bitmap`, `tt_face_load_sbix_image`), `src/sfnt/sfobjs.c` (the `available_sizes`), `src/sfnt/ttmtx.c` (`tt_face_get_metrics`), `src/base/ftobjs.c` (`FT_Match_Size`) ([ADR 0023](docs/adr/0023-color-glyphs.md)) |
 
 The FreeType License follows.
@@ -1687,3 +1687,51 @@ Copyright notices and complete license text from this fixed source:
    See the License for the specific language governing permissions and
    limitations under the License.
 ~~~~
+
+## bzip2
+
+The legacy block randomisation sequence is from bzip2 (randtable.c).
+
+```text
+--------------------------------------------------------------------------
+
+This program, "bzip2", the associated library "libbzip2", and all
+documentation, are copyright (C) 1996-2010 Julian R Seward.  All
+rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+
+2. The origin of this software must not be misrepresented; you must
+   not claim that you wrote the original software.  If you use this
+   software in a product, an acknowledgment in the product
+   documentation would be appreciated but is not required.
+
+3. Altered source versions must be plainly marked as such, and must
+   not be misrepresented as being the original software.
+
+4. The name of the author may not be used to endorse or promote
+   products derived from this software without specific prior written
+   permission.
+
+THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
+OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
+GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Julian Seward, jseward@acm.org
+bzip2/libbzip2 version 1.1.0 of 6 September 2010
+
+--------------------------------------------------------------------------
+```

@@ -202,6 +202,57 @@ fn adr0063_i1_subfont_inherits_only_unset_functions_and_scales_parent_advance() 
     assert_eq!(glyphs(&result), [(B, 0)]);
     assert_eq!(advances(&result), [1554]);
     assert_eq!(child.horizontal_origin(B), Some((22, 13)));
+    let position = result.glyph_positions()[0];
+    assert_eq!((position.x_offset, position.y_offset), (-22, -13));
+}
+
+#[test]
+fn adr0063_i1_vertical_origin_is_computed_at_parent_scale() {
+    let data = make_font(false, vec![]);
+    let font = Font::new(&data, 0).unwrap();
+    let instance = font.default_instance();
+    let root = SubFont::new(Scale::unscaled(&font));
+    let mut child = root.child();
+    child.set_scale(Scale::new(
+        HbScale::new(2000, 1000, font.hb_units_per_em()),
+        0,
+        0,
+    ));
+    let plan = ShapePlan::new(instance, props(Direction::Ttb), &[]);
+    let shape_a = |font: &SubFont| {
+        let mut b = UnicodeBuffer::new();
+        b.push_utf8(b"a", 0, None);
+        shape_with_subfont(instance, font, &plan, b).glyph_positions()[0]
+    };
+    let plain = shape_a(&child);
+    assert_eq!(plain.x_offset, -510);
+    child.set_synthetic_bold(0., 0.1, false);
+    let bold = shape_a(&child);
+    assert_eq!(bold.y_advance, plain.y_advance + 100);
+    assert_eq!(bold.y_offset, plain.y_offset - 100);
+}
+
+#[test]
+fn adr0063_i1_unavailable_origin_uses_the_other_direction_for_one_batch() {
+    let data = make_font(false, vec![]);
+    let font = Font::new(&data, 0).unwrap();
+    let instance = font.default_instance();
+    let scale = Scale::unscaled(&font);
+    let mut child = SubFont::new(scale);
+    child.set_h_origin_func(|glyph| (glyph == A).then_some((11, 13)));
+    child.set_v_origin_func(|_| Some((30, 40)));
+    child.set_h_advance_func(|_| 100);
+    let mut buffer = UnicodeBuffer::new();
+    let text = format!("{}ba", "a".repeat(31));
+    buffer.push_utf8(text.as_bytes(), 0, None);
+    let plan = ShapePlan::new(instance, props(Direction::Ltr), &[]);
+    let output = shape_with_subfont(instance, &child, &plan, buffer);
+    let ascender = instance.scaled_h_extents(&scale.scale).ascender;
+    for pos in &output.glyph_positions()[..32] {
+        assert_eq!((pos.x_offset, pos.y_offset), (20, ascender - 40));
+    }
+    let last = output.glyph_positions()[32];
+    assert_eq!((last.x_offset, last.y_offset), (-11, -13));
 }
 
 #[test]
@@ -903,6 +954,174 @@ fn adr0060_i1_kerx6_word_width_and_tuple_offsets() {
             let glyphs = run(&data, "ab", Run::default());
             assert_eq!(advances(&glyphs), [490, 500], "{long} {tuple}");
             assert_eq!(glyphs.glyph_positions()[1].x_offset, -20);
+        }
+    }
+}
+
+fn kerx_ab_pair() -> Vec<u8> {
+    let mut pair = vec![0; 28];
+    pair[..4].copy_from_slice(&34u32.to_be_bytes());
+    pair[15] = 1;
+    pair.extend_from_slice(&[0, 1, 0, 2, 0xff, 0xd8]);
+    pair
+}
+
+#[test]
+fn adr0060_i1_i2_unknown_kerx_does_not_hide_valid_pair() {
+    let pair = kerx_ab_pair();
+    for length in [11, 12, 13] {
+        let mut unknown = [0; 12];
+        unknown[3] = length;
+        unknown[7] = 255;
+        for first in [true, false] {
+            let mut table = vec![0, 2, 0, 0, 0, 0, 0, 2];
+            for sub in if first {
+                [&unknown[..], &pair]
+            } else {
+                [&pair[..], &unknown]
+            } {
+                table.extend_from_slice(sub);
+            }
+            let data = make_font(false, vec![(b"kerx", table)]);
+            let glyphs = run(&data, "ab", Run::default());
+            let offset = if length == 12 { -20 } else { 0 };
+            assert_eq!(
+                glyphs.glyph_positions()[1].x_offset,
+                offset,
+                "{length} {first}"
+            );
+        }
+    }
+}
+
+#[test]
+fn adr0060_i2_kerx_v3_requires_valid_glyph_coverage() {
+    let mut table = vec![0, 3, 0, 0, 0, 0, 0, 1];
+    let pair = kerx_ab_pair();
+    table.extend_from_slice(&pair);
+    for (coverage, offset) in [
+        (&[][..], 0),
+        (&[0, 0, 0], 0),
+        (&[0, 0, 0, 0], -20),
+        (&[255; 4], -20),
+        (&[0, 0, 0, 4], 0),
+    ] {
+        let mut kerx = table.clone();
+        kerx.extend_from_slice(coverage);
+        let data = make_font(false, vec![(b"kerx", kerx)]);
+        let glyphs = run(&data, "ab", Run::default());
+        assert_eq!(glyphs.glyph_positions()[1].x_offset, offset, "{coverage:?}");
+    }
+}
+
+#[test]
+fn adr0060_i1_aat_selects_kerx_and_gpos_per_feature() {
+    for morx in [false, true] {
+        for feature in [b"kern", b"dist"] {
+            let gpos = simple_layout(&[feature], vec![lookup(2, 0, vec![pair_pos(1, 2, -50)])]);
+            let gsub = simple_layout(
+                &[b"liga"],
+                vec![lookup(1, 0, vec![single_subst(&[(1, 1)])])],
+            );
+            let mut kerx = vec![0, 2, 0, 0, 0, 0, 0, 1];
+            kerx.extend(kerx_ab_pair());
+            let mut tables = vec![(b"GPOS", gpos), (b"GSUB", gsub), (b"kerx", kerx)];
+            if morx {
+                tables.push((
+                    b"morx",
+                    [0x0002_0000u32, 1, 0, 16, 0, 0]
+                        .into_iter()
+                        .flat_map(u32::to_be_bytes)
+                        .collect(),
+                ));
+            }
+            let data = make_font(false, tables);
+            let glyphs = run(&data, "ab", Run::default());
+            let (adv, offset) = if morx {
+                ([490, 500], -20)
+            } else {
+                ([460, 520], 0)
+            };
+            assert_eq!(advances(&glyphs), adv);
+            assert_eq!(glyphs.glyph_positions()[1].x_offset, offset);
+            assert_eq!(glyphs.glyph_infos()[1].flags.0, 1);
+        }
+    }
+}
+
+#[test]
+fn adr0060_i1_trak_point_size_boundaries_with_and_without_stat() {
+    // Horizontal normal track: +60 at 8 pt, -20 at 16 pt.
+    let mut trak = vec![
+        0, 1, 0, 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 1, 0, 2, 0, 0, 0, 28, 0, 0, 0, 0, 0, 0, 0, 36,
+    ];
+    trak.extend((8i32 << 16).to_be_bytes());
+    trak.extend((16i32 << 16).to_be_bytes());
+    trak.extend(60i16.to_be_bytes());
+    trak.extend((-20i16).to_be_bytes());
+    for stat in [false, true] {
+        let mut tables = vec![(b"trak", trak.clone())];
+        if stat {
+            tables.push((
+                b"STAT",
+                vec![0, 1, 0, 1, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+            ));
+        }
+        let bytes = make_font(false, tables);
+        for (size, adjustment) in [
+            (0., 20),
+            (7.9, 60),
+            (8., 60),
+            (8.1, 59),
+            (15.9, -19),
+            (16., -20),
+            (16.1, -20),
+        ] {
+            let scale = Scale::new(HbScale::new(1000, 1000, 1000).with_ptem(size), 0, 0);
+            let result = run(
+                &bytes,
+                "ab",
+                Run {
+                    scale: Some(scale),
+                    ..Run::default()
+                },
+            );
+            let extra = if stat { adjustment } else { 0 };
+            assert_eq!(
+                advances(&result),
+                [510 + extra, 520 + extra],
+                "{stat} {size}"
+            );
+        }
+    }
+}
+
+#[test]
+fn adr0060_i1_aat_marks_the_whole_buffer_unsafe_to_concat() {
+    let morx = [0x0002_0000u32, 1, 0, 16, 0, 0]
+        .into_iter()
+        .flat_map(u32::to_be_bytes)
+        .collect::<Vec<_>>();
+    let mut kerx = vec![0, 2, 0, 0, 0, 0, 0, 1];
+    kerx.extend(kerx_ab_pair());
+    for table in [(b"morx", morx), (b"kerx", kerx)] {
+        let data = make_font(false, vec![table]);
+        for len in [1, 255, 256] {
+            let text = "a".repeat(len);
+            let g = run(
+                &data,
+                &text,
+                Run {
+                    flags: BufferFlags::PRODUCE_UNSAFE_TO_CONCAT,
+                    ..Run::default()
+                },
+            );
+            assert_eq!(g.glyph_infos().len(), len);
+            assert!(
+                g.glyph_infos()
+                    .iter()
+                    .all(|g| g.flags == GlyphFlags::UNSAFE_TO_CONCAT)
+            );
         }
     }
 }

@@ -218,8 +218,16 @@ typedef struct sofel_font sofel_font_t;
 sofel_font_t *sofel_font_create(const uint8_t *data, size_t len, uint32_t index,
                                 int32_t *error);
 
+/* Opens a shaping face with the same buffer lifetime as sofel_font_create.
+ * A missing or unreadable header uses 1000 units per em.
+ * Rust: sofel_font::Font::for_shaping
+ * HarfBuzz: hb_face_create, hb_face_get_upem
+ */
+sofel_font_t *sofel_font_create_for_shaping(const uint8_t *data, size_t len,
+                                            uint32_t index, int32_t *error);
+
 /*
- * Frees a font made by sofel_font_create. Does nothing for NULL.
+ * Frees a font made by either font constructor. Does nothing for NULL.
  *
  * Rust: none
  * HarfBuzz: hb_font_destroy, hb_face_destroy
@@ -1956,6 +1964,40 @@ int32_t sofel_rasterizer_render_mono(sofel_rasterizer_t *rasterizer, uint32_t fl
 int32_t sofel_rasterizer_render_mono_placed(sofel_rasterizer_t *rasterizer, int32_t left,
         int32_t top, uint32_t width, uint32_t rows, uint32_t flags, uint16_t x_ppem,
         uint16_t y_ppem, uint8_t *pixels, size_t capacity, size_t *len, int32_t *box);
+
+/*
+ * Convert tightly packed top-down grayscale coverage to a signed distance field.
+ * The spread is 2..32 pixels. Source length must equal width times rows.
+ * Inputs and outputs must not overlap. Buffer sizing follows sofel_rasterizer_render.
+ *
+ * Rust: sofel_raster::bitmap_sdf
+ * HarfBuzz: none
+ * FreeType: FT_Render_Glyph (FT_RENDER_MODE_SDF, bitmap input)
+ */
+int32_t sofel_bitmap_sdf(int32_t left, int32_t top, uint32_t width, uint32_t rows,
+                        const uint8_t *source, size_t source_len, uint8_t spread,
+                        uint8_t *pixels, size_t capacity, size_t *len, int32_t *box);
+
+/*
+ * Report whether the outline last loaded in scratch fills the left side
+ * of its directed edges.
+ * Rust: sofel_outline::Scratch::fill_left
+ * HarfBuzz: none
+ * FreeType: FT_Outline_Get_Orientation
+ */
+int32_t sofel_outline_fill_left(const sofel_outline_scratch_t *scratch, uint32_t *fill_left);
+
+/*
+ * Render a signed distance field from recorded outline commands already
+ * translated to the bottom-left corner of the padded bitmap. Spread is
+ * 2..32 pixels. Buffer sizing follows sofel_rasterizer_render.
+ * Rust: sofel_raster::Rasterizer::render_outline_sdf_placed
+ * HarfBuzz: none
+ * FreeType: FT_Render_Glyph (FT_RENDER_MODE_SDF, outline input)
+ */
+int32_t sofel_rasterizer_render_outline_sdf_placed(sofel_rasterizer_t *rasterizer,
+        int32_t left, int32_t top, uint32_t width, uint32_t rows, uint8_t spread,
+        uint32_t fill_left, uint8_t *pixels, size_t capacity, size_t *len, int32_t *box);
 
 /*
  * Renders into the given box (left, top, width, rows, as from

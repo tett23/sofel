@@ -471,3 +471,41 @@ fn i1_aat_complex_shaper_uses_dumber_only_when_morx_is_selected() {
     assert_eq!(selected(Direction::Ltr, b"Latn"), Shaper::Default);
     assert_eq!(selected(Direction::Ttb, b"Arab"), Shaper::Default);
 }
+
+#[test]
+fn adr0060_i2_morx_checks_coverage_and_counts_subtables_across_chains() {
+    let selected = |version: u16, counts: &[u32], coverage: &[u8]| {
+        let mut table = Vec::from(version.to_be_bytes());
+        table.extend_from_slice(&[0; 2]);
+        table.extend_from_slice(&(counts.len() as u32).to_be_bytes());
+        for &n in counts {
+            let mut chain = vec![0; 16];
+            chain[12..16].copy_from_slice(&n.to_be_bytes());
+            for _ in 0..n {
+                // Type 3 is reserved and has only the extended header.
+                chain.extend_from_slice(&[0, 0, 0, 12, 0, 0, 0, 3, 0, 0, 0, 0]);
+            }
+            chain.extend_from_slice(coverage);
+            let len = chain.len() as u32;
+            chain[4..8].copy_from_slice(&len.to_be_bytes());
+            table.extend_from_slice(&chain);
+        }
+        let bytes = support::font(10, &[(0x61, 1)], &[500], vec![(b"morx", table)]);
+        let font = Font::new(&bytes, 0).unwrap();
+        ShapePlan::new(
+            font.default_instance(),
+            props(Direction::Rtl, Some(b"Arab"), None),
+            &[],
+        )
+        .shaper()
+            == Shaper::Dumber
+    };
+    assert!(selected(2, &[512, 512], &[]));
+    assert!(!selected(2, &[512, 513], &[]));
+    for offset in [0u32, u32::MAX] {
+        assert!(selected(3, &[1], &offset.to_be_bytes()));
+    }
+    assert!(selected(3, &[1], &[0, 0, 0, 4, 0, 0]));
+    assert!(!selected(3, &[1], &[0, 0, 0, 4, 0]));
+    assert!(!selected(3, &[1], &[0, 0, 0]));
+}
