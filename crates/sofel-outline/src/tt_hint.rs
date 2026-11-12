@@ -209,6 +209,8 @@ impl EngineInfo {
 
 #[derive(Clone)]
 struct Interpreter {
+    ppem: [u16; 2],
+    point_size: i64,
     engine: EngineInfo,
     projection: [i64; 2],
     dual_projection: [i64; 2],
@@ -231,6 +233,8 @@ impl Interpreter {
                 variation: false,
                 symmetric_smoothing: false,
             },
+            ppem: [0; 2],
+            point_size: 0,
             projection: [16384, 0],
             dual_projection: [16384, 0],
             freedom: [16384, 0],
@@ -287,6 +291,16 @@ impl Interpreter {
                     });
                 }
                 0x0e => self.freedom = self.projection,
+                op @ (0x4b | 0x4c) => {
+                    let value = if op == 0x4c && self.engine.version == 40 {
+                        self.point_size
+                    } else if self.projection[0] == 0 {
+                        i64::from(self.ppem[1])
+                    } else {
+                        i64::from(self.ppem[0])
+                    };
+                    push(stack, value, max_stack)?;
+                }
                 0x88 => {
                     let selector = stack.last_mut().ok_or(Error::StackUnderflow)?;
                     *selector = self.engine.query(*selector);
@@ -676,4 +690,17 @@ fn adr0064_i1_getinfo_reports_only_requested_interpreter_features() {
     assert_eq!(vm.engine.query(32 | 64 | 4096), 4096);
     vm.engine.target = HintTarget::Mono;
     assert_eq!(vm.engine.query(32 | 64 | 4096), 0);
+}
+
+#[test]
+fn adr0064_i1_projected_ppem_and_point_size_use_driver_metrics() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    vm.ppem = [12, 18];
+    vm.point_size = 9 * 64;
+    let mut stack = alloc::vec::Vec::new();
+    vm.execute(&[0x4b, 0x00, 0x4b, 0x4c], &mut stack, 4)
+        .unwrap();
+    vm.engine.version = 35;
+    vm.execute(&[0x4c], &mut stack, 4).unwrap();
+    assert_eq!(stack, [12, 18, 576, 18]);
 }
