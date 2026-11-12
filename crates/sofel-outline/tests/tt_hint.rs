@@ -7,10 +7,19 @@ use std::path::PathBuf;
 
 #[test]
 fn adr0064_i1_roboto_mono_points_match_freetype() {
+    check_glyphs("Roboto-Regular.abc.ttf", 1..4, 0x0669_0115_d204_3f9e);
+}
+
+#[test]
+fn adr0064_i1_composite_mono_points_match_freetype() {
+    check_glyphs("Roboto-Regular.abcAE.ttf", 7..8, 0xdcd1cf4ee1a62177);
+}
+
+fn check_glyphs(name: &str, glyphs: core::ops::Range<u32>, expected: u64) {
     let dir = std::env::var_os("SOFEL_TESTDATA")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/testdata"));
-    let path = dir.join("harfbuzz/test/api/fonts/Roboto-Regular.abc.ttf");
+    let path = dir.join("harfbuzz/test/api/fonts").join(name);
     let Ok(data) = std::fs::read(&path) else {
         assert!(
             std::env::var_os("SOFEL_REQUIRE_TESTDATA").is_none(),
@@ -32,7 +41,7 @@ fn adr0064_i1_roboto_mono_points_match_freetype() {
         }
     };
     for ppem in 1..=96 {
-        for glyph in 1..font.num_glyphs() {
+        for glyph in glyphs.clone() {
             outlines
                 .load_truetype_mono(GlyphId(glyph), ppem, &mut scratch)
                 .unwrap();
@@ -45,5 +54,5 @@ fn adr0064_i1_roboto_mono_points_match_freetype() {
             }
         }
     }
-    assert_eq!(hash, 0x0669_0115_d204_3f9e);
+    assert_eq!(hash, expected);
 }
