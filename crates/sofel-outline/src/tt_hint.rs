@@ -261,6 +261,13 @@ struct HintPoint {
     on_curve: bool,
 }
 
+fn project([x, y]: [i64; 2], vector: [i64; 2]) -> i64 {
+    let dot = x
+        .wrapping_mul(vector[0])
+        .wrapping_add(y.wrapping_mul(vector[1]));
+    dot.wrapping_add(if dot < 0 { 0x1fff } else { 0x2000 }) >> 14
+}
+
 #[allow(clippy::arithmetic_side_effects)]
 fn interpolate_contour(points: &mut [HintPoint], axis: usize) {
     let Some(first) = points.iter().position(|p| p.touched[axis]) else {
@@ -1041,9 +1048,9 @@ impl Interpreter {
                         .and_then(|i| zone.get(i))
                         .map_or(0, |point| {
                             if op == 0x47 {
-                                point.original[usize::from(self.dual_projection[0] == 0)]
+                                project(point.original, self.dual_projection)
                             } else {
-                                point.current[usize::from(self.projection[0] == 0)]
+                                project(point.current, self.projection)
                             }
                         });
                 }
@@ -1866,4 +1873,18 @@ fn adr0064_i1_prep_retains_font_functions_and_reinitializes_storage() {
     assert_eq!(vm.storage, [0]);
     assert_eq!(vm.points[0].len(), 6);
     assert_eq!(limit, 128);
+}
+
+#[test]
+fn adr0064_i1_gc_projects_both_coordinates_for_diagonal_vectors() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    vm.points[1].push(HintPoint {
+        current: [64, 128],
+        original: [-64, -128],
+        ..HintPoint::default()
+    });
+    let mut stack = alloc::vec![3, 4];
+    vm.execute(&[0x0a, 0xb0, 0, 0x46, 0xb0, 0, 0x47], &mut stack, 2)
+        .unwrap();
+    assert_eq!(stack, [141, -141]);
 }
