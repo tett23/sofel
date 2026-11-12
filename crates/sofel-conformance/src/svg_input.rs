@@ -112,7 +112,7 @@ const BLUE: [u8; 4] = [0, 0, 255, 255];
 // At 32 ppem the SVG 8-by-8 viewBox maps one user unit to four pixels.
 // Pixel coordinates below denote columns and rows from the baseline origin,
 // increasing right/down. Their centers are (column + 0.5, row + 0.5).
-fn rendered(
+pub(crate) fn rendered(
     stored: &[u8],
     last: u16,
     glyph: u32,

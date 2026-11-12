@@ -123,6 +123,7 @@ fn observation(feature: &str, case: &str, name: &str) -> Option<Result<(), Strin
     match feature {
         "in-document" => document_observation(case, name)
             .or_else(|| sofel_conformance::svg_input::observe(feature, case, name)),
+        "in-geometry" => sofel_conformance::svg_geometry::observe(case, name),
         "out-page" => Some(sofel_conformance::svg_page::observe(case, name)),
         _ => sofel_conformance::svg_input::observe(feature, case, name),
     }
