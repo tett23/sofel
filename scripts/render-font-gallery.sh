@@ -23,12 +23,12 @@ sh scripts/fetch-testdata.sh
 sh scripts/fetch-fonts.sh
 cargo build --locked --release -p sofel-cli --bin sofel-render --bin sofel-shape
 
-ruby tools/font-gallery/test_inputs.rb
-ruby tools/font-gallery/test_pixels.rb
-ruby tools/font-gallery/test_sheet.rb
-ruby tools/font-gallery/gallery.rb "$staging" "$root/target/release"
+CARGO_TARGET_DIR="$root/target" cargo test --locked --release --manifest-path tools/font-gallery/Cargo.toml
+CARGO_TARGET_DIR="$root/target" cargo build --locked --release --manifest-path tools/font-gallery/Cargo.toml --bin font-gallery
+"$root/target/release/font-gallery" "$staging" "$root/target/release"
 
-ruby tools/font-gallery/test_sbix_gallery.rb "$staging" "$root/target/release"
+SOFEL_GALLERY_OUTPUT="$staging" SOFEL_GALLERY_BINARIES="$root/target/release" CARGO_TARGET_DIR="$root/target" \
+  cargo test --locked --release --manifest-path tools/font-gallery/Cargo.toml --test sbix_gallery -- --ignored
 
 test -s "$staging/index.html"
 test -s "$staging/all-samples.png"
