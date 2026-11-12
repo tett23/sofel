@@ -22,12 +22,13 @@ use sofel_font::{
     Font, GlyphExtents, GlyphNames, HbScale,
     var::{Location, Variation},
 };
-use sofel_outline::HbExtents;
+use sofel_outline::{HbExtents, HbOutlineCommand, Scratch};
 use sofel_shape::{
     BufferFlags, ClusterLevel, DiffFlags, Direction, Feature, GlyphBuffer, GlyphFlags, GlyphInfo,
-    GlyphPosition, Language, Scale, Script, SegmentProperties, SerializeFlags, SerializeFont,
-    SerializeFormat, ShapePlan, UnicodeBuffer, deserialize_glyphs, diff, serialize_glyphs_range,
-    serialize_unicode, shape_fallback, shape_with_extents,
+    GlyphOutline, GlyphPosition, Language, Scale, Script, SegmentProperties, SerializeFlags,
+    SerializeFont, SerializeFormat, ShapePlan, SubFont, UnicodeBuffer, deserialize_glyphs, diff,
+    serialize_glyphs_range, serialize_unicode, shape_fallback, shape_with_extents,
+    shape_with_subfont,
 };
 
 /// The usage text, printed for `--help` and after a usage error.
@@ -65,6 +66,9 @@ Font:
   --font-ppem=N[,M]             the pixels per em (default 0, none)
   --variations=LIST             comma-separated design coordinates
   --named-instance=N            zero-based named instance
+  --font-slant=R                synthetic slant ratio
+  --font-bold=X[,Y]             synthetic bold fractions
+  --font-grade=X[,Y]            synthetic bold without advance growth
   --font-funcs=NAME             accepted and ignored
   --face-loader=NAME            accepted and ignored
 
@@ -96,8 +100,7 @@ Exit status:
   0  the text was shaped
   1  the font or the text file cannot be read
   2  wrong usage, or an option sofel-shape does not support
-     (--font-ptem, --font-slant,
-     --font-bold, --font-grade, other shapers, ...)
+     (--font-ptem, other shapers, ...)
   3  shaping failed (--verify found a problem)
 ";
 
@@ -118,6 +121,9 @@ struct Options {
     ppem: (i32, i32),
     variations: Vec<Variation>,
     named_instance: Option<u16>,
+    slant: f32,
+    embolden: (f32, f32),
+    embolden_in_place: bool,
     text: Option<Vec<u8>>,
     /// `text_len`: `None` is -1 (`strlen`).
     text_len: Option<usize>,
@@ -166,6 +172,9 @@ impl Default for Options {
             ppem: (0, 0),
             variations: Vec::new(),
             named_instance: None,
+            slant: 0.0,
+            embolden: (0.0, 0.0),
+            embolden_in_place: false,
             text: None,
             text_len: None,
             text_file: None,
@@ -418,9 +427,9 @@ const OPTIONS: &[(&str, Option<u8>, Kind)] = &[
         }),
     ),
     ("font-ptem", None, Kind::Unsupported),
-    ("font-slant", None, Kind::Unsupported),
-    ("font-bold", None, Kind::Unsupported),
-    ("font-grade", None, Kind::Unsupported),
+    ("font-slant", None, Kind::Value(set_font_slant)),
+    ("font-bold", None, Kind::Value(set_font_bold)),
+    ("font-grade", None, Kind::Value(set_font_grade)),
     ("ft-load-flags", None, Kind::Unsupported),
     ("sub-font", None, Kind::Unsupported),
     ("font-file", None, Kind::Unsupported),
@@ -665,6 +674,34 @@ fn set_font_ppem(o: &mut Options, v: &[u8]) -> Result<(), String> {
     })?;
     o.ppem = (x, y.unwrap_or(x));
     Ok(())
+}
+
+#[allow(clippy::cast_possible_truncation)] // HarfBuzz parses double then stores float.
+fn set_font_slant(o: &mut Options, v: &[u8]) -> Result<(), String> {
+    let value = std::str::from_utf8(v)
+        .ok()
+        .and_then(|text| text.parse::<f64>().ok())
+        .ok_or_else(|| "--font-slant argument should be a number".to_string())?;
+    o.slant = value as f32;
+    Ok(())
+}
+
+#[allow(clippy::cast_possible_truncation)] // HarfBuzz parses double then stores float.
+fn set_font_embolden(o: &mut Options, v: &[u8], in_place: bool) -> Result<(), String> {
+    let (x, y) = scan_pair(v, scan_double).ok_or_else(|| {
+        "--font-bold/--font-grade argument should be one or two numbers".to_string()
+    })?;
+    o.embolden = (x as f32, y.unwrap_or(x) as f32);
+    o.embolden_in_place = in_place;
+    Ok(())
+}
+
+fn set_font_bold(o: &mut Options, v: &[u8]) -> Result<(), String> {
+    set_font_embolden(o, v, false)
+}
+
+fn set_font_grade(o: &mut Options, v: &[u8]) -> Result<(), String> {
+    set_font_embolden(o, v, true)
 }
 
 /// `sscanf (s, "%X%*[ ,]%X")` with one conversion `scan`: `None` when
@@ -924,6 +961,26 @@ impl SerializeFont for CliFont<'_, '_> {
     }
 }
 
+struct SyntheticSerializeFont<'a, 'p> {
+    base: &'a dyn SerializeFont,
+    subfont: &'p SubFont<'p>,
+}
+
+impl SerializeFont for SyntheticSerializeFont<'_, '_> {
+    fn glyph_name(&self, glyph: u32) -> Option<&[u8]> {
+        self.base.glyph_name(glyph)
+    }
+    fn glyph_extents(&self, glyph: u32) -> Option<GlyphExtents> {
+        self.subfont.glyph_extents(glyph)
+    }
+    fn glyph_from_name(&self, name: &[u8]) -> Option<u32> {
+        self.base.glyph_from_name(name)
+    }
+    fn nominal_glyph(&self, c: u32) -> Option<u32> {
+        self.base.nominal_glyph(c)
+    }
+}
+
 /// Everything a line is shaped with.
 struct Context<'a, 'b, 'c> {
     o: &'c Options,
@@ -932,6 +989,45 @@ struct Context<'a, 'b, 'c> {
     scale: Scale,
     format: Option<SerializeFormat>,
     flags: SerializeFlags,
+}
+
+fn synthetic_outline(
+    instance: sofel_font::var::Instance<'_, '_, '_, '_>,
+    scale: Scale,
+    extents: &HbExtents<'_, '_, '_>,
+    glyph: u32,
+) -> Option<GlyphOutline> {
+    let mut outline = GlyphOutline::new();
+    let mut emit = |command| match command {
+        HbOutlineCommand::MoveTo(p) => outline.move_to(p),
+        HbOutlineCommand::LineTo(p) => outline.line_to(p),
+        HbOutlineCommand::QuadTo(c, p) => outline.quad_to(c, p),
+        HbOutlineCommand::CubicTo(a, b, p) => outline.cubic_to(a, b, p),
+        HbOutlineCommand::Close => outline.close(),
+    };
+    if let Some(path) = extents.cff_glyph_path(GlyphId(glyph), &scale.scale) {
+        for command in path {
+            emit(command);
+        }
+    } else {
+        let mut scratch = Scratch::default();
+        sofel_outline::load(
+            instance,
+            GlyphId(glyph),
+            sofel_outline::Scale::Unscaled,
+            &mut scratch,
+        )
+        .ok()?;
+        let upem = f32::from(instance.font().hb_units_per_em());
+        scratch
+            .hb_decompose(
+                (scale.scale.x_scale() as f32) / upem,
+                (scale.scale.y_scale() as f32) / upem,
+                emit,
+            )
+            .ok()?;
+    }
+    Some(outline)
 }
 
 /// Runs the command with `args` (without the program name), reading the
@@ -1179,6 +1275,19 @@ fn line_output<'a>(
     };
     let shape_one = |b: UnicodeBuffer| -> GlyphBuffer {
         match o.shaper {
+            Shaper::Ot if o.slant != 0.0 || o.embolden != (0.0, 0.0) => {
+                let extents = HbExtents::new(instance);
+                let mut subfont = SubFont::new(cx.scale);
+                subfont.set_synthetic_slant(o.slant);
+                subfont.set_synthetic_bold(o.embolden.0, o.embolden.1, o.embolden_in_place);
+                subfont.set_glyph_extents_func(|glyph| {
+                    extents.scaled_glyph_extents(GlyphId(glyph), &cx.scale.scale)
+                });
+                subfont.set_outline_func(|glyph| {
+                    synthetic_outline(instance, cx.scale, &extents, glyph)
+                });
+                shape_with_subfont(instance, &subfont, plan, b)
+            }
             Shaper::Ot => shape_with_extents(instance, &cx.scale, plan, b, &|g| {
                 instance
                     .glyf_extents(g)
@@ -1299,6 +1408,33 @@ fn serialize_all(
     flags: SerializeFlags,
     out: &mut Vec<u8>,
 ) {
+    if cx.o.slant != 0.0 || cx.o.embolden != (0.0, 0.0) {
+        let instance = cx.font.font.instance(&cx.location);
+        let extents = HbExtents::new(instance);
+        let mut subfont = SubFont::new(cx.scale);
+        subfont.set_synthetic_slant(cx.o.slant);
+        subfont.set_synthetic_bold(cx.o.embolden.0, cx.o.embolden.1, cx.o.embolden_in_place);
+        subfont.set_glyph_extents_func(|glyph| {
+            extents.scaled_glyph_extents(GlyphId(glyph), &cx.scale.scale)
+        });
+        subfont.set_outline_func(|glyph| synthetic_outline(instance, cx.scale, &extents, glyph));
+        let font = SyntheticSerializeFont {
+            base: &cx.font,
+            subfont: &subfont,
+        };
+        serialize_all_with_font(glyphs, format, flags, out, &font);
+    } else {
+        serialize_all_with_font(glyphs, format, flags, out, &cx.font);
+    }
+}
+
+fn serialize_all_with_font(
+    glyphs: &GlyphBuffer,
+    format: SerializeFormat,
+    flags: SerializeFlags,
+    out: &mut Vec<u8>,
+    font: &dyn SerializeFont,
+) {
     let infos = glyphs.glyph_infos();
     let mut start = 0;
     while start < infos.len() {
@@ -1308,7 +1444,7 @@ fn serialize_all(
             start,
             infos.len(),
             32768,
-            &cx.font,
+            font,
             format,
             flags,
             out,
