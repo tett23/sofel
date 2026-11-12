@@ -351,6 +351,12 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 軸を指定しないGDEF 1.3のItemVariationStoreは、GPOSの `0x8000` がPairPos形式1・2のVariationIndexに限られ、MATHに `0x8000` がなく、GSUBのFeatureVariationsも保持しない場合、残すLigCaretListとPairPosのVariationIndexに合わせて行と領域を詰めて書く。参照が0件ならストアを除く。GPOSのPairPos以外かMATHに同じバイト列が現れる場合と、GPOSをコピーするときは、安全側に倒して拒否する。GDEFだけをコピーしてGPOSをサブセット化するとき、HarfBuzzと同じくGPOSの参照番号は詰めるが、GDEFのストアは元のバイト列のまま写す。壊れたGDEFはこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
 - レイアウトの表のうち、PairPos以外のGPOSかMATHに `0x8000` のバイト列があるGDEF、GSUBのFeatureVariationsを保持するGDEF、GSUBとGPOSの版1.2とGDEFの版1.4、FeatureVariationsの版1.1と形式1でない条件、65536を超えるグリフのフォントの24bitの形式も `Unsupported` とする。
 
+## Web フォントの書き出し（`sofel-woff`）
+
+`sofel_woff::encode` は単一フェイスの sfnt と出力形式を受け取り、WOFF または WOFF2 のバイト列を返す。表のタグ、範囲、パディング、チェックサムとフォント全体のチェックサムを検査する。コマンドは変換を終えてから出力先を開く。[ADR 0070](adr/0070-webfont-encoding.md)
+
+WOFF は表を元の物理順に並べ、zlib で短くなる表だけを圧縮する。WOFF2 は DSIG を除き、head.flags のビット11を立て、全表を変換なしで一つの Brotli ストリームに格納する。
+
 ## 道具
 
 - `sofel-paint [--face N] [--palette P] [--foreground RRGGBBAA] [--ppem P] [--exact] (--glyph G | --char U+XXXX) FILE`：カラーグリフの塗りの命令を、HarfBuzzの `test/api/test-paint.c` と同じ字下げのテキストで書く。数はCの `%.3g`、`--exact` では `f32` のビットの16進。カラーでないグリフは終了コード1、使い方の誤りは2（[ADR 0023](adr/0023-color-glyphs.md)）。

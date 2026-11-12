@@ -26,10 +26,6 @@
 
 すべての機能の実装が終わってから高速化に着手する。実装中は [ADR 0005](adr/0005-conformance-tests.md) に従って出力を照合し、[ADR 0006](adr/0006-performance-measurement.md) に従って性能を記録する。下記の性能差の原因調査と最適化は実装完了後に行う。
 
-## Web フォントの書き出し
-
-[ADR 0070](adr/0070-webfont-encoding.md) で、単一フェイスの sfnt とサブセット化した sfnt を WOFF または WOFF2 に書き出す機能を採択した。実装はこれから行う。
-
 ## 未実装の ADR
 
 ### [ADR 0022](adr/0022-subsetting.md): サブセット化

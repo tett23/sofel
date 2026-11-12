@@ -61,7 +61,7 @@ jobs:
       - name: Build the API documentation
         env:
           RUSTDOCFLAGS: -D warnings
-        run: cargo doc --no-deps -p sofel-geom -p sofel-unicode -p sofel-read -p sofel-font -p sofel-write -p sofel-subset -p sofel-outline -p sofel-bitmap -p sofel-color -p sofel-raster -p sofel-shape -p sofel-cli -p sofel-capi
+        run: cargo doc --no-deps -p sofel-woff -p sofel-geom -p sofel-unicode -p sofel-read -p sofel-font -p sofel-write -p sofel-subset -p sofel-outline -p sofel-bitmap -p sofel-color -p sofel-raster -p sofel-shape -p sofel-cli -p sofel-capi
       # docs/adr/0003, docs/adr/0008
       - name: Check crate dependencies
         run: sh scripts/check-deps.sh
@@ -207,6 +207,12 @@ jobs:
         run: |
           SOFEL_FT_PNG=1 sh tools/ft-dump/build.sh target/testdata/freetype "$RUNNER_TEMP/ft-dump-png"
           SOFEL_FT_DUMP="$RUNNER_TEMP/ft-dump-png" cargo test --release -p sofel-conformance --test freetype_sbit i1_sbit_png -- --ignored
+      - name: Compare WOFF and WOFF2 tables with FreeType
+        if: runner.os == 'Linux'
+        run: |
+          cargo build --release -p sofel-woff -p sofel-cli --bin sofel-woff --bin sofel-subset
+          sh tools/ft-dump/build.sh target/testdata/freetype "$RUNNER_TEMP/webfont-compare" --webfont-reference
+          sh tools/webfont-reference/check.sh target/testdata/harfbuzz/test/subset/data/fonts target/release/sofel-woff target/release/sofel-subset "$RUNNER_TEMP/webfont-compare"
       - id: extra_fonts
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
