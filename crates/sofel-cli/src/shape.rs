@@ -27,8 +27,8 @@ use sofel_shape::{
     BufferFlags, ClusterLevel, DiffFlags, Direction, Feature, GlyphBuffer, GlyphFlags, GlyphInfo,
     GlyphOutline, GlyphPosition, Language, Scale, Script, SegmentProperties, SerializeFlags,
     SerializeFont, SerializeFormat, ShapePlan, SubFont, UnicodeBuffer, deserialize_glyphs, diff,
-    serialize_glyphs_range, serialize_unicode, shape_fallback, shape_with_extents,
-    shape_with_subfont,
+    serialize_glyphs_range, serialize_unicode, shape_fallback, shape_fallback_with_subfont,
+    shape_with_extents, shape_with_subfont,
 };
 
 /// The usage text, printed for `--help` and after a usage error.
@@ -1295,7 +1295,7 @@ fn line_output<'a>(
     };
     let shape_one = |b: UnicodeBuffer| -> GlyphBuffer {
         match o.shaper {
-            Shaper::Ot if o.slant != 0.0 || o.embolden != (0.0, 0.0) => {
+            _ if o.slant != 0.0 || o.embolden != (0.0, 0.0) => {
                 let extents = HbExtents::new(instance);
                 let mut subfont = SubFont::new(cx.scale);
                 subfont.set_synthetic_slant(o.slant);
@@ -1306,7 +1306,10 @@ fn line_output<'a>(
                 subfont.set_outline_func(|glyph| {
                     synthetic_outline(instance, cx.scale, &extents, glyph)
                 });
-                shape_with_subfont(instance, &subfont, plan, b)
+                match o.shaper {
+                    Shaper::Ot => shape_with_subfont(instance, &subfont, plan, b),
+                    Shaper::Fallback => shape_fallback_with_subfont(instance, &subfont, &props, b),
+                }
             }
             Shaper::Ot => shape_with_extents(instance, &cx.scale, plan, b, &|g| {
                 instance
