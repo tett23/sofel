@@ -210,6 +210,8 @@ jobs:
       - name: Compare WOFF and WOFF2 tables with FreeType
         if: runner.os == 'Linux'
         run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libbrotli-dev
           cargo build --release -p sofel-woff -p sofel-cli --bin sofel-woff --bin sofel-subset
           sh tools/ft-dump/build.sh target/testdata/freetype "$RUNNER_TEMP/webfont-compare" --webfont-reference
           sh tools/webfont-reference/check.sh target/testdata/harfbuzz/test/subset/data/fonts target/release/sofel-woff target/release/sofel-subset "$RUNNER_TEMP/webfont-compare"
