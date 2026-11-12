@@ -266,6 +266,19 @@ fn i1_subset_instance_restricts_remaining_fvar_axis_range() {
 }
 
 #[test]
+fn i1_subset_instance_endpoint_pin_removes_outside_named_instance() {
+    let data = font_with(vec![(b"fvar", fvar(&AXES))]);
+    let font = Font::new(&data, 0).unwrap();
+    let input = unicodes().with_axis_pinned(Tag::new(b"wght"), 900.0, &font).unwrap();
+    let output = subset(&font, &input).unwrap();
+    let sfnt = Sfnt::new(&output).unwrap();
+    let fvar = sfnt.table(Tag::new(b"fvar")).unwrap();
+    assert_eq!(u16::from_be_bytes([fvar[8], fvar[9]]), 1);
+    assert_eq!(&fvar[16..20], b"wdth");
+    assert_eq!(u16::from_be_bytes([fvar[12], fvar[13]]), 0);
+}
+
+#[test]
 fn i1_subset_instance_keeps_unmodified_avar_map_of_remaining_axis() {
     let wght_map = [(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)];
     let wdth_map = [(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)];
