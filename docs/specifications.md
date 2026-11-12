@@ -65,7 +65,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   sofel-read        （sfnt、TTC、dfont）
   sofel-type1       （Type1、MM、CID、Type42、AFM、PFM）
   sofel-pfr
-  sofel-bitmapfont  （BDF、PCF、FNT、FON）
+  sofel-bitmapfont  （BDF、PCF、FNT、NE FON。PE FON は未実装）
 
 フォントを扱うクレート
   sofel-woff    → sofel-inflate, sofel-brotli
