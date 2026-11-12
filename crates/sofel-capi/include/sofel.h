@@ -1849,6 +1849,19 @@ int32_t sofel_rasterizer_render_filtered_lcd(sofel_rasterizer_t *rasterizer, uin
                                        uint8_t *pixels, size_t capacity, size_t *len, int32_t *box);
 
 /*
+ * Convert tightly packed top-down grayscale coverage to a signed distance field.
+ * The spread is 2..32 pixels. Source length must equal width times rows.
+ * Inputs and outputs must not overlap. Buffer sizing follows sofel_rasterizer_render.
+ *
+ * Rust: sofel_raster::bitmap_sdf
+ * HarfBuzz: none
+ * FreeType: FT_Render_Glyph (FT_RENDER_MODE_SDF, bitmap input)
+ */
+int32_t sofel_bitmap_sdf(int32_t left, int32_t top, uint32_t width, uint32_t rows,
+                        const uint8_t *source, size_t source_len, uint8_t spread,
+                        uint8_t *pixels, size_t capacity, size_t *len, int32_t *box);
+
+/*
  * Renders into the given box (left, top, width, rows, as from
  * sofel_pixel_box) an outline recorded already moved by the box's shift
  * (and multiplied by 4 after the move when `overlap` is nonzero). The

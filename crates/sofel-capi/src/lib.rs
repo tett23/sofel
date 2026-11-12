@@ -2787,6 +2787,60 @@ impl BitmapOut<'_> {
     }
 }
 
+/// Compute an SDF from tightly packed, top-down grayscale coverage.
+///
+/// # Safety
+///
+/// The source must be readable for `source_len` bytes or NULL with zero
+/// length. Outputs must be disjoint from the input and each other and
+/// satisfy the requirements of [`sofel_rasterizer_render`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_bitmap_sdf(
+    left: i32,
+    top: i32,
+    width: u32,
+    rows: u32,
+    source: *const u8,
+    source_len: usize,
+    spread: u8,
+    pixels: *mut u8,
+    capacity: usize,
+    len: *mut usize,
+    box_: *mut i32,
+) -> i32 {
+    // SAFETY: the caller supplies valid, disjoint buffers.
+    let (input, pixels, len, b) = unsafe {
+        (
+            if source_len == 0 {
+                Some(&[][..])
+            } else {
+                bytes(source, source_len)
+            },
+            out_array(pixels, capacity),
+            w(len),
+            ints::<4>(box_),
+        )
+    };
+    status((|| {
+        let out = BitmapOut { pixels, len, b };
+        out.check()?;
+        let bitmap = Bitmap {
+            left,
+            top,
+            width,
+            rows,
+            pixels: some(input)?,
+        };
+        let mut buffer = Vec::new();
+        let result = sofel_raster::bitmap_sdf(bitmap, spread, &mut buffer).map_err(|e| match e {
+            sofel_raster::BitmapSdfError::TooLarge => ERROR_TOO_LARGE,
+            sofel_raster::BitmapSdfError::InvalidBitmap
+            | sofel_raster::BitmapSdfError::InvalidSpread => ERROR_INVALID_ARGUMENT,
+        });
+        out.put(result)
+    })())
+}
+
 fn options(fill: u32, overlap: u32, x_ppem: u16, y_ppem: u16) -> Result<RenderOptions, i32> {
     let fill = match fill {
         0 => FillRule::NonZero,

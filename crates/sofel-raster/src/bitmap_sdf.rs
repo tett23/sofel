@@ -1,3 +1,16 @@
+//! FreeType's bitmap SDF from ftbsdf.c. Fixed-point values use 16.16
+//! arithmetic. The Sobel kernel operates on 8-bit coverage, the radius
+//! is at most 32, and the map has a checked size and a two-pixel-or-wider
+//! border around the source. Both sweeps visit only in-bounds neighbors.
+#![allow(
+    clippy::arithmetic_side_effects,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap,
+    clippy::cast_possible_truncation,
+    clippy::indexing_slicing
+)]
+#![cfg_attr(test, allow(clippy::unwrap_used))]
+
 #[cfg(test)]
 mod tests {
     use super::*;
