@@ -164,12 +164,19 @@ impl Rounding {
 struct Interpreter {
     rounding: Rounding,
     storage: alloc::vec::Vec<i64>,
+    cvt: alloc::vec::Vec<i64>,
+    scale: i64,
 }
 
 impl Interpreter {
-    fn new(max_storage: u16) -> Self {
+    fn new(max_storage: u16, varied_cvt: &[i32], scale: i64) -> Self {
         Self {
             rounding: Rounding::Grid,
+            scale,
+            cvt: varied_cvt
+                .iter()
+                .map(|v| sofel_font::read::cff::ft::mul_fix(i64::from(v / 64), scale))
+                .collect(),
             storage: alloc::vec![0; usize::from(max_storage)],
         }
     }
@@ -223,21 +230,28 @@ impl Interpreter {
                         _ => *value,
                     };
                 }
-                0x42 => {
+                op @ (0x42 | 0x44 | 0x70) => {
                     let value = stack.pop().ok_or(Error::StackUnderflow)?;
                     let index = stack.pop().ok_or(Error::StackUnderflow)?;
-                    if let Some(slot) = usize::try_from(index)
-                        .ok()
-                        .and_then(|i| self.storage.get_mut(i))
-                    {
-                        *slot = value;
+                    let table = if op == 0x42 {
+                        &mut self.storage
+                    } else {
+                        &mut self.cvt
+                    };
+                    if let Some(slot) = usize::try_from(index).ok().and_then(|i| table.get_mut(i)) {
+                        *slot = if op == 0x70 {
+                            sofel_font::read::cff::ft::mul_fix(value, self.scale)
+                        } else {
+                            value
+                        };
                     }
                 }
-                0x43 => {
+                op @ (0x43 | 0x45) => {
+                    let table = if op == 0x43 { &self.storage } else { &self.cvt };
                     let index = stack.last_mut().ok_or(Error::StackUnderflow)?;
                     *index = usize::try_from(*index)
                         .ok()
-                        .and_then(|i| self.storage.get(i))
+                        .and_then(|i| table.get(i))
                         .copied()
                         .unwrap_or(0);
                 }
@@ -304,7 +318,7 @@ impl Interpreter {
 
 #[cfg(test)]
 fn run(code: &[u8], stack: &mut alloc::vec::Vec<i64>, max_stack: usize) -> Result<(), Error> {
-    Interpreter::new(0).execute(code, stack, max_stack)
+    Interpreter::new(0, &[], 0x10000).execute(code, stack, max_stack)
 }
 
 #[test]
@@ -427,7 +441,7 @@ fn adr0064_i1_super_rounding_keeps_phase_and_diagonal_period() {
 
 #[test]
 fn adr0064_i1_glyph_storage_writes_are_private_and_bounded() {
-    let mut prep = Interpreter::new(2);
+    let mut prep = Interpreter::new(2, &[], 0x10000);
     let mut stack = alloc::vec![1, -42];
     prep.execute(&[0x42], &mut stack, 4).unwrap();
     let mut glyph = prep.clone();
@@ -441,4 +455,22 @@ fn adr0064_i1_glyph_storage_writes_are_private_and_bounded() {
     assert_eq!(stack, [0]);
     prep.execute(&[0xb0, 1, 0x43], &mut stack, 4).unwrap();
     assert_eq!(stack, [0, -42]);
+}
+
+#[test]
+fn adr0064_i1_control_values_scale_font_units_and_preserve_pixel_units() {
+    let mut vm = Interpreter::new(0, &[21 * 64 + 63, -21 * 64 - 63], 0x8000);
+    let mut stack = alloc::vec::Vec::new();
+    vm.execute(&[0xb0, 0, 0x45, 0xb0, 1, 0x45], &mut stack, 8)
+        .unwrap();
+    assert_eq!(stack, [11, -11]);
+    vm.execute(
+        &[
+            0xb1, 1, 9, 0x70, 0xb0, 1, 0x45, 0xb1, 0, 9, 0x44, 0xb0, 0, 0x45,
+        ],
+        &mut stack,
+        8,
+    )
+    .unwrap();
+    assert_eq!(stack, [11, -11, 5, 9]);
 }
