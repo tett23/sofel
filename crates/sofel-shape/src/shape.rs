@@ -404,6 +404,11 @@ fn substitute_pre(
                 {
                     continue;
                 }
+                buffer.charge(buffer.len);
+                if buffer.max_ops < 0 {
+                    buffer.successful = false;
+                    break;
+                }
                 let mut replace = |info: &mut crate::buffer::Info, glyph: u16| {
                     info.codepoint = u32::from(glyph);
                     if !plan.fallback_glyph_classes {

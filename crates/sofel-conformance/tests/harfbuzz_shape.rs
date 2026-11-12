@@ -400,3 +400,25 @@ fn i1_aat_contextual_morx_updates_marked_and_current_glyphs() {
         assert_eq!(run(&case), Ok(()), "{}", case.id);
     }
 }
+
+#[test]
+fn i1_aat_insertion_uses_marked_and_current_positions() {
+    let path =
+        paths::testdata().join("harfbuzz/test/shape/data/text-rendering-tests/tests/MORX-29.tests");
+    let suite = cases("text-rendering-tests", &path, &mut 0);
+    assert_eq!(suite.len(), 4);
+    for case in suite {
+        assert_eq!(run(&case), Ok(()), "{}", case.id);
+    }
+}
+
+#[test]
+fn i1_aat_ligature_uses_the_component_stack() {
+    let path =
+        paths::testdata().join("harfbuzz/test/shape/data/text-rendering-tests/tests/MORX-27.tests");
+    let suite = cases("text-rendering-tests", &path, &mut 0);
+    assert_eq!(suite.len(), 3);
+    for case in suite {
+        assert_eq!(run(&case), Ok(()), "{}", case.id);
+    }
+}
