@@ -414,14 +414,16 @@ fn cff2_mask_length_counts_stems_added_in_a_subroutine() {
 }
 
 #[test]
-fn cff2_shared_subroutine_with_conflicting_mask_lengths_is_unsupported() {
+fn cff2_shared_subroutine_with_conflicting_mask_lengths_retains_original_bytes() {
     let mut programs = charstrings();
     programs[1] = charstring(&[Cs::I(0), Cs::I(10), Cs::Op(1), Cs::I(-107), Cs::Op(29)]);
     programs[2] = charstring(&[Cs::I(-107), Cs::Op(29)]);
     let bytes = font_with_programs(vec![vec![19, 139, 11]], Vec::new(), programs);
     let font = Font::new(&bytes, 0).unwrap();
+    let out = subset(&font, &glyphs(&[1, 2])).unwrap();
+    assert_eq!(out, include_bytes!("data/cff2-context-mask-hb15.otf"));
     assert!(matches!(
-        Plan::new(&font, &glyphs(&[1, 2])),
+        subset(&font, &glyphs(&[1, 2]).with_flags(Flags::NO_HINTING)),
         Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"CFF2")
     ));
 }
