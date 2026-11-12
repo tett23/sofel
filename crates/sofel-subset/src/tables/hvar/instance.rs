@@ -5,8 +5,9 @@ use super::{
 use crate::tables::variation_region;
 use sofel_geom::float::{hb_clamp_to_i32, hb_roundf32, i32_to_f32};
 
-type Region = Vec<[u32; 3]>;
+pub(super) type Region = Vec<[u32; 3]>;
 type Column = (Region, Vec<i32>);
+pub(super) type Block = (usize, Vec<Column>);
 
 fn key(tents: &[[f32; 3]]) -> Region {
     tents
@@ -21,6 +22,8 @@ pub(super) fn subset(
     store: ItemVariationStore<'_>,
     items: &[(u16, Vec<u32>)],
     tag: Tag,
+    optimize: bool,
+    remap: &mut BTreeMap<u32, u32>,
 ) -> Result<Vec<u8>, SubsetError> {
     let bad = SubsetError::Malformed { tag };
     let limit = SubsetError::Limit { tag };
@@ -41,6 +44,7 @@ pub(super) fn subset(
         original.push(axes);
     }
     let mut used = BTreeSet::new();
+    let mut seen = BTreeSet::new();
     let mut order = Vec::new();
     let mut blocks = Vec::new();
     let mut long = false;
@@ -76,10 +80,11 @@ pub(super) fn subset(
                 .into_iter()
                 .map(|d| hb_clamp_to_i32(hb_roundf32(d)))
                 .collect();
+            if seen.insert(region.clone()) {
+                order.push(region.clone());
+            }
             if rounded.iter().any(|&d| d != 0) {
-                if used.insert(region.clone()) {
-                    order.push(region.clone());
-                }
+                used.insert(region.clone());
                 long |= rounded.iter().any(|&v| i16::try_from(v).is_err());
                 block.push((region, rounded));
             }
@@ -98,6 +103,9 @@ pub(super) fn subset(
     let region_offset = out.u32(0);
     if regions.is_empty() {
         return Ok(Vec::new());
+    }
+    if optimize {
+        *remap = super::optimize::optimize(&mut blocks, &regions, tag)?;
     }
     out.u16(u16::try_from(blocks.len()).map_err(|_| limit)?);
     let offsets: Vec<_> = blocks.iter().map(|_| out.u32(0)).collect();

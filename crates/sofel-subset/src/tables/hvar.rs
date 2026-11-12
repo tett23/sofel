@@ -1,6 +1,7 @@
 //! HVAR and VVAR with implicit advance maps (ADR 0022 stage 10).
 
 mod instance;
+mod optimize;
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
@@ -86,8 +87,17 @@ pub(super) fn subset(
         .into_iter()
         .map(|(outer, rows)| (outer, rows.into_iter().collect::<Vec<_>>()))
         .collect();
+    let mut remap = BTreeMap::new();
     let store_bytes = if plan.var.instancing() && !plan.var.n.normalized_coords.is_empty() {
-        instance::subset(plan, font, store, &old_items, tag)?
+        instance::subset(
+            plan,
+            font,
+            store,
+            &old_items,
+            tag,
+            maps[0].is_some(),
+            &mut remap,
+        )?
     } else {
         subset_store(store, &old_items, tag)?
     };
@@ -101,7 +111,7 @@ pub(super) fn subset(
         .take(if vertical { 4 } else { 3 })
     {
         rewritten_maps.push(if index == 0 || map.is_some() {
-            index_map(plan, &old_items, map, tag)?
+            index_map(plan, &old_items, map, &remap, tag)?
         } else {
             None
         });
@@ -146,6 +156,7 @@ fn index_map(
     plan: &Plan,
     old_items: &[(u16, Vec<u32>)],
     source: Option<DeltaSetIndexMap<'_>>,
+    remap: &BTreeMap<u32, u32>,
     tag: Tag,
 ) -> Result<Option<Vec<u8>>, SubsetError> {
     let glyphs = plan.new_to_old_glyphs();
@@ -184,11 +195,15 @@ fn index_map(
         let inner = rows
             .binary_search(&(old_item & 0xffff))
             .map_err(|_| SubsetError::Malformed { tag })?;
+        let compact = (u32::try_from(new_outer).map_err(|_| SubsetError::Limit { tag })? << 16)
+            | u32::try_from(inner).map_err(|_| SubsetError::Limit { tag })?;
         *values
             .get_mut(index)
-            .ok_or(SubsetError::Malformed { tag })? =
-            (u32::try_from(new_outer).map_err(|_| SubsetError::Limit { tag })? << 16)
-                | u32::try_from(inner).map_err(|_| SubsetError::Limit { tag })?;
+            .ok_or(SubsetError::Malformed { tag })? = if remap.is_empty() {
+            compact
+        } else {
+            *remap.get(&compact).ok_or(SubsetError::Malformed { tag })?
+        };
     }
     if source.is_none()
         && values

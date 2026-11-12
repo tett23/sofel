@@ -458,7 +458,7 @@ fn adr0061_i1_restricted_gvar_axis_matches_harfbuzz() {
             let input = Input::new()
                 .map_set(SetKind::Unicodes, |s| s.add_range(0, 0x10ffff))
                 .map_set(SetKind::DropTables, |s| {
-                    for tag in [b"GDEF", b"GPOS", b"GSUB", b"HVAR", b"STAT"] {
+                    for tag in [b"GDEF", b"GPOS", b"GSUB", b"STAT"] {
                         s.add(Tag::new(tag).to_u32());
                     }
                 })
@@ -476,7 +476,7 @@ fn adr0061_i1_restricted_gvar_axis_matches_harfbuzz() {
                     .arg("--subset")
                     .arg(format!("--font-file={}", path.display()))
                     .arg("--unicodes=*")
-                    .arg("--drop-tables+=GDEF,GPOS,GSUB,HVAR,STAT")
+                    .arg("--drop-tables+=GDEF,GPOS,GSUB,STAT")
                     .arg(format!("--variations=wght={min}:{default}:{max}"))
                     .arg(format!("--output-file={}", output.display()))
                     .status()

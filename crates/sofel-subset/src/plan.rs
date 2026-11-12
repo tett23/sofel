@@ -321,7 +321,7 @@ impl Plan {
                         || (!norm.all_axes_pinned
                             && !norm.avar2
                             && font.table(Tag::new(tag)).is_some_and(|data| {
-                                sofel_font::read::be::u32_at(data, 8) == Some(0)
+                                sofel_font::read::be::u32_at(data, 8).is_some()
                             })
                             && !input
                                 .set(SetKind::NoSubsetTables)
