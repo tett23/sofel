@@ -349,6 +349,6 @@ FreeTypeの計算を移植した部分を含むクレート（`sofel-geom` な�
 Rust のツールチェーンと、適合テストと同じフォント取得環境を使う。生成器とそのテストは `tools/font-gallery` の Rust プログラムである。
 各フェイスの単字と、その書体に合う文字列を一枚の PNG で見比べられる。
 sbix の見本は 109 ppem のストライクを使い、グリフ 19 の単字と `simple_linear` の合字 26 をそれぞれ 128 × 128 画素で表示する。
-CFF の COLRv1、OT-SVG、可変 COLRv1 の見本は 48 ppem で表示する。カラーの4書体は単字と文字列の両方を検査する。
+CFF の COLRv1、OT-SVG、可変 COLRv1 の見本は 48 ppem で表示する。Noto Color Emoji の CBDT 版と COLRv1 版は、109 ppem で 😀 と 👩‍💻 を並べる。
 CI では Actions の対象の実行からコミット SHA 付きのフォントギャラリーをダウンロードし、展開したディレクトリの `index.html` を開く。
 保存期間は14日間である（[sofel ADR 0069](docs/adr/0069-font-render-gallery.md)）。

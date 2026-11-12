@@ -591,4 +591,5 @@ color-svg の単字19と文字列から得たグリフ26は48 ppemで描画す�
 生成器は [sofel ADR 0073](adr/0073-rust-font-gallery.md) に従う Rust の開発用バイナリとし、Unicode スカラー値とグリフ ID、26.6 固定小数点の位置と整数画素、描画結果と登録済みの未対応状態を型で区別する。シェルの入口は Rust のテストを実行してから生成器を起動する。
 sbix の単字 19 と合字 26 は固定版 FreeType と全画素を照合し、一覧の各欄に等倍で配置する（[sofel ADR 0072](adr/0072-color-gallery-acceptance.md)）。
 CFF の 19・26 と可変 COLRv1 の 92・93 は固定版 HarfBuzz raster と原点・寸法・乗算済み BGRA の全画素を照合する。一覧 PNG の検査では、これらの2書体、sbix、OT-SVG の単字と文字列を個別に比較する。
+[sofel ADR 0077](adr/0077-noto-color-emoji-gallery.md) に従い、Noto Color Emoji v2.047 の CBDT 版と COLRv1 版で 😀 と 👩‍💻 を 109 ppem で描く。各形式で ZWJ 列が一つのグリフになること、各画像の寸法と RGBA の CRC-32、一覧 PNG に配置した画素を検査する。
 文書だけの変更を除き、CI はプルリクエストと main への push で HTML と PNG を生成し、検査したコミット SHA 付きのアーティファクトを14日間保存する。
