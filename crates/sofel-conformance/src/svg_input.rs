@@ -113,8 +113,8 @@ fn check_selection(stored: &[u8], glyph: u32, expected: u32) -> Result<(), Strin
         },
         _ => return Err(format!("no reference shape for glyph {expected}")),
     };
-    let actual: Vec<_> = scene.shapes.iter().map(|shape| shape.kind).collect();
-    if actual == [wanted] {
+    let actual: Vec<_> = scene.shapes.iter().map(|shape| &shape.kind).collect();
+    if actual == [&wanted] {
         Ok(())
     } else {
         Err(format!(
