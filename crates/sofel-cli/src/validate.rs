@@ -19,7 +19,7 @@ use crate::json;
 pub const HELP: &str = "\
 usage: sofel-validate [--json] FILE...
 
-Validates sfnt fonts, TTC/OTC collections, CEF, bare CFF 1, CID Type 1, and Type 42 fonts.
+Validates sfnt fonts, TTC/OTC collections, CEF, bare CFF 1, CID Type 1, Type 42, and BDF fonts.
 Tables without a validator are skipped.
 
 Each problem is one line on standard output:
@@ -104,6 +104,26 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
                 continue;
             }
         };
+        if sofel_bitmapfont::BdfFont::is_bdf(&bytes) {
+            if let Err(offset) = sofel_bitmapfont::BdfFont::parse_with_offset(&bytes) {
+                emit_diagnostic(
+                    &name,
+                    None,
+                    Diagnostic {
+                        table: Tag::new(b"BDF "),
+                        offset: u32::try_from(offset).unwrap_or(u32::MAX),
+                        severity: Severity::Error,
+                        kind: Kind::InvalidFontContainer {
+                            reason: "invalid BDF font",
+                        },
+                    },
+                    as_json,
+                    out,
+                    &mut errors,
+                );
+            }
+            continue;
+        }
         if bytes.first() == Some(&1) {
             cff::validate_bare(&bytes, &mut |diagnostic| {
                 emit_diagnostic(&name, None, diagnostic, as_json, out, &mut errors)
