@@ -313,7 +313,17 @@ pub(crate) fn subset(s: &mut Sub<'_, '_>, gdef: &[u8]) -> bool {
                 s.unsupported("the GDEF item variation store (ADR 0022 stage 10)");
                 return false;
             };
-            match crate::tables::hvar::subset_store(store, old_items, Tag::new(b"GDEF")) {
+            let result = if s.p.var.n.avar2 {
+                crate::tables::hvar::subset_store_with_avar2(
+                    s.p,
+                    store,
+                    old_items,
+                    Tag::new(b"GDEF"),
+                )
+            } else {
+                crate::tables::hvar::subset_store(store, old_items, Tag::new(b"GDEF"))
+            };
+            match result {
                 Ok(bytes) => store_bytes = Some(bytes),
                 Err(_) => {
                     s.unsupported("the GDEF item variation store (ADR 0022 stage 10)");
