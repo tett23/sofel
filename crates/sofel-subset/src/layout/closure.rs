@@ -128,38 +128,42 @@ impl<'a> Closure<'a> {
         match k {
             Kind::SingleSubst => self.single(st),
             Kind::MultipleSubst | Kind::AlternateSubst => {
-                if st.u16(0) != 1 {
+                let Some(sets) = super::data::SequenceSets::new(st) else {
                     return;
-                }
-                let cov = Cov(st.off16(2));
-                let n = usize::from(st.u16(4));
+                };
                 let mut add = Vec::new();
-                for (i, g) in cov.glyphs().into_iter().take(n).enumerate() {
-                    if !self.parent().has(g) {
-                        continue;
+                for (i, g) in sets
+                    .coverage()
+                    .glyphs()
+                    .into_iter()
+                    .take(sets.count())
+                    .enumerate()
+                {
+                    if self.parent().has(g)
+                        && let Some(seq) = sets.sequence(i)
+                    {
+                        add.extend(seq);
                     }
-                    let seq = st.off16(6usize.saturating_add(i.saturating_mul(2)));
-                    let m = usize::from(seq.u16(0));
-                    (0..m).for_each(|j| add.push(u32::from(seq.u16_at(2, j))));
                 }
                 add.into_iter().for_each(|g| self.output.add(g));
             }
             Kind::LigatureSubst => {
-                if st.u16(0) != 1 {
+                let Some(sets) = super::data::SequenceSets::new(st) else {
                     return;
-                }
-                let cov = Cov(st.off16(2));
-                let n = usize::from(st.u16(4));
+                };
                 let mut add = Vec::new();
-                for (i, g) in cov.glyphs().into_iter().take(n).enumerate() {
-                    if !self.parent().has(g) {
-                        continue;
-                    }
-                    let set = st.off16(6usize.saturating_add(i.saturating_mul(2)));
-                    for j in 0..usize::from(set.u16(0)) {
-                        let lig = set.off16(2usize.saturating_add(j.saturating_mul(2)));
-                        if ligature_intersects(lig, &self.glyphs) {
-                            add.push(u32::from(lig.u16(0)));
+                for (i, g) in sets
+                    .coverage()
+                    .glyphs()
+                    .into_iter()
+                    .take(sets.count())
+                    .enumerate()
+                {
+                    if self.parent().has(g) {
+                        for lig in super::data::ligatures(sets.set(i), sets.width) {
+                            if ligature_intersects(lig, sets.width, &self.glyphs) {
+                                add.push(lig.uint(0, sets.width));
+                            }
                         }
                     }
                 }
@@ -168,19 +172,23 @@ impl<'a> Closure<'a> {
             Kind::Context => context::context_closure(self, st),
             Kind::ChainContext => context::chain_closure(self, st),
             Kind::ReverseChain => {
-                if st.u16(0) != 1 || !reverse_intersects(st, &self.glyphs) {
+                if !reverse_intersects(st, &self.glyphs) {
                     return;
                 }
-                let cov = Cov(st.off16(2));
-                let (_, _, subst) = reverse_parts(st);
-                let n = usize::from(subst.u16(0));
+                let (cov, width, _, subst) = reverse_parts(st);
+                let n = subst.uint(0, width) as usize;
                 let add: Vec<u32> = cov
                     .glyphs()
                     .into_iter()
                     .take(n)
                     .enumerate()
                     .filter(|&(_, g)| self.parent().has(g))
-                    .map(|(i, _)| u32::from(subst.u16_at(2, i)))
+                    .map(|(i, _)| {
+                        subst.uint(
+                            i.saturating_add(1).saturating_mul(usize::from(width)),
+                            width,
+                        )
+                    })
                     .collect();
                 add.into_iter().for_each(|g| self.output.add(g));
             }
@@ -189,11 +197,12 @@ impl<'a> Closure<'a> {
     }
 
     fn single(&mut self, st: D<'a>) {
-        let cov = Cov(st.off16(2));
+        let sub = super::data::SingleSubst(st);
+        let cov = sub.coverage();
         match st.u16(0) {
-            1 => {
-                let d = u32::from(st.u16(4));
-                let mask = 0xFFFFu32;
+            1 | 3 => {
+                let d = sub.operand(0);
+                let mask = sub.mask();
                 if cov.population() >= u64::from(mask) {
                     return;
                 }
@@ -212,8 +221,8 @@ impl<'a> Closure<'a> {
                 let add: Vec<u32> = inter.iter().map(|g| g.wrapping_add(d) & mask).collect();
                 add.into_iter().for_each(|g| self.output.add(g));
             }
-            2 => {
-                let n = usize::from(st.u16(4));
+            2 | 4 => {
+                let n = sub.operand(0) as usize;
                 let parent = self.parent();
                 let mut add = Vec::new();
                 if n as u64 > parent.len().saturating_mul(4) {
@@ -223,12 +232,12 @@ impl<'a> Closure<'a> {
                         if i >= n {
                             continue;
                         }
-                        add.push(u32::from(st.u16_at(6, i)));
+                        add.push(sub.operand(i.saturating_add(1)));
                     }
                 } else {
                     for (i, g) in cov.glyphs().into_iter().take(n).enumerate() {
                         if parent.has(g) {
-                            add.push(u32::from(st.u16_at(6, i)));
+                            add.push(sub.operand(i.saturating_add(1)));
                         }
                     }
                 }
@@ -240,32 +249,36 @@ impl<'a> Closure<'a> {
 }
 
 /// `Ligature::intersects`: every component is in `glyphs`.
-pub(crate) fn ligature_intersects(lig: D<'_>, glyphs: &BitSet) -> bool {
-    let n = usize::from(lig.u16(2)).saturating_sub(1);
-    (0..n).all(|i| glyphs.has(u32::from(lig.u16_at(4, i))))
+pub(crate) fn ligature_intersects(lig: D<'_>, width: u8, glyphs: &BitSet) -> bool {
+    super::data::components(lig, width).all(|g| glyphs.has(g))
 }
 
-/// The backtrack array, the lookahead array and the substitute array of
-/// a ReverseChainSingleSubst format 1.
-pub(crate) fn reverse_parts(st: D<'_>) -> (D<'_>, D<'_>, D<'_>) {
-    let backtrack = st.at(4);
-    let nb = usize::from(backtrack.u16(0));
-    let lookahead = backtrack.at(2usize.saturating_add(nb.saturating_mul(2)));
-    let nl = usize::from(lookahead.u16(0));
-    let subst = lookahead.at(2usize.saturating_add(nl.saturating_mul(2)));
-    (backtrack, lookahead, subst)
+/// Coverage, operand width, context arrays and substitutes of a reverse chaining lookup.
+pub(crate) fn reverse_parts(st: D<'_>) -> (Cov<'_>, u8, [D<'_>; 2], D<'_>) {
+    let (cov, width, start) = if st.u16(0) == 2 {
+        (st.off32(2), 3u8, 6)
+    } else {
+        (st.off16(2), 2, 4)
+    };
+    let next =
+        |a: D<'_>| 2usize.saturating_add(usize::from(a.u16(0)).saturating_mul(usize::from(width)));
+    let back = st.at(start);
+    let ahead = back.at(next(back));
+    (Cov(cov), width, [back, ahead], ahead.at(next(ahead)))
 }
 
 fn reverse_intersects(st: D<'_>, glyphs: &BitSet) -> bool {
-    if !Cov(st.off16(2)).intersects(glyphs) {
+    if !matches!(st.u16(0), 1 | 2) {
         return false;
     }
-    let (b, l, _) = reverse_parts(st);
-    let all = |arr: D<'_>| {
-        (0..usize::from(arr.u16(0)))
-            .all(|i| Cov(st.follow(u32::from(arr.u16_at(2, i)))).intersects(glyphs))
-    };
-    all(b) && all(l)
+    let (cov, width, contexts, _) = reverse_parts(st);
+    cov.intersects(glyphs)
+        && contexts.iter().all(|arr| {
+            (0..usize::from(arr.u16(0))).all(|i| {
+                let at = 2usize.saturating_add(i.saturating_mul(usize::from(width)));
+                Cov(st.follow(arr.uint(at, width))).intersects(glyphs)
+            })
+        })
 }
 
 /// `may_have_non_1to1` of a GSUB lookup.
@@ -282,41 +295,50 @@ pub(crate) fn may_have_non_1to1(lookup: D<'_>, gsub: bool) -> bool {
 pub(crate) fn subtable_intersects(k: Kind, st: D<'_>, glyphs: &BitSet) -> bool {
     let cov = Cov(st.off16(2));
     match k {
-        Kind::SingleSubst => matches!(st.u16(0), 1 | 2) && cov.intersects(glyphs),
-        Kind::MultipleSubst | Kind::AlternateSubst => st.u16(0) == 1 && cov.intersects(glyphs),
-        Kind::LigatureSubst => {
-            if st.u16(0) != 1 {
-                return false;
-            }
-            let n = usize::from(st.u16(4));
-            cov.glyphs()
-                .into_iter()
-                .take(n)
-                .enumerate()
-                .filter(|&(_, g)| glyphs.has(g))
-                .any(|(i, _)| {
-                    let set = st.off16(6usize.saturating_add(i.saturating_mul(2)));
-                    (0..usize::from(set.u16(0))).any(|j| {
-                        ligature_intersects(
-                            set.off16(2usize.saturating_add(j.saturating_mul(2))),
-                            glyphs,
-                        )
-                    })
-                })
+        Kind::SingleSubst => {
+            matches!(st.u16(0), 1..=4) && super::data::SingleSubst(st).coverage().intersects(glyphs)
         }
+        Kind::MultipleSubst | Kind::AlternateSubst => super::data::SequenceSets::new(st)
+            .is_some_and(|sets| sets.coverage().intersects(glyphs)),
+        Kind::LigatureSubst => super::data::SequenceSets::new(st).is_some_and(|sets| {
+            sets.coverage()
+                .glyphs()
+                .into_iter()
+                .take(sets.count())
+                .enumerate()
+                .any(|(i, g)| {
+                    glyphs.has(g)
+                        && super::data::ligatures(sets.set(i), sets.width)
+                            .any(|lig| ligature_intersects(lig, sets.width, glyphs))
+                })
+        }),
         Kind::Context => context::context_intersects(st, glyphs),
         Kind::ChainContext => context::chain_intersects(st, glyphs),
-        Kind::ReverseChain => st.u16(0) == 1 && reverse_intersects(st, glyphs),
-        Kind::SinglePos => matches!(st.u16(0), 1 | 2) && cov.intersects(glyphs),
-        Kind::PairPos => match st.u16(0) {
-            1 => super::gpos::pair1_intersects(st, glyphs),
-            2 => cov.intersects(glyphs) && super::data::Cls(st.off16(10)).intersects(glyphs),
+        Kind::ReverseChain => reverse_intersects(st, glyphs),
+        Kind::SinglePos => match st.u16(0) {
+            1 | 2 => cov.intersects(glyphs),
+            3 | 4 => Cov(st.off32(2)).intersects(glyphs),
             _ => false,
         },
-        Kind::CursivePos => st.u16(0) == 1 && cov.intersects(glyphs),
-        Kind::MarkBasePos | Kind::MarkLigPos | Kind::MarkMarkPos => {
-            st.u16(0) == 1 && cov.intersects(glyphs) && Cov(st.off16(4)).intersects(glyphs)
-        }
+        Kind::PairPos => match st.u16(0) {
+            1 | 3 => super::gpos::pair1_intersects(st, glyphs),
+            2 => cov.intersects(glyphs) && super::data::Cls(st.off16(10)).intersects(glyphs),
+            4 => {
+                Cov(st.off32(2)).intersects(glyphs)
+                    && super::data::Cls(st.off32(14)).intersects(glyphs)
+            }
+            _ => false,
+        },
+        Kind::CursivePos => match st.u16(0) {
+            1 => cov.intersects(glyphs),
+            2 => Cov(st.off32(2)).intersects(glyphs),
+            _ => false,
+        },
+        Kind::MarkBasePos | Kind::MarkLigPos | Kind::MarkMarkPos => match st.u16(0) {
+            1 => cov.intersects(glyphs) && Cov(st.off16(4)).intersects(glyphs),
+            2 => Cov(st.off32(2)).intersects(glyphs) && Cov(st.off32(6)).intersects(glyphs),
+            _ => false,
+        },
         Kind::Unknown => false,
     }
 }

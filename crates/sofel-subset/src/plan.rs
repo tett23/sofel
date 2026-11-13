@@ -175,15 +175,6 @@ fn layout_unsupported(
         font.table(tag)
             .filter(|_| !drop.contains(tag.to_u32()) && !no_subset.contains(tag.to_u32()))
     };
-    let any = [b"GSUB", b"GPOS", b"GDEF", b"BASE"]
-        .iter()
-        .any(|t| kept(t).is_some());
-    if any && font.num_glyphs() > 0x1_0000 {
-        return Err(SubsetError::Unsupported {
-            tag: Tag::new(b"GSUB"),
-            reason: "layout tables of fonts with more than 65536 glyphs (ADR 0022 stage 3)",
-        });
-    }
     for t in [b"GSUB", b"GPOS"] {
         if kept(t).is_some_and(|d| sofel_font::read::be::u32_at(d, 0).unwrap_or(0) > 0x0001_0002) {
             return Err(SubsetError::Unsupported {
@@ -197,17 +188,17 @@ fn layout_unsupported(
         let tag = Tag::new(t);
         font.table(tag).is_some() && !drop.contains(tag.to_u32())
     };
-    let gsub_may_reference_store = retained(b"GSUB")
-        && font.table(Tag::new(b"GSUB")).is_some_and(|d| {
-            let table = layout::Gsubgpos::new(d, true);
-            // The GSUB writer only emits format-1 axis ranges, which never
-            // reference GDEF. A copied GSUB bypasses that writer.
-            table.version() >= 0x0001_0001
-                && sofel_font::read::be::u32_at(d, 10) != Some(0)
-                && (table.feature_variations_view().is_none()
-                    || (no_subset.contains(Tag::new(b"GSUB").to_u32())
-                        && !table.has_only_axis_range_conditions()))
-        });
+    let conditions_may_reference_store = [b"GSUB", b"GPOS"].into_iter().any(|name| {
+        retained(name)
+            && font.table(Tag::new(name)).is_some_and(|data| {
+                let table = layout::Gsubgpos::new(data, name == b"GSUB");
+                table.version() >= 0x0001_0001
+                    && sofel_font::read::be::u32_at(data, 10) != Some(0)
+                    && (table.feature_variations_view().is_none()
+                        || (no_subset.contains(Tag::new(name).to_u32())
+                            && !table.conditions_are_store_independent()))
+            })
+    });
     // A VariationIndex Device necessarily contains the format word 0x8000.
     // Scan the whole retained table so an unknown or malformed subtable
     // cannot make a real reference look absent. Other 0x8000 words may
@@ -221,7 +212,7 @@ fn layout_unsupported(
         gpos_may_reference_store && no_subset.contains(Tag::new(b"GPOS").to_u32());
     if !pinned
         && kept(b"GDEF").is_some_and(layout::gdef::has_var_store)
-        && (copied_gpos_may_reference_store || gsub_may_reference_store)
+        && (copied_gpos_may_reference_store || conditions_may_reference_store)
     {
         return Err(SubsetError::Unsupported {
             tag: Tag::new(b"GDEF"),
@@ -903,6 +894,57 @@ impl Plan {
             } else {
                 n
             };
+        if new_to_old.iter().any(|&(new, _)| new > 0xFFFF) {
+            let narrow_rule_glyphs_fit = new_to_old
+                .iter()
+                .all(|&(new, old)| old > u16::MAX as u32 || new <= u16::MAX as u32);
+            for name in [b"GSUB", b"GPOS"] {
+                let tag = Tag::new(name);
+                if drop.contains(tag.to_u32()) || no_subset.contains(tag.to_u32()) {
+                    continue;
+                }
+                let Some(data) = font.table(tag) else {
+                    continue;
+                };
+                let gsub = name == b"GSUB";
+                let table = layout::Gsubgpos::new(data, gsub);
+                let plan = if gsub { &p.layout.gsub } else { &p.layout.gpos };
+                let supported = plan.lookups.keys().all(|&i| {
+                    layout::subtables(table.lookup(i as usize), gsub)
+                        .iter()
+                        .all(|(kind, subtable)| {
+                            (*kind == layout::Kind::PairPos && matches!(subtable.u16(0), 1..=4))
+                                || (matches!(
+                                    kind,
+                                    layout::Kind::Context | layout::Kind::ChainContext
+                                ) && (matches!(subtable.u16(0), 2 | 3 | 6)
+                                    || (subtable.u16(0) == 1 && narrow_rule_glyphs_fit)))
+                                || (matches!(
+                                    kind,
+                                    layout::Kind::MarkBasePos
+                                        | layout::Kind::MarkLigPos
+                                        | layout::Kind::MarkMarkPos
+                                ) && matches!(subtable.u16(0), 1 | 2))
+                                || matches!(
+                                    kind,
+                                    layout::Kind::SingleSubst
+                                        | layout::Kind::MultipleSubst
+                                        | layout::Kind::LigatureSubst
+                                        | layout::Kind::ReverseChain
+                                        | layout::Kind::AlternateSubst
+                                        | layout::Kind::SinglePos
+                                        | layout::Kind::CursivePos
+                                )
+                        })
+                });
+                if !supported {
+                    return Err(SubsetError::Unsupported {
+                        tag,
+                        reason: "layout subsetting with retained glyph IDs above 65535",
+                    });
+                }
+            }
+        }
         p.glyphs = GlyphMap::new(new_to_old, num_glyphs);
         let cff2 = Tag::new(b"CFF2");
         if font.table(cff2).is_some()
