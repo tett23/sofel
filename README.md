@@ -66,7 +66,7 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-geom`](crates/sofel-geom) | FreeTypeと同じ結果を返す固定小数点の演算と、輪郭を受け渡す `Pen`、HarfBuzzと同じ丸め（`sofel_geom::float`）。カラーグリフの塗りの命令を受け渡す `Painter` と塗りの値、変換、どの環境でも同じ結果の三角関数、塗りの補助の関数（[ADR 0023](docs/adr/0023-color-glyphs.md)） |
 | [`sofel-unicode`](crates/sofel-unicode) | Unicode 18.0.0の文字の性質（General_Category、Script、正規分解と合成、Vertical_Orientationなど。[ADR 0019](docs/adr/0019-unicode-character-data.md)） |
 | [`sofel-read`](crates/sofel-read) | sfntの表の読み取りと検証。コピーも確保もせず、どの入力でもpanicしない |
-| [`sofel-type1`](crates/sofel-type1) | PFA・PFB の復号と Type1 の文字対応、送り幅、AFM・PFM を付加したカーニングを Rust API で読む（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)） |
+| [`sofel-type1`](crates/sofel-type1) | PFA・PFB の復号と Type1 の文字対応、送り幅、AFM・PFM のカーニング、Type42 の埋め込み sfnt・Encoding・CharStrings を Rust API で読む（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)） |
 | [`sofel-font`](crates/sofel-font) | フォントを一度だけ読み、グリフの数、文字からグリフへの対応、送り幅、フォント全体と縦書きのメトリクス、BASEの基準線とその代わりの値、名前とグリフ名（postとCFFのcharset）をHarfBuzzの方針で返し、HarfBuzzと同じ拡大縮小（`HbScale`）をする。HarfBuzzのCFFとCFF2のアクセラレータ（`HbCff1`、`HbCff2`）を持つ。素の CFF 1 はフェイス番号で Top DICT を選んで読む。PostScript名と `FT_Face` の値はFreeTypeの方針。TrueType の制御値は指定した軸位置で取得できる |
 | [`sofel-outline`](crates/sofel-outline) | glyfとGLYFの輪郭を、ヒンティングなしでFreeTypeと同じ座標で `Pen` に渡す。素の CFF 1 の輪郭も `draw_bare_cff` で描く。読み込んだ閉じた輪郭は、半径と角の接合を指定して縁取り、両側または片側の境界を取り出す（[ADR 0076](docs/adr/0076-glyph-outline-stroking.md)）。HarfBuzzと同じグリフの箱（glyf、CFF2、CFF。`HbExtents`、[ADR 0021](docs/adr/0021-cff-outlines.md)）を求める |
 | [`sofel-shape`](crates/sofel-shape) | HarfBuzz 15.1.0のOTシェーパーと同じシェーピング（バッファ、区間の性質、計画、正規化、`GSUB` と `GPOS`、フォールバックの位置。[ADR 0020](docs/adr/0020-shaping-foundation.md)）、機能の文字列、直列化、言語と文字体系のタグ。文字体系ごとのシェーパー（hebrew、hangul、thai、arabic、indic、khmer、myanmar、USE。[ADR 0024](docs/adr/0024-complex-shapers.md)）もすべて実装した |
@@ -84,6 +84,8 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-cli`](crates/sofel-cli) | 小さな道具（`sofel-validate`、`sofel-render`、`sofel-paint`、`sofel-shape`、`sofel-subset`） |
 | [`sofel-capi`](crates/sofel-capi) | C ABI（ヘッダは [`sofel.h`](crates/sofel-capi/include/sofel.h)、[ADR 0015](docs/adr/0015-c-abi.md)） |
 | [`sofel-conformance`](crates/sofel-conformance) | FreeTypeとHarfBuzzとの突き合わせのテスト（`cargo test` では走らない） |
+
+サブセットの Rust・C API では、プラットフォーム、エンコーディング、言語、名前 ID を指定して名前レコードを追加・置換できる。空文字列を指定するとそのレコードを削除する。
 
 シェーピングのフォント関数を差し替えるときは、`sofel-shape::SubFont` で親からの継承と問い合わせ別の上書きを指定する。子の送り、原点、グリフの箱、輪郭は親子のスケールを換算する。合成太字と斜体はシェーピングと輪郭に反映する。`sofel-shape` コマンドでは、`ot` と `fallback` のどちらでも `--font-slant`、`--font-bold`、`--font-grade` を指定できる（[ADR 0063](docs/adr/0063-font-functions-and-synthesis.md)）。
 
@@ -167,7 +169,7 @@ HarfBuzzの `hb-subset` と同じオプションでサブセット化する（[A
 軸を固定しない場合も、BASE の座標に VariationIndex の参照がなければ、使われない変化量の表を除く。
 適合テストで出力が違えば、表ごとに最初の差の位置を示す。片方だけにある表は、どちらに欠けているかも示す。
 
-CFF2 の全軸を指定した値に固定すると、輪郭と横・縦のメトリクスに変化量を反映する。一部の軸だけを固定する場合と軸の範囲を狭める場合は、残る範囲に合わせて輪郭と Private DICT の変化量を書き直す。`--downgrade-cff2` を併用すると、固定した位置の CFF を書き出す。可変の COLR のストアを残す入力は対象外である（[ADR 0061](docs/adr/0061-subset-axis-instancing.md)）。
+CFF2 の全軸を指定した値に固定すると、輪郭と横・縦のメトリクスに変化量を反映する。一部の軸だけを固定する場合と軸の範囲を狭める場合は、残る範囲に合わせて輪郭と Private DICT の変化量を書き直す。`--downgrade-cff2` を併用すると、固定した位置の CFF を書き出す。可変 COLR を併せ持つ場合は、同じ軸指定を色の描画にも適用する（[ADR 0061](docs/adr/0061-subset-axis-instancing.md)）。
 
 軸を固定しない CFF2 は `--desubroutinize` を指定するとサブセット化できる。指定しない場合は、残すグリフがサブルーチンを呼ばなければ未使用のサブルーチンを除き、呼ぶ場合は即値の番号で呼ぶ global/local のサブルーチンを必要な分だけ残して番号を詰める。`blend`、`vsindex` と VariationStore を残す。ヒントを保持する場合は `hintmask` と `cntrmask` のデータバイトを解釈器に従って読み飛ばす。`--no-hinting` では、ヒントが描画命令より前にあり、同じ charstring 内で先行する call がなく、引数が同じ charstring 内の連続した数値だけで、使用するサブルーチンがヒント除去後も空にならず、`blend`、`vsindex`、`dotsection` を含まない場合に限ってヒントを除く。描画を開始した後の `hintmask` と `cntrmask` も、引数が空ならマスクのデータとともに除く。サブルーチン先頭の stem に対しては、呼び出し直前に積んだ連続する数値の引数も除く。空のサブルーチンや、命令列全体がヒントと `return` の除去で空になるサブルーチンは、別のサブルーチンを呼ばなければ、その呼び出しとともに除く。同じサブルーチンのマスク長が呼び出しごとに異なるときも、ヒントを保持し、そのサブルーチン内に別の呼び出しがなければ元の命令列を保つ。ヒントを除くときは、長さによって解釈が変わる部分が数値のオペランドだけなら、最初の呼び出しで読んだマスク長を使う。
 

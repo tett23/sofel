@@ -106,6 +106,7 @@ pub struct Plan {
     pub(crate) codepoint_to_glyph: BTreeMap<u32, u32>,
     pub(crate) glyphset: RangeSet,
     pub(crate) glyphs_requested: RangeSet,
+    pub(crate) name_overrides: BTreeMap<(u16, u16, u16, u16), Vec<u8>>,
     pub(crate) name_ids: RangeSet,
     pub(crate) name_languages: RangeSet,
     pub(crate) drop_tables: RangeSet,
@@ -431,8 +432,6 @@ impl Plan {
                 && !other_variation_tags.iter().any(|tag| {
                     **tag != *b"gvar" && **tag != *b"GVAR" && font.table(Tag::new(tag)).is_some()
                 });
-            // A separate outline source or a retained BASE/COLR store needs its
-            // own instancing path, even when the CFF2 outlines can be pinned.
             let kept = |tag: &[u8; 4]| {
                 let tag = Tag::new(tag);
                 font.table(tag).filter(|_| !drop.contains(tag.to_u32()))
@@ -447,11 +446,7 @@ impl Plan {
                 && kept(b"CFF2").is_some()
                 && [b"glyf", b"GLYF", b"gvar", b"GVAR", b"cvar", b"VARC"]
                     .iter()
-                    .all(|t| kept(t).is_none())
-                && kept(b"COLR").is_none_or(|data| {
-                    sofel_font::read::colr::Colr::new(data)
-                        .is_ok_and(|table| table.var_store_offset() == 0)
-                });
+                    .all(|t| kept(t).is_none());
             if !(norm.all_axes_pinned && norm.pinned_at_default)
                 && !metadata_only
                 && !gvar_full_pin
@@ -464,12 +459,6 @@ impl Plan {
             }
         }
         let pinned = norm.all_axes_pinned;
-        if !input.name_overrides().is_empty() {
-            return Err(SubsetError::Unsupported {
-                tag: Tag::new(b"name"),
-                reason: "name overrides",
-            });
-        }
         let no_subset = input.set(SetKind::NoSubsetTables);
         let varc_tag = Tag::new(b"VARC");
         if font.table(varc_tag).is_some()
@@ -512,6 +501,7 @@ impl Plan {
             codepoint_to_glyph: BTreeMap::new(),
             glyphset: RangeSet::new(),
             glyphs_requested: glyphs_in.clone(),
+            name_overrides: input.name_overrides().clone(),
             name_ids: input.set(SetKind::NameIds).clone(),
             name_languages: input.set(SetKind::NameLanguages).clone(),
             drop_tables: drop.clone(),

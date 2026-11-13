@@ -394,9 +394,10 @@ jobs:
         run: |
           export CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=$GITHUB_WORKSPACE::$GITHUB_WORKSPACE"
           cargo test --release --target wasm32-wasip1 -p sofel-conformance --test harfbuzz_subset
-      - name: Check variable-font delta digest on wasm32-wasip1
+      - name: Check variable-font API fixtures and delta digest on wasm32-wasip1
         run: |
           export CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=$GITHUB_WORKSPACE/target/testdata::/testdata --env SOFEL_TESTDATA=/testdata"
+          cargo test --release --target wasm32-wasip1 -p sofel-conformance --test variation_api
           cargo test --release --target wasm32-wasip1 -p sofel-conformance --test variation_reference adr0029_corpus_delta_digest
       - name: Test extra font corpus on wasm32-wasip1
         run: |

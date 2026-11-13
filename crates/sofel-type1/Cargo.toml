@@ -3,7 +3,7 @@ name = "sofel-type1"
 description = "Type 1 font and attached metrics readers (sofel ADR 0065)"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
+license = "MIT AND FTL AND BSD-3-Clause"
 repository.workspace = true
 rust-version.workspace = true
 
