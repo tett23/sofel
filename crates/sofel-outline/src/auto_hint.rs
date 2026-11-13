@@ -189,7 +189,7 @@ pub(super) fn load(
         .is_some_and(|style| style.script.name == "Latin");
     if !latin {
         scratch.clear();
-        return Err(OutlineError::AutoHintUnsupportedGlyph);
+        return Err(OutlineError::AutoHintUnsupported);
     }
     let needs_up_adjustment = if is_composite(font, glyph) {
         let codepoint = skrifa::charmap::Charmap::new(&reference)
@@ -198,14 +198,14 @@ pub(super) fn load(
             .map(|(codepoint, _)| codepoint);
         let Some(codepoint) = codepoint else {
             scratch.clear();
-            return Err(OutlineError::AutoHintUnsupportedGlyph);
+            return Err(OutlineError::AutoHintUnsupported);
         };
         if auto_adjust::UP_CODEPOINTS
             .binary_search(&codepoint)
             .is_err()
         {
             scratch.clear();
-            return Err(OutlineError::AutoHintUnsupportedGlyph);
+            return Err(OutlineError::AutoHintUnsupported);
         }
         true
     } else {
@@ -242,7 +242,7 @@ pub(super) fn load(
     apply_path(scratch, &path).ok_or(OutlineError::InvalidOutline)?;
     if needs_up_adjustment && !auto_adjust::adjust_up(scratch, ppem) {
         scratch.clear();
-        return Err(OutlineError::AutoHintUnsupportedGlyph);
+        return Err(OutlineError::AutoHintUnsupported);
     }
     let advance = metrics.advance_width.map_or(0, device);
     Ok((

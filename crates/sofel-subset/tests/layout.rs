@@ -1501,3 +1501,73 @@ fn gpos_kept_glyphs_only() {
     assert_eq!(u16_at(follow(&gpos, 6), 0), 0);
     assert_eq!(u16_at(follow(&gpos, 8), 0), 0);
 }
+
+#[test]
+fn adr0022_layout12_uses_extended_header_and_retains_lookups() {
+    let src = layout_table(&[(b"liga", &[0])], &[(1, single(&[1], 2))]);
+    for wide in [false, true] {
+        let mut table = vec![0; 26];
+        table[..4].copy_from_slice(&0x0001_0002u32.to_be_bytes());
+        table.extend_from_slice(&src[10..]);
+        for i in 0..3 {
+            let mut offset = usize::from(u16_at(&src, 4 + 2 * i)) + 16;
+            if wide {
+                if i == 2 {
+                    let lookup = table[offset..].to_vec();
+                    offset = table.len();
+                    table.extend_from_slice(&[0, 1, 0, 0, 0, 6]);
+                    table.extend_from_slice(&lookup[4..]);
+                }
+                table[14 + 4 * i..18 + 4 * i].copy_from_slice(&(offset as u32).to_be_bytes());
+            } else {
+                table[4 + 2 * i..6 + 2 * i].copy_from_slice(&(offset as u16).to_be_bytes());
+            }
+        }
+        let data = font_with(vec![(b"GSUB", table)]);
+        let out = subset(&Font::new(&data, 0).unwrap(), &chars("A")).unwrap();
+        assert_eq!(num_glyphs(&out), 3);
+        let result = out_table(&out, b"GSUB").unwrap();
+        assert_eq!(&result[..14], &[0, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        let at = u32::from_be_bytes(result[22..26].try_into().unwrap()) as usize;
+        assert_eq!(u16_at(&result, at), 1);
+        let len = if wide { 4 } else { 2 };
+        let expected = if wide { &[0, 0, 0, 6][..] } else { &[0, 4][..] };
+        assert_eq!(&result[at + 2..at + 2 + len], expected);
+    }
+}
+
+#[test]
+fn adr0022_gdef14_class_offsets_match_harfbuzz() {
+    for wide in [false, true] {
+        let mut header = vec![0; 38];
+        header[..4].copy_from_slice(&0x0001_0004u32.to_be_bytes());
+        let (at, width) = if wide { (18, 4) } else { (4, 2) };
+        let classes = class_def2(&[(1, 3, 1)]);
+        let input = link(header, vec![(at, width, classes.clone())]);
+        let data = font_with(vec![(b"GDEF", input.clone())]);
+        let font = Font::new(&data, 0).unwrap();
+        let out = subset(&font, &chars("ABC")).unwrap();
+        let expected = if wide {
+            input
+        } else {
+            gdef_with_classes(classes)
+        };
+        assert_eq!(out_table(&out, b"GDEF").unwrap(), expected);
+    }
+}
+
+#[test]
+fn adr0022_gdef14_ligature_carets_match_harfbuzz() {
+    let mut header = vec![0; 38];
+    header[..4].copy_from_slice(&0x0001_0004u32.to_be_bytes());
+    let carets = vec![
+        0, 0, 0, 10, 0, 0, 1, 0, 0, 16, // coverage, count, LigGlyph
+        0, 1, 0, 1, 0, 1, // coverage contains glyph 1
+        0, 1, 0, 4, 0, 1, 0, 100, // one format-1 caret at 100
+    ];
+    let input = link(header, vec![(26, 4, carets)]);
+    let data = font_with(vec![(b"GDEF", input.clone())]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("ABC")).unwrap();
+    assert_eq!(out_table(&out, b"GDEF").unwrap(), input);
+}

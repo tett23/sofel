@@ -65,7 +65,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   sofel-read        （sfnt、TTC、dfont）
   sofel-type1       （Type1、MM、CID、Type42、AFM、PFM）
   sofel-pfr
-  sofel-bitmapfont  （BDF、PCF、FNT、NE FON。PE FON は未実装）
+  sofel-bitmapfont  （BDF、PCF、FNT、NE・PE32 FON）
 
 フォントを扱うクレート
   sofel-woff    → sofel-inflate, sofel-brotli
@@ -192,7 +192,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 ## 輪郭（`sofel-outline`）
 
 - `Outlines::load_truetype_v35` は指定した ppem で TrueType の単純グリフと複合グリフを読み、v35 のネイティブヒンティングを適用する。ロード時に NORMAL、LIGHT、MONO、LCD、LCD_V のターゲットを選ぶ。`load_truetype_mono` は MONO を使う。フォントプログラムと準備プログラムを実行し、グリフ命令が更新した輪郭を `Scratch::points` で返す。`point_tags` では各点のタグ（ヒンタが移動対象にした軸とドロップアウト制御を含む）、`contour_ends` では各輪郭の最終点の番号を取得できる。複合グリフでは、各成分にヒンティングを適用して配置した後、複合グリフ自身の命令を実行する。未対応の命令は `InvalidOutline` を返す（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。 `Outlines::load_truetype_v40` と C API の `sofel_outline_load_truetype_v40` は同じ5種類のターゲットで v40 の補正を適用し、輪郭と補正後の水平アドバンス（26.6 固定小数点）を返す。
-- `Outlines::load_with_hint` はロード時に `HintMode::None`、`NativeV35`、`NativeV40`、`Auto` と NORMAL、LIGHT、MONO、LCD、LCD_V のターゲットを指定し、輪郭と水平アドバンスを返す。`Auto` は TrueType の Latin に分類される単純グリフと空輪郭に対応する。複合グリフは FreeType の `AF_ADJUST_UP` 対象の文字に対応し、ヒント適用後の上付きアクセント高が 1画素より大きく ppem の 1/8 以下の場合に限る。それ以外の複合グリフと Latin 以外のグリフには `AutoHintUnsupportedGlyph` を返し、`Scratch` を空にする（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
+- `Outlines::load_with_hint` と C API の `sofel_outline_load_with_hint` はロード時に `HintMode::None`、`NativeV35`、`NativeV40`、`Auto` と NORMAL、LIGHT、MONO、LCD、LCD_V のターゲットを指定し、輪郭と水平アドバンスを返す。`Auto` は TrueType の Latin に分類される単純グリフと空輪郭に対応する。複合グリフは FreeType の `AF_ADJUST_UP` 対象の文字に対応し、ヒント適用後の上付きアクセント高が 1画素より大きく ppem の 1/8 以下の場合に限る。それ以外の複合グリフと Latin 以外のグリフには `AutoHintUnsupported` を返し、`Scratch` を空にする（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
 
 - glyfと `GLYF` の単純なグリフと合成グリフの輪郭を、ヒンティングをせずに、FreeTypeと同じ座標で `Pen` に渡す（[ADR 0011](adr/0011-glyf-outlines.md)）。`GLYF` があれば `GLYF` と `LOCA` を使い、そのときだけフラグ0x80を三次曲線、0x2000を24bitの成分のグリフIDとして扱う。
 - 倍率は `FT_Set_Pixel_Sizes` と同じく `div_fix(ppem << 6, unitsPerEm)` で、点は `mul_fix` で拡大縮小し、丸めない。locaの解釈と合成の位置の計算はFreeTypeに合わせる。
@@ -400,18 +400,30 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - [ADR 0061](adr/0061-subset-axis-instancing.md) の全軸固定では、glyf の単純グリフと合成グリフを固定位置で書き出し、空のグリフを含めて幻の点からメトリクスを求める。avar 版1・版2ともに輪郭座標は利用者の設計座標から求める。版2のサブセット計画では、各軸の写像を通して 2.14 に丸めた座標列から全軸の補正量を計算する。各補正量を整数に丸めて元の座標に加え、結果を正規化範囲に収める。cvar とレイアウトの差分にはサブセット計画の正規化座標を使う。cvar の差分を加算してから丸めて cvt に反映する。gvar の一部の軸を固定するときは、固定する軸のタグ順に各軸のスカラーを変化量に掛ける。残る軸の領域が同じタプルを足し合わせてから整数に丸める。軸範囲の変更では、元の領域の寄与を新しい既定位置での寄与と、その両側で増減する寄与に分ける。新しい軸座標に移すときは、元の既定値から最小値・最大値までの設計座標の距離を使う。avar 版1の軸範囲を狭めるときは、写像を逆にたどって元の入力範囲を求める。範囲内の点の入出力をそれぞれ正規化し直し、必須の3点を加えて入力座標順に書き出す。IUP 最適化を指定すると、新しい既定位置の輪郭で補間できる点を調べ、参照点と変化量の合計バイト数が減る場合にその点を省く。HVAR・VVAR の送り幅では、明示マップがある場合は同じ変化量を持つ行をまとめ、マップの参照先を更新する。送り幅のマップの有無にかかわらず、残す行の変化量を新しい領域ごとに足し合わせて丸める。すべての行がゼロになる領域を取り除き、残る元の領域の後に新しく生じた領域を書く。GDEF の変化量ストアも残す軸に合わせて書き直す。GPOS の位置調整と GDEF のキャレットには新しい既定位置での差分を加え、残る変化量への参照を更新する。一部の軸を残す場合は、MVAR の各メトリクスが参照する変化量を新しい軸範囲に合わせて書き直す。MVAR の差分は元のメトリクスに加えてから丸め、OS/2、hhea、vhea、post に書き出す。hhea のアセンダー、ディセンダー、行間は元の3値が OS/2 の組版用の3値と一致した場合に更新する。GDEF のキャレット、GPOS のアンカーと位置調整値、BASE の基準線には各表が参照する変化量を加える。GSUB の FeatureVariations には固定位置を含む最初の軸範囲を適用する。一部の軸を残す場合も、置換条件が参照する軸をすべて固定すれば、固定位置で有効な置換を選ぶ。条件が参照する軸を残すときは、軸番号を振り直す。指定範囲のどこでも成り立たない条件があれば、その置換候補を除く。固定した軸で成り立つ条件と、上下限が軸の指定範囲に一致する条件を取り除く。ほかの条件の上下限は新しい軸座標に変換する。新しい既定位置で選んだ置換を基本の機能とし、条件によって元の機能に戻る場合は、その機能が参照する名前も残す。TrueType の軸範囲を変更すると、新しい既定位置での差分を制御値に加え、残る範囲の差分を cvar に書く。BASE の基準線の座標にも新しい既定位置の差分を加え、残る軸の変化量ストアと参照番号を書き直す。COLR の一部の軸を固定すると、固定位置での変化量をペイントとクリップ矩形に加え、残る軸の変化量を ItemVariationStore に書き出す。
 - 軸を指定しない HVAR と VVAR は、複数のItemVariationDataから残したグリフに対応する行と使う領域を詰め、全ての値が0の列を除いて書き出す。使わないItemVariationDataを除き、暗黙・明示の送り幅とサイドベアリングのマップを新しいグリフIDに合わせて書く（[ADR 0022](adr/0022-subsetting.md)）。 明示マップの末尾で複数のグリフが同じ行を参照する場合は、その最初の項目までを書き、残りは最後の値を繰り返して読む。空のサイドベアリングと縦の原点のマップは出力しない。
 - [ADR 0061](adr/0061-subset-axis-instancing.md) の全軸固定では、COLR 版1の DeltaSetIndexMapと変化量ストアを参照して、単色とグラデーションの各停止点の不透明度を 0 から 1 に収める。クリップ矩形は最小座標の差分を切り下げ、最大座標の差分を切り上げる。拡大率が 2.14 の範囲を超える場合はアフィン変換で表す。放射グラデーションの半径が負になる場合は、円の位置と停止点のオフセットを同じパラメーターで変換し、表現できる静的なグラデーションを書き出す。
-- VARC のサブセット化（[ADR 0067](adr/0067-varc-components.md)）は、残す部品を再帰的に集め、グリフ ID と参照、条件、部品の軸座標、変化量ストアの番号を再配置する。VARC が参照しない1軸を既定値に固定し、gvar、GVAR、HVAR、VVAR、MVAR、cvar、CFF2、GDEF、GSUB、GPOS、BASE、MATH、COLR、STAT が存在しないか捨てられ、avar が版2でない場合は、残る軸の番号を書き直す。これらの表と avar が元のフォントにない場合は、非既定値への固定と範囲の指定でも VARC の軸番号を写す。元のフォントに gvar だけが加わる場合も、gvar を出力から除けば、単純グリフの輪郭とメトリクスに新しい既定位置の変化量を反映する。CFF2 がなく、avar 版2の全軸が恒等写像で軸インデックスマップと変化量ストアが空なら、軸固定時に avar を省く。範囲を変更する1軸が恒等写像で、同じく CFF2、軸インデックスマップ、変化量ストアがない場合は、座標の補正量を avar に書く。他の軸の非線形な写像と、元の輪郭とメトリクスを保つ。この範囲変更では gvar を出力に残せる。VARC が参照しない1軸を固定すると、その座標で寄与する gvar タプルの差分を残る軸に写す。差分を持つ点が一部だけの輪郭では補間を行い、同じ軸範囲に写るタプルの差分を合計してから丸める。出力に VARC のグリフが残らない場合は VARC を省き、その軸の固定を妨げない。参照される軸の固定と対象外の変化量表を持つフォントの部分軸固定は `Unsupported` とする。VARC を `NoSubsetTables` でそのまま写す場合は、`RETAIN_GIDS` を指定して軸を変えないことを要し、満たさなければ `Unsupported` とする。
+- VARC のサブセット化（[ADR 0067](adr/0067-varc-components.md)）は、残す部品を再帰的に集め、グリフ ID と参照、条件、部品の軸座標、変化量ストアの番号を再配置する。VARC が参照しない軸を既定値に固定し、gvar、GVAR、HVAR、VVAR、MVAR、cvar、CFF2、GDEF、GSUB、GPOS、BASE、MATH、COLR、STAT が存在しないか捨てられ、avar が版2でない場合は、残る軸の番号を書き直す。これらの表と avar が元のフォントにない場合は、非既定値への固定と範囲の指定でも VARC の軸番号を写す。元のフォントに gvar だけが加わる場合も、gvar を出力から除けば、単純グリフの輪郭とメトリクスに新しい既定位置の変化量を反映する。CFF2 がなく、avar 版2の全軸が恒等写像で軸インデックスマップと変化量ストアが空なら、軸固定時に avar を省く。範囲を変更する1軸が恒等写像で、同じく CFF2、軸インデックスマップ、変化量ストアがない場合は、座標の補正量を avar に書く。他の軸の非線形な写像と、元の輪郭とメトリクスを保つ。この範囲変更では gvar を出力に残せる。VARC が参照しない軸を固定すると、その座標で寄与する gvar タプルの差分を残る軸に写す。差分を持つ点が一部だけの輪郭では補間を行い、同じ軸範囲に写るタプルの差分を合計してから丸める。出力に VARC のグリフが残らない場合は VARC を省き、その軸の固定を妨げない。参照される軸の固定と対象外の変化量表を持つフォントの部分軸固定は `Unsupported` とする。VARC を `NoSubsetTables` でそのまま写す場合は、`RETAIN_GIDS` を指定して軸を変えないことを要し、満たさなければ `Unsupported` とする。
 - 名前の表では、上書きの指定でレコードを追加・置換し、空文字列を指定したレコードを削除する。
 - 軸を指定しない BASE 1.1 の ItemVariationStore は、残すスクリプトとフィーチャに属する横と縦の BaseCoord の VariationIndex を集め、使う行と領域だけを詰めて番号を振りなおす。参照が0件なら、HarfBuzzと同じくストアを除いて座標を残す。BaseValues、既定の MinMax、言語別とフィーチャ別の MinMax を調べ、壊れた参照はこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
 - 軸を指定しないGDEF 1.3のItemVariationStoreは、コピーするGSUBのFeatureVariationsがバージョン1.0で軸範囲の条件だけを持つ場合も含めて、残すLigCaretList、値の記録、アンカー、MATHの定数・斜体補正・上アクセント・カーニング・組み立てのVariationIndexに合わせて行と領域を詰めて書く。参照が0件ならストアを除く。GPOSの値の記録とアンカーをたどってVariationIndexを集める。送り幅などの値に現れる `0x8000` は参照に数えない。MATHだけをコピーするときは、除去したグリフの記録も含め、すべてのVariationIndexがGDEFの再配置後に元の行を指すことを確かめる。MATHだけをコピーして参照番号を合わせられない場合と、同じバイト列があるGPOSをそのままコピーする場合は拒否する。GDEFだけをコピーしてGPOSやMATHをサブセット化するとき、HarfBuzzと同じくそれらの参照番号を詰め、GDEFのストアは元のバイト列のまま写す。壊れたGDEFはこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
+- GSUB・GPOS 版1.2 のサブセット化では、ScriptList、FeatureList、LookupList を32ビットのオフセットで出力する。LookupList 内のオフセット幅は入力のリストに従う（[ADR 0022](adr/0022-subsetting.md)）。
+- GDEF 版1.4 は、各サブテーブルの32ビットオフセットが非ゼロの場合にそちらを使う。拡張オフセットを使う入力は版1.4で書き出す。合字キャレット一覧では32ビットの Coverage オフセットと24ビットの件数・合字オフセットを扱う（[ADR 0022](adr/0022-subsetting.md)）。
 - [ADR 0022](adr/0022-subsetting.md) のFeatureVariations版1.1では、残すフィーチャのLookupVariationRecordからlookupと条件形式2のVariationIndexを集める。軸を指定しないときは条件形式1〜5を保ち、部分軸指定では一定になる条件を評価し、残る条件木とlookup番号を書き直す。条件が参照するGDEFのItemVariationStoreは、使う行を残して参照番号を更新する。[ADR 0061](adr/0061-subset-axis-instancing.md) の軸固定では、条件値の符号が丸めで変わらない倍率で必要な行をprivate rowにし、全軸固定で有効なlookupをフィーチャに加える。
-- レイアウトの表のうち、FeatureVariationsを持つGSUBをそのままコピーする場合のGDEF、GSUBとGPOSの版1.2とGDEFの版1.4、FeatureVariations版1.0の形式1でない条件、65536を超えるグリフのフォントの24bitの形式も `Unsupported` とする。
+- レイアウトの表のうち、FeatureVariationsを持つGSUBをそのままコピーする場合のGDEF、FeatureVariations版1.0の形式1でない条件、65536を超えるグリフのフォントの24bitの形式も `Unsupported` とする。
 
 ## WOFF と圧縮フォントの読み込み
 
 `sofel_woff::decode_woff2` は、Brotli の非圧縮ブロックに変換なしの表を格納した単一フェイスの WOFF2 を sfnt に戻す。CLI は外側の圧縮を展開した後に WOFF2 の署名を識別する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
 `sofel_woff::decode_woff` は出力サイズの上限を受け取り、WOFF 1.0 の表を物理順に展開して sfnt を返す。フォントを読み込む CLI は gzip、UNIX compress（LZW）、bzip2 を先に展開してから WOFF の署名を検査する。検証器は WOFF の不正なフィールドか圧縮表の入力オフセットを報告する。bzip2 はブロックとメンバーの CRC を検査し、破損を検出した入力オフセットを報告する。gzip の破損はメンバーを含むコンテナ先頭で報告する。[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)
+
+## 固定サイズのビットマップフェイス
+
+`Font::from_bitmap` は BDF、PCF、Windows FNT、FON の署名を識別し、指定した番号のフェイスを開く。
+フェイスから文字に対応するグリフ番号、ストライクのサイズ、グリフの送り幅と画像を取得する。
+`sofel-render` もこの形式判定とフェイス操作を使う（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+
+FON では NE または i386 PE32 のフォントリソースを読む。
+PE32 では `RT_FONT` の名前・言語ディレクトリを順にたどり、各データ項目にフェイス番号を付ける。
+リソースやフォントの宣言長が対象のセクションを越える場合はエラーを返す。
 
 ## BDF フェイス
 
@@ -434,7 +446,18 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 `sofel-type1::source::Type1Source` は PFA の16進 eexec と PFB の ASCII・バイナリセクションを読み、秘密辞書を復号する。`sofel-type1::face::Type1Face` は文字コードからグリフ番号への対応、グリフ名、charstring から読んだ送り幅を返す。AFM または PFM を付加すると、グリフ対のカーニングを返す。PFB のセクション長、PFA の16進表記、charstring の長さと AFM・PFM のペア表を検査する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
+横書きでは、Type1 フェイスを `SubFont::from_type1` に渡し、`shape_with_subfont` で文字列を組む。グリフ名から Unicode に対応するグリフを選び、送り幅と付加済みの AFM・PFM のカーニングを使う。`kern=0` を指定した範囲ではカーニングを適用しない。
+
 `sofel-type1::type42::Type42Source` は Type42 の `/sfnts` 配列の16進文字列または `RD` バイナリを連結し、展開長と sfnt の表範囲を検査する。`/Encoding` と `/CharStrings` から Type42 のグリフ番号を読み、`.notdef` を先頭に置く。Unicode の文字対応は PostScript のグリフ名を Adobe Glyph List と `uniXXXX`・`uXXXXX` によって変換し、8ビットの Encoding は別に問い合わせる。`Font::from_type42` が返す `Type42Face` は Type42 のグリフ番号を埋め込み TrueType のグリフ番号へ変換し、送りを返す。輪郭を読むときは `embedded_glyph` と `inner_font` の組を使う（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+
+## 素の CFF フェイスと CEF
+
+`sofel-font::Cff::from_bare` は sfnt に包まれていない CFF 1 をフェイス番号で開く。Name INDEX の位置で Top DICT を選び、CharStrings のグリフ数、charset のグリフ名、Encoding を既存の CFF ビューで問い合わせる。`BareCffFace` は Adobe Glyph List を使った Unicode の文字対応、8ビットの Encoding、グリフ名、charstring の送り幅を返す。`sofel-outline::draw_bare_cff` はそのグリフの輪郭をヒンティングなしで描く。`sofel-render` の通常ファイル入力は素の CFF 1 を判別し、`--glyph` または `--char` で輪郭を PGM に描く。`sofel render --text` は `SubFont` の文字対応と送り幅の関数を使って一行をシェーピングし、同じ輪郭で描く。`sofel-validate` は素の CFF 1 の全フェイスを検査し、破損位置を CFF 表からのオフセットで報告する。範囲外のフェイス番号、必須の INDEX や CharStrings の欠落を拒む。共通の `Font` 型への接続は未実装である（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+
+CEF（Compact Embedded Font）は `head` がなく `CFF ` 表を持つ `OTTO` ディレクトリから開く。
+`BareCffFace::new` はフェイス番号 0 を受け付け、CFF のグリフ名から文字を対応付ける。
+`sofel-render` はこのフェイスの送りと輪郭を使う。
+`sofel-validate` はディレクトリの範囲とチェックサム、CFF の内容、任意の `cmap` 表を検査する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
 ## Web フォントの書き出し（`sofel-woff`）
 

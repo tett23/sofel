@@ -622,6 +622,27 @@ static void test_outlines(const sofel_font_t *font) {
   CHECK(sofel_outline_load_truetype_v40(font, NULL, 1, 16, 0, scratch, cbox, &overlap, &hinted_advance) == SOFEL_OK);
   CHECK(sofel_outline_load_truetype_v40(font, NULL, 1, 16, 5, scratch, cbox, &overlap, &hinted_advance) == SOFEL_ERROR_INVALID_ARGUMENT);
   CHECK(sofel_outline_load_truetype_v35(font, NULL, 1, 16, 5, scratch, cbox, &overlap) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_outline_load_with_hint(font, NULL, 1, 16, SOFEL_HINT_MODE_NONE,
+                                     SOFEL_HINT_TARGET_NORMAL, scratch, cbox, &overlap,
+                                     &hinted_advance) == SOFEL_OK);
+  CHECK(sofel_outline_load_with_hint(font, NULL, 1, 16, SOFEL_HINT_MODE_NATIVE_V35,
+                                     SOFEL_HINT_TARGET_MONO, scratch, cbox, &overlap,
+                                     &hinted_advance) == SOFEL_OK);
+  CHECK(sofel_outline_load_with_hint(font, NULL, 1, 16, SOFEL_HINT_MODE_NATIVE_V40,
+                                     SOFEL_HINT_TARGET_NORMAL, scratch, cbox, &overlap,
+                                     &hinted_advance) == SOFEL_OK);
+  CHECK(sofel_outline_load_with_hint(font, NULL, 1, 16, SOFEL_HINT_MODE_AUTO,
+                                     SOFEL_HINT_TARGET_NORMAL, scratch, cbox, &overlap,
+                                     &hinted_advance) == SOFEL_ERROR_UNSUPPORTED);
+  CHECK(sofel_outline_load_with_hint(font, NULL, 1, 16, 4, SOFEL_HINT_TARGET_NORMAL,
+                                     scratch, cbox, &overlap, &hinted_advance) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_outline_load_with_hint(font, NULL, 1, 16, SOFEL_HINT_MODE_NONE, 5,
+                                     scratch, cbox, &overlap, &hinted_advance) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_outline_load_with_hint(font, NULL, 1, 16, SOFEL_HINT_MODE_NONE,
+                                     SOFEL_HINT_TARGET_NORMAL, scratch, cbox, &overlap,
+                                     NULL) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_outline_load_truetype_v40(font, NULL, 1, 16, SOFEL_HINT_TARGET_NORMAL,
+                                        scratch, cbox, &overlap, &hinted_advance) == SOFEL_OK);
 
   const uint8_t *point_tags;
   const size_t *contour_ends;

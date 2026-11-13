@@ -161,7 +161,6 @@ name = "sofel-cli"
 version = "0.0.0"
 dependencies = [
  "sofel-bitmap",
- "sofel-bitmapfont",
  "sofel-color",
  "sofel-font",
  "sofel-geom",
@@ -212,6 +211,7 @@ dependencies = [
 name = "sofel-font"
 version = "0.0.0"
 dependencies = [
+ "sofel-bitmapfont",
  "sofel-geom",
  "sofel-read",
  "sofel-type1",

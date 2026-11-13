@@ -87,6 +87,171 @@ fn adr0061_i1_avar2_self_contained_pin_plus_range_match_harfbuzz() {
 }
 
 #[test]
+fn adr0061_i1_avar2_moved_default_plus_self_contained_pin_matches_harfbuzz() {
+    compare_axes(&[
+        (b"wght", 190.0, 550.0, 900.0),
+        (b"wdth", 150.0, 150.0, 150.0),
+    ]);
+}
+
+#[test]
+fn adr0061_i1_avar2_restricts_cff2_hvar_and_gdef_like_harfbuzz() {
+    let source = paths::testdata().join("harfbuzz/test/subset/data/fonts/AdobeVFPrototype.otf");
+    let bytes = std::fs::read(source).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    for has_store in [false, true] {
+        let mut avar = font.table(Tag::new(b"avar")).unwrap().to_vec();
+        avar[..2].copy_from_slice(&2u16.to_be_bytes());
+        avar.extend(0u32.to_be_bytes()); // No explicit DeltaSetIndexMap.
+        if has_store {
+            avar.extend(u32::try_from(avar.len() + 4).unwrap().to_be_bytes());
+            avar.extend(1u16.to_be_bytes()); // ItemVariationStore format 1.
+            avar.extend(12u32.to_be_bytes()); // RegionList offset.
+            avar.extend(1u16.to_be_bytes()); // One ItemVariationData.
+            avar.extend(28u32.to_be_bytes()); // ItemVariationData offset.
+            avar.extend(2u16.to_be_bytes()); // Two axes.
+            avar.extend(1u16.to_be_bytes()); // One region.
+            for axis in [[0i16, 16384, 16384], [0, 0, 0]] {
+                for value in axis {
+                    avar.extend(value.to_be_bytes());
+                }
+            }
+            for value in [2u16, 1, 1, 0, 1024, 0] {
+                avar.extend(value.to_be_bytes());
+            }
+        } else {
+            avar.extend(0u32.to_be_bytes());
+        }
+        let tables = font
+            .sfnt()
+            .records()
+            .map(|r| {
+                (
+                    r.tag,
+                    if r.tag == Tag::new(b"avar") {
+                        avar.clone()
+                    } else {
+                        r.data(&bytes).unwrap().to_vec()
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        let refs = tables
+            .iter()
+            .map(|(tag, bytes)| (*tag, bytes.as_slice()))
+            .collect::<Vec<_>>();
+        let modified = sofel_write::build_sfnt(&refs).unwrap();
+        let path = std::env::temp_dir().join(format!(
+            "sofel-adr61-cff2-avar2-{has_store}-{}.otf",
+            std::process::id()
+        ));
+        std::fs::write(&path, modified).unwrap();
+        for ranges in [
+            vec![(b"wght", 300.0, 500.0, 700.0)],
+            vec![(b"wght", 600.0, 600.0, 600.0)],
+            vec![(b"CNTR", 50.0, 50.0, 50.0)],
+            vec![(b"wght", 300.0, 500.0, 700.0), (b"CNTR", 50.0, 50.0, 50.0)],
+            vec![(b"wght", 600.0, 600.0, 600.0), (b"CNTR", 50.0, 50.0, 50.0)],
+            vec![(b"wght", 200.0, 200.0, 200.0), (b"CNTR", 0.0, 0.0, 0.0)],
+            vec![
+                (b"wght", 900.0, 900.0, 900.0),
+                (b"CNTR", 100.0, 100.0, 100.0),
+            ],
+        ] {
+            compare_path(&path, &ranges);
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+}
+
+#[test]
+fn adr0061_i1_avar2_restricts_variable_colr_like_harfbuzz() {
+    let source = paths::testdata().join("harfbuzz/test/subset/data/fonts/KalniaGlaze.ttf");
+    let bytes = std::fs::read(source).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let mut avar = font.table(Tag::new(b"avar")).unwrap().to_vec();
+    avar[..2].copy_from_slice(&2u16.to_be_bytes());
+    avar.extend([0; 8]);
+    let tables = font
+        .sfnt()
+        .records()
+        .map(|r| {
+            (
+                r.tag,
+                if r.tag == Tag::new(b"avar") {
+                    avar.clone()
+                } else {
+                    r.data(&bytes).unwrap().to_vec()
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+    let refs = tables
+        .iter()
+        .map(|(tag, bytes)| (*tag, bytes.as_slice()))
+        .collect::<Vec<_>>();
+    let modified = sofel_write::build_sfnt(&refs).unwrap();
+    let path =
+        std::env::temp_dir().join(format!("sofel-adr61-colr-avar2-{}.ttf", std::process::id()));
+    std::fs::write(&path, modified).unwrap();
+    for ranges in [
+        vec![(b"wght", 200.0, 400.0, 600.0)],
+        vec![(b"wght", 400.0, 400.0, 600.0)],
+        vec![(b"wdth", 112.0, 112.0, 112.0)],
+        vec![
+            (b"wght", 200.0, 400.0, 600.0),
+            (b"wdth", 112.0, 112.0, 112.0),
+        ],
+        vec![
+            (b"wght", 400.0, 400.0, 400.0),
+            (b"wdth", 112.0, 112.0, 112.0),
+        ],
+    ] {
+        compare_path(&path, &ranges);
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn adr0061_i1_avar2_restricts_variable_base_like_harfbuzz() {
+    let source = paths::testdata().join("harfbuzz/test/subset/data/fonts/NotoSerifHK-subset.ttf");
+    let bytes = std::fs::read(source).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let mut avar = font.table(Tag::new(b"avar")).unwrap().to_vec();
+    avar[..2].copy_from_slice(&2u16.to_be_bytes());
+    avar.extend([0; 8]);
+    let tables = font
+        .sfnt()
+        .records()
+        .map(|r| {
+            (
+                r.tag,
+                if r.tag == Tag::new(b"avar") {
+                    avar.clone()
+                } else {
+                    r.data(&bytes).unwrap().to_vec()
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+    let refs = tables
+        .iter()
+        .map(|(tag, bytes)| (*tag, bytes.as_slice()))
+        .collect::<Vec<_>>();
+    let modified = sofel_write::build_sfnt(&refs).unwrap();
+    let path =
+        std::env::temp_dir().join(format!("sofel-adr61-base-avar2-{}.ttf", std::process::id()));
+    std::fs::write(&path, modified).unwrap();
+    for ranges in [
+        vec![(b"wght", 200.0, 200.0, 400.0)],
+        vec![(b"wght", 400.0, 400.0, 900.0)],
+    ] {
+        compare_path(&path, &ranges);
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn adr0061_i1_avar2_shared_default_and_self_contained_pin_match_harfbuzz() {
     compare_axes(&[(b"XOPQ", 88.0, 88.0, 88.0), (b"wdth", 100.0, 100.0, 100.0)]);
 }

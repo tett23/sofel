@@ -74,7 +74,7 @@ fn adr0064_i1_auto_non_latin_reports_unsupported() {
     let mut scratch = Scratch::default();
     assert!(matches!(
         outlines.load_auto_hinted(GlyphId(5), 16, HintTarget::Normal, &mut scratch),
-        Err(OutlineError::AutoHintUnsupportedGlyph)
+        Err(OutlineError::AutoHintUnsupported)
     ));
     assert!(scratch.points().is_empty());
 }
@@ -89,7 +89,7 @@ fn adr0064_i1_auto_composite_outside_short_accent_range_reports_unsupported() {
         let mut scratch = Scratch::default();
         assert!(matches!(
             outlines.load_auto_hinted(GlyphId(7), ppem, HintTarget::Normal, &mut scratch),
-            Err(OutlineError::AutoHintUnsupportedGlyph)
+            Err(OutlineError::AutoHintUnsupported)
         ));
         assert!(scratch.points().is_empty());
     }

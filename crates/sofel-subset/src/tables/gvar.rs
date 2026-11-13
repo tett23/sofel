@@ -19,6 +19,8 @@ use crate::plan::Plan;
 
 use super::Tables;
 
+type GlyphRecord<'a> = (u32, Cow<'a, [u8]>);
+
 pub(super) fn subset(
     plan: &Plan,
     font: &Font<'_>,
@@ -59,7 +61,14 @@ pub(super) fn subset(
         };
         records.push((new_gid, Cow::Borrowed(bytes)));
     }
-    if (plan.var.instancing() || !plan.var.n.avar2_reachable.is_empty())
+    if plan.var.n.avar2
+        && !plan.var.instancing()
+        && !plan.var.n.avar2_reachable.is_empty()
+        && plan.var.n.retained_axis_indices.len() == usize::from(table.axis_count())
+        && !large
+    {
+        records = cull_unreachable_records(plan, &table, &records, tag)?;
+    } else if (plan.var.instancing() || !plan.var.n.avar2_reachable.is_empty())
         && !large
         && (!plan.var.n.avar2
             || plan.var.n.retained_axis_indices.len() < usize::from(table.axis_count())
@@ -94,6 +103,98 @@ pub(super) fn subset(
         &records,
         serializer,
     )
+}
+
+fn cull_unreachable_records<'a>(
+    plan: &Plan,
+    table: &Gvar<'_>,
+    records: &[GlyphRecord<'a>],
+    tag: Tag,
+) -> Result<Vec<GlyphRecord<'a>>, SubsetError> {
+    use sofel_font::read::gvar::PackedPoints;
+
+    let bad = SubsetError::Malformed { tag };
+    let mut result: Vec<GlyphRecord<'a>> = Vec::with_capacity(records.len());
+    let axes = usize::from(table.axis_count());
+    for ((new_gid, raw), &(_, old_gid)) in records.iter().zip(plan.new_to_old_glyphs()) {
+        if raw.is_empty() {
+            result.push((*new_gid, Cow::Borrowed(&[])));
+            continue;
+        }
+        let glyph = table.glyph_data(old_gid).ok_or(bad)?;
+        let data_at = usize::from(sofel_font::read::be::u16_at(raw, 2).ok_or(bad)?);
+        let shared_size = if glyph.has_shared_points() {
+            PackedPoints::parse(raw.get(data_at..).ok_or(bad)?)
+                .ok_or(bad)?
+                .1
+        } else {
+            0
+        };
+        let mut header_at = 4usize;
+        let mut headers = Vec::new();
+        let mut data = Vec::new();
+        let mut kept = 0u16;
+        for tuple in glyph.tuples() {
+            let tuple = tuple.ok_or(bad)?;
+            let peak = tuple
+                .embedded_peak()
+                .or_else(|| table.shared_tuple(tuple.shared_peak_index()?))
+                .ok_or(bad)?;
+            let mut region = Vec::with_capacity(axes);
+            for axis in 0..axes {
+                let middle = peak.axis(axis).ok_or(bad)?;
+                let (low, high) = if let Some((start, end)) = tuple.intermediate() {
+                    (start.axis(axis).ok_or(bad)?, end.axis(axis).ok_or(bad)?)
+                } else {
+                    (middle.min(0), middle.max(0))
+                };
+                region.push([low, middle, high].map(|v| f32::from(v) / 16384.0));
+            }
+            let flags = sofel_font::read::be::u16_at(raw, header_at.checked_add(2).ok_or(bad)?)
+                .ok_or(bad)?;
+            let coordinate_sets = usize::from(flags & 0x8000 != 0)
+                .saturating_add(usize::from(flags & 0x4000 != 0).saturating_mul(2));
+            let next = header_at
+                .checked_add(4)
+                .and_then(|n| {
+                    coordinate_sets
+                        .checked_mul(axes)
+                        .and_then(|v| v.checked_mul(2))
+                        .and_then(|v| n.checked_add(v))
+                })
+                .ok_or(bad)?;
+            if !super::avar::region_dead(
+                &region,
+                &plan.var.n.axis_tags,
+                &plan.var.n.avar2_reachable,
+            ) {
+                headers.extend_from_slice(raw.get(header_at..next).ok_or(bad)?);
+                data.extend_from_slice(tuple.data());
+                kept = kept.saturating_add(1);
+            }
+            header_at = next;
+        }
+        if kept == glyph.tuple_count() {
+            result.push((*new_gid, raw.clone()));
+        } else if kept == 0 {
+            result.push((*new_gid, Cow::Borrowed(&[])));
+        } else {
+            let mut output = Vec::new();
+            output.extend_from_slice(
+                &(kept | if glyph.has_shared_points() { 0x8000 } else { 0 }).to_be_bytes(),
+            );
+            let new_data_at = 4usize.checked_add(headers.len()).ok_or(bad)?;
+            output.extend_from_slice(&u16::try_from(new_data_at).map_err(|_| bad)?.to_be_bytes());
+            output.extend(headers);
+            output.extend_from_slice(
+                raw.get(data_at..data_at.checked_add(shared_size).ok_or(bad)?)
+                    .ok_or(bad)?,
+            );
+            output.extend(data);
+            result.push((*new_gid, Cow::Owned(output)));
+        }
+    }
+    Ok(result)
 }
 
 /// Writes the shared peak tuples and the output glyph records, choosing

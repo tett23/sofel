@@ -1,4 +1,4 @@
-//! `sofel-validate`: validate sfnt fonts and collections (ADR 0008).
+//! `sofel-validate`: validate sfnt, CEF and bare CFF fonts (ADR 0008, 0065).
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -9,7 +9,7 @@ use std::path::Path;
 use sofel_read::layout::damage::DamageEvent;
 use sofel_read::sfnt::{FontFile, Sfnt};
 use sofel_read::{
-    DetailValue, Diagnostic, Kind, ReadError, Severity, Tag, gdef, gpos, gsub, validate,
+    DetailValue, Diagnostic, Kind, ReadError, Severity, Tag, cff, gdef, gpos, gsub, validate,
 };
 
 use crate::json;
@@ -18,8 +18,8 @@ use crate::json;
 pub const HELP: &str = "\
 usage: sofel-validate [--json] FILE...
 
-Validates sfnt fonts and TTC/OTC collections with the validators of
-sofel-read. Tables without a validator are skipped.
+Validates sfnt fonts, TTC/OTC collections, CEF and bare CFF 1 fonts with
+the validators of sofel-read. Tables without a validator are skipped.
 
 Each problem is one line on standard output:
 
@@ -103,8 +103,24 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
                 continue;
             }
         };
+        if bytes.first() == Some(&1) {
+            cff::validate_bare(&bytes, &mut |diagnostic| {
+                emit_diagnostic(&name, None, diagnostic, as_json, out, &mut errors)
+            });
+            continue;
+        }
         match FontFile::new(&bytes) {
             Err(e) => emit_diagnostic(&name, None, file_diagnostic(e), as_json, out, &mut errors),
+            Ok(FontFile::Sfnt(s)) if cff::is_cef(&s) => {
+                let mut report = |d| emit_diagnostic(&name, None, d, as_json, out, &mut errors);
+                validate::directory(&s, &mut report);
+                if let Some(data) = s.table(cff::TAG) {
+                    cff::validate_bare(data, &mut report);
+                }
+                if let Some(data) = s.table(sofel_font::read::cmap::TAG) {
+                    sofel_font::read::cmap::validate(data, None, &mut report);
+                }
+            }
             Ok(FontFile::Sfnt(s)) => {
                 validate_face(&s, &name, None, as_json, out, &mut errors);
             }

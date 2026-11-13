@@ -185,7 +185,7 @@ pub enum OutlineError {
     /// A charstring cannot be decoded, or its Font DICT cannot be read.
     InvalidCharString,
     /// Automatic hinting for this outline kind is not implemented yet.
-    AutoHintUnsupportedGlyph,
+    AutoHintUnsupported,
 }
 
 impl fmt::Display for OutlineError {
@@ -198,7 +198,7 @@ impl fmt::Display for OutlineError {
             OutlineError::UnsupportedFormat => "no outline table",
             OutlineError::InvalidCff => "invalid CFF table",
             OutlineError::InvalidCharString => "invalid charstring",
-            OutlineError::AutoHintUnsupportedGlyph => {
+            OutlineError::AutoHintUnsupported => {
                 "automatic hinting for this glyph is not implemented"
             }
         })
@@ -370,6 +370,32 @@ pub fn draw(
     pen: &mut impl Pen,
 ) -> Result<OutlineInfo, OutlineError> {
     Outlines::new(instance).draw(glyph, scale, scratch, pen)
+}
+
+/// Draws a glyph from a bare CFF 1 face without hinting.
+///
+/// The face is opened with [`Cff::from_bare`]. `Scale::Unscaled` returns
+/// coordinates in the CFF design space, as the sfnt CFF path does.
+pub fn draw_bare_cff(
+    cff: &Cff<'_>,
+    glyph: GlyphId,
+    scale: Scale,
+    scratch: &mut Scratch,
+    pen: &mut impl Pen,
+) -> Result<OutlineInfo, OutlineError> {
+    let info = load_bare_cff(cff, glyph, scale, scratch)?;
+    scratch.decompose(Point::default(), 1, pen)?;
+    Ok(info)
+}
+
+/// Loads a bare CFF 1 glyph into `scratch` for decomposition or rasterization.
+pub fn load_bare_cff(
+    cff: &Cff<'_>,
+    glyph: GlyphId,
+    scale: Scale,
+    scratch: &mut Scratch,
+) -> Result<OutlineInfo, OutlineError> {
+    cff::load_bare_cff(cff, glyph, scale, scratch)
 }
 
 /// How a font's outlines are read: chosen as FreeType chooses its driver.
