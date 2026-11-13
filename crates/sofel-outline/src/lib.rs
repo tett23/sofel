@@ -620,16 +620,21 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
             HintMode::NativeV40 => self.load_truetype_v40(glyph, ppem, target, scratch),
             HintMode::Auto => {
                 let scale = Scale::pixels(&self.font, ppem, ppem);
-                let info = self.load(glyph, scale, scratch)?;
-                if !scratch.points.is_empty()
-                    && !(matches!(self.format, Format::Glyf)
-                        && !info.overlap
-                        && auto_latin_fallback(&self.font, glyph)
-                        && auto_unlinked_parallelogram(scratch))
+                let unscaled = self.load(glyph, Scale::Unscaled, scratch)?;
+                let info = if scratch.points.is_empty() {
+                    unscaled
+                } else if matches!(self.format, Format::Glyf)
+                    && !unscaled.overlap
+                    && self.font.table(Tag::new(b"gvar")).is_none()
+                    && self.font.table(Tag::new(b"GLYF")).is_none()
+                    && auto_latin_fallback(&self.font, glyph)
+                    && auto_unlinked_parallelogram(scratch, self.font.units_per_em())
                 {
+                    self.load(glyph, scale, scratch)?
+                } else {
                     scratch.clear();
                     return Err(OutlineError::AutoHintUnsupported);
-                }
+                };
                 let Scale::Scaled { x, .. } = scale else {
                     return Err(OutlineError::InvalidOutline);
                 };
@@ -748,10 +753,21 @@ fn auto_no_gsub_lookups(font: &Font<'_>) -> bool {
 // In the CJK fallback, these disjoint horizontal segments cannot link into
 // a stem. With no CJK cmap samples, there are no active blue zones; neither
 // dimension moves its edges (afcjk.c:1790-2165, FreeType 2.15.0).
-fn auto_unlinked_parallelogram(scratch: &Scratch) -> bool {
+// Each coordinate is i32: differences and their 14-fold products fit in i64.
+#[allow(clippy::arithmetic_side_effects)]
+fn auto_unlinked_parallelogram(scratch: &Scratch, upem: u16) -> bool {
     let [p0, p1, p2, p3] = scratch.points.as_slice() else {
         return false;
     };
+    let dy = i64::from(p1.y) - i64::from(p0.y);
+    let side1 = i64::from(p1.x) - i64::from(p0.x);
+    let side2 = i64::from(p2.x) - i64::from(p3.x);
+    let near = 20 * i64::from(upem) / 2048;
+    let enough = (side1 + dy >= near * 2)
+        && (side2 + dy >= near * 2)
+        && (i64::from(p3.x) - i64::from(p0.x) >= near * 2)
+        && (i64::from(p2.x) - i64::from(p1.x) >= near * 2);
+    let slanted = dy <= 14 * side1 && side1 <= 14 * dy && dy <= 14 * side2 && side2 <= 14 * dy;
     scratch.ends == [3]
         && scratch.tags.iter().all(|tag| *tag == TAG_ON)
         && p0.y == p3.y
@@ -760,6 +776,29 @@ fn auto_unlinked_parallelogram(scratch: &Scratch) -> bool {
         && p0.x < p3.x
         && p3.x < p1.x
         && p1.x < p2.x
+        && enough
+        && slanted
+}
+
+#[cfg(test)]
+mod auto_shape_tests {
+    use super::*;
+
+    #[test]
+    fn adr0064_i1_near_vertical_fallback_shape_requires_real_hinting() {
+        let scratch = Scratch {
+            points: Vec::from([
+                Point { x: 0, y: 0 },
+                Point { x: 3, y: 1000 },
+                Point { x: 5, y: 1000 },
+                Point { x: 2, y: 0 },
+            ]),
+            tags: Vec::from([TAG_ON; 4]),
+            ends: Vec::from([3]),
+            ..Default::default()
+        };
+        assert!(!auto_unlinked_parallelogram(&scratch, 2048));
+    }
 }
 
 /// Loads the points of `glyph` into `scratch`, as `FT_Load_Glyph` with
