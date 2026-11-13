@@ -70,7 +70,7 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-geom`](crates/sofel-geom) | FreeTypeと同じ結果を返す固定小数点の演算と、輪郭を受け渡す `Pen`、HarfBuzzと同じ丸め（`sofel_geom::float`）。カラーグリフの塗りの命令を受け渡す `Painter` と塗りの値、変換、どの環境でも同じ結果の三角関数、塗りの補助の関数（[ADR 0023](docs/adr/0023-color-glyphs.md)） |
 | [`sofel-unicode`](crates/sofel-unicode) | Unicode 18.0.0の文字の性質（General_Category、Script、正規分解と合成、Vertical_Orientationなど。[ADR 0019](docs/adr/0019-unicode-character-data.md)） |
 | [`sofel-read`](crates/sofel-read) | sfntの表の読み取りと検証。コピーも確保もせず、どの入力でもpanicしない |
-| [`sofel-type1`](crates/sofel-type1) | PFA・PFB の復号と Type1 の文字対応、送り幅、AFM・PFM のカーニングを使った横書きのシェーピング、Type42 の埋め込み sfnt・Encoding・CharStrings を Rust API で読む（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)） |
+| [`sofel-type1`](crates/sofel-type1) | PFA・PFB の復号と Type1 の文字対応、送り幅、AFM・PFM のカーニングを使った横書きのシェーピング、CID-keyed Type 1 の CIDMap・Font DICT・charstring・送り幅、Type42 の埋め込み sfnt・Encoding・CharStrings を Rust API で読む（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)） |
 | [`sofel-font`](crates/sofel-font) | フォントを一度だけ読み、グリフの数、文字からグリフへの対応、送り幅、フォント全体と縦書きのメトリクス、BASEの基準線とその代わりの値、名前とグリフ名（postとCFFのcharset）をHarfBuzzの方針で返し、HarfBuzzと同じ拡大縮小（`HbScale`）をする。HarfBuzzのCFFとCFF2のアクセラレータ（`HbCff1`、`HbCff2`）を持つ。素の CFF 1 はフェイス番号で Top DICT を選び、`BareCffFace` で文字対応と送り幅を返す。PostScript名と `FT_Face` の値はFreeTypeの方針。TrueType の制御値は指定した軸位置で取得できる |
 | [`sofel-outline`](crates/sofel-outline) | glyfとGLYFの輪郭を、ヒンティングなしでFreeTypeと同じ座標で `Pen` に渡す。素の CFF 1 の輪郭も `draw_bare_cff` で描く。読み込んだ閉じた輪郭は、半径と角の接合を指定して縁取り、両側または片側の境界を取り出す（[ADR 0076](docs/adr/0076-glyph-outline-stroking.md)）。HarfBuzzと同じグリフの箱（glyf、CFF2、CFF。`HbExtents`、[ADR 0021](docs/adr/0021-cff-outlines.md)）を求める |
 | [`sofel-shape`](crates/sofel-shape) | HarfBuzz 15.1.0のOTシェーパーと同じシェーピング（バッファ、区間の性質、計画、正規化、`GSUB` と `GPOS`、フォールバックの位置。[ADR 0020](docs/adr/0020-shaping-foundation.md)）、機能の文字列、直列化、言語と文字体系のタグ。文字体系ごとのシェーパー（hebrew、hangul、thai、arabic、indic、khmer、myanmar、USE。[ADR 0024](docs/adr/0024-complex-shapers.md)）もすべて実装した |
@@ -89,6 +89,7 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-capi`](crates/sofel-capi) | C ABI（ヘッダは [`sofel.h`](crates/sofel-capi/include/sofel.h)、[ADR 0015](docs/adr/0015-c-abi.md)） |
 | [`sofel-conformance`](crates/sofel-conformance) | FreeTypeとHarfBuzzとの突き合わせのテスト（`cargo test` では走らない） |
 
+サブセット化では、65,536グリフを超えるフォントのグリフを選んで小さい ID に振り直せる。GSUB の SingleSubst と GPOS の SinglePos では、形式3・4で記録された置換と位置調整を保持する。Coverage と ClassDef の形式3・4にも対応する。
 BDF、PCF、FNT、FON は Rust API の `Font::from_bitmap` で開く。文字対応、送り幅、固定サイズの画像を同じ API で読める。
 
 CEF（Compact Embedded Font）は `BareCffFace::new` のフェイス番号 0 で開く。`sofel-render` でもグリフ番号や文字を指定して描画できる。
@@ -101,7 +102,7 @@ PFR（Portable Font Resource）は、Rust API の `Font::from_pfr` でフェイ�
 
 TrueType の単純グリフと複合グリフには、`Outlines::load_truetype_v35` で NORMAL、LIGHT、MONO、LCD、LCD_V のヒンティングターゲットを選べる。対応する命令を FreeType の v35 インタープリターに合わせて実行し、補正後の輪郭を `Scratch` に格納する（[ADR 0064](docs/adr/0064-freetype-hinting-and-render-modes.md)）。 `Outlines::load_truetype_v40` と C API の `sofel_outline_load_truetype_v40` は同じ5種類のターゲットで v40 の補正を適用し、輪郭と補正後の水平アドバンス（26.6 固定小数点）を返す。
 
-ヒンティング方式をロード時に選ぶ場合は、C API の `sofel_outline_load_with_hint` または `Outlines::load_with_hint` に `HintMode::None`、`NativeV35`、`NativeV40`、`Auto` とターゲットを渡す。`Auto` は TrueType の Latin に分類される単純グリフ、空輪郭、短い上付きアクセントを持つ一部の複合グリフに対応する。後者は FreeType の `AF_ADJUST_UP` 対象の文字で、ヒント適用後のアクセント高が 1画素より大きく ppem の 1/8 以下の場合に限る。ほかの輪郭を持つ複合グリフと Latin 以外のグリフには `AutoHintUnsupported` を返す。ロード結果は輪郭と水平アドバンス（26.6 固定小数点）で、描画モードは描画時に別途選ぶ。
+ヒンティング方式をロード時に選ぶ場合は、C API の `sofel_outline_load_with_hint` または `Outlines::load_with_hint` に `HintMode::None`、`NativeV35`、`NativeV40`、`Auto` とターゲットを渡す。`Auto` は TrueType の Latin に分類される単純グリフ、空輪郭、Unicode に割り当てられていない一部の平行四辺形の輪郭、短い上付きアクセントを持つ一部の複合グリフに対応する。後者は FreeType の `AF_ADJUST_UP` 対象の文字で、ヒント適用後のアクセント高が 1画素より大きく ppem の 1/8 以下の場合に限る。対応範囲外の輪郭には `AutoHintUnsupported` を返す。ロード結果は輪郭と水平アドバンス（26.6 固定小数点）で、描画モードは描画時に別途選ぶ。
 
 FreeTypeの合成操作には、`sofel-outline::Scratch` のスロット用の斜体と太字、`sofel-bitmap` の画素形式変換と太字を使う。ビットマップの太字では `embolden_bitmap_slot` が画像とスロットのメトリクス、配置を合わせて更新する。HarfBuzzに合わせた輪郭の命令は、glyfを `Scratch::hb_decompose`、CFFとCFF2を `HbExtents::cff_glyph_path` から得る。画像を含むカラーグリフの合成斜体は、`sofel-color::paint_recording_at_with_slant` が描画命令を変換で包む（[ADR 0063](docs/adr/0063-font-functions-and-synthesis.md)）。
 
@@ -192,6 +193,9 @@ sofel-subset --font-file=Roboto.ttf --unicodes=41-5A -o out.ttf
 ```
 
 フォントを読むコマンド（`sofel-shape`、`sofel-render`、`sofel-paint`、`sofel-subset`、`sofel-validate`）は WOFF 1.0、gzip、UNIX compress（LZW）、bzip2で包んだ入力を署名から識別する。`sofel-woff --format woff2` が書き出す単一フェイスの WOFF2 も読み込める。[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)
+
+`sofel-render` は CID-keyed Type 1 のファイルを `--glyph` で直接開き、対応済みの Type 1 輪郭命令と Font DICT の `FontMatrix` を適用して PGM に描く。CID ファイルに Unicode cmap はないため、`--char` は受け付けない（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
+`sofel-validate` は CIDMap とサブルーチンマップの切り詰め、ヘッダの不正な値、16進データの無効なバイトについてファイル内の位置を報告する。
 
 ### `sofel-woff`
 

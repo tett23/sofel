@@ -182,71 +182,7 @@ impl<'p, 's> Sub<'p, 's> {
 
     /// `Coverage::serialize` into the current object.
     pub fn coverage(&mut self, glyphs: &[u32]) -> bool {
-        let count = glyphs.len();
-        let mut num_ranges = 0usize;
-        let mut last = INVALID.wrapping_sub(1);
-        let mut max = 0u32;
-        let mut unsorted = false;
-        for &g in glyphs {
-            if last != INVALID.wrapping_sub(1) && g < last {
-                unsorted = true;
-            }
-            if last.wrapping_add(1) != g {
-                num_ranges = num_ranges.wrapping_add(1);
-            }
-            last = g;
-            max = max.max(g);
-        }
-        if max > 0xFFFF {
-            self.unsupported("24-bit Coverage tables (ADR 0022 stage 3)");
-            return false;
-        }
-        if !unsorted && count <= num_ranges.saturating_mul(3) {
-            self.s.u16(1);
-            let at = self.s.u16(0);
-            if !self
-                .s
-                .check_assign_u16(at, count as u64, Errors::ARRAY_OVERFLOW)
-            {
-                return false;
-            }
-            glyphs.iter().for_each(|&g| {
-                self.s.u16(lo16(g));
-            });
-            return true;
-        }
-        self.s.u16(2);
-        let at = self.s.u16(0);
-        if !self
-            .s
-            .check_assign_u16(at, num_ranges as u64, Errors::ARRAY_OVERFLOW)
-        {
-            return false;
-        }
-        let mut ranges: Vec<(u32, u32, u32)> = Vec::with_capacity(num_ranges);
-        let mut last = INVALID.wrapping_sub(1);
-        let mut unsorted = false;
-        for (count, &g) in glyphs.iter().enumerate() {
-            if last.wrapping_add(1) != g {
-                if last != INVALID.wrapping_sub(1) && last.wrapping_add(1) > g {
-                    unsorted = true;
-                }
-                ranges.push((g, g, n32(count)));
-            }
-            if let Some(r) = ranges.last_mut() {
-                r.1 = g;
-            }
-            last = g;
-        }
-        if unsorted {
-            ranges.sort_unstable();
-        }
-        for (a, z, v) in ranges {
-            self.s.u16(lo16(a));
-            self.s.u16(lo16(z));
-            self.s.u16((v & 0xFFFF) as u16);
-        }
-        true
+        write_coverage(self.s, glyphs)
     }
 
     /// `Coverage::subset` into the current object: the covered glyphs of
@@ -267,103 +203,7 @@ impl<'p, 's> Sub<'p, 's> {
     /// `ClassDef::serialize` of `(glyph, class)` pairs (class 0 left out)
     /// into the current object.
     pub fn class_def(&mut self, pairs: &[(u32, u32)]) -> bool {
-        let glyphs: Vec<(u32, u32)> = pairs.iter().copied().filter(|p| p.1 != 0).collect();
-        let mut format = 2u16;
-        if let Some(&(glyph_min, first_class)) = glyphs.first() {
-            let mut glyph_max = glyph_min;
-            let mut class_max = 0u32;
-            let mut num_ranges = 1u64;
-            let mut prev_gid = glyph_min;
-            let mut prev_klass = first_class;
-            for &(g, k) in &glyphs {
-                class_max = class_max.max(k);
-                if g == glyph_min {
-                    continue;
-                }
-                glyph_max = glyph_max.max(g);
-                if g != prev_gid.wrapping_add(1) || k != prev_klass {
-                    num_ranges = num_ranges.wrapping_add(1);
-                }
-                prev_gid = g;
-                prev_klass = k;
-            }
-            let span = u64::from(glyph_max.wrapping_sub(glyph_min)).wrapping_add(1);
-            let mut best = u64::MAX;
-            if glyph_max <= 0xFFFF && span <= 0xFFFF && class_max <= 0xFFFF {
-                let size = 6u64.saturating_add(span.saturating_mul(2));
-                if size < best {
-                    best = size;
-                    format = 1;
-                }
-            }
-            if glyph_max <= 0xFFFF && num_ranges <= 0xFFFF && class_max <= 0xFFFF {
-                let size = 4u64.saturating_add(num_ranges.saturating_mul(6));
-                if size < best {
-                    best = size;
-                    format = 2;
-                }
-            }
-            if best == u64::MAX {
-                self.unsupported("24-bit ClassDef tables (ADR 0022 stage 3)");
-                return false;
-            }
-        }
-        if format == 1 {
-            self.s.u16(1);
-            let Some(&(glyph_min, _)) = glyphs.first() else {
-                self.s.u16(0);
-                self.s.u16(0);
-                return true;
-            };
-            let glyph_max = glyphs.iter().map(|p| p.0).fold(0, u32::max);
-            let count = glyph_max.wrapping_sub(glyph_min).wrapping_add(1) as usize;
-            self.s.u16(lo16(glyph_min));
-            self.s.u16(n16(count));
-            let at = self.s.zeros(count.saturating_mul(2));
-            for &(g, k) in &glyphs {
-                let idx = g.wrapping_sub(glyph_min) as usize;
-                if idx < count {
-                    self.s
-                        .set_u16(at.saturating_add(idx.saturating_mul(2)), lo16(k));
-                }
-            }
-            return true;
-        }
-        self.s.u16(2);
-        let count_at = self.s.u16(0);
-        let Some(&(first, first_class)) = glyphs.first() else {
-            return true;
-        };
-        let mut ranges: Vec<(u32, u32, u32)> = alloc::vec![(first, first, first_class)];
-        let mut prev_gid = first;
-        let mut prev_klass = first_class;
-        let mut unsorted = false;
-        for &(g, k) in glyphs.iter().skip(1) {
-            if g != prev_gid.wrapping_add(1) || k != prev_klass {
-                if g < prev_gid {
-                    unsorted = true;
-                }
-                if let Some(r) = ranges.last_mut() {
-                    r.1 = prev_gid;
-                }
-                ranges.push((g, g, k));
-            }
-            prev_klass = k;
-            prev_gid = g;
-        }
-        if let Some(r) = ranges.last_mut() {
-            r.1 = prev_gid;
-        }
-        self.s.set_u16(count_at, n16(ranges.len()));
-        if unsorted {
-            ranges.sort_unstable();
-        }
-        for (a, z, v) in ranges {
-            self.s.u16(lo16(a));
-            self.s.u16(lo16(z));
-            self.s.u16(lo16(v));
-        }
-        true
+        write_class_def(self.s, pairs)
     }
 
     /// `ClassDef::subset` into the current object. With `klass_map`, the
@@ -812,14 +652,24 @@ impl<'p, 's> Sub<'p, 's> {
             {
                 continue;
             }
-            let Some(c) = cs.condition(i).ok().flatten() else {
+            let Ok(source) = cs.condition(i) else {
                 self.unsupported("FeatureVariations conditions other than format 1");
                 return false;
             };
-            if c.format() != 1 {
+            if self.p.var.user().is_empty()
+                && source.is_none_or(|c| matches!(c.format(), 0 | 2..=5))
+            {
+                if self.offset_append(4, |s| {
+                    super::feature_variations11::write_set_condition(s, source)
+                }) {
+                    self.bump_u16(count_at, 1);
+                }
+                continue;
+            }
+            let Some(c) = source.filter(|c| c.format() == 1) else {
                 self.unsupported("FeatureVariations conditions other than format 1");
                 return false;
-            }
+            };
             if self.offset_append(4, |s| {
                 let Some((axis, min, max)) = c.axis_range() else {
                     return false;
@@ -939,5 +789,258 @@ impl<'p, 's> Sub<'p, 's> {
             }
         }
         true
+    }
+}
+
+fn write_class_def(s: &mut Serializer, pairs: &[(u32, u32)]) -> bool {
+    let glyphs: Vec<(u32, u32)> = pairs.iter().copied().filter(|p| p.1 != 0).collect();
+    let mut format = 2u16;
+    if let Some(&(glyph_min, first_class)) = glyphs.first() {
+        let mut glyph_max = glyph_min;
+        let mut class_max = 0u32;
+        let mut num_ranges = 1u64;
+        let mut prev_gid = glyph_min;
+        let mut prev_klass = first_class;
+        for &(g, k) in &glyphs {
+            class_max = class_max.max(k);
+            if g == glyph_min {
+                continue;
+            }
+            glyph_max = glyph_max.max(g);
+            if g != prev_gid.wrapping_add(1) || k != prev_klass {
+                num_ranges = num_ranges.wrapping_add(1);
+            }
+            prev_gid = g;
+            prev_klass = k;
+        }
+        let span = u64::from(glyph_max.wrapping_sub(glyph_min)).wrapping_add(1);
+        let mut best = u64::MAX;
+        if glyph_max <= 0xFFFF && span <= 0xFFFF && class_max <= 0xFFFF {
+            let size = 6u64.saturating_add(span.saturating_mul(2));
+            if size < best {
+                best = size;
+                format = 1;
+            }
+        }
+        if glyph_max <= 0xFFFF && num_ranges <= 0xFFFF && class_max <= 0xFFFF {
+            let size = 4u64.saturating_add(num_ranges.saturating_mul(6));
+            if size < best {
+                best = size;
+                format = 2;
+            }
+        }
+        if glyph_max <= 0xFF_FFFF && span <= 0xFF_FFFF && class_max <= 0xFF_FFFF {
+            let size = 8u64.saturating_add(span.saturating_mul(3));
+            if size < best {
+                best = size;
+                format = 3;
+            }
+        }
+        if glyph_max <= 0xFF_FFFF && num_ranges <= 0xFF_FFFF && class_max <= 0xFFFF {
+            let size = 5u64.saturating_add(num_ranges.saturating_mul(8));
+            if size < best {
+                best = size;
+                format = 4;
+            }
+        }
+        if best == u64::MAX {
+            return s.err(Errors::INT_OVERFLOW);
+        }
+    }
+    s.u16(format);
+    if format == 1 || format == 3 {
+        let Some(&(glyph_min, _)) = glyphs.first() else {
+            return s.err(Errors::OTHER);
+        };
+        let glyph_max = glyphs.iter().map(|p| p.0).max().unwrap_or(glyph_min);
+        let count = glyph_max.saturating_sub(glyph_min).saturating_add(1);
+        let width = if format == 3 {
+            s.u24(glyph_min);
+            s.u24(count);
+            3
+        } else {
+            s.u16(lo16(glyph_min));
+            s.u16(lo16(count));
+            2
+        };
+        let at = s.zeros((count as usize).saturating_mul(width));
+        for &(g, k) in &glyphs {
+            if let Some(index) = g.checked_sub(glyph_min) {
+                let pos = at.saturating_add((index as usize).saturating_mul(width));
+                if format == 3 {
+                    s.set_u24(pos, k);
+                } else {
+                    s.set_u16(pos, lo16(k));
+                }
+            }
+        }
+        return true;
+    }
+    let count_at = if format == 4 { s.u24(0) } else { s.u16(0) };
+    let Some(&(first, first_class)) = glyphs.first() else {
+        return true;
+    };
+    let mut ranges: Vec<(u32, u32, u32)> = alloc::vec![(first, first, first_class)];
+    let mut prev_gid = first;
+    let mut prev_klass = first_class;
+    let mut unsorted = false;
+    for &(g, k) in glyphs.iter().skip(1) {
+        if g != prev_gid.wrapping_add(1) || k != prev_klass {
+            if g < prev_gid {
+                unsorted = true;
+            }
+            if let Some(r) = ranges.last_mut() {
+                r.1 = prev_gid;
+            }
+            ranges.push((g, g, k));
+        }
+        prev_klass = k;
+        prev_gid = g;
+    }
+    if let Some(r) = ranges.last_mut() {
+        r.1 = prev_gid;
+    }
+    if format == 4 {
+        s.set_u24(count_at, n32(ranges.len()));
+    } else {
+        s.set_u16(count_at, n16(ranges.len()));
+    }
+    if unsorted {
+        ranges.sort_unstable();
+    }
+    for (a, z, v) in ranges {
+        if format == 4 {
+            s.u24(a);
+            s.u24(z);
+        } else {
+            s.u16(lo16(a));
+            s.u16(lo16(z));
+        }
+        s.u16(lo16(v));
+    }
+    true
+}
+
+fn write_coverage(s: &mut Serializer, glyphs: &[u32]) -> bool {
+    let count = glyphs.len();
+    let mut num_ranges = 0usize;
+    let mut last = INVALID.wrapping_sub(1);
+    let mut max = 0u32;
+    let mut unsorted = false;
+    for &g in glyphs {
+        if last != INVALID.wrapping_sub(1) && g < last {
+            unsorted = true;
+        }
+        if last.wrapping_add(1) != g {
+            num_ranges = num_ranges.wrapping_add(1);
+        }
+        last = g;
+        max = max.max(g);
+    }
+    if max > 0xFF_FFFF {
+        return s.err(Errors::INT_OVERFLOW);
+    }
+    let wide = max > 0xFFFF;
+    let array = !unsorted && count <= num_ranges.saturating_mul(3);
+    s.u16(match (wide, array) {
+        (false, true) => 1,
+        (false, false) => 2,
+        (true, true) => 3,
+        (true, false) => 4,
+    });
+    let records = if array { count } else { num_ranges };
+    let ok = if wide {
+        let at = s.u24(0);
+        s.check_assign_u24(at, records as u64, Errors::ARRAY_OVERFLOW)
+    } else {
+        let at = s.u16(0);
+        s.check_assign_u16(at, records as u64, Errors::ARRAY_OVERFLOW)
+    };
+    if !ok {
+        return false;
+    }
+    let mut write = |value: u32| {
+        if wide {
+            s.u24(value);
+        } else {
+            s.u16(lo16(value));
+        }
+    };
+    if array {
+        glyphs.iter().copied().for_each(write);
+        return true;
+    }
+    let mut ranges: Vec<(u32, u32, u32)> = Vec::with_capacity(num_ranges);
+    let mut last = INVALID.wrapping_sub(1);
+    let mut unsorted = false;
+    for (count, &g) in glyphs.iter().enumerate() {
+        if last.wrapping_add(1) != g {
+            if last != INVALID.wrapping_sub(1) && last.wrapping_add(1) > g {
+                unsorted = true;
+            }
+            ranges.push((g, g, n32(count)));
+        }
+        if let Some(r) = ranges.last_mut() {
+            r.1 = g;
+        }
+        last = g;
+    }
+    if unsorted {
+        ranges.sort_unstable();
+    }
+    for (a, z, v) in ranges {
+        write(a);
+        write(z);
+        write(v);
+    }
+    true
+}
+
+#[cfg(test)]
+mod coverage_writer_tests {
+    use super::*;
+
+    #[test]
+    fn adr0022_wide_coverage_array_and_range() {
+        for (glyphs, expected) in [
+            (
+                &[65536, 16777215][..],
+                &[0, 3, 0, 0, 2, 1, 0, 0, 255, 255, 255][..],
+            ),
+            (
+                &[65535, 65536, 65537, 65538][..],
+                &[0, 4, 0, 0, 1, 0, 255, 255, 1, 0, 2, 0, 0, 0][..],
+            ),
+        ] {
+            let mut serializer = Serializer::new();
+            assert!(write_coverage(&mut serializer, glyphs));
+            assert_eq!(serializer.current(), expected);
+        }
+        let mut serializer = Serializer::new();
+        assert!(!write_coverage(&mut serializer, &[0x1000000]));
+        assert!(serializer.in_error());
+    }
+}
+
+#[cfg(test)]
+mod class_writer_tests {
+    use super::*;
+
+    #[test]
+    fn adr0022_wide_class_array_and_ranges() {
+        for (pairs, bytes) in [
+            (
+                &[(65536, 65537)][..],
+                &[0, 3, 1, 0, 0, 0, 0, 1, 1, 0, 1][..],
+            ),
+            (
+                &[(65536, 2), (65537, 2), (65538, 2)][..],
+                &[0, 4, 0, 0, 1, 1, 0, 0, 1, 0, 2, 0, 2][..],
+            ),
+        ] {
+            let mut serializer = Serializer::new();
+            assert!(write_class_def(&mut serializer, pairs));
+            assert_eq!(serializer.current(), bytes);
+        }
     }
 }

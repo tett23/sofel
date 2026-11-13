@@ -172,6 +172,7 @@ dependencies = [
  "sofel-shape",
  "sofel-subset",
  "sofel-svg",
+ "sofel-type1",
  "sofel-woff",
 ]
 

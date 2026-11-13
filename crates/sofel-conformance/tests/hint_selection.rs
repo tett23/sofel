@@ -105,15 +105,59 @@ fn adr0064_i1_auto_empty_slots_match_freetype() {
 }
 
 #[test]
-fn adr0064_i1_auto_non_latin_reports_unsupported_and_clears_scratch() {
+fn adr0064_i1_auto_unlinked_fallback_outline_matches_freetype() {
     let path = paths::testdata().join("harfbuzz/test/api/fonts/Roboto-Regular.abcAE.ttf");
+    let data = std::fs::read(&path).unwrap();
+    let font = Font::new(&data, 0).unwrap();
+    let outlines = Outlines::new(font.default_instance());
+    let mut scratch = Scratch::default();
+    for ppem in 1..=200 {
+        for (target_name, target) in [
+            ("normal", HintTarget::Normal),
+            ("light", HintTarget::Light),
+            ("mono", HintTarget::Mono),
+            ("lcd", HintTarget::Lcd),
+            ("lcd-v", HintTarget::VerticalLcd),
+        ] {
+            let reference = Command::new(paths::ft_dump())
+                .args(["--hint-slot", &ppem.to_string(), "5", "auto", target_name])
+                .arg(&path)
+                .output()
+                .unwrap();
+            assert!(
+                reference.status.success(),
+                "{}",
+                String::from_utf8_lossy(&reference.stderr)
+            );
+            let (_, advance) = outlines
+                .load_with_hint(GlyphId(5), ppem, HintMode::Auto, target, &mut scratch)
+                .unwrap();
+            let mut actual = format!("advance {advance} 0\n");
+            for (point, tag) in scratch.points().iter().zip(scratch.point_tags()) {
+                writeln!(actual, "point {} {} {tag}", point.x, point.y).unwrap();
+            }
+            for end in scratch.contour_ends() {
+                writeln!(actual, "end {end}").unwrap();
+            }
+            assert_eq!(
+                actual,
+                String::from_utf8(reference.stdout).unwrap(),
+                "{target_name} {ppem}"
+            );
+        }
+    }
+}
+
+#[test]
+fn adr0064_i1_auto_non_latin_reports_unsupported_and_clears_scratch() {
+    let path = paths::testdata().join("harfbuzz/test/api/fonts/Mplus1p-Regular.660E.ttf");
     let data = std::fs::read(&path).unwrap();
     let font = Font::new(&data, 0).unwrap();
     let outlines = Outlines::new(font.default_instance());
     let mut scratch = Scratch::default();
     outlines
         .load_with_hint(
-            GlyphId(5),
+            GlyphId(1),
             16,
             HintMode::None,
             HintTarget::Normal,
@@ -123,7 +167,7 @@ fn adr0064_i1_auto_non_latin_reports_unsupported_and_clears_scratch() {
     assert!(!scratch.points().is_empty());
     assert_eq!(
         outlines.load_with_hint(
-            GlyphId(5),
+            GlyphId(1),
             16,
             HintMode::Auto,
             HintTarget::Normal,
@@ -134,4 +178,34 @@ fn adr0064_i1_auto_non_latin_reports_unsupported_and_clears_scratch() {
     assert!(scratch.points().is_empty());
     assert!(scratch.point_tags().is_empty());
     assert!(scratch.contour_ends().is_empty());
+}
+
+#[test]
+fn adr0064_i1_reference_auto_style_distinguishes_cmap_and_fallback() {
+    let path = paths::testdata().join("harfbuzz/test/api/fonts/Roboto-Regular.abcAE.ttf");
+    for (gid, expected) in [
+        (0, 86),
+        (1, 8249),
+        (2, 8249),
+        (3, 8249),
+        (4, 8249),
+        (5, 86),
+        (6, 86),
+        (7, 8249),
+    ] {
+        let output = Command::new(paths::ft_dump())
+            .args(["--auto-style", &gid.to_string()])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            format!("style {expected}\n")
+        );
+    }
 }

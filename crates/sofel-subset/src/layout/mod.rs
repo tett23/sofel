@@ -13,12 +13,12 @@ pub(crate) mod gpos;
 pub(crate) mod gsub;
 pub(crate) mod plan;
 
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 
 use crate::bits::BitSet;
 use data::D;
-use sofel_font::read::feature_variations::FeatureVariations;
+use sofel_font::read::feature_variations::{Condition, FeatureVariations};
 
 /// HarfBuzz's limits (`src/hb-limits.hh`) used by the layout code.
 pub(crate) mod limits {
@@ -169,19 +169,44 @@ impl<'a> Gsubgpos<'a> {
         FeatureVariations::new(self.feature_variations().0).ok()
     }
 
-    /// Whether all copied conditions are axis ranges, with no GDEF store indices.
-    pub fn has_only_axis_range_conditions(self) -> bool {
-        self.feature_variations_view().is_some_and(|fv| {
-            fv.version() == 0x0001_0000 && (0..fv.len()).all(|i| {
-                fv.record(i).is_some_and(|record| match record.conditions() {
-                    Ok(None) => true,
-                    Ok(Some(set)) => (0..set.len()).all(|j| {
-                        matches!(set.condition(j), Ok(Some(condition)) if condition.axis_range().is_some())
-                    }),
-                    Err(_) => false,
-                })
-            })
-        })
+    /// Whether every copied condition is known to be independent of the GDEF store.
+    pub fn conditions_are_store_independent(self) -> bool {
+        let Some(fv) = self.feature_variations_view() else {
+            return false;
+        };
+        if !matches!(fv.version(), 0x0001_0000 | 0x0001_0001) {
+            return false;
+        }
+        let mut inspected = BTreeSet::new();
+        let mut independent = |condition: Option<Condition<'_>>| {
+            condition.is_none_or(|c| condition_is_store_independent(c, &mut inspected))
+        };
+        for i in 0..fv.len() {
+            let Some(Ok(set)) = fv.record(i).map(|r| r.conditions()) else {
+                return false;
+            };
+            if let Some(set) = set
+                && !(0..set.len()).all(|j| set.condition(j).is_ok_and(&mut independent))
+            {
+                return false;
+            }
+        }
+        for i in 0..fv.lookup_record_count() {
+            let Some(Ok(table)) = fv.lookup_record(i).map(|r| r.feature_lookups()) else {
+                return false;
+            };
+            if let Some(table) = table
+                && (table.version() != 0x0001_0000
+                    || !(0..table.len()).all(|j| {
+                        table
+                            .record(j)
+                            .is_some_and(|r| r.condition().is_ok_and(&mut independent))
+                    }))
+            {
+                return false;
+            }
+        }
+        true
     }
 
     /// The number of scripts.
@@ -259,6 +284,33 @@ impl<'a> Gsubgpos<'a> {
     pub fn delta(self, d: D<'a>) -> usize {
         self.d.0.len().saturating_sub(d.0.len())
     }
+}
+
+/// Offsets point forward in the table. Shared subexpressions have the same suffix.
+fn condition_is_store_independent(root: Condition<'_>, inspected: &mut BTreeSet<usize>) -> bool {
+    let mut pending = alloc::vec![root];
+    while let Some(condition) = pending.pop() {
+        if !inspected.insert(condition.data().len()) {
+            continue;
+        }
+        match condition.format() {
+            0 | 1 => {}
+            2 if condition
+                .value()
+                .is_some_and(|(_, index)| index == u32::MAX) => {}
+            3..=5 => {
+                for i in 0..condition.children_len().unwrap_or(0) {
+                    match condition.child(i) {
+                        Ok(Some(child)) => pending.push(child),
+                        Ok(None) => {}
+                        Err(_) => return false,
+                    }
+                }
+            }
+            _ => return false,
+        }
+    }
+    true
 }
 
 /// A lookup's subtables with extensions resolved: `(kind, subtable)`.
