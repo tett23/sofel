@@ -65,11 +65,9 @@ pub(super) fn subset(
         && !plan.var.instancing()
         && !plan.var.n.avar2_reachable.is_empty()
         && plan.var.n.retained_axis_indices.len() == usize::from(table.axis_count())
-        && !large
     {
         records = cull_unreachable_records(plan, &table, &records, tag)?;
     } else if (plan.var.instancing() || !plan.var.n.avar2_reachable.is_empty())
-        && !large
         && (!plan.var.n.avar2
             || plan.var.n.retained_axis_indices.len() < usize::from(table.axis_count())
             || !plan.var.n.avar2_reachable.is_empty())

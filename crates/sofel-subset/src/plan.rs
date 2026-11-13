@@ -451,7 +451,7 @@ impl Plan {
                                 sofel_font::read::mvar::Mvar::new(data).is_ok()
                             }))
                 }
-                b"gvar" => {
+                b"gvar" | b"GVAR" => {
                     !norm.avar2
                         || inert_gvar
                         || avar2_range
@@ -459,7 +459,6 @@ impl Plan {
                         || pinned_glyf
                         || !norm.avar2_self_contained.is_empty()
                 }
-                b"GVAR" => inert_gvar,
                 _ => false,
             };
             !handled && font.table(Tag::new(tag)).is_some()
