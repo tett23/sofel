@@ -191,7 +191,8 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 ## 輪郭（`sofel-outline`）
 
-- `Outlines::load_with_hint` と C API の `sofel_outline_load_with_hint` は ppem、ヒンティングモード、ターゲットをロード時に受け取り、輪郭と水平アドバンスを返す。ヒンティングモードはなし、TrueType v35、TrueType v40、自動ヒンティングを指定する。自動ヒンティングは空輪郭の送り幅だけをグリッドに合わせる。非空輪郭の自動ヒンティングは Rust では `AutoHintUnsupported`、C API では `SOFEL_ERROR_UNSUPPORTED` を返す（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
+- `Outlines::load_with_hint` と C API の `sofel_outline_load_with_hint` は ppem、ヒンティングモード、ターゲットをロード時に受け取り、輪郭と水平アドバンスを返す。ヒンティングモードはなし、TrueType v35、TrueType v40、自動ヒンティングを指定する（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
+- 自動ヒンティングは空輪郭の送り幅をグリッドに合わせる。非空輪郭では、glyf フォントに gvar と GLYF がなく、Unicode cmap の全マッピングが1024件以下で U+0020..007F または U+0100..024F に収まり、GSUB lookup がなく、対象グリフに Unicode マッピングがない場合に限り、無ヒントの輪郭を検査する。その輪郭が重ならない4個のオンカーブ点からなる平行四辺形1つで、上下の辺の x 範囲が交わらず、斜辺が FreeType の軸方向判定の閾値から外れ、4辺が近接点の閾値の2倍以上なら、輪郭点を移動せず送り幅をグリッドに合わせる。ほかの非空輪郭は Rust では `AutoHintUnsupported`、C API では `SOFEL_ERROR_UNSUPPORTED` を返す（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
 - `Outlines::load_truetype_v35` は指定した ppem で TrueType の単純グリフと複合グリフを読み、v35 のネイティブヒンティングを適用する。ロード時に NORMAL、LIGHT、MONO、LCD、LCD_V のターゲットを選ぶ。`load_truetype_mono` は MONO を使う。フォントプログラムと準備プログラムを実行し、グリフ命令が更新した輪郭を `Scratch::points` で返す。`point_tags` では各点のタグ（ヒンタが移動対象にした軸とドロップアウト制御を含む）、`contour_ends` では各輪郭の最終点の番号を取得できる。複合グリフでは、各成分にヒンティングを適用して配置した後、複合グリフ自身の命令を実行する。未対応の命令は `InvalidOutline` を返す（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。 `Outlines::load_truetype_v40` と C API の `sofel_outline_load_truetype_v40` は同じ5種類のターゲットで v40 の補正を適用し、輪郭と補正後の水平アドバンス（26.6 固定小数点）を返す。
 
 - glyfと `GLYF` の単純なグリフと合成グリフの輪郭を、ヒンティングをせずに、FreeTypeと同じ座標で `Pen` に渡す（[ADR 0011](adr/0011-glyf-outlines.md)）。`GLYF` があれば `GLYF` と `LOCA` を使い、そのときだけフラグ0x80を三次曲線、0x2000を24bitの成分のグリフIDとして扱う。

@@ -2520,8 +2520,7 @@ fn put_info(info: OutlineInfo, cbox: &mut [i32; 4], overlap: &mut u32) {
 enum OutlineLoad<'a> {
     Unhinted(Result<Scale, i32>),
     TrueTypeV35(u16, HintTarget, Option<&'a mut i32>),
-    TrueTypeV40(u16, HintTarget, &'a mut i32),
-    Selected(u16, HintMode, HintTarget, &'a mut i32),
+    WithHint(u16, HintMode, HintTarget, &'a mut i32),
 }
 
 fn outline_load(
@@ -2537,8 +2536,8 @@ fn outline_load(
     let outlines = outlines_at(font, location);
     let info = match load {
         OutlineLoad::Unhinted(scale) => outlines.load(GlyphId(glyph), scale?, &mut scratch.scratch),
-        OutlineLoad::TrueTypeV40(ppem, target, advance) => outlines
-            .load_truetype_v40(GlyphId(glyph), ppem, target, &mut scratch.scratch)
+        OutlineLoad::WithHint(ppem, mode, target, advance) => outlines
+            .load_with_hint(GlyphId(glyph), ppem, mode, target, &mut scratch.scratch)
             .map(|(info, width)| {
                 *advance = width;
                 info
@@ -2549,12 +2548,6 @@ fn outline_load(
                 if let Some(out) = advance {
                     *out = width;
                 }
-                info
-            }),
-        OutlineLoad::Selected(ppem, mode, target, advance) => outlines
-            .load_with_hint(GlyphId(glyph), ppem, mode, target, &mut scratch.scratch)
-            .map(|(info, width)| {
-                *advance = width;
                 info
             }),
     }
@@ -2676,16 +2669,6 @@ fn hint_target(target: u32) -> Option<HintTarget> {
     })
 }
 
-fn hint_mode(mode: u32) -> Option<HintMode> {
-    Some(match mode {
-        0 => HintMode::None,
-        1 => HintMode::NativeV35,
-        2 => HintMode::NativeV40,
-        3 => HintMode::Auto,
-        _ => return None,
-    })
-}
-
 /// Loads a TrueType v35 outline and writes its 26.6 pixel horizontal advance.
 ///
 /// # Safety
@@ -2740,31 +2723,19 @@ pub unsafe extern "C" fn sofel_outline_load_truetype_v40(
     overlap: *mut u32,
     advance: *mut i32,
 ) -> i32 {
-    let Some(target) = hint_target(target) else {
-        return ERROR_INVALID_ARGUMENT;
-    };
-    // SAFETY: all handles and output pointers follow the load contract above.
+    // SAFETY: both entry points require the same handles and output buffers.
     unsafe {
-        let Some(advance) = w(advance) else {
-            return ERROR_INVALID_ARGUMENT;
-        };
-        status(outline_load(
-            r(font),
-            r(location),
-            glyph,
-            OutlineLoad::TrueTypeV40(ppem, target, advance),
-            w(scratch),
-            ints::<4>(cbox),
-            w(overlap),
-        ))
+        sofel_outline_load_with_hint(
+            font, location, glyph, ppem, 2, target, scratch, cbox, overlap, advance,
+        )
     }
 }
 
-/// Loads an outline with the selected hinting mode and target.
+/// Loads an outline with the selected hint mode and writes its horizontal advance.
 ///
 /// # Safety
 ///
-/// The requirements are those of [`sofel_outline_load`]. `advance` must be writable for one i32.
+/// The pointer requirements are those of [`sofel_outline_load_truetype_v40`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sofel_outline_load_with_hint(
     font: *const SofelFont,
@@ -2778,7 +2749,14 @@ pub unsafe extern "C" fn sofel_outline_load_with_hint(
     overlap: *mut u32,
     advance: *mut i32,
 ) -> i32 {
-    let (Some(mode), Some(target)) = (hint_mode(mode), hint_target(target)) else {
+    let mode = match mode {
+        0 => HintMode::None,
+        1 => HintMode::NativeV35,
+        2 => HintMode::NativeV40,
+        3 => HintMode::Auto,
+        _ => return ERROR_INVALID_ARGUMENT,
+    };
+    let Some(target) = hint_target(target) else {
         return ERROR_INVALID_ARGUMENT;
     };
     // SAFETY: all handles and output pointers follow the load contract above.
@@ -2790,7 +2768,7 @@ pub unsafe extern "C" fn sofel_outline_load_with_hint(
             r(font),
             r(location),
             glyph,
-            OutlineLoad::Selected(ppem, mode, target, advance),
+            OutlineLoad::WithHint(ppem, mode, target, advance),
             w(scratch),
             ints::<4>(cbox),
             w(overlap),
