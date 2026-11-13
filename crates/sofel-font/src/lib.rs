@@ -60,6 +60,8 @@ mod hb_cff;
 mod layout;
 pub mod layout_query;
 mod metrics;
+mod pfr;
+pub use pfr::{PfrBitmap, PfrFace};
 mod name_language;
 mod names;
 pub mod remap;
@@ -284,6 +286,9 @@ pub struct Font<'a> {
     /// `BASE`, when HarfBuzz's sanitizer keeps it (ADR 0017).
     base: Option<Base<'a>>,
 }
+
+/// A Type 42 wrapper's PostScript glyph indices mapped to its embedded font.
+pub mod type42;
 
 /// The OpenType layout table whose FeatureList is queried (sofel ADR 0075).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -510,6 +515,24 @@ fn uvs_subtable<'a>(c: &Cmap<'a>) -> Option<Subtable<'a>> {
 }
 
 impl<'a> Font<'a> {
+    /// Opens a logical face of a Portable Font Resource.
+    pub fn from_pfr(data: &'a [u8], index: u32) -> Result<PfrFace<'a>, FontError> {
+        read::pfr::PfrFace::read(data, index)
+            .map(PfrFace)
+            .map_err(FontError::Read)
+    }
+
+    /// Opens a Type 42 wrapper and its embedded sfnt.
+    ///
+    /// The source must outlive the returned face. Its PostScript encoding and
+    /// CharStrings determine the public glyph indices.
+    pub fn from_type42(
+        source: &'a sofel_type1::type42::Type42Source,
+        index: u32,
+    ) -> Result<type42::Type42Face<'a>, FontError> {
+        type42::Type42Face::new(source, index)
+    }
+
     /// Opens font `index` of `data`: 0 for a single sfnt, any index of a
     /// collection. Reads the glyph count, picks the cmap subtables and
     /// prepares the horizontal metrics once; a missing or broken `maxp`,

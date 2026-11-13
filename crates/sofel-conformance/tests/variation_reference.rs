@@ -704,3 +704,61 @@ fn adr0029_corpus_delta_digest() {
         include_str!("../../../conformance/var-deltas.digest").trim()
     );
 }
+
+#[test]
+fn adr0027_random_design_positions_match_both_reference_tools() {
+    use sofel_read::sfnt::FontFile;
+    let mut checked = [0; 2];
+    for path in variable_font_paths(&paths::testdata()) {
+        let bytes = std::fs::read(&path).unwrap();
+        let faces = match FontFile::new(&bytes) {
+            Ok(FontFile::Collection(c)) => c.num_fonts(),
+            Ok(FontFile::Dfont(d)) => d.num_fonts(),
+            Ok(FontFile::Sfnt(_)) => 1,
+            Err(_) => continue,
+        };
+        for index in 0..faces {
+            let Ok(font) = Font::new(&bytes, index) else {
+                continue;
+            };
+            if font.var_axes().next().is_none() {
+                continue;
+            }
+            let expected: Vec<_> = variation_locations::positions(&font)
+                .into_iter()
+                .filter(|p| p.id.starts_with("rand:"))
+                .map(|p| {
+                    let mut line = p.id.clone();
+                    for value in p.requested_design_values() {
+                        line.push_str(&format!(" {:08x}", value.to_bits()));
+                    }
+                    line
+                })
+                .collect();
+            for (tool, exe) in [paths::hb_dump(), paths::ft_dump()].into_iter().enumerate() {
+                if tool == 1 && font.ft_mm_var().is_none() {
+                    continue;
+                }
+                let output = dump(&exe, &["--var-random"], &path);
+                let actual: Vec<_> = face_block(&output, index)
+                    .unwrap()
+                    .lines()
+                    .filter(|line| line.starts_with("rand:"))
+                    .collect();
+                assert_eq!(
+                    actual,
+                    expected,
+                    "{} {} face {index}",
+                    exe.display(),
+                    path.display()
+                );
+                checked[tool] += actual.len();
+            }
+        }
+    }
+    assert!(checked.iter().all(|count| *count > 0));
+    eprintln!(
+        "random design positions checked: HarfBuzz {}, FreeType {}",
+        checked[0], checked[1]
+    );
+}

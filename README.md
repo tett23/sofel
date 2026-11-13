@@ -23,6 +23,8 @@ OpenType タグから得るスクリプト値は、[ADR 0050](docs/adr/0050-pres
 VARC の輪郭は、部品の表示条件、軸座標、変形を評価して指定位置で描く（[ADR 0067](docs/adr/0067-varc-components.md)）。HarfBuzz との比較には、整数の輪郭 API を保ったまま浮動小数点の描画命令を返す経路を使う。
 
 サブセット化（[ADR 0022](docs/adr/0022-subsetting.md)）は、sfntの組み立てと直列化、オフセットのあふれを解く再配置、glyf系の表、cmap、name、OS/2、post、hdmx、CFF（名前のキーとCIDのキー）、VORG、GDEF、GSUB、GPOS、BASEとレイアウトの閉包、COLR（版0、変化量の表を持たない版1、版1の塗りが残らず版0にできるもの、残す版1の塗りとクリップがすべて静的なもの、軸を固定せず変化量ストアを直接またはマップを介して参照するもの、全軸を既定位置に固定したもの）、CPAL、CBLC、CBDT、sbixとCOLRの閉包、MATHとその閉包、軸を指定しないgvarとGVARの書き出し、glyfとCFF2の可変フォントのすべての軸の既定の値への固定（fvar、avar、STATの読み取りと、CFF2をCFFに変換する `DOWNGRADE_CFF2` を含む）、同じフォントを繰り返しサブセット化するための前処理（`Prepared`）、CFFのcharstringの取り出し、グリフ名での指定（`--glyphs`）と、これらのC ABI（`sofel_subset` など）までを実装し、HarfBuzzのサブセット化のテストのうちこれらの表だけを持つ組でバイト単位で一致する。Golemの使い方（グリフIDと `RETAIN_GIDS`）は、HarfBuzzのテストのフォントのうちこれらの表だけを持つものすべてで `hb-subset` と同じバイト列を出す。軸を指定しない HVAR と VVAR は、複数のItemVariationDataから使う行と領域だけを残し、暗黙・明示の送り幅とサイドベアリングのマップを書ける。明示マップの末尾で繰り返す行番号は1項目にまとめる。軸を指定しないGDEF 1.3のItemVariationStoreは、GSUBのFeatureVariationsが軸範囲の条件だけを持つ場合も含めて、残すキャレット、値の記録、アンカー、MATHの定数・斜体補正・上アクセント・カーニング・組み立てが参照する番号と領域を詰めて書く。参照が0件ならストアを除く。GDEFをそのままコピーするときも、サブセット化するMATHの参照番号を詰める。MATHをそのままコピーしてGDEFをサブセット化するときは、すべての参照番号が保持される場合に対応する。MATHだけをコピーして参照番号を詰め直せない場合と軸範囲以外の条件を持つFeatureVariationsがあるGSUBをそのままコピーする場合のGDEFの変化量の表と、軸を固定しないCFF2の変化量の表は、10段階目で書く。
+
+可変フォントの FreeType 互換メトリクスでは、横と縦の送り幅に指定位置の差分を加える。左と上のサイドベアリングは元のメトリクスを使う（[ADR 0078](docs/adr/0078-freetype-side-bearing-variation-callbacks.md)）。
 [ADR 0061](docs/adr/0061-subset-axis-instancing.md) の部分実装では、fvarとavar版1以外の変化量表、レイアウト・色の表を持たないフォントについて、固定した軸を除き、残る軸の範囲と名前つきインスタンスを更新して書く。STATがある場合は、指定した軸範囲の外の軸値を除いて残す。avar版1がある場合は、既定位置に固定した軸の写像を除き、残る軸の写像を保つ。avar版1の全軸が-1→-1、0→0、1→1の3点だけの恒等写像なら、非既定位置への固定と範囲指定でも残る軸の写像を保つ。対象外の表を持つフォントの部分軸固定は、次の VARC の場合を除き引き続き `Unsupported` とする。
 
 avar版2の部分軸指定では、範囲を変えた軸の座標をavarの写像と変化量ストアで補正する。最終座標が一定になる固定軸だけをfvarから除き、残す固定軸は隠して保持する。HVARとgvarでは、指定した範囲から届かない変化量の領域を除く。
@@ -33,7 +35,7 @@ GSUBとGPOSのFeatureVariations版1.1は、残すフィーチャのlookup条件�
 
 glyf と gvar を持つフォントの全軸を固定すると、単純グリフの輪郭点、合成グリフの部品の位置、送り幅を決める幻の点に変化量を適用する。空のグリフでも送り幅を更新する。avar 版2を持つフォントの全軸固定では、軸間の補正も適用する。gvar の軸を複数固定してほかの軸を残す場合は、固定する軸ごとにタプルの変化量を縮小し、残る軸で領域が一致するタプルをまとめる。軸範囲を狭める場合は、元のタプルを新しい範囲で有効な領域に分け、各領域の変化量を求める。avar 版1がある場合は、範囲内に残る写像の点を新しい軸座標で書き直す。IUP 最適化を指定すると、新しい既定位置の輪郭で補間できる点を調べ、参照点と変化量の合計バイト数が減る場合にその点を省く。HVAR・VVAR の送り幅は、残る軸の範囲に合わせて変化量を書き直す。送り幅がマップを介して変化量を参照する場合は、同じ変化量を持つ行をまとめてマップを更新する。GDEF の変化量ストアも残す軸に合わせて書き直す。GPOS の位置調整と GDEF のキャレットには新しい既定位置での差分を加え、残る変化量への参照を更新する。一部の軸を残す場合は、MVAR の各メトリクスが参照する変化量を新しい軸範囲に合わせて書き直す。MVAR の差分を OS/2、水平・垂直メトリクスのヘッダー、post の対応する値に適用する。cvar の差分は TrueType の制御値に、GDEF・GPOS・BASE の差分はキャレット、字形の配置、基準線の座標に反映する。GSUB の字形置換には固定した位置で有効な条件を使う。一部の軸を残す場合も、置換条件が参照する軸をすべて固定すれば、固定位置で有効な置換を選ぶ。条件が参照する軸を残すときは、軸番号を振り直す。指定範囲のどこでも成り立たない条件があれば、その置換候補を除く。固定した軸で成り立つ条件と、上下限が軸の指定範囲に一致する条件を取り除く。ほかの条件の上下限は新しい軸座標に変換する。新しい既定位置で選んだ置換を基本の機能とし、条件によって元の機能に戻る場合は、その機能が参照する名前も残す。TrueType の軸範囲を変更すると、新しい既定位置での差分を制御値に加え、残る範囲の差分を cvar に書く。BASE の基準線の座標にも新しい既定位置の差分を加え、残る軸の変化量ストアと参照番号を書き直す。COLR の一部の軸を固定すると、固定位置での変化量をペイントとクリップ矩形に加え、残る軸の変化量を ItemVariationStore に書き出す。COLR 版1の可変ペイントは、全軸の固定位置で色、グラデーション、変換、クリップ矩形を計算し、静的な形式で書き出す。
 
-VARC のサブセット化は、残す部品の閉包と参照の再採番、条件と変化量ストアの再配置を行う（[ADR 0067](docs/adr/0067-varc-components.md)）。VARC が参照しない軸を既定値に固定する場合は、gvar、GDEF、GSUB などの対象表が存在しないか捨てられ、avar が版2でなければ部分軸固定できる。これらの対象表と avar が最初からない場合は、同じ軸を既定値以外に固定するか範囲を指定することもできる。元のフォントに gvar だけが加わる場合も、gvar を出力から除けば、単純グリフの輪郭とメトリクスに新しい既定位置の変化量を反映する。CFF2 がなく、avar 版2の全軸が恒等写像で軸インデックスマップと変化量ストアが空なら、軸固定時に avar を省く。範囲を変更する1軸が恒等写像で、同じく CFF2、軸インデックスマップ、変化量ストアがない場合は、座標の補正量を avar に書く。他の軸の非線形な写像と、元の輪郭とメトリクスを保つ。この範囲変更では gvar を出力に残せる。VARC が参照しない軸を固定すると、その座標で寄与する gvar タプルの差分を残る軸に写す。差分を持つ点が一部だけの輪郭では補間を行い、同じ軸範囲に写るタプルの差分を合計してから丸める。VARC をそのまま写す指定は、グリフ ID を保持し、軸を変えない場合だけ受け付ける。
+VARC のサブセット化は、残す部品の閉包と参照の再採番、条件と変化量ストアの再配置を行う（[ADR 0067](docs/adr/0067-varc-components.md)）。出力に VARC のグリフが残らない場合は VARC を省き、元の VARC が参照する軸も固定できる。VARC が参照しない軸を既定値に固定する場合は、gvar、GDEF、GSUB などの対象表が存在しないか捨てられ、avar が版2でなければ部分軸固定できる。これらの対象表と avar が最初からない場合は、同じ軸を既定値以外に固定するか範囲を指定することもできる。元のフォントに gvar だけが加わる場合も、gvar を出力から除けば、単純グリフの輪郭とメトリクスに新しい既定位置の変化量を反映する。CFF2 がなく、avar 版2の全軸が恒等写像で軸インデックスマップと変化量ストアが空なら、軸固定時に avar を省く。範囲を変更する1軸が恒等写像で、同じく CFF2、軸インデックスマップ、変化量ストアがない場合は、座標の補正量を avar に書く。他の軸の非線形な写像と、元の輪郭とメトリクスを保つ。この範囲変更では gvar を出力に残せる。VARC が参照しない軸を固定すると、その座標で寄与する gvar タプルの差分を残る軸に写す。差分を持つ点が一部だけの輪郭では補間を行い、同じ軸範囲に写るタプルの差分を合計してから丸める。VARC をそのまま写す指定は、グリフ ID を保持し、軸を変えない場合だけ受け付ける。
 
 `sofel-read` は、sfntの目録、TTC/OTC、dfont（[ADR 0058](docs/adr/0058-dfont-face-selection.md)）、head、maxp/MAXP、hhea/HHEA、hmtx/HMTX、cmap（フォーマット0〜15）、loca、glyf（[ADR 0007](docs/adr/0007-sfnt-read-foundation.md)、[0011](docs/adr/0011-glyf-outlines.md)）と、OS/2、name、post、vhea/VHEA、vmtx/VMTX、VORG（[ADR 0016](docs/adr/0016-font-and-vertical-metrics.md)）、BASE（[ADR 0017](docs/adr/0017-base-baselines.md)）、CFFとCFF2（[ADR 0021](docs/adr/0021-cff-outlines.md)）、GDEF、GSUB、GPOS（[ADR 0020](docs/adr/0020-shaping-foundation.md)）、MATH、fvar、avar、STAT（[ADR 0022](docs/adr/0022-subsetting.md)）を読み、各表の検証器を持つ。VARC は版1のヘッダ、部品記録、条件、変化量ストアを検査しながら読む（[ADR 0067](docs/adr/0067-varc-components.md)）。 `sofel-validate` も VARC の破損を診断する。
 
@@ -68,13 +70,14 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-geom`](crates/sofel-geom) | FreeTypeと同じ結果を返す固定小数点の演算と、輪郭を受け渡す `Pen`、HarfBuzzと同じ丸め（`sofel_geom::float`）。カラーグリフの塗りの命令を受け渡す `Painter` と塗りの値、変換、どの環境でも同じ結果の三角関数、塗りの補助の関数（[ADR 0023](docs/adr/0023-color-glyphs.md)） |
 | [`sofel-unicode`](crates/sofel-unicode) | Unicode 18.0.0の文字の性質（General_Category、Script、正規分解と合成、Vertical_Orientationなど。[ADR 0019](docs/adr/0019-unicode-character-data.md)） |
 | [`sofel-read`](crates/sofel-read) | sfntの表の読み取りと検証。コピーも確保もせず、どの入力でもpanicしない |
+| [`sofel-type1`](crates/sofel-type1) | PFA・PFB の復号と Type1 の文字対応、送り幅、AFM・PFM のカーニング、Type42 の埋め込み sfnt・Encoding・CharStrings を Rust API で読む（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)） |
 | [`sofel-font`](crates/sofel-font) | フォントを一度だけ読み、グリフの数、文字からグリフへの対応、送り幅、フォント全体と縦書きのメトリクス、BASEの基準線とその代わりの値、名前とグリフ名（postとCFFのcharset）をHarfBuzzの方針で返し、HarfBuzzと同じ拡大縮小（`HbScale`）をする。HarfBuzzのCFFとCFF2のアクセラレータ（`HbCff1`、`HbCff2`）を持つ。PostScript名と `FT_Face` の値はFreeTypeの方針。TrueType の制御値は指定した軸位置で取得できる |
-| [`sofel-outline`](crates/sofel-outline) | glyfとGLYFの輪郭を、ヒンティングなしでFreeTypeと同じ座標で `Pen` に渡す。HarfBuzzと同じグリフの箱（glyf、CFF2、CFF。`HbExtents`、[ADR 0021](docs/adr/0021-cff-outlines.md)）を求める |
+| [`sofel-outline`](crates/sofel-outline) | glyfとGLYFの輪郭を、ヒンティングなしでFreeTypeと同じ座標で `Pen` に渡す。読み込んだ閉じた輪郭は、半径と角の接合を指定して縁取り、両側または片側の境界を取り出す（[ADR 0076](docs/adr/0076-glyph-outline-stroking.md)）。HarfBuzzと同じグリフの箱（glyf、CFF2、CFF。`HbExtents`、[ADR 0021](docs/adr/0021-cff-outlines.md)）を求める |
 | [`sofel-shape`](crates/sofel-shape) | HarfBuzz 15.1.0のOTシェーパーと同じシェーピング（バッファ、区間の性質、計画、正規化、`GSUB` と `GPOS`、フォールバックの位置。[ADR 0020](docs/adr/0020-shaping-foundation.md)）、機能の文字列、直列化、言語と文字体系のタグ。文字体系ごとのシェーパー（hebrew、hangul、thai、arabic、indic、khmer、myanmar、USE。[ADR 0024](docs/adr/0024-complex-shapers.md)）もすべて実装した |
 | [`sofel-inflate`](crates/sofel-inflate) | 出力上限を指定した DEFLATE・zlib・gzip の展開 |
 | [`sofel-png`](crates/sofel-png) | PNG の各色型と Adam7 をアルファ乗算済み BGRA に復号する（[ADR 0066](docs/adr/0066-color-glyph-pixels.md)） |
 | [`sofel-bitmap`](crates/sofel-bitmap) | 埋め込みビットマップ（CBLC/CBDT、EBLC/EBDT、`bloc`/`bdat`、sbix）のストライク、その選び方（HarfBuzzとFreeTypeの両方）、グリフの画像のデータとメトリクス、EBDTの画素のFreeTypeと同じ書き込み、CBDT と sbix の PNG の復号（[ADR 0023](docs/adr/0023-color-glyphs.md)） |
-| [`sofel-bitmapfont`](crates/sofel-bitmapfont) | BDF と PCF の文字対応、送り幅、固定サイズの画像を読む。BDF は 1、2、4、8 bit、PCF は 1 bit（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)） |
+| [`sofel-bitmapfont`](crates/sofel-bitmapfont) | BDF、PCF、Windows FNT と NE FON の文字対応、送り幅、固定サイズの画像を読む。BDF は 1、2、4、8 bit、ほかは 1 bit（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)） |
 | [`sofel-color`](crates/sofel-color) | カラーグリフ：CPALのパレット、COLR（版0と版1）、SVG、CBDT、sbixをHarfBuzzと同じ命令で `Painter` に渡す。gzip 圧縮された SVG は展開して渡す。命令の記録（`Recording`）、カラーグリフを含むグリフの箱、フォールバックのための問い合わせ（[ADR 0023](docs/adr/0023-color-glyphs.md)） |
 | [`sofel-write`](crates/sofel-write) | sfntの組み立てと、HarfBuzzと同じ詰め方のオブジェクトの直列化（[ADR 0022](docs/adr/0022-subsetting.md)） |
 | [`sofel-subset`](crates/sofel-subset) | HarfBuzzの `hb-subset` とバイト単位で同じ出力のサブセット化（[ADR 0022](docs/adr/0022-subsetting.md)。書ける表はglyf系、cmap、name、OS/2、post、hdmx、CFF、VORG、GDEF、GSUB、GPOS、BASE、COLR、CPAL、CBLC、CBDT、sbix、MATH、STAT、軸を固定したり範囲を制限したりしたCFF2など。軸はすべて既定の値に固定できる。前処理（`Prepared`）で同じフォントの計画を速く作れる） |
@@ -85,6 +88,10 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-cli`](crates/sofel-cli) | 小さな道具（`sofel-validate`、`sofel-render`、`sofel-paint`、`sofel-shape`、`sofel-subset`） |
 | [`sofel-capi`](crates/sofel-capi) | C ABI（ヘッダは [`sofel.h`](crates/sofel-capi/include/sofel.h)、[ADR 0015](docs/adr/0015-c-abi.md)） |
 | [`sofel-conformance`](crates/sofel-conformance) | FreeTypeとHarfBuzzとの突き合わせのテスト（`cargo test` では走らない） |
+
+PFR（Portable Font Resource）は、Rust API の `Font::from_pfr` でフェイス番号を指定して開く。文字対応と送り幅を取得し、輪郭または指定サイズの埋め込みビットマップを取り出せる。
+
+サブセットの Rust・C API では、プラットフォーム、エンコーディング、言語、名前 ID を指定して名前レコードを追加・置換できる。空文字列を指定するとそのレコードを削除する。
 
 シェーピングのフォント関数を差し替えるときは、`sofel-shape::SubFont` で親からの継承と問い合わせ別の上書きを指定する。子の送り、原点、グリフの箱、輪郭は親子のスケールを換算する。合成太字と斜体はシェーピングと輪郭に反映する。`sofel-shape` コマンドでは、`ot` と `fallback` のどちらでも `--font-slant`、`--font-bold`、`--font-grade` を指定できる（[ADR 0063](docs/adr/0063-font-functions-and-synthesis.md)）。
 
@@ -120,6 +127,8 @@ sofel render --ppem 48 --text-file sample.txt font.ttf > sample.pgm
 BDF の固定サイズの画像は `--ppem`、`--char` または `--glyph` を指定して描ける。画素の深さは 1、2、4、8 bit で、PGM に変換する。BDF は 1 フェイスで、指定サイズのストライクがない場合と `--no-bitmap` を指定した場合は描画に失敗する（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
 
 PCF の固定サイズの 1 bit 画像も同じ引数で PGM に変換する。PCF は 1 フェイスで、指定サイズのストライクがない場合と `--no-bitmap` を指定した場合は描画に失敗する（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
+
+Windows FNT と NE FON の固定サイズの 1 bit 画像も同じ引数で PGM に変換する。FNT は 1 フェイスで、FON のリソースは `--face` で選ぶ。指定サイズのストライクがない場合と `--no-bitmap` を指定した場合は描画に失敗する（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
 
 可変フォントの輪郭には `--variations=wght=500` や `--named-instance=0` で位置を指定できる。既定以外の位置では埋め込みビットマップを使わず、輪郭を描く。
 
@@ -166,9 +175,9 @@ HarfBuzzの `hb-subset` と同じオプションでサブセット化する（[A
 軸を固定しない場合も、BASE の座標に VariationIndex の参照がなければ、使われない変化量の表を除く。
 適合テストで出力が違えば、表ごとに最初の差の位置を示す。片方だけにある表は、どちらに欠けているかも示す。
 
-CFF2 の全軸を指定した値に固定すると、輪郭と横・縦のメトリクスに変化量を反映する。一部の軸だけを固定する場合と軸の範囲を狭める場合は、残る範囲に合わせて輪郭と Private DICT の変化量を書き直す。`--downgrade-cff2` を併用すると、固定した位置の CFF を書き出す。可変の COLR のストアを残す入力は対象外である（[ADR 0061](docs/adr/0061-subset-axis-instancing.md)）。
+CFF2 の全軸を指定した値に固定すると、輪郭と横・縦のメトリクスに変化量を反映する。一部の軸だけを固定する場合と軸の範囲を狭める場合は、残る範囲に合わせて輪郭と Private DICT の変化量を書き直す。`--downgrade-cff2` を併用すると、固定した位置の CFF を書き出す。可変 COLR を併せ持つ場合は、同じ軸指定を色の描画にも適用する（[ADR 0061](docs/adr/0061-subset-axis-instancing.md)）。
 
-軸を固定しない CFF2 は `--desubroutinize` を指定するとサブセット化できる。指定しない場合は、残すグリフがサブルーチンを呼ばなければ未使用のサブルーチンを除き、呼ぶ場合は即値の番号で呼ぶ global/local のサブルーチンを必要な分だけ残して番号を詰める。`blend`、`vsindex` と VariationStore を残す。ヒントを保持する場合は `hintmask` と `cntrmask` のデータバイトを解釈器に従って読み飛ばす。`--no-hinting` では、ヒントが描画命令より前にあり、同じ charstring 内で先行する call がなく、引数が同じ charstring 内の連続した数値だけで、使用するサブルーチンがヒント除去後も空にならず、`blend`、`vsindex`、`dotsection` を含まない場合に限ってヒントを除く。描画を開始した後の `hintmask` と `cntrmask` も、引数が空ならマスクのデータとともに除く。サブルーチン先頭の stem に対しては、呼び出し直前に積んだ連続する数値の引数も除く。空のサブルーチンや、命令列全体がヒントと `return` の除去で空になるサブルーチンは、別のサブルーチンを呼ばなければ、その呼び出しとともに除く。同じサブルーチンのマスク長が呼び出しごとに異なるときも、ヒントを保持し、そのサブルーチン内に別の呼び出しがなければ元の命令列を保つ。ヒントを除くときは、長さによって解釈が変わる部分が数値のオペランドだけなら、最初の呼び出しで読んだマスク長を使う。
+軸を固定しない CFF2 は `--desubroutinize` を指定するとサブセット化できる。指定しない場合は、残すグリフがサブルーチンを呼ばなければ未使用のサブルーチンを除き、呼ぶ場合は即値の番号で呼ぶ global/local のサブルーチンを必要な分だけ残して番号を詰める。`blend`、`vsindex` と VariationStore を残す。ヒントを保持する場合は `hintmask` と `cntrmask` のデータバイトを解釈器に従って読み飛ばす。`--no-hinting` では、ヒントが描画命令より前にあり、同じ charstring 内で先行する call がなく、引数が同じ charstring 内の連続した数値だけで、使用するサブルーチンがヒント除去後も空にならず、`blend`、`vsindex`、`dotsection` を含まない場合に限ってヒントを除く。描画を開始した後の `hintmask` と `cntrmask` も、引数が空ならマスクのデータとともに除く。サブルーチン先頭の stem に対しては、呼び出し直前に積んだ連続する数値の引数も除く。空のサブルーチンや、命令列全体がヒントと `return` の除去で空になるサブルーチンは、その呼び出しとともに除く。この除去で呼び出し元のサブルーチンも空になれば、その呼び出しも除く。同じサブルーチンのマスク長が呼び出しごとに異なるときも、ヒントを保持し、そのサブルーチン内に別の呼び出しがなければ元の命令列を保つ。ヒントを除くときは、長さによって解釈が変わる部分が数値のオペランドだけなら、最初の呼び出しで読んだマスク長を使う。
 
 ```sh
 sofel-subset --font-file=Roboto.ttf --unicodes=41-5A -o out.ttf

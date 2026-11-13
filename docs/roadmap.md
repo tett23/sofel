@@ -4,10 +4,6 @@
 
 各項は、何が残っているか、どこに由来するか、何があれば進められるかの順に書く。節と項は、ほかの項が依存するものを先に置いた。確認できなかった事項には「未確認」と書いた。
 
-[ADR 0027](adr/0027-variable-fonts.md)（可変フォント）は採択（未実装）である。[ADR 0029](adr/0029-variation-deltas.md) の変化量評価と、[ADR 0030](adr/0030-variation-evaluation-corrections.md) の修正は実装済みである。座標の正規化、表の読み取りと検証、ItemVariationStoreの評価の核、名前つきインスタンス、PostScript名、HVARとVVARのメトリクス、gvarとCFF2の輪郭、FeatureVariationsとGPOSの変化量を使うシェーピング、COLRv1の可変の塗り、C ABI、CLI、計測を段階ごとに実装した。[ADR 0028](adr/0028-ptem-is-not-opsz.md) の分類訂正も実装済みである。
-
-[ADR 0027](adr/0027-variable-fonts.md) の CFF2 輪郭とラスタをコーパスに列挙された各位置で比較する検査と、追加フォントの非既定位置でメトリクスと輪郭を比較する検査は main に入った。`ft_left_side_bearing` と `ft_top_side_bearing` に HVAR・VVAR の差分を適用するという決定は、固定版 FreeType の公開値と異なる。合成フォントで送り幅だけが変わり、サイドベアリングが変わらないことを確認したため、修正 ADR をレビュー用に起草した。
-
 ## HarfBuzz・FreeType 互換に必要な機能
 
 ここでいう互換は、[ADR 0001](adr/0001-project-goal-and-scope.md) が対象にした機能で、同じ入力と設定から参照実装と同じ結果を得ることを指す。次の表には実装済みの機能も含む。C の呼び出し口は [ADR 0015](adr/0015-c-abi.md) の sofel 独自 ABI を使う。
@@ -38,7 +34,7 @@ Golem はフォントを開くときに GSUB と GPOS の機能タグをすべ�
 
 ### [ADR 0022](adr/0022-subsetting.md): サブセット化
 
-[ADR 0022](adr/0022-subsetting.md) は採択（未実装）で、段階ごとに実装している。PR #42 までで、レイアウトの段階などが main に入った。10段階目（gvar、GVAR、HVAR、VVAR、ピン留めなしの CFF2、GDEF、BASE、COLR の項目の変化量の記憶）は、可変フォントの [ADR 0027](adr/0027-variable-fonts.md) の読み取り部分を使って実装する。VARC は13段階目まで待つ。[ADR 0022](adr/0022-subsetting.md) のステータスを採択にする条件は、[ADR 0027](adr/0027-variable-fonts.md) の採択と、10段階目の実装である。
+[ADR 0022](adr/0022-subsetting.md) は採択（未実装）である。可変フォントの読み取りは [ADR 0027](adr/0027-variable-fonts.md) で実装した。サブセット化では、名前レコードの上書きと VARC の部品参照の再採番まで実装した。残る作業には、10段階目の CFF2 サブルーチンのヒント除去と、[ADR 0061](adr/0061-subset-axis-instancing.md) の軸の固定・範囲変更がある。表ごとの対応範囲は[仕様書](specifications.md)に記す。
 
 ### シェーピング、フォントの検証と描画、照合の記録
 
