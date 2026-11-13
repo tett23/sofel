@@ -212,13 +212,18 @@ fn pe_resource<'a>(
             for lang in directory(resources, subdirectory(name)?)? {
                 budget = budget.checked_sub(1).ok_or(WinFontError)?;
                 if face == Some(faces) {
+                    let file_offset = |part: &[u8]| {
+                        (part.as_ptr() as usize).saturating_sub(file.as_ptr() as usize)
+                    };
+                    *position = file_offset(lang).saturating_add(4);
                     let leaf = range(resources, offset32(lang, 4)?, 16)?;
+                    *position = file_offset(leaf);
                     let offset = u32_at(leaf, 0)?.checked_sub(rva).ok_or(WinFontError)?;
-                    let bytes = range(
-                        raw,
-                        usize::try_from(offset).map_err(|_| WinFontError)?,
-                        offset32(leaf, 4)?,
-                    )?;
+                    let tail = raw
+                        .get(usize::try_from(offset).map_err(|_| WinFontError)?..)
+                        .ok_or(WinFontError)?;
+                    *position = position.saturating_add(4);
+                    let bytes = range(tail, 0, offset32(leaf, 4)?)?;
                     selected = Some(bytes);
                 }
                 faces = faces.checked_add(1).ok_or(WinFontError)?;
