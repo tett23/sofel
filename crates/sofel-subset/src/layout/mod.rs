@@ -47,6 +47,8 @@ pub(crate) struct LayoutPlan {
     pub universal_record: Option<usize>,
     /// Old lookup index to new (`gsub_lookups`).
     pub lookups: BTreeMap<u32, u32>,
+    /// Active lookup indices per feature after every axis is fixed.
+    pub lookup_variations: BTreeMap<u32, Vec<u32>>,
     /// Old feature index to new, duplicates left out (`gsub_features`).
     pub features: BTreeMap<u32, u32>,
     /// Old feature index to new, duplicates mapped to the feature they

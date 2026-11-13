@@ -528,7 +528,7 @@ impl<'p, 's> Sub<'p, 's> {
     }
 
     /// `Feature::subset` into the current object.
-    fn feature(&mut self, f: D<'_>, tag: Option<u32>) -> bool {
+    fn feature(&mut self, f: D<'_>, tag: Option<u32>, active: Option<&[u32]>) -> bool {
         let params_at = self.s.u16(0);
         let count_at = self.s.u16(0);
         if let Some(tag) = tag {
@@ -543,8 +543,17 @@ impl<'p, 's> Sub<'p, 's> {
             }
         }
         let lookups = self.lookup_map();
-        let it: Vec<u32> = (0..usize::from(f.u16(2)))
-            .filter_map(|i| lookups.get(&u32::from(f.u16_at(4, i))).copied())
+        let source = active.map_or_else(
+            || {
+                (0..usize::from(f.u16(2)))
+                    .map(|i| u32::from(f.u16_at(4, i)))
+                    .collect::<Vec<_>>()
+            },
+            |values| values.to_vec(),
+        );
+        let it: Vec<u32> = source
+            .into_iter()
+            .filter_map(|old| lookups.get(&old).copied())
             .collect();
         self.index_array(count_at, it.into_iter());
         true
@@ -560,6 +569,7 @@ impl<'p, 's> Sub<'p, 's> {
             }
             let snap = self.s.snapshot();
             let tag = t.feature_tag(i);
+            let active = self.lp().lookup_variations.get(&n32(i)).cloned();
             self.s.u32(tag);
             let at = self.s.u16(0);
             // A substitute from the applied FeatureVariations record is
@@ -568,11 +578,13 @@ impl<'p, 's> Sub<'p, 's> {
             let ok = match self.lp().substitutes.get(&n32(i)) {
                 Some(&off) => {
                     let f = t.d.at(off);
-                    self.serialize_subset(at, 2, |s| s.feature(f, Some(tag)))
+                    self.serialize_subset(at, 2, |s| s.feature(f, Some(tag), active.as_deref()))
                 }
                 None => {
                     let f = t.feature(i);
-                    self.serialize_subset_opt(at, 2, f, |s| s.feature(f, Some(tag)))
+                    self.serialize_subset_opt(at, 2, f, |s| {
+                        s.feature(f, Some(tag), active.as_deref())
+                    })
                 }
             };
             if ok {
@@ -770,7 +782,7 @@ impl<'p, 's> Sub<'p, 's> {
                     let at = s.s.u32(0);
                     let f = t.feature(old as usize);
                     if !s.serialize_subset(at, 4, |s| {
-                        s.feature(f, Some(t.feature_tag(old as usize)))
+                        s.feature(f, Some(t.feature_tag(old as usize)), None)
                     }) {
                         return false;
                     }
@@ -876,7 +888,7 @@ impl<'p, 's> Sub<'p, 's> {
             let at = self.s.u32(0);
             let tag = t.feature_tag(index as usize);
             let f = D(record.feature().ok().flatten().unwrap_or(&[]));
-            if self.serialize_subset_opt(at, 4, f, |s| s.feature(f, Some(tag))) {
+            if self.serialize_subset_opt(at, 4, f, |s| s.feature(f, Some(tag), None)) {
                 self.bump_u16(count_at, 1);
             } else {
                 self.s.revert(snap);

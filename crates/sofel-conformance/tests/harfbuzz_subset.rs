@@ -77,6 +77,18 @@ fn harfbuzz_subset_tests() {
             case.id()
         };
         let out = run(case, prepared);
+        // The pinned HarfBuzz rejects this upstream-disabled font in all
+        // four profiles: its COLR variation store points outside the table.
+        if case.suite == "colrv1.notoemoji"
+            && case
+                .font
+                .file_name()
+                .is_some_and(|name| name == "NotoColrEmojiGlyf-Regular.subset.ttf")
+        {
+            assert_eq!(out.unwrap_err(), "malformed table COLR", "{id}");
+            results.push((format!("{id}:reject"), true));
+            continue;
+        }
         let (bytes_ok, validate_ok) = match &out {
             Ok(o) => {
                 let bytes_ok = match std::fs::read(case.expected(&data())) {
@@ -295,4 +307,26 @@ fn adr0022_name_overrides_match_harfbuzz_name_table() {
         Sfnt::new(&actual).unwrap().table(tag).unwrap(),
         Sfnt::new(&expected).unwrap().table(tag).unwrap()
     );
+}
+
+#[test]
+fn adr0022_invalid_colr_store_is_rejected_when_retained() {
+    let path = data().join("fonts/NotoColrEmojiGlyf-Regular.subset.ttf");
+    for codepoint in ["1f696", "1f35e"] {
+        for prepared in [false, true] {
+            let mut args = vec![
+                format!("--font-file={}", path.display()),
+                format!("--unicodes={codepoint}"),
+            ];
+            if prepared {
+                args.push("--preprocess".into());
+            }
+            assert!(
+                subset::run_sofel(&args).is_err(),
+                "{codepoint}, prepared={prepared}"
+            );
+            args.push("--drop-tables+=COLR".into());
+            assert!(subset::run_sofel(&args).is_ok());
+        }
+    }
 }

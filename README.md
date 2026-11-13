@@ -29,7 +29,7 @@ VARC の輪郭は、部品の表示条件、軸座標、変形を評価して指
 
 avar版2の部分軸指定では、範囲を変えた軸の座標をavarの写像と変化量ストアで補正する。最終座標が一定になる固定軸だけをfvarから除き、残す固定軸は隠して保持する。HVARとgvarでは、指定した範囲から届かない変化量の領域を除く。
 
-GSUBとGPOSのFeatureVariations版1.1は、残すフィーチャのlookup条件を評価して書き直す。GDEFの変化量ストアを条件が参照するときは、使う行を残して参照番号を更新する。
+GSUBとGPOSのFeatureVariations版1.1は、残すフィーチャのlookup条件を評価して書き直す。GDEFの変化量ストアを条件が参照するときは、使う行を残して参照番号を更新する。軸を固定して条件の差分が分数になる場合は、条件の符号を保つprivate rowを加える。全軸固定では、固定位置で有効なlookupをフィーチャに書く。
 
 また、gvar または GVAR があっても、共有 tuple と全グリフの変化記録が空なら、非既定値への固定と軸の範囲指定を受け付ける。軸を指定した出力から空の gvar または GVAR を除く。
 
@@ -88,6 +88,8 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-cli`](crates/sofel-cli) | 小さな道具（`sofel-validate`、`sofel-render`、`sofel-paint`、`sofel-shape`、`sofel-subset`） |
 | [`sofel-capi`](crates/sofel-capi) | C ABI（ヘッダは [`sofel.h`](crates/sofel-capi/include/sofel.h)、[ADR 0015](docs/adr/0015-c-abi.md)） |
 | [`sofel-conformance`](crates/sofel-conformance) | FreeTypeとHarfBuzzとの突き合わせのテスト（`cargo test` では走らない） |
+
+PFR（Portable Font Resource）は、Rust API の `Font::from_pfr` でフェイス番号を指定して開く。文字対応と送り幅を取得し、輪郭または指定サイズの埋め込みビットマップを取り出せる。
 
 サブセットの Rust・C API では、プラットフォーム、エンコーディング、言語、名前 ID を指定して名前レコードを追加・置換できる。空文字列を指定するとそのレコードを削除する。
 
