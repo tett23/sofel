@@ -1,7 +1,7 @@
 //! HVAR and VVAR with implicit advance maps (ADR 0022 stage 10).
 
 pub(crate) mod instance;
-mod optimize;
+pub(crate) mod optimize;
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
@@ -88,7 +88,9 @@ pub(super) fn subset(
         .map(|(outer, rows)| (outer, rows.into_iter().collect::<Vec<_>>()))
         .collect();
     let mut remap = BTreeMap::new();
-    let store_bytes = if plan.var.instancing() && !plan.var.n.normalized_coords.is_empty() {
+    let store_bytes = if (plan.var.instancing() && !plan.var.n.normalized_coords.is_empty())
+        || !plan.var.n.avar2_reachable.is_empty()
+    {
         instance::subset(
             plan,
             font,

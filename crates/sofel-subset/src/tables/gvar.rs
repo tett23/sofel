@@ -59,10 +59,11 @@ pub(super) fn subset(
         };
         records.push((new_gid, Cow::Borrowed(bytes)));
     }
-    if plan.var.instancing()
+    if (plan.var.instancing() || !plan.var.n.avar2_reachable.is_empty())
         && !large
         && (!plan.var.n.avar2
-            || plan.var.n.retained_axis_indices.len() < usize::from(table.axis_count()))
+            || plan.var.n.retained_axis_indices.len() < usize::from(table.axis_count())
+            || !plan.var.n.avar2_reachable.is_empty())
     {
         return instance_records(plan, font, tag, &table, &records, serializer);
     }
@@ -274,6 +275,10 @@ fn instance_records(
                     (peak.min(0), peak.max(0))
                 };
                 source.push([lower, peak, upper].map(|v| f32::from(v) / 16384.0));
+            }
+            if super::avar::region_dead(&source, &plan.var.n.axis_tags, &plan.var.n.avar2_reachable)
+            {
+                continue;
             }
             let parts = variation_region::split(source, &changed, 4095, tag)?;
             for (tents, scales) in parts {
@@ -492,6 +497,23 @@ fn instance_records(
     }
     if glyphs.is_empty() {
         return Ok(false);
+    }
+    if plan.var.n.avar2
+        && !plan.var.n.avar2_reachable.is_empty()
+        && plan.var.n.avar2_self_contained.is_empty()
+    {
+        for shared in 0..table.shared_tuple_count() {
+            let Some(source) = table.shared_tuple(shared) else {
+                continue;
+            };
+            let mut peak = Vec::new();
+            for &axis in kept {
+                peak.extend(source.axis(axis).ok_or(bad)?.to_be_bytes());
+            }
+            if let Some(count) = frequencies.get_mut(&peak) {
+                *count = (*count).max(2);
+            }
+        }
     }
     let mut peaks: Vec<_> = frequencies.into_iter().filter(|(_, n)| *n > 1).collect();
     peaks.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));

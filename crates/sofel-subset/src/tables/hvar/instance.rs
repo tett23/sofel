@@ -5,9 +5,9 @@ use super::{
 use crate::tables::variation_region;
 use sofel_geom::float::{hb_clamp_to_i32, hb_roundf32, i32_to_f32};
 
-pub(super) type Region = Vec<[u32; 3]>;
-type Column = (Region, Vec<i32>);
-pub(super) type Block = (usize, Vec<Column>);
+pub(crate) type Region = Vec<[u32; 3]>;
+pub(crate) type Column = (Region, Vec<i32>);
+pub(crate) type Block = (usize, Vec<Column>);
 
 fn key(tents: &[[f32; 3]]) -> Region {
     tents
@@ -55,6 +55,13 @@ pub(crate) fn subset(
         for col in 0..data.region_index_count() {
             let region = usize::from(data.region_index(usize::from(col)).ok_or(bad)?);
             let source = original.get(region).ok_or(bad)?;
+            if crate::tables::avar::region_dead(
+                source,
+                &plan.var.n.axis_tags,
+                &plan.var.n.avar2_reachable,
+            ) {
+                continue;
+            }
             for (tents, scales) in
                 variation_region::split(source.clone(), &changes, usize::from(u16::MAX), tag)?
             {
@@ -130,7 +137,7 @@ pub(crate) fn subset(
     Ok(out.current().to_vec())
 }
 
-fn write_block(
+pub(crate) fn write_block(
     out: &mut Serializer,
     rows: usize,
     columns: &[Column],

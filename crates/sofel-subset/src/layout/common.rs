@@ -685,7 +685,7 @@ impl<'p, 's> Sub<'p, 's> {
     // FeatureVariations (version 1.0, without instancing).
 
     fn feature_variations(&mut self, t: Gsubgpos<'_>, fv: FeatureVariations<'_>) -> bool {
-        if fv.version() != 0x0001_0000 {
+        if fv.version() != 0x0001_0000 && fv.version() != 0x0001_0001 {
             self.unsupported("FeatureVariations 1.1 (ADR 0022 stage 3)");
             return false;
         }
@@ -780,7 +780,11 @@ impl<'p, 's> Sub<'p, 's> {
             out = out.wrapping_add(1);
         }
         self.s.set_u32(count_at, out);
-        out != 0
+        if fv.version() >= 0x0001_0001 {
+            super::feature_variations11::subset_lookup_records(self, fv) || out != 0
+        } else {
+            out != 0
+        }
     }
 
     fn condition_set(&mut self, cs: ConditionSet<'_>, record: u32) -> bool {
