@@ -10,7 +10,6 @@ use crate::plan::Plan;
 
 const TAG: Tag = Tag::new(b"avar");
 
-#[allow(dead_code)] // Used by the avar2 planner once the serializer is wired.
 pub(crate) struct Avar2Ranges {
     pub reachable: BTreeMap<Tag, crate::input::AxisRange>,
     pub self_contained: BTreeMap<Tag, f32>,
@@ -18,7 +17,7 @@ pub(crate) struct Avar2Ranges {
 
 /// Bounds the original avar2 coordinates over the requested user box.
 /// A pinned axis is removable only when its delta is constant on that box.
-#[allow(dead_code, clippy::indexing_slicing, clippy::cast_possible_truncation)]
+#[allow(clippy::indexing_slicing, clippy::cast_possible_truncation)]
 pub(crate) fn avar2_reachable_ranges(
     font: &sofel_font::Font<'_>,
     n: &crate::instance::Normalized,
@@ -484,7 +483,7 @@ fn compensation_regions(
 // The variation delta is piecewise multilinear. Its extrema and those of
 // identity + delta occur on the grid of input bounds and active tent knots.
 // HarfBuzz enumerates at most 16384 points and then uses interval bounds.
-#[allow(dead_code, clippy::indexing_slicing, clippy::arithmetic_side_effects)]
+#[allow(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 fn avar2_reachable_range(
     box_: &[[f64; 2]],
     target: usize,

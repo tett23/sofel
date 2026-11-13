@@ -299,6 +299,55 @@ impl Plan {
                     norm.user.values().all(|r| r.min == r.max) || norm.user.contains_key(&tag)
                 })
             });
+        if norm.avar2 && !norm.all_axes_pinned && !identity_avar2 {
+            norm.old_intermediates = norm.axes_location.clone();
+            let ranges = crate::tables::avar::avar2_reachable_ranges(
+                font,
+                &norm,
+                font.table(Tag::new(b"CFF2")).is_none(),
+            )?;
+            norm.avar2_reachable = ranges.reachable;
+            norm.avar2_self_contained = ranges.self_contained;
+            if font.table(Tag::new(b"VARC")).is_some() && !drop.contains(Tag::new(b"VARC").to_u32())
+            {
+                norm.avar2_reachable.clear();
+            }
+            norm.retained_axis_indices = norm
+                .axis_tags
+                .iter()
+                .enumerate()
+                .filter_map(|(i, tag)| (!norm.avar2_self_contained.contains_key(tag)).then_some(i))
+                .collect();
+            norm.axes_location = norm
+                .avar2_self_contained
+                .iter()
+                .map(|(&tag, &coord)| {
+                    (
+                        tag,
+                        crate::input::AxisRange {
+                            min: coord,
+                            default: coord,
+                            max: coord,
+                        },
+                    )
+                })
+                .collect();
+            norm.normalized_coords = if norm.avar2_self_contained.is_empty() {
+                Vec::new()
+            } else {
+                norm.axis_tags
+                    .iter()
+                    .map(|tag| {
+                        norm.avar2_self_contained.get(tag).map_or(0, |&value| {
+                            crate::instance::f64_to_i32(sofel_geom::float::hb_roundf32(
+                                value * 16384.0,
+                            ))
+                        })
+                    })
+                    .collect()
+            };
+            norm.pinned_at_default = norm.avar2_self_contained.values().all(|&v| v == 0.0);
+        }
         let avar2_range = identity_avar2 && norm.user.values().any(|r| r.min < r.max);
         let point_pins = !norm.user.is_empty() && norm.user.values().all(|r| r.min == r.max);
         // During a complete glyf instance, HarfBuzz writes hmtx/vmtx from
