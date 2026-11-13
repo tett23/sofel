@@ -909,6 +909,7 @@ impl Plan {
             && !drop.contains(cff2.to_u32())
             && !no_subset.contains(cff2.to_u32())
             && !full_instance
+            && !p.var.instancing()
             && !flags.has(Flags::DESUBROUTINIZE)
             && crate::tables::cff::uses_subroutines(font, p.glyphs.new_to_old.as_slice())
             && !crate::tables::cff::supports_subroutines(
