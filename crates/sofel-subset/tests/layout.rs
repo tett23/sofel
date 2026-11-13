@@ -1126,8 +1126,22 @@ fn adr0022_copied_gsub_value_condition_checks_gdef_reference() {
             0, 3, 2, 0, 0, 9, 0, 0, 9, 0, 4, 2, 0, 0, 9, 0, 0, 9, 0, 5, 0, 0, 5,
         ];
         nested.extend(&value);
-        for condition in [value, nested] {
-            let gsub = gsub_with_feature_condition(condition);
+        let mut lookup_gsub = gsub_with_feature_condition(value.clone());
+        let fv_at = u32::from_be_bytes(lookup_gsub[10..14].try_into().unwrap()) as usize;
+        lookup_gsub.truncate(fv_at);
+        let conditions = link(
+            Buf::new().u32(0x10000).u16(0).u32(1).u32(0).u32(0).done(),
+            vec![(10, 4, value.clone()), (14, 4, vec![0, 1, 0, 0])],
+        );
+        lookup_gsub.extend(link(
+            Buf::new().u32(0x10001).u32(0).u32(1).u16(0).u32(0).done(),
+            vec![(14, 4, conditions)],
+        ));
+        for gsub in [
+            gsub_with_feature_condition(value),
+            gsub_with_feature_condition(nested),
+            lookup_gsub,
+        ] {
             let data = font_with(vec![
                 (b"GSUB", gsub.clone()),
                 (b"GDEF", gdef_with_referenced_store(&[])),

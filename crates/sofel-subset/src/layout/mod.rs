@@ -171,24 +171,42 @@ impl<'a> Gsubgpos<'a> {
 
     /// Whether every copied condition is known to be independent of the GDEF store.
     pub fn conditions_are_store_independent(self) -> bool {
+        let Some(fv) = self.feature_variations_view() else {
+            return false;
+        };
+        if !matches!(fv.version(), 0x0001_0000 | 0x0001_0001) {
+            return false;
+        }
         let mut inspected = BTreeSet::new();
-        self.feature_variations_view().is_some_and(|fv| {
-            fv.version() == 0x0001_0000
-                && (0..fv.len()).all(|i| {
-                    fv.record(i)
-                        .is_some_and(|record| match record.conditions() {
-                            Ok(None) => true,
-                            Ok(Some(set)) => (0..set.len()).all(|j| match set.condition(j) {
-                                Ok(None) => true,
-                                Ok(Some(condition)) => {
-                                    condition_is_store_independent(condition, &mut inspected)
-                                }
-                                Err(_) => false,
-                            }),
-                            Err(_) => false,
-                        })
-                })
-        })
+        let mut independent = |condition: Option<Condition<'_>>| {
+            condition.is_none_or(|c| condition_is_store_independent(c, &mut inspected))
+        };
+        for i in 0..fv.len() {
+            let Some(Ok(set)) = fv.record(i).map(|r| r.conditions()) else {
+                return false;
+            };
+            if let Some(set) = set
+                && !(0..set.len()).all(|j| set.condition(j).is_ok_and(&mut independent))
+            {
+                return false;
+            }
+        }
+        for i in 0..fv.lookup_record_count() {
+            let Some(Ok(table)) = fv.lookup_record(i).map(|r| r.feature_lookups()) else {
+                return false;
+            };
+            if let Some(table) = table
+                && (table.version() != 0x0001_0000
+                    || !(0..table.len()).all(|j| {
+                        table
+                            .record(j)
+                            .is_some_and(|r| r.condition().is_ok_and(&mut independent))
+                    }))
+            {
+                return false;
+            }
+        }
+        true
     }
 
     /// The number of scripts.
