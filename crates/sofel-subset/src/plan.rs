@@ -159,6 +159,7 @@ pub(crate) struct PlanLayout {
     pub instanced_gdef_store: Option<Vec<u8>>,
     pub gdef_var_items: Vec<(u16, Vec<u32>)>,
     pub gdef_var_map: BTreeMap<u32, u32>,
+    pub math_var_map: BTreeMap<u32, u32>,
     /// Condition-specific private rows and unrounded sign-preserving defaults.
     pub gdef_condition_map: BTreeMap<(u32, i16), (u32, i16)>,
 }
@@ -459,6 +460,16 @@ impl Plan {
                             && font.table(Tag::new(tag)).is_some_and(|data| {
                                 sofel_font::read::mvar::Mvar::new(data).is_ok()
                             }))
+                }
+                b"MATH" => {
+                    !input
+                        .set(SetKind::NoSubsetTables)
+                        .contains(Tag::new(tag).to_u32())
+                        && font.table(Tag::new(tag)).is_some_and(|data| {
+                            let all = RangeSet::all();
+                            crate::tables::math::retained_variation_indices(data, &all, &all)
+                                .is_some()
+                        })
                 }
                 b"gvar" => {
                     !norm.avar2
@@ -1018,6 +1029,11 @@ impl Plan {
                         reason: "the GDEF item variation store (ADR 0022 stage 10)",
                     });
                 };
+                if p.var.n.avar2 {
+                    // With avar2, HarfBuzz's MATH references use the compact
+                    // index map even when GDEF's rows are optimized afterward.
+                    p.layout.math_var_map = map.clone();
+                }
                 if copied_math && !copied_gdef && math_has_var_format {
                     // Even records for glyphs outside the subset survive in a
                     // copied MATH. Every original index must still address its row.

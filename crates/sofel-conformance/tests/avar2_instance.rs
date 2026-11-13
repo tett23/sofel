@@ -252,6 +252,58 @@ fn adr0061_i1_avar2_restricts_variable_base_like_harfbuzz() {
 }
 
 #[test]
+fn adr0061_i1_math_variation_references_match_harfbuzz() {
+    let source = paths::testdata().join("harfbuzz/test/api/fonts/math-variations.ttf");
+    for ranges in [
+        vec![(b"wght", 0.5, 0.5, 0.5)],
+        vec![(b"wdth", 0.5, 0.5, 0.5)],
+        vec![(b"wght", 0.0, 0.5, 1.0)],
+        vec![(b"wght", 0.5, 0.5, 0.5), (b"wdth", 0.5, 0.5, 0.5)],
+    ] {
+        compare_path(&source, &ranges);
+    }
+}
+
+#[test]
+fn adr0061_i1_avar2_math_variation_references_match_harfbuzz() {
+    let source = paths::testdata().join("harfbuzz/test/api/fonts/math-variations.ttf");
+    let bytes = std::fs::read(source).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let mut avar = vec![0, 2, 0, 0, 0, 0, 0, 2];
+    for _ in 0..2 {
+        avar.extend(3u16.to_be_bytes());
+        for coord in [-16384i16, 0, 16384] {
+            avar.extend(coord.to_be_bytes());
+            avar.extend(coord.to_be_bytes());
+        }
+    }
+    avar.extend([0; 8]);
+    let mut tables = font
+        .sfnt()
+        .records()
+        .map(|r| (r.tag, r.data(&bytes).unwrap().to_vec()))
+        .collect::<Vec<_>>();
+    tables.push((Tag::new(b"avar"), avar));
+    let refs = tables
+        .iter()
+        .map(|(tag, bytes)| (*tag, bytes.as_slice()))
+        .collect::<Vec<_>>();
+    let modified = sofel_write::build_sfnt(&refs).unwrap();
+    let path =
+        std::env::temp_dir().join(format!("sofel-adr61-math-avar2-{}.ttf", std::process::id()));
+    std::fs::write(&path, modified).unwrap();
+    for ranges in [
+        vec![(b"wght", 0.0, 0.5, 1.0)],
+        vec![(b"wght", 0.5, 0.5, 0.5)],
+        vec![(b"wght", 0.0, 0.5, 1.0), (b"wdth", 0.5, 0.5, 0.5)],
+        vec![(b"wght", 0.5, 0.5, 0.5), (b"wdth", 0.5, 0.5, 0.5)],
+    ] {
+        compare_path(&path, &ranges);
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn adr0061_i1_avar2_shared_default_and_self_contained_pin_match_harfbuzz() {
     compare_axes(&[(b"XOPQ", 88.0, 88.0, 88.0), (b"wdth", 100.0, 100.0, 100.0)]);
 }
