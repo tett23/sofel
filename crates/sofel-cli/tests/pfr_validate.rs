@@ -55,3 +55,13 @@ fn adr0065_i2_pfr_reports_directory_offset_field() -> Result<(), Box<dyn std::er
     assert!(output.contains("\"offset\":12"), "{output}");
     Ok(())
 }
+
+#[test]
+fn adr0065_i2_pfr_reports_zero_units_field() -> Result<(), Box<dyn std::error::Error>> {
+    let mut data = pfr::triangle();
+    data.get_mut(85..87).ok_or("missing units field")?.fill(0);
+    let (status, output) = validate(&data)?;
+    assert_eq!(status, 1);
+    assert!(output.contains("\"offset\":85"), "{output}");
+    Ok(())
+}
