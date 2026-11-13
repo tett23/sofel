@@ -50,19 +50,24 @@ impl Type1Source {
             .get(after..)
             .ok_or(data.len())?
             .iter()
-            .position(|byte| *byte == b'\n')
+            .position(|byte| matches!(byte, b'\r' | b'\n'))
             .ok_or(data.len())?;
         let start = after
             .checked_add(line_end)
             .and_then(|n| n.checked_add(1))
             .ok_or(data.len())?;
+        let start = if data.get(start.saturating_sub(1)..start.saturating_add(1)) == Some(b"\r\n") {
+            start.checked_add(1).ok_or(data.len())?
+        } else {
+            start
+        };
         let mut cipher = Vec::new();
         let mut high = None;
         let mut ended = false;
         for line in data
             .get(start..)
             .ok_or(data.len())?
-            .split(|byte| *byte == b'\n')
+            .split(|byte| matches!(byte, b'\r' | b'\n'))
         {
             let line = line.trim_ascii();
             if line.starts_with(b"cleartomark") {
