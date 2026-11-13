@@ -149,6 +149,51 @@ fn adr0064_i1_auto_unlinked_fallback_outline_matches_freetype() {
 }
 
 #[test]
+fn adr0064_i1_latin_cap_rectangle_edges_match_freetype() {
+    let path = paths::testdata().join("harfbuzz/perf/fonts/Roboto-Regular.ttf");
+    let data = std::fs::read(&path).unwrap();
+    let font = Font::new(&data, 0).unwrap();
+    assert_eq!(font.nominal_glyph(u32::from('I')), Some(GlyphId(46)));
+    let outlines = Outlines::new(font.default_instance());
+    let mut scratch = Scratch::default();
+    for ppem in 1..=76 {
+        for (target_name, target) in [("light", HintTarget::Light), ("lcd", HintTarget::Lcd)] {
+            let reference = Command::new(paths::ft_dump())
+                .args(["--hint-slot", &ppem.to_string(), "46", "auto", target_name])
+                .arg(&path)
+                .output()
+                .unwrap();
+            assert!(reference.status.success());
+            let (_, advance) = outlines
+                .load_with_hint(GlyphId(46), ppem, HintMode::Auto, target, &mut scratch)
+                .unwrap();
+            let mut actual = format!("advance {advance} 0\n");
+            for (point, tag) in scratch.points().iter().zip(scratch.point_tags()) {
+                writeln!(actual, "point {} {} {tag}", point.x, point.y).unwrap();
+            }
+            for end in scratch.contour_ends() {
+                writeln!(actual, "end {end}").unwrap();
+            }
+            assert_eq!(
+                actual,
+                String::from_utf8(reference.stdout).unwrap(),
+                "{target_name} {ppem}"
+            );
+        }
+    }
+    assert_eq!(
+        outlines.load_with_hint(
+            GlyphId(46),
+            77,
+            HintMode::Auto,
+            HintTarget::Light,
+            &mut scratch
+        ),
+        Err(OutlineError::AutoHintUnsupported)
+    );
+}
+
+#[test]
 fn adr0064_i1_auto_nonempty_reports_unsupported_and_clears_scratch() {
     let path = paths::testdata().join("harfbuzz/test/api/fonts/Roboto-Regular.abcAE.ttf");
     let data = std::fs::read(&path).unwrap();
