@@ -805,19 +805,40 @@ impl Plan {
             } else {
                 n
             };
-        if num_glyphs > 0x1_0000
-            && new_to_old.iter().any(|&(new, _)| new > 0xFFFF)
-            && [b"GSUB", b"GPOS", b"GDEF", b"BASE"].iter().any(|t| {
-                let tag = Tag::new(t);
-                font.table(tag).is_some()
-                    && !drop.contains(tag.to_u32())
-                    && !no_subset.contains(tag.to_u32())
-            })
-        {
-            return Err(SubsetError::Unsupported {
-                tag: Tag::new(b"GSUB"),
-                reason: "layout subsetting with retained glyph IDs above 65535",
-            });
+        if new_to_old.iter().any(|&(new, _)| new > 0xFFFF) {
+            for name in [b"GSUB", b"GPOS", b"GDEF", b"BASE"] {
+                let tag = Tag::new(name);
+                if drop.contains(tag.to_u32()) || no_subset.contains(tag.to_u32()) {
+                    continue;
+                }
+                let Some(data) = font.table(tag) else {
+                    continue;
+                };
+                let supported = match name {
+                    b"GSUB" | b"GPOS" => {
+                        let gsub = name == b"GSUB";
+                        let table = layout::Gsubgpos::new(data, gsub);
+                        let plan = if gsub { &p.layout.gsub } else { &p.layout.gpos };
+                        plan.lookups.keys().all(|&i| {
+                            layout::subtables(table.lookup(i as usize), gsub)
+                                .iter()
+                                .all(|(kind, _)| {
+                                    matches!(
+                                        kind,
+                                        layout::Kind::SingleSubst | layout::Kind::SinglePos
+                                    )
+                                })
+                        })
+                    }
+                    _ => false,
+                };
+                if !supported {
+                    return Err(SubsetError::Unsupported {
+                        tag,
+                        reason: "layout subsetting with retained glyph IDs above 65535",
+                    });
+                }
+            }
         }
         p.glyphs = GlyphMap::new(new_to_old, num_glyphs);
         let cff2 = Tag::new(b"CFF2");

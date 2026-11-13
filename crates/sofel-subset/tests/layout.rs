@@ -1619,3 +1619,27 @@ fn adr0022_wide_source_substitution_maps_high_input_to_compact_ids() {
     let subtable = follow(follow(follow(&gsub, 8), 2), 6);
     assert_eq!(u16_at(subtable, 4), 65535);
 }
+
+#[test]
+fn adr0022_retained_high_gid_keeps_single_substitution() {
+    let st = vec![0, 3, 0, 0, 0, 9, 0, 255, 255, 0, 1, 0, 1, 0, 1];
+    let mut tables = sample_tables();
+    tables
+        .iter_mut()
+        .find(|(tag, _)| *tag == b"hmtx")
+        .unwrap()
+        .1
+        .resize(2 * 65537 + 2 * 20, 0);
+    tables.extend([
+        (b"MAXP", vec![0, 0, 80, 0, 1, 0, 1]),
+        (b"GSUB", layout_table(&[(b"liga", &[0])], &[(1, st)])),
+    ]);
+    tables.sort_by_key(|(tag, _)| **tag);
+    let data = sfnt(&tables);
+    let input = chars("A").with_flags(Flags::RETAIN_GIDS);
+    let out = subset(&Font::new(&data, 0).unwrap(), &input).unwrap();
+    assert_eq!(Font::new(&out, 0).unwrap().num_glyphs(), 65537);
+    let gsub = out_table(&out, b"GSUB").unwrap();
+    let st = follow(follow(follow(&gsub, 8), 2), 6);
+    assert!(st.starts_with(&[0, 3, 0, 0, 0, 9, 0, 255, 255]));
+}
