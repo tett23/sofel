@@ -80,6 +80,11 @@
  *   length X Y      -> FT_Vector_Length of (X, Y)
  *
  * Usage: ft-dump --outline SIZE FILE
+ * Usage: ft-dump --auto-style GLYPH FILE
+ *
+ * Prints the autofitter's raw style word for one glyph before loading it.
+ * The low 13 bits hold the style index; the high bits hold cmap, nonbase,
+ * and digit flags (FreeType src/autofit/afglobal.h).
  *
  * Usage: ft-dump --stroke SIZE GLYPH RADIUS JOIN MITER BORDER FILE
  * Usage: ft-dump --stroke-points SIZE GLYPH RADIUS JOIN MITER BORDER FILE
@@ -266,6 +271,7 @@
 #include FT_FREETYPE_H
 #include FT_TRUETYPE_TABLES_H
 #include FT_MODULE_H
+#include FT_DRIVER_H
 #include FT_ADVANCES_H
 #include FT_TRIGONOMETRY_H
 #include FT_OUTLINE_H
@@ -1764,6 +1770,31 @@ static int hint_slot(const char *size, const char *glyph, const char *engine,
   return error ? 1 : 0;
 }
 
+/* The autofitter's per-glyph style index, before loading any glyph. */
+static int auto_style(const char *glyph, const char *path)
+{
+  FT_Library library;
+  FT_Face face;
+  FT_Prop_GlyphToScriptMap prop;
+  FT_Error error;
+  char *end;
+  long gid = strtol(glyph, &end, 10);
+  if (!*glyph || *end || gid < 0 || gid > 65535) return 2;
+  if (FT_Init_FreeType(&library)) return 1;
+  error = FT_New_Face(library, path, 0, &face);
+  if (!error) {
+    prop.face = face;
+    prop.map = NULL;
+    error = FT_Property_Get(library, "autofitter", "glyph-to-script-map", &prop);
+    if (!error && gid >= face->num_glyphs) error = FT_Err_Invalid_Glyph_Index;
+    if (!error) printf("style %u\n", (unsigned)prop.map[gid]);
+    FT_Done_Face(face);
+  }
+  FT_Done_FreeType(library);
+  if (error) fprintf(stderr, "ft-dump: auto style error %d\n", error);
+  return error ? 1 : 0;
+}
+
 int main(int argc, char **argv)
 {
   FT_Library library;
@@ -1781,6 +1812,8 @@ int main(int argc, char **argv)
   if (argc >= 2 && !reference_options(&argc, argv)) return 2;
   if (argc == 7 && !strcmp(argv[1], "--hint-slot"))
     return hint_slot(argv[2], argv[3], argv[4], argv[5], argv[6]);
+  if (argc == 4 && !strcmp(argv[1], "--auto-style"))
+    return auto_style(argv[2], argv[3]);
   if (argc == 3 && strcmp(argv[1], "--advances") == 0)
     return dump_advance_queries(argv[2]);
   if (argc == 2 && strcmp(argv[1], "--calc") == 0)
@@ -1827,7 +1860,7 @@ int main(int argc, char **argv)
     argc = 2;
   }
   if (argc != 2) {
-    fprintf(stderr, "usage: ft-dump FILE | ft-dump --hint-slot PPEM GLYPH ENGINE TARGET FILE | ft-dump --advances [--named-instance=N] [--variations=TAG=value,...] FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --stroke SIZE GLYPH RADIUS JOIN MITER BORDER FILE | ft-dump --sampled-outline SIZE FILE PLAN | ft-dump --sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...] | ft-dump --raster PPEM [--color|--lcd|--lcd-v|--mono|--sdf|--bitmap-sdf] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --cff2-private FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
+    fprintf(stderr, "usage: ft-dump FILE | ft-dump --hint-slot PPEM GLYPH ENGINE TARGET FILE | ft-dump --auto-style GLYPH FILE | ft-dump --advances [--named-instance=N] [--variations=TAG=value,...] FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --stroke SIZE GLYPH RADIUS JOIN MITER BORDER FILE | ft-dump --sampled-outline SIZE FILE PLAN | ft-dump --sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...] | ft-dump --raster PPEM [--color|--lcd|--lcd-v|--mono|--sdf|--bitmap-sdf] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --cff2-private FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
     return 2;
   }
   if (FT_Init_FreeType(&library) != 0) {

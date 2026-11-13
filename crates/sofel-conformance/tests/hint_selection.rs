@@ -135,3 +135,33 @@ fn adr0064_i1_auto_nonempty_reports_unsupported_and_clears_scratch() {
     assert!(scratch.point_tags().is_empty());
     assert!(scratch.contour_ends().is_empty());
 }
+
+#[test]
+fn adr0064_i1_reference_auto_style_distinguishes_cmap_and_fallback() {
+    let path = paths::testdata().join("harfbuzz/test/api/fonts/Roboto-Regular.abcAE.ttf");
+    for (gid, expected) in [
+        (0, 86),
+        (1, 8249),
+        (2, 8249),
+        (3, 8249),
+        (4, 8249),
+        (5, 86),
+        (6, 86),
+        (7, 8249),
+    ] {
+        let output = Command::new(paths::ft_dump())
+            .args(["--auto-style", &gid.to_string()])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            format!("style {expected}\n")
+        );
+    }
+}
