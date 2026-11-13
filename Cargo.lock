@@ -34,6 +34,10 @@ name = "sofel-bitmapfont"
 version = "0.0.0"
 
 [[package]]
+name = "sofel-brotli"
+version = "0.0.0"
+
+[[package]]
 name = "sofel-capi"
 version = "0.0.0"
 dependencies = [
@@ -204,6 +208,7 @@ dependencies = [
 name = "sofel-woff"
 version = "0.0.0"
 dependencies = [
+ "sofel-brotli",
  "sofel-inflate",
  "sofel-read",
  "sofel-write",
