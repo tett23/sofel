@@ -664,41 +664,41 @@ fn adr0061_i1_partial_cff2_preserves_blends_and_remaps_vsindex() {
             .join(name);
         let bytes = std::fs::read(&path).unwrap();
         let font = Font::new(&bytes, 0).unwrap();
-        let input = Input::new()
-            .map_set(SetKind::Unicodes, |s| s.add_range(0x41, 0x43))
-            .with_axis_range(
-                Tag::new(b"wght"),
-                Some(300.0),
-                Some(700.0),
-                Some(500.0),
-                &font,
-            )
-            .unwrap()
-            .with_axis_range(Tag::new(b"CNTR"), Some(25.0), Some(75.0), None, &font)
-            .unwrap();
-        let output =
-            std::env::temp_dir().join(format!("sofel-cff2-range-{}.otf", std::process::id()));
-        assert!(
-            Command::new(paths::hb_dump())
-                .arg("--subset")
-                .arg(format!("--font-file={}", path.display()))
-                .args([
-                    "--unicodes=41,42,43",
-                    "--variations=wght=300:500:700,CNTR=25:75"
-                ])
-                .arg(format!("--output-file={}", output.display()))
-                .status()
+        for (first, last, unicodes) in [(0x41, 0x43, "41,42,43"), (0, 0x10ffff, "*")] {
+            let input = Input::new()
+                .map_set(SetKind::Unicodes, |s| s.add_range(first, last))
+                .with_axis_range(
+                    Tag::new(b"wght"),
+                    Some(300.0),
+                    Some(700.0),
+                    Some(500.0),
+                    &font,
+                )
                 .unwrap()
-                .success()
-        );
-        let expected = std::fs::read(&output).unwrap();
-        std::fs::remove_file(output).unwrap();
-        let actual = subset(&font, &input).unwrap();
-        assert!(
-            actual == expected,
-            "{name}: {}",
-            sofel_conformance::subset::diff(&expected, &actual)
-        );
+                .with_axis_range(Tag::new(b"CNTR"), Some(25.0), Some(75.0), None, &font)
+                .unwrap();
+            let output =
+                std::env::temp_dir().join(format!("sofel-cff2-range-{}.otf", std::process::id()));
+            assert!(
+                Command::new(paths::hb_dump())
+                    .arg("--subset")
+                    .arg(format!("--font-file={}", path.display()))
+                    .arg(format!("--unicodes={unicodes}"))
+                    .arg("--variations=wght=300:500:700,CNTR=25:75")
+                    .arg(format!("--output-file={}", output.display()))
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+            let expected = std::fs::read(&output).unwrap();
+            std::fs::remove_file(output).unwrap();
+            let actual = subset(&font, &input).unwrap();
+            assert!(
+                actual == expected,
+                "{name}: {}",
+                sofel_conformance::subset::diff(&expected, &actual)
+            );
+        }
     }
 }
 

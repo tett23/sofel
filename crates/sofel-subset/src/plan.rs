@@ -1317,7 +1317,7 @@ fn glyph_map(
 fn condition_is_constant(range: Option<&crate::input::AxisRange>, min: i16, max: i16) -> bool {
     let (low, high) = range.map_or((-1.0, 1.0), |r| (r.min, r.max));
     let (min, max) = (f32::from(min) / 16384.0, f32::from(max) / 16384.0);
-    high < min || low > max || (min <= low && high <= max)
+    max < min || high < min || low > max || low == high || (min == low && max == high)
 }
 
 fn can_instance_layout_conditions(data: &[u8], axis_tags: &[Tag], avar2: bool) -> bool {
