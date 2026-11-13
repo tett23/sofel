@@ -46,9 +46,13 @@ extern crate alloc;
 
 pub use sofel_geom as geom;
 pub use sofel_read as read;
+pub use sofel_type1::{face::Type1Face, source::Type1Source};
 
+mod bare_cff;
 mod base_sanitize;
 pub mod baseline;
+mod bitmap_face;
+pub use bitmap_face::{BitmapFace, BitmapFormat};
 mod cff;
 mod ft;
 mod ft_glyf;
@@ -68,12 +72,14 @@ pub mod remap;
 mod tables;
 pub mod var;
 
+pub use bare_cff::BareCffFace;
 pub use cff::{Cff, CffError, CffMatrix, CidError, PsFontInfo, Ros, Subfont, fs_type};
 pub use ft::FtFaceMetrics;
 pub use hb_cff::{HbCff1, HbCff2};
 pub use layout::Direction;
 pub use metrics::{FontExtents, GlyphExtents, HbScale, MetricsTag};
 pub use names::{GlyphNames, Language, NameEntry, NameLength, Names, SfntName};
+pub use sofel_type1::cid::CidFace;
 
 use core::fmt;
 

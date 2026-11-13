@@ -32,6 +32,8 @@ pub mod face;
 /// Unscaled Type 1 charstring metrics.
 pub mod metrics;
 
+/// CID-keyed Type 1 font data and CIDMap access.
+pub mod cid;
 /// Type 42 PostScript wrapper around an sfnt font.
 pub mod type42;
 mod type42_expert;

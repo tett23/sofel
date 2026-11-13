@@ -660,8 +660,21 @@ fn position(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut
             }
         }
     }
-    // The `ot` font functions have no kerning: fallback kerning does
-    // nothing.
+    if horizontal
+        && plan.apply_fallback_kern
+        && plan.kern_mask != 0
+        && let Some(sub) = font.kern_subfont()
+    {
+        let reverse = buffer.direction.is_backward();
+        if reverse {
+            buffer.reverse();
+        }
+        buffer.unsafe_to_concat_all();
+        crate::aat::kerning::apply_pairs(buffer, plan.kern_mask, false, |l, r| sub.pair_kern(l, r));
+        if reverse {
+            buffer.reverse();
+        }
+    }
     if plan.zero_marks && zwm == ZeroWidthMarks::ByGdefLate {
         zero_mark_widths_by_gdef(buffer, adjust);
     }

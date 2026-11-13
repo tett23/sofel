@@ -58,6 +58,13 @@ impl<'a> Type1Face<'a> {
         self.charstrings.glyph_index(self.encoding.name(code)?)
     }
 
+    /// Unicode mapping synthesized from PostScript glyph names.
+    pub fn unicode_glyph(&self, codepoint: u32) -> Option<usize> {
+        (1..self.num_glyphs()).find(|&gid| {
+            self.glyph_name(gid).and_then(crate::type42::glyph_unicode) == Some(codepoint)
+        })
+    }
+
     /// The PostScript name of a glyph index.
     pub fn glyph_name(&self, glyph: usize) -> Option<&'a [u8]> {
         self.charstrings.glyph_name(glyph)
@@ -66,6 +73,11 @@ impl<'a> Type1Face<'a> {
     /// The decrypted charstring of a glyph index.
     pub fn glyph_program(&self, glyph: usize) -> Option<Vec<u8>> {
         self.charstrings.glyph_program(self.glyph_name(glyph)?)
+    }
+
+    /// Decrypted local Type 1 subroutine by index.
+    pub fn subroutine_program(&self, index: usize) -> Option<Vec<u8>> {
+        self.charstrings.subroutine_program(index)
     }
 
     /// The unscaled side bearings and advances of a glyph.

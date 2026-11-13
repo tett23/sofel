@@ -285,6 +285,61 @@ pub(crate) fn has_machine(tables: &[Subtable<'_>]) -> bool {
 pub(crate) fn cross_stream(tables: &[Subtable<'_>]) -> bool {
     tables.iter().any(|t| t.coverage & 0x4000_0000 != 0)
 }
+pub(crate) fn apply_pairs(
+    buf: &mut Buffer,
+    mask: Mask,
+    cross: bool,
+    value: impl Fn(u32, u32) -> i32,
+) {
+    let horizontal = buf.direction.is_horizontal();
+    let mut prior = None;
+    for j in 0..buf.len {
+        let Some(info) = buf.infos().get(j) else {
+            break;
+        };
+        if info.is_mark() {
+            continue;
+        }
+        if info.mask & mask == 0 {
+            prior = None;
+            continue;
+        }
+        if let Some((i, left)) = prior {
+            let v = value(left, info.codepoint);
+            if v != 0 {
+                if let Some(p) = buf.positions_mut().get_mut(i) {
+                    let p: &mut crate::buffer::Pos = p;
+                    if !cross {
+                        if horizontal {
+                            p.x_advance = p.x_advance.saturating_add(v >> 1);
+                        } else {
+                            p.y_advance = p.y_advance.saturating_add(v >> 1);
+                        }
+                    }
+                }
+                if let Some(p) = buf.positions_mut().get_mut(j) {
+                    let half = v.saturating_sub(v >> 1);
+                    if cross {
+                        if horizontal {
+                            p.y_offset = v;
+                        } else {
+                            p.x_offset = v;
+                        }
+                        buf.scratch_flags |= scratch::HAS_GPOS_ATTACHMENT;
+                    } else if horizontal {
+                        p.x_advance = p.x_advance.saturating_add(half);
+                        p.x_offset = p.x_offset.saturating_add(half);
+                    } else {
+                        p.y_advance = p.y_advance.saturating_add(half);
+                        p.y_offset = p.y_offset.saturating_add(half);
+                    }
+                }
+                buf.unsafe_to_break(i, j.saturating_add(1));
+            }
+        }
+        prior = buf.infos().get(j).map(|info| (j, info.codepoint));
+    }
+}
 pub(crate) fn apply(tables: &[Subtable<'_>], buf: &mut Buffer, scale: &HbScale, mask: Mask) {
     buf.unsafe_to_concat_all();
     let horizontal = buf.direction.is_horizontal();
@@ -393,58 +448,14 @@ pub(crate) fn apply(tables: &[Subtable<'_>], buf: &mut Buffer, scale: &HbScale, 
                 }
             });
         } else if mask != 0 {
-            let mut prior = None;
-            for j in 0..buf.len {
-                let Some(info) = buf.infos().get(j) else {
-                    break;
-                };
-                if info.is_mark() {
-                    continue;
+            apply_pairs(buf, mask, cross, |left, right| {
+                let v = t.value(left, right);
+                if horizontal {
+                    scale.em_scale_x(v)
+                } else {
+                    scale.em_scale_y(v)
                 }
-                if info.mask & mask == 0 {
-                    prior = None;
-                    continue;
-                }
-                if let Some((i, left)) = prior {
-                    let pair = t.value(left, info.codepoint);
-                    let v = if horizontal {
-                        scale.em_scale_x(pair)
-                    } else {
-                        scale.em_scale_y(pair)
-                    };
-                    if v != 0 {
-                        if let Some(p) = buf.positions_mut().get_mut(i) {
-                            let p: &mut crate::buffer::Pos = p;
-                            if !cross {
-                                if horizontal {
-                                    p.x_advance = p.x_advance.saturating_add(v >> 1);
-                                } else {
-                                    p.y_advance = p.y_advance.saturating_add(v >> 1);
-                                }
-                            }
-                        }
-                        if let Some(p) = buf.positions_mut().get_mut(j) {
-                            let half = v.saturating_sub(v >> 1);
-                            if cross {
-                                if horizontal {
-                                    p.y_offset = v;
-                                } else {
-                                    p.x_offset = v;
-                                }
-                                buf.scratch_flags |= scratch::HAS_GPOS_ATTACHMENT;
-                            } else if horizontal {
-                                p.x_advance = p.x_advance.saturating_add(half);
-                                p.x_offset = p.x_offset.saturating_add(half);
-                            } else {
-                                p.y_advance = p.y_advance.saturating_add(half);
-                                p.y_offset = p.y_offset.saturating_add(half);
-                            }
-                        }
-                        buf.unsafe_to_break(i, j.saturating_add(1));
-                    }
-                }
-                prior = buf.infos().get(j).map(|info| (j, info.codepoint));
-            }
+            });
         }
         if reverse {
             buf.reverse();

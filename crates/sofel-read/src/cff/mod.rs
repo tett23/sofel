@@ -29,7 +29,7 @@ mod index;
 
 pub use blend::FtBlend;
 pub use charset::{Charset, CharsetIndex};
-pub use check::{validate, validate2};
+pub use check::{validate, validate_bare, validate2};
 pub use data::{
     EXPERT_CHARSET, EXPERT_ENCODING, EXPERT_SUBSET_CHARSET, ISO_ADOBE_CHARSET, STANDARD_ENCODING,
     STANDARD_STRINGS,
@@ -45,6 +45,15 @@ use crate::{ReadError, Tag};
 pub const TAG: Tag = Tag::new(b"CFF ");
 /// The `CFF2` tag.
 pub const TAG2: Tag = Tag::new(b"CFF2");
+
+/// Whether this directory describes a Compact Embedded Font with a CFF 1
+/// table. A present but out-of-bounds head still belongs to the sfnt validator.
+pub fn is_cef(sfnt: &crate::sfnt::Sfnt<'_>) -> bool {
+    sfnt.version() == u32::from_be_bytes(*b"OTTO")
+        && sfnt.record(crate::head::TAG).is_none()
+        && sfnt.record(TAG).is_some()
+        && sfnt.record(TAG2).is_none()
+}
 
 /// The number of standard strings: SIDs below this are standard strings.
 pub const NUM_STANDARD_STRINGS: u32 = 391;

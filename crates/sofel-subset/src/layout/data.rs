@@ -40,6 +40,14 @@ impl<'a> D<'a> {
         ])
     }
 
+    /// A layout operand stored in two or three bytes.
+    pub fn uint(self, at: usize, width: u8) -> u32 {
+        if width == 3 {
+            self.u32(at) >> 8
+        } else {
+            u32::from(self.u16(at))
+        }
+    }
     /// The view at `off` bytes in; empty past the end.
     pub fn at(self, off: usize) -> D<'a> {
         D(self.0.get(off..).unwrap_or(&[]))
@@ -73,6 +81,109 @@ impl<'a> D<'a> {
     /// The `i`th `u16` of an array starting at `at`.
     pub fn u16_at(self, at: usize, i: usize) -> u16 {
         self.u16(at.saturating_add(i.saturating_mul(2)))
+    }
+}
+
+/// MultipleSubst and AlternateSubst share a Coverage and an array of sequence offsets.
+#[derive(Clone, Copy)]
+pub(crate) struct SequenceSets<'a> {
+    table: D<'a>,
+    pub width: u8,
+}
+
+impl<'a> SequenceSets<'a> {
+    pub fn new(table: D<'a>) -> Option<Self> {
+        let width = match table.u16(0) {
+            1 => 2,
+            2 => 3,
+            _ => return None,
+        };
+        Some(Self { table, width })
+    }
+    pub fn coverage(self) -> Cov<'a> {
+        Cov(if self.width == 3 {
+            self.table.off32(2)
+        } else {
+            self.table.off16(2)
+        })
+    }
+    pub fn count(self) -> usize {
+        self.table
+            .uint(if self.width == 3 { 6 } else { 4 }, self.width) as usize
+    }
+    pub fn set(self, index: usize) -> D<'a> {
+        let start: usize = if self.width == 3 { 9 } else { 6 };
+        self.table.follow(self.table.uint(
+            start.saturating_add(index.saturating_mul(usize::from(self.width))),
+            self.width,
+        ))
+    }
+    pub fn sequence(self, index: usize) -> Option<impl Iterator<Item = u32> + 'a> {
+        let width = usize::from(self.width);
+        let set = self.set(index);
+        if set.is_null() {
+            return None;
+        }
+        let count = set.uint(0, self.width) as usize;
+        if count.checked_add(1)?.checked_mul(width)? > set.0.len() {
+            return None;
+        }
+        Some(
+            (0..count)
+                .map(move |i| set.uint(i.saturating_add(1).saturating_mul(width), self.width)),
+        )
+    }
+}
+
+pub(crate) fn ligatures(set: D<'_>, width: u8) -> impl Iterator<Item = D<'_>> {
+    (0..usize::from(set.u16(0)))
+        .map(move |i| {
+            set.follow(set.uint(
+                2usize.saturating_add(i.saturating_mul(usize::from(width))),
+                width,
+            ))
+        })
+        .filter(|lig| !lig.is_null())
+}
+
+pub(crate) fn components(lig: D<'_>, width: u8) -> impl Iterator<Item = u32> {
+    let n = usize::from(lig.u16(usize::from(width))).saturating_sub(1);
+    (0..n).map(move |i| {
+        lig.uint(
+            2usize.saturating_add(i.saturating_add(1).saturating_mul(usize::from(width))),
+            width,
+        )
+    })
+}
+
+/// SingleSubst uses a long Coverage offset and 24-bit operands in formats 3 and 4.
+#[derive(Clone, Copy)]
+pub(crate) struct SingleSubst<'a>(pub D<'a>);
+
+impl<'a> SingleSubst<'a> {
+    pub fn coverage(self) -> Cov<'a> {
+        Cov(if self.0.u16(0) >= 3 {
+            self.0.off32(2)
+        } else {
+            self.0.off16(2)
+        })
+    }
+
+    pub fn mask(self) -> u32 {
+        if self.0.u16(0) >= 3 {
+            0xFF_FFFF
+        } else {
+            0xFFFF
+        }
+    }
+
+    /// Operand zero is the delta or array length. Subsequent operands are substitutes.
+    pub fn operand(self, index: usize) -> u32 {
+        if self.0.u16(0) >= 3 {
+            self.0.u32(6usize.saturating_add(index.saturating_mul(3))) >> 8
+        } else {
+            u32::from(self.0.u16_at(4, index))
+        }
     }
 }
 
@@ -113,25 +224,44 @@ pub(crate) fn bsearch(n: usize, cmp: impl Fn(usize) -> core::cmp::Ordering) -> O
     None
 }
 
-/// A Coverage table (formats 1 and 2).
+/// A Coverage table (formats 1 through 4).
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct Cov<'a>(pub D<'a>);
 
 impl<'a> Cov<'a> {
+    fn checked(self) -> sofel_font::read::layout::Coverage<'a> {
+        sofel_font::read::layout::Coverage::new(self.0.0)
+            .unwrap_or_else(|_| sofel_font::read::layout::Coverage::empty())
+    }
+
     fn format(self) -> u16 {
         self.0.u16(0)
     }
 
     fn count(self) -> usize {
-        usize::from(self.0.u16(2))
+        if self.format() >= 3 {
+            self.checked().num_records()
+        } else {
+            usize::from(self.0.u16(2))
+        }
     }
 
     fn glyph1(self, i: usize) -> u32 {
-        u32::from(self.0.u16_at(4, i))
+        if self.format() == 3 {
+            self.checked().glyph(i).map_or(0, |g| g.0)
+        } else {
+            u32::from(self.0.u16_at(4, i))
+        }
     }
 
     /// `(first, last, start coverage index)` of range `i` of format 2.
     fn range(self, i: usize) -> (u32, u32, u32) {
+        if self.format() == 4 {
+            return self
+                .checked()
+                .range(i)
+                .map_or((1, 0, 0), |(a, z, v)| (a.0, z.0, v));
+        }
         let at = 4usize.saturating_add(i.saturating_mul(6));
         (
             u32::from(self.0.u16(at)),
@@ -143,9 +273,9 @@ impl<'a> Cov<'a> {
     /// The coverage index of `g` (`get_coverage`).
     pub fn get(self, g: u32) -> Option<u32> {
         match self.format() {
-            1 => bsearch(self.count(), |i| g.cmp(&self.glyph1(i)))
+            1 | 3 => bsearch(self.count(), |i| g.cmp(&self.glyph1(i)))
                 .map(|i| u32::try_from(i).unwrap_or(INVALID)),
-            2 => {
+            2 | 4 => {
                 let (first, last, value) = bsearch(self.count(), |i| {
                     let (a, z, _) = self.range(i);
                     if g < a {
@@ -171,8 +301,8 @@ impl<'a> Cov<'a> {
     /// The number of covered glyphs (`get_population`).
     pub fn population(self) -> u64 {
         match self.format() {
-            1 => self.count() as u64,
-            2 => (0..self.count())
+            1 | 3 => self.count() as u64,
+            2 | 4 => (0..self.count())
                 .map(|i| {
                     let (a, z, _) = self.range(i);
                     if z < a {
@@ -190,8 +320,8 @@ impl<'a> Cov<'a> {
     /// format 2 range whose coverage index does not follow on).
     pub fn glyphs(self) -> Vec<u32> {
         match self.format() {
-            1 => (0..self.count()).map(|i| self.glyph1(i)).collect(),
-            2 => {
+            1 | 3 => (0..self.count()).map(|i| self.glyph1(i)).collect(),
+            2 | 4 => {
                 let n = self.count();
                 let mut out = Vec::new();
                 if n == 0 {
@@ -231,14 +361,14 @@ impl<'a> Cov<'a> {
     /// Whether a glyph of `glyphs` is covered (`intersects`).
     pub fn intersects(self, glyphs: &BitSet) -> bool {
         match self.format() {
-            1 => {
+            1 | 3 => {
                 let n = self.count() as u64;
                 if n > glyphs.len().saturating_mul(bit_storage(n)) {
                     return glyphs.iter().any(|g| self.has(g));
                 }
                 (0..self.count()).any(|i| glyphs.has(self.glyph1(i)))
             }
-            2 => {
+            2 | 4 => {
                 let n = self.count() as u64;
                 if n > glyphs.len().saturating_mul(bit_storage(n)) {
                     return glyphs.iter().any(|g| self.has(g));
@@ -255,11 +385,11 @@ impl<'a> Cov<'a> {
     /// Adds the covered glyphs of `glyphs` to `out` (`intersect_set`).
     pub fn intersect_set(self, glyphs: &BitSet, out: &mut BitSet) {
         match self.format() {
-            1 => (0..self.count())
+            1 | 3 => (0..self.count())
                 .map(|i| self.glyph1(i))
                 .filter(|&g| glyphs.has(g))
                 .for_each(|g| out.add(g)),
-            2 => {
+            2 | 4 => {
                 let mut last = 0u32;
                 for i in 0..self.count() {
                     let (a, z, _) = self.range(i);
@@ -279,32 +409,59 @@ impl<'a> Cov<'a> {
     }
 }
 
-/// A ClassDef table (formats 1 and 2).
+/// A ClassDef table (formats 1 through 4).
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct Cls<'a>(pub D<'a>);
 
 impl<'a> Cls<'a> {
+    fn checked(self) -> sofel_font::read::layout::ClassDef<'a> {
+        sofel_font::read::layout::ClassDef::new(self.0.0)
+            .unwrap_or_else(|_| sofel_font::read::layout::ClassDef::empty())
+    }
+
     fn format(self) -> u16 {
         self.0.u16(0)
     }
 
     fn start(self) -> u32 {
-        u32::from(self.0.u16(2))
+        if self.format() == 3 {
+            self.checked().start_glyph().0
+        } else {
+            u32::from(self.0.u16(2))
+        }
     }
 
     fn count1(self) -> usize {
-        usize::from(self.0.u16(4))
+        if self.format() == 3 {
+            self.checked().num_records()
+        } else {
+            usize::from(self.0.u16(4))
+        }
     }
 
     fn value1(self, i: usize) -> u32 {
-        u32::from(self.0.u16_at(6, i))
+        if self.format() == 3 {
+            self.checked().class_value(i).unwrap_or(0)
+        } else {
+            u32::from(self.0.u16_at(6, i))
+        }
     }
 
     fn count2(self) -> usize {
-        usize::from(self.0.u16(2))
+        if self.format() == 4 {
+            self.checked().num_records()
+        } else {
+            usize::from(self.0.u16(2))
+        }
     }
 
     fn range(self, i: usize) -> (u32, u32, u32) {
+        if self.format() == 4 {
+            return self
+                .checked()
+                .range(i)
+                .map_or((1, 0, 0), |(a, z, v)| (a.0, z.0, v));
+        }
         let at = 4usize.saturating_add(i.saturating_mul(6));
         (
             u32::from(self.0.u16(at)),
@@ -329,11 +486,11 @@ impl<'a> Cls<'a> {
     /// The class of `g` (`get_class`).
     pub fn get(self, g: u32) -> u32 {
         match self.format() {
-            1 => {
+            1 | 3 => {
                 let i = g.wrapping_sub(self.start()) as usize;
                 if i < self.count1() { self.value1(i) } else { 0 }
             }
-            2 => self.find2(g).map_or(0, |i| self.range(i).2),
+            2 | 4 => self.find2(g).map_or(0, |i| self.range(i).2),
             _ => 0,
         }
     }
@@ -341,8 +498,8 @@ impl<'a> Cls<'a> {
     /// The number of glyphs listed (`get_population`).
     pub fn population(self) -> u64 {
         match self.format() {
-            1 => self.count1() as u64,
-            2 => (0..self.count2())
+            1 | 3 => self.count1() as u64,
+            2 | 4 => (0..self.count2())
                 .map(|i| {
                     let (a, z, _) = self.range(i);
                     if z < a {
@@ -362,7 +519,7 @@ impl<'a> Cls<'a> {
     /// (`intersects`).
     pub fn intersects(self, glyphs: &BitSet) -> bool {
         match self.format() {
-            1 => {
+            1 | 3 => {
                 let start = self.start();
                 let end = start.wrapping_add(n32(self.count1()));
                 let mut g = glyphs.next(start.wrapping_sub(1));
@@ -374,7 +531,7 @@ impl<'a> Cls<'a> {
                 }
                 false
             }
-            2 => {
+            2 | 4 => {
                 let n = self.count2() as u64;
                 if n > glyphs.len().saturating_mul(bit_storage(n)) {
                     return glyphs.iter().any(|g| self.get(g) != 0);
@@ -391,7 +548,7 @@ impl<'a> Cls<'a> {
     /// Whether a glyph of `glyphs` has class `klass` (`intersects_class`).
     pub fn intersects_class(self, glyphs: &BitSet, klass: u32) -> bool {
         match self.format() {
-            1 => {
+            1 | 3 => {
                 let count = self.count1();
                 let start = self.start();
                 if klass == 0 {
@@ -410,7 +567,7 @@ impl<'a> Cls<'a> {
                 (0..count)
                     .any(|i| self.value1(i) == klass && glyphs.has(start.wrapping_add(n32(i))))
             }
-            2 => {
+            2 | 4 => {
                 let n = self.count2();
                 if klass == 0 {
                     if n == 0 {
@@ -449,7 +606,7 @@ impl<'a> Cls<'a> {
     /// (`intersected_class_glyphs`).
     pub fn intersected_class_glyphs(self, glyphs: &BitSet, klass: u32, out: &mut BitSet) {
         match self.format() {
-            1 => {
+            1 | 3 => {
                 let count = self.count1();
                 let start = self.start();
                 if klass == 0 {
@@ -469,7 +626,7 @@ impl<'a> Cls<'a> {
                     .filter(|&i| self.value1(i) == klass && glyphs.has(start.wrapping_add(n32(i))))
                     .for_each(|i| out.add(start.wrapping_add(n32(i))));
             }
-            2 => {
+            2 | 4 => {
                 let n = self.count2();
                 if klass == 0 {
                     let mut g = INVALID;
@@ -528,7 +685,7 @@ impl<'a> Cls<'a> {
             return;
         }
         match self.format() {
-            1 => {
+            1 | 3 => {
                 let count = self.count1();
                 if count == 0 {
                     out.add(0);
@@ -543,7 +700,7 @@ impl<'a> Cls<'a> {
                     .filter(|&i| glyphs.has(start.wrapping_add(n32(i))))
                     .for_each(|i| out.add(self.value1(i)));
             }
-            2 => {
+            2 | 4 => {
                 let n = self.count2();
                 if n == 0 {
                     out.add(0);
@@ -601,11 +758,11 @@ impl<'a> Cls<'a> {
             klasses.add(k);
         };
         match self.format() {
-            1 => {
+            1 | 3 => {
                 let start = self.start();
                 (0..self.count1()).for_each(|i| push(start.wrapping_add(n32(i)), self.value1(i)));
             }
-            2 => {
+            2 | 4 => {
                 let n = self.count2() as u64;
                 if glyphset.len().saturating_mul(bit_storage(n)) < self.population() {
                     glyphset.iter().for_each(|g| push(g, self.get(g)));

@@ -1,5 +1,4 @@
-//! GDEF subsetting (`OT/Layout/GDEF/GDEF.hh`), versions 1.0 to 1.3
-//! without a variation store, and the mark glyph sets the plan keeps
+//! GDEF subsetting (`OT/Layout/GDEF/GDEF.hh`), versions 1.0 to 1.4, and the mark glyph sets the plan keeps
 //! (`remap_used_mark_sets`).
 
 use alloc::collections::{BTreeMap, BTreeSet};
@@ -14,6 +13,15 @@ use super::common::Sub;
 use super::data::{Cls, Cov, D, n32};
 use crate::bits::BitSet;
 
+// In GDEF 1.4 a nonzero extended offset supersedes its 16-bit counterpart.
+fn subtable(d: D<'_>, short: usize, extended: usize) -> (usize, u8, D<'_>) {
+    if d.u32(0) == 0x0001_0004 && d.u32(extended) != 0 {
+        (extended, 4, d.off32(extended))
+    } else {
+        (short, 2, d.off16(short))
+    }
+}
+
 /// `MarkGlyphSets::collect_used_mark_sets` and `remap_indexes`: the mark
 /// glyph sets that cover a glyph of `glyphs`, numbered anew.
 pub(crate) fn used_mark_sets(gdef: &[u8], glyphs: &BitSet) -> BTreeMap<u32, u32> {
@@ -22,7 +30,7 @@ pub(crate) fn used_mark_sets(gdef: &[u8], glyphs: &BitSet) -> BTreeMap<u32, u32>
     if version < 0x0001_0002 {
         return BTreeMap::new();
     }
-    let sets = d.off16(12);
+    let (_, _, sets) = subtable(d, 12, 34);
     if sets.is_null() || sets.u16(0) != 1 {
         return BTreeMap::new();
     }
@@ -64,7 +72,8 @@ pub(crate) fn retained_variation_indices(
         }
     }
     if let Some(list) = gdef.lig_caret_list().ok()? {
-        let coverage = Cov(D(src).off16(8).off16(0));
+        let (_, width, caret_list) = subtable(D(src), 8, 26);
+        let coverage = caret_coverage(caret_list, width == 4);
         for (i, glyph) in coverage.glyphs().into_iter().take(list.len()).enumerate() {
             if !glyphs.has(glyph) {
                 continue;
@@ -219,21 +228,35 @@ fn caret_value(s: &mut Sub<'_, '_>, c: D<'_>, remap: &BTreeMap<u32, u32>) -> boo
     }
 }
 
-fn lig_caret_list(s: &mut Sub<'_, '_>, lcl: D<'_>, remap: &BTreeMap<u32, u32>) -> bool {
-    let cov = Cov(lcl.off16(0));
-    let cov_at = s.s.u16(0);
-    let count_at = s.s.u16(0);
-    let n = usize::from(lcl.u16(2));
+fn caret_coverage(list: D<'_>, wide: bool) -> Cov<'_> {
+    Cov(if wide { list.off32(0) } else { list.off16(0) })
+}
+
+fn lig_caret_list(s: &mut Sub<'_, '_>, lcl: D<'_>, wide: bool, remap: &BTreeMap<u32, u32>) -> bool {
+    let cov = caret_coverage(lcl, wide);
+    let (cov_width, width) = if wide { (4u8, 3u8) } else { (2, 2) };
+    let cov_at = s.s.zeros(usize::from(cov_width));
+    let count_at = s.s.zeros(usize::from(width));
+    let n = if wide {
+        sofel_font::read::be::u24_at(lcl.0, 4).unwrap_or(0) as usize
+    } else {
+        usize::from(lcl.u16(2))
+    };
     let mut new_cov = Vec::new();
     for (i, g) in cov.glyphs().into_iter().take(n).enumerate() {
         if !s.in_gsub(g) {
             continue;
         }
-        let lg = lcl.off16(4usize.saturating_add(i.saturating_mul(2)));
+        let lg = if wide {
+            let at = 7usize.saturating_add(i.saturating_mul(3));
+            lcl.follow(sofel_font::read::be::u24_at(lcl.0, at).unwrap_or(0))
+        } else {
+            lcl.off16(4usize.saturating_add(i.saturating_mul(2)))
+        };
         if lg.is_null() {
             continue;
         }
-        if s.offset_append(2, |s| {
+        if s.offset_append(width, |s| {
             let count_at = s.s.u16(0);
             let mut k = 0u16;
             for j in 0..usize::from(lg.u16(0)) {
@@ -248,11 +271,19 @@ fn lig_caret_list(s: &mut Sub<'_, '_>, lcl: D<'_>, remap: &BTreeMap<u32, u32>) -
             s.s.set_u16(count_at, k);
             k != 0
         }) {
-            s.bump_u16(count_at, 1);
             new_cov.push(s.map(g));
         }
     }
-    s.serialize_serialize(cov_at, 2, |s| s.coverage(&new_cov));
+    if wide {
+        s.s.set_u24(count_at, n32(new_cov.len()));
+    } else {
+        s.s.check_assign_u16(
+            count_at,
+            new_cov.len() as u64,
+            sofel_write::Errors::ARRAY_OVERFLOW,
+        );
+    }
+    s.serialize_serialize(cov_at, cov_width, |s| s.coverage(&new_cov));
     !new_cov.is_empty()
 }
 
@@ -289,7 +320,7 @@ pub(crate) fn subset(s: &mut Sub<'_, '_>, gdef: &[u8]) -> bool {
     if version >> 16 != 1 {
         return false;
     }
-    if version >= 0x0001_0004 {
+    if version > 0x0001_0004 || (version == 0x0001_0004 && gdef.len() < 38) {
         s.unsupported("GDEF 1.4 (ADR 0022 stage 3)");
         return false;
     }
@@ -341,6 +372,11 @@ pub(crate) fn subset(s: &mut Sub<'_, '_>, gdef: &[u8]) -> bool {
     if version >= 0x0001_0003 {
         s.s.u32(d.u32(14));
     }
+    let extended = version == 0x0001_0004 && [18, 22, 26, 30, 34].iter().any(|&at| d.u32(at) != 0);
+    if extended {
+        s.s.set_u32(14, 0);
+        s.s.zeros(20);
+    }
     s.s.set_u32(0, version);
     let subset_varstore = store_bytes.is_some_and(|bytes| {
         s.serialize_serialize(14, 4, |s| {
@@ -348,15 +384,17 @@ pub(crate) fn subset(s: &mut Sub<'_, '_>, gdef: &[u8]) -> bool {
             true
         })
     });
-    if !subset_varstore && version >= 0x0001_0002 {
+    if !subset_varstore && version >= 0x0001_0002 && !extended {
         s.s.revert(snapshot2);
     }
     let mut sets = false;
     if version >= 0x0001_0002 {
-        let m = d.off16(12);
-        sets = s.serialize_subset_opt(12, 2, m, |s| mark_glyph_sets(s, m));
+        let (at, width, m) = subtable(d, 12, 34);
+        sets = s.serialize_subset_opt(at, width, m, |s| mark_glyph_sets(s, m));
     }
-    if subset_varstore {
+    if extended {
+        s.s.set_u32(0, 0x0001_0004);
+    } else if subset_varstore {
         s.s.set_u32(0, 0x0001_0003);
     } else if sets {
         s.s.set_u32(0, 0x0001_0002);
@@ -364,17 +402,19 @@ pub(crate) fn subset(s: &mut Sub<'_, '_>, gdef: &[u8]) -> bool {
         s.s.set_u32(0, 0x0001_0000);
         s.s.revert(snapshot0);
     }
-    let gcd = d.off16(4);
-    let glyph_classes = s.serialize_subset_opt(4, 2, gcd, |s| {
+    let (at, width, gcd) = subtable(d, 4, 18);
+    let glyph_classes = s.serialize_subset_opt(at, width, gcd, |s| {
         s.class_def_subset(Cls(gcd), None, false, true, None)
     });
-    let al = d.off16(6);
-    let attach = s.serialize_subset_opt(6, 2, al, |s| attach_list(s, al));
-    let macd = d.off16(10);
-    let mark_attach = s.serialize_subset_opt(10, 2, macd, |s| {
+    let (at, width, al) = subtable(d, 6, 22);
+    let attach = s.serialize_subset_opt(at, width, al, |s| attach_list(s, al));
+    let (at, width, macd) = subtable(d, 10, 30);
+    let mark_attach = s.serialize_subset_opt(at, width, macd, |s| {
         s.class_def_subset(Cls(macd), None, false, true, None)
     });
-    let lcl = d.off16(8);
-    let carets = s.serialize_subset_opt(8, 2, lcl, |s| lig_caret_list(s, lcl, remap));
+    let (at, width, lcl) = subtable(d, 8, 26);
+    let carets = s.serialize_subset_opt(at, width, lcl, |s| {
+        lig_caret_list(s, lcl, width == 4, remap)
+    });
     glyph_classes || attach || carets || mark_attach || sets || subset_varstore
 }

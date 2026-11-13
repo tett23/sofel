@@ -1021,9 +1021,7 @@ fn adr0022_negative_gpos_advance_is_not_a_variation_index() {
     );
 }
 
-#[test]
-fn adr0022_gsub_axis_range_can_survive_gdef_store_subsetting() {
-    let gdef = gdef_with_unused_store(class_def2(&[(1, 5, 1)]));
+fn gsub_with_feature_condition(condition: Vec<u8>) -> Vec<u8> {
     let mut gsub = gsubgpos(
         0x0001_0001,
         script_list(vec![(b"DFLT", script(lang_sys(0xffff, &[0]), vec![]))]),
@@ -1038,7 +1036,6 @@ fn adr0022_gsub_axis_range_can_survive_gdef_store_subsetting() {
     );
     let fv_at = u32::try_from(gsub.len()).unwrap();
     gsub[10..14].copy_from_slice(&fv_at.to_be_bytes());
-    let condition = Buf::new().u16(1).u16(0).i16(0).i16(0x4000).done();
     let conditions = link(Buf::new().u16(1).u32(0).done(), vec![(2, 4, condition)]);
     let replacement = Buf::new().u16(0).u16(1).u16(1).done();
     let substitutions = link(
@@ -1050,6 +1047,180 @@ fn adr0022_gsub_axis_range_can_survive_gdef_store_subsetting() {
         vec![(8, 4, conditions), (12, 4, substitutions)],
     );
     gsub.extend(fv);
+    gsub
+}
+
+#[test]
+fn adr0022_value_condition_retains_and_remaps_gdef_delta() {
+    let condition = Buf::new().u16(2).i16(-7).u32(2).done();
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[])),
+        (b"GSUB", gsub_with_feature_condition(condition)),
+    ]);
+    let out = subset(&Font::new(&data, 0).unwrap(), &chars("ABC")).unwrap();
+    let gsub = out_table(&out, b"GSUB").unwrap();
+    let offset = u32::from_be_bytes(gsub[10..14].try_into().unwrap()) as usize;
+    let view =
+        sofel_font::read::feature_variations::FeatureVariations::new(&gsub[offset..]).unwrap();
+    let set = view.record(0).unwrap().conditions().unwrap().unwrap();
+    assert_eq!(set.condition(0).unwrap().unwrap().value(), Some((-7, 0)));
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    let store = sofel_font::read::gdef::Gdef::new(&gdef)
+        .unwrap()
+        .variation_store()
+        .unwrap()
+        .unwrap();
+    assert_eq!(store.item_data(0).unwrap().item_count, 1);
+}
+
+#[test]
+fn adr0022_boolean_conditions_keep_nested_value_indices() {
+    for format in [3u16, 4, 5] {
+        let mut condition = format.to_be_bytes().to_vec();
+        if format != 5 {
+            condition.push(1);
+        }
+        condition.extend([0, 0, if format == 5 { 5 } else { 6 }]);
+        condition.extend(Buf::new().u16(2).i16(-7).u32(2).done());
+        let data = font_with(vec![
+            (b"GDEF", gdef_with_referenced_store(&[])),
+            (b"GSUB", gsub_with_feature_condition(condition)),
+        ]);
+        let out = subset(&Font::new(&data, 0).unwrap(), &chars("ABC")).unwrap();
+        let gsub = out_table(&out, b"GSUB").unwrap();
+        let offset = u32::from_be_bytes(gsub[10..14].try_into().unwrap()) as usize;
+        let view =
+            sofel_font::read::feature_variations::FeatureVariations::new(&gsub[offset..]).unwrap();
+        let set = view.record(0).unwrap().conditions().unwrap().unwrap();
+        let expression = set.condition(0).unwrap().unwrap();
+        assert_eq!(expression.format(), format);
+        assert_eq!(expression.child(0).unwrap().unwrap().value(), Some((-7, 0)));
+    }
+}
+
+#[test]
+fn adr0022_null_condition_serializes_as_true() {
+    let mut gsub = gsub_with_feature_condition(vec![0, 0]);
+    let offset = u32::from_be_bytes(gsub[10..14].try_into().unwrap()) as usize;
+    let set =
+        offset + u32::from_be_bytes(gsub[offset + 8..offset + 12].try_into().unwrap()) as usize;
+    gsub[set + 2..set + 6].fill(0);
+    let data = font_with(vec![(b"GSUB", gsub)]);
+    let out = subset(&Font::new(&data, 0).unwrap(), &chars("ABC")).unwrap();
+    let bytes = out_table(&out, b"GSUB").unwrap();
+    let start = u32::from_be_bytes(bytes[10..14].try_into().unwrap()) as usize;
+    let fv = sofel_font::read::feature_variations::FeatureVariations::new(&bytes[start..]).unwrap();
+    let set = fv.record(0).unwrap().conditions().unwrap().unwrap();
+    assert_eq!(
+        set.condition(0).unwrap().unwrap().value(),
+        Some((1, u32::MAX))
+    );
+}
+
+#[test]
+fn adr0022_copied_gpos_condition_checks_gdef_reference_without_device() {
+    for index in [u32::MAX, 2] {
+        let template = gsub_with_feature_condition(Buf::new().u16(2).i16(-7).u32(index).done());
+        let fv_at = u32::from_be_bytes(template[10..14].try_into().unwrap()) as usize;
+        let position = vec![0, 1, 0, 8, 0, 4, 0, 12, 0, 1, 0, 1, 0, 1];
+        let mut gpos = gsubgpos(
+            0x10001,
+            script_list(vec![(b"DFLT", script(lang_sys(0xffff, &[0]), vec![]))]),
+            feature_list(&[(b"kern", &[0])]),
+            lookup_list(
+                vec![
+                    lookup(1, 0, vec![position.clone()], None),
+                    lookup(1, 0, vec![position], None),
+                ],
+                false,
+            ),
+        );
+        let offset = gpos.len() as u32;
+        gpos[10..14].copy_from_slice(&offset.to_be_bytes());
+        gpos.extend(&template[fv_at..]);
+        let data = font_with(vec![
+            (b"GPOS", gpos.clone()),
+            (b"GDEF", gdef_with_referenced_store(&[])),
+        ]);
+        let input = chars("ABC").map_set(SetKind::NoSubsetTables, |set| {
+            set.add(Tag::new(b"GPOS").to_u32());
+        });
+        let out = subset(&Font::new(&data, 0).unwrap(), &input);
+        if index == u32::MAX {
+            assert_eq!(out_table(&out.unwrap(), b"GPOS").unwrap(), gpos);
+        } else {
+            assert!(matches!(out,Err(SubsetError::Unsupported{tag,..}) if tag==Tag::new(b"GDEF")));
+        }
+    }
+}
+
+#[test]
+fn adr0022_copied_gsub_value_condition_checks_gdef_reference() {
+    for index in [u32::MAX, 2] {
+        let value = Buf::new().u16(2).i16(-7).u32(index).done();
+        // AND and OR share their two child offsets; NOT wraps the value.
+        let mut nested = vec![
+            0, 3, 2, 0, 0, 9, 0, 0, 9, 0, 4, 2, 0, 0, 9, 0, 0, 9, 0, 5, 0, 0, 5,
+        ];
+        nested.extend(&value);
+        let mut lookup_gsub = gsub_with_feature_condition(value.clone());
+        let fv_at = u32::from_be_bytes(lookup_gsub[10..14].try_into().unwrap()) as usize;
+        lookup_gsub.truncate(fv_at);
+        let conditions = link(
+            Buf::new().u32(0x10000).u16(0).u32(1).u32(0).u32(0).done(),
+            vec![(10, 4, value.clone()), (14, 4, vec![0, 1, 0, 0])],
+        );
+        lookup_gsub.extend(link(
+            Buf::new().u32(0x10001).u32(0).u32(1).u16(0).u32(0).done(),
+            vec![(14, 4, conditions)],
+        ));
+        for gsub in [
+            gsub_with_feature_condition(value),
+            gsub_with_feature_condition(nested),
+            lookup_gsub,
+        ] {
+            let data = font_with(vec![
+                (b"GSUB", gsub.clone()),
+                (b"GDEF", gdef_with_referenced_store(&[])),
+            ]);
+            let input = chars("ABC").map_set(SetKind::NoSubsetTables, |set| {
+                set.add(Tag::new(b"GSUB").to_u32());
+            });
+            let out = subset(&Font::new(&data, 0).unwrap(), &input);
+            if index == u32::MAX {
+                assert_eq!(out_table(&out.unwrap(), b"GSUB").unwrap(), gsub);
+            } else {
+                assert!(
+                    matches!(out, Err(SubsetError::Unsupported {tag,..}) if tag==Tag::new(b"GDEF"))
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn adr0022_value_condition_without_variation_keeps_signed_default() {
+    for default in [-7, 0, 8] {
+        let condition = Buf::new().u16(2).i16(default).u32(u32::MAX).done();
+        let data = font_with(vec![(b"GSUB", gsub_with_feature_condition(condition))]);
+        let out = subset(&Font::new(&data, 0).unwrap(), &chars("ABC")).unwrap();
+        let gsub = out_table(&out, b"GSUB").unwrap();
+        let offset = u32::from_be_bytes(gsub[10..14].try_into().unwrap()) as usize;
+        let view =
+            sofel_font::read::feature_variations::FeatureVariations::new(&gsub[offset..]).unwrap();
+        let set = view.record(0).unwrap().conditions().unwrap().unwrap();
+        assert_eq!(
+            set.condition(0).unwrap().unwrap().value(),
+            Some((default, u32::MAX))
+        );
+    }
+}
+
+#[test]
+fn adr0022_gsub_axis_range_can_survive_gdef_store_subsetting() {
+    let gdef = gdef_with_unused_store(class_def2(&[(1, 5, 1)]));
+    let condition = Buf::new().u16(1).u16(0).i16(0).i16(0x4000).done();
+    let gsub = gsub_with_feature_condition(condition);
     let data = font_with(vec![(b"GDEF", gdef), (b"GSUB", gsub)]);
     let font = Font::new(&data, 0).unwrap();
     let copied = chars("ABC").map_set(SetKind::NoSubsetTables, |set| {
@@ -1500,4 +1671,769 @@ fn gpos_kept_glyphs_only() {
     let gpos = out_table(&out, b"GPOS").unwrap();
     assert_eq!(u16_at(follow(&gpos, 6), 0), 0);
     assert_eq!(u16_at(follow(&gpos, 8), 0), 0);
+}
+
+#[test]
+fn adr0022_wide_coverage_retains_single_substitutions() {
+    for coverage in [
+        vec![0, 3, 0, 0, 2, 0, 0, 1, 0, 0, 2],
+        vec![0, 4, 0, 0, 1, 0, 0, 1, 0, 0, 2, 0, 0, 0],
+    ] {
+        let subtable = link(
+            Buf::new().u16(1).u16(0).u16(4).done(),
+            vec![(2, 2, coverage)],
+        );
+        let data = font_with(vec![(
+            b"GSUB",
+            layout_table(&[(b"liga", &[0])], &[(1, subtable)]),
+        )]);
+        let out = subset(&Font::new(&data, 0).unwrap(), &chars("AB")).unwrap();
+        assert_eq!(num_glyphs(&out), 5);
+        assert_eq!(
+            first_coverage(&out_table(&out, b"GSUB").unwrap()),
+            coverage1(&[1, 2])
+        );
+    }
+}
+
+#[test]
+fn adr0022_wide_class_definitions_keep_glyph_classes() {
+    for classes in [
+        vec![0, 3, 0, 0, 1, 0, 0, 2, 0, 0, 1, 0, 0, 1],
+        vec![0, 4, 0, 0, 1, 0, 0, 1, 0, 0, 2, 0, 1],
+    ] {
+        let data = font_with(vec![(b"GDEF", gdef_with_classes(classes))]);
+        let out = subset(&Font::new(&data, 0).unwrap(), &chars("AB")).unwrap();
+        assert_eq!(glyph_class_def(&out), vec![0, 1, 0, 1, 0, 2, 0, 1, 0, 1]);
+    }
+}
+
+#[test]
+fn adr0022_wide_single_substitution_retains_output_glyphs() {
+    for mut st in [
+        vec![0, 3, 0, 0, 0, 9, 0, 0, 4],
+        vec![0, 4, 0, 0, 0, 15, 0, 0, 2, 0, 0, 5, 0, 0, 6],
+    ] {
+        st.extend(coverage1(&[1, 2]));
+        let data = font_with(vec![(
+            b"GSUB",
+            layout_table(&[(b"liga", &[0])], &[(1, st)]),
+        )]);
+        let out = subset(&Font::new(&data, 0).unwrap(), &chars("AB")).unwrap();
+        assert_eq!(num_glyphs(&out), 5);
+        assert_eq!(
+            first_coverage(&out_table(&out, b"GSUB").unwrap()),
+            coverage1(&[1, 2])
+        );
+    }
+}
+
+#[test]
+fn adr0022_wide_single_position_values_survive_subsetting() {
+    for (mut st, expected) in [
+        (
+            vec![0, 3, 0, 0, 0, 10, 0, 4, 255, 226],
+            vec![0, 1, 0, 8, 0, 4, 255, 226],
+        ),
+        (
+            vec![0, 4, 0, 0, 0, 15, 0, 4, 0, 0, 2, 255, 226, 0, 25],
+            vec![0, 2, 0, 12, 0, 4, 0, 2, 255, 226, 0, 25],
+        ),
+    ] {
+        st.extend(coverage1(&[1, 2]));
+        let data = font_with(vec![(
+            b"GPOS",
+            layout_table(&[(b"kern", &[0])], &[(1, st)]),
+        )]);
+        let out = subset(&Font::new(&data, 0).unwrap(), &chars("AB")).unwrap();
+        let table = out_table(&out, b"GPOS").unwrap();
+        let list = follow(&table, 8);
+        assert_eq!(u16_at(list, 0), 1);
+        assert!(follow(follow(list, 2), 6).starts_with(&expected));
+    }
+}
+
+#[test]
+fn adr0022_wide_source_keeps_layout_for_low_glyphs() {
+    let data = font_with(vec![
+        (b"MAXP", vec![0, 0, 80, 0, 1, 0, 1]),
+        (
+            b"GSUB",
+            layout_table(&[(b"liga", &[0])], &[(1, single(&[1, 2], 4))]),
+        ),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    assert_eq!(font.num_glyphs(), 65537);
+    let out = subset(&font, &chars("AB")).unwrap();
+    assert_eq!(num_glyphs(&out), 5);
+    assert_eq!(
+        first_coverage(&out_table(&out, b"GSUB").unwrap()),
+        coverage1(&[1, 2])
+    );
+}
+
+#[test]
+fn adr0022_wide_source_substitution_maps_high_input_to_compact_ids() {
+    // Coverage contains glyph 65536; the 24-bit delta wraps to glyph 1.
+    let st = vec![0, 3, 0, 0, 0, 9, 255, 0, 1, 0, 3, 0, 0, 1, 1, 0, 0];
+    let data = font_with(vec![
+        (b"MAXP", vec![0, 0, 80, 0, 1, 0, 1]),
+        (b"GSUB", layout_table(&[(b"liga", &[0])], &[(1, st)])),
+    ]);
+    let input = Input::new().map_set(SetKind::Glyphs, |set| {
+        set.add(65536);
+    });
+    let out = subset(&Font::new(&data, 0).unwrap(), &input).unwrap();
+    assert_eq!(num_glyphs(&out), 3);
+    let gsub = out_table(&out, b"GSUB").unwrap();
+    assert_eq!(first_coverage(&gsub), coverage1(&[2]));
+    let subtable = follow(follow(follow(&gsub, 8), 2), 6);
+    assert_eq!(u16_at(subtable, 4), 65535);
+}
+
+#[test]
+fn adr0022_retained_high_gid_keeps_single_substitution() {
+    let st = vec![0, 3, 0, 0, 0, 9, 0, 255, 255, 0, 1, 0, 1, 0, 1];
+    let mut tables = sample_tables();
+    tables
+        .iter_mut()
+        .find(|(tag, _)| *tag == b"hmtx")
+        .unwrap()
+        .1
+        .resize(2 * 65537 + 2 * 20, 0);
+    let classes = vec![0, 3, 1, 0, 0, 0, 0, 1, 0, 0, 2];
+    let axis = AxisSpec {
+        tags: Some(vec![*b"romn"]),
+        scripts: Some(vec![(
+            *b"DFLT",
+            Some(ScriptSpec {
+                values: Some((0, vec![Some(Coord::F4(-23, 65536, 5))])),
+                ..Default::default()
+            }),
+        )]),
+    };
+    let anchor = Buf::new().u16(1).i16(-11).i16(29).done();
+    let cursive = link(
+        Buf::new().u16(2).u32(0).u24(1).u24(0).u24(0).done(),
+        vec![(2, 4, vec![0, 3, 0, 0, 1, 1, 0, 0]), (9, 3, anchor.clone())],
+    );
+    tables.extend([
+        (b"GPOS", layout_table(&[(b"curs", &[0])], &[(3, cursive)])),
+        (b"BASE", base(Some(&axis), None)),
+        (b"GDEF", gdef_with_classes(classes.clone())),
+        (b"MAXP", vec![0, 0, 80, 0, 1, 0, 1]),
+        (b"GSUB", layout_table(&[(b"liga", &[0])], &[(1, st)])),
+    ]);
+    tables.sort_by_key(|(tag, _)| **tag);
+    let data = sfnt(&tables);
+    let input = chars("A").with_flags(Flags::RETAIN_GIDS);
+    let out = subset(&Font::new(&data, 0).unwrap(), &input).unwrap();
+    assert_eq!(Font::new(&out, 0).unwrap().num_glyphs(), 65537);
+    let gpos = out_table(&out, b"GPOS").unwrap();
+    let st = follow(follow(follow(&gpos, 8), 2), 6);
+    assert_eq!(u16_at(st, 0), 2);
+    assert_eq!(&st[6..9], &[0, 0, 1]);
+    let entry = u32::from_be_bytes([0, st[9], st[10], st[11]]) as usize;
+    assert!(st[entry..].starts_with(&anchor));
+    let baseline = out_table(&out, b"BASE").unwrap();
+    assert!(
+        baseline
+            .windows(9)
+            .any(|record| record == base_coord(&Coord::F4(-23, 65536, 5)))
+    );
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    assert!(follow(&gdef, 4).starts_with(&classes));
+    let gsub = out_table(&out, b"GSUB").unwrap();
+    let st = follow(follow(follow(&gsub, 8), 2), 6);
+    assert!(st.starts_with(&[0, 3, 0, 0, 0, 9, 0, 255, 255]));
+}
+
+#[test]
+fn adr0022_wide_multiple_and_alternate_substitutions() {
+    for lookup in [2, 3] {
+        let seq = vec![0, 0, 2, 0, 0, 5, 0, 0, 6];
+        let st = link(
+            Buf::new().u16(2).u32(0).u24(1).u24(0).done(),
+            vec![(2, 4, coverage1(&[1])), (9, 3, seq)],
+        );
+        let data = font_with(vec![(
+            b"GSUB",
+            layout_table(&[(b"liga", &[0])], &[(lookup, st)]),
+        )]);
+        let out = subset(&Font::new(&data, 0).unwrap(), &chars("A")).unwrap();
+        assert_eq!(num_glyphs(&out), 4);
+        let gsub = out_table(&out, b"GSUB").unwrap();
+        let st = follow(follow(follow(&gsub, 8), 2), 6);
+        assert_eq!(u16_at(st, 0), 2);
+        let seq = u32::from_be_bytes([0, st[9], st[10], st[11]]) as usize;
+        assert!(st[seq..].starts_with(&[0, 0, 2, 0, 0, 2, 0, 0, 3]));
+    }
+}
+
+#[test]
+fn adr0022_wide_reverse_chain_keeps_context_and_substitute() {
+    let header = Buf::new()
+        .u16(2)
+        .u32(0)
+        .u16(1)
+        .u24(0)
+        .u16(1)
+        .u24(0)
+        .u24(1)
+        .u24(6)
+        .done();
+    let st = link(
+        header,
+        vec![
+            (2, 4, coverage1(&[1])),
+            (8, 3, coverage1(&[2])),
+            (13, 3, coverage1(&[3])),
+        ],
+    );
+    let data = font_with(vec![(
+        b"GSUB",
+        layout_table(&[(b"liga", &[0])], &[(8, st)]),
+    )]);
+    let out = subset(&Font::new(&data, 0).unwrap(), &chars("ABC")).unwrap();
+    assert_eq!(num_glyphs(&out), 5);
+    let table = out_table(&out, b"GSUB").unwrap();
+    let sub = follow(follow(follow(&table, 8), 2), 6);
+    assert_eq!(u16_at(sub, 0), 2);
+    assert_eq!(&sub[16..22], &[0, 0, 1, 0, 0, 4]);
+    for (at, glyph) in [(8, 2), (13, 3)] {
+        let off = u32::from_be_bytes([0, sub[at], sub[at + 1], sub[at + 2]]) as usize;
+        assert!(sub[off..].starts_with(&coverage1(&[glyph])));
+    }
+}
+
+#[test]
+fn adr0022_wide_ligature_keeps_components_and_result() {
+    let lig = Buf::new().u24(6).u16(2).u24(2).done();
+    let set = link(Buf::new().u16(1).u24(0).done(), vec![(2, 3, lig)]);
+    let st = link(
+        Buf::new().u16(2).u32(0).u24(1).u24(0).done(),
+        vec![(2, 4, coverage1(&[1])), (9, 3, set)],
+    );
+    let data = font_with(vec![(
+        b"GSUB",
+        layout_table(&[(b"liga", &[0])], &[(4, st)]),
+    )]);
+    let out = subset(&Font::new(&data, 0).unwrap(), &chars("AB")).unwrap();
+    assert_eq!(num_glyphs(&out), 4);
+    let table = out_table(&out, b"GSUB").unwrap();
+    let st = follow(follow(follow(&table, 8), 2), 6);
+    let follow24 =
+        |d: &[u8], at: usize| u32::from_be_bytes([0, d[at], d[at + 1], d[at + 2]]) as usize;
+    let set = &st[follow24(st, 9)..];
+    assert!(set[follow24(set, 2)..].starts_with(&[0, 0, 3, 0, 2, 0, 0, 2]));
+}
+
+#[test]
+fn adr0022_wide_pair_classes_keep_advance() {
+    let pair = link(
+        Buf::new()
+            .u16(4)
+            .u32(0)
+            .u16(4)
+            .u16(0)
+            .u32(0)
+            .u32(0)
+            .u16(2)
+            .u16(2)
+            .i16(0)
+            .i16(0)
+            .i16(0)
+            .i16(-43)
+            .done(),
+        vec![
+            (2, 4, coverage1(&[2])),
+            (10, 4, class_def2(&[(2, 2, 1)])),
+            (14, 4, class_def2(&[(3, 3, 1)])),
+        ],
+    );
+    let data = font_with(vec![(
+        b"GPOS",
+        layout_table(&[(b"kern", &[0])], &[(2, pair)]),
+    )]);
+    let out = subset(&Font::new(&data, 0).unwrap(), &chars("BC")).unwrap();
+    let table = out_table(&out, b"GPOS").unwrap();
+    let list = follow(&table, 8);
+    assert_eq!(u16_at(list, 0), 1);
+    let st = follow(follow(list, 2), 6);
+    assert_eq!(u16_at(st, 0), 4);
+    assert_eq!(&st[18..26], &[0, 1, 0, 2, 0, 0, 255, 213]);
+}
+
+#[test]
+fn adr0022_wide_pair_set_keeps_selected_second_glyph() {
+    let records = Buf::new().u24(2).u24(2).i16(-21).u24(3).i16(-43).done();
+    let pair = link(
+        Buf::new().u16(3).u32(0).u16(4).u16(0).u24(1).u24(0).done(),
+        vec![(2, 4, coverage1(&[1])), (13, 3, records)],
+    );
+    let data = font_with(vec![(
+        b"GPOS",
+        layout_table(&[(b"kern", &[0])], &[(2, pair)]),
+    )]);
+    let out = subset(&Font::new(&data, 0).unwrap(), &chars("AC")).unwrap();
+    let table = out_table(&out, b"GPOS").unwrap();
+    let list = follow(&table, 8);
+    assert_eq!(u16_at(list, 0), 1);
+    let st = follow(follow(list, 2), 6);
+    assert_eq!(u16_at(st, 0), 3);
+    let at = u32::from_be_bytes([0, st[13], st[14], st[15]]) as usize;
+    assert!(st[at..].starts_with(&[0, 0, 1, 0, 0, 2, 255, 213]));
+}
+
+#[test]
+fn adr0022_mark_anchors_survive_a_retained_wide_gid() {
+    let anchor = Buf::new().u16(1).i16(-9).i16(47).done();
+    for kind in [4, 5, 6] {
+        let marks = link(
+            Buf::new().u16(1).u16(0).u16(0).done(),
+            vec![(4, 2, anchor.clone())],
+        );
+        let matrix = link(
+            Buf::new().u16(1).u16(0).done(),
+            vec![(2, 2, anchor.clone())],
+        );
+        let bases = if kind == 5 {
+            link(Buf::new().u16(1).u16(0).done(), vec![(2, 2, matrix)])
+        } else {
+            matrix
+        };
+        let st = link(
+            Buf::new().u16(1).u16(0).u16(0).u16(1).u16(0).u16(0).done(),
+            vec![
+                (2, 2, vec![0, 3, 0, 0, 1, 1, 0, 0]),
+                (4, 2, coverage1(&[1])),
+                (8, 2, marks),
+                (10, 2, bases),
+            ],
+        );
+        let mut tables = sample_tables();
+        tables
+            .iter_mut()
+            .find(|(tag, _)| *tag == b"hmtx")
+            .unwrap()
+            .1
+            .resize(2 * 65537 + 40, 0);
+        tables.extend([
+            (b"MAXP", vec![0, 0, 80, 0, 1, 0, 1]),
+            (b"GPOS", layout_table(&[(b"mark", &[0])], &[(kind, st)])),
+        ]);
+        tables.sort_by_key(|(tag, _)| **tag);
+        let data = sfnt(&tables);
+        let input = chars("A")
+            .map_set(SetKind::Glyphs, |set| {
+                set.add(65536);
+            })
+            .with_flags(Flags::RETAIN_GIDS);
+        let out = subset(&Font::new(&data, 0).unwrap(), &input).unwrap();
+        let gpos = out_table(&out, b"GPOS").unwrap();
+        let st = follow(follow(follow(&gpos, 8), 2), 6);
+        assert!(follow(st, 2).starts_with(&[0, 3, 0, 0, 1, 1, 0, 0]));
+        assert!(follow(follow(st, 8), 4).starts_with(&anchor));
+        let base = follow(st, 10);
+        let matrix = if kind == 5 { follow(base, 2) } else { base };
+        assert!(follow(matrix, 2).starts_with(&anchor));
+    }
+}
+
+#[test]
+fn adr0022_layout12_uses_extended_header_and_retains_lookups() {
+    let src = layout_table(&[(b"liga", &[0])], &[(1, single(&[1], 2))]);
+    for wide in [false, true] {
+        let mut table = vec![0; 26];
+        table[..4].copy_from_slice(&0x0001_0002u32.to_be_bytes());
+        table.extend_from_slice(&src[10..]);
+        for i in 0..3 {
+            let mut offset = usize::from(u16_at(&src, 4 + 2 * i)) + 16;
+            if wide {
+                if i == 2 {
+                    let lookup = table[offset..].to_vec();
+                    offset = table.len();
+                    table.extend_from_slice(&[0, 1, 0, 0, 0, 6]);
+                    table.extend_from_slice(&lookup[4..]);
+                }
+                table[14 + 4 * i..18 + 4 * i].copy_from_slice(&(offset as u32).to_be_bytes());
+            } else {
+                table[4 + 2 * i..6 + 2 * i].copy_from_slice(&(offset as u16).to_be_bytes());
+            }
+        }
+        let data = font_with(vec![(b"GSUB", table)]);
+        let out = subset(&Font::new(&data, 0).unwrap(), &chars("A")).unwrap();
+        assert_eq!(num_glyphs(&out), 3);
+        let result = out_table(&out, b"GSUB").unwrap();
+        assert_eq!(&result[..14], &[0, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        let at = u32::from_be_bytes(result[22..26].try_into().unwrap()) as usize;
+        assert_eq!(u16_at(&result, at), 1);
+        let len = if wide { 4 } else { 2 };
+        let expected = if wide { &[0, 0, 0, 6][..] } else { &[0, 4][..] };
+        assert_eq!(&result[at + 2..at + 2 + len], expected);
+    }
+}
+
+#[test]
+fn adr0022_gdef14_class_offsets_match_harfbuzz() {
+    for wide in [false, true] {
+        let mut header = vec![0; 38];
+        header[..4].copy_from_slice(&0x0001_0004u32.to_be_bytes());
+        let (at, width) = if wide { (18, 4) } else { (4, 2) };
+        let classes = class_def2(&[(1, 3, 1)]);
+        let input = link(header, vec![(at, width, classes.clone())]);
+        let data = font_with(vec![(b"GDEF", input.clone())]);
+        let font = Font::new(&data, 0).unwrap();
+        let out = subset(&font, &chars("ABC")).unwrap();
+        let expected = if wide {
+            input
+        } else {
+            gdef_with_classes(classes)
+        };
+        assert_eq!(out_table(&out, b"GDEF").unwrap(), expected);
+    }
+}
+
+#[test]
+fn adr0022_gdef14_ligature_carets_match_harfbuzz() {
+    let mut header = vec![0; 38];
+    header[..4].copy_from_slice(&0x0001_0004u32.to_be_bytes());
+    let carets = vec![
+        0, 0, 0, 10, 0, 0, 1, 0, 0, 16, // coverage, count, LigGlyph
+        0, 1, 0, 1, 0, 1, // coverage contains glyph 1
+        0, 1, 0, 4, 0, 1, 0, 100, // one format-1 caret at 100
+    ];
+    let input = link(header, vec![(26, 4, carets)]);
+    let data = font_with(vec![(b"GDEF", input.clone())]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("ABC")).unwrap();
+    assert_eq!(out_table(&out, b"GDEF").unwrap(), input);
+}
+
+#[test]
+fn adr0022_context_coverage_retains_high_glyph_and_nested_lookup() {
+    let wide = vec![0, 3, 0, 0, 1, 1, 0, 0];
+    let rule_context = |rule: Vec<u8>| {
+        let rules = link(vec![0, 1, 0, 0], vec![(2, 2, rule)]);
+        link(
+            vec![0, 1, 0, 0, 0, 1, 0, 0],
+            vec![(2, 2, wide.clone()), (6, 2, rules)],
+        )
+    };
+    let class_context = |chained: bool, rule: Vec<u8>| {
+        let classes = vec![0, 3, 1, 0, 0, 0, 0, 1, 0, 0, 1];
+        let rules = link(vec![0, 1, 0, 0], vec![(2, 2, rule)]);
+        if chained {
+            link(
+                vec![0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0],
+                vec![
+                    (2, 2, wide.clone()),
+                    (4, 2, classes.clone()),
+                    (6, 2, classes.clone()),
+                    (8, 2, classes),
+                    (14, 2, rules),
+                ],
+            )
+        } else {
+            link(
+                vec![0, 2, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0],
+                vec![(2, 2, wide.clone()), (4, 2, classes), (10, 2, rules)],
+            )
+        }
+    };
+    let wide_classes = vec![0, 3, 1, 0, 0, 0, 0, 1, 0, 0, 1];
+    let class_rule = vec![0, 2, 0, 1, 0, 1, 0, 1, 0, 1];
+    let wide_class_set = link(vec![0, 1, 0, 0, 0], vec![(2, 3, class_rule.clone())]);
+    let wide_class_context = link(
+        vec![0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0],
+        vec![
+            (2, 4, wide.clone()),
+            (6, 4, wide_classes.clone()),
+            (16, 3, wide_class_set),
+        ],
+    );
+    let chain_class_rule = vec![0, 1, 0, 1, 0, 2, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1];
+    let mut chain_header = vec![0; 26];
+    chain_header[1] = 5;
+    chain_header[19] = 2;
+    let chain_class_context = link(
+        chain_header,
+        vec![
+            (2, 4, wide.clone()),
+            (6, 4, wide_classes.clone()),
+            (10, 4, wide_classes.clone()),
+            (14, 4, wide_classes),
+            (
+                23,
+                3,
+                link(vec![0, 1, 0, 0, 0], vec![(2, 3, chain_class_rule.clone())]),
+            ),
+        ],
+    );
+    let wide_rule = vec![0, 2, 0, 1, 1, 0, 0, 0, 1, 0, 1];
+    let wide_set = link(vec![0, 1, 0, 0], vec![(2, 2, wide_rule)]);
+    let wide_context = link(
+        vec![0, 4, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+        vec![(2, 4, wide.clone()), (9, 3, wide_set)],
+    );
+    for (kind, st, at) in [
+        (6, chain_class_context, 2),
+        (5, wide_class_context, 2),
+        (5, wide_context, 2),
+        (
+            6,
+            link(
+                vec![0, 4, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+                vec![
+                    (2, 4, wide.clone()),
+                    (
+                        9,
+                        3,
+                        link(
+                            vec![0, 1, 0, 0, 0],
+                            vec![(
+                                2,
+                                3,
+                                vec![
+                                    0, 1, 1, 0, 0, 0, 2, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 1, 0, 1,
+                                ],
+                            )],
+                        ),
+                    ),
+                ],
+            ),
+            2,
+        ),
+        (
+            5,
+            link(
+                vec![0, 6, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1],
+                vec![(6, 3, wide.clone())],
+            ),
+            6,
+        ),
+        (
+            6,
+            link(
+                vec![0, 6, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1],
+                vec![(6, 3, wide.clone())],
+            ),
+            6,
+        ),
+        (5, class_context(false, vec![0, 1, 0, 1, 0, 0, 0, 1]), 2),
+        (
+            6,
+            class_context(true, vec![0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]),
+            2,
+        ),
+        (5, rule_context(vec![0, 1, 0, 1, 0, 0, 0, 1]), 2),
+        (6, rule_context(vec![0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]), 2),
+        (
+            5,
+            link(
+                Buf::new().u16(3).u16(1).u16(1).u16(0).u16(0).u16(1).done(),
+                vec![(6, 2, wide.clone())],
+            ),
+            6,
+        ),
+        (
+            6,
+            link(
+                Buf::new()
+                    .u16(3)
+                    .u16(0)
+                    .u16(1)
+                    .u16(0)
+                    .u16(0)
+                    .u16(1)
+                    .u16(0)
+                    .u16(1)
+                    .done(),
+                vec![(6, 2, wide.clone())],
+            ),
+            6,
+        ),
+    ] {
+        let nested = vec![0, 3, 0, 0, 0, 9, 255, 0, 1, 0, 3, 0, 0, 1, 1, 0, 0];
+        let mut tables = sample_tables();
+        tables
+            .iter_mut()
+            .find(|(tag, _)| *tag == b"hmtx")
+            .unwrap()
+            .1
+            .resize(2 * 65537 + 40, 0);
+        tables.extend([
+            (b"MAXP", vec![0, 0, 80, 0, 1, 0, 1]),
+            (
+                b"GSUB",
+                layout_table(&[(b"liga", &[0])], &[(kind, st), (1, nested)]),
+            ),
+        ]);
+        tables.sort_by_key(|(tag, _)| **tag);
+        let data = sfnt(&tables);
+        let input = Input::new()
+            .map_set(SetKind::Glyphs, |set| {
+                set.add(65536);
+            })
+            .with_flags(Flags::RETAIN_GIDS);
+        let out = subset(&Font::new(&data, 0).unwrap(), &input).unwrap();
+        let table = out_table(&out, b"GSUB").unwrap();
+        let list = follow(&table, 8);
+        assert_eq!(u16_at(list, 0), 2);
+        let context = follow(follow(list, 2), 6);
+        if u16_at(context, 0) == 5 {
+            let cov = u32::from_be_bytes(context[2..6].try_into().unwrap()) as usize;
+            assert!(context[cov..].starts_with(&wide));
+            let index = if kind == 5 { 16 } else { 23 };
+            let set =
+                u32::from_be_bytes([0, context[index], context[index + 1], context[index + 2]])
+                    as usize;
+            let rule = u32::from_be_bytes([0, context[set + 2], context[set + 3], context[set + 4]])
+                as usize;
+            assert!(context[set + rule..].starts_with(if kind == 5 {
+                &class_rule
+            } else {
+                &chain_class_rule
+            }));
+            continue;
+        }
+        if u16_at(context, 0) == 4 {
+            let cov = u32::from_be_bytes(context[2..6].try_into().unwrap()) as usize;
+            assert!(context[cov..].starts_with(&wide));
+            let set = u32::from_be_bytes([0, context[9], context[10], context[11]]) as usize;
+            if kind == 5 {
+                assert!(follow(&context[set..], 2).starts_with(&[0, 2, 0, 1, 1, 0, 0, 0, 1, 0, 1]));
+            } else {
+                let rule =
+                    u32::from_be_bytes([0, context[set + 2], context[set + 3], context[set + 4]])
+                        as usize;
+                assert!(context[set + rule..].starts_with(&[
+                    0, 1, 1, 0, 0, 0, 2, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 1, 0, 1
+                ]));
+            }
+            continue;
+        }
+        if u16_at(context, 0) == 6 {
+            let offset =
+                u32::from_be_bytes([0, context[at], context[at + 1], context[at + 2]]) as usize;
+            assert!(context[offset..].starts_with(&wide));
+            assert_eq!(u16_at(context, if kind == 5 { 11 } else { 15 }), 1);
+            continue;
+        }
+        assert!(follow(context, at).starts_with(&wide));
+        if at == 2 {
+            let set_at = match (u16_at(context, 0), kind) {
+                (2, 5) => 10,
+                (2, 6) => 14,
+                _ => 6,
+            };
+            let rule = follow(follow(context, set_at), 2);
+            assert_eq!(u16_at(rule, if kind == 5 { 6 } else { 10 }), 1);
+        } else {
+            assert_eq!(u16_at(context, if kind == 5 { 10 } else { 14 }), 1);
+        }
+    }
+}
+
+#[test]
+fn adr0022_layout_12_writes_wide_lists_from_both_header_forms() {
+    for (tag, feature, subtable) in [
+        (b"GSUB", b"liga", vec![0, 1, 0, 6, 0, 1, 0, 1, 0, 1, 0, 1]),
+        (
+            b"GPOS",
+            b"kern",
+            vec![0, 1, 0, 8, 0, 4, 255, 213, 0, 1, 0, 1, 0, 1],
+        ),
+    ] {
+        let narrow = layout_table(&[(feature, &[0])], &[(1, subtable)]);
+        for wide in [false, true] {
+            let mut table = vec![0; 26];
+            table[..4].copy_from_slice(&0x10002u32.to_be_bytes());
+            for (short, long) in [(4, 14), (6, 18), (8, 22)] {
+                let offset = table.len();
+                let list = follow(&narrow, short);
+                if wide {
+                    table[long..long + 4].copy_from_slice(&(offset as u32).to_be_bytes());
+                } else {
+                    table[short..short + 2].copy_from_slice(&(offset as u16).to_be_bytes());
+                }
+                if wide && short == 8 {
+                    table.extend([0, 1, 0, 0, 0, 6]);
+                    table.extend(follow(list, 2));
+                } else {
+                    table.extend(list);
+                }
+            }
+            let data = font_with(vec![(tag, table)]);
+            let out = subset(&Font::new(&data, 0).unwrap(), &chars("AB")).unwrap();
+            let out = out_table(&out, tag).unwrap();
+            assert_eq!(&out[..14], &[0, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+            let far = |d: &[u8], at| u32::from_be_bytes(d[at..at + 4].try_into().unwrap()) as usize;
+            for at in [14, 18, 22] {
+                assert_eq!(u16_at(&out, far(&out, at)), 1);
+            }
+            let list = &out[far(&out, 22)..];
+            let lookup = if wide {
+                &list[far(list, 2)..]
+            } else {
+                follow(list, 2)
+            };
+            assert_eq!(u16_at(lookup, 0), 1);
+            if tag == b"GPOS" {
+                let position = follow(lookup, 6);
+                assert_eq!(u16_at(position, 4), 4);
+                assert_eq!(u16_at(position, 6).cast_signed(), -43);
+            }
+        }
+    }
+}
+
+#[test]
+fn adr0022_wide_mark_positioning_keeps_marks_and_anchors() {
+    let anchor = Buf::new().u16(1).i16(-9).i16(47).done();
+    for kind in [4, 5, 6] {
+        let marks = link(vec![0, 0, 1, 0, 0, 0, 0, 0], vec![(5, 3, anchor.clone())]);
+        let matrix = link(vec![0, 0, 1, 0, 0, 0], vec![(3, 3, anchor.clone())]);
+        let bases = if kind == 5 {
+            link(vec![0, 0, 1, 0, 0, 0], vec![(3, 3, matrix)])
+        } else {
+            matrix
+        };
+        let mut header = vec![0; 20];
+        header[1] = 2;
+        header[11] = 1;
+        let subtable = link(
+            header,
+            vec![
+                (2, 4, coverage1(&[1])),
+                (6, 4, coverage1(&[2])),
+                (12, 4, marks),
+                (16, 4, bases),
+            ],
+        );
+        let data = font_with(vec![(
+            b"GPOS",
+            layout_table(&[(b"mark", &[0])], &[(kind, subtable)]),
+        )]);
+        let out = subset(&Font::new(&data, 0).unwrap(), &chars("AB")).unwrap();
+        let gpos = out_table(&out, b"GPOS").unwrap();
+        let list = follow(&gpos, 8);
+        assert_eq!(u16_at(list, 0), 1, "missing format-2 mark lookup {kind}");
+        let st = follow(follow(list, 2), 6);
+        assert_eq!(u16_at(st, 0), 2);
+        let far = |d: &[u8], at, width| {
+            d[at..at + width]
+                .iter()
+                .fold(0usize, |v, &b| v * 256 + usize::from(b))
+        };
+        let marks = &st[far(st, 12, 4)..];
+        assert!(marks[far(marks, 5, 3)..].starts_with(&anchor));
+        let base = &st[far(st, 16, 4)..];
+        let matrix = if kind == 5 {
+            &base[far(base, 3, 3)..]
+        } else {
+            base
+        };
+        assert!(matrix[far(matrix, 3, 3)..].starts_with(&anchor));
+    }
 }

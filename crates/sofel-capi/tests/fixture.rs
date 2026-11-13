@@ -48,6 +48,7 @@ fn outline_error(e: OutlineError) -> i32 {
         OutlineError::UnsupportedFormat => -7,
         OutlineError::InvalidCff => -13,
         OutlineError::InvalidCharString => -8,
+        OutlineError::AutoHintUnsupported => -18,
     }
 }
 

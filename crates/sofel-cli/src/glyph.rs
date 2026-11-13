@@ -9,10 +9,33 @@ use std::fmt;
 use sofel_color::{PaintOptions, Palette};
 use sofel_font::geom::Color;
 use sofel_font::read::GlyphId;
-use sofel_outline::{OutlineError, Outlines, Scale, Scratch};
+use sofel_font::{BareCffFace, Type1Face};
+use sofel_geom::{Command, Fixed, FnPen, Point, div_fix};
+use sofel_outline::{OutlineError, OutlineInfo, Outlines, Scale, Scratch};
 use sofel_raster::{
     BgraImage, Bitmap, FillRule, RasterError, Rasterizer, RenderOptions, blend_layer, pixel_box,
 };
+use sofel_type1::cid::CidFace;
+
+/// Render a Type 1 PFA/PFB outline through the ordinary gray rasterizer.
+pub fn render_type1<'r>(
+    face: &Type1Face<'_>,
+    glyph: usize,
+    ppem: u16,
+    raster: &'r mut Rasterizer,
+) -> Result<Bitmap<'r>, RenderError> {
+    let fixed = Fixed(div_fix(i32::from(ppem).saturating_mul(64), 1000));
+    raster.clear();
+    sofel_outline::draw_type1(face, glyph, Scale::Scaled { x: fixed, y: fixed }, raster)
+        .map_err(RenderError::Outline)?;
+    raster
+        .render(RenderOptions {
+            fill: FillRule::NonZero,
+            overlap: false,
+            ppem: Some((ppem, ppem)),
+        })
+        .map_err(RenderError::Raster)
+}
 
 use crate::color_raster::SvgImagePainter;
 
@@ -64,6 +87,91 @@ pub fn render<'r>(
     let info = outlines
         .load(glyph, Scale::pixels(font, ppem, ppem), scratch)
         .map_err(RenderError::Outline)?;
+    render_loaded(info, ppem, scratch, raster)
+}
+
+/// Renders one glyph of a bare CFF face through the normal gray rasterizer.
+pub fn render_bare_cff<'r>(
+    face: &BareCffFace<'_>,
+    glyph: GlyphId,
+    ppem: u16,
+    scratch: &mut Scratch,
+    raster: &'r mut Rasterizer,
+) -> Result<Bitmap<'r>, RenderError> {
+    let upem = i32::try_from(face.cff().top_matrix().units_per_em)
+        .ok()
+        .filter(|upem| *upem > 0)
+        .ok_or(RenderError::Outline(OutlineError::InvalidOutline))?;
+    let scale = Fixed(div_fix(i32::from(ppem).saturating_mul(64), upem));
+    let info = sofel_outline::load_bare_cff(
+        face.cff(),
+        glyph,
+        Scale::Scaled { x: scale, y: scale },
+        scratch,
+    )
+    .map_err(RenderError::Outline)?;
+    render_loaded(info, ppem, scratch, raster)
+}
+
+/// Render a basic CID-keyed Type 1 outline without hinting.
+pub fn render_cid<'r>(
+    face: &CidFace,
+    cid: usize,
+    ppem: u16,
+    raster: &'r mut Rasterizer,
+) -> Result<Bitmap<'r>, RenderError> {
+    let fixed = Fixed(div_fix(
+        i32::from(ppem).saturating_mul(64),
+        i32::from(face.units_per_em()),
+    ));
+    let scale = Scale::Scaled { x: fixed, y: fixed };
+    let info = sofel_outline::draw_cid(face, cid, scale, &mut FnPen(|_| {}))
+        .map_err(RenderError::Outline)?;
+    let c = info.cbox;
+    let bounds = pixel_box(c.x_min, c.y_min, c.x_max, c.y_max);
+    let shift = bounds.shift();
+    raster.clear();
+    sofel_outline::draw_cid(
+        face,
+        cid,
+        scale,
+        &mut FnPen(|command| {
+            shift_command(command, shift).apply(raster);
+        }),
+    )
+    .map_err(RenderError::Outline)?;
+    raster
+        .render_placed(
+            bounds,
+            RenderOptions {
+                fill: FillRule::NonZero,
+                overlap: false,
+                ppem: Some((ppem, ppem)),
+            },
+        )
+        .map_err(RenderError::Raster)
+}
+
+fn shift_command(command: Command, offset: Point) -> Command {
+    let shift = |p: Point| Point {
+        x: p.x.saturating_add(offset.x),
+        y: p.y.saturating_add(offset.y),
+    };
+    match command {
+        Command::MoveTo(p) => Command::MoveTo(shift(p)),
+        Command::LineTo(p) => Command::LineTo(shift(p)),
+        Command::QuadTo(c, p) => Command::QuadTo(shift(c), shift(p)),
+        Command::CubicTo(c1, c2, p) => Command::CubicTo(shift(c1), shift(c2), shift(p)),
+        Command::Close => Command::Close,
+    }
+}
+
+fn render_loaded<'r>(
+    info: OutlineInfo,
+    ppem: u16,
+    scratch: &mut Scratch,
+    raster: &'r mut Rasterizer,
+) -> Result<Bitmap<'r>, RenderError> {
     let c = info.cbox;
     let b = pixel_box(c.x_min, c.y_min, c.x_max, c.y_max);
     raster.clear();
