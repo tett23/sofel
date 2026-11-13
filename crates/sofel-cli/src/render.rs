@@ -7,6 +7,7 @@ use sofel_font::read::GlyphId;
 use sofel_font::{BareCffFace, BitmapFormat, Font};
 use sofel_outline::{Outlines, Scratch};
 use sofel_raster::Rasterizer;
+use sofel_type1::cid::CidFace;
 
 use crate::glyph;
 
@@ -285,6 +286,9 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
     if let Some(format) = BitmapFormat::detect(&bytes) {
         return render_fixed(format, &bytes, &args, out, err);
     }
+    if bytes.starts_with(b"%!PS-Adobe-3.0 Resource-CIDFont") {
+        return render_cid(&bytes, &args, out, err);
+    }
     if bytes.first() == Some(&1)
         || sofel_font::read::sfnt::Sfnt::new(&bytes)
             .is_ok_and(|sfnt| sofel_font::read::cff::is_cef(&sfnt))
@@ -447,6 +451,44 @@ fn render_bare_cff(
     image.extend(bitmap.pixels.iter().map(|value| !value));
     if out.write_all(&image).is_err() {
         return fail(err, "cannot write the image");
+    }
+    0
+}
+
+fn render_cid(bytes: &[u8], args: &Args, out: &mut dyn Write, err: &mut dyn Write) -> i32 {
+    let mut fail = |msg: &str| {
+        let _ = writeln!(err, "sofel-render: {msg}");
+        1
+    };
+    if args.face != 0 {
+        return fail("CID face index out of range");
+    }
+    let Target::Glyph(glyph) = args.target else {
+        return fail("CID Type 1 has no Unicode cmap; use --glyph");
+    };
+    let Ok(face) = CidFace::parse(bytes, 67_108_864) else {
+        return fail("invalid CID Type 1 font");
+    };
+    let mut raster = Rasterizer::new();
+    let Ok(b) = glyph::render_cid(
+        &face,
+        usize::try_from(glyph).unwrap_or(usize::MAX),
+        args.ppem,
+        &mut raster,
+    ) else {
+        return fail("CID glyph cannot be rendered");
+    };
+    if b.width == 0 || b.rows == 0 {
+        return fail("CID glyph is empty");
+    }
+    let mut image = format!(
+        "P5\n# left {} top {}\n{} {}\n255\n",
+        b.left, b.top, b.width, b.rows
+    )
+    .into_bytes();
+    image.extend(b.pixels.iter().map(|v| !v));
+    if out.write_all(&image).is_err() {
+        return fail("cannot write the image");
     }
     0
 }
