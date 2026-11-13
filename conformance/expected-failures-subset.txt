@@ -4,10 +4,6 @@
 # upstream:disabled for a suite HarfBuzz's meson.build leaves out and has
 # no expected files for. A case run with --preprocess (id suffixed
 # +prepared) fails for the same reason as the case without it.
-avar2_null_varstore_partial_instance.tests/RobotoDelta-NullVarStore-VF.default.all.wght=300-400-600.iup_optimize.ttf:bytes  # deferred:iup
-avar2_null_varstore_partial_instance.tests/RobotoDelta-NullVarStore-VF.default.all.wght=300-400-600.iup_optimize.ttf+prepared:bytes  # deferred:iup
-avar2_null_varstore_partial_instance.tests/RobotoDelta-NullVarStore-VF.default.all.wght=300-400-600.iup_optimize.ttf:validate  # deferred:iup
-avar2_null_varstore_partial_instance.tests/RobotoDelta-NullVarStore-VF.default.all.wght=300-400-600.iup_optimize.ttf+prepared:validate  # deferred:iup
 colrv1.notoemoji.tests/NotoColrEmojiGlyf-Regular.subset.default.1f696.ttf:bytes  # upstream:disabled
 colrv1.notoemoji.tests/NotoColrEmojiGlyf-Regular.subset.default.1f696.ttf+prepared:bytes  # upstream:disabled
 colrv1.notoemoji.tests/NotoColrEmojiGlyf-Regular.subset.default.1f696.ttf:validate  # upstream:disabled

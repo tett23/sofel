@@ -295,7 +295,9 @@ impl Plan {
             && font.table(Tag::new(b"CFF2")).is_none()
             && (norm.user.len() == 1 || norm.user.values().all(|r| r.min == r.max))
             && font.table(Tag::new(b"avar")).is_some_and(|data| {
-                crate::tables::avar::is_empty_identity_v2(data, norm.axis_tags.len())
+                crate::tables::avar::is_empty_identity_v2(data, &norm.axis_tags, |tag| {
+                    norm.user.values().all(|r| r.min == r.max) || norm.user.contains_key(&tag)
+                })
             });
         let avar2_range = identity_avar2 && norm.user.values().any(|r| r.min < r.max);
         let point_pins = !norm.user.is_empty() && norm.user.values().all(|r| r.min == r.max);
@@ -309,6 +311,10 @@ impl Plan {
                 .contains(Tag::new(b"glyf").to_u32())
             && font.table(Tag::new(b"CFF2")).is_none();
         let needs_rebase = |tag: &&[u8; 4]| {
+            if avar2_range {
+                // avar2 maps the restricted user range into the original variation space.
+                return false;
+            }
             let handled = match *tag {
                 b"GSUB" | b"GPOS" | b"GDEF" | b"BASE" | b"COLR" => {
                     let static_table = font.table(Tag::new(tag)).is_some_and(|data| match *tag {
