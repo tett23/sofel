@@ -1904,3 +1904,65 @@ fn adr0022_gdef14_ligature_carets_match_harfbuzz() {
     let out = subset(&font, &chars("ABC")).unwrap();
     assert_eq!(out_table(&out, b"GDEF").unwrap(), input);
 }
+
+#[test]
+fn adr0022_context_coverage_retains_high_glyph_and_nested_lookup() {
+    let wide = vec![0, 3, 0, 0, 1, 1, 0, 0];
+    for (kind, st, at) in [
+        (
+            5,
+            link(
+                Buf::new().u16(3).u16(1).u16(1).u16(0).u16(0).u16(1).done(),
+                vec![(6, 2, wide.clone())],
+            ),
+            6,
+        ),
+        (
+            6,
+            link(
+                Buf::new()
+                    .u16(3)
+                    .u16(0)
+                    .u16(1)
+                    .u16(0)
+                    .u16(0)
+                    .u16(1)
+                    .u16(0)
+                    .u16(1)
+                    .done(),
+                vec![(6, 2, wide.clone())],
+            ),
+            6,
+        ),
+    ] {
+        let nested = vec![0, 3, 0, 0, 0, 9, 255, 0, 1, 0, 3, 0, 0, 1, 1, 0, 0];
+        let mut tables = sample_tables();
+        tables
+            .iter_mut()
+            .find(|(tag, _)| *tag == b"hmtx")
+            .unwrap()
+            .1
+            .resize(2 * 65537 + 40, 0);
+        tables.extend([
+            (b"MAXP", vec![0, 0, 80, 0, 1, 0, 1]),
+            (
+                b"GSUB",
+                layout_table(&[(b"liga", &[0])], &[(kind, st), (1, nested)]),
+            ),
+        ]);
+        tables.sort_by_key(|(tag, _)| **tag);
+        let data = sfnt(&tables);
+        let input = Input::new()
+            .map_set(SetKind::Glyphs, |set| {
+                set.add(65536);
+            })
+            .with_flags(Flags::RETAIN_GIDS);
+        let out = subset(&Font::new(&data, 0).unwrap(), &input).unwrap();
+        let table = out_table(&out, b"GSUB").unwrap();
+        let list = follow(&table, 8);
+        assert_eq!(u16_at(list, 0), 2);
+        let context = follow(follow(list, 2), 6);
+        assert!(follow(context, at).starts_with(&wide));
+        assert_eq!(u16_at(context, if kind == 5 { 10 } else { 14 }), 1);
+    }
+}

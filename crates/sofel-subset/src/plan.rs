@@ -866,6 +866,10 @@ impl Plan {
                             (*kind == layout::Kind::PairPos && matches!(subtable.u16(0), 1..=4))
                                 || (matches!(
                                     kind,
+                                    layout::Kind::Context | layout::Kind::ChainContext
+                                ) && subtable.u16(0) == 3)
+                                || (matches!(
+                                    kind,
                                     layout::Kind::MarkBasePos
                                         | layout::Kind::MarkLigPos
                                         | layout::Kind::MarkMarkPos
