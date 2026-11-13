@@ -2141,7 +2141,14 @@ fn adr0022_context_coverage_retains_high_glyph_and_nested_lookup() {
             )
         }
     };
+    let wide_rule = vec![0, 2, 0, 1, 1, 0, 0, 0, 1, 0, 1];
+    let wide_set = link(vec![0, 1, 0, 0], vec![(2, 2, wide_rule)]);
+    let wide_context = link(
+        vec![0, 4, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+        vec![(2, 4, wide.clone()), (9, 3, wide_set)],
+    );
     for (kind, st, at) in [
+        (5, wide_context, 2),
         (
             5,
             link(
@@ -2219,6 +2226,13 @@ fn adr0022_context_coverage_retains_high_glyph_and_nested_lookup() {
         let list = follow(&table, 8);
         assert_eq!(u16_at(list, 0), 2);
         let context = follow(follow(list, 2), 6);
+        if u16_at(context, 0) == 4 {
+            let cov = u32::from_be_bytes(context[2..6].try_into().unwrap()) as usize;
+            assert!(context[cov..].starts_with(&wide));
+            let set = u32::from_be_bytes([0, context[9], context[10], context[11]]) as usize;
+            assert!(follow(&context[set..], 2).starts_with(&[0, 2, 0, 1, 1, 0, 0, 0, 1, 0, 1]));
+            continue;
+        }
         if u16_at(context, 0) == 6 {
             let offset =
                 u32::from_be_bytes([0, context[at], context[at + 1], context[at + 2]]) as usize;
