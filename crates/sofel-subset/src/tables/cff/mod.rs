@@ -8,6 +8,7 @@ mod cff2;
 pub(crate) mod cs;
 mod cs2;
 mod dict;
+mod projection;
 mod specialize;
 
 pub(crate) use cff2::{

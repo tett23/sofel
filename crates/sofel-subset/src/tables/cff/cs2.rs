@@ -957,6 +957,7 @@ pub(crate) fn interpret<O: Ops>(env: &mut Env<'_, '_>, o: &mut O) -> bool {
 pub(crate) struct Usage {
     pub drop_hints: bool,
     pub has_blend: bool,
+    pub blend_major: Option<u32>,
     pub has_flex1: bool,
 }
 
@@ -966,6 +967,7 @@ impl Ops for Usage {
         let counts = !(op == RETURN || op == ENDCHAR || (is_hint(op) && self.drop_hints));
         if counts && env.args.iter().any(Arg::blending) {
             self.has_blend = true;
+            self.blend_major = Some(env.ivs);
         }
         env.clear_args();
     }
@@ -973,16 +975,25 @@ impl Ops for Usage {
 
 /// `coordinate_t` of `cff2_cs_rounding_t` without deltas: the absolute
 /// position along one axis.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 struct Coordinate {
     value: f64,
+    deltas: Vec<f64>,
 }
 
 impl Coordinate {
     /// `round`: the operand becomes the difference of the rounded
     /// absolute positions.
     fn round(&mut self, arg: &mut Arg) {
-        arg.deltas.clear();
+        self.deltas.resize(arg.deltas.len(), 0.0);
+        for (absolute, delta) in self.deltas.iter_mut().zip(&mut arg.deltas) {
+            let previous = *absolute;
+            *absolute += *delta;
+            *delta = floor(*absolute + 0.5) - floor(previous + 0.5);
+        }
+        if arg.deltas.iter().all(|&v| v == 0.0) {
+            arg.deltas.clear();
+        }
         let previous = self.value;
         self.value += arg.v;
         arg.v = floor(self.value + 0.5) - floor(previous + 0.5);
@@ -1121,7 +1132,7 @@ impl Rounding {
                     return false;
                 }
                 // These operators return to the initial y.
-                let y = self.point[1];
+                let y = self.point[1].clone();
                 for i in 0..n {
                     let axis = if op == HFLEX {
                         i == 2
@@ -1173,14 +1184,16 @@ impl Command {
 /// hints dropped with `drop_hints`, the operands rounded with `rounding`
 /// and the commands captured in `commands`.
 #[derive(Default)]
-pub(crate) struct Flatten {
+pub(crate) struct Flatten<'a> {
+    pub projection: Option<&'a super::projection::Projection>,
+    pub emitted_major: Option<u32>,
     pub out: Vec<u8>,
     pub drop_hints: bool,
     pub rounding: Option<Rounding>,
     pub commands: Option<Vec<Command>>,
 }
 
-impl Flatten {
+impl Flatten<'_> {
     /// `flatten_blends`: a blend group written back as a `blend`.
     fn flatten_blends(&mut self, i: usize, env: &mut Env<'_, '_>) -> usize {
         let nv = env.args.get(i).map_or(0, |a| a.num_values) as usize;
@@ -1197,6 +1210,57 @@ impl Flatten {
             env.set_error();
             return nv;
         }
+        if let Some(projection) = self.projection {
+            let Some(t) = projection.transforms.get(env.ivs as usize) else {
+                env.set_error();
+                return nv;
+            };
+            let mut done = 0;
+            while done < nv {
+                let remaining = nv.saturating_sub(done);
+                let count = if t.columns.is_empty() {
+                    remaining
+                } else {
+                    remaining.min(
+                        512usize
+                            .saturating_sub(i.saturating_add(done))
+                            .checked_div(t.columns.len().saturating_add(1))
+                            .unwrap_or(0),
+                    )
+                };
+                if count == 0 {
+                    env.set_error();
+                    return nv;
+                }
+                let Some(chunk) = group.get(done..done.saturating_add(count)) else {
+                    env.set_error();
+                    return nv;
+                };
+                for a in chunk {
+                    let Some(fold) = t.fold(&a.deltas) else {
+                        env.set_error();
+                        return nv;
+                    };
+                    encode_num_cs(&mut self.out, a.v + c_round(fold));
+                }
+                if !t.columns.is_empty() {
+                    for a in chunk {
+                        let Some(values) = t.deltas(&a.deltas) else {
+                            env.set_error();
+                            return nv;
+                        };
+                        for value in values {
+                            encode_num_cs(&mut self.out, c_round(value));
+                        }
+                    }
+                    encode_int(&mut self.out, i32::try_from(count).unwrap_or(i32::MAX));
+                    encode_op(&mut self.out, BLENDCS);
+                    self.emitted_major = Some(env.ivs);
+                }
+                done = done.saturating_add(count);
+            }
+            return nv;
+        }
         for a in group {
             encode_num_cs(&mut self.out, a.v);
         }
@@ -1211,15 +1275,31 @@ impl Flatten {
     }
 }
 
-impl Ops for Flatten {
+impl Ops for Flatten<'_> {
     fn flush_args_and_op(&mut self, op: u32, env: &mut Env<'_, '_>) {
         let skip = op == RETURN || op == ENDCHAR || (is_hint(op) && self.drop_hints);
-        if !skip
-            && let Some(r) = &mut self.rounding
-            && !r.round(op, &mut env.args)
-        {
-            env.set_error();
-            return;
+        if !skip && let Some(r) = &mut self.rounding {
+            if let Some(p) = self.projection {
+                let transform = p.transforms.get(env.ivs as usize);
+                for arg in &mut env.args {
+                    if arg.blending() {
+                        let Some((fold, deltas)) =
+                            transform.and_then(|t| t.fold(&arg.deltas).zip(t.deltas(&arg.deltas)))
+                        else {
+                            env.set_error();
+                            return;
+                        };
+                        arg.v += fold;
+                        arg.deltas = deltas;
+                    } else if let Some(t) = transform {
+                        arg.deltas.resize(t.columns.len(), 0.0);
+                    }
+                }
+            }
+            if !r.round(op, &mut env.args) {
+                env.set_error();
+                return;
+            }
         }
         if !skip && let Some(c) = &mut self.commands {
             c.push(Command::new(op, env.args.iter().map(|a| a.v).collect()));
@@ -1241,7 +1321,40 @@ impl Ops for Flatten {
             let Some(a) = env.args.get(i) else {
                 break;
             };
-            if a.blending() && self.rounding.is_none() {
+            if self.rounding.is_some() && !a.deltas.is_empty() {
+                let k = a.deltas.len();
+                let remaining = env.args.get(i..).unwrap_or_default();
+                let count = remaining
+                    .iter()
+                    .take_while(|arg| arg.deltas.len() == k)
+                    .count()
+                    .min(
+                        512usize
+                            .saturating_sub(i)
+                            .checked_div(k.saturating_add(1))
+                            .unwrap_or(0),
+                    );
+                if count == 0 {
+                    env.set_error();
+                    return;
+                }
+                let Some(chunk) = remaining.get(..count) else {
+                    env.set_error();
+                    return;
+                };
+                for arg in chunk {
+                    encode_num_cs(&mut self.out, arg.v);
+                }
+                for arg in chunk {
+                    for &delta in &arg.deltas {
+                        encode_num_cs(&mut self.out, delta);
+                    }
+                }
+                encode_int(&mut self.out, i32::try_from(count).unwrap_or(i32::MAX));
+                encode_op(&mut self.out, BLENDCS);
+                self.emitted_major = Some(env.ivs);
+                i = i.saturating_add(count);
+            } else if a.blending() && self.rounding.is_none() {
                 let nv = a.num_values as usize;
                 if nv == 0 || count < nv {
                     env.set_error();

@@ -232,6 +232,7 @@ pub(crate) struct Normalized {
     pub normalized_coords: Vec<i32>,
     /// `axes_old_index_tag_map`: the tag of each `fvar` axis.
     pub axis_tags: Vec<Tag>,
+    pub axis_distances: Vec<[f32; 2]>,
     /// Old `fvar` indices retained in the output, in source order.
     pub retained_axis_indices: Vec<usize>,
     pub all_axes_pinned: bool,
@@ -279,6 +280,8 @@ pub(crate) fn normalize(font: &Font<'_>, user: &BTreeMap<Tag, AxisRange>) -> Nor
     let mut last = 0usize;
     for (i, a) in axes.iter().enumerate() {
         n.axis_tags.push(a.tag);
+        n.axis_distances
+            .push([a.default - a.min, a.max - a.default]);
         let range = n.user.get(&a.tag).copied();
         if range.is_none_or(|r| !(r.min == r.default && r.default == r.max)) {
             not_pinned = true;

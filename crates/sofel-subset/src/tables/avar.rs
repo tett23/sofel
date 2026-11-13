@@ -9,23 +9,31 @@ use crate::plan::Plan;
 
 const TAG: Tag = Tag::new(b"avar");
 
-/// Checks for the three identity knots on every axis and both null v2 offsets.
-pub(crate) fn is_empty_identity_v2(data: &[u8], axes: usize) -> bool {
+/// Checks that the selected axes use identity knots and both v2 offsets are null.
+pub(crate) fn is_empty_identity_v2(
+    data: &[u8],
+    axes: &[Tag],
+    selected: impl Fn(Tag) -> bool,
+) -> bool {
     Avar::new(data).is_ok_and(|table| {
         table.v2_offsets() == Some((0, 0))
-            && table.axis_count() == axes
-            && (0..axes).all(|axis| {
-                table.segment_map(axis).is_some_and(|map| {
-                    map.len() == 3
-                        && [-16384, 0, 16384]
-                            .into_iter()
-                            .enumerate()
-                            .all(|(index, value)| {
-                                map.pair(index)
-                                    .is_some_and(|(from, to)| from.0 == value && to.0 == value)
-                            })
+            && table.axis_count() == axes.len()
+            && axes
+                .iter()
+                .enumerate()
+                .filter(|(_, tag)| selected(**tag))
+                .all(|(axis, _)| {
+                    table.segment_map(axis).is_some_and(|map| {
+                        map.len() == 3
+                            && [-16384, 0, 16384]
+                                .into_iter()
+                                .enumerate()
+                                .all(|(index, value)| {
+                                    map.pair(index)
+                                        .is_some_and(|(from, to)| from.0 == value && to.0 == value)
+                                })
+                    })
                 })
-            })
     })
 }
 
@@ -210,7 +218,22 @@ fn subset_identity_range(
         }
     }
     let mut output = src.get(..8).ok_or(failed)?.to_vec();
+    let avar = Avar::new(src).map_err(|_| failed)?;
     for i in 0..axes.len() {
+        if i != axis {
+            let segment = avar.segment_map(i).ok_or(failed)?;
+            output.extend(
+                u16::try_from(segment.len())
+                    .map_err(|_| failed)?
+                    .to_be_bytes(),
+            );
+            for j in 0..segment.len() {
+                let (from, to) = segment.pair(j).ok_or(failed)?;
+                output.extend(from.0.to_be_bytes());
+                output.extend(to.0.to_be_bytes());
+            }
+            continue;
+        }
         let mut knots = alloc::vec![-16384i16, 0, 16384];
         if i == axis && !knots.contains(&mapped) {
             knots.insert(knots.partition_point(|&v| v < mapped), mapped);
