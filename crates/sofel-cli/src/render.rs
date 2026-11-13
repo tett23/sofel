@@ -4,6 +4,8 @@ use std::ffi::OsString;
 use std::io::Write;
 
 use sofel_bitmapfont::BdfFont;
+use sofel_bitmapfont::pcf::PcfFont;
+use sofel_bitmapfont::winfnt::WinFont;
 use sofel_font::Font;
 use sofel_font::read::GlyphId;
 use sofel_outline::{Outlines, Scratch};
@@ -31,6 +33,9 @@ FT_LOAD_COLOR does (ADR 0023). OT-SVG rect and circle gradients are
 drawn in color (ADR 0072). The image is written as PAM; the color of
 palette entry 0xFFFF is white when the palette is marked for dark
 backgrounds, else black.
+
+BDF and PCF bitmap faces use their single fixed strike. PCF supports
+monochrome glyphs; both formats write PGM (ADR 0065).
 
   --variations LIST   design coordinates, e.g. wght=500
   --named-instance N  start at named instance N (zero-based)
@@ -279,6 +284,12 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
     if BdfFont::is_bdf(&bytes) {
         return render_bdf(&bytes, &args, out, err);
     }
+    if PcfFont::is_pcf(&bytes) {
+        return render_pcf(&bytes, &args, out, err);
+    }
+    if WinFont::is_win_font(&bytes) {
+        return render_winfnt(&bytes, &args, out, err);
+    }
     let font = match Font::new(&bytes, args.face) {
         Ok(f) => f,
         Err(e) => return fail(err, format!("{}: {e}", args.file.to_string_lossy())),
@@ -385,6 +396,104 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
         return fail(err, "cannot write the image".into());
     }
     0
+}
+
+fn render_winfnt(bytes: &[u8], args: &Args, out: &mut dyn Write, err: &mut dyn Write) -> i32 {
+    let mut fail = |message: &str| {
+        let _ = writeln!(err, "sofel-render: {message}");
+        1
+    };
+    let font = match WinFont::parse(bytes, args.face) {
+        Ok(font) => font,
+        Err(_) => return fail("invalid FNT/FON font or face"),
+    };
+    let (x, y) = font.ppem_26_6();
+    let ppem = u32::from(args.ppem);
+    if ((x.saturating_add(32)) / 64, (y.saturating_add(32)) / 64) != (ppem, ppem) {
+        return fail("FNT/FON has no matching bitmap strike");
+    }
+    if args.no_bitmap {
+        return fail("FNT/FON has no outline");
+    }
+    let id = match args.target {
+        Target::Glyph(id) => id,
+        Target::Char(code) => match font.nominal_glyph(code) {
+            Some(id) => id,
+            None => return fail("character is not mapped"),
+        },
+        Target::Text(_) | Target::TextFile(_) => {
+            return fail("FNT/FON text rendering is unavailable");
+        }
+    };
+    let Some(glyph) = font.glyph(id) else {
+        return fail("glyph is out of range");
+    };
+    render_mono_bitmap(glyph, out, &mut fail)
+}
+
+fn render_mono_bitmap(
+    glyph: &sofel_bitmapfont::Glyph,
+    out: &mut dyn Write,
+    fail: &mut dyn FnMut(&str) -> i32,
+) -> i32 {
+    if glyph.width == 0 || glyph.height == 0 {
+        return fail("glyph is empty");
+    }
+    let mut image = format!(
+        "P5\n# left {} top {}\n{} {}\n255\n",
+        glyph.left, glyph.top, glyph.width, glyph.height
+    )
+    .into_bytes();
+    let pitch = usize::from(glyph.width).div_ceil(8);
+    for row in glyph.bitmap.chunks_exact(pitch) {
+        for x in 0..usize::from(glyph.width) {
+            image.push(
+                if row.get(x / 8).copied().unwrap_or(0) & (0x80 >> (x % 8)) != 0 {
+                    0
+                } else {
+                    255
+                },
+            );
+        }
+    }
+    if out.write_all(&image).is_err() {
+        return fail("cannot write the image");
+    }
+    0
+}
+
+fn render_pcf(bytes: &[u8], args: &Args, out: &mut dyn Write, err: &mut dyn Write) -> i32 {
+    let mut fail = |message: &str| {
+        let _ = writeln!(err, "sofel-render: {message}");
+        1
+    };
+    if args.face != 0 {
+        return fail("PCF has only face 0");
+    }
+    let font = match PcfFont::parse(bytes) {
+        Ok(font) => font,
+        Err(_) => return fail("invalid PCF font"),
+    };
+    let (x, y) = font.ppem_26_6();
+    let ppem = u32::from(args.ppem);
+    if ((x.saturating_add(32)) / 64, (y.saturating_add(32)) / 64) != (ppem, ppem) {
+        return fail("PCF has no matching bitmap strike");
+    }
+    if args.no_bitmap {
+        return fail("PCF has no outline");
+    }
+    let id = match args.target {
+        Target::Glyph(id) => id,
+        Target::Char(code) => match font.nominal_glyph(code) {
+            Some(id) => id,
+            None => return fail("character is not mapped"),
+        },
+        Target::Text(_) | Target::TextFile(_) => return fail("PCF text rendering is unavailable"),
+    };
+    let Some(glyph) = font.glyph(id) else {
+        return fail("glyph is out of range");
+    };
+    render_mono_bitmap(glyph, out, &mut fail)
 }
 
 fn render_bdf(bytes: &[u8], args: &Args, out: &mut dyn Write, err: &mut dyn Write) -> i32 {

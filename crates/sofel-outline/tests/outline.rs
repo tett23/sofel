@@ -785,3 +785,128 @@ fn adr0064_i1_composite_runs_after_hinted_children_are_placed() {
     assert_eq!(scratch.points()[1].y, 64);
     assert_eq!(scratch.points()[4].y, 150);
 }
+
+#[test]
+fn adr0064_i1_flip_instructions_update_outline_curve_tags() {
+    // FLIPRGON 1..2, FLIPRGOFF 2..3, SLOOP 2 then FLIPPT 0,3.
+    let code = [
+        0xb1, 1, 2, 0x81, 0xb1, 2, 3, 0x82, 0xb0, 2, 0x17, 0xb1, 0, 3, 0x80,
+    ];
+    let scratch = hinted_square(&code);
+    // FreeType v35, 16 ppem, FT_LOAD_TARGET_MONO | FT_LOAD_NO_AUTOHINT.
+    assert_eq!(scratch.point_tags(), &[4, 1, 0, 1]);
+    assert_eq!(scratch.contour_ends(), &[3]);
+}
+
+#[test]
+fn adr0064_i1_untouch_only_clears_the_freedom_vector_axes() {
+    // Set the same control point in x and y, then untouch it along y.
+    let scratch = hinted_square(&[
+        0x01, 0xb1, 1, 64, 0x48, 0x00, 0xb1, 1, 128, 0x48, 0xb0, 1, 0x29,
+    ]);
+    assert_eq!(scratch.point_tags(), &[5, 8, 0, 1]);
+    assert_eq!(scratch.points()[1], Point { x: 64, y: 128 });
+}
+
+fn hinted_square(code: &[u8]) -> Scratch {
+    let glyph = simple_glyph(
+        &[&[
+            Pt::On(0, 0),
+            Pt::Off(0, 1000),
+            Pt::Off(1000, 1000),
+            Pt::On(1000, 0),
+        ]],
+        false,
+        code,
+    );
+    let data = glyph_font(&[vec![], glyph], true, false);
+    let font = Font::new(&data, 0).unwrap();
+    let mut scratch = Scratch::default();
+    sofel_outline::Outlines::new(font.default_instance())
+        .load_truetype_mono(GlyphId(1), 16, &mut scratch)
+        .unwrap();
+    scratch
+}
+
+#[test]
+fn adr0064_i1_diagonal_mdap_msirp_match_freetype_v35_outline() {
+    let scratch = hinted_square(&[
+        0x01, 0xb1, 1, 30, 0x48, 0x00, 0xb1, 1, 40, 0x48, 0xb1, 3, 4, 0x0a, 0x0e, 0xb0, 1, 0x2f,
+        0xb1, 2, 100, 0x3b,
+    ]);
+    assert_eq!(
+        scratch.points(),
+        &[
+            Point { x: 0, y: 0 },
+            Point { x: 38, y: 51 },
+            Point { x: 262, y: 8 },
+            Point { x: 1024, y: 0 }
+        ]
+    );
+    assert_eq!(scratch.point_tags(), &[5, 24, 24, 1]);
+}
+
+#[test]
+fn adr0064_i1_shpix_matches_freetype_on_a_diagonal_negative_distance() {
+    let scratch = hinted_square(&[0xb1, 3, 4, 0x0b, 0xb0, 1, 0xb8, 0xff, 0x9c, 0x38]);
+    assert_eq!(scratch.points()[1], Point { x: -60, y: 944 });
+    assert_eq!(scratch.point_tags(), &[5, 24, 0, 1]);
+}
+
+#[test]
+fn adr0064_i1_isect_uses_the_crossing_or_parallel_midpoint() {
+    for (indices, expected) in [
+        ([0, 2, 1, 3], Point { x: 512, y: 512 }),
+        ([0, 1, 0, 1], Point { x: 0, y: 512 }),
+    ] {
+        let [a0, a1, b0, b1] = indices;
+        let scratch = hinted_square(&[0xb4, 3, a0, a1, b0, b1, 0x0f]);
+        assert_eq!(scratch.points()[3], expected);
+        assert_eq!(scratch.point_tags()[3], 25);
+    }
+}
+
+#[test]
+fn adr0064_i1_gx_instructions_read_the_selected_location() {
+    use sofel_font::var::Location;
+    let glyph = simple_glyph(
+        &[&[Pt::On(0, 0), Pt::On(40, 0), Pt::On(0, 40)]],
+        false,
+        &[0x01, 0xb0, 1, 0x91, 0x48, 0x00, 0xb0, 1, 0x92, 0x48],
+    );
+    let mut fvar = vec![0, 1, 0, 0, 0, 16, 0, 2, 0, 1, 0, 20, 0, 0, 0, 8];
+    fvar.extend_from_slice(b"wght");
+    for value in [-65536i32, 0, 65536] {
+        fvar.extend_from_slice(&value.to_be_bytes());
+    }
+    fvar.extend_from_slice(&[0, 0, 1, 0]);
+    let gvar = vec![
+        0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 26, 0, 2, 0, 0, 0, 0, 0, 26, 0, 0, 0, 0, 0, 0,
+    ];
+    let bytes = glyph_font_with(
+        &[vec![], glyph],
+        false,
+        false,
+        vec![(b"fvar", fvar), (b"gvar", gvar)],
+    );
+    let font = Font::new(&bytes, 0).unwrap();
+    for (raw, expected) in [(0, 0), (67, 16), (-67, -17)] {
+        let location = Location::from_normalized_16_16(&font, &[sofel_font::read::Fixed(raw)]);
+        let outlines = sofel_outline::Outlines::new(font.instance(&location));
+        let mut scratch = Scratch::default();
+        outlines
+            .load_truetype_mono(GlyphId(1), 16, &mut scratch)
+            .unwrap();
+        assert_eq!(scratch.points()[1], Point { x: expected, y: 17 });
+    }
+}
+
+#[test]
+fn adr0064_i1_conditional_jump_reaches_freetype_hint_coordinates() {
+    for (flag, x) in [(0, 77), (1, 53)] {
+        let scratch =
+            hinted_square(&[0x01, 0xb1, 1, 53, 0xb1, 4, flag, 0x78, 0x21, 0xb0, 77, 0x48]);
+        assert_eq!(scratch.points()[1], Point { x, y: 1024 });
+        assert_eq!(scratch.point_tags()[1], 8);
+    }
+}

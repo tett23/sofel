@@ -31,6 +31,45 @@ pub(crate) fn fixed_to_f32(f: Fixed) -> f32 {
     i32_to_f32(f.0) * (1.0 / 65536.0)
 }
 
+/// Renormalize a mapped axis value with HarfBuzz design-space distances.
+pub(crate) fn renormalize(value: f32, limits: [f32; 3], distances: [f32; 2]) -> f32 {
+    let [low, default, high] = limits;
+    let [negative, positive] = distances;
+    if !(low <= default && default <= high) {
+        return value.clamp(-1.0, 1.0);
+    }
+    if value == default {
+        return 0.0;
+    }
+    if default < 0.0 {
+        return -renormalize(-value, [-high, -default, -low], [positive, negative]);
+    }
+    if value > default {
+        return if high == default {
+            1.0
+        } else {
+            (value - default) / (high - default)
+        };
+    }
+    if low >= 0.0 {
+        return if default == low {
+            -1.0
+        } else {
+            (value - default) / (default - low)
+        };
+    }
+    let total = negative * (-low) + positive * default;
+    if total == 0.0 {
+        return 0.0;
+    }
+    let distance = if value >= 0.0 {
+        (default - value) * positive
+    } else {
+        (-value) * negative + positive * default
+    };
+    -distance / total
+}
+
 /// `F2DOT14::to_float`.
 pub(crate) fn f2dot14_to_f32(v: i16) -> f32 {
     i32_to_f32(i32::from(v)) * (1.0 / 16384.0)

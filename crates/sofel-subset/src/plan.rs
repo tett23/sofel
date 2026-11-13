@@ -33,23 +33,6 @@ pub(crate) const PINNED_DROP: [&[u8; 4]; 8] = [
 ];
 
 /// An identity avar v1 map needs no rebasing when an axis range changes.
-fn avar_v1_identity(table: &sofel_font::read::avar::Avar<'_>, axis_count: usize) -> bool {
-    table.major_version() == 1
-        && table.axis_count() == axis_count
-        && (0..axis_count).all(|axis| {
-            table.segment_map(axis).is_some_and(|map| {
-                map.len() == 3
-                    && [-16384, 0, 16384]
-                        .iter()
-                        .enumerate()
-                        .all(|(index, &value)| {
-                            map.pair(index)
-                                .is_some_and(|(from, to)| from.0 == value && to.0 == value)
-                        })
-            })
-        })
-}
-
 /// The glyph mapping: new ids in ascending order with their old ids, and
 /// the reverse lookup (ADR 0022's `GlyphMap`).
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
@@ -165,8 +148,7 @@ pub(crate) struct PlanLayout {
     pub layout_features: RangeSet,
     pub layout_scripts: RangeSet,
     /// Every axis is pinned and GDEF has a variation store: its
-    /// variation indices map to `HB_OT_LAYOUT_NO_VARIATIONS_INDEX` with
-    /// no delta (`layout_variation_idx_delta_map`).
+    /// variation indices map to `HB_OT_LAYOUT_NO_VARIATIONS_INDEX`.
     pub varidx_pinned: bool,
     /// Rounded GDEF variation deltas at a fully pinned location.
     pub pinned_layout_deltas: BTreeMap<u32, i32>,
@@ -315,7 +297,7 @@ impl Plan {
                 crate::tables::avar::is_empty_identity_v2(data, norm.axis_tags.len())
             });
         let avar2_range = identity_avar2 && norm.user.values().any(|r| r.min < r.max);
-        let single_pin = norm.user.len() == 1 && norm.user.values().all(|r| r.min == r.max);
+        let point_pins = !norm.user.is_empty() && norm.user.values().all(|r| r.min == r.max);
         // During a complete glyf instance, HarfBuzz writes hmtx/vmtx from
         // the four instanced phantom points and drops HVAR/VVAR.
         let pinned_glyf = norm.all_axes_pinned
@@ -327,7 +309,7 @@ impl Plan {
             && font.table(Tag::new(b"CFF2")).is_none();
         let needs_rebase = |tag: &&[u8; 4]| {
             let handled = match *tag {
-                b"GSUB" | b"GPOS" | b"GDEF" | b"BASE" => {
+                b"GSUB" | b"GPOS" | b"GDEF" | b"BASE" | b"COLR" => {
                     norm.all_axes_pinned
                         && !input
                             .set(SetKind::NoSubsetTables)
@@ -335,7 +317,7 @@ impl Plan {
                 }
                 b"HVAR" | b"VVAR" => pinned_glyf,
                 b"cvar" | b"MVAR" => norm.all_axes_pinned,
-                b"gvar" => inert_gvar || avar2_range || single_pin || pinned_glyf,
+                b"gvar" => !norm.avar2 || inert_gvar || avar2_range || point_pins || pinned_glyf,
                 b"GVAR" => inert_gvar,
                 _ => false,
             };
@@ -385,23 +367,18 @@ impl Plan {
                 !drop.contains(tag.to_u32())
             });
             let varc_safe = !varc_retained || varc_unrelated_axis_change;
-            let simple_avar = (single_pin && drop.contains(Tag::new(b"avar").to_u32()))
+            let simple_avar = (point_pins && drop.contains(Tag::new(b"avar").to_u32()))
                 || identity_avar2
                 || (norm.avar2 && norm.all_axes_pinned)
                 || font.table(Tag::new(b"avar")).is_none_or(|data| {
                     sofel_font::read::avar::Avar::new(data).is_ok_and(|table| {
-                        avar_v1_identity(&table, norm.axis_tags.len())
-                            || (table.major_version() == 1
-                                && (norm.pinned_at_default
-                                    || (norm.all_axes_pinned
-                                        && (0..table.axis_count()).all(|axis| {
-                                            table.segment_map(axis).is_some_and(|map| {
-                                                sofel_font::var::map_float(&map, 0.0) == 0.0
-                                            })
-                                        })))
-                                && norm.user.values().all(|range| {
-                                    range.min == range.default && range.default == range.max
-                                }))
+                        table.major_version() == 1
+                            && table.axis_count() == norm.axis_tags.len()
+                            && (0..table.axis_count()).all(|axis| {
+                                table
+                                    .segment_map(axis)
+                                    .is_some_and(|map| sofel_font::var::map_float(&map, 0.0) == 0.0)
+                            })
                     })
                 });
             let metadata_only = no_other_variation_data && varc_safe && simple_avar;
@@ -414,7 +391,29 @@ impl Plan {
                 && !other_variation_tags.iter().any(|tag| {
                     **tag != *b"gvar" && **tag != *b"GVAR" && font.table(Tag::new(tag)).is_some()
                 });
-            if !(norm.all_axes_pinned && norm.pinned_at_default) && !metadata_only && !gvar_full_pin
+            // A separate outline source or a retained BASE/COLR store needs its
+            // own instancing path, even when the CFF2 outlines can be pinned.
+            let kept = |tag: &[u8; 4]| {
+                let tag = Tag::new(tag);
+                font.table(tag).filter(|_| !drop.contains(tag.to_u32()))
+            };
+            let cff2_full_pin = norm.all_axes_pinned
+                && kept(b"CFF2").is_some()
+                && [b"glyf", b"GLYF", b"gvar", b"GVAR", b"cvar", b"VARC"]
+                    .iter()
+                    .all(|t| kept(t).is_none())
+                && kept(b"BASE").is_none_or(|data| {
+                    sofel_font::read::base::Base::new(data)
+                        .is_ok_and(|table| table.item_var_store_offset().unwrap_or(0) == 0)
+                })
+                && kept(b"COLR").is_none_or(|data| {
+                    sofel_font::read::colr::Colr::new(data)
+                        .is_ok_and(|table| table.var_store_offset() == 0)
+                });
+            if !(norm.all_axes_pinned && norm.pinned_at_default)
+                && !metadata_only
+                && !gvar_full_pin
+                && !cff2_full_pin
             {
                 return Err(SubsetError::Unsupported {
                     tag: Tag::new(b"fvar"),

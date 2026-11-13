@@ -17,6 +17,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn adr0064_i1_stack_vectors_normalize_and_preserve_zero() {
+        let mut stack = alloc::vec![3, 4];
+        run(
+            &[
+                0x0a, 0xb1, 0, 0, 0x0a, 0xb9, 0xff, 0xff, 0, 0, 0x0b, 0x0c, 0x0d,
+            ],
+            &mut stack,
+            4,
+        )
+        .unwrap();
+        assert_eq!(stack, [9830, 13107, -16384, 0]);
+    }
+
+    #[test]
     fn adr0064_i1_branches_skip_nested_blocks_and_push_payloads() {
         let mut stack = alloc::vec::Vec::new();
         // Both halves contain opcode-looking payload bytes. The nested
@@ -182,10 +196,18 @@ impl Rounding {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum HintTarget {
+/// Target reported to the native TrueType interpreter while loading an outline.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HintTarget {
+    /// Normal grayscale target.
+    Normal,
+    /// Light grayscale target.
+    Light,
+    /// Monochrome grid fitting.
     Mono,
-    Gray,
+    /// Horizontal LCD target.
+    Lcd,
+    /// Vertical LCD target.
     VerticalLcd,
 }
 
@@ -197,6 +219,7 @@ struct EngineInfo {
     stretched: bool,
     variation: bool,
     symmetric_smoothing: bool,
+    tricky: bool,
 }
 
 impl EngineInfo {
@@ -217,7 +240,10 @@ impl EngineInfo {
             (8, subpixel && self.target == HintTarget::VerticalLcd),
             (10, subpixel),
             (11, subpixel && self.symmetric_smoothing),
-            (12, subpixel && self.target == HintTarget::Gray),
+            (
+                12,
+                subpixel && matches!(self.target, HintTarget::Normal | HintTarget::Light),
+            ),
         ] {
             if enabled && selector & (1 << bit) != 0 {
                 result |= 1 << (bit + 7);
@@ -233,6 +259,119 @@ struct HintPoint {
     original: [i64; 2],
     current: [i64; 2],
     touched: [bool; 2],
+    on_curve: bool,
+}
+
+fn move_axis(point: &mut HintPoint, axis: usize, value: i64, compatibility: u8) {
+    if compatibility == 0 || (axis == 1 && compatibility != 7) {
+        point.current[axis] = value;
+    }
+    point.touched[axis] = true;
+}
+
+fn line_vector(a: [i64; 2], b: [i64; 2], perpendicular: bool) -> [i64; 2] {
+    if a == b {
+        return [16384, 0];
+    }
+    let dx = a[0].wrapping_sub(b[0]);
+    let dy = a[1].wrapping_sub(b[1]);
+    let [x, y] = if perpendicular {
+        [dy.wrapping_neg(), dx]
+    } else {
+        [dx, dy]
+    };
+    let (unit, _) = crate::slot_synth::normalize(sofel_geom::Point {
+        x: x as i32,
+        y: y as i32,
+    });
+    [i64::from(unit.x / 4), i64::from(unit.y / 4)]
+}
+
+fn project([x, y]: [i64; 2], vector: [i64; 2]) -> i64 {
+    let dot = x
+        .wrapping_mul(vector[0])
+        .wrapping_add(y.wrapping_mul(vector[1]));
+    dot.wrapping_add(if dot < 0 { 0x1fff } else { 0x2000 }) >> 14
+}
+
+fn projected_distance(a: [i64; 2], b: [i64; 2], vector: [i64; 2]) -> i64 {
+    project([a[0].wrapping_sub(b[0]), a[1].wrapping_sub(b[1])], vector)
+}
+
+fn intersection(a0: [i64; 2], a1: [i64; 2], b0: [i64; 2], b1: [i64; 2]) -> [i64; 2] {
+    use sofel_font::read::cff::ft::mul_div;
+    let dx = a1[0].wrapping_sub(a0[0]);
+    let dy = a1[1].wrapping_sub(a0[1]);
+    let ex = b1[0].wrapping_sub(b0[0]);
+    let ey = b1[1].wrapping_sub(b0[1]);
+    let cross = |x, y| mul_div(x, ey.wrapping_neg(), 64).wrapping_add(mul_div(y, ex, 64));
+    let det = cross(dx, dy);
+    let dot = mul_div(dx, ex, 64).wrapping_add(mul_div(dy, ey, 64));
+    if det.wrapping_abs().wrapping_mul(19) > dot.wrapping_abs() {
+        let numerator = cross(b0[0].wrapping_sub(a0[0]), b0[1].wrapping_sub(a0[1]));
+        [
+            a0[0].wrapping_add(mul_div(numerator, dx, det)),
+            a0[1].wrapping_add(mul_div(numerator, dy, det)),
+        ]
+    } else {
+        [0, 1].map(|axis| {
+            a0[axis]
+                .wrapping_add(a1[axis])
+                .wrapping_add(b0[axis])
+                .wrapping_add(b1[axis])
+                / 4
+        })
+    }
+}
+
+fn shift_point(point: &mut HintPoint, delta: [i64; 2], freedom: [i64; 2], compatibility: u8) {
+    for axis in 0..2 {
+        if freedom[axis] != 0 {
+            if compatibility == 0 || (axis == 1 && compatibility != 7) {
+                point.current[axis] = point.current[axis].wrapping_add(delta[axis]);
+            }
+            point.touched[axis] = true;
+        }
+    }
+}
+
+// Both vectors contain normalized F2Dot14 components.
+#[allow(clippy::arithmetic_side_effects)]
+fn movement_factors(projection: [i64; 2], freedom: [i64; 2]) -> [i64; 2] {
+    let dot = (projection[0] * freedom[0] + projection[1] * freedom[1] + 0x2000) >> 14;
+    if (-0x1554..0x1555).contains(&dot) {
+        return [0, 0];
+    }
+    freedom.map(|component| {
+        if dot >= 0x3ffe {
+            component * 4
+        } else {
+            component * 65536 / dot
+        }
+    })
+}
+
+fn move_point(
+    point: &mut HintPoint,
+    distance: i64,
+    projection: [i64; 2],
+    freedom: [i64; 2],
+    compatibility: u8,
+) {
+    for (axis, factor) in movement_factors(projection, freedom)
+        .into_iter()
+        .enumerate()
+    {
+        if factor != 0 {
+            let delta = sofel_font::read::cff::ft::mul_fix(distance, factor);
+            move_axis(
+                point,
+                axis,
+                point.current[axis].wrapping_add(delta),
+                compatibility,
+            );
+        }
+    }
 }
 
 #[allow(clippy::arithmetic_side_effects)]
@@ -286,14 +425,17 @@ fn interpolate_contour(points: &mut [HintPoint], axis: usize) {
 #[derive(Clone)]
 pub(crate) struct Interpreter {
     in_prep: bool,
+    in_glyph: bool,
     instruction_control: u8,
     contour_ends: alloc::vec::Vec<usize>,
     auto_flip: bool,
     minimum_distance: i64,
     backward_compatibility: u8,
+    blend_coords: alloc::vec::Vec<i32>,
     composite: bool,
     loop_count: u16,
     points: [alloc::vec::Vec<HintPoint>; 2],
+    twilight_limit: usize,
     reference: [u16; 3],
     delta_base: u16,
     delta_shift: u8,
@@ -309,6 +451,8 @@ pub(crate) struct Interpreter {
     projection: [i64; 2],
     dual_projection: [i64; 2],
     freedom: [i64; 2],
+    instructions: alloc::collections::BTreeMap<u8, alloc::rc::Rc<[u8]>>,
+    instruction_def_limit: Option<u16>,
     functions: alloc::collections::BTreeMap<u16, alloc::rc::Rc<[u8]>>,
     rounding: Rounding,
     storage: alloc::vec::Vec<i64>,
@@ -321,21 +465,25 @@ impl Interpreter {
         Self {
             engine: EngineInfo {
                 version: 40,
-                target: HintTarget::Gray,
+                target: HintTarget::Normal,
                 rotated: false,
                 stretched: false,
                 variation: false,
                 symmetric_smoothing: false,
+                tricky: false,
             },
             points: Default::default(),
+            twilight_limit: 0,
             reference: [0; 3],
             loop_count: 1,
             backward_compatibility: 0,
+            blend_coords: alloc::vec::Vec::new(),
             composite: false,
             auto_flip: true,
             minimum_distance: 64,
             contour_ends: alloc::vec::Vec::new(),
             in_prep: false,
+            in_glyph: false,
             instruction_control: 0,
             delta_base: 9,
             delta_shift: 3,
@@ -350,6 +498,8 @@ impl Interpreter {
             projection: [16384, 0],
             dual_projection: [16384, 0],
             freedom: [16384, 0],
+            instructions: alloc::collections::BTreeMap::new(),
+            instruction_def_limit: None,
             functions: alloc::collections::BTreeMap::new(),
             rounding: Rounding::Grid,
             scale,
@@ -361,20 +511,23 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn mono(
+    pub(super) fn native(
         instance: sofel_font::var::Instance<'_, '_, '_, '_>,
         ppem: u16,
+        target: HintTarget,
+        version: u8,
     ) -> Result<(Self, usize), super::OutlineError> {
         Self::prepare(
             instance,
             ppem,
             EngineInfo {
-                version: 35,
-                target: HintTarget::Mono,
+                version,
+                target,
                 rotated: false,
                 stretched: false,
                 variation: !instance.location().ft_default(),
                 symmetric_smoothing: false,
+                tricky: false,
             },
         )
         .map_err(|_| super::OutlineError::InvalidOutline)
@@ -383,6 +536,7 @@ impl Interpreter {
     pub(super) fn hint_composite(
         &self,
         outline: &mut [super::Point],
+        tags: &mut [u8],
         phantoms: &mut [super::Point; 4],
         ends: &[usize],
         code: &[u8],
@@ -392,13 +546,23 @@ impl Interpreter {
         composite.composite = true;
         let originals: alloc::vec::Vec<_> =
             outline.iter().chain(phantoms.iter()).copied().collect();
-        composite.hint_outline(originals.into_iter(), outline, phantoms, ends, code, limit)
+        composite.hint_outline(
+            originals.into_iter(),
+            outline,
+            tags,
+            phantoms,
+            ends,
+            code,
+            limit,
+        )
     }
 
+    #[allow(clippy::too_many_arguments)] // Parallel point and tag buffers share the glyph zone.
     pub(super) fn hint_outline(
         &self,
         unscaled: impl Iterator<Item = super::Point>,
         outline: &mut [super::Point],
+        tags: &mut [u8],
         phantoms: &mut [super::Point; 4],
         ends: &[usize],
         code: &[u8],
@@ -406,23 +570,41 @@ impl Interpreter {
     ) -> Result<(), super::OutlineError> {
         let points = unscaled
             .zip(outline.iter().chain(phantoms.iter()))
-            .map(|(raw, p)| {
+            .enumerate()
+            .map(|(i, (raw, p))| {
                 let scaled = [i64::from(p.x), i64::from(p.y)];
                 HintPoint {
                     unscaled: [i64::from(raw.x), i64::from(raw.y)],
                     original: scaled,
                     current: scaled,
                     touched: [false; 2],
+                    on_curve: tags.get(i).is_some_and(|tag| tag & 1 != 0),
                 }
             })
             .collect();
-        let result = self
+        let (result, scan_type, compatibility) = self
             .execute_glyph(points, ends, code, limit)
             .map_err(|_| super::OutlineError::InvalidOutline)?;
-        for (point, out) in result
-            .iter()
-            .zip(outline.iter_mut().chain(phantoms.iter_mut()))
+        for (point, tag) in result.iter().zip(tags.iter_mut()) {
+            *tag = (*tag & !0x19)
+                | u8::from(point.on_curve)
+                | (u8::from(point.touched[0]) << 3)
+                | (u8::from(point.touched[1]) << 4);
+        }
+        if !code.is_empty()
+            && let Some(tag) = tags.first_mut()
         {
+            *tag |= ((scan_type as u8) << 5) | 4;
+        }
+        for (point, out) in result.iter().zip(
+            outline
+                .iter_mut()
+                .chain(
+                    phantoms
+                        .iter_mut()
+                        .take(if compatibility == 0 { 4 } else { 0 }),
+                ),
+        ) {
             out.x = point.current[0] as i32;
             out.y = point.current[1] as i32;
         }
@@ -433,7 +615,7 @@ impl Interpreter {
     fn prepare(
         instance: sofel_font::var::Instance<'_, '_, '_, '_>,
         ppem: u16,
-        engine: EngineInfo,
+        mut engine: EngineInfo,
     ) -> Result<(Self, usize), Error> {
         use sofel_font::read::{CountWidth, Tag, maxp};
         let font = instance.font();
@@ -446,6 +628,18 @@ impl Interpreter {
             .map_err(|_| Error::InvalidReference)?
             .truetype()
             .unwrap_or_default();
+        let mut grid_fit = maxima.max_size_of_instructions != 0;
+        if engine.version == 40 {
+            engine.tricky = super::tt_policy::tricky(font);
+            engine.symmetric_smoothing = !grid_fit || ppem > 20;
+            if let Some(flags) = font
+                .table(Tag::new(b"gasp"))
+                .and_then(|data| super::tt_policy::gasp(data, ppem))
+            {
+                engine.symmetric_smoothing = flags & 8 != 0;
+                grid_fit = flags & 4 != 0;
+            }
+        }
         let cvt = if font.table(Tag::new(b"cvt ")).is_some() {
             instance
                 .ft_control_values()
@@ -457,15 +651,22 @@ impl Interpreter {
             i64::from(ppem) * 64,
             i64::from(font.units_per_em()),
         );
-        Self::prepare_programs(
+        let (mut vm, limit) = Self::prepare_programs(
             maxima,
             &cvt,
             ppem,
             scale,
             engine,
-            font.table(Tag::new(b"fpgm")).unwrap_or_default(),
-            font.table(Tag::new(b"prep")).unwrap_or_default(),
-        )
+            instance.ft_coords(),
+            (
+                font.table(Tag::new(b"fpgm")).unwrap_or_default(),
+                font.table(Tag::new(b"prep")).unwrap_or_default(),
+            ),
+        )?;
+        if engine.version == 40 && engine.target == HintTarget::Lcd && !engine.tricky && !grid_fit {
+            vm.instruction_control |= 1;
+        }
+        Ok((vm, limit))
     }
 
     #[allow(clippy::arithmetic_side_effects)]
@@ -475,27 +676,47 @@ impl Interpreter {
         ppem: u16,
         scale: i64,
         engine: EngineInfo,
-        font_program: &[u8],
-        prep: &[u8],
+        coords: &[sofel_font::read::Fixed],
+        (font_program, prep): (&[u8], &[u8]),
     ) -> Result<(Self, usize), Error> {
         let declared = usize::from(maxima.max_stack_elements);
         let limit = declared + (declared / 2).max(128);
-        let twilight = (usize::from(maxima.max_twilight_points) + 4)
-            .min(65535)
-            .min(cvt.len().saturating_mul(2).max(30));
+        let twilight_limit = (usize::from(maxima.max_twilight_points) + 4).min(65535);
+        let twilight = twilight_limit.min(cvt.len().saturating_mul(2).max(30));
         let mut vm = Self::new(maxima.max_storage, cvt, scale);
         vm.engine = engine;
+        vm.twilight_limit = twilight_limit;
+        vm.instruction_def_limit = Some(maxima.max_instruction_defs);
+        vm.blend_coords
+            .extend(coords.iter().map(|coord| coord.0 >> 2));
         vm.points[0].resize(twilight, HintPoint::default());
         let mut font_vm = vm.clone();
         font_vm.cvt.fill(0);
         font_vm.execute(font_program, &mut alloc::vec::Vec::new(), limit)?;
         vm.functions = font_vm.functions;
+        vm.instructions = font_vm.instructions;
         vm.ppem = [ppem; 2];
         vm.point_size = i64::from(ppem) * 64;
         vm.in_prep = true;
         vm.execute(prep, &mut alloc::vec::Vec::new(), limit)?;
         vm.in_prep = false;
         Ok((vm, limit))
+    }
+
+    pub(super) fn subpixel(&self) -> bool {
+        self.engine.version == 40 && self.engine.target != HintTarget::Mono && !self.engine.tricky
+    }
+
+    fn native_horizontal(&self) -> bool {
+        self.in_glyph
+            && self.subpixel()
+            && self.backward_compatibility == 0
+            && self.freedom[1] == 0
+            && self.projection[1] == 0
+    }
+
+    pub(super) fn device_width_allowed(&self) -> bool {
+        !self.disables_hinting() && (!self.subpixel() || self.instruction_control & 4 != 0)
     }
 
     pub(super) fn disables_hinting(&self) -> bool {
@@ -508,8 +729,10 @@ impl Interpreter {
         contour_ends: &[usize],
         program: &[u8],
         max_stack: usize,
-    ) -> Result<alloc::vec::Vec<HintPoint>, Error> {
+    ) -> Result<(alloc::vec::Vec<HintPoint>, u16, u8), Error> {
         let mut glyph = self.clone();
+        glyph.in_glyph = true;
+        glyph.instruction_def_limit = None;
         if self.instruction_control & 2 != 0 {
             glyph.minimum_distance = 64;
             glyph.control_value_cutin = 68;
@@ -521,6 +744,15 @@ impl Interpreter {
             glyph.scan_control = false;
             glyph.scan_type = 0;
         }
+        if self.subpixel() {
+            glyph.backward_compatibility = (self.instruction_control & 4) ^ 4;
+        }
+        let twilight = points
+            .len()
+            .saturating_add(self.cvt.len())
+            .saturating_mul(2)
+            .max(30);
+        glyph.points[0].resize(twilight.min(self.twilight_limit), HintPoint::default());
         glyph.points[1] = points;
         let outline_len = contour_ends.last().map_or(0, |end| end.saturating_add(1));
         if let Some([left, right, top, bottom]) = glyph.points[1].get_mut(outline_len..) {
@@ -537,10 +769,25 @@ impl Interpreter {
         glyph.loop_count = 1;
         glyph.rounding = Rounding::Grid;
         glyph.execute(program, &mut alloc::vec::Vec::new(), max_stack)?;
-        Ok(core::mem::take(&mut glyph.points[1]))
+        Ok((
+            core::mem::take(&mut glyph.points[1]),
+            glyph.scan_type,
+            glyph.backward_compatibility,
+        ))
     }
 
     fn move_relative(&mut self, op: u8, index: u16, cvt: Option<i64>) {
+        let native = self.native_horizontal();
+        let cutin = if native {
+            self.control_value_cutin >> 4
+        } else {
+            self.control_value_cutin
+        };
+        let min_distance = if native {
+            self.minimum_distance >> 1
+        } else {
+            self.minimum_distance
+        };
         let base_index = self.reference[0];
         self.reference[1] = base_index;
         self.reference[2] = index;
@@ -554,7 +801,6 @@ impl Interpreter {
         let Some(point) = self.points[target_zone].get_mut(usize::from(index)) else {
             return;
         };
-        let original_axis = usize::from(self.dual_projection[0] == 0);
         let mut requested = if let Some(entry) = cvt {
             match entry {
                 -1 => 0,
@@ -564,10 +810,10 @@ impl Interpreter {
                 },
             }
         } else if base_zone == 0 || target_zone == 0 {
-            point.original[original_axis].wrapping_sub(base.original[original_axis])
+            projected_distance(point.original, base.original, self.dual_projection)
         } else {
             sofel_font::read::cff::ft::mul_fix(
-                point.unscaled[original_axis].wrapping_sub(base.unscaled[original_axis]),
+                projected_distance(point.unscaled, base.unscaled, self.dual_projection),
                 if self.composite { 65536 } else { self.scale },
             )
         };
@@ -582,18 +828,19 @@ impl Interpreter {
         }
         let original = if cvt.is_some() {
             if target_zone == 0 {
-                let axis = usize::from(self.freedom[0] == 0);
-                point.original = base.original;
-                point.original[axis] = point.original[axis].wrapping_add(requested);
+                point.original = core::array::from_fn(|axis| {
+                    base.original[axis]
+                        .wrapping_add(project([requested, 0], [self.freedom[axis], 0]))
+                });
                 point.current = point.original;
             }
-            let measured = point.original[original_axis].wrapping_sub(base.original[original_axis]);
+            let measured = projected_distance(point.original, base.original, self.dual_projection);
             if self.auto_flip && (measured ^ requested) < 0 {
                 requested = requested.wrapping_neg();
             }
             if op & 4 != 0
                 && base_zone == target_zone
-                && i128::from(measured.abs_diff(requested)) > i128::from(self.control_value_cutin)
+                && i128::from(measured.abs_diff(requested)) > i128::from(cutin)
             {
                 requested = measured;
             }
@@ -601,23 +848,41 @@ impl Interpreter {
         } else {
             requested
         };
-        let mut distance = if op & 4 != 0 {
+        let mut distance = if op & 4 != 0 && !native {
             self.rounding.apply(requested)
         } else {
             requested
         };
         if op & 8 != 0 {
             distance = if original >= 0 {
-                distance.max(self.minimum_distance)
+                distance.max(min_distance)
             } else {
-                distance.min(self.minimum_distance.wrapping_neg())
+                distance.min(min_distance.wrapping_neg())
             };
         }
-        let axis = usize::from(self.projection[0] == 0);
-        if self.freedom[axis] != 0 {
-            point.current[axis] = base.current[axis].wrapping_add(distance);
-            point.touched[axis] = true;
-        }
+        let current = projected_distance(point.current, base.current, self.projection);
+        move_point(
+            point,
+            distance.wrapping_sub(current),
+            self.projection,
+            self.freedom,
+            self.backward_compatibility,
+        );
+    }
+
+    fn reference_shift(&self, op: u8) -> Option<(usize, usize, [i64; 2])> {
+        let (zone, reference) = if op & 1 == 0 {
+            (self.zones[1], self.reference[2])
+        } else {
+            (self.zones[0], self.reference[1])
+        };
+        let zone = usize::from(zone);
+        let reference = usize::from(reference);
+        let base = self.points[zone].get(reference)?;
+        let distance = projected_distance(base.current, base.original, self.projection);
+        let delta = movement_factors(self.projection, self.freedom)
+            .map(|factor| sofel_font::read::cff::ft::mul_fix(distance, factor));
+        Some((zone, reference, delta))
     }
 
     fn interpolate(&mut self, stack: &mut alloc::vec::Vec<i64>) {
@@ -628,31 +893,31 @@ impl Interpreter {
         let [z0, z1, z2] = self.zones.map(usize::from);
         let base = self.points[z0].get(usize::from(self.reference[1])).copied();
         let end = self.points[z1].get(usize::from(self.reference[2])).copied();
-        let axis = usize::from(self.projection[0] == 0);
-        let original_axis = usize::from(self.dual_projection[0] == 0);
         let twilight = self.zones.contains(&0);
-        let original = |p: HintPoint| {
-            if twilight {
-                p.original[original_axis]
-            } else {
-                p.unscaled[original_axis]
-            }
-        };
+        let original = |p: HintPoint| if twilight { p.original } else { p.unscaled };
         if let Some(base) = base {
-            let old_range = end.map_or(0, |p| original(p).wrapping_sub(original(base)));
-            let new_range = end.map_or(0, |p| p.current[axis].wrapping_sub(base.current[axis]));
+            let original_offset =
+                |p| projected_distance(original(p), original(base), self.dual_projection);
+            let current_offset =
+                |p: HintPoint| projected_distance(p.current, base.current, self.projection);
+            let old_range = end.map_or(0, original_offset);
+            let new_range = end.map_or(0, current_offset);
             for &index in stack[first..].iter().rev() {
                 if let Some(p) = self.points[z2].get_mut(index as u32 as usize) {
-                    let offset = original(*p).wrapping_sub(original(base));
+                    let offset = original_offset(*p);
                     let distance = if old_range == 0 {
                         offset
                     } else {
                         sofel_font::read::cff::ft::mul_div(offset, new_range, old_range)
                     };
-                    if self.freedom[axis] != 0 {
-                        p.current[axis] = base.current[axis].wrapping_add(distance);
-                        p.touched[axis] = true;
-                    }
+                    let delta = distance.wrapping_sub(current_offset(*p));
+                    move_point(
+                        p,
+                        delta,
+                        self.projection,
+                        self.freedom,
+                        self.backward_compatibility,
+                    );
                 }
             }
         }
@@ -681,8 +946,10 @@ impl Interpreter {
         depth: usize,
         remaining: &mut usize,
     ) -> Result<(), Error> {
+        let program = code;
         while !code.is_empty() {
             *remaining = remaining.checked_sub(1).ok_or(Error::ExecutionLimit)?;
+            let offset = program.len() - code.len();
             let instruction = next(&mut code)?;
             match instruction.opcode {
                 op @ 0x00..=0x05 => {
@@ -695,6 +962,52 @@ impl Interpreter {
                         self.freedom = axis;
                     }
                 }
+                op @ (0x06..=0x09 | 0x86 | 0x87) => {
+                    let second = stack.pop().ok_or(Error::StackUnderflow)? as u16;
+                    let first = stack.pop().ok_or(Error::StackUnderflow)? as u16;
+                    let Some((a, b)) = self.points[usize::from(self.zones[1])]
+                        .get(usize::from(first))
+                        .zip(self.points[usize::from(self.zones[2])].get(usize::from(second)))
+                    else {
+                        continue;
+                    };
+                    let dual = matches!(op, 0x86 | 0x87);
+                    let perpendicular = op & 1 != 0;
+                    let current = line_vector(
+                        a.current,
+                        b.current,
+                        perpendicular && (!dual || a.original != b.original),
+                    );
+                    if matches!(op, 0x08 | 0x09) {
+                        self.freedom = current;
+                    } else {
+                        self.projection = current;
+                        self.dual_projection = if dual {
+                            line_vector(a.original, b.original, perpendicular)
+                        } else {
+                            current
+                        };
+                    }
+                }
+                op @ (0x0a | 0x0b) => {
+                    let y = stack.pop().ok_or(Error::StackUnderflow)? as i16;
+                    let x = stack.pop().ok_or(Error::StackUnderflow)? as i16;
+                    let vector = if op == 0x0a {
+                        &mut self.projection
+                    } else {
+                        &mut self.freedom
+                    };
+                    if x != 0 || y != 0 {
+                        let (unit, _) = crate::slot_synth::normalize(sofel_geom::Point {
+                            x: i32::from(x),
+                            y: i32::from(y),
+                        });
+                        *vector = [i64::from(unit.x / 4), i64::from(unit.y / 4)];
+                    }
+                    if op == 0x0a {
+                        self.dual_projection = self.projection;
+                    }
+                }
                 op @ (0x0c | 0x0d) => {
                     if max_stack.saturating_sub(stack.len()) < 2 {
                         return Err(Error::StackOverflow);
@@ -704,6 +1017,29 @@ impl Interpreter {
                     } else {
                         self.freedom
                     });
+                }
+                0x0f => {
+                    let start = stack.len().checked_sub(5).ok_or(Error::StackUnderflow)?;
+                    let [target, a0, a1, b0, b1] = *stack[start..]
+                        .first_chunk::<5>()
+                        .ok_or(Error::StackUnderflow)?;
+                    stack.truncate(start);
+                    let [z0, z1, z2] = self.zones.map(usize::from);
+                    let coords = |zone: usize, index: i64| {
+                        self.points[zone]
+                            .get(usize::from(index as u16))
+                            .map(|point| point.current)
+                    };
+                    if let (Some(a0), Some(a1), Some(b0), Some(b1)) = (
+                        coords(z1, a0),
+                        coords(z1, a1),
+                        coords(z0, b0),
+                        coords(z0, b1),
+                    ) && let Some(point) = self.points[z2].get_mut(usize::from(target as u16))
+                    {
+                        point.current = intersection(a0, a1, b0, b1);
+                        point.touched = [true; 2];
+                    }
                 }
                 0x0e => self.freedom = self.projection,
                 op @ (0x4b | 0x4c) => {
@@ -782,8 +1118,12 @@ impl Interpreter {
                                 || (self.backward_compatibility != 7
                                     && ((self.composite && axis == 1) || point.touched[1]));
                             if allowed && self.projection[axis] != 0 {
-                                point.current[axis] = point.current[axis].wrapping_add(delta);
-                                point.touched[axis] = true;
+                                move_axis(
+                                    point,
+                                    axis,
+                                    point.current[axis].wrapping_add(delta),
+                                    self.backward_compatibility,
+                                );
                             }
                         }
                     }
@@ -794,27 +1134,12 @@ impl Interpreter {
                     let Some(first) = stack.len().checked_sub(count) else {
                         continue;
                     };
-                    let (zone, reference) = if op == 0x32 {
-                        (self.zones[1], self.reference[2])
-                    } else {
-                        (self.zones[0], self.reference[1])
-                    };
-                    let base = self.points[usize::from(zone)]
-                        .get(usize::from(reference))
-                        .copied();
-                    if let Some(base) = base {
-                        let axis = usize::from(self.freedom[0] == 0);
-                        let delta = if self.projection[axis] != 0 {
-                            base.current[axis].wrapping_sub(base.original[axis])
-                        } else {
-                            0
-                        };
+                    if let Some((_, _, delta)) = self.reference_shift(op) {
                         for &id in stack[first..].iter().rev() {
                             if let Some(p) =
                                 self.points[usize::from(self.zones[2])].get_mut(id as u32 as usize)
                             {
-                                p.current[axis] = p.current[axis].wrapping_add(delta);
-                                p.touched[axis] = true;
+                                shift_point(p, delta, self.freedom, self.backward_compatibility);
                             }
                         }
                     }
@@ -835,30 +1160,62 @@ impl Interpreter {
                     } else {
                         continue;
                     };
-                    let (zone, reference) = if op == 0x34 {
-                        (self.zones[1], self.reference[2])
-                    } else {
-                        (self.zones[0], self.reference[1])
-                    };
-                    let Some(base) = self.points[usize::from(zone)]
-                        .get(usize::from(reference))
-                        .copied()
-                    else {
+                    let Some((zone, reference, delta)) = self.reference_shift(op) else {
                         continue;
-                    };
-                    let axis = usize::from(self.freedom[0] == 0);
-                    let delta = if self.projection[axis] != 0 {
-                        base.current[axis].wrapping_sub(base.original[axis])
-                    } else {
-                        0
                     };
                     let points = self.points[target]
                         .get_mut(start..end)
                         .ok_or(Error::InvalidReference)?;
                     for (offset, p) in points.iter_mut().enumerate() {
-                        if usize::from(zone) != target || offset + start != usize::from(reference) {
-                            p.current[axis] = p.current[axis].wrapping_add(delta);
-                            p.touched[axis] = true;
+                        if zone != target || offset + start != reference {
+                            shift_point(p, delta, self.freedom, self.backward_compatibility);
+                        }
+                    }
+                }
+                op @ (0x36 | 0x37) => {
+                    let target = stack.pop().ok_or(Error::StackUnderflow)? as i32;
+                    if !matches!(target, 0 | 1) {
+                        continue;
+                    }
+                    let target = target as usize;
+                    let Some((zone, reference, delta)) = self.reference_shift(op) else {
+                        continue;
+                    };
+                    let points = &mut self.points[target];
+                    let limit = if target == 1 {
+                        points.len().saturating_sub(4)
+                    } else {
+                        points.len()
+                    };
+                    for (i, point) in points.iter_mut().take(limit).enumerate() {
+                        if target != zone || i != reference {
+                            point.current[0] = point.current[0].wrapping_add(delta[0]);
+                            point.current[1] = point.current[1].wrapping_add(delta[1]);
+                        }
+                    }
+                }
+                0x38 => {
+                    let distance = stack.pop().ok_or(Error::StackUnderflow)?;
+                    let count = usize::from(core::mem::replace(&mut self.loop_count, 1));
+                    let Some(start) = stack.len().checked_sub(count) else {
+                        continue;
+                    };
+                    let delta = self
+                        .freedom
+                        .map(|component| project([distance, 0], [component, 0]));
+                    let twilight = self.zones.contains(&0);
+                    let zone = usize::from(self.zones[2]);
+                    for index in stack.drain(start..).rev() {
+                        let Some(point) = self.points[zone].get_mut(index as u32 as usize) else {
+                            continue;
+                        };
+                        let compatibility = self.backward_compatibility;
+                        if compatibility == 0
+                            || twilight
+                            || (compatibility != 7
+                                && ((self.composite && self.freedom[1] != 0) || point.touched[1]))
+                        {
+                            shift_point(point, delta, self.freedom, compatibility);
                         }
                     }
                 }
@@ -873,39 +1230,120 @@ impl Interpreter {
                     let Some(p) = self.points[z1].get_mut(usize::from(index)) else {
                         continue;
                     };
-                    let axis = usize::from(self.projection[0] == 0);
                     if z1 == 0 {
-                        p.original = base.original;
-                        if self.freedom[axis] != 0 {
-                            p.original[axis] = base.original[axis].wrapping_add(distance);
-                        }
-                        p.current = p.original;
+                        p.current = base.original;
+                        move_point(
+                            p,
+                            distance,
+                            self.projection,
+                            self.freedom,
+                            self.backward_compatibility,
+                        );
+                        p.original = p.current;
                     }
-                    if self.freedom[axis] != 0 {
-                        p.current[axis] = base.current[axis].wrapping_add(distance);
-                        p.touched[axis] = true;
-                    }
+                    let current = projected_distance(p.current, base.current, self.projection);
+                    move_point(
+                        p,
+                        distance.wrapping_sub(current),
+                        self.projection,
+                        self.freedom,
+                        self.backward_compatibility,
+                    );
                     self.reference[1] = self.reference[0];
                     self.reference[2] = index;
                     if op == 0x3b {
                         self.reference[0] = index;
                     }
                 }
+                0x27 => {
+                    let second = usize::from(stack.pop().ok_or(Error::StackUnderflow)? as u16);
+                    let first = usize::from(stack.pop().ok_or(Error::StackUnderflow)? as u16);
+                    let [z0, z1, _] = self.zones.map(usize::from);
+                    let Some((a, b)) = self.points[z0].get(second).zip(self.points[z1].get(first))
+                    else {
+                        continue;
+                    };
+                    let distance = projected_distance(a.current, b.current, self.projection) / 2;
+                    move_point(
+                        &mut self.points[z1][first],
+                        distance,
+                        self.projection,
+                        self.freedom,
+                        self.backward_compatibility,
+                    );
+                    move_point(
+                        &mut self.points[z0][second],
+                        distance.wrapping_neg(),
+                        self.projection,
+                        self.freedom,
+                        self.backward_compatibility,
+                    );
+                }
+                0x3c => {
+                    let count = usize::from(core::mem::replace(&mut self.loop_count, 1));
+                    let Some(start) = stack.len().checked_sub(count) else {
+                        continue;
+                    };
+                    let [z0, z1, _] = self.zones.map(usize::from);
+                    for index in stack.drain(start..).rev() {
+                        let Some(base) = self.points[z0]
+                            .get(usize::from(self.reference[0]))
+                            .map(|p| p.current)
+                        else {
+                            break;
+                        };
+                        if let Some(point) = self.points[z1].get_mut(usize::from(index as u16)) {
+                            let distance = projected_distance(point.current, base, self.projection);
+                            move_point(
+                                point,
+                                distance.wrapping_neg(),
+                                self.projection,
+                                self.freedom,
+                                self.backward_compatibility,
+                            );
+                        }
+                    }
+                }
+                0x29 => {
+                    let index = stack.pop().ok_or(Error::StackUnderflow)? as u16;
+                    if let Some(point) =
+                        self.points[usize::from(self.zones[0])].get_mut(usize::from(index))
+                    {
+                        for (touched, freedom) in point.touched.iter_mut().zip(self.freedom) {
+                            if freedom != 0 {
+                                *touched = false;
+                            }
+                        }
+                    }
+                }
                 op @ (0x2e | 0x2f) => {
+                    let native = self.native_horizontal();
                     let index = stack.pop().ok_or(Error::StackUnderflow)? as u16;
                     let zone = usize::from(self.zones[0]);
                     if let Some(point) = self.points[zone].get_mut(usize::from(index)) {
-                        let axis = usize::from(self.projection[0] == 0);
-                        if self.freedom[axis] != 0 {
-                            if op == 0x2f {
-                                point.current[axis] = self.rounding.apply(point.current[axis]);
-                            }
-                            point.touched[axis] = true;
-                        }
+                        let delta = if op == 0x2f && !native {
+                            let current = project(point.current, self.projection);
+                            self.rounding.apply(current).wrapping_sub(current)
+                        } else {
+                            0
+                        };
+                        move_point(
+                            point,
+                            delta,
+                            self.projection,
+                            self.freedom,
+                            self.backward_compatibility,
+                        );
                         self.reference[..2].fill(index);
                     }
                 }
                 op @ (0x3e | 0x3f) => {
+                    let native = self.native_horizontal();
+                    let cutin = if native {
+                        self.control_value_cutin >> 4
+                    } else {
+                        self.control_value_cutin
+                    };
                     let cvt = stack.pop().ok_or(Error::StackUnderflow)?;
                     let index = stack.pop().ok_or(Error::StackUnderflow)? as u16;
                     self.reference[..2].fill(index);
@@ -928,19 +1366,15 @@ impl Interpreter {
                     let distance = if op == 0x3e {
                         value
                     } else {
-                        self.rounding.apply(
-                            if i128::from(value.abs_diff(current))
-                                > i128::from(self.control_value_cutin)
-                            {
-                                current
-                            } else {
-                                value
-                            },
-                        )
+                        let v = if i128::from(value.abs_diff(current)) > i128::from(cutin) {
+                            current
+                        } else {
+                            value
+                        };
+                        if native { v } else { self.rounding.apply(v) }
                     };
                     if freedom == projection {
-                        point.current[freedom] = distance;
-                        point.touched[freedom] = true;
+                        move_axis(point, freedom, distance, self.backward_compatibility);
                     }
                 }
                 0x17 => {
@@ -959,28 +1393,87 @@ impl Interpreter {
                         .and_then(|i| zone.get(i))
                         .map_or(0, |point| {
                             if op == 0x47 {
-                                point.original[usize::from(self.dual_projection[0] == 0)]
+                                project(point.original, self.dual_projection)
                             } else {
-                                point.current[usize::from(self.projection[0] == 0)]
+                                project(point.current, self.projection)
                             }
                         });
+                }
+                op @ (0x49 | 0x4a) => {
+                    let second = stack.pop().ok_or(Error::StackUnderflow)? as u16;
+                    let first = stack.last_mut().ok_or(Error::StackUnderflow)?;
+                    let [z0, z1, _] = self.zones.map(usize::from);
+                    let pair = self.points[z0]
+                        .get(usize::from(*first as u16))
+                        .zip(self.points[z1].get(usize::from(second)));
+                    *first = pair.map_or(0, |(a, b)| {
+                        let (left, right, vector, scale) = if op == 0x49 {
+                            (a.current, b.current, self.projection, 65536)
+                        } else if z0 == 0 || z1 == 0 {
+                            (a.original, b.original, self.dual_projection, 65536)
+                        } else {
+                            (
+                                a.unscaled,
+                                b.unscaled,
+                                self.dual_projection,
+                                if self.composite { 65536 } else { self.scale },
+                            )
+                        };
+                        let delta = [
+                            left[0].wrapping_sub(right[0]),
+                            left[1].wrapping_sub(right[1]),
+                        ];
+                        sofel_font::read::cff::ft::mul_fix(project(delta, vector), scale)
+                    });
                 }
                 0x48 => {
                     let coordinate = stack.pop().ok_or(Error::StackUnderflow)?;
                     let index = stack.pop().ok_or(Error::StackUnderflow)? as u16;
                     let zone = usize::from(self.zones[2]);
                     if let Some(point) = self.points[zone].get_mut(usize::from(index)) {
-                        let axis = usize::from(self.projection[0] == 0);
-                        if self.freedom[axis] != 0 {
-                            point.current[axis] = coordinate;
-                            point.touched[axis] = true;
-                        }
+                        let distance =
+                            coordinate.wrapping_sub(project(point.current, self.projection));
+                        move_point(
+                            point,
+                            distance,
+                            self.projection,
+                            self.freedom,
+                            self.backward_compatibility,
+                        );
                         if zone == 0 {
                             point.original = point.current;
                         }
                     }
                 }
                 0x1a => self.minimum_distance = stack.pop().ok_or(Error::StackUnderflow)?,
+                0x80 => {
+                    let count = usize::from(core::mem::replace(&mut self.loop_count, 1));
+                    let Some(first) = stack.len().checked_sub(count) else {
+                        continue;
+                    };
+                    *remaining = remaining.checked_sub(count).ok_or(Error::ExecutionLimit)?;
+                    for index in stack.drain(first..).rev() {
+                        if self.backward_compatibility != 7
+                            && let Some(point) = self.points[1].get_mut(usize::from(index as u16))
+                        {
+                            point.on_curve = !point.on_curve;
+                        }
+                    }
+                }
+                op @ (0x81 | 0x82) => {
+                    let last = usize::from(stack.pop().ok_or(Error::StackUnderflow)? as u16);
+                    let first = usize::from(stack.pop().ok_or(Error::StackUnderflow)? as u16);
+                    if self.backward_compatibility != 7
+                        && let Some(range) = self.points[1].get_mut(first..=last)
+                    {
+                        *remaining = remaining
+                            .checked_sub(range.len())
+                            .ok_or(Error::ExecutionLimit)?;
+                        for point in range {
+                            point.on_curve = op == 0x81;
+                        }
+                    }
+                }
                 0x4d => self.auto_flip = true,
                 0x4e => self.auto_flip = false,
                 op @ 0xc0..=0xff => {
@@ -1012,6 +1505,13 @@ impl Interpreter {
                 0x8e => {
                     let selector = stack.pop().ok_or(Error::StackUnderflow)?;
                     let value = stack.pop().ok_or(Error::StackUnderflow)?;
+                    if self.in_glyph
+                        && self.engine.version == 40
+                        && selector == 3
+                        && (value == 0 || value == 4)
+                    {
+                        self.backward_compatibility = (value as u8 & 4) ^ 4;
+                    }
                     if self.in_prep && (1..=3).contains(&selector) {
                         let flag = 1u8 << (selector - 1);
                         if value == 0 {
@@ -1049,20 +1549,43 @@ impl Interpreter {
                         self.scan_type = mode as u16;
                     }
                 }
+                0x91 if !self.blend_coords.is_empty() => {
+                    if self.blend_coords.len() > max_stack.saturating_sub(stack.len()) {
+                        return Err(Error::StackOverflow);
+                    }
+                    stack.extend(self.blend_coords.iter().copied().map(i64::from));
+                }
+                0x92 if !self.blend_coords.is_empty() => push(stack, 17, max_stack)?,
                 0x88 => {
                     let selector = stack.last_mut().ok_or(Error::StackUnderflow)?;
                     *selector = self.engine.query(*selector);
                 }
-                0x2c => {
+                op @ (0x2c | 0x89) => {
                     let id = u16::try_from(stack.pop().ok_or(Error::StackUnderflow)?)
                         .map_err(|_| Error::InvalidReference)?;
+                    let instruction_id = if op == 0x89 {
+                        let opcode = u8::try_from(id).map_err(|_| Error::InvalidReference)?;
+                        let limit = self.instruction_def_limit.ok_or(Error::InvalidOpcode)?;
+                        if !self.instructions.contains_key(&opcode)
+                            && self.instructions.len() >= usize::from(limit)
+                        {
+                            return Err(Error::InvalidReference);
+                        }
+                        Some(opcode)
+                    } else {
+                        None
+                    };
                     let start = code;
                     loop {
                         let size = start.len() - code.len();
                         match next(&mut code)?.opcode {
                             0x2d => {
-                                self.functions
-                                    .insert(id, alloc::rc::Rc::from(&start[..size]));
+                                let body = alloc::rc::Rc::from(&start[..size]);
+                                if let Some(opcode) = instruction_id {
+                                    self.instructions.insert(opcode, body);
+                                } else {
+                                    self.functions.insert(id, body);
+                                }
                                 break;
                             }
                             0x2c | 0x89 => return Err(Error::InvalidOpcode),
@@ -1128,7 +1651,7 @@ impl Interpreter {
                     *value = match op {
                         0x56 => i64::from(self.rounding.apply(*value) & 64 != 0),
                         0x57 => i64::from(self.rounding.apply(*value) & 64 == 0),
-                        0x68..=0x6b => self.rounding.apply(*value),
+                        0x68..=0x6b if !self.native_horizontal() => self.rounding.apply(*value),
                         _ => *value,
                     };
                 }
@@ -1213,8 +1736,43 @@ impl Interpreter {
                         skip_block(&mut code, true)?;
                     }
                 }
+                op @ (0x1c | 0x78 | 0x79) => {
+                    let take = if op == 0x1c {
+                        true
+                    } else {
+                        let flag = stack.pop().ok_or(Error::StackUnderflow)?;
+                        (flag != 0) == (op == 0x78)
+                    };
+                    let relative = stack.pop().ok_or(Error::StackUnderflow)?;
+                    if take {
+                        if relative == 0 && stack.is_empty() {
+                            return Err(Error::InvalidArgument);
+                        }
+                        let target = offset
+                            .checked_add_signed(
+                                isize::try_from(relative).map_err(|_| Error::InvalidArgument)?,
+                            )
+                            .ok_or(Error::InvalidArgument)?;
+                        if target > program.len() && depth != 0 {
+                            return Err(Error::InvalidArgument);
+                        }
+                        code = program.get(target..).unwrap_or_default();
+                    }
+                }
                 0x1b => skip_block(&mut code, false)?,
                 0x59 => {}
+                op @ (0x28 | 0x7b | 0x83 | 0x84 | 0x8f..=0xaf) => {
+                    let body = self
+                        .instructions
+                        .get(&op)
+                        .cloned()
+                        .ok_or(Error::InvalidOpcode)?;
+                    if depth >= 32 {
+                        return Err(Error::StackOverflow);
+                    }
+                    *remaining = remaining.checked_sub(1).ok_or(Error::ExecutionLimit)?;
+                    self.execute_frame(&body, stack, max_stack, depth + 1, remaining)?;
+                }
                 _ => return Err(Error::InvalidOpcode),
             }
         }
@@ -1421,6 +1979,7 @@ fn adr0064_i1_getinfo_reports_only_requested_interpreter_features() {
         stretched: false,
         variation: true,
         symmetric_smoothing: true,
+        tricky: false,
     };
     for (selector, expected) in [
         (1, 40),
@@ -1657,6 +2216,7 @@ fn adr0064_i1_mdrp_measures_before_scaling_and_updates_references() {
 #[test]
 fn adr0064_i1_glyph_starts_with_default_vectors_but_keeps_prepared_cvt() {
     let mut vm = Interpreter::new(0, &[0], 65536);
+    vm.engine.target = HintTarget::Mono;
     vm.execute(
         &[0, 0x7a, 0xb1, 0, 38, 0x44, 0xb0, 0, 0x16],
         &mut alloc::vec::Vec::new(),
@@ -1664,7 +2224,7 @@ fn adr0064_i1_glyph_starts_with_default_vectors_but_keeps_prepared_cvt() {
     )
     .unwrap();
     let points = alloc::vec![HintPoint::default()];
-    let result = vm
+    let (result, _, _) = vm
         .execute_glyph(points, &[], &[0xb1, 0, 0, 0x3f, 0xb1, 0, 17, 0x44], 2)
         .unwrap();
     assert_eq!(result[0].current, [64, 0]);
@@ -1709,8 +2269,9 @@ fn adr0064_i1_iup_wraps_each_contour_and_excludes_phantoms() {
         unscaled: [x, 0],
         current: [c, 0],
         touched: [t, false],
+        ..Default::default()
     });
-    let out = vm
+    let (out, _, _) = vm
         .execute_glyph(points.to_vec(), &[4, 6], &[0x31], 0)
         .unwrap();
     assert_eq!(
@@ -1725,7 +2286,7 @@ fn adr0064_i1_iup_wraps_each_contour_and_excludes_phantoms() {
 fn adr0064_i1_rounds_phantom_coordinates_before_glyph_program() {
     let vm = Interpreter::new(0, &[], 65536);
     let points = alloc::vec![HintPoint{current:[95,-33],original:[95,-33],..Default::default()};5];
-    let result = vm.execute_glyph(points, &[0], &[], 0).unwrap();
+    let (result, _, _) = vm.execute_glyph(points, &[0], &[], 0).unwrap();
     assert_eq!(
         result
             .iter()
@@ -1751,12 +2312,352 @@ fn adr0064_i1_prep_retains_font_functions_and_reinitializes_storage() {
         16,
         65536,
         engine,
-        &[0xb1, 0, 99, 0x42, 0xb0, 1, 0x2c, 0xb0, 4, 0x60, 0x2d],
-        &[0xb1, 0, 0, 0x43, 0xb0, 1, 0x2b, 0x44],
+        &[],
+        (
+            &[0xb1, 0, 99, 0x42, 0xb0, 1, 0x2c, 0xb0, 4, 0x60, 0x2d],
+            &[0xb1, 0, 0, 0x43, 0xb0, 1, 0x2b, 0x44],
+        ),
     )
     .unwrap();
     assert_eq!(vm.cvt, [4]);
     assert_eq!(vm.storage, [0]);
     assert_eq!(vm.points[0].len(), 6);
     assert_eq!(limit, 128);
+}
+
+#[test]
+fn adr0064_i1_gc_projects_both_coordinates_for_diagonal_vectors() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    vm.points[1].push(HintPoint {
+        current: [64, 128],
+        original: [-64, -128],
+        ..HintPoint::default()
+    });
+    let mut stack = alloc::vec![3, 4];
+    vm.execute(&[0x0a, 0xb0, 0, 0x46, 0xb0, 0, 0x47], &mut stack, 2)
+        .unwrap();
+    assert_eq!(stack, [141, -141]);
+}
+
+#[test]
+fn adr0064_i1_scfs_moves_along_freedom_and_marks_each_moved_axis() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    vm.points[1].push(HintPoint::default());
+    for (projection, expected, touched) in [
+        ([9830, 13107], [60, 80], [true, true]),
+        ([16384, 0], [100, 133], [true, true]),
+        ([-13107, 9830], [0, 0], [false, false]),
+    ] {
+        vm.points[1][0] = HintPoint::default();
+        vm.projection = projection;
+        vm.freedom = [9830, 13107];
+        vm.execute(&[0x48], &mut alloc::vec![0, 100], 2).unwrap();
+        assert_eq!(vm.points[1][0].current, expected);
+        assert_eq!(vm.points[1][0].touched, touched);
+    }
+}
+
+#[test]
+fn adr0064_i1_v40_glyph_waiver_rounds_horizontal_on_the_fine_grid() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    // Select x, waive compatibility in this glyph, then ROUND 38 and SCFS point 0.
+    let points = alloc::vec![HintPoint::default();5];
+    let (result, _, _) = vm
+        .execute_glyph(
+            points,
+            &[0],
+            &[1, 0xb1, 4, 3, 0x8e, 0xb1, 0, 38, 0x68, 0x48],
+            4,
+        )
+        .unwrap();
+    assert_eq!(result[0].current, [38, 0]);
+    vm.engine.target = HintTarget::Mono;
+    let (mono, _, _) = vm
+        .execute_glyph(
+            alloc::vec![HintPoint::default();5],
+            &[0],
+            &[1, 0xb1, 0, 38, 0x68, 0x48],
+            4,
+        )
+        .unwrap();
+    assert_eq!(mono[0].current, [64, 0]);
+}
+
+#[test]
+fn adr0064_i1_md_uses_current_original_or_unscaled_points_and_selected_zones() {
+    let mut vm = Interpreter::new(0, &[], 131072);
+    let source = HintPoint {
+        current: [10, 20],
+        original: [30, 40],
+        unscaled: [50, 60],
+        ..HintPoint::default()
+    };
+    vm.points[0].push(source);
+    vm.points[1].extend([source, HintPoint::default()]);
+    vm.projection = [0, 16384];
+    vm.dual_projection = [-16384, 0];
+    for (op, zone, index, expected) in [
+        (0x49, 1, 1, 20),
+        (0x4a, 1, 1, -100),
+        (0x4a, 0, 1, -30),
+        (0x49, 1, 2, 0),
+    ] {
+        vm.zones[0] = zone;
+        let mut stack = alloc::vec![0, index];
+        vm.execute(&[op], &mut stack, 2).unwrap();
+        assert_eq!(stack, [expected]);
+    }
+}
+
+#[test]
+fn adr0064_i1_line_vectors_use_zones_rotation_and_original_positions() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    vm.zones = [1, 0, 1];
+    vm.points[0].push(HintPoint {
+        current: [3, 4],
+        original: [0, 4],
+        ..HintPoint::default()
+    });
+    vm.points[1].push(HintPoint::default());
+    for (op, expected) in [
+        (0x06, [9830, 13107]),
+        (0x07, [-13107, 9830]),
+        (0x08, [9830, 13107]),
+        (0x09, [-13107, 9830]),
+        (0x86, [9830, 13107]),
+        (0x87, [-13107, 9830]),
+    ] {
+        vm.execute(&[op], &mut alloc::vec![0, 0], 2).unwrap();
+        if matches!(op, 0x08 | 0x09) {
+            assert_eq!(vm.freedom, expected);
+        } else {
+            assert_eq!(vm.projection, expected);
+            assert_eq!(
+                vm.dual_projection,
+                match op {
+                    0x86 => [0, 16384],
+                    0x87 => [-16384, 0],
+                    _ => expected,
+                }
+            );
+        }
+    }
+    vm.points[0][0].original = [0, 0];
+    vm.execute(&[0x87], &mut alloc::vec![0, 0], 2).unwrap();
+    assert_eq!(vm.dual_projection, [16384, 0]);
+    assert_eq!(vm.projection, [9830, 13107]);
+}
+
+#[test]
+fn adr0064_i1_alignpts_and_alignrp_move_selected_points_and_reset_loop() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    vm.zones = [0, 1, 1];
+    vm.points[0].push(HintPoint {
+        current: [15, 5],
+        ..HintPoint::default()
+    });
+    vm.points[1].resize(3, HintPoint::default());
+    vm.execute(&[0x27], &mut alloc::vec![0, 0], 2).unwrap();
+    assert_eq!(vm.points[0][0].current, [8, 5]);
+    assert_eq!(vm.points[1][0].current, [7, 0]);
+    vm.loop_count = 3;
+    let mut stack = alloc::vec![77, 1, 99, 2];
+    vm.execute(&[0x3c], &mut stack, 4).unwrap();
+    assert_eq!(vm.loop_count, 1);
+    assert_eq!(stack, [77]);
+    for point in &vm.points[1][1..] {
+        assert_eq!(point.current, [8, 0]);
+        assert_eq!(point.touched, [true, false]);
+    }
+}
+
+#[test]
+fn adr0064_i1_ip_projects_original_and_current_ranges_before_moving() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    vm.points[1].extend([
+        HintPoint::default(),
+        HintPoint {
+            unscaled: [0, 100],
+            current: [60, 80],
+            ..HintPoint::default()
+        },
+        HintPoint {
+            unscaled: [0, 50],
+            current: [0, 0],
+            ..HintPoint::default()
+        },
+    ]);
+    vm.reference = [0, 0, 1];
+    vm.dual_projection = [0, 16384];
+    vm.projection = [9830, 13107];
+    vm.freedom = vm.projection;
+    vm.execute(&[0x39], &mut alloc::vec![2], 1).unwrap();
+    assert_eq!(vm.points[1][2].current, [30, 40]);
+    assert_eq!(vm.points[1][2].touched, [true, true]);
+}
+
+#[test]
+fn adr0064_i1_mdap_and_msirp_move_in_the_projected_direction() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    vm.projection = [9830, 13107];
+    vm.freedom = vm.projection;
+    vm.points[1].push(HintPoint {
+        current: [30, 40],
+        ..HintPoint::default()
+    });
+    vm.execute(&[0x2f], &mut alloc::vec![0], 1).unwrap();
+    assert_eq!(vm.points[1][0].current, [38, 51]);
+    assert_eq!(vm.points[1][0].touched, [true, true]);
+    vm.points[0].push(HintPoint::default());
+    vm.zones[1] = 0;
+    vm.execute(&[0x3b], &mut alloc::vec![0, 100], 2).unwrap();
+    assert_eq!(vm.points[0][0].original, [60, 80]);
+    assert_eq!(vm.points[0][0].current, [98, 131]);
+    assert_eq!(vm.points[0][0].touched, [true, true]);
+}
+
+#[test]
+fn adr0064_i1_zone_shift_excludes_reference_and_phantoms_and_preserves_tags() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    vm.points[1].resize(7, HintPoint::default());
+    vm.points[0].resize(2, HintPoint::default());
+    vm.points[1][1].current = [30, 40];
+    vm.reference[2] = 1;
+    vm.projection = [9830, 13107];
+    vm.freedom = vm.projection;
+    vm.execute(&[0x36], &mut alloc::vec![1], 1).unwrap();
+    for (i, p) in vm.points[1].iter().enumerate() {
+        assert_eq!(p.current, if i < 3 { [30, 40] } else { [0, 0] });
+        assert_eq!(p.touched, [false, false]);
+    }
+    vm.reference[1] = 1;
+    vm.execute(&[0x37], &mut alloc::vec![0], 1).unwrap();
+    assert!(
+        vm.points[0]
+            .iter()
+            .all(|p| p.current == [30, 40] && p.touched == [false, false])
+    );
+}
+
+#[test]
+fn adr0064_i1_shp_and_shc_shift_both_axes_with_diagonal_freedom() {
+    for op in [0x32, 0x33, 0x34, 0x35] {
+        let mut vm = Interpreter::new(0, &[], 65536);
+        vm.points[1].resize(3, HintPoint::default());
+        vm.points[1][0].current = [30, 40];
+        vm.contour_ends.push(2);
+        vm.projection = [9830, 13107];
+        vm.freedom = vm.projection;
+        vm.execute(&[op], &mut alloc::vec![if op < 0x34 { 1 } else { 0 }], 1)
+            .unwrap();
+        assert_eq!(vm.points[1][1].current, [30, 40]);
+        assert_eq!(vm.points[1][1].touched, [true, true]);
+        assert_eq!(vm.points[1][0].touched, [false, false]);
+        assert_eq!(vm.points[1][2].touched, [op >= 0x34; 2]);
+    }
+}
+
+#[test]
+fn adr0064_i1_shpix_uses_freedom_and_consumes_loop_indices() {
+    for (compat, twilight, touched, expected) in [
+        (0, false, false, [-60, -80]),
+        (4, false, false, [0, 0]),
+        (4, false, true, [0, -80]),
+        (4, true, false, [0, -80]),
+        (7, true, false, [0, 0]),
+    ] {
+        let mut vm = Interpreter::new(0, &[], 65536);
+        vm.points[1].resize(2, HintPoint::default());
+        vm.points[1][1].touched[1] = touched;
+        vm.zones[0] = u8::from(!twilight);
+        vm.backward_compatibility = compat;
+        vm.freedom = [9830, 13107];
+        vm.loop_count = 2;
+        let mut stack = alloc::vec![77, 1, 99, -100];
+        vm.execute(&[0x38], &mut stack, 4).unwrap();
+        assert_eq!(vm.points[1][1].current, expected);
+        assert_eq!(vm.loop_count, 1);
+        assert_eq!(stack, [77]);
+    }
+}
+
+#[test]
+fn adr0064_i1_getvariation_pushes_all_axes_within_the_stack_limit() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    assert_eq!(
+        vm.execute(&[0x91], &mut alloc::vec![], 4),
+        Err(Error::InvalidOpcode)
+    );
+    vm.blend_coords = alloc::vec![-16384, 0, 8192];
+    let mut stack = alloc::vec![7];
+    assert_eq!(
+        vm.execute(&[0x91], &mut stack, 3),
+        Err(Error::StackOverflow)
+    );
+    assert_eq!(stack, [7]);
+    vm.execute(&[0x91], &mut stack, 4).unwrap();
+    assert_eq!(stack, [7, -16384, 0, 8192]);
+}
+
+#[test]
+fn adr0064_i1_static_idef_can_be_redefined_in_prep_within_maxp_limit() {
+    let maxima = sofel_font::read::maxp::TrueTypeMaxima {
+        max_instruction_defs: 1,
+        ..Default::default()
+    };
+    let engine = Interpreter::new(0, &[], 65536).engine;
+    let definition = [0xb0, 0x91, 0x89, 0xb0, 2, 0x2d];
+    let redefine = [0xb0, 0x91, 0x89, 0xb0, 3, 0x2d];
+    let (mut vm, limit) = Interpreter::prepare_programs(
+        maxima,
+        &[],
+        16,
+        65536,
+        engine,
+        &[],
+        (&definition, &redefine),
+    )
+    .unwrap();
+    let mut stack = alloc::vec![];
+    vm.execute(&[0x91], &mut stack, limit).unwrap();
+    assert_eq!(stack, [3]);
+    assert!(
+        vm.execute_glyph(alloc::vec![], &[], &definition, limit)
+            .is_err()
+    );
+    assert!(
+        Interpreter::prepare_programs(
+            maxima,
+            &[],
+            16,
+            65536,
+            engine,
+            &[],
+            (&definition, &[0xb0, 0x92, 0x89, 0x2d])
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn adr0064_i1_relative_jumps_count_from_opcode_and_obey_execution_limit() {
+    for (op, flag, expected) in [
+        (0x78, 1, alloc::vec![9]),
+        (0x78, 0, alloc::vec![5, 9]),
+        (0x79, 0, alloc::vec![9]),
+        (0x79, 1, alloc::vec![5, 9]),
+    ] {
+        let mut values = alloc::vec![];
+        run(&[0xb1, 3, flag, op, 0xb0, 5, 0xb0, 9], &mut values, 3).unwrap();
+        assert_eq!(values, expected);
+    }
+    let mut vm = Interpreter::new(0, &[], 65536);
+    let mut values = alloc::vec![];
+    let mut budget = 7;
+    assert_eq!(
+        vm.execute_frame(&[0xb8, 0xff, 0xfd, 0x1c], &mut values, 1, 0, &mut budget),
+        Err(Error::ExecutionLimit)
+    );
+    assert_eq!(budget, 0);
+    assert!(run(&[0xb0, 0, 0x1c], &mut values, 1).is_err());
 }
