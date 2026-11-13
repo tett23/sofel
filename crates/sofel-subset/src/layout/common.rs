@@ -656,6 +656,19 @@ impl<'p, 's> Sub<'p, 's> {
                 self.unsupported("FeatureVariations conditions other than format 1");
                 return false;
             };
+            if self.p.var.user().is_empty()
+                && let Some((default, u32::MAX)) = c.value()
+            {
+                if self.offset_append(4, |s| {
+                    s.s.u16(2);
+                    s.s.i16(default);
+                    s.s.u32(u32::MAX);
+                    true
+                }) {
+                    self.bump_u16(count_at, 1);
+                }
+                continue;
+            }
             if c.format() != 1 {
                 self.unsupported("FeatureVariations conditions other than format 1");
                 return false;

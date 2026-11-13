@@ -191,7 +191,7 @@ fn layout_unsupported(
     let gsub_may_reference_store = retained(b"GSUB")
         && font.table(Tag::new(b"GSUB")).is_some_and(|d| {
             let table = layout::Gsubgpos::new(d, true);
-            // The GSUB writer only emits format-1 axis ranges, which never
+            // The supported feature record conditions do not
             // reference GDEF. A copied GSUB bypasses that writer.
             table.version() >= 0x0001_0001
                 && sofel_font::read::be::u32_at(d, 10) != Some(0)

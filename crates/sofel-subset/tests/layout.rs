@@ -1021,9 +1021,7 @@ fn adr0022_negative_gpos_advance_is_not_a_variation_index() {
     );
 }
 
-#[test]
-fn adr0022_gsub_axis_range_can_survive_gdef_store_subsetting() {
-    let gdef = gdef_with_unused_store(class_def2(&[(1, 5, 1)]));
+fn gsub_with_feature_condition(condition: Vec<u8>) -> Vec<u8> {
     let mut gsub = gsubgpos(
         0x0001_0001,
         script_list(vec![(b"DFLT", script(lang_sys(0xffff, &[0]), vec![]))]),
@@ -1038,7 +1036,6 @@ fn adr0022_gsub_axis_range_can_survive_gdef_store_subsetting() {
     );
     let fv_at = u32::try_from(gsub.len()).unwrap();
     gsub[10..14].copy_from_slice(&fv_at.to_be_bytes());
-    let condition = Buf::new().u16(1).u16(0).i16(0).i16(0x4000).done();
     let conditions = link(Buf::new().u16(1).u32(0).done(), vec![(2, 4, condition)]);
     let replacement = Buf::new().u16(0).u16(1).u16(1).done();
     let substitutions = link(
@@ -1050,6 +1047,32 @@ fn adr0022_gsub_axis_range_can_survive_gdef_store_subsetting() {
         vec![(8, 4, conditions), (12, 4, substitutions)],
     );
     gsub.extend(fv);
+    gsub
+}
+
+#[test]
+fn adr0022_value_condition_without_variation_keeps_signed_default() {
+    for default in [-7, 0, 8] {
+        let condition = Buf::new().u16(2).i16(default).u32(u32::MAX).done();
+        let data = font_with(vec![(b"GSUB", gsub_with_feature_condition(condition))]);
+        let out = subset(&Font::new(&data, 0).unwrap(), &chars("ABC")).unwrap();
+        let gsub = out_table(&out, b"GSUB").unwrap();
+        let offset = u32::from_be_bytes(gsub[10..14].try_into().unwrap()) as usize;
+        let view =
+            sofel_font::read::feature_variations::FeatureVariations::new(&gsub[offset..]).unwrap();
+        let set = view.record(0).unwrap().conditions().unwrap().unwrap();
+        assert_eq!(
+            set.condition(0).unwrap().unwrap().value(),
+            Some((default, u32::MAX))
+        );
+    }
+}
+
+#[test]
+fn adr0022_gsub_axis_range_can_survive_gdef_store_subsetting() {
+    let gdef = gdef_with_unused_store(class_def2(&[(1, 5, 1)]));
+    let condition = Buf::new().u16(1).u16(0).i16(0).i16(0x4000).done();
+    let gsub = gsub_with_feature_condition(condition);
     let data = font_with(vec![(b"GDEF", gdef), (b"GSUB", gsub)]);
     let font = Font::new(&data, 0).unwrap();
     let copied = chars("ABC").map_set(SetKind::NoSubsetTables, |set| {
