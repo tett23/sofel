@@ -150,18 +150,16 @@ impl Border {
             let a3 = add(a3, center)?;
             let a2 = add(a2, center)?;
             self.cubic_to(a1, a2, a3)?;
-            a1 = Point {
-                x: a3
-                    .x
-                    .checked_mul(2)
-                    .and_then(|v| v.checked_sub(a2.x))
-                    .ok_or(BorderError::TooLarge)?,
-                y: a3
-                    .y
-                    .checked_mul(2)
-                    .and_then(|v| v.checked_sub(a2.y))
-                    .ok_or(BorderError::TooLarge)?,
-            };
+            if i < arcs {
+                let reflect = |end: i32, control: i32| {
+                    i32::try_from(2 * i64::from(end) - i64::from(control))
+                        .map_err(|_| BorderError::TooLarge)
+                };
+                a1 = Point {
+                    x: reflect(a3.x, a2.x)?,
+                    y: reflect(a3.y, a2.y)?,
+                };
+            }
         }
         Ok(())
     }
