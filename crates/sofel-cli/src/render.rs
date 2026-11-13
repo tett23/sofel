@@ -690,9 +690,9 @@ fn render_fixed(
         Err(_) if format == BitmapFormat::Windows => return fail("invalid FNT/FON font or face"),
         Err(_) => return fail(&format!("invalid {name} font")),
     };
-    let (x, y) = font.ppem_26_6();
+    let (_, y) = font.ppem_26_6();
     let ppem = u32::from(args.ppem);
-    if (x.saturating_add(32) / 64, y.saturating_add(32) / 64) != (ppem, ppem) {
+    if y.saturating_add(32) / 64 != ppem {
         return fail(&format!("{name} has no matching bitmap strike"));
     }
     if args.no_bitmap {
