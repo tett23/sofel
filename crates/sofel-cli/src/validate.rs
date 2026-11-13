@@ -7,6 +7,7 @@ use std::io::Write;
 use std::path::Path;
 
 use sofel_read::layout::damage::DamageEvent;
+use sofel_read::pfr::PfrFace;
 use sofel_read::sfnt::{FontFile, Sfnt};
 use sofel_read::{
     DetailValue, Diagnostic, Kind, ReadError, Severity, Tag, cff, gdef, gpos, gsub, validate,
@@ -19,7 +20,7 @@ use crate::json;
 pub const HELP: &str = "\
 usage: sofel-validate [--json] FILE...
 
-Validates sfnt fonts, TTC/OTC collections, CEF, bare CFF 1, and CID Type 1 fonts.
+Validates sfnt fonts, TTC/OTC collections, CEF, bare CFF 1, CID Type 1 and PFR fonts.
 Tables without a validator are skipped.
 
 Each problem is one line on standard output:
@@ -108,6 +109,38 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
             cff::validate_bare(&bytes, &mut |diagnostic| {
                 emit_diagnostic(&name, None, diagnostic, as_json, out, &mut errors)
             });
+            continue;
+        }
+        if bytes.starts_with(b"PFR0") {
+            let report = |font, offset, out: &mut dyn Write, errors: &mut bool| {
+                emit_diagnostic(
+                    &name,
+                    font,
+                    Diagnostic {
+                        table: Tag::new(b"PFR "),
+                        offset: u32::try_from(offset).unwrap_or(u32::MAX),
+                        severity: Severity::Error,
+                        kind: Kind::InvalidFontContainer {
+                            reason: "invalid PFR resource",
+                        },
+                    },
+                    as_json,
+                    out,
+                    errors,
+                );
+            };
+            let count = match PfrFace::read_positioned(&bytes, 0) {
+                Ok(face) => u32::from(face.face_count()),
+                Err((_, offset)) => {
+                    report(None, offset, out, &mut errors);
+                    continue;
+                }
+            };
+            for index in 1..count {
+                if let Err((_, offset)) = PfrFace::read_positioned(&bytes, index) {
+                    report(Some(index), offset, out, &mut errors);
+                }
+            }
             continue;
         }
         if bytes.starts_with(b"%!PS-Adobe-3.0 Resource-CIDFont") {
