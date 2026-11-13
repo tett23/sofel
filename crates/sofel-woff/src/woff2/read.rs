@@ -74,7 +74,9 @@ pub fn decode_woff2(input: &[u8], limit: usize) -> Result<Vec<u8>, DecodeError> 
         return Err(error(16, "output limit exceeded"));
     }
     let compressed = word(input, 20)? as usize;
-    let mut remaining = input.get(48..).ok_or(error(48, "truncated WOFF2 header"))?;
+    let mut remaining = input
+        .get(48..)
+        .ok_or(error(input.len(), "truncated WOFF2 header"))?;
     let mut entries = Vec::with_capacity(count);
     let mut sfnt_size = 12usize.saturating_add(count << 4);
     let mut stored_size = 0usize;
@@ -102,7 +104,7 @@ pub fn decode_woff2(input: &[u8], limit: usize) -> Result<Vec<u8>, DecodeError> 
     let at = input.len().saturating_sub(remaining.len());
     let stream = remaining
         .get(..compressed)
-        .ok_or(error(at, "truncated Brotli data"))?;
+        .ok_or(error(input.len(), "truncated Brotli data"))?;
     let mut end = at
         .checked_add(compressed)
         .ok_or(error(at, "compressed size overflow"))?;
