@@ -301,7 +301,23 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
     if Type1Source::has_text_header(&bytes) || bytes.starts_with(&[0x80, 0x01]) {
         return render_type1(&bytes, &args, text.as_deref(), out, err);
     }
-    let font = match Font::new(&bytes, args.face) {
+    let type42_source;
+    let type42 = if bytes.starts_with(b"%!PS-TrueTypeFont") {
+        type42_source = match sofel_type1::type42::Type42Source::parse(&bytes, bytes.len()) {
+            Ok(source) => source,
+            Err(e) => return fail(err, e.to_string()),
+        };
+        match Font::from_type42(&type42_source, args.face) {
+            Ok(face) => Some(face),
+            Err(e) => return fail(err, e.to_string()),
+        }
+    } else {
+        None
+    };
+    let font = match type42.as_ref().map_or_else(
+        || Font::new(&bytes, args.face),
+        |face| Ok(face.inner_font()),
+    ) {
         Ok(f) => f,
         Err(e) => return fail(err, format!("{}: {e}", args.file.to_string_lossy())),
     };
@@ -313,6 +329,7 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
         return match crate::text_image::draw(
             &font,
             &location,
+            type42.as_ref(),
             args.ppem,
             &text,
             &args.features,
@@ -324,11 +341,21 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
     }
     let glyph = match args.target {
         Target::Glyph(g) => GlyphId(g),
-        Target::Char(c) => match font.nominal_glyph(c) {
+        Target::Char(c) => match type42
+            .as_ref()
+            .map_or_else(|| font.nominal_glyph(c), |face| face.nominal_glyph(c))
+        {
             Some(g) => g,
             None => return fail(err, format!("no glyph for U+{c:04X}")),
         },
         Target::Text(_) | Target::TextFile(_) => unreachable!(),
+    };
+    let glyph = match type42.as_ref() {
+        Some(face) => match face.embedded_glyph(glyph) {
+            Some(mapped) => mapped,
+            None => return fail(err, format!("invalid Type 42 glyph {}", glyph.0)),
+        },
+        None => glyph,
     };
     if !args.no_bitmap
         && location.ft_default()
