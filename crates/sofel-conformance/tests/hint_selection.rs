@@ -149,6 +149,67 @@ fn adr0064_i1_auto_unlinked_fallback_outline_matches_freetype() {
 }
 
 #[test]
+fn adr0064_i1_latin_cap_rectangle_edges_match_freetype() {
+    for (relative, gid, max_ppem) in [
+        ("harfbuzz/perf/fonts/Roboto-Regular.ttf", 46, 76),
+        (
+            "harfbuzz/test/subset/data/fonts/Molengo-Regular.ttf",
+            44,
+            86,
+        ),
+    ] {
+        let path = paths::testdata().join(relative);
+        let data = std::fs::read(&path).unwrap();
+        let font = Font::new(&data, 0).unwrap();
+        assert_eq!(font.nominal_glyph(u32::from('I')), Some(GlyphId(gid)));
+        let outlines = Outlines::new(font.default_instance());
+        let mut scratch = Scratch::default();
+        for ppem in 1..=max_ppem {
+            for (target_name, target) in [("light", HintTarget::Light), ("lcd", HintTarget::Lcd)] {
+                let reference = Command::new(paths::ft_dump())
+                    .args([
+                        "--hint-slot",
+                        &ppem.to_string(),
+                        &gid.to_string(),
+                        "auto",
+                        target_name,
+                    ])
+                    .arg(&path)
+                    .output()
+                    .unwrap();
+                assert!(reference.status.success());
+                let (_, advance) = outlines
+                    .load_with_hint(GlyphId(gid), ppem, HintMode::Auto, target, &mut scratch)
+                    .unwrap();
+                let mut actual = format!("advance {advance} 0\n");
+                for (point, tag) in scratch.points().iter().zip(scratch.point_tags()) {
+                    writeln!(actual, "point {} {} {tag}", point.x, point.y).unwrap();
+                }
+                for end in scratch.contour_ends() {
+                    writeln!(actual, "end {end}").unwrap();
+                }
+                assert_eq!(
+                    actual,
+                    String::from_utf8(reference.stdout).unwrap(),
+                    "{relative} {target_name} {ppem}"
+                );
+            }
+        }
+        assert_eq!(
+            outlines.load_with_hint(
+                GlyphId(gid),
+                max_ppem + 1,
+                HintMode::Auto,
+                HintTarget::Light,
+                &mut scratch
+            ),
+            Err(OutlineError::AutoHintUnsupported),
+            "{relative}"
+        );
+    }
+}
+
+#[test]
 fn adr0064_i1_auto_nonempty_reports_unsupported_and_clears_scratch() {
     let path = paths::testdata().join("harfbuzz/test/api/fonts/Roboto-Regular.abcAE.ttf");
     let data = std::fs::read(&path).unwrap();

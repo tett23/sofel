@@ -66,6 +66,8 @@
 extern crate alloc;
 
 mod hb_cff;
+mod type1;
+pub use type1::draw_type1;
 mod hb_draw;
 mod slot_synth;
 mod stroke;
@@ -623,8 +625,18 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
             HintMode::Auto => {
                 let scale = Scale::pixels(&self.font, ppem, ppem);
                 let unscaled = self.load(glyph, Scale::Unscaled, scratch)?;
+                let cap_rect_top = (!unscaled.overlap)
+                    .then(|| self.auto_latin_cap_rectangle_top(glyph, scale, target, scratch))
+                    .flatten();
                 let info = if scratch.points.is_empty() {
                     unscaled
+                } else if let Some(top) = cap_rect_top {
+                    let mut info = self.load(glyph, scale, scratch)?;
+                    for point in &mut scratch.points {
+                        point.y = if point.y > 0 { top } else { 0 };
+                    }
+                    info.cbox = control_box(&scratch.points);
+                    info
                 } else if matches!(self.format, Format::Glyf)
                     && !unscaled.overlap
                     && self.font.table(Tag::new(b"gvar")).is_none()
@@ -647,6 +659,77 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
                 Ok((info, advance.wrapping_add(32) & !63))
             }
         }
+    }
+
+    // A cap-height rectangle has two horizontal edges.  In LIGHT and LCD,
+    // FreeType aligns these edges to the baseline and cap blue zones while
+    // leaving X untouched (aflatin.c:1178-1450, 4220-4560).
+    #[allow(clippy::arithmetic_side_effects)]
+    fn auto_latin_cap_rectangle_top(
+        &self,
+        glyph: GlyphId,
+        scale: Scale,
+        target: HintTarget,
+        scratch: &Scratch,
+    ) -> Option<i32> {
+        if !matches!(target, HintTarget::Light | HintTarget::Lcd)
+            || !matches!(self.format, Format::Glyf)
+            || self.font.table(Tag::new(b"gvar")).is_some()
+            || self.font.table(Tag::new(b"GLYF")).is_some()
+            || glyph != self.font.nominal_glyph(u32::from('I'))?
+            || scratch.ends != [3]
+            || scratch.tags != [TAG_ON; 4]
+        {
+            return None;
+        }
+        let [p0, p1, p2, p3] = scratch.points.as_slice() else {
+            return None;
+        };
+        if p0.x != p1.x
+            || p2.x != p3.x
+            || p0.y != p3.y
+            || p1.y != p2.y
+            || p0.y <= p1.y
+            || p1.y != 0
+            || p0.x <= p2.x
+        {
+            return None;
+        }
+        let cap = p0.y;
+        let mut sample = Scratch::default();
+        let h = self.font.nominal_glyph(u32::from('H'))?;
+        self.load(h, Scale::Unscaled, &mut sample).ok()?;
+        if sample.points.iter().map(|p| p.y).max()? != cap {
+            return None;
+        }
+        let e = self.font.nominal_glyph(u32::from('e'))?;
+        self.load(e, Scale::Unscaled, &mut sample).ok()?;
+        let xheight_shoot = sample.points.iter().map(|p| p.y).max()?;
+        let o = self.font.nominal_glyph(u32::from('O'))?;
+        self.load(o, Scale::Unscaled, &mut sample).ok()?;
+        let cap_shoot = sample.points.iter().map(|p| p.y).max()?;
+        if cap_shoot <= cap || sample.points.iter().map(|p| p.y).min()? >= 0 {
+            return None;
+        }
+        let Scale::Scaled { y, .. } = scale else {
+            return None;
+        };
+        let scaled = mul_fix(xheight_shoot, y.0);
+        if scaled <= 0 {
+            return None;
+        }
+        let fitted = (scaled + 40) & !63;
+        let new_scale = i32::try_from(
+            (i64::from(y.0) * i64::from(fitted) + i64::from(scaled / 2)) / i64::from(scaled),
+        )
+        .ok()?;
+        if mul_fix(i32::from(self.font.units_per_em()), new_scale - y.0).abs() >= 128 {
+            return None;
+        }
+        if mul_fix(cap_shoot - cap, new_scale) > 48 {
+            return None;
+        }
+        Some((mul_fix(cap, new_scale) + 32) & !63)
     }
 
     fn load_native_truetype(

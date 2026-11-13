@@ -2141,7 +2141,69 @@ fn adr0022_context_coverage_retains_high_glyph_and_nested_lookup() {
             )
         }
     };
+    let wide_classes = vec![0, 3, 1, 0, 0, 0, 0, 1, 0, 0, 1];
+    let class_rule = vec![0, 2, 0, 1, 0, 1, 0, 1, 0, 1];
+    let wide_class_set = link(vec![0, 1, 0, 0, 0], vec![(2, 3, class_rule.clone())]);
+    let wide_class_context = link(
+        vec![0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0],
+        vec![
+            (2, 4, wide.clone()),
+            (6, 4, wide_classes.clone()),
+            (16, 3, wide_class_set),
+        ],
+    );
+    let chain_class_rule = vec![0, 1, 0, 1, 0, 2, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1];
+    let mut chain_header = vec![0; 26];
+    chain_header[1] = 5;
+    chain_header[19] = 2;
+    let chain_class_context = link(
+        chain_header,
+        vec![
+            (2, 4, wide.clone()),
+            (6, 4, wide_classes.clone()),
+            (10, 4, wide_classes.clone()),
+            (14, 4, wide_classes),
+            (
+                23,
+                3,
+                link(vec![0, 1, 0, 0, 0], vec![(2, 3, chain_class_rule.clone())]),
+            ),
+        ],
+    );
+    let wide_rule = vec![0, 2, 0, 1, 1, 0, 0, 0, 1, 0, 1];
+    let wide_set = link(vec![0, 1, 0, 0], vec![(2, 2, wide_rule)]);
+    let wide_context = link(
+        vec![0, 4, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+        vec![(2, 4, wide.clone()), (9, 3, wide_set)],
+    );
     for (kind, st, at) in [
+        (6, chain_class_context, 2),
+        (5, wide_class_context, 2),
+        (5, wide_context, 2),
+        (
+            6,
+            link(
+                vec![0, 4, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+                vec![
+                    (2, 4, wide.clone()),
+                    (
+                        9,
+                        3,
+                        link(
+                            vec![0, 1, 0, 0, 0],
+                            vec![(
+                                2,
+                                3,
+                                vec![
+                                    0, 1, 1, 0, 0, 0, 2, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 1, 0, 1,
+                                ],
+                            )],
+                        ),
+                    ),
+                ],
+            ),
+            2,
+        ),
         (
             5,
             link(
@@ -2219,6 +2281,38 @@ fn adr0022_context_coverage_retains_high_glyph_and_nested_lookup() {
         let list = follow(&table, 8);
         assert_eq!(u16_at(list, 0), 2);
         let context = follow(follow(list, 2), 6);
+        if u16_at(context, 0) == 5 {
+            let cov = u32::from_be_bytes(context[2..6].try_into().unwrap()) as usize;
+            assert!(context[cov..].starts_with(&wide));
+            let index = if kind == 5 { 16 } else { 23 };
+            let set =
+                u32::from_be_bytes([0, context[index], context[index + 1], context[index + 2]])
+                    as usize;
+            let rule = u32::from_be_bytes([0, context[set + 2], context[set + 3], context[set + 4]])
+                as usize;
+            assert!(context[set + rule..].starts_with(if kind == 5 {
+                &class_rule
+            } else {
+                &chain_class_rule
+            }));
+            continue;
+        }
+        if u16_at(context, 0) == 4 {
+            let cov = u32::from_be_bytes(context[2..6].try_into().unwrap()) as usize;
+            assert!(context[cov..].starts_with(&wide));
+            let set = u32::from_be_bytes([0, context[9], context[10], context[11]]) as usize;
+            if kind == 5 {
+                assert!(follow(&context[set..], 2).starts_with(&[0, 2, 0, 1, 1, 0, 0, 0, 1, 0, 1]));
+            } else {
+                let rule =
+                    u32::from_be_bytes([0, context[set + 2], context[set + 3], context[set + 4]])
+                        as usize;
+                assert!(context[set + rule..].starts_with(&[
+                    0, 1, 1, 0, 0, 0, 2, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 1, 0, 1
+                ]));
+            }
+            continue;
+        }
         if u16_at(context, 0) == 6 {
             let offset =
                 u32::from_be_bytes([0, context[at], context[at + 1], context[at + 2]]) as usize;

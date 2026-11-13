@@ -9,13 +9,33 @@ use std::fmt;
 use sofel_color::{PaintOptions, Palette};
 use sofel_font::geom::Color;
 use sofel_font::read::GlyphId;
-use sofel_font::{BareCffFace, PfrFace};
+use sofel_font::{BareCffFace, PfrFace, Type1Face};
 use sofel_geom::{Command, Fixed, FnPen, Point, div_fix, mul_fix};
 use sofel_outline::{OutlineError, OutlineInfo, Outlines, Scale, Scratch};
 use sofel_raster::{
     BgraImage, Bitmap, FillRule, RasterError, Rasterizer, RenderOptions, blend_layer, pixel_box,
 };
 use sofel_type1::cid::CidFace;
+
+/// Render a Type 1 PFA/PFB outline through the ordinary gray rasterizer.
+pub fn render_type1<'r>(
+    face: &Type1Face<'_>,
+    glyph: usize,
+    ppem: u16,
+    raster: &'r mut Rasterizer,
+) -> Result<Bitmap<'r>, RenderError> {
+    let fixed = Fixed(div_fix(i32::from(ppem).saturating_mul(64), 1000));
+    raster.clear();
+    sofel_outline::draw_type1(face, glyph, Scale::Scaled { x: fixed, y: fixed }, raster)
+        .map_err(RenderError::Outline)?;
+    raster
+        .render(RenderOptions {
+            fill: FillRule::NonZero,
+            overlap: false,
+            ppem: Some((ppem, ppem)),
+        })
+        .map_err(RenderError::Raster)
+}
 
 use crate::color_raster::SvgImagePainter;
 
