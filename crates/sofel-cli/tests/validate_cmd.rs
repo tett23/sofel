@@ -670,4 +670,20 @@ fn adr0065_i2_winfnt_validator_checks_every_face() {
     for field in ["\"font\":1".to_owned(), format!("\"offset\":{height}")] {
         assert!(out.stdout.contains(&field), "{}", out.stdout);
     }
+    let first = usize::from(u16::from_le_bytes([container[0x8a], container[0x8b]]));
+    container[first + 88..first + 90].fill(0);
+    let both = dir.file("both.fon", &container);
+    let out = run(&["--json".as_ref(), both.as_os_str()]);
+    assert_eq!(out.code, 1);
+    assert_eq!(out.stdout.lines().count(), 2);
+    for (face, offset) in [(0, first + 88), (1, height)] {
+        assert!(
+            out.stdout
+                .lines()
+                .any(|line| line.contains(&format!("\"font\":{face}"))
+                    && line.contains(&format!("\"offset\":{offset}"))),
+            "{}",
+            out.stdout
+        );
+    }
 }

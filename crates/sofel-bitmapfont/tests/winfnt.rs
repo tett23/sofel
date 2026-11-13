@@ -57,3 +57,10 @@ fn adr0065_i2_fnt_and_fon_bounds() {
         assert!(WinFont::parse(&FON[..end], 1).is_err(), "FON prefix {end}");
     }
 }
+
+#[test]
+fn adr0065_i2_ne_resource_alignment_offset() {
+    let mut bytes = FON.to_vec();
+    bytes[0x80] = 17;
+    assert_eq!(WinFont::parse_with_offset(&bytes, 0).unwrap_err(), 0x80);
+}
