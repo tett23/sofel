@@ -755,6 +755,50 @@ fn adr0061_i1_partial_layout_matches_harfbuzz() {
 }
 
 #[test]
+fn adr0061_i1_cff2_all_glyphs_gdef_gpos_match_harfbuzz() {
+    let path = paths::testdata().join("harfbuzz/test/subset/data/fonts/AdobeVFPrototype.otf");
+    let bytes = std::fs::read(&path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let base = Input::new().map_set(SetKind::Unicodes, |unicodes| {
+        unicodes.add_range(0, 0x10ffff)
+    });
+    for (variation, input) in [
+        (
+            "wght=300:600",
+            base.with_axis_range(Tag::new(b"wght"), Some(300.0), Some(600.0), None, &font)
+                .unwrap(),
+        ),
+        (
+            "CNTR=0",
+            base.with_axis_pinned_to_default(Tag::new(b"CNTR"), &font)
+                .unwrap(),
+        ),
+    ] {
+        let actual = subset(&font, &input).unwrap();
+        let output =
+            std::env::temp_dir().join(format!("sofel-cff2-gdef-{}.otf", std::process::id()));
+        assert!(
+            Command::new(paths::hb_dump())
+                .arg("--subset")
+                .arg(format!("--font-file={}", path.display()))
+                .arg("--unicodes=*")
+                .arg(format!("--variations={variation}"))
+                .arg(format!("--output-file={}", output.display()))
+                .status()
+                .unwrap()
+                .success()
+        );
+        let expected = std::fs::read(&output).unwrap();
+        std::fs::remove_file(output).unwrap();
+        assert!(
+            actual == expected,
+            "{variation}: {}",
+            sofel_conformance::subset::diff(&expected, &actual)
+        );
+    }
+}
+
+#[test]
 fn adr0061_i1_cvar_range_projects_control_value_tuples() {
     for (file, low, default, high) in [
         ("subset/data/fonts/Muli-ABC.ttf", 300u16, 500u16, 700u16),

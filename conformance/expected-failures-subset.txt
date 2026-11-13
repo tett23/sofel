@@ -29,7 +29,3 @@ glyf_partial_instancing_iup.tests/Roboto-Variable.composite.default.all.wght=200
 glyf_partial_instancing_iup.tests/Roboto-Variable.composite.default.all.wght=200-300-500,wdth=80-90.ttf+prepared:bytes  # upstream:fixture
 glyf_partial_instancing_iup.tests/Roboto-Variable.composite.default.all.wght=200-300-500,wdth=80-90.iup_optimize.ttf:bytes  # upstream:fixture
 glyf_partial_instancing_iup.tests/Roboto-Variable.composite.default.all.wght=200-300-500,wdth=80-90.iup_optimize.ttf+prepared:bytes  # upstream:fixture
-instantiate_cff2_partial.tests/AdobeVFPrototype.default.all.wght=300-600.otf:bytes  # deferred:instance
-instantiate_cff2_partial.tests/AdobeVFPrototype.default.all.wght=300-600.otf+prepared:bytes  # deferred:instance
-instantiate_cff2_partial.tests/AdobeVFPrototype.default.all.CNTR=drop.otf:bytes  # deferred:instance
-instantiate_cff2_partial.tests/AdobeVFPrototype.default.all.CNTR=drop.otf+prepared:bytes  # deferred:instance
