@@ -8,13 +8,22 @@ mod fixture;
 #[test]
 fn adr0065_i1_type1_pfa_pfb_render_like_freetype() -> Result<(), Box<dyn std::error::Error>> {
     let (pfa, pfb) = fixture::sample();
-    let fonttype_header = |mut font: Vec<u8>, offset: usize| {
-        font[offset..offset + 14].copy_from_slice(b"%!FontType1   ");
-        font
+    let fonttype_header = |mut font: Vec<u8>, offset: usize| -> Option<Vec<u8>> {
+        font.get_mut(offset..offset.checked_add(14)?)?
+            .copy_from_slice(b"%!FontType1   ");
+        Some(font)
     };
     for (extension, bytes, target) in [
-        ("pfa", fonttype_header(pfa.clone(), 0), "--char"),
-        ("pfb", fonttype_header(pfb.clone(), 6), "--glyph"),
+        (
+            "pfa",
+            fonttype_header(pfa.clone(), 0).ok_or("short PFA header")?,
+            "--char",
+        ),
+        (
+            "pfb",
+            fonttype_header(pfb.clone(), 6).ok_or("short PFB header")?,
+            "--glyph",
+        ),
         ("pfa", pfa, "--char"),
         ("pfb", pfb, "--glyph"),
     ] {
