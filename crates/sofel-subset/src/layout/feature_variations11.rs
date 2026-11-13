@@ -253,8 +253,8 @@ fn write_node(s: &mut Sub<'_, '_>, node: &Node) -> bool {
     }
 }
 
-pub(super) fn write_set_condition(s: &mut Sub<'_, '_>, source: Condition<'_>) -> bool {
-    let node = match condition(s, source, 64) {
+pub(super) fn write_set_condition(s: &mut Sub<'_, '_>, source: Option<Condition<'_>>) -> bool {
+    let node = match source.map_or(Some(ResultNode::True), |c| condition(s, c, 64)) {
         Some(ResultNode::Keep(node)) => node,
         Some(ResultNode::True) => Node::Value(1, u32::MAX),
         Some(ResultNode::False) => Node::Value(0, u32::MAX),

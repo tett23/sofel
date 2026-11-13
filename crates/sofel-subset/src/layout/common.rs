@@ -652,22 +652,24 @@ impl<'p, 's> Sub<'p, 's> {
             {
                 continue;
             }
-            let Some(c) = cs.condition(i).ok().flatten() else {
+            let Ok(source) = cs.condition(i) else {
                 self.unsupported("FeatureVariations conditions other than format 1");
                 return false;
             };
-            if self.p.var.user().is_empty() && matches!(c.format(), 0 | 2..=5) {
+            if self.p.var.user().is_empty()
+                && source.is_none_or(|c| matches!(c.format(), 0 | 2..=5))
+            {
                 if self.offset_append(4, |s| {
-                    super::feature_variations11::write_set_condition(s, c)
+                    super::feature_variations11::write_set_condition(s, source)
                 }) {
                     self.bump_u16(count_at, 1);
                 }
                 continue;
             }
-            if c.format() != 1 {
+            let Some(c) = source.filter(|c| c.format() == 1) else {
                 self.unsupported("FeatureVariations conditions other than format 1");
                 return false;
-            }
+            };
             if self.offset_append(4, |s| {
                 let Some((axis, min, max)) = c.axis_range() else {
                     return false;

@@ -1099,6 +1099,25 @@ fn adr0022_boolean_conditions_keep_nested_value_indices() {
 }
 
 #[test]
+fn adr0022_null_condition_serializes_as_true() {
+    let mut gsub = gsub_with_feature_condition(vec![0, 0]);
+    let offset = u32::from_be_bytes(gsub[10..14].try_into().unwrap()) as usize;
+    let set =
+        offset + u32::from_be_bytes(gsub[offset + 8..offset + 12].try_into().unwrap()) as usize;
+    gsub[set + 2..set + 6].fill(0);
+    let data = font_with(vec![(b"GSUB", gsub)]);
+    let out = subset(&Font::new(&data, 0).unwrap(), &chars("ABC")).unwrap();
+    let bytes = out_table(&out, b"GSUB").unwrap();
+    let start = u32::from_be_bytes(bytes[10..14].try_into().unwrap()) as usize;
+    let fv = sofel_font::read::feature_variations::FeatureVariations::new(&bytes[start..]).unwrap();
+    let set = fv.record(0).unwrap().conditions().unwrap().unwrap();
+    assert_eq!(
+        set.condition(0).unwrap().unwrap().value(),
+        Some((1, u32::MAX))
+    );
+}
+
+#[test]
 fn adr0022_value_condition_without_variation_keeps_signed_default() {
     for default in [-7, 0, 8] {
         let condition = Buf::new().u16(2).i16(default).u32(u32::MAX).done();
