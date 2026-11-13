@@ -137,7 +137,6 @@ version = "0.0.0"
 dependencies = [
  "sofel-font",
  "sofel-geom",
- "sofel-type1",
 ]
 
 [[package]]

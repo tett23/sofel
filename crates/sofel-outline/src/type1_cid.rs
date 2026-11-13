@@ -2,8 +2,8 @@
 
 use alloc::vec::Vec;
 
+use sofel_font::CidFace;
 use sofel_geom::{Pen, Point, mul_fix};
-use sofel_type1::cid::CidFace;
 
 use crate::{CBox, OutlineError, OutlineInfo, Scale};
 
@@ -92,6 +92,14 @@ pub fn draw_cid(
                 let [dx1, dy1, dx2, dy2, dx3, dy3] = take(&mut stack)?;
                 state.curve_by(dx1, dy1, dx2, dy2, dx3, dy3)?;
             }
+            30 => {
+                let [dy1, dx2, dy2, dx3] = take(&mut stack)?;
+                state.curve_by(0, dy1, dx2, dy2, dx3, 0)?;
+            }
+            31 => {
+                let [dx1, dx2, dy2, dy3] = take(&mut stack)?;
+                state.curve_by(dx1, 0, dx2, dy2, 0, dy3)?;
+            }
             9 => {
                 if !stack.is_empty() {
                     return Err(OutlineError::InvalidCharString);
@@ -149,6 +157,7 @@ struct State<'a, P: Pen> {
     x: i32,
     y: i32,
     start: Option<(i32, i32)>,
+    emitted: bool,
     box_: Option<CBox>,
 }
 
@@ -160,6 +169,7 @@ impl<'a, P: Pen> State<'a, P> {
             x: 0,
             y: 0,
             start: None,
+            emitted: false,
             box_: None,
         }
     }
@@ -202,15 +212,22 @@ impl<'a, P: Pen> State<'a, P> {
             .checked_add(dy)
             .ok_or(OutlineError::InvalidCharString)?;
         self.start = Some((self.x, self.y));
-        let p = self.point(self.x, self.y);
-        self.pen.move_to(p);
+        self.emitted = false;
+        Ok(())
+    }
+
+    fn ensure_started(&mut self) -> Result<(), OutlineError> {
+        let (x, y) = self.start.ok_or(OutlineError::InvalidCharString)?;
+        if !self.emitted {
+            let p = self.point(x, y);
+            self.pen.move_to(p);
+            self.emitted = true;
+        }
         Ok(())
     }
 
     fn line_by(&mut self, dx: i32, dy: i32) -> Result<(), OutlineError> {
-        if self.start.is_none() {
-            return Err(OutlineError::InvalidCharString);
-        }
+        self.ensure_started()?;
         self.x = self
             .x
             .checked_add(dx)
@@ -233,9 +250,7 @@ impl<'a, P: Pen> State<'a, P> {
         dx3: i32,
         dy3: i32,
     ) -> Result<(), OutlineError> {
-        if self.start.is_none() {
-            return Err(OutlineError::InvalidCharString);
-        }
+        self.ensure_started()?;
         let x1 = self
             .x
             .checked_add(dx1)
@@ -257,11 +272,14 @@ impl<'a, P: Pen> State<'a, P> {
 
     fn close(&mut self) {
         if let Some((x, y)) = self.start.take() {
-            if (self.x, self.y) != (x, y) {
-                let p = self.point(x, y);
-                self.pen.line_to(p);
+            if self.emitted {
+                if (self.x, self.y) != (x, y) {
+                    let p = self.point(x, y);
+                    self.pen.line_to(p);
+                }
+                self.pen.close();
             }
-            self.pen.close();
+            self.emitted = false;
             self.x = x;
             self.y = y;
         }
