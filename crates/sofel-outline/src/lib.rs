@@ -189,7 +189,7 @@ pub enum OutlineError {
     InvalidCff,
     /// A charstring cannot be decoded, or its Font DICT cannot be read.
     InvalidCharString,
-    /// Automatic hinting for this nonempty glyph is not implemented.
+    /// Automatic hinting for this outline kind is not implemented yet.
     AutoHintUnsupported,
 }
 
@@ -596,8 +596,21 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
         self.load_native_truetype(glyph, ppem, target, scratch, 40)
     }
 
-    /// Loads an outline and horizontal advance in 26.6 pixels with the
-    /// selected hinting engine and target. Rasterization is a separate step.
+    /// Loads a glyph with FreeType-compatible automatic hinting at a square
+    /// pixel size. The target is independent of the later rasterization mode.
+    pub fn load_auto_hinted(
+        &self,
+        glyph: GlyphId,
+        ppem: u16,
+        target: HintTarget,
+        scratch: &mut Scratch,
+    ) -> Result<(OutlineInfo, i32), OutlineError> {
+        auto_hint::load(self, glyph, ppem, target, scratch)
+    }
+
+    /// Loads at `ppem` with the selected hinting engine and target, returning
+    /// the outline and horizontal advance in 26.6 pixels. Rasterization is a
+    /// separate operation.
     pub fn load_with_hint(
         &self,
         glyph: GlyphId,
@@ -657,8 +670,7 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
                 {
                     self.load(glyph, scale, scratch)?
                 } else {
-                    scratch.clear();
-                    return Err(OutlineError::AutoHintUnsupported);
+                    return self.load_auto_hinted(glyph, ppem, target, scratch);
                 };
                 let Scale::Scaled { x, .. } = scale else {
                     return Err(OutlineError::InvalidOutline);
@@ -1644,3 +1656,5 @@ fn decompose(
 
 mod cff;
 use cff::load_cff_at;
+mod auto_adjust;
+mod auto_hint;
