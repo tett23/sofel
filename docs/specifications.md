@@ -433,7 +433,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 `sofel-type1::source::Type1Source` は PFA の16進 eexec と PFB の ASCII・バイナリセクションを読み、秘密辞書を復号する。`sofel-type1::face::Type1Face` は文字コードからグリフ番号への対応、グリフ名、charstring から読んだ送り幅を返す。AFM または PFM を付加すると、グリフ対のカーニングを返す。PFB のセクション長、PFA の16進表記、charstring の長さと AFM・PFM のペア表を検査する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
-`sofel-type1::cid::CidFace` は CID-keyed Type 1 のバイナリまたは16進データを読み、CIDMap から CID の Font DICT と charstring の範囲を選ぶ。各 Font DICT の `lenIV` に従って charstring を復号し、送り幅を返す。CIDMap の長さを開くときに、charstring のオフセットをグリフの問い合わせ時に入力範囲内で検査する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+`sofel-type1::cid::CidFace` は CID-keyed Type 1 のバイナリまたは16進データを読み、CIDMap から CID の Font DICT と charstring の範囲を選ぶ。各 Font DICT の `lenIV` に従って charstring を復号し、送り幅を返す。対角成分が同じで斜交・平行移動のない `FontMatrix` から units per em を求める。CIDMap の長さを開くときに、charstring のオフセットをグリフの問い合わせ時に入力範囲内で検査する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 `sofel-outline::draw_cid` は CID の Type 1 charstring から、移動・直線・三次曲線の基本命令をヒンティングなしで描画する。未対応の命令を含む charstring はエラーを返す。
 `sofel-render --glyph` は CID-keyed Type 1 を通常のファイル入力から開き、対応済みの輪郭を PGM に描く。Unicode cmap を持たない CID フォントに対する `--char` はエラーを返す。
 

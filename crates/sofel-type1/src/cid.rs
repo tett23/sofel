@@ -27,6 +27,7 @@ pub struct CidFace {
     fd_bytes: usize,
     gd_bytes: usize,
     len_iv: Vec<i32>,
+    units_per_em: u16,
 }
 
 impl CidFace {
@@ -72,6 +73,7 @@ impl CidFace {
             return Err(CidError);
         }
         let mut len_iv = Vec::new();
+        let mut units_per_em = None;
         let marker = b"%ADOBeginFontDict";
         let mut rest = header;
         while let Some(pos) = find_bytes(rest, marker) {
@@ -81,6 +83,11 @@ impl CidFace {
             let end = find_bytes(rest, marker).unwrap_or(rest.len());
             let dict = rest.get(..end).ok_or(CidError)?;
             len_iv.push(field_i32(dict, b"lenIV").unwrap_or(4));
+            let current_upem = matrix_upem(dict)?;
+            if units_per_em.is_some_and(|upem| upem != current_upem) {
+                return Err(CidError);
+            }
+            units_per_em = Some(current_upem);
             rest = rest.get(end..).ok_or(CidError)?;
         }
         if len_iv.len() != dict_count {
@@ -93,12 +100,18 @@ impl CidFace {
             fd_bytes,
             gd_bytes,
             len_iv,
+            units_per_em: units_per_em.ok_or(CidError)?,
         })
     }
 
     /// Number of CIDs exposed as glyph indices.
     pub fn num_glyphs(&self) -> usize {
         self.cid_count
+    }
+
+    /// Units per em derived from the uniform Font DICT matrix.
+    pub fn units_per_em(&self) -> u16 {
+        self.units_per_em
     }
 
     /// Decrypted Type 1 charstring for a CID.
@@ -188,4 +201,38 @@ fn decode_hex(raw: &[u8], max_output: usize) -> Result<Vec<u8>, CidError> {
         return Err(CidError);
     }
     Ok(out)
+}
+
+fn matrix_upem(dict: &[u8]) -> Result<u16, CidError> {
+    let Some(at) = find_bytes(dict, b"/FontMatrix") else {
+        return Ok(1000);
+    };
+    let after = at.checked_add(b"/FontMatrix".len()).ok_or(CidError)?;
+    let data = dict.get(after..).ok_or(CidError)?.trim_ascii_start();
+    let data = data.strip_prefix(b"[").ok_or(CidError)?;
+    let end = data.iter().position(|&byte| byte == b']').ok_or(CidError)?;
+    let values: Vec<_> = data
+        .get(..end)
+        .ok_or(CidError)?
+        .split(|byte| byte.is_ascii_whitespace())
+        .filter(|part| !part.is_empty())
+        .collect();
+    let [a, b, c, d, e, f] = values.as_slice() else {
+        return Err(CidError);
+    };
+    if a != d || [b, c, e, f].iter().any(|value| **value != b"0") {
+        return Err(CidError);
+    }
+    let text = core::str::from_utf8(a).map_err(|_| CidError)?;
+    let (integer, fractional) = text.split_once('.').ok_or(CidError)?;
+    if !integer.is_empty() && integer != "0" {
+        return Err(CidError);
+    }
+    let numerator = fractional.parse::<u32>().map_err(|_| CidError)?;
+    let digits = u32::try_from(fractional.len()).map_err(|_| CidError)?;
+    let denominator = 10u32.checked_pow(digits).ok_or(CidError)?;
+    if denominator.checked_rem(numerator) != Some(0) {
+        return Err(CidError);
+    }
+    u16::try_from(denominator.checked_div(numerator).ok_or(CidError)?).map_err(|_| CidError)
 }

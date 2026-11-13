@@ -120,3 +120,20 @@ fn adr0065_i1_opens_hex_cid_data() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(face.glyph_metrics(0).ok_or("metrics")?.advance_x, 500);
     Ok(())
 }
+
+#[test]
+fn adr0065_i1_uses_font_matrix_for_units_per_em() -> Result<(), Box<dyn std::error::Error>> {
+    let mut source = sample();
+    let old = b"[0.001 0 0 0.001 0 0]";
+    let at = source
+        .windows(old.len())
+        .position(|w| w == old)
+        .ok_or("matrix")?;
+    source
+        .get_mut(at..at.checked_add(old.len()).ok_or("overflow")?)
+        .ok_or("bounds")?
+        .copy_from_slice(b"[0.002 0 0 0.002 0 0]");
+    let face = CidFace::parse(&source, 1024)?;
+    assert_eq!(face.units_per_em(), 500);
+    Ok(())
+}

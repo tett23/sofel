@@ -100,7 +100,10 @@ pub fn render_cid<'r>(
     ppem: u16,
     raster: &'r mut Rasterizer,
 ) -> Result<Bitmap<'r>, RenderError> {
-    let fixed = Fixed(div_fix(i32::from(ppem).saturating_mul(64), 1000));
+    let fixed = Fixed(div_fix(
+        i32::from(ppem).saturating_mul(64),
+        i32::from(face.units_per_em()),
+    ));
     let scale = Scale::Scaled { x: fixed, y: fixed };
     let info = sofel_outline::draw_cid(face, cid, scale, &mut FnPen(|_| {}))
         .map_err(RenderError::Outline)?;

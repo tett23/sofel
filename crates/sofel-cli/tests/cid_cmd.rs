@@ -20,13 +20,12 @@ end put\n%ADOEndFontDict\ndef\n(Binary) 24 StartData\n"
         14,
     ]);
     let path = std::env::temp_dir().join(format!("sofel-cid-{}.ps", std::process::id()));
-    std::fs::write(&path, source).unwrap();
+    std::fs::write(&path, &source).unwrap();
     let result = Command::new(env!("CARGO_BIN_EXE_sofel-render"))
         .args(["--ppem", "100", "--glyph", "0"])
         .arg(&path)
         .output()
         .unwrap();
-    std::fs::remove_file(path).unwrap();
     assert_eq!(result.status.code(), Some(0));
     let mut expected = b"P5\n# left 10 top 20\n10 10\n255\n".to_vec();
     for row in 0..10usize {
@@ -42,4 +41,23 @@ end put\n%ADOEndFontDict\ndef\n(Binary) 24 StartData\n"
         }
     }
     assert_eq!(result.stdout, expected);
+    let old = b"[0.001 0 0 0.001 0 0]";
+    let at = source.windows(old.len()).position(|w| w == old).unwrap();
+    source
+        .get_mut(at..at.saturating_add(old.len()))
+        .unwrap()
+        .copy_from_slice(b"[0.002 0 0 0.002 0 0]");
+    std::fs::write(&path, source).unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_sofel-render"))
+        .args(["--ppem", "100", "--glyph", "0"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    std::fs::remove_file(path).unwrap();
+    assert_eq!(result.status.code(), Some(0));
+    assert!(
+        result
+            .stdout
+            .starts_with(b"P5\n# left 20 top 40\n20 20\n255\n")
+    );
 }
