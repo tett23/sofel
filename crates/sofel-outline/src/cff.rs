@@ -136,7 +136,25 @@ pub(crate) fn load_cff_at(
     }
     let instance = font.instance(location);
     let blend = instance.ft_blend_weights(cff);
-    load_cff_with_blend(cff, glyph, scale, &blend, s)
+    load_cff_with_blend(cff, glyph, scale, &blend, s, false)
+}
+
+/// Decode a CFF 1 charstring at Adobe's hinted path scale. The caller checks
+/// that the charstring has no stems before selecting this result.
+pub(crate) fn load_cff_native_without_stems(
+    font: &Font<'_>,
+    location: &Location<'_>,
+    cff: &Cff<'_>,
+    glyph: GlyphId,
+    scale: Scale,
+    s: &mut Scratch,
+) -> Result<OutlineInfo, OutlineError> {
+    if font.units_per_em() > 0x7FFF {
+        return Err(OutlineError::InvalidOutline);
+    }
+    let instance = font.instance(location);
+    let blend = instance.ft_blend_weights(cff);
+    load_cff_with_blend(cff, glyph, scale, &blend, s, true)
 }
 
 pub(crate) fn load_bare_cff(
@@ -151,7 +169,7 @@ pub(crate) fn load_bare_cff(
     let glyph = cff
         .bare_charstring_index(glyph)
         .ok_or(OutlineError::NoGlyphData)?;
-    load_cff_with_blend(cff, glyph, scale, &cff.default_blend(), s)
+    load_cff_with_blend(cff, glyph, scale, &cff.default_blend(), s, false)
 }
 
 fn load_cff_with_blend(
@@ -160,6 +178,7 @@ fn load_cff_with_blend(
     scale: Scale,
     blend: &dyn BlendWeights,
     s: &mut Scratch,
+    native_without_stems: bool,
 ) -> Result<OutlineInfo, OutlineError> {
     s.clear();
     if glyph.0 >= cff.num_glyphs() {
@@ -195,7 +214,14 @@ fn load_cff_with_blend(
         // the state starts from the Private DICT's initialRandomSeed; it
         // restarts at every draw (ADR 0021).
         random_seed: ft::low32(p.initial_random_seed.cast_unsigned()),
-        scale: 0x400,
+        scale: if native_without_stems {
+            let Scale::Scaled { y, .. } = scale else {
+                return Err(OutlineError::InvalidOutline);
+            };
+            y.0.wrapping_add(32) / 64
+        } else {
+            0x400
+        },
     };
     let mut builder = Builder {
         points: &mut s.points,
@@ -240,7 +266,7 @@ fn load_cff_with_blend(
             force = true;
         }
     }
-    if scaled || force {
+    if (scaled || force) && !native_without_stems {
         for pt in &mut s.points {
             pt.x = mul_fix(pt.x, x_scale);
             pt.y = mul_fix(pt.y, y_scale);

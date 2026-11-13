@@ -309,6 +309,11 @@ pub struct Work {
 }
 
 impl Work {
+    /// Number of horizontal and vertical stems seen in the last decode.
+    pub fn hint_stem_count(&self) -> usize {
+        self.hints.total()
+    }
+
     /// The first operator of the last decode that is reserved or belongs
     /// to the other version, with its position.
     pub fn unknown_operator(&self) -> Option<(usize, u16)> {
