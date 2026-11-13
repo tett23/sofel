@@ -32,6 +32,18 @@ fn section(data: &[u8], offset: usize, size: usize) -> Result<&[u8], ReadError> 
     be::slice_at(data, offset, size).ok_or(ReadError::OutOfBounds)
 }
 
+/// Encoded bitmap selected for one glyph and strike.
+pub struct BitmapProgram<'a> {
+    /// Glyph position, dimensions, optional advance and compressed pixels.
+    pub bytes: &'a [u8],
+    /// True when encoded rows run from the top down.
+    pub top_down: bool,
+    /// Default advance in physical metrics units.
+    pub advance: i16,
+    /// Physical metrics units per em.
+    pub units: u16,
+}
+
 /// A PFR face borrowing its character directory and glyph program section.
 #[derive(Debug)]
 pub struct PfrFace<'a> {
@@ -44,6 +56,9 @@ pub struct PfrFace<'a> {
     records: &'a [u8],
     record_size: usize,
     programs: &'a [u8],
+    physical_extras: &'a [u8],
+    bitmap_tables: &'a [u8],
+    top_down: bool,
 }
 
 impl<'a> PfrFace<'a> {
@@ -109,6 +124,9 @@ impl<'a> PfrFace<'a> {
             size |= number(&mut logical, 1)? << 16;
         }
         let mut physical = within(triple(27)?, triple(24)?, offset, size)?;
+        let bitmap_tables = data
+            .get(offset.checked_add(size).ok_or(ReadError::OutOfBounds)?..)
+            .ok_or(ReadError::OutOfBounds)?;
         take(&mut physical, 2)?;
         let units = word16(&mut physical)?;
         let metrics_units = word16(&mut physical)?;
@@ -122,6 +140,7 @@ impl<'a> PfrFace<'a> {
         } else {
             0
         };
+        let physical_extras = if flags & 128 != 0 { physical } else { &[] };
         if flags & 128 != 0 {
             extras(&mut physical)?;
         }
@@ -146,6 +165,9 @@ impl<'a> PfrFace<'a> {
             metrics_units,
             flags,
             fixed_advance,
+            physical_extras,
+            bitmap_tables,
+            top_down: header[42] & 2 != 0,
             record_size,
             records: take(&mut physical, usize::from(glyphs) * record_size)?,
             programs: section(data, triple(35)?, triple(32)?)?,
@@ -219,6 +241,69 @@ impl<'a> PfrFace<'a> {
         let raw = i64::from(self.record(glyph.0.saturating_sub(1) as usize).ok()?.1);
         let den = i64::from(self.metrics_units);
         i32::try_from(raw.signum() * ((raw.abs() * i64::from(self.units) + den / 2) / den)).ok()
+    }
+    /// Finds a bitmap in a strike of the given pixel dimensions.
+    /// Returns its program, row direction, raw physical advance and metric resolution.
+    #[allow(clippy::arithmetic_side_effects)] // Flag fields contribute at most one byte.
+    pub fn bitmap_program(
+        &self,
+        glyph: GlyphId,
+        x: u16,
+        y: u16,
+    ) -> Result<Option<BitmapProgram<'a>>, ReadError> {
+        let (code, advance, _, _) = self.record(be::to_usize(glyph.0.saturating_sub(1)))?;
+        if self.physical_extras.is_empty() {
+            return Ok(None);
+        }
+        let mut extra = self.physical_extras;
+        for _ in 0..number(&mut extra, 1)? {
+            let size = number(&mut extra, 1)?;
+            let kind = number(&mut extra, 1)?;
+            let mut item = take(&mut extra, size)?;
+            if kind != 1 {
+                continue;
+            }
+            take(&mut item, 3)?;
+            let widths = number(&mut item, 1)?;
+            for _ in 0..number(&mut item, 1)? {
+                let wx = number(&mut item, 1 + usize::from(widths & 1 != 0))?;
+                let wy = number(&mut item, 1 + usize::from(widths & 2 != 0))?;
+                let flags = number(&mut item, 1)?;
+                let len = number(&mut item, 2 + usize::from(widths & 4 != 0))?;
+                let offset = number(&mut item, 2 + usize::from(widths & 8 != 0))?;
+                let count = number(&mut item, 1 + usize::from(widths & 16 != 0))?;
+                if (wx, wy) != (usize::from(x), usize::from(y)) {
+                    continue;
+                }
+                let mut table = section(self.bitmap_tables, offset, len)?;
+                let mut matched = None;
+                let mut previous = None;
+                for _ in 0..count {
+                    let c = be::to_u32(number(&mut table, 1 + usize::from(flags & 1 != 0))?);
+                    let n = number(&mut table, 1 + usize::from(flags & 2 != 0))?;
+                    let off = number(&mut table, 2 + usize::from(flags & 4 != 0))?;
+                    if previous.is_some_and(|prev| prev >= c) {
+                        return Err(ReadError::InvalidValue);
+                    }
+                    previous = Some(c);
+                    let program = section(self.programs, off, n)?;
+                    if c == code && n != 0 {
+                        matched = Some(BitmapProgram {
+                            bytes: program,
+                            top_down: self.top_down,
+                            advance,
+                            units: self.metrics_units,
+                        });
+                    }
+                }
+                return Ok(matched);
+            }
+        }
+        Ok(None)
+    }
+    /// All glyph program bytes, including components addressed by a compound glyph.
+    pub fn programs(&self) -> &'a [u8] {
+        self.programs
     }
     /// Encoded GPS bytes for an outline.
     pub fn glyph_program(&self, glyph: GlyphId) -> Option<&'a [u8]> {
