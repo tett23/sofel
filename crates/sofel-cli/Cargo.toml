@@ -15,6 +15,7 @@ sofel-woff = {path="../sofel-woff"}
 sofel-read = { path = "../sofel-read" }
 sofel-font = { path = "../sofel-font" }
 sofel-outline = { path = "../sofel-outline" }
+sofel-type1 = { path = "../sofel-type1" }
 sofel-raster = { path = "../sofel-raster" }
 sofel-shape = { path = "../sofel-shape" }
 sofel-bitmap = { path = "../sofel-bitmap" }

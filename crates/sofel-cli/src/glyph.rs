@@ -9,10 +9,12 @@ use std::fmt;
 use sofel_color::{PaintOptions, Palette};
 use sofel_font::geom::Color;
 use sofel_font::read::GlyphId;
+use sofel_geom::{Command, Fixed, FnPen, Point, div_fix};
 use sofel_outline::{OutlineError, Outlines, Scale, Scratch};
 use sofel_raster::{
     BgraImage, Bitmap, FillRule, RasterError, Rasterizer, RenderOptions, blend_layer, pixel_box,
 };
+use sofel_type1::cid::CidFace;
 
 use crate::color_raster::SvgImagePainter;
 
@@ -79,6 +81,56 @@ pub fn render<'r>(
     raster
         .render_placed(b, options)
         .map_err(RenderError::Raster)
+}
+
+/// Render a basic CID-keyed Type 1 outline without hinting.
+pub fn render_cid<'r>(
+    face: &CidFace,
+    cid: usize,
+    ppem: u16,
+    raster: &'r mut Rasterizer,
+) -> Result<Bitmap<'r>, RenderError> {
+    let fixed = Fixed(div_fix(i32::from(ppem).saturating_mul(64), 1000));
+    let scale = Scale::Scaled { x: fixed, y: fixed };
+    let info = sofel_outline::draw_cid(face, cid, scale, &mut FnPen(|_| {}))
+        .map_err(RenderError::Outline)?;
+    let c = info.cbox;
+    let bounds = pixel_box(c.x_min, c.y_min, c.x_max, c.y_max);
+    let shift = bounds.shift();
+    raster.clear();
+    sofel_outline::draw_cid(
+        face,
+        cid,
+        scale,
+        &mut FnPen(|command| {
+            shift_command(command, shift).apply(raster);
+        }),
+    )
+    .map_err(RenderError::Outline)?;
+    raster
+        .render_placed(
+            bounds,
+            RenderOptions {
+                fill: FillRule::NonZero,
+                overlap: false,
+                ppem: Some((ppem, ppem)),
+            },
+        )
+        .map_err(RenderError::Raster)
+}
+
+fn shift_command(command: Command, offset: Point) -> Command {
+    let shift = |p: Point| Point {
+        x: p.x.saturating_add(offset.x),
+        y: p.y.saturating_add(offset.y),
+    };
+    match command {
+        Command::MoveTo(p) => Command::MoveTo(shift(p)),
+        Command::LineTo(p) => Command::LineTo(shift(p)),
+        Command::QuadTo(c, p) => Command::QuadTo(shift(c), shift(p)),
+        Command::CubicTo(c1, c2, p) => Command::CubicTo(shift(c1), shift(c2), shift(p)),
+        Command::Close => Command::Close,
+    }
 }
 
 /// Render an unhinted TrueType glyph to packed monochrome rows. The

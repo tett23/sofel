@@ -185,6 +185,8 @@ sofel-subset --font-file=Roboto.ttf --unicodes=41-5A -o out.ttf
 
 フォントを読むコマンド（`sofel-shape`、`sofel-render`、`sofel-paint`、`sofel-subset`、`sofel-validate`）は WOFF 1.0、gzip、UNIX compress（LZW）、bzip2で包んだ入力を署名から識別する。`sofel-woff --format woff2` が書き出す単一フェイスの WOFF2 も読み込める。[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)
 
+`sofel-render` は CID-keyed Type 1 のファイルを `--glyph` で直接開き、対応済みの Type 1 輪郭命令を PGM に描く。CID ファイルに Unicode cmap はないため、`--char` は受け付けない（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
+
 ### `sofel-woff`
 
 単一フェイスの TrueType、CFF、CFF2 を Web 配布用に変換する。入力と出力にはファイル名か `-`（標準入力・標準出力）を指定する。[ADR 0070](docs/adr/0070-webfont-encoding.md)
