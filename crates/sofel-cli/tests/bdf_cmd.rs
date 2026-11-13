@@ -86,3 +86,13 @@ fn adr0065_i1_bdf_bounds_and_strike() {
     assert_eq!(run_data(&at_75_dpi, &["--ppem", "8", "--glyph", "1"]).0, 0);
     assert_eq!(run_data(&at_75_dpi, &["--ppem", "9", "--glyph", "1"]).0, 1);
 }
+
+#[test]
+fn adr0065_i1_bdf_selects_asymmetric_strike_by_height() {
+    let data = BDF.replace("SIZE 8 72 72", "SIZE 8 96 72");
+    assert_eq!(
+        run_data(&data, &["--ppem", "8", "--glyph", "1"]),
+        run(&["--ppem", "8", "--glyph", "1"])
+    );
+    assert_eq!(run_data(&data, &["--ppem", "11", "--glyph", "1"]).0, 1);
+}

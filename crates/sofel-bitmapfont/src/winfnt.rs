@@ -41,20 +41,28 @@ fn byte(data: &[u8], offset: usize) -> Result<u8, WinFontError> {
     data.get(offset).copied().ok_or(WinFontError)
 }
 
-fn fon_resource(data: &[u8], face: u32) -> Result<(&[u8], u32), WinFontError> {
+fn fon_resource<'a>(
+    data: &'a [u8],
+    face: Option<u32>,
+    position: &mut usize,
+) -> Result<(Option<&'a [u8]>, u32), WinFontError> {
+    *position = 0x3c;
     let ne = usize::try_from(u32_at(data, 0x3c)?).map_err(|_| WinFontError)?;
+    *position = ne;
     if data.get(ne..).is_some_and(|s| s.starts_with(b"PE\0\0")) {
-        return pe_resource(data.get(ne..).ok_or(WinFontError)?, data, face);
+        return pe_resource(ne, data, face, position);
     }
     if data.get(ne..ne.checked_add(2).ok_or(WinFontError)?) != Some(b"NE") {
         return Err(WinFontError);
     }
+    *position = ne.saturating_add(36);
     let resource = ne
         .checked_add(usize::from(u16_at(
             data,
             ne.checked_add(36).ok_or(WinFontError)?,
         )?))
         .ok_or(WinFontError)?;
+    *position = ne.saturating_add(38);
     let names = ne
         .checked_add(usize::from(u16_at(
             data,
@@ -64,12 +72,14 @@ fn fon_resource(data: &[u8], face: u32) -> Result<(&[u8], u32), WinFontError> {
     if resource >= names || names > data.len() {
         return Err(WinFontError);
     }
+    *position = resource;
     let shift = u16_at(data, resource)?;
     if shift > 16 {
         return Err(WinFontError);
     }
     let mut at = resource.checked_add(2).ok_or(WinFontError)?;
     loop {
+        *position = at;
         if at >= names {
             return Err(WinFontError);
         }
@@ -77,6 +87,7 @@ fn fon_resource(data: &[u8], face: u32) -> Result<(&[u8], u32), WinFontError> {
         if kind == 0 {
             return Err(WinFontError);
         }
+        *position = at.saturating_add(2);
         let count = u16_at(data, at.checked_add(2).ok_or(WinFontError)?)?;
         let entries = at.checked_add(8).ok_or(WinFontError)?;
         let end = entries
@@ -86,7 +97,13 @@ fn fon_resource(data: &[u8], face: u32) -> Result<(&[u8], u32), WinFontError> {
             return Err(WinFontError);
         }
         if kind == 0x8008 {
-            if face >= u32::from(count) || count == 0 {
+            if count == 0 {
+                return Err(WinFontError);
+            }
+            let Some(face) = face else {
+                return Ok((None, u32::from(count)));
+            };
+            if face >= u32::from(count) {
                 return Err(WinFontError);
             }
             let entry = entries
@@ -97,15 +114,19 @@ fn fon_resource(data: &[u8], face: u32) -> Result<(&[u8], u32), WinFontError> {
                         .ok_or(WinFontError)?,
                 )
                 .ok_or(WinFontError)?;
+            *position = entry;
             let offset = usize::from(u16_at(data, entry)?)
                 .checked_shl(u32::from(shift))
                 .ok_or(WinFontError)?;
+            *position = entry.saturating_add(2);
             let size = usize::from(u16_at(data, entry.checked_add(2).ok_or(WinFontError)?)?)
                 .checked_shl(u32::from(shift))
                 .ok_or(WinFontError)?;
             return Ok((
-                data.get(offset..offset.checked_add(size).ok_or(WinFontError)?)
-                    .ok_or(WinFontError)?,
+                Some(
+                    data.get(offset..offset.checked_add(size).ok_or(WinFontError)?)
+                        .ok_or(WinFontError)?,
+                ),
                 u32::from(count),
             ));
         }
@@ -145,18 +166,25 @@ fn subdirectory(entry: &[u8]) -> Result<usize, WinFontError> {
 }
 
 fn pe_resource<'a>(
-    header: &[u8],
+    base: usize,
     file: &'a [u8],
-    face: u32,
-) -> Result<(&'a [u8], u32), WinFontError> {
-    if u16_at(header, 4)? != 0x14c
-        || u16_at(header, 20)? != 224
-        || u16_at(header, 24)? != 0x10b
-        || u32_at(header, 116)? < 3
-    {
+    face: Option<u32>,
+    position: &mut usize,
+) -> Result<(Option<&'a [u8]>, u32), WinFontError> {
+    let header = file.get(base..).ok_or(WinFontError)?;
+    for (offset, expected) in [(4, 0x14c), (20, 224), (24, 0x10b)] {
+        *position = base.saturating_add(offset);
+        if u16_at(header, offset)? != expected {
+            return Err(WinFontError);
+        }
+    }
+    *position = base.saturating_add(116);
+    if u32_at(header, 116)? < 3 {
         return Err(WinFontError);
     }
+    *position = base.saturating_add(136);
     let rva = u32_at(header, 136)?;
+    *position = base;
     let sections = range(
         header,
         248,
@@ -183,21 +211,29 @@ fn pe_resource<'a>(
             budget = budget.checked_sub(1).ok_or(WinFontError)?;
             for lang in directory(resources, subdirectory(name)?)? {
                 budget = budget.checked_sub(1).ok_or(WinFontError)?;
-                let leaf = range(resources, offset32(lang, 4)?, 16)?;
-                let offset = u32_at(leaf, 0)?.checked_sub(rva).ok_or(WinFontError)?;
-                let bytes = range(
-                    raw,
-                    usize::try_from(offset).map_err(|_| WinFontError)?,
-                    offset32(leaf, 4)?,
-                )?;
-                if faces == face {
+                if face == Some(faces) {
+                    let file_offset = |part: &[u8]| {
+                        (part.as_ptr() as usize).saturating_sub(file.as_ptr() as usize)
+                    };
+                    *position = file_offset(lang).saturating_add(4);
+                    let leaf = range(resources, offset32(lang, 4)?, 16)?;
+                    *position = file_offset(leaf);
+                    let offset = u32_at(leaf, 0)?.checked_sub(rva).ok_or(WinFontError)?;
+                    let tail = raw
+                        .get(usize::try_from(offset).map_err(|_| WinFontError)?..)
+                        .ok_or(WinFontError)?;
+                    *position = position.saturating_add(4);
+                    let bytes = range(tail, 0, offset32(leaf, 4)?)?;
                     selected = Some(bytes);
                 }
                 faces = faces.checked_add(1).ok_or(WinFontError)?;
             }
         }
     }
-    Ok((selected.ok_or(WinFontError)?, faces))
+    if faces == 0 {
+        return Err(WinFontError);
+    }
+    Ok((selected, faces))
 }
 
 fn round_64(value: u32) -> Result<u32, WinFontError> {
@@ -224,23 +260,58 @@ impl WinFont {
 
     /// Parse `face` of a raw FNT or an NE or PE32 FON file.
     pub fn parse(data: &[u8], face: u32) -> Result<Self, WinFontError> {
-        let (data, num_faces) = if data.starts_with(b"MZ") {
-            fon_resource(data, face)?
-        } else if face == 0 {
-            (data, 1)
+        Self::parse_with_offset(data, face).map_err(|_| WinFontError)
+    }
+
+    /// Read the face count independently of the validity of the first strike.
+    pub fn face_count(file: &[u8]) -> Result<u32, WinFontError> {
+        if file.starts_with(b"MZ") {
+            fon_resource(file, None, &mut 0).map(|(_, count)| count)
+        } else if Self::is_win_font(file) {
+            Ok(1)
         } else {
-            return Err(WinFontError);
+            Err(WinFontError)
+        }
+    }
+
+    /// Parse a face and report the file offset of an invalid FNT field.
+    pub fn parse_with_offset(file: &[u8], face: u32) -> Result<Self, usize> {
+        let (data, num_faces) = if file.starts_with(b"MZ") {
+            let mut position = 0;
+            let (data, count) = fon_resource(file, Some(face), &mut position)
+                .map_err(|_| file.len().min(position))?;
+            (data.ok_or(position.min(file.len()))?, count)
+        } else if face == 0 {
+            (file, 1)
+        } else {
+            return Err(0);
         };
+        let base = (data.as_ptr() as usize).saturating_sub(file.as_ptr() as usize);
+        let mut at = 0;
+        Self::parse_fnt(data, num_faces, &mut at)
+            .map_err(|_| base.saturating_add(at.min(data.len())))
+    }
+
+    fn parse_fnt(data: &[u8], num_faces: u32, at: &mut usize) -> Result<Self, WinFontError> {
         let version = u16_at(data, 0)?;
-        if !matches!(version, 0x200 | 0x300) || data.len() < 148 {
+        if !matches!(version, 0x200 | 0x300) {
             return Err(WinFontError);
         }
+        if data.len() < 148 {
+            *at = data.len();
+            return Err(WinFontError);
+        }
+        *at = 2;
         let size = usize::try_from(u32_at(data, 2)?).map_err(|_| WinFontError)?;
         let header_size = if version == 0x300 { 148usize } else { 118usize };
-        if size < header_size || size > data.len() || u16_at(data, 66)? & 1 != 0 {
+        if size < header_size || size > data.len() {
             return Err(WinFontError);
         }
         let data = data.get(..size).ok_or(WinFontError)?;
+        *at = 66;
+        if u16_at(data, 66)? & 1 != 0 {
+            return Err(WinFontError);
+        }
         let point_size = u32::from(u16_at(data, 68)?);
         let y_res = match u16_at(data, 70)? {
             0 => 72,
@@ -250,11 +321,14 @@ impl WinFont {
             0 => 72,
             value => u32::from(value),
         };
+        *at = 74;
         let ascent = i16::try_from(u16_at(data, 74)?).map_err(|_| WinFontError)?;
+        *at = 88;
         let height = u16_at(data, 88)?;
         if height == 0 {
             return Err(WinFontError);
         }
+        *at = 95;
         let first_char = byte(data, 95)?;
         let last_char = byte(data, 96)?;
         if first_char > last_char {
@@ -263,6 +337,7 @@ impl WinFont {
         let count = usize::from(last_char.checked_sub(first_char).ok_or(WinFontError)?)
             .checked_add(1)
             .ok_or(WinFontError)?;
+        *at = 97;
         let default_glyph = usize::from(byte(data, 97)?);
         if default_glyph >= count
             || usize::try_from(u32_at(data, 105)?).map_err(|_| WinFontError)? >= size
@@ -281,6 +356,7 @@ impl WinFont {
         }
         let x_ppem = round_64(mul_div(nominal, x_res, 72)?)?;
         let entry_len = if version == 0x300 { 6usize } else { 4usize };
+        *at = header_size;
         let entries_end = header_size
             .checked_add(count.checked_mul(entry_len).ok_or(WinFontError)?)
             .ok_or(WinFontError)?;
@@ -292,7 +368,9 @@ impl WinFont {
             let entry = header_size
                 .checked_add(i.checked_mul(entry_len).ok_or(WinFontError)?)
                 .ok_or(WinFontError)?;
+            *at = entry;
             let width = u16_at(data, entry)?;
+            *at = entry.saturating_add(2);
             let value_offset = entry.checked_add(2).ok_or(WinFontError)?;
             let offset = if version == 0x300 {
                 usize::try_from(u32_at(data, value_offset)?).map_err(|_| WinFontError)?

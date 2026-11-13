@@ -201,6 +201,8 @@ sofel-subset --font-file=Roboto.ttf --unicodes=41-5A -o out.ttf
 
 BDF の検証では、壊れた行の先頭位置を表示する。ビットマップ行が途中で欠落した場合はファイル末尾の位置を表示する。
 
+Windows の FNT と FON も検証できる。複数のフェイスを含む FON では、診断にフェイス番号が付く。
+
 Type 42 も `sofel-validate` で検証できる。`/sfnts` の16進文字列に無効な文字があれば、その文字のファイル内の位置を報告する。
 
 ### `sofel-woff`

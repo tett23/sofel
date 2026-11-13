@@ -465,6 +465,8 @@ Type 1 の Multiple Masters では、`Type1Face::multiple_masters` が軸の名�
 
 `sofel-validate` は BDF を識別し、ファイル先頭から破損した行の先頭までのバイト数をタグ `BDF ` のオフセットとして返す。入力が途中で尽きた場合はファイル長を、不正な UTF-8 がある場合は最初の不正なバイトの位置を返す（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
+Windows ビットマップフォントの検証では、単独の FNT または FON に収録された各フェイスを読み込む。FON のフェイス内で高さフィールドがゼロの場合、診断のオフセットは FON の先頭からそのフィールドまでのバイト数となる（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+
 `sofel-validate` は Type 42 のラッパーを解析し、埋め込み sfnt を通常の sfnt と同じ手順で検証する。ラッパーの診断はタグ `T42 ` とファイル先頭からのオフセットを返す。埋め込み sfnt の各表の診断では、その表の先頭からのオフセットを返す（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
 `sofel-type1::type42::Type42Source` は Type42 の `/sfnts` 配列の16進文字列または `RD` バイナリを連結し、展開長と sfnt の表範囲を検査する。`/Encoding` と `/CharStrings` から Type42 のグリフ番号を読み、`.notdef` を先頭に置く。Unicode の文字対応は PostScript のグリフ名を Adobe Glyph List と `uniXXXX`・`uXXXXX` によって変換し、8ビットの Encoding は別に問い合わせる。`Font::from_type42` が返す `Type42Face` は Type42 のグリフ番号を埋め込み TrueType のグリフ番号へ変換し、送りを返す。輪郭を読むときは `embedded_glyph` と `inner_font` の組を使う（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。

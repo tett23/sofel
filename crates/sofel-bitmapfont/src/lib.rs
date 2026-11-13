@@ -24,7 +24,7 @@ impl fmt::Display for BdfError {
 }
 
 /// One BDF glyph and its packed monochrome bitmap.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Glyph {
     /// Unicode encoding, absent for `ENCODING -1`.
     pub encoding: Option<u32>,
@@ -50,6 +50,7 @@ pub struct BdfFont {
     bits_per_pixel: u8,
     glyphs: Vec<Glyph>,
     default_glyph: usize,
+    encoded_count: usize,
 }
 
 impl BdfFont {
@@ -68,11 +69,21 @@ impl BdfFont {
         let text = core::str::from_utf8(data).map_err(|error| error.valid_up_to())?;
         let mut next_offset = 0usize;
         let mut offset = 0usize;
-        let mut raw = text.split_inclusive('\n');
+        let mut remaining = text;
         let lines = core::iter::from_fn(|| {
             offset = next_offset;
-            let line = raw.next()?;
-            next_offset = next_offset.saturating_add(line.len());
+            if remaining.is_empty() {
+                return None;
+            }
+            let end = remaining.find(['\r', '\n']).unwrap_or(remaining.len());
+            let (line, suffix) = remaining.split_at(end);
+            let separator = if suffix.starts_with("\r\n") || suffix.starts_with("\n\r") {
+                2
+            } else {
+                usize::from(!suffix.is_empty())
+            };
+            remaining = suffix.get(separator..)?;
+            next_offset = text.len().saturating_sub(remaining.len());
             Some(line.trim_end())
         });
         Self::parse_lines(lines, data.len()).map_err(|_| offset)
@@ -92,6 +103,10 @@ impl BdfFont {
         let mut declared = None;
         let mut glyphs = Vec::new();
         let mut default_char = None;
+        let mut point_size = None;
+        let mut pixel_size = 0;
+        let mut resolution_x = None;
+        let mut resolution_y = None;
         let mut ended = false;
         let mut in_properties = false;
         while let Some(line) = lines.next() {
@@ -124,6 +139,23 @@ impl BdfFont {
                     return Err(BdfError);
                 }
                 in_properties = false;
+            } else if in_properties && let Some((key, value)) = line.split_once(' ') {
+                match key {
+                    "POINT_SIZE" => point_size = Some(number(Some(value.trim()))?.unsigned_abs()),
+                    "PIXEL_SIZE" => {
+                        pixel_size = number(Some(value.trim()))?.unsigned_abs().min(32767)
+                    }
+                    "RESOLUTION_X" => {
+                        resolution_x = Some(number(Some(value.trim()))?.unsigned_abs())
+                    }
+                    "RESOLUTION_Y" => {
+                        resolution_y = Some(number(Some(value.trim()))?.unsigned_abs())
+                    }
+                    "DEFAULT_CHAR" => {
+                        default_char = u32::try_from(number(Some(value.trim()))?).ok()
+                    }
+                    _ => {}
+                }
             } else if let Some(fields) = line.strip_prefix("SIZE ") {
                 let mut parts = fields.split_ascii_whitespace();
                 let points = number(parts.next())?;
@@ -162,7 +194,13 @@ impl BdfFont {
                 if in_properties || declared.is_none_or(|n| glyphs.len() >= n) {
                     return Err(BdfError);
                 }
-                glyphs.push(parse_glyph(&mut lines, input_len, size.ok_or(BdfError)?.3)?);
+                let glyph = parse_glyph(&mut lines, input_len, size.ok_or(BdfError)?.3)?;
+                // The BDF driver exposes a reserved empty slot for an unencoded glyph.
+                glyphs.push(if glyph.encoding.is_some() {
+                    glyph
+                } else {
+                    Glyph::default()
+                });
             }
         }
         let (points, x_res, y_res, bits_per_pixel) = size.ok_or(BdfError)?;
@@ -171,27 +209,45 @@ impl BdfFont {
             return Err(BdfError);
         }
         glyphs.sort_by_key(|glyph| glyph.encoding.unwrap_or(u32::MAX));
+        let encoded_count = glyphs.partition_point(|g| g.encoding.is_some());
         let default_glyph = default_char
             .and_then(|codepoint| {
                 glyphs
                     .iter()
-                    .position(|glyph| glyph.encoding == Some(codepoint))
+                    .rposition(|glyph| glyph.encoding.unwrap_or(0) == codepoint)
             })
             .unwrap_or(0);
-        let ppem = |resolution: u32| {
-            points
-                .checked_mul(resolution)?
-                .checked_mul(64)?
-                .checked_add(36)
-                .map(|v| v / 72)
-                .filter(|v| *v > 0)
+        let mul_div = |a: u32, b: u32, divisor: u32| {
+            let rounded = u64::from(a)
+                .saturating_mul(u64::from(b))
+                .saturating_add(u64::from(divisor / 2));
+            u32::try_from(rounded.checked_div(u64::from(divisor)).ok_or(BdfError)?)
+                .map_err(|_| BdfError)
+        };
+        let size = match point_size {
+            Some(n) if n <= 0x504c2 => mul_div(n, 64 * 7200, 72270)?,
+            None if points <= 32767 => points << 6,
+            _ => 32767,
+        };
+        let x_res = resolution_x.unwrap_or(x_res).min(32767);
+        let y_res = resolution_y.unwrap_or(y_res).min(32767);
+        let y_ppem = match (pixel_size, y_res) {
+            (0, 0) => size,
+            (0, res) => mul_div(size, res, 72)?,
+            (pixels, _) => pixels << 6,
+        };
+        let x_ppem = if x_res == 0 || y_res == 0 {
+            y_ppem
+        } else {
+            mul_div(y_ppem, x_res, y_res)?
         };
         Ok(Self {
-            x_ppem_26_6: ppem(x_res).ok_or(BdfError)?,
-            y_ppem_26_6: ppem(y_res).ok_or(BdfError)?,
+            x_ppem_26_6: x_ppem,
+            y_ppem_26_6: y_ppem,
             bits_per_pixel,
             glyphs,
             default_glyph,
+            encoded_count,
         })
     }
 
@@ -209,10 +265,29 @@ impl BdfFont {
     }
     /// Map a Unicode scalar to FreeType's one-based glyph ID.
     pub fn nominal_glyph(&self, codepoint: u32) -> Option<u32> {
-        self.glyphs
-            .iter()
-            .position(|g| g.encoding == Some(codepoint))
-            .and_then(|i| u32::try_from(i.saturating_add(1)).ok())
+        let mut low = 0;
+        let mut high = self.encoded_count;
+        let mut mid = high / 2;
+        while low < high {
+            let code = self.glyphs.get(mid)?.encoding?;
+            match codepoint.cmp(&code) {
+                core::cmp::Ordering::Equal => {
+                    // FreeType's BDF cmap stores and returns a 16-bit glyph index.
+                    let id = u16::try_from(mid & 0xffff).ok()?.wrapping_add(1);
+                    return (id != 0).then_some(u32::from(id));
+                }
+                core::cmp::Ordering::Less => high = mid,
+                core::cmp::Ordering::Greater => low = mid.checked_add(1)?,
+            }
+            // FreeType predicts the next index from the distance between character codes.
+            let step = i64::from(codepoint).saturating_sub(i64::from(code));
+            mid = isize::try_from(step)
+                .ok()
+                .and_then(|delta| mid.checked_add_signed(delta))
+                .filter(|index| (low..high).contains(index))
+                .unwrap_or_else(|| low.midpoint(high));
+        }
+        None
     }
     /// Return a glyph by FreeType glyph ID. ID zero uses the first glyph.
     pub fn glyph(&self, id: u32) -> Option<&Glyph> {
@@ -239,8 +314,18 @@ fn parse_glyph<'a>(
     let mut box_data = None;
     while let Some(line) = lines.next() {
         if let Some(field) = line.strip_prefix("ENCODING ") {
-            let value = number(field.split_ascii_whitespace().next())?;
-            encoding = Some(u32::try_from(value).ok());
+            let mut fields = field.split_ascii_whitespace();
+            let primary = number(fields.next())?;
+            let value = if primary < 0 {
+                fields
+                    .next()
+                    .map(|field| number(Some(field)))
+                    .transpose()?
+                    .unwrap_or(-1)
+            } else {
+                primary
+            };
+            encoding = Some(u32::try_from(value).ok().filter(|code| *code < 0x110000));
         } else if let Some(field) = line.strip_prefix("DWIDTH ") {
             advance = Some(number(field.split_ascii_whitespace().next())?);
         } else if let Some(field) = line.strip_prefix("BBX ") {
