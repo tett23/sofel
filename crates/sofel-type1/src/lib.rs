@@ -9,3 +9,6 @@ pub mod afm;
 
 /// Type 1 PFB stream container.
 pub mod pfb;
+
+/// PFM kerning metrics.
+pub mod pfm;
