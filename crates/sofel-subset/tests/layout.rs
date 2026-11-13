@@ -2270,3 +2270,53 @@ fn adr0022_layout_12_writes_wide_lists_from_both_header_forms() {
         }
     }
 }
+
+#[test]
+fn adr0022_wide_mark_positioning_keeps_marks_and_anchors() {
+    let anchor = Buf::new().u16(1).i16(-9).i16(47).done();
+    for kind in [4, 5, 6] {
+        let marks = link(vec![0, 0, 1, 0, 0, 0, 0, 0], vec![(5, 3, anchor.clone())]);
+        let matrix = link(vec![0, 0, 1, 0, 0, 0], vec![(3, 3, anchor.clone())]);
+        let bases = if kind == 5 {
+            link(vec![0, 0, 1, 0, 0, 0], vec![(3, 3, matrix)])
+        } else {
+            matrix
+        };
+        let mut header = vec![0; 20];
+        header[1] = 2;
+        header[11] = 1;
+        let subtable = link(
+            header,
+            vec![
+                (2, 4, coverage1(&[1])),
+                (6, 4, coverage1(&[2])),
+                (12, 4, marks),
+                (16, 4, bases),
+            ],
+        );
+        let data = font_with(vec![(
+            b"GPOS",
+            layout_table(&[(b"mark", &[0])], &[(kind, subtable)]),
+        )]);
+        let out = subset(&Font::new(&data, 0).unwrap(), &chars("AB")).unwrap();
+        let gpos = out_table(&out, b"GPOS").unwrap();
+        let list = follow(&gpos, 8);
+        assert_eq!(u16_at(list, 0), 1, "missing format-2 mark lookup {kind}");
+        let st = follow(follow(list, 2), 6);
+        assert_eq!(u16_at(st, 0), 2);
+        let far = |d: &[u8], at, width| {
+            d[at..at + width]
+                .iter()
+                .fold(0usize, |v, &b| v * 256 + usize::from(b))
+        };
+        let marks = &st[far(st, 12, 4)..];
+        assert!(marks[far(marks, 5, 3)..].starts_with(&anchor));
+        let base = &st[far(st, 16, 4)..];
+        let matrix = if kind == 5 {
+            &base[far(base, 3, 3)..]
+        } else {
+            base
+        };
+        assert!(matrix[far(matrix, 3, 3)..].starts_with(&anchor));
+    }
+}

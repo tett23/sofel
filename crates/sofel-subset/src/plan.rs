@@ -924,7 +924,7 @@ impl Plan {
                                     layout::Kind::MarkBasePos
                                         | layout::Kind::MarkLigPos
                                         | layout::Kind::MarkMarkPos
-                                ) && subtable.u16(0) == 1)
+                                ) && matches!(subtable.u16(0), 1 | 2))
                                 || matches!(
                                     kind,
                                     layout::Kind::SingleSubst

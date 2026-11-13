@@ -72,35 +72,81 @@ fn collect_anchor_devices(anchor: D<'_>, keep: bool, selected: &mut BTreeSet<u32
     Some(())
 }
 
+#[derive(Clone, Copy)]
+struct MarkWidths {
+    outer: u8,
+    inner: u8,
+}
+
+impl MarkWidths {
+    fn new(st: D<'_>) -> Option<Self> {
+        match st.u16(0) {
+            1 => Some(Self { outer: 2, inner: 2 }),
+            2 => Some(Self { outer: 4, inner: 3 }),
+            _ => None,
+        }
+    }
+
+    fn field(self, st: D<'_>, narrow: usize, wide: usize) -> D<'_> {
+        if self.outer == 4 {
+            st.off32(wide)
+        } else {
+            st.off16(narrow)
+        }
+    }
+
+    fn count(self, data: D<'_>) -> usize {
+        data.uint(0, self.inner) as usize
+    }
+    fn record(self, index: usize, extra: usize) -> usize {
+        usize::from(self.inner)
+            .saturating_add(index.saturating_mul(usize::from(self.inner).saturating_add(extra)))
+    }
+    fn offset(self, data: D<'_>, at: usize) -> D<'_> {
+        data.follow(data.uint(at, self.inner))
+    }
+    fn set_count(self, s: &mut Sub<'_, '_>, at: usize, value: u32) {
+        if self.inner == 3 {
+            s.s.set_u24(at, value)
+        } else {
+            s.s.set_u16(at, n16(value as usize))
+        }
+    }
+}
 fn collect_mark_anchors(
+    w: MarkWidths,
     marks: D<'_>,
     coverage: Cov<'_>,
     glyphs: &BitSet,
     selected: &mut BTreeSet<u32>,
 ) -> Option<()> {
-    let n = usize::from(marks.u16(0));
-    if n.checked_mul(4)? > marks.0.len().saturating_sub(2) {
+    let n = w.count(marks);
+    if n.checked_mul(usize::from(w.inner) + 2)? > marks.0.len().saturating_sub(usize::from(w.inner))
+    {
         return None;
     }
     for (i, glyph) in coverage.glyphs().into_iter().take(n).enumerate() {
-        let anchor = marks.off16(4usize.saturating_add(i.saturating_mul(4)));
+        let anchor = w.offset(marks, w.record(i, 2).saturating_add(2));
         collect_anchor_devices(anchor, glyphs.has(glyph), selected)?;
     }
     Some(())
 }
 
 fn collect_anchor_matrix(
+    w: MarkWidths,
     matrix: D<'_>,
     class_count: usize,
     kept: &BTreeSet<usize>,
     selected: &mut BTreeSet<u32>,
 ) -> Option<()> {
-    let cells = usize::from(matrix.u16(0)).checked_mul(class_count)?;
-    if cells.checked_mul(2)? > matrix.0.len().saturating_sub(2) {
+    let cells = w.count(matrix).checked_mul(class_count)?;
+    if cells.checked_mul(usize::from(w.inner))?
+        > matrix.0.len().saturating_sub(usize::from(w.inner))
+    {
         return None;
     }
     for i in 0..cells {
-        let anchor = matrix.off16(2usize.saturating_add(i.saturating_mul(2)));
+        let anchor = w.offset(matrix, w.record(i, 0));
         collect_anchor_devices(anchor, kept.contains(&i), selected)?;
     }
     Some(())
@@ -111,34 +157,35 @@ fn collect_mark_base_like_anchors(
     glyphs: &BitSet,
     selected: &mut BTreeSet<u32>,
 ) -> Option<()> {
-    let mark_cov = Cov(st.off16(2));
-    let base_cov = Cov(st.off16(4));
-    let class_count = usize::from(st.u16(6));
-    let marks = st.off16(8);
-    let bases = st.off16(10);
-    if usize::from(bases.u16(0))
+    let w = MarkWidths::new(st)?;
+    let mark_cov = Cov(w.field(st, 2, 2));
+    let base_cov = Cov(w.field(st, 4, 6));
+    let class_count = usize::from(st.u16(if w.outer == 4 { 10 } else { 6 }));
+    let marks = w.field(st, 8, 12);
+    let bases = w.field(st, 10, 16);
+    if w.count(bases)
         .checked_mul(class_count)?
-        .checked_mul(2)?
-        > bases.0.len().saturating_sub(2)
+        .checked_mul(usize::from(w.inner))?
+        > bases.0.len().saturating_sub(usize::from(w.inner))
     {
         return None;
     }
-    collect_mark_anchors(marks, mark_cov, glyphs, selected)?;
-    let classes = mark_classes(mark_cov, marks, glyphs);
+    collect_mark_anchors(w, marks, mark_cov, glyphs, selected)?;
+    let classes = mark_classes(w, mark_cov, marks, glyphs);
     let mut kept = BTreeSet::new();
     for (row, glyph) in base_cov
         .glyphs()
         .into_iter()
-        .take(usize::from(bases.u16(0)))
+        .take(w.count(bases))
         .enumerate()
     {
         if !glyphs.has(glyph) {
             continue;
         }
         let at = |col: usize| row.saturating_mul(class_count).saturating_add(col);
-        if (0..class_count)
-            .any(|col| classes.contains_key(&n32(col)) && bases.u16_at(2, at(col)) != 0)
-        {
+        if (0..class_count).any(|col| {
+            classes.contains_key(&n32(col)) && bases.uint(w.record(at(col), 0), w.inner) != 0
+        }) {
             kept.extend(
                 (0..class_count)
                     .filter(|&col| classes.contains_key(&n32(col)))
@@ -146,7 +193,7 @@ fn collect_mark_base_like_anchors(
             );
         }
     }
-    collect_anchor_matrix(bases, class_count, &kept, selected)
+    collect_anchor_matrix(w, bases, class_count, &kept, selected)
 }
 
 fn collect_mark_lig_anchors(
@@ -154,24 +201,27 @@ fn collect_mark_lig_anchors(
     glyphs: &BitSet,
     selected: &mut BTreeSet<u32>,
 ) -> Option<()> {
-    let mark_cov = Cov(st.off16(2));
-    let lig_cov = Cov(st.off16(4));
-    let class_count = usize::from(st.u16(6));
-    let marks = st.off16(8);
-    let ligs = st.off16(10);
-    collect_mark_anchors(marks, mark_cov, glyphs, selected)?;
-    let classes = mark_classes(mark_cov, marks, glyphs);
-    let n = usize::from(ligs.u16(0));
-    if n.checked_mul(2)? > ligs.0.len().saturating_sub(2) {
+    let w = MarkWidths::new(st)?;
+    let mark_cov = Cov(w.field(st, 2, 2));
+    let lig_cov = Cov(w.field(st, 4, 6));
+    let class_count = usize::from(st.u16(if w.outer == 4 { 10 } else { 6 }));
+    let marks = w.field(st, 8, 12);
+    let ligs = w.field(st, 10, 16);
+    collect_mark_anchors(w, marks, mark_cov, glyphs, selected)?;
+    let classes = mark_classes(w, mark_cov, marks, glyphs);
+    let n = w.count(ligs);
+    if n.checked_mul(usize::from(w.inner))? > ligs.0.len().saturating_sub(usize::from(w.inner)) {
         return None;
     }
     for (i, glyph) in lig_cov.glyphs().into_iter().take(n).enumerate() {
-        let attach = ligs.off16(2usize.saturating_add(i.saturating_mul(2)));
+        let attach = w.offset(ligs, w.record(i, 0));
         if attach.is_null() {
             continue;
         }
-        let cells = usize::from(attach.u16(0)).checked_mul(class_count)?;
-        if cells.checked_mul(2)? > attach.0.len().saturating_sub(2) {
+        let cells = w.count(attach).checked_mul(class_count)?;
+        if cells.checked_mul(usize::from(w.inner))?
+            > attach.0.len().saturating_sub(usize::from(w.inner))
+        {
             return None;
         }
         let in_class = |cell: usize| {
@@ -179,9 +229,10 @@ fn collect_mark_lig_anchors(
                 .is_some_and(|class| classes.contains_key(&n32(class)))
         };
         let keep = glyphs.has(glyph)
-            && (0..cells).any(|cell| in_class(cell) && attach.u16_at(2, cell) != 0);
+            && (0..cells)
+                .any(|cell| in_class(cell) && attach.uint(w.record(cell, 0), w.inner) != 0);
         let kept = (0..cells).filter(|&cell| keep && in_class(cell)).collect();
-        collect_anchor_matrix(attach, class_count, &kept, selected)?;
+        collect_anchor_matrix(w, attach, class_count, &kept, selected)?;
     }
     Some(())
 }
@@ -256,11 +307,13 @@ pub(crate) fn retained_variation_indices(
                 }
                 continue;
             }
-            if matches!(kind, Kind::MarkBasePos | Kind::MarkMarkPos) && subtable.u16(0) == 1 {
+            if matches!(kind, Kind::MarkBasePos | Kind::MarkMarkPos)
+                && matches!(subtable.u16(0), 1 | 2)
+            {
                 collect_mark_base_like_anchors(subtable, glyphs, &mut selected)?;
                 continue;
             }
-            if kind == Kind::MarkLigPos && subtable.u16(0) == 1 {
+            if kind == Kind::MarkLigPos && matches!(subtable.u16(0), 1 | 2) {
                 collect_mark_lig_anchors(subtable, glyphs, &mut selected)?;
                 continue;
             }
@@ -1016,51 +1069,62 @@ pub(crate) fn cursive(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
 }
 
 /// `Markclass_closure_and_remap_indexes`.
-fn mark_classes(cov: Cov<'_>, marks: D<'_>, gs: &BitSet) -> BTreeMap<u32, u32> {
-    let n = usize::from(marks.u16(0));
+fn mark_classes(w: MarkWidths, cov: Cov<'_>, marks: D<'_>, gs: &BitSet) -> BTreeMap<u32, u32> {
+    let n = w.count(marks);
     let mut classes = BitSet::new();
     for (i, g) in cov.glyphs().into_iter().take(n).enumerate() {
         if gs.has(g) {
-            classes.add(u32::from(
-                marks.u16(2usize.saturating_add(i.saturating_mul(4))),
-            ));
+            classes.add(u32::from(marks.u16(w.record(i, 2))));
         }
     }
     classes.iter().zip(0u32..).collect()
 }
 
 /// `MarkArray::subset` into the current object.
-fn mark_array(s: &mut Sub<'_, '_>, marks: D<'_>, cov: Cov<'_>, map: &BTreeMap<u32, u32>) -> bool {
-    let count_at = s.s.u16(0);
-    let n = usize::from(marks.u16(0));
+fn mark_array(
+    w: MarkWidths,
+    s: &mut Sub<'_, '_>,
+    marks: D<'_>,
+    cov: Cov<'_>,
+    map: &BTreeMap<u32, u32>,
+) -> bool {
+    let count_at = s.s.zeros(usize::from(w.inner));
+    let n = w.count(marks);
     let mut ret = false;
-    let mut len = 0u16;
+    let mut len = 0u32;
     for (i, g) in cov.glyphs().into_iter().take(n).enumerate() {
         if !s.in_gsub(g) {
             continue;
         }
-        let rec = 2usize.saturating_add(i.saturating_mul(4));
+        let rec = w.record(i, 2);
         let class = u32::from(marks.u16(rec));
         s.s.u16((map.get(&class).copied().unwrap_or(crate::set::INVALID) & 0xFFFF) as u16);
-        let at = s.s.u16(0);
-        let a = marks.off16(rec.saturating_add(2));
-        ret |= s.serialize_subset_opt(at, 2, a, |s| anchor(s, a));
+        let at = s.s.zeros(usize::from(w.inner));
+        let a = w.offset(marks, rec.saturating_add(2));
+        ret |= s.serialize_subset_opt(at, w.inner, a, |s| anchor(s, a));
         len = len.wrapping_add(1);
     }
-    s.s.set_u16(count_at, len);
+    w.set_count(s, count_at, len);
     ret
 }
 
 /// `AnchorMatrix::subset` into the current object.
-fn anchor_matrix(s: &mut Sub<'_, '_>, m: D<'_>, rows: u16, indexes: &[usize]) -> bool {
+fn anchor_matrix(
+    w: MarkWidths,
+    s: &mut Sub<'_, '_>,
+    m: D<'_>,
+    rows: usize,
+    indexes: &[usize],
+) -> bool {
     if indexes.is_empty() {
         return false;
     }
-    s.s.u16(rows);
+    let at = s.s.zeros(usize::from(w.inner));
+    w.set_count(s, at, n32(rows));
     for &i in indexes {
-        let a = m.off16(2usize.saturating_add(i.saturating_mul(2)));
-        let at = s.s.u16(0);
-        s.serialize_subset_opt(at, 2, a, |s| anchor(s, a));
+        let a = w.offset(m, w.record(i, 0));
+        let at = s.s.zeros(usize::from(w.inner));
+        s.serialize_subset_opt(at, w.inner, a, |s| anchor(s, a));
     }
     true
 }
@@ -1068,13 +1132,14 @@ fn anchor_matrix(s: &mut Sub<'_, '_>, m: D<'_>, rows: u16, indexes: &[usize]) ->
 /// `collect_subset_anchor_indexes`: the kept rows of a base or mark2
 /// array and their new coverage.
 fn anchor_indexes(
+    w: MarkWidths,
     s: &Sub<'_, '_>,
     cov: Cov<'_>,
     m: D<'_>,
     class_count: usize,
     map: &BTreeMap<u32, u32>,
 ) -> (Vec<u32>, Vec<usize>) {
-    let rows = usize::from(m.u16(0));
+    let rows = w.count(m);
     let mut new_cov = Vec::new();
     let mut indexes = Vec::new();
     for (row, g) in cov.glyphs().into_iter().take(rows).enumerate() {
@@ -1082,8 +1147,8 @@ fn anchor_indexes(
             continue;
         }
         let at = |col: usize| row.saturating_mul(class_count).saturating_add(col);
-        let non_empty =
-            (0..class_count).any(|col| map.contains_key(&n32(col)) && m.u16_at(2, at(col)) != 0);
+        let non_empty = (0..class_count)
+            .any(|col| map.contains_key(&n32(col)) && m.uint(w.record(at(col), 0), w.inner) != 0);
         if !non_empty {
             continue;
         }
@@ -1097,26 +1162,26 @@ fn anchor_indexes(
 
 /// MarkBasePos and MarkMarkPos format 1 (they share the layout).
 fn mark_base_like(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
-    if st.u16(0) != 1 {
+    let Some(w) = MarkWidths::new(st) else {
         return false;
-    }
-    let mark_cov = Cov(st.off16(2));
-    let base_cov = Cov(st.off16(4));
-    let class_count = usize::from(st.u16(6));
-    let marks = st.off16(8);
-    let bases = st.off16(10);
-    s.s.u16(1);
-    let mark_cov_at = s.s.u16(0);
-    let base_cov_at = s.s.u16(0);
+    };
+    let mark_cov = Cov(w.field(st, 2, 2));
+    let base_cov = Cov(w.field(st, 4, 6));
+    let class_count = usize::from(st.u16(if w.outer == 4 { 10 } else { 6 }));
+    let marks = w.field(st, 8, 12);
+    let bases = w.field(st, 10, 16);
+    s.s.u16(st.u16(0));
+    let mark_cov_at = s.s.zeros(usize::from(w.outer));
+    let base_cov_at = s.s.zeros(usize::from(w.outer));
     let cc_at = s.s.u16(0);
-    let marks_at = s.s.u16(0);
-    let bases_at = s.s.u16(0);
-    let map = mark_classes(mark_cov, marks, &s.p.layout.glyphset_gsub);
+    let marks_at = s.s.zeros(usize::from(w.outer));
+    let bases_at = s.s.zeros(usize::from(w.outer));
+    let map = mark_classes(w, mark_cov, marks, &s.p.layout.glyphset_gsub);
     if map.is_empty() {
         return false;
     }
     s.s.set_u16(cc_at, n16(map.len()));
-    let n = usize::from(marks.u16(0));
+    let n = w.count(marks);
     let new_cov: Vec<u32> = mark_cov
         .glyphs()
         .into_iter()
@@ -1124,22 +1189,24 @@ fn mark_base_like(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
         .filter(|&g| s.in_gsub(g))
         .map(|g| s.map(g))
         .collect();
-    if !s.serialize_serialize(mark_cov_at, 2, |s| s.coverage(&new_cov)) {
+    if !s.serialize_serialize(mark_cov_at, w.outer, |s| s.coverage(&new_cov)) {
         return false;
     }
-    if !s.serialize_subset_opt(marks_at, 2, marks, |s| mark_array(s, marks, mark_cov, &map)) {
+    if !s.serialize_subset_opt(marks_at, w.outer, marks, |s| {
+        mark_array(w, s, marks, mark_cov, &map)
+    }) {
         return false;
     }
-    let (new_cov, indexes) = anchor_indexes(s, base_cov, bases, class_count, &map);
+    let (new_cov, indexes) = anchor_indexes(w, s, base_cov, bases, class_count, &map);
     if new_cov.is_empty() {
         return false;
     }
-    if !s.serialize_serialize(base_cov_at, 2, |s| s.coverage(&new_cov)) {
+    if !s.serialize_serialize(base_cov_at, w.outer, |s| s.coverage(&new_cov)) {
         return false;
     }
-    let rows = n16(new_cov.len());
-    s.serialize_subset_opt(bases_at, 2, bases, |s| {
-        anchor_matrix(s, bases, rows, &indexes)
+    let rows = new_cov.len();
+    s.serialize_subset_opt(bases_at, w.outer, bases, |s| {
+        anchor_matrix(w, s, bases, rows, &indexes)
     })
 }
 
@@ -1155,26 +1222,26 @@ pub(crate) fn mark_mark(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
 
 /// MarkLigPos format 1.
 pub(crate) fn mark_lig(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
-    if st.u16(0) != 1 {
+    let Some(w) = MarkWidths::new(st) else {
         return false;
-    }
-    let mark_cov = Cov(st.off16(2));
-    let lig_cov = Cov(st.off16(4));
-    let class_count = usize::from(st.u16(6));
-    let marks = st.off16(8);
-    let ligs = st.off16(10);
-    s.s.u16(1);
-    let mark_cov_at = s.s.u16(0);
-    let lig_cov_at = s.s.u16(0);
+    };
+    let mark_cov = Cov(w.field(st, 2, 2));
+    let lig_cov = Cov(w.field(st, 4, 6));
+    let class_count = usize::from(st.u16(if w.outer == 4 { 10 } else { 6 }));
+    let marks = w.field(st, 8, 12);
+    let ligs = w.field(st, 10, 16);
+    s.s.u16(st.u16(0));
+    let mark_cov_at = s.s.zeros(usize::from(w.outer));
+    let lig_cov_at = s.s.zeros(usize::from(w.outer));
     let cc_at = s.s.u16(0);
-    let marks_at = s.s.u16(0);
-    let ligs_at = s.s.u16(0);
-    let map = mark_classes(mark_cov, marks, &s.p.layout.glyphset_gsub);
+    let marks_at = s.s.zeros(usize::from(w.outer));
+    let ligs_at = s.s.zeros(usize::from(w.outer));
+    let map = mark_classes(w, mark_cov, marks, &s.p.layout.glyphset_gsub);
     if map.is_empty() {
         return false;
     }
     s.s.set_u16(cc_at, n16(map.len()));
-    let n = usize::from(marks.u16(0));
+    let n = w.count(marks);
     let new_cov: Vec<u32> = mark_cov
         .glyphs()
         .into_iter()
@@ -1182,36 +1249,46 @@ pub(crate) fn mark_lig(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
         .filter(|&g| s.in_gsub(g))
         .map(|g| s.map(g))
         .collect();
-    if !s.serialize_serialize(mark_cov_at, 2, |s| s.coverage(&new_cov)) {
+    if !s.serialize_serialize(mark_cov_at, w.outer, |s| s.coverage(&new_cov)) {
         return false;
     }
-    if !s.serialize_subset_opt(marks_at, 2, marks, |s| mark_array(s, marks, mark_cov, &map)) {
+    if !s.serialize_subset_opt(marks_at, w.outer, marks, |s| {
+        mark_array(w, s, marks, mark_cov, &map)
+    }) {
         return false;
     }
     let mut new_lig_cov = Vec::new();
-    let ok = s.serialize_subset_opt(ligs_at, 2, ligs, |s| {
-        let count_at = s.s.u16(0);
+    let ok = s.serialize_subset_opt(ligs_at, w.outer, ligs, |s| {
+        let count_at = s.s.zeros(usize::from(w.inner));
         let mut ret = false;
-        let n = usize::from(ligs.u16(0));
+        let n = w.count(ligs);
         for (i, g) in lig_cov.glyphs().into_iter().take(n).enumerate() {
             if !s.in_gsub(g) {
                 continue;
             }
-            let src = ligs.off16(2usize.saturating_add(i.saturating_mul(2)));
-            let rows = src.u16(0);
-            let cells = usize::from(rows).saturating_mul(class_count);
+            let src = w.offset(ligs, w.record(i, 0));
+            let rows = w.count(src);
+            let cells = rows.saturating_mul(class_count);
+            if cells.saturating_mul(usize::from(w.inner))
+                > src.0.len().saturating_sub(usize::from(w.inner))
+            {
+                continue;
+            }
             let kept = |idx: usize| {
                 class_count != 0
                     && map.contains_key(&n32(idx.checked_rem(class_count).unwrap_or(0)))
             };
-            let non_empty = (0..cells).any(|idx| kept(idx) && src.u16_at(2, idx) != 0);
+            let non_empty =
+                (0..cells).any(|idx| kept(idx) && src.uint(w.record(idx, 0), w.inner) != 0);
             if !non_empty {
                 continue;
             }
-            let at = s.s.u16(0);
-            s.bump_u16(count_at, 1);
+            let at = s.s.zeros(usize::from(w.inner));
+            w.set_count(s, count_at, n32(new_lig_cov.len().saturating_add(1)));
             let indexes: Vec<usize> = (0..cells).filter(|&idx| kept(idx)).collect();
-            ret |= s.serialize_subset_opt(at, 2, src, |s| anchor_matrix(s, src, rows, &indexes));
+            ret |= s.serialize_subset_opt(at, w.inner, src, |s| {
+                anchor_matrix(w, s, src, rows, &indexes)
+            });
             new_lig_cov.push(s.map(g));
         }
         ret
@@ -1219,7 +1296,7 @@ pub(crate) fn mark_lig(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
     if !ok {
         return false;
     }
-    s.serialize_serialize(lig_cov_at, 2, |s| s.coverage(&new_lig_cov))
+    s.serialize_serialize(lig_cov_at, w.outer, |s| s.coverage(&new_lig_cov))
 }
 
 #[cfg(test)]
