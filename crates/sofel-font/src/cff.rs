@@ -39,8 +39,7 @@ pub enum CffError {
     /// An INDEX (Name, Top DICT, String, Global Subrs, CharStrings,
     /// FDArray or Local Subrs) cannot be read.
     Index,
-    /// More than one font in the Name INDEX, or fewer Top DICTs than
-    /// names.
+    /// An invalid Name INDEX count or face index, or fewer Top DICTs than names.
     Names,
     /// A Top, Font or Private DICT cannot be parsed.
     Dict(DictError),
@@ -284,6 +283,13 @@ fn private_slice(data: &[u8], size: u64, offset: u64) -> Result<&[u8], CffError>
 }
 
 impl<'a> Cff<'a> {
+    /// Open a bare CFF 1 face by its zero-based Name INDEX position.
+    ///
+    /// Bare CFF has no sfnt `head`; the default units per em are 1000.
+    pub fn from_bare(data: &'a [u8], index: u32) -> Result<Cff<'a>, CffError> {
+        Self::from_data(data, Version::Cff, 1000, None, Some(index))
+    }
+
     /// Opens the `CFF2` or else the `CFF ` table of `font` as FreeType's
     /// CFF driver does (`cff_face_init`, `cff_font_load`), failing
     /// exactly when FreeType cannot open the face for CFF reasons. The
@@ -309,13 +315,22 @@ impl<'a> Cff<'a> {
 
     /// Opens a table of an sfnt font: `data` runs from the start of the
     /// table to the end of the file, `units_per_em` is `head`'s, and
-    /// `fvar_axes` the axis count of `fvar` if any (ADR 0021; bare CFF
-    /// comes with a later ADR).
+    /// `fvar_axes` the axis count of `fvar` if any (ADR 0021).
     pub fn from_table(
         data: &'a [u8],
         version: Version,
         units_per_em: u16,
         fvar_axes: Option<u16>,
+    ) -> Result<Cff<'a>, CffError> {
+        Self::from_data(data, version, units_per_em, fvar_axes, None)
+    }
+
+    fn from_data(
+        data: &'a [u8],
+        version: Version,
+        units_per_em: u16,
+        fvar_axes: Option<u16>,
+        face_index: Option<u32>,
     ) -> Result<Cff<'a>, CffError> {
         let header = Header::new(data).map_err(|_| CffError::Header)?;
         let hdr = usize::from(header.header_size);
@@ -348,13 +363,17 @@ impl<'a> Cff<'a> {
                 let strings = ft_index(data, strings_at as u64, version)?;
                 let g_at = index_end(&strings, strings_at);
                 let g = ft_index(data, g_at as u64, version)?;
-                if names.len() > tops.len() || names.len() > 1 {
+                if names.len() > tops.len()
+                    || face_index.is_none() && names.len() > 1
+                    || face_index.is_some_and(|index| index >= names.len())
+                {
                     return Err(CffError::Names);
                 }
                 let top = if tops.is_empty() {
                     &[][..]
                 } else {
-                    tops.ft_element(0).ok_or(CffError::Index)?
+                    tops.ft_element(face_index.unwrap_or(0))
+                        .ok_or(CffError::Index)?
                 };
                 (top, strings, g)
             }

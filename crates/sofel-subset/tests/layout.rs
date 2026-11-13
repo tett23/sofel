@@ -1535,3 +1535,39 @@ fn adr0022_layout12_uses_extended_header_and_retains_lookups() {
         assert_eq!(&result[at + 2..at + 2 + len], expected);
     }
 }
+
+#[test]
+fn adr0022_gdef14_class_offsets_match_harfbuzz() {
+    for wide in [false, true] {
+        let mut header = vec![0; 38];
+        header[..4].copy_from_slice(&0x0001_0004u32.to_be_bytes());
+        let (at, width) = if wide { (18, 4) } else { (4, 2) };
+        let classes = class_def2(&[(1, 3, 1)]);
+        let input = link(header, vec![(at, width, classes.clone())]);
+        let data = font_with(vec![(b"GDEF", input.clone())]);
+        let font = Font::new(&data, 0).unwrap();
+        let out = subset(&font, &chars("ABC")).unwrap();
+        let expected = if wide {
+            input
+        } else {
+            gdef_with_classes(classes)
+        };
+        assert_eq!(out_table(&out, b"GDEF").unwrap(), expected);
+    }
+}
+
+#[test]
+fn adr0022_gdef14_ligature_carets_match_harfbuzz() {
+    let mut header = vec![0; 38];
+    header[..4].copy_from_slice(&0x0001_0004u32.to_be_bytes());
+    let carets = vec![
+        0, 0, 0, 10, 0, 0, 1, 0, 0, 16, // coverage, count, LigGlyph
+        0, 1, 0, 1, 0, 1, // coverage contains glyph 1
+        0, 1, 0, 4, 0, 1, 0, 100, // one format-1 caret at 100
+    ];
+    let input = link(header, vec![(26, 4, carets)]);
+    let data = font_with(vec![(b"GDEF", input.clone())]);
+    let font = Font::new(&data, 0).unwrap();
+    let out = subset(&font, &chars("ABC")).unwrap();
+    assert_eq!(out_table(&out, b"GDEF").unwrap(), input);
+}
