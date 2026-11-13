@@ -11,20 +11,62 @@ const BARE_CFF: &[u8] = &[
     21, 239, 139, 5, 139, 239, 5, 14,
 ];
 
+const TEXT_CFF: &[u8] = &[
+    1, 0, 4, 4, 0, 1, 1, 1, 2, b'A', 0, 1, 1, 1, 3, 160, 17, 0, 0, 0, 0, 0, 2, 1, 1, 2, 14, 14,
+    248, 136, 239, 239, 21, 239, 139, 5, 139, 239, 5, 14,
+];
+
 fn run(extra: &[&str]) -> (i32, Vec<u8>) {
+    run_data(BARE_CFF, extra)
+}
+
+fn run_data(data: &[u8], extra: &[&str]) -> (i32, Vec<u8>) {
+    run_data_as(data, extra, false)
+}
+
+fn run_data_as(data: &[u8], extra: &[&str], unified: bool) -> (i32, Vec<u8>) {
     let path = std::env::temp_dir().join(format!(
         "sofel-adr0065-bare-cff-{}-{}.cff",
         std::process::id(),
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));
-    std::fs::write(&path, BARE_CFF).unwrap();
-    let result = Command::new(env!("CARGO_BIN_EXE_sofel-render"))
-        .args(extra)
-        .arg(&path)
-        .output()
-        .unwrap();
+    std::fs::write(&path, data).unwrap();
+    let mut command = Command::new(if unified {
+        env!("CARGO_BIN_EXE_sofel")
+    } else {
+        env!("CARGO_BIN_EXE_sofel-render")
+    });
+    if unified {
+        command.arg("render");
+    }
+    let result = command.args(extra).arg(&path).output().unwrap();
     std::fs::remove_file(path).unwrap();
     (result.status.code().unwrap(), result.stdout)
+}
+
+#[test]
+fn adr0065_i1_bare_cff_shapes_and_renders_two_glyphs() {
+    let (status, image) = run_data_as(TEXT_CFF, &["--ppem", "100", "--text", "  "], true);
+    assert_eq!(status, 0);
+    let mut expected = b"P5\n100 10\n255\n".to_vec();
+    for row in 0..10 {
+        for x in 0..100 {
+            let value = if (10..20).contains(&x) || (60..70).contains(&x) {
+                let local = x % 50 - 10;
+                if local < 9 - row {
+                    255
+                } else if local == 9 - row {
+                    127
+                } else {
+                    0
+                }
+            } else {
+                255
+            };
+            expected.push(value);
+        }
+    }
+    assert_eq!(image, expected);
 }
 
 #[test]
