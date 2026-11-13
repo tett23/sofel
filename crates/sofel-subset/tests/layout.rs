@@ -1051,6 +1051,29 @@ fn gsub_with_feature_condition(condition: Vec<u8>) -> Vec<u8> {
 }
 
 #[test]
+fn adr0022_value_condition_retains_and_remaps_gdef_delta() {
+    let condition = Buf::new().u16(2).i16(-7).u32(2).done();
+    let data = font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[])),
+        (b"GSUB", gsub_with_feature_condition(condition)),
+    ]);
+    let out = subset(&Font::new(&data, 0).unwrap(), &chars("ABC")).unwrap();
+    let gsub = out_table(&out, b"GSUB").unwrap();
+    let offset = u32::from_be_bytes(gsub[10..14].try_into().unwrap()) as usize;
+    let view =
+        sofel_font::read::feature_variations::FeatureVariations::new(&gsub[offset..]).unwrap();
+    let set = view.record(0).unwrap().conditions().unwrap().unwrap();
+    assert_eq!(set.condition(0).unwrap().unwrap().value(), Some((-7, 0)));
+    let gdef = out_table(&out, b"GDEF").unwrap();
+    let store = sofel_font::read::gdef::Gdef::new(&gdef)
+        .unwrap()
+        .variation_store()
+        .unwrap()
+        .unwrap();
+    assert_eq!(store.item_data(0).unwrap().item_count, 1);
+}
+
+#[test]
 fn adr0022_value_condition_without_variation_keeps_signed_default() {
     for default in [-7, 0, 8] {
         let condition = Buf::new().u16(2).i16(default).u32(u32::MAX).done();

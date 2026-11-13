@@ -227,6 +227,15 @@ pub(crate) fn feature_variation_var_indices(
     let Some(fv) = t.feature_variations_view() else {
         return selected;
     };
+    for i in 0..fv.len() {
+        if let Some(set) = fv.record(i).and_then(|r| r.conditions().ok().flatten()) {
+            for j in 0..set.len() {
+                if let Ok(Some(condition)) = set.condition(j) {
+                    collect_condition_var_indices(condition, &mut selected, 64);
+                }
+            }
+        }
+    }
     for i in 0..fv.lookup_record_count() {
         let Some(record) = fv.lookup_record(i) else {
             continue;

@@ -657,12 +657,19 @@ impl<'p, 's> Sub<'p, 's> {
                 return false;
             };
             if self.p.var.user().is_empty()
-                && let Some((default, u32::MAX)) = c.value()
+                && let Some((default, index)) = c.value()
             {
+                let new_index = self
+                    .p
+                    .layout
+                    .gdef_var_map
+                    .get(&index)
+                    .copied()
+                    .unwrap_or(index);
                 if self.offset_append(4, |s| {
                     s.s.u16(2);
                     s.s.i16(default);
-                    s.s.u32(u32::MAX);
+                    s.s.u32(new_index);
                     true
                 }) {
                     self.bump_u16(count_at, 1);
