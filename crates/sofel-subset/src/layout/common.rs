@@ -803,14 +803,14 @@ fn write_class_def(s: &mut Serializer, pairs: &[(u32, u32)]) -> bool {
             }
         }
         if glyph_max <= 0xFF_FFFF && span <= 0xFF_FFFF && class_max <= 0xFF_FFFF {
-            let size = 8 + 3 * span;
+            let size = 8u64.saturating_add(span.saturating_mul(3));
             if size < best {
                 best = size;
                 format = 3;
             }
         }
         if glyph_max <= 0xFF_FFFF && num_ranges <= 0xFF_FFFF && class_max <= 0xFFFF {
-            let size = 5 + 8 * num_ranges;
+            let size = 5u64.saturating_add(num_ranges.saturating_mul(8));
             if size < best {
                 best = size;
                 format = 4;
@@ -822,9 +822,11 @@ fn write_class_def(s: &mut Serializer, pairs: &[(u32, u32)]) -> bool {
     }
     s.u16(format);
     if format == 1 || format == 3 {
-        let glyph_min = glyphs[0].0;
+        let Some(&(glyph_min, _)) = glyphs.first() else {
+            return s.err(Errors::OTHER);
+        };
         let glyph_max = glyphs.iter().map(|p| p.0).max().unwrap_or(glyph_min);
-        let count = glyph_max - glyph_min + 1;
+        let count = glyph_max.saturating_sub(glyph_min).saturating_add(1);
         let width = if format == 3 {
             s.u24(glyph_min);
             s.u24(count);
@@ -834,10 +836,10 @@ fn write_class_def(s: &mut Serializer, pairs: &[(u32, u32)]) -> bool {
             s.u16(lo16(count));
             2
         };
-        let at = s.zeros(count as usize * width);
+        let at = s.zeros((count as usize).saturating_mul(width));
         for &(g, k) in &glyphs {
             if let Some(index) = g.checked_sub(glyph_min) {
-                let pos = at + index as usize * width;
+                let pos = at.saturating_add((index as usize).saturating_mul(width));
                 if format == 3 {
                     s.set_u24(pos, k);
                 } else {
@@ -913,8 +915,12 @@ fn write_coverage(s: &mut Serializer, glyphs: &[u32]) -> bool {
     }
     let wide = max > 0xFFFF;
     let array = !unsorted && count <= num_ranges.saturating_mul(3);
-    let format = if array { 1 } else { 2 };
-    s.u16(if wide { format + 2 } else { format });
+    s.u16(match (wide, array) {
+        (false, true) => 1,
+        (false, false) => 2,
+        (true, true) => 3,
+        (true, false) => 4,
+    });
     let records = if array { count } else { num_ranges };
     let ok = if wide {
         let at = s.u24(0);
