@@ -17,6 +17,27 @@ end put\n%ADOEndFontDict\ndef\n(Binary) 11 StartData\n"
     data
 }
 
+fn sample_with_subr() -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let source = sample();
+    let marker = b"(Binary) 11 StartData\n";
+    let at = source
+        .windows(marker.len())
+        .position(|w| w == marker)
+        .ok_or("data marker")?;
+    let mut header = String::from_utf8(source.get(..at).ok_or("header")?.to_vec())?;
+    header = header.replace(
+        "/Private 1 dict",
+        "/SubrCount 1 def\n/SDBytes 1 def\n/SubrMapOffset 13 def\n/Private 1 dict",
+    );
+    let mut data = header.into_bytes();
+    data.extend_from_slice(b"(Binary) 29 StartData\n");
+    data.extend_from_slice(&[
+        0, 0, 6, 0, 0, 13, 139, 248, 136, 13, 139, 10, 14, 15, 29, 239, 239, 21, 239, 139, 5, 139,
+        239, 5, 39, 39, 5, 9, 11,
+    ]);
+    Ok(data)
+}
+
 fn two_dicts() -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let one = sample();
     let marker = b"%ADOBeginFontDict\n";
@@ -151,5 +172,36 @@ fn adr0065_i1_skips_comment_startdata_marker() -> Result<(), Box<dyn std::error:
     decorated.extend_from_slice(source.get(at..).ok_or("suffix")?);
     let face = CidFace::parse(&decorated, 1024)?;
     assert_eq!(face.glyph_metrics(0).ok_or("metrics")?.advance_x, 500);
+    Ok(())
+}
+
+#[test]
+fn adr0065_i1_reads_cid_font_dict_subroutine() -> Result<(), Box<dyn std::error::Error>> {
+    let face = CidFace::parse(&sample_with_subr()?, 1024)?;
+    assert_eq!(
+        face.glyph_program(0).ok_or("glyph")?,
+        [139, 248, 136, 13, 139, 10, 14]
+    );
+    assert_eq!(
+        face.subroutine_program(0, 0).ok_or("subroutine")?,
+        [239, 239, 21, 239, 139, 5, 139, 239, 5, 39, 39, 5, 9, 11]
+    );
+    assert!(face.subroutine_program(0, 1).is_none());
+    Ok(())
+}
+
+#[test]
+fn adr0065_i2_rejects_truncated_subroutine_map() -> Result<(), Box<dyn std::error::Error>> {
+    let mut source = sample_with_subr()?;
+    let old = b"/SubrMapOffset 13";
+    let at = source
+        .windows(old.len())
+        .position(|w| w == old)
+        .ok_or("offset")?;
+    source
+        .get_mut(at..at + old.len())
+        .ok_or("bounds")?
+        .copy_from_slice(b"/SubrMapOffset 99");
+    assert!(CidFace::parse(&source, 1024).is_err());
     Ok(())
 }

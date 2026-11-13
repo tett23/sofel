@@ -20,6 +20,22 @@ pub fn draw_cid(
         .ok_or(OutlineError::InvalidGlyphIndex)?;
     let mut state = State::new(scale, pen);
     let mut stack = Vec::new();
+    decode_program(face, cid, &program, &mut state, &mut stack, 0, false)?;
+    Ok(state.info())
+}
+
+fn decode_program<P: Pen>(
+    face: &CidFace,
+    cid: usize,
+    program: &[u8],
+    state: &mut State<'_, P>,
+    stack: &mut Vec<i32>,
+    depth: usize,
+    subroutine: bool,
+) -> Result<(), OutlineError> {
+    if depth >= 32 {
+        return Err(OutlineError::InvalidCharString);
+    }
     let mut at = 0usize;
     while let Some(&op) = program.get(at) {
         at = at.checked_add(1).ok_or(OutlineError::InvalidCharString)?;
@@ -60,44 +76,44 @@ pub fn draw_cid(
             }
             1 | 3 => stack.clear(), // hstem and vstem: no hinting
             13 => {
-                let [side, _advance] = take(&mut stack)?;
+                let [side, _advance] = take(stack)?;
                 state.x = side;
                 state.y = 0;
             }
             21 => {
-                let [dx, dy] = take(&mut stack)?;
+                let [dx, dy] = take(stack)?;
                 state.move_by(dx, dy)?;
             }
             22 => {
-                let [dx] = take(&mut stack)?;
+                let [dx] = take(stack)?;
                 state.move_by(dx, 0)?;
             }
             4 => {
-                let [dy] = take(&mut stack)?;
+                let [dy] = take(stack)?;
                 state.move_by(0, dy)?;
             }
             5 => {
-                let [dx, dy] = take(&mut stack)?;
+                let [dx, dy] = take(stack)?;
                 state.line_by(dx, dy)?;
             }
             6 => {
-                let [dx] = take(&mut stack)?;
+                let [dx] = take(stack)?;
                 state.line_by(dx, 0)?;
             }
             7 => {
-                let [dy] = take(&mut stack)?;
+                let [dy] = take(stack)?;
                 state.line_by(0, dy)?;
             }
             8 => {
-                let [dx1, dy1, dx2, dy2, dx3, dy3] = take(&mut stack)?;
+                let [dx1, dy1, dx2, dy2, dx3, dy3] = take(stack)?;
                 state.curve_by(dx1, dy1, dx2, dy2, dx3, dy3)?;
             }
             30 => {
-                let [dy1, dx2, dy2, dx3] = take(&mut stack)?;
+                let [dy1, dx2, dy2, dx3] = take(stack)?;
                 state.curve_by(0, dy1, dx2, dy2, dx3, 0)?;
             }
             31 => {
-                let [dx1, dx2, dy2, dy3] = take(&mut stack)?;
+                let [dx1, dx2, dy2, dy3] = take(stack)?;
                 state.curve_by(dx1, 0, dx2, dy2, 0, dy3)?;
             }
             9 => {
@@ -106,12 +122,32 @@ pub fn draw_cid(
                 }
                 state.close();
             }
+            10 => {
+                let index = stack.pop().ok_or(OutlineError::InvalidCharString)?;
+                let index = usize::try_from(index).map_err(|_| OutlineError::InvalidCharString)?;
+                let subr = face
+                    .subroutine_program(cid, index)
+                    .ok_or(OutlineError::InvalidCharString)?;
+                decode_program(
+                    face,
+                    cid,
+                    &subr,
+                    state,
+                    stack,
+                    depth.saturating_add(1),
+                    true,
+                )?;
+            }
+            11 if subroutine => return Ok(()),
             14 => {
+                if subroutine {
+                    return Err(OutlineError::InvalidCharString);
+                }
                 if !stack.is_empty() {
                     return Err(OutlineError::InvalidCharString);
                 }
                 state.close();
-                return Ok(state.info());
+                return Ok(());
             }
             12 => {
                 let escape = *program.get(at).ok_or(OutlineError::InvalidCharString)?;
@@ -119,12 +155,12 @@ pub fn draw_cid(
                 match escape {
                     0..=2 => stack.clear(), // dotsection, vstem3, hstem3
                     7 => {
-                        let [sx, sy, _wx, _wy] = take(&mut stack)?;
+                        let [sx, sy, _wx, _wy] = take(stack)?;
                         state.x = sx;
                         state.y = sy;
                     }
                     12 => {
-                        let [a, b] = take(&mut stack)?;
+                        let [a, b] = take(stack)?;
                         if b == 0 {
                             return Err(OutlineError::InvalidCharString);
                         }

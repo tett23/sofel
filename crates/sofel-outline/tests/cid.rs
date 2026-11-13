@@ -137,3 +137,36 @@ fn adr0065_i1_cid_hv_curve_matches_freetype() -> Result<(), Box<dyn std::error::
     );
     Ok(())
 }
+
+#[test]
+fn adr0065_i1_cid_callsubr_matches_freetype() -> Result<(), Box<dyn std::error::Error>> {
+    let mut source = sample(&[139, 248, 136, 13, 139, 10, 14]);
+    let marker = b"/Private 1 dict";
+    let at = source
+        .windows(marker.len())
+        .position(|w| w == marker)
+        .ok_or("private")?;
+    source.splice(
+        at..at,
+        b"/SubrCount 1 def\n/SDBytes 1 def\n/SubrMapOffset 13 def\n"
+            .iter()
+            .copied(),
+    );
+    source.extend_from_slice(&[
+        15, 29, 239, 239, 21, 239, 139, 5, 139, 239, 5, 39, 39, 5, 9, 11,
+    ]);
+    let face = CidFace::parse(&source, 1024)?;
+    let mut commands = Vec::new();
+    draw_cid(&face, 0, Scale::Unscaled, &mut FnPen(|c| commands.push(c)))?;
+    assert_eq!(
+        commands,
+        vec![
+            Command::MoveTo(Point { x: 100, y: 100 }),
+            Command::LineTo(Point { x: 200, y: 100 }),
+            Command::LineTo(Point { x: 200, y: 200 }),
+            Command::LineTo(Point { x: 100, y: 100 }),
+            Command::Close,
+        ]
+    );
+    Ok(())
+}

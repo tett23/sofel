@@ -26,8 +26,16 @@ pub struct CidFace {
     cidmap_offset: usize,
     fd_bytes: usize,
     gd_bytes: usize,
-    len_iv: Vec<i32>,
+    dicts: Vec<FontDict>,
     units_per_em: u16,
+}
+
+#[derive(Clone, Debug)]
+struct FontDict {
+    len_iv: i32,
+    subr_count: usize,
+    subr_map_offset: usize,
+    sd_bytes: usize,
 }
 
 impl CidFace {
@@ -72,7 +80,7 @@ impl CidFace {
         if map_end > data.len() {
             return Err(CidError);
         }
-        let mut len_iv = Vec::new();
+        let mut dicts = Vec::new();
         let mut units_per_em = None;
         let marker = b"%ADOBeginFontDict";
         let mut rest = header;
@@ -82,7 +90,25 @@ impl CidFace {
                 .ok_or(CidError)?;
             let end = find_bytes(rest, marker).unwrap_or(rest.len());
             let dict = rest.get(..end).ok_or(CidError)?;
-            len_iv.push(field_i32(dict, b"lenIV").unwrap_or(4));
+            let subr_count = field_usize(dict, b"SubrCount").unwrap_or(0);
+            let subr_map_offset = field_usize(dict, b"SubrMapOffset").unwrap_or(0);
+            let sd_bytes = field_usize(dict, b"SDBytes").unwrap_or(0);
+            if subr_count > 0 {
+                let map_end = subr_count
+                    .checked_add(1)
+                    .and_then(|count| count.checked_mul(sd_bytes))
+                    .and_then(|size| subr_map_offset.checked_add(size))
+                    .ok_or(CidError)?;
+                if !(1..=4).contains(&sd_bytes) || map_end > data.len() {
+                    return Err(CidError);
+                }
+            }
+            dicts.push(FontDict {
+                len_iv: field_i32(dict, b"lenIV").unwrap_or(4),
+                subr_count,
+                subr_map_offset,
+                sd_bytes,
+            });
             let current_upem = matrix_upem(dict)?;
             if units_per_em.is_some_and(|upem| upem != current_upem) {
                 return Err(CidError);
@@ -90,7 +116,7 @@ impl CidFace {
             units_per_em = Some(current_upem);
             rest = rest.get(end..).ok_or(CidError)?;
         }
-        if len_iv.len() != dict_count {
+        if dicts.len() != dict_count {
             return Err(CidError);
         }
         Ok(Self {
@@ -99,7 +125,7 @@ impl CidFace {
             cidmap_offset,
             fd_bytes,
             gd_bytes,
-            len_iv,
+            dicts,
             units_per_em: units_per_em.ok_or(CidError)?,
         })
     }
@@ -122,7 +148,7 @@ impl CidFace {
         let entry = self.fd_bytes.checked_add(self.gd_bytes)?;
         let map = self.cidmap_offset.checked_add(cid.checked_mul(entry)?)?;
         let fd = read_be(self.data.get(map..map.checked_add(self.fd_bytes)?)?);
-        let len_iv = *self.len_iv.get(fd)?;
+        let len_iv = self.dicts.get(fd)?.len_iv;
         let first = map.checked_add(self.fd_bytes)?;
         let off1 = read_be(self.data.get(first..first.checked_add(self.gd_bytes)?)?);
         let next = map.checked_add(entry)?.checked_add(self.fd_bytes)?;
@@ -131,6 +157,31 @@ impl CidFace {
             return None;
         }
         decrypt_charstring(self.data.get(off1..off2)?, len_iv)
+    }
+
+    /// Decrypted Font DICT subroutine selected by a CID and local index.
+    pub fn subroutine_program(&self, cid: usize, index: usize) -> Option<Vec<u8>> {
+        if cid >= self.cid_count {
+            return None;
+        }
+        let entry = self.fd_bytes.checked_add(self.gd_bytes)?;
+        let map = self.cidmap_offset.checked_add(cid.checked_mul(entry)?)?;
+        let fd = read_be(self.data.get(map..map.checked_add(self.fd_bytes)?)?);
+        let dict = self.dicts.get(fd)?;
+        if index >= dict.subr_count {
+            return None;
+        }
+        let first = dict
+            .subr_map_offset
+            .checked_add(index.checked_mul(dict.sd_bytes)?)?;
+        let second = first.checked_add(dict.sd_bytes)?;
+        let end = second.checked_add(dict.sd_bytes)?;
+        let off1 = read_be(self.data.get(first..second)?);
+        let off2 = read_be(self.data.get(second..end)?);
+        if off1 > off2 {
+            return None;
+        }
+        decrypt_charstring(self.data.get(off1..off2)?, dict.len_iv)
     }
 
     /// Unscaled Type 1 side bearings and advances for a CID.
