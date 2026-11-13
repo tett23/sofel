@@ -45,6 +45,7 @@ pub struct CidFace {
     gd_bytes: usize,
     dicts: Vec<FontDict>,
     units_per_em: u16,
+    native_stem_blues_empty: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -81,6 +82,7 @@ impl CidFace {
         }
         let start = find_start_data(source).ok_or(CidError::invalid())?;
         let header = source.get(..start).ok_or(CidError::invalid())?;
+        let native_stem_blues_empty = crate::face::blue_zones_empty(header);
         let mode = header.rsplit(|&b| b == b'\n').next().unwrap_or(header);
         let data_start = start
             .checked_add(b"StartData".len())
@@ -181,6 +183,7 @@ impl CidFace {
             gd_bytes,
             dicts,
             units_per_em,
+            native_stem_blues_empty,
         })
     }
 
@@ -192,6 +195,11 @@ impl CidFace {
     /// Units per em derived from the uniform Font DICT matrix.
     pub fn units_per_em(&self) -> u16 {
         self.units_per_em
+    }
+
+    /// Whether the native single-stem path can ignore PostScript blue zones.
+    pub fn native_stem_blues_empty(&self) -> bool {
+        self.native_stem_blues_empty
     }
 
     /// Font DICT transform selected by the CID's FDBytes field.
