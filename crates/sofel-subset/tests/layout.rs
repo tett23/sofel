@@ -1118,6 +1118,28 @@ fn adr0022_null_condition_serializes_as_true() {
 }
 
 #[test]
+fn adr0022_copied_gsub_value_condition_checks_gdef_reference() {
+    for index in [u32::MAX, 2] {
+        let gsub = gsub_with_feature_condition(Buf::new().u16(2).i16(-7).u32(index).done());
+        let data = font_with(vec![
+            (b"GSUB", gsub.clone()),
+            (b"GDEF", gdef_with_referenced_store(&[])),
+        ]);
+        let input = chars("ABC").map_set(SetKind::NoSubsetTables, |set| {
+            set.add(Tag::new(b"GSUB").to_u32());
+        });
+        let out = subset(&Font::new(&data, 0).unwrap(), &input);
+        if index == u32::MAX {
+            assert_eq!(out_table(&out.unwrap(), b"GSUB").unwrap(), gsub);
+        } else {
+            assert!(
+                matches!(out, Err(SubsetError::Unsupported {tag,..}) if tag==Tag::new(b"GDEF"))
+            );
+        }
+    }
+}
+
+#[test]
 fn adr0022_value_condition_without_variation_keeps_signed_default() {
     for default in [-7, 0, 8] {
         let condition = Buf::new().u16(2).i16(default).u32(u32::MAX).done();

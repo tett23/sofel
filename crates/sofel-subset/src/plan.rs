@@ -196,7 +196,7 @@ fn layout_unsupported(
                 && sofel_font::read::be::u32_at(d, 10) != Some(0)
                 && (table.feature_variations_view().is_none()
                     || (no_subset.contains(Tag::new(b"GSUB").to_u32())
-                        && !table.has_only_axis_range_conditions()))
+                        && !table.conditions_are_store_independent()))
         });
     // A VariationIndex Device necessarily contains the format word 0x8000.
     // Scan the whole retained table so an unknown or malformed subtable

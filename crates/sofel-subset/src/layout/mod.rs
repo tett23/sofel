@@ -169,18 +169,28 @@ impl<'a> Gsubgpos<'a> {
         FeatureVariations::new(self.feature_variations().0).ok()
     }
 
-    /// Whether all copied conditions are axis ranges, with no GDEF store indices.
-    pub fn has_only_axis_range_conditions(self) -> bool {
+    /// Whether every copied condition is known to be independent of the GDEF store.
+    pub fn conditions_are_store_independent(self) -> bool {
         self.feature_variations_view().is_some_and(|fv| {
-            fv.version() == 0x0001_0000 && (0..fv.len()).all(|i| {
-                fv.record(i).is_some_and(|record| match record.conditions() {
-                    Ok(None) => true,
-                    Ok(Some(set)) => (0..set.len()).all(|j| {
-                        matches!(set.condition(j), Ok(Some(condition)) if condition.axis_range().is_some())
-                    }),
-                    Err(_) => false,
+            fv.version() == 0x0001_0000
+                && (0..fv.len()).all(|i| {
+                    fv.record(i)
+                        .is_some_and(|record| match record.conditions() {
+                            Ok(None) => true,
+                            Ok(Some(set)) => (0..set.len()).all(|j| match set.condition(j) {
+                                Ok(None) => true,
+                                Ok(Some(condition)) => {
+                                    condition.format() == 0
+                                        || condition.axis_range().is_some()
+                                        || condition
+                                            .value()
+                                            .is_some_and(|(_, index)| index == u32::MAX)
+                                }
+                                Err(_) => false,
+                            }),
+                            Err(_) => false,
+                        })
                 })
-            })
         })
     }
 
