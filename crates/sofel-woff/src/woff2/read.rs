@@ -137,9 +137,6 @@ pub fn decode_woff2(input: &[u8], limit: usize) -> Result<Vec<u8>, DecodeError> 
     for _ in 0..count {
         let at = input.len().saturating_sub(remaining.len());
         let entry = read_entry(&mut remaining).ok_or(error(at, "invalid WOFF2 table entry"))?;
-        if entry.transformed && entry.tag != super::Tag::new(b"hmtx") {
-            return Err(error(at, "unsupported transformed table"));
-        }
         let length = (entry.original as usize)
             .checked_next_multiple_of(4)
             .ok_or(error(at, "table length overflow"))?;
@@ -192,15 +189,38 @@ pub fn decode_woff2(input: &[u8], limit: usize) -> Result<Vec<u8>, DecodeError> 
     let mut data = decoded.as_slice();
     let mut tables = Vec::with_capacity(count);
     let mut transformed = None;
+    let mut outline = None;
+    let mut offsets = None;
     for entry in entries {
         let (table, tail) = data
             .split_at_checked(entry.stored as usize)
             .ok_or(error(at, "truncated table data"))?;
         if entry.transformed {
-            transformed = Some((tables.len(), table, entry.original as usize));
+            match &entry.tag.to_u32().to_be_bytes() {
+                b"glyf" => outline = Some((tables.len(), table, entry.original as usize)),
+                b"loca" => offsets = Some((tables.len(), entry.original as usize)),
+                _ => transformed = Some((tables.len(), table, entry.original as usize)),
+            }
         }
         tables.push((entry.tag, table));
         data = tail;
+    }
+    let rebuilt;
+    match (outline, offsets) {
+        (Some((g, stream, original)), Some((l, len))) => {
+            rebuilt = super::glyf::restore(
+                stream,
+                len,
+                limit
+                    .checked_sub(total.saturating_sub(original.next_multiple_of(4)))
+                    .ok_or(error(at, "output limit exceeded"))?,
+            )
+            .ok_or(error(at, "invalid glyf transform"))?;
+            tables.get_mut(g).ok_or(error(at, "missing glyf"))?.1 = &rebuilt.0;
+            tables.get_mut(l).ok_or(error(at, "missing loca"))?.1 = &rebuilt.1;
+        }
+        (None, None) => {}
+        _ => return Err(error(at, "inconsistent glyf/loca transforms")),
     }
     let restored;
     if let Some((index, stream, length)) = transformed {
@@ -272,5 +292,63 @@ mod tests {
         for stream in [&[0, 1, 244][..], &[7, 1, 244], &[3, 1], &[3, 1, 244, 0]] {
             assert!(restore_hmtx(&tables, stream, 6).is_none());
         }
+    }
+}
+
+#[cfg(test)]
+mod transformed_outline_tests {
+    extern crate std;
+    use super::*;
+    use alloc::{boxed::Box, vec};
+
+    #[test]
+    fn adr0065_i1_transformed_simple_outline_and_offsets() -> Result<(), Box<dyn std::error::Error>>
+    {
+        // One empty glyph and one single-point contour with point (4, 5).
+        let streams: [&[u8]; 7] = [&[0, 0, 0, 1], &[1], &[23], &[0x34, 0], &[], &[0; 4], &[]];
+        let mut transformed = Vec::from([0, 0, 0, 0, 0, 2, 0, 0]);
+        for stream in streams {
+            transformed.extend_from_slice(&u32::try_from(stream.len())?.to_be_bytes());
+        }
+        for stream in streams {
+            transformed.extend_from_slice(stream);
+        }
+        let mut directory = vec![10, 20, u8::try_from(transformed.len())?, 11, 6, 0];
+        let compressed = crate::compress::brotli(&transformed);
+        let mut input = [0; 48].to_vec();
+        input.get_mut(..4).ok_or("header")?.copy_from_slice(b"wOF2");
+        input
+            .get_mut(4..8)
+            .ok_or("header")?
+            .copy_from_slice(&0x10000u32.to_be_bytes());
+        input
+            .get_mut(12..14)
+            .ok_or("header")?
+            .copy_from_slice(&2u16.to_be_bytes());
+        input
+            .get_mut(16..20)
+            .ok_or("header")?
+            .copy_from_slice(&72u32.to_be_bytes());
+        input
+            .get_mut(20..24)
+            .ok_or("header")?
+            .copy_from_slice(&u32::try_from(compressed.len())?.to_be_bytes());
+        input.append(&mut directory);
+        input.extend(compressed);
+        let size = u32::try_from(input.len())?;
+        input
+            .get_mut(8..12)
+            .ok_or("header")?
+            .copy_from_slice(&size.to_be_bytes());
+        let decoded = decode_woff2(&input, 128).map_err(|_| "outline decode")?;
+        let sfnt = sofel_read::sfnt::Sfnt::new(&decoded).map_err(|_| "sfnt")?;
+        let loca = sfnt.table(super::super::Tag::new(b"loca")).ok_or("loca")?;
+        let glyf = sfnt.table(super::super::Tag::new(b"glyf")).ok_or("glyf")?;
+        assert_eq!(loca, &[0, 0, 0, 0, 0, 10]);
+        assert_eq!(
+            glyf.get(..10),
+            Some([0, 1, 0, 4, 0, 5, 0, 4, 0, 5].as_slice())
+        );
+        Ok(())
     }
 }
