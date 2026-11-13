@@ -37,11 +37,11 @@ impl Axis<'_> {
     }
     /// Minimum design coordinate.
     pub fn minimum(&self) -> i32 {
-        self.map[0].0
+        self.map.first().map_or(0, |point| point.0)
     }
     /// Maximum design coordinate.
     pub fn maximum(&self) -> i32 {
-        self.map[self.map.len() - 1].0
+        self.map.last().map_or(0, |point| point.0)
     }
     /// Default design coordinate.
     pub fn default(&self) -> i32 {
@@ -51,11 +51,12 @@ impl Axis<'_> {
     fn blend(&self, design: i32) -> Result<i32, MmError> {
         let design = design.clamp(self.minimum(), self.maximum());
         for pair in self.map.windows(2) {
-            if design <= pair[1].0 {
-                return interpolate(design, pair[0].0, pair[1].0, pair[0].1, pair[1].1);
+            let (&left, &right) = (pair.first().ok_or(MmError)?, pair.get(1).ok_or(MmError)?);
+            if design <= right.0 {
+                return interpolate(design, left.0, right.0, left.1, right.1);
             }
         }
-        Ok(self.map[self.map.len() - 1].1)
+        self.map.last().map(|point| point.1).ok_or(MmError)
     }
 }
 
@@ -118,12 +119,15 @@ impl<'a> MultipleMasters<'a> {
                 if pair.len() != 2 {
                     return Err(MmError);
                 }
-                entries.push((number(&pair[0])?, number(&pair[1])?));
+                entries.push((
+                    number(pair.first().ok_or(MmError)?)?,
+                    number(pair.get(1).ok_or(MmError)?)?,
+                ));
             }
-            if entries
-                .windows(2)
-                .any(|p| p[0].0 >= p[1].0 || p[0].1 >= p[1].1)
-            {
+            if entries.windows(2).any(|p| match (p.first(), p.get(1)) {
+                (Some(left), Some(right)) => left.0 >= right.0 || left.1 >= right.1,
+                _ => true,
+            }) {
                 return Err(MmError);
             }
             let normalized = default_weights
@@ -135,7 +139,7 @@ impl<'a> MultipleMasters<'a> {
                 })?;
             let unmapped = unmap(&entries, normalized)?;
             // FreeType's Type 1 design map stores integral design points.
-            let default = ((i64::from(unmapped) + 32768) / 65536)
+            let default = (i64::from(unmapped).checked_add(32768).ok_or(MmError)? / 65536)
                 .checked_mul(65536)
                 .and_then(|n| i32::try_from(n).ok())
                 .ok_or(MmError)?;
@@ -183,7 +187,7 @@ impl<'a> MultipleMasters<'a> {
             let mut weight = 1 << 16;
             for (axis, blend) in blends.iter().enumerate() {
                 let factor = if master & (1 << axis) == 0 {
-                    (1 << 16) - blend
+                    (1i32 << 16).checked_sub(*blend).ok_or(MmError)?
                 } else {
                     *blend
                 };
@@ -194,8 +198,14 @@ impl<'a> MultipleMasters<'a> {
                 if factor >= 1 << 16 {
                     continue;
                 }
-                weight = i32::try_from((i64::from(weight) * i64::from(factor) + 32768) >> 16)
-                    .map_err(|_| MmError)?;
+                weight = i32::try_from(
+                    i64::from(weight)
+                        .checked_mul(i64::from(factor))
+                        .and_then(|n| n.checked_add(32768))
+                        .ok_or(MmError)?
+                        >> 16,
+                )
+                .map_err(|_| MmError)?;
             }
             weights.push(weight);
         }
@@ -225,20 +235,28 @@ fn name_value<'a>(value: &Value<'a>) -> Result<&'a [u8], MmError> {
 }
 
 fn interpolate(x: i32, x0: i32, x1: i32, y0: i32, y1: i32) -> Result<i32, MmError> {
-    let numerator = i64::from(x - x0) * i64::from(y1 - y0);
-    let denominator = i64::from(x1 - x0);
-    let delta = (numerator + denominator / 2) / denominator;
-    i32::try_from(i64::from(y0) + delta).map_err(|_| MmError)
+    let numerator = i64::from(x)
+        .checked_sub(i64::from(x0))
+        .and_then(|n| n.checked_mul(i64::from(y1).checked_sub(i64::from(y0))?))
+        .ok_or(MmError)?;
+    let denominator = i64::from(x1).checked_sub(i64::from(x0)).ok_or(MmError)?;
+    let delta = numerator
+        .checked_add(denominator / 2)
+        .ok_or(MmError)?
+        .checked_div(denominator)
+        .ok_or(MmError)?;
+    i32::try_from(i64::from(y0).checked_add(delta).ok_or(MmError)?).map_err(|_| MmError)
 }
 
 fn unmap(map: &[(i32, i32)], blend: i32) -> Result<i32, MmError> {
-    let blend = blend.clamp(map[0].1, map[map.len() - 1].1);
+    let blend = blend.clamp(map.first().ok_or(MmError)?.1, map.last().ok_or(MmError)?.1);
     for pair in map.windows(2) {
-        if blend <= pair[1].1 {
-            return interpolate(blend, pair[0].1, pair[1].1, pair[0].0, pair[1].0);
+        let (&left, &right) = (pair.first().ok_or(MmError)?, pair.get(1).ok_or(MmError)?);
+        if blend <= right.1 {
+            return interpolate(blend, left.1, right.1, left.0, right.0);
         }
     }
-    Ok(map[map.len() - 1].0)
+    map.last().map(|point| point.0).ok_or(MmError)
 }
 
 fn field<'a>(data: &'a [u8], key: &[u8]) -> Result<Option<Value<'a>>, MmError> {
@@ -268,7 +286,7 @@ fn value<'a>(data: &'a [u8], at: &mut usize, depth: usize) -> Result<Value<'a>, 
             if values.len() >= 256 {
                 return Err(MmError);
             }
-            values.push(value(data, at, depth + 1)?);
+            values.push(value(data, at, depth.checked_add(1).ok_or(MmError)?)?);
         }
         Ok(Value::Array(values))
     } else if let Some(name) = token.strip_prefix(b"/") {
@@ -282,10 +300,10 @@ fn next<'a>(data: &'a [u8], at: &mut usize) -> Result<Option<&'a [u8]>, MmError>
     while let Some(&byte) = data.get(*at) {
         if byte == b'%' {
             while data.get(*at).is_some_and(|b| *b != b'\n') {
-                *at += 1;
+                *at = at.checked_add(1).ok_or(MmError)?;
             }
         } else if byte.is_ascii_whitespace() {
-            *at += 1;
+            *at = at.checked_add(1).ok_or(MmError)?;
         } else {
             break;
         }
@@ -295,19 +313,19 @@ fn next<'a>(data: &'a [u8], at: &mut usize) -> Result<Option<&'a [u8]>, MmError>
     };
     let start = *at;
     if byte == b'[' || byte == b']' {
-        *at += 1;
+        *at = at.checked_add(1).ok_or(MmError)?;
     } else {
         while let Some(&byte) = data.get(*at) {
             if byte.is_ascii_whitespace() || matches!(byte, b'[' | b']' | b'%') {
                 break;
             }
-            *at += 1;
+            *at = at.checked_add(1).ok_or(MmError)?;
         }
     }
     if *at == start {
         return Err(MmError);
     }
-    Ok(Some(&data[start..*at]))
+    Ok(Some(data.get(start..*at).ok_or(MmError)?))
 }
 
 fn fixed(token: &[u8]) -> Result<i32, MmError> {
@@ -330,8 +348,13 @@ fn fixed(token: &[u8]) -> Result<i32, MmError> {
         .and_then(|n| {
             fraction
                 .checked_mul(65536)
-                .and_then(|f| n.checked_add((f + scale / 2) / scale))
+                .and_then(|f| n.checked_add(f.checked_add(scale / 2)?.checked_div(scale)?))
         })
         .ok_or(MmError)?;
-    i32::try_from(if negative { -raw } else { raw }).map_err(|_| MmError)
+    i32::try_from(if negative {
+        raw.checked_neg().ok_or(MmError)?
+    } else {
+        raw
+    })
+    .map_err(|_| MmError)
 }

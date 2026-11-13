@@ -20,9 +20,11 @@ fn adr0065_i2_type1_encoding_rejects_out_of_range_code() {
 }
 
 #[test]
-fn adr0065_i1_type1_mm_postscript_helper_precedes_encoding() {
+fn adr0065_i1_type1_mm_postscript_helper_precedes_encoding()
+-> Result<(), sofel_type1::encoding::EncodingError> {
     let data =
         b"/Encoding currentfont /Encoding get put definefont\n/Encoding StandardEncoding def\n";
-    let encoding = Encoding::parse(data).unwrap();
+    let encoding = Encoding::parse(data)?;
     assert_eq!(encoding.name(b'A'), Some(&b"A"[..]));
+    Ok(())
 }

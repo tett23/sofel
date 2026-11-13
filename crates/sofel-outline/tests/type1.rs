@@ -73,10 +73,10 @@ fn adr0065_i1_type1_mm_blends_other_subr_14() -> Result<(), Box<dyn std::error::
     let at = pfa
         .windows(marker.len())
         .position(|part| part == marker)
-        .unwrap();
-    let mut mm_pfa = pfa[..at].to_vec();
+        .ok_or("missing marker")?;
+    let mut mm_pfa = pfa.get(..at).ok_or("invalid marker")?.to_vec();
     mm_pfa.extend_from_slice(b"/BlendDesignPositions [[0] [1]] def\n/BlendDesignMap [[[50 0] [999 1]]] def\n/BlendAxisTypes [/Weight] def\n/WeightVector [0.631191 0.368809] def\n");
-    mm_pfa.extend_from_slice(&pfa[at..]);
+    mm_pfa.extend_from_slice(pfa.get(at..).ok_or("invalid marker")?);
     let source = Type1Source::parse_pfa(&mm_pfa, 4096)?;
     let mut face = Type1Face::new(&source)?;
     let mut commands = Vec::new();
@@ -104,10 +104,10 @@ fn adr0065_i1_type1_mm_blends_other_subr_15_two_points() -> Result<(), Box<dyn s
     let at = pfa
         .windows(marker.len())
         .position(|part| part == marker)
-        .unwrap();
-    let mut mm_pfa = pfa[..at].to_vec();
+        .ok_or("missing marker")?;
+    let mut mm_pfa = pfa.get(..at).ok_or("invalid marker")?.to_vec();
     mm_pfa.extend_from_slice(b"/BlendDesignPositions [[0] [1]] def\n/BlendDesignMap [[[50 0] [999 1]]] def\n/BlendAxisTypes [/Weight] def\n/WeightVector [0.631191 0.368809] def\n");
-    mm_pfa.extend_from_slice(&pfa[at..]);
+    mm_pfa.extend_from_slice(pfa.get(at..).ok_or("invalid marker")?);
     let source = Type1Source::parse_pfa(&mm_pfa, 4096)?;
     let face = Type1Face::new(&source)?;
     let mut commands = Vec::new();

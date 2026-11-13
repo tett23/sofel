@@ -166,8 +166,12 @@ fn decode_program<P: Pen>(
                             continue;
                         }
                         let points = match subr_no {
-                            14..=17 => usize::try_from(subr_no - 13)
-                                .map_err(|_| OutlineError::InvalidCharString)?,
+                            14..=17 => usize::try_from(
+                                subr_no
+                                    .checked_sub(13)
+                                    .ok_or(OutlineError::InvalidCharString)?,
+                            )
+                            .map_err(|_| OutlineError::InvalidCharString)?,
                             18 => 6,
                             _ => return Err(OutlineError::InvalidCharString),
                         };
@@ -179,15 +183,34 @@ fn decode_program<P: Pen>(
                         {
                             return Err(OutlineError::InvalidCharString);
                         }
-                        let start = stack.len() - arg_count;
+                        let start = stack
+                            .len()
+                            .checked_sub(arg_count)
+                            .ok_or(OutlineError::InvalidCharString)?;
                         let args = stack.split_off(start);
                         for point in 0..points {
-                            let mut value = args[point];
+                            let mut value =
+                                *args.get(point).ok_or(OutlineError::InvalidCharString)?;
                             for master in 1..weights.len() {
-                                let delta = args[points + point * (weights.len() - 1) + master - 1];
+                                let index = weights
+                                    .len()
+                                    .checked_sub(1)
+                                    .and_then(|n| point.checked_mul(n))
+                                    .and_then(|n| points.checked_add(n))
+                                    .and_then(|n| n.checked_add(master))
+                                    .and_then(|n| n.checked_sub(1))
+                                    .ok_or(OutlineError::InvalidCharString)?;
+                                let delta =
+                                    *args.get(index).ok_or(OutlineError::InvalidCharString)?;
                                 let weighted = delta
-                                    .checked_mul(i64::from(weights[master]))
-                                    .and_then(|n| n.checked_add(32768 - i64::from(n < 0)))
+                                    .checked_mul(i64::from(
+                                        *weights
+                                            .get(master)
+                                            .ok_or(OutlineError::InvalidCharString)?,
+                                    ))
+                                    .and_then(|n| {
+                                        n.checked_add(32768i64.checked_sub(i64::from(n < 0))?)
+                                    })
                                     .ok_or(OutlineError::InvalidCharString)?
                                     >> 16;
                                 value = value
@@ -198,7 +221,12 @@ fn decode_program<P: Pen>(
                         }
                         state.pending_pops = points;
                     }
-                    17 if state.pending_pops > 0 => state.pending_pops -= 1,
+                    17 if state.pending_pops > 0 => {
+                        state.pending_pops = state
+                            .pending_pops
+                            .checked_sub(1)
+                            .ok_or(OutlineError::InvalidCharString)?
+                    }
                     7 => {
                         let [sx, sy, _wx, _wy] = take(stack)?;
                         state.x = sx;
@@ -264,8 +292,8 @@ impl<'a, P: Pen> State<'a, P> {
     }
 
     fn point(&mut self, x: i64, y: i64) -> Point {
-        let x = (x >> 16).clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
-        let y = (y >> 16).clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+        let x = i32::try_from(x >> 16).unwrap_or(if x < 0 { i32::MIN } else { i32::MAX });
+        let y = i32::try_from(y >> 16).unwrap_or(if y < 0 { i32::MIN } else { i32::MAX });
         let [xx, yx, xy, yy, dx, dy] = self.matrix;
         let transformed_x = mul_fix(x, xx)
             .saturating_add(mul_fix(y, xy))
