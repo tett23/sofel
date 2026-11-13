@@ -1779,7 +1779,7 @@ static int auto_style(const char *glyph, const char *path)
   FT_Error error;
   char *end;
   long gid = strtol(glyph, &end, 10);
-  if (!*glyph || *end || gid < 0 || gid > 65535) return 2;
+  if (!*glyph || *end || gid < 0 || (unsigned long)gid > UINT_MAX) return 2;
   if (FT_Init_FreeType(&library)) return 1;
   error = FT_New_Face(library, path, 0, &face);
   if (!error) {
