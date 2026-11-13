@@ -403,8 +403,8 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 名前の表では、上書きの指定でレコードを追加・置換し、空文字列を指定したレコードを削除する。
 - 軸を指定しない BASE 1.1 の ItemVariationStore は、残すスクリプトとフィーチャに属する横と縦の BaseCoord の VariationIndex を集め、使う行と領域だけを詰めて番号を振りなおす。参照が0件なら、HarfBuzzと同じくストアを除いて座標を残す。BaseValues、既定の MinMax、言語別とフィーチャ別の MinMax を調べ、壊れた参照はこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
 - 軸を指定しないGDEF 1.3のItemVariationStoreは、コピーするGSUBのFeatureVariationsがバージョン1.0で軸範囲の条件だけを持つ場合も含めて、残すLigCaretList、値の記録、アンカー、MATHの定数・斜体補正・上アクセント・カーニング・組み立てのVariationIndexに合わせて行と領域を詰めて書く。参照が0件ならストアを除く。GPOSの値の記録とアンカーをたどってVariationIndexを集める。送り幅などの値に現れる `0x8000` は参照に数えない。MATHだけをコピーするときは、除去したグリフの記録も含め、すべてのVariationIndexがGDEFの再配置後に元の行を指すことを確かめる。MATHだけをコピーして参照番号を合わせられない場合と、同じバイト列があるGPOSをそのままコピーする場合は拒否する。GDEFだけをコピーしてGPOSやMATHをサブセット化するとき、HarfBuzzと同じくそれらの参照番号を詰め、GDEFのストアは元のバイト列のまま写す。壊れたGDEFはこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
-- [ADR 0022](adr/0022-subsetting.md) のFeatureVariations版1.1では、残すフィーチャのLookupVariationRecordからlookupと条件形式2のVariationIndexを集める。軸を指定しないときは条件形式1〜5を保ち、部分軸指定では一定になる条件を評価し、残る条件木とlookup番号を書き直す。条件が参照するGDEFのItemVariationStoreは、使う行を残して参照番号を更新する。
-- レイアウトの表のうち、FeatureVariationsを持つGSUBをそのままコピーする場合のGDEF、GSUBとGPOSの版1.2とGDEFの版1.4、FeatureVariations版1.0の形式1でない条件と版1.1の全軸固定、65536を超えるグリフのフォントの24bitの形式も `Unsupported` とする。
+- [ADR 0022](adr/0022-subsetting.md) のFeatureVariations版1.1では、残すフィーチャのLookupVariationRecordからlookupと条件形式2のVariationIndexを集める。軸を指定しないときは条件形式1〜5を保ち、部分軸指定では一定になる条件を評価し、残る条件木とlookup番号を書き直す。条件が参照するGDEFのItemVariationStoreは、使う行を残して参照番号を更新する。[ADR 0061](adr/0061-subset-axis-instancing.md) の軸固定では、条件値の符号が丸めで変わらない倍率で必要な行をprivate rowにし、全軸固定で有効なlookupをフィーチャに加える。
+- レイアウトの表のうち、FeatureVariationsを持つGSUBをそのままコピーする場合のGDEF、GSUBとGPOSの版1.2とGDEFの版1.4、FeatureVariations版1.0の形式1でない条件、65536を超えるグリフのフォントの24bitの形式も `Unsupported` とする。
 
 ## WOFF と圧縮フォントの読み込み
 
@@ -444,6 +444,10 @@ PE32 では `RT_FONT` の名前・言語ディレクトリを順にたどり、�
 `sofel-type1::source::Type1Source` は PFA の16進 eexec と PFB の ASCII・バイナリセクションを読み、秘密辞書を復号する。`sofel-type1::face::Type1Face` は文字コードからグリフ番号への対応、グリフ名、charstring から読んだ送り幅を返す。AFM または PFM を付加すると、グリフ対のカーニングを返す。PFB のセクション長、PFA の16進表記、charstring の長さと AFM・PFM のペア表を検査する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
 `sofel-type1::type42::Type42Source` は Type42 の `/sfnts` 配列の16進文字列または `RD` バイナリを連結し、展開長と sfnt の表範囲を検査する。`/Encoding` と `/CharStrings` から Type42 のグリフ番号を読み、`.notdef` を先頭に置く。Unicode の文字対応は PostScript のグリフ名を Adobe Glyph List と `uniXXXX`・`uXXXXX` によって変換し、8ビットの Encoding は別に問い合わせる。`Font::from_type42` が返す `Type42Face` は Type42 のグリフ番号を埋め込み TrueType のグリフ番号へ変換し、送りを返す。輪郭を読むときは `embedded_glyph` と `inner_font` の組を使う（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+
+## 素の CFF フェイス
+
+`sofel-font::Cff::from_bare` は sfnt に包まれていない CFF 1 をフェイス番号で開く。Name INDEX の位置で Top DICT を選び、CharStrings のグリフ数、charset のグリフ名、Encoding を既存の CFF ビューで問い合わせる。`BareCffFace` は Adobe Glyph List を使った Unicode の文字対応、8ビットの Encoding、グリフ名、charstring の送り幅を返す。`sofel-outline::draw_bare_cff` はそのグリフの輪郭をヒンティングなしで描く。`sofel-render` の通常ファイル入力は素の CFF 1 を判別し、`--glyph` または `--char` で輪郭を PGM に描く。`sofel render --text` は `SubFont` の文字対応と送り幅の関数を使って一行をシェーピングし、同じ輪郭で描く。`sofel-validate` は素の CFF 1 の全フェイスを検査し、破損位置を CFF 表からのオフセットで報告する。範囲外のフェイス番号、必須の INDEX や CharStrings の欠落を拒む。共通の `Font` 型への接続は未実装である（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
 ## Web フォントの書き出し（`sofel-woff`）
 

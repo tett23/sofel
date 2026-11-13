@@ -4,7 +4,7 @@ use std::ffi::OsString;
 use std::io::Write;
 
 use sofel_font::read::GlyphId;
-use sofel_font::{BitmapFormat, Font};
+use sofel_font::{BareCffFace, BitmapFormat, Font};
 use sofel_outline::{Outlines, Scratch};
 use sofel_raster::Rasterizer;
 
@@ -33,6 +33,10 @@ backgrounds, else black.
 
 BDF and PCF bitmap faces use their single fixed strike. PCF supports
 monochrome glyphs; both formats write PGM (ADR 0065).
+
+Bare CFF 1 faces use their PostScript character mapping and unhinted
+outlines for --char and --glyph. `sofel render --text` also shapes bare
+CFF characters through its font callbacks (ADR 0065).
 
   --variations LIST   design coordinates, e.g. wght=500
   --named-instance N  start at named instance N (zero-based)
@@ -281,6 +285,9 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
     if let Some(format) = BitmapFormat::detect(&bytes) {
         return render_fixed(format, &bytes, &args, out, err);
     }
+    if bytes.first() == Some(&1) {
+        return render_bare_cff(&bytes, &args, text.as_deref(), out, err);
+    }
     let font = match Font::new(&bytes, args.face) {
         Ok(f) => f,
         Err(e) => return fail(err, format!("{}: {e}", args.file.to_string_lossy())),
@@ -385,6 +392,58 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
     image.extend(b.pixels.iter().map(|v| !v));
     if out.write_all(&image).is_err() {
         return fail(err, "cannot write the image".into());
+    }
+    0
+}
+
+fn render_bare_cff(
+    bytes: &[u8],
+    args: &Args,
+    text: Option<&str>,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> i32 {
+    let fail = |err: &mut dyn Write, message: &str| {
+        let _ = writeln!(err, "sofel-render: {message}");
+        1
+    };
+    let face = match BareCffFace::new(bytes, args.face) {
+        Ok(face) => face,
+        Err(_) => return fail(err, "invalid bare CFF font or face"),
+    };
+    if let Some(text) = text {
+        return match crate::text_image::draw_bare_cff(&face, args.ppem, text, &args.features, out) {
+            Ok(()) => 0,
+            Err(message) => fail(err, &message),
+        };
+    }
+    let glyph = match args.target {
+        Target::Glyph(glyph) => GlyphId(glyph),
+        Target::Char(codepoint) => match face.nominal_glyph(codepoint) {
+            Some(glyph) => glyph,
+            None => return fail(err, "character is not mapped"),
+        },
+        Target::Text(_) | Target::TextFile(_) => {
+            return fail(err, "bare CFF text input is unavailable");
+        }
+    };
+    let mut scratch = Scratch::default();
+    let mut raster = Rasterizer::new();
+    let bitmap = match glyph::render_bare_cff(&face, glyph, args.ppem, &mut scratch, &mut raster) {
+        Ok(bitmap) => bitmap,
+        Err(_) => return fail(err, "bare CFF glyph cannot be rendered"),
+    };
+    if bitmap.width == 0 || bitmap.rows == 0 {
+        return fail(err, "bare CFF glyph is empty");
+    }
+    let mut image = format!(
+        "P5\n# left {} top {}\n{} {}\n255\n",
+        bitmap.left, bitmap.top, bitmap.width, bitmap.rows
+    )
+    .into_bytes();
+    image.extend(bitmap.pixels.iter().map(|value| !value));
+    if out.write_all(&image).is_err() {
+        return fail(err, "cannot write the image");
     }
     0
 }

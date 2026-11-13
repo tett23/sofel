@@ -13,6 +13,7 @@ use alloc::vec::Vec;
 
 use sofel_font::read::GlyphId;
 use sofel_font::read::cff::charstring::{self, Context, PathSink};
+use sofel_font::read::cff::dict::BlendWeights;
 use sofel_font::read::cff::ft;
 use sofel_font::var::Location;
 use sofel_font::{Cff, Font};
@@ -127,10 +128,6 @@ pub(crate) fn load_cff_at(
     scale: Scale,
     s: &mut Scratch,
 ) -> Result<OutlineInfo, OutlineError> {
-    s.clear();
-    if glyph.0 >= cff.num_glyphs() {
-        return Err(OutlineError::InvalidGlyphIndex);
-    }
     let scaled = matches!(scale, Scale::Scaled { .. });
     // cf2_checkTransform: FreeType rejects scaling with unitsPerEm above
     // 0x7FFF (Glyph_Too_Big, and the retry fails the same way).
@@ -139,8 +136,35 @@ pub(crate) fn load_cff_at(
     }
     let instance = font.instance(location);
     let blend = instance.ft_blend_weights(cff);
+    load_cff_with_blend(cff, glyph, scale, &blend, s)
+}
+
+pub(crate) fn load_bare_cff(
+    cff: &Cff<'_>,
+    glyph: GlyphId,
+    scale: Scale,
+    s: &mut Scratch,
+) -> Result<OutlineInfo, OutlineError> {
+    if matches!(scale, Scale::Scaled { .. }) && cff.head_units_per_em() > 0x7FFF {
+        return Err(OutlineError::InvalidOutline);
+    }
+    load_cff_with_blend(cff, glyph, scale, &cff.default_blend(), s)
+}
+
+fn load_cff_with_blend(
+    cff: &Cff<'_>,
+    glyph: GlyphId,
+    scale: Scale,
+    blend: &dyn BlendWeights,
+    s: &mut Scratch,
+) -> Result<OutlineInfo, OutlineError> {
+    s.clear();
+    if glyph.0 >= cff.num_glyphs() {
+        return Err(OutlineError::InvalidGlyphIndex);
+    }
+    let scaled = matches!(scale, Scale::Scaled { .. });
     let sub = cff
-        .subfont_with_blend(glyph, &blend)
+        .subfont_with_blend(glyph, blend)
         .ok_or(OutlineError::InvalidCharString)?;
     let data = cff
         .char_strings()
@@ -163,7 +187,7 @@ pub(crate) fn load_cff_at(
         max_stack: top.maxstack,
         has_variations: cff.variation_store().is_some_and(|v| v.data_count() != 0),
         vsindex: p.vsindex,
-        blend: &blend,
+        blend,
         // The face's seed is 0 (ft-dump sets FT_PARAM_TAG_RANDOM_SEED), so
         // the state starts from the Private DICT's initialRandomSeed; it
         // restarts at every draw (ADR 0021).
