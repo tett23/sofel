@@ -124,6 +124,18 @@ impl<'a> Charstrings<'a> {
             .map(|(_, bytes)| *bytes)
     }
 
+    /// The glyph name at its source-order index.
+    pub fn glyph_name(&self, index: usize) -> Option<&'a [u8]> {
+        self.glyphs.get(index).map(|(name, _)| *name)
+    }
+
+    /// The source-order index of a glyph name.
+    pub fn glyph_index(&self, name: &[u8]) -> Option<usize> {
+        self.glyphs
+            .iter()
+            .position(|(candidate, _)| *candidate == name)
+    }
+
     /// The encrypted local subroutine at `index`.
     pub fn subroutine(&self, index: usize) -> Option<&'a [u8]> {
         self.subrs.get(index).copied().flatten()

@@ -24,3 +24,6 @@ pub mod charstrings;
 
 /// Type 1 character encoding.
 pub mod encoding;
+
+/// Type 1 face character and glyph queries.
+pub mod face;
