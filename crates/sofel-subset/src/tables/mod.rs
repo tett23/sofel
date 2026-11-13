@@ -203,6 +203,10 @@ impl Plan {
                 self.passthrough(font, tag, tables);
                 return Ok(room);
             }
+            b"MVAR" if !self.var.instancing() => {
+                self.passthrough(font, tag, tables);
+                return Ok(room);
+            }
             b"MVAR" => Some(mvar::subset),
             b"STAT" => Some(stat::subset),
             b"fvar" if !self.var.user().is_empty() => {
