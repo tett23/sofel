@@ -26,9 +26,14 @@ pub struct Type1Source {
 }
 
 impl Type1Source {
+    /// Recognize either cleartext Type 1 signature accepted by FreeType.
+    pub fn has_text_header(data: &[u8]) -> bool {
+        data.starts_with(b"%!PS-AdobeFont") || data.starts_with(b"%!FontType")
+    }
+
     /// Read a PFA font with ASCII hexadecimal eexec data.
     pub fn parse_pfa(data: &[u8], max_output: usize) -> Result<Self, SourceError> {
-        if !data.starts_with(b"%!PS-AdobeFont") {
+        if !Self::has_text_header(data) {
             return Err(SourceError);
         }
         let marker = data
@@ -89,7 +94,7 @@ impl Type1Source {
         let pfb = Pfb::parse(data, max_output).map_err(|_| SourceError)?;
         let first = pfb.sections().first().ok_or(SourceError)?;
         if first.kind != SectionKind::Ascii
-            || !first.data.starts_with(b"%!PS-AdobeFont")
+            || !Self::has_text_header(first.data)
             || !first.data.windows(5).any(|window| window == b"eexec")
         {
             return Err(SourceError);

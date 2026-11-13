@@ -7,6 +7,7 @@ use crate::afm::Afm;
 use crate::charstrings::Charstrings;
 use crate::encoding::Encoding;
 use crate::metrics::{Metrics, parse_metrics};
+use crate::multiple_masters::MultipleMasters;
 use crate::pfm::Pfm;
 use crate::source::Type1Source;
 
@@ -27,6 +28,8 @@ impl core::error::Error for FaceError {}
 pub struct Type1Face<'a> {
     encoding: Encoding<'a>,
     charstrings: Charstrings<'a>,
+    multiple_masters: Option<MultipleMasters<'a>>,
+    master_weights: Option<Vec<i32>>,
     attached: Option<AttachedMetrics<'a>>,
 }
 
@@ -41,11 +44,34 @@ impl<'a> Type1Face<'a> {
     pub fn new(source: &'a Type1Source) -> Result<Self, FaceError> {
         let encoding = Encoding::parse(source.cleartext()).map_err(|_| FaceError)?;
         let charstrings = Charstrings::parse(source.private()).map_err(|_| FaceError)?;
+        let multiple_masters = MultipleMasters::parse(source.cleartext()).map_err(|_| FaceError)?;
+        let master_weights = multiple_masters
+            .as_ref()
+            .map(|mm| mm.default_weights().to_vec());
         Ok(Self {
             encoding,
             charstrings,
+            multiple_masters,
+            master_weights,
             attached: None,
         })
+    }
+
+    /// Multiple Masters axis metadata, when the Type 1 source has it.
+    pub fn multiple_masters(&self) -> Option<&MultipleMasters<'a>> {
+        self.multiple_masters.as_ref()
+    }
+
+    /// Select a Type 1 Multiple Masters design location in signed 16.16 coordinates.
+    pub fn set_design_coordinates(&mut self, coordinates: &[i32]) -> Result<(), FaceError> {
+        let mm = self.multiple_masters.as_ref().ok_or(FaceError)?;
+        self.master_weights = Some(mm.master_weights(coordinates).map_err(|_| FaceError)?);
+        Ok(())
+    }
+
+    /// The currently selected Type 1 Multiple Masters interpolation weights.
+    pub fn master_weights(&self) -> Option<&[i32]> {
+        self.master_weights.as_deref()
     }
 
     /// Number of indexed glyphs.
@@ -73,6 +99,11 @@ impl<'a> Type1Face<'a> {
     /// The decrypted charstring of a glyph index.
     pub fn glyph_program(&self, glyph: usize) -> Option<Vec<u8>> {
         self.charstrings.glyph_program(self.glyph_name(glyph)?)
+    }
+
+    /// Decrypted local Type 1 subroutine by index.
+    pub fn subroutine_program(&self, index: usize) -> Option<Vec<u8>> {
+        self.charstrings.subroutine_program(index)
     }
 
     /// The unscaled side bearings and advances of a glyph.

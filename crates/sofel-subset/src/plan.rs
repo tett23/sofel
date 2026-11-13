@@ -159,6 +159,7 @@ pub(crate) struct PlanLayout {
     pub instanced_gdef_store: Option<Vec<u8>>,
     pub gdef_var_items: Vec<(u16, Vec<u32>)>,
     pub gdef_var_map: BTreeMap<u32, u32>,
+    pub math_var_map: BTreeMap<u32, u32>,
     /// Condition-specific private rows and unrounded sign-preserving defaults.
     pub gdef_condition_map: BTreeMap<(u32, i16), (u32, i16)>,
 }
@@ -199,20 +200,9 @@ fn layout_unsupported(
                             && !table.conditions_are_store_independent()))
             })
     });
-    // A VariationIndex Device necessarily contains the format word 0x8000.
-    // Scan the whole retained table so an unknown or malformed subtable
-    // cannot make a real reference look absent. Other 0x8000 words may
-    // conservatively keep the table unsupported.
-    let may_reference_gdef_store = |d: &[u8]| d.windows(2).any(|word| word == [0x80, 0x00]);
-    let gpos_may_reference_store = retained(b"GPOS")
-        && font
-            .table(Tag::new(b"GPOS"))
-            .is_some_and(may_reference_gdef_store);
-    let copied_gpos_may_reference_store =
-        gpos_may_reference_store && no_subset.contains(Tag::new(b"GPOS").to_u32());
     if !pinned
         && kept(b"GDEF").is_some_and(layout::gdef::has_var_store)
-        && (copied_gpos_may_reference_store || conditions_may_reference_store)
+        && conditions_may_reference_store
     {
         return Err(SubsetError::Unsupported {
             tag: Tag::new(b"GDEF"),
@@ -398,6 +388,12 @@ impl Plan {
                 .contains(Tag::new(b"glyf").to_u32())
             && font.table(Tag::new(b"CFF2")).is_none();
         let needs_rebase = |tag: &&[u8; 4]| {
+            if input
+                .set(SetKind::NoSubsetTables)
+                .contains(Tag::new(tag).to_u32())
+            {
+                return false;
+            }
             if avar2_range {
                 // avar2 maps the restricted user range into the original variation space.
                 return false;
@@ -413,7 +409,7 @@ impl Plan {
                         }
                         b"BASE" => sofel_font::read::base::Base::new(data).is_ok_and(|table| {
                             table.item_var_store_offset().unwrap_or(0) == 0
-                                || (!norm.avar2 && table.variation_store().is_ok())
+                                || table.variation_store().is_ok()
                         }),
                         b"COLR" => sofel_font::read::colr::Colr::new(data).is_ok(),
                         b"GDEF" => sofel_font::read::gdef::Gdef::new(data).is_ok_and(|t| {
@@ -430,7 +426,9 @@ impl Plan {
                 b"HVAR" | b"VVAR" => {
                     pinned_glyf
                         || (!norm.all_axes_pinned
-                            && (!norm.avar2 || !norm.avar2_self_contained.is_empty())
+                            && (!norm.avar2
+                                || identity_avar2
+                                || !norm.avar2_self_contained.is_empty())
                             && font.table(Tag::new(tag)).is_some_and(|data| {
                                 sofel_font::read::be::u32_at(data, 8).is_some()
                             })
@@ -439,11 +437,16 @@ impl Plan {
                                 .contains(Tag::new(tag).to_u32()))
                 }
                 b"cvar" => {
-                    norm.all_axes_pinned || !norm.avar2 || !norm.avar2_self_contained.is_empty()
+                    norm.all_axes_pinned
+                        || !norm.avar2
+                        || identity_avar2
+                        || !norm.avar2_self_contained.is_empty()
                 }
                 b"MVAR" => {
                     norm.all_axes_pinned
-                        || ((!norm.avar2 || !norm.avar2_self_contained.is_empty())
+                        || ((!norm.avar2
+                            || identity_avar2
+                            || !norm.avar2_self_contained.is_empty())
                             && !input
                                 .set(SetKind::NoSubsetTables)
                                 .contains(Tag::new(tag).to_u32())
@@ -451,7 +454,17 @@ impl Plan {
                                 sofel_font::read::mvar::Mvar::new(data).is_ok()
                             }))
                 }
-                b"gvar" => {
+                b"MATH" => {
+                    !input
+                        .set(SetKind::NoSubsetTables)
+                        .contains(Tag::new(tag).to_u32())
+                        && font.table(Tag::new(tag)).is_some_and(|data| {
+                            let all = RangeSet::all();
+                            crate::tables::math::retained_variation_indices(data, &all, &all)
+                                .is_some()
+                        })
+                }
+                b"gvar" | b"GVAR" => {
                     !norm.avar2
                         || inert_gvar
                         || avar2_range
@@ -459,7 +472,6 @@ impl Plan {
                         || pinned_glyf
                         || !norm.avar2_self_contained.is_empty()
                 }
-                b"GVAR" => inert_gvar,
                 _ => false,
             };
             !handled && font.table(Tag::new(tag)).is_some()
@@ -917,7 +929,7 @@ impl Plan {
                                 || (matches!(
                                     kind,
                                     layout::Kind::Context | layout::Kind::ChainContext
-                                ) && (matches!(subtable.u16(0), 2 | 3 | 6)
+                                ) && (matches!(subtable.u16(0), 2..=6)
                                     || (subtable.u16(0) == 1 && narrow_rule_glyphs_fit)))
                                 || (matches!(
                                     kind,
@@ -995,9 +1007,8 @@ impl Plan {
             p.layout.used_mark_sets = layout::gdef::used_mark_sets(gdef, &p.layout.glyphset_gsub);
             let copied_gdef = no_subset.contains(Tag::new(b"GDEF").to_u32());
             let gpos_data = font.table(Tag::new(b"GPOS")).unwrap_or(&[]);
-            let gpos_has_var_format = tag_kept(b"GPOS")
-                && !no_subset.contains(Tag::new(b"GPOS").to_u32())
-                && gpos_data.windows(2).any(|word| word == [0x80, 0x00]);
+            let gpos_has_var_format =
+                tag_kept(b"GPOS") && gpos_data.windows(2).any(|word| word == [0x80, 0x00]);
             let math_data = font.table(Tag::new(b"MATH")).unwrap_or(&[]);
             let copied_math = no_subset.contains(Tag::new(b"MATH").to_u32());
             let math_has_var_format = tag_kept(b"MATH")
@@ -1060,6 +1071,11 @@ impl Plan {
                         reason: "the GDEF item variation store (ADR 0022 stage 10)",
                     });
                 };
+                if p.var.n.avar2 {
+                    // With avar2, HarfBuzz's MATH references use the compact
+                    // index map even when GDEF's rows are optimized afterward.
+                    p.layout.math_var_map = map.clone();
+                }
                 if copied_math && !copied_gdef && math_has_var_format {
                     // Even records for glyphs outside the subset survive in a
                     // copied MATH. Every original index must still address its row.
@@ -1085,6 +1101,14 @@ impl Plan {
                 } else if copied_gdef {
                     // HarfBuzz remaps subset GPOS and MATH references even when it
                     // copies the original GDEF table unchanged.
+                    if p.var.instancing() {
+                        p.layout.pinned_layout_deltas = p.pinned_deltas(
+                            font,
+                            Tag::new(b"GDEF"),
+                            sofel_font::var::StoreKind::Gdef,
+                            &map,
+                        )?;
+                    }
                     p.layout.gdef_var_map = map;
                 } else if p.var.instancing() {
                     let tag = Tag::new(b"GDEF");

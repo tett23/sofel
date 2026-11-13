@@ -4,7 +4,7 @@ use std::ffi::OsString;
 use std::io::Write;
 
 use sofel_font::read::GlyphId;
-use sofel_font::{BareCffFace, BitmapFormat, Font};
+use sofel_font::{BareCffFace, BitmapFormat, Font, Type1Face, Type1Source};
 use sofel_outline::{Outlines, Scratch};
 use sofel_raster::Rasterizer;
 use sofel_type1::cid::CidFace;
@@ -35,9 +35,15 @@ backgrounds, else black.
 BDF and PCF bitmap faces use their single fixed strike. PCF supports
 monochrome glyphs; both formats write PGM (ADR 0065).
 
+PFR faces use an embedded monochrome strike at the requested size when
+available, and otherwise render the unhinted outline as PGM (ADR 0065).
+
 Bare CFF 1 and CEF faces use their PostScript character mapping and unhinted
 outlines for --char and --glyph. `sofel render --text` also shapes bare
 CFF characters through its font callbacks (ADR 0065).
+
+Type 1 PFA and PFB faces render their unhinted outlines by glyph index,
+glyph-name Unicode character, or shaped text (ADR 0065).
 
   --variations LIST   design coordinates, e.g. wght=500
   --named-instance N  start at named instance N (zero-based)
@@ -286,6 +292,9 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
     if let Some(format) = BitmapFormat::detect(&bytes) {
         return render_fixed(format, &bytes, &args, out, err);
     }
+    if bytes.starts_with(b"PFR0") {
+        return render_pfr(&bytes, &args, out, err);
+    }
     if bytes.starts_with(b"%!PS-Adobe-3.0 Resource-CIDFont") {
         return render_cid(&bytes, &args, out, err);
     }
@@ -294,6 +303,9 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
             .is_ok_and(|sfnt| sofel_font::read::cff::is_cef(&sfnt))
     {
         return render_bare_cff(&bytes, &args, text.as_deref(), out, err);
+    }
+    if Type1Source::has_text_header(&bytes) || bytes.starts_with(&[0x80, 0x01]) {
+        return render_type1(&bytes, &args, text.as_deref(), out, err);
     }
     let font = match Font::new(&bytes, args.face) {
         Ok(f) => f,
@@ -403,6 +415,67 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
     0
 }
 
+fn render_type1(
+    bytes: &[u8],
+    args: &Args,
+    text: Option<&str>,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> i32 {
+    let mut fail = |message: &str| {
+        let _ = writeln!(err, "sofel-render: {message}");
+        1
+    };
+    if args.face != 0 {
+        return fail("Type 1 face index out of range");
+    }
+    let source = if Type1Source::has_text_header(bytes) {
+        Type1Source::parse_pfa(bytes, 67_108_864)
+    } else {
+        Type1Source::parse_pfb(bytes, 67_108_864)
+    };
+    let Ok(source) = source else {
+        return fail("invalid Type 1 font source");
+    };
+    let Ok(face) = Type1Face::new(&source) else {
+        return fail("invalid Type 1 face");
+    };
+    if let Some(text) = text {
+        return match crate::text_image::draw_type1(&face, args.ppem, text, &args.features, out) {
+            Ok(()) => 0,
+            Err(message) => fail(&message),
+        };
+    }
+    let glyph = match args.target {
+        Target::Glyph(glyph) => usize::try_from(glyph).unwrap_or(usize::MAX),
+        Target::Char(codepoint) => {
+            let Some(glyph) = face.unicode_glyph(codepoint) else {
+                return fail("character is not mapped");
+            };
+            glyph
+        }
+        Target::Text(_) | Target::TextFile(_) => return fail("Type 1 text input is unavailable"),
+    };
+    let mut raster = Rasterizer::new();
+    let bitmap = glyph::render_type1(&face, glyph, args.ppem, &mut raster);
+    let Ok(bitmap) = bitmap else {
+        return fail("Type 1 glyph cannot be rendered");
+    };
+    if bitmap.width == 0 || bitmap.rows == 0 {
+        return fail("Type 1 glyph is empty");
+    }
+    let mut image = format!(
+        "P5\n# left {} top {}\n{} {}\n255\n",
+        bitmap.left, bitmap.top, bitmap.width, bitmap.rows
+    )
+    .into_bytes();
+    image.extend(bitmap.pixels.iter().map(|value| !value));
+    if out.write_all(&image).is_err() {
+        return fail("cannot write the image");
+    }
+    0
+}
+
 fn render_bare_cff(
     bytes: &[u8],
     args: &Args,
@@ -487,6 +560,83 @@ fn render_cid(bytes: &[u8], args: &Args, out: &mut dyn Write, err: &mut dyn Writ
     )
     .into_bytes();
     image.extend(b.pixels.iter().map(|v| !v));
+    if out.write_all(&image).is_err() {
+        return fail("cannot write the image");
+    }
+    0
+}
+
+fn render_pfr(bytes: &[u8], args: &Args, out: &mut dyn Write, err: &mut dyn Write) -> i32 {
+    let mut fail = |message: &str| {
+        let _ = writeln!(err, "sofel-render: {message}");
+        1
+    };
+    let Ok(face) = Font::from_pfr(bytes, args.face) else {
+        return fail("invalid PFR font or face");
+    };
+    let glyph = match args.target {
+        Target::Glyph(glyph) => GlyphId(glyph),
+        Target::Char(codepoint) => match face.nominal_glyph(codepoint) {
+            Some(glyph) => glyph,
+            None => return fail("character is not mapped"),
+        },
+        Target::Text(_) | Target::TextFile(_) => return fail("PFR text rendering is unavailable"),
+    };
+    if !args.no_bitmap {
+        let embedded = match face.bitmap(glyph, args.ppem, args.ppem) {
+            Ok(bitmap) => bitmap,
+            Err(_) => return fail("invalid PFR bitmap"),
+        };
+        if let Some(bitmap) = embedded {
+            let width = usize::from(bitmap.width);
+            let rows = usize::from(bitmap.height);
+            let Some(size) = width.checked_mul(rows).filter(|size| *size <= 67_108_864) else {
+                return fail("PFR bitmap is too large");
+            };
+            let stride = width.saturating_add(7) / 8;
+            let mut image = format!(
+                "P5\n# left {} top {}\n{} {}\n255\n",
+                bitmap.left, bitmap.top, width, rows
+            )
+            .into_bytes();
+            image.reserve(size);
+            for row in 0..rows {
+                for column in 0..width {
+                    let Some(index) = row
+                        .checked_mul(stride)
+                        .and_then(|n| n.checked_add(column / 8))
+                    else {
+                        return fail("invalid PFR bitmap");
+                    };
+                    let Some(&byte) = bitmap.pixels.get(index) else {
+                        return fail("invalid PFR bitmap");
+                    };
+                    image.push(if byte & (0x80 >> (column % 8)) == 0 {
+                        255
+                    } else {
+                        0
+                    });
+                }
+            }
+            if out.write_all(&image).is_err() {
+                return fail("cannot write the image");
+            }
+            return 0;
+        }
+    }
+    let mut raster = Rasterizer::new();
+    let Ok(bitmap) = glyph::render_pfr(&face, glyph, args.ppem, &mut raster) else {
+        return fail("PFR glyph cannot be rendered");
+    };
+    if bitmap.width == 0 || bitmap.rows == 0 {
+        return fail("PFR glyph is empty");
+    }
+    let mut image = format!(
+        "P5\n# left {} top {}\n{} {}\n255\n",
+        bitmap.left, bitmap.top, bitmap.width, bitmap.rows
+    )
+    .into_bytes();
+    image.extend(bitmap.pixels.iter().map(|value| !value));
     if out.write_all(&image).is_err() {
         return fail("cannot write the image");
     }

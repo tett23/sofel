@@ -32,7 +32,10 @@ fn collect_variation_index(
     let at = src.len().checked_sub(dev.0.len())?.checked_add(4)?;
     formats.insert(at);
     if keep {
-        indices.insert((u32::from(dev.u16(0)) << 16) | u32::from(dev.u16(2)));
+        let index = (u32::from(dev.u16(0)) << 16) | u32::from(dev.u16(2));
+        if index != u32::MAX {
+            indices.insert(index);
+        }
     }
     Some(())
 }
@@ -281,7 +284,12 @@ fn map(s: &Sub<'_, '_>, g: u32) -> u32 {
 fn device_copy(s: &mut Sub<'_, '_>, dev: D<'_>) -> bool {
     if dev.u16(4) == 0x8000 {
         let old = (u32::from(dev.u16(0)) << 16) | u32::from(dev.u16(2));
-        if let Some(&new) = s.p.layout.gdef_var_map.get(&old) {
+        let remap = if s.p.var.n.avar2 && !s.p.var.all_axes_pinned() {
+            &s.p.layout.math_var_map
+        } else {
+            &s.p.layout.gdef_var_map
+        };
+        if let Some(&new) = remap.get(&old) {
             s.s.u16((new >> 16) as u16);
             s.s.u16(u16::try_from(new & 0xffff).unwrap_or_default());
             s.s.u16(0x8000);
