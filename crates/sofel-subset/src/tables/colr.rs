@@ -144,6 +144,9 @@ fn plan_store(
                     *index = remap.get(index).copied().unwrap_or(NO_VARIATION);
                 }
             }
+        } else if !instance.0.var.n.avar2_reachable.is_empty() {
+            plan.variation_store =
+                super::hvar::subset_store_with_avar2(instance.0, store, &groups, TAG)?;
         } else {
             plan.variation_store = super::hvar::subset_store(store, &groups, TAG)?;
         }
