@@ -11,40 +11,52 @@ use crate::bits::BitSet;
 /// `SingleSubst::serialize` of `(glyph, substitute)` pairs into the
 /// current object.
 fn single_serialize(s: &mut Sub<'_, '_>, pairs: &[(u32, u32)]) {
-    let Some(&(g0, s0)) = pairs.first() else {
-        s.s.u16(2);
-        let cov_at = s.s.u16(0);
-        s.s.u16(0);
-        s.serialize_serialize(cov_at, 2, |s| s.coverage(&[]));
-        return;
-    };
-    if pairs.iter().any(|p| p.1 > 0xFFFF) {
-        s.unsupported("24-bit SingleSubst (ADR 0022 stage 3)");
-        return;
-    }
-    let delta = s0.wrapping_sub(g0) & 0xFFFF;
-    let same = pairs
-        .iter()
-        .skip(1)
-        .all(|p| p.1.wrapping_sub(p.0) & 0xFFFF == delta);
+    let (at, width) = single_header(s.s, pairs);
     let glyphs: Vec<u32> = pairs.iter().map(|p| p.0).collect();
-    if same {
-        s.s.u16(1);
-        let cov_at = s.s.u16(0);
-        s.s.u16(delta as u16);
-        s.serialize_serialize(cov_at, 2, |s| s.coverage(&glyphs));
-    } else {
-        s.s.u16(2);
-        let cov_at = s.s.u16(0);
-        s.s.u16(n16(pairs.len()));
-        pairs.iter().for_each(|p| {
-            s.s.u16(lo16(p.1));
-        });
-        s.serialize_serialize(cov_at, 2, |s| s.coverage(&glyphs));
-    }
+    s.serialize_serialize(at, width, |s| s.coverage(&glyphs));
 }
 
-/// SingleSubst formats 1 and 2.
+/// Writes the substitution operands and returns the Coverage offset field and its width.
+fn single_header(s: &mut sofel_write::Serializer, pairs: &[(u32, u32)]) -> (usize, u8) {
+    use sofel_write::Errors;
+    let wide = pairs.iter().any(|p| p.1 > 0xFFFF);
+    let mask = if wide { 0xFF_FFFF } else { 0xFFFF };
+    let delta = pairs
+        .first()
+        .map(|p| p.1.wrapping_sub(p.0) & mask)
+        .filter(|&d| pairs.iter().all(|p| p.1.wrapping_sub(p.0) & mask == d));
+    s.u16(match (wide, delta.is_some()) {
+        (false, true) => 1,
+        (false, false) => 2,
+        (true, true) => 3,
+        (true, false) => 4,
+    });
+    let field = if wide { (s.u32(0), 4) } else { (s.u16(0), 2) };
+    if pairs.iter().any(|p| p.1 > 0xFF_FFFF) {
+        s.err(Errors::INT_OVERFLOW);
+    } else if let Some(d) = delta {
+        if wide {
+            s.u24(d);
+        } else {
+            s.u16(lo16(d));
+        }
+    } else if wide {
+        let at = s.u24(0);
+        s.check_assign_u24(at, pairs.len() as u64, Errors::ARRAY_OVERFLOW);
+        for &(_, gid) in pairs {
+            s.u24(gid);
+        }
+    } else {
+        let at = s.u16(0);
+        s.check_assign_u16(at, pairs.len() as u64, Errors::ARRAY_OVERFLOW);
+        for &(_, gid) in pairs {
+            s.u16(lo16(gid));
+        }
+    }
+    field
+}
+
+/// SingleSubst formats 1 through 4.
 pub(crate) fn single(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
     let sub = super::data::SingleSubst(st);
     let cov = sub.coverage();
@@ -251,4 +263,28 @@ pub(crate) fn reverse(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
     let glyphs: Vec<u32> = pairs.iter().map(|p| p.0).collect();
     s.serialize_serialize(cov_at, 2, |s| s.coverage(&glyphs));
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sofel_write::Serializer;
+
+    #[test]
+    fn adr0022_single_substitution_writes_24_bit_operands() {
+        for (pairs, expected) in [
+            (
+                &[(1, 65536), (2, 65537)][..],
+                &[0, 3, 0, 0, 0, 0, 0, 255, 255][..],
+            ),
+            (
+                &[(1, 65536), (2, 16777215)][..],
+                &[0, 4, 0, 0, 0, 0, 0, 0, 2, 1, 0, 0, 255, 255, 255][..],
+            ),
+        ] {
+            let mut serializer = Serializer::new();
+            assert_eq!(single_header(&mut serializer, pairs), (2, 4));
+            assert_eq!(serializer.current(), expected);
+        }
+    }
 }
