@@ -1055,3 +1055,24 @@ fn unpinned_base_store_collects_language_min_max() {
         Some(21)
     );
 }
+
+#[test]
+fn adr0061_i1_partial_pin_removes_axis_from_wide_gvar() {
+    // A shared peak on the retained weight axis. Empty glyph slots are valid.
+    let mut gvar = vec![0, 1, 0, 0, 0, 2, 0, 1];
+    let shared_at = 21u32 + 2 * 29;
+    gvar.extend(shared_at.to_be_bytes());
+    gvar.extend([0, 0, 28, 0, 0]);
+    gvar.extend((shared_at + 4).to_be_bytes());
+    gvar.resize(shared_at as usize, 0);
+    gvar.extend([0x40, 0, 0, 0]);
+    let data = font_with(vec![(b"fvar", fvar(&AXES)), (b"GVAR", gvar)]);
+    let font = Font::new(&data, 0).unwrap();
+    let input = unicodes()
+        .with_axis_pinned_to_default(Tag::new(b"wdth"), &font)
+        .unwrap();
+    let output = subset(&font, &input).unwrap();
+    let sfnt = Sfnt::new(&output).unwrap();
+    assert_eq!(&sfnt.table(Tag::new(b"fvar")).unwrap()[8..10], &[0, 1]);
+    assert!(sfnt.table(Tag::new(b"GVAR")).is_none());
+}
