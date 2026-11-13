@@ -592,37 +592,60 @@ fn single_serialize(
     it: &[(u32, D<'_>)],
     new_format: u16,
 ) {
-    let len = value_len(src_format);
-    let mut format = 2u16;
-    if let Some(&(_, first)) = it.first() {
-        format = if it
-            .iter()
-            .all(|(_, v)| (0..len).all(|i| v.u16_at(0, i) == first.u16_at(0, i)))
-        {
-            1
-        } else {
-            2
-        };
-    }
-    if it.iter().any(|p| p.0 > 0xFFFF) {
-        s.unsupported("24-bit SinglePos (ADR 0022 stage 3)");
-        return;
-    }
+    let (cov_at, width, shared) = single_header(s.s, src_format, it, new_format);
     let glyphs: Vec<u32> = it.iter().map(|p| p.0).collect();
-    s.s.u16(format);
-    let cov_at = s.s.u16(0);
-    s.s.u16(new_format);
-    if format == 1 {
+    if shared {
         if let Some(&(_, v)) = it.first() {
             copy_values(s, src_format, new_format, base, v);
         }
     } else {
-        s.s.u16(n16(it.len()));
         for &(_, v) in it {
             copy_values(s, src_format, new_format, base, v);
         }
     }
-    s.serialize_serialize(cov_at, 2, |s| s.coverage(&glyphs));
+    s.serialize_serialize(cov_at, width, |s| s.coverage(&glyphs));
+}
+
+/// Writes the header and reports whether all glyphs share one value record.
+fn single_header(
+    s: &mut sofel_write::Serializer,
+    src_format: u16,
+    records: &[(u32, D<'_>)],
+    new_format: u16,
+) -> (usize, u8, bool) {
+    let len = value_len(src_format);
+    let shared = records.first().is_some_and(|(_, first)| {
+        records
+            .iter()
+            .all(|(_, v)| (0..len).all(|i| v.u16_at(0, i) == first.u16_at(0, i)))
+    });
+    let wide = records.iter().any(|p| p.0 > 0xFFFF);
+    s.u16(match (wide, shared) {
+        (false, true) => 1,
+        (false, false) => 2,
+        (true, true) => 3,
+        (true, false) => 4,
+    });
+    let (at, width) = if wide { (s.u32(0), 4) } else { (s.u16(0), 2) };
+    s.u16(new_format);
+    if !shared {
+        if wide {
+            let count = s.u24(0);
+            s.check_assign_u24(
+                count,
+                records.len() as u64,
+                sofel_write::Errors::ARRAY_OVERFLOW,
+            );
+        } else {
+            let count = s.u16(0);
+            s.check_assign_u16(
+                count,
+                records.len() as u64,
+                sofel_write::Errors::ARRAY_OVERFLOW,
+            );
+        }
+    }
+    (at, width, shared)
 }
 
 /// SinglePos formats 1 through 4.
@@ -1124,4 +1147,25 @@ pub(crate) fn mark_lig(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
         return false;
     }
     s.serialize_serialize(lig_cov_at, 2, |s| s.coverage(&new_lig_cov))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sofel_write::Serializer;
+
+    #[test]
+    fn adr0022_single_position_writes_wide_coverage_offset_and_count() {
+        for (second, header) in [
+            (D(&[0, 12]), &[0, 3, 0, 0, 0, 0, 0, 4][..]),
+            (D(&[0, 24]), &[0, 4, 0, 0, 0, 0, 0, 4, 0, 0, 2][..]),
+        ] {
+            let mut out = Serializer::new();
+            let (_, width, shared) =
+                single_header(&mut out, 4, &[(65535, D(&[0, 12])), (65536, second)], 4);
+            assert_eq!(out.current(), header);
+            assert_eq!(width, 4);
+            assert_eq!(shared, second.u16(0) == 12);
+        }
+    }
 }
