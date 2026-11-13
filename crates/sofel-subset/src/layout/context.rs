@@ -145,20 +145,29 @@ fn offsets(d: D<'_>, count_at: usize) -> Vec<D<'_>> {
         .collect()
 }
 
-/// The raw 16-bit offsets of an array.
-fn raw_offsets(d: D<'_>, count_at: usize) -> Vec<u32> {
-    let n = usize::from(d.u16(count_at));
-    (0..n)
+/// Coverage offsets occupy three bytes in format 6 and two in format 3.
+fn coverage_offset_width(st: D<'_>) -> u8 {
+    if st.u16(0) == 6 { 3 } else { 2 }
+}
+
+fn coverage_offsets(st: D<'_>, start: usize, count: usize) -> Vec<u32> {
+    let width = coverage_offset_width(st);
+    (0..count)
         .map(|i| {
-            u32::from(
-                d.u16(
-                    count_at
-                        .saturating_add(2)
-                        .saturating_add(i.saturating_mul(2)),
-                ),
+            st.uint(
+                start.saturating_add(i.saturating_mul(usize::from(width))),
+                width,
             )
         })
         .collect()
+}
+
+fn raw_offsets(st: D<'_>, count_at: usize) -> Vec<u32> {
+    coverage_offsets(
+        st,
+        count_at.saturating_add(2),
+        usize::from(st.u16(count_at)),
+    )
 }
 
 /// A ChainContextFormat3: the backtrack, input and lookahead coverage
@@ -172,16 +181,17 @@ pub(crate) struct Chain3 {
 
 /// Reads a ChainContextFormat3.
 pub(crate) fn chain3(st: D<'_>) -> Chain3 {
+    let width = usize::from(coverage_offset_width(st));
     let backtrack = raw_offsets(st, 2);
-    let mut at = 4usize.saturating_add(backtrack.len().saturating_mul(2));
+    let mut at = 4usize.saturating_add(backtrack.len().saturating_mul(width));
     let input = raw_offsets(st, at);
     at = at
         .saturating_add(2)
-        .saturating_add(input.len().saturating_mul(2));
+        .saturating_add(input.len().saturating_mul(width));
     let lookahead = raw_offsets(st, at);
     at = at
         .saturating_add(2)
-        .saturating_add(lookahead.len().saturating_mul(2));
+        .saturating_add(lookahead.len().saturating_mul(width));
     let nr = usize::from(st.u16(at));
     Chain3 {
         backtrack,
@@ -371,9 +381,9 @@ pub(crate) fn context_closure(c: &mut Closure<'_>, st: D<'_>) {
             }
             c.stack.pop();
         }
-        3 => {
+        3 | 6 => {
             let count = usize::from(st.u16(2));
-            let covs = u16s(st, 6, count);
+            let covs = coverage_offsets(st, 6, count);
             let first = Cov(st.follow(covs.first().copied().unwrap_or(0)));
             if !first.intersects(&c.glyphs) {
                 return;
@@ -383,7 +393,7 @@ pub(crate) fn context_closure(c: &mut Closure<'_>, st: D<'_>) {
             c.stack.push(cur);
             let lookups = records(
                 st,
-                6usize.saturating_add(count.saturating_mul(2)),
+                6usize.saturating_add(count.saturating_mul(usize::from(coverage_offset_width(st)))),
                 usize::from(st.u16(4)),
             );
             let input = covs.get(1..).unwrap_or(&[]);
@@ -438,7 +448,7 @@ pub(crate) fn chain_closure(c: &mut Closure<'_>, st: D<'_>) {
             }
             c.stack.pop();
         }
-        3 => {
+        3 | 6 => {
             let ch = chain3(st);
             let first = Cov(st.follow(ch.input.first().copied().unwrap_or(0)));
             if !first.intersects(&c.glyphs) {
@@ -504,9 +514,9 @@ pub(crate) fn context_intersects(st: D<'_>, glyphs: &BitSet) -> bool {
                         .any(|r| all_intersect(glyphs, &rule(r).input, Vals::Class(cd)))
             })
         }
-        3 => {
+        3 | 6 => {
             let count = usize::from(st.u16(2));
-            let covs = u16s(st, 6, count);
+            let covs = coverage_offsets(st, 6, count);
             if !Cov(st.follow(covs.first().copied().unwrap_or(0))).intersects(glyphs) {
                 return false;
             }
@@ -569,7 +579,7 @@ pub(crate) fn chain_intersects(st: D<'_>, glyphs: &BitSet) -> bool {
                         })
             })
         }
-        3 => {
+        3 | 6 => {
             let ch = chain3(st);
             if !Cov(st.follow(ch.input.first().copied().unwrap_or(0))).intersects(glyphs) {
                 return false;
@@ -621,14 +631,14 @@ pub(crate) fn context_closure_lookups(c: &mut LookupClosure<'_, '_>, st: D<'_>) 
                 rule_set_closure_lookups(c, set, Vals::Class(cd));
             }
         }
-        3 => {
+        3 | 6 => {
             if !context_intersects(st, glyphs) {
                 return;
             }
             let count = usize::from(st.u16(2));
             let lookups = records(
                 st,
-                6usize.saturating_add(count.saturating_mul(2)),
+                6usize.saturating_add(count.saturating_mul(usize::from(coverage_offset_width(st)))),
                 usize::from(st.u16(4)),
             );
             recurse_records(c, &lookups);
@@ -703,7 +713,7 @@ pub(crate) fn chain_closure_lookups(c: &mut LookupClosure<'_, '_>, st: D<'_>) {
                 chain_rule_set_closure_lookups(c, set, vals);
             }
         }
-        3 => {
+        3 | 6 => {
             if !chain_intersects(st, glyphs) {
                 return;
             }
@@ -937,21 +947,22 @@ pub(crate) fn context_subset(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
             s.s.set_u16(count_at, n16(nz.wrapping_add(1)));
             true
         }
-        3 => {
-            s.s.u16(3);
+        3 | 6 => {
+            s.s.u16(st.u16(0));
+            let width = coverage_offset_width(st);
             let count = usize::from(st.u16(2));
             s.s.u16(n16(count));
             let lc_at = s.s.u16(0);
-            for i in 0..count {
-                let c = st.off16(6usize.saturating_add(i.saturating_mul(2)));
-                let at = s.s.u16(0);
-                if !s.serialize_subset_opt(at, 2, c, |s| s.coverage_subset(Cov(c))) {
+            for off in coverage_offsets(st, 6, count) {
+                let c = st.follow(off);
+                let at = s.s.zeros(usize::from(width));
+                if !s.serialize_subset_opt(at, width, c, |s| s.coverage_subset(Cov(c))) {
                     return false;
                 }
             }
             let lookups = records(
                 st,
-                6usize.saturating_add(count.saturating_mul(2)),
+                6usize.saturating_add(count.saturating_mul(usize::from(coverage_offset_width(st)))),
                 usize::from(st.u16(4)),
             );
             let n = write_records(s, &lookups);
@@ -1039,8 +1050,9 @@ pub(crate) fn chain_subset(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
             s.s.set_u16(count_at, n16(nz.wrapping_add(1)));
             true
         }
-        3 => {
-            s.s.u16(3);
+        3 | 6 => {
+            s.s.u16(st.u16(0));
+            let width = coverage_offset_width(st);
             let ch = chain3(st);
             for list in [&ch.backtrack, &ch.input, &ch.lookahead] {
                 s.s.u16(0);
@@ -1048,10 +1060,10 @@ pub(crate) fn chain_subset(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
                 let mut n = 0u16;
                 for &off in list.iter() {
                     let c = st.follow(off);
-                    let at = s.s.u16(0);
+                    let at = s.s.zeros(usize::from(width));
                     n = n.wrapping_add(1);
                     s.s.set_u16(count_at, n);
-                    if !s.serialize_subset_opt(at, 2, c, |s| s.coverage_subset(Cov(c))) {
+                    if !s.serialize_subset_opt(at, width, c, |s| s.coverage_subset(Cov(c))) {
                         return false;
                     }
                 }

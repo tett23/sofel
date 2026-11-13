@@ -2142,6 +2142,22 @@ fn adr0022_context_coverage_retains_high_glyph_and_nested_lookup() {
         }
     };
     for (kind, st, at) in [
+        (
+            5,
+            link(
+                vec![0, 6, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1],
+                vec![(6, 3, wide.clone())],
+            ),
+            6,
+        ),
+        (
+            6,
+            link(
+                vec![0, 6, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1],
+                vec![(6, 3, wide.clone())],
+            ),
+            6,
+        ),
         (5, class_context(false, vec![0, 1, 0, 1, 0, 0, 0, 1]), 2),
         (
             6,
@@ -2203,6 +2219,13 @@ fn adr0022_context_coverage_retains_high_glyph_and_nested_lookup() {
         let list = follow(&table, 8);
         assert_eq!(u16_at(list, 0), 2);
         let context = follow(follow(list, 2), 6);
+        if u16_at(context, 0) == 6 {
+            let offset =
+                u32::from_be_bytes([0, context[at], context[at + 1], context[at + 2]]) as usize;
+            assert!(context[offset..].starts_with(&wide));
+            assert_eq!(u16_at(context, if kind == 5 { 11 } else { 15 }), 1);
+            continue;
+        }
         assert!(follow(context, at).starts_with(&wide));
         if at == 2 {
             let set_at = match (u16_at(context, 0), kind) {
