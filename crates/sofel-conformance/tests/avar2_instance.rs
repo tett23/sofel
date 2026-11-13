@@ -151,6 +151,12 @@ fn adr0061_i1_avar2_restricts_cff2_hvar_and_gdef_like_harfbuzz() {
             vec![(b"wght", 600.0, 600.0, 600.0)],
             vec![(b"CNTR", 50.0, 50.0, 50.0)],
             vec![(b"wght", 300.0, 500.0, 700.0), (b"CNTR", 50.0, 50.0, 50.0)],
+            vec![(b"wght", 600.0, 600.0, 600.0), (b"CNTR", 50.0, 50.0, 50.0)],
+            vec![(b"wght", 200.0, 200.0, 200.0), (b"CNTR", 0.0, 0.0, 0.0)],
+            vec![
+                (b"wght", 900.0, 900.0, 900.0),
+                (b"CNTR", 100.0, 100.0, 100.0),
+            ],
         ] {
             compare_path(&path, &ranges);
         }
