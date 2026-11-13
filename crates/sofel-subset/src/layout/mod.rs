@@ -110,7 +110,7 @@ pub(crate) fn kind(gsub: bool, lookup_type: u16) -> Kind {
     }
 }
 
-/// A GSUB or GPOS table (`GSUBGPOS`), versions 1.0 and 1.1.
+/// A GSUB or GPOS table (`GSUBGPOS`), versions 1.0 through 1.2.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct Gsubgpos<'a> {
     pub d: D<'a>,
@@ -130,17 +130,29 @@ impl<'a> Gsubgpos<'a> {
 
     /// The ScriptList.
     pub fn script_list(self) -> D<'a> {
-        self.d.off16(4)
+        if self.version() == 0x0001_0002 && self.d.u32(14) != 0 {
+            self.d.off32(14)
+        } else {
+            self.d.off16(4)
+        }
     }
 
     /// The FeatureList.
     pub fn feature_list(self) -> D<'a> {
-        self.d.off16(6)
+        if self.version() == 0x0001_0002 && self.d.u32(18) != 0 {
+            self.d.off32(18)
+        } else {
+            self.d.off16(6)
+        }
     }
 
     /// The LookupList.
     pub fn lookup_list(self) -> D<'a> {
-        self.d.off16(8)
+        if self.version() == 0x0001_0002 && self.d.u32(22) != 0 {
+            self.d.off32(22)
+        } else {
+            self.d.off16(8)
+        }
     }
 
     /// The FeatureVariations table, empty below version 1.1.
@@ -218,6 +230,10 @@ impl<'a> Gsubgpos<'a> {
         l.off16(6usize.saturating_add(i.saturating_mul(6)))
     }
 
+    pub fn wide_lookup_offsets(self) -> bool {
+        self.version() == 0x0001_0002 && self.d.u32(22) != 0
+    }
+
     /// The number of lookups.
     pub fn lookup_count(self) -> usize {
         usize::from(self.lookup_list().u16(0))
@@ -228,8 +244,13 @@ impl<'a> Gsubgpos<'a> {
         if i >= self.lookup_count() {
             return D(&[]);
         }
-        self.lookup_list()
-            .off16(2usize.saturating_add(i.saturating_mul(2)))
+        if self.wide_lookup_offsets() {
+            self.lookup_list()
+                .off32(2usize.saturating_add(i.saturating_mul(4)))
+        } else {
+            self.lookup_list()
+                .off16(2usize.saturating_add(i.saturating_mul(2)))
+        }
     }
 
     /// The offset of `d` from the start of the table: views are suffixes

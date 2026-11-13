@@ -65,7 +65,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   sofel-read        （sfnt、TTC、dfont）
   sofel-type1       （Type1、MM、CID、Type42、AFM、PFM）
   sofel-pfr
-  sofel-bitmapfont  （BDF、PCF、FNT、NE FON。PE FON は未実装）
+  sofel-bitmapfont  （BDF、PCF、FNT、NE・PE32 FON）
 
 フォントを扱うクレート
   sofel-woff    → sofel-inflate, sofel-brotli
@@ -405,15 +405,26 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 名前の表では、上書きの指定でレコードを追加・置換し、空文字列を指定したレコードを削除する。
 - 軸を指定しない BASE 1.1 の ItemVariationStore は、残すスクリプトとフィーチャに属する横と縦の BaseCoord の VariationIndex を集め、使う行と領域だけを詰めて番号を振りなおす。参照が0件なら、HarfBuzzと同じくストアを除いて座標を残す。BaseValues、既定の MinMax、言語別とフィーチャ別の MinMax を調べ、壊れた参照はこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
 - 軸を指定しないGDEF 1.3のItemVariationStoreは、コピーするGSUBのFeatureVariationsがバージョン1.0で軸範囲の条件だけを持つ場合も含めて、残すLigCaretList、値の記録、アンカー、MATHの定数・斜体補正・上アクセント・カーニング・組み立てのVariationIndexに合わせて行と領域を詰めて書く。参照が0件ならストアを除く。GPOSの値の記録とアンカーをたどってVariationIndexを集める。送り幅などの値に現れる `0x8000` は参照に数えない。MATHだけをコピーするときは、除去したグリフの記録も含め、すべてのVariationIndexがGDEFの再配置後に元の行を指すことを確かめる。MATHだけをコピーして参照番号を合わせられない場合と、同じバイト列があるGPOSをそのままコピーする場合は拒否する。GDEFだけをコピーしてGPOSやMATHをサブセット化するとき、HarfBuzzと同じくそれらの参照番号を詰め、GDEFのストアは元のバイト列のまま写す。壊れたGDEFはこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
+- GSUB・GPOS 版1.2 のサブセット化では、ScriptList、FeatureList、LookupList を32ビットのオフセットで出力する。LookupList 内のオフセット幅は入力のリストに従う（[ADR 0022](adr/0022-subsetting.md)）。
 - GDEF 版1.4 は、各サブテーブルの32ビットオフセットが非ゼロの場合にそちらを使う。拡張オフセットを使う入力は版1.4で書き出す。合字キャレット一覧では32ビットの Coverage オフセットと24ビットの件数・合字オフセットを扱う（[ADR 0022](adr/0022-subsetting.md)）。
 - [ADR 0022](adr/0022-subsetting.md) のFeatureVariations版1.1では、残すフィーチャのLookupVariationRecordからlookupと条件形式2のVariationIndexを集める。軸を指定しないときは条件形式1〜5を保ち、部分軸指定では一定になる条件を評価し、残る条件木とlookup番号を書き直す。条件が参照するGDEFのItemVariationStoreは、使う行を残して参照番号を更新する。[ADR 0061](adr/0061-subset-axis-instancing.md) の軸固定では、条件値の符号が丸めで変わらない倍率で必要な行をprivate rowにし、全軸固定で有効なlookupをフィーチャに加える。
-- レイアウトの表のうち、FeatureVariationsを持つGSUBをそのままコピーする場合のGDEF、GSUBとGPOSの版1.2、FeatureVariations版1.0の形式1でない条件、65536を超えるグリフのフォントの24bitの形式も `Unsupported` とする。
+- レイアウトの表のうち、FeatureVariationsを持つGSUBをそのままコピーする場合のGDEF、FeatureVariations版1.0の形式1でない条件、65536を超えるグリフのフォントの24bitの形式も `Unsupported` とする。
 
 ## WOFF と圧縮フォントの読み込み
 
 `sofel_woff::decode_woff2` は、Brotli の非圧縮ブロックに変換なしの表を格納した単一フェイスの WOFF2 を sfnt に戻す。CLI は外側の圧縮を展開した後に WOFF2 の署名を識別する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
 `sofel_woff::decode_woff` は出力サイズの上限を受け取り、WOFF 1.0 の表を物理順に展開して sfnt を返す。フォントを読み込む CLI は gzip、UNIX compress（LZW）、bzip2 を先に展開してから WOFF の署名を検査する。検証器は WOFF の不正なフィールドか圧縮表の入力オフセットを報告する。bzip2 はブロックとメンバーの CRC を検査し、破損を検出した入力オフセットを報告する。gzip の破損はメンバーを含むコンテナ先頭で報告する。[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)
+
+## 固定サイズのビットマップフェイス
+
+`Font::from_bitmap` は BDF、PCF、Windows FNT、FON の署名を識別し、指定した番号のフェイスを開く。
+フェイスから文字に対応するグリフ番号、ストライクのサイズ、グリフの送り幅と画像を取得する。
+`sofel-render` もこの形式判定とフェイス操作を使う（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+
+FON では NE または i386 PE32 のフォントリソースを読む。
+PE32 では `RT_FONT` の名前・言語ディレクトリを順にたどり、各データ項目にフェイス番号を付ける。
+リソースやフォントの宣言長が対象のセクションを越える場合はエラーを返す。
 
 ## BDF フェイス
 
@@ -436,11 +447,18 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 `sofel-type1::source::Type1Source` は PFA の16進 eexec と PFB の ASCII・バイナリセクションを読み、秘密辞書を復号する。`sofel-type1::face::Type1Face` は文字コードからグリフ番号への対応、グリフ名、charstring から読んだ送り幅を返す。AFM または PFM を付加すると、グリフ対のカーニングを返す。PFB のセクション長、PFA の16進表記、charstring の長さと AFM・PFM のペア表を検査する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
+横書きでは、Type1 フェイスを `SubFont::from_type1` に渡し、`shape_with_subfont` で文字列を組む。グリフ名から Unicode に対応するグリフを選び、送り幅と付加済みの AFM・PFM のカーニングを使う。`kern=0` を指定した範囲ではカーニングを適用しない。
+
 `sofel-type1::type42::Type42Source` は Type42 の `/sfnts` 配列の16進文字列または `RD` バイナリを連結し、展開長と sfnt の表範囲を検査する。`/Encoding` と `/CharStrings` から Type42 のグリフ番号を読み、`.notdef` を先頭に置く。Unicode の文字対応は PostScript のグリフ名を Adobe Glyph List と `uniXXXX`・`uXXXXX` によって変換し、8ビットの Encoding は別に問い合わせる。`Font::from_type42` が返す `Type42Face` は Type42 のグリフ番号を埋め込み TrueType のグリフ番号へ変換し、送りを返す。輪郭を読むときは `embedded_glyph` と `inner_font` の組を使う（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
-## 素の CFF フェイス
+## 素の CFF フェイスと CEF
 
 `sofel-font::Cff::from_bare` は sfnt に包まれていない CFF 1 をフェイス番号で開く。Name INDEX の位置で Top DICT を選び、CharStrings のグリフ数、charset のグリフ名、Encoding を既存の CFF ビューで問い合わせる。`BareCffFace` は Adobe Glyph List を使った Unicode の文字対応、8ビットの Encoding、グリフ名、charstring の送り幅を返す。`sofel-outline::draw_bare_cff` はそのグリフの輪郭をヒンティングなしで描く。`sofel-render` の通常ファイル入力は素の CFF 1 を判別し、`--glyph` または `--char` で輪郭を PGM に描く。`sofel render --text` は `SubFont` の文字対応と送り幅の関数を使って一行をシェーピングし、同じ輪郭で描く。`sofel-validate` は素の CFF 1 の全フェイスを検査し、破損位置を CFF 表からのオフセットで報告する。範囲外のフェイス番号、必須の INDEX や CharStrings の欠落を拒む。共通の `Font` 型への接続は未実装である（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+
+CEF（Compact Embedded Font）は `head` がなく `CFF ` 表を持つ `OTTO` ディレクトリから開く。
+`BareCffFace::new` はフェイス番号 0 を受け付け、CFF のグリフ名から文字を対応付ける。
+`sofel-render` はこのフェイスの送りと輪郭を使う。
+`sofel-validate` はディレクトリの範囲とチェックサム、CFF の内容、任意の `cmap` 表を検査する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
 ## Web フォントの書き出し（`sofel-woff`）
 

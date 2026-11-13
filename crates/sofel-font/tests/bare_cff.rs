@@ -95,3 +95,25 @@ fn adr0065_i1_bare_cff_reads_charstring_advance() {
         Some(500)
     );
 }
+
+#[test]
+fn adr0065_i1_cef_selects_single_face_and_charstring_metrics() {
+    let mut bytes =
+        b"OTTO\x00\x01\x00\x10\x00\x00\x00\x00CFF \x00\x00\x00\x00\x00\x00\x00\x1c".to_vec();
+    bytes.extend_from_slice(
+        &u32::try_from(WIDTH_500.len())
+            .unwrap_or_default()
+            .to_be_bytes(),
+    );
+    bytes.extend_from_slice(WIDTH_500);
+    let face = BareCffFace::new(&bytes, 0);
+    assert_eq!(face.as_ref().map(BareCffFace::num_glyphs), Ok(1));
+    assert_eq!(
+        face.ok()
+            .and_then(|f| f.h_advance(sofel_font::read::GlyphId(0))),
+        Some(500)
+    );
+    assert!(BareCffFace::new(&bytes, 1).is_err());
+    bytes.pop();
+    assert!(BareCffFace::new(&bytes, 0).is_err());
+}
