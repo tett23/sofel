@@ -34,7 +34,7 @@ Golem はフォントを開くときに GSUB と GPOS の機能タグをすべ�
 
 ### [ADR 0022](adr/0022-subsetting.md): サブセット化
 
-[ADR 0022](adr/0022-subsetting.md) は採択（未実装）である。可変フォントの読み取りは [ADR 0027](adr/0027-variable-fonts.md) で実装した。サブセット化では、名前レコードの上書きと VARC の部品参照の再採番まで実装した。残る作業には、10段階目の CFF2 サブルーチンのヒント除去と、[ADR 0061](adr/0061-subset-axis-instancing.md) の軸の固定・範囲変更がある。表ごとの対応範囲は[仕様書](specifications.md)に記す。
+[ADR 0022](adr/0022-subsetting.md) は採択（未実装）である。可変フォントの読み取りは [ADR 0027](adr/0027-variable-fonts.md) で実装した。サブセット化では、名前レコードの上書きと VARC の部品参照の再採番まで実装した。軸の固定・範囲変更は [ADR 0061](adr/0061-subset-axis-instancing.md) に従って実装した。残る作業には、10段階目の CFF2 サブルーチンのヒント除去がある。表ごとの対応範囲は[仕様書](specifications.md)に記す。
 
 ### シェーピング、フォントの検証と描画、照合の記録
 
@@ -99,7 +99,6 @@ Unicode の性質の引きが HarfBuzz の 1.24 倍である。2段または3段
 
 先に、可変フォントの [ADR 0027](adr/0027-variable-fonts.md) に依存する項を並べる。
 
-- 任意の位置への可変フォントのインスタンス化と、軸の範囲を絞る部分的なインスタンス化。[ADR 0022](adr/0022-subsetting.md) の「後回しにしたもの」にある。[ADR 0027](adr/0027-variable-fonts.md) の実装後に [ADR 0061](adr/0061-subset-axis-instancing.md) に従って進める。解消すると、サブセット化のテストの期待する失敗のうち、インスタンスの91件と IUP の23件が消える。
 - ppem を使った Device 表の補正（ヒンティングの Device）。GPOS、GDEF のキャレット、BASE、MATH が対象である。[ADR 0017](adr/0017-base-baselines.md) による。変化量の部分は [ADR 0027](adr/0027-variable-fonts.md) に入る。
 - GDEF のリガチャのキャレットの API。[ADR 0027](adr/0027-variable-fonts.md) の一覧にある。
 - スタイルの値 `hb_style_get_value`。[ADR 0027](adr/0027-variable-fonts.md) の一覧にある。
