@@ -3,8 +3,10 @@
 use alloc::vec::Vec;
 use core::fmt;
 
+use crate::afm::Afm;
 use crate::charstrings::Charstrings;
 use crate::encoding::Encoding;
+use crate::pfm::Pfm;
 use crate::source::Type1Source;
 
 /// Invalid glyph dictionary or encoding in a Type 1 source.
@@ -24,6 +26,13 @@ impl core::error::Error for FaceError {}
 pub struct Type1Face<'a> {
     encoding: Encoding<'a>,
     charstrings: Charstrings<'a>,
+    attached: Option<AttachedMetrics<'a>>,
+}
+
+#[derive(Clone, Debug)]
+enum AttachedMetrics<'a> {
+    Afm(Afm<'a>),
+    Pfm(Vec<(usize, usize, i16)>),
 }
 
 impl<'a> Type1Face<'a> {
@@ -34,6 +43,7 @@ impl<'a> Type1Face<'a> {
         Ok(Self {
             encoding,
             charstrings,
+            attached: None,
         })
     }
 
@@ -55,5 +65,49 @@ impl<'a> Type1Face<'a> {
     /// The decrypted charstring of a glyph index.
     pub fn glyph_program(&self, glyph: usize) -> Option<Vec<u8>> {
         self.charstrings.glyph_program(self.glyph_name(glyph)?)
+    }
+
+    /// Attach AFM metrics to the face, replacing any previous AFM data.
+    pub fn attach_afm(&mut self, data: &'a [u8]) -> Result<(), FaceError> {
+        let afm = Afm::parse(data).map_err(|_| FaceError)?;
+        self.attached = Some(AttachedMetrics::Afm(afm));
+        Ok(())
+    }
+
+    /// Attach PFM metrics to the face, replacing any previous metrics data.
+    pub fn attach_pfm(&mut self, data: &[u8]) -> Result<(), FaceError> {
+        let pfm = Pfm::parse(data).map_err(|_| FaceError)?;
+        let pairs = pfm
+            .pairs()
+            .map(|(left, right, value)| {
+                (
+                    self.nominal_glyph(left).unwrap_or(0),
+                    self.nominal_glyph(right).unwrap_or(0),
+                    value,
+                )
+            })
+            .collect();
+        self.attached = Some(AttachedMetrics::Pfm(pairs));
+        Ok(())
+    }
+
+    /// The unscaled horizontal and vertical adjustment of a glyph pair.
+    pub fn kerning(&self, left: usize, right: usize) -> (i32, i32) {
+        match &self.attached {
+            Some(AttachedMetrics::Afm(afm)) => {
+                let Some(left) = self.glyph_name(left) else {
+                    return (0, 0);
+                };
+                let Some(right) = self.glyph_name(right) else {
+                    return (0, 0);
+                };
+                afm.kerning(left, right)
+            }
+            Some(AttachedMetrics::Pfm(pairs)) => pairs
+                .iter()
+                .find(|(a, b, _)| *a == left && *b == right)
+                .map_or((0, 0), |(_, _, x)| (i32::from(*x), 0)),
+            None => (0, 0),
+        }
     }
 }

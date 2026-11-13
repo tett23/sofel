@@ -66,6 +66,11 @@ impl Pfm {
             .and_then(|index| self.pairs.get(index))
             .map_or(0, |pair| pair.2)
     }
+
+    /// All encoded kerning pairs in character-code order.
+    pub fn pairs(&self) -> impl Iterator<Item = (u8, u8, i16)> + '_ {
+        self.pairs.iter().copied()
+    }
 }
 
 fn le_u16(data: &[u8], at: usize) -> Result<u16, PfmError> {
