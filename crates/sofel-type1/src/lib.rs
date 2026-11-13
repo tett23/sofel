@@ -32,6 +32,9 @@ pub mod face;
 /// Unscaled Type 1 charstring metrics.
 pub mod metrics;
 
+/// Type 1 Multiple Masters design axes and coordinates.
+pub mod multiple_masters;
+
 /// Type 42 PostScript wrapper around an sfnt font.
 pub mod type42;
 mod type42_expert;

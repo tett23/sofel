@@ -7,6 +7,7 @@ use crate::afm::Afm;
 use crate::charstrings::Charstrings;
 use crate::encoding::Encoding;
 use crate::metrics::{Metrics, parse_metrics};
+use crate::multiple_masters::MultipleMasters;
 use crate::pfm::Pfm;
 use crate::source::Type1Source;
 
@@ -27,6 +28,7 @@ impl core::error::Error for FaceError {}
 pub struct Type1Face<'a> {
     encoding: Encoding<'a>,
     charstrings: Charstrings<'a>,
+    multiple_masters: Option<MultipleMasters<'a>>,
     attached: Option<AttachedMetrics<'a>>,
 }
 
@@ -41,11 +43,18 @@ impl<'a> Type1Face<'a> {
     pub fn new(source: &'a Type1Source) -> Result<Self, FaceError> {
         let encoding = Encoding::parse(source.cleartext()).map_err(|_| FaceError)?;
         let charstrings = Charstrings::parse(source.private()).map_err(|_| FaceError)?;
+        let multiple_masters = MultipleMasters::parse(source.cleartext()).map_err(|_| FaceError)?;
         Ok(Self {
             encoding,
             charstrings,
+            multiple_masters,
             attached: None,
         })
+    }
+
+    /// Multiple Masters axis metadata, when the Type 1 source has it.
+    pub fn multiple_masters(&self) -> Option<&MultipleMasters<'a>> {
+        self.multiple_masters.as_ref()
     }
 
     /// Number of indexed glyphs.
