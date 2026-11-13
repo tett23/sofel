@@ -383,9 +383,15 @@ fn decode_hex(raw: &[u8], max_output: usize, data_start: usize) -> Result<Vec<u8
     let mut high = None;
     for (index, &byte) in raw.iter().enumerate() {
         if byte == b'>' {
+            if let Some(hi) = high.take() {
+                if out.len() >= max_output {
+                    return Err(CidError::at(data_start.saturating_add(index)));
+                }
+                out.push(hi << 4);
+            }
             break;
         }
-        if byte.is_ascii_whitespace() {
+        if byte == 0 || byte.is_ascii_whitespace() {
             continue;
         }
         let offset = data_start.saturating_add(index);
