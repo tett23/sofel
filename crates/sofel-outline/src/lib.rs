@@ -365,9 +365,19 @@ pub fn draw_bare_cff(
     scratch: &mut Scratch,
     pen: &mut impl Pen,
 ) -> Result<OutlineInfo, OutlineError> {
-    let info = cff::load_bare_cff(cff, glyph, scale, scratch)?;
+    let info = load_bare_cff(cff, glyph, scale, scratch)?;
     scratch.decompose(Point::default(), 1, pen)?;
     Ok(info)
+}
+
+/// Loads a bare CFF 1 glyph into `scratch` for decomposition or rasterization.
+pub fn load_bare_cff(
+    cff: &Cff<'_>,
+    glyph: GlyphId,
+    scale: Scale,
+    scratch: &mut Scratch,
+) -> Result<OutlineInfo, OutlineError> {
+    cff::load_bare_cff(cff, glyph, scale, scratch)
 }
 
 /// How a font's outlines are read: chosen as FreeType chooses its driver.

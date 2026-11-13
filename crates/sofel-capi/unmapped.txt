@@ -105,6 +105,7 @@ sofel_font::Cff::from_table C opens sfnt fonts with sofel_font_create, which ope
 sofel_font::Cff::from_bare The bare CFF Rust reader has no C font handle yet (sofel ADR 0065).
 sofel_font::BareCffFace::* Bare CFF character mapping and metrics use a Rust-owned face; the C font handle accepts sfnt data only (sofel ADR 0065).
 sofel_outline::draw_bare_cff Bare CFF drawing uses a Rust-owned face; the C font handle accepts sfnt data only (sofel ADR 0065).
+sofel_outline::load_bare_cff Bare CFF rasterization uses a Rust-owned face; the C font handle accepts sfnt data only (sofel ADR 0065).
 sofel_font::Cff::char_strings Rust views of the CFF structures for the outline crate; C reads the bytes with sofel_font_table.
 sofel_font::Cff::charset Rust views of the CFF structures; C reads CIDs with sofel_font_cid.
 sofel_font::Cff::data Rust view of the table; C reads the bytes with sofel_font_table.

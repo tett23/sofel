@@ -426,7 +426,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 ## 素の CFF フェイス
 
-`sofel-font::Cff::from_bare` は sfnt に包まれていない CFF 1 をフェイス番号で開く。Name INDEX の位置で Top DICT を選び、CharStrings のグリフ数、charset のグリフ名、Encoding を既存の CFF ビューで問い合わせる。`BareCffFace` は Adobe Glyph List を使った Unicode の文字対応、8ビットの Encoding、グリフ名、charstring の送り幅を返す。`sofel-outline::draw_bare_cff` はそのグリフの輪郭をヒンティングなしで描く。範囲外のフェイス番号、必須の INDEX や CharStrings の欠落を拒む。通常のファイル入力と共通のフェイス操作への接続は未実装である（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+`sofel-font::Cff::from_bare` は sfnt に包まれていない CFF 1 をフェイス番号で開く。Name INDEX の位置で Top DICT を選び、CharStrings のグリフ数、charset のグリフ名、Encoding を既存の CFF ビューで問い合わせる。`BareCffFace` は Adobe Glyph List を使った Unicode の文字対応、8ビットの Encoding、グリフ名、charstring の送り幅を返す。`sofel-outline::draw_bare_cff` はそのグリフの輪郭をヒンティングなしで描く。`sofel-render` の通常ファイル入力は素の CFF 1 を判別し、`--glyph` または `--char` で輪郭を PGM に描く。範囲外のフェイス番号、必須の INDEX や CharStrings の欠落を拒む。共通のフォント型とテキスト描画への接続は未実装である（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
 ## Web フォントの書き出し（`sofel-woff`）
 
