@@ -346,7 +346,7 @@ impl Plan {
                                 .set(SetKind::NoSubsetTables)
                                 .contains(Tag::new(tag).to_u32()))
                 }
-                b"cvar" => norm.all_axes_pinned,
+                b"cvar" => norm.all_axes_pinned || !norm.avar2,
                 b"MVAR" => {
                     norm.all_axes_pinned
                         || (!norm.avar2

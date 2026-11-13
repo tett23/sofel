@@ -753,3 +753,56 @@ fn adr0061_i1_partial_layout_matches_harfbuzz() {
         );
     }
 }
+
+#[test]
+fn adr0061_i1_cvar_range_projects_control_value_tuples() {
+    for (file, low, default, high) in [
+        ("subset/data/fonts/Muli-ABC.ttf", 300u16, 500u16, 700u16),
+        (
+            "shape/data/text-rendering-tests/fonts/TestCVARGVAROne.ttf",
+            40,
+            100,
+            170,
+        ),
+        (
+            "shape/data/text-rendering-tests/fonts/TestCVARGVARTwo.ttf",
+            28,
+            40,
+            94,
+        ),
+    ] {
+        let path = paths::testdata().join("harfbuzz/test").join(file);
+        let bytes = std::fs::read(&path).unwrap();
+        let font = Font::new(&bytes, 0).unwrap();
+        let input = Input::new()
+            .map_set(SetKind::Unicodes, |s| s.add_range(0, 0x10ffff))
+            .with_axis_range(
+                Tag::new(b"wght"),
+                Some(low.into()),
+                Some(high.into()),
+                Some(default.into()),
+                &font,
+            )
+            .unwrap();
+        let actual = subset(&font, &input).unwrap();
+        let out = std::env::temp_dir().join(format!("sofel-cvar-range-{}.ttf", std::process::id()));
+        assert!(
+            Command::new(paths::hb_dump())
+                .arg("--subset")
+                .arg(format!("--font-file={}", path.display()))
+                .arg("--unicodes=*")
+                .arg(format!("--variations=wght={low}:{default}:{high}"))
+                .arg(format!("--output-file={}", out.display()))
+                .status()
+                .unwrap()
+                .success()
+        );
+        let expected = std::fs::read(&out).unwrap();
+        std::fs::remove_file(out).unwrap();
+        assert!(
+            actual == expected,
+            "{file}: {}",
+            sofel_conformance::subset::diff(&expected, &actual)
+        );
+    }
+}

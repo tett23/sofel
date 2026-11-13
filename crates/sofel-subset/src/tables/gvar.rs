@@ -1,5 +1,6 @@
 //! `gvar` and `GVAR` subsetting without instancing (ADR 0022 stage 10).
 
+pub(super) mod cvar;
 mod iup;
 
 use super::variation_region;
