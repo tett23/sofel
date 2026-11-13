@@ -23,6 +23,11 @@ fn adr0061_i1_passthrough_gdef_with_axis_pin_matches_harfbuzz() {
     compare_passthrough_table(b"GDEF");
 }
 
+#[test]
+fn adr0061_i1_passthrough_gpos_with_axis_pin_matches_harfbuzz() {
+    compare_passthrough_table(b"GPOS");
+}
+
 fn compare_passthrough_table(tag: &[u8; 4]) {
     let name = std::str::from_utf8(tag).unwrap();
     let path = paths::testdata().join("harfbuzz/test/subset/data/fonts/KalniaGlaze.ttf");
@@ -75,6 +80,200 @@ fn compare_passthrough_table(tag: &[u8; 4]) {
             })
             .collect::<Vec<_>>();
         panic!("{name}: {differences:?}");
+    }
+}
+
+#[test]
+fn adr0061_i1_avar2_passthrough_tables_match_harfbuzz() {
+    let path = paths::testdata().join("harfbuzz/test/api/fonts/TestAvar2Instance.ttf");
+    let bytes = std::fs::read(&path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    for tag in [b"HVAR", b"MVAR", b"gvar", b"avar", b"fvar"] {
+        for (min, default, max) in [(600.0, 600.0, 600.0), (200.0, 400.0, 700.0)] {
+            let name = std::str::from_utf8(tag).unwrap();
+            let input = Input::new()
+                .map_set(SetKind::Unicodes, |s| s.add_range(0, 0x10ffff))
+                .map_set(SetKind::NoSubsetTables, |s| s.add(Tag::new(tag).to_u32()))
+                .with_axis_range(
+                    Tag::new(b"wght"),
+                    Some(min),
+                    Some(max),
+                    Some(default),
+                    &font,
+                )
+                .unwrap();
+            let actual = subset(&font, &input).unwrap();
+            let output = std::env::temp_dir().join(format!(
+                "sofel-adr0061-avar2-passthrough-{name}-{min}-{default}-{max}-{}.ttf",
+                std::process::id()
+            ));
+            assert!(
+                Command::new(paths::hb_dump())
+                    .arg("--subset")
+                    .arg(format!("--font-file={}", path.display()))
+                    .arg("--unicodes=*")
+                    .arg(format!("--no-subset-tables+={name}"))
+                    .arg(format!("--variations=wght={min}:{default}:{max}"))
+                    .arg(format!("--output-file={}", output.display()))
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+            let expected = std::fs::read(&output).unwrap();
+            std::fs::remove_file(output).unwrap();
+            if actual != expected {
+                let got = Font::new(&actual, 0).unwrap();
+                let want = Font::new(&expected, 0).unwrap();
+                let differences = want
+                    .sfnt()
+                    .records()
+                    .filter_map(|record| {
+                        let a = got.table(record.tag).unwrap_or(&[]);
+                        let b = want.table(record.tag).unwrap_or(&[]);
+                        (a != b).then(|| {
+                            (
+                                record.tag,
+                                a.len(),
+                                b.len(),
+                                a.iter()
+                                    .zip(b)
+                                    .position(|(x, y)| x != y)
+                                    .unwrap_or(a.len().min(b.len())),
+                            )
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                panic!("{name} {min}:{default}:{max}: {differences:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn adr0061_i1_avar2_passthrough_multiple_tables_and_axes_match_harfbuzz() {
+    let path = paths::testdata().join("harfbuzz/test/api/fonts/TestAvar2Instance.ttf");
+    let bytes = std::fs::read(&path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let input = Input::new()
+        .map_set(SetKind::Unicodes, |s| s.add_range(0, 0x10ffff))
+        .map_set(SetKind::NoSubsetTables, |s| {
+            for tag in [b"HVAR", b"MVAR", b"gvar"] {
+                s.add(Tag::new(tag).to_u32());
+            }
+        })
+        .with_axis_range(
+            Tag::new(b"wght"),
+            Some(200.0),
+            Some(700.0),
+            Some(400.0),
+            &font,
+        )
+        .unwrap()
+        .with_axis_pinned(Tag::new(b"XOPQ"), 88.0, &font)
+        .unwrap();
+    let actual = subset(&font, &input).unwrap();
+    let output = std::env::temp_dir().join(format!(
+        "sofel-adr0061-avar2-passthrough-mixed-{}.ttf",
+        std::process::id()
+    ));
+    assert!(
+        Command::new(paths::hb_dump())
+            .arg("--subset")
+            .arg(format!("--font-file={}", path.display()))
+            .arg("--unicodes=*")
+            .arg("--no-subset-tables+=HVAR,MVAR,gvar")
+            .arg("--variations=wght=200:400:700,XOPQ=88")
+            .arg(format!("--output-file={}", output.display()))
+            .status()
+            .unwrap()
+            .success()
+    );
+    let expected = std::fs::read(&output).unwrap();
+    std::fs::remove_file(output).unwrap();
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn adr0061_i1_avar2_passthrough_layout_tables_match_harfbuzz() {
+    let path =
+        paths::testdata().join("harfbuzz/test/subset/data/fonts/RobotoDelta-NullVarStore-VF.ttf");
+    let bytes = std::fs::read(&path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    for (label, codepoint) in [("all", None), ("A", Some(0x41)), ("c", Some(0x63))] {
+        for tag in [b"GPOS", b"GDEF"] {
+            let name = std::str::from_utf8(tag).unwrap();
+            let input = Input::new()
+                .map_set(SetKind::Unicodes, |s| {
+                    if let Some(cp) = codepoint {
+                        s.add(cp);
+                    } else {
+                        s.add_range(0, 0x10ffff);
+                    }
+                })
+                .map_set(SetKind::NoSubsetTables, |s| s.add(Tag::new(tag).to_u32()))
+                .with_axis_range(
+                    Tag::new(b"wght"),
+                    Some(300.0),
+                    Some(600.0),
+                    Some(400.0),
+                    &font,
+                )
+                .unwrap();
+            let actual = subset(&font, &input).unwrap();
+            let output = std::env::temp_dir().join(format!(
+                "sofel-adr0061-avar2-passthrough-layout-{name}-{label}-{}.ttf",
+                std::process::id()
+            ));
+            assert!(
+                Command::new(paths::hb_dump())
+                    .arg("--subset")
+                    .arg(format!("--font-file={}", path.display()))
+                    .arg(codepoint.map_or("--unicodes=*".to_owned(), |cp| format!(
+                        "--unicodes=U+{cp:04X}"
+                    )))
+                    .arg(format!("--no-subset-tables+={name}"))
+                    .arg("--variations=wght=300:400:600")
+                    .arg(format!("--output-file={}", output.display()))
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+            let expected = std::fs::read(&output).unwrap();
+            std::fs::remove_file(output).unwrap();
+            if name == "GPOS" && label == "c" {
+                let source_len = font.table(Tag::new(b"GDEF")).unwrap().len();
+                let retained_len = Font::new(&expected, 0)
+                    .unwrap()
+                    .table(Tag::new(b"GDEF"))
+                    .unwrap()
+                    .len();
+                assert!(retained_len > 20 && retained_len < source_len);
+            }
+            if actual != expected {
+                let got = Font::new(&actual, 0).unwrap();
+                let want = Font::new(&expected, 0).unwrap();
+                let differences = want
+                    .sfnt()
+                    .records()
+                    .filter_map(|record| {
+                        let a = got.table(record.tag).unwrap_or(&[]);
+                        let b = want.table(record.tag).unwrap_or(&[]);
+                        (a != b).then(|| {
+                            (
+                                record.tag,
+                                a.len(),
+                                b.len(),
+                                a.iter()
+                                    .zip(b)
+                                    .position(|(x, y)| x != y)
+                                    .unwrap_or(a.len().min(b.len())),
+                            )
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                panic!("{name} {label}: {differences:?}");
+            }
+        }
     }
 }
 
