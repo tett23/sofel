@@ -252,6 +252,7 @@ sofel follows rules of HarfBuzz 15.1.0 (commit `3df40d9b98d6b32f0e4288d4ecfbb158
 | `sofel-shape` | `src/feature.rs`: feature strings (`hb_feature_from_string`, `hb_feature_to_string`) from `src/hb-common.cc` (Copyright © 2009, 2010 Red Hat, Inc.; © 2011, 2012 Google, Inc.), and `hb_parse_int`, `hb_parse_uint` from `src/hb-number.cc` (Copyright © 2019-2026 Ebrahim Byagowi); `src/serialize.rs`: buffer serialization from `src/hb-buffer-serialize.cc`, the readers after the Ragel grammars `src/hb-buffer-deserialize-json.rl`, `src/hb-buffer-deserialize-text-glyphs.rl` and `src/hb-buffer-deserialize-text-unicode.rl`, and `glyph_to_string`, `glyph_from_string` from `src/hb-font.hh` (Copyright © 2012, 2013 Google, Inc.; the grammars © 2013 Google, Inc.) ([ADR 0020](docs/adr/0020-shaping-foundation.md)) |
 | `sofel-cli` | `src/shape.rs` (`sofel-shape`): the options, the reading of the text, the output and `--verify` from `util/hb-shape.cc`, `util/shape-options.hh`, `util/font-options.hh`, `util/text-options.hh`, `util/shape-format.hh`, `util/shape-output.hh` and `src/hb-buffer-verify.cc` (Copyright © 2010 Behdad Esfahbod; © 2011, 2012 Google, Inc.; © 2022 Behdad Esfahbod) ([ADR 0020](docs/adr/0020-shaping-foundation.md)) |
 | `sofel-write` | `src/sfnt.rs`: the font assembly of `src/hb-face-builder.cc` and `src/hb-open-file.hh`; `src/serialize.rs`: the object serializer of `src/hb-serialize.hh` (Copyright © 2007-2008 Red Hat, Inc.; © 2012-2018 Google, Inc.; © 2019 Facebook, Inc.); `src/repack/`: the repacker of `src/hb-repacker.hh`, `src/graph/` (`graph.hh`, `serialize.hh`, `gsubgpos-graph.hh`, `gsubgpos-context.*`, `pairpos-graph.hh`, `markbasepos-graph.hh`, `ligature-graph.hh`, `coverage-graph.hh`, `classdef-graph.hh`, `split-helpers.hh`), `src/hb-subset-serialize.cc`, `src/hb-priority-queue.hh`, `src/hb-map.hh` (the hash table's probing and order) and the Coverage and ClassDef serialization of `src/OT/Layout/Common/` and `src/hb-ot-layout-common.hh`, with its tests from `src/test-repacker.cc` and `src/graph/test-classdef-graph.cc` (Copyright © 2007-2010 Red Hat, Inc.; © 2010-2026 Google, Inc.) ([ADR 0022](docs/adr/0022-subsetting.md)) |
+| `sofel-subset` | Variation support rebasing in `src/tables/gvar/solver.rs` follows `src/hb-subset-instancer-solver.cc` (Copyright © 2023 Behdad Esfahbod). |
 | `sofel-subset` | The subsetter: `src/hb-subset.cc`, `src/hb-subset-input.cc` (with `hb_subset_preprocess`), `src/hb-subset-plan.cc`, `src/hb-subset-accelerator.hh` (the preprocessed data), `src/hb-subset-table.hh` (with the growth of `hb_vector_t::alloc` of `src/hb-vector.hh` for the room of the serialization buffer), the cmap reading and subsetting of `src/hb-ot-cmap-table.hh`, `src/OT/glyf/`, `src/hb-ot-hmtx-table.hh`, `src/hb-ot-maxp-table.hh`, `src/hb-ot-os2-table.hh` with the Unicode ranges of `src/hb-ot-os2-unicode-ranges.hh`, `src/hb-ot-post-table.hh` with the standard names of `src/hb-ot-post-macroman.hh`, `src/OT/name/name.hh`, `src/hb-ot-hdmx-table.hh`; the CFF subsetting of `src/hb-subset-cff1.cc`, `src/hb-subset-cff-common.hh`, `src/hb-subset-cff-common.cc` and `src/hb-subset-table-cff.cc` with the charstring interpreter of `src/hb-cff-interp-common.hh`, `src/hb-cff-interp-cs-common.hh`, `src/hb-cff-interp-dict-common.hh` and `src/hb-cff1-interp-cs.hh`, the serialization and `seac` search of `src/hb-ot-cff1-table.hh`, `src/hb-ot-cff1-table.cc` and `src/hb-ot-cff-common.hh`, and `src/hb-ot-vorg-table.hh`; the layout closure and subsetting of `src/hb-subset-plan-layout.cc`, `src/hb-ot-layout-common.hh`, `src/hb-ot-layout-gsubgpos.hh`, `src/hb-ot-layout.cc` (`hb_ot_layout_collect_features`, `hb_ot_layout_lookups_substitute_closure`), `src/OT/Layout/Common/`, `src/OT/Layout/GSUB/`, `src/OT/Layout/GPOS/`, `src/OT/Layout/GDEF/GDEF.hh` and `src/hb-ot-layout-base-table.hh`; the color closure and subsetting of `src/OT/Color/COLR/COLR.hh`, `src/OT/Color/COLR/colrv1-closure.hh`, `src/OT/Color/CPAL/CPAL.hh`, `src/OT/Color/CBDT/CBDT.hh`, `src/OT/Color/sbix/sbix.hh` and `src/hb-subset-table-color.cc`; the MATH closure and subsetting of `src/hb-ot-math-table.hh`; the name id collection of `src/hb-ot-stat-table.hh` and `src/hb-ot-var-fvar-table.hh`; and pinning every axis to its default: `src/hb-subset-plan-var.cc` (`normalize_axes_location`), the axis functions of `src/hb-subset-input.cc`, the axis normalization of `src/hb-ot-var-fvar-table.hh` and `src/hb-ot-var-avar-table.hh` (`SegmentMaps::map_float`, `map_coords_2_14`), the outline recompilation of `src/OT/glyf/Glyph.hh`, `src/OT/glyf/SimpleGlyph.hh`, `src/OT/glyf/CompositeGlyph.hh` and `src/OT/glyf/glyf-helpers.hh` with the cycle check of `src/hb-decycler.hh`, the metrics updates of `src/hb-ot-hmtx-table.hh`, `src/hb-ot-maxp-table.hh`, `src/hb-ot-os2-table.hh` and `src/hb-ot-post-table.hh`, the STAT subsetting of `src/hb-ot-stat-table.hh`, the CFF2 instancing and its conversion to CFF of `src/hb-subset-cff2.cc`, `src/hb-subset-cff2-round.hh`, `src/hb-subset-cff2-to-cff1.hh`, `src/hb-cff-specializer.hh` and `src/hb-cff-width-optimizer.hh` with the CFF2 charstring interpreter of `src/hb-cff2-interp-cs.hh`, the DICTs of `src/hb-ot-cff2-table.hh`, the glyph boxes of `src/hb-ot-cff2-table.cc`, the region scalars of `src/hb-ot-layout-common.hh` (`VarRegionAxis::evaluate`) and `update_instance_metrics_map_from_cff2` of `src/hb-subset-plan-var.cc`, the FeatureVariations evaluation of `src/hb-ot-layout-common.hh` and the instanced value formats of `src/OT/Layout/GPOS/ValueFormat.hh` (Copyright © 2018-2023 Google, Inc.; © 2016 Google, Inc.; © 2020 Google, Inc.; © 2011-2012 Google, Inc.; © 2007-2010 Red Hat, Inc.; © 2010-2012 Google, Inc.; © 2017 Google, Inc.; © 2016 Elie Roux; © 2018-2019 Ebrahim Byagowi; © 2018 Adobe Inc.; © 2016 Igalia S.L.) ([ADR 0022](docs/adr/0022-subsetting.md)) |
 | `sofel-cli` | `src/subset.rs`: the options of `util/hb-subset.cc` and `hb_subset_input_to_string_or_fail` of `src/hb-subset-input.cc` ([ADR 0022](docs/adr/0022-subsetting.md)) |
 
@@ -1735,3 +1736,112 @@ bzip2/libbzip2 version 1.1.0 of 6 September 2010
 
 --------------------------------------------------------------------------
 ```
+
+## Noto Color Emoji gallery fonts (sofel [ADR 0077](docs/adr/0077-noto-color-emoji-gallery.md))
+
+The two fixed v2.047 font binaries are downloaded for the gallery and its tests. They are not bundled with sofel. Both use the license supplied in the same release.
+
+| Font ID | Source file | Cached file |
+|---|---|---|
+| `color-noto-cbdt` | `fonts/NotoColorEmoji.ttf` | `fonts/color-noto-cbdt.ttf` |
+| `color-noto-colrv1` | `fonts/Noto-COLRv1.ttf` | `fonts/color-noto-colrv1.ttf` |
+
+Source: https://raw.githubusercontent.com/googlefonts/noto-emoji/v2.047/fonts/LICENSE
+
+Complete font license text from this fixed release:
+
+~~~~text
+This Font Software is licensed under the SIL Open Font License,
+Version 1.1.
+
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font
+creation efforts of academic and linguistic communities, and to
+provide a free and open framework in which fonts may be shared and
+improved in partnership with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded,
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply to
+any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software
+components as distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to,
+deleting, or substituting -- in part or in whole -- any of the
+components of the Original Version, by changing formats or by porting
+the Font Software to a new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed,
+modify, redistribute, and sell modified and unmodified copies of the
+Font Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components, in
+Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the
+corresponding Copyright Holder. This restriction only applies to the
+primary font name as presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created using
+the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+
+~~~~

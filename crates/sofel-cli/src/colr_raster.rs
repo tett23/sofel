@@ -109,7 +109,6 @@ fn intersect_rect(
         }
     }
 }
-
 fn fill_solid(pixels: &mut [u8], mask: &[u8], c: sofel_geom::Color) {
     let color = [mul(c.b, c.a), mul(c.g, c.a), mul(c.r, c.a), c.a];
     for (dst, &coverage) in pixels.as_chunks_mut::<4>().0.iter_mut().zip(mask) {
@@ -193,6 +192,9 @@ pub(crate) fn render(
                 };
                 image.paint_bitmap(&src, encoded.extents?, t, clips.last()?)?;
             }
+            // Recording always declines the nested glyph callback. Its expanded
+            // paint operations immediately follow this notification in the stream.
+            PaintCommand::ColorGlyph(_) => {}
             PaintCommand::PushTransform(other) => matrices.push(t.multiply(other)),
             PaintCommand::PopTransform => {
                 matrices.pop()?;

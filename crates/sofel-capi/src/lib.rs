@@ -34,7 +34,7 @@ use sofel_font::read::sfnt::FontFile;
 use sofel_font::read::{DetailValue, Diagnostic, GlyphId, Severity, Tag, validate};
 use sofel_font::{Cff, CidError, Direction, Font, FontError, GlyphExtents, HbScale, MetricsTag};
 use sofel_geom::{Fixed, Matrix, Pen, Point};
-use sofel_outline::{OutlineError, OutlineInfo, Outlines, Scale, Scratch};
+use sofel_outline::{HintTarget, OutlineError, OutlineInfo, Outlines, Scale, Scratch};
 use sofel_raster::{Bitmap, FillRule, PixelBox, RasterError, Rasterizer, RenderOptions};
 
 /// `SOFEL_VERSION_MAJOR`.
@@ -2415,6 +2415,40 @@ pub extern "C" fn sofel_outline_scratch_create() -> *mut SofelOutlineScratch {
     }))
 }
 
+/// Borrows the point tags and inclusive contour ends of the last loaded outline.
+///
+/// # Safety
+///
+/// `scratch` is NULL or a live work area. Output pointers are NULL or distinct
+/// writable locations. The returned arrays are valid until the next mutation
+/// or destruction of `scratch`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_outline_tags_and_contours(
+    scratch: *const SofelOutlineScratch,
+    tags: *mut *const u8,
+    num_points: *mut usize,
+    ends: *mut *const usize,
+    num_contours: *mut usize,
+) -> i32 {
+    // SAFETY: each pointer satisfies the caller's conditions.
+    let (scratch, tags, num_points, ends, num_contours) =
+        unsafe { (r(scratch), w(tags), w(num_points), w(ends), w(num_contours)) };
+    status((|| {
+        let scratch = &some(scratch)?.scratch;
+        let (tags, num_points, ends, num_contours) = (
+            some(tags)?,
+            some(num_points)?,
+            some(ends)?,
+            some(num_contours)?,
+        );
+        let point_tags = scratch.point_tags();
+        let contour_ends = scratch.contour_ends();
+        (*tags, *num_points) = (point_tags.as_ptr(), point_tags.len());
+        (*ends, *num_contours) = (contour_ends.as_ptr(), contour_ends.len());
+        Ok(())
+    })())
+}
+
 /// `sofel_outline_scratch_destroy`.
 ///
 /// # Safety
@@ -2479,9 +2513,10 @@ fn put_info(info: OutlineInfo, cbox: &mut [i32; 4], overlap: &mut u32) {
     *overlap = u32::from(info.overlap);
 }
 
-enum OutlineLoad {
+enum OutlineLoad<'a> {
     Unhinted(Result<Scale, i32>),
-    Mono(u16),
+    TrueTypeV35(u16, HintTarget, Option<&'a mut i32>),
+    TrueTypeV40(u16, HintTarget, &'a mut i32),
 }
 
 fn outline_load(
@@ -2497,9 +2532,20 @@ fn outline_load(
     let outlines = outlines_at(font, location);
     let info = match load {
         OutlineLoad::Unhinted(scale) => outlines.load(GlyphId(glyph), scale?, &mut scratch.scratch),
-        OutlineLoad::Mono(ppem) => {
-            outlines.load_truetype_mono(GlyphId(glyph), ppem, &mut scratch.scratch)
-        }
+        OutlineLoad::TrueTypeV40(ppem, target, advance) => outlines
+            .load_truetype_v40(GlyphId(glyph), ppem, target, &mut scratch.scratch)
+            .map(|(info, width)| {
+                *advance = width;
+                info
+            }),
+        OutlineLoad::TrueTypeV35(ppem, target, advance) => outlines
+            .load_truetype_v35_with_advance(GlyphId(glyph), ppem, target, &mut scratch.scratch)
+            .map(|(info, width)| {
+                if let Some(out) = advance {
+                    *out = width;
+                }
+                info
+            }),
     }
     .map_err(outline_error)?;
     put_info(info, cbox, overlap);
@@ -2567,7 +2613,125 @@ pub unsafe extern "C" fn sofel_outline_load_truetype_mono(
             r(font),
             r(location),
             glyph,
-            OutlineLoad::Mono(ppem),
+            OutlineLoad::TrueTypeV35(ppem, HintTarget::Mono, None),
+            w(scratch),
+            ints::<4>(cbox),
+            w(overlap),
+        ))
+    }
+}
+
+/// Loads a TrueType outline using the v35 interpreter and the selected load target.
+///
+/// # Safety
+///
+/// The pointer requirements are those of [`sofel_outline_load`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_outline_load_truetype_v35(
+    font: *const SofelFont,
+    location: *const SofelLocation,
+    glyph: u32,
+    ppem: u16,
+    target: u32,
+    scratch: *mut SofelOutlineScratch,
+    cbox: *mut i32,
+    overlap: *mut u32,
+) -> i32 {
+    let Some(target) = hint_target(target) else {
+        return ERROR_INVALID_ARGUMENT;
+    };
+    // SAFETY: the caller supplies the handles and output buffers required by outline_load.
+    unsafe {
+        status(outline_load(
+            r(font),
+            r(location),
+            glyph,
+            OutlineLoad::TrueTypeV35(ppem, target, None),
+            w(scratch),
+            ints::<4>(cbox),
+            w(overlap),
+        ))
+    }
+}
+
+fn hint_target(target: u32) -> Option<HintTarget> {
+    Some(match target {
+        0 => HintTarget::Normal,
+        1 => HintTarget::Light,
+        2 => HintTarget::Mono,
+        3 => HintTarget::Lcd,
+        4 => HintTarget::VerticalLcd,
+        _ => return None,
+    })
+}
+
+/// Loads a TrueType v35 outline and writes its 26.6 pixel horizontal advance.
+///
+/// # Safety
+///
+/// The requirements are those of [`sofel_outline_load`]. `advance` must be writable for one i32.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_outline_load_truetype_v35_with_advance(
+    font: *const SofelFont,
+    location: *const SofelLocation,
+    glyph: u32,
+    ppem: u16,
+    target: u32,
+    scratch: *mut SofelOutlineScratch,
+    cbox: *mut i32,
+    overlap: *mut u32,
+    advance: *mut i32,
+) -> i32 {
+    let Some(target) = hint_target(target) else {
+        return ERROR_INVALID_ARGUMENT;
+    };
+    // SAFETY: all handles and output pointers follow the load contract above.
+    unsafe {
+        let Some(advance) = w(advance) else {
+            return ERROR_INVALID_ARGUMENT;
+        };
+        status(outline_load(
+            r(font),
+            r(location),
+            glyph,
+            OutlineLoad::TrueTypeV35(ppem, target, Some(advance)),
+            w(scratch),
+            ints::<4>(cbox),
+            w(overlap),
+        ))
+    }
+}
+
+/// Loads a TrueType v40 outline and writes its 26.6 pixel horizontal advance.
+///
+/// # Safety
+///
+/// The requirements are those of [`sofel_outline_load`]. `advance` must be writable for one i32.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_outline_load_truetype_v40(
+    font: *const SofelFont,
+    location: *const SofelLocation,
+    glyph: u32,
+    ppem: u16,
+    target: u32,
+    scratch: *mut SofelOutlineScratch,
+    cbox: *mut i32,
+    overlap: *mut u32,
+    advance: *mut i32,
+) -> i32 {
+    let Some(target) = hint_target(target) else {
+        return ERROR_INVALID_ARGUMENT;
+    };
+    // SAFETY: all handles and output pointers follow the load contract above.
+    unsafe {
+        let Some(advance) = w(advance) else {
+            return ERROR_INVALID_ARGUMENT;
+        };
+        status(outline_load(
+            r(font),
+            r(location),
+            glyph,
+            OutlineLoad::TrueTypeV40(ppem, target, advance),
             w(scratch),
             ints::<4>(cbox),
             w(overlap),

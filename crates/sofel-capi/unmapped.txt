@@ -24,10 +24,14 @@ sofel_font::var::Instance::glyf_extents_with_scratch Rust work-area variant of t
 sofel_font::var::Instance::varied_glyf_control_box Unrounded internal outline for COLR layer clipping; C receives the painted glyph extents (ADR 0027).
 sofel_font::var::Instance::ft_h_advance_with_scratch Rust work-area variant of sofel_font_ft_h_advance; the C query uses the ordinary Rust entry (ADR 0048).
 sofel_font::var::Instance::ft_v_advance_with_scratch Rust work-area variant of sofel_font_ft_v_advance; the C query uses the ordinary Rust entry (ADR 0048).
+sofel_font::var::gvar::infer_hb Internal contour interpolation shared by outline evaluation and subset instancing. C receives the resulting outline or subset font (ADR 0030, ADR 0061).
+sofel_font::var::gvar::apply_cvar_hb Internal CVT instancing for the subset writer. C callers receive the adjusted cvt table in the subset font (ADR 0061).
 sofel_font::var::gvar::apply_hb Internal HarfBuzz gvar point evaluation; C gets the resulting font values through coordinate-dependent queries (ADR 0030).
 sofel_font::var::gvar::apply_ft Internal FreeType gvar point evaluation; C gets the resulting outline through sofel_outline_load and sofel_outline_draw (ADR 0030).
 sofel_font::var::Location::default_ref The NULL location argument will represent the static default for C coordinate-dependent queries in the ADR 0027 query PR.
 sofel_font::var::StoreScalars::* Internal cached variation-region coefficients, without a direct C operation (ADR 0029).
+sofel_font::var::unmap_float Internal inverse avar interpolation for subset axis ranges (ADR 0061).
+sofel_font::var::apply_avar2_2_14 Internal subset coordinate mapping helper (ADR 0061).
 sofel_font::var::map_float Internal avar interpolation helper, without a direct C operation (ADR 0027).
 sofel_font::var::normalize_axis_value Internal fvar normalization helper, without a direct C operation (ADR 0027).
 sofel_geom::Command::apply Replays a recorded Rust Command into a Rust Pen; C pens receive the commands directly.
@@ -209,6 +213,10 @@ sofel_color::FtPaintGraph::* The location-resolved raw COLR tree; the C paint AP
 sofel_unicode::Script::from_raw_tag C represents the four script bytes directly as a big-endian uint32_t tag.
 sofel_raster::BgraImage::paint_bitmap Rust caller-owned transformed bitmap surface; C renders the sampled glyph with sofel_render_color_glyph (ADR 0066).
 sofel_raster::blend_sampled Rust closure-based gradient blending into a caller-owned BGRA surface; the C ABI does not expose a raster surface handle (ADR 0072).
+sofel_svg::OutlinePainter::* Rust trait for geometry clips used by sofel_render_color_glyph.
+sofel_svg::sample_brush Rust SVG brush sampler used by sofel_render_color_glyph.
+sofel_svg::GlyphScene::paint Rust Painter command adapter for selected SVG glyphs; C renders the same commands through sofel_render_color_glyph.
+sofel_svg::Scene::paint Rust Painter command adapter; C renders the same commands through sofel_render_color_glyph.
 sofel_svg::parse_shapes Rust view of the rect/circle SVG subset; the C ABI exposes the original document through sofel_svg_document (ADR 0072).
 sofel_svg::parse_glyph Rust glyph scene with inherited paint and clipping for the renderer; C can retrieve the original document with sofel_svg_document (ADR 0074).
 sofel_svg::Shape::draw Rust Pen adapter for SVG geometry; C gets the original document with sofel_svg_document (ADR 0072).
@@ -247,5 +255,8 @@ sofel_raster::ColorGradient::* The C entry point sofel_render_color_glyph evalua
 sofel_raster::composite_pixel The C entry point sofel_render_color_glyph composites the recorded COLRv1 groups.
 sofel_raster::PaintMask::* The C entry point sofel_render_color_glyph applies outline coverage to the color surface.
 sofel_read::feat::* A validated feature-name view used by the C shaping functions; C reads the table with sofel_font_table.
+sofel_woff::decode_woff2 The font input commands reconstruct WOFF2 tables into an sfnt buffer.
 sofel_woff::decode_woff The font input commands reconstruct WOFF tables into an sfnt buffer.
 sofel_bitmapfont::BdfFont::* BDF parsing and fixed bitmap queries are Rust and sofel-render operations; the C font handle still accepts sfnt data only (sofel ADR 0065).
+sofel_bitmapfont::pcf::PcfFont::* PCF parsing and fixed bitmap queries are Rust and sofel-render operations; the C font handle still accepts sfnt data only (sofel ADR 0065).
+sofel_bitmapfont::winfnt::WinFont::* FNT and NE FON parsing and fixed bitmap queries are exposed through Rust and sofel-render (sofel ADR 0065).

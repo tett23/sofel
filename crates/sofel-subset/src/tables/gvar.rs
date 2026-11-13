@@ -1,5 +1,7 @@
 //! `gvar` and `GVAR` subsetting without instancing (ADR 0022 stage 10).
 
+mod solver;
+
 use alloc::borrow::Cow;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -16,7 +18,7 @@ use super::Tables;
 
 pub(super) fn subset(
     plan: &Plan,
-    _font: &Font<'_>,
+    font: &Font<'_>,
     tag: Tag,
     src: &[u8],
     serializer: &mut Serializer,
@@ -55,9 +57,11 @@ pub(super) fn subset(
         records.push((new_gid, Cow::Borrowed(bytes)));
     }
     if plan.var.instancing()
-        && plan.var.n.retained_axis_indices.len() < usize::from(table.axis_count())
+        && !large
+        && (!plan.var.n.avar2
+            || plan.var.n.retained_axis_indices.len() < usize::from(table.axis_count()))
     {
-        return pin_records(plan, tag, &table, &records, serializer);
+        return instance_records(plan, font, tag, &table, &records, serializer);
     }
     let shared_len = usize::from(table.axis_count())
         .checked_mul(usize::from(table.shared_tuple_count()))
@@ -180,35 +184,74 @@ struct PinnedTuple<'a> {
     peak: Vec<u8>,
     intermediate: Option<Vec<u8>>,
     points: &'a [u8],
-    deltas: &'a [u8],
+    deltas: Cow<'a, [u8]>,
 }
 
-fn pin_records(
+// Match the run boundaries chosen by HarfBuzz TupleValues::compile_unsafe.
+fn pack_deltas(mut values: &[i16], output: &mut Vec<u8>) {
+    while let Some(&first) = values.first() {
+        let byte = |value: i16| i8::try_from(value).is_ok();
+        let flag = if first == 0 {
+            0x80
+        } else if byte(first) {
+            0
+        } else {
+            0x40
+        };
+        let length = values
+            .iter()
+            .enumerate()
+            .take_while(|&(i, &value)| {
+                let next = values.get(i.saturating_add(1)).copied();
+                match flag {
+                    0x80 => value == 0,
+                    0 => byte(value) && !(value == 0 && next == Some(0)),
+                    _ => value != 0 && !(byte(value) && next.is_some_and(byte)),
+                }
+            })
+            .count();
+        let (run, rest) = values.split_at(length);
+        for chunk in run.chunks(64) {
+            output.push(flag | u8::try_from(chunk.len().saturating_sub(1)).unwrap_or(63));
+            match flag {
+                0 => output.extend(chunk.iter().map(|v| v.to_be_bytes()[1])),
+                0x40 => output.extend(chunk.iter().flat_map(|v| v.to_be_bytes())),
+                _ => {}
+            }
+        }
+        values = rest;
+    }
+}
+
+fn instance_records(
     plan: &Plan,
+    font: &Font<'_>,
     tag: Tag,
     table: &Gvar<'_>,
     records: &[(u32, Cow<'_, [u8]>)],
     serializer: &mut Serializer,
 ) -> Result<bool, SubsetError> {
-    use sofel_font::read::gvar::{PackedPoints, Tuple};
+    use sofel_font::read::gvar::PackedPoints;
     let bad = SubsetError::Malformed { tag };
     let kept = &plan.var.n.retained_axis_indices;
     let axes = usize::from(table.axis_count());
-    let pin = (0..axes).find(|i| !kept.contains(i)).ok_or(bad)?;
-    if kept.len().checked_add(1) != Some(axes) {
-        return Err(SubsetError::Unsupported {
-            tag,
-            reason: "gvar instancing across multiple pinned axes",
-        });
-    }
-    let pinned_coord = *plan.var.n.normalized_coords.get(pin).ok_or(bad)?;
-    let project = |tuple: Tuple<'_>| -> Result<Vec<u8>, SubsetError> {
-        let mut coords = Vec::new();
-        for &i in kept {
-            coords.extend(tuple.axis(i).ok_or(bad)?.to_be_bytes());
-        }
-        Ok(coords)
-    };
+    let axis_infos = crate::instance::axis_infos(font);
+    let changed = plan
+        .var
+        .n
+        .axes_location
+        .iter()
+        .filter_map(|(tag, range)| {
+            let axis = axis_infos.iter().position(|info| info.tag == *tag)?;
+            let info = axis_infos.get(axis)?;
+            Some((
+                axis,
+                [range.min, range.default, range.max],
+                [info.default - info.min, info.max - info.default],
+            ))
+        })
+        .collect::<Vec<_>>();
+    let outlines = super::glyf::GlyfAccel::new(font);
     let mut glyphs = Vec::new();
     let mut frequencies = BTreeMap::<Vec<u8>, usize>::new();
     for ((gid, raw), &(_, old)) in records.iter().zip(plan.new_to_old_glyphs()) {
@@ -224,32 +267,84 @@ fn pin_records(
             points = bytes.get(..length).ok_or(bad)?;
         }
         let mut tuples = Vec::new();
+        let mut regions = BTreeMap::new();
+        let mut groups: Vec<(_, _, Vec<_>)> = Vec::new();
         for tuple in glyph.tuples() {
             let tuple = tuple.ok_or(bad)?;
             let peak = tuple
                 .embedded_peak()
                 .or_else(|| table.shared_tuple(tuple.shared_peak_index()?))
                 .ok_or(bad)?;
-            let projected = project(peak)?;
-            if peak.axis(pin).ok_or(bad)? != 0 {
-                if pinned_coord != 0 && projected.iter().any(|&b| b != 0) {
-                    return Err(SubsetError::Unsupported {
-                        tag,
-                        reason: "rebasing a gvar tuple shared by pinned and retained axes",
-                    });
-                }
-                // Mixed tuples vanish at the default. A pinned-only contribution
-                // at another coordinate is already in glyf and the phantom points.
-                continue;
+            let mut source = Vec::with_capacity(axes);
+            for i in 0..axes {
+                let peak = peak.axis(i).ok_or(bad)?;
+                let (lower, upper) = if let Some((start, end)) = tuple.intermediate() {
+                    (start.axis(i).ok_or(bad)?, end.axis(i).ok_or(bad)?)
+                } else {
+                    (peak.min(0), peak.max(0))
+                };
+                source.push([lower, peak, upper].map(|v| f32::from(v) / 16384.0));
             }
-            let intermediate = tuple
-                .intermediate()
-                .map(|(start, end)| -> Result<_, SubsetError> {
-                    let mut region = project(start)?;
-                    region.extend(project(end)?);
-                    Ok(region)
-                })
-                .transpose()?;
+            let mut parts = alloc::vec![(source, Vec::<f32>::new())];
+            for &(axis, limits, distances) in &changed {
+                let mut next = Vec::new();
+                for (tents, scales) in parts {
+                    let tent = *tents.get(axis).ok_or(bad)?;
+                    let solutions = solver::rebase(tent, limits, distances);
+                    for (weight, region) in solutions {
+                        if next.len() >= 4095 {
+                            return Err(SubsetError::Limit { tag });
+                        }
+                        let mut tents = tents.clone();
+                        *tents.get_mut(axis).ok_or(bad)? = region;
+                        let mut scales = scales.clone();
+                        if weight != 1.0 {
+                            scales.push(weight);
+                        }
+                        next.push((tents, scales));
+                    }
+                }
+                parts = next;
+            }
+            for (tents, scales) in parts {
+                let mut projected = Vec::new();
+                let mut starts = Vec::new();
+                let mut ends = Vec::new();
+                let mut intermediate = false;
+                let mut region_key = Vec::with_capacity(kept.len());
+                for &axis in kept {
+                    let tent = *tents.get(axis).ok_or(bad)?;
+                    let [low, middle, high] = tent;
+                    intermediate |= low != middle.min(0.0) || high != middle.max(0.0);
+                    region_key.push(tent.map(|v| if v == 0.0 { 0 } else { v.to_bits() }));
+                    let [start, peak, end] = tent.map(|v| {
+                        let fixed = crate::instance::f64_to_i32(sofel_geom::float::hb_roundf32(
+                            v * 16384.0,
+                        ));
+                        i16::try_from(fixed.clamp(i32::from(i16::MIN), i32::from(i16::MAX)))
+                            .unwrap_or_default()
+                    });
+                    projected.extend(peak.to_be_bytes());
+                    starts.extend(start.to_be_bytes());
+                    ends.extend(end.to_be_bytes());
+                }
+                if region_key.iter().all(|axis| *axis == [0; 3]) {
+                    continue;
+                }
+                let intermediate = intermediate.then(|| {
+                    starts.extend(ends);
+                    starts
+                });
+                let index = *regions.entry(region_key).or_insert_with(|| {
+                    let index = groups.len();
+                    groups.push((projected, intermediate, Vec::new()));
+                    index
+                });
+                groups.get_mut(index).ok_or(bad)?.2.push((tuple, scales));
+            }
+        }
+        for (projected, intermediate, contributors) in groups {
+            let (tuple, scales) = contributors.first().ok_or(bad)?;
             let count = frequencies.entry(projected.clone()).or_default();
             *count = count.saturating_add(1);
             let (points, deltas) = if tuple.private_points() {
@@ -257,6 +352,93 @@ fn pin_records(
                 tuple.data().split_at_checked(used).ok_or(bad)?
             } else {
                 (points, tuple.data())
+            };
+            let (points, deltas) = if contributors.len() == 1
+                && scales.is_empty()
+                && PackedPoints::parse(points).ok_or(bad)?.0.is_all()
+            {
+                (points, Cow::Borrowed(deltas))
+            } else {
+                let outline = outlines.glyph(old, false);
+                let simple = (outline.kind == super::glyf::Kind::Simple)
+                    .then(|| {
+                        sofel_font::read::glyf::Glyph::new(outline.bytes)
+                            .and_then(|glyph| glyph.simple())
+                    })
+                    .transpose()
+                    .map_err(|_| bad)?;
+                let count = if let Some(ref simple) = simple {
+                    usize::try_from(simple.num_points()).map_err(|_| bad)?
+                } else {
+                    outline.components().count()
+                };
+                let n = count.checked_add(4).ok_or(bad)?;
+                let mut sums = [alloc::vec![0.0; n], alloc::vec![0.0; n]];
+                let mut original = Vec::new();
+                for (part, scales) in contributors {
+                    let scaled =
+                        |value: i16| scales.iter().fold(f32::from(value), |v, scale| v * scale);
+                    let (x, y) = part.deltas(n, glyph.shared_points()).ok_or(bad)?;
+                    if let Some(indices) = part
+                        .points()
+                        .or(glyph.shared_points())
+                        .filter(|p| !p.is_all())
+                    {
+                        use sofel_font::var::gvar::{Point, infer_hb};
+                        if let Some(ref simple) = simple
+                            && original.is_empty()
+                        {
+                            original.extend(simple.points(outline.extended).map(|p| Point {
+                                x: sofel_geom::float::i32_to_f32(p.x),
+                                y: sofel_geom::float::i32_to_f32(p.y),
+                                end: false,
+                            }));
+                            if original.len().checked_add(4) != Some(n) {
+                                return Err(bad);
+                            }
+                            for end in simple.end_points() {
+                                original.get_mut(usize::from(end)).ok_or(bad)?.end = true;
+                            }
+                            original.resize(n, Point::default());
+                        }
+                        let mut expanded = alloc::vec![Point::default(); n];
+                        let mut explicit = alloc::vec![false; n];
+                        for ((i, dx), dy) in indices.iter().zip(x.iter()).zip(y.iter()) {
+                            let i = usize::try_from(i).map_err(|_| bad)?;
+                            let point = expanded.get_mut(i).ok_or(bad)?;
+                            point.x = scaled(dx);
+                            point.y = scaled(dy);
+                            *explicit.get_mut(i).ok_or(bad)? = true;
+                        }
+                        if simple.is_some() {
+                            infer_hb(&original, &mut expanded, &explicit).map_err(|_| bad)?;
+                        }
+                        let [xs, ys] = &mut sums;
+                        for ((x, y), d) in xs.iter_mut().zip(ys).zip(expanded) {
+                            *x += d.x;
+                            *y += d.y;
+                        }
+                        continue;
+                    }
+                    for (sum, axis) in sums.iter_mut().zip([x, y]) {
+                        for (value, delta) in sum.iter_mut().zip(axis.iter()) {
+                            *value += scaled(delta);
+                        }
+                    }
+                }
+                let mut encoded = Vec::new();
+                for sum in sums {
+                    let values = sum
+                        .into_iter()
+                        .map(|value| {
+                            let rounded = sofel_geom::float::hb_roundf32(value);
+                            i16::try_from(crate::instance::f64_to_i32(rounded))
+                                .map_err(|_| SubsetError::Limit { tag })
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    pack_deltas(&values, &mut encoded);
+                }
+                (&[0u8][..], Cow::Owned(encoded))
             };
             tuples.push(PinnedTuple {
                 peak: projected,
@@ -297,7 +479,10 @@ fn pin_records(
         } else {
             None
         };
-        let count = u16::try_from(tuples.len()).map_err(|_| bad)?;
+        let count = u16::try_from(tuples.len())
+            .ok()
+            .filter(|&n| n <= 0x0fff)
+            .ok_or(SubsetError::Limit { tag })?;
         let mut headers = Vec::new();
         let mut payload = shared_points.unwrap_or_default().to_vec();
         for tuple in tuples {
@@ -331,7 +516,7 @@ fn pin_records(
             if private {
                 payload.extend(tuple.points);
             }
-            payload.extend(tuple.deltas);
+            payload.extend_from_slice(&tuple.deltas);
         }
         let mut record = Vec::new();
         record.extend((count | if shared_points.is_some() { 0x8000 } else { 0 }).to_be_bytes());
@@ -342,6 +527,9 @@ fn pin_records(
         );
         record.extend(headers);
         record.extend(payload);
+        if record.len() % 2 != 0 {
+            record.push(0);
+        }
         output.push((gid, Cow::Owned(record)));
     }
     serialize_records(

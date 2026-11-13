@@ -4,6 +4,8 @@
 //! the subsetting of both versions, without a variation store or a
 //! DeltaSetIndexMap (ADR 0022 stage 10).
 
+mod radial;
+
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 
@@ -438,6 +440,7 @@ struct Sub<'a, 'p> {
     p: &'p Plan,
     t: D<'a>,
     s: &'p mut Serializer,
+    delta: Option<&'p dyn Fn(u32) -> f32>,
     /// Paints nested in the one being written.
     depth: u32,
 }
@@ -532,6 +535,70 @@ impl Sub<'_, '_> {
         true
     }
 
+    fn fold_fixed(&mut self, src: usize, out: usize, index: u32, alpha: bool) {
+        let Some(delta) = self.delta else { return };
+        if index == NO_VARIATION {
+            return;
+        }
+        let base = i16::from_be_bytes(self.t.u16(src).to_be_bytes());
+        let sum = f32::from(base) + delta(index);
+        let (min, max) = if alpha {
+            (0, 16384)
+        } else {
+            (i16::MIN, i16::MAX)
+        };
+        let value = crate::instance::f64_to_i32(sofel_geom::float::hb_roundf32(sum))
+            .clamp(i32::from(min), i32::from(max));
+        self.s
+            .write_at(out, &i16::try_from(value).unwrap_or(max).to_be_bytes());
+    }
+
+    fn fold_coord(&mut self, src: usize, out: usize, adjustment: f64) {
+        let base = i16::from_be_bytes(self.t.u16(src).to_be_bytes());
+        let value = crate::instance::f64_to_i32(f64::from(base) + adjustment)
+            .clamp(i32::from(i16::MIN), i32::from(i16::MAX));
+        self.s
+            .write_at(out, &i16::try_from(value).unwrap_or_default().to_be_bytes());
+    }
+
+    fn fold_paint_fields(&mut self, format: u8, at: usize, out: usize, size: usize) {
+        let Some(delta) = self.delta else { return };
+        let base = self.t.u32(at.saturating_add(size));
+        if base == NO_VARIATION {
+            return;
+        }
+        if format == 3 {
+            self.fold_fixed(at.saturating_add(3), out.saturating_add(3), base, true);
+            return;
+        }
+        for (axis, offset) in (4..size).step_by(2).enumerate() {
+            let index = base.saturating_add(u32::try_from(axis).unwrap_or(u32::MAX));
+            let src = at.saturating_add(offset);
+            let dest = out.saturating_add(offset);
+            let fixed = match format {
+                9 => axis >= 2,
+                17 | 19 | 29 | 31 => axis < 2,
+                21 | 23 | 25 | 27 => axis == 0,
+                _ => false,
+            };
+            if fixed {
+                self.fold_fixed(src, dest, index, false);
+            } else if format == 7 && matches!(axis, 2 | 5) {
+                let value = crate::instance::f64_to_i32(
+                    f64::from(self.t.u16(src)) + sofel_geom::float::hb_roundf32(delta(index)),
+                );
+                self.s.write_at(
+                    dest,
+                    &u16::try_from(value.clamp(0, 65535))
+                        .unwrap_or_default()
+                        .to_be_bytes(),
+                );
+            } else {
+                self.fold_coord(src, dest, sofel_geom::float::hb_roundf32(delta(index)));
+            }
+        }
+    }
+
     /// `ColorLine::subset`.
     fn color_line(&mut self, at: usize, var: bool) -> bool {
         let line = self.t.at(at);
@@ -545,6 +612,16 @@ impl Sub<'_, '_> {
             if !self.palette(out.saturating_add(2), self.t.u16(stop.saturating_add(2))) {
                 return false;
             }
+            if var {
+                let base = self.t.u32(stop.saturating_add(6));
+                self.fold_fixed(stop, out, base, false);
+                self.fold_fixed(
+                    stop.saturating_add(4),
+                    out.saturating_add(4),
+                    base.saturating_add(1),
+                    true,
+                );
+            }
             if var && !self.var_index(stop.saturating_add(6)) {
                 return false;
             }
@@ -554,7 +631,21 @@ impl Sub<'_, '_> {
 
     /// `Affine2x3::subset` (in `Variable` for `var`).
     fn affine(&mut self, at: usize, var: bool) -> bool {
-        self.embed(at, 24);
+        let out = self.embed(at, 24);
+        let base = self.t.u32(at.saturating_add(24));
+        if var
+            && base != NO_VARIATION
+            && let Some(delta) = self.delta
+        {
+            for field in 0..6u32 {
+                let offset = (field as usize).saturating_mul(4);
+                let old = i32::from_be_bytes(self.t.u32(at.saturating_add(offset)).to_be_bytes());
+                let sum = f64::from(old) + f64::from(delta(base.saturating_add(field)));
+                let value = crate::instance::f64_to_i32(sofel_geom::float::hb_roundf(sum));
+                self.s
+                    .write_at(out.saturating_add(offset), &value.to_be_bytes());
+            }
+        }
         !var || self.var_index(at.saturating_add(24))
     }
 
@@ -572,17 +663,101 @@ impl Sub<'_, '_> {
         ok
     }
 
+    // A static F2DOT14 scale outside [-2, 2) needs a 16.16 transform.
+    fn scale_transform(&mut self, at: usize, format: u8, size: usize) -> Option<bool> {
+        if !matches!(format, 17 | 19 | 21 | 23) {
+            return None;
+        }
+        let delta = self.delta?;
+        let base = self.t.u32(at.saturating_add(size));
+        if base == NO_VARIATION {
+            return None;
+        }
+        let coord = |field: u32| {
+            let offset = at
+                .saturating_add(4)
+                .saturating_add((field as usize).saturating_mul(2));
+            f32::from(i16::from_be_bytes(self.t.u16(offset).to_be_bytes()))
+        };
+        let scale = |field| {
+            crate::instance::f64_to_f32(sofel_geom::float::hb_roundf32(
+                coord(field) + delta(base.saturating_add(field)),
+            )) / 16384.0
+        };
+        let uniform = matches!(format, 21 | 23);
+        let sx = scale(0);
+        let sy = if uniform { sx } else { scale(1) };
+        if (-2.0..2.0).contains(&sx) && (-2.0..2.0).contains(&sy) {
+            return None;
+        }
+        let center = |field| {
+            coord(field)
+                + crate::instance::f64_to_f32(sofel_geom::float::hb_roundf32(delta(
+                    base.saturating_add(field),
+                )))
+        };
+        let (cx, cy) = match format {
+            19 => (center(2), center(3)),
+            23 => (center(1), center(2)),
+            _ => (0.0, 0.0),
+        };
+        let (dx, dy) = (cx * (1.0 - sx), cy * (1.0 - sy));
+        let ok = if (-32768.0..32768.0).contains(&dx) && (-32768.0..32768.0).contains(&dy) {
+            self.transform_chain(at, &[[sx, sy, dx, dy]])
+        } else {
+            let outer = [1.0, 1.0, cx / 2.0, cy / 2.0];
+            let inner = [1.0, 1.0, -cx / 2.0, -cy / 2.0];
+            self.transform_chain(at, &[outer, outer, [sx, sy, 0.0, 0.0], inner, inner])
+        };
+        Some(ok)
+    }
+
+    fn transform_chain(&mut self, at: usize, matrices: &[[f32; 4]]) -> bool {
+        let Some((&[sx, sy, dx, dy], rest)) = matrices.split_first() else {
+            let offset = u24(self.t, at.saturating_add(1));
+            return offset != 0 && self.paint(at.saturating_add(offset as usize));
+        };
+        self.s.u8(12);
+        let child = self.s.u24(0);
+        let affine = self.s.u24(0);
+        self.s.push();
+        for value in [sx, 0.0, 0.0, sy, dx, dy] {
+            let fixed =
+                crate::instance::f64_to_i32(sofel_geom::float::hb_roundf32(value * 65536.0));
+            self.s.extend(&fixed.to_be_bytes());
+        }
+        let matrix = self.s.pop_pack(true);
+        self.s.link24(affine, matrix);
+        self.s.push();
+        if !self.transform_chain(at, rest) {
+            self.s.pop_discard();
+            return false;
+        }
+        let source = self.s.pop_pack(true);
+        self.s.link24(child, source);
+        true
+    }
+
     /// [`paint`](Self::paint) without the nesting check.
     fn paint_at(&mut self, at: usize) -> bool {
         let format = self.t.u8(at);
         let Some((size, var)) = paint_size(format) else {
             return false;
         };
+        if format == 7
+            && let Some(result) = self.negative_radial(at)
+        {
+            return result;
+        }
+        if let Some(result) = self.scale_transform(at, format, size) {
+            return result;
+        }
         let out = self.embed(at, size);
         let p = self.t.at(at);
         if (var || format == 13) && self.p.var.instancing() && self.p.var.all_axes_pinned() {
-            // All supported full instances are pinned at the default.
-            // The preceding paint format carries the same base values.
+            if var {
+                self.fold_paint_fields(format, at, out, size);
+            }
             self.s.write_at(out, &[format.saturating_sub(1)]);
         }
         let ok = match format {
@@ -707,6 +882,25 @@ impl Sub<'_, '_> {
             2 => {
                 let out = self.embed(at, 9);
                 if self.p.var.instancing() && self.p.var.all_axes_pinned() {
+                    let base = self.t.u32(at.saturating_add(9));
+                    if base != NO_VARIATION
+                        && let Some(delta) = self.delta
+                    {
+                        for field in 0..4u32 {
+                            let d = delta(base.saturating_add(field));
+                            let d = if field < 2 {
+                                sofel_geom::float::floorf(d)
+                            } else {
+                                sofel_geom::float::ceilf(d)
+                            };
+                            let offset = 1usize.saturating_add((field as usize).saturating_mul(2));
+                            self.fold_coord(
+                                at.saturating_add(offset),
+                                out.saturating_add(offset),
+                                f64::from(d),
+                            );
+                        }
+                    }
                     self.s.write_at(out, &[1]);
                     return true;
                 }
@@ -776,7 +970,7 @@ impl Sub<'_, '_> {
 /// `COLR::subset`.
 pub(crate) fn subset(
     plan: &Plan,
-    _font: &Font<'_>,
+    font: &Font<'_>,
     tag: Tag,
     src: &[u8],
     s: &mut Serializer,
@@ -842,11 +1036,38 @@ pub(crate) fn subset(
         let idx = s.pop_pack(true);
         s.link32(30, idx);
     }
+    use sofel_font::var::{HbF32, Location, StoreKind};
+    let pinned = plan.var.all_axes_pinned() && !plan.var.n.pinned_at_default;
+    let location =
+        pinned.then(|| Location::from_normalized_2_14(font, &plan.var.n.normalized_coords));
+    let instance = location.as_ref().map(|location| font.instance(location));
+    let index_map = colr
+        .var_index_map()
+        .ok()
+        .flatten()
+        .filter(|map| !map.is_empty());
+    let delta = |index| {
+        let mapped = index_map.map_or(index, |map| map.map(index));
+        let [a, b, c, d] = mapped.to_be_bytes();
+        instance
+            .as_ref()
+            .and_then(|instance| {
+                instance
+                    .item_delta::<HbF32>(
+                        StoreKind::Colr,
+                        u16::from_be_bytes([a, b]),
+                        u16::from_be_bytes([c, d]),
+                    )
+                    .ok()
+            })
+            .unwrap_or(0.0)
+    };
     let mut c = Sub {
         p: plan,
         t,
         s,
         depth: 0,
+        delta: pinned.then_some(&delta),
     };
     let off = |at: usize| {
         let o = t.u32(at);

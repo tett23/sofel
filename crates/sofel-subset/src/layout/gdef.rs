@@ -142,6 +142,27 @@ pub(crate) fn is_variation_device(dev: D<'_>) -> bool {
     !dev.is_null() && dev.u16(4) == 0x8000
 }
 
+pub(crate) fn pinned_delta(p: &crate::plan::Plan, dev: D<'_>) -> i32 {
+    if !is_variation_device(dev) {
+        return 0;
+    }
+    let index = (u32::from(dev.u16(0)) << 16) | u32::from(dev.u16(2));
+    p.layout
+        .pinned_layout_deltas
+        .get(&index)
+        .copied()
+        .unwrap_or(0)
+}
+
+pub(super) fn adjust_coordinate(s: &mut Sub<'_, '_>, at: usize, value: u16, device: D<'_>) -> bool {
+    let adjusted = i32::from(value.cast_signed()).saturating_add(pinned_delta(s.p, device));
+    let Ok(result) = i16::try_from(adjusted) else {
+        return s.s.err(sofel_write::Errors::INT_OVERFLOW);
+    };
+    s.s.set_u16(at, result.cast_unsigned());
+    true
+}
+
 fn caret_value(s: &mut Sub<'_, '_>, c: D<'_>, remap: &BTreeMap<u32, u32>) -> bool {
     match c.u16(0) {
         1 | 2 => {
@@ -154,7 +175,7 @@ fn caret_value(s: &mut Sub<'_, '_>, c: D<'_>, remap: &BTreeMap<u32, u32>) -> boo
             if s.p.layout.varidx_pinned && is_variation_device(dev) {
                 // Mapped to no variations: downgraded to format 1.
                 s.s.set_u16(0, 1);
-                return true;
+                return adjust_coordinate(s, 2, c.u16(2), dev);
             }
             let at = s.s.u16(0);
             s.serialize_copy(at, 2, dev, |s| {

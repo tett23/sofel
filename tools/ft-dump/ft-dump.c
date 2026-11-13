@@ -81,6 +81,14 @@
  *
  * Usage: ft-dump --outline SIZE FILE
  *
+ * Usage: ft-dump --stroke SIZE GLYPH RADIUS JOIN MITER BORDER FILE
+ *
+ * Strokes one loaded outline through FT_Glyph_Stroke (BORDER=0), or
+ * FT_Glyph_StrokeBorder (BORDER=1 outside, 2 inside), using butt caps.
+ * JOIN is round=0, bevel=1, miter-variable=2 or miter-fixed=3.
+ * MITER is signed 16.16. The M/L/Q/C/Z lines are FT_Outline_Decompose
+ * of the resulting outline, with Z appended after each contour.
+ *
  * Writes the outline of every glyph (ADR 0011), loaded with
  * FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP, plus FT_LOAD_NO_SCALE when SIZE
  * is `unscaled`; otherwise SIZE is a pixel size for FT_Set_Pixel_Sizes.
@@ -258,6 +266,8 @@
 #include FT_ADVANCES_H
 #include FT_TRIGONOMETRY_H
 #include FT_OUTLINE_H
+#include FT_GLYPH_H
+#include FT_STROKER_H
 #include FT_MULTIPLE_MASTERS_H
 #include FT_SFNT_NAMES_H
 #include FT_CID_H
@@ -336,6 +346,53 @@ static int cubic_to(const FT_Vector *c1, const FT_Vector *c2,
 static const FT_Outline_Funcs outline_funcs = {
   move_to, line_to, conic_to, cubic_to, 0, 0
 };
+
+/* One closed glyph outline, using the public stroker entry points (ADR 0076). */
+static int dump_stroke(const char *size, const char *glyph_arg,
+                       const char *radius_arg, const char *join_arg,
+                       const char *miter_arg, const char *border_arg,
+                       const char *path)
+{
+  FT_Library library;
+  FT_Face face;
+  FT_Stroker stroker;
+  FT_Glyph glyph;
+  FT_Error error;
+  FT_Int32 flags = FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP;
+  FT_UInt glyph_id = (FT_UInt)strtoul(glyph_arg, NULL, 10);
+  FT_Fixed miter = (FT_Fixed)strtol(miter_arg, NULL, 10);
+  FT_Stroker_LineJoin join = (FT_Stroker_LineJoin)strtoul(join_arg, NULL, 10);
+  unsigned long border = strtoul(border_arg, NULL, 10);
+  if (FT_Init_FreeType(&library)) return 1;
+  error = FT_New_Face(library, path, 0, &face);
+  if (error) { FT_Done_FreeType(library); return 1; }
+  if (strcmp(size, "unscaled") == 0) flags |= FT_LOAD_NO_SCALE;
+  else if (FT_Set_Pixel_Sizes(face, 0, (FT_UInt)strtoul(size, NULL, 10))) {
+    FT_Done_Face(face); FT_Done_FreeType(library); return 1;
+  }
+  error = FT_Load_Glyph(face, glyph_id, flags);
+  if (!error) error = FT_Get_Glyph(face->glyph, &glyph);
+  if (!error) error = FT_Stroker_New(library, &stroker);
+  if (error) { FT_Done_Face(face); FT_Done_FreeType(library); return 1; }
+  FT_Stroker_Set(stroker, (FT_Fixed)strtol(radius_arg, NULL, 10),
+                 FT_STROKER_LINECAP_BUTT, join, miter);
+  if (border == 0) error = FT_Glyph_Stroke(&glyph, stroker, 1);
+  else error = FT_Glyph_StrokeBorder(&glyph, stroker, border == 2, 1);
+  printf("glyph %u\n", glyph_id);
+  if (error) printf("error %d\n", (int)error);
+  else {
+    FT_OutlineGlyph outline = (FT_OutlineGlyph)glyph;
+    contour_open = 0;
+    error = FT_Outline_Decompose(&outline->outline, &outline_funcs, NULL);
+    end_contour();
+    if (error) printf("error %d\n", (int)error);
+  }
+  FT_Done_Glyph(glyph);
+  FT_Stroker_Done(stroker);
+  FT_Done_Face(face);
+  FT_Done_FreeType(library);
+  return error ? 1 : 0;
+}
 
 static void dump_outlines(FT_Face face, int unscaled, int ppem,
                           const FT_ULong *selected, size_t selected_count)
@@ -1122,6 +1179,20 @@ static int calc(void)
       v.x = a;
       v.y = b;
       printf("%ld\n", (long)FT_Vector_Length(&v));
+    } else if (strcmp(op, "atan2") == 0 && scanf("%ld %ld", &a, &b) == 2)
+      printf("%ld\n", (long)FT_Atan2(a, b));
+    else if (strcmp(op, "unit") == 0 && scanf("%ld", &a) == 1) {
+      FT_Vector v;
+      FT_Vector_Unit(&v, a);
+      printf("%ld %ld\n", (long)v.x, (long)v.y);
+    } else if (strcmp(op, "from_polar") == 0 && scanf("%ld %ld", &a, &b) == 2) {
+      FT_Vector v;
+      FT_Vector_From_Polar(&v, a, b);
+      printf("%ld %ld\n", (long)v.x, (long)v.y);
+    } else if (strcmp(op, "tan") == 0 && scanf("%ld", &a) == 1) {
+      printf("%ld\n", (long)FT_Tan(a));
+    } else if (strcmp(op, "angle_diff") == 0 && scanf("%ld %ld", &a, &b) == 2) {
+      printf("%ld\n", (long)FT_Angle_Diff(a, b));
     } else {
       fprintf(stderr, "ft-dump: bad --calc input at %s\n", op);
       return 2;
@@ -1634,6 +1705,8 @@ int main(int argc, char **argv)
     return calc();
   if (argc == 4 && strcmp(argv[1], "--outline") == 0)
     return outlines(argv[2], argv[3], 0, NULL, NULL);
+  if (argc == 9 && strcmp(argv[1], "--stroke") == 0)
+    return dump_stroke(argv[2], argv[3], argv[4], argv[5], argv[6], argv[7], argv[8]);
   if (argc == 5 && strcmp(argv[1], "--sampled-outline") == 0)
     return outlines(argv[2], argv[3], 0, argv[4], NULL);
   if (argc == 6 && strcmp(argv[1], "--sampled-outline-var") == 0)
@@ -1670,7 +1743,7 @@ int main(int argc, char **argv)
     argc = 2;
   }
   if (argc != 2) {
-    fprintf(stderr, "usage: ft-dump FILE | ft-dump --advances [--named-instance=N] [--variations=TAG=value,...] FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --sampled-outline SIZE FILE PLAN | ft-dump --sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...] | ft-dump --raster PPEM [--color|--lcd|--lcd-v|--mono|--sdf|--bitmap-sdf] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --cff2-private FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
+    fprintf(stderr, "usage: ft-dump FILE | ft-dump --advances [--named-instance=N] [--variations=TAG=value,...] FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --stroke SIZE GLYPH RADIUS JOIN MITER BORDER FILE | ft-dump --sampled-outline SIZE FILE PLAN | ft-dump --sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...] | ft-dump --raster PPEM [--color|--lcd|--lcd-v|--mono|--sdf|--bitmap-sdf] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --cff2-private FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
     return 2;
   }
   if (FT_Init_FreeType(&library) != 0) {

@@ -210,6 +210,7 @@ pub(crate) fn subset(
     }
     if plan.var.instancing() {
         update_header(&mut h, map, bounds);
+        super::mvar::apply(plan, font, htag, &mut h)?;
     }
     tables.insert(htag, h);
     Ok(true)
@@ -217,8 +218,7 @@ pub(crate) fn subset(
 
 /// The instancing part of `subset_update_header`: the maximum advance
 /// and, from the glyphs with bounds, the minimum side bearings and the
-/// maximum extent. (The MVAR deltas and the ascender, descender and line
-/// gap from OS/2 do not change at the default location.)
+/// maximum extent.
 fn update_header(
     h: &mut [u8],
     map: &alloc::collections::BTreeMap<u32, (u32, i32)>,

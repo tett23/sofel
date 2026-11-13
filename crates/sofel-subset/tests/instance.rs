@@ -461,7 +461,7 @@ fn i1_subset_instance_one_sided_range_with_identity_avar() {
 }
 
 #[test]
-fn i1_subset_instance_nonidentity_avar_rejects_nondefault_pin() {
+fn i1_subset_instance_nonidentity_avar_remaps_a_restricted_axis() {
     let shifted = [(-1.0, -1.0), (0.0, 0.0), (0.5, 0.75), (1.0, 1.0)];
     let identity = [(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)];
     let data = font_with(vec![
@@ -472,10 +472,30 @@ fn i1_subset_instance_nonidentity_avar_rejects_nondefault_pin() {
     let input = unicodes()
         .with_axis_pinned(Tag::new(b"wght"), 900.0, &font)
         .unwrap();
-    assert!(matches!(
-        subset(&font, &input),
-        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"fvar")
-    ));
+    let output = subset(&font, &input).unwrap();
+    let out = Sfnt::new(&output).unwrap();
+    assert_eq!(out.table(Tag::new(b"avar")).unwrap(), avar(1, &[&identity]));
+    let input = unicodes()
+        .with_axis_range(
+            Tag::new(b"wght"),
+            Some(100.0),
+            Some(775.0),
+            Some(400.0),
+            &font,
+        )
+        .unwrap();
+    let output = subset(&font, &input).unwrap();
+    let out = Sfnt::new(&output).unwrap();
+    let expected = [
+        (-1.0, -1.0),
+        (0.0, 0.0),
+        (10923.0 / 16384.0, 14043.0 / 16384.0),
+        (1.0, 1.0),
+    ];
+    assert_eq!(
+        out.table(Tag::new(b"avar")).unwrap(),
+        avar(1, &[&expected, &identity])
+    );
 }
 
 #[test]
@@ -545,11 +565,11 @@ fn i2_unknown_axis_preserves_previous_axis_range_and_output() {
 }
 
 #[test]
-fn avar_that_moves_the_default_or_version_2_is_unsupported() {
+fn full_pin_accepts_identity_avar_versions_and_rejects_a_moved_v1_default() {
     let moved = avar(1, &[&[(-1.0, -1.0), (0.0, 0.25), (1.0, 1.0)], &[]]);
     let identity = avar(1, &[&[(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)], &[]]);
     let v2 = avar(2, &[&[], &[]]);
-    for (avar, ok) in [(identity, true), (moved, false), (v2, false)] {
+    for (avar, ok) in [(identity, true), (moved, false), (v2, true)] {
         let data = font_with(vec![(b"fvar", fvar(&AXES)), (b"avar", avar)]);
         let font = Font::new(&data, 0).unwrap();
         let i = unicodes().with_all_axes_pinned_to_default(&font).unwrap();
@@ -644,6 +664,18 @@ fn pinning_preserves_the_base_coordinate_and_removes_its_variation_index() {
     ];
     let expected: Vec<_> = expected.into_iter().flat_map(u16::to_be_bytes).collect();
     assert_eq!(sfnt.table(Tag::new(b"BASE")).unwrap(), expected);
+    for (weight, baseline) in [(650.0, 134u16), (900.0, 144)] {
+        let input = pinned
+            .with_axis_pinned(Tag::new(b"wght"), weight, &font)
+            .unwrap();
+        let out = subset(&font, &input).unwrap();
+        let mut varied = expected.clone();
+        varied[38..40].copy_from_slice(&baseline.to_be_bytes());
+        assert_eq!(
+            Sfnt::new(&out).unwrap().table(Tag::new(b"BASE")).unwrap(),
+            varied
+        );
+    }
 }
 
 #[test]

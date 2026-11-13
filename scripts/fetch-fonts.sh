@@ -92,7 +92,7 @@ while IFS="$tab" read -r id source member rel digest license features || [ -n "$
   case "$features" in ''|,*|*,|*,,*) fail "invalid features: $id";; esac
   old_ifs=$IFS; IFS=,
   for feature in $features; do
-    case "$feature" in shape|rtl|indic|use|variable|cff|cff2|math|ttc|cjk|vertical|avar2|colr|sbix|svg|metrics|outline) :;; *) fail "unknown feature: $id/$feature";; esac
+    case "$feature" in shape|rtl|indic|use|variable|cff|cff2|math|ttc|cjk|vertical|avar2|colr|cbdt|sbix|svg|metrics|outline) :;; *) fail "unknown feature: $id/$feature";; esac
   done
   IFS=$old_ifs
   source_rel=$(awk -F '\t' -v id="$source" '$1==id { print $5 }' "$lock")

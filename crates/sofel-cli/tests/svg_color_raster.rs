@@ -15,6 +15,52 @@ use sofel_raster::{BgraImage, FillRule, Rasterizer, RenderOptions};
 use sofel_svg::{Gradient, GradientKind, Scene, Shape, ShapeKind, Stop};
 use std::process::Command;
 
+fn gzip_stored(data: &[u8]) -> Vec<u8> {
+    let len = u16::try_from(data.len()).unwrap();
+    let mut out = vec![31, 139, 8, 0, 0, 0, 0, 0, 0, 255, 1];
+    out.extend_from_slice(&len.to_le_bytes());
+    out.extend_from_slice(&(!len).to_le_bytes());
+    out.extend_from_slice(data);
+    out.extend_from_slice(&sofel_inflate::crc32(data).to_le_bytes());
+    out.extend_from_slice(&u32::from(len).to_le_bytes());
+    out
+}
+
+#[test]
+fn adr0066_i3_plain_and_gzip_two_glyphs_have_identical_pixels() {
+    let xml = br##"<svg viewBox="0 0 10 10"><g id="glyph1"><rect width="10" height="10" fill="red"/></g><g id="glyph2"><rect width="10" height="10" fill="blue"/></g></svg>"##;
+    let gzip = gzip_stored(xml);
+    let mut rendered = Vec::new();
+    for source in [xml.as_slice(), gzip.as_slice()] {
+        let document = sofel_svg::document(source, 4096).unwrap();
+        for glyph in [1, 2] {
+            let scene = sofel_svg::parse_glyph(&document, glyph, 10, [0, 0, 0, 255]).unwrap();
+            let mut raster = Rasterizer::new();
+            let mut image = BgraImage::default();
+            assert!(sofel_cli::color_raster::render_glyph_scene(
+                &scene,
+                10,
+                10,
+                &mut raster,
+                &mut image
+            ));
+            assert_eq!((image.width, image.rows), (10, 10));
+            let expected = if glyph == 1 {
+                [0, 0, 255, 255]
+            } else {
+                [255, 0, 0, 255]
+            };
+            let (pixels, tail) = image.pixels.as_chunks::<4>();
+            assert!(tail.is_empty());
+            assert!(pixels.iter().all(|pixel| *pixel == expected));
+            rendered.push(image);
+        }
+    }
+    assert_eq!(rendered[0], rendered[2]);
+    assert_eq!(rendered[1], rendered[3]);
+    assert_ne!(rendered[0], rendered[1]);
+}
+
 // Independent I3 oracle for the two source SVG documents. It uses the
 // numeric rect/circle/stop declarations, without calling the SVG parser,
 // its gradient sampler, or the production BGRA blending function.
@@ -256,6 +302,34 @@ fn adr0072_i3_real_svg_glyphs_render_as_color() {
                 rgba,
                 "independent glyph {glyph} pixel ({x}, {y})"
             );
+        }
+    }
+}
+
+#[test]
+fn adr0066_i3_clipped_foreground_overlapping_a_background_matches_each_pixel() {
+    let xml = br##"<svg viewBox="0 0 4 4"><defs><clipPath id="clip"><rect x="1" y="1" width="2" height="2"/></clipPath></defs><g id="glyph1"><path d="M0 0H4V4H0Z" fill="#123456"/><path d="M0 0H3V4H0Z" clip-path="url(#clip)" fill="context-fill"/></g></svg>"##;
+    let compressed = gzip_stored(xml);
+    for source in [xml.as_slice(), compressed.as_slice()] {
+        let document = sofel_svg::document(source, 4096).unwrap();
+        let scene = sofel_svg::parse_glyph(&document, 1, 4, [9, 27, 81, 255]).unwrap();
+        let mut image = BgraImage::default();
+        assert!(sofel_cli::color_raster::render_glyph_scene(
+            &scene,
+            4,
+            4,
+            &mut Rasterizer::new(),
+            &mut image,
+        ));
+        assert_eq!((image.width, image.rows), (4, 4));
+        for (index, &pixel) in image.pixels.as_chunks::<4>().0.iter().enumerate() {
+            let (x, y) = (index % 4, index / 4);
+            let expected = if (1..3).contains(&x) && (1..3).contains(&y) {
+                [81, 27, 9, 255]
+            } else {
+                [0x56, 0x34, 0x12, 255]
+            };
+            assert_eq!(pixel, expected, "pixel ({x}, {y})");
         }
     }
 }

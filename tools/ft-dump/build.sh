@@ -34,7 +34,7 @@ if [ ! -f "$src/include/ft2build.h" ]; then
 fi
 
 files="
-  base/ftsystem.c base/ftinit.c base/ftdebug.c base/ftbase.c
+  base/ftsystem.c base/ftinit.c base/ftdebug.c base/ftbase.c base/ftstroke.c
   base/ftbbox.c base/ftglyph.c base/ftbitmap.c base/ftmm.c
   base/fttype1.c base/ftgasp.c base/ftbdf.c base/ftcid.c base/ftpfr.c
   base/ftwinfnt.c base/ftfstype.c base/ftotval.c

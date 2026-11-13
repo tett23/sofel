@@ -14,13 +14,16 @@ static bool number(const char *arg, unsigned &value) {
 }
 
 int main(int argc, char **argv) {
-  unsigned glyph = 0, ppem = 0;
-  if (argc != 4 || !number(argv[2], glyph) || !number(argv[3], ppem) || !ppem || ppem > 65535) return 2;
+  unsigned glyph = 0, ppem = 0, palette = 0;
+  hb_variation_t variation;
+  if (argc == 6 && (!number(argv[4], palette) || !hb_variation_from_string(argv[5], -1, &variation))) return 2;
+  if ((argc != 4 && argc != 6) || !number(argv[2], glyph) || !number(argv[3], ppem) || !ppem || ppem > 65535) return 2;
   hb_blob_t *blob = hb_blob_create_from_file_or_fail(argv[1]);
   if (!blob) return 1;
   hb_face_t *face = hb_face_create(blob, 0);
   hb_font_t *font = hb_font_create(face);
   hb_ot_font_set_funcs(font);
+  if (argc == 6) hb_font_set_variations(font, &variation, 1);
   unsigned upem = hb_face_get_upem(face);
   hb_font_set_scale(font, upem, upem);
   hb_font_set_ppem(font, ppem, ppem);
@@ -28,7 +31,7 @@ int main(int argc, char **argv) {
   if (!paint || !upem || glyph >= hb_face_get_glyph_count(face)) return 1;
   float scale = static_cast<float>(ppem) / upem;
   hb_raster_paint_set_transform(paint, scale, 0, 0, scale, 0, 0);
-  hb_raster_paint_set_palette(paint, 0);
+  hb_raster_paint_set_palette(paint, palette);
   hb_raster_paint_set_foreground(paint, HB_COLOR(0, 0, 0, 255));
   if (!hb_raster_paint_glyph_or_fail(paint, font, glyph)) return 1;
   hb_raster_image_t *image = hb_raster_paint_render(paint);

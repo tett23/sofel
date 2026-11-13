@@ -1,5 +1,6 @@
 //! C ABI for ADR 0062 layout queries.
 
+use sofel_font::LayoutTable;
 use sofel_font::layout_query::{LayoutQueries, MathGlyphPart, MathGlyphVariant, MathKernEntry};
 use sofel_font::read::{GlyphId, Tag, math::Corner};
 
@@ -59,6 +60,54 @@ fn corner(value: i32) -> Result<Corner, i32> {
         3 => Ok(Corner::BottomLeft),
         _ => Err(ERROR_INVALID_ARGUMENT),
     }
+}
+
+/// Copy one page of GSUB or GPOS FeatureList tags (sofel ADR 0075).
+///
+/// # Safety
+///
+/// `font` is NULL or live; outputs are NULL or writable for the given
+/// capacity and do not alias one another.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_font_feature_tags(
+    font: *const SofelFont,
+    table_tag: u32,
+    start: u32,
+    tags: *mut u32,
+    capacity: u32,
+    written: *mut u32,
+    total: *mut u32,
+) -> i32 {
+    // SAFETY: the caller provides live handles and disjoint writable outputs.
+    let (font, tags, written, total) = unsafe {
+        (
+            r(font),
+            out_array(tags, usize::try_from(capacity).unwrap_or(usize::MAX)),
+            w(written),
+            w(total),
+        )
+    };
+    status((|| -> Status {
+        let (font, tags, written, total) = (some(font)?, some(tags)?, some(written)?, some(total)?);
+        let table = match table_tag {
+            t if t == Tag::new(b"GSUB").to_u32() => LayoutTable::Gsub,
+            t if t == Tag::new(b"GPOS").to_u32() => LayoutTable::Gpos,
+            _ => return Err(ERROR_INVALID_ARGUMENT),
+        };
+        let (_, count) = font.font.feature_tags(table, start, &mut []);
+        let start = usize::try_from(start).unwrap_or(usize::MAX).min(count);
+        let len = count.saturating_sub(start).min(tags.len());
+        let mut page = vec![Tag::new(&[0; 4]); len];
+        let (copied, count) =
+            font.font
+                .feature_tags(table, u32::try_from(start).unwrap_or(u32::MAX), &mut page);
+        for (dst, tag) in tags.iter_mut().zip(page.iter()).take(copied) {
+            *dst = tag.to_u32();
+        }
+        *written = u32::try_from(copied).unwrap_or(u32::MAX);
+        *total = u32::try_from(count).unwrap_or(u32::MAX);
+        Ok(())
+    })())
 }
 
 fn page<T, U>(

@@ -7,6 +7,7 @@ pub const WIDTH: usize = 490;
 pub const HEIGHT: usize = 232;
 pub const SAMPLE_TOP: usize = 35;
 pub const SAMPLE_HEIGHT: usize = 128;
+const SAMPLE_GAP: usize = 4;
 pub const RUN_X: usize = 152;
 pub const COLUMNS: usize = 3;
 
@@ -17,7 +18,7 @@ pub fn card(
 ) -> Result<Image, String> {
     let mut card = pixels::blank(WIDTH, HEIGHT)?;
     for (image, x, max_width) in [
-        (solo, PADDING, RUN_X - 2 * PADDING),
+        (solo, PADDING, RUN_X - PADDING - SAMPLE_GAP),
         (run, RUN_X, WIDTH - RUN_X - PADDING),
     ] {
         let Some(image) = image else {
