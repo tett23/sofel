@@ -50,6 +50,7 @@ pub struct BdfFont {
     bits_per_pixel: u8,
     glyphs: Vec<Glyph>,
     default_glyph: usize,
+    encoded_count: usize,
 }
 
 impl BdfFont {
@@ -208,11 +209,12 @@ impl BdfFont {
             return Err(BdfError);
         }
         glyphs.sort_by_key(|glyph| glyph.encoding.unwrap_or(u32::MAX));
+        let encoded_count = glyphs.partition_point(|g| g.encoding.is_some());
         let default_glyph = default_char
             .and_then(|codepoint| {
                 glyphs
                     .iter()
-                    .position(|glyph| glyph.encoding == Some(codepoint))
+                    .rposition(|glyph| glyph.encoding.unwrap_or(0) == codepoint)
             })
             .unwrap_or(0);
         let mul_div = |a: u32, b: u32, divisor: u32| {
@@ -245,6 +247,7 @@ impl BdfFont {
             bits_per_pixel,
             glyphs,
             default_glyph,
+            encoded_count,
         })
     }
 
@@ -262,10 +265,29 @@ impl BdfFont {
     }
     /// Map a Unicode scalar to FreeType's one-based glyph ID.
     pub fn nominal_glyph(&self, codepoint: u32) -> Option<u32> {
-        self.glyphs
-            .iter()
-            .position(|g| g.encoding == Some(codepoint))
-            .and_then(|i| u32::try_from(i.saturating_add(1)).ok())
+        let mut low = 0;
+        let mut high = self.encoded_count;
+        let mut mid = high / 2;
+        while low < high {
+            let code = self.glyphs.get(mid)?.encoding?;
+            match codepoint.cmp(&code) {
+                core::cmp::Ordering::Equal => {
+                    // FreeType's BDF cmap stores and returns a 16-bit glyph index.
+                    let id = u16::try_from(mid & 0xffff).ok()?.wrapping_add(1);
+                    return (id != 0).then_some(u32::from(id));
+                }
+                core::cmp::Ordering::Less => high = mid,
+                core::cmp::Ordering::Greater => low = mid.checked_add(1)?,
+            }
+            // FreeType predicts the next index from the distance between character codes.
+            let step = i64::from(codepoint).saturating_sub(i64::from(code));
+            mid = isize::try_from(step)
+                .ok()
+                .and_then(|delta| mid.checked_add_signed(delta))
+                .filter(|index| (low..high).contains(index))
+                .unwrap_or_else(|| low.midpoint(high));
+        }
+        None
     }
     /// Return a glyph by FreeType glyph ID. ID zero uses the first glyph.
     pub fn glyph(&self, id: u32) -> Option<&Glyph> {
