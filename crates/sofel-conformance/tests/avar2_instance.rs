@@ -87,6 +87,14 @@ fn adr0061_i1_avar2_self_contained_pin_plus_range_match_harfbuzz() {
 }
 
 #[test]
+fn adr0061_i1_avar2_moved_default_plus_self_contained_pin_matches_harfbuzz() {
+    compare_axes(&[
+        (b"wght", 190.0, 550.0, 900.0),
+        (b"wdth", 150.0, 150.0, 150.0),
+    ]);
+}
+
+#[test]
 fn adr0061_i1_avar2_shared_default_and_self_contained_pin_match_harfbuzz() {
     compare_axes(&[(b"XOPQ", 88.0, 88.0, 88.0), (b"wdth", 100.0, 100.0, 100.0)]);
 }
