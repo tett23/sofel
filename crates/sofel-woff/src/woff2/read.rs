@@ -59,16 +59,29 @@ fn collection_directory(
             return Err(error(remaining, "invalid collection face flavor"));
         }
         let mut indices = Vec::with_capacity(tables);
+        let mut glyf = None;
+        let mut loca = None;
         for _ in 0..tables {
             let before = *remaining;
             let index = usize::from(
                 super::glyf::uint255(remaining)
                     .ok_or(error(before, "truncated collection table index"))?,
             );
-            if index >= entries.len() {
-                return Err(error(before, "invalid collection table index"));
+            let entry = entries
+                .get(index)
+                .ok_or(error(before, "invalid collection table index"))?;
+            if entry.tag == super::Tag::new(b"glyf") {
+                glyf = Some(index);
+            } else if entry.tag == super::Tag::new(b"loca") {
+                loca = Some(index);
             }
             indices.push(index);
+        }
+        if glyf.and_then(|index| index.checked_add(1)) != loca {
+            return Err(error(
+                remaining,
+                "collection glyf and loca must be consecutive",
+            ));
         }
         faces.push(CollectionFace { flavor, indices });
     }
@@ -545,6 +558,22 @@ mod transformed_outline_tests {
 mod collection_tests {
     use super::*;
     use sofel_read::{Tag, sfnt::Collection};
+
+    #[test]
+    fn adr0065_i2_collection_rejects_nonconsecutive_untransformed_glyf_loca() {
+        let mut input = [0; 48].to_vec();
+        input[..8].copy_from_slice(b"wOF2ttcf");
+        input[12..14].copy_from_slice(&3u16.to_be_bytes());
+        input[16..20].copy_from_slice(&88u32.to_be_bytes());
+        let packed = crate::compress::brotli(&[0; 6]);
+        input[20..24].copy_from_slice(&u32::try_from(packed.len()).unwrap().to_be_bytes());
+        input.extend([0xca, 2, 1, 2, 0xcb, 2]);
+        input.extend([0, 1, 0, 0, 1, 3, 0, 1, 0, 0, 0, 1, 2]);
+        input.extend(packed);
+        let length = u32::try_from(input.len()).unwrap();
+        input[8..12].copy_from_slice(&length.to_be_bytes());
+        assert!(decode_woff2(&input, 88).is_err());
+    }
 
     #[test]
     fn adr0065_i1_collection_restores_each_faces_transformed_metrics() {
