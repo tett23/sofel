@@ -191,6 +191,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 ## 輪郭（`sofel-outline`）
 
+- `Outlines::load_with_hint` と C API の `sofel_outline_load_with_hint` は ppem、ヒンティングモード、ターゲットをロード時に受け取り、輪郭と水平アドバンスを返す。ヒンティングモードはなし、TrueType v35、TrueType v40、自動ヒンティングを指定する。自動ヒンティングは空輪郭の送り幅だけをグリッドに合わせる。非空輪郭の自動ヒンティングは Rust では `AutoHintUnsupported`、C API では `SOFEL_ERROR_UNSUPPORTED` を返す（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
 - `Outlines::load_truetype_v35` は指定した ppem で TrueType の単純グリフと複合グリフを読み、v35 のネイティブヒンティングを適用する。ロード時に NORMAL、LIGHT、MONO、LCD、LCD_V のターゲットを選ぶ。`load_truetype_mono` は MONO を使う。フォントプログラムと準備プログラムを実行し、グリフ命令が更新した輪郭を `Scratch::points` で返す。`point_tags` では各点のタグ（ヒンタが移動対象にした軸とドロップアウト制御を含む）、`contour_ends` では各輪郭の最終点の番号を取得できる。複合グリフでは、各成分にヒンティングを適用して配置した後、複合グリフ自身の命令を実行する。未対応の命令は `InvalidOutline` を返す（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。 `Outlines::load_truetype_v40` と C API の `sofel_outline_load_truetype_v40` は同じ5種類のターゲットで v40 の補正を適用し、輪郭と補正後の水平アドバンス（26.6 固定小数点）を返す。
 
 - glyfと `GLYF` の単純なグリフと合成グリフの輪郭を、ヒンティングをせずに、FreeTypeと同じ座標で `Pen` に渡す（[ADR 0011](adr/0011-glyf-outlines.md)）。`GLYF` があれば `GLYF` と `LOCA` を使い、そのときだけフラグ0x80を三次曲線、0x2000を24bitの成分のグリフIDとして扱う。
@@ -403,10 +404,11 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 名前の表では、上書きの指定でレコードを追加・置換し、空文字列を指定したレコードを削除する。
 - 軸を指定しない BASE 1.1 の ItemVariationStore は、残すスクリプトとフィーチャに属する横と縦の BaseCoord の VariationIndex を集め、使う行と領域だけを詰めて番号を振りなおす。参照が0件なら、HarfBuzzと同じくストアを除いて座標を残す。BaseValues、既定の MinMax、言語別とフィーチャ別の MinMax を調べ、壊れた参照はこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
 - 軸を指定しないGDEF 1.3のItemVariationStoreは、コピーするGSUBのFeatureVariationsがバージョン1.0で軸範囲の条件だけを持つ場合も含めて、残すLigCaretList、値の記録、アンカー、MATHの定数・斜体補正・上アクセント・カーニング・組み立てのVariationIndexに合わせて行と領域を詰めて書く。参照が0件ならストアを除く。GPOSの値の記録とアンカーをたどってVariationIndexを集める。送り幅などの値に現れる `0x8000` は参照に数えない。MATHだけをコピーするときは、除去したグリフの記録も含め、すべてのVariationIndexがGDEFの再配置後に元の行を指すことを確かめる。MATHだけをコピーして参照番号を合わせられない場合と、同じバイト列があるGPOSをそのままコピーする場合は拒否する。GDEFだけをコピーしてGPOSやMATHをサブセット化するとき、HarfBuzzと同じくそれらの参照番号を詰め、GDEFのストアは元のバイト列のまま写す。壊れたGDEFはこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
-- GSUB・GPOS 版1.2 のサブセット化では、ScriptList、FeatureList、LookupList を32ビットのオフセットで出力する。LookupList 内のオフセット幅は入力のリストに従う（[ADR 0022](adr/0022-subsetting.md)）。
+- GSUB・GPOS の版1.2は、ScriptList、FeatureList、LookupList ごとに32ビットのオフセットを使い、値が0なら対応する16ビットのオフセットから読む。サブセット出力は版1.2を保ち、3つのリストへのオフセットを32ビットで書く。LookupList 内の各 lookup へのオフセット幅は固定版 HarfBuzz と同じく入力の幅を保つ。
+- GSUB・GPOS の Coverage 形式3・4では、24ビットのグリフ ID と範囲を使ってサブセットに残すグリフを決める。ClassDef 形式3・4のグリフクラス、SingleSubst 形式3・4の置換、SinglePos 形式3・4の位置調整も引き継ぐ。元のグリフ ID が 65535 を超えていても、出力 ID がすべて 65535 以下なら再採番してレイアウトを出力する（[ADR 0022](adr/0022-subsetting.md)）。
 - GDEF 版1.4 は、各サブテーブルの32ビットオフセットが非ゼロの場合にそちらを使う。拡張オフセットを使う入力は版1.4で書き出す。合字キャレット一覧では32ビットの Coverage オフセットと24ビットの件数・合字オフセットを扱う（[ADR 0022](adr/0022-subsetting.md)）。
 - [ADR 0022](adr/0022-subsetting.md) のFeatureVariations版1.1では、残すフィーチャのLookupVariationRecordからlookupと条件形式2のVariationIndexを集める。軸を指定しないときは条件形式1〜5を保ち、部分軸指定では一定になる条件を評価し、残る条件木とlookup番号を書き直す。条件が参照するGDEFのItemVariationStoreは、使う行を残して参照番号を更新する。[ADR 0061](adr/0061-subset-axis-instancing.md) の軸固定では、条件値の符号が丸めで変わらない倍率で必要な行をprivate rowにし、全軸固定で有効なlookupをフィーチャに加える。
-- レイアウトの表のうち、FeatureVariationsを持つGSUBをそのままコピーする場合のGDEF、FeatureVariations版1.0の形式1でない条件、65536を超えるグリフのフォントの24bitの形式も `Unsupported` とする。
+- レイアウトの表のうち、GDEF の変動インデックスを参照する FeatureVariations を持つ GSUB・GPOS をそのままコピーし、GDEF のストアをサブセット化する場合、GSUBとGPOSの版1.2を超える版、FeatureVariations版1.0の形式1でない条件（軸を指定しない形式0・2〜5の条件を除く）、出力に 65535 を超えるグリフ ID を割り当て、GSUB・GPOS で SingleSubst・MultipleSubst・AlternateSubst・LigatureSubst・ReverseChainSingleSubst・SinglePos・PairPos・CursivePos・マーク位置調整（MarkBasePos・MarkLigPos・MarkMarkPos）の形式1・2・文脈置換／位置調整と連鎖文脈置換／位置調整の形式1〜3・6以外のサブテーブルを持つ lookup を残す場合も `Unsupported` とする。文脈・連鎖文脈の形式1では、元の ID が 65535 以下のグリフに 65535 を超える出力 ID を割り当てる場合も `Unsupported` とする。形式1のルールはグリフ ID を16ビットで記録する。
 
 ## WOFF と圧縮フォントの読み込み
 
@@ -448,6 +450,12 @@ PE32 では `RT_FONT` の名前・言語ディレクトリを順にたどり、�
 `sofel-render` は PFA と PFB を通常入力として開き、`--glyph` またはグリフ名から導いた Unicode の `--char` の Type 1 輪郭をヒンティングなしで PGM に描く。`sofel render --text` では Type1 フェイスの `SubFont` で形にして同じ輪郭を描く。`sofel-outline::draw_type1` は Type 1 の hsbw、sbw、移動、線、曲線、局所サブルーチンを読み、未対応命令または破損した charstring をエラーにする。`closepath` のあとも charstring の現在位置を保持する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
 横書きでは、Type1 フェイスを `SubFont::from_type1` に渡し、`shape_with_subfont` で文字列を組む。グリフ名から Unicode に対応するグリフを選び、送り幅と付加済みの AFM・PFM のカーニングを使う。`kern=0` を指定した範囲ではカーニングを適用しない。
+
+`sofel-type1::cid::CidFace` は CID-keyed Type 1 のバイナリまたは16進データを読み、CIDMap から CID の Font DICT と charstring の範囲を選ぶ。各 Font DICT の `lenIV` に従って charstring とローカルのサブルーチンを復号する。`FontMatrix` は FreeType と同じく `yy` の絶対値で正規化し、輪郭と送り幅に適用する。`yy` が0なら変換は零行列になる。フェイスの units per em は、`yy` の絶対値が標準の 0.001 と異なる Font DICT の値を読み込み順で更新する。CIDMap とサブルーチンマップの長さを開くときに、charstring とサブルーチンのオフセットを問い合わせ時に入力範囲内で検査する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+`sofel-outline::draw_cid` は CID の Type 1 charstring から、移動・直線・三次曲線の基本命令をヒンティングなしで描画する。未対応の命令を含む charstring はエラーを返す。
+`sofel-render --glyph` は CID-keyed Type 1 を通常のファイル入力から開き、対応済みの輪郭を PGM に描く。Unicode cmap を持たない CID フォントに対する `--char` はエラーを返す。
+
+`sofel-validate` は CID-keyed Type 1 を識別し、CIDMap とサブルーチンマップが切り詰められた場合は最初の欠落位置を、16進データに無効なバイトがある場合はそのバイト位置を、ヘッダの数値が不正な場合は値の位置を、FontMatrix が不正な場合はフィールドの位置を、ファイル先頭からのオフセットとして報告する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
 `sofel-type1::type42::Type42Source` は Type42 の `/sfnts` 配列の16進文字列または `RD` バイナリを連結し、展開長と sfnt の表範囲を検査する。`/Encoding` と `/CharStrings` から Type42 のグリフ番号を読み、`.notdef` を先頭に置く。Unicode の文字対応は PostScript のグリフ名を Adobe Glyph List と `uniXXXX`・`uXXXXX` によって変換し、8ビットの Encoding は別に問い合わせる。`Font::from_type42` が返す `Type42Face` は Type42 のグリフ番号を埋め込み TrueType のグリフ番号へ変換し、送りを返す。輪郭を読むときは `embedded_glyph` と `inner_font` の組を使う（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
