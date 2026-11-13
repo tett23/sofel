@@ -5,9 +5,9 @@
 use alloc::vec::Vec;
 
 use sofel_font::Type1Face;
-use sofel_geom::{Pen, Point, mul_fix};
+use sofel_geom::{FnPen, Pen, Point, mul_fix};
 
-use crate::{CBox, OutlineError, OutlineInfo, Scale};
+use crate::{CBox, HintTarget, OutlineError, OutlineInfo, Scale, ps_native};
 
 /// Draw one PFA or PFB Type 1 glyph by glyph index.
 /// Unsupported Type 1 operators return [`OutlineError::InvalidCharString`].
@@ -20,10 +20,45 @@ pub fn draw_type1(
     let program = face
         .glyph_program(glyph)
         .ok_or(OutlineError::InvalidGlyphIndex)?;
-    let mut state = State::new(scale, [65536, 0, 0, 65536, 0, 0], pen);
+    let mut state = State::new(scale, [65536, 0, 0, 65536, 0, 0], false, pen);
     let mut stack = Vec::new();
     decode_program(face, &program, &mut state, &mut stack, 0, false)?;
     Ok(state.info())
+}
+
+/// Draw a stemless Type 1 glyph at Adobe's native path scale and return its
+/// grid-fitted horizontal advance. The caller supplies FreeType's 16.16 size
+/// scale; glyphs with stems remain unsupported.
+pub fn draw_type1_native(
+    face: &Type1Face<'_>,
+    glyph: usize,
+    scale: Scale,
+    _target: HintTarget,
+    pen: &mut impl Pen,
+) -> Result<(OutlineInfo, i32), OutlineError> {
+    let Scale::Scaled { x, .. } = scale else {
+        return Err(OutlineError::InvalidOutline);
+    };
+    let program = face
+        .glyph_program(glyph)
+        .ok_or(OutlineError::InvalidGlyphIndex)?;
+    let mut null_pen = FnPen(|_| {});
+    let mut scan = State::new(
+        Scale::Unscaled,
+        [65536, 0, 0, 65536, 0, 0],
+        false,
+        &mut null_pen,
+    );
+    decode_program(face, &program, &mut scan, &mut Vec::new(), 0, false)?;
+    if scan.has_stems {
+        return Err(OutlineError::UnsupportedFormat);
+    }
+    let mut state = State::new(scale, [65536, 0, 0, 65536, 0, 0], true, pen);
+    decode_program(face, &program, &mut state, &mut Vec::new(), 0, false)?;
+    let metrics = face
+        .glyph_metrics(glyph)
+        .ok_or(OutlineError::InvalidCharString)?;
+    Ok((state.info(), ps_native::advance(metrics.advance_x, x)))
 }
 
 fn decode_program<P: Pen>(
@@ -79,7 +114,10 @@ fn decode_program<P: Pen>(
                 stack.push(i64::from(i32::from_be_bytes(bytes)) << 16);
                 at = end;
             }
-            1 | 3 => stack.clear(), // hstem and vstem: no hinting
+            1 | 3 => {
+                state.has_stems = true;
+                stack.clear();
+            }
             13 => {
                 let [side, _advance] = take(stack)?;
                 state.x = side;
@@ -151,7 +189,11 @@ fn decode_program<P: Pen>(
                 let escape = *program.get(at).ok_or(OutlineError::InvalidCharString)?;
                 at = at.checked_add(1).ok_or(OutlineError::InvalidCharString)?;
                 match escape {
-                    0..=2 => stack.clear(), // dotsection, vstem3, hstem3
+                    0 => stack.clear(), // dotsection
+                    1 | 2 => {
+                        state.has_stems = true;
+                        stack.clear();
+                    }
                     16 => {
                         let subr_no = stack.pop().ok_or(OutlineError::InvalidCharString)? >> 16;
                         let arg_count = usize::try_from(
@@ -274,10 +316,12 @@ struct State<'a, P: Pen> {
     emitted: bool,
     box_: Option<CBox>,
     pending_pops: usize,
+    has_stems: bool,
+    native: bool,
 }
 
 impl<'a, P: Pen> State<'a, P> {
-    fn new(scale: Scale, matrix: [i32; 6], pen: &'a mut P) -> Self {
+    fn new(scale: Scale, matrix: [i32; 6], native: bool, pen: &'a mut P) -> Self {
         Self {
             scale,
             matrix,
@@ -288,10 +332,22 @@ impl<'a, P: Pen> State<'a, P> {
             emitted: false,
             box_: None,
             pending_pops: 0,
+            has_stems: false,
+            native,
         }
     }
 
     fn point(&mut self, x: i64, y: i64) -> Point {
+        if self.native
+            && let Scale::Scaled { x: sx, y: sy } = self.scale
+        {
+            let p = Point {
+                x: ps_native::coordinate_fixed(x, sx),
+                y: ps_native::coordinate_fixed(y, sy),
+            };
+            self.update_box(p);
+            return p;
+        }
         let x = i32::try_from(x >> 16).unwrap_or(if x < 0 { i32::MIN } else { i32::MAX });
         let y = i32::try_from(y >> 16).unwrap_or(if y < 0 { i32::MIN } else { i32::MAX });
         let [xx, yx, xy, yy, dx, dy] = self.matrix;
@@ -311,6 +367,11 @@ impl<'a, P: Pen> State<'a, P> {
                 y: mul_fix(transformed_y, sy.0),
             },
         };
+        self.update_box(p);
+        p
+    }
+
+    fn update_box(&mut self, p: Point) {
         match &mut self.box_ {
             Some(bounds) => {
                 bounds.x_min = bounds.x_min.min(p.x);
@@ -327,7 +388,6 @@ impl<'a, P: Pen> State<'a, P> {
                 })
             }
         }
-        p
     }
 
     fn move_by(&mut self, dx: i64, dy: i64) -> Result<(), OutlineError> {

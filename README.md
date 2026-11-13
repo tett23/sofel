@@ -106,6 +106,8 @@ TrueType の単純グリフと複合グリフには、`Outlines::load_truetype_v
 
 CFF 1 の charstring に stem がない場合、`load_with_hint` のネイティブ指定は点座標と送り幅を FreeType の Adobe 経路に合わせる。stem を持つ CFF 1 と CFF2 のネイティブヒンティングは未対応である（[ADR 0064](docs/adr/0064-freetype-hinting-and-render-modes.md)）。
 
+PFA・PFB の Type1 と CID キーの Type1 では、`draw_type1_native` と `draw_cid_native` が stem のない charstring を FreeType の Adobe 経路のスケールで描き、グリッドに合わせた水平アドバンスを返す。呼び出し側が 16.16 形式のサイズスケールとヒンティングターゲットを渡す。stem を持つ charstring は未対応エラーを返す（[ADR 0064](docs/adr/0064-freetype-hinting-and-render-modes.md)）。
+
 FreeTypeの合成操作には、`sofel-outline::Scratch` のスロット用の斜体と太字、`sofel-bitmap` の画素形式変換と太字を使う。ビットマップの太字では `embolden_bitmap_slot` が画像とスロットのメトリクス、配置を合わせて更新する。HarfBuzzに合わせた輪郭の命令は、glyfを `Scratch::hb_decompose`、CFFとCFF2を `HbExtents::cff_glyph_path` から得る。画像を含むカラーグリフの合成斜体は、`sofel-color::paint_recording_at_with_slant` が描画命令を変換で包む（[ADR 0063](docs/adr/0063-font-functions-and-synthesis.md)）。
 
 `sofel-validate` は CFF2 の FDSelect フォーマット4を互換性の警告として報告する。ほかにエラーがなければ検証は成功する（[ADR 0056](docs/adr/0056-cff2-fdselect-format4-warning.md)）。
