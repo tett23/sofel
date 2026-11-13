@@ -74,6 +74,7 @@ mod stroke_line;
 mod stroke_trig;
 mod tt_hint;
 mod tt_policy;
+mod type1_cid;
 pub use tt_hint::HintTarget;
 mod varc_draw;
 
@@ -83,6 +84,7 @@ pub use hb_cff::{HbExtents, cff1_extents, cff2_extents, cff2_extents_at};
 pub use slot_synth::SlotMetrics;
 pub use sofel_geom::FloatCommand as HbOutlineCommand;
 pub use stroke::{StrokeBorder, StrokeError, StrokeJoin, StrokeStyle};
+pub use type1_cid::draw_cid;
 
 use alloc::vec::Vec;
 use core::fmt;
@@ -620,11 +622,21 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
             HintMode::NativeV40 => self.load_truetype_v40(glyph, ppem, target, scratch),
             HintMode::Auto => {
                 let scale = Scale::pixels(&self.font, ppem, ppem);
-                let info = self.load(glyph, scale, scratch)?;
-                if !scratch.points.is_empty() {
+                let unscaled = self.load(glyph, Scale::Unscaled, scratch)?;
+                let info = if scratch.points.is_empty() {
+                    unscaled
+                } else if matches!(self.format, Format::Glyf)
+                    && !unscaled.overlap
+                    && self.font.table(Tag::new(b"gvar")).is_none()
+                    && self.font.table(Tag::new(b"GLYF")).is_none()
+                    && auto_latin_fallback(&self.font, glyph)
+                    && auto_unlinked_parallelogram(scratch, self.font.units_per_em())
+                {
+                    self.load(glyph, scale, scratch)?
+                } else {
                     scratch.clear();
                     return Err(OutlineError::AutoHintUnsupported);
-                }
+                };
                 let Scale::Scaled { x, .. } = scale else {
                     return Err(OutlineError::InvalidOutline);
                 };
@@ -685,6 +697,109 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
                 Err(*e)
             }
         }
+    }
+}
+
+// A Latin-only Unicode cmap with no GSUB lookup leaves unmapped glyphs in
+// FreeType's CJK fallback style. See afglobal.c:157-283 (FreeType 2.15.0).
+fn auto_latin_fallback(font: &Font<'_>, glyph: GlyphId) -> bool {
+    use sofel_font::read::cmap::{Cmap, TAG as CMAP_TAG};
+
+    let Some(data) = font.table(CMAP_TAG) else {
+        return false;
+    };
+    let Ok(cmap) = Cmap::new(data) else {
+        return false;
+    };
+    let mut has_unicode = false;
+    let mut mappings = 0usize;
+    for record in cmap
+        .records()
+        .filter(|r| r.platform_id == 0 || (r.platform_id == 3 && matches!(r.encoding_id, 1 | 10)))
+    {
+        let Ok(subtable) = record.subtable() else {
+            return false;
+        };
+        if matches!(subtable.format(), 14 | 15) {
+            continue;
+        }
+        has_unicode = true;
+        for (cp, g) in subtable.mappings() {
+            mappings = mappings.saturating_add(1);
+            if mappings > 1024 || g == glyph || !matches!(cp, 0x20..=0x7f | 0x100..=0x24f) {
+                return false;
+            }
+        }
+    }
+    has_unicode && auto_no_gsub_lookups(font)
+}
+
+fn auto_no_gsub_lookups(font: &Font<'_>) -> bool {
+    let Some(gsub) = font.table(Tag::new(b"GSUB")) else {
+        return true;
+    };
+    if gsub.get(0..4) != Some([0, 1, 0, 0].as_slice()) {
+        return false;
+    }
+    let Some(offset) = gsub
+        .get(8..10)
+        .and_then(|bytes| bytes.try_into().ok())
+        .map(u16::from_be_bytes)
+        .map(usize::from)
+    else {
+        return false;
+    };
+    offset >= 10 && matches!(gsub.get(offset..offset.saturating_add(2)), Some([0, 0]))
+}
+
+// In the CJK fallback, these disjoint horizontal segments cannot link into
+// a stem. With no CJK cmap samples, there are no active blue zones; neither
+// dimension moves its edges (afcjk.c:1790-2165, FreeType 2.15.0).
+// Each coordinate is i32: differences and their 14-fold products fit in i64.
+#[allow(clippy::arithmetic_side_effects)]
+fn auto_unlinked_parallelogram(scratch: &Scratch, upem: u16) -> bool {
+    let [p0, p1, p2, p3] = scratch.points.as_slice() else {
+        return false;
+    };
+    let dy = i64::from(p1.y) - i64::from(p0.y);
+    let side1 = i64::from(p1.x) - i64::from(p0.x);
+    let side2 = i64::from(p2.x) - i64::from(p3.x);
+    let near = 20 * i64::from(upem) / 2048;
+    let enough = (side1 + dy >= near * 2)
+        && (side2 + dy >= near * 2)
+        && (i64::from(p3.x) - i64::from(p0.x) >= near * 2)
+        && (i64::from(p2.x) - i64::from(p1.x) >= near * 2);
+    let slanted = dy <= 14 * side1 && side1 <= 14 * dy && dy <= 14 * side2 && side2 <= 14 * dy;
+    scratch.ends == [3]
+        && scratch.tags.iter().all(|tag| *tag == TAG_ON)
+        && p0.y == p3.y
+        && p1.y == p2.y
+        && p0.y < p1.y
+        && p0.x < p3.x
+        && p3.x < p1.x
+        && p1.x < p2.x
+        && enough
+        && slanted
+}
+
+#[cfg(test)]
+mod auto_shape_tests {
+    use super::*;
+
+    #[test]
+    fn adr0064_i1_near_vertical_fallback_shape_requires_real_hinting() {
+        let scratch = Scratch {
+            points: Vec::from([
+                Point { x: 0, y: 0 },
+                Point { x: 3, y: 1000 },
+                Point { x: 5, y: 1000 },
+                Point { x: 2, y: 0 },
+            ]),
+            tags: Vec::from([TAG_ON; 4]),
+            ends: Vec::from([3]),
+            ..Default::default()
+        };
+        assert!(!auto_unlinked_parallelogram(&scratch, 2048));
     }
 }
 
