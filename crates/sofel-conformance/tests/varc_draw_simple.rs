@@ -619,7 +619,7 @@ fn adr0067_i2_unrelated_axis_pin_with_gvar_dropped_matches_harfbuzz() {
                 .unwrap();
             assert!(output.status.success());
             let expected = std::fs::read(&reference).unwrap();
-            assert_eq!(ours, expected);
+            assert_eq!(ours, expected, "{file} {variation}");
             let _ = std::fs::remove_file(reference);
         }
     }
@@ -767,7 +767,7 @@ fn adr0067_i2_avar2_range_preserves_gvar_matches_harfbuzz() {
         assert!(reference.status.success());
         let expected = std::fs::read(&output).unwrap();
         std::fs::remove_file(output).unwrap();
-        assert_eq!(ours, expected);
+        assert_eq!(ours, expected, "{variation}");
     }
 }
 

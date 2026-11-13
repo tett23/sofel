@@ -227,6 +227,12 @@ pub(crate) struct Normalized {
     pub user: BTreeMap<Tag, AxisRange>,
     /// `axes_location`: the normalized ranges.
     pub axes_location: BTreeMap<Tag, AxisRange>,
+    /// Requested ranges in the original avar v1 intermediate coordinates.
+    pub old_intermediates: BTreeMap<Tag, AxisRange>,
+    /// Conservative reachable final-coordinate bounds for avar2.
+    pub avar2_reachable: BTreeMap<Tag, AxisRange>,
+    /// Final coordinates of avar2 pins whose deltas are constant.
+    pub avar2_self_contained: BTreeMap<Tag, f32>,
     /// `normalized_coords`: per `fvar` axis, in 2.14; empty when no axis
     /// is set.
     pub normalized_coords: Vec<i32>,
