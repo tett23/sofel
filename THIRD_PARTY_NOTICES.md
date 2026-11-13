@@ -297,7 +297,7 @@ PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
 
 ## musl
 
-`sofel-geom`'s `src/trigf.rs` ports `src/math/sincosf.c`, `src/math/tanf.c`, `src/math/__sindf.c`, `src/math/__cosdf.c`, `src/math/__tandf.c`, `src/math/__rem_pio2f.c` and the `ipio2` table of `src/math/__rem_pio2_large.c` from musl 1.2.6 (commit `bd54dc3e8049b9c7db092905e743cdebbb8864f3`), licensed under the MIT license ([ADR 0023](docs/adr/0023-color-glyphs.md)). These files come from FreeBSD's msun and carry the Sun Microsystems notice below.
+`sofel-geom`'s `src/trigf.rs` ports `src/math/sincosf.c`, `src/math/tanf.c`, `src/math/__sindf.c`, `src/math/__cosdf.c`, `src/math/__tandf.c`, `src/math/__rem_pio2f.c` and the `ipio2` table of `src/math/__rem_pio2_large.c` from musl 1.2.6 (commit `bd54dc3e8049b9c7db092905e743cdebbb8864f3`), licensed under the MIT license ([ADR 0023](docs/adr/0023-color-glyphs.md)). The VARC reference builder also includes copies of those C files and `src/internal/libm.h` under `tools/hb-varc-reference/musl/`. The mathematical functions come from FreeBSD's msun and carry the Sun Microsystems notice below.
 
 ```
 Copyright © 2005-2020 Rich Felker, et al.
