@@ -33,30 +33,35 @@ impl Type1Source {
 
     /// Read a PFA font with ASCII hexadecimal eexec data.
     pub fn parse_pfa(data: &[u8], max_output: usize) -> Result<Self, SourceError> {
+        Self::parse_pfa_with_offset(data, max_output).map_err(|_| SourceError)
+    }
+
+    /// Read a PFA source and report a file-relative failure offset.
+    pub fn parse_pfa_with_offset(data: &[u8], max_output: usize) -> Result<Self, usize> {
         if !Self::has_text_header(data) {
-            return Err(SourceError);
+            return Err(0);
         }
         let marker = data
             .windows(5)
             .position(|window| window == b"eexec")
-            .ok_or(SourceError)?;
-        let after = marker.checked_add(5).ok_or(SourceError)?;
+            .ok_or(data.len())?;
+        let after = marker.checked_add(5).ok_or(data.len())?;
         let line_end = data
             .get(after..)
-            .ok_or(SourceError)?
+            .ok_or(data.len())?
             .iter()
             .position(|byte| *byte == b'\n')
-            .ok_or(SourceError)?;
+            .ok_or(data.len())?;
         let start = after
             .checked_add(line_end)
             .and_then(|n| n.checked_add(1))
-            .ok_or(SourceError)?;
+            .ok_or(data.len())?;
         let mut cipher = Vec::new();
         let mut high = None;
         let mut ended = false;
         for line in data
             .get(start..)
-            .ok_or(SourceError)?
+            .ok_or(data.len())?
             .split(|byte| *byte == b'\n')
         {
             let line = line.trim_ascii();
@@ -64,14 +69,15 @@ impl Type1Source {
                 ended = true;
                 break;
             }
-            for &byte in line {
+            let base = (line.as_ptr() as usize).saturating_sub(data.as_ptr() as usize);
+            for (index, &byte) in line.iter().enumerate() {
                 if byte.is_ascii_whitespace() {
                     continue;
                 }
-                let nibble = hex_nibble(byte).ok_or(SourceError)?;
+                let nibble = hex_nibble(byte).ok_or(base.saturating_add(index))?;
                 if let Some(upper) = high.take() {
                     if cipher.len() >= max_output {
-                        return Err(SourceError);
+                        return Err(data.len());
                     }
                     cipher.push((upper << 4) | nibble);
                 } else {
@@ -80,24 +86,29 @@ impl Type1Source {
             }
         }
         if !ended || high.is_some() {
-            return Err(SourceError);
+            return Err(data.len());
         }
-        let private = decrypt_eexec(&cipher).ok_or(SourceError)?;
+        let private = decrypt_eexec(&cipher).ok_or(data.len())?;
         Ok(Self {
-            cleartext: data.get(..start).ok_or(SourceError)?.to_vec(),
+            cleartext: data.get(..start).ok_or(data.len())?.to_vec(),
             private,
         })
     }
 
     /// Read the PostScript and eexec sections from a PFB font.
     pub fn parse_pfb(data: &[u8], max_output: usize) -> Result<Self, SourceError> {
-        let pfb = Pfb::parse(data, max_output).map_err(|_| SourceError)?;
-        let first = pfb.sections().first().ok_or(SourceError)?;
+        Self::parse_pfb_with_offset(data, max_output).map_err(|_| SourceError)
+    }
+
+    /// Read a PFB source and report a file-relative failure offset.
+    pub fn parse_pfb_with_offset(data: &[u8], max_output: usize) -> Result<Self, usize> {
+        let pfb = Pfb::parse_with_offset(data, max_output)?;
+        let first = pfb.sections().first().ok_or(data.len())?;
         if first.kind != SectionKind::Ascii
             || !Self::has_text_header(first.data)
             || !first.data.windows(5).any(|window| window == b"eexec")
         {
-            return Err(SourceError);
+            return Err(6);
         }
         let mut cipher = Vec::new();
         let mut trailing = false;
@@ -105,10 +116,14 @@ impl Type1Source {
             match section.kind {
                 SectionKind::Binary if !trailing => cipher.extend_from_slice(section.data),
                 SectionKind::Ascii => trailing = true,
-                SectionKind::Binary => return Err(SourceError),
+                SectionKind::Binary => {
+                    return Err(
+                        (section.data.as_ptr() as usize).saturating_sub(data.as_ptr() as usize)
+                    );
+                }
             }
         }
-        let private = decrypt_eexec(&cipher).ok_or(SourceError)?;
+        let private = decrypt_eexec(&cipher).ok_or(data.len())?;
         Ok(Self {
             cleartext: first.data.to_vec(),
             private,

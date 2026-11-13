@@ -12,6 +12,8 @@
 
 #[path = "../../sofel-read/tests/support/build.rs"]
 mod build;
+#[path = "../../sofel-type1/tests/support/type1_triangle.rs"]
+mod type1_fixture;
 
 use build::*;
 use sofel_font::{Cff, Font, HbCff2};
@@ -606,6 +608,47 @@ fn inv4_layout_damage_total_counts_two_faces() {
             text.stdout.lines().last().unwrap().contains("at least 2"),
             "{}",
             text.stdout
+        );
+    }
+}
+
+#[test]
+fn adr0065_i2_type1_source_reports_file_offsets() {
+    let dir = Dir::new("type1-source-offset");
+    let (pfa, pfb) = type1_fixture::sample();
+    for (name, data) in [("triangle.pfa", pfa), ("triangle.pfb", pfb)] {
+        let file = dir.file(name, &data);
+        let checked = run(&[file.as_os_str()]);
+        assert_eq!(checked.code, 0, "{}", checked.stdout);
+    }
+    let bad_hex = b"%!PS-AdobeFont-1.0\ncurrentfile eexec\n 000Z\ncleartomark\n";
+    let short_section = b"\x80\x01\x08\x00\x00\x00ab";
+    for (name, bytes, tag, at) in [
+        (
+            "bad.pfa",
+            bad_hex.as_slice(),
+            "PFA ",
+            bad_hex.iter().position(|b| *b == b'Z').unwrap(),
+        ),
+        (
+            "bad.pfb",
+            short_section.as_slice(),
+            "PFB ",
+            short_section.len(),
+        ),
+    ] {
+        let file = dir.file(name, bytes);
+        let out = run(&["--json".as_ref(), file.as_os_str()]);
+        assert_eq!(out.code, 1);
+        assert!(
+            out.stdout.contains(&format!("\"table\":\"{tag}\"")),
+            "{}",
+            out.stdout
+        );
+        assert!(
+            out.stdout.contains(&format!("\"offset\":{at}")),
+            "{}",
+            out.stdout
         );
     }
 }
