@@ -806,9 +806,7 @@ impl Plan {
                 n
             };
         if num_glyphs > 0x1_0000
-            && new_to_old
-                .iter()
-                .any(|&(new, old)| new > 0xFFFF || old > 0xFFFF)
+            && new_to_old.iter().any(|&(new, _)| new > 0xFFFF)
             && [b"GSUB", b"GPOS", b"GDEF", b"BASE"].iter().any(|t| {
                 let tag = Tag::new(t);
                 font.table(tag).is_some()

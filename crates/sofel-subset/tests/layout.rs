@@ -1600,3 +1600,22 @@ fn adr0022_wide_source_keeps_layout_for_low_glyphs() {
         coverage1(&[1, 2])
     );
 }
+
+#[test]
+fn adr0022_wide_source_substitution_maps_high_input_to_compact_ids() {
+    // Coverage contains glyph 65536; the 24-bit delta wraps to glyph 1.
+    let st = vec![0, 3, 0, 0, 0, 9, 255, 0, 1, 0, 3, 0, 0, 1, 1, 0, 0];
+    let data = font_with(vec![
+        (b"MAXP", vec![0, 0, 80, 0, 1, 0, 1]),
+        (b"GSUB", layout_table(&[(b"liga", &[0])], &[(1, st)])),
+    ]);
+    let input = Input::new().map_set(SetKind::Glyphs, |set| {
+        set.add(65536);
+    });
+    let out = subset(&Font::new(&data, 0).unwrap(), &input).unwrap();
+    assert_eq!(num_glyphs(&out), 3);
+    let gsub = out_table(&out, b"GSUB").unwrap();
+    assert_eq!(first_coverage(&gsub), coverage1(&[2]));
+    let subtable = follow(follow(follow(&gsub, 8), 2), 6);
+    assert_eq!(u16_at(subtable, 4), 65535);
+}
