@@ -3315,6 +3315,8 @@ static bool subset_option (subset_args_t *a, const std::string &name, const char
     return subset_tags (hb_subset_input_set (in, HB_SUBSET_SETS_LAYOUT_SCRIPT_TAG), suffix, arg);
   if (base == "drop-tables")
     return subset_tags (hb_subset_input_set (in, HB_SUBSET_SETS_DROP_TABLE_TAG), suffix, arg);
+  if (base == "no-subset-tables")
+    return subset_tags (hb_subset_input_set (in, HB_SUBSET_SETS_NO_SUBSET_TABLE_TAG), suffix, arg);
   if (name == "gid-map") return subset_gid_map (a, arg);
   if (name == "variations" || name == "instance") return subset_instance (a, arg);
   return subset_fail ("unknown option --%s", name.c_str ());

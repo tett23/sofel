@@ -408,6 +408,12 @@ impl Plan {
                 .contains(Tag::new(b"glyf").to_u32())
             && font.table(Tag::new(b"CFF2")).is_none();
         let needs_rebase = |tag: &&[u8; 4]| {
+            if input
+                .set(SetKind::NoSubsetTables)
+                .contains(Tag::new(tag).to_u32())
+            {
+                return false;
+            }
             if avar2_range {
                 // avar2 maps the restricted user range into the original variation space.
                 return false;

@@ -14,6 +14,40 @@ use sofel_subset::{Input, SetKind, subset};
 use std::process::Command;
 
 #[test]
+fn adr0061_i1_passthrough_hvar_with_axis_pin_matches_harfbuzz() {
+    let path = paths::testdata().join("harfbuzz/test/subset/data/fonts/KalniaGlaze.ttf");
+    let bytes = std::fs::read(&path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let input = Input::new()
+        .map_set(SetKind::Unicodes, |s| s.add_range(0, 0x10ffff))
+        .map_set(SetKind::NoSubsetTables, |s| {
+            s.add(Tag::new(b"HVAR").to_u32())
+        })
+        .with_axis_pinned(Tag::new(b"wght"), 600.0, &font)
+        .unwrap();
+    let actual = subset(&font, &input).unwrap();
+    let output = std::env::temp_dir().join(format!(
+        "sofel-adr0061-passthrough-HVAR-{}.ttf",
+        std::process::id()
+    ));
+    assert!(
+        Command::new(paths::hb_dump())
+            .arg("--subset")
+            .arg(format!("--font-file={}", path.display()))
+            .arg("--unicodes=*")
+            .arg("--no-subset-tables+=HVAR")
+            .arg("--variations=wght=600")
+            .arg(format!("--output-file={}", output.display()))
+            .status()
+            .unwrap()
+            .success()
+    );
+    let expected = std::fs::read(&output).unwrap();
+    std::fs::remove_file(output).unwrap();
+    assert_eq!(actual, expected);
+}
+
+#[test]
 fn adr0061_i1_avar2_restrict_same_default_matches_harfbuzz() {
     compare(b"wght", 200.0, 400.0, 700.0);
 }
