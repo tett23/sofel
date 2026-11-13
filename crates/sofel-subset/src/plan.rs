@@ -867,6 +867,7 @@ impl Plan {
                                 kind,
                                 layout::Kind::SingleSubst
                                     | layout::Kind::MultipleSubst
+                                    | layout::Kind::ReverseChain
                                     | layout::Kind::AlternateSubst
                                     | layout::Kind::SinglePos
                                     | layout::Kind::CursivePos

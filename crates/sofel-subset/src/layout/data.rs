@@ -40,6 +40,14 @@ impl<'a> D<'a> {
         ])
     }
 
+    /// A layout operand stored in two or three bytes.
+    pub fn uint(self, at: usize, width: u8) -> u32 {
+        if width == 3 {
+            self.u32(at) >> 8
+        } else {
+            u32::from(self.u16(at))
+        }
+    }
     /// The view at `off` bytes in; empty past the end.
     pub fn at(self, off: usize) -> D<'a> {
         D(self.0.get(off..).unwrap_or(&[]))

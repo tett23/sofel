@@ -171,19 +171,23 @@ impl<'a> Closure<'a> {
             Kind::Context => context::context_closure(self, st),
             Kind::ChainContext => context::chain_closure(self, st),
             Kind::ReverseChain => {
-                if st.u16(0) != 1 || !reverse_intersects(st, &self.glyphs) {
+                if !reverse_intersects(st, &self.glyphs) {
                     return;
                 }
-                let cov = Cov(st.off16(2));
-                let (_, _, subst) = reverse_parts(st);
-                let n = usize::from(subst.u16(0));
+                let (cov, width, _, subst) = reverse_parts(st);
+                let n = subst.uint(0, width) as usize;
                 let add: Vec<u32> = cov
                     .glyphs()
                     .into_iter()
                     .take(n)
                     .enumerate()
                     .filter(|&(_, g)| self.parent().has(g))
-                    .map(|(i, _)| u32::from(subst.u16_at(2, i)))
+                    .map(|(i, _)| {
+                        subst.uint(
+                            i.saturating_add(1).saturating_mul(usize::from(width)),
+                            width,
+                        )
+                    })
                     .collect();
                 add.into_iter().for_each(|g| self.output.add(g));
             }
@@ -249,27 +253,32 @@ pub(crate) fn ligature_intersects(lig: D<'_>, glyphs: &BitSet) -> bool {
     (0..n).all(|i| glyphs.has(u32::from(lig.u16_at(4, i))))
 }
 
-/// The backtrack array, the lookahead array and the substitute array of
-/// a ReverseChainSingleSubst format 1.
-pub(crate) fn reverse_parts(st: D<'_>) -> (D<'_>, D<'_>, D<'_>) {
-    let backtrack = st.at(4);
-    let nb = usize::from(backtrack.u16(0));
-    let lookahead = backtrack.at(2usize.saturating_add(nb.saturating_mul(2)));
-    let nl = usize::from(lookahead.u16(0));
-    let subst = lookahead.at(2usize.saturating_add(nl.saturating_mul(2)));
-    (backtrack, lookahead, subst)
+/// Coverage, operand width, context arrays and substitutes of a reverse chaining lookup.
+pub(crate) fn reverse_parts(st: D<'_>) -> (Cov<'_>, u8, [D<'_>; 2], D<'_>) {
+    let (cov, width, start) = if st.u16(0) == 2 {
+        (st.off32(2), 3u8, 6)
+    } else {
+        (st.off16(2), 2, 4)
+    };
+    let next =
+        |a: D<'_>| 2usize.saturating_add(usize::from(a.u16(0)).saturating_mul(usize::from(width)));
+    let back = st.at(start);
+    let ahead = back.at(next(back));
+    (Cov(cov), width, [back, ahead], ahead.at(next(ahead)))
 }
 
 fn reverse_intersects(st: D<'_>, glyphs: &BitSet) -> bool {
-    if !Cov(st.off16(2)).intersects(glyphs) {
+    if !matches!(st.u16(0), 1 | 2) {
         return false;
     }
-    let (b, l, _) = reverse_parts(st);
-    let all = |arr: D<'_>| {
-        (0..usize::from(arr.u16(0)))
-            .all(|i| Cov(st.follow(u32::from(arr.u16_at(2, i)))).intersects(glyphs))
-    };
-    all(b) && all(l)
+    let (cov, width, contexts, _) = reverse_parts(st);
+    cov.intersects(glyphs)
+        && contexts.iter().all(|arr| {
+            (0..usize::from(arr.u16(0))).all(|i| {
+                let at = 2usize.saturating_add(i.saturating_mul(usize::from(width)));
+                Cov(st.follow(arr.uint(at, width))).intersects(glyphs)
+            })
+        })
 }
 
 /// `may_have_non_1to1` of a GSUB lookup.
@@ -313,7 +322,7 @@ pub(crate) fn subtable_intersects(k: Kind, st: D<'_>, glyphs: &BitSet) -> bool {
         }
         Kind::Context => context::context_intersects(st, glyphs),
         Kind::ChainContext => context::chain_intersects(st, glyphs),
-        Kind::ReverseChain => st.u16(0) == 1 && reverse_intersects(st, glyphs),
+        Kind::ReverseChain => reverse_intersects(st, glyphs),
         Kind::SinglePos => match st.u16(0) {
             1 | 2 => cov.intersects(glyphs),
             3 | 4 => Cov(st.off32(2)).intersects(glyphs),

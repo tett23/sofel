@@ -243,44 +243,63 @@ fn ligature_set(s: &mut Sub<'_, '_>, set: D<'_>, coverage_idx: u32) -> bool {
 
 /// ReverseChainSingleSubst format 1.
 pub(crate) fn reverse(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
-    if st.u16(0) != 1 {
+    if !matches!(st.u16(0), 1 | 2) {
         return false;
     }
-    let cov = Cov(st.off16(2));
-    let (backtrack, lookahead, subst) = reverse_parts(st);
-    let n = usize::from(subst.u16(0));
+    let (cov, width, contexts, subst) = reverse_parts(st);
+    let n = subst.uint(0, width) as usize;
     let gs = &s.p.layout.glyphset_gsub;
     let pairs: Vec<(u32, u32)> = cov
         .glyphs()
         .into_iter()
         .take(n)
         .enumerate()
-        .map(|(i, g)| (g, u32::from(subst.u16_at(2, i))))
+        .map(|(i, g)| {
+            (
+                g,
+                subst.uint(
+                    i.saturating_add(1).saturating_mul(usize::from(width)),
+                    width,
+                ),
+            )
+        })
         .filter(|p| gs.has(p.0) && gs.has(p.1))
         .map(|(a, b)| (s.map(a), s.map(b)))
         .collect();
     if pairs.is_empty() {
         return false;
     }
-    s.s.u16(1);
-    let cov_at = s.s.u16(0);
-    for arr in [backtrack, lookahead] {
+    s.s.u16(st.u16(0));
+    let cov_width = if width == 3 { 4 } else { 2 };
+    let cov_at = s.s.zeros(usize::from(cov_width));
+    for arr in contexts {
         let count_at = s.s.u16(0);
         for i in 0..usize::from(arr.u16(0)) {
-            let c = st.follow(u32::from(arr.u16_at(2, i)));
-            let at = s.s.u16(0);
+            let c = st.follow(arr.uint(
+                2usize.saturating_add(i.saturating_mul(usize::from(width))),
+                width,
+            ));
+            let at = s.s.zeros(usize::from(width));
             s.bump_u16(count_at, 1);
-            if !s.serialize_subset_opt(at, 2, c, |s| s.coverage_subset(Cov(c))) {
+            if !s.serialize_subset_opt(at, width, c, |s| s.coverage_subset(Cov(c))) {
                 return false;
             }
         }
     }
-    s.s.u16(n16(pairs.len()));
-    pairs.iter().for_each(|p| {
-        s.s.u16((p.1 & 0xFFFF) as u16);
-    });
+    if width == 3 {
+        s.s.u24(super::data::n32(pairs.len()));
+        for &(_, g) in &pairs {
+            s.s.u24(g);
+        }
+    } else {
+        s.s.u16(n16(pairs.len()));
+        for &(_, g) in &pairs {
+            let at = s.s.u16(0);
+            s.s.check_assign_u16(at, u64::from(g), sofel_write::Errors::INT_OVERFLOW);
+        }
+    }
     let glyphs: Vec<u32> = pairs.iter().map(|p| p.0).collect();
-    s.serialize_serialize(cov_at, 2, |s| s.coverage(&glyphs));
+    s.serialize_serialize(cov_at, cov_width, |s| s.coverage(&glyphs));
     true
 }
 

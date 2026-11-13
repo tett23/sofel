@@ -1698,3 +1698,39 @@ fn adr0022_wide_multiple_and_alternate_substitutions() {
         assert!(st[seq..].starts_with(&[0, 0, 2, 0, 0, 2, 0, 0, 3]));
     }
 }
+
+#[test]
+fn adr0022_wide_reverse_chain_keeps_context_and_substitute() {
+    let header = Buf::new()
+        .u16(2)
+        .u32(0)
+        .u16(1)
+        .u24(0)
+        .u16(1)
+        .u24(0)
+        .u24(1)
+        .u24(6)
+        .done();
+    let st = link(
+        header,
+        vec![
+            (2, 4, coverage1(&[1])),
+            (8, 3, coverage1(&[2])),
+            (13, 3, coverage1(&[3])),
+        ],
+    );
+    let data = font_with(vec![(
+        b"GSUB",
+        layout_table(&[(b"liga", &[0])], &[(8, st)]),
+    )]);
+    let out = subset(&Font::new(&data, 0).unwrap(), &chars("ABC")).unwrap();
+    assert_eq!(num_glyphs(&out), 5);
+    let table = out_table(&out, b"GSUB").unwrap();
+    let sub = follow(follow(follow(&table, 8), 2), 6);
+    assert_eq!(u16_at(sub, 0), 2);
+    assert_eq!(&sub[16..22], &[0, 0, 1, 0, 0, 4]);
+    for (at, glyph) in [(8, 2), (13, 3)] {
+        let off = u32::from_be_bytes([0, sub[at], sub[at + 1], sub[at + 2]]) as usize;
+        assert!(sub[off..].starts_with(&coverage1(&[glyph])));
+    }
+}
