@@ -25,15 +25,23 @@ pub(super) struct Border {
 }
 
 impl Border {
-    pub(super) fn reset(&mut self) {
-        self.points.clear();
-        self.tags.clear();
-        self.start = None;
-        self.movable = false;
+    pub(super) fn movable(&self) -> bool {
+        self.movable
+    }
+
+    pub(super) fn set_movable(&mut self, value: bool) {
+        self.movable = value;
+    }
+
+    pub(super) fn last(&self) -> Option<Point> {
+        self.points.last().copied()
     }
 
     fn append(&mut self, p: Point, tag: u8) -> Result<(), BorderError> {
-        if self.points.len() >= 65535 {
+        // `close` replaces the first point with the final point and drops
+        // that final point, so one temporary point beyond the output limit
+        // can still produce an outline of exactly 65535 points.
+        if self.points.len() >= 65536 {
             return Err(BorderError::TooLarge);
         }
         self.points.push(p);

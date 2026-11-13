@@ -41,7 +41,7 @@ fn inv1_stroke_border_closure_and_duplicate_lines() {
     );
     assert_eq!(tags, [1, 1, 0, 1, 2, 2]);
     assert_eq!(ends, [5]);
-    border.reset();
+    border = Border::default();
     points.clear();
     tags.clear();
     ends.clear();

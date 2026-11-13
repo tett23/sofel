@@ -68,6 +68,10 @@ extern crate alloc;
 mod hb_cff;
 mod hb_draw;
 mod slot_synth;
+mod stroke;
+mod stroke_border;
+mod stroke_line;
+mod stroke_trig;
 mod tt_hint;
 mod varc_draw;
 
@@ -76,6 +80,7 @@ pub use sofel_font as font;
 pub use hb_cff::{HbExtents, cff1_extents, cff2_extents, cff2_extents_at};
 pub use slot_synth::SlotMetrics;
 pub use sofel_geom::FloatCommand as HbOutlineCommand;
+pub use stroke::{StrokeBorder, StrokeError, StrokeJoin, StrokeStyle};
 
 use alloc::vec::Vec;
 use core::fmt;

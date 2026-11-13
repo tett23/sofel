@@ -67,7 +67,7 @@ fn nonzero_add(value: i32, strength: i32) -> i32 {
 
 /// `FT_Outline_Get_Orientation` on the polygon of control points.
 #[allow(clippy::arithmetic_side_effects, clippy::indexing_slicing)] // Loader-validated contour bounds; 64-bit area.
-fn true_type_orientation(points: &[Point], ends: &[usize]) -> Option<bool> {
+pub(super) fn true_type_orientation(points: &[Point], ends: &[usize]) -> Option<bool> {
     let mut area = 0i64;
     let mut first = 0;
     for &last in ends {
