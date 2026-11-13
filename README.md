@@ -71,8 +71,8 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-unicode`](crates/sofel-unicode) | Unicode 18.0.0の文字の性質（General_Category、Script、正規分解と合成、Vertical_Orientationなど。[ADR 0019](docs/adr/0019-unicode-character-data.md)） |
 | [`sofel-read`](crates/sofel-read) | sfntの表の読み取りと検証。コピーも確保もせず、どの入力でもpanicしない |
 | [`sofel-type1`](crates/sofel-type1) | PFA・PFB の復号と Type1 の文字対応、送り幅、AFM・PFM のカーニング、Type42 の埋め込み sfnt・Encoding・CharStrings を Rust API で読む（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)） |
-| [`sofel-font`](crates/sofel-font) | フォントを一度だけ読み、グリフの数、文字からグリフへの対応、送り幅、フォント全体と縦書きのメトリクス、BASEの基準線とその代わりの値、名前とグリフ名（postとCFFのcharset）をHarfBuzzの方針で返し、HarfBuzzと同じ拡大縮小（`HbScale`）をする。HarfBuzzのCFFとCFF2のアクセラレータ（`HbCff1`、`HbCff2`）を持つ。PostScript名と `FT_Face` の値はFreeTypeの方針。TrueType の制御値は指定した軸位置で取得できる |
-| [`sofel-outline`](crates/sofel-outline) | glyfとGLYFの輪郭を、ヒンティングなしでFreeTypeと同じ座標で `Pen` に渡す。読み込んだ閉じた輪郭は、半径と角の接合を指定して縁取り、両側または片側の境界を取り出す（[ADR 0076](docs/adr/0076-glyph-outline-stroking.md)）。HarfBuzzと同じグリフの箱（glyf、CFF2、CFF。`HbExtents`、[ADR 0021](docs/adr/0021-cff-outlines.md)）を求める |
+| [`sofel-font`](crates/sofel-font) | フォントを一度だけ読み、グリフの数、文字からグリフへの対応、送り幅、フォント全体と縦書きのメトリクス、BASEの基準線とその代わりの値、名前とグリフ名（postとCFFのcharset）をHarfBuzzの方針で返し、HarfBuzzと同じ拡大縮小（`HbScale`）をする。HarfBuzzのCFFとCFF2のアクセラレータ（`HbCff1`、`HbCff2`）を持つ。素の CFF 1 はフェイス番号で Top DICT を選び、`BareCffFace` で文字対応と送り幅を返す。PostScript名と `FT_Face` の値はFreeTypeの方針。TrueType の制御値は指定した軸位置で取得できる |
+| [`sofel-outline`](crates/sofel-outline) | glyfとGLYFの輪郭を、ヒンティングなしでFreeTypeと同じ座標で `Pen` に渡す。素の CFF 1 の輪郭も `draw_bare_cff` で描く。読み込んだ閉じた輪郭は、半径と角の接合を指定して縁取り、両側または片側の境界を取り出す（[ADR 0076](docs/adr/0076-glyph-outline-stroking.md)）。HarfBuzzと同じグリフの箱（glyf、CFF2、CFF。`HbExtents`、[ADR 0021](docs/adr/0021-cff-outlines.md)）を求める |
 | [`sofel-shape`](crates/sofel-shape) | HarfBuzz 15.1.0のOTシェーパーと同じシェーピング（バッファ、区間の性質、計画、正規化、`GSUB` と `GPOS`、フォールバックの位置。[ADR 0020](docs/adr/0020-shaping-foundation.md)）、機能の文字列、直列化、言語と文字体系のタグ。文字体系ごとのシェーパー（hebrew、hangul、thai、arabic、indic、khmer、myanmar、USE。[ADR 0024](docs/adr/0024-complex-shapers.md)）もすべて実装した |
 | [`sofel-inflate`](crates/sofel-inflate) | 出力上限を指定した DEFLATE・zlib・gzip の展開 |
 | [`sofel-png`](crates/sofel-png) | PNG の各色型と Adam7 をアルファ乗算済み BGRA に復号する（[ADR 0066](docs/adr/0066-color-glyph-pixels.md)） |
@@ -129,6 +129,8 @@ BDF の固定サイズの画像は `--ppem`、`--char` または `--glyph` を�
 PCF の固定サイズの 1 bit 画像も同じ引数で PGM に変換する。PCF は 1 フェイスで、指定サイズのストライクがない場合と `--no-bitmap` を指定した場合は描画に失敗する（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
 
 Windows FNT と NE FON の固定サイズの 1 bit 画像も同じ引数で PGM に変換する。FNT は 1 フェイスで、FON のリソースは `--face` で選ぶ。指定サイズのストライクがない場合と `--no-bitmap` を指定した場合は描画に失敗する（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
+
+素の CFF 1 の輪郭は `--face` でフェイスを選び、`--char` または `--glyph` で指定して PGM に描く。`sofel render --text` は同じフェイスの文字対応と送り幅を使って一行を描く。文字の対応には PostScript グリフ名を使う（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
 
 可変フォントの輪郭には `--variations=wght=500` や `--named-instance=0` で位置を指定できる。既定以外の位置では埋め込みビットマップを使わず、輪郭を描く。
 
@@ -196,7 +198,7 @@ sofel-subset --font-file=font.ttf --unicodes=41-5A -o - | sofel-woff --format wo
 
 ### `sofel-validate`
 
-sfnt、TTC/OTC、dfontの各表を検証する（[ADR 0008](docs/adr/0008-validate-command-and-freetype-comparison.md)、[ADR 0058](docs/adr/0058-dfont-face-selection.md)）。誤りを1件1行で出し、`--json` ではJSON Linesで出す。
+sfnt、TTC/OTC、dfontの各表と素の CFF 1 を検証する（[ADR 0008](docs/adr/0008-validate-command-and-freetype-comparison.md)、[ADR 0058](docs/adr/0058-dfont-face-selection.md)、[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。誤りを1件1行で出し、`--json` ではJSON Linesで出す。
 
 ```sh
 cargo run --release --bin sofel-validate -- font.ttf

@@ -7,9 +7,11 @@
 use std::fmt;
 
 use sofel_color::{PaintOptions, Palette};
+use sofel_font::BareCffFace;
 use sofel_font::geom::Color;
 use sofel_font::read::GlyphId;
-use sofel_outline::{OutlineError, Outlines, Scale, Scratch};
+use sofel_geom::{Fixed, div_fix};
+use sofel_outline::{OutlineError, OutlineInfo, Outlines, Scale, Scratch};
 use sofel_raster::{
     BgraImage, Bitmap, FillRule, RasterError, Rasterizer, RenderOptions, blend_layer, pixel_box,
 };
@@ -64,6 +66,38 @@ pub fn render<'r>(
     let info = outlines
         .load(glyph, Scale::pixels(font, ppem, ppem), scratch)
         .map_err(RenderError::Outline)?;
+    render_loaded(info, ppem, scratch, raster)
+}
+
+/// Renders one glyph of a bare CFF face through the normal gray rasterizer.
+pub fn render_bare_cff<'r>(
+    face: &BareCffFace<'_>,
+    glyph: GlyphId,
+    ppem: u16,
+    scratch: &mut Scratch,
+    raster: &'r mut Rasterizer,
+) -> Result<Bitmap<'r>, RenderError> {
+    let upem = i32::try_from(face.cff().top_matrix().units_per_em)
+        .ok()
+        .filter(|upem| *upem > 0)
+        .ok_or(RenderError::Outline(OutlineError::InvalidOutline))?;
+    let scale = Fixed(div_fix(i32::from(ppem).saturating_mul(64), upem));
+    let info = sofel_outline::load_bare_cff(
+        face.cff(),
+        glyph,
+        Scale::Scaled { x: scale, y: scale },
+        scratch,
+    )
+    .map_err(RenderError::Outline)?;
+    render_loaded(info, ppem, scratch, raster)
+}
+
+fn render_loaded<'r>(
+    info: OutlineInfo,
+    ppem: u16,
+    scratch: &mut Scratch,
+    raster: &'r mut Rasterizer,
+) -> Result<Bitmap<'r>, RenderError> {
     let c = info.cbox;
     let b = pixel_box(c.x_min, c.y_min, c.x_max, c.y_max);
     raster.clear();
