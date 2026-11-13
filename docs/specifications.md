@@ -445,6 +445,8 @@ PE32 では `RT_FONT` の名前・言語ディレクトリを順にたどり、�
 
 `sofel-type1::source::Type1Source` は PFA の16進 eexec と PFB の ASCII・バイナリセクションを読み、秘密辞書を復号する。`sofel-type1::face::Type1Face` は文字コードからグリフ番号への対応、グリフ名、charstring から読んだ送り幅を返す。AFM または PFM を付加すると、グリフ対のカーニングを返す。PFB のセクション長、PFA の16進表記、charstring の長さと AFM・PFM のペア表を検査する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
+横書きでは、Type1 フェイスを `SubFont::from_type1` に渡し、`shape_with_subfont` で文字列を組む。グリフ名から Unicode に対応するグリフを選び、送り幅と付加済みの AFM・PFM のカーニングを使う。`kern=0` を指定した範囲ではカーニングを適用しない。
+
 `sofel-type1::type42::Type42Source` は Type42 の `/sfnts` 配列の16進文字列または `RD` バイナリを連結し、展開長と sfnt の表範囲を検査する。`/Encoding` と `/CharStrings` から Type42 のグリフ番号を読み、`.notdef` を先頭に置く。Unicode の文字対応は PostScript のグリフ名を Adobe Glyph List と `uniXXXX`・`uXXXXX` によって変換し、8ビットの Encoding は別に問い合わせる。`Font::from_type42` が返す `Type42Face` は Type42 のグリフ番号を埋め込み TrueType のグリフ番号へ変換し、送りを返す。輪郭を読むときは `embedded_glyph` と `inner_font` の組を使う（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
 ## 素の CFF フェイスと CEF
