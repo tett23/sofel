@@ -35,6 +35,9 @@ backgrounds, else black.
 BDF and PCF bitmap faces use their single fixed strike. PCF supports
 monochrome glyphs; both formats write PGM (ADR 0065).
 
+PFR faces use an embedded monochrome strike at the requested size when
+available, and otherwise render the unhinted outline as PGM (ADR 0065).
+
 Bare CFF 1 and CEF faces use their PostScript character mapping and unhinted
 outlines for --char and --glyph. `sofel render --text` also shapes bare
 CFF characters through its font callbacks (ADR 0065).
@@ -288,6 +291,9 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
     };
     if let Some(format) = BitmapFormat::detect(&bytes) {
         return render_fixed(format, &bytes, &args, out, err);
+    }
+    if bytes.starts_with(b"PFR0") {
+        return render_pfr(&bytes, &args, out, err);
     }
     if bytes.starts_with(b"%!PS-Adobe-3.0 Resource-CIDFont") {
         return render_cid(&bytes, &args, out, err);
@@ -554,6 +560,83 @@ fn render_cid(bytes: &[u8], args: &Args, out: &mut dyn Write, err: &mut dyn Writ
     )
     .into_bytes();
     image.extend(b.pixels.iter().map(|v| !v));
+    if out.write_all(&image).is_err() {
+        return fail("cannot write the image");
+    }
+    0
+}
+
+fn render_pfr(bytes: &[u8], args: &Args, out: &mut dyn Write, err: &mut dyn Write) -> i32 {
+    let mut fail = |message: &str| {
+        let _ = writeln!(err, "sofel-render: {message}");
+        1
+    };
+    let Ok(face) = Font::from_pfr(bytes, args.face) else {
+        return fail("invalid PFR font or face");
+    };
+    let glyph = match args.target {
+        Target::Glyph(glyph) => GlyphId(glyph),
+        Target::Char(codepoint) => match face.nominal_glyph(codepoint) {
+            Some(glyph) => glyph,
+            None => return fail("character is not mapped"),
+        },
+        Target::Text(_) | Target::TextFile(_) => return fail("PFR text rendering is unavailable"),
+    };
+    if !args.no_bitmap {
+        let embedded = match face.bitmap(glyph, args.ppem, args.ppem) {
+            Ok(bitmap) => bitmap,
+            Err(_) => return fail("invalid PFR bitmap"),
+        };
+        if let Some(bitmap) = embedded {
+            let width = usize::from(bitmap.width);
+            let rows = usize::from(bitmap.height);
+            let Some(size) = width.checked_mul(rows).filter(|size| *size <= 67_108_864) else {
+                return fail("PFR bitmap is too large");
+            };
+            let stride = width.saturating_add(7) / 8;
+            let mut image = format!(
+                "P5\n# left {} top {}\n{} {}\n255\n",
+                bitmap.left, bitmap.top, width, rows
+            )
+            .into_bytes();
+            image.reserve(size);
+            for row in 0..rows {
+                for column in 0..width {
+                    let Some(index) = row
+                        .checked_mul(stride)
+                        .and_then(|n| n.checked_add(column / 8))
+                    else {
+                        return fail("invalid PFR bitmap");
+                    };
+                    let Some(&byte) = bitmap.pixels.get(index) else {
+                        return fail("invalid PFR bitmap");
+                    };
+                    image.push(if byte & (0x80 >> (column % 8)) == 0 {
+                        255
+                    } else {
+                        0
+                    });
+                }
+            }
+            if out.write_all(&image).is_err() {
+                return fail("cannot write the image");
+            }
+            return 0;
+        }
+    }
+    let mut raster = Rasterizer::new();
+    let Ok(bitmap) = glyph::render_pfr(&face, glyph, args.ppem, &mut raster) else {
+        return fail("PFR glyph cannot be rendered");
+    };
+    if bitmap.width == 0 || bitmap.rows == 0 {
+        return fail("PFR glyph is empty");
+    }
+    let mut image = format!(
+        "P5\n# left {} top {}\n{} {}\n255\n",
+        bitmap.left, bitmap.top, bitmap.width, bitmap.rows
+    )
+    .into_bytes();
+    image.extend(bitmap.pixels.iter().map(|value| !value));
     if out.write_all(&image).is_err() {
         return fail("cannot write the image");
     }
