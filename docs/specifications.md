@@ -4,7 +4,7 @@
 
 この文書は、採択したADRから、現在の仕様をまとめる。
 決定の経緯は各ADRを参照。
-可変フォントの [ADR 0027](adr/0027-variable-fonts.md) は採択（未実装）である。変化量評価の [ADR 0029](adr/0029-variation-deltas.md) と、その修正を定める [ADR 0030](adr/0030-variation-evaluation-corrections.md) は採択済みである。`--font-ptem` の分類訂正は [ADR 0028](adr/0028-ptem-is-not-opsz.md) に従って実装済みである。
+可変フォントの [ADR 0027](adr/0027-variable-fonts.md) は採択済みである。変化量評価の [ADR 0029](adr/0029-variation-deltas.md) と、その修正を定める [ADR 0030](adr/0030-variation-evaluation-corrections.md) も採択済みである。`--font-ptem` の分類訂正は [ADR 0028](adr/0028-ptem-is-not-opsz.md) に従って実装済みである。
 [ADR 0027](adr/0027-variable-fonts.md) の表の読み取りと検証器は実装済みである。
 `sofel-font::var` には、設計座標と正規化座標からの位置の構築、avar版1と版2の写像、[ADR 0029](adr/0029-variation-deltas.md) と [ADR 0030](adr/0030-variation-evaluation-corrections.md) に従うItemVariationStoreの差分の評価の核、fvarの軸と名前つきインスタンスの問い合わせ、FreeTypeのMMVarの読み取り、位置ごとのPostScript名を実装している。MVARはタグに対応する丸め前の差分を `Instance::metrics_variation` で取得でき、横・縦のスケールを適用した値もRustとC ABIから取得できる。FreeTypeが既定のインスタンスを合成した場合は、名前のIDが0でもその番号と設計座標を使える。同じタグを持つ軸が複数ある場合、タグによる指定はHarfBuzz側では該当する全軸に、FreeType側では先頭の該当軸に適用する。FreeTypeの正規化座標が全軸で0になると、設計座標の問い合わせはfvarの既定値を16.16固定小数点のまま返す。名前つきインスタンスに専用のPostScript名がない場合は、接頭辞とサブファミリー名から生成する。
 ItemVariationStore の行の評価は、C ABI の `sofel_instance_item_delta_hb` と `sofel_instance_item_delta_ft` からも呼べる。ストアや行がなければ0を返し、不正なストアの列挙値は `SOFEL_ERROR_INVALID_ARGUMENT` を返す。NULL の位置は静的な既定位置とする（[ADR 0030](adr/0030-variation-evaluation-corrections.md)）。
@@ -13,9 +13,9 @@ C ABIは [ADR 0027](adr/0027-variable-fonts.md) の位置の作成、座標の�
 メトリクスではHVARとVVARの送り幅、VORGとVVARの縦原点、MVARのフォント全体のメトリクス、FreeTypeの縦送り幅に位置を適用する。
 基準線とレイアウトのフォント全体の値では、BASEのVariationIndexに位置を適用する。
 レイアウトの問い合わせでは [ADR 0062](adr/0062-layout-query-device-adjustments.md) に従い、GPOS、GDEF、BASE、MATH の Device 補正に対象方向の ppem または位置の座標を使う。Rust と C ABI は合字キャレットと MATH の値・列を公開する。
-gvarの幻の点による送り幅と箱、輪郭、シェーピング、塗りの変化量は未実装である。
+gvarの幻の点による送り幅と箱、glyfとCFF2の座標つき輪郭、FeatureVariationsを使うシェーピング、COLRv1の座標つき塗りを実装している。
 FreeTypeが合成する既定の名前つきインスタンスは、必要なnameレコードが欠ける場合も件数と既定番号に含める。nameレコードが欠けた末尾のスタイルは名前IDと全座標がゼロである（[ADR 0036](adr/0036-freetype-missing-default-named-style.md)）。
-`sofel-shape` は位置によるFeatureVariations、GPOSのVariationIndex、送り幅と縦原点を使う。`sofel-shape` のCLIは `--variations` と `--named-instance` で位置を指定する。これらと上記以外の位置による値の変更は未実装である。
+`sofel-shape` は位置によるFeatureVariations、GPOSのVariationIndex、送り幅と縦原点を使う。`sofel-shape` のCLIは `--variations` と `--named-instance` で位置を指定する。
 追加フォントの検証は [ADR 0031](adr/0031-diverse-font-corpus.md) に従って実装した。
 文書だけの変更でCIを省く方針は [ADR 0032](adr/0032-documentation-only-ci.md) と [ADR 0034](adr/0034-ci-document-input-classification.md) に従って実装している。
 以下の実装済みの機能の記述は、各実装の PR で更新する。
