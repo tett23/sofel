@@ -461,7 +461,7 @@ fn i1_subset_instance_one_sided_range_with_identity_avar() {
 }
 
 #[test]
-fn i1_subset_instance_nonidentity_avar_rejects_nondefault_pin() {
+fn i1_subset_instance_nonidentity_avar_remaps_a_restricted_axis() {
     let shifted = [(-1.0, -1.0), (0.0, 0.0), (0.5, 0.75), (1.0, 1.0)];
     let identity = [(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)];
     let data = font_with(vec![
@@ -472,10 +472,30 @@ fn i1_subset_instance_nonidentity_avar_rejects_nondefault_pin() {
     let input = unicodes()
         .with_axis_pinned(Tag::new(b"wght"), 900.0, &font)
         .unwrap();
-    assert!(matches!(
-        subset(&font, &input),
-        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"fvar")
-    ));
+    let output = subset(&font, &input).unwrap();
+    let out = Sfnt::new(&output).unwrap();
+    assert_eq!(out.table(Tag::new(b"avar")).unwrap(), avar(1, &[&identity]));
+    let input = unicodes()
+        .with_axis_range(
+            Tag::new(b"wght"),
+            Some(100.0),
+            Some(775.0),
+            Some(400.0),
+            &font,
+        )
+        .unwrap();
+    let output = subset(&font, &input).unwrap();
+    let out = Sfnt::new(&output).unwrap();
+    let expected = [
+        (-1.0, -1.0),
+        (0.0, 0.0),
+        (10923.0 / 16384.0, 14043.0 / 16384.0),
+        (1.0, 1.0),
+    ];
+    assert_eq!(
+        out.table(Tag::new(b"avar")).unwrap(),
+        avar(1, &[&expected, &identity])
+    );
 }
 
 #[test]
