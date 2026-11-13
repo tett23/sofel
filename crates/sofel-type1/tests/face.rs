@@ -33,21 +33,21 @@ fn adr0065_i1_type1_attached_pfm_changes_pair_kerning() -> Result<(), Box<dyn st
     let pfa = b"%!PS-AdobeFont-1.0\n/Encoding 256 array\ndup 65/A put\nreadonly def\ncurrentfile eexec\nb8588da5424438407bb191bb43917fe221abd99deb2b4445bd5dc6bc878aed52c60104d4fb73902409cd1f6e6f4d242ad4e3209df6508dce5468e50a62bb81ca1078b9f3529710710c06cdde6e7146c338ce\ncleartomark\n";
     let source = Type1Source::parse_pfa(pfa, 4096)?;
     let mut face = Type1Face::new(&source)?;
-    let mut pfm = vec![0u8; 143];
+    let mut pfm = vec![0u8; 141];
     pfm.get_mut(1).ok_or("version")?.clone_from(&1);
     pfm.get_mut(2..6)
         .ok_or("file size")?
-        .copy_from_slice(&143u32.to_le_bytes());
-    pfm.get_mut(119..121)
+        .copy_from_slice(&141u32.to_le_bytes());
+    pfm.get_mut(117..119)
         .ok_or("extension size")?
         .copy_from_slice(&18u16.to_le_bytes());
-    pfm.get_mut(133..137)
+    pfm.get_mut(131..135)
         .ok_or("pair offset")?
-        .copy_from_slice(&137u32.to_le_bytes());
-    pfm.get_mut(137..139)
+        .copy_from_slice(&135u32.to_le_bytes());
+    pfm.get_mut(135..137)
         .ok_or("pair count")?
         .copy_from_slice(&1u16.to_le_bytes());
-    pfm.get_mut(139..143)
+    pfm.get_mut(137..141)
         .ok_or("pair")?
         .copy_from_slice(&[b'A', b'A', 0xec, 0xff]);
     face.attach_pfm(&pfm)?;

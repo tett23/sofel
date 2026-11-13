@@ -31,7 +31,7 @@ impl Pfm {
             return Err(PfmError);
         }
         let width_length = usize::from(le_u16(data, 99)?);
-        let extension = 119usize.checked_add(width_length).ok_or(PfmError)?;
+        let extension = 117usize.checked_add(width_length).ok_or(PfmError)?;
         let Some(extension_end) = extension.checked_add(18) else {
             return Err(PfmError);
         };
