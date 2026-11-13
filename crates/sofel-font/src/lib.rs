@@ -46,6 +46,7 @@ extern crate alloc;
 
 pub use sofel_geom as geom;
 pub use sofel_read as read;
+pub use sofel_type1::{face::Type1Face, source::Type1Source};
 
 mod bare_cff;
 mod base_sanitize;
@@ -65,7 +66,6 @@ pub mod layout_query;
 mod metrics;
 mod pfr;
 pub use pfr::{PfrBitmap, PfrFace};
-pub use sofel_type1::{face::Type1Face, source::Type1Source};
 mod name_language;
 mod names;
 pub mod remap;

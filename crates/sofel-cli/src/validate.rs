@@ -1,4 +1,4 @@
-//! `sofel-validate`: validate sfnt and bare CFF fonts (ADR 0008, 0065).
+//! `sofel-validate`: validate sfnt, CEF and bare CFF fonts (ADR 0008, 0065).
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -18,7 +18,7 @@ use crate::json;
 pub const HELP: &str = "\
 usage: sofel-validate [--json] FILE...
 
-Validates sfnt fonts, TTC/OTC collections, and bare CFF 1 fonts with
+Validates sfnt fonts, TTC/OTC collections, CEF and bare CFF 1 fonts with
 the validators of sofel-read. Tables without a validator are skipped.
 
 Each problem is one line on standard output:
@@ -111,6 +111,16 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
         }
         match FontFile::new(&bytes) {
             Err(e) => emit_diagnostic(&name, None, file_diagnostic(e), as_json, out, &mut errors),
+            Ok(FontFile::Sfnt(s)) if cff::is_cef(&s) => {
+                let mut report = |d| emit_diagnostic(&name, None, d, as_json, out, &mut errors);
+                validate::directory(&s, &mut report);
+                if let Some(data) = s.table(cff::TAG) {
+                    cff::validate_bare(data, &mut report);
+                }
+                if let Some(data) = s.table(sofel_font::read::cmap::TAG) {
+                    sofel_font::read::cmap::validate(data, None, &mut report);
+                }
+            }
             Ok(FontFile::Sfnt(s)) => {
                 validate_face(&s, &name, None, as_json, out, &mut errors);
             }

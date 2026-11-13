@@ -7,15 +7,28 @@ use sofel_type1::type42::glyph_unicode;
 
 use crate::{Cff, CffError};
 
-/// A bare CFF 1 face opened without an sfnt wrapper.
+/// A standalone CFF 1 face or a CEF face without OpenType metrics.
 #[derive(Clone, Copy, Debug)]
 pub struct BareCffFace<'a> {
     cff: Cff<'a>,
 }
 
 impl<'a> BareCffFace<'a> {
-    /// Open a face by its zero-based Name INDEX position.
+    /// Opens a bare face by Name INDEX or face zero in a CEF wrapper.
     pub fn new(data: &'a [u8], index: u32) -> Result<Self, CffError> {
+        let data = if data.starts_with(b"OTTO") {
+            let sfnt = sofel_read::sfnt::Sfnt::new(data).map_err(|_| CffError::Header)?;
+            if !sofel_read::cff::is_cef(&sfnt) {
+                return Err(CffError::NotCff);
+            }
+            if index != 0 {
+                return Err(CffError::Names);
+            }
+            sfnt.table(sofel_read::cff::TAG)
+                .ok_or(CffError::OutOfBounds)?
+        } else {
+            data
+        };
         Ok(Self {
             cff: Cff::from_bare(data, index)?,
         })

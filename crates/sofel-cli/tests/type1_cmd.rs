@@ -45,3 +45,45 @@ fn adr0065_i1_type1_pfa_pfb_render_like_freetype() -> Result<(), Box<dyn std::er
     }
     Ok(())
 }
+
+#[test]
+fn adr0065_i1_type1_shapes_and_renders_text() -> Result<(), Box<dyn std::error::Error>> {
+    let (pfa, _) = fixture::sample();
+    let path = std::env::temp_dir().join(format!("sofel-type1-text-{}.pfa", std::process::id()));
+    std::fs::write(&path, pfa)?;
+    let result = Command::new(env!("CARGO_BIN_EXE_sofel"))
+        .args(["render", "--ppem", "100", "--text", "A"])
+        .arg(&path)
+        .output()?;
+    std::fs::remove_file(path)?;
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(result.stdout.starts_with(b"P5\n50 10\n255\n"));
+    Ok(())
+}
+
+#[test]
+fn adr0065_i1_type1_maps_unicode_beyond_encoding() -> Result<(), Box<dyn std::error::Error>> {
+    let program = [
+        139, 248, 136, 13, 239, 239, 21, 239, 139, 5, 139, 239, 5, 39, 39, 5, 9, 14,
+    ];
+    let (pfa, _) = fixture::with_glyph_name(&program, "Euro");
+    let path = std::env::temp_dir().join(format!("sofel-type1-euro-{}.pfa", std::process::id()));
+    std::fs::write(&path, pfa)?;
+    let render = |target: [&str; 2]| -> Result<_, Box<dyn std::error::Error>> {
+        Ok(Command::new(env!("CARGO_BIN_EXE_sofel-render"))
+            .args(["--ppem", "100", target[0], target[1]])
+            .arg(&path)
+            .output()?)
+    };
+    let by_char = render(["--char", "U+20AC"])?;
+    let by_glyph = render(["--glyph", "1"])?;
+    std::fs::remove_file(path)?;
+    assert_eq!(by_char.status.code(), Some(0));
+    assert_eq!(by_char.stdout, by_glyph.stdout);
+    Ok(())
+}
