@@ -6,6 +6,7 @@ use core::fmt;
 use crate::afm::Afm;
 use crate::charstrings::Charstrings;
 use crate::encoding::Encoding;
+use crate::metrics::{Metrics, parse_metrics};
 use crate::pfm::Pfm;
 use crate::source::Type1Source;
 
@@ -65,6 +66,11 @@ impl<'a> Type1Face<'a> {
     /// The decrypted charstring of a glyph index.
     pub fn glyph_program(&self, glyph: usize) -> Option<Vec<u8>> {
         self.charstrings.glyph_program(self.glyph_name(glyph)?)
+    }
+
+    /// The unscaled side bearings and advances of a glyph.
+    pub fn glyph_metrics(&self, glyph: usize) -> Option<Metrics> {
+        parse_metrics(&self.glyph_program(glyph)?).ok()
     }
 
     /// Attach AFM metrics to the face, replacing any previous AFM data.

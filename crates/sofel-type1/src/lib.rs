@@ -27,3 +27,6 @@ pub mod encoding;
 
 /// Type 1 face character and glyph queries.
 pub mod face;
+
+/// Unscaled Type 1 charstring metrics.
+pub mod metrics;
