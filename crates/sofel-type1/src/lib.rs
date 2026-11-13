@@ -21,3 +21,6 @@ pub mod source;
 
 /// Type 1 charstring and subroutine index.
 pub mod charstrings;
+
+/// Type 1 character encoding.
+pub mod encoding;

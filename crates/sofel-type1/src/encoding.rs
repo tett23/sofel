@@ -1,0 +1,100 @@
+//! Type 1 glyph-name encoding.
+
+use core::fmt;
+use sofel_read::cff::{STANDARD_ENCODING, STANDARD_STRINGS};
+
+/// Invalid or unsupported Type 1 encoding declaration.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EncodingError;
+
+impl fmt::Display for EncodingError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("invalid Type 1 encoding")
+    }
+}
+
+impl core::error::Error for EncodingError {}
+
+/// The glyph name assigned to each eight-bit character code.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Encoding<'a> {
+    names: [Option<&'a [u8]>; 256],
+}
+
+impl<'a> Encoding<'a> {
+    /// Read a standard or explicit 256-entry Type 1 encoding.
+    pub fn parse(cleartext: &'a [u8]) -> Result<Self, EncodingError> {
+        let marker = cleartext
+            .windows(9)
+            .position(|bytes| bytes == b"/Encoding")
+            .ok_or(EncodingError)?;
+        let after = marker.checked_add(9).ok_or(EncodingError)?;
+        let declaration = cleartext
+            .get(after..)
+            .ok_or(EncodingError)?
+            .trim_ascii_start();
+        if declaration.starts_with(b"StandardEncoding") {
+            let names = core::array::from_fn(|code| {
+                let sid = *STANDARD_ENCODING.get(code)?;
+                if sid == 0 {
+                    return None;
+                }
+                STANDARD_STRINGS
+                    .get(usize::from(sid))
+                    .map(|name| name.as_bytes())
+            });
+            return Ok(Self { names });
+        }
+        let body = declaration
+            .strip_prefix(b"256 array")
+            .ok_or(EncodingError)?;
+        let end = body
+            .windows(12)
+            .position(|bytes| bytes == b"readonly def")
+            .or_else(|| body.windows(3).position(|bytes| bytes == b"def"))
+            .ok_or(EncodingError)?;
+        let body = body.get(..end).ok_or(EncodingError)?;
+        let mut names = [None; 256];
+        for line in body.split(|byte| *byte == b'\n' || *byte == b'\r') {
+            let line = line.trim_ascii();
+            let Some(rest) = line.strip_prefix(b"dup ") else {
+                continue;
+            };
+            let digits = rest.iter().take_while(|byte| byte.is_ascii_digit()).count();
+            let code = decimal(rest.get(..digits).ok_or(EncodingError)?)?;
+            let name = rest.get(digits..).ok_or(EncodingError)?.trim_ascii_start();
+            let name = name.strip_prefix(b"/").ok_or(EncodingError)?;
+            let end = name
+                .iter()
+                .position(u8::is_ascii_whitespace)
+                .ok_or(EncodingError)?;
+            let name = name.get(..end).ok_or(EncodingError)?;
+            if name.is_empty() || !line.ends_with(b"put") {
+                return Err(EncodingError);
+            }
+            *names.get_mut(code).ok_or(EncodingError)? = (name != b".notdef").then_some(name);
+        }
+        Ok(Self { names })
+    }
+
+    /// The glyph name assigned to `code`, absent for `.notdef`.
+    pub fn name(&self, code: u8) -> Option<&'a [u8]> {
+        self.names.get(usize::from(code)).copied().flatten()
+    }
+}
+
+fn decimal(bytes: &[u8]) -> Result<usize, EncodingError> {
+    if bytes.is_empty() {
+        return Err(EncodingError);
+    }
+    bytes.iter().try_fold(0usize, |value, byte| {
+        let digit = byte
+            .checked_sub(b'0')
+            .filter(|digit| *digit < 10)
+            .ok_or(EncodingError)?;
+        value
+            .checked_mul(10)
+            .and_then(|n| n.checked_add(usize::from(digit)))
+            .ok_or(EncodingError)
+    })
+}
