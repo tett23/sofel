@@ -288,7 +288,8 @@ fn next_word<'a>(data: &'a [u8], at: &mut usize) -> Option<&'a [u8]> {
     token(data, at)
 }
 
-fn glyph_unicode(name: &[u8]) -> Option<u32> {
+/// Single Unicode value represented by an Adobe or `uniXXXX` glyph name.
+pub fn glyph_unicode(name: &[u8]) -> Option<u32> {
     let name = name.split(|byte| *byte == b'.').next()?;
     if let Some(hex) = name.strip_prefix(b"uni").filter(|hex| hex.len() == 4) {
         return hex_codepoint(hex);

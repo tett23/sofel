@@ -1,4 +1,18 @@
-use sofel_font::Cff;
+use sofel_font::{BareCffFace, Cff};
+
+const TWO_GLYPHS: &[u8] = &[
+    1, 0, 4, 4, // Header
+    0, 1, 1, 1, 2, b'A', // Name INDEX
+    0, 1, 1, 1, 3, 160, 17, // Top DICT INDEX
+    0, 0, // String INDEX
+    0, 0, // Global Subrs INDEX
+    0, 2, 1, 1, 2, 3, 14, 14, // CharStrings INDEX
+];
+
+const WIDTH_500: &[u8] = &[
+    1, 0, 4, 4, 0, 1, 1, 1, 2, b'A', 0, 1, 1, 1, 3, 160, 17, 0, 0, 0, 0, 0, 1, 1, 1, 6, 248, 136,
+    139, 22, 14,
+];
 
 // One .notdef glyph. The Top DICT's CharStrings offset is 21.
 const BARE_CFF: &[u8] = &[
@@ -49,4 +63,35 @@ fn adr0065_i1_bare_cff_selects_last_face() {
         Ok(42)
     );
     assert!(Cff::from_bare(TWO_FACES, 2).is_err());
+}
+
+#[test]
+fn adr0065_i1_bare_cff_character_mapping_matches_postscript_names() {
+    let face = BareCffFace::new(TWO_GLYPHS, 0);
+    assert_eq!(face.as_ref().map(BareCffFace::num_glyphs), Ok(2));
+    assert_eq!(
+        face.as_ref().ok().and_then(|face| face.nominal_glyph(32)),
+        Some(sofel_font::read::GlyphId(1))
+    );
+    assert_eq!(
+        face.as_ref().ok().and_then(|face| face.encoded_glyph(32)),
+        Some(sofel_font::read::GlyphId(1))
+    );
+    assert_eq!(
+        face.as_ref()
+            .ok()
+            .and_then(|face| face.glyph_name(sofel_font::read::GlyphId(1))),
+        Some(&b"space"[..])
+    );
+}
+
+#[test]
+fn adr0065_i1_bare_cff_reads_charstring_advance() {
+    let face = BareCffFace::new(WIDTH_500, 0);
+    assert_eq!(
+        face.as_ref()
+            .ok()
+            .and_then(|face| face.h_advance(sofel_font::read::GlyphId(0))),
+        Some(500)
+    );
 }
