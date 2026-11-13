@@ -1813,3 +1813,58 @@ fn adr0022_wide_pair_set_keeps_selected_second_glyph() {
     let at = u32::from_be_bytes([0, st[13], st[14], st[15]]) as usize;
     assert!(st[at..].starts_with(&[0, 0, 1, 0, 0, 2, 255, 213]));
 }
+
+#[test]
+fn adr0022_mark_anchors_survive_a_retained_wide_gid() {
+    let anchor = Buf::new().u16(1).i16(-9).i16(47).done();
+    for kind in [4, 5, 6] {
+        let marks = link(
+            Buf::new().u16(1).u16(0).u16(0).done(),
+            vec![(4, 2, anchor.clone())],
+        );
+        let matrix = link(
+            Buf::new().u16(1).u16(0).done(),
+            vec![(2, 2, anchor.clone())],
+        );
+        let bases = if kind == 5 {
+            link(Buf::new().u16(1).u16(0).done(), vec![(2, 2, matrix)])
+        } else {
+            matrix
+        };
+        let st = link(
+            Buf::new().u16(1).u16(0).u16(0).u16(1).u16(0).u16(0).done(),
+            vec![
+                (2, 2, vec![0, 3, 0, 0, 1, 1, 0, 0]),
+                (4, 2, coverage1(&[1])),
+                (8, 2, marks),
+                (10, 2, bases),
+            ],
+        );
+        let mut tables = sample_tables();
+        tables
+            .iter_mut()
+            .find(|(tag, _)| *tag == b"hmtx")
+            .unwrap()
+            .1
+            .resize(2 * 65537 + 40, 0);
+        tables.extend([
+            (b"MAXP", vec![0, 0, 80, 0, 1, 0, 1]),
+            (b"GPOS", layout_table(&[(b"mark", &[0])], &[(kind, st)])),
+        ]);
+        tables.sort_by_key(|(tag, _)| **tag);
+        let data = sfnt(&tables);
+        let input = chars("A")
+            .map_set(SetKind::Glyphs, |set| {
+                set.add(65536);
+            })
+            .with_flags(Flags::RETAIN_GIDS);
+        let out = subset(&Font::new(&data, 0).unwrap(), &input).unwrap();
+        let gpos = out_table(&out, b"GPOS").unwrap();
+        let st = follow(follow(follow(&gpos, 8), 2), 6);
+        assert!(follow(st, 2).starts_with(&[0, 3, 0, 0, 1, 1, 0, 0]));
+        assert!(follow(follow(st, 8), 4).starts_with(&anchor));
+        let base = follow(st, 10);
+        let matrix = if kind == 5 { follow(base, 2) } else { base };
+        assert!(follow(matrix, 2).starts_with(&anchor));
+    }
+}

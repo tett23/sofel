@@ -864,6 +864,12 @@ impl Plan {
                         .iter()
                         .all(|(kind, subtable)| {
                             (*kind == layout::Kind::PairPos && matches!(subtable.u16(0), 1..=4))
+                                || (matches!(
+                                    kind,
+                                    layout::Kind::MarkBasePos
+                                        | layout::Kind::MarkLigPos
+                                        | layout::Kind::MarkMarkPos
+                                ) && subtable.u16(0) == 1)
                                 || matches!(
                                     kind,
                                     layout::Kind::SingleSubst
