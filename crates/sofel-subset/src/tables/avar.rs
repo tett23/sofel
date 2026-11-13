@@ -1,5 +1,6 @@
 //! Removes pinned axes from an unchanged avar version 1 map (ADR 0061).
 
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use sofel_font::read::{Tag, avar::Avar};
@@ -8,6 +9,110 @@ use crate::error::SubsetError;
 use crate::plan::Plan;
 
 const TAG: Tag = Tag::new(b"avar");
+
+#[allow(dead_code)] // Used by the avar2 planner once the serializer is wired.
+pub(crate) struct Avar2Ranges {
+    pub reachable: BTreeMap<Tag, crate::input::AxisRange>,
+    pub self_contained: BTreeMap<Tag, f32>,
+}
+
+/// Bounds the original avar2 coordinates over the requested user box.
+/// A pinned axis is removable only when its delta is constant on that box.
+#[allow(dead_code, clippy::indexing_slicing, clippy::cast_possible_truncation)]
+pub(crate) fn avar2_reachable_ranges(
+    font: &sofel_font::Font<'_>,
+    n: &crate::instance::Normalized,
+    detect_self_contained: bool,
+) -> Result<Avar2Ranges, SubsetError> {
+    let bad = SubsetError::Malformed { tag: TAG };
+    let source = font.table(TAG).ok_or(bad)?;
+    let avar = Avar::new(source).map_err(|_| bad)?;
+    let store = avar.variation_store().map_err(|_| bad)?;
+    let index_map = avar.axis_index_map().map_err(|_| bad)?;
+    let axes = crate::instance::axis_infos(font);
+    let box_: Vec<[f64; 2]> = axes
+        .iter()
+        .map(|axis| {
+            if let Some(range) = n.axes_location.get(&axis.tag) {
+                [f64::from(range.min), f64::from(range.max)]
+            } else if axis.hidden {
+                [0.0, 0.0]
+            } else {
+                [-1.0, 1.0]
+            }
+        })
+        .collect();
+    let mut result = Avar2Ranges {
+        reachable: BTreeMap::new(),
+        self_contained: BTreeMap::new(),
+    };
+    for (axis, info) in axes.iter().enumerate() {
+        let index = index_map.map_or(u32::try_from(axis).map_err(|_| bad)?, |m| {
+            m.map(u32::try_from(axis).unwrap_or(u32::MAX))
+        });
+        let data = store.and_then(|s| u16::try_from(index >> 16).ok().and_then(|o| s.item_data(o)));
+        let mut row = Vec::new();
+        if let (Some(store), Some(data)) = (store, data)
+            && let Ok(inner) = u16::try_from(index & 0xffff)
+            && inner < data.item_count
+        {
+            for column in 0..data.region_index_count() {
+                let delta = data.delta(inner, column).ok_or(bad)?;
+                if delta == 0 {
+                    continue;
+                }
+                let region_id = data.region_index(usize::from(column)).ok_or(bad)?;
+                let region = store.region(region_id).ok_or(bad)?;
+                let tents = (0..axes.len())
+                    .map(|i| {
+                        region
+                            .axis(i)
+                            .map(|(start, peak, end)| {
+                                [start, peak, end].map(|v| f64::from(v) / 16384.0)
+                            })
+                            .ok_or(bad)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                row.push((delta, tents));
+            }
+        }
+        let (delta, final_coord) = avar2_reachable_range(&box_, axis, &row);
+        if detect_self_contained
+            && delta[0] == delta[1]
+            && n.user.get(&info.tag).is_some_and(|r| r.min == r.max)
+        {
+            let intermediate = box_[axis][0];
+            let fixed = crate::instance::f64_to_i32(sofel_geom::float::hb_roundf32(
+                crate::instance::f64_to_f32(intermediate * 16384.0),
+            ));
+            let delta_fixed = crate::instance::f64_to_i32(sofel_geom::float::hb_roundf32(
+                crate::instance::f64_to_f32(delta[0]),
+            ));
+            let final_fixed = fixed.saturating_add(delta_fixed).clamp(-16384, 16384);
+            result
+                .self_contained
+                .insert(info.tag, final_fixed as f32 / 16384.0);
+            continue;
+        }
+        let lo =
+            sofel_geom::float::floor((final_coord[0] - 1.0 / 16384.0).clamp(-1.0, 1.0) * 16384.0)
+                / 16384.0;
+        let hi =
+            -sofel_geom::float::floor(-(final_coord[1] + 1.0 / 16384.0).clamp(-1.0, 1.0) * 16384.0)
+                / 16384.0;
+        if lo > -1.0 || hi < 1.0 {
+            result.reachable.insert(
+                info.tag,
+                crate::input::AxisRange {
+                    min: lo as f32,
+                    default: 0.0_f64.clamp(lo, hi) as f32,
+                    max: hi as f32,
+                },
+            );
+        }
+    }
+    Ok(result)
+}
 
 /// Checks that the selected axes use identity knots and both v2 offsets are null.
 pub(crate) fn is_empty_identity_v2(
@@ -376,9 +481,150 @@ fn compensation_regions(
     regions
 }
 
+// The variation delta is piecewise multilinear. Its extrema and those of
+// identity + delta occur on the grid of input bounds and active tent knots.
+// HarfBuzz enumerates at most 16384 points and then uses interval bounds.
+#[allow(dead_code, clippy::indexing_slicing, clippy::arithmetic_side_effects)]
+fn avar2_reachable_range(
+    box_: &[[f64; 2]],
+    target: usize,
+    row: &[(i32, Vec<[f64; 3]>)],
+) -> ([f64; 2], [f64; 2]) {
+    let mut points = alloc::vec![alloc::vec![0.0]; box_.len()];
+    if let (Some(&[lo, hi]), Some(grid)) = (box_.get(target), points.get_mut(target)) {
+        *grid = alloc::vec![lo, hi];
+    }
+    for (_, region) in row {
+        for (axis, &[start, peak, end]) in region.iter().enumerate() {
+            if peak == 0.0 || start > peak || peak > end || start < 0.0 && end > 0.0 {
+                continue;
+            }
+            if let (Some(&[lo, hi]), Some(grid)) = (box_.get(axis), points.get_mut(axis)) {
+                grid.extend([lo, hi]);
+                grid.extend([start.clamp(lo, hi), peak.clamp(lo, hi), end.clamp(lo, hi)]);
+            }
+        }
+    }
+    for grid in &mut points {
+        grid.sort_by(f64::total_cmp);
+        grid.dedup();
+    }
+    let exact = points
+        .iter()
+        .try_fold(1usize, |total, p| total.checked_mul(p.len()))
+        .is_some_and(|count| count <= 16384);
+    let tent = |value: f64, [start, peak, end]: [f64; 3]| {
+        if peak == 0.0 || start > peak || peak > end || start < 0.0 && end > 0.0 || value == peak {
+            1.0
+        } else if value <= start || value >= end {
+            0.0
+        } else if value < peak {
+            (value - start) / (peak - start)
+        } else {
+            (end - value) / (end - peak)
+        }
+    };
+    if exact {
+        let mut positions = alloc::vec![0usize; points.len()];
+        let mut deltas = [f64::INFINITY, f64::NEG_INFINITY];
+        let mut finals = [f64::INFINITY, f64::NEG_INFINITY];
+        loop {
+            let delta = row
+                .iter()
+                .map(|(d, region)| {
+                    let scalar = region
+                        .iter()
+                        .enumerate()
+                        .map(|(axis, &t)| {
+                            let at = points
+                                .get(axis)
+                                .and_then(|p| p.get(positions[axis]))
+                                .copied()
+                                .unwrap_or(0.0);
+                            tent(at, t)
+                        })
+                        .product::<f64>();
+                    f64::from(*d) * scalar
+                })
+                .sum::<f64>();
+            let identity = points
+                .get(target)
+                .and_then(|p| p.get(positions[target]))
+                .copied()
+                .unwrap_or(0.0);
+            let final_coord = identity + delta / 16384.0;
+            deltas = [deltas[0].min(delta), deltas[1].max(delta)];
+            finals = [finals[0].min(final_coord), finals[1].max(final_coord)];
+            let mut axis = 0;
+            while axis < positions.len() {
+                positions[axis] += 1;
+                if positions[axis] < points[axis].len() {
+                    break;
+                }
+                positions[axis] = 0;
+                axis += 1;
+            }
+            if axis == positions.len() {
+                break;
+            }
+        }
+        (deltas, finals)
+    } else {
+        let mut deltas = [0.0; 2];
+        for (delta, region) in row {
+            let (low, high) =
+                region
+                    .iter()
+                    .enumerate()
+                    .fold((1.0, 1.0), |(low, high), (axis, &t)| {
+                        let [a, b] = box_.get(axis).copied().unwrap_or([-1.0, 1.0]);
+                        let x = tent(a, t);
+                        let y = tent(b, t);
+                        let maximum = if a <= t[1] && t[1] <= b {
+                            1.0
+                        } else {
+                            x.max(y)
+                        };
+                        (low * x.min(y), high * maximum)
+                    });
+            let values = [f64::from(*delta) * low, f64::from(*delta) * high];
+            deltas[0] += values[0].min(values[1]);
+            deltas[1] += values[0].max(values[1]);
+        }
+        let [lo, hi] = box_.get(target).copied().unwrap_or([-1.0, 1.0]);
+        (deltas, [lo + deltas[0] / 16384.0, hi + deltas[1] / 16384.0])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::compensation_regions;
+
+    #[test]
+    fn adr0061_i1_avar2_reachable_range_detects_driven_pins_and_culling() {
+        use super::avar2_reachable_range;
+        // The target axis is pinned at 0.5, while a free source axis drives
+        // its final coordinate through a tent with a quarter-axis delta.
+        let row = [(4096, alloc::vec![[0.0, 0.0, 0.0], [0.0, 1.0, 1.0]])];
+        let (delta, final_range) = avar2_reachable_range(&[[0.5, 0.5], [-1.0, 1.0]], 0, &row);
+        assert_eq!(delta, [0.0, 4096.0]);
+        assert_eq!(final_range, [0.5, 0.75]);
+        let (_, restricted) = avar2_reachable_range(&[[0.5, 0.5], [-1.0, 0.0]], 0, &row);
+        assert_eq!(restricted, [0.5, 0.5]);
+    }
+
+    #[test]
+    fn adr0061_i1_avar2_reachable_range_ignores_unreferenced_axes() {
+        use super::avar2_reachable_range;
+        let mut box_ = alloc::vec![[-1.0, 1.0]; 20];
+        box_[0] = [0.5, 0.5];
+        let mut region = alloc::vec![[0.0, 0.0, 0.0]; 20];
+        region[1] = [0.0, 1.0, 1.0];
+        let row = [(4096, region.clone()), (-4096, region)];
+        let (delta, final_range) = avar2_reachable_range(&box_, 0, &row);
+        assert_eq!(delta, [0.0, 0.0]);
+        assert_eq!(final_range, [0.5, 0.5]);
+    }
 
     #[test]
     fn i2_identity_range_compensation_uses_old_default_as_an_interior_knot() {
