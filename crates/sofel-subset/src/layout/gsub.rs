@@ -158,29 +158,26 @@ pub(crate) fn multiple_or_alternate(s: &mut Sub<'_, '_>, st: D<'_>, multiple: bo
     !new_cov.is_empty()
 }
 
-/// `LigatureSet::intersects_lig_glyph`.
-fn set_intersects_lig_glyph(set: D<'_>, glyphs: &BitSet) -> bool {
-    (0..usize::from(set.u16(0))).any(|j| {
-        let lig = set.off16(2usize.saturating_add(j.saturating_mul(2)));
-        glyphs.has(u32::from(lig.u16(0))) && ligature_intersects(lig, glyphs)
-    })
-}
-
-/// LigatureSubst format 1.
+/// LigatureSubst formats 1 and 2.
 pub(crate) fn ligature(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
-    if st.u16(0) != 1 {
+    let Some(sets) = super::data::SequenceSets::new(st) else {
         return false;
-    }
-    s.s.u16(1);
-    let cov_at = s.s.u16(0);
-    let count_at = s.s.u16(0);
-    let cov = Cov(st.off16(2));
-    let n = usize::from(st.u16(4));
-    let set_at = |i: usize| st.off16(6usize.saturating_add(i.saturating_mul(2)));
+    };
+    let width = sets.width;
+    s.s.u16(st.u16(0));
+    let cov_at = s.s.zeros(if width == 3 { 4 } else { 2 });
+    let count_at = s.s.zeros(usize::from(width));
+    let cov = sets.coverage();
+    let n = sets.count();
     let pairs: Vec<(usize, u32)> = cov.glyphs().into_iter().take(n).enumerate().collect();
     let mut new_cov = BitSet::new();
     for &(i, g) in &pairs {
-        if s.in_gsub(g) && set_intersects_lig_glyph(set_at(i), &s.p.layout.glyphset_gsub) {
+        if s.in_gsub(g)
+            && super::data::ligatures(sets.set(i), width).any(|lig| {
+                s.in_gsub(lig.uint(0, width))
+                    && ligature_intersects(lig, width, &s.p.layout.glyphset_gsub)
+            })
+        {
             new_cov.add(g);
         }
     }
@@ -191,43 +188,57 @@ pub(crate) fn ligature(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
         return false;
     }
     let coverage_idx = s.s.pop_pack(true);
-    s.s.link16(cov_at, coverage_idx);
+    if width == 3 {
+        s.s.link32(cov_at, coverage_idx);
+    } else {
+        s.s.link16(cov_at, coverage_idx);
+    }
+    let mut count = 0u32;
     for &(i, g) in &pairs {
         if !new_cov.has(g) {
             continue;
         }
-        let set = set_at(i);
+        let set = sets.set(i);
         if set.is_null() {
             continue;
         }
-        if s.offset_append(2, |s| ligature_set(s, set, coverage_idx)) {
-            s.bump_u16(count_at, 1);
+        if s.offset_append(width, |s| ligature_set(s, set, width, coverage_idx)) {
+            count = count.saturating_add(1);
         }
+    }
+    if width == 3 {
+        s.s.set_u24(count_at, count);
+    } else {
+        s.s.set_u16(count_at, lo16(count));
     }
     !new_cov.is_empty()
 }
 
 /// `LigatureSet::subset`.
-fn ligature_set(s: &mut Sub<'_, '_>, set: D<'_>, coverage_idx: u32) -> bool {
+fn ligature_set(s: &mut Sub<'_, '_>, set: D<'_>, width: u8, coverage_idx: u32) -> bool {
     let count_at = s.s.u16(0);
     let mut n = 0u16;
-    for j in 0..usize::from(set.u16(0)) {
-        let lig = set.off16(2usize.saturating_add(j.saturating_mul(2)));
-        if lig.is_null() {
-            continue;
-        }
-        if s.offset_append(2, |s| {
-            let gs = &s.p.layout.glyphset_gsub;
-            if !ligature_intersects(lig, gs) || !gs.has(u32::from(lig.u16(0))) {
+    for lig in super::data::ligatures(set, width) {
+        if s.offset_append(width, |s| {
+            if !ligature_intersects(lig, width, &s.p.layout.glyphset_gsub)
+                || !s.in_gsub(lig.uint(0, width))
+            {
                 return false;
             }
             s.s.add_virtual_link(coverage_idx);
-            let comps = usize::from(lig.u16(2)).saturating_sub(1);
-            s.s.u16((s.map(u32::from(lig.u16(0))) & 0xFFFF) as u16);
-            s.s.u16(n16(comps.wrapping_add(1)));
-            for k in 0..comps {
-                let g = s.map(u32::from(lig.u16_at(4, k)));
-                s.s.u16((g & 0xFFFF) as u16);
+            let write_gid = |s: &mut Sub<'_, '_>, old| {
+                let g = s.map(old);
+                if width == 3 {
+                    s.s.u24(g);
+                } else {
+                    let at = s.s.u16(0);
+                    s.s.check_assign_u16(at, u64::from(g), sofel_write::Errors::INT_OVERFLOW);
+                }
+            };
+            write_gid(s, lig.uint(0, width));
+            s.s.u16(lig.u16(usize::from(width)).max(1));
+            for g in super::data::components(lig, width) {
+                write_gid(s, g);
             }
             true
         }) {

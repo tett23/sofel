@@ -148,21 +148,22 @@ impl<'a> Closure<'a> {
                 add.into_iter().for_each(|g| self.output.add(g));
             }
             Kind::LigatureSubst => {
-                if st.u16(0) != 1 {
+                let Some(sets) = super::data::SequenceSets::new(st) else {
                     return;
-                }
-                let cov = Cov(st.off16(2));
-                let n = usize::from(st.u16(4));
+                };
                 let mut add = Vec::new();
-                for (i, g) in cov.glyphs().into_iter().take(n).enumerate() {
-                    if !self.parent().has(g) {
-                        continue;
-                    }
-                    let set = st.off16(6usize.saturating_add(i.saturating_mul(2)));
-                    for j in 0..usize::from(set.u16(0)) {
-                        let lig = set.off16(2usize.saturating_add(j.saturating_mul(2)));
-                        if ligature_intersects(lig, &self.glyphs) {
-                            add.push(u32::from(lig.u16(0)));
+                for (i, g) in sets
+                    .coverage()
+                    .glyphs()
+                    .into_iter()
+                    .take(sets.count())
+                    .enumerate()
+                {
+                    if self.parent().has(g) {
+                        for lig in super::data::ligatures(sets.set(i), sets.width) {
+                            if ligature_intersects(lig, sets.width, &self.glyphs) {
+                                add.push(lig.uint(0, sets.width));
+                            }
                         }
                     }
                 }
@@ -248,9 +249,8 @@ impl<'a> Closure<'a> {
 }
 
 /// `Ligature::intersects`: every component is in `glyphs`.
-pub(crate) fn ligature_intersects(lig: D<'_>, glyphs: &BitSet) -> bool {
-    let n = usize::from(lig.u16(2)).saturating_sub(1);
-    (0..n).all(|i| glyphs.has(u32::from(lig.u16_at(4, i))))
+pub(crate) fn ligature_intersects(lig: D<'_>, width: u8, glyphs: &BitSet) -> bool {
+    super::data::components(lig, width).all(|g| glyphs.has(g))
 }
 
 /// Coverage, operand width, context arrays and substitutes of a reverse chaining lookup.
@@ -300,26 +300,18 @@ pub(crate) fn subtable_intersects(k: Kind, st: D<'_>, glyphs: &BitSet) -> bool {
         }
         Kind::MultipleSubst | Kind::AlternateSubst => super::data::SequenceSets::new(st)
             .is_some_and(|sets| sets.coverage().intersects(glyphs)),
-        Kind::LigatureSubst => {
-            if st.u16(0) != 1 {
-                return false;
-            }
-            let n = usize::from(st.u16(4));
-            cov.glyphs()
+        Kind::LigatureSubst => super::data::SequenceSets::new(st).is_some_and(|sets| {
+            sets.coverage()
+                .glyphs()
                 .into_iter()
-                .take(n)
+                .take(sets.count())
                 .enumerate()
-                .filter(|&(_, g)| glyphs.has(g))
-                .any(|(i, _)| {
-                    let set = st.off16(6usize.saturating_add(i.saturating_mul(2)));
-                    (0..usize::from(set.u16(0))).any(|j| {
-                        ligature_intersects(
-                            set.off16(2usize.saturating_add(j.saturating_mul(2))),
-                            glyphs,
-                        )
-                    })
+                .any(|(i, g)| {
+                    glyphs.has(g)
+                        && super::data::ligatures(sets.set(i), sets.width)
+                            .any(|lig| ligature_intersects(lig, sets.width, glyphs))
                 })
-        }
+        }),
         Kind::Context => context::context_intersects(st, glyphs),
         Kind::ChainContext => context::chain_intersects(st, glyphs),
         Kind::ReverseChain => reverse_intersects(st, glyphs),

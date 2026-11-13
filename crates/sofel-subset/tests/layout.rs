@@ -1734,3 +1734,25 @@ fn adr0022_wide_reverse_chain_keeps_context_and_substitute() {
         assert!(sub[off..].starts_with(&coverage1(&[glyph])));
     }
 }
+
+#[test]
+fn adr0022_wide_ligature_keeps_components_and_result() {
+    let lig = Buf::new().u24(6).u16(2).u24(2).done();
+    let set = link(Buf::new().u16(1).u24(0).done(), vec![(2, 3, lig)]);
+    let st = link(
+        Buf::new().u16(2).u32(0).u24(1).u24(0).done(),
+        vec![(2, 4, coverage1(&[1])), (9, 3, set)],
+    );
+    let data = font_with(vec![(
+        b"GSUB",
+        layout_table(&[(b"liga", &[0])], &[(4, st)]),
+    )]);
+    let out = subset(&Font::new(&data, 0).unwrap(), &chars("AB")).unwrap();
+    assert_eq!(num_glyphs(&out), 4);
+    let table = out_table(&out, b"GSUB").unwrap();
+    let st = follow(follow(follow(&table, 8), 2), 6);
+    let follow24 =
+        |d: &[u8], at: usize| u32::from_be_bytes([0, d[at], d[at + 1], d[at + 2]]) as usize;
+    let set = &st[follow24(st, 9)..];
+    assert!(set[follow24(set, 2)..].starts_with(&[0, 0, 3, 0, 2, 0, 0, 2]));
+}

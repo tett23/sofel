@@ -107,32 +107,53 @@ impl<'a> SequenceSets<'a> {
             self.table.off16(2)
         })
     }
-    fn uint(self, data: D<'_>, at: usize) -> u32 {
-        if self.width == 3 {
-            data.u32(at) >> 8
-        } else {
-            u32::from(data.u16(at))
-        }
-    }
     pub fn count(self) -> usize {
-        self.uint(self.table, if self.width == 3 { 6 } else { 4 }) as usize
+        self.table
+            .uint(if self.width == 3 { 6 } else { 4 }, self.width) as usize
+    }
+    pub fn set(self, index: usize) -> D<'a> {
+        let start: usize = if self.width == 3 { 9 } else { 6 };
+        self.table.follow(self.table.uint(
+            start.saturating_add(index.saturating_mul(usize::from(self.width))),
+            self.width,
+        ))
     }
     pub fn sequence(self, index: usize) -> Option<impl Iterator<Item = u32> + 'a> {
         let width = usize::from(self.width);
-        let start: usize = if width == 3 { 9 } else { 6 };
-        let set = self.table.follow(self.uint(
-            self.table,
-            start.saturating_add(index.saturating_mul(width)),
-        ));
+        let set = self.set(index);
         if set.is_null() {
             return None;
         }
-        let count = self.uint(set, 0) as usize;
+        let count = set.uint(0, self.width) as usize;
         if count.checked_add(1)?.checked_mul(width)? > set.0.len() {
             return None;
         }
-        Some((0..count).map(move |i| self.uint(set, i.saturating_add(1).saturating_mul(width))))
+        Some(
+            (0..count)
+                .map(move |i| set.uint(i.saturating_add(1).saturating_mul(width), self.width)),
+        )
     }
+}
+
+pub(crate) fn ligatures(set: D<'_>, width: u8) -> impl Iterator<Item = D<'_>> {
+    (0..usize::from(set.u16(0)))
+        .map(move |i| {
+            set.follow(set.uint(
+                2usize.saturating_add(i.saturating_mul(usize::from(width))),
+                width,
+            ))
+        })
+        .filter(|lig| !lig.is_null())
+}
+
+pub(crate) fn components(lig: D<'_>, width: u8) -> impl Iterator<Item = u32> {
+    let n = usize::from(lig.u16(usize::from(width))).saturating_sub(1);
+    (0..n).map(move |i| {
+        lig.uint(
+            2usize.saturating_add(i.saturating_add(1).saturating_mul(usize::from(width))),
+            width,
+        )
+    })
 }
 
 /// SingleSubst uses a long Coverage offset and 24-bit operands in formats 3 and 4.
