@@ -415,7 +415,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 ## WOFF と圧縮フォントの読み込み
 
-`sofel_woff::decode_woff2` は、Brotli の非圧縮ブロックに変換なしの表を格納した単一フェイスの WOFF2 を sfnt に戻す。CLI は外側の圧縮を展開した後に WOFF2 の署名を識別する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+`sofel_woff::decode_woff2` は、Brotli の非圧縮ブロックを使った単一フェイスの WOFF2 を sfnt に戻す。変換なしの表に加え、変換した hmtx も読み、元の glyf と loca から省略された左サイドベアリングを復元する。CLI は外側の圧縮を展開した後に WOFF2 の署名を識別する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
 `sofel_woff::decode_woff` は出力サイズの上限を受け取り、WOFF 1.0 の表を物理順に展開して sfnt を返す。フォントを読み込む CLI は gzip、UNIX compress（LZW）、bzip2 を先に展開してから WOFF の署名を検査する。検証器は WOFF の不正なフィールドか圧縮表の入力オフセットを報告する。bzip2 はブロックとメンバーの CRC を検査し、破損を検出した入力オフセットを報告する。gzip の破損はメンバーを含むコンテナ先頭で報告する。[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)
 
@@ -470,6 +470,8 @@ Windows ビットマップフォントの検証では、単独の FNT または 
 `sofel-validate` は Type 42 のラッパーを解析し、埋め込み sfnt を通常の sfnt と同じ手順で検証する。ラッパーの診断はタグ `T42 ` とファイル先頭からのオフセットを返す。埋め込み sfnt の各表の診断では、その表の先頭からのオフセットを返す（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
 `sofel-type1::type42::Type42Source` は Type42 の `/sfnts` 配列の16進文字列または `RD` バイナリを連結し、展開長と sfnt の表範囲を検査する。`/Encoding` と `/CharStrings` から Type42 のグリフ番号を読み、`.notdef` を先頭に置く。Unicode の文字対応は PostScript のグリフ名を Adobe Glyph List と `uniXXXX`・`uXXXXX` によって変換し、8ビットの Encoding は別に問い合わせる。`Font::from_type42` が返す `Type42Face` は Type42 のグリフ番号を埋め込み TrueType のグリフ番号へ変換し、送りを返す。輪郭を読むときは `embedded_glyph` と `inner_font` の組を使う（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+
+`sofel render` は Type42 の `--glyph` を PostScript のグリフ番号として読み、`--char` と `--text` の Unicode は PostScript のグリフ名から引く。描画には対応する埋め込み TrueType グリフを使う。
 
 ## 素の CFF フェイスと CEF
 
