@@ -94,7 +94,7 @@ BDF、PCF、FNT、FON は Rust API の `Font::from_bitmap` で開く。文字対
 
 CEF（Compact Embedded Font）は `BareCffFace::new` のフェイス番号 0 で開く。`sofel-render` でもグリフ番号や文字を指定して描画できる。
 
-PFR（Portable Font Resource）は、Rust API の `Font::from_pfr` でフェイス番号を指定して開く。文字対応と送り幅を取得し、輪郭または指定サイズの埋め込みビットマップを取り出せる。
+PFR（Portable Font Resource）は、Rust API の `Font::from_pfr` でフェイス番号を指定して開く。文字対応と送り幅を取得し、輪郭または指定サイズの埋め込みビットマップを取り出せる。`sofel-render` は PFR を通常入力として開き、グリフ番号または文字から PGM に描く。
 
 サブセットの Rust・C API では、プラットフォーム、エンコーディング、言語、名前 ID を指定して名前レコードを追加・置換できる。空文字列を指定するとそのレコードを削除する。
 
