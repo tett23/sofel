@@ -185,10 +185,10 @@ fn layout_unsupported(
         });
     }
     for t in [b"GSUB", b"GPOS"] {
-        if kept(t).is_some_and(|d| sofel_font::read::be::u32_at(d, 0).unwrap_or(0) >= 0x0001_0002) {
+        if kept(t).is_some_and(|d| sofel_font::read::be::u32_at(d, 0).unwrap_or(0) > 0x0001_0002) {
             return Err(SubsetError::Unsupported {
                 tag: Tag::new(t),
-                reason: "GSUB and GPOS 1.2 (ADR 0022 stage 3)",
+                reason: "GSUB and GPOS versions newer than 1.2 (ADR 0022 stage 3)",
             });
         }
     }
