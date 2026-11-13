@@ -415,7 +415,7 @@ impl Plan {
                             table.item_var_store_offset().unwrap_or(0) == 0
                                 || (!norm.avar2 && table.variation_store().is_ok())
                         }),
-                        b"COLR" => !norm.avar2 && sofel_font::read::colr::Colr::new(data).is_ok(),
+                        b"COLR" => sofel_font::read::colr::Colr::new(data).is_ok(),
                         b"GDEF" => sofel_font::read::gdef::Gdef::new(data).is_ok_and(|t| {
                             t.item_var_store_offset().unwrap_or(0) == 0
                                 || t.variation_store().is_ok()

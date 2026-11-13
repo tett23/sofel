@@ -70,7 +70,7 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-geom`](crates/sofel-geom) | FreeTypeと同じ結果を返す固定小数点の演算と、輪郭を受け渡す `Pen`、HarfBuzzと同じ丸め（`sofel_geom::float`）。カラーグリフの塗りの命令を受け渡す `Painter` と塗りの値、変換、どの環境でも同じ結果の三角関数、塗りの補助の関数（[ADR 0023](docs/adr/0023-color-glyphs.md)） |
 | [`sofel-unicode`](crates/sofel-unicode) | Unicode 18.0.0の文字の性質（General_Category、Script、正規分解と合成、Vertical_Orientationなど。[ADR 0019](docs/adr/0019-unicode-character-data.md)） |
 | [`sofel-read`](crates/sofel-read) | sfntの表の読み取りと検証。コピーも確保もせず、どの入力でもpanicしない |
-| [`sofel-type1`](crates/sofel-type1) | PFA・PFB の復号と Type1 の文字対応、送り幅、AFM・PFM のカーニング、Type42 の埋め込み sfnt・Encoding・CharStrings を Rust API で読む（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)） |
+| [`sofel-type1`](crates/sofel-type1) | PFA・PFB の復号と Type1 の文字対応、送り幅、AFM・PFM のカーニングを使った横書きのシェーピング、Type42 の埋め込み sfnt・Encoding・CharStrings を Rust API で読む（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)） |
 | [`sofel-font`](crates/sofel-font) | フォントを一度だけ読み、グリフの数、文字からグリフへの対応、送り幅、フォント全体と縦書きのメトリクス、BASEの基準線とその代わりの値、名前とグリフ名（postとCFFのcharset）をHarfBuzzの方針で返し、HarfBuzzと同じ拡大縮小（`HbScale`）をする。HarfBuzzのCFFとCFF2のアクセラレータ（`HbCff1`、`HbCff2`）を持つ。素の CFF 1 はフェイス番号で Top DICT を選び、`BareCffFace` で文字対応と送り幅を返す。PostScript名と `FT_Face` の値はFreeTypeの方針。TrueType の制御値は指定した軸位置で取得できる |
 | [`sofel-outline`](crates/sofel-outline) | glyfとGLYFの輪郭を、ヒンティングなしでFreeTypeと同じ座標で `Pen` に渡す。素の CFF 1 の輪郭も `draw_bare_cff` で描く。読み込んだ閉じた輪郭は、半径と角の接合を指定して縁取り、両側または片側の境界を取り出す（[ADR 0076](docs/adr/0076-glyph-outline-stroking.md)）。HarfBuzzと同じグリフの箱（glyf、CFF2、CFF。`HbExtents`、[ADR 0021](docs/adr/0021-cff-outlines.md)）を求める |
 | [`sofel-shape`](crates/sofel-shape) | HarfBuzz 15.1.0のOTシェーパーと同じシェーピング（バッファ、区間の性質、計画、正規化、`GSUB` と `GPOS`、フォールバックの位置。[ADR 0020](docs/adr/0020-shaping-foundation.md)）、機能の文字列、直列化、言語と文字体系のタグ。文字体系ごとのシェーパー（hebrew、hangul、thai、arabic、indic、khmer、myanmar、USE。[ADR 0024](docs/adr/0024-complex-shapers.md)）もすべて実装した |
@@ -91,6 +91,8 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 
 サブセット化では、65,536グリフを超えるフォントのグリフを選んで小さい ID に振り直せる。GSUB の SingleSubst と GPOS の SinglePos では、形式3・4で記録された置換と位置調整を保持する。Coverage と ClassDef の形式3・4にも対応する。
 BDF、PCF、FNT、FON は Rust API の `Font::from_bitmap` で開く。文字対応、送り幅、固定サイズの画像を同じ API で読める。
+
+CEF（Compact Embedded Font）は `BareCffFace::new` のフェイス番号 0 で開く。`sofel-render` でもグリフ番号や文字を指定して描画できる。
 
 PFR（Portable Font Resource）は、Rust API の `Font::from_pfr` でフェイス番号を指定して開く。文字対応と送り幅を取得し、輪郭または指定サイズの埋め込みビットマップを取り出せる。
 
@@ -201,7 +203,7 @@ sofel-subset --font-file=font.ttf --unicodes=41-5A -o - | sofel-woff --format wo
 
 ### `sofel-validate`
 
-sfnt、TTC/OTC、dfontの各表と素の CFF 1 を検証する（[ADR 0008](docs/adr/0008-validate-command-and-freetype-comparison.md)、[ADR 0058](docs/adr/0058-dfont-face-selection.md)、[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。誤りを1件1行で出し、`--json` ではJSON Linesで出す。
+sfnt、TTC/OTC、dfont の各表、素の CFF 1、CEF を検証する（[ADR 0008](docs/adr/0008-validate-command-and-freetype-comparison.md)、[ADR 0058](docs/adr/0058-dfont-face-selection.md)、[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。誤りを1件1行で出し、`--json` ではJSON Linesで出す。
 
 ```sh
 cargo run --release --bin sofel-validate -- font.ttf

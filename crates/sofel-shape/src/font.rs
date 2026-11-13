@@ -18,6 +18,7 @@ use sofel_geom::float::{ceilf, floorf, hb_clamp_to_i32};
 
 use crate::outline::GlyphOutline;
 
+type KerningFn<'a> = dyn Fn(u32, u32) -> i32 + Send + Sync + 'a;
 type VariationGlyphFn<'a> = dyn Fn(u32, u32) -> Option<u32> + Send + Sync + 'a;
 type OriginFn<'a> = dyn Fn(u32) -> Option<(i32, i32)> + Send + Sync + 'a;
 
@@ -27,6 +28,7 @@ type OriginFn<'a> = dyn Fn(u32) -> Option<(i32, i32)> + Send + Sync + 'a;
 /// delegates to the parent; a set function supplies a value in this font's
 /// scale, as with HarfBuzz's `hb_font_create_sub_font`.
 pub struct SubFont<'p> {
+    h_kerning: Option<Box<KerningFn<'p>>>,
     parent: Option<&'p SubFont<'p>>,
     scale: Scale,
     nominal_glyph: Option<Box<dyn Fn(u32) -> Option<u32> + Send + Sync + 'p>>,
@@ -49,6 +51,7 @@ impl<'p> SubFont<'p> {
         Self {
             parent: None,
             scale,
+            h_kerning: None,
             nominal_glyph: None,
             variation_glyph: None,
             h_advance: None,
@@ -64,11 +67,54 @@ impl<'p> SubFont<'p> {
         }
     }
 
+    /// Creates a shaping font using the Type 1 glyph names, metrics and attached
+    /// AFM or PFM pairs. The supplied scale converts design units to positions.
+    pub fn from_type1(scale: Scale, face: &'p sofel_font::Type1Face<'_>) -> Self {
+        let mut font = Self::new(scale);
+        font.set_nominal_glyph_func(move |cp| u32::try_from(face.unicode_glyph(cp)?).ok());
+        font.set_h_advance_func(move |gid| {
+            usize::try_from(gid)
+                .ok()
+                .and_then(|g| face.glyph_metrics(g))
+                .map_or(0, |m| scale.scale.em_scale_x(m.advance_x))
+        });
+        font.set_h_kerning_func(move |left, right| {
+            let (Ok(left), Ok(right)) = (usize::try_from(left), usize::try_from(right)) else {
+                return 0;
+            };
+            scale.scale.em_scale_x(face.kerning(left, right).0)
+        });
+        font
+    }
+
+    /// Provides horizontal pair kerning in this font's scaled units.
+    pub fn set_h_kerning_func(&mut self, func: impl Fn(u32, u32) -> i32 + Send + Sync + 'p) {
+        self.h_kerning = Some(Box::new(func));
+    }
+
+    fn has_h_kerning(&self) -> bool {
+        self.h_kerning.is_some() || self.parent.is_some_and(Self::has_h_kerning)
+    }
+
+    pub(crate) fn pair_kern(&self, left: u32, right: u32) -> i32 {
+        if let Some(func) = &self.h_kerning {
+            return func(left, right);
+        }
+        self.parent.map_or(0, |parent| {
+            parent_scale_distance(
+                parent.pair_kern(left, right),
+                parent.scale.scale.x_scale(),
+                self.scale.scale.x_scale(),
+            )
+        })
+    }
+
     /// Create a child, copying the scale and synthetic settings.
     pub fn child(&'p self) -> Self {
         Self {
             parent: Some(self),
             scale: self.scale,
+            h_kerning: None,
             nominal_glyph: None,
             variation_glyph: None,
             h_advance: None,
@@ -525,6 +571,10 @@ pub(crate) fn round_to_i32(v: f32) -> i32 {
 }
 
 impl<'f, 'a, 'l, 's> ShapeFont<'f, 'a, 'l, 's> {
+    pub(crate) fn kern_subfont(&self) -> Option<&SubFont<'f>> {
+        self.subfont.filter(|s| s.has_h_kerning())
+    }
+
     pub(crate) fn new(
         instance: Instance<'f, 'a, 'l, 's>,
         scale: Scale,

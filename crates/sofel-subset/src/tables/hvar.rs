@@ -88,9 +88,7 @@ pub(super) fn subset(
         .map(|(outer, rows)| (outer, rows.into_iter().collect::<Vec<_>>()))
         .collect();
     let mut remap = BTreeMap::new();
-    let store_bytes = if (plan.var.instancing() && !plan.var.n.normalized_coords.is_empty())
-        || !plan.var.n.avar2_reachable.is_empty()
-    {
+    let store_bytes = if plan.var.instancing() {
         instance::subset(
             plan,
             font,
@@ -100,6 +98,11 @@ pub(super) fn subset(
             maps[0].is_some(),
             &mut remap,
         )?
+    } else if plan.var.n.avar2 && !plan.var.n.avar2_reachable.is_empty() {
+        // HarfBuzz leaves the store's rows and regions in their original
+        // coordinates here, removing only regions the restricted avar2
+        // mapping cannot reach.
+        subset_store_inner(store, &old_items, tag, Some(plan))?
     } else {
         subset_store(store, &old_items, tag)?
     };
@@ -267,6 +270,24 @@ pub(crate) fn subset_store(
     old_items: &[(u16, Vec<u32>)],
     tag: Tag,
 ) -> Result<Vec<u8>, SubsetError> {
+    subset_store_inner(store, old_items, tag, None)
+}
+
+pub(crate) fn subset_store_with_avar2(
+    plan: &Plan,
+    store: ItemVariationStore<'_>,
+    old_items: &[(u16, Vec<u32>)],
+    tag: Tag,
+) -> Result<Vec<u8>, SubsetError> {
+    subset_store_inner(store, old_items, tag, Some(plan))
+}
+
+fn subset_store_inner(
+    store: ItemVariationStore<'_>,
+    old_items: &[(u16, Vec<u32>)],
+    tag: Tag,
+    avar2_plan: Option<&Plan>,
+) -> Result<Vec<u8>, SubsetError> {
     let mut referenced = BTreeSet::new();
     let mut plans = Vec::new();
     for (outer, rows) in old_items {
@@ -281,6 +302,24 @@ pub(crate) fn subset_store(
                 .ok_or(SubsetError::Malformed { tag })?;
             if region >= store.region_count() {
                 return Err(SubsetError::Malformed { tag });
+            }
+            if let Some(plan) = avar2_plan {
+                let source = store.region(region).ok_or(SubsetError::Malformed { tag })?;
+                let tents = (0..source.len())
+                    .map(|axis| {
+                        source
+                            .axis(axis)
+                            .map(|(a, b, c)| [a, b, c].map(|value| f32::from(value) / 16384.0))
+                    })
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or(SubsetError::Malformed { tag })?;
+                if super::avar::region_dead(
+                    &tents,
+                    &plan.var.n.axis_tags,
+                    &plan.var.n.avar2_reachable,
+                ) {
+                    continue;
+                }
             }
             let width = rows
                 .get(..valid_rows)

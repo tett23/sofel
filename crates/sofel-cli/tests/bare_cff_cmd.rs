@@ -86,3 +86,23 @@ fn adr0065_i1_bare_cff_renders_reference_triangle() {
 fn adr0065_i2_bare_cff_rejects_out_of_range_face() {
     assert_eq!(run(&["--ppem", "100", "--face", "1", "--glyph", "0"]).0, 1);
 }
+
+#[test]
+fn adr0065_i1_cef_matches_reference_character_mapping_and_outline() {
+    // CEF has no head. FreeType's CFF driver synthesizes its Unicode mapping
+    // from glyph names even when this wrapper contains a cmap mapping A to 1.
+    let mut data =
+        b"OTTO\x00\x02\x00\x20\x00\x01\x00\x00CFF \x00\x00\x00\x00\x00\x00\x00\x2c".to_vec();
+    data.extend_from_slice(&u32::try_from(TEXT_CFF.len()).unwrap().to_be_bytes());
+    data.extend_from_slice(b"cmap\x00\x00\x00\x00\x00\x00\x00\x54\x00\x00\x00\x18");
+    data.extend_from_slice(TEXT_CFF);
+    data.resize(84, 0);
+    data.extend_from_slice(&[
+        0, 0, 0, 1, 0, 3, 0, 1, 0, 0, 0, 12, 0, 6, 0, 12, 0, 0, 0, 65, 0, 1, 0, 1,
+    ]);
+    let args = ["--ppem", "32", "--char", "U+0020"];
+    let expected = run_data(TEXT_CFF, &args);
+    assert_eq!(expected.0, 0);
+    assert_eq!(run_data_as(&data, &args, true), expected);
+    assert_ne!(run_data(&data, &["--ppem", "32", "--char", "U+0041"]).0, 0);
+}
