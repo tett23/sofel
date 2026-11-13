@@ -656,21 +656,9 @@ impl<'p, 's> Sub<'p, 's> {
                 self.unsupported("FeatureVariations conditions other than format 1");
                 return false;
             };
-            if self.p.var.user().is_empty()
-                && let Some((default, index)) = c.value()
-            {
-                let new_index = self
-                    .p
-                    .layout
-                    .gdef_var_map
-                    .get(&index)
-                    .copied()
-                    .unwrap_or(index);
+            if self.p.var.user().is_empty() && matches!(c.format(), 0 | 2..=5) {
                 if self.offset_append(4, |s| {
-                    s.s.u16(2);
-                    s.s.i16(default);
-                    s.s.u32(new_index);
-                    true
+                    super::feature_variations11::write_set_condition(s, c)
                 }) {
                     self.bump_u16(count_at, 1);
                 }

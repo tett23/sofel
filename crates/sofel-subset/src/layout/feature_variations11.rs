@@ -132,7 +132,14 @@ fn condition(s: &Sub<'_, '_>, source: Condition<'_>, depth: u8) -> Option<Result
         2 => {
             let (default, index) = source.value()?;
             if s.p.var.user().is_empty() {
-                ResultNode::Keep(Node::Value(default, index))
+                ResultNode::Keep(Node::Value(
+                    default,
+                    s.p.layout
+                        .gdef_var_map
+                        .get(&index)
+                        .copied()
+                        .unwrap_or(index),
+                ))
             } else if index == u32::MAX {
                 if default > 0 {
                     ResultNode::True
@@ -244,6 +251,19 @@ fn write_node(s: &mut Sub<'_, '_>, node: &Node) -> bool {
             s.serialize_subset(at, 3, |s| write_node(s, child))
         }
     }
+}
+
+pub(super) fn write_set_condition(s: &mut Sub<'_, '_>, source: Condition<'_>) -> bool {
+    let node = match condition(s, source, 64) {
+        Some(ResultNode::Keep(node)) => node,
+        Some(ResultNode::True) => Node::Value(1, u32::MAX),
+        Some(ResultNode::False) => Node::Value(0, u32::MAX),
+        None => {
+            s.unsupported("malformed or deeply nested feature variation condition");
+            return false;
+        }
+    };
+    write_node(s, &node)
 }
 
 pub(super) fn subset_lookup_records(s: &mut Sub<'_, '_>, fv: FeatureVariations<'_>) -> bool {
