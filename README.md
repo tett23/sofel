@@ -192,7 +192,7 @@ CFF2 の全軸を指定した値に固定すると、輪郭と横・縦のメト
 sofel-subset --font-file=Roboto.ttf --unicodes=41-5A -o out.ttf
 ```
 
-フォントを読むコマンド（`sofel-shape`、`sofel-render`、`sofel-paint`、`sofel-subset`、`sofel-validate`）は WOFF 1.0、gzip、UNIX compress（LZW）、bzip2で包んだ入力を署名から識別する。`sofel-woff --format woff2` が書き出す単一フェイスの WOFF2 も読み込める。[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)
+フォントを読むコマンド（`sofel-shape`、`sofel-render`、`sofel-paint`、`sofel-subset`、`sofel-validate`）は WOFF 1.0、gzip、UNIX compress（LZW）、bzip2で包んだ入力を署名から識別する。`sofel-woff --format woff2` が書き出す単一フェイスの WOFF2 も読み込める。同じ非圧縮 Brotli ブロックを使い、hmtx だけを変換した入力にも対応する。[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)
 
 `sofel-render` は Type 1 の PFA と PFB を `--glyph` またはグリフ名から導いた Unicode の `--char` で開き、対応済みの輪郭命令を PGM に描く。`sofel render --text` でも同じ輪郭を描く（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
 
