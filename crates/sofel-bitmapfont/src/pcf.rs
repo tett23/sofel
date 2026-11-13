@@ -78,6 +78,7 @@ fn directory_error_offset(data: &[u8]) -> usize {
     if count == 0 || count > 64 {
         return 4;
     }
+    let mut bitmap = None;
     for index in 0..count {
         let Some(at) = index.checked_mul(16).and_then(|n| n.checked_add(8)) else {
             return 4;
@@ -105,6 +106,44 @@ fn directory_error_offset(data: &[u8]) -> usize {
         };
         if end > data.len() {
             return at.saturating_add(12);
+        }
+        if kind == 8 {
+            bitmap = Some((
+                usize::try_from(offset).unwrap_or(0),
+                usize::try_from(size).unwrap_or(0),
+            ));
+        }
+    }
+    if let Some((start, size)) = bitmap {
+        let Some(bytes) = data.get(start..start.saturating_add(size)) else {
+            return start;
+        };
+        let Ok(format) = u32_at(bytes, 0, false) else {
+            return start;
+        };
+        let big = format & 4 != 0;
+        let Ok(count) =
+            u32_at(bytes, 4, big).and_then(|n| usize::try_from(n).map_err(|_| PcfError))
+        else {
+            return start.saturating_add(4);
+        };
+        let Some(bytes_start) = count.checked_mul(4).and_then(|n| n.checked_add(24)) else {
+            return start.saturating_add(4);
+        };
+        for index in 0..count {
+            let Some(at) = index.checked_mul(4).and_then(|n| n.checked_add(8)) else {
+                return start.saturating_add(4);
+            };
+            let Ok(offset) = u32_at(bytes, at, big) else {
+                return start.saturating_add(at);
+            };
+            if usize::try_from(offset)
+                .ok()
+                .and_then(|n| bytes_start.checked_add(n))
+                .is_none_or(|end| end > bytes.len())
+            {
+                return start.saturating_add(at);
+            }
         }
     }
     0

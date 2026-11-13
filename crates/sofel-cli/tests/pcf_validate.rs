@@ -60,3 +60,25 @@ fn adr0065_i2_pcf_reports_truncated_directory() -> Result<(), Box<dyn std::error
     assert!(output.contains("\"offset\":8"), "{output}");
     Ok(())
 }
+
+#[test]
+fn adr0065_i2_pcf_reports_bitmap_offset_inside_table() -> Result<(), Box<dyn std::error::Error>> {
+    let mut data = PCF.to_vec();
+    let record = (0..9)
+        .map(|i| 8 + 16 * i)
+        .find(|at| data.get(*at) == Some(&8))
+        .ok_or("missing bitmap table")?;
+    let start = usize::try_from(u32::from_le_bytes(
+        data.get(record + 12..record + 16)
+            .ok_or("missing table offset")?
+            .try_into()?,
+    ))?;
+    let offset = start + 8;
+    data.get_mut(offset..offset + 4)
+        .ok_or("missing bitmap offset")?
+        .copy_from_slice(&u32::MAX.to_le_bytes());
+    let (status, output) = validate(&data)?;
+    assert_eq!(status, 1);
+    assert!(output.contains(&format!("\"offset\":{offset}")), "{output}");
+    Ok(())
+}
