@@ -200,20 +200,9 @@ fn layout_unsupported(
                             && !table.conditions_are_store_independent()))
             })
     });
-    // A VariationIndex Device necessarily contains the format word 0x8000.
-    // Scan the whole retained table so an unknown or malformed subtable
-    // cannot make a real reference look absent. Other 0x8000 words may
-    // conservatively keep the table unsupported.
-    let may_reference_gdef_store = |d: &[u8]| d.windows(2).any(|word| word == [0x80, 0x00]);
-    let gpos_may_reference_store = retained(b"GPOS")
-        && font
-            .table(Tag::new(b"GPOS"))
-            .is_some_and(may_reference_gdef_store);
-    let copied_gpos_may_reference_store =
-        gpos_may_reference_store && no_subset.contains(Tag::new(b"GPOS").to_u32());
     if !pinned
         && kept(b"GDEF").is_some_and(layout::gdef::has_var_store)
-        && (copied_gpos_may_reference_store || conditions_may_reference_store)
+        && conditions_may_reference_store
     {
         return Err(SubsetError::Unsupported {
             tag: Tag::new(b"GDEF"),
@@ -475,7 +464,7 @@ impl Plan {
                                 .is_some()
                         })
                 }
-                b"gvar" => {
+                b"gvar" | b"GVAR" => {
                     !norm.avar2
                         || inert_gvar
                         || avar2_range
@@ -483,7 +472,6 @@ impl Plan {
                         || pinned_glyf
                         || !norm.avar2_self_contained.is_empty()
                 }
-                b"GVAR" => inert_gvar,
                 _ => false,
             };
             !handled && font.table(Tag::new(tag)).is_some()
@@ -1019,9 +1007,8 @@ impl Plan {
             p.layout.used_mark_sets = layout::gdef::used_mark_sets(gdef, &p.layout.glyphset_gsub);
             let copied_gdef = no_subset.contains(Tag::new(b"GDEF").to_u32());
             let gpos_data = font.table(Tag::new(b"GPOS")).unwrap_or(&[]);
-            let gpos_has_var_format = tag_kept(b"GPOS")
-                && !no_subset.contains(Tag::new(b"GPOS").to_u32())
-                && gpos_data.windows(2).any(|word| word == [0x80, 0x00]);
+            let gpos_has_var_format =
+                tag_kept(b"GPOS") && gpos_data.windows(2).any(|word| word == [0x80, 0x00]);
             let math_data = font.table(Tag::new(b"MATH")).unwrap_or(&[]);
             let copied_math = no_subset.contains(Tag::new(b"MATH").to_u32());
             let math_has_var_format = tag_kept(b"MATH")

@@ -20,7 +20,7 @@ use crate::json;
 pub const HELP: &str = "\
 usage: sofel-validate [--json] FILE...
 
-Validates sfnt fonts, TTC/OTC collections, CEF, bare CFF 1, CID Type 1 and PFR fonts.
+Validates sfnt fonts, TTC/OTC collections, CEF, bare CFF 1, CID Type 1, Type 42, and PFR fonts.
 Tables without a validator are skipped.
 
 Each problem is one line on standard output:
@@ -140,6 +140,39 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
                 if let Err((_, offset)) = PfrFace::read_positioned(&bytes, index) {
                     report(Some(index), offset, out, &mut errors);
                 }
+            }
+            continue;
+        }
+        if bytes.starts_with(b"%!PS-TrueTypeFont") {
+            match sofel_type1::type42::Type42Source::parse(&bytes, 67_108_864) {
+                Ok(source) => match Sfnt::new(source.sfnt()) {
+                    Ok(sfnt) => {
+                        validate_face(&sfnt, &name, None, as_json, out, &mut errors);
+                    }
+                    Err(error) => emit_diagnostic(
+                        &name,
+                        None,
+                        file_diagnostic(error),
+                        as_json,
+                        out,
+                        &mut errors,
+                    ),
+                },
+                Err(error) => emit_diagnostic(
+                    &name,
+                    None,
+                    Diagnostic {
+                        table: Tag::new(b"T42 "),
+                        offset: u32::try_from(error.offset()).unwrap_or(u32::MAX),
+                        severity: Severity::Error,
+                        kind: Kind::InvalidFontContainer {
+                            reason: "invalid Type 42 wrapper",
+                        },
+                    },
+                    as_json,
+                    out,
+                    &mut errors,
+                ),
             }
             continue;
         }
