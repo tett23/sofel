@@ -463,6 +463,8 @@ Type 1 の Multiple Masters では、`Type1Face::multiple_masters` が軸の名�
 
 `sofel-validate` は CID-keyed Type 1 を識別し、CIDMap とサブルーチンマップが切り詰められた場合は最初の欠落位置を、16進データに無効なバイトがある場合はそのバイト位置を、ヘッダの数値が不正な場合は値の位置を、FontMatrix が不正な場合はフィールドの位置を、ファイル先頭からのオフセットとして報告する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
+`sofel-validate` は Type 42 のラッパーを解析し、埋め込み sfnt を通常の sfnt と同じ手順で検証する。ラッパーの診断はタグ `T42 ` とファイル先頭からのオフセットを返す。埋め込み sfnt の各表の診断では、その表の先頭からのオフセットを返す（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+
 `sofel-type1::type42::Type42Source` は Type42 の `/sfnts` 配列の16進文字列または `RD` バイナリを連結し、展開長と sfnt の表範囲を検査する。`/Encoding` と `/CharStrings` から Type42 のグリフ番号を読み、`.notdef` を先頭に置く。Unicode の文字対応は PostScript のグリフ名を Adobe Glyph List と `uniXXXX`・`uXXXXX` によって変換し、8ビットの Encoding は別に問い合わせる。`Font::from_type42` が返す `Type42Face` は Type42 のグリフ番号を埋め込み TrueType のグリフ番号へ変換し、送りを返す。輪郭を読むときは `embedded_glyph` と `inner_font` の組を使う（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
 ## 素の CFF フェイスと CEF
