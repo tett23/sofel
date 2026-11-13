@@ -106,6 +106,7 @@ pub struct Plan {
     pub(crate) codepoint_to_glyph: BTreeMap<u32, u32>,
     pub(crate) glyphset: RangeSet,
     pub(crate) glyphs_requested: RangeSet,
+    pub(crate) name_overrides: BTreeMap<(u16, u16, u16, u16), Vec<u8>>,
     pub(crate) name_ids: RangeSet,
     pub(crate) name_languages: RangeSet,
     pub(crate) drop_tables: RangeSet,
@@ -458,12 +459,6 @@ impl Plan {
             }
         }
         let pinned = norm.all_axes_pinned;
-        if !input.name_overrides().is_empty() {
-            return Err(SubsetError::Unsupported {
-                tag: Tag::new(b"name"),
-                reason: "name overrides",
-            });
-        }
         let no_subset = input.set(SetKind::NoSubsetTables);
         let varc_tag = Tag::new(b"VARC");
         if font.table(varc_tag).is_some()
@@ -506,6 +501,7 @@ impl Plan {
             codepoint_to_glyph: BTreeMap::new(),
             glyphset: RangeSet::new(),
             glyphs_requested: glyphs_in.clone(),
+            name_overrides: input.name_overrides().clone(),
             name_ids: input.set(SetKind::NameIds).clone(),
             name_languages: input.set(SetKind::NameLanguages).clone(),
             drop_tables: drop.clone(),

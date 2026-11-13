@@ -763,10 +763,13 @@ static const uint32_t subset_0_unicode_old[] = {65, 1, 67, 3, 0};
 static const uint32_t subset_1_old_new[] = {0, 0, 1, 2, 2, 1, 0};
 static const uint32_t subset_1_new_old[] = {0, 0, 1, 2, 2, 1, 0};
 static const uint32_t subset_1_unicode_old[] = {65, 1, 66, 2, 0};
+static const uint32_t subset_2_old_new[] = {0, 0, 1, 1, 0};
+static const uint32_t subset_2_new_old[] = {0, 0, 1, 1, 0};
+static const uint32_t subset_2_unicode_old[] = {65, 1, 0};
 static const struct subset_case subset_cases[] = {
   {0, 4, 408, 0xa5860540ba77b1e4u, 4, subset_0_old_new, 4, subset_0_new_old, 2, subset_0_unicode_old},
   {0, 3, 372, 0x3a216f51496398e8u, 3, subset_1_old_new, 3, subset_1_new_old, 2, subset_1_unicode_old},
-  {-18, 0, 0, 0, 0, NULL, 0, NULL, 0, NULL},
+  {0, 2, 328, 0x46a46ec2324f0a3cu, 2, subset_2_old_new, 2, subset_2_new_old, 1, subset_2_unicode_old},
 };
 #define SUBSET_INVALID_INPUT (-16)
 struct axis_string_case { const char *s; int32_t status; uint32_t bits[3]; };
