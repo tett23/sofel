@@ -1118,6 +1118,43 @@ fn adr0022_null_condition_serializes_as_true() {
 }
 
 #[test]
+fn adr0022_copied_gpos_condition_checks_gdef_reference_without_device() {
+    for index in [u32::MAX, 2] {
+        let template = gsub_with_feature_condition(Buf::new().u16(2).i16(-7).u32(index).done());
+        let fv_at = u32::from_be_bytes(template[10..14].try_into().unwrap()) as usize;
+        let position = vec![0, 1, 0, 8, 0, 4, 0, 12, 0, 1, 0, 1, 0, 1];
+        let mut gpos = gsubgpos(
+            0x10001,
+            script_list(vec![(b"DFLT", script(lang_sys(0xffff, &[0]), vec![]))]),
+            feature_list(&[(b"kern", &[0])]),
+            lookup_list(
+                vec![
+                    lookup(1, 0, vec![position.clone()], None),
+                    lookup(1, 0, vec![position], None),
+                ],
+                false,
+            ),
+        );
+        let offset = gpos.len() as u32;
+        gpos[10..14].copy_from_slice(&offset.to_be_bytes());
+        gpos.extend(&template[fv_at..]);
+        let data = font_with(vec![
+            (b"GPOS", gpos.clone()),
+            (b"GDEF", gdef_with_referenced_store(&[])),
+        ]);
+        let input = chars("ABC").map_set(SetKind::NoSubsetTables, |set| {
+            set.add(Tag::new(b"GPOS").to_u32());
+        });
+        let out = subset(&Font::new(&data, 0).unwrap(), &input);
+        if index == u32::MAX {
+            assert_eq!(out_table(&out.unwrap(), b"GPOS").unwrap(), gpos);
+        } else {
+            assert!(matches!(out,Err(SubsetError::Unsupported{tag,..}) if tag==Tag::new(b"GDEF")));
+        }
+    }
+}
+
+#[test]
 fn adr0022_copied_gsub_value_condition_checks_gdef_reference() {
     for index in [u32::MAX, 2] {
         let value = Buf::new().u16(2).i16(-7).u32(index).done();

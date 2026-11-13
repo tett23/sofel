@@ -188,16 +188,17 @@ fn layout_unsupported(
         let tag = Tag::new(t);
         font.table(tag).is_some() && !drop.contains(tag.to_u32())
     };
-    let gsub_may_reference_store = retained(b"GSUB")
-        && font.table(Tag::new(b"GSUB")).is_some_and(|d| {
-            let table = layout::Gsubgpos::new(d, true);
-            // The subset writer remaps condition indices. A copied GSUB keeps its original indices.
-            table.version() >= 0x0001_0001
-                && sofel_font::read::be::u32_at(d, 10) != Some(0)
-                && (table.feature_variations_view().is_none()
-                    || (no_subset.contains(Tag::new(b"GSUB").to_u32())
-                        && !table.conditions_are_store_independent()))
-        });
+    let conditions_may_reference_store = [b"GSUB", b"GPOS"].into_iter().any(|name| {
+        retained(name)
+            && font.table(Tag::new(name)).is_some_and(|data| {
+                let table = layout::Gsubgpos::new(data, name == b"GSUB");
+                table.version() >= 0x0001_0001
+                    && sofel_font::read::be::u32_at(data, 10) != Some(0)
+                    && (table.feature_variations_view().is_none()
+                        || (no_subset.contains(Tag::new(name).to_u32())
+                            && !table.conditions_are_store_independent()))
+            })
+    });
     // A VariationIndex Device necessarily contains the format word 0x8000.
     // Scan the whole retained table so an unknown or malformed subtable
     // cannot make a real reference look absent. Other 0x8000 words may
@@ -211,7 +212,7 @@ fn layout_unsupported(
         gpos_may_reference_store && no_subset.contains(Tag::new(b"GPOS").to_u32());
     if !pinned
         && kept(b"GDEF").is_some_and(layout::gdef::has_var_store)
-        && (copied_gpos_may_reference_store || gsub_may_reference_store)
+        && (copied_gpos_may_reference_store || conditions_may_reference_store)
     {
         return Err(SubsetError::Unsupported {
             tag: Tag::new(b"GDEF"),
