@@ -1524,3 +1524,15 @@ fn adr0022_wide_coverage_retains_single_substitutions() {
         );
     }
 }
+
+#[test]
+fn adr0022_wide_class_definitions_keep_glyph_classes() {
+    for classes in [
+        vec![0, 3, 0, 0, 1, 0, 0, 2, 0, 0, 1, 0, 0, 1],
+        vec![0, 4, 0, 0, 1, 0, 0, 1, 0, 0, 2, 0, 1],
+    ] {
+        let data = font_with(vec![(b"GDEF", gdef_with_classes(classes))]);
+        let out = subset(&Font::new(&data, 0).unwrap(), &chars("AB")).unwrap();
+        assert_eq!(glyph_class_def(&out), vec![0, 1, 0, 1, 0, 2, 0, 1, 0, 1]);
+    }
+}

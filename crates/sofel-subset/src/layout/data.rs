@@ -298,32 +298,59 @@ impl<'a> Cov<'a> {
     }
 }
 
-/// A ClassDef table (formats 1 and 2).
+/// A ClassDef table (formats 1 through 4).
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct Cls<'a>(pub D<'a>);
 
 impl<'a> Cls<'a> {
+    fn checked(self) -> sofel_font::read::layout::ClassDef<'a> {
+        sofel_font::read::layout::ClassDef::new(self.0.0)
+            .unwrap_or_else(|_| sofel_font::read::layout::ClassDef::empty())
+    }
+
     fn format(self) -> u16 {
         self.0.u16(0)
     }
 
     fn start(self) -> u32 {
-        u32::from(self.0.u16(2))
+        if self.format() == 3 {
+            self.checked().start_glyph().0
+        } else {
+            u32::from(self.0.u16(2))
+        }
     }
 
     fn count1(self) -> usize {
-        usize::from(self.0.u16(4))
+        if self.format() == 3 {
+            self.checked().num_records()
+        } else {
+            usize::from(self.0.u16(4))
+        }
     }
 
     fn value1(self, i: usize) -> u32 {
-        u32::from(self.0.u16_at(6, i))
+        if self.format() == 3 {
+            self.checked().class_value(i).unwrap_or(0)
+        } else {
+            u32::from(self.0.u16_at(6, i))
+        }
     }
 
     fn count2(self) -> usize {
-        usize::from(self.0.u16(2))
+        if self.format() == 4 {
+            self.checked().num_records()
+        } else {
+            usize::from(self.0.u16(2))
+        }
     }
 
     fn range(self, i: usize) -> (u32, u32, u32) {
+        if self.format() == 4 {
+            return self
+                .checked()
+                .range(i)
+                .map_or((1, 0, 0), |(a, z, v)| (a.0, z.0, v));
+        }
         let at = 4usize.saturating_add(i.saturating_mul(6));
         (
             u32::from(self.0.u16(at)),
@@ -348,11 +375,11 @@ impl<'a> Cls<'a> {
     /// The class of `g` (`get_class`).
     pub fn get(self, g: u32) -> u32 {
         match self.format() {
-            1 => {
+            1 | 3 => {
                 let i = g.wrapping_sub(self.start()) as usize;
                 if i < self.count1() { self.value1(i) } else { 0 }
             }
-            2 => self.find2(g).map_or(0, |i| self.range(i).2),
+            2 | 4 => self.find2(g).map_or(0, |i| self.range(i).2),
             _ => 0,
         }
     }
@@ -360,8 +387,8 @@ impl<'a> Cls<'a> {
     /// The number of glyphs listed (`get_population`).
     pub fn population(self) -> u64 {
         match self.format() {
-            1 => self.count1() as u64,
-            2 => (0..self.count2())
+            1 | 3 => self.count1() as u64,
+            2 | 4 => (0..self.count2())
                 .map(|i| {
                     let (a, z, _) = self.range(i);
                     if z < a {
@@ -381,7 +408,7 @@ impl<'a> Cls<'a> {
     /// (`intersects`).
     pub fn intersects(self, glyphs: &BitSet) -> bool {
         match self.format() {
-            1 => {
+            1 | 3 => {
                 let start = self.start();
                 let end = start.wrapping_add(n32(self.count1()));
                 let mut g = glyphs.next(start.wrapping_sub(1));
@@ -393,7 +420,7 @@ impl<'a> Cls<'a> {
                 }
                 false
             }
-            2 => {
+            2 | 4 => {
                 let n = self.count2() as u64;
                 if n > glyphs.len().saturating_mul(bit_storage(n)) {
                     return glyphs.iter().any(|g| self.get(g) != 0);
@@ -410,7 +437,7 @@ impl<'a> Cls<'a> {
     /// Whether a glyph of `glyphs` has class `klass` (`intersects_class`).
     pub fn intersects_class(self, glyphs: &BitSet, klass: u32) -> bool {
         match self.format() {
-            1 => {
+            1 | 3 => {
                 let count = self.count1();
                 let start = self.start();
                 if klass == 0 {
@@ -429,7 +456,7 @@ impl<'a> Cls<'a> {
                 (0..count)
                     .any(|i| self.value1(i) == klass && glyphs.has(start.wrapping_add(n32(i))))
             }
-            2 => {
+            2 | 4 => {
                 let n = self.count2();
                 if klass == 0 {
                     if n == 0 {
@@ -468,7 +495,7 @@ impl<'a> Cls<'a> {
     /// (`intersected_class_glyphs`).
     pub fn intersected_class_glyphs(self, glyphs: &BitSet, klass: u32, out: &mut BitSet) {
         match self.format() {
-            1 => {
+            1 | 3 => {
                 let count = self.count1();
                 let start = self.start();
                 if klass == 0 {
@@ -488,7 +515,7 @@ impl<'a> Cls<'a> {
                     .filter(|&i| self.value1(i) == klass && glyphs.has(start.wrapping_add(n32(i))))
                     .for_each(|i| out.add(start.wrapping_add(n32(i))));
             }
-            2 => {
+            2 | 4 => {
                 let n = self.count2();
                 if klass == 0 {
                     let mut g = INVALID;
@@ -547,7 +574,7 @@ impl<'a> Cls<'a> {
             return;
         }
         match self.format() {
-            1 => {
+            1 | 3 => {
                 let count = self.count1();
                 if count == 0 {
                     out.add(0);
@@ -562,7 +589,7 @@ impl<'a> Cls<'a> {
                     .filter(|&i| glyphs.has(start.wrapping_add(n32(i))))
                     .for_each(|i| out.add(self.value1(i)));
             }
-            2 => {
+            2 | 4 => {
                 let n = self.count2();
                 if n == 0 {
                     out.add(0);
@@ -620,11 +647,11 @@ impl<'a> Cls<'a> {
             klasses.add(k);
         };
         match self.format() {
-            1 => {
+            1 | 3 => {
                 let start = self.start();
                 (0..self.count1()).for_each(|i| push(start.wrapping_add(n32(i)), self.value1(i)));
             }
-            2 => {
+            2 | 4 => {
                 let n = self.count2() as u64;
                 if glyphset.len().saturating_mul(bit_storage(n)) < self.population() {
                     glyphset.iter().for_each(|g| push(g, self.get(g)));

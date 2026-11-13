@@ -85,7 +85,7 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-capi`](crates/sofel-capi) | C ABI（ヘッダは [`sofel.h`](crates/sofel-capi/include/sofel.h)、[ADR 0015](docs/adr/0015-c-abi.md)） |
 | [`sofel-conformance`](crates/sofel-conformance) | FreeTypeとHarfBuzzとの突き合わせのテスト（`cargo test` では走らない） |
 
-サブセット化では GSUB・GPOS の Coverage 形式3・4から置換や位置調整の対象グリフを取得する。
+サブセット化では GSUB・GPOS の Coverage 形式3・4から置換や位置調整の対象グリフを取得する。ClassDef 形式3・4のグリフクラスも保持する。
 
 サブセットの Rust・C API では、プラットフォーム、エンコーディング、言語、名前 ID を指定して名前レコードを追加・置換できる。空文字列を指定するとそのレコードを削除する。
 
