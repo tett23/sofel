@@ -888,6 +888,20 @@ impl Plan {
                         reason: "the GDEF item variation store (ADR 0022 stage 10)",
                     });
                 };
+                for (tag, layout) in [
+                    (Tag::new(b"GSUB"), &p.layout.gsub),
+                    (Tag::new(b"GPOS"), &p.layout.gpos),
+                ] {
+                    if tag_kept(&tag.0)
+                        && !no_subset.contains(tag.to_u32())
+                        && let Some(data) = font.table(tag)
+                    {
+                        selected.extend(layout::plan::feature_variation_var_indices(
+                            layout::Gsubgpos::new(data, tag == Tag::new(b"GSUB")),
+                            &layout.features_w_dups,
+                        ));
+                    }
+                }
                 if math_has_var_format {
                     let Some(math_indices) = crate::tables::math::retained_variation_indices(
                         math_data,
