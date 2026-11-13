@@ -423,7 +423,7 @@ impl Plan {
                         }
                         b"BASE" => sofel_font::read::base::Base::new(data).is_ok_and(|table| {
                             table.item_var_store_offset().unwrap_or(0) == 0
-                                || (!norm.avar2 && table.variation_store().is_ok())
+                                || table.variation_store().is_ok()
                         }),
                         b"COLR" => sofel_font::read::colr::Colr::new(data).is_ok(),
                         b"GDEF" => sofel_font::read::gdef::Gdef::new(data).is_ok_and(|t| {
@@ -440,7 +440,9 @@ impl Plan {
                 b"HVAR" | b"VVAR" => {
                     pinned_glyf
                         || (!norm.all_axes_pinned
-                            && (!norm.avar2 || !norm.avar2_self_contained.is_empty())
+                            && (!norm.avar2
+                                || identity_avar2
+                                || !norm.avar2_self_contained.is_empty())
                             && font.table(Tag::new(tag)).is_some_and(|data| {
                                 sofel_font::read::be::u32_at(data, 8).is_some()
                             })
@@ -449,11 +451,16 @@ impl Plan {
                                 .contains(Tag::new(tag).to_u32()))
                 }
                 b"cvar" => {
-                    norm.all_axes_pinned || !norm.avar2 || !norm.avar2_self_contained.is_empty()
+                    norm.all_axes_pinned
+                        || !norm.avar2
+                        || identity_avar2
+                        || !norm.avar2_self_contained.is_empty()
                 }
                 b"MVAR" => {
                     norm.all_axes_pinned
-                        || ((!norm.avar2 || !norm.avar2_self_contained.is_empty())
+                        || ((!norm.avar2
+                            || identity_avar2
+                            || !norm.avar2_self_contained.is_empty())
                             && !input
                                 .set(SetKind::NoSubsetTables)
                                 .contains(Tag::new(tag).to_u32())

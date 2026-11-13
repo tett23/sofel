@@ -252,6 +252,108 @@ fn adr0061_i1_avar2_restricts_variable_base_like_harfbuzz() {
 }
 
 #[test]
+fn adr0061_i1_avar2_partial_pin_with_empty_base_store_matches_harfbuzz() {
+    let source = paths::testdata().join("harfbuzz/test/subset/data/fonts/KalniaGlaze.ttf");
+    let bytes = std::fs::read(source).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let mut avar = font.table(Tag::new(b"avar")).unwrap().to_vec();
+    avar[..2].copy_from_slice(&2u16.to_be_bytes());
+    avar.extend([0; 8]);
+    let adobe = std::fs::read(
+        paths::testdata().join("harfbuzz/test/subset/data/fonts/AdobeVFPrototype.otf"),
+    )
+    .unwrap();
+    let adobe_font = Font::new(&adobe, 0).unwrap();
+    let old_base = adobe_font.table(Tag::new(b"BASE")).unwrap();
+    let mut base = vec![0, 1, 0, 1, 0, 12, 0, 0];
+    let store_at = u32::try_from(old_base.len() + 4).unwrap();
+    base.extend(store_at.to_be_bytes());
+    base.extend(&old_base[8..]);
+    base.extend([0, 1, 0, 0, 0, 8, 0, 0, 0, 2, 0, 0]);
+    let tables = font
+        .sfnt()
+        .records()
+        .map(|r| {
+            (
+                r.tag,
+                if r.tag == Tag::new(b"avar") {
+                    avar.clone()
+                } else {
+                    r.data(&bytes).unwrap().to_vec()
+                },
+            )
+        })
+        .chain(std::iter::once((Tag::new(b"BASE"), base)))
+        .collect::<Vec<_>>();
+    let refs = tables
+        .iter()
+        .map(|(tag, bytes)| (*tag, bytes.as_slice()))
+        .collect::<Vec<_>>();
+    let modified = sofel_write::build_sfnt(&refs).unwrap();
+    let path =
+        std::env::temp_dir().join(format!("sofel-adr61-base-store-{}.ttf", std::process::id()));
+    std::fs::write(&path, modified).unwrap();
+    for ranges in [
+        vec![
+            (b"wght", 200.0, 400.0, 600.0),
+            (b"wdth", 112.0, 112.0, 112.0),
+        ],
+        vec![(b"wght", 200.0, 400.0, 600.0)],
+    ] {
+        compare_path(&path, &ranges);
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn adr0061_i1_identity_avar2_partial_pin_keeps_variable_tables() {
+    let source = paths::testdata().join("harfbuzz/test/subset/data/fonts/KalniaGlaze.ttf");
+    let bytes = std::fs::read(source).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let mut avar = vec![0, 2, 0, 0, 0, 0, 0, 2];
+    for _ in 0..2 {
+        avar.extend(3u16.to_be_bytes());
+        for coord in [-16384i16, 0, 16384] {
+            avar.extend(coord.to_be_bytes());
+            avar.extend(coord.to_be_bytes());
+        }
+    }
+    avar.extend([0; 8]);
+    let tables = font
+        .sfnt()
+        .records()
+        .map(|r| {
+            (
+                r.tag,
+                if r.tag == Tag::new(b"avar") {
+                    avar.clone()
+                } else {
+                    r.data(&bytes).unwrap().to_vec()
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+    let refs = tables
+        .iter()
+        .map(|(tag, bytes)| (*tag, bytes.as_slice()))
+        .collect::<Vec<_>>();
+    let modified = sofel_write::build_sfnt(&refs).unwrap();
+    let path = std::env::temp_dir().join(format!(
+        "sofel-adr61-identity-avar2-{}.ttf",
+        std::process::id()
+    ));
+    std::fs::write(&path, modified).unwrap();
+    for ranges in [
+        vec![(b"wght", 200.0, 200.0, 200.0)],
+        vec![(b"wdth", 112.0, 112.0, 112.0)],
+        vec![(b"wght", 200.0, 400.0, 600.0)],
+    ] {
+        compare_path(&path, &ranges);
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn adr0061_i1_math_variation_references_match_harfbuzz() {
     let source = paths::testdata().join("harfbuzz/test/api/fonts/math-variations.ttf");
     for ranges in [
