@@ -20,6 +20,27 @@ fn word16(bytes: &mut &[u8]) -> Result<u16, ReadError> {
 fn signed16(bytes: &mut &[u8]) -> Result<i16, ReadError> {
     be::i16_at(take(bytes, 2)?, 0).ok_or(ReadError::OutOfBounds)
 }
+fn strike_count(mut extras: &[u8]) -> Result<usize, ReadError> {
+    if extras.is_empty() {
+        return Ok(0);
+    }
+    let mut total = 0usize;
+    for _ in 0..number(&mut extras, 1)? {
+        let size = number(&mut extras, 1)?;
+        let kind = number(&mut extras, 1)?;
+        let mut item = take(&mut extras, size)?;
+        if kind == 1 {
+            take(&mut item, 3)?;
+            let format = number(&mut item, 1)?;
+            let count = number(&mut item, 1)?;
+            let width = 8usize.saturating_add(be::to_usize((format & 31).count_ones()));
+            take(&mut item, count.saturating_mul(width))?;
+            total = total.saturating_add(count);
+        }
+    }
+    Ok(total)
+}
+
 fn extras(bytes: &mut &[u8]) -> Result<(), ReadError> {
     for _ in 0..number(bytes, 1)? {
         let size = number(bytes, 1)?;
@@ -172,6 +193,8 @@ impl<'a> PfrFace<'a> {
             records: take(&mut physical, usize::from(glyphs) * record_size)?,
             programs: section(data, triple(35)?, triple(32)?)?,
         };
+        let strikes = strike_count(face.physical_extras)?;
+        let mut outlines = false;
         let mut prev = None;
         for i in 0..usize::from(glyphs) {
             let (code, _, offset, size) = face.record(i)?;
@@ -179,7 +202,11 @@ impl<'a> PfrFace<'a> {
                 return Err(ReadError::InvalidValue);
             }
             prev = Some(code);
+            outlines |= offset != 0;
             section(face.programs, offset, size)?;
+        }
+        if !outlines && strikes == 0 {
+            return Err(ReadError::InvalidValue);
         }
         Ok(face)
     }

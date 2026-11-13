@@ -186,3 +186,13 @@ fn i2_decode_bounds_pfr_rejects_cyclic_outlines_and_truncated_runs() {
             .is_err()
     );
 }
+
+#[test]
+fn i2_decode_bounds_pfr_requires_outlines_or_strikes() {
+    let mut data = pfr();
+    data[115] = 0;
+    assert!(Font::from_pfr(&data, 0).is_err());
+    let mut bitmap = bitmap_font(&[4, 0, 0x32, 0xa8]);
+    bitmap[131] = 0;
+    assert!(Font::from_pfr(&bitmap, 0).is_ok());
+}
