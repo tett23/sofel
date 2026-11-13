@@ -530,6 +530,20 @@ fn offset(v: u64) -> usize {
 /// without errors can be opened by FreeType, unless its FDSelect has
 /// format 4 (a warning).
 pub fn validate(data: &[u8], num_glyphs: Option<u32>, report: &mut dyn FnMut(Diagnostic)) {
+    validate_with_mode(data, num_glyphs, false, report);
+}
+
+/// Validates every face in a bare CFF 1 font set without an sfnt `maxp`.
+pub fn validate_bare(data: &[u8], report: &mut dyn FnMut(Diagnostic)) {
+    validate_with_mode(data, None, true, report);
+}
+
+fn validate_with_mode(
+    data: &[u8],
+    num_glyphs: Option<u32>,
+    bare: bool,
+    report: &mut dyn FnMut(Diagnostic),
+) {
     let mut r = Reporter {
         tag: TAG,
         report,
@@ -573,7 +587,7 @@ pub fn validate(data: &[u8], num_glyphs: Option<u32>, report: &mut dyn FnMut(Dia
     let Some(tops) = index(&mut r, data, top_at, v) else {
         return;
     };
-    if names.len() > 1 {
+    if !bare && names.len() > 1 {
         r.emit(names_at, Kind::MultipleNames { count: names.len() });
     }
     if tops.len() < names.len().max(1) {
@@ -593,13 +607,51 @@ pub fn validate(data: &[u8], num_glyphs: Option<u32>, report: &mut dyn FnMut(Dia
     let Some(global_subrs) = index(&mut r, data, gsubrs_at, v) else {
         return;
     };
-    let Some(top_data) = tops.get(0) else {
+    let context = BareFaceValidation {
+        data,
+        version: v,
+        tops,
+        top_at,
+        strings,
+        global_subrs,
+        num_glyphs,
+    };
+    let count = if bare { names.len() } else { 1 };
+    for face_index in 0..count {
+        validate_one(&mut r, &context, face_index);
+    }
+}
+
+#[derive(Clone, Copy)]
+struct BareFaceValidation<'a> {
+    data: &'a [u8],
+    version: Version,
+    tops: Index<'a>,
+    top_at: usize,
+    strings: Index<'a>,
+    global_subrs: Index<'a>,
+    num_glyphs: Option<u32>,
+}
+
+fn validate_one(r: &mut Reporter<'_>, context: &BareFaceValidation<'_>, face_index: u32) {
+    let BareFaceValidation {
+        data,
+        version: v,
+        tops,
+        top_at,
+        strings,
+        global_subrs,
+        num_glyphs,
+    } = *context;
+    let Some(top_data) = tops.get(face_index) else {
         return;
     };
     let top_base = top_at
         .saturating_add(tops.data_offset())
-        .saturating_add(to_usize(tops.offset(0).unwrap_or(1).saturating_sub(1)));
-    let Some(top) = top_dict(&mut r, top_data, top_base, v) else {
+        .saturating_add(to_usize(
+            tops.offset(face_index).unwrap_or(1).saturating_sub(1),
+        ));
+    let Some(top) = top_dict(r, top_data, top_base, v) else {
         return;
     };
     if top.charstring_type != 2 {
@@ -614,10 +666,10 @@ pub fn validate(data: &[u8], num_glyphs: Option<u32>, report: &mut dyn FnMut(Dia
         return r.emit(top_base, Kind::MissingCharStrings);
     }
     let cs_at = offset(top.char_strings);
-    let Some(cs) = index(&mut r, data, cs_at, v) else {
+    let Some(cs) = index(r, data, cs_at, v) else {
         return;
     };
-    if !glyph_count(&mut r, cs_at, &cs, num_glyphs) {
+    if !glyph_count(r, cs_at, &cs, num_glyphs) {
         return;
     }
     let n = cs.len();
@@ -660,7 +712,7 @@ pub fn validate(data: &[u8], num_glyphs: Option<u32>, report: &mut dyn FnMut(Dia
             return r.emit(top_base, Kind::MissingFdArray);
         }
         let fda_at = offset(top.fd_array);
-        let Some(fda) = index(&mut r, data, fda_at, v) else {
+        let Some(fda) = index(r, data, fda_at, v) else {
             return;
         };
         if fda.len() > 256 {
@@ -672,11 +724,11 @@ pub fn validate(data: &[u8], num_glyphs: Option<u32>, report: &mut dyn FnMut(Dia
             let base = fda_at
                 .saturating_add(fda.data_offset())
                 .saturating_add(to_usize(fda.offset(i).unwrap_or(1).saturating_sub(1)));
-            dict_checks(&mut r, d, base, DictKind::Top);
+            dict_checks(r, d, base, DictKind::Top);
             match FontDict::parse(d, v) {
                 Ok(f) if f.cid_registry == dict::NO_SID => {
                     *slot = private(
-                        &mut r,
+                        r,
                         data,
                         f.private_size,
                         f.private_offset,
@@ -686,16 +738,16 @@ pub fn validate(data: &[u8], num_glyphs: Option<u32>, report: &mut dyn FnMut(Dia
                     );
                 }
                 Ok(_) => *slot = Some(Sub::new(&PrivateDict::default(), Index::empty(v))),
-                Err(e) => dict_error(&mut r, base, e),
+                Err(e) => dict_error(r, base, e),
             }
         }
-        fd_select_view = fd_select(&mut r, data, offset(top.fd_select), n, fds);
+        fd_select_view = fd_select(r, data, offset(top.fd_select), n, fds);
         if fd_select_view.is_none() {
             return;
         }
     } else if let Some(slot) = privates.get_mut(0) {
         *slot = private(
-            &mut r,
+            r,
             data,
             top.private_size,
             top.private_offset,
@@ -705,7 +757,7 @@ pub fn validate(data: &[u8], num_glyphs: Option<u32>, report: &mut dyn FnMut(Dia
         );
     }
     char_strings(
-        &mut r,
+        r,
         &Glyphs {
             version: v,
             char_strings: cs,
