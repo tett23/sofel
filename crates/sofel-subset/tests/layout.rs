@@ -1908,7 +1908,16 @@ fn adr0022_gdef14_ligature_carets_match_harfbuzz() {
 #[test]
 fn adr0022_context_coverage_retains_high_glyph_and_nested_lookup() {
     let wide = vec![0, 3, 0, 0, 1, 1, 0, 0];
+    let rule_context = |rule: Vec<u8>| {
+        let rules = link(vec![0, 1, 0, 0], vec![(2, 2, rule)]);
+        link(
+            vec![0, 1, 0, 0, 0, 1, 0, 0],
+            vec![(2, 2, wide.clone()), (6, 2, rules)],
+        )
+    };
     for (kind, st, at) in [
+        (5, rule_context(vec![0, 1, 0, 1, 0, 0, 0, 1]), 2),
+        (6, rule_context(vec![0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]), 2),
         (
             5,
             link(
@@ -1963,6 +1972,11 @@ fn adr0022_context_coverage_retains_high_glyph_and_nested_lookup() {
         assert_eq!(u16_at(list, 0), 2);
         let context = follow(follow(list, 2), 6);
         assert!(follow(context, at).starts_with(&wide));
-        assert_eq!(u16_at(context, if kind == 5 { 10 } else { 14 }), 1);
+        if at == 2 {
+            let rule = follow(follow(context, 6), 2);
+            assert_eq!(u16_at(rule, if kind == 5 { 6 } else { 10 }), 1);
+        } else {
+            assert_eq!(u16_at(context, if kind == 5 { 10 } else { 14 }), 1);
+        }
     }
 }

@@ -848,6 +848,9 @@ impl Plan {
                 n
             };
         if new_to_old.iter().any(|&(new, _)| new > 0xFFFF) {
+            let narrow_rule_glyphs_fit = new_to_old
+                .iter()
+                .all(|&(new, old)| old > u16::MAX as u32 || new <= u16::MAX as u32);
             for name in [b"GSUB", b"GPOS"] {
                 let tag = Tag::new(name);
                 if drop.contains(tag.to_u32()) || no_subset.contains(tag.to_u32()) {
@@ -867,7 +870,8 @@ impl Plan {
                                 || (matches!(
                                     kind,
                                     layout::Kind::Context | layout::Kind::ChainContext
-                                ) && subtable.u16(0) == 3)
+                                ) && (subtable.u16(0) == 3
+                                    || (subtable.u16(0) == 1 && narrow_rule_glyphs_fit)))
                                 || (matches!(
                                     kind,
                                     layout::Kind::MarkBasePos
