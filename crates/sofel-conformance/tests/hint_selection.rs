@@ -105,7 +105,7 @@ fn adr0064_i1_auto_empty_slots_match_freetype() {
 }
 
 #[test]
-fn adr0064_i1_auto_nonempty_reports_unsupported_and_clears_scratch() {
+fn adr0064_i1_auto_non_latin_reports_unsupported_and_clears_scratch() {
     let path = paths::testdata().join("harfbuzz/test/api/fonts/Roboto-Regular.abcAE.ttf");
     let data = std::fs::read(&path).unwrap();
     let font = Font::new(&data, 0).unwrap();
@@ -113,7 +113,7 @@ fn adr0064_i1_auto_nonempty_reports_unsupported_and_clears_scratch() {
     let mut scratch = Scratch::default();
     outlines
         .load_with_hint(
-            GlyphId(2),
+            GlyphId(5),
             16,
             HintMode::None,
             HintTarget::Normal,
@@ -123,7 +123,7 @@ fn adr0064_i1_auto_nonempty_reports_unsupported_and_clears_scratch() {
     assert!(!scratch.points().is_empty());
     assert_eq!(
         outlines.load_with_hint(
-            GlyphId(2),
+            GlyphId(5),
             16,
             HintMode::Auto,
             HintTarget::Normal,
