@@ -1733,7 +1733,7 @@ enum {
  * Loads an outline at square ppem with the selected hinting mode and target.
  * Writes the horizontal advance in 26.6 pixels. Automatic hinting currently
  * returns SOFEL_ERROR_UNSUPPORTED for outlines outside its supported cases.
- * Rust: sofel_outline::Outlines::load_with_hint
+ * Rust: sofel_outline::Outlines::load_with_hint, sofel_outline::Outlines::load_auto_hinted
  * HarfBuzz: none
  * FreeType: FT_Load_Glyph
  */
