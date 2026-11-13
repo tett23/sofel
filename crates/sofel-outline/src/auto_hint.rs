@@ -12,7 +12,9 @@ use skrifa::outline::{
 use skrifa::raw::{FontRef, model::glyph::outline::PathElement};
 use sofel_font::read::{GlyphId, Tag, glyf::Glyph, loca::Loca, sfnt::FontFile};
 
-use crate::{HintTarget, OutlineError, OutlineInfo, Outlines, Scale, Scratch, control_box};
+use crate::{
+    HintTarget, OutlineError, OutlineInfo, Outlines, Scale, Scratch, auto_adjust, control_box,
+};
 
 #[derive(Clone, Copy, Debug)]
 enum Map {
@@ -133,7 +135,7 @@ fn face_index(font: &sofel_font::Font<'_>) -> Option<u32> {
     }
 }
 
-fn is_simple(font: &sofel_font::Font<'_>, glyph: GlyphId) -> bool {
+fn is_composite(font: &sofel_font::Font<'_>, glyph: GlyphId) -> bool {
     let sfnt = font.sfnt();
     let Some(glyf) = sfnt.table(Tag::new(b"glyf")) else {
         return false;
@@ -144,15 +146,16 @@ fn is_simple(font: &sofel_font::Font<'_>, glyph: GlyphId) -> bool {
     let Ok(loca) = Loca::new(loca_data, font.head().index_to_loc_format()) else {
         return false;
     };
-    let Some(start) = loca.offset(glyph.0 as usize).map(|v| v as usize) else {
+    let index = glyph.0 as usize;
+    let Some(start) = loca.offset(index).map(|v| v as usize) else {
         return false;
     };
-    let Some(end) = loca.offset(glyph.0 as usize + 1).map(|v| v as usize) else {
+    let Some(end) = loca.offset(index.saturating_add(1)).map(|v| v as usize) else {
         return false;
     };
     glyf.get(start..end)
         .and_then(|data| Glyph::new(data).ok())
-        .is_some_and(|value| value.number_of_contours() > 0)
+        .is_some_and(|value| value.number_of_contours() < 0)
 }
 
 pub(super) fn load(
@@ -174,10 +177,6 @@ pub(super) fn load(
         });
         return Ok((original, advance));
     }
-    if !is_simple(font, glyph) {
-        scratch.clear();
-        return Err(OutlineError::AutoHintUnsupportedGlyph);
-    }
     let sfnt = font.sfnt();
     let index = face_index(font).ok_or(OutlineError::UnsupportedFormat)?;
     let reference =
@@ -192,6 +191,26 @@ pub(super) fn load(
         scratch.clear();
         return Err(OutlineError::AutoHintUnsupportedGlyph);
     }
+    let needs_up_adjustment = if is_composite(font, glyph) {
+        let codepoint = skrifa::charmap::Charmap::new(&reference)
+            .mappings()
+            .find(|(_, id)| id.to_u32() == glyph.0)
+            .map(|(codepoint, _)| codepoint);
+        let Some(codepoint) = codepoint else {
+            scratch.clear();
+            return Err(OutlineError::AutoHintUnsupportedGlyph);
+        };
+        if auto_adjust::UP_CODEPOINTS
+            .binary_search(&codepoint)
+            .is_err()
+        {
+            scratch.clear();
+            return Err(OutlineError::AutoHintUnsupportedGlyph);
+        }
+        true
+    } else {
+        false
+    };
     let coords: Vec<_> = outlines
         .instance()
         .ft_coords()
@@ -221,6 +240,10 @@ pub(super) fn load(
         .draw(DrawSettings::hinted(&hinter, false), &mut path)
         .map_err(|_| OutlineError::InvalidOutline)?;
     apply_path(scratch, &path).ok_or(OutlineError::InvalidOutline)?;
+    if needs_up_adjustment && !auto_adjust::adjust_up(scratch, ppem) {
+        scratch.clear();
+        return Err(OutlineError::AutoHintUnsupportedGlyph);
+    }
     let advance = metrics.advance_width.map_or(0, device);
     Ok((
         OutlineInfo {

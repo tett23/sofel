@@ -59,24 +59,40 @@ fn adr0064_i1_auto_slots_match_freetype() {
     check_slots(
         &path,
         &Outlines::new(font.default_instance()),
-        &[0, 1, 2, 3, 4],
+        &[0, 1, 2, 3, 4, 7],
         None,
         &["auto"],
     );
 }
 
 #[test]
-fn adr0064_i1_auto_composite_reports_unsupported() {
+fn adr0064_i1_auto_non_latin_reports_unsupported() {
     let path = paths::testdata().join("harfbuzz/test/api/fonts/Roboto-Regular.abcAE.ttf");
     let data = std::fs::read(&path).unwrap();
     let font = Font::new(&data, 0).unwrap();
     let outlines = Outlines::new(font.default_instance());
     let mut scratch = Scratch::default();
     assert!(matches!(
-        outlines.load_auto_hinted(GlyphId(7), 16, HintTarget::Normal, &mut scratch),
+        outlines.load_auto_hinted(GlyphId(5), 16, HintTarget::Normal, &mut scratch),
         Err(OutlineError::AutoHintUnsupportedGlyph)
     ));
     assert!(scratch.points().is_empty());
+}
+
+#[test]
+fn adr0064_i1_auto_composite_outside_short_accent_range_reports_unsupported() {
+    let path = paths::testdata().join("harfbuzz/test/api/fonts/Roboto-Regular.abcAE.ttf");
+    let data = std::fs::read(&path).unwrap();
+    let font = Font::new(&data, 0).unwrap();
+    let outlines = Outlines::new(font.default_instance());
+    for ppem in [8, 32] {
+        let mut scratch = Scratch::default();
+        assert!(matches!(
+            outlines.load_auto_hinted(GlyphId(7), ppem, HintTarget::Normal, &mut scratch),
+            Err(OutlineError::AutoHintUnsupportedGlyph)
+        ));
+        assert!(scratch.points().is_empty());
+    }
 }
 
 #[test]
@@ -100,6 +116,7 @@ fn check_slots(
     variation: Option<&str>,
     engines: &[&str],
 ) {
+    let ppem = 16u16;
     let mut scratch = Scratch::default();
     for (name, target) in [
         ("normal", HintTarget::Normal),
@@ -111,7 +128,13 @@ fn check_slots(
         for &engine in engines {
             for &gid in glyphs {
                 let reference = Command::new(paths::ft_dump())
-                    .args(["--hint-slot", "16", &gid.to_string(), engine, name])
+                    .args([
+                        "--hint-slot",
+                        &ppem.to_string(),
+                        &gid.to_string(),
+                        engine,
+                        name,
+                    ])
                     .args(variation)
                     .arg(path)
                     .output()
@@ -128,7 +151,8 @@ fn check_slots(
                     "auto" => HintMode::Auto,
                     _ => unreachable!(),
                 };
-                let loaded = outlines.load_with_hint(GlyphId(gid), 16, mode, target, &mut scratch);
+                let loaded =
+                    outlines.load_with_hint(GlyphId(gid), ppem, mode, target, &mut scratch);
                 assert!(loaded.is_ok(), "{engine} {name} {gid}: {loaded:?}");
                 let (_, advance) = loaded.unwrap();
                 let mut actual = format!("advance {advance} 0\n");

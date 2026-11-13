@@ -1407,4 +1407,5 @@ fn decompose(
 
 mod cff;
 use cff::load_cff_at;
+mod auto_adjust;
 mod auto_hint;
