@@ -79,9 +79,11 @@ fn plan_store(
     }
     let map = colr
         .var_index_map()
-        .map_err(|_| unsupported_store())?
+        .map_err(|_| SubsetError::Malformed { tag: TAG })?
         .filter(|m| !m.is_empty());
-    let store = colr.variation_store().map_err(|_| unsupported_store())?;
+    let store = colr
+        .variation_store()
+        .map_err(|_| SubsetError::Malformed { tag: TAG })?;
     if retains_no_v1_paints(colr, glyphset) {
         return Ok(());
     }

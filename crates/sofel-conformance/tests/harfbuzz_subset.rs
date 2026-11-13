@@ -77,6 +77,18 @@ fn harfbuzz_subset_tests() {
             case.id()
         };
         let out = run(case, prepared);
+        // The pinned HarfBuzz rejects this upstream-disabled font in all
+        // four profiles: its COLR variation store points outside the table.
+        if case.suite == "colrv1.notoemoji"
+            && case
+                .font
+                .file_name()
+                .is_some_and(|name| name == "NotoColrEmojiGlyf-Regular.subset.ttf")
+        {
+            assert_eq!(out.unwrap_err(), "malformed table COLR", "{id}");
+            results.push((format!("{id}:reject"), true));
+            continue;
+        }
         let (bytes_ok, validate_ok) = match &out {
             Ok(o) => {
                 let bytes_ok = match std::fs::read(case.expected(&data())) {
