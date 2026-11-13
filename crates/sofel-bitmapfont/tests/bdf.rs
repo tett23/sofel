@@ -31,3 +31,24 @@ fn adr0065_i2_bdf_rejects_missing_rows_and_count_overflow() {
     let missing_properties_end = ORDER.replace("ENDPROPERTIES\n", "");
     assert!(BdfFont::parse(missing_properties_end.as_bytes()).is_err());
 }
+
+#[test]
+fn adr0065_i1_bdf_line_endings_preserve_bitmaps_and_offsets() {
+    let reference = BdfFont::parse(ORDER.as_bytes()).unwrap();
+    for ending in ["\r", "\r\n", "\n", "\n\r"] {
+        let source = ORDER.replace('\n', ending);
+        let face = BdfFont::parse(source.as_bytes()).unwrap();
+        for id in 0..3 {
+            assert_eq!(face.glyph(id), reference.glyph(id));
+        }
+        let broken = source.replacen(
+            &format!("{ending}FF{ending}"),
+            &format!("{ending}FG{ending}"),
+            1,
+        );
+        assert_eq!(
+            BdfFont::parse_with_offset(broken.as_bytes()).unwrap_err(),
+            broken.find("FG").unwrap()
+        );
+    }
+}

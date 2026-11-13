@@ -68,11 +68,21 @@ impl BdfFont {
         let text = core::str::from_utf8(data).map_err(|error| error.valid_up_to())?;
         let mut next_offset = 0usize;
         let mut offset = 0usize;
-        let mut raw = text.split_inclusive('\n');
+        let mut remaining = text;
         let lines = core::iter::from_fn(|| {
             offset = next_offset;
-            let line = raw.next()?;
-            next_offset = next_offset.saturating_add(line.len());
+            if remaining.is_empty() {
+                return None;
+            }
+            let end = remaining.find(['\r', '\n']).unwrap_or(remaining.len());
+            let (line, suffix) = remaining.split_at(end);
+            let separator = if suffix.starts_with("\r\n") || suffix.starts_with("\n\r") {
+                2
+            } else {
+                usize::from(!suffix.is_empty())
+            };
+            remaining = suffix.get(separator..)?;
+            next_offset = text.len().saturating_sub(remaining.len());
             Some(line.trim_end())
         });
         Self::parse_lines(lines, data.len()).map_err(|_| offset)
