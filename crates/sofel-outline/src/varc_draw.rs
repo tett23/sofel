@@ -328,7 +328,7 @@ fn visit<S: LeafSink>(
         }
         state.edges_left = state.edges_left.saturating_sub(1);
         state.path.push(glyph.0);
-        let record = varc.record(glyph).ok_or(OutlineError::InvalidComposite)?;
+        let record = varc.record(glyph).unwrap_or(&[]);
         let mut at = 0usize;
         for component in components {
             let component = component.ok_or(OutlineError::InvalidComposite)?;

@@ -423,7 +423,7 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
             .font
             .table(Tag::new(b"VARC"))
             .and_then(|data| sofel_font::read::varc::Varc::new(data).ok())
-            && varc.record(glyph).is_some()
+            && varc.coverage().get(glyph).is_some()
         {
             let mut scratch = Scratch::default();
             let mut pen = sofel_geom::FnPen(|_: sofel_geom::Command| {});
@@ -446,7 +446,7 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
     }
 
     /// Draw a VARC-covered glyph with HarfBuzz's floating-point coordinates.
-    /// Returns `None` when the glyph has no VARC record or the record is invalid.
+    /// Returns `None` when the glyph is outside VARC coverage or the record is invalid.
     pub fn varc_glyph_path(
         &self,
         glyph: GlyphId,
@@ -456,7 +456,7 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
             .font
             .table(Tag::new(b"VARC"))
             .and_then(|data| sofel_font::read::varc::Varc::new(data).ok())?;
-        varc.record(glyph)?;
+        varc.coverage().get(glyph)?;
         varc_draw::draw_float(self, &varc, glyph, scale, &mut Scratch::default()).ok()
     }
 
@@ -493,7 +493,7 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
             .font
             .table(Tag::new(b"VARC"))
             .and_then(|data| sofel_font::read::varc::Varc::new(data).ok())
-            && varc.record(glyph).is_some()
+            && varc.coverage().get(glyph).is_some()
         {
             return varc_draw::draw(self, &varc, glyph, scale, scratch, pen);
         }
