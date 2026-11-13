@@ -24,6 +24,7 @@ mod sbix;
 pub(crate) mod stat;
 pub(crate) mod varc;
 pub(crate) mod varc_complex;
+mod variation_region;
 mod vorg;
 
 use alloc::collections::{BTreeMap, BTreeSet};
@@ -202,6 +203,11 @@ impl Plan {
                 self.passthrough(font, tag, tables);
                 return Ok(room);
             }
+            b"MVAR" if !self.var.instancing() => {
+                self.passthrough(font, tag, tables);
+                return Ok(room);
+            }
+            b"MVAR" => Some(mvar::subset),
             b"STAT" => Some(stat::subset),
             b"fvar" if !self.var.user().is_empty() => {
                 let src = font.table(tag).unwrap_or(&[]);

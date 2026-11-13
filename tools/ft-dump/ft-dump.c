@@ -82,6 +82,7 @@
  * Usage: ft-dump --outline SIZE FILE
  *
  * Usage: ft-dump --stroke SIZE GLYPH RADIUS JOIN MITER BORDER FILE
+ * Usage: ft-dump --stroke-points SIZE GLYPH RADIUS JOIN MITER BORDER FILE
  *
  * Strokes one loaded outline through FT_Glyph_Stroke (BORDER=0), or
  * FT_Glyph_StrokeBorder (BORDER=1 outside, 2 inside), using butt caps.
@@ -351,7 +352,7 @@ static const FT_Outline_Funcs outline_funcs = {
 static int dump_stroke(const char *size, const char *glyph_arg,
                        const char *radius_arg, const char *join_arg,
                        const char *miter_arg, const char *border_arg,
-                       const char *path)
+                       const char *path, int raw)
 {
   FT_Library library;
   FT_Face face;
@@ -382,10 +383,20 @@ static int dump_stroke(const char *size, const char *glyph_arg,
   if (error) printf("error %d\n", (int)error);
   else {
     FT_OutlineGlyph outline = (FT_OutlineGlyph)glyph;
-    contour_open = 0;
-    error = FT_Outline_Decompose(&outline->outline, &outline_funcs, NULL);
-    end_contour();
-    if (error) printf("error %d\n", (int)error);
+    if (raw) {
+      int i;
+      for (i = 0; i < outline->outline.n_points; i++)
+        printf("point %ld %ld %u\n", (long)outline->outline.points[i].x,
+               (long)outline->outline.points[i].y,
+               (unsigned char)outline->outline.tags[i]);
+      for (i = 0; i < outline->outline.n_contours; i++)
+        printf("end %d\n", outline->outline.contours[i]);
+    } else {
+      contour_open = 0;
+      error = FT_Outline_Decompose(&outline->outline, &outline_funcs, NULL);
+      end_contour();
+      if (error) printf("error %d\n", (int)error);
+    }
   }
   FT_Done_Glyph(glyph);
   FT_Stroker_Done(stroker);
@@ -1464,6 +1475,8 @@ static void dump_cff2_private(FT_Face face)
 }
 
 /* ADR 0027 task 2: public FreeType variation queries and normalization. */
+#include "../variation-sample.h"
+
 static int dump_var_reference(int argc, char **argv)
 {
   FT_Library library;
@@ -1522,7 +1535,17 @@ static int dump_var_reference(int argc, char **argv)
       continue;
     }
     printf("axis_count %u\n", mm->num_axis);
-    if (!normalize) {
+    if (strcmp(argv[1], "--var-random") == 0) {
+      uint32_t state = 1;
+      for (unsigned sample = 0; sample < 8; sample++) {
+        printf("rand:%u", sample);
+        for (axis = 0; axis < mm->num_axis; axis++)
+          print_sample_axis(&state, (float)mm->axis[axis].minimum / 65536.0f,
+                            (float)mm->axis[axis].maximum / 65536.0f);
+        putchar('\n');
+      }
+    }
+    else if (!normalize) {
       for (axis = 0; axis < mm->num_axis; axis++) {
         FT_UInt flags = 0;
         FT_Var_Axis *a = &mm->axis[axis];
@@ -1696,7 +1719,8 @@ int main(int argc, char **argv)
   FT_Error error;
 
   if (argc >= 2 && (strcmp(argv[1], "--var") == 0 ||
-                    strcmp(argv[1], "--var-normalize") == 0))
+                    strcmp(argv[1], "--var-normalize") == 0 ||
+                    strcmp(argv[1], "--var-random") == 0))
     return dump_var_reference(argc, argv);
   if (argc >= 2 && !reference_options(&argc, argv)) return 2;
   if (argc == 3 && strcmp(argv[1], "--advances") == 0)
@@ -1706,7 +1730,9 @@ int main(int argc, char **argv)
   if (argc == 4 && strcmp(argv[1], "--outline") == 0)
     return outlines(argv[2], argv[3], 0, NULL, NULL);
   if (argc == 9 && strcmp(argv[1], "--stroke") == 0)
-    return dump_stroke(argv[2], argv[3], argv[4], argv[5], argv[6], argv[7], argv[8]);
+    return dump_stroke(argv[2], argv[3], argv[4], argv[5], argv[6], argv[7], argv[8], 0);
+  if (argc == 9 && strcmp(argv[1], "--stroke-points") == 0)
+    return dump_stroke(argv[2], argv[3], argv[4], argv[5], argv[6], argv[7], argv[8], 1);
   if (argc == 5 && strcmp(argv[1], "--sampled-outline") == 0)
     return outlines(argv[2], argv[3], 0, argv[4], NULL);
   if (argc == 6 && strcmp(argv[1], "--sampled-outline-var") == 0)

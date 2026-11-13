@@ -41,7 +41,7 @@ fn inv1_stroke_border_closure_and_duplicate_lines() {
     );
     assert_eq!(tags, [1, 1, 0, 1, 2, 2]);
     assert_eq!(ends, [5]);
-    border.reset();
+    border = Border::default();
     points.clear();
     tags.clear();
     ends.clear();
@@ -62,4 +62,33 @@ fn inv1_stroke_border_arc_has_cubic_segments() {
     assert_eq!(ends, [2]);
     assert_eq!(tags, [1, 2, 2]);
     assert_eq!(points.first(), Some(&p(0, 100)));
+}
+
+#[test]
+fn inv1_stroke_arc_is_translation_invariant_near_coordinate_limits() {
+    for offset in [i32::MIN + 1024, i32::MAX - 1024] {
+        let mut border = Border::default();
+        border.move_to(p(offset + 100, offset)).unwrap();
+        border
+            .arc_to(p(offset, offset), 100, 0, stroke_trig::PI)
+            .unwrap();
+        border.close(false);
+        let mut actual = Vec::new();
+        border
+            .export(&mut actual, &mut Vec::new(), &mut Vec::new())
+            .unwrap();
+        let mut reference = Border::default();
+        reference.move_to(p(100, 0)).unwrap();
+        reference.arc_to(p(0, 0), 100, 0, stroke_trig::PI).unwrap();
+        reference.close(false);
+        let mut expected = Vec::new();
+        reference
+            .export(&mut expected, &mut Vec::new(), &mut Vec::new())
+            .unwrap();
+        for point in &mut expected {
+            point.x += offset;
+            point.y += offset;
+        }
+        assert_eq!(actual, expected);
+    }
 }

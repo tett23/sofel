@@ -77,24 +77,27 @@ fn harfbuzz_subset_tests() {
             case.id()
         };
         let out = run(case, prepared);
-        let expected = std::fs::read(case.expected(&data()));
-        let (bytes_ok, validate_ok) = match (&out, &expected) {
-            (Ok(o), Ok(e)) => {
-                if o != e {
-                    detail.push(format!("{id}:bytes {}", subset::diff(e, o)));
-                }
+        let (bytes_ok, validate_ok) = match &out {
+            Ok(o) => {
+                let bytes_ok = match std::fs::read(case.expected(&data())) {
+                    Ok(expected) if *o == expected => true,
+                    Ok(expected) => {
+                        detail.push(format!("{id}:bytes {}", subset::diff(&expected, o)));
+                        false
+                    }
+                    Err(err) => {
+                        detail.push(format!("{id}: no expected file: {err}"));
+                        false
+                    }
+                };
                 let errs = validate_errors(o);
                 if !errs.is_empty() {
                     detail.push(format!("{id}:validate {}", errs.join("; ")));
                 }
-                (o == e, errs.is_empty())
+                (bytes_ok, errs.is_empty())
             }
-            (Err(err), _) => {
+            Err(err) => {
                 detail.push(format!("{id}: {err}"));
-                (false, false)
-            }
-            (_, Err(err)) => {
-                detail.push(format!("{id}: no expected file: {err}"));
                 (false, false)
             }
         };

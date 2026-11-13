@@ -126,11 +126,11 @@ fn adr0027_glyf_geometry_matches_freetype_at_all_corpus_locations() {
                             }
                             glyphs += 1;
                             let kind = usize::from(mode == "--raster");
-                            // VARC records replace glyf outlines and belong to ADR 0067.
+                            // VARC-covered glyphs use VARC outlines and belong to ADR 0067.
                             // Keep checking every ordinary glyf glyph in these fonts.
                             if varc
                                 .as_ref()
-                                .and_then(|table| table.record(GlyphId(glyph)))
+                                .and_then(|table| table.coverage().get(GlyphId(glyph)))
                                 .is_some()
                             {
                                 skipped_varc[kind] += 1;
