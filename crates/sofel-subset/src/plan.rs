@@ -158,6 +158,8 @@ pub(crate) struct PlanLayout {
     pub instanced_gdef_store: Option<Vec<u8>>,
     pub gdef_var_items: Vec<(u16, Vec<u32>)>,
     pub gdef_var_map: BTreeMap<u32, u32>,
+    /// Condition-specific private rows and unrounded sign-preserving defaults.
+    pub gdef_condition_map: BTreeMap<(u32, i16), (u32, i16)>,
 }
 
 /// The checks of the layout tables this version cannot write yet.
@@ -372,6 +374,9 @@ impl Plan {
                     let static_table = font.table(Tag::new(tag)).is_some_and(|data| match *tag {
                         b"GSUB" | b"GPOS" => {
                             can_instance_layout_conditions(data, &norm.axis_tags, norm.avar2)
+                                || layout::Gsubgpos::new(data, *tag == b"GSUB")
+                                    .feature_variations_view()
+                                    .is_some_and(|fv| fv.version() == 0x0001_0001)
                         }
                         b"BASE" => sofel_font::read::base::Base::new(data).is_ok_and(|table| {
                             table.item_var_store_offset().unwrap_or(0) == 0
@@ -380,7 +385,7 @@ impl Plan {
                         b"COLR" => !norm.avar2 && sofel_font::read::colr::Colr::new(data).is_ok(),
                         b"GDEF" => sofel_font::read::gdef::Gdef::new(data).is_ok_and(|t| {
                             t.item_var_store_offset().unwrap_or(0) == 0
-                                || (!norm.avar2 && t.variation_store().is_ok())
+                                || t.variation_store().is_ok()
                         }),
                         _ => false,
                     });
@@ -640,6 +645,42 @@ impl Plan {
         let table =
             |t: &[u8; 4], gsub: bool| Gsubgpos::new(font.table(Tag::new(t)).unwrap_or(&[]), gsub);
         let no_closure = flags.has(Flags::NO_LAYOUT_CLOSURE);
+        let mut condition_deltas = BTreeMap::new();
+        if !p.var.n.normalized_coords.is_empty() {
+            let location =
+                sofel_font::var::Location::from_normalized_2_14(font, &p.var.n.normalized_coords);
+            let instance = font.instance(&location);
+            for (tag, is_gsub) in [(b"GSUB", true), (b"GPOS", false)] {
+                if !tag_kept(tag) {
+                    continue;
+                }
+                let Some(data) = font.table(Tag::new(tag)) else {
+                    continue;
+                };
+                let t = layout::Gsubgpos::new(data, is_gsub);
+                let all = (0..t.feature_count())
+                    .map(|i| (u32::try_from(i).unwrap_or(u32::MAX), 0))
+                    .collect();
+                for (index, _) in layout::plan::feature_variation_condition_values(t, &all) {
+                    let outer = u16::try_from(index >> 16).map_err(|_| SubsetError::Limit {
+                        tag: Tag::new(b"GDEF"),
+                    })?;
+                    let inner = u16::try_from(index & 0xffff).map_err(|_| SubsetError::Limit {
+                        tag: Tag::new(b"GDEF"),
+                    })?;
+                    let delta = instance
+                        .item_delta::<sofel_font::var::HbF64>(
+                            sofel_font::var::StoreKind::Gdef,
+                            outer,
+                            inner,
+                        )
+                        .map_err(|_| SubsetError::Malformed {
+                            tag: Tag::new(b"GDEF"),
+                        })?;
+                    condition_deltas.insert(index, delta);
+                }
+            }
+        }
         for (tag, is_gsub, lp) in [
             (b"GSUB", true, &mut p.layout.gsub),
             (b"GPOS", false, &mut p.layout.gpos),
@@ -670,6 +711,7 @@ impl Plan {
                     } else {
                         None
                     },
+                    condition_deltas: &condition_deltas,
                 },
             );
             if fixed && !pinned {
@@ -972,15 +1014,52 @@ impl Plan {
                         items
                     };
                     let mut projected = BTreeMap::new();
-                    let bytes = crate::tables::hvar::instance::subset(
+                    let location = sofel_font::var::Location::from_normalized_2_14(
+                        font,
+                        &p.var.n.normalized_coords,
+                    );
+                    let instance = font.instance(&location);
+                    let mut conditions = Vec::new();
+                    for (layout_tag, lp) in [
+                        (Tag::new(b"GSUB"), &p.layout.gsub),
+                        (Tag::new(b"GPOS"), &p.layout.gpos),
+                    ] {
+                        if !tag_kept(&layout_tag.0) {
+                            continue;
+                        }
+                        let Some(data) = font.table(layout_tag) else {
+                            continue;
+                        };
+                        let source = layout::Gsubgpos::new(data, layout_tag == Tag::new(b"GSUB"));
+                        for (index, default) in layout::plan::feature_variation_condition_values(
+                            source,
+                            &lp.features_w_dups,
+                        ) {
+                            let outer = u16::try_from(index >> 16)
+                                .map_err(|_| SubsetError::Limit { tag })?;
+                            let inner = u16::try_from(index & 0xffff)
+                                .map_err(|_| SubsetError::Limit { tag })?;
+                            let delta = instance
+                                .item_delta::<sofel_font::var::HbF64>(
+                                    sofel_font::var::StoreKind::Gdef,
+                                    outer,
+                                    inner,
+                                )
+                                .map_err(|_| SubsetError::Malformed { tag })?;
+                            conditions.push((index, default, f64::from(default) + delta));
+                        }
+                    }
+                    let mut condition_map = BTreeMap::new();
+                    let bytes = crate::tables::hvar::instance::subset_gdef_conditions(
                         &p,
                         font,
                         store,
                         &items,
-                        tag,
-                        true,
                         &mut projected,
+                        &conditions,
+                        &mut condition_map,
                     )?;
+                    p.layout.gdef_condition_map = condition_map;
                     p.layout.pinned_layout_deltas =
                         p.pinned_deltas(font, tag, sofel_font::var::StoreKind::Gdef, &map)?;
                     p.layout.gdef_var_map = map
