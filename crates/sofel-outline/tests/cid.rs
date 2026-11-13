@@ -224,3 +224,37 @@ fn adr0065_i1_cid_general_font_matrix_matches_freetype() -> Result<(), Box<dyn s
     }
     Ok(())
 }
+
+#[test]
+fn adr0065_i1_cid_zero_yy_matrix_collapses_like_freetype() -> Result<(), Box<dyn std::error::Error>>
+{
+    let mut source = sample(&[
+        139, 248, 136, 13, 239, 239, 21, 239, 139, 5, 139, 239, 5, 39, 39, 5, 9, 14,
+    ]);
+    let old = b"[0.001 0 0 0.001 0 0]";
+    let at = source
+        .windows(old.len())
+        .position(|w| w == old)
+        .ok_or("matrix")?;
+    source.splice(
+        at..at + old.len(),
+        b"[0 0.001 -0.001 0 0 0]".iter().copied(),
+    );
+    let face = CidFace::parse(&source, 1024)?;
+    let mut commands = Vec::new();
+    let info = draw_cid(&face, 0, Scale::Unscaled, &mut FnPen(|c| commands.push(c)))?;
+    assert_eq!(
+        commands.first(),
+        Some(&Command::MoveTo(Point { x: 0, y: 0 }))
+    );
+    assert_eq!(
+        (
+            info.cbox.x_min,
+            info.cbox.y_min,
+            info.cbox.x_max,
+            info.cbox.y_max
+        ),
+        (0, 0, 0, 0)
+    );
+    Ok(())
+}

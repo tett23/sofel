@@ -118,7 +118,7 @@ impl CidFace {
             return Err(CidError::at(source.len()));
         }
         let mut dicts = Vec::new();
-        let mut units_per_em = None;
+        let mut units_per_em = 1000;
         let marker = b"%ADOBeginFontDict";
         let mut rest = header;
         while let Some(pos) = find_bytes(rest, marker) {
@@ -165,10 +165,9 @@ impl CidFace {
                 sd_bytes,
                 matrix,
             });
-            if units_per_em.is_some_and(|upem| upem != current_upem) {
-                return Err(CidError::invalid());
+            if let Some(current_upem) = current_upem {
+                units_per_em = current_upem;
             }
-            units_per_em = Some(current_upem);
             rest = rest.get(end..).ok_or(CidError::invalid())?;
         }
         if dicts.len() != dict_count {
@@ -181,7 +180,7 @@ impl CidFace {
             fd_bytes,
             gd_bytes,
             dicts,
-            units_per_em: units_per_em.ok_or(CidError::invalid())?,
+            units_per_em,
         })
     }
 
@@ -399,7 +398,7 @@ fn decode_hex(raw: &[u8], max_output: usize, data_start: usize) -> Result<Vec<u8
     Ok(out)
 }
 
-fn parse_matrix(dict: &[u8]) -> Result<(CidMatrix, u16), CidError> {
+fn parse_matrix(dict: &[u8]) -> Result<(CidMatrix, Option<u16>), CidError> {
     let Some(at) = find_bytes(dict, b"/FontMatrix") else {
         return Ok((
             CidMatrix {
@@ -410,7 +409,7 @@ fn parse_matrix(dict: &[u8]) -> Result<(CidMatrix, u16), CidError> {
                 dx: 0,
                 dy: 0,
             },
-            1000,
+            None,
         ));
     };
     let after = at
@@ -449,18 +448,30 @@ fn parse_matrix(dict: &[u8]) -> Result<(CidMatrix, u16), CidError> {
     }
     let scale = fixed[3].unsigned_abs();
     if scale == 0 {
-        return Err(CidError::invalid());
+        return Ok((
+            CidMatrix {
+                xx: 0,
+                yx: 0,
+                xy: 0,
+                yy: 0,
+                dx: 0,
+                dy: 0,
+            },
+            None,
+        ));
     }
     let upem = if scale == 65536 {
-        1000
+        None
     } else {
-        u16::try_from(
-            (1000u64 << 16)
-                .saturating_add(u64::from(scale / 2))
-                .checked_div(u64::from(scale))
-                .ok_or(CidError::invalid())?,
+        Some(
+            u16::try_from(
+                (1000u64 << 16)
+                    .saturating_add(u64::from(scale / 2))
+                    .checked_div(u64::from(scale))
+                    .ok_or(CidError::invalid())?,
+            )
+            .map_err(|_| CidError::invalid())?,
         )
-        .map_err(|_| CidError::invalid())?
     };
     let normalize = |value: i32| -> Result<i32, CidError> {
         let numerator = i64::from(value).saturating_mul(65536);

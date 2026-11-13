@@ -326,3 +326,68 @@ fn adr0065_i1_applies_general_font_matrix_to_advance() -> Result<(), Box<dyn std
     assert_eq!(face.glyph_metrics(0).ok_or("metrics")?.advance_x, 510);
     Ok(())
 }
+
+#[test]
+fn adr0065_i1_zero_yy_matrix_matches_freetype() -> Result<(), Box<dyn std::error::Error>> {
+    let mut source = sample();
+    let old = b"[0.001 0 0 0.001 0 0]";
+    let at = source
+        .windows(old.len())
+        .position(|w| w == old)
+        .ok_or("matrix")?;
+    source.splice(
+        at..at + old.len(),
+        b"[0 0.001 -0.001 0 0 0]".iter().copied(),
+    );
+    let face = CidFace::parse(&source, 1024)?;
+    assert_eq!(face.units_per_em(), 1000);
+    assert_eq!(face.glyph_metrics(0).ok_or("metrics")?.advance_x, 0);
+    Ok(())
+}
+
+#[test]
+fn adr0065_i1_last_font_dict_sets_face_units_per_em() -> Result<(), Box<dyn std::error::Error>> {
+    let mut source = two_dicts()?;
+    let old = b"[0.001 0 0 0.001 0 0]";
+    let first = source
+        .windows(old.len())
+        .position(|w| w == old)
+        .ok_or("first")?;
+    let second = source
+        .get(first + old.len()..)
+        .ok_or("rest")?
+        .windows(old.len())
+        .position(|w| w == old)
+        .ok_or("second")?
+        + first
+        + old.len();
+    source
+        .get_mut(second..second + old.len())
+        .ok_or("matrix")?
+        .copy_from_slice(b"[0.002 0 0 0.002 0 0]");
+    let face = CidFace::parse(&source, 1024)?;
+    assert_eq!(face.units_per_em(), 500);
+    assert_eq!(face.glyph_metrics(0).ok_or("first metrics")?.advance_x, 500);
+    assert_eq!(
+        face.glyph_metrics(1).ok_or("second metrics")?.advance_x,
+        600
+    );
+    Ok(())
+}
+
+#[test]
+fn adr0065_i1_default_matrix_keeps_previous_face_units() -> Result<(), Box<dyn std::error::Error>> {
+    let mut source = two_dicts()?;
+    let old = b"[0.001 0 0 0.001 0 0]";
+    let first = source
+        .windows(old.len())
+        .position(|w| w == old)
+        .ok_or("first")?;
+    source
+        .get_mut(first..first + old.len())
+        .ok_or("matrix")?
+        .copy_from_slice(b"[0.002 0 0 0.002 0 0]");
+    let face = CidFace::parse(&source, 1024)?;
+    assert_eq!(face.units_per_em(), 500);
+    Ok(())
+}
