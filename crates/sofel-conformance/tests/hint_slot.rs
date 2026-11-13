@@ -18,7 +18,7 @@ fn adr0064_i1_native_slots_match_freetype() {
     check_slots(
         &path,
         &Outlines::new(font.default_instance()),
-        &[1, 7],
+        &[1, 4, 7],
         None,
     );
 }
