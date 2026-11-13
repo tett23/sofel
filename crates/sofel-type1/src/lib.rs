@@ -32,6 +32,9 @@ pub mod face;
 /// Unscaled Type 1 charstring metrics.
 pub mod metrics;
 
+/// Type 1 Multiple Masters design axes and coordinates.
+pub mod multiple_masters;
+
 /// CID-keyed Type 1 font data and CIDMap access.
 pub mod cid;
 /// Type 42 PostScript wrapper around an sfnt font.

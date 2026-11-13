@@ -65,11 +65,9 @@ pub(super) fn subset(
         && !plan.var.instancing()
         && !plan.var.n.avar2_reachable.is_empty()
         && plan.var.n.retained_axis_indices.len() == usize::from(table.axis_count())
-        && !large
     {
         records = cull_unreachable_records(plan, &table, &records, tag)?;
     } else if (plan.var.instancing() || !plan.var.n.avar2_reachable.is_empty())
-        && !large
         && (!plan.var.n.avar2
             || plan.var.n.retained_axis_indices.len() < usize::from(table.axis_count())
             || !plan.var.n.avar2_reachable.is_empty())
@@ -105,6 +103,36 @@ pub(super) fn subset(
     )
 }
 
+fn tuple_data_offset(raw: &[u8], tag: Tag) -> Option<usize> {
+    use sofel_font::read::be;
+    if tag == Tag::new(b"GVAR") {
+        usize::try_from(be::u24_at(raw, 2)?).ok()
+    } else {
+        Some(usize::from(be::u16_at(raw, 2)?))
+    }
+}
+
+/// Writes the offset relative to the start of the glyph record.
+fn append_tuple_data_offset(
+    record: &mut Vec<u8>,
+    header_bytes: usize,
+    tag: Tag,
+) -> Result<(), SubsetError> {
+    let limit = SubsetError::Limit { tag };
+    if tag == Tag::new(b"GVAR") {
+        let offset = u32::try_from(header_bytes.checked_add(5).ok_or(limit)?).map_err(|_| limit)?;
+        if offset > 0xff_ffff {
+            return Err(limit);
+        }
+        let [_, hi, mid, lo] = offset.to_be_bytes();
+        record.extend([hi, mid, lo]);
+    } else {
+        let offset = u16::try_from(header_bytes.checked_add(4).ok_or(limit)?).map_err(|_| limit)?;
+        record.extend(offset.to_be_bytes());
+    }
+    Ok(())
+}
+
 fn cull_unreachable_records<'a>(
     plan: &Plan,
     table: &Gvar<'_>,
@@ -122,7 +150,7 @@ fn cull_unreachable_records<'a>(
             continue;
         }
         let glyph = table.glyph_data(old_gid).ok_or(bad)?;
-        let data_at = usize::from(sofel_font::read::be::u16_at(raw, 2).ok_or(bad)?);
+        let data_at = tuple_data_offset(raw, tag).ok_or(bad)?;
         let shared_size = if glyph.has_shared_points() {
             PackedPoints::parse(raw.get(data_at..).ok_or(bad)?)
                 .ok_or(bad)?
@@ -130,7 +158,7 @@ fn cull_unreachable_records<'a>(
         } else {
             0
         };
-        let mut header_at = 4usize;
+        let mut header_at = if tag == Tag::new(b"GVAR") { 5usize } else { 4 };
         let mut headers = Vec::new();
         let mut data = Vec::new();
         let mut kept = 0u16;
@@ -183,8 +211,7 @@ fn cull_unreachable_records<'a>(
             output.extend_from_slice(
                 &(kept | if glyph.has_shared_points() { 0x8000 } else { 0 }).to_be_bytes(),
             );
-            let new_data_at = 4usize.checked_add(headers.len()).ok_or(bad)?;
-            output.extend_from_slice(&u16::try_from(new_data_at).map_err(|_| bad)?.to_be_bytes());
+            append_tuple_data_offset(&mut output, headers.len(), tag)?;
             output.extend(headers);
             output.extend_from_slice(
                 raw.get(data_at..data_at.checked_add(shared_size).ok_or(bad)?)
@@ -210,10 +237,17 @@ fn serialize_records(
 ) -> Result<bool, SubsetError> {
     let glyph_count = plan.num_output_glyphs();
     let large = tag == Tag::new(b"GVAR");
+    // The instancer computes padding and the short-offset threshold with a
+    // four-byte tuple header, even for GVAR, whose actual header is five bytes.
+    let wide_instance = large && plan.var.instancing();
     let padded_len = records
         .iter()
         .try_fold(0usize, |total, (_, bytes)| {
-            total.checked_add(bytes.len())?.checked_add(bytes.len() % 2)
+            if wide_instance {
+                total.checked_add(bytes.len().saturating_sub(1))
+            } else {
+                total.checked_add(bytes.len())?.checked_add(bytes.len() % 2)
+            }
         })
         .ok_or(SubsetError::Limit { tag })?;
     let long = padded_len > 0x1fffe || plan.flags.has(Flags::IFTB_REQUIREMENTS);
@@ -255,7 +289,7 @@ fn serialize_records(
             data_offset = data_offset
                 .checked_add(bytes.len())
                 .ok_or(SubsetError::Limit { tag })?;
-            if !long && bytes.len() % 2 != 0 {
+            if !wide_instance && !long && bytes.len() % 2 != 0 {
                 serializer.u8(0);
                 data_offset = data_offset
                     .checked_add(1)
@@ -353,8 +387,8 @@ fn instance_records(
         let glyph = table.glyph_data(old).ok_or(bad)?;
         let mut points = &[0u8][..];
         if glyph.has_shared_points() {
-            let offset = sofel_font::read::be::u16_at(raw, 2).ok_or(bad)?;
-            let bytes = raw.get(usize::from(offset)..).ok_or(bad)?;
+            let offset = tuple_data_offset(raw, tag).ok_or(bad)?;
+            let bytes = raw.get(offset..).ok_or(bad)?;
             let (_, length) = PackedPoints::parse(bytes).ok_or(bad)?;
             points = bytes.get(..length).ok_or(bad)?;
         }
@@ -681,14 +715,10 @@ fn instance_records(
         }
         let mut record = Vec::new();
         record.extend((count | if shared_points.is_some() { 0x8000 } else { 0 }).to_be_bytes());
-        record.extend(
-            u16::try_from(headers.len().checked_add(4).ok_or(bad)?)
-                .map_err(|_| bad)?
-                .to_be_bytes(),
-        );
+        append_tuple_data_offset(&mut record, headers.len(), tag)?;
         record.extend(headers);
         record.extend(payload);
-        if record.len() % 2 != 0 {
+        if record.len() % 2 != usize::from(tag == Tag::new(b"GVAR")) {
             record.push(0);
         }
         output.push((gid, Cow::Owned(record)));
