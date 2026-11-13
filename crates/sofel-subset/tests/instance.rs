@@ -917,6 +917,39 @@ fn unpinned_base_store_with_variation_index_is_remapped() {
 }
 
 #[test]
+fn adr0061_i1_partial_base_pin_folds_delta_into_baseline() {
+    let data = font_with(vec![
+        (b"fvar", fvar(&AXES)),
+        (b"BASE", base_with_variation_index()),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    let input = unicodes()
+        .with_axis_pinned(Tag::new(b"wght"), 650.0, &font)
+        .unwrap();
+    let out = subset(&font, &input).unwrap();
+    let sfnt = Sfnt::new(&out).unwrap();
+    let base = sofel_font::read::base::Base::new(sfnt.table(Tag::new(b"BASE")).unwrap()).unwrap();
+    let coord = base
+        .horiz_axis()
+        .unwrap()
+        .unwrap()
+        .base_script_list()
+        .unwrap()
+        .unwrap()
+        .script(0)
+        .unwrap()
+        .unwrap()
+        .base_values()
+        .unwrap()
+        .unwrap()
+        .coord(0)
+        .unwrap()
+        .unwrap();
+    assert_eq!(coord.coordinate(), 134);
+    assert!(coord.device().unwrap().is_none());
+}
+
+#[test]
 fn unpinned_base_store_compacts_second_item_to_first() {
     let mut base = base_with_variation_index();
     base[51] = 1; // BaseCoord's VariationIndex: old inner 1.

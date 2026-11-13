@@ -141,7 +141,8 @@ pub(super) fn optimize(
         }
         let mut unique = Vec::new();
         for (inner, row) in rows.into_iter().enumerate() {
-            if matches!(&tag.0, b"MVAR" | b"GDEF" | b"COLR") && row.iter().all(|&delta| delta == 0)
+            if matches!(&tag.0, b"MVAR" | b"GDEF" | b"COLR" | b"BASE")
+                && row.iter().all(|&delta| delta == 0)
             {
                 continue;
             }

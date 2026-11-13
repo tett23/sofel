@@ -755,8 +755,26 @@ fn adr0061_i1_partial_layout_matches_harfbuzz() {
 }
 
 #[test]
-fn adr0061_i1_cvar_range_projects_control_value_tuples() {
+fn adr0061_i1_base_and_cvar_restrict_weight_like_harfbuzz() {
     for (file, low, default, high) in [
+        (
+            "shape/data/in-house/fonts/NotoSansCJK-VF.abc.ttf",
+            300,
+            500,
+            700,
+        ),
+        (
+            "shape/data/in-house/fonts/NotoSansCJK-VF.abc.otf",
+            300,
+            500,
+            700,
+        ),
+        (
+            "shape/data/in-house/fonts/NotoSerifHK-subset.ttf",
+            300,
+            500,
+            700,
+        ),
         ("subset/data/fonts/Muli-ABC.ttf", 300u16, 500u16, 700u16),
         (
             "shape/data/text-rendering-tests/fonts/TestCVARGVAROne.ttf",
@@ -785,7 +803,8 @@ fn adr0061_i1_cvar_range_projects_control_value_tuples() {
             )
             .unwrap();
         let actual = subset(&font, &input).unwrap();
-        let out = std::env::temp_dir().join(format!("sofel-cvar-range-{}.ttf", std::process::id()));
+        let out =
+            std::env::temp_dir().join(format!("sofel-base-cvar-range-{}.ttf", std::process::id()));
         assert!(
             Command::new(paths::hb_dump())
                 .arg("--subset")

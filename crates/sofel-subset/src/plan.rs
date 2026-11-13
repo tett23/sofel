@@ -321,8 +321,10 @@ impl Plan {
                         b"GSUB" | b"GPOS" => {
                             can_instance_layout_conditions(data, &norm.axis_tags, norm.avar2)
                         }
-                        b"BASE" => sofel_font::read::base::Base::new(data)
-                            .is_ok_and(|table| table.item_var_store_offset().unwrap_or(0) == 0),
+                        b"BASE" => sofel_font::read::base::Base::new(data).is_ok_and(|table| {
+                            table.item_var_store_offset().unwrap_or(0) == 0
+                                || (!norm.avar2 && table.variation_store().is_ok())
+                        }),
                         b"COLR" => !norm.avar2 && sofel_font::read::colr::Colr::new(data).is_ok(),
                         b"GDEF" => sofel_font::read::gdef::Gdef::new(data).is_ok_and(|t| {
                             t.item_var_store_offset().unwrap_or(0) == 0
@@ -448,10 +450,6 @@ impl Plan {
                 && [b"glyf", b"GLYF", b"gvar", b"GVAR", b"cvar", b"VARC"]
                     .iter()
                     .all(|t| kept(t).is_none())
-                && kept(b"BASE").is_none_or(|data| {
-                    sofel_font::read::base::Base::new(data)
-                        .is_ok_and(|table| table.item_var_store_offset().unwrap_or(0) == 0)
-                })
                 && kept(b"COLR").is_none_or(|data| {
                     sofel_font::read::colr::Colr::new(data)
                         .is_ok_and(|table| table.var_store_offset() == 0)
@@ -916,7 +914,7 @@ impl Plan {
                 }
             }
         }
-        if pinned
+        if p.var.instancing()
             && !p.var.n.pinned_at_default
             && tag_kept(b"BASE")
             && !no_subset.contains(Tag::new(b"BASE").to_u32())

@@ -217,7 +217,7 @@ fn base_coord(s: &mut Sub<'_, '_>, c: D<'_>, remap: &BTreeMap<u32, u32>) -> bool
         3 => {
             s.s.extend(c.slice(0, 4));
             let dev = c.off16(4);
-            if s.p.var.all_axes_pinned() && !s.p.var.n.pinned_at_default && dev.u16(4) == 0x8000 {
+            if s.p.var.instancing() && !s.p.var.n.pinned_at_default && dev.u16(4) == 0x8000 {
                 let index = (u32::from(dev.u16(0)) << 16) | u32::from(dev.u16(2));
                 let Some(&delta) = s.p.layout.pinned_base_deltas.get(&index) else {
                     return false;
@@ -365,7 +365,7 @@ fn axis(s: &mut Sub<'_, '_>, a: D<'_>, remap: &BTreeMap<u32, u32>) -> bool {
 /// `BASE::subset`.
 pub(crate) fn subset(
     p: &Plan,
-    _font: &Font<'_>,
+    font: &Font<'_>,
     tag: Tag,
     src: &[u8],
     s: &mut Serializer,
@@ -378,7 +378,7 @@ pub(crate) fn subset(
     if version >= 0x0001_0001
         && d.u32(8) != 0
         && !p.var.all_axes_pinned()
-        && !unused_variation_store(src)
+        && (p.var.instancing() || !unused_variation_store(src))
     {
         let Some((old_items, new_indices)) = retained_variation_indices(src, p) else {
             return Err(SubsetError::Unsupported {
@@ -387,12 +387,46 @@ pub(crate) fn subset(
             });
         };
         remap = new_indices;
-        if !old_items.is_empty() {
+        if p.var.instancing() || !old_items.is_empty() {
             let store = Base::new(src)
                 .ok()
                 .and_then(|base| base.variation_store().ok().flatten())
                 .ok_or(SubsetError::Malformed { tag })?;
-            store_bytes = Some(crate::tables::hvar::subset_store(store, &old_items, tag)?);
+            if p.var.instancing() {
+                let items = if old_items.is_empty() {
+                    (0..store.data_count())
+                        .map(|outer| {
+                            let data = store
+                                .item_data(outer)
+                                .ok_or(SubsetError::Malformed { tag })?;
+                            Ok((outer, (0..u32::from(data.item_count)).collect()))
+                        })
+                        .collect::<Result<Vec<_>, SubsetError>>()?
+                } else {
+                    old_items
+                };
+                let mut projected = BTreeMap::new();
+                let bytes = crate::tables::hvar::instance::subset(
+                    p,
+                    font,
+                    store,
+                    &items,
+                    tag,
+                    true,
+                    &mut projected,
+                )?;
+                remap.retain(|_, index| {
+                    projected.get(index).is_some_and(|new| {
+                        *index = *new;
+                        true
+                    })
+                });
+                if !bytes.is_empty() {
+                    store_bytes = Some(bytes);
+                }
+            } else {
+                store_bytes = Some(crate::tables::hvar::subset_store(store, &old_items, tag)?);
+            }
         }
     }
     let mut c = Sub::new(p, s, false);
