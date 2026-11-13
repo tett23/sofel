@@ -691,3 +691,47 @@ fn adr0067_i2_avar2_range_preserves_gvar_matches_harfbuzz() {
         assert_eq!(ours, expected, "{variation}");
     }
 }
+
+#[test]
+fn adr0061_i1_two_unrelated_varc_axes_match_harfbuzz() {
+    for file in ["varc-unrelated-axis.ttf", "varc-unrelated-axis-avar2.ttf"] {
+        let path = paths::testdata().join("harfbuzz/test/api/fonts").join(file);
+        let bytes = std::fs::read(&path).unwrap();
+        let font = Font::new(&bytes, 0).unwrap();
+        let base = Input::new().map_set(SetKind::Unicodes, |set| set.add(0xAC01));
+        for (variation, input) in [
+            (
+                "DUMY=0.5,0005=0.5",
+                base.with_axis_pinned(Tag::new(b"DUMY"), 0.5, &font)
+                    .unwrap()
+                    .with_axis_pinned(Tag::new(b"0005"), 0.5, &font),
+            ),
+            (
+                "DUMY=0:0.5:1,0005=0.5",
+                base.with_axis_range(Tag::new(b"DUMY"), Some(0.0), Some(1.0), Some(0.5), &font)
+                    .unwrap()
+                    .with_axis_pinned(Tag::new(b"0005"), 0.5, &font),
+            ),
+        ] {
+            let output = std::env::temp_dir()
+                .join(format!("sofel-varc-two-axes-{}.ttf", std::process::id()));
+            let reference = ProcessCommand::new(paths::hb_dump())
+                .arg("--subset")
+                .arg(format!("--font-file={}", path.display()))
+                .arg("--unicodes=U+AC01")
+                .arg(format!("--variations={variation}"))
+                .arg(format!("--output-file={}", output.display()))
+                .output()
+                .unwrap();
+            assert!(reference.status.success(), "{variation}");
+            let expected = std::fs::read(&output).unwrap();
+            std::fs::remove_file(output).unwrap();
+            let actual = subset(&font, &input.unwrap()).unwrap();
+            assert!(
+                actual == expected,
+                "{file} {variation}: {}",
+                sofel_conformance::subset::diff(&expected, &actual)
+            );
+        }
+    }
+}
