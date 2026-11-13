@@ -5,6 +5,57 @@ use alloc::vec::Vec;
 
 pub(super) type Tent = [f32; 3];
 
+type ScaledRegion = (Vec<Tent>, Vec<f32>);
+pub(super) type Change = (usize, Tent, [f32; 2]);
+pub(super) fn changes(font: &sofel_font::Font<'_>, plan: &crate::plan::Plan) -> Vec<Change> {
+    let axis_infos = crate::instance::axis_infos(font);
+    plan.var
+        .n
+        .axes_location
+        .iter()
+        .filter_map(|(tag, range)| {
+            let axis = axis_infos.iter().position(|info| info.tag == *tag)?;
+            let info = axis_infos.get(axis)?;
+            Some((
+                axis,
+                [range.min, range.default, range.max],
+                [info.default - info.min, info.max - info.default],
+            ))
+        })
+        .collect()
+}
+pub(super) fn split(
+    source: Vec<Tent>,
+    changed: &[Change],
+    limit: usize,
+    tag: sofel_font::read::Tag,
+) -> Result<Vec<ScaledRegion>, crate::error::SubsetError> {
+    use crate::error::SubsetError;
+    let bad = SubsetError::Malformed { tag };
+    let mut parts = alloc::vec![(source, Vec::<f32>::new())];
+    for &(axis, limits, distances) in changed {
+        let mut next = Vec::new();
+        for (tents, scales) in parts {
+            let tent = *tents.get(axis).ok_or(bad)?;
+            let solutions = rebase(tent, limits, distances);
+            for (weight, region) in solutions {
+                if next.len() >= limit {
+                    return Err(SubsetError::Limit { tag });
+                }
+                let mut tents = tents.clone();
+                *tents.get_mut(axis).ok_or(bad)? = region;
+                let mut scales = scales.clone();
+                if weight != 1.0 {
+                    scales.push(weight);
+                }
+                next.push((tents, scales));
+            }
+        }
+        parts = next;
+    }
+    Ok(parts)
+}
+
 fn reverse([a, b, c]: Tent) -> Tent {
     [-c, -b, -a]
 }

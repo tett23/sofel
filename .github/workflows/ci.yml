@@ -287,7 +287,7 @@ jobs:
           path: |
             target/ft-dump
             target/hb-dump
-          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-${{ runner.arch }}-reference-tools-${{ steps.native-toolchain.outputs.key }}-${{ hashFiles('.github/workflows/ci.yml', 'testdata.lock', 'tools/ft-dump/**', 'tools/hb-dump/**') }}
+          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-${{ runner.arch }}-reference-tools-${{ steps.native-toolchain.outputs.key }}-${{ hashFiles('.github/workflows/ci.yml', 'testdata.lock', 'tools/ft-dump/**', 'tools/hb-dump/**', 'tools/variation-sample.h') }}
       - name: Build ft-dump
         if: steps.reference-tools.outputs.cache-hit != 'true'
         run: |
@@ -297,6 +297,8 @@ jobs:
       - name: Build hb-dump
         if: steps.reference-tools.outputs.cache-hit != 'true'
         run: sh scripts/measure-process-tree.sh sh tools/hb-dump/build.sh
+      - name: Build VARC outline reference
+        run: sh scripts/measure-process-tree.sh sh tools/hb-varc-reference/build.sh target/testdata/harfbuzz target/hb-varc-reference/hb-varc-reference musl
       - name: Compare with FreeType and HarfBuzz
         run: sh scripts/measure-process-tree.sh sh scripts/test-conformance.sh 2
       # docs/adr/0021: the same hash as on wasm32 (the wasm job).
