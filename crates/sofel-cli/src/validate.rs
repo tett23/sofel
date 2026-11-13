@@ -114,7 +114,12 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
             let result = source.and_then(|source| {
                 sofel_font::Type1Face::new(&source)
                     .map(|_| ())
-                    .map_err(|_| 0usize)
+                    .map_err(|_| {
+                        sofel_type1::charstrings::Charstrings::parse_with_offset(source.private())
+                            .err()
+                            .and_then(|index| source.private_file_offset(&bytes, index))
+                            .unwrap_or(0)
+                    })
             });
             if let Err(offset) = result {
                 emit_diagnostic(

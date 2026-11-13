@@ -130,6 +130,35 @@ impl Type1Source {
         })
     }
 
+    /// Locate a decrypted private dictionary byte in the original PFA or PFB.
+    pub fn private_file_offset(&self, file: &[u8], index: usize) -> Option<usize> {
+        let mut cipher_index = index.checked_add(4)?;
+        if Self::has_text_header(file) {
+            let start = self.cleartext.len();
+            let (relative, _) = file
+                .get(start..)?
+                .iter()
+                .enumerate()
+                .filter(|(_, byte)| byte.is_ascii_hexdigit())
+                .nth(cipher_index.checked_mul(2)?)?;
+            return start.checked_add(relative);
+        }
+        let pfb = Pfb::parse(file, file.len()).ok()?;
+        for section in pfb
+            .sections()
+            .iter()
+            .filter(|s| s.kind == SectionKind::Binary)
+        {
+            if cipher_index < section.data.len() {
+                return (section.data.as_ptr() as usize)
+                    .checked_sub(file.as_ptr() as usize)?
+                    .checked_add(cipher_index);
+            }
+            cipher_index = cipher_index.checked_sub(section.data.len())?;
+        }
+        Some(file.len())
+    }
+
     /// The unencrypted PostScript program before `eexec`.
     pub fn cleartext(&self) -> &[u8] {
         &self.cleartext

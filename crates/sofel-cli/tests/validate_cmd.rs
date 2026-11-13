@@ -652,3 +652,36 @@ fn adr0065_i2_type1_source_reports_file_offsets() {
         );
     }
 }
+
+#[test]
+fn adr0065_i2_pfb_private_token_has_file_offset() {
+    let (_, mut pfb) = type1_fixture::sample();
+    let header_len = u32::from_le_bytes(pfb[2..6].try_into().unwrap()) as usize;
+    let binary = 6 + header_len + 6;
+    let private = sofel_font::Type1Source::parse_pfb(&pfb, pfb.len()).unwrap();
+    let len_iv = private
+        .private()
+        .windows(6)
+        .position(|w| w == b"/lenIV")
+        .unwrap();
+    // Four random plaintext bytes precede the private dictionary.
+    let digit = binary + 4 + len_iv + b"/lenIV ".len();
+    let mut plain = private.private().to_vec();
+    plain[digit - binary - 4] = b'!';
+    let mut state = 55665u16;
+    for (slot, byte) in pfb[binary..].iter_mut().zip(b"ABCD".iter().chain(&plain)) {
+        *slot = *byte ^ (state >> 8) as u8;
+        state = (u16::from(*slot).wrapping_add(state))
+            .wrapping_mul(52845)
+            .wrapping_add(22719);
+    }
+    let dir = Dir::new("type1-private-offset");
+    let file = dir.file("lenIV.pfb", &pfb);
+    let out = run(&["--json".as_ref(), file.as_os_str()]);
+    assert_eq!(out.code, 1);
+    assert!(
+        out.stdout.contains(&format!("\"offset\":{digit}")),
+        "{}",
+        out.stdout
+    );
+}
