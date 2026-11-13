@@ -130,17 +130,29 @@ impl<'a> Gsubgpos<'a> {
 
     /// The ScriptList.
     pub fn script_list(self) -> D<'a> {
-        self.d.off16(4)
+        if self.version() >= 0x0001_0002 && self.d.u32(14) != 0 {
+            self.d.off32(14)
+        } else {
+            self.d.off16(4)
+        }
     }
 
     /// The FeatureList.
     pub fn feature_list(self) -> D<'a> {
-        self.d.off16(6)
+        if self.version() >= 0x0001_0002 && self.d.u32(18) != 0 {
+            self.d.off32(18)
+        } else {
+            self.d.off16(6)
+        }
     }
 
     /// The LookupList.
     pub fn lookup_list(self) -> D<'a> {
-        self.d.off16(8)
+        if self.version() >= 0x0001_0002 && self.d.u32(22) != 0 {
+            self.d.off32(22)
+        } else {
+            self.d.off16(8)
+        }
     }
 
     /// The FeatureVariations table, empty below version 1.1.
@@ -228,8 +240,12 @@ impl<'a> Gsubgpos<'a> {
         if i >= self.lookup_count() {
             return D(&[]);
         }
-        self.lookup_list()
-            .off16(2usize.saturating_add(i.saturating_mul(2)))
+        let list = self.lookup_list();
+        if self.version() >= 0x0001_0002 && self.d.u32(22) != 0 {
+            list.off32(2usize.saturating_add(i.saturating_mul(4)))
+        } else {
+            list.off16(2usize.saturating_add(i.saturating_mul(2)))
+        }
     }
 
     /// The offset of `d` from the start of the table: views are suffixes

@@ -196,9 +196,8 @@ pub(crate) fn retained_variation_indices(
 ) -> Option<BTreeSet<u32>> {
     let t = Gsubgpos::new(data, false);
     let mut selected = BTreeSet::new();
-    let list = t.lookup_list();
-    for i in 0..usize::from(list.u16(0)) {
-        let lookup = list.off16(2usize.saturating_add(i.saturating_mul(2)));
+    for i in 0..t.lookup_count() {
+        let lookup = t.lookup(i);
         if !plan.lookups.contains_key(&n32(i)) {
             continue;
         }

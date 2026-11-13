@@ -325,19 +325,19 @@ impl<'p, 's> Sub<'p, 's> {
     }
 
     /// `LookupOffsetList::subset`.
-    fn lookup_list(&mut self, list: D<'_>) -> bool {
+    fn lookup_list(&mut self, table: Gsubgpos<'_>, width: u8) -> bool {
         let count_at = self.s.u16(0);
-        let n = usize::from(list.u16(0));
+        let n = table.lookup_count();
         let lookups = self.lookup_map();
         for i in 0..n {
             if !lookups.contains_key(&n32(i)) {
                 continue;
             }
-            let l = list.off16(2usize.saturating_add(i.saturating_mul(2)));
+            let l = table.lookup(i);
             if l.is_null() {
                 continue;
             }
-            if self.offset_append(2, |s| s.lookup(l)) {
+            if self.offset_append(width, |s| s.lookup(l)) {
                 self.bump_u16(count_at, 1);
             }
         }
@@ -745,30 +745,36 @@ impl<'p, 's> Sub<'p, 's> {
         if version >> 16 != 1 {
             return false;
         }
-        if version >= 0x0001_0002 {
-            self.unsupported("GSUB and GPOS 1.2 (ADR 0022 stage 3)");
-            return false;
-        }
         self.s.u32(version);
-        let script_at = self.s.u16(0);
-        let feature_at = self.s.u16(0);
-        let lookup_at = self.s.u16(0);
-        let ll = t.lookup_list();
-        self.serialize_subset_opt(lookup_at, 2, ll, |s| s.lookup_list(ll));
-        let fl = t.feature_list();
-        self.serialize_subset_opt(feature_at, 2, fl, |s| s.feature_list(t));
-        let sl = t.script_list();
-        self.serialize_subset_opt(script_at, 2, sl, |s| s.script_list(t));
+        let wide = version == 0x0001_0002;
+        let mut script_at = self.s.u16(0);
+        let mut feature_at = self.s.u16(0);
+        let mut lookup_at = self.s.u16(0);
+        let fv_at = if wide {
+            let at = self.s.u32(0);
+            script_at = self.s.u32(0);
+            feature_at = self.s.u32(0);
+            lookup_at = self.s.u32(0);
+            Some(at)
+        } else {
+            None
+        };
+        let width = if wide { 4 } else { 2 };
+        self.serialize_subset_opt(lookup_at, width, t.lookup_list(), |s| {
+            s.lookup_list(t, width)
+        });
+        self.serialize_subset_opt(feature_at, width, t.feature_list(), |s| s.feature_list(t));
+        self.serialize_subset_opt(script_at, width, t.script_list(), |s| s.script_list(t));
         if version >= 0x0001_0001 {
             let snap = self.s.snapshot();
-            let at = self.s.u32(0);
+            let at = fv_at.unwrap_or_else(|| self.s.u32(0));
             let fv = t.feature_variations_view();
             // Pinning every axis drops the feature variations.
             let ret = (!self.lp().fixed_conditions || self.lp().universal_record.is_some())
                 && fv.is_some_and(|fv| {
                     self.serialize_subset_opt(at, 4, D(fv.data()), |s| s.feature_variations(t, fv))
                 });
-            if !ret {
+            if !ret && !wide {
                 self.s.revert(snap);
                 self.s.set_u32(0, 0x0001_0000);
             }
