@@ -502,11 +502,14 @@ struct Cff2Plan {
     fdselect: Option<(u8, Vec<(u32, u32)>)>,
     fdmap: FdMap,
     keep_variations: bool,
+    projected_store: Option<Vec<u8>>,
+    projection: Option<super::projection::Projection>,
+    majors: BTreeMap<u32, u16>,
     subrs: Option<KeptSubrs>,
 }
 
 /// `cff2_subset_plan::create` on the full-instance or desubroutinized path.
-fn create(plan: &Plan, acc: &Acc<'_>, tag: Tag) -> Result<Cff2Plan, SubsetError> {
+fn create(plan: &Plan, acc: &Acc<'_>, font: &Font<'_>, tag: Tag) -> Result<Cff2Plan, SubsetError> {
     let fail = SubsetError::Failed { tag };
     if plan.glyphs.old_gid(0) != Some(0) {
         return Err(fail);
@@ -514,6 +517,18 @@ fn create(plan: &Plan, acc: &Acc<'_>, tag: Tag) -> Result<Cff2Plan, SubsetError>
     let num_glyphs = plan.num_output_glyphs;
     let drop_hints = plan.flags.has(Flags::NO_HINTING);
     let coords = plan.var.n.normalized_coords.as_slice();
+    let partial = !coords.is_empty() && !plan.var.all_axes_pinned();
+    let projection = if partial && acc.fonts.store.at.is_some() {
+        Some(super::projection::Projection::new(
+            acc.fonts.store,
+            plan,
+            font,
+        )?)
+    } else {
+        None
+    };
+    let mut used = BTreeSet::new();
+    let mut used_fds = BTreeSet::new();
     let keep_variations = coords.is_empty();
     let fonts = &acc.fonts;
     let glyph = |i: u32| -> Result<Option<(u32, u32)>, SubsetError> {
@@ -542,11 +557,20 @@ fn create(plan: &Plan, acc: &Acc<'_>, tag: Tag) -> Result<Cff2Plan, SubsetError>
         if !cs2::interpret(&mut env, &mut u) {
             return Err(fail);
         }
+        used_fds.insert(fd);
+        used.extend(u.blend_major);
         called |= env.called_subr();
         if let Some(r) = round.get_mut(i as usize) {
             *r = !keep_variations && u.has_blend && !u.has_flex1;
         }
     }
+    let (projected_store, majors) = if let Some(p) = &projection {
+        used.extend(private_blend_majors(acc, &used_fds, drop_hints).ok_or(fail)?);
+        let (bytes, majors) = p.store(&used, &plan.var.n.retained_axis_indices)?;
+        (Some(bytes), majors)
+    } else {
+        (None, BTreeMap::new())
+    };
     let mut charstrings = vec![Vec::new(); num_glyphs as usize];
     let mut commands = vec![Vec::new(); num_glyphs as usize];
     for i in 0..num_glyphs {
@@ -554,9 +578,14 @@ fn create(plan: &Plan, acc: &Acc<'_>, tag: Tag) -> Result<Cff2Plan, SubsetError>
             continue;
         };
         let rounds = round.get(i as usize).copied().unwrap_or(false);
-        let mut env = Env::new(fonts.char_string(old), fonts.programs(fd), coords);
+        let mut env = Env::new(
+            fonts.char_string(old),
+            fonts.programs(fd),
+            if partial { &[] } else { coords },
+        );
         env.round_blends = !rounds;
         let mut f = Flatten {
+            projection: projection.as_ref(),
             drop_hints,
             rounding: rounds.then(Rounding::default),
             commands: Some(Vec::new()),
@@ -566,7 +595,15 @@ fn create(plan: &Plan, acc: &Acc<'_>, tag: Tag) -> Result<Cff2Plan, SubsetError>
             return Err(fail);
         }
         if let Some(c) = charstrings.get_mut(i as usize) {
-            *c = f.out;
+            if let Some(major) = f.emitted_major {
+                let new = majors.get(&major).copied().unwrap_or(0);
+                let default = majors.get(&fonts.programs(fd).ivs).copied().unwrap_or(0);
+                if new != default {
+                    encode_int(c, i32::from(new));
+                    encode_op(c, cs2::VSINDEXCS);
+                }
+            }
+            c.extend(f.out);
         }
         if let Some(c) = commands.get_mut(i as usize) {
             *c = f.commands.unwrap_or_default();
@@ -608,7 +645,10 @@ fn create(plan: &Plan, acc: &Acc<'_>, tag: Tag) -> Result<Cff2Plan, SubsetError>
         subset_fdcount,
         fdselect,
         fdmap,
-        keep_variations,
+        keep_variations: keep_variations || projected_store.as_ref().is_some_and(|s| !s.is_empty()),
+        projected_store,
+        projection,
+        majors,
         subrs,
     })
 }
@@ -786,18 +826,22 @@ fn bcd_nibbles(printed: &[u8]) -> Vec<u8> {
     nibbles
 }
 
-/// `cff2_private_blend_encoder_param_t` without partial instancing: the
-/// state kept across the operators of one Private DICT.
-struct BlendParam<'a, 'c> {
+/// `cff2_private_blend_encoder_param_t`: the state kept across the
+/// operators of one Private DICT.
+struct BlendParam<'a, 'c, 'p> {
     store: Store<'a>,
     coords: &'c [i32],
+    projection: Option<&'p super::projection::Projection>,
+    majors: &'p BTreeMap<u32, u16>,
     seen_blend: bool,
     ivs: u32,
     region_count: u32,
     scalars: Vec<f32>,
+    fold_exact: f64,
+    fold_emitted: f64,
 }
 
-impl BlendParam<'_, '_> {
+impl BlendParam<'_, '_, '_> {
     /// `blend_deltas`.
     fn blend_deltas(&self, deltas: &[f64]) -> f64 {
         if self.scalars.len() != deltas.len() {
@@ -808,12 +852,74 @@ impl BlendParam<'_, '_> {
             .zip(deltas)
             .fold(0.0, |v, (&s, &d)| v + f64::from(s) * d)
     }
+
+    fn fold(&mut self, deltas: &[f64]) -> Option<f64> {
+        let exact = self
+            .projection?
+            .transforms
+            .get(self.ivs as usize)?
+            .fold(deltas)?;
+        let emitted = c_round(self.fold_exact + exact) - self.fold_emitted;
+        self.fold_exact += exact;
+        self.fold_emitted += emitted;
+        Some(emitted)
+    }
+}
+
+fn dict_ivs(stack: &mut Vec<f64>) -> Option<u32> {
+    stack.pop().and_then(|v| {
+        (v >= f64::from(i32::MIN) && v <= f64::from(i32::MAX))
+            .then(|| super::cs::to_int(v))
+            .and_then(|i| u32::try_from(i).ok())
+    })
+}
+
+/// VarData used by blends in the Private DICTs of retained Font DICTs.
+fn private_blend_majors(
+    acc: &Acc<'_>,
+    used_fds: &BTreeSet<u32>,
+    drop_hints: bool,
+) -> Option<BTreeSet<u32>> {
+    let mut used = BTreeSet::new();
+    for &fd in used_fds {
+        let (dict, bytes) = acc.privates.get(fd as usize)?;
+        let mut ivs = 0;
+        for op in &dict.ops {
+            if drop_hints && dict::is_hint_op(op.op) {
+                continue;
+            }
+            let bytes = bytes.get(op.start..op.end)?;
+            let mut stack = Vec::new();
+            let mut offset = 0;
+            while offset < bytes.len() {
+                let (token, next) = dict_token(bytes, offset)?;
+                offset = next;
+                match token {
+                    DictToken::Number(value) => stack.push(value),
+                    DictToken::Operator(dict::VSINDEX) => {
+                        ivs = dict_ivs(&mut stack)?;
+                        stack.clear();
+                    }
+                    DictToken::Operator(dict::BLEND) => {
+                        used.insert(ivs);
+                        stack.clear();
+                    }
+                    DictToken::Operator(_) => stack.clear(),
+                }
+            }
+        }
+    }
+    Some(used)
 }
 
 /// `cff2_private_dict_blend_opset_t` over one recorded operator's bytes
 /// (`cff2_private_dict_op_serializer_t` when pinned): the operands with
 /// their blends evaluated, then the operator; `vsindex` is dropped.
-fn reinterpret_private_op(out: &mut Vec<u8>, bytes: &[u8], param: &mut BlendParam<'_, '_>) -> bool {
+fn reinterpret_private_op(
+    out: &mut Vec<u8>,
+    bytes: &[u8],
+    param: &mut BlendParam<'_, '_, '_>,
+) -> bool {
     /// The Private DICT operators written with their operands.
     const HINTS: [u32; 13] = [10, 11, 265, 266, 267, 274, 273, 6, 7, 8, 9, 268, 269];
     let mut stack: Vec<f64> = Vec::new();
@@ -835,19 +941,22 @@ fn reinterpret_private_op(out: &mut Vec<u8>, bytes: &[u8], param: &mut BlendPara
         };
         match op {
             dict::VSINDEX => {
-                let Some(ivs) = stack.pop().and_then(|v| {
-                    (v >= f64::from(i32::MIN) && v <= f64::from(i32::MAX))
-                        .then(|| super::cs::to_int(v))
-                        .and_then(|i| u32::try_from(i).ok())
-                }) else {
+                let Some(ivs) = dict_ivs(&mut stack) else {
                     return false;
                 };
                 param.ivs = ivs;
+                if param.projection.is_some() {
+                    let new = param.majors.get(&ivs).copied().unwrap_or(0);
+                    if new != 0 {
+                        encode_int(out, i32::from(new));
+                        encode_op(out, dict::VSINDEX);
+                    }
+                }
                 stack.clear();
                 continue;
             }
             dict::BLEND => {
-                if !process_blend(&mut stack, param) {
+                if !process_blend(out, &mut stack, param) {
                     return false;
                 }
                 continue;
@@ -860,13 +969,19 @@ fn reinterpret_private_op(out: &mut Vec<u8>, bytes: &[u8], param: &mut BlendPara
         }
         encode_op(out, op);
         stack.clear();
+        param.fold_exact = 0.0;
+        param.fold_emitted = 0.0;
     }
     true
 }
 
-/// `cff2_private_dict_blend_opset_t::process_blend` when pinned: each
-/// blended value becomes its rounded value at the coordinates.
-fn process_blend(stack: &mut Vec<f64>, param: &mut BlendParam<'_, '_>) -> bool {
+/// `cff2_private_dict_blend_opset_t::process_blend`: fold pinned axes and
+/// rewrite the remaining deltas against the projected variation store.
+fn process_blend(
+    out: &mut Vec<u8>,
+    stack: &mut Vec<f64>,
+    param: &mut BlendParam<'_, '_, '_>,
+) -> bool {
     if !param.seen_blend {
         param.region_count = param.store.region_count(param.ivs);
         param.scalars = param
@@ -875,11 +990,7 @@ fn process_blend(stack: &mut Vec<f64>, param: &mut BlendParam<'_, '_>) -> bool {
         param.seen_blend = true;
     }
     let k = param.region_count;
-    let Some(n) = stack.pop().and_then(|v| {
-        (v >= f64::from(i32::MIN) && v <= f64::from(i32::MAX))
-            .then(|| super::cs::to_int(v))
-            .and_then(|i| u32::try_from(i).ok())
-    }) else {
+    let Some(n) = dict_ivs(stack) else {
         return false;
     };
     let count = stack.len();
@@ -893,6 +1004,82 @@ fn process_blend(stack: &mut Vec<f64>, param: &mut BlendParam<'_, '_>) -> bool {
     };
     let start = count.saturating_sub(total);
     let (n, k) = (n as usize, k as usize);
+    if k != 0 && param.projection.is_some() {
+        let Some(transform) = param
+            .projection
+            .and_then(|projection| projection.transforms.get(param.ivs as usize))
+        else {
+            return false;
+        };
+        if transform.gains.len() != k {
+            return false;
+        }
+        for &value in stack.get(..start).unwrap_or(&[]) {
+            encode_num_tp(out, value);
+        }
+        let columns = if param.majors.contains_key(&param.ivs) {
+            transform.columns.len()
+        } else {
+            0
+        };
+        if columns == 0 {
+            for i in 0..n {
+                let from = start.saturating_add(n).saturating_add(i.saturating_mul(k));
+                let Some(deltas) = stack.get(from..from.saturating_add(k)) else {
+                    return false;
+                };
+                let Some(fold) = param.fold(deltas) else {
+                    return false;
+                };
+                let Some(&base) = stack.get(start.saturating_add(i)) else {
+                    return false;
+                };
+                encode_num_tp(out, base + fold);
+            }
+        } else {
+            let mut done = 0;
+            while done < n {
+                let available = 512usize.saturating_sub(start.saturating_add(done));
+                let chunk = available
+                    .checked_div(columns.saturating_add(1))
+                    .unwrap_or(0)
+                    .min(n.saturating_sub(done));
+                if chunk == 0 {
+                    return false;
+                }
+                for i in done..done.saturating_add(chunk) {
+                    let from = start.saturating_add(n).saturating_add(i.saturating_mul(k));
+                    let Some(deltas) = stack.get(from..from.saturating_add(k)) else {
+                        return false;
+                    };
+                    let Some(fold) = param.fold(deltas) else {
+                        return false;
+                    };
+                    let Some(&base) = stack.get(start.saturating_add(i)) else {
+                        return false;
+                    };
+                    encode_num_tp(out, base + fold);
+                }
+                for i in done..done.saturating_add(chunk) {
+                    let from = start.saturating_add(n).saturating_add(i.saturating_mul(k));
+                    let Some(deltas) = stack.get(from..from.saturating_add(k)) else {
+                        return false;
+                    };
+                    let Some(projected) = transform.deltas(deltas) else {
+                        return false;
+                    };
+                    for delta in projected {
+                        encode_num_tp(out, f64::from(hb_clamp_to_i32(c_round(delta))));
+                    }
+                }
+                encode_int(out, i32::try_from(chunk).unwrap_or(i32::MAX));
+                encode_op(out, dict::BLEND);
+                done = done.saturating_add(chunk);
+            }
+        }
+        stack.clear();
+        return true;
+    }
     for i in 0..n {
         let from = start.saturating_add(n).saturating_add(i.saturating_mul(k));
         let d = param.blend_deltas(stack.get(from..from.saturating_add(k)).unwrap_or(&[]));
@@ -905,17 +1092,15 @@ fn process_blend(stack: &mut Vec<f64>, param: &mut BlendParam<'_, '_>) -> bool {
 }
 
 /// A Private DICT (`PrivateDict::serialize` with
-/// `cff2_private_dict_op_serializer_t`): hints dropped with
-/// `drop_hints`, no `Subrs` (the charstrings are desubroutinized), and
-/// blends evaluated only for a pinned instance.
+/// `cff2_private_dict_op_serializer_t`): hints and subroutines follow
+/// the plan, and blends are rewritten for pinned or restricted axes.
 fn private_dict(
     s: &mut Serializer,
     acc: &Acc<'_>,
     fd: usize,
-    drop_hints: bool,
     coords: &[i32],
-    keep_variations: bool,
     subrs_link: ObjIdx,
+    p: &Cff2Plan,
 ) -> bool {
     let Some((d, bytes)) = acc.privates.get(fd) else {
         return false;
@@ -923,13 +1108,17 @@ fn private_dict(
     let mut param = BlendParam {
         store: acc.fonts.store,
         coords,
+        projection: p.projection.as_ref(),
+        majors: &p.majors,
         seen_blend: false,
         ivs: 0,
         region_count: 0,
         scalars: Vec::new(),
+        fold_exact: 0.0,
+        fold_emitted: 0.0,
     };
     for o in &d.ops {
-        if drop_hints && dict::is_hint_op(o.op) {
+        if p.drop_hints && dict::is_hint_op(o.op) {
             continue;
         }
         if o.op == dict::SUBRS {
@@ -938,7 +1127,7 @@ fn private_dict(
             }
             continue;
         }
-        if keep_variations {
+        if p.keep_variations && p.projection.is_none() {
             s.extend(bytes.get(o.start..o.end).unwrap_or(&[]));
             continue;
         }
@@ -983,15 +1172,7 @@ fn privates(
             subrs_link = s.pop_pack(true);
         }
         s.push();
-        if !private_dict(
-            s,
-            acc,
-            i,
-            p.drop_hints,
-            coords,
-            p.keep_variations,
-            subrs_link,
-        ) {
+        if !private_dict(s, acc, i, coords, subrs_link, p) {
             s.pop_discard();
             return None;
         }
@@ -1061,7 +1242,15 @@ fn serialize2(s: &mut Serializer, acc: &Acc<'_>, p: &Cff2Plan, coords: &[i32]) -
     let Some(fd_array_link) = fd_array(s, acc, p, &infos, true) else {
         return false;
     };
-    let var_store_link = if p.keep_variations
+    let var_store_link = if let Some(bytes) = &p.projected_store {
+        if bytes.is_empty() {
+            0
+        } else {
+            s.push();
+            s.extend(bytes);
+            s.pop_pack(false)
+        }
+    } else if p.keep_variations
         && let Some(at) = acc.fonts.store.at
     {
         let size = usize::from(acc.fonts.store.size());
@@ -1260,8 +1449,8 @@ pub(crate) fn subset(
     tables: &mut Tables,
 ) -> Result<bool, SubsetError> {
     let acc = Acc::new(font).ok_or(SubsetError::Failed { tag })?;
-    let p = create(plan, &acc, tag)?;
-    if plan.flags.has(Flags::DOWNGRADE_CFF2) {
+    let p = create(plan, &acc, font, tag)?;
+    if plan.var.all_axes_pinned() && plan.flags.has(Flags::DOWNGRADE_CFF2) {
         if serialize1(s, &acc, &p, plan) && !s.in_error() {
             let done = core::mem::replace(s, Serializer::new());
             // Keep the room the serializer needed (see `room`).
