@@ -103,3 +103,12 @@ fn adr0065_i1_unencoded_bdf_slot_has_empty_metrics_and_bitmap() {
     );
     assert!(slot.bitmap.is_empty());
 }
+
+#[test]
+fn adr0065_i1_bdf_duplicate_encoding_matches_reference_lookup() {
+    let source = ORDER.replace("ENCODING 65", "ENCODING 66");
+    let face = BdfFont::parse(source.as_bytes()).unwrap();
+    assert_eq!(face.nominal_glyph(66), Some(2));
+    assert_eq!(face.glyph(0), face.glyph(2));
+    assert_ne!(face.glyph(1), face.glyph(2));
+}
