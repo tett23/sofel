@@ -38,10 +38,10 @@ pub fn draw_cid_native(
     face: &CidFace,
     cid: usize,
     scale: Scale,
-    _target: HintTarget,
+    target: HintTarget,
     pen: &mut impl Pen,
 ) -> Result<(OutlineInfo, i32), OutlineError> {
-    let Scale::Scaled { x, .. } = scale else {
+    let Scale::Scaled { x, y } = scale else {
         return Err(OutlineError::InvalidOutline);
     };
     let program = face
@@ -54,10 +54,21 @@ pub fn draw_cid_native(
     let mut null_pen = FnPen(|_| {});
     let mut scan = State::new(Scale::Unscaled, matrix, false, &mut null_pen);
     decode_program(face, cid, &program, &mut scan, &mut Vec::new(), 0, false)?;
-    if scan.has_stems {
+    if scan.has_stems
+        && (target != HintTarget::Light
+            || scan.unsupported_stem_map
+            || scan.h_stem.is_none()
+            || matrix != [65536, 0, 0, 65536, 0, 0]
+            || !face.native_stem_blues_empty())
+    {
         return Err(OutlineError::UnsupportedFormat);
     }
     let mut state = State::new(scale, matrix, true, pen);
+    if let Some((position, width)) = scan.h_stem {
+        state.h_stem_shift =
+            ps_native::single_hstem_shift(i64::from(position) << 16, i64::from(width) << 16, y)
+                .ok_or(OutlineError::UnsupportedFormat)?;
+    }
     decode_program(face, cid, &program, &mut state, &mut Vec::new(), 0, false)?;
     let metrics = face
         .glyph_metrics(cid)
@@ -117,6 +128,17 @@ fn decode_program<P: Pen>(
             }
             1 | 3 => {
                 state.has_stems = true;
+                if op == 1 {
+                    if let [position, width] = stack.as_slice() {
+                        if state.h_stem.is_none() && !state.emitted {
+                            state.h_stem = Some((*position, *width));
+                        } else {
+                            state.unsupported_stem_map = true;
+                        }
+                    } else {
+                        state.unsupported_stem_map = true;
+                    }
+                }
                 stack.clear();
             }
             13 => {
@@ -200,6 +222,7 @@ fn decode_program<P: Pen>(
                     0 => stack.clear(), // dotsection
                     1 | 2 => {
                         state.has_stems = true;
+                        state.unsupported_stem_map = true;
                         stack.clear();
                     }
                     7 => {
@@ -246,6 +269,9 @@ struct State<'a, P: Pen> {
     box_: Option<CBox>,
     has_stems: bool,
     native: bool,
+    h_stem: Option<(i32, i32)>,
+    h_stem_shift: i64,
+    unsupported_stem_map: bool,
 }
 
 impl<'a, P: Pen> State<'a, P> {
@@ -261,6 +287,9 @@ impl<'a, P: Pen> State<'a, P> {
             box_: None,
             has_stems: false,
             native,
+            h_stem: None,
+            h_stem_shift: 0,
+            unsupported_stem_map: false,
         }
     }
 
@@ -269,7 +298,10 @@ impl<'a, P: Pen> State<'a, P> {
         if self.native
             && let Scale::Scaled { x: sx, y: sy } = self.scale
         {
-            let (px, py) = (ps_native::coordinate(x, sx), ps_native::coordinate(y, sy));
+            let (px, py) = (
+                ps_native::coordinate(x, sx),
+                ps_native::coordinate_fixed_shifted(i64::from(y) << 16, sy, self.h_stem_shift),
+            );
             let p = Point {
                 x: mul_fix(px, xx)
                     .saturating_add(mul_fix(py, xy))
