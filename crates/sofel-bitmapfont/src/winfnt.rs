@@ -1,4 +1,4 @@
-//! Bounds-checked Windows FNT and NE FON bitmap faces (sofel ADR 0065).
+//! Bounds-checked Windows FNT and NE and PE32 FON bitmap faces (sofel ADR 0065).
 use alloc::vec::Vec;
 
 use crate::Glyph;
@@ -7,7 +7,7 @@ use crate::Glyph;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WinFontError;
 
-/// A single strike from a raw FNT or an NE FON resource.
+/// A single strike from a raw FNT or an NE or PE32 FON resource.
 #[derive(Clone, Debug)]
 pub struct WinFont {
     glyphs: Vec<Glyph>,
@@ -43,6 +43,9 @@ fn byte(data: &[u8], offset: usize) -> Result<u8, WinFontError> {
 
 fn fon_resource(data: &[u8], face: u32) -> Result<(&[u8], u32), WinFontError> {
     let ne = usize::try_from(u32_at(data, 0x3c)?).map_err(|_| WinFontError)?;
+    if data.get(ne..).is_some_and(|s| s.starts_with(b"PE\0\0")) {
+        return pe_resource(data.get(ne..).ok_or(WinFontError)?, data, face);
+    }
     if data.get(ne..ne.checked_add(2).ok_or(WinFontError)?) != Some(b"NE") {
         return Err(WinFontError);
     }
@@ -110,6 +113,93 @@ fn fon_resource(data: &[u8], face: u32) -> Result<(&[u8], u32), WinFontError> {
     }
 }
 
+fn range(data: &[u8], offset: usize, len: usize) -> Result<&[u8], WinFontError> {
+    data.get(offset..offset.checked_add(len).ok_or(WinFontError)?)
+        .ok_or(WinFontError)
+}
+
+fn offset32(data: &[u8], at: usize) -> Result<usize, WinFontError> {
+    usize::try_from(u32_at(data, at)?).map_err(|_| WinFontError)
+}
+
+fn directory(resources: &[u8], offset: usize) -> Result<&[[u8; 8]], WinFontError> {
+    let header = range(resources, offset, 16)?;
+    let count = u16_at(header, 12)?
+        .checked_add(u16_at(header, 14)?)
+        .ok_or(WinFontError)?;
+    Ok(range(
+        resources,
+        offset.checked_add(16).ok_or(WinFontError)?,
+        usize::from(count).saturating_mul(8),
+    )?
+    .as_chunks::<8>()
+    .0)
+}
+
+fn subdirectory(entry: &[u8]) -> Result<usize, WinFontError> {
+    let offset = u32_at(entry, 4)?;
+    if offset & 0x80000000 == 0 {
+        return Err(WinFontError);
+    }
+    usize::try_from(offset & 0x7fffffff).map_err(|_| WinFontError)
+}
+
+fn pe_resource<'a>(
+    header: &[u8],
+    file: &'a [u8],
+    face: u32,
+) -> Result<(&'a [u8], u32), WinFontError> {
+    if u16_at(header, 4)? != 0x14c
+        || u16_at(header, 20)? != 224
+        || u16_at(header, 24)? != 0x10b
+        || u32_at(header, 116)? < 3
+    {
+        return Err(WinFontError);
+    }
+    let rva = u32_at(header, 136)?;
+    let sections = range(
+        header,
+        248,
+        usize::from(u16_at(header, 6)?).saturating_mul(40),
+    )?;
+    let section = sections
+        .as_chunks::<40>()
+        .0
+        .iter()
+        .find(|sec| u32_at(*sec, 12) == Ok(rva))
+        .ok_or(WinFontError)?;
+    let raw = range(file, offset32(section, 20)?, offset32(section, 16)?)?;
+    let resources = range(raw, 0, offset32(header, 140)?)?;
+    let mut selected = None;
+    let mut faces = 0u32;
+    // Cap traversed directory entries by the size of the resource table.
+    // Repeated references must not amplify a small directory into billions of visits.
+    let mut budget = resources.len() / 8;
+    for ty in directory(resources, 0)? {
+        if u32_at(ty, 0)? != 8 {
+            continue;
+        }
+        for name in directory(resources, subdirectory(ty)?)? {
+            budget = budget.checked_sub(1).ok_or(WinFontError)?;
+            for lang in directory(resources, subdirectory(name)?)? {
+                budget = budget.checked_sub(1).ok_or(WinFontError)?;
+                let leaf = range(resources, offset32(lang, 4)?, 16)?;
+                let offset = u32_at(leaf, 0)?.checked_sub(rva).ok_or(WinFontError)?;
+                let bytes = range(
+                    raw,
+                    usize::try_from(offset).map_err(|_| WinFontError)?,
+                    offset32(leaf, 4)?,
+                )?;
+                if faces == face {
+                    selected = Some(bytes);
+                }
+                faces = faces.checked_add(1).ok_or(WinFontError)?;
+            }
+        }
+    }
+    Ok((selected.ok_or(WinFontError)?, faces))
+}
+
 fn round_64(value: u32) -> Result<u32, WinFontError> {
     value.checked_add(32).map(|v| v & !63).ok_or(WinFontError)
 }
@@ -132,7 +222,7 @@ impl WinFont {
         data.starts_with(b"MZ") || data.starts_with(b"\x00\x02") || data.starts_with(b"\x00\x03")
     }
 
-    /// Parse `face` of a raw FNT or an NE FON file.
+    /// Parse `face` of a raw FNT or an NE or PE32 FON file.
     pub fn parse(data: &[u8], face: u32) -> Result<Self, WinFontError> {
         let (data, num_faces) = if data.starts_with(b"MZ") {
             fon_resource(data, face)?
@@ -252,7 +342,7 @@ impl WinFont {
         })
     }
 
-    /// Number of faces in the raw FNT or NE FON container.
+    /// Number of faces in the raw FNT or NE and PE32 FON container.
     pub fn num_faces(&self) -> u32 {
         self.num_faces
     }
