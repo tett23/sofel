@@ -9,8 +9,8 @@ use std::fmt;
 use sofel_color::{PaintOptions, Palette};
 use sofel_font::geom::Color;
 use sofel_font::read::GlyphId;
-use sofel_font::{BareCffFace, Type1Face};
-use sofel_geom::{Command, Fixed, FnPen, Point, div_fix};
+use sofel_font::{BareCffFace, PfrFace, Type1Face};
+use sofel_geom::{Command, Fixed, FnPen, Point, div_fix, mul_fix};
 use sofel_outline::{OutlineError, OutlineInfo, Outlines, Scale, Scratch};
 use sofel_raster::{
     BgraImage, Bitmap, FillRule, RasterError, Rasterizer, RenderOptions, blend_layer, pixel_box,
@@ -140,6 +140,75 @@ pub fn render_cid<'r>(
         }),
     )
     .map_err(RenderError::Outline)?;
+    raster
+        .render_placed(
+            bounds,
+            RenderOptions {
+                fill: FillRule::NonZero,
+                overlap: false,
+                ppem: Some((ppem, ppem)),
+            },
+        )
+        .map_err(RenderError::Raster)
+}
+
+/// Render a PFR outline at the selected size without hinting.
+pub fn render_pfr<'r>(
+    face: &PfrFace<'_>,
+    glyph: GlyphId,
+    ppem: u16,
+    raster: &'r mut Rasterizer,
+) -> Result<Bitmap<'r>, RenderError> {
+    let scale = div_fix(
+        i32::from(ppem).saturating_mul(64),
+        i32::from(face.units_per_em()),
+    );
+    let scaled = |p: Point| Point {
+        x: mul_fix(p.x, scale),
+        y: mul_fix(p.y, scale),
+    };
+    let mut commands = Vec::new();
+    face.draw(glyph, &mut FnPen(|command| commands.push(command)))
+        .map_err(|_| RenderError::Outline(OutlineError::InvalidOutline))?;
+    let mut points = Vec::new();
+    let commands: Vec<_> = commands
+        .into_iter()
+        .map(|command| match command {
+            Command::MoveTo(p) => Command::MoveTo(scaled(p)),
+            Command::LineTo(p) => Command::LineTo(scaled(p)),
+            Command::QuadTo(c, p) => Command::QuadTo(scaled(c), scaled(p)),
+            Command::CubicTo(a, b, c) => Command::CubicTo(scaled(a), scaled(b), scaled(c)),
+            Command::Close => Command::Close,
+        })
+        .inspect(|command| match *command {
+            Command::MoveTo(p) | Command::LineTo(p) => points.push(p),
+            Command::QuadTo(a, b) => points.extend([a, b]),
+            Command::CubicTo(a, b, c) => points.extend([a, b, c]),
+            Command::Close => {}
+        })
+        .collect();
+    let has_points = !points.is_empty();
+    let (min_x, max_x, min_y, max_y) = points.into_iter().fold(
+        (i32::MAX, i32::MIN, i32::MAX, i32::MIN),
+        |(min_x, max_x, min_y, max_y), p| {
+            (
+                min_x.min(p.x),
+                max_x.max(p.x),
+                min_y.min(p.y),
+                max_y.max(p.y),
+            )
+        },
+    );
+    let bounds = if has_points {
+        pixel_box(min_x, min_y, max_x, max_y)
+    } else {
+        pixel_box(0, 0, 0, 0)
+    };
+    let shift = bounds.shift();
+    raster.clear();
+    for command in commands {
+        shift_command(command, shift).apply(raster);
+    }
     raster
         .render_placed(
             bounds,
