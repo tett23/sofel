@@ -173,15 +173,6 @@ fn layout_unsupported(
         font.table(tag)
             .filter(|_| !drop.contains(tag.to_u32()) && !no_subset.contains(tag.to_u32()))
     };
-    let any = [b"GSUB", b"GPOS", b"GDEF", b"BASE"]
-        .iter()
-        .any(|t| kept(t).is_some());
-    if any && font.num_glyphs() > 0x1_0000 {
-        return Err(SubsetError::Unsupported {
-            tag: Tag::new(b"GSUB"),
-            reason: "layout tables of fonts with more than 65536 glyphs (ADR 0022 stage 3)",
-        });
-    }
     for t in [b"GSUB", b"GPOS"] {
         if kept(t).is_some_and(|d| sofel_font::read::be::u32_at(d, 0).unwrap_or(0) >= 0x0001_0002) {
             return Err(SubsetError::Unsupported {
@@ -814,6 +805,22 @@ impl Plan {
             } else {
                 n
             };
+        if num_glyphs > 0x1_0000
+            && new_to_old
+                .iter()
+                .any(|&(new, old)| new > 0xFFFF || old > 0xFFFF)
+            && [b"GSUB", b"GPOS", b"GDEF", b"BASE"].iter().any(|t| {
+                let tag = Tag::new(t);
+                font.table(tag).is_some()
+                    && !drop.contains(tag.to_u32())
+                    && !no_subset.contains(tag.to_u32())
+            })
+        {
+            return Err(SubsetError::Unsupported {
+                tag: Tag::new(b"GSUB"),
+                reason: "layout subsetting with retained glyph IDs above 65535",
+            });
+        }
         p.glyphs = GlyphMap::new(new_to_old, num_glyphs);
         let cff2 = Tag::new(b"CFF2");
         if font.table(cff2).is_some()

@@ -1581,3 +1581,22 @@ fn adr0022_wide_single_position_values_survive_subsetting() {
         assert!(follow(follow(list, 2), 6).starts_with(&expected));
     }
 }
+
+#[test]
+fn adr0022_wide_source_keeps_layout_for_low_glyphs() {
+    let data = font_with(vec![
+        (b"MAXP", vec![0, 0, 80, 0, 1, 0, 1]),
+        (
+            b"GSUB",
+            layout_table(&[(b"liga", &[0])], &[(1, single(&[1, 2], 4))]),
+        ),
+    ]);
+    let font = Font::new(&data, 0).unwrap();
+    assert_eq!(font.num_glyphs(), 65537);
+    let out = subset(&font, &chars("AB")).unwrap();
+    assert_eq!(num_glyphs(&out), 5);
+    assert_eq!(
+        first_coverage(&out_table(&out, b"GSUB").unwrap()),
+        coverage1(&[1, 2])
+    );
+}
