@@ -294,6 +294,45 @@ impl Plan {
                 })
             })
         });
+        // Without these glyph-producing closures, cmap and the explicit glyph
+        // set determine whether any VARC record can reach the output.
+        let varc_unselected = !norm.user.is_empty()
+            && font.table(Tag::new(b"VARC")).is_some_and(|data| {
+                if drop.contains(Tag::new(b"VARC").to_u32())
+                    || input
+                        .set(SetKind::NoSubsetTables)
+                        .contains(Tag::new(b"VARC").to_u32())
+                    || [b"GSUB", b"MATH", b"COLR"].iter().any(|tag| {
+                        font.table(Tag::new(tag)).is_some()
+                            && !drop.contains(Tag::new(tag).to_u32())
+                    })
+                {
+                    return false;
+                }
+                let Ok(varc) = Varc::new(data) else {
+                    return false;
+                };
+                let cmap = CmapAccel::new(font);
+                let unicodes = unicode_closure(
+                    input.set(SetKind::Unicodes),
+                    !flags.has(Flags::NO_BIDI_CLOSURE),
+                );
+                let selected = populate_unicodes(
+                    &cmap,
+                    &unicodes,
+                    input.set(SetKind::Glyphs),
+                    num_glyphs,
+                    prepared.map(Prepared::accel),
+                );
+                let mut glyphs = selected.glyphset_gsub;
+                glyphs.add(0);
+                cmap.closure_glyphs(&selected.unicodes, &mut glyphs);
+                glyphs.iter().all(|gid| {
+                    varc.coverage()
+                        .get(sofel_font::read::GlyphId(gid))
+                        .is_none()
+                })
+            });
         let identity_avar2 = norm.avar2
             && font.table(Tag::new(b"CFF2")).is_none()
             && (norm.user.len() == 1 || norm.user.values().all(|r| r.min == r.max))
@@ -311,7 +350,9 @@ impl Plan {
             )?;
             norm.avar2_reachable = ranges.reachable;
             norm.avar2_self_contained = ranges.self_contained;
-            if font.table(Tag::new(b"VARC")).is_some() && !drop.contains(Tag::new(b"VARC").to_u32())
+            if font.table(Tag::new(b"VARC")).is_some()
+                && !drop.contains(Tag::new(b"VARC").to_u32())
+                && !varc_unselected
             {
                 norm.avar2_reachable.clear();
             }
@@ -473,7 +514,9 @@ impl Plan {
                 norm.normalized_coords.clear();
             }
             let varc_tag = Tag::new(b"VARC");
-            let varc_retained = font.table(varc_tag).is_some() && !drop.contains(varc_tag.to_u32());
+            let varc_retained = font.table(varc_tag).is_some()
+                && !drop.contains(varc_tag.to_u32())
+                && !varc_unselected;
             let no_other_variation_data = !other_variation_tags.iter().any(|tag| {
                 if *tag == b"STAT" && !varc_retained {
                     return false;
