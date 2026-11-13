@@ -192,7 +192,7 @@ sofel-subset --font-file=font.ttf --unicodes=41-5A -o - | sofel-woff --format wo
 
 ### `sofel-validate`
 
-sfnt、TTC/OTC、dfontの各表を検証する（[ADR 0008](docs/adr/0008-validate-command-and-freetype-comparison.md)、[ADR 0058](docs/adr/0058-dfont-face-selection.md)）。誤りを1件1行で出し、`--json` ではJSON Linesで出す。
+sfnt、TTC/OTC、dfontの各表と素の CFF 1 を検証する（[ADR 0008](docs/adr/0008-validate-command-and-freetype-comparison.md)、[ADR 0058](docs/adr/0058-dfont-face-selection.md)、[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。誤りを1件1行で出し、`--json` ではJSON Linesで出す。
 
 ```sh
 cargo run --release --bin sofel-validate -- font.ttf
