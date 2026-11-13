@@ -1475,6 +1475,8 @@ static void dump_cff2_private(FT_Face face)
 }
 
 /* ADR 0027 task 2: public FreeType variation queries and normalization. */
+#include "../variation-sample.h"
+
 static int dump_var_reference(int argc, char **argv)
 {
   FT_Library library;
@@ -1533,7 +1535,17 @@ static int dump_var_reference(int argc, char **argv)
       continue;
     }
     printf("axis_count %u\n", mm->num_axis);
-    if (!normalize) {
+    if (strcmp(argv[1], "--var-random") == 0) {
+      uint32_t state = 1;
+      for (unsigned sample = 0; sample < 8; sample++) {
+        printf("rand:%u", sample);
+        for (axis = 0; axis < mm->num_axis; axis++)
+          print_sample_axis(&state, (float)mm->axis[axis].minimum / 65536.0f,
+                            (float)mm->axis[axis].maximum / 65536.0f);
+        putchar('\n');
+      }
+    }
+    else if (!normalize) {
       for (axis = 0; axis < mm->num_axis; axis++) {
         FT_UInt flags = 0;
         FT_Var_Axis *a = &mm->axis[axis];
@@ -1707,7 +1719,8 @@ int main(int argc, char **argv)
   FT_Error error;
 
   if (argc >= 2 && (strcmp(argv[1], "--var") == 0 ||
-                    strcmp(argv[1], "--var-normalize") == 0))
+                    strcmp(argv[1], "--var-normalize") == 0 ||
+                    strcmp(argv[1], "--var-random") == 0))
     return dump_var_reference(argc, argv);
   if (argc >= 2 && !reference_options(&argc, argv)) return 2;
   if (argc == 3 && strcmp(argv[1], "--advances") == 0)
