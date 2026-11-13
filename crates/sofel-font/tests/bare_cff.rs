@@ -10,15 +10,14 @@ const BARE_CFF: &[u8] = &[
     0, 1, 1, 1, 2, 14, // CharStrings INDEX
 ];
 
-// Two names select different Top DICTs and CharStrings INDEXes.
+// Two names select different Top DICTs; the second has UniqueID 42.
 const TWO_FACES: &[u8] = &[
     1, 0, 4, 4, // Header
     0, 2, 1, 1, 2, 3, b'A', b'B', // Name INDEX
-    0, 2, 1, 1, 3, 5, 165, 17, 171, 17, // Top DICT INDEX
+    0, 2, 1, 1, 3, 7, 167, 17, 167, 17, 181, 13, // Top DICT INDEX
     0, 0, // String INDEX
     0, 0, // Global Subrs INDEX
-    0, 1, 1, 1, 2, 14, // first CharStrings INDEX
-    0, 2, 1, 1, 2, 3, 14, 14, // second CharStrings INDEX
+    0, 1, 1, 1, 2, 14, // CharStrings INDEX
 ];
 
 #[test]
@@ -42,12 +41,12 @@ fn adr0065_i2_bare_cff_rejects_invalid_index_and_truncation() {
 #[test]
 fn adr0065_i1_bare_cff_selects_last_face() {
     assert_eq!(
-        Cff::from_bare(TWO_FACES, 0).map(|face| face.num_glyphs()),
-        Ok(1)
+        Cff::from_bare(TWO_FACES, 0).map(|face| face.top_dict().unique_id),
+        Ok(0)
     );
     assert_eq!(
-        Cff::from_bare(TWO_FACES, 1).map(|face| face.num_glyphs()),
-        Ok(2)
+        Cff::from_bare(TWO_FACES, 1).map(|face| face.top_dict().unique_id),
+        Ok(42)
     );
     assert!(Cff::from_bare(TWO_FACES, 2).is_err());
 }
