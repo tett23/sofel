@@ -1870,6 +1870,40 @@ fn adr0022_mark_anchors_survive_a_retained_wide_gid() {
 }
 
 #[test]
+fn adr0022_layout12_uses_extended_header_and_retains_lookups() {
+    let src = layout_table(&[(b"liga", &[0])], &[(1, single(&[1], 2))]);
+    for wide in [false, true] {
+        let mut table = vec![0; 26];
+        table[..4].copy_from_slice(&0x0001_0002u32.to_be_bytes());
+        table.extend_from_slice(&src[10..]);
+        for i in 0..3 {
+            let mut offset = usize::from(u16_at(&src, 4 + 2 * i)) + 16;
+            if wide {
+                if i == 2 {
+                    let lookup = table[offset..].to_vec();
+                    offset = table.len();
+                    table.extend_from_slice(&[0, 1, 0, 0, 0, 6]);
+                    table.extend_from_slice(&lookup[4..]);
+                }
+                table[14 + 4 * i..18 + 4 * i].copy_from_slice(&(offset as u32).to_be_bytes());
+            } else {
+                table[4 + 2 * i..6 + 2 * i].copy_from_slice(&(offset as u16).to_be_bytes());
+            }
+        }
+        let data = font_with(vec![(b"GSUB", table)]);
+        let out = subset(&Font::new(&data, 0).unwrap(), &chars("A")).unwrap();
+        assert_eq!(num_glyphs(&out), 3);
+        let result = out_table(&out, b"GSUB").unwrap();
+        assert_eq!(&result[..14], &[0, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        let at = u32::from_be_bytes(result[22..26].try_into().unwrap()) as usize;
+        assert_eq!(u16_at(&result, at), 1);
+        let len = if wide { 4 } else { 2 };
+        let expected = if wide { &[0, 0, 0, 6][..] } else { &[0, 4][..] };
+        assert_eq!(&result[at + 2..at + 2 + len], expected);
+    }
+}
+
+#[test]
 fn adr0022_gdef14_class_offsets_match_harfbuzz() {
     for wide in [false, true] {
         let mut header = vec![0; 38];
@@ -2051,12 +2085,16 @@ fn adr0022_layout_12_writes_wide_lists_from_both_header_forms() {
                 assert_eq!(u16_at(&out, far(&out, at)), 1);
             }
             let list = &out[far(&out, 22)..];
-            let lookup = &list[far(list, 2)..];
+            let lookup = if wide {
+                &list[far(list, 2)..]
+            } else {
+                follow(list, 2)
+            };
             assert_eq!(u16_at(lookup, 0), 1);
             if tag == b"GPOS" {
                 let position = follow(lookup, 6);
                 assert_eq!(u16_at(position, 4), 4);
-                assert_eq!(u16_at(position, 6) as i16, -43);
+                assert_eq!(u16_at(position, 6).cast_signed(), -43);
             }
         }
     }

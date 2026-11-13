@@ -325,9 +325,10 @@ impl<'p, 's> Sub<'p, 's> {
     }
 
     /// `LookupOffsetList::subset`.
-    fn lookup_list(&mut self, table: Gsubgpos<'_>, width: u8) -> bool {
+    fn lookup_list(&mut self, table: Gsubgpos<'_>) -> bool {
         let count_at = self.s.u16(0);
         let n = table.lookup_count();
+        let width = if table.wide_lookup_offsets() { 4 } else { 2 };
         let lookups = self.lookup_map();
         for i in 0..n {
             if !lookups.contains_key(&n32(i)) {
@@ -745,29 +746,27 @@ impl<'p, 's> Sub<'p, 's> {
         if version >> 16 != 1 {
             return false;
         }
+        if version > 0x0001_0002 {
+            self.unsupported("GSUB and GPOS versions newer than 1.2 (ADR 0022 stage 3)");
+            return false;
+        }
         self.s.u32(version);
         let wide = version == 0x0001_0002;
-        let mut script_at = self.s.u16(0);
-        let mut feature_at = self.s.u16(0);
-        let mut lookup_at = self.s.u16(0);
-        let fv_at = if wide {
-            let at = self.s.u32(0);
-            script_at = self.s.u32(0);
-            feature_at = self.s.u32(0);
-            lookup_at = self.s.u32(0);
-            Some(at)
+        let (script_at, feature_at, lookup_at, width) = if wide {
+            self.s.zeros(10);
+            (self.s.u32(0), self.s.u32(0), self.s.u32(0), 4)
         } else {
-            None
+            (self.s.u16(0), self.s.u16(0), self.s.u16(0), 2)
         };
-        let width = if wide { 4 } else { 2 };
-        self.serialize_subset_opt(lookup_at, width, t.lookup_list(), |s| {
-            s.lookup_list(t, width)
-        });
-        self.serialize_subset_opt(feature_at, width, t.feature_list(), |s| s.feature_list(t));
-        self.serialize_subset_opt(script_at, width, t.script_list(), |s| s.script_list(t));
+        let ll = t.lookup_list();
+        self.serialize_subset_opt(lookup_at, width, ll, |s| s.lookup_list(t));
+        let fl = t.feature_list();
+        self.serialize_subset_opt(feature_at, width, fl, |s| s.feature_list(t));
+        let sl = t.script_list();
+        self.serialize_subset_opt(script_at, width, sl, |s| s.script_list(t));
         if version >= 0x0001_0001 {
             let snap = self.s.snapshot();
-            let at = fv_at.unwrap_or_else(|| self.s.u32(0));
+            let at = if wide { 10 } else { self.s.u32(0) };
             let fv = t.feature_variations_view();
             // Pinning every axis drops the feature variations.
             let ret = (!self.lp().fixed_conditions || self.lp().universal_record.is_some())

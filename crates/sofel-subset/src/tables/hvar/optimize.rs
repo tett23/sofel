@@ -77,7 +77,8 @@ fn combine(mut encodings: Vec<Encoding>) -> Vec<Encoding> {
     encodings.sort_by(|a, b| {
         a.width()
             .cmp(&b.width())
-            // HarfBuzz's b.chars.cmp(a.chars) reverses hb_array_t's reversed memcmp.
+            // HarfBuzz's hb_array_t::cmp reverses its operands, so
+            // b->chars.cmp(a->chars) sorts these byte widths ascending.
             .then_with(|| a.widths.cmp(&b.widths))
     });
     let mut queue = BinaryHeap::new();
