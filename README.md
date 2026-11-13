@@ -22,7 +22,7 @@ OpenType タグから得るスクリプト値は、[ADR 0050](docs/adr/0050-pres
 
 VARC の輪郭は、部品の表示条件、軸座標、変形を評価して指定位置で描く（[ADR 0067](docs/adr/0067-varc-components.md)）。HarfBuzz との比較には、整数の輪郭 API を保ったまま浮動小数点の描画命令を返す経路を使う。
 
-サブセット化（[ADR 0022](docs/adr/0022-subsetting.md)）は、sfntの組み立てと直列化、オフセットのあふれを解く再配置、glyf系の表、cmap、name、OS/2、post、hdmx、CFF（名前のキーとCIDのキー）、VORG、GDEF（版1.4の拡張オフセットを含む）、GSUB、GPOS、BASEとレイアウトの閉包、COLR（版0、変化量の表を持たない版1、版1の塗りが残らず版0にできるもの、残す版1の塗りとクリップがすべて静的なもの、軸を固定せず変化量ストアを直接またはマップを介して参照するもの、全軸を既定位置に固定したもの）、CPAL、CBLC、CBDT、sbixとCOLRの閉包、MATHとその閉包、軸を指定しないgvarとGVARの書き出し、glyfとCFF2の可変フォントのすべての軸の既定の値への固定（fvar、avar、STATの読み取りと、CFF2をCFFに変換する `DOWNGRADE_CFF2` を含む）、同じフォントを繰り返しサブセット化するための前処理（`Prepared`）、CFFのcharstringの取り出し、グリフ名での指定（`--glyphs`）と、これらのC ABI（`sofel_subset` など）までを実装し、HarfBuzzのサブセット化のテストのうちこれらの表だけを持つ組でバイト単位で一致する。Golemの使い方（グリフIDと `RETAIN_GIDS`）は、HarfBuzzのテストのフォントのうちこれらの表だけを持つものすべてで `hb-subset` と同じバイト列を出す。軸を指定しない HVAR と VVAR は、複数のItemVariationDataから使う行と領域だけを残し、暗黙・明示の送り幅とサイドベアリングのマップを書ける。明示マップの末尾で繰り返す行番号は1項目にまとめる。軸を指定しないGDEF 1.3のItemVariationStoreは、GSUBのFeatureVariationsが軸範囲の条件だけを持つ場合も含めて、残すキャレット、値の記録、アンカー、MATHの定数・斜体補正・上アクセント・カーニング・組み立てが参照する番号と領域を詰めて書く。参照が0件ならストアを除く。GDEFをそのままコピーするときも、サブセット化するMATHの参照番号を詰める。MATHをそのままコピーしてGDEFをサブセット化するときは、すべての参照番号が保持される場合に対応する。MATHだけをコピーして参照番号を詰め直せない場合と軸範囲以外の条件を持つFeatureVariationsがあるGSUBをそのままコピーする場合のGDEFの変化量の表と、軸を固定しないCFF2の変化量の表は、10段階目で書く。
+サブセット化（[ADR 0022](docs/adr/0022-subsetting.md)）は、sfntの組み立てと直列化、オフセットのあふれを解く再配置、glyf系の表、cmap、name、OS/2、post、hdmx、CFF（名前のキーとCIDのキー）、VORG、GDEF（版1.4の拡張オフセットを含む）、GSUB・GPOS（版1.2を含む）、BASEとレイアウトの閉包、COLR（版0、変化量の表を持たない版1、版1の塗りが残らず版0にできるもの、残す版1の塗りとクリップがすべて静的なもの、軸を固定せず変化量ストアを直接またはマップを介して参照するもの、全軸を既定位置に固定したもの）、CPAL、CBLC、CBDT、sbixとCOLRの閉包、MATHとその閉包、軸を指定しないgvarとGVARの書き出し、glyfとCFF2の可変フォントのすべての軸の既定の値への固定（fvar、avar、STATの読み取りと、CFF2をCFFに変換する `DOWNGRADE_CFF2` を含む）、同じフォントを繰り返しサブセット化するための前処理（`Prepared`）、CFFのcharstringの取り出し、グリフ名での指定（`--glyphs`）と、これらのC ABI（`sofel_subset` など）までを実装し、HarfBuzzのサブセット化のテストのうちこれらの表だけを持つ組でバイト単位で一致する。Golemの使い方（グリフIDと `RETAIN_GIDS`）は、HarfBuzzのテストのフォントのうちこれらの表だけを持つものすべてで `hb-subset` と同じバイト列を出す。軸を指定しない HVAR と VVAR は、複数のItemVariationDataから使う行と領域だけを残し、暗黙・明示の送り幅とサイドベアリングのマップを書ける。明示マップの末尾で繰り返す行番号は1項目にまとめる。軸を指定しないGDEF 1.3のItemVariationStoreは、GSUBのFeatureVariationsが軸範囲の条件だけを持つ場合も含めて、残すキャレット、値の記録、アンカー、MATHの定数・斜体補正・上アクセント・カーニング・組み立てが参照する番号と領域を詰めて書く。参照が0件ならストアを除く。GDEFをそのままコピーするときも、サブセット化するMATHの参照番号を詰める。MATHをそのままコピーしてGDEFをサブセット化するときは、すべての参照番号が保持される場合に対応する。MATHだけをコピーして参照番号を詰め直せない場合と軸範囲以外の条件を持つFeatureVariationsがあるGSUBをそのままコピーする場合のGDEFの変化量の表と、軸を固定しないCFF2の変化量の表は、10段階目で書く。
 
 可変フォントの FreeType 互換メトリクスでは、横と縦の送り幅に指定位置の差分を加える。左と上のサイドベアリングは元のメトリクスを使う（[ADR 0078](docs/adr/0078-freetype-side-bearing-variation-callbacks.md)）。
 [ADR 0061](docs/adr/0061-subset-axis-instancing.md) の部分実装では、fvarとavar版1以外の変化量表、レイアウト・色の表を持たないフォントについて、固定した軸を除き、残る軸の範囲と名前つきインスタンスを更新して書く。STATがある場合は、指定した軸範囲の外の軸値を除いて残す。avar版1がある場合は、既定位置に固定した軸の写像を除き、残る軸の写像を保つ。avar版1の全軸が-1→-1、0→0、1→1の3点だけの恒等写像なら、非既定位置への固定と範囲指定でも残る軸の写像を保つ。対象外の表を持つフォントの部分軸固定は、次の VARC の場合を除き引き続き `Unsupported` とする。
@@ -90,6 +90,8 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-conformance`](crates/sofel-conformance) | FreeTypeとHarfBuzzとの突き合わせのテスト（`cargo test` では走らない） |
 
 BDF、PCF、FNT、FON は Rust API の `Font::from_bitmap` で開く。文字対応、送り幅、固定サイズの画像を同じ API で読める。
+
+CEF（Compact Embedded Font）は `BareCffFace::new` のフェイス番号 0 で開く。`sofel-render` でもグリフ番号や文字を指定して描画できる。
 
 PFR（Portable Font Resource）は、Rust API の `Font::from_pfr` でフェイス番号を指定して開く。文字対応と送り幅を取得し、輪郭または指定サイズの埋め込みビットマップを取り出せる。
 
@@ -203,7 +205,7 @@ sofel-subset --font-file=font.ttf --unicodes=41-5A -o - | sofel-woff --format wo
 
 ### `sofel-validate`
 
-sfnt、TTC/OTC、dfontの各表と素の CFF 1 を検証する（[ADR 0008](docs/adr/0008-validate-command-and-freetype-comparison.md)、[ADR 0058](docs/adr/0058-dfont-face-selection.md)、[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。誤りを1件1行で出し、`--json` ではJSON Linesで出す。
+sfnt、TTC/OTC、dfont の各表、素の CFF 1、CEF を検証する（[ADR 0008](docs/adr/0008-validate-command-and-freetype-comparison.md)、[ADR 0058](docs/adr/0058-dfont-face-selection.md)、[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。誤りを1件1行で出し、`--json` ではJSON Linesで出す。
 
 ```sh
 cargo run --release --bin sofel-validate -- font.ttf

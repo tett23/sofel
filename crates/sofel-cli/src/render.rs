@@ -35,7 +35,7 @@ backgrounds, else black.
 BDF and PCF bitmap faces use their single fixed strike. PCF supports
 monochrome glyphs; both formats write PGM (ADR 0065).
 
-Bare CFF 1 faces use their PostScript character mapping and unhinted
+Bare CFF 1 and CEF faces use their PostScript character mapping and unhinted
 outlines for --char and --glyph. `sofel render --text` also shapes bare
 CFF characters through its font callbacks (ADR 0065).
 
@@ -289,7 +289,10 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
     if bytes.starts_with(b"%!PS-Adobe-3.0 Resource-CIDFont") {
         return render_cid(&bytes, &args, out, err);
     }
-    if bytes.first() == Some(&1) {
+    if bytes.first() == Some(&1)
+        || sofel_font::read::sfnt::Sfnt::new(&bytes)
+            .is_ok_and(|sfnt| sofel_font::read::cff::is_cef(&sfnt))
+    {
         return render_bare_cff(&bytes, &args, text.as_deref(), out, err);
     }
     let font = match Font::new(&bytes, args.face) {

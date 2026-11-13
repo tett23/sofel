@@ -47,3 +47,17 @@ fn adr0065_i2_bare_cff_reports_missing_second_charstrings() {
     assert!(output.contains("\"offset\":20"));
     assert!(output.contains("missing_char_strings"));
 }
+
+#[test]
+fn adr0065_i2_cef_validates_directory_and_type2_payload() {
+    let mut data =
+        b"OTTO\x00\x01\x00\x10\x00\x00\x00\x00CFF \x00\x00\x00\x00\x00\x00\x00\x1c".to_vec();
+    data.extend_from_slice(&u32::try_from(TWO_FACES.len()).unwrap().to_be_bytes());
+    data.extend_from_slice(TWO_FACES);
+    assert_eq!(run(&data).0, 0);
+    data.truncate(24);
+    data.extend_from_slice(&u32::MAX.to_be_bytes());
+    let (status, message) = run(&data);
+    assert_eq!(status, 1);
+    assert!(message.contains("offset_out_of_bounds"));
+}
