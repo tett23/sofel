@@ -188,3 +188,46 @@ fn adr0027_composites_take_last_component_metrics() {
         }
     }
 }
+
+#[test]
+fn adr0027_axes_without_named_instances_and_inferred_gvar_extents() {
+    let bytes = api_font("Zycon.ttf");
+    let font = Font::new(&bytes, 0).unwrap();
+    assert!(font.var_axes().next().is_some());
+    assert_eq!(font.named_instances().count(), 0);
+
+    let bytes = api_font("TestGVAREight.ttf");
+    let font = Font::new(&bytes, 0).unwrap();
+    let location = Location::from_normalized_2_14(&font, &[100, 0, 0, 0, 0, 0]);
+    assert!(
+        HbExtents::new(font.instance(&location))
+            .glyph_extents(GlyphId(4))
+            .is_some()
+    );
+}
+
+#[test]
+fn adr0027_hvar_long_deltas_saturate_at_axis_maximum() {
+    let bytes = api_font("hvar-long-deltas.ttf");
+    let font = Font::new(&bytes, 0).unwrap();
+    let location = Location::from_design(&font, &[1.]);
+    assert_eq!(font.default_instance().advance(GlyphId(1)), 500);
+    assert_eq!(font.instance(&location).advance(GlyphId(1)), u32::MAX);
+}
+
+#[test]
+fn adr0027_cff2_default_and_design_extents() {
+    let bytes = api_font("AdobeVFPrototype.abc.otf");
+    let font = Font::new(&bytes, 0).unwrap();
+    let location = Location::from_design(&font, &[600., 50.]);
+    for (instance, expected) in [
+        (font.default_instance(), [46, 487, 455, -500]),
+        (font.instance(&location), [38, 493, 480, -507]),
+    ] {
+        let ext = HbExtents::new(instance).glyph_extents(GlyphId(1)).unwrap();
+        assert_eq!(
+            [ext.x_bearing, ext.y_bearing, ext.width, ext.height],
+            expected
+        );
+    }
+}
