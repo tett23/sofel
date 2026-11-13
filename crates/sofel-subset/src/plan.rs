@@ -315,6 +315,7 @@ impl Plan {
                         b"GSUB" | b"GPOS" => {
                             can_instance_layout_conditions(data, &norm.axis_tags, norm.avar2)
                         }
+                        b"COLR" => !norm.avar2 && sofel_font::read::colr::Colr::new(data).is_ok(),
                         b"GDEF" => sofel_font::read::gdef::Gdef::new(data).is_ok_and(|t| {
                             t.item_var_store_offset().unwrap_or(0) == 0
                                 || (!norm.avar2 && t.variation_store().is_ok())
@@ -619,6 +620,7 @@ impl Plan {
                 &mut cur,
                 full_instance,
                 colr_kept,
+                (&p, font),
                 num_glyphs,
             )?;
         }

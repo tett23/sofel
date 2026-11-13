@@ -70,6 +70,7 @@ fn plan_store(
     glyphset: &RangeSet,
     complete: bool,
     pinned: bool,
+    instance: (&Plan, &Font<'_>),
     mut indices: BTreeSet<u32>,
     plan: &mut ColorPlan,
 ) -> Result<(), SubsetError> {
@@ -128,7 +129,25 @@ fn plan_store(
         }
     }
     if let Some(store) = store {
-        plan.variation_store = super::hvar::subset_store(store, &groups, TAG)?;
+        if instance.0.var.instancing() {
+            let mut remap = BTreeMap::new();
+            plan.variation_store = super::hvar::instance::subset(
+                instance.0,
+                instance.1,
+                store,
+                &groups,
+                TAG,
+                map.is_some(),
+                &mut remap,
+            )?;
+            if map.is_some() {
+                for index in plan.variation_indices.values_mut() {
+                    *index = remap.get(index).copied().unwrap_or(NO_VARIATION);
+                }
+            }
+        } else {
+            plan.variation_store = super::hvar::subset_store(store, &groups, TAG)?;
+        }
     }
     if let Some(map) = map {
         let rows = core::mem::take(&mut plan.variation_indices);
@@ -169,6 +188,7 @@ pub(crate) fn closure(
     glyphs: &mut RangeSet,
     pinned: bool,
     subset_table: bool,
+    instance: (&Plan, &Font<'_>),
     num_glyphs: u32,
 ) -> Result<ColorPlan, SubsetError> {
     let Some(colr) = sanitized(data) else {
@@ -274,7 +294,15 @@ pub(crate) fn closure(
         ..ColorPlan::default()
     };
     if subset_table {
-        plan_store(&colr, glyphs, can_subset_store, pinned, indices, &mut plan)?;
+        plan_store(
+            &colr,
+            glyphs,
+            can_subset_store,
+            pinned,
+            instance,
+            indices,
+            &mut plan,
+        )?;
     }
     Ok(plan)
 }
@@ -542,7 +570,7 @@ impl Sub<'_, '_> {
         }
         let base = i16::from_be_bytes(self.t.u16(src).to_be_bytes());
         let sum = f32::from(base) + delta(index);
-        let (min, max) = if alpha {
+        let (min, max) = if alpha && self.p.var.all_axes_pinned() {
             (0, 16384)
         } else {
             (i16::MIN, i16::MAX)
@@ -665,7 +693,7 @@ impl Sub<'_, '_> {
 
     // A static F2DOT14 scale outside [-2, 2) needs a 16.16 transform.
     fn scale_transform(&mut self, at: usize, format: u8, size: usize) -> Option<bool> {
-        if !matches!(format, 17 | 19 | 21 | 23) {
+        if !self.p.var.all_axes_pinned() || !matches!(format, 17 | 19 | 21 | 23) {
             return None;
         }
         let delta = self.delta?;
@@ -745,6 +773,7 @@ impl Sub<'_, '_> {
             return false;
         };
         if format == 7
+            && self.p.var.all_axes_pinned()
             && let Some(result) = self.negative_radial(at)
         {
             return result;
@@ -754,10 +783,10 @@ impl Sub<'_, '_> {
         }
         let out = self.embed(at, size);
         let p = self.t.at(at);
+        if var && self.p.var.instancing() {
+            self.fold_paint_fields(format, at, out, size);
+        }
         if (var || format == 13) && self.p.var.instancing() && self.p.var.all_axes_pinned() {
-            if var {
-                self.fold_paint_fields(format, at, out, size);
-            }
             self.s.write_at(out, &[format.saturating_sub(1)]);
         }
         let ok = match format {
@@ -881,7 +910,7 @@ impl Sub<'_, '_> {
             }
             2 => {
                 let out = self.embed(at, 9);
-                if self.p.var.instancing() && self.p.var.all_axes_pinned() {
+                if self.p.var.instancing() {
                     let base = self.t.u32(at.saturating_add(9));
                     if base != NO_VARIATION
                         && let Some(delta) = self.delta
@@ -901,8 +930,10 @@ impl Sub<'_, '_> {
                             );
                         }
                     }
-                    self.s.write_at(out, &[1]);
-                    return true;
+                    if self.p.var.all_axes_pinned() {
+                        self.s.write_at(out, &[1]);
+                        return true;
+                    }
                 }
                 self.var_index(at.saturating_add(9))
             }
@@ -1037,7 +1068,7 @@ pub(crate) fn subset(
         s.link32(30, idx);
     }
     use sofel_font::var::{HbF32, Location, StoreKind};
-    let pinned = plan.var.all_axes_pinned() && !plan.var.n.pinned_at_default;
+    let pinned = plan.var.instancing() && !plan.var.n.pinned_at_default;
     let location =
         pinned.then(|| Location::from_normalized_2_14(font, &plan.var.n.normalized_coords));
     let instance = location.as_ref().map(|location| font.instance(location));
