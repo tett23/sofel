@@ -388,7 +388,9 @@ impl Input {
     /// (`hb_subset_input_override_name_table`); `text` is UTF-8, and
     /// empty to remove the record.
     pub fn with_name_override(mut self, ids: (u16, u16, u16, u16), text: Vec<u8>) -> Input {
-        self.name_overrides.insert(ids, text);
+        if ids.0 != 1 || text.is_ascii() {
+            self.name_overrides.insert(ids, text);
+        }
         self
     }
 }
