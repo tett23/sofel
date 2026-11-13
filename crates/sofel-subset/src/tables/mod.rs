@@ -208,6 +208,7 @@ impl Plan {
                 return Ok(room);
             }
             b"MVAR" => Some(mvar::subset),
+            b"cvar" => Some(gvar::cvar::subset),
             b"STAT" => Some(stat::subset),
             b"fvar" if !self.var.user().is_empty() => {
                 let src = font.table(tag).unwrap_or(&[]);
