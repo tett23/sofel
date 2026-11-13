@@ -177,7 +177,7 @@ fn subset_inner(
                     | u32::try_from(inner).map_err(|_| limit)?
             } else {
                 let outer = items.len().checked_add(private_blocks.len()).ok_or(limit)?;
-                let columns = columns
+                let columns: Vec<_> = columns
                     .iter()
                     .filter_map(|(region, values)| {
                         let scaled = f64::from(*values.get(inner)?) * scale;
@@ -186,6 +186,13 @@ fn subset_inner(
                         (rounded != 0).then(|| (region.clone(), alloc::vec![rounded]))
                     })
                     .collect();
+                for (region, values) in &columns {
+                    if seen.insert(region.clone()) {
+                        order.push(region.clone());
+                    }
+                    used.insert(region.clone());
+                    long |= values.iter().any(|&value| i16::try_from(value).is_err());
+                }
                 private_blocks.push((1, columns));
                 u32::try_from(outer).map_err(|_| limit)? << 16
             };
