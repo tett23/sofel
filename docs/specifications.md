@@ -447,6 +447,8 @@ PE32 では `RT_FONT` の名前・言語ディレクトリを順にたどり、�
 宣言したセクションやグリフプログラムの範囲が入力からはみ出す場合はエラーを返す（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 `sofel-render` は PFR の論理フェイス番号とグリフ番号または文字を受け取り、指定したサイズに一致するストライクがあれば埋め込みビットマップを PGM に描く。ストライクがない場合はヒンティングなしの輪郭をラスタライズする（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
+`sofel-validate` は PFR の各論理フェイスについて、セクションとグリフプログラムの範囲を検査する。破損したフィールドのファイル内オフセットを `PFR ` の診断として返す（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+
 ## Type1 フェイス
 
 `sofel-type1::source::Type1Source` は PFA の16進 eexec と PFB の ASCII・バイナリセクションを読み、秘密辞書を復号する。`sofel-type1::face::Type1Face` は文字コードからグリフ番号への対応、グリフ名、charstring から読んだ送り幅を返す。AFM または PFM を付加すると、グリフ対のカーニングを返す。PFB のセクション長、PFA の16進表記、charstring の長さと AFM・PFM のペア表を検査する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
