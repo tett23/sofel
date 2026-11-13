@@ -148,6 +148,9 @@ pub(crate) fn load_bare_cff(
     if matches!(scale, Scale::Scaled { .. }) && cff.head_units_per_em() > 0x7FFF {
         return Err(OutlineError::InvalidOutline);
     }
+    let glyph = cff
+        .bare_charstring_index(glyph)
+        .ok_or(OutlineError::NoGlyphData)?;
     load_cff_with_blend(cff, glyph, scale, &cff.default_blend(), s)
 }
 

@@ -767,6 +767,17 @@ impl<'a> Cff<'a> {
         self.version == Version::Cff && self.top.is_cid()
     }
 
+    /// Translate a standalone FreeType face glyph identifier to a CharStrings index.
+    pub fn bare_charstring_index(&self, glyph: GlyphId) -> Option<GlyphId> {
+        if self.is_cid_keyed() && glyph.0 != 0 {
+            self.charset()?
+                .glyph(u16::try_from(glyph.0).ok()?)
+                .map(GlyphId)
+        } else {
+            (glyph.0 < self.num_glyphs()).then_some(glyph)
+        }
+    }
+
     /// The CID of `glyph` (`FT_Get_CID_From_Glyph_Index`): the charset
     /// value. Each call reads the charset ranges before the glyph; to
     /// look up many glyphs, build a [`CharsetIndex`] once (see
