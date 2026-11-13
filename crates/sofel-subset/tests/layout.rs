@@ -2015,37 +2015,49 @@ fn adr0022_context_coverage_retains_high_glyph_and_nested_lookup() {
 
 #[test]
 fn adr0022_layout_12_writes_wide_lists_from_both_header_forms() {
-    let narrow = layout_table(
-        &[(b"liga", &[0])],
-        &[(1, vec![0, 1, 0, 6, 0, 1, 0, 1, 0, 1, 0, 1])],
-    );
-    for wide in [false, true] {
-        let mut table = vec![0; 26];
-        table[..4].copy_from_slice(&0x10002u32.to_be_bytes());
-        for (short, long) in [(4, 14), (6, 18), (8, 22)] {
-            let offset = table.len();
-            let list = follow(&narrow, short);
-            if wide {
-                table[long..long + 4].copy_from_slice(&(offset as u32).to_be_bytes());
-            } else {
-                table[short..short + 2].copy_from_slice(&(offset as u16).to_be_bytes());
+    for (tag, feature, subtable) in [
+        (b"GSUB", b"liga", vec![0, 1, 0, 6, 0, 1, 0, 1, 0, 1, 0, 1]),
+        (
+            b"GPOS",
+            b"kern",
+            vec![0, 1, 0, 8, 0, 4, 255, 213, 0, 1, 0, 1, 0, 1],
+        ),
+    ] {
+        let narrow = layout_table(&[(feature, &[0])], &[(1, subtable)]);
+        for wide in [false, true] {
+            let mut table = vec![0; 26];
+            table[..4].copy_from_slice(&0x10002u32.to_be_bytes());
+            for (short, long) in [(4, 14), (6, 18), (8, 22)] {
+                let offset = table.len();
+                let list = follow(&narrow, short);
+                if wide {
+                    table[long..long + 4].copy_from_slice(&(offset as u32).to_be_bytes());
+                } else {
+                    table[short..short + 2].copy_from_slice(&(offset as u16).to_be_bytes());
+                }
+                if wide && short == 8 {
+                    table.extend([0, 1, 0, 0, 0, 6]);
+                    table.extend(follow(list, 2));
+                } else {
+                    table.extend(list);
+                }
             }
-            if wide && short == 8 {
-                table.extend([0, 1, 0, 0, 0, 6]);
-                table.extend(follow(list, 2));
-            } else {
-                table.extend(list);
+            let data = font_with(vec![(tag, table)]);
+            let out = subset(&Font::new(&data, 0).unwrap(), &chars("AB")).unwrap();
+            let out = out_table(&out, tag).unwrap();
+            assert_eq!(&out[..14], &[0, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+            let far = |d: &[u8], at| u32::from_be_bytes(d[at..at + 4].try_into().unwrap()) as usize;
+            for at in [14, 18, 22] {
+                assert_eq!(u16_at(&out, far(&out, at)), 1);
+            }
+            let list = &out[far(&out, 22)..];
+            let lookup = &list[far(list, 2)..];
+            assert_eq!(u16_at(lookup, 0), 1);
+            if tag == b"GPOS" {
+                let position = follow(lookup, 6);
+                assert_eq!(u16_at(position, 4), 4);
+                assert_eq!(u16_at(position, 6) as i16, -43);
             }
         }
-        let data = font_with(vec![(b"GSUB", table)]);
-        let out = subset(&Font::new(&data, 0).unwrap(), &chars("AB")).unwrap();
-        let out = out_table(&out, b"GSUB").unwrap();
-        assert_eq!(&out[..14], &[0, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-        let far = |d: &[u8], at| u32::from_be_bytes(d[at..at + 4].try_into().unwrap()) as usize;
-        for at in [14, 18, 22] {
-            assert_eq!(u16_at(&out, far(&out, at)), 1);
-        }
-        let list = &out[far(&out, 22)..];
-        assert_eq!(u16_at(list, far(list, 2)), 1);
     }
 }
