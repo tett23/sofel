@@ -825,3 +825,37 @@ fn adr0061_i1_base_and_cvar_restrict_weight_like_harfbuzz() {
         );
     }
 }
+
+#[test]
+fn adr0061_i1_cff2_all_glyphs_reorders_gdef_variation_rows_like_harfbuzz() {
+    let data = paths::testdata().join("harfbuzz/test/subset/data");
+    let source = std::fs::read(data.join("fonts/AdobeVFPrototype.otf")).unwrap();
+    let font = Font::new(&source, 0).unwrap();
+    let base = Input::new()
+        .map_set(SetKind::Unicodes, |set| set.add_range(0, 0x10ffff))
+        .map_set(SetKind::DropTables, |set| {
+            set.add(Tag::new(b"DSIG").to_u32());
+            set.add(Tag::new(b"BASE").to_u32());
+        });
+    for (name, input) in [
+        (
+            "wght=300-600",
+            base.with_axis_range(Tag::new(b"wght"), Some(300.0), Some(600.0), None, &font),
+        ),
+        (
+            "CNTR=drop",
+            base.with_axis_pinned_to_default(Tag::new(b"CNTR"), &font),
+        ),
+    ] {
+        let expected = std::fs::read(data.join(format!(
+            "expected/instantiate_cff2_partial/AdobeVFPrototype.default.all.{name}.otf"
+        )))
+        .unwrap();
+        let actual = subset(&font, &input.unwrap()).unwrap();
+        assert!(
+            actual == expected,
+            "{name}: {}",
+            sofel_conformance::subset::diff(&expected, &actual)
+        );
+    }
+}
