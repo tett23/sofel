@@ -94,3 +94,48 @@ pub(super) fn apply(
     }
     Ok(())
 }
+
+pub(super) fn subset(
+    plan: &Plan,
+    font: &Font<'_>,
+    tag: Tag,
+    src: &[u8],
+    serializer: &mut sofel_write::Serializer,
+    _tables: &mut super::Tables,
+) -> Result<bool, SubsetError> {
+    let bad = SubsetError::Malformed { tag };
+    let table = Mvar::new(src).map_err(|_| bad)?;
+    let store = table.store().map_err(|_| bad)?;
+    let mut items = alloc::vec::Vec::new();
+    for outer in 0..store.data_count() {
+        let count = store.item_data(outer).ok_or(bad)?.item_count;
+        items.push((outer, (0..u32::from(count)).collect()));
+    }
+    let mut remap = alloc::collections::BTreeMap::new();
+    let bytes = super::hvar::instance::subset(plan, font, store, &items, tag, true, &mut remap)?;
+    if bytes.is_empty() {
+        return Ok(false);
+    }
+    let stride = usize::from(be::u16_at(src, 6).ok_or(bad)?);
+    let offset = table
+        .record_count()
+        .checked_mul(stride)
+        .and_then(|size| size.checked_add(12))
+        .ok_or(bad)?;
+    serializer.extend(src.get(..10).ok_or(bad)?);
+    serializer.u16(u16::try_from(offset).map_err(|_| SubsetError::Limit { tag })?);
+    for (index, raw) in src
+        .get(12..offset)
+        .ok_or(bad)?
+        .chunks_exact(stride)
+        .enumerate()
+    {
+        let record = table.record(index).ok_or(bad)?;
+        let old = u32::from(record.outer) << 16 | u32::from(record.inner);
+        serializer.u32(record.tag.to_u32());
+        serializer.u32(remap.get(&old).copied().unwrap_or(u32::MAX));
+        serializer.extend(raw.get(8..).ok_or(bad)?);
+    }
+    serializer.extend(&bytes);
+    Ok(true)
+}

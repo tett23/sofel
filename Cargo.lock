@@ -183,6 +183,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "sofel-type1"
+version = "0.0.0"
+
+[[package]]
 name = "sofel-unicode"
 version = "0.0.0"
 

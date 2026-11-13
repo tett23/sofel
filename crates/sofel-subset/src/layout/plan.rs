@@ -180,7 +180,7 @@ fn substitutions(fv: Option<FeatureVariations<'_>>) -> Vec<Vec<(u32, D<'_>)>> {
 /// `all_axes_pinned`): the first record whose conditions all hold at the
 /// normalized location. Only conditions of format 1 (axis ranges) are
 /// evaluated by this version.
-fn applied_record(
+pub(crate) fn applied_record(
     fv: Option<FeatureVariations<'_>>,
     coords: &[i32],
 ) -> Result<Option<usize>, &'static str> {
@@ -219,7 +219,7 @@ fn applied_record(
 
 /// The substitutes of `features` from the record that applies at the
 /// pinned location: feature index to the offset of the substitute.
-fn pinned_substitutes(
+pub(crate) fn pinned_substitutes(
     t: Gsubgpos<'_>,
     features: &BitSet,
     coords: &[i32],
@@ -248,9 +248,54 @@ fn pinned_substitutes(
     Ok(out)
 }
 
-/// The axes pinned for a layout plan: `None` without pinning, else the
-/// normalized 2.14 coordinates in fvar axis order.
-pub(crate) type Pinned<'a> = Option<&'a [i32]>;
+/// Source records that can match the output design space, in first-match order.
+/// An empty set of condition indices matches everywhere and shadows later records.
+pub(crate) fn retained_conditions(
+    fv: FeatureVariations<'_>,
+    axes: &crate::instance::Normalized,
+) -> Option<BTreeMap<u32, Vec<u16>>> {
+    let mut records = BTreeMap::new();
+    let mut seen = alloc::collections::BTreeSet::new();
+    'record: for i in 0..fv.len() {
+        let mut indices = Vec::new();
+        let mut key = Vec::new();
+        if let Some(set) = fv.record(i)?.conditions().ok()? {
+            for j in 0..set.len() {
+                let (axis, min, max) = set.condition(j).ok()??.axis_range()?;
+                let tag = axes.axis_tags.get(usize::from(axis))?;
+                let (lo, hi) = axes
+                    .axes_location
+                    .get(tag)
+                    .map_or((-1.0, 1.0), |r| (r.min, r.max));
+                let lower = f32::from(min) / 16384.0;
+                let upper = f32::from(max) / 16384.0;
+                if upper < lower || upper < lo || lower > hi {
+                    continue 'record;
+                }
+                if lo != hi && (lower != lo || upper != hi) {
+                    indices.push(j);
+                    key.push((axis, min, max));
+                }
+            }
+        }
+        key.sort_unstable();
+        if !seen.insert(key) {
+            continue;
+        }
+        let universal = indices.is_empty();
+        records.insert(i, indices);
+        if universal {
+            break;
+        }
+    }
+    Some(records)
+}
+
+pub(crate) struct LayoutLocation<'a> {
+    pub coords: &'a [i32],
+    pub fixed: bool,
+    pub retained_conditions: Option<BTreeMap<u32, Vec<u16>>>,
+}
 
 /// `_closure_glyphs_lookups_features`: what to keep of GSUB or GPOS;
 /// for GSUB also grows `glyphs` by the substitution closure. With every
@@ -263,7 +308,7 @@ pub(crate) fn closure_glyphs_lookups_features(
     layout_features: &RangeSet,
     layout_scripts: &RangeSet,
     glyphs: &mut BitSet,
-    pinned: Pinned<'_>,
+    location: LayoutLocation<'_>,
 ) -> LayoutPlan {
     // _collect_layout_indices
     let feature_tags: Vec<u32> = (0..t.feature_count()).map(|i| t.feature_tag(i)).collect();
@@ -302,7 +347,8 @@ pub(crate) fn closure_glyphs_lookups_features(
     }
     let mut feature_indices = c.out;
     let mut lookup_indices = BitSet::new();
-    let (substitutes, unsupported) = match pinned {
+    let (substitutes, unsupported) = match (!location.coords.is_empty()).then_some(location.coords)
+    {
         Some(axes) => match pinned_substitutes(t, &feature_indices, axes) {
             Ok(m) => (m, None),
             Err(e) => (BTreeMap::new(), Some(e)),
@@ -316,13 +362,32 @@ pub(crate) fn closure_glyphs_lookups_features(
             .map_or_else(|| t.feature(i as usize), |&off| t.d.at(off))
     };
     for f in feature_indices.iter() {
+        if !location.fixed
+            && substitutes.contains_key(&f)
+            && location
+                .retained_conditions
+                .as_ref()
+                .is_some_and(|records| records.values().all(|v| !v.is_empty()))
+        {
+            feature_lookups(t.feature(f as usize)).for_each(|l| lookup_indices.add(l));
+        }
         feature_lookups(feature(f)).for_each(|l| lookup_indices.add(l));
     }
     // Pinning drops FeatureVariations: its lookups are not collected.
-    let subs = if pinned.is_some() {
+    let subs = if location.fixed {
         Vec::new()
     } else {
         substitutions(t.feature_variations_view())
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, subs)| {
+                location
+                    .retained_conditions
+                    .as_ref()
+                    .is_none_or(|m| m.contains_key(&n32(i)))
+                    .then_some(subs)
+            })
+            .collect()
     };
     for record in &subs {
         for &(fi, f) in record {
@@ -427,6 +492,9 @@ pub(crate) fn closure_glyphs_lookups_features(
         }
     }
     LayoutPlan {
+        retained_conditions: location.retained_conditions,
+        fixed_conditions: location.fixed,
+        universal_record: None,
         lookups,
         features: features_map,
         features_w_dups: with_dups,
@@ -592,11 +660,30 @@ pub(crate) fn collect_name_ids(
             .get(&n32(i))
             .map_or_else(|| t.feature(i), |&off| t.d.at(off));
         add(f, t.feature_tag(i), names);
+        if !lp.fixed_conditions
+            && lp.substitutes.contains_key(&n32(i))
+            && lp
+                .retained_conditions
+                .as_ref()
+                .is_some_and(|m| m.values().all(|v| !v.is_empty()))
+        {
+            add(t.feature(i), t.feature_tag(i), names);
+        }
     }
     if pinned {
         return;
     }
-    for record in substitutions(t.feature_variations_view()) {
+    for (index, record) in substitutions(t.feature_variations_view())
+        .into_iter()
+        .enumerate()
+    {
+        if lp
+            .retained_conditions
+            .as_ref()
+            .is_some_and(|m| !m.contains_key(&n32(index)))
+        {
+            continue;
+        }
         for (fi, f) in record {
             if features.contains_key(&fi) {
                 add(f, t.feature_tag(fi as usize), names);

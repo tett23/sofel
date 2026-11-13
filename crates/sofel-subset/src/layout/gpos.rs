@@ -413,6 +413,19 @@ fn pinned_value_delta(s: &Sub<'_, '_>, format: u16, base: D<'_>, values: D<'_>, 
 fn instanced_format(s: &Sub<'_, '_>, format: u16, base: D<'_>, values: D<'_>) -> u16 {
     let mut result = format & 0xf;
     for bit in 0..4 {
+        let device_flag = 0x10u16 << bit;
+        if format & device_flag != 0 {
+            let index = (format & device_flag.wrapping_sub(1)).count_ones() as usize;
+            let offset = values.u16_at(0, index);
+            let dev = base.follow(u32::from(offset));
+            let old = (u32::from(dev.u16(0)) << 16) | u32::from(dev.u16(2));
+            if offset != 0
+                && super::gdef::is_variation_device(dev)
+                && s.p.layout.gdef_var_map.contains_key(&old)
+            {
+                result |= device_flag;
+            }
+        }
         if pinned_value_delta(s, format, base, values, bit) != 0 {
             result |= 1 << bit;
         }
@@ -540,7 +553,9 @@ fn anchor(s: &mut Sub<'_, '_>, a: D<'_>) -> bool {
                         .gdef_var_map
                         .contains_key(&((u32::from(dev.u16(0)) << 16) | u32::from(dev.u16(2))))
             };
-            if !s.p.layout.varidx_pinned && ((is_var(x) && !mapped(x)) || (is_var(y) && !mapped(y)))
+            if !s.p.layout.varidx_pinned
+                && s.p.layout.instanced_gdef_store.is_none()
+                && ((is_var(x) && !mapped(x)) || (is_var(y) && !mapped(y)))
             {
                 return false;
             }

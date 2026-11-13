@@ -770,3 +770,29 @@ fn adr0067_i2_avar2_range_preserves_gvar_matches_harfbuzz() {
         assert_eq!(ours, expected);
     }
 }
+
+#[test]
+fn adr0061_i1_varc_without_retained_glyphs_matches_harfbuzz() {
+    let path = paths::testdata().join("harfbuzz/test/api/fonts/varc-ac00-ac01.ttf");
+    let bytes = std::fs::read(&path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let input = Input::new()
+        .map_set(SetKind::Glyphs, |glyphs| glyphs.add(0))
+        .with_axis_pinned_to_default(Tag::new(b"wght"), &font)
+        .unwrap();
+    let ours = subset(&font, &input).unwrap();
+    let reference =
+        std::env::temp_dir().join(format!("sofel-varc-empty-{}.ttf", std::process::id()));
+    let output = ProcessCommand::new(paths::hb_dump())
+        .arg("--subset")
+        .arg(format!("--font-file={}", path.display()))
+        .arg("--glyphs=0")
+        .arg("--variations=wght=356.5")
+        .arg(format!("--output-file={}", reference.display()))
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{:?}", output.stderr);
+    let expected = std::fs::read(&reference).unwrap();
+    std::fs::remove_file(reference).unwrap();
+    assert_eq!(ours, expected);
+}

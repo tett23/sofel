@@ -1,0 +1,12 @@
+[package]
+name = "sofel-type1"
+description = "Type 1 font and attached metrics readers (sofel ADR 0065)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
