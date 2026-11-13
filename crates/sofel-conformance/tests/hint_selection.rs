@@ -111,7 +111,7 @@ fn adr0064_i1_auto_unlinked_fallback_outline_matches_freetype() {
     let font = Font::new(&data, 0).unwrap();
     let outlines = Outlines::new(font.default_instance());
     let mut scratch = Scratch::default();
-    for ppem in 4..=200 {
+    for ppem in 1..=200 {
         for (target_name, target) in [
             ("normal", HintTarget::Normal),
             ("light", HintTarget::Light),
