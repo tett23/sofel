@@ -256,6 +256,7 @@
  * the file cannot be opened at all, 2 on wrong usage.
  */
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -264,6 +265,7 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include FT_TRUETYPE_TABLES_H
+#include FT_MODULE_H
 #include FT_ADVANCES_H
 #include FT_TRIGONOMETRY_H
 #include FT_OUTLINE_H
@@ -1708,6 +1710,60 @@ static int otvalid(const char *path)
   return 0;
 }
 
+/* Raw glyph slot before rendering, for ADR 0064 invariant 1. */
+static int hint_slot(const char *size, const char *glyph, const char *engine,
+                     const char *target, const char *path)
+{
+  FT_Library library;
+  FT_Face face;
+  FT_Error error;
+  FT_UInt version = 0;
+  FT_Int32 flags = FT_LOAD_NO_BITMAP;
+  char *end;
+  long ppem = strtol(size, &end, 10);
+  if (!*size || *end || ppem <= 0 || ppem > 65535) return 2;
+  long gid = strtol(glyph, &end, 10);
+  if (!*glyph || *end || gid < 0 || (unsigned long)gid > UINT_MAX) return 2;
+
+  if (!strcmp(engine, "auto")) flags |= FT_LOAD_FORCE_AUTOHINT;
+  else if (!strcmp(engine, "none")) flags |= FT_LOAD_NO_HINTING;
+  else {
+    flags |= FT_LOAD_NO_AUTOHINT;
+    if (!strcmp(engine, "v35")) version = 35;
+    else if (!strcmp(engine, "v40")) version = 40;
+    else if (strcmp(engine, "native")) return 2;
+  }
+  if (!strcmp(target, "light")) flags |= FT_LOAD_TARGET_LIGHT;
+  else if (!strcmp(target, "mono")) flags |= FT_LOAD_TARGET_MONO;
+  else if (!strcmp(target, "lcd")) flags |= FT_LOAD_TARGET_LCD;
+  else if (!strcmp(target, "lcd-v")) flags |= FT_LOAD_TARGET_LCD_V;
+  else if (strcmp(target, "normal")) return 2;
+
+  if (FT_Init_FreeType(&library)) return 1;
+  error = version ? FT_Property_Set(library, "truetype", "interpreter-version", &version) : 0;
+  if (!error) error = FT_New_Face(library, path, 0, &face);
+  if (!error) {
+    error = set_reference_location(library, face, reference_variations);
+    if (!error) error = FT_Set_Pixel_Sizes(face, 0, (FT_UInt)ppem);
+    if (!error) error = FT_Load_Glyph(face, (FT_UInt)gid, flags);
+    if (!error && face->glyph->format != FT_GLYPH_FORMAT_OUTLINE)
+      error = FT_Err_Invalid_Glyph_Format;
+    if (!error) {
+      FT_GlyphSlot slot = face->glyph;
+      printf("advance %ld %ld\n", slot->advance.x, slot->advance.y);
+      for (int i = 0; i < slot->outline.n_points; i++)
+        printf("point %ld %ld %u\n", slot->outline.points[i].x, slot->outline.points[i].y,
+               (unsigned char)slot->outline.tags[i]);
+      for (int i = 0; i < slot->outline.n_contours; i++)
+        printf("end %d\n", slot->outline.contours[i]);
+    }
+    FT_Done_Face(face);
+  }
+  FT_Done_FreeType(library);
+  if (error) fprintf(stderr, "ft-dump: hint slot error %d\n", error);
+  return error ? 1 : 0;
+}
+
 int main(int argc, char **argv)
 {
   FT_Library library;
@@ -1723,6 +1779,8 @@ int main(int argc, char **argv)
                     strcmp(argv[1], "--var-random") == 0))
     return dump_var_reference(argc, argv);
   if (argc >= 2 && !reference_options(&argc, argv)) return 2;
+  if (argc == 7 && !strcmp(argv[1], "--hint-slot"))
+    return hint_slot(argv[2], argv[3], argv[4], argv[5], argv[6]);
   if (argc == 3 && strcmp(argv[1], "--advances") == 0)
     return dump_advance_queries(argv[2]);
   if (argc == 2 && strcmp(argv[1], "--calc") == 0)
@@ -1769,7 +1827,7 @@ int main(int argc, char **argv)
     argc = 2;
   }
   if (argc != 2) {
-    fprintf(stderr, "usage: ft-dump FILE | ft-dump --advances [--named-instance=N] [--variations=TAG=value,...] FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --stroke SIZE GLYPH RADIUS JOIN MITER BORDER FILE | ft-dump --sampled-outline SIZE FILE PLAN | ft-dump --sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...] | ft-dump --raster PPEM [--color|--lcd|--lcd-v|--mono|--sdf|--bitmap-sdf] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --cff2-private FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
+    fprintf(stderr, "usage: ft-dump FILE | ft-dump --hint-slot PPEM GLYPH ENGINE TARGET FILE | ft-dump --advances [--named-instance=N] [--variations=TAG=value,...] FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --stroke SIZE GLYPH RADIUS JOIN MITER BORDER FILE | ft-dump --sampled-outline SIZE FILE PLAN | ft-dump --sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...] | ft-dump --raster PPEM [--color|--lcd|--lcd-v|--mono|--sdf|--bitmap-sdf] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --cff2-private FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
     return 2;
   }
   if (FT_Init_FreeType(&library) != 0) {
