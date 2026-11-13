@@ -15,3 +15,6 @@ pub mod pfm;
 
 /// Type 1 eexec and charstring decryption.
 pub mod cipher;
+
+/// Unpacked Type 1 font programs.
+pub mod source;
