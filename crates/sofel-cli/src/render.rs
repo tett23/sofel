@@ -294,7 +294,7 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
     {
         return render_bare_cff(&bytes, &args, text.as_deref(), out, err);
     }
-    if bytes.starts_with(b"%!PS-AdobeFont") || bytes.starts_with(&[0x80, 0x01]) {
+    if Type1Source::has_text_header(&bytes) || bytes.starts_with(&[0x80, 0x01]) {
         return render_type1(&bytes, &args, text.as_deref(), out, err);
     }
     let font = match Font::new(&bytes, args.face) {
@@ -419,7 +419,7 @@ fn render_type1(
     if args.face != 0 {
         return fail("Type 1 face index out of range");
     }
-    let source = if bytes.starts_with(b"%!PS-AdobeFont") {
+    let source = if Type1Source::has_text_header(bytes) {
         Type1Source::parse_pfa(bytes, 67_108_864)
     } else {
         Type1Source::parse_pfb(bytes, 67_108_864)
