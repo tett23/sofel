@@ -8,7 +8,24 @@ use crate::metrics::{Metrics, parse_metrics};
 
 /// Invalid CID-keyed Type 1 header, map, or data bounds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct CidError;
+pub struct CidError {
+    offset: usize,
+}
+
+impl CidError {
+    const fn invalid() -> Self {
+        Self { offset: 0 }
+    }
+
+    const fn at(offset: usize) -> Self {
+        Self { offset }
+    }
+
+    /// Byte position in the original file where reading failed.
+    pub const fn offset(self) -> usize {
+        self.offset
+    }
+}
 
 impl fmt::Display for CidError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -60,26 +77,26 @@ impl CidFace {
     /// Parse the PostScript header and bounded binary or hex data section.
     pub fn parse(source: &[u8], max_output: usize) -> Result<Self, CidError> {
         if !source.starts_with(b"%!PS-Adobe-3.0 Resource-CIDFont") {
-            return Err(CidError);
+            return Err(CidError::invalid());
         }
-        let start = find_start_data(source).ok_or(CidError)?;
-        let header = source.get(..start).ok_or(CidError)?;
+        let start = find_start_data(source).ok_or(CidError::invalid())?;
+        let header = source.get(..start).ok_or(CidError::invalid())?;
         let mode = header.rsplit(|&b| b == b'\n').next().unwrap_or(header);
         let data_start = start
             .checked_add(b"StartData".len())
             .and_then(|value| value.checked_add(1))
-            .ok_or(CidError)?;
-        let raw = source.get(data_start..).ok_or(CidError)?;
+            .ok_or(CidError::invalid())?;
+        let raw = source.get(data_start..).ok_or(CidError::invalid())?;
         let data = if mode.windows(5).any(|w| w == b"(Hex)") {
-            decode_hex(raw, max_output)?
+            decode_hex(raw, max_output, data_start)?
         } else {
             if raw.len() > max_output {
-                return Err(CidError);
+                return Err(CidError::at(data_start.saturating_add(max_output)));
             }
             raw.to_vec()
         };
         if field_usize(header, b"CIDFontType")? != 0 {
-            return Err(CidError);
+            return Err(CidError::invalid());
         }
         let cid_count = field_usize(header, b"CIDCount")?;
         let cidmap_offset = field_usize(header, b"CIDMapOffset")?;
@@ -87,16 +104,18 @@ impl CidFace {
         let gd_bytes = field_usize(header, b"GDBytes")?;
         let dict_count = field_usize(header, b"FDArray")?;
         if cid_count == 0 || dict_count == 0 || fd_bytes > 4 || !(1..=4).contains(&gd_bytes) {
-            return Err(CidError);
+            return Err(CidError::invalid());
         }
-        let entry = fd_bytes.checked_add(gd_bytes).ok_or(CidError)?;
+        let entry = fd_bytes.checked_add(gd_bytes).ok_or(CidError::invalid())?;
         let map_len = cid_count
             .checked_add(1)
             .and_then(|count| count.checked_mul(entry))
-            .ok_or(CidError)?;
-        let map_end = cidmap_offset.checked_add(map_len).ok_or(CidError)?;
+            .ok_or(CidError::invalid())?;
+        let map_end = cidmap_offset
+            .checked_add(map_len)
+            .ok_or(CidError::invalid())?;
         if map_end > data.len() {
-            return Err(CidError);
+            return Err(CidError::at(source.len()));
         }
         let mut dicts = Vec::new();
         let mut units_per_em = None;
@@ -104,10 +123,10 @@ impl CidFace {
         let mut rest = header;
         while let Some(pos) = find_bytes(rest, marker) {
             rest = rest
-                .get(pos.checked_add(marker.len()).ok_or(CidError)?..)
-                .ok_or(CidError)?;
+                .get(pos.checked_add(marker.len()).ok_or(CidError::invalid())?..)
+                .ok_or(CidError::invalid())?;
             let end = find_bytes(rest, marker).unwrap_or(rest.len());
-            let dict = rest.get(..end).ok_or(CidError)?;
+            let dict = rest.get(..end).ok_or(CidError::invalid())?;
             let subr_count = field_usize(dict, b"SubrCount").unwrap_or(0);
             let subr_map_offset = field_usize(dict, b"SubrMapOffset").unwrap_or(0);
             let sd_bytes = field_usize(dict, b"SDBytes").unwrap_or(0);
@@ -116,9 +135,12 @@ impl CidFace {
                     .checked_add(1)
                     .and_then(|count| count.checked_mul(sd_bytes))
                     .and_then(|size| subr_map_offset.checked_add(size))
-                    .ok_or(CidError)?;
-                if !(1..=4).contains(&sd_bytes) || map_end > data.len() {
-                    return Err(CidError);
+                    .ok_or(CidError::invalid())?;
+                if !(1..=4).contains(&sd_bytes) {
+                    return Err(CidError::invalid());
+                }
+                if map_end > data.len() {
+                    return Err(CidError::at(source.len()));
                 }
             }
             let (matrix, current_upem) = parse_matrix(dict)?;
@@ -130,13 +152,13 @@ impl CidFace {
                 matrix,
             });
             if units_per_em.is_some_and(|upem| upem != current_upem) {
-                return Err(CidError);
+                return Err(CidError::invalid());
             }
             units_per_em = Some(current_upem);
-            rest = rest.get(end..).ok_or(CidError)?;
+            rest = rest.get(end..).ok_or(CidError::invalid())?;
         }
         if dicts.len() != dict_count {
-            return Err(CidError);
+            return Err(CidError::invalid());
         }
         Ok(Self {
             data,
@@ -145,7 +167,7 @@ impl CidFace {
             fd_bytes,
             gd_bytes,
             dicts,
-            units_per_em: units_per_em.ok_or(CidError)?,
+            units_per_em: units_per_em.ok_or(CidError::invalid())?,
         })
     }
 
@@ -283,30 +305,31 @@ fn word_byte(byte: u8) -> bool {
 }
 
 fn field_usize(data: &[u8], name: &[u8]) -> Result<usize, CidError> {
-    usize::try_from(field_i32(data, name)?).map_err(|_| CidError)
+    usize::try_from(field_i32(data, name)?).map_err(|_| CidError::invalid())
 }
 
 fn field_i32(data: &[u8], name: &[u8]) -> Result<i32, CidError> {
-    let mut key = Vec::with_capacity(name.len().checked_add(1).ok_or(CidError)?);
+    let mut key = Vec::with_capacity(name.len().checked_add(1).ok_or(CidError::invalid())?);
     key.push(b'/');
     key.extend_from_slice(name);
     let at = data
         .windows(key.len())
         .position(|w| w == key)
-        .ok_or(CidError)?;
+        .ok_or(CidError::invalid())?;
     let rest = data
-        .get(at.checked_add(key.len()).ok_or(CidError)?..)
-        .ok_or(CidError)?;
+        .get(at.checked_add(key.len()).ok_or(CidError::invalid())?..)
+        .ok_or(CidError::invalid())?;
     if !rest.first().is_some_and(u8::is_ascii_whitespace) {
-        return Err(CidError);
+        return Err(CidError::invalid());
     }
     let rest = rest.trim_ascii_start();
     let end = rest
         .iter()
         .position(|b| !b.is_ascii_digit() && *b != b'-')
         .unwrap_or(rest.len());
-    let text = core::str::from_utf8(rest.get(..end).ok_or(CidError)?).map_err(|_| CidError)?;
-    text.parse::<i32>().map_err(|_| CidError)
+    let text = core::str::from_utf8(rest.get(..end).ok_or(CidError::invalid())?)
+        .map_err(|_| CidError::invalid())?;
+    text.parse::<i32>().map_err(|_| CidError::invalid())
 }
 
 fn read_be(bytes: &[u8]) -> usize {
@@ -315,21 +338,22 @@ fn read_be(bytes: &[u8]) -> usize {
         .fold(0usize, |value, &byte| (value << 8) | usize::from(byte))
 }
 
-fn decode_hex(raw: &[u8], max_output: usize) -> Result<Vec<u8>, CidError> {
+fn decode_hex(raw: &[u8], max_output: usize, data_start: usize) -> Result<Vec<u8>, CidError> {
     let mut out = Vec::new();
     let mut high = None;
-    for &byte in raw {
+    for (index, &byte) in raw.iter().enumerate() {
         if byte == b'>' {
             break;
         }
         if byte.is_ascii_whitespace() {
             continue;
         }
-        let digit =
-            u8::try_from((byte as char).to_digit(16).ok_or(CidError)?).map_err(|_| CidError)?;
+        let offset = data_start.saturating_add(index);
+        let digit = u8::try_from((byte as char).to_digit(16).ok_or(CidError::at(offset))?)
+            .map_err(|_| CidError::at(offset))?;
         if let Some(hi) = high.take() {
             if out.len() >= max_output {
-                return Err(CidError);
+                return Err(CidError::at(offset));
             }
             out.push((hi << 4) | digit);
         } else {
@@ -337,7 +361,7 @@ fn decode_hex(raw: &[u8], max_output: usize) -> Result<Vec<u8>, CidError> {
         }
     }
     if high.is_some() {
-        return Err(CidError);
+        return Err(CidError::at(data_start.saturating_add(raw.len())));
     }
     Ok(out)
 }
@@ -356,26 +380,34 @@ fn parse_matrix(dict: &[u8]) -> Result<(CidMatrix, u16), CidError> {
             1000,
         ));
     };
-    let after = at.checked_add(b"/FontMatrix".len()).ok_or(CidError)?;
-    let data = dict.get(after..).ok_or(CidError)?.trim_ascii_start();
-    let data = data.strip_prefix(b"[").ok_or(CidError)?;
-    let end = data.iter().position(|&byte| byte == b']').ok_or(CidError)?;
+    let after = at
+        .checked_add(b"/FontMatrix".len())
+        .ok_or(CidError::invalid())?;
+    let data = dict
+        .get(after..)
+        .ok_or(CidError::invalid())?
+        .trim_ascii_start();
+    let data = data.strip_prefix(b"[").ok_or(CidError::invalid())?;
+    let end = data
+        .iter()
+        .position(|&byte| byte == b']')
+        .ok_or(CidError::invalid())?;
     let values: Vec<_> = data
         .get(..end)
-        .ok_or(CidError)?
+        .ok_or(CidError::invalid())?
         .split(|byte| byte.is_ascii_whitespace())
         .filter(|part| !part.is_empty())
         .collect();
     let [_a, _b, _c, _d, _e, _f] = values.as_slice() else {
-        return Err(CidError);
+        return Err(CidError::invalid());
     };
     let mut fixed = [0i32; 6];
     for (target, value) in fixed.iter_mut().zip(values) {
-        let text = core::str::from_utf8(value).map_err(|_| CidError)?;
-        let number = text.parse::<f64>().map_err(|_| CidError)?;
+        let text = core::str::from_utf8(value).map_err(|_| CidError::invalid())?;
+        let number = text.parse::<f64>().map_err(|_| CidError::invalid())?;
         let scaled = number * 1000.0 * 65536.0;
         if !scaled.is_finite() || scaled < f64::from(i32::MIN) || scaled > f64::from(i32::MAX) {
-            return Err(CidError);
+            return Err(CidError::invalid());
         }
         // The explicit range check above makes this rounded float conversion bounded.
         #[allow(clippy::cast_possible_truncation)]
@@ -384,7 +416,7 @@ fn parse_matrix(dict: &[u8]) -> Result<(CidMatrix, u16), CidError> {
     }
     let scale = fixed[3].unsigned_abs();
     if scale == 0 {
-        return Err(CidError);
+        return Err(CidError::invalid());
     }
     let upem = if scale == 65536 {
         1000
@@ -393,14 +425,18 @@ fn parse_matrix(dict: &[u8]) -> Result<(CidMatrix, u16), CidError> {
             (1000u64 << 16)
                 .saturating_add(u64::from(scale / 2))
                 .checked_div(u64::from(scale))
-                .ok_or(CidError)?,
+                .ok_or(CidError::invalid())?,
         )
-        .map_err(|_| CidError)?
+        .map_err(|_| CidError::invalid())?
     };
     let normalize = |value: i32| -> Result<i32, CidError> {
         let numerator = i64::from(value).saturating_mul(65536);
-        i32::try_from(numerator.checked_div(i64::from(scale)).ok_or(CidError)?)
-            .map_err(|_| CidError)
+        i32::try_from(
+            numerator
+                .checked_div(i64::from(scale))
+                .ok_or(CidError::invalid())?,
+        )
+        .map_err(|_| CidError::invalid())
     };
     let matrix = CidMatrix {
         xx: normalize(fixed[0])?,

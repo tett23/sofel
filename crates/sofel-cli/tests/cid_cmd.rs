@@ -41,6 +41,13 @@ end put\n%ADOEndFontDict\ndef\n(Binary) 24 StartData\n"
         }
     }
     assert_eq!(result.stdout, expected);
+    let validation = Command::new(env!("CARGO_BIN_EXE_sofel-validate"))
+        .arg("--json")
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert_eq!(validation.status.code(), Some(0));
+    assert!(validation.stdout.is_empty());
     let old = b"[0.001 0 0 0.001 0 0]";
     let at = source.windows(old.len()).position(|w| w == old).unwrap();
     source
@@ -59,5 +66,31 @@ end put\n%ADOEndFontDict\ndef\n(Binary) 24 StartData\n"
         result
             .stdout
             .starts_with(b"P5\n# left 20 top 40\n20 20\n255\n")
+    );
+}
+
+#[test]
+fn adr0065_i2_cid_validator_reports_truncated_map_position() {
+    let mut source = b"%!PS-Adobe-3.0 Resource-CIDFont\n\
+/CIDFontType 0 def\n/CIDCount 1 def\n/FDBytes 1 def\n/GDBytes 2 def\n/CIDMapOffset 0 def\n\
+/FDArray 1 array\n%ADOBeginFontDict\n/FontMatrix [0.001 0 0 0.001 0 0] def\n\
+/Private 1 dict begin /lenIV -1 def end\n%ADOEndFontDict\n\
+(Binary) 2 StartData\n"
+        .to_vec();
+    source.extend_from_slice(&[0, 0]);
+    let path = std::env::temp_dir().join(format!("sofel-cid-broken-{}.ps", std::process::id()));
+    std::fs::write(&path, &source).unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_sofel-validate"))
+        .arg("--json")
+        .arg(&path)
+        .output()
+        .unwrap();
+    std::fs::remove_file(path).unwrap();
+    assert_eq!(result.status.code(), Some(1));
+    let json = String::from_utf8(result.stdout).unwrap();
+    assert!(json.contains("\"table\":\"CID \""), "{json}");
+    assert!(
+        json.contains(&format!("\"offset\":{}", source.len())),
+        "{json}"
     );
 }

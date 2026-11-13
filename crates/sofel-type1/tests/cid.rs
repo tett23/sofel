@@ -86,7 +86,12 @@ fn adr0065_i1_opens_cid_type1_and_reads_advance() -> Result<(), Box<dyn std::err
 fn adr0065_i2_rejects_truncated_cid_map() {
     let mut data = sample();
     data.truncate(data.len() - 9);
-    assert!(CidFace::parse(&data, 1024).is_err());
+    assert_eq!(
+        CidFace::parse(&data, 1024)
+            .err()
+            .map(|error| error.offset()),
+        Some(data.len())
+    );
     let mut data = sample();
     data.truncate(data.len() - 8);
     assert!(CidFace::parse(&data, 1024).is_err());
@@ -139,6 +144,32 @@ fn adr0065_i1_opens_hex_cid_data() -> Result<(), Box<dyn std::error::Error>> {
     data.push(b'>');
     let face = CidFace::parse(&data, 1024)?;
     assert_eq!(face.glyph_metrics(0).ok_or("metrics")?.advance_x, 500);
+    Ok(())
+}
+
+#[test]
+fn adr0065_i2_reports_invalid_hex_byte_position() -> Result<(), Box<dyn std::error::Error>> {
+    let original = sample();
+    let at = original
+        .windows(b"StartData\n".len())
+        .position(|w| w == b"StartData\n")
+        .ok_or("marker")?;
+    let mut source = original
+        .get(..at + b"StartData\n".len())
+        .ok_or("header")?
+        .to_vec();
+    let mode = source
+        .windows(b"(Binary)".len())
+        .position(|w| w == b"(Binary)")
+        .ok_or("mode")?;
+    source.splice(mode..mode + b"(Binary)".len(), b"(Hex)".iter().copied());
+    source.push(b'x');
+    assert_eq!(
+        CidFace::parse(&source, 1024)
+            .err()
+            .map(|error| error.offset()),
+        Some(source.len() - 1)
+    );
     Ok(())
 }
 
@@ -202,7 +233,12 @@ fn adr0065_i2_rejects_truncated_subroutine_map() -> Result<(), Box<dyn std::erro
         .get_mut(at..at + old.len())
         .ok_or("bounds")?
         .copy_from_slice(b"/SubrMapOffset 99");
-    assert!(CidFace::parse(&source, 1024).is_err());
+    assert_eq!(
+        CidFace::parse(&source, 1024)
+            .err()
+            .map(|error| error.offset()),
+        Some(source.len())
+    );
     Ok(())
 }
 
