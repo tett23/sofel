@@ -4,9 +4,10 @@ use std::ffi::OsString;
 use std::io::Write;
 
 use sofel_font::read::GlyphId;
-use sofel_font::{BareCffFace, BitmapFormat, Font};
+use sofel_font::{BareCffFace, BitmapFormat, Font, Type1Face, Type1Source};
 use sofel_outline::{Outlines, Scratch};
 use sofel_raster::Rasterizer;
+use sofel_type1::cid::CidFace;
 
 use crate::glyph;
 
@@ -37,6 +38,9 @@ monochrome glyphs; both formats write PGM (ADR 0065).
 Bare CFF 1 and CEF faces use their PostScript character mapping and unhinted
 outlines for --char and --glyph. `sofel render --text` also shapes bare
 CFF characters through its font callbacks (ADR 0065).
+
+Type 1 PFA and PFB faces render their unhinted outlines by glyph index,
+glyph-name Unicode character, or shaped text (ADR 0065).
 
   --variations LIST   design coordinates, e.g. wght=500
   --named-instance N  start at named instance N (zero-based)
@@ -285,11 +289,17 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
     if let Some(format) = BitmapFormat::detect(&bytes) {
         return render_fixed(format, &bytes, &args, out, err);
     }
+    if bytes.starts_with(b"%!PS-Adobe-3.0 Resource-CIDFont") {
+        return render_cid(&bytes, &args, out, err);
+    }
     if bytes.first() == Some(&1)
         || sofel_font::read::sfnt::Sfnt::new(&bytes)
             .is_ok_and(|sfnt| sofel_font::read::cff::is_cef(&sfnt))
     {
         return render_bare_cff(&bytes, &args, text.as_deref(), out, err);
+    }
+    if Type1Source::has_text_header(&bytes) || bytes.starts_with(&[0x80, 0x01]) {
+        return render_type1(&bytes, &args, text.as_deref(), out, err);
     }
     let font = match Font::new(&bytes, args.face) {
         Ok(f) => f,
@@ -399,6 +409,67 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
     0
 }
 
+fn render_type1(
+    bytes: &[u8],
+    args: &Args,
+    text: Option<&str>,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> i32 {
+    let mut fail = |message: &str| {
+        let _ = writeln!(err, "sofel-render: {message}");
+        1
+    };
+    if args.face != 0 {
+        return fail("Type 1 face index out of range");
+    }
+    let source = if Type1Source::has_text_header(bytes) {
+        Type1Source::parse_pfa(bytes, 67_108_864)
+    } else {
+        Type1Source::parse_pfb(bytes, 67_108_864)
+    };
+    let Ok(source) = source else {
+        return fail("invalid Type 1 font source");
+    };
+    let Ok(face) = Type1Face::new(&source) else {
+        return fail("invalid Type 1 face");
+    };
+    if let Some(text) = text {
+        return match crate::text_image::draw_type1(&face, args.ppem, text, &args.features, out) {
+            Ok(()) => 0,
+            Err(message) => fail(&message),
+        };
+    }
+    let glyph = match args.target {
+        Target::Glyph(glyph) => usize::try_from(glyph).unwrap_or(usize::MAX),
+        Target::Char(codepoint) => {
+            let Some(glyph) = face.unicode_glyph(codepoint) else {
+                return fail("character is not mapped");
+            };
+            glyph
+        }
+        Target::Text(_) | Target::TextFile(_) => return fail("Type 1 text input is unavailable"),
+    };
+    let mut raster = Rasterizer::new();
+    let bitmap = glyph::render_type1(&face, glyph, args.ppem, &mut raster);
+    let Ok(bitmap) = bitmap else {
+        return fail("Type 1 glyph cannot be rendered");
+    };
+    if bitmap.width == 0 || bitmap.rows == 0 {
+        return fail("Type 1 glyph is empty");
+    }
+    let mut image = format!(
+        "P5\n# left {} top {}\n{} {}\n255\n",
+        bitmap.left, bitmap.top, bitmap.width, bitmap.rows
+    )
+    .into_bytes();
+    image.extend(bitmap.pixels.iter().map(|value| !value));
+    if out.write_all(&image).is_err() {
+        return fail("cannot write the image");
+    }
+    0
+}
+
 fn render_bare_cff(
     bytes: &[u8],
     args: &Args,
@@ -447,6 +518,44 @@ fn render_bare_cff(
     image.extend(bitmap.pixels.iter().map(|value| !value));
     if out.write_all(&image).is_err() {
         return fail(err, "cannot write the image");
+    }
+    0
+}
+
+fn render_cid(bytes: &[u8], args: &Args, out: &mut dyn Write, err: &mut dyn Write) -> i32 {
+    let mut fail = |msg: &str| {
+        let _ = writeln!(err, "sofel-render: {msg}");
+        1
+    };
+    if args.face != 0 {
+        return fail("CID face index out of range");
+    }
+    let Target::Glyph(glyph) = args.target else {
+        return fail("CID Type 1 has no Unicode cmap; use --glyph");
+    };
+    let Ok(face) = CidFace::parse(bytes, 67_108_864) else {
+        return fail("invalid CID Type 1 font");
+    };
+    let mut raster = Rasterizer::new();
+    let Ok(b) = glyph::render_cid(
+        &face,
+        usize::try_from(glyph).unwrap_or(usize::MAX),
+        args.ppem,
+        &mut raster,
+    ) else {
+        return fail("CID glyph cannot be rendered");
+    };
+    if b.width == 0 || b.rows == 0 {
+        return fail("CID glyph is empty");
+    }
+    let mut image = format!(
+        "P5\n# left {} top {}\n{} {}\n255\n",
+        b.left, b.top, b.width, b.rows
+    )
+    .into_bytes();
+    image.extend(b.pixels.iter().map(|v| !v));
+    if out.write_all(&image).is_err() {
+        return fail("cannot write the image");
     }
     0
 }

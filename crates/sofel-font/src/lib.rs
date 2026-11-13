@@ -79,6 +79,7 @@ pub use hb_cff::{HbCff1, HbCff2};
 pub use layout::Direction;
 pub use metrics::{FontExtents, GlyphExtents, HbScale, MetricsTag};
 pub use names::{GlyphNames, Language, NameEntry, NameLength, Names, SfntName};
+pub use sofel_type1::cid::CidFace;
 
 use core::fmt;
 
