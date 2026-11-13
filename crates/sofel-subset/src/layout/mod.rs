@@ -13,12 +13,12 @@ pub(crate) mod gpos;
 pub(crate) mod gsub;
 pub(crate) mod plan;
 
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 
 use crate::bits::BitSet;
 use data::D;
-use sofel_font::read::feature_variations::FeatureVariations;
+use sofel_font::read::feature_variations::{Condition, FeatureVariations};
 
 /// HarfBuzz's limits (`src/hb-limits.hh`) used by the layout code.
 pub(crate) mod limits {
@@ -171,6 +171,7 @@ impl<'a> Gsubgpos<'a> {
 
     /// Whether every copied condition is known to be independent of the GDEF store.
     pub fn conditions_are_store_independent(self) -> bool {
+        let mut inspected = BTreeSet::new();
         self.feature_variations_view().is_some_and(|fv| {
             fv.version() == 0x0001_0000
                 && (0..fv.len()).all(|i| {
@@ -180,11 +181,7 @@ impl<'a> Gsubgpos<'a> {
                             Ok(Some(set)) => (0..set.len()).all(|j| match set.condition(j) {
                                 Ok(None) => true,
                                 Ok(Some(condition)) => {
-                                    condition.format() == 0
-                                        || condition.axis_range().is_some()
-                                        || condition
-                                            .value()
-                                            .is_some_and(|(_, index)| index == u32::MAX)
+                                    condition_is_store_independent(condition, &mut inspected)
                                 }
                                 Err(_) => false,
                             }),
@@ -269,6 +266,33 @@ impl<'a> Gsubgpos<'a> {
     pub fn delta(self, d: D<'a>) -> usize {
         self.d.0.len().saturating_sub(d.0.len())
     }
+}
+
+/// Offsets point forward in the table. Shared subexpressions have the same suffix.
+fn condition_is_store_independent(root: Condition<'_>, inspected: &mut BTreeSet<usize>) -> bool {
+    let mut pending = alloc::vec![root];
+    while let Some(condition) = pending.pop() {
+        if !inspected.insert(condition.data().len()) {
+            continue;
+        }
+        match condition.format() {
+            0 | 1 => {}
+            2 if condition
+                .value()
+                .is_some_and(|(_, index)| index == u32::MAX) => {}
+            3..=5 => {
+                for i in 0..condition.children_len().unwrap_or(0) {
+                    match condition.child(i) {
+                        Ok(Some(child)) => pending.push(child),
+                        Ok(None) => {}
+                        Err(_) => return false,
+                    }
+                }
+            }
+            _ => return false,
+        }
+    }
+    true
 }
 
 /// A lookup's subtables with extensions resolved: `(kind, subtable)`.

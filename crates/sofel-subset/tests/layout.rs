@@ -1120,21 +1120,29 @@ fn adr0022_null_condition_serializes_as_true() {
 #[test]
 fn adr0022_copied_gsub_value_condition_checks_gdef_reference() {
     for index in [u32::MAX, 2] {
-        let gsub = gsub_with_feature_condition(Buf::new().u16(2).i16(-7).u32(index).done());
-        let data = font_with(vec![
-            (b"GSUB", gsub.clone()),
-            (b"GDEF", gdef_with_referenced_store(&[])),
-        ]);
-        let input = chars("ABC").map_set(SetKind::NoSubsetTables, |set| {
-            set.add(Tag::new(b"GSUB").to_u32());
-        });
-        let out = subset(&Font::new(&data, 0).unwrap(), &input);
-        if index == u32::MAX {
-            assert_eq!(out_table(&out.unwrap(), b"GSUB").unwrap(), gsub);
-        } else {
-            assert!(
-                matches!(out, Err(SubsetError::Unsupported {tag,..}) if tag==Tag::new(b"GDEF"))
-            );
+        let value = Buf::new().u16(2).i16(-7).u32(index).done();
+        // AND and OR share their two child offsets; NOT wraps the value.
+        let mut nested = vec![
+            0, 3, 2, 0, 0, 9, 0, 0, 9, 0, 4, 2, 0, 0, 9, 0, 0, 9, 0, 5, 0, 0, 5,
+        ];
+        nested.extend(&value);
+        for condition in [value, nested] {
+            let gsub = gsub_with_feature_condition(condition);
+            let data = font_with(vec![
+                (b"GSUB", gsub.clone()),
+                (b"GDEF", gdef_with_referenced_store(&[])),
+            ]);
+            let input = chars("ABC").map_set(SetKind::NoSubsetTables, |set| {
+                set.add(Tag::new(b"GSUB").to_u32());
+            });
+            let out = subset(&Font::new(&data, 0).unwrap(), &input);
+            if index == u32::MAX {
+                assert_eq!(out_table(&out.unwrap(), b"GSUB").unwrap(), gsub);
+            } else {
+                assert!(
+                    matches!(out, Err(SubsetError::Unsupported {tag,..}) if tag==Tag::new(b"GDEF"))
+                );
+            }
         }
     }
 }
