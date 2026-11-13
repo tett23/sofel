@@ -1556,3 +1556,28 @@ fn adr0022_wide_single_substitution_retains_output_glyphs() {
         );
     }
 }
+
+#[test]
+fn adr0022_wide_single_position_values_survive_subsetting() {
+    for (mut st, expected) in [
+        (
+            vec![0, 3, 0, 0, 0, 10, 0, 4, 255, 226],
+            vec![0, 1, 0, 8, 0, 4, 255, 226],
+        ),
+        (
+            vec![0, 4, 0, 0, 0, 15, 0, 4, 0, 0, 2, 255, 226, 0, 25],
+            vec![0, 2, 0, 12, 0, 4, 0, 2, 255, 226, 0, 25],
+        ),
+    ] {
+        st.extend(coverage1(&[1, 2]));
+        let data = font_with(vec![(
+            b"GPOS",
+            layout_table(&[(b"kern", &[0])], &[(1, st)]),
+        )]);
+        let out = subset(&Font::new(&data, 0).unwrap(), &chars("AB")).unwrap();
+        let table = out_table(&out, b"GPOS").unwrap();
+        let list = follow(&table, 8);
+        assert_eq!(u16_at(list, 0), 1);
+        assert!(follow(follow(list, 2), 6).starts_with(&expected));
+    }
+}

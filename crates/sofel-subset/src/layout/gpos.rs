@@ -209,28 +209,26 @@ pub(crate) fn retained_variation_indices(
                 continue;
             };
             if kind == Kind::SinglePos {
-                let cov = Cov(subtable.off16(2));
-                let vf = subtable.u16(4);
+                let (cov, vf, n, start) = single_records(subtable);
                 match subtable.u16(0) {
-                    1 => {
+                    1 | 3 => {
                         collect_value_devices(
                             subtable,
-                            subtable.at(6),
+                            subtable.at(start),
                             [vf, 0],
                             cov.intersects(glyphs),
                             &mut selected,
                         )?;
                     }
-                    2 => {
-                        let n = usize::from(subtable.u16(6));
+                    2 | 4 => {
                         let record_len = value_len(vf).saturating_mul(2);
-                        if n.checked_mul(record_len)? > subtable.0.len().saturating_sub(8) {
+                        if n.checked_mul(record_len)? > subtable.0.len().saturating_sub(start) {
                             return None;
                         }
                         for (k, glyph) in cov.glyphs().into_iter().take(n).enumerate() {
                             collect_value_devices(
                                 subtable,
-                                subtable.at(8usize.saturating_add(k.saturating_mul(record_len))),
+                                subtable.at(start.saturating_add(k.saturating_mul(record_len))),
                                 [vf, 0],
                                 glyphs.has(glyph),
                                 &mut selected,
@@ -575,6 +573,17 @@ fn anchor(s: &mut Sub<'_, '_>, a: D<'_>) -> bool {
     }
 }
 
+/// Coverage, value format, record count and first record offset of a SinglePos.
+fn single_records(st: D<'_>) -> (Cov<'_>, u16, usize, usize) {
+    match st.u16(0) {
+        1 => (Cov(st.off16(2)), st.u16(4), 1, 6),
+        2 => (Cov(st.off16(2)), st.u16(4), usize::from(st.u16(6)), 8),
+        3 => (Cov(st.off32(2)), st.u16(6), 1, 8),
+        4 => (Cov(st.off32(2)), st.u16(6), (st.u32(8) >> 8) as usize, 11),
+        _ => (Cov(D(&[])), 0, 0, 0),
+    }
+}
+
 /// `SinglePos::serialize` of `(glyph, values)` into the current object.
 fn single_serialize(
     s: &mut Sub<'_, '_>,
@@ -616,15 +625,14 @@ fn single_serialize(
     s.serialize_serialize(cov_at, 2, |s| s.coverage(&glyphs));
 }
 
-/// SinglePos formats 1 and 2.
+/// SinglePos formats 1 through 4.
 pub(crate) fn single(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
-    let cov = Cov(st.off16(2));
-    let vf = st.u16(4);
+    let (cov, vf, n, start) = single_records(st);
     let len = value_len(vf);
     let gs = &s.p.layout.glyphset_gsub;
     match st.u16(0) {
-        1 => {
-            let values = st.at(6);
+        1 | 3 => {
+            let values = st.at(start);
             let mut inter = BitSet::new();
             cov.intersect_set(gs, &mut inter);
             let new_format = if s.p.var.instancing() {
@@ -638,8 +646,7 @@ pub(crate) fn single(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
             single_serialize(s, st, vf, &it, new_format);
             !it.is_empty()
         }
-        2 => {
-            let n = usize::from(st.u16(6));
+        2 | 4 => {
             let it: Vec<(u32, D<'_>)> = cov
                 .glyphs()
                 .into_iter()
@@ -649,7 +656,7 @@ pub(crate) fn single(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
                 .map(|(i, g)| {
                     (
                         s.map(g),
-                        st.at(8usize.saturating_add(i.saturating_mul(len).saturating_mul(2))),
+                        st.at(start.saturating_add(i.saturating_mul(len).saturating_mul(2))),
                     )
                 })
                 .collect();

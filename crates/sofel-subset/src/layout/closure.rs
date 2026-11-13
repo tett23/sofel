@@ -310,7 +310,11 @@ pub(crate) fn subtable_intersects(k: Kind, st: D<'_>, glyphs: &BitSet) -> bool {
         Kind::Context => context::context_intersects(st, glyphs),
         Kind::ChainContext => context::chain_intersects(st, glyphs),
         Kind::ReverseChain => st.u16(0) == 1 && reverse_intersects(st, glyphs),
-        Kind::SinglePos => matches!(st.u16(0), 1 | 2) && cov.intersects(glyphs),
+        Kind::SinglePos => match st.u16(0) {
+            1 | 2 => cov.intersects(glyphs),
+            3 | 4 => Cov(st.off32(2)).intersects(glyphs),
+            _ => false,
+        },
         Kind::PairPos => match st.u16(0) {
             1 => super::gpos::pair1_intersects(st, glyphs),
             2 => cov.intersects(glyphs) && super::data::Cls(st.off16(10)).intersects(glyphs),
