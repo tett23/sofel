@@ -76,6 +76,57 @@ impl<'a> D<'a> {
     }
 }
 
+/// MultipleSubst and AlternateSubst share a Coverage and an array of sequence offsets.
+#[derive(Clone, Copy)]
+pub(crate) struct SequenceSets<'a> {
+    table: D<'a>,
+    pub width: u8,
+}
+
+impl<'a> SequenceSets<'a> {
+    pub fn new(table: D<'a>) -> Option<Self> {
+        let width = match table.u16(0) {
+            1 => 2,
+            2 => 3,
+            _ => return None,
+        };
+        Some(Self { table, width })
+    }
+    pub fn coverage(self) -> Cov<'a> {
+        Cov(if self.width == 3 {
+            self.table.off32(2)
+        } else {
+            self.table.off16(2)
+        })
+    }
+    fn uint(self, data: D<'_>, at: usize) -> u32 {
+        if self.width == 3 {
+            data.u32(at) >> 8
+        } else {
+            u32::from(data.u16(at))
+        }
+    }
+    pub fn count(self) -> usize {
+        self.uint(self.table, if self.width == 3 { 6 } else { 4 }) as usize
+    }
+    pub fn sequence(self, index: usize) -> Option<impl Iterator<Item = u32> + 'a> {
+        let width = usize::from(self.width);
+        let start: usize = if width == 3 { 9 } else { 6 };
+        let set = self.table.follow(self.uint(
+            self.table,
+            start.saturating_add(index.saturating_mul(width)),
+        ));
+        if set.is_null() {
+            return None;
+        }
+        let count = self.uint(set, 0) as usize;
+        if count.checked_add(1)?.checked_mul(width)? > set.0.len() {
+            return None;
+        }
+        Some((0..count).map(move |i| self.uint(set, i.saturating_add(1).saturating_mul(width))))
+    }
+}
+
 /// SingleSubst uses a long Coverage offset and 24-bit operands in formats 3 and 4.
 #[derive(Clone, Copy)]
 pub(crate) struct SingleSubst<'a>(pub D<'a>);

@@ -128,19 +128,22 @@ impl<'a> Closure<'a> {
         match k {
             Kind::SingleSubst => self.single(st),
             Kind::MultipleSubst | Kind::AlternateSubst => {
-                if st.u16(0) != 1 {
+                let Some(sets) = super::data::SequenceSets::new(st) else {
                     return;
-                }
-                let cov = Cov(st.off16(2));
-                let n = usize::from(st.u16(4));
+                };
                 let mut add = Vec::new();
-                for (i, g) in cov.glyphs().into_iter().take(n).enumerate() {
-                    if !self.parent().has(g) {
-                        continue;
+                for (i, g) in sets
+                    .coverage()
+                    .glyphs()
+                    .into_iter()
+                    .take(sets.count())
+                    .enumerate()
+                {
+                    if self.parent().has(g)
+                        && let Some(seq) = sets.sequence(i)
+                    {
+                        add.extend(seq);
                     }
-                    let seq = st.off16(6usize.saturating_add(i.saturating_mul(2)));
-                    let m = usize::from(seq.u16(0));
-                    (0..m).for_each(|j| add.push(u32::from(seq.u16_at(2, j))));
                 }
                 add.into_iter().for_each(|g| self.output.add(g));
             }
@@ -286,7 +289,8 @@ pub(crate) fn subtable_intersects(k: Kind, st: D<'_>, glyphs: &BitSet) -> bool {
         Kind::SingleSubst => {
             matches!(st.u16(0), 1..=4) && super::data::SingleSubst(st).coverage().intersects(glyphs)
         }
-        Kind::MultipleSubst | Kind::AlternateSubst => st.u16(0) == 1 && cov.intersects(glyphs),
+        Kind::MultipleSubst | Kind::AlternateSubst => super::data::SequenceSets::new(st)
+            .is_some_and(|sets| sets.coverage().intersects(glyphs)),
         Kind::LigatureSubst => {
             if st.u16(0) != 1 {
                 return false;

@@ -92,26 +92,30 @@ pub(crate) fn single(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
 
 /// MultipleSubst (`multiple`) and AlternateSubst format 1.
 pub(crate) fn multiple_or_alternate(s: &mut Sub<'_, '_>, st: D<'_>, multiple: bool) -> bool {
-    if st.u16(0) != 1 {
+    let Some(sets) = super::data::SequenceSets::new(st) else {
         return false;
-    }
-    s.s.u16(1);
-    let cov_at = s.s.u16(0);
-    let count_at = s.s.u16(0);
-    let cov = Cov(st.off16(2));
-    let n = usize::from(st.u16(4));
+    };
+    let width = sets.width;
+    let cov_width: u8 = if width == 3 { 4 } else { 2 };
+    s.s.u16(st.u16(0));
+    let cov_at = s.s.zeros(usize::from(cov_width));
+    let count_at = s.s.zeros(usize::from(width));
     let mut new_cov = Vec::new();
-    for (i, g) in cov.glyphs().into_iter().take(n).enumerate() {
+    for (i, g) in sets
+        .coverage()
+        .glyphs()
+        .into_iter()
+        .take(sets.count())
+        .enumerate()
+    {
         if !s.in_gsub(g) {
             continue;
         }
-        let set = st.off16(6usize.saturating_add(i.saturating_mul(2)));
-        if set.is_null() {
+        let Some(seq) = sets.sequence(i) else {
             continue;
-        }
-        let ok = s.offset_append(2, |s| {
-            let m = usize::from(set.u16(0));
-            let glyphs: Vec<u32> = (0..m).map(|j| u32::from(set.u16_at(2, j))).collect();
+        };
+        let ok = s.offset_append(width, |s| {
+            let glyphs: Vec<u32> = seq.collect();
             let out: Vec<u32> = if multiple {
                 if !glyphs.iter().all(|&g| s.in_gsub(g)) {
                     return false;
@@ -124,18 +128,33 @@ pub(crate) fn multiple_or_alternate(s: &mut Sub<'_, '_>, st: D<'_>, multiple: bo
                     .map(|&g| s.map(g))
                     .collect()
             };
+            if width == 3 {
+                if !multiple && out.is_empty() {
+                    return false;
+                }
+                s.s.u24(super::data::n32(out.len()));
+                for g in out {
+                    s.s.u24(g);
+                }
+                return true;
+            }
             s.s.u16(n16(out.len()));
-            out.iter().for_each(|&g| {
-                s.s.u16((g & 0xFFFF) as u16);
-            });
+            for &g in &out {
+                let at = s.s.u16(0);
+                s.s.check_assign_u16(at, u64::from(g), sofel_write::Errors::INT_OVERFLOW);
+            }
             multiple || !out.is_empty()
         });
         if ok {
-            s.bump_u16(count_at, 1);
             new_cov.push(s.map(g));
         }
     }
-    s.serialize_serialize(cov_at, 2, |s| s.coverage(&new_cov));
+    if width == 3 {
+        s.s.set_u24(count_at, super::data::n32(new_cov.len()));
+    } else {
+        s.s.set_u16(count_at, n16(new_cov.len()));
+    }
+    s.serialize_serialize(cov_at, cov_width, |s| s.coverage(&new_cov));
     !new_cov.is_empty()
 }
 

@@ -1676,3 +1676,25 @@ fn adr0022_retained_high_gid_keeps_single_substitution() {
     let st = follow(follow(follow(&gsub, 8), 2), 6);
     assert!(st.starts_with(&[0, 3, 0, 0, 0, 9, 0, 255, 255]));
 }
+
+#[test]
+fn adr0022_wide_multiple_and_alternate_substitutions() {
+    for lookup in [2, 3] {
+        let seq = vec![0, 0, 2, 0, 0, 5, 0, 0, 6];
+        let st = link(
+            Buf::new().u16(2).u32(0).u24(1).u24(0).done(),
+            vec![(2, 4, coverage1(&[1])), (9, 3, seq)],
+        );
+        let data = font_with(vec![(
+            b"GSUB",
+            layout_table(&[(b"liga", &[0])], &[(lookup, st)]),
+        )]);
+        let out = subset(&Font::new(&data, 0).unwrap(), &chars("A")).unwrap();
+        assert_eq!(num_glyphs(&out), 4);
+        let gsub = out_table(&out, b"GSUB").unwrap();
+        let st = follow(follow(follow(&gsub, 8), 2), 6);
+        assert_eq!(u16_at(st, 0), 2);
+        let seq = u32::from_be_bytes([0, st[9], st[10], st[11]]) as usize;
+        assert!(st[seq..].starts_with(&[0, 0, 2, 0, 0, 2, 0, 0, 3]));
+    }
+}
