@@ -182,71 +182,7 @@ impl<'p, 's> Sub<'p, 's> {
 
     /// `Coverage::serialize` into the current object.
     pub fn coverage(&mut self, glyphs: &[u32]) -> bool {
-        let count = glyphs.len();
-        let mut num_ranges = 0usize;
-        let mut last = INVALID.wrapping_sub(1);
-        let mut max = 0u32;
-        let mut unsorted = false;
-        for &g in glyphs {
-            if last != INVALID.wrapping_sub(1) && g < last {
-                unsorted = true;
-            }
-            if last.wrapping_add(1) != g {
-                num_ranges = num_ranges.wrapping_add(1);
-            }
-            last = g;
-            max = max.max(g);
-        }
-        if max > 0xFFFF {
-            self.unsupported("24-bit Coverage tables (ADR 0022 stage 3)");
-            return false;
-        }
-        if !unsorted && count <= num_ranges.saturating_mul(3) {
-            self.s.u16(1);
-            let at = self.s.u16(0);
-            if !self
-                .s
-                .check_assign_u16(at, count as u64, Errors::ARRAY_OVERFLOW)
-            {
-                return false;
-            }
-            glyphs.iter().for_each(|&g| {
-                self.s.u16(lo16(g));
-            });
-            return true;
-        }
-        self.s.u16(2);
-        let at = self.s.u16(0);
-        if !self
-            .s
-            .check_assign_u16(at, num_ranges as u64, Errors::ARRAY_OVERFLOW)
-        {
-            return false;
-        }
-        let mut ranges: Vec<(u32, u32, u32)> = Vec::with_capacity(num_ranges);
-        let mut last = INVALID.wrapping_sub(1);
-        let mut unsorted = false;
-        for (count, &g) in glyphs.iter().enumerate() {
-            if last.wrapping_add(1) != g {
-                if last != INVALID.wrapping_sub(1) && last.wrapping_add(1) > g {
-                    unsorted = true;
-                }
-                ranges.push((g, g, n32(count)));
-            }
-            if let Some(r) = ranges.last_mut() {
-                r.1 = g;
-            }
-            last = g;
-        }
-        if unsorted {
-            ranges.sort_unstable();
-        }
-        for (a, z, v) in ranges {
-            self.s.u16(lo16(a));
-            self.s.u16(lo16(z));
-            self.s.u16((v & 0xFFFF) as u16);
-        }
-        true
+        write_coverage(self.s, glyphs)
     }
 
     /// `Coverage::subset` into the current object: the covered glyphs of
@@ -918,5 +854,102 @@ impl<'p, 's> Sub<'p, 's> {
             }
         }
         true
+    }
+}
+
+fn write_coverage(s: &mut Serializer, glyphs: &[u32]) -> bool {
+    let count = glyphs.len();
+    let mut num_ranges = 0usize;
+    let mut last = INVALID.wrapping_sub(1);
+    let mut max = 0u32;
+    let mut unsorted = false;
+    for &g in glyphs {
+        if last != INVALID.wrapping_sub(1) && g < last {
+            unsorted = true;
+        }
+        if last.wrapping_add(1) != g {
+            num_ranges = num_ranges.wrapping_add(1);
+        }
+        last = g;
+        max = max.max(g);
+    }
+    if max > 0xFF_FFFF {
+        return s.err(Errors::INT_OVERFLOW);
+    }
+    let wide = max > 0xFFFF;
+    let array = !unsorted && count <= num_ranges.saturating_mul(3);
+    let format = if array { 1 } else { 2 };
+    s.u16(if wide { format + 2 } else { format });
+    let records = if array { count } else { num_ranges };
+    let ok = if wide {
+        let at = s.u24(0);
+        s.check_assign_u24(at, records as u64, Errors::ARRAY_OVERFLOW)
+    } else {
+        let at = s.u16(0);
+        s.check_assign_u16(at, records as u64, Errors::ARRAY_OVERFLOW)
+    };
+    if !ok {
+        return false;
+    }
+    let mut write = |value: u32| {
+        if wide {
+            s.u24(value);
+        } else {
+            s.u16(lo16(value));
+        }
+    };
+    if array {
+        glyphs.iter().copied().for_each(write);
+        return true;
+    }
+    let mut ranges: Vec<(u32, u32, u32)> = Vec::with_capacity(num_ranges);
+    let mut last = INVALID.wrapping_sub(1);
+    let mut unsorted = false;
+    for (count, &g) in glyphs.iter().enumerate() {
+        if last.wrapping_add(1) != g {
+            if last != INVALID.wrapping_sub(1) && last.wrapping_add(1) > g {
+                unsorted = true;
+            }
+            ranges.push((g, g, n32(count)));
+        }
+        if let Some(r) = ranges.last_mut() {
+            r.1 = g;
+        }
+        last = g;
+    }
+    if unsorted {
+        ranges.sort_unstable();
+    }
+    for (a, z, v) in ranges {
+        write(a);
+        write(z);
+        write(v);
+    }
+    true
+}
+
+#[cfg(test)]
+mod coverage_writer_tests {
+    use super::*;
+
+    #[test]
+    fn adr0022_wide_coverage_array_and_range() {
+        for (glyphs, expected) in [
+            (
+                &[65536, 16777215][..],
+                &[0, 3, 0, 0, 2, 1, 0, 0, 255, 255, 255][..],
+            ),
+            (
+                &[65535, 65536, 65537, 65538][..],
+                &[0, 4, 0, 0, 1, 0, 255, 255, 1, 0, 2, 0, 0, 0][..],
+            ),
+        ] {
+            let mut serializer = Serializer::new();
+            assert!(write_coverage(&mut serializer, glyphs));
+            assert_eq!(serializer.current(), expected);
+        }
+        let mut serializer = Serializer::new();
+        assert!(!write_coverage(&mut serializer, &[0x1000000]));
+        assert!(serializer.in_error());
     }
 }
