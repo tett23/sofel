@@ -917,8 +917,7 @@ impl Plan {
                                 || (matches!(
                                     kind,
                                     layout::Kind::Context | layout::Kind::ChainContext
-                                ) && (matches!(subtable.u16(0), 2..=4 | 6)
-                                    || (*kind == layout::Kind::Context && subtable.u16(0) == 5)
+                                ) && (matches!(subtable.u16(0), 2..=6)
                                     || (subtable.u16(0) == 1 && narrow_rule_glyphs_fit)))
                                 || (matches!(
                                     kind,

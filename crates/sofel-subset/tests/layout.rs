@@ -2148,8 +2148,26 @@ fn adr0022_context_coverage_retains_high_glyph_and_nested_lookup() {
         vec![0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0],
         vec![
             (2, 4, wide.clone()),
-            (6, 4, wide_classes),
+            (6, 4, wide_classes.clone()),
             (16, 3, wide_class_set),
+        ],
+    );
+    let chain_class_rule = vec![0, 1, 0, 1, 0, 2, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1];
+    let mut chain_header = vec![0; 26];
+    chain_header[1] = 5;
+    chain_header[19] = 2;
+    let chain_class_context = link(
+        chain_header,
+        vec![
+            (2, 4, wide.clone()),
+            (6, 4, wide_classes.clone()),
+            (10, 4, wide_classes.clone()),
+            (14, 4, wide_classes),
+            (
+                23,
+                3,
+                link(vec![0, 1, 0, 0, 0], vec![(2, 3, chain_class_rule.clone())]),
+            ),
         ],
     );
     let wide_rule = vec![0, 2, 0, 1, 1, 0, 0, 0, 1, 0, 1];
@@ -2159,6 +2177,7 @@ fn adr0022_context_coverage_retains_high_glyph_and_nested_lookup() {
         vec![(2, 4, wide.clone()), (9, 3, wide_set)],
     );
     for (kind, st, at) in [
+        (6, chain_class_context, 2),
         (5, wide_class_context, 2),
         (5, wide_context, 2),
         (
@@ -2265,10 +2284,17 @@ fn adr0022_context_coverage_retains_high_glyph_and_nested_lookup() {
         if u16_at(context, 0) == 5 {
             let cov = u32::from_be_bytes(context[2..6].try_into().unwrap()) as usize;
             assert!(context[cov..].starts_with(&wide));
-            let set = u32::from_be_bytes([0, context[16], context[17], context[18]]) as usize;
+            let index = if kind == 5 { 16 } else { 23 };
+            let set =
+                u32::from_be_bytes([0, context[index], context[index + 1], context[index + 2]])
+                    as usize;
             let rule = u32::from_be_bytes([0, context[set + 2], context[set + 3], context[set + 4]])
                 as usize;
-            assert!(context[set + rule..].starts_with(&class_rule));
+            assert!(context[set + rule..].starts_with(if kind == 5 {
+                &class_rule
+            } else {
+                &chain_class_rule
+            }));
             continue;
         }
         if u16_at(context, 0) == 4 {

@@ -156,25 +156,36 @@ struct ClassRuleSets<'a> {
     width: u8,
 }
 impl<'a> ClassRuleSets<'a> {
-    fn new(table: D<'a>) -> Self {
-        let (outer, width) = if table.u16(0) == 5 { (4, 3) } else { (2, 2) };
-        let count_at = if outer == 4 { 10usize } else { 6 };
+    fn new(table: D<'a>, chained: bool) -> Self {
+        let wide = table.u16(0) == 5;
+        let (outer, width) = if wide { (4, 3) } else { (2, 2) };
+        let count_at = match (chained, wide) {
+            (true, true) => 18usize,
+            (true, false) => 10,
+            (false, true) => 10,
+            (false, false) => 6,
+        };
+        let count_width = if chained { 2 } else { width };
         Self {
             table,
-            coverage: if outer == 4 {
-                table.off32(2)
-            } else {
-                table.off16(2)
-            },
-            classes: if outer == 4 {
-                table.off32(6)
-            } else {
-                table.off16(4)
-            },
-            count: table.uint(count_at, width) as usize,
-            start: count_at.saturating_add(usize::from(width)),
+            coverage: if wide { table.off32(2) } else { table.off16(2) },
+            classes: if wide { table.off32(6) } else { table.off16(4) },
+            count: table.uint(count_at, count_width) as usize,
+            start: count_at.saturating_add(usize::from(count_width)),
             outer,
             width,
+        }
+    }
+    fn class(&self, index: usize) -> D<'a> {
+        let at = 2usize.saturating_add(
+            index
+                .saturating_add(1)
+                .saturating_mul(usize::from(self.outer)),
+        );
+        if self.outer == 4 {
+            self.table.off32(at)
+        } else {
+            self.table.off16(at)
         }
     }
     fn set(&self, index: usize) -> D<'a> {
@@ -395,7 +406,7 @@ fn rule_set_closure(
 fn chain_rule_set_closure(
     c: &mut Closure<'_>,
     set: D<'_>,
-    width: u8,
+    widths: (u8, u8),
     value: u32,
     vals: [Vals<'_>; 3],
     cache: &mut ClassGlyphsCache,
@@ -403,11 +414,11 @@ fn chain_rule_set_closure(
     if c.limit_exceeded() {
         return;
     }
-    for r in offsets(set, 0, width) {
+    for r in offsets(set, 0, widths.0) {
         if c.limit_exceeded() {
             continue;
         }
-        let r = chain_rule(r, width);
+        let r = chain_rule(r, widths.1);
         if chain_all_intersect(&c.glyphs, &r.backtrack, &r.input, &r.lookahead, vals) {
             recurse_lookups(
                 c,
@@ -456,7 +467,7 @@ pub(crate) fn context_closure(c: &mut Closure<'_>, st: D<'_>) {
             c.stack.pop();
         }
         2 | 5 => {
-            let sets = ClassRuleSets::new(st);
+            let sets = ClassRuleSets::new(st, false);
             let cov = Cov(sets.coverage);
             if !cov.intersects(&c.glyphs) {
                 return;
@@ -515,12 +526,20 @@ pub(crate) fn chain_closure(c: &mut Closure<'_>, st: D<'_>) {
                     continue;
                 }
                 let set = sets.set(i);
-                chain_rule_set_closure(c, set, sets.width, g, [Vals::Glyph; 3], &mut cache);
+                chain_rule_set_closure(
+                    c,
+                    set,
+                    (sets.width, sets.width),
+                    g,
+                    [Vals::Glyph; 3],
+                    &mut cache,
+                );
             }
             c.stack.pop();
         }
-        2 => {
-            let cov = Cov(st.off16(2));
+        2 | 5 => {
+            let sets = ClassRuleSets::new(st, true);
+            let cov = Cov(sets.coverage);
             if !cov.intersects(&c.glyphs) {
                 return;
             }
@@ -528,19 +547,19 @@ pub(crate) fn chain_closure(c: &mut Closure<'_>, st: D<'_>) {
             cov.intersect_set(c.parent(), &mut cur);
             c.stack.push(cur);
             let vals = [
-                Vals::Class(Cls(st.off16(4))),
-                Vals::Class(Cls(st.off16(6))),
-                Vals::Class(Cls(st.off16(8))),
+                Vals::Class(Cls(sets.class(0))),
+                Vals::Class(Cls(sets.class(1))),
+                Vals::Class(Cls(sets.class(2))),
             ];
-            let input_cd = Cls(st.off16(6));
-            let n = usize::from(st.u16(10));
+            let input_cd = Cls(sets.class(1));
+            let n = sets.count;
             for i in 0..n {
                 let k = n32(i);
                 if !input_cd.intersects_class(c.parent(), k) {
                     continue;
                 }
-                let set = st.off16(12usize.saturating_add(i.saturating_mul(2)));
-                chain_rule_set_closure(c, set, 2, k, vals, &mut cache);
+                let set = sets.set(i);
+                chain_rule_set_closure(c, set, (sets.width, 2), k, vals, &mut cache);
             }
             c.stack.pop();
         }
@@ -592,7 +611,7 @@ pub(crate) fn context_intersects(st: D<'_>, glyphs: &BitSet) -> bool {
                 })
         }
         2 | 5 => {
-            let sets = ClassRuleSets::new(st);
+            let sets = ClassRuleSets::new(st, false);
             let cov = Cov(sets.coverage);
             if !cov.intersects(glyphs) {
                 return false;
@@ -650,32 +669,31 @@ pub(crate) fn chain_intersects(st: D<'_>, glyphs: &BitSet) -> bool {
                     })
                 })
         }
-        2 => {
-            let cov = Cov(st.off16(2));
+        2 | 5 => {
+            let sets = ClassRuleSets::new(st, true);
+            let cov = Cov(sets.coverage);
             if !cov.intersects(glyphs) {
                 return false;
             }
             let vals = [
-                Vals::Class(Cls(st.off16(4))),
-                Vals::Class(Cls(st.off16(6))),
-                Vals::Class(Cls(st.off16(8))),
+                Vals::Class(Cls(sets.class(0))),
+                Vals::Class(Cls(sets.class(1))),
+                Vals::Class(Cls(sets.class(2))),
             ];
-            let input_cd = Cls(st.off16(6));
+            let input_cd = Cls(sets.class(1));
             let mut retained = BitSet::new();
             cov.intersect_set(glyphs, &mut retained);
             let mut classes = BitSet::new();
             input_cd.intersected_classes(&retained, &mut classes);
-            let n = usize::from(st.u16(10));
+            let n = sets.count;
             (0..n).any(|i| {
                 let k = n32(i);
                 input_cd.intersects_class(glyphs, k)
                     && classes.has(k)
-                    && offsets(st.off16(12usize.saturating_add(i.saturating_mul(2))), 0, 2)
-                        .into_iter()
-                        .any(|r| {
-                            let r = chain_rule(r, 2);
-                            chain_all_intersect(glyphs, &r.backtrack, &r.input, &r.lookahead, vals)
-                        })
+                    && offsets(sets.set(i), 0, sets.width).into_iter().any(|r| {
+                        let r = chain_rule(r, 2);
+                        chain_all_intersect(glyphs, &r.backtrack, &r.input, &r.lookahead, vals)
+                    })
             })
         }
         3 | 6 => {
@@ -718,7 +736,7 @@ pub(crate) fn context_closure_lookups(c: &mut LookupClosure<'_, '_>, st: D<'_>) 
             }
         }
         2 | 5 => {
-            let sets = ClassRuleSets::new(st);
+            let sets = ClassRuleSets::new(st, false);
             if !Cov(sets.coverage).intersects(glyphs) {
                 return;
             }
@@ -772,17 +790,17 @@ fn rule_set_closure_lookups(
 fn chain_rule_set_closure_lookups(
     c: &mut LookupClosure<'_, '_>,
     set: D<'_>,
-    width: u8,
+    widths: (u8, u8),
     vals: [Vals<'_>; 3],
 ) {
     if c.limit_exceeded() {
         return;
     }
-    for r in offsets(set, 0, width) {
+    for r in offsets(set, 0, widths.0) {
         if c.limit_exceeded() {
             continue;
         }
-        let r = chain_rule(r, width);
+        let r = chain_rule(r, widths.1);
         if !chain_all_intersect(c.glyphs, &r.backtrack, &r.input, &r.lookahead, vals) {
             continue;
         }
@@ -803,26 +821,27 @@ pub(crate) fn chain_closure_lookups(c: &mut LookupClosure<'_, '_>, st: D<'_>) {
                     continue;
                 }
                 let set = sets.set(i);
-                chain_rule_set_closure_lookups(c, set, sets.width, [Vals::Glyph; 3]);
+                chain_rule_set_closure_lookups(c, set, (sets.width, sets.width), [Vals::Glyph; 3]);
             }
         }
-        2 => {
-            if !Cov(st.off16(2)).intersects(glyphs) {
+        2 | 5 => {
+            let sets = ClassRuleSets::new(st, true);
+            if !Cov(sets.coverage).intersects(glyphs) {
                 return;
             }
             let vals = [
-                Vals::Class(Cls(st.off16(4))),
-                Vals::Class(Cls(st.off16(6))),
-                Vals::Class(Cls(st.off16(8))),
+                Vals::Class(Cls(sets.class(0))),
+                Vals::Class(Cls(sets.class(1))),
+                Vals::Class(Cls(sets.class(2))),
             ];
-            let input_cd = Cls(st.off16(6));
-            let n = usize::from(st.u16(10));
+            let input_cd = Cls(sets.class(1));
+            let n = sets.count;
             for i in 0..n {
                 if !input_cd.intersects_class(glyphs, n32(i)) {
                     continue;
                 }
-                let set = st.off16(12usize.saturating_add(i.saturating_mul(2)));
-                chain_rule_set_closure_lookups(c, set, 2, vals);
+                let set = sets.set(i);
+                chain_rule_set_closure_lookups(c, set, (sets.width, 2), vals);
             }
         }
         3 | 6 => {
@@ -977,7 +996,7 @@ fn chain_rule_subset(
 fn chain_rule_set_subset(
     s: &mut Sub<'_, '_>,
     set: D<'_>,
-    width: u8,
+    widths: (u8, u8),
     maps: Option<[&BTreeMap<u32, u32>; 3]>,
 ) -> bool {
     let snap = s.s.snapshot();
@@ -985,16 +1004,16 @@ fn chain_rule_set_subset(
     let mut n = 0u16;
     for i in 0..usize::from(set.u16(0)) {
         let off = set.uint(
-            2usize.saturating_add(i.saturating_mul(usize::from(width))),
-            width,
+            2usize.saturating_add(i.saturating_mul(usize::from(widths.0))),
+            widths.0,
         );
         if off == 0 {
             continue;
         }
         let r = set.follow(off);
         let o_snap = s.s.snapshot();
-        let at = s.s.zeros(usize::from(width));
-        if s.serialize_subset(at, width, |s| chain_rule_subset(s, r, width, maps)) {
+        let at = s.s.zeros(usize::from(widths.0));
+        if s.serialize_subset(at, widths.0, |s| chain_rule_subset(s, r, widths.1, maps)) {
             n = n.wrapping_add(1);
         } else {
             s.s.revert(o_snap);
@@ -1044,7 +1063,7 @@ pub(crate) fn context_subset(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
             !new_cov.is_empty()
         }
         2 | 5 => {
-            let sets = ClassRuleSets::new(st);
+            let sets = ClassRuleSets::new(st, false);
             s.s.u16(st.u16(0));
             let cov_at = s.s.zeros(usize::from(sets.outer));
             let cd_at = s.s.zeros(usize::from(sets.outer));
@@ -1142,7 +1161,7 @@ pub(crate) fn chain_subset(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
                     continue;
                 }
                 if s.offset_append(sets.width, |s| {
-                    chain_rule_set_subset(s, set, sets.width, None)
+                    chain_rule_set_subset(s, set, (sets.width, sets.width), None)
                 }) {
                     count = count.wrapping_add(1);
                     new_cov.push(s.p.glyphs.new_gid(g).unwrap_or(crate::set::INVALID));
@@ -1156,21 +1175,22 @@ pub(crate) fn chain_subset(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
             s.serialize_serialize(cov_at, outer, |s| s.coverage(&new_cov));
             !new_cov.is_empty()
         }
-        2 => {
-            s.s.u16(2);
-            let cov_at = s.s.u16(0);
-            let ats = [s.s.u16(0), s.s.u16(0), s.s.u16(0)];
+        2 | 5 => {
+            let sets = ClassRuleSets::new(st, true);
+            s.s.u16(st.u16(0));
+            let cov_at = s.s.zeros(usize::from(sets.outer));
+            let ats = [0; 3].map(|_| s.s.zeros(usize::from(sets.outer)));
             let count_at = s.s.u16(0);
-            let cov_d = st.off16(2);
-            s.serialize_subset_opt(cov_at, 2, cov_d, |s| s.coverage_subset(Cov(cov_d)));
+            let cov_d = sets.coverage;
+            s.serialize_subset_opt(cov_at, sets.outer, cov_d, |s| s.coverage_subset(Cov(cov_d)));
             let mut maps: [BTreeMap<u32, u32>; 3] = Default::default();
             for (j, (at, map)) in ats.iter().zip(maps.iter_mut()).enumerate() {
-                let cd = st.off16(4usize.saturating_add(j.saturating_mul(2)));
-                s.serialize_subset_opt(*at, 2, cd, |s| {
+                let cd = sets.class(j);
+                s.serialize_subset_opt(*at, sets.outer, cd, |s| {
                     s.class_def_subset(Cls(cd), Some(map), true, true, None)
                 });
             }
-            let input_cd = Cls(st.off16(6));
+            let input_cd = Cls(sets.class(1));
             let mut retained = BitSet::new();
             Cov(cov_d).intersect_set(&s.p.layout.glyphset_gsub, &mut retained);
             let mut classes = BitSet::new();
@@ -1178,18 +1198,18 @@ pub(crate) fn chain_subset(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
             let mut non_zero: Option<usize> = None;
             let mut index = 0usize;
             let mut last = s.s.snapshot();
-            let n = usize::from(st.u16(10));
+            let n = sets.count;
             let refs = [&maps[0], &maps[1], &maps[2]];
             for i in 0..n {
                 let k = n32(i);
                 if !maps[1].contains_key(&k) {
                     continue;
                 }
-                let at = s.s.u16(0);
-                let set = st.off16(12usize.saturating_add(i.saturating_mul(2)));
+                let at = s.s.zeros(usize::from(sets.width));
+                let set = sets.set(i);
                 let ok = classes.has(k)
-                    && s.serialize_subset_opt(at, 2, set, |s| {
-                        chain_rule_set_subset(s, set, 2, Some(refs))
+                    && s.serialize_subset_opt(at, sets.width, set, |s| {
+                        chain_rule_set_subset(s, set, (sets.width, 2), Some(refs))
                     });
                 if ok {
                     last = s.s.snapshot();
