@@ -272,7 +272,7 @@ pub(crate) fn retained_conditions(
                 if upper < lower || upper < lo || lower > hi {
                     continue 'record;
                 }
-                if lower > lo || upper < hi {
+                if lo != hi && (lower != lo || upper != hi) {
                     indices.push(j);
                     key.push((axis, min, max));
                 }

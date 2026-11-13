@@ -321,6 +321,8 @@ impl Plan {
                         b"GSUB" | b"GPOS" => {
                             can_instance_layout_conditions(data, &norm.axis_tags, norm.avar2)
                         }
+                        b"BASE" => sofel_font::read::base::Base::new(data)
+                            .is_ok_and(|table| table.item_var_store_offset().unwrap_or(0) == 0),
                         b"COLR" => !norm.avar2 && sofel_font::read::colr::Colr::new(data).is_ok(),
                         b"GDEF" => sofel_font::read::gdef::Gdef::new(data).is_ok_and(|t| {
                             t.item_var_store_offset().unwrap_or(0) == 0
@@ -433,7 +435,13 @@ impl Plan {
                 let tag = Tag::new(tag);
                 font.table(tag).filter(|_| !drop.contains(tag.to_u32()))
             };
-            let cff2_full_pin = norm.all_axes_pinned
+            let cff2_instance = (norm.all_axes_pinned
+                || (!norm.avar2
+                    && simple_avar
+                    && other_variation_tags
+                        .iter()
+                        .filter(|tag| **tag != b"CFF2" && **tag != b"STAT")
+                        .all(|tag| kept(tag).is_none() || !needs_rebase(tag))))
                 && kept(b"CFF2").is_some()
                 && [b"glyf", b"GLYF", b"gvar", b"GVAR", b"cvar", b"VARC"]
                     .iter()
@@ -449,7 +457,7 @@ impl Plan {
             if !(norm.all_axes_pinned && norm.pinned_at_default)
                 && !metadata_only
                 && !gvar_full_pin
-                && !cff2_full_pin
+                && !cff2_instance
             {
                 return Err(SubsetError::Unsupported {
                     tag: Tag::new(b"fvar"),
@@ -1322,7 +1330,7 @@ fn glyph_map(
 fn condition_is_constant(range: Option<&crate::input::AxisRange>, min: i16, max: i16) -> bool {
     let (low, high) = range.map_or((-1.0, 1.0), |r| (r.min, r.max));
     let (min, max) = (f32::from(min) / 16384.0, f32::from(max) / 16384.0);
-    high < min || low > max || (min <= low && high <= max)
+    max < min || high < min || low > max || low == high || (min == low && max == high)
 }
 
 fn can_instance_layout_conditions(data: &[u8], axis_tags: &[Tag], avar2: bool) -> bool {
