@@ -1915,7 +1915,34 @@ fn adr0022_context_coverage_retains_high_glyph_and_nested_lookup() {
             vec![(2, 2, wide.clone()), (6, 2, rules)],
         )
     };
+    let class_context = |chained: bool, rule: Vec<u8>| {
+        let classes = vec![0, 3, 1, 0, 0, 0, 0, 1, 0, 0, 1];
+        let rules = link(vec![0, 1, 0, 0], vec![(2, 2, rule)]);
+        if chained {
+            link(
+                vec![0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0],
+                vec![
+                    (2, 2, wide.clone()),
+                    (4, 2, classes.clone()),
+                    (6, 2, classes.clone()),
+                    (8, 2, classes),
+                    (14, 2, rules),
+                ],
+            )
+        } else {
+            link(
+                vec![0, 2, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0],
+                vec![(2, 2, wide.clone()), (4, 2, classes), (10, 2, rules)],
+            )
+        }
+    };
     for (kind, st, at) in [
+        (5, class_context(false, vec![0, 1, 0, 1, 0, 0, 0, 1]), 2),
+        (
+            6,
+            class_context(true, vec![0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]),
+            2,
+        ),
         (5, rule_context(vec![0, 1, 0, 1, 0, 0, 0, 1]), 2),
         (6, rule_context(vec![0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]), 2),
         (
@@ -1973,7 +2000,12 @@ fn adr0022_context_coverage_retains_high_glyph_and_nested_lookup() {
         let context = follow(follow(list, 2), 6);
         assert!(follow(context, at).starts_with(&wide));
         if at == 2 {
-            let rule = follow(follow(context, 6), 2);
+            let set_at = match (u16_at(context, 0), kind) {
+                (2, 5) => 10,
+                (2, 6) => 14,
+                _ => 6,
+            };
+            let rule = follow(follow(context, set_at), 2);
             assert_eq!(u16_at(rule, if kind == 5 { 6 } else { 10 }), 1);
         } else {
             assert_eq!(u16_at(context, if kind == 5 { 10 } else { 14 }), 1);
