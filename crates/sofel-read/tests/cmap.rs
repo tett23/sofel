@@ -39,6 +39,24 @@ fn check_mappings(s: &Subtable<'_>) -> Vec<(u32, u32)> {
         assert_ne!(*gid, 0);
         assert_eq!(s.glyph(*c), g(*gid), "codepoint {c:#x}");
     }
+    for limit in pairs
+        .iter()
+        .take(4)
+        .flat_map(|(c, _)| [c.saturating_sub(1), *c])
+    {
+        let bounded: Vec<_> = s
+            .mappings_through(limit)
+            .map(|(c, gid)| (c, gid.0))
+            .collect();
+        assert_eq!(
+            bounded,
+            pairs
+                .iter()
+                .copied()
+                .take_while(|(c, _)| *c <= limit)
+                .collect::<Vec<_>>()
+        );
+    }
     pairs
 }
 

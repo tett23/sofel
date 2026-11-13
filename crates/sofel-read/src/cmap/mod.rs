@@ -224,7 +224,13 @@ impl<'a> Subtable<'a> {
     /// The mapped `(codepoint, glyph)` pairs in ascending code order.
     /// Glyph 0 is skipped. Every pair agrees with [`Subtable::glyph`].
     pub fn mappings(&self) -> Mappings<'a> {
+        self.mappings_through(u32::MAX)
+    }
+
+    /// Enumerates mappings only up to and including the given character code.
+    pub fn mappings_through(&self, max_codepoint: u32) -> Mappings<'a> {
         Mappings {
+            max_codepoint,
             sub: *self,
             range: 0,
             next: 0,
@@ -249,6 +255,7 @@ impl<'a> Subtable<'a> {
 /// Iterator returned by [`Subtable::mappings`].
 #[derive(Clone, Debug)]
 pub struct Mappings<'a> {
+    max_codepoint: u32,
     sub: Subtable<'a>,
     range: usize,
     /// The smallest code not yet looked at.
@@ -262,6 +269,9 @@ impl Iterator for Mappings<'_> {
         loop {
             let (start, end) = self.sub.range(self.range)?;
             let from = self.next.max(u64::from(start));
+            if from > u64::from(self.max_codepoint) {
+                return None;
+            }
             if from > u64::from(end) {
                 self.range = self.range.checked_add(1)?;
                 continue;

@@ -158,6 +158,48 @@ fn is_composite(font: &sofel_font::Font<'_>, glyph: GlyphId) -> bool {
         .is_some_and(|value| value.number_of_contours() < 0)
 }
 
+// Prefer symbol, then full Unicode, then BMP. Among equal priorities the
+// last encoding record wins, as in the automatic hinter's character map.
+fn hint_charmap(data: &[u8]) -> Option<sofel_font::read::cmap::Subtable<'_>> {
+    sofel_font::read::cmap::Cmap::new(data)
+        .ok()?
+        .records()
+        .filter_map(|record| {
+            let priority = match (record.platform_id, record.encoding_id) {
+                (3, 0) => 3,
+                (3, 10) | (0, 4 | 6) => 2,
+                (0, 5) => return None,
+                (0 | 2, _) | (3, 1) => 1,
+                _ => return None,
+            };
+            let sub = record.subtable().ok()?;
+            matches!(sub.format(), 4 | 12 | 13).then_some((priority, sub))
+        })
+        .max_by_key(|(priority, _)| *priority)
+        .map(|(_, sub)| sub)
+}
+
+fn first_codepoint(font: &sofel_font::Font<'_>, glyph: GlyphId) -> Option<u32> {
+    let delta = font.table(Tag::new(b"DMAP")).and_then(hint_charmap);
+    let base = font.table(Tag::new(b"cmap")).and_then(hint_charmap);
+    let first = |sub: sofel_font::read::cmap::Subtable<'_>, from_base: bool| {
+        sub.mappings_through(u32::from(char::MAX))
+            .find(|(cp, id)| {
+                *id == glyph
+                    && !(from_base
+                        && delta
+                            .as_ref()
+                            .and_then(|table| table.glyph(*cp))
+                            .is_some_and(|id| id.0 < font.num_glyphs()))
+            })
+            .map(|(cp, _)| cp)
+    };
+    base.and_then(|sub| first(sub, true))
+        .into_iter()
+        .chain(delta.and_then(|sub| first(sub, false)))
+        .min()
+}
+
 pub(super) fn load(
     outlines: &Outlines<'_, '_, '_>,
     glyph: GlyphId,
@@ -192,10 +234,7 @@ pub(super) fn load(
         return Err(OutlineError::AutoHintUnsupported);
     }
     let needs_up_adjustment = if is_composite(font, glyph) {
-        let codepoint = skrifa::charmap::Charmap::new(&reference)
-            .mappings()
-            .find(|(_, id)| id.to_u32() == glyph.0)
-            .map(|(codepoint, _)| codepoint);
+        let codepoint = first_codepoint(font, glyph);
         let Some(codepoint) = codepoint else {
             scratch.clear();
             return Err(OutlineError::AutoHintUnsupported);
