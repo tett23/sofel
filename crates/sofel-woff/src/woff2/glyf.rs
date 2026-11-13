@@ -259,7 +259,16 @@ pub(super) fn restore(
             let size = uint255(&mut glyphs)?;
             body.extend_from_slice(&size.to_be_bytes());
             body.extend_from_slice(take_bytes(&mut instructions, usize::from(size))?);
-            body.extend(encoded);
+            for run in encoded.chunk_by(|left, right| left == right) {
+                for chunk in run.chunks(256) {
+                    let (&flag, repeats) = chunk.split_first()?;
+                    if repeats.is_empty() {
+                        body.push(flag);
+                    } else {
+                        body.extend([flag | 8, u8::try_from(repeats.len()).ok()?]);
+                    }
+                }
+            }
             body.extend(xs);
             body.extend(ys);
         }
@@ -325,5 +334,25 @@ mod composite_tests {
         assert_eq!(glyf.get(22..25)?, &[0, 1, 0x31]);
         assert_eq!(loca, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 28]);
         Some(())
+    }
+}
+
+#[cfg(test)]
+mod simple_tests {
+    #[test]
+    fn adr0065_i1_repeated_flags_fit_original_table() {
+        let parts: [&[u8]; 7] = [&[0, 1], &[8], &[0; 8], &[0; 9], &[], &[0; 4], &[]];
+        let mut input = alloc::vec![0, 0, 0, 0, 0, 1, 0, 0];
+        for part in parts {
+            input.extend((part.len() as u32).to_be_bytes());
+        }
+        for part in parts {
+            input.extend(part);
+        }
+        let restored = super::restore(&input, 4, 16);
+        assert_eq!(
+            restored.as_ref().and_then(|(glyf, _)| glyf.get(14..)),
+            Some(&[0x39, 7][..])
+        );
     }
 }
