@@ -24,7 +24,7 @@ impl fmt::Display for BdfError {
 }
 
 /// One BDF glyph and its packed monochrome bitmap.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Glyph {
     /// Unicode encoding, absent for `ENCODING -1`.
     pub encoding: Option<u32>,
@@ -193,7 +193,13 @@ impl BdfFont {
                 if in_properties || declared.is_none_or(|n| glyphs.len() >= n) {
                     return Err(BdfError);
                 }
-                glyphs.push(parse_glyph(&mut lines, input_len, size.ok_or(BdfError)?.3)?);
+                let glyph = parse_glyph(&mut lines, input_len, size.ok_or(BdfError)?.3)?;
+                // The BDF driver exposes a reserved empty slot for an unencoded glyph.
+                glyphs.push(if glyph.encoding.is_some() {
+                    glyph
+                } else {
+                    Glyph::default()
+                });
             }
         }
         let (points, x_res, y_res, bits_per_pixel) = size.ok_or(BdfError)?;
