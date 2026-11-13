@@ -86,6 +86,8 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 
 TrueType の単純グリフと複合グリフには、`Outlines::load_truetype_v35` で NORMAL、LIGHT、MONO、LCD、LCD_V のヒンティングターゲットを選べる。対応する命令を FreeType の v35 インタープリターに合わせて実行し、補正後の輪郭を `Scratch` に格納する（[ADR 0064](docs/adr/0064-freetype-hinting-and-render-modes.md)）。 `Outlines::load_truetype_v40` と C API の `sofel_outline_load_truetype_v40` は同じ5種類のターゲットで v40 の補正を適用し、輪郭と補正後の水平アドバンス（26.6 固定小数点）を返す。
 
+ヒンティング方式をロード時に選ぶ場合は、`Outlines::load_with_hint` に `HintMode::None`、`NativeV35`、`NativeV40`、`Auto` とターゲットを渡す。`Auto` は現時点で TrueType の Latin に分類される単純グリフと空輪郭に対応し、それ以外の輪郭を持つグリフには `AutoHintUnsupportedGlyph` を返す。ロード結果は輪郭と水平アドバンス（26.6 固定小数点）で、描画モードは描画時に別途選ぶ。
+
 FreeTypeの合成操作には、`sofel-outline::Scratch` のスロット用の斜体と太字、`sofel-bitmap` の画素形式変換と太字を使う。ビットマップの太字では `embolden_bitmap_slot` が画像とスロットのメトリクス、配置を合わせて更新する。HarfBuzzに合わせた輪郭の命令は、glyfを `Scratch::hb_decompose`、CFFとCFF2を `HbExtents::cff_glyph_path` から得る。画像を含むカラーグリフの合成斜体は、`sofel-color::paint_recording_at_with_slant` が描画命令を変換で包む（[ADR 0063](docs/adr/0063-font-functions-and-synthesis.md)）。
 
 `sofel-validate` は CFF2 の FDSelect フォーマット4を互換性の警告として報告する。ほかにエラーがなければ検証は成功する（[ADR 0056](docs/adr/0056-cff2-fdselect-format4-warning.md)）。

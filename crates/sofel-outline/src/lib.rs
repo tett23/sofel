@@ -124,6 +124,19 @@ impl Scale {
     }
 }
 
+/// Hinting engine selected when loading an outline at a pixel size.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum HintMode {
+    /// Keep the outline unhinted.
+    None,
+    /// Use FreeType's TrueType v35 interpreter.
+    NativeV35,
+    /// Use FreeType's TrueType v40 interpreter.
+    NativeV40,
+    /// Use the automatic hinter.
+    Auto,
+}
+
 /// The smallest box holding every point, off-curve ones included
 /// (`FT_Outline_Get_CBox`); all zero for an empty outline. In the unit of
 /// the points: font units or 26.6, y up.
@@ -171,6 +184,8 @@ pub enum OutlineError {
     InvalidCff,
     /// A charstring cannot be decoded, or its Font DICT cannot be read.
     InvalidCharString,
+    /// Automatic hinting for this outline kind is not implemented yet.
+    AutoHintUnsupportedGlyph,
 }
 
 impl fmt::Display for OutlineError {
@@ -183,6 +198,9 @@ impl fmt::Display for OutlineError {
             OutlineError::UnsupportedFormat => "no outline table",
             OutlineError::InvalidCff => "invalid CFF table",
             OutlineError::InvalidCharString => "invalid charstring",
+            OutlineError::AutoHintUnsupportedGlyph => {
+                "automatic hinting for this glyph is not implemented"
+            }
         })
     }
 }
@@ -545,6 +563,50 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
         scratch: &mut Scratch,
     ) -> Result<(OutlineInfo, i32), OutlineError> {
         self.load_native_truetype(glyph, ppem, target, scratch, 40)
+    }
+
+    /// Loads a glyph with FreeType-compatible automatic hinting at a square
+    /// pixel size. The target is independent of the later rasterization mode.
+    pub fn load_auto_hinted(
+        &self,
+        glyph: GlyphId,
+        ppem: u16,
+        target: HintTarget,
+        scratch: &mut Scratch,
+    ) -> Result<(OutlineInfo, i32), OutlineError> {
+        auto_hint::load(self, glyph, ppem, target, scratch)
+    }
+
+    /// Loads at `ppem` with the selected hinting engine and target, returning
+    /// the outline and horizontal advance in 26.6 pixels. Rasterization is a
+    /// separate operation.
+    pub fn load_with_hint(
+        &self,
+        glyph: GlyphId,
+        ppem: u16,
+        mode: HintMode,
+        target: HintTarget,
+        scratch: &mut Scratch,
+    ) -> Result<(OutlineInfo, i32), OutlineError> {
+        match mode {
+            HintMode::None => {
+                let scale = Scale::pixels(&self.font, ppem, ppem);
+                let info = self.load(glyph, scale, scratch)?;
+                let Scale::Scaled { x, .. } = scale else {
+                    return Err(OutlineError::InvalidOutline);
+                };
+                let advance = self
+                    .instance()
+                    .ft_h_advance(glyph)
+                    .map_or(0, |width| mul_fix(i32::from(width), x.0));
+                Ok((info, advance))
+            }
+            HintMode::NativeV35 => {
+                self.load_truetype_v35_with_advance(glyph, ppem, target, scratch)
+            }
+            HintMode::NativeV40 => self.load_truetype_v40(glyph, ppem, target, scratch),
+            HintMode::Auto => self.load_auto_hinted(glyph, ppem, target, scratch),
+        }
     }
 
     fn load_native_truetype(
@@ -1345,3 +1407,4 @@ fn decompose(
 
 mod cff;
 use cff::load_cff_at;
+mod auto_hint;

@@ -10,6 +10,7 @@ rust-version.workspace = true
 [dependencies]
 sofel-font = { path = "../sofel-font" }
 sofel-geom = { path = "../sofel-geom" }
+skrifa = { version = "0.49", default-features = false, features = ["libm"] }
 
 [lints]
 workspace = true
