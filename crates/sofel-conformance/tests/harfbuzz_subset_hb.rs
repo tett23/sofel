@@ -126,6 +126,39 @@ fn subsetting_agrees_with_harfbuzz() {
 
     // (id, arguments)
     let mut cases: Vec<(String, Vec<String>)> = Vec::new();
+    // Keep checking the pinned library when a saved upstream fixture differs.
+    for case in subset::all_cases(&data())
+        .unwrap()
+        .into_iter()
+        .filter(|case| {
+            case.suite == "glyf_partial_instancing_iup"
+                && case.instance == "wght=200:300:500,wdth=80:90"
+        })
+    {
+        let args = case.args().unwrap();
+        for prepared in [false, true] {
+            let mut args = args.clone();
+            if prepared {
+                args.push("--preprocess".into());
+            }
+            let reference_args: Vec<_> = args
+                .iter()
+                .map(|arg| {
+                    arg.strip_prefix("--instance=")
+                        .map_or_else(|| arg.clone(), |range| format!("--variations={range}"))
+                })
+                .collect();
+            let expected = harfbuzz(&exe, &reference_args, &out).unwrap();
+            let actual = subset::run_sofel(&args).unwrap();
+            assert!(
+                actual == expected,
+                "{} prepared={prepared}: {}",
+                case.id(),
+                subset::diff(&expected, &actual)
+            );
+        }
+    }
+
     let texts: Vec<String> = subset::GOLEM_TEXTS
         .iter()
         .map(|t| std::fs::read_to_string(paths::testdata().join(t)).unwrap())
