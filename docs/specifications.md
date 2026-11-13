@@ -421,6 +421,10 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 `sofel-type1::source::Type1Source` は PFA の16進 eexec と PFB の ASCII・バイナリセクションを読み、秘密辞書を復号する。`sofel-type1::face::Type1Face` は文字コードからグリフ番号への対応、グリフ名、charstring から読んだ送り幅を返す。AFM または PFM を付加すると、グリフ対のカーニングを返す。PFB のセクション長、PFA の16進表記、charstring の長さと AFM・PFM のペア表を検査する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
+## 素の CFF フェイス
+
+`sofel-font::Cff::from_bare` は sfnt に包まれていない CFF 1 をフェイス番号で開く。Name INDEX の位置で Top DICT を選び、CharStrings のグリフ数、charset のグリフ名、Encoding を既存の CFF ビューで問い合わせる。範囲外のフェイス番号、必須の INDEX や CharStrings の欠落を拒む。描画と共通のフェイス操作への接続は未実装である（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+
 ## Web フォントの書き出し（`sofel-woff`）
 
 `sofel_woff::encode` は単一フェイスの sfnt と出力形式を受け取り、WOFF または WOFF2 のバイト列を返す。表のタグ、範囲、パディング、チェックサムとフォント全体のチェックサムを検査する。コマンドは変換を終えてから出力先を開く。[ADR 0070](adr/0070-webfont-encoding.md)

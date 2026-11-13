@@ -101,7 +101,8 @@ sofel_font::Cff::charset_name C gets glyph names from sofel_font_glyph_name and 
 sofel_font::Cff::ft_glyph_name C gets FreeType's glyph names from sofel_font_ft_glyph_name.
 sofel_font::Cff::ft_glyph_from_name C uses sofel_glyph_names_ft_glyph_from_name.
 sofel_font::Cff::has_glyph_names FreeType's face flag; C sees it as sofel_font_ft_glyph_name failing.
-sofel_font::Cff::from_table Bare CFF is a later ADR; C opens sfnt fonts with sofel_font_create, which opens the CFF.
+sofel_font::Cff::from_table C opens sfnt fonts with sofel_font_create, which opens the CFF (ADR 0021).
+sofel_font::Cff::from_bare The bare CFF Rust reader has no C font handle yet (sofel ADR 0065).
 sofel_font::Cff::char_strings Rust views of the CFF structures for the outline crate; C reads the bytes with sofel_font_table.
 sofel_font::Cff::charset Rust views of the CFF structures; C reads CIDs with sofel_font_cid.
 sofel_font::Cff::data Rust view of the table; C reads the bytes with sofel_font_table.
