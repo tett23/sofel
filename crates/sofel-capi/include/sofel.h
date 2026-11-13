@@ -1774,6 +1774,37 @@ int32_t sofel_outline_decompose(const sofel_outline_scratch_t *scratch, int32_t 
                                 sofel_cubic_to_func_t cubic_to, sofel_close_func_t close,
                                 void *user);
 
+/* Corner joins for sofel_outline_stroke. */
+#define SOFEL_STROKE_JOIN_ROUND 0
+#define SOFEL_STROKE_JOIN_BEVEL 1
+#define SOFEL_STROKE_JOIN_MITER_VARIABLE 2
+#define SOFEL_STROKE_JOIN_MITER_FIXED 3
+
+/* The full stroke or one border of the whole outline. */
+#define SOFEL_STROKE_BORDER_FULL 0
+#define SOFEL_STROKE_BORDER_OUTER 1
+#define SOFEL_STROKE_BORDER_INNER 2
+
+/*
+ * Stroke the last loaded closed outline. `radius` is half the stroke width
+ * in outline units; `miter_limit` is signed 16.16, clamped to at least 1.
+ * The source scratch is not changed. No callback is invoked on error.
+ * A NULL scratch or callback returns SOFEL_ERROR_NULL; a negative radius
+ * or unknown join/border returns SOFEL_ERROR_INVALID_ARGUMENT. Output
+ * beyond signed 32-bit coordinates or 65535 points/contours returns
+ * SOFEL_ERROR_TOO_LARGE. `user` may be NULL.
+ *
+ * Rust: sofel_outline::Scratch::stroke
+ * HarfBuzz: none
+ * FreeType: FT_Glyph_Stroke, FT_Glyph_StrokeBorder
+ */
+int32_t sofel_outline_stroke(const sofel_outline_scratch_t *scratch,
+                             int32_t radius, uint32_t join, int32_t miter_limit,
+                             uint32_t border, sofel_move_to_func_t move_to,
+                             sofel_line_to_func_t line_to, sofel_quad_to_func_t quad_to,
+                             sofel_cubic_to_func_t cubic_to, sofel_close_func_t close,
+                             void *user);
+
 /*
  * sofel_outline_load followed by sofel_outline_decompose with no offset:
  * draws a glyph into the pen. Commands sent before an error stay sent.

@@ -61,7 +61,7 @@ jobs:
       - name: Build the API documentation
         env:
           RUSTDOCFLAGS: -D warnings
-        run: cargo doc --no-deps -p sofel-woff -p sofel-geom -p sofel-unicode -p sofel-read -p sofel-font -p sofel-write -p sofel-subset -p sofel-outline -p sofel-bitmap -p sofel-color -p sofel-raster -p sofel-shape -p sofel-cli -p sofel-capi
+        run: cargo doc --no-deps -p sofel-woff -p sofel-geom -p sofel-unicode -p sofel-read -p sofel-type1 -p sofel-font -p sofel-write -p sofel-subset -p sofel-outline -p sofel-bitmap -p sofel-color -p sofel-raster -p sofel-shape -p sofel-cli -p sofel-capi
       # docs/adr/0003, docs/adr/0008
       - name: Check crate dependencies
         run: sh scripts/check-deps.sh
@@ -287,7 +287,7 @@ jobs:
           path: |
             target/ft-dump
             target/hb-dump
-          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-${{ runner.arch }}-reference-tools-${{ steps.native-toolchain.outputs.key }}-${{ hashFiles('.github/workflows/ci.yml', 'testdata.lock', 'tools/ft-dump/**', 'tools/hb-dump/**') }}
+          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-${{ runner.arch }}-reference-tools-${{ steps.native-toolchain.outputs.key }}-${{ hashFiles('.github/workflows/ci.yml', 'testdata.lock', 'tools/ft-dump/**', 'tools/hb-dump/**', 'tools/variation-sample.h') }}
       - name: Build ft-dump
         if: steps.reference-tools.outputs.cache-hit != 'true'
         run: |
@@ -297,6 +297,8 @@ jobs:
       - name: Build hb-dump
         if: steps.reference-tools.outputs.cache-hit != 'true'
         run: sh scripts/measure-process-tree.sh sh tools/hb-dump/build.sh
+      - name: Build VARC outline reference
+        run: sh scripts/measure-process-tree.sh sh tools/hb-varc-reference/build.sh target/testdata/harfbuzz target/hb-varc-reference/hb-varc-reference musl
       - name: Compare with FreeType and HarfBuzz
         run: sh scripts/measure-process-tree.sh sh scripts/test-conformance.sh 2
       # docs/adr/0021: the same hash as on wasm32 (the wasm job).
@@ -392,9 +394,10 @@ jobs:
         run: |
           export CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=$GITHUB_WORKSPACE::$GITHUB_WORKSPACE"
           cargo test --release --target wasm32-wasip1 -p sofel-conformance --test harfbuzz_subset
-      - name: Check variable-font delta digest on wasm32-wasip1
+      - name: Check variable-font API fixtures and delta digest on wasm32-wasip1
         run: |
           export CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=$GITHUB_WORKSPACE/target/testdata::/testdata --env SOFEL_TESTDATA=/testdata"
+          cargo test --release --target wasm32-wasip1 -p sofel-conformance --test variation_api
           cargo test --release --target wasm32-wasip1 -p sofel-conformance --test variation_reference adr0029_corpus_delta_digest
       - name: Test extra font corpus on wasm32-wasip1
         run: |

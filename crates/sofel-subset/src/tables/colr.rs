@@ -77,10 +77,14 @@ fn plan_store(
     if colr.var_store_offset() == 0 && colr.var_index_map_offset() == 0 {
         return Ok(());
     }
+    let map = colr
+        .var_index_map()
+        .map_err(|_| SubsetError::Malformed { tag: TAG })?
+        .filter(|m| !m.is_empty());
+    let store = colr
+        .variation_store()
+        .map_err(|_| SubsetError::Malformed { tag: TAG })?;
     if retains_no_v1_paints(colr, glyphset) {
-        // A valid v1 table can downgrade even when no color glyph remains.
-        colr.variation_store().map_err(|_| unsupported_store())?;
-        colr.var_index_map().map_err(|_| unsupported_store())?;
         return Ok(());
     }
     if !complete {
@@ -97,11 +101,6 @@ fn plan_store(
     if indices.is_empty() {
         return Ok(());
     }
-    let map = colr
-        .var_index_map()
-        .map_err(|_| unsupported_store())?
-        .filter(|m| !m.is_empty());
-    let store = colr.variation_store().map_err(|_| unsupported_store())?;
     let rows: BTreeSet<_> = indices
         .iter()
         .map(|&idx| map.map_or(idx, |m| m.map(idx)))

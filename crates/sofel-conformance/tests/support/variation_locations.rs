@@ -10,6 +10,11 @@ pub struct Position {
 }
 
 impl Position {
+    #[allow(dead_code)]
+    pub fn requested_design_values(&self) -> impl Iterator<Item = f32> + '_ {
+        self.variations.iter().map(|variation| variation.value)
+    }
+
     pub fn location<'a>(&self, font: &Font<'a>) -> Location<'a> {
         Location::new(font, self.named, &self.variations)
     }
