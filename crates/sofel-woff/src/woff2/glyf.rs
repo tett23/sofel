@@ -340,11 +340,11 @@ mod composite_tests {
 #[cfg(test)]
 mod simple_tests {
     #[test]
-    fn adr0065_i1_repeated_flags_fit_original_table() {
+    fn adr0065_i1_repeated_flags_fit_original_table() -> Result<(), core::num::TryFromIntError> {
         let parts: [&[u8]; 7] = [&[0, 1], &[8], &[0; 8], &[0; 9], &[], &[0; 4], &[]];
         let mut input = alloc::vec![0, 0, 0, 0, 0, 1, 0, 0];
         for part in parts {
-            input.extend((part.len() as u32).to_be_bytes());
+            input.extend(u32::try_from(part.len())?.to_be_bytes());
         }
         for part in parts {
             input.extend(part);
@@ -354,5 +354,6 @@ mod simple_tests {
             restored.as_ref().and_then(|(glyf, _)| glyf.get(14..)),
             Some(&[0x39, 7][..])
         );
+        Ok(())
     }
 }
