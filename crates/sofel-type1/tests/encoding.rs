@@ -18,3 +18,11 @@ fn adr0065_i1_type1_explicit_and_standard_encoding()
 fn adr0065_i2_type1_encoding_rejects_out_of_range_code() {
     assert!(Encoding::parse(b"/Encoding 256 array\ndup 256/A put\nreadonly def\n").is_err());
 }
+
+#[test]
+fn adr0065_i1_type1_mm_postscript_helper_precedes_encoding() {
+    let data =
+        b"/Encoding currentfont /Encoding get put definefont\n/Encoding StandardEncoding def\n";
+    let encoding = Encoding::parse(data).unwrap();
+    assert_eq!(encoding.name(b'A'), Some(&b"A"[..]));
+}

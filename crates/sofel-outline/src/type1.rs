@@ -1,6 +1,6 @@
 //! Unhinted Type 1 charstring outlines (sofel ADR 0065).
 //! Operator and contour behavior follows FreeType 2.15.0
-//! `src/psaux/t1decode.c` and `src/psaux/psobjs.c` (FTL).
+//! `src/psaux/t1decode.c`, `src/psaux/psintrp.c`, and `src/psaux/psobjs.c` (FTL).
 
 use alloc::vec::Vec;
 
@@ -30,7 +30,7 @@ fn decode_program<P: Pen>(
     face: &Type1Face<'_>,
     program: &[u8],
     state: &mut State<'_, P>,
-    stack: &mut Vec<i32>,
+    stack: &mut Vec<i64>,
     depth: usize,
     subroutine: bool,
 ) -> Result<(), OutlineError> {
@@ -41,28 +41,32 @@ fn decode_program<P: Pen>(
     while let Some(&op) = program.get(at) {
         at = at.checked_add(1).ok_or(OutlineError::InvalidCharString)?;
         match op {
-            32..=246 => stack.push(i32::from(op).saturating_sub(139)),
+            32..=246 => stack.push(i64::from(i32::from(op).saturating_sub(139)) << 16),
             247..=250 => {
                 let next = i32::from(*program.get(at).ok_or(OutlineError::InvalidCharString)?);
                 at = at.checked_add(1).ok_or(OutlineError::InvalidCharString)?;
                 stack.push(
-                    i32::from(op)
-                        .saturating_sub(247)
-                        .saturating_mul(256)
-                        .saturating_add(next)
-                        .saturating_add(108),
+                    i64::from(
+                        i32::from(op)
+                            .saturating_sub(247)
+                            .saturating_mul(256)
+                            .saturating_add(next)
+                            .saturating_add(108),
+                    ) << 16,
                 );
             }
             251..=254 => {
                 let next = i32::from(*program.get(at).ok_or(OutlineError::InvalidCharString)?);
                 at = at.checked_add(1).ok_or(OutlineError::InvalidCharString)?;
                 stack.push(
-                    i32::from(op)
-                        .saturating_sub(251)
-                        .saturating_mul(256)
-                        .saturating_add(next)
-                        .saturating_add(108)
-                        .saturating_neg(),
+                    i64::from(
+                        i32::from(op)
+                            .saturating_sub(251)
+                            .saturating_mul(256)
+                            .saturating_add(next)
+                            .saturating_add(108)
+                            .saturating_neg(),
+                    ) << 16,
                 );
             }
             255 => {
@@ -72,7 +76,7 @@ fn decode_program<P: Pen>(
                     .ok_or(OutlineError::InvalidCharString)?
                     .try_into()
                     .map_err(|_| OutlineError::InvalidCharString)?;
-                stack.push(i32::from_be_bytes(bytes));
+                stack.push(i64::from(i32::from_be_bytes(bytes)) << 16);
                 at = end;
             }
             1 | 3 => stack.clear(), // hstem and vstem: no hinting
@@ -125,7 +129,8 @@ fn decode_program<P: Pen>(
             }
             10 => {
                 let index = stack.pop().ok_or(OutlineError::InvalidCharString)?;
-                let index = usize::try_from(index).map_err(|_| OutlineError::InvalidCharString)?;
+                let index =
+                    usize::try_from(index >> 16).map_err(|_| OutlineError::InvalidCharString)?;
                 let subr = face
                     .subroutine_program(index)
                     .ok_or(OutlineError::InvalidCharString)?;
@@ -147,6 +152,53 @@ fn decode_program<P: Pen>(
                 at = at.checked_add(1).ok_or(OutlineError::InvalidCharString)?;
                 match escape {
                     0..=2 => stack.clear(), // dotsection, vstem3, hstem3
+                    16 => {
+                        let subr_no = stack.pop().ok_or(OutlineError::InvalidCharString)? >> 16;
+                        let arg_count = usize::try_from(
+                            stack.pop().ok_or(OutlineError::InvalidCharString)? >> 16,
+                        )
+                        .map_err(|_| OutlineError::InvalidCharString)?;
+                        if subr_no == 3 {
+                            if arg_count != 1 || stack.is_empty() {
+                                return Err(OutlineError::InvalidCharString);
+                            }
+                            state.pending_pops = 1;
+                            continue;
+                        }
+                        let points = match subr_no {
+                            14..=17 => usize::try_from(subr_no - 13)
+                                .map_err(|_| OutlineError::InvalidCharString)?,
+                            18 => 6,
+                            _ => return Err(OutlineError::InvalidCharString),
+                        };
+                        let weights = face
+                            .master_weights()
+                            .ok_or(OutlineError::InvalidCharString)?;
+                        if arg_count != points.saturating_mul(weights.len())
+                            || arg_count > stack.len()
+                        {
+                            return Err(OutlineError::InvalidCharString);
+                        }
+                        let start = stack.len() - arg_count;
+                        let args = stack.split_off(start);
+                        for point in 0..points {
+                            let mut value = args[point];
+                            for master in 1..weights.len() {
+                                let delta = args[points + point * (weights.len() - 1) + master - 1];
+                                let weighted = delta
+                                    .checked_mul(i64::from(weights[master]))
+                                    .and_then(|n| n.checked_add(32768 - i64::from(n < 0)))
+                                    .ok_or(OutlineError::InvalidCharString)?
+                                    >> 16;
+                                value = value
+                                    .checked_add(weighted)
+                                    .ok_or(OutlineError::InvalidCharString)?;
+                            }
+                            stack.push(value);
+                        }
+                        state.pending_pops = points;
+                    }
+                    17 if state.pending_pops > 0 => state.pending_pops -= 1,
                     7 => {
                         let [sx, sy, _wx, _wy] = take(stack)?;
                         state.x = sx;
@@ -157,7 +209,11 @@ fn decode_program<P: Pen>(
                         if b == 0 {
                             return Err(OutlineError::InvalidCharString);
                         }
-                        stack.push(a.checked_div(b).ok_or(OutlineError::InvalidCharString)?);
+                        stack.push(
+                            a.checked_mul(65536)
+                                .and_then(|n| n.checked_div(b))
+                                .ok_or(OutlineError::InvalidCharString)?,
+                        );
                     }
                     _ => return Err(OutlineError::InvalidCharString),
                 }
@@ -171,7 +227,7 @@ fn decode_program<P: Pen>(
     Err(OutlineError::InvalidCharString)
 }
 
-fn take<const N: usize>(stack: &mut Vec<i32>) -> Result<[i32; N], OutlineError> {
+fn take<const N: usize>(stack: &mut Vec<i64>) -> Result<[i64; N], OutlineError> {
     let args = stack
         .as_slice()
         .try_into()
@@ -184,11 +240,12 @@ struct State<'a, P: Pen> {
     scale: Scale,
     matrix: [i32; 6],
     pen: &'a mut P,
-    x: i32,
-    y: i32,
-    start: Option<(i32, i32)>,
+    x: i64,
+    y: i64,
+    start: Option<(i64, i64)>,
     emitted: bool,
     box_: Option<CBox>,
+    pending_pops: usize,
 }
 
 impl<'a, P: Pen> State<'a, P> {
@@ -202,10 +259,13 @@ impl<'a, P: Pen> State<'a, P> {
             start: None,
             emitted: false,
             box_: None,
+            pending_pops: 0,
         }
     }
 
-    fn point(&mut self, x: i32, y: i32) -> Point {
+    fn point(&mut self, x: i64, y: i64) -> Point {
+        let x = (x >> 16).clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+        let y = (y >> 16).clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
         let [xx, yx, xy, yy, dx, dy] = self.matrix;
         let transformed_x = mul_fix(x, xx)
             .saturating_add(mul_fix(y, xy))
@@ -242,7 +302,7 @@ impl<'a, P: Pen> State<'a, P> {
         p
     }
 
-    fn move_by(&mut self, dx: i32, dy: i32) -> Result<(), OutlineError> {
+    fn move_by(&mut self, dx: i64, dy: i64) -> Result<(), OutlineError> {
         self.close();
         self.x = self
             .x
@@ -267,7 +327,7 @@ impl<'a, P: Pen> State<'a, P> {
         Ok(())
     }
 
-    fn line_by(&mut self, dx: i32, dy: i32) -> Result<(), OutlineError> {
+    fn line_by(&mut self, dx: i64, dy: i64) -> Result<(), OutlineError> {
         self.ensure_started()?;
         self.x = self
             .x
@@ -284,12 +344,12 @@ impl<'a, P: Pen> State<'a, P> {
 
     fn curve_by(
         &mut self,
-        dx1: i32,
-        dy1: i32,
-        dx2: i32,
-        dy2: i32,
-        dx3: i32,
-        dy3: i32,
+        dx1: i64,
+        dy1: i64,
+        dx2: i64,
+        dy2: i64,
+        dx3: i64,
+        dy3: i64,
     ) -> Result<(), OutlineError> {
         self.ensure_started()?;
         let x1 = self
