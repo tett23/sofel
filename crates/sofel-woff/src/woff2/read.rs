@@ -2,62 +2,6 @@
 use super::{DecodeError, Vec, read_entry};
 use crate::decode::word;
 
-struct Bits<'a> {
-    data: &'a [u8],
-    bit: usize,
-}
-
-impl Bits<'_> {
-    fn take(&mut self, count: u32) -> Option<usize> {
-        let mut value = 0;
-        for shift in 0..count {
-            let byte = self.data.get(self.bit / 8)?;
-            value |= usize::from((byte >> (self.bit % 8)) & 1) << shift;
-            self.bit = self.bit.checked_add(1)?;
-        }
-        Some(value)
-    }
-
-    fn align(&mut self) -> Option<()> {
-        let padding = self.bit.wrapping_neg() & 7;
-        (self.take(u32::try_from(padding).ok()?)? == 0).then_some(())
-    }
-}
-
-fn stored_stream(data: &[u8], expected: usize) -> Option<Vec<u8>> {
-    let mut bits = Bits { data, bit: 0 };
-    if bits.take(1)? != 0 && bits.take(3)? == 0 && bits.take(3)? == 1 {
-        return None;
-    }
-    let mut out = Vec::new();
-    loop {
-        if bits.take(1)? != 0 {
-            if bits.take(1)? != 1 {
-                return None;
-            }
-            bits.align()?;
-            return (out.len() == expected && bits.bit / 8 == data.len()).then_some(out);
-        }
-        let nibbles = u32::try_from(bits.take(2)?).ok()?.checked_add(4)?;
-        if nibbles == 7 {
-            return None;
-        }
-        let encoded = bits.take(nibbles << 2)?;
-        if nibbles > 4 && encoded >> (nibbles.saturating_sub(1) << 2) == 0 {
-            return None;
-        }
-        let length = encoded.checked_add(1)?;
-        if bits.take(1)? != 1 || out.len().checked_add(length)? > expected {
-            return None;
-        }
-        bits.align()?;
-        let start = bits.bit / 8;
-        let end = start.checked_add(length)?;
-        out.extend_from_slice(data.get(start..end)?);
-        bits.bit = end.checked_mul(8)?;
-    }
-}
-
 fn restore_hmtx(tables: &[(super::Tag, &[u8])], stream: &[u8], length: usize) -> Option<Vec<u8>> {
     let table = |name| {
         tables
@@ -184,7 +128,7 @@ pub fn decode_woff2(input: &[u8], limit: usize) -> Result<Vec<u8>, DecodeError> 
     {
         return Err(error(end, "unclaimed data after final block"));
     }
-    let decoded = stored_stream(stream, stored_size)
+    let decoded = sofel_brotli::decompress(stream, stored_size)
         .ok_or(error(at, "unsupported or malformed Brotli stream"))?;
     let mut data = decoded.as_slice();
     let mut tables = Vec::with_capacity(count);
