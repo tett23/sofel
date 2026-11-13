@@ -12,6 +12,10 @@ pub fn with_glyph_program(program: &[u8]) -> (Vec<u8>, Vec<u8>) {
 }
 
 pub fn with_glyph_name(program: &[u8], name: &str) -> (Vec<u8>, Vec<u8>) {
+    with_glyph_name_and_blues(program, name, "[]")
+}
+
+pub fn with_glyph_name_and_blues(program: &[u8], name: &str, blues: &str) -> (Vec<u8>, Vec<u8>) {
     let header = b"%!PS-AdobeFont-1.0: Test 1.0\n\
 11 dict begin\n/FontName /Test def\n/FontType 1 def\n/PaintType 0 def\n\
 /FontMatrix [0.001 0 0 0.001 0 0] readonly def\n\
@@ -25,9 +29,11 @@ readonly def\ncurrentdict end\ncurrentfile eexec\n";
     let mut private = b"dup /Private 8 dict dup begin\n\
 /RD {string currentfile exch readstring pop} executeonly def\n\
 /ND {noaccess def} executeonly def\n/NP {noaccess put} executeonly def\n\
-/lenIV -1 def\n/BlueValues [] def\n/Subrs 0 array\n\
-/CharStrings 2 dict dup begin\n/.notdef 5 RD "
+/lenIV -1 def\n/BlueValues "
         .to_vec();
+    private.extend_from_slice(blues.as_bytes());
+    private
+        .extend_from_slice(b" def\n/Subrs 0 array\n/CharStrings 2 dict dup begin\n/.notdef 5 RD ");
     private.extend_from_slice(&notdef);
     private.extend_from_slice(format!(" ND\n/{name} {} RD ", program.len()).as_bytes());
     private.extend_from_slice(program);
