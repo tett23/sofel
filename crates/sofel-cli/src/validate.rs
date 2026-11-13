@@ -6,6 +6,7 @@ use std::ffi::OsString;
 use std::io::Write;
 use std::path::Path;
 
+use sofel_bitmapfont::pcf::PcfFont;
 use sofel_read::layout::damage::DamageEvent;
 use sofel_read::sfnt::{FontFile, Sfnt};
 use sofel_read::{
@@ -19,7 +20,7 @@ use crate::json;
 pub const HELP: &str = "\
 usage: sofel-validate [--json] FILE...
 
-Validates sfnt fonts, TTC/OTC collections, CEF, bare CFF 1, CID Type 1, Type 42, and BDF fonts.
+Validates sfnt fonts, TTC/OTC collections, CEF, bare CFF 1, CID Type 1, Type 42, PCF, and BDF fonts.
 Tables without a validator are skipped.
 
 Each problem is one line on standard output:
@@ -104,6 +105,26 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
                 continue;
             }
         };
+        if PcfFont::is_pcf(&bytes) {
+            if let Err((_, offset)) = PcfFont::parse_positioned(&bytes) {
+                emit_diagnostic(
+                    &name,
+                    None,
+                    Diagnostic {
+                        table: Tag::new(b"PCF "),
+                        offset: u32::try_from(offset).unwrap_or(u32::MAX),
+                        severity: Severity::Error,
+                        kind: Kind::InvalidFontContainer {
+                            reason: "invalid PCF font",
+                        },
+                    },
+                    as_json,
+                    out,
+                    &mut errors,
+                );
+            }
+            continue;
+        }
         if sofel_bitmapfont::BdfFont::is_bdf(&bytes) {
             if let Err(offset) = sofel_bitmapfont::BdfFont::parse_with_offset(&bytes) {
                 emit_diagnostic(

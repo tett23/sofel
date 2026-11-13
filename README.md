@@ -92,6 +92,8 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 サブセット化では、65,536グリフを超えるフォントのグリフを選んで小さい ID に振り直せる。GSUB の SingleSubst と GPOS の SinglePos では、形式3・4で記録された置換と位置調整を保持する。Coverage と ClassDef の形式3・4にも対応する。
 BDF、PCF、FNT、FON は Rust API の `Font::from_bitmap` で開く。文字対応、送り幅、固定サイズの画像を同じ API で読める。
 
+`sofel-validate` は PCF の構造を検査する。ディレクトリの破損はファイル内のフィールド位置を報告する。
+
 CEF（Compact Embedded Font）は `BareCffFace::new` のフェイス番号 0 で開く。`sofel-render` でもグリフ番号や文字を指定して描画できる。
 
 PFR（Portable Font Resource）は、Rust API の `Font::from_pfr` でフェイス番号を指定して開く。文字対応と送り幅を取得し、輪郭または指定サイズの埋め込みビットマップを取り出せる。`sofel-render` は PFR を通常入力として開き、グリフ番号または文字から PGM に描く。
@@ -214,7 +216,7 @@ sofel-subset --font-file=font.ttf --unicodes=41-5A -o - | sofel-woff --format wo
 
 ### `sofel-validate`
 
-sfnt、TTC/OTC、dfont の各表、素の CFF 1、CEF を検証する（[ADR 0008](docs/adr/0008-validate-command-and-freetype-comparison.md)、[ADR 0058](docs/adr/0058-dfont-face-selection.md)、[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。誤りを1件1行で出し、`--json` ではJSON Linesで出す。
+sfnt、TTC/OTC、dfont の各表、素の CFF 1、CEF、PCF を検証する（[ADR 0008](docs/adr/0008-validate-command-and-freetype-comparison.md)、[ADR 0058](docs/adr/0058-dfont-face-selection.md)、[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。誤りを1件1行で出し、`--json` ではJSON Linesで出す。
 
 ```sh
 cargo run --release --bin sofel-validate -- font.ttf

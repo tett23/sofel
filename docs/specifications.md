@@ -437,6 +437,8 @@ PE32 では `RT_FONT` の名前・言語ディレクトリを順にたどり、�
 
 `sofel-bitmapfont::pcf::PcfFont` は PCF の文字対応、送り、単一の固定サイズの 1 bit 画像を読む。文字表のグリフ番号は FreeType と同じく 1 から始まり、グリフ番号 0 には既定文字の画像を使う。`sofel-render` は PCF を通常のファイル入力から開き、`--char` と `--glyph` のどちらでも PGM を出す。表の範囲、文字表、ビットマップのオフセットと長さを検査する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
+`sofel-validate` は PCF の署名を素の CFF より先に判別し、フォントの構造を検査する。ディレクトリの件数、切り詰め、必須表の範囲、ビットマップオフセットが壊れている場合は該当フィールドのファイル内位置を `PCF ` の診断として返す。その他の表内部の構造不正は位置 0 を返す（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+
 ## PFR フェイス
 
 `Font::from_pfr` は PFR の論理フェイス番号を受け取り、物理フォントの文字対応と送りを返す。
