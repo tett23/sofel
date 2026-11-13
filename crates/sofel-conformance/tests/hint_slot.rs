@@ -29,7 +29,7 @@ fn adr0064_i1_variable_slots_match_freetype() {
         .join("harfbuzz/test/shape/data/text-rendering-tests/fonts/TestCVARGVARTwo.ttf");
     let data = std::fs::read(&path).unwrap();
     let font = Font::new(&data, 0).unwrap();
-    let glyphs = [b'h', b'o', b'n'].map(|c| font.nominal_glyph(u32::from(c)).unwrap().0);
+    let glyphs = b"hon".map(|c| font.nominal_glyph(u32::from(c)).unwrap().0);
     for weight in [28u16, 94] {
         let location = Location::new(
             &font,
