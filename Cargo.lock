@@ -112,6 +112,7 @@ version = "0.0.0"
 dependencies = [
  "sofel-geom",
  "sofel-read",
+ "sofel-type1",
 ]
 
 [[package]]

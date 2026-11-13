@@ -22,7 +22,7 @@ pub struct Encoding<'a> {
 }
 
 impl<'a> Encoding<'a> {
-    /// Read a standard or explicit 256-entry Type 1 encoding.
+    /// Read a standard or explicit Type 1 encoding of at most 256 entries.
     pub fn parse(cleartext: &'a [u8]) -> Result<Self, EncodingError> {
         let marker = cleartext
             .windows(9)
@@ -37,8 +37,40 @@ impl<'a> Encoding<'a> {
             let names = STANDARD_NAMES;
             return Ok(Self { names });
         }
+        if let Some(body) = declaration.strip_prefix(b"[") {
+            let end = body
+                .iter()
+                .position(|byte| *byte == b']')
+                .ok_or(EncodingError)?;
+            let mut names = [None; 256];
+            for (code, word) in body
+                .get(..end)
+                .ok_or(EncodingError)?
+                .split(u8::is_ascii_whitespace)
+                .filter(|word| !word.is_empty())
+                .enumerate()
+            {
+                let name = word
+                    .strip_prefix(b"/")
+                    .filter(|name| !name.is_empty())
+                    .ok_or(EncodingError)?;
+                *names.get_mut(code).ok_or(EncodingError)? = (name != b".notdef").then_some(name);
+            }
+            return Ok(Self { names });
+        }
+        let digits = declaration
+            .iter()
+            .take_while(|byte| byte.is_ascii_digit())
+            .count();
+        let count = decimal(declaration.get(..digits).ok_or(EncodingError)?)?;
+        if count > 256 {
+            return Err(EncodingError);
+        }
         let body = declaration
-            .strip_prefix(b"256 array")
+            .get(digits..)
+            .ok_or(EncodingError)?
+            .trim_ascii_start()
+            .strip_prefix(b"array")
             .ok_or(EncodingError)?;
         let end = body
             .windows(12)
@@ -47,24 +79,34 @@ impl<'a> Encoding<'a> {
             .ok_or(EncodingError)?;
         let body = body.get(..end).ok_or(EncodingError)?;
         let mut names = [None; 256];
-        for line in body.split(|byte| *byte == b'\n' || *byte == b'\r') {
-            let line = line.trim_ascii();
-            let Some(rest) = line.strip_prefix(b"dup ") else {
-                continue;
-            };
+        let mut rest = body;
+        while let Some(at) = rest.windows(3).position(|word| word == b"dup") {
+            rest = rest
+                .get(at.saturating_add(3)..)
+                .ok_or(EncodingError)?
+                .trim_ascii_start();
             let digits = rest.iter().take_while(|byte| byte.is_ascii_digit()).count();
             let code = decimal(rest.get(..digits).ok_or(EncodingError)?)?;
-            let name = rest.get(digits..).ok_or(EncodingError)?.trim_ascii_start();
-            let name = name.strip_prefix(b"/").ok_or(EncodingError)?;
-            let end = name
+            if code >= count {
+                return Err(EncodingError);
+            }
+            rest = rest.get(digits..).ok_or(EncodingError)?.trim_ascii_start();
+            let name = rest.strip_prefix(b"/").ok_or(EncodingError)?;
+            let name_end = name
                 .iter()
                 .position(u8::is_ascii_whitespace)
                 .ok_or(EncodingError)?;
-            let name = name.get(..end).ok_or(EncodingError)?;
-            if name.is_empty() || !line.ends_with(b"put") {
+            let glyph_name = name.get(..name_end).ok_or(EncodingError)?;
+            rest = name
+                .get(name_end..)
+                .ok_or(EncodingError)?
+                .trim_ascii_start();
+            if glyph_name.is_empty() || !rest.starts_with(b"put") {
                 return Err(EncodingError);
             }
-            *names.get_mut(code).ok_or(EncodingError)? = (name != b".notdef").then_some(name);
+            rest = rest.get(3..).ok_or(EncodingError)?;
+            *names.get_mut(code).ok_or(EncodingError)? =
+                (glyph_name != b".notdef").then_some(glyph_name);
         }
         Ok(Self { names })
     }

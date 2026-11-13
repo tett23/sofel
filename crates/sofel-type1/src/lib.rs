@@ -31,3 +31,8 @@ pub mod face;
 
 /// Unscaled Type 1 charstring metrics.
 pub mod metrics;
+
+/// Type 42 PostScript wrapper around an sfnt font.
+pub mod type42;
+mod type42_expert;
+mod type42_glyphlist;
