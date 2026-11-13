@@ -64,3 +64,12 @@ fn adr0065_i2_ne_resource_alignment_offset() {
     bytes[0x80] = 17;
     assert_eq!(WinFont::parse_with_offset(&bytes, 0).unwrap_err(), 0x80);
 }
+
+#[test]
+fn adr0065_i2_face_count_survives_invalid_first_resource() {
+    let mut bytes = FON.to_vec();
+    bytes[0x8a..0x8c].fill(0xff);
+    assert_eq!(WinFont::face_count(&bytes), Ok(2));
+    assert!(WinFont::parse(&bytes, 0).is_err());
+    assert!(WinFont::parse(&bytes, 1).is_ok());
+}
