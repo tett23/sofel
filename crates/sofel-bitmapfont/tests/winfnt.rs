@@ -86,3 +86,16 @@ fn adr0065_i2_pe_header_field_offsets() {
         bytes[position..position + 2].copy_from_slice(&value.to_le_bytes());
     }
 }
+
+#[test]
+fn adr0065_i2_pe_font_resource_offsets() {
+    // PE32 resource directory containing the existing mono.fnt at byte 1024.
+    let file = include_bytes!("data/mono-pe.fon");
+    let face = WinFont::parse(file, 0).unwrap();
+    assert_eq!(face.glyph(1), WinFont::parse(FNT, 0).unwrap().glyph(1));
+    for field in [580, 584, 588] {
+        let mut bytes = file.to_vec();
+        bytes[field..field + 4].fill(0xff);
+        assert_eq!(WinFont::parse_with_offset(&bytes, 0).unwrap_err(), field);
+    }
+}
