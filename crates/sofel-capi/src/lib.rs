@@ -34,7 +34,10 @@ use sofel_font::read::sfnt::FontFile;
 use sofel_font::read::{DetailValue, Diagnostic, GlyphId, Severity, Tag, validate};
 use sofel_font::{Cff, CidError, Direction, Font, FontError, GlyphExtents, HbScale, MetricsTag};
 use sofel_geom::{Fixed, Matrix, Pen, Point};
-use sofel_outline::{HintTarget, OutlineError, OutlineInfo, Outlines, Scale, Scratch};
+use sofel_outline::{
+    HintTarget, OutlineError, OutlineInfo, Outlines, Scale, Scratch, StrokeBorder, StrokeError,
+    StrokeJoin, StrokeStyle,
+};
 use sofel_raster::{Bitmap, FillRule, PixelBox, RasterError, Rasterizer, RenderOptions};
 
 /// `SOFEL_VERSION_MAJOR`.
@@ -2780,6 +2783,63 @@ pub unsafe extern "C" fn sofel_outline_decompose(
         multiplier,
         pen,
     ))
+}
+
+/// `sofel_outline_stroke`.
+///
+/// # Safety
+///
+/// `scratch` is NULL or a live work area that no other thread changes.
+/// The pen functions are NULL or functions of the declared types.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_outline_stroke(
+    scratch: *const SofelOutlineScratch,
+    radius: i32,
+    join: u32,
+    miter_limit: i32,
+    border: u32,
+    move_to: PointFunc,
+    line_to: PointFunc,
+    quad_to: QuadFunc,
+    cubic_to: CubicFunc,
+    close: CloseFunc,
+    user: *mut c_void,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let scratch = unsafe { r(scratch) };
+    let pen = CPen::new(move_to, line_to, quad_to, cubic_to, close, user);
+    status((|| {
+        let scratch = some(scratch)?;
+        let mut pen = pen?;
+        let join = match join {
+            0 => StrokeJoin::Round,
+            1 => StrokeJoin::Bevel,
+            2 => StrokeJoin::MiterVariable,
+            3 => StrokeJoin::MiterFixed,
+            _ => return Err(ERROR_INVALID_ARGUMENT),
+        };
+        let border = match border {
+            0 => StrokeBorder::Full,
+            1 => StrokeBorder::Outer,
+            2 => StrokeBorder::Inner,
+            _ => return Err(ERROR_INVALID_ARGUMENT),
+        };
+        scratch
+            .scratch
+            .stroke(
+                StrokeStyle {
+                    radius,
+                    join,
+                    miter_limit: Fixed(miter_limit),
+                },
+                border,
+                &mut pen,
+            )
+            .map_err(|e| match e {
+                StrokeError::InvalidRadius => ERROR_INVALID_ARGUMENT,
+                StrokeError::TooLarge => ERROR_TOO_LARGE,
+            })
+    })())
 }
 
 fn outline_draw(
