@@ -24,15 +24,22 @@ pub struct Encoding<'a> {
 impl<'a> Encoding<'a> {
     /// Read a standard or explicit Type 1 encoding of at most 256 entries.
     pub fn parse(cleartext: &'a [u8]) -> Result<Self, EncodingError> {
-        let marker = cleartext
-            .windows(9)
-            .position(|bytes| bytes == b"/Encoding")
-            .ok_or(EncodingError)?;
-        let after = marker.checked_add(9).ok_or(EncodingError)?;
-        let declaration = cleartext
-            .get(after..)
-            .ok_or(EncodingError)?
-            .trim_ascii_start();
+        let mut search = cleartext;
+        let declaration = loop {
+            let marker = search
+                .windows(9)
+                .position(|bytes| bytes == b"/Encoding")
+                .ok_or(EncodingError)?;
+            let after = marker.checked_add(9).ok_or(EncodingError)?;
+            let candidate = search.get(after..).ok_or(EncodingError)?.trim_ascii_start();
+            if candidate.starts_with(b"StandardEncoding")
+                || candidate.starts_with(b"[")
+                || candidate.first().is_some_and(u8::is_ascii_digit)
+            {
+                break candidate;
+            }
+            search = search.get(after..).ok_or(EncodingError)?;
+        };
         if declaration.starts_with(b"StandardEncoding") {
             let names = STANDARD_NAMES;
             return Ok(Self { names });

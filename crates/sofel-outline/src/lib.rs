@@ -65,6 +65,7 @@
 
 extern crate alloc;
 
+mod auto_latin;
 mod hb_cff;
 mod type1;
 pub use type1::draw_type1;
@@ -628,8 +629,18 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
                 let cap_rect_top = (!unscaled.overlap)
                     .then(|| self.auto_latin_cap_rectangle_top(glyph, scale, target, scratch))
                     .flatten();
+                let linked_stems = (!unscaled.overlap)
+                    .then(|| auto_latin::linked_stems(self, glyph, scale, target, scratch))
+                    .flatten();
                 let info = if scratch.points.is_empty() {
                     unscaled
+                } else if let Some(ys) = linked_stems {
+                    let mut info = self.load(glyph, scale, scratch)?;
+                    for (point, y) in scratch.points.iter_mut().zip(ys) {
+                        point.y = y;
+                    }
+                    info.cbox = control_box(&scratch.points);
+                    info
                 } else if let Some(top) = cap_rect_top {
                     let mut info = self.load(glyph, scale, scratch)?;
                     for point in &mut scratch.points {

@@ -649,3 +649,19 @@ fn adr0065_i2_bdf_bitmap_eof_and_complete_face() {
         bad.stdout
     );
 }
+
+#[test]
+fn adr0065_i2_type42_invalid_hex_reports_wrapper_byte() {
+    let dir = Dir::new("type42-invalid-hex");
+    let data = b"%!PS-TrueTypeFont\n/FontType 42 def\n/sfnts [<0Z>] def\n";
+    let path = dir.file("bad.t42", data);
+    let out = run(&["--json".as_ref(), path.as_os_str()]);
+    assert_eq!(out.code, 1);
+    assert!(out.stdout.contains("\"table\":\"T42 \""), "{}", out.stdout);
+    let offset = data.iter().position(|&byte| byte == b'Z').unwrap();
+    assert!(
+        out.stdout.contains(&format!("\"offset\":{offset}")),
+        "{}",
+        out.stdout
+    );
+}
