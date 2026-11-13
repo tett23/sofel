@@ -863,7 +863,7 @@ impl Plan {
                     layout::subtables(table.lookup(i as usize), gsub)
                         .iter()
                         .all(|(kind, subtable)| {
-                            (*kind == layout::Kind::PairPos && matches!(subtable.u16(0), 2 | 4))
+                            (*kind == layout::Kind::PairPos && matches!(subtable.u16(0), 1..=4))
                                 || matches!(
                                     kind,
                                     layout::Kind::SingleSubst

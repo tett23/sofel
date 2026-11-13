@@ -1792,3 +1792,24 @@ fn adr0022_wide_pair_classes_keep_advance() {
     assert_eq!(u16_at(st, 0), 4);
     assert_eq!(&st[18..26], &[0, 1, 0, 2, 0, 0, 255, 213]);
 }
+
+#[test]
+fn adr0022_wide_pair_set_keeps_selected_second_glyph() {
+    let records = Buf::new().u24(2).u24(2).i16(-21).u24(3).i16(-43).done();
+    let pair = link(
+        Buf::new().u16(3).u32(0).u16(4).u16(0).u24(1).u24(0).done(),
+        vec![(2, 4, coverage1(&[1])), (13, 3, records)],
+    );
+    let data = font_with(vec![(
+        b"GPOS",
+        layout_table(&[(b"kern", &[0])], &[(2, pair)]),
+    )]);
+    let out = subset(&Font::new(&data, 0).unwrap(), &chars("AC")).unwrap();
+    let table = out_table(&out, b"GPOS").unwrap();
+    let list = follow(&table, 8);
+    assert_eq!(u16_at(list, 0), 1);
+    let st = follow(follow(list, 2), 6);
+    assert_eq!(u16_at(st, 0), 3);
+    let at = u32::from_be_bytes([0, st[13], st[14], st[15]]) as usize;
+    assert!(st[at..].starts_with(&[0, 0, 1, 0, 0, 2, 255, 213]));
+}

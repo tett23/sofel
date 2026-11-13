@@ -282,23 +282,18 @@ pub(crate) fn retained_variation_indices(
             }
             let lengths = [value_len(vf[0]), value_len(vf[1])];
             match pair.u16(0) {
-                1 => {
-                    let record_len = 2usize
-                        .saturating_add(lengths[0].saturating_add(lengths[1]).saturating_mul(2));
-                    for (k, first) in cov
-                        .glyphs()
-                        .into_iter()
-                        .take(usize::from(pair.u16(8)))
-                        .enumerate()
-                    {
-                        let ps = pair.off16(10usize.saturating_add(k.saturating_mul(2)));
-                        if ps.is_null() {
-                            continue;
-                        }
-                        for m in 0..usize::from(ps.u16(0)) {
-                            let r = ps.at(2usize.saturating_add(m.saturating_mul(record_len)));
-                            let keep = glyphs.has(first) && glyphs.has(u32::from(r.u16(0)));
-                            collect_value_devices(ps, r.at(2), vf, keep, &mut selected)?;
+                1 | 3 => {
+                    let pairs = PairSets::new(pair);
+                    for (i, first) in cov.glyphs().into_iter().take(pairs.count).enumerate() {
+                        let set = pairs.set(i);
+                        for (second, values) in pairs.records(set) {
+                            collect_value_devices(
+                                set,
+                                values,
+                                vf,
+                                glyphs.has(first) && glyphs.has(second),
+                                &mut selected,
+                            )?;
                         }
                     }
                 }
@@ -704,59 +699,109 @@ pub(crate) fn single(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
     }
 }
 
-/// `PairPosFormat1::intersects`.
-pub(crate) fn pair1_intersects(st: D<'_>, glyphs: &BitSet) -> bool {
-    let cov = Cov(st.off16(2));
-    let vf1 = st.u16(4);
-    let vf2 = st.u16(6);
-    let n = usize::from(st.u16(8));
-    let set_at = |i: usize| -> D<'_> {
-        if i >= n {
+/// PairPos formats 1 and 3 differ in their glyph, count and offset widths.
+struct PairSets<'a> {
+    table: D<'a>,
+    cov: Cov<'a>,
+    vf: [u16; 2],
+    width: u8,
+    count: usize,
+    start: usize,
+    stride: usize,
+}
+
+impl<'a> PairSets<'a> {
+    fn new(table: D<'a>) -> Self {
+        let (cov, vf, width, count, start) = if table.u16(0) == 3 {
+            (
+                Cov(table.off32(2)),
+                [table.u16(6), table.u16(8)],
+                3,
+                table.uint(10, 3) as usize,
+                13,
+            )
+        } else {
+            (
+                Cov(table.off16(2)),
+                [table.u16(4), table.u16(6)],
+                2,
+                usize::from(table.u16(8)),
+                10,
+            )
+        };
+        let stride = usize::from(width).saturating_add(
+            value_len(vf[0])
+                .saturating_add(value_len(vf[1]))
+                .saturating_mul(2),
+        );
+        Self {
+            table,
+            cov,
+            vf,
+            width,
+            count,
+            start,
+            stride,
+        }
+    }
+    fn set(&self, i: usize) -> D<'a> {
+        if i >= self.count {
             return D(&[]);
         }
-        st.off16(10usize.saturating_add(i.saturating_mul(2)))
-    };
-    let record = 2usize.saturating_add(
-        value_len(vf1)
-            .saturating_add(value_len(vf2))
-            .saturating_mul(2),
-    );
-    let set_intersects = |ps: D<'_>| {
-        (0..usize::from(ps.u16(0))).any(|j| {
-            glyphs.has(u32::from(
-                ps.u16(2usize.saturating_add(j.saturating_mul(record))),
-            ))
+        self.table.follow(
+            self.table.uint(
+                self.start
+                    .saturating_add(i.saturating_mul(usize::from(self.width))),
+                self.width,
+            ),
+        )
+    }
+    fn records(&self, set: D<'a>) -> impl Iterator<Item = (u32, D<'a>)> {
+        let w = usize::from(self.width);
+        let count = (set.uint(0, self.width) as usize).min(
+            set.0
+                .len()
+                .saturating_sub(w)
+                .checked_div(self.stride)
+                .unwrap_or(0),
+        );
+        (0..count).map(move |j| {
+            let r = set.at(w.saturating_add(j.saturating_mul(self.stride)));
+            (r.uint(0, self.width), r.at(w))
         })
-    };
+    }
+}
+
+pub(crate) fn pair1_intersects(st: D<'_>, glyphs: &BitSet) -> bool {
+    let pairs = PairSets::new(st);
+    let (cov, n) = (pairs.cov, pairs.count);
+    let set_intersects = |i| pairs.records(pairs.set(i)).any(|(g, _)| glyphs.has(g));
     if n as u64 > glyphs.len().saturating_mul(bit_storage(n as u64)) {
-        return glyphs.iter().any(|g| {
-            cov.get(g)
-                .is_some_and(|i| set_intersects(set_at(i as usize)))
-        });
+        return glyphs
+            .iter()
+            .any(|g| cov.get(g).is_some_and(|i| set_intersects(i as usize)));
     }
     cov.glyphs()
         .into_iter()
         .take(n)
         .enumerate()
         .filter(|&(_, g)| glyphs.has(g))
-        .any(|(i, _)| set_intersects(set_at(i)))
+        .any(|(i, _)| set_intersects(i))
 }
 
 /// PairPos formats 1 and 2.
 pub(crate) fn pair(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
     match st.u16(0) {
-        1 => pair1(s, st),
+        1 | 3 => pair1(s, st),
         2 | 4 => pair2(s, st),
         _ => false,
     }
 }
 
 fn pair1(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
-    let cov = Cov(st.off16(2));
-    let vf = [st.u16(4), st.u16(6)];
-    let n = usize::from(st.u16(8));
+    let pairs = PairSets::new(st);
+    let (cov, vf, n, width) = (pairs.cov, pairs.vf, pairs.count, pairs.width);
     let len1 = value_len(vf[0]);
-    let record = 2usize.saturating_add(len1.saturating_add(value_len(vf[1])).saturating_mul(2));
     let gs = &s.p.layout.glyphset_gsub;
     let sets: Vec<(u32, D<'_>)> = cov
         .glyphs()
@@ -764,35 +809,24 @@ fn pair1(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
         .take(n)
         .enumerate()
         .filter(|&(_, g)| gs.has(g))
-        .map(|(i, g)| (g, st.off16(10usize.saturating_add(i.saturating_mul(2)))))
+        .map(|(i, g)| (g, pairs.set(i)))
         .collect();
     let mut new_vf = vf;
     let instancing = s.p.var.instancing();
     if instancing || strip_hints(s) {
         let (mut f1, mut f2) = (0u16, 0u16);
         for &(_, ps) in &sets {
-            for j in 0..usize::from(ps.u16(0)) {
-                let r = ps.at(2usize.saturating_add(j.saturating_mul(record)));
-                if !gs.has(u32::from(r.u16(0))) {
+            for (second, r) in pairs.records(ps) {
+                if !gs.has(second) {
                     continue;
                 }
                 if instancing {
-                    f1 |= instanced_format(s, vf[0], ps, r.at(2));
-                    f2 |= instanced_format(
-                        s,
-                        vf[1],
-                        ps,
-                        r.at(2usize.saturating_add(len1.saturating_mul(2))),
-                    );
+                    f1 |= instanced_format(s, vf[0], ps, r);
+                    f2 |= instanced_format(s, vf[1], ps, r.at(len1.saturating_mul(2)));
                     continue;
                 }
-                f1 |= pair_effective_format(s, vf[0], ps, r.at(2));
-                f2 |= pair_effective_format(
-                    s,
-                    vf[1],
-                    ps,
-                    r.at(2usize.saturating_add(len1.saturating_mul(2))),
-                );
+                f1 |= pair_effective_format(s, vf[0], ps, r);
+                f2 |= pair_effective_format(s, vf[1], ps, r.at(len1.saturating_mul(2)));
             }
             if !instancing && f1 == vf[0] && f2 == vf[1] {
                 break;
@@ -800,45 +834,52 @@ fn pair1(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
         }
         new_vf = [f1, f2];
     }
-    s.s.u16(1);
-    let cov_at = s.s.u16(0);
+    s.s.u16(st.u16(0));
+    let cov_width = if width == 3 { 4 } else { 2 };
+    let cov_at = s.s.zeros(usize::from(cov_width));
     s.s.u16(new_vf[0]);
     s.s.u16(new_vf[1]);
-    let count_at = s.s.u16(0);
+    let count_at = s.s.zeros(usize::from(width));
     let mut new_cov = Vec::new();
     for &(g, ps) in &sets {
         if ps.is_null() {
             continue;
         }
-        let ok = s.offset_append(2, |s| {
-            let count_at = s.s.u16(0);
-            let mut num = 0u16;
-            for j in 0..usize::from(ps.u16(0)) {
-                let r = ps.at(2usize.saturating_add(j.saturating_mul(record)));
-                let second = u32::from(r.u16(0));
+        let ok = s.offset_append(width, |s| {
+            let count_at = s.s.zeros(usize::from(width));
+            let mut num = 0u32;
+            for (second, r) in pairs.records(ps) {
                 if !s.in_gsub(second) {
                     continue;
                 }
-                s.s.u16((s.map(second) & 0xFFFF) as u16);
-                copy_values(s, vf[0], new_vf[0], ps, r.at(2));
-                copy_values(
-                    s,
-                    vf[1],
-                    new_vf[1],
-                    ps,
-                    r.at(2usize.saturating_add(len1.saturating_mul(2))),
-                );
+                let gid = s.map(second);
+                if width == 3 {
+                    s.s.u24(gid);
+                } else {
+                    let at = s.s.u16(0);
+                    s.s.check_assign_u16(at, u64::from(gid), sofel_write::Errors::INT_OVERFLOW);
+                }
+                copy_values(s, vf[0], new_vf[0], ps, r);
+                copy_values(s, vf[1], new_vf[1], ps, r.at(len1.saturating_mul(2)));
                 num = num.wrapping_add(1);
             }
-            s.s.set_u16(count_at, num);
+            if width == 3 {
+                s.s.set_u24(count_at, num);
+            } else {
+                s.s.set_u16(count_at, super::data::lo16(num));
+            }
             num != 0
         });
         if ok {
-            s.bump_u16(count_at, 1);
             new_cov.push(s.map(g));
         }
     }
-    s.serialize_serialize(cov_at, 2, |s| s.coverage(&new_cov));
+    if width == 3 {
+        s.s.set_u24(count_at, n32(new_cov.len()));
+    } else {
+        s.s.set_u16(count_at, n16(new_cov.len()));
+    }
+    s.serialize_serialize(cov_at, cov_width, |s| s.coverage(&new_cov));
     !new_cov.is_empty()
 }
 
