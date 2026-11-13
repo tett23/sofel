@@ -18,7 +18,14 @@ pub fn draw_cid(
     let program = face
         .glyph_program(cid)
         .ok_or(OutlineError::InvalidGlyphIndex)?;
-    let mut state = State::new(scale, pen);
+    let matrix = face.matrix(cid).ok_or(OutlineError::InvalidGlyphIndex)?;
+    let mut state = State::new(
+        scale,
+        [
+            matrix.xx, matrix.yx, matrix.xy, matrix.yy, matrix.dx, matrix.dy,
+        ],
+        pen,
+    );
     let mut stack = Vec::new();
     decode_program(face, cid, &program, &mut state, &mut stack, 0, false)?;
     Ok(state.info())
@@ -189,6 +196,7 @@ fn take<const N: usize>(stack: &mut Vec<i32>) -> Result<[i32; N], OutlineError> 
 
 struct State<'a, P: Pen> {
     scale: Scale,
+    matrix: [i32; 6],
     pen: &'a mut P,
     x: i32,
     y: i32,
@@ -198,9 +206,10 @@ struct State<'a, P: Pen> {
 }
 
 impl<'a, P: Pen> State<'a, P> {
-    fn new(scale: Scale, pen: &'a mut P) -> Self {
+    fn new(scale: Scale, matrix: [i32; 6], pen: &'a mut P) -> Self {
         Self {
             scale,
+            matrix,
             pen,
             x: 0,
             y: 0,
@@ -211,11 +220,21 @@ impl<'a, P: Pen> State<'a, P> {
     }
 
     fn point(&mut self, x: i32, y: i32) -> Point {
+        let [xx, yx, xy, yy, dx, dy] = self.matrix;
+        let transformed_x = mul_fix(x, xx)
+            .saturating_add(mul_fix(y, xy))
+            .saturating_add(dx);
+        let transformed_y = mul_fix(x, yx)
+            .saturating_add(mul_fix(y, yy))
+            .saturating_add(dy);
         let p = match self.scale {
-            Scale::Unscaled => Point { x, y },
+            Scale::Unscaled => Point {
+                x: transformed_x,
+                y: transformed_y,
+            },
             Scale::Scaled { x: sx, y: sy } => Point {
-                x: mul_fix(x, sx.0),
-                y: mul_fix(y, sy.0),
+                x: mul_fix(transformed_x, sx.0),
+                y: mul_fix(transformed_y, sy.0),
             },
         };
         match &mut self.box_ {

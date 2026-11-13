@@ -205,3 +205,31 @@ fn adr0065_i2_rejects_truncated_subroutine_map() -> Result<(), Box<dyn std::erro
     assert!(CidFace::parse(&source, 1024).is_err());
     Ok(())
 }
+
+#[test]
+fn adr0065_i1_applies_general_font_matrix_to_advance() -> Result<(), Box<dyn std::error::Error>> {
+    let original = sample();
+    let mut source = original.clone();
+    let old = b"[0.001 0 0 0.001 0 0]";
+    let at = source
+        .windows(old.len())
+        .position(|w| w == old)
+        .ok_or("matrix")?;
+    source.splice(at..at + old.len(), b"[0.002 0 0 0.001 0 0]".iter().copied());
+    let face = CidFace::parse(&source, 1024)?;
+    assert_eq!(face.units_per_em(), 1000);
+    assert_eq!(face.glyph_metrics(0).ok_or("metrics")?.advance_x, 1000);
+
+    let mut source = original;
+    let at = source
+        .windows(old.len())
+        .position(|w| w == old)
+        .ok_or("matrix")?;
+    source.splice(
+        at..at + old.len(),
+        b"[0.001 0 0 0.001 0.01 0.02]".iter().copied(),
+    );
+    let face = CidFace::parse(&source, 1024)?;
+    assert_eq!(face.glyph_metrics(0).ok_or("metrics")?.advance_x, 510);
+    Ok(())
+}

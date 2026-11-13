@@ -36,6 +36,24 @@ struct FontDict {
     subr_count: usize,
     subr_map_offset: usize,
     sd_bytes: usize,
+    matrix: CidMatrix,
+}
+
+/// Font DICT transform, normalized to 16.16 font units as FreeType does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CidMatrix {
+    /// Horizontal contribution from x.
+    pub xx: i32,
+    /// Vertical contribution from x.
+    pub yx: i32,
+    /// Horizontal contribution from y.
+    pub xy: i32,
+    /// Vertical contribution from y.
+    pub yy: i32,
+    /// Horizontal translation in font units.
+    pub dx: i32,
+    /// Vertical translation in font units.
+    pub dy: i32,
 }
 
 impl CidFace {
@@ -103,13 +121,14 @@ impl CidFace {
                     return Err(CidError);
                 }
             }
+            let (matrix, current_upem) = parse_matrix(dict)?;
             dicts.push(FontDict {
                 len_iv: field_i32(dict, b"lenIV").unwrap_or(4),
                 subr_count,
                 subr_map_offset,
                 sd_bytes,
+                matrix,
             });
-            let current_upem = matrix_upem(dict)?;
             if units_per_em.is_some_and(|upem| upem != current_upem) {
                 return Err(CidError);
             }
@@ -138,6 +157,17 @@ impl CidFace {
     /// Units per em derived from the uniform Font DICT matrix.
     pub fn units_per_em(&self) -> u16 {
         self.units_per_em
+    }
+
+    /// Font DICT transform selected by the CID's FDBytes field.
+    pub fn matrix(&self, cid: usize) -> Option<CidMatrix> {
+        if cid >= self.cid_count {
+            return None;
+        }
+        let entry = self.fd_bytes.checked_add(self.gd_bytes)?;
+        let map = self.cidmap_offset.checked_add(cid.checked_mul(entry)?)?;
+        let fd = read_be(self.data.get(map..map.checked_add(self.fd_bytes)?)?);
+        Some(self.dicts.get(fd)?.matrix)
     }
 
     /// Decrypted Type 1 charstring for a CID.
@@ -186,8 +216,18 @@ impl CidFace {
 
     /// Unscaled Type 1 side bearings and advances for a CID.
     pub fn glyph_metrics(&self, cid: usize) -> Option<Metrics> {
-        parse_metrics(&self.glyph_program(cid)?).ok()
+        let mut metrics = parse_metrics(&self.glyph_program(cid)?).ok()?;
+        let matrix = self.matrix(cid)?;
+        metrics.advance_x = mul_fix(metrics.advance_x, matrix.xx).saturating_add(matrix.dx);
+        metrics.advance_y = mul_fix(metrics.advance_y, matrix.yy).saturating_add(matrix.dy);
+        Some(metrics)
     }
+}
+
+fn mul_fix(a: i32, b: i32) -> i32 {
+    let product = i64::from(a).saturating_mul(i64::from(b));
+    let rounded = product.saturating_add(0x8000).saturating_add(product >> 63) >> 16;
+    i32::try_from(rounded).unwrap_or(if rounded < 0 { i32::MIN } else { i32::MAX })
 }
 
 fn find_bytes(data: &[u8], needle: &[u8]) -> Option<usize> {
@@ -302,9 +342,19 @@ fn decode_hex(raw: &[u8], max_output: usize) -> Result<Vec<u8>, CidError> {
     Ok(out)
 }
 
-fn matrix_upem(dict: &[u8]) -> Result<u16, CidError> {
+fn parse_matrix(dict: &[u8]) -> Result<(CidMatrix, u16), CidError> {
     let Some(at) = find_bytes(dict, b"/FontMatrix") else {
-        return Ok(1000);
+        return Ok((
+            CidMatrix {
+                xx: 65536,
+                yx: 0,
+                xy: 0,
+                yy: 65536,
+                dx: 0,
+                dy: 0,
+            },
+            1000,
+        ));
     };
     let after = at.checked_add(b"/FontMatrix".len()).ok_or(CidError)?;
     let data = dict.get(after..).ok_or(CidError)?.trim_ascii_start();
@@ -316,22 +366,49 @@ fn matrix_upem(dict: &[u8]) -> Result<u16, CidError> {
         .split(|byte| byte.is_ascii_whitespace())
         .filter(|part| !part.is_empty())
         .collect();
-    let [a, b, c, d, e, f] = values.as_slice() else {
+    let [_a, _b, _c, _d, _e, _f] = values.as_slice() else {
         return Err(CidError);
     };
-    if a != d || [b, c, e, f].iter().any(|value| **value != b"0") {
+    let mut fixed = [0i32; 6];
+    for (target, value) in fixed.iter_mut().zip(values) {
+        let text = core::str::from_utf8(value).map_err(|_| CidError)?;
+        let number = text.parse::<f64>().map_err(|_| CidError)?;
+        let scaled = number * 1000.0 * 65536.0;
+        if !scaled.is_finite() || scaled < f64::from(i32::MIN) || scaled > f64::from(i32::MAX) {
+            return Err(CidError);
+        }
+        // The explicit range check above makes this rounded float conversion bounded.
+        #[allow(clippy::cast_possible_truncation)]
+        let rounded = (scaled + if scaled < 0.0 { -0.5 } else { 0.5 }) as i32;
+        *target = rounded;
+    }
+    let scale = fixed[3].unsigned_abs();
+    if scale == 0 {
         return Err(CidError);
     }
-    let text = core::str::from_utf8(a).map_err(|_| CidError)?;
-    let (integer, fractional) = text.split_once('.').ok_or(CidError)?;
-    if !integer.is_empty() && integer != "0" {
-        return Err(CidError);
-    }
-    let numerator = fractional.parse::<u32>().map_err(|_| CidError)?;
-    let digits = u32::try_from(fractional.len()).map_err(|_| CidError)?;
-    let denominator = 10u32.checked_pow(digits).ok_or(CidError)?;
-    if denominator.checked_rem(numerator) != Some(0) {
-        return Err(CidError);
-    }
-    u16::try_from(denominator.checked_div(numerator).ok_or(CidError)?).map_err(|_| CidError)
+    let upem = if scale == 65536 {
+        1000
+    } else {
+        u16::try_from(
+            (1000u64 << 16)
+                .saturating_add(u64::from(scale / 2))
+                .checked_div(u64::from(scale))
+                .ok_or(CidError)?,
+        )
+        .map_err(|_| CidError)?
+    };
+    let normalize = |value: i32| -> Result<i32, CidError> {
+        let numerator = i64::from(value).saturating_mul(65536);
+        i32::try_from(numerator.checked_div(i64::from(scale)).ok_or(CidError)?)
+            .map_err(|_| CidError)
+    };
+    let matrix = CidMatrix {
+        xx: normalize(fixed[0])?,
+        yx: normalize(fixed[1])?,
+        xy: normalize(fixed[2])?,
+        yy: normalize(fixed[3])?,
+        dx: normalize(fixed[4])? >> 16,
+        dy: normalize(fixed[5])? >> 16,
+    };
+    Ok((matrix, upem))
 }

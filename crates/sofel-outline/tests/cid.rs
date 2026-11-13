@@ -170,3 +170,57 @@ fn adr0065_i1_cid_callsubr_matches_freetype() -> Result<(), Box<dyn std::error::
     );
     Ok(())
 }
+
+#[test]
+fn adr0065_i1_cid_general_font_matrix_matches_freetype() -> Result<(), Box<dyn std::error::Error>> {
+    let original = sample(&[
+        139, 248, 136, 13, 239, 239, 21, 239, 139, 5, 139, 239, 5, 39, 39, 5, 9, 14,
+    ]);
+    let old = b"[0.001 0 0 0.001 0 0]";
+    for (matrix, expected) in [
+        (
+            b"[0.001 0.0005 0 0.001 0 0]".as_slice(),
+            (100, 150, 200, 200, 200, 300),
+        ),
+        (
+            b"[0.001 0 0 0.001 0.01 0.02]".as_slice(),
+            (110, 120, 210, 120, 210, 220),
+        ),
+        (
+            b"[0.002 0 0 0.001 0 0]".as_slice(),
+            (200, 100, 400, 100, 400, 200),
+        ),
+    ] {
+        let mut source = original.clone();
+        let at = source
+            .windows(old.len())
+            .position(|w| w == old)
+            .ok_or("matrix")?;
+        source.splice(at..at + old.len(), matrix.iter().copied());
+        let face = CidFace::parse(&source, 1024)?;
+        let mut commands = Vec::new();
+        draw_cid(&face, 0, Scale::Unscaled, &mut FnPen(|c| commands.push(c)))?;
+        assert_eq!(
+            commands.first(),
+            Some(&Command::MoveTo(Point {
+                x: expected.0,
+                y: expected.1
+            }))
+        );
+        assert_eq!(
+            commands.get(1),
+            Some(&Command::LineTo(Point {
+                x: expected.2,
+                y: expected.3
+            }))
+        );
+        assert_eq!(
+            commands.get(2),
+            Some(&Command::LineTo(Point {
+                x: expected.4,
+                y: expected.5
+            }))
+        );
+    }
+    Ok(())
+}
