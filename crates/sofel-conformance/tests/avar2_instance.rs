@@ -168,6 +168,46 @@ fn adr0022_i1_gpos_feature_variations_11_two_ranges_match_harfbuzz() {
     );
 }
 
+#[test]
+fn adr0061_i1_gsub_feature_variations_11_one_pin_match_harfbuzz() {
+    let path = paths::testdata()
+        .join("harfbuzz/test/api/fonts/feature-variation-precision-GSUB-lookup-avar2.ttf");
+    compare_path(
+        &path,
+        &[(b"TEST", -0.5, 0.0, 0.5), (b"DUMY", 0.5, 0.5, 0.5)],
+    );
+}
+
+#[test]
+fn adr0061_i1_gpos_feature_variations_11_one_pin_match_harfbuzz() {
+    let path = paths::testdata()
+        .join("harfbuzz/test/api/fonts/feature-variation-precision-GPOS-lookup-avar2.ttf");
+    compare_path(
+        &path,
+        &[(b"TEST", -0.5, 0.0, 0.5), (b"DUMY", 0.5, 0.5, 0.5)],
+    );
+}
+
+#[test]
+fn adr0061_i1_gsub_feature_variations_11_all_pinned_match_harfbuzz() {
+    let path = paths::testdata()
+        .join("harfbuzz/test/api/fonts/feature-variation-precision-GSUB-lookup-avar2.ttf");
+    compare_path(
+        &path,
+        &[(b"TEST", 0.5, 0.5, 0.5), (b"DUMY", -0.5, -0.5, -0.5)],
+    );
+}
+
+#[test]
+fn adr0061_i1_gpos_feature_variations_11_all_pinned_match_harfbuzz() {
+    let path = paths::testdata()
+        .join("harfbuzz/test/api/fonts/feature-variation-precision-GPOS-lookup-avar2.ttf");
+    compare_path(
+        &path,
+        &[(b"TEST", 0.5, 0.5, 0.5), (b"DUMY", -0.5, -0.5, -0.5)],
+    );
+}
+
 fn compare_store_variant(null: bool, ranges: &[(&[u8; 4], f32, f32, f32)]) {
     let source = paths::testdata().join("harfbuzz/test/api/fonts/TestAvar2Instance.ttf");
     let bytes = std::fs::read(source).unwrap();
