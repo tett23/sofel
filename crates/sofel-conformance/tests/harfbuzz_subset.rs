@@ -268,6 +268,36 @@ fn table_diff_reports_changed_missing_and_extra_tables() {
 }
 
 #[test]
+fn adr0022_name_overrides_match_harfbuzz_name_table() {
+    use sofel_subset::{Flags, Input, SetKind};
+    let dir = paths::testdata().join("harfbuzz/test/api/fonts");
+    let source = std::fs::read(dir.join("nameID.origin.ttf")).unwrap();
+    let expected = std::fs::read(dir.join("nameID.override.expected.ttf")).unwrap();
+    let mut input = Input::new()
+        .with_flags(Flags::NAME_LEGACY)
+        .map_set(SetKind::NameIds, |ids| ids.add_range(0, 13))
+        .map_set(SetKind::NameLanguages, |ids| ids.add_range(0, 0x5fff));
+    for (key, value) in [
+        ((1, 0, 0, 1), "Roboto Replaced"),
+        ((1, 0, 0, 1), "Roboto Test"),
+        ((3, 1, 0x409, 1), "Roboto Test unicode platform"),
+        ((1, 0, 0, 2), "Bold"),
+        ((1, 0, 0, 6), "Roboto-Bold"),
+        ((1, 0, 0, 12), "Non ascii test Ü"),
+        ((1, 0, 0, 14), ""),
+        ((1, 0, 0, 16), "Roboto-test-inserting"),
+    ] {
+        input = input.with_name_override(key, value.as_bytes().to_vec());
+    }
+    let actual = sofel_subset::subset(&Font::new(&source, 0).unwrap(), &input).unwrap();
+    let tag = sofel_read::Tag::new(b"name");
+    assert_eq!(
+        Sfnt::new(&actual).unwrap().table(tag).unwrap(),
+        Sfnt::new(&expected).unwrap().table(tag).unwrap()
+    );
+}
+
+#[test]
 fn adr0022_invalid_colr_store_is_rejected_when_retained() {
     let path = data().join("fonts/NotoColrEmojiGlyf-Regular.subset.ttf");
     for codepoint in ["1f696", "1f35e"] {

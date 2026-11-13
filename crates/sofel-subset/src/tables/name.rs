@@ -59,6 +59,23 @@ pub(crate) fn subset(
                 || (r[0] == 3 && matches!(r[1], 0 | 1 | 10))
         })
         .collect();
+    let key = |r: &[u16; 6]| (r[0], r[1], r[2], r[3]);
+    let mut insert: alloc::collections::BTreeSet<_> = plan.name_overrides.keys().copied().collect();
+    records.retain(|r| {
+        insert.remove(&key(r));
+        plan.name_overrides
+            .get(&key(r))
+            .is_none_or(|value| !value.is_empty())
+    });
+    for (platform, encoding, language, name) in insert {
+        if plan
+            .name_overrides
+            .get(&(platform, encoding, language, name))
+            .is_some_and(|value| !value.is_empty())
+        {
+            records.push([platform, encoding, language, name, 0, 0]);
+        }
+    }
     for r in &records {
         let start = string_offset.saturating_add(usize::from(r[5]));
         if start.saturating_add(usize::from(r[4])) > src.len() {
@@ -74,16 +91,36 @@ pub(crate) fn subset(
     let so = s.u16(0);
     for r in &records {
         let rec = s.len();
-        r.iter().take(5).for_each(|&v| {
+        r.iter().take(4).for_each(|&v| {
             s.u16(v);
         });
-        s.u16(0);
-        let start = string_offset.saturating_add(usize::from(r[5]));
-        s.push();
-        s.extend(
+        let encoded;
+        let bytes = if let Some(text) = plan.name_overrides.get(&key(r)) {
+            if r[0] == 1 {
+                text.as_slice()
+            } else {
+                let mut result = Vec::new();
+                for chunk in text.utf8_chunks() {
+                    result.extend(chunk.valid().encode_utf16().flat_map(u16::to_be_bytes));
+                    for _ in chunk.invalid() {
+                        result.extend(0xfffdu16.to_be_bytes());
+                    }
+                }
+                encoded = result;
+                &encoded
+            }
+        } else {
+            let start = string_offset.saturating_add(usize::from(r[5]));
             src.get(start..start.saturating_add(usize::from(r[4])))
-                .unwrap_or(&[]),
-        );
+                .ok_or(bad)?
+        };
+        let length = s.u16(0);
+        if !s.check_assign_u16(length, bytes.len() as u64, Errors::INT_OVERFLOW) {
+            return Ok(false);
+        }
+        s.u16(0);
+        s.push();
+        s.extend(bytes);
         let idx = s.pop_pack(true);
         s.add_link(rec.saturating_add(10), 2, false, idx, Whence::Tail, 0);
     }
