@@ -715,8 +715,18 @@ impl Interpreter {
             && self.projection[1] == 0
     }
 
+    fn initial_backward_compatibility(&self) -> u8 {
+        if self.subpixel()
+            && (self.instruction_control & 2 != 0 || self.instruction_control & 4 == 0)
+        {
+            4
+        } else {
+            0
+        }
+    }
+
     pub(super) fn device_width_allowed(&self) -> bool {
-        !self.disables_hinting() && (!self.subpixel() || self.instruction_control & 4 != 0)
+        !self.disables_hinting() && self.initial_backward_compatibility() == 0
     }
 
     pub(super) fn disables_hinting(&self) -> bool {
@@ -744,9 +754,7 @@ impl Interpreter {
             glyph.scan_control = false;
             glyph.scan_type = 0;
         }
-        if self.subpixel() {
-            glyph.backward_compatibility = (self.instruction_control & 4) ^ 4;
-        }
+        glyph.backward_compatibility = self.initial_backward_compatibility();
         let twilight = points
             .len()
             .saturating_add(self.cvt.len())
@@ -1684,7 +1692,8 @@ impl Interpreter {
                     let value = *stack.last().ok_or(Error::StackUnderflow)?;
                     push(stack, value, max_stack)?;
                 }
-                0x21 => {
+                // POP, SANGW, and AA each discard one operand in FreeType.
+                0x21 | 0x7e | 0x7f => {
                     stack.pop().ok_or(Error::StackUnderflow)?;
                 }
                 0x22 => stack.clear(),
@@ -2660,4 +2669,31 @@ fn adr0064_i1_relative_jumps_count_from_opcode_and_obey_execution_limit() {
     );
     assert_eq!(budget, 0);
     assert!(run(&[0xb0, 0, 0x1c], &mut values, 1).is_err());
+}
+
+#[test]
+fn adr0064_i1_legacy_angle_instructions_consume_one_operand() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    for opcode in [0x7e, 0x7f] {
+        let mut stack = alloc::vec![13, 42];
+        vm.execute(&[opcode], &mut stack, 2).unwrap();
+        assert_eq!(stack, [13]);
+        assert_eq!(
+            vm.execute(&[opcode], &mut alloc::vec![], 2),
+            Err(Error::StackUnderflow)
+        );
+    }
+}
+
+#[test]
+fn adr0064_i1_reverting_prep_state_restores_subpixel_compatibility() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    vm.engine.version = 40;
+    vm.engine.target = HintTarget::Normal;
+    for (control, compatibility, device_width) in [(4, 0, true), (6, 4, false)] {
+        vm.instruction_control = control;
+        let (_, _, actual) = vm.execute_glyph(alloc::vec![], &[], &[], 0).unwrap();
+        assert_eq!(actual, compatibility);
+        assert_eq!(vm.device_width_allowed(), device_width);
+    }
 }

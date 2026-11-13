@@ -755,6 +755,50 @@ fn adr0061_i1_partial_layout_matches_harfbuzz() {
 }
 
 #[test]
+fn adr0061_i1_cff2_all_glyphs_gdef_gpos_match_harfbuzz() {
+    let path = paths::testdata().join("harfbuzz/test/subset/data/fonts/AdobeVFPrototype.otf");
+    let bytes = std::fs::read(&path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let base = Input::new().map_set(SetKind::Unicodes, |unicodes| {
+        unicodes.add_range(0, 0x10ffff)
+    });
+    for (variation, input) in [
+        (
+            "wght=300:600",
+            base.with_axis_range(Tag::new(b"wght"), Some(300.0), Some(600.0), None, &font)
+                .unwrap(),
+        ),
+        (
+            "CNTR=0",
+            base.with_axis_pinned_to_default(Tag::new(b"CNTR"), &font)
+                .unwrap(),
+        ),
+    ] {
+        let actual = subset(&font, &input).unwrap();
+        let output =
+            std::env::temp_dir().join(format!("sofel-cff2-gdef-{}.otf", std::process::id()));
+        assert!(
+            Command::new(paths::hb_dump())
+                .arg("--subset")
+                .arg(format!("--font-file={}", path.display()))
+                .arg("--unicodes=*")
+                .arg(format!("--variations={variation}"))
+                .arg(format!("--output-file={}", output.display()))
+                .status()
+                .unwrap()
+                .success()
+        );
+        let expected = std::fs::read(&output).unwrap();
+        std::fs::remove_file(output).unwrap();
+        assert!(
+            actual == expected,
+            "{variation}: {}",
+            sofel_conformance::subset::diff(&expected, &actual)
+        );
+    }
+}
+
+#[test]
 fn adr0061_i1_base_and_cvar_restrict_weight_like_harfbuzz() {
     for (file, low, default, high) in [
         (
@@ -858,4 +902,95 @@ fn adr0061_i1_cff2_all_glyphs_reorders_gdef_variation_rows_like_harfbuzz() {
             sofel_conformance::subset::diff(&expected, &actual)
         );
     }
+}
+
+#[test]
+fn adr0061_i1_cff2_with_variable_colr_matches_harfbuzz() {
+    let original = std::fs::read(
+        paths::testdata().join("harfbuzz/test/subset/data/fonts/AdobeVFPrototype.otf"),
+    )
+    .unwrap();
+    let original_font = Font::new(&original, 0).unwrap();
+    let gid = u16::try_from(original_font.nominal_glyph(65).unwrap().0).unwrap();
+    let axes: Vec<_> = original_font.var_axes().collect();
+    let mut solid = build::colr_v1(
+        &[],
+        &[],
+        &[build::Buf::new().u8(3).u16(0).u16(8192).u32(0).done()],
+        &[(gid, 0)],
+        &[],
+        &[],
+    );
+    let offset = u32::try_from(solid.len()).unwrap();
+    solid
+        .get_mut(30..34)
+        .unwrap()
+        .copy_from_slice(&offset.to_be_bytes());
+    let region = axes
+        .iter()
+        .map(|axis| {
+            if axis.tag == Tag::new(b"wght") {
+                (0, 16384, 16384)
+            } else {
+                (0, 0, 0)
+            }
+        })
+        .collect();
+    let mut store =
+        build::item_variation_store(u16::try_from(axes.len()).unwrap(), &[region], &[vec![0]]);
+    let row_offset = store.len() - 8;
+    store
+        .get_mut(row_offset..row_offset + 2)
+        .unwrap()
+        .copy_from_slice(&1u16.to_be_bytes());
+    store.push(80);
+    solid.extend(store);
+    let mut tables: Vec<_> = original_font
+        .sfnt()
+        .records()
+        .map(|r| (r.tag.0, r.data(&original).unwrap().to_vec()))
+        .collect();
+    tables.push((*b"COLR", solid));
+    tables.push((*b"CPAL", build::cpal(1, &[0], &[[0, 0, 0, 255]], None)));
+    tables.sort_by_key(|(tag, _)| *tag);
+    let tables: Vec<_> = tables
+        .iter()
+        .map(|(tag, data)| (tag, data.clone()))
+        .collect();
+    let bytes = build::sfnt_with_version(u32::from_be_bytes(*b"OTTO"), &tables);
+    let font = Font::new(&bytes, 0).unwrap();
+    let path = std::env::temp_dir().join(format!("sofel-cff2-colr-{}.otf", std::process::id()));
+    let output = path.with_extension("subset.otf");
+    std::fs::write(&path, &bytes).unwrap();
+    for (variation, lo, hi) in [
+        ("wght=600,CNTR=50", 600., 600.),
+        ("wght=300:600:700,CNTR=50", 300., 700.),
+    ] {
+        let input = Input::new()
+            .map_set(SetKind::Unicodes, |s| s.add_range(65, 65))
+            .with_axis_range(Tag::new(b"wght"), Some(lo), Some(hi), Some(600.), &font)
+            .unwrap()
+            .with_axis_pinned(Tag::new(b"CNTR"), 50., &font)
+            .unwrap();
+        assert!(
+            Command::new(paths::hb_dump())
+                .arg("--subset")
+                .arg(format!("--font-file={}", path.display()))
+                .arg("--unicodes=41")
+                .arg(format!("--variations={variation}"))
+                .arg(format!("--output-file={}", output.display()))
+                .status()
+                .unwrap()
+                .success()
+        );
+        let reference = std::fs::read(&output).unwrap();
+        let actual = subset(&font, &input).unwrap();
+        assert!(
+            reference == actual,
+            "{variation}: {}",
+            sofel_conformance::subset::diff(&reference, &actual)
+        );
+    }
+    std::fs::remove_file(path).unwrap();
+    std::fs::remove_file(output).unwrap();
 }

@@ -228,3 +228,33 @@ fn deterministic() {
     assert_eq!(f.num_glyphs(), 4);
     assert_eq!(f.nominal_glyph(0x42).map(|g| g.0), Some(2));
 }
+
+#[test]
+fn adr0022_name_overrides_replace_insert_and_remove_records() {
+    let mut tables = sample_tables_with_glyf();
+    tables.retain(|(tag, _)| **tag != *b"name");
+    tables.push((
+        b"name",
+        name(
+            0,
+            &[(3, 1, 0x409, 1, b"old"), (3, 1, 0x409, 2, b"gone")],
+            &[],
+        ),
+    ));
+    tables.sort_by_key(|(tag, _)| **tag);
+    let bytes = sfnt(&tables);
+    let font = Font::new(&bytes, 0).unwrap();
+    let input = Input::new()
+        .with_name_override((3, 1, 0x409, 1), "字😀".as_bytes().to_vec())
+        .with_name_override((3, 1, 0x409, 2), Vec::new())
+        .with_name_override((1, 0, 0, 55), b"Mac".to_vec());
+    let result = subset(&font, &input).unwrap();
+    let output = Font::new(&result, 0).unwrap();
+    let names =
+        sofel_font::read::name::Name::new(output.table(Tag::new(b"name")).unwrap()).unwrap();
+    let rows: Vec<_> = names
+        .records()
+        .map(|r| (r.name_id, names.string(&r).unwrap().to_vec()))
+        .collect();
+    assert_eq!(rows, [(55, b"Mac".to_vec()), (1, utf16be("字😀"))]);
+}

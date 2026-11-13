@@ -1,26 +1,8 @@
 # Expected failures of HarfBuzz's subsetting tests (ADR 0022), each with
 # its reason: stage:<name> for an ADR 0022 stage not implemented yet,
 # deferred:instance and deferred:iup for the instancing ADR 0022 defers,
-# upstream:fixture for a saved output that differs from pinned hb-subset,
-# upstream:disabled for a suite HarfBuzz's meson.build leaves out and has
-# no expected files for. A case run with --preprocess (id suffixed
-# +prepared) fails for the same reason as the case without it.
-colrv1.notoemoji.tests/NotoColrEmojiGlyf-Regular.subset.default.1f696.ttf:bytes  # upstream:disabled
-colrv1.notoemoji.tests/NotoColrEmojiGlyf-Regular.subset.default.1f696.ttf+prepared:bytes  # upstream:disabled
-colrv1.notoemoji.tests/NotoColrEmojiGlyf-Regular.subset.default.1f35e.ttf:bytes  # upstream:disabled
-colrv1.notoemoji.tests/NotoColrEmojiGlyf-Regular.subset.default.1f35e.ttf+prepared:bytes  # upstream:disabled
-colrv1.notoemoji.tests/NotoColrEmojiGlyf-Regular.subset.drop-hints.1f696.ttf:bytes  # upstream:disabled
-colrv1.notoemoji.tests/NotoColrEmojiGlyf-Regular.subset.drop-hints.1f696.ttf+prepared:bytes  # upstream:disabled
-colrv1.notoemoji.tests/NotoColrEmojiGlyf-Regular.subset.drop-hints.1f35e.ttf:bytes  # upstream:disabled
-colrv1.notoemoji.tests/NotoColrEmojiGlyf-Regular.subset.drop-hints.1f35e.ttf+prepared:bytes  # upstream:disabled
-colrv1.notoemoji.tests/NotoColrEmojiGlyf-Regular.subset.drop-hints-retain-gids.1f696.ttf:bytes  # upstream:disabled
-colrv1.notoemoji.tests/NotoColrEmojiGlyf-Regular.subset.drop-hints-retain-gids.1f696.ttf+prepared:bytes  # upstream:disabled
-colrv1.notoemoji.tests/NotoColrEmojiGlyf-Regular.subset.drop-hints-retain-gids.1f35e.ttf:bytes  # upstream:disabled
-colrv1.notoemoji.tests/NotoColrEmojiGlyf-Regular.subset.drop-hints-retain-gids.1f35e.ttf+prepared:bytes  # upstream:disabled
-colrv1.notoemoji.tests/NotoColrEmojiGlyf-Regular.subset.retain-gids.1f696.ttf:bytes  # upstream:disabled
-colrv1.notoemoji.tests/NotoColrEmojiGlyf-Regular.subset.retain-gids.1f696.ttf+prepared:bytes  # upstream:disabled
-colrv1.notoemoji.tests/NotoColrEmojiGlyf-Regular.subset.retain-gids.1f35e.ttf:bytes  # upstream:disabled
-colrv1.notoemoji.tests/NotoColrEmojiGlyf-Regular.subset.retain-gids.1f35e.ttf+prepared:bytes  # upstream:disabled
+# upstream:fixture for a saved output that differs from pinned hb-subset.
+# A case run with --preprocess (id suffixed +prepared) fails for the same reason.
 glyf_partial_instancing_iup.tests/Roboto-Variable.ABC.default.all.wght=200-300-500,wdth=80-90.ttf:bytes  # upstream:fixture
 glyf_partial_instancing_iup.tests/Roboto-Variable.ABC.default.all.wght=200-300-500,wdth=80-90.ttf+prepared:bytes  # upstream:fixture
 glyf_partial_instancing_iup.tests/Roboto-Variable.ABC.default.all.wght=200-300-500,wdth=80-90.iup_optimize.ttf:bytes  # upstream:fixture

@@ -513,6 +513,8 @@ static bool var_options (int argc, char **argv, unsigned *named,
   return true;
 }
 
+#include "../variation-sample.h"
+
 static int dump_var_reference (int argc, char **argv)
 {
   bool normalize = strcmp (argv[1], "--var-normalize") == 0;
@@ -541,7 +543,16 @@ static int dump_var_reference (int argc, char **argv)
     hb_ot_var_get_axis_infos (face, 0, &actual, axes.data());
     axes.resize (actual);
     printf ("face %u\naxis_count %u\n", i, count);
-    if (!normalize)
+    if (strcmp(argv[1], "--var-random") == 0) {
+      uint32_t state = 1;
+      for (unsigned sample = 0; sample < 8; sample++) {
+        printf("rand:%u", sample);
+        for (const auto &axis : axes)
+          print_sample_axis(&state, axis.min_value, axis.max_value);
+        putchar('\n');
+      }
+    }
+    else if (!normalize)
     {
       printf ("has_data %u\n", (unsigned) hb_ot_var_has_data (face));
       for (const auto &axis : axes)
@@ -3498,7 +3509,8 @@ static const two_file_mode_t two_file_modes[] = {
 int main (int argc, char **argv)
 {
   if (argc >= 2 && (strcmp (argv[1], "--var") == 0 ||
-                    strcmp (argv[1], "--var-normalize") == 0))
+                    strcmp (argv[1], "--var-normalize") == 0 ||
+                    strcmp(argv[1], "--var-random") == 0))
     return dump_var_reference (argc, argv);
   if (argc >= 2 && strcmp (argv[1], "--subset") == 0)
     return dump_subset (argc, argv);

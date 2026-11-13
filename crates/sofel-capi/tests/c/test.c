@@ -132,6 +132,9 @@ static void check_declarations(void) {
                        sofel_move_to_func_t, sofel_line_to_func_t, sofel_quad_to_func_t,
                        sofel_cubic_to_func_t, sofel_close_func_t, void *) =
       sofel_outline_decompose;
+  int32_t (*stroke)(const sofel_outline_scratch_t *, int32_t, uint32_t, int32_t, uint32_t,
+                    sofel_move_to_func_t, sofel_line_to_func_t, sofel_quad_to_func_t,
+                    sofel_cubic_to_func_t, sofel_close_func_t, void *) = sofel_outline_stroke;
   int32_t (*draw)(const sofel_font_t *, const sofel_location_t *, uint32_t, uint32_t, int32_t, int32_t,
                   sofel_outline_scratch_t *, sofel_move_to_func_t, sofel_line_to_func_t,
                   sofel_quad_to_func_t, sofel_cubic_to_func_t, sofel_close_func_t, void *,
@@ -224,7 +227,7 @@ static void check_declarations(void) {
       (const void *)raster_quad_to,  (const void *)raster_cubic_to,
       (const void *)raster_close,    (const void *)pixel_box,
       (const void *)render,          (const void *)render_placed,
-      (const void *)render_glyph,    (const void *)validate,
+      (const void *)render_glyph,    (const void *)validate, (const void *)stroke,
       (const void *)diag_font,       (const void *)diag_table,
       (const void *)diag_offset,     (const void *)diag_severity,
       (const void *)diag_kind,       (const void *)diag_message,
@@ -636,6 +639,51 @@ static void test_outlines(const sofel_font_t *font) {
   CHECK(sofel_outline_decompose(scratch, 100, -50, 4, rec_move_to, rec_line_to, rec_quad_to,
                                 rec_cubic_to, rec_close, &rec) == SOFEL_OK);
   CHECK(same_commands(&rec, decomposed, COUNT(decomposed)));
+
+  /* sofel ADR 0076: stroke is reusable and leaves the loaded outline intact. */
+  CHECK(sofel_outline_load(font, NULL, 1, SOFEL_SCALE_NONE, 0, 0, scratch, cbox, &overlap) == SOFEL_OK);
+  for (uint32_t join = SOFEL_STROKE_JOIN_ROUND; join <= SOFEL_STROKE_JOIN_MITER_FIXED; join++) {
+    for (uint32_t border = SOFEL_STROKE_BORDER_FULL; border <= SOFEL_STROKE_BORDER_INNER; border++) {
+      rec.len = 0;
+      CHECK(sofel_outline_stroke(scratch, 1, join, 65536, border, rec_move_to, rec_line_to,
+                                 rec_quad_to, rec_cubic_to, rec_close, &rec) == SOFEL_OK);
+      CHECK(rec.len > 0 && rec.len < MAX_COMMANDS);
+    }
+  }
+  rec.len = 0;
+  CHECK(sofel_outline_stroke(scratch, -1, 0, 65536, 0, rec_move_to, rec_line_to,
+                             rec_quad_to, rec_cubic_to, rec_close, &rec) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(rec.len == 0);
+  CHECK(sofel_outline_stroke(scratch, 1, 4, 65536, 0, rec_move_to, rec_line_to,
+                             rec_quad_to, rec_cubic_to, rec_close, &rec) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_outline_stroke(scratch, 1, 0, 65536, 3, rec_move_to, rec_line_to,
+                             rec_quad_to, rec_cubic_to, rec_close, &rec) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(rec.len == 0);
+  CHECK(sofel_outline_stroke(NULL, 1, 0, 65536, 0, rec_move_to, rec_line_to,
+                             rec_quad_to, rec_cubic_to, rec_close, &rec) == SOFEL_ERROR_NULL);
+  CHECK(sofel_outline_stroke(scratch, 1, 0, 65536, 0, NULL, rec_line_to,
+                             rec_quad_to, rec_cubic_to, rec_close, &rec) == SOFEL_ERROR_NULL);
+  CHECK(sofel_outline_stroke(scratch, 1, 0, 65536, 0, rec_move_to, NULL,
+                             rec_quad_to, rec_cubic_to, rec_close, &rec) == SOFEL_ERROR_NULL);
+  CHECK(sofel_outline_stroke(scratch, 1, 0, 65536, 0, rec_move_to, rec_line_to,
+                             NULL, rec_cubic_to, rec_close, &rec) == SOFEL_ERROR_NULL);
+  CHECK(sofel_outline_stroke(scratch, 1, 0, 65536, 0, rec_move_to, rec_line_to,
+                             rec_quad_to, NULL, rec_close, &rec) == SOFEL_ERROR_NULL);
+  CHECK(sofel_outline_stroke(scratch, 1, 0, 65536, 0, rec_move_to, rec_line_to,
+                             rec_quad_to, rec_cubic_to, NULL, &rec) == SOFEL_ERROR_NULL);
+  CHECK(rec.len == 0);
+  CHECK(sofel_outline_stroke(scratch, INT32_MAX, 0, 65536, 0, rec_move_to, rec_line_to,
+                             rec_quad_to, rec_cubic_to, rec_close, &rec) == SOFEL_ERROR_TOO_LARGE);
+  CHECK(rec.len == 0);
+  CHECK(sofel_outline_decompose(scratch, 0, 0, 1, rec_move_to, rec_line_to,
+                                rec_quad_to, rec_cubic_to, rec_close, &rec) == SOFEL_OK);
+  CHECK(rec.len > 0);
+  {
+    sofel_outline_scratch_t *empty = sofel_outline_scratch_create();
+    CHECK(sofel_outline_stroke(empty, 1, 0, 65536, 0, rec_move_to, rec_line_to,
+                               rec_quad_to, rec_cubic_to, rec_close, NULL) == SOFEL_OK);
+    sofel_outline_scratch_destroy(empty);
+  }
 
   /* Errors. */
   CHECK(sofel_outline_load(font, NULL, 1, 2, 0, 0, scratch, cbox, &overlap) ==

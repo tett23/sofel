@@ -116,6 +116,51 @@ fn adr0067_i1_component_condition_at_boundary() {
 }
 
 #[test]
+fn adr0067_i1_component_condition_on_both_sides_of_boundary() {
+    let source = source();
+    let font = Font::new(&source, 0).unwrap();
+    let mut record = Varc::new(font.table(Tag::new(b"VARC")).unwrap())
+        .unwrap()
+        .record(GlyphId(3))
+        .unwrap()
+        .to_vec();
+    record[1] |= 0x80;
+    record.insert(4, 0);
+    let conditioned = synthetic_with_condition(&[(3, record)], Some((0, 0)));
+    let conditioned_font = Font::new(&conditioned, 0).unwrap();
+    let axis_bytes =
+        std::fs::read(paths::testdata().join("harfbuzz/test/api/fonts/varc-ac00-ac01.ttf"))
+            .unwrap();
+    let axis_font = Font::new(&axis_bytes, 0).unwrap();
+    let mut tables: Vec<_> = conditioned_font
+        .sfnt()
+        .records()
+        .map(|record| (record.tag, conditioned_font.table(record.tag).unwrap()))
+        .collect();
+    tables.push((
+        Tag::new(b"fvar"),
+        axis_font.table(Tag::new(b"fvar")).unwrap(),
+    ));
+    let bytes = sofel_write::build_sfnt(&tables).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    assert!(font.var_axes().next().is_some());
+    for (coordinate, visible) in [(-1, false), (0, true), (1, false)] {
+        let location = Location::from_normalized_2_14(&font, &[coordinate]);
+        let outlines = Outlines::new(font.instance(&location));
+        let mut commands = Vec::new();
+        outlines
+            .draw(
+                GlyphId(3),
+                Scale::Unscaled,
+                &mut Scratch::default(),
+                &mut FnPen(|command| commands.push(command)),
+            )
+            .unwrap();
+        assert_eq!(!commands.is_empty(), visible, "coordinate={coordinate}");
+    }
+}
+
+#[test]
 fn adr0067_i1_component_axes_and_variations_draw_at_two_locations() {
     let data = std::fs::read(paths::testdata().join("harfbuzz/test/api/fonts/varc-ac00-ac01.ttf"))
         .unwrap();
@@ -258,6 +303,27 @@ fn adr0067_i2_real_varc_subset_matches_harfbuzz() {
     }
 }
 
+#[test]
+fn adr0067_i2_renumbered_component_draws_same_path() {
+    let bytes = source();
+    let source_font = Font::new(&bytes, 0).unwrap();
+    let input = Input::new().map_set(SetKind::Glyphs, |glyphs| glyphs.add(3));
+    let subset_bytes = subset(&source_font, &input).unwrap();
+    let subset_font = Font::new(&subset_bytes, 0).unwrap();
+    let subset_varc = Varc::new(subset_font.table(Tag::new(b"VARC")).unwrap()).unwrap();
+    let (first, last) = subset_varc.coverage().ranges().next().unwrap();
+    assert_eq!(first, last);
+    assert_ne!(first, GlyphId(3));
+
+    let source_path = Outlines::new(source_font.default_instance())
+        .varc_glyph_path(GlyphId(3), sofel_font::HbScale::unscaled(&source_font))
+        .unwrap();
+    let subset_path = Outlines::new(subset_font.default_instance())
+        .varc_glyph_path(first, sofel_font::HbScale::unscaled(&subset_font))
+        .unwrap();
+    assert_eq!(subset_path, source_path);
+}
+
 fn draw(font: &Font<'_>, glyph: u32, scratch: &mut Scratch) -> (CBox, Vec<Command>) {
     let outlines = Outlines::new(font.default_instance());
     let mut commands = Vec::new();
@@ -341,6 +407,19 @@ fn adr0067_i3_self_and_two_glyph_cycles_leave_next_glyph_clean() {
     assert_eq!(
         draw(&cycle_font, 1, &mut scratch),
         draw(&cycle_font, 1, &mut Scratch::default())
+    );
+}
+
+#[test]
+fn adr0067_i3_out_of_range_component_leaves_next_glyph_clean() {
+    let bytes = synthetic(&[(3, vec![0, 0, 255])]);
+    let font = Font::new(&bytes, 0).unwrap();
+    assert!(font.num_glyphs() < 255);
+    let mut scratch = Scratch::default();
+    assert!(draw(&font, 3, &mut scratch).1.is_empty());
+    assert_eq!(
+        draw(&font, 1, &mut scratch),
+        draw(&font, 1, &mut Scratch::default())
     );
 }
 
@@ -734,4 +813,30 @@ fn adr0061_i1_two_unrelated_varc_axes_match_harfbuzz() {
             );
         }
     }
+}
+
+#[test]
+fn adr0061_i1_varc_without_retained_glyphs_matches_harfbuzz() {
+    let path = paths::testdata().join("harfbuzz/test/api/fonts/varc-ac00-ac01.ttf");
+    let bytes = std::fs::read(&path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let input = Input::new()
+        .map_set(SetKind::Glyphs, |glyphs| glyphs.add(0))
+        .with_axis_pinned_to_default(Tag::new(b"wght"), &font)
+        .unwrap();
+    let ours = subset(&font, &input).unwrap();
+    let reference =
+        std::env::temp_dir().join(format!("sofel-varc-empty-{}.ttf", std::process::id()));
+    let output = ProcessCommand::new(paths::hb_dump())
+        .arg("--subset")
+        .arg(format!("--font-file={}", path.display()))
+        .arg("--glyphs=0")
+        .arg("--variations=wght=356.5")
+        .arg(format!("--output-file={}", reference.display()))
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{:?}", output.stderr);
+    let expected = std::fs::read(&reference).unwrap();
+    std::fs::remove_file(reference).unwrap();
+    assert_eq!(ours, expected);
 }
