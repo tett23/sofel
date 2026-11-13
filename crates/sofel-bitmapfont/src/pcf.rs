@@ -70,6 +70,46 @@ fn table(data: &[u8], kind: u32) -> Result<&[u8], PcfError> {
     Err(PcfError)
 }
 
+fn directory_error_offset(data: &[u8]) -> usize {
+    let Ok(count) = u32_at(data, 4, false).and_then(|n| usize::try_from(n).map_err(|_| PcfError))
+    else {
+        return 4;
+    };
+    if count == 0 || count > 64 {
+        return 4;
+    }
+    for index in 0..count {
+        let Some(at) = index.checked_mul(16).and_then(|n| n.checked_add(8)) else {
+            return 4;
+        };
+        if data.get(at..at.saturating_add(16)).is_none() {
+            return at;
+        }
+        let Ok(kind) = u32_at(data, at, false) else {
+            return at;
+        };
+        if !matches!(kind, 1 | 4 | 8 | 32) {
+            continue;
+        }
+        let Ok(size) = u32_at(data, at.saturating_add(8), false) else {
+            return at.saturating_add(8);
+        };
+        let Ok(offset) = u32_at(data, at.saturating_add(12), false) else {
+            return at.saturating_add(12);
+        };
+        let Some(end) = usize::try_from(offset)
+            .ok()
+            .and_then(|start| start.checked_add(usize::try_from(size).ok()?))
+        else {
+            return at.saturating_add(12);
+        };
+        if end > data.len() {
+            return at.saturating_add(12);
+        }
+    }
+    0
+}
+
 fn property(data: &[u8], name: &[u8]) -> Result<Option<i32>, PcfError> {
     let props = table(data, 1)?;
     let format = u32_at(props, 0, false)?;
@@ -110,6 +150,12 @@ impl PcfFont {
     /// Whether the PCF magic is present.
     pub fn is_pcf(data: &[u8]) -> bool {
         data.starts_with(b"\x01fcp")
+    }
+
+    /// Parse a PCF face and identify a damaged table directory field.
+    /// Errors within a table use the file start when no directory field is damaged.
+    pub fn parse_positioned(data: &[u8]) -> Result<Self, (PcfError, usize)> {
+        Self::parse(data).map_err(|error| (error, directory_error_offset(data)))
     }
 
     /// Parse a PCF face with a single monochrome strike.
