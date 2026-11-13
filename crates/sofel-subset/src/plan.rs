@@ -806,7 +806,7 @@ impl Plan {
                 n
             };
         if new_to_old.iter().any(|&(new, _)| new > 0xFFFF) {
-            for name in [b"GSUB", b"GPOS", b"GDEF", b"BASE"] {
+            for name in [b"GSUB", b"GPOS", b"BASE"] {
                 let tag = Tag::new(name);
                 if drop.contains(tag.to_u32()) || no_subset.contains(tag.to_u32()) {
                     continue;

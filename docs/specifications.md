@@ -405,7 +405,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - 軸を指定しないGDEF 1.3のItemVariationStoreは、コピーするGSUBのFeatureVariationsがバージョン1.0で軸範囲の条件だけを持つ場合も含めて、残すLigCaretList、値の記録、アンカー、MATHの定数・斜体補正・上アクセント・カーニング・組み立てのVariationIndexに合わせて行と領域を詰めて書く。参照が0件ならストアを除く。GPOSの値の記録とアンカーをたどってVariationIndexを集める。送り幅などの値に現れる `0x8000` は参照に数えない。MATHだけをコピーするときは、除去したグリフの記録も含め、すべてのVariationIndexがGDEFの再配置後に元の行を指すことを確かめる。MATHだけをコピーして参照番号を合わせられない場合と、同じバイト列があるGPOSをそのままコピーする場合は拒否する。GDEFだけをコピーしてGPOSやMATHをサブセット化するとき、HarfBuzzと同じくそれらの参照番号を詰め、GDEFのストアは元のバイト列のまま写す。壊れたGDEFはこの処理の対象にしない（[ADR 0022](adr/0022-subsetting.md) の10段階目）。
 - GSUB・GPOS の Coverage 形式3・4では、24ビットのグリフ ID と範囲を使ってサブセットに残すグリフを決める。ClassDef 形式3・4のグリフクラス、SingleSubst 形式3・4の置換、SinglePos 形式3・4の位置調整も引き継ぐ。元のグリフ ID が 65535 を超えていても、出力 ID がすべて 65535 以下なら再採番してレイアウトを出力する（[ADR 0022](adr/0022-subsetting.md)）。
 - [ADR 0022](adr/0022-subsetting.md) のFeatureVariations版1.1では、残すフィーチャのLookupVariationRecordからlookupと条件形式2のVariationIndexを集める。軸を指定しないときは条件形式1〜5を保ち、部分軸指定では一定になる条件を評価し、残る条件木とlookup番号を書き直す。条件が参照するGDEFのItemVariationStoreは、使う行を残して参照番号を更新する。
-- レイアウトの表のうち、FeatureVariationsを持つGSUBをそのままコピーする場合のGDEF、GSUBとGPOSの版1.2とGDEFの版1.4、FeatureVariations版1.0の形式1でない条件と版1.1の全軸固定、出力に 65535 を超えるグリフ ID を割り当て、GDEF・BASE をサブセット化する場合や、GSUB・GPOS で SingleSubst・SinglePos 以外のサブテーブルを持つ lookup を残す場合も `Unsupported` とする。
+- レイアウトの表のうち、FeatureVariationsを持つGSUBをそのままコピーする場合のGDEF、GSUBとGPOSの版1.2とGDEFの版1.4、FeatureVariations版1.0の形式1でない条件と版1.1の全軸固定、出力に 65535 を超えるグリフ ID を割り当て、BASE をサブセット化する場合や、GSUB・GPOS で SingleSubst・SinglePos 以外のサブテーブルを持つ lookup を残す場合も `Unsupported` とする。
 
 ## WOFF と圧縮フォントの読み込み
 
