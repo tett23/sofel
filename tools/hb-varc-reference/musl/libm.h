@@ -9,6 +9,10 @@
 #include <float.h>
 #include <math.h>
 
+#ifndef M_PI_2
+#define M_PI_2 1.57079632679489661923
+#endif
+
 #ifndef __BYTE_ORDER
 #define __BYTE_ORDER __BYTE_ORDER__
 #endif
