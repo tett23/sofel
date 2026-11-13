@@ -288,7 +288,9 @@ fn keep_subrs(
                 }
             }
         }
-        for trace in env.call_trace()? {
+        // Examine callees before their callers so removed nested calls count toward
+        // the byte ranges discarded from their containing subroutine.
+        for trace in env.call_trace()?.iter().rev() {
             let target = match trace.target {
                 Source::Global(old) => p.gsubrs.get(old)?,
                 Source::Local(old) => p.lsubrs.get(old)?,

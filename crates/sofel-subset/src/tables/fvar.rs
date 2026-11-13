@@ -60,6 +60,15 @@ pub(crate) fn subset(plan: &Plan, src: &[u8]) -> Result<Vec<u8>, SubsetError> {
             for (offset, value) in [(4, range.min), (8, range.default), (12, range.max)] {
                 write_at(&mut out, start.saturating_add(offset), &fixed(value))?;
             }
+            if plan.var.n.avar2 && range.min == range.max {
+                let flags = be::u16_at(&out, start.saturating_add(16))
+                    .ok_or(SubsetError::Malformed { tag: TAG })?;
+                write_at(
+                    &mut out,
+                    start.saturating_add(16),
+                    &(flags | 1).to_be_bytes(),
+                )?;
+            }
         }
     }
     let mut count = 0u16;

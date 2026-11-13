@@ -7,6 +7,7 @@ pub(crate) mod closure;
 pub(crate) mod common;
 pub(crate) mod context;
 pub(crate) mod data;
+mod feature_variations11;
 pub(crate) mod gdef;
 pub(crate) mod gpos;
 pub(crate) mod gsub;
