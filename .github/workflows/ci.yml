@@ -287,7 +287,7 @@ jobs:
           path: |
             target/ft-dump
             target/hb-dump
-          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-${{ runner.arch }}-reference-tools-${{ steps.native-toolchain.outputs.key }}-${{ hashFiles('.github/workflows/ci.yml', 'testdata.lock', 'tools/ft-dump/**', 'tools/hb-dump/**') }}
+          key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-${{ runner.arch }}-reference-tools-${{ steps.native-toolchain.outputs.key }}-${{ hashFiles('.github/workflows/ci.yml', 'testdata.lock', 'tools/ft-dump/**', 'tools/hb-dump/**', 'tools/variation-sample.h') }}
       - name: Build ft-dump
         if: steps.reference-tools.outputs.cache-hit != 'true'
         run: |
