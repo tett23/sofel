@@ -65,7 +65,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   sofel-read        （sfnt、TTC、dfont）
   sofel-type1       （Type1、MM、CID、Type42、AFM、PFM）
   sofel-pfr
-  sofel-bitmapfont  （BDF、PCF、FNT、NE FON。PE FON は未実装）
+  sofel-bitmapfont  （BDF、PCF、FNT、NE・PE32 FON）
 
 フォントを扱うクレート
   sofel-woff    → sofel-inflate, sofel-brotli
@@ -411,6 +411,16 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 `sofel_woff::decode_woff2` は、Brotli の非圧縮ブロックに変換なしの表を格納した単一フェイスの WOFF2 を sfnt に戻す。CLI は外側の圧縮を展開した後に WOFF2 の署名を識別する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
 `sofel_woff::decode_woff` は出力サイズの上限を受け取り、WOFF 1.0 の表を物理順に展開して sfnt を返す。フォントを読み込む CLI は gzip、UNIX compress（LZW）、bzip2 を先に展開してから WOFF の署名を検査する。検証器は WOFF の不正なフィールドか圧縮表の入力オフセットを報告する。bzip2 はブロックとメンバーの CRC を検査し、破損を検出した入力オフセットを報告する。gzip の破損はメンバーを含むコンテナ先頭で報告する。[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)
+
+## 固定サイズのビットマップフェイス
+
+`Font::from_bitmap` は BDF、PCF、Windows FNT、FON の署名を識別し、指定した番号のフェイスを開く。
+フェイスから文字に対応するグリフ番号、ストライクのサイズ、グリフの送り幅と画像を取得する。
+`sofel-render` もこの形式判定とフェイス操作を使う（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+
+FON では NE または i386 PE32 のフォントリソースを読む。
+PE32 では `RT_FONT` の名前・言語ディレクトリを順にたどり、各データ項目にフェイス番号を付ける。
+リソースやフォントの宣言長が対象のセクションを越える場合はエラーを返す。
 
 ## BDF フェイス
 

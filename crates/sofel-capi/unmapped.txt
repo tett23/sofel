@@ -259,6 +259,9 @@ sofel_woff::decode_woff2 The font input commands reconstruct WOFF2 tables into a
 sofel_woff::decode_woff The font input commands reconstruct WOFF tables into an sfnt buffer.
 sofel_bitmapfont::BdfFont::* BDF parsing and fixed bitmap queries are Rust and sofel-render operations; the C font handle still accepts sfnt data only (sofel ADR 0065).
 sofel_bitmapfont::pcf::PcfFont::* PCF parsing and fixed bitmap queries are Rust and sofel-render operations; the C font handle still accepts sfnt data only (sofel ADR 0065).
+sofel_font::Font::from_bitmap Fixed bitmap faces expose Rust-owned glyph pixels; the C font handle accepts sfnt data (sofel ADR 0065).
+sofel_font::BitmapFormat::* Legacy bitmap signature detection and face selection are Rust entry points for non-sfnt inputs (sofel ADR 0065).
+sofel_font::BitmapFace::* The fixed-strike face borrows glyph images from owned Rust driver data (sofel ADR 0065).
 sofel_font::Font::from_pfr PFR opens a logical face borrowing a non-sfnt resource; the C font handle accepts sfnt bytes (sofel ADR 0065).
 sofel_font::PfrFace::* PFR outlines take a Rust Pen and embedded strikes return Rust-owned pixel buffers (sofel ADR 0065).
 sofel_read::pfr::* Physical PFR directories and program slices are borrowed Rust views outside the sfnt C handle (sofel ADR 0065).
