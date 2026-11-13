@@ -170,6 +170,7 @@ fn layout_unsupported(
     drop: &RangeSet,
     no_subset: &RangeSet,
     pinned: bool,
+    axis_change: bool,
 ) -> Result<(), SubsetError> {
     let kept = |t: &[u8; 4]| {
         let tag = Tag::new(t);
@@ -196,7 +197,8 @@ fn layout_unsupported(
                 table.version() >= 0x0001_0001
                     && sofel_font::read::be::u32_at(data, 10) != Some(0)
                     && (table.feature_variations_view().is_none()
-                        || (no_subset.contains(Tag::new(name).to_u32())
+                        || (!axis_change
+                            && no_subset.contains(Tag::new(name).to_u32())
                             && !table.conditions_are_store_independent()))
             })
     });
@@ -607,7 +609,7 @@ impl Plan {
         }
 
         let full_instance = pinned && !norm.normalized_coords.is_empty();
-        layout_unsupported(font, drop, no_subset, pinned)?;
+        layout_unsupported(font, drop, no_subset, pinned, !norm.user.is_empty())?;
         let colr_table = font.table(Tag::new(b"COLR"));
         let colr_kept = !drop.contains(Tag::new(b"COLR").to_u32())
             && !no_subset.contains(Tag::new(b"COLR").to_u32());
@@ -1039,13 +1041,17 @@ impl Plan {
                     (Tag::new(b"GPOS"), &p.layout.gpos),
                 ] {
                     if tag_kept(&tag.0)
-                        && !no_subset.contains(tag.to_u32())
                         && let Some(data) = font.table(tag)
                     {
-                        selected.extend(layout::plan::feature_variation_var_indices(
-                            layout::Gsubgpos::new(data, tag == Tag::new(b"GSUB")),
-                            &layout.features_w_dups,
-                        ));
+                        let table = layout::Gsubgpos::new(data, tag == Tag::new(b"GSUB"));
+                        if !no_subset.contains(tag.to_u32())
+                            || !table.conditions_are_store_independent()
+                        {
+                            selected.extend(layout::plan::feature_variation_var_indices(
+                                table,
+                                &layout.features_w_dups,
+                            ));
+                        }
                     }
                 }
                 if math_has_var_format {

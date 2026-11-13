@@ -35,6 +35,9 @@ backgrounds, else black.
 BDF and PCF bitmap faces use their single fixed strike. PCF supports
 monochrome glyphs; both formats write PGM (ADR 0065).
 
+PFR faces use an embedded monochrome strike at the requested size when
+available, and otherwise render the unhinted outline as PGM (ADR 0065).
+
 Bare CFF 1 and CEF faces use their PostScript character mapping and unhinted
 outlines for --char and --glyph. `sofel render --text` also shapes bare
 CFF characters through its font callbacks (ADR 0065).
@@ -289,6 +292,9 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
     if let Some(format) = BitmapFormat::detect(&bytes) {
         return render_fixed(format, &bytes, &args, out, err);
     }
+    if bytes.starts_with(b"PFR0") {
+        return render_pfr(&bytes, &args, out, err);
+    }
     if bytes.starts_with(b"%!PS-Adobe-3.0 Resource-CIDFont") {
         return render_cid(&bytes, &args, out, err);
     }
@@ -301,7 +307,23 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
     if Type1Source::has_text_header(&bytes) || bytes.starts_with(&[0x80, 0x01]) {
         return render_type1(&bytes, &args, text.as_deref(), out, err);
     }
-    let font = match Font::new(&bytes, args.face) {
+    let type42_source;
+    let type42 = if bytes.starts_with(b"%!PS-TrueTypeFont") {
+        type42_source = match sofel_type1::type42::Type42Source::parse(&bytes, bytes.len()) {
+            Ok(source) => source,
+            Err(e) => return fail(err, e.to_string()),
+        };
+        match Font::from_type42(&type42_source, args.face) {
+            Ok(face) => Some(face),
+            Err(e) => return fail(err, e.to_string()),
+        }
+    } else {
+        None
+    };
+    let font = match type42.as_ref().map_or_else(
+        || Font::new(&bytes, args.face),
+        |face| Ok(face.inner_font()),
+    ) {
         Ok(f) => f,
         Err(e) => return fail(err, format!("{}: {e}", args.file.to_string_lossy())),
     };
@@ -313,6 +335,7 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
         return match crate::text_image::draw(
             &font,
             &location,
+            type42.as_ref(),
             args.ppem,
             &text,
             &args.features,
@@ -324,11 +347,21 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
     }
     let glyph = match args.target {
         Target::Glyph(g) => GlyphId(g),
-        Target::Char(c) => match font.nominal_glyph(c) {
+        Target::Char(c) => match type42
+            .as_ref()
+            .map_or_else(|| font.nominal_glyph(c), |face| face.nominal_glyph(c))
+        {
             Some(g) => g,
             None => return fail(err, format!("no glyph for U+{c:04X}")),
         },
         Target::Text(_) | Target::TextFile(_) => unreachable!(),
+    };
+    let glyph = match type42.as_ref() {
+        Some(face) => match face.embedded_glyph(glyph) {
+            Some(mapped) => mapped,
+            None => return fail(err, format!("invalid Type 42 glyph {}", glyph.0)),
+        },
+        None => glyph,
     };
     if !args.no_bitmap
         && location.ft_default()
@@ -554,6 +587,83 @@ fn render_cid(bytes: &[u8], args: &Args, out: &mut dyn Write, err: &mut dyn Writ
     )
     .into_bytes();
     image.extend(b.pixels.iter().map(|v| !v));
+    if out.write_all(&image).is_err() {
+        return fail("cannot write the image");
+    }
+    0
+}
+
+fn render_pfr(bytes: &[u8], args: &Args, out: &mut dyn Write, err: &mut dyn Write) -> i32 {
+    let mut fail = |message: &str| {
+        let _ = writeln!(err, "sofel-render: {message}");
+        1
+    };
+    let Ok(face) = Font::from_pfr(bytes, args.face) else {
+        return fail("invalid PFR font or face");
+    };
+    let glyph = match args.target {
+        Target::Glyph(glyph) => GlyphId(glyph),
+        Target::Char(codepoint) => match face.nominal_glyph(codepoint) {
+            Some(glyph) => glyph,
+            None => return fail("character is not mapped"),
+        },
+        Target::Text(_) | Target::TextFile(_) => return fail("PFR text rendering is unavailable"),
+    };
+    if !args.no_bitmap {
+        let embedded = match face.bitmap(glyph, args.ppem, args.ppem) {
+            Ok(bitmap) => bitmap,
+            Err(_) => return fail("invalid PFR bitmap"),
+        };
+        if let Some(bitmap) = embedded {
+            let width = usize::from(bitmap.width);
+            let rows = usize::from(bitmap.height);
+            let Some(size) = width.checked_mul(rows).filter(|size| *size <= 67_108_864) else {
+                return fail("PFR bitmap is too large");
+            };
+            let stride = width.saturating_add(7) / 8;
+            let mut image = format!(
+                "P5\n# left {} top {}\n{} {}\n255\n",
+                bitmap.left, bitmap.top, width, rows
+            )
+            .into_bytes();
+            image.reserve(size);
+            for row in 0..rows {
+                for column in 0..width {
+                    let Some(index) = row
+                        .checked_mul(stride)
+                        .and_then(|n| n.checked_add(column / 8))
+                    else {
+                        return fail("invalid PFR bitmap");
+                    };
+                    let Some(&byte) = bitmap.pixels.get(index) else {
+                        return fail("invalid PFR bitmap");
+                    };
+                    image.push(if byte & (0x80 >> (column % 8)) == 0 {
+                        255
+                    } else {
+                        0
+                    });
+                }
+            }
+            if out.write_all(&image).is_err() {
+                return fail("cannot write the image");
+            }
+            return 0;
+        }
+    }
+    let mut raster = Rasterizer::new();
+    let Ok(bitmap) = glyph::render_pfr(&face, glyph, args.ppem, &mut raster) else {
+        return fail("PFR glyph cannot be rendered");
+    };
+    if bitmap.width == 0 || bitmap.rows == 0 {
+        return fail("PFR glyph is empty");
+    }
+    let mut image = format!(
+        "P5\n# left {} top {}\n{} {}\n255\n",
+        bitmap.left, bitmap.top, bitmap.width, bitmap.rows
+    )
+    .into_bytes();
+    image.extend(bitmap.pixels.iter().map(|value| !value));
     if out.write_all(&image).is_err() {
         return fail("cannot write the image");
     }
