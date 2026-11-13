@@ -475,6 +475,7 @@ Type 1 の Multiple Masters では、`Type1Face::multiple_masters` が軸の名�
 ## 素の CFF フェイスと CEF
 
 `sofel-font::Cff::from_bare` は sfnt に包まれていない CFF 1 をフェイス番号で開く。Name INDEX の位置で Top DICT を選び、CharStrings のグリフ数、charset のグリフ名、Encoding を既存の CFF ビューで問い合わせる。`BareCffFace` は Adobe Glyph List を使った Unicode の文字対応、8ビットの Encoding、グリフ名、charstring の送り幅を返す。`sofel-outline::draw_bare_cff` はそのグリフの輪郭をヒンティングなしで描く。`sofel-render` の通常ファイル入力は素の CFF 1 を判別し、`--glyph` または `--char` で輪郭を PGM に描く。`sofel render --text` は `SubFont` の文字対応と送り幅の関数を使って一行をシェーピングし、同じ輪郭で描く。`sofel-validate` は素の CFF 1 の全フェイスを検査し、破損位置を CFF 表からのオフセットで報告する。範囲外のフェイス番号、必須の INDEX や CharStrings の欠落を拒む。共通の `Font` 型への接続は未実装である（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+CID-keyed の素の CFF 1 と CEF では、フェイスのグリフ数は最大 CID に 1 を加えた値とする。送り幅と輪郭の問い合わせは CID を charset で CharStrings の索引に変換する。charset にない CID の問い合わせは失敗し、Unicode の文字対応は空になる。
 
 CEF（Compact Embedded Font）は `head` がなく `CFF ` 表を持つ `OTTO` ディレクトリから開く。
 `BareCffFace::new` はフェイス番号 0 を受け付け、CFF のグリフ名から文字を対応付ける。

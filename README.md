@@ -140,6 +140,7 @@ PCF の固定サイズの 1 bit 画像も同じ引数で PGM に変換する。P
 Windows FNT と NE・PE32 FON の固定サイズの 1 bit 画像も同じ引数で PGM に変換する。FNT は 1 フェイスで、FON のリソースは `--face` で選ぶ。指定サイズのストライクがない場合と `--no-bitmap` を指定した場合は描画に失敗する（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
 
 素の CFF 1 の輪郭は `--face` でフェイスを選び、`--char` または `--glyph` で指定して PGM に描く。`sofel render --text` は同じフェイスの文字対応と送り幅を使って一行を描く。文字の対応には PostScript グリフ名を使う（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
+CID-keyed の素の CFF 1 と CEF は、`--glyph` に CID を指定して描画する。
 
 可変フォントの輪郭には `--variations=wght=500` や `--named-instance=0` で位置を指定できる。既定以外の位置では埋め込みビットマップを使わず、輪郭を描く。
 
