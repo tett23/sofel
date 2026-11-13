@@ -103,3 +103,48 @@ fn adr0030_i10_public_composite_budget_does_not_return_partial_extents() {
     assert_eq!(instance.glyf_extents(GlyphId(2)), None);
     assert_eq!(instance.v_origin(GlyphId(2), |_| None), (251, 250));
 }
+
+#[test]
+fn adr0027_use_my_metrics_does_not_load_unused_contour_points() {
+    // HarfBuzz test_advance_tt_var_comp_use_my_metrics. The child declares
+    // 65,536 points, but only its phantom points are needed for advances.
+    let mut component = comp(1, Args::Xy(0, 0));
+    component.flags |= USE_MY_METRICS;
+    let composite = composite_glyph(&[component; 4], [0; 4], false);
+    let child = build::Buf::new()
+        .i16(1)
+        .bytes(&[0; 8])
+        .u16(u16::MAX)
+        .u16(0)
+        .done();
+    let (glyf, loca) = glyf_loca(&[composite, child], false);
+    let gvar = build::Buf::new()
+        .u32(65536)
+        .u16(1)
+        .u16(0)
+        .u32(26)
+        .u16(2)
+        .u16(0)
+        .u32(26)
+        .bytes(&[0; 6])
+        .done();
+    let replacements = [
+        (b"glyf", glyf),
+        (b"loca", loca),
+        (b"head", head(HeadSpec::default())),
+        (b"hhea", hhea(2)),
+        (b"hmtx", hmtx(&[(600, 0); 2], &[])),
+        (b"maxp", maxp05(2)),
+        (b"fvar", fvar_one_axis()),
+        (b"gvar", gvar),
+    ];
+    let mut tables = sample_tables();
+    tables.retain(|(tag, _)| !replacements.iter().any(|(other, _)| tag == other));
+    tables.extend(replacements);
+    tables.sort_by_key(|(tag, _)| **tag);
+    let bytes = sfnt(&tables);
+    let font = Font::new(&bytes, 0).unwrap();
+    let location = Location::from_design(&font, &[0.5]);
+    assert_eq!(font.default_instance().advance(GlyphId(0)), 600);
+    assert_eq!(font.instance(&location).advance(GlyphId(0)), 600);
+}
