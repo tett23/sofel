@@ -398,7 +398,6 @@ impl Plan {
                 let tag = Tag::new(tag);
                 !drop.contains(tag.to_u32())
             });
-            let varc_safe = !varc_retained || varc_unrelated_axis_change;
             let simple_avar = (point_pins && drop.contains(Tag::new(b"avar").to_u32()))
                 || identity_avar2
                 || (norm.avar2 && norm.all_axes_pinned)
@@ -413,13 +412,12 @@ impl Plan {
                             })
                     })
                 });
-            let metadata_only = no_other_variation_data && varc_safe && simple_avar;
+            let metadata_only = no_other_variation_data && simple_avar;
             let gvar_full_pin = norm.all_axes_pinned
                 && font.table(Tag::new(b"gvar")).is_some()
                 && font.table(Tag::new(b"GVAR")).is_none()
                 && font.table(Tag::new(b"glyf")).is_some()
                 && font.table(Tag::new(b"avar")).is_none()
-                && varc_safe
                 && !other_variation_tags.iter().any(|tag| {
                     **tag != *b"gvar" && **tag != *b"GVAR" && font.table(Tag::new(tag)).is_some()
                 });
@@ -477,7 +475,7 @@ impl Plan {
             let passthrough = no_subset.contains(t.to_u32());
             let dropped = drop.contains(t.to_u32()) || (pinned && PINNED_DROP.contains(&tag));
             if font.table(t).is_some() && !dropped && !passthrough {
-                if tag == b"VARC" && (norm.user.is_empty() || varc_unrelated_axis_change) {
+                if tag == b"VARC" {
                     let source = font.table(t).unwrap_or(&[]);
                     Varc::new(source).map_err(|_| SubsetError::Malformed { tag: t })?;
                     continue;
@@ -648,6 +646,21 @@ impl Plan {
                     }
                 }
             }
+        }
+        if !p.var.n.user.is_empty()
+            && !varc_unrelated_axis_change
+            && tag_kept(b"VARC")
+            && font.table(Tag::new(b"VARC")).is_some_and(|data| {
+                Varc::new(data).is_ok_and(|varc| {
+                    cur.iter()
+                        .any(|glyph| varc.components(sofel_font::read::GlyphId(glyph)).is_some())
+                })
+            })
+        {
+            return Err(SubsetError::Unsupported {
+                tag: Tag::new(b"fvar"),
+                reason: "instancing variation data needs ADR 0061",
+            });
         }
         p.glyphset_varced = cur.clone();
         // _nameid_closure
