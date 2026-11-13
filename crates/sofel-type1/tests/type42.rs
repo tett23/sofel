@@ -59,7 +59,16 @@ fn adr0065_i1_type42_reads_binary_sfnts() {
 #[test]
 fn adr0065_i1_type42_skips_postscript_comments() {
     let data = b"%!PS-TrueTypeFont\n% /sfnts [<bad>]\n/FontType 42 def\n/Encoding StandardEncoding def\n/CharStrings 1 dict dup begin /.notdef 0 def end readonly def\n/sfnts [ % a comment\n<000100000000000000000000> ] def";
-    assert_eq!(Type42Source::parse(data, 12).unwrap().sfnt().len(), 12);
+    for ending in ["\n", "\r", "\r\n"] {
+        let bytes = std::str::from_utf8(data).unwrap().replace('\n', ending);
+        assert_eq!(
+            Type42Source::parse(bytes.as_bytes(), 12)
+                .unwrap()
+                .sfnt()
+                .len(),
+            12
+        );
+    }
 }
 
 #[test]
