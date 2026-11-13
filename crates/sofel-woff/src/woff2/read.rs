@@ -91,6 +91,9 @@ pub fn decode_woff2(input: &[u8], limit: usize) -> Result<Vec<u8>, DecodeError> 
         stored_size = stored_size
             .checked_add(entry.stored as usize)
             .ok_or(error(at, "stream length overflow"))?;
+        if stored_size > limit {
+            return Err(error(at, "transformed stream exceeds limit"));
+        }
         entries.push(entry);
     }
     if sfnt_size != total {
@@ -183,6 +186,24 @@ pub fn decode_woff2(input: &[u8], limit: usize) -> Result<Vec<u8>, DecodeError> 
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn adr0065_i2_transformed_stream_limit_before_brotli() {
+        let mut input = [0; 51];
+        input[..4].copy_from_slice(b"wOF2");
+        input[4..8].copy_from_slice(&0x10000_u32.to_be_bytes());
+        input[8..12].copy_from_slice(&51u32.to_be_bytes());
+        input[12..14].copy_from_slice(&1u16.to_be_bytes());
+        input[16..20].copy_from_slice(&32u32.to_be_bytes());
+        input[48..].copy_from_slice(&[0x43, 4, 33]);
+        let rejected = decode_woff2(&input, 32).unwrap_err();
+        assert_eq!(
+            (rejected.offset, rejected.reason),
+            (48, "transformed stream exceeds limit")
+        );
+        // At the limit, the directory is accepted and decoding reaches the empty stream.
+        assert_eq!(decode_woff2(&input, 33).unwrap_err().offset, 51);
+    }
 
     #[test]
     fn i1_hmtx_restores_omitted_bearings_and_empty_glyph() {
