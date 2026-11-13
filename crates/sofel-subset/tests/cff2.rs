@@ -734,3 +734,15 @@ fn downgrade_writes_a_cid_keyed_cff() {
     let fs = top.fd_select as usize;
     assert_eq!(&cff[fs..fs + 8], &[3, 0, 1, 0, 0, 0, 0, 4]);
 }
+
+#[test]
+fn cff2_no_hinting_removes_nested_calls_to_empty_subroutines() {
+    let mut programs = charstrings();
+    programs[2] = charstring(&[Cs::I(-107), Cs::Op(29)]);
+    let global = charstring(&[Cs::I(-107), Cs::Op(10), Cs::Op(11)]);
+    let local = charstring(&[Cs::I(0), Cs::I(10), Cs::Op(1), Cs::Op(11)]);
+    let bytes = font_with_programs(vec![global], vec![local], programs);
+    let font = Font::new(&bytes, 0).unwrap();
+    let out = subset(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)).unwrap();
+    assert_eq!(out, include_bytes!("data/cff2-no-hint-empty-subr-hb15.otf"));
+}

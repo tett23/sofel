@@ -300,7 +300,59 @@ impl Plan {
                     norm.user.values().all(|r| r.min == r.max) || norm.user.contains_key(&tag)
                 })
             });
-        let avar2_range = identity_avar2 && norm.user.values().any(|r| r.min < r.max);
+        if norm.avar2 && !norm.all_axes_pinned && !identity_avar2 {
+            norm.old_intermediates = norm.axes_location.clone();
+            let ranges = crate::tables::avar::avar2_reachable_ranges(
+                font,
+                &norm,
+                font.table(Tag::new(b"CFF2")).is_none(),
+            )?;
+            norm.avar2_reachable = ranges.reachable;
+            norm.avar2_self_contained = ranges.self_contained;
+            if font.table(Tag::new(b"VARC")).is_some() && !drop.contains(Tag::new(b"VARC").to_u32())
+            {
+                norm.avar2_reachable.clear();
+            }
+            norm.retained_axis_indices = norm
+                .axis_tags
+                .iter()
+                .enumerate()
+                .filter_map(|(i, tag)| (!norm.avar2_self_contained.contains_key(tag)).then_some(i))
+                .collect();
+            norm.axes_location = norm
+                .avar2_self_contained
+                .iter()
+                .map(|(&tag, &coord)| {
+                    (
+                        tag,
+                        crate::input::AxisRange {
+                            min: coord,
+                            default: coord,
+                            max: coord,
+                        },
+                    )
+                })
+                .collect();
+            norm.normalized_coords = if norm.avar2_self_contained.is_empty() {
+                Vec::new()
+            } else {
+                norm.axis_tags
+                    .iter()
+                    .map(|tag| {
+                        norm.avar2_self_contained.get(tag).map_or(0, |&value| {
+                            crate::instance::f64_to_i32(sofel_geom::float::hb_roundf32(
+                                value * 16384.0,
+                            ))
+                        })
+                    })
+                    .collect()
+            };
+            norm.pinned_at_default = norm.avar2_self_contained.values().all(|&v| v == 0.0);
+        }
+        let avar2_range = norm.avar2
+            && !norm.all_axes_pinned
+            && norm.avar2_self_contained.is_empty()
+            && (!identity_avar2 || norm.user.values().any(|r| r.min < r.max));
         let point_pins = !norm.user.is_empty() && norm.user.values().all(|r| r.min == r.max);
         // During a complete glyf instance, HarfBuzz writes hmtx/vmtx from
         // the four instanced phantom points and drops HVAR/VVAR.
@@ -341,7 +393,7 @@ impl Plan {
                 b"HVAR" | b"VVAR" => {
                     pinned_glyf
                         || (!norm.all_axes_pinned
-                            && !norm.avar2
+                            && (!norm.avar2 || !norm.avar2_self_contained.is_empty())
                             && font.table(Tag::new(tag)).is_some_and(|data| {
                                 sofel_font::read::be::u32_at(data, 8).is_some()
                             })
@@ -349,10 +401,12 @@ impl Plan {
                                 .set(SetKind::NoSubsetTables)
                                 .contains(Tag::new(tag).to_u32()))
                 }
-                b"cvar" => norm.all_axes_pinned || !norm.avar2,
+                b"cvar" => {
+                    norm.all_axes_pinned || !norm.avar2 || !norm.avar2_self_contained.is_empty()
+                }
                 b"MVAR" => {
                     norm.all_axes_pinned
-                        || (!norm.avar2
+                        || ((!norm.avar2 || !norm.avar2_self_contained.is_empty())
                             && !input
                                 .set(SetKind::NoSubsetTables)
                                 .contains(Tag::new(tag).to_u32())
@@ -360,7 +414,14 @@ impl Plan {
                                 sofel_font::read::mvar::Mvar::new(data).is_ok()
                             }))
                 }
-                b"gvar" => !norm.avar2 || inert_gvar || avar2_range || point_pins || pinned_glyf,
+                b"gvar" => {
+                    !norm.avar2
+                        || inert_gvar
+                        || avar2_range
+                        || point_pins
+                        || pinned_glyf
+                        || !norm.avar2_self_contained.is_empty()
+                }
                 b"GVAR" => inert_gvar,
                 _ => false,
             };
@@ -386,7 +447,12 @@ impl Plan {
             false
         };
         if !norm.user.is_empty() {
-            if norm.avar2 && !norm.all_axes_pinned && !identity_avar2 {
+            if norm.avar2
+                && !norm.all_axes_pinned
+                && !identity_avar2
+                && !avar2_range
+                && norm.avar2_self_contained.is_empty()
+            {
                 return Err(SubsetError::Unsupported {
                     tag: Tag::new(b"avar"),
                     reason: "pinning the axes of avar version 2 (deferred by ADR 0022)",
@@ -410,7 +476,7 @@ impl Plan {
                 !drop.contains(tag.to_u32())
             });
             let simple_avar = (point_pins && drop.contains(Tag::new(b"avar").to_u32()))
-                || identity_avar2
+                || norm.avar2
                 || (norm.avar2 && norm.all_axes_pinned)
                 || font.table(Tag::new(b"avar")).is_none_or(|data| {
                     sofel_font::read::avar::Avar::new(data).is_ok_and(|table| {
@@ -825,6 +891,20 @@ impl Plan {
                         reason: "the GDEF item variation store (ADR 0022 stage 10)",
                     });
                 };
+                for (tag, layout) in [
+                    (Tag::new(b"GSUB"), &p.layout.gsub),
+                    (Tag::new(b"GPOS"), &p.layout.gpos),
+                ] {
+                    if tag_kept(&tag.0)
+                        && !no_subset.contains(tag.to_u32())
+                        && let Some(data) = font.table(tag)
+                    {
+                        selected.extend(layout::plan::feature_variation_var_indices(
+                            layout::Gsubgpos::new(data, tag == Tag::new(b"GSUB")),
+                            &layout.features_w_dups,
+                        ));
+                    }
+                }
                 if math_has_var_format {
                     let Some(math_indices) = crate::tables::math::retained_variation_indices(
                         math_data,
