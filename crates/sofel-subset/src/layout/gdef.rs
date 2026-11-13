@@ -142,7 +142,7 @@ pub(crate) fn is_variation_device(dev: D<'_>) -> bool {
     !dev.is_null() && dev.u16(4) == 0x8000
 }
 
-pub(super) fn pinned_delta(p: &crate::plan::Plan, dev: D<'_>) -> i32 {
+pub(crate) fn pinned_delta(p: &crate::plan::Plan, dev: D<'_>) -> i32 {
     if !is_variation_device(dev) {
         return 0;
     }

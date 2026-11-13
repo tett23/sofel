@@ -148,8 +148,7 @@ pub(crate) struct PlanLayout {
     pub layout_features: RangeSet,
     pub layout_scripts: RangeSet,
     /// Every axis is pinned and GDEF has a variation store: its
-    /// variation indices map to `HB_OT_LAYOUT_NO_VARIATIONS_INDEX` with
-    /// no delta (`layout_variation_idx_delta_map`).
+    /// variation indices map to `HB_OT_LAYOUT_NO_VARIATIONS_INDEX`.
     pub varidx_pinned: bool,
     /// Rounded GDEF variation deltas at a fully pinned location.
     pub pinned_layout_deltas: BTreeMap<u32, i32>,
@@ -392,7 +391,29 @@ impl Plan {
                 && !other_variation_tags.iter().any(|tag| {
                     **tag != *b"gvar" && **tag != *b"GVAR" && font.table(Tag::new(tag)).is_some()
                 });
-            if !(norm.all_axes_pinned && norm.pinned_at_default) && !metadata_only && !gvar_full_pin
+            // A separate outline source or a retained BASE/COLR store needs its
+            // own instancing path, even when the CFF2 outlines can be pinned.
+            let kept = |tag: &[u8; 4]| {
+                let tag = Tag::new(tag);
+                font.table(tag).filter(|_| !drop.contains(tag.to_u32()))
+            };
+            let cff2_full_pin = norm.all_axes_pinned
+                && kept(b"CFF2").is_some()
+                && [b"glyf", b"GLYF", b"gvar", b"GVAR", b"cvar", b"VARC"]
+                    .iter()
+                    .all(|t| kept(t).is_none())
+                && kept(b"BASE").is_none_or(|data| {
+                    sofel_font::read::base::Base::new(data)
+                        .is_ok_and(|table| table.item_var_store_offset().unwrap_or(0) == 0)
+                })
+                && kept(b"COLR").is_none_or(|data| {
+                    sofel_font::read::colr::Colr::new(data)
+                        .is_ok_and(|table| table.var_store_offset() == 0)
+                });
+            if !(norm.all_axes_pinned && norm.pinned_at_default)
+                && !metadata_only
+                && !gvar_full_pin
+                && !cff2_full_pin
             {
                 return Err(SubsetError::Unsupported {
                     tag: Tag::new(b"fvar"),

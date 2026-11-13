@@ -10,7 +10,7 @@ use crate::sfnt::{Collection, Sfnt, TableRecord};
 use crate::{
     CountWidth, Diagnostic, Kind, Tag, avar, base, cbdt, cblc, cff, cmap, colr, cpal,
     feature_variations, fvar, gdef, glyf, gpos, gsub, gvar, head, hhea, hmtx, hvar, loca, math,
-    maxp, mvar, name, os2, post, sbix, stat, svg, vhea, vmtx, vorg,
+    maxp, mvar, name, os2, post, sbix, stat, svg, varc, vhea, vmtx, vorg,
 };
 
 /// The pseudo tag of diagnostics about the table directory.
@@ -227,6 +227,9 @@ fn sfnt_inner(
     }
     if let Some(d) = table(sfnt, mvar::TAG) {
         mvar::validate(d, axes, report);
+    }
+    if let Some(d) = table(sfnt, varc::TAG) {
+        varc::validate(d, report);
     }
     if let Some(d) = table(sfnt, stat::TAG) {
         stat::validate(d, report);

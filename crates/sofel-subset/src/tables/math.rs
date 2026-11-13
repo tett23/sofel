@@ -298,9 +298,10 @@ fn device_copy(s: &mut Sub<'_, '_>, dev: D<'_>) -> bool {
 
 /// `MathValueRecord::copy` of the record at `at` of `base`.
 fn value_record(s: &mut Sub<'_, '_>, base: D<'_>, at: usize) {
-    s.s.u16(base.u16(at));
-    let field = s.s.u16(0);
     let dev = device(base.off16(at.saturating_add(2)));
+    let delta = crate::layout::gdef::pinned_delta(s.p, dev);
+    s.s.u16(base.u16(at).wrapping_add(crate::instance::lo16(delta)));
+    let field = s.s.u16(0);
     s.serialize_copy(field, 2, dev, |s| device_copy(s, dev));
 }
 

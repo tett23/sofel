@@ -135,3 +135,34 @@ fn adr0072_i4_color_svg_is_registered_for_a_drawn_glyph_and_run() {
         ("19".into(), "simple_linear", 48)
     );
 }
+
+#[test]
+fn i1_i2_noto_color_emoji_registration_and_card_boundary() {
+    let root = std::env::temp_dir().join(format!("sofel-noto-gallery-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("cbdt.ttf"), b"OTTO").unwrap();
+    std::fs::write(root.join("colrv1.ttf"), b"OTTO").unwrap();
+    std::fs::write(
+        root.join("fonts.tsv"),
+        "color-noto-cbdt\tcolor-noto-cbdt\t-\tcbdt.ttf\n\
+         color-noto-colrv1\tcolor-noto-colrv1\t-\tcolrv1.ttf\n",
+    )
+    .unwrap();
+    let samples = inputs::cases(&root, &root.join("fonts.tsv"), &root, false).unwrap();
+    std::fs::remove_dir_all(root).unwrap();
+    for id in ["color-noto-cbdt", "color-noto-colrv1"] {
+        let sample = samples.iter().find(|sample| sample.id == id).unwrap();
+        assert_eq!(sample.face, 0);
+        assert_eq!(sample.solo.kind(), "char");
+        assert_eq!(sample.solo.value(), "U+1F600");
+        assert_eq!(sample.text, "👩‍💻");
+        assert_eq!(sample.ppem, 109);
+        assert!(sample.color);
+        assert!(!sample.unsupported_empty);
+    }
+
+    let fitting = pixels::blank(136, 128).unwrap();
+    assert!(sheet::card(Some(&fitting), None, &[]).is_ok());
+    let overflowing = pixels::blank(137, 128).unwrap();
+    assert!(sheet::card(Some(&overflowing), None, &[]).is_err());
+}

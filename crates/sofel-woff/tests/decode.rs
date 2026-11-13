@@ -46,3 +46,35 @@ fn i2_bounded_input_rejects_short_or_overlapping_woff_records() {
         assert!(decode_woff(&damaged, input.len()).is_err());
     }
 }
+
+#[test]
+fn adr0065_i1_woff2_reads_untransformed_tables_across_brotli_blocks() {
+    let payload: Vec<u8> = (0..=255u8).cycle().take(70_000).collect();
+    let font = build_sfnt_ordered(
+        &[(Tag::new(b"head"), &[0; 54]), (Tag::new(b"Test"), &payload)],
+        &[],
+    )
+    .unwrap();
+    let packed = encode(&font, Format::Woff2).unwrap();
+    let decoded = sofel_woff::decode_woff2(&packed, font.len()).unwrap();
+    let face = sofel_read::sfnt::Sfnt::new(&decoded).unwrap();
+    assert_eq!(face.table(Tag::new(b"Test")).unwrap(), payload);
+    assert!(sofel_woff::decode_woff2(&packed, font.len() - 1).is_err());
+    for end in [4, 47, 48, packed.len() - 1] {
+        assert!(sofel_woff::decode_woff2(&packed[..end], font.len()).is_err());
+    }
+}
+
+#[test]
+fn adr0065_i2_woff2_checks_optional_block_bounds() {
+    let font = build_sfnt_ordered(&[(Tag::new(b"head"), &[0; 54])], &[]).unwrap();
+    let packed = encode(&font, Format::Woff2).unwrap();
+    for (field, value) in [(28, 48u32), (32, 1), (36, 12), (40, 48), (44, 1)] {
+        let mut broken = packed.clone();
+        broken[field..field + 4].copy_from_slice(&value.to_be_bytes());
+        assert!(
+            sofel_woff::decode_woff2(&broken, font.len()).is_err(),
+            "field {field}"
+        );
+    }
+}

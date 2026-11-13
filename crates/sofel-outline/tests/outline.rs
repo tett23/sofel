@@ -900,3 +900,13 @@ fn adr0064_i1_gx_instructions_read_the_selected_location() {
         assert_eq!(scratch.points()[1], Point { x: expected, y: 17 });
     }
 }
+
+#[test]
+fn adr0064_i1_conditional_jump_reaches_freetype_hint_coordinates() {
+    for (flag, x) in [(0, 77), (1, 53)] {
+        let scratch =
+            hinted_square(&[0x01, 0xb1, 1, 53, 0xb1, 4, flag, 0x78, 0x21, 0xb0, 77, 0x48]);
+        assert_eq!(scratch.points()[1], Point { x, y: 1024 });
+        assert_eq!(scratch.point_tags()[1], 8);
+    }
+}

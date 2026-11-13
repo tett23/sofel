@@ -1144,6 +1144,24 @@ int32_t sofel_scale_layout_font_extents(const sofel_scale_t *scale, const sofel_
 
 /* ------------------------------------------------------ layout queries */
 
+/*
+ * Copy a page of GSUB or GPOS FeatureList tags in record order, retaining
+ * duplicates. table_tag is SOFEL_TAG('G','S','U','B') or
+ * SOFEL_TAG('G','P','O','S'). *total is independent of start; *written is
+ * the number copied. This function returns SOFEL_OK even when capacity is
+ * smaller than the remaining tags, unlike the general variable-output
+ * convention. tags may be NULL when capacity is 0. A required NULL pointer
+ * returns SOFEL_ERROR_NULL before an invalid table tag is checked; errors
+ * leave tags, *written and *total unchanged (sofel ADR 0075).
+ *
+ * Rust: sofel_font::Font::feature_tags
+ * HarfBuzz: hb_ot_layout_table_get_feature_tags
+ * FreeType: none
+ */
+int32_t sofel_font_feature_tags(const sofel_font_t *font, uint32_t table_tag,
+                                uint32_t start, uint32_t *tags, uint32_t capacity,
+                                uint32_t *written, uint32_t *total);
+
 /* ADR 0062: pass NULL scale for font units and no pixel-size Device delta. */
 /* The shared evaluator also supplies GPOS positioning and BASE queries.
  * Rust: sofel_font::var::Instance::layout_queries
@@ -1715,6 +1733,30 @@ int32_t sofel_outline_load_truetype_v35(const sofel_font_t *font, const sofel_lo
                                         uint32_t glyph, uint16_t ppem, uint32_t target,
                                         sofel_outline_scratch_t *scratch, int32_t *cbox,
                                         uint32_t *overlap);
+
+/*
+ * Loads a native v35 TrueType outline at square ppem with the selected load
+ * target and writes the grid-fitted horizontal advance in 26.6 pixels.
+ * Rust: sofel_outline::Outlines::load_truetype_v35_with_advance
+ * HarfBuzz: none
+ * FreeType: FT_Load_Glyph
+ */
+int32_t sofel_outline_load_truetype_v35_with_advance(const sofel_font_t *font, const sofel_location_t *location,
+                                        uint32_t glyph, uint16_t ppem, uint32_t target,
+                                        sofel_outline_scratch_t *scratch, int32_t *cbox,
+                                        uint32_t *overlap, int32_t *advance);
+
+/*
+ * Loads a native v40 TrueType outline at square ppem with the selected load
+ * target and writes the grid-fitted horizontal advance in 26.6 pixels.
+ * Rust: sofel_outline::Outlines::load_truetype_v40
+ * HarfBuzz: none
+ * FreeType: FT_Load_Glyph
+ */
+int32_t sofel_outline_load_truetype_v40(const sofel_font_t *font, const sofel_location_t *location,
+                                        uint32_t glyph, uint16_t ppem, uint32_t target,
+                                        sofel_outline_scratch_t *scratch, int32_t *cbox,
+                                        uint32_t *overlap, int32_t *advance);
 
 /*
  * Sends the outline last loaded into `scratch` to the pen, after moving

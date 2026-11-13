@@ -15,6 +15,7 @@ mod decode;
 pub use decode::{DecodeError, decode_woff};
 mod woff;
 mod woff2;
+pub use woff2::decode_woff2;
 
 /// Output container.
 #[derive(Clone, Copy, Debug)]

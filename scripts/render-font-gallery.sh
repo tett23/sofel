@@ -21,6 +21,7 @@ mkdir "$staging"
 
 sh scripts/fetch-testdata.sh
 sh scripts/fetch-fonts.sh
+sh scripts/fetch-fonts.sh gallery-fonts.lock conformance/gallery-fonts.tsv
 cargo build --locked --release -p sofel-cli --bin sofel-render --bin sofel-shape
 
 CARGO_TARGET_DIR="$root/target" cargo test --locked --release --manifest-path tools/font-gallery/Cargo.toml

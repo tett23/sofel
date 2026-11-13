@@ -17,7 +17,10 @@ use alloc::vec::Vec;
 use sofel_font::read::cff::hb::{
     DictKind, DictToken, HbFdSelect, HbIndex, Sanitizer, dict_token, interpret_dict,
 };
+use sofel_font::read::delta_set_index_map::DeltaSetIndexMap;
+use sofel_font::read::hvar::{Hvar, Vvar};
 use sofel_font::read::{GlyphId, Tag};
+use sofel_font::var::{HbF32, Location, StoreKind};
 use sofel_font::{Font, GlyphExtents, HbCff2};
 use sofel_geom::float::hb_clamp_to_i32;
 use sofel_write::{Errors, ObjIdx, Serializer, Whence};
@@ -1282,7 +1285,7 @@ pub(crate) fn subset(
 
 /// `update_instance_metrics_map_from_cff2`: the boxes, advances and side
 /// bearings of the kept glyphs at the instance, from CFF2 and hmtx and
-/// vmtx (whose HVAR and VVAR deltas are 0 at the default location). Does
+/// vmtx, including the HVAR and VVAR deltas at the pinned location. Does
 /// nothing without a CFF2 table HarfBuzz reads.
 pub(crate) fn instance_metrics(
     font: &Font<'_>,
@@ -1296,7 +1299,28 @@ pub(crate) fn instance_metrics(
     let fonts = Fonts::new(hb);
     let hmtx = MetricsAccel::dual(font, false);
     let vmtx = MetricsAccel::dual(font, true);
-    let clamp_advance = |v: u32| v.min(0xFFFF);
+    let location = Location::from_normalized_2_14(font, coords);
+    let instance = font.instance(&location);
+    let hmap = font
+        .table(Tag::new(b"HVAR"))
+        .and_then(|data| Hvar::new(data).ok()?.advance_map().ok());
+    let vmap = font
+        .table(Tag::new(b"VVAR"))
+        .and_then(|data| Vvar::new(data).ok()?.advance_map().ok());
+    let advance = |old: u32, base: u32, kind, indices: Option<Option<DeltaSetIndexMap<'_>>>| {
+        let delta = indices.map_or(0, |map| {
+            let index = map.map_or(old, |map| map.map(old));
+            let raw = instance
+                .item_delta::<HbF32>(
+                    kind,
+                    (index >> 16) as u16,
+                    u16::try_from(index & 0xffff).unwrap_or_default(),
+                )
+                .unwrap_or_default();
+            crate::instance::f64_to_i32(sofel_geom::float::hb_roundf32(raw))
+        });
+        base.saturating_add_signed(delta).min(u32::from(u16::MAX))
+    };
     for &(new, old) in new_to_old {
         let Some(e) = fonts.extents(old, coords) else {
             continue;
@@ -1315,21 +1339,25 @@ pub(crate) fn instance_metrics(
             } else {
                 hmtx.side_bearing(old)
             };
-            m.hmtx.insert(new, (clamp_advance(hmtx.advance(old)), lsb));
+            m.hmtx.insert(
+                new,
+                (advance(old, hmtx.advance(old), StoreKind::Hvar, hmap), lsb),
+            );
             if has_bounds && let Some(w) = m.bounds_width.get_mut(new as usize) {
                 *w = e.width.cast_unsigned();
             }
         }
         if vmtx.has_data() {
             let tsb = if has_bounds {
-                let (_, vorg_y) = font
-                    .default_instance()
-                    .v_origin(GlyphId(old), |g| fonts.extents(g.0, coords));
+                let (_, vorg_y) = instance.v_origin(GlyphId(old), |g| fonts.extents(g.0, coords));
                 vorg_y.saturating_sub(e.y_bearing)
             } else {
                 vmtx.side_bearing(old)
             };
-            m.vmtx.insert(new, (clamp_advance(vmtx.advance(old)), tsb));
+            m.vmtx.insert(
+                new,
+                (advance(old, vmtx.advance(old), StoreKind::Vvar, vmap), tsb),
+            );
             if has_bounds && let Some(h) = m.bounds_height.get_mut(new as usize) {
                 *h = e.height.saturating_neg().cast_unsigned();
             }

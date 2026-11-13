@@ -1,0 +1,5 @@
+# Fixed source files for the Noto Color Emoji gallery (ADR 0077).
+# id	HTTPS URL	SHA-256	bytes	cache path
+color-noto-cbdt	https://raw.githubusercontent.com/googlefonts/noto-emoji/v2.047/fonts/NotoColorEmoji.ttf	39ee3c587e10e89669b9ff32703261d10d5f9c4dd5ad147b6b5a1c5200591817	10643852	fonts/color-noto-cbdt.ttf
+color-noto-colrv1	https://raw.githubusercontent.com/googlefonts/noto-emoji/v2.047/fonts/Noto-COLRv1.ttf	23549f29b5ad741fcb4c025b8dc44652ff0f459892467ebcccec1e6bbe839b44	4813824	fonts/color-noto-colrv1.ttf
+color-noto-license	https://raw.githubusercontent.com/googlefonts/noto-emoji/v2.047/fonts/LICENSE	6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2	4301	licenses/color-noto-license.txt
