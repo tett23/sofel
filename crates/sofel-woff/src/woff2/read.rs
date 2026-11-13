@@ -58,7 +58,54 @@ fn stored_stream(data: &[u8], expected: usize) -> Option<Vec<u8>> {
     }
 }
 
-/// Reconstructs a single sfnt with untransformed tables in uncompressed Brotli blocks.
+fn restore_hmtx(tables: &[(super::Tag, &[u8])], stream: &[u8], length: usize) -> Option<Vec<u8>> {
+    let table = |name| {
+        tables
+            .iter()
+            .find(|(tag, _)| *tag == super::Tag::new(name))
+            .map(|(_, data)| *data)
+    };
+    let field = |data: &[u8], offset| Some(u16::from_be_bytes(*data.get(offset..)?.first_chunk()?));
+    let glyphs = usize::from(field(table(b"maxp")?, 4)?);
+    let metrics = usize::from(field(table(b"hhea")?, 34)?);
+    if !(1..=glyphs).contains(&metrics) || glyphs.checked_add(metrics)?.checked_mul(2)? != length {
+        return None;
+    }
+    let (&flags, bytes) = stream.split_first()?;
+    if !(1..=3).contains(&flags) {
+        return None;
+    }
+    let (widths, mut bearings) = bytes.split_at_checked(metrics * 2)?;
+    let format = i16::from_be_bytes(field(table(b"head")?, 50)?.to_be_bytes());
+    let loca = sofel_read::loca::Loca::new(table(b"loca")?, format).ok()?;
+    let glyf = table(b"glyf")?;
+    let mut output = Vec::with_capacity(length);
+    for index in 0..glyphs {
+        let flag = if index < metrics {
+            output.extend_from_slice(widths.get(index.checked_mul(2)?..)?.first_chunk::<2>()?);
+            1
+        } else {
+            2
+        };
+        if flags & flag == 0 {
+            let (bearing, tail) = bearings.split_first_chunk::<2>()?;
+            output.extend_from_slice(bearing);
+            bearings = tail;
+        } else {
+            let glyph = glyf
+                .get(loca.offset(index)? as usize..loca.offset(index.checked_add(1)?)? as usize)?;
+            let xmin = if glyph.is_empty() {
+                0
+            } else {
+                field(glyph, 2)?
+            };
+            output.extend_from_slice(&xmin.to_be_bytes());
+        }
+    }
+    bearings.is_empty().then_some(output)
+}
+
+/// Reconstructs a single sfnt from uncompressed Brotli blocks, including transformed hmtx.
 ///
 /// # Errors
 /// Reports invalid input, unsupported transformations or compression, and output limit violations.
@@ -90,7 +137,7 @@ pub fn decode_woff2(input: &[u8], limit: usize) -> Result<Vec<u8>, DecodeError> 
     for _ in 0..count {
         let at = input.len().saturating_sub(remaining.len());
         let entry = read_entry(&mut remaining).ok_or(error(at, "invalid WOFF2 table entry"))?;
-        if entry.transformed {
+        if entry.transformed && entry.tag != super::Tag::new(b"hmtx") {
             return Err(error(at, "unsupported transformed table"));
         }
         let length = (entry.original as usize)
@@ -144,16 +191,86 @@ pub fn decode_woff2(input: &[u8], limit: usize) -> Result<Vec<u8>, DecodeError> 
         .ok_or(error(at, "unsupported or malformed Brotli stream"))?;
     let mut data = decoded.as_slice();
     let mut tables = Vec::with_capacity(count);
+    let mut transformed = None;
     for entry in entries {
         let (table, tail) = data
-            .split_at_checked(entry.original as usize)
+            .split_at_checked(entry.stored as usize)
             .ok_or(error(at, "truncated table data"))?;
+        if entry.transformed {
+            transformed = Some((tables.len(), table, entry.original as usize));
+        }
         tables.push((entry.tag, table));
         data = tail;
+    }
+    let restored;
+    if let Some((index, stream, length)) = transformed {
+        restored =
+            restore_hmtx(&tables, stream, length).ok_or(error(at, "invalid hmtx transform"))?;
+        tables.get_mut(index).ok_or(error(at, "missing hmtx"))?.1 = &restored;
     }
     let sfnt = sofel_write::build_sfnt(&tables).map_err(|_| error(at, "invalid sfnt directory"))?;
     if word(&sfnt, 0)? != flavor {
         return Err(error(4, "flavor does not match outline tables"));
     }
     Ok(sfnt)
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn i1_hmtx_restores_omitted_bearings_and_empty_glyph() {
+        let mut hhea = [0; 36];
+        hhea[35] = 1;
+        let tables: Vec<(super::super::Tag, &[u8])> = [
+            (b"head", &[0; 54][..]),
+            (b"maxp", &[0, 1, 0, 0, 0, 2]),
+            (b"hhea", &hhea),
+            (b"loca", &[0, 0, 0, 5, 0, 5]),
+            (b"glyf", &[0, 1, 255, 249, 0, 0, 0, 0, 0, 0]),
+        ]
+        .into_iter()
+        .map(|(tag, data)| (super::super::Tag::new(tag), data))
+        .collect();
+        // Put hmtx first so reconstruction cannot depend on directory order.
+        let mut payload = Vec::from([3, 1, 244]);
+        let mut directory = Vec::from([0x43, 6, 3]);
+        for ((_, data), flags) in tables.iter().zip([1, 4, 2, 0xcb, 0xca]) {
+            directory.extend_from_slice(&[flags, u8::try_from(data.len()).unwrap()]);
+            payload.extend_from_slice(data);
+        }
+        let compressed = crate::compress::brotli(&payload);
+        let mut input = [0; 48].to_vec();
+        input[..4].copy_from_slice(b"wOF2");
+        input[4..8].copy_from_slice(&0x10000_u32.to_be_bytes());
+        input[12..14].copy_from_slice(&6_u16.to_be_bytes());
+        let total = 12 + 6 * 16 + 8 + 56 + 8 + 36 + 8 + 12;
+        input[16..20].copy_from_slice(&u32::try_from(total).unwrap().to_be_bytes());
+        input[20..24].copy_from_slice(&u32::try_from(compressed.len()).unwrap().to_be_bytes());
+        input.extend_from_slice(&directory);
+        input.extend_from_slice(&compressed);
+        let size = u32::try_from(input.len()).unwrap();
+        input[8..12].copy_from_slice(&size.to_be_bytes());
+        let decoded = decode_woff2(&input, total).unwrap();
+        let face = sofel_read::sfnt::Sfnt::new(&decoded).unwrap();
+        assert_eq!(
+            face.table(super::super::Tag::new(b"hmtx")),
+            Some(&[1, 244, 255, 249, 0, 0][..])
+        );
+        for (stream, expected) in [
+            (&[1, 1, 244, 0, 20][..], [1, 244, 255, 249, 0, 20]),
+            (&[2, 1, 244, 0, 8], [1, 244, 0, 8, 0, 0]),
+            (&[3, 1, 244], [1, 244, 255, 249, 0, 0]),
+        ] {
+            assert_eq!(
+                restore_hmtx(&tables, stream, 6).as_deref(),
+                Some(&expected[..])
+            );
+        }
+        for stream in [&[0, 1, 244][..], &[7, 1, 244], &[3, 1], &[3, 1, 244, 0]] {
+            assert!(restore_hmtx(&tables, stream, 6).is_none());
+        }
+    }
 }
