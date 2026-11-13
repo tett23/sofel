@@ -19,7 +19,7 @@ use crate::json;
 pub const HELP: &str = "\
 usage: sofel-validate [--json] FILE...
 
-Validates sfnt fonts, TTC/OTC collections, CEF, bare CFF 1, CID Type 1, and BDF fonts.
+Validates sfnt fonts, TTC/OTC collections, CEF, bare CFF 1, CID Type 1, BDF, FNT, and FON fonts.
 Tables without a validator are skipped.
 
 Each problem is one line on standard output:
@@ -104,6 +104,31 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
                 continue;
             }
         };
+        if sofel_bitmapfont::winfnt::WinFont::is_win_font(&bytes) {
+            let collection = bytes.starts_with(b"MZ");
+            let count = sofel_bitmapfont::winfnt::WinFont::face_count(&bytes).unwrap_or(1);
+            for face in 0..count {
+                match sofel_bitmapfont::winfnt::WinFont::parse_with_offset(&bytes, face) {
+                    Ok(_) => {}
+                    Err(offset) => emit_diagnostic(
+                        &name,
+                        collection.then_some(face),
+                        Diagnostic {
+                            table: Tag::new(if collection { b"FON " } else { b"FNT " }),
+                            offset: u32::try_from(offset).unwrap_or(u32::MAX),
+                            severity: Severity::Error,
+                            kind: Kind::InvalidFontContainer {
+                                reason: "invalid Windows bitmap font",
+                            },
+                        },
+                        as_json,
+                        out,
+                        &mut errors,
+                    ),
+                }
+            }
+            continue;
+        }
         if sofel_bitmapfont::BdfFont::is_bdf(&bytes) {
             if let Err(offset) = sofel_bitmapfont::BdfFont::parse_with_offset(&bytes) {
                 emit_diagnostic(

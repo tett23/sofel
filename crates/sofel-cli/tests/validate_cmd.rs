@@ -649,3 +649,25 @@ fn adr0065_i2_bdf_bitmap_eof_and_complete_face() {
         bad.stdout
     );
 }
+
+#[test]
+fn adr0065_i2_winfnt_validator_checks_every_face() {
+    let dir = Dir::new("winfont-validation");
+    let raw = include_bytes!("../../sofel-bitmapfont/tests/data/mono.fnt");
+    let mut container = include_bytes!("../../sofel-bitmapfont/tests/data/two.fon").to_vec();
+    for (name, data) in [("ok.fnt", raw.as_slice()), ("ok.fon", container.as_slice())] {
+        let path = dir.file(name, data);
+        let out = run(&[path.as_os_str()]);
+        assert_eq!(out.code, 0, "{}", out.stdout);
+    }
+    // The second NE resource entry stores a byte offset (alignment shift zero).
+    let second = usize::from(u16::from_le_bytes([container[0x96], container[0x97]]));
+    let height = second + 88;
+    container[height..height + 2].fill(0);
+    let bad = dir.file("second.fon", &container);
+    let out = run(&["--json".as_ref(), bad.as_os_str()]);
+    assert_eq!(out.code, 1);
+    for field in ["\"font\":1".to_owned(), format!("\"offset\":{height}")] {
+        assert!(out.stdout.contains(&field), "{}", out.stdout);
+    }
+}

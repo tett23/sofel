@@ -201,6 +201,8 @@ sofel-subset --font-file=Roboto.ttf --unicodes=41-5A -o out.ttf
 
 BDF の検証では、壊れた行の先頭位置を表示する。ビットマップ行が途中で欠落した場合はファイル末尾の位置を表示する。
 
+Windows の FNT と FON も検証できる。複数のフェイスを含む FON では、診断にフェイス番号が付く。
+
 ### `sofel-woff`
 
 単一フェイスの TrueType、CFF、CFF2 を Web 配布用に変換する。入力と出力にはファイル名か `-`（標準入力・標準出力）を指定する。[ADR 0070](docs/adr/0070-webfont-encoding.md)

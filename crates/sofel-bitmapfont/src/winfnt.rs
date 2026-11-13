@@ -224,23 +224,55 @@ impl WinFont {
 
     /// Parse `face` of a raw FNT or an NE or PE32 FON file.
     pub fn parse(data: &[u8], face: u32) -> Result<Self, WinFontError> {
-        let (data, num_faces) = if data.starts_with(b"MZ") {
-            fon_resource(data, face)?
-        } else if face == 0 {
-            (data, 1)
+        Self::parse_with_offset(data, face).map_err(|_| WinFontError)
+    }
+
+    /// Read the face count independently of the validity of the first strike.
+    pub fn face_count(file: &[u8]) -> Result<u32, WinFontError> {
+        if file.starts_with(b"MZ") {
+            fon_resource(file, 0).map(|(_, count)| count)
+        } else if Self::is_win_font(file) {
+            Ok(1)
         } else {
-            return Err(WinFontError);
+            Err(WinFontError)
+        }
+    }
+
+    /// Parse a face and report the file offset of an invalid FNT field.
+    pub fn parse_with_offset(file: &[u8], face: u32) -> Result<Self, usize> {
+        let (data, num_faces) = if file.starts_with(b"MZ") {
+            fon_resource(file, face).map_err(|_| file.len().min(0x3c))?
+        } else if face == 0 {
+            (file, 1)
+        } else {
+            return Err(0);
         };
+        let base = (data.as_ptr() as usize).saturating_sub(file.as_ptr() as usize);
+        let mut at = 0;
+        Self::parse_fnt(data, num_faces, &mut at)
+            .map_err(|_| base.saturating_add(at.min(data.len())))
+    }
+
+    fn parse_fnt(data: &[u8], num_faces: u32, at: &mut usize) -> Result<Self, WinFontError> {
         let version = u16_at(data, 0)?;
-        if !matches!(version, 0x200 | 0x300) || data.len() < 148 {
+        if !matches!(version, 0x200 | 0x300) {
             return Err(WinFontError);
         }
+        if data.len() < 148 {
+            *at = data.len();
+            return Err(WinFontError);
+        }
+        *at = 2;
         let size = usize::try_from(u32_at(data, 2)?).map_err(|_| WinFontError)?;
         let header_size = if version == 0x300 { 148usize } else { 118usize };
-        if size < header_size || size > data.len() || u16_at(data, 66)? & 1 != 0 {
+        if size < header_size || size > data.len() {
             return Err(WinFontError);
         }
         let data = data.get(..size).ok_or(WinFontError)?;
+        *at = 66;
+        if u16_at(data, 66)? & 1 != 0 {
+            return Err(WinFontError);
+        }
         let point_size = u32::from(u16_at(data, 68)?);
         let y_res = match u16_at(data, 70)? {
             0 => 72,
@@ -250,11 +282,14 @@ impl WinFont {
             0 => 72,
             value => u32::from(value),
         };
+        *at = 74;
         let ascent = i16::try_from(u16_at(data, 74)?).map_err(|_| WinFontError)?;
+        *at = 88;
         let height = u16_at(data, 88)?;
         if height == 0 {
             return Err(WinFontError);
         }
+        *at = 95;
         let first_char = byte(data, 95)?;
         let last_char = byte(data, 96)?;
         if first_char > last_char {
@@ -263,6 +298,7 @@ impl WinFont {
         let count = usize::from(last_char.checked_sub(first_char).ok_or(WinFontError)?)
             .checked_add(1)
             .ok_or(WinFontError)?;
+        *at = 97;
         let default_glyph = usize::from(byte(data, 97)?);
         if default_glyph >= count
             || usize::try_from(u32_at(data, 105)?).map_err(|_| WinFontError)? >= size
@@ -281,6 +317,7 @@ impl WinFont {
         }
         let x_ppem = round_64(mul_div(nominal, x_res, 72)?)?;
         let entry_len = if version == 0x300 { 6usize } else { 4usize };
+        *at = header_size;
         let entries_end = header_size
             .checked_add(count.checked_mul(entry_len).ok_or(WinFontError)?)
             .ok_or(WinFontError)?;
@@ -292,7 +329,9 @@ impl WinFont {
             let entry = header_size
                 .checked_add(i.checked_mul(entry_len).ok_or(WinFontError)?)
                 .ok_or(WinFontError)?;
+            *at = entry;
             let width = u16_at(data, entry)?;
+            *at = entry.saturating_add(2);
             let value_offset = entry.checked_add(2).ok_or(WinFontError)?;
             let offset = if version == 0x300 {
                 usize::try_from(u32_at(data, value_offset)?).map_err(|_| WinFontError)?
