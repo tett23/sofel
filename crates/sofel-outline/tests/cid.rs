@@ -258,3 +258,26 @@ fn adr0065_i1_cid_zero_yy_matrix_collapses_like_freetype() -> Result<(), Box<dyn
     );
     Ok(())
 }
+
+#[test]
+fn adr0065_i1_closepath_preserves_current_point_for_next_contour()
+-> Result<(), Box<dyn std::error::Error>> {
+    let source = sample(&[
+        139, 248, 136, 13, 139, 139, 21, 239, 139, 5, 139, 239, 5, 9, 139, 139, 21, 149, 139, 5,
+        139, 149, 5, 9, 14,
+    ]);
+    let face = CidFace::parse(&source, 1024)?;
+    let mut starts = Vec::new();
+    draw_cid(
+        &face,
+        0,
+        Scale::Unscaled,
+        &mut FnPen(|c| {
+            if let Command::MoveTo(point) = c {
+                starts.push(point);
+            }
+        }),
+    )?;
+    assert_eq!(starts, [Point { x: 0, y: 0 }, Point { x: 100, y: 100 }]);
+    Ok(())
+}

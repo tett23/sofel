@@ -335,8 +335,6 @@ impl<'a, P: Pen> State<'a, P> {
                 self.pen.close();
             }
             self.emitted = false;
-            self.x = x;
-            self.y = y;
         }
     }
 
