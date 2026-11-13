@@ -30,6 +30,7 @@ sofel_font::var::gvar::apply_hb Internal HarfBuzz gvar point evaluation; C gets 
 sofel_font::var::gvar::apply_ft Internal FreeType gvar point evaluation; C gets the resulting outline through sofel_outline_load and sofel_outline_draw (ADR 0030).
 sofel_font::var::Location::default_ref The NULL location argument will represent the static default for C coordinate-dependent queries in the ADR 0027 query PR.
 sofel_font::var::StoreScalars::* Internal cached variation-region coefficients, without a direct C operation (ADR 0029).
+sofel_font::var::unmap_float Internal inverse avar interpolation for subset axis ranges (ADR 0061).
 sofel_font::var::apply_avar2_2_14 Internal subset coordinate mapping helper (ADR 0061).
 sofel_font::var::map_float Internal avar interpolation helper, without a direct C operation (ADR 0027).
 sofel_font::var::normalize_axis_value Internal fvar normalization helper, without a direct C operation (ADR 0027).
@@ -259,3 +260,5 @@ sofel_woff::decode_woff The font input commands reconstruct WOFF tables into an 
 sofel_bitmapfont::BdfFont::* BDF parsing and fixed bitmap queries are Rust and sofel-render operations; the C font handle still accepts sfnt data only (sofel ADR 0065).
 sofel_bitmapfont::pcf::PcfFont::* PCF parsing and fixed bitmap queries are Rust and sofel-render operations; the C font handle still accepts sfnt data only (sofel ADR 0065).
 sofel_font::Font::from_type42 Type 42 wrappers are decoded by a Rust-owned source before opening the embedded sfnt; the C font handle still accepts sfnt bytes only (sofel ADR 0065).
+sofel_type1::* Type 1 PFA/PFB and AFM/PFM are standalone Rust readers; the C font handle still accepts sfnt data only (sofel ADR 0065).
+sofel_bitmapfont::winfnt::WinFont::* FNT and NE FON parsing and fixed bitmap queries are exposed through Rust and sofel-render (sofel ADR 0065).
