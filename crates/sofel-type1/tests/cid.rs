@@ -136,7 +136,7 @@ fn adr0065_i1_opens_hex_cid_data() -> Result<(), Box<dyn std::error::Error>> {
         .checked_add(marker.len())
         .ok_or("offset overflow")?;
     let mut data = String::from_utf8(source.get(..binary).ok_or("header")?.to_vec())?
-        .replace("(Binary) 11", "(Hex) 22")
+        .replace("(Binary) 11", "(Hex) % encoding argument\r22\n")
         .into_bytes();
     for byte in source.get(binary..).ok_or("binary")? {
         data.extend_from_slice(format!("{byte:02x}").as_bytes());

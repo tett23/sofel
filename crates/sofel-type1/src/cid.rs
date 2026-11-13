@@ -79,15 +79,14 @@ impl CidFace {
         if !source.starts_with(b"%!PS-Adobe-3.0 Resource-CIDFont") {
             return Err(CidError::invalid());
         }
-        let start = find_start_data(source).ok_or(CidError::invalid())?;
+        let (start, hex) = find_start_data(source).ok_or(CidError::invalid())?;
         let header = source.get(..start).ok_or(CidError::invalid())?;
-        let mode = header.rsplit(|&b| b == b'\n').next().unwrap_or(header);
         let data_start = start
             .checked_add(b"StartData".len())
             .and_then(|value| value.checked_add(1))
             .ok_or(CidError::invalid())?;
         let raw = source.get(data_start..).ok_or(CidError::invalid())?;
-        let data = if mode.windows(5).any(|w| w == b"(Hex)") {
+        let data = if hex {
             decode_hex(raw, max_output, data_start)?
         } else {
             if raw.len() > max_output {
@@ -269,13 +268,19 @@ fn find_bytes(data: &[u8], needle: &[u8]) -> Option<usize> {
     data.windows(needle.len()).position(|w| w == needle)
 }
 
-fn find_start_data(source: &[u8]) -> Option<usize> {
+fn find_start_data(source: &[u8]) -> Option<(usize, bool)> {
+    let mut hex_arguments = [false; 2];
     let mut at = 0usize;
     while let Some(&byte) = source.get(at) {
+        let token = at;
         if byte == b'%' {
-            while source.get(at).is_some_and(|&value| value != b'\n') {
+            while source
+                .get(at)
+                .is_some_and(|value| !matches!(value, b'\r' | b'\n'))
+            {
                 at = at.checked_add(1)?;
             }
+            continue;
         } else if byte == b'(' {
             let mut depth = 1usize;
             at = at.checked_add(1)?;
@@ -304,10 +309,13 @@ fn find_start_data(source: &[u8]) -> Option<usize> {
                 at = at.checked_add(1)?;
             }
             if source.get(start..at) == Some(&b"StartData"[..]) {
-                return Some(start);
+                return Some((start, hex_arguments[0]));
             }
         } else {
             at = at.checked_add(1)?;
+        }
+        if !byte.is_ascii_whitespace() {
+            hex_arguments = [hex_arguments[1], source.get(token..at) == Some(b"(Hex)")];
         }
     }
     None
