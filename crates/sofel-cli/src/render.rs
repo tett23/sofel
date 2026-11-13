@@ -602,7 +602,13 @@ fn render_pfr(bytes: &[u8], args: &Args, out: &mut dyn Write, err: &mut dyn Writ
             image.reserve(size);
             for row in 0..rows {
                 for column in 0..width {
-                    let Some(&byte) = bitmap.pixels.get(row * stride + column / 8) else {
+                    let Some(index) = row
+                        .checked_mul(stride)
+                        .and_then(|n| n.checked_add(column / 8))
+                    else {
+                        return fail("invalid PFR bitmap");
+                    };
+                    let Some(&byte) = bitmap.pixels.get(index) else {
                         return fail("invalid PFR bitmap");
                     };
                     image.push(if byte & (0x80 >> (column % 8)) == 0 {

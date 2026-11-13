@@ -1,3 +1,5 @@
+#![allow(clippy::arithmetic_side_effects, clippy::indexing_slicing)]
+
 pub fn triangle() -> Vec<u8> {
     let mut data = vec![0; 124];
     data[..4].copy_from_slice(b"PFR0");
