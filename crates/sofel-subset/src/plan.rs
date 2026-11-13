@@ -964,9 +964,8 @@ impl Plan {
             p.layout.used_mark_sets = layout::gdef::used_mark_sets(gdef, &p.layout.glyphset_gsub);
             let copied_gdef = no_subset.contains(Tag::new(b"GDEF").to_u32());
             let gpos_data = font.table(Tag::new(b"GPOS")).unwrap_or(&[]);
-            let gpos_has_var_format = tag_kept(b"GPOS")
-                && !no_subset.contains(Tag::new(b"GPOS").to_u32())
-                && gpos_data.windows(2).any(|word| word == [0x80, 0x00]);
+            let gpos_has_var_format =
+                tag_kept(b"GPOS") && gpos_data.windows(2).any(|word| word == [0x80, 0x00]);
             let math_data = font.table(Tag::new(b"MATH")).unwrap_or(&[]);
             let copied_math = no_subset.contains(Tag::new(b"MATH").to_u32());
             let math_has_var_format = tag_kept(b"MATH")
@@ -992,24 +991,6 @@ impl Plan {
                         reason: "the GDEF item variation store (ADR 0022 stage 10)",
                     });
                 };
-                if no_subset.contains(Tag::new(b"GPOS").to_u32()) {
-                    // Every original GPOS reference survives a copied table.
-                    // Preserve the store's row numbers even for unused glyphs.
-                    let tag = Tag::new(b"GDEF");
-                    let store = sofel_font::read::gdef::Gdef::new(gdef)
-                        .ok()
-                        .and_then(|table| table.variation_store().ok().flatten())
-                        .ok_or(SubsetError::Malformed { tag })?;
-                    for outer in 0..store.data_count() {
-                        let rows = store
-                            .item_data(outer)
-                            .ok_or(SubsetError::Malformed { tag })?
-                            .item_count;
-                        for inner in 0..rows {
-                            selected.insert((u32::from(outer) << 16) | u32::from(inner));
-                        }
-                    }
-                }
                 for (tag, layout) in [
                     (Tag::new(b"GSUB"), &p.layout.gsub),
                     (Tag::new(b"GPOS"), &p.layout.gpos),
