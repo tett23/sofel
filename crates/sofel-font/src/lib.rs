@@ -60,6 +60,8 @@ mod hb_cff;
 mod layout;
 pub mod layout_query;
 mod metrics;
+mod pfr;
+pub use pfr::{PfrBitmap, PfrFace};
 mod name_language;
 mod names;
 pub mod remap;
@@ -513,6 +515,13 @@ fn uvs_subtable<'a>(c: &Cmap<'a>) -> Option<Subtable<'a>> {
 }
 
 impl<'a> Font<'a> {
+    /// Opens a logical face of a Portable Font Resource.
+    pub fn from_pfr(data: &'a [u8], index: u32) -> Result<PfrFace<'a>, FontError> {
+        read::pfr::PfrFace::read(data, index)
+            .map(PfrFace)
+            .map_err(FontError::Read)
+    }
+
     /// Opens a Type 42 wrapper and its embedded sfnt.
     ///
     /// The source must outlive the returned face. Its PostScript encoding and
