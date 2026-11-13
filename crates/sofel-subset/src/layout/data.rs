@@ -76,6 +76,37 @@ impl<'a> D<'a> {
     }
 }
 
+/// SingleSubst uses a long Coverage offset and 24-bit operands in formats 3 and 4.
+#[derive(Clone, Copy)]
+pub(crate) struct SingleSubst<'a>(pub D<'a>);
+
+impl<'a> SingleSubst<'a> {
+    pub fn coverage(self) -> Cov<'a> {
+        Cov(if self.0.u16(0) >= 3 {
+            self.0.off32(2)
+        } else {
+            self.0.off16(2)
+        })
+    }
+
+    pub fn mask(self) -> u32 {
+        if self.0.u16(0) >= 3 {
+            0xFF_FFFF
+        } else {
+            0xFFFF
+        }
+    }
+
+    /// Operand zero is the delta or array length. Subsequent operands are substitutes.
+    pub fn operand(self, index: usize) -> u32 {
+        if self.0.u16(0) >= 3 {
+            self.0.u32(6usize.saturating_add(index.saturating_mul(3))) >> 8
+        } else {
+            u32::from(self.0.u16_at(4, index))
+        }
+    }
+}
+
 /// `v` as a `u32` (indices and counts of 16-bit arrays always fit).
 pub(crate) fn n32(v: usize) -> u32 {
     u32::try_from(v).unwrap_or(u32::MAX)

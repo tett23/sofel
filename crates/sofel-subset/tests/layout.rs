@@ -1536,3 +1536,23 @@ fn adr0022_wide_class_definitions_keep_glyph_classes() {
         assert_eq!(glyph_class_def(&out), vec![0, 1, 0, 1, 0, 2, 0, 1, 0, 1]);
     }
 }
+
+#[test]
+fn adr0022_wide_single_substitution_retains_output_glyphs() {
+    for mut st in [
+        vec![0, 3, 0, 0, 0, 9, 0, 0, 4],
+        vec![0, 4, 0, 0, 0, 15, 0, 0, 2, 0, 0, 5, 0, 0, 6],
+    ] {
+        st.extend(coverage1(&[1, 2]));
+        let data = font_with(vec![(
+            b"GSUB",
+            layout_table(&[(b"liga", &[0])], &[(1, st)]),
+        )]);
+        let out = subset(&Font::new(&data, 0).unwrap(), &chars("AB")).unwrap();
+        assert_eq!(num_glyphs(&out), 5);
+        assert_eq!(
+            first_coverage(&out_table(&out, b"GSUB").unwrap()),
+            coverage1(&[1, 2])
+        );
+    }
+}

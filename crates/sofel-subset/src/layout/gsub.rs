@@ -46,27 +46,28 @@ fn single_serialize(s: &mut Sub<'_, '_>, pairs: &[(u32, u32)]) {
 
 /// SingleSubst formats 1 and 2.
 pub(crate) fn single(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
-    let cov = Cov(st.off16(2));
+    let sub = super::data::SingleSubst(st);
+    let cov = sub.coverage();
     let gs = &s.p.layout.glyphset_gsub;
     let pairs: Vec<(u32, u32)> = match st.u16(0) {
-        1 => {
-            let d = u32::from(st.u16(4));
+        1 | 3 => {
+            let d = sub.operand(0);
             let mut inter = BitSet::new();
             cov.intersect_set(gs, &mut inter);
             inter
                 .iter()
-                .map(|g| (g, g.wrapping_add(d) & 0xFFFF))
+                .map(|g| (g, g.wrapping_add(d) & sub.mask()))
                 .filter(|p| gs.has(p.1))
                 .map(|(a, b)| (s.map(a), s.map(b)))
                 .collect()
         }
-        2 => {
-            let n = usize::from(st.u16(4));
+        2 | 4 => {
+            let n = sub.operand(0) as usize;
             cov.glyphs()
                 .into_iter()
                 .take(n)
                 .enumerate()
-                .map(|(i, g)| (g, u32::from(st.u16_at(6, i))))
+                .map(|(i, g)| (g, sub.operand(i.saturating_add(1))))
                 .filter(|p| gs.has(p.0) && gs.has(p.1))
                 .map(|(a, b)| (s.map(a), s.map(b)))
                 .collect()

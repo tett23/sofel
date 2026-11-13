@@ -189,11 +189,12 @@ impl<'a> Closure<'a> {
     }
 
     fn single(&mut self, st: D<'a>) {
-        let cov = Cov(st.off16(2));
+        let sub = super::data::SingleSubst(st);
+        let cov = sub.coverage();
         match st.u16(0) {
-            1 => {
-                let d = u32::from(st.u16(4));
-                let mask = 0xFFFFu32;
+            1 | 3 => {
+                let d = sub.operand(0);
+                let mask = sub.mask();
                 if cov.population() >= u64::from(mask) {
                     return;
                 }
@@ -212,8 +213,8 @@ impl<'a> Closure<'a> {
                 let add: Vec<u32> = inter.iter().map(|g| g.wrapping_add(d) & mask).collect();
                 add.into_iter().for_each(|g| self.output.add(g));
             }
-            2 => {
-                let n = usize::from(st.u16(4));
+            2 | 4 => {
+                let n = sub.operand(0) as usize;
                 let parent = self.parent();
                 let mut add = Vec::new();
                 if n as u64 > parent.len().saturating_mul(4) {
@@ -223,12 +224,12 @@ impl<'a> Closure<'a> {
                         if i >= n {
                             continue;
                         }
-                        add.push(u32::from(st.u16_at(6, i)));
+                        add.push(sub.operand(i.saturating_add(1)));
                     }
                 } else {
                     for (i, g) in cov.glyphs().into_iter().take(n).enumerate() {
                         if parent.has(g) {
-                            add.push(u32::from(st.u16_at(6, i)));
+                            add.push(sub.operand(i.saturating_add(1)));
                         }
                     }
                 }
@@ -282,7 +283,9 @@ pub(crate) fn may_have_non_1to1(lookup: D<'_>, gsub: bool) -> bool {
 pub(crate) fn subtable_intersects(k: Kind, st: D<'_>, glyphs: &BitSet) -> bool {
     let cov = Cov(st.off16(2));
     match k {
-        Kind::SingleSubst => matches!(st.u16(0), 1 | 2) && cov.intersects(glyphs),
+        Kind::SingleSubst => {
+            matches!(st.u16(0), 1..=4) && super::data::SingleSubst(st).coverage().intersects(glyphs)
+        }
         Kind::MultipleSubst | Kind::AlternateSubst => st.u16(0) == 1 && cov.intersects(glyphs),
         Kind::LigatureSubst => {
             if st.u16(0) != 1 {
