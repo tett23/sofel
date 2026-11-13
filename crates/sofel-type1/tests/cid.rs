@@ -174,6 +174,63 @@ fn adr0065_i2_reports_invalid_hex_byte_position() -> Result<(), Box<dyn std::err
 }
 
 #[test]
+fn adr0065_i2_reports_invalid_header_value_position() -> Result<(), Box<dyn std::error::Error>> {
+    let mut source = sample();
+    let old = b"/GDBytes 2";
+    let at = source
+        .windows(old.len())
+        .position(|w| w == old)
+        .ok_or("field")?;
+    *source.get_mut(at + old.len() - 1).ok_or("value")? = b'x';
+    let bad_value = at + old.len() - 1;
+    assert_eq!(
+        CidFace::parse(&source, 1024)
+            .err()
+            .map(|error| error.offset()),
+        Some(bad_value)
+    );
+    Ok(())
+}
+
+#[test]
+fn adr0065_i2_reports_invalid_font_dict_field_position() -> Result<(), Box<dyn std::error::Error>> {
+    let mut source = sample_with_subr()?;
+    let old = b"/SubrCount 1";
+    let at = source
+        .windows(old.len())
+        .position(|w| w == old)
+        .ok_or("field")?;
+    let bad_value = at + old.len() - 1;
+    *source.get_mut(bad_value).ok_or("value")? = b'x';
+    assert_eq!(
+        CidFace::parse(&source, 1024)
+            .err()
+            .map(|error| error.offset()),
+        Some(bad_value)
+    );
+    Ok(())
+}
+
+#[test]
+fn adr0065_i2_reports_invalid_matrix_field_position() -> Result<(), Box<dyn std::error::Error>> {
+    let mut source = sample();
+    let old = b"/FontMatrix [0.001 0 0 0.001 0 0]";
+    let at = source
+        .windows(old.len())
+        .position(|w| w == old)
+        .ok_or("matrix")?;
+    let value = at + b"/FontMatrix [".len();
+    *source.get_mut(value).ok_or("value")? = b'x';
+    assert_eq!(
+        CidFace::parse(&source, 1024)
+            .err()
+            .map(|error| error.offset()),
+        Some(at)
+    );
+    Ok(())
+}
+
+#[test]
 fn adr0065_i1_uses_font_matrix_for_units_per_em() -> Result<(), Box<dyn std::error::Error>> {
     let mut source = sample();
     let old = b"[0.001 0 0 0.001 0 0]";

@@ -125,11 +125,19 @@ impl CidFace {
             rest = rest
                 .get(pos.checked_add(marker.len()).ok_or(CidError::invalid())?..)
                 .ok_or(CidError::invalid())?;
+            let dict_base = header.len().saturating_sub(rest.len());
             let end = find_bytes(rest, marker).unwrap_or(rest.len());
             let dict = rest.get(..end).ok_or(CidError::invalid())?;
-            let subr_count = field_usize(dict, b"SubrCount").unwrap_or(0);
-            let subr_map_offset = field_usize(dict, b"SubrMapOffset").unwrap_or(0);
-            let sd_bytes = field_usize(dict, b"SDBytes").unwrap_or(0);
+            let locate = |error: CidError| CidError::at(dict_base.saturating_add(error.offset()));
+            let subr_count = optional_field_usize(dict, b"SubrCount")
+                .map_err(locate)?
+                .unwrap_or(0);
+            let subr_map_offset = optional_field_usize(dict, b"SubrMapOffset")
+                .map_err(locate)?
+                .unwrap_or(0);
+            let sd_bytes = optional_field_usize(dict, b"SDBytes")
+                .map_err(locate)?
+                .unwrap_or(0);
             if subr_count > 0 {
                 let map_end = subr_count
                     .checked_add(1)
@@ -143,9 +151,15 @@ impl CidFace {
                     return Err(CidError::at(source.len()));
                 }
             }
-            let (matrix, current_upem) = parse_matrix(dict)?;
+            let (matrix, current_upem) = parse_matrix(dict).map_err(|_| {
+                CidError::at(
+                    dict_base.saturating_add(find_bytes(dict, b"/FontMatrix").unwrap_or(0)),
+                )
+            })?;
             dicts.push(FontDict {
-                len_iv: field_i32(dict, b"lenIV").unwrap_or(4),
+                len_iv: optional_field_i32(dict, b"lenIV")
+                    .map_err(locate)?
+                    .unwrap_or(4),
                 subr_count,
                 subr_map_offset,
                 sd_bytes,
@@ -305,31 +319,50 @@ fn word_byte(byte: u8) -> bool {
 }
 
 fn field_usize(data: &[u8], name: &[u8]) -> Result<usize, CidError> {
-    usize::try_from(field_i32(data, name)?).map_err(|_| CidError::invalid())
+    let (value, at) = field_i32(data, name)?;
+    usize::try_from(value).map_err(|_| CidError::at(at))
 }
 
-fn field_i32(data: &[u8], name: &[u8]) -> Result<i32, CidError> {
+fn optional_field_usize(data: &[u8], name: &[u8]) -> Result<Option<usize>, CidError> {
+    optional_field_i32(data, name)?
+        .map(|value| usize::try_from(value).map_err(|_| CidError::invalid()))
+        .transpose()
+}
+
+fn optional_field_i32(data: &[u8], name: &[u8]) -> Result<Option<i32>, CidError> {
+    let mut key = Vec::with_capacity(name.len().saturating_add(1));
+    key.push(b'/');
+    key.extend_from_slice(name);
+    if find_bytes(data, &key).is_none() {
+        return Ok(None);
+    }
+    field_i32(data, name).map(|(value, _)| Some(value))
+}
+
+fn field_i32(data: &[u8], name: &[u8]) -> Result<(i32, usize), CidError> {
     let mut key = Vec::with_capacity(name.len().checked_add(1).ok_or(CidError::invalid())?);
     key.push(b'/');
     key.extend_from_slice(name);
     let at = data
         .windows(key.len())
         .position(|w| w == key)
-        .ok_or(CidError::invalid())?;
-    let rest = data
-        .get(at.checked_add(key.len()).ok_or(CidError::invalid())?..)
-        .ok_or(CidError::invalid())?;
-    if !rest.first().is_some_and(u8::is_ascii_whitespace) {
-        return Err(CidError::invalid());
+        .ok_or(CidError::at(data.len()))?;
+    let after_key = at.checked_add(key.len()).ok_or(CidError::at(at))?;
+    let untrimmed = data.get(after_key..).ok_or(CidError::at(after_key))?;
+    if !untrimmed.first().is_some_and(u8::is_ascii_whitespace) {
+        return Err(CidError::at(after_key));
     }
-    let rest = rest.trim_ascii_start();
+    let rest = untrimmed.trim_ascii_start();
+    let value_at = after_key.saturating_add(untrimmed.len().saturating_sub(rest.len()));
     let end = rest
         .iter()
         .position(|b| !b.is_ascii_digit() && *b != b'-')
         .unwrap_or(rest.len());
-    let text = core::str::from_utf8(rest.get(..end).ok_or(CidError::invalid())?)
-        .map_err(|_| CidError::invalid())?;
-    text.parse::<i32>().map_err(|_| CidError::invalid())
+    let text = core::str::from_utf8(rest.get(..end).ok_or(CidError::at(value_at))?)
+        .map_err(|_| CidError::at(value_at))?;
+    text.parse::<i32>()
+        .map(|value| (value, value_at))
+        .map_err(|_| CidError::at(value_at))
 }
 
 fn read_be(bytes: &[u8]) -> usize {
