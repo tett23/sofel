@@ -6,6 +6,100 @@ use sofel_font::{Font, read::GlyphId};
 use sofel_outline::{HintMode, HintTarget, OutlineError, Outlines, Scratch};
 use std::{fmt::Write, process::Command};
 
+#[path = "../../sofel-read/tests/support/build.rs"]
+mod cff_build;
+
+#[test]
+fn adr0064_i1_native_cff_without_stems_matches_freetype() {
+    use cff_build::{Cff1Spec, Cs, cff1, charstring, otto_font};
+    let glyphs = vec![
+        charstring(&[Cs::Op(14)]),
+        charstring(&[
+            Cs::I(0),
+            Cs::I(0),
+            Cs::Op(21),
+            Cs::I(500),
+            Cs::Op(6),
+            Cs::I(700),
+            Cs::Op(7),
+            Cs::Op(14),
+        ]),
+    ];
+    let bytes = otto_font(2, vec![(b"CFF ", cff1(&Cff1Spec::new(glyphs)))]);
+    let path = std::env::temp_dir().join(format!(
+        "sofel-adr0064-native-cff-{}.otf",
+        std::process::id()
+    ));
+    std::fs::write(&path, &bytes).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let outlines = Outlines::new(font.default_instance());
+    let mut scratch = Scratch::default();
+    for ppem in 1..=34 {
+        for (target_name, target) in [
+            ("normal", HintTarget::Normal),
+            ("light", HintTarget::Light),
+            ("mono", HintTarget::Mono),
+            ("lcd", HintTarget::Lcd),
+            ("lcd-v", HintTarget::VerticalLcd),
+        ] {
+            let reference = Command::new(paths::ft_dump())
+                .args(["--hint-slot", &ppem.to_string(), "1", "native", target_name])
+                .arg(&path)
+                .output()
+                .unwrap();
+            assert!(reference.status.success());
+            let (_, advance) = outlines
+                .load_with_hint(GlyphId(1), ppem, HintMode::NativeV35, target, &mut scratch)
+                .unwrap();
+            let mut actual = format!("advance {advance} 0\n");
+            for (point, tag) in scratch.points().iter().zip(scratch.point_tags()) {
+                writeln!(actual, "point {} {} {tag}", point.x, point.y).unwrap();
+            }
+            for end in scratch.contour_ends() {
+                writeln!(actual, "end {end}").unwrap();
+            }
+            assert_eq!(
+                actual,
+                String::from_utf8(reference.stdout).unwrap(),
+                "{target_name} {ppem}"
+            );
+        }
+    }
+    std::fs::remove_file(path).unwrap();
+
+    let hinted_path = paths::testdata().join("extra-fonts/fonts/source-serif.otf");
+    let hinted_bytes = std::fs::read(hinted_path).unwrap();
+    let hinted_font = Font::new(&hinted_bytes, 0).unwrap();
+    let hinted = Outlines::new(hinted_font.default_instance());
+    assert_eq!(
+        hinted.load_with_hint(
+            GlyphId(36),
+            16,
+            HintMode::NativeV35,
+            HintTarget::Light,
+            &mut scratch,
+        ),
+        Err(OutlineError::UnsupportedFormat),
+    );
+    assert!(scratch.points().is_empty());
+
+    let cff2_path = paths::testdata().join("harfbuzz/test/subset/data/fonts/AdobeVFPrototype.otf");
+    let cff2_bytes = std::fs::read(cff2_path).unwrap();
+    let cff2_font = Font::new(&cff2_bytes, 0).unwrap();
+    let cff2 = Outlines::new(cff2_font.default_instance());
+    assert_eq!(
+        cff2.load_with_hint(
+            GlyphId(1),
+            16,
+            HintMode::NativeV35,
+            HintTarget::Light,
+            &mut scratch,
+        ),
+        Err(OutlineError::UnsupportedFormat),
+    );
+    assert!(scratch.points().is_empty());
+}
+
 #[test]
 fn adr0064_i1_load_selection_matches_freetype() {
     let path = paths::testdata().join("harfbuzz/test/api/fonts/Roboto-Regular.abcAE.ttf");
