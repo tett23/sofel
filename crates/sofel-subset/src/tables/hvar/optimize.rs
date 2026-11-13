@@ -122,7 +122,7 @@ fn combine(mut encodings: Vec<Encoding>) -> Vec<Encoding> {
     slots.into_iter().flatten().collect()
 }
 
-pub(super) fn optimize(
+pub(crate) fn optimize(
     blocks: &mut Vec<Block>,
     regions: &[Region],
     tag: Tag,

@@ -1,4 +1,4 @@
-//! Removes pinned axes from an unchanged avar version 1 map (ADR 0061).
+//! Rewrites avar version 1 and version 2 for axis instancing (ADR 0061).
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -13,6 +13,26 @@ const TAG: Tag = Tag::new(b"avar");
 pub(crate) struct Avar2Ranges {
     pub reachable: BTreeMap<Tag, crate::input::AxisRange>,
     pub self_contained: BTreeMap<Tag, f32>,
+}
+
+/// HarfBuzz's avar2 dead-region predicate, with strict boundaries.
+pub(super) fn region_dead(
+    tents: &[[f32; 3]],
+    tags: &[Tag],
+    reachable: &BTreeMap<Tag, crate::input::AxisRange>,
+) -> bool {
+    tents.iter().enumerate().any(|(axis, &[start, peak, end])| {
+        let Some(range) = tags.get(axis).and_then(|tag| reachable.get(tag)) else {
+            return false;
+        };
+        let fixed =
+            |v: f32| crate::instance::f64_to_i32(sofel_geom::float::hb_roundf32(v * 16384.0));
+        let [start, peak, end] = [start, peak, end].map(fixed);
+        if peak == 0 || start > peak || peak > end || start < 0 && end > 0 {
+            return false;
+        }
+        fixed(range.max) < start || fixed(range.min) > end
+    })
 }
 
 /// Bounds the original avar2 coordinates over the requested user box.
@@ -149,6 +169,9 @@ pub(crate) fn subset(
 ) -> Result<Vec<u8>, SubsetError> {
     let avar = Avar::new(src).map_err(|_| SubsetError::Malformed { tag: TAG })?;
     if avar.major_version() == 2 {
+        if !plan.var.n.old_intermediates.is_empty() {
+            return super::avar2::subset(plan, font, src);
+        }
         return subset_identity_range(plan, font, src);
     }
     if avar.major_version() != 1 {
@@ -435,7 +458,7 @@ fn residual(knots: &[(i16, i32)], old: [f32; 3], new: [f32; 3], mapped: i16) -> 
 
 /// Builds the bias and single-axis tent deltas in F2Dot14 units for
 /// an identity segment map whose user range has changed.
-fn compensation_regions(
+pub(super) fn compensation_regions(
     [min, default, max]: [i32; 3],
     old_default: i16,
     mapping: Option<MappingBreakpoint>,
@@ -460,6 +483,45 @@ fn compensation_regions(
         candidate.insert(at, extra);
         if residual(&candidate, old, new, extra.0) <= residual(&knots, old, new, extra.0) {
             knots = candidate;
+        }
+    }
+    let mut regions = Vec::new();
+    if default != 0 {
+        regions.push(([0; 3], default));
+    }
+    for (index, &(peak, offset)) in knots.iter().enumerate() {
+        if peak == 0 || offset == default {
+            continue;
+        }
+        let start = index
+            .checked_sub(1)
+            .and_then(|i| knots.get(i))
+            .map_or(peak, |k| k.0);
+        let end = knots.get(index.saturating_add(1)).map_or(peak, |k| k.0);
+        regions.push(([start, peak, end], offset.saturating_sub(default)));
+    }
+    regions
+}
+
+/// The same offset tents with every retained interior avar v1 kink.
+pub(super) fn compensation_regions_many(
+    [min, default, max]: [i32; 3],
+    old_default: i16,
+    breakpoints: &[(i16, i32)],
+) -> Vec<([i16; 3], i32)> {
+    const UNIT: i16 = 16384;
+    let mut knots = alloc::vec![
+        (-UNIT, min.saturating_add(i32::from(UNIT))),
+        (0, default),
+        (UNIT, max.saturating_sub(i32::from(UNIT))),
+    ];
+    if old_default != 0 && old_default.abs_diff(0) < UNIT.cast_unsigned() {
+        let at = knots.partition_point(|&(z, _)| z < old_default);
+        knots.insert(at, (old_default, i32::from(old_default).saturating_neg()));
+    }
+    for &(z, offset) in breakpoints {
+        if let Err(at) = knots.binary_search_by_key(&z, |k| k.0) {
+            knots.insert(at, (z, offset));
         }
     }
     let mut regions = Vec::new();
@@ -615,10 +677,12 @@ mod tests {
     #[test]
     fn adr0061_i1_avar2_reachable_range_ignores_unreferenced_axes() {
         use super::avar2_reachable_range;
-        let mut box_ = alloc::vec![[-1.0, 1.0]; 20];
-        box_[0] = [0.5, 0.5];
-        let mut region = alloc::vec![[0.0, 0.0, 0.0]; 20];
-        region[1] = [0.0, 1.0, 1.0];
+        let box_ = (0..20)
+            .map(|i| if i == 0 { [0.5, 0.5] } else { [-1.0, 1.0] })
+            .collect::<alloc::vec::Vec<_>>();
+        let region = (0..20)
+            .map(|i| if i == 1 { [0.0, 1.0, 1.0] } else { [0.0; 3] })
+            .collect::<alloc::vec::Vec<_>>();
         let row = [(4096, region.clone()), (-4096, region)];
         let (delta, final_range) = avar2_reachable_range(&box_, 0, &row);
         assert_eq!(delta, [0.0, 0.0]);

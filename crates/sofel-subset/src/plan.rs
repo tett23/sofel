@@ -348,7 +348,10 @@ impl Plan {
             };
             norm.pinned_at_default = norm.avar2_self_contained.values().all(|&v| v == 0.0);
         }
-        let avar2_range = identity_avar2 && norm.user.values().any(|r| r.min < r.max);
+        let avar2_range = norm.avar2
+            && !norm.all_axes_pinned
+            && norm.avar2_self_contained.is_empty()
+            && (!identity_avar2 || norm.user.values().any(|r| r.min < r.max));
         let point_pins = !norm.user.is_empty() && norm.user.values().all(|r| r.min == r.max);
         // During a complete glyf instance, HarfBuzz writes hmtx/vmtx from
         // the four instanced phantom points and drops HVAR/VVAR.
@@ -389,7 +392,7 @@ impl Plan {
                 b"HVAR" | b"VVAR" => {
                     pinned_glyf
                         || (!norm.all_axes_pinned
-                            && !norm.avar2
+                            && (!norm.avar2 || !norm.avar2_self_contained.is_empty())
                             && font.table(Tag::new(tag)).is_some_and(|data| {
                                 sofel_font::read::be::u32_at(data, 8).is_some()
                             })
@@ -397,10 +400,12 @@ impl Plan {
                                 .set(SetKind::NoSubsetTables)
                                 .contains(Tag::new(tag).to_u32()))
                 }
-                b"cvar" => norm.all_axes_pinned || !norm.avar2,
+                b"cvar" => {
+                    norm.all_axes_pinned || !norm.avar2 || !norm.avar2_self_contained.is_empty()
+                }
                 b"MVAR" => {
                     norm.all_axes_pinned
-                        || (!norm.avar2
+                        || ((!norm.avar2 || !norm.avar2_self_contained.is_empty())
                             && !input
                                 .set(SetKind::NoSubsetTables)
                                 .contains(Tag::new(tag).to_u32())
@@ -408,7 +413,14 @@ impl Plan {
                                 sofel_font::read::mvar::Mvar::new(data).is_ok()
                             }))
                 }
-                b"gvar" => !norm.avar2 || inert_gvar || avar2_range || point_pins || pinned_glyf,
+                b"gvar" => {
+                    !norm.avar2
+                        || inert_gvar
+                        || avar2_range
+                        || point_pins
+                        || pinned_glyf
+                        || !norm.avar2_self_contained.is_empty()
+                }
                 b"GVAR" => inert_gvar,
                 _ => false,
             };
@@ -434,7 +446,12 @@ impl Plan {
             false
         };
         if !norm.user.is_empty() {
-            if norm.avar2 && !norm.all_axes_pinned && !identity_avar2 {
+            if norm.avar2
+                && !norm.all_axes_pinned
+                && !identity_avar2
+                && !avar2_range
+                && norm.avar2_self_contained.is_empty()
+            {
                 return Err(SubsetError::Unsupported {
                     tag: Tag::new(b"avar"),
                     reason: "pinning the axes of avar version 2 (deferred by ADR 0022)",
@@ -459,7 +476,7 @@ impl Plan {
             });
             let varc_safe = !varc_retained || varc_unrelated_axis_change;
             let simple_avar = (point_pins && drop.contains(Tag::new(b"avar").to_u32()))
-                || identity_avar2
+                || norm.avar2
                 || (norm.avar2 && norm.all_axes_pinned)
                 || font.table(Tag::new(b"avar")).is_none_or(|data| {
                     sofel_font::read::avar::Avar::new(data).is_ok_and(|table| {
