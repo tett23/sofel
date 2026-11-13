@@ -448,6 +448,8 @@ PE32 では `RT_FONT` の名前・言語ディレクトリを順にたどり、�
 
 `sofel-type1::source::Type1Source` は PFA の16進 eexec と PFB の ASCII・バイナリセクションを読み、秘密辞書を復号する。`sofel-type1::face::Type1Face` は文字コードからグリフ番号への対応、グリフ名、charstring から読んだ送り幅を返す。AFM または PFM を付加すると、グリフ対のカーニングを返す。PFB のセクション長、PFA の16進表記、charstring の長さと AFM・PFM のペア表を検査する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
+`sofel-render` は PFA と PFB を通常入力として開き、`--glyph` またはグリフ名から導いた Unicode の `--char` の Type 1 輪郭をヒンティングなしで PGM に描く。`sofel render --text` では Type1 フェイスの `SubFont` で形にして同じ輪郭を描く。`sofel-outline::draw_type1` は Type 1 の hsbw、sbw、移動、線、曲線、局所サブルーチンを読み、未対応命令または破損した charstring をエラーにする。`closepath` のあとも charstring の現在位置を保持する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+
 横書きでは、Type1 フェイスを `SubFont::from_type1` に渡し、`shape_with_subfont` で文字列を組む。グリフ名から Unicode に対応するグリフを選び、送り幅と付加済みの AFM・PFM のカーニングを使う。`kern=0` を指定した範囲ではカーニングを適用しない。
 
 `sofel-type1::cid::CidFace` は CID-keyed Type 1 のバイナリまたは16進データを読み、CIDMap から CID の Font DICT と charstring の範囲を選ぶ。各 Font DICT の `lenIV` に従って charstring とローカルのサブルーチンを復号する。`FontMatrix` は FreeType と同じく `yy` の絶対値で正規化し、輪郭と送り幅に適用する。`yy` が0なら変換は零行列になる。フェイスの units per em は、`yy` の絶対値が標準の 0.001 と異なる Font DICT の値を読み込み順で更新する。CIDMap とサブルーチンマップの長さを開くときに、charstring とサブルーチンのオフセットを問い合わせ時に入力範囲内で検査する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。

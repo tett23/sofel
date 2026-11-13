@@ -2,7 +2,7 @@
 
 use std::io::Write;
 
-use sofel_font::{BareCffFace, Font, HbScale, read::GlyphId, var::Location};
+use sofel_font::{BareCffFace, Font, HbScale, Type1Face, read::GlyphId, var::Location};
 use sofel_outline::{Outlines, Scratch};
 use sofel_raster::{Bitmap, Rasterizer};
 use sofel_shape::{
@@ -117,6 +117,39 @@ pub(crate) fn draw_bare_cff(
     let mut raster = Rasterizer::new();
     draw_positions(&glyphs, out, |glyph| {
         let bitmap = glyph::render_bare_cff(face, glyph, ppem, &mut scratch, &mut raster)
+            .map_err(|e| format!("glyph {}: {e}", glyph.0))?;
+        copy_bitmap(bitmap)
+    })
+}
+
+/// Shapes and draws one line of Type 1 PFA/PFB text.
+pub(crate) fn draw_type1(
+    face: &Type1Face<'_>,
+    ppem: u16,
+    text: &str,
+    features: &[Feature],
+    out: &mut dyn Write,
+) -> Result<(), String> {
+    const EMPTY_SFNT: [u8; 12] = [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let font = Font::for_shaping(&EMPTY_SFNT, 0).map_err(|e| format!("shaping face: {e}"))?;
+    let instance = font.default_instance();
+    let mut input = UnicodeBuffer::new();
+    input.push_utf8(text.as_bytes(), 0, None);
+    input.number_clusters();
+    let props = SegmentProperties::default().guess(&input, None);
+    let plan = ShapePlan::new(instance, props, features);
+    let scale_value = i32::from(ppem).saturating_mul(64);
+    let scale = Scale::new(
+        HbScale::for_font(&font, scale_value, scale_value),
+        u32::from(ppem),
+        u32::from(ppem),
+    );
+    let subfont = SubFont::from_type1(scale, face);
+    let glyphs = shape_with_subfont(instance, &subfont, &plan, input);
+    let mut raster = Rasterizer::new();
+    draw_positions(&glyphs, out, |glyph| {
+        let index = usize::try_from(glyph.0).map_err(|_| "glyph index overflow")?;
+        let bitmap = glyph::render_type1(face, index, ppem, &mut raster)
             .map_err(|e| format!("glyph {}: {e}", glyph.0))?;
         copy_bitmap(bitmap)
     })
