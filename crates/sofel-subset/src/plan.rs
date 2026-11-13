@@ -431,8 +431,6 @@ impl Plan {
                 && !other_variation_tags.iter().any(|tag| {
                     **tag != *b"gvar" && **tag != *b"GVAR" && font.table(Tag::new(tag)).is_some()
                 });
-            // A separate outline source or a retained BASE/COLR store needs its
-            // own instancing path, even when the CFF2 outlines can be pinned.
             let kept = |tag: &[u8; 4]| {
                 let tag = Tag::new(tag);
                 font.table(tag).filter(|_| !drop.contains(tag.to_u32()))
@@ -447,11 +445,7 @@ impl Plan {
                 && kept(b"CFF2").is_some()
                 && [b"glyf", b"GLYF", b"gvar", b"GVAR", b"cvar", b"VARC"]
                     .iter()
-                    .all(|t| kept(t).is_none())
-                && kept(b"COLR").is_none_or(|data| {
-                    sofel_font::read::colr::Colr::new(data)
-                        .is_ok_and(|table| table.var_store_offset() == 0)
-                });
+                    .all(|t| kept(t).is_none());
             if !(norm.all_axes_pinned && norm.pinned_at_default)
                 && !metadata_only
                 && !gvar_full_pin
