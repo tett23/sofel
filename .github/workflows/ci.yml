@@ -61,7 +61,7 @@ jobs:
       - name: Build the API documentation
         env:
           RUSTDOCFLAGS: -D warnings
-        run: cargo doc --no-deps -p sofel-woff -p sofel-geom -p sofel-unicode -p sofel-read -p sofel-font -p sofel-write -p sofel-subset -p sofel-outline -p sofel-bitmap -p sofel-color -p sofel-raster -p sofel-shape -p sofel-cli -p sofel-capi
+        run: cargo doc --no-deps -p sofel-woff -p sofel-geom -p sofel-unicode -p sofel-read -p sofel-type1 -p sofel-font -p sofel-write -p sofel-subset -p sofel-outline -p sofel-bitmap -p sofel-color -p sofel-raster -p sofel-shape -p sofel-cli -p sofel-capi
       # docs/adr/0003, docs/adr/0008
       - name: Check crate dependencies
         run: sh scripts/check-deps.sh
@@ -394,9 +394,10 @@ jobs:
         run: |
           export CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=$GITHUB_WORKSPACE::$GITHUB_WORKSPACE"
           cargo test --release --target wasm32-wasip1 -p sofel-conformance --test harfbuzz_subset
-      - name: Check variable-font delta digest on wasm32-wasip1
+      - name: Check variable-font API fixtures and delta digest on wasm32-wasip1
         run: |
           export CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=$GITHUB_WORKSPACE/target/testdata::/testdata --env SOFEL_TESTDATA=/testdata"
+          cargo test --release --target wasm32-wasip1 -p sofel-conformance --test variation_api
           cargo test --release --target wasm32-wasip1 -p sofel-conformance --test variation_reference adr0029_corpus_delta_digest
       - name: Test extra font corpus on wasm32-wasip1
         run: |

@@ -5,9 +5,9 @@ use super::{
 use crate::tables::variation_region;
 use sofel_geom::float::{hb_clamp_to_i32, hb_roundf32, i32_to_f32};
 
-pub(super) type Region = Vec<[u32; 3]>;
-type Column = (Region, Vec<i32>);
-pub(super) type Block = (usize, Vec<Column>);
+pub(crate) type Region = Vec<[u32; 3]>;
+pub(crate) type Column = (Region, Vec<i32>);
+pub(crate) type Block = (usize, Vec<Column>);
 
 fn key(tents: &[[f32; 3]]) -> Region {
     tents
@@ -24,6 +24,57 @@ pub(crate) fn subset(
     tag: Tag,
     optimize: bool,
     remap: &mut BTreeMap<u32, u32>,
+) -> Result<Vec<u8>, SubsetError> {
+    subset_inner(
+        plan,
+        font,
+        store,
+        items,
+        (tag, optimize),
+        remap,
+        ConditionRows {
+            values: &[],
+            map: &mut BTreeMap::new(),
+        },
+    )
+}
+
+pub(crate) fn subset_gdef_conditions(
+    plan: &Plan,
+    font: &Font<'_>,
+    store: ItemVariationStore<'_>,
+    items: &[(u16, Vec<u32>)],
+    remap: &mut BTreeMap<u32, u32>,
+    conditions: &[(u32, i16, f64)],
+    condition_map: &mut BTreeMap<(u32, i16), (u32, i16)>,
+) -> Result<Vec<u8>, SubsetError> {
+    subset_inner(
+        plan,
+        font,
+        store,
+        items,
+        (Tag::new(b"GDEF"), true),
+        remap,
+        ConditionRows {
+            values: conditions,
+            map: condition_map,
+        },
+    )
+}
+
+struct ConditionRows<'a> {
+    values: &'a [(u32, i16, f64)],
+    map: &'a mut BTreeMap<(u32, i16), (u32, i16)>,
+}
+
+fn subset_inner(
+    plan: &Plan,
+    font: &Font<'_>,
+    store: ItemVariationStore<'_>,
+    items: &[(u16, Vec<u32>)],
+    (tag, optimize): (Tag, bool),
+    remap: &mut BTreeMap<u32, u32>,
+    conditions: ConditionRows<'_>,
 ) -> Result<Vec<u8>, SubsetError> {
     let bad = SubsetError::Malformed { tag };
     let limit = SubsetError::Limit { tag };
@@ -47,6 +98,8 @@ pub(crate) fn subset(
     let mut seen = BTreeSet::new();
     let mut order = Vec::new();
     let mut blocks = Vec::new();
+    let mut private_blocks = Vec::new();
+    let mut pending_conditions = BTreeMap::new();
     let mut long = false;
     for (outer, rows) in items {
         let data = store.item_data(*outer).ok_or(bad)?;
@@ -55,6 +108,13 @@ pub(crate) fn subset(
         for col in 0..data.region_index_count() {
             let region = usize::from(data.region_index(usize::from(col)).ok_or(bad)?);
             let source = original.get(region).ok_or(bad)?;
+            if crate::tables::avar::region_dead(
+                source,
+                &plan.var.n.axis_tags,
+                &plan.var.n.avar2_reachable,
+            ) {
+                continue;
+            }
             for (tents, scales) in
                 variation_region::split(source.clone(), &changes, usize::from(u16::MAX), tag)?
             {
@@ -74,6 +134,70 @@ pub(crate) fn subset(
                 }
             }
         }
+        for &(index, default, value) in conditions.values {
+            if u16::try_from(index >> 16).ok() != Some(*outer) {
+                continue;
+            }
+            let Some(inner) = rows.iter().position(|&row| row == (index & 0xffff)) else {
+                continue;
+            };
+            let deltas = columns
+                .iter()
+                .map(|(_, values)| values.get(inner).copied().unwrap_or(0.0))
+                .collect::<Vec<_>>();
+            let variable = deltas.iter().any(|&delta| delta != 0.0);
+            if !variable {
+                let sign = if value > 0.0 { 1 } else { 0 };
+                pending_conditions.insert((index, default), (u32::MAX, sign));
+                continue;
+            }
+            let maximum = deltas
+                .iter()
+                .fold(value.abs(), |max, delta| max.max(f64::from(delta.abs())));
+            let mut scale = 1.0f64;
+            while maximum * scale > f64::from(i32::MAX) {
+                scale *= 0.5;
+            }
+            while maximum * scale * 2.0 <= f64::from(i32::MAX) {
+                let integral = value * scale == sofel_geom::float::hb_roundf(value * scale)
+                    && deltas.iter().all(|&delta| {
+                        let scaled = f64::from(delta) * scale;
+                        scaled == sofel_geom::float::hb_roundf(scaled)
+                    });
+                if integral {
+                    break;
+                }
+                scale *= 2.0;
+            }
+            let default_value =
+                crate::instance::f64_to_i32(sofel_geom::float::hb_roundf(value * scale));
+            let default_value = i16::try_from(default_value).map_err(|_| limit)?;
+            let compact = if scale == 1.0 {
+                (u32::try_from(blocks.len()).map_err(|_| limit)? << 16)
+                    | u32::try_from(inner).map_err(|_| limit)?
+            } else {
+                let outer = items.len().checked_add(private_blocks.len()).ok_or(limit)?;
+                let columns: Vec<_> = columns
+                    .iter()
+                    .filter_map(|(region, values)| {
+                        let scaled = f64::from(*values.get(inner)?) * scale;
+                        let rounded =
+                            crate::instance::f64_to_i32(sofel_geom::float::hb_roundf(scaled));
+                        (rounded != 0).then(|| (region.clone(), alloc::vec![rounded]))
+                    })
+                    .collect();
+                for (region, values) in &columns {
+                    if seen.insert(region.clone()) {
+                        order.push(region.clone());
+                    }
+                    used.insert(region.clone());
+                    long |= values.iter().any(|&value| i16::try_from(value).is_err());
+                }
+                private_blocks.push((1, columns));
+                u32::try_from(outer).map_err(|_| limit)? << 16
+            };
+            pending_conditions.insert((index, default), (compact, default_value));
+        }
         let mut block = Vec::new();
         for (region, values) in columns {
             let rounded: Vec<_> = values
@@ -91,6 +215,7 @@ pub(crate) fn subset(
         }
         blocks.push((rows.len(), block));
     }
+    blocks.extend(private_blocks);
     let mut regions = Vec::new();
     for region in original.iter().map(|t| key(t)).chain(order) {
         if used.remove(&region) {
@@ -106,6 +231,14 @@ pub(crate) fn subset(
     }
     if optimize {
         *remap = super::optimize::optimize(&mut blocks, &regions, tag)?;
+    }
+    for (source, (compact, default)) in pending_conditions {
+        let index = if compact == u32::MAX {
+            compact
+        } else {
+            *remap.get(&compact).ok_or(limit)?
+        };
+        conditions.map.insert(source, (index, default));
     }
     out.u16(u16::try_from(blocks.len()).map_err(|_| limit)?);
     let offsets: Vec<_> = blocks.iter().map(|_| out.u32(0)).collect();
@@ -130,7 +263,7 @@ pub(crate) fn subset(
     Ok(out.current().to_vec())
 }
 
-fn write_block(
+pub(crate) fn write_block(
     out: &mut Serializer,
     rows: usize,
     columns: &[Column],

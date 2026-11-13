@@ -214,6 +214,7 @@ version = "0.0.0"
 dependencies = [
  "sofel-geom",
  "sofel-read",
+ "sofel-type1",
 ]
 
 [[package]]
@@ -284,6 +285,10 @@ dependencies = [
  "sofel-geom",
  "sofel-inflate",
 ]
+
+[[package]]
+name = "sofel-type1"
+version = "0.0.0"
 
 [[package]]
 name = "sofel-unicode"
