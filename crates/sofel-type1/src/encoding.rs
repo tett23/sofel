@@ -1,7 +1,7 @@
 //! Type 1 glyph-name encoding.
 
+use crate::encoding_data::STANDARD_NAMES;
 use core::fmt;
-use sofel_read::cff::{STANDARD_ENCODING, STANDARD_STRINGS};
 
 /// Invalid or unsupported Type 1 encoding declaration.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -34,15 +34,7 @@ impl<'a> Encoding<'a> {
             .ok_or(EncodingError)?
             .trim_ascii_start();
         if declaration.starts_with(b"StandardEncoding") {
-            let names = core::array::from_fn(|code| {
-                let sid = *STANDARD_ENCODING.get(code)?;
-                if sid == 0 {
-                    return None;
-                }
-                STANDARD_STRINGS
-                    .get(usize::from(sid))
-                    .map(|name| name.as_bytes())
-            });
+            let names = STANDARD_NAMES;
             return Ok(Self { names });
         }
         let body = declaration

@@ -185,9 +185,6 @@ dependencies = [
 [[package]]
 name = "sofel-type1"
 version = "0.0.0"
-dependencies = [
- "sofel-read",
-]
 
 [[package]]
 name = "sofel-unicode"
