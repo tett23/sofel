@@ -209,20 +209,7 @@ fn layout_unsupported(
                     || (no_subset.contains(Tag::new(b"GSUB").to_u32())
                         && !table.has_only_axis_range_conditions()))
         });
-    // A VariationIndex Device necessarily contains the format word 0x8000.
-    // Scan the whole retained table so an unknown or malformed subtable
-    // cannot make a real reference look absent. Other 0x8000 words may
-    // conservatively keep the table unsupported.
-    let may_reference_gdef_store = |d: &[u8]| d.windows(2).any(|word| word == [0x80, 0x00]);
-    let gpos_may_reference_store = retained(b"GPOS")
-        && font
-            .table(Tag::new(b"GPOS"))
-            .is_some_and(may_reference_gdef_store);
-    let copied_gpos_may_reference_store =
-        gpos_may_reference_store && no_subset.contains(Tag::new(b"GPOS").to_u32());
-    if !pinned
-        && kept(b"GDEF").is_some_and(layout::gdef::has_var_store)
-        && (copied_gpos_may_reference_store || gsub_may_reference_store)
+    if !pinned && kept(b"GDEF").is_some_and(layout::gdef::has_var_store) && gsub_may_reference_store
     {
         return Err(SubsetError::Unsupported {
             tag: Tag::new(b"GDEF"),
@@ -1005,6 +992,24 @@ impl Plan {
                         reason: "the GDEF item variation store (ADR 0022 stage 10)",
                     });
                 };
+                if no_subset.contains(Tag::new(b"GPOS").to_u32()) {
+                    // Every original GPOS reference survives a copied table.
+                    // Preserve the store's row numbers even for unused glyphs.
+                    let tag = Tag::new(b"GDEF");
+                    let store = sofel_font::read::gdef::Gdef::new(gdef)
+                        .ok()
+                        .and_then(|table| table.variation_store().ok().flatten())
+                        .ok_or(SubsetError::Malformed { tag })?;
+                    for outer in 0..store.data_count() {
+                        let rows = store
+                            .item_data(outer)
+                            .ok_or(SubsetError::Malformed { tag })?
+                            .item_count;
+                        for inner in 0..rows {
+                            selected.insert((u32::from(outer) << 16) | u32::from(inner));
+                        }
+                    }
+                }
                 for (tag, layout) in [
                     (Tag::new(b"GSUB"), &p.layout.gsub),
                     (Tag::new(b"GPOS"), &p.layout.gpos),
