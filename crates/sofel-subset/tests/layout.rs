@@ -1501,3 +1501,26 @@ fn gpos_kept_glyphs_only() {
     assert_eq!(u16_at(follow(&gpos, 6), 0), 0);
     assert_eq!(u16_at(follow(&gpos, 8), 0), 0);
 }
+
+#[test]
+fn adr0022_wide_coverage_retains_single_substitutions() {
+    for coverage in [
+        vec![0, 3, 0, 0, 2, 0, 0, 1, 0, 0, 2],
+        vec![0, 4, 0, 0, 1, 0, 0, 1, 0, 0, 2, 0, 0, 0],
+    ] {
+        let subtable = link(
+            Buf::new().u16(1).u16(0).u16(4).done(),
+            vec![(2, 2, coverage)],
+        );
+        let data = font_with(vec![(
+            b"GSUB",
+            layout_table(&[(b"liga", &[0])], &[(1, subtable)]),
+        )]);
+        let out = subset(&Font::new(&data, 0).unwrap(), &chars("AB")).unwrap();
+        assert_eq!(num_glyphs(&out), 5);
+        assert_eq!(
+            first_coverage(&out_table(&out, b"GSUB").unwrap()),
+            coverage1(&[1, 2])
+        );
+    }
+}

@@ -113,25 +113,44 @@ pub(crate) fn bsearch(n: usize, cmp: impl Fn(usize) -> core::cmp::Ordering) -> O
     None
 }
 
-/// A Coverage table (formats 1 and 2).
+/// A Coverage table (formats 1 through 4).
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct Cov<'a>(pub D<'a>);
 
 impl<'a> Cov<'a> {
+    fn checked(self) -> sofel_font::read::layout::Coverage<'a> {
+        sofel_font::read::layout::Coverage::new(self.0.0)
+            .unwrap_or_else(|_| sofel_font::read::layout::Coverage::empty())
+    }
+
     fn format(self) -> u16 {
         self.0.u16(0)
     }
 
     fn count(self) -> usize {
-        usize::from(self.0.u16(2))
+        if self.format() >= 3 {
+            self.checked().num_records()
+        } else {
+            usize::from(self.0.u16(2))
+        }
     }
 
     fn glyph1(self, i: usize) -> u32 {
-        u32::from(self.0.u16_at(4, i))
+        if self.format() == 3 {
+            self.checked().glyph(i).map_or(0, |g| g.0)
+        } else {
+            u32::from(self.0.u16_at(4, i))
+        }
     }
 
     /// `(first, last, start coverage index)` of range `i` of format 2.
     fn range(self, i: usize) -> (u32, u32, u32) {
+        if self.format() == 4 {
+            return self
+                .checked()
+                .range(i)
+                .map_or((1, 0, 0), |(a, z, v)| (a.0, z.0, v));
+        }
         let at = 4usize.saturating_add(i.saturating_mul(6));
         (
             u32::from(self.0.u16(at)),
@@ -143,9 +162,9 @@ impl<'a> Cov<'a> {
     /// The coverage index of `g` (`get_coverage`).
     pub fn get(self, g: u32) -> Option<u32> {
         match self.format() {
-            1 => bsearch(self.count(), |i| g.cmp(&self.glyph1(i)))
+            1 | 3 => bsearch(self.count(), |i| g.cmp(&self.glyph1(i)))
                 .map(|i| u32::try_from(i).unwrap_or(INVALID)),
-            2 => {
+            2 | 4 => {
                 let (first, last, value) = bsearch(self.count(), |i| {
                     let (a, z, _) = self.range(i);
                     if g < a {
@@ -171,8 +190,8 @@ impl<'a> Cov<'a> {
     /// The number of covered glyphs (`get_population`).
     pub fn population(self) -> u64 {
         match self.format() {
-            1 => self.count() as u64,
-            2 => (0..self.count())
+            1 | 3 => self.count() as u64,
+            2 | 4 => (0..self.count())
                 .map(|i| {
                     let (a, z, _) = self.range(i);
                     if z < a {
@@ -190,8 +209,8 @@ impl<'a> Cov<'a> {
     /// format 2 range whose coverage index does not follow on).
     pub fn glyphs(self) -> Vec<u32> {
         match self.format() {
-            1 => (0..self.count()).map(|i| self.glyph1(i)).collect(),
-            2 => {
+            1 | 3 => (0..self.count()).map(|i| self.glyph1(i)).collect(),
+            2 | 4 => {
                 let n = self.count();
                 let mut out = Vec::new();
                 if n == 0 {
@@ -231,14 +250,14 @@ impl<'a> Cov<'a> {
     /// Whether a glyph of `glyphs` is covered (`intersects`).
     pub fn intersects(self, glyphs: &BitSet) -> bool {
         match self.format() {
-            1 => {
+            1 | 3 => {
                 let n = self.count() as u64;
                 if n > glyphs.len().saturating_mul(bit_storage(n)) {
                     return glyphs.iter().any(|g| self.has(g));
                 }
                 (0..self.count()).any(|i| glyphs.has(self.glyph1(i)))
             }
-            2 => {
+            2 | 4 => {
                 let n = self.count() as u64;
                 if n > glyphs.len().saturating_mul(bit_storage(n)) {
                     return glyphs.iter().any(|g| self.has(g));
@@ -255,11 +274,11 @@ impl<'a> Cov<'a> {
     /// Adds the covered glyphs of `glyphs` to `out` (`intersect_set`).
     pub fn intersect_set(self, glyphs: &BitSet, out: &mut BitSet) {
         match self.format() {
-            1 => (0..self.count())
+            1 | 3 => (0..self.count())
                 .map(|i| self.glyph1(i))
                 .filter(|&g| glyphs.has(g))
                 .for_each(|g| out.add(g)),
-            2 => {
+            2 | 4 => {
                 let mut last = 0u32;
                 for i in 0..self.count() {
                     let (a, z, _) = self.range(i);
