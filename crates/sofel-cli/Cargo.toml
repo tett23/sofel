@@ -8,6 +8,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+sofel-bitmapfont = { path = "../sofel-bitmapfont" }
 sofel-png = { path = "../sofel-png" }
 sofel-geom = { path = "../sofel-geom" }
 sofel-inflate = {path="../sofel-inflate"}
@@ -19,7 +20,6 @@ sofel-type1 = { path = "../sofel-type1" }
 sofel-raster = { path = "../sofel-raster" }
 sofel-shape = { path = "../sofel-shape" }
 sofel-bitmap = { path = "../sofel-bitmap" }
-sofel-bitmapfont = { path = "../sofel-bitmapfont" }
 sofel-color = { path = "../sofel-color" }
 sofel-svg = { path = "../sofel-svg" }
 sofel-subset = { path = "../sofel-subset" }

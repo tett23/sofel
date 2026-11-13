@@ -194,7 +194,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - `Outlines::load_with_hint` と C API の `sofel_outline_load_with_hint` は ppem、ヒンティングモード、ターゲットをロード時に受け取り、輪郭と水平アドバンスを返す。ヒンティングモードはなし、TrueType v35、TrueType v40、自動ヒンティングを指定する（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
 - 自動ヒンティングは空輪郭の送り幅をグリッドに合わせる。非空輪郭では、glyf フォントに gvar と GLYF がなく、Unicode cmap の全マッピングが1024件以下で U+0020..007F または U+0100..024F に収まり、GSUB lookup がなく、対象グリフに Unicode マッピングがない場合に限り、無ヒントの輪郭を検査する。その輪郭が重ならない4個のオンカーブ点からなる平行四辺形1つで、上下の辺の x 範囲が交わらず、斜辺が FreeType の軸方向判定の閾値から外れ、4辺が近接点の閾値の2倍以上なら、輪郭点を移動せず送り幅をグリッドに合わせる（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
 - Latin の大文字 I が重ならない4点の矩形輪郭で、H の上端が I の上端と一致し、e の上端から x-height、O の上端から cap height の blue zone を求められる場合、自動ヒンティングは LIGHT と LCD のターゲットで baseline と cap height の edge を blue zone に合わせる。cap height の blue zone が有効で、x-height によるスケール補正が FreeType の上限内に収まる場合に限る。送り幅はグリッドに合わせる（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
-- Latin の小文字 b が重ならない glyf の3輪郭で、横方向の segment が6本あり、X 範囲が重なる逆方向の segment が cap stem、bowl の上端と下端の3組に分かれる場合、自動ヒンティングは LIGHT と LCD のターゲットで縦 edge を blue zone に合わせる。a と c の輪郭から x-height と baseline を求める。i と o に文字対応があれば、その輪郭も ascender と標準 stem 幅の計算に使う。近接する edge を結合し、各 segment の点を edge に合わせ、残る strong point と weak point を補間する。gvar と GLYF を持つフォント、およびこの6 segment 構造に当てはまらない小文字 b は対象外とする。送り幅はグリッドに合わせる。これら以外の非空輪郭は Rust では `AutoHintUnsupported`、C API では `SOFEL_ERROR_UNSUPPORTED` を返す（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
+- Latin の小文字 b・d が重ならない glyf の3輪郭で、横方向の segment が6本あり、X 範囲が重なる逆方向の segment が cap stem、bowl の上端と下端の3組に分かれる場合、自動ヒンティングは LIGHT と LCD のターゲットで縦 edge を blue zone に合わせる。a と c の輪郭から x-height と baseline を求める。i と o に文字対応があれば、その輪郭も ascender と標準 stem 幅の計算に使う。近接する edge を結合し、各 segment の点を edge に合わせ、残る strong point と weak point を補間する。gvar と GLYF を持つフォント、およびこの6 segment 構造に当てはまらない小文字 b・d は対象外とする。送り幅はグリッドに合わせる。これら以外の非空輪郭は Rust では `AutoHintUnsupported`、C API では `SOFEL_ERROR_UNSUPPORTED` を返す（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
 - `Outlines::load_truetype_v35` は指定した ppem で TrueType の単純グリフと複合グリフを読み、v35 のネイティブヒンティングを適用する。ロード時に NORMAL、LIGHT、MONO、LCD、LCD_V のターゲットを選ぶ。`load_truetype_mono` は MONO を使う。フォントプログラムと準備プログラムを実行し、グリフ命令が更新した輪郭を `Scratch::points` で返す。`point_tags` では各点のタグ（ヒンタが移動対象にした軸とドロップアウト制御を含む）、`contour_ends` では各輪郭の最終点の番号を取得できる。複合グリフでは、各成分にヒンティングを適用して配置した後、複合グリフ自身の命令を実行する。未対応の命令は `InvalidOutline` を返す（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。 `Outlines::load_truetype_v40` と C API の `sofel_outline_load_truetype_v40` は同じ5種類のターゲットで v40 の補正を適用し、輪郭と補正後の水平アドバンス（26.6 固定小数点）を返す。
 
 - glyfと `GLYF` の単純なグリフと合成グリフの輪郭を、ヒンティングをせずに、FreeTypeと同じ座標で `Pen` に渡す（[ADR 0011](adr/0011-glyf-outlines.md)）。`GLYF` があれば `GLYF` と `LOCA` を使い、そのときだけフラグ0x80を三次曲線、0x2000を24bitの成分のグリフIDとして扱う。
@@ -415,7 +415,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 ## WOFF と圧縮フォントの読み込み
 
-`sofel_woff::decode_woff2` は、Brotli の非圧縮ブロックに変換なしの表を格納した単一フェイスの WOFF2 を sfnt に戻す。CLI は外側の圧縮を展開した後に WOFF2 の署名を識別する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+`sofel_woff::decode_woff2` は、Brotli の非圧縮ブロックを使った単一フェイスの WOFF2 を sfnt に戻す。変換なしの表に加え、変換した hmtx も読み、元の glyf と loca から省略された左サイドベアリングを復元する。CLI は外側の圧縮を展開した後に WOFF2 の署名を識別する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
 `sofel_woff::decode_woff` は出力サイズの上限を受け取り、WOFF 1.0 の表を物理順に展開して sfnt を返す。フォントを読み込む CLI は gzip、UNIX compress（LZW）、bzip2 を先に展開してから WOFF の署名を検査する。検証器は WOFF の不正なフィールドか圧縮表の入力オフセットを報告する。bzip2 はブロックとメンバーの CRC を検査し、破損を検出した入力オフセットを報告する。gzip の破損はメンバーを含むコンテナ先頭で報告する。[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)
 
@@ -465,9 +465,13 @@ Type 1 の Multiple Masters では、`Type1Face::multiple_masters` が軸の名�
 
 `sofel-validate` は CID-keyed Type 1 を識別し、CIDMap とサブルーチンマップが切り詰められた場合は最初の欠落位置を、16進データに無効なバイトがある場合はそのバイト位置を、ヘッダの数値が不正な場合は値の位置を、FontMatrix が不正な場合はフィールドの位置を、ファイル先頭からのオフセットとして報告する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
+`sofel-validate` は BDF を識別し、ファイル先頭から破損した行の先頭までのバイト数をタグ `BDF ` のオフセットとして返す。入力が途中で尽きた場合はファイル長を、不正な UTF-8 がある場合は最初の不正なバイトの位置を返す（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+
 `sofel-validate` は Type 42 のラッパーを解析し、埋め込み sfnt を通常の sfnt と同じ手順で検証する。ラッパーの診断はタグ `T42 ` とファイル先頭からのオフセットを返す。埋め込み sfnt の各表の診断では、その表の先頭からのオフセットを返す（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
 `sofel-type1::type42::Type42Source` は Type42 の `/sfnts` 配列の16進文字列または `RD` バイナリを連結し、展開長と sfnt の表範囲を検査する。`/Encoding` と `/CharStrings` から Type42 のグリフ番号を読み、`.notdef` を先頭に置く。Unicode の文字対応は PostScript のグリフ名を Adobe Glyph List と `uniXXXX`・`uXXXXX` によって変換し、8ビットの Encoding は別に問い合わせる。`Font::from_type42` が返す `Type42Face` は Type42 のグリフ番号を埋め込み TrueType のグリフ番号へ変換し、送りを返す。輪郭を読むときは `embedded_glyph` と `inner_font` の組を使う（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+
+`sofel render` は Type42 の `--glyph` を PostScript のグリフ番号として読み、`--char` と `--text` の Unicode は PostScript のグリフ名から引く。描画には対応する埋め込み TrueType グリフを使う。
 
 ## 素の CFF フェイスと CEF
 
