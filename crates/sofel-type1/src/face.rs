@@ -68,6 +68,11 @@ impl<'a> Type1Face<'a> {
         self.charstrings.glyph_program(self.glyph_name(glyph)?)
     }
 
+    /// Decrypted local Type 1 subroutine by index.
+    pub fn subroutine_program(&self, index: usize) -> Option<Vec<u8>> {
+        self.charstrings.subroutine_program(index)
+    }
+
     /// The unscaled side bearings and advances of a glyph.
     pub fn glyph_metrics(&self, glyph: usize) -> Option<Metrics> {
         parse_metrics(&self.glyph_program(glyph)?).ok()

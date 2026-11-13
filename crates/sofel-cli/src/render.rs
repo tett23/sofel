@@ -4,9 +4,10 @@ use std::ffi::OsString;
 use std::io::Write;
 
 use sofel_font::read::GlyphId;
-use sofel_font::{BareCffFace, BitmapFormat, Font};
-use sofel_outline::{Outlines, Scratch};
-use sofel_raster::Rasterizer;
+use sofel_font::{BareCffFace, BitmapFormat, Font, Type1Face, Type1Source};
+use sofel_geom::{Fixed, div_fix};
+use sofel_outline::{Outlines, Scale, Scratch, draw_type1};
+use sofel_raster::{FillRule, Rasterizer, RenderOptions};
 
 use crate::glyph;
 
@@ -37,6 +38,9 @@ monochrome glyphs; both formats write PGM (ADR 0065).
 Bare CFF 1 faces use their PostScript character mapping and unhinted
 outlines for --char and --glyph. `sofel render --text` also shapes bare
 CFF characters through its font callbacks (ADR 0065).
+
+Type 1 PFA and PFB faces render their unhinted outlines by glyph index
+or eight-bit encoded character (ADR 0065).
 
   --variations LIST   design coordinates, e.g. wght=500
   --named-instance N  start at named instance N (zero-based)
@@ -288,6 +292,9 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
     if bytes.first() == Some(&1) {
         return render_bare_cff(&bytes, &args, text.as_deref(), out, err);
     }
+    if bytes.starts_with(b"%!PS-AdobeFont") || bytes.starts_with(&[0x80, 0x01]) {
+        return render_type1(&bytes, &args, text.as_deref(), out, err);
+    }
     let font = match Font::new(&bytes, args.face) {
         Ok(f) => f,
         Err(e) => return fail(err, format!("{}: {e}", args.file.to_string_lossy())),
@@ -392,6 +399,76 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
     image.extend(b.pixels.iter().map(|v| !v));
     if out.write_all(&image).is_err() {
         return fail(err, "cannot write the image".into());
+    }
+    0
+}
+
+fn render_type1(
+    bytes: &[u8],
+    args: &Args,
+    text: Option<&str>,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> i32 {
+    let mut fail = |message: &str| {
+        let _ = writeln!(err, "sofel-render: {message}");
+        1
+    };
+    if args.face != 0 {
+        return fail("Type 1 face index out of range");
+    }
+    if text.is_some() {
+        return fail("Type 1 text input is unavailable");
+    }
+    let source = if bytes.starts_with(b"%!PS-AdobeFont") {
+        Type1Source::parse_pfa(bytes, 67_108_864)
+    } else {
+        Type1Source::parse_pfb(bytes, 67_108_864)
+    };
+    let Ok(source) = source else {
+        return fail("invalid Type 1 font source");
+    };
+    let Ok(face) = Type1Face::new(&source) else {
+        return fail("invalid Type 1 face");
+    };
+    let glyph = match args.target {
+        Target::Glyph(glyph) => usize::try_from(glyph).unwrap_or(usize::MAX),
+        Target::Char(codepoint) => {
+            let Ok(code) = u8::try_from(codepoint) else {
+                return fail("character is not mapped");
+            };
+            let Some(glyph) = face.nominal_glyph(code) else {
+                return fail("character is not mapped");
+            };
+            glyph
+        }
+        Target::Text(_) | Target::TextFile(_) => return fail("Type 1 text input is unavailable"),
+    };
+    let fixed = Fixed(div_fix(i32::from(args.ppem).saturating_mul(64), 1000));
+    let scale = Scale::Scaled { x: fixed, y: fixed };
+    let mut raster = Rasterizer::new();
+    if draw_type1(&face, glyph, scale, &mut raster).is_err() {
+        return fail("Type 1 glyph cannot be rendered");
+    }
+    let bitmap = raster.render(RenderOptions {
+        fill: FillRule::NonZero,
+        overlap: false,
+        ppem: Some((args.ppem, args.ppem)),
+    });
+    let Ok(bitmap) = bitmap else {
+        return fail("Type 1 glyph cannot be rendered");
+    };
+    if bitmap.width == 0 || bitmap.rows == 0 {
+        return fail("Type 1 glyph is empty");
+    }
+    let mut image = format!(
+        "P5\n# left {} top {}\n{} {}\n255\n",
+        bitmap.left, bitmap.top, bitmap.width, bitmap.rows
+    )
+    .into_bytes();
+    image.extend(bitmap.pixels.iter().map(|value| !value));
+    if out.write_all(&image).is_err() {
+        return fail("cannot write the image");
     }
     0
 }

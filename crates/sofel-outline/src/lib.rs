@@ -66,6 +66,8 @@
 extern crate alloc;
 
 mod hb_cff;
+mod type1;
+pub use type1::draw_type1;
 mod hb_draw;
 mod slot_synth;
 mod stroke;
