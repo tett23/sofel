@@ -66,3 +66,26 @@ fn adr0065_i1_bdf_alternative_encoding_selects_the_same_glyph() {
     let font = BdfFont::parse(source.as_bytes()).unwrap();
     assert_eq!(font.nominal_glyph(1114112), None);
 }
+
+#[test]
+fn adr0065_i1_bdf_strike_uses_size_properties() {
+    for (properties, expected) in [
+        ("POINT_SIZE 80", (510, 510)),
+        ("PIXEL_SIZE 9", (576, 576)),
+        ("RESOLUTION_X 96\nRESOLUTION_Y 75", (682, 533)),
+        (
+            "PIXEL_SIZE -9\nRESOLUTION_X 96\nRESOLUTION_Y 72",
+            (768, 576),
+        ),
+    ] {
+        let count = 3 + properties.lines().count();
+        let source = ORDER.replace(
+            "STARTPROPERTIES 3",
+            &format!("STARTPROPERTIES {count}\n{properties}"),
+        );
+        assert_eq!(
+            BdfFont::parse(source.as_bytes()).unwrap().ppem_26_6(),
+            expected
+        );
+    }
+}
