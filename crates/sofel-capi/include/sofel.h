@@ -1758,6 +1758,25 @@ int32_t sofel_outline_load_truetype_v40(const sofel_font_t *font, const sofel_lo
                                         sofel_outline_scratch_t *scratch, int32_t *cbox,
                                         uint32_t *overlap, int32_t *advance);
 
+enum {
+  SOFEL_HINT_MODE_NONE = 0,
+  SOFEL_HINT_MODE_NATIVE_V35 = 1,
+  SOFEL_HINT_MODE_NATIVE_V40 = 2,
+  SOFEL_HINT_MODE_AUTO = 3
+};
+
+/*
+ * Loads an outline with the selected hint mode and target at square ppem.
+ * Writes the horizontal advance in 26.6 pixels.
+ * Rust: sofel_outline::Outlines::load_with_hint
+ * HarfBuzz: none
+ * FreeType: FT_Load_Glyph
+ */
+int32_t sofel_outline_load_with_hint(const sofel_font_t *font, const sofel_location_t *location,
+                                     uint32_t glyph, uint16_t ppem, uint32_t mode, uint32_t target,
+                                     sofel_outline_scratch_t *scratch, int32_t *cbox,
+                                     uint32_t *overlap, int32_t *advance);
+
 /*
  * Sends the outline last loaded into `scratch` to the pen, after moving
  * it by (dx, dy) and multiplying every point by `multiplier`, as

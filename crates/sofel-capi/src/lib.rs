@@ -35,8 +35,8 @@ use sofel_font::read::{DetailValue, Diagnostic, GlyphId, Severity, Tag, validate
 use sofel_font::{Cff, CidError, Direction, Font, FontError, GlyphExtents, HbScale, MetricsTag};
 use sofel_geom::{Fixed, Matrix, Pen, Point};
 use sofel_outline::{
-    HintTarget, OutlineError, OutlineInfo, Outlines, Scale, Scratch, StrokeBorder, StrokeError,
-    StrokeJoin, StrokeStyle,
+    HintMode, HintTarget, OutlineError, OutlineInfo, Outlines, Scale, Scratch, StrokeBorder,
+    StrokeError, StrokeJoin, StrokeStyle,
 };
 use sofel_raster::{Bitmap, FillRule, PixelBox, RasterError, Rasterizer, RenderOptions};
 
@@ -2520,7 +2520,7 @@ fn put_info(info: OutlineInfo, cbox: &mut [i32; 4], overlap: &mut u32) {
 enum OutlineLoad<'a> {
     Unhinted(Result<Scale, i32>),
     TrueTypeV35(u16, HintTarget, Option<&'a mut i32>),
-    TrueTypeV40(u16, HintTarget, &'a mut i32),
+    WithHint(u16, HintMode, HintTarget, &'a mut i32),
 }
 
 fn outline_load(
@@ -2536,8 +2536,8 @@ fn outline_load(
     let outlines = outlines_at(font, location);
     let info = match load {
         OutlineLoad::Unhinted(scale) => outlines.load(GlyphId(glyph), scale?, &mut scratch.scratch),
-        OutlineLoad::TrueTypeV40(ppem, target, advance) => outlines
-            .load_truetype_v40(GlyphId(glyph), ppem, target, &mut scratch.scratch)
+        OutlineLoad::WithHint(ppem, mode, target, advance) => outlines
+            .load_with_hint(GlyphId(glyph), ppem, mode, target, &mut scratch.scratch)
             .map(|(info, width)| {
                 *advance = width;
                 info
@@ -2723,6 +2723,39 @@ pub unsafe extern "C" fn sofel_outline_load_truetype_v40(
     overlap: *mut u32,
     advance: *mut i32,
 ) -> i32 {
+    // SAFETY: both entry points require the same handles and output buffers.
+    unsafe {
+        sofel_outline_load_with_hint(
+            font, location, glyph, ppem, 2, target, scratch, cbox, overlap, advance,
+        )
+    }
+}
+
+/// Loads an outline with the selected hint mode and writes its horizontal advance.
+///
+/// # Safety
+///
+/// The pointer requirements are those of [`sofel_outline_load_truetype_v40`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_outline_load_with_hint(
+    font: *const SofelFont,
+    location: *const SofelLocation,
+    glyph: u32,
+    ppem: u16,
+    mode: u32,
+    target: u32,
+    scratch: *mut SofelOutlineScratch,
+    cbox: *mut i32,
+    overlap: *mut u32,
+    advance: *mut i32,
+) -> i32 {
+    let mode = match mode {
+        0 => HintMode::None,
+        1 => HintMode::NativeV35,
+        2 => HintMode::NativeV40,
+        3 => HintMode::Auto,
+        _ => return ERROR_INVALID_ARGUMENT,
+    };
     let Some(target) = hint_target(target) else {
         return ERROR_INVALID_ARGUMENT;
     };
@@ -2735,7 +2768,7 @@ pub unsafe extern "C" fn sofel_outline_load_truetype_v40(
             r(font),
             r(location),
             glyph,
-            OutlineLoad::TrueTypeV40(ppem, target, advance),
+            OutlineLoad::WithHint(ppem, mode, target, advance),
             w(scratch),
             ints::<4>(cbox),
             w(overlap),
