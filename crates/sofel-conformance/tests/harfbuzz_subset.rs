@@ -266,3 +266,25 @@ fn table_diff_reports_changed_missing_and_extra_tables() {
         assert!(report.contains(detail), "{report}");
     }
 }
+
+#[test]
+fn adr0022_invalid_colr_store_is_rejected_when_retained() {
+    let path = data().join("fonts/NotoColrEmojiGlyf-Regular.subset.ttf");
+    for codepoint in ["1f696", "1f35e"] {
+        for prepared in [false, true] {
+            let mut args = vec![
+                format!("--font-file={}", path.display()),
+                format!("--unicodes={codepoint}"),
+            ];
+            if prepared {
+                args.push("--preprocess".into());
+            }
+            assert!(
+                subset::run_sofel(&args).is_err(),
+                "{codepoint}, prepared={prepared}"
+            );
+            args.push("--drop-tables+=COLR".into());
+            assert!(subset::run_sofel(&args).is_ok());
+        }
+    }
+}
