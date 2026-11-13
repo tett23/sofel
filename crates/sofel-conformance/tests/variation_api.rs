@@ -231,3 +231,27 @@ fn adr0027_cff2_default_and_design_extents() {
         );
     }
 }
+
+#[test]
+fn adr0027_baselines_match_harfbuzz_api_fixtures() {
+    use sofel_font::Direction::{Horizontal, Vertical};
+
+    for (file, tag, direction, script, expected) in [
+        ("base.ttf", b"icfb", Vertical, b"hani", 46),
+        ("base.ttf", b"idtp", Vertical, b"hani", 1000),
+        ("base.ttf", b"math", Horizontal, b"hani", 271),
+        ("base2.ttf", b"hang", Horizontal, b"beng", 622),
+        ("base2.ttf", b"hang", Horizontal, b"bng2", 622),
+        ("base2.ttf", b"hang", Horizontal, b"tibt", 600),
+    ] {
+        let data = api_font(file);
+        let font = Font::new(&data, 0).unwrap();
+        let instance = font.default_instance();
+        let boxes = HbExtents::new(instance);
+        let position =
+            instance.baseline_with_fallback(Tag::new(tag), direction, Tag::new(script), |glyph| {
+                boxes.glyph_extents(glyph)
+            });
+        assert_eq!(position, expected, "{file} {tag:?} {script:?}");
+    }
+}
