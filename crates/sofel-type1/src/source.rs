@@ -26,6 +26,64 @@ pub struct Type1Source {
 }
 
 impl Type1Source {
+    /// Read a PFA font with ASCII hexadecimal eexec data.
+    pub fn parse_pfa(data: &[u8], max_output: usize) -> Result<Self, SourceError> {
+        if !data.starts_with(b"%!PS-AdobeFont") {
+            return Err(SourceError);
+        }
+        let marker = data
+            .windows(5)
+            .position(|window| window == b"eexec")
+            .ok_or(SourceError)?;
+        let after = marker.checked_add(5).ok_or(SourceError)?;
+        let line_end = data
+            .get(after..)
+            .ok_or(SourceError)?
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .ok_or(SourceError)?;
+        let start = after
+            .checked_add(line_end)
+            .and_then(|n| n.checked_add(1))
+            .ok_or(SourceError)?;
+        let mut cipher = Vec::new();
+        let mut high = None;
+        let mut ended = false;
+        for line in data
+            .get(start..)
+            .ok_or(SourceError)?
+            .split(|byte| *byte == b'\n')
+        {
+            let line = line.trim_ascii();
+            if line.starts_with(b"cleartomark") {
+                ended = true;
+                break;
+            }
+            for &byte in line {
+                if byte.is_ascii_whitespace() {
+                    continue;
+                }
+                let nibble = hex_nibble(byte).ok_or(SourceError)?;
+                if let Some(upper) = high.take() {
+                    if cipher.len() >= max_output {
+                        return Err(SourceError);
+                    }
+                    cipher.push((upper << 4) | nibble);
+                } else {
+                    high = Some(nibble);
+                }
+            }
+        }
+        if !ended || high.is_some() {
+            return Err(SourceError);
+        }
+        let private = decrypt_eexec(&cipher).ok_or(SourceError)?;
+        Ok(Self {
+            cleartext: data.get(..start).ok_or(SourceError)?.to_vec(),
+            private,
+        })
+    }
+
     /// Read the PostScript and eexec sections from a PFB font.
     pub fn parse_pfb(data: &[u8], max_output: usize) -> Result<Self, SourceError> {
         let pfb = Pfb::parse(data, max_output).map_err(|_| SourceError)?;
@@ -60,5 +118,14 @@ impl Type1Source {
     /// The decrypted private dictionary after the four random bytes.
     pub fn private(&self) -> &[u8] {
         &self.private
+    }
+}
+
+fn hex_nibble(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => byte.checked_sub(b'0'),
+        b'a'..=b'f' => byte.checked_sub(b'a').and_then(|n| n.checked_add(10)),
+        b'A'..=b'F' => byte.checked_sub(b'A').and_then(|n| n.checked_add(10)),
+        _ => None,
     }
 }

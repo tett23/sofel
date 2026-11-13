@@ -18,3 +18,6 @@ pub mod cipher;
 
 /// Unpacked Type 1 font programs.
 pub mod source;
+
+/// Type 1 charstring and subroutine index.
+pub mod charstrings;
