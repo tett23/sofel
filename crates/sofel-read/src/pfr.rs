@@ -87,6 +87,18 @@ impl<'a> PfrFace<'a> {
     // Counts have at most 16 bits, and character records occupy at most 10 bytes.
     #[allow(clippy::arithmetic_side_effects)]
     pub fn read(data: &'a [u8], index: u32) -> Result<Self, ReadError> {
+        Self::read_positioned(data, index).map_err(|(error, _)| error)
+    }
+
+    /// Reads a face and returns the byte offset of a failing PFR field.
+    #[allow(clippy::arithmetic_side_effects)]
+    pub fn read_positioned(data: &'a [u8], index: u32) -> Result<Self, (ReadError, usize)> {
+        let mut position = 0;
+        Self::read_inner(data, index, &mut position).map_err(|error| (error, position))
+    }
+
+    #[allow(clippy::arithmetic_side_effects)]
+    fn read_inner(data: &'a [u8], index: u32, position: &mut usize) -> Result<Self, ReadError> {
         let header = data.first_chunk::<58>().ok_or(ReadError::OutOfBounds)?;
         if !header.starts_with(b"PFR0")
             || be::u16_at(header, 6) != Some(0x0d0a)
@@ -108,6 +120,7 @@ impl<'a> PfrFace<'a> {
             return Err(ReadError::InvalidValue);
         }
         section(data, 0, word(8)?)?;
+        *position = 12;
         let mut directory = section(data, word(12)?, word(10)?)?;
         let faces = word16(&mut directory)?;
         let entries = take(&mut directory, usize::from(faces) * 5)?;
@@ -124,6 +137,10 @@ impl<'a> PfrFace<'a> {
                 size,
             )
         };
+        *position = word(12)?
+            .saturating_add(2)
+            .saturating_add(be::to_usize(index).saturating_mul(5))
+            .saturating_add(2);
         let mut logical = within(triple(19)?, triple(16)?, logical_offset, logical_size)?;
         take(&mut logical, 12)?;
         let style = number(&mut logical, 1)?;
@@ -144,6 +161,9 @@ impl<'a> PfrFace<'a> {
         if header[41] != 0 {
             size |= number(&mut logical, 1)? << 16;
         }
+        *position = logical_offset
+            .saturating_add(logical_size.saturating_sub(logical.len()))
+            .saturating_sub(3);
         let mut physical = within(triple(27)?, triple(24)?, offset, size)?;
         let bitmap_tables = data
             .get(offset.checked_add(size).ok_or(ReadError::OutOfBounds)?..)
@@ -179,6 +199,8 @@ impl<'a> PfrFace<'a> {
             + usize::from(flags & 8 != 0)
             + usize::from(flags & 16 != 0)
             + usize::from(flags & 32 != 0);
+        *position = offset.saturating_add(size.saturating_sub(physical.len()));
+        let records_offset = *position;
         let face = Self {
             faces,
             glyphs,
@@ -197,6 +219,11 @@ impl<'a> PfrFace<'a> {
         let mut outlines = false;
         let mut prev = None;
         for i in 0..usize::from(glyphs) {
+            *position = records_offset
+                .saturating_add(i.saturating_mul(record_size))
+                .saturating_add(1 + usize::from(flags & 2 != 0))
+                .saturating_add(2 * usize::from(flags & 4 != 0))
+                .saturating_add(usize::from(flags & 8 != 0));
             let (code, _, offset, size) = face.record(i)?;
             if prev.is_some_and(|v| code <= v) {
                 return Err(ReadError::InvalidValue);
