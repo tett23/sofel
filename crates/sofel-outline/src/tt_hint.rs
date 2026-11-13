@@ -1684,7 +1684,8 @@ impl Interpreter {
                     let value = *stack.last().ok_or(Error::StackUnderflow)?;
                     push(stack, value, max_stack)?;
                 }
-                0x21 => {
+                // POP, SANGW, and AA each discard one operand in FreeType.
+                0x21 | 0x7e | 0x7f => {
                     stack.pop().ok_or(Error::StackUnderflow)?;
                 }
                 0x22 => stack.clear(),
@@ -2660,4 +2661,18 @@ fn adr0064_i1_relative_jumps_count_from_opcode_and_obey_execution_limit() {
     );
     assert_eq!(budget, 0);
     assert!(run(&[0xb0, 0, 0x1c], &mut values, 1).is_err());
+}
+
+#[test]
+fn adr0064_i1_legacy_angle_instructions_consume_one_operand() {
+    let mut vm = Interpreter::new(0, &[], 65536);
+    for opcode in [0x7e, 0x7f] {
+        let mut stack = alloc::vec![13, 42];
+        vm.execute(&[opcode], &mut stack, 2).unwrap();
+        assert_eq!(stack, [13]);
+        assert_eq!(
+            vm.execute(&[opcode], &mut alloc::vec![], 2),
+            Err(Error::StackUnderflow)
+        );
+    }
 }
