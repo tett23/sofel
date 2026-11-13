@@ -89,6 +89,7 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-capi`](crates/sofel-capi) | C ABI（ヘッダは [`sofel.h`](crates/sofel-capi/include/sofel.h)、[ADR 0015](docs/adr/0015-c-abi.md)） |
 | [`sofel-conformance`](crates/sofel-conformance) | FreeTypeとHarfBuzzとの突き合わせのテスト（`cargo test` では走らない） |
 
+サブセット化では、65,536グリフを超えるフォントのグリフを選んで小さい ID に振り直せる。GSUB の SingleSubst と GPOS の SinglePos では、形式3・4で記録された置換と位置調整を保持する。Coverage と ClassDef の形式3・4にも対応する。
 BDF、PCF、FNT、FON は Rust API の `Font::from_bitmap` で開く。文字対応、送り幅、固定サイズの画像を同じ API で読める。
 
 CEF（Compact Embedded Font）は `BareCffFace::new` のフェイス番号 0 で開く。`sofel-render` でもグリフ番号や文字を指定して描画できる。

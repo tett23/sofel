@@ -207,12 +207,22 @@ fn base_coord(s: &mut Sub<'_, '_>, c: D<'_>, remap: &BTreeMap<u32, u32>) -> bool
             s.s.extend(c.slice(0, 4));
             true
         }
-        2 => {
-            s.s.extend(c.slice(0, 8));
-            let Some(g) = s.p.glyphs.new_gid(u32::from(c.u16(4))) else {
+        2 | 4 => {
+            let wide = c.u16(0) == 4;
+            let reference = if wide {
+                c.u32(4) >> 8
+            } else {
+                u32::from(c.u16(4))
+            };
+            let Some(g) = s.p.glyphs.new_gid(reference) else {
                 return false;
             };
-            s.s.check_assign_u16(4, u64::from(g), sofel_write::Errors::INT_OVERFLOW)
+            s.s.extend(c.slice(0, if wide { 9 } else { 8 }));
+            if wide {
+                s.s.check_assign_u24(4, u64::from(g), sofel_write::Errors::INT_OVERFLOW)
+            } else {
+                s.s.check_assign_u16(4, u64::from(g), sofel_write::Errors::INT_OVERFLOW)
+            }
         }
         3 => {
             s.s.extend(c.slice(0, 4));
