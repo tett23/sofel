@@ -459,6 +459,31 @@ fn cff2_shared_subroutine_with_conflicting_mask_lengths_retains_original_bytes()
 }
 
 #[test]
+fn adr0061_i1_cff2_subroutine_context_with_partial_axis_matches_harfbuzz() {
+    let mut programs = charstrings();
+    programs[1] = charstring(&[Cs::I(0), Cs::I(10), Cs::Op(1), Cs::I(-107), Cs::Op(29)]);
+    programs[2] = charstring(&[Cs::I(-107), Cs::Op(29)]);
+    let bytes = font_with_programs(vec![vec![19, 1, 11]], Vec::new(), programs);
+    let font = Font::new(&bytes, 0).unwrap();
+    let input = glyphs(&[1, 2])
+        .with_flags(Flags::NO_HINTING)
+        .with_axis_range(
+            Tag::new(b"wght"),
+            Some(300.0),
+            Some(700.0),
+            Some(500.0),
+            &font,
+        )
+        .unwrap();
+    // Pinned hb-dump --subset --gids=1,2 --no-hinting
+    // --variations=wght=300:500:700 on the constructed source.
+    assert_eq!(
+        subset(&font, &input).unwrap(),
+        include_bytes!("data/adr0061-cff2-partial-context-hb15.otf")
+    );
+}
+
+#[test]
 fn cff2_no_hinting_removes_used_glyph_and_subroutine_stems() {
     let mut programs = charstrings();
     programs[2] = charstring(&[
