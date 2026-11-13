@@ -106,6 +106,68 @@ fn adr0061_i1_avar2_null_store_self_contained_pin_matches_harfbuzz() {
     compare_store_variant(true, &[(b"opsz", 40.0, 40.0, 40.0)]);
 }
 
+#[test]
+fn adr0022_i1_avar2_gsub_feature_variations_11_matches_harfbuzz() {
+    let path = paths::testdata()
+        .join("harfbuzz/test/api/fonts/feature-variation-precision-GSUB-lookup-avar2.ttf");
+    compare_path(&path, &[(b"TEST", -0.5, 0.0, 0.5)]);
+}
+
+#[test]
+fn adr0022_i1_avar2_gpos_feature_variations_11_matches_harfbuzz() {
+    let path = paths::testdata()
+        .join("harfbuzz/test/api/fonts/feature-variation-precision-GPOS-lookup-avar2.ttf");
+    compare_path(&path, &[(b"TEST", -0.5, 0.0, 0.5)]);
+}
+
+#[test]
+fn adr0022_i1_gsub_feature_variations_11_without_axis_change_matches_harfbuzz() {
+    let path = paths::testdata()
+        .join("harfbuzz/test/api/fonts/feature-variation-precision-GSUB-lookup-avar2.ttf");
+    compare_path(&path, &[]);
+}
+
+#[test]
+fn adr0022_i1_gpos_feature_variations_11_without_axis_change_matches_harfbuzz() {
+    let path = paths::testdata()
+        .join("harfbuzz/test/api/fonts/feature-variation-precision-GPOS-lookup-avar2.ttf");
+    compare_path(&path, &[]);
+}
+
+#[test]
+fn adr0022_i1_gsub_feature_variations_11_moved_default_matches_harfbuzz() {
+    let path = paths::testdata()
+        .join("harfbuzz/test/api/fonts/feature-variation-precision-GSUB-lookup-avar2.ttf");
+    compare_path(&path, &[(b"TEST", -0.75, -0.25, 0.5)]);
+}
+
+#[test]
+fn adr0022_i1_gpos_feature_variations_11_moved_default_matches_harfbuzz() {
+    let path = paths::testdata()
+        .join("harfbuzz/test/api/fonts/feature-variation-precision-GPOS-lookup-avar2.ttf");
+    compare_path(&path, &[(b"TEST", -0.75, -0.25, 0.5)]);
+}
+
+#[test]
+fn adr0022_i1_gsub_feature_variations_11_two_ranges_match_harfbuzz() {
+    let path = paths::testdata()
+        .join("harfbuzz/test/api/fonts/feature-variation-precision-GSUB-lookup-avar2.ttf");
+    compare_path(
+        &path,
+        &[(b"TEST", -0.5, 0.0, 0.5), (b"DUMY", -0.75, 0.25, 1.0)],
+    );
+}
+
+#[test]
+fn adr0022_i1_gpos_feature_variations_11_two_ranges_match_harfbuzz() {
+    let path = paths::testdata()
+        .join("harfbuzz/test/api/fonts/feature-variation-precision-GPOS-lookup-avar2.ttf");
+    compare_path(
+        &path,
+        &[(b"TEST", -0.5, 0.0, 0.5), (b"DUMY", -0.75, 0.25, 1.0)],
+    );
+}
+
 fn compare_store_variant(null: bool, ranges: &[(&[u8; 4], f32, f32, f32)]) {
     let source = paths::testdata().join("harfbuzz/test/api/fonts/TestAvar2Instance.ttf");
     let bytes = std::fs::read(source).unwrap();

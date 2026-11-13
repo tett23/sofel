@@ -5,7 +5,7 @@
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
-use sofel_font::read::feature_variations::FeatureVariations;
+use sofel_font::read::feature_variations::{Condition, FeatureVariations};
 
 use super::closure::{closure_lookups, substitute_closure};
 use super::data::{D, bsearch, n32};
@@ -148,6 +148,55 @@ fn find_script(t: Gsubgpos<'_>, tag: u32) -> Option<usize> {
 /// The lookup indices of feature `f`.
 fn feature_lookups(f: D<'_>) -> impl Iterator<Item = u32> + '_ {
     (0..usize::from(f.u16(2))).map(move |i| u32::from(f.u16_at(4, i)))
+}
+
+fn collect_condition_var_indices(
+    condition: Condition<'_>,
+    selected: &mut alloc::collections::BTreeSet<u32>,
+    depth: u8,
+) {
+    if depth == 0 {
+        return;
+    }
+    if let Some((_, index)) = condition.value()
+        && index != u32::MAX
+    {
+        selected.insert(index);
+    }
+    if let Some(len) = condition.children_len() {
+        for i in 0..len {
+            if let Ok(Some(child)) = condition.child(i) {
+                collect_condition_var_indices(child, selected, depth.saturating_sub(1));
+            }
+        }
+    }
+}
+
+pub(crate) fn feature_variation_var_indices(
+    t: Gsubgpos<'_>,
+    kept_features: &BTreeMap<u32, u32>,
+) -> alloc::collections::BTreeSet<u32> {
+    let mut selected = alloc::collections::BTreeSet::new();
+    let Some(fv) = t.feature_variations_view() else {
+        return selected;
+    };
+    for i in 0..fv.lookup_record_count() {
+        let Some(record) = fv.lookup_record(i) else {
+            continue;
+        };
+        if !kept_features.contains_key(&u32::from(record.feature_index())) {
+            continue;
+        }
+        let Ok(Some(table)) = record.feature_lookups() else {
+            continue;
+        };
+        for j in 0..table.len() {
+            if let Some(condition) = table.record(j).and_then(|r| r.condition().ok().flatten()) {
+                collect_condition_var_indices(condition, &mut selected, 64);
+            }
+        }
+    }
+    selected
 }
 
 /// The substitution records of FeatureVariations version 1.x:
@@ -393,6 +442,33 @@ pub(crate) fn closure_glyphs_lookups_features(
         for &(fi, f) in record {
             if feature_indices.has(fi) {
                 feature_lookups(f).for_each(|l| lookup_indices.add(l));
+            }
+        }
+    }
+
+    if let Some(fv) = t.feature_variations_view() {
+        for i in 0..fv.lookup_record_count() {
+            let Some(record) = fv.lookup_record(i) else {
+                continue;
+            };
+            if !feature_indices.has(u32::from(record.feature_index())) {
+                continue;
+            }
+            let Ok(Some(table)) = record.feature_lookups() else {
+                continue;
+            };
+            for j in 0..table.len() {
+                let Some(indices) = table
+                    .record(j)
+                    .and_then(|r| r.lookup_indices().ok().flatten())
+                else {
+                    continue;
+                };
+                for k in 0..indices.len() {
+                    if let Some(index) = indices.get(k) {
+                        lookup_indices.add(u32::from(index));
+                    }
+                }
             }
         }
     }
