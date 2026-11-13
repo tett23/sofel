@@ -13,6 +13,7 @@ pub(crate) mod gsub;
 pub(crate) mod plan;
 
 use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
 
 use crate::bits::BitSet;
 use data::D;
@@ -40,6 +41,7 @@ pub(crate) mod limits {
 /// `gpos_*` members of `hb_subset_plan_t`).
 #[derive(Clone, Debug, Default)]
 pub(crate) struct LayoutPlan {
+    pub retained_conditions: Option<BTreeMap<u32, Vec<u16>>>,
     pub fixed_conditions: bool,
     pub universal_record: Option<usize>,
     /// Old lookup index to new (`gsub_lookups`).

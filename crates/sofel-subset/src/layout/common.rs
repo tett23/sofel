@@ -706,6 +706,14 @@ impl<'p, 's> Sub<'p, 's> {
         for i in 0..count {
             if self
                 .lp()
+                .retained_conditions
+                .as_ref()
+                .is_some_and(|m| !m.contains_key(&i))
+            {
+                continue;
+            }
+            if self
+                .lp()
                 .universal_record
                 .is_some_and(|idx| usize::try_from(i).ok() != Some(idx))
             {
@@ -715,9 +723,17 @@ impl<'p, 's> Sub<'p, 's> {
             let subs_at = self.s.u32(0);
             let Some(record) = fv.record(i) else { continue };
             if self.lp().universal_record.is_none()
+                && self
+                    .lp()
+                    .retained_conditions
+                    .as_ref()
+                    .and_then(|m| m.get(&i))
+                    .is_none_or(|v| !v.is_empty())
                 && let Some(conds) = record.conditions().ok().flatten()
             {
-                self.serialize_subset_opt(cond_at, 4, D(conds.data()), |s| s.condition_set(conds));
+                self.serialize_subset_opt(cond_at, 4, D(conds.data()), |s| {
+                    s.condition_set(conds, i)
+                });
             }
             if let Some(subs) = record.substitutions().ok().flatten() {
                 self.serialize_subset_opt(subs_at, 4, D(subs.data()), |s| {
@@ -726,7 +742,15 @@ impl<'p, 's> Sub<'p, 's> {
             }
             out = out.wrapping_add(1);
         }
-        if out != 0 && !self.lp().fixed_conditions && !self.lp().substitutes.is_empty() {
+        if out != 0
+            && !self.lp().fixed_conditions
+            && self
+                .lp()
+                .retained_conditions
+                .as_ref()
+                .is_none_or(|m| !m.values().any(Vec::is_empty))
+            && !self.lp().substitutes.is_empty()
+        {
             let conditions = self.s.u32(0);
             let substitutions = self.s.u32(0);
             self.serialize_subset(conditions, 4, |s| {
@@ -739,12 +763,16 @@ impl<'p, 's> Sub<'p, 's> {
                 let indices: Vec<_> = s.lp().substitutes.keys().copied().collect();
                 for old in indices {
                     let Some(&new) = s.lp().features_w_dups.get(&old) else {
-                        continue;
+                        return false;
                     };
                     s.s.u16((new & 0xffff) as u16);
                     let at = s.s.u32(0);
                     let f = t.feature(old as usize);
-                    s.serialize_subset(at, 4, |s| s.feature(f, Some(t.feature_tag(old as usize))));
+                    if !s.serialize_subset(at, 4, |s| {
+                        s.feature(f, Some(t.feature_tag(old as usize)))
+                    }) {
+                        return false;
+                    }
                     s.bump_u16(count, 1);
                 }
                 true
@@ -755,9 +783,18 @@ impl<'p, 's> Sub<'p, 's> {
         out != 0
     }
 
-    fn condition_set(&mut self, cs: ConditionSet<'_>) -> bool {
+    fn condition_set(&mut self, cs: ConditionSet<'_>, record: u32) -> bool {
         let count_at = self.s.u16(0);
         for i in 0..cs.len() {
+            if self
+                .lp()
+                .retained_conditions
+                .as_ref()
+                .and_then(|m| m.get(&record))
+                .is_some_and(|indices| indices.binary_search(&i).is_err())
+            {
+                continue;
+            }
             let Some(c) = cs.condition(i).ok().flatten() else {
                 self.unsupported("FeatureVariations conditions other than format 1");
                 return false;

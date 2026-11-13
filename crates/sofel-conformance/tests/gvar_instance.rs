@@ -606,11 +606,18 @@ fn adr0061_i1_iup_optimized_partial_instance_matches_harfbuzz() {
 #[test]
 fn adr0061_i1_partial_layout_matches_harfbuzz() {
     for (name, axis, min, default, max) in [
-        ("AnekBangla-subset.ttf", b"wght", 300u16, 300u16, 300u16),
-        ("NotoSansOriya-subset.ttf", b"wdth", 75, 75, 75),
-        ("NotoSansOriya-subset.ttf", b"wght", 300, 300, 300),
-        ("NotoSansOriya-subset.ttf", b"wght", 900, 900, 900),
-        ("NotoSansOriya-subset.ttf", b"wght", 200, 400, 850),
+        ("AnekBangla-subset.ttf", b"wght", 300.0f32, 300.0, 300.0),
+        ("NotoSansOriya-subset.ttf", b"wdth", 75.0, 75.0, 75.0),
+        ("NotoSansOriya-subset.ttf", b"wght", 300.0, 300.0, 300.0),
+        ("NotoSansOriya-subset.ttf", b"wght", 900.0, 900.0, 900.0),
+        ("NotoSansOriya-subset.ttf", b"wght", 200.0, 400.0, 850.0),
+        (
+            "AnekBangla-question-subset.ttf",
+            b"wdth",
+            112.5,
+            112.5,
+            112.5,
+        ),
     ] {
         let path = paths::testdata()
             .join("harfbuzz/test/subset/data/fonts")
@@ -619,13 +626,7 @@ fn adr0061_i1_partial_layout_matches_harfbuzz() {
         let font = Font::new(&bytes, 0).unwrap();
         let input = Input::new()
             .map_set(SetKind::Unicodes, |s| s.add_range(0, 0x10ffff))
-            .with_axis_range(
-                Tag::new(axis),
-                Some(f32::from(min)),
-                Some(f32::from(max)),
-                Some(f32::from(default)),
-                &font,
-            )
+            .with_axis_range(Tag::new(axis), Some(min), Some(max), Some(default), &font)
             .unwrap();
         let actual = subset(&font, &input).unwrap();
         let output =

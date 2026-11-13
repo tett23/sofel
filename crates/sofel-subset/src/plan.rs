@@ -313,12 +313,9 @@ impl Plan {
             let handled = match *tag {
                 b"GSUB" | b"GPOS" | b"GDEF" | b"BASE" | b"COLR" => {
                     let static_table = font.table(Tag::new(tag)).is_some_and(|data| match *tag {
-                        b"GSUB" | b"GPOS" => can_instance_layout_conditions(
-                            data,
-                            &norm.axis_tags,
-                            &norm.axes_location,
-                            norm.avar2,
-                        ),
+                        b"GSUB" | b"GPOS" => {
+                            can_instance_layout_conditions(data, &norm.axis_tags, norm.avar2)
+                        }
                         b"GDEF" => sofel_font::read::gdef::Gdef::new(data).is_ok_and(|t| {
                             t.item_var_store_offset().unwrap_or(0) == 0
                                 || (!norm.avar2 && t.variation_store().is_ok())
@@ -564,7 +561,16 @@ impl Plan {
                 &p.layout.layout_features,
                 &p.layout.layout_scripts,
                 &mut gsub_glyphs,
-                fixed.then_some(p.var.n.normalized_coords.as_slice()),
+                layout::plan::LayoutLocation {
+                    coords: &p.var.n.normalized_coords,
+                    fixed,
+                    retained_conditions: if !fixed && !p.var.n.normalized_coords.is_empty() {
+                        t.feature_variations_view()
+                            .and_then(|fv| layout::plan::retained_conditions(fv, &p.var.n))
+                    } else {
+                        None
+                    },
+                },
             );
             if fixed && !pinned {
                 lp.universal_record = layout::plan::applied_record(
@@ -573,13 +579,6 @@ impl Plan {
                 )
                 .ok()
                 .flatten();
-            }
-            if !fixed && !p.var.n.normalized_coords.is_empty() {
-                let features = BitSet::from_values(lp.features_w_dups.keys().copied());
-                match layout::plan::pinned_substitutes(t, &features, &p.var.n.normalized_coords) {
-                    Ok(map) => lp.substitutes = map,
-                    Err(reason) => lp.unsupported = Some(reason),
-                }
             }
         }
         for (t, lp) in [(b"GSUB", &p.layout.gsub), (b"GPOS", &p.layout.gpos)] {
@@ -1270,18 +1269,8 @@ fn condition_is_constant(range: Option<&crate::input::AxisRange>, min: i16, max:
     high < min || low > max || (min <= low && high <= max)
 }
 
-fn can_instance_layout_conditions(
-    data: &[u8],
-    axis_tags: &[Tag],
-    user: &BTreeMap<Tag, crate::input::AxisRange>,
-    avar2: bool,
-) -> bool {
-    !avar2
-        && (layout_conditions_match(data, axis_tags, |tag, min, max| {
-            !condition_is_constant(user.get(tag), min, max)
-        }) || layout_conditions_match(data, axis_tags, |tag, min, max| {
-            condition_is_constant(user.get(tag), min, max)
-        }))
+fn can_instance_layout_conditions(data: &[u8], axis_tags: &[Tag], avar2: bool) -> bool {
+    !avar2 && layout_conditions_match(data, axis_tags, |_, _, _| true)
         || sofel_font::read::layout::LayoutTable::new(data)
             .is_ok_and(|t| t.feature_variations_offset().unwrap_or(0) == 0)
 }
