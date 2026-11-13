@@ -89,3 +89,17 @@ fn adr0065_i1_bdf_strike_uses_size_properties() {
         );
     }
 }
+
+#[test]
+fn adr0065_i1_unencoded_bdf_slot_has_empty_metrics_and_bitmap() {
+    let source = ORDER.replace("ENCODING 65", "ENCODING -1");
+    let face = BdfFont::parse(source.as_bytes()).unwrap();
+    assert_eq!(face.num_glyphs(), 3);
+    assert_eq!(face.nominal_glyph(66), Some(1));
+    let slot = face.glyph(2).unwrap();
+    assert_eq!(
+        (slot.width, slot.height, slot.advance, slot.left, slot.top),
+        (0, 0, 0, 0, 0)
+    );
+    assert!(slot.bitmap.is_empty());
+}
