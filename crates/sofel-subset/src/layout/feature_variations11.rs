@@ -1,5 +1,6 @@
 //! LookupVariationRecord subsetting for FeatureVariations 1.1 (ADR 0022).
 
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use sofel_font::read::feature_variations::{Condition, FeatureVariations};
 
@@ -17,6 +18,51 @@ enum ResultNode {
     True,
     False,
     Keep(Node),
+}
+
+pub(super) fn evaluate_condition(
+    source: Condition<'_>,
+    coords: &[i32],
+    deltas: &BTreeMap<u32, f64>,
+    depth: u8,
+) -> Option<bool> {
+    if depth == 0 {
+        return None;
+    }
+    Some(match source.format() {
+        0 => true,
+        1 => {
+            let (axis, min, max) = source.axis_range()?;
+            let coord = *coords.get(usize::from(axis))?;
+            coord >= i32::from(min) && coord <= i32::from(max)
+        }
+        2 => {
+            let (default, index) = source.value()?;
+            f64::from(default) + deltas.get(&index).copied().unwrap_or(0.0) > 0.0
+        }
+        3 => {
+            let mut result = true;
+            for i in 0..source.children_len()? {
+                if let Some(child) = source.child(i).ok()? {
+                    result &= evaluate_condition(child, coords, deltas, depth.saturating_sub(1))?;
+                }
+            }
+            result
+        }
+        4 => {
+            let mut result = false;
+            for i in 0..source.children_len()? {
+                result |= source.child(i).ok()?.map_or(Some(true), |child| {
+                    evaluate_condition(child, coords, deltas, depth.saturating_sub(1))
+                })?;
+            }
+            result
+        }
+        5 => !source.child(0).ok()?.map_or(Some(true), |child| {
+            evaluate_condition(child, coords, deltas, depth.saturating_sub(1))
+        })?,
+        _ => false,
+    })
 }
 
 fn condition(s: &Sub<'_, '_>, source: Condition<'_>, depth: u8) -> Option<ResultNode> {
@@ -92,6 +138,17 @@ fn condition(s: &Sub<'_, '_>, source: Condition<'_>, depth: u8) -> Option<Result
                     ResultNode::True
                 } else {
                     ResultNode::False
+                }
+            } else if let Some(&(new, value)) = s.p.layout.gdef_condition_map.get(&(index, default))
+            {
+                if new == u32::MAX {
+                    if value > 0 {
+                        ResultNode::True
+                    } else {
+                        ResultNode::False
+                    }
+                } else {
+                    ResultNode::Keep(Node::Value(value, new))
                 }
             } else if let Some(&new) = s.p.layout.gdef_var_map.get(&index) {
                 let delta =

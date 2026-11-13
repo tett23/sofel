@@ -7,10 +7,11 @@
 use std::fmt;
 
 use sofel_color::{PaintOptions, Palette};
+use sofel_font::BareCffFace;
 use sofel_font::geom::Color;
 use sofel_font::read::GlyphId;
 use sofel_geom::{Command, Fixed, FnPen, Point, div_fix};
-use sofel_outline::{OutlineError, Outlines, Scale, Scratch};
+use sofel_outline::{OutlineError, OutlineInfo, Outlines, Scale, Scratch};
 use sofel_raster::{
     BgraImage, Bitmap, FillRule, RasterError, Rasterizer, RenderOptions, blend_layer, pixel_box,
 };
@@ -66,21 +67,30 @@ pub fn render<'r>(
     let info = outlines
         .load(glyph, Scale::pixels(font, ppem, ppem), scratch)
         .map_err(RenderError::Outline)?;
-    let c = info.cbox;
-    let b = pixel_box(c.x_min, c.y_min, c.x_max, c.y_max);
-    raster.clear();
-    let multiplier = if info.overlap { 4 } else { 1 };
-    scratch
-        .decompose(b.shift(), multiplier, raster)
-        .map_err(RenderError::Outline)?;
-    let options = RenderOptions {
-        fill: FillRule::NonZero,
-        overlap: info.overlap,
-        ppem: Some((ppem, ppem)),
-    };
-    raster
-        .render_placed(b, options)
-        .map_err(RenderError::Raster)
+    render_loaded(info, ppem, scratch, raster)
+}
+
+/// Renders one glyph of a bare CFF face through the normal gray rasterizer.
+pub fn render_bare_cff<'r>(
+    face: &BareCffFace<'_>,
+    glyph: GlyphId,
+    ppem: u16,
+    scratch: &mut Scratch,
+    raster: &'r mut Rasterizer,
+) -> Result<Bitmap<'r>, RenderError> {
+    let upem = i32::try_from(face.cff().top_matrix().units_per_em)
+        .ok()
+        .filter(|upem| *upem > 0)
+        .ok_or(RenderError::Outline(OutlineError::InvalidOutline))?;
+    let scale = Fixed(div_fix(i32::from(ppem).saturating_mul(64), upem));
+    let info = sofel_outline::load_bare_cff(
+        face.cff(),
+        glyph,
+        Scale::Scaled { x: scale, y: scale },
+        scratch,
+    )
+    .map_err(RenderError::Outline)?;
+    render_loaded(info, ppem, scratch, raster)
 }
 
 /// Render a basic CID-keyed Type 1 outline without hinting.
@@ -131,6 +141,29 @@ fn shift_command(command: Command, offset: Point) -> Command {
         Command::CubicTo(c1, c2, p) => Command::CubicTo(shift(c1), shift(c2), shift(p)),
         Command::Close => Command::Close,
     }
+}
+
+fn render_loaded<'r>(
+    info: OutlineInfo,
+    ppem: u16,
+    scratch: &mut Scratch,
+    raster: &'r mut Rasterizer,
+) -> Result<Bitmap<'r>, RenderError> {
+    let c = info.cbox;
+    let b = pixel_box(c.x_min, c.y_min, c.x_max, c.y_max);
+    raster.clear();
+    let multiplier = if info.overlap { 4 } else { 1 };
+    scratch
+        .decompose(b.shift(), multiplier, raster)
+        .map_err(RenderError::Outline)?;
+    let options = RenderOptions {
+        fill: FillRule::NonZero,
+        overlap: info.overlap,
+        ppem: Some((ppem, ppem)),
+    };
+    raster
+        .render_placed(b, options)
+        .map_err(RenderError::Raster)
 }
 
 /// Render an unhinted TrueType glyph to packed monochrome rows. The

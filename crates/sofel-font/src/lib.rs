@@ -47,6 +47,7 @@ extern crate alloc;
 pub use sofel_geom as geom;
 pub use sofel_read as read;
 
+mod bare_cff;
 mod base_sanitize;
 pub mod baseline;
 mod cff;
@@ -68,6 +69,7 @@ pub mod remap;
 mod tables;
 pub mod var;
 
+pub use bare_cff::BareCffFace;
 pub use cff::{Cff, CffError, CffMatrix, CidError, PsFontInfo, Ros, Subfont, fs_type};
 pub use ft::FtFaceMetrics;
 pub use hb_cff::{HbCff1, HbCff2};
