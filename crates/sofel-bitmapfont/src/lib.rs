@@ -102,6 +102,10 @@ impl BdfFont {
         let mut declared = None;
         let mut glyphs = Vec::new();
         let mut default_char = None;
+        let mut point_size = None;
+        let mut pixel_size = 0;
+        let mut resolution_x = None;
+        let mut resolution_y = None;
         let mut ended = false;
         let mut in_properties = false;
         while let Some(line) = lines.next() {
@@ -134,6 +138,23 @@ impl BdfFont {
                     return Err(BdfError);
                 }
                 in_properties = false;
+            } else if in_properties && let Some((key, value)) = line.split_once(' ') {
+                match key {
+                    "POINT_SIZE" => point_size = Some(number(Some(value.trim()))?.unsigned_abs()),
+                    "PIXEL_SIZE" => {
+                        pixel_size = number(Some(value.trim()))?.unsigned_abs().min(32767)
+                    }
+                    "RESOLUTION_X" => {
+                        resolution_x = Some(number(Some(value.trim()))?.unsigned_abs())
+                    }
+                    "RESOLUTION_Y" => {
+                        resolution_y = Some(number(Some(value.trim()))?.unsigned_abs())
+                    }
+                    "DEFAULT_CHAR" => {
+                        default_char = u32::try_from(number(Some(value.trim()))?).ok()
+                    }
+                    _ => {}
+                }
             } else if let Some(fields) = line.strip_prefix("SIZE ") {
                 let mut parts = fields.split_ascii_whitespace();
                 let points = number(parts.next())?;
@@ -188,17 +209,33 @@ impl BdfFont {
                     .position(|glyph| glyph.encoding == Some(codepoint))
             })
             .unwrap_or(0);
-        let ppem = |resolution: u32| {
-            points
-                .checked_mul(resolution)?
-                .checked_mul(64)?
-                .checked_add(36)
-                .map(|v| v / 72)
-                .filter(|v| *v > 0)
+        let mul_div = |a: u32, b: u32, divisor: u32| {
+            let rounded = u64::from(a)
+                .saturating_mul(u64::from(b))
+                .saturating_add(u64::from(divisor / 2));
+            u32::try_from(rounded.checked_div(u64::from(divisor)).ok_or(BdfError)?)
+                .map_err(|_| BdfError)
+        };
+        let size = match point_size {
+            Some(n) if n <= 0x504c2 => mul_div(n, 64 * 7200, 72270)?,
+            None if points <= 32767 => points << 6,
+            _ => 32767,
+        };
+        let x_res = resolution_x.unwrap_or(x_res).min(32767);
+        let y_res = resolution_y.unwrap_or(y_res).min(32767);
+        let y_ppem = match (pixel_size, y_res) {
+            (0, 0) => size,
+            (0, res) => mul_div(size, res, 72)?,
+            (pixels, _) => pixels << 6,
+        };
+        let x_ppem = if x_res == 0 || y_res == 0 {
+            y_ppem
+        } else {
+            mul_div(y_ppem, x_res, y_res)?
         };
         Ok(Self {
-            x_ppem_26_6: ppem(x_res).ok_or(BdfError)?,
-            y_ppem_26_6: ppem(y_res).ok_or(BdfError)?,
+            x_ppem_26_6: x_ppem,
+            y_ppem_26_6: y_ppem,
             bits_per_pixel,
             glyphs,
             default_glyph,
