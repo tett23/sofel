@@ -196,6 +196,7 @@ fn adr0061_i1_avar2_restricts_variable_colr_like_harfbuzz() {
     std::fs::write(&path, modified).unwrap();
     for ranges in [
         vec![(b"wght", 200.0, 400.0, 600.0)],
+        vec![(b"wght", 400.0, 400.0, 600.0)],
         vec![(b"wdth", 112.0, 112.0, 112.0)],
         vec![
             (b"wght", 200.0, 400.0, 600.0),
