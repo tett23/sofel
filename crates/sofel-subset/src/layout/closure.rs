@@ -323,6 +323,10 @@ pub(crate) fn subtable_intersects(k: Kind, st: D<'_>, glyphs: &BitSet) -> bool {
         Kind::PairPos => match st.u16(0) {
             1 => super::gpos::pair1_intersects(st, glyphs),
             2 => cov.intersects(glyphs) && super::data::Cls(st.off16(10)).intersects(glyphs),
+            4 => {
+                Cov(st.off32(2)).intersects(glyphs)
+                    && super::data::Cls(st.off32(14)).intersects(glyphs)
+            }
             _ => false,
         },
         Kind::CursivePos => match st.u16(0) {

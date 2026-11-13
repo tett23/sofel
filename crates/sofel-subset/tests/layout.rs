@@ -1756,3 +1756,39 @@ fn adr0022_wide_ligature_keeps_components_and_result() {
     let set = &st[follow24(st, 9)..];
     assert!(set[follow24(set, 2)..].starts_with(&[0, 0, 3, 0, 2, 0, 0, 2]));
 }
+
+#[test]
+fn adr0022_wide_pair_classes_keep_advance() {
+    let pair = link(
+        Buf::new()
+            .u16(4)
+            .u32(0)
+            .u16(4)
+            .u16(0)
+            .u32(0)
+            .u32(0)
+            .u16(2)
+            .u16(2)
+            .i16(0)
+            .i16(0)
+            .i16(0)
+            .i16(-43)
+            .done(),
+        vec![
+            (2, 4, coverage1(&[2])),
+            (10, 4, class_def2(&[(2, 2, 1)])),
+            (14, 4, class_def2(&[(3, 3, 1)])),
+        ],
+    );
+    let data = font_with(vec![(
+        b"GPOS",
+        layout_table(&[(b"kern", &[0])], &[(2, pair)]),
+    )]);
+    let out = subset(&Font::new(&data, 0).unwrap(), &chars("BC")).unwrap();
+    let table = out_table(&out, b"GPOS").unwrap();
+    let list = follow(&table, 8);
+    assert_eq!(u16_at(list, 0), 1);
+    let st = follow(follow(list, 2), 6);
+    assert_eq!(u16_at(st, 0), 4);
+    assert_eq!(&st[18..26], &[0, 1, 0, 2, 0, 0, 255, 213]);
+}

@@ -862,17 +862,18 @@ impl Plan {
                 let supported = plan.lookups.keys().all(|&i| {
                     layout::subtables(table.lookup(i as usize), gsub)
                         .iter()
-                        .all(|(kind, _)| {
-                            matches!(
-                                kind,
-                                layout::Kind::SingleSubst
-                                    | layout::Kind::MultipleSubst
-                                    | layout::Kind::LigatureSubst
-                                    | layout::Kind::ReverseChain
-                                    | layout::Kind::AlternateSubst
-                                    | layout::Kind::SinglePos
-                                    | layout::Kind::CursivePos
-                            )
+                        .all(|(kind, subtable)| {
+                            (*kind == layout::Kind::PairPos && matches!(subtable.u16(0), 2 | 4))
+                                || matches!(
+                                    kind,
+                                    layout::Kind::SingleSubst
+                                        | layout::Kind::MultipleSubst
+                                        | layout::Kind::LigatureSubst
+                                        | layout::Kind::ReverseChain
+                                        | layout::Kind::AlternateSubst
+                                        | layout::Kind::SinglePos
+                                        | layout::Kind::CursivePos
+                                )
                         })
                 });
                 if !supported {

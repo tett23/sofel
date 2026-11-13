@@ -272,8 +272,11 @@ pub(crate) fn retained_variation_indices(
                 return None;
             }
             let pair = subtable;
-            let cov = Cov(pair.off16(2));
-            let vf = [pair.u16(4), pair.u16(6)];
+            let (cov, vf) = if pair.u16(0) >= 3 {
+                (Cov(pair.off32(2)), [pair.u16(6), pair.u16(8)])
+            } else {
+                (Cov(pair.off16(2)), [pair.u16(4), pair.u16(6)])
+            };
             if (vf[0] | vf[1]) & 0x00f0 == 0 {
                 continue;
             }
@@ -299,16 +302,15 @@ pub(crate) fn retained_variation_indices(
                         }
                     }
                 }
-                2 => {
-                    let c1_count = usize::from(pair.u16(12));
-                    let c2_count = usize::from(pair.u16(14));
+                2 | 4 => {
+                    let (cd1, cd2, n1, n2, start) = pair_classes(pair);
+                    let (c1_count, c2_count) = (usize::from(n1), usize::from(n2));
                     let record_len = lengths[0].saturating_add(lengths[1]).saturating_mul(2);
                     let bytes = c1_count.checked_mul(c2_count)?.checked_mul(record_len)?;
-                    if bytes > pair.0.len().saturating_sub(16) {
+                    if bytes > pair.0.len().saturating_sub(start) {
                         return None;
                     }
-                    let cd1 = Cls(pair.off16(8));
-                    let cd2 = Cls(pair.off16(10));
+                    let (cd1, cd2) = (Cls(cd1), Cls(cd2));
                     let (pairs1, classes1) = cd1.subset_pairs(
                         glyphs,
                         num_glyphs,
@@ -331,7 +333,7 @@ pub(crate) fn retained_variation_indices(
                     let keep_subtable = cov.intersects(glyphs) && cd2.intersects(glyphs);
                     for c1 in 0..c1_count {
                         for c2 in 0..c2_count {
-                            let at = 16usize.saturating_add(
+                            let at = start.saturating_add(
                                 c1.saturating_mul(c2_count)
                                     .saturating_add(c2)
                                     .saturating_mul(record_len),
@@ -744,7 +746,7 @@ pub(crate) fn pair1_intersects(st: D<'_>, glyphs: &BitSet) -> bool {
 pub(crate) fn pair(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
     match st.u16(0) {
         1 => pair1(s, st),
-        2 => pair2(s, st),
+        2 | 4 => pair2(s, st),
         _ => false,
     }
 }
@@ -840,14 +842,23 @@ fn pair1(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
     !new_cov.is_empty()
 }
 
+/// The two ClassDefs, class counts, and value matrix start of PairPos formats 2 and 4.
+fn pair_classes(st: D<'_>) -> (D<'_>, D<'_>, u16, u16, usize) {
+    if st.u16(0) == 4 {
+        (st.off32(10), st.off32(14), st.u16(18), st.u16(20), 22)
+    } else {
+        (st.off16(8), st.off16(10), st.u16(12), st.u16(14), 16)
+    }
+}
+
 fn pair2(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
-    let cov_d = st.off16(2);
-    let vf1 = st.u16(4);
-    let vf2 = st.u16(6);
-    let cd1 = st.off16(8);
-    let cd2 = st.off16(10);
-    let class1_count = u32::from(st.u16(12));
-    let class2_count = u32::from(st.u16(14));
+    let wide = st.u16(0) == 4;
+    let width: u8 = if wide { 4 } else { 2 };
+    let cov_d = if wide { st.off32(2) } else { st.off16(2) };
+    let vf1 = st.u16(if wide { 6 } else { 4 });
+    let vf2 = st.u16(if wide { 8 } else { 6 });
+    let (cd1, cd2, n1, n2, start) = pair_classes(st);
+    let (class1_count, class2_count) = (u32::from(n1), u32::from(n2));
     let len1 = value_len(vf1);
     let total = len1.saturating_add(value_len(vf2));
     let value_at = |c1: u32, c2: u32| -> D<'_> {
@@ -855,24 +866,24 @@ fn pair2(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
             .saturating_mul(class2_count as usize)
             .saturating_add(c2 as usize)
             .saturating_mul(total);
-        st.at(16usize.saturating_add(idx.saturating_mul(2)))
+        st.at(start.saturating_add(idx.saturating_mul(2)))
     };
-    s.s.u16(2);
-    let cov_at = s.s.u16(0);
+    s.s.u16(st.u16(0));
+    let cov_at = s.s.zeros(usize::from(width));
     let vf_at = s.s.u16(vf1);
     s.s.u16(vf2);
-    let cd1_at = s.s.u16(0);
-    let cd2_at = s.s.u16(0);
+    let cd1_at = s.s.zeros(usize::from(width));
+    let cd2_at = s.s.zeros(usize::from(width));
     let c1_at = s.s.u16(0);
     let c2_at = s.s.u16(0);
     let mut map1 = BTreeMap::new();
     let cov = Cov(cov_d);
-    s.serialize_subset_opt(cd1_at, 2, cd1, |s| {
+    s.serialize_subset_opt(cd1_at, width, cd1, |s| {
         s.class_def_subset(Cls(cd1), Some(&mut map1), true, true, Some(cov))
     });
     s.s.set_u16(c1_at, n16(map1.len()));
     let mut map2 = BTreeMap::new();
-    s.serialize_subset_opt(cd2_at, 2, cd2, |s| {
+    s.serialize_subset_opt(cd2_at, width, cd2, |s| {
         s.class_def_subset(Cls(cd2), Some(&mut map2), true, false, None)
     });
     s.s.set_u16(c2_at, n16(map2.len()));
@@ -908,7 +919,7 @@ fn pair2(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
             copy_values(s, vf2, f2, st, v.at(len1.saturating_mul(2)));
         }
     }
-    let ret = s.serialize_subset_opt(cov_at, 2, cov_d, |s| s.coverage_subset(cov));
+    let ret = s.serialize_subset_opt(cov_at, width, cov_d, |s| s.coverage_subset(cov));
     !map1.is_empty() && !map2.is_empty() && ret
 }
 
