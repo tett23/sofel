@@ -551,7 +551,7 @@ fn avar2_reachable_range(
     target: usize,
     row: &[(i32, Vec<[f64; 3]>)],
 ) -> ([f64; 2], [f64; 2]) {
-    let mut points = alloc::vec![alloc::vec![0.0]; box_.len()];
+    let mut points = alloc::vec![Vec::new(); box_.len()];
     if let (Some(&[lo, hi]), Some(grid)) = (box_.get(target), points.get_mut(target)) {
         *grid = alloc::vec![lo, hi];
     }
@@ -564,6 +564,11 @@ fn avar2_reachable_range(
                 grid.extend([lo, hi]);
                 grid.extend([start.clamp(lo, hi), peak.clamp(lo, hi), end.clamp(lo, hi)]);
             }
+        }
+    }
+    for grid in &mut points {
+        if grid.is_empty() {
+            grid.push(0.0);
         }
     }
     for grid in &mut points {
@@ -672,6 +677,15 @@ mod tests {
         assert_eq!(final_range, [0.5, 0.75]);
         let (_, restricted) = avar2_reachable_range(&[[0.5, 0.5], [-1.0, 0.0]], 0, &row);
         assert_eq!(restricted, [0.5, 0.5]);
+    }
+
+    #[test]
+    fn adr0061_i1_avar2_reachable_range_excludes_unreachable_zero_of_pinned_axis() {
+        use super::avar2_reachable_range;
+        let row = [(-4096, alloc::vec![[0.0, 0.5, 1.0], [0.0; 3]])];
+        let (delta, final_range) = avar2_reachable_range(&[[0.5, 0.5], [0.0, 1.0]], 1, &row);
+        assert_eq!(delta, [-4096.0, -4096.0]);
+        assert_eq!(final_range, [-0.25, 0.75]);
     }
 
     #[test]

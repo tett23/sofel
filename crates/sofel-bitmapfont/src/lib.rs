@@ -7,7 +7,7 @@ extern crate alloc;
 /// PCF bitmap faces.
 pub mod pcf;
 
-/// Windows FNT and NE FON bitmap faces.
+/// Windows FNT and NE and PE32 FON bitmap faces.
 pub mod winfnt;
 
 use alloc::vec::Vec;
