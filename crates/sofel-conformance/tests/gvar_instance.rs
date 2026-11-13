@@ -401,3 +401,45 @@ fn adr0061_i1_substitute_features_at_pinned_coordinates() {
     }
     std::fs::remove_file(out).unwrap();
 }
+
+#[test]
+fn adr0061_i1_two_pins_keep_the_remaining_gvar_axis() {
+    let path = paths::testdata().join("harfbuzz/test/subset/data/fonts/Handjet.ttf");
+    let data = std::fs::read(&path).unwrap();
+    let font = Font::new(&data, 0).unwrap();
+    let output =
+        std::env::temp_dir().join(format!("sofel-gvar-two-pins-{}.ttf", std::process::id()));
+    for (weight, grid) in [(400.0, 1.0), (500.0, 1.5), (900.0, 2.0)] {
+        let input = Input::new()
+            .map_set(SetKind::Unicodes, |s| s.add_range(0, 0x10ffff))
+            .map_set(SetKind::DropTables, |s| {
+                for tag in [b"GDEF", b"GPOS", b"GSUB", b"HVAR", b"STAT"] {
+                    s.add(Tag::new(tag).to_u32());
+                }
+            })
+            .with_axis_pinned(Tag::new(b"wght"), weight, &font)
+            .unwrap()
+            .with_axis_pinned(Tag::new(b"ELGR"), grid, &font)
+            .unwrap();
+        let actual = subset(&font, &input).unwrap();
+        assert!(
+            Command::new(paths::hb_dump())
+                .arg("--subset")
+                .arg(format!("--font-file={}", path.display()))
+                .arg("--unicodes=*")
+                .arg("--drop-tables+=GDEF,GPOS,GSUB,HVAR,STAT")
+                .arg(format!("--variations=wght={weight},ELGR={grid}"))
+                .arg(format!("--output-file={}", output.display()))
+                .status()
+                .unwrap()
+                .success()
+        );
+        let expected = std::fs::read(&output).unwrap();
+        assert_eq!(
+            sofel_conformance::subset::diff(&expected, &actual),
+            sofel_conformance::subset::diff(&expected, &expected)
+        );
+        assert_eq!(actual, expected);
+    }
+    std::fs::remove_file(output).unwrap();
+}
