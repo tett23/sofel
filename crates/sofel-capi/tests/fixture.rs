@@ -782,6 +782,21 @@ fn generate() -> String {
     );
 
     bytes(&mut out, "font_data", &font_data);
+    let feature_layout = |tags: &[&[u8; 4]]| {
+        let ids: Vec<u16> = (0..tags.len()).map(|i| i as u16).collect();
+        let features: Vec<(&[u8; 4], &[u16])> = tags.iter().map(|tag| (*tag, &[][..])).collect();
+        gsubgpos(
+            0x0001_0000,
+            script_list(vec![(b"DFLT", script(lang_sys(0xffff, &ids), vec![]))]),
+            feature_list(&features),
+            lookup_list(vec![], false),
+        )
+    };
+    let mut feature_tables = sample_tables();
+    feature_tables.push((b"GSUB", feature_layout(&[b"kern", b"kern", b"vert"])));
+    feature_tables.push((b"GPOS", feature_layout(&[b"mark"])));
+    feature_tables.sort_by_key(|(tag, _)| **tag);
+    bytes(&mut out, "feature_tags_data", &sfnt(&feature_tables));
     let mut layout_query_tables = sample_tables();
     layout_query_tables.push((b"MATH", layout_query_fixture::sample()));
     layout_query_tables.sort_by_key(|(tag, _)| **tag);

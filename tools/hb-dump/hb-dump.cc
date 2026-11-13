@@ -2800,6 +2800,36 @@ static int dump_syllables (int argc HB_UNUSED, char **argv)
   return 0;
 }
 
+/* --feature-tags: a fixed pagination matrix for each layout FeatureList. */
+static int dump_feature_tags (hb_blob_t *blob)
+{
+  static const hb_tag_t tables[] = {HB_OT_TAG_GSUB, HB_OT_TAG_GPOS};
+  static const unsigned starts[] = {0, 2, 0xFFFFFFFFu};
+  static const unsigned capacities[] = {0, 1, 2, 4};
+  unsigned faces = hb_face_count (blob);
+  if (!faces) faces = 1;
+  for (unsigned face_index = 0; face_index < faces; face_index++)
+  {
+    hb_face_t *face = hb_face_create (blob, face_index);
+    for (unsigned t = 0; t < 2; t++)
+      for (unsigned s = 0; s < 3; s++)
+        for (unsigned c = 0; c < 4; c++)
+        {
+          hb_tag_t tags[4] = {0, 0, 0, 0};
+          unsigned written = capacities[c];
+          unsigned total = hb_ot_layout_table_get_feature_tags
+            (face, tables[t], starts[s], &written, tags);
+          printf ("face %u %c%c%c%c %u %u %u %u", face_index,
+                  tables[t] >> 24, tables[t] >> 16, tables[t] >> 8, tables[t],
+                  starts[s], capacities[c], written, total);
+          for (unsigned i = 0; i < written; i++) printf (" %08x", tags[i]);
+          putchar ('\n');
+        }
+    hb_face_destroy (face);
+  }
+  return 0;
+}
+
 /* --layout-map: the script and language system hb_ot_map_builder_t picks
  * in GSUB and GPOS. */
 static int dump_layout_map (hb_blob_t *blob)
@@ -3445,6 +3475,7 @@ static const dump_mode_t modes[] = {
   {"--baselines", dump_baselines},
   {"--vowel-constraints", dump_vowel_constraints},
   {"--layout-map", dump_layout_map},
+  {"--feature-tags", dump_feature_tags},
   {"--paint", dump_paint},
   {"--color", dump_color},
   {"--extents", dump_extents},

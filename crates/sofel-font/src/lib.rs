@@ -285,6 +285,24 @@ pub struct Font<'a> {
     base: Option<Base<'a>>,
 }
 
+/// The OpenType layout table whose FeatureList is queried (sofel ADR 0075).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LayoutTable {
+    /// Glyph substitution table.
+    Gsub,
+    /// Glyph positioning table.
+    Gpos,
+}
+
+impl LayoutTable {
+    fn tag(self) -> Tag {
+        match self {
+            Self::Gsub => Tag::new(b"GSUB"),
+            Self::Gpos => Tag::new(b"GPOS"),
+        }
+    }
+}
+
 /// HarfBuzz's order of preference (`find_best_subtable`). `ANY` matches
 /// every encoding.
 const ANY: u16 = 0xFFFF;
@@ -691,6 +709,29 @@ impl<'a> Font<'a> {
         use sofel_read::layout::sanitize::{Admission, assess};
         self.table(tag)
             .filter(|d| assess(tag, Some(d)) == Admission::Accepted)
+    }
+
+    /// Copy a page of FeatureList tags in record order, preserving duplicates.
+    /// Returns `(written, total)`; a missing or rejected table is empty.
+    pub fn feature_tags(&self, table: LayoutTable, start: u32, out: &mut [Tag]) -> (usize, usize) {
+        let Some(features) = self
+            .shaping_table(table.tag())
+            .and_then(|data| sofel_read::layout::LayoutTable::new(data).ok())
+            .and_then(|layout| layout.feature_list().ok().flatten())
+        else {
+            return (0, 0);
+        };
+        let total = features.len();
+        let start = usize::try_from(start).unwrap_or(usize::MAX).min(total);
+        let mut written = 0usize;
+        for (dest, index) in out.iter_mut().zip(start..total) {
+            let Some(tag) = features.tag(index) else {
+                break;
+            };
+            *dest = tag;
+            written = written.saturating_add(1);
+        }
+        (written, total)
     }
 
     /// The glyph for a character, from the chosen cmap subtable (in

@@ -69,6 +69,8 @@ pub enum Kind {
         /// The value found.
         found: u32,
     },
+    /// A VARC structure contains an invalid value or component record.
+    InvalidVarc,
     /// An unknown subtable format.
     UnknownFormat {
         /// The value found.
@@ -695,6 +697,7 @@ impl Kind {
             InvalidFontContainer { .. }
             | Truncated { .. }
             | UnknownVersion { .. }
+            | InvalidVarc
             | UnknownFormat { .. }
             | OffsetOutOfBounds { .. }
             | InvalidIndexToLocFormat { .. }
@@ -811,6 +814,7 @@ impl Kind {
             InvalidFontContainer { .. } => "invalid_font_container",
             Truncated { .. } => "truncated",
             UnknownVersion { .. } => "unknown_version",
+            InvalidVarc => "invalid_varc",
             UnknownFormat { .. } => "unknown_format",
             UnknownConditionFormat { .. } => "unknown_condition_format",
             ConditionAxisOutOfRange { .. } => "condition_axis_out_of_range",
@@ -927,6 +931,7 @@ impl Kind {
         use Kind::*;
         match *self {
             InvalidFontContainer { .. } => {}
+            InvalidVarc => {}
             Truncated { needed, available } => {
                 f("needed", Uint(needed));
                 f("available", Uint(available));
@@ -1236,6 +1241,7 @@ impl fmt::Display for Kind {
                 )
             }
             UnknownVersion { found } => write!(f, "unknown version {found:#010x}"),
+            InvalidVarc => f.write_str("invalid VARC structure"),
             UnknownFormat { found } => write!(f, "unknown subtable format {found}"),
             UnknownConditionFormat { found } => {
                 write!(f, "unknown FeatureVariations condition format {found}")

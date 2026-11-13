@@ -70,9 +70,22 @@ fn choice(id: &str) -> Option<(SoloInput, &'static str, &'static str)> {
         "source-han" => (SoloInput::Scalar("U+9AA8"), "山水風月", "und"),
         "amstelvar" => (SoloInput::Scalar("U+0067"), "office & affix", "en"),
         "color-cff" | "color-sbix" | "color-svg" => (SoloInput::Glyph(19), "simple_linear", "en"),
+        "color-noto-cbdt" | "color-noto-colrv1" => (SoloInput::Scalar("U+1F600"), "👩‍💻", "und"),
         "hb-variable-colr" => (SoloInput::Glyph(92), "\u{f0502}\u{f0503}", "und"),
         _ => return None,
     })
+}
+
+pub fn gallery_cases(repo: &Path) -> Result<Vec<Sample>, String> {
+    let fonts = repo.join("target/testdata/extra-fonts");
+    let mut samples = cases(repo, &repo.join("conformance/fonts.tsv"), &fonts, true)?;
+    samples.extend(cases(
+        repo,
+        &repo.join("conformance/gallery-fonts.tsv"),
+        &fonts,
+        false,
+    )?);
+    Ok(samples)
 }
 
 pub fn cases(
@@ -125,7 +138,10 @@ pub fn cases(
                 id: id.clone(),
                 face,
                 path: path.clone(),
-                ppem: if id == "color-sbix" { 109 } else { 48 },
+                ppem: match id.as_str() {
+                    "color-sbix" | "color-noto-cbdt" | "color-noto-colrv1" => 109,
+                    _ => 48,
+                },
                 solo: solo.clone(),
                 text,
                 lang,
