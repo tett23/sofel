@@ -2,8 +2,8 @@
 
 use alloc::vec::Vec;
 
+use sofel_font::CidFace;
 use sofel_geom::{Pen, Point, mul_fix};
-use sofel_type1::cid::CidFace;
 
 use crate::{CBox, OutlineError, OutlineInfo, Scale};
 

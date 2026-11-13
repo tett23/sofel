@@ -1,8 +1,8 @@
 //! CID Type 1 outline compared with pinned FreeType 2.15.0.
 
+use sofel_font::CidFace;
 use sofel_geom::{Command, Fixed, FnPen, Point};
 use sofel_outline::{Scale, draw_cid};
-use sofel_type1::cid::CidFace;
 
 #[test]
 fn adr0065_i1_cid_triangle_matches_freetype() -> Result<(), Box<dyn std::error::Error>> {

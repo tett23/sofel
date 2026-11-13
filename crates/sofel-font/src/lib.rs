@@ -63,6 +63,7 @@ pub mod layout_query;
 mod metrics;
 mod pfr;
 pub use pfr::{PfrBitmap, PfrFace};
+pub use sofel_type1::cid::CidFace;
 mod name_language;
 mod names;
 pub mod remap;
