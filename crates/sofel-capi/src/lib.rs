@@ -271,6 +271,7 @@ fn outline_error(e: OutlineError) -> i32 {
         OutlineError::UnsupportedFormat => ERROR_NO_GLYPH_DATA,
         OutlineError::InvalidCff => ERROR_INVALID_CFF,
         OutlineError::InvalidCharString => ERROR_INVALID_OUTLINE,
+        OutlineError::AutoHintUnsupportedGlyph => subset::ERROR_UNSUPPORTED,
     }
 }
 
