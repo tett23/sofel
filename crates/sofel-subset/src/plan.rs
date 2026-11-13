@@ -863,7 +863,12 @@ impl Plan {
                     layout::subtables(table.lookup(i as usize), gsub)
                         .iter()
                         .all(|(kind, _)| {
-                            matches!(kind, layout::Kind::SingleSubst | layout::Kind::SinglePos)
+                            matches!(
+                                kind,
+                                layout::Kind::SingleSubst
+                                    | layout::Kind::SinglePos
+                                    | layout::Kind::CursivePos
+                            )
                         })
                 });
                 if !supported {

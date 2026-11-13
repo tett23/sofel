@@ -239,17 +239,20 @@ pub(crate) fn retained_variation_indices(
                 }
                 continue;
             }
-            if kind == Kind::CursivePos && subtable.u16(0) == 1 {
-                let n = usize::from(subtable.u16(4));
-                if n.checked_mul(4)? > subtable.0.len().saturating_sub(6) {
+            if kind == Kind::CursivePos {
+                let (cov, n, start, width) = cursive_records(subtable)?;
+                let stride = usize::from(width).saturating_mul(2);
+                if n.checked_mul(stride)? > subtable.0.len().saturating_sub(start) {
                     return None;
                 }
-                let cov = Cov(subtable.off16(2));
                 for (k, glyph) in cov.glyphs().into_iter().take(n).enumerate() {
-                    let rec = 6usize.saturating_add(k.saturating_mul(4));
-                    let keep = glyphs.has(glyph);
-                    for at in [rec, rec.saturating_add(2)] {
-                        collect_anchor_devices(subtable.off16(at), keep, &mut selected)?;
+                    let rec = start.saturating_add(k.saturating_mul(stride));
+                    for at in [rec, rec.saturating_add(usize::from(width))] {
+                        collect_anchor_devices(
+                            cursive_anchor(subtable, at, width),
+                            glyphs.has(glyph),
+                            &mut selected,
+                        )?;
                     }
                 }
                 continue;
@@ -909,13 +912,28 @@ fn pair2(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
     !map1.is_empty() && !map2.is_empty() && ret
 }
 
-/// CursivePos format 1.
-pub(crate) fn cursive(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
-    if st.u16(0) != 1 {
-        return false;
+/// Coverage and dimensions of the CursivePos entry/exit record array.
+fn cursive_records(st: D<'_>) -> Option<(Cov<'_>, usize, usize, u8)> {
+    match st.u16(0) {
+        1 => Some((Cov(st.off16(2)), usize::from(st.u16(4)), 6, 2)),
+        2 => Some((Cov(st.off32(2)), (st.u32(6) >> 8) as usize, 9, 3)),
+        _ => None,
     }
-    let cov = Cov(st.off16(2));
-    let n = usize::from(st.u16(4));
+}
+
+fn cursive_anchor(st: D<'_>, at: usize, width: u8) -> D<'_> {
+    if width == 3 {
+        st.follow(st.u32(at) >> 8)
+    } else {
+        st.off16(at)
+    }
+}
+
+/// CursivePos formats 1 and 2.
+pub(crate) fn cursive(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
+    let Some((cov, n, start, width)) = cursive_records(st) else {
+        return false;
+    };
     let gs = &s.p.layout.glyphset_gsub;
     let it: Vec<(u32, usize)> = cov
         .glyphs()
@@ -925,20 +943,24 @@ pub(crate) fn cursive(s: &mut Sub<'_, '_>, st: D<'_>) -> bool {
         .filter(|&(_, g)| gs.has(g))
         .map(|(i, g)| (s.map(g), i))
         .collect();
-    s.s.u16(1);
-    let cov_at = s.s.u16(0);
-    s.s.u16(n16(it.len()));
+    s.s.u16(st.u16(0));
+    let cov_width = if width == 3 { 4 } else { 2 };
+    let cov_at = s.s.zeros(usize::from(cov_width));
+    if width == 3 {
+        s.s.u24(n32(it.len()));
+    } else {
+        s.s.u16(n16(it.len()));
+    }
     for &(_, i) in &it {
-        let rec = 6usize.saturating_add(i.saturating_mul(4));
-        let entry_at = s.s.u16(0);
-        let exit_at = s.s.u16(0);
-        let entry = st.off16(rec);
-        let exit = st.off16(rec.saturating_add(2));
-        s.serialize_subset_opt(entry_at, 2, entry, |s| anchor(s, entry));
-        s.serialize_subset_opt(exit_at, 2, exit, |s| anchor(s, exit));
+        let rec = start.saturating_add(i.saturating_mul(usize::from(width).saturating_mul(2)));
+        for at in [rec, rec.saturating_add(usize::from(width))] {
+            let field = s.s.zeros(usize::from(width));
+            let src = cursive_anchor(st, at, width);
+            s.serialize_subset_opt(field, width, src, |s| anchor(s, src));
+        }
     }
     let glyphs: Vec<u32> = it.iter().map(|p| p.0).collect();
-    s.serialize_serialize(cov_at, 2, |s| s.coverage(&glyphs));
+    s.serialize_serialize(cov_at, cov_width, |s| s.coverage(&glyphs));
     !it.is_empty()
 }
 

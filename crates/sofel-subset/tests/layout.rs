@@ -1641,7 +1641,13 @@ fn adr0022_retained_high_gid_keeps_single_substitution() {
             }),
         )]),
     };
+    let anchor = Buf::new().u16(1).i16(-11).i16(29).done();
+    let cursive = link(
+        Buf::new().u16(2).u32(0).u24(1).u24(0).u24(0).done(),
+        vec![(2, 4, vec![0, 3, 0, 0, 1, 1, 0, 0]), (9, 3, anchor.clone())],
+    );
     tables.extend([
+        (b"GPOS", layout_table(&[(b"curs", &[0])], &[(3, cursive)])),
         (b"BASE", base(Some(&axis), None)),
         (b"GDEF", gdef_with_classes(classes.clone())),
         (b"MAXP", vec![0, 0, 80, 0, 1, 0, 1]),
@@ -1652,6 +1658,12 @@ fn adr0022_retained_high_gid_keeps_single_substitution() {
     let input = chars("A").with_flags(Flags::RETAIN_GIDS);
     let out = subset(&Font::new(&data, 0).unwrap(), &input).unwrap();
     assert_eq!(Font::new(&out, 0).unwrap().num_glyphs(), 65537);
+    let gpos = out_table(&out, b"GPOS").unwrap();
+    let st = follow(follow(follow(&gpos, 8), 2), 6);
+    assert_eq!(u16_at(st, 0), 2);
+    assert_eq!(&st[6..9], &[0, 0, 1]);
+    let entry = u32::from_be_bytes([0, st[9], st[10], st[11]]) as usize;
+    assert!(st[entry..].starts_with(&anchor));
     let baseline = out_table(&out, b"BASE").unwrap();
     assert!(
         baseline
