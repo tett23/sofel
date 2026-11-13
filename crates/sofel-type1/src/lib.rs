@@ -12,3 +12,6 @@ pub mod pfb;
 
 /// PFM kerning metrics.
 pub mod pfm;
+
+/// Type 1 eexec and charstring decryption.
+pub mod cipher;
