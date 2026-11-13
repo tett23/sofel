@@ -633,7 +633,8 @@ static void test_outlines(const sofel_font_t *font) {
                                      &hinted_advance) == SOFEL_OK);
   CHECK(sofel_outline_load_with_hint(font, NULL, 1, 16, SOFEL_HINT_MODE_AUTO,
                                      SOFEL_HINT_TARGET_NORMAL, scratch, cbox, &overlap,
-                                     &hinted_advance) == SOFEL_ERROR_UNSUPPORTED);
+                                     &hinted_advance) == SOFEL_OK);
+  CHECK(hinted_advance > 0 && cbox[0] < cbox[2] && cbox[1] < cbox[3]);
   CHECK(sofel_outline_load_with_hint(font, NULL, 1, 16, 4, SOFEL_HINT_TARGET_NORMAL,
                                      scratch, cbox, &overlap, &hinted_advance) == SOFEL_ERROR_INVALID_ARGUMENT);
   CHECK(sofel_outline_load_with_hint(font, NULL, 1, 16, SOFEL_HINT_MODE_NONE, 5,
