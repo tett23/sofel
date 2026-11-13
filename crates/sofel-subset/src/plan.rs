@@ -865,6 +865,20 @@ impl Plan {
                         .ok()
                         .and_then(|table| table.variation_store().ok().flatten())
                         .ok_or(SubsetError::Malformed { tag })?;
+                    // HarfBuzz omits the inner maps when no layout record uses
+                    // a variation index. Instancing then processes every row.
+                    let items = if items.is_empty() {
+                        (0..store.data_count())
+                            .map(|outer| {
+                                let data = store
+                                    .item_data(outer)
+                                    .ok_or(SubsetError::Malformed { tag })?;
+                                Ok((outer, (0..u32::from(data.item_count)).collect()))
+                            })
+                            .collect::<Result<Vec<_>, SubsetError>>()?
+                    } else {
+                        items
+                    };
                     let mut projected = BTreeMap::new();
                     let bytes = crate::tables::hvar::instance::subset(
                         &p,
