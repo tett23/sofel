@@ -73,3 +73,16 @@ fn adr0065_i2_face_count_survives_invalid_first_resource() {
     assert!(WinFont::parse(&bytes, 0).is_err());
     assert!(WinFont::parse(&bytes, 1).is_ok());
 }
+
+#[test]
+fn adr0065_i2_pe_header_field_offsets() {
+    let mut bytes = vec![0; 320];
+    bytes[..2].copy_from_slice(b"MZ");
+    bytes[60..64].copy_from_slice(&64u32.to_le_bytes());
+    bytes[64..68].copy_from_slice(b"PE\0\0");
+    for (field, value) in [(4, 0x14cu16), (20, 224), (24, 0x10b), (116, 3)] {
+        let position = 64 + field;
+        assert_eq!(WinFont::parse_with_offset(&bytes, 0).unwrap_err(), position);
+        bytes[position..position + 2].copy_from_slice(&value.to_le_bytes());
+    }
+}

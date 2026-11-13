@@ -50,7 +50,7 @@ fn fon_resource<'a>(
     let ne = usize::try_from(u32_at(data, 0x3c)?).map_err(|_| WinFontError)?;
     *position = ne;
     if data.get(ne..).is_some_and(|s| s.starts_with(b"PE\0\0")) {
-        return pe_resource(data.get(ne..).ok_or(WinFontError)?, data, face);
+        return pe_resource(ne, data, face, position);
     }
     if data.get(ne..ne.checked_add(2).ok_or(WinFontError)?) != Some(b"NE") {
         return Err(WinFontError);
@@ -166,18 +166,25 @@ fn subdirectory(entry: &[u8]) -> Result<usize, WinFontError> {
 }
 
 fn pe_resource<'a>(
-    header: &[u8],
+    base: usize,
     file: &'a [u8],
     face: Option<u32>,
+    position: &mut usize,
 ) -> Result<(Option<&'a [u8]>, u32), WinFontError> {
-    if u16_at(header, 4)? != 0x14c
-        || u16_at(header, 20)? != 224
-        || u16_at(header, 24)? != 0x10b
-        || u32_at(header, 116)? < 3
-    {
+    let header = file.get(base..).ok_or(WinFontError)?;
+    for (offset, expected) in [(4, 0x14c), (20, 224), (24, 0x10b)] {
+        *position = base.saturating_add(offset);
+        if u16_at(header, offset)? != expected {
+            return Err(WinFontError);
+        }
+    }
+    *position = base.saturating_add(116);
+    if u32_at(header, 116)? < 3 {
         return Err(WinFontError);
     }
+    *position = base.saturating_add(136);
     let rva = u32_at(header, 136)?;
+    *position = base;
     let sections = range(
         header,
         248,
