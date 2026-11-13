@@ -1,5 +1,6 @@
 //! Index Type 1 charstrings after eexec decryption.
 
+use crate::cipher::decrypt_charstring;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt;
@@ -21,11 +22,29 @@ impl core::error::Error for CharstringError {}
 pub struct Charstrings<'a> {
     glyphs: Vec<(&'a [u8], &'a [u8])>,
     subrs: Vec<Option<&'a [u8]>>,
+    len_iv: i32,
 }
 
 impl<'a> Charstrings<'a> {
     /// Read `/Subrs` and `/CharStrings` binary objects with checked lengths.
     pub fn parse(data: &'a [u8]) -> Result<Self, CharstringError> {
+        let charstrings_start = keyword(data, b"/CharStrings").ok_or(CharstringError)?;
+        let prefix_end = keyword(data, b"/Subrs")
+            .unwrap_or(charstrings_start)
+            .min(charstrings_start);
+        let prefix = data.get(..prefix_end).ok_or(CharstringError)?;
+        let len_iv = if let Some(start) = keyword(prefix, b"/lenIV") {
+            let mut reader = Reader {
+                data: prefix,
+                at: start,
+            };
+            if reader.word()? != b"/lenIV" {
+                return Err(CharstringError);
+            }
+            signed_number(reader.word()?)?
+        } else {
+            4
+        };
         let mut subrs = Vec::new();
         if let Some(start) = keyword(data, b"/Subrs") {
             let mut reader = Reader { data, at: start };
@@ -53,8 +72,10 @@ impl<'a> Charstrings<'a> {
                 *subrs.get_mut(index).ok_or(CharstringError)? = Some(bytes);
             }
         }
-        let start = keyword(data, b"/CharStrings").ok_or(CharstringError)?;
-        let mut reader = Reader { data, at: start };
+        let mut reader = Reader {
+            data,
+            at: charstrings_start,
+        };
         if reader.word()? != b"/CharStrings" {
             return Err(CharstringError);
         }
@@ -83,7 +104,11 @@ impl<'a> Charstrings<'a> {
             }
             glyphs.push((name, bytes));
         }
-        Ok(Self { glyphs, subrs })
+        Ok(Self {
+            glyphs,
+            subrs,
+            len_iv,
+        })
     }
 
     /// Number of glyph charstrings in source order.
@@ -102,6 +127,21 @@ impl<'a> Charstrings<'a> {
     /// The encrypted local subroutine at `index`.
     pub fn subroutine(&self, index: usize) -> Option<&'a [u8]> {
         self.subrs.get(index).copied().flatten()
+    }
+
+    /// The number of random bytes before each encrypted charstring.
+    pub fn len_iv(&self) -> i32 {
+        self.len_iv
+    }
+
+    /// The decrypted program for a named glyph.
+    pub fn glyph_program(&self, name: &[u8]) -> Option<Vec<u8>> {
+        decrypt_charstring(self.glyph(name)?, self.len_iv)
+    }
+
+    /// The decrypted local subroutine at `index`.
+    pub fn subroutine_program(&self, index: usize) -> Option<Vec<u8>> {
+        decrypt_charstring(self.subroutine(index)?, self.len_iv)
     }
 }
 
@@ -123,6 +163,21 @@ fn number(word: &[u8]) -> Result<usize, CharstringError> {
             .and_then(|n| n.checked_add(usize::from(digit)))
             .ok_or(CharstringError)
     })
+}
+
+fn signed_number(word: &[u8]) -> Result<i32, CharstringError> {
+    let (negative, digits) = if let Some(rest) = word.strip_prefix(b"-") {
+        (true, rest)
+    } else {
+        (false, word)
+    };
+    let value = i64::try_from(number(digits)?).map_err(|_| CharstringError)?;
+    let value = if negative {
+        value.checked_neg().ok_or(CharstringError)?
+    } else {
+        value
+    };
+    i32::try_from(value).map_err(|_| CharstringError)
 }
 
 struct Reader<'a> {

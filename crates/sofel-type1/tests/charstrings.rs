@@ -20,3 +20,14 @@ fn adr0065_i2_type1_rejects_truncated_binary_charstring() {
     let private = b"/CharStrings 999999 dict dup begin\n";
     assert!(Charstrings::parse(private).is_err());
 }
+
+#[test]
+fn adr0065_i1_type1_uses_len_iv_for_glyph_programs()
+-> Result<(), sofel_type1::charstrings::CharstringError> {
+    let private =
+        b"/lenIV 4 def\n/CharStrings 1 dict dup begin\n/A 6 RD \x51\x6a\x9f\x0c\x4f\xb0 ND\n";
+    let table = Charstrings::parse(private)?;
+    assert_eq!(table.len_iv(), 4);
+    assert_eq!(table.glyph_program(b"A"), Some(vec![0x8b, 0x0e]));
+    Ok(())
+}
