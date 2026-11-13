@@ -38,7 +38,8 @@ pub(super) fn linked_stems(
         || !matches!(outlines.format, Format::Glyf)
         || outlines.font.table(Tag::new(b"gvar")).is_some()
         || outlines.font.table(Tag::new(b"GLYF")).is_some()
-        || glyph != outlines.font.nominal_glyph(u32::from('b'))?
+        || (outlines.font.nominal_glyph(u32::from('b')) != Some(glyph)
+            && outlines.font.nominal_glyph(u32::from('d')) != Some(glyph))
         || scratch.ends.len() != 3
     {
         return None;

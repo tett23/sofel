@@ -295,6 +295,47 @@ fn adr0064_i1_latin_light_edges_match_freetype() {
 }
 
 #[test]
+fn adr0064_i1_latin_d_linked_stems_match_freetype() {
+    for relative in [
+        "harfbuzz/test/subset/data/expected/full_instance/Roboto-Variable.default.all.wght=150,wdth=80.ttf",
+        "harfbuzz/test/subset/data/expected/full_instance/Roboto-Variable.default.all.wght=300,wdth=90.ttf",
+    ] {
+        let path = paths::testdata().join(relative);
+        let data = std::fs::read(&path).unwrap();
+        let font = Font::new(&data, 0).unwrap();
+        let gid = font.nominal_glyph(u32::from('d')).unwrap();
+        assert_eq!(gid, GlyphId(72));
+        let outlines = Outlines::new(font.default_instance());
+        let mut scratch = Scratch::default();
+        for ppem in 1..=34 {
+            for (target_name, target) in [("light", HintTarget::Light), ("lcd", HintTarget::Lcd)] {
+                let reference = Command::new(paths::ft_dump())
+                    .args(["--hint-slot", &ppem.to_string(), "72", "auto", target_name])
+                    .arg(&path)
+                    .output()
+                    .unwrap();
+                assert!(reference.status.success());
+                let (_, advance) = outlines
+                    .load_with_hint(gid, ppem, HintMode::Auto, target, &mut scratch)
+                    .unwrap();
+                let mut actual = format!("advance {advance} 0\n");
+                for (point, tag) in scratch.points().iter().zip(scratch.point_tags()) {
+                    writeln!(actual, "point {} {} {tag}", point.x, point.y).unwrap();
+                }
+                for end in scratch.contour_ends() {
+                    writeln!(actual, "end {end}").unwrap();
+                }
+                assert_eq!(
+                    actual,
+                    String::from_utf8(reference.stdout).unwrap(),
+                    "{relative} {target_name} {ppem}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn adr0064_i1_auto_nonempty_reports_unsupported_and_clears_scratch() {
     let path = paths::testdata().join("harfbuzz/test/api/fonts/Roboto-Regular.abcAE.ttf");
     let data = std::fs::read(&path).unwrap();
