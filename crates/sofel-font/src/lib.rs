@@ -510,6 +510,17 @@ fn uvs_subtable<'a>(c: &Cmap<'a>) -> Option<Subtable<'a>> {
 }
 
 impl<'a> Font<'a> {
+    /// Opens the embedded sfnt of a previously decoded Type 42 source.
+    ///
+    /// The source must outlive the returned font. Character mapping comes
+    /// from the embedded sfnt; Type 42's PostScript Encoding is not applied.
+    pub fn from_type42(
+        source: &'a sofel_type1::type42::Type42Source,
+        index: u32,
+    ) -> Result<Self, FontError> {
+        Self::new(source.sfnt(), index)
+    }
+
     /// Opens font `index` of `data`: 0 for a single sfnt, any index of a
     /// collection. Reads the glyph count, picks the cmap subtables and
     /// prepares the horizontal metrics once; a missing or broken `maxp`,
