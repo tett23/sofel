@@ -137,3 +137,19 @@ fn adr0065_i1_uses_font_matrix_for_units_per_em() -> Result<(), Box<dyn std::err
     assert_eq!(face.units_per_em(), 500);
     Ok(())
 }
+
+#[test]
+fn adr0065_i1_skips_comment_startdata_marker() -> Result<(), Box<dyn std::error::Error>> {
+    let source = sample();
+    let marker = b"/CIDFontName";
+    let at = source
+        .windows(marker.len())
+        .position(|w| w == marker)
+        .ok_or("name")?;
+    let mut decorated = source.get(..at).ok_or("prefix")?.to_vec();
+    decorated.extend_from_slice(b"% fake StartData marker\n");
+    decorated.extend_from_slice(source.get(at..).ok_or("suffix")?);
+    let face = CidFace::parse(&decorated, 1024)?;
+    assert_eq!(face.glyph_metrics(0).ok_or("metrics")?.advance_x, 500);
+    Ok(())
+}

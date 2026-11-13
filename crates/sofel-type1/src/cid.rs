@@ -36,7 +36,7 @@ impl CidFace {
         if !source.starts_with(b"%!PS-Adobe-3.0 Resource-CIDFont") {
             return Err(CidError);
         }
-        let start = find_bytes(source, b"StartData").ok_or(CidError)?;
+        let start = find_start_data(source).ok_or(CidError)?;
         let header = source.get(..start).ok_or(CidError)?;
         let mode = header.rsplit(|&b| b == b'\n').next().unwrap_or(header);
         let data_start = start
@@ -141,6 +141,54 @@ impl CidFace {
 
 fn find_bytes(data: &[u8], needle: &[u8]) -> Option<usize> {
     data.windows(needle.len()).position(|w| w == needle)
+}
+
+fn find_start_data(source: &[u8]) -> Option<usize> {
+    let mut at = 0usize;
+    while let Some(&byte) = source.get(at) {
+        if byte == b'%' {
+            while source.get(at).is_some_and(|&value| value != b'\n') {
+                at = at.checked_add(1)?;
+            }
+        } else if byte == b'(' {
+            let mut depth = 1usize;
+            at = at.checked_add(1)?;
+            while depth != 0 {
+                let &value = source.get(at)?;
+                if value == b'\\' {
+                    at = at.checked_add(2)?;
+                    continue;
+                }
+                if value == b'(' {
+                    depth = depth.checked_add(1)?;
+                }
+                if value == b')' {
+                    depth = depth.checked_sub(1)?;
+                }
+                at = at.checked_add(1)?;
+            }
+        } else if byte == b'/' {
+            at = at.checked_add(1)?;
+            while source.get(at).is_some_and(|&value| word_byte(value)) {
+                at = at.checked_add(1)?;
+            }
+        } else if word_byte(byte) {
+            let start = at;
+            while source.get(at).is_some_and(|&value| word_byte(value)) {
+                at = at.checked_add(1)?;
+            }
+            if source.get(start..at) == Some(&b"StartData"[..]) {
+                return Some(start);
+            }
+        } else {
+            at = at.checked_add(1)?;
+        }
+    }
+    None
+}
+
+fn word_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
 }
 
 fn field_usize(data: &[u8], name: &[u8]) -> Result<usize, CidError> {
