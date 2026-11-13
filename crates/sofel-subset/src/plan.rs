@@ -848,7 +848,7 @@ impl Plan {
                 n
             };
         if new_to_old.iter().any(|&(new, _)| new > 0xFFFF) {
-            for name in [b"GSUB", b"GPOS", b"BASE"] {
+            for name in [b"GSUB", b"GPOS"] {
                 let tag = Tag::new(name);
                 if drop.contains(tag.to_u32()) || no_subset.contains(tag.to_u32()) {
                     continue;
@@ -856,24 +856,16 @@ impl Plan {
                 let Some(data) = font.table(tag) else {
                     continue;
                 };
-                let supported = match name {
-                    b"GSUB" | b"GPOS" => {
-                        let gsub = name == b"GSUB";
-                        let table = layout::Gsubgpos::new(data, gsub);
-                        let plan = if gsub { &p.layout.gsub } else { &p.layout.gpos };
-                        plan.lookups.keys().all(|&i| {
-                            layout::subtables(table.lookup(i as usize), gsub)
-                                .iter()
-                                .all(|(kind, _)| {
-                                    matches!(
-                                        kind,
-                                        layout::Kind::SingleSubst | layout::Kind::SinglePos
-                                    )
-                                })
+                let gsub = name == b"GSUB";
+                let table = layout::Gsubgpos::new(data, gsub);
+                let plan = if gsub { &p.layout.gsub } else { &p.layout.gpos };
+                let supported = plan.lookups.keys().all(|&i| {
+                    layout::subtables(table.lookup(i as usize), gsub)
+                        .iter()
+                        .all(|(kind, _)| {
+                            matches!(kind, layout::Kind::SingleSubst | layout::Kind::SinglePos)
                         })
-                    }
-                    _ => false,
-                };
+                });
                 if !supported {
                     return Err(SubsetError::Unsupported {
                         tag,

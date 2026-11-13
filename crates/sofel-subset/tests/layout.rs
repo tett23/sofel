@@ -1631,7 +1631,18 @@ fn adr0022_retained_high_gid_keeps_single_substitution() {
         .1
         .resize(2 * 65537 + 2 * 20, 0);
     let classes = vec![0, 3, 1, 0, 0, 0, 0, 1, 0, 0, 2];
+    let axis = AxisSpec {
+        tags: Some(vec![*b"romn"]),
+        scripts: Some(vec![(
+            *b"DFLT",
+            Some(ScriptSpec {
+                values: Some((0, vec![Some(Coord::F4(-23, 65536, 5))])),
+                ..Default::default()
+            }),
+        )]),
+    };
     tables.extend([
+        (b"BASE", base(Some(&axis), None)),
         (b"GDEF", gdef_with_classes(classes.clone())),
         (b"MAXP", vec![0, 0, 80, 0, 1, 0, 1]),
         (b"GSUB", layout_table(&[(b"liga", &[0])], &[(1, st)])),
@@ -1641,6 +1652,12 @@ fn adr0022_retained_high_gid_keeps_single_substitution() {
     let input = chars("A").with_flags(Flags::RETAIN_GIDS);
     let out = subset(&Font::new(&data, 0).unwrap(), &input).unwrap();
     assert_eq!(Font::new(&out, 0).unwrap().num_glyphs(), 65537);
+    let baseline = out_table(&out, b"BASE").unwrap();
+    assert!(
+        baseline
+            .windows(9)
+            .any(|record| record == base_coord(&Coord::F4(-23, 65536, 5)))
+    );
     let gdef = out_table(&out, b"GDEF").unwrap();
     assert!(follow(&gdef, 4).starts_with(&classes));
     let gsub = out_table(&out, b"GSUB").unwrap();
