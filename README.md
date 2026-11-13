@@ -77,7 +77,7 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-inflate`](crates/sofel-inflate) | 出力上限を指定した DEFLATE・zlib・gzip の展開 |
 | [`sofel-png`](crates/sofel-png) | PNG の各色型と Adam7 をアルファ乗算済み BGRA に復号する（[ADR 0066](docs/adr/0066-color-glyph-pixels.md)） |
 | [`sofel-bitmap`](crates/sofel-bitmap) | 埋め込みビットマップ（CBLC/CBDT、EBLC/EBDT、`bloc`/`bdat`、sbix）のストライク、その選び方（HarfBuzzとFreeTypeの両方）、グリフの画像のデータとメトリクス、EBDTの画素のFreeTypeと同じ書き込み、CBDT と sbix の PNG の復号（[ADR 0023](docs/adr/0023-color-glyphs.md)） |
-| [`sofel-bitmapfont`](crates/sofel-bitmapfont) | BDF、PCF、Windows FNT と NE FON の文字対応、送り幅、固定サイズの画像を読む。BDF は 1、2、4、8 bit、ほかは 1 bit（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)） |
+| [`sofel-bitmapfont`](crates/sofel-bitmapfont) | BDF、PCF、Windows FNT と NE・PE32 FON の文字対応、送り幅、固定サイズの画像を読む。BDF は 1、2、4、8 bit、ほかは 1 bit（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)） |
 | [`sofel-color`](crates/sofel-color) | カラーグリフ：CPALのパレット、COLR（版0と版1）、SVG、CBDT、sbixをHarfBuzzと同じ命令で `Painter` に渡す。gzip 圧縮された SVG は展開して渡す。命令の記録（`Recording`）、カラーグリフを含むグリフの箱、フォールバックのための問い合わせ（[ADR 0023](docs/adr/0023-color-glyphs.md)） |
 | [`sofel-write`](crates/sofel-write) | sfntの組み立てと、HarfBuzzと同じ詰め方のオブジェクトの直列化（[ADR 0022](docs/adr/0022-subsetting.md)） |
 | [`sofel-subset`](crates/sofel-subset) | HarfBuzzの `hb-subset` とバイト単位で同じ出力のサブセット化（[ADR 0022](docs/adr/0022-subsetting.md)。書ける表はglyf系、cmap、name、OS/2、post、hdmx、CFF、VORG、GDEF、GSUB、GPOS、BASE、COLR、CPAL、CBLC、CBDT、sbix、MATH、STAT、軸を固定したり範囲を制限したりしたCFF2など。軸はすべて既定の値に固定できる。前処理（`Prepared`）で同じフォントの計画を速く作れる） |
@@ -88,6 +88,8 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-cli`](crates/sofel-cli) | 小さな道具（`sofel-validate`、`sofel-render`、`sofel-paint`、`sofel-shape`、`sofel-subset`） |
 | [`sofel-capi`](crates/sofel-capi) | C ABI（ヘッダは [`sofel.h`](crates/sofel-capi/include/sofel.h)、[ADR 0015](docs/adr/0015-c-abi.md)） |
 | [`sofel-conformance`](crates/sofel-conformance) | FreeTypeとHarfBuzzとの突き合わせのテスト（`cargo test` では走らない） |
+
+BDF、PCF、FNT、FON は Rust API の `Font::from_bitmap` で開く。文字対応、送り幅、固定サイズの画像を同じ API で読める。
 
 PFR（Portable Font Resource）は、Rust API の `Font::from_pfr` でフェイス番号を指定して開く。文字対応と送り幅を取得し、輪郭または指定サイズの埋め込みビットマップを取り出せる。
 
@@ -128,7 +130,7 @@ BDF の固定サイズの画像は `--ppem`、`--char` または `--glyph` を�
 
 PCF の固定サイズの 1 bit 画像も同じ引数で PGM に変換する。PCF は 1 フェイスで、指定サイズのストライクがない場合と `--no-bitmap` を指定した場合は描画に失敗する（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
 
-Windows FNT と NE FON の固定サイズの 1 bit 画像も同じ引数で PGM に変換する。FNT は 1 フェイスで、FON のリソースは `--face` で選ぶ。指定サイズのストライクがない場合と `--no-bitmap` を指定した場合は描画に失敗する（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
+Windows FNT と NE・PE32 FON の固定サイズの 1 bit 画像も同じ引数で PGM に変換する。FNT は 1 フェイスで、FON のリソースは `--face` で選ぶ。指定サイズのストライクがない場合と `--no-bitmap` を指定した場合は描画に失敗する（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
 
 素の CFF 1 の輪郭は `--face` でフェイスを選び、`--char` または `--glyph` で指定して PGM に描く。`sofel render --text` は同じフェイスの文字対応と送り幅を使って一行を描く。文字の対応には PostScript グリフ名を使う（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
 

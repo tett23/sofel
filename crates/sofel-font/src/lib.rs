@@ -50,6 +50,8 @@ pub use sofel_read as read;
 mod bare_cff;
 mod base_sanitize;
 pub mod baseline;
+mod bitmap_face;
+pub use bitmap_face::{BitmapFace, BitmapFormat};
 mod cff;
 mod ft;
 mod ft_glyf;
