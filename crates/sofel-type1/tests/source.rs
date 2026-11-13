@@ -61,3 +61,10 @@ fn adr0065_i1_pfa_postscript_line_endings() -> Result<(), sofel_type1::source::S
     }
     Ok(())
 }
+
+#[test]
+fn adr0065_i1_pfa_finds_executable_eexec() -> Result<(), sofel_type1::source::SourceError> {
+    let data = b"%!PS-AdobeFont-1.0\n% eexec ignored\n/Notice (nested (eexec) string) def\n/eexec_alias 0 def\ncurrentfile eexec b8588da5426e547975a11180dc\ncleartomark\n";
+    assert_eq!(Type1Source::parse_pfa(data, 4096)?.private(), b"/FontName");
+    Ok(())
+}

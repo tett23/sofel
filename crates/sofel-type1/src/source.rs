@@ -41,26 +41,14 @@ impl Type1Source {
         if !Self::has_text_header(data) {
             return Err(0);
         }
-        let marker = data
-            .windows(5)
-            .position(|window| window == b"eexec")
-            .ok_or(data.len())?;
-        let after = marker.checked_add(5).ok_or(data.len())?;
-        let line_end = data
+        let after = eexec_end(data).ok_or(data.len())?;
+        let whitespace = data
             .get(after..)
             .ok_or(data.len())?
             .iter()
-            .position(|byte| matches!(byte, b'\r' | b'\n'))
-            .ok_or(data.len())?;
-        let start = after
-            .checked_add(line_end)
-            .and_then(|n| n.checked_add(1))
-            .ok_or(data.len())?;
-        let start = if data.get(start.saturating_sub(1)..start.saturating_add(1)) == Some(b"\r\n") {
-            start.checked_add(1).ok_or(data.len())?
-        } else {
-            start
-        };
+            .take_while(|byte| byte.is_ascii_whitespace())
+            .count();
+        let start = after.checked_add(whitespace).ok_or(data.len())?;
         let mut cipher = Vec::new();
         let mut high = None;
         let mut ended = false;
@@ -111,7 +99,7 @@ impl Type1Source {
         let first = pfb.sections().first().ok_or(data.len())?;
         if first.kind != SectionKind::Ascii
             || !Self::has_text_header(first.data)
-            || !first.data.windows(5).any(|window| window == b"eexec")
+            || eexec_end(first.data).is_none()
         {
             return Err(6);
         }
@@ -182,4 +170,51 @@ fn hex_nibble(byte: u8) -> Option<u8> {
         b'A'..=b'F' => byte.checked_sub(b'A').and_then(|n| n.checked_add(10)),
         _ => None,
     }
+}
+
+/// Locate the encryption operator among top-level PostScript tokens.
+fn eexec_end(data: &[u8]) -> Option<usize> {
+    let mut bytes = data.iter().copied().enumerate().peekable();
+    let mut procedure_depth = 0usize;
+    while let Some((start, byte)) = bytes.next() {
+        match byte {
+            b'%' => {
+                bytes
+                    .by_ref()
+                    .take_while(|(_, b)| !matches!(b, b'\r' | b'\n'))
+                    .count();
+            }
+            b'(' => {
+                let mut depth = 1usize;
+                while depth > 0 {
+                    match bytes.next()?.1 {
+                        b'\\' => {
+                            bytes.next()?;
+                        }
+                        b'(' => depth = depth.checked_add(1)?,
+                        b')' => depth = depth.checked_sub(1)?,
+                        _ => {}
+                    }
+                }
+            }
+            b'<' if bytes.next_if(|(_, b)| *b == b'<').is_none() => {
+                bytes.find(|(_, b)| *b == b'>')?;
+            }
+            b'{' => procedure_depth = procedure_depth.checked_add(1)?,
+            b'}' => procedure_depth = procedure_depth.saturating_sub(1),
+            b if b == b'/' || !ps_delimiter(b) => {
+                while bytes.next_if(|(_, next)| !ps_delimiter(*next)).is_some() {}
+                let end = bytes.peek().map_or(data.len(), |(offset, _)| *offset);
+                if procedure_depth == 0 && data.get(start..end) == Some(b"eexec") {
+                    return Some(end);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn ps_delimiter(byte: u8) -> bool {
+    byte.is_ascii_whitespace() || b"()<>[]{}/%".contains(&byte)
 }
