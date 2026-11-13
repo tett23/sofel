@@ -249,8 +249,18 @@ fn parse_glyph<'a>(
     let mut box_data = None;
     while let Some(line) = lines.next() {
         if let Some(field) = line.strip_prefix("ENCODING ") {
-            let value = number(field.split_ascii_whitespace().next())?;
-            encoding = Some(u32::try_from(value).ok());
+            let mut fields = field.split_ascii_whitespace();
+            let primary = number(fields.next())?;
+            let value = if primary < 0 {
+                fields
+                    .next()
+                    .map(|field| number(Some(field)))
+                    .transpose()?
+                    .unwrap_or(-1)
+            } else {
+                primary
+            };
+            encoding = Some(u32::try_from(value).ok().filter(|code| *code < 0x110000));
         } else if let Some(field) = line.strip_prefix("DWIDTH ") {
             advance = Some(number(field.split_ascii_whitespace().next())?);
         } else if let Some(field) = line.strip_prefix("BBX ") {

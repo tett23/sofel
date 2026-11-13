@@ -52,3 +52,17 @@ fn adr0065_i1_bdf_line_endings_preserve_bitmaps_and_offsets() {
         );
     }
 }
+
+#[test]
+fn adr0065_i1_bdf_alternative_encoding_selects_the_same_glyph() {
+    let reference = BdfFont::parse(ORDER.as_bytes()).unwrap();
+    for value in ["-1 65", "-2 65"] {
+        let source = ORDER.replace("ENCODING 65", &format!("ENCODING {value}"));
+        let font = BdfFont::parse(source.as_bytes()).unwrap();
+        assert_eq!(font.nominal_glyph(65), reference.nominal_glyph(65));
+        assert_eq!(font.glyph(1), reference.glyph(1));
+    }
+    let source = ORDER.replace("ENCODING 65", "ENCODING 1114112");
+    let font = BdfFont::parse(source.as_bytes()).unwrap();
+    assert_eq!(font.nominal_glyph(1114112), None);
+}
