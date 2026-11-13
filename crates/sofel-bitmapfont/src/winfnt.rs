@@ -43,9 +43,9 @@ fn byte(data: &[u8], offset: usize) -> Result<u8, WinFontError> {
 
 fn fon_resource<'a>(
     data: &'a [u8],
-    face: u32,
+    face: Option<u32>,
     position: &mut usize,
-) -> Result<(&'a [u8], u32), WinFontError> {
+) -> Result<(Option<&'a [u8]>, u32), WinFontError> {
     *position = 0x3c;
     let ne = usize::try_from(u32_at(data, 0x3c)?).map_err(|_| WinFontError)?;
     *position = ne;
@@ -97,7 +97,13 @@ fn fon_resource<'a>(
             return Err(WinFontError);
         }
         if kind == 0x8008 {
-            if face >= u32::from(count) || count == 0 {
+            if count == 0 {
+                return Err(WinFontError);
+            }
+            let Some(face) = face else {
+                return Ok((None, u32::from(count)));
+            };
+            if face >= u32::from(count) {
                 return Err(WinFontError);
             }
             let entry = entries
@@ -117,8 +123,10 @@ fn fon_resource<'a>(
                 .checked_shl(u32::from(shift))
                 .ok_or(WinFontError)?;
             return Ok((
-                data.get(offset..offset.checked_add(size).ok_or(WinFontError)?)
-                    .ok_or(WinFontError)?,
+                Some(
+                    data.get(offset..offset.checked_add(size).ok_or(WinFontError)?)
+                        .ok_or(WinFontError)?,
+                ),
                 u32::from(count),
             ));
         }
@@ -160,8 +168,8 @@ fn subdirectory(entry: &[u8]) -> Result<usize, WinFontError> {
 fn pe_resource<'a>(
     header: &[u8],
     file: &'a [u8],
-    face: u32,
-) -> Result<(&'a [u8], u32), WinFontError> {
+    face: Option<u32>,
+) -> Result<(Option<&'a [u8]>, u32), WinFontError> {
     if u16_at(header, 4)? != 0x14c
         || u16_at(header, 20)? != 224
         || u16_at(header, 24)? != 0x10b
@@ -196,21 +204,24 @@ fn pe_resource<'a>(
             budget = budget.checked_sub(1).ok_or(WinFontError)?;
             for lang in directory(resources, subdirectory(name)?)? {
                 budget = budget.checked_sub(1).ok_or(WinFontError)?;
-                let leaf = range(resources, offset32(lang, 4)?, 16)?;
-                let offset = u32_at(leaf, 0)?.checked_sub(rva).ok_or(WinFontError)?;
-                let bytes = range(
-                    raw,
-                    usize::try_from(offset).map_err(|_| WinFontError)?,
-                    offset32(leaf, 4)?,
-                )?;
-                if faces == face {
+                if face == Some(faces) {
+                    let leaf = range(resources, offset32(lang, 4)?, 16)?;
+                    let offset = u32_at(leaf, 0)?.checked_sub(rva).ok_or(WinFontError)?;
+                    let bytes = range(
+                        raw,
+                        usize::try_from(offset).map_err(|_| WinFontError)?,
+                        offset32(leaf, 4)?,
+                    )?;
                     selected = Some(bytes);
                 }
                 faces = faces.checked_add(1).ok_or(WinFontError)?;
             }
         }
     }
-    Ok((selected.ok_or(WinFontError)?, faces))
+    if faces == 0 {
+        return Err(WinFontError);
+    }
+    Ok((selected, faces))
 }
 
 fn round_64(value: u32) -> Result<u32, WinFontError> {
@@ -243,7 +254,7 @@ impl WinFont {
     /// Read the face count independently of the validity of the first strike.
     pub fn face_count(file: &[u8]) -> Result<u32, WinFontError> {
         if file.starts_with(b"MZ") {
-            fon_resource(file, 0, &mut 0).map(|(_, count)| count)
+            fon_resource(file, None, &mut 0).map(|(_, count)| count)
         } else if Self::is_win_font(file) {
             Ok(1)
         } else {
@@ -255,7 +266,9 @@ impl WinFont {
     pub fn parse_with_offset(file: &[u8], face: u32) -> Result<Self, usize> {
         let (data, num_faces) = if file.starts_with(b"MZ") {
             let mut position = 0;
-            fon_resource(file, face, &mut position).map_err(|_| file.len().min(position))?
+            let (data, count) = fon_resource(file, Some(face), &mut position)
+                .map_err(|_| file.len().min(position))?;
+            (data.ok_or(position.min(file.len()))?, count)
         } else if face == 0 {
             (file, 1)
         } else {
