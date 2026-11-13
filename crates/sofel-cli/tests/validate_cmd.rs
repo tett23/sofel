@@ -609,3 +609,43 @@ fn inv4_layout_damage_total_counts_two_faces() {
         );
     }
 }
+
+#[test]
+fn adr0065_i2_bdf_reports_invalid_size_line() {
+    let dir = Dir::new("bdf-invalid-size");
+    let data = b"STARTFONT 2.1\r\nFONT Test\r\nSIZE broken\r\n";
+    let path = dir.file("bad.bdf", data);
+    let out = run(&["--json".as_ref(), path.as_os_str()]);
+    assert_eq!(out.code, 1);
+    assert!(out.stdout.contains("\"table\":\"BDF \""), "{}", out.stdout);
+    let offset = data.windows(4).position(|w| w == b"SIZE").unwrap();
+    assert!(
+        out.stdout.contains(&format!("\"offset\":{offset}")),
+        "{}",
+        out.stdout
+    );
+}
+
+#[test]
+fn adr0065_i2_bdf_bitmap_eof_and_complete_face() {
+    let dir = Dir::new("bdf-bitmap-eof");
+    let data = include_bytes!("../../sofel-bitmapfont/tests/data/mono.bdf");
+    let path = dir.file("good.bdf", data);
+    let good = run(&[path.as_os_str()]);
+    assert_eq!(good.code, 0, "{}", good.stdout);
+    assert!(good.stdout.is_empty());
+    let marker = b"BITMAP\n";
+    let end = data
+        .windows(marker.len())
+        .position(|w| w == marker)
+        .unwrap()
+        + marker.len();
+    let path = dir.file("truncated.bdf", &data[..end]);
+    let bad = run(&["--json".as_ref(), path.as_os_str()]);
+    assert_eq!(bad.code, 1);
+    assert!(
+        bad.stdout.contains(&format!("\"offset\":{end}")),
+        "{}",
+        bad.stdout
+    );
+}
