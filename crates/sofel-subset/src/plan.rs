@@ -435,18 +435,22 @@ impl Plan {
         let no_other_varc_rebase = !other_variation_tags.iter().any(|tag| {
             needs_rebase(tag) && (**tag != *b"gvar" || !drop.contains(Tag::new(tag).to_u32()))
         });
-        let varc_unrelated_axis_change = if norm.user.len() == 1
+        let varc_unrelated_axis_change = if !norm.user.is_empty()
             && (norm.pinned_at_default || no_other_varc_rebase)
         {
             let axes = instance::axis_infos(font);
-            axes.iter().enumerate().any(|(index, info)| {
-                norm.user.get(&info.tag).is_some_and(|range| {
-                    no_other_varc_rebase
-                        || (range.min == range.default && range.default == range.max)
-                }) && u16::try_from(index).ok().is_some_and(|index| {
-                    font.table(Tag::new(b"VARC"))
-                        .is_some_and(|data| crate::tables::varc_complex::axis_unused(data, index))
-                })
+            norm.user.iter().all(|(tag, range)| {
+                (no_other_varc_rebase || (range.min == range.default && range.default == range.max))
+                    && axes
+                        .iter()
+                        .enumerate()
+                        .find(|(_, info)| info.tag == *tag)
+                        .and_then(|(index, _)| u16::try_from(index).ok())
+                        .is_some_and(|index| {
+                            font.table(Tag::new(b"VARC")).is_some_and(|data| {
+                                crate::tables::varc_complex::axis_unused(data, index)
+                            })
+                        })
             })
         } else {
             false
