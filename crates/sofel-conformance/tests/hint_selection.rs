@@ -105,6 +105,50 @@ fn adr0064_i1_auto_empty_slots_match_freetype() {
 }
 
 #[test]
+fn adr0064_i1_auto_unlinked_fallback_outline_matches_freetype() {
+    let path = paths::testdata().join("harfbuzz/test/api/fonts/Roboto-Regular.abcAE.ttf");
+    let data = std::fs::read(&path).unwrap();
+    let font = Font::new(&data, 0).unwrap();
+    let outlines = Outlines::new(font.default_instance());
+    let mut scratch = Scratch::default();
+    for ppem in 4..=200 {
+        for (target_name, target) in [
+            ("normal", HintTarget::Normal),
+            ("light", HintTarget::Light),
+            ("mono", HintTarget::Mono),
+            ("lcd", HintTarget::Lcd),
+            ("lcd-v", HintTarget::VerticalLcd),
+        ] {
+            let reference = Command::new(paths::ft_dump())
+                .args(["--hint-slot", &ppem.to_string(), "5", "auto", target_name])
+                .arg(&path)
+                .output()
+                .unwrap();
+            assert!(
+                reference.status.success(),
+                "{}",
+                String::from_utf8_lossy(&reference.stderr)
+            );
+            let (_, advance) = outlines
+                .load_with_hint(GlyphId(5), ppem, HintMode::Auto, target, &mut scratch)
+                .unwrap();
+            let mut actual = format!("advance {advance} 0\n");
+            for (point, tag) in scratch.points().iter().zip(scratch.point_tags()) {
+                writeln!(actual, "point {} {} {tag}", point.x, point.y).unwrap();
+            }
+            for end in scratch.contour_ends() {
+                writeln!(actual, "end {end}").unwrap();
+            }
+            assert_eq!(
+                actual,
+                String::from_utf8(reference.stdout).unwrap(),
+                "{target_name} {ppem}"
+            );
+        }
+    }
+}
+
+#[test]
 fn adr0064_i1_auto_nonempty_reports_unsupported_and_clears_scratch() {
     let path = paths::testdata().join("harfbuzz/test/api/fonts/Roboto-Regular.abcAE.ttf");
     let data = std::fs::read(&path).unwrap();
