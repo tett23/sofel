@@ -15,19 +15,27 @@ use std::process::Command;
 
 #[test]
 fn adr0061_i1_passthrough_hvar_with_axis_pin_matches_harfbuzz() {
+    compare_passthrough_table(b"HVAR");
+}
+
+#[test]
+fn adr0061_i1_passthrough_gdef_with_axis_pin_matches_harfbuzz() {
+    compare_passthrough_table(b"GDEF");
+}
+
+fn compare_passthrough_table(tag: &[u8; 4]) {
+    let name = std::str::from_utf8(tag).unwrap();
     let path = paths::testdata().join("harfbuzz/test/subset/data/fonts/KalniaGlaze.ttf");
     let bytes = std::fs::read(&path).unwrap();
     let font = Font::new(&bytes, 0).unwrap();
     let input = Input::new()
         .map_set(SetKind::Unicodes, |s| s.add_range(0, 0x10ffff))
-        .map_set(SetKind::NoSubsetTables, |s| {
-            s.add(Tag::new(b"HVAR").to_u32())
-        })
+        .map_set(SetKind::NoSubsetTables, |s| s.add(Tag::new(tag).to_u32()))
         .with_axis_pinned(Tag::new(b"wght"), 600.0, &font)
         .unwrap();
     let actual = subset(&font, &input).unwrap();
     let output = std::env::temp_dir().join(format!(
-        "sofel-adr0061-passthrough-HVAR-{}.ttf",
+        "sofel-adr0061-passthrough-{name}-{}.ttf",
         std::process::id()
     ));
     assert!(
@@ -35,7 +43,7 @@ fn adr0061_i1_passthrough_hvar_with_axis_pin_matches_harfbuzz() {
             .arg("--subset")
             .arg(format!("--font-file={}", path.display()))
             .arg("--unicodes=*")
-            .arg("--no-subset-tables+=HVAR")
+            .arg(format!("--no-subset-tables+={name}"))
             .arg("--variations=wght=600")
             .arg(format!("--output-file={}", output.display()))
             .status()
@@ -44,7 +52,30 @@ fn adr0061_i1_passthrough_hvar_with_axis_pin_matches_harfbuzz() {
     );
     let expected = std::fs::read(&output).unwrap();
     std::fs::remove_file(output).unwrap();
-    assert_eq!(actual, expected);
+    if actual != expected {
+        let got = Font::new(&actual, 0).unwrap();
+        let want = Font::new(&expected, 0).unwrap();
+        let differences = want
+            .sfnt()
+            .records()
+            .filter_map(|record| {
+                let a = got.table(record.tag).unwrap_or(&[]);
+                let b = want.table(record.tag).unwrap_or(&[]);
+                (a != b).then(|| {
+                    (
+                        record.tag,
+                        a.len(),
+                        b.len(),
+                        a.iter()
+                            .zip(b)
+                            .position(|(x, y)| x != y)
+                            .unwrap_or(a.len().min(b.len())),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        panic!("{name}: {differences:?}");
+    }
 }
 
 #[test]

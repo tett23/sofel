@@ -1072,6 +1072,14 @@ impl Plan {
                 } else if copied_gdef {
                     // HarfBuzz remaps subset GPOS and MATH references even when it
                     // copies the original GDEF table unchanged.
+                    if p.var.instancing() {
+                        p.layout.pinned_layout_deltas = p.pinned_deltas(
+                            font,
+                            Tag::new(b"GDEF"),
+                            sofel_font::var::StoreKind::Gdef,
+                            &map,
+                        )?;
+                    }
                     p.layout.gdef_var_map = map;
                 } else if p.var.instancing() {
                     let tag = Tag::new(b"GDEF");
