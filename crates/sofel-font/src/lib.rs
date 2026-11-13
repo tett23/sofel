@@ -510,6 +510,10 @@ fn uvs_subtable<'a>(c: &Cmap<'a>) -> Option<Subtable<'a>> {
 }
 
 impl<'a> Font<'a> {
+    /// Opens a logical face of a Portable Font Resource.
+    pub fn from_pfr(data: &'a [u8], index: u32) -> Result<read::pfr::PfrFace<'a>, FontError> {
+        read::pfr::PfrFace::read(data, index).map_err(FontError::Read)
+    }
     /// Opens font `index` of `data`: 0 for a single sfnt, any index of a
     /// collection. Reads the glyph count, picks the cmap subtables and
     /// prepares the horizontal metrics once; a missing or broken `maxp`,
