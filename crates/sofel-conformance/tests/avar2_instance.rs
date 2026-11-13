@@ -213,6 +213,45 @@ fn adr0061_i1_avar2_restricts_variable_colr_like_harfbuzz() {
 }
 
 #[test]
+fn adr0061_i1_avar2_restricts_variable_base_like_harfbuzz() {
+    let source = paths::testdata().join("harfbuzz/test/subset/data/fonts/NotoSerifHK-subset.ttf");
+    let bytes = std::fs::read(source).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let mut avar = font.table(Tag::new(b"avar")).unwrap().to_vec();
+    avar[..2].copy_from_slice(&2u16.to_be_bytes());
+    avar.extend([0; 8]);
+    let tables = font
+        .sfnt()
+        .records()
+        .map(|r| {
+            (
+                r.tag,
+                if r.tag == Tag::new(b"avar") {
+                    avar.clone()
+                } else {
+                    r.data(&bytes).unwrap().to_vec()
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+    let refs = tables
+        .iter()
+        .map(|(tag, bytes)| (*tag, bytes.as_slice()))
+        .collect::<Vec<_>>();
+    let modified = sofel_write::build_sfnt(&refs).unwrap();
+    let path =
+        std::env::temp_dir().join(format!("sofel-adr61-base-avar2-{}.ttf", std::process::id()));
+    std::fs::write(&path, modified).unwrap();
+    for ranges in [
+        vec![(b"wght", 200.0, 200.0, 400.0)],
+        vec![(b"wght", 400.0, 400.0, 900.0)],
+    ] {
+        compare_path(&path, &ranges);
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn adr0061_i1_avar2_shared_default_and_self_contained_pin_match_harfbuzz() {
     compare_axes(&[(b"XOPQ", 88.0, 88.0, 88.0), (b"wdth", 100.0, 100.0, 100.0)]);
 }
