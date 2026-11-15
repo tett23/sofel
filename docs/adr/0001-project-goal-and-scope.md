@@ -1,6 +1,6 @@
 # ADR 0001: HarfBuzzとFreeTypeを統合したフォントエンジンをRustで書く
 
-ステータス: 採択→C言語のAPIは [ADR 0015](0015-c-abi.md)、完了条件は [ADR 0045](0045-foundation-completion-criteria.md)
+Status: superseded [{"by":["docs/adr/0015-c-abi.md"],"part":"C言語のAPI"},{"by":["docs/adr/0045-foundation-completion-criteria.md"],"part":"完了条件"}]
 
 ## 文脈
 

@@ -1,6 +1,6 @@
 # ADR 0003: クレートの層と依存の向き
 
-ステータス: 採択→C言語のAPIは [ADR 0015](0015-c-abi.md)、`sofel-unicode` の追加は [ADR 0019](0019-unicode-character-data.md)、`sofel-subset` の `sofel-unicode` への依存は [ADR 0022](0022-subsetting.md)、完了条件は [ADR 0045](0045-foundation-completion-criteria.md)
+Status: superseded [{"by":["docs/adr/0015-c-abi.md"],"part":"C言語のAPI"},{"by":["docs/adr/0019-unicode-character-data.md"],"part":"`sofel-unicode` の追加"},{"by":["docs/adr/0022-subsetting.md"],"part":"`sofel-subset` の `sofel-unicode` への依存"},{"by":["docs/adr/0045-foundation-completion-criteria.md"],"part":"完了条件"}]
 
 ## 文脈
 

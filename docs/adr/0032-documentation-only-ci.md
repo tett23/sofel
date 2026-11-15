@@ -1,6 +1,6 @@
 # ADR 0032: 文書だけの変更ではCIのビルドとテストを省く
 
-ステータス: 採択→省略する文書の判定は [ADR 0034](0034-ci-document-input-classification.md)
+Status: superseded [{"by":["docs/adr/0034-ci-document-input-classification.md"],"part":"省略する文書の判定"}]
 
 ## 文脈
 

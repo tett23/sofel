@@ -1,6 +1,6 @@
 # ADR 0007: `sofel-read` の土台（sfntの目録、head、maxp、hhea、hmtx、cmap）
 
-ステータス: 採択
+Status: accepted
 
 ## 文脈
 
