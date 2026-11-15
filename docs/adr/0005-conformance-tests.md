@@ -1,6 +1,6 @@
 # ADR 0005: HarfBuzzとFreeTypeの出力を正しさの基準にする
 
-ステータス: 採択→`ft-dump` の確かめ方は[ADR 0008](0008-validate-command-and-freetype-comparison.md)、完了条件は [ADR 0045](0045-foundation-completion-criteria.md)
+Status: superseded [{"by":["docs/adr/0008-validate-command-and-freetype-comparison.md"],"part":"`ft-dump` の確かめ方"},{"by":["docs/adr/0045-foundation-completion-criteria.md"],"part":"完了条件"}]
 
 ## 文脈
 

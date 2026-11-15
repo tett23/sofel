@@ -1,6 +1,6 @@
 # ADR 0065: 旧形式と Web フォントを既存のフェイスとして開く
 
-ステータス: 採択（未実装）
+Status: accepted-pending
 
 ## 文脈
 

@@ -1,6 +1,6 @@
 # ADR 0036: FreeType の既定名つきスタイルが欠けた fvar の扱い
 
-ステータス: 採択
+Status: accepted
 
 ## 文脈
 

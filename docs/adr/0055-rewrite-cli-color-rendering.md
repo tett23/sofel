@@ -1,6 +1,6 @@
 # ADR 0055: CLI の COLRv0 描画処理を独自に書き直し、MIT を維持する
 
-ステータス: 採択
+Status: accepted
 
 ## 文脈
 

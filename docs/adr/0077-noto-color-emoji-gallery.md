@@ -1,6 +1,6 @@
 # ADR 0077: Noto Color Emoji の二形式で笑顔と ZWJ 列の描画を検査する
 
-ステータス: 採択
+Status: accepted
 
 ## 文脈
 
