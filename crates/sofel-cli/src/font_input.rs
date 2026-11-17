@@ -1,6 +1,4 @@
 //! Decode file wrappers before sfnt face selection (ADR 0065).
-mod bzip2;
-mod lzw;
 use sofel_read::{Diagnostic, Kind, validate};
 
 // FreeType exposes at most a signed 31-bit stream for gzip input
@@ -22,9 +20,11 @@ pub(crate) fn unpack(mut data: Vec<u8>) -> Result<Vec<u8>, Diagnostic> {
     let lzw = data.starts_with(&[31, 157]);
     let bzip = data.starts_with(b"BZh");
     if bzip {
-        data = bzip2::decode(&data, MAX_FONT_BYTES)?;
+        data = sofel_bzip2::decode(&data, MAX_FONT_BYTES)
+            .map_err(|e| diagnostic(e.offset, e.reason))?;
     } else if lzw {
-        data = lzw::decode(&data, MAX_FONT_BYTES)?;
+        data =
+            sofel_lzw::decode(&data, MAX_FONT_BYTES).map_err(|e| diagnostic(e.offset, e.reason))?;
     } else if gzip {
         data = sofel_inflate::gzip(&data, MAX_FONT_BYTES).map_err(|e| {
             diagnostic(
@@ -72,23 +72,6 @@ mod tests {
     }
 
     #[test]
-    fn adr0065_i1_bzip2_randomised_and_concatenated_members() {
-        // An early-style randomised block, including its first bit flip.
-        let member = [
-            66, 90, 104, 49, 49, 65, 89, 38, 83, 89, 188, 203, 165, 171, 128, 0, 59, 64, 0, 127, 0,
-            32, 0, 80, 134, 0, 77, 84, 52, 61, 17, 155, 17, 202, 26, 212, 140, 17, 200, 142, 196,
-            122, 35, 226, 238, 72, 167, 10, 18, 23, 153, 116, 181, 96,
-        ];
-        let expected: Vec<_> = (0u8..7).cycle().take(830).collect();
-        assert_eq!(bzip2::decode(&member, 830), Ok(expected.clone()));
-        assert!(bzip2::decode(&member, 829).is_err());
-        assert_eq!(
-            bzip2::decode(&member.repeat(2), 1660),
-            Ok(expected.repeat(2))
-        );
-    }
-
-    #[test]
     fn adr0065_i2_bzip2_rejects_truncation_and_checksum_damage() {
         for end in [3, 4, 12, TWO_BLOCKS.len() - 1] {
             assert!(unpack(TWO_BLOCKS.iter().take(end).copied().collect()).is_err());
@@ -100,12 +83,6 @@ mod tests {
         assert!(unpack(broken).is_err());
     }
 
-    #[test]
-    fn i2_lzw_checks_codes_and_output_limit() {
-        assert!(lzw::decode(&[31, 157, 0x90, 0x41], 7).is_err());
-        assert!(lzw::decode(&[31, 157, 0x90, 0xff, 1], 7).is_err());
-        assert!(lzw::decode(&[31, 157, 0x90, 0x41, 0x84, 4, 0x1c, 8], 6).is_err());
-    }
     #[test]
     fn i1_unix_compress_expands_dictionary_references() {
         let encoded = vec![0x1f, 0x9d, 0x90, 0x41, 0x84, 0x04, 0x1c, 0x08];

@@ -63,11 +63,13 @@ sofel-conformance *
 !no_std sofel-bitmap
 !no_std sofel-bitmapfont
 !no_std sofel-brotli
+!no_std sofel-bzip2
 !no_std sofel-color
 !no_std sofel-font
 !no_std sofel-geom
 !no_std sofel-gpu
 !no_std sofel-inflate
+!no_std sofel-lzw
 !no_std sofel-outline
 !no_std sofel-png
 !no_std sofel-raster

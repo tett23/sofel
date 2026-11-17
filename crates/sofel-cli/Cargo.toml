@@ -12,6 +12,8 @@ sofel-bitmapfont = { path = "../sofel-bitmapfont" }
 sofel-png = { path = "../sofel-png" }
 sofel-geom = { path = "../sofel-geom" }
 sofel-inflate = {path="../sofel-inflate"}
+sofel-lzw = { path = "../sofel-lzw" }
+sofel-bzip2 = { path = "../sofel-bzip2" }
 sofel-woff = {path="../sofel-woff"}
 sofel-read = { path = "../sofel-read" }
 sofel-font = { path = "../sofel-font" }
