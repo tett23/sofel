@@ -120,8 +120,9 @@ fn decode_program<P: Pen>(
             }
             13 => {
                 let [side, _advance] = take(stack)?;
-                state.x = side;
-                state.y = 0;
+                state.side_bearing = side;
+                state.x = state.origin.0.saturating_add(side);
+                state.y = state.origin.1;
             }
             21 => {
                 let [dx, dy] = take(stack)?;
@@ -271,8 +272,38 @@ fn decode_program<P: Pen>(
                     }
                     7 => {
                         let [sx, sy, _wx, _wy] = take(stack)?;
-                        state.x = sx;
-                        state.y = sy;
+                        state.side_bearing = sx;
+                        state.x = state.origin.0.saturating_add(sx);
+                        state.y = state.origin.1.saturating_add(sy);
+                    }
+                    6 => {
+                        // seac: FreeType 2.15.0 `cf2_escSEAC` (psintrp.c).
+                        let [asb, adx, ady, bchar, achar] = take(stack)?;
+                        if state.in_seac {
+                            return Err(OutlineError::InvalidCharString);
+                        }
+                        // "seac weirdness": adx counts from the side bearing
+                        // of the seac glyph.
+                        let adx = adx.saturating_add(state.side_bearing);
+                        let base = standard_code_glyph(face, bchar >> 16)
+                            .ok_or(OutlineError::InvalidCharString)?;
+                        let accent = standard_code_glyph(face, achar >> 16)
+                            .ok_or(OutlineError::InvalidCharString)?;
+                        let base = face
+                            .glyph_program(base)
+                            .ok_or(OutlineError::InvalidCharString)?;
+                        let accent = face
+                            .glyph_program(accent)
+                            .ok_or(OutlineError::InvalidCharString)?;
+                        let depth = depth.saturating_add(1);
+                        state.in_seac = true;
+                        state.origin = (0, 0);
+                        decode_program(face, &base, state, &mut Vec::new(), depth, false)?;
+                        state.origin = (adx.saturating_sub(asb), ady);
+                        decode_program(face, &accent, state, &mut Vec::new(), depth, false)?;
+                        state.origin = (0, 0);
+                        state.in_seac = false;
+                        return Ok(());
                     }
                     12 => {
                         let [a, b] = take(stack)?;
@@ -297,6 +328,15 @@ fn decode_program<P: Pen>(
     Err(OutlineError::InvalidCharString)
 }
 
+/// The glyph whose name StandardEncoding gives to `code`, searched by name
+/// in glyph order (FreeType's `t1_lookup_glyph_by_stdcharcode_ps`).
+fn standard_code_glyph(face: &Type1Face<'_>, code: i64) -> Option<usize> {
+    let code = usize::try_from(code).ok().filter(|&c| c <= 255)?;
+    let sid = *sofel_font::read::cff::STANDARD_ENCODING.get(code)?;
+    let name = sofel_font::read::cff::STANDARD_STRINGS.get(usize::from(sid))?;
+    (0..face.num_glyphs()).find(|&g| face.glyph_name(g) == Some(name.as_bytes()))
+}
+
 fn take<const N: usize>(stack: &mut Vec<i64>) -> Result<[i64; N], OutlineError> {
     let args = stack
         .as_slice()
@@ -318,6 +358,12 @@ struct State<'a, P: Pen> {
     pending_pops: usize,
     has_stems: bool,
     native: bool,
+    /// Where a `seac` component starts (16.16 font units).
+    origin: (i64, i64),
+    /// The side bearing set by the last `hsbw` or `sbw`.
+    side_bearing: i64,
+    /// Inside a `seac` component, where `seac` may not nest.
+    in_seac: bool,
 }
 
 impl<'a, P: Pen> State<'a, P> {
@@ -334,6 +380,9 @@ impl<'a, P: Pen> State<'a, P> {
             pending_pops: 0,
             has_stems: false,
             native,
+            origin: (0, 0),
+            side_bearing: 0,
+            in_seac: false,
         }
     }
 

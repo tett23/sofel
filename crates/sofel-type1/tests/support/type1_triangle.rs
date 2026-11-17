@@ -12,25 +12,37 @@ pub fn with_glyph_program(program: &[u8]) -> (Vec<u8>, Vec<u8>) {
 }
 
 pub fn with_glyph_name(program: &[u8], name: &str) -> (Vec<u8>, Vec<u8>) {
-    let header = b"%!PS-AdobeFont-1.0: Test 1.0\n\
+    with_glyphs(&[(name, program)], &[(65, name)])
+}
+
+/// A face with `.notdef` and the given named glyphs, in this order, and
+/// the given encoding entries (code, name).
+pub fn with_glyphs(glyphs: &[(&str, &[u8])], encoding: &[(u8, &str)]) -> (Vec<u8>, Vec<u8>) {
+    let mut header = b"%!PS-AdobeFont-1.0: Test 1.0\n\
 11 dict begin\n/FontName /Test def\n/FontType 1 def\n/PaintType 0 def\n\
 /FontMatrix [0.001 0 0 0.001 0 0] readonly def\n\
 /FontBBox [0 0 200 200] readonly def\n/Encoding 256 array\n\
-0 1 255 {1 index exch /.notdef put} for\ndup 65 /A put\n\
-readonly def\ncurrentdict end\ncurrentfile eexec\n";
-    let header = String::from_utf8_lossy(header)
-        .replace("/A put", &format!("/{name} put"))
-        .into_bytes();
-    let notdef = [139, 248, 136, 13, 14];
-    let mut private = b"dup /Private 8 dict dup begin\n\
-/RD {string currentfile exch readstring pop} executeonly def\n\
-/ND {noaccess def} executeonly def\n/NP {noaccess put} executeonly def\n\
-/lenIV -1 def\n/BlueValues [] def\n/Subrs 0 array\n\
-/CharStrings 2 dict dup begin\n/.notdef 5 RD "
+0 1 255 {1 index exch /.notdef put} for\n"
         .to_vec();
+    for (code, name) in encoding {
+        header.extend_from_slice(format!("dup {code} /{name} put\n").as_bytes());
+    }
+    header.extend_from_slice(b"readonly def\ncurrentdict end\ncurrentfile eexec\n");
+    let notdef = [139, 248, 136, 13, 14];
+    let mut private = format!(
+        "dup /Private 8 dict dup begin\n\
+/RD {{string currentfile exch readstring pop}} executeonly def\n\
+/ND {{noaccess def}} executeonly def\n/NP {{noaccess put}} executeonly def\n\
+/lenIV -1 def\n/BlueValues [] def\n/Subrs 0 array\n\
+/CharStrings {} dict dup begin\n/.notdef 5 RD ",
+        glyphs.len().saturating_add(1)
+    )
+    .into_bytes();
     private.extend_from_slice(&notdef);
-    private.extend_from_slice(format!(" ND\n/{name} {} RD ", program.len()).as_bytes());
-    private.extend_from_slice(program);
+    for (name, program) in glyphs {
+        private.extend_from_slice(format!(" ND\n/{name} {} RD ", program.len()).as_bytes());
+        private.extend_from_slice(program);
+    }
     private.extend_from_slice(
         b" ND\nend\nend\nreadonly put\nnoaccess put\n\
 dup /FontName get exch definefont pop\nmark currentfile closefile\n",

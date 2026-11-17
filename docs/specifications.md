@@ -456,6 +456,7 @@ PE32 では `RT_FONT` の名前・言語ディレクトリを順にたどり、�
 `sofel-type1::source::Type1Source` は PFA の16進 eexec と PFB の ASCII・バイナリセクションを読み、秘密辞書を復号する。`sofel-type1::face::Type1Face` は文字コードからグリフ番号への対応、グリフ名、charstring から読んだ送り幅を返す。AFM または PFM を付加すると、グリフ対のカーニングを返す。PFB のセクション長、PFA の16進表記、charstring の長さと AFM・PFM のペア表を検査する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
 `sofel-render` は PFA と PFB を通常入力として開き、`--glyph` またはグリフ名から導いた Unicode の `--char` の Type 1 輪郭をヒンティングなしで PGM に描く。`sofel render --text` では Type1 フェイスの `SubFont` で形にして同じ輪郭を描く。`sofel-outline::draw_type1` は Type 1 の hsbw、sbw、移動、線、曲線、局所サブルーチンを読み、未対応命令または破損した charstring をエラーにする。`closepath` のあとも charstring の現在位置を保持する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+`seac` は FreeType 2.15.0 の Adobe engine と同じく、StandardEncoding の文字コードからグリフ名を引き、グリフの順に名前の一致する最初のグリフを土台とアクセントにする。土台は原点から、アクセントは `adx` に `seac` を持つグリフの側面のベアリングを足して `asb` を引いた位置と `ady` から描く。文字コードが 0〜255 の外、名前に合うグリフが無い、`seac` の入れ子はエラーにする（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
 Type 1 の Multiple Masters では、`Type1Face::multiple_masters` が軸の名前・範囲・既定位置を返す。`Type1Face::set_design_coordinates` は 16.16 固定小数のデザイン座標を選び、`sofel-outline::draw_type1` は OtherSubr 14〜18 の補間を選択した位置で行う。デザインマップと既定位置は FreeType 2.15.0 の Type 1 の計算に合わせる（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
