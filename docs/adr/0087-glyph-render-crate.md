@@ -1,6 +1,6 @@
 # ADR 0087: グリフを描く関数を no_std のクレートに移し、C ABI から sofel-cli の依存を外す
 
-Status: proposed
+Status: accepted-pending
 
 ## 文脈
 

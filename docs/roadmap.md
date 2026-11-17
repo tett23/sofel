@@ -45,10 +45,17 @@ Golem はフォントを開くときに GSUB と GPOS の機能タグをすべ�
 - **VARC のグリフのスロット**：FreeType は VARC が覆うグリフを、ヒンティングの指定に関わらず VARC からヒンティングなしで読む。`Outlines::load` と `load_with_hint` は CFF2 の charstring を読み、charstring の無いグリフでは失敗する。`conformance/expected-failures-cff-hint.txt` に該当を記録した。VARC の輪郭を点とタグのスロットに組む処理が要る（[ADR 0067](adr/0067-varc-components.md) と合わせて決める）。
 - **blend を計算できない CFF2 の Private DICT**：領域の軸の数が `fvar` と違う CFF2 では、sofel はヒンティングの有無に関わらずグリフの読み込みに失敗し、FreeType は空の輪郭を返す（[ADR 0021](adr/0021-cff-outlines.md)）。`conformance/expected-failures-cff-hint.txt` に該当を記録した。
 
-- **HarfBuzz を使う構成**：FreeType を `FT_CONFIG_OPTION_USE_HARFBUZZ` で組むと、GSUB の機能（小型大文字、上付きなど）から style を割り当て、`afadjust.c` の逆引きにも GSUB を使う。参照ビルドがこの構成を持たないため、照合の手段を決める ADR が要る。
-- **モジュールの設定**：`no-stem-darkening`、`darkening-parameters`、`increase-x-height`、`fallback-script`、`default-script` を FreeType の既定値に固定している。設定を受け取る API は無い。
+- **HarfBuzz を使う構成**：FreeType を `FT_CONFIG_OPTION_USE_HARFBUZZ` で組むと、GSUB の機能（小型大文字、上付きなど）から style を割り当て、`afadjust.c` の逆引きにも GSUB を使う。[ADR 0085](adr/0085-autofit-harfbuzz-configuration.md) で、この構成を選べるようにし、HarfBuzz を組んだ ft-dump と照合すると採択した（未実装）。
+- **モジュールの設定**：`no-stem-darkening`、`darkening-parameters`、`increase-x-height`、`fallback-script`、`default-script` を FreeType の既定値に固定している。設定を受け取る API は無い。[ADR 0086](adr/0086-hinting-module-properties.md) で、ロード指定で受け取ると採択した（未実装）。
 - **`Outlines` 以外のフェイス**：Type1、CID、Type42、PFR、素の CFF のフェイスは自動ヒンティングできない。
 - **tricky フォントと SVG グリフ**：FreeType は tricky フォントを自動ヒンティングせず、SVG のグリフを先に読む。sofel はこの2つを判定しない。
+
+### 監査の指摘と旧形式の照合
+
+- **グリフを描くクレート**（未実装）：[ADR 0087](adr/0087-glyph-render-crate.md)。描画の関数を `sofel-glyph-render` に移し、`sofel-capi` から `sofel-cli` の依存を外す。
+- **自作のテスト入力の記録**（未実装）：[ADR 0088](adr/0088-synthetic-test-fixtures.md)。置いたフォントの形式のファイルの作り方を `README.md` に書き、CI で確かめる。
+- **番号とテストの名前**（未実装）：[ADR 0089](adr/0089-invariant-numbers-and-test-names.md)。不変条件と受けいれ条件の番号とテストの名前を一度だけ書き換え、CI で確かめる。
+- **旧形式の実フォントの照合**（未実装）：[ADR 0090](adr/0090-legacy-format-conformance-fonts.md)。Spleen と cmr10 を取得し、FreeType と照合する。Type1 の flex が先に要る。
 
 ### シェーピング、フォントの検証と描画、照合の記録
 

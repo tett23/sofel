@@ -1,6 +1,6 @@
 # ADR 0088: 自作した最小のテスト入力と、その参照出力をリポジトリに置く
 
-Status: proposed
+Status: accepted-pending
 
 ## 文脈
 

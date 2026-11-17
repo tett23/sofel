@@ -1,6 +1,6 @@
 # ADR 0089: 不変条件と受けいれ条件の番号と、テストの名前を決まりの形に揃える
 
-Status: proposed
+Status: accepted-pending
 
 ## 文脈
 

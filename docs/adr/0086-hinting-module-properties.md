@@ -1,6 +1,6 @@
 # ADR 0086: ヒンタのモジュールの設定をロード指定で受け取る
 
-Status: proposed
+Status: accepted-pending
 
 ## 文脈
 

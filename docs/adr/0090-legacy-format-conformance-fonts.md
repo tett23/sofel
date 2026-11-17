@@ -1,6 +1,6 @@
 # ADR 0090: 旧形式の実フォントを取得して FreeType と照合する
 
-Status: proposed
+Status: accepted-pending
 
 ## 文脈
 
