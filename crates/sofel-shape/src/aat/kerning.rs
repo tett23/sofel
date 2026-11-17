@@ -69,7 +69,8 @@ pub(crate) fn read<'a>(
     glyphs: u32,
 ) -> Option<Vec<Subtable<'a>>> {
     let kerx = sofel_font::read::kerx::Kerx::new(data, glyphs).ok()?;
-    let anchors = core::cell::OnceCell::new();
+    // The anchor table, read once at the first attachment subtable.
+    let mut anchors = None;
     let mut result = Vec::new();
     for current in kerx.subtables() {
         let coverage = be::u32_at(current, 4)?;
@@ -100,7 +101,7 @@ pub(crate) fn read<'a>(
                     StateTable::from_kind(state, glyphs, MachineKind::Kerning)?,
                     flags >> 30,
                     state.get((flags & 0x00ff_ffff) as usize..)?,
-                    *anchors.get_or_init(|| {
+                    *anchors.get_or_insert_with(|| {
                         ankr.and_then(|s| sofel_font::read::ankr::Ankr::new(s, glyphs))
                     }),
                 )

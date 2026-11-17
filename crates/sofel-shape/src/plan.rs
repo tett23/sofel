@@ -92,6 +92,8 @@ pub(crate) enum ShaperData {
 
 /// A hook that runs on the buffer.
 pub(crate) type BufferHook = fn(&ShapePlan<'_>, &mut Buffer, &ShapeFont<'_, '_, '_, '_>);
+/// A hook that may query glyph metrics, which fill the font's scratch.
+pub(crate) type MetricsHook = fn(&ShapePlan<'_>, &mut Buffer, &mut ShapeFont<'_, '_, '_, '_>);
 
 /// A shaper's decomposition (`decompose`).
 pub(crate) type DecomposeFn = fn(&NormalizeContext<'_, '_, '_, '_, '_>, u32) -> Option<(u32, u32)>;
@@ -104,8 +106,8 @@ pub(crate) struct ShaperFuncs {
     pub(crate) collect_features: Option<fn(&mut Planner<'_, '_>)>,
     pub(crate) override_features: Option<fn(&mut Planner<'_, '_>)>,
     pub(crate) data_create: Option<fn(&ShapePlan<'_>, &Font<'_>) -> ShaperData>,
-    pub(crate) preprocess_text: Option<BufferHook>,
-    pub(crate) postprocess_glyphs: Option<BufferHook>,
+    pub(crate) preprocess_text: Option<MetricsHook>,
+    pub(crate) postprocess_glyphs: Option<MetricsHook>,
     pub(crate) decompose: Option<DecomposeFn>,
     pub(crate) compose: Option<ComposeFn>,
     pub(crate) setup_masks: Option<BufferHook>,

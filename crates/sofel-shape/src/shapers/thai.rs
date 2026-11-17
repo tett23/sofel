@@ -220,7 +220,11 @@ fn is_above_base_mark(u: u32) -> bool {
 }
 
 /// `preprocess_text_thai`.
-fn preprocess_text(plan: &ShapePlan<'_>, buffer: &mut Buffer, font: &ShapeFont<'_, '_, '_, '_>) {
+fn preprocess_text(
+    plan: &ShapePlan<'_>,
+    buffer: &mut Buffer,
+    font: &mut ShapeFont<'_, '_, '_, '_>,
+) {
     buffer.clear_output();
     buffer.idx = 0;
     let count = buffer.len;

@@ -5,7 +5,6 @@
 //! MIT; see THIRD_PARTY_NOTICES.md.
 
 use alloc::boxed::Box;
-use core::cell::RefCell;
 
 use sofel_font::read::{GlyphId, device::Device};
 use sofel_font::{
@@ -292,7 +291,7 @@ impl<'p> SubFont<'p> {
         }
     }
 
-    fn raw_h_advance(&self, glyph: u32, base: &dyn Fn(Scale, u32) -> i32) -> i32 {
+    fn raw_h_advance(&self, glyph: u32, base: &mut dyn FnMut(Scale, u32) -> i32) -> i32 {
         if let Some(func) = &self.h_advance {
             func(glyph)
         } else if let Some(parent) = self.parent {
@@ -307,7 +306,7 @@ impl<'p> SubFont<'p> {
         }
     }
 
-    fn raw_v_advance(&self, glyph: u32, base: &dyn Fn(&SubFont, u32) -> i32) -> i32 {
+    fn raw_v_advance(&self, glyph: u32, base: &mut dyn FnMut(&SubFont, u32) -> i32) -> i32 {
         if let Some(func) = &self.v_advance {
             func(glyph)
         } else if let Some(parent) = self.parent {
@@ -325,7 +324,7 @@ impl<'p> SubFont<'p> {
     fn raw_v_origin(
         &self,
         glyph: u32,
-        base: &impl Fn(&SubFont, u32) -> Option<(i32, i32)>,
+        base: &mut impl FnMut(&SubFont, u32) -> Option<(i32, i32)>,
     ) -> Option<(i32, i32)> {
         if let Some(func) = &self.v_origin {
             func(glyph)
@@ -557,12 +556,28 @@ pub(crate) struct ShapeFont<'f, 'a, 'l, 's> {
     x_multf: f32,
     y_multf: f32,
     extents: &'f dyn Fn(GlyphId) -> Option<GlyphExtents>,
-    glyph_scratch: RefCell<GlyphScratch>,
+    glyph_scratch: GlyphScratch,
     advance_cache: Option<Box<AdvanceCache<'f, 'a, 'l, 's>>>,
     subfont: Option<&'f SubFont<'f>>,
 }
 
 pub(crate) use sofel_geom::float::i32_to_f32;
+
+/// The horizontal advance through the caller's advance cache when the
+/// location varies advances, else directly; both use `scratch`.
+fn base_h_advance(
+    instance: &Instance<'_, '_, '_, '_>,
+    cache: Option<&mut AdvanceCache<'_, '_, '_, '_>>,
+    scratch: &mut GlyphScratch,
+    scale: Scale,
+    glyph: u32,
+) -> i32 {
+    let advance = match cache {
+        Some(cache) => cache.advance_with_scratch(GlyphId(glyph), scratch),
+        None => instance.advance(GlyphId(glyph)),
+    };
+    scale.scale.em_scale_x(advance.cast_signed())
+}
 
 /// HarfBuzz's `roundf` (`floor ((double) v + .5)`) cast to
 /// `hb_position_t`, clamped.
@@ -594,7 +609,7 @@ impl<'f, 'a, 'l, 's> ShapeFont<'f, 'a, 'l, 's> {
             x_multf: i32_to_f32(scale.scale.x_scale()) / upem,
             y_multf: i32_to_f32(scale.scale.y_scale()) / upem,
             extents,
-            glyph_scratch: RefCell::new(GlyphScratch::default()),
+            glyph_scratch: GlyphScratch::default(),
             advance_cache,
             subfont,
         }
@@ -633,58 +648,53 @@ impl<'f, 'a, 'l, 's> ShapeFont<'f, 'a, 'l, 's> {
         )
     }
     /// `get_glyph_h_advance`.
-    pub(crate) fn h_advance(&self, glyph: u32) -> i32 {
-        self.subfont.map_or_else(
-            || self.base_h_advance(self.scale, glyph),
-            |font| {
-                font.synthetic_h_advance(
-                    font.raw_h_advance(glyph, &|s, g| self.base_h_advance(s, g)),
-                )
-            },
-        )
+    pub(crate) fn h_advance(&mut self, glyph: u32) -> i32 {
+        let Some(font) = self.subfont else {
+            return self.base_h_advance(self.scale, glyph);
+        };
+        let raw = font.raw_h_advance(glyph, &mut |s, g| self.base_h_advance(s, g));
+        font.synthetic_h_advance(raw)
     }
 
-    fn base_h_advance(&self, scale: Scale, glyph: u32) -> i32 {
-        let advance = self.advance_cache.as_ref().map_or_else(
-            || self.instance.advance(GlyphId(glyph)),
-            |cache| {
-                cache.advance_with_scratch(GlyphId(glyph), &mut self.glyph_scratch.borrow_mut())
-            },
-        );
-        scale.scale.em_scale_x(advance.cast_signed())
+    fn base_h_advance(&mut self, scale: Scale, glyph: u32) -> i32 {
+        base_h_advance(
+            &self.instance,
+            self.advance_cache.as_deref_mut(),
+            &mut self.glyph_scratch,
+            scale,
+            glyph,
+        )
     }
 
     /// `get_glyph_v_advance`.
-    pub(crate) fn v_advance(&self, glyph: u32) -> i32 {
-        let base = |scale: Scale, glyph: u32| {
-            let mut scratch = self.glyph_scratch.borrow_mut();
-            self.instance
-                .scaled_v_advance_with_scratch(&scale.scale, GlyphId(glyph), &mut scratch)
+    pub(crate) fn v_advance(&mut self, glyph: u32) -> i32 {
+        let instance = self.instance;
+        let has_vertical_metrics = self.font.has_vertical_metrics();
+        let scratch = &mut self.glyph_scratch;
+        let mut base = |scale: Scale, glyph: u32| {
+            instance.scaled_v_advance_with_scratch(&scale.scale, GlyphId(glyph), scratch)
         };
-        self.subfont.map_or_else(
-            || base(self.scale, glyph),
-            |subfont| {
-                let advance = subfont.raw_v_advance(glyph, &|owner, glyph| {
-                    let advance = base(owner.scale, glyph);
-                    if self.font.has_vertical_metrics() {
-                        advance
-                    } else {
-                        // Without vmtx, OT uses the owning font's synthetic
-                        // horizontal ascender when calculating the raw advance.
-                        advance
-                            .wrapping_sub(owner.synthetic_ascender(0, owner.scale.scale.y_scale()))
-                    }
-                });
-                subfont.synthetic_v_advance(advance)
-            },
-        )
+        let Some(subfont) = self.subfont else {
+            return base(self.scale, glyph);
+        };
+        let advance = subfont.raw_v_advance(glyph, &mut |owner, glyph| {
+            let advance = base(owner.scale, glyph);
+            if has_vertical_metrics {
+                advance
+            } else {
+                // Without vmtx, OT uses the owning font's synthetic
+                // horizontal ascender when calculating the raw advance.
+                advance.wrapping_sub(owner.synthetic_ascender(0, owner.scale.scale.y_scale()))
+            }
+        });
+        subfont.synthetic_v_advance(advance)
     }
 
     pub(crate) fn has_h_origin(&self) -> bool {
         core::iter::successors(self.subfont, |font| font.parent).any(|font| font.h_origin.is_some())
     }
 
-    fn lookup_origin(&self, glyph: u32, horizontal: bool) -> Option<(i32, i32)> {
+    fn lookup_origin(&mut self, glyph: u32, horizontal: bool) -> Option<(i32, i32)> {
         if horizontal {
             self.subfont
                 .map_or(Some((0, 0)), |font| font.horizontal_origin(glyph))
@@ -696,7 +706,7 @@ impl<'f, 'a, 'l, 's> ShapeFont<'f, 'a, 'l, 's> {
     /// HarfBuzz retries the whole batch in the other direction when any
     /// callback fails. The fallback shaper passes one glyph at a time.
     pub(crate) fn origins(
-        &self,
+        &mut self,
         glyphs: impl Iterator<Item = u32> + Clone,
         horizontal: bool,
         output: &mut [(i32, i32)],
@@ -735,34 +745,37 @@ impl<'f, 'a, 'l, 's> ShapeFont<'f, 'a, 'l, 's> {
         }
     }
 
-    fn lookup_v_origin(&self, glyph: u32) -> Option<(i32, i32)> {
-        let base = |owner: Option<&SubFont>, glyph: u32| {
-            let scale = owner.map_or(self.scale, SubFont::scale);
-            let (mut x, mut y) = {
-                let mut scratch = self.glyph_scratch.borrow_mut();
-                self.instance.scaled_v_origin_with_scratch(
-                    &scale.scale,
-                    GlyphId(glyph),
-                    |g| (self.extents)(g).map(|e| scale.scale.scale_glyph_extents(e)),
-                    &mut scratch,
-                )
-            };
+    fn lookup_v_origin(&mut self, glyph: u32) -> Option<(i32, i32)> {
+        let instance = self.instance;
+        let font = self.font;
+        let shape_scale = self.scale;
+        let extents = self.extents;
+        let mut cache = self.advance_cache.as_deref_mut();
+        let scratch = &mut self.glyph_scratch;
+        let mut base = |owner: Option<&SubFont>, glyph: u32| {
+            let scale = owner.map_or(shape_scale, SubFont::scale);
+            let (mut x, mut y) = instance.scaled_v_origin_with_scratch(
+                &scale.scale,
+                GlyphId(glyph),
+                |g| extents(g).map(|e| scale.scale.scale_glyph_extents(e)),
+                scratch,
+            );
             if let Some(subfont) = owner {
                 // HarfBuzz's OpenType vertical origin asks the font for
                 // synthetic horizontal advances before halving them.
-                x = subfont.synthetic_h_advance(
-                    subfont.raw_h_advance(glyph, &|s, g| self.base_h_advance(s, g)),
-                ) / 2;
-                if !self.font.has_vertical_metrics() {
-                    let mut font_extents = self.instance.scaled_h_extents(&scale.scale);
+                x = subfont.synthetic_h_advance(subfont.raw_h_advance(glyph, &mut |s, g| {
+                    base_h_advance(&instance, cache.as_deref_mut(), scratch, s, g)
+                })) / 2;
+                if !font.has_vertical_metrics() {
+                    let mut font_extents = instance.scaled_h_extents(&scale.scale);
                     font_extents.ascender =
                         subfont.synthetic_ascender(font_extents.ascender, scale.scale.y_scale());
                     let advance = i64::from(font_extents.ascender)
                         .saturating_sub(i64::from(font_extents.descender));
-                    let extents = subfont.glyph_extents_with_base(glyph, &|s, g| {
-                        (self.extents)(GlyphId(g)).map(|value| s.scale.scale_glyph_extents(value))
+                    let glyph_extents = subfont.glyph_extents_with_base(glyph, &|s, g| {
+                        extents(GlyphId(g)).map(|value| s.scale.scale_glyph_extents(value))
                     });
-                    y = extents.map_or(font_extents.ascender, |value| {
+                    y = glyph_extents.map_or(font_extents.ascender, |value| {
                         let result = i64::from(value.y_bearing)
                             .saturating_add(advance.saturating_add(i64::from(value.height)) >> 1);
                         i32::try_from(result.clamp(i64::from(i32::MIN), i64::from(i32::MAX)))
@@ -772,14 +785,12 @@ impl<'f, 'a, 'l, 's> ShapeFont<'f, 'a, 'l, 's> {
             }
             Some((x, y))
         };
-        self.subfont.map_or_else(
-            || base(None, glyph),
-            |subfont| {
-                subfont
-                    .raw_v_origin(glyph, &|owner, g| base(Some(owner), g))
-                    .map(|origin| subfont.synthetic_origin(origin))
-            },
-        )
+        let Some(subfont) = self.subfont else {
+            return base(None, glyph);
+        };
+        subfont
+            .raw_v_origin(glyph, &mut |owner, g| base(Some(owner), g))
+            .map(|origin| subfont.synthetic_origin(origin))
     }
     /// `get_glyph_extents`, scaled.
     pub(crate) fn glyph_extents(&self, glyph: u32) -> Option<GlyphExtents> {

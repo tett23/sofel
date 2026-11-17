@@ -84,13 +84,13 @@ fn is_hangul_tone(u: u32) -> bool {
 }
 
 /// `is_zero_width_char`.
-fn is_zero_width_char(font: &ShapeFont<'_, '_, '_, '_>, u: u32) -> bool {
+fn is_zero_width_char(font: &mut ShapeFont<'_, '_, '_, '_>, u: u32) -> bool {
     font.nominal_glyph(u)
         .is_some_and(|g| font.h_advance(g) == 0)
 }
 
 /// `preprocess_text_hangul`.
-fn preprocess_text(_: &ShapePlan<'_>, buffer: &mut Buffer, font: &ShapeFont<'_, '_, '_, '_>) {
+fn preprocess_text(_: &ShapePlan<'_>, buffer: &mut Buffer, font: &mut ShapeFont<'_, '_, '_, '_>) {
     buffer.clear_output();
     // The most recent syllable, valid only if start < end.
     let mut start = 0usize;
