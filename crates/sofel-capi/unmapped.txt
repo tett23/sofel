@@ -273,5 +273,7 @@ sofel_font::Font::from_type42 Type 42 wrappers are decoded by a Rust-owned sourc
 sofel_font::type42::* Type 42 maps PostScript glyph indices to an embedded TrueType face; the C font handle still accepts sfnt bytes only (sofel ADR 0065).
 sofel_type1::* Type 1 PFA/PFB and AFM/PFM are standalone Rust readers; the C font handle still accepts sfnt data only (sofel ADR 0065).
 sofel_outline::draw_type1 Type 1 PFA/PFB outlines are a Rust-only path; the C font handle still accepts sfnt data only (sofel ADR 0065).
+sofel_outline::draw_type1_native Type 1 PFA/PFB native outlines use the Rust-only standalone face; the C font handle still accepts sfnt data only (sofel ADR 0064, ADR 0065).
 sofel_outline::draw_cid CID Type 1 outlines are a Rust-only path; the C font handle still accepts sfnt data only (sofel ADR 0065).
+sofel_outline::draw_cid_native CID Type 1 native outlines use the Rust-only standalone face; the C font handle still accepts sfnt data only (sofel ADR 0064, ADR 0065).
 sofel_bitmapfont::winfnt::WinFont::* FNT and NE FON parsing and fixed bitmap queries are exposed through Rust and sofel-render (sofel ADR 0065).

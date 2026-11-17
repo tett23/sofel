@@ -215,7 +215,7 @@ fn load_cff_with_blend(
             let Scale::Scaled { y, .. } = scale else {
                 return Err(OutlineError::InvalidOutline);
             };
-            y.0.wrapping_add(32) / 64
+            crate::ps_native::path_scale(y)
         } else {
             0x400
         },
