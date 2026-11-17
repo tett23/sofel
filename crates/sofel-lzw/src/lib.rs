@@ -1,6 +1,31 @@
 //! UNIX compress streams pack eight little-endian codes into each group.
 //! A reset or a width change discards the unused tail of the current group.
-use super::{Diagnostic, diagnostic};
+//!
+//! The output is bounded by the caller (sofel ADR 0065, sofel ADR 0081).
+#![no_std]
+extern crate alloc;
+use alloc::vec::Vec;
+
+/// Failure to decode: where in the input, and why.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Error {
+    /// The byte offset in the input where decoding failed.
+    pub offset: usize,
+    /// What was wrong there.
+    pub reason: &'static str,
+}
+
+impl Error {
+    fn new(offset: usize, reason: &'static str) -> Self {
+        Self { offset, reason }
+    }
+}
+
+impl core::fmt::Display for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{} at byte {}", self.reason, self.offset)
+    }
+}
 
 struct Codes<'a> {
     input: &'a [u8],
@@ -10,7 +35,7 @@ struct Codes<'a> {
 }
 
 impl Codes<'_> {
-    fn next(&mut self, width: usize) -> Result<Option<usize>, Diagnostic> {
+    fn next(&mut self, width: usize) -> Result<Option<usize>, Error> {
         if self.bit.saturating_add(width) > self.group.len().saturating_mul(8) {
             let count = width.min(self.input.len());
             if count == 0 {
@@ -20,7 +45,7 @@ impl Codes<'_> {
             (self.group, self.input) = self.input.split_at(count);
             self.bit = 0;
             if count.saturating_mul(8) < width {
-                return Err(diagnostic(self.offset, "truncated LZW code"));
+                return Err(Error::new(self.offset, "truncated LZW code"));
             }
         }
         let mut code = 0;
@@ -37,14 +62,14 @@ impl Codes<'_> {
     }
 }
 
-pub(super) fn decode(data: &[u8], limit: usize) -> Result<Vec<u8>, Diagnostic> {
+pub fn decode(data: &[u8], limit: usize) -> Result<Vec<u8>, Error> {
     let (&flags, input) = data
         .get(2..)
         .and_then(|s| s.split_first())
-        .ok_or_else(|| diagnostic(data.len(), "missing LZW flags"))?;
+        .ok_or_else(|| Error::new(data.len(), "missing LZW flags"))?;
     let max_width = usize::from(flags & 31);
     if !(9..=16).contains(&max_width) || flags & 0x60 != 0 {
-        return Err(diagnostic(2, "invalid LZW flags"));
+        return Err(Error::new(2, "invalid LZW flags"));
     }
     let block_mode = flags & 0x80 != 0;
     let first_entry: usize = if block_mode { 257 } else { 256 };
@@ -76,7 +101,7 @@ pub(super) fn decode(data: &[u8], limit: usize) -> Result<Vec<u8>, Diagnostic> {
             continue;
         }
         let invalid = || {
-            diagnostic(
+            Error::new(
                 codes
                     .offset
                     .saturating_add(codes.bit.saturating_sub(width) / 8),
@@ -102,7 +127,7 @@ pub(super) fn decode(data: &[u8], limit: usize) -> Result<Vec<u8>, Diagnostic> {
         reverse.push(first);
         let count = reverse.len().saturating_add(usize::from(repeated));
         if count > limit.saturating_sub(out.len()) {
-            return Err(diagnostic(
+            return Err(Error::new(
                 codes.offset,
                 "LZW output exceeds the font size limit",
             ));

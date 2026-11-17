@@ -1,9 +1,11 @@
 # The allowed dependencies of each crate: the table of ADR 0003.
 # <crate> <dependency>, or <crate> * for any; `!unsafe <crate>` allows
-# a crate to use `unsafe`.
+# a crate to use `unsafe`; `!bin <crate>` allows binaries in a crate;
+# `!no_std <crate>` requires #![no_std] at its library root (ADR 0081).
 
 # Crates that do not depend on fonts
-# (sofel-unicode: no dependencies, ADR 0019)
+# (sofel-unicode: no dependencies, ADR 0019; sofel-lzw and sofel-bzip2:
+# no dependencies, ADR 0081)
 sofel-png sofel-inflate
 sofel-svg sofel-inflate
 sofel-svg sofel-geom
@@ -51,3 +53,33 @@ sofel-capi *
 
 # Test crate (ADR 0005, ADR 0008)
 sofel-conformance *
+
+# Crates with binaries (ADR 0003, ADR 0081): the small tools, and the
+# conformance helper binary.
+!bin sofel-cli
+!bin sofel-conformance
+
+# Library crates build without std (ADR 0004, ADR 0081).
+!no_std sofel-bitmap
+!no_std sofel-bitmapfont
+!no_std sofel-brotli
+!no_std sofel-bzip2
+!no_std sofel-color
+!no_std sofel-font
+!no_std sofel-geom
+!no_std sofel-gpu
+!no_std sofel-inflate
+!no_std sofel-lzw
+!no_std sofel-outline
+!no_std sofel-pfr
+!no_std sofel-png
+!no_std sofel-raster
+!no_std sofel-read
+!no_std sofel-shape
+!no_std sofel-subset
+!no_std sofel-svg
+!no_std sofel-type1
+!no_std sofel-unicode
+!no_std sofel-vector
+!no_std sofel-woff
+!no_std sofel-write

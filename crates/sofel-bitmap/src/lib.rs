@@ -49,6 +49,8 @@ extern crate alloc;
 
 mod convert;
 mod decode;
+mod pfr;
+pub use pfr::{PfrBitmap, pfr_bitmap};
 mod embolden;
 
 pub use convert::{BitmapView, ConvertError, ConvertedBitmap, convert_bitmap};

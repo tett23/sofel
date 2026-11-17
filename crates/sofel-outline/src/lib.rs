@@ -67,6 +67,8 @@ extern crate alloc;
 
 mod autofit;
 mod hb_cff;
+mod pfr;
+pub use pfr::draw_pfr;
 mod type1;
 pub use type1::{draw_type1, draw_type1_native};
 mod hb_draw;

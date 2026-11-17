@@ -1891,6 +1891,89 @@ static int auto_hint(const char *first, const char *last, const char *target,
   return error ? 1 : 0;
 }
 
+/*
+ * ft-dump --mono-outline FLAGS
+ *
+ * Renders an outline read from standard input with FreeType's
+ * monochrome rasterizer (sofel ADR 0064 I2), through FT_Glyph_To_Bitmap
+ * and FT_RENDER_MODE_MONO, which preset the bitmap box like
+ * FT_Render_Glyph. FLAGS is the decimal FT_OUTLINE_* word of the outline
+ * (for example 256 for FT_OUTLINE_HIGH_PRECISION). Input lines:
+ *
+ *   <x> <y> <tag>                       (a point in 26.6 and its tag)
+ *   end                                 (ends the current contour)
+ *
+ * Output, as for --auto-hint:
+ *
+ *   render_error <code>
+ *   bitmap <left> <top> <width> <rows>
+ *   <row as hex, top first; packed bits>
+ */
+static int mono_outline(const char *flags_text)
+{
+  FT_Library library;
+  FT_Glyph glyph;
+  FT_OutlineGlyph outline_glyph;
+  FT_Outline *o;
+  FT_Vector points[4096];
+  char tags[4096];
+  unsigned short ends[1024];
+  int n_points = 0, n_contours = 0;
+  char line[128];
+  char *end;
+  long flags = strtol(flags_text, &end, 10);
+  FT_Error e;
+  if (!*flags_text || *end || flags < 0) return 2;
+  while (fgets(line, sizeof line, stdin)) {
+    long x, y;
+    int tag;
+    if (!strncmp(line, "end", 3)) {
+      if (n_contours == 1024 || n_points == 0) return 2;
+      ends[n_contours++] = (unsigned short)(n_points - 1);
+    } else if (sscanf(line, "%ld %ld %d", &x, &y, &tag) == 3) {
+      if (n_points == 4096) return 2;
+      points[n_points].x = x;
+      points[n_points].y = y;
+      tags[n_points++] = (char)tag;
+    } else if (line[0] != '\n') {
+      return 2;
+    }
+  }
+  if (FT_Init_FreeType(&library)) return 1;
+  e = FT_New_Glyph(library, FT_GLYPH_FORMAT_OUTLINE, &glyph);
+  if (!e) {
+    outline_glyph = (FT_OutlineGlyph)glyph;
+    o = &outline_glyph->outline;
+    e = FT_Outline_New(library, (FT_UInt)n_points, n_contours, o);
+    if (!e) {
+      memcpy(o->points, points, sizeof *points * (size_t)n_points);
+      memcpy(o->tags, tags, (size_t)n_points);
+      memcpy(o->contours, ends, sizeof *ends * (size_t)n_contours);
+      o->flags |= (int)flags;
+      e = FT_Glyph_To_Bitmap(&glyph, FT_RENDER_MODE_MONO, NULL, 1);
+    }
+    if (e) {
+      printf("render_error %d\n", (int)e);
+    } else {
+      FT_BitmapGlyph bitmap_glyph = (FT_BitmapGlyph)glyph;
+      FT_Bitmap *b = &bitmap_glyph->bitmap;
+      printf("bitmap %d %d %u %u\n", bitmap_glyph->left, bitmap_glyph->top, b->width, b->rows);
+      for (unsigned int r = 0; r < b->rows; r++) {
+        const unsigned char *row = b->pitch < 0
+            ? b->buffer - (long)(b->rows - 1 - r) * b->pitch
+            : b->buffer + (long)r * b->pitch;
+        for (unsigned int c = 0; c < (b->width + 7) / 8; c++)
+          printf("%02x", row[c]);
+        if (b->width)
+          printf("\n");
+      }
+    }
+    FT_Done_Glyph(glyph);
+  }
+  FT_Done_FreeType(library);
+  return 0;
+}
+
 /* Every glyph's autofitter style word, before loading any glyph. */
 static int auto_styles(const char *path)
 {
@@ -2002,6 +2085,8 @@ int main(int argc, char **argv)
     return faces(argv[2], dump_colr);
   if (argc == 3 && strcmp(argv[1], "--sbit") == 0)
     return faces(argv[2], dump_sbit);
+  if (argc == 3 && strcmp(argv[1], "--mono-outline") == 0)
+    return mono_outline(argv[2]);
   if (argc == 3 && strcmp(argv[1], "--otvalid") == 0)
     return otvalid(argv[2]);
   if (argc == 3 && strcmp(argv[1], "--metrics") == 0) {
@@ -2010,7 +2095,7 @@ int main(int argc, char **argv)
     argc = 2;
   }
   if (argc != 2) {
-    fprintf(stderr, "usage: ft-dump FILE | ft-dump --hint-slot PPEM GLYPH ENGINE TARGET FILE | ft-dump --auto-style GLYPH FILE | ft-dump --auto-styles [--variations=TAG=value,...] FILE | ft-dump --auto-hint FIRST_PPEM LAST_PPEM TARGET [--variations=TAG=value,...] FILE | ft-dump --native-hint FIRST_PPEM LAST_PPEM TARGET [--variations=TAG=value,...] [--face=N] [--glyph-step=N] FILE | ft-dump --advances [--named-instance=N] [--variations=TAG=value,...] FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --stroke SIZE GLYPH RADIUS JOIN MITER BORDER FILE | ft-dump --sampled-outline SIZE FILE PLAN | ft-dump --sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...] | ft-dump --raster PPEM [--color|--lcd|--lcd-v|--mono|--sdf|--bitmap-sdf] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --cff2-private FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
+    fprintf(stderr, "usage: ft-dump FILE | ft-dump --hint-slot PPEM GLYPH ENGINE TARGET FILE | ft-dump --auto-style GLYPH FILE | ft-dump --auto-styles [--variations=TAG=value,...] FILE | ft-dump --auto-hint FIRST_PPEM LAST_PPEM TARGET [--variations=TAG=value,...] FILE | ft-dump --native-hint FIRST_PPEM LAST_PPEM TARGET [--variations=TAG=value,...] [--face=N] [--glyph-step=N] FILE | ft-dump --advances [--named-instance=N] [--variations=TAG=value,...] FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --stroke SIZE GLYPH RADIUS JOIN MITER BORDER FILE | ft-dump --sampled-outline SIZE FILE PLAN | ft-dump --sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...] | ft-dump --raster PPEM [--color|--lcd|--lcd-v|--mono|--sdf|--bitmap-sdf] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --cff2-private FILE | ft-dump --mono-outline FLAGS < OUTLINE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
     return 2;
   }
   if (FT_Init_FreeType(&library) != 0) {

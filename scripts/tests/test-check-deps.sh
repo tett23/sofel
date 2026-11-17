@@ -53,3 +53,26 @@ if sh "$script" "$tmp/ws" "$tmp/allowed.txt" 2>/dev/null; then
 fi
 
 echo "ok: check-deps.sh"
+
+# ADR 0081 I4: only crates marked `!bin` may have binary targets.
+printf '[workspace]\nresolver = "3"\nmembers = ["a", "b"]\n\n[workspace.lints.rust]\nunsafe_code = "forbid"\n' >"$tmp/ws/Cargo.toml"
+crate b ''
+mkdir -p "$tmp/ws/b/src/bin"
+printf 'fn main() {}\n' >"$tmp/ws/b/src/bin/tool.rs"
+if sh "$script" "$tmp/ws" "$tmp/allowed.txt" 2>/dev/null; then
+  fail "ADR 0081 I4: a binary in a crate without !bin was accepted"
+fi
+printf '# allowed\na b\n!bin b\n' >"$tmp/bin.txt"
+sh "$script" "$tmp/ws" "$tmp/bin.txt" 2>/dev/null || fail "ADR 0081 I4: '!bin b' did not allow the binary"
+rm -r "$tmp/ws/b/src/bin"
+sh "$script" "$tmp/ws" "$tmp/allowed.txt" 2>/dev/null || fail "ADR 0081 I4: a library without binaries was rejected"
+echo "ok: ADR 0081 I4: binaries only in crates marked !bin"
+
+# ADR 0081 I2: crates marked `!no_std` must declare #![no_std].
+printf '# allowed\na b\n!no_std b\n' >"$tmp/nostd.txt"
+if sh "$script" "$tmp/ws" "$tmp/nostd.txt" 2>/dev/null; then
+  fail "ADR 0081 I2: a !no_std crate without #![no_std] was accepted"
+fi
+printf '#![no_std]\n' >"$tmp/ws/b/src/lib.rs"
+sh "$script" "$tmp/ws" "$tmp/nostd.txt" 2>/dev/null || fail "ADR 0081 I2: #![no_std] in lib.rs was not accepted"
+echo "ok: ADR 0081 I2: crates marked !no_std declare #![no_std]"
