@@ -1,6 +1,6 @@
 # ADR 0084: OpenType の `rand` を足した派生フォントを描画見本に加える
 
-Status: proposed
+Status: accepted-pending
 
 ## 文脈
 
