@@ -235,6 +235,9 @@ pub struct Scratch {
     stack: Vec<u32>,
     /// The work area of the Type 2 charstring decoder (ADR 0021).
     cff: Work,
+    /// The stems and hint maps of the CFF hinter (sofel ADR 0064), made
+    /// at the first hinted CFF load.
+    cff_hints: Option<alloc::boxed::Box<sofel_font::read::cff::charstring::HintWork>>,
     /// FreeType's reusable gvar buffers.
     gvar: FtScratch,
     varied: Vec<gvar::Point<i32>>,

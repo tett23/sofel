@@ -274,7 +274,10 @@ fn load_cff_with_blend(
         path_begun: false,
     };
     let decoded = match &hinting {
-        Some(h) => charstring::decode_hinted(data, &ctx, h, &mut s.cff, &mut builder),
+        Some(h) => {
+            let hint_work = s.cff_hints.get_or_insert_with(Default::default);
+            charstring::decode_hinted(data, &ctx, h, &mut s.cff, hint_work, &mut builder)
+        }
         None => charstring::decode(data, &ctx, &mut s.cff, &mut builder),
     };
     if decoded.is_err() {

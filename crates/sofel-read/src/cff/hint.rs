@@ -16,7 +16,7 @@ use super::ft;
 /// `CF2_MAX_HINTS`: the most horizontal and vertical stems together.
 pub(crate) const MAX_HINTS: usize = 96;
 /// `CF2_MAX_HINT_EDGES`.
-const MAX_EDGES: usize = MAX_HINTS * 2;
+pub(crate) const MAX_EDGES: usize = MAX_HINTS * 2;
 /// `CF2_MIN_COUNTER`: half a pixel.
 const MIN_COUNTER: i32 = 0x8000;
 const ONE: i32 = 0x1_0000;
@@ -62,7 +62,7 @@ fn abs(x: i32) -> i32 {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 struct Hint {
     flags: u8,
-    index: usize,
+    index: u8,
     cs: i32,
     ds: i32,
     scale: i32,
@@ -125,7 +125,7 @@ impl Hint {
         };
         let mut hint = Hint {
             flags,
-            index,
+            index: u8::try_from(index).unwrap_or(u8::MAX),
             cs: cs.wrapping_add(origin),
             ds: 0,
             scale,
@@ -501,24 +501,26 @@ impl Blues {
 }
 
 /// A hint map (`CF2_HintMapRec`): edges sorted by character space
-/// coordinate, mapping y to device space piecewise linearly.
+/// coordinate, mapping y to device space piecewise linearly. It holds at
+/// most `N` edges: [`MAX_EDGES`] for hinting, 0 without, where only its
+/// validity is used.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) struct HintMap {
+pub(crate) struct HintMap<const N: usize> {
     /// `isValid`.
     pub(crate) valid: bool,
     scale: i32,
     count: usize,
-    edges: [Hint; MAX_EDGES],
+    edges: [Hint; N],
 }
 
-impl HintMap {
+impl<const N: usize> HintMap<N> {
     /// `cf2_hintmap_init`: empty and invalid, at `scale`.
-    pub(crate) fn new(scale: i32) -> HintMap {
+    pub(crate) fn new(scale: i32) -> HintMap<N> {
         HintMap {
             valid: false,
             scale,
             count: 0,
-            edges: [Hint::default(); MAX_EDGES],
+            edges: [Hint::default(); N],
         }
     }
 
@@ -673,7 +675,7 @@ impl HintMap {
     }
 
     /// `cf2_hintmap_insertHint`.
-    fn insert(&mut self, initial: Option<&HintMap>, bottom: Hint, top: Hint) {
+    fn insert(&mut self, initial: Option<&HintMap<N>>, bottom: Hint, top: Hint) {
         let (mut first, mut second, is_pair) = if !bottom.is_valid() {
             (top, top, false)
         } else if !top.is_valid() {
@@ -720,7 +722,7 @@ impl HintMap {
         }
         let added = if is_pair { 2 } else { 1 };
         let new_count = self.count.saturating_add(added);
-        if new_count > MAX_EDGES {
+        if new_count > N.min(MAX_EDGES) {
             return;
         }
         if let Some(tail) = self.edges.get_mut(at..new_count) {
@@ -751,9 +753,9 @@ pub(crate) struct Stems<'a> {
 
 /// `cf2_hintmap_build` of `map` from `mask`, building `initial` first if
 /// it is not valid.
-pub(crate) fn build(
-    map: &mut HintMap,
-    initial: &mut HintMap,
+pub(crate) fn build<const N: usize>(
+    map: &mut HintMap<N>,
+    initial: &mut HintMap<N>,
     stems: &mut Stems<'_>,
     mask: &mut HintMask,
     origin: i32,
@@ -765,9 +767,9 @@ pub(crate) fn build(
     build_one(map, Some(initial), stems, mask, origin, false)
 }
 
-fn build_one(
-    map: &mut HintMap,
-    initial: Option<&HintMap>,
+fn build_one<const N: usize>(
+    map: &mut HintMap<N>,
+    initial: Option<&HintMap<N>>,
     stems: &mut Stems<'_>,
     mask: &mut HintMask,
     origin: i32,
@@ -828,7 +830,7 @@ fn build_one(
                 if edge.is_synthetic() {
                     continue;
                 }
-                if let Some(stem) = stems.h.get_mut(edge.index) {
+                if let Some(stem) = stems.h.get_mut(usize::from(edge.index)) {
                     if edge.is_top() {
                         stem.max_ds = edge.ds;
                     } else {
