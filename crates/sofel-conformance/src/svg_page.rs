@@ -1,5 +1,4 @@
 //! Compare positioned SVG pages with the fixed HarfBuzz output (sofel ADR 0074).
-use quick_xml::{Reader, XmlVersion, events::Event};
 use sofel_font::Font;
 use sofel_geom::{Color, GlyphExtents, Image, ImageFormat, Point, Rect, Transform};
 use sofel_outline::{Outlines, Scale, Scratch};
@@ -13,43 +12,157 @@ enum Node {
     Content(String),
 }
 
+/// The elements, attributes and text of an SVG document with one `svg`
+/// root. Empty elements become a start and an end; whitespace-only text is
+/// dropped. Comments, declarations, processing instructions, CDATA and
+/// document types are errors, as are mismatched or missing end tags.
 fn nodes(xml: &str) -> Result<Vec<Node>, String> {
-    let mut reader = Reader::from_str(xml);
-    reader.config_mut().expand_empty_elements = true;
     let mut scene = Vec::new();
-    let mut depth = 0_usize;
-    loop {
-        let event = reader.read_event().map_err(|e| e.to_string())?;
-        match event {
-            Event::Start(tag) => {
-                let name = tag.name().as_ref().to_owned();
-                if depth == 0 && (!scene.is_empty() || name != "svg") {
-                    return Err("expected a single svg root".into());
-                }
-                let mut attrs = BTreeMap::new();
-                for attr in tag.attributes() {
-                    let attr = attr.map_err(|e| e.to_string())?;
-                    let key = attr.key.as_ref();
-                    let value = attr
-                        .normalized_value(XmlVersion::Implicit1_0)
-                        .map_err(|e| e.to_string())?;
-                    attrs.insert(key.to_owned(), value.into_owned());
-                }
-                depth += 1;
-                scene.push(Node::Start(name, attrs));
+    let mut open: Vec<String> = Vec::new();
+    let mut rest = xml;
+    while !rest.is_empty() {
+        let Some(after) = rest.strip_prefix('<') else {
+            let end = rest.find('<').unwrap_or(rest.len());
+            let (raw, tail) = rest.split_at(end);
+            rest = tail;
+            if raw.bytes().all(|b| b.is_ascii_whitespace()) {
+                continue;
             }
-            Event::End(_) => {
-                depth = depth.checked_sub(1).ok_or("unmatched end tag")?;
-                scene.push(Node::End);
+            if open.is_empty() {
+                return Err("text outside the svg root".into());
             }
-            Event::Text(text) if text.as_ref().bytes().all(|b| b.is_ascii_whitespace()) => (),
-            Event::Text(text) if depth > 0 => scene.push(Node::Content(
-                text.xml_content(XmlVersion::Implicit1_0).into_owned(),
-            )),
-            Event::Eof if depth == 0 && !scene.is_empty() => return Ok(scene),
-            Event::Eof => return Err("incomplete SVG document".into()),
-            other => return Err(format!("unexpected XML event {other:?}")),
+            scene.push(Node::Content(decode(&line_ends(raw), false)?));
+            continue;
+        };
+        if let Some(after) = after.strip_prefix('/') {
+            let end = after.find('>').ok_or("unterminated end tag")?;
+            let (name, tail) = after.split_at(end);
+            rest = tail.get(1..).unwrap_or_default();
+            if open.pop().as_deref() != Some(name.trim_end()) {
+                return Err(format!("unmatched end tag {name}"));
+            }
+            scene.push(Node::End);
+            continue;
         }
+        if after.starts_with(['!', '?']) {
+            return Err(format!(
+                "unexpected XML markup {:?}",
+                after.get(..8).unwrap_or(after)
+            ));
+        }
+        let name_end = after
+            .find(|c: char| c.is_ascii_whitespace() || c == '/' || c == '>')
+            .ok_or("unterminated start tag")?;
+        let (name, mut tail) = after.split_at(name_end);
+        if name.is_empty() {
+            return Err("empty element name".into());
+        }
+        if open.is_empty() && (!scene.is_empty() || name != "svg") {
+            return Err("expected a single svg root".into());
+        }
+        let mut attrs = BTreeMap::new();
+        let empty = loop {
+            tail = tail.trim_start_matches(|c: char| c.is_ascii_whitespace());
+            if let Some(t) = tail.strip_prefix("/>") {
+                tail = t;
+                break true;
+            }
+            if let Some(t) = tail.strip_prefix('>') {
+                tail = t;
+                break false;
+            }
+            let eq = tail.find('=').ok_or("attribute without a value")?;
+            let (key, t) = tail.split_at(eq);
+            let key = key.trim_end();
+            if key.is_empty() || key.contains(|c: char| c.is_ascii_whitespace()) {
+                return Err(format!("bad attribute name {key:?}"));
+            }
+            let t = t
+                .get(1..)
+                .unwrap_or_default()
+                .trim_start_matches(|c: char| c.is_ascii_whitespace());
+            let quote = t
+                .chars()
+                .next()
+                .filter(|&q| q == '"' || q == '\'')
+                .ok_or("unquoted attribute value")?;
+            let t = t.get(1..).unwrap_or_default();
+            let close = t.find(quote).ok_or("unterminated attribute value")?;
+            let (raw, t) = t.split_at(close);
+            if raw.contains('<') {
+                return Err("< in an attribute value".into());
+            }
+            let value = decode(&line_ends(raw), true)?;
+            if attrs.insert(key.to_owned(), value).is_some() {
+                return Err(format!("duplicate attribute {key}"));
+            }
+            tail = t.get(1..).unwrap_or_default();
+        };
+        rest = tail;
+        scene.push(Node::Start(name.to_owned(), attrs));
+        if empty {
+            scene.push(Node::End);
+        } else {
+            open.push(name.to_owned());
+        }
+    }
+    if open.is_empty() && !scene.is_empty() {
+        Ok(scene)
+    } else {
+        Err("incomplete SVG document".into())
+    }
+}
+
+/// XML's end-of-line handling: CR LF and lone CR become LF.
+fn line_ends(raw: &str) -> String {
+    raw.replace("\r\n", "\n").replace('\r', "\n")
+}
+
+/// Expands the five predefined entities and character references. In
+/// attribute values, tab and LF (after [`line_ends`]) become spaces before
+/// the references are expanded, as XML's attribute-value normalization does.
+fn decode(text: &str, attribute: bool) -> Result<String, String> {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find('&') {
+        let (plain, tail) = rest.split_at(at);
+        push_plain(&mut out, plain, attribute);
+        let end = tail.find(';').ok_or("unterminated reference")?;
+        let name = tail.get(1..end).unwrap_or_default();
+        let c = match name {
+            "lt" => '<',
+            "gt" => '>',
+            "amp" => '&',
+            "quot" => '"',
+            "apos" => '\'',
+            _ => {
+                let code = if let Some(hex) = name.strip_prefix("#x") {
+                    u32::from_str_radix(hex, 16).ok()
+                } else if let Some(dec) = name.strip_prefix('#') {
+                    dec.parse().ok()
+                } else {
+                    None
+                };
+                code.and_then(char::from_u32)
+                    .ok_or_else(|| format!("unknown reference &{name};"))?
+            }
+        };
+        out.push(c);
+        rest = tail.get(end.saturating_add(1)..).unwrap_or_default();
+    }
+    push_plain(&mut out, rest, attribute);
+    Ok(out)
+}
+
+fn push_plain(out: &mut String, plain: &str, attribute: bool) {
+    if attribute {
+        out.extend(
+            plain
+                .chars()
+                .map(|c| if c == '\t' || c == '\n' { ' ' } else { c }),
+        );
+    } else {
+        out.push_str(plain);
     }
 }
 
@@ -177,4 +290,95 @@ pub fn measurement(case: &str) -> Result<String, String> {
         normalized.len(),
         crate::svg_input::fingerprint(format!("{normalized:?}").as_bytes())
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Node, nodes};
+    use std::collections::BTreeMap;
+
+    fn start(name: &str, attrs: &[(&str, &str)]) -> Node {
+        Node::Start(
+            name.to_owned(),
+            attrs
+                .iter()
+                .map(|&(k, v)| (k.to_owned(), v.to_owned()))
+                .collect::<BTreeMap<_, _>>(),
+        )
+    }
+
+    #[test]
+    fn empty_elements_expand_and_both_quotes_read() {
+        assert_eq!(
+            nodes(r#"<svg><a/><b x='1' y="2" ></b><c z = "3" /></svg>"#),
+            Ok(vec![
+                start("svg", &[]),
+                start("a", &[]),
+                Node::End,
+                start("b", &[("x", "1"), ("y", "2")]),
+                Node::End,
+                start("c", &[("z", "3")]),
+                Node::End,
+                Node::End,
+            ])
+        );
+    }
+
+    #[test]
+    fn references_are_decoded() {
+        assert_eq!(
+            nodes(r#"<svg t="a&amp;b&lt;&gt;&quot;&apos;&#65;&#x42;">x &gt; &#x263A;</svg>"#),
+            Ok(vec![
+                start("svg", &[("t", "a&b<>\"'AB")]),
+                Node::Content("x > \u{263a}".to_owned()),
+                Node::End,
+            ])
+        );
+    }
+
+    #[test]
+    fn attribute_whitespace_and_text_line_ends_are_normalized() {
+        assert_eq!(
+            nodes("<svg t=\"a\tb\nc\r\nd\re&#10;f\">g\r\nh\ri</svg>"),
+            Ok(vec![
+                start("svg", &[("t", "a b c d e\nf")]),
+                Node::Content("g\nh\ni".to_owned()),
+                Node::End,
+            ])
+        );
+    }
+
+    #[test]
+    fn whitespace_only_text_is_skipped() {
+        assert_eq!(
+            nodes("<svg>\n  <a/>\n</svg>\n"),
+            Ok(vec![
+                start("svg", &[]),
+                start("a", &[]),
+                Node::End,
+                Node::End
+            ])
+        );
+    }
+
+    #[test]
+    fn other_markup_and_broken_documents_are_errors() {
+        for xml in [
+            "<svg><!-- c --></svg>",
+            "<?xml version=\"1.0\"?><svg/>",
+            "<svg><![CDATA[x]]></svg>",
+            "<!DOCTYPE svg><svg/>",
+            "<g/>",
+            "<svg/><svg/>",
+            "<svg><a></b></svg>",
+            "<svg>",
+            "",
+            "x<svg/>",
+            "<svg>&nbsp;</svg>",
+            "<svg a=\"1\" a=\"2\"/>",
+            "<svg a=1/>",
+        ] {
+            assert!(nodes(xml).is_err(), "{xml:?}");
+        }
+    }
 }
