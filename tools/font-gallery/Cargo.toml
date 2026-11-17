@@ -13,5 +13,13 @@ members = ["."]
 name = "font-gallery"
 path = "src/main.rs"
 
+# sofel ADR 0083, ADR 0084: the derived sample fonts.
+[dependencies]
+sofel-font = { path = "../../crates/sofel-font" }
+sofel-write = { path = "../../crates/sofel-write" }
+
 [dev-dependencies]
+sofel-cli = { path = "../../crates/sofel-cli" }
+sofel-geom = { path = "../../crates/sofel-geom" }
 sofel-inflate = { path = "../../crates/sofel-inflate" }
+sofel-outline = { path = "../../crates/sofel-outline" }

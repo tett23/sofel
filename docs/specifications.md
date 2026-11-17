@@ -703,3 +703,13 @@ sbix の単字 19 と合字 26 は固定版 FreeType と全画素を照合し、
 CFF の 19・26 と可変 COLRv1 の 92・93 は固定版 HarfBuzz raster と原点・寸法・乗算済み BGRA の全画素を照合する。一覧 PNG の検査では、これらの2書体、sbix、OT-SVG の単字と文字列を個別に比較する。
 [sofel ADR 0077](adr/0077-noto-color-emoji-gallery.md) に従い、Noto Color Emoji v2.047 の CBDT 版と COLRv1 版で 😀 と 👩‍💻 を 109 ppem で描く。各形式で ZWJ 列が一つのグリフになること、各画像の寸法と RGBA の CRC-32、一覧 PNG に配置した画素を検査する。
 文書だけの変更を除き、CI はプルリクエストと main への push で HTML と PNG を生成し、検査したコミット SHA 付きのアーティファクトを14日間保存する。
+
+描画見本には、固定したフォントから描画見本のビルドで作る2つの派生フォントのカードもある（[sofel ADR 0083](adr/0083-cff-random-gallery-sample.md)、[sofel ADR 0084](adr/0084-opentype-rand-gallery-sample.md)）。
+生成器は、カードを描く前に派生フォントを `target/derived-fonts/` に書き、元のライセンスを隣に写す。
+元のフォントの SHA-256 が台帳（`fonts.lock` と `gallery-fonts.lock`）と違うときは、派生フォントを書かずにエラーにする。
+派生フォントは OFL 1.1 の改変版なので、描画見本の出力（`target/font-gallery/`）には置かず、CI は出力に `.otf` と `.ttf` が無いことを確かめる。
+
+- `derived-cff-random`: STIX Two Math（`stix-math`）の `R`（グリフ ID 20、139 バイト）の charstring を、`random 1000 mul random 1000 mul rmoveto 500 0 rlineto 0 500 rlineto endchar` の26バイトと `endchar` の埋め草で、同じ長さのまま書き換えた `sofel-random-sample.otf`。charstring が26バイトより短いときはエラーにする。name の ID 1、3、4、6（16、17 があればそれも）は `Sofel Random Sample` と `SofelRandomSample-Regular` にし、ID 0、13、14 は残す。単字 `U+0052` と文字列 `RRRR` を48 ppem で描く。`random` の状態はグリフごとに種から始まるので、4つの `R` は同じ形になる。
+- `derived-rand`: Caveat（`caveat`、google/fonts `5571d84c` の `Caveat[wght].ttf`）の GSUB に、型3の lookup 30（a〜z と A〜Z の各文字 `x` の AlternateSet `[x, x.ss01, x.ss02]`）、それだけを参照する機能 13 `rand` を足し、DFLT と latn の既定の LangSys に 13 を加えた `sofel-rand-sample.ttf`。新しいヘッダと一覧を元の GSUB のバイト列の前に置き、変えない項目は元の表を指す。異体字が無いとき、またはオフセットが65535を超えるときはエラーにする。name は `Sofel Rand Sample` と `SofelRandSample-Regular` にする。単字 `U+0061` と文字列 `aaaa eeee oooo tttt` を、既定の機能と既定の軸の位置で48 ppem で描く。`calt` も異体字に切り替えるので、文字列の字形は `rand` と `calt` の両方で決まる。
+
+台帳の全フェイスを描く決まりにより、元の Caveat も同じ入力の `caveat` のカードになる。

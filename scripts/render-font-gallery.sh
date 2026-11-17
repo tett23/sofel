@@ -26,10 +26,12 @@ cargo build --locked --release -p sofel-cli --bin sofel-render --bin sofel-shape
 
 CARGO_TARGET_DIR="$root/target" cargo test --locked --release --manifest-path tools/font-gallery/Cargo.toml
 CARGO_TARGET_DIR="$root/target" cargo build --locked --release --manifest-path tools/font-gallery/Cargo.toml --bin font-gallery
+# The generator first writes the derived sample fonts (sofel ADR 0083,
+# ADR 0084) to target/derived-fonts, outside the gallery output.
 "$root/target/release/font-gallery" "$staging" "$root/target/release"
 
 SOFEL_GALLERY_OUTPUT="$staging" SOFEL_GALLERY_BINARIES="$root/target/release" CARGO_TARGET_DIR="$root/target" \
-  cargo test --locked --release --manifest-path tools/font-gallery/Cargo.toml --test color_gallery -- --ignored
+  cargo test --locked --release --manifest-path tools/font-gallery/Cargo.toml --test color_gallery --test derived -- --ignored
 
 test -s "$staging/index.html"
 test -s "$staging/all-samples.png"
