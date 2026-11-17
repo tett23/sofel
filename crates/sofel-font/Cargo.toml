@@ -9,6 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 sofel-bitmapfont = { path = "../sofel-bitmapfont" }
+sofel-pfr = { path = "../sofel-pfr" }
 sofel-geom = { path = "../sofel-geom" }
 sofel-read = { path = "../sofel-read" }
 sofel-type1 = { path = "../sofel-type1" }

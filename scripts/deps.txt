@@ -71,6 +71,7 @@ sofel-conformance *
 !no_std sofel-inflate
 !no_std sofel-lzw
 !no_std sofel-outline
+!no_std sofel-pfr
 !no_std sofel-png
 !no_std sofel-raster
 !no_std sofel-read

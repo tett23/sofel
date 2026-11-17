@@ -60,6 +60,7 @@ dependencies = [
  "sofel-inflate",
  "sofel-lzw",
  "sofel-outline",
+ "sofel-pfr",
  "sofel-png",
  "sofel-raster",
  "sofel-read",
@@ -107,6 +108,7 @@ version = "0.0.0"
 dependencies = [
  "sofel-bitmapfont",
  "sofel-geom",
+ "sofel-pfr",
  "sofel-read",
  "sofel-type1",
 ]
@@ -137,6 +139,10 @@ dependencies = [
  "sofel-font",
  "sofel-geom",
 ]
+
+[[package]]
+name = "sofel-pfr"
+version = "0.0.0"
 
 [[package]]
 name = "sofel-png"

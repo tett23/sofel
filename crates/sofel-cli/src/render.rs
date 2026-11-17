@@ -610,7 +610,7 @@ fn render_pfr(bytes: &[u8], args: &Args, out: &mut dyn Write, err: &mut dyn Writ
         Target::Text(_) | Target::TextFile(_) => return fail("PFR text rendering is unavailable"),
     };
     if !args.no_bitmap {
-        let embedded = match face.bitmap(glyph, args.ppem, args.ppem) {
+        let embedded = match sofel_bitmap::pfr_bitmap(&face, glyph, args.ppem, args.ppem) {
             Ok(bitmap) => bitmap,
             Err(_) => return fail("invalid PFR bitmap"),
         };

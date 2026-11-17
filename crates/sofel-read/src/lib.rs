@@ -70,7 +70,6 @@ pub mod maxp;
 pub mod mvar;
 pub mod name;
 pub mod os2;
-pub mod pfr;
 pub mod post;
 pub mod sbix;
 mod search;

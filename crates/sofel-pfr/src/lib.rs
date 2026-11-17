@@ -1,26 +1,84 @@
 //! Portable Font Resource logical faces and physical character descriptors.
+//!
+//! This crate has no dependencies (sofel ADR 0081). Glyph ids are `u32`:
+//! glyph 0 is the missing glyph and glyph `n` is character record `n - 1`.
+#![no_std]
+#![forbid(unsafe_code)]
+#![warn(missing_docs)]
 
-use crate::{GlyphId, ReadError, be};
+/// A glyph id of a PFR face.
+pub type GlyphId = u32;
 
-fn take<'a>(bytes: &mut &'a [u8], size: usize) -> Result<&'a [u8], ReadError> {
-    let (value, tail) = bytes.split_at_checked(size).ok_or(ReadError::OutOfBounds)?;
+/// Why a PFR resource or one of its parts could not be read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PfrError {
+    /// An offset, size or index points outside the data.
+    OutOfBounds,
+    /// A field holds a value the format does not allow.
+    InvalidValue,
+}
+
+impl core::fmt::Display for PfrError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            Self::OutOfBounds => "offset or size out of bounds",
+            Self::InvalidValue => "invalid value",
+        })
+    }
+}
+
+impl core::error::Error for PfrError {}
+
+/// Big-endian reads with the same semantics as `sofel_read::be`.
+mod be {
+    pub fn slice_at(data: &[u8], offset: usize, len: usize) -> Option<&[u8]> {
+        data.get(offset..offset.checked_add(len)?)
+    }
+    pub fn u8_at(data: &[u8], offset: usize) -> Option<u8> {
+        data.get(offset).copied()
+    }
+    fn array_at<const N: usize>(data: &[u8], offset: usize) -> Option<&[u8; N]> {
+        data.get(offset..)?.first_chunk::<N>()
+    }
+    pub fn u16_at(data: &[u8], offset: usize) -> Option<u16> {
+        array_at::<2>(data, offset).map(|a| u16::from_be_bytes(*a))
+    }
+    pub fn i16_at(data: &[u8], offset: usize) -> Option<i16> {
+        array_at::<2>(data, offset).map(|a| i16::from_be_bytes(*a))
+    }
+    pub fn u24_at(data: &[u8], offset: usize) -> Option<u32> {
+        array_at::<3>(data, offset).map(|a| {
+            let [x, y, z] = *a;
+            u32::from_be_bytes([0, x, y, z])
+        })
+    }
+    pub fn to_usize(v: u32) -> usize {
+        usize::try_from(v).unwrap_or(usize::MAX)
+    }
+    pub fn to_u32(v: usize) -> u32 {
+        u32::try_from(v).unwrap_or(u32::MAX)
+    }
+}
+
+fn take<'a>(bytes: &mut &'a [u8], size: usize) -> Result<&'a [u8], PfrError> {
+    let (value, tail) = bytes.split_at_checked(size).ok_or(PfrError::OutOfBounds)?;
     *bytes = tail;
     Ok(value)
 }
 
-fn number(bytes: &mut &[u8], width: usize) -> Result<usize, ReadError> {
+fn number(bytes: &mut &[u8], width: usize) -> Result<usize, PfrError> {
     Ok(take(bytes, width)?
         .iter()
         .fold(0, |n, b| (n << 8) | usize::from(*b)))
 }
 
-fn word16(bytes: &mut &[u8]) -> Result<u16, ReadError> {
-    be::u16_at(take(bytes, 2)?, 0).ok_or(ReadError::OutOfBounds)
+fn word16(bytes: &mut &[u8]) -> Result<u16, PfrError> {
+    be::u16_at(take(bytes, 2)?, 0).ok_or(PfrError::OutOfBounds)
 }
-fn signed16(bytes: &mut &[u8]) -> Result<i16, ReadError> {
-    be::i16_at(take(bytes, 2)?, 0).ok_or(ReadError::OutOfBounds)
+fn signed16(bytes: &mut &[u8]) -> Result<i16, PfrError> {
+    be::i16_at(take(bytes, 2)?, 0).ok_or(PfrError::OutOfBounds)
 }
-fn strike_count(mut extras: &[u8]) -> Result<usize, ReadError> {
+fn strike_count(mut extras: &[u8]) -> Result<usize, PfrError> {
     if extras.is_empty() {
         return Ok(0);
     }
@@ -41,7 +99,7 @@ fn strike_count(mut extras: &[u8]) -> Result<usize, ReadError> {
     Ok(total)
 }
 
-fn extras(bytes: &mut &[u8]) -> Result<(), ReadError> {
+fn extras(bytes: &mut &[u8]) -> Result<(), PfrError> {
     for _ in 0..number(bytes, 1)? {
         let size = number(bytes, 1)?;
         take(bytes, size.saturating_add(1))?;
@@ -49,8 +107,8 @@ fn extras(bytes: &mut &[u8]) -> Result<(), ReadError> {
     Ok(())
 }
 
-fn section(data: &[u8], offset: usize, size: usize) -> Result<&[u8], ReadError> {
-    be::slice_at(data, offset, size).ok_or(ReadError::OutOfBounds)
+fn section(data: &[u8], offset: usize, size: usize) -> Result<&[u8], PfrError> {
+    be::slice_at(data, offset, size).ok_or(PfrError::OutOfBounds)
 }
 
 /// Encoded bitmap selected for one glyph and strike.
@@ -86,38 +144,38 @@ impl<'a> PfrFace<'a> {
     /// Reads one logical font and validates its glyph program ranges.
     // Counts have at most 16 bits, and character records occupy at most 10 bytes.
     #[allow(clippy::arithmetic_side_effects)]
-    pub fn read(data: &'a [u8], index: u32) -> Result<Self, ReadError> {
+    pub fn read(data: &'a [u8], index: u32) -> Result<Self, PfrError> {
         Self::read_positioned(data, index).map_err(|(error, _)| error)
     }
 
     /// Reads a face and returns the byte offset of a failing PFR field.
     #[allow(clippy::arithmetic_side_effects)]
-    pub fn read_positioned(data: &'a [u8], index: u32) -> Result<Self, (ReadError, usize)> {
+    pub fn read_positioned(data: &'a [u8], index: u32) -> Result<Self, (PfrError, usize)> {
         let mut position = 0;
         Self::read_inner(data, index, &mut position).map_err(|error| (error, position))
     }
 
     #[allow(clippy::arithmetic_side_effects)]
-    fn read_inner(data: &'a [u8], index: u32, position: &mut usize) -> Result<Self, ReadError> {
-        let header = data.first_chunk::<58>().ok_or(ReadError::OutOfBounds)?;
+    fn read_inner(data: &'a [u8], index: u32, position: &mut usize) -> Result<Self, PfrError> {
+        let header = data.first_chunk::<58>().ok_or(PfrError::OutOfBounds)?;
         if !header.starts_with(b"PFR0")
             || be::u16_at(header, 6) != Some(0x0d0a)
             || be::u16_at(header, 4) > Some(4)
         {
-            return Err(ReadError::InvalidValue);
+            return Err(PfrError::InvalidValue);
         }
         let word = |i| {
             be::u16_at(header, i)
                 .map(usize::from)
-                .ok_or(ReadError::OutOfBounds)
+                .ok_or(PfrError::OutOfBounds)
         };
         let triple = |i| {
             be::u24_at(header, i)
                 .map(be::to_usize)
-                .ok_or(ReadError::OutOfBounds)
+                .ok_or(PfrError::OutOfBounds)
         };
         if word(8)? < 58 {
-            return Err(ReadError::InvalidValue);
+            return Err(PfrError::InvalidValue);
         }
         *position = 8;
         section(data, 0, word(8)?)?;
@@ -127,7 +185,7 @@ impl<'a> PfrFace<'a> {
         *position = word(12)?.saturating_add(2);
         let entries = take(&mut directory, usize::from(faces) * 5)?;
         if index >= u32::from(faces) {
-            return Err(ReadError::OutOfBounds);
+            return Err(PfrError::OutOfBounds);
         }
         let mut entry = section(entries, be::to_usize(index).saturating_mul(5), 5)?;
         let logical_size = number(&mut entry, 2)?;
@@ -135,7 +193,7 @@ impl<'a> PfrFace<'a> {
         let within = |start: usize, len: usize, offset: usize, size: usize| {
             section(
                 section(data, start, len)?,
-                offset.checked_sub(start).ok_or(ReadError::OutOfBounds)?,
+                offset.checked_sub(start).ok_or(PfrError::OutOfBounds)?,
                 size,
             )
         };
@@ -168,22 +226,22 @@ impl<'a> PfrFace<'a> {
             .saturating_sub(3);
         let mut physical = within(triple(27)?, triple(24)?, offset, size)?;
         let bitmap_tables = data
-            .get(offset.checked_add(size).ok_or(ReadError::OutOfBounds)?..)
-            .ok_or(ReadError::OutOfBounds)?;
+            .get(offset.checked_add(size).ok_or(PfrError::OutOfBounds)?..)
+            .ok_or(PfrError::OutOfBounds)?;
         take(&mut physical, 2)?;
         *position = offset.saturating_add(2);
         let units = word16(&mut physical)?;
         if units == 0 {
-            return Err(ReadError::InvalidValue);
+            return Err(PfrError::InvalidValue);
         }
         *position = offset.saturating_add(4);
         let metrics_units = word16(&mut physical)?;
         if metrics_units == 0 {
-            return Err(ReadError::InvalidValue);
+            return Err(PfrError::InvalidValue);
         }
         take(&mut physical, 8)?;
         *position = offset.saturating_add(size.saturating_sub(physical.len()));
-        let flags = be::u8_at(take(&mut physical, 1)?, 0).ok_or(ReadError::OutOfBounds)?;
+        let flags = be::u8_at(take(&mut physical, 1)?, 0).ok_or(PfrError::OutOfBounds)?;
         let fixed_advance = if flags & 4 == 0 {
             *position = offset.saturating_add(size.saturating_sub(physical.len()));
             signed16(&mut physical)?
@@ -204,7 +262,7 @@ impl<'a> PfrFace<'a> {
         *position = offset.saturating_add(size.saturating_sub(physical.len()));
         let glyphs = word16(&mut physical)?;
         if glyphs == 0 {
-            return Err(ReadError::InvalidValue);
+            return Err(PfrError::InvalidValue);
         }
         let record_size = 4
             + usize::from(flags & 2 != 0)
@@ -239,26 +297,26 @@ impl<'a> PfrFace<'a> {
                 .saturating_add(usize::from(flags & 8 != 0));
             let (code, _, offset, size) = face.record(i)?;
             if prev.is_some_and(|v| code <= v) {
-                return Err(ReadError::InvalidValue);
+                return Err(PfrError::InvalidValue);
             }
             prev = Some(code);
             outlines |= offset != 0;
             section(face.programs, offset, size)?;
         }
         if !outlines && strikes == 0 {
-            return Err(ReadError::InvalidValue);
+            return Err(PfrError::InvalidValue);
         }
         Ok(face)
     }
 
     // Each flag contributes at most one byte to a field width.
     #[allow(clippy::arithmetic_side_effects)]
-    fn record(&self, index: usize) -> Result<(u32, i16, usize, usize), ReadError> {
+    fn record(&self, index: usize) -> Result<(u32, i16, usize, usize), PfrError> {
         let mut bytes = section(
             self.records,
             index
                 .checked_mul(self.record_size)
-                .ok_or(ReadError::OutOfBounds)?,
+                .ok_or(PfrError::OutOfBounds)?,
             self.record_size,
         )?;
         let flags = self.flags;
@@ -293,7 +351,7 @@ impl<'a> PfrFace<'a> {
             let mid = lo.midpoint(hi);
             match self.record(mid).ok()?.0.cmp(&code) {
                 core::cmp::Ordering::Equal => {
-                    return Some(GlyphId(be::to_u32(mid).saturating_add(1)));
+                    return Some(be::to_u32(mid).saturating_add(1));
                 }
                 core::cmp::Ordering::Less => lo = mid.saturating_add(1),
                 core::cmp::Ordering::Greater => hi = mid,
@@ -305,7 +363,7 @@ impl<'a> PfrFace<'a> {
     // An i16 advance times a u16 resolution fits i64; read rejects a zero divisor.
     #[allow(clippy::arithmetic_side_effects)]
     pub fn advance(&self, glyph: GlyphId) -> Option<i32> {
-        let raw = i64::from(self.record(glyph.0.saturating_sub(1) as usize).ok()?.1);
+        let raw = i64::from(self.record(glyph.saturating_sub(1) as usize).ok()?.1);
         let den = i64::from(self.metrics_units);
         i32::try_from(raw.signum() * ((raw.abs() * i64::from(self.units) + den / 2) / den)).ok()
     }
@@ -317,8 +375,8 @@ impl<'a> PfrFace<'a> {
         glyph: GlyphId,
         x: u16,
         y: u16,
-    ) -> Result<Option<BitmapProgram<'a>>, ReadError> {
-        let (code, advance, _, _) = self.record(be::to_usize(glyph.0.saturating_sub(1)))?;
+    ) -> Result<Option<BitmapProgram<'a>>, PfrError> {
+        let (code, advance, _, _) = self.record(be::to_usize(glyph.saturating_sub(1)))?;
         if self.physical_extras.is_empty() {
             return Ok(None);
         }
@@ -350,7 +408,7 @@ impl<'a> PfrFace<'a> {
                     let n = number(&mut table, 1 + usize::from(flags & 2 != 0))?;
                     let off = number(&mut table, 2 + usize::from(flags & 4 != 0))?;
                     if previous.is_some_and(|prev| prev >= c) {
-                        return Err(ReadError::InvalidValue);
+                        return Err(PfrError::InvalidValue);
                     }
                     previous = Some(c);
                     let program = section(self.programs, off, n)?;
@@ -374,7 +432,7 @@ impl<'a> PfrFace<'a> {
     }
     /// Encoded GPS bytes for an outline.
     pub fn glyph_program(&self, glyph: GlyphId) -> Option<&'a [u8]> {
-        let (_, _, offset, size) = self.record(glyph.0.saturating_sub(1) as usize).ok()?;
+        let (_, _, offset, size) = self.record(glyph.saturating_sub(1) as usize).ok()?;
         be::slice_at(self.programs, offset, size)
     }
 }
