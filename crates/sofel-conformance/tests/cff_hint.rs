@@ -50,7 +50,7 @@ const TARGETS: [(&str, HintTarget); 5] = [
 ];
 
 /// The most glyphs compared per face by default.
-const GLYPH_CAP: u32 = 200;
+const GLYPH_CAP: u32 = 100;
 
 fn glyph_cap() -> u32 {
     std::env::var("SOFEL_CFF_HINT_GLYPH_CAP")
