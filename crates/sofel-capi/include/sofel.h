@@ -2130,6 +2130,20 @@ typedef struct sofel_diagnostic sofel_diagnostic_t;
 #define SOFEL_DETAIL_TAG 2
 
 /*
+ * The "reason" value of the problem "cff_random_unchecked" (ADR 0082),
+ * one of the three problems of the interval check of CFF glyphs that run
+ * random, with "cff_random_subroutine_out_of_range" and
+ * "cff_random_operand_rejected": a divisor range with 0, a sqrt operand
+ * range with negative numbers, an index or roll range beyond the stack,
+ * a range with an infinite end, and the work limit.
+ */
+#define SOFEL_CFF_RANDOM_DIVISION_BY_ZERO 0
+#define SOFEL_CFF_RANDOM_NEGATIVE_SQRT 1
+#define SOFEL_CFF_RANDOM_STACK_POSITION 2
+#define SOFEL_CFF_RANDOM_INFINITE_BOUND 3
+#define SOFEL_CFF_RANDOM_LIMIT 4
+
+/*
  * Receives one problem.
  *
  * Rust: none

@@ -5,6 +5,7 @@ use super::dict::{
     self, After, BlendWeights, DictError, DictErrorKind, DictKind, DictToken, DictTokens, FontDict,
     NoBlend, PrivateDict, TopDict, op,
 };
+use super::random_check::{self, Finding};
 use super::{Charset, Encoding, FdSelect, Header, Index, TAG, TAG2, Version};
 use crate::be::{self, to_u32, to_usize};
 use crate::item_variation::{self, ItemVariationStore};
@@ -497,6 +498,36 @@ fn char_strings(r: &mut Reporter<'_>, g: &Glyphs<'_, '_>) {
                 },
             );
         }
+        // ADR 0082: a CFF glyph whose seed path runs random is traced
+        // again with intervals.
+        if g.version == Version::Cff
+            && work.ran_random()
+            && let Some(found) = random_check::check(data, &ctx)
+        {
+            let at = if found.depth == 0 {
+                base.saturating_add(found.position)
+            } else {
+                base
+            };
+            r.emit(at, random_kind(glyph, found));
+        }
+    }
+}
+
+fn random_kind(glyph: u32, found: random_check::Found) -> Kind {
+    let position = to_u32(found.position);
+    match found.finding {
+        Finding::SubroutineOutOfRange => Kind::CffRandomSubroutineOutOfRange { glyph, position },
+        Finding::Unchecked(reason) => Kind::CffRandomUnchecked {
+            glyph,
+            position,
+            reason,
+        },
+        Finding::OperandRejected(operator) => Kind::CffRandomOperandRejected {
+            glyph,
+            position,
+            operator: u32::from(operator),
+        },
     }
 }
 

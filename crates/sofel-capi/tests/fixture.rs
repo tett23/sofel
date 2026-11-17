@@ -681,6 +681,38 @@ fn raster_error(e: RasterError) -> i32 {
     }
 }
 
+/// A CFF font whose glyphs give the three diagnostics of the interval
+/// check of ADR 0082: a one-sided call outside the global subroutines, a
+/// divisor range with 0, and a 16.16 subroutine number.
+fn cff_random_font() -> Vec<u8> {
+    use Cs::*;
+    let mut spec = Cff1Spec::new(vec![
+        charstring(&[Op(14)]),
+        charstring(&[
+            I(0),
+            I(1),
+            Op(0x0C17),
+            F(0x8000),
+            Op(0x0C16),
+            Op(0x0C05),
+            Op(29),
+            Op(14),
+        ]),
+        charstring(&[
+            I(1),
+            Op(0x0C17),
+            F(0x8000),
+            Op(0x0C0B),
+            Op(0x0C0C),
+            Op(0x0C12),
+            Op(14),
+        ]),
+        charstring(&[Op(0x0C17), Op(10), Op(14)]),
+    ]);
+    spec.lsubrs = vec![charstring(&[Op(11)]); 110];
+    otto_font(4, vec![(b"CFF ", cff1(&spec))])
+}
+
 /// The diagnostics of `data` as `sofel_validate` reports them.
 fn diagnostics(out: &mut String, name: &str, data: &[u8]) {
     let mut rows = Vec::new();
@@ -1253,6 +1285,9 @@ fn generate() -> String {
     // Validation.
     diagnostics(&mut out, "invalid_diagnostics", &invalid_data);
     diagnostics(&mut out, "ttc_diagnostics", &ttc_data);
+    let random = cff_random_font();
+    bytes(&mut out, "cff_random_data", &random);
+    diagnostics(&mut out, "cff_random_diagnostics", &random);
     color_cases(&mut out);
     subset_cases(&mut out, &font_data);
     subset_cff_cases(&mut out, &cff_data);
