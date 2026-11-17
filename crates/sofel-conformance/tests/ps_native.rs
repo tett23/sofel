@@ -105,12 +105,69 @@ fn adr0064_i1_native_cid_stems_are_unsupported() {
                 x: factor,
                 y: factor
             },
-            HintTarget::Light,
+            HintTarget::Mono,
             &mut FnPen(|c| commands.push(c)),
         ),
         Err(OutlineError::UnsupportedFormat),
     );
     assert!(commands.is_empty());
+}
+
+#[test]
+fn adr0064_i1_native_cid_single_hstem_matches_freetype() {
+    // The contour's bottom and top coincide with the single hstem.
+    let bytes = cid_sample(&[
+        139, 248, 136, 13, 239, 239, 1, 239, 239, 3, 239, 239, 21, 239, 139, 5, 139, 239, 5, 39,
+        139, 5, 139, 39, 5, 9, 14,
+    ]);
+    let path =
+        std::env::temp_dir().join(format!("sofel-adr0064-cid-stem-{}.cid", std::process::id()));
+    std::fs::write(&path, &bytes).unwrap();
+    let face = CidFace::parse(&bytes, 1024).unwrap();
+    for ppem in [8, 16, 32] {
+        let factor = Fixed(div_fix(ppem * 64, i32::from(face.units_per_em())));
+        let mut commands = Vec::new();
+        let (_, advance) = draw_cid_native(
+            &face,
+            0,
+            Scale::Scaled {
+                x: factor,
+                y: factor,
+            },
+            HintTarget::Light,
+            &mut FnPen(|c| commands.push(c)),
+        )
+        .unwrap();
+        let mut points = Vec::new();
+        for command in commands {
+            match command {
+                Command::MoveTo(p) | Command::LineTo(p) => points.push(p),
+                Command::Close => {
+                    if points.last() == points.first() {
+                        points.pop();
+                    }
+                }
+                other => assert_eq!(other, Command::Close),
+            }
+        }
+        let mut actual = format!("advance {advance} 0\n");
+        for p in &points {
+            actual.push_str(&format!("point {} {} 1\n", p.x, p.y));
+        }
+        actual.push_str(&format!("end {}\n", points.len() - 1));
+        let reference = std::process::Command::new(paths::ft_dump())
+            .args(["--hint-slot", &ppem.to_string(), "0", "native", "light"])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(reference.status.success());
+        assert_eq!(
+            actual,
+            String::from_utf8(reference.stdout).unwrap(),
+            "ppem {ppem}"
+        );
+    }
+    std::fs::remove_file(path).unwrap();
 }
 
 #[test]
@@ -267,7 +324,7 @@ fn adr0064_i1_native_type1_stems_are_unsupported() {
                 x: factor,
                 y: factor
             },
-            HintTarget::Light,
+            HintTarget::Mono,
             &mut FnPen(|c| commands.push(c)),
         ),
         Err(OutlineError::UnsupportedFormat),

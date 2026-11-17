@@ -33,10 +33,10 @@ pub fn draw_type1_native(
     face: &Type1Face<'_>,
     glyph: usize,
     scale: Scale,
-    _target: HintTarget,
+    target: HintTarget,
     pen: &mut impl Pen,
 ) -> Result<(OutlineInfo, i32), OutlineError> {
-    let Scale::Scaled { x, .. } = scale else {
+    let Scale::Scaled { x, y } = scale else {
         return Err(OutlineError::InvalidOutline);
     };
     let program = face
@@ -50,10 +50,19 @@ pub fn draw_type1_native(
         &mut null_pen,
     );
     decode_program(face, &program, &mut scan, &mut Vec::new(), 0, false)?;
-    if scan.has_stems {
+    if scan.has_stems
+        && (target != HintTarget::Light
+            || scan.unsupported_stem_map
+            || scan.h_stem.is_none()
+            || !face.native_stem_blues_empty())
+    {
         return Err(OutlineError::UnsupportedFormat);
     }
     let mut state = State::new(scale, [65536, 0, 0, 65536, 0, 0], true, pen);
+    if let Some((position, width)) = scan.h_stem {
+        state.h_stem_shift = ps_native::single_hstem_shift(position, width, y)
+            .ok_or(OutlineError::UnsupportedFormat)?;
+    }
     decode_program(face, &program, &mut state, &mut Vec::new(), 0, false)?;
     let metrics = face
         .glyph_metrics(glyph)
@@ -116,6 +125,17 @@ fn decode_program<P: Pen>(
             }
             1 | 3 => {
                 state.has_stems = true;
+                if op == 1 {
+                    if let [position, width] = stack.as_slice() {
+                        if state.h_stem.is_none() && !state.emitted {
+                            state.h_stem = Some((*position, *width));
+                        } else {
+                            state.unsupported_stem_map = true;
+                        }
+                    } else {
+                        state.unsupported_stem_map = true;
+                    }
+                }
                 stack.clear();
             }
             13 => {
@@ -192,6 +212,7 @@ fn decode_program<P: Pen>(
                     0 => stack.clear(), // dotsection
                     1 | 2 => {
                         state.has_stems = true;
+                        state.unsupported_stem_map = true;
                         stack.clear();
                     }
                     16 => {
@@ -318,6 +339,9 @@ struct State<'a, P: Pen> {
     pending_pops: usize,
     has_stems: bool,
     native: bool,
+    h_stem: Option<(i64, i64)>,
+    h_stem_shift: i64,
+    unsupported_stem_map: bool,
 }
 
 impl<'a, P: Pen> State<'a, P> {
@@ -334,6 +358,9 @@ impl<'a, P: Pen> State<'a, P> {
             pending_pops: 0,
             has_stems: false,
             native,
+            h_stem: None,
+            h_stem_shift: 0,
+            unsupported_stem_map: false,
         }
     }
 
@@ -343,7 +370,7 @@ impl<'a, P: Pen> State<'a, P> {
         {
             let p = Point {
                 x: ps_native::coordinate_fixed(x, sx),
-                y: ps_native::coordinate_fixed(y, sy),
+                y: ps_native::coordinate_fixed_shifted(y, sy, self.h_stem_shift),
             };
             self.update_box(p);
             return p;
