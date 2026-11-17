@@ -57,3 +57,45 @@ fn adr0065_i2_fnt_and_fon_bounds() {
         assert!(WinFont::parse(&FON[..end], 1).is_err(), "FON prefix {end}");
     }
 }
+
+#[test]
+fn adr0065_i2_ne_resource_alignment_offset() {
+    let mut bytes = FON.to_vec();
+    bytes[0x80] = 17;
+    assert_eq!(WinFont::parse_with_offset(&bytes, 0).unwrap_err(), 0x80);
+}
+
+#[test]
+fn adr0065_i2_face_count_survives_invalid_first_resource() {
+    let mut bytes = FON.to_vec();
+    bytes[0x8a..0x8c].fill(0xff);
+    assert_eq!(WinFont::face_count(&bytes), Ok(2));
+    assert!(WinFont::parse(&bytes, 0).is_err());
+    assert!(WinFont::parse(&bytes, 1).is_ok());
+}
+
+#[test]
+fn adr0065_i2_pe_header_field_offsets() {
+    let mut bytes = vec![0; 320];
+    bytes[..2].copy_from_slice(b"MZ");
+    bytes[60..64].copy_from_slice(&64u32.to_le_bytes());
+    bytes[64..68].copy_from_slice(b"PE\0\0");
+    for (field, value) in [(4, 0x14cu16), (20, 224), (24, 0x10b), (116, 3)] {
+        let position = 64 + field;
+        assert_eq!(WinFont::parse_with_offset(&bytes, 0).unwrap_err(), position);
+        bytes[position..position + 2].copy_from_slice(&value.to_le_bytes());
+    }
+}
+
+#[test]
+fn adr0065_i2_pe_font_resource_offsets() {
+    // PE32 resource directory containing the existing mono.fnt at byte 1024.
+    let file = include_bytes!("data/mono-pe.fon");
+    let face = WinFont::parse(file, 0).unwrap();
+    assert_eq!(face.glyph(1), WinFont::parse(FNT, 0).unwrap().glyph(1));
+    for field in [580, 584, 588] {
+        let mut bytes = file.to_vec();
+        bytes[field..field + 4].fill(0xff);
+        assert_eq!(WinFont::parse_with_offset(&bytes, 0).unwrap_err(), field);
+    }
+}

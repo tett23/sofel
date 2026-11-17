@@ -8,6 +8,7 @@ use std::path::Path;
 
 use sofel_bitmapfont::pcf::PcfFont;
 use sofel_read::layout::damage::DamageEvent;
+use sofel_read::pfr::PfrFace;
 use sofel_read::sfnt::{FontFile, Sfnt};
 use sofel_read::{
     DetailValue, Diagnostic, Kind, ReadError, Severity, Tag, cff, gdef, gpos, gsub, validate,
@@ -20,7 +21,7 @@ use crate::json;
 pub const HELP: &str = "\
 usage: sofel-validate [--json] FILE...
 
-Validates sfnt fonts, TTC/OTC collections, CEF, bare CFF 1, CID Type 1, PFA, PFB, Type 42, BDF, and PCF fonts.
+Validates sfnt fonts, TTC/OTC collections, CEF, bare CFF 1, CID Type 1, PFA, PFB, Type 42, BDF, PCF, PFR, FNT, and FON fonts.
 Tables without a validator are skipped.
 
 Each problem is one line on standard output:
@@ -105,6 +106,31 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
                 continue;
             }
         };
+        if sofel_bitmapfont::winfnt::WinFont::is_win_font(&bytes) {
+            let collection = bytes.starts_with(b"MZ");
+            let count = sofel_bitmapfont::winfnt::WinFont::face_count(&bytes).unwrap_or(1);
+            for face in 0..count {
+                match sofel_bitmapfont::winfnt::WinFont::parse_with_offset(&bytes, face) {
+                    Ok(_) => {}
+                    Err(offset) => emit_diagnostic(
+                        &name,
+                        collection.then_some(face),
+                        Diagnostic {
+                            table: Tag::new(if collection { b"FON " } else { b"FNT " }),
+                            offset: u32::try_from(offset).unwrap_or(u32::MAX),
+                            severity: Severity::Error,
+                            kind: Kind::InvalidFontContainer {
+                                reason: "invalid Windows bitmap font",
+                            },
+                        },
+                        as_json,
+                        out,
+                        &mut errors,
+                    ),
+                }
+            }
+            continue;
+        }
         if sofel_bitmapfont::BdfFont::is_bdf(&bytes) {
             if let Err(offset) = sofel_bitmapfont::BdfFont::parse_with_offset(&bytes) {
                 emit_diagnostic(
@@ -217,6 +243,38 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
                     out,
                     &mut errors,
                 ),
+            }
+            continue;
+        }
+        if bytes.starts_with(b"PFR0") {
+            let report = |font, offset, out: &mut dyn Write, errors: &mut bool| {
+                emit_diagnostic(
+                    &name,
+                    font,
+                    Diagnostic {
+                        table: Tag::new(b"PFR "),
+                        offset: u32::try_from(offset).unwrap_or(u32::MAX),
+                        severity: Severity::Error,
+                        kind: Kind::InvalidFontContainer {
+                            reason: "invalid PFR resource",
+                        },
+                    },
+                    as_json,
+                    out,
+                    errors,
+                );
+            };
+            let count = match PfrFace::read_positioned(&bytes, 0) {
+                Ok(face) => u32::from(face.face_count()),
+                Err((_, offset)) => {
+                    report(None, offset, out, &mut errors);
+                    continue;
+                }
+            };
+            for index in 1..count {
+                if let Err((_, offset)) = PfrFace::read_positioned(&bytes, index) {
+                    report(Some(index), offset, out, &mut errors);
+                }
             }
             continue;
         }

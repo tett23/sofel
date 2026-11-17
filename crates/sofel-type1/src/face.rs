@@ -31,6 +31,7 @@ pub struct Type1Face<'a> {
     multiple_masters: Option<MultipleMasters<'a>>,
     master_weights: Option<Vec<i32>>,
     attached: Option<AttachedMetrics<'a>>,
+    native_stem_blues_empty: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -54,7 +55,13 @@ impl<'a> Type1Face<'a> {
             multiple_masters,
             master_weights,
             attached: None,
+            native_stem_blues_empty: blue_zones_empty(source.private()),
         })
+    }
+
+    /// Whether the native single-stem path can ignore PostScript blue zones.
+    pub fn native_stem_blues_empty(&self) -> bool {
+        self.native_stem_blues_empty
     }
 
     /// Multiple Masters axis metadata, when the Type 1 source has it.
@@ -154,4 +161,31 @@ impl<'a> Type1Face<'a> {
             None => (0, 0),
         }
     }
+}
+
+pub(crate) fn blue_zones_empty(data: &[u8]) -> bool {
+    [
+        b"/BlueValues".as_slice(),
+        b"/OtherBlues",
+        b"/FamilyBlues",
+        b"/FamilyOtherBlues",
+    ]
+    .into_iter()
+    .all(|name| {
+        let mut rest = data;
+        while let Some(at) = rest.windows(name.len()).position(|window| window == name) {
+            let Some(value) = at.checked_add(name.len()).and_then(|at| rest.get(at..)) else {
+                return false;
+            };
+            let value = value.trim_ascii_start();
+            let Some(value) = value.strip_prefix(b"[") else {
+                return false;
+            };
+            if !value.trim_ascii_start().starts_with(b"]") {
+                return false;
+            }
+            rest = value;
+        }
+        true
+    })
 }

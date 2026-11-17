@@ -12,12 +12,25 @@ pub fn with_glyph_program(program: &[u8]) -> (Vec<u8>, Vec<u8>) {
 }
 
 pub fn with_glyph_name(program: &[u8], name: &str) -> (Vec<u8>, Vec<u8>) {
-    with_glyphs(&[(name, program)], &[(65, name)])
+    with_glyph_name_and_blues(program, name, "[]")
+}
+
+pub fn with_glyph_name_and_blues(program: &[u8], name: &str, blues: &str) -> (Vec<u8>, Vec<u8>) {
+    with_glyphs_and_blues(&[(name, program)], &[(65, name)], blues)
 }
 
 /// A face with `.notdef` and the given named glyphs, in this order, and
 /// the given encoding entries (code, name).
 pub fn with_glyphs(glyphs: &[(&str, &[u8])], encoding: &[(u8, &str)]) -> (Vec<u8>, Vec<u8>) {
+    with_glyphs_and_blues(glyphs, encoding, "[]")
+}
+
+/// [`with_glyphs`] with the Private dictionary's `/BlueValues` array.
+pub fn with_glyphs_and_blues(
+    glyphs: &[(&str, &[u8])],
+    encoding: &[(u8, &str)],
+    blues: &str,
+) -> (Vec<u8>, Vec<u8>) {
     let mut header = b"%!PS-AdobeFont-1.0: Test 1.0\n\
 11 dict begin\n/FontName /Test def\n/FontType 1 def\n/PaintType 0 def\n\
 /FontMatrix [0.001 0 0 0.001 0 0] readonly def\n\
@@ -33,7 +46,7 @@ pub fn with_glyphs(glyphs: &[(&str, &[u8])], encoding: &[(u8, &str)]) -> (Vec<u8
         "dup /Private 8 dict dup begin\n\
 /RD {{string currentfile exch readstring pop}} executeonly def\n\
 /ND {{noaccess def}} executeonly def\n/NP {{noaccess put}} executeonly def\n\
-/lenIV -1 def\n/BlueValues [] def\n/Subrs 0 array\n\
+/lenIV -1 def\n/BlueValues {blues} def\n/Subrs 0 array\n\
 /CharStrings {} dict dup begin\n/.notdef 5 RD ",
         glyphs.len().saturating_add(1)
     )

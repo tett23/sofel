@@ -196,7 +196,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 - Latin の大文字 I が重ならない4点の矩形輪郭で、H の上端が I の上端と一致し、e の上端から x-height、O の上端から cap height の blue zone を求められる場合、自動ヒンティングは LIGHT と LCD のターゲットで baseline と cap height の edge を blue zone に合わせる。cap height の blue zone が有効で、x-height によるスケール補正が FreeType の上限内に収まる場合に限る。送り幅はグリッドに合わせる（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
 - Latin の小文字 b・d が重ならない glyf の3輪郭で、横方向の segment が6本あり、X 範囲が重なる逆方向の segment が cap stem、bowl の上端と下端の3組に分かれる場合、自動ヒンティングは LIGHT と LCD のターゲットで縦 edge を blue zone に合わせる。a と c の輪郭から x-height と baseline を求める。i と o に文字対応があれば、その輪郭も ascender と標準 stem 幅の計算に使う。近接する edge を結合し、各 segment の点を edge に合わせ、残る strong point と weak point を補間する。gvar と GLYF を持つフォント、およびこの6 segment 構造に当てはまらない小文字 b・d は対象外とする。送り幅はグリッドに合わせる。これら以外の非空輪郭は Rust では `AutoHintUnsupported`、C API では `SOFEL_ERROR_UNSUPPORTED` を返す（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
 - CFF 1 の charstring に horizontal stem と vertical stem がない場合、`Outlines::load_with_hint` のネイティブ指定は FreeType の Adobe 経路と同じスケールで輪郭点を変換し、送り幅をピクセルグリッドに合わせる。5種類のヒンティングターゲットで同じ条件を使う。stem を持つ CFF 1 と CFF2 のネイティブヒンティングは `UnsupportedFormat` を返す（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
-- Type1 と CID キーの Type1 の charstring に stem がない場合、`draw_type1_native` と `draw_cid_native` は渡された 16.16 サイズスケールを FreeType の Adobe 経路と同じ方法で点に適用し、グリッドに合わせた水平アドバンスを返す。5種類のヒンティングターゲットを受け取る。stem を持つ charstring は `UnsupportedFormat` を返し、描画コマンドを送らない（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
+- Type1 と CID キーの Type1 の charstring に stem がない場合、`draw_type1_native` と `draw_cid_native` は渡された 16.16 サイズスケールを FreeType の Adobe 経路と同じ方法で点に適用し、グリッドに合わせた水平アドバンスを返す。5種類のヒンティングターゲットを受け取る。LIGHT で blue zone が空かつ単一の水平 stem がある場合は、stem の近い辺を画素境界に合わせて輪郭点を移動する。CID の stem 付きグリフは FontMatrix が単位行列の場合に限る。対応しない stem の構成は `UnsupportedFormat` を返し、描画コマンドを送らない（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
 - `Outlines::load_truetype_v35` は指定した ppem で TrueType の単純グリフと複合グリフを読み、v35 のネイティブヒンティングを適用する。ロード時に NORMAL、LIGHT、MONO、LCD、LCD_V のターゲットを選ぶ。`load_truetype_mono` は MONO を使う。フォントプログラムと準備プログラムを実行し、グリフ命令が更新した輪郭を `Scratch::points` で返す。`point_tags` では各点のタグ（ヒンタが移動対象にした軸とドロップアウト制御を含む）、`contour_ends` では各輪郭の最終点の番号を取得できる。複合グリフでは、各成分にヒンティングを適用して配置した後、複合グリフ自身の命令を実行する。未対応の命令は `InvalidOutline` を返す（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。 `Outlines::load_truetype_v40` と C API の `sofel_outline_load_truetype_v40` は同じ5種類のターゲットで v40 の補正を適用し、輪郭と補正後の水平アドバンス（26.6 固定小数点）を返す。
 
 - glyfと `GLYF` の単純なグリフと合成グリフの輪郭を、ヒンティングをせずに、FreeTypeと同じ座標で `Pen` に渡す（[ADR 0011](adr/0011-glyf-outlines.md)）。`GLYF` があれば `GLYF` と `LOCA` を使い、そのときだけフラグ0x80を三次曲線、0x2000を24bitの成分のグリフIDとして扱う。
@@ -417,7 +417,7 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 ## WOFF と圧縮フォントの読み込み
 
-`sofel_woff::decode_woff2` は、Brotli の非圧縮ブロックを使った単一フェイスの WOFF2 を sfnt に戻す。変換した glyf と loca から単純グリフと複合グリフの輪郭、命令、グリフのオフセットを復元する。hmtx の変換で省略された左サイドベアリングは、復元後の glyf と loca から求める。CLI は外側の圧縮を展開した後に WOFF2 の署名を識別する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+`sofel_woff::decode_woff2` は、Brotli の圧縮・非圧縮ブロックを使った単一フェイスの WOFF2 を sfnt に戻す。WOFF2 コレクションからはフェイスの順序と共有表を保った TTC を復元する。変換した glyf と loca から単純グリフと複合グリフの輪郭、命令、グリフのオフセットを復元する。hmtx の変換で省略された左サイドベアリングは、復元後の glyf と loca から求める。CLI は外側の圧縮を展開した後に WOFF2 の署名を識別する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
 `sofel_woff::decode_woff` は出力サイズの上限を受け取り、WOFF 1.0 の表を物理順に展開して sfnt を返す。フォントを読み込む CLI は gzip、UNIX compress（LZW）、bzip2 を先に展開してから WOFF の署名を検査する。検証器は WOFF の不正なフィールドか圧縮表の入力オフセットを報告する。bzip2 はブロックとメンバーの CRC を検査し、破損を検出した入力オフセットを報告する。gzip の破損はメンバーを含むコンテナ先頭で報告する。[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)
 
@@ -451,6 +451,8 @@ PE32 では `RT_FONT` の名前・言語ディレクトリを順にたどり、�
 宣言したセクションやグリフプログラムの範囲が入力からはみ出す場合はエラーを返す（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 `sofel-render` は PFR の論理フェイス番号とグリフ番号または文字を受け取り、指定したサイズに一致するストライクがあれば埋め込みビットマップを PGM に描く。ストライクがない場合はヒンティングなしの輪郭をラスタライズする（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
+`sofel-validate` は PFR の各論理フェイスについて、セクションとグリフプログラムの範囲を検査する。破損したフィールドのファイル内オフセットを `PFR ` の診断として返す（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+
 ## Type1 フェイス
 
 `sofel-type1::source::Type1Source` は PFA の16進 eexec と PFB の ASCII・バイナリセクションを読み、秘密辞書を復号する。`sofel-type1::face::Type1Face` は文字コードからグリフ番号への対応、グリフ名、charstring から読んだ送り幅を返す。AFM または PFM を付加すると、グリフ対のカーニングを返す。PFB のセクション長、PFA の16進表記、charstring の長さと AFM・PFM のペア表を検査する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
@@ -473,6 +475,7 @@ Type 1 の Multiple Masters では、`Type1Face::multiple_masters` が軸の名�
 `sofel-validate` は BDF を識別し、ファイル先頭から破損した行の先頭までのバイト数をタグ `BDF ` のオフセットとして返す。入力が途中で尽きた場合はファイル長を、不正な UTF-8 がある場合は最初の不正なバイトの位置を返す（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
 `sofel-validate` は Type 42 のラッパーを解析し、埋め込み sfnt を通常の sfnt と同じ手順で検証する。ラッパーの診断はタグ `T42 ` とファイル先頭からのオフセットを返す。埋め込み sfnt の各表の診断では、その表の先頭からのオフセットを返す（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+Windows ビットマップフォントの検証では、単独の FNT または FON に収録された各フェイスを読み込む。FON のフェイス内で高さフィールドがゼロの場合、診断のオフセットは FON の先頭からそのフィールドまでのバイト数となる（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
 `sofel-type1::type42::Type42Source` は Type42 の `/sfnts` 配列の16進文字列または `RD` バイナリを連結し、展開長と sfnt の表範囲を検査する。`/Encoding` と `/CharStrings` から Type42 のグリフ番号を読み、`.notdef` を先頭に置く。Unicode の文字対応は PostScript のグリフ名を Adobe Glyph List と `uniXXXX`・`uXXXXX` によって変換し、8ビットの Encoding は別に問い合わせる。`Font::from_type42` が返す `Type42Face` は Type42 のグリフ番号を埋め込み TrueType のグリフ番号へ変換し、送りを返す。輪郭を読むときは `embedded_glyph` と `inner_font` の組を使う（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
@@ -481,6 +484,7 @@ Type 1 の Multiple Masters では、`Type1Face::multiple_masters` が軸の名�
 ## 素の CFF フェイスと CEF
 
 `sofel-font::Cff::from_bare` は sfnt に包まれていない CFF 1 をフェイス番号で開く。Name INDEX の位置で Top DICT を選び、CharStrings のグリフ数、charset のグリフ名、Encoding を既存の CFF ビューで問い合わせる。`BareCffFace` は Adobe Glyph List を使った Unicode の文字対応、8ビットの Encoding、グリフ名、charstring の送り幅を返す。`sofel-outline::draw_bare_cff` はそのグリフの輪郭をヒンティングなしで描く。`sofel-render` の通常ファイル入力は素の CFF 1 を判別し、`--glyph` または `--char` で輪郭を PGM に描く。`sofel render --text` は `SubFont` の文字対応と送り幅の関数を使って一行をシェーピングし、同じ輪郭で描く。`sofel-validate` は素の CFF 1 の全フェイスを検査し、破損位置を CFF 表からのオフセットで報告する。範囲外のフェイス番号、必須の INDEX や CharStrings の欠落を拒む。共通の `Font` 型への接続は未実装である（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+CID-keyed の素の CFF 1 と CEF では、フェイスのグリフ数は最大 CID に 1 を加えた値とする。送り幅と輪郭の問い合わせは CID を charset で CharStrings の索引に変換する。charset にない CID の問い合わせは失敗し、Unicode の文字対応は空になる。
 
 CEF（Compact Embedded Font）は `head` がなく `CFF ` 表を持つ `OTTO` ディレクトリから開く。
 `BareCffFace::new` はフェイス番号 0 を受け付け、CFF のグリフ名から文字を対応付ける。
@@ -646,6 +650,9 @@ CI の文書だけの変更は、比較起点の `ci/documentation-only.rules` �
 - [ADR 0006](adr/0006-performance-measurement.md) のサブセット化の文字数別の計測は、HarfBuzz 15.1.0 の `perf/benchmark-subset.cc` の静的フォント7個を使う。各フォントを前処理し、文字コード順の先頭10文字からフォント別の上限までを、既定の設定と `RETAIN_GIDS` でそれぞれ残す。件数は両端と、その間の8の累乗とする。フォントの文字数が指定より少ないときは全ての文字を残す。計測には入力集合の作成と出力のハッシュ計算を含む。
 - サブセット化の項目（HarfBuzz。[ADR 0022](adr/0022-subsetting.md)）：`Roboto-Regular.ttf`（glyf）、`SourceHanSans-Regular_subset.otf`（CIDキーのCFF）、`NotoNastaliqUrdu-Bold.ttf`（大きなGSUBとGPOS）を、グリフIDと `RETAIN_GIDS`（Golemの使い方）、文字と既定のフラグでサブセット化する。グリフと文字は `hb-dump` の突き合わせと同じく `ja-runs.txt` と `en-paragraph.txt` から作る。sofelは `Input` を作って `subset` を呼び、HarfBuzzは `hb_subset_input_t` を作って `hb_subset_or_fail` と `hb_face_reference_blob` を呼ぶ。どちらも出力のFNV-1aのハッシュを求め、計測の前に一致を確かめる。HarfBuzz は、`bench/build-c.sh` が `harfbuzz-subset.cc` の include の内容と順序を保って最大4個の翻訳単位に分割し、同じフラグでコンパイルしてビルドする（[ADR 0038](adr/0038-partition-benchmark-harfbuzz-units.md)）。native と wasm は並列のまま、ターゲット内のコンパイルは一つずつ実行する。前処理つきの項目は、前処理の段階で足す。
 - CIでは、ネイティブとwasmの両方を `--once` で走らせ、落ちないことと結果の照合だけを確かめる。
+- 記録は、手動で起動するワークフロー `.github/workflows/bench.yml` でも取れる。入力は主題 `subject` と、項目を絞る `filter` である。`ubuntu-latest` と `macos-latest` で、`scripts/bench-record.sh` がネイティブと wasm を計測し、記録を一つずつ書く（[ADR 0080](adr/0080-ci-benchmark-records.md)）。
+- 記録の名前は `<YYYY-MM-DD>-<主題>-ci-<ランナー>.md`（日付は UTC、ランナーは `linux-x64` や `macos-arm64`）で、「環境」「ネイティブ」「wasm」の節を持つ。「環境」の節は、ランナーのイメージ、OS、CPU、論理 CPU の数、メモリ、計測の直前の負荷平均、Rust、C と C++ のコンパイラ、wasmtime、wasi-sdk、FreeType と HarfBuzz の固定コミット、sofel のコミット、実行の URL を書き、取れなかった値は `未取得` と書く。計測が失敗したときは記録を書かない（[ADR 0080](adr/0080-ci-benchmark-records.md)）。
+- ワークフローはリポジトリに書き込まず、記録を artifact（`bench-record-<ランナー>`）とジョブの要約に出す。記録は、`gh run download` で取り、変えずに `docs/benchmarks/` に置くプルリクエストで取り込む（[ADR 0080](adr/0080-ci-benchmark-records.md)）。
 - 目標は、各項目でsofelの時間が比較の相手以下であること。
 - [ADR 0030](adr/0030-variation-evaluation-corrections.md) の HVAR の項目は、RobotoFlex-Variable、SourceSerifVariable-Roman、AdobeVFPrototype の全グリフの送り幅に対応する変化量を `HbF32` で評価する。位置の作成時に `wght=500` を指定し、同じフォント、同じ内容の別コピー、別フォントで作った位置の3通りを計る。別フォントの場合は、この3フォントを順に並べて次のフォントで位置を作り、末尾から先頭に戻る。計測前に、同じ正規化座標のキャッシュを使った値と各グリフの差分を照合する。MVAR を持つ後ろの2フォントでは、各レコードの変化量を静的な既定位置で HarfBuzz と照合し、その位置での問い合わせを計る。表のインデックスを集める時間は含めない。 [計測結果](benchmarks/2026-11-11-item-variation-deltas.md)。
 - 追加フォントの代表項目（[ADR 0031](adr/0031-diverse-font-corpus.md)）は13ファイルのフェイス0・既定座標を使う。10文字のcmapと先頭最大128グリフの横advance・輪郭コマンド数、Source Hanの縦advance、STIXのMATH全56定数、3カラー形式、9フォントの短いシェーピング入力を含む。MATH定数は個別にも照合し、COLRv1は固定HarfBuzzの正規化済みpaint列も照合する。シェーピングはscriptを推定し、言語なし・既定featureとする。具体的な入力と計測値は [役割別計測記録](benchmarks/2026-11-11-extra-font-roles.md) に記す。

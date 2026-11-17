@@ -413,3 +413,13 @@ fn name_index_over_many_ranges() {
     assert_eq!(c.glyph_from_name(&idx, b"A"), Some(GlyphId(1)));
     assert_index_agrees(&c);
 }
+
+#[test]
+fn adr0065_i1_bare_cid_identifiers_select_sparse_charstrings() {
+    let data = cff1(&cid_spec());
+    let face = sofel_font::BareCffFace::new(&data, 0).unwrap();
+    assert_eq!(face.num_glyphs(), 102);
+    assert_eq!(face.h_advance(GlyphId(1)), None);
+    assert!(face.h_advance(GlyphId(100)).is_some());
+    assert_eq!(face.nominal_glyph(100), None);
+}

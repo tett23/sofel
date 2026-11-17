@@ -512,6 +512,7 @@ fn adr0064_i2_selawik_monochrome_bitmaps_match_freetype() {
     let mut raster = Rasterizer::new();
     let mut mismatches = Vec::new();
     let mut count = 0;
+    let mut widths = std::collections::BTreeSet::new();
     for ppem in [12, 24, 48] {
         let reference = Command::new(paths::ft_dump())
             .args(["--raster", &ppem.to_string(), "--mono"])
@@ -530,6 +531,7 @@ fn adr0064_i2_selawik_monochrome_bitmaps_match_freetype() {
             )
             .unwrap();
             let b = bitmap.bounds;
+            widths.insert(b.width);
             let mut actual = vec![format!(
                 "bitmap {} {} {} {}",
                 b.left, b.top, b.width, b.rows
@@ -557,6 +559,14 @@ fn adr0064_i2_selawik_monochrome_bitmaps_match_freetype() {
         }
     }
     assert!(count > 0);
+    // ADR 0064 boundary: the rows of 7, 8 and 9 pixels end before, at and
+    // after a byte boundary of the packed bitmap.
+    for width in [7, 8, 9] {
+        assert!(
+            widths.contains(&width),
+            "no {width}-pixel-wide bitmap compared"
+        );
+    }
     eprintln!(
         "{} mismatched of {count} monochrome glyphs",
         mismatches.len()

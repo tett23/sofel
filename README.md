@@ -96,7 +96,7 @@ BDF、PCF、FNT、FON は Rust API の `Font::from_bitmap` で開く。文字対
 
 CEF（Compact Embedded Font）は `BareCffFace::new` のフェイス番号 0 で開く。`sofel-render` でもグリフ番号や文字を指定して描画できる。
 
-PFR（Portable Font Resource）は、Rust API の `Font::from_pfr` でフェイス番号を指定して開く。文字対応と送り幅を取得し、輪郭または指定サイズの埋め込みビットマップを取り出せる。`sofel-render` は PFR を通常入力として開き、グリフ番号または文字から PGM に描く。
+PFR（Portable Font Resource）は、Rust API の `Font::from_pfr` でフェイス番号を指定して開く。文字対応と送り幅を取得し、輪郭または指定サイズの埋め込みビットマップを取り出せる。`sofel-render` は PFR を通常入力として開き、グリフ番号または文字から PGM に描く。`sofel-validate` は PFR のフェイス構造とグリフプログラムの範囲を検査し、破損したフィールドの位置を報告する。
 
 サブセットの Rust・C API では、プラットフォーム、エンコーディング、言語、名前 ID を指定して名前レコードを追加・置換できる。空文字列を指定するとそのレコードを削除する。
 
@@ -108,7 +108,7 @@ TrueType の単純グリフと複合グリフには、`Outlines::load_truetype_v
 
 CFF 1 の charstring に stem がない場合、`load_with_hint` のネイティブ指定は点座標と送り幅を FreeType の Adobe 経路に合わせる。stem を持つ CFF 1 と CFF2 のネイティブヒンティングは未対応である（[ADR 0064](docs/adr/0064-freetype-hinting-and-render-modes.md)）。
 
-PFA・PFB の Type1 と CID キーの Type1 では、`draw_type1_native` と `draw_cid_native` が stem のない charstring を FreeType の Adobe 経路のスケールで描き、グリッドに合わせた水平アドバンスを返す。呼び出し側が 16.16 形式のサイズスケールとヒンティングターゲットを渡す。stem を持つ charstring は未対応エラーを返す（[ADR 0064](docs/adr/0064-freetype-hinting-and-render-modes.md)）。
+PFA・PFB の Type1 と CID キーの Type1 では、`draw_type1_native` と `draw_cid_native` が stem のない charstring を FreeType の Adobe 経路のスケールで描き、グリッドに合わせた水平アドバンスを返す。呼び出し側が 16.16 形式のサイズスケールとヒンティングターゲットを渡す。LIGHT では blue zone が空のとき、単一の水平 stem の位置を画素境界に合わせる。CID では FontMatrix が単位行列のときに限る。複数 stem、縦方向の stem だけの charstring、blue zone がある場合、ほかのターゲットの stem は未対応エラーを返す（[ADR 0064](docs/adr/0064-freetype-hinting-and-render-modes.md)）。
 
 FreeTypeの合成操作には、`sofel-outline::Scratch` のスロット用の斜体と太字、`sofel-bitmap` の画素形式変換と太字を使う。ビットマップの太字では `embolden_bitmap_slot` が画像とスロットのメトリクス、配置を合わせて更新する。HarfBuzzに合わせた輪郭の命令は、glyfを `Scratch::hb_decompose`、CFFとCFF2を `HbExtents::cff_glyph_path` から得る。画像を含むカラーグリフの合成斜体は、`sofel-color::paint_recording_at_with_slant` が描画命令を変換で包む（[ADR 0063](docs/adr/0063-font-functions-and-synthesis.md)）。
 
@@ -144,6 +144,7 @@ PCF の固定サイズの 1 bit 画像も同じ引数で PGM に変換する。P
 Windows FNT と NE・PE32 FON の固定サイズの 1 bit 画像も同じ引数で PGM に変換する。FNT は 1 フェイスで、FON のリソースは `--face` で選ぶ。指定サイズのストライクがない場合と `--no-bitmap` を指定した場合は描画に失敗する（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
 
 素の CFF 1 の輪郭は `--face` でフェイスを選び、`--char` または `--glyph` で指定して PGM に描く。`sofel render --text` は同じフェイスの文字対応と送り幅を使って一行を描く。文字の対応には PostScript グリフ名を使う（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
+CID-keyed の素の CFF 1 と CEF は、`--glyph` に CID を指定して描画する。
 
 可変フォントの輪郭には `--variations=wght=500` や `--named-instance=0` で位置を指定できる。既定以外の位置では埋め込みビットマップを使わず、輪郭を描く。
 
@@ -198,7 +199,7 @@ CFF2 の全軸を指定した値に固定すると、輪郭と横・縦のメト
 sofel-subset --font-file=Roboto.ttf --unicodes=41-5A -o out.ttf
 ```
 
-フォントを読むコマンド（`sofel-shape`、`sofel-render`、`sofel-paint`、`sofel-subset`、`sofel-validate`）は WOFF 1.0、gzip、UNIX compress（LZW）、bzip2で包んだ入力を署名から識別する。`sofel-woff --format woff2` が書き出す単一フェイスの WOFF2 も読み込める。同じ非圧縮 Brotli ブロックを使い、glyf・loca または hmtx を変換した入力にも対応する。[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)
+フォントを読むコマンド（`sofel-shape`、`sofel-render`、`sofel-paint`、`sofel-subset`、`sofel-validate`）は WOFF 1.0、gzip、UNIX compress（LZW）、bzip2で包んだ入力を署名から識別する。`sofel-woff --format woff2` が書き出す単一フェイスの WOFF2 も読み込める。複数フェイスを格納した WOFF2 コレクション、圧縮 Brotli ブロックを使った WOFF2 や、glyf・loca または hmtx を変換した入力にも対応する。[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)
 
 `sofel-render` は Type 1 の PFA と PFB を `--glyph` またはグリフ名から導いた Unicode の `--char` で開き、対応済みの輪郭命令を PGM に描く。`sofel render --text` でも同じ輪郭を描く（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
 
@@ -210,6 +211,7 @@ Type 1 の PFA と PFB も検証できる。PFA の暗号化データに無効�
 BDF の検証では、壊れた行の先頭位置を表示する。ビットマップ行が途中で欠落した場合はファイル末尾の位置を表示する。
 
 Type 42 も `sofel-validate` で検証できる。`/sfnts` の16進文字列に無効な文字があれば、その文字のファイル内の位置を報告する。
+Windows の FNT と FON も検証できる。複数のフェイスを含む FON では、診断にフェイス番号が付く。
 
 ### `sofel-woff`
 
@@ -222,7 +224,7 @@ sofel-subset --font-file=font.ttf --unicodes=41-5A -o - | sofel-woff --format wo
 
 ### `sofel-validate`
 
-sfnt、TTC/OTC、dfont の各表、素の CFF 1、CEF、PCF を検証する（[ADR 0008](docs/adr/0008-validate-command-and-freetype-comparison.md)、[ADR 0058](docs/adr/0058-dfont-face-selection.md)、[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。誤りを1件1行で出し、`--json` ではJSON Linesで出す。
+sfnt、TTC/OTC、dfont の各表、素の CFF 1、CEF、PCF、PFR を検証する（[ADR 0008](docs/adr/0008-validate-command-and-freetype-comparison.md)、[ADR 0058](docs/adr/0058-dfont-face-selection.md)、[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。誤りを1件1行で出し、`--json` ではJSON Linesで出す。
 
 ```sh
 cargo run --release --bin sofel-validate -- font.ttf
@@ -366,6 +368,14 @@ cargo run --release --manifest-path bench/Cargo.toml            # Markdownの表
 sh bench/build-c.sh wasm32-wasip1
 cargo build --release --manifest-path bench/Cargo.toml --target wasm32-wasip1
 wasmtime run -W exceptions=y --dir target/testdata bench/target/wasm32-wasip1/release/sofel-bench.wasm
+```
+
+手元の機械の負荷に左右されない記録は、CI で取る（[ADR 0080](docs/adr/0080-ci-benchmark-records.md)）。GitHub の Actions の画面か `gh` で、ワークフロー「Benchmark records」を主題を付けて起動する。終わったら artifact を取り、ファイルを変えずに `docs/benchmarks/` に置いてプルリクエストにする。`gh run download` は artifact ごとにディレクトリを作るので、中の記録を移す。
+
+```sh
+gh workflow run bench.yml -f subject=stage2-rerun
+gh run download <実行の ID> --pattern 'bench-record-*' --dir "$TMPDIR/records"
+mv "$TMPDIR"/records/bench-record-*/*.md docs/benchmarks/
 ```
 
 ファジングには、nightlyのツールチェーンと [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) が要る。対象は `cmap`、`metrics`、`font`、`outline`、`os2`、`name`、`post`、`vorg`、`base`、`gdef`、`gsub`、`gpos`、`cff`、`shape`（シェーピング）、`deserialize`（直列化の読み込み）。

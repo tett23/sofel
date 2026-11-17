@@ -31,3 +31,84 @@ fn adr0065_i2_bdf_rejects_missing_rows_and_count_overflow() {
     let missing_properties_end = ORDER.replace("ENDPROPERTIES\n", "");
     assert!(BdfFont::parse(missing_properties_end.as_bytes()).is_err());
 }
+
+#[test]
+fn adr0065_i1_bdf_line_endings_preserve_bitmaps_and_offsets() {
+    let reference = BdfFont::parse(ORDER.as_bytes()).unwrap();
+    for ending in ["\r", "\r\n", "\n", "\n\r"] {
+        let source = ORDER.replace('\n', ending);
+        let face = BdfFont::parse(source.as_bytes()).unwrap();
+        for id in 0..3 {
+            assert_eq!(face.glyph(id), reference.glyph(id));
+        }
+        let broken = source.replacen(
+            &format!("{ending}FF{ending}"),
+            &format!("{ending}FG{ending}"),
+            1,
+        );
+        assert_eq!(
+            BdfFont::parse_with_offset(broken.as_bytes()).unwrap_err(),
+            broken.find("FG").unwrap()
+        );
+    }
+}
+
+#[test]
+fn adr0065_i1_bdf_alternative_encoding_selects_the_same_glyph() {
+    let reference = BdfFont::parse(ORDER.as_bytes()).unwrap();
+    for value in ["-1 65", "-2 65"] {
+        let source = ORDER.replace("ENCODING 65", &format!("ENCODING {value}"));
+        let font = BdfFont::parse(source.as_bytes()).unwrap();
+        assert_eq!(font.nominal_glyph(65), reference.nominal_glyph(65));
+        assert_eq!(font.glyph(1), reference.glyph(1));
+    }
+    let source = ORDER.replace("ENCODING 65", "ENCODING 1114112");
+    let font = BdfFont::parse(source.as_bytes()).unwrap();
+    assert_eq!(font.nominal_glyph(1114112), None);
+}
+
+#[test]
+fn adr0065_i1_bdf_strike_uses_size_properties() {
+    for (properties, expected) in [
+        ("POINT_SIZE 80", (510, 510)),
+        ("PIXEL_SIZE 9", (576, 576)),
+        ("RESOLUTION_X 96\nRESOLUTION_Y 75", (682, 533)),
+        (
+            "PIXEL_SIZE -9\nRESOLUTION_X 96\nRESOLUTION_Y 72",
+            (768, 576),
+        ),
+    ] {
+        let count = 3 + properties.lines().count();
+        let source = ORDER.replace(
+            "STARTPROPERTIES 3",
+            &format!("STARTPROPERTIES {count}\n{properties}"),
+        );
+        assert_eq!(
+            BdfFont::parse(source.as_bytes()).unwrap().ppem_26_6(),
+            expected
+        );
+    }
+}
+
+#[test]
+fn adr0065_i1_unencoded_bdf_slot_has_empty_metrics_and_bitmap() {
+    let source = ORDER.replace("ENCODING 65", "ENCODING -1");
+    let face = BdfFont::parse(source.as_bytes()).unwrap();
+    assert_eq!(face.num_glyphs(), 3);
+    assert_eq!(face.nominal_glyph(66), Some(1));
+    let slot = face.glyph(2).unwrap();
+    assert_eq!(
+        (slot.width, slot.height, slot.advance, slot.left, slot.top),
+        (0, 0, 0, 0, 0)
+    );
+    assert!(slot.bitmap.is_empty());
+}
+
+#[test]
+fn adr0065_i1_bdf_duplicate_encoding_matches_reference_lookup() {
+    let source = ORDER.replace("ENCODING 65", "ENCODING 66");
+    let face = BdfFont::parse(source.as_bytes()).unwrap();
+    assert_eq!(face.nominal_glyph(66), Some(2));
+    assert_eq!(face.glyph(0), face.glyph(2));
+    assert_ne!(face.glyph(1), face.glyph(2));
+}
