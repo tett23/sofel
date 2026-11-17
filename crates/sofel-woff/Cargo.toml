@@ -1,6 +1,6 @@
 [package]
 name = "sofel-woff"
-description = "Encode single-face sfnt fonts as WOFF or WOFF2"
+description = "WOFF and WOFF2: decode to sfnt, and encode single-face sfnt fonts (ADR 0070, ADR 0081)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
