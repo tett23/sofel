@@ -1,8 +1,9 @@
 //! CFF and CFF2 glyphs as FreeType's `cff_slot_load` loads them without
-//! hinting (ADR 0021): the charstring decoded by FreeType's Adobe engine
+//! hinting (ADR 0021) and with the Adobe engine's hinting (sofel ADR
+//! 0064): the charstring decoded by FreeType's Adobe engine
 //! (`sofel_read::cff::charstring`), the points built as `ps_builder_*`
 //! builds them (`src/psaux/psobjs.c`, `src/psaux/psft.c`), then the
-//! FontMatrix, its translation and the scale.
+//! FontMatrix, its translation and, without hinting, the scale.
 //!
 //! Ported from FreeType 2.15.0. Copyright 2007-2014 Adobe Systems
 //! Incorporated, and Copyright (C) 1996-2026 by David Turner, Robert
@@ -14,7 +15,7 @@ use alloc::vec::Vec;
 use sofel_font::read::GlyphId;
 use sofel_font::read::cff::charstring::{self, Context, PathSink};
 use sofel_font::read::cff::dict::BlendWeights;
-use sofel_font::read::cff::ft;
+use sofel_font::read::cff::{Hinting, ft};
 use sofel_font::var::Location;
 use sofel_font::{Cff, Font};
 use sofel_geom::Point;
@@ -136,25 +137,30 @@ pub(crate) fn load_cff_at(
     }
     let instance = font.instance(location);
     let blend = instance.ft_blend_weights(cff);
-    load_cff_with_blend(cff, glyph, scale, &blend, s, false)
+    load_cff_with_blend(cff, glyph, scale, &blend, s, None).map(|(info, _)| info)
 }
 
-/// Decode a CFF 1 charstring at Adobe's hinted path scale. The caller checks
-/// that the charstring has no stems before selecting this result.
-pub(crate) fn load_cff_native_without_stems(
+/// `cff_slot_load` with hinting at `location` (sofel ADR 0064): the
+/// outline in 26.6 pixels and FreeType's `glyph->x_scale`, which scales
+/// the advance.
+pub(crate) fn load_cff_hinted(
     font: &Font<'_>,
     location: &Location<'_>,
     cff: &Cff<'_>,
     glyph: GlyphId,
     scale: Scale,
     s: &mut Scratch,
-) -> Result<OutlineInfo, OutlineError> {
+) -> Result<(OutlineInfo, i64), OutlineError> {
+    // cf2_checkTransform fails with Glyph_Too_Big, and so does the retry
+    // without hinting.
     if font.units_per_em() > 0x7FFF {
+        s.clear();
         return Err(OutlineError::InvalidOutline);
     }
     let instance = font.instance(location);
     let blend = instance.ft_blend_weights(cff);
-    load_cff_with_blend(cff, glyph, scale, &blend, s, true)
+    let upm = i32::from(font.units_per_em());
+    load_cff_with_blend(cff, glyph, scale, &blend, s, Some(upm))
 }
 
 pub(crate) fn load_bare_cff(
@@ -169,17 +175,34 @@ pub(crate) fn load_bare_cff(
     let glyph = cff
         .bare_charstring_index(glyph)
         .ok_or(OutlineError::NoGlyphData)?;
-    load_cff_with_blend(cff, glyph, scale, &cff.default_blend(), s, false)
+    load_cff_with_blend(cff, glyph, scale, &cff.default_blend(), s, None).map(|(info, _)| info)
 }
 
+/// `cf2_checkTransform` for the hinted path scales: whether the Adobe
+/// engine takes them. `None` is an error (`Invalid_Size_Handle`),
+/// `Some(false)` is `Glyph_Too_Big`, after which `cff_slot_load` loads
+/// the glyph again without hinting.
+fn hinted_scales_fit(a: i32, d: i32, upm: i32) -> Option<bool> {
+    if a <= 0 || d <= 0 {
+        return None;
+    }
+    if upm > 0x7FFF {
+        return Some(false);
+    }
+    let max = ft::to_i32(ft::div_fix(2000 << 16, i64::from(upm) << 16));
+    Some(a <= max && d <= max)
+}
+
+/// `cff_slot_load`: hinted when `hinted_upm` holds the face's units per
+/// em. Returns the outline and `glyph->x_scale`.
 fn load_cff_with_blend(
     cff: &Cff<'_>,
     glyph: GlyphId,
     scale: Scale,
     blend: &dyn BlendWeights,
     s: &mut Scratch,
-    native_without_stems: bool,
-) -> Result<OutlineInfo, OutlineError> {
+    hinted_upm: Option<i32>,
+) -> Result<(OutlineInfo, i64), OutlineError> {
     s.clear();
     if glyph.0 >= cff.num_glyphs() {
         return Err(OutlineError::InvalidGlyphIndex);
@@ -188,6 +211,34 @@ fn load_cff_with_blend(
     let sub = cff
         .subfont_with_blend(glyph, blend)
         .ok_or(OutlineError::InvalidCharString)?;
+    let m = sub.matrix;
+    let (mut x_scale, mut y_scale) = match scale {
+        Scale::Unscaled => (0x1_0000_i64, 0x1_0000_i64),
+        Scale::Scaled { x, y } => (i64::from(x.0), i64::from(y.0)),
+    };
+    let mut force = false;
+    if cff.num_font_dicts() > 0 {
+        let top_upm = cff.top_matrix().units_per_em.cast_signed();
+        let sub_upm = m.units_per_em.cast_signed();
+        if top_upm != sub_upm {
+            x_scale = ft::mul_div(x_scale, top_upm, sub_upm);
+            y_scale = ft::mul_div(y_scale, top_upm, sub_upm);
+            force = true;
+        }
+    }
+    // cf2_getScaleAndHintFlag and cf2_checkTransform.
+    let hinting = match hinted_upm {
+        Some(upm) if scaled => {
+            let a = ft::to_i32(x_scale).wrapping_add(32) / 64;
+            let d = ft::to_i32(y_scale).wrapping_add(32) / 64;
+            match hinted_scales_fit(a, d, upm) {
+                None => return Err(OutlineError::InvalidOutline),
+                Some(true) => Some(Hinting::new(&sub.private, a, d)),
+                Some(false) => None,
+            }
+        }
+        _ => None,
+    };
     let data = cff
         .char_strings()
         .ft_element(glyph.0)
@@ -214,14 +265,7 @@ fn load_cff_with_blend(
         // the state starts from the Private DICT's initialRandomSeed; it
         // restarts at every draw (ADR 0021).
         random_seed: ft::low32(p.initial_random_seed.cast_unsigned()),
-        scale: if native_without_stems {
-            let Scale::Scaled { y, .. } = scale else {
-                return Err(OutlineError::InvalidOutline);
-            };
-            crate::ps_native::path_scale(y)
-        } else {
-            0x400
-        },
+        scale: 0x400,
     };
     let mut builder = Builder {
         points: &mut s.points,
@@ -229,12 +273,18 @@ fn load_cff_with_blend(
         ends: &mut s.ends,
         path_begun: false,
     };
-    if charstring::decode(data, &ctx, &mut s.cff, &mut builder).is_err() {
+    let decoded = match &hinting {
+        Some(h) => {
+            let hint_work = s.cff_hints.get_or_insert_with(Default::default);
+            charstring::decode_hinted(data, &ctx, h, &mut s.cff, hint_work, &mut builder)
+        }
+        None => charstring::decode(data, &ctx, &mut s.cff, &mut builder),
+    };
+    if decoded.is_err() {
         s.clear();
         return Err(OutlineError::InvalidCharString);
     }
     builder.close_contour();
-    let m = sub.matrix;
     if !m.is_identity() {
         let [xx, yx, xy, yy] = m.m;
         for pt in &mut s.points {
@@ -252,32 +302,19 @@ fn load_cff_with_blend(
             pt.y = pt.y.wrapping_add(oy);
         }
     }
-    let (mut x_scale, mut y_scale) = match scale {
-        Scale::Unscaled => (0x1_0000_i64, 0x1_0000_i64),
-        Scale::Scaled { x, y } => (i64::from(x.0), i64::from(y.0)),
-    };
-    let mut force = false;
-    if cff.num_font_dicts() > 0 {
-        let top_upm = cff.top_matrix().units_per_em.cast_signed();
-        let sub_upm = m.units_per_em.cast_signed();
-        if top_upm != sub_upm {
-            x_scale = ft::mul_div(x_scale, top_upm, sub_upm);
-            y_scale = ft::mul_div(y_scale, top_upm, sub_upm);
-            force = true;
-        }
-    }
-    if (scaled || force) && !native_without_stems {
+    if (scaled || force) && hinting.is_none() {
         for pt in &mut s.points {
             pt.x = mul_fix(pt.x, x_scale);
             pt.y = mul_fix(pt.y, y_scale);
         }
     }
-    Ok(OutlineInfo {
+    let info = OutlineInfo {
         overlap: false,
         cbox: if s.points.is_empty() {
             CBox::default()
         } else {
             control_box(&s.points)
         },
-    })
+    };
+    Ok((info, x_scale))
 }

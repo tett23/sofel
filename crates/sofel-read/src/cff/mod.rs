@@ -25,6 +25,7 @@ pub mod encoding;
 pub mod fdselect;
 pub mod ft;
 pub mod hb;
+mod hint;
 mod index;
 mod random_check;
 
@@ -37,6 +38,7 @@ pub use data::{
 };
 pub use encoding::Encoding;
 pub use fdselect::FdSelect;
+pub use hint::Hinting;
 pub use index::Index;
 
 use crate::be::{self, to_usize};

@@ -109,7 +109,7 @@ TrueType の単純グリフと複合グリフには、`Outlines::load_truetype_v
 
 `Outlines::load_with_hint` と C API の `sofel_outline_load_with_hint` はロード時にヒンティングなし、TrueType v35、TrueType v40、自動ヒンティングとターゲットを選ぶ。自動ヒンティングは FreeType 2.15.0 の自動ヒンタを HarfBuzz なしの構成で移植したもので、Latin、CJK、Indic、dummy の書記体系をすべて扱う。多数のグリフを読むときは、フォントと位置ごとに `AutoHintCache` を作り、`Outlines::load_auto_hinted`（C では `sofel_autohint_cache_create` と `sofel_outline_load_auto_hinted`）に渡す。LCD の画像を FreeType と画素まで合わせるには、`Rasterizer::render_harmony_placed`（C では `sofel_outline_render_harmony`）で描く（[ADR 0064](docs/adr/0064-freetype-hinting-and-render-modes.md)）。
 
-CFF 1 の charstring に stem がない場合、`load_with_hint` のネイティブ指定は点座標と送り幅を FreeType の Adobe 経路に合わせる。stem を持つ CFF 1 と CFF2 のネイティブヒンティングは未対応である（[ADR 0064](docs/adr/0064-freetype-hinting-and-render-modes.md)）。
+CFF と CFF2 のフォントでは、`load_with_hint` のネイティブ指定は FreeType の Adobe engine のヒンタ（stem のヒントマップ、hintmask と cntrmask、blue zone、FamilyBlues、em box の合成ヒント。stem の太らせは FreeType の既定と同じく行わない）で輪郭点と送り幅を FreeType に合わせる。CFF2 は軸位置でヒンティングする（[ADR 0064](docs/adr/0064-freetype-hinting-and-render-modes.md)）。
 
 PFA・PFB の Type1 と CID キーの Type1 では、`draw_type1_native` と `draw_cid_native` が stem のない charstring を FreeType の Adobe 経路のスケールで描き、グリッドに合わせた水平アドバンスを返す。呼び出し側が 16.16 形式のサイズスケールとヒンティングターゲットを渡す。LIGHT では blue zone が空のとき、単一の水平 stem の位置を画素境界に合わせる。CID では FontMatrix が単位行列のときに限る。複数 stem、縦方向の stem だけの charstring、blue zone がある場合、ほかのターゲットの stem は未対応エラーを返す（[ADR 0064](docs/adr/0064-freetype-hinting-and-render-modes.md)）。
 

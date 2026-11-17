@@ -10,7 +10,7 @@ use std::{fmt::Write, process::Command};
 mod cff_build;
 
 #[test]
-fn adr0064_i1_native_cff_without_stems_matches_freetype() {
+fn adr0064_i1_native_cff_matches_freetype() {
     use cff_build::{Cff1Spec, Cs, cff1, charstring, otto_font};
     let glyphs = vec![
         charstring(&[Cs::Op(14)]),
@@ -67,35 +67,48 @@ fn adr0064_i1_native_cff_without_stems_matches_freetype() {
     }
     std::fs::remove_file(path).unwrap();
 
-    let hinted_path = paths::testdata().join("extra-fonts/fonts/source-serif.otf");
-    let hinted_bytes = std::fs::read(hinted_path).unwrap();
-    let hinted_font = Font::new(&hinted_bytes, 0).unwrap();
-    let hinted = Outlines::new(hinted_font.default_instance());
+    // Stems, CFF2 and blends take the same path (sofel ADR 0064).
+    for (relative, gid) in [
+        ("extra-fonts/fonts/source-serif.otf", 36),
+        ("harfbuzz/test/subset/data/fonts/AdobeVFPrototype.otf", 1),
+    ] {
+        let path = paths::testdata().join(relative);
+        let bytes = std::fs::read(&path).unwrap();
+        let font = Font::new(&bytes, 0).unwrap();
+        let outlines = Outlines::new(font.default_instance());
+        for (engine, mode) in [("v35", HintMode::NativeV35), ("v40", HintMode::NativeV40)] {
+            let reference = Command::new(paths::ft_dump())
+                .args(["--hint-slot", "16", &gid.to_string(), engine, "light"])
+                .arg(&path)
+                .output()
+                .unwrap();
+            assert!(reference.status.success());
+            let (_, advance) = outlines
+                .load_with_hint(GlyphId(gid), 16, mode, HintTarget::Light, &mut scratch)
+                .unwrap();
+            let mut actual = format!("advance {advance} 0\n");
+            for (point, tag) in scratch.points().iter().zip(scratch.point_tags()) {
+                writeln!(actual, "point {} {} {tag}", point.x, point.y).unwrap();
+            }
+            for end in scratch.contour_ends() {
+                writeln!(actual, "end {end}").unwrap();
+            }
+            assert_eq!(
+                actual,
+                String::from_utf8(reference.stdout).unwrap(),
+                "{relative} {engine}"
+            );
+        }
+    }
     assert_eq!(
-        hinted.load_with_hint(
-            GlyphId(36),
+        Outlines::new(Font::new(&bytes, 0).unwrap().default_instance()).load_with_hint(
+            GlyphId(9),
             16,
             HintMode::NativeV35,
             HintTarget::Light,
             &mut scratch,
         ),
-        Err(OutlineError::UnsupportedFormat),
-    );
-    assert!(scratch.points().is_empty());
-
-    let cff2_path = paths::testdata().join("harfbuzz/test/subset/data/fonts/AdobeVFPrototype.otf");
-    let cff2_bytes = std::fs::read(cff2_path).unwrap();
-    let cff2_font = Font::new(&cff2_bytes, 0).unwrap();
-    let cff2 = Outlines::new(cff2_font.default_instance());
-    assert_eq!(
-        cff2.load_with_hint(
-            GlyphId(1),
-            16,
-            HintMode::NativeV35,
-            HintTarget::Light,
-            &mut scratch,
-        ),
-        Err(OutlineError::UnsupportedFormat),
+        Err(OutlineError::InvalidGlyphIndex),
     );
     assert!(scratch.points().is_empty());
 }
