@@ -1,0 +1,48 @@
+# ADR 0082 A2: the glyphs that sofel's interval check reports on Golem's
+# test fonts, and the codes Golem root ADR 0390 gives them.
+#
+# Columns: font, glyph, sofel kind ("-" for none), Golem codes ("-" for
+# none), note. tests/cff_random.rs (sofel-conformance) rebuilds the fonts
+# and compares the first three columns.
+#
+# The fonts: sans-random and han-random are Golem's
+# random-audit/out/*-random.otf, rebuilt from the HarfBuzz test fonts
+# SourceSansPro-Regular.otf (glyph 44) and
+# SourceHanSans-Regular_subset.otf (glyph 5) with Golem's src/patch.py
+# program; the test checks that the bytes are Golem's. The other rows put
+# the programs of Golem's review of its ADR 0390 (adr0390-review) and of
+# that ADR's boundary table into glyph 44 of Source Sans Pro. n is the
+# largest number callsubr takes in Source Sans Pro (the number plus the
+# bias is the last entry of its local Subrs INDEX); k in the row names is
+# the multiplier of random, as in Golem's boundary table. Every program
+# but intcall runs random on its seed path.
+#
+# Golem's noto-random.otf is not rebuilt: its source font
+# (NotoSerifJP-Regular.otf of a Golem test project) is not in the test
+# data. It is CID-keyed with the same program as han-random; run by hand,
+# sofel-validate reports no interval diagnostic on it.
+#
+# The Golem codes follow the rules of Golem root ADR 0390, which Golem has
+# not implemented yet: G08107 a reference outside an INDEX, G08108 a
+# reference that cannot be checked, G08109 a glyph FreeType cannot load.
+# Golem reports the three independently; sofel reports the first finding
+# of a glyph only (ADR 0082), so a glyph with two Golem codes has one
+# sofel kind. Golem also gives G08108 to a glyph without random that
+# runs more than 100,000 numbers and operators; sofel checks only glyphs
+# whose seed path runs random (ADR 0082), so no row has that case.
+sans-random	44	-	-	random only moves the pen
+han-random	5	-	-	random only moves the pen (CID-keyed)
+simple	44	-	-	random 1000 mul 0 rmoveto 500 0 rlineto endchar
+callsubr	44	cff_random_operand_rejected	G08109	random 1 mul callsubr: numbers 0 and 1 are inside the INDEX; FreeType rejects the 16.16 number
+intcall	44	-	-	-107 callsubr: no random
+ifelse	44	cff_random_operand_rejected	G08109	-107 -107 random random ifelse callsubr: ifelse pushes a 16.16 number
+getrand	44	cff_random_operand_rejected	G08109	random get
+idxrand	44	cff_random_unchecked	G08108 G08109	0 random index: position (0, 1] on a stack of 1; sofel stops at the first finding
+div0	44	-	-	1 0 div: a number, not a range (FreeType divides as usual)
+sqrtneg	44	-	-	-1 sqrt: a number, not a range
+random-k-mul-callsubr-n	44	cff_random_operand_rejected	G08109	numbers 0 to n are inside the INDEX
+random-k-mul-callsubr-n+1	44	cff_random_subroutine_out_of_range	G08107 G08109	number n + 1 is outside; sofel stops at the first finding
+one-over-random-callsubr	44	cff_random_subroutine_out_of_range	G08107 G08109	1 random div callsubr: the number range [1, inf) has an infinite end
+divide-by-random-minus-half	44	cff_random_unchecked	G08108	1 (random - 0.5) div: the divisor range contains 0
+sqrt-random-minus-half	44	cff_random_unchecked	G08108	(random - 0.5) sqrt: the range contains negative numbers
+ifelse-one-sided-call	44	cff_random_subroutine_out_of_range	G08107 G08109	n+1 n random 0.5 ifelse callsubr: the first argument's branch (n + 1) is outside

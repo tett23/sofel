@@ -117,6 +117,8 @@ FreeTypeの合成操作には、`sofel-outline::Scratch` のスロット用の�
 
 `sofel-validate` は CFF2 の FDSelect フォーマット4を互換性の警告として報告する。ほかにエラーがなければ検証は成功する（[ADR 0056](docs/adr/0056-cff2-fdselect-format4-warning.md)）。
 
+CFF の `random` は、描くたびに Private DICT の `initialRandomSeed` から始まるので、輪郭は読む順やスレッドに依らない。`sofel-validate` は、`random` を実行するグリフを値の区間でたどりなおし、`random` の値しだいで INDEX の外のサブルーチンを呼ぶ枝（`cff_random_subroutine_out_of_range`、Error）、確かめきれない枝（`cff_random_unchecked`、Warning）、FreeType が描けない 16.16 の番号や位置（`cff_random_operand_rejected`、Warning）を報告する（[ADR 0082](docs/adr/0082-cff-random-interval-check.md)）。
+
 ### `sofel` で文字列を描く
 
 リポジトリのルートで次のコマンドを実行すると、`sofel` をインストールできます。

@@ -1,6 +1,6 @@
 # ADR 0082: CFFの `random` の決まりと、区間による参照の確かめ
 
-Status: accepted-pending
+Status: accepted
 
 ## 文脈
 

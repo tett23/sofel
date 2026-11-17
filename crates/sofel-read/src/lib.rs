@@ -84,6 +84,6 @@ pub mod vhea;
 pub mod vmtx;
 pub mod vorg;
 
-pub use diag::{DetailValue, Diagnostic, Kind, Severity};
+pub use diag::{CffRandomReason, DetailValue, Diagnostic, Kind, Severity};
 pub use error::ReadError;
 pub use types::{CountWidth, F2Dot14, Fixed, GlyphId, LongDateTime, Tag};

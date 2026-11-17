@@ -78,6 +78,9 @@
  *   div_fix A B     -> FT_DivFix(A, B)
  *   mul_div A B C   -> FT_MulDiv(A, B, C)
  *   length X Y      -> FT_Vector_Length of (X, Y)
+ *   random SEED N   -> the N values the CFF operator random pushes from
+ *                      the state SEED, on one line: cf2_escRANDOM's
+ *                      (state & 0xFFFF) + 1, then cff_random (ADR 0082)
  *
  * Usage: ft-dump --outline SIZE FILE
  * Usage: ft-dump --auto-hint FIRST LAST TARGET [--variations=TAG=value,...] FILE
@@ -295,6 +298,8 @@
 #include FT_OPENTYPE_VALIDATE_H
 #include FT_COLOR_H
 #include <freetype/internal/cffotypes.h>
+/* psaux's cff_random (src/psaux/psobjs.c), from psrandom.c. */
+FT_UInt32 ft_dump_cff_random(FT_UInt32 r);
 #include <freetype/internal/services/svcfftl.h>
 
 static FT_UInt reference_named;
@@ -1222,6 +1227,16 @@ static int calc(void)
       printf("%ld\n", (long)FT_Tan(a));
     } else if (strcmp(op, "angle_diff") == 0 && scanf("%ld %ld", &a, &b) == 2) {
       printf("%ld\n", (long)FT_Angle_Diff(a, b));
+    } else if (strcmp(op, "random") == 0 && scanf("%ld %ld", &a, &b) == 2) {
+      /* The body of cf2_escRANDOM (src/psaux/psintrp.c). */
+      FT_UInt32 state = (FT_UInt32)a;
+      long k;
+
+      for (k = 0; k < b; k++) {
+        printf(k ? " %ld" : "%ld", (long)(FT_Int32)((state & 0xFFFF) + 1));
+        state = ft_dump_cff_random(state);
+      }
+      printf("\n");
     } else {
       fprintf(stderr, "ft-dump: bad --calc input at %s\n", op);
       return 2;

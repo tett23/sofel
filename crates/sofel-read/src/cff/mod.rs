@@ -26,6 +26,7 @@ pub mod fdselect;
 pub mod ft;
 pub mod hb;
 mod index;
+mod random_check;
 
 pub use blend::FtBlend;
 pub use charset::{Charset, CharsetIndex};

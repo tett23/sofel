@@ -779,3 +779,102 @@ fn adr0065_i2_winfnt_validator_checks_every_face() {
         );
     }
 }
+
+/// A CFF font whose glyphs 1 to 3 give the three diagnostics of the
+/// interval check of ADR 0082, with 110 local subroutines and no global
+/// ones.
+fn cff_random_font() -> Vec<u8> {
+    use Cs::{F, I, Op};
+    let random = || Op(0x0C17);
+    let mut spec = Cff1Spec::new(vec![
+        charstring(&[Op(14)]),
+        // 0 1 random 0.5 ifelse not callgsubr: no global subroutines.
+        charstring(&[
+            I(0),
+            I(1),
+            random(),
+            F(0x8000),
+            Op(0x0C16),
+            Op(0x0C05),
+            Op(29),
+            Op(14),
+        ]),
+        // 1 (random - 0.5) div.
+        charstring(&[
+            I(1),
+            random(),
+            F(0x8000),
+            Op(0x0C0B),
+            Op(0x0C0C),
+            Op(0x0C12),
+            Op(14),
+        ]),
+        // random callsubr.
+        charstring(&[random(), Op(10), Op(14)]),
+    ]);
+    spec.lsubrs = vec![charstring(&[Op(11)]); 110];
+    otto_font(4, vec![(b"CFF ", cff1(&spec))])
+}
+
+#[test]
+fn adr0082_cff_random_text_and_json() {
+    let d = Dir::new("cff-interval");
+    let p = d.file("interval.otf", &cff_random_font());
+    let text = run(&[os(&p)]);
+    assert_eq!(text.code, 1, "{}", text.stdout);
+    let lines: Vec<&str> = text
+        .stdout
+        .lines()
+        .filter(|l| l.contains("random-dependent") || l.contains("random check"))
+        .collect();
+    assert_eq!(lines.len(), 3, "{}", text.stdout);
+    assert!(
+        lines[0].contains(
+            "error: glyph 1: a random-dependent branch calls a subroutine out of range at byte 13"
+        ),
+        "{}",
+        lines[0]
+    );
+    assert!(
+        lines[1].contains(
+            "warning: glyph 2: the random check stops at byte 10: a divisor range contains 0"
+        ),
+        "{}",
+        lines[1]
+    );
+    assert!(
+        lines[2].contains(
+            "warning: glyph 3: a random-dependent branch gives a 16.16 number to operator 0x000a at byte 2"
+        ),
+        "{}",
+        lines[2]
+    );
+    let json = run(&[std::ffi::OsStr::new("--json"), os(&p)]);
+    let found: Vec<BTreeMap<String, J>> = json
+        .stdout
+        .lines()
+        .map(parse)
+        .filter(|o| matches!(o.get("kind"), Some(J::Str(k)) if k.starts_with("cff_random_")))
+        .collect();
+    let kinds: Vec<&J> = found.iter().map(|o| &o["kind"]).collect();
+    assert_eq!(
+        kinds,
+        vec![
+            &J::Str("cff_random_subroutine_out_of_range".into()),
+            &J::Str("cff_random_unchecked".into()),
+            &J::Str("cff_random_operand_rejected".into()),
+        ]
+    );
+    assert_eq!(found[0]["severity"], J::Str("error".into()));
+    let detail = |i: usize, k: &str| {
+        let J::Obj(details) = &found[i]["details"] else {
+            panic!("details is not an object")
+        };
+        details[k].clone()
+    };
+    assert_eq!(detail(0, "glyph"), J::Num(1.0));
+    assert_eq!(detail(0, "position"), J::Num(13.0));
+    assert_eq!(detail(1, "reason"), J::Num(0.0));
+    assert_eq!(detail(2, "operator"), J::Num(10.0));
+    assert_eq!(found[2]["severity"], J::Str("warning".into()));
+}
