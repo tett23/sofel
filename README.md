@@ -406,5 +406,6 @@ Rust のツールチェーンと、適合テストと同じフォント取得環
 各フェイスの単字と、その書体に合う文字列を一枚の PNG で見比べられる。
 sbix の見本は 109 ppem のストライクを使い、グリフ 19 の単字と `simple_linear` の合字 26 をそれぞれ 128 × 128 画素で表示する。
 CFF の COLRv1、OT-SVG、可変 COLRv1 の見本は 48 ppem で表示する。Noto Color Emoji の CBDT 版と COLRv1 版は、109 ppem で 😀 と 👩‍💻 を並べる。
+`derived-cff-random` と `derived-rand` の見本は、ビルドのたびに固定したフォントから作る派生フォントで描く。`derived-cff-random` は CFF の `random` 演算子を使う `R` を4つ並べ、どれも同じ形になる。`derived-rand` は Caveat に OpenType の `rand` 機能を足したもので、同じ文字の繰り返しに異体字が混ざる。派生フォントは `target/derived-fonts/` に置かれ、描画見本の出力と CI のアーティファクトには入らない（[sofel ADR 0083](docs/adr/0083-cff-random-gallery-sample.md)、[sofel ADR 0084](docs/adr/0084-opentype-rand-gallery-sample.md)）。
 CI では Actions の対象の実行からコミット SHA 付きのフォントギャラリーをダウンロードし、展開したディレクトリの `index.html` を開く。
 保存期間は14日間である（[sofel ADR 0069](docs/adr/0069-font-render-gallery.md)）。
