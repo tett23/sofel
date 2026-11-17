@@ -45,39 +45,106 @@ HarfBuzzのシェーピングと、FreeTypeのグリフの読み込み、ヒン�
 ## 構成
 
 Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003](adr/0003-crate-layers.md)、`sofel-unicode` は [ADR 0019](adr/0019-unicode-character-data.md)）。矢印の先が依存先である。
+`sofel-cli` と `sofel-capi`（C ABI、[ADR 0015](adr/0015-c-abi.md)）は、上の層のすべてに依存してよいので、矢印を省く。
 
+```mermaid
+flowchart BT
+  subgraph base["フォントに依存しないクレート"]
+    geom[sofel-geom]
+    unicode[sofel-unicode]
+    inflate[sofel-inflate]
+    lzw[sofel-lzw]
+    bzip2[sofel-bzip2]
+    brotli[sofel-brotli]
+    png[sofel-png]
+    svg[sofel-svg]
+    raster[sofel-raster]
+    gpu[sofel-gpu]
+    vector[sofel-vector]
+  end
+  subgraph formats["フォントの形式を読むクレート"]
+    read["sofel-read（sfnt、TTC、dfont）"]
+    type1["sofel-type1（Type1、MM、CID、Type42、AFM、PFM）"]
+    pfr["sofel-pfr（PFR）"]
+    bitmapfont["sofel-bitmapfont（BDF、PCF、FNT、NE・PE32 FON）"]
+  end
+  subgraph fonts["フォントを扱うクレート"]
+    woff[sofel-woff]
+    font[sofel-font]
+    shape[sofel-shape]
+    outline[sofel-outline]
+    bitmap[sofel-bitmap]
+    color[sofel-color]
+    write[sofel-write]
+    subset[sofel-subset]
+  end
+  subgraph tools["道具とC ABI（上のすべてに依存してよい）"]
+    cli["sofel-cli（道具のバイナリ群）"]
+    capi["sofel-capi（C ABI）"]
+  end
+  png --> inflate
+  svg --> inflate
+  svg --> geom
+  raster --> geom
+  gpu --> geom
+  vector --> geom
+  woff --> inflate
+  woff --> brotli
+  woff --> read
+  woff --> write
+  font --> read
+  font --> type1
+  font --> pfr
+  font --> bitmapfont
+  font --> geom
+  shape --> font
+  shape --> unicode
+  shape --> geom
+  outline --> font
+  outline --> geom
+  bitmap --> font
+  bitmap --> png
+  color --> outline
+  color --> bitmap
+  color --> svg
+  color --> geom
+  write --> read
+  subset --> font
+  subset --> write
+  subset --> geom
+  subset --> unicode
 ```
-フォントに依存しないクレート
-  sofel-geom
-  sofel-unicode
-  sofel-inflate
-  sofel-lzw
-  sofel-bzip2
-  sofel-brotli
-  sofel-png    → sofel-inflate
-  sofel-svg    → sofel-inflate, sofel-geom
-  sofel-raster → sofel-geom
-  sofel-gpu    → sofel-geom
-  sofel-vector → sofel-geom
 
-フォントの形式を読むクレート
-  sofel-read        （sfnt、TTC、dfont）
-  sofel-type1       （Type1、MM、CID、Type42、AFM、PFM）
-  sofel-pfr         （PFR）
-  sofel-bitmapfont  （BDF、PCF、FNT、NE・PE32 FON）
+各クレートの責務は次のとおりである。
 
-フォントを扱うクレート
-  sofel-woff    → sofel-inflate, sofel-brotli, sofel-read, sofel-write
-  sofel-font    → sofel-read, sofel-type1, sofel-pfr, sofel-bitmapfont, sofel-geom
-  sofel-shape   → sofel-font, sofel-unicode, sofel-geom
-  sofel-outline → sofel-font, sofel-geom
-  sofel-bitmap  → sofel-font, sofel-png
-  sofel-color   → sofel-outline, sofel-bitmap, sofel-svg, sofel-geom
-  sofel-write   → sofel-read
-  sofel-subset  → sofel-font, sofel-write, sofel-geom, sofel-unicode
-  sofel-cli     → 上のすべて（道具のバイナリ群）
-  sofel-capi    → 上のすべて（C ABI、[ADR 0015](adr/0015-c-abi.md)）
-```
+| 層 | クレート | 責務 |
+|---|---|---|
+| フォントに依存しない | `sofel-geom` | FreeTypeと同じ固定小数点の演算、HarfBuzzと同じ丸め（`sofel_geom::float`）、輪郭を受け渡す `Pen` と塗りを受け渡す `Painter` |
+| | `sofel-unicode` | シェーピングに使うUnicodeの文字の性質 |
+| | `sofel-inflate` | 出力の上限つきの DEFLATE、zlib、gzip の展開 |
+| | `sofel-lzw` | 出力の上限つきの UNIX compress（LZW、`.Z`）の展開 |
+| | `sofel-bzip2` | 出力の上限つきの bzip2 の展開 |
+| | `sofel-brotli` | 出力の上限つきの Brotli の展開 |
+| | `sofel-png` | PNG の復号（アルファ乗算済みの BGRA） |
+| | `sofel-svg` | OpenType の SVG の文書を解析し、輪郭と塗りの命令にする |
+| | `sofel-raster` | 輪郭の画素化（アンチエイリアス、モノクロ、LCD、SDF）と塗りの合成 |
+| | `sofel-gpu` | GPU 向けの輪郭と塗りのレコードと、シェーダーのソース |
+| | `sofel-vector` | 輪郭と塗りの命令を SVG と PDF に書き出す |
+| フォントの形式を読む | `sofel-read` | sfnt の表（TTC、OTC、dfont を含む）の読み取りと検証。コピーも確保もしない |
+| | `sofel-type1` | Type1（PFA、PFB）、Multiple Masters、CID キーの Type1、Type42、AFM、PFM の読み取り |
+| | `sofel-pfr` | PFR のフェイス、文字の目録、グリフとビットマップのプログラムの読み取りと、破損の位置の報告 |
+| | `sofel-bitmapfont` | BDF、PCF、FNT、FON の読み取り |
+| フォントを扱う | `sofel-woff` | WOFF と WOFF2 の展開と、単一フェイスの sfnt の WOFF と WOFF2 への書き出し |
+| | `sofel-font` | 形式を判別し、文字からグリフへの対応、メトリクス、軸の正規化を形式によらない形で返す |
+| | `sofel-shape` | HarfBuzz と同じシェーピング（OT、AAT、GSUB と GPOS を持たないフォント） |
+| | `sofel-outline` | FreeType と同じグリフの輪郭（glyf、CFF、CFF2、VARC、Type1 と CID の charstring、PFR）とヒンティング |
+| | `sofel-bitmap` | 埋め込みビットマップのグリフ（EBDT、CBDT、sbix、PFR のストライクなど） |
+| | `sofel-color` | カラーグリフ（COLR、CPAL、カラーのビットマップ、SVG）を塗りの命令として `Painter` に渡す |
+| | `sofel-write` | sfnt の組み立てと、HarfBuzz と同じオブジェクトの直列化と再配置 |
+| | `sofel-subset` | HarfBuzz とバイト単位で同じサブセット化と、可変フォントの軸の固定 |
+| 道具と C ABI | `sofel-cli` | 小さな道具のバイナリ群（`sofel-validate`、`sofel-render`、`sofel-shape`、`sofel-subset`、`sofel-woff` など）と、包みの判別と展開 |
+| | `sofel-capi` | C ABI（[ADR 0015](adr/0015-c-abi.md)） |
+| テスト | `sofel-conformance` | FreeType と HarfBuzz との突き合わせのテスト（ライブラリの依存には入れない） |
 
 - `sofel-color` と `sofel-subset` の `sofel-geom` への依存は、HarfBuzzの丸め（`sofel_geom::float`）を共有するためである（[ADR 0026](adr/0026-harfbuzz-rounding.md)）。
 - `sofel-subset` の `sofel-unicode` への依存は、鏡像の文字（bidiの閉包）のためである（[ADR 0022](adr/0022-subsetting.md)）。
