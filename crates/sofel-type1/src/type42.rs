@@ -398,7 +398,7 @@ fn find_name(data: &[u8], name: &[u8]) -> Option<usize> {
         if byte == b'%' {
             while let Some(&next) = data.get(at) {
                 at = at.saturating_add(1);
-                if next == b'\n' {
+                if matches!(next, b'\r' | b'\n') {
                     break;
                 }
             }
@@ -424,7 +424,7 @@ fn skip_space(data: &[u8], at: &mut usize) {
             Some(b'%') => {
                 while let Some(&next) = data.get(*at) {
                     *at = at.saturating_add(1);
-                    if next == b'\n' {
+                    if matches!(next, b'\r' | b'\n') {
                         break;
                     }
                 }

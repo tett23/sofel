@@ -1,6 +1,6 @@
 # ADR 0078: FreeType のサイドベアリング補正を参照実装に合わせる
 
-ステータス: 採択
+Status: accepted
 
 ## 文脈
 

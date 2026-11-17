@@ -1,6 +1,6 @@
 # ADR 0012: アンチエイリアスのラスタライズ（`sofel-raster`）と `sofel-render`
 
-ステータス: 採択
+Status: accepted
 
 ## 文脈
 
