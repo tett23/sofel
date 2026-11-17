@@ -857,7 +857,7 @@ fn check_font_queries(font: &sofel_font::Font<'_>) {
 /// table without an `Error` (and without an FDSelect of format 4) opens.
 /// The interval check of glyphs that run `random` (ADR 0082): it ends
 /// for every input (its work is bounded by 100,000 numbers and operators
-/// and 64 waiting branches), reports at most one diagnostic per glyph,
+/// and 16 waiting branches), reports at most one diagnostic per glyph,
 /// only for CFF, and reports the same on every run.
 fn check_cff_random(table: &[u8], flags: u8, num_glyphs: Option<u32>, seen: &[Diagnostic]) {
     let glyph = |d: &Diagnostic| {

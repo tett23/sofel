@@ -119,11 +119,11 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
     | 1 | `sqrt` の区間が負の数を含む |
     | 2 | `index` の位置の区間がスタックの深さ以上の値を含む、または `roll` の数の区間が負か深さを超える値を含む |
     | 3 | 無限大の端を持つ区間を `mul`、`div`、または位置に使う |
-    | 4 | 上限を超える：すべての枝を合わせた実行の数（数と演算子をそれぞれ一つと数える）が100000を超える、または待っている枝が64を超える |
+    | 4 | 上限を超える：すべての枝を合わせた実行の数（数と演算子をそれぞれ一つと数える）が100000を超える、または待っている枝が16を超える |
 
   - 診断の `position` は、ほかのcharstringの診断と同じく、グリフのcharstringか実行中のサブルーチンの中のバイト位置とする。診断のオフセット（`CFF ` の表の先頭からの位置）は、グリフのcharstringの中で見つけたときはその位置、サブルーチンの中で見つけたときはグリフのcharstringの先頭とする。種から始めた道筋の診断は変えない。CFF2、seacの部品、`random` を実行しないグリフはたどらない。
   - 幅0の値（両端が同じ数）どうしの演算は、FreeTypeと同じ値と型を求める。幅0の除数の0は `cff_random_unchecked` にせず、FreeTypeと同じく割る。[ADR 0082](adr/0082-cff-random-interval-check.md) の不変条件の表の行「区間 (0, 1] で `div` の除数にする」は、本文の「除数の端が0の側に開いていれば結果の端を無限大にする」と食い違う。本文に従い、端が0に開いた除数は結果の端を無限大にするだけとし、0を含む除数の例は `random 0.5 sub` で割るグリフで確かめる。
-  - 待っている枝の上限64は、ADRに無い。`sofel-read` は割り当てをしないので、待っている枝の状態を固定の配列に持つためである。
+  - 待っている枝の上限16は、ADRに無い。`sofel-read` は割り当てをしないので、待っている枝の状態をスタックの上の固定の配列に持つ。wasi-sdkの既定のスタック（64KiB）で動くよう、配列を約20KiBに抑えるためである。
 - CFF2の座標つきの解釈（[ADR 0027](adr/0027-variable-fonts.md)、[ADR 0030](adr/0030-variation-evaluation-corrections.md)）：FreeType側の係数は `Instance::blend_scalars::<Ft>` から元の列順で渡す。係数が0の列も残し、Private DICTとcharstringを位置ごとに評価する。HarfBuzz側の箱は、`f32` の領域係数と `f64` の差分の積和を使う。C ABIの `sofel_cff2_blend_vector` は、既定成分の65536を先頭に置き、必要な長さを返す。出力配列が短ければ変更しない。HarfBuzzのCFF2の箱は、fvar軸のあるフォントの既定位置でも全軸の0座標で領域を評価する。FreeTypeの静的な既定位置では差分の係数を0にする。
 - CFFのcharsetの索引（[ADR 0025](adr/0025-cff-charset-index.md)）：`Charset::num_ranges` はフォーマット1と2の範囲のうち、FreeTypeと同じくグリフの数を覆うまでの数（フォーマット0と予め定められたcharsetは0）。`Charset::index_into` は、呼び出し側の配列に各範囲の最初のグリフIDを書き、それを借りる `CharsetIndex`（`Copy`、`Send`、`Sync`）を返す。配列が短ければ何も書かずに要る長さを返す。確保はしない。`CharsetIndex::sid` は範囲の最初のグリフIDを二分探索し、`CharsetIndex::glyph` は範囲を順に見る。値は0xFFFFでの切りつめを含め、常に `Charset::sid`、`Charset::glyph` と等しい。
 - BASEの検証器は、表に収まらないオフセットの先、タグで引く記録（BaseTagList、BaseScriptList、BaseLangSys、FeatMinMax）がタグの昇順でないこと、BaseValuesの座標の数とBaseTagListのタグの数の不一致、未知のBaseCoordの形式を `Error` に、`defaultBaselineIndex` がタグの数以上であることを `Warning` にする。ビューの `find` は、並びが乱れていてもHarfBuzzと同じ記録を返すように、HarfBuzzの二分探索（`hb_bsearch_impl`）と同じ順に調べる（[ADR 0017](adr/0017-base-baselines.md)）。

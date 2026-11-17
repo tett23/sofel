@@ -22,7 +22,7 @@ use crate::CffRandomReason;
 /// The numbers and operators the branches may run together.
 const LIMIT: u32 = 100_000;
 /// The branches that may wait at once.
-const MAX_PENDING: usize = 64;
+const MAX_PENDING: usize = 16;
 /// The CFF operand stack.
 const STACK: usize = 48;
 

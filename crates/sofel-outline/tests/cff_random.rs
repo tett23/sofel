@@ -110,18 +110,21 @@ fn adr0082_i1_order_count_threads_and_other_fonts_do_not_matter() {
     dedup.dedup();
     assert_eq!(dedup, once);
     assert_eq!(draw_all(&bytes, &[3, 2, 1]), once);
-    // Two threads drawing at the same time.
-    let threads: Vec<_> = (0..2)
-        .map(|t| {
-            let bytes = bytes.clone();
-            std::thread::spawn(move || {
-                let order: Vec<u32> = if t == 0 { vec![1, 2, 3] } else { vec![3, 1, 2] };
-                draw_all(&bytes, &order)
+    // Two threads drawing at the same time (wasm32-wasip1 has no threads).
+    #[cfg(not(target_os = "wasi"))]
+    {
+        let threads: Vec<_> = (0..2)
+            .map(|t| {
+                let bytes = bytes.clone();
+                std::thread::spawn(move || {
+                    let order: Vec<u32> = if t == 0 { vec![1, 2, 3] } else { vec![3, 1, 2] };
+                    draw_all(&bytes, &order)
+                })
             })
-        })
-        .collect();
-    for t in threads {
-        assert_eq!(t.join().unwrap(), once);
+            .collect();
+        for t in threads {
+            assert_eq!(t.join().unwrap(), once);
+        }
     }
     // After other fonts were opened and drawn.
     for seed in [1, 2, 3] {
