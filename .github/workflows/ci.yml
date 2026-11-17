@@ -348,11 +348,11 @@ jobs:
           key: ${{ env.SOFEL_CACHE_GENERATION }}-${{ runner.os }}-wasm-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
       - uses: bytecodealliance/actions/wasmtime/setup@9152e710e9f7182e4c29ad218e4f335a7b203613 # v1.1.3
       - name: Build libraries for wasm32-unknown-unknown
-        run: cargo build --release --target wasm32-unknown-unknown -p sofel-read -p sofel-geom -p sofel-unicode -p sofel-font -p sofel-write -p sofel-subset -p sofel-outline -p sofel-bitmap -p sofel-color -p sofel-raster -p sofel-shape -p sofel-vector -p sofel-gpu -p sofel-inflate -p sofel-brotli -p sofel-png -p sofel-svg -p sofel-type1 -p sofel-woff -p sofel-bitmapfont -p sofel-capi
+        run: cargo build --release --target wasm32-unknown-unknown -p sofel-read -p sofel-geom -p sofel-unicode -p sofel-font -p sofel-write -p sofel-subset -p sofel-outline -p sofel-bitmap -p sofel-color -p sofel-raster -p sofel-shape -p sofel-vector -p sofel-gpu -p sofel-inflate -p sofel-brotli -p sofel-png -p sofel-svg -p sofel-type1 -p sofel-woff -p sofel-bitmapfont -p sofel-lzw -p sofel-bzip2 -p sofel-pfr -p sofel-capi
       - name: Test libraries on wasm32-wasip1
         env:
           CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime
-        run: cargo test --target wasm32-wasip1 -p sofel-read -p sofel-geom -p sofel-unicode -p sofel-font -p sofel-write -p sofel-subset -p sofel-outline -p sofel-bitmap -p sofel-color -p sofel-raster -p sofel-shape -p sofel-vector -p sofel-gpu -p sofel-inflate -p sofel-brotli -p sofel-png -p sofel-svg -p sofel-type1 -p sofel-woff -p sofel-bitmapfont
+        run: cargo test --target wasm32-wasip1 -p sofel-read -p sofel-geom -p sofel-unicode -p sofel-font -p sofel-write -p sofel-subset -p sofel-outline -p sofel-bitmap -p sofel-color -p sofel-raster -p sofel-shape -p sofel-vector -p sofel-gpu -p sofel-inflate -p sofel-brotli -p sofel-png -p sofel-svg -p sofel-type1 -p sofel-woff -p sofel-bitmapfont -p sofel-lzw -p sofel-bzip2 -p sofel-pfr
       # docs/adr/0021: the CFF outline hash of two test fonts, compared
       # with the committed value that the conformance job checks natively.
       - id: testdata
