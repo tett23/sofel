@@ -246,7 +246,7 @@ fn adr0049_i1_cache_matches_uncached_hvar_boundaries() {
     let font = Font::new(&bytes, 0).unwrap();
     let location = Location::from_design(&font, &[1.0]);
     let instance = font.instance(&location);
-    let cache = AdvanceCache::new(instance);
+    let mut cache = AdvanceCache::new(instance);
     let mut scratch = sofel_font::GlyphScratch::default();
     for glyph in [0, 0, 1, 127, 128, 0, u32::MAX, u32::MAX] {
         assert_eq!(
@@ -272,9 +272,9 @@ fn adr0049_i2_cache_owns_one_instance() {
     let default = Location::default_ref();
     let varied = Location::from_design(&first, &[1.0]);
     let mut scratch = sofel_font::GlyphScratch::default();
-    let first_default = AdvanceCache::new(first.instance(default));
-    let first_varied = AdvanceCache::new(first.instance(&varied));
-    let second_varied = AdvanceCache::new(second.instance(&varied));
+    let mut first_default = AdvanceCache::new(first.instance(default));
+    let mut first_varied = AdvanceCache::new(first.instance(&varied));
+    let mut second_varied = AdvanceCache::new(second.instance(&varied));
     assert_eq!(
         first_default.advance_with_scratch(GlyphId(0), &mut scratch),
         500

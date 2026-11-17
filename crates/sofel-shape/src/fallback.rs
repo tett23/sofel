@@ -187,7 +187,7 @@ fn position_mark(
 /// `position_around_base`.
 fn position_around_base(
     plan: &ShapePlan<'_>,
-    font: &ShapeFont<'_, '_, '_, '_>,
+    font: &mut ShapeFont<'_, '_, '_, '_>,
     buffer: &mut Buffer,
     base: usize,
     end: usize,
@@ -282,7 +282,7 @@ fn position_around_base(
 /// `position_cluster`.
 fn position_cluster(
     plan: &ShapePlan<'_>,
-    font: &ShapeFont<'_, '_, '_, '_>,
+    font: &mut ShapeFont<'_, '_, '_, '_>,
     buffer: &mut Buffer,
     start: usize,
     end: usize,
@@ -317,7 +317,7 @@ fn position_cluster(
 /// `_hb_ot_shape_fallback_mark_position`.
 pub(crate) fn position_marks(
     plan: &ShapePlan<'_>,
-    font: &ShapeFont<'_, '_, '_, '_>,
+    font: &mut ShapeFont<'_, '_, '_, '_>,
     buffer: &mut Buffer,
     adjust: bool,
 ) {
@@ -334,7 +334,7 @@ pub(crate) fn position_marks(
 }
 
 /// `_hb_ot_shape_fallback_spaces`.
-pub(crate) fn fallback_spaces(font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut Buffer) {
+pub(crate) fn fallback_spaces(font: &mut ShapeFont<'_, '_, '_, '_>, buffer: &mut Buffer) {
     let horizontal = buffer.direction.is_horizontal();
     let invisible = buffer.invisible;
     let (xs, ys) = (i64::from(font.x_scale()), i64::from(font.y_scale()));
@@ -354,7 +354,7 @@ pub(crate) fn fallback_spaces(font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut Buf
                 buffer.pos[i].y_advance = wrap(ys.wrapping_neg() / 4);
             }
         }
-        let advance_of = |g: u32| {
+        let advance_of = |font: &mut ShapeFont<'_, '_, '_, '_>, g: u32| {
             if horizontal {
                 (Some(font.h_advance(g)), None)
             } else {
@@ -394,7 +394,7 @@ pub(crate) fn fallback_spaces(font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut Buf
                 if let Some(g) =
                     (u32::from(b'0')..=u32::from(b'9')).find_map(|u| font.nominal_glyph(u))
                 {
-                    let (h, v) = advance_of(g);
+                    let (h, v) = advance_of(font, g);
                     if let Some(h) = h {
                         p.x_advance = h;
                     }
@@ -408,7 +408,7 @@ pub(crate) fn fallback_spaces(font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut Buf
                     .nominal_glyph(u32::from(b'.'))
                     .or_else(|| font.nominal_glyph(u32::from(b',')));
                 if let Some(g) = g {
-                    let (h, v) = advance_of(g);
+                    let (h, v) = advance_of(font, g);
                     if let Some(h) = h {
                         p.x_advance = h;
                     }

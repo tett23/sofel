@@ -397,7 +397,7 @@ const STCH_MAX_GLYPHS: u32 = 256;
 
 /// `apply_stch`: the tiles of each stretch repeated to fill the rest of
 /// the word, in two passes (measure, then cut).
-fn apply_stch(buffer: &mut Buffer, font: &ShapeFont<'_, '_, '_, '_>) {
+fn apply_stch(buffer: &mut Buffer, font: &mut ShapeFont<'_, '_, '_, '_>) {
     if buffer.scratch_flags & HAS_STCH == 0 {
         return;
     }
@@ -574,7 +574,11 @@ fn apply_stch(buffer: &mut Buffer, font: &ShapeFont<'_, '_, '_, '_>) {
 }
 
 /// `postprocess_glyphs_arabic`.
-fn postprocess_glyphs(_: &ShapePlan<'_>, buffer: &mut Buffer, font: &ShapeFont<'_, '_, '_, '_>) {
+fn postprocess_glyphs(
+    _: &ShapePlan<'_>,
+    buffer: &mut Buffer,
+    font: &mut ShapeFont<'_, '_, '_, '_>,
+) {
     apply_stch(buffer, font);
 }
 

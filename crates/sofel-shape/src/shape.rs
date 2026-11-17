@@ -55,10 +55,10 @@ pub fn shape_with_extents(
     let mut buf = buffer.buf;
     buf.direction = plan.props.direction;
     buf.script = plan.props.script;
-    let sf = ShapeFont::new(instance, *scale, extents, None);
+    let mut sf = ShapeFont::new(instance, *scale, extents, None);
     buf.enter();
     if buf.len > 0 {
-        shape_internal(plan, &sf, &mut buf);
+        shape_internal(plan, &mut sf, &mut buf);
     }
     buf.leave();
     into_glyph_buffer(buf)
@@ -76,10 +76,10 @@ pub fn shape_with_subfont<'f, 'a, 'l, 's>(
     buf.direction = plan.props.direction;
     buf.script = plan.props.script;
     let extents = |g| instance.glyf_extents(g);
-    let sf = ShapeFont::new(instance, subfont.scale(), &extents, Some(subfont));
+    let mut sf = ShapeFont::new(instance, subfont.scale(), &extents, Some(subfont));
     buf.enter();
     if buf.len > 0 {
-        shape_internal(plan, &sf, &mut buf);
+        shape_internal(plan, &mut sf, &mut buf);
     }
     buf.leave();
     into_glyph_buffer(buf)
@@ -122,7 +122,7 @@ fn into_glyph_buffer(mut buf: Buffer) -> GlyphBuffer {
 }
 
 /// `hb_ot_shape_internal`.
-fn shape_internal(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut Buffer) {
+fn shape_internal(plan: &ShapePlan<'_>, font: &mut ShapeFont<'_, '_, '_, '_>, buffer: &mut Buffer) {
     let target_direction = buffer.direction;
     set_unicode_props_all(buffer, plan.map.global_mask);
     insert_dotted_circle(buffer, font);
@@ -523,7 +523,11 @@ fn hide_default_ignorables(buffer: &mut Buffer, font: &ShapeFont<'_, '_, '_, '_>
 }
 
 /// `hb_ot_substitute_post`.
-fn substitute_post(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut Buffer) {
+fn substitute_post(
+    plan: &ShapePlan<'_>,
+    font: &mut ShapeFont<'_, '_, '_, '_>,
+    buffer: &mut Buffer,
+) {
     if plan.morx.is_some() {
         buffer.delete_glyphs_inplace(|info| info.codepoint == 0xffff);
     }
@@ -577,7 +581,7 @@ fn zero_width_default_ignorables(buffer: &mut Buffer) {
 }
 
 fn adjust_origins(
-    font: &ShapeFont<'_, '_, '_, '_>,
+    font: &mut ShapeFont<'_, '_, '_, '_>,
     buffer: &mut Buffer,
     horizontal: bool,
     adjust: fn(i32, i32) -> i32,
@@ -598,7 +602,7 @@ fn adjust_origins(
 }
 
 /// `hb_ot_position`.
-fn position(plan: &ShapePlan<'_>, font: &ShapeFont<'_, '_, '_, '_>, buffer: &mut Buffer) {
+fn position(plan: &ShapePlan<'_>, font: &mut ShapeFont<'_, '_, '_, '_>, buffer: &mut Buffer) {
     buffer.clear_positions();
     // hb_ot_position_default
     let horizontal = buffer.direction.is_horizontal();
@@ -730,8 +734,8 @@ pub fn shape_fallback(
     buffer: UnicodeBuffer,
 ) -> GlyphBuffer {
     let extents = |g: GlyphId| instance.glyf_extents(g);
-    let sf = ShapeFont::new(instance, *scale, &extents, None);
-    fallback_with_font(&sf, props, buffer)
+    let mut sf = ShapeFont::new(instance, *scale, &extents, None);
+    fallback_with_font(&mut sf, props, buffer)
 }
 
 /// Shape without layout tables using a child font's functions and synthetic settings.
@@ -742,12 +746,12 @@ pub fn shape_fallback_with_subfont<'f>(
     buffer: UnicodeBuffer,
 ) -> GlyphBuffer {
     let extents = |g: GlyphId| instance.glyf_extents(g);
-    let sf = ShapeFont::new(instance, subfont.scale(), &extents, Some(subfont));
-    fallback_with_font(&sf, props, buffer)
+    let mut sf = ShapeFont::new(instance, subfont.scale(), &extents, Some(subfont));
+    fallback_with_font(&mut sf, props, buffer)
 }
 
 fn fallback_with_font(
-    sf: &ShapeFont<'_, '_, '_, '_>,
+    sf: &mut ShapeFont<'_, '_, '_, '_>,
     props: &ResolvedProperties,
     buffer: UnicodeBuffer,
 ) -> GlyphBuffer {

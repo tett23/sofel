@@ -8,7 +8,6 @@ pub mod gvar;
 
 use alloc::vec::Vec;
 use alloc::{format, string::String};
-use core::sync::atomic::{AtomicU64, Ordering};
 use sofel_geom::float::{hb_clamp_to_i32, hb_roundf32, i32_to_f32};
 use sofel_geom::{div_fix, mul_div, mul_fix};
 use sofel_read::item_variation::{ItemVariationStore, Region};
@@ -1228,30 +1227,27 @@ pub struct AdvanceCache<'font, 'data, 'loc, 'source> {
     slots: AdvanceSlots,
 }
 
-struct AdvanceSlots([AtomicU64; 128]);
+struct AdvanceSlots([u64; 128]);
 
 impl AdvanceSlots {
     fn new() -> Self {
-        Self([const { AtomicU64::new(u64::MAX) }; 128])
+        Self([u64::MAX; 128])
     }
 
     #[inline]
-    fn get_or_compute(&self, glyph: u32, compute: impl FnOnce() -> u32) -> u32 {
+    fn get_or_compute(&mut self, glyph: u32, compute: impl FnOnce() -> u32) -> u32 {
         if glyph == u32::MAX {
             return compute();
         }
-        let Some(slot) = self.0.get(usize::try_from(glyph & 127).unwrap_or(0)) else {
+        let Some(slot) = self.0.get_mut(usize::try_from(glyph & 127).unwrap_or(0)) else {
             return compute();
         };
-        let cached = slot.load(Ordering::Relaxed);
+        let cached = *slot;
         if u32::try_from(cached >> 32).unwrap_or(u32::MAX) == glyph {
             return u32::try_from(cached & u64::from(u32::MAX)).unwrap_or(0);
         }
         let advance = compute();
-        slot.store(
-            (u64::from(glyph) << 32) | u64::from(advance),
-            Ordering::Relaxed,
-        );
+        *slot = (u64::from(glyph) << 32) | u64::from(advance);
         advance
     }
 }
@@ -1267,10 +1263,14 @@ impl<'font, 'data, 'loc, 'source> AdvanceCache<'font, 'data, 'loc, 'source> {
 
     /// Returns the final horizontal advance, evaluating a miss with `scratch`.
     #[inline]
-    pub fn advance_with_scratch(&self, glyph: GlyphId, scratch: &mut crate::GlyphScratch) -> u32 {
-        self.slots.get_or_compute(glyph.0, || {
-            self.instance.advance_with_scratch(glyph, scratch)
-        })
+    pub fn advance_with_scratch(
+        &mut self,
+        glyph: GlyphId,
+        scratch: &mut crate::GlyphScratch,
+    ) -> u32 {
+        let instance = &self.instance;
+        self.slots
+            .get_or_compute(glyph.0, || instance.advance_with_scratch(glyph, scratch))
     }
 }
 
@@ -2489,7 +2489,7 @@ mod tests {
 
     #[test]
     fn adr0049_i1_direct_slots_hit_collision_and_sentinel() {
-        let slots = AdvanceSlots::new();
+        let mut slots = AdvanceSlots::new();
         let mut computed = 0;
         for glyph in 0..128 {
             assert_eq!(
