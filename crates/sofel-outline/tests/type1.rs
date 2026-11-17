@@ -141,3 +141,101 @@ fn adr0065_i1_type1_other_subr_3_passes_operand() -> Result<(), Box<dyn std::err
     assert!(commands.contains(&Command::LineTo(Point { x: 200, y: 100 })));
     Ok(())
 }
+
+/// Glyphs for `seac`: A, acute (std code 194), B = A + acute, then three
+/// composites FreeType 2.15.0 rejects (error 3 from `ft-dump --outline`).
+fn seac_face_bytes() -> Vec<u8> {
+    let a: &[u8] = &[
+        139, 248, 136, 13, 239, 239, 21, 239, 139, 5, 139, 239, 5, 39, 39, 5, 9, 14,
+    ];
+    let acute: &[u8] = &[
+        169, 248, 136, 13, 159, 247, 42, 21, 179, 139, 5, 119, 169, 5, 9, 14,
+    ];
+    // 10 500 hsbw; 30 80 20 65 194 seac (B), then the same with the base
+    // code 66 (B itself, nested), 67 (no glyph C), and the accent code 300.
+    let b: &[u8] = &[149, 248, 136, 13, 169, 219, 159, 204, 247, 86, 12, 6];
+    let nest: &[u8] = &[149, 248, 136, 13, 169, 219, 159, 205, 247, 86, 12, 6];
+    let missing: &[u8] = &[149, 248, 136, 13, 169, 219, 159, 206, 247, 86, 12, 6];
+    let wide: &[u8] = &[149, 248, 136, 13, 169, 219, 159, 204, 247, 192, 12, 6];
+    fixture::with_glyphs(
+        &[
+            ("A", a),
+            ("acute", acute),
+            ("B", b),
+            ("nest", nest),
+            ("missing", missing),
+            ("wide", wide),
+        ],
+        &[(65, "A"), (66, "B")],
+    )
+    .0
+}
+
+fn lines(points: &[(i32, i32)]) -> Vec<Command> {
+    let mut out: Vec<Command> = points
+        .iter()
+        .enumerate()
+        .map(|(i, &(x, y))| {
+            let p = Point { x, y };
+            if i == 0 {
+                Command::MoveTo(p)
+            } else {
+                Command::LineTo(p)
+            }
+        })
+        .collect();
+    out.push(Command::Close);
+    out
+}
+
+#[test]
+fn adr0065_i1_type1_seac_matches_freetype() -> Result<(), Box<dyn std::error::Error>> {
+    let pfa = seac_face_bytes();
+    let source = Type1Source::parse_pfa(&pfa, 4096)?;
+    let face = Type1Face::new(&source)?;
+    // ft-dump --outline unscaled: the base at its own side bearing, the
+    // accent moved by adx + lsb(seac glyph) - asb = 80 + 10 - 30.
+    let mut commands = Vec::new();
+    let info = draw_type1(&face, 3, Scale::Unscaled, &mut FnPen(|c| commands.push(c)))?;
+    let mut want = lines(&[(100, 100), (200, 100), (200, 200), (100, 100)]);
+    want.extend(lines(&[(110, 170), (150, 170), (130, 200), (110, 170)]));
+    assert_eq!(commands, want);
+    assert_eq!(
+        (
+            info.cbox.x_min,
+            info.cbox.y_min,
+            info.cbox.x_max,
+            info.cbox.y_max
+        ),
+        (100, 100, 200, 200)
+    );
+    // ft-dump --outline 16.
+    let fixed = sofel_geom::Fixed(sofel_geom::div_fix(16 * 64, 1000));
+    let mut commands = Vec::new();
+    draw_type1(
+        &face,
+        3,
+        Scale::Scaled { x: fixed, y: fixed },
+        &mut FnPen(|c| commands.push(c)),
+    )?;
+    let mut want = lines(&[(102, 102), (205, 102), (205, 205), (102, 102)]);
+    want.extend(lines(&[(113, 174), (154, 174), (133, 205), (113, 174)]));
+    assert_eq!(commands, want);
+    Ok(())
+}
+
+#[test]
+fn adr0065_i1_type1_seac_rejects_what_freetype_rejects() -> Result<(), Box<dyn std::error::Error>> {
+    let pfa = seac_face_bytes();
+    let source = Type1Source::parse_pfa(&pfa, 4096)?;
+    let face = Type1Face::new(&source)?;
+    // Nested seac, a base code without a glyph, an accent code above 255.
+    for glyph in [4, 5, 6] {
+        assert_eq!(
+            draw_type1(&face, glyph, Scale::Unscaled, &mut FnPen(|_| {})).err(),
+            Some(sofel_outline::OutlineError::InvalidCharString),
+            "glyph {glyph}"
+        );
+    }
+    Ok(())
+}
