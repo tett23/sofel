@@ -101,7 +101,7 @@ fn take_bytes<'a>(input: &mut &'a [u8], count: usize) -> Option<&'a [u8]> {
     Some(bytes)
 }
 
-fn uint255(input: &mut &[u8]) -> Option<u16> {
+pub(super) fn uint255(input: &mut &[u8]) -> Option<u16> {
     Some(match take::<1>(input)?[0] {
         253 => u16::from_be_bytes(take(input)?),
         254 => 506 + u16::from(take::<1>(input)?[0]),
