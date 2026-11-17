@@ -1,6 +1,6 @@
 # ADR 0083: CFF の `random` を使うグリフを描画見本に加える
 
-Status: accepted-pending
+Status: accepted
 
 ## 文脈
 
