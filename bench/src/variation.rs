@@ -228,7 +228,7 @@ fn advance_cache_items(
             name,
             format!("ADR0049 advance {pattern} cached {location}"),
             &mut || {
-                let cache = AdvanceCache::new(instance);
+                let mut cache = AdvanceCache::new(instance);
                 let mut scratch = GlyphScratch::default();
                 ids.iter()
                     .map(|&glyph| {
