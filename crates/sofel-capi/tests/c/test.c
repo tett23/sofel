@@ -1086,6 +1086,13 @@ static void test_validate(void) {
   check_validate(invalid_data, sizeof invalid_data, invalid_diagnostics,
                  COUNT(invalid_diagnostics));
   check_validate(ttc_data, sizeof ttc_data, ttc_diagnostics, COUNT(ttc_diagnostics));
+  /* The interval check of glyphs that run random (ADR 0082). */
+  check_validate(cff_random_data, sizeof cff_random_data, cff_random_diagnostics,
+                 COUNT(cff_random_diagnostics));
+  CHECK(strstr(cff_random_diagnostics[2].details, "reason:0:0;") != NULL);
+  CHECK(SOFEL_CFF_RANDOM_DIVISION_BY_ZERO == 0 && SOFEL_CFF_RANDOM_NEGATIVE_SQRT == 1 &&
+        SOFEL_CFF_RANDOM_STACK_POSITION == 2 && SOFEL_CFF_RANDOM_INFINITE_BOUND == 3 &&
+        SOFEL_CFF_RANDOM_LIMIT == 4);
   CHECK(sofel_validate(not_font_data, sizeof not_font_data, count_diagnostic, &n) ==
         SOFEL_ERROR_INVALID_FONT);
   CHECK(n == 0);

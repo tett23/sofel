@@ -117,6 +117,8 @@ FreeTypeの合成操作には、`sofel-outline::Scratch` のスロット用の�
 
 `sofel-validate` は CFF2 の FDSelect フォーマット4を互換性の警告として報告する。ほかにエラーがなければ検証は成功する（[ADR 0056](docs/adr/0056-cff2-fdselect-format4-warning.md)）。
 
+CFF の `random` は、描くたびに Private DICT の `initialRandomSeed` から始まるので、輪郭は読む順やスレッドに依らない。`sofel-validate` は、`random` を実行するグリフを値の区間でたどりなおし、`random` の値しだいで INDEX の外のサブルーチンを呼ぶ枝（`cff_random_subroutine_out_of_range`、Error）、確かめきれない枝（`cff_random_unchecked`、Warning）、FreeType が描けない 16.16 の番号や位置（`cff_random_operand_rejected`、Warning）を報告する（[ADR 0082](docs/adr/0082-cff-random-interval-check.md)）。
+
 ### `sofel` で文字列を描く
 
 リポジトリのルートで次のコマンドを実行すると、`sofel` をインストールできます。
@@ -409,5 +411,6 @@ Rust のツールチェーンと、適合テストと同じフォント取得環
 各フェイスの単字と、その書体に合う文字列を一枚の PNG で見比べられる。
 sbix の見本は 109 ppem のストライクを使い、グリフ 19 の単字と `simple_linear` の合字 26 をそれぞれ 128 × 128 画素で表示する。
 CFF の COLRv1、OT-SVG、可変 COLRv1 の見本は 48 ppem で表示する。Noto Color Emoji の CBDT 版と COLRv1 版は、109 ppem で 😀 と 👩‍💻 を並べる。
+`derived-cff-random` と `derived-rand` の見本は、ビルドのたびに固定したフォントから作る派生フォントで描く。`derived-cff-random` は CFF の `random` 演算子を使う `R` を4つ並べ、どれも同じ形になる。`derived-rand` は Caveat に OpenType の `rand` 機能を足したもので、同じ文字の繰り返しに異体字が混ざる。派生フォントは `target/derived-fonts/` に置かれ、描画見本の出力と CI のアーティファクトには入らない（[sofel ADR 0083](docs/adr/0083-cff-random-gallery-sample.md)、[sofel ADR 0084](docs/adr/0084-opentype-rand-gallery-sample.md)）。
 CI では Actions の対象の実行からコミット SHA 付きのフォントギャラリーをダウンロードし、展開したディレクトリの `index.html` を開く。
 保存期間は14日間である（[sofel ADR 0069](docs/adr/0069-font-render-gallery.md)）。

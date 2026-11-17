@@ -1,3 +1,4 @@
 # id	source file id	archive member (- for direct)	font path	SHA-256	license id	features
 color-noto-cbdt	color-noto-cbdt	-	fonts/color-noto-cbdt.ttf	39ee3c587e10e89669b9ff32703261d10d5f9c4dd5ad147b6b5a1c5200591817	color-noto-license	shape,cbdt
 color-noto-colrv1	color-noto-colrv1	-	fonts/color-noto-colrv1.ttf	23549f29b5ad741fcb4c025b8dc44652ff0f459892467ebcccec1e6bbe839b44	color-noto-license	shape,colr
+caveat	caveat	-	fonts/caveat.ttf	0bdb6b660482d31531b3945849fba5916b3ef8695da7024a9e6b9ee3c4157988	caveat-license	shape,variable

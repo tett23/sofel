@@ -855,6 +855,38 @@ fn check_font_queries(font: &sofel_font::Font<'_>) {
 /// the rest is the table. `Cff::new`, every glyph through `Outlines`, the
 /// CID queries, the names and the font information must not panic, and a
 /// table without an `Error` (and without an FDSelect of format 4) opens.
+/// The interval check of glyphs that run `random` (ADR 0082): it ends
+/// for every input (its work is bounded by 100,000 numbers and operators
+/// and 16 waiting branches), reports at most one diagnostic per glyph,
+/// only for CFF, and reports the same on every run.
+fn check_cff_random(table: &[u8], flags: u8, num_glyphs: Option<u32>, seen: &[Diagnostic]) {
+    let glyph = |d: &Diagnostic| {
+        let mut g = None;
+        d.kind.details(&mut |k, v| {
+            if k == "glyph" {
+                g = Some(v);
+            }
+        });
+        g
+    };
+    let random: Vec<&Diagnostic> = seen
+        .iter()
+        .filter(|d| d.kind.id().starts_with("cff_random_"))
+        .collect();
+    if flags & 1 != 0 {
+        assert!(random.is_empty(), "CFF2 has no random: {random:?}");
+        return;
+    }
+    for (i, a) in random.iter().enumerate() {
+        for b in &random[i + 1..] {
+            assert_ne!(glyph(a), glyph(b), "two interval findings for one glyph");
+        }
+    }
+    let mut again = Vec::new();
+    sofel_read::cff::validate(table, num_glyphs, &mut |d| again.push(d));
+    assert_eq!(again, seen, "the diagnostics differ between two runs");
+}
+
 pub fn check_cff(input: &[u8]) {
     let Some((&flags, table)) = input.split_first() else { return };
     let tag: &[u8; 4] = if flags & 1 == 0 { b"CFF " } else { b"CFF2" };
@@ -876,11 +908,17 @@ pub fn check_cff(input: &[u8]) {
         error |= d.severity == Severity::Error;
         format4 |= d.kind.id() == "fd_select_format4";
     };
+    let mut seen = Vec::new();
+    let mut collect = |d: Diagnostic| {
+        report(d);
+        seen.push(d);
+    };
     if flags & 1 == 0 {
-        sofel_read::cff::validate(table, num_glyphs, &mut report);
+        sofel_read::cff::validate(table, num_glyphs, &mut collect);
     } else {
-        sofel_read::cff::validate2(table, num_glyphs, (flags & 2 != 0).then_some(1), &mut report);
+        sofel_read::cff::validate2(table, num_glyphs, (flags & 2 != 0).then_some(1), &mut collect);
     }
+    check_cff_random(table, flags, num_glyphs, &seen);
     let cff = sofel_font::Cff::new(&font);
     if !error && !format4 {
         assert!(cff.is_ok(), "no Error, but Cff::new fails: {cff:?}");

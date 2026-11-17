@@ -258,11 +258,11 @@ impl core::fmt::Debug for Context<'_> {
 /// The largest operand stack (CFF2 `maxstack`).
 pub const MAX_STACK: usize = 513;
 /// FreeType's `CF2_MAX_SUBR`.
-const MAX_SUBR: usize = 16;
+pub(super) const MAX_SUBR: usize = 16;
 /// `CF2_MAX_HINTS`.
-const MAX_HINTS: usize = hint::MAX_HINTS;
+pub(super) const MAX_HINTS: usize = hint::MAX_HINTS;
 /// `CF2_STORAGE_SIZE`.
-const STORAGE_SIZE: usize = 32;
+pub(super) const STORAGE_SIZE: usize = 32;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Number {
@@ -303,7 +303,7 @@ pub struct Work {
     stack: [Number; MAX_STACK],
     len: usize,
     storage: [i32; STORAGE_SIZE],
-    hints: Hints,
+    hints: HintState,
     path: GlyphPath,
     maps: Maps,
     random: u32,
@@ -311,9 +311,15 @@ pub struct Work {
     vsindex: u32,
     unknown: Option<(usize, u16)>,
     implicit_end: bool,
+    ran_random: bool,
 }
 
 impl Work {
+    /// Whether the last decode ran `random` (ADR 0082).
+    pub fn ran_random(&self) -> bool {
+        self.ran_random
+    }
+
     /// Number of horizontal and vertical stems seen in the last decode.
     pub fn hint_stem_count(&self) -> usize {
         self.hints.total()
@@ -337,7 +343,7 @@ impl Default for Work {
             stack: [Number::Int(0); MAX_STACK],
             len: 0,
             storage: [0; STORAGE_SIZE],
-            hints: Hints::default(),
+            hints: HintState::default(),
             path: GlyphPath::default(),
             maps: Maps::new(0),
             random: 0,
@@ -345,6 +351,7 @@ impl Default for Work {
             vsindex: 0,
             unknown: None,
             implicit_end: false,
+            ran_random: false,
         }
     }
 }
@@ -353,16 +360,16 @@ impl Default for Work {
 /// stems (the first [`MAX_HINTS`]; more fail when a map is built), the
 /// counts, and `hintMask`.
 #[derive(Clone, Copy, Debug)]
-struct Hints {
+struct HintState {
     h_stems: usize,
     v_stems: usize,
     h: [StemHint; MAX_HINTS],
     mask: HintMask,
 }
 
-impl Default for Hints {
-    fn default() -> Hints {
-        Hints {
+impl Default for HintState {
+    fn default() -> HintState {
+        HintState {
             h_stems: 0,
             v_stems: 0,
             h: [StemHint::default(); MAX_HINTS],
@@ -371,9 +378,59 @@ impl Default for Hints {
     }
 }
 
-impl Hints {
+impl HintState {
     fn total(&self) -> usize {
         self.h_stems.saturating_add(self.v_stems)
+    }
+}
+
+/// The hint counts and mask validity FreeType keeps without hinting,
+/// for the interval check of `random` (ADR 0082): they decide errors and
+/// whether a zero-length line starts a new hint map. The decoder keeps
+/// [`HintState`].
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct Hints {
+    pub(super) h_stems: usize,
+    pub(super) v_stems: usize,
+    pub(super) mask_valid: bool,
+    pub(super) mask_new: bool,
+    mask_bits: usize,
+    pub(super) initial_map_valid: bool,
+}
+
+impl Hints {
+    pub(super) fn total(&self) -> usize {
+        self.h_stems.saturating_add(self.v_stems)
+    }
+
+    /// `cf2_hintmask_setCounts`.
+    pub(super) fn set_counts(&mut self, bits: usize) -> Result<(), CharStringErrorKind> {
+        if bits > MAX_HINTS {
+            return Err(CharStringErrorKind::TooManyHints);
+        }
+        self.mask_bits = bits;
+        self.mask_valid = true;
+        self.mask_new = true;
+        Ok(())
+    }
+
+    /// `cf2_hintmap_build` for the glyph path's hint map; returns whether
+    /// the map became valid.
+    pub(super) fn build(&mut self) -> Result<bool, CharStringErrorKind> {
+        if !self.initial_map_valid {
+            if self.total() > MAX_HINTS {
+                return Err(CharStringErrorKind::TooManyHints);
+            }
+            self.initial_map_valid = true;
+        }
+        if !self.mask_valid {
+            self.set_counts(self.total())?;
+        }
+        if self.h_stems > self.mask_bits {
+            return Ok(false);
+        }
+        self.mask_new = false;
+        Ok(true)
     }
 }
 
@@ -913,6 +970,7 @@ fn run_decode(
     work.vsindex = ctx.vsindex;
     work.unknown = None;
     work.implicit_end = false;
+    work.ran_random = false;
     let mut run = Run {
         ctx,
         hinting,
@@ -941,7 +999,7 @@ fn interpret(
     // Fresh per call: stack, storage, hints and glyph path.
     r.work.len = 0;
     r.work.storage = [0; STORAGE_SIZE];
-    r.work.hints = Hints::default();
+    r.work.hints = HintState::default();
     r.work.path = GlyphPath {
         move_pending: true,
         origin_y: origin.1,
@@ -1469,6 +1527,7 @@ fn escape(r: &mut Run<'_, '_>, op2: u16, cur: &mut (i32, i32), cff2: bool) -> St
         23 => {
             let v = ((r.work.random & 0xFFFF).saturating_add(1)).cast_signed();
             r.work.random = random_next(r.work.random);
+            r.work.ran_random = true;
             r.push(Number::Fixed(v))?;
         }
         // mul

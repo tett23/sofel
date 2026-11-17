@@ -41,6 +41,7 @@ sofel_read::avar::* Zero-copy Rust views and per-table validators for pinning th
 sofel_read::base::* Zero-copy Rust views and per-table validators; C gets baselines with sofel_font_baseline and sofel_font_layout_font_extents, reads the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::be::* Bounds-checked big-endian readers of Rust slices for the table views; C reads bytes directly.
 sofel_read::cff::* Zero-copy Rust views, the FreeType DICT parsers, the Type 2 charstring decoder and the CFF validators (ADR 0021); C reads the bytes with sofel_font_table and validates with sofel_validate.
+sofel_read::CffRandomReason::code The reason of cff_random_unchecked (ADR 0082) reaches C as the "reason" value of sofel_diagnostic_details; sofel.h names the values SOFEL_CFF_RANDOM_*.
 sofel_read::cmap::* Zero-copy Rust views and per-table validators; C maps characters with sofel_font_nominal_glyph and sofel_font_variation_glyph, reads the bytes with sofel_font_table, and validates with sofel_validate.
 sofel_read::device::* Zero-copy Rust views of Device tables, read through the BASE, GDEF and GPOS views; C reads the bytes with sofel_font_table.
 sofel_read::delta_set_index_map::* Zero-copy Rust views and validator of DeltaSetIndexMap (ADR 0027); C reads the bytes with sofel_font_table and validates with sofel_validate.

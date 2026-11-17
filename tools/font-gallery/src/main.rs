@@ -189,6 +189,7 @@ fn generate(output: &Path, binaries: &Path) -> Result<(), String> {
         return Err("gallery output directory is not writable".into());
     }
     let repo = std::env::current_dir().map_err(|e| e.to_string())?;
+    font_gallery::derive::write_derived_fonts(&repo)?;
     let samples = inputs::gallery_cases(&repo)?;
     let label_font = samples
         .iter()

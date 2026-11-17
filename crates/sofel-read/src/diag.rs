@@ -687,6 +687,77 @@ pub enum Kind {
         /// The number of layers.
         count: u32,
     },
+    /// A branch of the interval check of a CFF glyph that runs `random`
+    /// calls a subroutine outside its INDEX (ADR 0082).
+    CffRandomSubroutineOutOfRange {
+        /// The glyph id.
+        glyph: u32,
+        /// The byte position in the charstring or subroutine.
+        position: u32,
+    },
+    /// The interval check of a CFF glyph that runs `random` cannot decide
+    /// whether every branch is valid (ADR 0082).
+    CffRandomUnchecked {
+        /// The glyph id.
+        glyph: u32,
+        /// The byte position in the charstring or subroutine.
+        position: u32,
+        /// Why the check stopped.
+        reason: CffRandomReason,
+    },
+    /// A branch of the interval check of a CFF glyph that runs `random`
+    /// gives a 16.16 number to an operator that needs an integer; FreeType
+    /// and sofel cannot draw the glyph (ADR 0082).
+    CffRandomOperandRejected {
+        /// The glyph id.
+        glyph: u32,
+        /// The byte position in the charstring or subroutine.
+        position: u32,
+        /// The operator (`0x0C00 | b` for `12 b`).
+        operator: u32,
+    },
+}
+
+/// Why the interval check of a CFF glyph that runs `random` cannot
+/// decide (ADR 0082). [`CffRandomReason::code`] is the `reason` value of
+/// `sofel-validate --json`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum CffRandomReason {
+    /// A divisor range of `div` that contains 0.
+    DivisionByZero,
+    /// An operand range of `sqrt` that contains negative numbers.
+    NegativeSqrt,
+    /// A position range of `index` that reaches the stack depth, or a
+    /// count range of `roll` that is negative or above the stack depth.
+    StackPosition,
+    /// A range with an infinite end used by `mul`, `div` or as a position.
+    InfiniteBound,
+    /// The branches together run more than 100,000 numbers and operators,
+    /// or nest more branches than the check can hold.
+    Limit,
+}
+
+impl CffRandomReason {
+    /// The stable number of the reason: 0 to 4 in declaration order.
+    pub fn code(self) -> u32 {
+        match self {
+            CffRandomReason::DivisionByZero => 0,
+            CffRandomReason::NegativeSqrt => 1,
+            CffRandomReason::StackPosition => 2,
+            CffRandomReason::InfiniteBound => 3,
+            CffRandomReason::Limit => 4,
+        }
+    }
+
+    fn describe(self) -> &'static str {
+        match self {
+            CffRandomReason::DivisionByZero => "a divisor range contains 0",
+            CffRandomReason::NegativeSqrt => "a sqrt operand range contains negative numbers",
+            CffRandomReason::StackPosition => "an index or roll range reaches beyond the stack",
+            CffRandomReason::InfiniteBound => "a range with an infinite end is used",
+            CffRandomReason::Limit => "the branches exceed the work limit",
+        }
+    }
 }
 
 impl Kind {
@@ -771,7 +842,8 @@ impl Kind {
             | NestedExtension
             | EmptyInputSequence
             | WorkLimitExceeded
-            | LayerIndexOutOfRange { .. } => Severity::Error,
+            | LayerIndexOutOfRange { .. }
+            | CffRandomSubroutineOutOfRange { .. } => Severity::Error,
             RecordsNotSorted { .. }
             | DuplicateTable { .. }
             | ChecksumMismatch { .. }
@@ -802,7 +874,9 @@ impl Kind {
             | DefaultBaselineOutOfRange { .. }
             | ReservedBitsSet { .. }
             | CoverageDuplicate { .. }
-            | ColorIndexOutOfRange { .. } => Severity::Warning,
+            | ColorIndexOutOfRange { .. }
+            | CffRandomUnchecked { .. }
+            | CffRandomOperandRejected { .. } => Severity::Warning,
             UnknownConditionFormat { .. } | LayoutTableDiscarded { .. } => Severity::Warning,
         }
     }
@@ -922,6 +996,9 @@ impl Kind {
             WorkLimitExceeded => "work_limit_exceeded",
             ColorIndexOutOfRange { .. } => "color_index_out_of_range",
             LayerIndexOutOfRange { .. } => "layer_index_out_of_range",
+            CffRandomSubroutineOutOfRange { .. } => "cff_random_subroutine_out_of_range",
+            CffRandomUnchecked { .. } => "cff_random_unchecked",
+            CffRandomOperandRejected { .. } => "cff_random_operand_rejected",
         }
     }
 
@@ -1224,6 +1301,28 @@ impl Kind {
             DefaultBaselineOutOfRange { index, count } => {
                 f("index", Uint(index));
                 f("count", Uint(count));
+            }
+            CffRandomSubroutineOutOfRange { glyph, position } => {
+                f("glyph", Uint(glyph));
+                f("position", Uint(position));
+            }
+            CffRandomUnchecked {
+                glyph,
+                position,
+                reason,
+            } => {
+                f("glyph", Uint(glyph));
+                f("position", Uint(position));
+                f("reason", Uint(reason.code()));
+            }
+            CffRandomOperandRejected {
+                glyph,
+                position,
+                operator,
+            } => {
+                f("glyph", Uint(glyph));
+                f("position", Uint(position));
+                f("operator", Uint(operator));
             }
         }
     }
@@ -1584,6 +1683,27 @@ impl fmt::Display for Kind {
             WorkLimitExceeded => {
                 f.write_str("validation stopped: too many offsets for the size of the table, or too many problems")
             }
+            CffRandomSubroutineOutOfRange { glyph, position } => write!(
+                f,
+                "glyph {glyph}: a random-dependent branch calls a subroutine out of range at byte {position}"
+            ),
+            CffRandomUnchecked {
+                glyph,
+                position,
+                reason,
+            } => write!(
+                f,
+                "glyph {glyph}: the random check stops at byte {position}: {}",
+                reason.describe()
+            ),
+            CffRandomOperandRejected {
+                glyph,
+                position,
+                operator,
+            } => write!(
+                f,
+                "glyph {glyph}: a random-dependent branch gives a 16.16 number to operator {operator:#06x} at byte {position}"
+            ),
         }
     }
 }

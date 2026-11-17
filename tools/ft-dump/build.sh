@@ -56,11 +56,23 @@ if [ "${SOFEL_FT_PNG:-0}" = 1 ]; then
   png_flags="-DFT_CONFIG_OPTION_USE_PNG -lpng"
 fi
 mkdir -p "$(dirname "$out")"
-# shellcheck disable=SC2086 # $sources is a list of paths without spaces
+# ft-dump --calc random calls psaux's static cff_random through
+# psrandom.c, which needs the psaux sources on its include path; it is
+# compiled on its own so that path does not reach the other files.
+extra=
+if [ "$driver" = "$here/ft-dump.c" ]; then
+  extra="$(dirname "$out")/psrandom.o"
+  "$cc" -O2 -w \
+    -DFT2_BUILD_LIBRARY \
+    '-DFT_CONFIG_MODULES_H=<ftmodule.h>' \
+    -I "$here" -I "$src/include" -I "$src/src/psaux" \
+    -c "$here/psrandom.c" -o "$extra"
+fi
+# shellcheck disable=SC2086 # $sources and $extra are paths without spaces
 "$cc" -O2 -w \
   -DFT2_BUILD_LIBRARY \
   '-DFT_CONFIG_MODULES_H=<ftmodule.h>' \
   -I "$here" -I "$src/include" \
-  "$driver" $sources $png_flags "$@" \
+  "$driver" $sources $extra $png_flags "$@" \
   -o "$out"
 echo "$out"
