@@ -624,35 +624,18 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
                 Ok((info, advance))
             }
             HintMode::NativeV35 | HintMode::NativeV40 if matches!(self.format, Format::Cff(_)) => {
-                if !matches!(self.format, Format::Cff(c) if c.version() == sofel_font::read::cff::Version::Cff)
-                {
-                    scratch.clear();
-                    return Err(OutlineError::UnsupportedFormat);
-                }
-                let scale = Scale::pixels(&self.font, ppem, ppem);
-                self.load(glyph, Scale::Unscaled, scratch)?;
-                if scratch.cff.hint_stem_count() != 0 {
-                    scratch.clear();
-                    return Err(OutlineError::UnsupportedFormat);
-                }
-                let Scale::Scaled { x, .. } = scale else {
-                    return Err(OutlineError::InvalidOutline);
-                };
                 let Format::Cff(cff) = self.format else {
                     return Err(OutlineError::UnsupportedFormat);
                 };
-                let info = cff::load_cff_native_without_stems(
-                    &self.font,
-                    self.location,
-                    &cff,
-                    glyph,
-                    scale,
-                    scratch,
-                )?;
-                let advance = self
-                    .instance()
-                    .ft_h_advance(glyph)
-                    .map_or(0, |width| mul_fix(i32::from(width), x.0));
+                let scale = Scale::pixels(&self.font, ppem, ppem);
+                let (info, x_scale) =
+                    cff::load_cff_hinted(&self.font, self.location, &cff, glyph, scale, scratch)?;
+                let advance = self.instance().ft_h_advance(glyph).map_or(0, |width| {
+                    sofel_font::read::cff::ft::to_i32(sofel_font::read::cff::ft::mul_fix(
+                        i64::from(width),
+                        x_scale,
+                    ))
+                });
                 Ok((info, advance.wrapping_add(32) & !63))
             }
             HintMode::NativeV35 => {

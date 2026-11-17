@@ -85,6 +85,13 @@
  * Loads every glyph through the automatic hinter and renders it at each
  * ppem from FIRST to LAST; see auto_hint below (ADR 0064).
  *
+ * Usage: ft-dump --native-hint FIRST LAST TARGET [--variations=TAG=value,...] [--face=N] [--glyph-step=N] FILE
+ *
+ * The same with the font driver's own hinter (FT_LOAD_NO_AUTOHINT), for
+ * the CFF and CFF2 hinter of ADR 0064. --face selects the face of a
+ * collection and --glyph-step loads only every Nth glyph (both modes;
+ * defaults 0 and 1).
+ *
  * Usage: ft-dump --auto-styles [--variations=TAG=value,...] FILE
  *
  * Prints `style <glyph> <word>` for every glyph of face 0, the word as
@@ -300,6 +307,10 @@
 static FT_UInt reference_named;
 static int reference_has_named;
 static const char *reference_variations;
+/* --face=N: the face of a collection that --auto-hint and --native-hint load. */
+static FT_Long reference_face;
+/* --glyph-step=N: --auto-hint and --native-hint load every Nth glyph. */
+static FT_Long reference_glyph_step = 1;
 
 static int reference_options(int *argc, char **argv)
 {
@@ -315,6 +326,16 @@ static int reference_options(int *argc, char **argv)
     } else if (strncmp(arg, "--variations=", 13) == 0) {
       reference_variations = arg + 13;
       if (!*reference_variations) return 0;
+    } else if (strncmp(arg, "--face=", 7) == 0) {
+      char *end;
+      unsigned long value = strtoul(arg + 7, &end, 10);
+      if (!arg[7] || *end || value >= 0xFFFF) return 0;
+      reference_face = (FT_Long)value;
+    } else if (strncmp(arg, "--glyph-step=", 13) == 0) {
+      char *end;
+      unsigned long value = strtoul(arg + 13, &end, 10);
+      if (!arg[13] || *end || value == 0 || value > 0xFFFF) return 0;
+      reference_glyph_step = (FT_Long)value;
     } else argv[write++] = argv[read];
   }
   *argc = write;
@@ -1781,10 +1802,11 @@ static int hint_slot(const char *size, const char *glyph, const char *engine,
 }
 
 /*
- * Every glyph of face 0 through the automatic hinter, for ADR 0064 I1 and
- * I2: for each ppem from FIRST to LAST, FT_Set_Pixel_Sizes(0, ppem), and
- * for each glyph FT_Load_Glyph with FT_LOAD_FORCE_AUTOHINT |
- * FT_LOAD_NO_BITMAP and the load target, then FT_Render_Glyph in the
+ * Every glyph of face 0 (or --face) through the automatic hinter (ENGINE is
+ * FT_LOAD_FORCE_AUTOHINT) or the driver's hinter (FT_LOAD_NO_AUTOHINT),
+ * for ADR 0064 I1 and I2: for each ppem from FIRST to LAST,
+ * FT_Set_Pixel_Sizes(0, ppem), and for each glyph FT_Load_Glyph with
+ * ENGINE | FT_LOAD_NO_BITMAP and the load target, then FT_Render_Glyph in the
  * render mode of the same name (normal, light, mono, lcd, lcd-v).
  *
  *   size <ppem>
@@ -1798,12 +1820,12 @@ static int hint_slot(const char *size, const char *glyph, const char *engine,
  *   <row as hex, top first; packed bits for mono, bytes otherwise>
  */
 static int auto_hint(const char *first, const char *last, const char *target,
-                     const char *path)
+                     const char *path, FT_Int32 engine)
 {
   FT_Library library;
   FT_Face face;
   FT_Error error;
-  FT_Int32 flags = FT_LOAD_NO_BITMAP | FT_LOAD_FORCE_AUTOHINT;
+  FT_Int32 flags = FT_LOAD_NO_BITMAP | engine;
   FT_Render_Mode mode = FT_RENDER_MODE_NORMAL;
   char *end;
   long from = strtol(first, &end, 10), to;
@@ -1817,7 +1839,7 @@ static int auto_hint(const char *first, const char *last, const char *target,
   else if (strcmp(target, "normal")) return 2;
 
   if (FT_Init_FreeType(&library)) return 1;
-  error = FT_New_Face(library, path, 0, &face);
+  error = FT_New_Face(library, path, reference_face, &face);
   if (!error) {
     error = set_reference_location(library, face, reference_variations);
     for (long ppem = from; !error && ppem <= to; ppem++) {
@@ -1825,7 +1847,7 @@ static int auto_hint(const char *first, const char *last, const char *target,
       error = FT_Set_Pixel_Sizes(face, 0, (FT_UInt)ppem);
       if (error) break;
       printf("size %ld\n", ppem);
-      for (g = 0; g < face->num_glyphs; g++) {
+      for (g = 0; g < face->num_glyphs; g += reference_glyph_step) {
         FT_GlyphSlot slot = face->glyph;
         FT_Error e;
         FT_Bitmap *b;
@@ -1939,7 +1961,9 @@ int main(int argc, char **argv)
   if (argc == 3 && !strcmp(argv[1], "--auto-styles"))
     return auto_styles(argv[2]);
   if (argc == 6 && !strcmp(argv[1], "--auto-hint"))
-    return auto_hint(argv[2], argv[3], argv[4], argv[5]);
+    return auto_hint(argv[2], argv[3], argv[4], argv[5], FT_LOAD_FORCE_AUTOHINT);
+  if (argc == 6 && !strcmp(argv[1], "--native-hint"))
+    return auto_hint(argv[2], argv[3], argv[4], argv[5], FT_LOAD_NO_AUTOHINT);
   if (argc == 3 && strcmp(argv[1], "--advances") == 0)
     return dump_advance_queries(argv[2]);
   if (argc == 2 && strcmp(argv[1], "--calc") == 0)
@@ -1986,7 +2010,7 @@ int main(int argc, char **argv)
     argc = 2;
   }
   if (argc != 2) {
-    fprintf(stderr, "usage: ft-dump FILE | ft-dump --hint-slot PPEM GLYPH ENGINE TARGET FILE | ft-dump --auto-style GLYPH FILE | ft-dump --auto-styles [--variations=TAG=value,...] FILE | ft-dump --auto-hint FIRST_PPEM LAST_PPEM TARGET [--variations=TAG=value,...] FILE | ft-dump --advances [--named-instance=N] [--variations=TAG=value,...] FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --stroke SIZE GLYPH RADIUS JOIN MITER BORDER FILE | ft-dump --sampled-outline SIZE FILE PLAN | ft-dump --sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...] | ft-dump --raster PPEM [--color|--lcd|--lcd-v|--mono|--sdf|--bitmap-sdf] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --cff2-private FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
+    fprintf(stderr, "usage: ft-dump FILE | ft-dump --hint-slot PPEM GLYPH ENGINE TARGET FILE | ft-dump --auto-style GLYPH FILE | ft-dump --auto-styles [--variations=TAG=value,...] FILE | ft-dump --auto-hint FIRST_PPEM LAST_PPEM TARGET [--variations=TAG=value,...] FILE | ft-dump --native-hint FIRST_PPEM LAST_PPEM TARGET [--variations=TAG=value,...] [--face=N] [--glyph-step=N] FILE | ft-dump --advances [--named-instance=N] [--variations=TAG=value,...] FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --stroke SIZE GLYPH RADIUS JOIN MITER BORDER FILE | ft-dump --sampled-outline SIZE FILE PLAN | ft-dump --sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...] | ft-dump --raster PPEM [--color|--lcd|--lcd-v|--mono|--sdf|--bitmap-sdf] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --cff2-private FILE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
     return 2;
   }
   if (FT_Init_FreeType(&library) != 0) {

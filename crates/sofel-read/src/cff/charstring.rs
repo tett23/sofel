@@ -1,20 +1,23 @@
-//! Type 2 charstrings: the lexer, and FreeType's charstring decoder
-//! without hinting.
+//! Type 2 charstrings: the lexer, and FreeType's charstring decoder with
+//! and without hinting.
 //!
 //! The decoder is a port of FreeType 2.15.0's Adobe engine
 //! (`cf2_interpT2CharString` in `src/psaux/psintrp.c`, `cf2_glyphpath_*`
-//! in `src/psaux/pshints.c`, `src/psaux/psstack.c`) with hinting and stem
-//! darkening taken out. What stays: the operand stack with its number
-//! types, the subroutine stack, the width, the stem counts and hint masks
-//! (they decide errors and which zero-length lines are kept), flex, seac,
-//! the arithmetic operators, CFF2 `blend` and `vsindex`, and the glyph
-//! path, which drops zero-length lines and maps points to device space.
+//! in `src/psaux/pshints.c`, `src/psaux/psstack.c`) with stem darkening
+//! taken out (FreeType's default). What it keeps: the operand stack with
+//! its number types, the subroutine stack, the width, the stem hints and
+//! hint masks (without hinting they still decide errors and which
+//! zero-length lines are kept), flex, seac, the arithmetic operators,
+//! CFF2 `blend` and `vsindex`, and the glyph path, which drops
+//! zero-length lines and maps points to device space through the hint
+//! maps of [`super::hint`] ([`decode_hinted`], sofel ADR 0064).
 //! Copyright 2007-2014 Adobe Systems Incorporated, and Copyright (C)
 //! 1996-2026 by David Turner, Robert Wilhelm, and Werner Lemberg. Used
 //! under the FreeType License (FTL) with the Adobe patent license; see
 //! THIRD_PARTY_NOTICES.md.
 
 use super::dict::BlendWeights;
+use super::hint::{self, HintMap, HintMask, Hinting, StemHint, Stems};
 use super::{Charset, Index, STANDARD_ENCODING, Version, ft};
 use crate::be;
 
@@ -256,7 +259,7 @@ pub const MAX_STACK: usize = 513;
 /// FreeType's `CF2_MAX_SUBR`.
 const MAX_SUBR: usize = 16;
 /// `CF2_MAX_HINTS`.
-const MAX_HINTS: usize = 96;
+const MAX_HINTS: usize = hint::MAX_HINTS;
 /// `CF2_STORAGE_SIZE`.
 const STORAGE_SIZE: usize = 32;
 
@@ -301,6 +304,7 @@ pub struct Work {
     storage: [i32; STORAGE_SIZE],
     hints: Hints,
     path: GlyphPath,
+    maps: Maps,
     random: u32,
     used_blend: bool,
     vsindex: u32,
@@ -334,6 +338,7 @@ impl Default for Work {
             storage: [0; STORAGE_SIZE],
             hints: Hints::default(),
             path: GlyphPath::default(),
+            maps: Maps::new(0),
             random: 0,
             used_blend: false,
             vsindex: 0,
@@ -343,52 +348,64 @@ impl Default for Work {
     }
 }
 
-/// The hint state FreeType keeps without hinting: it decides errors and
-/// whether a zero-length line starts a new hint map.
-#[derive(Clone, Copy, Debug, Default)]
+/// The stem hints and the hint mask of one charstring: the horizontal
+/// stems (the first [`MAX_HINTS`]; more fail when a map is built), the
+/// counts, and `hintMask`.
+#[derive(Clone, Copy, Debug)]
 struct Hints {
     h_stems: usize,
     v_stems: usize,
-    mask_valid: bool,
-    mask_new: bool,
-    mask_bits: usize,
-    initial_map_valid: bool,
+    h: [StemHint; MAX_HINTS],
+    mask: HintMask,
+}
+
+impl Default for Hints {
+    fn default() -> Hints {
+        Hints {
+            h_stems: 0,
+            v_stems: 0,
+            h: [StemHint::default(); MAX_HINTS],
+            mask: HintMask::default(),
+        }
+    }
 }
 
 impl Hints {
     fn total(&self) -> usize {
         self.h_stems.saturating_add(self.v_stems)
     }
+}
 
-    /// `cf2_hintmask_setCounts`.
-    fn set_counts(&mut self, bits: usize) -> Result<(), CharStringErrorKind> {
-        if bits > MAX_HINTS {
-            return Err(CharStringErrorKind::TooManyHints);
+/// The glyph path's hint maps: the current one, the one in force at the
+/// start of the contour, and the initial one of the captured hints.
+#[derive(Clone, Copy, Debug)]
+struct Maps {
+    map: HintMap,
+    first: HintMap,
+    initial: HintMap,
+}
+
+impl Maps {
+    fn new(scale: i32) -> Maps {
+        Maps {
+            map: HintMap::new(scale),
+            first: HintMap::new(scale),
+            initial: HintMap::new(scale),
         }
-        self.mask_bits = bits;
-        self.mask_valid = true;
-        self.mask_new = true;
-        Ok(())
     }
 
-    /// `cf2_hintmap_build` for the glyph path's hint map; returns whether
-    /// the map became valid.
-    fn build(&mut self) -> Result<bool, CharStringErrorKind> {
-        if !self.initial_map_valid {
-            if self.total() > MAX_HINTS {
-                return Err(CharStringErrorKind::TooManyHints);
-            }
-            self.initial_map_valid = true;
-        }
-        if !self.mask_valid {
-            self.set_counts(self.total())?;
-        }
-        if self.h_stems > self.mask_bits {
-            return Ok(false);
-        }
-        self.mask_new = false;
-        Ok(true)
+    fn reset(&mut self, scale: i32) {
+        self.map.reset(scale);
+        self.first.reset(scale);
+        self.initial.reset(scale);
     }
+}
+
+/// Which hint map maps a point.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Which {
+    Current,
+    First,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -398,14 +415,14 @@ enum Elem {
     Cube,
 }
 
-/// `CF2_GlyphPathRec` without hinting and darkening.
+/// `CF2_GlyphPathRec` without darkening; the hint maps are in [`Maps`].
 #[derive(Clone, Copy, Debug, Default)]
 struct GlyphPath {
     move_pending: bool,
     open: bool,
     closing: bool,
     queued: bool,
-    map_valid: bool,
+    origin_y: i32,
     current: (i32, i32),
     start: (i32, i32),
     current_ds: (i32, i32),
@@ -417,6 +434,7 @@ struct GlyphPath {
 
 struct Run<'s, 'c> {
     ctx: &'s Context<'c>,
+    hinting: Option<&'s Hinting>,
     work: &'s mut Work,
     sink: &'s mut dyn PathSink,
 }
@@ -424,16 +442,56 @@ struct Run<'s, 'c> {
 type Step<T> = Result<T, CharStringErrorKind>;
 
 impl Run<'_, '_> {
-    fn ds(&self, p: (i32, i32)) -> (i32, i32) {
-        let s = self.ctx.scale;
-        (mul_fix(s, p.0), mul_fix(p.1, s))
+    fn scales(&self) -> (i32, i32) {
+        self.hinting
+            .map_or((self.ctx.scale, self.ctx.scale), |h| h.scales())
     }
 
+    /// `cf2_glyphpath_hintPoint`: x scaled, y through a hint map (only
+    /// scaled without hinting, where the maps stay empty).
+    fn ds(&self, which: Which, p: (i32, i32)) -> (i32, i32) {
+        let map = match which {
+            Which::Current => &self.work.maps.map,
+            Which::First => &self.work.maps.first,
+        };
+        (mul_fix(self.scales().0, p.0), map.map(p.1))
+    }
+
+    /// `cf2_hintmap_build` of the glyph path's current map.
     fn build_map(&mut self) -> Step<()> {
-        if self.work.hints.build()? {
-            self.work.path.map_valid = true;
-        }
-        Ok(())
+        let w = &mut *self.work;
+        let mut stems = Stems {
+            h: &mut w.hints.h,
+            h_count: w.hints.h_stems,
+            v_count: w.hints.v_stems,
+            blues: self.hinting.map(Hinting::blues),
+        };
+        hint::build(
+            &mut w.maps.map,
+            &mut w.maps.initial,
+            &mut stems,
+            &mut w.hints.mask,
+            w.path.origin_y,
+        )
+        .map_err(|_| CharStringErrorKind::TooManyHints)
+    }
+
+    /// `cntrmask`: a counter map built only to place and lock its stems.
+    fn counter_mask(&mut self, bytes: &[u8]) -> Step<()> {
+        let scale_y = self.scales().1;
+        let w = &mut *self.work;
+        let mut mask = HintMask::default();
+        mask.read(w.hints.total(), bytes)
+            .map_err(|_| CharStringErrorKind::TooManyHints)?;
+        let mut map = HintMap::new(scale_y);
+        let mut stems = Stems {
+            h: &mut w.hints.h,
+            h_count: w.hints.h_stems,
+            v_count: w.hints.v_stems,
+            blues: self.hinting.map(Hinting::blues),
+        };
+        hint::build(&mut map, &mut w.maps.initial, &mut stems, &mut mask, 0)
+            .map_err(|_| CharStringErrorKind::TooManyHints)
     }
 
     /// `cf2_glyphpath_moveTo`.
@@ -443,19 +501,22 @@ impl Run<'_, '_> {
         p.current = (x, y);
         p.start = (x, y);
         p.move_pending = true;
-        if !p.map_valid || self.work.hints.mask_new {
+        if !self.work.maps.map.valid || self.work.hints.mask.new {
             self.build_map()?;
+        }
+        if self.hinting.is_some() {
+            self.work.maps.first = self.work.maps.map;
         }
         Ok(())
     }
 
     /// `cf2_glyphpath_pushMove`.
     fn push_move(&mut self, start: (i32, i32)) -> Step<()> {
-        if !self.work.path.map_valid {
+        if !self.work.maps.map.valid {
             let s = self.work.path.start;
             self.move_to(s.0, s.1)?;
         }
-        let pt = self.ds(start);
+        let pt = self.ds(Which::Current, start);
         self.sink.move_to();
         self.work.path.current_ds = pt;
         self.work.path.start0 = start;
@@ -463,12 +524,15 @@ impl Run<'_, '_> {
     }
 
     /// `cf2_glyphpath_pushPrevElem` without offsets: the previous and the
-    /// next element always join.
+    /// next element always join, so no intersection is computed. Closing
+    /// maps the end of a line and the start point with the contour's
+    /// first hint map.
     fn push_prev(&mut self, next0: (i32, i32), close: bool) {
         let p = self.work.path;
+        let end_map = if close { Which::First } else { Which::Current };
         match p.prev {
             Elem::Line => {
-                let pt1 = self.ds(p.prev_p[1]);
+                let pt1 = self.ds(end_map, p.prev_p[1]);
                 if pt1 != p.current_ds {
                     self.sink.line_to(p.current_ds, pt1);
                     self.work.path.current_ds = pt1;
@@ -476,18 +540,15 @@ impl Run<'_, '_> {
             }
             Elem::Cube => {
                 let (a, b, c) = (
-                    self.ds(p.prev_p[1]),
-                    self.ds(p.prev_p[2]),
-                    self.ds(p.prev_p[3]),
+                    self.ds(Which::Current, p.prev_p[1]),
+                    self.ds(Which::Current, p.prev_p[2]),
+                    self.ds(Which::Current, p.prev_p[3]),
                 );
                 self.sink.cubic_to(p.current_ds, a, b, c);
                 self.work.path.current_ds = c;
             }
         }
-        // No intersection is used, so the connecting line is always
-        // considered.
-        let _ = close;
-        let pt1 = self.ds(next0);
+        let pt1 = self.ds(end_map, next0);
         let cur = self.work.path.current_ds;
         if pt1 != cur {
             self.sink.line_to(cur, pt1);
@@ -497,7 +558,7 @@ impl Run<'_, '_> {
 
     /// `cf2_glyphpath_lineTo`.
     fn line_to(&mut self, x: i32, y: i32) -> Step<()> {
-        let new_map = self.work.hints.mask_new && !self.work.path.closing;
+        let new_map = self.work.hints.mask.new && !self.work.path.closing;
         if self.work.path.current == (x, y) && !new_map {
             return Ok(());
         }
@@ -542,7 +603,7 @@ impl Run<'_, '_> {
         p.queued = true;
         p.prev = Elem::Cube;
         p.prev_p = [p0, c1, c2, to];
-        if self.work.hints.mask_new {
+        if self.work.hints.mask.new {
             self.build_map()?;
         }
         self.work.path.current = to;
@@ -686,7 +747,18 @@ impl Run<'_, '_> {
         }
         let pairs = count.saturating_sub(usize::from(has_width)) / 2;
         if horizontal {
-            self.work.hints.h_stems = self.work.hints.h_stems.saturating_add(pairs);
+            let mut position = 0i32;
+            for k in 0..pairs {
+                let i = usize::from(has_width).saturating_add(k.saturating_mul(2));
+                let min = add(position, self.get(i)?);
+                let max = add(min, self.get(i.saturating_add(1))?);
+                position = max;
+                let n = self.work.hints.h_stems;
+                if let Some(slot) = self.work.hints.h.get_mut(n) {
+                    *slot = StemHint::new(min, max);
+                }
+                self.work.hints.h_stems = n.saturating_add(1);
+            }
         } else {
             self.work.hints.v_stems = self.work.hints.v_stems.saturating_add(pairs);
         }
@@ -810,12 +882,42 @@ pub fn decode(
     work: &mut Work,
     sink: &mut dyn PathSink,
 ) -> Result<Decoded, CharStringError> {
+    run_decode(charstring, ctx, None, work, sink)
+}
+
+/// Decodes `charstring` as [`decode`] does, hinted as FreeType's Adobe
+/// engine hints with `hinting` (sofel ADR 0064): y goes through the hint
+/// maps built from the horizontal stems, the hint masks and the blue
+/// zones; x is only scaled. The scales of `hinting` replace
+/// [`Context::scale`].
+pub fn decode_hinted(
+    charstring: &[u8],
+    ctx: &Context<'_>,
+    hinting: &Hinting,
+    work: &mut Work,
+    sink: &mut dyn PathSink,
+) -> Result<Decoded, CharStringError> {
+    run_decode(charstring, ctx, Some(hinting), work, sink)
+}
+
+fn run_decode(
+    charstring: &[u8],
+    ctx: &Context<'_>,
+    hinting: Option<&Hinting>,
+    work: &mut Work,
+    sink: &mut dyn PathSink,
+) -> Result<Decoded, CharStringError> {
     work.random = ctx.random_seed;
     work.used_blend = false;
     work.vsindex = ctx.vsindex;
     work.unknown = None;
     work.implicit_end = false;
-    let mut run = Run { ctx, work, sink };
+    let mut run = Run {
+        ctx,
+        hinting,
+        work,
+        sink,
+    };
     let mut width = int_to_fixed(ft::to_i32(ctx.default_width_x));
     interpret(&mut run, charstring, false, (0, 0), &mut width)?;
     Ok(Decoded { width })
@@ -841,8 +943,11 @@ fn interpret(
     r.work.hints = Hints::default();
     r.work.path = GlyphPath {
         move_pending: true,
+        origin_y: origin.1,
         ..GlyphPath::default()
     };
+    let scale_y = r.scales().1;
+    r.work.maps.reset(scale_y);
     let cff2 = r.ctx.version == Version::Cff2;
     let mut have_width = cff2;
     let mut cur = origin;
@@ -929,7 +1034,7 @@ fn interpret(
                 }
                 // hstem, hstemhm, vstem, vstemhm
                 1 | 18 | 3 | 23 => {
-                    if !r.work.hints.mask_valid {
+                    if !r.work.hints.mask.valid {
                         r.stems(op == 1 || op == 18, &mut have_width, width)?;
                     }
                 }
@@ -1036,19 +1141,11 @@ fn interpret(
                 }
                 // hintmask, cntrmask
                 19 | 20 => {
-                    if !(r.count() > 1 && r.work.hints.mask_valid) {
+                    if !(r.count() > 1 && r.work.hints.mask.valid) {
                         r.stems(false, &mut have_width, width)?;
                         let bits = r.work.hints.total();
-                        if op == 19 {
-                            r.work.hints.set_counts(bits)?;
-                        } else {
-                            // The counter mask is read into a temporary
-                            // mask and map: only its errors and the
-                            // initial hint map remain.
-                            if bits > MAX_HINTS {
-                                return Err(CharStringErrorKind::TooManyHints);
-                            }
-                            r.work.hints.initial_map_valid = true;
+                        if bits > MAX_HINTS {
+                            return Err(CharStringErrorKind::TooManyHints);
                         }
                         let bytes = bits.saturating_add(7) / 8;
                         let mut t = CharStringTokens {
@@ -1056,8 +1153,20 @@ fn interpret(
                             pos: tokens.pos,
                             version: r.ctx.version,
                         };
-                        t.skip(bytes).ok_or(CharStringErrorKind::Truncated)?;
+                        let mask = t.skip(bytes).ok_or(CharStringErrorKind::Truncated)?;
                         save(&mut frames, depth, t.pos);
+                        if op == 19 {
+                            r.work
+                                .hints
+                                .mask
+                                .read(bits, mask)
+                                .map_err(|_| CharStringErrorKind::TooManyHints)?;
+                        } else {
+                            // The counter mask builds a map that is
+                            // dropped: only the stem positions it locks,
+                            // the initial map and its errors remain.
+                            r.counter_mask(mask)?;
+                        }
                     }
                 }
                 // rmoveto
