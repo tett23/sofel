@@ -2,62 +2,6 @@
 use super::{DecodeError, Vec, read_entry};
 use crate::decode::word;
 
-struct Bits<'a> {
-    data: &'a [u8],
-    bit: usize,
-}
-
-impl Bits<'_> {
-    fn take(&mut self, count: u32) -> Option<usize> {
-        let mut value = 0;
-        for shift in 0..count {
-            let byte = self.data.get(self.bit / 8)?;
-            value |= usize::from((byte >> (self.bit % 8)) & 1) << shift;
-            self.bit = self.bit.checked_add(1)?;
-        }
-        Some(value)
-    }
-
-    fn align(&mut self) -> Option<()> {
-        let padding = self.bit.wrapping_neg() & 7;
-        (self.take(u32::try_from(padding).ok()?)? == 0).then_some(())
-    }
-}
-
-fn stored_stream(data: &[u8], expected: usize) -> Option<Vec<u8>> {
-    let mut bits = Bits { data, bit: 0 };
-    if bits.take(1)? != 0 && bits.take(3)? == 0 && bits.take(3)? == 1 {
-        return None;
-    }
-    let mut out = Vec::new();
-    loop {
-        if bits.take(1)? != 0 {
-            if bits.take(1)? != 1 {
-                return None;
-            }
-            bits.align()?;
-            return (out.len() == expected && bits.bit / 8 == data.len()).then_some(out);
-        }
-        let nibbles = u32::try_from(bits.take(2)?).ok()?.checked_add(4)?;
-        if nibbles == 7 {
-            return None;
-        }
-        let encoded = bits.take(nibbles << 2)?;
-        if nibbles > 4 && encoded >> (nibbles.saturating_sub(1) << 2) == 0 {
-            return None;
-        }
-        let length = encoded.checked_add(1)?;
-        if bits.take(1)? != 1 || out.len().checked_add(length)? > expected {
-            return None;
-        }
-        bits.align()?;
-        let start = bits.bit / 8;
-        let end = start.checked_add(length)?;
-        out.extend_from_slice(data.get(start..end)?);
-        bits.bit = end.checked_mul(8)?;
-    }
-}
-
 fn restore_hmtx(tables: &[(super::Tag, &[u8])], stream: &[u8], length: usize) -> Option<Vec<u8>> {
     let table = |name| {
         tables
@@ -130,7 +74,9 @@ pub fn decode_woff2(input: &[u8], limit: usize) -> Result<Vec<u8>, DecodeError> 
         return Err(error(16, "output limit exceeded"));
     }
     let compressed = word(input, 20)? as usize;
-    let mut remaining = input.get(48..).ok_or(error(48, "truncated WOFF2 header"))?;
+    let mut remaining = input
+        .get(48..)
+        .ok_or(error(input.len(), "truncated WOFF2 header"))?;
     let mut entries = Vec::with_capacity(count);
     let mut sfnt_size = 12usize.saturating_add(count << 4);
     let mut stored_size = 0usize;
@@ -147,6 +93,9 @@ pub fn decode_woff2(input: &[u8], limit: usize) -> Result<Vec<u8>, DecodeError> 
         stored_size = stored_size
             .checked_add(entry.stored as usize)
             .ok_or(error(at, "stream length overflow"))?;
+        if stored_size > limit {
+            return Err(error(at, "transformed stream exceeds limit"));
+        }
         entries.push(entry);
     }
     if sfnt_size != total {
@@ -155,7 +104,7 @@ pub fn decode_woff2(input: &[u8], limit: usize) -> Result<Vec<u8>, DecodeError> 
     let at = input.len().saturating_sub(remaining.len());
     let stream = remaining
         .get(..compressed)
-        .ok_or(error(at, "truncated Brotli data"))?;
+        .ok_or(error(input.len(), "truncated Brotli data"))?;
     let mut end = at
         .checked_add(compressed)
         .ok_or(error(at, "compressed size overflow"))?;
@@ -184,7 +133,7 @@ pub fn decode_woff2(input: &[u8], limit: usize) -> Result<Vec<u8>, DecodeError> 
     {
         return Err(error(end, "unclaimed data after final block"));
     }
-    let decoded = stored_stream(stream, stored_size)
+    let decoded = sofel_brotli::decompress(stream, stored_size)
         .ok_or(error(at, "unsupported or malformed Brotli stream"))?;
     let mut data = decoded.as_slice();
     let mut tables = Vec::with_capacity(count);
@@ -239,6 +188,24 @@ pub fn decode_woff2(input: &[u8], limit: usize) -> Result<Vec<u8>, DecodeError> 
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn adr0065_i2_transformed_stream_limit_before_brotli() {
+        let mut input = [0; 51];
+        input[..4].copy_from_slice(b"wOF2");
+        input[4..8].copy_from_slice(&0x10000_u32.to_be_bytes());
+        input[8..12].copy_from_slice(&51u32.to_be_bytes());
+        input[12..14].copy_from_slice(&1u16.to_be_bytes());
+        input[16..20].copy_from_slice(&32u32.to_be_bytes());
+        input[48..].copy_from_slice(&[0x43, 4, 33]);
+        let rejected = decode_woff2(&input, 32).unwrap_err();
+        assert_eq!(
+            (rejected.offset, rejected.reason),
+            (48, "transformed stream exceeds limit")
+        );
+        // At the limit, the directory is accepted and decoding reaches the empty stream.
+        assert_eq!(decode_woff2(&input, 33).unwrap_err().offset, 51);
+    }
 
     #[test]
     fn i1_hmtx_restores_omitted_bearings_and_empty_glyph() {
