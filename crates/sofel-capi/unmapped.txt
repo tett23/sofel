@@ -271,6 +271,10 @@ sofel_font::BitmapFace::* The fixed-strike face borrows glyph images from owned 
 sofel_font::Font::from_pfr PFR opens a logical face borrowing a non-sfnt resource; the C font handle accepts sfnt bytes (sofel ADR 0065).
 sofel_font::PfrFace::* PFR faces borrow the resource bytes; outlines (sofel_outline::draw_pfr) take a Rust Pen and embedded strikes (sofel_bitmap::pfr_bitmap) return Rust-owned pixel buffers (sofel ADR 0065).
 sofel_pfr::* Physical PFR directories and program slices are borrowed Rust views outside the sfnt C handle (sofel ADR 0065).
+sofel_outline::draw_pfr PFR outlines take a Rust Pen and a PFR face, which the sfnt C font handle cannot hold (sofel ADR 0065, sofel ADR 0081).
+sofel_bitmap::pfr_bitmap PFR strikes return Rust-owned pixel buffers from a PFR face, which the sfnt C font handle cannot hold (sofel ADR 0065, sofel ADR 0081).
+sofel_lzw::* Unwrapping .Z fonts is done by the caller before the C font handle reads sfnt bytes (sofel ADR 0081).
+sofel_bzip2::* Unwrapping .bz2 fonts is done by the caller before the C font handle reads sfnt bytes (sofel ADR 0081).
 sofel_font::Font::from_type42 Type 42 wrappers are decoded by a Rust-owned source before opening the embedded sfnt; the C font handle still accepts sfnt bytes only (sofel ADR 0065).
 sofel_font::type42::* Type 42 maps PostScript glyph indices to an embedded TrueType face; the C font handle still accepts sfnt bytes only (sofel ADR 0065).
 sofel_type1::* Type 1 PFA/PFB and AFM/PFM are standalone Rust readers; the C font handle still accepts sfnt data only (sofel ADR 0065).

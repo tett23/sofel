@@ -58,17 +58,16 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
   sofel-svg    → sofel-inflate, sofel-geom
   sofel-raster → sofel-geom
   sofel-gpu    → sofel-geom
-  sofel-gpu → sofel-geom
   sofel-vector → sofel-geom
 
 フォントの形式を読むクレート
   sofel-read        （sfnt、TTC、dfont）
   sofel-type1       （Type1、MM、CID、Type42、AFM、PFM）
-  sofel-pfr
+  sofel-pfr         （PFR）
   sofel-bitmapfont  （BDF、PCF、FNT、NE・PE32 FON）
 
 フォントを扱うクレート
-  sofel-woff    → sofel-inflate, sofel-brotli
+  sofel-woff    → sofel-inflate, sofel-brotli, sofel-read, sofel-write
   sofel-font    → sofel-read, sofel-type1, sofel-pfr, sofel-bitmapfont, sofel-geom
   sofel-shape   → sofel-font, sofel-unicode, sofel-geom
   sofel-outline → sofel-font, sofel-geom
@@ -82,6 +81,9 @@ Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003
 
 - `sofel-color` と `sofel-subset` の `sofel-geom` への依存は、HarfBuzzの丸め（`sofel_geom::float`）を共有するためである（[ADR 0026](adr/0026-harfbuzz-rounding.md)）。
 - `sofel-subset` の `sofel-unicode` への依存は、鏡像の文字（bidiの閉包）のためである（[ADR 0022](adr/0022-subsetting.md)）。
+- `sofel-woff` は WOFF と WOFF2 の展開に加えて書き出し（[ADR 0070](adr/0070-webfont-encoding.md)）を持ち、sfnt の目録を読むために `sofel-read`、チェックサムと sfnt の組み立てのために `sofel-write` に依存する（[ADR 0081](adr/0081-crate-layout-corrections.md)）。
+- LZW と bzip2 の展開は `sofel-lzw` と `sofel-bzip2` に、PFR の読み取りと検証は `sofel-pfr` に置く。PFR の輪郭は `sofel-outline`、埋め込みビットマップは `sofel-bitmap` が扱う。バイナリは `sofel-cli` だけが持ち、`sofel-woff` コマンドもそこに置く（[ADR 0081](adr/0081-crate-layout-corrections.md)）。
+- `scripts/check-deps.sh` は、`scripts/deps.txt` に無い依存、`!bin` の無いクレートのバイナリ、`!no_std` のクレートの `#![no_std]` の欠落を誤りにする（[ADR 0081](adr/0081-crate-layout-corrections.md)）。
 
 - 輪郭と塗りは、`sofel-geom` の `Pen` と `Painter` で受け渡す。`sofel-raster`、`sofel-gpu`、`sofel-vector` はフォントの型を知らない。
 - 形式のビューと検証器は、形式を読むクレートだけに置く。検証器は確保をせず、誤りを呼び出し側の関数に渡す。charstringの解釈とヒンティングは `sofel-outline` が行い、Type1とCFFで共有する。ただし、FreeTypeのType 2 charstringの解読器（演算子から装置の空間の線と曲線まで）は、全グリフを走らせる `CFF ` と `CFF2` の検証器が使うため `sofel-read` に置き、点への変換と仕上げを `sofel-outline` が行う（[ADR 0021](adr/0021-cff-outlines.md)）。

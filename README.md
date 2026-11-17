@@ -75,8 +75,11 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-outline`](crates/sofel-outline) | glyfとGLYFの輪郭を、ヒンティングなしでFreeTypeと同じ座標で `Pen` に渡す。素の CFF 1 の輪郭も `draw_bare_cff` で描く。読み込んだ閉じた輪郭は、半径と角の接合を指定して縁取り、両側または片側の境界を取り出す（[ADR 0076](docs/adr/0076-glyph-outline-stroking.md)）。HarfBuzzと同じグリフの箱（glyf、CFF2、CFF。`HbExtents`、[ADR 0021](docs/adr/0021-cff-outlines.md)）を求める |
 | [`sofel-shape`](crates/sofel-shape) | HarfBuzz 15.1.0のOTシェーパーと同じシェーピング（バッファ、区間の性質、計画、正規化、`GSUB` と `GPOS`、フォールバックの位置。[ADR 0020](docs/adr/0020-shaping-foundation.md)）、機能の文字列、直列化、言語と文字体系のタグ。文字体系ごとのシェーパー（hebrew、hangul、thai、arabic、indic、khmer、myanmar、USE。[ADR 0024](docs/adr/0024-complex-shapers.md)）もすべて実装した |
 | [`sofel-inflate`](crates/sofel-inflate) | 出力上限を指定した DEFLATE・zlib・gzip の展開 |
+| [`sofel-lzw`](crates/sofel-lzw) | 出力上限を指定した UNIX compress（LZW、`.Z`）の展開（[ADR 0081](docs/adr/0081-crate-layout-corrections.md)） |
+| [`sofel-bzip2`](crates/sofel-bzip2) | 出力上限を指定した bzip2 の展開（[ADR 0081](docs/adr/0081-crate-layout-corrections.md)） |
 | [`sofel-png`](crates/sofel-png) | PNG の各色型と Adam7 をアルファ乗算済み BGRA に復号する（[ADR 0066](docs/adr/0066-color-glyph-pixels.md)） |
 | [`sofel-bitmap`](crates/sofel-bitmap) | 埋め込みビットマップ（CBLC/CBDT、EBLC/EBDT、`bloc`/`bdat`、sbix）のストライク、その選び方（HarfBuzzとFreeTypeの両方）、グリフの画像のデータとメトリクス、EBDTの画素のFreeTypeと同じ書き込み、CBDT と sbix の PNG の復号（[ADR 0023](docs/adr/0023-color-glyphs.md)） |
+| [`sofel-pfr`](crates/sofel-pfr) | PFR のフェイスの選択、文字対応、送り幅、グリフとビットマップのプログラムの読み取りと、破損の位置の報告。輪郭は `sofel-outline`、埋め込みビットマップは `sofel-bitmap` が扱う（[ADR 0081](docs/adr/0081-crate-layout-corrections.md)） |
 | [`sofel-bitmapfont`](crates/sofel-bitmapfont) | BDF、PCF、Windows FNT と NE・PE32 FON の文字対応、送り幅、固定サイズの画像を読む。BDF は 1、2、4、8 bit、ほかは 1 bit（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)） |
 | [`sofel-color`](crates/sofel-color) | カラーグリフ：CPALのパレット、COLR（版0と版1）、SVG、CBDT、sbixをHarfBuzzと同じ命令で `Painter` に渡す。gzip 圧縮された SVG は展開して渡す。命令の記録（`Recording`）、カラーグリフを含むグリフの箱、フォールバックのための問い合わせ（[ADR 0023](docs/adr/0023-color-glyphs.md)） |
 | [`sofel-write`](crates/sofel-write) | sfntの組み立てと、HarfBuzzと同じ詰め方のオブジェクトの直列化（[ADR 0022](docs/adr/0022-subsetting.md)） |
@@ -84,8 +87,8 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-gpu`](crates/sofel-gpu) | 輪郭とカラーグリフの塗りを GPU で描くための RGBA16I レコードに変換し、WGSL、GLSL、MSL、HLSL のシェーダーを提供する（[ADR 0068](docs/adr/0068-vector-and-gpu-output.md)） |
 | [`sofel-vector`](crates/sofel-vector) | 配置した輪郭と COLRv0 のレイヤーを SVG または PDF に書く。ビットマップグリフを埋め込み、PDF では COLRv1 の線形・放射・スイープグラデーションを描画する。SVG では COLRv1 の線形・放射・スイープグラデーションとクリップ付きの PNG にも対応する（[ADR 0068](docs/adr/0068-vector-and-gpu-output.md)） |
 | [`sofel-raster`](crates/sofel-raster) | FreeTypeのsmoothのラスタライザと同じ計算で、8bitのアンチエイリアスの画像を作る。COLRv0の層をFreeTypeと同じ整数の計算でBGRAの画像に重ねる（`blend_layer`）。輪郭またはグレースケール画像から符号付き距離場（SDF）を生成できる。モノクロは1画素1ビットで描き、水平・垂直 LCD は Harmony と5タップフィルタに対応する |
-| [`sofel-woff`](crates/sofel-woff) | 単一フェイスの sfnt を WOFF・WOFF2 に変換するライブラリとコマンド |
-| [`sofel-cli`](crates/sofel-cli) | 小さな道具（`sofel-validate`、`sofel-render`、`sofel-paint`、`sofel-shape`、`sofel-subset`） |
+| [`sofel-woff`](crates/sofel-woff) | WOFF・WOFF2 の展開と、単一フェイスの sfnt の WOFF・WOFF2 への書き出し |
+| [`sofel-cli`](crates/sofel-cli) | 小さな道具（`sofel-validate`、`sofel-render`、`sofel-paint`、`sofel-shape`、`sofel-subset`、`sofel-woff`）。包みの判別と展開の呼び出しも持つ |
 | [`sofel-capi`](crates/sofel-capi) | C ABI（ヘッダは [`sofel.h`](crates/sofel-capi/include/sofel.h)、[ADR 0015](docs/adr/0015-c-abi.md)） |
 | [`sofel-conformance`](crates/sofel-conformance) | FreeTypeとHarfBuzzとの突き合わせのテスト（`cargo test` では走らない） |
 
