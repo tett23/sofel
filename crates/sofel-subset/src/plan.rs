@@ -1082,9 +1082,9 @@ impl Plan {
                     // index map even when GDEF's rows are optimized afterward.
                     p.layout.math_var_map = map.clone();
                 }
-                if copied_math && !copied_gdef && math_has_var_format {
-                    // Even records for glyphs outside the subset survive in a
-                    // copied MATH. Every original index must still address its row.
+                if p.var.user().is_empty() && copied_math && !copied_gdef && math_has_var_format {
+                    // The non-instancing writer cannot rewrite references in
+                    // a copied MATH table when the GDEF rows are renumbered.
                     let all = RangeSet::all();
                     let all_indices =
                         crate::tables::math::retained_variation_indices(math_data, &all, &all);
