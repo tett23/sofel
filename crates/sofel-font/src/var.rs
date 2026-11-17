@@ -1767,6 +1767,15 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
         self.font.ft_metrics.left_side_bearing(glyph)
     }
 
+    /// The glyph whose phantom points FreeType's glyf loader keeps for
+    /// `glyph`: `glyph` itself, or for a composite glyph the last
+    /// component with USE_MY_METRICS, followed down the components
+    /// (`TT_Process_Composite_Component`). `None` for a font without glyf
+    /// or a glyph not below the glyph count.
+    pub fn ft_metrics_glyph(&self, glyph: GlyphId) -> Option<GlyphId> {
+        crate::ft_glyf::metrics_source_glyph(*self, glyph)
+    }
+
     /// FreeType's first unscaled horizontal advance on a fresh face.
     pub fn ft_h_advance(&self, glyph: GlyphId) -> Option<u16> {
         self.ft_h_advance_with_scratch(glyph, &mut crate::FtAdvanceScratch::default())

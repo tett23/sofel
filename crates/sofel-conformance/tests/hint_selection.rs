@@ -245,11 +245,11 @@ fn adr0064_i1_auto_unlinked_fallback_outline_matches_freetype() {
 #[test]
 fn adr0064_i1_latin_cap_rectangle_edges_match_freetype() {
     for (relative, gid, max_ppem) in [
-        ("harfbuzz/perf/fonts/Roboto-Regular.ttf", 46, 76),
+        ("harfbuzz/perf/fonts/Roboto-Regular.ttf", 46, 120),
         (
             "harfbuzz/test/subset/data/fonts/Molengo-Regular.ttf",
             44,
-            86,
+            120,
         ),
     ] {
         let path = paths::testdata().join(relative);
@@ -289,17 +289,6 @@ fn adr0064_i1_latin_cap_rectangle_edges_match_freetype() {
                 );
             }
         }
-        assert_eq!(
-            outlines.load_with_hint(
-                GlyphId(gid),
-                max_ppem + 1,
-                HintMode::Auto,
-                HintTarget::Light,
-                &mut scratch
-            ),
-            Err(OutlineError::AutoHintUnsupported),
-            "{relative}"
-        );
     }
 }
 
@@ -310,12 +299,12 @@ fn adr0064_i1_latin_light_edges_match_freetype() {
         (
             "harfbuzz/test/subset/data/expected/full_instance/Roboto-Variable.default.all.wght=150,wdth=80.ttf",
             70,
-            34,
+            120,
         ),
         (
             "harfbuzz/test/subset/data/expected/full_instance/Roboto-Variable.default.all.wght=300,wdth=90.ttf",
             70,
-            34,
+            120,
         ),
     ] {
         let path = paths::testdata().join(relative);
@@ -355,37 +344,31 @@ fn adr0064_i1_latin_light_edges_match_freetype() {
                 );
             }
         }
-        if max_ppem == 34 {
-            assert_eq!(
-                outlines.load_with_hint(
-                    GlyphId(gid),
-                    35,
-                    HintMode::Auto,
-                    HintTarget::Light,
-                    &mut scratch
-                ),
-                Err(OutlineError::AutoHintUnsupported)
-            );
-        }
     }
-    let variable_path =
-        paths::testdata().join("harfbuzz/test/subset/data/fonts/Roboto-Variable.ttf");
-    let variable_data = std::fs::read(&variable_path).unwrap();
-    let variable_font = Font::new(&variable_data, 0).unwrap();
-    let variable_b = variable_font.nominal_glyph(u32::from('b')).unwrap();
-    let variable_outlines = Outlines::new(variable_font.default_instance());
+    // A variable font (gvar) at its default location.
+    let path = paths::testdata().join("harfbuzz/test/subset/data/fonts/Roboto-Variable.ttf");
+    let data = std::fs::read(&path).unwrap();
+    let font = Font::new(&data, 0).unwrap();
+    let glyph = font.nominal_glyph(u32::from('b')).unwrap();
+    let outlines = Outlines::new(font.default_instance());
     let mut scratch = Scratch::default();
-    assert_eq!(
-        variable_outlines.load_with_hint(
-            variable_b,
-            16,
-            HintMode::Auto,
-            HintTarget::Light,
-            &mut scratch
-        ),
-        Err(OutlineError::AutoHintUnsupported)
-    );
-    assert!(scratch.points().is_empty());
+    let (_, advance) = outlines
+        .load_with_hint(glyph, 16, HintMode::Auto, HintTarget::Light, &mut scratch)
+        .unwrap();
+    let reference = Command::new(paths::ft_dump())
+        .args(["--hint-slot", "16", &glyph.0.to_string(), "auto", "light"])
+        .arg(path)
+        .output()
+        .unwrap();
+    assert!(reference.status.success());
+    let mut actual = format!("advance {advance} 0\n");
+    for (point, tag) in scratch.points().iter().zip(scratch.point_tags()) {
+        writeln!(actual, "point {} {} {tag}", point.x, point.y).unwrap();
+    }
+    for end in scratch.contour_ends() {
+        writeln!(actual, "end {end}").unwrap();
+    }
+    assert_eq!(actual, String::from_utf8(reference.stdout).unwrap());
 }
 
 #[test]
@@ -430,15 +413,21 @@ fn adr0064_i1_latin_d_linked_stems_match_freetype() {
 }
 
 #[test]
-fn adr0064_i1_auto_nonempty_reports_unsupported_and_clears_scratch() {
-    let path = paths::testdata().join("harfbuzz/test/api/fonts/Roboto-Regular.abcAE.ttf");
+fn adr0064_i1_auto_varc_glyph_reports_unsupported_and_clears_scratch() {
+    // FreeType never auto-hints a glyph that VARC covers (ftobjs.c).
+    let path = paths::testdata().join("harfbuzz/test/api/fonts/varc-ac00-ac01.ttf");
     let data = std::fs::read(&path).unwrap();
     let font = Font::new(&data, 0).unwrap();
+    let glyph = font.nominal_glyph(0xAC00).unwrap();
     let outlines = Outlines::new(font.default_instance());
     let mut scratch = Scratch::default();
-    outlines
+    // Fill the scratch from another font so that clearing it shows.
+    let other =
+        std::fs::read(paths::testdata().join("harfbuzz/perf/fonts/Roboto-Regular.ttf")).unwrap();
+    let other = Font::new(&other, 0).unwrap();
+    Outlines::new(other.default_instance())
         .load_with_hint(
-            GlyphId(2),
+            GlyphId(36),
             16,
             HintMode::None,
             HintTarget::Normal,
@@ -447,18 +436,55 @@ fn adr0064_i1_auto_nonempty_reports_unsupported_and_clears_scratch() {
         .unwrap();
     assert!(!scratch.points().is_empty());
     assert_eq!(
-        outlines.load_with_hint(
-            GlyphId(2),
-            16,
-            HintMode::Auto,
-            HintTarget::Normal,
-            &mut scratch
-        ),
+        outlines.load_with_hint(glyph, 16, HintMode::Auto, HintTarget::Normal, &mut scratch),
         Err(OutlineError::AutoHintUnsupported)
     );
     assert!(scratch.points().is_empty());
     assert!(scratch.point_tags().is_empty());
     assert!(scratch.contour_ends().is_empty());
+}
+
+#[test]
+fn adr0064_i1_auto_styles_match_freetype() {
+    // The style of every glyph, from the Unicode cmap without HarfBuzz,
+    // as FreeType's glyph-to-script-map gives it before any glyph loads.
+    let mut compared = 0;
+    for relative in [
+        "harfbuzz/test/api/fonts/Roboto-Regular.abcAE.ttf",
+        "harfbuzz/test/api/fonts/Mplus1p-Regular.660E.ttf",
+        "harfbuzz/perf/fonts/Roboto-Regular.ttf",
+        "harfbuzz/perf/fonts/Amiri-Regular.ttf",
+        "extra-fonts/fonts/devanagari.ttf",
+        "extra-fonts/fonts/khmer.ttf",
+        "extra-fonts/fonts/myanmar.ttf",
+        "extra-fonts/fonts/hebrew.ttf",
+        "extra-fonts/fonts/source-serif.otf",
+        "extra-fonts/fonts/stix-math.otf",
+    ] {
+        let path = paths::testdata().join(relative);
+        let data = std::fs::read(&path).unwrap();
+        let font = Font::new(&data, 0).unwrap();
+        let outlines = Outlines::new(font.default_instance());
+        let cache = sofel_outline::AutoHintCache::new(&outlines);
+        let reference = Command::new(paths::ft_dump())
+            .arg("--auto-styles")
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(reference.status.success());
+        let mut actual = String::new();
+        for glyph in 0..font.num_glyphs() {
+            let style = cache.glyph_style(GlyphId(glyph)).unwrap();
+            writeln!(actual, "style {glyph} {style}").unwrap();
+            compared += 1;
+        }
+        assert_eq!(
+            actual,
+            String::from_utf8(reference.stdout).unwrap(),
+            "{relative}"
+        );
+    }
+    assert!(compared > 10_000);
 }
 
 #[test]

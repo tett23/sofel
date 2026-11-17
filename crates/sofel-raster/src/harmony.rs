@@ -14,6 +14,9 @@ pub enum LcdMode {
     Vertical,
 }
 
+/// Records the outline moved by an offset into a cleared rasterizer.
+type Record<'a> = dyn FnMut(Point, &mut Rasterizer) + 'a;
+
 impl Rasterizer {
     /// Renders three grayscale coverages displaced according to FreeType's
     /// default Harmony geometry. Width and rows count subpixels in the active
@@ -27,6 +30,46 @@ impl Rasterizer {
         options: RenderOptions,
     ) -> Result<Bitmap<'_>, RasterError> {
         let (x0, y0, x1, y1) = control_box(&self.commands).unwrap_or_default();
+        self.harmony(mode, (x0, y0, x1, y1), options, None)
+    }
+
+    /// Renders FreeType's Harmony configuration as [`Rasterizer::render_harmony`]
+    /// does, for an outline that `record` puts into the rasterizer once for
+    /// each subpixel plane. `cbox` is the control box of the outline
+    /// before any move (`x_min`, `y_min`, `x_max`, `y_max`, 26.6). For
+    /// each plane, `record` gets the rasterizer, cleared, and the offset
+    /// to add to every outline point before decomposing the outline into
+    /// it. FreeType translates the outline for each plane and only then
+    /// decomposes it, so the implied on-curve points between conic
+    /// control points are rounded at their moved positions; recording
+    /// the moved outline reproduces that rounding, which moving recorded
+    /// commands cannot.
+    ///
+    /// # Errors
+    /// Returns an error if the bitmap bounds or allocation exceed the supported range.
+    pub fn render_harmony_placed(
+        &mut self,
+        mode: LcdMode,
+        cbox: (i32, i32, i32, i32),
+        options: RenderOptions,
+        record: &mut dyn FnMut(Point, &mut Rasterizer),
+    ) -> Result<Bitmap<'_>, RasterError> {
+        let (x0, y0, x1, y1) = cbox;
+        self.harmony(
+            mode,
+            (i64::from(x0), i64::from(y0), i64::from(x1), i64::from(y1)),
+            options,
+            Some(record),
+        )
+    }
+
+    fn harmony(
+        &mut self,
+        mode: LcdMode,
+        (x0, y0, x1, y1): (i64, i64, i64, i64),
+        options: RenderOptions,
+        mut record: Option<&mut Record<'_>>,
+    ) -> Result<Bitmap<'_>, RasterError> {
         let (pad_x, pad_y) = match mode {
             LcdMode::Horizontal => (21, 0),
             LcdMode::Vertical => (0, 21),
@@ -70,15 +113,25 @@ impl Rasterizer {
                         ..shift
                     },
                 };
-                let plane = self.render_box(
-                    b,
-                    shift,
-                    Point { x: 1, y: 1 },
-                    RenderOptions {
-                        overlap: false,
-                        ..options
-                    },
-                )?;
+                let options = RenderOptions {
+                    overlap: false,
+                    ..options
+                };
+                let plane = match record.as_mut() {
+                    Some(record) => {
+                        self.commands.clear();
+                        record(shift, self);
+                        self.render_box(b, Point::default(), Point { x: 1, y: 1 }, options)
+                    }
+                    None => self.render_box(b, shift, Point { x: 1, y: 1 }, options),
+                };
+                let plane = match plane {
+                    Ok(plane) => plane,
+                    Err(e) => {
+                        self.lcd_pixels = output;
+                        return Err(e);
+                    }
+                };
                 match mode {
                     LcdMode::Horizontal => {
                         for (dst, src) in

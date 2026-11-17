@@ -293,6 +293,12 @@ jobs:
         run: |
           sh scripts/measure-process-tree.sh sh tools/ft-dump/build.sh
           sh scripts/measure-process-tree.sh sh tools/ft-dump/build.sh target/testdata/freetype target/ft-dump/ft-dump-filtered --filtered-lcd
+      # sofel ADR 0064: the automatic hinter's tables are generated from
+      # the pinned FreeType sources.
+      - name: Regenerate the automatic hinter's tables
+        run: |
+          sh tools/autofit-tables/build.sh
+          git diff --exit-code crates/sofel-outline/src/autofit/tables.rs
       # docs/adr/0016
       - name: Build hb-dump
         if: steps.reference-tools.outputs.cache-hit != 'true'

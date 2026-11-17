@@ -26,6 +26,7 @@ unsafe extern "C" {
     pub fn bft_advance(face: *mut c_void, gid: c_uint) -> c_long;
     pub fn bft_outline(face: *mut c_void, gid: c_uint, unscaled: c_int) -> c_long;
     pub fn bft_render(face: *mut c_void, gid: c_uint) -> c_long;
+    pub fn bft_autohint(face: *mut c_void, gid: c_uint, light: c_int) -> c_long;
 
     pub fn bhb_open(data: *const c_uchar, len: c_uint, index: c_uint) -> *mut c_void;
     pub fn bhb_close(font: *mut c_void);
@@ -172,6 +173,10 @@ impl FtFace {
     pub fn outline(&self, gid: u32, unscaled: bool) -> i64 {
         // SAFETY: a valid face.
         unsafe { bft_outline(self.0, gid, c_int::from(unscaled)) as i64 }
+    }
+    pub fn autohint(&self, gid: u32, light: bool) -> i64 {
+        // SAFETY: a valid face.
+        unsafe { bft_autohint(self.0, gid, c_int::from(light)) as i64 }
     }
     pub fn cid(&self, gid: u32) -> i64 {
         // SAFETY: a valid face.

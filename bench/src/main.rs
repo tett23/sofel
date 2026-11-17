@@ -707,6 +707,59 @@ fn geometry_items(
         );
     }
 
+    // Automatic hinting (sofel ADR 0064): the advance plus the sum of the
+    // point coordinates of every glyph, with the caller-held cache.
+    if suffix.is_empty() {
+        for (light, target) in [
+            (false, sofel_outline::HintTarget::Normal),
+            (true, sofel_outline::HintTarget::Light),
+        ] {
+            let ppem = 16u16;
+            ft.set_ppem(u32::from(ppem));
+            let mut scratch = Scratch::default();
+            let mut cache = sofel_outline::AutoHintCache::new(&outlines);
+            b.item(
+                name,
+                format!(
+                    "autohint {ppem}px {}",
+                    if light { "light" } else { "normal" }
+                ),
+                &mut || {
+                    (0..n)
+                        .map(|g| {
+                            match outlines.load_auto_hinted(
+                                GlyphId(g),
+                                ppem,
+                                target,
+                                &mut cache,
+                                &mut scratch,
+                            ) {
+                                Ok((_, advance)) => wrap(
+                                    scratch
+                                        .points()
+                                        .iter()
+                                        .map(|p| i64::from(p.x) + i64::from(p.y))
+                                        .sum::<i64>()
+                                        + i64::from(advance),
+                                ),
+                                Err(_) => wrap(-1),
+                            }
+                        })
+                        .fold(0u64, u64::wrapping_add)
+                },
+                Some((
+                    &mut || {
+                        (0..n)
+                            .map(|g| wrap(ft.autohint(g, light)))
+                            .fold(0, u64::wrapping_add)
+                    },
+                    Compare::Yes,
+                )),
+                None,
+            );
+        }
+    }
+
     // Rendering: the sum of all pixels of every glyph.
     eprintln!("{name}: {n} glyphs");
     for &ppem in raster_sizes {
