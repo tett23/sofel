@@ -6,9 +6,152 @@ version = 4
 name = "font-gallery"
 version = "0.0.0"
 dependencies = [
+ "sofel-cli",
+ "sofel-font",
+ "sofel-geom",
  "sofel-inflate",
+ "sofel-outline",
+ "sofel-write",
 ]
+
+[[package]]
+name = "sofel-bitmap"
+version = "0.0.0"
+dependencies = [
+ "sofel-font",
+ "sofel-png",
+]
+
+[[package]]
+name = "sofel-bitmapfont"
+version = "0.0.0"
+
+[[package]]
+name = "sofel-brotli"
+version = "0.0.0"
+
+[[package]]
+name = "sofel-cli"
+version = "0.0.0"
+dependencies = [
+ "sofel-bitmap",
+ "sofel-bitmapfont",
+ "sofel-color",
+ "sofel-font",
+ "sofel-geom",
+ "sofel-inflate",
+ "sofel-outline",
+ "sofel-png",
+ "sofel-raster",
+ "sofel-read",
+ "sofel-shape",
+ "sofel-subset",
+ "sofel-svg",
+ "sofel-type1",
+ "sofel-woff",
+]
+
+[[package]]
+name = "sofel-color"
+version = "0.0.0"
+dependencies = [
+ "sofel-bitmap",
+ "sofel-outline",
+ "sofel-svg",
+]
+
+[[package]]
+name = "sofel-font"
+version = "0.0.0"
+dependencies = [
+ "sofel-bitmapfont",
+ "sofel-geom",
+ "sofel-read",
+ "sofel-type1",
+]
+
+[[package]]
+name = "sofel-geom"
+version = "0.0.0"
 
 [[package]]
 name = "sofel-inflate"
 version = "0.0.0"
+
+[[package]]
+name = "sofel-outline"
+version = "0.0.0"
+dependencies = [
+ "sofel-font",
+ "sofel-geom",
+]
+
+[[package]]
+name = "sofel-png"
+version = "0.0.0"
+dependencies = [
+ "sofel-inflate",
+]
+
+[[package]]
+name = "sofel-raster"
+version = "0.0.0"
+dependencies = [
+ "sofel-geom",
+]
+
+[[package]]
+name = "sofel-read"
+version = "0.0.0"
+
+[[package]]
+name = "sofel-shape"
+version = "0.0.0"
+dependencies = [
+ "sofel-font",
+ "sofel-geom",
+ "sofel-unicode",
+]
+
+[[package]]
+name = "sofel-subset"
+version = "0.0.0"
+dependencies = [
+ "sofel-font",
+ "sofel-geom",
+ "sofel-unicode",
+ "sofel-write",
+]
+
+[[package]]
+name = "sofel-svg"
+version = "0.0.0"
+dependencies = [
+ "sofel-geom",
+ "sofel-inflate",
+]
+
+[[package]]
+name = "sofel-type1"
+version = "0.0.0"
+
+[[package]]
+name = "sofel-unicode"
+version = "0.0.0"
+
+[[package]]
+name = "sofel-woff"
+version = "0.0.0"
+dependencies = [
+ "sofel-brotli",
+ "sofel-inflate",
+ "sofel-read",
+ "sofel-write",
+]
+
+[[package]]
+name = "sofel-write"
+version = "0.0.0"
+dependencies = [
+ "sofel-read",
+]

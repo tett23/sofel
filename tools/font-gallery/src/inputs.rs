@@ -72,6 +72,7 @@ fn choice(id: &str) -> Option<(SoloInput, &'static str, &'static str)> {
         "color-cff" | "color-sbix" | "color-svg" => (SoloInput::Glyph(19), "simple_linear", "en"),
         "color-noto-cbdt" | "color-noto-colrv1" => (SoloInput::Scalar("U+1F600"), "👩‍💻", "und"),
         "hb-variable-colr" => (SoloInput::Glyph(92), "\u{f0502}\u{f0503}", "und"),
+        "caveat" => (SoloInput::Scalar("U+0061"), "aaaa eeee oooo tttt", "en"),
         _ => return None,
     })
 }
@@ -85,6 +86,7 @@ pub fn gallery_cases(repo: &Path) -> Result<Vec<Sample>, String> {
         &fonts,
         false,
     )?);
+    samples.extend(derived_cases(repo));
     Ok(samples)
 }
 
@@ -436,4 +438,38 @@ pub fn render_case(
         glyph_ids,
         status,
     })
+}
+
+/// The cards of the derived fonts (sofel ADR 0083, ADR 0084), read from
+/// `target/derived-fonts`; [`crate::derive::write_derived_fonts`] writes
+/// them first.
+pub fn derived_cases(repo: &Path) -> Vec<Sample> {
+    let dir = repo.join(crate::derive::DERIVED_DIR);
+    [
+        (
+            "derived-cff-random",
+            crate::derive::CFF_RANDOM_FILE,
+            "U+0052",
+            "RRRR",
+        ),
+        (
+            "derived-rand",
+            crate::derive::RAND_FILE,
+            "U+0061",
+            "aaaa eeee oooo tttt",
+        ),
+    ]
+    .into_iter()
+    .map(|(id, file, solo, text)| Sample {
+        id: id.into(),
+        face: 0,
+        path: dir.join(file),
+        ppem: 48,
+        solo: SoloInput::Scalar(solo),
+        text,
+        lang: "en",
+        color: false,
+        unsupported_empty: false,
+    })
+    .collect()
 }
