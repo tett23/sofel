@@ -1,6 +1,6 @@
 # ADR 0058: dfont のバイト列からフェイス番号で sfnt を選ぶ
 
-ステータス: 採択
+Status: accepted
 
 ## 文脈
 

@@ -464,6 +464,8 @@ Type 1 の Multiple Masters では、`Type1Face::multiple_masters` が軸の名�
 
 `sofel-validate` は CID-keyed Type 1 を識別し、CIDMap とサブルーチンマップが切り詰められた場合は最初の欠落位置を、16進データに無効なバイトがある場合はそのバイト位置を、ヘッダの数値が不正な場合は値の位置を、FontMatrix が不正な場合はフィールドの位置を、ファイル先頭からのオフセットとして報告する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
+`sofel-validate` は PFA と PFB のソースを読み、Type 1 フェイスを構築できるか検査する。PFA の不正な16進文字と PFB の途中で切れたセクションの診断は、それぞれのファイル先頭からのオフセットを返す（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+
 `sofel-validate` は BDF を識別し、ファイル先頭から破損した行の先頭までのバイト数をタグ `BDF ` のオフセットとして返す。入力が途中で尽きた場合はファイル長を、不正な UTF-8 がある場合は最初の不正なバイトの位置を返す（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
 `sofel-validate` は Type 42 のラッパーを解析し、埋め込み sfnt を通常の sfnt と同じ手順で検証する。ラッパーの診断はタグ `T42 ` とファイル先頭からのオフセットを返す。埋め込み sfnt の各表の診断では、その表の先頭からのオフセットを返す（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。

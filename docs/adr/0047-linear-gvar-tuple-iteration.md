@@ -1,6 +1,6 @@
 # ADR 0047: gvar の組を線形に走査する
 
-ステータス: 採択
+Status: accepted
 
 ## 文脈
 

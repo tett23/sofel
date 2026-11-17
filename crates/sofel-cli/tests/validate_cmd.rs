@@ -12,6 +12,8 @@
 
 #[path = "../../sofel-read/tests/support/build.rs"]
 mod build;
+#[path = "../../sofel-type1/tests/support/type1_triangle.rs"]
+mod type1_fixture;
 
 use build::*;
 use sofel_font::{Cff, Font, HbCff2};
@@ -661,6 +663,80 @@ fn adr0065_i2_type42_invalid_hex_reports_wrapper_byte() {
     let offset = data.iter().position(|&byte| byte == b'Z').unwrap();
     assert!(
         out.stdout.contains(&format!("\"offset\":{offset}")),
+        "{}",
+        out.stdout
+    );
+}
+
+#[test]
+fn adr0065_i2_type1_source_reports_file_offsets() {
+    let dir = Dir::new("type1-source-offset");
+    let (pfa, pfb) = type1_fixture::sample();
+    for (name, data) in [("triangle.pfa", pfa), ("triangle.pfb", pfb)] {
+        let file = dir.file(name, &data);
+        let checked = run(&[file.as_os_str()]);
+        assert_eq!(checked.code, 0, "{}", checked.stdout);
+    }
+    let bad_hex = b"%!PS-AdobeFont-1.0\ncurrentfile eexec\n 000Z\ncleartomark\n";
+    let short_section = b"\x80\x01\x08\x00\x00\x00ab";
+    for (name, bytes, tag, at) in [
+        (
+            "bad.pfa",
+            bad_hex.as_slice(),
+            "PFA ",
+            bad_hex.iter().position(|b| *b == b'Z').unwrap(),
+        ),
+        (
+            "bad.pfb",
+            short_section.as_slice(),
+            "PFB ",
+            short_section.len(),
+        ),
+    ] {
+        let file = dir.file(name, bytes);
+        let out = run(&["--json".as_ref(), file.as_os_str()]);
+        assert_eq!(out.code, 1);
+        assert!(
+            out.stdout.contains(&format!("\"table\":\"{tag}\"")),
+            "{}",
+            out.stdout
+        );
+        assert!(
+            out.stdout.contains(&format!("\"offset\":{at}")),
+            "{}",
+            out.stdout
+        );
+    }
+}
+
+#[test]
+fn adr0065_i2_pfb_private_token_has_file_offset() {
+    let (_, mut pfb) = type1_fixture::sample();
+    let header_len = u32::from_le_bytes(pfb[2..6].try_into().unwrap()) as usize;
+    let binary = 6 + header_len + 6;
+    let private = sofel_font::Type1Source::parse_pfb(&pfb, pfb.len()).unwrap();
+    let len_iv = private
+        .private()
+        .windows(6)
+        .position(|w| w == b"/lenIV")
+        .unwrap();
+    // Four random plaintext bytes precede the private dictionary.
+    let digit = binary + 4 + len_iv + b"/lenIV ".len();
+    let mut plain = private.private().to_vec();
+    plain[digit - binary - 4] = b'!';
+    let mut state = 55665u16;
+    for (slot, byte) in pfb[binary..].iter_mut().zip(b"ABCD".iter().chain(&plain)) {
+        *slot = *byte ^ (state >> 8) as u8;
+        state = (u16::from(*slot).wrapping_add(state))
+            .wrapping_mul(52845)
+            .wrapping_add(22719);
+    }
+    let dir = Dir::new("type1-private-offset");
+    let file = dir.file("lenIV.pfb", &pfb);
+    let out = run(&["--json".as_ref(), file.as_os_str()]);
+    assert_eq!(out.code, 1);
+    assert!(
+        out.stdout.contains(&format!("\"offset\":{digit}")),
         "{}",
         out.stdout
     );

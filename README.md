@@ -202,6 +202,8 @@ sofel-subset --font-file=Roboto.ttf --unicodes=41-5A -o out.ttf
 `sofel-render` は CID-keyed Type 1 のファイルを `--glyph` で直接開き、対応済みの Type 1 輪郭命令と Font DICT の `FontMatrix` を適用して PGM に描く。CID ファイルに Unicode cmap はないため、`--char` は受け付けない（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
 `sofel-validate` は CIDMap とサブルーチンマップの切り詰め、ヘッダの不正な値、16進データの無効なバイトについてファイル内の位置を報告する。
 
+Type 1 の PFA と PFB も検証できる。PFA の暗号化データに無効な16進文字があればその位置を、PFB のセクションが途中で切れていれば最初の欠落位置を表示する。
+
 BDF の検証では、壊れた行の先頭位置を表示する。ビットマップ行が途中で欠落した場合はファイル末尾の位置を表示する。
 
 Type 42 も `sofel-validate` で検証できる。`/sfnts` の16進文字列に無効な文字があれば、その文字のファイル内の位置を報告する。
@@ -239,7 +241,8 @@ CI は、用途を確認して `ci/documentation-only.rules` の `document` に�
 通常のCIでは、LinuxとmacOSで生成器の検査と適合テストを並列に実行する（[ADR 0039](docs/adr/0039-generator-ci-parallelism.md)）。
 `ci-result` は、判定と保護、および全ジョブの結果を確認する。
 
-クローン後、gitのhookを有効化する。コミット済みのADRは [adr-guard](https://github.com/tett23/adr-guard) で保護しており、手元に adr-guard が要る。
+クローン後、gitのhookを有効化する。コミット済みのADRは [adr-guard](https://github.com/tett23/adr-guard) で保護しており、手元に adr-guard の v0.13.1 以降が要る（[ADR 0079](docs/adr/0079-update-adr-guard-to-v0.13.1.md)）。
+ADRのステータスの行は新形式（`Status: <トークン>`）で書き、新しいADRは `Status: proposed` でコミットする。採択は、後のコミットでステータスを `accepted` か `accepted-pending` に変えて記録する。
 
 ```sh
 git config core.hooksPath .githooks
