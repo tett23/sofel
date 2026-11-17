@@ -1,6 +1,6 @@
 # ADR 0013: 計測の道具（`bench/`）と2段階目の計測の項目
 
-Status: accepted
+Status: superseded [{"by":["docs/adr/0080-ci-benchmark-records.md"],"part":"実装しないこと"}]
 
 ## 文脈
 

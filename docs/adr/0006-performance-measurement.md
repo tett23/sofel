@@ -1,6 +1,6 @@
 # ADR 0006: 性能の基準と計測の方法
 
-Status: superseded [{"by":["docs/adr/0045-foundation-completion-criteria.md"],"part":"完了条件"}]
+Status: superseded [{"by":["docs/adr/0045-foundation-completion-criteria.md"],"part":"完了条件"},{"by":["docs/adr/0080-ci-benchmark-records.md"],"part":"実装しないこと"}]
 
 ## 文脈
 
