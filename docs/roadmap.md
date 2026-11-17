@@ -77,11 +77,10 @@ Unicode の性質の引きが HarfBuzz の 1.24 倍である。2段または3段
 
 ### RobotoFlex（重なりのある輪郭）のラスタライズ
 
-[ADR 0014](adr/0014-raster-sweep-touched-cells.md) の実装は [PR #13](https://github.com/tett23/sofel/pull/13) でマージ済みである。ADR の本文にある計測では、修正後に FreeType の 0.92 倍と 0.93 倍になった。ただし `docs/benchmarks/` に [ADR 0014](adr/0014-raster-sweep-touched-cells.md) のベンチマークの記録がなく、これを足すのが残っている。報告では、記録を足す作業が別のブランチ（`bench-record-adr-0014`）で進んでいるとのことだが、このブランチはこの時点でマージされていない（未確認）。進めるには、負荷のないマシンで計測して記録を足す。
-
-### 負荷の高いマシンで取った記録
-
-負荷平均が最大 280 のマシンで取った記録がある。負荷のないマシンで取り直すべきものは、[ADR 0013](adr/0013-benchmark-harness.md) の2段階目の記録（[docs/benchmarks/2026-11-10-stage2.md](benchmarks/2026-11-10-stage2.md)）、[ADR 0019](adr/0019-unicode-character-data.md)、[ADR 0021](adr/0021-cff-outlines.md)（[docs/benchmarks/2026-11-10-cff.md](benchmarks/2026-11-10-cff.md)）、[ADR 0023](adr/0023-color-glyphs.md)、[ADR 0025](adr/0025-cff-charset-index.md)（[docs/benchmarks/2026-11-10-cff-charset-index.md](benchmarks/2026-11-10-cff-charset-index.md)）、[ADR 0020](adr/0020-shaping-foundation.md)、[ADR 0022](adr/0022-subsetting.md) である。どの記録が高負荷で取られたかを、記録の本文では確かめていない（未確認）。
+[ADR 0014](adr/0014-raster-sweep-touched-cells.md) の実装の後も、Linux（x64）では FreeType より遅い。
+[ADR 0080](adr/0080-ci-benchmark-records.md) のワークフローで取った記録では、RobotoFlex-Variable の12〜96画素のラスタライズの比が、`linux-x64` のネイティブで1.05〜1.62、wasm で1.14〜2.08である（[docs/benchmarks/2026-11-17-stage2-rerun-ci-linux-x64.md](benchmarks/2026-11-17-stage2-rerun-ci-linux-x64.md)）。
+同じ実行の `macos-arm64` では、ネイティブで0.84〜0.98、wasm で0.82〜1.02である（[docs/benchmarks/2026-11-17-stage2-rerun-ci-macos-arm64.md](benchmarks/2026-11-17-stage2-rerun-ci-macos-arm64.md)）。
+進めるには、x64 で時間の内訳を測り、直し方を決める ADR を書く。
 
 ## 後続の実装と設計
 
