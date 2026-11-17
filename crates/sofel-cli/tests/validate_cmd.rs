@@ -740,6 +740,9 @@ fn adr0065_i2_pfb_private_token_has_file_offset() {
         "{}",
         out.stdout
     );
+}
+
+#[test]
 fn adr0065_i2_winfnt_validator_checks_every_face() {
     let dir = Dir::new("winfont-validation");
     let raw = include_bytes!("../../sofel-bitmapfont/tests/data/mono.fnt");
