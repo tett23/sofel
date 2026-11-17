@@ -1,6 +1,6 @@
 # ADR 0081: クレートの置き場所を [ADR 0003](0003-crate-layers.md) の表に戻し、WOFF の依存を足す
 
-Status: accepted-pending
+Status: accepted
 
 ## 文脈
 

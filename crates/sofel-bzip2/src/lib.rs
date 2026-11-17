@@ -1,9 +1,34 @@
 //! bzip2 block decoding, including the randomised blocks used by early encoders.
-use super::{Diagnostic, diagnostic};
+//!
+//! The output is bounded by the caller (sofel ADR 0065, sofel ADR 0081).
+#![no_std]
+extern crate alloc;
+use alloc::{vec, vec::Vec};
+
+/// Failure to decode: where in the input, and why.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Error {
+    /// The byte offset in the input where decoding failed.
+    pub offset: usize,
+    /// What was wrong there.
+    pub reason: &'static str,
+}
+
+impl Error {
+    fn new(offset: usize, reason: &'static str) -> Self {
+        Self { offset, reason }
+    }
+}
+
+impl core::fmt::Display for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{} at byte {}", self.reason, self.offset)
+    }
+}
 
 mod random;
 
-type Result<T> = core::result::Result<T, Diagnostic>;
+type Result<T> = core::result::Result<T, Error>;
 
 struct Bits<'a> {
     data: &'a [u8],
@@ -12,8 +37,8 @@ struct Bits<'a> {
 }
 
 impl Bits<'_> {
-    fn error(&self, message: &'static str) -> Diagnostic {
-        diagnostic(self.byte, message)
+    fn error(&self, message: &'static str) -> Error {
+        Error::new(self.byte, message)
     }
 
     fn read(&mut self, count: usize) -> Result<u32> {
@@ -245,7 +270,7 @@ const CRC_TABLE: [u32; 256] = {
     table
 };
 
-pub(super) fn decode(data: &[u8], limit: usize) -> Result<Vec<u8>> {
+pub fn decode(data: &[u8], limit: usize) -> Result<Vec<u8>> {
     let mut bits = Bits {
         data,
         byte: 0,
@@ -269,7 +294,7 @@ pub(super) fn decode(data: &[u8], limit: usize) -> Result<Vec<u8>> {
             match marker {
                 0x1772_4538_5090 => {
                     if combined != expected {
-                        return Err(diagnostic(
+                        return Err(Error::new(
                             checksum_offset,
                             "bzip2 member checksum mismatch",
                         ));
@@ -282,7 +307,7 @@ pub(super) fn decode(data: &[u8], limit: usize) -> Result<Vec<u8>> {
                     let column = last_column(&mut bits, block_size)?;
                     let crc = restore(&column, origin, randomised, &mut output, limit, &bits)?;
                     if crc != expected {
-                        return Err(diagnostic(checksum_offset, "bzip2 block checksum mismatch"));
+                        return Err(Error::new(checksum_offset, "bzip2 block checksum mismatch"));
                     }
                     combined = combined.rotate_left(1) ^ crc;
                 }

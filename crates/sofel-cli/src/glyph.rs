@@ -168,7 +168,7 @@ pub fn render_pfr<'r>(
         y: mul_fix(p.y, scale),
     };
     let mut commands = Vec::new();
-    face.draw(glyph, &mut FnPen(|command| commands.push(command)))
+    sofel_outline::draw_pfr(face, glyph, &mut FnPen(|command| commands.push(command)))
         .map_err(|_| RenderError::Outline(OutlineError::InvalidOutline))?;
     let mut points = Vec::new();
     let commands: Vec<_> = commands

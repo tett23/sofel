@@ -27,6 +27,10 @@ name = "sofel-brotli"
 version = "0.0.0"
 
 [[package]]
+name = "sofel-bzip2"
+version = "0.0.0"
+
+[[package]]
 name = "sofel-capi"
 version = "0.0.0"
 dependencies = [
@@ -53,11 +57,14 @@ version = "0.0.0"
 dependencies = [
  "sofel-bitmap",
  "sofel-bitmapfont",
+ "sofel-bzip2",
  "sofel-color",
  "sofel-font",
  "sofel-geom",
  "sofel-inflate",
+ "sofel-lzw",
  "sofel-outline",
+ "sofel-pfr",
  "sofel-png",
  "sofel-raster",
  "sofel-read",
@@ -105,6 +112,7 @@ version = "0.0.0"
 dependencies = [
  "sofel-bitmapfont",
  "sofel-geom",
+ "sofel-pfr",
  "sofel-read",
  "sofel-type1",
 ]
@@ -125,12 +133,20 @@ name = "sofel-inflate"
 version = "0.0.0"
 
 [[package]]
+name = "sofel-lzw"
+version = "0.0.0"
+
+[[package]]
 name = "sofel-outline"
 version = "0.0.0"
 dependencies = [
  "sofel-font",
  "sofel-geom",
 ]
+
+[[package]]
+name = "sofel-pfr"
+version = "0.0.0"
 
 [[package]]
 name = "sofel-png"
