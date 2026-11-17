@@ -50,6 +50,10 @@ fn inflate_with_gzip(zlib: &[u8], expected: &[u8]) -> Vec<u8> {
 }
 
 #[test]
+#[cfg_attr(
+    target_os = "wasi",
+    ignore = "checks the streams with the host gzip, which wasm cannot start"
+)]
 fn i1_webfont_roundtrip_preserves_woff_physical_order() {
     let input = font();
     let encoded = encode(&input, Format::Woff).unwrap();
@@ -104,6 +108,10 @@ fn i3_webfont_error_bad_checksums_and_extra_bytes() {
 }
 
 #[test]
+#[cfg_attr(
+    target_os = "wasi",
+    ignore = "runs the sofel-woff binary, which wasm cannot start"
+)]
 fn i3_webfont_error_keeps_existing_and_absent_output() {
     use std::{
         fs,
