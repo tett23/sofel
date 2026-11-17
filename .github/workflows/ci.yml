@@ -496,6 +496,11 @@ jobs:
           sh tools/vector-reference/bitmap.sh
       - name: Test the harness
         run: |
+          # ADR 0013: bench/ depends on no external crates.
+          if grep -q '^source = ' bench/Cargo.lock; then
+            echo "bench/Cargo.lock lists external crates" >&2
+            exit 1
+          fi
           cargo fmt --check --manifest-path bench/Cargo.toml
           cargo test --release --manifest-path bench/Cargo.toml
       - name: Check results natively

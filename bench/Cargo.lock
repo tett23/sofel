@@ -3,19 +3,8 @@
 version = 4
 
 [[package]]
-name = "memchr"
-version = "2.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
-
-[[package]]
-name = "quick-xml"
-version = "0.42.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41b1177fdf999d2321d3fb46ff47159d9c1fb9ad66a4879f8c50a0b504615e9b"
-dependencies = [
- "memchr",
-]
+name = "font-gallery"
+version = "0.0.0"
 
 [[package]]
 name = "sofel-bench"
@@ -43,13 +32,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "sofel-bitmapfont"
+version = "0.0.0"
+
+[[package]]
+name = "sofel-brotli"
+version = "0.0.0"
+
+[[package]]
 name = "sofel-cli"
 version = "0.0.0"
 dependencies = [
  "sofel-bitmap",
+ "sofel-bitmapfont",
  "sofel-color",
  "sofel-font",
  "sofel-geom",
+ "sofel-inflate",
  "sofel-outline",
  "sofel-png",
  "sofel-raster",
@@ -57,6 +56,8 @@ dependencies = [
  "sofel-shape",
  "sofel-subset",
  "sofel-svg",
+ "sofel-type1",
+ "sofel-woff",
 ]
 
 [[package]]
@@ -72,17 +73,19 @@ dependencies = [
 name = "sofel-conformance"
 version = "0.0.0"
 dependencies = [
- "quick-xml",
+ "font-gallery",
  "sofel-bitmap",
  "sofel-cli",
  "sofel-color",
  "sofel-font",
  "sofel-geom",
  "sofel-outline",
+ "sofel-png",
  "sofel-raster",
  "sofel-read",
  "sofel-shape",
  "sofel-subset",
+ "sofel-svg",
  "sofel-unicode",
  "sofel-vector",
  "sofel-write",
@@ -92,8 +95,10 @@ dependencies = [
 name = "sofel-font"
 version = "0.0.0"
 dependencies = [
+ "sofel-bitmapfont",
  "sofel-geom",
  "sofel-read",
+ "sofel-type1",
 ]
 
 [[package]]
@@ -158,6 +163,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "sofel-type1"
+version = "0.0.0"
+
+[[package]]
 name = "sofel-unicode"
 version = "0.0.0"
 
@@ -166,6 +175,16 @@ name = "sofel-vector"
 version = "0.0.0"
 dependencies = [
  "sofel-geom",
+]
+
+[[package]]
+name = "sofel-woff"
+version = "0.0.0"
+dependencies = [
+ "sofel-brotli",
+ "sofel-inflate",
+ "sofel-read",
+ "sofel-write",
 ]
 
 [[package]]
