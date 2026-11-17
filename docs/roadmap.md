@@ -43,7 +43,6 @@ Golem はフォントを開くときに GSUB と GPOS の機能タグをすべ�
 - **HarfBuzz を使う構成**：FreeType を `FT_CONFIG_OPTION_USE_HARFBUZZ` で組むと、GSUB の機能（小型大文字、上付きなど）から style を割り当て、`afadjust.c` の逆引きにも GSUB を使う。参照ビルドがこの構成を持たないため、照合の手段を決める ADR が要る。
 - **モジュールの設定**：`no-stem-darkening`、`darkening-parameters`、`increase-x-height`、`fallback-script`、`default-script` を FreeType の既定値に固定している。設定を受け取る API は無い。
 - **`Outlines` 以外のフェイス**：Type1、CID、Type42、PFR、素の CFF のフェイスは自動ヒンティングできない。
-- **モノクロのドロップアウト**：自動ヒンティングした輪郭のモノクロ画像は、14サイズと5ターゲットの照合（約243万スロット）のうち248件で、`sofel-raster` のドロップアウトの画素の選び方が FreeType の `ftraster.c` と食い違う。スロットと画像の箱は一致し、行の画素だけが違う。該当は `conformance/expected-failures-autohint.txt` に記録した。`ftraster.c` のプロファイルとドロップアウトの処理を照合し直す。
 - **tricky フォントと SVG グリフ**：FreeType は tricky フォントを自動ヒンティングせず、SVG のグリフを先に読む。sofel はこの2つを判定しない。
 
 ### シェーピング、フォントの検証と描画、照合の記録
