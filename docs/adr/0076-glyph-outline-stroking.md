@@ -1,6 +1,6 @@
 # ADR 0076: FreeType と同じ輪郭でグリフを縁取る
 
-ステータス: 採択
+Status: accepted
 
 ## 文脈
 

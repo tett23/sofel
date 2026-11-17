@@ -1,6 +1,6 @@
 # ADR 0043: HarfBuzzの塗りの参照出力をグリフごとに比較する
 
-ステータス: 採択
+Status: accepted
 
 ## 文脈
 

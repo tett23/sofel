@@ -316,3 +316,41 @@ fn adr0027_render_accepts_design_settings_and_rejects_invalid_named_instances() 
     );
     let _ = std::fs::remove_file(f);
 }
+
+#[test]
+fn adr0065_i1_type42_render_uses_postscript_glyph_indices() {
+    let inner = font_file("type42");
+    let bytes = std::fs::read(&inner).unwrap();
+    let hex = bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let outer = inner.with_extension("t42");
+    std::fs::write(&outer, format!("%!PS-TrueTypeFont-1.0\n/FontType 42 def\n/Encoding StandardEncoding def\n/CharStrings 3 dict dup begin\n/.notdef 0 def\n/A 2 def\n/B 1 def\nend readonly def\n/sfnts [<{hex}>] def\n")).unwrap();
+    let expected = run(&["--ppem", "12", "--glyph", "1", inner.to_str().unwrap()]);
+    assert_eq!(expected.0, 0);
+    for (option, value) in [("--char", "U+0042"), ("--glyph", "2")] {
+        let result = run(&["--ppem", "12", option, value, outer.to_str().unwrap()]);
+        assert_eq!(result, expected);
+    }
+    let render_text = |text: &str, font: &std::path::Path| {
+        let output = Command::new(env!("CARGO_BIN_EXE_sofel"))
+            .args(["render", "--ppem", "12", "--text", text])
+            .arg(font)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        output.stdout
+    };
+    assert_eq!(render_text("BB", &outer), render_text("AA", &inner));
+    assert_eq!(
+        run(&["--ppem", "12", "--glyph", "3", outer.to_str().unwrap()]).0,
+        1
+    );
+    std::fs::remove_file(inner).unwrap();
+    std::fs::remove_file(outer).unwrap();
+}

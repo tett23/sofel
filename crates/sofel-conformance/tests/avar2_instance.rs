@@ -200,7 +200,7 @@ fn adr0061_i1_avar2_passthrough_layout_tables_match_harfbuzz() {
     let bytes = std::fs::read(&path).unwrap();
     let font = Font::new(&bytes, 0).unwrap();
     for (label, codepoint) in [("all", None), ("A", Some(0x41)), ("c", Some(0x63))] {
-        for tag in [b"GPOS", b"GDEF"] {
+        for tag in [b"GPOS", b"GDEF", b"GSUB"] {
             let name = std::str::from_utf8(tag).unwrap();
             let input = Input::new()
                 .map_set(SetKind::Unicodes, |s| {
@@ -275,6 +275,83 @@ fn adr0061_i1_avar2_passthrough_layout_tables_match_harfbuzz() {
             }
         }
     }
+}
+
+#[test]
+fn adr0061_i1_avar2_passthrough_feature_variations_match_harfbuzz() {
+    for (name, tag) in [
+        ("feature-variation-precision-GPOS-lookup-avar2.ttf", b"GPOS"),
+        ("feature-variation-precision-GPOS-legacy-avar2.ttf", b"GPOS"),
+        ("feature-variation-precision-GSUB-lookup-avar2.ttf", b"GSUB"),
+        ("feature-variation-precision-GSUB-legacy-avar2.ttf", b"GSUB"),
+    ] {
+        let path = paths::testdata().join("harfbuzz/test/api/fonts").join(name);
+        let bytes = std::fs::read(&path).unwrap();
+        let font = Font::new(&bytes, 0).unwrap();
+        let input = Input::new()
+            .map_set(SetKind::Unicodes, |s| s.add_range(0, 0x10ffff))
+            .map_set(SetKind::NoSubsetTables, |s| s.add(Tag::new(tag).to_u32()))
+            .with_axis_range(Tag::new(b"TEST"), Some(-0.5), Some(0.5), Some(0.0), &font)
+            .unwrap();
+        let actual = subset(&font, &input).unwrap();
+        let output = std::env::temp_dir().join(format!(
+            "sofel-adr0061-avar2-passthrough-feature-{name}-{}.ttf",
+            std::process::id()
+        ));
+        assert!(
+            Command::new(paths::hb_dump())
+                .arg("--subset")
+                .arg(format!("--font-file={}", path.display()))
+                .arg("--unicodes=*")
+                .arg(format!(
+                    "--no-subset-tables+={}",
+                    std::str::from_utf8(tag).unwrap()
+                ))
+                .arg("--variations=TEST=-0.5:0:0.5")
+                .arg(format!("--output-file={}", output.display()))
+                .status()
+                .unwrap()
+                .success()
+        );
+        let expected = std::fs::read(&output).unwrap();
+        std::fs::remove_file(output).unwrap();
+        assert_eq!(actual, expected, "{name}");
+    }
+}
+
+#[test]
+fn adr0061_i1_avar2_passthrough_feature_variations_narrow_glyphs_match_harfbuzz() {
+    let path = paths::testdata()
+        .join("harfbuzz/test/api/fonts/feature-variation-precision-GPOS-lookup-avar2.ttf");
+    let bytes = std::fs::read(&path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let input = Input::new()
+        .map_set(SetKind::Unicodes, |s| s.add(0x41))
+        .map_set(SetKind::NoSubsetTables, |s| {
+            s.add(Tag::new(b"GPOS").to_u32())
+        })
+        .with_axis_range(Tag::new(b"TEST"), Some(-0.5), Some(0.5), Some(0.0), &font)
+        .unwrap();
+    let actual = subset(&font, &input).unwrap();
+    let output = std::env::temp_dir().join(format!(
+        "sofel-adr0061-feature-passthrough-narrow-{}.ttf",
+        std::process::id()
+    ));
+    assert!(
+        Command::new(paths::hb_dump())
+            .arg("--subset")
+            .arg(format!("--font-file={}", path.display()))
+            .arg("--unicodes=U+0041")
+            .arg("--no-subset-tables+=GPOS")
+            .arg("--variations=TEST=-0.5:0:0.5")
+            .arg(format!("--output-file={}", output.display()))
+            .status()
+            .unwrap()
+            .success()
+    );
+    let expected = std::fs::read(&output).unwrap();
+    std::fs::remove_file(output).unwrap();
+    assert_eq!(actual, expected);
 }
 
 #[test]

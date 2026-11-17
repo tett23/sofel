@@ -1,6 +1,6 @@
 # ADR 0042: Coverageの要約が飽和したら読み取りを終える
 
-ステータス: 採択
+Status: accepted
 
 ## 文脈
 

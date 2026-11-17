@@ -1,6 +1,6 @@
 # ADR 0075: GSUB と GPOS の機能タグを C から列挙する
 
-ステータス: 採択
+Status: accepted
 
 ## 文脈
 

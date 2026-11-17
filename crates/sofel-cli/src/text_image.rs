@@ -48,6 +48,7 @@ fn copy_bitmap(bitmap: Bitmap<'_>) -> Result<RasterGlyph, String> {
 pub(crate) fn draw(
     font: &Font<'_>,
     location: &Location<'_>,
+    type42: Option<&sofel_font::type42::Type42Face<'_>>,
     ppem: u16,
     text: &str,
     features: &[Feature],
@@ -66,11 +67,18 @@ pub(crate) fn draw(
         u32::from(ppem),
     );
     let outlines = Outlines::new(instance);
-    let glyphs = shape_with_extents(instance, &scale, &plan, input, &|g| {
-        instance
-            .glyf_extents(g)
-            .or_else(|| outlines.glyph_extents(g))
-    });
+    let glyphs = if let Some(face) = type42 {
+        let mut subfont = SubFont::new(scale);
+        subfont
+            .set_nominal_glyph_func(|cp| face.embedded_glyph(face.nominal_glyph(cp)?).map(|g| g.0));
+        shape_with_subfont(instance, &subfont, &plan, input)
+    } else {
+        shape_with_extents(instance, &scale, &plan, input, &|g| {
+            instance
+                .glyf_extents(g)
+                .or_else(|| outlines.glyph_extents(g))
+        })
+    };
     let mut scratch = Scratch::default();
     let mut raster = Rasterizer::new();
     draw_positions(&glyphs, out, |glyph| {

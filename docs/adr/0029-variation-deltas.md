@@ -1,6 +1,6 @@
 # ADR 0029: 変化量の評価（1つの核、2つの算術、位置が持つ領域の係数）
 
-ステータス: 採択→評価の修正は [ADR 0030](0030-variation-evaluation-corrections.md)
+Status: superseded [{"by":["docs/adr/0030-variation-evaluation-corrections.md"],"part":"評価の修正"}]
 
 ## 文脈
 

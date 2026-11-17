@@ -28,79 +28,102 @@ pub struct Charstrings<'a> {
 impl<'a> Charstrings<'a> {
     /// Read `/Subrs` and `/CharStrings` binary objects with checked lengths.
     pub fn parse(data: &'a [u8]) -> Result<Self, CharstringError> {
-        let charstrings_start = keyword(data, b"/CharStrings").ok_or(CharstringError)?;
+        Self::parse_with_offset(data).map_err(|_| CharstringError)
+    }
+
+    /// Return a byte offset in the decrypted private dictionary on failure.
+    pub fn parse_with_offset(data: &'a [u8]) -> Result<Self, usize> {
+        let charstrings_start = keyword(data, b"/CharStrings").ok_or(data.len())?;
         let prefix_end = keyword(data, b"/Subrs")
             .unwrap_or(charstrings_start)
             .min(charstrings_start);
-        let prefix = data.get(..prefix_end).ok_or(CharstringError)?;
+        let prefix = data.get(..prefix_end).ok_or(data.len())?;
         let len_iv = if let Some(start) = keyword(prefix, b"/lenIV") {
             let mut reader = Reader {
                 data: prefix,
                 at: start,
+                start,
             };
-            if reader.word()? != b"/lenIV" {
-                return Err(CharstringError);
+            if reader.word().map_err(|_| reader.at)? != b"/lenIV" {
+                return Err(reader.start);
             }
-            signed_number(reader.word()?)?
+            signed_number(reader.word().map_err(|_| reader.at)?).map_err(|_| reader.start)?
         } else {
             4
         };
         let mut subrs = Vec::new();
         if let Some(start) = keyword(data, b"/Subrs") {
-            let mut reader = Reader { data, at: start };
-            if reader.word()? != b"/Subrs" {
-                return Err(CharstringError);
+            let mut reader = Reader {
+                data,
+                at: start,
+                start,
+            };
+            if reader.word().map_err(|_| reader.at)? != b"/Subrs" {
+                return Err(reader.start);
             }
-            let count = number(reader.word()?)?;
-            if count > data.len() / 4 || reader.word()? != b"array" {
-                return Err(CharstringError);
+            let count = number(reader.word().map_err(|_| reader.at)?).map_err(|_| reader.start)?;
+            if count > data.len() / 4 || reader.word().map_err(|_| reader.at)? != b"array" {
+                return Err(reader.start);
             }
             subrs = vec![None; count];
             for _ in 0..count {
-                if reader.word()? != b"dup" {
-                    return Err(CharstringError);
+                if reader.word().map_err(|_| reader.at)? != b"dup" {
+                    return Err(reader.start);
                 }
-                let index = number(reader.word()?)?;
-                let length = number(reader.word()?)?;
-                if !matches!(reader.word()?, b"RD" | b"-|" | b"readstring") {
-                    return Err(CharstringError);
+                let index =
+                    number(reader.word().map_err(|_| reader.at)?).map_err(|_| reader.start)?;
+                let length =
+                    number(reader.word().map_err(|_| reader.at)?).map_err(|_| reader.start)?;
+                if !matches!(
+                    reader.word().map_err(|_| reader.at)?,
+                    b"RD" | b"-|" | b"readstring"
+                ) {
+                    return Err(reader.start);
                 }
-                let bytes = reader.binary(length)?;
-                if !matches!(reader.word()?, b"NP" | b"|-" | b"put") {
-                    return Err(CharstringError);
+                let bytes = reader.binary(length).map_err(|_| data.len())?;
+                if !matches!(
+                    reader.word().map_err(|_| reader.at)?,
+                    b"NP" | b"|-" | b"put"
+                ) {
+                    return Err(reader.start);
                 }
-                *subrs.get_mut(index).ok_or(CharstringError)? = Some(bytes);
+                *subrs.get_mut(index).ok_or(reader.start)? = Some(bytes);
             }
         }
         let mut reader = Reader {
             data,
             at: charstrings_start,
+            start: charstrings_start,
         };
-        if reader.word()? != b"/CharStrings" {
-            return Err(CharstringError);
+        if reader.word().map_err(|_| reader.at)? != b"/CharStrings" {
+            return Err(reader.start);
         }
-        let count = number(reader.word()?)?;
+        let count = number(reader.word().map_err(|_| reader.at)?).map_err(|_| reader.start)?;
         if count == 0 || count > data.len() / 5 {
-            return Err(CharstringError);
+            return Err(reader.start);
         }
         let mut glyphs = Vec::with_capacity(count);
-        let mut first = reader.word()?;
+        let mut first = reader.word().map_err(|_| reader.at)?;
         while !first.starts_with(b"/") {
-            first = reader.word()?;
+            first = reader.word().map_err(|_| reader.at)?;
         }
         for index in 0..count {
-            let name = if index == 0 { first } else { reader.word()? };
+            let name = if index == 0 {
+                first
+            } else {
+                reader.word().map_err(|_| reader.at)?
+            };
             let name = name
                 .strip_prefix(b"/")
                 .filter(|name| !name.is_empty())
-                .ok_or(CharstringError)?;
-            let length = number(reader.word()?)?;
-            if !matches!(reader.word()?, b"RD" | b"-|") {
-                return Err(CharstringError);
+                .ok_or(reader.start)?;
+            let length = number(reader.word().map_err(|_| reader.at)?).map_err(|_| reader.start)?;
+            if !matches!(reader.word().map_err(|_| reader.at)?, b"RD" | b"-|") {
+                return Err(reader.start);
             }
-            let bytes = reader.binary(length)?;
-            if !matches!(reader.word()?, b"ND" | b"|-") {
-                return Err(CharstringError);
+            let bytes = reader.binary(length).map_err(|_| data.len())?;
+            if !matches!(reader.word().map_err(|_| reader.at)?, b"ND" | b"|-") {
+                return Err(reader.start);
             }
             glyphs.push((name, bytes));
         }
@@ -195,6 +218,7 @@ fn signed_number(word: &[u8]) -> Result<i32, CharstringError> {
 struct Reader<'a> {
     data: &'a [u8],
     at: usize,
+    start: usize,
 }
 
 impl<'a> Reader<'a> {
@@ -216,6 +240,7 @@ impl<'a> Reader<'a> {
                 break;
             }
         }
+        self.start = self.at;
         let rest = self.data.get(self.at..).ok_or(CharstringError)?;
         let length = rest
             .iter()

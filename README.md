@@ -70,7 +70,7 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-geom`](crates/sofel-geom) | FreeTypeと同じ結果を返す固定小数点の演算と、輪郭を受け渡す `Pen`、HarfBuzzと同じ丸め（`sofel_geom::float`）。カラーグリフの塗りの命令を受け渡す `Painter` と塗りの値、変換、どの環境でも同じ結果の三角関数、塗りの補助の関数（[ADR 0023](docs/adr/0023-color-glyphs.md)） |
 | [`sofel-unicode`](crates/sofel-unicode) | Unicode 18.0.0の文字の性質（General_Category、Script、正規分解と合成、Vertical_Orientationなど。[ADR 0019](docs/adr/0019-unicode-character-data.md)） |
 | [`sofel-read`](crates/sofel-read) | sfntの表の読み取りと検証。コピーも確保もせず、どの入力でもpanicしない |
-| [`sofel-type1`](crates/sofel-type1) | PFA・PFB の復号と Type1 の文字対応、送り幅、Multiple Masters のデザイン座標と輪郭補間、AFM・PFM のカーニングを使った横書きのシェーピング、CID-keyed Type 1 の CIDMap・Font DICT・charstring・送り幅、Type42 の埋め込み sfnt・Encoding・CharStrings を Rust API で読む（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)） |
+| [`sofel-type1`](crates/sofel-type1) | PFA・PFB の復号と Type1 の文字対応、送り幅、Multiple Masters のデザイン座標と輪郭補間、AFM・PFM のカーニングを使った横書きのシェーピング、CID-keyed Type 1 の CIDMap・Font DICT・charstring・送り幅、Type42 の埋め込み sfnt・Encoding・CharStrings の読み取り。Type42 の文字とグリフを `sofel render` で描画する（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)） |
 | [`sofel-font`](crates/sofel-font) | フォントを一度だけ読み、グリフの数、文字からグリフへの対応、送り幅、フォント全体と縦書きのメトリクス、BASEの基準線とその代わりの値、名前とグリフ名（postとCFFのcharset）をHarfBuzzの方針で返し、HarfBuzzと同じ拡大縮小（`HbScale`）をする。HarfBuzzのCFFとCFF2のアクセラレータ（`HbCff1`、`HbCff2`）を持つ。素の CFF 1 はフェイス番号で Top DICT を選び、`BareCffFace` で文字対応と送り幅を返す。PostScript名と `FT_Face` の値はFreeTypeの方針。TrueType の制御値は指定した軸位置で取得できる |
 | [`sofel-outline`](crates/sofel-outline) | glyfとGLYFの輪郭を、ヒンティングなしでFreeTypeと同じ座標で `Pen` に渡す。素の CFF 1 の輪郭も `draw_bare_cff` で描く。読み込んだ閉じた輪郭は、半径と角の接合を指定して縁取り、両側または片側の境界を取り出す（[ADR 0076](docs/adr/0076-glyph-outline-stroking.md)）。HarfBuzzと同じグリフの箱（glyf、CFF2、CFF。`HbExtents`、[ADR 0021](docs/adr/0021-cff-outlines.md)）を求める |
 | [`sofel-shape`](crates/sofel-shape) | HarfBuzz 15.1.0のOTシェーパーと同じシェーピング（バッファ、区間の性質、計画、正規化、`GSUB` と `GPOS`、フォールバックの位置。[ADR 0020](docs/adr/0020-shaping-foundation.md)）、機能の文字列、直列化、言語と文字体系のタグ。文字体系ごとのシェーパー（hebrew、hangul、thai、arabic、indic、khmer、myanmar、USE。[ADR 0024](docs/adr/0024-complex-shapers.md)）もすべて実装した |
@@ -196,12 +196,16 @@ CFF2 の全軸を指定した値に固定すると、輪郭と横・縦のメト
 sofel-subset --font-file=Roboto.ttf --unicodes=41-5A -o out.ttf
 ```
 
-フォントを読むコマンド（`sofel-shape`、`sofel-render`、`sofel-paint`、`sofel-subset`、`sofel-validate`）は WOFF 1.0、gzip、UNIX compress（LZW）、bzip2で包んだ入力を署名から識別する。`sofel-woff --format woff2` が書き出す単一フェイスの WOFF2 も読み込める。[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)
+フォントを読むコマンド（`sofel-shape`、`sofel-render`、`sofel-paint`、`sofel-subset`、`sofel-validate`）は WOFF 1.0、gzip、UNIX compress（LZW）、bzip2で包んだ入力を署名から識別する。`sofel-woff --format woff2` が書き出す単一フェイスの WOFF2 も読み込める。同じ非圧縮 Brotli ブロックを使い、hmtx だけを変換した入力にも対応する。[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)
 
 `sofel-render` は Type 1 の PFA と PFB を `--glyph` またはグリフ名から導いた Unicode の `--char` で開き、対応済みの輪郭命令を PGM に描く。`sofel render --text` でも同じ輪郭を描く（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
 
 `sofel-render` は CID-keyed Type 1 のファイルを `--glyph` で直接開き、対応済みの Type 1 輪郭命令と Font DICT の `FontMatrix` を適用して PGM に描く。CID ファイルに Unicode cmap はないため、`--char` は受け付けない（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
 `sofel-validate` は CIDMap とサブルーチンマップの切り詰め、ヘッダの不正な値、16進データの無効なバイトについてファイル内の位置を報告する。
+
+Type 1 の PFA と PFB も検証できる。PFA の暗号化データに無効な16進文字があればその位置を、PFB のセクションが途中で切れていれば最初の欠落位置を表示する。
+
+BDF の検証では、壊れた行の先頭位置を表示する。ビットマップ行が途中で欠落した場合はファイル末尾の位置を表示する。
 
 Type 42 も `sofel-validate` で検証できる。`/sfnts` の16進文字列に無効な文字があれば、その文字のファイル内の位置を報告する。
 
@@ -238,7 +242,8 @@ CI は、用途を確認して `ci/documentation-only.rules` の `document` に�
 通常のCIでは、LinuxとmacOSで生成器の検査と適合テストを並列に実行する（[ADR 0039](docs/adr/0039-generator-ci-parallelism.md)）。
 `ci-result` は、判定と保護、および全ジョブの結果を確認する。
 
-クローン後、gitのhookを有効化する。コミット済みのADRは [adr-guard](https://github.com/tett23/adr-guard) で保護しており、手元に adr-guard が要る。
+クローン後、gitのhookを有効化する。コミット済みのADRは [adr-guard](https://github.com/tett23/adr-guard) で保護しており、手元に adr-guard の v0.13.1 以降が要る（[ADR 0079](docs/adr/0079-update-adr-guard-to-v0.13.1.md)）。
+ADRのステータスの行は新形式（`Status: <トークン>`）で書き、新しいADRは `Status: proposed` でコミットする。採択は、後のコミットでステータスを `accepted` か `accepted-pending` に変えて記録する。
 
 ```sh
 git config core.hooksPath .githooks

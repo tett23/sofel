@@ -60,8 +60,28 @@ impl BdfFont {
 
     /// Parse a BDF 2.1 face. Malformed dimensions, rows and glyph counts fail.
     pub fn parse(data: &[u8]) -> Result<Self, BdfError> {
-        let text = core::str::from_utf8(data).map_err(|_| BdfError)?;
-        let mut lines = text.lines().map(str::trim_end);
+        Self::parse_with_offset(data).map_err(|_| BdfError)
+    }
+
+    /// Parse a BDF face, reporting the first byte of the failing line or EOF.
+    pub fn parse_with_offset(data: &[u8]) -> Result<Self, usize> {
+        let text = core::str::from_utf8(data).map_err(|error| error.valid_up_to())?;
+        let mut next_offset = 0usize;
+        let mut offset = 0usize;
+        let mut raw = text.split_inclusive('\n');
+        let lines = core::iter::from_fn(|| {
+            offset = next_offset;
+            let line = raw.next()?;
+            next_offset = next_offset.saturating_add(line.len());
+            Some(line.trim_end())
+        });
+        Self::parse_lines(lines, data.len()).map_err(|_| offset)
+    }
+
+    fn parse_lines<'a>(
+        mut lines: impl Iterator<Item = &'a str>,
+        input_len: usize,
+    ) -> Result<Self, BdfError> {
         let first = lines.next().ok_or(BdfError)?;
         if !first.starts_with("STARTFONT ") {
             return Err(BdfError);
@@ -142,11 +162,7 @@ impl BdfFont {
                 if in_properties || declared.is_none_or(|n| glyphs.len() >= n) {
                     return Err(BdfError);
                 }
-                glyphs.push(parse_glyph(
-                    &mut lines,
-                    data.len(),
-                    size.ok_or(BdfError)?.3,
-                )?);
+                glyphs.push(parse_glyph(&mut lines, input_len, size.ok_or(BdfError)?.3)?);
             }
         }
         let (points, x_res, y_res, bits_per_pixel) = size.ok_or(BdfError)?;
