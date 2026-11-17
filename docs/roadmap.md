@@ -36,6 +36,16 @@ Golem はフォントを開くときに GSUB と GPOS の機能タグをすべ�
 
 [ADR 0022](adr/0022-subsetting.md) は採択（未実装）である。可変フォントの読み取りは [ADR 0027](adr/0027-variable-fonts.md) で実装した。サブセット化では、名前レコードの上書きと VARC の部品参照の再採番まで実装した。軸の固定・範囲変更は [ADR 0061](adr/0061-subset-axis-instancing.md) に従って実装した。残る作業には、10段階目の CFF2 サブルーチンのヒント除去がある。表ごとの対応範囲は[仕様書](specifications.md)に記す。
 
+### [ADR 0064](adr/0064-freetype-hinting-and-render-modes.md): 自動ヒンタの残り
+
+[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md) は採択（未実装）である。自動ヒンタは、参照ビルドと同じ HarfBuzz なしの構成で、glyf と CFF の輪郭のすべての書記体系を移植した。自動ヒンタについて残る作業は次のとおりである。
+
+- **HarfBuzz を使う構成**：FreeType を `FT_CONFIG_OPTION_USE_HARFBUZZ` で組むと、GSUB の機能（小型大文字、上付きなど）から style を割り当て、`afadjust.c` の逆引きにも GSUB を使う。参照ビルドがこの構成を持たないため、照合の手段を決める ADR が要る。
+- **モジュールの設定**：`no-stem-darkening`、`darkening-parameters`、`increase-x-height`、`fallback-script`、`default-script` を FreeType の既定値に固定している。設定を受け取る API は無い。
+- **`Outlines` 以外のフェイス**：Type1、CID、Type42、PFR、素の CFF のフェイスは自動ヒンティングできない。
+- **モノクロのドロップアウト**：自動ヒンティングした輪郭のモノクロ画像は、14サイズと5ターゲットの照合（約243万スロット）のうち248件で、`sofel-raster` のドロップアウトの画素の選び方が FreeType の `ftraster.c` と食い違う。スロットと画像の箱は一致し、行の画素だけが違う。該当は `conformance/expected-failures-autohint.txt` に記録した。`ftraster.c` のプロファイルとドロップアウトの処理を照合し直す。
+- **tricky フォントと SVG グリフ**：FreeType は tricky フォントを自動ヒンティングせず、SVG のグリフを先に読む。sofel はこの2つを判定しない。
+
 ### シェーピング、フォントの検証と描画、照合の記録
 
 cmap のフォーマット2と8は、通常のグリフ検索では読み、シェーピングでは HarfBuzz に合わせて対応なしとする処理を実装済みである。[仕様書](specifications.md) に両方の検索規則を記載している。
@@ -103,7 +113,7 @@ Unicode の性質の引きが HarfBuzz の 1.24 倍である。2段または3段
 - スタイルの値 `hb_style_get_value`。[ADR 0027](adr/0027-variable-fonts.md) の一覧にある。
 - MATH の問い合わせ（`hb_ot_math_*`）と、JSTF の扱いの決定。[ADR 0017](adr/0017-base-baselines.md) による。MATH のビューは [ADR 0022](adr/0022-subsetting.md) で入っている。
 - AAT のシェーピング（10段階目）。morx、mort、kerx、ankr、trak、feat、ltag、dumber シェーパー、旧 `kern` 表、`--font-ptem` による trak。[ADR 0020](adr/0020-shaping-foundation.md) による。[ADR 0060](adr/0060-aat-shaping.md) で実装した。固定版 HarfBuzz とのシェーピング比較では `aat` 分類の期待失敗は0件である。
-- ヒンティング（7段階目）。TrueType バイトコード（v35、v40）、cvar、幻の点の丸め（[ADR 0018](adr/0018-phantom-point-shift.md)）、CFF のヒンターとステムの太らせ（[ADR 0021](adr/0021-cff-outlines.md)）、オートヒンター、mono と LCD と SDF のラスタライズ。
+- ヒンティング（7段階目）。TrueType バイトコード（v35、v40）、cvar、幻の点の丸め（[ADR 0018](adr/0018-phantom-point-shift.md)）、CFF のヒンターとステムの太らせ（[ADR 0021](adr/0021-cff-outlines.md)）、mono と LCD と SDF のラスタライズ。自動ヒンタは [ADR 0064](adr/0064-freetype-hinting-and-render-modes.md) で移植した。
 - 合成の太字と斜体。HarfBuzz の `hb_font_set_synthetic_*`、FreeType の `FT_GlyphSlot_Embolden`、`FT_GlyphSlot_Oblique`、`FT_Bitmap_Embolden`。[ADR 0016](adr/0016-font-and-vertical-metrics.md)、[ADR 0020](adr/0020-shaping-foundation.md)、[ADR 0023](adr/0023-color-glyphs.md) による。適合テストの `synthetic` 分類が消える。
 - カラーの残り（[ADR 0023](adr/0023-color-glyphs.md)）。`sofel-inflate` と `sofel-png` による復号、`sofel-raster` での RGBA の合成（グラデーションと28の合成モード）、`sofel-svg` での OT-SVG の描画、ベクトルと GPU の出力（12段階目）。
 - sfnt 以外の形式（8段階目）。素の CFF と CEF（[ADR 0021](adr/0021-cff-outlines.md)）、Type1、CID、Type42、PFR、BDF、PCF、FNT、gzip、LZW、bzip2。dfont は [ADR 0058](adr/0058-dfont-face-selection.md) に従って実装した。9段階目に WOFF と WOFF2 と Brotli がある。

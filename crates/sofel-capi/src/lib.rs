@@ -111,6 +111,11 @@ pub struct SofelOutlineScratch {
     scratch: Scratch,
 }
 
+/// `sofel_autohint_cache_t`.
+pub struct SofelAutoHintCache {
+    cache: sofel_outline::AutoHintCache,
+}
+
 /// `sofel_rasterizer_t`.
 pub struct SofelRasterizer {
     raster: Rasterizer,
@@ -2774,6 +2779,182 @@ pub unsafe extern "C" fn sofel_outline_load_with_hint(
             w(overlap),
         ))
     }
+}
+
+/// `sofel_autohint_cache_create`.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `location` is NULL or a live location
+/// made for `font`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_autohint_cache_create(
+    font: *const SofelFont,
+    location: *const SofelLocation,
+) -> *mut SofelAutoHintCache {
+    // SAFETY: the caller's conditions.
+    let (font, location) = unsafe { (r(font), r(location)) };
+    let Some(font) = font else {
+        return core::ptr::null_mut();
+    };
+    let outlines = outlines_at(font, location);
+    Box::into_raw(Box::new(SofelAutoHintCache {
+        cache: sofel_outline::AutoHintCache::new(&outlines),
+    }))
+}
+
+/// `sofel_autohint_cache_glyph_style`.
+///
+/// # Safety
+///
+/// `cache` is NULL or a live cache; `style` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_autohint_cache_glyph_style(
+    cache: *const SofelAutoHintCache,
+    glyph: u32,
+    style: *mut u16,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (cache, style) = unsafe { (r(cache), w(style)) };
+    status((|| {
+        let (cache, style) = (some(cache)?, some(style)?);
+        *style = cache
+            .cache
+            .glyph_style(GlyphId(glyph))
+            .ok_or(ERROR_INVALID_ARGUMENT)?;
+        Ok(())
+    })())
+}
+
+/// `sofel_autohint_cache_destroy`.
+///
+/// # Safety
+///
+/// `cache` is NULL or from `sofel_autohint_cache_create`, not yet
+/// destroyed and not in use.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_autohint_cache_destroy(cache: *mut SofelAutoHintCache) {
+    if !cache.is_null() {
+        // SAFETY: the pointer came from Box::into_raw and is dropped once.
+        drop(unsafe { Box::from_raw(cache) });
+    }
+}
+
+/// `sofel_outline_load_auto_hinted`.
+///
+/// # Safety
+///
+/// The requirements are those of [`sofel_outline_load_with_hint`];
+/// `cache` is NULL or a live cache made for the same font and location
+/// that no other thread uses.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_outline_load_auto_hinted(
+    font: *const SofelFont,
+    location: *const SofelLocation,
+    glyph: u32,
+    ppem: u16,
+    target: u32,
+    cache: *mut SofelAutoHintCache,
+    scratch: *mut SofelOutlineScratch,
+    cbox: *mut i32,
+    overlap: *mut u32,
+    advance: *mut i32,
+) -> i32 {
+    let Some(target) = hint_target(target) else {
+        return ERROR_INVALID_ARGUMENT;
+    };
+    // SAFETY: the caller's conditions.
+    let (font, location, cache, scratch, cbox, overlap, advance) = unsafe {
+        (
+            r(font),
+            r(location),
+            w(cache),
+            w(scratch),
+            ints::<4>(cbox),
+            w(overlap),
+            w(advance),
+        )
+    };
+    status((|| {
+        let (font, cache, scratch) = (some(font)?, some(cache)?, some(scratch)?);
+        let (cbox, overlap, advance) = (some(cbox)?, some(overlap)?, some(advance)?);
+        let outlines = outlines_at(font, location);
+        let (info, width) = outlines
+            .load_auto_hinted(
+                GlyphId(glyph),
+                ppem,
+                target,
+                &mut cache.cache,
+                &mut scratch.scratch,
+            )
+            .map_err(outline_error)?;
+        *advance = width;
+        put_info(info, cbox, overlap);
+        Ok(())
+    })())
+}
+
+/// `sofel_outline_render_harmony`.
+///
+/// # Safety
+///
+/// `scratch` is NULL or a live work area; the other pointers follow
+/// [`sofel_rasterizer_render_harmony`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_outline_render_harmony(
+    scratch: *const SofelOutlineScratch,
+    rasterizer: *mut SofelRasterizer,
+    fill: u32,
+    direction: u32,
+    x_ppem: u16,
+    y_ppem: u16,
+    pixels: *mut u8,
+    capacity: usize,
+    len: *mut usize,
+    box_: *mut i32,
+) -> i32 {
+    // SAFETY: the caller's conditions.
+    let (scratch, rasterizer, pixels, len, b) = unsafe {
+        (
+            r(scratch),
+            w(rasterizer),
+            out_array(pixels, capacity),
+            w(len),
+            ints::<4>(box_),
+        )
+    };
+    let lcd = match direction {
+        0 => sofel_raster::LcdMode::Horizontal,
+        1 => sofel_raster::LcdMode::Vertical,
+        _ => return ERROR_INVALID_ARGUMENT,
+    };
+    let out = BitmapOut { pixels, len, b };
+    status((|| {
+        let (scratch, rasterizer) = (some(scratch)?, some(rasterizer)?);
+        out.check()?;
+        let options = options(fill, 0, x_ppem, y_ppem)?;
+        let points = scratch.scratch.points();
+        let cbox = points
+            .iter()
+            .fold(None, |b: Option<(i32, i32, i32, i32)>, p| {
+                Some(b.map_or((p.x, p.y, p.x, p.y), |(a, c, d, e)| {
+                    (a.min(p.x), c.min(p.y), d.max(p.x), e.max(p.y))
+                }))
+            });
+        let mut decomposed = Ok(());
+        let bitmap = rasterizer.raster.render_harmony_placed(
+            lcd,
+            cbox.unwrap_or_default(),
+            options,
+            &mut |offset, raster| {
+                if decomposed.is_ok() {
+                    decomposed = scratch.scratch.decompose(offset, 1, raster);
+                }
+            },
+        );
+        decomposed.map_err(outline_error)?;
+        out.put(bitmap.map_err(raster_error))
+    })())
 }
 
 fn outline_decompose(

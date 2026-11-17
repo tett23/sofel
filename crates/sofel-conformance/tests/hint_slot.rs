@@ -7,7 +7,7 @@ use sofel_font::{
     read::{GlyphId, Tag},
     var::{Location, Variation},
 };
-use sofel_outline::{HintTarget, Outlines, Scratch};
+use sofel_outline::{HintMode, HintTarget, Outlines, Scratch};
 use std::{fmt::Write, process::Command};
 
 #[test]
@@ -20,6 +20,7 @@ fn adr0064_i1_native_slots_match_freetype() {
         &Outlines::new(font.default_instance()),
         &[1, 4, 7],
         None,
+        &["v35", "v40"],
     );
 }
 
@@ -45,8 +46,39 @@ fn adr0064_i1_variable_slots_match_freetype() {
             &Outlines::new(font.instance(&location)),
             &glyphs,
             Some(&args),
+            &["v35", "v40"],
         );
     }
+}
+
+#[test]
+fn adr0064_i1_auto_slots_match_freetype() {
+    // Empty glyphs, Latin glyphs, the CJK fallback of unmapped glyphs and
+    // a composite with an accent above (AF_ADJUST_UP), at every target.
+    let path = paths::testdata().join("harfbuzz/test/api/fonts/Roboto-Regular.abcAE.ttf");
+    let data = std::fs::read(&path).unwrap();
+    let font = Font::new(&data, 0).unwrap();
+    check_slots(
+        &path,
+        &Outlines::new(font.default_instance()),
+        &[0, 1, 2, 3, 4, 5, 6, 7],
+        None,
+        &["auto"],
+    );
+}
+
+#[test]
+fn adr0064_i1_unhinted_load_entry_matches_freetype() {
+    let path = paths::testdata().join("harfbuzz/test/api/fonts/Roboto-Regular.abcAE.ttf");
+    let data = std::fs::read(&path).unwrap();
+    let font = Font::new(&data, 0).unwrap();
+    check_slots(
+        &path,
+        &Outlines::new(font.default_instance()),
+        &[1, 4, 5, 7],
+        None,
+        &["none"],
+    );
 }
 
 fn check_slots(
@@ -54,6 +86,7 @@ fn check_slots(
     outlines: &Outlines<'_, '_, '_>,
     glyphs: &[u32],
     variation: Option<&str>,
+    engines: &[&str],
 ) {
     let mut scratch = Scratch::default();
     for (name, target) in [
@@ -63,7 +96,7 @@ fn check_slots(
         ("lcd", HintTarget::Lcd),
         ("lcd-v", HintTarget::VerticalLcd),
     ] {
-        for engine in ["v35", "v40"] {
+        for &engine in engines {
             for &gid in glyphs {
                 let reference = Command::new(paths::ft_dump())
                     .args(["--hint-slot", "16", &gid.to_string(), engine, name])
@@ -76,12 +109,15 @@ fn check_slots(
                     "{}",
                     String::from_utf8_lossy(&reference.stderr)
                 );
-                let (_, advance) = if engine == "v35" {
-                    outlines.load_truetype_v35_with_advance(GlyphId(gid), 16, target, &mut scratch)
-                } else {
-                    outlines.load_truetype_v40(GlyphId(gid), 16, target, &mut scratch)
-                }
-                .unwrap();
+                let mode = match engine {
+                    "none" => HintMode::None,
+                    "v35" => HintMode::NativeV35,
+                    "v40" => HintMode::NativeV40,
+                    _ => HintMode::Auto,
+                };
+                let loaded = outlines.load_with_hint(GlyphId(gid), 16, mode, target, &mut scratch);
+                assert!(loaded.is_ok(), "{engine} {name} {gid}: {loaded:?}");
+                let (_, advance) = loaded.unwrap();
                 let mut actual = format!("advance {advance} 0\n");
                 assert_eq!(scratch.points().len(), scratch.point_tags().len());
                 for (point, tag) in scratch.points().iter().zip(scratch.point_tags()) {

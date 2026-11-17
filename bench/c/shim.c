@@ -113,6 +113,24 @@ long bft_outline(void *face, unsigned gid, int unscaled)
   return n;
 }
 
+/* Loads a glyph through the automatic hinter (FT_LOAD_FORCE_AUTOHINT |
+ * FT_LOAD_NO_BITMAP, NORMAL or LIGHT target) at the current size; returns
+ * the advance plus the sum of the point coordinates, or -1. */
+long bft_autohint(void *face, unsigned gid, int light)
+{
+  FT_Face f = (FT_Face)face;
+  FT_Int32 flags = FT_LOAD_FORCE_AUTOHINT | FT_LOAD_NO_BITMAP;
+  long sum;
+  if (light)
+    flags |= FT_LOAD_TARGET_LIGHT;
+  if (FT_Load_Glyph(f, gid, flags) != 0 || f->glyph->format != FT_GLYPH_FORMAT_OUTLINE)
+    return -1;
+  sum = f->glyph->advance.x;
+  for (int i = 0; i < f->glyph->outline.n_points; i++)
+    sum += f->glyph->outline.points[i].x + f->glyph->outline.points[i].y;
+  return sum;
+}
+
 /* Loads (NO_HINTING | NO_BITMAP) and renders (NORMAL) a glyph at the
  * current size; returns the sum of the pixels, or -1. */
 long bft_render(void *face, unsigned gid)

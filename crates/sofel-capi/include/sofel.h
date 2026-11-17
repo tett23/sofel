@@ -1778,6 +1778,59 @@ int32_t sofel_outline_load_with_hint(const sofel_font_t *font, const sofel_locat
                                      uint32_t *overlap, int32_t *advance);
 
 /*
+ * The automatic hinter's state for one font at one location: the style of
+ * each glyph and the metrics of each style (FreeType's
+ * face->autohint.data). Made from a font and location (NULL for the
+ * default location); use it only with the same font and location. NULL
+ * when the font is NULL.
+ *
+ * Rust: sofel_outline::AutoHintCache::new
+ * HarfBuzz: none
+ * FreeType: af_face_globals_new
+ */
+typedef struct sofel_autohint_cache sofel_autohint_cache_t;
+sofel_autohint_cache_t *sofel_autohint_cache_create(const sofel_font_t *font,
+                                                    const sofel_location_t *location);
+
+/*
+ * The raw style word of a glyph: the style index in the low 13 bits, then
+ * the cmap, non-base and digit flags (FreeType's glyph-to-script-map).
+ *
+ * Rust: sofel_outline::AutoHintCache::glyph_style
+ * HarfBuzz: none
+ * FreeType: FT_Property_Get (autofitter, glyph-to-script-map)
+ */
+int32_t sofel_autohint_cache_glyph_style(const sofel_autohint_cache_t *cache, uint32_t glyph,
+                                         uint16_t *style);
+
+/*
+ * Frees an automatic hinter state. Does nothing for NULL.
+ *
+ * Rust: none
+ * HarfBuzz: none
+ * FreeType: af_face_globals_free
+ */
+void sofel_autohint_cache_destroy(sofel_autohint_cache_t *cache);
+
+/*
+ * Loads a glyph through FreeType's automatic hinter at square ppem with a
+ * SOFEL_HINT_TARGET_* load target, using and updating the cache made for
+ * the same font and location. Writes the control box, the overlap flag
+ * and the horizontal advance in 26.6 pixels like
+ * sofel_outline_load_with_hint.
+ *
+ * Rust: sofel_outline::Outlines::load_auto_hinted
+ * HarfBuzz: none
+ * FreeType: FT_Load_Glyph (FT_LOAD_FORCE_AUTOHINT)
+ */
+int32_t sofel_outline_load_auto_hinted(const sofel_font_t *font,
+                                       const sofel_location_t *location, uint32_t glyph,
+                                       uint16_t ppem, uint32_t target,
+                                       sofel_autohint_cache_t *cache,
+                                       sofel_outline_scratch_t *scratch, int32_t cbox[4],
+                                       uint32_t *overlap, int32_t *advance);
+
+/*
  * Sends the outline last loaded into `scratch` to the pen, after moving
  * it by (dx, dy) and multiplying every point by `multiplier`, as
  * FT_Outline_Translate followed by FT_Outline_Decompose would.
@@ -1999,6 +2052,23 @@ int32_t sofel_rasterizer_render(sofel_rasterizer_t *rasterizer, uint32_t fill,
 int32_t sofel_rasterizer_render_harmony(sofel_rasterizer_t *rasterizer, uint32_t fill,
                                        uint32_t direction, uint16_t x_ppem, uint16_t y_ppem,
                                        uint8_t *pixels, size_t capacity, size_t *len, int32_t *box);
+
+/*
+ * Renders the outline in the scratch as sofel_rasterizer_render_harmony
+ * does, decomposing it again at each of the three subpixel positions as
+ * FreeType translates the outline before each pass. This rounds the
+ * implied on-curve points between conic control points as FreeType does.
+ * The recorded outline of the rasterizer is replaced.
+ *
+ * Rust: sofel_raster::Rasterizer::render_harmony_placed
+ * HarfBuzz: none
+ * FreeType: FT_Render_Glyph (FT_RENDER_MODE_LCD, FT_RENDER_MODE_LCD_V)
+ */
+int32_t sofel_outline_render_harmony(const sofel_outline_scratch_t *scratch,
+                                     sofel_rasterizer_t *rasterizer, uint32_t fill,
+                                     uint32_t direction, uint16_t x_ppem, uint16_t y_ppem,
+                                     uint8_t *pixels, size_t capacity, size_t *len,
+                                     int32_t *box);
 
 /*
  * Renders horizontal or vertical LCD coverage using five filter weights.

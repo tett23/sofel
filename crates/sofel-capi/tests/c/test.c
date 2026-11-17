@@ -632,6 +632,61 @@ static void test_outlines(const sofel_font_t *font) {
                                      &selected_overlap, &selected_advance) == SOFEL_ERROR_INVALID_ARGUMENT);
   CHECK(sofel_outline_load_truetype_v40(font, NULL, 1, 16, 5, scratch, cbox, &overlap, &hinted_advance) == SOFEL_ERROR_INVALID_ARGUMENT);
   CHECK(sofel_outline_load_truetype_v35(font, NULL, 1, 16, 5, scratch, cbox, &overlap) == SOFEL_ERROR_INVALID_ARGUMENT);
+  /* sofel ADR 0064: every hint mode, and the automatic hinter's cache. */
+  CHECK(sofel_outline_load_with_hint(font, NULL, 1, 16, SOFEL_HINT_MODE_NONE,
+                                     SOFEL_HINT_TARGET_NORMAL, scratch, cbox, &overlap,
+                                     &hinted_advance) == SOFEL_OK);
+  CHECK(sofel_outline_load_with_hint(font, NULL, 1, 16, SOFEL_HINT_MODE_NATIVE_V35,
+                                     SOFEL_HINT_TARGET_MONO, scratch, cbox, &overlap,
+                                     &hinted_advance) == SOFEL_OK);
+  for (uint32_t target = SOFEL_HINT_TARGET_NORMAL; target <= SOFEL_HINT_TARGET_LCD_V; target++) {
+    int32_t auto_box[4], auto_advance = -1;
+    uint32_t auto_overlap;
+    CHECK(sofel_outline_load_with_hint(font, NULL, 1, 16, SOFEL_HINT_MODE_AUTO, target, scratch,
+                                       cbox, &overlap, &hinted_advance) == SOFEL_OK);
+    CHECK(hinted_advance > 0 && cbox[0] < cbox[2] && cbox[1] < cbox[3]);
+    sofel_autohint_cache_t *cache = sofel_autohint_cache_create(font, NULL);
+    CHECK(cache != NULL);
+    CHECK(sofel_outline_load_auto_hinted(font, NULL, 1, 16, target, cache, scratch, auto_box,
+                                         &auto_overlap, &auto_advance) == SOFEL_OK);
+    CHECK(memcmp(auto_box, cbox, sizeof auto_box) == 0 && auto_overlap == overlap &&
+          auto_advance == hinted_advance);
+    CHECK(sofel_outline_load_auto_hinted(font, NULL, 1, 16, 5, cache, scratch, auto_box,
+                                         &auto_overlap, &auto_advance) == SOFEL_ERROR_INVALID_ARGUMENT);
+    CHECK(sofel_outline_load_auto_hinted(font, NULL, 1, 16, target, NULL, scratch, auto_box,
+                                         &auto_overlap, &auto_advance) == SOFEL_ERROR_NULL);
+    uint16_t style = 0;
+    CHECK(sofel_autohint_cache_glyph_style(cache, 1, &style) == SOFEL_OK);
+    CHECK(sofel_autohint_cache_glyph_style(cache, UINT32_MAX, &style) == SOFEL_ERROR_INVALID_ARGUMENT);
+    CHECK(sofel_autohint_cache_glyph_style(NULL, 1, &style) == SOFEL_ERROR_NULL);
+    sofel_autohint_cache_destroy(cache);
+  }
+  CHECK(sofel_autohint_cache_create(NULL, NULL) == NULL);
+  sofel_autohint_cache_destroy(NULL);
+  CHECK(sofel_outline_load_with_hint(font, NULL, 1, 16, 4, SOFEL_HINT_TARGET_NORMAL,
+                                     scratch, cbox, &overlap, &hinted_advance) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_outline_load_with_hint(font, NULL, 1, 16, SOFEL_HINT_MODE_NONE, 5,
+                                     scratch, cbox, &overlap, &hinted_advance) == SOFEL_ERROR_INVALID_ARGUMENT);
+  CHECK(sofel_outline_load_with_hint(font, NULL, 1, 16, SOFEL_HINT_MODE_NONE,
+                                     SOFEL_HINT_TARGET_NORMAL, scratch, cbox, &overlap,
+                                     NULL) == SOFEL_ERROR_INVALID_ARGUMENT);
+  {
+    sofel_rasterizer_t *lcd = sofel_rasterizer_create();
+    uint8_t lcd_pixels[4096];
+    size_t lcd_len;
+    int32_t lcd_box[4];
+    CHECK(sofel_outline_render_harmony(scratch, lcd, 0, SOFEL_LCD_HORIZONTAL, 16, 16, lcd_pixels,
+                                       sizeof lcd_pixels, &lcd_len, lcd_box) == SOFEL_OK);
+    CHECK(lcd_len == (size_t)lcd_box[2] * (size_t)lcd_box[3] && lcd_box[2] % 3 == 0);
+    CHECK(sofel_outline_render_harmony(scratch, lcd, 0, SOFEL_LCD_VERTICAL, 16, 16, lcd_pixels,
+                                       sizeof lcd_pixels, &lcd_len, lcd_box) == SOFEL_OK);
+    CHECK(lcd_len == (size_t)lcd_box[2] * (size_t)lcd_box[3] && lcd_box[3] % 3 == 0);
+    CHECK(sofel_outline_render_harmony(scratch, lcd, 0, 2, 16, 16, lcd_pixels, sizeof lcd_pixels,
+                                       &lcd_len, lcd_box) == SOFEL_ERROR_INVALID_ARGUMENT);
+    CHECK(sofel_outline_render_harmony(NULL, lcd, 0, SOFEL_LCD_HORIZONTAL, 16, 16, lcd_pixels,
+                                       sizeof lcd_pixels, &lcd_len, lcd_box) == SOFEL_ERROR_NULL);
+    sofel_rasterizer_destroy(lcd);
+  }
 
   const uint8_t *point_tags;
   const size_t *contour_ends;
