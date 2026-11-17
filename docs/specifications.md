@@ -660,7 +660,7 @@ CI の文書だけの変更は、比較起点の `ci/documentation-only.rules` �
 
 ## ライセンス
 
-- sofelはMITとする。FreeTypeのコードを流用する場合はFTLを選び、文書でFreeType Projectを明示する（[ADR 0002](adr/0002-license-and-reuse.md)）。Slugを流用する場合は、READMEにクレジットを載せる。
+- sofelはMITとする。FreeTypeのコードを流用する場合はFTLを選び、文書でFreeType Projectを明示する（[ADR 0002](adr/0002-license-and-reuse.md)）。`sofel-gpu` のシェーダーは HarfBuzz を経由して Slug を流用しているので、README に Slug と作者 Eric Lengyel のクレジットを載せ、`THIRD_PARTY_NOTICES.md` に著作権表示を載せる。
 - 流用元の著作権表示とライセンスは `THIRD_PARTY_NOTICES.md` に載せ、流用したファイルの先頭に流用元を書く。
 - UCDから生成した表を含む `sofel-unicode` と `sofel-shape` は、Unicode License v3にも従う（`MIT AND Unicode-3.0`）。
 

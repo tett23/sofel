@@ -395,6 +395,10 @@ FreeTypeの計算を移植した部分を含むクレート（`sofel-geom` な�
 
 > Portions of this software are copyright © 2026 The FreeType Project (https://freetype.org). All rights reserved.
 
+`sofel-gpu` の GPU のシェーダーは、Eric Lengyel の Slug のアルゴリズムにもとづく HarfBuzz のシェーダーを流用している（[ADR 0002](docs/adr/0002-license-and-reuse.md)、[ADR 0068](docs/adr/0068-vector-and-gpu-output.md)）。
+
+> The GPU outline shaders are based on the Slug algorithm by Eric Lengyel (https://github.com/EricLengyel/Slug). Copyright © 2017 Eric Lengyel.
+
 ### フォントごとの描画見本
 
 リポジトリ直下で `sh scripts/render-font-gallery.sh` を実行し、`target/font-gallery/index.html` をブラウザーで開く。
