@@ -364,6 +364,14 @@ cargo build --release --manifest-path bench/Cargo.toml --target wasm32-wasip1
 wasmtime run -W exceptions=y --dir target/testdata bench/target/wasm32-wasip1/release/sofel-bench.wasm
 ```
 
+手元の機械の負荷に左右されない記録は、CI で取る（[ADR 0080](docs/adr/0080-ci-benchmark-records.md)）。GitHub の Actions の画面か `gh` で、ワークフロー「Benchmark records」を主題を付けて起動する。終わったら artifact を取り、ファイルを変えずに `docs/benchmarks/` に置いてプルリクエストにする。`gh run download` は artifact ごとにディレクトリを作るので、中の記録を移す。
+
+```sh
+gh workflow run bench.yml -f subject=stage2-rerun
+gh run download <実行の ID> --pattern 'bench-record-*' --dir "$TMPDIR/records"
+mv "$TMPDIR"/records/bench-record-*/*.md docs/benchmarks/
+```
+
 ファジングには、nightlyのツールチェーンと [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) が要る。対象は `cmap`、`metrics`、`font`、`outline`、`os2`、`name`、`post`、`vorg`、`base`、`gdef`、`gsub`、`gpos`、`cff`、`shape`（シェーピング）、`deserialize`（直列化の読み込み）。
 
 ```sh
