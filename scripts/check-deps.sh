@@ -14,6 +14,10 @@
 # `unsafe_code = "forbid"` in the workspace) or `#![forbid(unsafe_code)]`
 # at the root of each library and binary. A line `!unsafe <crate>` in
 # DEPS exempts a crate.
+#
+# Only crates marked `!bin <crate>` may have binary targets, and crates
+# marked `!no_std <crate>` must declare `#![no_std]` at the root of their
+# library (ADR 0081).
 # Needs cargo and jq.
 
 set -eu
@@ -27,6 +31,8 @@ trap 'rm -rf "$tmp"' EXIT
 sed -e 's/#.*//' -e 's/[[:space:]]*$//' "$deps" | grep -v '^$' >"$tmp/lines" || true
 grep -v '^!' "$tmp/lines" >"$tmp/allowed" || true
 sed -n 's/^!unsafe //p' "$tmp/lines" >"$tmp/unsafe"
+sed -n 's/^!bin //p' "$tmp/lines" >"$tmp/bin"
+sed -n 's/^!no_std //p' "$tmp/lines" >"$tmp/no_std"
 
 cargo metadata --format-version 1 --no-deps --offline --manifest-path "$ws/Cargo.toml" >"$tmp/meta"
 jq -r '.packages[] | .name as $p | .dependencies[] | "\($p) \(.name)"' "$tmp/meta" |
@@ -69,4 +75,24 @@ while read -r crate manifest; do
     status=1
   fi
 done <"$tmp/packages"
+
+# ADR 0081 I4: binaries only where `!bin` allows them.
+jq -r '.packages[] | .name as $p | .targets[] | select(.kind | any(. == "bin")) | "\($p) \(.name)"' \
+  "$tmp/meta" | while read -r crate bin; do
+  if ! grep -qxF "$crate" "$tmp/bin"; then
+    echo "check-deps.sh: $crate has the binary $bin; only crates marked \`!bin\` in $deps may" >&2
+    echo fail
+  fi
+done >"$tmp/bin-failures"
+[ -s "$tmp/bin-failures" ] && status=1
+
+# ADR 0081 I2: `!no_std` crates declare it at the library root.
+while read -r crate; do
+  lib=$(jq -r --arg p "$crate" '.packages[] | select(.name == $p) | .targets[]
+    | select(.kind | any(. == "lib")) | .src_path' "$tmp/meta")
+  if [ -z "$lib" ] || ! grep -qxF '#![no_std]' "$lib"; then
+    echo "check-deps.sh: $crate is marked \`!no_std\` but its library does not declare #![no_std]" >&2
+    status=1
+  fi
+done <"$tmp/no_std"
 exit $status

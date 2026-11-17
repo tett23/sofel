@@ -7,8 +7,8 @@ use std::io::Write;
 use std::path::Path;
 
 use sofel_bitmapfont::pcf::PcfFont;
+use sofel_pfr::PfrFace;
 use sofel_read::layout::damage::DamageEvent;
-use sofel_read::pfr::PfrFace;
 use sofel_read::sfnt::{FontFile, Sfnt};
 use sofel_read::{
     DetailValue, Diagnostic, Kind, ReadError, Severity, Tag, cff, gdef, gpos, gsub, validate,
