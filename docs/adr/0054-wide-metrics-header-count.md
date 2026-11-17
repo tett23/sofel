@@ -1,6 +1,6 @@
 # ADR 0054: HHEA と VHEA のメトリクス件数を32ビットで読む
 
-ステータス: 採択
+Status: accepted
 
 ## 文脈
 

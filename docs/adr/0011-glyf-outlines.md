@@ -1,6 +1,6 @@
 # ADR 0011: glyfの輪郭（`sofel-read` のglyfとloca、`sofel-outline`）
 
-ステータス: 採択→幻の点のpp1.xは [ADR 0018](0018-phantom-point-shift.md)
+Status: superseded [{"by":["docs/adr/0018-phantom-point-shift.md"],"part":"幻の点のpp1.x"}]
 
 ## 文脈
 

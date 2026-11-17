@@ -34,13 +34,23 @@ impl<'a> BareCffFace<'a> {
         })
     }
 
-    /// Number of glyphs in this face's CharStrings INDEX.
+    /// Size of the public glyph index range, including gaps in a CID-keyed charset.
     pub fn num_glyphs(&self) -> u32 {
-        self.cff.num_glyphs()
+        if self.cff.is_cid_keyed() {
+            self.cff
+                .charset()
+                .and_then(|cs| cs.sids().max())
+                .map_or(1, |cid| u32::from(cid).saturating_add(1))
+        } else {
+            self.cff.num_glyphs()
+        }
     }
 
     /// Glyph selected by the PostScript glyph name's Unicode value.
     pub fn nominal_glyph(&self, codepoint: u32) -> Option<GlyphId> {
+        if self.cff.is_cid_keyed() {
+            return None;
+        }
         (1..self.num_glyphs())
             .map(GlyphId)
             .find(|&glyph| self.glyph_name(glyph).and_then(glyph_unicode) == Some(codepoint))
@@ -59,6 +69,7 @@ impl<'a> BareCffFace<'a> {
 
     /// Unscaled horizontal advance decoded from the Type 2 charstring.
     pub fn h_advance(&self, glyph: GlyphId) -> Option<i32> {
+        let glyph = self.cff.bare_charstring_index(glyph)?;
         let sub = self.cff.subfont(glyph)?;
         let data = self.cff.char_strings().ft_element(glyph.0)?;
         let (global_subrs, global_subrs_sorted) = self.cff.global_subrs();

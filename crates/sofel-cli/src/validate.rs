@@ -6,7 +6,9 @@ use std::ffi::OsString;
 use std::io::Write;
 use std::path::Path;
 
+use sofel_bitmapfont::pcf::PcfFont;
 use sofel_read::layout::damage::DamageEvent;
+use sofel_read::pfr::PfrFace;
 use sofel_read::sfnt::{FontFile, Sfnt};
 use sofel_read::{
     DetailValue, Diagnostic, Kind, ReadError, Severity, Tag, cff, gdef, gpos, gsub, validate,
@@ -19,7 +21,7 @@ use crate::json;
 pub const HELP: &str = "\
 usage: sofel-validate [--json] FILE...
 
-Validates sfnt fonts, TTC/OTC collections, CEF, bare CFF 1, CID Type 1, Type 42, and BDF fonts.
+Validates sfnt fonts, TTC/OTC collections, CEF, bare CFF 1, CID Type 1, PFA, PFB, Type 42, BDF, PCF, and PFR fonts.
 Tables without a validator are skipped.
 
 Each problem is one line on standard output:
@@ -124,6 +126,62 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
             }
             continue;
         }
+        let pfa = sofel_font::Type1Source::has_text_header(&bytes);
+        if pfa || bytes.first() == Some(&0x80) {
+            let source = if pfa {
+                sofel_font::Type1Source::parse_pfa_with_offset(&bytes, 67_108_864)
+            } else {
+                sofel_font::Type1Source::parse_pfb_with_offset(&bytes, 67_108_864)
+            };
+            let result = source.and_then(|source| {
+                sofel_font::Type1Face::new(&source)
+                    .map(|_| ())
+                    .map_err(|_| {
+                        sofel_type1::charstrings::Charstrings::parse_with_offset(source.private())
+                            .err()
+                            .and_then(|index| source.private_file_offset(&bytes, index))
+                            .unwrap_or(0)
+                    })
+            });
+            if let Err(offset) = result {
+                emit_diagnostic(
+                    &name,
+                    None,
+                    Diagnostic {
+                        table: Tag::new(if pfa { b"PFA " } else { b"PFB " }),
+                        offset: u32::try_from(offset).unwrap_or(u32::MAX),
+                        severity: Severity::Error,
+                        kind: Kind::InvalidFontContainer {
+                            reason: "invalid Type 1 font",
+                        },
+                    },
+                    as_json,
+                    out,
+                    &mut errors,
+                );
+            }
+            continue;
+        }
+        if PcfFont::is_pcf(&bytes) {
+            if let Err((_, offset)) = PcfFont::parse_positioned(&bytes) {
+                emit_diagnostic(
+                    &name,
+                    None,
+                    Diagnostic {
+                        table: Tag::new(b"PCF "),
+                        offset: u32::try_from(offset).unwrap_or(u32::MAX),
+                        severity: Severity::Error,
+                        kind: Kind::InvalidFontContainer {
+                            reason: "invalid PCF font",
+                        },
+                    },
+                    as_json,
+                    out,
+                    &mut errors,
+                );
+            }
+            continue;
+        }
         if bytes.first() == Some(&1) {
             cff::validate_bare(&bytes, &mut |diagnostic| {
                 emit_diagnostic(&name, None, diagnostic, as_json, out, &mut errors)
@@ -160,6 +218,38 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
                     out,
                     &mut errors,
                 ),
+            }
+            continue;
+        }
+        if bytes.starts_with(b"PFR0") {
+            let report = |font, offset, out: &mut dyn Write, errors: &mut bool| {
+                emit_diagnostic(
+                    &name,
+                    font,
+                    Diagnostic {
+                        table: Tag::new(b"PFR "),
+                        offset: u32::try_from(offset).unwrap_or(u32::MAX),
+                        severity: Severity::Error,
+                        kind: Kind::InvalidFontContainer {
+                            reason: "invalid PFR resource",
+                        },
+                    },
+                    as_json,
+                    out,
+                    errors,
+                );
+            };
+            let count = match PfrFace::read_positioned(&bytes, 0) {
+                Ok(face) => u32::from(face.face_count()),
+                Err((_, offset)) => {
+                    report(None, offset, out, &mut errors);
+                    continue;
+                }
+            };
+            for index in 1..count {
+                if let Err((_, offset)) = PfrFace::read_positioned(&bytes, index) {
+                    report(Some(index), offset, out, &mut errors);
+                }
             }
             continue;
         }

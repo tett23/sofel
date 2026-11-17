@@ -10,12 +10,12 @@ git init -q
 git config user.name CI
 git config user.email ci@example.invalid
 mkdir -p docs/adr docs/audit docs/audits docs/benchmark docs/benchmarks
-printf '# ADR 0001: Test\n\nステータス: 提案\n' >docs/adr/0001-test.md
+printf '# ADR 0001: Test\n\nStatus: proposed\n' >docs/adr/0001-test.md
 for dir in audit audits benchmark benchmarks; do printf 'record\n' >"docs/$dir/one.md"; done
 git add . && git -c core.hooksPath=/dev/null commit -qm base
 base=$(git rev-parse HEAD)
 check() { "$guard" check-range --allow-status --allow-links "$base" HEAD >/dev/null 2>&1; }
-printf '# ADR 0001: Test\n\nステータス: 採択\n' >docs/adr/0001-test.md
+printf '# ADR 0001: Test\n\nStatus: accepted\n' >docs/adr/0001-test.md
 git add . && git -c core.hooksPath=/dev/null commit -qm status
 check || { echo 'I05: ADR status update rejected' >&2; exit 1; }
 git reset -q --hard "$base"
