@@ -10,7 +10,8 @@
 //! zero-length lines are kept), flex, seac, the arithmetic operators,
 //! CFF2 `blend` and `vsindex`, and the glyph path, which drops
 //! zero-length lines and maps points to device space through the hint
-//! maps of [`super::hint`] ([`decode_hinted`], sofel ADR 0064).
+//! maps and blue zones of [`super::Hinting`] ([`decode_hinted`], sofel
+//! ADR 0064).
 //! Copyright 2007-2014 Adobe Systems Incorporated, and Copyright (C)
 //! 1996-2026 by David Turner, Robert Wilhelm, and Werner Lemberg. Used
 //! under the FreeType License (FTL) with the Adobe patent license; see

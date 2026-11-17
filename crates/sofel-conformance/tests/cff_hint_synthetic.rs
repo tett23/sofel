@@ -150,7 +150,7 @@ fn glyphs() -> Vec<Vec<u8>> {
     ]);
     glyphs[2] = charstring(&g);
     // 3: hint replacement in the middle of a contour, with curves.
-    let mut g = vec![
+    let g = vec![
         I(0),
         I(40),
         I(160),
