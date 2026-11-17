@@ -136,7 +136,7 @@ fn adr0065_i1_opens_hex_cid_data() -> Result<(), Box<dyn std::error::Error>> {
         .checked_add(marker.len())
         .ok_or("offset overflow")?;
     let mut data = String::from_utf8(source.get(..binary).ok_or("header")?.to_vec())?
-        .replace("(Binary) 11", "(Hex) 22")
+        .replace("(Binary) 11", "(Hex) % encoding argument\r22\n")
         .into_bytes();
     for byte in source.get(binary..).ok_or("binary")? {
         data.extend_from_slice(format!("{byte:02x}").as_bytes());
@@ -389,5 +389,20 @@ fn adr0065_i1_default_matrix_keeps_previous_face_units() -> Result<(), Box<dyn s
         .copy_from_slice(b"[0.002 0 0 0.002 0 0]");
     let face = CidFace::parse(&source, 1024)?;
     assert_eq!(face.units_per_em(), 500);
+    Ok(())
+}
+
+#[test]
+fn adr0065_i1_cid_hex_padding_and_null_whitespace() -> Result<(), Box<dyn std::error::Error>> {
+    let source = sample();
+    let start = source
+        .windows(8)
+        .position(|v| v == b"(Binary)")
+        .ok_or("mode")?;
+    let mut data = source.get(..start).ok_or("header")?.to_vec();
+    data.extend_from_slice(b"(Hex) 12 StartData\n00000600000b8bf8\x00880d0ea>");
+    let face = CidFace::parse(&data, 12)?;
+    assert_eq!(face.glyph_metrics(0).ok_or("metrics")?.advance_x, 500);
+    assert!(CidFace::parse(&data, 11).is_err());
     Ok(())
 }

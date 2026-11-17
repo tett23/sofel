@@ -1,6 +1,6 @@
 # ADR 0016: フォント全体のメトリクスと縦書きのメトリクス（OS/2、name、post、vhea、vmtx、VORG、グリフの箱、拡大縮小）
 
-ステータス: 採択→`roundf` と `x_mult` の写し方は [ADR 0026](0026-harfbuzz-rounding.md)、座標で変わる値と縦の原点の幻の点の置き場所は [ADR 0027](0027-variable-fonts.md)
+Status: superseded [{"by":["docs/adr/0026-harfbuzz-rounding.md"],"part":"`roundf` と `x_mult` の写し方"},{"by":["docs/adr/0027-variable-fonts.md"],"part":"座標で変わる値と縦の原点の幻の点の置き場所"}]
 
 ## 文脈
 

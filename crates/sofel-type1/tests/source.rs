@@ -49,3 +49,22 @@ fn adr0065_i2_pfa_rejects_short_or_invalid_hex() {
         .is_err()
     );
 }
+
+#[test]
+fn adr0065_i1_pfa_postscript_line_endings() -> Result<(), sofel_type1::source::SourceError> {
+    for ending in ["\r", "\r\n", "\n"] {
+        let clear = format!("%!PS-AdobeFont-1.0{ending}currentfile eexec{ending}");
+        let font = format!("{clear}b8588da5426e547975a11180dc{ending}cleartomark{ending}");
+        let source = Type1Source::parse_pfa(font.as_bytes(), 4096)?;
+        assert_eq!(source.cleartext(), clear.as_bytes());
+        assert_eq!(source.private(), b"/FontName");
+    }
+    Ok(())
+}
+
+#[test]
+fn adr0065_i1_pfa_finds_executable_eexec() -> Result<(), sofel_type1::source::SourceError> {
+    let data = b"%!PS-AdobeFont-1.0\n% eexec ignored\n/Notice (nested (eexec) string) def\n/eexec_alias 0 def\ncurrentfile eexec b8588da5426e547975a11180dc\ncleartomark\n";
+    assert_eq!(Type1Source::parse_pfa(data, 4096)?.private(), b"/FontName");
+    Ok(())
+}

@@ -19,7 +19,7 @@ use crate::json;
 pub const HELP: &str = "\
 usage: sofel-validate [--json] FILE...
 
-Validates sfnt fonts, TTC/OTC collections, CEF, bare CFF 1, CID Type 1, Type 42, and BDF fonts.
+Validates sfnt fonts, TTC/OTC collections, CEF, bare CFF 1, CID Type 1, PFA, PFB, Type 42, and BDF fonts.
 Tables without a validator are skipped.
 
 Each problem is one line on standard output:
@@ -115,6 +115,42 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
                         severity: Severity::Error,
                         kind: Kind::InvalidFontContainer {
                             reason: "invalid BDF font",
+                        },
+                    },
+                    as_json,
+                    out,
+                    &mut errors,
+                );
+            }
+            continue;
+        }
+        let pfa = sofel_font::Type1Source::has_text_header(&bytes);
+        if pfa || bytes.first() == Some(&0x80) {
+            let source = if pfa {
+                sofel_font::Type1Source::parse_pfa_with_offset(&bytes, 67_108_864)
+            } else {
+                sofel_font::Type1Source::parse_pfb_with_offset(&bytes, 67_108_864)
+            };
+            let result = source.and_then(|source| {
+                sofel_font::Type1Face::new(&source)
+                    .map(|_| ())
+                    .map_err(|_| {
+                        sofel_type1::charstrings::Charstrings::parse_with_offset(source.private())
+                            .err()
+                            .and_then(|index| source.private_file_offset(&bytes, index))
+                            .unwrap_or(0)
+                    })
+            });
+            if let Err(offset) = result {
+                emit_diagnostic(
+                    &name,
+                    None,
+                    Diagnostic {
+                        table: Tag::new(if pfa { b"PFA " } else { b"PFB " }),
+                        offset: u32::try_from(offset).unwrap_or(u32::MAX),
+                        severity: Severity::Error,
+                        kind: Kind::InvalidFontContainer {
+                            reason: "invalid Type 1 font",
                         },
                     },
                     as_json,

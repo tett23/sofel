@@ -104,6 +104,8 @@ TrueType の単純グリフと複合グリフには、`Outlines::load_truetype_v
 
 `Outlines::load_with_hint` と C API の `sofel_outline_load_with_hint` はロード時にヒンティングなし、TrueType v35、TrueType v40、自動ヒンティングとターゲットを選ぶ。自動ヒンティングは空輪郭、輪郭点を移動しない条件を確認できる一部の非空輪郭、Latin の大文字 I の矩形輪郭と小文字 b・d の一部の3輪郭に対応する。大文字 I と小文字 b・d では LIGHT と LCD のターゲットで縦 edge を blue zone に合わせ、小文字 b・d では linked stem と残りの点を整列する。これら以外の非空輪郭には未対応エラーを返す（[ADR 0064](docs/adr/0064-freetype-hinting-and-render-modes.md)）。
 
+CFF 1 の charstring に stem がない場合、`load_with_hint` のネイティブ指定は点座標と送り幅を FreeType の Adobe 経路に合わせる。stem を持つ CFF 1 と CFF2 のネイティブヒンティングは未対応である（[ADR 0064](docs/adr/0064-freetype-hinting-and-render-modes.md)）。
+
 FreeTypeの合成操作には、`sofel-outline::Scratch` のスロット用の斜体と太字、`sofel-bitmap` の画素形式変換と太字を使う。ビットマップの太字では `embolden_bitmap_slot` が画像とスロットのメトリクス、配置を合わせて更新する。HarfBuzzに合わせた輪郭の命令は、glyfを `Scratch::hb_decompose`、CFFとCFF2を `HbExtents::cff_glyph_path` から得る。画像を含むカラーグリフの合成斜体は、`sofel-color::paint_recording_at_with_slant` が描画命令を変換で包む（[ADR 0063](docs/adr/0063-font-functions-and-synthesis.md)）。
 
 `sofel-validate` は CFF2 の FDSelect フォーマット4を互換性の警告として報告する。ほかにエラーがなければ検証は成功する（[ADR 0056](docs/adr/0056-cff2-fdselect-format4-warning.md)）。
@@ -199,6 +201,8 @@ sofel-subset --font-file=Roboto.ttf --unicodes=41-5A -o out.ttf
 `sofel-render` は CID-keyed Type 1 のファイルを `--glyph` で直接開き、対応済みの Type 1 輪郭命令と Font DICT の `FontMatrix` を適用して PGM に描く。CID ファイルに Unicode cmap はないため、`--char` は受け付けない（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
 `sofel-validate` は CIDMap とサブルーチンマップの切り詰め、ヘッダの不正な値、16進データの無効なバイトについてファイル内の位置を報告する。
 
+Type 1 の PFA と PFB も検証できる。PFA の暗号化データに無効な16進文字があればその位置を、PFB のセクションが途中で切れていれば最初の欠落位置を表示する。
+
 BDF の検証では、壊れた行の先頭位置を表示する。ビットマップ行が途中で欠落した場合はファイル末尾の位置を表示する。
 
 Type 42 も `sofel-validate` で検証できる。`/sfnts` の16進文字列に無効な文字があれば、その文字のファイル内の位置を報告する。
@@ -236,7 +240,8 @@ CI は、用途を確認して `ci/documentation-only.rules` の `document` に�
 通常のCIでは、LinuxとmacOSで生成器の検査と適合テストを並列に実行する（[ADR 0039](docs/adr/0039-generator-ci-parallelism.md)）。
 `ci-result` は、判定と保護、および全ジョブの結果を確認する。
 
-クローン後、gitのhookを有効化する。コミット済みのADRは [adr-guard](https://github.com/tett23/adr-guard) で保護しており、手元に adr-guard が要る。
+クローン後、gitのhookを有効化する。コミット済みのADRは [adr-guard](https://github.com/tett23/adr-guard) で保護しており、手元に adr-guard の v0.13.1 以降が要る（[ADR 0079](docs/adr/0079-update-adr-guard-to-v0.13.1.md)）。
+ADRのステータスの行は新形式（`Status: <トークン>`）で書き、新しいADRは `Status: proposed` でコミットする。採択は、後のコミットでステータスを `accepted` か `accepted-pending` に変えて記録する。
 
 ```sh
 git config core.hooksPath .githooks
