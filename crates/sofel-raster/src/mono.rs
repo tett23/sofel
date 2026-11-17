@@ -487,6 +487,132 @@ impl ContourProfiles {
     }
 }
 
+// A profile as Draw_Sweep sees it: x for each scanline from the bottom up,
+// and its successor in the contour loop (Finalize_Profile_Table).
+struct SweepProfile {
+    up: bool,
+    bottom: i64,
+    xs: alloc::vec::Vec<i64>,
+    next: usize,
+    start_y: i64,
+    end_y: i64,
+}
+
+impl SweepProfile {
+    fn top(&self) -> i64 {
+        self.bottom + self.xs.len() as i64 - 1
+    }
+
+    fn x(&self, row: i64) -> i64 {
+        usize::try_from(row - self.bottom)
+            .ok()
+            .and_then(|i| self.xs.get(i))
+            .copied()
+            .unwrap_or_default()
+    }
+}
+
+// Draw_Sweep's stub test for the ascending P_Left paired with P_Right: the
+// pair closes its contour at P_Left's top (upper stub) or bottom (lower
+// stub) scanline, and the span is not at least half a pixel wide with an
+// overshoot at that end.
+fn is_stub(
+    profiles: &[SweepProfile],
+    left: usize,
+    right: usize,
+    row: i64,
+    span: i64,
+    precision: i64,
+) -> bool {
+    let half = precision / 2;
+    let wide = span >= half;
+    let p = &profiles[left];
+    let upper =
+        row == p.top() && p.next == right && !(wide && p.end_y.rem_euclid(precision) >= half);
+    let lower = row == p.bottom
+        && profiles[right].next == left
+        && !(wide && (-p.start_y).rem_euclid(precision) >= half);
+    upper || lower
+}
+
+#[cfg(test)]
+mod sweep_tests {
+    use super::{SweepProfile, bubble_sort, insert_profile};
+
+    fn profile(up: bool, x: i64) -> SweepProfile {
+        SweepProfile {
+            up,
+            bottom: 0,
+            xs: alloc::vec![x, x],
+            next: 0,
+            start_y: 0,
+            end_y: 0,
+        }
+    }
+
+    #[test]
+    fn adr0064_i2_active_profiles_insert_before_equal_x_and_sort_stably() {
+        let profiles = [profile(true, 5), profile(true, 5), profile(true, 3)];
+        let mut list = alloc::vec::Vec::new();
+        for g in 0..3 {
+            insert_profile(&mut list, &profiles, g, 0);
+        }
+        assert_eq!(list, [2, 1, 0]);
+        let mut list = alloc::vec![1, 0, 2];
+        bubble_sort(&mut list, &profiles, 1);
+        assert_eq!(list, [2, 1, 0]);
+    }
+}
+
+fn sweep_profiles(contours: &[alloc::vec::Vec<Profile>]) -> alloc::vec::Vec<SweepProfile> {
+    let mut all = alloc::vec::Vec::new();
+    for contour in contours {
+        let base = all.len();
+        for (pi, profile) in contour.iter().enumerate() {
+            let mut samples = profile.samples.clone();
+            if !profile.up {
+                samples.reverse();
+            }
+            all.push(SweepProfile {
+                up: profile.up,
+                bottom: samples.first().map_or(0, |s| s.0),
+                xs: samples.iter().map(|s| s.1).collect(),
+                next: base + (pi + 1) % contour.len(),
+                start_y: profile.start_y,
+                end_y: profile.end_y,
+            });
+        }
+    }
+    all
+}
+
+// InsNew: a profile activated on this scanline goes before the first
+// active profile whose x is not smaller.
+fn insert_profile(
+    list: &mut alloc::vec::Vec<usize>,
+    profiles: &[SweepProfile],
+    g: usize,
+    row: i64,
+) {
+    let x = profiles[g].x(row);
+    let at = list
+        .iter()
+        .position(|&h| profiles[h].x(row) >= x)
+        .unwrap_or(list.len());
+    list.insert(at, g);
+}
+
+// Increment: swap the first inverted neighbours and restart, so profiles
+// with equal x keep their order from the previous scanline.
+fn bubble_sort(list: &mut [usize], profiles: &[SweepProfile], row: i64) {
+    while let Some(i) = list
+        .windows(2)
+        .position(|w| profiles[w[0]].x(row) > profiles[w[1]].x(row))
+    {
+        list.swap(i, i + 1);
+    }
+}
+
 #[cfg(test)]
 mod command_tests {
     use super::glyph_profiles;
@@ -614,6 +740,39 @@ mod bitmap_tests {
     }
 }
 
+#[cfg(test)]
+mod tie_tests {
+    use super::MonoOptions;
+    use sofel_geom::{Pen, Point};
+
+    // FreeType pairs active profiles of equal x in the order of its active
+    // lists, so the collapsed second contour splits the diamond's stub pair
+    // and the dropout is drawn. Reference: `ft-dump --mono-outline 0`.
+    #[test]
+    fn adr0064_i2_equal_x_profiles_pair_in_active_list_order() {
+        let mut raster = super::super::Rasterizer::new();
+        for contour in [
+            &[(-96, -128), (-208, -192), (-320, -128), (-208, -64)][..],
+            &[(-162, -128), (-90, -128)],
+        ] {
+            raster.move_to(Point {
+                x: contour[0].0,
+                y: contour[0].1,
+            });
+            for &(x, y) in &contour[1..] {
+                raster.line_to(Point { x, y });
+            }
+            raster.close();
+        }
+        let b = raster.render_mono(MonoOptions::default(), None).unwrap();
+        assert_eq!(
+            (b.bounds.left, b.bounds.top, b.bounds.width, b.bounds.rows),
+            (-5, -1, 4, 2)
+        );
+        assert_eq!(b.pixels, [0x60, 0xf0]);
+    }
+}
+
 /// Outline flags used by FreeType's monochrome scan converter.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct MonoOptions {
@@ -722,28 +881,34 @@ impl super::Rasterizer {
                 flipped,
                 prescaled,
             );
-            let mut crossings = alloc::vec![(alloc::vec::Vec::new(),alloc::vec::Vec::new());height];
-            for (ci, contour) in contours.iter().enumerate() {
-                for (pi, profile) in contour.iter().enumerate() {
-                    for &(row, x) in &profile.samples {
-                        let (up, down) = &mut crossings[row as usize];
-                        (if profile.up { up } else { down }).push((x, ci, pi));
-                    }
+            let profiles = sweep_profiles(&contours);
+            let mut waiting: alloc::vec::Vec<usize> = (0..profiles.len()).collect();
+            waiting.sort_by_key(|&g| profiles[g].bottom);
+            let mut waiting = waiting.into_iter().peekable();
+            let (mut left, mut right) = (alloc::vec::Vec::new(), alloc::vec::Vec::new());
+            for row in 0..height {
+                let row_i = row as i64;
+                while let Some(g) = waiting.next_if(|&g| profiles[g].bottom == row_i) {
+                    let list = if profiles[g].up {
+                        &mut left
+                    } else {
+                        &mut right
+                    };
+                    insert_profile(list, &profiles, g, row_i);
                 }
-            }
-            for (row, (mut up, mut down)) in crossings.into_iter().enumerate() {
-                up.sort_by_key(|v| v.0);
-                down.sort_by_key(|v| v.0);
                 let address = |pos: usize| {
                     let (x, y) = if flipped { (row, pos) } else { (pos, row) };
                     ((rows - 1 - y) * stride + x / 8, 0x80u8 >> (x % 8))
                 };
                 let mut drops = alloc::vec::Vec::new();
-                for ((a, ci, pi), (b, cj, pj)) in up.into_iter().zip(down) {
-                    let (left, right) = (a.min(b), a.max(b));
-                    if (left + precision - 1).div_euclid(precision) <= right.div_euclid(precision) {
+                for (&l, &r) in left.iter().zip(&right) {
+                    let (a, b) = (profiles[l].x(row_i), profiles[r].x(row_i));
+                    let (left_x, right_x) = (a.min(b), a.max(b));
+                    if (left_x + precision - 1).div_euclid(precision)
+                        <= right_x.div_euclid(precision)
+                    {
                         if flipped {
-                            for v in [left, right] {
+                            for v in [left_x, right_x] {
                                 if v % precision == 0
                                     && (0..extent as i64).contains(&(v / precision))
                                 {
@@ -756,35 +921,22 @@ impl super::Rasterizer {
                             paint_span(
                                 &mut self.pixels[begin..begin + stride],
                                 width,
-                                left,
-                                right,
+                                left_x,
+                                right_x,
                                 precision,
                             );
                         }
-                    } else if !options.ignore_dropouts {
-                        let profiles = &contours[ci];
-                        let profile = &profiles[pi];
-                        if !options.include_stubs && ci == cj {
-                            let half = precision / 2;
-                            let wide = right - left >= half;
-                            let upper = (pi + 1) % profiles.len() == pj
-                                && profile.samples.last().is_some_and(|p| p.0 == row as i64);
-                            let lower = (pj + 1) % profiles.len() == pi
-                                && profile.samples.first().is_some_and(|p| p.0 == row as i64);
-                            if (upper && !(wide && profile.end_y.rem_euclid(precision) >= half))
-                                || (lower
-                                    && !(wide && (-profile.start_y).rem_euclid(precision) >= half))
-                            {
-                                continue;
-                            }
-                        }
-                        drops.push((left, right));
+                    } else if !options.ignore_dropouts
+                        && (options.include_stubs
+                            || !is_stub(&profiles, l, r, row_i, right_x - left_x, precision))
+                    {
+                        drops.push((left_x, right_x));
                     }
                 }
-                for (left, right) in drops {
+                for (left_x, right_x) in drops {
                     if let Some(pos) = dropout_pixel(
-                        left,
-                        right,
+                        left_x,
+                        right_x,
                         precision,
                         options.smart_dropouts,
                         extent,
@@ -796,6 +948,10 @@ impl super::Rasterizer {
                         let (i, m) = address(pos);
                         self.pixels[i] |= m;
                     }
+                }
+                for list in [&mut left, &mut right] {
+                    list.retain(|&g| profiles[g].top() > row_i);
+                    bubble_sort(list, &profiles, row_i + 1);
                 }
             }
         }
