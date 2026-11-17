@@ -78,3 +78,15 @@ fn adr0065_i2_woff2_checks_optional_block_bounds() {
         );
     }
 }
+
+#[test]
+fn adr0065_i2_truncated_woff2_reports_first_missing_byte() {
+    let font = build_sfnt_ordered(&[(Tag::new(b"head"), &[0; 54])], &[]).unwrap();
+    let packed = encode(&font, Format::Woff2).unwrap();
+    for end in [24, 35, 47, 53, 54] {
+        let mut cut = packed[..end].to_vec();
+        cut[8..12].copy_from_slice(&u32::try_from(end).unwrap().to_be_bytes());
+        let diagnostic = sofel_woff::decode_woff2(&cut, font.len()).unwrap_err();
+        assert_eq!(diagnostic.offset, end, "{}", diagnostic.reason);
+    }
+}

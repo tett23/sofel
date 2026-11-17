@@ -3,9 +3,9 @@
 use alloc::vec::Vec;
 
 use sofel_font::CidFace;
-use sofel_geom::{Pen, Point, mul_fix};
+use sofel_geom::{FnPen, Pen, Point, mul_fix};
 
-use crate::{CBox, OutlineError, OutlineInfo, Scale};
+use crate::{CBox, HintTarget, OutlineError, OutlineInfo, Scale, ps_native};
 
 /// Draw a CID-keyed Type 1 glyph using its CID as glyph index.
 /// Unsupported Type 1 operators return [`OutlineError::InvalidCharString`].
@@ -24,11 +24,56 @@ pub fn draw_cid(
         [
             matrix.xx, matrix.yx, matrix.xy, matrix.yy, matrix.dx, matrix.dy,
         ],
+        false,
         pen,
     );
     let mut stack = Vec::new();
     decode_program(face, cid, &program, &mut state, &mut stack, 0, false)?;
     Ok(state.info())
+}
+
+/// Draw a stemless CID-keyed Type 1 glyph at Adobe's native path scale and
+/// return its grid-fitted horizontal advance.
+pub fn draw_cid_native(
+    face: &CidFace,
+    cid: usize,
+    scale: Scale,
+    target: HintTarget,
+    pen: &mut impl Pen,
+) -> Result<(OutlineInfo, i32), OutlineError> {
+    let Scale::Scaled { x, y } = scale else {
+        return Err(OutlineError::InvalidOutline);
+    };
+    let program = face
+        .glyph_program(cid)
+        .ok_or(OutlineError::InvalidGlyphIndex)?;
+    let matrix = face.matrix(cid).ok_or(OutlineError::InvalidGlyphIndex)?;
+    let matrix = [
+        matrix.xx, matrix.yx, matrix.xy, matrix.yy, matrix.dx, matrix.dy,
+    ];
+    let mut null_pen = FnPen(|_| {});
+    let mut scan = State::new(Scale::Unscaled, matrix, false, &mut null_pen);
+    decode_program(face, cid, &program, &mut scan, &mut Vec::new(), 0, false)?;
+    if scan.has_stems
+        && (target != HintTarget::Light
+            || scan.unsupported_stem_map
+            || scan.h_stem.is_none()
+            || matrix != [65536, 0, 0, 65536, 0, 0]
+            || !face.native_stem_blues_empty())
+    {
+        return Err(OutlineError::UnsupportedFormat);
+    }
+    let mut state = State::new(scale, matrix, true, pen);
+    if let Some((position, width)) = scan.h_stem {
+        state.h_stem_shift =
+            ps_native::single_hstem_shift(i64::from(position) << 16, i64::from(width) << 16, y)
+                .ok_or(OutlineError::UnsupportedFormat)?;
+    }
+    decode_program(face, cid, &program, &mut state, &mut Vec::new(), 0, false)?;
+    let metrics = face
+        .glyph_metrics(cid)
+        .ok_or(OutlineError::InvalidCharString)?;
+    Ok((state.info(), ps_native::advance(metrics.advance_x, x)))
 }
 
 fn decode_program<P: Pen>(
@@ -81,7 +126,21 @@ fn decode_program<P: Pen>(
                 stack.push(i32::from_be_bytes(bytes));
                 at = end;
             }
-            1 | 3 => stack.clear(), // hstem and vstem: no hinting
+            1 | 3 => {
+                state.has_stems = true;
+                if op == 1 {
+                    if let [position, width] = stack.as_slice() {
+                        if state.h_stem.is_none() && !state.emitted {
+                            state.h_stem = Some((*position, *width));
+                        } else {
+                            state.unsupported_stem_map = true;
+                        }
+                    } else {
+                        state.unsupported_stem_map = true;
+                    }
+                }
+                stack.clear();
+            }
             13 => {
                 let [side, _advance] = take(stack)?;
                 state.x = side;
@@ -160,7 +219,12 @@ fn decode_program<P: Pen>(
                 let escape = *program.get(at).ok_or(OutlineError::InvalidCharString)?;
                 at = at.checked_add(1).ok_or(OutlineError::InvalidCharString)?;
                 match escape {
-                    0..=2 => stack.clear(), // dotsection, vstem3, hstem3
+                    0 => stack.clear(), // dotsection
+                    1 | 2 => {
+                        state.has_stems = true;
+                        state.unsupported_stem_map = true;
+                        stack.clear();
+                    }
                     7 => {
                         let [sx, sy, _wx, _wy] = take(stack)?;
                         state.x = sx;
@@ -203,10 +267,15 @@ struct State<'a, P: Pen> {
     start: Option<(i32, i32)>,
     emitted: bool,
     box_: Option<CBox>,
+    has_stems: bool,
+    native: bool,
+    h_stem: Option<(i32, i32)>,
+    h_stem_shift: i64,
+    unsupported_stem_map: bool,
 }
 
 impl<'a, P: Pen> State<'a, P> {
-    fn new(scale: Scale, matrix: [i32; 6], pen: &'a mut P) -> Self {
+    fn new(scale: Scale, matrix: [i32; 6], native: bool, pen: &'a mut P) -> Self {
         Self {
             scale,
             matrix,
@@ -216,11 +285,34 @@ impl<'a, P: Pen> State<'a, P> {
             start: None,
             emitted: false,
             box_: None,
+            has_stems: false,
+            native,
+            h_stem: None,
+            h_stem_shift: 0,
+            unsupported_stem_map: false,
         }
     }
 
     fn point(&mut self, x: i32, y: i32) -> Point {
         let [xx, yx, xy, yy, dx, dy] = self.matrix;
+        if self.native
+            && let Scale::Scaled { x: sx, y: sy } = self.scale
+        {
+            let (px, py) = (
+                ps_native::coordinate(x, sx),
+                ps_native::coordinate_fixed_shifted(i64::from(y) << 16, sy, self.h_stem_shift),
+            );
+            let p = Point {
+                x: mul_fix(px, xx)
+                    .saturating_add(mul_fix(py, xy))
+                    .saturating_add(dx),
+                y: mul_fix(px, yx)
+                    .saturating_add(mul_fix(py, yy))
+                    .saturating_add(dy),
+            };
+            self.update_box(p);
+            return p;
+        }
         let transformed_x = mul_fix(x, xx)
             .saturating_add(mul_fix(y, xy))
             .saturating_add(dx);
@@ -237,6 +329,11 @@ impl<'a, P: Pen> State<'a, P> {
                 y: mul_fix(transformed_y, sy.0),
             },
         };
+        self.update_box(p);
+        p
+    }
+
+    fn update_box(&mut self, p: Point) {
         match &mut self.box_ {
             Some(bounds) => {
                 bounds.x_min = bounds.x_min.min(p.x);
@@ -253,7 +350,6 @@ impl<'a, P: Pen> State<'a, P> {
                 })
             }
         }
-        p
     }
 
     fn move_by(&mut self, dx: i32, dy: i32) -> Result<(), OutlineError> {

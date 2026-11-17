@@ -1,6 +1,6 @@
 # ADR 0061: 軸を固定または制限して可変フォントを書き出す
 
-Status: accepted-pending
+Status: accepted
 
 ## 文脈
 

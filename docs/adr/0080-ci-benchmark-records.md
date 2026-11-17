@@ -1,6 +1,6 @@
 # ADR 0080: 計測の記録を CI で取る
 
-Status: accepted-pending
+Status: accepted
 
 ## 文脈
 

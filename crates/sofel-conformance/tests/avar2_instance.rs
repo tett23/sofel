@@ -550,6 +550,14 @@ fn adr0061_i1_avar2_restricts_variable_colr_like_harfbuzz() {
     ] {
         compare_path(&path, &ranges);
     }
+    for tag in [b"COLR"] {
+        for ranges in [
+            vec![(b"wght", 400.0, 400.0, 400.0)],
+            vec![(b"wght", 200.0, 400.0, 600.0)],
+        ] {
+            compare_path_no_subset(&path, &ranges, tag);
+        }
+    }
     std::fs::remove_file(path).unwrap();
 }
 
@@ -588,6 +596,12 @@ fn adr0061_i1_avar2_restricts_variable_base_like_harfbuzz() {
         vec![(b"wght", 400.0, 400.0, 900.0)],
     ] {
         compare_path(&path, &ranges);
+    }
+    for ranges in [
+        vec![(b"wght", 200.0, 200.0, 200.0)],
+        vec![(b"wght", 200.0, 200.0, 400.0)],
+    ] {
+        compare_path_no_subset(&path, &ranges, b"BASE");
     }
     std::fs::remove_file(path).unwrap();
 }
@@ -742,6 +756,12 @@ fn adr0061_i1_avar2_math_variation_references_match_harfbuzz() {
         vec![(b"wght", 0.5, 0.5, 0.5), (b"wdth", 0.5, 0.5, 0.5)],
     ] {
         compare_path(&path, &ranges);
+    }
+    for ranges in [
+        vec![(b"wght", 0.5, 0.5, 0.5)],
+        vec![(b"wght", 0.0, 0.5, 1.0)],
+    ] {
+        compare_path_no_subset(&path, &ranges, b"MATH");
     }
     std::fs::remove_file(path).unwrap();
 }
@@ -994,4 +1014,71 @@ fn compare_path(path: &std::path::Path, ranges: &[(&[u8; 4], f32, f32, f32)]) {
         }
         panic!("sfnt bytes differ outside table payloads");
     }
+}
+
+fn compare_path_no_subset(
+    path: &std::path::Path,
+    ranges: &[(&[u8; 4], f32, f32, f32)],
+    tag: &[u8; 4],
+) {
+    for unicodes in ["*", "U+0041"] {
+        compare_path_no_subset_with_unicodes(path, ranges, tag, unicodes);
+    }
+}
+
+fn compare_path_no_subset_with_unicodes(
+    path: &std::path::Path,
+    ranges: &[(&[u8; 4], f32, f32, f32)],
+    tag: &[u8; 4],
+    unicodes: &str,
+) {
+    let bytes = std::fs::read(path).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let glyphs = if unicodes == "*" {
+        (0, 0x10ffff)
+    } else {
+        (0x41, 0x41)
+    };
+    let mut input = Input::new()
+        .map_set(SetKind::Unicodes, |set| set.add_range(glyphs.0, glyphs.1))
+        .map_set(SetKind::NoSubsetTables, |set| {
+            set.add(Tag::new(tag).to_u32())
+        });
+    for &(axis, min, default, max) in ranges {
+        input = input
+            .with_axis_range(Tag::new(axis), Some(min), Some(max), Some(default), &font)
+            .unwrap();
+    }
+    let actual = subset(&font, &input).unwrap();
+    let variations = ranges
+        .iter()
+        .map(|(axis, min, default, max)| {
+            format!(
+                "{}={min}:{default}:{max}",
+                std::str::from_utf8(*axis).unwrap()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let table = std::str::from_utf8(tag).unwrap();
+    let output = std::env::temp_dir().join(format!(
+        "sofel-avar2-no-subset-{}-{table}-{unicodes}-{}.ttf",
+        std::process::id(),
+        variations.replace(['=', ':', ','], "-")
+    ));
+    assert!(
+        Command::new(paths::hb_dump())
+            .arg("--subset")
+            .arg(format!("--font-file={}", path.display()))
+            .arg(format!("--unicodes={unicodes}"))
+            .arg(format!("--no-subset-tables+={table}"))
+            .arg(format!("--variations={variations}"))
+            .arg(format!("--output-file={}", output.display()))
+            .status()
+            .unwrap()
+            .success()
+    );
+    let expected = std::fs::read(&output).unwrap();
+    std::fs::remove_file(output).unwrap();
+    assert_eq!(actual, expected, "{table} with {variations} and {unicodes}");
 }

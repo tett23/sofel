@@ -2,62 +2,6 @@
 use super::{DecodeError, Vec, read_entry};
 use crate::decode::word;
 
-struct Bits<'a> {
-    data: &'a [u8],
-    bit: usize,
-}
-
-impl Bits<'_> {
-    fn take(&mut self, count: u32) -> Option<usize> {
-        let mut value = 0;
-        for shift in 0..count {
-            let byte = self.data.get(self.bit / 8)?;
-            value |= usize::from((byte >> (self.bit % 8)) & 1) << shift;
-            self.bit = self.bit.checked_add(1)?;
-        }
-        Some(value)
-    }
-
-    fn align(&mut self) -> Option<()> {
-        let padding = self.bit.wrapping_neg() & 7;
-        (self.take(u32::try_from(padding).ok()?)? == 0).then_some(())
-    }
-}
-
-fn stored_stream(data: &[u8], expected: usize) -> Option<Vec<u8>> {
-    let mut bits = Bits { data, bit: 0 };
-    if bits.take(1)? != 0 && bits.take(3)? == 0 && bits.take(3)? == 1 {
-        return None;
-    }
-    let mut out = Vec::new();
-    loop {
-        if bits.take(1)? != 0 {
-            if bits.take(1)? != 1 {
-                return None;
-            }
-            bits.align()?;
-            return (out.len() == expected && bits.bit / 8 == data.len()).then_some(out);
-        }
-        let nibbles = u32::try_from(bits.take(2)?).ok()?.checked_add(4)?;
-        if nibbles == 7 {
-            return None;
-        }
-        let encoded = bits.take(nibbles << 2)?;
-        if nibbles > 4 && encoded >> (nibbles.saturating_sub(1) << 2) == 0 {
-            return None;
-        }
-        let length = encoded.checked_add(1)?;
-        if bits.take(1)? != 1 || out.len().checked_add(length)? > expected {
-            return None;
-        }
-        bits.align()?;
-        let start = bits.bit / 8;
-        let end = start.checked_add(length)?;
-        out.extend_from_slice(data.get(start..end)?);
-        bits.bit = end.checked_mul(8)?;
-    }
-}
-
 fn restore_hmtx(tables: &[(super::Tag, &[u8])], stream: &[u8], length: usize) -> Option<Vec<u8>> {
     let table = |name| {
         tables
@@ -130,16 +74,15 @@ pub fn decode_woff2(input: &[u8], limit: usize) -> Result<Vec<u8>, DecodeError> 
         return Err(error(16, "output limit exceeded"));
     }
     let compressed = word(input, 20)? as usize;
-    let mut remaining = input.get(48..).ok_or(error(48, "truncated WOFF2 header"))?;
+    let mut remaining = input
+        .get(48..)
+        .ok_or(error(input.len(), "truncated WOFF2 header"))?;
     let mut entries = Vec::with_capacity(count);
     let mut sfnt_size = 12usize.saturating_add(count << 4);
     let mut stored_size = 0usize;
     for _ in 0..count {
         let at = input.len().saturating_sub(remaining.len());
         let entry = read_entry(&mut remaining).ok_or(error(at, "invalid WOFF2 table entry"))?;
-        if entry.transformed && entry.tag != super::Tag::new(b"hmtx") {
-            return Err(error(at, "unsupported transformed table"));
-        }
         let length = (entry.original as usize)
             .checked_next_multiple_of(4)
             .ok_or(error(at, "table length overflow"))?;
@@ -150,6 +93,9 @@ pub fn decode_woff2(input: &[u8], limit: usize) -> Result<Vec<u8>, DecodeError> 
         stored_size = stored_size
             .checked_add(entry.stored as usize)
             .ok_or(error(at, "stream length overflow"))?;
+        if stored_size > limit {
+            return Err(error(at, "transformed stream exceeds limit"));
+        }
         entries.push(entry);
     }
     if sfnt_size != total {
@@ -158,7 +104,7 @@ pub fn decode_woff2(input: &[u8], limit: usize) -> Result<Vec<u8>, DecodeError> 
     let at = input.len().saturating_sub(remaining.len());
     let stream = remaining
         .get(..compressed)
-        .ok_or(error(at, "truncated Brotli data"))?;
+        .ok_or(error(input.len(), "truncated Brotli data"))?;
     let mut end = at
         .checked_add(compressed)
         .ok_or(error(at, "compressed size overflow"))?;
@@ -187,20 +133,43 @@ pub fn decode_woff2(input: &[u8], limit: usize) -> Result<Vec<u8>, DecodeError> 
     {
         return Err(error(end, "unclaimed data after final block"));
     }
-    let decoded = stored_stream(stream, stored_size)
+    let decoded = sofel_brotli::decompress(stream, stored_size)
         .ok_or(error(at, "unsupported or malformed Brotli stream"))?;
     let mut data = decoded.as_slice();
     let mut tables = Vec::with_capacity(count);
     let mut transformed = None;
+    let mut outline = None;
+    let mut offsets = None;
     for entry in entries {
         let (table, tail) = data
             .split_at_checked(entry.stored as usize)
             .ok_or(error(at, "truncated table data"))?;
         if entry.transformed {
-            transformed = Some((tables.len(), table, entry.original as usize));
+            match &entry.tag.to_u32().to_be_bytes() {
+                b"glyf" => outline = Some((tables.len(), table, entry.original as usize)),
+                b"loca" => offsets = Some((tables.len(), entry.original as usize)),
+                _ => transformed = Some((tables.len(), table, entry.original as usize)),
+            }
         }
         tables.push((entry.tag, table));
         data = tail;
+    }
+    let rebuilt;
+    match (outline, offsets) {
+        (Some((g, stream, original)), Some((l, len))) => {
+            rebuilt = super::glyf::restore(
+                stream,
+                len,
+                limit
+                    .checked_sub(total.saturating_sub(original.next_multiple_of(4)))
+                    .ok_or(error(at, "output limit exceeded"))?,
+            )
+            .ok_or(error(at, "invalid glyf transform"))?;
+            tables.get_mut(g).ok_or(error(at, "missing glyf"))?.1 = &rebuilt.0;
+            tables.get_mut(l).ok_or(error(at, "missing loca"))?.1 = &rebuilt.1;
+        }
+        (None, None) => {}
+        _ => return Err(error(at, "inconsistent glyf/loca transforms")),
     }
     let restored;
     if let Some((index, stream, length)) = transformed {
@@ -219,6 +188,24 @@ pub fn decode_woff2(input: &[u8], limit: usize) -> Result<Vec<u8>, DecodeError> 
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn adr0065_i2_transformed_stream_limit_before_brotli() {
+        let mut input = [0; 51];
+        input[..4].copy_from_slice(b"wOF2");
+        input[4..8].copy_from_slice(&0x10000_u32.to_be_bytes());
+        input[8..12].copy_from_slice(&51u32.to_be_bytes());
+        input[12..14].copy_from_slice(&1u16.to_be_bytes());
+        input[16..20].copy_from_slice(&32u32.to_be_bytes());
+        input[48..].copy_from_slice(&[0x43, 4, 33]);
+        let rejected = decode_woff2(&input, 32).unwrap_err();
+        assert_eq!(
+            (rejected.offset, rejected.reason),
+            (48, "transformed stream exceeds limit")
+        );
+        // At the limit, the directory is accepted and decoding reaches the empty stream.
+        assert_eq!(decode_woff2(&input, 33).unwrap_err().offset, 51);
+    }
 
     #[test]
     fn i1_hmtx_restores_omitted_bearings_and_empty_glyph() {
@@ -272,5 +259,63 @@ mod tests {
         for stream in [&[0, 1, 244][..], &[7, 1, 244], &[3, 1], &[3, 1, 244, 0]] {
             assert!(restore_hmtx(&tables, stream, 6).is_none());
         }
+    }
+}
+
+#[cfg(test)]
+mod transformed_outline_tests {
+    extern crate std;
+    use super::*;
+    use alloc::{boxed::Box, vec};
+
+    #[test]
+    fn adr0065_i1_transformed_simple_outline_and_offsets() -> Result<(), Box<dyn std::error::Error>>
+    {
+        // One empty glyph and one single-point contour with point (4, 5).
+        let streams: [&[u8]; 7] = [&[0, 0, 0, 1], &[1], &[23], &[0x34, 0], &[], &[0; 4], &[]];
+        let mut transformed = Vec::from([0, 0, 0, 0, 0, 2, 0, 0]);
+        for stream in streams {
+            transformed.extend_from_slice(&u32::try_from(stream.len())?.to_be_bytes());
+        }
+        for stream in streams {
+            transformed.extend_from_slice(stream);
+        }
+        let mut directory = vec![10, 20, u8::try_from(transformed.len())?, 11, 6, 0];
+        let compressed = crate::compress::brotli(&transformed);
+        let mut input = [0; 48].to_vec();
+        input.get_mut(..4).ok_or("header")?.copy_from_slice(b"wOF2");
+        input
+            .get_mut(4..8)
+            .ok_or("header")?
+            .copy_from_slice(&0x10000u32.to_be_bytes());
+        input
+            .get_mut(12..14)
+            .ok_or("header")?
+            .copy_from_slice(&2u16.to_be_bytes());
+        input
+            .get_mut(16..20)
+            .ok_or("header")?
+            .copy_from_slice(&72u32.to_be_bytes());
+        input
+            .get_mut(20..24)
+            .ok_or("header")?
+            .copy_from_slice(&u32::try_from(compressed.len())?.to_be_bytes());
+        input.append(&mut directory);
+        input.extend(compressed);
+        let size = u32::try_from(input.len())?;
+        input
+            .get_mut(8..12)
+            .ok_or("header")?
+            .copy_from_slice(&size.to_be_bytes());
+        let decoded = decode_woff2(&input, 128).map_err(|_| "outline decode")?;
+        let sfnt = sofel_read::sfnt::Sfnt::new(&decoded).map_err(|_| "sfnt")?;
+        let loca = sfnt.table(super::super::Tag::new(b"loca")).ok_or("loca")?;
+        let glyf = sfnt.table(super::super::Tag::new(b"glyf")).ok_or("glyf")?;
+        assert_eq!(loca, &[0, 0, 0, 0, 0, 10]);
+        assert_eq!(
+            glyf.get(..10),
+            Some([0, 1, 0, 4, 0, 5, 0, 4, 0, 5].as_slice())
+        );
+        Ok(())
     }
 }

@@ -1,4 +1,5 @@
 use super::*;
+mod glyf;
 mod read;
 pub use read::decode_woff2;
 
