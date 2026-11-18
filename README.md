@@ -89,9 +89,10 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-gpu`](crates/sofel-gpu) | 輪郭とカラーグリフの塗りを GPU で描くための RGBA16I レコードに変換し、WGSL、GLSL、MSL、HLSL のシェーダーを提供する（[ADR 0068](docs/adr/0068-vector-and-gpu-output.md)） |
 | [`sofel-vector`](crates/sofel-vector) | 配置した輪郭と COLRv0 のレイヤーを SVG または PDF に書く。ビットマップグリフを埋め込み、PDF では COLRv1 の線形・放射・スイープグラデーションを描画する。SVG では COLRv1 の線形・放射・スイープグラデーションとクリップ付きの PNG にも対応する（[ADR 0068](docs/adr/0068-vector-and-gpu-output.md)） |
 | [`sofel-raster`](crates/sofel-raster) | FreeTypeのsmoothのラスタライザと同じ計算で、8bitのアンチエイリアスの画像を作る。COLRv0の層をFreeTypeと同じ整数の計算でBGRAの画像に重ねる（`blend_layer`）。輪郭またはグレースケール画像から符号付き距離場（SDF）を生成できる。モノクロは1画素1ビットで描き、水平・垂直 LCD は Harmony と5タップフィルタに対応する |
+| [`sofel-glyph-render`](crates/sofel-glyph-render) | 1グリフを、FreeTypeと同じ灰色のビットマップか、カラーグリフ（COLRv0、COLRv1、SVG、カラーのビットマップ）の画像に描く。`sofel-render` と C ABI が共有し、wasm でも使える（[ADR 0087](docs/adr/0087-glyph-render-crate.md)、[ADR 0095](docs/adr/0095-glyph-render-math-and-colrv1.md)） |
 | [`sofel-woff`](crates/sofel-woff) | WOFF・WOFF2 の展開と、単一フェイスの sfnt の WOFF・WOFF2 への書き出し |
 | [`sofel-cli`](crates/sofel-cli) | 小さな道具（`sofel-validate`、`sofel-render`、`sofel-paint`、`sofel-shape`、`sofel-subset`、`sofel-woff`）。包みの判別と展開の呼び出しも持つ |
-| [`sofel-capi`](crates/sofel-capi) | C ABI（ヘッダは [`sofel.h`](crates/sofel-capi/include/sofel.h)、[ADR 0015](docs/adr/0015-c-abi.md)） |
+| [`sofel-capi`](crates/sofel-capi) | C ABI（ヘッダは [`sofel.h`](crates/sofel-capi/include/sofel.h)、[ADR 0015](docs/adr/0015-c-abi.md)）。`sofel-cli` にはテストでだけ依存する（[ADR 0087](docs/adr/0087-glyph-render-crate.md)） |
 | [`sofel-conformance`](crates/sofel-conformance) | FreeTypeとHarfBuzzとの突き合わせのテスト（`cargo test` では走らない） |
 
 サブセット化では、65,536グリフを超えるフォントのグリフを選んで小さい ID に振り直せる。GSUB の SingleSubst と GPOS の SinglePos では、形式3・4で記録された置換と位置調整を保持する。Coverage と ClassDef の形式3・4にも対応する。
@@ -161,6 +162,8 @@ CID-keyed の素の CFF 1 と CEF は、`--glyph` に CID を指定して描画�
 COLRv1 の矩形クリップは、回転・せん断・反転した場合にも変換後の四辺で切り抜く。
 
 CLI のレイヤー選択と描画制御は独自実装で、画素合成には `sofel-raster` を使う（[ADR 0055](docs/adr/0055-rewrite-cli-color-rendering.md)）。
+描く関数は `sofel-glyph-render` にあり、C ABI の `sofel_render_glyph` と `sofel_render_color_glyph` も同じ関数を使う（[ADR 0087](docs/adr/0087-glyph-render-crate.md)）。
+扇形のグラデーションの角度は `sofel_geom::float::atan2f` で求めるので、どのプラットフォームでも同じ画素になる（[ADR 0095](docs/adr/0095-glyph-render-math-and-colrv1.md)）。
 
 ```sh
 cargo run --release --bin sofel-render -- --ppem 48 --char U+0041 font.ttf > a.pgm
@@ -269,7 +272,7 @@ cargo test
 cargo clippy --workspace --all-targets -- -D warnings
 sh scripts/check-deps.sh   # クレートの依存が ADR 0003 の表に沿い、sofel-capi 以外が unsafe を禁じているか（jq が要る）
 sh scripts/run-tests.sh    # シェルのスクリプトのテスト
-RUSTDOCFLAGS="-D warnings" cargo doc --no-deps -p sofel-geom -p sofel-unicode -p sofel-read -p sofel-font -p sofel-write -p sofel-subset -p sofel-outline -p sofel-bitmap -p sofel-color -p sofel-raster -p sofel-cli -p sofel-capi
+RUSTDOCFLAGS="-D warnings" cargo doc --no-deps -p sofel-geom -p sofel-unicode -p sofel-read -p sofel-font -p sofel-write -p sofel-subset -p sofel-outline -p sofel-bitmap -p sofel-color -p sofel-raster -p sofel-glyph-render -p sofel-cli -p sofel-capi
 ```
 
 C API でテキスト形式や JSON のグリフ列を読み込んだバッファは、パースエラーの後も、クリアすれば元の設定で再利用できる（[ADR 0053](docs/adr/0053-preserve-buffer-settings-after-glyph-deserialization.md)）。
@@ -351,8 +354,8 @@ cargo test --manifest-path tools/gen-machine/Cargo.toml
 wasmでは、`wasm32-unknown-unknown` へのビルドと、`wasm32-wasip1` での単体テストを確かめる（[ADR 0004](docs/adr/0004-wasm-and-no-std.md)）。単体テストには [wasmtime](https://wasmtime.dev/) が要る。
 
 ```sh
-cargo build --release --target wasm32-unknown-unknown -p sofel-read -p sofel-geom -p sofel-unicode -p sofel-font -p sofel-write -p sofel-subset -p sofel-outline -p sofel-bitmap -p sofel-color -p sofel-raster -p sofel-shape -p sofel-vector -p sofel-gpu -p sofel-inflate -p sofel-brotli -p sofel-png -p sofel-svg -p sofel-type1 -p sofel-woff -p sofel-bitmapfont -p sofel-lzw -p sofel-bzip2 -p sofel-pfr -p sofel-capi
-CARGO_TARGET_WASM32_WASIP1_RUNNER=wasmtime cargo test --target wasm32-wasip1 -p sofel-read -p sofel-geom -p sofel-unicode -p sofel-font -p sofel-write -p sofel-subset -p sofel-outline -p sofel-bitmap -p sofel-color -p sofel-raster -p sofel-shape -p sofel-vector -p sofel-gpu -p sofel-inflate -p sofel-brotli -p sofel-png -p sofel-svg -p sofel-type1 -p sofel-woff -p sofel-bitmapfont -p sofel-lzw -p sofel-bzip2 -p sofel-pfr
+cargo build --release --target wasm32-unknown-unknown -p sofel-read -p sofel-geom -p sofel-unicode -p sofel-font -p sofel-write -p sofel-subset -p sofel-outline -p sofel-bitmap -p sofel-color -p sofel-raster -p sofel-shape -p sofel-vector -p sofel-gpu -p sofel-inflate -p sofel-brotli -p sofel-png -p sofel-svg -p sofel-type1 -p sofel-woff -p sofel-bitmapfont -p sofel-lzw -p sofel-bzip2 -p sofel-pfr -p sofel-glyph-render -p sofel-capi
+CARGO_TARGET_WASM32_WASIP1_RUNNER=wasmtime cargo test --target wasm32-wasip1 -p sofel-read -p sofel-geom -p sofel-unicode -p sofel-font -p sofel-write -p sofel-subset -p sofel-outline -p sofel-bitmap -p sofel-color -p sofel-raster -p sofel-shape -p sofel-vector -p sofel-gpu -p sofel-inflate -p sofel-brotli -p sofel-png -p sofel-svg -p sofel-type1 -p sofel-woff -p sofel-bitmapfont -p sofel-lzw -p sofel-bzip2 -p sofel-pfr -p sofel-glyph-render
 # サブセット化の適合テストをwasmで（リポジトリと target/testdata が見えるように）
 CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=$PWD::$PWD" cargo test --release --target wasm32-wasip1 -p sofel-conformance --test harfbuzz_subset
 ```

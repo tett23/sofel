@@ -122,3 +122,44 @@ sh "$script" "$tmp/ws" "$tmp/noalloc.txt" 2>/dev/null ||
   fail "ADR 0094 I1: core::alloc or a comment mentioning alloc was rejected"
 rm "$tmp/ws/b/src/m.rs"
 echo "ok: ADR 0094 I1: crates marked !no_alloc do not use alloc"
+
+# ADR 0087 I1: `!dev <crate> <dependency>` allows the dependency only as
+# a development dependency; normal and build dependencies still need a
+# `<crate> <dependency>` line.
+crate b ''
+crate a ''
+printf '\n[dev-dependencies]\nb = { path = "../b" }\n' >>"$tmp/ws/a/Cargo.toml"
+printf '# dev only\n!dev a b\n' >"$tmp/dev.txt"
+sh "$script" "$tmp/ws" "$tmp/dev.txt" 2>/dev/null ||
+  fail "ADR 0087 I1: '!dev a b' did not allow a development dependency"
+if sh "$script" "$tmp/ws" "$tmp/none.txt" 2>/dev/null; then
+  fail "ADR 0087 I1: a development dependency missing from deps.txt was accepted"
+fi
+crate a 'b = { path = "../b" }'
+if sh "$script" "$tmp/ws" "$tmp/dev.txt" 2>/dev/null; then
+  fail "ADR 0087 I1: '!dev a b' allowed a normal dependency"
+fi
+crate a ''
+printf '\n[build-dependencies]\nb = { path = "../b" }\n' >>"$tmp/ws/a/Cargo.toml"
+if sh "$script" "$tmp/ws" "$tmp/dev.txt" 2>/dev/null; then
+  fail "ADR 0087 I1: '!dev a b' allowed a build dependency"
+fi
+echo "ok: ADR 0087 I1: !dev allows only development dependencies"
+
+# ADR 0087 I1: in the real workspace, the C ABI's normal dependencies do
+# not reach sofel-cli, even transitively, and putting sofel-cli back
+# into its normal dependencies fails the check.
+if cargo tree --offline --manifest-path "$root/Cargo.toml" -p sofel-capi -e normal --prefix none |
+  grep -q '^sofel-cli '; then
+  fail "ADR 0087 I1: sofel-capi depends on sofel-cli outside its tests"
+fi
+sh "$script" "$root" 2>/dev/null || fail "ADR 0087 I1: the workspace failed the check"
+mkdir -p "$tmp/real"
+cp -R "$root/Cargo.toml" "$root/Cargo.lock" "$root/crates" "$tmp/real/"
+sed 's|^\[dev-dependencies\]$||' "$root/crates/sofel-capi/Cargo.toml" >"$tmp/real/crates/sofel-capi/Cargo.toml"
+if sh "$script" "$tmp/real" "$root/scripts/deps.txt" 2>"$tmp/real.err"; then
+  fail "ADR 0087 I1: sofel-cli as a normal dependency of sofel-capi was accepted"
+fi
+grep -qF "sofel-capi depends on sofel-cli (normal)" "$tmp/real.err" ||
+  fail "ADR 0087 I1: the check failed for another reason: $(cat "$tmp/real.err")"
+echo "ok: ADR 0087 I1: sofel-capi depends on sofel-cli only in its tests"

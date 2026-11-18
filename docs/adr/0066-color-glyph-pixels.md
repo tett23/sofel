@@ -1,6 +1,6 @@
 # ADR 0066: カラーグリフの画像を復号し、塗りを画素に合成する
 
-Status: accepted
+Status: superseded [{"part":"不変条件 2（COLRv1 の参照）","by":["docs/adr/0095-glyph-render-math-and-colrv1.md"]}]
 
 ## 文脈
 

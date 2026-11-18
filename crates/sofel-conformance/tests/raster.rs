@@ -415,7 +415,7 @@ fn adr0064_i2_selawik_bitmap_sdf_matches_freetype() {
         assert!(reference.status.success());
         let faces = parse(&String::from_utf8(reference.stdout).unwrap()).unwrap();
         for (&gid, expected) in &faces[&0].glyphs {
-            let source = sofel_cli::glyph::render(
+            let source = sofel_glyph_render::render(
                 &outlines,
                 sofel_font::read::GlyphId(gid),
                 ppem,
@@ -522,7 +522,7 @@ fn adr0064_i2_selawik_monochrome_bitmaps_match_freetype() {
         assert!(reference.status.success());
         let faces = parse(&String::from_utf8(reference.stdout).unwrap()).unwrap();
         for (&gid, expected) in &faces[&0].glyphs {
-            let bitmap = sofel_cli::glyph::render_mono(
+            let bitmap = sofel_glyph_render::render_mono(
                 &outlines,
                 GlyphId(gid),
                 ppem,

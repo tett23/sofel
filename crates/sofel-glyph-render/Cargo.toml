@@ -1,0 +1,21 @@
+[package]
+name = "sofel-glyph-render"
+description = "Rendering one glyph to a gray bitmap or a color image, shared by the tools and the C ABI (ADR 0087)"
+version.workspace = true
+edition.workspace = true
+license = "MIT"
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+sofel-font = { path = "../sofel-font" }
+sofel-outline = { path = "../sofel-outline" }
+sofel-raster = { path = "../sofel-raster" }
+sofel-color = { path = "../sofel-color" }
+sofel-svg = { path = "../sofel-svg" }
+sofel-type1 = { path = "../sofel-type1" }
+sofel-geom = { path = "../sofel-geom" }
+sofel-png = { path = "../sofel-png" }
+
+[lints]
+workspace = true

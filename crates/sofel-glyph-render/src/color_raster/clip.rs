@@ -1,6 +1,8 @@
 //! Combine the silhouettes of SVG clipping shapes on a common 4×4 subpixel
 //! grid. Union and intersection precede conversion to pixel coverage, so
 //! adjacent children sharing a pixel do not leave a translucent seam.
+use alloc::vec;
+use alloc::vec::Vec;
 use sofel_raster::{Bitmap, FillRule, RasterError, Rasterizer, RenderOptions};
 use sofel_svg::ClipPath;
 

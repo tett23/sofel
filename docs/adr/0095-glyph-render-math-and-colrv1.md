@@ -1,6 +1,6 @@
 # ADR 0095: 描画のクレートにCOLRv1の描画を含め、数学の関数を自前で持つ（[ADR 0087](0087-glyph-render-crate.md)と[ADR 0066](0066-color-glyph-pixels.md)の修正）
 
-Status: accepted-pending
+Status: accepted
 
 ## 文脈
 

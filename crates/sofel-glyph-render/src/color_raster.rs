@@ -1,5 +1,6 @@
 //! Connects OT-SVG image paint commands to the shared raster surface (sofel ADR 0072).
 
+use alloc::vec::Vec;
 use sofel_font::geom::{
     Brush, CompositeMode, Image, ImageFormat, Painter, PointF, Rect, Transform,
 };

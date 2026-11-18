@@ -10,7 +10,7 @@ use sofel_shape::{
     shape_with_extents, shape_with_subfont,
 };
 
-use crate::glyph;
+use sofel_glyph_render as glyph;
 
 struct PlacedGlyph {
     left: i64,

@@ -9,8 +9,8 @@
 #[path = "../../../conformance/svg/color_svg.rs"]
 mod color_svg;
 
-use sofel_cli::color_raster::render_scene;
 use sofel_font::geom::{Pen, Point};
+use sofel_glyph_render::color_raster::render_scene;
 use sofel_raster::{BgraImage, FillRule, Rasterizer, RenderOptions};
 use sofel_svg::{Gradient, GradientKind, Scene, Shape, ShapeKind, Stop};
 use std::process::Command;
@@ -37,7 +37,7 @@ fn adr0066_i3_plain_and_gzip_two_glyphs_have_identical_pixels() {
             let scene = sofel_svg::parse_glyph(&document, glyph, 10, [0, 0, 0, 255]).unwrap();
             let mut raster = Rasterizer::new();
             let mut image = BgraImage::default();
-            assert!(sofel_cli::color_raster::render_glyph_scene(
+            assert!(sofel_glyph_render::color_raster::render_glyph_scene(
                 &scene,
                 10,
                 10,
@@ -314,7 +314,7 @@ fn adr0066_i3_clipped_foreground_overlapping_a_background_matches_each_pixel() {
         let document = sofel_svg::document(source, 4096).unwrap();
         let scene = sofel_svg::parse_glyph(&document, 1, 4, [9, 27, 81, 255]).unwrap();
         let mut image = BgraImage::default();
-        assert!(sofel_cli::color_raster::render_glyph_scene(
+        assert!(sofel_glyph_render::color_raster::render_glyph_scene(
             &scene,
             4,
             4,

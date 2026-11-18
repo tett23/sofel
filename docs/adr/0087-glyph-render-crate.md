@@ -1,6 +1,6 @@
 # ADR 0087: グリフを描く関数を no_std のクレートに移し、C ABI から sofel-cli の依存を外す
 
-Status: accepted-pending
+Status: superseded [{"part":"移すコードと依存","by":["docs/adr/0095-glyph-render-math-and-colrv1.md"]},{"part":"不変条件 I3","by":["docs/adr/0095-glyph-render-math-and-colrv1.md"]}]
 
 ## 文脈
 

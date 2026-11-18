@@ -44,8 +44,8 @@ HarfBuzzのシェーピングと、FreeTypeのグリフの読み込み、ヒン�
 
 ## 構成
 
-Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003](adr/0003-crate-layers.md)、`sofel-unicode` は [ADR 0019](adr/0019-unicode-character-data.md)、`sofel-shape`、`sofel-color`、`sofel-subset` の `sofel-geom` への依存は [ADR 0093](adr/0093-geom-dependencies-of-shape-color-subset.md)）。矢印の先が依存先である。
-`sofel-cli` と `sofel-capi`（C ABI、[ADR 0015](adr/0015-c-abi.md)）は、上の層のすべてに依存してよいので、矢印を省く。
+Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003](adr/0003-crate-layers.md)、`sofel-unicode` は [ADR 0019](adr/0019-unicode-character-data.md)、`sofel-shape`、`sofel-color`、`sofel-subset` の `sofel-geom` への依存は [ADR 0093](adr/0093-geom-dependencies-of-shape-color-subset.md)、`sofel-glyph-render` は [ADR 0087](adr/0087-glyph-render-crate.md) と [ADR 0095](adr/0095-glyph-render-math-and-colrv1.md)）。矢印の先が依存先である。
+`sofel-cli` は上の層のすべてに依存してよいので、矢印を省く。`sofel-capi`（C ABI、[ADR 0015](adr/0015-c-abi.md)）はライブラリのクレートに一つずつ依存し、`sofel-cli` にはテストでだけ依存する（[ADR 0087](adr/0087-glyph-render-crate.md)）。矢印は省く。
 
 ```mermaid
 flowchart BT
@@ -78,7 +78,10 @@ flowchart BT
     write[sofel-write]
     subset[sofel-subset]
   end
-  subgraph tools["道具とC ABI（上のすべてに依存してよい）"]
+  subgraph render["グリフを描くクレート"]
+    glyphrender[sofel-glyph-render]
+  end
+  subgraph tools["道具とC ABI"]
     cli["sofel-cli（道具のバイナリ群）"]
     capi["sofel-capi（C ABI）"]
   end
@@ -113,6 +116,14 @@ flowchart BT
   subset --> write
   subset --> geom
   subset --> unicode
+  glyphrender --> font
+  glyphrender --> outline
+  glyphrender --> raster
+  glyphrender --> color
+  glyphrender --> svg
+  glyphrender --> type1
+  glyphrender --> geom
+  glyphrender --> png
 ```
 
 各クレートの責務は次のとおりである。
@@ -142,15 +153,16 @@ flowchart BT
 | | `sofel-color` | カラーグリフ（COLR、CPAL、カラーのビットマップ、SVG）を塗りの命令として `Painter` に渡す |
 | | `sofel-write` | sfnt の組み立てと、HarfBuzz と同じオブジェクトの直列化と再配置 |
 | | `sofel-subset` | HarfBuzz とバイト単位で同じサブセット化と、可変フォントの軸の固定 |
+| グリフを描く | `sofel-glyph-render` | 1グリフを、FreeTypeと同じ灰色のビットマップか、カラーグリフ（COLRv0、COLRv1、SVG、カラーのビットマップ）の画像に描く。道具とC ABIが共有する（[ADR 0087](adr/0087-glyph-render-crate.md)、[ADR 0095](adr/0095-glyph-render-math-and-colrv1.md)） |
 | 道具と C ABI | `sofel-cli` | 小さな道具のバイナリ群（`sofel-validate`、`sofel-render`、`sofel-shape`、`sofel-subset`、`sofel-woff` など）と、包みの判別と展開 |
-| | `sofel-capi` | C ABI（[ADR 0015](adr/0015-c-abi.md)） |
+| | `sofel-capi` | C ABI（[ADR 0015](adr/0015-c-abi.md)）。`sofel-cli` にはテストでだけ依存し、wasm へのビルドに `sofel-cli` を含めない（[ADR 0087](adr/0087-glyph-render-crate.md)） |
 | テスト | `sofel-conformance` | FreeType と HarfBuzz との突き合わせのテスト（ライブラリの依存には入れない） |
 
 - `sofel-color` と `sofel-subset` の `sofel-geom` への依存は、HarfBuzzの丸め（`sofel_geom::float`）を共有するためである（[ADR 0026](adr/0026-harfbuzz-rounding.md)）。`sofel-shape` の `sofel-geom` への依存は、シェーピングの結果を輪郭として返すときの輪郭の命令とHarfBuzzの丸めのためである。表は依存を許すだけで、求めない。`sofel-color` は今は `sofel-geom` を使わない（[ADR 0093](adr/0093-geom-dependencies-of-shape-color-subset.md)）。
 - `sofel-subset` の `sofel-unicode` への依存は、鏡像の文字（bidiの閉包）のためである（[ADR 0022](adr/0022-subsetting.md)）。
 - `sofel-woff` は WOFF と WOFF2 の展開に加えて書き出し（[ADR 0070](adr/0070-webfont-encoding.md)）を持ち、sfnt の目録を読むために `sofel-read`、チェックサムと sfnt の組み立てのために `sofel-write` に依存する（[ADR 0081](adr/0081-crate-layout-corrections.md)）。
 - LZW と bzip2 の展開は `sofel-lzw` と `sofel-bzip2` に、PFR の読み取りと検証は `sofel-pfr` に置く。PFR の輪郭は `sofel-outline`、埋め込みビットマップは `sofel-bitmap` が扱う。バイナリは `sofel-cli` だけが持ち、`sofel-woff` コマンドもそこに置く（[ADR 0081](adr/0081-crate-layout-corrections.md)）。
-- `scripts/check-deps.sh` は、`scripts/deps.txt` に無い依存、`!bin` の無いクレートのバイナリ、`!no_std` のクレートの `#![no_std]` の欠落を誤りにする（[ADR 0081](adr/0081-crate-layout-corrections.md)）。`scripts/tests/test-adr0093-i1-deps-table.sh` は、`scripts/deps.txt` が許す依存の組が、ADRの表から書いた一覧と等しいことを確かめる。依存を変えるADRを実装するときは、この一覧も直す（[ADR 0093](adr/0093-geom-dependencies-of-shape-color-subset.md)）。
+- `scripts/check-deps.sh` は、`scripts/deps.txt` に無い依存、`!bin` の無いクレートのバイナリ、`!no_std` のクレートの `#![no_std]` の欠落を誤りにする（[ADR 0081](adr/0081-crate-layout-corrections.md)）。`!dev <クレート> <依存先>` の行は、その依存を開発用の依存（`[dev-dependencies]`）としてだけ許し、通常の依存とビルド用の依存には `<クレート> <依存先>` の行が要る（[ADR 0087](adr/0087-glyph-render-crate.md)）。`scripts/tests/test-adr0093-i1-deps-table.sh` は、`scripts/deps.txt` が許す依存の組が、ADRの表から書いた一覧と等しいことを確かめる。依存を変えるADRを実装するときは、この一覧も直す（[ADR 0093](adr/0093-geom-dependencies-of-shape-color-subset.md)）。
 - フォントの形式を読むクレートのうち、`sofel-read` と `sofel-pfr` はコピーも確保もしない。`scripts/deps.txt` はこの2つに `!no_alloc` をつけ、`scripts/check-deps.sh` は、`!no_alloc` のクレートの `src/` に `extern crate alloc` か `alloc::` があれば誤りにする。`sofel-type1` と `sofel-bitmapfont` は `alloc` で確保する。[ADR 0094](adr/0094-allocation-in-type1-and-bitmapfont.md) は、確保してよい場合を、`eexec` とCharStringの復号の結果、PFBの区画をつないだ結果、AFMとPFMの解析の結果、画素に直したビットマップ、グリフの一覧など、元のバイト列のままでは読めないものを作るときに限る。確保する公開の関数は、rustdocに何を確保するかを書く（[ADR 0094](adr/0094-allocation-in-type1-and-bitmapfont.md)）。
 
 - 輪郭と塗りは、`sofel-geom` の `Pen` と `Painter` で受け渡す。`sofel-raster`、`sofel-gpu`、`sofel-vector` はフォントの型を知らない。
@@ -214,6 +226,7 @@ flowchart BT
 - `F26Dot6`、`Fixed`（16.16）、`F2Dot14` と、FreeTypeと同じ結果を返す `mul_fix`、`div_fix`、`mul_div`、`mul_div_no_round`、`vector_length`（CORDIC）、`transform` を持つ（[ADR 0009](adr/0009-geom-fixed-point-and-pen.md)）。
 - 輪郭は `Pen`（`move_to`、`line_to`、`quad_to`、`cubic_to`、`close`）で受け渡す。命令の並びは `FT_Outline_Decompose` と同じ約束に従う。`Point` の単位（26.6かフォントの単位）は作る側が決める。
 - `sofel_geom::float` は、HarfBuzzの値を写すための浮動小数点の補助を持つ（[ADR 0026](adr/0026-harfbuzz-rounding.md)）。Cの `floor`、`floorf`、`ceilf`、`truncf`、HarfBuzzの `roundf`（`hb-algs.hh` の `_hb_roundf` のマクロ。`hb_roundf(f64) -> f64` と `hb_roundf32(f32) -> f64`）、`hb_clamp_to<int> (double)`（`hb_clamp_to_i32`）と、整数と `float` の変換。HarfBuzzの `roundf` はCの `roundf` ではなく、値を倍精度に広げてから0.5を足し、床関数をとる。半分の値は負でも正の無限大の側へ丸まる（−2.5は−2）。sofelがHarfBuzzの値を写す箇所の `roundf` は、すべてこの意味とし、`sofel-font`、`sofel-outline`、`sofel-color`、`sofel-subset` はここを使う。HarfBuzzの式の型の混ざり方はC++の通常の算術変換に従って写し（整数と `float` の割り算は `float` で行う）、四則演算と床関数のほかは使わない。FMAは使わない。
+- `sofel_geom::float` は、`no_std` で使えない `f32` の関数の代わりに、`sqrtf` と `atan2f` も持つ（[ADR 0095](adr/0095-glyph-render-math-and-colrv1.md)）。`sqrtf` は整数だけで正しく丸めた平方根（IEEE 754 の `squareRoot`）を求め、どのプラットフォームの `sqrtf` とも同じ値を返す。テストで、すべての `f32`（2^32個）を `f32::sqrt` と比べる。`atan2f` は musl 1.2.6 の `atan2f` と `atanf` の移植で、`f32` の四則演算だけで計算する。プラットフォームの `atan2f` と同じ値は求めない。テストで、決まった種の乱数100万組で `f64` の `atan2` を丸めた値との差が2ulp以下であることと、特別な値（±0、±無限大、NaN、軸の上の値）と決まった種の乱数100万組の結果のハッシュが x86-64、aarch64、wasm32 で同じことを確かめる。
 
 ## Unicodeの文字の性質（`sofel-unicode`）
 
@@ -434,7 +447,7 @@ flowchart BT
   - `color_formats`、`glyph_color_format`（塗りの木をたどらない。`v1_fits` も見ない）、`layers`、`svg_document` を持つ。
   - 生の塗りの木（`base_paint`、`PaintRef`、`clip_box`、`layer_paint`）は、FreeTypeの `FT_Get_Color_Glyph_Paint` などと同じ値を返す。基本のグリフの探索はFreeTypeの二分探索による。
 - `sofel-bitmap`：`strikes` はFreeTypeの `available_sizes`（CBLC、EBLC、`bloc`、sbixの順に最初の表、ppemが0のストライクは除く）、`match_strike` は `FT_Match_Size`、`choose_strike` はHarfBuzzの選び方（`max(x, y)` が要求以上で最小、無ければ最大、0は最大）、`glyph_bitmap` はFreeTypeの読み込み（sbixの `dupe` と `flip` を4回まで）で画像のデータとメトリクスを返す。PNGを塗るための `cbdt_png`、`sbix_png` とその箱はHarfBuzzの読み方（CBDTは索引の形式1と3、画像の形式17と18、sbixは `dupe` を8回まで）による。
-- `Rasterizer::render_mono` と C の `sofel_rasterizer_render_mono` は、輪郭をモノクロで描く。各行は上から順に並び、左端の画素が最初のバイトの最上位ビットに対応する。行のバイト数は幅を8で割って切り上げた値である。走査とドロップアウトの制御は FreeType の `ftraster.c` に従う。各走査線では、上向きと下向きのプロファイルを x の順に並べて組にし、x の等しいプロファイルは FreeType の走査中のリストと同じ順（新しく走査に入るプロファイルは x の等しいものの前、前の走査線の順を保つ安定な並べ替え）に並べる。この順は、組が同じ輪郭の端の stub に当たるかの判定を決める。`sofel_cli::glyph::render_mono` は、ヒンティングなしの TrueType 輪郭を画素中心に合わせて移動し、暗黙の点を求めてから描く（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
+- `Rasterizer::render_mono` と C の `sofel_rasterizer_render_mono` は、輪郭をモノクロで描く。各行は上から順に並び、左端の画素が最初のバイトの最上位ビットに対応する。行のバイト数は幅を8で割って切り上げた値である。走査とドロップアウトの制御は FreeType の `ftraster.c` に従う。各走査線では、上向きと下向きのプロファイルを x の順に並べて組にし、x の等しいプロファイルは FreeType の走査中のリストと同じ順（新しく走査に入るプロファイルは x の等しいものの前、前の走査線の順を保つ安定な並べ替え）に並べる。この順は、組が同じ輪郭の端の stub に当たるかの判定を決める。`sofel_glyph_render::render_mono` は、ヒンティングなしの TrueType 輪郭を画素中心に合わせて移動し、暗黙の点を求めてから描く（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
 - `Instance::ft_control_values` と C の `sofel_font_ft_control_values` は、指定した軸位置の `cvar` 差分を `cvt ` 表に適用し、ピクセルサイズで拡大縮小する前の制御値を 26.6 形式で返す（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。
 - `Rasterizer::render_outline_sdf_placed` と C の `sofel_rasterizer_render_outline_sdf_placed` は、余白を含む画像の左下を原点とする輪郭から符号付き距離場を生成する（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。距離の上限は2〜32画素で、画像の各画素に輪郭までの符号付き距離を1バイトで記録する。輪郭が進行方向の左側を塗るかどうかは、読み込んだ輪郭の `Scratch::fill_left` で取得できる。
 - `bitmap_sdf` と C の `sofel_bitmap_sdf` はグレースケール画像の各画素から輪郭までの符号付き距離を求める（[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md)）。距離の上限は2〜32画素から選ぶ。空でない入力の四辺には、その上限と同じ幅の余白を加える。出力の各画素は1バイトで、輪郭上は128、外側は128以下、内側は128以上である。
@@ -446,7 +459,7 @@ flowchart BT
 - `sofel-render` は、`--ppem` に等しいストライク（`FT_Match_Size`）があり、グリフのビットマップがあれば、`--no-bitmap` が無いかぎりビットマップを書く。白黒と灰色はPGM（階調を0〜255に広げて反転）、32bitはPAM（`P7`、`TUPLTYPE RGB_ALPHA`、乗算済みでない値に直す）とし、位置は同じ注釈の行に書く。
 - 検査：テストのデータにEBLCや `bloc` のフォントが無いため、画像の形式1、2、5、6、7、8、9、深さ1、2、4、8、32、索引の形式1〜5の組み合わせを、EBLC/EBDTと `bloc`/`bdat`/`bhed` で組み立てた110個のフォントと、glyfの輪郭とCBLC/CBDTを両方持つフォントを、`ft-dump --sbit`（`FT_Select_Size` と `FT_LOAD_COLOR` の画素とメトリクス）と比べ、すべて一致する。
 - `sofel-raster` の `blend_layer` は、8bitの被覆率の画像を色で重ねて乗算済みのBGRAの画像（`BgraImage`）に足す。FreeTypeの `tt_face_colr_blend_layer` と同じく、最初の画素のある層で画像の箱を決め（画素の無い層では箱を決めず、次の層が決めなおす）、以後の層で箱を広げて写しなおし、画素ごとに整数で重ねる（`fa = alpha × coverage / 255`、`dst × (255 − fa) / 255 + color × fa / 255`）。
-- `sofel_cli::glyph::render_color` は、FreeTypeの `FT_LOAD_COLOR | FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP` と `FT_RENDER_MODE_NORMAL` の描画と同じく、グリフ自身の輪郭を読んでから、COLRv0の層をそれぞれ `glyph::render` で描いて `blend_layer` で重ねる。層は `color_layers`（FreeTypeの `FT_Get_Color_Glyph_Layer` と同じく、基本のグリフの記録が層の記録を越えれば無し、グリフの番号がグリフの数以上か、パレットの番号が前景色（0xFFFF）以外でパレットの項目の数以上の層で打ち切り）による。色は `PaintOptions` のパレットと前景色から取る。層が無いか、層のどれかが描けなければ、グリフ自身の輪郭を灰色で描く（`ColorGlyph::Gray`）。
+- `sofel_glyph_render::render_color` は、FreeTypeの `FT_LOAD_COLOR | FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP` と `FT_RENDER_MODE_NORMAL` の描画と同じく、グリフ自身の輪郭を読んでから、COLRv0の層をそれぞれ `glyph::render` で描いて `blend_layer` で重ねる。層は `color_layers`（FreeTypeの `FT_Get_Color_Glyph_Layer` と同じく、基本のグリフの記録が層の記録を越えれば無し、グリフの番号がグリフの数以上か、パレットの番号が前景色（0xFFFF）以外でパレットの項目の数以上の層で打ち切り）による。色は `PaintOptions` のパレットと前景色から取る。層が無いか、層のどれかが描けなければ、グリフ自身の輪郭を灰色で描く（`ColorGlyph::Gray`）。
 - 要求 ppem と一致するストライクがなく、`--color` で埋め込み PNG を使う場合、画像のクリップと変換を適用し、乗算済み BGRA を双線形補間する。PNG のアルファの乗算と画像座標は HarfBuzz raster に合わせる。ストライクが一致する場合は従来の FreeType 互換の画像を使う（[ADR 0066](adr/0066-color-glyph-pixels.md)）。
 - `sofel-render --color [--palette N]` は、COLRv0、輪郭と矩形でクリップした COLRv1 の線形・放射・扇形グラデーションと、`rect`、`circle`、`path` と単色または線形・放射グラデーションからなる OT-SVG のグリフをPAM（乗算済みでない値に直す）で書く。OT-SVG の描画では、選んだグリフの輪郭とクリップパスを重ね、その範囲を `Painter` の単色またはグラデーションの塗り命令で描く。OT-SVG では対象グリフの要素を選び、`defs` の停止点、`stop-opacity`、図形の境界ボックス、`gradientTransform`、グループの `transform` を適用し、図形の順に重ねる（[ADR 0072](adr/0072-color-gallery-acceptance.md)）。前景色は、パレットに暗い背景向けの印があれば白、無ければ黒とする。
 - COLRv1 の回転・せん断を含む矩形クリップは、変換後の四辺に対して画素中心の内外を調べ、外側のカバレッジを 0 にする。反転した変換では頂点の巡回方向を逆にして判定する（[ADR 0066](adr/0066-color-glyph-pixels.md)）。
@@ -463,7 +476,7 @@ flowchart BT
 - 8bitのアンチエイリアスの画像を、FreeTypeのsmoothのラスタライザと同じ数値の計算で作る（[ADR 0012](adr/0012-antialiased-rasterizer.md)）。セルは帯ごとの密な配列（上限64KiB）に積む。重なりの印のある輪郭は4×4の副標本で描く。FreeTypeとの差は0（完全一致）とする。
 - 掃き出しは、帯の行ごとに触れた列の範囲だけを走査し、被覆率は触れたセルでだけ求めて次のセルまで使う。走査したセルは0に戻し、帯の配列を描画のたびに全体を0にはしない（[ADR 0014](adr/0014-raster-sweep-touched-cells.md)）。
 - 重なりのときは、画素ごとに16個の副標本の `(coverage + 8) / 16` を16bitで合計し、最後に `min(合計, 255)` とする。合計は256以下なので、FreeTypeの標本ごとの `sum - (sum >> 8)` と同じ値になる（[ADR 0014](adr/0014-raster-sweep-touched-cells.md)）。
-- FreeTypeは、輪郭をビットマップの原点へ動かしてから（重なりの印があればさらに4倍してから）命令に変換する。暗黙の曲線上の点（中点の0への切り捨て）はこの順序で決まるので、完全に一致させるには、`sofel_outline::load` で点を読み、`sofel_raster::pixel_box` で箱を求め、`Scratch::decompose` に `PixelBox::shift()` と倍率を渡して命令に変換し、`Rasterizer::render_placed` で描く。この手順は `sofel_cli::glyph::render` にまとめてある。`Rasterizer::render` は、記録した命令をあとから動かすので、中点のある輪郭では1画素の値が1〜2ずれることがある。
+- FreeTypeは、輪郭をビットマップの原点へ動かしてから（重なりの印があればさらに4倍してから）命令に変換する。暗黙の曲線上の点（中点の0への切り捨て）はこの順序で決まるので、完全に一致させるには、`sofel_outline::load` で点を読み、`sofel_raster::pixel_box` で箱を求め、`Scratch::decompose` に `PixelBox::shift()` と倍率を渡して命令に変換し、`Rasterizer::render_placed` で描く。この手順は `sofel_glyph_render::render` にまとめてある。`Rasterizer::render` は、記録した命令をあとから動かすので、中点のある輪郭では1画素の値が1〜2ずれることがある。
 - HarfBuzz 15.1.0のテストのフォントで、FreeTypeが開けるglyf、CFF、CFF2のフェイスを12、24、48画素で比べ、期待する失敗は無い。CFFのグリフは重なりの印を持たず、非ゼロ規則で描く（FreeTypeの `REVERSE_FILL` と `HIGH_PRECISION` はsmoothのラスタライザが見ない）。
 
 ## サブセット化（`sofel-write`、`sofel-subset`）
@@ -772,6 +785,9 @@ color-svg の単字19と文字列から得たグリフ26は48 ppemで描画す�
 生成器は [sofel ADR 0073](adr/0073-rust-font-gallery.md) に従う Rust の開発用バイナリとし、Unicode スカラー値とグリフ ID、26.6 固定小数点の位置と整数画素、描画結果と登録済みの未対応状態を型で区別する。シェルの入口は Rust のテストを実行してから生成器を起動する。
 sbix の単字 19 と合字 26 は固定版 FreeType と全画素を照合し、一覧の各欄に等倍で配置する（[sofel ADR 0072](adr/0072-color-gallery-acceptance.md)）。
 CFF の 19・26 と可変 COLRv1 の 92・93 は固定版 HarfBuzz raster と原点・寸法・乗算済み BGRA の全画素を照合する。一覧 PNG の検査では、これらの2書体、sbix、OT-SVG の単字と文字列を個別に比較する。
+HarfBuzz raster の参照（`tools/hb-raster-reference/build.sh`）は、HarfBuzzが呼ぶ `atan2f` を `sofel_geom::float::atan2f` に差しかえてビルドする。
+`atan2f` を C の関数として出すクレート（`tools/hb-raster-reference/atan2f/`）を、Rust の実行時ライブラリを含まない1つのオブジェクト（fat LTO）にして、C のライブラリより先にリンクするので、扇形のグラデーションの角度は、どのプラットフォームでも sofel と同じになる（[ADR 0095](adr/0095-glyph-render-math-and-colrv1.md)）。
+Linux の CI は、プラットフォームの `atan2f` でビルドした参照とも比べ、画像が変わるグリフを `tools/hb-raster-reference/atan2f-changes.sh` で一覧にする。
 [sofel ADR 0077](adr/0077-noto-color-emoji-gallery.md) に従い、Noto Color Emoji v2.047 の CBDT 版と COLRv1 版で 😀 と 👩‍💻 を 109 ppem で描く。各形式で ZWJ 列が一つのグリフになること、各画像の寸法と RGBA の CRC-32、一覧 PNG に配置した画素を検査する。
 文書だけの変更を除き、CI はプルリクエストと main への push で HTML と PNG を生成し、検査したコミット SHA 付きのアーティファクトを14日間保存する。
 

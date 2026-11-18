@@ -17,7 +17,7 @@ pub fn sofel_glyph(
     scratch: &mut Scratch,
     raster: &mut Rasterizer,
 ) -> GlyphLines {
-    let Ok(b) = sofel_cli::glyph::render(outlines, GlyphId(glyph), ppem, scratch, raster) else {
+    let Ok(b) = sofel_glyph_render::render(outlines, GlyphId(glyph), ppem, scratch, raster) else {
         return vec!["error".to_string()];
     };
     let mut lines = vec![format!(

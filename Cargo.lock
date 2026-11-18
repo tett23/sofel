@@ -39,6 +39,7 @@ dependencies = [
  "sofel-color",
  "sofel-font",
  "sofel-geom",
+ "sofel-glyph-render",
  "sofel-gpu",
  "sofel-outline",
  "sofel-png",
@@ -61,6 +62,7 @@ dependencies = [
  "sofel-color",
  "sofel-font",
  "sofel-geom",
+ "sofel-glyph-render",
  "sofel-inflate",
  "sofel-lzw",
  "sofel-outline",
@@ -94,6 +96,7 @@ dependencies = [
  "sofel-color",
  "sofel-font",
  "sofel-geom",
+ "sofel-glyph-render",
  "sofel-outline",
  "sofel-png",
  "sofel-raster",
@@ -120,6 +123,20 @@ dependencies = [
 [[package]]
 name = "sofel-geom"
 version = "0.0.0"
+
+[[package]]
+name = "sofel-glyph-render"
+version = "0.0.0"
+dependencies = [
+ "sofel-color",
+ "sofel-font",
+ "sofel-geom",
+ "sofel-outline",
+ "sofel-png",
+ "sofel-raster",
+ "sofel-svg",
+ "sofel-type1",
+]
 
 [[package]]
 name = "sofel-gpu"

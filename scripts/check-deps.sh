@@ -7,7 +7,9 @@
 #   DEPS       default: scripts/deps.txt
 #
 # Each line of DEPS is `<crate> <dependency>`; `<crate> *` allows any
-# dependency; `#` starts a comment. All dependency kinds are checked.
+# dependency; `#` starts a comment. All dependency kinds are checked. A
+# line `!dev <crate> <dependency>` allows the dependency only as a
+# development dependency (ADR 0087).
 #
 # It also checks that every crate forbids `unsafe` (ADR 0003, ADR 0015):
 # through the workspace lints (`[lints] workspace = true` with
@@ -37,17 +39,21 @@ sed -n 's/^!unsafe //p' "$tmp/lines" >"$tmp/unsafe"
 sed -n 's/^!bin //p' "$tmp/lines" >"$tmp/bin"
 sed -n 's/^!no_std //p' "$tmp/lines" >"$tmp/no_std"
 sed -n 's/^!no_alloc //p' "$tmp/lines" >"$tmp/no_alloc"
+sed -n 's/^!dev //p' "$tmp/lines" >"$tmp/dev"
 
 cargo metadata --format-version 1 --no-deps --offline --manifest-path "$ws/Cargo.toml" >"$tmp/meta"
-jq -r '.packages[] | .name as $p | .dependencies[] | "\($p) \(.name)"' "$tmp/meta" |
+jq -r '.packages[] | .name as $p | .dependencies[] | "\($p) \(.name) \(.kind // "normal")"' "$tmp/meta" |
   sort -u >"$tmp/actual"
 
 status=0
-while read -r crate dep; do
+while read -r crate dep kind; do
   if grep -qxF "$crate $dep" "$tmp/allowed" || grep -qxF "$crate *" "$tmp/allowed"; then
     continue
   fi
-  echo "check-deps.sh: $crate depends on $dep, which $deps does not allow" >&2
+  if [ "$kind" = dev ] && grep -qxF "$crate $dep" "$tmp/dev"; then
+    continue
+  fi
+  echo "check-deps.sh: $crate depends on $dep ($kind), which $deps does not allow" >&2
   status=1
 done <"$tmp/actual"
 

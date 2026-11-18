@@ -769,7 +769,7 @@ fn geometry_items(
         let mut ours = |glyphs: &mut dyn Iterator<Item = u32>| {
             glyphs
                 .map(|g| {
-                    match sofel_cli::glyph::render(
+                    match sofel_glyph_render::render(
                         &outlines,
                         GlyphId(g),
                         ppem,
@@ -1049,7 +1049,7 @@ fn color_items(b: &mut Bench, testdata: &std::path::Path) {
                 let mut ours = || {
                     (0..n)
                         .map(|g| {
-                            use sofel_cli::glyph::{ColorGlyph, render_colr_v0};
+                            use sofel_glyph_render::{ColorGlyph, render_colr_v0};
                             match render_colr_v0(
                                 &outlines,
                                 GlyphId(g),

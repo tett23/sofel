@@ -1,6 +1,6 @@
 //! sofel ADR 0074 I2: clipping and transformed coverage in paint order.
 #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
-use sofel_cli::color_raster::render_glyph_scene;
+use sofel_glyph_render::color_raster::render_glyph_scene;
 use sofel_raster::{BgraImage, Rasterizer};
 use sofel_svg::{ClipElement, ClipPath, GlyphScene, ShapeKind, parse_shapes};
 

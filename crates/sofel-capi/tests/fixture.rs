@@ -1110,10 +1110,10 @@ fn generate() -> String {
     for g in 0..=font.num_glyphs() {
         for ppem in [16u16, 41] {
             let r =
-                sofel_cli::glyph::render(&outlines, GlyphId(g), ppem, &mut scratch, &mut raster)
+                sofel_glyph_render::render(&outlines, GlyphId(g), ppem, &mut scratch, &mut raster)
                     .map_err(|e| match e {
-                        sofel_cli::glyph::RenderError::Outline(e) => outline_error(e),
-                        sofel_cli::glyph::RenderError::Raster(e) => raster_error(e),
+                        sofel_glyph_render::RenderError::Outline(e) => outline_error(e),
+                        sofel_glyph_render::RenderError::Raster(e) => raster_error(e),
                     });
             let bm = bitmap(r);
             let name = format!("render_{g}_{ppem}");
