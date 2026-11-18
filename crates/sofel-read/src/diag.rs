@@ -719,7 +719,7 @@ pub enum Kind {
 }
 
 /// Why the interval check of a CFF glyph that runs `random` cannot
-/// decide (ADR 0082). [`CffRandomReason::code`] is the `reason` value of
+/// decide (ADR 0082, values by ADR 0092). [`CffRandomReason::code`] is the `reason` value of
 /// `sofel-validate --json`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum CffRandomReason {
@@ -732,8 +732,8 @@ pub enum CffRandomReason {
     StackPosition,
     /// A range with an infinite end used by `mul`, `div` or as a position.
     InfiniteBound,
-    /// The branches together run more than 100,000 numbers and operators,
-    /// or nest more branches than the check can hold.
+    /// The branches together run more than 100,000 numbers and operators
+    /// (ADR 0092: nothing else gives this reason).
     Limit,
 }
 

@@ -175,12 +175,13 @@ flowchart BT
 - CFF2 の FDSelect フォーマット4（[ADR 0056](adr/0056-cff2-fdselect-format4-warning.md)）は `fd_select_format4` の Warning として報告する。範囲や番兵が壊れていれば Error も報告する。ほかに Error がなければ `sofel-validate` は終了コード0を返す。FreeType 互換の輪郭取得はフォーマット4を拒む。
 - CFFの `random` を実行するグリフの区間による確かめ（[ADR 0082](adr/0082-cff-random-interval-check.md)）：検証器は、種から始めた道筋で `random` を一度でも実行したCFFのグリフを、値を区間で持つ解釈器でもう一度たどる。`random` は (0, 1] を積み、算術は区間の端をFreeTypeの演算（`FT_MulFix`、`FT_DivFix`、`FT_SqrtFixed`）で求め、32bitを超える端は無限大とする。比較、論理の演算子と `ifelse` の結果が一つに決まらなければ、結果ごとに別の枝としてたどる（`ifelse` は最初の引数の枝が先、比較と論理は結果0の枝が先）。
   - 値はFreeTypeの型（整数か16.16か）も持つ。`random` と算術の結果は16.16で、整数の値も `ifelse`、`dup`、`exch`、`index`、`get` を通ると16.16になる。
-  - `callsubr`、`callgsubr`、`index`、`roll` は、まず区間の下端の床から上端の天井までの整数を確かめ、次に型を確かめる。`put` と `get` は型だけを確かめる。16.16の値はFreeTypeが受け付けないので、これらの演算子が16.16の値を受けると、たどるのをやめる。そのため、番号の区間が幅を持つまま次の枝に進むことはない。
+  - 幅を持つ区間を番号や位置に使う `callsubr`、`callgsubr`、`put`、`get`、`index`、`roll` は、区間の下端の床から上端の天井までの各整数を、小さい順に別の枝としてたどる（`roll` は数の小さい順、同じ数では量の小さい順）。各枝では、その整数がINDEXの外か（`callsubr`、`callgsubr`）、スタックの深さの外か（`index`、`roll`）を確かめ、次に型を確かめる。端が無限大の区間は枝に分けず、`callsubr` と `callgsubr` では `cff_random_subroutine_out_of_range`、ほかでは `cff_random_unchecked`（3）とする。
+  - 幅を持つ区間は、いつも16.16である。16.16の値はFreeTypeが受け付けないので、最初の枝（最も小さい整数）が範囲の中なら、その枝で `cff_random_operand_rejected` を見つける。そのため、2つめ以降の整数の枝には進まない。たとえば、108個のサブルーチンで `random callsubr` は、番号0の枝（位置107、INDEXの中）で `cff_random_operand_rejected` を報告し、番号1の枝（位置108、INDEXの外）には届かない。
   - グリフごとに、たどる順で最初に見つけたもの一つだけを報告する。診断は次の3つである。
     - `cff_random_subroutine_out_of_range`（Error）：ある枝の `callsubr` か `callgsubr` の番号に偏りを足した位置がINDEXの外にある。端が無限大の番号を含む。
     - `cff_random_unchecked`（Warning）：確かめきれない。理由を `reason` の値で示す（下の表）。
     - `cff_random_operand_rejected`（Warning）：整数を求める演算子が16.16の値を受ける。`operator` はその演算子である。
-  - `cff_random_unchecked` の `reason` の値は次のとおりである。C ABIでは `SOFEL_CFF_RANDOM_*` の名前を持つ。
+  - `cff_random_unchecked` の `reason` の値は、[ADR 0092](adr/0092-cff-random-check-corrections.md) の表のとおり次の5つである。C ABIでは `SOFEL_CFF_RANDOM_*` の名前を持つ。
 
     | 値 | 意味 |
     | --- | --- |
@@ -188,11 +189,12 @@ flowchart BT
     | 1 | `sqrt` の区間が負の数を含む |
     | 2 | `index` の位置の区間がスタックの深さ以上の値を含む、または `roll` の数の区間が負か深さを超える値を含む |
     | 3 | 無限大の端を持つ区間を `mul`、`div`、または位置に使う |
-    | 4 | 上限を超える：すべての枝を合わせた実行の数（数と演算子をそれぞれ一つと数える）が100000を超える、または待っている枝が16を超える |
+    | 4 | 上限を超える：すべての枝を合わせた実行の数（数と演算子をそれぞれ一つと数える）が100000を超える。ほかの理由では4にしない（[ADR 0092](adr/0092-cff-random-check-corrections.md)） |
 
   - 診断の `position` は、ほかのcharstringの診断と同じく、グリフのcharstringか実行中のサブルーチンの中のバイト位置とする。診断のオフセット（`CFF ` の表の先頭からの位置）は、グリフのcharstringの中で見つけたときはその位置、サブルーチンの中で見つけたときはグリフのcharstringの先頭とする。種から始めた道筋の診断は変えない。CFF2、seacの部品、`random` を実行しないグリフはたどらない。
-  - 幅0の値（両端が同じ数）どうしの演算は、FreeTypeと同じ値と型を求める。幅0の除数の0は `cff_random_unchecked` にせず、FreeTypeと同じく割る。[ADR 0082](adr/0082-cff-random-interval-check.md) の不変条件の表の行「区間 (0, 1] で `div` の除数にする」は、本文の「除数の端が0の側に開いていれば結果の端を無限大にする」と食い違う。本文に従い、端が0に開いた除数は結果の端を無限大にするだけとし、0を含む除数の例は `random 0.5 sub` で割るグリフで確かめる。
-  - 待っている枝の上限16は、ADRに無い。`sofel-read` は割り当てをしないので、待っている枝の状態をスタックの上の固定の配列に持つ。wasi-sdkの既定のスタック（64KiB）で動くよう、配列を約20KiBに抑えるためである。
+  - 幅0の値（両端が同じ数）どうしの演算は、FreeTypeと同じ値と型を求める。幅0の除数の0は `cff_random_unchecked` にせず、FreeTypeと同じく割る。端が0に開いた除数（たとえば `1 random div` の (0, 1]）は診断にせず、結果の端を無限大にする。0を含む幅を持つ除数（たとえば `1 random 0.5 sub div` の (−0.5, 0.5]）は `cff_random_unchecked`（0）とする（[ADR 0092](adr/0092-cff-random-check-corrections.md)）。
+  - 待っている枝の数に上限は無い（[ADR 0092](adr/0092-cff-random-check-corrections.md)）。`sofel-read` は割り当てをしないので、枝は深さ優先でたどり、いまの道筋を分かれ目ごとの選んだ側の1bitの列として持つ。分かれ目の演算子は幅を持つ値を少なくとも1つ減らし、ほかの演算子は幅を持つ値を多くとも1つしか増やさない（`random`、`dup`、`index`、`get`）。そのため、1本の道筋は分かれ目ごとにほかの数えた演算子を少なくとも1つ実行し、分かれ目は50000以下である。列は固定の6250バイトに収まる。
+  - 枝が終わると、最も深い「2つめの結果をまだたどっていない」分かれ目の2つめの結果へ進む。その分かれ目の状態は、その分かれ目か、それより手前の分かれ目で保存した状態から、bitの列に従ってたどりなおして求める。たどりなおしは同じ結果を再び求めるだけなので、実行の数に数えない。保存する状態は8個で、いまの道筋の先端から離れるほど間引く。保存の数は速さだけを変え、診断を変えない。wasi-sdkの既定のスタック（64KiB）で動くよう、wasm32での確かめの関数のスタックの領域を21280バイトに抑える。これは、待っている枝を16個まで持った前の実装の21424バイトより小さい。
 - CFF2の座標つきの解釈（[ADR 0027](adr/0027-variable-fonts.md)、[ADR 0030](adr/0030-variation-evaluation-corrections.md)）：FreeType側の係数は `Instance::blend_scalars::<Ft>` から元の列順で渡す。係数が0の列も残し、Private DICTとcharstringを位置ごとに評価する。HarfBuzz側の箱は、`f32` の領域係数と `f64` の差分の積和を使う。C ABIの `sofel_cff2_blend_vector` は、既定成分の65536を先頭に置き、必要な長さを返す。出力配列が短ければ変更しない。HarfBuzzのCFF2の箱は、fvar軸のあるフォントの既定位置でも全軸の0座標で領域を評価する。FreeTypeの静的な既定位置では差分の係数を0にする。
 - CFFのcharsetの索引（[ADR 0025](adr/0025-cff-charset-index.md)）：`Charset::num_ranges` はフォーマット1と2の範囲のうち、FreeTypeと同じくグリフの数を覆うまでの数（フォーマット0と予め定められたcharsetは0）。`Charset::index_into` は、呼び出し側の配列に各範囲の最初のグリフIDを書き、それを借りる `CharsetIndex`（`Copy`、`Send`、`Sync`）を返す。配列が短ければ何も書かずに要る長さを返す。確保はしない。`CharsetIndex::sid` は範囲の最初のグリフIDを二分探索し、`CharsetIndex::glyph` は範囲を順に見る。値は0xFFFFでの切りつめを含め、常に `Charset::sid`、`Charset::glyph` と等しい。
 - BASEの検証器は、表に収まらないオフセットの先、タグで引く記録（BaseTagList、BaseScriptList、BaseLangSys、FeatMinMax）がタグの昇順でないこと、BaseValuesの座標の数とBaseTagListのタグの数の不一致、未知のBaseCoordの形式を `Error` に、`defaultBaselineIndex` がタグの数以上であることを `Warning` にする。ビューの `find` は、並びが乱れていてもHarfBuzzと同じ記録を返すように、HarfBuzzの二分探索（`hb_bsearch_impl`）と同じ順に調べる（[ADR 0017](adr/0017-base-baselines.md)）。
