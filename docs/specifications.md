@@ -785,7 +785,7 @@ color-svg の単字19と文字列から得たグリフ26は48 ppemで描画す�
 sbix の単字 19 と合字 26 は固定版 FreeType と全画素を照合し、一覧の各欄に等倍で配置する（[sofel ADR 0072](adr/0072-color-gallery-acceptance.md)）。
 CFF の 19・26 と可変 COLRv1 の 92・93 は固定版 HarfBuzz raster と原点・寸法・乗算済み BGRA の全画素を照合する。一覧 PNG の検査では、これらの2書体、sbix、OT-SVG の単字と文字列を個別に比較する。
 HarfBuzz raster の参照（`tools/hb-raster-reference/build.sh`）は、HarfBuzzが呼ぶ `atan2f` を `sofel_geom::float::atan2f` に差しかえてビルドする。
-`atan2f` を C の関数として出す静的ライブラリ（`tools/hb-raster-reference/atan2f/`）を C のライブラリより先にリンクするので、扇形のグラデーションの角度は、どのプラットフォームでも sofel と同じになる（[ADR 0095](adr/0095-glyph-render-math-and-colrv1.md)）。
+`atan2f` を C の関数として出すクレート（`tools/hb-raster-reference/atan2f/`）を、Rust の実行時ライブラリを含まない1つのオブジェクト（fat LTO）にして、C のライブラリより先にリンクするので、扇形のグラデーションの角度は、どのプラットフォームでも sofel と同じになる（[ADR 0095](adr/0095-glyph-render-math-and-colrv1.md)）。
 Linux の CI は、プラットフォームの `atan2f` でビルドした参照とも比べ、画像が変わるグリフを `tools/hb-raster-reference/atan2f-changes.sh` で一覧にする。
 [sofel ADR 0077](adr/0077-noto-color-emoji-gallery.md) に従い、Noto Color Emoji v2.047 の CBDT 版と COLRv1 版で 😀 と 👩‍💻 を 109 ppem で描く。各形式で ZWJ 列が一つのグリフになること、各画像の寸法と RGBA の CRC-32、一覧 PNG に配置した画素を検査する。
 文書だけの変更を除き、CI はプルリクエストと main への push で HTML と PNG を生成し、検査したコミット SHA 付きのアーティファクトを14日間保存する。

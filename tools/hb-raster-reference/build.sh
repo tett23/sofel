@@ -1,9 +1,10 @@
 #!/bin/sh
 # Build the HarfBuzz raster reference (sofel ADR 0066, ADR 0072) with
 # HarfBuzz's calls to atan2f answered by sofel_geom::float::atan2f (sofel
-# ADR 0095): the static library in atan2f/ exports it as the C function
-# atan2f and is linked before the C library, so the sweep gradients get
-# the same angles as sofel on every platform. sqrtf is the platform's: it
+# ADR 0095): the crate in atan2f/ exports it as the C function atan2f.
+# It is built into one object (fat LTO), so that nothing else of Rust's
+# runtime is linked, and the object comes before the C library. The sweep
+# gradients then get the same angles as sofel on every platform. sqrtf is the platform's: it
 # is correctly rounded everywhere, as sofel's is.
 # Usage: build.sh HARFBUZZ_SOURCE OUTPUT [PINNED_LIBHARFBUZZ_A]
 # Needs a C++ compiler ($CXX, default c++) and cargo.
@@ -19,8 +20,10 @@ target_dir=${SOFEL_ATAN2F_TARGET_DIR:-$root/target/hb-raster-atan2f}
 if [ "${SOFEL_HB_RASTER_ATAN2F:-sofel}" = libm ]; then
   set --
 else
-  cargo build --quiet --release --manifest-path "$here/atan2f/Cargo.toml" --target-dir "$target_dir"
-  set -- "$target_dir/release/libsofel_atan2f_c.a"
+  mkdir -p "$target_dir"
+  cargo rustc --quiet --release --manifest-path "$here/atan2f/Cargo.toml" --target-dir "$target_dir" \
+    -- --emit=obj="$target_dir/atan2f.o"
+  set -- "$target_dir/atan2f.o"
 fi
 if [ "${SOFEL_HB_RASTER_PNG:-0}" = 1 ]; then
   # libpng-dev on the Linux conformance runner supplies this header and library.

@@ -1,7 +1,8 @@
 //! `sofel_geom::float::atan2f` as the C function `atan2f` (ADR 0095).
 //!
-//! `tools/hb-raster-reference/build.sh` links this static library before
-//! the C library, so HarfBuzz's raster calls sofel's `atan2f` instead of
+//! `tools/hb-raster-reference/build.sh` builds this crate into one object
+//! (fat LTO, so nothing else of the Rust runtime comes along) and links
+//! it before the C library, so HarfBuzz's raster calls sofel's `atan2f` instead of
 //! the platform's, and its sweep gradients give the angles sofel uses on
 //! every platform.
 

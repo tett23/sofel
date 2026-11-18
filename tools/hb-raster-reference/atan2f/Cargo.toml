@@ -19,5 +19,9 @@ sofel-geom = { path = "../../../crates/sofel-geom" }
 [profile.dev]
 panic = "abort"
 
+# One object with the whole program (sofel-geom and core inlined), so the
+# reference links that object alone and nothing from compiler_builtins.
 [profile.release]
 panic = "abort"
+lto = "fat"
+codegen-units = 1
