@@ -27,7 +27,7 @@ use core::ffi::{c_char, c_void};
 use core::fmt::Write as _;
 use std::ffi::CString;
 
-use sofel_cli::glyph::RenderError;
+use sofel_glyph_render::RenderError;
 use sofel_font::read::cff::{CharsetIndex, Version};
 use sofel_font::read::os2::Os2;
 use sofel_font::read::sfnt::FontFile;
@@ -3812,7 +3812,7 @@ fn render_glyph(
 ) -> Status {
     let (font, scratch, r) = (some(font)?, some(scratch)?, some(rasterizer)?);
     out.check()?;
-    let bitmap = sofel_cli::glyph::render(
+    let bitmap = sofel_glyph_render::render(
         &outlines_at(font, location),
         GlyphId(glyph),
         ppem,
@@ -3897,7 +3897,7 @@ fn render_color_glyph(
     out: BitmapOut<'_>,
     is_color: Option<&mut u32>,
 ) -> Status {
-    use sofel_cli::glyph::{ColorGlyph, render_color};
+    use sofel_glyph_render::{ColorGlyph, render_color};
     let (font, scratch, r) = (some(font)?, some(scratch)?, some(rasterizer)?);
     let is_color = some(is_color)?;
     out.check()?;

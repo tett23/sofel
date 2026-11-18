@@ -5,6 +5,7 @@ use sofel_font::geom::{
 };
 use sofel_raster::{BgraImage, FillRule, Rasterizer, RenderOptions, blend_sampled};
 use sofel_svg::{Scene, parse_glyph};
+use alloc::vec::Vec;
 
 /// A painter that accepts the OT-SVG image for one glyph.
 pub struct SvgImagePainter<'a> {

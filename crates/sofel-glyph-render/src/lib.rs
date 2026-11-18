@@ -4,7 +4,13 @@
 //! has the overlap flag) before decomposing it, and rasterize. Color
 //! glyphs follow the COLR version 0 layer records (ADR 0023).
 
-use std::fmt;
+#![no_std]
+#![warn(missing_docs)]
+
+extern crate alloc;
+
+use alloc::vec::Vec;
+use core::fmt;
 
 use sofel_color::{PaintOptions, Palette};
 use sofel_font::geom::Color;
@@ -37,6 +43,9 @@ pub fn render_type1<'r>(
         .map_err(RenderError::Raster)
 }
 
+pub mod color_raster;
+mod colr_raster;
+
 use crate::color_raster::SvgImagePainter;
 
 /// Why [`render`] failed.
@@ -57,7 +66,7 @@ impl fmt::Display for RenderError {
     }
 }
 
-impl std::error::Error for RenderError {}
+impl core::error::Error for RenderError {}
 
 /// Renders `glyph` at `ppem` pixels as `FT_Set_Pixel_Sizes`,
 /// `FT_Load_Glyph` with `FT_LOAD_NO_HINTING` and `FT_Render_Glyph` with

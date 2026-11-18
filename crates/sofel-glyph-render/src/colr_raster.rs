@@ -9,7 +9,9 @@ use sofel_color::{PaintCommand, PaintOptions, Painted, Recording};
 use sofel_geom::{Brush, CompositeMode, Pen, PointF, Rect, Transform};
 use sofel_outline::{HbOutlineCommand, Outlines, Scale, Scratch};
 use sofel_raster::{BgraImage, ColorGradient, PaintMask, composite_pixel};
-use sofel_read::GlyphId;
+use sofel_font::read::GlyphId;
+use alloc::vec;
+use alloc::vec::Vec;
 
 fn inverse(t: Transform) -> Option<Transform> {
     let det = t.xx * t.yy - t.xy * t.yx;

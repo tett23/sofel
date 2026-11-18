@@ -122,6 +122,19 @@ name = "sofel-geom"
 version = "0.0.0"
 
 [[package]]
+name = "sofel-glyph-render"
+version = "0.0.0"
+dependencies = [
+ "sofel-color",
+ "sofel-font",
+ "sofel-geom",
+ "sofel-outline",
+ "sofel-raster",
+ "sofel-svg",
+ "sofel-type1",
+]
+
+[[package]]
 name = "sofel-gpu"
 version = "0.0.0"
 dependencies = [

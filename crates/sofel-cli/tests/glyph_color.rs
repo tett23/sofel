@@ -5,7 +5,7 @@
 mod build;
 
 use build::*;
-use sofel_cli::glyph::{ColorGlyph, color_layers, render, render_color};
+use sofel_glyph_render::{ColorGlyph, color_layers, render, render_color};
 use sofel_color::{PaintOptions, Palette};
 use sofel_font::Font;
 use sofel_font::geom::Color;
