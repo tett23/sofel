@@ -1,6 +1,6 @@
 # ADR 0096: `sofel-type1` と `sofel-bitmapfont` の検証器と、確保を許す場合の追加（[ADR 0094](0094-allocation-in-type1-and-bitmapfont.md)の修正）
 
-Status: proposed
+Status: accepted-pending
 
 ## 文脈
 
