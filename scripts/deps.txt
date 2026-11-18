@@ -3,7 +3,8 @@
 # a crate to use `unsafe`; `!bin <crate>` allows binaries in a crate;
 # `!no_std <crate>` requires #![no_std] at its library root (ADR 0081);
 # `!dev <crate> <dependency>` allows a dependency only in `[dev-dependencies]`
-# (ADR 0087).
+# (ADR 0087);
+# `!no_alloc <crate>` forbids the alloc crate in its src/ (ADR 0094).
 
 # Crates that do not depend on fonts
 # (sofel-unicode: no dependencies, ADR 0019; sofel-lzw and sofel-bzip2:
@@ -114,3 +115,8 @@ sofel-conformance *
 !no_std sofel-vector
 !no_std sofel-woff
 !no_std sofel-write
+
+# Format readers that neither copy nor allocate: no alloc crate at all
+# (ADR 0003, ADR 0094). sofel-type1 and sofel-bitmapfont may allocate.
+!no_alloc sofel-read
+!no_alloc sofel-pfr

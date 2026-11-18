@@ -76,6 +76,8 @@ pub struct CidMatrix {
 
 impl CidFace {
     /// Parse the PostScript header and bounded binary or hex data section.
+    ///
+    /// Allocates the binary data (a copy, or the decoded hexadecimal data) and the Font DICTs (ADR 0094).
     pub fn parse(source: &[u8], max_output: usize) -> Result<Self, CidError> {
         if !source.starts_with(b"%!PS-Adobe-3.0 Resource-CIDFont") {
             return Err(CidError::invalid());
@@ -213,6 +215,8 @@ impl CidFace {
     }
 
     /// Decrypted Type 1 charstring for a CID.
+    ///
+    /// Allocates the decrypted charstring (ADR 0094).
     pub fn glyph_program(&self, cid: usize) -> Option<Vec<u8>> {
         if cid >= self.cid_count {
             return None;
@@ -232,6 +236,8 @@ impl CidFace {
     }
 
     /// Decrypted Font DICT subroutine selected by a CID and local index.
+    ///
+    /// Allocates the decrypted subroutine (ADR 0094).
     pub fn subroutine_program(&self, cid: usize, index: usize) -> Option<Vec<u8>> {
         if cid >= self.cid_count {
             return None;
@@ -257,6 +263,8 @@ impl CidFace {
     }
 
     /// Unscaled Type 1 side bearings and advances for a CID.
+    ///
+    /// Allocates the decrypted charstring and the operand stack used to read it (ADR 0094).
     pub fn glyph_metrics(&self, cid: usize) -> Option<Metrics> {
         let mut metrics = parse_metrics(&self.glyph_program(cid)?).ok()?;
         let matrix = self.matrix(cid)?;

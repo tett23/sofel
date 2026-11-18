@@ -29,6 +29,8 @@ pub struct Metrics {
 }
 
 /// Read the first `hsbw` or `sbw` instruction of a decrypted charstring.
+///
+/// Allocates the operand stack (ADR 0094).
 pub fn parse_metrics(program: &[u8]) -> Result<Metrics, MetricsError> {
     let mut stack = Vec::new();
     let mut at = 0usize;

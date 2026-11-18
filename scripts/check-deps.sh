@@ -20,7 +20,9 @@
 # Only crates marked `!bin <crate>` may have binary targets, and crates
 # marked `!no_std <crate>` must declare `#![no_std]` at the root of their
 # library (ADR 0081), and also #![forbid(unsafe_code)] unless marked
-# `!unsafe` (ADR 0003).
+# `!unsafe` (ADR 0003). Crates marked `!no_alloc <crate>` must not use the
+# alloc crate (`extern crate alloc`, `alloc::`) in their library sources
+# (ADR 0094).
 # Needs cargo and jq.
 
 set -eu
@@ -36,6 +38,7 @@ grep -v '^!' "$tmp/lines" >"$tmp/allowed" || true
 sed -n 's/^!unsafe //p' "$tmp/lines" >"$tmp/unsafe"
 sed -n 's/^!bin //p' "$tmp/lines" >"$tmp/bin"
 sed -n 's/^!no_std //p' "$tmp/lines" >"$tmp/no_std"
+sed -n 's/^!no_alloc //p' "$tmp/lines" >"$tmp/no_alloc"
 sed -n 's/^!dev //p' "$tmp/lines" >"$tmp/dev"
 
 cargo metadata --format-version 1 --no-deps --offline --manifest-path "$ws/Cargo.toml" >"$tmp/meta"
@@ -107,4 +110,24 @@ while read -r crate; do
     status=1
   fi
 done <"$tmp/no_std"
+
+# ADR 0094 I1: `!no_alloc` crates neither import nor use the alloc crate
+# anywhere in the directory of their library root (comments aside).
+while read -r crate; do
+  lib=$(jq -r --arg p "$crate" '.packages[] | select(.name == $p) | .targets[]
+    | select(.kind | any(. == "lib")) | .src_path' "$tmp/meta")
+  if [ -z "$lib" ]; then
+    echo "check-deps.sh: $crate is marked \`!no_alloc\` but has no library" >&2
+    status=1
+    continue
+  fi
+  find "$(dirname "$lib")" -name '*.rs' -type f -exec grep -nE \
+    '(^|[^:[:alnum:]_])alloc::|extern[[:space:]]+crate[[:space:]]+alloc' {} + 2>/dev/null |
+    grep -vE '^([^:]*:)?[0-9]+:[[:space:]]*//' >"$tmp/alloc-uses" || true
+  if [ -s "$tmp/alloc-uses" ]; then
+    echo "check-deps.sh: $crate is marked \`!no_alloc\` but uses the alloc crate:" >&2
+    cat "$tmp/alloc-uses" >&2
+    status=1
+  fi
+done <"$tmp/no_alloc"
 exit $status

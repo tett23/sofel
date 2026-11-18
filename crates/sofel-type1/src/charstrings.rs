@@ -27,11 +27,15 @@ pub struct Charstrings<'a> {
 
 impl<'a> Charstrings<'a> {
     /// Read `/Subrs` and `/CharStrings` binary objects with checked lengths.
+    ///
+    /// Allocates the tables of the CharStrings and Subrs (ADR 0094).
     pub fn parse(data: &'a [u8]) -> Result<Self, CharstringError> {
         Self::parse_with_offset(data).map_err(|_| CharstringError)
     }
 
     /// Return a byte offset in the decrypted private dictionary on failure.
+    ///
+    /// Allocates the tables of the CharStrings and Subrs (ADR 0094).
     pub fn parse_with_offset(data: &'a [u8]) -> Result<Self, usize> {
         let charstrings_start = keyword(data, b"/CharStrings").ok_or(data.len())?;
         let prefix_end = keyword(data, b"/Subrs")
@@ -170,11 +174,15 @@ impl<'a> Charstrings<'a> {
     }
 
     /// The decrypted program for a named glyph.
+    ///
+    /// Allocates the decrypted charstring (ADR 0094).
     pub fn glyph_program(&self, name: &[u8]) -> Option<Vec<u8>> {
         decrypt_charstring(self.glyph(name)?, self.len_iv)
     }
 
     /// The decrypted local subroutine at `index`.
+    ///
+    /// Allocates the decrypted subroutine (ADR 0094).
     pub fn subroutine_program(&self, index: usize) -> Option<Vec<u8>> {
         decrypt_charstring(self.subroutine(index)?, self.len_iv)
     }

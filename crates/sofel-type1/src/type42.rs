@@ -35,6 +35,8 @@ pub struct Type42Source {
 
 impl Type42Source {
     /// Extract the `/sfnts` array, with an upper bound on its decoded length.
+    ///
+    /// Allocates the joined `/sfnts` data and the table of glyph names (ADR 0094).
     pub fn parse(data: &[u8], max_output: usize) -> Result<Self, Type42Error> {
         if !data.starts_with(b"%!PS-TrueTypeFont") {
             return Err(Type42Error(0));
