@@ -1,6 +1,6 @@
 # ADR 0098: 検証器が確保しないことを、アロケータではなくモジュールの検査で確かめる（[ADR 0096](0096-type1-bitmapfont-validators-and-allocation.md)と[ADR 0094](0094-allocation-in-type1-and-bitmapfont.md)の修正）
 
-Status: accepted-pending
+Status: accepted
 
 ## 文脈
 

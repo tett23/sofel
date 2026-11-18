@@ -1,6 +1,6 @@
 # ADR 0094: `sofel-type1` と `sofel-bitmapfont` に確保を許す（[ADR 0003](0003-crate-layers.md)の修正）
 
-Status: accepted-pending
+Status: superseded [{"part":"実装すること（確保してよい場合）","by":["docs/adr/0096-type1-bitmapfont-validators-and-allocation.md"],"kind":"supplement"},{"part":"不変条件 I2（対象の検証器）","by":["docs/adr/0096-type1-bitmapfont-validators-and-allocation.md"],"kind":"supplement"},{"part":"テスト設計（I2）","by":["docs/adr/0098-allocation-free-validator-modules.md"]}]
 
 ## 文脈
 

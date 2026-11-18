@@ -156,6 +156,7 @@ name = "sofel-read-fuzz"
 version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
+ "sofel-bitmapfont",
  "sofel-color",
  "sofel-font",
  "sofel-geom",
@@ -164,6 +165,7 @@ dependencies = [
  "sofel-read",
  "sofel-shape",
  "sofel-subset",
+ "sofel-type1",
  "sofel-write",
 ]
 

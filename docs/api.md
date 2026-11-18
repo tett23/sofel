@@ -264,6 +264,26 @@ fn single(gsub_table: &[u8], glyph: GlyphId) -> Option<u32> {
 
 - `gsub::validate` と `gpos::validate` は、GDEFのマークのグリフの集合の数を引数に取る（`None` なら調べない）。`gdef::validate` は表だけを取る。
 
+## Type 1 とビットマップの形式を検証する（`sofel-type1`、`sofel-bitmapfont`）
+
+`sofel-type1` と `sofel-bitmapfont` の検証器は、確保をせず、誤りを `noalloc::Problem`（バイトの位置と理由）としてコールバックに渡す（[ADR 0096](adr/0096-type1-bitmapfont-validators-and-allocation.md)）。
+検証器は各クレートの `noalloc` モジュールにあり、そのモジュールが確保する名前もクレートのほかのモジュールも使わないことを `scripts/check-deps.sh` が確かめる（[ADR 0098](adr/0098-allocation-free-validator-modules.md)）。
+
+```rust
+let data = std::fs::read("font.pfb")?;
+sofel_type1::source::validate_pfb(&data, 1 << 26, &mut |p| {
+    println!("{} at {}", p.reason, p.offset);
+});
+let fon = std::fs::read("font.fon")?;
+sofel_bitmapfont::winfnt::WinFont::validate(&fon, &mut |p| {
+    println!("face {:?}: {} at {}", p.face, p.reason, p.offset);
+});
+```
+
+- `sofel-type1`：`source::validate_pfa`、`source::validate_pfb`、`cid::validate`、`type42::validate`（復号した結果やつないだ sfnt の上限 `max_output` を取る）、`afm::validate`、`pfm::validate`。
+- `sofel-bitmapfont`：`BdfFont::validate`、`PcfFont::validate`、`WinFont::validate`（FON の各面）。
+- 検証器が誤りを報告しない入力は、対応する解析の関数も受け付ける。
+
 ## カラーグリフ（`sofel-color`、`sofel-bitmap`）
 
 カラーグリフは `sofel_geom::Painter` に塗りの命令として渡す（[ADR 0023](adr/0023-color-glyphs.md)）。命令の順と値はHarfBuzzの `hb_font_paint_glyph` と同じで、単位はフォントの単位（yは上）。拡大と配置は呼び出し側の変換に含める。

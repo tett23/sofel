@@ -1697,3 +1697,63 @@ mod gvar_ft_apply_tests {
         }
     }
 }
+
+/// The Type 1 family validators of ADR 0096 do not panic, and an input
+/// they find no problem in is accepted by the matching parser (I3).
+pub fn check_type1_validators(data: &[u8]) {
+    use sofel_type1::face::Type1Face;
+    use sofel_type1::source::Type1Source;
+    const LIMIT: usize = 1 << 20;
+    let clean = |validate: &dyn Fn(&mut dyn FnMut(sofel_type1::noalloc::Problem))| {
+        let mut clean = true;
+        validate(&mut |_| clean = false);
+        clean
+    };
+    if clean(&|r| sofel_type1::source::validate_pfa(data, LIMIT, r)) {
+        let source = Type1Source::parse_pfa(data, LIMIT).expect("PFA validator accepted");
+        Type1Face::new(&source).expect("PFA face validator accepted");
+    }
+    if clean(&|r| sofel_type1::source::validate_pfb(data, LIMIT, r)) {
+        let source = Type1Source::parse_pfb(data, LIMIT).expect("PFB validator accepted");
+        Type1Face::new(&source).expect("PFB face validator accepted");
+    }
+    if clean(&|r| sofel_type1::cid::validate(data, LIMIT, r)) {
+        sofel_type1::cid::CidFace::parse(data, LIMIT).expect("CID validator accepted");
+    }
+    if clean(&|r| sofel_type1::type42::validate(data, LIMIT, r)) {
+        sofel_type1::type42::Type42Source::parse(data, LIMIT).expect("Type 42 validator accepted");
+    }
+    if clean(&|r| sofel_type1::afm::validate(data, r)) {
+        sofel_type1::afm::Afm::parse(data).expect("AFM validator accepted");
+    }
+    if clean(&|r| sofel_type1::pfm::validate(data, r)) {
+        sofel_type1::pfm::Pfm::parse(data).expect("PFM validator accepted");
+    }
+    let _ = sofel_type1::metrics::parse_metrics(data);
+}
+
+/// The bitmap validators of ADR 0096 do not panic, and an input they find
+/// no problem in is accepted by the matching parser (I3).
+pub fn check_bitmap_validators(data: &[u8]) {
+    use sofel_bitmapfont::BdfFont;
+    use sofel_bitmapfont::pcf::PcfFont;
+    use sofel_bitmapfont::winfnt::WinFont;
+    let mut clean = true;
+    BdfFont::validate(data, &mut |_| clean = false);
+    if clean {
+        BdfFont::parse(data).expect("BDF validator accepted");
+    }
+    clean = true;
+    PcfFont::validate(data, &mut |_| clean = false);
+    if clean {
+        PcfFont::parse(data).expect("PCF validator accepted");
+    }
+    clean = true;
+    WinFont::validate(data, &mut |_| clean = false);
+    if clean {
+        let count = WinFont::face_count(data).expect("FON validator accepted");
+        for face in 0..count {
+            WinFont::parse(data, face).expect("FNT validator accepted");
+        }
+    }
+}

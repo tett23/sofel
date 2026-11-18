@@ -6,6 +6,7 @@ use std::ffi::OsString;
 use std::io::Write;
 use std::path::Path;
 
+use sofel_bitmapfont::noalloc::Problem as BitmapProblem;
 use sofel_bitmapfont::pcf::PcfFont;
 use sofel_pfr::PfrFace;
 use sofel_read::layout::damage::DamageEvent;
@@ -13,7 +14,7 @@ use sofel_read::sfnt::{FontFile, Sfnt};
 use sofel_read::{
     DetailValue, Diagnostic, Kind, ReadError, Severity, Tag, cff, gdef, gpos, gsub, validate,
 };
-use sofel_type1::cid::CidFace;
+use sofel_type1::noalloc::Problem as Type1Problem;
 
 use crate::json;
 
@@ -62,6 +63,14 @@ Exit status:
      validated
 ";
 
+/// A BDF or PCF validator (ADR 0096).
+type BitmapValidator = fn(&[u8], &mut dyn FnMut(BitmapProblem));
+/// A PFA or PFB validator, with its output limit (ADR 0096).
+type Type1Validator = fn(&[u8], usize, &mut dyn FnMut(Type1Problem));
+
+/// The largest decoded Type 1, CID and Type 42 data the validators accept.
+const MAX_OUTPUT: usize = 67_108_864;
+
 /// Runs the command with `args` (without the program name). Returns the
 /// exit status.
 pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
@@ -106,105 +115,51 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
                 continue;
             }
         };
+        // Type 1 and bitmap formats: their validators (ADR 0096).
+        let container = |tag: &[u8; 4], offset: usize, reason: &'static str| Diagnostic {
+            table: Tag::new(tag),
+            offset: u32::try_from(offset).unwrap_or(u32::MAX),
+            severity: Severity::Error,
+            kind: Kind::InvalidFontContainer { reason },
+        };
         if sofel_bitmapfont::winfnt::WinFont::is_win_font(&bytes) {
-            let collection = bytes.starts_with(b"MZ");
-            let count = sofel_bitmapfont::winfnt::WinFont::face_count(&bytes).unwrap_or(1);
-            for face in 0..count {
-                match sofel_bitmapfont::winfnt::WinFont::parse_with_offset(&bytes, face) {
-                    Ok(_) => {}
-                    Err(offset) => emit_diagnostic(
-                        &name,
-                        collection.then_some(face),
-                        Diagnostic {
-                            table: Tag::new(if collection { b"FON " } else { b"FNT " }),
-                            offset: u32::try_from(offset).unwrap_or(u32::MAX),
-                            severity: Severity::Error,
-                            kind: Kind::InvalidFontContainer {
-                                reason: "invalid Windows bitmap font",
-                            },
-                        },
-                        as_json,
-                        out,
-                        &mut errors,
-                    ),
-                }
-            }
+            let tag = if bytes.starts_with(b"MZ") {
+                b"FON "
+            } else {
+                b"FNT "
+            };
+            sofel_bitmapfont::winfnt::WinFont::validate(&bytes, &mut |p| {
+                let d = container(tag, p.offset, p.reason);
+                emit_diagnostic(&name, p.face, d, as_json, out, &mut errors);
+            });
             continue;
         }
-        if sofel_bitmapfont::BdfFont::is_bdf(&bytes) {
-            if let Err(offset) = sofel_bitmapfont::BdfFont::parse_with_offset(&bytes) {
-                emit_diagnostic(
-                    &name,
-                    None,
-                    Diagnostic {
-                        table: Tag::new(b"BDF "),
-                        offset: u32::try_from(offset).unwrap_or(u32::MAX),
-                        severity: Severity::Error,
-                        kind: Kind::InvalidFontContainer {
-                            reason: "invalid BDF font",
-                        },
-                    },
-                    as_json,
-                    out,
-                    &mut errors,
-                );
-            }
+        let bitmap_validator: Option<(&[u8; 4], BitmapValidator)> =
+            if sofel_bitmapfont::BdfFont::is_bdf(&bytes) {
+                Some((b"BDF ", sofel_bitmapfont::BdfFont::validate))
+            } else if PcfFont::is_pcf(&bytes) {
+                Some((b"PCF ", PcfFont::validate))
+            } else {
+                None
+            };
+        if let Some((tag, validator)) = bitmap_validator {
+            validator(&bytes, &mut |p| {
+                let d = container(tag, p.offset, p.reason);
+                emit_diagnostic(&name, None, d, as_json, out, &mut errors);
+            });
             continue;
         }
         let pfa = sofel_font::Type1Source::has_text_header(&bytes);
         if pfa || bytes.first() == Some(&0x80) {
-            let source = if pfa {
-                sofel_font::Type1Source::parse_pfa_with_offset(&bytes, 67_108_864)
+            let (tag, validator): (&[u8; 4], Type1Validator) = if pfa {
+                (b"PFA ", sofel_type1::source::validate_pfa)
             } else {
-                sofel_font::Type1Source::parse_pfb_with_offset(&bytes, 67_108_864)
+                (b"PFB ", sofel_type1::source::validate_pfb)
             };
-            let result = source.and_then(|source| {
-                sofel_font::Type1Face::new(&source)
-                    .map(|_| ())
-                    .map_err(|_| {
-                        sofel_type1::charstrings::Charstrings::parse_with_offset(source.private())
-                            .err()
-                            .and_then(|index| source.private_file_offset(&bytes, index))
-                            .unwrap_or(0)
-                    })
+            validator(&bytes, MAX_OUTPUT, &mut |p| {
+                let d = container(tag, p.offset, p.reason);
+                emit_diagnostic(&name, None, d, as_json, out, &mut errors);
             });
-            if let Err(offset) = result {
-                emit_diagnostic(
-                    &name,
-                    None,
-                    Diagnostic {
-                        table: Tag::new(if pfa { b"PFA " } else { b"PFB " }),
-                        offset: u32::try_from(offset).unwrap_or(u32::MAX),
-                        severity: Severity::Error,
-                        kind: Kind::InvalidFontContainer {
-                            reason: "invalid Type 1 font",
-                        },
-                    },
-                    as_json,
-                    out,
-                    &mut errors,
-                );
-            }
-            continue;
-        }
-        if PcfFont::is_pcf(&bytes) {
-            if let Err((_, offset)) = PcfFont::parse_positioned(&bytes) {
-                emit_diagnostic(
-                    &name,
-                    None,
-                    Diagnostic {
-                        table: Tag::new(b"PCF "),
-                        offset: u32::try_from(offset).unwrap_or(u32::MAX),
-                        severity: Severity::Error,
-                        kind: Kind::InvalidFontContainer {
-                            reason: "invalid PCF font",
-                        },
-                    },
-                    as_json,
-                    out,
-                    &mut errors,
-                );
-            }
             continue;
         }
         if bytes.first() == Some(&1) {
@@ -214,8 +169,18 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
             continue;
         }
         if bytes.starts_with(b"%!PS-TrueTypeFont") {
-            match sofel_type1::type42::Type42Source::parse(&bytes, 67_108_864) {
-                Ok(source) => match Sfnt::new(source.sfnt()) {
+            let mut wrapper_ok = true;
+            sofel_type1::type42::validate(&bytes, MAX_OUTPUT, &mut |p| {
+                wrapper_ok = false;
+                let d = container(b"T42 ", p.offset, p.reason);
+                emit_diagnostic(&name, None, d, as_json, out, &mut errors);
+            });
+            // The sfnt inside is validated like any sfnt; joining it is the
+            // caller's allocation, not the validator's.
+            if wrapper_ok
+                && let Ok(source) = sofel_type1::type42::Type42Source::parse(&bytes, MAX_OUTPUT)
+            {
+                match Sfnt::new(source.sfnt()) {
                     Ok(sfnt) => {
                         validate_face(&sfnt, &name, None, as_json, out, &mut errors);
                     }
@@ -227,22 +192,7 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
                         out,
                         &mut errors,
                     ),
-                },
-                Err(error) => emit_diagnostic(
-                    &name,
-                    None,
-                    Diagnostic {
-                        table: Tag::new(b"T42 "),
-                        offset: u32::try_from(error.offset()).unwrap_or(u32::MAX),
-                        severity: Severity::Error,
-                        kind: Kind::InvalidFontContainer {
-                            reason: "invalid Type 42 wrapper",
-                        },
-                    },
-                    as_json,
-                    out,
-                    &mut errors,
-                ),
+                }
             }
             continue;
         }
@@ -279,23 +229,10 @@ pub fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
             continue;
         }
         if bytes.starts_with(b"%!PS-Adobe-3.0 Resource-CIDFont") {
-            if let Err(error) = CidFace::parse(&bytes, 67_108_864) {
-                emit_diagnostic(
-                    &name,
-                    None,
-                    Diagnostic {
-                        table: Tag::new(b"CID "),
-                        offset: u32::try_from(error.offset()).unwrap_or(u32::MAX),
-                        severity: Severity::Error,
-                        kind: Kind::InvalidFontContainer {
-                            reason: "invalid CID-keyed Type 1 font",
-                        },
-                    },
-                    as_json,
-                    out,
-                    &mut errors,
-                );
-            }
+            sofel_type1::cid::validate(&bytes, MAX_OUTPUT, &mut |p| {
+                let d = container(b"CID ", p.offset, p.reason);
+                emit_diagnostic(&name, None, d, as_json, out, &mut errors);
+            });
             continue;
         }
         match FontFile::new(&bytes) {

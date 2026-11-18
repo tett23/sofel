@@ -22,7 +22,10 @@
 # library (ADR 0081), and also #![forbid(unsafe_code)] unless marked
 # `!unsafe` (ADR 0003). Crates marked `!no_alloc <crate>` must not use the
 # alloc crate (`extern crate alloc`, `alloc::`) in their library sources
-# (ADR 0094).
+# (ADR 0094). A line `!no_alloc_dir <crate> <dir>` names a directory of
+# the crate (relative to its manifest) that must exist, must not name what
+# allocates, and may reach only `core`, itself and `!no_alloc` crates
+# (ADR 0098).
 # Needs cargo and jq.
 
 set -eu
@@ -39,6 +42,7 @@ sed -n 's/^!unsafe //p' "$tmp/lines" >"$tmp/unsafe"
 sed -n 's/^!bin //p' "$tmp/lines" >"$tmp/bin"
 sed -n 's/^!no_std //p' "$tmp/lines" >"$tmp/no_std"
 sed -n 's/^!no_alloc //p' "$tmp/lines" >"$tmp/no_alloc"
+sed -n 's/^!no_alloc_dir //p' "$tmp/lines" >"$tmp/no_alloc_dir"
 sed -n 's/^!dev //p' "$tmp/lines" >"$tmp/dev"
 
 cargo metadata --format-version 1 --no-deps --offline --manifest-path "$ws/Cargo.toml" >"$tmp/meta"
@@ -130,4 +134,58 @@ while read -r crate; do
     status=1
   fi
 done <"$tmp/no_alloc"
+
+# ADR 0098 I1, I2: a `!no_alloc_dir` directory exists, names nothing that
+# allocates, and its `use` lines and paths start only with `core`,
+# `crate::noalloc`, `self`, `super` (not from its mod.rs), a primitive
+# type, one of its own modules, a name a checked `use` line brings in, a
+# lint tool or a `!no_alloc` crate. Comments and
+# text after ` //` are not read.
+tr '-' '_' <"$tmp/no_alloc" >"$tmp/no_alloc_crates"
+while read -r crate dir; do
+  manifest=$(jq -r --arg p "$crate" '.packages[] | select(.name == $p) | .manifest_path' "$tmp/meta")
+  path=$(dirname "$manifest")/$dir
+  if [ -z "$manifest" ] || [ ! -d "$path" ]; then
+    echo "check-deps.sh: $crate has no \`!no_alloc_dir\` directory $dir" >&2
+    status=1
+    continue
+  fi
+  find "$path" -name '*.rs' -type f | sed -e 's#.*/##' -e 's#\.rs$##' >"$tmp/own"
+  # Lint tools name lints in attributes, not code.
+  printf '%s\n' core self super u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize \
+    f32 f64 bool char str clippy rustdoc >>"$tmp/own"
+  cat "$tmp/no_alloc_crates" >>"$tmp/own"
+  for file in $(find "$path" -name '*.rs' -type f); do
+    grep -vE '^[[:space:]]*//' "$file" | sed -e 's#[[:space:]]//.*$##' >"$tmp/code"
+    grep -nE '(^|[^:[:alnum:]_])alloc::|(^|[^[:alnum:]_])(Vec|Box|String|Rc|Arc)([^[:alnum:]_]|$)|(vec|format)!|\.(to_vec|to_string|to_owned)\(|\.collect([^[:alnum:]_]|$)|extern[[:space:]]+crate' \
+      "$tmp/code" >"$tmp/names" || true
+    if [ -s "$tmp/names" ]; then
+      echo "check-deps.sh: $file names what allocates (ADR 0098):" >&2
+      cat "$tmp/names" >&2
+      status=1
+    fi
+    grep -oE '(^|[^:.[:alnum:]_])crate::[[:alnum:]_]*' "$tmp/code" |
+      grep -v 'crate::noalloc$' >"$tmp/outside" || true
+    if [ "$(basename "$file")" = mod.rs ] && [ "$(dirname "$file")" = "${path%/}" ]; then
+      grep -oE '(^|[^:.[:alnum:]_])super::' "$tmp/code" >>"$tmp/outside" || true
+    fi
+    grep -oE '(^|[^:.[:alnum:]_])super::super::' "$tmp/code" >>"$tmp/outside" || true
+    # Names a `use` line brings in may start paths; the line itself is
+    # checked like any other path.
+    cp "$tmp/own" "$tmp/names-here"
+    grep -E '^[[:space:]]*(pub[[:space:]]+)?use[[:space:]]' "$tmp/code" |
+      grep -oE '[a-z_][a-z0-9_]*' >>"$tmp/names-here" || true
+    grep -E '^[[:space:]]*(pub[[:space:]]+)?use[[:space:]]' "$tmp/code" |
+      sed -E 's/^[[:space:]]*(pub[[:space:]]+)?use[[:space:]]+//' |
+      grep -vE '^(core|crate|self|super)::' |
+      grep -vE "^($(paste -sd '|' "$tmp/no_alloc_crates"))::" >>"$tmp/outside" || true
+    grep -oE '(^|[^:.[:alnum:]_])[a-z_][a-z0-9_]*::' "$tmp/code" |
+      sed -e 's/^[^a-z_]//' -e 's/::$//' | grep -vxF -e crate -f "$tmp/names-here" >>"$tmp/outside" || true
+    if [ -s "$tmp/outside" ]; then
+      echo "check-deps.sh: $file reaches outside its directory (ADR 0098):" >&2
+      cat "$tmp/outside" >&2
+      status=1
+    fi
+  done
+done <"$tmp/no_alloc_dir"
 exit $status

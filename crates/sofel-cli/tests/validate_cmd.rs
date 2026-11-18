@@ -878,3 +878,27 @@ fn adr0082_cff_random_text_and_json() {
     assert_eq!(detail(2, "operator"), J::Num(10.0));
     assert_eq!(found[2]["severity"], J::Str("warning".into()));
 }
+
+#[test]
+fn adr0096_i1_validate_reports_the_validators_reasons() {
+    let dir = Dir::new("adr0096-reasons");
+    for (name, data, reason) in [
+        (
+            "bad.pfa",
+            &b"%!PS-AdobeFont-1.0\n"[..],
+            "invalid Type 1 font (PFA)",
+        ),
+        ("bad.bdf", b"STARTFONT 2.1\n", "invalid BDF font"),
+        (
+            "bad.cid",
+            b"%!PS-Adobe-3.0 Resource-CIDFont\n",
+            "invalid CID-keyed Type 1 font",
+        ),
+        ("bad.t42", b"%!PS-TrueTypeFont\n", "invalid Type 42 wrapper"),
+    ] {
+        let path = dir.file(name, data);
+        let out = run(&[path.as_os_str()]);
+        assert_eq!(out.code, 1, "{name}");
+        assert!(out.stdout.contains(reason), "{name}: {}", out.stdout);
+    }
+}

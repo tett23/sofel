@@ -142,9 +142,9 @@ flowchart BT
 | | `sofel-gpu` | GPU 向けの輪郭と塗りのレコードと、シェーダーのソース |
 | | `sofel-vector` | 輪郭と塗りの命令を SVG と PDF に書き出す |
 | フォントの形式を読む | `sofel-read` | sfnt の表（TTC、OTC、dfont を含む）の読み取りと検証。コピーも確保もしない |
-| | `sofel-type1` | Type1（PFA、PFB）、Multiple Masters、CID キーの Type1、Type42、AFM、PFM の読み取り。復号の結果やPFBの区画をつないだ結果などを確保する（[ADR 0094](adr/0094-allocation-in-type1-and-bitmapfont.md)） |
+| | `sofel-type1` | Type1（PFA、PFB）、Multiple Masters、CID キーの Type1、Type42、AFM、PFM の読み取りと検証。解析は復号の結果やPFBの区画をつないだ結果などを確保する（[ADR 0094](adr/0094-allocation-in-type1-and-bitmapfont.md)）。検証器は確保しない（[ADR 0096](adr/0096-type1-bitmapfont-validators-and-allocation.md)、[ADR 0098](adr/0098-allocation-free-validator-modules.md)） |
 | | `sofel-pfr` | PFR のフェイス、文字の目録、グリフとビットマップのプログラムの読み取りと、破損の位置の報告 |
-| | `sofel-bitmapfont` | BDF、PCF、FNT、FON の読み取り。画素に直したビットマップとグリフの一覧を確保する（[ADR 0094](adr/0094-allocation-in-type1-and-bitmapfont.md)） |
+| | `sofel-bitmapfont` | BDF、PCF、FNT、FON の読み取りと検証。解析は画素に直したビットマップとグリフの一覧を確保する（[ADR 0094](adr/0094-allocation-in-type1-and-bitmapfont.md)）。検証器は確保しない（[ADR 0096](adr/0096-type1-bitmapfont-validators-and-allocation.md)、[ADR 0098](adr/0098-allocation-free-validator-modules.md)） |
 | フォントを扱う | `sofel-woff` | WOFF と WOFF2 の展開と、単一フェイスの sfnt の WOFF と WOFF2 への書き出し |
 | | `sofel-font` | 形式を判別し、文字からグリフへの対応、メトリクス、軸の正規化を形式によらない形で返す |
 | | `sofel-shape` | HarfBuzz と同じシェーピング（OT、AAT、GSUB と GPOS を持たないフォント） |
@@ -164,6 +164,20 @@ flowchart BT
 - LZW と bzip2 の展開は `sofel-lzw` と `sofel-bzip2` に、PFR の読み取りと検証は `sofel-pfr` に置く。PFR の輪郭は `sofel-outline`、埋め込みビットマップは `sofel-bitmap` が扱う。バイナリは `sofel-cli` だけが持ち、`sofel-woff` コマンドもそこに置く（[ADR 0081](adr/0081-crate-layout-corrections.md)）。
 - `scripts/check-deps.sh` は、`scripts/deps.txt` に無い依存、`!bin` の無いクレートのバイナリ、`!no_std` のクレートの `#![no_std]` の欠落を誤りにする（[ADR 0081](adr/0081-crate-layout-corrections.md)）。`!dev <クレート> <依存先>` の行は、その依存を開発用の依存（`[dev-dependencies]`）としてだけ許し、通常の依存とビルド用の依存には `<クレート> <依存先>` の行が要る（[ADR 0087](adr/0087-glyph-render-crate.md)）。`scripts/tests/test-adr0093-i1-deps-table.sh` は、`scripts/deps.txt` が許す依存の組が、ADRの表から書いた一覧と等しいことを確かめる。依存を変えるADRを実装するときは、この一覧も直す（[ADR 0093](adr/0093-geom-dependencies-of-shape-color-subset.md)）。
 - フォントの形式を読むクレートのうち、`sofel-read` と `sofel-pfr` はコピーも確保もしない。`scripts/deps.txt` はこの2つに `!no_alloc` をつけ、`scripts/check-deps.sh` は、`!no_alloc` のクレートの `src/` に `extern crate alloc` か `alloc::` があれば誤りにする。`sofel-type1` と `sofel-bitmapfont` は `alloc` で確保する。[ADR 0094](adr/0094-allocation-in-type1-and-bitmapfont.md) は、確保してよい場合を、`eexec` とCharStringの復号の結果、PFBの区画をつないだ結果、AFMとPFMの解析の結果、画素に直したビットマップ、グリフの一覧など、元のバイト列のままでは読めないものを作るときに限る。確保する公開の関数は、rustdocに何を確保するかを書く（[ADR 0094](adr/0094-allocation-in-type1-and-bitmapfont.md)）。
+- [ADR 0096](adr/0096-type1-bitmapfont-validators-and-allocation.md) は、この確保してよい場合に、名前や番号で引くための解析した構造の一覧を加える。CharStringsとSubrsの表、PFBの区画の一覧、Multiple Mastersの軸と重み、CIDのFont DICTの一覧、Type42のCharStringsの表がこれに当たる。一方、大きさの上限が仕様で決まる Type 1 の charstring の演算子のスタック（`hsbw` と `sbw` を読む `parse_metrics`）は確保せず、24個の固定の配列とする。25個目のオペランドは誤りである（[ADR 0096](adr/0096-type1-bitmapfont-validators-and-allocation.md)、[ADR 0098](adr/0098-allocation-free-validator-modules.md)）。
+- `sofel-type1` と `sofel-bitmapfont` は、各形式の検証器を `src/noalloc/` に置く。検証器は確保をせず、見つけた誤りを `noalloc::Problem`（バイトの位置と理由。FON では面の番号も）として呼び出し側の関数に1つずつ渡す。検証器は次のとおりである（[ADR 0096](adr/0096-type1-bitmapfont-validators-and-allocation.md)）。
+
+  | クレート | 形式 | 検証器 |
+  | --- | --- | --- |
+  | `sofel-type1` | PFA、PFB | `noalloc::type1::validate_pfa`、`validate_pfb`（`source` から再公開） |
+  | | CID キーの Type1 | `noalloc::cid::validate`（`cid::validate`） |
+  | | Type42 | `noalloc::type42::validate`（`type42::validate`） |
+  | | AFM、PFM | `noalloc::afm::validate`、`noalloc::pfm::validate`（`afm::validate`、`pfm::validate`） |
+  | `sofel-bitmapfont` | BDF、PCF | `noalloc::bdf::validate`、`noalloc::pcf::validate`（`BdfFont::validate`、`PcfFont::validate`） |
+  | | FNT、FON | `noalloc::winfnt::validate`（`WinFont::validate`）。FON の各面を確かめ、誤りのある面ごとに1件を渡す |
+
+- 検証器と解析の関数は、`src/noalloc/` の同じ読みとりの処理を通る。解析の関数は、その処理が渡す値を集めて確保した構造を作る。そのため、検証器が誤りを報告しない入力は、対応する解析の関数（PFA と PFB では `Type1Source` の解析と `Type1Face::new`）も受け付ける。`eexec` の部分は、復号した結果を確保せず、暗号文を1バイトずつ復号しながら読む。Type42 の `/sfnts` は、つながずに2度読み、2度目に表の目録を確かめる（[ADR 0096](adr/0096-type1-bitmapfont-validators-and-allocation.md)）。
+- `src/noalloc/` のコードは、確保する名前（`alloc::`、`Vec`、`Box`、`String`、`Rc`、`Arc`、`vec!`、`format!`、`.to_vec(`、`.to_string(`、`.to_owned(`、`.collect`、`extern crate`）を書かない。また、`use` と経路は、`core::`、`crate::noalloc::`、`self::`、`super::`（ディレクトリの `mod.rs` からは使わない）、プリミティブの型、ディレクトリの中のモジュール、確かめた `use` が持ちこむ名前、lint の道具（`clippy`、`rustdoc`）、`!no_alloc` のクレートだけで始める。`scripts/deps.txt` の `!no_alloc_dir <クレート> <ディレクトリ>` の行が対象を決め、`scripts/check-deps.sh` は、ディレクトリが無いとき、またはこの決まりに反するときに誤りにする（[ADR 0098](adr/0098-allocation-free-validator-modules.md)）。
 
 - 輪郭と塗りは、`sofel-geom` の `Pen` と `Painter` で受け渡す。`sofel-raster`、`sofel-gpu`、`sofel-vector` はフォントの型を知らない。
 - 形式のビューと検証器は、形式を読むクレートだけに置く。検証器は確保をせず、誤りを呼び出し側の関数に渡す。charstringの解釈とヒンティングは `sofel-outline` が行い、Type1とCFFで共有する。ただし、FreeTypeのType 2 charstringの解読器（演算子から装置の空間の線と曲線まで）は、全グリフを走らせる `CFF ` と `CFF2` の検証器が使うため `sofel-read` に置き、点への変換と仕上げを `sofel-outline` が行う（[ADR 0021](adr/0021-cff-outlines.md)）。
@@ -577,6 +591,8 @@ Type 1 の Multiple Masters では、`Type1Face::multiple_masters` が軸の名�
 `sofel-render --glyph` は CID-keyed Type 1 を通常のファイル入力から開き、対応済みの輪郭を PGM に描く。Unicode cmap を持たない CID フォントに対する `--char` はエラーを返す。
 
 `sofel-validate` は CID-keyed Type 1 を識別し、CIDMap とサブルーチンマップが切り詰められた場合は最初の欠落位置を、16進データに無効なバイトがある場合はそのバイト位置を、ヘッダの数値が不正な場合は値の位置を、FontMatrix が不正な場合はフィールドの位置を、ファイル先頭からのオフセットとして報告する（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+
+`sofel-validate` は、Type 1、CID キーの Type 1、Type 42、BDF、PCF、FNT、FON を、解析の関数ではなく各形式の検証器で確かめ、検証器の理由を `invalid_font_container` の説明として出す（[ADR 0096](adr/0096-type1-bitmapfont-validators-and-allocation.md)）。Type 42 では、ラッパーに誤りが無いときだけ、埋め込み sfnt をつないで通常の sfnt と同じ手順で検証する。
 
 `sofel-validate` は PFA と PFB のソースを読み、Type 1 フェイスを構築できるか検査する。PFA の不正な16進文字と PFB の途中で切れたセクションの診断は、それぞれのファイル先頭からのオフセットを返す（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
