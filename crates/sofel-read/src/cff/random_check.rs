@@ -5,13 +5,15 @@
 //! value held as an interval: `random` pushes (0, 1], arithmetic works on
 //! the ends, and a comparison or `ifelse` whose result is not decided
 //! follows each result as a separate branch, depth first. The first
-//! problem found on any branch is returned.
+//! problem found in branch order is returned.
 //!
-//! The check is allocation-free: pending branches are kept in a fixed
-//! array of [`MAX_PENDING`] states. Every branch point has two results
-//! (comparisons and `ifelse`); operators that take an integer stop the
-//! check when they get a 16.16 number, so a range of integers never
-//! reaches them.
+//! The check is allocation-free and has no bound of its own on the
+//! branches: the current path is a list of decision bits, at most one per
+//! two counted operators, and a path is traced again from a few saved
+//! states (see [`check`]). Every branch point has two results (comparisons and
+//! `ifelse`). An interval with width is always a 16.16 number, so an
+//! operator that takes an integer stops on the first integer of the range
+//! (the smallest), and the later integers are never reached.
 
 use super::charstring::{
     CharStringToken, CharStringTokens, Context, Hints, MAX_HINTS, MAX_SUBR, STORAGE_SIZE,
@@ -21,8 +23,8 @@ use crate::CffRandomReason;
 
 /// The numbers and operators the branches may run together.
 const LIMIT: u32 = 100_000;
-/// The branches that may wait at once.
-const MAX_PENDING: usize = 16;
+/// The states of forks saved to shorten tracing a path again.
+const SLOTS: usize = 8;
 /// The CFF operand stack.
 const STACK: usize = 48;
 
@@ -271,6 +273,8 @@ struct State<'a> {
     map_valid: bool,
     frames: [Frame<'a>; MAX_SUBR + 1],
     depth: usize,
+    /// The numbers and operators this path has run.
+    steps: u32,
 }
 
 /// Why a branch stopped running.
@@ -311,6 +315,13 @@ impl<'a> State<'a> {
                 self.push(no)?;
                 Err(Stop::Branch { other: yes, at })
             }
+        }
+    }
+
+    /// Replaces the result of the fork on top of the stack.
+    fn set_top(&mut self, v: Val) {
+        if let Some(top) = self.len.checked_sub(1).and_then(|t| self.stack.get_mut(t)) {
+            *top = v;
         }
     }
 
@@ -368,8 +379,101 @@ impl At {
 
 /// Traces `charstring` with intervals; the first problem found on any
 /// branch, in the branch order of ADR 0082.
+///
+/// The branches are traced depth first. The current path is kept as the
+/// list of its decisions (one bit per fork: the first or the second
+/// result); a fork whose second result is still to be traced is a 0 bit.
+/// When a branch ends, the deepest 0 bit becomes 1 and the path is traced
+/// again from the deepest saved state at or before that fork, following
+/// the bits. Tracing again is deterministic and does not count towards the
+/// limit.
+///
+/// A path has at most [`LIMIT`] / 2 forks, so the bits need no other
+/// bound. A fork pops an operand with width (an operand without width
+/// decides the operator) and pushes at most one value, which is one of
+/// the popped ones for `ifelse` and a number without width otherwise: each
+/// fork removes at least one value with width from the stack and the
+/// storage. Each other operator adds at most one (`random`, `dup`,
+/// `index` and `get` add one; arithmetic, `exch` and `roll` add none), and
+/// a path starts with none. So a path runs at least one other counted
+/// operator for each fork, and at most [`LIMIT`] counted operators.
 pub(super) fn check(charstring: &[u8], ctx: &Context<'_>) -> Option<Found> {
-    let first = State {
+    let mut path = Path {
+        bits: [0; PATH_BYTES],
+    };
+    let mut saved = Saved {
+        slots: [Fork {
+            state: start(charstring),
+            other: Val::ZERO,
+            fork: 0,
+        }; SLOTS],
+        kept: 0,
+    };
+    let mut cur = start(charstring);
+    let mut count = 0u32;
+    // The forks the current path has passed.
+    let mut forks = 0usize;
+    // While tracing again: the fork that takes its second result.
+    let mut target: Option<usize> = None;
+    loop {
+        match run(&mut cur, ctx, &mut count, target.is_none()) {
+            Stop::Found(f) => return Some(f),
+            Stop::Branch { other, at } => {
+                let second = match target {
+                    Some(j) if j == forks => {
+                        target = None;
+                        true
+                    }
+                    Some(_) => path.get(forks),
+                    None => false,
+                };
+                if !path.set(forks, second) {
+                    // Unreachable: see the bound of the bits above.
+                    return Some(Found {
+                        finding: Finding::Unchecked(CffRandomReason::Limit),
+                        position: at.position,
+                        depth: at.depth,
+                    });
+                }
+                saved.keep(&cur, other, forks);
+                if second {
+                    cur.set_top(other);
+                }
+                forks = forks.saturating_add(1);
+            }
+            Stop::End => {
+                if target.is_some() {
+                    // Unreachable: tracing again follows a path that ran.
+                    return None;
+                }
+                let j = (0..forks).rev().find(|&i| !path.get(i))?;
+                path.set(j, true);
+                saved.truncate(j);
+                match saved.last() {
+                    Some(base) => {
+                        cur = base.state;
+                        if path.get(base.fork) {
+                            cur.set_top(base.other);
+                        }
+                        forks = base.fork.saturating_add(1);
+                        if base.fork != j {
+                            target = Some(j);
+                        }
+                    }
+                    None => {
+                        cur = start(charstring);
+                        forks = 0;
+                        target = Some(j);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The state of a glyph before its first number or operator.
+fn start(charstring: &[u8]) -> State<'_> {
+    State {
         stack: [Val::ZERO; STACK],
         len: 0,
         storage: [Val::ZERO; STORAGE_SIZE],
@@ -380,47 +484,120 @@ pub(super) fn check(charstring: &[u8], ctx: &Context<'_>) -> Option<Found> {
             pos: 0,
         }; MAX_SUBR + 1],
         depth: 0,
-    };
-    let mut pending = [first; MAX_PENDING];
-    let mut waiting = 0usize;
-    let mut cur = first;
-    let mut count = 0u32;
-    loop {
-        match run(&mut cur, ctx, &mut count) {
-            Stop::Found(f) => return Some(f),
-            Stop::Branch { other, at } => {
-                let Some(slot) = pending.get_mut(waiting) else {
-                    return Some(Found {
-                        finding: Finding::Unchecked(CffRandomReason::Limit),
-                        position: at.position,
-                        depth: at.depth,
-                    });
-                };
-                *slot = cur;
-                if let Some(top) = cur.len.checked_sub(1).and_then(|t| slot.stack.get_mut(t)) {
-                    *top = other;
-                }
-                waiting = waiting.saturating_add(1);
+        steps: 0,
+    }
+}
+
+/// The bytes of the decisions of one path: [`LIMIT`] / 2 forks (see
+/// [`check`]).
+const PATH_BYTES: usize = (LIMIT as usize / 2).div_ceil(8);
+
+/// The decisions of the current path: bit `i` is set when fork `i` takes
+/// its second result.
+struct Path {
+    bits: [u8; PATH_BYTES],
+}
+
+impl Path {
+    fn get(&self, i: usize) -> bool {
+        self.bits
+            .get(i / 8)
+            .is_some_and(|b| b & (1 << (i % 8)) != 0)
+    }
+
+    /// Sets bit `i`; false when the path is longer than the bits.
+    fn set(&mut self, i: usize, second: bool) -> bool {
+        let Some(b) = self.bits.get_mut(i / 8) else {
+            return false;
+        };
+        let mask = 1u8 << (i % 8);
+        *b = if second { *b | mask } else { *b & !mask };
+        true
+    }
+}
+
+/// The state at a fork of the current path, before its decision: the
+/// first result is on the stack, `other` is the second.
+#[derive(Clone, Copy)]
+struct Fork<'a> {
+    state: State<'a>,
+    other: Val,
+    fork: usize,
+}
+
+/// The saved states of forks on the current path, in path order. They only
+/// shorten tracing again; which ones are kept does not change the result.
+struct Saved<'a> {
+    slots: [Fork<'a>; SLOTS],
+    kept: usize,
+}
+
+impl<'a> Saved<'a> {
+    fn last(&self) -> Option<&Fork<'a>> {
+        self.kept.checked_sub(1).and_then(|i| self.slots.get(i))
+    }
+
+    /// Forgets the states of forks after `fork`.
+    fn truncate(&mut self, fork: usize) {
+        self.kept = self
+            .slots
+            .iter()
+            .take(self.kept)
+            .take_while(|f| f.fork <= fork)
+            .count();
+    }
+
+    /// Saves the state of the newest fork. When the slots are full, the
+    /// state is dropped whose gap, merged with its neighbours', is the
+    /// smallest against its distance from the newest fork, so that the
+    /// kept states thin out away from it.
+    fn keep(&mut self, state: &State<'a>, other: Val, fork: usize) {
+        if self.kept >= SLOTS {
+            let tip = u64::from(state.steps);
+            let at = |i: usize| self.slots.get(i).map_or(tip, |f| u64::from(f.state.steps));
+            let cost = |i: usize| {
+                let prev = i.checked_sub(1).map_or(0, at);
+                let next = at(i.saturating_add(1));
+                (
+                    next.saturating_sub(prev),
+                    tip.saturating_sub(next).saturating_add(1),
+                )
+            };
+            let drop = (0..SLOTS)
+                .min_by(|&a, &b| {
+                    let (ga, da) = cost(a);
+                    let (gb, db) = cost(b);
+                    u128::from(ga)
+                        .saturating_mul(u128::from(db))
+                        .cmp(&u128::from(gb).saturating_mul(u128::from(da)))
+                })
+                .unwrap_or(0);
+            if let Some(tail) = self.slots.get_mut(drop..) {
+                tail.rotate_left(1);
             }
-            Stop::End => {
-                waiting = waiting.checked_sub(1)?;
-                cur = *pending.get(waiting)?;
-            }
+            self.kept = SLOTS.saturating_sub(1);
+        }
+        if let Some(slot) = self.slots.get_mut(self.kept) {
+            slot.state = *state;
+            slot.other = other;
+            slot.fork = fork;
+            self.kept = self.kept.saturating_add(1);
         }
     }
 }
 
-/// Runs `s` until it ends, branches or finds a problem.
-fn run<'a>(s: &mut State<'a>, ctx: &Context<'a>, count: &mut u32) -> Stop {
+/// Runs `s` until it ends, branches or finds a problem; `counting` is
+/// false while a path is traced again.
+fn run<'a>(s: &mut State<'a>, ctx: &Context<'a>, count: &mut u32, counting: bool) -> Stop {
     loop {
-        if let Err(stop) = step(s, ctx, count) {
+        if let Err(stop) = step(s, ctx, count, counting) {
             return stop;
         }
     }
 }
 
 /// Runs one number or operator.
-fn step<'a>(s: &mut State<'a>, ctx: &Context<'a>, count: &mut u32) -> Step<()> {
+fn step<'a>(s: &mut State<'a>, ctx: &Context<'a>, count: &mut u32, counting: bool) -> Step<()> {
     let frame = s.frame();
     let at = At {
         position: frame.pos,
@@ -431,9 +608,12 @@ fn step<'a>(s: &mut State<'a>, ctx: &Context<'a>, count: &mut u32) -> Step<()> {
     let op = if tokens.at_end() {
         if s.depth > 0 { 11 } else { 14 }
     } else {
-        *count = count.saturating_add(1);
-        if *count > LIMIT {
-            return Err(at.found(Finding::Unchecked(CffRandomReason::Limit)));
+        s.steps = s.steps.saturating_add(1);
+        if counting {
+            *count = count.saturating_add(1);
+            if *count > LIMIT {
+                return Err(at.found(Finding::Unchecked(CffRandomReason::Limit)));
+            }
         }
         match tokens.next_token() {
             Some(Ok(CharStringToken::Integer(v))) => {
@@ -493,10 +673,11 @@ fn step<'a>(s: &mut State<'a>, ctx: &Context<'a>, count: &mut u32) -> Step<()> {
             if v.infinite() {
                 return Err(out_of_range);
             }
-            let (lo, hi) = v.integers();
+            // The smallest number is the first branch; see the module.
+            let lo = v.integers().0;
             let bias = i64::from(bias);
             let count = i64::from(index.len());
-            if lo.saturating_add(bias) < 0 || hi.saturating_add(bias) >= count {
+            if lo.saturating_add(bias) < 0 || lo.saturating_add(bias) >= count {
                 return Err(out_of_range);
             }
             if v.fixed() {
@@ -750,7 +931,8 @@ fn escape(s: &mut State<'_>, op: u16, at: At) -> Step<bool> {
             if v.infinite() {
                 return Err(at.found(Finding::Unchecked(CffRandomReason::InfiniteBound)));
             }
-            if !v.is_point() && v.integers().1 >= i64::try_from(size).unwrap_or(i64::MAX) {
+            // The smallest position is the first branch; see the module.
+            if !v.is_point() && v.integers().0 >= i64::try_from(size).unwrap_or(i64::MAX) {
                 return Err(at.found(Finding::Unchecked(CffRandomReason::StackPosition)));
             }
             let i = int_operand(v, op, at)?;
@@ -772,8 +954,9 @@ fn escape(s: &mut State<'_>, op: u16, at: At) -> Step<bool> {
             if shift.infinite() || count.infinite() {
                 return Err(at.found(Finding::Unchecked(CffRandomReason::InfiniteBound)));
             }
-            let (lo, hi) = count.integers();
-            if !count.is_point() && (lo < 0 || hi > size) {
+            // The smallest count is the first branch; see the module.
+            let lo = count.integers().0;
+            if !count.is_point() && (lo < 0 || lo > size) {
                 return Err(at.found(Finding::Unchecked(CffRandomReason::StackPosition)));
             }
             let shift = int_operand(shift, op, at)?;
