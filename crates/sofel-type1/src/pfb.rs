@@ -41,11 +41,15 @@ pub struct Pfb<'a> {
 
 impl<'a> Pfb<'a> {
     /// Parse PFB framing without copying its payloads.
+    ///
+    /// Allocates the list of sections (ADR 0094).
     pub fn parse(data: &'a [u8], max_output: usize) -> Result<Self, PfbError> {
         Self::parse_with_offset(data, max_output).map_err(|_| PfbError)
     }
 
     /// Parse the framing and locate the invalid byte or truncated section.
+    ///
+    /// Allocates the list of sections (ADR 0094).
     pub fn parse_with_offset(data: &'a [u8], max_output: usize) -> Result<Self, usize> {
         let mut at = 0usize;
         let mut total = 0usize;
@@ -100,6 +104,8 @@ impl<'a> Pfb<'a> {
 /// Reassemble the ASCII and binary PFB segments in their original order.
 ///
 /// The output is bounded by both `max_output` and the total input length.
+///
+/// Allocates the list of sections and the joined bytes (ADR 0094).
 pub fn decode_pfb(data: &[u8], max_output: usize) -> Result<Vec<u8>, PfbError> {
     let pfb = Pfb::parse(data, max_output)?;
     let mut output = Vec::new();

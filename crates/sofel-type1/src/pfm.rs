@@ -23,6 +23,8 @@ pub struct Pfm {
 
 impl Pfm {
     /// Parse the PFM extension table and its optional kerning pairs.
+    ///
+    /// Allocates the table of kerning pairs (ADR 0094).
     pub fn parse(data: &[u8]) -> Result<Self, PfmError> {
         if data.len() < 7 || data.get(1).copied().ok_or(PfmError)? >= 4 {
             return Err(PfmError);

@@ -32,11 +32,15 @@ impl Type1Source {
     }
 
     /// Read a PFA font with ASCII hexadecimal eexec data.
+    ///
+    /// Allocates a copy of the cleartext and the decrypted private part (ADR 0094).
     pub fn parse_pfa(data: &[u8], max_output: usize) -> Result<Self, SourceError> {
         Self::parse_pfa_with_offset(data, max_output).map_err(|_| SourceError)
     }
 
     /// Read a PFA source and report a file-relative failure offset.
+    ///
+    /// Allocates a copy of the cleartext and the decrypted private part (ADR 0094).
     pub fn parse_pfa_with_offset(data: &[u8], max_output: usize) -> Result<Self, usize> {
         if !Self::has_text_header(data) {
             return Err(0);
@@ -89,11 +93,15 @@ impl Type1Source {
     }
 
     /// Read the PostScript and eexec sections from a PFB font.
+    ///
+    /// Allocates a copy of the cleartext, the joined binary sections and the decrypted private part (ADR 0094).
     pub fn parse_pfb(data: &[u8], max_output: usize) -> Result<Self, SourceError> {
         Self::parse_pfb_with_offset(data, max_output).map_err(|_| SourceError)
     }
 
     /// Read a PFB source and report a file-relative failure offset.
+    ///
+    /// Allocates a copy of the cleartext, the joined binary sections and the decrypted private part (ADR 0094).
     pub fn parse_pfb_with_offset(data: &[u8], max_output: usize) -> Result<Self, usize> {
         let pfb = Pfb::parse_with_offset(data, max_output)?;
         let first = pfb.sections().first().ok_or(data.len())?;

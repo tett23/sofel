@@ -193,11 +193,15 @@ impl PcfFont {
 
     /// Parse a PCF face and identify a damaged table directory field.
     /// Errors within a table use the file start when no directory field is damaged.
+    ///
+    /// Allocates the glyph list, each glyph's repacked pixels and the character map (ADR 0094).
     pub fn parse_positioned(data: &[u8]) -> Result<Self, (PcfError, usize)> {
         Self::parse(data).map_err(|error| (error, directory_error_offset(data)))
     }
 
     /// Parse a PCF face with a single monochrome strike.
+    ///
+    /// Allocates the glyph list, each glyph's repacked pixels and the character map (ADR 0094).
     pub fn parse(data: &[u8]) -> Result<Self, PcfError> {
         let metrics = table(data, 4)?;
         let mf = u32_at(metrics, 0, false)?;

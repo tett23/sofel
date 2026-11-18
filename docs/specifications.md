@@ -131,9 +131,9 @@ flowchart BT
 | | `sofel-gpu` | GPU 向けの輪郭と塗りのレコードと、シェーダーのソース |
 | | `sofel-vector` | 輪郭と塗りの命令を SVG と PDF に書き出す |
 | フォントの形式を読む | `sofel-read` | sfnt の表（TTC、OTC、dfont を含む）の読み取りと検証。コピーも確保もしない |
-| | `sofel-type1` | Type1（PFA、PFB）、Multiple Masters、CID キーの Type1、Type42、AFM、PFM の読み取り |
+| | `sofel-type1` | Type1（PFA、PFB）、Multiple Masters、CID キーの Type1、Type42、AFM、PFM の読み取り。復号の結果やPFBの区画をつないだ結果などを確保する（[ADR 0094](adr/0094-allocation-in-type1-and-bitmapfont.md)） |
 | | `sofel-pfr` | PFR のフェイス、文字の目録、グリフとビットマップのプログラムの読み取りと、破損の位置の報告 |
-| | `sofel-bitmapfont` | BDF、PCF、FNT、FON の読み取り |
+| | `sofel-bitmapfont` | BDF、PCF、FNT、FON の読み取り。画素に直したビットマップとグリフの一覧を確保する（[ADR 0094](adr/0094-allocation-in-type1-and-bitmapfont.md)） |
 | フォントを扱う | `sofel-woff` | WOFF と WOFF2 の展開と、単一フェイスの sfnt の WOFF と WOFF2 への書き出し |
 | | `sofel-font` | 形式を判別し、文字からグリフへの対応、メトリクス、軸の正規化を形式によらない形で返す |
 | | `sofel-shape` | HarfBuzz と同じシェーピング（OT、AAT、GSUB と GPOS を持たないフォント） |
@@ -151,6 +151,7 @@ flowchart BT
 - `sofel-woff` は WOFF と WOFF2 の展開に加えて書き出し（[ADR 0070](adr/0070-webfont-encoding.md)）を持ち、sfnt の目録を読むために `sofel-read`、チェックサムと sfnt の組み立てのために `sofel-write` に依存する（[ADR 0081](adr/0081-crate-layout-corrections.md)）。
 - LZW と bzip2 の展開は `sofel-lzw` と `sofel-bzip2` に、PFR の読み取りと検証は `sofel-pfr` に置く。PFR の輪郭は `sofel-outline`、埋め込みビットマップは `sofel-bitmap` が扱う。バイナリは `sofel-cli` だけが持ち、`sofel-woff` コマンドもそこに置く（[ADR 0081](adr/0081-crate-layout-corrections.md)）。
 - `scripts/check-deps.sh` は、`scripts/deps.txt` に無い依存、`!bin` の無いクレートのバイナリ、`!no_std` のクレートの `#![no_std]` の欠落を誤りにする（[ADR 0081](adr/0081-crate-layout-corrections.md)）。`scripts/tests/test-adr0093-i1-deps-table.sh` は、`scripts/deps.txt` が許す依存の組が、ADRの表から書いた一覧と等しいことを確かめる。依存を変えるADRを実装するときは、この一覧も直す（[ADR 0093](adr/0093-geom-dependencies-of-shape-color-subset.md)）。
+- フォントの形式を読むクレートのうち、`sofel-read` と `sofel-pfr` はコピーも確保もしない。`scripts/deps.txt` はこの2つに `!no_alloc` をつけ、`scripts/check-deps.sh` は、`!no_alloc` のクレートの `src/` に `extern crate alloc` か `alloc::` があれば誤りにする。`sofel-type1` と `sofel-bitmapfont` は `alloc` で確保する。[ADR 0094](adr/0094-allocation-in-type1-and-bitmapfont.md) は、確保してよい場合を、`eexec` とCharStringの復号の結果、PFBの区画をつないだ結果、AFMとPFMの解析の結果、画素に直したビットマップ、グリフの一覧など、元のバイト列のままでは読めないものを作るときに限る。確保する公開の関数は、rustdocに何を確保するかを書く（[ADR 0094](adr/0094-allocation-in-type1-and-bitmapfont.md)）。
 
 - 輪郭と塗りは、`sofel-geom` の `Pen` と `Painter` で受け渡す。`sofel-raster`、`sofel-gpu`、`sofel-vector` はフォントの型を知らない。
 - 形式のビューと検証器は、形式を読むクレートだけに置く。検証器は確保をせず、誤りを呼び出し側の関数に渡す。charstringの解釈とヒンティングは `sofel-outline` が行い、Type1とCFFで共有する。ただし、FreeTypeのType 2 charstringの解読器（演算子から装置の空間の線と曲線まで）は、全グリフを走らせる `CFF ` と `CFF2` の検証器が使うため `sofel-read` に置き、点への変換と仕上げを `sofel-outline` が行う（[ADR 0021](adr/0021-cff-outlines.md)）。
