@@ -44,7 +44,7 @@ HarfBuzzのシェーピングと、FreeTypeのグリフの読み込み、ヒン�
 
 ## 構成
 
-Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003](adr/0003-crate-layers.md)、`sofel-unicode` は [ADR 0019](adr/0019-unicode-character-data.md)）。矢印の先が依存先である。
+Cargoのワークスペースで、依存は次のとおりとする（[ADR 0003](adr/0003-crate-layers.md)、`sofel-unicode` は [ADR 0019](adr/0019-unicode-character-data.md)、`sofel-shape`、`sofel-color`、`sofel-subset` の `sofel-geom` への依存は [ADR 0093](adr/0093-geom-dependencies-of-shape-color-subset.md)）。矢印の先が依存先である。
 `sofel-cli` と `sofel-capi`（C ABI、[ADR 0015](adr/0015-c-abi.md)）は、上の層のすべてに依存してよいので、矢印を省く。
 
 ```mermaid
@@ -146,11 +146,11 @@ flowchart BT
 | | `sofel-capi` | C ABI（[ADR 0015](adr/0015-c-abi.md)） |
 | テスト | `sofel-conformance` | FreeType と HarfBuzz との突き合わせのテスト（ライブラリの依存には入れない） |
 
-- `sofel-color` と `sofel-subset` の `sofel-geom` への依存は、HarfBuzzの丸め（`sofel_geom::float`）を共有するためである（[ADR 0026](adr/0026-harfbuzz-rounding.md)）。
+- `sofel-color` と `sofel-subset` の `sofel-geom` への依存は、HarfBuzzの丸め（`sofel_geom::float`）を共有するためである（[ADR 0026](adr/0026-harfbuzz-rounding.md)）。`sofel-shape` の `sofel-geom` への依存は、シェーピングの結果を輪郭として返すときの輪郭の命令とHarfBuzzの丸めのためである。表は依存を許すだけで、求めない。`sofel-color` は今は `sofel-geom` を使わない（[ADR 0093](adr/0093-geom-dependencies-of-shape-color-subset.md)）。
 - `sofel-subset` の `sofel-unicode` への依存は、鏡像の文字（bidiの閉包）のためである（[ADR 0022](adr/0022-subsetting.md)）。
 - `sofel-woff` は WOFF と WOFF2 の展開に加えて書き出し（[ADR 0070](adr/0070-webfont-encoding.md)）を持ち、sfnt の目録を読むために `sofel-read`、チェックサムと sfnt の組み立てのために `sofel-write` に依存する（[ADR 0081](adr/0081-crate-layout-corrections.md)）。
 - LZW と bzip2 の展開は `sofel-lzw` と `sofel-bzip2` に、PFR の読み取りと検証は `sofel-pfr` に置く。PFR の輪郭は `sofel-outline`、埋め込みビットマップは `sofel-bitmap` が扱う。バイナリは `sofel-cli` だけが持ち、`sofel-woff` コマンドもそこに置く（[ADR 0081](adr/0081-crate-layout-corrections.md)）。
-- `scripts/check-deps.sh` は、`scripts/deps.txt` に無い依存、`!bin` の無いクレートのバイナリ、`!no_std` のクレートの `#![no_std]` の欠落を誤りにする（[ADR 0081](adr/0081-crate-layout-corrections.md)）。
+- `scripts/check-deps.sh` は、`scripts/deps.txt` に無い依存、`!bin` の無いクレートのバイナリ、`!no_std` のクレートの `#![no_std]` の欠落を誤りにする（[ADR 0081](adr/0081-crate-layout-corrections.md)）。`scripts/tests/test-adr0093-i1-deps-table.sh` は、`scripts/deps.txt` が許す依存の組が、ADRの表から書いた一覧と等しいことを確かめる。依存を変えるADRを実装するときは、この一覧も直す（[ADR 0093](adr/0093-geom-dependencies-of-shape-color-subset.md)）。
 - フォントの形式を読むクレートのうち、`sofel-read` と `sofel-pfr` はコピーも確保もしない。`scripts/deps.txt` はこの2つに `!no_alloc` をつけ、`scripts/check-deps.sh` は、`!no_alloc` のクレートの `src/` に `extern crate alloc` か `alloc::` があれば誤りにする。`sofel-type1` と `sofel-bitmapfont` は `alloc` で確保する。[ADR 0094](adr/0094-allocation-in-type1-and-bitmapfont.md) は、確保してよい場合を、`eexec` とCharStringの復号の結果、PFBの区画をつないだ結果、AFMとPFMの解析の結果、画素に直したビットマップ、グリフの一覧など、元のバイト列のままでは読めないものを作るときに限る。確保する公開の関数は、rustdocに何を確保するかを書く（[ADR 0094](adr/0094-allocation-in-type1-and-bitmapfont.md)）。
 
 - 輪郭と塗りは、`sofel-geom` の `Pen` と `Painter` で受け渡す。`sofel-raster`、`sofel-gpu`、`sofel-vector` はフォントの型を知らない。
@@ -158,7 +158,7 @@ flowchart BT
 - `sofel-font` が形式を判別し、形式によらない形でフォントを表す。圧縮で包んだフォントの展開は、`sofel-font` に渡すまえに呼び出し側が行う（`sofel-cli` は自動で展開する）。
 - ライブラリの値は不変で、内部可変性を使わない。キャッシュ（シェーピングの計画など）は、呼び出し側が持つ値とする。
 - 公開の値はすべて `Send` と `Sync` を満たす。ライブラリの中でスレッドを作らない。
-- ライブラリのクレートは `#![forbid(unsafe_code)]` とし、外部のクレートに依存しない。`unsafe` を使ってよいのは、Cから渡されたポインタを参照に変える `sofel-capi` だけである（[ADR 0015](adr/0015-c-abi.md)）。`scripts/check-deps.sh` が、ほかのクレートが `unsafe` を禁じていることを確かめる。
+- ライブラリのクレートは `#![forbid(unsafe_code)]` とし、外部のクレートに依存しない。`unsafe` を使ってよいのは、Cから渡されたポインタを参照に変える `sofel-capi` だけである（[ADR 0015](adr/0015-c-abi.md)）。`scripts/check-deps.sh` が、ほかのクレートが `unsafe` を禁じていることと、`!no_std` のライブラリのクレートが `lib.rs` に `#![forbid(unsafe_code)]` を書いていることを確かめる（[ADR 0003](adr/0003-crate-layers.md)）。
 - ライブラリは `&[u8]` を受け取るだけで、ファイルを読まない。
 - 検査には、必要に応じて形式手法（Kani、Verus、Creusotなど）を使ってよい。道具はライブラリの依存に入れない。
 

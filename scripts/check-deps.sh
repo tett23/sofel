@@ -17,7 +17,8 @@
 #
 # Only crates marked `!bin <crate>` may have binary targets, and crates
 # marked `!no_std <crate>` must declare `#![no_std]` at the root of their
-# library (ADR 0081). Crates marked `!no_alloc <crate>` must not use the
+# library (ADR 0081), and also #![forbid(unsafe_code)] unless marked
+# `!unsafe` (ADR 0003). Crates marked `!no_alloc <crate>` must not use the
 # alloc crate (`extern crate alloc`, `alloc::`) in their library sources
 # (ADR 0094).
 # Needs cargo and jq.
@@ -95,6 +96,11 @@ while read -r crate; do
     | select(.kind | any(. == "lib")) | .src_path' "$tmp/meta")
   if [ -z "$lib" ] || ! grep -qxF '#![no_std]' "$lib"; then
     echo "check-deps.sh: $crate is marked \`!no_std\` but its library does not declare #![no_std]" >&2
+    status=1
+  fi
+  # ADR 0003: library crates write #![forbid(unsafe_code)] at their root.
+  if [ -n "$lib" ] && ! grep -qxF "$crate" "$tmp/unsafe" && ! grep -qxF '#![forbid(unsafe_code)]' "$lib"; then
+    echo "check-deps.sh: $crate is marked \`!no_std\` but its library does not declare #![forbid(unsafe_code)]" >&2
     status=1
   fi
 done <"$tmp/no_std"
