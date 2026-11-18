@@ -52,6 +52,7 @@ mod bare_cff;
 mod base_sanitize;
 pub mod baseline;
 mod bitmap_face;
+mod math_sanitize;
 pub use bitmap_face::{BitmapFace, BitmapFormat};
 mod cff;
 mod ft;

@@ -21,6 +21,7 @@ pub mod expect;
 pub mod extra;
 pub mod fonts;
 pub mod hb;
+pub mod math;
 pub mod outline;
 pub mod paths;
 pub mod raster;

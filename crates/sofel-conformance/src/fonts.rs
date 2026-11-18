@@ -56,3 +56,35 @@ pub fn harfbuzz_base_fonts(testdata: &Path) -> Vec<PathBuf> {
     out.sort();
     out
 }
+
+/// The test fonts that may have a MATH table (ADR 0091): the fonts of
+/// [`harfbuzz_fonts`], the sfnt fonts of HarfBuzz's API tests
+/// (`test/api/fonts/`, where `MathTestFont*` and `math-variations.ttf`
+/// are) and of the extra fonts (`extra-fonts/fonts/`, when fetched) whose
+/// bytes contain the tag `MATH`, and HarfBuzz's nine MATH test fonts
+/// (with `MathTestFontNone.otf`, which has none), sorted.
+pub fn math_candidate_fonts(testdata: &Path) -> Vec<PathBuf> {
+    let sfnt_files = |dir: PathBuf| -> Vec<PathBuf> {
+        std::fs::read_dir(dir)
+            .map(|entries| entries.flatten().map(|e| e.path()).collect())
+            .unwrap_or_default()
+    };
+    let mut out: Vec<PathBuf> = harfbuzz_fonts(testdata)
+        .into_iter()
+        .chain(sfnt_files(testdata.join("harfbuzz/test/api/fonts")))
+        .chain(sfnt_files(testdata.join("extra-fonts/fonts")))
+        .filter(|p| {
+            let named = p
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("MathTestFont") || n == "math-variations.ttf");
+            std::fs::read(p).is_ok_and(|b| {
+                b.first_chunk::<4>().is_some_and(|h| SFNT_MAGIC.contains(h))
+                    && (named || b.windows(4).any(|w| w == b"MATH"))
+            })
+        })
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}

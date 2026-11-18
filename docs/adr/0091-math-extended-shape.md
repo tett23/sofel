@@ -1,6 +1,6 @@
 # ADR 0091: MATH表の採否と伸長形の判定をHarfBuzzに合わせる（[ADR 0062](0062-layout-query-device-adjustments.md)の補足）
 
-Status: accepted-pending
+Status: accepted
 
 ## 文脈
 

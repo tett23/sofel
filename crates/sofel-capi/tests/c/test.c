@@ -3096,6 +3096,39 @@ static void test_subset_axes(const sofel_font_t *static_font) {
   free(data);
 }
 
+/* ADR 0091 I3: the MATH acceptance through the C ABI equals the Rust
+ * values (math_acceptance_expected), and argument errors leave the
+ * caller's sentinel intact. */
+static void test_math_acceptance(void) {
+  static const uint32_t glyphs[4] = {3, 7, 8, 0xFFFF};
+  const uint8_t *data[2] = {layout_query_math_data, math_rejected_data};
+  const size_t sizes[2] = {sizeof layout_query_math_data, sizeof math_rejected_data};
+  CHECK(math_acceptance_expected[0] == 1 && math_acceptance_expected[2] == 1 &&
+        math_acceptance_expected[5] == 0 && math_acceptance_expected[7] == 0);
+  for (int f = 0; f < 2; f++) {
+    int32_t error = -99;
+    sofel_font_t *font = sofel_font_create(data[f], sizes[f], 0, &error);
+    CHECK(font != NULL && error == SOFEL_OK);
+    if (font == NULL) continue;
+    int32_t value = -7;
+    CHECK(sofel_math_has_data(font, &value) == SOFEL_OK &&
+          value == math_acceptance_expected[f * 5]);
+    for (int g = 0; g < 4; g++) {
+      value = -7;
+      CHECK(sofel_math_is_extended_shape(font, glyphs[g], &value) == SOFEL_OK &&
+            value == math_acceptance_expected[f * 5 + 1 + g]);
+    }
+    CHECK(sofel_math_has_data(font, NULL) == SOFEL_ERROR_NULL);
+    CHECK(sofel_math_is_extended_shape(font, 7, NULL) == SOFEL_ERROR_NULL);
+    sofel_font_destroy(font);
+  }
+  int32_t sentinel = -7;
+  CHECK(sofel_math_has_data(NULL, &sentinel) == SOFEL_ERROR_NULL && sentinel == -7);
+  CHECK(sofel_math_is_extended_shape(NULL, 7, &sentinel) == SOFEL_ERROR_NULL &&
+        sentinel == -7);
+  CHECK(sofel_math_has_data(NULL, NULL) == SOFEL_ERROR_NULL);
+}
+
 /* ADR 0062 I2: an empty page leaves the caller's sentinel intact. */
 static void test_layout_queries(const sofel_font_t *font) {
   int32_t value = -7;
@@ -3246,6 +3279,7 @@ int main(void) {
 
   test_font(font);
   test_layout_queries(font);
+  test_math_acceptance();
   inv2_feature_tags_outputs();
   test_variation_abi(font);
   test_collection();

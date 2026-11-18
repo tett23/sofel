@@ -19,6 +19,8 @@
 mod build;
 #[path = "../../sofel-font/tests/support/layout_query_fixture.rs"]
 mod layout_query_fixture;
+#[path = "../../sofel-font/tests/support/math_acceptance_fixture.rs"]
+mod math_acceptance_fixture;
 
 use std::fmt::Write as _;
 
@@ -837,6 +839,30 @@ fn generate() -> String {
         &mut out,
         "layout_query_math_data",
         &sfnt(&layout_query_tables),
+    );
+    // ADR 0091 I3: a MATH table HarfBuzz rejects (MathVariants out of
+    // range), and the Rust values of has_data and the extended shapes of
+    // glyphs 3, 7, 8 and 0xFFFF for layout_query_math_data and it.
+    let math_rejected =
+        math_acceptance_fixture::font(Some(math_acceptance_fixture::out_of_range(8)));
+    bytes(&mut out, "math_rejected_data", &math_rejected);
+    let math_accepted = sfnt(&layout_query_tables);
+    let mut math_expected = Vec::new();
+    for data in [&math_accepted, &math_rejected] {
+        let font = Font::new(data, 0).unwrap();
+        let query = font
+            .default_instance()
+            .layout_queries(HbScale::unscaled(&font), 0, 0);
+        math_expected.push(i32::from(query.has_math()));
+        for glyph in [3u32, 7, 8, 0xFFFF] {
+            math_expected.push(i32::from(query.math_is_extended_shape(GlyphId(glyph))));
+        }
+    }
+    ints(
+        &mut out,
+        "int32_t",
+        "math_acceptance_expected",
+        &math_expected,
     );
     let mut layout_query_gdef_tables = sample_tables();
     layout_query_gdef_tables.push((b"GDEF", layout_query_fixture::gdef_with_carets()));

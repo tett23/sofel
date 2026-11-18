@@ -26,32 +26,40 @@ const OPS_MAX: u64 = 0x3FFF_FFFF;
 
 /// Whether HarfBuzz's sanitizer accepts `data` as a `BASE` table.
 pub(crate) fn sane(data: &[u8]) -> bool {
-    let len = u64::try_from(data.len()).unwrap_or(u64::MAX);
-    let ops = len
-        .checked_mul(OPS_FACTOR)
-        .map_or(OPS_MAX, |m| m.clamp(OPS_MIN, OPS_MAX));
-    let mut c = Ctx {
-        data,
-        ops: i64::try_from(ops).unwrap_or(0),
-    };
-    c.base()
+    Ctx::new(data).base()
 }
 
-struct Ctx<'a> {
+/// `hb_sanitize_context_t` over one table: its bytes and what is left of
+/// the operation budget. The `MATH` sanitizer (ADR 0091) shares it.
+pub(crate) struct Ctx<'a> {
     data: &'a [u8],
     ops: i64,
 }
 
+impl<'a> Ctx<'a> {
+    /// `start_processing`: the budget of a table of `data.len()` bytes.
+    pub(crate) fn new(data: &'a [u8]) -> Self {
+        let len = u64::try_from(data.len()).unwrap_or(u64::MAX);
+        let ops = len
+            .checked_mul(OPS_FACTOR)
+            .map_or(OPS_MAX, |m| m.clamp(OPS_MIN, OPS_MAX));
+        Ctx {
+            data,
+            ops: i64::try_from(ops).unwrap_or(0),
+        }
+    }
+}
+
 impl Ctx<'_> {
     /// `check_struct`: `len` bytes at `at` are there (no operations).
-    fn fits(&self, at: usize, len: usize) -> bool {
+    pub(crate) fn fits(&self, at: usize, len: usize) -> bool {
         at.checked_add(len)
             .is_some_and(|end| end <= self.data.len())
     }
 
     /// `check_range`: `len` bytes at `at` are there, and the budget
     /// stays above 0 after taking `len` from it.
-    fn range(&mut self, at: usize, len: u64) -> bool {
+    pub(crate) fn range(&mut self, at: usize, len: u64) -> bool {
         let Ok(n) = usize::try_from(len) else {
             return false;
         };
@@ -64,13 +72,22 @@ impl Ctx<'_> {
         self.ops > 0
     }
 
-    fn u16(&self, at: usize) -> Option<u16> {
+    pub(crate) fn u16(&self, at: usize) -> Option<u16> {
         be::u16_at(self.data, at)
+    }
+
+    pub(crate) fn u24(&self, at: usize) -> Option<u32> {
+        be::u24_at(self.data, at)
     }
 
     /// An `Offset16To` at `field`, from `base`: null, or a table that
     /// `check` accepts.
-    fn offset16(&mut self, field: usize, base: usize, check: fn(&mut Self, usize) -> bool) -> bool {
+    pub(crate) fn offset16(
+        &mut self,
+        field: usize,
+        base: usize,
+        check: fn(&mut Self, usize) -> bool,
+    ) -> bool {
         match self.u16(field) {
             None => false,
             Some(0) => true,
@@ -89,7 +106,7 @@ impl Ctx<'_> {
 
     /// An array of `count` (at `at`) records of `size` bytes after the
     /// count; the start of the records and the count.
-    fn array(&mut self, at: usize, size: u64) -> Option<(usize, usize)> {
+    pub(crate) fn array(&mut self, at: usize, size: u64) -> Option<(usize, usize)> {
         let n = self.u16(at)?;
         let first = at.saturating_add(2);
         self.range(first, u64::from(n).saturating_mul(size))
@@ -179,7 +196,7 @@ impl Ctx<'_> {
         }
     }
 
-    fn device(&mut self, at: usize) -> bool {
+    pub(crate) fn device(&mut self, at: usize) -> bool {
         if !self.fits(at, 6) {
             return false;
         }
