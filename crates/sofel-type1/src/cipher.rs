@@ -25,6 +25,8 @@ fn decrypt(data: &[u8], seed: u16, discard: usize) -> Option<Vec<u8>> {
 }
 
 /// Decrypt an eexec segment, discarding its first four random bytes.
+///
+/// Allocates the decrypted bytes (ADR 0094).
 pub fn decrypt_eexec(data: &[u8]) -> Option<Vec<u8>> {
     decrypt(data, EEXEC_SEED, 4)
 }
@@ -32,6 +34,8 @@ pub fn decrypt_eexec(data: &[u8]) -> Option<Vec<u8>> {
 /// Decrypt a charstring using `len_iv` random prefix bytes.
 ///
 /// A negative `len_iv` identifies a plaintext charstring.
+///
+/// Allocates the decrypted bytes, or a copy of `data` when `len_iv` is negative (ADR 0094).
 pub fn decrypt_charstring(data: &[u8], len_iv: i32) -> Option<Vec<u8>> {
     if len_iv < 0 {
         return Some(data.to_vec());

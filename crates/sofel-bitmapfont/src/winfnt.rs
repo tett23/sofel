@@ -259,6 +259,8 @@ impl WinFont {
     }
 
     /// Parse `face` of a raw FNT or an NE or PE32 FON file.
+    ///
+    /// Allocates the glyph list and each glyph's pixels reordered into rows (ADR 0094).
     pub fn parse(data: &[u8], face: u32) -> Result<Self, WinFontError> {
         Self::parse_with_offset(data, face).map_err(|_| WinFontError)
     }
@@ -275,6 +277,8 @@ impl WinFont {
     }
 
     /// Parse a face and report the file offset of an invalid FNT field.
+    ///
+    /// Allocates the glyph list and each glyph's pixels reordered into rows (ADR 0094).
     pub fn parse_with_offset(file: &[u8], face: u32) -> Result<Self, usize> {
         let (data, num_faces) = if file.starts_with(b"MZ") {
             let mut position = 0;

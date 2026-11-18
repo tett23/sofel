@@ -60,11 +60,15 @@ impl BdfFont {
     }
 
     /// Parse a BDF 2.1 face. Malformed dimensions, rows and glyph counts fail.
+    ///
+    /// Allocates the glyph list and each glyph's pixels decoded from hexadecimal (ADR 0094).
     pub fn parse(data: &[u8]) -> Result<Self, BdfError> {
         Self::parse_with_offset(data).map_err(|_| BdfError)
     }
 
     /// Parse a BDF face, reporting the first byte of the failing line or EOF.
+    ///
+    /// Allocates the glyph list and each glyph's pixels decoded from hexadecimal (ADR 0094).
     pub fn parse_with_offset(data: &[u8]) -> Result<Self, usize> {
         let text = core::str::from_utf8(data).map_err(|error| error.valid_up_to())?;
         let mut next_offset = 0usize;

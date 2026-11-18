@@ -31,6 +31,8 @@ pub struct Afm<'a> {
 
 impl<'a> Afm<'a> {
     /// Parse an AFM file with checked pair counts and a required end marker.
+    ///
+    /// Allocates the table of kerning pairs (ADR 0094).
     pub fn parse(data: &'a [u8]) -> Result<Self, AfmError> {
         let mut lines = data.split(|byte| *byte == b'\n' || *byte == b'\r');
         let first = lines.next().ok_or(AfmError)?;

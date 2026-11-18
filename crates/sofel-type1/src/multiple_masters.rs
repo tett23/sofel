@@ -69,6 +69,8 @@ pub struct MultipleMasters<'a> {
 
 impl<'a> MultipleMasters<'a> {
     /// Parse MM dictionaries in the cleartext Type 1 program. A non-MM font returns `None`.
+    ///
+    /// Allocates the axes, their maps and the default weights (ADR 0094).
     pub fn parse(data: &'a [u8]) -> Result<Option<Self>, MmError> {
         let types = field(data, b"BlendAxisTypes")?;
         let positions = field(data, b"BlendDesignPositions")?;
@@ -168,6 +170,8 @@ impl<'a> MultipleMasters<'a> {
         &self.default_weights
     }
     /// Convert design coordinates to normalized blend coordinates.
+    ///
+    /// Allocates the returned coordinates (ADR 0094).
     pub fn blend_coordinates(&self, design: &[i32]) -> Result<Vec<i32>, MmError> {
         if design.len() != self.axes.len() {
             return Err(MmError);
@@ -180,6 +184,8 @@ impl<'a> MultipleMasters<'a> {
     }
 
     /// Interpolation weights in Type 1 master order for design coordinates.
+    ///
+    /// Allocates the returned weights (ADR 0094).
     pub fn master_weights(&self, design: &[i32]) -> Result<Vec<i32>, MmError> {
         let blends = self.blend_coordinates(design)?;
         let mut weights = Vec::with_capacity(self.default_weights.len());

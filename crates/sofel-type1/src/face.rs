@@ -42,6 +42,8 @@ enum AttachedMetrics<'a> {
 
 impl<'a> Type1Face<'a> {
     /// Open a previously unpacked Type 1 source.
+    ///
+    /// Allocates the tables of the CharStrings and Subrs, the Multiple Masters axes and a copy of their default weights (ADR 0094).
     pub fn new(source: &'a Type1Source) -> Result<Self, FaceError> {
         let encoding = Encoding::parse(source.cleartext()).map_err(|_| FaceError)?;
         let charstrings = Charstrings::parse(source.private()).map_err(|_| FaceError)?;
@@ -70,6 +72,8 @@ impl<'a> Type1Face<'a> {
     }
 
     /// Select a Type 1 Multiple Masters design location in signed 16.16 coordinates.
+    ///
+    /// Allocates the new master weights (ADR 0094).
     pub fn set_design_coordinates(&mut self, coordinates: &[i32]) -> Result<(), FaceError> {
         let mm = self.multiple_masters.as_ref().ok_or(FaceError)?;
         self.master_weights = Some(mm.master_weights(coordinates).map_err(|_| FaceError)?);
@@ -104,21 +108,29 @@ impl<'a> Type1Face<'a> {
     }
 
     /// The decrypted charstring of a glyph index.
+    ///
+    /// Allocates the decrypted charstring (ADR 0094).
     pub fn glyph_program(&self, glyph: usize) -> Option<Vec<u8>> {
         self.charstrings.glyph_program(self.glyph_name(glyph)?)
     }
 
     /// Decrypted local Type 1 subroutine by index.
+    ///
+    /// Allocates the decrypted subroutine (ADR 0094).
     pub fn subroutine_program(&self, index: usize) -> Option<Vec<u8>> {
         self.charstrings.subroutine_program(index)
     }
 
     /// The unscaled side bearings and advances of a glyph.
+    ///
+    /// Allocates the decrypted charstring and the operand stack used to read it (ADR 0094).
     pub fn glyph_metrics(&self, glyph: usize) -> Option<Metrics> {
         parse_metrics(&self.glyph_program(glyph)?).ok()
     }
 
     /// Attach AFM metrics to the face, replacing any previous AFM data.
+    ///
+    /// Allocates the table of AFM kerning pairs (ADR 0094).
     pub fn attach_afm(&mut self, data: &'a [u8]) -> Result<(), FaceError> {
         let afm = Afm::parse(data).map_err(|_| FaceError)?;
         self.attached = Some(AttachedMetrics::Afm(afm));
@@ -126,6 +138,8 @@ impl<'a> Type1Face<'a> {
     }
 
     /// Attach PFM metrics to the face, replacing any previous metrics data.
+    ///
+    /// Allocates the table of PFM kerning pairs (ADR 0094).
     pub fn attach_pfm(&mut self, data: &[u8]) -> Result<(), FaceError> {
         let pfm = Pfm::parse(data).map_err(|_| FaceError)?;
         let pairs = pfm

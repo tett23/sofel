@@ -76,3 +76,25 @@ fi
 printf '#![no_std]\n' >"$tmp/ws/b/src/lib.rs"
 sh "$script" "$tmp/ws" "$tmp/nostd.txt" 2>/dev/null || fail "ADR 0081 I2: #![no_std] in lib.rs was not accepted"
 echo "ok: ADR 0081 I2: crates marked !no_std declare #![no_std]"
+
+# ADR 0094 I1: crates marked `!no_alloc` have no `extern crate alloc` and
+# no `alloc::` paths anywhere in their src/.
+crate b ''
+printf '#![no_std]\n#![forbid(unsafe_code)]\n' >"$tmp/ws/b/src/lib.rs"
+printf '# allowed\na b\n!no_alloc b\n' >"$tmp/noalloc.txt"
+sh "$script" "$tmp/ws" "$tmp/noalloc.txt" 2>/dev/null ||
+  fail "ADR 0094 I1: a !no_alloc crate without alloc was rejected"
+printf '#![no_std]\n#![forbid(unsafe_code)]\nextern crate alloc;\n' >"$tmp/ws/b/src/lib.rs"
+if sh "$script" "$tmp/ws" "$tmp/noalloc.txt" 2>/dev/null; then
+  fail "ADR 0094 I1: extern crate alloc in a !no_alloc crate was accepted"
+fi
+printf '#![no_std]\n#![forbid(unsafe_code)]\nmod m;\n' >"$tmp/ws/b/src/lib.rs"
+printf 'pub type V = alloc::vec::Vec<u8>;\n' >"$tmp/ws/b/src/m.rs"
+if sh "$script" "$tmp/ws" "$tmp/noalloc.txt" 2>/dev/null; then
+  fail "ADR 0094 I1: an alloc:: path in a !no_alloc crate was accepted"
+fi
+printf '//! Allocation-free: nothing here uses the alloc crate.\npub type L = core::alloc::Layout;\n' >"$tmp/ws/b/src/m.rs"
+sh "$script" "$tmp/ws" "$tmp/noalloc.txt" 2>/dev/null ||
+  fail "ADR 0094 I1: core::alloc or a comment mentioning alloc was rejected"
+rm "$tmp/ws/b/src/m.rs"
+echo "ok: ADR 0094 I1: crates marked !no_alloc do not use alloc"
