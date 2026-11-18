@@ -1,5 +1,6 @@
 //! Bounded DEFLATE, zlib and gzip decoding (RFC 1951, 1950 and 1952).
 #![no_std]
+#![forbid(unsafe_code)]
 extern crate alloc;
 use alloc::vec::Vec;
 

@@ -1,5 +1,6 @@
 //! Bounded Brotli bitstream decoder.
 #![no_std]
+#![forbid(unsafe_code)]
 extern crate alloc;
 mod block;
 mod context;

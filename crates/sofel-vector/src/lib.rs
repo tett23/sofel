@@ -1,5 +1,6 @@
 //! Font-independent SVG pages for positioned glyph outlines.
 #![no_std]
+#![forbid(unsafe_code)]
 
 extern crate alloc;
 mod pdf;

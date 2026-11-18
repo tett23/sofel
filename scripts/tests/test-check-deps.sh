@@ -73,9 +73,20 @@ printf '# allowed\na b\n!no_std b\n' >"$tmp/nostd.txt"
 if sh "$script" "$tmp/ws" "$tmp/nostd.txt" 2>/dev/null; then
   fail "ADR 0081 I2: a !no_std crate without #![no_std] was accepted"
 fi
-printf '#![no_std]\n' >"$tmp/ws/b/src/lib.rs"
+printf '#![no_std]\n#![forbid(unsafe_code)]\n' >"$tmp/ws/b/src/lib.rs"
 sh "$script" "$tmp/ws" "$tmp/nostd.txt" 2>/dev/null || fail "ADR 0081 I2: #![no_std] in lib.rs was not accepted"
 echo "ok: ADR 0081 I2: crates marked !no_std declare #![no_std]"
+
+# ADR 0003: library crates (marked `!no_std`) write #![forbid(unsafe_code)]
+# at their library root; the workspace lints alone are not enough.
+printf '#![no_std]\n' >"$tmp/ws/b/src/lib.rs"
+if sh "$script" "$tmp/ws" "$tmp/nostd.txt" 2>/dev/null; then
+  fail "ADR 0003: a !no_std library without #![forbid(unsafe_code)] was accepted"
+fi
+printf '#![no_std]\n#![forbid(unsafe_code)]\n' >"$tmp/ws/b/src/lib.rs"
+sh "$script" "$tmp/ws" "$tmp/nostd.txt" 2>/dev/null ||
+  fail "ADR 0003: #![forbid(unsafe_code)] in a !no_std library was not accepted"
+echo "ok: ADR 0003: library crates forbid unsafe code at their root"
 
 # ADR 0093 I2: every normal dependency of the real workspace is allowed by
 # deps.txt. A deps.txt without `sofel-shape sofel-geom` fails, and a pair

@@ -77,7 +77,9 @@ FreeTypeとHarfBuzzとの性能の比較は [docs/benchmarks/](docs/benchmarks/)
 | [`sofel-inflate`](crates/sofel-inflate) | 出力上限を指定した DEFLATE・zlib・gzip の展開 |
 | [`sofel-lzw`](crates/sofel-lzw) | 出力上限を指定した UNIX compress（LZW、`.Z`）の展開（[ADR 0081](docs/adr/0081-crate-layout-corrections.md)） |
 | [`sofel-bzip2`](crates/sofel-bzip2) | 出力上限を指定した bzip2 の展開（[ADR 0081](docs/adr/0081-crate-layout-corrections.md)） |
+| [`sofel-brotli`](crates/sofel-brotli) | 出力上限を指定した Brotli の展開（WOFF2 のため。[ADR 0003](docs/adr/0003-crate-layers.md)） |
 | [`sofel-png`](crates/sofel-png) | PNG の各色型と Adam7 をアルファ乗算済み BGRA に復号する（[ADR 0066](docs/adr/0066-color-glyph-pixels.md)） |
+| [`sofel-svg`](crates/sofel-svg) | OpenType の SVG の文書を解析し、輪郭と塗りの命令にする。gzip で圧縮された文書も展開する（[ADR 0066](docs/adr/0066-color-glyph-pixels.md)） |
 | [`sofel-bitmap`](crates/sofel-bitmap) | 埋め込みビットマップ（CBLC/CBDT、EBLC/EBDT、`bloc`/`bdat`、sbix）のストライク、その選び方（HarfBuzzとFreeTypeの両方）、グリフの画像のデータとメトリクス、EBDTの画素のFreeTypeと同じ書き込み、CBDT と sbix の PNG の復号（[ADR 0023](docs/adr/0023-color-glyphs.md)） |
 | [`sofel-pfr`](crates/sofel-pfr) | PFR のフェイスの選択、文字対応、送り幅、グリフとビットマップのプログラムの読み取りと、破損の位置の報告。輪郭は `sofel-outline`、埋め込みビットマップは `sofel-bitmap` が扱う（[ADR 0081](docs/adr/0081-crate-layout-corrections.md)） |
 | [`sofel-bitmapfont`](crates/sofel-bitmapfont) | BDF、PCF、Windows FNT と NE・PE32 FON の文字対応、送り幅、固定サイズの画像を読む。BDF は 1、2、4、8 bit、ほかは 1 bit（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)） |
