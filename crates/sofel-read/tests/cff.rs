@@ -1865,3 +1865,12 @@ fn validate_sfnt_runs_cff_validators() {
         "{d:?}"
     );
 }
+
+/// ADR 0003: public values are `Send` and `Sync`, so a decoder context
+/// can be shared across threads.
+#[test]
+fn context_is_send_sync() {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<Context<'static>>();
+    assert_send_sync::<sofel_read::cff::dict::NoBlend>();
+}

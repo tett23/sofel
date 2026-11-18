@@ -2,6 +2,7 @@
 //! Ported from HarfBuzz 15.1.0 src/hb-gpu-draw.cc (Old MIT license).
 //! Copyright © 2026 Behdad Esfahbod. See THIRD_PARTY_NOTICES.md.
 #![no_std]
+#![forbid(unsafe_code)]
 
 extern crate alloc;
 use alloc::{vec, vec::Vec};

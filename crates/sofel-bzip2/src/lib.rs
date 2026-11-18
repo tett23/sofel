@@ -2,6 +2,7 @@
 //!
 //! The output is bounded by the caller (sofel ADR 0065, sofel ADR 0081).
 #![no_std]
+#![forbid(unsafe_code)]
 extern crate alloc;
 use alloc::{vec, vec::Vec};
 

@@ -1317,7 +1317,10 @@ impl FontDict {
 
 /// The weights of a CFF2 `blend` (FreeType's blend vector `BV` without
 /// its first, default, element).
-pub trait BlendWeights {
+///
+/// It requires `Sync` so that a charstring [`Context`](super::charstring::Context)
+/// holding `&dyn BlendWeights` is `Send` and `Sync` (ADR 0003).
+pub trait BlendWeights: Sync {
     /// The number of regions of ItemVariationData `vsindex`, or `None`
     /// when no blend vector can be built for it.
     fn regions(&self, vsindex: u32) -> Option<u32>;
