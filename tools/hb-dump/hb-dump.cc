@@ -99,6 +99,16 @@
  *                     tag in the BASE table)
  *   end
  *
+ * Mode --math (ADR 0091): for each face index i,
+ *
+ *   face <i>
+ *   math <has_data> <glyph count>
+ *                     (hb_ot_math_has_data, hb_face_get_glyph_count)
+ *   extended <g>...   (the glyphs g from 0 to the glyph count, and
+ *                     0xFFFF, for which hb_ot_math_is_glyph_extended_shape
+ *                     is true, ascending)
+ *   end
+ *
  * Mode --layout-map (ADR 0020): for each face i,
  *
  *   face <i>
@@ -1101,6 +1111,31 @@ static int dump_baselines (hb_blob_t *blob)
     printf ("end\n");
 
     hb_font_destroy (font);
+    hb_face_destroy (face);
+  }
+  return 0;
+}
+/* ADR 0091: whether HarfBuzz keeps the MATH table, and the glyphs that
+ * are extended shapes among every glyph of the face, the first id past
+ * them and 0xFFFF. */
+static int dump_math (hb_blob_t *blob)
+{
+  unsigned count = hb_face_count (blob);
+  if (!count) count = 1;
+  for (unsigned i = 0; i < count; i++)
+  {
+    hb_face_t *face = hb_face_create (blob, i);
+    unsigned glyphs = hb_face_get_glyph_count (face);
+    printf ("face %u\n", i);
+    printf ("math %d %u\n", hb_ot_math_has_data (face) ? 1 : 0, glyphs);
+    printf ("extended");
+    for (hb_codepoint_t g = 0; g <= glyphs; g++)
+      if (hb_ot_math_is_glyph_extended_shape (face, g))
+	printf (" %u", g);
+    if (glyphs < 0xFFFFu && hb_ot_math_is_glyph_extended_shape (face, 0xFFFFu))
+      printf (" %u", 0xFFFFu);
+    printf ("\n");
+    printf ("end\n");
     hb_face_destroy (face);
   }
   return 0;
@@ -3486,6 +3521,7 @@ static const dump_mode_t modes[] = {
   {"--cmap", dump_cmap},
   {"--cmap-digest", dump_cmap_digest},
   {"--baselines", dump_baselines},
+  {"--math", dump_math},
   {"--vowel-constraints", dump_vowel_constraints},
   {"--layout-map", dump_layout_map},
   {"--feature-tags", dump_feature_tags},

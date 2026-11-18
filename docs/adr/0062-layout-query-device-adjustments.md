@@ -1,6 +1,6 @@
 # ADR 0062: レイアウトの問い合わせでサイズと軸座標を引き継ぐ
 
-Status: accepted
+Status: superseded [{"part":"実装すること","by":["docs/adr/0091-math-extended-shape.md"],"kind":"supplement"}]
 
 ## 文脈
 

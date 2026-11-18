@@ -93,9 +93,12 @@ impl<'font, 'data, 'loc, 'source> LayoutQueries<'font, 'data, 'loc, 'source> {
         self.instance.font()
     }
 
+    /// The MATH table when HarfBuzz's sanitizer accepts it (ADR 0091),
+    /// checked on every query: every MATH query shares this decision.
     fn math(&self) -> Option<Math<'data>> {
         self.font()
             .table(Tag::new(b"MATH"))
+            .filter(|data| crate::math_sanitize::sane(data))
             .and_then(|data| Math::new(data).ok())
     }
 
@@ -169,7 +172,8 @@ impl<'font, 'data, 'loc, 'source> LayoutQueries<'font, 'data, 'loc, 'source> {
         )
     }
 
-    /// Whether a readable MATH table exists.
+    /// Whether a MATH table exists that HarfBuzz's sanitizer accepts
+    /// (`hb_ot_math_has_data`, ADR 0091).
     pub fn has_math(&self) -> bool {
         self.math().is_some()
     }
