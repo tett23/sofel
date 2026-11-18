@@ -1,6 +1,6 @@
 # ADR 0020: シェーピングの土台（`sofel-shape`、GDEF、GSUB、GPOS、バッファ、計画、既定のシェーパー）
 
-Status: superseded [{"by":["docs/adr/0028-ptem-is-not-opsz.md"],"part":"`--font-ptem` の分類"},{"by":["docs/adr/0044-shaping-conformance-exceptions.md"],"part":"既知の期待失敗の分類"},{"by":["docs/adr/0027-variable-fonts.md"],"part":"可変フォントのシェーピング"}]
+Status: superseded [{"by":["docs/adr/0028-ptem-is-not-opsz.md"],"part":"`--font-ptem` の分類"},{"by":["docs/adr/0044-shaping-conformance-exceptions.md"],"part":"既知の期待失敗の分類"},{"by":["docs/adr/0027-variable-fonts.md"],"part":"可変フォントのシェーピング"},{"by":["docs/adr/0093-geom-dependencies-of-shape-color-subset.md"],"part":"実装すること（sofel-shape の依存）"}]
 
 ## 文脈
 

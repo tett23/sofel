@@ -1,6 +1,6 @@
 # ADR 0003: クレートの層と依存の向き
 
-Status: superseded [{"by":["docs/adr/0015-c-abi.md"],"part":"C言語のAPI"},{"by":["docs/adr/0019-unicode-character-data.md"],"part":"`sofel-unicode` の追加"},{"by":["docs/adr/0022-subsetting.md"],"part":"`sofel-subset` の `sofel-unicode` への依存"},{"by":["docs/adr/0045-foundation-completion-criteria.md"],"part":"完了条件"},{"by":["docs/adr/0081-crate-layout-corrections.md"],"part":"ワークスペースとクレート（`sofel-woff` の行）"}]
+Status: superseded [{"by":["docs/adr/0015-c-abi.md"],"part":"C言語のAPI"},{"by":["docs/adr/0019-unicode-character-data.md"],"part":"`sofel-unicode` の追加"},{"by":["docs/adr/0022-subsetting.md"],"part":"`sofel-subset` の `sofel-unicode` への依存"},{"by":["docs/adr/0045-foundation-completion-criteria.md"],"part":"完了条件"},{"by":["docs/adr/0081-crate-layout-corrections.md"],"part":"ワークスペースとクレート（`sofel-woff` の行）"},{"by":["docs/adr/0093-geom-dependencies-of-shape-color-subset.md"],"part":"ワークスペースとクレート（sofel-shape、sofel-color、sofel-subset の依存）"}]
 
 ## 文脈
 
