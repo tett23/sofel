@@ -73,29 +73,30 @@ printf '# allowed\na b\n!no_std b\n' >"$tmp/nostd.txt"
 if sh "$script" "$tmp/ws" "$tmp/nostd.txt" 2>/dev/null; then
   fail "ADR 0081 I2: a !no_std crate without #![no_std] was accepted"
 fi
-printf '#![no_std]\n' >"$tmp/ws/b/src/lib.rs"
+printf '#![no_std]\n#![forbid(unsafe_code)]\n' >"$tmp/ws/b/src/lib.rs"
 sh "$script" "$tmp/ws" "$tmp/nostd.txt" 2>/dev/null || fail "ADR 0081 I2: #![no_std] in lib.rs was not accepted"
 echo "ok: ADR 0081 I2: crates marked !no_std declare #![no_std]"
 
-# ADR 0087 I1: `!dev <crate> <dependency>` allows the dependency only as
-# a development dependency; normal and build dependencies still need a
-# `<crate> <dependency>` line.
+# ADR 0003: library crates (marked `!no_std`) write #![forbid(unsafe_code)]
+# at their library root; the workspace lints alone are not enough.
+printf '#![no_std]\n' >"$tmp/ws/b/src/lib.rs"
+if sh "$script" "$tmp/ws" "$tmp/nostd.txt" 2>/dev/null; then
+  fail "ADR 0003: a !no_std library without #![forbid(unsafe_code)] was accepted"
+fi
+printf '#![no_std]\n#![forbid(unsafe_code)]\n' >"$tmp/ws/b/src/lib.rs"
+sh "$script" "$tmp/ws" "$tmp/nostd.txt" 2>/dev/null ||
+  fail "ADR 0003: #![forbid(unsafe_code)] in a !no_std library was not accepted"
+echo "ok: ADR 0003: library crates forbid unsafe code at their root"
+
+# ADR 0093 I2: every normal dependency of the real workspace is allowed by
+# deps.txt. A deps.txt without `sofel-shape sofel-geom` fails, and a pair
+# that deps.txt allows but no crate uses is fine (the table only allows).
+grep -v '^sofel-shape sofel-geom$' "$root/scripts/deps.txt" >"$tmp/no-shape-geom.txt"
+if sh "$script" "$root" "$tmp/no-shape-geom.txt" 2>/dev/null; then
+  fail "ADR 0093 I2: deps.txt without 'sofel-shape sofel-geom' was accepted"
+fi
 crate b ''
 crate a ''
-printf '\n[dev-dependencies]\nb = { path = "../b" }\n' >>"$tmp/ws/a/Cargo.toml"
-printf '# dev only\n!dev a b\n' >"$tmp/dev.txt"
-sh "$script" "$tmp/ws" "$tmp/dev.txt" 2>/dev/null ||
-  fail "ADR 0087 I1: '!dev a b' did not allow a development dependency"
-if sh "$script" "$tmp/ws" "$tmp/none.txt" 2>/dev/null; then
-  fail "ADR 0087 I1: a development dependency missing from deps.txt was accepted"
-fi
-crate a 'b = { path = "../b" }'
-if sh "$script" "$tmp/ws" "$tmp/dev.txt" 2>/dev/null; then
-  fail "ADR 0087 I1: '!dev a b' allowed a normal dependency"
-fi
-crate a ''
-printf '\n[build-dependencies]\nb = { path = "../b" }\n' >>"$tmp/ws/a/Cargo.toml"
-if sh "$script" "$tmp/ws" "$tmp/dev.txt" 2>/dev/null; then
-  fail "ADR 0087 I1: '!dev a b' allowed a build dependency"
-fi
-echo "ok: ADR 0087 I1: !dev allows only development dependencies"
+sh "$script" "$tmp/ws" "$tmp/allowed.txt" 2>/dev/null ||
+  fail "ADR 0093 I2: an allowed but unused dependency was rejected"
+echo "ok: ADR 0093 I2: check-deps.sh fails when deps.txt drops a used pair"
