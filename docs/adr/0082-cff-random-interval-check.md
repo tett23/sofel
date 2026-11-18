@@ -1,6 +1,6 @@
 # ADR 0082: CFFの `random` の決まりと、区間による参照の確かめ
 
-Status: accepted
+Status: superseded [{"part":"不変条件（区間 (0, 1] を div の除数にする行）","by":["docs/adr/0092-cff-random-check-corrections.md"]},{"part":"実装すること（CffRandomUnchecked の reason）","by":["docs/adr/0092-cff-random-check-corrections.md"]}]
 
 ## 文脈
 

@@ -685,9 +685,17 @@ fn raster_error(e: RasterError) -> i32 {
 
 /// A CFF font whose glyphs give the three diagnostics of the interval
 /// check of ADR 0082: a one-sided call outside the global subroutines, a
-/// divisor range with 0, and a 16.16 subroutine number.
+/// divisor range with 0, and a 16.16 subroutine number; then one glyph
+/// for each other reason of `cff_random_unchecked` (ADR 0092).
 fn cff_random_font() -> Vec<u8> {
     use Cs::*;
+    // 14 levels of `1 2 random random ifelse drop`: 131065 numbers and
+    // operators over all the branches.
+    let mut limit = Vec::new();
+    for _ in 0..14 {
+        limit.extend([I(1), I(2), Op(0x0C17), Op(0x0C17), Op(0x0C16), Op(0x0C12)]);
+    }
+    limit.push(Op(14));
     let mut spec = Cff1Spec::new(vec![
         charstring(&[Op(14)]),
         charstring(&[
@@ -710,9 +718,41 @@ fn cff_random_font() -> Vec<u8> {
             Op(14),
         ]),
         charstring(&[Op(0x0C17), Op(10), Op(14)]),
+        // random 0.5 sub sqrt: NegativeSqrt (1).
+        charstring(&[
+            Op(0x0C17),
+            F(0x8000),
+            Op(0x0C0B),
+            Op(0x0C1A),
+            Op(0x0C12),
+            Op(14),
+        ]),
+        // 1 2 3 (random + 3) index: StackPosition (2).
+        charstring(&[
+            I(1),
+            I(2),
+            I(3),
+            Op(0x0C17),
+            I(3),
+            Op(0x0C0A),
+            Op(0x0C1D),
+            Op(14),
+        ]),
+        // (1 / random) * 2: InfiniteBound (3).
+        charstring(&[
+            I(1),
+            Op(0x0C17),
+            Op(0x0C0C),
+            I(2),
+            Op(0x0C18),
+            Op(0x0C12),
+            Op(14),
+        ]),
+        // Limit (4).
+        charstring(&limit),
     ]);
     spec.lsubrs = vec![charstring(&[Op(11)]); 110];
-    otto_font(4, vec![(b"CFF ", cff1(&spec))])
+    otto_font(8, vec![(b"CFF ", cff1(&spec))])
 }
 
 /// The diagnostics of `data` as `sofel_validate` reports them.

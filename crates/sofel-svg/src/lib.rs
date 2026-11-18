@@ -1,5 +1,6 @@
 //! OpenType SVG document data (ADR 0066).
 #![no_std]
+#![forbid(unsafe_code)]
 
 extern crate alloc;
 mod paint;

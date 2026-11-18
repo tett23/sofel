@@ -1089,7 +1089,13 @@ static void test_validate(void) {
   /* The interval check of glyphs that run random (ADR 0082). */
   check_validate(cff_random_data, sizeof cff_random_data, cff_random_diagnostics,
                  COUNT(cff_random_diagnostics));
+  /* The five reasons of "cff_random_unchecked" read as 0 to 4 (ADR 0092). */
+  CHECK(COUNT(cff_random_diagnostics) == 10);
   CHECK(strstr(cff_random_diagnostics[2].details, "reason:0:0;") != NULL);
+  CHECK(strstr(cff_random_diagnostics[5].details, "reason:0:1;") != NULL);
+  CHECK(strstr(cff_random_diagnostics[7].details, "reason:0:2;") != NULL);
+  CHECK(strstr(cff_random_diagnostics[8].details, "reason:0:3;") != NULL);
+  CHECK(strstr(cff_random_diagnostics[9].details, "reason:0:4;") != NULL);
   CHECK(SOFEL_CFF_RANDOM_DIVISION_BY_ZERO == 0 && SOFEL_CFF_RANDOM_NEGATIVE_SQRT == 1 &&
         SOFEL_CFF_RANDOM_STACK_POSITION == 2 && SOFEL_CFF_RANDOM_INFINITE_BOUND == 3 &&
         SOFEL_CFF_RANDOM_LIMIT == 4);
