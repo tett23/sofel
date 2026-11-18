@@ -2175,7 +2175,7 @@ int32_t sofel_rasterizer_render_placed(sofel_rasterizer_t *rasterizer, int32_t l
  * Errors: those of sofel_outline_load, SOFEL_ERROR_TOO_LARGE,
  * SOFEL_ERROR_BUFFER_TOO_SMALL.
  *
- * Rust: sofel_cli::glyph::render
+ * Rust: sofel_glyph_render::render
  * HarfBuzz: none
  * FreeType: FT_Set_Pixel_Sizes, FT_Load_Glyph, FT_Render_Glyph
  */
@@ -2913,7 +2913,7 @@ int32_t sofel_font_has_bitmaps(const sofel_font_t *font, uint8_t *has);
  *
  * Errors: those of sofel_render_glyph.
  *
- * Rust: sofel_cli::glyph::render_color, sofel_cli::glyph::color_layers
+ * Rust: sofel_glyph_render::render_color, sofel_glyph_render::color_layers
  * HarfBuzz: none
  * FreeType: FT_Load_Glyph (FT_LOAD_COLOR), FT_Render_Glyph, FT_Get_Color_Glyph_Layer
  */

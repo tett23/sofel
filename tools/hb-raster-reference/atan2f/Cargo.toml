@@ -1,0 +1,23 @@
+[package]
+name = "sofel-atan2f-c"
+description = "sofel_geom::float::atan2f as the C function atan2f, linked into the HarfBuzz raster reference (ADR 0095)"
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+# Its own workspace: built only by tools/hb-raster-reference/build.sh.
+[workspace]
+
+[lib]
+crate-type = ["staticlib"]
+path = "lib.rs"
+
+[dependencies]
+sofel-geom = { path = "../../../crates/sofel-geom" }
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

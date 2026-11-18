@@ -5,6 +5,10 @@ version = 4
 [[package]]
 name = "font-gallery"
 version = "0.0.0"
+dependencies = [
+ "sofel-font",
+ "sofel-write",
+]
 
 [[package]]
 name = "sofel-bench"
@@ -16,6 +20,7 @@ dependencies = [
  "sofel-conformance",
  "sofel-font",
  "sofel-geom",
+ "sofel-glyph-render",
  "sofel-outline",
  "sofel-raster",
  "sofel-shape",
@@ -53,6 +58,7 @@ dependencies = [
  "sofel-color",
  "sofel-font",
  "sofel-geom",
+ "sofel-glyph-render",
  "sofel-inflate",
  "sofel-lzw",
  "sofel-outline",
@@ -86,6 +92,7 @@ dependencies = [
  "sofel-color",
  "sofel-font",
  "sofel-geom",
+ "sofel-glyph-render",
  "sofel-outline",
  "sofel-png",
  "sofel-raster",
@@ -112,6 +119,20 @@ dependencies = [
 [[package]]
 name = "sofel-geom"
 version = "0.0.0"
+
+[[package]]
+name = "sofel-glyph-render"
+version = "0.0.0"
+dependencies = [
+ "sofel-color",
+ "sofel-font",
+ "sofel-geom",
+ "sofel-outline",
+ "sofel-png",
+ "sofel-raster",
+ "sofel-svg",
+ "sofel-type1",
+]
 
 [[package]]
 name = "sofel-inflate"

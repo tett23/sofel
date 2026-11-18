@@ -154,7 +154,7 @@ let info = outlines.draw(gid, scale, &mut scratch, &mut pen)?;
 
 `Rasterizer` は `Pen` でもある。26.6の輪郭を記録し、`render` で8bitの被覆率の画像にする。
 
-1グリフをFreeTypeの `FT_Render_Glyph`（`FT_RENDER_MODE_NORMAL`）と同じ画像にするなら、`sofel_cli::glyph::render`（フォントの `Outlines` を受け取る）を使う。
+1グリフをFreeTypeの `FT_Render_Glyph`（`FT_RENDER_MODE_NORMAL`）と同じ画像にするなら、`sofel_glyph_render::render`（フォントの `Outlines` を受け取る）を使う。
 
 ```rust
 use sofel_outline::Scratch;
@@ -162,15 +162,15 @@ use sofel_raster::Rasterizer;
 
 let mut scratch = Scratch::default();
 let mut raster = Rasterizer::new();
-let bitmap = sofel_cli::glyph::render(&font, gid, 48, &mut scratch, &mut raster)?;
+let bitmap = sofel_glyph_render::render(&font, gid, 48, &mut scratch, &mut raster)?;
 // bitmap.left, bitmap.top: FreeTypeの bitmap_left, bitmap_top
 // bitmap.width, bitmap.rows, bitmap.pixels（上の行から、1画素1バイト、0〜255）
 ```
 
-COLRv0のグリフをFreeTypeの `FT_LOAD_COLOR` と同じ色の画像にするなら、`sofel_cli::glyph::render_color` を使う。層をそれぞれ `glyph::render` で描き、`sofel_raster::blend_layer` で乗算済みのBGRAの `BgraImage` に重ねる。層の無いグリフや層を描けないグリフは、FreeTypeと同じくグリフ自身の輪郭を灰色で描く。
+COLRv0のグリフをFreeTypeの `FT_LOAD_COLOR` と同じ色の画像にするなら、`sofel_glyph_render::render_color` を使う。層をそれぞれ `sofel_glyph_render::render` で描き、`sofel_raster::blend_layer` で乗算済みのBGRAの `BgraImage` に重ねる。層の無いグリフや層を描けないグリフは、FreeTypeと同じくグリフ自身の輪郭を灰色で描く。
 
 ```rust
-use sofel_cli::glyph::{ColorGlyph, render_color};
+use sofel_glyph_render::{ColorGlyph, render_color};
 use sofel_color::{PaintOptions, Palette};
 use sofel_raster::BgraImage;
 
@@ -589,8 +589,8 @@ sofel_font_destroy(font);
 | `sofel_font_ft_face_metrics`、`sofel_font_ft_v_advance` | `Instance::ft_face_metrics`、`Instance::ft_v_advance` | `FT_Face`、`FT_Get_Advance` |
 | `sofel_outline_draw`、`sofel_outline_load`、`sofel_outline_decompose` | `draw`、`load`、`Scratch::decompose` | `FT_Load_Glyph` + `FT_Outline_Decompose` |
 | `sofel_rasterizer_*`、`sofel_pixel_box` | `Rasterizer`、`pixel_box` | `FT_Outline_Render` |
-| `sofel_render_glyph` | `sofel_cli::glyph::render` | `FT_Render_Glyph` |
-| `sofel_render_color_glyph`、`sofel_blend_layer` | `sofel_cli::glyph::render_color`、`sofel_raster::blend_layer` | `FT_Render_Glyph`（`FT_LOAD_COLOR`）、`tt_face_colr_blend_layer` |
+| `sofel_render_glyph` | `sofel_glyph_render::render` | `FT_Render_Glyph` |
+| `sofel_render_color_glyph`、`sofel_blend_layer` | `sofel_glyph_render::render_color`、`sofel_raster::blend_layer` | `FT_Render_Glyph`（`FT_LOAD_COLOR`）、`tt_face_colr_blend_layer` |
 | `sofel_validate`、`sofel_diagnostic_*` | `validate::sfnt`、`validate::collection`、`Kind` | なし |
 | `sofel_unicode_*`、`sofel_script_from_iso15924` | `sofel_unicode` の関数 | `hb_unicode_*`、`hb_script_from_string` |
 | `sofel_feature_parse`、`sofel_feature_format` | `Feature::parse`、`Feature::format` | `hb_feature_from_string`、`hb_feature_to_string` |

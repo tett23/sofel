@@ -5,11 +5,11 @@
 mod build;
 
 use build::*;
-use sofel_glyph_render::{ColorGlyph, color_layers, render, render_color};
 use sofel_color::{PaintOptions, Palette};
 use sofel_font::Font;
 use sofel_font::geom::Color;
 use sofel_font::read::GlyphId;
+use sofel_glyph_render::{ColorGlyph, color_layers, render, render_color};
 use sofel_outline::{Outlines, Scratch};
 use sofel_raster::{BgraImage, Rasterizer, blend_layer};
 

@@ -21,11 +21,17 @@ sofel-outline = { path = "../sofel-outline" }
 sofel-raster = { path = "../sofel-raster" }
 sofel-bitmap = { path = "../sofel-bitmap" }
 sofel-color = { path = "../sofel-color" }
-sofel-cli = { path = "../sofel-cli" }
 sofel-unicode = { path = "../sofel-unicode" }
 sofel-shape = { path = "../sofel-shape" }
 sofel-subset = { path = "../sofel-subset" }
 sofel-write = { path = "../sofel-write" }
+sofel-glyph-render = { path = "../sofel-glyph-render" }
+
+# The tests compare the C ABI with the tools (sofel_cli::paint); the
+# library does not depend on sofel-cli, which is not built for wasm
+# (ADR 0004, ADR 0087).
+[dev-dependencies]
+sofel-cli = { path = "../sofel-cli" }
 
 # The workspace lints, except that `unsafe` is allowed: this crate turns
 # the pointers C passes into references (ADR 0015). Every other crate

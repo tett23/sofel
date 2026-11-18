@@ -9,7 +9,7 @@ use sofel_outline::{Outlines, Scratch};
 use sofel_raster::Rasterizer;
 use sofel_type1::cid::CidFace;
 
-use crate::glyph;
+use sofel_glyph_render as glyph;
 
 /// The usage text, printed for `--help` and after a usage error.
 pub const HELP: &str = "\

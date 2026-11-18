@@ -4,10 +4,10 @@ mod color_svg;
 mod gallery;
 mod references;
 
-use sofel_glyph_render::{ColorGlyph, render_color};
 use sofel_color::{PaintOptions, Painted, Scratch};
 use sofel_font::Font;
 use sofel_geom::{Brush, Color, CompositeMode, Image, ImageFormat, Painter, Rect, Transform};
+use sofel_glyph_render::{ColorGlyph, render_color};
 use sofel_raster::{BgraImage, Rasterizer};
 use sofel_read::Tag;
 

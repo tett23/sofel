@@ -307,7 +307,8 @@ fn atanf(x: f32) -> f32 {
 ///
 /// Ported from musl 1.2.6 (commit bd54dc3e8049b9c7db092905e743cdebbb8864f3),
 /// `src/math/atan2f.c` and `src/math/atanf.c`, which come from FreeBSD's
-/// msun. Copyright © 2005-2020 Rich Felker, et al. (MIT); Copyright (C)
+/// msun (conversion to float by Ian Lance Taylor, Cygnus Support).
+/// Copyright © 2005-2020 Rich Felker, et al. (MIT); Copyright (C)
 /// 1993 by Sun Microsystems, Inc. Used under their licenses; see
 /// THIRD_PARTY_NOTICES.md.
 ///

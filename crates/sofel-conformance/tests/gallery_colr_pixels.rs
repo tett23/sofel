@@ -1,9 +1,9 @@
 //! The four COLRv1 gallery reference images (sofel ADR 0072, I1).
 #![allow(clippy::unwrap_used)]
-use sofel_glyph_render::{ColorGlyph, render_color};
 use sofel_color::PaintOptions;
 use sofel_conformance::paths;
 use sofel_font::Font;
+use sofel_glyph_render::{ColorGlyph, render_color};
 use sofel_outline::{Outlines, Scratch};
 use sofel_raster::{BgraImage, Rasterizer};
 use sofel_read::GlyphId;

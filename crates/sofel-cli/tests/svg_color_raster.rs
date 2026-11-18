@@ -9,8 +9,8 @@
 #[path = "../../../conformance/svg/color_svg.rs"]
 mod color_svg;
 
-use sofel_glyph_render::color_raster::render_scene;
 use sofel_font::geom::{Pen, Point};
+use sofel_glyph_render::color_raster::render_scene;
 use sofel_raster::{BgraImage, FillRule, Rasterizer, RenderOptions};
 use sofel_svg::{Gradient, GradientKind, Scene, Shape, ShapeKind, Stop};
 use std::process::Command;

@@ -1,9 +1,9 @@
 //! Non-strike glyph sizes use the HarfBuzz raster image callback (sofel ADR 0066 I2).
 #![allow(clippy::unwrap_used)]
-use sofel_glyph_render::{ColorGlyph, render_color};
 use sofel_color::PaintOptions;
 use sofel_conformance::paths;
 use sofel_font::Font;
+use sofel_glyph_render::{ColorGlyph, render_color};
 use sofel_outline::{Outlines, Scratch};
 use sofel_raster::{BgraImage, Rasterizer};
 use sofel_read::GlyphId;

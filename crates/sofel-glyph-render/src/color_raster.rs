@@ -1,11 +1,11 @@
 //! Connects OT-SVG image paint commands to the shared raster surface (sofel ADR 0072).
 
+use alloc::vec::Vec;
 use sofel_font::geom::{
     Brush, CompositeMode, Image, ImageFormat, Painter, PointF, Rect, Transform,
 };
 use sofel_raster::{BgraImage, FillRule, Rasterizer, RenderOptions, blend_sampled};
 use sofel_svg::{Scene, parse_glyph};
-use alloc::vec::Vec;
 
 /// A painter that accepts the OT-SVG image for one glyph.
 pub struct SvgImagePainter<'a> {

@@ -27,13 +27,13 @@ use core::ffi::{c_char, c_void};
 use core::fmt::Write as _;
 use std::ffi::CString;
 
-use sofel_glyph_render::RenderError;
 use sofel_font::read::cff::{CharsetIndex, Version};
 use sofel_font::read::os2::Os2;
 use sofel_font::read::sfnt::FontFile;
 use sofel_font::read::{DetailValue, Diagnostic, GlyphId, Severity, Tag, validate};
 use sofel_font::{Cff, CidError, Direction, Font, FontError, GlyphExtents, HbScale, MetricsTag};
 use sofel_geom::{Fixed, Matrix, Pen, Point};
+use sofel_glyph_render::RenderError;
 use sofel_outline::{
     HintMode, HintTarget, OutlineError, OutlineInfo, Outlines, Scale, Scratch, StrokeBorder,
     StrokeError, StrokeJoin, StrokeStyle,

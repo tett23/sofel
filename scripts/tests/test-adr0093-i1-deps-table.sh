@@ -53,10 +53,36 @@ sofel-color sofel-geom
 sofel-subset sofel-geom
 # ADR 0093: sofel-shape uses sofel-geom
 sofel-shape sofel-geom
-# ADR 0003, ADR 0015, ADR 0008: the tools, the C ABI and the conformance
-# tests may depend on every crate
+# The glyph rendering shared by the tools and the C ABI (ADR 0087,
+# ADR 0095)
+sofel-glyph-render sofel-font
+sofel-glyph-render sofel-outline
+sofel-glyph-render sofel-raster
+sofel-glyph-render sofel-color
+sofel-glyph-render sofel-svg
+sofel-glyph-render sofel-type1
+sofel-glyph-render sofel-geom
+sofel-glyph-render sofel-png
+# ADR 0003, ADR 0008: the tools and the conformance tests may depend on
+# every crate
 sofel-cli *
-sofel-capi *
+# ADR 0087: the C ABI lists its dependencies; sofel-cli only in its tests
+# (a `!dev` line, which this list does not compare)
+sofel-capi sofel-png
+sofel-capi sofel-gpu
+sofel-capi sofel-vector
+sofel-capi sofel-read
+sofel-capi sofel-geom
+sofel-capi sofel-font
+sofel-capi sofel-outline
+sofel-capi sofel-raster
+sofel-capi sofel-bitmap
+sofel-capi sofel-color
+sofel-capi sofel-unicode
+sofel-capi sofel-shape
+sofel-capi sofel-subset
+sofel-capi sofel-write
+sofel-capi sofel-glyph-render
 sofel-conformance *
 EOF
 

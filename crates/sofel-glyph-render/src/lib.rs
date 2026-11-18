@@ -1,10 +1,17 @@
-//! Rendering one glyph the way FreeType does (ADR 0012): load the
+//! Rendering one glyph, shared by the tools of sofel-cli and the C ABI
+//! (ADR 0087, ADR 0095).
+//!
+//! Gray glyphs are rendered the way FreeType does (ADR 0012): load the
 //! outline without hinting, find the bitmap box from its control box,
 //! move the outline to the bitmap origin (and multiply it by 4 when it
 //! has the overlap flag) before decomposing it, and rasterize. Color
-//! glyphs follow the COLR version 0 layer records (ADR 0023).
+//! glyphs follow the COLR version 0 layer records (ADR 0023), and COLRv1,
+//! OT-SVG and color bitmaps are painted as HarfBuzz's raster does (ADR
+//! 0066). The floating-point functions come from `sofel_geom::float`, so
+//! the pixels are the same on every target (ADR 0095).
 
 #![no_std]
+#![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
 extern crate alloc;
@@ -322,7 +329,7 @@ pub enum ColorGlyph<'r> {
 /// invalid glyph or palette indices end the prefix. `None` is the
 /// foreground color.
 pub fn color_layers(font: &sofel_font::Font<'_>, glyph: u32) -> Vec<(u32, Option<u16>)> {
-    use sofel_read::colr::{Colr, FOREGROUND, TAG};
+    use sofel_font::read::colr::{Colr, FOREGROUND, TAG};
     let Some(colr) = font.table(TAG).and_then(|data| Colr::new(data).ok()) else {
         return Vec::new();
     };

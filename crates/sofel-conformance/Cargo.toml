@@ -18,6 +18,7 @@ sofel-font = { path = "../sofel-font" }
 sofel-outline = { path = "../sofel-outline" }
 sofel-raster = { path = "../sofel-raster" }
 sofel-cli = { path = "../sofel-cli" }
+sofel-glyph-render = { path = "../sofel-glyph-render" }
 sofel-subset = { path = "../sofel-subset" }
 sofel-write = { path = "../sofel-write" }
 sofel-bitmap = { path = "../sofel-bitmap" }

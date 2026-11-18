@@ -1,10 +1,10 @@
 //! Combine the silhouettes of SVG clipping shapes on a common 4×4 subpixel
 //! grid. Union and intersection precede conversion to pixel coverage, so
 //! adjacent children sharing a pixel do not leave a translucent seam.
-use sofel_raster::{Bitmap, FillRule, RasterError, Rasterizer, RenderOptions};
-use sofel_svg::ClipPath;
 use alloc::vec;
 use alloc::vec::Vec;
+use sofel_raster::{Bitmap, FillRule, RasterError, Rasterizer, RenderOptions};
+use sofel_svg::ClipPath;
 
 #[allow(clippy::arithmetic_side_effects, clippy::cast_possible_truncation)] // At most 16 samples × 255 coverage; the rounded result fits in u8.
 pub(super) fn coverage(

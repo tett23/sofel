@@ -1,7 +1,9 @@
 # The allowed dependencies of each crate: the table of ADR 0003.
 # <crate> <dependency>, or <crate> * for any; `!unsafe <crate>` allows
 # a crate to use `unsafe`; `!bin <crate>` allows binaries in a crate;
-# `!no_std <crate>` requires #![no_std] at its library root (ADR 0081).
+# `!no_std <crate>` requires #![no_std] at its library root (ADR 0081);
+# `!dev <crate> <dependency>` allows a dependency only in `[dev-dependencies]`
+# (ADR 0087).
 
 # Crates that do not depend on fonts
 # (sofel-unicode: no dependencies, ADR 0019; sofel-lzw and sofel-bzip2:
@@ -44,8 +46,36 @@ sofel-subset sofel-unicode
 # HarfBuzz's rounding in sofel_geom::float (ADR 0026)
 sofel-color sofel-geom
 sofel-subset sofel-geom
+# The glyph rendering shared by the tools and the C ABI (ADR 0087,
+# ADR 0095)
+sofel-glyph-render sofel-font
+sofel-glyph-render sofel-outline
+sofel-glyph-render sofel-raster
+sofel-glyph-render sofel-color
+sofel-glyph-render sofel-svg
+sofel-glyph-render sofel-type1
+sofel-glyph-render sofel-geom
+sofel-glyph-render sofel-png
 sofel-cli *
-sofel-capi *
+# The C ABI (ADR 0015) depends on the library crates one by one, and on
+# sofel-cli only in its tests: sofel-cli is not built for wasm (ADR 0004,
+# ADR 0087)
+sofel-capi sofel-png
+sofel-capi sofel-gpu
+sofel-capi sofel-vector
+sofel-capi sofel-read
+sofel-capi sofel-geom
+sofel-capi sofel-font
+sofel-capi sofel-outline
+sofel-capi sofel-raster
+sofel-capi sofel-bitmap
+sofel-capi sofel-color
+sofel-capi sofel-unicode
+sofel-capi sofel-shape
+sofel-capi sofel-subset
+sofel-capi sofel-write
+sofel-capi sofel-glyph-render
+!dev sofel-capi sofel-cli
 
 # Crates that may use `unsafe` (ADR 0015): the C ABI turns C pointers
 # into references. Every other crate forbids it.
@@ -67,6 +97,7 @@ sofel-conformance *
 !no_std sofel-color
 !no_std sofel-font
 !no_std sofel-geom
+!no_std sofel-glyph-render
 !no_std sofel-gpu
 !no_std sofel-inflate
 !no_std sofel-lzw

@@ -86,7 +86,12 @@ name = "sofel-bitmap"
 version = "0.0.0"
 dependencies = [
  "sofel-font",
+ "sofel-png",
 ]
+
+[[package]]
+name = "sofel-bitmapfont"
+version = "0.0.0"
 
 [[package]]
 name = "sofel-color"
@@ -94,18 +99,26 @@ version = "0.0.0"
 dependencies = [
  "sofel-bitmap",
  "sofel-outline",
+ "sofel-svg",
 ]
 
 [[package]]
 name = "sofel-font"
 version = "0.0.0"
 dependencies = [
+ "sofel-bitmapfont",
  "sofel-geom",
+ "sofel-pfr",
  "sofel-read",
+ "sofel-type1",
 ]
 
 [[package]]
 name = "sofel-geom"
+version = "0.0.0"
+
+[[package]]
+name = "sofel-inflate"
 version = "0.0.0"
 
 [[package]]
@@ -114,6 +127,17 @@ version = "0.0.0"
 dependencies = [
  "sofel-font",
  "sofel-geom",
+]
+
+[[package]]
+name = "sofel-pfr"
+version = "0.0.0"
+
+[[package]]
+name = "sofel-png"
+version = "0.0.0"
+dependencies = [
+ "sofel-inflate",
 ]
 
 [[package]]
@@ -161,6 +185,18 @@ dependencies = [
  "sofel-unicode",
  "sofel-write",
 ]
+
+[[package]]
+name = "sofel-svg"
+version = "0.0.0"
+dependencies = [
+ "sofel-geom",
+ "sofel-inflate",
+]
+
+[[package]]
+name = "sofel-type1"
+version = "0.0.0"
 
 [[package]]
 name = "sofel-unicode"
