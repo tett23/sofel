@@ -174,9 +174,9 @@ flowchart BT
   | | Type42 | `noalloc::type42::validate`（`type42::validate`） |
   | | AFM、PFM | `noalloc::afm::validate`、`noalloc::pfm::validate`（`afm::validate`、`pfm::validate`） |
   | `sofel-bitmapfont` | BDF、PCF | `noalloc::bdf::validate`、`noalloc::pcf::validate`（`BdfFont::validate`、`PcfFont::validate`） |
-  | | FNT、FON | `noalloc::winfnt::validate`（`WinFont::validate`）。FON の各面を確かめ、誤りのある面ごとに1件を渡す |
+  | | FNT、FON | `noalloc::winfnt::validate`（`WinFont::validate`）。FON の各面を確かめ、誤りのある面ごとに1件を渡す。FON のリソースの表が読めないときは、面の番号の無い1件だけを渡す |
 
-- 検証器と解析の関数は、`src/noalloc/` の同じ読みとりの処理を通る。解析の関数は、その処理が渡す値を集めて確保した構造を作る。そのため、検証器が誤りを報告しない入力は、対応する解析の関数（PFA と PFB では `Type1Source` の解析と `Type1Face::new`）も受け付ける。`eexec` の部分は、復号した結果を確保せず、暗号文を1バイトずつ復号しながら読む。Type42 の `/sfnts` は、つながずに2度読み、2度目に表の目録を確かめる（[ADR 0096](adr/0096-type1-bitmapfont-validators-and-allocation.md)）。
+- 検証器と解析の関数は、`src/noalloc/` の同じ読みとりの処理を通る。解析の関数は、その処理が渡す値を集めて確保した構造を作る。そのため、検証器が誤りを報告しない入力は、対応する解析の関数（PFA と PFB では `Type1Source` の解析と `Type1Face::new`）も受け付ける。ただし、検証器は、`eexec` の部分を、復号した結果を確保せず、暗号文を1バイトずつ復号しながら読む。また、検証器は、Type42 の `/sfnts` をつながずに2度読み、2度目に表の目録を確かめる。解析の関数は、これまでどおり暗号文や `/sfnts` をつないで確保する（[ADR 0096](adr/0096-type1-bitmapfont-validators-and-allocation.md)）。
 - `src/noalloc/` のコードは、確保する名前（`alloc::`、`Vec`、`Box`、`String`、`Rc`、`Arc`、`vec!`、`format!`、`.to_vec(`、`.to_string(`、`.to_owned(`、`.collect`、`extern crate`）を書かない。また、`use` と経路は、`core::`、`crate::noalloc::`、`self::`、`super::`（ディレクトリの `mod.rs` からは使わない）、プリミティブの型、ディレクトリの中のモジュール、確かめた `use` が持ちこむ名前、lint の道具（`clippy`、`rustdoc`）、`!no_alloc` のクレートだけで始める。`scripts/deps.txt` の `!no_alloc_dir <クレート> <ディレクトリ>` の行が対象を決め、`scripts/check-deps.sh` は、ディレクトリが無いとき、またはこの決まりに反するときに誤りにする（[ADR 0098](adr/0098-allocation-free-validator-modules.md)）。
 
 - 輪郭と塗りは、`sofel-geom` の `Pen` と `Painter` で受け渡す。`sofel-raster`、`sofel-gpu`、`sofel-vector` はフォントの型を知らない。

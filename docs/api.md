@@ -266,7 +266,7 @@ fn single(gsub_table: &[u8], glyph: GlyphId) -> Option<u32> {
 
 ## Type 1 とビットマップの形式を検証する（`sofel-type1`、`sofel-bitmapfont`）
 
-`sofel-type1` と `sofel-bitmapfont` の検証器は、確保をせず、誤りを `noalloc::Problem`（バイトの位置と理由）としてコールバックに渡す（[ADR 0096](adr/0096-type1-bitmapfont-validators-and-allocation.md)）。
+`sofel-type1` と `sofel-bitmapfont` の検証器は、確保をせず、誤りを `noalloc::Problem`（バイトの位置と理由。`sofel-bitmapfont` では FON の面の番号も）としてコールバックに渡す（[ADR 0096](adr/0096-type1-bitmapfont-validators-and-allocation.md)）。
 検証器は各クレートの `noalloc` モジュールにあり、そのモジュールが確保する名前もクレートのほかのモジュールも使わないことを `scripts/check-deps.sh` が確かめる（[ADR 0098](adr/0098-allocation-free-validator-modules.md)）。
 
 ```rust
@@ -280,7 +280,7 @@ sofel_bitmapfont::winfnt::WinFont::validate(&fon, &mut |p| {
 });
 ```
 
-- `sofel-type1`：`source::validate_pfa`、`source::validate_pfb`、`cid::validate`、`type42::validate`（復号した結果やつないだ sfnt の上限 `max_output` を取る）、`afm::validate`、`pfm::validate`。
+- `sofel-type1`：`source::validate_pfa`、`source::validate_pfb`、`cid::validate`、`type42::validate`、`afm::validate`、`pfm::validate`。このうち AFM と PFM のほかの4つは、解析の関数と同じく、復号やつないだ結果の大きさの上限 `max_output` を取る。
 - `sofel-bitmapfont`：`BdfFont::validate`、`PcfFont::validate`、`WinFont::validate`（FON の各面）。
 - 検証器が誤りを報告しない入力は、対応する解析の関数も受け付ける。
 
