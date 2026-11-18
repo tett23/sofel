@@ -100,3 +100,26 @@ crate a ''
 sh "$script" "$tmp/ws" "$tmp/allowed.txt" 2>/dev/null ||
   fail "ADR 0093 I2: an allowed but unused dependency was rejected"
 echo "ok: ADR 0093 I2: check-deps.sh fails when deps.txt drops a used pair"
+
+# ADR 0087 I1: `!dev <crate> <dependency>` allows the dependency only as
+# a development dependency; normal and build dependencies still need a
+# `<crate> <dependency>` line.
+crate b ''
+crate a ''
+printf '\n[dev-dependencies]\nb = { path = "../b" }\n' >>"$tmp/ws/a/Cargo.toml"
+printf '# dev only\n!dev a b\n' >"$tmp/dev.txt"
+sh "$script" "$tmp/ws" "$tmp/dev.txt" 2>/dev/null ||
+  fail "ADR 0087 I1: '!dev a b' did not allow a development dependency"
+if sh "$script" "$tmp/ws" "$tmp/none.txt" 2>/dev/null; then
+  fail "ADR 0087 I1: a development dependency missing from deps.txt was accepted"
+fi
+crate a 'b = { path = "../b" }'
+if sh "$script" "$tmp/ws" "$tmp/dev.txt" 2>/dev/null; then
+  fail "ADR 0087 I1: '!dev a b' allowed a normal dependency"
+fi
+crate a ''
+printf '\n[build-dependencies]\nb = { path = "../b" }\n' >>"$tmp/ws/a/Cargo.toml"
+if sh "$script" "$tmp/ws" "$tmp/dev.txt" 2>/dev/null; then
+  fail "ADR 0087 I1: '!dev a b' allowed a build dependency"
+fi
+echo "ok: ADR 0087 I1: !dev allows only development dependencies"
