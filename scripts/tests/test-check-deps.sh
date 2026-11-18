@@ -76,3 +76,16 @@ fi
 printf '#![no_std]\n' >"$tmp/ws/b/src/lib.rs"
 sh "$script" "$tmp/ws" "$tmp/nostd.txt" 2>/dev/null || fail "ADR 0081 I2: #![no_std] in lib.rs was not accepted"
 echo "ok: ADR 0081 I2: crates marked !no_std declare #![no_std]"
+
+# ADR 0093 I2: every normal dependency of the real workspace is allowed by
+# deps.txt. A deps.txt without `sofel-shape sofel-geom` fails, and a pair
+# that deps.txt allows but no crate uses is fine (the table only allows).
+grep -v '^sofel-shape sofel-geom$' "$root/scripts/deps.txt" >"$tmp/no-shape-geom.txt"
+if sh "$script" "$root" "$tmp/no-shape-geom.txt" 2>/dev/null; then
+  fail "ADR 0093 I2: deps.txt without 'sofel-shape sofel-geom' was accepted"
+fi
+crate b ''
+crate a ''
+sh "$script" "$tmp/ws" "$tmp/allowed.txt" 2>/dev/null ||
+  fail "ADR 0093 I2: an allowed but unused dependency was rejected"
+echo "ok: ADR 0093 I2: check-deps.sh fails when deps.txt drops a used pair"
