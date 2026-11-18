@@ -37,11 +37,11 @@ callsubr	44	cff_random_operand_rejected	G08109	random 1 mul callsubr: numbers 0 
 intcall	44	-	-	-107 callsubr: no random
 ifelse	44	cff_random_operand_rejected	G08109	-107 -107 random random ifelse callsubr: ifelse pushes a 16.16 number
 getrand	44	cff_random_operand_rejected	G08109	random get
-idxrand	44	cff_random_unchecked	G08108 G08109	0 random index: position (0, 1] on a stack of 1; sofel stops at the first finding
+idxrand	44	cff_random_operand_rejected	G08108 G08109	0 random index: position (0, 1] on a stack of 1; the first branch, position 0, is inside the stack and takes a 16.16 number (ADR 0082 branch order); sofel stops at the first finding
 div0	44	-	-	1 0 div: a number, not a range (FreeType divides as usual)
 sqrtneg	44	-	-	-1 sqrt: a number, not a range
 random-k-mul-callsubr-n	44	cff_random_operand_rejected	G08109	numbers 0 to n are inside the INDEX
-random-k-mul-callsubr-n+1	44	cff_random_subroutine_out_of_range	G08107 G08109	number n + 1 is outside; sofel stops at the first finding
+random-k-mul-callsubr-n+1	44	cff_random_operand_rejected	G08107 G08109	number n + 1 is outside, but the first branch, number 0, is inside and takes a 16.16 number (ADR 0082 branch order); sofel stops at the first finding
 one-over-random-callsubr	44	cff_random_subroutine_out_of_range	G08107 G08109	1 random div callsubr: the number range [1, inf) has an infinite end
 divide-by-random-minus-half	44	cff_random_unchecked	G08108	1 (random - 0.5) div: the divisor range contains 0
 sqrt-random-minus-half	44	cff_random_unchecked	G08108	(random - 0.5) sqrt: the range contains negative numbers
