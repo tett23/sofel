@@ -1,6 +1,6 @@
 # ADR 0095: 描画のクレートにCOLRv1の描画を含め、数学の関数を自前で持つ（[ADR 0087](0087-glyph-render-crate.md)と[ADR 0066](0066-color-glyph-pixels.md)の修正）
 
-Status: accepted
+Status: superseded [{"part":"照合の基準（差しかえる場所）","by":["docs/adr/0097-atan2f-substitution-in-raster-reference.md"]},{"part":"テスト設計（I4 のビルド）","by":["docs/adr/0097-atan2f-substitution-in-raster-reference.md"]}]
 
 ## 文脈
 

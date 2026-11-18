@@ -1,6 +1,6 @@
 # ADR 0097: `atan2f` の差しかえを HarfBuzz raster の参照のビルドで行う（[ADR 0095](0095-glyph-render-math-and-colrv1.md)の修正）
 
-Status: accepted-pending
+Status: accepted
 
 ## 文脈
 
