@@ -1,6 +1,6 @@
 # ADR 0094: `sofel-type1` と `sofel-bitmapfont` に確保を許す（[ADR 0003](0003-crate-layers.md)の修正）
 
-Status: proposed
+Status: accepted-pending
 
 ## 文脈
 

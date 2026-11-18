@@ -1,6 +1,6 @@
 # ADR 0093: `sofel-shape`、`sofel-color`、`sofel-subset` から `sofel-geom` への依存を表に足す（[ADR 0003](0003-crate-layers.md)の修正）
 
-Status: proposed
+Status: accepted-pending
 
 ## 文脈
 

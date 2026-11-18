@@ -1,6 +1,6 @@
 # ADR 0092: CFFの `random` の区間の確かめの食い違いを直す（[ADR 0082](0082-cff-random-interval-check.md)の修正）
 
-Status: proposed
+Status: accepted-pending
 
 ## 文脈
 
