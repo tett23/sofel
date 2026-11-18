@@ -4,7 +4,9 @@
 # `!no_std <crate>` requires #![no_std] at its library root (ADR 0081);
 # `!dev <crate> <dependency>` allows a dependency only in `[dev-dependencies]`
 # (ADR 0087);
-# `!no_alloc <crate>` forbids the alloc crate in its src/ (ADR 0094).
+# `!no_alloc <crate>` forbids the alloc crate in its src/ (ADR 0094);
+# `!no_alloc_dir <crate> <dir>` keeps a directory of a crate free of
+# allocation and of the crate's other modules (ADR 0098).
 
 # Crates that do not depend on fonts
 # (sofel-unicode: no dependencies, ADR 0019; sofel-lzw and sofel-bzip2:
@@ -120,3 +122,8 @@ sofel-conformance *
 # (ADR 0003, ADR 0094). sofel-type1 and sofel-bitmapfont may allocate.
 !no_alloc sofel-read
 !no_alloc sofel-pfr
+
+# The validators and the charstring metrics of the readers that may
+# allocate live in directories that do not (ADR 0096, ADR 0098).
+!no_alloc_dir sofel-type1 src/noalloc
+!no_alloc_dir sofel-bitmapfont src/noalloc

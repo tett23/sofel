@@ -123,7 +123,7 @@ impl<'a> Type1Face<'a> {
 
     /// The unscaled side bearings and advances of a glyph.
     ///
-    /// Allocates the decrypted charstring and the operand stack used to read it (ADR 0094).
+    /// Allocates the decrypted charstring (ADR 0094); the operand stack is a fixed array (ADR 0098).
     pub fn glyph_metrics(&self, glyph: usize) -> Option<Metrics> {
         parse_metrics(&self.glyph_program(glyph)?).ok()
     }

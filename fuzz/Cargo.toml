@@ -19,6 +19,8 @@ sofel-raster = { path = "../crates/sofel-raster" }
 sofel-shape = { path = "../crates/sofel-shape" }
 sofel-subset = { path = "../crates/sofel-subset" }
 sofel-write = { path = "../crates/sofel-write" }
+sofel-type1 = { path = "../crates/sofel-type1" }
+sofel-bitmapfont = { path = "../crates/sofel-bitmapfont" }
 
 # Not part of the main workspace (ADR 0007).
 [workspace]
@@ -174,6 +176,20 @@ bench = false
 [[bin]]
 name = "location"
 path = "fuzz_targets/location.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "type1_validators"
+path = "fuzz_targets/type1_validators.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bitmap_validators"
+path = "fuzz_targets/bitmap_validators.rs"
 test = false
 doc = false
 bench = false

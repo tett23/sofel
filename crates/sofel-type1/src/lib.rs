@@ -37,6 +37,8 @@ pub mod multiple_masters;
 
 /// CID-keyed Type 1 font data and CIDMap access.
 pub mod cid;
+/// Allocation-free readers and validators (sofel ADR 0096, ADR 0098).
+pub mod noalloc;
 /// Type 42 PostScript wrapper around an sfnt font.
 pub mod type42;
 mod type42_expert;

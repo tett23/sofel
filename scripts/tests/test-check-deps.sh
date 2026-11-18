@@ -123,6 +123,61 @@ sh "$script" "$tmp/ws" "$tmp/noalloc.txt" 2>/dev/null ||
 rm "$tmp/ws/b/src/m.rs"
 echo "ok: ADR 0094 I1: crates marked !no_alloc do not use alloc"
 
+# ADR 0098 I1, I2: a `!no_alloc_dir <crate> <dir>` directory exists, names
+# nothing that allocates, and reaches only core, itself and !no_alloc
+# crates.
+crate b ''
+mkdir -p "$tmp/ws/b/src/noalloc"
+printf '#![no_std]\n#![forbid(unsafe_code)]\nextern crate alloc;\npub mod noalloc;\nmod cipher;\npub fn decrypt() -> alloc::vec::Vec<u8> { alloc::vec::Vec::new() }\n' >"$tmp/ws/b/src/lib.rs"
+: >"$tmp/ws/b/src/cipher.rs"
+printf '//! No Vec here: comments may name it.\npub mod walk;\nuse core::fmt;\nuse crate::noalloc::walk::step;\npub fn f(x: &[u8]) -> Option<u16> { let _ = fmt::Error; step(x); u16::try_from(x.len()).ok() }\n' >"$tmp/ws/b/src/noalloc/mod.rs"
+printf 'use super::f;\npub fn step(x: &[u8]) -> usize { let _ = f; self::len(x) }\nfn len(x: &[u8]) -> usize { x.iter().count() }\n' >"$tmp/ws/b/src/noalloc/walk.rs"
+printf '# allowed\na b\n!no_alloc_dir b src/noalloc\n' >"$tmp/noallocdir.txt"
+sh "$script" "$tmp/ws" "$tmp/noallocdir.txt" 2>/dev/null ||
+  fail "ADR 0098 I1: an allocation-free directory was rejected"
+cp "$tmp/ws/b/src/noalloc/walk.rs" "$tmp/walk.rs"
+printf 'pub fn g() { let v: Vec<u8> = Vec::new(); let _ = v; }\n' >>"$tmp/ws/b/src/noalloc/walk.rs"
+if sh "$script" "$tmp/ws" "$tmp/noallocdir.txt" 2>/dev/null; then
+  fail "ADR 0098 I1: Vec in a !no_alloc_dir directory was accepted"
+fi
+for name in 'alloc::vec::Vec<u8>' 'Box<u8>' 'String' ; do
+  cp "$tmp/walk.rs" "$tmp/ws/b/src/noalloc/walk.rs"
+  printf 'pub type T = %s;\n' "$name" >>"$tmp/ws/b/src/noalloc/walk.rs"
+  if sh "$script" "$tmp/ws" "$tmp/noallocdir.txt" 2>/dev/null; then
+    fail "ADR 0098 I1: $name in a !no_alloc_dir directory was accepted"
+  fi
+done
+for call in 'x.to_vec()' 'x.iter().collect::<()>()' 'format!("")' 'vec![0u8]'; do
+  cp "$tmp/walk.rs" "$tmp/ws/b/src/noalloc/walk.rs"
+  printf 'pub fn h(x: &[u8]) { let _ = %s; }\n' "$call" >>"$tmp/ws/b/src/noalloc/walk.rs"
+  if sh "$script" "$tmp/ws" "$tmp/noallocdir.txt" 2>/dev/null; then
+    fail "ADR 0098 I1: $call in a !no_alloc_dir directory was accepted"
+  fi
+done
+for line in 'use crate::cipher::decrypt;' 'pub fn h() { crate::decrypt(); }' 'extern crate std;' 'use std::vec;'; do
+  cp "$tmp/walk.rs" "$tmp/ws/b/src/noalloc/walk.rs"
+  printf '%s\n' "$line" >>"$tmp/ws/b/src/noalloc/walk.rs"
+  if sh "$script" "$tmp/ws" "$tmp/noallocdir.txt" 2>/dev/null; then
+    fail "ADR 0098 I2: '$line' in a !no_alloc_dir directory was accepted"
+  fi
+done
+cp "$tmp/walk.rs" "$tmp/ws/b/src/noalloc/walk.rs"
+printf 'use super::super::cipher;\n' >>"$tmp/ws/b/src/noalloc/walk.rs"
+if sh "$script" "$tmp/ws" "$tmp/noallocdir.txt" 2>/dev/null; then
+  fail "ADR 0098 I2: super:: leaving the directory was accepted"
+fi
+cp "$tmp/walk.rs" "$tmp/ws/b/src/noalloc/walk.rs"
+printf 'use super::cipher;\n' >>"$tmp/ws/b/src/noalloc/mod.rs"
+if sh "$script" "$tmp/ws" "$tmp/noallocdir.txt" 2>/dev/null; then
+  fail "ADR 0098 I2: super:: in the directory's mod.rs was accepted"
+fi
+rm -r "$tmp/ws/b/src/noalloc"
+if sh "$script" "$tmp/ws" "$tmp/noallocdir.txt" 2>/dev/null; then
+  fail "ADR 0098 I1: a missing !no_alloc_dir directory was accepted"
+fi
+rm "$tmp/ws/b/src/cipher.rs"
+echo "ok: ADR 0098 I1, I2: !no_alloc_dir directories do not allocate"
+
 # ADR 0087 I1: `!dev <crate> <dependency>` allows the dependency only as
 # a development dependency; normal and build dependencies still need a
 # `<crate> <dependency>` line.

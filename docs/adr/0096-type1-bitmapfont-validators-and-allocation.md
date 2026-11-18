@@ -1,6 +1,6 @@
 # ADR 0096: `sofel-type1` と `sofel-bitmapfont` の検証器と、確保を許す場合の追加（[ADR 0094](0094-allocation-in-type1-and-bitmapfont.md)の修正）
 
-Status: accepted-pending
+Status: superseded [{"part":"不変条件 I2、I4 とテスト設計（確保の確かめ方）","by":["docs/adr/0098-allocation-free-validator-modules.md"]},{"part":"確保をやめるもの（metrics.rs の説明）","by":["docs/adr/0098-allocation-free-validator-modules.md"]}]
 
 ## 文脈
 
