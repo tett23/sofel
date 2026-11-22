@@ -16,7 +16,7 @@ fn p(x: i32, y: i32) -> Point {
 }
 
 #[test]
-fn inv1_stroke_border_closure_and_duplicate_lines() {
+fn adr0076_i1_stroke_border_closure_and_duplicate_lines() {
     let mut border = Border::default();
     border.move_to(p(0, 0)).unwrap();
     border.line_to(p(10, 0), false).unwrap();
@@ -50,7 +50,7 @@ fn inv1_stroke_border_closure_and_duplicate_lines() {
 }
 
 #[test]
-fn inv1_stroke_border_arc_has_cubic_segments() {
+fn adr0076_i1_stroke_border_arc_has_cubic_segments() {
     let mut border = Border::default();
     border.move_to(p(100, 0)).unwrap();
     border.arc_to(p(0, 0), 100, 0, stroke_trig::PI2).unwrap();
@@ -65,7 +65,7 @@ fn inv1_stroke_border_arc_has_cubic_segments() {
 }
 
 #[test]
-fn inv1_stroke_arc_is_translation_invariant_near_coordinate_limits() {
+fn adr0076_i1_stroke_arc_is_translation_invariant_near_coordinate_limits() {
     for offset in [i32::MIN + 1024, i32::MAX - 1024] {
         let mut border = Border::default();
         border.move_to(p(offset + 100, offset)).unwrap();

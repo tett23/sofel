@@ -28,7 +28,7 @@ fn original(tag: Tag, bytes: &[u8]) -> Vec<Diagnostic> {
 }
 
 #[test]
-fn inv4_layout_damage_keeps_original_diagnostics_and_siblings() {
+fn adr0059_i4_layout_damage_keeps_original_diagnostics_and_siblings() {
     let bytes = Buf::new()
         .u32(0x0001_0000)
         .u16(0x100)
@@ -61,7 +61,7 @@ fn inv4_layout_damage_keeps_original_diagnostics_and_siblings() {
 }
 
 #[test]
-fn inv4_sfnt_damage_keeps_all_original_diagnostics_once() {
+fn adr0059_i4_sfnt_damage_keeps_all_original_diagnostics_once() {
     let damaged = Buf::new()
         .u32(0x0001_0000)
         .u16(0x100)
@@ -91,7 +91,7 @@ fn inv4_sfnt_damage_keeps_all_original_diagnostics_once() {
 }
 
 #[test]
-fn inv4_layout_damage_reports_gdef_and_unreadable_header() {
+fn adr0059_i4_layout_damage_reports_gdef_and_unreadable_header() {
     let bytes = Buf::new()
         .u32(0x0001_0000)
         .u16(0x100)
@@ -130,7 +130,7 @@ fn inv4_layout_damage_reports_gdef_and_unreadable_header() {
 }
 
 #[test]
-fn inv4_layout_damage_stays_within_report_limit() {
+fn adr0059_i4_layout_damage_stays_within_report_limit() {
     let n = 1200usize;
     let lig = Buf::new().u16(3).u16(0).done();
     let n16 = u16::try_from(n).unwrap();
@@ -165,7 +165,7 @@ fn inv4_layout_damage_stays_within_report_limit() {
 }
 
 #[test]
-fn inv4_partial_lookup_list_keeps_readable_sibling() {
+fn adr0059_i4_partial_lookup_list_keeps_readable_sibling() {
     let bytes = Buf::new()
         .u32(0x0001_0000)
         .u16(0)
@@ -191,7 +191,7 @@ fn inv4_partial_lookup_list_keeps_readable_sibling() {
 }
 
 #[test]
-fn inv4_partial_lookup_list_walks_valid_child_descendants() {
+fn adr0059_i4_partial_lookup_list_walks_valid_child_descendants() {
     let mut bytes = vec![0; 29];
     bytes
         .get_mut(0..4)
@@ -240,7 +240,7 @@ fn inv4_partial_lookup_list_walks_valid_child_descendants() {
 }
 
 #[test]
-fn inv4_partial_feature_list_walks_valid_child_descendants() {
+fn adr0059_i4_partial_feature_list_walks_valid_child_descendants() {
     let mut bytes = vec![0; 23];
     bytes
         .get_mut(0..4)
@@ -280,7 +280,7 @@ fn inv4_partial_feature_list_walks_valid_child_descendants() {
 }
 
 #[test]
-fn inv4_partial_script_list_walks_valid_child_descendants() {
+fn adr0059_i4_partial_script_list_walks_valid_child_descendants() {
     let mut bytes = vec![0; 23];
     bytes
         .get_mut(0..4)
@@ -320,7 +320,7 @@ fn inv4_partial_script_list_walks_valid_child_descendants() {
 }
 
 #[test]
-fn inv4_partial_attach_and_ligature_sets_report_readable_offsets() {
+fn adr0059_i4_partial_attach_and_ligature_sets_report_readable_offsets() {
     let gdef = [1u16, 0, 0, 12, 0, 0, 0, 2, 0xffff];
     let gsub = [1u16, 0, 0, 0, 10, 1, 4, 4, 0, 1, 8, 1, 0, 1, 8, 2, 0xffff];
     for (tag, words, field) in [

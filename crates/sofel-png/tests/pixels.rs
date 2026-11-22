@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::arithmetic_side_effects)]
 use sofel_png::decode;
 #[test]
-fn i1_decode_all_color_types_depths_and_interlace() {
+fn adr0066_i1_decode_all_color_types_depths_and_interlace() {
     check(
         0,
         1,
@@ -141,7 +141,7 @@ fn check(color: u8, depth: u8, _raw: &[u8], expected: &[u8], encoded: &[u8]) {
 }
 
 #[test]
-fn i1_adam7_passes_reset_filters_and_place_every_pixel() {
+fn adr0066_i1_adam7_passes_reset_filters_and_place_every_pixel() {
     let image = decode(include_bytes!("data/adam7-rgba.png"), 81).unwrap();
     let expected: Vec<_> = (0u8..9)
         .flat_map(|y| (0u8..9).flat_map(move |x| [(x + y) * 13, y * 19, x * 17, 255]))

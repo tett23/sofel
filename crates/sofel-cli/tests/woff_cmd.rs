@@ -3,7 +3,7 @@
 #![allow(clippy::unwrap_used)]
 
 #[test]
-fn i3_webfont_error_keeps_existing_and_absent_output() {
+fn adr0070_i3_webfont_error_keeps_existing_and_absent_output() {
     use std::{
         fs,
         process::{Command, Stdio},

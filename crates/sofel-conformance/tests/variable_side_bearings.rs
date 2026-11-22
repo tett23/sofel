@@ -139,11 +139,11 @@ fn check(vertical: bool) {
 }
 
 #[test]
-fn adr0078_i01_hvar_lsb_map_keeps_freetype_bearing() {
+fn adr0078_i1_hvar_lsb_map_keeps_freetype_bearing() {
     check(false);
 }
 
 #[test]
-fn adr0078_i02_vvar_tsb_map_keeps_freetype_bearing() {
+fn adr0078_i2_vvar_tsb_map_keeps_freetype_bearing() {
     check(true);
 }

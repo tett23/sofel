@@ -1,6 +1,6 @@
 # ADR 0002: ライセンスと、既存の実装とテストの流用
 
-Status: accepted
+Status: superseded [{"part":"テストのデータ","by":["docs/adr/0088-synthetic-test-fixtures.md"],"kind":"supplement"}]
 
 ## 文脈
 

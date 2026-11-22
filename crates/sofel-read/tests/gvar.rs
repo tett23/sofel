@@ -160,7 +160,7 @@ fn i04_gvar_embedded_intermediate_and_shared_points() {
 }
 
 #[test]
-fn adr0047_i01_i02_tuples_keep_order_and_data_boundaries() {
+fn adr0047_i1_i2_tuples_keep_order_and_data_boundaries() {
     let glyph_bytes = [
         0, 2, 0, 12, // two tuples, serialized data starts after the headers
         0, 2, 0, 0, // first tuple uses shared peak zero
@@ -199,7 +199,7 @@ fn adr0047_i01_i02_tuples_keep_order_and_data_boundaries() {
 }
 
 #[test]
-fn adr0047_i04_broken_tuple_bounds_still_reject_glyph_data() {
+fn adr0047_i4_broken_tuple_bounds_still_reject_glyph_data() {
     let mut data = header(gvar::TAG, 1, false);
     data[22..24].copy_from_slice(&8u16.to_be_bytes());
     data.extend_from_slice(&[0, 2, 0, 12, 0, 2, 0, 0, 0, 3, 0, 0, 0xaa, 0xbb, 0xcc, 0xdd]);

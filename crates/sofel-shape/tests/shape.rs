@@ -812,7 +812,7 @@ fn adr0049_i4_variable_shape_matches_uncached_advance_and_default_fields() {
 }
 
 #[test]
-fn i1_aat_feat_selector_range_uses_the_input_clusters() {
+fn adr0060_i1_aat_feat_selector_range_uses_the_input_clusters() {
     // The chain's one noncontextual lookup replaces glyph 1 with 2 when liga is on.
     let words = [
         0x0002_0000u32,
@@ -866,7 +866,7 @@ fn i1_aat_feat_selector_range_uses_the_input_clusters() {
 }
 
 #[test]
-fn i2_aat_state_stops_at_a_nonadvancing_cycle_and_rejects_a_short_entry() {
+fn adr0060_i2_aat_state_stops_at_a_nonadvancing_cycle_and_rejects_a_short_entry() {
     // Extended rearrangement machine: the only row loops without consuming a glyph.
     let words = [
         0x0002_0000u32,

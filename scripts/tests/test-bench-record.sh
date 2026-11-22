@@ -1,5 +1,5 @@
 #!/bin/sh
-# Tests for scripts/bench-record.sh (ADR 0080 I1-I6), with fake measurements.
+# Tests for scripts/bench-record.sh (ADR 0080 I1, I2, I3, I4, I5, I6), with fake measurements.
 
 set -eu
 
@@ -71,7 +71,7 @@ order=$(grep -n '^## ' "$f" | sed 's/^[0-9]*:## //' | tr '\n' ',')
 [ "$order" = "環境,ネイティブ,wasm," ] || fail "ADR 0080 I2: sections are $order"
 awk '/^## ネイティブ$/{f=1;next} /^## /{f=0} f' "$f" | grep -qF '| cmap | A |' || fail "ADR 0080 I2: the native table is missing"
 awk '/^## wasm$/{f=1;next} /^## /{f=0} f' "$f" | grep -qF '| cmap | wasm |' || fail "ADR 0080 I2: the wasm table is missing"
-echo 'ok: ADR 0080 I1, I2: one record with the environment, native and wasm sections'
+echo 'ADR 0080 I1, I2: one record with the environment, native and wasm sections'
 
 # ADR 0080 I1: a one-letter subject, and a macOS arm64 runner.
 fake_uname Darwin arm64
@@ -82,7 +82,7 @@ fake_uname Linux aarch64
 SOFEL_BENCH_NATIVE=$tmp/native SOFEL_BENCH_WASM=$tmp/wasm PATH="$tmp/uname-Linux-aarch64:$PATH" \
   run "$tmp/o2b" --subject a >/dev/null || fail "ADR 0080 I1: aarch64 failed"
 [ -f "$tmp/o2b/$today-a-ci-linux-arm64.md" ] || fail "ADR 0080 I1: got $(ls "$tmp/o2b")"
-echo 'ok: ADR 0080 I1: runner names and a one-letter subject'
+echo 'ADR 0080 I1: runner names and a one-letter subject'
 
 # ADR 0080 I2: empty measurement output still gives the sections.
 fake native 0 ''
@@ -92,7 +92,7 @@ SOFEL_BENCH_NATIVE=$tmp/native SOFEL_BENCH_WASM=$tmp/wasm \
 f=$(ls "$tmp/o3"/*.md)
 order=$(grep -n '^## ' "$f" | sed 's/^[0-9]*:## //' | tr '\n' ',')
 [ "$order" = "環境,ネイティブ,wasm," ] || fail "ADR 0080 I2: sections with empty output are $order"
-echo 'ok: ADR 0080 I2: empty output keeps the sections'
+echo 'ADR 0080 I2: empty output keeps the sections'
 
 # ADR 0080 I3: every environment row, and 未取得 without lscpu and sysctl.
 rows='ランナーのイメージと版
@@ -122,7 +122,7 @@ printf '%s\n' "$rows" | while IFS= read -r row; do
   grep -q "^| $row | " "$f" || fail "ADR 0080 I3: no row $row"
 done
 grep -q '^| CPU の名前 | 未取得 |$' "$f" || fail "ADR 0080 I3: CPU without lscpu and sysctl: $(grep 'CPU の名前' "$f")"
-echo 'ok: ADR 0080 I3: every environment row, 未取得 when a value cannot be read'
+echo 'ADR 0080 I3: every environment row, 未取得 when a value cannot be read'
 
 # ADR 0080 I4: a failing measurement writes nothing and keeps its status.
 fake native 1 "$native_table"
@@ -141,7 +141,7 @@ code=$?
 set -e
 [ "$code" = 3 ] || fail "ADR 0080 I4: wasm failure exited $code"
 [ -z "$(ls "$tmp/o6")" ] || fail "ADR 0080 I4: a record was written after a wasm failure"
-echo 'ok: ADR 0080 I4: failures keep their status and write nothing'
+echo 'ADR 0080 I4: failures keep their status and write nothing'
 
 # ADR 0080 I5: bad or missing subjects stop before measuring.
 fake wasm 0 "$wasm_table"
@@ -161,7 +161,7 @@ set -e
 [ "$code" = 2 ] || fail "ADR 0080 I5: no subject exited $code"
 [ ! -f "$tmp/native.args" ] || fail "ADR 0080 I5: no subject ran a measurement"
 [ -z "$(ls "$tmp/o7")" ] || fail "ADR 0080 I5: a record was written"
-echo 'ok: ADR 0080 I5: bad subjects exit 2 before measuring'
+echo 'ADR 0080 I5: bad subjects exit 2 before measuring'
 
 # ADR 0080 I6: --filter reaches both measurements, and only when given.
 SOFEL_BENCH_NATIVE=$tmp/native SOFEL_BENCH_WASM=$tmp/wasm \
@@ -172,4 +172,4 @@ SOFEL_BENCH_NATIVE=$tmp/native SOFEL_BENCH_WASM=$tmp/wasm \
   run "$tmp/o9" --subject f >/dev/null || fail "ADR 0080 I6: an unfiltered run failed"
 [ "$(cat "$tmp/native.args")" = "" ] || fail "ADR 0080 I6: native got '$(cat "$tmp/native.args")' without --filter"
 [ "$(cat "$tmp/wasm.args")" = "" ] || fail "ADR 0080 I6: wasm got '$(cat "$tmp/wasm.args")' without --filter"
-echo 'ok: ADR 0080 I6: --filter is passed to both measurements only when given'
+echo 'ADR 0080 I6: --filter is passed to both measurements only when given'

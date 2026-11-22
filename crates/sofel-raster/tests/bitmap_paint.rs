@@ -3,7 +3,7 @@ use sofel_geom::{GlyphExtents, Transform};
 use sofel_raster::BgraImage;
 
 #[test]
-fn i2_transformed_image_interpolates_four_neighbors_and_respects_clip() {
+fn adr0066_i2_transformed_image_interpolates_four_neighbors_and_respects_clip() {
     let src = BgraImage {
         width: 2,
         rows: 2,

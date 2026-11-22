@@ -1,5 +1,5 @@
 #!/bin/sh
-# ADR 0033 I7-I8: aggregate descendants only and preserve failures.
+# ADR 0033 I7, I8: aggregate descendants only and preserve failures.
 set -eu
 root=$(cd "$(dirname "$0")/../.." && pwd)
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/sofel-measure.XXXXXX")
@@ -29,4 +29,4 @@ for result in 0 17; do
   grep -qx command-output "$tmp/stdout"
   grep -q 'peak_tree_rss_kib=600 ' "$tmp/stderr"
 done
-echo 'ok: ADR 0033 I7-I8 CI process-tree measurement'
+echo 'ADR 0033 I7, I8: CI process-tree measurement'

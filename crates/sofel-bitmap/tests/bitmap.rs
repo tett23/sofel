@@ -220,7 +220,7 @@ fn bitmap_only_fonts_open() {
 }
 
 #[test]
-fn i1_sbit_png_decodes_pixels_and_flips_logical_row() {
+fn adr0066_i1_sbit_png_decodes_pixels_and_flips_logical_row() {
     let png = vec![
         137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 2, 0, 0, 0, 1, 8, 6,
         0, 0, 0, 244, 34, 127, 138, 0, 0, 0, 17, 73, 68, 65, 84, 120, 156, 99, 248, 207, 192, 208,

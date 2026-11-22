@@ -5,7 +5,7 @@
 use sofel_conformance::extra::{Corpus, sample_glyphs};
 
 #[test]
-fn i04_sample_boundaries_and_mandatory_glyphs() {
+fn adr0031_i4_sample_boundaries_and_mandatory_glyphs() {
     assert_eq!(sample_glyphs(0, &[]).unwrap(), Vec::<u32>::new());
     assert_eq!(sample_glyphs(1, &[0]).unwrap(), vec![0]);
     assert_eq!(sample_glyphs(2, &[0, 1]).unwrap(), vec![0, 1]);
@@ -18,7 +18,7 @@ fn i04_sample_boundaries_and_mandatory_glyphs() {
 }
 
 #[test]
-fn i04_registry_rejects_duplicate_id_and_hash() {
+fn adr0031_i4_registry_rejects_duplicate_id_and_hash() {
     let lock = "font\thttps://example.invalid/a\t0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\t1\tfonts/a.ttf\nlicense\thttps://example.invalid/l\tabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789\t1\tlicenses/l.txt\n";
     let row = "a\tfont\t-\tfonts/a.ttf\t0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\tlicense\tshape\n";
     assert_eq!(Corpus::parse(lock, row).unwrap().fonts.len(), 1);
@@ -28,7 +28,7 @@ fn i04_registry_rejects_duplicate_id_and_hash() {
 }
 
 #[test]
-fn i05_every_registered_font_has_a_role() {
+fn adr0031_i5_every_registered_font_has_a_role() {
     let corpus = Corpus::parse(
         include_str!("../../../fonts.lock"),
         include_str!("../../../conformance/fonts.tsv"),

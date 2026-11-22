@@ -24,7 +24,7 @@ use sofel_raster::Rasterizer;
 mod build;
 
 #[test]
-fn adr0030_i04_cff2_zero_coordinates_match_harfbuzz() {
+fn adr0030_i4_cff2_zero_coordinates_match_harfbuzz() {
     use build::Cs::{I, Op};
     let store = build::item_variation_store(1, &[vec![(0, 0, 0)]], &[vec![0]]);
     let glyph = build::charstring(&[

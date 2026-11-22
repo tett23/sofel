@@ -11,7 +11,7 @@ use sofel_font::Font;
 use sofel_font::read::sfnt::FontFile;
 
 #[test]
-fn i06_all_scalar_nominal_glyphs_match_harfbuzz() {
+fn adr0031_i6_all_scalar_nominal_glyphs_match_harfbuzz() {
     let corpus = Corpus::parse(
         include_str!("../../../fonts.lock"),
         include_str!("../../../conformance/fonts.tsv"),

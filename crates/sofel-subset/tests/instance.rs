@@ -11,6 +11,8 @@
 
 #[path = "../../sofel-read/tests/support/build.rs"]
 mod build;
+#[path = "support/fixture_input.rs"]
+mod fixture_input;
 
 use build::*;
 use sofel_font::Font;
@@ -281,7 +283,7 @@ fn i1_subset_instance_endpoint_pin_removes_outside_named_instance() {
 }
 
 #[test]
-fn i1_subset_instance_endpoint_pin_filters_stat_without_variation_data() {
+fn adr0061_i1_subset_instance_endpoint_pin_filters_stat_without_variation_data() {
     let data = font_with(vec![
         (b"fvar", fvar(&AXES)),
         (
@@ -300,6 +302,7 @@ fn i1_subset_instance_endpoint_pin_filters_stat_without_variation_data() {
         .unwrap();
     let output = subset(&font, &input).unwrap();
     // hb-dump --subset from HarfBuzz 3df40d9, --instance=wght=900.
+    fixture_input::export("adr0061-stat-endpoint-hb15.ttf", &data).unwrap();
     assert_eq!(
         output,
         include_bytes!("data/adr0061-stat-endpoint-hb15.ttf")
@@ -310,7 +313,7 @@ fn i1_subset_instance_endpoint_pin_filters_stat_without_variation_data() {
 }
 
 #[test]
-fn i1_subset_instance_range_filters_stat_without_variation_data() {
+fn adr0061_i1_subset_instance_range_filters_stat_without_variation_data() {
     let data = font_with(vec![
         (b"fvar", fvar(&AXES)),
         (
@@ -335,6 +338,7 @@ fn i1_subset_instance_range_filters_stat_without_variation_data() {
         .unwrap();
     let output = subset(&font, &input).unwrap();
     // hb-dump --subset from HarfBuzz 3df40d9, --instance=wght=300:400:500.
+    fixture_input::export("adr0061-stat-range-hb15.ttf", &data).unwrap();
     assert_eq!(output, include_bytes!("data/adr0061-stat-range-hb15.ttf"));
     let sfnt = Sfnt::new(&output).unwrap();
     let stat = sfnt.table(Tag::new(b"STAT")).unwrap();
@@ -342,7 +346,7 @@ fn i1_subset_instance_range_filters_stat_without_variation_data() {
 }
 
 #[test]
-fn i1_subset_instance_all_axes_pinned_filters_stat_without_variation_data() {
+fn adr0061_i1_subset_instance_all_axes_pinned_filters_stat_without_variation_data() {
     let data = font_with(vec![
         (b"fvar", fvar(&AXES)),
         (
@@ -363,6 +367,7 @@ fn i1_subset_instance_all_axes_pinned_filters_stat_without_variation_data() {
         .unwrap();
     let output = subset(&font, &input).unwrap();
     // hb-dump --subset from HarfBuzz 3df40d9, --instance=wght=900,wdth=drop.
+    fixture_input::export("adr0061-stat-all-hb15.ttf", &data).unwrap();
     assert_eq!(output, include_bytes!("data/adr0061-stat-all-hb15.ttf"));
     let sfnt = Sfnt::new(&output).unwrap();
     let stat = sfnt.table(Tag::new(b"STAT")).unwrap();
@@ -370,7 +375,7 @@ fn i1_subset_instance_all_axes_pinned_filters_stat_without_variation_data() {
 }
 
 #[test]
-fn i1_subset_instance_default_pin_keeps_avar_and_filters_stat() {
+fn adr0061_i1_subset_instance_default_pin_keeps_avar_and_filters_stat() {
     let map = [(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)];
     let data = font_with(vec![
         (b"fvar", fvar(&AXES)),
@@ -391,6 +396,7 @@ fn i1_subset_instance_default_pin_keeps_avar_and_filters_stat() {
         .unwrap();
     let output = subset(&font, &input).unwrap();
     // hb-dump --subset from HarfBuzz 3df40d9, --instance=wdth=drop.
+    fixture_input::export("adr0061-stat-avar-hb15.ttf", &data).unwrap();
     assert_eq!(output, include_bytes!("data/adr0061-stat-avar-hb15.ttf"));
     let sfnt = Sfnt::new(&output).unwrap();
     let stat = sfnt.table(Tag::new(b"STAT")).unwrap();
@@ -398,7 +404,7 @@ fn i1_subset_instance_default_pin_keeps_avar_and_filters_stat() {
 }
 
 #[test]
-fn i1_subset_instance_nondefault_pin_with_identity_avar() {
+fn adr0061_i1_subset_instance_nondefault_pin_with_identity_avar() {
     let identity = [(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)];
     let data = font_with(vec![
         (b"fvar", fvar(&AXES)),
@@ -410,11 +416,12 @@ fn i1_subset_instance_nondefault_pin_with_identity_avar() {
         .unwrap();
     let output = subset(&font, &input).unwrap();
     // HarfBuzz 3df40d9, hb-dump --subset --unicodes=41 --instance=wght=900.
+    fixture_input::export("adr0061-avar-pin-hb15.ttf", &data).unwrap();
     assert_eq!(output, include_bytes!("data/adr0061-avar-pin-hb15.ttf"));
 }
 
 #[test]
-fn i1_subset_instance_range_with_identity_avar() {
+fn adr0061_i1_subset_instance_range_with_identity_avar() {
     let identity = [(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)];
     let data = font_with(vec![
         (b"fvar", fvar(&AXES)),
@@ -432,11 +439,12 @@ fn i1_subset_instance_range_with_identity_avar() {
         .unwrap();
     let output = subset(&font, &input).unwrap();
     // HarfBuzz 3df40d9, hb-dump --subset --unicodes=41 --instance=wght=300:400:500.
+    fixture_input::export("adr0061-avar-range-hb15.ttf", &data).unwrap();
     assert_eq!(output, include_bytes!("data/adr0061-avar-range-hb15.ttf"));
 }
 
 #[test]
-fn i1_subset_instance_one_sided_range_with_identity_avar() {
+fn adr0061_i1_subset_instance_one_sided_range_with_identity_avar() {
     let identity = [(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)];
     let data = font_with(vec![
         (b"fvar", fvar(&AXES)),
@@ -454,6 +462,7 @@ fn i1_subset_instance_one_sided_range_with_identity_avar() {
         .unwrap();
     let output = subset(&font, &input).unwrap();
     // HarfBuzz 3df40d9, hb-dump --subset --unicodes=41 --instance=wght=400:400:500.
+    fixture_input::export("adr0061-avar-one-sided-hb15.ttf", &data).unwrap();
     assert_eq!(
         output,
         include_bytes!("data/adr0061-avar-one-sided-hb15.ttf")
@@ -548,7 +557,7 @@ fn i1_subset_instance_drops_names_of_removed_axes() {
 }
 
 #[test]
-fn i2_unknown_axis_preserves_previous_axis_range_and_output() {
+fn adr0061_i2_unknown_axis_preserves_previous_axis_range_and_output() {
     let data = font_with(vec![(b"fvar", fvar(&AXES))]);
     let font = Font::new(&data, 0).unwrap();
     let input = unicodes().with_all_axes_pinned_to_default(&font).unwrap();

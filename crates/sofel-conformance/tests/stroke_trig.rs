@@ -8,7 +8,7 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 #[test]
-fn inv1_stroke_cordic_matches_freetype() {
+fn adr0076_i1_stroke_cordic_matches_freetype() {
     let exe = paths::ft_dump();
     paths::require(&exe, "ft-dump").unwrap();
     let angles = [

@@ -307,7 +307,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn i2_all_required_observations_pass_even_with_out_of_scope_requirements() {
+    fn adr0074_i2_all_required_observations_pass_even_with_out_of_scope_requirements() {
         let mut seen = BTreeSet::new();
         assert!(verify(INVENTORY, |feature, case, name| {
             assert!(seen.insert((feature.to_owned(), case.to_owned(), name.to_owned())));
@@ -323,7 +323,7 @@ mod tests {
     }
 
     #[test]
-    fn i2_one_missing_or_failed_observation_fails_the_case() {
+    fn adr0074_i2_one_missing_or_failed_observation_fails_the_case() {
         for probe in [None, Some(Err("pixel (2, 3) has wrong RGBA".to_owned()))] {
             assert!(!verify(INVENTORY, |feature, case, name| {
                 if (feature, case, name) == ("in-gradient", "linear", "rgba") {

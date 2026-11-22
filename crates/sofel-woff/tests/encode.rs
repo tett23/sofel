@@ -54,7 +54,7 @@ fn inflate_with_gzip(zlib: &[u8], expected: &[u8]) -> Vec<u8> {
     target_os = "wasi",
     ignore = "checks the streams with the host gzip, which wasm cannot start"
 )]
-fn i1_webfont_roundtrip_preserves_woff_physical_order() {
+fn adr0070_i1_webfont_roundtrip_preserves_woff_physical_order() {
     let input = font();
     let encoded = encode(&input, Format::Woff).unwrap();
     assert_eq!(&encoded[4..8], &input[..4]);
@@ -86,7 +86,7 @@ fn i1_webfont_roundtrip_preserves_woff_physical_order() {
 }
 
 #[test]
-fn i2_webfont_directory_drops_dsig_only_for_woff2() {
+fn adr0070_i2_webfont_directory_drops_dsig_only_for_woff2() {
     let data = encode(&font(), Format::Woff2).unwrap();
     assert_eq!(&data[..4], b"wOF2");
     assert_eq!(&data[12..14], &2u16.to_be_bytes());
@@ -94,7 +94,7 @@ fn i2_webfont_directory_drops_dsig_only_for_woff2() {
 }
 
 #[test]
-fn i3_webfont_error_bad_checksums_and_extra_bytes() {
+fn adr0070_i3_webfont_error_bad_checksums_and_extra_bytes() {
     for format in [Format::Woff, Format::Woff2] {
         let mut invalid = font();
         invalid[8] ^= 1;
@@ -108,7 +108,7 @@ fn i3_webfont_error_bad_checksums_and_extra_bytes() {
 }
 
 #[test]
-fn i2_webfont_directory_null_transforms_and_signature_flags() {
+fn adr0070_i2_webfont_directory_null_transforms_and_signature_flags() {
     for signed in [false, true] {
         for already_flagged in [false, true] {
             let mut head = [0u8; 54];

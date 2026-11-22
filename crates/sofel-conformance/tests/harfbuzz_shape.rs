@@ -379,7 +379,7 @@ fn harfbuzz_shaping_tests() {
 }
 
 #[test]
-fn i1_aat_morx_rearranges_all_sixteen_verbs() {
+fn adr0060_i1_aat_morx_rearranges_all_sixteen_verbs() {
     let data =
         paths::testdata().join("harfbuzz/test/shape/data/text-rendering-tests/tests/MORX-2.tests");
     let mut skipped = 0;
@@ -391,7 +391,7 @@ fn i1_aat_morx_rearranges_all_sixteen_verbs() {
 }
 
 #[test]
-fn i1_aat_contextual_morx_updates_marked_and_current_glyphs() {
+fn adr0060_i1_aat_contextual_morx_updates_marked_and_current_glyphs() {
     let data =
         paths::testdata().join("harfbuzz/test/shape/data/text-rendering-tests/tests/MORX-18.tests");
     let suite = cases("text-rendering-tests", &data, &mut 0);
@@ -402,7 +402,7 @@ fn i1_aat_contextual_morx_updates_marked_and_current_glyphs() {
 }
 
 #[test]
-fn i1_aat_insertion_uses_marked_and_current_positions() {
+fn adr0060_i1_aat_insertion_uses_marked_and_current_positions() {
     let path =
         paths::testdata().join("harfbuzz/test/shape/data/text-rendering-tests/tests/MORX-29.tests");
     let suite = cases("text-rendering-tests", &path, &mut 0);
@@ -413,7 +413,7 @@ fn i1_aat_insertion_uses_marked_and_current_positions() {
 }
 
 #[test]
-fn i1_aat_ligature_uses_the_component_stack() {
+fn adr0060_i1_aat_ligature_uses_the_component_stack() {
     let path =
         paths::testdata().join("harfbuzz/test/shape/data/text-rendering-tests/tests/MORX-27.tests");
     let suite = cases("text-rendering-tests", &path, &mut 0);
@@ -424,7 +424,7 @@ fn i1_aat_ligature_uses_the_component_stack() {
 }
 
 #[test]
-fn i1_aat_kerx_pairs_and_history_match_reference() {
+fn adr0060_i1_aat_kerx_pairs_and_history_match_reference() {
     let path = paths::testdata().join("harfbuzz/test/shape/data/in-house/tests/aat-kerx.tests");
     let suite = cases("in-house", &path, &mut 0);
     for id in ["in-house/aat-kerx.tests:5", "in-house/aat-kerx.tests:23"] {
@@ -434,7 +434,7 @@ fn i1_aat_kerx_pairs_and_history_match_reference() {
 }
 
 #[test]
-fn i1_aat_kerx_attaches_marks_in_both_directions() {
+fn adr0060_i1_aat_kerx_attaches_marks_in_both_directions() {
     let path = paths::testdata().join("harfbuzz/test/shape/data/in-house/tests/aat-kerx.tests");
     let suite = cases("in-house", &path, &mut 0);
     for line in [13, 14, 19, 20] {
@@ -445,7 +445,7 @@ fn i1_aat_kerx_attaches_marks_in_both_directions() {
 }
 
 #[test]
-fn i1_aat_ltag_matches_whole_language_subtags() {
+fn adr0060_i1_aat_ltag_matches_whole_language_subtags() {
     let path = paths::testdata().join("harfbuzz/test/shape/data/in-house/tests/aat-morx.tests");
     let suite = cases("in-house", &path, &mut 0);
     for line in 9..=17 {
@@ -456,7 +456,7 @@ fn i1_aat_ltag_matches_whole_language_subtags() {
 }
 
 #[test]
-fn i1_legacy_kern_pairs_classes_and_script_selection() {
+fn adr0060_i1_legacy_kern_pairs_classes_and_script_selection() {
     for (file, lines) in [
         ("kern-format2", &[1, 2, 3][..]),
         ("per-script-kern-fallback", &[13, 15][..]),
@@ -475,7 +475,7 @@ fn i1_legacy_kern_pairs_classes_and_script_selection() {
 }
 
 #[test]
-fn i1_legacy_kern_machine_pops_positions_until_the_low_bit() {
+fn adr0060_i1_legacy_kern_machine_pops_positions_until_the_low_bit() {
     let path = paths::testdata().join("harfbuzz/test/shape/data/in-house/tests/kern-format1.tests");
     let suite = cases("in-house", &path, &mut 0);
     assert!(!suite.is_empty());
@@ -485,7 +485,7 @@ fn i1_legacy_kern_machine_pops_positions_until_the_low_bit() {
 }
 
 #[test]
-fn i1_legacy_mort_chain_runs_all_five_operations() {
+fn adr0060_i1_legacy_mort_chain_runs_all_five_operations() {
     let path =
         paths::testdata().join("harfbuzz/test/shape/data/text-rendering-tests/tests/MORT-1.tests");
     let suite = cases("text-rendering-tests", &path, &mut 0);
@@ -510,7 +510,7 @@ fn adr0060_i1_aat_shape_without_head() {
 }
 
 #[test]
-fn i1_aat_shape_all_glyph_fields_match_native_harfbuzz() {
+fn adr0060_i1_aat_shape_all_glyph_fields_match_native_harfbuzz() {
     let root = paths::testdata().join("harfbuzz/test/shape/data");
     let mut compared = 0;
     let mut differences = Vec::new();

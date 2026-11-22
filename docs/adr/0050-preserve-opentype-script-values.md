@@ -34,9 +34,9 @@ ISO 15924 の文字列を受け取る `Script::from_iso15924` の規則と、言
 
 ## 不変条件
 
-1. 任意の OpenType タグについて、`hb_ot_tag_to_script` の戻り値がゼロなら `ot_tag_to_script` は `None` を返す。
+- I1: 任意の OpenType タグについて、`hb_ot_tag_to_script` の戻り値がゼロなら `ot_tag_to_script` は `None` を返す。
    それ以外なら、返った `Script` の `tag()` は戻り値のビッグエンディアン表現と一致する。
-2. 任意のスクリプトタグと任意の言語タグ（省略を含む）について、`ot_tags_to_script_and_language` の第1戻り値は、同じスクリプトタグを渡した `ot_tag_to_script` の戻り値と一致する。
+- I2: 任意のスクリプトタグと任意の言語タグ（省略を含む）について、`ot_tags_to_script_and_language` の第1戻り値は、同じスクリプトタグを渡した `ot_tag_to_script` の戻り値と一致する。
 
 | OpenType タグ | 期待するスクリプト |
 | --- | --- |
