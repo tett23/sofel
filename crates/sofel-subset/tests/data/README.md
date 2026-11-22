@@ -512,3 +512,21 @@ cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-varstore-partial-desubr-hb15.otf" "crates/sofel
 "$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-varstore-unused-vsindex-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-varstore-unused-vsindex-desubr-hb15.otf" --gids=1 --desubroutinize
 cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-varstore-unused-vsindex-desubr-hb15.otf" "crates/sofel-subset/tests/data/cff2-varstore-unused-vsindex-desubr-hb15.otf"
 ```
+
+## cff2-context-call-keep-hb15.otf
+
+`tests/cff2.rs` の `cff2_contextual_nested_call_keep_hints_matches_harfbuzz` が作る入力である。共有 global サブルーチンのマスク長が呼び出し元によって変わり、一方で入れ子の call を読む。ヒントを保持したまま gid 1 と 2 を残す。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-context-call-keep-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-context-call-keep-hb15.otf" --gids=1,2
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-context-call-keep-hb15.otf" "crates/sofel-subset/tests/data/cff2-context-call-keep-hb15.otf"
+```
+
+## cff2-context-call-keep-reverse-hb15.otf
+
+同じ2つのグリフの解析順を逆にした入力である。最初の呼び出しで確定する call の位置が変わる。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-context-call-keep-reverse-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-context-call-keep-reverse-hb15.otf" --gids=1,2
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-context-call-keep-reverse-hb15.otf" "crates/sofel-subset/tests/data/cff2-context-call-keep-reverse-hb15.otf"
+```
