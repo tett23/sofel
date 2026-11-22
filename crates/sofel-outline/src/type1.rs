@@ -219,8 +219,8 @@ fn decode_program<P: Pen>(
                                     .ok_or(OutlineError::InvalidCharString)?;
                             }
                         }
-                    } else {
-                        state.unsupported_stem_map = true;
+                    } else if !state.native {
+                        state.late_stem_pending = true;
                     }
                 } else {
                     state.unsupported_stem_map = true;
@@ -550,6 +550,7 @@ struct State<'a, P: Pen> {
     h_stem_shift: i64,
     h_stem_map: Option<Type1HorizontalStemMap>,
     unsupported_stem_map: bool,
+    late_stem_pending: bool,
     flex: Option<Flex>,
 }
 
@@ -585,6 +586,7 @@ impl<'a, P: Pen> State<'a, P> {
             h_stem_shift: 0,
             h_stem_map: None,
             unsupported_stem_map: false,
+            late_stem_pending: false,
             flex: None,
         }
     }
@@ -646,6 +648,9 @@ impl<'a, P: Pen> State<'a, P> {
     }
 
     fn move_by(&mut self, dx: i64, dy: i64) -> Result<(), OutlineError> {
+        if self.late_stem_pending {
+            self.unsupported_stem_map = true;
+        }
         if self.flex.is_none() {
             self.close();
         }
