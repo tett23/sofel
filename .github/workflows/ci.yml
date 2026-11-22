@@ -256,7 +256,7 @@ jobs:
             SOFEL_REQUIRE_TESTDATA=1 SOFEL_FT_DUMP="$RUNNER_TEMP/ft-dump-legacy" cargo test --release -p sofel-conformance --test common_face
           fi
           SOFEL_REQUIRE_TESTDATA=1 cargo test --release -p sofel-capi --test common_face
-          SOFEL_REQUIRE_TESTDATA=1 sh scripts/test-capi.sh native
+          SOFEL_REQUIRE_TESTDATA=1 SOFEL_REQUIRE_EXTRA_FONTS=1 sh scripts/test-capi.sh native
       - name: Compare gallery sbix glyphs with FreeType
         if: runner.os == 'Linux'
         run: SOFEL_FT_DUMP="$RUNNER_TEMP/ft-dump-png" cargo test --release -p sofel-conformance --test freetype_sbit i2_sbix_gallery -- --ignored
