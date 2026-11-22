@@ -252,7 +252,19 @@ fn decode_program<P: Pen>(
                     0 => stack.clear(), // dotsection
                     1 | 2 => {
                         state.has_stems = true;
-                        state.unsupported_stem_map = true;
+                        if escape == 2 && !state.emitted {
+                            if let [p0, w0, p1, w1, p2, w2] = stack.as_slice() {
+                                for (position, width) in [(*p0, *w0), (*p1, *w1), (*p2, *w2)] {
+                                    if !state.h_stems.contains(&(position, width)) {
+                                        state.h_stems.push((position, width));
+                                    }
+                                }
+                            } else {
+                                state.unsupported_stem_map = true;
+                            }
+                        } else {
+                            state.unsupported_stem_map = true;
+                        }
                         stack.clear();
                     }
                     16 => {
