@@ -132,6 +132,19 @@ fn adr0086_cli_hint_properties() {
         path,
     ]);
     assert_eq!(code, 2, "{err}");
+    let (code, image, err) = run(&[
+        "--ppem",
+        "12",
+        "--glyph",
+        "1",
+        "--hint",
+        "native",
+        "--hint-property",
+        "cff:no-stem-darkening=false",
+        path,
+    ]);
+    assert_eq!(code, 0, "{err}");
+    assert!(image.starts_with(b"P5\n"));
     let _ = std::fs::remove_file(f);
 }
 

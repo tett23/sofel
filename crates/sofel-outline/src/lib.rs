@@ -620,6 +620,29 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
         target: HintTarget,
         scratch: &mut Scratch,
     ) -> Result<(OutlineInfo, i32), OutlineError> {
+        self.load_with_hint_properties(
+            glyph,
+            ppem,
+            mode,
+            target,
+            scratch,
+            &HintProperties::default(),
+        )
+    }
+
+    /// Loads with a hinting mode, target, and module properties supplied for this call.
+    pub fn load_with_hint_properties(
+        &self,
+        glyph: GlyphId,
+        ppem: u16,
+        mode: HintMode,
+        target: HintTarget,
+        scratch: &mut Scratch,
+        properties: &HintProperties,
+    ) -> Result<(OutlineInfo, i32), OutlineError> {
+        properties
+            .validate()
+            .map_err(|_| OutlineError::InvalidHintProperties)?;
         match mode {
             HintMode::None => {
                 let scale = Scale::pixels(&self.font, ppem, ppem);
@@ -638,8 +661,16 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
                     return Err(OutlineError::UnsupportedFormat);
                 };
                 let scale = Scale::pixels(&self.font, ppem, ppem);
-                let (info, x_scale) =
-                    cff::load_cff_hinted(&self.font, self.location, &cff, glyph, scale, scratch)?;
+                let (info, x_scale) = cff::load_cff_hinted(
+                    &self.font,
+                    self.location,
+                    &cff,
+                    glyph,
+                    scale,
+                    ppem,
+                    properties.cff,
+                    scratch,
+                )?;
                 let advance = self.instance().ft_h_advance(glyph).map_or(0, |width| {
                     sofel_font::read::cff::ft::to_i32(sofel_font::read::cff::ft::mul_fix(
                         i64::from(width),
@@ -654,7 +685,9 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
             HintMode::NativeV40 => self.load_truetype_v40(glyph, ppem, target, scratch),
             HintMode::Auto => {
                 let mut cache = AutoHintCache::new(self);
-                self.load_auto_hinted(glyph, ppem, target, &mut cache, scratch)
+                self.load_auto_hinted_with_properties(
+                    glyph, ppem, target, &mut cache, scratch, properties,
+                )
             }
         }
     }

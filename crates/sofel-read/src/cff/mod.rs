@@ -19,6 +19,7 @@ pub mod blend;
 pub mod charset;
 pub mod charstring;
 mod check;
+mod darkening;
 mod data;
 pub mod dict;
 pub mod encoding;

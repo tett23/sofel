@@ -5,7 +5,7 @@ use std::io::Write;
 
 use sofel_font::read::GlyphId;
 use sofel_font::{BareCffFace, BitmapFormat, Font, Type1Face, Type1Source};
-use sofel_outline::{AutoHintCache, HintProperties, Outlines, Scratch};
+use sofel_outline::{AutoHintCache, HintMode, HintProperties, HintTarget, Outlines, Scratch};
 use sofel_raster::Rasterizer;
 use sofel_type1::cid::CidFace;
 
@@ -49,7 +49,7 @@ glyph-name Unicode character, or shaped text (ADR 0065).
   --named-instance N  start at named instance N (zero-based)
   --face N      the font in a collection (default 0)
   --ppem P      the size in pixels per em
-  --hint auto   use the automatic hinter for an outline glyph
+  --hint auto|native   use the selected hinter for an outline glyph
   --hint-property MODULE:NAME=VALUE
                 set a hinting module property for this load
   --no-bitmap   draw the outline even when there is a bitmap
@@ -74,7 +74,7 @@ struct Args {
     color: bool,
     palette: u16,
     palette_given: bool,
-    auto_hint: bool,
+    hint: Option<HintMode>,
     hint_properties: HintProperties,
     target: Target,
     features: Vec<sofel_shape::Feature>,
@@ -92,7 +92,7 @@ fn parse(args: &[OsString], unified: bool) -> Result<Option<Args>, String> {
     let (mut face, mut ppem, mut target, mut file) = (0u32, None, None, None);
     let mut location = crate::variation_options::LocationOptions::default();
     let mut no_bitmap = false;
-    let mut auto_hint = false;
+    let mut hint = None;
     let mut hint_property_given = false;
     let mut hint_properties = HintProperties::default();
     let mut features = Vec::new();
@@ -140,10 +140,11 @@ fn parse(args: &[OsString], unified: bool) -> Result<Option<Args>, String> {
             Some("--face") => face = value("--face")?.parse().map_err(|_| "bad --face")?,
             Some("--no-bitmap") => no_bitmap = true,
             Some("--hint") => {
-                if value("--hint")? != "auto" {
-                    return Err("--hint supports auto".into());
-                }
-                auto_hint = true;
+                hint = Some(match value("--hint")?.as_str() {
+                    "auto" => HintMode::Auto,
+                    "native" => HintMode::NativeV40,
+                    _ => return Err("--hint supports auto or native".into()),
+                });
             }
             Some("--hint-property") => {
                 hint_property_given = true;
@@ -189,8 +190,8 @@ fn parse(args: &[OsString], unified: bool) -> Result<Option<Args>, String> {
     hint_properties
         .validate()
         .map_err(|_| "bad darkening-parameters")?;
-    if hint_property_given && !auto_hint {
-        return Err("--hint-property requires --hint auto".into());
+    if hint_property_given && hint.is_none() {
+        return Err("--hint-property requires --hint auto or native".into());
     }
     Ok(Some(Args {
         location,
@@ -199,7 +200,7 @@ fn parse(args: &[OsString], unified: bool) -> Result<Option<Args>, String> {
         color,
         palette,
         palette_given,
-        auto_hint,
+        hint,
         hint_properties,
         ppem: ppem.ok_or("--ppem is required")?,
         target: target.ok_or("give --glyph or --char")?,
@@ -324,12 +325,12 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
         let _ = writeln!(err, "sofel-render: {msg}");
         1
     };
-    if args.auto_hint
+    if args.hint.is_some()
         && (args.color || matches!(args.target, Target::Text(_) | Target::TextFile(_)))
     {
         let _ = writeln!(
             err,
-            "sofel-render: --hint auto requires a monochrome outline glyph"
+            "sofel-render: --hint requires a monochrome outline glyph"
         );
         return 2;
     }
@@ -509,19 +510,33 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
             Err(e) => Err(e),
         }
     } else {
-        if args.auto_hint {
-            let mut cache = AutoHintCache::new(&outlines);
-            glyph::render_auto_hinted(
-                &outlines,
-                glyph,
-                args.ppem,
-                &mut cache,
-                &args.hint_properties,
-                &mut scratch,
-                &mut raster,
-            )
-        } else {
-            glyph::render(&outlines, glyph, args.ppem, &mut scratch, &mut raster)
+        match args.hint {
+            Some(HintMode::Auto) => {
+                let mut cache = AutoHintCache::new(&outlines);
+                glyph::render_auto_hinted(
+                    &outlines,
+                    glyph,
+                    args.ppem,
+                    &mut cache,
+                    &args.hint_properties,
+                    &mut scratch,
+                    &mut raster,
+                )
+            }
+            Some(mode) => outlines
+                .load_with_hint_properties(
+                    glyph,
+                    args.ppem,
+                    mode,
+                    HintTarget::Normal,
+                    &mut scratch,
+                    &args.hint_properties,
+                )
+                .map_err(glyph::RenderError::Outline)
+                .and_then(|(info, _)| {
+                    glyph::render_loaded(info, args.ppem, &mut scratch, &mut raster)
+                }),
+            None => glyph::render(&outlines, glyph, args.ppem, &mut scratch, &mut raster),
         }
     };
     let b = match rendered {

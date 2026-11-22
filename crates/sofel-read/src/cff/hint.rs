@@ -1,15 +1,15 @@
 //! The hinting state of FreeType's Adobe engine (sofel ADR 0064): stem
 //! hints, hint masks, blue zones (`src/psaux/psblues.c`) and hint maps
 //! (`src/psaux/pshints.c`). Only horizontal stems move points, in y;
-//! vertical stems are only counted. Stem darkening is off, as in
-//! FreeType's default (`no-stem-darkening` is true), so the darkening
-//! amounts are zero.
+//! vertical stems are only counted. Stem darkening is off by default;
+//! [`Hinting::new_with_darkening`] applies the requested module curve.
 //!
 //! Ported from FreeType 2.15.0. Copyright 2007-2014 Adobe Systems
 //! Incorporated, and Copyright (C) 1996-2026 by David Turner, Robert
 //! Wilhelm, and Werner Lemberg. Used under the FreeType License (FTL)
 //! with the Adobe patent license; see THIRD_PARTY_NOTICES.md.
 
+use super::darkening;
 use super::dict::PrivateDict;
 use super::ft;
 
@@ -97,8 +97,15 @@ impl Hint {
         self.flags & SYNTHETIC != 0
     }
 
-    /// `cf2_hint_init` without darkening.
-    fn new(stem: &StemHint, index: usize, origin: i32, scale: i32, bottom: bool) -> Hint {
+    /// `cf2_hint_init`, including the top-edge darkening offset.
+    fn new(
+        stem: &StemHint,
+        index: usize,
+        origin: i32,
+        scale: i32,
+        bottom: bool,
+        darken_y: i32,
+    ) -> Hint {
         let width = stem.max.wrapping_sub(stem.min);
         let (flags, cs) = if width == -21 * 65536 {
             if bottom {
@@ -126,7 +133,13 @@ impl Hint {
         let mut hint = Hint {
             flags,
             index: u8::try_from(index).unwrap_or(u8::MAX),
-            cs: cs.wrapping_add(origin),
+            cs: cs
+                .wrapping_add(if flags & (PAIR_TOP | GHOST_TOP) != 0 {
+                    darken_y.wrapping_mul(2)
+                } else {
+                    0
+                })
+                .wrapping_add(origin),
             ds: 0,
             scale,
         };
@@ -250,13 +263,16 @@ struct Zone {
 /// What FreeType's Adobe engine hints a glyph with (sofel ADR 0064): the
 /// scales from character space to 16.16 device pixels (FreeType's
 /// `(x_scale + 32) / 64`) and the blue zones of the glyph's Private DICT
-/// at the vertical scale. Make it with [`Hinting::new`] and pass it to
+/// at the vertical scale. Make it with [`Hinting::new`] or
+/// [`Hinting::new_with_darkening`] and pass it to
 /// [`super::charstring::decode_hinted`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Hinting {
     blues: Blues,
     x_scale: i32,
     y_scale: i32,
+    darken_x: i32,
+    darken_y: i32,
 }
 
 impl Hinting {
@@ -265,10 +281,54 @@ impl Hinting {
     /// `cf2_blues_init`, without stem darkening).
     pub fn new(private: &PrivateDict, x_scale: i32, y_scale: i32) -> Hinting {
         Hinting {
-            blues: Blues::new(private, y_scale),
+            blues: Blues::new(private, y_scale, 0, false),
             x_scale,
             y_scale,
+            darken_x: 0,
+            darken_y: 0,
         }
+    }
+
+    /// Hinting with FreeType's PostScript stem darkening curve enabled.
+    pub fn new_with_darkening(
+        private: &PrivateDict,
+        x_scale: i32,
+        y_scale: i32,
+        units_per_em: u32,
+        ppem: u16,
+        parameters: [i32; 8],
+    ) -> Hinting {
+        let upem = if units_per_em == 0 {
+            1000
+        } else {
+            units_per_em
+        };
+        let em_ratio = (1000_i32 << 16).wrapping_div(i32::try_from(upem).unwrap_or(i32::MAX));
+        let raw_vw = int_to_fixed(private.std_vw);
+        let raw_hw = int_to_fixed(private.std_hw);
+        let std_vw = if raw_vw > 0 {
+            raw_vw
+        } else {
+            div_fix(75 << 16, em_ratio)
+        };
+        let std_hw = if raw_hw > 0 && std_vw > raw_hw.saturating_mul(2) {
+            div_fix(75 << 16, em_ratio)
+        } else {
+            div_fix(110 << 16, em_ratio)
+        };
+        let darken_x = darkening::amount(upem, ppem, std_vw, parameters);
+        let darken_y = darkening::amount(upem, ppem, std_hw, parameters);
+        Hinting {
+            blues: Blues::new(private, y_scale, darken_y, true),
+            x_scale,
+            y_scale,
+            darken_x,
+            darken_y,
+        }
+    }
+
+    pub(crate) fn darkening(&self) -> (i32, i32) {
+        (self.darken_x, self.darken_y)
     }
 
     pub(crate) fn scales(&self) -> (i32, i32) {
@@ -281,7 +341,7 @@ impl Hinting {
 }
 
 /// The blue zones of a Private DICT at a scale (`CF2_BluesRec`), as
-/// `cf2_blues_init` computes them without darkening.
+/// `cf2_blues_init` computes them, including top-zone darkening when enabled.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct Blues {
     count: usize,
@@ -297,7 +357,7 @@ pub(crate) struct Blues {
 impl Blues {
     /// `cf2_blues_init` for `private` at the vertical scale `scale` (the
     /// 16.16 factor from character space to 16.16 device pixels).
-    fn new(private: &PrivateDict, scale: i32) -> Blues {
+    fn new(private: &PrivateDict, scale: i32, darken_y: i32, stem_darkened: bool) -> Blues {
         let mut blues = Blues {
             count: 0,
             suppress_overshoot: false,
@@ -335,7 +395,9 @@ impl Blues {
                 ds: round(mul_fix(cs, scale)).wrapping_sub(MIN_COUNTER),
                 scale,
             };
-            let cs = ICF_TOP.wrapping_add(1);
+            let cs = ICF_TOP
+                .wrapping_add(1)
+                .wrapping_add(darken_y.wrapping_mul(2));
             blues.em_top = Hint {
                 flags: GHOST_TOP | LOCKED | SYNTHETIC,
                 index: 0,
@@ -368,8 +430,16 @@ impl Blues {
         for i in (0..n_blue).step_by(2) {
             push(
                 &mut blues,
-                value(blue_values, i),
-                value(blue_values, i.saturating_add(1)),
+                value(blue_values, i).wrapping_add(if i == 0 {
+                    0
+                } else {
+                    darken_y.wrapping_mul(2)
+                }),
+                value(blue_values, i.saturating_add(1)).wrapping_add(if i == 0 {
+                    0
+                } else {
+                    darken_y.wrapping_mul(2)
+                }),
                 i == 0,
             );
         }
@@ -409,7 +479,7 @@ impl Blues {
                 }
             } else {
                 for j in (2..n_family).step_by(2) {
-                    let family = value(family_blues, j);
+                    let family = value(family_blues, j).wrapping_add(darken_y.wrapping_mul(2));
                     let diff = abs(flat.wrapping_sub(family));
                     if diff < min_diff && diff < units_per_pixel {
                         zone.cs_flat = family;
@@ -439,6 +509,9 @@ impl Blues {
             if boost > 0x7FFF {
                 boost = 0x7FFF;
             }
+        }
+        if stem_darkened {
+            boost = 0;
         }
         for zone in blues.zones.iter_mut().take(count) {
             let ds = mul_fix(zone.cs_flat, scale);
@@ -749,6 +822,8 @@ pub(crate) struct Stems<'a> {
     pub(crate) v_count: usize,
     /// The blue zones when hinting, `None` without.
     pub(crate) blues: Option<&'a Blues>,
+    /// Half-width darkening amount in the vertical direction.
+    pub(crate) darken_y: i32,
 }
 
 /// `cf2_hintmap_build` of `map` from `mask`, building `initial` first if
@@ -792,7 +867,7 @@ fn build_one<const N: usize>(
         let scale = map.scale;
         let hint = |stems: &Stems<'_>, i: usize, bottom: bool| {
             let stem = stems.h.get(i).copied().unwrap_or_default();
-            Hint::new(&stem, i, origin, scale, bottom)
+            Hint::new(&stem, i, origin, scale, bottom, stems.darken_y)
         };
         for i in 0..bit_count {
             if temp.bit(i) {

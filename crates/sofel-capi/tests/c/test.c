@@ -2550,6 +2550,15 @@ static void test_adr0086_i1_i4_hint_properties(const sofel_font_t *font) {
       configured_box, &configured_overlap, &configured_advance) == SOFEL_OK);
   CHECK(memcmp(legacy_box, configured_box, sizeof legacy_box) == 0);
   CHECK(legacy_overlap == configured_overlap && legacy_advance == configured_advance);
+  CHECK(sofel_outline_load_with_hint(font, NULL, 1, 16, SOFEL_HINT_MODE_AUTO,
+                                     SOFEL_HINT_TARGET_NORMAL, scratch, legacy_box,
+                                     &legacy_overlap, &legacy_advance) == SOFEL_OK);
+  CHECK(sofel_outline_load_with_hint_properties(
+      font, NULL, 1, 16, SOFEL_HINT_MODE_AUTO, SOFEL_HINT_TARGET_NORMAL,
+      &properties, scratch, configured_box, &configured_overlap,
+      &configured_advance) == SOFEL_OK);
+  CHECK(memcmp(legacy_box, configured_box, sizeof legacy_box) == 0);
+  CHECK(legacy_overlap == configured_overlap && legacy_advance == configured_advance);
   properties.autofitter.no_stem_darkening = 2;
   CHECK(sofel_outline_load_auto_hinted_with_properties(
       font, NULL, 1, 16, SOFEL_HINT_TARGET_LIGHT, cache, &properties, scratch,

@@ -38,7 +38,7 @@ use sofel_font::Font;
 use sofel_font::geom::Point;
 use sofel_font::read::{GlyphId, Tag};
 use sofel_font::var::{Location, Variation};
-use sofel_outline::{HintMode, HintTarget, OutlineInfo, Outlines, Scratch};
+use sofel_outline::{HintMode, HintProperties, HintTarget, OutlineInfo, Outlines, Scratch};
 use sofel_raster::{FillRule, LcdMode, MonoOptions, Rasterizer, RenderOptions};
 
 const TARGETS: [(&str, HintTarget); 5] = [
@@ -48,6 +48,43 @@ const TARGETS: [(&str, HintTarget); 5] = [
     ("lcd", HintTarget::Lcd),
     ("lcd-v", HintTarget::VerticalLcd),
 ];
+
+#[test]
+fn adr0086_i2_native_cff_darkening_matches_property_reference() {
+    let path = paths::testdata().join("extra-fonts/fonts/source-serif.otf");
+    let output = Command::new(paths::ft_dump())
+        .args(["--hint-slot", "9", "0", "native", "light"])
+        .arg("--hint-property=cff:no-stem-darkening=0")
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let expected = String::from_utf8(output.stdout).unwrap();
+    let data = std::fs::read(&path).unwrap();
+    let font = Font::new(&data, 0).unwrap();
+    let outlines = Outlines::new(font.default_instance());
+    let mut scratch = Scratch::default();
+    let mut properties = sofel_outline::HintProperties::default();
+    properties.cff.no_stem_darkening = false;
+    let (_, advance) = outlines
+        .load_with_hint_properties(
+            GlyphId(0),
+            9,
+            HintMode::NativeV40,
+            HintTarget::Light,
+            &mut scratch,
+            &properties,
+        )
+        .unwrap();
+    let mut actual = format!("advance {advance} 0\n");
+    for (point, tag) in scratch.points().iter().zip(scratch.point_tags()) {
+        actual.push_str(&format!("point {} {} {tag}\n", point.x, point.y));
+    }
+    for end in scratch.contour_ends() {
+        actual.push_str(&format!("end {end}\n"));
+    }
+    assert_eq!(actual, expected);
+}
 
 /// The most glyphs compared per face by default.
 const GLYPH_CAP: u32 = 100;
@@ -360,10 +397,21 @@ fn compare_glyph(
     scratch: &mut Scratch,
     raster: &mut Rasterizer,
     stats: &mut Stats,
+    properties: Option<&HintProperties>,
 ) {
     stats.compared += 1;
-    let loaded =
-        outlines.load_with_hint(GlyphId(gid), ppem, HintMode::NativeV40, target.1, scratch);
+    let loaded = if let Some(properties) = properties {
+        outlines.load_with_hint_properties(
+            GlyphId(gid),
+            ppem,
+            HintMode::NativeV40,
+            target.1,
+            scratch,
+            properties,
+        )
+    } else {
+        outlines.load_with_hint(GlyphId(gid), ppem, HintMode::NativeV40, target.1, scratch)
+    };
     let mut actual = Vec::new();
     match loaded {
         Err(e) => actual.push(format!("error {e:?}")),
@@ -411,7 +459,12 @@ fn compare_glyph(
 
 /// Runs `ft-dump --native-hint` over the sizes and compares each glyph
 /// as its lines arrive.
-fn compare_case(case: &Case, sizes: &[u16], stats: &mut Stats) {
+fn compare_case(
+    case: &Case,
+    sizes: &[u16],
+    stats: &mut Stats,
+    properties: Option<&HintProperties>,
+) {
     let path = paths::testdata().join(&case.path);
     let data = std::fs::read(&path).unwrap();
     let font = Font::new(&data, case.face).unwrap();
@@ -436,6 +489,20 @@ fn compare_case(case: &Case, sizes: &[u16], stats: &mut Stats) {
         }
         if case.face != 0 {
             command.arg(format!("--face={}", case.face));
+        }
+        if properties.is_some() {
+            command.arg("--hint-property=cff:no-stem-darkening=0");
+            if let Some(properties) = properties
+                && properties.cff.darkening_parameters
+                    != HintProperties::default().cff.darkening_parameters
+            {
+                let csv = properties
+                    .cff
+                    .darkening_parameters
+                    .map(|value| value.to_string())
+                    .join(",");
+                command.arg(format!("--hint-property=cff:darkening-parameters={csv}"));
+            }
         }
         let cap = glyph_cap();
         if cap > 0 && font.num_glyphs() > cap {
@@ -466,6 +533,7 @@ fn compare_case(case: &Case, sizes: &[u16], stats: &mut Stats) {
                     &mut scratch,
                     &mut raster,
                     stats,
+                    properties,
                 );
             }
             lines.clear();
@@ -490,6 +558,52 @@ fn compare_case(case: &Case, sizes: &[u16], stats: &mut Stats) {
         }
         assert!(status.success(), "{id}: ft-dump --native-hint failed");
     }
+}
+
+#[test]
+fn adr0086_a1_cff_darkening_corpus_all_targets() {
+    let mut properties = HintProperties::default();
+    properties.cff.no_stem_darkening = false;
+    let mut stats = Stats::default();
+    for curve in [
+        HintProperties::default().cff.darkening_parameters,
+        [0, 500, 0, 500, 0, 500, 0, 500],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+    ] {
+        properties.cff.darkening_parameters = curve;
+        for path in [
+            "extra-fonts/fonts/source-serif.otf",
+            "extra-fonts/fonts/stix-math.otf",
+            "harfbuzz/perf/fonts/NotoSansDuployan-Regular.otf",
+        ] {
+            let case = Case {
+                path: path.into(),
+                face: 0,
+                variations: None,
+            };
+            compare_case(&case, &[9, 16], &mut stats, Some(&properties));
+        }
+    }
+    assert!(stats.compared >= 100, "compared {}", stats.compared);
+    eprintln!(
+        "root ADR 0086 CFF: compared {}, loaded {}, rendered {}, failures {}",
+        stats.compared,
+        stats.loaded,
+        stats.rendered,
+        stats.failures.len()
+    );
+    assert!(
+        stats.failures.is_empty(),
+        "{} failures: {}",
+        stats.failures.len(),
+        stats
+            .failures
+            .iter()
+            .take(5)
+            .map(|f| format!("{} {}", f.id, f.detail))
+            .collect::<Vec<_>>()
+            .join("; ")
+    );
 }
 
 /// Whether the expected identifier `pattern` (fields may be `*`) names
@@ -530,7 +644,7 @@ fn adr0064_i1_i2_cff_hinted_slots_and_bitmaps_match_freetype() {
                         break;
                     };
                     let mut stats = Stats::default();
-                    compare_case(case, &sizes, &mut stats);
+                    compare_case(case, &sizes, &mut stats, None);
                     let mut t = total.lock().unwrap();
                     t.unopened.extend(stats.unopened);
                     t.compared += stats.compared;

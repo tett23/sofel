@@ -2608,7 +2608,7 @@ fn put_info(info: OutlineInfo, cbox: &mut [i32; 4], overlap: &mut u32) {
 enum OutlineLoad<'a> {
     Unhinted(Result<Scale, i32>),
     TrueTypeV35(u16, HintTarget, Option<&'a mut i32>),
-    WithHint(u16, HintMode, HintTarget, &'a mut i32),
+    WithHint(u16, HintMode, HintTarget, HintProperties, &'a mut i32),
 }
 
 fn outline_load(
@@ -2624,8 +2624,15 @@ fn outline_load(
     let outlines = outlines_at(font, location);
     let info = match load {
         OutlineLoad::Unhinted(scale) => outlines.load(GlyphId(glyph), scale?, &mut scratch.scratch),
-        OutlineLoad::WithHint(ppem, mode, target, advance) => outlines
-            .load_with_hint(GlyphId(glyph), ppem, mode, target, &mut scratch.scratch)
+        OutlineLoad::WithHint(ppem, mode, target, properties, advance) => outlines
+            .load_with_hint_properties(
+                GlyphId(glyph),
+                ppem,
+                mode,
+                target,
+                &mut scratch.scratch,
+                &properties,
+            )
             .map(|(info, width)| {
                 *advance = width;
                 info
@@ -2837,6 +2844,43 @@ pub unsafe extern "C" fn sofel_outline_load_with_hint(
     overlap: *mut u32,
     advance: *mut i32,
 ) -> i32 {
+    // SAFETY: The new entry point has the same pointer contract and accepts NULL properties.
+    unsafe {
+        sofel_outline_load_with_hint_properties(
+            font,
+            location,
+            glyph,
+            ppem,
+            mode,
+            target,
+            core::ptr::null(),
+            scratch,
+            cbox,
+            overlap,
+            advance,
+        )
+    }
+}
+
+/// `sofel_outline_load_with_hint_properties`.
+///
+/// # Safety
+/// The handles and output buffers follow [`sofel_outline_load_with_hint`];
+/// `properties` is NULL or readable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_outline_load_with_hint_properties(
+    font: *const SofelFont,
+    location: *const SofelLocation,
+    glyph: u32,
+    ppem: u16,
+    mode: u32,
+    target: u32,
+    properties: *const SofelHintProperties,
+    scratch: *mut SofelOutlineScratch,
+    cbox: *mut i32,
+    overlap: *mut u32,
+    advance: *mut i32,
+) -> i32 {
     let mode = match mode {
         0 => HintMode::None,
         1 => HintMode::NativeV35,
@@ -2852,11 +2896,16 @@ pub unsafe extern "C" fn sofel_outline_load_with_hint(
         let Some(advance) = w(advance) else {
             return ERROR_INVALID_ARGUMENT;
         };
+        let properties =
+            match r(properties).map_or(Ok(HintProperties::default()), |value| value.parse()) {
+                Ok(value) => value,
+                Err(code) => return code,
+            };
         status(outline_load(
             r(font),
             r(location),
             glyph,
-            OutlineLoad::WithHint(ppem, mode, target, advance),
+            OutlineLoad::WithHint(ppem, mode, target, properties, advance),
             w(scratch),
             ints::<4>(cbox),
             w(overlap),

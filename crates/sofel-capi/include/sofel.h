@@ -1797,6 +1797,13 @@ typedef struct sofel_hint_properties {
 } sofel_hint_properties_t;
 
 int32_t sofel_hint_properties_default(sofel_hint_properties_t *output);
+/* NULL properties uses FreeType defaults. */
+int32_t sofel_outline_load_with_hint_properties(
+    const sofel_font_t *font, const sofel_location_t *location,
+    uint32_t glyph, uint16_t ppem, uint32_t mode, uint32_t target,
+    const sofel_hint_properties_t *properties,
+    sofel_outline_scratch_t *scratch, int32_t *cbox,
+    uint32_t *overlap, int32_t *advance);
 
 /*
  * The automatic hinter's state for one font at one location: the style of
