@@ -5,6 +5,18 @@ use sofel_font::FaceData;
 
 #[path = "../../sofel-read/tests/support/build.rs"]
 mod build;
+#[path = "../../sofel-cli/tests/support/pfr.rs"]
+#[allow(dead_code)]
+mod pfr_fixture;
+
+const BARE_CFF: &[u8] = &[
+    1, 0, 4, 4, 0, 1, 1, 1, 2, b'A', 0, 1, 1, 1, 3, 160, 17, 0, 0, 0, 0, 0, 1, 1, 1, 6, 248, 136,
+    139, 22, 14,
+];
+const TEXT_CFF: &[u8] = &[
+    1, 0, 4, 4, 0, 1, 1, 1, 2, b'A', 0, 1, 1, 1, 3, 160, 17, 0, 0, 0, 0, 0, 2, 1, 1, 2, 14, 14,
+    248, 136, 239, 239, 21, 239, 139, 5, 139, 239, 5, 14,
+];
 
 #[test]
 fn adr0100_i6_c_face_owns_input_and_matches_metrics() {
@@ -404,5 +416,85 @@ fn adr0100_i1_i6_c_sfnt_fixed_strike_metrics_and_pixels() {
         sofel_face_destroy(face);
         sofel_outline_scratch_destroy(scratch);
         sofel_rasterizer_destroy(raster);
+    }
+}
+
+#[test]
+fn adr0100_a1_synthetic_missing_formats_c_queries() {
+    let mut cid = b"%!PS-Adobe-3.0 Resource-CIDFont\n\
+/CIDFontName /TestCID def\n/CIDFontType 0 def\n\
+/Registry (Adobe) def\n/Ordering (Identity) def\n/Supplement 0 def\n\
+/CIDCount 1 def\n/FDBytes 1 def\n/GDBytes 2 def\n/CIDMapOffset 0 def\n\
+/FDArray 1 array\n%ADOBeginFontDict\n\
+dup 0 10 dict begin\n/FontName /TestCID def\n/FontType 1 def\n\
+/FontMatrix [0.001 0 0 0.001 0 0] def\n\
+/Private 1 dict begin /lenIV -1 def end\n\
+end put\n%ADOEndFontDict\ndef\n(Binary) 24 StartData\n"
+        .to_vec();
+    cid.extend_from_slice(&[
+        0, 0, 6, 0, 0, 24, 139, 248, 136, 13, 239, 239, 21, 239, 139, 5, 139, 239, 5, 39, 39, 5, 9,
+        14,
+    ]);
+    let mut cef =
+        b"OTTO\x00\x02\x00\x20\x00\x01\x00\x00CFF \x00\x00\x00\x00\x00\x00\x00\x2c".to_vec();
+    cef.extend_from_slice(&u32::try_from(TEXT_CFF.len()).unwrap().to_be_bytes());
+    cef.extend_from_slice(b"cmap\x00\x00\x00\x00\x00\x00\x00\x54\x00\x00\x00\x18");
+    cef.extend_from_slice(TEXT_CFF);
+    cef.resize(84, 0);
+    cef.extend_from_slice(&[
+        0, 0, 0, 1, 0, 3, 0, 1, 0, 0, 0, 12, 0, 6, 0, 12, 0, 0, 0, 65, 0, 1, 0, 1,
+    ]);
+    let samples = [
+        ("CFF", BARE_CFF.to_vec()),
+        ("CEF", cef),
+        ("CID", cid),
+        ("PFR", pfr_fixture::triangle()),
+        (
+            "FNT",
+            include_bytes!("../../sofel-bitmapfont/tests/data/mono.fnt").to_vec(),
+        ),
+        (
+            "FON",
+            include_bytes!("../../sofel-bitmapfont/tests/data/two.fon").to_vec(),
+        ),
+    ];
+    for (name, bytes) in samples {
+        let data = FaceData::new(&bytes).unwrap();
+        let mut count = 0;
+        // SAFETY: input and count output are live and disjoint.
+        let status = unsafe { sofel_face_count(bytes.as_ptr(), bytes.len(), &mut count) };
+        assert_eq!(status, 0, "{name}");
+        assert_eq!(count, data.face_count().unwrap(), "{name}");
+        for index in 0..count {
+            let opened = data.open(index).unwrap();
+            let mut error = 0;
+            // SAFETY: input and error output are live and disjoint.
+            let handle =
+                unsafe { sofel_face_create(bytes.as_ptr(), bytes.len(), index, &mut error) };
+            assert!(!handle.is_null(), "{name}/{index}: {error}");
+            let mut glyph_count = 0;
+            // SAFETY: handle and count output are live.
+            let status = unsafe { sofel_face_num_glyphs(handle, &mut glyph_count) };
+            assert_eq!(status, 0, "{name}/{index}");
+            assert_eq!(
+                glyph_count,
+                opened.as_face().glyph_count(),
+                "{name}/{index}"
+            );
+            let face = opened.as_face();
+            let ppem = face
+                .strike(0)
+                .map_or(20u16, |(x, _)| u16::try_from((x + 32) / 64).unwrap());
+            let expected = face.h_advance(sofel_font::read::GlyphId(0), ppem, None);
+            let mut advance = 0;
+            // SAFETY: handle and advance output are live.
+            let status = unsafe { sofel_face_h_advance(handle, 0, ppem, u32::MAX, &mut advance) };
+            assert_eq!(status == 0, expected.is_ok(), "{name}/{index}");
+            if let Ok(expected) = expected {
+                assert_eq!(advance, expected, "{name}/{index}");
+            }
+            // SAFETY: handle is destroyed once.
+            unsafe { sofel_face_destroy(handle) };
+        }
     }
 }
