@@ -1793,6 +1793,18 @@ sofel_autohint_cache_t *sofel_autohint_cache_create(const sofel_font_t *font,
                                                     const sofel_location_t *location);
 
 /*
+ * Creates an automatic-hinter cache using GSUB style coverage, HarfBuzz
+ * shaping for blue-zone strings, and GSUB accent reverse mappings.
+ * Use sofel_autohint_cache_create for cmap-only coverage.
+ *
+ * Rust: sofel_outline::AutoHintCache::with_shaping_data
+ * HarfBuzz: hb_shape and hb_ot_layout_lookups_substitute_closure
+ * FreeType: FT_CONFIG_OPTION_USE_HARFBUZZ
+ */
+sofel_autohint_cache_t *sofel_autohint_cache_create_with_gsub(const sofel_font_t *font,
+                                                              const sofel_location_t *location);
+
+/*
  * The raw style word of a glyph: the style index in the low 13 bits, then
  * the cmap, non-base and digit flags (FreeType's glyph-to-script-map).
  *

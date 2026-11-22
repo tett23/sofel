@@ -2530,6 +2530,31 @@ static uint8_t *read_testdata(const char *path, size_t *len) {
   return data;
 }
 
+static void test_adr0085_i2_gsub_cache(void) {
+  size_t size = 0;
+  uint8_t *data = read_testdata("extra-fonts/fonts/source-serif.otf", &size);
+  if (data == NULL) {
+    CHECK(getenv("SOFEL_REQUIRE_TESTDATA") == NULL);
+    return;
+  }
+  int32_t error;
+  sofel_font_t *font = sofel_font_create(data, size, 0, &error);
+  CHECK(font != NULL && error == SOFEL_OK);
+  if (font != NULL) {
+    sofel_autohint_cache_t *cmap = sofel_autohint_cache_create(font, NULL);
+    sofel_autohint_cache_t *gsub = sofel_autohint_cache_create_with_gsub(font, NULL);
+    uint16_t cmap_style = 0, gsub_style = 0;
+    CHECK(cmap != NULL && gsub != NULL);
+    CHECK(sofel_autohint_cache_glyph_style(cmap, 109, &cmap_style) == SOFEL_OK);
+    CHECK(sofel_autohint_cache_glyph_style(gsub, 109, &gsub_style) == SOFEL_OK);
+    CHECK((cmap_style & 0x1FFF) == 86 && (gsub_style & 0x1FFF) == 57);
+    sofel_autohint_cache_destroy(cmap);
+    sofel_autohint_cache_destroy(gsub);
+    sofel_font_destroy(font);
+  }
+  free(data);
+}
+
 static void test_adr0064_i1_control_values(void) {
   const float weights[] = {300, 400, 575, 700};
   const int32_t expected[] = {3008, 4992, 5559, 6464};
@@ -3304,6 +3329,7 @@ int main(void) {
   test_shape_fixture_font(font);
   test_shape_ppem();
   test_adr0064_i1_control_values();
+  test_adr0085_i2_gsub_cache();
   test_golem_shape();
   test_subset_input();
   test_axis_strings();

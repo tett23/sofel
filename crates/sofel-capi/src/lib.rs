@@ -2803,6 +2803,74 @@ pub unsafe extern "C" fn sofel_autohint_cache_create(
     }))
 }
 
+/// Creates an automatic-hinter cache with GSUB coverage and shaped blue zones.
+///
+/// # Safety
+///
+/// `font` is NULL or a live font; `location` is NULL or a live location
+/// made for `font`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_autohint_cache_create_with_gsub(
+    font: *const SofelFont,
+    location: *const SofelLocation,
+) -> *mut SofelAutoHintCache {
+    // SAFETY: the caller's conditions.
+    let (font, location) = unsafe { (r(font), r(location)) };
+    let Some(font) = font else {
+        return core::ptr::null_mut();
+    };
+    let outlines = outlines_at(font, location);
+    let specs = sofel_outline::AutoHintCache::style_specs();
+    let requests: Vec<_> = specs
+        .iter()
+        .map(|style| sofel_shape::AutoHintStyleRequest {
+            index: style.index,
+            script: style.script,
+            ranges: style.ranges,
+            nonbase_ranges: style.nonbase_ranges,
+            feature: style.feature,
+            blue_strings: &style.blue_strings,
+            standard: style.standard,
+        })
+        .collect();
+    let (glyph_styles, clusters) = sofel_shape::auto_hint_shaping_data(
+        outlines.instance(),
+        &|glyph| outlines.glyph_extents(glyph),
+        &requests,
+        86,
+        57,
+    );
+    let reverse = sofel_shape::auto_hint_reverse_entries(
+        outlines.font(),
+        &requests,
+        &sofel_outline::AutoHintCache::adjustment_codepoints(),
+    );
+    let data = sofel_outline::AutoHintShapingData {
+        glyph_styles,
+        reverse,
+        clusters: clusters
+            .into_iter()
+            .map(|cluster| sofel_outline::AutoHintShapedCluster {
+                style: cluster.style,
+                text: cluster.text,
+                glyphs: cluster
+                    .glyphs
+                    .into_iter()
+                    .map(|glyph| sofel_outline::AutoHintShapedGlyph {
+                        glyph: glyph.glyph,
+                        x_advance: glyph.x_advance,
+                        y_offset: glyph.y_offset,
+                    })
+                    .collect(),
+            })
+            .collect(),
+    };
+    let Some(cache) = sofel_outline::AutoHintCache::new(&outlines).with_shaping_data(data) else {
+        return core::ptr::null_mut();
+    };
+    Box::into_raw(Box::new(SofelAutoHintCache { cache }))
+}
+
 /// `sofel_autohint_cache_glyph_style`.
 ///
 /// # Safety

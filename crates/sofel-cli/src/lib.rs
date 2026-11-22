@@ -5,6 +5,7 @@
 #![warn(missing_docs)]
 
 mod font_input;
+pub mod hint;
 pub mod json;
 pub mod paint;
 pub mod render;

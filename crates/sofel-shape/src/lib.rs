@@ -47,7 +47,10 @@ mod utf;
 mod tag_table;
 mod serialize;
 
-pub use autofit::{AutoHintStyleRequest, auto_hint_gsub_styles};
+pub use autofit::{
+    AutoHintShapedCluster, AutoHintShapedGlyph, AutoHintStyleRequest, auto_hint_gsub_styles,
+    auto_hint_reverse_entries, auto_hint_shape_cluster, auto_hint_shaping_data,
+};
 pub use buffer::{
     BufferFlags, ClusterLevel, GlyphBuffer, MAX_LEN_DEFAULT, MAX_LEN_FACTOR, MAX_LEN_MIN,
     MAX_OPS_DEFAULT, MAX_OPS_FACTOR, MAX_OPS_MIN, REPLACEMENT_CHARACTER, UnicodeBuffer,

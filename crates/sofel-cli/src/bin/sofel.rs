@@ -2,7 +2,7 @@
 use std::ffi::OsString;
 use std::io::{Write, stderr, stdout};
 
-use sofel_cli::{paint, render, shape, subset, validate};
+use sofel_cli::{hint, paint, render, shape, subset, validate};
 
 struct Command {
     name: &'static str,
@@ -15,6 +15,12 @@ const RENDER_EXAMPLE: &str =
     "sofel render --ppem 48 --text \"office & affix\" font.ttf > sample.pgm";
 
 const COMMANDS: &[Command] = &[
+    Command {
+        name: "hint",
+        purpose: "Inspect an auto-hinted glyph slot",
+        help: hint::HELP,
+        example: "sofel hint --gsub --ppem 16 --glyph 42 font.ttf",
+    },
     Command {
         name: "render",
         purpose: "Render a glyph or a line of text to an image",
@@ -106,6 +112,7 @@ fn run(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write) -> std::io::
         return Ok(0);
     }
     Ok(match cmd.name {
+        "hint" => hint::run(rest, out, err),
         "render" => render::run_unified(rest, out, err),
         "shape" => shape::run(rest, out, err),
         "paint" => paint::run(rest, out, err),

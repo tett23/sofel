@@ -1,20 +1,24 @@
 //! GSUB style coverage for FreeType's HarfBuzz-backed automatic hinter.
 
-use alloc::collections::BTreeSet;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec;
 use alloc::vec::Vec;
 
 use sofel_font::Font;
+use sofel_font::read::GlyphId;
 use sofel_font::read::Tag;
 use sofel_font::read::gpos;
 use sofel_font::read::gsub::{self, SubstSubtable};
 use sofel_font::read::layout::{
     ChainedSequenceContext, FeatureList, LayoutTable, LookupList, ScriptList, SequenceContext,
 };
+use sofel_font::{GlyphExtents, var::Instance};
 
 use crate::Script;
 use crate::layout::Layout;
 use crate::layout::would::{WouldApply, lookup_would_substitute};
+use crate::shape::shape_with_extents;
+use crate::{Feature, Scale, SegmentProperties, ShapePlan, UnicodeBuffer};
 
 #[derive(Clone, Copy)]
 struct LookupContext<'a> {
@@ -41,6 +45,352 @@ pub struct AutoHintStyleRequest<'a> {
     pub feature: Option<[u8; 4]>,
     /// UTF-8 strings used to determine whether a feature has blue zones.
     pub blue_strings: &'a [&'a [u8]],
+    /// UTF-8 standard-character candidates for stem width measurement.
+    pub standard: &'a [u8],
+}
+
+/// One glyph of a blue-zone or standard-character cluster at font-unit scale.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AutoHintShapedGlyph {
+    /// Result glyph ID.
+    pub glyph: u32,
+    /// Horizontal advance in font units.
+    pub x_advance: i32,
+    /// Vertical offset in font units.
+    pub y_offset: i32,
+}
+
+/// A shaped cluster and the auto-hinter style that consumes it.
+#[derive(Clone, Debug)]
+pub struct AutoHintShapedCluster {
+    /// Style index in FreeType's style table.
+    pub style: u16,
+    /// UTF-8 source text without spaces.
+    pub text: Vec<u8>,
+    /// Shaping result, empty when a feature has no glyph substitution.
+    pub glyphs: Vec<AutoHintShapedGlyph>,
+}
+
+/// Computes the HarfBuzz-backed automatic hinter's style map and clusters.
+pub fn auto_hint_shaping_data(
+    instance: Instance<'_, '_, '_, '_>,
+    extents: &dyn Fn(GlyphId) -> Option<GlyphExtents>,
+    requests: &[AutoHintStyleRequest<'_>],
+    fallback_style: u16,
+    default_style: u16,
+) -> (Vec<u16>, Vec<AutoHintShapedCluster>) {
+    let glyph_styles =
+        auto_hint_gsub_styles(instance.font(), requests, fallback_style, default_style);
+    let mut clusters = Vec::new();
+    for request in requests {
+        if !glyph_styles
+            .iter()
+            .any(|&word| word & 0x1fff == request.index)
+        {
+            continue;
+        }
+        let mut seen = BTreeSet::new();
+        for string in core::iter::once(request.standard)
+            .chain(request.blue_strings.iter().copied())
+            .chain(core::iter::once(b"0 1 2 3 4 5 6 7 8 9".as_slice()))
+        {
+            for text in string
+                .split(|&byte| byte == b' ')
+                .filter(|text| !text.is_empty() && *text != b"|")
+            {
+                if seen.insert(text.to_vec()) {
+                    let glyphs = auto_hint_shape_cluster(instance, extents, text, request.feature);
+                    clusters.push(AutoHintShapedCluster {
+                        style: request.index,
+                        text: text.to_vec(),
+                        glyphs,
+                    });
+                }
+            }
+        }
+    }
+    (glyph_styles, clusters)
+}
+
+/// Builds per-style GSUB inverse entries used for accent adjustment.
+/// Direct cmap entries are left to the outline cache and take precedence.
+pub fn auto_hint_reverse_entries(
+    font: &Font<'_>,
+    requests: &[AutoHintStyleRequest<'_>],
+    adjustment_codepoints: &[u32],
+) -> Vec<(u16, u32, u32)> {
+    let Some(table) = font
+        .table(Tag::new(b"GSUB"))
+        .and_then(|data| LayoutTable::new(data).ok())
+    else {
+        return Vec::new();
+    };
+    let Some((scripts, features, lookups)) = table
+        .script_list()
+        .ok()
+        .flatten()
+        .zip(table.feature_list().ok().flatten())
+        .zip(table.lookup_list().ok().flatten())
+        .map(|((a, b), c)| (a, b, c))
+    else {
+        return Vec::new();
+    };
+    let mut direct = BTreeMap::new();
+    for &codepoint in adjustment_codepoints {
+        if let Some(glyph) = font.nominal_glyph_raw(codepoint)
+            && glyph.0 != 0
+        {
+            direct.insert(glyph.0, codepoint);
+        }
+    }
+    let mut result = Vec::new();
+    for request in requests {
+        let Some(script) = Script::from_iso15924(&request.script) else {
+            continue;
+        };
+        let (tags, _) = ot_tags_from_script_and_language_max(Some(script), None, 1, 0);
+        let indices = collect_lookup_indices(scripts, features, &tags, None);
+        let mut replacements: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
+        let mut insertion_order = Vec::new();
+        for index in indices {
+            let Ok(Some(lookup)) = lookups.lookup(index) else {
+                continue;
+            };
+            let mut valid = lookup.num_subtables() > 0;
+            for i in 0..lookup.num_subtables() {
+                valid &= matches!(
+                    gsub::subtable(&lookup, i),
+                    Ok(SubstSubtable::SingleDelta { .. }
+                        | SubstSubtable::SingleList { .. }
+                        | SubstSubtable::Alternate { .. })
+                );
+            }
+            if !valid {
+                continue;
+            }
+            for i in 0..lookup.num_subtables() {
+                let Ok(subtable) = gsub::subtable(&lookup, i) else {
+                    continue;
+                };
+                add_reverse_substitutions(subtable, &mut replacements, &mut insertion_order);
+            }
+        }
+        let mut mapped = direct.clone();
+        for glyph in ft_hash_iteration(&insertion_order) {
+            if glyph & 0xffff_0000 != 0 {
+                continue;
+            }
+            if let Some(&codepoint) = mapped.get(&glyph) {
+                add_reverse_descendants(glyph, codepoint, &replacements, &mut mapped, 0);
+            }
+        }
+        result.extend(
+            mapped
+                .into_iter()
+                .filter(|(glyph, _)| !direct.contains_key(glyph))
+                .map(|(glyph, codepoint)| (request.index, glyph, codepoint)),
+        );
+    }
+    result
+}
+
+fn add_reverse_descendants(
+    glyph: u32,
+    codepoint: u32,
+    replacements: &BTreeMap<u32, Vec<u32>>,
+    mapped: &mut BTreeMap<u32, u32>,
+    depth: usize,
+) {
+    if depth >= 64 {
+        return;
+    }
+    if let Some(next) = replacements.get(&glyph) {
+        for &replacement in next {
+            if let alloc::collections::btree_map::Entry::Vacant(entry) = mapped.entry(replacement) {
+                entry.insert(codepoint);
+                add_reverse_descendants(
+                    replacement,
+                    codepoint,
+                    replacements,
+                    mapped,
+                    depth.saturating_add(1),
+                );
+            }
+        }
+    }
+}
+
+fn add_reverse_substitutions(
+    subtable: SubstSubtable<'_>,
+    replacements: &mut BTreeMap<u32, Vec<u32>>,
+    insertion_order: &mut Vec<u32>,
+) {
+    let mut add = |glyph: u32, replacement: u32| {
+        if let alloc::collections::btree_map::Entry::Vacant(entry) = replacements.entry(glyph) {
+            insertion_order.push(glyph);
+            entry.insert(Vec::new());
+        } else if let Some(list) = replacements.get(&glyph) {
+            insertion_order.push(glyph | (u32::try_from(list.len()).unwrap_or(u32::MAX) << 16));
+        }
+        if let Some(list) = replacements.get_mut(&glyph) {
+            list.push(replacement);
+        }
+    };
+    match subtable {
+        SubstSubtable::SingleDelta {
+            coverage,
+            delta,
+            mask,
+        } => {
+            for glyph in ft_coverage_glyphs(coverage) {
+                add(glyph, glyph.wrapping_add(delta) & mask);
+            }
+        }
+        SubstSubtable::SingleList {
+            coverage,
+            substitutes,
+        } => {
+            for (index, glyph) in ft_coverage_glyphs(coverage).into_iter().enumerate() {
+                if let Some(replacement) = substitutes.get(index) {
+                    add(glyph, replacement);
+                }
+            }
+        }
+        SubstSubtable::Alternate {
+            coverage,
+            alternate_sets,
+        } => {
+            for (index, glyph) in ft_coverage_glyphs(coverage).into_iter().enumerate() {
+                if let Ok(Some(set)) = alternate_sets.get(index) {
+                    for i in 0..set.len() {
+                        if let Some(replacement) = set.get(i) {
+                            add(glyph, replacement);
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The coverage iterator in FreeType's `afgsub.c`, including its final-range
+/// termination behavior for format 2.
+fn ft_coverage_glyphs(coverage: sofel_font::read::layout::Coverage<'_>) -> Vec<u32> {
+    match coverage.format() {
+        1 => (0..coverage.num_records())
+            .filter_map(|i| coverage.glyph(i).map(|g| g.0))
+            .collect(),
+        2 => (0..coverage.num_records())
+            .flat_map(|i| {
+                coverage
+                    .range(i)
+                    .into_iter()
+                    .flat_map(move |(first, last, _)| {
+                        let end = if i.saturating_add(1) == coverage.num_records() {
+                            first.0
+                        } else {
+                            last.0
+                        };
+                        first.0..=end
+                    })
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Numeric hash-table iteration order from FreeType's `fthash.c`.
+// The table is always nonempty, and the index is reduced modulo its size.
+#[allow(
+    clippy::arithmetic_side_effects,
+    clippy::indexing_slicing,
+    clippy::cast_possible_truncation
+)]
+fn ft_hash_iteration(keys: &[u32]) -> Vec<u32> {
+    fn hash(key: u32) -> u64 {
+        let mut result = u64::from(key & 0xff);
+        for shift in [8, 16, 24] {
+            result = result
+                .wrapping_mul(31)
+                .wrapping_add(u64::from((key >> shift) & 0xff));
+        }
+        result
+    }
+    fn insert(table: &mut [Option<u32>], key: u32) -> bool {
+        let mut index = (hash(key) % table.len() as u64) as usize;
+        loop {
+            match table[index] {
+                Some(old) if old == key => return false,
+                Some(_) => {
+                    index = if index == 0 {
+                        table.len() - 1
+                    } else {
+                        index - 1
+                    }
+                }
+                None => {
+                    table[index] = Some(key);
+                    return true;
+                }
+            }
+        }
+    }
+    let mut table = vec![None; 241];
+    let mut used = 0;
+    for &key in keys {
+        if insert(&mut table, key) {
+            if used >= table.len() / 3 {
+                let old = table;
+                table = vec![None; old.len() * 2];
+                for key in old.into_iter().flatten() {
+                    insert(&mut table, key);
+                }
+            }
+            used += 1;
+        }
+    }
+    table.into_iter().flatten().collect()
+}
+
+/// Shapes one auto-hinter cluster as FreeType's HarfBuzz path does.
+pub fn auto_hint_shape_cluster(
+    instance: Instance<'_, '_, '_, '_>,
+    extents: &dyn Fn(GlyphId) -> Option<GlyphExtents>,
+    text: &[u8],
+    feature: Option<[u8; 4]>,
+) -> Vec<AutoHintShapedGlyph> {
+    let mut buffer = UnicodeBuffer::new();
+    buffer.push_utf8(text, 0, None);
+    let properties = SegmentProperties::default().guess(&buffer, None);
+    let features = feature.map(|tag| Feature::new(Tag(tag), 1));
+    let plan = ShapePlan::new(instance, properties.clone(), features.as_slice());
+    let scale = Scale::unscaled(instance.font());
+    let shaped = shape_with_extents(instance, &scale, &plan, buffer, extents);
+    if feature.is_some() {
+        let mut baseline = UnicodeBuffer::new();
+        baseline.push_utf8(text, 0, None);
+        let baseline_plan = ShapePlan::new(instance, properties, &[]);
+        let unfeatured = shape_with_extents(instance, &scale, &baseline_plan, baseline, extents);
+        if shaped
+            .glyph_infos()
+            .iter()
+            .map(|g| g.glyph)
+            .eq(unfeatured.glyph_infos().iter().map(|g| g.glyph))
+        {
+            return Vec::new();
+        }
+    }
+    shaped
+        .glyph_infos()
+        .iter()
+        .zip(shaped.glyph_positions())
+        .map(|(info, pos)| AutoHintShapedGlyph {
+            glyph: info.glyph,
+            x_advance: pos.x_advance,
+            y_offset: pos.y_offset,
+        })
+        .collect()
 }
 
 /// Assigns FreeType's automatic-hinter styles in the order of its style
@@ -214,7 +564,7 @@ fn assign_gsub_style(
             .collect()
     };
     let mut previous = usize::MAX;
-    for _ in 0..5 {
+    for _ in 0..14 {
         if glyphs.len() == previous {
             break;
         }
@@ -223,11 +573,11 @@ fn assign_gsub_style(
             let Ok(Some(lookup)) = lookups.lookup(index) else {
                 continue;
             };
-            add_lookup_outputs(&lookup, &mut glyphs, feature.is_none(), styles.len());
+            add_lookup_outputs(&lookup, &mut glyphs, feature.is_none(), None, styles.len());
             if feature.is_none() {
                 for i in 0..lookup.num_subtables() {
                     if let Ok(subtable) = gsub::subtable(&lookup, i) {
-                        add_context_outputs(subtable, lookups, &mut glyphs, styles.len());
+                        add_context_outputs(subtable, lookups, &mut glyphs, styles.len(), 0);
                     }
                 }
             } else {
@@ -235,7 +585,7 @@ fn assign_gsub_style(
                     if let Ok(subtable) = gsub::subtable(&lookup, i) {
                         for nested in nested_lookups(subtable, &glyphs) {
                             if let Ok(Some(lookup)) = lookups.lookup(nested) {
-                                add_lookup_outputs(&lookup, &mut glyphs, false, styles.len());
+                                add_lookup_outputs(&lookup, &mut glyphs, false, None, styles.len());
                             }
                         }
                     }
@@ -332,6 +682,7 @@ fn add_context_outputs(
     lookups: LookupList<'_>,
     glyphs: &mut BTreeSet<u32>,
     limit: usize,
+    depth: u8,
 ) {
     use sofel_font::read::layout::LookupRecords;
 
@@ -341,6 +692,7 @@ fn add_context_outputs(
         positions: &[BTreeSet<u32>],
         glyphs: &mut BTreeSet<u32>,
         limit: usize,
+        depth: u8,
     ) {
         if positions.iter().any(BTreeSet::is_empty) {
             return;
@@ -352,8 +704,21 @@ fn add_context_outputs(
             let Ok(Some(lookup)) = lookups.lookup(usize::from(record.lookup_index)) else {
                 continue;
             };
-            let mut result = active.clone();
-            add_lookup_outputs(&lookup, &mut result, true, limit);
+            let mut result = glyphs.clone();
+            add_lookup_outputs(&lookup, &mut result, true, Some(active), limit);
+            if depth < 8 {
+                for index in 0..lookup.num_subtables() {
+                    if let Ok(subtable) = gsub::subtable(&lookup, index) {
+                        add_context_outputs(
+                            subtable,
+                            lookups,
+                            &mut result,
+                            limit,
+                            depth.saturating_add(1),
+                        );
+                    }
+                }
+            }
             glyphs.extend(result);
         }
     }
@@ -399,7 +764,7 @@ fn add_context_outputs(
                         .iter()
                         .all(|set| set.iter().all(|glyph| available.contains(glyph)))
                     {
-                        records(lookups, rule.lookups, &positions, glyphs, limit);
+                        records(lookups, rule.lookups, &positions, glyphs, limit, depth);
                     }
                 }
             }
@@ -429,7 +794,7 @@ fn add_context_outputs(
                                 .map_or_else(BTreeSet::new, |value| classes(class_def, value))
                         }))
                         .collect::<Vec<_>>();
-                    records(lookups, rule.lookups, &positions, glyphs, limit);
+                    records(lookups, rule.lookups, &positions, glyphs, limit, depth);
                 }
             }
         }
@@ -446,7 +811,7 @@ fn add_context_outputs(
                         .map_or_else(BTreeSet::new, covered)
                 })
                 .collect::<Vec<_>>();
-            records(lookups, records_list, &positions, glyphs, limit);
+            records(lookups, records_list, &positions, glyphs, limit, depth);
         }
         SubstSubtable::ChainContext(ChainedSequenceContext::Glyphs {
             coverage,
@@ -483,7 +848,7 @@ fn add_context_outputs(
                             .iter()
                             .all(|set| set.iter().all(|glyph| available.contains(glyph)))
                         {
-                            records(lookups, rule.lookups, &positions, glyphs, limit);
+                            records(lookups, rule.lookups, &positions, glyphs, limit, depth);
                         }
                     }
                 }
@@ -528,7 +893,7 @@ fn add_context_outputs(
                                 })
                             }))
                             .collect::<Vec<_>>();
-                        records(lookups, rule.lookups, &positions, glyphs, limit);
+                        records(lookups, rule.lookups, &positions, glyphs, limit, depth);
                     }
                 }
             }
@@ -561,7 +926,7 @@ fn add_context_outputs(
                         .map_or_else(BTreeSet::new, covered)
                 })
                 .collect::<Vec<_>>();
-            records(lookups, records_list, &positions, glyphs, limit);
+            records(lookups, records_list, &positions, glyphs, limit, depth);
         }
         _ => {}
     }
@@ -685,8 +1050,13 @@ fn add_lookup_outputs(
     lookup: &sofel_font::read::layout::Lookup<'_>,
     glyphs: &mut BTreeSet<u32>,
     only_reachable: bool,
+    allowed_first: Option<&BTreeSet<u32>>,
     limit: usize,
 ) {
+    let reachable = |glyph: u32, glyphs: &BTreeSet<u32>| {
+        !only_reachable
+            || allowed_first.map_or_else(|| glyphs.contains(&glyph), |s| s.contains(&glyph))
+    };
     for i in 0..lookup.num_subtables() {
         let Ok(subtable) = gsub::subtable(lookup, i) else {
             continue;
@@ -699,7 +1069,7 @@ fn add_lookup_outputs(
             } => {
                 for (first, last) in coverage.ranges() {
                     for glyph in first.0..=last.0.min(u32::try_from(limit).unwrap_or(u32::MAX)) {
-                        if !only_reachable || glyphs.contains(&glyph) {
+                        if reachable(glyph, glyphs) {
                             glyphs.insert(glyph.wrapping_add(delta) & mask);
                         }
                     }
@@ -711,7 +1081,7 @@ fn add_lookup_outputs(
             } => {
                 for (first, last) in coverage.ranges() {
                     for glyph in first.0..=last.0.min(u32::try_from(limit).unwrap_or(u32::MAX)) {
-                        if (!only_reachable || glyphs.contains(&glyph))
+                        if reachable(glyph, glyphs)
                             && let Some(index) = coverage.get(sofel_font::read::GlyphId(glyph))
                             && let Some(replacement) = substitutes.get(index as usize)
                         {
@@ -730,7 +1100,7 @@ fn add_lookup_outputs(
             } => {
                 for (first, last) in coverage.ranges() {
                     for glyph in first.0..=last.0.min(u32::try_from(limit).unwrap_or(u32::MAX)) {
-                        if (!only_reachable || glyphs.contains(&glyph))
+                        if reachable(glyph, glyphs)
                             && let Some(index) = coverage.get(sofel_font::read::GlyphId(glyph))
                             && let Ok(Some(sequence)) = sequences.get(index as usize)
                         {
@@ -749,7 +1119,7 @@ fn add_lookup_outputs(
             } => {
                 for (first, last) in coverage.ranges() {
                     for glyph in first.0..=last.0.min(u32::try_from(limit).unwrap_or(u32::MAX)) {
-                        if (!only_reachable || glyphs.contains(&glyph))
+                        if reachable(glyph, glyphs)
                             && let Some(index) = coverage.get(sofel_font::read::GlyphId(glyph))
                             && let Ok(Some(set)) = ligature_sets.get(index as usize)
                         {
@@ -766,6 +1136,33 @@ fn add_lookup_outputs(
                                     glyphs.insert(ligature.glyph.0);
                                 }
                             }
+                        }
+                    }
+                }
+            }
+            SubstSubtable::ReverseChainSingle {
+                coverage,
+                backtrack,
+                lookahead,
+                substitutes,
+            } => {
+                let context_matches = [backtrack, lookahead].into_iter().all(|coverages| {
+                    (0..coverages.len()).all(|index| {
+                        coverages.get(index).ok().flatten().is_some_and(|coverage| {
+                            glyphs.iter().any(|&glyph| {
+                                coverage.get(sofel_font::read::GlyphId(glyph)).is_some()
+                            })
+                        })
+                    })
+                });
+                if context_matches {
+                    let inputs = glyphs.iter().copied().collect::<Vec<_>>();
+                    for glyph in inputs {
+                        if reachable(glyph, glyphs)
+                            && let Some(index) = coverage.get(sofel_font::read::GlyphId(glyph))
+                            && let Some(replacement) = substitutes.get(index as usize)
+                        {
+                            glyphs.insert(replacement);
                         }
                     }
                 }
