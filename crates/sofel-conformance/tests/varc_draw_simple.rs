@@ -8,7 +8,7 @@ use sofel_conformance::paths;
 use sofel_font::Font;
 use sofel_font::var::Location;
 use sofel_geom::{Command, FnPen};
-use sofel_outline::{CBox, HbOutlineCommand, Outlines, Scale, Scratch};
+use sofel_outline::{CBox, HbOutlineCommand, HintMode, HintTarget, Outlines, Scale, Scratch};
 use sofel_read::{GlyphId, Tag, varc::Varc};
 use sofel_subset::{Flags, Input, SetKind, subset};
 use std::process::Command as ProcessCommand;
@@ -88,6 +88,233 @@ fn synthetic_with_condition(records: &[(u16, Vec<u8>)], condition: Option<(i16, 
         })
         .collect();
     sofel_write::build_sfnt(&tables).unwrap()
+}
+
+fn ft_slot_lines(data: &[u8], name: &str) -> Vec<String> {
+    ft_slot_lines_at(data, name, 16)
+}
+
+fn ft_slot_lines_at(data: &[u8], name: &str, ppem: u16) -> Vec<String> {
+    let path =
+        std::env::temp_dir().join(format!("sofel-varc-slot-{name}-{}.otf", std::process::id()));
+    std::fs::write(&path, data).unwrap();
+    let size = ppem.to_string();
+    let output = ProcessCommand::new(paths::ft_dump())
+        .args(["--native-hint", &size, &size, "normal"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    let _ = std::fs::remove_file(path);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let text = String::from_utf8(output.stdout).unwrap();
+    text.lines()
+        .skip_while(|line| *line != "glyph 3")
+        .skip(1)
+        .take_while(|line| !line.starts_with("glyph "))
+        .filter(|line| {
+            ["advance ", "point ", "end ", "empty-slot ", "error "]
+                .iter()
+                .any(|prefix| line.starts_with(prefix))
+        })
+        .map(str::to_owned)
+        .collect()
+}
+
+fn sofel_slot_lines(data: &[u8]) -> Vec<String> {
+    sofel_slot_lines_at(data, 16)
+}
+
+fn sofel_slot_lines_at(data: &[u8], ppem: u16) -> Vec<String> {
+    let font = Font::new(data, 0).unwrap();
+    let outlines = Outlines::new(font.default_instance());
+    let mut scratch = Scratch::default();
+    match outlines.load_with_hint(
+        GlyphId(3),
+        ppem,
+        HintMode::NativeV40,
+        HintTarget::Normal,
+        &mut scratch,
+    ) {
+        Ok((_, advance)) => {
+            let mut lines = vec![format!("advance {advance} 0")];
+            lines.extend(
+                scratch
+                    .points()
+                    .iter()
+                    .zip(scratch.point_tags())
+                    .map(|(p, tag)| format!("point {} {} {tag}", p.x, p.y)),
+            );
+            lines.extend(
+                scratch
+                    .contour_ends()
+                    .iter()
+                    .map(|end| format!("end {end}")),
+            );
+            lines
+        }
+        Err(error) => {
+            assert!(scratch.points().is_empty() && scratch.contour_ends().is_empty());
+            vec![format!("error {error:?}")]
+        }
+    }
+}
+
+fn component_record(glyph: u16, fields: &[(u32, i16)]) -> Vec<u8> {
+    let flags = fields.iter().fold(0, |flags, (bit, _)| flags | 1 << bit);
+    let mut record = if flags < 0x80 {
+        vec![u8::try_from(flags).unwrap()]
+    } else if flags < 0x4000 {
+        vec![
+            u8::try_from(0x80 | (flags >> 8)).unwrap(),
+            u8::try_from(flags & 0xff).unwrap(),
+        ]
+    } else {
+        vec![
+            u8::try_from(0xc0 | (flags >> 16)).unwrap(),
+            u8::try_from((flags >> 8) & 0xff).unwrap(),
+            u8::try_from(flags & 0xff).unwrap(),
+        ]
+    };
+    record.extend_from_slice(&glyph.to_be_bytes());
+    for (_, value) in fields {
+        record.extend_from_slice(&value.to_be_bytes());
+    }
+    record
+}
+
+#[test]
+fn adr0064_i1_varc_slot_fixed_transform_composition() {
+    let cases = [
+        ("rotation", vec![(3, component_record(1, &[(6, 1024)]))]),
+        (
+            "raw-boundary",
+            vec![(3, component_record(1, &[(4, -32768), (5, 32767)]))],
+        ),
+        (
+            "angle-boundary",
+            vec![(3, component_record(1, &[(6, -32768), (13, 32767)]))],
+        ),
+        (
+            "skew-center",
+            vec![(
+                3,
+                component_record(
+                    1,
+                    &[
+                        (4, 127),
+                        (5, -61),
+                        (6, 983),
+                        (8, 1291),
+                        (9, 907),
+                        (13, 209),
+                        (14, -117),
+                        (10, 37),
+                        (11, -23),
+                    ],
+                ),
+            )],
+        ),
+        (
+            "nested",
+            vec![
+                (2, component_record(1, &[(6, -712), (8, 1231), (10, 71)])),
+                (
+                    3,
+                    component_record(2, &[(4, 201), (5, -177), (6, 1501), (13, 119), (11, -39)]),
+                ),
+            ],
+        ),
+    ];
+    for (name, records) in cases {
+        let data = synthetic(&records);
+        for ppem in [5, 9, 16, 24, 36, 73] {
+            assert_eq!(
+                sofel_slot_lines_at(&data, ppem),
+                ft_slot_lines_at(&data, name, ppem),
+                "{name} ppem {ppem}"
+            );
+        }
+    }
+}
+
+#[test]
+fn adr0064_i1_varc_slot_ignores_invalid_or_missing_conditions() {
+    let bytes = source();
+    let font = Font::new(&bytes, 0).unwrap();
+    let record = Varc::new(font.table(Tag::new(b"VARC")).unwrap())
+        .unwrap()
+        .record(GlyphId(3))
+        .unwrap()
+        .to_vec();
+    for (name, condition) in [
+        ("invalid-condition", Some((0, 0))),
+        ("missing-condition", None),
+    ] {
+        let mut conditioned = record.clone();
+        conditioned[1] |= 0x80;
+        conditioned.insert(4, 100); // condition index exceeds the one-entry list
+        let data = synthetic_with_condition(&[(3, conditioned)], condition);
+        assert_eq!(
+            sofel_slot_lines(&data),
+            ft_slot_lines(&data, name),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn adr0064_i1_varc_slot_falls_back_at_freetype_depth_limit() {
+    let mut records = vec![(1, vec![0, 0, 2])];
+    records.extend((3..=18).map(|glyph| {
+        (
+            glyph,
+            vec![
+                0,
+                0,
+                if glyph == 18 {
+                    1
+                } else {
+                    u8::try_from(glyph + 1).unwrap()
+                },
+            ],
+        )
+    }));
+    let data = synthetic(&records);
+    assert_eq!(sofel_slot_lines(&data), ft_slot_lines(&data, "depth-limit"));
+}
+
+#[test]
+fn adr0064_i1_varc_slot_skips_failed_child_and_keeps_sibling() {
+    // maxp reaches glyph 5, but CFF2 has no CharString for glyph 4.
+    let data = synthetic(&[(3, vec![0, 0, 4, 0, 0, 1]), (5, Vec::new())]);
+    assert_eq!(
+        sofel_slot_lines(&data),
+        ft_slot_lines(&data, "failed-child")
+    );
+}
+
+#[test]
+fn adr0067_i3_missing_varc_record_terminates_without_contaminating_next_glyph() {
+    let bytes =
+        std::fs::read(paths::testdata().join("harfbuzz/test/api/fonts/varc-coverage-longer.ttf"))
+            .unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let varc = Varc::new(font.table(Tag::new(b"VARC")).unwrap()).unwrap();
+    let glyph = (0..font.num_glyphs())
+        .map(GlyphId)
+        .find(|&glyph| varc.coverage().get(glyph).is_some() && varc.record(glyph).is_none())
+        .unwrap();
+    let outlines = Outlines::new(font.default_instance());
+    let mut scratch = Scratch::default();
+    let _ = outlines.load(glyph, Scale::Unscaled, &mut scratch);
+    let _ = draw(&font, glyph.0, &mut scratch);
+    let after = draw(&font, 1, &mut scratch);
+    let isolated = draw(&font, 1, &mut Scratch::default());
+    assert_eq!(after, isolated);
 }
 
 #[test]

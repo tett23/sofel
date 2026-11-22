@@ -5,10 +5,14 @@
 //!
 //! The expected hashes come from this same file run against the code
 //! before the move (main at 50d02387, with `use sofel_cli::glyph;`).
-//! GRAY also includes the later CFF2 default-coordinate correction of root
-//! ADR 0030 / root ADR 0064: of these 120 fonts, only fuzz font
-//! clusterfuzz-testcase-hb-fuzzer-5662671558934528 changes. Its corrected
-//! output is independently compared with FreeType in cff_hint.rs.
+//! GRAY includes the later CFF2 and VARC loading corrections (root ADR
+//! 0030 / root ADR 0064). Per-font comparisons found changes only in
+//! clusterfuzz-testcase-hb-fuzzer-5662671558934528 and
+//! cff2-varc-short-fdselect0-oob.otf among these 120 inputs. The former
+//! is independently compared with FreeType in cff_hint.rs. The latter
+//! lacks hmtx (FreeType rejects the face with Hmtx_Table_Missing), so its
+//! snapshot covers raw Rust views; valid VARC faces are compared with
+//! FreeType in cff_hint.rs.
 
 #![allow(
     clippy::unwrap_used,
@@ -186,5 +190,5 @@ fn adr0095_i3_type1_glyphs_render_as_before_the_move() {
 }
 
 const COLOR: (u64, usize, usize) = (0x5c44_1a1c_d90f_04fd, 1672, 392);
-const GRAY: (u64, usize, usize) = (0x209e_db2b_96cb_dc63, 1136, 2);
+const GRAY: (u64, usize, usize) = (0xd4e3_d727_3384_fb8b, 1136, 2);
 const TYPE1: u64 = 0x2ee4_18ea_91e2_1545;

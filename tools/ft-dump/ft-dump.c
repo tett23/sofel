@@ -1834,6 +1834,7 @@ static int hint_slot(const char *size, const char *glyph, const char *engine,
  *   size <ppem>
  *   glyph <g>
  *   error <code>                        (loading failed)
+ *   empty-slot <x> <y> <format>          (loaded, but not an outline)
  *   advance <x> <y>                     (the slot before rendering)
  *   point <x> <y> <tag>
  *   end <contour end>
@@ -1876,9 +1877,13 @@ static int auto_hint(const char *first, const char *last, const char *target,
         unsigned int r, c;
         printf("glyph %ld\n", (long)g);
         e = FT_Load_Glyph(face, (FT_UInt)g, flags);
-        if (!e && slot->format != FT_GLYPH_FORMAT_OUTLINE) e = FT_Err_Invalid_Glyph_Format;
         if (e) {
           printf("error %d\n", (int)e);
+          continue;
+        }
+        if (slot->format != FT_GLYPH_FORMAT_OUTLINE) {
+          printf("empty-slot %ld %ld %lu\n", slot->advance.x, slot->advance.y,
+                 (unsigned long)slot->format);
           continue;
         }
         printf("advance %ld %ld\n", slot->advance.x, slot->advance.y);

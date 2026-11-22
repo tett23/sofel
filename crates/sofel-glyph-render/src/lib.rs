@@ -292,7 +292,12 @@ pub fn render_mono<'r>(
         .map_err(RenderError::Outline)?;
     let c = info.cbox;
     let bounds = sofel_raster::mono_pixel_box(c.x_min, c.y_min, c.x_max, c.y_max);
-    let high_precision = ppem < 24 && bounds.width.saturating_add(bounds.rows) < 258;
+    let varc = outlines
+        .font()
+        .table(sofel_font::read::Tag::new(b"VARC"))
+        .and_then(|data| sofel_font::read::varc::Varc::new(data).ok())
+        .is_some_and(|table| table.coverage().get(glyph).is_some());
+    let high_precision = !varc && ppem < 24 && bounds.width.saturating_add(bounds.rows) < 258;
     let multiplier = if high_precision { 64 } else { 1 };
     let shift = bounds.shift();
     let offset = sofel_font::geom::Point {

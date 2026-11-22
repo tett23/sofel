@@ -226,6 +226,7 @@ fn render(
     ppem: u16,
     target: HintTarget,
     raster: &mut Rasterizer,
+    varc_face: Option<(&Outlines<'_, '_, '_>, GlyphId)>,
 ) -> Vec<String> {
     let c = info.cbox;
     let options = RenderOptions {
@@ -256,6 +257,21 @@ fn render(
             );
         }
         HintTarget::Mono => {
+            if let Some((outlines, glyph)) = varc_face {
+                let mut loaded = Scratch::default();
+                let Ok(bitmap) =
+                    sofel_glyph_render::render_mono(outlines, glyph, ppem, &mut loaded, raster)
+                else {
+                    return vec!["render_error".into()];
+                };
+                let b = bitmap.bounds;
+                lines.push(format!(
+                    "bitmap {} {} {} {}",
+                    b.left, b.top, b.width, b.rows
+                ));
+                hex_rows(&mut lines, bitmap.pixels, bitmap.stride, b.rows as usize);
+                return lines;
+            }
             let bounds = sofel_raster::mono_pixel_box(c.x_min, c.y_min, c.x_max, c.y_max);
             let high_precision = ppem < 24 && bounds.width.saturating_add(bounds.rows) < 258;
             let multiplier = if high_precision { 64 } else { 1 };
@@ -368,14 +384,31 @@ fn compare_glyph(
     match loaded {
         Err(e) => actual.push(format!("error {e:?}")),
         Ok((info, advance)) => {
-            actual.push(format!("advance {advance} 0"));
-            for (p, tag) in scratch.points().iter().zip(scratch.point_tags()) {
-                actual.push(format!("point {} {} {tag}", p.x, p.y));
+            let varc = outlines
+                .font()
+                .table(Tag::new(b"VARC"))
+                .and_then(|data| sofel_font::read::varc::Varc::new(data).ok())
+                .is_some_and(|table| table.coverage().get(GlyphId(gid)).is_some());
+            if varc && scratch.points().is_empty() && scratch.contour_ends().is_empty() {
+                // FreeType leaves an empty VARC glyph slot in FT_GLYPH_FORMAT_NONE.
+                actual.push(format!("empty-slot {advance} 0 0"));
+            } else {
+                actual.push(format!("advance {advance} 0"));
+                for (p, tag) in scratch.points().iter().zip(scratch.point_tags()) {
+                    actual.push(format!("point {} {} {tag}", p.x, p.y));
+                }
+                for end in scratch.contour_ends() {
+                    actual.push(format!("end {end}"));
+                }
+                actual.extend(render(
+                    info,
+                    scratch,
+                    ppem,
+                    target.1,
+                    raster,
+                    varc.then_some((outlines, GlyphId(gid))),
+                ));
             }
-            for end in scratch.contour_ends() {
-                actual.push(format!("end {end}"));
-            }
-            actual.extend(render(info, scratch, ppem, target.1, raster));
         }
     }
     let both_errors = expected.first().is_some_and(|l| l.starts_with("error"))
@@ -412,10 +445,14 @@ fn compare_glyph(
 /// Runs `ft-dump --native-hint` over the sizes and compares each glyph
 /// as its lines arrive.
 fn compare_case(case: &Case, sizes: &[u16], stats: &mut Stats) {
-    compare_case_with_cap(case, sizes, stats, glyph_cap());
+    compare_case_selected(case, sizes, stats, false, glyph_cap());
 }
 
 fn compare_case_with_cap(case: &Case, sizes: &[u16], stats: &mut Stats, cap: u32) {
+    compare_case_selected(case, sizes, stats, false, cap);
+}
+
+fn compare_case_selected(case: &Case, sizes: &[u16], stats: &mut Stats, varc_only: bool, cap: u32) {
     let path = paths::testdata().join(&case.path);
     let data = std::fs::read(&path).unwrap();
     let font = Font::new(&data, case.face).unwrap();
@@ -458,6 +495,11 @@ fn compare_case_with_cap(case: &Case, sizes: &[u16], stats: &mut Stats, cap: u32
         let mut flush = |size: u16, glyph: Option<u32>, lines: &mut Vec<String>| {
             if let Some(g) = glyph
                 && wanted.contains(&size)
+                && (!varc_only
+                    || font
+                        .table(Tag::new(b"VARC"))
+                        .and_then(|data| sofel_font::read::varc::Varc::new(data).ok())
+                        .is_some_and(|varc| varc.coverage().get(GlyphId(g)).is_some()))
             {
                 compare_glyph(
                     &id,
@@ -599,6 +641,50 @@ fn adr0064_i1_i2_cff_hinted_slots_and_bitmaps_match_freetype() {
         unexpected.len()
     );
     assert!(stale.is_empty(), "expected failures that pass: {stale:?}");
+}
+
+#[test]
+fn adr0064_i1_i2_varc_slots_match_freetype() {
+    paths::require(&paths::ft_dump(), "ft-dump").unwrap();
+    let mut stats = Stats::default();
+    for path in [
+        "freetype/tests/data/varc-short-cff2.otf",
+        "freetype/tests/data/varc-static-cff2.otf",
+        "freetype/tests/data/varc-static-gvar.ttf",
+        "freetype/tests/data/varc-null-condition.ttf",
+        "freetype/tests/data/varc-reset-only.ttf",
+        "freetype/tests/data/varc-value-conditions.ttf",
+        "freetype/tests/data/varc-variation-store.ttf",
+    ] {
+        let bytes = std::fs::read(paths::testdata().join(path)).unwrap();
+        let font = Font::new(&bytes, 0).unwrap();
+        let mut locations = vec![None];
+        if let Some(variations) = midway(&font) {
+            locations.push(Some(variations));
+        }
+        for variations in locations {
+            compare_case_selected(
+                &Case {
+                    path: path.into(),
+                    face: 0,
+                    variations,
+                },
+                &[5, 9, 16, 24, 36],
+                &mut stats,
+                true,
+                0,
+            );
+        }
+    }
+    assert!(stats.unopened.is_empty(), "{:?}", stats.unopened);
+    for failure in &stats.failures {
+        eprintln!("{}: {}", failure.id, failure.detail);
+    }
+    assert!(
+        stats.failures.is_empty(),
+        "{} mismatches",
+        stats.failures.len()
+    );
 }
 
 #[test]

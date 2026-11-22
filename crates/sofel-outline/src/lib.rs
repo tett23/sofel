@@ -263,9 +263,42 @@ struct Context<'a, 'loc, 'source> {
     hint: Option<(tt_hint::Interpreter, usize)>,
     scale: Scale,
     native_metrics: bool,
+    raw_coords: Option<&'loc [i32]>,
 }
 
 impl Context<'_, '_, '_> {
+    fn is_default(&self) -> bool {
+        self.raw_coords.map_or_else(
+            || self.location.ft_default(),
+            |coords| coords.iter().all(|&coord| coord == 0),
+        )
+    }
+    fn apply_gvar(
+        &self,
+        glyph: u32,
+        points: &mut [gvar::Point<i32>],
+        scratch: &mut FtScratch,
+    ) -> Result<bool, gvar::GvarError> {
+        if let Some(coords) = self.raw_coords {
+            let tag = if self.font.table(Tag::new(b"GVAR")).is_some() {
+                Tag::new(b"GVAR")
+            } else {
+                Tag::new(b"gvar")
+            };
+            let Some(bytes) = self.font.table(tag) else {
+                return Ok(false);
+            };
+            let table = sofel_font::read::gvar::Gvar::new(bytes, tag)
+                .map_err(|_| gvar::GvarError::InvalidLocation)?;
+            let coords: Vec<_> = coords.iter().map(|coord| coord.saturating_mul(4)).collect();
+            gvar::apply_ft(&table, glyph, &coords, &[], points, scratch)
+        } else {
+            self.font
+                .instance(self.location)
+                .apply_gvar_ft(glyph, points, scratch)
+        }
+    }
+
     /// `tt_face_get_location`: the byte range of a glyph.
     fn location(&self, glyph: u32) -> (usize, usize) {
         let len = self.glyf.len();
@@ -308,7 +341,7 @@ impl Context<'_, '_, '_> {
                 .instance(self.location)
                 .ft_left_side_bearing(GlyphId(glyph)),
         ));
-        if !self.location.ft_default() {
+        if !self.is_default() {
             return x;
         }
         match self.scale {
@@ -319,7 +352,7 @@ impl Context<'_, '_, '_> {
 
     fn phantoms(&self, glyph: u32, x_min: i16, y_max: i16) -> [Point; 4] {
         let left = self.pp1_x(glyph, x_min);
-        if self.location.ft_default() {
+        if self.is_default() {
             return [
                 Point { x: left, y: 0 },
                 Point::default(),
@@ -608,6 +641,13 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
         self.load_native_truetype(glyph, ppem, target, scratch, 40)
     }
 
+    fn varc_covers(&self, glyph: GlyphId) -> bool {
+        self.font
+            .table(Tag::new(b"VARC"))
+            .and_then(|data| sofel_font::read::varc::Varc::new(data).ok())
+            .is_some_and(|varc| varc.coverage().get(glyph).is_some())
+    }
+
     /// Loads an outline and horizontal advance in 26.6 pixels with the
     /// selected hinting engine and target. Rasterization is a separate step.
     pub fn load_with_hint(
@@ -618,6 +658,23 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
         target: HintTarget,
         scratch: &mut Scratch,
     ) -> Result<(OutlineInfo, i32), OutlineError> {
+        if self.varc_covers(glyph) {
+            let scale = Scale::pixels(&self.font, ppem, ppem);
+            let info = self.load(glyph, scale, scratch)?;
+            let Scale::Scaled { x, .. } = scale else {
+                return Err(OutlineError::InvalidOutline);
+            };
+            let advance = self
+                .instance()
+                .ft_h_advance(glyph)
+                .map_or(0, |width| mul_fix(i32::from(width), x.0));
+            let advance = if mode == HintMode::None || scratch.points.is_empty() {
+                advance
+            } else {
+                advance.wrapping_add(32) & !63
+            };
+            return Ok((info, advance));
+        }
         match mode {
             HintMode::None => {
                 let scale = Scale::pixels(&self.font, ppem, ppem);
@@ -667,9 +724,9 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
     /// style; make it with [`AutoHintCache::new`] from this value and keep
     /// it for the following glyphs. All writing systems of FreeType's
     /// automatic hinter without HarfBuzz are covered: Latin, CJK, Indic
-    /// and the unhinted dummy. Glyphs that VARC covers, which FreeType
-    /// never auto-hints, and fonts of another format than glyf and CFF
-    /// return [`OutlineError::AutoHintUnsupported`].
+    /// and the unhinted dummy. Glyphs that VARC covers are loaded without
+    /// hinting, as FreeType does. Fonts of another format than glyf and
+    /// CFF return [`OutlineError::AutoHintUnsupported`].
     pub fn load_auto_hinted(
         &self,
         glyph: GlyphId,
@@ -678,6 +735,9 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
         cache: &mut AutoHintCache,
         scratch: &mut Scratch,
     ) -> Result<(OutlineInfo, i32), OutlineError> {
+        if self.varc_covers(glyph) {
+            return self.load_with_hint(glyph, ppem, HintMode::Auto, target, scratch);
+        }
         autofit::load(self, glyph, ppem, target, cache, scratch)
     }
 
@@ -689,6 +749,14 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
         scratch: &mut Scratch,
         version: u8,
     ) -> Result<(OutlineInfo, i32), OutlineError> {
+        if self.varc_covers(glyph) {
+            let mode = if version == 35 {
+                HintMode::NativeV35
+            } else {
+                HintMode::NativeV40
+            };
+            return self.load_with_hint(glyph, ppem, mode, target, scratch);
+        }
         scratch.clear();
         let hint = tt_hint::Interpreter::native(self.instance(), ppem, target, version)?;
         let device_width = hint
@@ -716,6 +784,23 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
     /// in whole font units (fractions truncated), the FontMatrix applied,
     /// then the scale; never overlapping.
     pub fn load(
+        &self,
+        glyph: GlyphId,
+        scale: Scale,
+        scratch: &mut Scratch,
+    ) -> Result<OutlineInfo, OutlineError> {
+        if let Some(varc) = self
+            .font
+            .table(Tag::new(b"VARC"))
+            .and_then(|data| sofel_font::read::varc::Varc::new(data).ok())
+            && varc.coverage().get(glyph).is_some()
+        {
+            return varc_draw::load(self, &varc, glyph, scale, scratch);
+        }
+        self.load_base(glyph, scale, scratch)
+    }
+
+    fn load_base(
         &self,
         glyph: GlyphId,
         scale: Scale,
@@ -757,6 +842,17 @@ fn load_glyf(
     scratch: &mut Scratch,
     hint: Option<(tt_hint::Interpreter, usize)>,
 ) -> Result<OutlineInfo, OutlineError> {
+    load_glyf_with_coords(instance, glyph, scale, scratch, hint, None)
+}
+
+fn load_glyf_with_coords(
+    instance: Instance<'_, '_, '_, '_>,
+    glyph: GlyphId,
+    scale: Scale,
+    scratch: &mut Scratch,
+    hint: Option<(tt_hint::Interpreter, usize)>,
+    raw_coords: Option<&[i32]>,
+) -> Result<OutlineInfo, OutlineError> {
     let font = instance.font();
     let extended = font.table(glyf::TAG_WIDE).is_some();
     let (glyf_tag, loca_tag): (Tag, Tag) = if extended {
@@ -775,6 +871,7 @@ fn load_glyf(
         num_glyphs: font.num_glyphs(),
         extended,
         native_metrics: hint.is_some(),
+        raw_coords,
         hint: hint.filter(|(vm, _)| !vm.disables_hinting()),
         scale,
     };
@@ -783,7 +880,7 @@ fn load_glyf(
     scratch.ends.clear();
     scratch.components.clear();
     scratch.stack.clear();
-    if !ctx.location.ft_default() {
+    if !ctx.is_default() {
         scratch.phantoms = [Point::default(); 4];
     }
     if glyph.0 >= ctx.num_glyphs {
@@ -915,14 +1012,14 @@ fn load_glyph(
     }
     let (offset, len) = ctx.location(glyph);
     if len == 0 {
-        if ctx.native_metrics && ctx.location.ft_default() {
+        if ctx.native_metrics && ctx.is_default() {
             s.phantoms = ctx
                 .design_phantoms(glyph, 0, 0)
                 .map(|p| ctx.scale_point(p.x, p.y));
         }
         // An empty glyph's box is all zero.
         *pp1_x = ctx.pp1_x(glyph, 0);
-        if !ctx.location.ft_default() {
+        if !ctx.is_default() {
             s.phantoms = ctx.phantoms(glyph, 0, 0);
             vary_empty_phantoms(ctx, s, glyph, pp1_x)?;
         }
@@ -935,23 +1032,23 @@ fn load_glyph(
     let g = Glyph::new(data).map_err(|_| OutlineError::InvalidOutline)?;
     let n = g.number_of_contours();
     if n == 0 {
-        if ctx.native_metrics && ctx.location.ft_default() {
+        if ctx.native_metrics && ctx.is_default() {
             s.phantoms = ctx
                 .design_phantoms(glyph, 0, 0)
                 .map(|p| ctx.scale_point(p.x, p.y));
         }
         *pp1_x = ctx.pp1_x(glyph, 0);
-        if !ctx.location.ft_default() {
+        if !ctx.is_default() {
             s.phantoms = ctx.phantoms(glyph, 0, 0);
             vary_empty_phantoms(ctx, s, glyph, pp1_x)?;
         }
         return Ok(());
     }
     *pp1_x = ctx.pp1_x(glyph, g.x_min());
-    if !ctx.location.ft_default() {
+    if !ctx.is_default() {
         s.phantoms = ctx.phantoms(glyph, g.x_min(), g.y_max());
     }
-    if ctx.native_metrics && ctx.location.ft_default() {
+    if ctx.native_metrics && ctx.is_default() {
         s.phantoms = ctx
             .design_phantoms(glyph, g.x_min(), g.y_max())
             .map(|p| ctx.scale_point(p.x, p.y));
@@ -969,7 +1066,7 @@ fn vary_empty_phantoms(
     glyph: u32,
     pp1_x: &mut i32,
 ) -> Result<(), OutlineError> {
-    if ctx.location.ft_default() {
+    if ctx.is_default() {
         return Ok(());
     }
     s.varied.clear();
@@ -978,9 +1075,7 @@ fn vary_empty_phantoms(
         y: p.y.wrapping_shl(16),
         end: false,
     }));
-    ctx.font
-        .instance(ctx.location)
-        .apply_gvar_ft(glyph, &mut s.varied, &mut s.gvar)
+    ctx.apply_gvar(glyph, &mut s.varied, &mut s.gvar)
         .map_err(|_| OutlineError::InvalidOutline)?;
     let hvar = ctx.font.table(Tag::new(b"HVAR")).is_some();
     let vvar = ctx.font.table(Tag::new(b"VVAR")).is_some();
@@ -1014,7 +1109,7 @@ fn load_simple(
     let simple = g.simple().map_err(|_| OutlineError::InvalidOutline)?;
     let base = s.points.len();
     let contour_base = s.ends.len();
-    let varied = !ctx.location.ft_default();
+    let varied = !ctx.is_default();
     for p in simple.points(ctx.extended) {
         s.points.push(if varied {
             Point { x: p.x, y: p.y }
@@ -1047,9 +1142,7 @@ fn load_simple(
             y: p.y.wrapping_shl(16),
             end: false,
         }));
-        ctx.font
-            .instance(ctx.location)
-            .apply_gvar_ft(glyph, &mut s.varied, &mut s.gvar)
+        ctx.apply_gvar(glyph, &mut s.varied, &mut s.gvar)
             .map_err(|_| OutlineError::InvalidOutline)?;
         let hvar = ctx.font.table(Tag::new(b"HVAR")).is_some();
         let vvar = ctx.font.table(Tag::new(b"VVAR")).is_some();
@@ -1168,7 +1261,7 @@ fn load_composite(
     {
         *overlap = true;
     }
-    if !ctx.location.ft_default() {
+    if !ctx.is_default() {
         let count = end_component - first_component;
         s.varied.clear();
         for component in &s.components[first_component..end_component] {
@@ -1183,9 +1276,7 @@ fn load_composite(
             y: p.y.wrapping_shl(16),
             end: false,
         }));
-        ctx.font
-            .instance(ctx.location)
-            .apply_gvar_ft(glyph, &mut s.varied, &mut s.gvar)
+        ctx.apply_gvar(glyph, &mut s.varied, &mut s.gvar)
             .map_err(|_| OutlineError::InvalidOutline)?;
         for (component, varied) in s.components[first_component..end_component]
             .iter_mut()
@@ -1227,7 +1318,7 @@ fn load_composite(
         // The component's phantom points stay only with USE_MY_METRICS;
         // its offset and transform do not move them.
         if c.flags & USE_MY_METRICS == 0 {
-            if ctx.location.ft_default() {
+            if ctx.is_default() {
                 s.phantoms = saved;
                 *pp1_x = saved_pp1;
             } else {
@@ -1244,7 +1335,7 @@ fn load_composite(
     }
     s.stack.pop();
     s.components.truncate(first_component);
-    if !ctx.location.ft_default() && !metrics_component {
+    if !ctx.is_default() && !metrics_component {
         if let Scale::Scaled { x, y } = ctx.scale {
             for phantom in &mut s.phantoms {
                 phantom.x = mul_fix(phantom.x, x.0);

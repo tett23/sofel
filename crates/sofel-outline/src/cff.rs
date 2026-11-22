@@ -195,7 +195,7 @@ fn hinted_scales_fit(a: i32, d: i32, upm: i32) -> Option<bool> {
 
 /// `cff_slot_load`: hinted when `hinted_upm` holds the face's units per
 /// em. Returns the outline and `glyph->x_scale`.
-fn load_cff_with_blend(
+pub(crate) fn load_cff_with_blend(
     cff: &Cff<'_>,
     glyph: GlyphId,
     scale: Scale,
