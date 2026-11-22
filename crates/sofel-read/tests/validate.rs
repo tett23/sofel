@@ -92,7 +92,7 @@ fn maxp_and_hhea_diagnostics() {
 }
 
 #[test]
-fn inv2_truncated_wide_metric_count_diagnostics() {
+fn adr0054_i2_truncated_wide_metric_count_diagnostics() {
     for (tag, validate) in [
         (
             b"HHEA",

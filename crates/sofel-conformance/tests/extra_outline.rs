@@ -111,7 +111,7 @@ fn snapshots() -> BTreeMap<&'static str, String> {
 }
 
 #[test]
-fn i05_sampled_outlines_match_freetype() {
+fn adr0031_i5_sampled_outlines_match_freetype() {
     let corpus = Corpus::parse(
         include_str!("../../../fonts.lock"),
         include_str!("../../../conformance/fonts.tsv"),
@@ -175,7 +175,7 @@ fn i05_sampled_outlines_match_freetype() {
 
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
-fn i06_outline_reference_matches_pinned_freetype() {
+fn adr0031_i6_outline_reference_matches_pinned_freetype() {
     let corpus = Corpus::parse(
         include_str!("../../../fonts.lock"),
         include_str!("../../../conformance/fonts.tsv"),

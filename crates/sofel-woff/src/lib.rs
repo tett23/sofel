@@ -161,7 +161,7 @@ mod tests {
     use super::*;
     #[test]
     #[cfg(target_pointer_width = "64")]
-    fn i3_webfont_header_size_limit() {
+    fn adr0070_i3_webfont_header_size_limit() {
         assert!(size(u32::MAX as usize).is_ok());
         assert!(size((u32::MAX as usize).saturating_add(1)).is_err());
         assert!(aligned(usize::MAX).is_err());

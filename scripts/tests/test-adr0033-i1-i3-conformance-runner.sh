@@ -85,4 +85,4 @@ reset_state
 if TEST_FAIL=two sh "$root/scripts/test-conformance.sh" 2; then fail 'I2: test failure lost'; fi
 reset_state
 if DOC_FAIL=1 sh "$root/scripts/test-conformance.sh" 2; then fail 'I2: doc failure lost'; fi
-echo 'ok: ADR 0033 I1-I3 conformance runner'
+echo 'ADR 0033 I1, I2, I3: conformance runner'

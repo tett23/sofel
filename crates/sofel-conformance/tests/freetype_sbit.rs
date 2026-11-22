@@ -369,7 +369,7 @@ fn color_bitmaps_hide_outlines() {
 
 #[test]
 #[ignore = "requires ft-dump built with SOFEL_FT_PNG=1; run by the PNG reference CI step"]
-fn i1_sbit_png_matches_freetype_color_rows() {
+fn adr0066_i1_sbit_png_matches_freetype_color_rows() {
     fn bitmaps(text: &str) -> Vec<(String, Vec<String>)> {
         let mut result: Vec<(String, Vec<String>)> = Vec::new();
         let mut size = "";
@@ -424,7 +424,7 @@ fn i1_sbit_png_matches_freetype_color_rows() {
 
 #[test]
 #[ignore = "requires the gallery corpus and PNG-enabled ft-dump"]
-fn i2_sbix_gallery_strike_origin_and_pixels() {
+fn adr0072_i2_sbix_gallery_strike_origin_and_pixels() {
     let bytes = std::fs::read(paths::testdata().join("extra-fonts/fonts/color-sbix.ttf")).unwrap();
     let font = Font::new(&bytes, 0).unwrap();
     let ours = sofel_sbit(&font);

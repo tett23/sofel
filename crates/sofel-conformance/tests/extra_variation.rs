@@ -80,7 +80,7 @@ fn snapshots(text: &'static str) -> BTreeMap<&'static str, String> {
 }
 
 #[test]
-fn i05_nondefault_metrics_and_outlines_match_or_named_failure() {
+fn adr0031_i5_nondefault_metrics_and_outlines_match_or_named_failure() {
     let cases = cases();
     let metrics = snapshots(include_str!(
         "../../../conformance/extra-variation-metrics-hb.txt"
@@ -410,7 +410,7 @@ fn adr0027_i07_gvar_composite_extents() {
 
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
-fn i06_nondefault_references_match_pinned_harfbuzz_and_freetype() {
+fn adr0031_i6_nondefault_references_match_pinned_harfbuzz_and_freetype() {
     let hb_dump = paths::hb_dump();
     let ft_dump = paths::ft_dump();
     paths::require(&hb_dump, "hb-dump").unwrap();

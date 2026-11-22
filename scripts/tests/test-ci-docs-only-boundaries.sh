@@ -1,5 +1,5 @@
 #!/bin/sh
-# ADR 0032 I01/I03 and ADR 0034 I01/I03: base and malformed-rule boundaries.
+# ADR 0032 I1, I3, ADR 0034 I1, I3: base and malformed-rule boundaries.
 [ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"
 set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -70,4 +70,4 @@ if CI_REPO_DIR="$tmp" CI_EVENT_NAME=pull_request CI_BASE_SHA="$original" CI_HEAD
   echo 'I03_git_diff_failure: accepted failed diff' >&2
   exit 1
 fi
-echo 'ok: ADR 0032 I01/I03 and ADR 0034 I01/I03 boundaries'
+echo 'ADR 0032 I1, I3, ADR 0034 I1, I3: boundaries'

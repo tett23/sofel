@@ -604,7 +604,7 @@ fn nesting_stops_at_64() {
 }
 
 #[test]
-fn i3_svg_pixels_gzip_replays_the_expanded_document() {
+fn adr0066_i3_svg_pixels_gzip_replays_the_expanded_document() {
     let xml = b"<svg><path id='glyph1'/></svg>";
     let member = vec![
         31, 139, 8, 0, 0, 0, 0, 0, 0, 255, 179, 41, 46, 75, 183, 179, 41, 72, 44, 201, 80, 200, 76,

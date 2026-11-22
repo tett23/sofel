@@ -9,7 +9,7 @@ use build::{Buf, name, sample_tables_with_glyf, sfnt, utf16be};
 use sofel_capi::*;
 
 #[test]
-fn adr0030_i06_cff2_blend_vector_c_abi_preserves_columns_and_short_buffer() {
+fn adr0030_i6_cff2_blend_vector_c_abi_preserves_columns_and_short_buffer() {
     let store = build::item_variation_store(
         1,
         &[vec![(0, 0x4000, 0x4000)], vec![(0, 0, 0)]],
@@ -424,7 +424,7 @@ fn mvar_font_bytes_with_peak(peak: i16) -> Vec<u8> {
 }
 
 #[test]
-fn adr0030_i08_null_location_keeps_hb_mvar_default_region() {
+fn adr0030_i8_null_location_keeps_hb_mvar_default_region() {
     use sofel_font::var::{Ft, HbF32, Location, StoreKind};
     let bytes = mvar_font_bytes_with_peak(0);
     let rust_font = sofel_font::Font::new(&bytes, 0).unwrap();
@@ -583,7 +583,7 @@ fn i02_named_instance_inquiries_copy_design_coordinates() {
 }
 
 #[test]
-fn adr0036_i01_i02_i03_freetype_mm_var_inquiries_include_zero_style() {
+fn adr0036_i1_i2_i3_freetype_mm_var_inquiries_include_zero_style() {
     let bytes = named_font_bytes();
     let mut error = -99;
     // SAFETY: bytes stay alive until the font is destroyed.

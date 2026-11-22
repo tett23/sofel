@@ -83,7 +83,7 @@ fn items_for(font: &Path, testdata: &Path, ft_dump: &Path) -> Vec<Item> {
 }
 
 #[test]
-fn inv1_dfont_faces_match_freetype() {
+fn adr0058_i1_dfont_faces_match_freetype() {
     let ft_dump = std::env::var_os("SOFEL_FT_DUMP")
         .map(PathBuf::from)
         .unwrap_or_else(paths::ft_dump);

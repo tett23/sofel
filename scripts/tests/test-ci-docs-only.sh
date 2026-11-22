@@ -1,5 +1,5 @@
 #!/bin/sh
-# ADR 0032 I01-I03 and ADR 0034 I01-I03.
+# ADR 0032 I1, I2, I3, ADR 0034 I1, I2, I3.
 [ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"
 set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -100,4 +100,4 @@ base=$(git rev-parse HEAD)
 printf 'x\n' >>docs/adr/one.md
 git add . && git commit -qm document-with-invalid-rules
 expect false I03_invalid_rule_columns
-echo 'ok: ADR 0032 I01-I03 and ADR 0034 I01-I03'
+echo 'ADR 0032 I1, I2, I3, ADR 0034 I1, I2, I3: documentation classification'

@@ -176,7 +176,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn i2_outline_detects_changed_selection_and_transform_order() {
+    fn adr0074_i2_outline_detects_changed_selection_and_transform_order() {
         let xml = r##"<svg><defs><linearGradient id="white"><stop stop-color="#fff"/></linearGradient></defs><g id="glyph3" transform="matrix(2 0 0 1 125 62.5)"><rect x="62.5" y="62.5" width="125" height="125" fill="url(#white)"/></g></svg>"##;
         assert_eq!(
             compare_outline("nested-transform", 3, xml.as_bytes()),

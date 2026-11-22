@@ -57,7 +57,7 @@ impl Painter for Trace {
     }
 }
 #[test]
-fn i3_selected_shapes_emit_balanced_clips_and_resolved_painter_brushes() {
+fn adr0066_i3_selected_shapes_emit_balanced_clips_and_resolved_painter_brushes() {
     let xml = br##"<svg viewBox="0 0 4 4"><defs><linearGradient id="g"><stop offset="0" stop-color="red"/><stop offset="1" stop-color="blue"/></linearGradient><clipPath id="c"><rect width="2" height="2"/></clipPath><path id="p" d="M0 0 L3 0 L0 3 Z" fill="context-fill"/></defs><g id="glyph1" transform="translate(1,0)" clip-path="url(#c)"><use href="#p"/><rect width="3" height="3" fill="url(#g)"/></g><rect id="glyph2" width="3" height="3" fill="white"/></svg>"##;
     let scene = parse_glyph(xml, 1, 1000, [5, 6, 7, 255]).expect("valid SVG");
     let mut trace = Trace::default();

@@ -306,7 +306,7 @@ mod tests {
     use sofel_geom::Rect;
 
     #[test]
-    fn i2_rotated_clips_keep_parent_coverage_in_either_winding() {
+    fn adr0066_i2_rotated_clips_keep_parent_coverage_in_either_winding() {
         let rect = Rect {
             x_min: 0.,
             y_min: 0.,

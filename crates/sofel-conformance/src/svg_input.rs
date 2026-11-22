@@ -431,7 +431,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn i3_shared_svg_glyphs_match_in_plain_and_gzip_storage() -> Result<(), String> {
+    fn adr0066_i3_shared_svg_glyphs_match_in_plain_and_gzip_storage() -> Result<(), String> {
         let first = rendered(DOCUMENT, 2, 1, RED)?;
         let second = rendered(DOCUMENT, 2, 2, RED)?;
         assert_ne!(first, second);
@@ -441,20 +441,20 @@ mod tests {
     }
 
     #[test]
-    fn i2_svg_observations_check_painted_document_bytes() {
+    fn adr0074_i2_svg_observations_check_painted_document_bytes() {
         assert_eq!(check_document(DOCUMENT, DOCUMENT), Ok(()));
         assert!(check_document(b"<svg/>", DOCUMENT).is_err());
         assert!(check_document(&[], DOCUMENT).is_err());
     }
 
     #[test]
-    fn i2_svg_observations_do_not_promote_bytes_to_pixels() {
+    fn adr0074_i2_svg_observations_do_not_promote_bytes_to_pixels() {
         assert!(observe("in-document", "gzip", "decompressed-bytes").is_some());
         assert!(observe("in-document", "gzip", "unlisted").is_none());
     }
 
     #[test]
-    fn i2_svg_samples_detect_wrong_color_transparency_and_order() {
+    fn adr0074_i2_svg_samples_detect_wrong_color_transparency_and_order() {
         let image = sofel_raster::BgraImage {
             left: 2,
             top: -3,
@@ -472,7 +472,7 @@ mod tests {
     }
 
     #[test]
-    fn i2_svg_gradient_anchors_reject_a_shifted_or_mutated_stop() {
+    fn adr0074_i2_svg_gradient_anchors_reject_a_shifted_or_mutated_stop() {
         let mut image = BgraImage {
             left: 2,
             top: -3,
@@ -493,7 +493,7 @@ mod tests {
 mod selection_tests {
     use super::*;
     #[test]
-    fn i2_svg_selection_rejects_missing_and_adjacent_shapes() {
+    fn adr0074_i2_svg_selection_rejects_missing_and_adjacent_shapes() {
         let selected =
             br##"<svg><defs><linearGradient id="g"><stop stop-color="red"/></linearGradient></defs>
             <g id="glyph1"><rect width="4" height="4" fill="url(#g)"/></g>
@@ -508,7 +508,7 @@ mod selection_tests {
 mod real_glyph_tests {
     use super::*;
     #[test]
-    fn i2_real_glyph_rejects_missing_pixels_and_gray_fallback() {
+    fn adr0074_i2_real_glyph_rejects_missing_pixels_and_gray_fallback() {
         assert!(color_svg::check_cli_pixels(19, b"P5\n1 1\n255\n\x80").is_err());
         assert!(color_svg::check_cli_pixels(26, b"P7\nENDHDR\n").is_err());
     }

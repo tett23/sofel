@@ -89,7 +89,7 @@ fn compare_at(
 const CFF: &str = "extra-fonts/fonts/color-cff.otf";
 const VARIABLE: &str = "harfbuzz/test/api/fonts/test_glyphs-glyf_colr_1_variable.ttf";
 #[test]
-fn i1_color_cff_19() {
+fn adr0072_i1_color_cff_19() {
     compare(
         CFF,
         19,
@@ -98,7 +98,7 @@ fn i1_color_cff_19() {
     );
 }
 #[test]
-fn i1_color_cff_26() {
+fn adr0072_i1_color_cff_26() {
     compare(
         CFF,
         26,
@@ -107,7 +107,7 @@ fn i1_color_cff_26() {
     );
 }
 #[test]
-fn i1_variable_colr_92() {
+fn adr0072_i1_variable_colr_92() {
     compare(
         VARIABLE,
         92,
@@ -116,7 +116,7 @@ fn i1_variable_colr_92() {
     );
 }
 #[test]
-fn i1_variable_colr_93() {
+fn adr0072_i1_variable_colr_93() {
     compare(
         VARIABLE,
         93,
@@ -126,7 +126,7 @@ fn i1_variable_colr_93() {
 }
 
 #[test]
-fn i2_colr_pixels_sweep() {
+fn adr0066_i2_colr_pixels_sweep() {
     compare(
         VARIABLE,
         27,
@@ -148,7 +148,7 @@ fn i2_colr_pixels_sweep() {
 }
 
 #[test]
-fn i2_colr_pixels_all_28_composite_modes() {
+fn adr0066_i2_colr_pixels_all_28_composite_modes() {
     let mut references: &[u8] = include_bytes!("../../../conformance/color-raster/composites.bgra");
     for glyph in 120..=147 {
         let header = references.iter().position(|b| *b == b'\n').unwrap();
@@ -173,7 +173,7 @@ fn i2_colr_pixels_all_28_composite_modes() {
 
 #[test]
 #[ignore = "requires the pinned HarfBuzz raster reference executable"]
-fn i2_all_colrv1_pixel_glyphs_match_harfbuzz_raster() {
+fn adr0066_i2_all_colrv1_pixel_glyphs_match_harfbuzz_raster() {
     let helper = std::env::var_os("SOFEL_HB_RASTER_REFERENCE").unwrap();
     let font = paths::testdata().join(VARIABLE);
     let mut checked = 0;

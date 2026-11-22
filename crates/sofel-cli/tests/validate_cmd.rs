@@ -131,7 +131,7 @@ fn cff2_fdselect_font(format: u8, sentinel: u32) -> Vec<u8> {
 }
 
 #[test]
-fn inv2_validate_fdselect_exit() {
+fn adr0056_i2_validate_fdselect_exit() {
     let dir = Dir::new("cff2-fdselect");
     for (format, sentinel, code) in [(4, 3, 0), (4, 4, 1), (0, 3, 0), (3, 3, 0)] {
         let bytes = cff2_fdselect_font(format, sentinel);
@@ -148,7 +148,7 @@ fn inv2_validate_fdselect_exit() {
 }
 
 #[test]
-fn inv3_equivalent_fdselect() {
+fn adr0056_i3_equivalent_fdselect() {
     for format in [0, 3, 4] {
         let bytes = cff2_fdselect_font(format, 3);
         let font = Font::new(&bytes, 0).unwrap();
@@ -499,7 +499,7 @@ fn damaged_layout_font() -> Vec<u8> {
 }
 
 #[test]
-fn inv2_layout_discard_diagnostic() {
+fn adr0059_i2_layout_discard_diagnostic() {
     let d = Dir::new("layout-discard");
     let p = d.file("damaged.ttf", &damaged_layout_font());
     for output in [run(&[os(&p)]), run(&["--json".as_ref(), os(&p)])] {
@@ -511,7 +511,7 @@ fn inv2_layout_discard_diagnostic() {
 }
 
 #[test]
-fn inv3_original_layout_diagnostics() {
+fn adr0059_i3_original_layout_diagnostics() {
     let d = Dir::new("original-layout");
     let p = d.file("damaged.ttf", &damaged_layout_font());
     let out = run(&["--json".as_ref(), os(&p)]);
@@ -524,7 +524,7 @@ fn inv3_original_layout_diagnostics() {
 }
 
 #[test]
-fn inv4_all_layout_damage() {
+fn adr0059_i4_all_layout_damage() {
     let d = Dir::new("layout-damage");
     let p = d.file("damaged.ttf", &damaged_layout_font());
     let out = run(&["--json".as_ref(), os(&p)]);
@@ -554,7 +554,7 @@ fn inv4_all_layout_damage() {
 }
 
 #[test]
-fn inv4_layout_damage_is_per_face() {
+fn adr0059_i4_layout_damage_is_per_face() {
     let mut damaged = sample_tables();
     damaged.push((b"GSUB", vec![0, 1, 0, 0, 0, 255, 0, 0, 0, 0]));
     damaged.sort_by_key(|(tag, _)| **tag);
@@ -572,7 +572,7 @@ fn inv4_layout_damage_is_per_face() {
 }
 
 #[test]
-fn inv4_layout_damage_total_counts_two_faces() {
+fn adr0059_i4_layout_damage_total_counts_two_faces() {
     let mut damaged = sample_tables();
     damaged.push((b"GSUB", vec![0, 1, 0, 0, 0, 255, 0, 0, 0, 0]));
     damaged.sort_by_key(|(tag, _)| **tag);

@@ -8,7 +8,7 @@ use sofel_woff::{Format, decode_woff, encode};
 use sofel_write::build_sfnt_ordered;
 
 #[test]
-fn i1_font_driver_woff_restores_directory_data_and_physical_order() {
+fn adr0065_i1_font_driver_woff_restores_directory_data_and_physical_order() {
     let input = build_sfnt_ordered(
         &[
             (Tag::new(b"head"), &[0; 54]),
@@ -23,7 +23,7 @@ fn i1_font_driver_woff_restores_directory_data_and_physical_order() {
     assert!(decode_woff(&packed, input.len() - 1).is_err());
 }
 #[test]
-fn i2_bounded_input_rejects_short_or_overlapping_woff_records() {
+fn adr0065_i2_bounded_input_rejects_short_or_overlapping_woff_records() {
     let input = build_sfnt_ordered(
         &[
             (Tag::new(b"head"), &[0; 54]),

@@ -131,7 +131,7 @@ fn snapshots() -> BTreeMap<&'static str, String> {
 }
 
 #[test]
-fn i05_sampled_metrics_match_harfbuzz() {
+fn adr0031_i5_sampled_metrics_match_harfbuzz() {
     let corpus = Corpus::parse(
         include_str!("../../../fonts.lock"),
         include_str!("../../../conformance/fonts.tsv"),
@@ -174,7 +174,7 @@ fn i05_sampled_metrics_match_harfbuzz() {
 
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
-fn i05_metric_reference_matches_pinned_harfbuzz() {
+fn adr0031_i5_metric_reference_matches_pinned_harfbuzz() {
     let corpus = Corpus::parse(
         include_str!("../../../fonts.lock"),
         include_str!("../../../conformance/fonts.tsv"),
