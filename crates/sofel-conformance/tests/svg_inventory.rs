@@ -28,7 +28,7 @@ fn run(ledger: &str) -> (bool, String) {
 }
 
 #[test]
-fn i1_svg_inventory() {
+fn adr0074_i1_svg_inventory() {
     let row = INVENTORY
         .lines()
         .find(|line| line.starts_with("in-document\tout-of-range\t"))
@@ -44,7 +44,7 @@ fn i1_svg_inventory() {
 }
 
 #[test]
-fn i2_partial_cases_fail_and_i3_results_repeat() {
+fn adr0074_i2_i3_partial_cases_fail_and_results_repeat() {
     let missing_reference = INVENTORY.replace("SVG 2 shapes and coordinate systems", "");
     let result = run(&missing_reference);
     assert!(!result.0);
@@ -55,7 +55,7 @@ fn i2_partial_cases_fail_and_i3_results_repeat() {
 }
 
 #[test]
-fn i2_separates_required_results_from_opentype_scope() {
+fn adr0074_i2_separates_required_results_from_opentype_scope() {
     let (_, report) = run(INVENTORY);
     assert!(report.contains("required cases: "));
     assert!(report.contains("OpenType 1.9.1 SVG requirements"));
@@ -67,7 +67,7 @@ fn i2_separates_required_results_from_opentype_scope() {
 }
 
 #[test]
-fn i2_verifier_runs_each_positioned_page() {
+fn adr0074_i2_verifier_runs_each_positioned_page() {
     let (_, report) = run(INVENTORY);
     for case in ["empty", "single", "translucent-overlap", "clipped-image"] {
         let prefix = format!("out-page\t{case}\toutput\t");
@@ -81,7 +81,7 @@ fn i2_verifier_runs_each_positioned_page() {
 }
 
 #[test]
-fn i1_case_source_identifies_input_selection_and_render_settings() {
+fn adr0074_i1_case_source_identifies_input_selection_and_render_settings() {
     let row = INVENTORY
         .lines()
         .find(|line| line.starts_with("in-geometry\tcircle\t"))
@@ -92,7 +92,7 @@ fn i1_case_source_identifies_input_selection_and_render_settings() {
 }
 
 #[test]
-fn i3_checked_in_local_measurements_cover_every_case() {
+fn adr0074_i3_checked_in_local_measurements_cover_every_case() {
     let reference = include_str!("../../../conformance/svg-measurements.tsv");
     fn keys(s: &str) -> std::collections::BTreeSet<(&str, &str)> {
         s.lines()

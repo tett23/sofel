@@ -29,4 +29,4 @@ for native in 0 1; do
     cmp "$tmp/expected" "$tmp/sorted" || { echo 'FAIL: I5 did not wait for both builds' >&2; exit 1; }
   done
 done
-echo 'ok: ADR 0033 I5 benchmark build'
+echo 'ADR 0033 I5: benchmark build'

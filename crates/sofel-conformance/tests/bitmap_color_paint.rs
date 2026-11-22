@@ -9,7 +9,7 @@ use sofel_raster::{BgraImage, Rasterizer};
 use sofel_read::GlyphId;
 
 #[test]
-fn i2_transformed_png_glyphs_match_harfbuzz_raster() {
+fn adr0066_i2_transformed_png_glyphs_match_harfbuzz_raster() {
     for (path, glyph, reference) in [
         (
             "extra-fonts/fonts/color-sbix.ttf",
@@ -59,7 +59,7 @@ fn i2_transformed_png_glyphs_match_harfbuzz_raster() {
 }
 
 #[test]
-fn i2_cli_samples_nonmatching_strike_and_honors_no_bitmap() {
+fn adr0066_i2_cli_samples_nonmatching_strike_and_honors_no_bitmap() {
     use std::ffi::OsString;
     let font = paths::testdata().join("extra-fonts/fonts/color-sbix.ttf");
     let mut args: Vec<OsString> = ["--color", "--ppem", "31", "--glyph", "19"]

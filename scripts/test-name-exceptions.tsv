@@ -1,0 +1,200 @@
+# File path	Exact test name	Reason (root ADR 0099)
+crates/sofel-capi/tests/variation.rs	adr0027_i03_location_changes_glyf_outline_and_box	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-capi/tests/variation.rs	i01_location_owns_coordinates_after_font_handle_is_destroyed	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-capi/tests/variation.rs	i02_axis_inquiries_match_rust_view	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-capi/tests/variation.rs	i02_location_constructors_and_coordinate_views	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-capi/tests/variation.rs	i02_named_instance_inquiries_copy_design_coordinates	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-capi/tests/variation.rs	i02_postscript_name_uses_location	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-capi/tests/variation.rs	i03_base_variation_index_reaches_scaled_c_abi	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-capi/tests/variation.rs	i03_baseline_and_layout_extents_accept_location	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-capi/tests/variation.rs	i03_font_extents_accept_location	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-capi/tests/variation.rs	i03_freetype_metrics_accept_location	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-capi/tests/variation.rs	i03_h_advance_accepts_location	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-capi/tests/variation.rs	i03_hvar_advance_preserves_unsigned_range_in_c_abi	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-capi/tests/variation.rs	i03_location_keeps_default_outline_and_metrics_until_values_are_applied	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-capi/tests/variation.rs	i03_metric_position_accepts_location	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-capi/tests/variation.rs	i03_mvar_metric_uses_location_at_scale_in_c_abi	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-capi/tests/variation.rs	i03_scaled_advance_accepts_location	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-capi/tests/variation.rs	i03_variation_parse_and_format_roundtrip	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-capi/tests/variation.rs	i03_vvar_advance_uses_location_in_c_abi	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-cli/src/variation_options.rs	adr0027_i_cli_named_instance_boundaries	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-cli/src/variation_options.rs	adr0027_i_cli_variations_keep_order_and_reject_invalid_values	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-cli/tests/render_cmd.rs	adr0027_render_accepts_design_settings_and_rejects_invalid_named_instances	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-cli/tests/validate_cmd.rs	adr0082_cff_random_text_and_json	root ADR 0082 の CLI 診断の text/JSON 出力を検査するが、この出力形式には条件番号がない。
+crates/sofel-conformance/tests/avar2_instance.rs	adr0022_i1_avar2_gpos_feature_variations_11_matches_harfbuzz	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-conformance/tests/avar2_instance.rs	adr0022_i1_avar2_gsub_feature_variations_11_matches_harfbuzz	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-conformance/tests/avar2_instance.rs	adr0022_i1_gpos_feature_variations_11_moved_default_matches_harfbuzz	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-conformance/tests/avar2_instance.rs	adr0022_i1_gpos_feature_variations_11_two_ranges_match_harfbuzz	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-conformance/tests/avar2_instance.rs	adr0022_i1_gpos_feature_variations_11_without_axis_change_matches_harfbuzz	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-conformance/tests/avar2_instance.rs	adr0022_i1_gsub_feature_variations_11_moved_default_matches_harfbuzz	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-conformance/tests/avar2_instance.rs	adr0022_i1_gsub_feature_variations_11_two_ranges_match_harfbuzz	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-conformance/tests/avar2_instance.rs	adr0022_i1_gsub_feature_variations_11_without_axis_change_matches_harfbuzz	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-conformance/tests/cff2_geometry_corpus.rs	adr0027_cff2_geometry_matches_freetype_at_all_corpus_locations	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/cff2_variation.rs	adr0027_i04_cff2_default_boxes_match_harfbuzz	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/cff2_variation.rs	adr0027_i04_cff2_extents_match_harfbuzz	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/cff2_variation.rs	adr0027_i04_cff2_outlines_match_freetype	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/cff2_variation.rs	adr0027_i04_cff2_rasters_match_freetype	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/extra_color.rs	adr0027_named_paint_samples_match_harfbuzz_at_each_location	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/extra_variation.rs	adr0027_i07_gvar_all_sampled_locations	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/extra_variation.rs	adr0027_i07_gvar_composite_extents	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/extra_variation.rs	adr0027_i07_gvar_nondefault_outline	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/extra_variation.rs	adr0027_i07_gvar_phantom_advance_without_hvar	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/extra_variation.rs	adr0027_i07_gvar_sampled_metrics	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/extra_variation.rs	adr0027_i07_gvar_scaled_outline	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/extra_variation.rs	adr0027_i07_gvar_vertical_phantoms	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/freetype_color.rs	adr0027_raw_paints_and_clip_boxes_at_design_locations	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/ftdump_advances.rs	adr0030_advances_report_both_queries_for_every_glyph	root ADR 0030 の参照ツールの送り幅出力形式を検査するが、ツールの形式には条件番号がない。
+crates/sofel-conformance/tests/glyf_geometry_corpus.rs	adr0027_glyf_geometry_matches_freetype_at_all_corpus_locations	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/harfbuzz_color.rs	adr0027_colr_paints_at_axis_named_and_random_locations	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/harfbuzz_color.rs	adr0027_i03_colr_layer_control_points_keep_fractional_coordinates	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/harfbuzz_color.rs	adr0027_variable_clip_rounds_each_edge_outward	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/harfbuzz_shape.rs	adr0028_trak_ptem_cases_are_aat_not_variations	root ADR 0028 に不変条件・受けいれ条件の節と条件番号がなく、AAT の適用範囲を確かめる既存名を維持する。
+crates/sofel-conformance/tests/harfbuzz_subset.rs	adr0022_invalid_colr_store_is_rejected_when_retained	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-conformance/tests/harfbuzz_subset.rs	adr0022_name_overrides_match_harfbuzz_name_table	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-conformance/tests/outline.rs	adr0027_variable_geometry_matches_freetype_at_corpus_positions	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/variation_api.rs	adr0027_axes_without_named_instances_and_inferred_gvar_extents	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/variation_api.rs	adr0027_baselines_match_harfbuzz_api_fixtures	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/variation_api.rs	adr0027_cff2_default_and_design_extents	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/variation_api.rs	adr0027_cff2_extents_at_design_and_named_locations	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/variation_api.rs	adr0027_composites_take_last_component_metrics	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/variation_api.rs	adr0027_hvar_long_deltas_saturate_at_axis_maximum	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/variation_api.rs	adr0027_var_coords_and_axis_infos	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/variation_api.rs	adr0027_variable_truetype_advances	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/variation_api.rs	adr0027_variable_truetype_extents_and_vertical_origin	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/variation_metrics_corpus.rs	adr0027_i03_adr0048_i02_freetype_metrics_at_all_corpus_locations	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/variation_metrics_corpus.rs	adr0027_i03_harfbuzz_metrics_at_all_corpus_locations	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/variation_metrics_corpus.rs	adr0027_i03_hvar_long_delta_uses_float_advance_addition	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/variation_reference.rs	adr0027_i02_design_normalized_and_postscript_at_all_positions	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/variation_reference.rs	adr0027_i2_freetype_var_queries_match_fvar	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/variation_reference.rs	adr0027_i2_harfbuzz_var_queries_match_fvar	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/variation_reference.rs	adr0027_i2_named_and_overridden_design_coordinates	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/variation_reference.rs	adr0027_i2_normalize_samples_cover_257_intervals_and_outside	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/variation_reference.rs	adr0027_i2_variable_corpus_axis_queries	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/variation_reference.rs	adr0027_i2_variable_corpus_normalization_samples	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/variation_reference.rs	adr0027_i2_variation_options_reach_existing_reference_modes	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/variation_reference.rs	adr0027_random_design_positions_match_both_reference_tools	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-conformance/tests/variation_reference.rs	adr0029_corpus_delta_digest	コーパス全体の固定ダイジェストを検査する。root ADR 0030 のテスト設計に含まれるが、不変条件にはダイジェストの条件番号がない。
+crates/sofel-font/src/var/generated_stores.rs	adr0029_ft_item_delta_is_independent_of_column_order	列順に依存しない整数評価の性質を検査する。root ADR 0029 に条件番号がなく、root ADR 0030 I1 の参照算術との比較とは異なる述語なので名前を維持する。
+crates/sofel-font/tests/baseline.rs	i03_base_variation_index_changes_baseline_at_location	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-font/tests/cff2_blend.rs	adr0027_i04_private_dict_reparses_for_each_location	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-font/tests/gvar_budget_public.rs	adr0027_use_my_metrics_does_not_load_unused_contour_points	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-font/tests/var.rs	adr0027_duplicate_axis_tags_keep_hb_and_ft_design_coordinates_separate	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-font/tests/var.rs	adr0027_i07_freetype_phantom_metrics_use_hvar_and_vmtx	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-font/tests/var.rs	adr0027_zero_normalized_coordinates_disable_ft_gvar_blending	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-font/tests/var.rs	i03_default_instance_keeps_existing_metric_values	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-font/tests/var.rs	i03_freetype_mvar_adjusts_derived_face_height	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-font/tests/var.rs	i03_freetype_mvar_does_not_create_metrics_without_outline	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-font/tests/var.rs	i03_freetype_mvar_recomputes_underline_center	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-font/tests/var.rs	i03_hvar_advance_retains_unsigned_range_above_u16	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-font/tests/var.rs	i03_hvar_advance_uses_implicit_map_and_harfbuzz_roundf	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-font/tests/var.rs	i03_hvar_does_not_adjust_missing_horizontal_metrics	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-font/tests/var.rs	i03_mvar_adds_float_delta_before_metric_scaling	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-font/tests/var.rs	i03_mvar_static_default_region_still_applies	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-font/tests/var.rs	i03_mvar_vertical_extents_follow_the_horizontal_scale	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-font/tests/var.rs	i03_mvar_zero_underline_size_uses_the_fallback	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-font/tests/var.rs	i03_vorg_uses_vvar_origin_map_before_scaling	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-font/tests/var.rs	i03_vvar_advance_uses_implicit_map_and_negative_harfbuzz_result	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-font/tests/var.rs	i04_avar2_uses_index_map_item	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-font/tests/var.rs	i04_avar2_uses_pre_delta_coordinates	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-font/tests/var.rs	i04_design_avar1_maps_both_precisions	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-font/tests/var.rs	i04_design_coordinate_normalizes_in_both_precisions	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-font/tests/var.rs	i04_named_location_then_later_variation_wins	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-font/tests/var.rs	i04_normalized_16_16_rounds_hb_coordinate	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-font/tests/var.rs	i04_variation_parse_and_format_css_and_hb_forms	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-font/tests/var.rs	i05_invalid_ft_normalized_location_precedes_store_lookup	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-inflate/tests/decode.rs	i1_i3_decode_block_types_with_output_limits	複数のフォント形式が使う DEFLATE・zlib・gzip 展開単体の正常系と出力上限を検査する。既存名の I1 と I3 に対応する ADR と条件番号を確定できない。
+crates/sofel-inflate/tests/decode.rs	i1_i3_wrappers_verify_trailers_and_gzip_members	複数のフォント形式が使う DEFLATE・zlib・gzip 展開単体の正常系と出力上限を検査する。既存名の I1 と I3 に対応する ADR と条件番号を確定できない。
+crates/sofel-inflate/tests/reference.rs	i1_i3_pinned_reference_streams	複数のフォント形式が使う DEFLATE・zlib・gzip 展開単体の正常系と出力上限を検査する。既存名の I1 と I3 に対応する ADR と条件番号を確定できない。
+crates/sofel-outline/tests/hb_extents.rs	adr0027_i04_cff2_blend_changes_harfbuzz_box	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-read/tests/cff_random.rs	adr0082_cff2_is_not_checked	root ADR 0082 の実装しないことにある CFF2 の除外を検査するが、この適用範囲には条件番号がない。
+crates/sofel-read/tests/feature_variations.rs	adr0027_feature_variations_boolean_and_value_conditions	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-read/tests/feature_variations.rs	adr0027_feature_variations_record_and_axis_range	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-read/tests/feature_variations.rs	adr0027_feature_variations_substitution_feature_and_layout_accessor	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-read/tests/feature_variations.rs	adr0027_feature_variations_truncation_and_unknown_format	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-read/tests/feature_variations.rs	adr0027_feature_variations_validator_diagnoses_axis_and_unknown_format	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-read/tests/gvar.rs	i01_gvar_offsets_and_shared_tuple	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-read/tests/gvar.rs	i02_gvar_packed_point_and_delta_boundaries	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-read/tests/gvar.rs	i03_gvar_gvar24_and_validation	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-read/tests/gvar.rs	i04_gvar_embedded_intermediate_and_shared_points	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
+crates/sofel-read/tests/variation_links.rs	adr0027_colr_index_map_is_checked	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-read/tests/variation_links.rs	adr0027_embedded_store_validators_check_store_contents	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-read/tests/variation_links.rs	adr0027_embedded_store_views_preserve_absent_and_invalid	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-read/tests/variation_metrics.rs	adr0027_metric_maps_allow_sentinel_empty_and_implicit_indices	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-read/tests/variation_metrics.rs	adr0027_sfnt_registers_metric_variation_validators	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-read/tests/variations.rs	adr0027_avar_v2_opens_optional_map_and_store	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-read/tests/variations.rs	adr0027_avar_v2_rejects_truncated_children_and_axis_mismatch	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-shape/src/layout/variations.rs	adr0027_i_plan_axis_range_boundaries_and_first_record	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-shape/src/layout/variations.rs	adr0027_i_plan_boolean_value_and_null_conditions	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-shape/src/layout/variations.rs	adr0027_i_plan_nested_boolean_conditions_and_depth	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-shape/src/layout/variations.rs	adr0027_i_plan_substitution_uses_feature_index	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-shape/tests/plan.rs	adr0027_i_plan_key_tracks_selected_record_not_exact_coords	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-shape/tests/shape.rs	adr0027_i_gpos_variation_index_applies_without_ppem	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
+crates/sofel-subset/src/instance.rs	i1_subset_instance_maps_old_axis_indices_after_partial_pin	軸制限の個別の表または内部計算を検査する。root ADR 0061 I1 の sfnt 全バイト比較とも I2 の未知の軸の失敗時の性質とも一致する条件番号を確定できない。
+crates/sofel-subset/src/layout/common.rs	adr0022_wide_class_array_and_ranges	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/src/layout/common.rs	adr0022_wide_coverage_array_and_range	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/src/layout/gpos.rs	adr0022_single_position_writes_wide_coverage_offset_and_count	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/src/layout/gsub.rs	adr0022_single_substitution_writes_24_bit_operands	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/src/tables/avar.rs	i2_identity_range_compensation_uses_old_default_as_an_interior_knot	軸制限の個別の表または内部計算を検査する。root ADR 0061 I1 の sfnt 全バイト比較とも I2 の未知の軸の失敗時の性質とも一致する条件番号を確定できない。
+crates/sofel-subset/src/tables/variation_region.rs	adr0061_rebase_preserves_the_default_gain_and_both_sides	区間の再基準化の数値的性質を検査する。root ADR 0061 I1 の sfnt 全バイト比較とも I2 の軸設定の失敗時の性質とも一致しない。
+crates/sofel-subset/tests/color.rs	adr0022_default_pin_converts_solid_and_clip_to_static_formats	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/color.rs	adr0022_default_pinned_paint_graph_matches_static_graph	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/gvar.rs	adr0022_gvar_iftb_uses_long_offsets_without_padding	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/gvar.rs	adr0022_gvar_keeps_mapped_glyphs_and_pads_short_offsets	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/gvar.rs	adr0022_gvar_retain_gids_preserves_empty_slots	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/gvar.rs	adr0022_gvar_supports_extended_glyph_count_header	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/gvar.rs	adr0022_gvar_zero_shared_tuple_offset	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/hvar.rs	adr0022_empty_optional_metric_map_has_no_output_offset	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/hvar.rs	adr0022_explicit_metric_maps_trim_repeated_tail_across_gid_holes	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/hvar.rs	adr0022_hvar_explicit_advance_and_side_maps_follow_retained_glyphs	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/hvar.rs	adr0022_hvar_explicit_maps_with_retain_gids	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/hvar.rs	adr0022_hvar_explicit_side_map_is_kept_when_identity	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/hvar.rs	adr0022_hvar_implicit_advance_map_follows_new_glyph_ids	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/hvar.rs	adr0022_hvar_multiple_item_data_preserves_advance_and_side_deltas	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/hvar.rs	adr0022_hvar_multiple_item_data_with_retain_gids	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/hvar.rs	adr0022_hvar_retain_gids_writes_advance_map_for_holes	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/hvar.rs	adr0022_vvar_explicit_advance_and_side_maps_follow_retained_glyphs	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/hvar.rs	adr0022_vvar_implicit_advance_map_follows_new_glyph_ids	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/hvar.rs	adr0022_vvar_multiple_item_data_preserves_advance_and_side_deltas	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/hvar.rs	adr0022_vvar_shared_advance_and_vertical_origin_map_is_serialized_once	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/instance.rs	i1_subset_instance_drops_names_of_removed_axes	軸制限の個別の表または内部計算を検査する。root ADR 0061 I1 の sfnt 全バイト比較とも I2 の未知の軸の失敗時の性質とも一致する条件番号を確定できない。
+crates/sofel-subset/tests/instance.rs	i1_subset_instance_endpoint_pin_removes_outside_named_instance	軸制限の個別の表または内部計算を検査する。root ADR 0061 I1 の sfnt 全バイト比較とも I2 の未知の軸の失敗時の性質とも一致する条件番号を確定できない。
+crates/sofel-subset/tests/instance.rs	i1_subset_instance_keeps_unmodified_avar_map_of_remaining_axis	軸制限の個別の表または内部計算を検査する。root ADR 0061 I1 の sfnt 全バイト比較とも I2 の未知の軸の失敗時の性質とも一致する条件番号を確定できない。
+crates/sofel-subset/tests/instance.rs	i1_subset_instance_nonidentity_avar_remaps_a_restricted_axis	軸制限の個別の表または内部計算を検査する。root ADR 0061 I1 の sfnt 全バイト比較とも I2 の未知の軸の失敗時の性質とも一致する条件番号を確定できない。
+crates/sofel-subset/tests/instance.rs	i1_subset_instance_one_default_axis_keeps_the_other_axis	軸制限の個別の表または内部計算を検査する。root ADR 0061 I1 の sfnt 全バイト比較とも I2 の未知の軸の失敗時の性質とも一致する条件番号を確定できない。
+crates/sofel-subset/tests/instance.rs	i1_subset_instance_restricts_remaining_fvar_axis_range	軸制限の個別の表または内部計算を検査する。root ADR 0061 I1 の sfnt 全バイト比較とも I2 の未知の軸の失敗時の性質とも一致する条件番号を確定できない。
+crates/sofel-subset/tests/layout.rs	adr0022_boolean_conditions_keep_nested_value_indices	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/layout.rs	adr0022_context_coverage_retains_high_glyph_and_nested_lookup	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/layout.rs	adr0022_copied_gpos_condition_checks_gdef_reference_without_device	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/layout.rs	adr0022_copied_gsub_value_condition_checks_gdef_reference	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/layout.rs	adr0022_gdef14_class_offsets_match_harfbuzz	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/layout.rs	adr0022_gdef14_ligature_carets_match_harfbuzz	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/layout.rs	adr0022_gsub_axis_range_can_survive_gdef_store_subsetting	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/layout.rs	adr0022_layout12_uses_extended_header_and_retains_lookups	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/layout.rs	adr0022_layout_12_writes_wide_lists_from_both_header_forms	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/layout.rs	adr0022_mark_anchors_survive_a_retained_wide_gid	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/layout.rs	adr0022_negative_gpos_advance_is_not_a_variation_index	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/layout.rs	adr0022_null_condition_serializes_as_true	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/layout.rs	adr0022_retained_high_gid_keeps_single_substitution	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/layout.rs	adr0022_value_condition_retains_and_remaps_gdef_delta	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/layout.rs	adr0022_value_condition_without_variation_keeps_signed_default	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/layout.rs	adr0022_wide_class_definitions_keep_glyph_classes	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/layout.rs	adr0022_wide_coverage_retains_single_substitutions	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/layout.rs	adr0022_wide_ligature_keeps_components_and_result	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/layout.rs	adr0022_wide_mark_positioning_keeps_marks_and_anchors	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/layout.rs	adr0022_wide_multiple_and_alternate_substitutions	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/layout.rs	adr0022_wide_pair_classes_keep_advance	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/layout.rs	adr0022_wide_pair_set_keeps_selected_second_glyph	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/layout.rs	adr0022_wide_reverse_chain_keeps_context_and_substitute	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/layout.rs	adr0022_wide_single_position_values_survive_subsetting	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/layout.rs	adr0022_wide_single_substitution_retains_output_glyphs	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/layout.rs	adr0022_wide_source_keeps_layout_for_low_glyphs	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/layout.rs	adr0022_wide_source_substitution_maps_high_input_to_compact_ids	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-subset/tests/plan.rs	adr0022_name_overrides_replace_insert_and_remove_records	root ADR 0022 に不変条件・受けいれ条件の節と条件番号がなく、既存名を維持する。
+crates/sofel-svg/tests/glyph_tree.rs	i2_repeated_use_is_bounded_even_without_a_cycle	SVG パーサー単体の選択・参照・循環・描画木を検査する。root ADR 0074 I2 の台帳の全必須ケースの検証結果とは別の述語であり、既存名の条件番号を確定できない。
+crates/sofel-svg/tests/glyph_tree.rs	i2_selected_glyph_keeps_ancestor_visibility_and_clips	SVG パーサー単体の選択・参照・循環・描画木を検査する。root ADR 0074 I2 の台帳の全必須ケースの検証結果とは別の述語であり、既存名の条件番号を確定できない。
+crates/sofel-svg/tests/glyph_tree.rs	i2_svg_shared_targets_styles_and_forward_references	SVG パーサー単体の選択・参照・循環・描画木を検査する。root ADR 0074 I2 の台帳の全必須ケースの検証結果とは別の述語であり、既存名の条件番号を確定できない。
+crates/sofel-svg/tests/glyph_tree.rs	i2_svg_use_cycles_and_script_subtrees_do_not_render	SVG パーサー単体の選択・参照・循環・描画木を検査する。root ADR 0074 I2 の台帳の全必須ケースの検証結果とは別の述語であり、既存名の条件番号を確定できない。
+crates/sofel-woff/src/woff2/read.rs	i1_hmtx_restores_omitted_bearings_and_empty_glyph	WOFF2 の hmtx の省略されたサイドベアリングを復元する内部処理を検査する。root ADR 0070 I1 の sfnt 全体の復元比較とは異なる述語であり、既存名を維持する。
+scripts/tests/test-check-deps.sh	ADR 0003: #![forbid(unsafe_code)] in a !no_std library was not accepted	root ADR 0003 に不変条件・受けいれ条件の節と条件番号がなく、ライブラリの unsafe 禁止を確かめる既存名を維持する。
+scripts/tests/test-check-deps.sh	ADR 0003: a !no_std library without #![forbid(unsafe_code)] was accepted	root ADR 0003 に不変条件・受けいれ条件の節と条件番号がなく、ライブラリの unsafe 禁止を確かめる既存名を維持する。
+scripts/tests/test-check-deps.sh	ok: ADR 0003: library crates forbid unsafe code at their root	root ADR 0003 に不変条件・受けいれ条件の節と条件番号がなく、ライブラリの unsafe 禁止を確かめる既存名を維持する。

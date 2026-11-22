@@ -7,7 +7,7 @@ const FNT: &[u8] = include_bytes!("../../sofel-bitmapfont/tests/data/mono.fnt");
 const FON: &[u8] = include_bytes!("../../sofel-bitmapfont/tests/data/two.fon");
 
 #[test]
-fn i1_font_driver_all_fixed_faces_match_freetype() {
+fn adr0065_i1_font_driver_all_fixed_faces_match_freetype() {
     for (bytes, index, faces, strike, code, first) in [
         (BDF, 0, 1, 512, 65, 0x18),
         (PCF, 0, 1, 510, 65, 0x18),
@@ -38,7 +38,7 @@ fn i1_font_driver_all_fixed_faces_match_freetype() {
     }
 }
 #[test]
-fn i2_decode_bounds_fixed_face_rejects_truncated_inputs() {
+fn adr0065_i2_decode_bounds_fixed_face_rejects_truncated_inputs() {
     for data in [BDF, PCF, FNT, FON] {
         assert!(Font::from_bitmap(data.get(..16).unwrap(), 0).is_err());
     }
@@ -87,7 +87,7 @@ fn pe_font() -> Vec<u8> {
 }
 
 #[test]
-fn i1_font_driver_pe_fon_indexes_resource_languages() {
+fn adr0065_i1_font_driver_pe_fon_indexes_resource_languages() {
     let data = pe_font();
     for i in 0..2 {
         let face = Font::from_bitmap(&data, i).unwrap();
@@ -101,7 +101,7 @@ fn i1_font_driver_pe_fon_indexes_resource_languages() {
 }
 #[test]
 #[allow(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
-fn i2_decode_bounds_pe_rejects_invalid_resource_addresses() {
+fn adr0065_i2_decode_bounds_pe_rejects_invalid_resource_addresses() {
     for (at, value) in [
         (332, u32::MAX),
         (532, 0x8000ffff),

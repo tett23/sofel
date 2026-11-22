@@ -84,7 +84,7 @@ mod tests {
     }
 
     #[test]
-    fn i1_unix_compress_expands_dictionary_references() {
+    fn adr0065_i1_unix_compress_expands_dictionary_references() {
         let encoded = vec![0x1f, 0x9d, 0x90, 0x41, 0x84, 0x04, 0x1c, 0x08];
         assert_eq!(unpack(encoded).as_deref(), Ok(b"ABABABA".as_slice()));
     }

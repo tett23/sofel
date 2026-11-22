@@ -8,7 +8,7 @@ sofel は、コミット済みの ADR と記録がステータスの行とリン
 検査は、git の pre-commit の hook（`exec adr-guard pre-commit --allow-status --allow-links`）と、CI の二か所で行う。
 CI では、`adr` ジョブが `tett23/adr-guard@624df60fe8956ef52b3a275198ee938175324496 # v0.10.0` の action を使う。
 さらに、`rust` ジョブの「Install adr-guard for protection regression tests」の手順が、`version=v0.10.0` のリリースのアーカイブを取得して検証する。
-その adr-guard は、[ADR 0032](0032-documentation-only-ci.md) の I05 のテスト（`scripts/tests/test-ci-guard.sh`）が使う。
+その adr-guard は、[ADR 0032](0032-documentation-only-ci.md) の I5 のテスト（`scripts/tests/test-ci-guard.sh`）が使う。
 adr-guard の版を決めた ADR はない。版は、最初の ADR を足したコミットと、[ADR 0032](0032-documentation-only-ci.md) を実装したコミットで、ワークフローに直接書いた。
 
 adr-guard は、v0.10.0 の後に v0.11.0、v0.12.0、v0.13.0、v0.13.1 を出した。
@@ -43,14 +43,14 @@ pre-commit の hook と `check-range` は状態の遷移も検査し、遷移の
 このブランチの作業ツリーで、`adr-guard links`、`adr-guard check-status`、`adr-guard check-numbers` は、どれも終了コード 0 で終わった。
 `adr-guard links --fix --include-committed` は、どのファイルも書きかえなかった。
 
-### I05 のテスト
+### I5 のテスト
 
 `scripts/tests/test-ci-guard.sh` は、v0.13.1 では失敗する。
 このテストは、一時リポジトリに `ステータス: 提案` の ADR をコミットし、`ステータス: 採択` に変えたコミットを `check-range --allow-status --allow-links` が通すことを確かめる。
-手元の adr-guard 0.13.1 で実行すると、「I05: ADR status update rejected」を出して終了コード 1 で終わった。
+手元の adr-guard 0.13.1 で実行すると、「I5: ADR status update rejected」を出して終了コード 1 で終わった。
 同じ手順を手で行うと、`check-range` は「新形式のステータス行は `Status: ` で始めてください」を出した（この手順は 0.13.0 で確かめた）。
 
-一方、テストの二つのステータスの行を `Status: proposed` と `Status: accepted` に置きかえた写しは、手元の adr-guard 0.13.1 で `ok: ADR 0032 I05 record protection` を出して終了コード 0 で終わった。
+一方、テストの二つのステータスの行を `Status: proposed` と `Status: accepted` に置きかえた写しは、手元の adr-guard 0.13.1 で `ok: ADR 0032 I5 record protection` を出して終了コード 0 で終わった。
 置きかえたのはこの二行だけで、ほかの検査（ADR の本文の変更、削除、移動と、記録の追加、変更、削除、移動）は変えていない。
 
 ### pre-commit の hook
@@ -84,7 +84,7 @@ v0.13.0 の移行スクリプトと比べて、出す新しい行は変わらな
 - `.github/workflows/ci.yml` の `adr` ジョブの action を `tett23/adr-guard@ab55769152ed0f8a3465ee3435a2df43ab9d067f # v0.13.1` にする。入力（`base`、`head`、`allow-status: true`、`allow-links: true`）は変えない。
 - 「Install adr-guard for protection regression tests」の手順の `version=v0.10.0` を `version=v0.13.1` にする。アーカイブの名前と取得先の URL の組み立てと、`SHA256SUMS` での検証は変えない。手順の前のコメントに `docs/adr/0079` を足す。
 
-### I05 のテスト
+### I5 のテスト
 
 - `scripts/tests/test-ci-guard.sh` の一時リポジトリの ADR のステータスの行を、`ステータス: 提案` から `Status: proposed` に、`ステータス: 採択` から `Status: accepted` にする。ほかの検査は変えない。
 - 直す前のテストが v0.13.1 で失敗することは、調査した事項で確かめた。このテストを CI の版より先に直し、手元の v0.13.1 で通ることを確かめてから、CI の版を上げる。
@@ -112,7 +112,7 @@ v0.13.0 の移行スクリプトと比べて、出す新しい行は変わらな
 ## 不変条件
 
 なし。設定の値と、一度だけ行う移行の手順を決める ADR で、sofel のクレートとスクリプトの振る舞いを変えないため。
-[ADR 0032](0032-documentation-only-ci.md) の I05 の性質（ADR のステータスだけの変更は通り、本文と記録の変更、削除、移動は失敗する）は変えない。
+[ADR 0032](0032-documentation-only-ci.md) の I5 の性質（ADR のステータスだけの変更は通り、本文と記録の変更、削除、移動は失敗する）は変えない。
 
 ## テスト設計
 
@@ -126,7 +126,7 @@ v0.13.0 の移行スクリプトと比べて、出す新しい行は変わらな
 ## トレードオフ
 
 - 新しい ADR は、まず `Status: proposed` でコミットし、採択は別のコミットでステータスの行を変えて記録することになる。最初から `ステータス: 採択` でコミットする手順は使えなくなるが、採択や却下が状態の遷移として検査される。
-- I05 のテストは、新形式のステータスの行だけを試す。旧形式の行の変更が拒否されることは、adr-guard 自身のテストに任せる。
+- I5 のテストは、新形式のステータスの行だけを試す。旧形式の行の変更が拒否されることは、adr-guard 自身のテストに任せる。
 - 手元の adr-guard が v0.12.0 より古いと、新形式の検査と状態の遷移の検査が手元では効かず、CI で初めて失敗に気づく。README に必要な版を書いて補う。
 
 ## 参考文献

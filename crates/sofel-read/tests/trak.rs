@@ -11,7 +11,7 @@ fn table() -> Vec<u8> {
     b
 }
 #[test]
-fn i1_aat_shape_trak_interpolates_size_and_clamps_ends() {
+fn adr0060_i1_aat_shape_trak_interpolates_size_and_clamps_ends() {
     let bytes = table();
     let t = Trak::new(&bytes).unwrap();
     for (ptem, delta) in [
@@ -27,7 +27,7 @@ fn i1_aat_shape_trak_interpolates_size_and_clamps_ends() {
     assert_eq!(t.tracking(false, 12.), 0.);
 }
 #[test]
-fn i2_aat_state_trak_rejects_incomplete_values() {
+fn adr0060_i2_aat_state_trak_rejects_incomplete_values() {
     let bytes = table();
     for end in 0..bytes.len() {
         assert!(Trak::new(&bytes[..end]).is_none());

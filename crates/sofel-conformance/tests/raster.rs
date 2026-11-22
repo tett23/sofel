@@ -279,7 +279,7 @@ mod stream_tests {
 }
 
 #[test]
-fn i2_render_mode_harmony_agrees_with_freetype() {
+fn adr0064_i2_render_mode_harmony_agrees_with_freetype() {
     use sofel_font::geom::{Pen, Point};
     use sofel_raster::{FillRule, LcdMode, RenderOptions};
     let square = simple_glyph(

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Local fixtures for the fixed extra-font corpus (ADR 0031, I01-I04).
+# Local fixtures for the fixed extra-font corpus (ADR 0031, I1, I2, I3, I4).
 set -eu
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -17,30 +17,30 @@ font_sha=$(shasum -a 256 "$tmp/cache/fonts/one.ttf" | cut -d ' ' -f 1)
 license_sha=$(shasum -a 256 "$tmp/cache/licenses/one.txt" | cut -d ' ' -f 1)
 printf 'one\thttps://example.invalid/one.ttf\t%s\t4\tfonts/one.ttf\nlicense\thttps://example.invalid/OFL.txt\t%s\t7\tlicenses/one.txt\n' "$font_sha" "$license_sha" > "$tmp/fonts.lock"
 printf 'one\tone\t-\tfonts/one.ttf\t%s\tlicense\tshape\n' "$font_sha" > "$tmp/fonts.tsv"
-SOFEL_FONTS_OFFLINE=1 sh "$script" "$tmp/fonts.lock" "$tmp/fonts.tsv" "$tmp/cache" >/dev/null || fail 'I01 valid font and license'
+SOFEL_FONTS_OFFLINE=1 sh "$script" "$tmp/fonts.lock" "$tmp/fonts.tsv" "$tmp/cache" >/dev/null || fail 'ADR 0031 I1: valid font and license'
 
 mv "$tmp/cache/licenses/one.txt" "$tmp/license-backup"
-reject 'I02 missing license'
+reject 'ADR 0031 I2: missing license'
 mv "$tmp/license-backup" "$tmp/cache/licenses/one.txt"
 printf bad > "$tmp/cache/fonts/one.ttf"
-reject 'I02 corrupt font'
+reject 'ADR 0031 I2: corrupt font'
 printf font > "$tmp/cache/fonts/one.ttf"
 
 printf 'two\thttps://example.invalid/two.ttf\t%s\t4\tfonts/two.ttf\n' "$font_sha" >> "$tmp/fonts.lock"
-reject 'I04 duplicate hash'
+reject 'ADR 0031 I4: duplicate hash'
 sed -i.bak '$d' "$tmp/fonts.lock"
 printf '' > "$tmp/fonts.tsv"
-reject 'I01 empty manifest'
+reject 'ADR 0031 I1: empty manifest'
 printf 'one\tone\t-\tfonts/one.ttf\t%s\tlicense\tshape\n' "$font_sha" > "$tmp/fonts.tsv"
 
 printf 'one\tone\t../outside\tfonts/one.ttf\t%s\tlicense\tshape\n' "$font_sha" > "$tmp/fonts.tsv"
-reject 'I03 escaping archive member'
+reject 'ADR 0031 I3: escaping archive member'
 printf 'one\tone\t-\t../outside\t%s\tlicense\tshape\n' "$font_sha" > "$tmp/fonts.tsv"
-reject 'I03 escaping destination'
+reject 'ADR 0031 I3: escaping destination'
 printf 'one\tone\t-\tfonts/one.ttf\t%s\tlicense\tshape\n' "$font_sha" > "$tmp/fonts.tsv"
 rm "$tmp/cache/fonts/one.ttf"
 ln -s "$tmp/license-backup" "$tmp/cache/fonts/one.ttf"
-reject 'I03 symlink in destination'
+reject 'ADR 0031 I3: symlink in destination'
 
 rm "$tmp/cache/fonts/one.ttf"
 mkdir "$tmp/zip-src"
@@ -50,8 +50,8 @@ archive_sha=$(shasum -a 256 "$tmp/cache/archive.zip" | cut -d ' ' -f 1)
 archive_bytes=$(wc -c < "$tmp/cache/archive.zip" | tr -d ' ')
 printf 'archive\thttps://example.invalid/archive.zip\t%s\t%s\tarchive.zip\nlicense\thttps://example.invalid/OFL.txt\t%s\t7\tlicenses/one.txt\n' "$archive_sha" "$archive_bytes" "$license_sha" > "$tmp/fonts.lock"
 printf 'one\tarchive\tinside.ttf\tfonts/extracted.ttf\t%s\tlicense\tshape\n' "$font_sha" > "$tmp/fonts.tsv"
-SOFEL_FONTS_OFFLINE=1 sh "$script" "$tmp/fonts.lock" "$tmp/fonts.tsv" "$tmp/cache" >/dev/null || fail 'I03 fixed archive member'
-[ "$(shasum -a 256 "$tmp/cache/fonts/extracted.ttf" | cut -d ' ' -f 1)" = "$font_sha" ] || fail 'I03 extracted hash'
+SOFEL_FONTS_OFFLINE=1 sh "$script" "$tmp/fonts.lock" "$tmp/fonts.tsv" "$tmp/cache" >/dev/null || fail 'ADR 0031 I3: fixed archive member'
+[ "$(shasum -a 256 "$tmp/cache/fonts/extracted.ttf" | cut -d ' ' -f 1)" = "$font_sha" ] || fail 'ADR 0031 I3: extracted hash'
 
 ln -s inside.ttf "$tmp/zip-src/link.ttf"
 (cd "$tmp/zip-src" && zip -y -q "$tmp/cache/symlink.zip" link.ttf)
@@ -59,6 +59,6 @@ archive_sha=$(shasum -a 256 "$tmp/cache/symlink.zip" | cut -d ' ' -f 1)
 archive_bytes=$(wc -c < "$tmp/cache/symlink.zip" | tr -d ' ')
 printf 'archive\thttps://example.invalid/symlink.zip\t%s\t%s\tsymlink.zip\nlicense\thttps://example.invalid/OFL.txt\t%s\t7\tlicenses/one.txt\n' "$archive_sha" "$archive_bytes" "$license_sha" > "$tmp/fonts.lock"
 printf 'one\tarchive\tlink.ttf\tfonts/link.ttf\t%s\tlicense\tshape\n' "$font_sha" > "$tmp/fonts.tsv"
-reject 'I03 symlink archive member'
+reject 'ADR 0031 I3: symlink archive member'
 
-echo 'ok: fetch-fonts.sh I01-I04 (10 cases)'
+echo 'ok: fetch-fonts.sh I1, I2, I3, I4 (10 cases)'

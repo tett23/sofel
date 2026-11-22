@@ -754,7 +754,7 @@ mod chain_tests {
     use super::chains;
 
     #[test]
-    fn i2_subtable_limit_spans_chains_and_applies_to_legacy_kern() {
+    fn adr0060_i2_subtable_limit_spans_chains_and_applies_to_legacy_kern() {
         for count in [1024u16, 1025] {
             let mut morx = alloc::vec![0, 2, 0, 0, 0, 0, 0, 2];
             for n in [512, u32::from(count) - 512] {
@@ -782,7 +782,7 @@ mod chain_tests {
     }
 
     #[test]
-    fn i2_morx_v3_checks_glyph_coverage_bounds() {
+    fn adr0060_i2_morx_v3_checks_glyph_coverage_bounds() {
         for (offset, bytes, valid) in [
             (4u32, 2u8, true),
             (4, 1, false),
@@ -816,7 +816,7 @@ mod chain_tests {
     }
 
     #[test]
-    fn i2_unknown_type_skips_only_its_bounded_subtable() {
+    fn adr0060_i2_unknown_type_skips_only_its_bounded_subtable() {
         // morx header, chain header, reserved type 3, then a format 8 lookup.
         let words: [u32; 14] = [
             0x00020000, 1, 1, 48, 0, 2, 12, 3, 1, 20, 4, 1, 0x00080001, 0x00010002,

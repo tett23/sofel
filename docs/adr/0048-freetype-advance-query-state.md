@@ -33,10 +33,10 @@ HVAR/VVAR が無い方向は、glyf の輪郭点の数と合成グリフの成�
 
 ## 不変条件
 
-1. I01: 同じ `Font`、`Location`、glyph に対する `ft_h_advance` と `ft_v_advance` は、呼び出し順によらず同じ値を返す。
-2. I02: 有効な glyf と位置について、`u16` に収まる初回の `FT_Get_Advances(FT_LOAD_NO_SCALE)` の横・縦送り幅と、それぞれの公開関数の結果が等しい。HVAR/VVAR がある場合、ない場合、共有・組固有の gvar 点番号、`USE_MY_METRICS` の場合を含む。サポート表の存在だけでなく、FreeType がその表を有効と認めたかを判定に使う。
-3. I03: 輪郭内部の幻の点は元のメトリクスから一度だけ変化し、公開する送り幅を先に呼んでも輪郭とラスターの結果が変わらない。
-4. I04: グリフ番号が範囲の外、または初回の送り幅が `u16` の範囲外なら、panic せず `None` を返す。既存の C API は非成功 status を返す。破損した glyf/gvar は panic せず、FreeType が読込を拒否するか既存メトリクスに戻すかに従って扱う。
+- I1: 同じ `Font`、`Location`、glyph に対する `ft_h_advance` と `ft_v_advance` は、呼び出し順によらず同じ値を返す。
+- I2: 有効な glyf と位置について、`u16` に収まる初回の `FT_Get_Advances(FT_LOAD_NO_SCALE)` の横・縦送り幅と、それぞれの公開関数の結果が等しい。HVAR/VVAR がある場合、ない場合、共有・組固有の gvar 点番号、`USE_MY_METRICS` の場合を含む。サポート表の存在だけでなく、FreeType がその表を有効と認めたかを判定に使う。
+- I3: 輪郭内部の幻の点は元のメトリクスから一度だけ変化し、公開する送り幅を先に呼んでも輪郭とラスターの結果が変わらない。
+- I4: グリフ番号が範囲の外、または初回の送り幅が `u16` の範囲外なら、panic せず `None` を返す。既存の C API は非成功 status を返す。破損した glyf/gvar は panic せず、FreeType が読込を拒否するか既存メトリクスに戻すかに従って扱う。
 
 | 境界の入力 | 期待する結果 |
 | --- | --- |
@@ -50,9 +50,9 @@ HVAR/VVAR が無い方向は、glyf の輪郭点の数と合成グリフの成�
 
 ## テスト設計
 
-まず、HVAR/VVAR の有無と gvar の幻の点の差、`USE_MY_METRICS`、0 と 65535 の境界を手で組んだフォントで I01、I02、I04 の失敗するテストにする。`ft-dump` の同じ face で初回の `FT_Get_Advances` と後続の `FT_ADVANCE_FLAG_FAST_ONLY` を順に呼び、値の違いを記録する。次に実装し、単体テストとコーパスの位置・全グリフの照合を行う。
+まず、HVAR/VVAR の有無と gvar の幻の点の差、`USE_MY_METRICS`、0 と 65535 の境界を手で組んだフォントで I1、I2、I4 の失敗するテストにする。`ft-dump` の同じ face で初回の `FT_Get_Advances` と後続の `FT_ADVANCE_FLAG_FAST_ONLY` を順に呼び、値の違いを記録する。次に実装し、単体テストとコーパスの位置・全グリフの照合を行う。
 
-I03 は、送り幅を呼ぶ前後の輪郭とラスターを FreeType と比較する。少なくとも Mada-VF、RobotoFlex-Variable、VVAR を持つフォントと、空・単純・合成グリフを含める。C API の同じ値と失敗 status を確かめる。性能は、位置ごとの全グリフ取得時間と、作業領域の確保回数・累計バイト数・同時に生きる最大バイト数を変更前後で測る。
+I3 は、送り幅を呼ぶ前後の輪郭とラスターを FreeType と比較する。少なくとも Mada-VF、RobotoFlex-Variable、VVAR を持つフォントと、空・単純・合成グリフを含める。C API の同じ値と失敗 status を確かめる。性能は、位置ごとの全グリフ取得時間と、作業領域の確保回数・累計バイト数・同時に生きる最大バイト数を変更前後で測る。
 
 ## トレードオフ
 
@@ -72,7 +72,7 @@ HVAR のある RobotoFlex-Variable は、947 グリフを 100 回読む時間が
 
 ## 採択前の確認事項
 
-FreeType は HVAR/VVAR 表の読込と検証が成功した場合にサポート印を立てる。RobotoFlex-Variable.ABC の HVAR majorVersion を 1 から 2 に変えると、FreeType の名前つき位置の glyph 1、2、3 の横送り幅は 1272、1200、1313 になった。表の存在だけで gvar の幻の点を抑止する試作は 1280、1260、1359 を返した。表の版、ItemVariationStore、advance map の読込成功を判定に加えると、この三つは一致した。SourceSerifVariable-Roman-VVAR の VVAR majorVersion を 1 から 2 に変えると、縦送り幅 glyph 1 と 3 は FreeType と試作の双方で 996 になった。正常な VVAR では双方とも 1000 だった。ほかの破損の仕方について FreeType と同じ判定になるかは未確認であり、I02 と I04 の手組みテストで確かめる。
+FreeType は HVAR/VVAR 表の読込と検証が成功した場合にサポート印を立てる。RobotoFlex-Variable.ABC の HVAR majorVersion を 1 から 2 に変えると、FreeType の名前つき位置の glyph 1、2、3 の横送り幅は 1272、1200、1313 になった。表の存在だけで gvar の幻の点を抑止する試作は 1280、1260、1359 を返した。表の版、ItemVariationStore、advance map の読込成功を判定に加えると、この三つは一致した。SourceSerifVariable-Roman-VVAR の VVAR majorVersion を 1 から 2 に変えると、縦送り幅 glyph 1 と 3 は FreeType と試作の双方で 996 になった。正常な VVAR では双方とも 1000 だった。ほかの破損の仕方について FreeType と同じ判定になるかは未確認であり、I2 と I4 の手組みテストで確かめる。
 
 `FT_Get_Advances` は符号つきの値を返すが、既存の Rust と C の API は `u16` を返す。Mada-VF の glyph 1 の元の横送り幅を 205 から 0 に変えると、名前つき位置で FreeType は -13 を返し、試作は `None` を返した。glyph 243 の元の横送り幅を 833 から 65535 に変えると、FreeType は 65550 を返し、試作は `None` を返した。一方、HVAR の算術が `FT_UShort` に切り詰めた 65533 はそのまま `Some(65533)` を返す。C API の試作は前二例とも既存の `SOFEL_ERROR_INVALID_GLYPH`（-6）を返したが、二つの glyph 番号は有効である。範囲外を `None` にする提案は既存の型を保つ一方、符号つきの値を利用者へ渡せない。別に符号つきの API と専用のエラーを追加するかは本人の判断を要する。
 

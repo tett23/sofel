@@ -112,7 +112,7 @@ fn expected(lines: &[&str]) -> Vec<u8> {
 }
 
 #[test]
-fn adr0071_inv5_ligature_and_disabled_feature_pixels() {
+fn adr0071_i5_ligature_and_disabled_feature_pixels() {
     let path = font();
     let path = path.to_str().unwrap();
     assert_eq!(
@@ -130,7 +130,7 @@ fn adr0071_inv5_ligature_and_disabled_feature_pixels() {
 }
 
 #[test]
-fn adr0071_inv5_mark_overlap_pixels() {
+fn adr0071_i5_mark_overlap_pixels() {
     let path = font();
     let path = path.to_str().unwrap();
     assert_eq!(
@@ -142,7 +142,7 @@ fn adr0071_inv5_mark_overlap_pixels() {
 }
 
 #[test]
-fn adr0071_inv5_right_to_left_and_spaces() {
+fn adr0071_i5_right_to_left_and_spaces() {
     let path = font();
     let path = path.to_str().unwrap();
     assert_eq!(

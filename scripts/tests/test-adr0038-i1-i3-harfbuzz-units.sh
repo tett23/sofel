@@ -1,5 +1,5 @@
 #!/bin/sh
-# ADR 0038 I1-I3: balanced, ordered units and fail-closed syntax.
+# ADR 0038 I1, I2, I3: balanced, ordered units and fail-closed syntax.
 set -eu
 root=$(cd "$(dirname "$0")/../.." && pwd)
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/sofel-hb-units.XXXXXX")
@@ -42,4 +42,4 @@ for invalid in empty macro absolute; do
   set -- "$tmp/invalid"/part-*.cc
   [ ! -f "$1" ] || { echo 'FAIL: I3 left a partial translation unit' >&2; exit 1; }
 done
-echo 'ok: ADR 0038 I1-I3 HarfBuzz translation units'
+echo 'ADR 0038 I1, I2, I3: HarfBuzz translation units'

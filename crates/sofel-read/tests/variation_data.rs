@@ -32,7 +32,7 @@ fn diagnostics(bytes: &[u8]) -> Vec<Diagnostic> {
 }
 
 #[test]
-fn i05_delta_rows_and_boundaries() {
+fn adr0030_i5_delta_rows_and_boundaries() {
     let mut rows = Vec::new();
     rows.extend((-300i16).to_be_bytes());
     rows.extend(400i16.to_be_bytes());
@@ -78,7 +78,7 @@ fn i05_delta_rows_and_boundaries() {
 }
 
 #[test]
-fn i05_long_words_and_bad_word_count() {
+fn adr0030_i5_long_words_and_bad_word_count() {
     let mut rows = Vec::new();
     rows.extend((-100_000i32).to_be_bytes());
     rows.extend(2_000_000i32.to_be_bytes());

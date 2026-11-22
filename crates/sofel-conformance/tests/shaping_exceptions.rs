@@ -9,7 +9,7 @@ enum Suite {
 }
 
 #[test]
-fn i1_only_the_reviewed_inputs_may_use_the_two_categories() {
+fn adr0044_i1_only_the_reviewed_inputs_may_use_the_two_categories() {
     for (suite, list) in [
         (
             Suite::Shape,
@@ -33,7 +33,7 @@ fn i1_only_the_reviewed_inputs_may_use_the_two_categories() {
 }
 
 #[test]
-fn i1_changing_the_line_face_script_suite_or_reason_invalidates_the_exception() {
+fn adr0044_i1_changing_the_line_face_script_suite_or_reason_invalidates_the_exception() {
     assert!(permitted(
         Suite::Shape,
         "in-house/collections.tests:1",

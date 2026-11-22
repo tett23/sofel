@@ -806,7 +806,7 @@ mod tests {
     }
 
     #[test]
-    fn adr0047_i03_active_private_and_zero_scalar_tuples_preserve_deltas() {
+    fn adr0047_i3_active_private_and_zero_scalar_tuples_preserve_deltas() {
         let bytes = [
             0, 1, 0, 0, 0, 1, 0, 0, // version and one axis
             0, 0, 0, 24, 0, 1, 0, 0, // shared tuple offset and glyph count
@@ -858,7 +858,7 @@ mod tests {
     }
 
     #[test]
-    fn adr0030_i01_ft_cumulative_tuple_rounding() {
+    fn adr0030_i1_ft_cumulative_tuple_rounding() {
         let peak = [0x4000, 0x6000];
         assert_eq!(tuple_scalar_ft(&[0x8000, 0x4000], &peak, None), 5461);
         assert_eq!(
@@ -868,7 +868,7 @@ mod tests {
     }
 
     #[test]
-    fn adr0030_i07_tuple_boundaries() {
+    fn adr0030_i7_tuple_boundaries() {
         let peak = [0x2000];
         let middle = Some((&[0x2000][..], &[0x4000][..]));
         assert_eq!(tuple_scalar_hb(&[0x2000], &peak, middle), 1.0);
@@ -883,7 +883,7 @@ mod tests {
         clippy::arithmetic_side_effects,
         clippy::unwrap_used
     )]
-    fn adr0029_generated_phantom_deltas_and_ft_tuple_order() {
+    fn adr0030_i7_generated_phantom_deltas_and_ft_tuple_order() {
         // Two contour points followed by four phantoms. The first tuple
         // names every point; the second names only points 1, 2, and 5.
         let all_header = [0, 14, 0x80, 0, 0x40, 0];
@@ -974,7 +974,7 @@ mod tests {
     }
 
     #[test]
-    fn adr0030_i07_all_points_and_phantom_only_match() {
+    fn adr0030_i7_all_points_and_phantom_only_match() {
         let bytes = one_all_points_tuple();
         let parsed = Gvar::new(&bytes, TAG);
         assert!(parsed.is_ok());
@@ -1022,7 +1022,7 @@ mod tests {
     }
 
     #[test]
-    fn adr0048_i02_ft_phantom_only_matches_full_at_zero_outline_points() {
+    fn adr0048_i2_ft_phantom_only_matches_full_at_zero_outline_points() {
         let bytes = one_all_points_tuple();
         let Ok(gvar) = Gvar::new(&bytes, TAG) else {
             return;
@@ -1072,7 +1072,7 @@ mod tests {
     }
 
     #[test]
-    fn adr0030_i07_iup_two_references_and_single_reference() {
+    fn adr0030_i7_iup_two_references_and_single_reference() {
         let hb_original = [
             Point {
                 x: 0.0,

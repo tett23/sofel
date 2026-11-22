@@ -2,7 +2,7 @@ use sofel_geom::{Brush, Color, ColorRef, CompositeMode, Painter, Solid};
 use sofel_gpu::{OutOfRange, Outline, Paint};
 
 #[test]
-fn i2_gpu_records_match_clip_depth_boundaries_and_groups() -> Result<(), OutOfRange> {
+fn adr0068_i2_gpu_records_match_clip_depth_boundaries_and_groups() -> Result<(), OutOfRange> {
     let mut expected = include_bytes!("data/paint-records.bin").as_slice();
     for case in 0..=6 {
         let mut paint = Paint::new([1000, 1000], |_, _| Ok(Outline::default()));

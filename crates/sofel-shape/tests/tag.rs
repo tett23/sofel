@@ -464,7 +464,7 @@ fn script_tags_preserve_harfbuzz_values() {
 }
 
 #[test]
-fn inv1_script_tag_bytes() {
+fn adr0050_i1_script_tag_bytes() {
     let cases: [(&str, Option<&[u8; 4]>); 9] = [
         ("DFLT", None),
         ("latn", Some(b"Latn")),
@@ -486,7 +486,7 @@ fn inv1_script_tag_bytes() {
 }
 
 #[test]
-fn inv2_script_with_language() {
+fn adr0050_i2_script_with_language() {
     for source in [
         "DFLT", "latn", "aran", "qaai", "ab!d", "LATN", "dev3", "abc2", "zzzz",
     ] {

@@ -29,7 +29,7 @@ fn admitted(bytes: &[u8]) -> bool {
 }
 
 #[test]
-fn inv1_gdef_header_versions_and_boundaries() {
+fn adr0059_i1_gdef_header_versions_and_boundaries() {
     for (version, size) in [
         (0x0001_0000, 12),
         (0x0001_0002, 14),
@@ -47,7 +47,7 @@ fn inv1_gdef_header_versions_and_boundaries() {
 }
 
 #[test]
-fn inv1_gdef_attach_list_descendants() {
+fn adr0059_i1_gdef_attach_list_descendants() {
     let mut bytes = gdef(0x0001_0000);
     bytes
         .get_mut(6..8)
@@ -64,7 +64,7 @@ fn inv1_gdef_attach_list_descendants() {
 }
 
 #[test]
-fn inv1_gdef_lig_caret_and_device_descendants() {
+fn adr0059_i1_gdef_lig_caret_and_device_descendants() {
     let mut bytes = gdef(0x0001_0000);
     bytes
         .get_mut(8..10)
@@ -110,7 +110,7 @@ fn inv1_gdef_lig_caret_and_device_descendants() {
 }
 
 #[test]
-fn inv1_gdef_mark_sets_and_variation_store() {
+fn adr0059_i1_gdef_mark_sets_and_variation_store() {
     let mut mark = gdef(0x0001_0002);
     mark.get_mut(12..14)
         .unwrap()
@@ -139,7 +139,7 @@ fn inv1_gdef_mark_sets_and_variation_store() {
 }
 
 #[test]
-fn inv1_gdef_v14_prefers_nonzero_wide_reference() {
+fn adr0059_i1_gdef_v14_prefers_nonzero_wide_reference() {
     let mut bytes = gdef(0x0001_0004);
     bytes
         .get_mut(4..6)
@@ -189,7 +189,7 @@ fn shared_coverage_mark_sets(count: usize) -> Vec<u8> {
 }
 
 #[test]
-fn inv1_gdef_budget_charges_repeated_coverage_bytes() {
+fn adr0059_i1_gdef_budget_charges_repeated_coverage_bytes() {
     let within = shared_coverage_mark_sets(114);
     let beyond = shared_coverage_mark_sets(115);
     assert_eq!(within.len(), 1078);

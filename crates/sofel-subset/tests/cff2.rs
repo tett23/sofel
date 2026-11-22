@@ -16,6 +16,8 @@
 
 #[path = "../../sofel-read/tests/support/build.rs"]
 mod build;
+#[path = "support/fixture_input.rs"]
+mod fixture_input;
 
 use build::*;
 use sofel_font::read::Tag;
@@ -250,6 +252,7 @@ fn cff2_called_subroutines_collect_nested_calls_and_renumber() {
     let out = subset(&Font::new(&bytes, 0).unwrap(), &glyphs(&[2])).unwrap();
     // HarfBuzz 15.1.0: hb-dump --subset --font-file=INPUT
     // --output-file=OUTPUT --gids=2 (the generated INPUT is this test's bytes).
+    fixture_input::export("cff2-called-subrs-hb15.otf", &bytes).unwrap();
     assert_eq!(out, include_bytes!("data/cff2-called-subrs-hb15.otf"));
     let result = Font::new(&out, 0).unwrap();
     let cff2 = HbCff2::new(&result).unwrap();
@@ -323,6 +326,7 @@ fn cff2_no_hinting_removes_subroutines_containing_only_stems() {
     let bytes = font_with_programs(vec![subroutine], Vec::new(), programs);
     let font = Font::new(&bytes, 0).unwrap();
     let out = subset(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)).unwrap();
+    fixture_input::export("cff2-no-hint-empty-subr-hb15.otf", &bytes).unwrap();
     assert_eq!(out, include_bytes!("data/cff2-no-hint-empty-subr-hb15.otf"));
     let result = Font::new(&out, 0).unwrap();
     let cff2 = HbCff2::new(&result).unwrap();
@@ -347,6 +351,7 @@ fn cff2_no_hinting_removes_stem_args_supplied_by_caller() {
     let bytes = font_with_programs(vec![global], Vec::new(), programs);
     let font = Font::new(&bytes, 0).unwrap();
     let out = subset(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)).unwrap();
+    fixture_input::export("cff2-no-hint-caller-stems-hb15.otf", &bytes).unwrap();
     assert_eq!(
         out,
         include_bytes!("data/cff2-no-hint-caller-stems-hb15.otf")
@@ -379,6 +384,7 @@ fn cff2_hintmask_bytes_that_look_like_calls_are_not_calls() {
     assert!(Plan::new(&font, &glyphs(&[2])).is_ok());
     let out = subset(&font, &glyphs(&[2])).unwrap();
     // HarfBuzz 15.1.0: hb-dump --subset --font-file=INPUT --output-file=OUTPUT --gids=2.
+    fixture_input::export("cff2-hintmask-hb15.otf", &bytes).unwrap();
     assert_eq!(out, include_bytes!("data/cff2-hintmask-hb15.otf"));
     let result = Font::new(&out, 0).unwrap();
     let cff2 = HbCff2::new(&result).unwrap();
@@ -415,6 +421,7 @@ fn cff2_mask_length_counts_stems_added_in_a_subroutine() {
     assert!(Plan::new(&font, &glyphs(&[2])).is_ok());
     let out = subset(&font, &glyphs(&[2])).unwrap();
     // HarfBuzz 15.1.0, with INPUT built above and --gids=2.
+    fixture_input::export("cff2-subr-stem-hb15.otf", &bytes).unwrap();
     assert_eq!(out, include_bytes!("data/cff2-subr-stem-hb15.otf"));
     let result = Font::new(&out, 0).unwrap();
     let cff2 = HbCff2::new(&result).unwrap();
@@ -439,14 +446,17 @@ fn cff2_shared_subroutine_with_conflicting_mask_lengths_retains_original_bytes()
     let mask_or_stem = font_with_programs(vec![vec![19, 1, 11]], Vec::new(), programs);
     let font = Font::new(&bytes, 0).unwrap();
     let out = subset(&font, &glyphs(&[1, 2])).unwrap();
+    fixture_input::export("cff2-context-mask-hb15.otf", &bytes).unwrap();
     assert_eq!(out, include_bytes!("data/cff2-context-mask-hb15.otf"));
     let out = subset(&font, &glyphs(&[1, 2]).with_flags(Flags::NO_HINTING)).unwrap();
+    fixture_input::export("cff2-context-mask-no-hint-hb15.otf", &bytes).unwrap();
     assert_eq!(
         out,
         include_bytes!("data/cff2-context-mask-no-hint-hb15.otf")
     );
     let font = Font::new(&reversed, 0).unwrap();
     let out = subset(&font, &glyphs(&[1, 2]).with_flags(Flags::NO_HINTING)).unwrap();
+    fixture_input::export("cff2-context-mask-reversed-no-hint-hb15.otf", &reversed).unwrap();
     assert_eq!(
         out,
         include_bytes!("data/cff2-context-mask-reversed-no-hint-hb15.otf")
@@ -477,6 +487,7 @@ fn adr0061_i1_cff2_subroutine_context_with_partial_axis_matches_harfbuzz() {
         .unwrap();
     // Pinned hb-dump --subset --gids=1,2 --no-hinting
     // --variations=wght=300:500:700 on the constructed source.
+    fixture_input::export("adr0061-cff2-partial-context-hb15.otf", &bytes).unwrap();
     assert_eq!(
         subset(&font, &input).unwrap(),
         include_bytes!("data/adr0061-cff2-partial-context-hb15.otf")
@@ -514,6 +525,7 @@ fn cff2_no_hinting_removes_used_glyph_and_subroutine_stems() {
     assert!(Plan::new(&font, &input).is_ok());
     let out = subset(&font, &input).unwrap();
     // HarfBuzz 15.1.0: hb-dump --subset --gids=2 --no-hinting.
+    fixture_input::export("cff2-no-hint-stems-hb15.otf", &bytes).unwrap();
     assert_eq!(out, include_bytes!("data/cff2-no-hint-stems-hb15.otf"));
     let result = Font::new(&out, 0).unwrap();
     let cff2 = HbCff2::new(&result).unwrap();
@@ -607,6 +619,7 @@ fn cff2_no_hinting_keeps_only_used_local_subroutine_without_hints() {
     let input = glyphs(&[2]).with_flags(Flags::NO_HINTING);
     let out = subset(&font, &input).unwrap();
     // HarfBuzz 15.1.0: hb-dump --subset --gids=2 --no-hinting.
+    fixture_input::export("cff2-no-hint-local-hb15.otf", &bytes).unwrap();
     assert_eq!(out, include_bytes!("data/cff2-no-hint-local-hb15.otf"));
     let result = Font::new(&out, 0).unwrap();
     let cff2 = HbCff2::new(&result).unwrap();

@@ -145,7 +145,7 @@ fn with_resource_probe<T>(render: impl FnOnce(&str) -> T) -> Result<(T, usize), 
 mod reference_tests {
     use super::*;
     #[test]
-    fn i2_reference_rectangle_rejects_swapped_transform_and_clip() {
+    fn adr0074_i2_reference_rectangle_rejects_swapped_transform_and_clip() {
         let image = BgraImage {
             left: 8,
             top: -7,
@@ -163,7 +163,7 @@ mod reference_tests {
     }
 
     #[test]
-    fn i2_resource_probe_counts_a_real_load_and_silence() -> Result<(), String> {
+    fn adr0074_i2_resource_probe_counts_a_real_load_and_silence() -> Result<(), String> {
         use std::io::{Read, Write};
         use std::net::TcpStream;
         let (_, silent) = with_resource_probe(|_| ())?;
