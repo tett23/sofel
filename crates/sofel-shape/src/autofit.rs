@@ -7,6 +7,7 @@ use alloc::vec::Vec;
 use sofel_font::Font;
 use sofel_font::read::GlyphId;
 use sofel_font::read::Tag;
+use sofel_font::read::feature_variations::FeatureVariations;
 use sofel_font::read::gpos;
 use sofel_font::read::gsub::{self, SubstSubtable};
 use sofel_font::read::layout::{
@@ -27,6 +28,7 @@ struct LookupContext<'a> {
     scripts: ScriptList<'a>,
     features: FeatureList<'a>,
     lookups: LookupList<'a>,
+    variations: Option<FeatureVariations<'a>>,
 }
 use crate::ot_tags_from_script_and_language_max;
 
@@ -149,7 +151,13 @@ pub fn auto_hint_reverse_entries(
             continue;
         };
         let (tags, _) = ot_tags_from_script_and_language_max(Some(script), None, 1, 0);
-        let indices = collect_lookup_indices(scripts, features, &tags, None);
+        let indices = collect_lookup_indices(
+            scripts,
+            features,
+            table.feature_variations().ok().flatten(),
+            &tags,
+            None,
+        );
         let mut replacements: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
         let mut insertion_order = Vec::new();
         for index in indices {
@@ -411,6 +419,7 @@ pub fn auto_hint_gsub_styles(
             gsub.script_list().ok()??,
             gsub.feature_list().ok()??,
             gsub.lookup_list().ok()??,
+            gsub.feature_variations().ok().flatten(),
         ))
     });
     let accelerated = Layout::new(font);
@@ -418,18 +427,19 @@ pub fn auto_hint_gsub_styles(
     for request in requests {
         if request.feature.is_none() {
             assign_cmap_style(font, &mut styles, request);
-        } else if let Some((scripts, features, lookups)) = tables {
+        } else if let Some((scripts, features, lookups, variations)) = tables {
             let context = LookupContext {
                 font,
                 accelerated: &accelerated,
                 scripts,
                 features,
                 lookups,
+                variations,
             };
             assign_gsub_style(&context, &mut styles, request, false);
         }
     }
-    if let Some((scripts, features, lookups)) = tables {
+    if let Some((scripts, features, lookups, variations)) = tables {
         for request in requests.iter().filter(|request| request.feature.is_none()) {
             let context = LookupContext {
                 font,
@@ -437,6 +447,7 @@ pub fn auto_hint_gsub_styles(
                 scripts,
                 features,
                 lookups,
+                variations,
             };
             assign_gsub_style(&context, &mut styles, request, false);
         }
@@ -447,6 +458,7 @@ pub fn auto_hint_gsub_styles(
                 scripts,
                 features,
                 lookups,
+                variations,
             };
             assign_gsub_style(&context, &mut styles, request, true);
         }
@@ -502,6 +514,7 @@ fn assign_gsub_style(
         scripts,
         features,
         lookups,
+        variations,
     } = *context;
     let Some(script) = Script::from_iso15924(&request.script) else {
         return;
@@ -514,7 +527,8 @@ fn assign_gsub_style(
         return;
     }
     let feature = request.feature.map(|tag| Tag::new(&tag));
-    let lookup_indices = collect_lookup_indices(scripts, features, &script_tags, feature);
+    let lookup_indices =
+        collect_lookup_indices(scripts, features, variations, &script_tags, feature);
     if lookup_indices.is_empty() {
         return;
     }
@@ -605,10 +619,12 @@ fn assign_gsub_style(
 fn collect_lookup_indices(
     scripts: ScriptList<'_>,
     features: FeatureList<'_>,
+    variations: Option<FeatureVariations<'_>>,
     script_tags: &[Tag],
     feature: Option<Tag>,
 ) -> BTreeSet<usize> {
     let mut lookup_indices = BTreeSet::new();
+    let mut selected_features = BTreeSet::new();
     for &tag in script_tags {
         let Some(index) = scripts.find(tag) else {
             continue;
@@ -625,11 +641,50 @@ fn collect_lookup_indices(
                 if feature.is_some_and(|wanted| features.tag(usize::from(index)) != Some(wanted)) {
                     continue;
                 }
+                selected_features.insert(index);
                 let Ok(Some(record)) = features.feature(usize::from(index)) else {
                     continue;
                 };
                 for i in 0..record.num_lookups() {
                     if let Some(index) = record.lookup_index(i) {
+                        lookup_indices.insert(usize::from(index));
+                    }
+                }
+            }
+        }
+    }
+    if let Some(variations) = variations {
+        for variation_index in 0..variations.len() {
+            let Some(variation) = variations.record(variation_index) else {
+                continue;
+            };
+            let Ok(Some(substitutions)) = variation.substitutions() else {
+                continue;
+            };
+            for record_index in 0..substitutions.len() {
+                let Some(record) = substitutions.record(record_index) else {
+                    continue;
+                };
+                if !selected_features.contains(&record.feature_index()) {
+                    continue;
+                }
+                let Ok(Some(data)) = record.feature() else {
+                    continue;
+                };
+                let Some(count) = data
+                    .get(2..4)
+                    .and_then(|bytes| <[u8; 2]>::try_from(bytes).ok())
+                    .map(u16::from_be_bytes)
+                else {
+                    continue;
+                };
+                for index in 0..usize::from(count) {
+                    let start = 4usize.saturating_add(index.saturating_mul(2));
+                    if let Some(index) = data
+                        .get(start..start.saturating_add(2))
+                        .and_then(|bytes| <[u8; 2]>::try_from(bytes).ok())
+                        .map(u16::from_be_bytes)
+                    {
                         lookup_indices.insert(usize::from(index));
                     }
                 }
@@ -661,7 +716,13 @@ fn collect_gpos_inputs(
         return BTreeSet::new();
     };
     let mut inputs = BTreeSet::new();
-    for index in collect_lookup_indices(scripts, features, script_tags, feature) {
+    for index in collect_lookup_indices(
+        scripts,
+        features,
+        table.feature_variations().ok().flatten(),
+        script_tags,
+        feature,
+    ) {
         let Ok(Some(lookup)) = lookups.lookup(index) else {
             continue;
         };
@@ -675,6 +736,22 @@ fn collect_gpos_inputs(
         }
     }
     inputs
+}
+
+fn coverage_glyph_at_index(
+    coverage: sofel_font::read::layout::Coverage<'_>,
+    index: usize,
+) -> Option<u32> {
+    if let Some(glyph) = coverage.glyph(index) {
+        return Some(glyph.0);
+    }
+    let index = u32::try_from(index).ok()?;
+    (0..coverage.num_records()).find_map(|record| {
+        let (first, last, start) = coverage.range(record)?;
+        let offset = index.checked_sub(start)?;
+        let glyph = first.0.checked_add(offset)?;
+        (glyph <= last.0).then_some(glyph)
+    })
 }
 
 fn add_context_outputs(
@@ -744,7 +821,7 @@ fn add_context_outputs(
             rule_sets,
         }) => {
             for i in 0..rule_sets.len() {
-                let Some(first) = coverage.glyph(i).map(|glyph| glyph.0) else {
+                let Some(first) = coverage_glyph_at_index(coverage, i) else {
                     continue;
                 };
                 if !available.contains(&first) {
@@ -818,7 +895,7 @@ fn add_context_outputs(
             rule_sets,
         }) => {
             for i in 0..rule_sets.len() {
-                let Some(first) = coverage.glyph(i).map(|glyph| glyph.0) else {
+                let Some(first) = coverage_glyph_at_index(coverage, i) else {
                     continue;
                 };
                 if !available.contains(&first) {
@@ -947,7 +1024,7 @@ fn nested_lookups(subtable: SubstSubtable<'_>, glyphs: &BTreeSet<u32>) -> BTreeS
             rule_sets,
         }) => {
             for i in 0..rule_sets.len() {
-                if !coverage.glyph(i).is_some_and(|g| glyphs.contains(&g.0)) {
+                if !coverage_glyph_at_index(coverage, i).is_some_and(|g| glyphs.contains(&g)) {
                     continue;
                 }
                 if let Ok(Some(set)) = rule_sets.get(i) {
@@ -1006,7 +1083,7 @@ fn nested_lookups(subtable: SubstSubtable<'_>, glyphs: &BTreeSet<u32>) -> BTreeS
             rule_sets,
         }) => {
             for i in 0..rule_sets.len() {
-                if !coverage.glyph(i).is_some_and(|g| glyphs.contains(&g.0)) {
+                if !coverage_glyph_at_index(coverage, i).is_some_and(|g| glyphs.contains(&g)) {
                     continue;
                 }
                 if let Ok(Some(set)) = rule_sets.get(i) {

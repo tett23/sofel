@@ -14,8 +14,7 @@ fn adr0085_a2_harfbuzz_reference_assigns_gsub_style() {
     assert_eq!(styles[57].feature, None);
     assert!(!styles[57].blue_strings.is_empty());
     let path = paths::testdata().join("extra-fonts/fonts/source-serif.otf");
-    let hb_reference = std::env::var_os("SOFEL_FT_DUMP_HB")
-        .unwrap_or_else(|| "target/ft-dump/ft-dump-harfbuzz".into());
+    let hb_reference = paths::ft_dump_hb();
     let default = Command::new(paths::ft_dump())
         .args(["--auto-style", "109"])
         .arg(&path)
@@ -56,12 +55,12 @@ fn adr0085_i2_gsub_default_closure_assigns_unmapped_latin_glyph() {
 
 #[test]
 fn adr0085_i2_gsub_style_words_match_harfbuzz_reference() {
-    let reference = std::env::var_os("SOFEL_FT_DUMP_HB")
-        .unwrap_or_else(|| "target/ft-dump/ft-dump-harfbuzz".into());
+    let reference = paths::ft_dump_hb();
     for relative in [
         "extra-fonts/fonts/source-serif.otf",
         "harfbuzz/perf/fonts/Roboto-Regular.ttf",
         "harfbuzz/perf/fonts/Amiri-Regular.ttf",
+        "extra-fonts/fonts/amstelvar.ttf",
         "harfbuzz/perf/fonts/NotoSansDuployan-Regular.otf",
         "extra-fonts/fonts/devanagari.ttf",
         "extra-fonts/fonts/hebrew.ttf",
@@ -69,7 +68,6 @@ fn adr0085_i2_gsub_style_words_match_harfbuzz_reference() {
         "extra-fonts/fonts/myanmar.ttf",
         "extra-fonts/fonts/arabic.ttf",
         "extra-fonts/fonts/stix-math.otf",
-        "extra-fonts/fonts/amstelvar.ttf",
         "harfbuzz/test/api/fonts/Roboto-Regular.abcAE.ttf",
         "harfbuzz/test/api/fonts/Mplus1p-Regular.660E.ttf",
     ] {
@@ -186,14 +184,11 @@ fn adr0085_i2_shaped_blue_zone_slot_matches_harfbuzz_reference() {
         ("mono", HintTarget::Mono),
     ] {
         for gid in [109, 547, 1121] {
-            let reference = Command::new(
-                std::env::var_os("SOFEL_FT_DUMP_HB")
-                    .unwrap_or_else(|| "target/ft-dump/ft-dump-harfbuzz".into()),
-            )
-            .args(["--hint-slot", "14", &gid.to_string(), "auto", target_name])
-            .arg(&path)
-            .output()
-            .unwrap();
+            let reference = Command::new(paths::ft_dump_hb())
+                .args(["--hint-slot", "14", &gid.to_string(), "auto", target_name])
+                .arg(&path)
+                .output()
+                .unwrap();
             assert!(reference.status.success());
             let (_, advance) = outlines
                 .load_auto_hinted(GlyphId(gid), 14, target, &mut cache, &mut scratch)
@@ -228,14 +223,11 @@ fn adr0085_i2_cli_gsub_load_matches_harfbuzz_reference() {
         "{}",
         String::from_utf8_lossy(&stderr)
     );
-    let reference = Command::new(
-        std::env::var_os("SOFEL_FT_DUMP_HB")
-            .unwrap_or_else(|| "target/ft-dump/ft-dump-harfbuzz".into()),
-    )
-    .args(["--hint-slot", "14", "547", "auto", "normal"])
-    .arg(&path)
-    .output()
-    .unwrap();
+    let reference = Command::new(paths::ft_dump_hb())
+        .args(["--hint-slot", "14", "547", "auto", "normal"])
+        .arg(&path)
+        .output()
+        .unwrap();
     assert!(reference.status.success());
     assert_eq!(stdout, reference.stdout);
 }

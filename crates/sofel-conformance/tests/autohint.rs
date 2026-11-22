@@ -196,10 +196,7 @@ fn reference(
     use_gsub: bool,
 ) -> BTreeMap<(u16, u32), Vec<String>> {
     let executable = if use_gsub {
-        std::env::var_os("SOFEL_FT_DUMP_HB").map_or_else(
-            || "target/ft-dump/ft-dump-harfbuzz".into(),
-            std::path::PathBuf::from,
-        )
+        paths::ft_dump_hb()
     } else {
         paths::ft_dump()
     };
