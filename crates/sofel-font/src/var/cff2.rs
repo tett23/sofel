@@ -191,8 +191,10 @@ impl<'font, 'data, 'loc, 'source> Instance<'font, 'data, 'loc, 'source> {
         let store = cff.variation_store();
         let valid = self.location.ft_error.is_none()
             && store.is_some_and(|store| {
-                cff.fvar_axes()
-                    .is_none_or(|count| count == store.axis_count())
+                !Ft::supplied(self.location)
+                    || cff
+                        .fvar_axes()
+                        .is_none_or(|count| count == store.axis_count())
             });
         let scalars = store.map(|store| {
             let same = self

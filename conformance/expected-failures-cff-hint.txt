@@ -5,4 +5,3 @@
 # mismatch in the rows of a bitmap whose slot (advance, points, tags,
 # contour ends) and box agree, unless its reason starts with `[slot]`.
 # Remove an entry when nothing matches it; the full run fails until you do.
-harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-hb-fuzzer-5662671558934528:*:*:*  # [slot] The CFF2 Private DICT blend fails (the regions have 2 axes, fvar has none), so sofel's loader fails with or without hinting where FreeType loads empty outlines; an ADR 0021 loading difference, not hinting (roadmap)

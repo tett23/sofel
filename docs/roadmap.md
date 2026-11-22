@@ -44,7 +44,6 @@ Golem はフォントを開くときに GSUB と GPOS の機能タグをすべ�
 
 - **Type1 と CID のネイティブヒンティング**：`draw_type1_native` と `draw_cid_native` は、stem の無いグリフと、blue zone の無い LIGHT の単一の水平 stem だけを扱い、ほかは未対応エラーを返す。FreeType は Type1 と CID も同じ Adobe engine でヒンティングする（`isT1` の経路：othersubr 3 によるヒントの置き換え、最初のヒントマップを作るための巻き戻し、hstem3 と vstem3）。`sofel-read` の CFF のヒントマップと blue zone（`cff::Hinting`）を Type1 の解読器から使えるようにする。
 - **素の CFF のネイティブヒンティング**：素の CFF のフェイス（`load_bare_cff`）にはヒンティングつきのロードが無い。
-- **blend を計算できない CFF2 の Private DICT**：領域の軸の数が `fvar` と違う CFF2 では、sofel はヒンティングの有無に関わらずグリフの読み込みに失敗し、FreeType は空の輪郭を返す（[ADR 0021](adr/0021-cff-outlines.md)）。`conformance/expected-failures-cff-hint.txt` に該当を記録した。
 
 - **モジュールの設定**：`no-stem-darkening`、`darkening-parameters`、`increase-x-height`、`fallback-script`、`default-script` を FreeType の既定値に固定している。設定を受け取る API は無い。[ADR 0086](adr/0086-hinting-module-properties.md) で、ロード指定で受け取ると採択した（未実装）。
 - **`Outlines` 以外のフェイス**：Type1、CID、Type42、PFR、素の CFF のフェイスは自動ヒンティングできない。

@@ -76,6 +76,25 @@ impl<'a> CharStringTokens<'a> {
         Some(s)
     }
 
+    // FreeType's decoder buffer has no error pointer. Its readByte returns
+    // zero past the end, so a truncated number or escape is zero-padded.
+    // Keep the public lexer strict for callers that diagnose malformed data.
+    fn next_ft_token(&mut self) -> Option<Result<CharStringToken, usize>> {
+        match self.next_token() {
+            Some(Err(at)) => {
+                let tail = self.data.get(at..)?;
+                let mut padded = [0; 5];
+                for (dest, source) in padded.iter_mut().zip(tail) {
+                    *dest = *source;
+                }
+                let token = CharStringTokens::new(&padded, self.version).next_token();
+                self.pos = self.data.len();
+                token
+            }
+            token => token,
+        }
+    }
+
     /// The next token, or `Err` with its position when it is cut by the
     /// end of the data. `None` at the end.
     pub fn next_token(&mut self) -> Option<Result<CharStringToken, usize>> {
@@ -1068,7 +1087,7 @@ fn interpret<const S: usize, const N: usize>(
                     14
                 }
             } else {
-                match tokens.next_token() {
+                match tokens.next_ft_token() {
                     Some(Ok(CharStringToken::Integer(v))) => {
                         save(&mut frames, depth, tokens.pos);
                         count_down(&mut limit)?;

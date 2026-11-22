@@ -445,10 +445,14 @@ fn compare_glyph(
 /// Runs `ft-dump --native-hint` over the sizes and compares each glyph
 /// as its lines arrive.
 fn compare_case(case: &Case, sizes: &[u16], stats: &mut Stats) {
-    compare_case_selected(case, sizes, stats, false);
+    compare_case_selected(case, sizes, stats, false, glyph_cap());
 }
 
-fn compare_case_selected(case: &Case, sizes: &[u16], stats: &mut Stats, varc_only: bool) {
+fn compare_case_with_cap(case: &Case, sizes: &[u16], stats: &mut Stats, cap: u32) {
+    compare_case_selected(case, sizes, stats, false, cap);
+}
+
+fn compare_case_selected(case: &Case, sizes: &[u16], stats: &mut Stats, varc_only: bool, cap: u32) {
     let path = paths::testdata().join(&case.path);
     let data = std::fs::read(&path).unwrap();
     let font = Font::new(&data, case.face).unwrap();
@@ -474,7 +478,6 @@ fn compare_case_selected(case: &Case, sizes: &[u16], stats: &mut Stats, varc_onl
         if case.face != 0 {
             command.arg(format!("--face={}", case.face));
         }
-        let cap = glyph_cap();
         if cap > 0 && font.num_glyphs() > cap {
             command.arg(format!("--glyph-step={}", font.num_glyphs().div_ceil(cap)));
         }
@@ -669,6 +672,7 @@ fn adr0064_i1_i2_varc_slots_match_freetype() {
                 &[5, 9, 16, 24, 36],
                 &mut stats,
                 true,
+                0,
             );
         }
     }
@@ -679,6 +683,33 @@ fn adr0064_i1_i2_varc_slots_match_freetype() {
     assert!(
         stats.failures.is_empty(),
         "{} mismatches",
+        stats.failures.len()
+    );
+}
+
+#[test]
+fn adr0064_i1_cff2_empty_coordinates_match_freetype() {
+    let mut stats = Stats::default();
+    compare_case_with_cap(
+        &Case {
+            path: "harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-hb-fuzzer-5662671558934528"
+                .into(),
+            face: 0,
+            variations: None,
+        },
+        &ppems(),
+        &mut stats,
+        0,
+    );
+    for failure in stats.failures.iter().take(40) {
+        eprintln!("{} {}", failure.id, failure.detail);
+    }
+    eprintln!("CFF2 empty coordinates: {} slots compared", stats.compared);
+    assert!(stats.unopened.is_empty());
+    assert!(stats.compared > 0);
+    assert!(
+        stats.failures.is_empty(),
+        "{} slot differences",
         stats.failures.len()
     );
 }
