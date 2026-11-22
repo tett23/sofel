@@ -201,19 +201,19 @@ fn decode_program<P: Pen>(
             }
             1 | 3 => {
                 state.has_stems = true;
-                if op == 1 {
-                    if let [position, width] = stack.as_slice() {
-                        if !state.emitted || (!state.native && !state.hint_groups.is_empty()) {
+                if let [position, width] = stack.as_slice() {
+                    if !state.emitted || (!state.native && !state.hint_groups.is_empty()) {
+                        if op == 1 {
                             state.h_stem.get_or_insert((*position, *width));
                             if !state.h_stems.contains(&(*position, *width)) {
                                 state.h_stems.push((*position, *width));
                             }
-                        } else {
-                            state.unsupported_stem_map = true;
                         }
                     } else {
                         state.unsupported_stem_map = true;
                     }
+                } else {
+                    state.unsupported_stem_map = true;
                 }
                 stack.clear();
             }
@@ -292,10 +292,10 @@ fn decode_program<P: Pen>(
                     0 => stack.clear(), // dotsection
                     1 | 2 => {
                         state.has_stems = true;
-                        if escape == 2 && !state.emitted {
+                        if !state.emitted {
                             if let [p0, w0, p1, w1, p2, w2] = stack.as_slice() {
                                 for (position, width) in [(*p0, *w0), (*p1, *w1), (*p2, *w2)] {
-                                    if !state.h_stems.contains(&(position, width)) {
+                                    if escape == 2 && !state.h_stems.contains(&(position, width)) {
                                         state.h_stems.push((position, width));
                                     }
                                 }
