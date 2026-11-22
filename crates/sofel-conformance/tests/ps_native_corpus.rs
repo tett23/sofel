@@ -11,8 +11,8 @@ use std::path::Path;
 use std::process::Command as Process;
 
 use sofel_font::{CidFace, Type1Face, Type1Source};
-use sofel_geom::{div_fix, Command, Fixed, FnPen, Point};
-use sofel_outline::{draw_cid_native, draw_type1_native, HintTarget, OutlineInfo, Scale};
+use sofel_geom::{Command, Fixed, FnPen, Point, div_fix};
+use sofel_outline::{HintTarget, OutlineInfo, Scale, draw_cid_native, draw_type1_native};
 use sofel_raster::{FillRule, LcdMode, MonoOptions, Rasterizer, RenderOptions};
 
 fn shifted(command: Command, offset: Point, multiplier: i32) -> Command {
