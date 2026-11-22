@@ -2,7 +2,7 @@
 
 use sofel_font::CidFace;
 use sofel_geom::{Command, Fixed, FnPen, Point};
-use sofel_outline::{Scale, draw_cid};
+use sofel_outline::{HintTarget, Scale, draw_cid, draw_cid_native};
 
 fn sample(program: &[u8]) -> Vec<u8> {
     let mut source = b"%!PS-Adobe-3.0 Resource-CIDFont\n\
@@ -21,6 +21,75 @@ end put\n%ADOEndFontDict\ndef\n"
     source.extend_from_slice(&end.to_be_bytes());
     source.extend_from_slice(program);
     source
+}
+
+#[test]
+fn adr0064_i1_adr0065_i1_cid_reserved_escape_matches_freetype()
+-> Result<(), Box<dyn std::error::Error>> {
+    let prefix = [139, 248, 136, 13];
+    let moveto = [239, 239, 21];
+    let first_line = [239, 139, 5];
+    let remaining = [139, 239, 5, 39, 39, 5];
+    let expected = [
+        Command::MoveTo(Point { x: 100, y: 100 }),
+        Command::LineTo(Point { x: 200, y: 100 }),
+        Command::LineTo(Point { x: 200, y: 200 }),
+        Command::LineTo(Point { x: 100, y: 100 }),
+        Command::Close,
+    ];
+    for position in 0..3 {
+        for with_stack in [false, true] {
+            let mut program = prefix.to_vec();
+            let mut reserved = Vec::new();
+            if with_stack {
+                reserved.push(140);
+            }
+            reserved.extend([12, 255]);
+            if position == 0 {
+                program.extend(&reserved);
+            }
+            program.extend(moveto);
+            program.extend(first_line);
+            if position == 1 {
+                program.extend(&reserved);
+            }
+            program.extend(remaining);
+            program.push(9);
+            if position == 2 {
+                program.extend(&reserved);
+            }
+            program.push(14);
+            let source = sample(&program);
+            let face = CidFace::parse(&source, 1024)?;
+            let mut commands = Vec::new();
+            let info = draw_cid(&face, 0, Scale::Unscaled, &mut FnPen(|c| commands.push(c)))?;
+            assert_eq!(commands, expected, "position={position} stack={with_stack}");
+            assert_eq!(
+                (
+                    info.cbox.x_min,
+                    info.cbox.y_min,
+                    info.cbox.x_max,
+                    info.cbox.y_max
+                ),
+                (100, 100, 200, 200)
+            );
+            let factor = Fixed(sofel_geom::div_fix(1024, 1000));
+            commands.clear();
+            let (_, advance) = draw_cid_native(
+                &face,
+                0,
+                Scale::Scaled {
+                    x: factor,
+                    y: factor,
+                },
+                HintTarget::Normal,
+                &mut FnPen(|c| commands.push(c)),
+            )?;
+            assert_eq!(advance, 512);
+            assert!(!commands.is_empty());
+        }
+    }
+    Ok(())
 }
 
 #[test]

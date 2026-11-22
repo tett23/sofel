@@ -9,7 +9,7 @@ use sofel_geom::{FnPen, Pen, Point, mul_fix};
 use crate::{CBox, HintTarget, OutlineError, OutlineInfo, Scale, ps_native};
 
 /// Draw a CID-keyed Type 1 glyph using its CID as glyph index.
-/// Unsupported Type 1 operators return [`OutlineError::InvalidCharString`].
+/// Malformed Type 1 operators return [`OutlineError::InvalidCharString`].
 pub fn draw_cid(
     face: &CidFace,
     cid: usize,
@@ -351,6 +351,7 @@ fn decode_program<P: Pen>(
                         }
                         stack.push(a.checked_div(b).ok_or(OutlineError::InvalidCharString)?);
                     }
+                    38..=255 => stack.clear(), // FreeType psintrp.c ignores reserved escapes.
                     _ => return Err(OutlineError::InvalidCharString),
                 }
             }

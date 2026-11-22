@@ -1,11 +1,81 @@
 //! Type 1 PFA/PFB outline compared with pinned FreeType 2.15.0.
 
 use sofel_font::{Type1Face, Type1Source};
-use sofel_geom::{Command, FnPen, Point};
-use sofel_outline::{Scale, draw_type1};
+use sofel_geom::{Command, Fixed, FnPen, Point, div_fix};
+use sofel_outline::{HintTarget, Scale, draw_type1, draw_type1_native};
 
 #[path = "../../sofel-type1/tests/support/type1_triangle.rs"]
 mod fixture;
+
+#[test]
+fn adr0064_i1_adr0065_i1_type1_reserved_escape_matches_freetype()
+-> Result<(), Box<dyn std::error::Error>> {
+    let prefix = [139, 248, 136, 13];
+    let moveto = [239, 239, 21];
+    let first_line = [239, 139, 5];
+    let remaining = [139, 239, 5, 39, 39, 5];
+    let expected = [
+        Command::MoveTo(Point { x: 100, y: 100 }),
+        Command::LineTo(Point { x: 200, y: 100 }),
+        Command::LineTo(Point { x: 200, y: 200 }),
+        Command::LineTo(Point { x: 100, y: 100 }),
+        Command::Close,
+    ];
+    for position in 0..3 {
+        for with_stack in [false, true] {
+            let mut program = prefix.to_vec();
+            let mut reserved = Vec::new();
+            if with_stack {
+                reserved.push(140);
+            }
+            reserved.extend([12, 255]);
+            if position == 0 {
+                program.extend(&reserved);
+            }
+            program.extend(moveto);
+            program.extend(first_line);
+            if position == 1 {
+                program.extend(&reserved);
+            }
+            program.extend(remaining);
+            program.push(9);
+            if position == 2 {
+                program.extend(&reserved);
+            }
+            program.push(14);
+            let (pfa, _) = fixture::with_glyph_program(&program);
+            let source = Type1Source::parse_pfa(&pfa, 4096)?;
+            let face = Type1Face::new(&source)?;
+            let mut commands = Vec::new();
+            let info = draw_type1(&face, 1, Scale::Unscaled, &mut FnPen(|c| commands.push(c)))?;
+            assert_eq!(commands, expected, "position={position} stack={with_stack}");
+            assert_eq!(
+                (
+                    info.cbox.x_min,
+                    info.cbox.y_min,
+                    info.cbox.x_max,
+                    info.cbox.y_max
+                ),
+                (100, 100, 200, 200)
+            );
+            let factor = Fixed(div_fix(1024, 1000));
+            commands.clear();
+            let (_, advance) = draw_type1_native(
+                &face,
+                1,
+                Scale::Scaled {
+                    x: factor,
+                    y: factor,
+                },
+                HintTarget::Normal,
+                &mut FnPen(|c| commands.push(c)),
+            )?;
+            assert_eq!(advance, 512);
+            assert!(!commands.is_empty());
+        }
+    }
+    Ok(())
+}
 
 #[test]
 fn adr0065_i1_type1_triangle_matches_freetype() -> Result<(), Box<dyn std::error::Error>> {
