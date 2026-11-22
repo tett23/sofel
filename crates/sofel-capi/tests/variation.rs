@@ -259,7 +259,7 @@ fn hvar_font_bytes() -> Vec<u8> {
 }
 
 #[test]
-fn i08_item_delta_c_abi_matches_rust_and_checks_arguments() {
+fn adr0030_i8_item_delta_c_abi_matches_rust_and_checks_arguments() {
     let bytes = hvar_font_bytes();
     let mut error = -99;
     let font = unsafe { sofel_font_create(bytes.as_ptr(), bytes.len(), 0, &mut error) };
