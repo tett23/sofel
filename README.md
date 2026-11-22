@@ -118,7 +118,7 @@ PFA・PFB の Type1 と CID キーの Type1 では、`draw_type1_native` と `dr
 
 FreeTypeの合成操作には、`sofel-outline::Scratch` のスロット用の斜体と太字、`sofel-bitmap` の画素形式変換と太字を使う。ビットマップの太字では `embolden_bitmap_slot` が画像とスロットのメトリクス、配置を合わせて更新する。HarfBuzzに合わせた輪郭の命令は、glyfを `Scratch::hb_decompose`、CFFとCFF2を `HbExtents::cff_glyph_path` から得る。画像を含むカラーグリフの合成斜体は、`sofel-color::paint_recording_at_with_slant` が描画命令を変換で包む（[ADR 0063](docs/adr/0063-font-functions-and-synthesis.md)）。
 
-`sofel-validate` は CFF2 の FDSelect フォーマット4を互換性の警告として報告する。ほかにエラーがなければ検証は成功する（[ADR 0056](docs/adr/0056-cff2-fdselect-format4-warning.md)）。
+`sofel-validate` は CFF2 の FDSelect フォーマット4を互換性の警告として報告する。ほかにエラーがなければ検証は成功する（[ADR 0056](docs/adr/0056-cff2-fdselect-format4-warning.md)）。CFF2 の Font DICT に長さ0・オフセット0の Private が明示されている場合は、空の辞書として受理する。Private の項目自体がない場合はエラーとする。
 
 CFF の `random` は、描くたびに Private DICT の `initialRandomSeed` から始まるので、輪郭は読む順やスレッドに依らない。`sofel-validate` は、`random` を実行するグリフを値の区間でたどりなおし、`random` の値しだいで INDEX の外のサブルーチンを呼ぶ枝（`cff_random_subroutine_out_of_range`、Error）、確かめきれない枝（`cff_random_unchecked`、Warning）、FreeType が描けない 16.16 の番号や位置（`cff_random_operand_rejected`、Warning）を報告する（[ADR 0082](docs/adr/0082-cff-random-interval-check.md)）。
 
