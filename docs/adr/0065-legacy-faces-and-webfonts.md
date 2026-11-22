@@ -1,6 +1,6 @@
 # ADR 0065: 旧形式と Web フォントを既存のフェイスとして開く
 
-Status: accepted-pending
+Status: superseded-pending [{"part":"共通フェイス操作","by":["docs/adr/0100-common-face-api.md"],"kind":"supplement"}]
 
 ## 文脈
 
