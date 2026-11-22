@@ -617,6 +617,7 @@ fn create(plan: &Plan, acc: &Acc<'_>, font: &Font<'_>, tag: Tag) -> Result<Cff2P
         env.round_blends = !rounds;
         let mut f = Flatten {
             projection: projection.as_ref(),
+            preserve_vsindex: keep_variations && !plan.flags.has(Flags::DESUBROUTINIZE),
             drop_hints,
             rounding: rounds.then(Rounding::default),
             commands: Some(Vec::new()),

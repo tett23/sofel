@@ -413,3 +413,21 @@ moveto の後に stem を宣言するケースをヒントなしでサブセッ�
 "$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-stem-after-moveto-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-stem-after-moveto-hb15.otf" --gids=2 --no-hinting
 cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-stem-after-moveto-hb15.otf" "crates/sofel-subset/tests/data/cff2-stem-after-moveto-hb15.otf"
 ```
+
+## cff2-flat-vsindex-hb15.otf
+
+入力は `tests/cff2_flat_vsindex.rs` の `cff2_flatten_preserves_explicit_vsindex_without_blend` が組む。軸を指定しない CFF2 で、サブルーチンを呼ばず、描画の `blend` も使わないが、明示的な `vsindex 0` を持つ。固定した HarfBuzz 15.1.0 の出力を比較する。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-flat-vsindex-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-flat-vsindex-hb15.otf" --gids=1
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-flat-vsindex-hb15.otf" "crates/sofel-subset/tests/data/cff2-flat-vsindex-hb15.otf"
+```
+
+## cff2-flat-vsindex-desubr-hb15.otf
+
+入力は `cff2-flat-vsindex-hb15.otf` と同じである。`DESUBROUTINIZE` を指定すると、固定した HarfBuzz 15.1.0 は描画の `blend` に使わない `vsindex` を除く。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-flat-vsindex-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-flat-vsindex-desubr-hb15.otf" --gids=1 --desubroutinize
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-flat-vsindex-desubr-hb15.otf" "crates/sofel-subset/tests/data/cff2-flat-vsindex-desubr-hb15.otf"
+```
