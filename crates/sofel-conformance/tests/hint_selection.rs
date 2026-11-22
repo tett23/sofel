@@ -6,6 +6,27 @@ use sofel_font::{Font, read::GlyphId};
 use sofel_outline::{HintMode, HintTarget, OutlineError, Outlines, Scratch};
 use std::{fmt::Write, process::Command};
 
+#[test]
+fn adr0085_a2_harfbuzz_reference_assigns_gsub_style() {
+    let path = paths::testdata().join("extra-fonts/fonts/source-serif.otf");
+    let hb_reference = std::env::var_os("SOFEL_FT_DUMP_HB")
+        .expect("SOFEL_FT_DUMP_HB must name the pinned HarfBuzz FreeType reference");
+    let default = Command::new(paths::ft_dump())
+        .args(["--auto-style", "109"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    let hb = Command::new(hb_reference)
+        .args(["--auto-style", "109"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(default.status.success());
+    assert!(hb.status.success());
+    assert_eq!(default.stdout, b"style 86\n");
+    assert_eq!(hb.stdout, b"style 57\n");
+}
+
 #[path = "../../sofel-read/tests/support/build.rs"]
 mod cff_build;
 
