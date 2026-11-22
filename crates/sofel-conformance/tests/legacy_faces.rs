@@ -517,25 +517,45 @@ fn adr0090_i3_cmr10_all_afm_and_pfm_kerning_pairs() {
             .unwrap(),
         format!("num_glyphs {}", face.num_glyphs())
     );
-    let reference_map = face_dump
-        .lines()
-        .filter_map(|line| line.strip_prefix("map "))
-        .map(|rest| {
+    let mut maps = Vec::<(u16, u16, BTreeMap<u32, usize>)>::new();
+    for line in face_dump.lines() {
+        if let Some(rest) = line.strip_prefix("cmap ") {
             let fields = rest.split_ascii_whitespace().collect::<Vec<_>>();
-            (
-                fields[0].parse::<u32>().unwrap(),
-                fields[1].parse::<usize>().unwrap(),
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
-    let cmap_results = (0..=0xffff)
-        .map(|code| {
-            (
-                format!("cmr10/cmap/{code}"),
-                face.unicode_glyph(code) == reference_map.get(&code).copied(),
-            )
-        })
-        .collect::<Vec<_>>();
+            maps.push((
+                fields[0].parse().unwrap(),
+                fields[1].parse().unwrap(),
+                BTreeMap::new(),
+            ));
+        } else if let Some(rest) = line.strip_prefix("map ") {
+            let fields = rest.split_ascii_whitespace().collect::<Vec<_>>();
+            maps.last_mut()
+                .unwrap()
+                .2
+                .insert(fields[0].parse().unwrap(), fields[1].parse().unwrap());
+        }
+    }
+    assert_eq!(maps.len(), 2);
+    let mut cmap_results = Vec::new();
+    for (platform, encoding, reference_map) in maps {
+        let kind = match (platform, encoding) {
+            (3, 1) => "unicode",
+            (7, 2) => "custom",
+            _ => panic!("unexpected cmap {platform}/{encoding}"),
+        };
+        for code in 0..=0xffff {
+            let actual = if kind == "unicode" {
+                face.unicode_glyph(code)
+            } else {
+                u8::try_from(code)
+                    .ok()
+                    .and_then(|value| face.nominal_glyph(value))
+            };
+            cmap_results.push((
+                format!("cmr10/cmap/{kind}/{code}"),
+                actual == reference_map.get(&code).copied(),
+            ));
+        }
+    }
     let expected = expect::parse(include_str!(
         "../../../conformance/expected-failures-legacy.txt"
     ));
