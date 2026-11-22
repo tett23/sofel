@@ -24,6 +24,7 @@ mod buffer;
 mod diff;
 mod digest;
 mod direction;
+mod face;
 mod fallback;
 mod feature;
 mod font;
@@ -57,6 +58,7 @@ pub use buffer::{
 };
 pub use diff::{DiffFlags, diff, diff_unicode};
 pub use direction::Direction;
+pub use face::shape_face;
 pub use feature::Feature;
 pub use font::SubFont;
 pub use glyph::{GlyphFlags, GlyphInfo, GlyphPosition};

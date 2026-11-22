@@ -17,6 +17,71 @@ fn read_error(error: PfrError) -> ReadError {
 }
 
 impl<'a> PfrFace<'a> {
+    pub(crate) fn bitmap_only(&self) -> bool {
+        !self.0.has_outlines()
+    }
+
+    pub(crate) fn bitmap_advance(
+        &self,
+        glyph: GlyphId,
+        x: u16,
+        y: u16,
+    ) -> Result<Option<i32>, ReadError> {
+        let Some(program) = self.bitmap_program(glyph, x, y)? else {
+            return Ok(None);
+        };
+        let bytes = program.bytes;
+        let flags = *bytes.first().ok_or(ReadError::OutOfBounds)?;
+        let bearing_len = match flags & 3 {
+            0 => 1,
+            1 => 2,
+            2 => 4,
+            _ => 6,
+        };
+        let size_len = match (flags >> 2) & 3 {
+            0 => 0,
+            1 => 1,
+            2 => 2,
+            _ => 4,
+        };
+        let offset = 1usize
+            .checked_add(bearing_len)
+            .and_then(|n| n.checked_add(size_len))
+            .ok_or(ReadError::OutOfBounds)?;
+        let raw = match (flags >> 4) & 3 {
+            0 => {
+                if program.units == 0 {
+                    return Err(ReadError::InvalidValue);
+                }
+                crate::geom::mul_div(
+                    i32::from(x).saturating_mul(256),
+                    i32::from(program.advance),
+                    i32::from(program.units),
+                )
+            }
+            1 => i32::from(i8::from_be_bytes([*bytes
+                .get(offset)
+                .ok_or(ReadError::OutOfBounds)?]))
+            .saturating_mul(256),
+            2 => {
+                let pair = bytes
+                    .get(offset..)
+                    .and_then(|b| b.first_chunk::<2>())
+                    .ok_or(ReadError::OutOfBounds)?;
+                i32::from(i16::from_be_bytes(*pair))
+            }
+            _ => {
+                let triple = bytes
+                    .get(offset..)
+                    .and_then(|b| b.first_chunk::<3>())
+                    .ok_or(ReadError::OutOfBounds)?;
+                let [a, b, c] = *triple;
+                i32::from_be_bytes([if a & 0x80 != 0 { 0xff } else { 0 }, a, b, c])
+            }
+        };
+        Ok(Some(((raw >> 2).saturating_add(32)) & !63))
+    }
+
     /// The face as read by `sofel-pfr`.
     pub fn inner(&self) -> &sofel_pfr::PfrFace<'a> {
         &self.0
@@ -32,6 +97,18 @@ impl<'a> PfrFace<'a> {
     /// Coordinate units per em of the physical outlines.
     pub fn units_per_em(&self) -> u16 {
         self.0.units_per_em()
+    }
+    /// Number of embedded bitmap strikes.
+    pub fn strike_count(&self) -> u32 {
+        self.0.strike_count()
+    }
+    /// Horizontal and vertical ppem in 26.6 pixels for an embedded strike.
+    pub fn strike(&self, index: u32) -> Option<(u32, u32)> {
+        self.0.strike(index)
+    }
+    /// Unscaled horizontal adjustment from PFR physical kerning pairs.
+    pub fn kerning(&self, left: GlyphId, right: GlyphId) -> Option<i32> {
+        self.0.kerning(left.0, right.0)
     }
     /// Finds a character in the sorted physical character directory.
     pub fn nominal_glyph(&self, code: u32) -> Option<GlyphId> {

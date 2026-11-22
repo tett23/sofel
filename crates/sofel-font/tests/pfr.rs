@@ -3,7 +3,7 @@
     clippy::indexing_slicing,
     clippy::unwrap_used
 )]
-use sofel_font::{Font, read::GlyphId};
+use sofel_font::{Face, Font, read::GlyphId};
 
 // Logical directory at 58, identity logical font at 65, physical font at
 // 83, and an empty outline program at GPS-relative offset 1.
@@ -95,4 +95,47 @@ fn adr0065_i2_decode_bounds_pfr_requires_outlines_or_strikes() {
     let mut bitmap = bitmap_font(&[4, 0, 0x32, 0xa8]);
     bitmap[131] = 0;
     assert!(Font::from_pfr(&bitmap, 0).is_ok());
+}
+
+#[test]
+fn adr0100_i1_pfr_strike_enumeration() {
+    let data = bitmap_font(&[4, 0, 0x32, 0xa8]);
+    let face = Font::from_pfr(&data, 0).unwrap();
+    assert_eq!(face.strike_count(), 1);
+    assert_eq!(face.strike(0), Some((12 * 64, 12 * 64)));
+    assert_eq!(face.strike(1), None);
+}
+
+#[test]
+fn adr0100_i2_pfr_nonzero_kerning_pair() {
+    let mut data = pfr();
+    data[97] = 128;
+    data.splice(100..100, [1, 7, 4, 1, 0xff, 0xb0, 0, 65, 65, 0]);
+    for (at, value) in [(23, 47), (26, 47), (79, 47), (37, 130)] {
+        data[at] = value;
+    }
+    let face = Font::from_pfr(&data, 0).unwrap();
+    assert_eq!(face.kerning(GlyphId(1), GlyphId(1)), Some(-80));
+    assert_eq!(face.kerning(GlyphId(0), GlyphId(1)), Some(0));
+    assert_eq!(
+        Face::from(&face).kerning(GlyphId(1), GlyphId(1), 1000, None),
+        Ok((-5120, 0))
+    );
+}
+
+#[test]
+fn adr0100_i1_pfr_selected_bitmap_advance_uses_bitmap_program() {
+    let data = bitmap_font(&[0x14, 0, 0x32, 3, 0xa8]);
+    let face = Font::from_pfr(&data, 0).unwrap();
+    assert_eq!(Face::Pfr(&face).h_advance(GlyphId(1), 12, Some(0)), Ok(192));
+    assert_eq!(Face::Pfr(&face).h_advance(GlyphId(1), 12, None), Ok(384));
+}
+
+#[test]
+fn adr0100_i4_bitmap_only_pfr_selects_first_matching_strike() {
+    let mut data = bitmap_font(&[0x14, 0, 0x32, 3, 0xa8]);
+    data[131] = 0;
+    let face = Font::from_pfr(&data, 0).unwrap();
+    assert_eq!(Face::Pfr(&face).h_advance(GlyphId(1), 12, None), Ok(192));
+    assert!(Face::Pfr(&face).h_advance(GlyphId(1), 13, None).is_err());
 }

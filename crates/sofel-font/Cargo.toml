@@ -9,10 +9,14 @@ rust-version.workspace = true
 
 [dependencies]
 sofel-bitmapfont = { path = "../sofel-bitmapfont" }
+sofel-bzip2 = { path = "../sofel-bzip2" }
+sofel-inflate = { path = "../sofel-inflate" }
+sofel-lzw = { path = "../sofel-lzw" }
 sofel-pfr = { path = "../sofel-pfr" }
 sofel-geom = { path = "../sofel-geom" }
 sofel-read = { path = "../sofel-read" }
 sofel-type1 = { path = "../sofel-type1" }
+sofel-woff = { path = "../sofel-woff" }
 
 [lints]
 workspace = true
