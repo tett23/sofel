@@ -23,6 +23,13 @@ pub fn ft_dump() -> PathBuf {
         .map_or_else(|| root().join("target/ft-dump/ft-dump"), PathBuf::from)
 }
 
+pub fn ft_dump_hb() -> PathBuf {
+    std::env::var_os("SOFEL_FT_DUMP_HB").map_or_else(
+        || root().join("target/ft-dump/ft-dump-harfbuzz"),
+        PathBuf::from,
+    )
+}
+
 pub fn hb_dump() -> PathBuf {
     std::env::var_os("SOFEL_HB_DUMP")
         .map_or_else(|| root().join("target/hb-dump/hb-dump"), PathBuf::from)
