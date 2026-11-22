@@ -151,13 +151,11 @@ fn adr0085_i1_default_cmap_only_matches_prior_reference() {
             "{}",
             String::from_utf8_lossy(&stderr)
         );
-        let reference = Command::new(
-            std::env::var_os("SOFEL_FT_DUMP").unwrap_or_else(|| "target/ft-dump/ft-dump".into()),
-        )
-        .args(["--hint-slot", "14", &glyph.to_string(), "auto", "normal"])
-        .arg(&path)
-        .output()
-        .unwrap();
+        let reference = Command::new(sofel_conformance::paths::ft_dump())
+            .args(["--hint-slot", "14", &glyph.to_string(), "auto", "normal"])
+            .arg(&path)
+            .output()
+            .unwrap();
         assert!(reference.status.success());
         assert_eq!(stdout, reference.stdout, "glyph {glyph}");
     }
