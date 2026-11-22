@@ -187,6 +187,21 @@ fn rewrite_calls(
     Some(out)
 }
 
+fn insert_drop(drops: &mut BTreeMap<usize, HintTrace>, mut hint: HintTrace) {
+    let overlaps: Vec<_> = drops
+        .iter()
+        .filter(|(_, old)| old.start <= hint.end && hint.start <= old.end)
+        .map(|(&start, _)| start)
+        .collect();
+    for start in overlaps {
+        if let Some(old) = drops.remove(&start) {
+            hint.start = hint.start.min(old.start);
+            hint.end = hint.end.max(old.end);
+        }
+    }
+    drops.insert(hint.start, hint);
+}
+
 fn keep_subrs(
     fonts: &Fonts<'_>,
     glyphs: &[(u32, u32)],
@@ -242,31 +257,30 @@ fn keep_subrs(
                         .checked_add(usize::try_from(size).ok()?)?;
                 }
 
-                if !hint.can_follow_call
-                    && env
-                        .call_trace()?
-                        .iter()
-                        .any(|call| call.source == hint.source && call.end <= hint.start)
-                {
-                    return None;
-                }
                 let drops = if hint.source == Source::Glyph {
                     &mut direct_drops
                 } else {
                     subr_drops.entry((fd, hint.source)).or_default()
                 };
-                if drops
-                    .insert(hint.start, hint)
-                    .is_some_and(|old| old != hint)
-                {
-                    return None;
-                }
+                insert_drop(drops, hint);
             }
         }
         // Examine callees before their callers so removed nested calls count toward
         // the byte ranges discarded from their containing subroutine.
         for trace in env.call_trace()?.iter().rev() {
             if trace.source != Source::Glyph && parsed.contains(&(fd, trace.source)) {
+                continue;
+            }
+            let source_drops = if trace.source == Source::Glyph {
+                Some(&direct_drops)
+            } else {
+                subr_drops.get(&(fd, trace.source))
+            };
+            if source_drops.is_some_and(|drops| {
+                drops
+                    .values()
+                    .any(|drop| drop.start <= trace.start && trace.end <= drop.end)
+            }) {
                 continue;
             }
             let target = match trace.target {
@@ -286,8 +300,8 @@ fn keep_subrs(
                 } else {
                     subr_drops.entry((fd, trace.source)).or_default()
                 };
-                drops.insert(
-                    trace.start,
+                insert_drop(
+                    drops,
                     HintTrace {
                         source: trace.source,
                         start: trace.start,
@@ -348,6 +362,32 @@ fn keep_subrs(
             .any(|key| subr_sites.contains_key(key))
     {
         return None;
+    }
+    // Calls that only produced removed hint arguments can have been traced
+    // before their containing prefix was discarded. Keep only the closure
+    // reachable through surviving call sites.
+    global_used.clear();
+    for used in &mut local_used {
+        used.clear();
+    }
+    visited.clear();
+    let mut pending = Vec::new();
+    for (_, _, fd, sites, _, _) in &glyph_sites {
+        pending.extend(sites.iter().map(|site| (*fd, *site)));
+    }
+    while let Some((fd, site)) = pending.pop() {
+        let source = if site.local {
+            local_used.get_mut(fd)?.insert(site.old);
+            Source::Local(site.old)
+        } else {
+            global_used.insert(site.old);
+            Source::Global(site.old)
+        };
+        if visited.insert((fd, source))
+            && let Some(sites) = subr_sites.get(&(fd, source))
+        {
+            pending.extend(sites.values().map(|site| (fd, *site)));
+        }
     }
     let gmap: BTreeMap<_, _> = global_used.iter().copied().zip(0u32..).collect();
     let lmaps: Vec<BTreeMap<_, _>> = local_used
