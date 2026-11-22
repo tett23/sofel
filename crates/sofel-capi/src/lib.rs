@@ -4057,6 +4057,63 @@ pub unsafe extern "C" fn sofel_render_glyph(
     ))
 }
 
+/// `sofel_render_auto_hinted_glyph`.
+///
+/// # Safety
+/// The handles and output buffers follow [`sofel_render_glyph`]; `cache` is
+/// made for the same font and location, and `properties` is NULL or readable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_render_auto_hinted_glyph(
+    font: *const SofelFont,
+    location: *const SofelLocation,
+    glyph: u32,
+    ppem: u16,
+    cache: *mut SofelAutoHintCache,
+    properties: *const SofelHintProperties,
+    scratch: *mut SofelOutlineScratch,
+    rasterizer: *mut SofelRasterizer,
+    pixels: *mut u8,
+    capacity: usize,
+    len: *mut usize,
+    box_: *mut i32,
+) -> i32 {
+    // SAFETY: pointers follow the contract above.
+    let (font, location, cache, properties, scratch, rasterizer, pixels, len, b) = unsafe {
+        (
+            r(font),
+            r(location),
+            w(cache),
+            r(properties),
+            w(scratch),
+            w(rasterizer),
+            out_array(pixels, capacity),
+            w(len),
+            ints::<4>(box_),
+        )
+    };
+    let out = BitmapOut { pixels, len, b };
+    status((|| {
+        let (font, cache, scratch, rasterizer) =
+            (some(font)?, some(cache)?, some(scratch)?, some(rasterizer)?);
+        out.check()?;
+        let properties = properties.map_or(Ok(HintProperties::default()), |value| value.parse())?;
+        let bitmap = sofel_glyph_render::render_auto_hinted(
+            &outlines_at(font, location),
+            GlyphId(glyph),
+            ppem,
+            &mut cache.cache,
+            &properties,
+            &mut scratch.scratch,
+            &mut rasterizer.raster,
+        )
+        .map_err(|e| match e {
+            RenderError::Outline(e) => outline_error(e),
+            RenderError::Raster(e) => raster_error(e),
+        });
+        out.put(bitmap)
+    })())
+}
+
 fn image_out(image: &sofel_raster::BgraImage, out: BitmapOut<'_>) -> Status {
     let (pixels, len, b) = (some(out.pixels)?, some(out.len)?, some(out.b)?);
     *len = image.pixels.len();

@@ -291,5 +291,7 @@ sofel_glyph_render::render_bare_cff Bare CFF files are read by the tools only; t
 sofel_glyph_render::render_cid CID-keyed Type 1 files are read by the tools only; the function moved from sofel-cli unchanged (ADR 0087).
 sofel_glyph_render::render_pfr PFR files are read by the tools only; the function moved from sofel-cli unchanged (ADR 0087).
 sofel_glyph_render::render_mono The monochrome render mode is used by the tools and the conformance tests; the C ABI renders gray bitmaps (sofel_render_glyph), and the function moved from sofel-cli unchanged (ADR 0087).
+sofel_glyph_render::render_loaded Rust helper that rasterizes an already loaded outline; C composes sofel_outline_decompose and sofel_rasterizer_render_placed for this operation (ADR 0086).
+sofel_outline::AutoHintCache::default_style_for_script Converts FreeType script indices to internal styles for GSUB setup; C passes the script property to the hinted load (ADR 0086).
 sofel_glyph_render::render_colr_v0 COLR version 0 only, for the FreeType comparison of the tools; C uses sofel_render_color_glyph, which covers it (ADR 0087).
 sofel_glyph_render::color_raster::* The OT-SVG painter and scene rasterizer that render_color uses internally; C gets their pixels from sofel_render_color_glyph (ADR 0087).

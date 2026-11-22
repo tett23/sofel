@@ -142,6 +142,15 @@ pub struct AutoHintCache {
 }
 
 impl AutoHintCache {
+    /// The default-coverage style for a FreeType `AF_Script` enum value.
+    /// Unknown values and scripts with only feature styles have no default style.
+    pub fn default_style_for_script(script: u32) -> Option<u16> {
+        STYLES
+            .iter()
+            .position(|style| style.default_coverage && u32::from(style.script) == script)
+            .and_then(|index| u16::try_from(index).ok())
+    }
+
     /// The cache for `outlines`: assigns every glyph to a style through
     /// the Unicode cmap, as FreeType's
     /// `af_face_globals_compute_style_coverage` does without HarfBuzz.
@@ -175,10 +184,7 @@ impl AutoHintCache {
         let fallback = properties
             .fallback_script
             .map_or(Ok(STYLE_FALLBACK), |script| {
-                STYLES
-                    .iter()
-                    .position(|style| style.default_coverage && u32::from(style.script) == script)
-                    .and_then(|index| u16::try_from(index).ok())
+                Self::default_style_for_script(script)
                     .ok_or(HintPropertyError::InvalidFallbackScript)
             })?;
         let mut cache = AutoHintCache::new(outlines);
