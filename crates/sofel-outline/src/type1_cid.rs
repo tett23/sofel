@@ -3,6 +3,7 @@
 use alloc::vec::Vec;
 
 use sofel_font::CidFace;
+use sofel_font::read::cff::Type1HorizontalStemMap;
 use sofel_geom::{FnPen, Pen, Point, mul_fix};
 
 use crate::{CBox, HintTarget, OutlineError, OutlineInfo, Scale, ps_native};
@@ -33,8 +34,8 @@ pub fn draw_cid(
 }
 
 /// Draw a CID-keyed Type 1 glyph at Adobe's native path scale and return its
-/// grid-fitted horizontal advance. One horizontal stem without blue zones is
-/// supported for every load target.
+/// grid-fitted horizontal advance. Horizontal stems declared before the path,
+/// without blue zones, are supported for every load target.
 pub fn draw_cid_native(
     face: &CidFace,
     cid: usize,
@@ -63,7 +64,16 @@ pub fn draw_cid_native(
         return Err(OutlineError::UnsupportedFormat);
     }
     let mut state = State::new(scale, matrix, true, pen);
-    if let Some((position, width)) = scan.h_stem {
+    if scan.h_stems.len() > 1 {
+        let stems: Vec<_> = scan
+            .h_stems
+            .iter()
+            .map(|&(position, width)| (position.wrapping_shl(16), width.wrapping_shl(16)))
+            .collect();
+        state.h_stem_map = Type1HorizontalStemMap::new(&stems, ps_native::path_scale(y))
+            .ok_or(OutlineError::UnsupportedFormat)
+            .map(Some)?;
+    } else if let Some((position, width)) = scan.h_stem {
         state.h_stem_shift =
             ps_native::single_hstem_shift(i64::from(position) << 16, i64::from(width) << 16, y)
                 .ok_or(OutlineError::UnsupportedFormat)?;
@@ -129,10 +139,11 @@ fn decode_program<P: Pen>(
                 state.has_stems = true;
                 if op == 1 {
                     if let [position, width] = stack.as_slice() {
-                        if !state.emitted
-                            && (state.h_stem.is_none() || state.h_stem == Some((*position, *width)))
-                        {
-                            state.h_stem = Some((*position, *width));
+                        if !state.emitted {
+                            state.h_stem.get_or_insert((*position, *width));
+                            if !state.h_stems.contains(&(*position, *width)) {
+                                state.h_stems.push((*position, *width));
+                            }
                         } else {
                             state.unsupported_stem_map = true;
                         }
@@ -271,7 +282,9 @@ struct State<'a, P: Pen> {
     has_stems: bool,
     native: bool,
     h_stem: Option<(i32, i32)>,
+    h_stems: Vec<(i32, i32)>,
     h_stem_shift: i64,
+    h_stem_map: Option<Type1HorizontalStemMap>,
     unsupported_stem_map: bool,
 }
 
@@ -289,7 +302,9 @@ impl<'a, P: Pen> State<'a, P> {
             has_stems: false,
             native,
             h_stem: None,
+            h_stems: Vec::new(),
             h_stem_shift: 0,
+            h_stem_map: None,
             unsupported_stem_map: false,
         }
     }
@@ -301,7 +316,16 @@ impl<'a, P: Pen> State<'a, P> {
         {
             let (px, py) = (
                 ps_native::coordinate(x, sx),
-                ps_native::coordinate_fixed_shifted(i64::from(y) << 16, sy, self.h_stem_shift),
+                self.h_stem_map.map_or_else(
+                    || {
+                        ps_native::coordinate_fixed_shifted(
+                            i64::from(y) << 16,
+                            sy,
+                            self.h_stem_shift,
+                        )
+                    },
+                    |map| map.map(y.wrapping_shl(16)) >> 10,
+                ),
             );
             let p = Point {
                 x: mul_fix(px, xx)

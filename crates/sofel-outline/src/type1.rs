@@ -5,6 +5,7 @@
 use alloc::vec::Vec;
 
 use sofel_font::Type1Face;
+use sofel_font::read::cff::Type1HorizontalStemMap;
 use sofel_geom::{FnPen, Pen, Point, mul_fix};
 
 use crate::{CBox, HintTarget, OutlineError, OutlineInfo, Scale, ps_native};
@@ -27,9 +28,9 @@ pub fn draw_type1(
 }
 
 /// Draw a Type 1 glyph at Adobe's native path scale and return its
-/// grid-fitted horizontal advance. One horizontal stem without blue zones is
-/// supported for every load target. The caller supplies FreeType's 16.16
-/// size scale.
+/// grid-fitted horizontal advance. Horizontal stems declared before the
+/// path, without blue zones, are supported for every load target. The caller
+/// supplies FreeType's 16.16 size scale.
 pub fn draw_type1_native(
     face: &Type1Face<'_>,
     glyph: usize,
@@ -55,7 +56,21 @@ pub fn draw_type1_native(
         return Err(OutlineError::UnsupportedFormat);
     }
     let mut state = State::new(scale, [65536, 0, 0, 65536, 0, 0], true, pen);
-    if let Some((position, width)) = scan.h_stem {
+    if scan.h_stems.len() > 1 {
+        let stems = scan
+            .h_stems
+            .iter()
+            .map(|&(position, width)| {
+                Ok((
+                    i32::try_from(position).map_err(|_| OutlineError::UnsupportedFormat)?,
+                    i32::try_from(width).map_err(|_| OutlineError::UnsupportedFormat)?,
+                ))
+            })
+            .collect::<Result<Vec<_>, OutlineError>>()?;
+        state.h_stem_map = Type1HorizontalStemMap::new(&stems, ps_native::path_scale(y))
+            .ok_or(OutlineError::UnsupportedFormat)
+            .map(Some)?;
+    } else if let Some((position, width)) = scan.h_stem {
         state.h_stem_shift = ps_native::single_hstem_shift(position, width, y)
             .ok_or(OutlineError::UnsupportedFormat)?;
     }
@@ -123,10 +138,11 @@ fn decode_program<P: Pen>(
                 state.has_stems = true;
                 if op == 1 {
                     if let [position, width] = stack.as_slice() {
-                        if !state.emitted
-                            && (state.h_stem.is_none() || state.h_stem == Some((*position, *width)))
-                        {
-                            state.h_stem = Some((*position, *width));
+                        if !state.emitted {
+                            state.h_stem.get_or_insert((*position, *width));
+                            if !state.h_stems.contains(&(*position, *width)) {
+                                state.h_stems.push((*position, *width));
+                            }
                         } else {
                             state.unsupported_stem_map = true;
                         }
@@ -424,7 +440,9 @@ struct State<'a, P: Pen> {
     /// Inside a `seac` component, where `seac` may not nest.
     in_seac: bool,
     h_stem: Option<(i64, i64)>,
+    h_stems: Vec<(i64, i64)>,
     h_stem_shift: i64,
+    h_stem_map: Option<Type1HorizontalStemMap>,
     unsupported_stem_map: bool,
     flex: Option<Flex>,
 }
@@ -453,7 +471,9 @@ impl<'a, P: Pen> State<'a, P> {
             side_bearing: 0,
             in_seac: false,
             h_stem: None,
+            h_stems: Vec::new(),
             h_stem_shift: 0,
+            h_stem_map: None,
             unsupported_stem_map: false,
             flex: None,
         }
@@ -465,7 +485,10 @@ impl<'a, P: Pen> State<'a, P> {
         {
             let p = Point {
                 x: ps_native::coordinate_fixed(x, sx),
-                y: ps_native::coordinate_fixed_shifted(y, sy, self.h_stem_shift),
+                y: self.h_stem_map.map_or_else(
+                    || ps_native::coordinate_fixed_shifted(y, sy, self.h_stem_shift),
+                    |map| map.map(sofel_font::read::cff::ft::to_i32(y)) >> 10,
+                ),
             };
             self.update_box(p);
             return p;

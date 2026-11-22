@@ -767,6 +767,47 @@ pub(crate) fn build<const N: usize>(
     build_one(map, Some(initial), stems, mask, origin, false)
 }
 
+/// Adobe's piecewise y-coordinate map for Type 1 horizontal stems without blue zones.
+#[derive(Clone, Copy, Debug)]
+pub struct Type1HorizontalStemMap {
+    map: HintMap<MAX_EDGES>,
+}
+
+impl Type1HorizontalStemMap {
+    /// Builds one map from the stems present before the path starts. Each pair
+    /// holds its lower edge and width in signed 16.16 character coordinates.
+    pub fn new(stems: &[(i32, i32)], scale: i32) -> Option<Self> {
+        if stems.is_empty() || stems.len() > MAX_HINTS {
+            return None;
+        }
+        let mut hints = [StemHint::default(); MAX_HINTS];
+        for (hint, &(position, width)) in hints.iter_mut().zip(stems) {
+            if width <= 0 {
+                return None;
+            }
+            *hint = StemHint::new(position, position.checked_add(width)?);
+        }
+        let private = PrivateDict::default();
+        let blues = Blues::new(&private, scale);
+        let mut stems = Stems {
+            h: &mut hints,
+            h_count: stems.len(),
+            v_count: 0,
+            blues: Some(&blues),
+        };
+        let mut map = HintMap::new(scale);
+        let mut initial = HintMap::new(scale);
+        let mut mask = HintMask::default();
+        build(&mut map, &mut initial, &mut stems, &mut mask, 0).ok()?;
+        Some(Self { map })
+    }
+
+    /// Maps one signed 16.16 character coordinate to signed 16.16 device pixels.
+    pub fn map(&self, coordinate: i32) -> i32 {
+        self.map.map(coordinate)
+    }
+}
+
 fn build_one<const N: usize>(
     map: &mut HintMap<N>,
     initial: Option<&HintMap<N>>,
