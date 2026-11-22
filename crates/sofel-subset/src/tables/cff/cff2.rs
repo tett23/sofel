@@ -221,7 +221,6 @@ fn keep_subrs(
     let mut visited = BTreeSet::new();
     let mut parsed = BTreeSet::new();
     let mut mask_sizes = BTreeMap::new();
-    let mut contextual_masks = BTreeSet::new();
     for &(new, old) in glyphs {
         let fd = usize::try_from(fonts.fd(old)).ok()?;
         let p = fonts.programs(u32::try_from(fd).ok()?);
@@ -232,12 +231,9 @@ fn keep_subrs(
         }
         for mask in env.mask_trace() {
             if mask.source != Source::Glyph {
-                let first = mask_sizes
+                mask_sizes
                     .entry((fd, mask.source, mask.at))
                     .or_insert(mask.size);
-                if *first != mask.size {
-                    contextual_masks.insert((fd, mask.source));
-                }
             }
         }
         let mut direct = BTreeMap::new();
@@ -355,17 +351,6 @@ fn keep_subrs(
             direct_drops.into_values().collect::<Vec<_>>(),
             env.hint_prefix(),
         ));
-    }
-    // An unchanged program can keep both interpretations. Rewriting a call
-    // could replace bytes consumed as mask data by another invocation. With
-    // hints removed, the first parsed interpretation supplies both the dropped
-    // masks and the surviving call sites.
-    if !drop_hints
-        && contextual_masks
-            .iter()
-            .any(|key| subr_sites.contains_key(key))
-    {
-        return None;
     }
     // Calls that only produced removed hint arguments can have been traced
     // before their containing prefix was discarded. Keep only the closure
