@@ -431,3 +431,86 @@ fn adr0100_i2_real_sfnt_fixed_strike_images_match_freetype() -> Result<(), &'sta
     assert_eq!(checked, if png_dump.is_some() { 4867 } else { 1021 });
     Ok(())
 }
+
+#[test]
+fn adr0100_i1_i2_type42_embedded_sbix_strike_matches_embedded_face() {
+    let path = paths::testdata().join("extra-fonts/fonts/color-sbix.ttf");
+    let bytes = std::fs::read(&path).unwrap();
+    let data = FaceData::new(&bytes).unwrap();
+    let opened = data.open(0).unwrap();
+    let sofel_font::Face::Sfnt(font) = opened.as_face() else {
+        return;
+    };
+    let strike = strikes(font).next().unwrap();
+    let ids = (0..font.num_glyphs())
+        .filter(|&glyph| sofel_bitmap::glyph_bitmap(font, &strike, glyph).is_some())
+        .collect::<Vec<_>>();
+    assert_eq!(ids.len(), 9);
+    let count = u16::from_be_bytes(bytes.get(4..6).unwrap().try_into().unwrap());
+    let tables = (0..usize::from(count))
+        .map(|index| {
+            let at = 12 + index * 16;
+            let tag = sofel_read::Tag::new(bytes.get(at..at + 4).unwrap().try_into().unwrap());
+            (tag, font.table(tag).unwrap())
+        })
+        .collect::<Vec<_>>();
+    let packed = sofel_write::build_sfnt(&tables).unwrap();
+    let hex = packed
+        .chunks(32_760)
+        .map(|chunk| {
+            format!(
+                "<{}>\n",
+                chunk
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>()
+            )
+        })
+        .collect::<String>();
+    let chars = ids
+        .iter()
+        .map(|id| format!("/G{id} {id} def\n"))
+        .collect::<String>();
+    let wrapper = format!(
+        "%!PS-TrueTypeFont-1.0\n/FontName /TestSbix def\n/FontType 42 def\n/FontMatrix [1 0 0 1 0 0] def\n/FontBBox [0 0 1000 1000] def\n/PaintType 0 def\n/Encoding StandardEncoding def\n/CharStrings {} dict dup begin\n/.notdef 0 def\n{chars}end readonly def\n/sfnts [\n{hex}] def\n",
+        ids.len() + 1
+    );
+    let wrapped = FaceData::new(wrapper.as_bytes()).unwrap();
+    let opened = wrapped.open(0).unwrap();
+    let outer = opened.as_face();
+    assert_eq!(outer.glyph_count(), 10);
+    assert_eq!(outer.strike_count(), 1);
+    let inner_data = FaceData::new(&packed).unwrap();
+    let inner_opened = inner_data.open(0).unwrap();
+    let inner = inner_opened.as_face();
+    for (outer_id, inner_id) in ids.iter().enumerate() {
+        let outer_id = GlyphId(u32::try_from(outer_id + 1).unwrap());
+        let inner_id = GlyphId(*inner_id);
+        assert_eq!(
+            outer.h_advance(outer_id, 109, Some(0)),
+            inner.h_advance(inner_id, 109, Some(0))
+        );
+        let (mut a, mut b) = (Scratch::default(), Scratch::default());
+        let (mut ra, mut rb) = (Rasterizer::new(), Rasterizer::new());
+        assert_eq!(
+            render_face(outer, outer_id, 109, Some(0), &mut a, &mut ra),
+            render_face(inner, inner_id, 109, Some(0), &mut b, &mut rb)
+        );
+    }
+    // FreeType's Type42 parser checks the remaining source length after sfnts.
+    let mut ft_wrapper = wrapper;
+    ft_wrapper.extend(std::iter::repeat_n(' ', packed.len() * 3));
+    let path = std::env::temp_dir().join(format!(
+        "sofel-common-type42-sbix-{}.t42",
+        std::process::id()
+    ));
+    std::fs::write(&path, ft_wrapper).unwrap();
+    let output = Command::new(paths::ft_dump())
+        .arg("--sbit")
+        .arg(&path)
+        .output()
+        .unwrap();
+    std::fs::remove_file(path).unwrap();
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"face 0\nend\n");
+}
