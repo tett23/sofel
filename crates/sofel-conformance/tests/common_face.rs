@@ -1,7 +1,9 @@
 //! Common face operations over the real legacy corpus (root ADR 0100).
 #![allow(clippy::unwrap_used)]
 
-use std::process::Command;
+use std::collections::BTreeMap;
+use std::io::{BufRead, BufReader};
+use std::process::{Command, Stdio};
 
 use sofel_bitmap::strikes;
 use sofel_conformance::paths;
@@ -10,6 +12,10 @@ use sofel_font::read::GlyphId;
 use sofel_glyph_render::render_face;
 use sofel_outline::Scratch;
 use sofel_raster::Rasterizer;
+
+#[path = "../../sofel-cli/tests/support/pfr.rs"]
+#[allow(dead_code)]
+mod pfr_fixture;
 
 #[test]
 fn adr0100_i1_i2_real_legacy_face_counts_and_unicode_maps() {
@@ -136,6 +142,101 @@ fn adr0100_i1_i2_real_bitmap_and_type1_advances() {
 }
 
 #[test]
+fn adr0100_i2_real_type1_all_afm_and_pfm_pairs_match_freetype() {
+    let path = paths::testdata().join("extra-fonts/fonts/cmr10.pfb");
+    let bytes = std::fs::read(&path).unwrap();
+    let data = FaceData::new(&bytes).unwrap();
+    let mut checked = 0;
+    for extension in ["afm", "pfm"] {
+        let attachment = path.with_extension(extension);
+        let metrics = std::fs::read(&attachment).unwrap();
+        let mut opened = data.open(0).unwrap();
+        if extension == "afm" {
+            opened.attach_afm(&metrics).unwrap();
+        } else {
+            opened.attach_pfm(&metrics).unwrap();
+        }
+        let output = Command::new(paths::ft_dump())
+            .arg("--legacy-kerning")
+            .arg(&path)
+            .arg(&attachment)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{extension}");
+        let pairs = String::from_utf8(output.stdout)
+            .unwrap()
+            .lines()
+            .filter_map(|line| {
+                let fields = line.split_ascii_whitespace().collect::<Vec<_>>();
+                let ["kern", left, right, x, y] = fields.as_slice() else {
+                    return None;
+                };
+                Some((
+                    (left.parse::<u32>().unwrap(), right.parse::<u32>().unwrap()),
+                    (x.parse::<i32>().unwrap(), y.parse::<i32>().unwrap()),
+                ))
+            })
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(pairs.len(), 181, "{extension}");
+        let face = opened.as_face();
+        let scale = sofel_geom::div_fix(20 * 64, 1000);
+        for left in 0..face.glyph_count() {
+            for right in 0..face.glyph_count() {
+                let (x, y) = pairs.get(&(left, right)).copied().unwrap_or((0, 0));
+                assert_eq!(
+                    face.kerning(GlyphId(left), GlyphId(right), 20, None),
+                    Ok((sofel_geom::mul_fix(x, scale), sofel_geom::mul_fix(y, scale))),
+                    "{extension}: {left}/{right}"
+                );
+                checked += 1;
+            }
+        }
+    }
+    assert_eq!(checked, 2 * 132 * 132);
+}
+
+#[test]
+fn adr0100_i2_pfr_nonzero_pair_matches_freetype() {
+    let bytes = pfr_fixture::with_kerning();
+    let data = FaceData::new(&bytes).unwrap();
+    let opened = data.open(0).unwrap();
+    let face = opened.as_face();
+    let path = std::env::temp_dir().join(format!("sofel-pfr-kern-{}.pfr", std::process::id()));
+    std::fs::write(&path, &bytes).unwrap();
+    let output = Command::new(paths::ft_dump())
+        .arg("--legacy-kerning")
+        .arg(&path)
+        .output()
+        .unwrap();
+    std::fs::remove_file(path).unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let lines = String::from_utf8(output.stdout).unwrap();
+    let pairs = lines
+        .lines()
+        .filter(|line| line.starts_with("kern "))
+        .collect::<Vec<_>>();
+    assert_eq!(pairs.len(), 1, "{lines}");
+    let fields = pairs
+        .first()
+        .unwrap()
+        .split_ascii_whitespace()
+        .collect::<Vec<_>>();
+    assert_eq!(fields.get(..3), Some(&["kern", "1", "1"][..]));
+    let raw = fields.get(3).unwrap().parse::<i32>().unwrap();
+    assert_eq!(raw, -120);
+    assert_eq!(fields.get(4), Some(&"0"));
+    let scale = sofel_geom::div_fix(20 * 64, 1000);
+    assert_eq!(
+        face.kerning(GlyphId(1), GlyphId(1), 20, None),
+        Ok((sofel_geom::mul_fix(raw, scale), 0))
+    );
+}
+
+#[test]
 fn adr0100_i1_i2_real_sfnt_fixed_strike_advances() -> Result<(), &'static str> {
     for name in ["spleen-8x16.dfont", "color-noto-cbdt.ttf", "color-sbix.ttf"] {
         let path = paths::testdata().join("extra-fonts/fonts").join(name);
@@ -216,7 +317,11 @@ fn adr0100_i1_i2_real_sfnt_fixed_strike_advances() -> Result<(), &'static str> {
 #[test]
 fn adr0100_i2_real_sfnt_fixed_strike_images_match_freetype() -> Result<(), &'static str> {
     let mut checked = 0;
+    let png_dump = std::env::var_os("SOFEL_FT_PNG_DUMP");
     for name in ["spleen-8x16.dfont", "color-noto-cbdt.ttf", "color-sbix.ttf"] {
+        if name.ends_with(".ttf") && png_dump.is_none() {
+            continue;
+        }
         let path = paths::testdata().join("extra-fonts/fonts").join(name);
         let bytes = std::fs::read(&path).unwrap();
         let data = FaceData::new(&bytes).unwrap();
@@ -226,16 +331,22 @@ fn adr0100_i2_real_sfnt_fixed_strike_images_match_freetype() -> Result<(), &'sta
             return Err("sfnt expected");
         };
         let sizes = strikes(font).collect::<Vec<_>>();
-        let output = Command::new(paths::ft_dump())
+        let dump = if name.ends_with(".ttf") {
+            std::path::PathBuf::from(png_dump.as_ref().unwrap())
+        } else {
+            paths::ft_dump()
+        };
+        let mut child = Command::new(dump)
             .arg("--sbit")
             .arg(&path)
-            .output()
+            .stdout(Stdio::piped())
+            .spawn()
             .unwrap();
-        assert!(output.status.success(), "{name}");
-        let text = String::from_utf8(output.stdout).unwrap();
-        let mut lines = text.lines();
+        let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
         let mut strike_index = None;
+        let mut image_count = 0;
         while let Some(line) = lines.next() {
+            let line = line.unwrap();
             let fields = line.split_ascii_whitespace().collect::<Vec<_>>();
             match fields.as_slice() {
                 ["size", raw] => strike_index = Some(raw.parse::<u32>().unwrap()),
@@ -248,7 +359,7 @@ fn adr0100_i2_real_sfnt_fixed_strike_images_match_freetype() -> Result<(), &'sta
                     let mode = mode.parse::<u8>().unwrap();
                     let raw = (0..rows)
                         .map(|_| {
-                            let row = lines.next().unwrap();
+                            let row = lines.next().unwrap().unwrap();
                             assert_eq!(row.len(), pitch * 2, "{name}: {line}");
                             (0..pitch)
                                 .map(|x| u8::from_str_radix(&row[x * 2..x * 2 + 2], 16).unwrap())
@@ -303,11 +414,20 @@ fn adr0100_i2_real_sfnt_fixed_strike_images_match_freetype() -> Result<(), &'sta
                         .collect::<Vec<_>>();
                     assert_eq!(image.pixels, expected, "{name}: {line}");
                     checked += 1;
+                    image_count += 1;
                 }
                 _ => {}
             }
         }
+        assert!(child.wait().unwrap().success(), "{name}");
+        let expected = match name {
+            "spleen-8x16.dfont" => 1021,
+            "color-noto-cbdt.ttf" => 3837,
+            "color-sbix.ttf" => 9,
+            _ => return Err("unexpected font"),
+        };
+        assert_eq!(image_count, expected, "{name}");
     }
-    assert_eq!(checked, 1021);
+    assert_eq!(checked, if png_dump.is_some() { 4867 } else { 1021 });
     Ok(())
 }

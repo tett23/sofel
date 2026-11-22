@@ -3308,6 +3308,53 @@ static void adr0100_i6_common_face(void) {
   sofel_face_destroy(face);
 }
 
+static void adr0100_i3_i5_i6_type1_afm_shapes_through_c(void) {
+  static const char afm[] =
+      "StartFontMetrics 4.1\nStartKernPairs 1\nKPX A A -80\n"
+      "EndKernPairs\nEndFontMetrics\n";
+  size_t len = 0;
+  uint8_t *data = read_testdata("extra-fonts/fonts/cmr10.pfb", &len);
+  sofel_face_t *original, *attached;
+  sofel_buffer_t *buffer;
+  sofel_segment_t segment = {SOFEL_DIRECTION_LTR, 0, NULL};
+  sofel_feature_t no_kern;
+  uint32_t glyph = 0;
+  int32_t error = 0, advance = 0, kern_x = 0, kern_y = 0, positions[8] = {0};
+  if (data == NULL) {
+    CHECK(getenv("SOFEL_REQUIRE_TESTDATA") == NULL);
+    return;
+  }
+  original = sofel_face_create(data, len, 0, &error);
+  CHECK(original != NULL && error == SOFEL_OK);
+  if (original == NULL) { free(data); return; }
+  attached = sofel_face_with_metrics(original, (const uint8_t *)afm,
+                                     sizeof afm - 1, SOFEL_METRICS_AFM, &error);
+  CHECK(attached != NULL && error == SOFEL_OK);
+  free(data);
+  sofel_face_destroy(original);
+  if (attached == NULL) return;
+  CHECK(sofel_face_nominal_glyph(attached, 'A', &glyph) == SOFEL_OK);
+  CHECK(sofel_face_h_advance(attached, glyph, 20, UINT32_MAX, &advance) == SOFEL_OK);
+  CHECK(sofel_face_kerning(attached, glyph, glyph, 20, UINT32_MAX,
+                           &kern_x, &kern_y) == SOFEL_OK && kern_x == -102 && kern_y == 0);
+  buffer = sofel_buffer_create();
+  CHECK(buffer != NULL);
+  if (buffer != NULL) {
+    CHECK(sofel_buffer_add_utf8(buffer, "AA", 2, 0, 2) == SOFEL_OK);
+    CHECK(sofel_face_shape(attached, 20, UINT32_MAX, &segment, NULL, 0, buffer) == SOFEL_OK);
+    CHECK(sofel_buffer_glyphs(buffer, NULL, NULL, NULL, positions, 2) == 2);
+    CHECK(positions[0] + positions[4] == advance * 2 + kern_x);
+    CHECK(sofel_buffer_clear(buffer) == SOFEL_OK);
+    CHECK(sofel_buffer_add_utf8(buffer, "AA", 2, 0, 2) == SOFEL_OK);
+    CHECK(sofel_feature_parse("kern=0", 6, &no_kern) == SOFEL_OK);
+    CHECK(sofel_face_shape(attached, 20, UINT32_MAX, &segment, &no_kern, 1, buffer) == SOFEL_OK);
+    CHECK(sofel_buffer_glyphs(buffer, NULL, NULL, NULL, positions, 2) == 2);
+    CHECK(positions[0] + positions[4] == advance * 2);
+    sofel_buffer_destroy(buffer);
+  }
+  sofel_face_destroy(attached);
+}
+
 int main(void) {
   int32_t e = 12345;
   sofel_font_t *font;
@@ -3322,6 +3369,7 @@ int main(void) {
   test_unicode();
   test_open();
   adr0100_i6_common_face();
+  adr0100_i3_i5_i6_type1_afm_shapes_through_c();
 
   font = sofel_font_create(font_data, sizeof font_data, 0, &e);
   CHECK(e == SOFEL_OK);

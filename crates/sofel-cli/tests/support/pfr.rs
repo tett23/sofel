@@ -62,3 +62,17 @@ pub fn bitmap_only() -> Vec<u8> {
     }
     data
 }
+
+#[allow(dead_code)]
+pub fn with_kerning() -> Vec<u8> {
+    let mut data = triangle();
+    data[97] |= 128;
+    data.splice(
+        100..100,
+        [1, 10, 4, 1, 0xff, 0x9c, 3, 0, 65, 0, 65, 0xff, 0xec],
+    );
+    for (offset, width, value) in [(22, 2, 50u32), (24, 3, 50), (78, 2, 50), (35, 3, 133)] {
+        data[offset..offset + width].copy_from_slice(&value.to_be_bytes()[4 - width..]);
+    }
+    data
+}

@@ -478,6 +478,7 @@ end put\n%ADOEndFontDict\ndef\n(Binary) 24 StartData\n"
         ("CEF", cef),
         ("CID", cid),
         ("PFR", pfr_fixture::triangle()),
+        ("PFR-kern", pfr_fixture::with_kerning()),
         (
             "FNT",
             include_bytes!("../../sofel-bitmapfont/tests/data/mono.fnt").to_vec(),
@@ -528,6 +529,23 @@ end put\n%ADOEndFontDict\ndef\n(Binary) 24 StartData\n"
             assert_eq!(status == 0, expected.is_ok(), "{name}/{index}");
             if let Ok(expected) = expected {
                 assert_eq!(advance, expected, "{name}/{index}");
+            }
+            if name == "PFR-kern" {
+                let expected = face
+                    .kerning(
+                        sofel_font::read::GlyphId(1),
+                        sofel_font::read::GlyphId(1),
+                        ppem,
+                        None,
+                    )
+                    .unwrap();
+                let (mut x, mut y) = (0, 0);
+                // SAFETY: handle and output values are live and disjoint.
+                let status =
+                    unsafe { sofel_face_kerning(handle, 1, 1, ppem, u32::MAX, &mut x, &mut y) };
+                assert_eq!(status, 0);
+                assert_eq!((x, y), expected);
+                assert_ne!(x, 0);
             }
             let c_scratch = sofel_outline_scratch_create();
             let c_raster = sofel_rasterizer_create();
@@ -632,7 +650,7 @@ end put\n%ADOEndFontDict\ndef\n(Binary) 24 StartData\n"
         }
         std::fs::remove_file(path).unwrap();
     }
-    assert_eq!(checked, 12, "synthetic formats must contain glyphs");
+    assert_eq!(checked, 14, "synthetic formats must contain glyphs");
 }
 
 #[test]
