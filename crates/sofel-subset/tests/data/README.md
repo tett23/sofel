@@ -265,3 +265,12 @@ cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-context-call-hb15.otf" "crates/sofel-su
 "$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-no-hint-context-call-reverse-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-context-call-reverse-hb15.otf" --gids=1,2 --no-hinting
 cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-context-call-reverse-hb15.otf" "crates/sofel-subset/tests/data/cff2-no-hint-context-call-reverse-hb15.otf"
 ```
+
+## cff2-no-hint-vsindex-path-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_no_hinting_keeps_vsindex_for_blended_subroutine_paths` が組む `bytes` である。グリフに `vsindex`、サブルーチンの描画に `blend` があり、除去する stem はない。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-no-hint-vsindex-path-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-vsindex-path-hb15.otf" --gids=2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-vsindex-path-hb15.otf" "crates/sofel-subset/tests/data/cff2-no-hint-vsindex-path-hb15.otf"
+```

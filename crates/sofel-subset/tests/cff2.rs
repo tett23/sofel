@@ -927,3 +927,41 @@ fn cff2_no_hinting_rewrites_nested_calls_after_contextual_masks() {
         assert_eq!(out, expected);
     }
 }
+
+#[test]
+fn cff2_no_hinting_keeps_vsindex_for_blended_subroutine_paths() {
+    let mut programs = charstrings();
+    let mut global = programs[1].clone();
+    global.push(11);
+    programs[2] = charstring(&[Cs::I(0), Cs::Op(15), Cs::I(-107), Cs::Op(29)]);
+    let bytes = font_with_programs(vec![global], Vec::new(), programs);
+    fixture_input::export("cff2-no-hint-vsindex-path-hb15.otf", &bytes).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let out = subset(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)).unwrap();
+    assert_eq!(
+        out,
+        include_bytes!("data/cff2-no-hint-vsindex-path-hb15.otf")
+    );
+}
+
+#[test]
+fn cff2_vsindex_hint_prefix_relocation_remains_unsupported() {
+    for prefix_first in [false, true] {
+        let mut programs = charstrings();
+        let prefix = charstring(&[Cs::I(0), Cs::Op(15)]);
+        let stem = charstring(&[Cs::I(0), Cs::I(10), Cs::Op(1)]);
+        programs[2] = if prefix_first {
+            [prefix, stem, charstring(&[Cs::I(-107), Cs::Op(29)])].concat()
+        } else {
+            [stem, prefix, charstring(&[Cs::I(-107), Cs::Op(29)])].concat()
+        };
+        let mut global = programs[1].clone();
+        global.push(11);
+        let bytes = font_with_programs(vec![global], Vec::new(), programs);
+        let font = Font::new(&bytes, 0).unwrap();
+        assert!(matches!(
+            subset(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)),
+            Err(sofel_subset::SubsetError::Unsupported { .. })
+        ));
+    }
+}

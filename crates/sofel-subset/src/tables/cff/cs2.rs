@@ -408,6 +408,11 @@ impl<'a, 'c> Env<'a, 'c> {
             return;
         }
         let independent_mask = mask && self.path_started && self.args.is_empty();
+        // Removing stems can require relocating a vsindex prefix to the glyph.
+        // Until that prefix is tracked, retain only path-only uses of vsindex.
+        if self.seen_vsindex && !independent_mask {
+            self.trace_valid = false;
+        }
         if (self.path_started && !independent_mask) || !self.args.len().is_multiple_of(2) {
             self.trace_valid = false;
         }
@@ -832,9 +837,6 @@ pub(crate) trait Ops {
 
 /// `cff2_cs_opset_t::process_op` over `cs_opset_t::process_op`.
 fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
-    if env.trace_drop_hints && op == VSINDEXCS {
-        env.trace_valid = false;
-    }
     if env.trace_drop_hints
         && matches!(
             op,
@@ -948,6 +950,9 @@ fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
                 run.map(|(source, start, _, _)| (source, start, env.ctx.off, env.args.len()));
         }
         VSINDEXCS => {
+            if env.trace_drop_hints && env.hint_trace.iter().any(|hint| !hint.can_follow_call) {
+                env.trace_valid = false;
+            }
             env.process_vsindex();
             env.clear_args();
         }
