@@ -1,6 +1,6 @@
 # ADR 0099: 条件番号を決められないテストを一覧に記録して検査から除く
 
-Status: accepted-pending
+Status: accepted
 
 ## 文脈
 
