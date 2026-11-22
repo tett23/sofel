@@ -11,6 +11,7 @@
 # default target/testdata/harfbuzz source path.
 # --webfont-reference builds the table comparison tool
 # with WOFF2 enabled and requires Brotli decoder headers and library.
+# Use --brotli to keep ft-dump.c and enable WOFF2 decoding.
 # Use --filtered-lcd as the third argument for the filtered LCD reference.
 # The C compiler is $CC (default: cc).
 
@@ -33,6 +34,8 @@ if [ "$mode" = "--harfbuzz" ]; then
   set -- -DFT_CONFIG_OPTION_USE_HARFBUZZ -I "$hb_src"
 elif [ "$mode" = "--webfont-reference" ]; then
   driver=$root/tools/webfont-reference/compare.c
+  set -- -DFT_CONFIG_OPTION_USE_BROTLI -lbrotlidec
+elif [ "$mode" = "--brotli" ]; then
   set -- -DFT_CONFIG_OPTION_USE_BROTLI -lbrotlidec
 elif [ "$mode" = "--filtered-lcd" ]; then
   set -- -DFT_CONFIG_OPTION_SUBPIXEL_RENDERING

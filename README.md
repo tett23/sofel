@@ -151,7 +151,7 @@ BDF の固定サイズの画像は `--ppem`、`--char` または `--glyph` を�
 
 PCF の固定サイズの 1 bit 画像も同じ引数で PGM に変換する。PCF は 1 フェイスで、指定サイズのストライクがない場合と `--no-bitmap` を指定した場合は描画に失敗する（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
 
-Windows FNT と NE・PE32 FON の固定サイズの 1 bit 画像も同じ引数で PGM に変換する。FNT は 1 フェイスで、FON のリソースは `--face` で選ぶ。指定サイズのストライクがない場合と `--no-bitmap` を指定した場合は描画に失敗する（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
+Windows FNT と NE・PE32 FON の固定サイズの 1 bit 画像も同じ引数で PGM に変換する。FNT は 1 フェイスで、FON のリソースは `--face` で選ぶ。指定サイズのストライクがない場合、幅0のグリフ、`--no-bitmap` を指定した場合は描画に失敗する（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
 
 素の CFF 1 の輪郭は `--face` でフェイスを選び、`--char` または `--glyph` で指定して PGM に描く。`sofel render --text` は同じフェイスの文字対応と送り幅を使って一行を描く。文字の対応には PostScript グリフ名を使う（[ADR 0065](docs/adr/0065-legacy-faces-and-webfonts.md)）。
 CID-keyed の素の CFF 1 と CEF は、`--glyph` に CID を指定して描画する。
@@ -299,6 +299,8 @@ FreeTypeとの突き合わせ（[ADR 0005](docs/adr/0005-conformance-tests.md)�
 シェーピングの適合テストでは、dfont と破損したレイアウト表の固定ケースが HarfBuzz と一致する（[ADR 0058](docs/adr/0058-dfont-face-selection.md)、[ADR 0059](docs/adr/0059-layout-sanitizer-diagnostics.md)）。残る期待失敗は[ロードマップ](docs/roadmap.md)に記す。
 
 追加フォントの適合テスト（[ADR 0031](docs/adr/0031-diverse-font-corpus.md)）は、OFL 1.1またはApache-2.0の13ファイルを固定し、TTCを含む57フェイスを調べる。バイナリはリポジトリに含めず、`fonts.lock` のSHA-256とバイト数で取得する。各フォントの取得元、著作権表示とライセンス全文は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) に記録する。`conformance/fonts.tsv` はファイル、ライセンス、検証する機能を結び、`conformance/font-cases.tsv` は可変フォントの各軸の最小・最大を含むシェーピングの入力と座標を固定する。機能がまだ実装されていないケースの理由は `conformance/expected-failures-extra-fonts.txt` にケースIDごとに記す。非既定座標のメトリクスと輪郭は、Arabic、Source Serif、Amstelvarの代表10ケースで実際の位置を渡し、固定版HarfBuzzとFreeTypeにそれぞれ照合する。`conformance/expected-failures-extra-variation.txt` は、この照合の期待失敗を記す。既定座標の一致と区別する。
+
+旧形式の適合テスト（[root ADR 0090](docs/adr/0090-legacy-format-conformance-fonts.md)）では、Spleen 2.3.0 の6形式と cmr10 の PFB、PFM、AFM を同じ一覧から取得する。固定版 FreeType と文字対応、画像、輪郭、カーニングを照合し、現在の期待失敗は0件である。Linux の CI は Brotli を有効にした ft-dump で WOFF2 の表も照合する。
 
 ```sh
 sh scripts/fetch-fonts.sh

@@ -107,6 +107,12 @@ pub fn cases(
         if fields.len() < 4 {
             return Err(format!("invalid font manifest row: {row}"));
         }
+        if fields
+            .get(6)
+            .is_some_and(|features| features.split(',').any(|feature| feature == "legacy"))
+        {
+            continue;
+        }
         rows.push((fields[0].to_string(), font_dir.join(fields[3])));
     }
     if rows.is_empty() {

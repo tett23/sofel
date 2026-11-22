@@ -84,12 +84,15 @@ impl WinFont {
             .checked_sub(u32::from(self.first_char))?
             .checked_add(1)
     }
-    /// Return a glyph; zero uses the default character.
+    /// Return a drawable glyph; zero uses the default character.
+    /// FreeType rejects a zero-width FNT glyph when loading its bitmap.
     pub fn glyph(&self, id: u32) -> Option<&Glyph> {
-        self.glyphs.get(if id == 0 {
-            self.default_glyph
-        } else {
-            usize::try_from(id.checked_sub(1)?).ok()?
-        })
+        self.glyphs
+            .get(if id == 0 {
+                self.default_glyph
+            } else {
+                usize::try_from(id.checked_sub(1)?).ok()?
+            })
+            .filter(|glyph| glyph.width != 0)
     }
 }

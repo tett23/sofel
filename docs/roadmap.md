@@ -52,7 +52,6 @@ Golem はフォントを開くときに GSUB と GPOS の機能タグをすべ�
 ### 監査の指摘と旧形式の照合
 
 - **グリフを描くクレート**（未実装）：[ADR 0087](adr/0087-glyph-render-crate.md)。描画の関数を `sofel-glyph-render` に移し、`sofel-capi` から `sofel-cli` の依存を外す。
-- **旧形式の実フォントの照合**（未実装）：[ADR 0090](adr/0090-legacy-format-conformance-fonts.md)。Spleen と cmr10 を取得し、FreeType と照合する。Type1 の flex が先に要る。
 
 ### シェーピング、フォントの検証と描画、照合の記録
 

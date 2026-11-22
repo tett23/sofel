@@ -1,0 +1,2 @@
+# root ADR 0090 I3: observed against FreeType 2.15.0.
+# A listed case turning green requires removal.
