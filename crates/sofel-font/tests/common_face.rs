@@ -33,6 +33,29 @@ fn adr0100_i1_i2_common_face_bitmap_mapping_metrics_and_pixels() {
 }
 
 #[test]
+fn adr0100_i1_i4_fractional_fixed_strike_rounds_to_requested_ppem() {
+    let input = std::str::from_utf8(BDF)
+        .unwrap()
+        .replace("SIZE 8 72 72", "SIZE 7 82 82");
+    let data = FaceData::new(input.as_bytes()).unwrap();
+    let opened = data.open(0).unwrap();
+    let face = opened.as_face();
+    assert_eq!(face.strike(0), Some((510, 510)));
+    assert_eq!(face.h_advance(GlyphId(1), 8, Some(0)), Ok(512));
+    assert!(face.h_advance(GlyphId(1), 7, Some(0)).is_err());
+
+    let asymmetric = std::str::from_utf8(BDF)
+        .unwrap()
+        .replace("SIZE 8 72 72", "SIZE 7 82 72");
+    let data = FaceData::new(asymmetric.as_bytes()).unwrap();
+    let opened = data.open(0).unwrap();
+    let face = opened.as_face();
+    assert_eq!(face.strike(0), Some((510, 448)));
+    assert!(face.h_advance(GlyphId(1), 8, Some(0)).is_err());
+    assert!(face.h_advance(GlyphId(1), 7, Some(0)).is_err());
+}
+
+#[test]
 fn adr0100_i1_i2_common_face_bare_cff_mapping_and_metrics() {
     let data = FaceData::new(WIDTH_500).unwrap();
     let opened = data.open(0).unwrap();

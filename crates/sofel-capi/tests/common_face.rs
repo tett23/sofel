@@ -2,6 +2,9 @@
 
 use sofel_capi::*;
 use sofel_font::FaceData;
+use sofel_glyph_render::render_face;
+use sofel_outline::Scratch;
+use sofel_raster::Rasterizer;
 
 #[path = "../../sofel-read/tests/support/build.rs"]
 mod build;
@@ -183,6 +186,32 @@ fn adr0100_i4_i6_c_size_and_overflow_errors() {
         // SAFETY: the handle is destroyed once.
         unsafe { sofel_face_destroy(face) };
     }
+}
+
+#[test]
+fn adr0100_i1_i4_i6_c_fractional_strike_rounding() {
+    let source = std::str::from_utf8(include_bytes!("../../sofel-bitmapfont/tests/data/mono.bdf"))
+        .unwrap()
+        .replace("SIZE 8 72 72", "SIZE 7 82 82");
+    let mut error = 0;
+    // SAFETY: input and error output are live and disjoint.
+    let face = unsafe { sofel_face_create(source.as_ptr(), source.len(), 0, &mut error) };
+    assert!(!face.is_null());
+    let (mut x, mut y) = (0, 0);
+    // SAFETY: face and outputs are live and disjoint.
+    let status = unsafe { sofel_face_strike(face, 0, &mut x, &mut y) };
+    assert_eq!(status, 0);
+    assert_eq!((x, y), (510, 510));
+    let mut advance = 0;
+    // SAFETY: face and advance output are live.
+    let status = unsafe { sofel_face_h_advance(face, 1, 8, 0, &mut advance) };
+    assert_eq!(status, 0);
+    assert_eq!(advance, 512);
+    // SAFETY: face and advance output are live.
+    let status = unsafe { sofel_face_h_advance(face, 1, 7, 0, &mut advance) };
+    assert!(status < 0);
+    // SAFETY: face is destroyed once.
+    unsafe { sofel_face_destroy(face) };
 }
 
 #[test]
@@ -420,7 +449,7 @@ fn adr0100_i1_i6_c_sfnt_fixed_strike_metrics_and_pixels() {
 }
 
 #[test]
-fn adr0100_a1_synthetic_missing_formats_c_queries() {
+fn adr0100_a1_synthetic_missing_formats_all_glyphs_match_c_and_cli() {
     let mut cid = b"%!PS-Adobe-3.0 Resource-CIDFont\n\
 /CIDFontName /TestCID def\n/CIDFontType 0 def\n\
 /Registry (Adobe) def\n/Ordering (Identity) def\n/Supplement 0 def\n\
@@ -458,7 +487,14 @@ end put\n%ADOEndFontDict\ndef\n(Binary) 24 StartData\n"
             include_bytes!("../../sofel-bitmapfont/tests/data/two.fon").to_vec(),
         ),
     ];
+    let mut checked = 0;
     for (name, bytes) in samples {
+        let path = std::env::temp_dir().join(format!(
+            "sofel-common-face-{}-{}.font",
+            std::process::id(),
+            name.to_ascii_lowercase()
+        ));
+        std::fs::write(&path, &bytes).unwrap();
         let data = FaceData::new(&bytes).unwrap();
         let mut count = 0;
         // SAFETY: input and count output are live and disjoint.
@@ -493,8 +529,260 @@ end put\n%ADOEndFontDict\ndef\n(Binary) 24 StartData\n"
             if let Ok(expected) = expected {
                 assert_eq!(advance, expected, "{name}/{index}");
             }
+            let c_scratch = sofel_outline_scratch_create();
+            let c_raster = sofel_rasterizer_create();
+            let mut rust_scratch = Scratch::default();
+            let mut rust_raster = Rasterizer::new();
+            for glyph in 0..glyph_count {
+                checked += 1;
+                let expected = render_face(
+                    face,
+                    sofel_font::read::GlyphId(glyph),
+                    ppem,
+                    None,
+                    &mut rust_scratch,
+                    &mut rust_raster,
+                );
+                let mut pixels = vec![
+                    0x55;
+                    expected
+                        .as_ref()
+                        .map_or(1, |image| image.pixels.len().max(1))
+                ];
+                let mut len = 0;
+                let mut box_ = [0; 4];
+                // SAFETY: handles and output buffers are live and disjoint.
+                let status = unsafe {
+                    sofel_face_render_glyph(
+                        handle,
+                        glyph,
+                        ppem,
+                        u32::MAX,
+                        c_scratch,
+                        c_raster,
+                        pixels.as_mut_ptr(),
+                        pixels.len(),
+                        &mut len,
+                        box_.as_mut_ptr(),
+                    )
+                };
+                assert_eq!(status == 0, expected.is_ok(), "{name}/{index}/{glyph}");
+                if let Ok(image) = expected.as_ref() {
+                    assert_eq!(len, image.pixels.len(), "{name}/{index}/{glyph}");
+                    assert_eq!(
+                        pixels.get(..len),
+                        Some(image.pixels.as_slice()),
+                        "{name}/{index}/{glyph}"
+                    );
+                    assert_eq!(
+                        box_,
+                        [
+                            image.left,
+                            image.top,
+                            i32::try_from(image.width).unwrap(),
+                            i32::try_from(image.rows).unwrap()
+                        ],
+                        "{name}/{index}/{glyph}"
+                    );
+                }
+                let mut output = Vec::new();
+                let mut stderr = Vec::new();
+                let args = [
+                    "--ppem".into(),
+                    ppem.to_string().into(),
+                    "--face".into(),
+                    index.to_string().into(),
+                    "--glyph".into(),
+                    glyph.to_string().into(),
+                    path.clone().into_os_string(),
+                ];
+                let cli_status = sofel_cli::render::run(&args, &mut output, &mut stderr);
+                let cli_image = expected
+                    .as_ref()
+                    .is_ok_and(|image| image.width > 0 && image.rows > 0);
+                assert_eq!(
+                    cli_status == 0,
+                    cli_image,
+                    "{name}/{index}/{glyph}: {}",
+                    String::from_utf8_lossy(&stderr)
+                );
+                if cli_image {
+                    let image = expected.as_ref().unwrap();
+                    let marker = b"\n255\n";
+                    let pixel_at = output
+                        .windows(marker.len())
+                        .position(|w| w == marker)
+                        .unwrap()
+                        + marker.len();
+                    let expected_pixels =
+                        image.pixels.iter().map(|value| !value).collect::<Vec<_>>();
+                    assert_eq!(
+                        output.get(pixel_at..),
+                        Some(expected_pixels.as_slice()),
+                        "{name}/{index}/{glyph} CLI pixels"
+                    );
+                }
+            }
             // SAFETY: handle is destroyed once.
-            unsafe { sofel_face_destroy(handle) };
+            unsafe {
+                sofel_face_destroy(handle);
+                sofel_outline_scratch_destroy(c_scratch);
+                sofel_rasterizer_destroy(c_raster);
+            }
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+    assert_eq!(checked, 12, "synthetic formats must contain glyphs");
+}
+
+#[test]
+fn adr0100_i6_a1_real_all_glyphs_match_c_and_cli_results() {
+    let base = std::env::var_os("SOFEL_TESTDATA")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/testdata")
+        });
+    let mut checked = 0;
+    for (name, ppem) in [
+        ("cmr10.pfb", 20u16),
+        ("spleen-8x16.bdf", 16),
+        ("spleen-8x16.pcf", 16),
+        ("spleen-8x16.fon", 16),
+        ("spleen-8x16.dfont", 16),
+        ("spleen-8x16.woff", 16),
+        ("spleen-8x16.woff2", 16),
+    ] {
+        let path = base.join("extra-fonts/fonts").join(name);
+        if !path.exists() {
+            assert!(
+                std::env::var_os("SOFEL_REQUIRE_TESTDATA").is_none(),
+                "{} missing",
+                path.display()
+            );
+            return;
+        }
+        let bytes = std::fs::read(&path).unwrap();
+        let data = FaceData::new(&bytes).unwrap();
+        for index in 0..data.face_count().unwrap() {
+            let opened = data.open(index).unwrap();
+            let face = opened.as_face();
+            let mut error = 0;
+            // SAFETY: source bytes and error output are live.
+            let handle =
+                unsafe { sofel_face_create(bytes.as_ptr(), bytes.len(), index, &mut error) };
+            assert!(!handle.is_null(), "{name}/{index}: {error}");
+            let c_scratch = sofel_outline_scratch_create();
+            let c_raster = sofel_rasterizer_create();
+            let mut rust_scratch = Scratch::default();
+            let mut rust_raster = Rasterizer::new();
+            for glyph in 0..face.glyph_count() {
+                checked += 1;
+                let id = sofel_font::read::GlyphId(glyph);
+                let rust_advance = face.h_advance(id, ppem, None);
+                let mut c_advance = 0;
+                // SAFETY: handle and output are live.
+                let status =
+                    unsafe { sofel_face_h_advance(handle, glyph, ppem, u32::MAX, &mut c_advance) };
+                assert_eq!(
+                    status == 0,
+                    rust_advance.is_ok(),
+                    "{name}/{index}/{glyph} advance"
+                );
+                if let Ok(advance) = rust_advance {
+                    assert_eq!(c_advance, advance, "{name}/{index}/{glyph} advance");
+                }
+                let rust_image =
+                    render_face(face, id, ppem, None, &mut rust_scratch, &mut rust_raster);
+                let mut pixels = vec![
+                    0x55u8;
+                    rust_image
+                        .as_ref()
+                        .map_or(1, |image| image.pixels.len().max(1))
+                ];
+                let mut len = 0;
+                let mut box_ = [0i32; 4];
+                // SAFETY: handles and output buffers are live and disjoint.
+                let status = unsafe {
+                    sofel_face_render_glyph(
+                        handle,
+                        glyph,
+                        ppem,
+                        u32::MAX,
+                        c_scratch,
+                        c_raster,
+                        pixels.as_mut_ptr(),
+                        pixels.len(),
+                        &mut len,
+                        box_.as_mut_ptr(),
+                    )
+                };
+                assert_eq!(
+                    status == 0,
+                    rust_image.is_ok(),
+                    "{name}/{index}/{glyph} image"
+                );
+                let mut output = Vec::new();
+                let mut stderr = Vec::new();
+                let args = [
+                    "--ppem".into(),
+                    ppem.to_string().into(),
+                    "--face".into(),
+                    index.to_string().into(),
+                    "--glyph".into(),
+                    glyph.to_string().into(),
+                    path.clone().into_os_string(),
+                ];
+                let cli_status = sofel_cli::render::run(&args, &mut output, &mut stderr);
+                if let Ok(image) = rust_image {
+                    assert_eq!(len, image.pixels.len(), "{name}/{index}/{glyph} len");
+                    assert_eq!(
+                        pixels.get(..len),
+                        Some(image.pixels.as_slice()),
+                        "{name}/{index}/{glyph} pixels"
+                    );
+                    assert_eq!(
+                        box_,
+                        [
+                            image.left,
+                            image.top,
+                            i32::try_from(image.width).unwrap(),
+                            i32::try_from(image.rows).unwrap()
+                        ],
+                        "{name}/{index}/{glyph} box"
+                    );
+                    if image.width == 0 || image.rows == 0 {
+                        assert_ne!(cli_status, 0, "{name}/{index}/{glyph} empty CLI image");
+                    } else {
+                        assert_eq!(
+                            cli_status,
+                            0,
+                            "{name}/{index}/{glyph}: {}",
+                            String::from_utf8_lossy(&stderr)
+                        );
+                        let marker = b"\n255\n";
+                        let pixel_at = output
+                            .windows(marker.len())
+                            .position(|w| w == marker)
+                            .unwrap()
+                            + marker.len();
+                        let expected = image.pixels.iter().map(|value| !value).collect::<Vec<_>>();
+                        assert_eq!(
+                            output.get(pixel_at..),
+                            Some(expected.as_slice()),
+                            "{name}/{index}/{glyph} CLI pixels"
+                        );
+                    }
+                } else {
+                    assert_ne!(cli_status, 0, "{name}/{index}/{glyph} CLI error");
+                }
+            }
+            // SAFETY: every handle is destroyed once.
+            unsafe {
+                sofel_face_destroy(handle);
+                sofel_outline_scratch_destroy(c_scratch);
+                sofel_rasterizer_destroy(c_raster);
+            }
         }
     }
+    assert_eq!(checked, 5454);
 }
