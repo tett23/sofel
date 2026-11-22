@@ -246,11 +246,12 @@ jobs:
           sh scripts/fetch-fonts.sh gallery-fonts.lock conformance/gallery-fonts.tsv
       - name: Compare real legacy fonts with FreeType
         run: |
+          sh tools/ft-dump/build.sh target/testdata/freetype "$RUNNER_TEMP/ft-dump-legacy"
           if [ "$RUNNER_OS" = Linux ]; then
             sh tools/ft-dump/build.sh target/testdata/freetype "$RUNNER_TEMP/ft-dump-brotli" --brotli
-            SOFEL_FT_BROTLI_DUMP="$RUNNER_TEMP/ft-dump-brotli" cargo test --release -p sofel-conformance --test legacy_faces
+            SOFEL_FT_DUMP="$RUNNER_TEMP/ft-dump-legacy" SOFEL_FT_BROTLI_DUMP="$RUNNER_TEMP/ft-dump-brotli" cargo test --release -p sofel-conformance --test legacy_faces
           else
-            cargo test --release -p sofel-conformance --test legacy_faces
+            SOFEL_FT_DUMP="$RUNNER_TEMP/ft-dump-legacy" cargo test --release -p sofel-conformance --test legacy_faces
           fi
       - name: Compare gallery sbix glyphs with FreeType
         if: runner.os == 'Linux'
