@@ -8,9 +8,14 @@ use std::{fmt::Write, process::Command};
 
 #[test]
 fn adr0085_a2_harfbuzz_reference_assigns_gsub_style() {
+    let styles = sofel_outline::AutoHintCache::style_specs();
+    assert_eq!(styles.len(), 87);
+    assert_eq!(styles[57].script, *b"Latn");
+    assert_eq!(styles[57].feature, None);
+    assert!(!styles[57].blue_strings.is_empty());
     let path = paths::testdata().join("extra-fonts/fonts/source-serif.otf");
     let hb_reference = std::env::var_os("SOFEL_FT_DUMP_HB")
-        .expect("SOFEL_FT_DUMP_HB must name the pinned HarfBuzz FreeType reference");
+        .unwrap_or_else(|| "target/ft-dump/ft-dump-harfbuzz".into());
     let default = Command::new(paths::ft_dump())
         .args(["--auto-style", "109"])
         .arg(&path)
@@ -25,6 +30,71 @@ fn adr0085_a2_harfbuzz_reference_assigns_gsub_style() {
     assert!(hb.status.success());
     assert_eq!(default.stdout, b"style 86\n");
     assert_eq!(hb.stdout, b"style 57\n");
+}
+
+#[test]
+fn adr0085_i2_gsub_default_closure_assigns_unmapped_latin_glyph() {
+    let path = paths::testdata().join("extra-fonts/fonts/source-serif.otf");
+    let data = std::fs::read(path).unwrap();
+    let font = Font::new(&data, 0).unwrap();
+    let requests = sofel_outline::AutoHintCache::style_specs();
+    let requests: Vec<_> = requests
+        .iter()
+        .map(|style| sofel_shape::AutoHintStyleRequest {
+            index: style.index,
+            script: style.script,
+            ranges: style.ranges,
+            nonbase_ranges: style.nonbase_ranges,
+            feature: style.feature,
+            blue_strings: &style.blue_strings,
+        })
+        .collect();
+    let styles = sofel_shape::auto_hint_gsub_styles(&font, &requests, 86, 86);
+    assert_eq!(styles[109], 57);
+}
+
+#[test]
+fn adr0085_i2_gsub_style_words_match_harfbuzz_reference() {
+    let reference = std::env::var_os("SOFEL_FT_DUMP_HB")
+        .unwrap_or_else(|| "target/ft-dump/ft-dump-harfbuzz".into());
+    for relative in [
+        "extra-fonts/fonts/source-serif.otf",
+        "harfbuzz/perf/fonts/Roboto-Regular.ttf",
+        "harfbuzz/perf/fonts/Amiri-Regular.ttf",
+    ] {
+        let path = paths::testdata().join(relative);
+        let data = std::fs::read(&path).unwrap();
+        let font = Font::new(&data, 0).unwrap();
+        let specs = sofel_outline::AutoHintCache::style_specs();
+        let requests: Vec<_> = specs
+            .iter()
+            .map(|style| sofel_shape::AutoHintStyleRequest {
+                index: style.index,
+                script: style.script,
+                ranges: style.ranges,
+                nonbase_ranges: style.nonbase_ranges,
+                feature: style.feature,
+                blue_strings: &style.blue_strings,
+            })
+            .collect();
+        let actual = sofel_shape::auto_hint_gsub_styles(&font, &requests, 86, 86);
+        let output = Command::new(&reference)
+            .arg("--auto-styles")
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let expected = String::from_utf8(output.stdout).unwrap();
+        for (glyph, line) in expected.lines().enumerate() {
+            let style = line
+                .split_ascii_whitespace()
+                .last()
+                .unwrap()
+                .parse::<u16>()
+                .unwrap();
+            assert_eq!(actual[glyph], style, "{relative} glyph {glyph}");
+        }
+    }
 }
 
 #[path = "../../sofel-read/tests/support/build.rs"]

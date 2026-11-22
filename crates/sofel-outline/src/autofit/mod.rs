@@ -67,6 +67,7 @@ pub(super) struct BlueStringRec {
 pub(super) struct ScriptClass {
     pub ranges: &'static [(u32, u32)],
     pub nonbase_ranges: &'static [(u32, u32)],
+    pub tag: &'static [u8; 4],
     pub top_to_bottom: bool,
     pub standard: &'static [u8],
 }
@@ -77,7 +78,26 @@ pub(super) struct StyleClass {
     pub writing_system: WritingSystem,
     pub script: u16,
     pub blue_stringset: u16,
+    pub coverage: u16,
     pub default_coverage: bool,
+}
+
+/// The script, feature and blue-zone strings an OpenType shaper needs to
+/// compute one FreeType automatic-hinter style's GSUB coverage.
+#[derive(Clone, Debug)]
+pub struct AutoHintStyleSpec {
+    /// Index into FreeType's ordered style table.
+    pub index: u16,
+    /// ISO 15924 script tag.
+    pub script: [u8; 4],
+    /// Unicode ranges used for cmap coverage.
+    pub ranges: &'static [(u32, u32)],
+    /// Unicode ranges marked as non-base glyphs.
+    pub nonbase_ranges: &'static [(u32, u32)],
+    /// OpenType feature tag, or `None` for a script's default style.
+    pub feature: Option<[u8; 4]>,
+    /// UTF-8 blue-zone strings from the pinned FreeType table.
+    pub blue_strings: Vec<&'static [u8]>,
 }
 
 /// The load target as the scaler's `render_mode`.
@@ -137,6 +157,40 @@ pub struct AutoHintCache {
 }
 
 impl AutoHintCache {
+    /// Style requests in FreeType's assignment order for a shaper to
+    /// evaluate against the font's GSUB and GPOS tables.
+    pub fn style_specs() -> Vec<AutoHintStyleSpec> {
+        STYLES
+            .iter()
+            .enumerate()
+            .map(|(index, style)| {
+                let mut blue_strings = Vec::new();
+                let mut position = usize::from(style.blue_stringset);
+                while let Some(blue) = tables::BLUE_STRINGSETS.get(position) {
+                    if blue.string == tables::BLUE_STRING_MAX {
+                        break;
+                    }
+                    let bytes = tables::BLUE_STRINGS
+                        .get(usize::from(blue.string)..)
+                        .unwrap_or_default();
+                    let end = bytes.iter().position(|&byte| byte == 0).unwrap_or(0);
+                    blue_strings.push(&bytes[..end]);
+                    position += 1;
+                }
+                AutoHintStyleSpec {
+                    index: index as u16,
+                    script: *SCRIPTS[usize::from(style.script)].tag,
+                    ranges: SCRIPTS[usize::from(style.script)].ranges,
+                    nonbase_ranges: SCRIPTS[usize::from(style.script)].nonbase_ranges,
+                    feature: tables::COVERAGE_TAGS
+                        .get(usize::from(style.coverage))
+                        .copied(),
+                    blue_strings,
+                }
+            })
+            .collect()
+    }
+
     /// The cache for `outlines`: assigns every glyph to a style through
     /// the Unicode cmap, as FreeType's
     /// `af_face_globals_compute_style_coverage` does without HarfBuzz.
@@ -169,6 +223,11 @@ impl AutoHintCache {
         self.glyph_styles
             .get(usize::try_from(glyph.0).ok()?)
             .copied()
+    }
+
+    /// The cmap-based style words for a shaper to extend with GSUB coverage.
+    pub fn glyph_styles(&self) -> &[u16] {
+        &self.glyph_styles
     }
 }
 

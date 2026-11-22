@@ -81,7 +81,7 @@ mod stroke_trig;
 mod tt_hint;
 mod tt_policy;
 mod type1_cid;
-pub use autofit::AutoHintCache;
+pub use autofit::{AutoHintCache, AutoHintStyleSpec};
 pub use tt_hint::HintTarget;
 mod varc_draw;
 

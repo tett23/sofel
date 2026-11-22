@@ -19,6 +19,7 @@
 extern crate alloc;
 
 mod aat;
+mod autofit;
 mod buffer;
 mod diff;
 mod digest;
@@ -46,6 +47,7 @@ mod utf;
 mod tag_table;
 mod serialize;
 
+pub use autofit::{AutoHintStyleRequest, auto_hint_gsub_styles};
 pub use buffer::{
     BufferFlags, ClusterLevel, GlyphBuffer, MAX_LEN_DEFAULT, MAX_LEN_FACTOR, MAX_LEN_MIN,
     MAX_OPS_DEFAULT, MAX_OPS_FACTOR, MAX_OPS_MIN, REPLACEMENT_CHARACTER, UnicodeBuffer,
