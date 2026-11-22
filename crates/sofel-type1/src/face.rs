@@ -8,6 +8,7 @@ use crate::charstrings::Charstrings;
 use crate::encoding::Encoding;
 use crate::metrics::{Metrics, parse_metrics};
 use crate::multiple_masters::MultipleMasters;
+use crate::noalloc::cid::{CidMatrix, parse_matrix};
 use crate::pfm::Pfm;
 use crate::source::Type1Source;
 
@@ -26,12 +27,36 @@ impl core::error::Error for FaceError {}
 /// One Type 1 face with its encoded character and glyph programs.
 #[derive(Clone, Debug)]
 pub struct Type1Face<'a> {
+    matrix: CidMatrix,
+    units_per_em: u16,
     encoding: Encoding<'a>,
     charstrings: Charstrings<'a>,
     multiple_masters: Option<MultipleMasters<'a>>,
     master_weights: Option<Vec<i32>>,
     attached: Option<AttachedMetrics<'a>>,
     native_stem_blues_empty: bool,
+    native_blue_zones: Option<NativeBlueZones>,
+}
+
+/// The four Type 1 blue-zone arrays used by the Adobe native hinter.
+#[derive(Clone, Debug)]
+pub struct NativeBlueZones {
+    /// BlueValues in font units.
+    pub blue_values: Vec<i32>,
+    /// OtherBlues in font units.
+    pub other_blues: Vec<i32>,
+    /// FamilyBlues in font units.
+    pub family_blues: Vec<i32>,
+    /// FamilyOtherBlues in font units.
+    pub family_other_blues: Vec<i32>,
+    /// BlueScale in 16.16 units times 1000.
+    pub blue_scale: i64,
+    /// BlueShift in font units.
+    pub blue_shift: i64,
+    /// BlueFuzz in font units.
+    pub blue_fuzz: i64,
+    /// LanguageGroup.
+    pub language_group: i32,
 }
 
 #[derive(Clone, Debug)]
@@ -51,19 +76,48 @@ impl<'a> Type1Face<'a> {
         let master_weights = multiple_masters
             .as_ref()
             .map(|mm| mm.default_weights().to_vec());
+        let (matrix, units_per_em) = parse_matrix(source.cleartext()).unwrap_or((
+            CidMatrix {
+                xx: 65536,
+                yx: 0,
+                xy: 0,
+                yy: 65536,
+                dx: 0,
+                dy: 0,
+            },
+            None,
+        ));
         Ok(Self {
+            matrix,
+            units_per_em: units_per_em.unwrap_or(1000),
             encoding,
             charstrings,
             multiple_masters,
             master_weights,
             attached: None,
             native_stem_blues_empty: blue_zones_empty(source.private()),
+            native_blue_zones: native_blue_zones(source.private()),
         })
+    }
+
+    /// The normalized Type 1 FontMatrix applied after charstring decoding.
+    pub fn matrix(&self) -> CidMatrix {
+        self.matrix
+    }
+
+    /// Units per em derived from the Type 1 FontMatrix's vertical scale.
+    pub fn units_per_em(&self) -> u16 {
+        self.units_per_em
     }
 
     /// Whether the native single-stem path can ignore PostScript blue zones.
     pub fn native_stem_blues_empty(&self) -> bool {
         self.native_stem_blues_empty
+    }
+
+    /// Type 1 blue-zone arrays for the Adobe native hinter.
+    pub fn native_blue_zones(&self) -> Option<&NativeBlueZones> {
+        self.native_blue_zones.as_ref()
     }
 
     /// Multiple Masters axis metadata, when the Type 1 source has it.
@@ -134,7 +188,12 @@ impl<'a> Type1Face<'a> {
     ///
     /// Allocates the decrypted charstring (ADR 0094); the operand stack is a fixed array (ADR 0098).
     pub fn glyph_metrics(&self, glyph: usize) -> Option<Metrics> {
-        parse_metrics(&self.glyph_program(glyph)?).ok()
+        let mut metrics = parse_metrics(&self.glyph_program(glyph)?).ok()?;
+        metrics.advance_x =
+            mul_fix(metrics.advance_x, self.matrix.xx).saturating_add(self.matrix.dx);
+        metrics.advance_y =
+            mul_fix(metrics.advance_y, self.matrix.yy).saturating_add(self.matrix.dy);
+        Some(metrics)
     }
 
     /// Attach AFM metrics to the face, replacing any previous AFM data.
@@ -186,6 +245,12 @@ impl<'a> Type1Face<'a> {
     }
 }
 
+fn mul_fix(a: i32, b: i32) -> i32 {
+    let product = i64::from(a).saturating_mul(i64::from(b));
+    let rounded = product.saturating_add(0x8000).saturating_add(product >> 63) >> 16;
+    i32::try_from(rounded).unwrap_or(if rounded < 0 { i32::MIN } else { i32::MAX })
+}
+
 pub(crate) fn blue_zones_empty(data: &[u8]) -> bool {
     [
         b"/BlueValues".as_slice(),
@@ -211,4 +276,95 @@ pub(crate) fn blue_zones_empty(data: &[u8]) -> bool {
         }
         true
     })
+}
+
+fn parse_blue_array(data: &[u8], name: &[u8], limit: usize) -> Option<Vec<i32>> {
+    let Some(at) = data.windows(name.len()).position(|window| window == name) else {
+        return Some(Vec::new());
+    };
+    let start = at.checked_add(name.len())?;
+    let value = data.get(start..)?.trim_ascii_start();
+    let value = value.strip_prefix(b"[")?;
+    let end = value.iter().position(|&byte| byte == b']')?;
+    let numbers = core::str::from_utf8(value.get(..end)?).ok()?;
+    let values = numbers
+        .split_ascii_whitespace()
+        .map(str::parse::<i32>)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    (values.len() <= limit && values.len().is_multiple_of(2)).then_some(values)
+}
+
+pub(crate) fn native_blue_zones(data: &[u8]) -> Option<NativeBlueZones> {
+    Some(NativeBlueZones {
+        blue_values: parse_blue_array(data, b"/BlueValues", 14)?,
+        other_blues: parse_blue_array(data, b"/OtherBlues", 10)?,
+        family_blues: parse_blue_array(data, b"/FamilyBlues", 14)?,
+        family_other_blues: parse_blue_array(data, b"/FamilyOtherBlues", 10)?,
+        blue_scale: parse_blue_scalar(data, b"/BlueScale", 2_596_864, 65_536_000)?,
+        blue_shift: parse_blue_scalar(data, b"/BlueShift", 7, 1)?,
+        blue_fuzz: parse_blue_scalar(data, b"/BlueFuzz", 1, 1)?,
+        language_group: i32::try_from(parse_blue_scalar(data, b"/LanguageGroup", 0, 1)?).ok()?,
+    })
+}
+
+fn parse_blue_scalar(data: &[u8], name: &[u8], default: i64, multiplier: i64) -> Option<i64> {
+    let Some(at) = data.windows(name.len()).position(|window| window == name) else {
+        return Some(default);
+    };
+    let start = at.checked_add(name.len())?;
+    let value = data.get(start..)?.trim_ascii_start();
+    let end = value
+        .iter()
+        .position(|byte| !byte.is_ascii_digit() && !matches!(*byte, b'.' | b'-' | b'+'))
+        .unwrap_or(value.len());
+    let number = core::str::from_utf8(value.get(..end)?).ok()?;
+    let (negative, number) = if let Some(rest) = number.strip_prefix('-') {
+        (true, rest)
+    } else {
+        (false, number.strip_prefix('+').unwrap_or(number))
+    };
+    let (whole, fraction) = number.split_once('.').unwrap_or((number, ""));
+    if whole.is_empty() && fraction.is_empty() {
+        return None;
+    }
+    let whole = if whole.is_empty() {
+        0
+    } else {
+        whole.parse::<i128>().ok()?
+    };
+    let fractional = if fraction.is_empty() {
+        0
+    } else {
+        fraction.parse::<i128>().ok()?
+    };
+    let denominator = 10_i128.checked_pow(u32::try_from(fraction.len()).ok()?)?;
+    let numerator = whole.checked_mul(denominator)?.checked_add(fractional)?;
+    let scaled = numerator.checked_mul(i128::from(multiplier))?;
+    let rounded = scaled
+        .checked_add(denominator / 2)?
+        .checked_div(denominator)?;
+    i64::try_from(if negative {
+        rounded.checked_neg()?
+    } else {
+        rounded
+    })
+    .ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_blue_scalar;
+
+    #[test]
+    fn adr0064_i1_type1_blue_scale_fixed_values() {
+        assert_eq!(
+            parse_blue_scalar(b"/BlueScale 0.039625 def", b"/BlueScale", 0, 65_536_000),
+            Some(2_596_864)
+        );
+        assert_eq!(
+            parse_blue_scalar(b"/BlueScale 0.08 def", b"/BlueScale", 0, 65_536_000),
+            Some(5_242_880)
+        );
+    }
 }

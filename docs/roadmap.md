@@ -38,9 +38,8 @@ Golem はフォントを開くときに GSUB と GPOS の機能タグをすべ�
 
 ### [ADR 0064](adr/0064-freetype-hinting-and-render-modes.md): ヒンティングの残り
 
-[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md) は採択（未実装）である。自動ヒンタは、参照ビルドと同じ HarfBuzz なしの構成で、glyf と CFF の輪郭のすべての書記体系を移植した。sfnt の CFF と CFF2 のネイティブヒンタ（Adobe engine）も移植した。残る作業は次のとおりである。
+[ADR 0064](adr/0064-freetype-hinting-and-render-modes.md) は採択（未実装）である。自動ヒンタは、参照ビルドと同じ HarfBuzz なしの構成で、glyf と CFF の輪郭のすべての書記体系を移植した。sfnt の CFF と CFF2、Type1 と CID のネイティブヒンタ（Adobe engine）も移植した。残る作業は次のとおりである。
 
-- **Type1 と CID のネイティブヒンティング**：`draw_type1_native` と `draw_cid_native` は、stem の無いグリフと、blue zone の無い LIGHT の単一の水平 stem だけを扱い、ほかは未対応エラーを返す。FreeType は Type1 と CID も同じ Adobe engine でヒンティングする（`isT1` の経路：othersubr 3 によるヒントの置き換え、最初のヒントマップを作るための巻き戻し、hstem3 と vstem3）。`sofel-read` の CFF のヒントマップと blue zone（`cff::Hinting`）を Type1 の解読器から使えるようにする。
 - **素の CFF のネイティブヒンティング**：素の CFF のフェイス（`load_bare_cff`）にはヒンティングつきのロードが無い。
 
 - **モジュールの設定**：`no-stem-darkening`、`darkening-parameters`、`increase-x-height`、`fallback-script`、`default-script` を FreeType の既定値に固定している。設定を受け取る API は無い。[ADR 0086](adr/0086-hinting-module-properties.md) で、ロード指定で受け取ると採択した（未実装）。

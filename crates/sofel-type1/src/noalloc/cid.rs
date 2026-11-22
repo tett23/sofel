@@ -357,7 +357,7 @@ fn decode_hex(
     Ok(len)
 }
 
-fn parse_matrix(dict: &[u8]) -> Result<(CidMatrix, Option<u16>), CidError> {
+pub(crate) fn parse_matrix(dict: &[u8]) -> Result<(CidMatrix, Option<u16>), CidError> {
     let Some(at) = find_bytes(dict, b"/FontMatrix") else {
         return Ok((
             CidMatrix {
