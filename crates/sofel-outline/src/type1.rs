@@ -222,6 +222,40 @@ fn decode_program<P: Pen>(
                             stack.pop().ok_or(OutlineError::InvalidCharString)? >> 16,
                         )
                         .map_err(|_| OutlineError::InvalidCharString)?;
+                        if subr_no == 1 {
+                            if arg_count != 0 || state.flex.is_some() {
+                                return Err(OutlineError::InvalidCharString);
+                            }
+                            if state.start.is_none() {
+                                state.start = Some((state.x, state.y));
+                            }
+                            state.ensure_started()?;
+                            state.flex = Some(Flex::default());
+                            continue;
+                        }
+                        if subr_no == 2 {
+                            if arg_count != 0 {
+                                return Err(OutlineError::InvalidCharString);
+                            }
+                            state.flex_add()?;
+                            continue;
+                        }
+                        if subr_no == 0 {
+                            if arg_count != 3
+                                || state.flex.as_ref().is_none_or(|flex| flex.count != 7)
+                                || stack.len() < 3
+                            {
+                                return Err(OutlineError::InvalidCharString);
+                            }
+                            let remaining = stack
+                                .len()
+                                .checked_sub(3)
+                                .ok_or(OutlineError::InvalidCharString)?;
+                            stack.truncate(remaining);
+                            stack.extend([state.x, state.y]);
+                            state.pending_pops = 2;
+                            continue;
+                        }
                         if subr_no == 3 {
                             if arg_count != 1 || stack.is_empty() {
                                 return Err(OutlineError::InvalidCharString);
@@ -290,6 +324,12 @@ fn decode_program<P: Pen>(
                             .pending_pops
                             .checked_sub(1)
                             .ok_or(OutlineError::InvalidCharString)?
+                    }
+                    33 => {
+                        let [x, y] = take(stack)?;
+                        state.x = x;
+                        state.y = y;
+                        state.flex = None;
                     }
                     7 => {
                         let [sx, sy, _wx, _wy] = take(stack)?;
@@ -388,6 +428,13 @@ struct State<'a, P: Pen> {
     h_stem: Option<(i64, i64)>,
     h_stem_shift: i64,
     unsupported_stem_map: bool,
+    flex: Option<Flex>,
+}
+
+#[derive(Default)]
+struct Flex {
+    count: usize,
+    points: [(i64, i64); 6],
 }
 
 impl<'a, P: Pen> State<'a, P> {
@@ -410,6 +457,7 @@ impl<'a, P: Pen> State<'a, P> {
             h_stem: None,
             h_stem_shift: 0,
             unsupported_stem_map: false,
+            flex: None,
         }
     }
 
@@ -467,7 +515,9 @@ impl<'a, P: Pen> State<'a, P> {
     }
 
     fn move_by(&mut self, dx: i64, dy: i64) -> Result<(), OutlineError> {
-        self.close();
+        if self.flex.is_none() {
+            self.close();
+        }
         self.x = self
             .x
             .checked_add(dx)
@@ -476,8 +526,44 @@ impl<'a, P: Pen> State<'a, P> {
             .y
             .checked_add(dy)
             .ok_or(OutlineError::InvalidCharString)?;
-        self.start = Some((self.x, self.y));
-        self.emitted = false;
+        if self.flex.is_none() {
+            self.start = Some((self.x, self.y));
+            self.emitted = false;
+        }
+        Ok(())
+    }
+
+    fn flex_add(&mut self) -> Result<(), OutlineError> {
+        let flex = self.flex.as_mut().ok_or(OutlineError::InvalidCharString)?;
+        let index = flex.count;
+        if index >= 7 {
+            return Err(OutlineError::InvalidCharString);
+        }
+        flex.count = flex.count.saturating_add(1);
+        if index == 0 {
+            return Ok(());
+        }
+        let slot = index
+            .checked_sub(1)
+            .and_then(|slot| flex.points.get_mut(slot))
+            .ok_or(OutlineError::InvalidCharString)?;
+        *slot = (self.x, self.y);
+        if index == 3 || index == 6 {
+            let offset = if index == 3 { 0 } else { 3 };
+            let points = self
+                .flex
+                .as_ref()
+                .ok_or(OutlineError::InvalidCharString)?
+                .points;
+            let [a, b, c] = *points
+                .get(offset..)
+                .and_then(|rest| rest.first_chunk::<3>())
+                .ok_or(OutlineError::InvalidCharString)?;
+            let a = self.point(a.0, a.1);
+            let b = self.point(b.0, b.1);
+            let c = self.point(c.0, c.1);
+            self.pen.cubic_to(a, b, c);
+        }
         Ok(())
     }
 
