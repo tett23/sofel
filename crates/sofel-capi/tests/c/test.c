@@ -2530,6 +2530,32 @@ static uint8_t *read_testdata(const char *path, size_t *len) {
   return data;
 }
 
+static void test_adr0064_i1_varc_slots(void) {
+  size_t len = 0;
+  uint8_t *data = read_testdata("harfbuzz/test/api/fonts/varc-short-cff2.otf", &len);
+  if (data == NULL) {
+    CHECK(getenv("SOFEL_REQUIRE_TESTDATA") == NULL);
+    return;
+  }
+  int32_t error, box[4], advance;
+  uint32_t overlap;
+  const int32_t expected[] = {614, 0, 820, 204};
+  sofel_font_t *font = sofel_font_create(data, len, 0, &error);
+  sofel_outline_scratch_t *scratch = sofel_outline_scratch_create();
+  CHECK(font != NULL && error == SOFEL_OK && scratch != NULL);
+  for (uint32_t mode = SOFEL_HINT_MODE_NONE; mode <= SOFEL_HINT_MODE_AUTO; mode++) {
+    CHECK(sofel_outline_load_with_hint(font, NULL, 3, 16, mode, SOFEL_HINT_TARGET_NORMAL,
+      scratch, box, &overlap, &advance) == SOFEL_OK);
+    CHECK(advance == 512 && overlap == 0 && memcmp(box, expected, sizeof box) == 0);
+  }
+  CHECK(sofel_outline_load_truetype_v40(font, NULL, 3, 16, SOFEL_HINT_TARGET_NORMAL,
+    scratch, box, &overlap, &advance) == SOFEL_OK);
+  CHECK(advance == 512 && memcmp(box, expected, sizeof box) == 0);
+  sofel_outline_scratch_destroy(scratch);
+  sofel_font_destroy(font);
+  free(data);
+}
+
 static void test_adr0064_i1_control_values(void) {
   const float weights[] = {300, 400, 575, 700};
   const int32_t expected[] = {3008, 4992, 5559, 6464};
@@ -3304,6 +3330,7 @@ int main(void) {
   test_shape_fixture_font(font);
   test_shape_ppem();
   test_adr0064_i1_control_values();
+  test_adr0064_i1_varc_slots();
   test_golem_shape();
   test_subset_input();
   test_axis_strings();

@@ -475,15 +475,36 @@ impl<'a> ConditionList<'a> {
         coords: &[i32],
         delta: &impl Fn(u32) -> f64,
     ) -> Option<bool> {
+        self.evaluate_policy(index, coords, delta, false)
+    }
+
+    /// Evaluate a component condition with FreeType's null-offset semantics.
+    /// Null conditions are true, including in logical subconditions.
+    pub fn evaluate_ft(
+        &self,
+        index: usize,
+        coords: &[i32],
+        delta: &impl Fn(u32) -> f64,
+    ) -> Option<bool> {
+        self.evaluate_policy(index, coords, delta, true)
+    }
+
+    fn evaluate_policy(
+        &self,
+        index: usize,
+        coords: &[i32],
+        delta: &impl Fn(u32) -> f64,
+        null: bool,
+    ) -> Option<bool> {
         let at = 4usize.checked_add(index.checked_mul(4)?)?;
         if index >= self.count {
             return None;
         }
         let offset = be::u32_at(self.data, at)? as usize;
         if offset == 0 {
-            return Some(false);
+            return Some(null);
         }
-        self.evaluate_at(offset, coords, delta, 64)
+        self.evaluate_at(offset, coords, delta, 64, null)
     }
 
     fn evaluate_at(
@@ -492,6 +513,7 @@ impl<'a> ConditionList<'a> {
         coords: &[i32],
         delta: &impl Fn(u32) -> f64,
         depth: usize,
+        null: bool,
     ) -> Option<bool> {
         if depth == 0 {
             return None;
@@ -522,13 +544,14 @@ impl<'a> ConditionList<'a> {
                     let field = at.checked_add(3)?.checked_add(index.checked_mul(3)?)?;
                     let relative = read_uint_at(self.data, field, 3)? as usize;
                     let child = if relative == 0 {
-                        false
+                        null
                     } else {
                         self.evaluate_at(
                             at.checked_add(relative)?,
                             coords,
                             delta,
                             depth.checked_sub(1)?,
+                            null,
                         )?
                     };
                     if and && !child {
@@ -544,13 +567,14 @@ impl<'a> ConditionList<'a> {
             5 => {
                 let relative = read_uint_at(self.data, at.checked_add(2)?, 3)? as usize;
                 if relative == 0 {
-                    Some(true)
+                    Some(!null)
                 } else {
                     self.evaluate_at(
                         at.checked_add(relative)?,
                         coords,
                         delta,
                         depth.checked_sub(1)?,
+                        null,
                     )
                     .map(|value| !value)
                 }
@@ -743,6 +767,24 @@ mod tests {
             0, 0, 0, // null child
         ];
         let conditions = ConditionList::new(&bytes).unwrap();
+        assert_eq!(conditions.evaluate(0, &[], &|_| 0.0), Some(true));
+    }
+
+    #[test]
+    fn adr0064_i1_varc_freetype_null_conditions() {
+        let top = [0, 0, 0, 1, 0, 0, 0, 0];
+        let conditions = ConditionList::new(&top).unwrap();
+        assert_eq!(conditions.evaluate_ft(0, &[], &|_| 0.0), Some(true));
+        assert_eq!(conditions.evaluate(0, &[], &|_| 0.0), Some(false));
+        for format in [3, 4] {
+            let bytes = [0, 0, 0, 1, 0, 0, 0, 8, 0, format, 1, 0, 0, 0];
+            let conditions = ConditionList::new(&bytes).unwrap();
+            assert_eq!(conditions.evaluate_ft(0, &[], &|_| 0.0), Some(true));
+            assert_eq!(conditions.evaluate(0, &[], &|_| 0.0), Some(false));
+        }
+        let negate = [0, 0, 0, 1, 0, 0, 0, 8, 0, 5, 0, 0, 0];
+        let conditions = ConditionList::new(&negate).unwrap();
+        assert_eq!(conditions.evaluate_ft(0, &[], &|_| 0.0), Some(false));
         assert_eq!(conditions.evaluate(0, &[], &|_| 0.0), Some(true));
     }
 

@@ -42,7 +42,6 @@ Golem はフォントを開くときに GSUB と GPOS の機能タグをすべ�
 
 - **Type1 と CID のネイティブヒンティング**：`draw_type1_native` と `draw_cid_native` は、stem の無いグリフと、blue zone の無い LIGHT の単一の水平 stem だけを扱い、ほかは未対応エラーを返す。FreeType は Type1 と CID も同じ Adobe engine でヒンティングする（`isT1` の経路：othersubr 3 によるヒントの置き換え、最初のヒントマップを作るための巻き戻し、hstem3 と vstem3）。`sofel-read` の CFF のヒントマップと blue zone（`cff::Hinting`）を Type1 の解読器から使えるようにする。
 - **素の CFF のネイティブヒンティング**：素の CFF のフェイス（`load_bare_cff`）にはヒンティングつきのロードが無い。
-- **VARC のグリフのスロット**：FreeType は VARC が覆うグリフを、ヒンティングの指定に関わらず VARC からヒンティングなしで読む。`Outlines::load` と `load_with_hint` は CFF2 の charstring を読み、charstring の無いグリフでは失敗する。`conformance/expected-failures-cff-hint.txt` に該当を記録した。VARC の輪郭を点とタグのスロットに組む処理が要る（[ADR 0067](adr/0067-varc-components.md) と合わせて決める）。
 - **blend を計算できない CFF2 の Private DICT**：領域の軸の数が `fvar` と違う CFF2 では、sofel はヒンティングの有無に関わらずグリフの読み込みに失敗し、FreeType は空の輪郭を返す（[ADR 0021](adr/0021-cff-outlines.md)）。`conformance/expected-failures-cff-hint.txt` に該当を記録した。
 
 - **HarfBuzz を使う構成**：FreeType を `FT_CONFIG_OPTION_USE_HARFBUZZ` で組むと、GSUB の機能（小型大文字、上付きなど）から style を割り当て、`afadjust.c` の逆引きにも GSUB を使う。[ADR 0085](adr/0085-autofit-harfbuzz-configuration.md) で、この構成を選べるようにし、HarfBuzz を組んだ ft-dump と照合すると採択した（未実装）。

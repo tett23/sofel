@@ -1,4 +1,8 @@
 //! Drawing VARC components through the existing integer pen interface.
+//! The slot transform ports FreeType 2.15.0's `tt_varc_build_transform`,
+//! `FT_Vector_Unit`, and `FT_Tan`. Copyright (C) 2001-2026 by David Turner,
+//! Robert Wilhelm, and Werner Lemberg. Used under the FreeType License (FTL);
+//! see THIRD_PARTY_NOTICES.md.
 
 use alloc::vec::Vec;
 
@@ -11,7 +15,7 @@ use sofel_font::read::{glyf, loca};
 use sofel_font::var::Location;
 use sofel_font::var::gvar::{HbScratch, Point as GvarPoint};
 use sofel_geom::float::{hb_clamp_to_i32, hb_roundf, hb_roundf32};
-use sofel_geom::{Pen, Point, PointF, Transform};
+use sofel_geom::{Pen, Point, PointF, Transform, div_fix, mul_fix};
 
 use crate::{
     CBox, HbOutlineCommand, OutlineError, OutlineInfo, Outlines, Scale, Scratch, TAG_CUBIC, TAG_ON,
@@ -92,6 +96,174 @@ fn emit_point(point: Point, transform: &Transform, scale: Scale, state: &mut Dra
     point
 }
 
+#[derive(Clone, Copy)]
+struct SlotTransform {
+    xx: i32,
+    xy: i32,
+    yx: i32,
+    yy: i32,
+    dx: i32,
+    dy: i32,
+}
+
+impl SlotTransform {
+    const IDENTITY: Self = Self {
+        xx: 0x10000,
+        xy: 0,
+        yx: 0,
+        yy: 0x10000,
+        dx: 0,
+        dy: 0,
+    };
+
+    fn multiply(self, child: Self) -> Self {
+        Self {
+            xx: mul_fix(self.xx, child.xx).wrapping_add(mul_fix(self.xy, child.yx)),
+            xy: mul_fix(self.xx, child.xy).wrapping_add(mul_fix(self.xy, child.yy)),
+            yx: mul_fix(self.yx, child.xx).wrapping_add(mul_fix(self.yy, child.yx)),
+            yy: mul_fix(self.yx, child.xy).wrapping_add(mul_fix(self.yy, child.yy)),
+            dx: mul_fix(child.dx, self.xx)
+                .wrapping_add(mul_fix(child.dy, self.xy))
+                .wrapping_add(self.dx),
+            dy: mul_fix(child.dx, self.yx)
+                .wrapping_add(mul_fix(child.dy, self.yy))
+                .wrapping_add(self.dy),
+        }
+    }
+
+    fn apply(self, point: Point, scale: Scale, state: &mut DrawState) -> Point {
+        let delta = |value: i32, axis: i32| match scale {
+            Scale::Unscaled => value.wrapping_add(32) >> 6,
+            Scale::Scaled { .. } => {
+                let scaled = i64::from(value)
+                    .wrapping_mul(i64::from(axis))
+                    .wrapping_add(0x200000)
+                    >> 22;
+                i32::try_from(scaled).unwrap_or(if scaled < 0 { i32::MIN } else { i32::MAX })
+            }
+        };
+        let (x_scale, y_scale) = match scale {
+            Scale::Unscaled => (0, 0),
+            Scale::Scaled { x, y } => (x.0, y.0),
+        };
+        let point = Point {
+            x: mul_fix(point.x, self.xx)
+                .wrapping_add(mul_fix(point.y, self.xy))
+                .wrapping_add(delta(self.dx, x_scale)),
+            y: mul_fix(point.x, self.yx)
+                .wrapping_add(mul_fix(point.y, self.yy))
+                .wrapping_add(delta(self.dy, y_scale)),
+        };
+        state.bounds = Some(state.bounds.map_or(
+            CBox {
+                x_min: point.x,
+                y_min: point.y,
+                x_max: point.x,
+                y_max: point.y,
+            },
+            |bounds| CBox {
+                x_min: bounds.x_min.min(point.x),
+                y_min: bounds.y_min.min(point.y),
+                x_max: bounds.x_max.max(point.x),
+                y_max: bounds.y_max.max(point.y),
+            },
+        ));
+        point
+    }
+}
+
+fn slot_pseudo_rotate(mut x: i32, mut y: i32, mut theta: i32) -> (i32, i32) {
+    // FreeType's FT_Vector_Unit and FT_Tan share this 23-step integer CORDIC.
+    const ATAN: [i32; 22] = [
+        1740967, 919879, 466945, 234379, 117304, 58666, 29335, 14668, 7334, 3667, 1833, 917, 458,
+        229, 115, 57, 29, 14, 7, 4, 2, 1,
+    ];
+    while theta < -(45 << 16) {
+        (x, y) = (y, x.wrapping_neg());
+        theta = theta.wrapping_add(90 << 16);
+    }
+    while theta > 45 << 16 {
+        (x, y) = (y.wrapping_neg(), x);
+        theta = theta.wrapping_sub(90 << 16);
+    }
+    for (i, atan) in (1u32..).zip(ATAN) {
+        let b = 1i32.wrapping_shl(i.wrapping_sub(1));
+        if theta < 0 {
+            (x, y) = (
+                x.wrapping_add(y.wrapping_add(b) >> i),
+                y.wrapping_sub(x.wrapping_add(b) >> i),
+            );
+            theta = theta.wrapping_add(atan);
+        } else {
+            (x, y) = (
+                x.wrapping_sub(y.wrapping_add(b) >> i),
+                y.wrapping_add(x.wrapping_add(b) >> i),
+            );
+            theta = theta.wrapping_sub(atan);
+        }
+    }
+    (x, y)
+}
+
+fn slot_unit(angle: i32) -> (i32, i32) {
+    let (x, y) = slot_pseudo_rotate(0x00dbd95b, 0, angle);
+    (x.wrapping_add(0x80) >> 8, y.wrapping_add(0x80) >> 8)
+}
+
+fn slot_tan(angle: i32) -> i32 {
+    let (x, y) = slot_pseudo_rotate(1 << 24, 0, angle);
+    div_fix(y, x)
+}
+
+fn slot_component_transform(flags: u32, raw: [f32; 9]) -> SlotTransform {
+    let value = |index: usize, bit: u32, factor: i32, fallback: i32| {
+        if flags & (1 << bit) == 0 {
+            fallback
+        } else {
+            hb_clamp_to_i32(hb_roundf32(
+                raw.get(index).copied().unwrap_or(0.0) * factor as f32,
+            ))
+        }
+    };
+    let sx = value(3, 8, 64, 0x10000);
+    let sy = value(4, 9, 64, sx);
+    let rotation = value(2, 6, 16, 0);
+    let (cos, sin) = if rotation == 0 {
+        (0x10000, 0)
+    } else {
+        slot_unit(mul_fix(rotation, 180 << 16))
+    };
+    let mut matrix = SlotTransform {
+        xx: mul_fix(cos, sx),
+        xy: mul_fix(sin.wrapping_neg(), sy),
+        yx: mul_fix(sin, sx),
+        yy: mul_fix(cos, sy),
+        dx: 0,
+        dy: 0,
+    };
+    let skew_x = value(5, 13, 16, 0);
+    let skew_y = value(6, 14, 16, 0);
+    if skew_x != 0 || skew_y != 0 {
+        let skew = SlotTransform {
+            xy: slot_tan(mul_fix(skew_x, 180 << 16)).wrapping_neg(),
+            yx: slot_tan(mul_fix(skew_y, 180 << 16)),
+            ..SlotTransform::IDENTITY
+        };
+        matrix = matrix.multiply(skew);
+    }
+    let cx = value(7, 10, 64, 0);
+    let cy = value(8, 11, 64, 0);
+    matrix.dx = value(0, 4, 64, 0)
+        .wrapping_add(cx)
+        .wrapping_sub(mul_fix(matrix.xx, cx))
+        .wrapping_sub(mul_fix(matrix.xy, cy));
+    matrix.dy = value(1, 5, 64, 0)
+        .wrapping_add(cy)
+        .wrapping_sub(mul_fix(matrix.yx, cx))
+        .wrapping_sub(mul_fix(matrix.yy, cy));
+    matrix
+}
+
 struct TransformPen<'a, P> {
     inner: &'a mut P,
     transform: Transform,
@@ -125,6 +297,56 @@ impl<P: Pen> Pen for TransformPen<'_, P> {
 }
 
 trait LeafSink {
+    fn enter_component(&mut self, _flags: u32, _raw: [f32; 9]) {}
+    fn leave_component(&mut self) {}
+
+    fn condition(
+        &self,
+        conditions: Option<sofel_font::read::varc::ConditionList<'_>>,
+        index: usize,
+        coords: &[i32],
+        delta: &impl Fn(u32) -> f64,
+    ) -> Option<bool> {
+        conditions?.evaluate(index, coords, delta)
+    }
+
+    fn checkpoint(&self, _state: &DrawState) -> Option<SlotCheckpoint> {
+        None
+    }
+
+    fn failed_child(
+        &mut self,
+        error: OutlineError,
+        _checkpoint: Option<SlotCheckpoint>,
+        _state: &mut DrawState,
+    ) -> Result<(), OutlineError> {
+        Err(error)
+    }
+
+    fn cycle(
+        &mut self,
+        _outlines: &Outlines<'_, '_, '_>,
+        _glyph: GlyphId,
+        _transform: Transform,
+        _coords: &[i32],
+        _scratch: &mut Scratch,
+        _state: &mut DrawState,
+    ) -> Result<(), OutlineError> {
+        Ok(())
+    }
+
+    fn depth_limit(
+        &mut self,
+        _outlines: &Outlines<'_, '_, '_>,
+        _glyph: GlyphId,
+        _transform: Transform,
+        _coords: &[i32],
+        _scratch: &mut Scratch,
+        _state: &mut DrawState,
+    ) -> Result<(), OutlineError> {
+        Ok(())
+    }
+
     fn leaf(
         &mut self,
         outlines: &Outlines<'_, '_, '_>,
@@ -134,6 +356,15 @@ trait LeafSink {
         scratch: &mut Scratch,
         state: &mut DrawState,
     ) -> Result<(), OutlineError>;
+}
+
+#[derive(Clone, Copy)]
+struct SlotCheckpoint {
+    points: usize,
+    ends: usize,
+    bounds: Option<CBox>,
+    overlap: bool,
+    edges_left: u32,
 }
 
 struct IntegerSink<'a, P> {
@@ -152,12 +383,12 @@ impl<P: Pen> LeafSink for IntegerSink<'_, P> {
         state: &mut DrawState,
     ) -> Result<(), OutlineError> {
         let info = if coords == outlines.instance().coords_normalized() {
-            outlines.load(glyph, self.scale, scratch)?
+            outlines.load_base(glyph, self.scale, scratch)?
         } else {
             let location = Location::from_normalized_2_14(&outlines.font, coords);
             outlines
                 .with_location(&location)
-                .load(glyph, self.scale, scratch)?
+                .load_base(glyph, self.scale, scratch)?
         };
         state.overlap |= info.overlap;
         scratch.decompose(
@@ -323,7 +554,13 @@ fn visit<S: LeafSink>(
         return Ok(());
     }
     if let Some(components) = varc.components(glyph) {
-        if depth_left == 0 || state.edges_left == 0 || state.path.contains(&glyph.0) {
+        if state.path.contains(&glyph.0) {
+            return sink.cycle(outlines, glyph, transform, coords, scratch, state);
+        }
+        if depth_left == 0 {
+            return sink.depth_limit(outlines, glyph, transform, coords, scratch, state);
+        }
+        if state.edges_left == 0 {
             return Ok(());
         }
         state.edges_left = state.edges_left.saturating_sub(1);
@@ -338,10 +575,6 @@ fn visit<S: LeafSink>(
             let encoded = record.get(at..end).ok_or(OutlineError::InvalidComposite)?;
             at = end;
             if let Some(index) = component.condition_index {
-                let Some(condition) = varc.condition_list() else {
-                    state.path.pop();
-                    return Err(OutlineError::InvalidComposite);
-                };
                 let store = varc.variation_store();
                 let delta = |var_index| {
                     let mut value = [0.0];
@@ -349,7 +582,7 @@ fn visit<S: LeafSink>(
                         .and_then(|store| store.add_delta(var_index, coords, &mut value))
                         .map_or(0.0, |_| value[0])
                 };
-                match condition.evaluate(index as usize, coords, &delta) {
+                match sink.condition(varc.condition_list(), index as usize, coords, &delta) {
                     Some(true) => {}
                     Some(false) => continue,
                     None => {
@@ -419,6 +652,9 @@ fn visit<S: LeafSink>(
                 }
             }
             let child = transform.multiply(&component_transform(component.flags, raw));
+            let checkpoint = sink.checkpoint(state);
+            let path_len = state.path.len();
+            sink.enter_component(component.flags, raw);
             let result = visit(
                 outlines,
                 varc,
@@ -430,15 +666,258 @@ fn visit<S: LeafSink>(
                 sink,
                 state,
             );
+            sink.leave_component();
             if let Err(error) = result {
-                state.path.pop();
-                return Err(error);
+                state.path.truncate(path_len);
+                sink.failed_child(error, checkpoint, state)?;
             }
         }
         state.path.pop();
         return Ok(());
     }
     sink.leaf(outlines, glyph, transform, coords, scratch, state)
+}
+
+struct SlotBlend<'a> {
+    store: sofel_font::read::item_variation::ItemVariationStore<'a>,
+    scalars: sofel_font::var::StoreScalars<i32>,
+}
+
+impl sofel_font::read::cff::dict::BlendWeights for SlotBlend<'_> {
+    fn regions(&self, index: u32) -> Option<u32> {
+        let data = self.store.item_data(u16::try_from(index).ok()?)?;
+        for column in 0..usize::from(data.region_index_count()) {
+            if data.region_index(column)? >= self.store.region_count() {
+                return None;
+            }
+        }
+        Some(u32::from(data.region_index_count()))
+    }
+    fn weight(&self, index: u32, column: u32) -> i32 {
+        let value = u16::try_from(index)
+            .ok()
+            .and_then(|index| self.store.item_data(index))
+            .and_then(|data| data.region_index(usize::try_from(column).ok()?))
+            .and_then(|region| self.scalars.regions().get(usize::from(region)).copied());
+        value.unwrap_or(0)
+    }
+}
+
+struct SlotSink {
+    scale: Scale,
+    points: Vec<Point>,
+    tags: Vec<u8>,
+    ends: Vec<usize>,
+    transforms: Vec<SlotTransform>,
+}
+
+impl LeafSink for SlotSink {
+    fn enter_component(&mut self, flags: u32, raw: [f32; 9]) {
+        let parent = self
+            .transforms
+            .last()
+            .copied()
+            .unwrap_or(SlotTransform::IDENTITY);
+        self.transforms
+            .push(parent.multiply(slot_component_transform(flags, raw)));
+    }
+
+    fn leave_component(&mut self) {
+        self.transforms.pop();
+    }
+
+    fn condition(
+        &self,
+        conditions: Option<sofel_font::read::varc::ConditionList<'_>>,
+        index: usize,
+        coords: &[i32],
+        delta: &impl Fn(u32) -> f64,
+    ) -> Option<bool> {
+        match conditions {
+            None => Some(true),
+            Some(conditions) if index >= conditions.len() => Some(true),
+            Some(conditions) => Some(
+                conditions
+                    .evaluate_ft(index, coords, delta)
+                    .unwrap_or(false),
+            ),
+        }
+    }
+
+    fn checkpoint(&self, state: &DrawState) -> Option<SlotCheckpoint> {
+        Some(SlotCheckpoint {
+            points: self.points.len(),
+            ends: self.ends.len(),
+            bounds: state.bounds,
+            overlap: state.overlap,
+            edges_left: state.edges_left,
+        })
+    }
+
+    fn failed_child(
+        &mut self,
+        _error: OutlineError,
+        checkpoint: Option<SlotCheckpoint>,
+        state: &mut DrawState,
+    ) -> Result<(), OutlineError> {
+        let checkpoint = checkpoint.ok_or(OutlineError::InvalidComposite)?;
+        self.points.truncate(checkpoint.points);
+        self.tags.truncate(checkpoint.points);
+        self.ends.truncate(checkpoint.ends);
+        state.bounds = checkpoint.bounds;
+        state.overlap = checkpoint.overlap;
+        state.edges_left = checkpoint.edges_left;
+        Ok(())
+    }
+
+    fn cycle(
+        &mut self,
+        outlines: &Outlines<'_, '_, '_>,
+        glyph: GlyphId,
+        transform: Transform,
+        coords: &[i32],
+        scratch: &mut Scratch,
+        state: &mut DrawState,
+    ) -> Result<(), OutlineError> {
+        self.leaf(outlines, glyph, transform, coords, scratch, state)
+    }
+
+    fn depth_limit(
+        &mut self,
+        outlines: &Outlines<'_, '_, '_>,
+        glyph: GlyphId,
+        transform: Transform,
+        coords: &[i32],
+        scratch: &mut Scratch,
+        state: &mut DrawState,
+    ) -> Result<(), OutlineError> {
+        self.leaf(outlines, glyph, transform, coords, scratch, state)
+    }
+
+    fn leaf(
+        &mut self,
+        outlines: &Outlines<'_, '_, '_>,
+        glyph: GlyphId,
+        _transform: Transform,
+        coords: &[i32],
+        scratch: &mut Scratch,
+        state: &mut DrawState,
+    ) -> Result<(), OutlineError> {
+        let location = Location::from_normalized_2_14(&outlines.font, coords);
+        let child = outlines.with_location(&location);
+        let info = match &child.format {
+            crate::Format::Cff(cff) => {
+                if matches!(self.scale, Scale::Scaled { .. }) && child.font.units_per_em() > 0x7fff
+                {
+                    return Err(OutlineError::InvalidOutline);
+                }
+                if let Some(store) = cff.variation_store() {
+                    let raw: Vec<_> = coords
+                        .iter()
+                        .map(|coord| sofel_font::read::Fixed(coord.saturating_mul(4)))
+                        .collect();
+                    let scalars = sofel_font::var::StoreScalars::from_store::<sofel_font::var::Ft>(
+                        &store,
+                        &raw,
+                        !raw.is_empty(),
+                    );
+                    crate::cff::load_cff_with_blend(
+                        cff,
+                        glyph,
+                        self.scale,
+                        &SlotBlend { store, scalars },
+                        scratch,
+                        None,
+                    )?
+                    .0
+                } else {
+                    crate::cff::load_cff_at(
+                        &child.font,
+                        child.location,
+                        cff,
+                        glyph,
+                        self.scale,
+                        scratch,
+                    )?
+                }
+            }
+            crate::Format::Glyf => crate::load_glyf_with_coords(
+                child.instance(),
+                glyph,
+                self.scale,
+                scratch,
+                None,
+                Some(coords),
+            )?,
+            crate::Format::Unsupported(error) => return Err(*error),
+        };
+        state.overlap |= info.overlap;
+        let offset = self.points.len();
+        let transform = self
+            .transforms
+            .last()
+            .copied()
+            .unwrap_or(SlotTransform::IDENTITY);
+        self.points.extend(
+            scratch
+                .points
+                .iter()
+                .map(|&point| transform.apply(point, self.scale, state)),
+        );
+        self.tags.extend_from_slice(&scratch.tags);
+        for &end in &scratch.ends {
+            self.ends.push(
+                offset
+                    .checked_add(end)
+                    .ok_or(OutlineError::InvalidOutline)?,
+            );
+        }
+        Ok(())
+    }
+}
+
+pub(super) fn load(
+    outlines: &Outlines<'_, '_, '_>,
+    varc: &Varc<'_>,
+    glyph: GlyphId,
+    scale: Scale,
+    scratch: &mut Scratch,
+) -> Result<OutlineInfo, OutlineError> {
+    scratch.clear();
+    let mut state = DrawState {
+        path: Vec::new(),
+        edges_left: 16_384,
+        bounds: None,
+        overlap: false,
+    };
+    let mut sink = SlotSink {
+        scale,
+        points: Vec::new(),
+        tags: Vec::new(),
+        ends: Vec::new(),
+        transforms: Vec::new(),
+    };
+    if let Err(error) = visit(
+        outlines,
+        varc,
+        glyph,
+        Transform::IDENTITY,
+        outlines.instance().coords_normalized(),
+        16,
+        scratch,
+        &mut sink,
+        &mut state,
+    ) {
+        scratch.clear();
+        return Err(error);
+    }
+    scratch.points = sink.points;
+    scratch.tags = sink.tags;
+    scratch.ends = sink.ends;
+    Ok(OutlineInfo {
+        overlap: state.overlap,
+        cbox: state.bounds.unwrap_or_default(),
+    })
 }
 
 pub(super) fn draw(

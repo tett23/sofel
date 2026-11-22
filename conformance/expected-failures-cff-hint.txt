@@ -6,6 +6,3 @@
 # contour ends) and box agree, unless its reason starts with `[slot]`.
 # Remove an entry when nothing matches it; the full run fails until you do.
 harfbuzz/test/fuzzing/fonts/clusterfuzz-testcase-hb-fuzzer-5662671558934528:*:*:*  # [slot] The CFF2 Private DICT blend fails (the regions have 2 axes, fvar has none), so sofel's loader fails with or without hinting where FreeType loads empty outlines; an ADR 0021 loading difference, not hinting (roadmap)
-freetype/tests/data/varc-short-cff2.otf:*:*:3  # [slot] FreeType loads a VARC glyph through VARC, unhinted; Outlines::load and load_with_hint read the CFF2 charstring, or fail where there is none (roadmap: VARC glyphs in the slot)
-harfbuzz/test/api/fonts/varc-short-cff2.otf:*:*:3  # [slot] FreeType loads a VARC glyph through VARC, unhinted; Outlines::load and load_with_hint read the CFF2 charstring, or fail where there is none (roadmap: VARC glyphs in the slot)
-freetype/tests/data/varc-static-cff2.otf:*:*:2  # [slot] FreeType loads a VARC glyph through VARC, unhinted; Outlines::load and load_with_hint read the CFF2 charstring, or fail where there is none (roadmap: VARC glyphs in the slot)
