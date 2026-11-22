@@ -836,6 +836,8 @@ pub(crate) trait Ops {
 
     fn flush_op(&mut self, _op: u32, _env: &mut Env<'_, '_>) {}
 
+    fn vsindex(&mut self, _env: &mut Env<'_, '_>) {}
+
     fn flush_hintmask(&mut self, op: u32, env: &mut Env<'_, '_>) {
         self.flush_args_and_op(op, env);
     }
@@ -975,6 +977,7 @@ fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
                 });
             }
             env.process_vsindex();
+            o.vsindex(env);
             env.clear_args();
         }
         _ => env.process_number(op),
@@ -1238,6 +1241,7 @@ impl Command {
 #[derive(Default)]
 pub(crate) struct Flatten<'a> {
     pub projection: Option<&'a super::projection::Projection>,
+    pub preserve_vsindex: bool,
     pub emitted_major: Option<u32>,
     pub out: Vec<u8>,
     pub drop_hints: bool,
@@ -1328,6 +1332,17 @@ impl Flatten<'_> {
 }
 
 impl Ops for Flatten<'_> {
+    fn vsindex(&mut self, env: &mut Env<'_, '_>) {
+        if self.preserve_vsindex {
+            if let Ok(index) = i32::try_from(env.ivs) {
+                encode_int(&mut self.out, index);
+                encode_op(&mut self.out, VSINDEXCS);
+            } else {
+                env.set_error();
+            }
+        }
+    }
+
     fn flush_args_and_op(&mut self, op: u32, env: &mut Env<'_, '_>) {
         let skip = op == RETURN || op == ENDCHAR || (is_hint(op) && self.drop_hints);
         if !skip && let Some(r) = &mut self.rounding {
