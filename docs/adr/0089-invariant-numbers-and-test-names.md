@@ -1,6 +1,6 @@
 # ADR 0089: 不変条件と受けいれ条件の番号と、テストの名前を決まりの形に揃える
 
-Status: accepted-pending
+Status: superseded-pending [{"part":"揃った形を保つ検査と不変条件 I1、I2","by":["docs/adr/0099-test-name-reference-exceptions.md"]}]
 
 ## 文脈
 
