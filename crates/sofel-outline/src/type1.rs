@@ -51,9 +51,7 @@ pub fn draw_type1_native(
         &mut null_pen,
     );
     decode_program(face, &program, &mut scan, &mut Vec::new(), 0, false)?;
-    if scan.has_stems
-        && (scan.unsupported_stem_map || scan.h_stem.is_none() || !face.native_stem_blues_empty())
-    {
+    if scan.has_stems && (scan.unsupported_stem_map || !face.native_stem_blues_empty()) {
         return Err(OutlineError::UnsupportedFormat);
     }
     let mut state = State::new(scale, [65536, 0, 0, 65536, 0, 0], true, pen);

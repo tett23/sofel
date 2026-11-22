@@ -57,7 +57,6 @@ pub fn draw_cid_native(
     decode_program(face, cid, &program, &mut scan, &mut Vec::new(), 0, false)?;
     if scan.has_stems
         && (scan.unsupported_stem_map
-            || scan.h_stem.is_none()
             || matrix != [65536, 0, 0, 65536, 0, 0]
             || !face.native_stem_blues_empty())
     {

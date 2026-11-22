@@ -142,6 +142,57 @@ fn adr0064_i1_native_cid_duplicate_stems_match_freetype() {
 }
 
 #[test]
+fn adr0064_i1_native_cid_vertical_stem_matches_freetype() {
+    let bytes = cid_sample(&[
+        139, 248, 136, 13, 239, 189, 3, 239, 239, 21, 239, 139, 5, 139, 239, 5, 39, 39, 5, 9, 14,
+    ]);
+    let path = std::env::temp_dir().join(format!(
+        "sofel-adr0064-cid-vstem-{}.cid",
+        std::process::id()
+    ));
+    std::fs::write(&path, &bytes).unwrap();
+    let face = CidFace::parse(&bytes, 1024).unwrap();
+    let factor = Fixed(div_fix(16 * 64, i32::from(face.units_per_em())));
+    let mut commands = Vec::new();
+    let (_, advance) = draw_cid_native(
+        &face,
+        0,
+        Scale::Scaled {
+            x: factor,
+            y: factor,
+        },
+        HintTarget::Mono,
+        &mut FnPen(|c| commands.push(c)),
+    )
+    .unwrap();
+    let mut points = Vec::new();
+    for command in commands {
+        match command {
+            Command::MoveTo(point) | Command::LineTo(point) => points.push(point),
+            Command::Close => {
+                if points.last() == points.first() {
+                    points.pop();
+                }
+            }
+            other => assert_eq!(other, Command::Close),
+        }
+    }
+    let mut actual = format!("advance {advance} 0\n");
+    for point in &points {
+        actual.push_str(&format!("point {} {} 1\n", point.x, point.y));
+    }
+    actual.push_str(&format!("end {}\n", points.len() - 1));
+    let reference = std::process::Command::new(paths::ft_dump())
+        .args(["--hint-slot", "16", "0", "native", "mono"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(reference.status.success());
+    assert_eq!(actual, String::from_utf8(reference.stdout).unwrap());
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn adr0064_i1_native_cid_stems_match_freetype_all_targets() {
     let bytes = cid_sample(&[
         139, 248, 136, 13, 239, 189, 1, 239, 239, 21, 239, 139, 5, 139, 239, 5, 39, 39, 5, 9, 14,
@@ -406,6 +457,58 @@ fn adr0064_i1_native_type1_duplicate_stems_match_freetype() {
     ]);
     let path = std::env::temp_dir().join(format!(
         "sofel-adr0064-type1-duplicate-stems-{}.pfa",
+        std::process::id()
+    ));
+    std::fs::write(&path, &pfa).unwrap();
+    let source = Type1Source::parse_pfa(&pfa, 4096).unwrap();
+    let face = Type1Face::new(&source).unwrap();
+    let factor = Fixed(div_fix(16 * 64, 1000));
+    let mut commands = Vec::new();
+    let (_, advance) = draw_type1_native(
+        &face,
+        1,
+        Scale::Scaled {
+            x: factor,
+            y: factor,
+        },
+        HintTarget::Mono,
+        &mut FnPen(|c| commands.push(c)),
+    )
+    .unwrap();
+    let mut points = Vec::new();
+    for command in commands {
+        match command {
+            Command::MoveTo(point) | Command::LineTo(point) => points.push(point),
+            Command::Close => {
+                if points.last() == points.first() {
+                    points.pop();
+                }
+            }
+            other => assert_eq!(other, Command::Close),
+        }
+    }
+    let mut actual = format!("advance {advance} 0\n");
+    for point in &points {
+        actual.push_str(&format!("point {} {} 1\n", point.x, point.y));
+    }
+    actual.push_str(&format!("end {}\n", points.len() - 1));
+    let reference = std::process::Command::new(paths::ft_dump())
+        .args(["--hint-slot", "16", "1", "native", "mono"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(reference.status.success());
+    assert_eq!(actual, String::from_utf8(reference.stdout).unwrap());
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn adr0064_i1_native_type1_vertical_stem_matches_freetype() {
+    let (pfa, _) = triangle::with_glyph_program(&[
+        139, 248, 136, 13, 239, 189, 3, 239, 239, 21, 239, 139, 5, 139, 239, 5, 39, 39, 5, 9, 14,
+    ]);
+    let path = std::env::temp_dir().join(format!(
+        "sofel-adr0064-type1-vstem-{}.pfa",
         std::process::id()
     ));
     std::fs::write(&path, &pfa).unwrap();
