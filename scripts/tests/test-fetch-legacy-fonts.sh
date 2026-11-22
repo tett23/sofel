@@ -41,4 +41,4 @@ printf 'archive\thttps://example.invalid/fonts.tar.gz\t%s\t%s\tarchives/fonts.ta
 printf 'sample\tarchive\tlink.bdf\tfonts/inside.bdf\t%s\tlicense\tlegacy\n' "$font_sha" > "$tmp/fonts.tsv"
 reject 'symlink member accepted'
 
-echo 'ok: root ADR 0090 I1, I2 (6 cases)'
+echo 'ADR 0090 I1, I2: tar archive boundaries (6 cases)'
