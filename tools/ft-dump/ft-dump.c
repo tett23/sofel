@@ -311,6 +311,7 @@
 #include FT_PARAMETER_TAGS_H
 #include FT_OPENTYPE_VALIDATE_H
 #include FT_COLOR_H
+#include FT_OTSVG_H
 #include <freetype/internal/cffotypes.h>
 /* psaux's cff_random (src/psaux/psobjs.c), from psrandom.c. */
 FT_UInt32 ft_dump_cff_random(FT_UInt32 r);
@@ -1769,15 +1770,21 @@ static int otvalid(const char *path)
   return 0;
 }
 
-/* Raw glyph slot before rendering, for ADR 0064 invariant 1. */
+/*
+ * Raw glyph slot before rendering, for ADR 0064 invariant 1.
+ * --color adds FT_LOAD_COLOR and reports the format; SVG slots also report
+ * document length, covered glyph range and units per EM. --no-svg adds
+ * FT_LOAD_NO_SVG. Neither option calls FT_Render_Glyph: without SVG hooks
+ * rendering fails even when FT_Load_Glyph succeeds.
+ */
 static int hint_slot(const char *size, const char *glyph, const char *engine,
-                     const char *target, const char *path)
+                     const char *target, const char *path, FT_Int32 extra_flags)
 {
   FT_Library library;
   FT_Face face;
   FT_Error error;
   FT_UInt version = 0;
-  FT_Int32 flags = FT_LOAD_NO_BITMAP;
+  FT_Int32 flags = FT_LOAD_NO_BITMAP | extra_flags;
   char *end;
   long ppem = strtol(size, &end, 10);
   if (!*size || *end || ppem <= 0 || ppem > 65535) return 2;
@@ -1805,11 +1812,19 @@ static int hint_slot(const char *size, const char *glyph, const char *engine,
     error = set_reference_location(library, face, reference_variations);
     if (!error) error = FT_Set_Pixel_Sizes(face, 0, (FT_UInt)ppem);
     if (!error) error = FT_Load_Glyph(face, (FT_UInt)gid, flags);
-    if (!error && face->glyph->format != FT_GLYPH_FORMAT_OUTLINE)
+    if (!error && !(extra_flags & FT_LOAD_COLOR) &&
+        face->glyph->format != FT_GLYPH_FORMAT_OUTLINE)
       error = FT_Err_Invalid_Glyph_Format;
     if (!error) {
       FT_GlyphSlot slot = face->glyph;
+      if (extra_flags & FT_LOAD_COLOR)
+        printf("format %lu\n", (unsigned long)slot->format);
       printf("advance %ld %ld\n", slot->advance.x, slot->advance.y);
+      if (slot->format == FT_GLYPH_FORMAT_SVG) {
+        FT_SVG_Document doc = (FT_SVG_Document)slot->other;
+        printf("svg-document %lu %u %u %u\n", doc->svg_document_length,
+               doc->start_glyph_id, doc->end_glyph_id, doc->units_per_EM);
+      }
       for (int i = 0; i < slot->outline.n_points; i++)
         printf("point %ld %ld %u\n", slot->outline.points[i].x, slot->outline.points[i].y,
                (unsigned char)slot->outline.tags[i]);
@@ -2150,8 +2165,16 @@ int main(int argc, char **argv)
     return legacy_kerning(argv[2], argc == 4 ? argv[3] : NULL);
   if (argc == 3 && !strcmp(argv[1], "--legacy-tables"))
     return legacy_tables(argv[2]);
-  if (argc == 7 && !strcmp(argv[1], "--hint-slot"))
-    return hint_slot(argv[2], argv[3], argv[4], argv[5], argv[6]);
+  if (argc >= 7 && argc <= 9 && !strcmp(argv[1], "--hint-slot")) {
+    FT_Int32 extra_flags = 0;
+    for (int arg = 6; arg < argc - 1; arg++) {
+      if (!strcmp(argv[arg], "--color")) extra_flags |= FT_LOAD_COLOR;
+      else if (!strcmp(argv[arg], "--no-svg")) extra_flags |= FT_LOAD_NO_SVG;
+      else return 2;
+    }
+    return hint_slot(argv[2], argv[3], argv[4], argv[5], argv[argc - 1],
+                     extra_flags);
+  }
   if (argc == 4 && !strcmp(argv[1], "--auto-style"))
     return auto_style(argv[2], argv[3]);
   if (argc == 3 && !strcmp(argv[1], "--auto-styles"))
@@ -2208,7 +2231,7 @@ int main(int argc, char **argv)
     argc = 2;
   }
   if (argc != 2) {
-    fprintf(stderr, "usage: ft-dump FILE | ft-dump --hint-slot PPEM GLYPH ENGINE TARGET FILE | ft-dump --auto-style GLYPH FILE | ft-dump --auto-styles [--variations=TAG=value,...] FILE | ft-dump --auto-hint FIRST_PPEM LAST_PPEM TARGET [--variations=TAG=value,...] FILE | ft-dump --native-hint FIRST_PPEM LAST_PPEM TARGET [--variations=TAG=value,...] [--face=N] [--glyph-step=N] FILE | ft-dump --advances [--named-instance=N] [--variations=TAG=value,...] FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --stroke SIZE GLYPH RADIUS JOIN MITER BORDER FILE | ft-dump --sampled-outline SIZE FILE PLAN | ft-dump --sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...] | ft-dump --raster PPEM [--color|--lcd|--lcd-v|--mono|--sdf|--bitmap-sdf] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --cff2-private FILE | ft-dump --mono-outline FLAGS < OUTLINE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
+    fprintf(stderr, "usage: ft-dump FILE | ft-dump --hint-slot PPEM GLYPH ENGINE TARGET [--color] [--no-svg] FILE | ft-dump --auto-style GLYPH FILE | ft-dump --auto-styles [--variations=TAG=value,...] FILE | ft-dump --auto-hint FIRST_PPEM LAST_PPEM TARGET [--variations=TAG=value,...] FILE | ft-dump --native-hint FIRST_PPEM LAST_PPEM TARGET [--variations=TAG=value,...] [--face=N] [--glyph-step=N] FILE | ft-dump --advances [--named-instance=N] [--variations=TAG=value,...] FILE | ft-dump --calc | ft-dump --outline SIZE FILE | ft-dump --stroke SIZE GLYPH RADIUS JOIN MITER BORDER FILE | ft-dump --sampled-outline SIZE FILE PLAN | ft-dump --sampled-outline-var SIZE FILE PLAN TAG=value[,TAG=value...] | ft-dump --raster PPEM [--color|--lcd|--lcd-v|--mono|--sdf|--bitmap-sdf] FILE | ft-dump --cid FILE | ft-dump --ps-info FILE | ft-dump --cff2-private FILE | ft-dump --mono-outline FLAGS < OUTLINE | ft-dump --otvalid FILE | ft-dump --colr FILE | ft-dump --sbit FILE\n");
     return 2;
   }
   if (FT_Init_FreeType(&library) != 0) {
