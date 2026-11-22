@@ -1,6 +1,6 @@
 # ADR 0100: 旧形式を含む共通フェイス API とメトリクス単位
 
-Status: proposed
+Status: accepted-pending
 
 ## 文脈
 
