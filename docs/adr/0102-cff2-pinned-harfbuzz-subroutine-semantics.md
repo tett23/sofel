@@ -1,6 +1,6 @@
 # ADR 0102: CFF2 の共有サブルーチンと変化量ストアを固定版 HarfBuzz に合わせる
 
-Status: proposed
+Status: accepted-pending
 
 ## 文脈
 
