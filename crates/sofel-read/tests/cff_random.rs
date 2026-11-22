@@ -466,7 +466,7 @@ fn adr0082_cff2_is_not_checked() {
 }
 
 #[test]
-fn adr0082_kind_details_and_messages() {
+fn adr0092_i3_kind_details_and_messages() {
     let k = Kind::CffRandomUnchecked {
         glyph: 3,
         position: 9,

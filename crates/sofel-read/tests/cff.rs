@@ -1815,7 +1815,7 @@ fn validator_cff2() {
 }
 
 #[test]
-fn inv1_fdselect_format4_severity() {
+fn adr0056_i1_fdselect_format4_severity() {
     let make = |sentinel: u32| {
         let mut fd_select = vec![4];
         fd_select.extend(2u32.to_be_bytes());

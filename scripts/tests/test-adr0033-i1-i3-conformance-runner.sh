@@ -60,29 +60,29 @@ reset_state
 sh "$root/scripts/test-conformance.sh" 2 || fail 'runner failed'
 printf 'doc\none\nthree\ntwo\n' >"$tmp/expected"
 sort "$tmp/done" >"$tmp/sorted"
-cmp "$tmp/expected" "$tmp/sorted" || fail 'I1: artifacts or doc tests omitted/duplicated'
-[ "$(sort -nr "$tmp/counts" | head -1)" = 2 ] || fail 'I3: not bounded at two'
+cmp "$tmp/expected" "$tmp/sorted" || fail 'ADR 0033 I1: artifacts or doc tests omitted/duplicated'
+[ "$(sort -nr "$tmp/counts" | head -1)" = 2 ] || fail 'ADR 0033 I3: not bounded at two'
 reset_state
 sh "$root/scripts/test-conformance.sh" 1 || fail 'serial runner failed'
-[ "$(sort -nr "$tmp/counts" | head -1)" = 1 ] || fail 'I3: serial limit'
+[ "$(sort -nr "$tmp/counts" | head -1)" = 1 ] || fail 'ADR 0033 I3: serial limit'
 reset_state
-TEST_NAMES=one sh "$root/scripts/test-conformance.sh" 2 || fail 'I1: single artifact'
+TEST_NAMES=one sh "$root/scripts/test-conformance.sh" 2 || fail 'ADR 0033 I1: single artifact'
 printf 'one\ndoc\n' >"$tmp/expected"
-cmp "$tmp/expected" "$tmp/done" || fail 'I1: single artifact omitted/duplicated'
+cmp "$tmp/expected" "$tmp/done" || fail 'ADR 0033 I1: single artifact omitted/duplicated'
 for invalid in 0 00 -1 x 1.5 ''; do
   if sh "$root/scripts/test-conformance.sh" "$invalid" >/dev/null 2>&1; then
-    fail 'I3: invalid job count accepted'
+    fail 'ADR 0033 I3: invalid job count accepted'
   fi
 done
 reset_state
-if BUILD_FAIL=1 sh "$root/scripts/test-conformance.sh" 2; then fail 'I2: build failure lost'; fi
-[ ! -s "$tmp/done" ] || fail 'I2: ran tests after failed build'
+if BUILD_FAIL=1 sh "$root/scripts/test-conformance.sh" 2; then fail 'ADR 0033 I2: build failure lost'; fi
+[ ! -s "$tmp/done" ] || fail 'ADR 0033 I2: ran tests after failed build'
 reset_state
-if BUILD_EMPTY=1 sh "$root/scripts/test-conformance.sh" 2; then fail 'I2: empty artifact list accepted'; fi
-[ ! -s "$tmp/done" ] || fail 'I2: ran tests with empty artifact list'
-if BUILD_BAD_JSON=1 sh "$root/scripts/test-conformance.sh" 2; then fail 'I2: malformed JSON accepted'; fi
+if BUILD_EMPTY=1 sh "$root/scripts/test-conformance.sh" 2; then fail 'ADR 0033 I2: empty artifact list accepted'; fi
+[ ! -s "$tmp/done" ] || fail 'ADR 0033 I2: ran tests with empty artifact list'
+if BUILD_BAD_JSON=1 sh "$root/scripts/test-conformance.sh" 2; then fail 'ADR 0033 I2: malformed JSON accepted'; fi
 reset_state
-if TEST_FAIL=two sh "$root/scripts/test-conformance.sh" 2; then fail 'I2: test failure lost'; fi
+if TEST_FAIL=two sh "$root/scripts/test-conformance.sh" 2; then fail 'ADR 0033 I2: test failure lost'; fi
 reset_state
-if DOC_FAIL=1 sh "$root/scripts/test-conformance.sh" 2; then fail 'I2: doc failure lost'; fi
-echo 'ok: ADR 0033 I1-I3 conformance runner'
+if DOC_FAIL=1 sh "$root/scripts/test-conformance.sh" 2; then fail 'ADR 0033 I2: doc failure lost'; fi
+echo 'ADR 0033 I1, I2, I3: conformance runner'

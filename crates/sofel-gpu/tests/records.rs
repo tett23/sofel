@@ -1,7 +1,7 @@
 use sofel_gpu::Outline;
 
 #[test]
-fn i2_gpu_records_match_harfbuzz_for_empty_and_touching_contours()
+fn adr0068_i2_gpu_records_match_harfbuzz_for_empty_and_touching_contours()
 -> Result<(), sofel_gpu::OutOfRange> {
     let mut expected = include_bytes!("data/outline-records.bin").as_slice();
     for case in 0..5 {
@@ -61,7 +61,7 @@ fn i2_gpu_records_match_harfbuzz_for_empty_and_touching_contours()
 }
 
 #[test]
-fn i2_gpu_records_reject_unrepresentable_coordinates_and_offsets() {
+fn adr0068_i2_gpu_records_reject_unrepresentable_coordinates_and_offsets() {
     for coordinate in [-8192.25, 8192., f32::NAN] {
         let mut outline = Outline::default();
         outline.move_to([0., 0.]);

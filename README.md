@@ -264,6 +264,9 @@ git config core.hooksPath .githooks
 ```
 
 設計判断は `docs/adr/` にADRとして記録する。
+ADR 番号を含むテスト名は、条件番号とその参照先を `sh scripts/check-test-names.sh` で検査する（[ADR 0089](docs/adr/0089-invariant-numbers-and-test-names.md)、[ADR 0099](docs/adr/0099-test-name-reference-exceptions.md)）。
+条件番号を決められない既存テストは [除外一覧](scripts/test-name-exceptions.tsv) にパス、テスト名、理由を記録し、名前の検査だけを除く。
+この検査は文書だけの変更でも CI で実行する。
 
 ツールチェーンは `rust-toolchain.toml` で固定している。テストは次のとおり走らせる。
 

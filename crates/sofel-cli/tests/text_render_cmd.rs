@@ -46,7 +46,7 @@ fn run(args: &[&str]) -> std::process::Output {
 }
 
 #[test]
-fn inv5_text_pixels() {
+fn adr0071_i5_text_pixels() {
     let f = font();
     let f = f.to_str().unwrap();
     let empty = run(&["--ppem", "48", "--text", "", f]);
@@ -77,7 +77,7 @@ fn inv5_text_pixels() {
 }
 
 #[test]
-fn inv6_text_usage() {
+fn adr0071_i6_text_usage() {
     let f = font();
     let f = f.to_str().unwrap();
     for args in [
@@ -96,7 +96,7 @@ fn inv6_text_usage() {
 }
 
 #[test]
-fn inv7_text_file_parity() {
+fn adr0071_i7_text_file_parity() {
     let f = font();
     let f = f.to_str().unwrap();
     let path = std::env::temp_dir().join(format!("sofel-text-{}.txt", std::process::id()));
@@ -120,7 +120,7 @@ fn inv7_text_file_parity() {
 }
 
 #[test]
-fn inv8_text_file_read_error() {
+fn adr0071_i8_text_file_read_error() {
     let path = format!("/nonexistent/sofel-text-{}.txt", std::process::id());
     let o = run(&[
         "--ppem",
@@ -135,7 +135,7 @@ fn inv8_text_file_read_error() {
 }
 
 #[test]
-fn inv3_legacy_render_parity_without_text() {
+fn adr0071_i3_legacy_render_parity_without_text() {
     let f = font();
     let f = f.to_str().unwrap();
     for args in [

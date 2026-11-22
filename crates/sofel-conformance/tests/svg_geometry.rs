@@ -2,7 +2,7 @@
 use sofel_conformance::svg_geometry::reference_bounds;
 
 #[test]
-fn i2_geometry_reference_bounds_use_transformed_ink() {
+fn adr0074_i2_geometry_reference_bounds_use_transformed_ink() {
     for (case, bounds) in [
         ("path-line", (4, 4, 11, 11)),
         ("path-curve", (4, 3, 15, 11)),
@@ -16,7 +16,7 @@ fn i2_geometry_reference_bounds_use_transformed_ink() {
 }
 
 #[test]
-fn i2_geometry_observes_the_transformed_outline_separately_from_ink_bounds() {
+fn adr0074_i2_geometry_observes_the_transformed_outline_separately_from_ink_bounds() {
     for case in ["rect", "circle"] {
         assert_eq!(
             sofel_conformance::svg_geometry::observe(case, "outline"),

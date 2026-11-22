@@ -380,7 +380,7 @@ mod tuple_iteration_tests {
 
     #[test]
     #[allow(clippy::unwrap_used)]
-    fn adr0047_i05_tuple_cursors_only_advance() {
+    fn adr0047_i5_tuple_cursors_only_advance() {
         let bytes = [
             0, 2, 0, 12, // two tuples, data begins after the two headers
             0, 2, 0, 0, // first two-byte data slice

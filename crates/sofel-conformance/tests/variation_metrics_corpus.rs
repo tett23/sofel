@@ -370,7 +370,7 @@ fn adr0027_i03_adr0048_i02_freetype_metrics_at_all_corpus_locations() {
 }
 
 #[test]
-fn adr0048_i01_first_single_and_batch_advances_match() {
+fn adr0048_i1_first_single_and_batch_advances_match() {
     let data = paths::testdata();
     let exe = paths::ft_dump();
     paths::require(&exe, "ft-dump").unwrap();

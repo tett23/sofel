@@ -33,7 +33,7 @@ fn math_with_device() -> Vec<u8> {
 }
 
 #[test]
-fn i1_device_query_math_constant_uses_y_ppem() {
+fn adr0062_i1_device_query_math_constant_uses_y_ppem() {
     let data = font_with_math(math_with_device());
     let font = Font::new(&data, 0).unwrap();
     let instance = font.default_instance();
@@ -45,7 +45,7 @@ fn i1_device_query_math_constant_uses_y_ppem() {
 }
 
 #[test]
-fn i1_device_query_math_horizontal_constant_uses_x_ppem() {
+fn adr0062_i1_device_query_math_horizontal_constant_uses_x_ppem() {
     let mut math = math_with_device();
     // `spaceAfterScript` is MATH constant 17, value record 13.
     math[70..74].copy_from_slice(&[0, 100, 0, 214]);
@@ -59,7 +59,7 @@ fn i1_device_query_math_horizontal_constant_uses_x_ppem() {
 }
 
 #[test]
-fn i1_device_query_missing_math_returns_harfbuzz_defaults() {
+fn adr0062_i1_device_query_missing_math_returns_harfbuzz_defaults() {
     let data = sfnt(&sample_tables());
     let font = Font::new(&data, 0).unwrap();
     let query = font
@@ -92,7 +92,7 @@ fn i1_device_query_missing_math_returns_harfbuzz_defaults() {
 }
 
 #[test]
-fn i1_device_query_math_glyphs_kern_and_assembly() {
+fn adr0062_i1_device_query_math_glyphs_kern_and_assembly() {
     let data = font_with_math(layout_query_fixture::sample());
     let font = Font::new(&data, 0).unwrap();
     let query = font
@@ -138,7 +138,7 @@ fn i1_device_query_math_glyphs_kern_and_assembly() {
 }
 
 #[test]
-fn i1_device_query_base_uses_directional_ppem() {
+fn adr0062_i1_device_query_base_uses_directional_ppem() {
     let axis = AxisSpec {
         tags: Some(vec![*b"romn"]),
         scripts: Some(vec![(
@@ -193,7 +193,7 @@ fn i1_device_query_base_uses_directional_ppem() {
 }
 
 #[test]
-fn i1_device_query_ligature_carets_use_x_or_y_ppem() {
+fn adr0062_i1_device_query_ligature_carets_use_x_or_y_ppem() {
     let mut tables = sample_tables();
     tables.push((b"GDEF", layout_query_fixture::gdef_with_carets()));
     tables.sort_by_key(|(tag, _)| **tag);
@@ -218,7 +218,7 @@ fn i1_device_query_ligature_carets_use_x_or_y_ppem() {
 }
 
 #[test]
-fn i1_device_query_math_variation_index_uses_location_without_ppem() {
+fn adr0062_i1_device_query_math_variation_index_uses_location_without_ppem() {
     let data = layout_query_fixture::variable_math_font();
     let font = Font::new(&data, 0).unwrap();
     let location = Location::new(
@@ -237,7 +237,7 @@ fn i1_device_query_math_variation_index_uses_location_without_ppem() {
 }
 
 #[test]
-fn i1_device_query_style_values_use_same_font_location() {
+fn adr0062_i1_device_query_style_values_use_same_font_location() {
     let data = sfnt(&sample_tables());
     let font = Font::new(&data, 0).unwrap();
     let query = font
@@ -249,7 +249,7 @@ fn i1_device_query_style_values_use_same_font_location() {
 }
 
 #[test]
-fn i1_device_query_style_optical_size_reads_gpos_size_feature() {
+fn adr0062_i1_device_query_style_optical_size_reads_gpos_size_feature() {
     let gpos = Buf::new()
         .u32(0x0001_0000)
         .u16(0)
@@ -282,7 +282,7 @@ fn i1_device_query_style_optical_size_reads_gpos_size_feature() {
 }
 
 #[test]
-fn i1_device_query_style_value_reads_stat_when_no_fvar_axis() {
+fn adr0062_i1_device_query_style_value_reads_stat_when_no_fvar_axis() {
     let stat = Buf::new()
         .u32(0x0001_0001)
         .u16(8)

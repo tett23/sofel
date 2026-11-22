@@ -2,7 +2,7 @@ use font_gallery::{inputs, pixels, sheet};
 use pixels::Fixed26Dot6 as F;
 
 #[test]
-fn i2_rust_gallery_publish_rejects_malformed_shape_json() {
+fn adr0073_i2_rust_gallery_publish_rejects_malformed_shape_json() {
     let good = br#"[{"g":26,"cl":0,"dx":0,"dy":0,"ax":64,"ay":0}]"#;
     assert_eq!(inputs::shape_records(good).unwrap()[0].g, 26);
     for malformed in [
@@ -15,7 +15,7 @@ fn i2_rust_gallery_publish_rejects_malformed_shape_json() {
 }
 
 #[test]
-fn i1_rust_gallery_parity_pixels() {
+fn adr0073_i1_rust_gallery_parity_pixels() {
     let pgm = b"P5\n# left -2 top 3\n2 1\n255\n\x00\x80";
     let image = pixels::parse(pgm).unwrap();
     assert_eq!(
@@ -28,7 +28,7 @@ fn i1_rust_gallery_parity_pixels() {
 }
 
 #[test]
-fn i1_rust_gallery_parity_faces() {
+fn adr0073_i1_rust_gallery_parity_faces() {
     let root = std::env::temp_dir().join(format!("sofel-gallery-test-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(root.join("fonts")).unwrap();
@@ -59,7 +59,7 @@ fn i1_rust_gallery_parity_faces() {
 }
 
 #[test]
-fn i1_rust_gallery_parity_composition_and_sheet() {
+fn adr0073_i1_rust_gallery_parity_composition_and_sheet() {
     let gray = pixels::parse(b"P5\n# left 0 top 1\n2 1\n255\n\x00\xff").unwrap();
     let ink = pixels::compose(&[
         pixels::Glyph {
@@ -89,7 +89,7 @@ fn i1_rust_gallery_parity_composition_and_sheet() {
 }
 
 #[test]
-fn i1_rust_gallery_parity_alpha_and_exact_copy() {
+fn adr0073_i1_rust_gallery_parity_alpha_and_exact_copy() {
     let rgba = pixels::parse(b"P7\n# left 1 top 4\nWIDTH 1\nHEIGHT 1\nDEPTH 4\nMAXVAL 255\nTUPLTYPE RGB_ALPHA\nENDHDR\n\xf0\x0c\x50\x80").unwrap();
     assert_eq!((rgba.left, rgba.top, rgba.width, rgba.height), (1, 4, 1, 1));
     let mut canvas = pixels::blank(2, 1).unwrap();
@@ -99,7 +99,7 @@ fn i1_rust_gallery_parity_alpha_and_exact_copy() {
 }
 
 #[test]
-fn i2_rust_gallery_publish_rejects_bad_inputs() {
+fn adr0073_i2_rust_gallery_publish_rejects_bad_inputs() {
     let root = std::env::temp_dir().join(format!("sofel-gallery-bad-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).unwrap();
@@ -137,7 +137,7 @@ fn adr0072_i4_color_svg_is_registered_for_a_drawn_glyph_and_run() {
 }
 
 #[test]
-fn i1_i2_noto_color_emoji_registration_and_card_boundary() {
+fn adr0077_i1_i2_noto_color_emoji_registration_and_card_boundary() {
     let root = std::env::temp_dir().join(format!("sofel-noto-gallery-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();
     std::fs::write(root.join("cbdt.ttf"), b"OTTO").unwrap();

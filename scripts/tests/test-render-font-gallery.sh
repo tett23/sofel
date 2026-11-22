@@ -1,5 +1,5 @@
 #!/bin/sh
-# sofel ADR 0069 I03: a corrupt fixed input and an unusable output fail.
+# sofel ADR 0069 I3: a corrupt fixed input and an unusable output fail.
 set -eu
 root=$(cd "$(dirname "$0")/../.." && pwd)
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/sofel-gallery-test.XXXXXX")

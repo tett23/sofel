@@ -49,7 +49,7 @@ fn pfr() -> Vec<u8> {
 }
 
 #[test]
-fn i1_font_driver_pfr_outline_triangle() {
+fn adr0065_i1_font_driver_pfr_outline_triangle() {
     use sofel_font::geom::{Command, FnPen, Point};
     let program = [0, 0x4f, 0x1e, 80, 0x1b, 60, 0];
     let mut data = pfr();
@@ -73,7 +73,7 @@ fn i1_font_driver_pfr_outline_triangle() {
 }
 
 #[test]
-fn i1_font_driver_pfr_compound_transform_matches_freetype() {
+fn adr0065_i1_font_driver_pfr_compound_transform_matches_freetype() {
     use sofel_font::geom::{Command, FnPen, Point};
     let mut data = pfr();
     data.truncate(121);
@@ -99,7 +99,7 @@ fn i1_font_driver_pfr_compound_transform_matches_freetype() {
 }
 
 #[test]
-fn i2_decode_bounds_pfr_rejects_cyclic_outlines_and_truncated_runs() {
+fn adr0065_i2_decode_bounds_pfr_rejects_cyclic_outlines_and_truncated_runs() {
     use sofel_font::geom::FnPen;
     let mut data = pfr();
     data.truncate(121);

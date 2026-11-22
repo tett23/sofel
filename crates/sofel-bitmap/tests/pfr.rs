@@ -66,7 +66,7 @@ fn bitmap_font(program: &[u8]) -> Vec<u8> {
 }
 
 #[test]
-fn i1_font_driver_pfr_strikes_match_freetype() {
+fn adr0065_i1_font_driver_pfr_strikes_match_freetype() {
     // Each pair of runs is white then black; pixels continue across scanlines.
     for program in [
         &[4, 0, 0x32, 0xa8][..],
@@ -92,7 +92,7 @@ fn i1_font_driver_pfr_strikes_match_freetype() {
 }
 
 #[test]
-fn i2_decode_bounds_pfr_rejects_cyclic_outlines_and_truncated_runs() {
+fn adr0065_i2_decode_bounds_pfr_rejects_cyclic_outlines_and_truncated_runs() {
     let short = bitmap_font(&[0x84, 0, 0x32, 0, 3, 1]);
     let face = Font::from_pfr(&short, 0).unwrap();
     assert!(pfr_bitmap(&face, GlyphId(1), 12, 12).is_err());

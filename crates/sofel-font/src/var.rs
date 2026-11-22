@@ -2569,7 +2569,7 @@ mod tests {
     }
 
     #[test]
-    fn i01_ft_cumulative_rounding() {
+    fn adr0030_i1_ft_cumulative_rounding() {
         let first = Ft::fold_region_axis(0x10000, Fixed(16), 0, 8, 16);
         assert_eq!(first, 32768);
         assert_eq!(Ft::fold_region_axis(first, Fixed(4), 0, 6, 12), 5461);
@@ -2578,14 +2578,14 @@ mod tests {
     }
 
     #[test]
-    fn i01_item_finish_and_order() {
+    fn adr0030_i1_item_finish_and_order() {
         assert_eq!(Ft::finish(Ft::mul_add(0, 32768, 7)), 4);
         assert_eq!(HbF32::finish(HbF32::mul_add(0.0, 0.5, 7)), 3.5);
         assert_eq!(HbF64::finish(HbF64::mul_add(0.0, 0.5, 7)), 3.5);
     }
 
     #[test]
-    fn i01_mixed_width_rows_keep_column_order_and_ft_rounding() {
+    fn adr0030_i1_mixed_width_rows_keep_column_order_and_ft_rounding() {
         // All columns use the same region at its peak. The first word is
         // followed by short deltas (16/8 bits, or 32/16 with LONG_WORDS).
         for (words, row, sum) in [
@@ -2631,7 +2631,7 @@ mod tests {
     }
 
     #[test]
-    fn i05_delta_boundaries_and_i09_dense_regions() {
+    fn adr0030_i5_i9_delta_boundaries_and_dense_regions() {
         let bytes = store(&7i16.to_be_bytes());
         let view = ItemVariationStore::new(&bytes).unwrap();
         let scalars = StoreScalars::<f32>::from_store::<HbF32>(&view, &[4], true);
@@ -2665,7 +2665,7 @@ mod tests {
     }
 
     #[test]
-    fn i02_cached_equals_on_the_fly() {
+    fn adr0030_i2_cached_equals_on_the_fly() {
         let mut seed = 27_u32;
         for i in 0..1000 {
             seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
@@ -2700,7 +2700,7 @@ mod tests {
     }
 
     #[test]
-    fn i09_shared_data_memory() {
+    fn adr0030_i9_shared_data_memory() {
         let single = store(&7i16.to_be_bytes());
         for count in [1_u16, u16::MAX] {
             let regions_offset = 8 + 4 * u32::from(count);
@@ -2720,7 +2720,7 @@ mod tests {
     }
 
     #[test]
-    fn i03_source_identity_checks_slice_and_face() {
+    fn adr0030_i3_source_identity_checks_slice_and_face() {
         let data = [1, 2, 3, 4];
         let copy = data;
         let source = SourceFont {

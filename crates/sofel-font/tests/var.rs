@@ -110,7 +110,7 @@ fn adr0048_phantom_width_font(base: u16, delta: i8) -> Vec<u8> {
 }
 
 #[test]
-fn adr0048_i01_i04_phantom_width_is_order_independent_and_checked() {
+fn adr0048_i1_i4_phantom_width_is_order_independent_and_checked() {
     for (base, delta, expected) in [(0, -1, None), (u16::MAX, 1, None)] {
         let bytes = adr0048_phantom_width_font(base, delta);
         let font = Font::new(&bytes, 0).unwrap();
@@ -688,7 +688,7 @@ fn font_with_avar2_map() -> Vec<u8> {
 }
 
 #[test]
-fn i03_source_identity_uses_target_regions_for_distinct_collection_faces() {
+fn adr0030_i3_source_identity_uses_target_regions_for_distinct_collection_faces() {
     let bytes = build::ttc(false, &[mvar_tables(8), mvar_tables(16)]);
     let first = Font::new(&bytes, 0).unwrap();
     let second = Font::new(&bytes, 1).unwrap();
@@ -714,7 +714,7 @@ fn i03_source_identity_uses_target_regions_for_distinct_collection_faces() {
 }
 
 #[test]
-fn i03_location_borrow_outlives_font_handle() {
+fn adr0030_i3_location_borrow_outlives_font_handle() {
     let bytes = font_with_mvar();
     let location = {
         let font = Font::new(&bytes, 0).unwrap();
@@ -728,7 +728,7 @@ fn i03_location_borrow_outlives_font_handle() {
 }
 
 #[test]
-fn i02_cached_and_copied_font_use_equal_deltas() {
+fn adr0030_i2_cached_and_copied_font_use_equal_deltas() {
     let mut bytes = font_with_mvar();
     let mvar = bytes
         .windows(4)
@@ -759,7 +759,7 @@ fn i02_cached_and_copied_font_use_equal_deltas() {
 }
 
 #[test]
-fn adr0029_i03_location_from_another_font_uses_the_target_regions() {
+fn adr0030_i3_location_from_another_font_uses_the_target_regions() {
     let source_bytes = sfnt(&mvar_tables(4));
     let source = Font::new(&source_bytes, 0).unwrap();
     let mut seed = 29u32;
@@ -988,7 +988,7 @@ fn freetype_mm_var_synthesizes_missing_default_named_style() {
 }
 
 #[test]
-fn adr0036_i01_missing_default_counts_tail_without_names() {
+fn adr0036_i1_missing_default_counts_tail_without_names() {
     let mut tables = sample_tables_with_glyf();
     tables.push((b"fvar", fvar_one_named()));
     tables.sort_by_key(|(tag, _)| **tag);
@@ -1005,7 +1005,7 @@ fn adr0036_i01_missing_default_counts_tail_without_names() {
 }
 
 #[test]
-fn adr0036_i02_missing_names_leave_zero_tail() {
+fn adr0036_i2_missing_names_leave_zero_tail() {
     let mut fvar = fvar_one_named();
     fvar.get_mut(24..28)
         .unwrap()
@@ -1029,7 +1029,7 @@ fn adr0036_i02_missing_names_leave_zero_tail() {
 }
 
 #[test]
-fn adr0036_i02_zero_length_and_unsupported_platform_leave_zero_tail() {
+fn adr0036_i2_zero_length_and_unsupported_platform_leave_zero_tail() {
     for names in [
         vec![(3, 1, 0x409, 2, &[][..]), (3, 1, 0x409, 6, &[][..])],
         vec![
@@ -1050,7 +1050,7 @@ fn adr0036_i02_zero_length_and_unsupported_platform_leave_zero_tail() {
 }
 
 #[test]
-fn adr0036_i03_default_named_instance_uses_one_based_tail() {
+fn adr0036_i3_default_named_instance_uses_one_based_tail() {
     let mut tables = sample_tables_with_glyf();
     tables.push((b"fvar", fvar_one_named()));
     tables.sort_by_key(|(tag, _)| **tag);
@@ -1071,7 +1071,7 @@ fn adr0036_i03_default_named_instance_uses_one_based_tail() {
 }
 
 #[test]
-fn adr0036_i02_named_default_uses_name_ids() {
+fn adr0036_i2_named_default_uses_name_ids() {
     let subfamily = utf16be("Regular");
     let typographic = utf16be("Text");
     let postscript = utf16be("Demo-Regular");
@@ -1322,7 +1322,7 @@ fn i04_avar2_uses_index_map_item() {
 }
 
 #[test]
-fn i04_explicit_zero_enables_ft_region_evaluation() {
+fn adr0030_i4_explicit_zero_enables_ft_region_evaluation() {
     let bytes = font_with_mvar();
     let font = Font::new(&bytes, 0).unwrap();
     let location = Location::from_normalized_2_14(&font, &[0]);
@@ -1332,7 +1332,7 @@ fn i04_explicit_zero_enables_ft_region_evaluation() {
 }
 
 #[test]
-fn i04_static_default_keeps_hb_mvar_but_ft_unsupplied_is_zero() {
+fn adr0030_i4_static_default_keeps_hb_mvar_but_ft_unsupplied_is_zero() {
     let bytes = font_with_mvar();
     let font = Font::new(&bytes, 0).unwrap();
     let instance = font.default_instance();
@@ -1341,7 +1341,7 @@ fn i04_static_default_keeps_hb_mvar_but_ft_unsupplied_is_zero() {
 }
 
 #[test]
-fn adr0030_i03_foreign_faces_recompute_shared_gvar_scalars() {
+fn adr0030_i3_foreign_faces_recompute_shared_gvar_scalars() {
     use sofel_font::var::gvar::{FtScratch, HbScratch, Point};
 
     let tables = |peak: u16| {

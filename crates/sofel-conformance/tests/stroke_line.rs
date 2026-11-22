@@ -20,7 +20,7 @@ use std::process::Command;
 use stroke_line::{Join, Stroker};
 
 #[test]
-fn inv1_stroke_triangle_points_match_freetype() {
+fn adr0076_i1_stroke_triangle_points_match_freetype() {
     let glyph = simple_glyph(
         &[&[Pt::On(0, 0), Pt::On(600, 0), Pt::On(200, 700)]],
         false,
@@ -82,7 +82,7 @@ fn inv1_stroke_triangle_points_match_freetype() {
 }
 
 #[test]
-fn inv1_stroke_winding_and_miter_boundaries() {
+fn adr0076_i1_stroke_winding_and_miter_boundaries() {
     let contours: [&[(i16, i16)]; 4] = [
         &[(0, 0), (600, 0), (200, 700)],
         &[(0, 0), (200, 700), (600, 0)],
@@ -169,7 +169,7 @@ fn inv1_stroke_winding_and_miter_boundaries() {
 }
 
 #[test]
-fn inv1_stroke_hole_and_reversed_whole_outline() {
+fn adr0076_i1_stroke_hole_and_reversed_whole_outline() {
     let outer = [(0, 0), (800, 0), (800, 800), (0, 800)];
     let inner = [(200, 200), (200, 600), (600, 600), (600, 200)];
     let make_glyph = |reverse: bool| {
@@ -262,7 +262,7 @@ fn inv1_stroke_hole_and_reversed_whole_outline() {
 }
 
 #[test]
-fn inv1_stroke_quadratic_points_match_freetype() {
+fn adr0076_i1_stroke_quadratic_points_match_freetype() {
     let glyph = simple_glyph(
         &[&[
             Pt::On(0, 0),
@@ -332,7 +332,7 @@ fn inv1_stroke_quadratic_points_match_freetype() {
 }
 
 #[test]
-fn inv1_stroke_real_cff_cubics_match_freetype() {
+fn adr0076_i1_stroke_real_cff_cubics_match_freetype() {
     let path = sofel_conformance::paths::testdata()
         .join("harfbuzz/perf/fonts/NotoSansDuployan-Regular.otf");
     sofel_conformance::paths::require(&path, "NotoSansDuployan-Regular.otf").unwrap();

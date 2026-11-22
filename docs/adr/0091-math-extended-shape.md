@@ -5,7 +5,7 @@ Status: accepted
 ## 文脈
 
 [ADR 0062](0062-layout-query-device-adjustments.md) は、MATH表の有無と、グリフが伸長形（MATH表の ExtendedShapeCoverage に登録されたグリフ）かを公開すると決めた。
-不変条件1は、値がHarfBuzzと一致することを求める。
+不変条件 I1は、値がHarfBuzzと一致することを求める。
 しかし、表をいつ「無い」とみなすかを決めておらず、MATH表の有無と伸長形の判定を確かめるテストも無い。
 
 この ADR は、[ADR 0062](0062-layout-query-device-adjustments.md) の「実装すること」のうち、MATH表の有無と伸長形の判定について、表の採否の決まりとテストを補う。

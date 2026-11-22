@@ -681,6 +681,14 @@ UTF-8 ファイルの末尾から LF または CRLF を一組だけ除き、前�
 
 ## 正しさの検査
 
+ADR 番号を含む Rust とシェルのテスト名は、`scripts/check-test-names.sh` が条件番号の表記と ADR 内の参照先を検査する（[ADR 0089](adr/0089-invariant-numbers-and-test-names.md)）。
+Rust の名前は `adrNNNN_i1_内容`、シェルの名前は `ADR NNNN I1: 内容` の形とし、受けいれ条件は `a1` と `A1` を使う。
+複数の条件は Rust では `_i2`、別の ADR では `_adrMMMM_i1` と続け、シェルでは `, I2`、`, ADR MMMM I1` と続ける。
+条件番号を決められない既存テストは [除外一覧](../scripts/test-name-exceptions.tsv) に記録する（[ADR 0099](adr/0099-test-name-reference-exceptions.md)）。
+パスとテスト名が完全一致する登録だけを名前の検査から除き、テストそのものは実行する。
+一覧の重複、空の理由、削除や移動によって見つからなくなったテストは検査を失敗させる。
+CI の `adr` ジョブは、文書だけの変更でもこの検査と検査器の回帰テストを実行する。
+
 SVG の検査器は [ADR 0074](adr/0074-svg-feature-conformance.md) の必須ケースと観測を [台帳](../conformance/svg-cases.tsv) と照合する。欠落、重複、未知の項目を報告し、ケースごとに期待値の出典と結果を出す。OT-SVG 入力では共有文書、選択したグリフの描画、変換後の輪郭、前景色、グラデーション、参照と制限を調べる。図形の描画境界は同じ輪郭を直接ラスタライザーに渡した結果と比較する。検査器を実装していない観測は未実行として扱う。
 
 SVG ページ出力では、空のページ、単字、半透明の重なり、クリップした画像の寸法と描画順を、[固定版 HarfBuzz で生成した参照](../conformance/svg-page/reference.cc) と比較する。XML の属性順と要素間の空白は比較から除く。

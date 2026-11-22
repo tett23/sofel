@@ -62,7 +62,7 @@ fn font_for(base: (u16, u16, u16), layers: &[(u16, u16)], broken_layer: bool) ->
 }
 
 #[test]
-fn inv1_color_layers() {
+fn adr0055_i1_color_layers() {
     let cases: &[((u16, u16, u16), &[(u16, u16)], &[(u32, Option<u16>)])] = &[
         ((3, 0, 0), &[], &[]),
         ((3, 0, 1), &[(1, 0xffff)], &[(1, None)]),
@@ -79,7 +79,7 @@ fn inv1_color_layers() {
 }
 
 #[test]
-fn inv2_color_pixels() {
+fn adr0055_i2_color_pixels() {
     let data = font_for((3, 0, 2), &[(1, 0), (2, 0xffff)], false);
     let font = Font::new(&data, 0).unwrap();
     let outlines = Outlines::new(font.default_instance());
@@ -138,7 +138,7 @@ fn inv2_color_pixels() {
 }
 
 #[test]
-fn inv3_gray_fallback() {
+fn adr0055_i3_gray_fallback() {
     for (base, layers, broken) in [
         ((3, 0, 0), vec![], false),
         ((3, 0, 3), vec![(1, 0), (2, 0)], false),

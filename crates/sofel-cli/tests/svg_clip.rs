@@ -44,7 +44,7 @@ fn bitmap(paths: Vec<Vec<(f32, f32)>>) -> BgraImage {
 }
 
 #[test]
-fn i2_svg_clip_unions_siblings_and_intersects_ancestors() {
+fn adr0074_i2_svg_clip_unions_siblings_and_intersects_ancestors() {
     let image = bitmap(vec![vec![(0.5, 0.5), (1., 1.), (3., 1.)], vec![(0., 2.)]]);
     let alpha: Vec<_> = image
         .pixels
@@ -57,7 +57,7 @@ fn i2_svg_clip_unions_siblings_and_intersects_ancestors() {
 }
 
 #[test]
-fn i2_svg_clip_unions_adjacent_subpixel_shapes_before_resolving_coverage() {
+fn adr0074_i2_svg_clip_unions_adjacent_subpixel_shapes_before_resolving_coverage() {
     let image = bitmap(vec![vec![(1., 0.5), (1.5, 0.5)]]);
     let alpha: Vec<_> = image
         .pixels
@@ -70,7 +70,7 @@ fn i2_svg_clip_unions_adjacent_subpixel_shapes_before_resolving_coverage() {
 }
 
 #[test]
-fn i2_svg_empty_clip_hides_the_entire_shape() {
+fn adr0074_i2_svg_empty_clip_hides_the_entire_shape() {
     let image = bitmap(vec![vec![]]);
     assert!(image.pixels.iter().all(|value| *value == 0));
 }
