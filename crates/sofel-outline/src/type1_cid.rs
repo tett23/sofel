@@ -63,16 +63,51 @@ pub fn draw_cid_native(
             || !zones.family_blues.is_empty()
             || !zones.family_other_blues.is_empty()
     });
+    let groups = if scan.hint_groups.is_empty() {
+        Vec::new()
+    } else {
+        let mut groups = scan.hint_groups.clone();
+        groups.push(scan.h_stems.clone());
+        groups
+    };
     if scan.has_stems
         && (scan.unsupported_stem_map
             || matrix != [65536, 0, 0, 65536, 0, 0]
             || blue_zones.is_none()
-            || (scan.h_stems.is_empty() && has_blue_zones))
+            || (scan.h_stems.is_empty() && groups.is_empty() && has_blue_zones))
     {
         return Err(OutlineError::UnsupportedFormat);
     }
     let mut state = State::new(scale, matrix, true, pen);
-    if !scan.h_stems.is_empty() && (scan.h_stems.len() > 1 || has_blue_zones) {
+    if !groups.is_empty() {
+        let blue_zones = blue_zones.ok_or(OutlineError::UnsupportedFormat)?;
+        let maps = groups
+            .iter()
+            .map(|group| {
+                let stems: Vec<_> = group
+                    .iter()
+                    .map(|&(position, width)| (position.wrapping_shl(16), width.wrapping_shl(16)))
+                    .collect();
+                Type1HorizontalStemMap::new_with_zones(
+                    &stems,
+                    ps_native::path_scale(y),
+                    &blue_zones.blue_values,
+                    &blue_zones.other_blues,
+                    &blue_zones.family_blues,
+                    &blue_zones.family_other_blues,
+                    Type1BlueSettings {
+                        blue_scale: blue_zones.blue_scale,
+                        blue_shift: blue_zones.blue_shift,
+                        blue_fuzz: blue_zones.blue_fuzz,
+                        language_group: blue_zones.language_group,
+                    },
+                )
+                .ok_or(OutlineError::UnsupportedFormat)
+            })
+            .collect::<Result<Vec<_>, OutlineError>>()?;
+        state.h_stem_map = maps.first().copied();
+        state.replacement_maps = maps.into_iter().skip(1).collect();
+    } else if !scan.h_stems.is_empty() && (scan.h_stems.len() > 1 || has_blue_zones) {
         let blue_zones = blue_zones.ok_or(OutlineError::UnsupportedFormat)?;
         let stems: Vec<_> = scan
             .h_stems
@@ -161,7 +196,7 @@ fn decode_program<P: Pen>(
                 state.has_stems = true;
                 if op == 1 {
                     if let [position, width] = stack.as_slice() {
-                        if !state.emitted {
+                        if !state.emitted || (!state.native && !state.hint_groups.is_empty()) {
                             state.h_stem.get_or_insert((*position, *width));
                             if !state.h_stems.contains(&(*position, *width)) {
                                 state.h_stems.push((*position, *width));
@@ -271,6 +306,29 @@ fn decode_program<P: Pen>(
                         }
                         stack.clear();
                     }
+                    16 => {
+                        let subr_no = stack.pop().ok_or(OutlineError::InvalidCharString)?;
+                        let arg_count = stack.pop().ok_or(OutlineError::InvalidCharString)?;
+                        if subr_no != 3 || arg_count != 1 || stack.is_empty() {
+                            return Err(OutlineError::InvalidCharString);
+                        }
+                        if state.native {
+                            if let Some(map) = state.replacement_maps.get(state.replacement_index) {
+                                state.h_stem_map = Some(*map);
+                                state.replacement_index = state.replacement_index.saturating_add(1);
+                            }
+                        } else {
+                            state.hint_groups.push(core::mem::take(&mut state.h_stems));
+                            state.h_stem = None;
+                        }
+                        state.pending_pops = 1;
+                    }
+                    17 if state.pending_pops > 0 => {
+                        state.pending_pops = state.pending_pops.saturating_sub(1);
+                    }
+                    18 => {
+                        stack.pop().ok_or(OutlineError::InvalidCharString)?;
+                    }
                     7 => {
                         let [sx, sy, _wx, _wy] = take(stack)?;
                         state.x = sx;
@@ -311,12 +369,17 @@ struct State<'a, P: Pen> {
     x: i32,
     y: i32,
     start: Option<(i32, i32)>,
+    start_point: Option<Point>,
     emitted: bool,
     box_: Option<CBox>,
     has_stems: bool,
     native: bool,
     h_stem: Option<(i32, i32)>,
     h_stems: Vec<(i32, i32)>,
+    hint_groups: Vec<Vec<(i32, i32)>>,
+    replacement_maps: Vec<Type1HorizontalStemMap>,
+    replacement_index: usize,
+    pending_pops: usize,
     h_stem_shift: i64,
     h_stem_map: Option<Type1HorizontalStemMap>,
     unsupported_stem_map: bool,
@@ -331,12 +394,17 @@ impl<'a, P: Pen> State<'a, P> {
             x: 0,
             y: 0,
             start: None,
+            start_point: None,
             emitted: false,
             box_: None,
             has_stems: false,
             native,
             h_stem: None,
             h_stems: Vec::new(),
+            hint_groups: Vec::new(),
+            replacement_maps: Vec::new(),
+            replacement_index: 0,
+            pending_pops: 0,
             h_stem_shift: 0,
             h_stem_map: None,
             unsupported_stem_map: false,
@@ -430,6 +498,7 @@ impl<'a, P: Pen> State<'a, P> {
         let (x, y) = self.start.ok_or(OutlineError::InvalidCharString)?;
         if !self.emitted {
             let p = self.point(x, y);
+            self.start_point = Some(p);
             self.pen.move_to(p);
             self.emitted = true;
         }
@@ -484,12 +553,13 @@ impl<'a, P: Pen> State<'a, P> {
         if let Some((x, y)) = self.start.take() {
             if self.emitted {
                 if (self.x, self.y) != (x, y) {
-                    let p = self.point(x, y);
+                    let p = self.start_point.unwrap_or_else(|| self.point(x, y));
                     self.pen.line_to(p);
                 }
                 self.pen.close();
             }
             self.emitted = false;
+            self.start_point = None;
         }
     }
 
