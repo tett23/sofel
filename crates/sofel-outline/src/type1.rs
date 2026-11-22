@@ -201,12 +201,22 @@ fn decode_program<P: Pen>(
             }
             1 | 3 => {
                 state.has_stems = true;
-                if let [position, width] = stack.as_slice() {
+                if stack.len() >= 2 && stack.len().is_multiple_of(2) {
                     if !state.emitted || (!state.native && !state.hint_groups.is_empty()) {
                         if op == 1 {
-                            state.h_stem.get_or_insert((*position, *width));
-                            if !state.h_stems.contains(&(*position, *width)) {
-                                state.h_stems.push((*position, *width));
+                            let mut edge = 0i64;
+                            for &[delta, width] in stack.as_chunks::<2>().0 {
+                                edge = edge
+                                    .checked_add(delta)
+                                    .ok_or(OutlineError::InvalidCharString)?;
+                                let stem = (edge, width);
+                                state.h_stem.get_or_insert(stem);
+                                if !state.h_stems.contains(&stem) {
+                                    state.h_stems.push(stem);
+                                }
+                                edge = edge
+                                    .checked_add(width)
+                                    .ok_or(OutlineError::InvalidCharString)?;
                             }
                         }
                     } else {
