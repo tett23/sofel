@@ -73,11 +73,7 @@ pub fn draw_cid_native(
         groups.push(scan.h_stems.clone());
         groups
     };
-    if scan.has_stems
-        && (scan.unsupported_stem_map
-            || blue_zones.is_none()
-            || (scan.h_stems.is_empty() && groups.is_empty() && has_blue_zones))
-    {
+    if scan.has_stems && (scan.unsupported_stem_map || blue_zones.is_none()) {
         return Err(OutlineError::UnsupportedFormat);
     }
     let mut state = State::new(scale, matrix, true, pen);
@@ -85,6 +81,10 @@ pub fn draw_cid_native(
         let blue_zones = blue_zones.ok_or(OutlineError::UnsupportedFormat)?;
         let mut maps = Vec::new();
         for group in &groups {
+            if group.is_empty() {
+                maps.push(None);
+                continue;
+            }
             let stems: Vec<_> = group
                 .iter()
                 .map(|&(position, width)| (position.wrapping_shl(16), width.wrapping_shl(16)))
@@ -102,12 +102,14 @@ pub fn draw_cid_native(
                     blue_fuzz: blue_zones.blue_fuzz,
                     language_group: blue_zones.language_group,
                 },
-                has_blue_zones.then(|| maps.first()).flatten(),
+                has_blue_zones
+                    .then(|| maps.first().and_then(Option::as_ref))
+                    .flatten(),
             )
             .ok_or(OutlineError::UnsupportedFormat)?;
-            maps.push(map);
+            maps.push(Some(map));
         }
-        state.h_stem_map = maps.first().copied();
+        state.h_stem_map = maps.first().copied().flatten();
         state.replacement_maps = maps.into_iter().skip(1).collect();
     } else if !scan.h_stems.is_empty() && (scan.h_stems.len() > 1 || has_blue_zones) {
         let blue_zones = blue_zones.ok_or(OutlineError::UnsupportedFormat)?;
@@ -322,7 +324,7 @@ fn decode_program<P: Pen>(
                         }
                         if state.native {
                             if let Some(map) = state.replacement_maps.get(state.replacement_index) {
-                                state.h_stem_map = Some(*map);
+                                state.h_stem_map = *map;
                                 state.replacement_index = state.replacement_index.saturating_add(1);
                             }
                         } else {
@@ -386,7 +388,7 @@ struct State<'a, P: Pen> {
     h_stem: Option<(i32, i32)>,
     h_stems: Vec<(i32, i32)>,
     hint_groups: Vec<Vec<(i32, i32)>>,
-    replacement_maps: Vec<Type1HorizontalStemMap>,
+    replacement_maps: Vec<Option<Type1HorizontalStemMap>>,
     replacement_index: usize,
     pending_pops: usize,
     h_stem_shift: i64,

@@ -66,11 +66,7 @@ pub fn draw_type1_native(
         groups.push(scan.h_stems.clone());
         groups
     };
-    if scan.has_stems
-        && (scan.unsupported_stem_map
-            || blue_zones.is_none()
-            || (scan.h_stems.is_empty() && groups.is_empty() && has_blue_zones))
-    {
+    if scan.has_stems && (scan.unsupported_stem_map || blue_zones.is_none()) {
         return Err(OutlineError::UnsupportedFormat);
     }
     let mut state = State::new(scale, [65536, 0, 0, 65536, 0, 0], true, pen);
