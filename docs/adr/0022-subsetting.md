@@ -1,6 +1,6 @@
 # ADR 0022: サブセット化と表の書き出し（`sofel-write` と `sofel-subset`）
 
-Status: superseded-pending [{"by":["docs/adr/0026-harfbuzz-rounding.md"],"part":"丸め"}]
+Status: superseded-pending [{"by":["docs/adr/0026-harfbuzz-rounding.md"],"part":"丸め"},{"part":"CFF2 の共有サブルーチン、変化量ストアと輪郭保存の例外","by":["docs/adr/0102-cff2-pinned-harfbuzz-subroutine-semantics.md"]}]
 
 ## 文脈
 
