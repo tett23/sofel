@@ -832,7 +832,7 @@ pub(crate) trait Ops {
 
 /// `cff2_cs_opset_t::process_op` over `cs_opset_t::process_op`.
 fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
-    if env.trace_drop_hints && matches!(op, VSINDEXCS | DOTSECTION) {
+    if env.trace_drop_hints && op == VSINDEXCS {
         env.trace_valid = false;
     }
     if env.trace_drop_hints
@@ -859,6 +859,21 @@ fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
         env.path_started = true;
     }
     match op {
+        DOTSECTION => {
+            if env.trace_drop_hints {
+                if !env.args.is_empty() {
+                    env.trace_valid = false;
+                }
+                env.hint_trace.push(HintTrace {
+                    source: env.ctx.source,
+                    start: env.ctx.off.saturating_sub(2),
+                    end: env.ctx.off,
+                    can_follow_call: true,
+                    mask_at: None,
+                });
+            }
+            env.clear_args();
+        }
         RETURN => env.return_from_subr(),
         ENDCHAR => {
             if env.trace_drop_hints && env.fetched_explicit {

@@ -34,7 +34,7 @@ Golem はフォントを開くときに GSUB と GPOS の機能タグをすべ�
 
 ### [ADR 0022](adr/0022-subsetting.md): サブセット化
 
-[ADR 0022](adr/0022-subsetting.md) は採択（未実装）である。可変フォントの読み取りは [ADR 0027](adr/0027-variable-fonts.md) で実装した。サブセット化では、名前レコードの上書きと VARC の部品参照の再採番まで実装した。軸の固定・範囲変更は [ADR 0061](adr/0061-subset-axis-instancing.md) に従って実装した。残る作業には、10段階目の CFF2 サブルーチンのヒント除去がある。`vsindex`・`dotsection` を含む場合、`blend` を含む引数が別の charstring から渡る一部の場合、異なるマスク長で呼ばれるサブルーチン内にさらに call がある場合の対応が残る。表ごとの対応範囲は[仕様書](specifications.md)に記す。
+[ADR 0022](adr/0022-subsetting.md) は採択（未実装）である。可変フォントの読み取りは [ADR 0027](adr/0027-variable-fonts.md) で実装した。サブセット化では、名前レコードの上書きと VARC の部品参照の再採番まで実装した。軸の固定・範囲変更は [ADR 0061](adr/0061-subset-axis-instancing.md) に従って実装した。残る作業には、10段階目の CFF2 サブルーチンのヒント除去がある。`vsindex` または引数のある `dotsection` を含む場合、`blend` を含む引数が別の charstring から渡る一部の場合、異なるマスク長で呼ばれるサブルーチン内にさらに call がある場合の対応が残る。表ごとの対応範囲は[仕様書](specifications.md)に記す。
 
 ### [ADR 0064](adr/0064-freetype-hinting-and-render-modes.md): ヒンティングの残り
 

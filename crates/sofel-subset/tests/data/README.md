@@ -238,3 +238,12 @@ cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-blended-path-hb15.otf" "crates/sofel-su
 "$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-no-hint-blended-stem-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-blended-stem-hb15.otf" --gids=2 --no-hinting
 cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-blended-stem-hb15.otf" "crates/sofel-subset/tests/data/cff2-no-hint-blended-stem-hb15.otf"
 ```
+
+## cff2-no-hint-dotsection-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_no_hinting_removes_dotsection_before_and_after_paths` が組む `bytes` である。描画命令の前後に引数のない `dotsection` を置いた CFF2 サブルーチンに `NO_HINTING` を適用する。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-no-hint-dotsection-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-dotsection-hb15.otf" --gids=2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-dotsection-hb15.otf" "crates/sofel-subset/tests/data/cff2-no-hint-dotsection-hb15.otf"
+```
