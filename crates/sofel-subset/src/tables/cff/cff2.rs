@@ -147,6 +147,7 @@ struct KeptSubrs {
     glyphs: Vec<Vec<u8>>,
     globals: Vec<Vec<u8>>,
     locals: Vec<Vec<Vec<u8>>>,
+    invalid_reference: bool,
 }
 
 fn rewrite_calls(
@@ -155,6 +156,7 @@ fn rewrite_calls(
     dropped: &[HintTrace],
     global: &BTreeMap<u32, u32>,
     local: &BTreeMap<u32, u32>,
+    missing_global_local: bool,
 ) -> Option<Vec<u8>> {
     let mut out = Vec::new();
     let mut cursor = 0;
@@ -172,12 +174,14 @@ fn rewrite_calls(
             } else {
                 (global, global.len())
             };
-            let next = *map.get(&site.old)?;
+            let next = match map.get(&site.old) {
+                Some(&index) => i32::try_from(index).ok()?,
+                None if site.local && missing_global_local => -1,
+                None => return None,
+            };
             encode_int(
                 &mut out,
-                i32::try_from(next)
-                    .ok()?
-                    .checked_sub(bias(u32::try_from(count).ok()?))?,
+                next.checked_sub(bias(u32::try_from(count).ok()?))?,
             );
             out.push(if site.local { 10 } else { 29 });
         }
@@ -398,6 +402,7 @@ fn keep_subrs(
         glyphs: vec![Vec::new(); output_count as usize],
         globals: Vec::new(),
         locals: vec![Vec::new(); fd_count],
+        invalid_reference: false,
     };
     for (new, old, fd, sites, dropped, prefix) in glyph_sites {
         let mut encoded = Vec::new();
@@ -411,33 +416,39 @@ fn keep_subrs(
             &dropped,
             &gmap,
             lmaps.get(fd)?,
+            false,
         )?);
         *result.glyphs.get_mut(new as usize)? = encoded;
     }
     for old in global_used {
-        let mut encoded = None;
-        for fd in 0..fd_count {
-            if visited.contains(&(fd, Source::Global(old))) {
-                let sites = subr_sites.get(&(fd, Source::Global(old)));
-                let dropped = subr_drops.get(&(fd, Source::Global(old)));
-                let bytes = fonts.programs(u32::try_from(fd).ok()?).gsubrs.get(old)?;
-                let value = rewrite_calls(
-                    bytes,
-                    &sites.map_or(Vec::new(), |s| s.values().copied().collect()),
-                    &dropped.map_or(Vec::new(), |s| s.values().copied().collect()),
-                    &gmap,
-                    lmaps.get(fd)?,
-                )?;
-                if drop_hints && value.is_empty() {
-                    return None;
-                }
-                if encoded.as_ref().is_some_and(|v| v != &value) {
-                    return None;
-                }
-                encoded = Some(value);
+        let fd = (0..fd_count).find(|&fd| visited.contains(&(fd, Source::Global(old))))?;
+        let sites = subr_sites
+            .get(&(fd, Source::Global(old)))
+            .map_or(Vec::new(), |s| s.values().copied().collect::<Vec<_>>());
+        let dropped = subr_drops
+            .get(&(fd, Source::Global(old)))
+            .map_or(Vec::new(), |s| s.values().copied().collect::<Vec<_>>());
+        let fd0_map = lmaps.first()?;
+        for (visit_fd, _) in lmaps.iter().enumerate() {
+            if visited.contains(&(visit_fd, Source::Global(old)))
+                && sites.iter().any(|site| {
+                    site.local
+                        && fd0_map.get(&site.old).is_none_or(|&next| {
+                            usize::try_from(next).ok().is_none_or(|next| {
+                                next >= local_used.get(visit_fd).map_or(0, BTreeSet::len)
+                            })
+                        })
+                })
+            {
+                result.invalid_reference = true;
             }
         }
-        result.globals.push(encoded?);
+        let bytes = fonts.programs(u32::try_from(fd).ok()?).gsubrs.get(old)?;
+        let value = rewrite_calls(bytes, &sites, &dropped, &gmap, fd0_map, true)?;
+        if drop_hints && value.is_empty() {
+            return None;
+        }
+        result.globals.push(value);
     }
     for (fd, used) in local_used.iter().enumerate() {
         let p = fonts.programs(u32::try_from(fd).ok()?);
@@ -450,6 +461,7 @@ fn keep_subrs(
                 &dropped.map_or(Vec::new(), |s| s.values().copied().collect()),
                 &gmap,
                 lmaps.get(fd)?,
+                false,
             )?;
             if drop_hints && value.is_empty() {
                 return None;
@@ -662,6 +674,9 @@ fn create(plan: &Plan, acc: &Acc<'_>, font: &Font<'_>, tag: Tag) -> Result<Cff2P
         None
     };
     if let Some(kept) = &subrs {
+        if kept.invalid_reference {
+            return Err(SubsetError::Malformed { tag });
+        }
         charstrings.clone_from(&kept.glyphs);
     }
     Ok(Cff2Plan {
@@ -1201,7 +1216,7 @@ fn privates(
                 s.pop_discard();
                 return None;
             }
-            subrs_link = s.pop_pack(true);
+            subrs_link = s.pop_pack(false);
         }
         s.push();
         if !private_dict(s, acc, i, coords, subrs_link, p) {
