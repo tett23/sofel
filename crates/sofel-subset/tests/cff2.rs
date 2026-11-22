@@ -1071,3 +1071,160 @@ fn cff2_path_only_vsindex_accepts_caller_argument() {
         include_bytes!("data/cff2-vsindex-caller-path-hb15.otf")
     );
 }
+
+#[test]
+fn cff2_no_hinting_removes_arguments_through_nested_calls() {
+    let mut programs = charstrings();
+    programs[2] = charstring(&[Cs::I(0), Cs::I(10), Cs::I(-107), Cs::Op(29)]);
+    let bytes = font_with_programs(
+        vec![
+            charstring(&[Cs::I(-106), Cs::Op(29), Cs::Op(11)]),
+            vec![1, 11],
+        ],
+        Vec::new(),
+        programs,
+    );
+    fixture_input::export("cff2-hint-args-nested-hb15.otf", &bytes).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    assert_eq!(
+        subset(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)).unwrap(),
+        include_bytes!("data/cff2-hint-args-nested-hb15.otf")
+    );
+}
+
+#[test]
+fn cff2_no_hinting_removes_forwarded_blends_but_keeps_path() {
+    let mut programs = charstrings();
+    programs[2] = charstring(&[
+        Cs::I(0),
+        Cs::I(10),
+        Cs::I(1),
+        Cs::I(2),
+        Cs::I(3),
+        Cs::I(4),
+        Cs::I(2),
+        Cs::Op(16),
+        Cs::I(-107),
+        Cs::Op(29),
+    ]);
+    let global = charstring(&[
+        Cs::I(-107),
+        Cs::Op(10),
+        Cs::I(0),
+        Cs::I(0),
+        Cs::Op(21),
+        Cs::I(10),
+        Cs::I(0),
+        Cs::Op(5),
+        Cs::Op(11),
+    ]);
+    let bytes = font_with_programs(vec![global], vec![vec![1, 11]], programs);
+    fixture_input::export("cff2-hint-args-blend-path-hb15.otf", &bytes).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    assert_eq!(
+        subset(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)).unwrap(),
+        include_bytes!("data/cff2-hint-args-blend-path-hb15.otf")
+    );
+}
+
+#[test]
+fn cff2_no_hinting_removes_arguments_split_across_callers() {
+    let cases: Vec<_> = [false, true]
+        .into_iter()
+        .map(|leaf_args| {
+            let mut programs = charstrings();
+            programs[2] = charstring(&[Cs::I(0), Cs::I(10), Cs::I(-107), Cs::Op(29)]);
+            let extra = charstring(&[Cs::I(20), Cs::I(10)]);
+            let mut outer = if leaf_args { Vec::new() } else { extra.clone() };
+            outer.extend(charstring(&[Cs::I(-106), Cs::Op(29), Cs::Op(11)]));
+            let mut inner = if leaf_args { extra } else { Vec::new() };
+            inner.extend([1, 11]);
+            let bytes = font_with_programs(vec![outer, inner], Vec::new(), programs);
+            let (name, expected): (&str, &[u8]) = if leaf_args {
+                (
+                    "cff2-hint-args-leaf-hb15.otf",
+                    include_bytes!("data/cff2-hint-args-leaf-hb15.otf"),
+                )
+            } else {
+                (
+                    "cff2-hint-args-middle-hb15.otf",
+                    include_bytes!("data/cff2-hint-args-middle-hb15.otf"),
+                )
+            };
+            fixture_input::export(name, &bytes).unwrap();
+            (bytes, expected)
+        })
+        .collect();
+    for (bytes, expected) in cases {
+        let font = Font::new(&bytes, 0).unwrap();
+        assert_eq!(
+            subset(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)).unwrap(),
+            expected
+        );
+    }
+}
+
+#[test]
+fn cff2_no_hinting_relocates_vsindex_argument_from_caller() {
+    let mut programs = charstrings();
+    let global = [
+        charstring(&[Cs::Op(15), Cs::I(0), Cs::I(10), Cs::Op(1)]),
+        programs[1].clone(),
+        vec![11],
+    ]
+    .concat();
+    programs[2] = charstring(&[Cs::I(0), Cs::I(-107), Cs::Op(29)]);
+    let bytes = font_with_programs(vec![global], Vec::new(), programs);
+    fixture_input::export("cff2-hint-vsindex-caller-hb15.otf", &bytes).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    assert_eq!(
+        subset(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)).unwrap(),
+        include_bytes!("data/cff2-hint-vsindex-caller-hb15.otf")
+    );
+}
+
+#[test]
+fn cff2_no_hinting_removes_hints_after_argument_return() {
+    let mut programs = charstrings();
+    programs[2] = charstring(&[Cs::I(-107), Cs::Op(29), Cs::Op(1)]);
+    let bytes = font_with_programs(
+        vec![charstring(&[Cs::I(0), Cs::I(10), Cs::Op(11)])],
+        Vec::new(),
+        programs,
+    );
+    fixture_input::export("cff2-hint-args-return-hb15.otf", &bytes).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    assert_eq!(
+        subset(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)).unwrap(),
+        include_bytes!("data/cff2-hint-args-return-hb15.otf")
+    );
+}
+
+#[test]
+fn cff2_no_hinting_removes_blend_operands_from_caller() {
+    let mut programs = charstrings();
+    programs[2] = charstring(&[Cs::I(0), Cs::I(10), Cs::I(-107), Cs::Op(29)]);
+    let global = charstring(&[
+        Cs::I(1),
+        Cs::I(2),
+        Cs::I(3),
+        Cs::I(4),
+        Cs::I(2),
+        Cs::Op(16),
+        Cs::Op(1),
+        Cs::I(0),
+        Cs::I(0),
+        Cs::Op(21),
+        Cs::I(10),
+        Cs::I(0),
+        Cs::Op(5),
+        Cs::Op(11),
+    ]);
+    let bytes = font_with_programs(vec![global], Vec::new(), programs);
+    fixture_input::export("cff2-hint-blend-operands-caller-hb15.otf", &bytes).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    assert_eq!(
+        subset(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)).unwrap(),
+        include_bytes!("data/cff2-hint-blend-operands-caller-hb15.otf")
+    );
+}
