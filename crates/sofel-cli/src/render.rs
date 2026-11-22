@@ -5,7 +5,7 @@ use std::io::Write;
 
 use sofel_font::read::GlyphId;
 use sofel_font::{BareCffFace, BitmapFormat, Font, Type1Face, Type1Source};
-use sofel_outline::{Outlines, Scratch};
+use sofel_outline::{AutoHintCache, HintMode, HintProperties, HintTarget, Outlines, Scratch};
 use sofel_raster::Rasterizer;
 use sofel_type1::cid::CidFace;
 
@@ -49,6 +49,9 @@ glyph-name Unicode character, or shaped text (ADR 0065).
   --named-instance N  start at named instance N (zero-based)
   --face N      the font in a collection (default 0)
   --ppem P      the size in pixels per em
+  --hint auto|native   use the selected hinter for an outline glyph
+  --hint-property MODULE:NAME=VALUE
+                set a hinting module property for this load
   --no-bitmap   draw the outline even when there is a bitmap
                 (FT_LOAD_NO_BITMAP)
   --color       draw supported color glyphs in color
@@ -71,6 +74,8 @@ struct Args {
     color: bool,
     palette: u16,
     palette_given: bool,
+    hint: Option<HintMode>,
+    hint_properties: HintProperties,
     target: Target,
     features: Vec<sofel_shape::Feature>,
     file: OsString,
@@ -87,6 +92,9 @@ fn parse(args: &[OsString], unified: bool) -> Result<Option<Args>, String> {
     let (mut face, mut ppem, mut target, mut file) = (0u32, None, None, None);
     let mut location = crate::variation_options::LocationOptions::default();
     let mut no_bitmap = false;
+    let mut hint = None;
+    let mut hint_property_given = false;
+    let mut hint_properties = HintProperties::default();
     let mut features = Vec::new();
     let (mut color, mut palette, mut palette_given) = (false, 0u16, false);
     let mut it = args.iter();
@@ -131,6 +139,17 @@ fn parse(args: &[OsString], unified: bool) -> Result<Option<Args>, String> {
             Some("--help" | "-h") => return Ok(None),
             Some("--face") => face = value("--face")?.parse().map_err(|_| "bad --face")?,
             Some("--no-bitmap") => no_bitmap = true,
+            Some("--hint") => {
+                hint = Some(match value("--hint")?.as_str() {
+                    "auto" => HintMode::Auto,
+                    "native" => HintMode::NativeV40,
+                    _ => return Err("--hint supports auto or native".into()),
+                });
+            }
+            Some("--hint-property") => {
+                hint_property_given = true;
+                parse_hint_property(&value("--hint-property")?, &mut hint_properties)?;
+            }
             Some("--color") => color = true,
             Some("--palette") => {
                 palette_given = true;
@@ -168,6 +187,12 @@ fn parse(args: &[OsString], unified: bool) -> Result<Option<Args>, String> {
             }
         }
     }
+    hint_properties
+        .validate()
+        .map_err(|_| "bad darkening-parameters")?;
+    if hint_property_given && hint.is_none() {
+        return Err("--hint-property requires --hint auto or native".into());
+    }
     Ok(Some(Args {
         location,
         face,
@@ -175,11 +200,64 @@ fn parse(args: &[OsString], unified: bool) -> Result<Option<Args>, String> {
         color,
         palette,
         palette_given,
+        hint,
+        hint_properties,
         ppem: ppem.ok_or("--ppem is required")?,
         target: target.ok_or("give --glyph or --char")?,
         features,
         file: file.ok_or("no file given")?,
     }))
+}
+
+fn parse_hint_property(raw: &str, properties: &mut HintProperties) -> Result<(), String> {
+    let (module, rest) = raw.split_once(':').ok_or("bad --hint-property")?;
+    let (name, value) = rest.split_once('=').ok_or("bad --hint-property")?;
+    if module == "autofitter" {
+        match name {
+            "increase-x-height" => {
+                properties.increase_x_height =
+                    value.parse().map_err(|_| "bad increase-x-height")?;
+                return Ok(());
+            }
+            "fallback-script" => {
+                properties.fallback_script =
+                    Some(value.parse().map_err(|_| "bad fallback-script")?);
+                return Ok(());
+            }
+            "default-script" => {
+                properties.default_script = Some(value.parse().map_err(|_| "bad default-script")?);
+                return Ok(());
+            }
+            _ => {}
+        }
+    }
+    let postscript = match module {
+        "autofitter" => &mut properties.autofitter,
+        "cff" => &mut properties.cff,
+        "type1" => &mut properties.type1,
+        "t1cid" => &mut properties.t1cid,
+        _ => return Err("unknown hint module".into()),
+    };
+    match name {
+        "no-stem-darkening" => {
+            postscript.no_stem_darkening = match value {
+                "1" | "true" => true,
+                "0" | "false" => false,
+                _ => return Err("bad no-stem-darkening".into()),
+            };
+        }
+        "darkening-parameters" => {
+            let values = value
+                .split(',')
+                .map(str::parse::<i32>)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| "bad darkening-parameters")?;
+            postscript.darkening_parameters =
+                values.try_into().map_err(|_| "bad darkening-parameters")?;
+        }
+        _ => return Err("unknown hint property".into()),
+    }
+    Ok(())
 }
 
 /// Runs the command with `args` (without the program name). Returns the
@@ -221,6 +299,8 @@ fn has_text_input(args: &[OsString]) -> bool {
                     | "--variations"
                     | "--named-instance"
                     | "--features"
+                    | "--hint"
+                    | "--hint-property"
             )
         {
             skip_value = true;
@@ -245,6 +325,15 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
         let _ = writeln!(err, "sofel-render: {msg}");
         1
     };
+    if args.hint.is_some()
+        && (args.color || matches!(args.target, Target::Text(_) | Target::TextFile(_)))
+    {
+        let _ = writeln!(
+            err,
+            "sofel-render: --hint requires a monochrome outline glyph"
+        );
+        return 2;
+    }
     if matches!(args.target, Target::Text(_) | Target::TextFile(_))
         && (args.color || args.palette_given)
     {
@@ -421,7 +510,34 @@ fn run_parsed(args: &[OsString], out: &mut dyn Write, err: &mut dyn Write, unifi
             Err(e) => Err(e),
         }
     } else {
-        glyph::render(&outlines, glyph, args.ppem, &mut scratch, &mut raster)
+        match args.hint {
+            Some(HintMode::Auto) => {
+                let mut cache = AutoHintCache::new(&outlines);
+                glyph::render_auto_hinted(
+                    &outlines,
+                    glyph,
+                    args.ppem,
+                    &mut cache,
+                    &args.hint_properties,
+                    &mut scratch,
+                    &mut raster,
+                )
+            }
+            Some(mode) => outlines
+                .load_with_hint_properties(
+                    glyph,
+                    args.ppem,
+                    mode,
+                    HintTarget::Normal,
+                    &mut scratch,
+                    &args.hint_properties,
+                )
+                .map_err(glyph::RenderError::Outline)
+                .and_then(|(info, _)| {
+                    glyph::render_loaded(info, args.ppem, &mut scratch, &mut raster)
+                }),
+            None => glyph::render(&outlines, glyph, args.ppem, &mut scratch, &mut raster),
+        }
     };
     let b = match rendered {
         Ok(b) => b,

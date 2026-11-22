@@ -143,12 +143,15 @@ pub(crate) fn load_cff_at(
 /// `cff_slot_load` with hinting at `location` (sofel ADR 0064): the
 /// outline in 26.6 pixels and FreeType's `glyph->x_scale`, which scales
 /// the advance.
+#[allow(clippy::too_many_arguments)] // Matches the CFF face, load, and property inputs.
 pub(crate) fn load_cff_hinted(
     font: &Font<'_>,
     location: &Location<'_>,
     cff: &Cff<'_>,
     glyph: GlyphId,
     scale: Scale,
+    ppem: u16,
+    properties: crate::PostScriptHintProperties,
     s: &mut Scratch,
 ) -> Result<(OutlineInfo, i64), OutlineError> {
     // cf2_checkTransform fails with Glyph_Too_Big, and so does the retry
@@ -160,7 +163,7 @@ pub(crate) fn load_cff_hinted(
     let instance = font.instance(location);
     let blend = instance.ft_blend_weights(cff);
     let upm = i32::from(font.units_per_em());
-    load_cff_with_blend(cff, glyph, scale, &blend, s, Some(upm))
+    load_cff_with_blend(cff, glyph, scale, &blend, s, Some((upm, ppem, properties)))
 }
 
 pub(crate) fn load_bare_cff(
@@ -201,7 +204,7 @@ fn load_cff_with_blend(
     scale: Scale,
     blend: &dyn BlendWeights,
     s: &mut Scratch,
-    hinted_upm: Option<i32>,
+    hinted_upm: Option<(i32, u16, crate::PostScriptHintProperties)>,
 ) -> Result<(OutlineInfo, i64), OutlineError> {
     s.clear();
     if glyph.0 >= cff.num_glyphs() {
@@ -228,12 +231,23 @@ fn load_cff_with_blend(
     }
     // cf2_getScaleAndHintFlag and cf2_checkTransform.
     let hinting = match hinted_upm {
-        Some(upm) if scaled => {
+        Some((upm, ppem, properties)) if scaled => {
             let a = ft::to_i32(x_scale).wrapping_add(32) / 64;
             let d = ft::to_i32(y_scale).wrapping_add(32) / 64;
             match hinted_scales_fit(a, d, upm) {
                 None => return Err(OutlineError::InvalidOutline),
-                Some(true) => Some(Hinting::new(&sub.private, a, d)),
+                Some(true) => Some(if properties.no_stem_darkening {
+                    Hinting::new(&sub.private, a, d)
+                } else {
+                    Hinting::new_with_darkening(
+                        &sub.private,
+                        a,
+                        d,
+                        u32::try_from(upm).unwrap_or(0),
+                        ppem,
+                        properties.darkening_parameters,
+                    )
+                }),
                 Some(false) => None,
             }
         }
@@ -276,7 +290,25 @@ fn load_cff_with_blend(
     let decoded = match &hinting {
         Some(h) => {
             let hint_work = s.cff_hints.get_or_insert_with(Default::default);
-            charstring::decode_hinted(data, &ctx, h, &mut s.cff, hint_work, &mut builder)
+            let first =
+                charstring::decode_hinted(data, &ctx, h, &mut s.cff, hint_work, &mut builder);
+            if first.is_ok() && h.is_darkened() && s.cff.winding_momentum() < 0 {
+                builder.points.clear();
+                builder.tags.clear();
+                builder.ends.clear();
+                builder.path_begun = false;
+                let reversed = h.with_reverse_winding();
+                charstring::decode_hinted(
+                    data,
+                    &ctx,
+                    &reversed,
+                    &mut s.cff,
+                    hint_work,
+                    &mut builder,
+                )
+            } else {
+                first
+            }
         }
         None => charstring::decode(data, &ctx, &mut s.cff, &mut builder),
     };

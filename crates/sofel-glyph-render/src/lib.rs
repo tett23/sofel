@@ -24,7 +24,9 @@ use sofel_font::geom::Color;
 use sofel_font::read::GlyphId;
 use sofel_font::{BareCffFace, PfrFace, Type1Face};
 use sofel_geom::{Command, Fixed, FnPen, Point, div_fix, mul_fix};
-use sofel_outline::{OutlineError, OutlineInfo, Outlines, Scale, Scratch};
+use sofel_outline::{
+    AutoHintCache, HintProperties, HintTarget, OutlineError, OutlineInfo, Outlines, Scale, Scratch,
+};
 use sofel_raster::{
     BgraImage, Bitmap, FillRule, RasterError, Rasterizer, RenderOptions, blend_layer, pixel_box,
 };
@@ -251,7 +253,11 @@ fn shift_command(command: Command, offset: Point) -> Command {
     }
 }
 
-fn render_loaded<'r>(
+/// Rasterizes the outline most recently loaded into `scratch`.
+///
+/// # Errors
+/// Returns an error if decomposition or rasterization fails.
+pub fn render_loaded<'r>(
     info: OutlineInfo,
     ppem: u16,
     scratch: &mut Scratch,
@@ -272,6 +278,32 @@ fn render_loaded<'r>(
     raster
         .render_placed(b, options)
         .map_err(RenderError::Raster)
+}
+
+/// Renders a glyph with per-load automatic hinter properties.
+///
+/// # Errors
+/// Returns an error if hinting or rasterization fails.
+pub fn render_auto_hinted<'r>(
+    outlines: &Outlines<'_, '_, '_>,
+    glyph: GlyphId,
+    ppem: u16,
+    cache: &mut AutoHintCache,
+    properties: &HintProperties,
+    scratch: &mut Scratch,
+    raster: &'r mut Rasterizer,
+) -> Result<Bitmap<'r>, RenderError> {
+    let (info, _) = outlines
+        .load_auto_hinted_with_properties(
+            glyph,
+            ppem,
+            HintTarget::Normal,
+            cache,
+            scratch,
+            properties,
+        )
+        .map_err(RenderError::Outline)?;
+    render_loaded(info, ppem, scratch, raster)
 }
 
 /// Render an unhinted TrueType glyph to packed monochrome rows. The

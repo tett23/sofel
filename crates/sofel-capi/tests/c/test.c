@@ -2530,6 +2530,63 @@ static uint8_t *read_testdata(const char *path, size_t *len) {
   return data;
 }
 
+static void test_adr0086_i1_i4_hint_properties(const sofel_font_t *font) {
+  sofel_hint_properties_t properties;
+  int32_t legacy_box[4], configured_box[4], legacy_advance, configured_advance;
+  uint32_t legacy_overlap, configured_overlap;
+  sofel_outline_scratch_t *scratch = sofel_outline_scratch_create();
+  sofel_autohint_cache_t *cache = sofel_autohint_cache_create(font, NULL);
+  sofel_rasterizer_t *raster = sofel_rasterizer_create();
+  uint8_t rendered[4096];
+  size_t rendered_len = 0;
+  int32_t rendered_box[4];
+  CHECK(sofel_hint_properties_default(&properties) == SOFEL_OK);
+  CHECK(sofel_hint_properties_default(NULL) == SOFEL_ERROR_NULL);
+  CHECK(properties.autofitter.no_stem_darkening == 1);
+  CHECK(properties.autofitter.darkening_parameters[0] == 500);
+  CHECK(properties.fallback_script == UINT32_MAX);
+  CHECK(cache != NULL);
+  CHECK(raster != NULL);
+  CHECK(sofel_render_auto_hinted_glyph(font, NULL, 1, 16, cache, &properties,
+                                       scratch, raster, rendered, sizeof rendered,
+                                       &rendered_len, rendered_box) == SOFEL_OK);
+  CHECK(rendered_len > 0);
+  CHECK(sofel_outline_load_auto_hinted(font, NULL, 1, 16, SOFEL_HINT_TARGET_NORMAL,
+                                       cache, scratch, legacy_box, &legacy_overlap,
+                                       &legacy_advance) == SOFEL_OK);
+  CHECK(sofel_outline_load_auto_hinted_with_properties(
+      font, NULL, 1, 16, SOFEL_HINT_TARGET_NORMAL, cache, &properties, scratch,
+      configured_box, &configured_overlap, &configured_advance) == SOFEL_OK);
+  CHECK(memcmp(legacy_box, configured_box, sizeof legacy_box) == 0);
+  CHECK(legacy_overlap == configured_overlap && legacy_advance == configured_advance);
+  CHECK(sofel_outline_load_with_hint(font, NULL, 1, 16, SOFEL_HINT_MODE_AUTO,
+                                     SOFEL_HINT_TARGET_NORMAL, scratch, legacy_box,
+                                     &legacy_overlap, &legacy_advance) == SOFEL_OK);
+  CHECK(sofel_outline_load_with_hint_properties(
+      font, NULL, 1, 16, SOFEL_HINT_MODE_AUTO, SOFEL_HINT_TARGET_NORMAL,
+      &properties, scratch, configured_box, &configured_overlap,
+      &configured_advance) == SOFEL_OK);
+  CHECK(memcmp(legacy_box, configured_box, sizeof legacy_box) == 0);
+  CHECK(legacy_overlap == configured_overlap && legacy_advance == configured_advance);
+  properties.autofitter.no_stem_darkening = 2;
+  CHECK(sofel_outline_load_auto_hinted_with_properties(
+      font, NULL, 1, 16, SOFEL_HINT_TARGET_LIGHT, cache, &properties, scratch,
+      configured_box, &configured_overlap, &configured_advance) == SOFEL_ERROR_INVALID_ARGUMENT);
+  properties.autofitter.no_stem_darkening = 1;
+  properties.autofitter.darkening_parameters[0] = -1;
+  CHECK(sofel_autohint_cache_create_with_properties(font, NULL, &properties) == NULL);
+  CHECK(sofel_outline_load_auto_hinted_with_properties(
+      font, NULL, 1, 16, SOFEL_HINT_TARGET_LIGHT, cache, &properties, scratch,
+      configured_box, &configured_overlap, &configured_advance) == SOFEL_ERROR_INVALID_ARGUMENT);
+  properties.autofitter.darkening_parameters[0] = 500;
+  sofel_autohint_cache_t *configured = sofel_autohint_cache_create_with_properties(font, NULL, &properties);
+  CHECK(configured != NULL);
+  sofel_autohint_cache_destroy(configured);
+  sofel_autohint_cache_destroy(cache);
+  sofel_rasterizer_destroy(raster);
+  sofel_outline_scratch_destroy(scratch);
+}
+
 static void test_adr0064_i1_control_values(void) {
   const float weights[] = {300, 400, 575, 700};
   const int32_t expected[] = {3008, 4992, 5559, 6464};
@@ -3284,6 +3341,7 @@ int main(void) {
   sofel_outline_scratch_destroy(scratch);
 
   test_font(font);
+  test_adr0086_i1_i4_hint_properties(font);
   test_layout_queries(font);
   test_math_acceptance();
   inv2_feature_tags_outputs();

@@ -323,6 +323,67 @@ static const char *reference_variations;
 static FT_Long reference_face;
 /* --glyph-step=N: --auto-hint and --native-hint load every Nth glyph. */
 static FT_Long reference_glyph_step = 1;
+static const char *reference_hint_properties[32];
+static size_t reference_hint_property_count;
+
+/* Apply repeated --hint-property=MODULE:NAME=VALUE options to the same library. */
+static FT_Error set_reference_hint_properties(FT_Library library, FT_Face face)
+{
+  for (size_t i = 0; i < reference_hint_property_count; i++) {
+    const char *option = reference_hint_properties[i];
+    const char *colon = strchr(option, ':');
+    const char *equal = colon ? strchr(colon + 1, '=') : NULL;
+    char module[32], name[40], *end;
+    long value;
+    FT_Error error;
+    if (!equal || colon - option <= 0 || colon - option >= (ptrdiff_t)sizeof(module) ||
+        equal - colon <= 1 || equal - colon > (ptrdiff_t)sizeof(name))
+      return FT_Err_Invalid_Argument;
+    memcpy(module, option, (size_t)(colon - option));
+    module[colon - option] = 0;
+    memcpy(name, colon + 1, (size_t)(equal - colon - 1));
+    name[equal - colon - 1] = 0;
+    if (!strcmp(name, "increase-x-height")) {
+      FT_Prop_IncreaseXHeight prop;
+      if (strcmp(module, "autofitter")) return FT_Err_Invalid_Argument;
+      if (!face) continue;
+      value = strtol(equal + 1, &end, 10);
+      if (!equal[1] || *end || value < 0 || (unsigned long)value > UINT_MAX)
+        return FT_Err_Invalid_Argument;
+      prop.face = face;
+      prop.limit = (FT_UInt)value;
+      error = FT_Property_Set(library, module, name, &prop);
+    } else if (face) {
+      continue;
+    } else if (!strcmp(name, "darkening-parameters")) {
+      FT_Int parameters[8];
+      const char *cursor = equal + 1;
+      for (int j = 0; j < 8; j++) {
+        value = strtol(cursor, &end, 10);
+        if (cursor == end || value < INT_MIN || value > INT_MAX ||
+            (j < 7 ? *end != ',' : *end != 0)) return FT_Err_Invalid_Argument;
+        parameters[j] = (FT_Int)value;
+        cursor = end + (j < 7);
+      }
+      error = FT_Property_Set(library, module, name, parameters);
+    } else {
+      value = strtol(equal + 1, &end, 10);
+      if (!equal[1] || *end || value < 0 || (unsigned long)value > UINT_MAX)
+        return FT_Err_Invalid_Argument;
+      if (!strcmp(name, "no-stem-darkening")) {
+        FT_Bool setting = (FT_Bool)value;
+        if (value > 1) return FT_Err_Invalid_Argument;
+        error = FT_Property_Set(library, module, name, &setting);
+      } else {
+        FT_UInt setting = (FT_UInt)value;
+        error = FT_Property_Set(library, module, name, &setting);
+      }
+    }
+    if (error) return error;
+  }
+  return 0;
+}
+
 
 static int reference_options(int *argc, char **argv)
 {
@@ -348,6 +409,9 @@ static int reference_options(int *argc, char **argv)
       unsigned long value = strtoul(arg + 13, &end, 10);
       if (!arg[13] || *end || value == 0 || value > 0xFFFF) return 0;
       reference_glyph_step = (FT_Long)value;
+    } else if (strncmp(arg, "--hint-property=", 16) == 0) {
+      if (reference_hint_property_count >= 32 || !arg[16]) return 0;
+      reference_hint_properties[reference_hint_property_count++] = arg + 16;
     } else argv[write++] = argv[read];
   }
   *argc = write;
@@ -1799,10 +1863,12 @@ static int hint_slot(const char *size, const char *glyph, const char *engine,
   else if (strcmp(target, "normal")) return 2;
 
   if (FT_Init_FreeType(&library)) return 1;
-  error = version ? FT_Property_Set(library, "truetype", "interpreter-version", &version) : 0;
+  error = set_reference_hint_properties(library, NULL);
+  if (!error && version) error = FT_Property_Set(library, "truetype", "interpreter-version", &version);
   if (!error) error = FT_New_Face(library, path, 0, &face);
   if (!error) {
-    error = set_reference_location(library, face, reference_variations);
+    error = set_reference_hint_properties(library, face);
+    if (!error) error = set_reference_location(library, face, reference_variations);
     if (!error) error = FT_Set_Pixel_Sizes(face, 0, (FT_UInt)ppem);
     if (!error) error = FT_Load_Glyph(face, (FT_UInt)gid, flags);
     if (!error && face->glyph->format != FT_GLYPH_FORMAT_OUTLINE)
@@ -1861,9 +1927,11 @@ static int auto_hint(const char *first, const char *last, const char *target,
   else if (strcmp(target, "normal")) return 2;
 
   if (FT_Init_FreeType(&library)) return 1;
-  error = FT_New_Face(library, path, reference_face, &face);
+  error = set_reference_hint_properties(library, NULL);
+  if (!error) error = FT_New_Face(library, path, reference_face, &face);
   if (!error) {
-    error = set_reference_location(library, face, reference_variations);
+    error = set_reference_hint_properties(library, face);
+    if (!error) error = set_reference_location(library, face, reference_variations);
     for (long ppem = from; !error && ppem <= to; ppem++) {
       FT_Long g;
       error = FT_Set_Pixel_Sizes(face, 0, (FT_UInt)ppem);
@@ -2004,9 +2072,11 @@ static int auto_styles(const char *path)
   FT_Prop_GlyphToScriptMap prop;
   FT_Error error;
   if (FT_Init_FreeType(&library)) return 1;
-  error = FT_New_Face(library, path, 0, &face);
+  error = set_reference_hint_properties(library, NULL);
+  if (!error) error = FT_New_Face(library, path, 0, &face);
   if (!error) {
-    error = set_reference_location(library, face, reference_variations);
+    error = set_reference_hint_properties(library, face);
+    if (!error) error = set_reference_location(library, face, reference_variations);
     prop.face = face;
     prop.map = NULL;
     if (!error) error = FT_Property_Get(library, "autofitter", "glyph-to-script-map", &prop);
@@ -2030,11 +2100,13 @@ static int auto_style(const char *glyph, const char *path)
   long gid = strtol(glyph, &end, 10);
   if (!*glyph || *end || gid < 0 || (unsigned long)gid > UINT_MAX) return 2;
   if (FT_Init_FreeType(&library)) return 1;
-  error = FT_New_Face(library, path, 0, &face);
+  error = set_reference_hint_properties(library, NULL);
+  if (!error) error = FT_New_Face(library, path, 0, &face);
   if (!error) {
+    error = set_reference_hint_properties(library, face);
     prop.face = face;
     prop.map = NULL;
-    error = FT_Property_Get(library, "autofitter", "glyph-to-script-map", &prop);
+    if (!error) error = FT_Property_Get(library, "autofitter", "glyph-to-script-map", &prop);
     if (!error && gid >= face->num_glyphs) error = FT_Err_Invalid_Glyph_Index;
     if (!error) printf("style %u\n", (unsigned)prop.map[gid]);
     FT_Done_Face(face);

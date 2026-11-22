@@ -657,7 +657,11 @@ fn scale_dim(metrics: &mut LatinMetrics, scaler: &Scaler, dim: usize) {
         .find(|b| b.flags & BLUE_ADJUSTMENT != 0)
     {
         let scaled = mul_fix(blue.shoot.org, scale);
-        let threshold = 40;
+        let threshold = if (6..=scaler.increase_x_height).contains(&u32::from(scaler.x_ppem)) {
+            52
+        } else {
+            40
+        };
         let fitted = (scaled + threshold) & !63;
         if scaled != fitted && dim == VERT {
             let new_scale = mul_div(scale, fitted, scaled);

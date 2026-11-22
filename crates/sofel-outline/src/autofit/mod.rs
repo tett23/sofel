@@ -30,6 +30,7 @@
 
 mod calc;
 mod cjk;
+mod darkening;
 mod hints;
 mod latin;
 #[rustfmt::skip]
@@ -44,7 +45,10 @@ use sofel_geom::Point;
 use self::calc::{div_fix, mul_fix, pix_round};
 use self::hints::{GlyphHints, HORZ, OutlineRef, SCALER_FLAG_NO_ADVANCE};
 use self::tables::{SCRIPTS, STYLE_FALLBACK, STYLE_NONE_DFLT, STYLES};
-use super::{Format, HintTarget, OutlineError, OutlineInfo, Outlines, Scale, Scratch};
+use super::{
+    Format, HintProperties, HintPropertyError, HintTarget, OutlineError, OutlineInfo, Outlines,
+    Scale, Scratch,
+};
 
 /// `AF_WritingSystem`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -101,6 +105,7 @@ pub(super) struct Scaler {
     pub render_mode: RenderMode,
     pub flags: u32,
     pub x_ppem: u16,
+    pub increase_x_height: u32,
 }
 
 const STYLE_MASK: u16 = 0x1FFF;
@@ -137,6 +142,15 @@ pub struct AutoHintCache {
 }
 
 impl AutoHintCache {
+    /// The default-coverage style for a FreeType `AF_Script` enum value.
+    /// Unknown values and scripts with only feature styles have no default style.
+    pub fn default_style_for_script(script: u32) -> Option<u16> {
+        STYLES
+            .iter()
+            .position(|style| style.default_coverage && u32::from(style.script) == script)
+            .and_then(|index| u16::try_from(index).ok())
+    }
+
     /// The cache for `outlines`: assigns every glyph to a style through
     /// the Unicode cmap, as FreeType's
     /// `af_face_globals_compute_style_coverage` does without HarfBuzz.
@@ -153,12 +167,29 @@ impl AutoHintCache {
             .and_then(|data| sofel_font::read::post::Post::new(data).ok())
             .is_some_and(|post| post.is_fixed_pitch() != 0);
         AutoHintCache {
-            glyph_styles: compute_style_coverage(&face),
+            glyph_styles: compute_style_coverage(&face, STYLE_FALLBACK),
             metrics: alloc::vec![None; STYLES.len()],
             italic,
             fixed_width,
             hints: GlyphHints::default(),
         }
+    }
+
+    /// Builds a cache with the requested fallback style for glyphs outside the cmap.
+    pub fn new_with_properties(
+        outlines: &Outlines<'_, '_, '_>,
+        properties: &HintProperties,
+    ) -> Result<AutoHintCache, HintPropertyError> {
+        properties.validate()?;
+        let fallback = properties
+            .fallback_script
+            .map_or(Ok(STYLE_FALLBACK), |script| {
+                Self::default_style_for_script(script)
+                    .ok_or(HintPropertyError::InvalidFallbackScript)
+            })?;
+        let mut cache = AutoHintCache::new(outlines);
+        cache.glyph_styles = compute_style_coverage(&Face::new(outlines), fallback);
+        Ok(cache)
     }
 
     /// The raw style word of `glyph` as FreeType's `glyph-to-script-map`
@@ -353,7 +384,7 @@ fn next_cluster<'p>(face: &Face<'_, '_, '_, '_>, mut p: &'p [u8]) -> (&'p [u8], 
 }
 
 /// `af_face_globals_compute_style_coverage` without HarfBuzz.
-fn compute_style_coverage(face: &Face<'_, '_, '_, '_>) -> Vec<u16> {
+fn compute_style_coverage(face: &Face<'_, '_, '_, '_>, fallback: u16) -> Vec<u16> {
     let n = usize::try_from(face.num_glyphs).unwrap_or(0);
     let mut gstyles = alloc::vec![STYLE_UNASSIGNED; n];
     if let Some(cmap) = face.cmap {
@@ -401,7 +432,7 @@ fn compute_style_coverage(face: &Face<'_, '_, '_, '_>) -> Vec<u16> {
     for g in &mut gstyles {
         if *g & STYLE_MASK == STYLE_UNASSIGNED {
             *g &= !STYLE_MASK;
-            *g |= STYLE_FALLBACK;
+            *g |= fallback;
         }
     }
     gstyles
@@ -478,6 +509,7 @@ pub(super) fn load(
     target: HintTarget,
     cache: &mut AutoHintCache,
     scratch: &mut Scratch,
+    properties: &HintProperties,
 ) -> Result<(OutlineInfo, i32), OutlineError> {
     let fail = |scratch: &mut Scratch, e: OutlineError| {
         scratch.clear();
@@ -514,6 +546,7 @@ pub(super) fn load(
         render_mode: render_mode(target),
         flags: 0,
         x_ppem: ppem,
+        increase_x_height: properties.increase_x_height,
     };
     let italic = cache.italic;
     let fixed_width = cache.fixed_width;
@@ -554,6 +587,17 @@ pub(super) fn load(
             return Err(e);
         }
     };
+    if scaler.render_mode == RenderMode::Light {
+        darkening::apply(
+            &mut scratch.points,
+            &scratch.ends,
+            &metrics,
+            ppem,
+            upem,
+            scale,
+            properties.autofitter,
+        );
+    }
     let hori_advance = unscaled_advance(outlines, glyph);
 
     let mut pp1x = hints.x_delta;

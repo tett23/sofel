@@ -3,8 +3,8 @@
 //!
 //! The decoder is a port of FreeType 2.15.0's Adobe engine
 //! (`cf2_interpT2CharString` in `src/psaux/psintrp.c`, `cf2_glyphpath_*`
-//! in `src/psaux/pshints.c`, `src/psaux/psstack.c`) with stem darkening
-//! taken out (FreeType's default). What it keeps: the operand stack with
+//! in `src/psaux/pshints.c`, `src/psaux/psstack.c`). Stem darkening is
+//! selected by the caller's [`super::Hinting`]. It keeps the operand stack with
 //! its number types, the subroutine stack, the width, the stem hints and
 //! hint masks (without hinting they still decide errors and which
 //! zero-length lines are kept), flex, seac, the arithmetic operators,
@@ -305,6 +305,7 @@ pub struct Work {
     len: usize,
     storage: [i32; STORAGE_SIZE],
     stem_count: usize,
+    winding_momentum: i32,
     path: GlyphPath,
     random: u32,
     used_blend: bool,
@@ -323,6 +324,11 @@ impl Work {
     /// Number of horizontal and vertical stems seen in the last decode.
     pub fn hint_stem_count(&self) -> usize {
         self.stem_count
+    }
+
+    /// FreeType's accumulated contour winding momentum for the last decode.
+    pub fn winding_momentum(&self) -> i32 {
+        self.winding_momentum
     }
 
     /// The first operator of the last decode that is reserved or belongs
@@ -344,6 +350,7 @@ impl Default for Work {
             len: 0,
             storage: [0; STORAGE_SIZE],
             stem_count: 0,
+            winding_momentum: 0,
             path: GlyphPath::default(),
             random: 0,
             used_blend: false,
@@ -490,7 +497,7 @@ enum Elem {
     Cube,
 }
 
-/// `CF2_GlyphPathRec` without darkening; the hint maps are in [`Maps`].
+/// `CF2_GlyphPathRec`; the hint maps are in [`Maps`].
 #[derive(Clone, Copy, Debug, Default)]
 struct GlyphPath {
     move_pending: bool,
@@ -519,6 +526,119 @@ struct Run<'s, 'c, const S: usize, const N: usize> {
 type Step<T> = Result<T, CharStringErrorKind>;
 
 impl<const S: usize, const N: usize> Run<'_, '_, S, N> {
+    fn add_winding_momentum(&mut self, from: (i32, i32), to: (i32, i32)) {
+        let dx = to.0.wrapping_sub(from.0);
+        let dy = to.1.wrapping_sub(from.1);
+        let term_x = (from.0 >> 16).wrapping_mul(dy >> 16);
+        let term_y = (from.1 >> 16).wrapping_mul(dx >> 16);
+        self.work.winding_momentum = self
+            .work
+            .winding_momentum
+            .wrapping_add(term_x.wrapping_sub(term_y));
+    }
+
+    /// `cf2_glyphpath_computeOffset` and its winding momentum.
+    fn darkening_offset(&mut self, from: (i32, i32), to: (i32, i32)) -> (i32, i32) {
+        let Some(&hinting) = self.hinting else {
+            return (0, 0);
+        };
+        let (x, y) = hinting.darkening();
+        if x == 0 && y == 0 {
+            return (0, 0);
+        }
+        self.add_winding_momentum(from, to);
+        let mut dx = to.0.wrapping_sub(from.0);
+        let mut dy = to.1.wrapping_sub(from.1);
+        if hinting.reverse_winding() {
+            dx = dx.wrapping_neg();
+            dy = dy.wrapping_neg();
+        }
+        let mx = |factor: i32| mul_fix(factor, x);
+        let my = |factor: i32| mul_fix(factor, y);
+        if dx >= 0 {
+            if dy >= 0 {
+                if dx > dy.wrapping_mul(2) {
+                    (0, 0)
+                } else if dy > dx.wrapping_mul(2) {
+                    (x, y)
+                } else {
+                    (mx(45875), my(19661))
+                }
+            } else if dx > dy.wrapping_neg().wrapping_mul(2) {
+                (0, 0)
+            } else if dy.wrapping_neg() > dx.wrapping_mul(2) {
+                (x.wrapping_neg(), y)
+            } else {
+                (mx(-45874), my(19661))
+            }
+        } else if dy >= 0 {
+            if dx.wrapping_neg() > dy.wrapping_mul(2) {
+                (0, y.wrapping_mul(2))
+            } else if dy > dx.wrapping_neg().wrapping_mul(2) {
+                (x, y)
+            } else {
+                (mx(45875), my(111411))
+            }
+        } else if dx.wrapping_neg() > dy.wrapping_neg().wrapping_mul(2) {
+            (0, y.wrapping_mul(2))
+        } else if dy.wrapping_neg() > dx.wrapping_neg().wrapping_mul(2) {
+            (x.wrapping_neg(), y)
+        } else {
+            (mx(-45874), my(111411))
+        }
+    }
+
+    fn offset_point(point: (i32, i32), offset: (i32, i32)) -> (i32, i32) {
+        (
+            point.0.wrapping_add(offset.0),
+            point.1.wrapping_add(offset.1),
+        )
+    }
+
+    /// `cf2_glyphpath_computeIntersection` for two offset segments.
+    fn darkening_intersection(
+        &self,
+        u1: (i32, i32),
+        u2: (i32, i32),
+        v1: (i32, i32),
+        v2: (i32, i32),
+    ) -> Option<(i32, i32)> {
+        let scale = |a: i32, b: i32| a.wrapping_sub(b).wrapping_add(16) >> 5;
+        let u = (scale(u2.0, u1.0), scale(u2.1, u1.1));
+        let v = (scale(v2.0, v1.0), scale(v2.1, v1.1));
+        let w = (scale(v1.0, u1.0), scale(v1.1, u1.1));
+        let perp = |a: (i32, i32), b: (i32, i32)| mul_fix(a.0, b.1).wrapping_sub(mul_fix(a.1, b.0));
+        let denominator = perp(u, v);
+        if denominator == 0 {
+            return None;
+        }
+        let factor = ft::to_i32(ft::div_fix(i64::from(perp(w, v)), i64::from(denominator)));
+        let mut result = (
+            u1.0.wrapping_add(mul_fix(factor, u2.0.wrapping_sub(u1.0))),
+            u1.1.wrapping_add(mul_fix(factor, u2.1.wrapping_sub(u1.1))),
+        );
+        let snap = 6554;
+        for (a, b) in [(u1, u2), (v1, v2)] {
+            if a.0 == b.0 && result.0.wrapping_sub(a.0).wrapping_abs() < snap {
+                result.0 = a.0;
+            }
+            if a.1 == b.1 && result.1.wrapping_sub(a.1).wrapping_abs() < snap {
+                result.1 = a.1;
+            }
+        }
+        let (darken_x, darken_y) = self.hinting.map_or((0, 0), Hinting::darkening);
+        let limit = darken_x
+            .wrapping_abs()
+            .max(darken_y.wrapping_abs())
+            .wrapping_mul(2);
+        let middle = (u2.0.wrapping_add(v1.0) / 2, u2.1.wrapping_add(v1.1) / 2);
+        if result.0.wrapping_sub(middle.0).wrapping_abs() > limit
+            || result.1.wrapping_sub(middle.1).wrapping_abs() > limit
+        {
+            return None;
+        }
+        Some(result)
+    }
     fn scales(&self) -> (i32, i32) {
         self.hinting
             .map_or((self.ctx.scale, self.ctx.scale), |h| h.scales())
@@ -541,6 +661,7 @@ impl<const S: usize, const N: usize> Run<'_, '_, S, N> {
             h_count: self.hints.h_stems,
             v_count: self.hints.v_stems,
             blues: self.hinting.map(Hinting::blues),
+            darken_y: self.hinting.map_or(0, |hinting| hinting.darkening().1),
         };
         hint::build(
             &mut self.maps.map,
@@ -564,6 +685,7 @@ impl<const S: usize, const N: usize> Run<'_, '_, S, N> {
             h_count: self.hints.h_stems,
             v_count: self.hints.v_stems,
             blues: self.hinting.map(Hinting::blues),
+            darken_y: self.hinting.map_or(0, |hinting| hinting.darkening().1),
         };
         hint::build(&mut map, &mut self.maps.initial, &mut stems, &mut mask, 0)
             .map_err(|_| CharStringErrorKind::TooManyHints)
@@ -598,11 +720,24 @@ impl<const S: usize, const N: usize> Run<'_, '_, S, N> {
         Ok(())
     }
 
-    /// `cf2_glyphpath_pushPrevElem` without offsets: the previous and the
-    /// next element always join, so no intersection is computed. Closing
-    /// maps the end of a line and the start point with the contour's
-    /// first hint map.
-    fn push_prev(&mut self, next0: (i32, i32), close: bool) {
+    /// `cf2_glyphpath_pushPrevElem`: intersect offset segments where they
+    /// meet, and map a closing segment with the contour's first hint map.
+    fn push_prev(&mut self, next0: &mut (i32, i32), next1: (i32, i32), close: bool) {
+        let prev = self.work.path;
+        let (u1, u2) = if prev.prev == Elem::Line {
+            (prev.prev_p[0], prev.prev_p[1])
+        } else {
+            (prev.prev_p[2], prev.prev_p[3])
+        };
+        let intersection = (u2 != *next0)
+            .then(|| self.darkening_intersection(u1, u2, *next0, next1))
+            .flatten();
+        if let Some(point) = intersection {
+            let end = if prev.prev == Elem::Line { 1 } else { 3 };
+            if let Some(slot) = self.work.path.prev_p.get_mut(end) {
+                *slot = point;
+            }
+        }
         let p = self.work.path;
         let end_map = if close { Which::First } else { Which::Current };
         match p.prev {
@@ -623,11 +758,16 @@ impl<const S: usize, const N: usize> Run<'_, '_, S, N> {
                 self.work.path.current_ds = c;
             }
         }
-        let pt1 = self.ds(end_map, next0);
-        let cur = self.work.path.current_ds;
-        if pt1 != cur {
-            self.sink.line_to(cur, pt1);
-            self.work.path.current_ds = pt1;
+        if intersection.is_none() || close {
+            let pt1 = self.ds(end_map, *next0);
+            let cur = self.work.path.current_ds;
+            if pt1 != cur {
+                self.sink.line_to(cur, pt1);
+                self.work.path.current_ds = pt1;
+            }
+        }
+        if let Some(point) = intersection {
+            *next0 = point;
         }
     }
 
@@ -639,21 +779,24 @@ impl<const S: usize, const N: usize> Run<'_, '_, S, N> {
         }
         let p0 = self.work.path.current;
         let p1 = (x, y);
+        let offset = self.darkening_offset(p0, p1);
+        let mut q0 = Self::offset_point(p0, offset);
+        let q1 = Self::offset_point(p1, offset);
         if self.work.path.move_pending {
-            self.push_move(p0)?;
+            self.push_move(q0)?;
             let p = &mut self.work.path;
             p.move_pending = false;
             p.open = true;
-            p.start1 = p1;
+            p.start1 = q1;
         }
         if self.work.path.queued {
-            self.push_prev(p0, false);
+            self.push_prev(&mut q0, q1, false);
         }
         let p = &mut self.work.path;
         p.queued = true;
         p.prev = Elem::Line;
-        p.prev_p[0] = p0;
-        p.prev_p[1] = p1;
+        p.prev_p[0] = q0;
+        p.prev_p[1] = q1;
         if new_map {
             self.build_map()?;
         }
@@ -664,20 +807,29 @@ impl<const S: usize, const N: usize> Run<'_, '_, S, N> {
     /// `cf2_glyphpath_curveTo`.
     fn curve_to(&mut self, c1: (i32, i32), c2: (i32, i32), to: (i32, i32)) -> Step<()> {
         let p0 = self.work.path.current;
+        let first = self.darkening_offset(p0, c1);
+        let last = self.darkening_offset(c2, to);
+        if self.hinting.is_some_and(Hinting::is_darkened) {
+            self.add_winding_momentum(c1, c2);
+        }
+        let mut q0 = Self::offset_point(p0, first);
+        let q1 = Self::offset_point(c1, first);
+        let q2 = Self::offset_point(c2, last);
+        let q3 = Self::offset_point(to, last);
         if self.work.path.move_pending {
-            self.push_move(p0)?;
+            self.push_move(q0)?;
             let p = &mut self.work.path;
             p.move_pending = false;
             p.open = true;
-            p.start1 = c1;
+            p.start1 = q1;
         }
         if self.work.path.queued {
-            self.push_prev(p0, false);
+            self.push_prev(&mut q0, q1, false);
         }
         let p = &mut self.work.path;
         p.queued = true;
         p.prev = Elem::Cube;
-        p.prev_p = [p0, c1, c2, to];
+        p.prev_p = [q0, q1, q2, q3];
         if self.hints.mask.new {
             self.build_map()?;
         }
@@ -692,8 +844,9 @@ impl<const S: usize, const N: usize> Run<'_, '_, S, N> {
             let s = self.work.path.start;
             self.line_to(s.0, s.1)?;
             if self.work.path.queued {
-                let s0 = self.work.path.start0;
-                self.push_prev(s0, true);
+                let mut s0 = self.work.path.start0;
+                let s1 = self.work.path.start1;
+                self.push_prev(&mut s0, s1, true);
             }
             let p = &mut self.work.path;
             p.move_pending = true;
@@ -989,6 +1142,7 @@ fn run_decode<const S: usize, const N: usize>(
     sink: &mut dyn PathSink,
 ) -> Result<Decoded, CharStringError> {
     work.random = ctx.random_seed;
+    work.winding_momentum = 0;
     work.used_blend = false;
     work.vsindex = ctx.vsindex;
     work.unknown = None;

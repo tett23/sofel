@@ -193,11 +193,15 @@ fn reference(
     variations: Option<&str>,
     (first, last): (u16, u16),
     target: &str,
+    property: Option<&str>,
 ) -> BTreeMap<(u16, u32), Vec<String>> {
     let mut command = Command::new(paths::ft_dump());
     command.args(["--auto-hint", &first.to_string(), &last.to_string(), target]);
     if let Some(v) = variations {
         command.arg(format!("--variations={v}"));
+    }
+    if let Some(property) = property {
+        command.arg(format!("--hint-property={property}"));
     }
     let out = command.arg(path).output().unwrap();
     assert!(
@@ -269,7 +273,7 @@ fn compare_font(relative: &str, variations: Option<&str>, stats: &mut Stats) {
     for (name, target) in TARGETS {
         let mut cache = AutoHintCache::new(&outlines);
         for &size in &sizes {
-            let expected = reference(&path, variations, (size, size), name);
+            let expected = reference(&path, variations, (size, size), name, None);
             for (&(ppem, gid), expected) in &expected {
                 stats.compared += 1;
                 let loaded =
@@ -438,4 +442,394 @@ fn adr0064_i1_load_with_hint_auto_uses_the_automatic_hinter() {
         Err(OutlineError::InvalidGlyphIndex)
     );
     assert!(a.points().is_empty());
+}
+
+#[test]
+fn adr0086_i1_i3_per_load_properties_preserve_defaults_and_do_not_leak() {
+    let path = paths::testdata().join("harfbuzz/perf/fonts/Roboto-Regular.ttf");
+    let data = std::fs::read(path).unwrap();
+    let font = Font::new(&data, 0).unwrap();
+    let outlines = Outlines::new(font.default_instance());
+    let glyph = font.nominal_glyph(u32::from('x')).unwrap();
+    let mut cache = AutoHintCache::new(&outlines);
+    let mut scratch = Scratch::default();
+    let defaults = sofel_outline::HintProperties::default();
+    let base = outlines
+        .load_auto_hinted(glyph, 10, HintTarget::Normal, &mut cache, &mut scratch)
+        .unwrap();
+    let base_points = scratch.points().to_vec();
+    let explicit = outlines
+        .load_auto_hinted_with_properties(
+            glyph,
+            10,
+            HintTarget::Normal,
+            &mut cache,
+            &mut scratch,
+            &defaults,
+        )
+        .unwrap();
+    assert_eq!(base, explicit);
+    assert_eq!(base_points, scratch.points());
+    let raised = sofel_outline::HintProperties {
+        increase_x_height: 10,
+        ..defaults
+    };
+    outlines
+        .load_auto_hinted_with_properties(
+            glyph,
+            10,
+            HintTarget::Normal,
+            &mut cache,
+            &mut scratch,
+            &raised,
+        )
+        .unwrap();
+    let repeated = outlines
+        .load_auto_hinted_with_properties(
+            glyph,
+            10,
+            HintTarget::Normal,
+            &mut cache,
+            &mut scratch,
+            &defaults,
+        )
+        .unwrap();
+    assert_eq!(base, repeated);
+    assert_eq!(base_points, scratch.points());
+}
+
+#[test]
+fn adr0086_i4_invalid_darkening_curves_are_rejected_by_both_engines() {
+    let path = paths::testdata().join("harfbuzz/perf/fonts/Roboto-Regular.ttf");
+    let data = std::fs::read(&path).unwrap();
+    let font = Font::new(&data, 0).unwrap();
+    let outlines = Outlines::new(font.default_instance());
+    let mut cache = AutoHintCache::new(&outlines);
+    let mut scratch = Scratch::default();
+    let glyph = font.nominal_glyph(u32::from('x')).unwrap();
+    for module in ["autofitter", "cff", "type1", "t1cid"] {
+        for curve in [
+            [-1, 0, 1, 0, 1, 0, 1, 0],
+            [2, 0, 1, 0, 1, 0, 1, 0],
+            [0, 501, 1, 0, 1, 0, 1, 0],
+        ] {
+            let mut properties = sofel_outline::HintProperties::default();
+            let settings = match module {
+                "autofitter" => &mut properties.autofitter,
+                "cff" => &mut properties.cff,
+                "type1" => &mut properties.type1,
+                _ => &mut properties.t1cid,
+            };
+            settings.darkening_parameters = curve;
+            let loaded = outlines.load_auto_hinted_with_properties(
+                glyph,
+                9,
+                HintTarget::Light,
+                &mut cache,
+                &mut scratch,
+                &properties,
+            );
+            assert!(matches!(loaded, Err(OutlineError::InvalidHintProperties)));
+            let csv = curve.map(|value| value.to_string()).join(",");
+            let output = Command::new(paths::ft_dump())
+                .args(["--auto-hint", "9", "9", "light"])
+                .arg(format!(
+                    "--hint-property={module}:darkening-parameters={csv}"
+                ))
+                .arg(&path)
+                .output()
+                .unwrap();
+            assert_eq!(output.status.code(), Some(1));
+            assert_eq!(
+                String::from_utf8(output.stderr).unwrap(),
+                "ft-dump: auto hint error 6\n"
+            );
+        }
+    }
+}
+
+#[test]
+fn adr0086_i2_xheight_load_matches_property_reference() {
+    let path = paths::testdata().join("harfbuzz/perf/fonts/Roboto-Regular.ttf");
+    let data = std::fs::read(&path).unwrap();
+    let font = Font::new(&data, 0).unwrap();
+    let outlines = Outlines::new(font.default_instance());
+    let properties = sofel_outline::HintProperties {
+        increase_x_height: 10,
+        ..Default::default()
+    };
+    let mut cache = AutoHintCache::new(&outlines);
+    let mut scratch = Scratch::default();
+    for ppem in [5, 6, 10, 11] {
+        for character in ['x', 'e', 'g'] {
+            let glyph = font.nominal_glyph(u32::from(character)).unwrap();
+            let expected = Command::new(paths::ft_dump())
+                .args([
+                    "--hint-slot",
+                    &ppem.to_string(),
+                    &glyph.0.to_string(),
+                    "auto",
+                    "normal",
+                    "--hint-property=autofitter:increase-x-height=10",
+                ])
+                .arg(&path)
+                .output()
+                .unwrap();
+            assert!(
+                expected.status.success(),
+                "{}",
+                String::from_utf8_lossy(&expected.stderr)
+            );
+            let (_, advance) = outlines
+                .load_auto_hinted_with_properties(
+                    glyph,
+                    ppem,
+                    HintTarget::Normal,
+                    &mut cache,
+                    &mut scratch,
+                    &properties,
+                )
+                .unwrap();
+            let mut actual = vec![format!("advance {advance} 0")];
+            for (point, tag) in scratch.points().iter().zip(scratch.point_tags()) {
+                actual.push(format!("point {} {} {tag}", point.x, point.y));
+            }
+            actual.extend(
+                scratch
+                    .contour_ends()
+                    .iter()
+                    .map(|end| format!("end {end}")),
+            );
+            assert_eq!(
+                String::from_utf8(expected.stdout)
+                    .unwrap()
+                    .lines()
+                    .collect::<Vec<_>>(),
+                actual.iter().map(String::as_str).collect::<Vec<_>>(),
+                "{character} {ppem}"
+            );
+        }
+    }
+}
+
+#[test]
+fn adr0086_i2_fallback_style_matches_property_reference() {
+    let path = paths::testdata().join("harfbuzz/perf/fonts/Roboto-Regular.ttf");
+    let data = std::fs::read(&path).unwrap();
+    let font = Font::new(&data, 0).unwrap();
+    let outlines = Outlines::new(font.default_instance());
+    let properties = sofel_outline::HintProperties {
+        fallback_script: Some(0),
+        ..Default::default()
+    };
+    let cache = AutoHintCache::new_with_properties(&outlines, &properties).unwrap();
+    let out = Command::new(paths::ft_dump())
+        .args([
+            "--auto-styles",
+            "--hint-property=autofitter:fallback-script=0",
+        ])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    for line in String::from_utf8(out.stdout).unwrap().lines() {
+        let parts: Vec<_> = line.split_ascii_whitespace().collect();
+        assert_eq!(parts[0], "style");
+        let glyph: u32 = parts[1].parse().unwrap();
+        let style: u16 = parts[2].parse().unwrap();
+        assert_eq!(
+            cache.glyph_style(GlyphId(glyph)),
+            Some(style),
+            "glyph {glyph}"
+        );
+    }
+}
+
+#[test]
+fn adr0086_i2_autofitter_darkening_matches_reference() {
+    let path = paths::testdata().join("harfbuzz/perf/fonts/Roboto-Regular.ttf");
+    let data = std::fs::read(&path).unwrap();
+    let font = Font::new(&data, 0).unwrap();
+    let outlines = Outlines::new(font.default_instance());
+    let glyph = font.nominal_glyph(u32::from('x')).unwrap();
+    let mut cache = AutoHintCache::new(&outlines);
+    let mut scratch = Scratch::default();
+    let mut properties = sofel_outline::HintProperties::default();
+    properties.autofitter.no_stem_darkening = false;
+    let expected = Command::new(paths::ft_dump())
+        .args([
+            "--hint-slot",
+            "9",
+            &glyph.0.to_string(),
+            "auto",
+            "light",
+            "--hint-property=autofitter:no-stem-darkening=0",
+        ])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(
+        expected.status.success(),
+        "{}",
+        String::from_utf8_lossy(&expected.stderr)
+    );
+    let (_, advance) = outlines
+        .load_auto_hinted_with_properties(
+            glyph,
+            9,
+            HintTarget::Light,
+            &mut cache,
+            &mut scratch,
+            &properties,
+        )
+        .unwrap();
+    let mut actual = vec![format!("advance {advance} 0")];
+    for (point, tag) in scratch.points().iter().zip(scratch.point_tags()) {
+        actual.push(format!("point {} {} {tag}", point.x, point.y));
+    }
+    actual.extend(
+        scratch
+            .contour_ends()
+            .iter()
+            .map(|end| format!("end {end}")),
+    );
+    assert_eq!(
+        String::from_utf8(expected.stdout)
+            .unwrap()
+            .lines()
+            .collect::<Vec<_>>(),
+        actual.iter().map(String::as_str).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn adr0086_i2_darkening_all_roboto_glyphs_match_reference() {
+    let path = paths::testdata().join("harfbuzz/perf/fonts/Roboto-Regular.ttf");
+    let data = std::fs::read(&path).unwrap();
+    let font = Font::new(&data, 0).unwrap();
+    let outlines = Outlines::new(font.default_instance());
+    let mut cache = AutoHintCache::new(&outlines);
+    let mut scratch = Scratch::default();
+    let mut raster = Rasterizer::new();
+    let mut properties = sofel_outline::HintProperties::default();
+    properties.autofitter.no_stem_darkening = false;
+    for ppem in [9, 16] {
+        let expected = reference(
+            &path,
+            None,
+            (ppem, ppem),
+            "light",
+            Some("autofitter:no-stem-darkening=0"),
+        );
+        for ((_, gid), lines) in expected {
+            let loaded = outlines.load_auto_hinted_with_properties(
+                GlyphId(gid),
+                ppem,
+                HintTarget::Light,
+                &mut cache,
+                &mut scratch,
+                &properties,
+            );
+            let mut actual = Vec::new();
+            match loaded {
+                Err(_) => actual.push("error".to_string()),
+                Ok((info, advance)) => {
+                    actual.push(format!("advance {advance} 0"));
+                    for (point, tag) in scratch.points().iter().zip(scratch.point_tags()) {
+                        actual.push(format!("point {} {} {tag}", point.x, point.y));
+                    }
+                    actual.extend(
+                        scratch
+                            .contour_ends()
+                            .iter()
+                            .map(|end| format!("end {end}")),
+                    );
+                    actual.extend(render(
+                        info,
+                        &scratch,
+                        ppem,
+                        HintTarget::Light,
+                        false,
+                        &mut raster,
+                    ));
+                }
+            }
+            let both_errors = lines.first().is_some_and(|line| line.starts_with("error"))
+                && actual.first().is_some_and(|line| line.starts_with("error"));
+            if !both_errors {
+                let mismatch = actual.iter().zip(&lines).position(|(a, b)| a != b);
+                assert_eq!(
+                    mismatch,
+                    None,
+                    "glyph {gid}, ppem {ppem}: {:?} vs {:?}",
+                    mismatch.and_then(|i| actual.get(i)),
+                    mismatch.and_then(|i| lines.get(i))
+                );
+                assert_eq!(actual.len(), lines.len(), "glyph {gid}, ppem {ppem}");
+            }
+        }
+    }
+}
+
+#[test]
+fn adr0086_i2_equal_darkening_knots_and_y500_match_reference() {
+    let path = paths::testdata().join("harfbuzz/perf/fonts/Roboto-Regular.ttf");
+    let data = std::fs::read(&path).unwrap();
+    let font = Font::new(&data, 0).unwrap();
+    let outlines = Outlines::new(font.default_instance());
+    let glyph = font.nominal_glyph(u32::from('x')).unwrap();
+    let mut cache = AutoHintCache::new(&outlines);
+    let mut scratch = Scratch::default();
+    let mut properties = sofel_outline::HintProperties::default();
+    properties.autofitter.no_stem_darkening = false;
+    properties.autofitter.darkening_parameters = [0, 500, 0, 500, 0, 500, 0, 500];
+    let expected = Command::new(paths::ft_dump())
+        .args([
+            "--hint-slot",
+            "9",
+            &glyph.0.to_string(),
+            "auto",
+            "light",
+            "--hint-property=autofitter:no-stem-darkening=0",
+            "--hint-property=autofitter:darkening-parameters=0,500,0,500,0,500,0,500",
+        ])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(
+        expected.status.success(),
+        "{}",
+        String::from_utf8_lossy(&expected.stderr)
+    );
+    let (_, advance) = outlines
+        .load_auto_hinted_with_properties(
+            glyph,
+            9,
+            HintTarget::Light,
+            &mut cache,
+            &mut scratch,
+            &properties,
+        )
+        .unwrap();
+    let mut actual = vec![format!("advance {advance} 0")];
+    for (point, tag) in scratch.points().iter().zip(scratch.point_tags()) {
+        actual.push(format!("point {} {} {tag}", point.x, point.y));
+    }
+    actual.extend(
+        scratch
+            .contour_ends()
+            .iter()
+            .map(|end| format!("end {end}")),
+    );
+    assert_eq!(
+        String::from_utf8(expected.stdout)
+            .unwrap()
+            .lines()
+            .collect::<Vec<_>>(),
+        actual.iter().map(String::as_str).collect::<Vec<_>>()
+    );
 }

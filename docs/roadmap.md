@@ -46,7 +46,7 @@ Golem はフォントを開くときに GSUB と GPOS の機能タグをすべ�
 - **blend を計算できない CFF2 の Private DICT**：領域の軸の数が `fvar` と違う CFF2 では、sofel はヒンティングの有無に関わらずグリフの読み込みに失敗し、FreeType は空の輪郭を返す（[ADR 0021](adr/0021-cff-outlines.md)）。`conformance/expected-failures-cff-hint.txt` に該当を記録した。
 
 - **HarfBuzz を使う構成**：FreeType を `FT_CONFIG_OPTION_USE_HARFBUZZ` で組むと、GSUB の機能（小型大文字、上付きなど）から style を割り当て、`afadjust.c` の逆引きにも GSUB を使う。[ADR 0085](adr/0085-autofit-harfbuzz-configuration.md) で、この構成を選べるようにし、HarfBuzz を組んだ ft-dump と照合すると採択した（未実装）。
-- **モジュールの設定**：`no-stem-darkening`、`darkening-parameters`、`increase-x-height`、`fallback-script`、`default-script` を FreeType の既定値に固定している。設定を受け取る API は無い。[ADR 0086](adr/0086-hinting-module-properties.md) で、ロード指定で受け取ると採択した（未実装）。
+- **モジュールの設定の残り**：自動ヒンタと CFF/CFF2 は、`no-stem-darkening` と `darkening-parameters` をロードごとに受け取る。自動ヒンタは `increase-x-height` と `fallback-script` も受け取る。`default-script` は HarfBuzz 構成（[ADR 0085](adr/0085-autofit-harfbuzz-configuration.md)）とあわせて実装する。Type1 と CID の `no-stem-darkening` と `darkening-parameters` は Adobe engine の移植が残るため未対応である（[ADR 0086](adr/0086-hinting-module-properties.md)）。
 - **`Outlines` 以外のフェイス**：Type1、CID、Type42、PFR、素の CFF のフェイスは自動ヒンティングできない。
 - **tricky フォントと SVG グリフ**：FreeType は tricky フォントを自動ヒンティングせず、SVG のグリフを先に読む。sofel はこの2つを判定しない。
 

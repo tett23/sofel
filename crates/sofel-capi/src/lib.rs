@@ -35,8 +35,8 @@ use sofel_font::{Cff, CidError, Direction, Font, FontError, GlyphExtents, HbScal
 use sofel_geom::{Fixed, Matrix, Pen, Point};
 use sofel_glyph_render::RenderError;
 use sofel_outline::{
-    HintMode, HintTarget, OutlineError, OutlineInfo, Outlines, Scale, Scratch, StrokeBorder,
-    StrokeError, StrokeJoin, StrokeStyle,
+    HintMode, HintProperties, HintTarget, OutlineError, OutlineInfo, Outlines,
+    PostScriptHintProperties, Scale, Scratch, StrokeBorder, StrokeError, StrokeJoin, StrokeStyle,
 };
 use sofel_raster::{Bitmap, FillRule, PixelBox, RasterError, Rasterizer, RenderOptions};
 
@@ -109,6 +109,88 @@ impl Drop for SofelFont {
 /// `sofel_outline_scratch_t`.
 pub struct SofelOutlineScratch {
     scratch: Scratch,
+}
+
+/// C representation of one module's stem darkening properties.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SofelStemDarkening {
+    no_stem_darkening: u32,
+    darkening_parameters: [i32; 8],
+}
+
+/// C representation of per-load FreeType hint properties.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SofelHintProperties {
+    autofitter: SofelStemDarkening,
+    cff: SofelStemDarkening,
+    type1: SofelStemDarkening,
+    t1cid: SofelStemDarkening,
+    increase_x_height: u32,
+    fallback_script: u32,
+    default_script: u32,
+}
+
+impl From<PostScriptHintProperties> for SofelStemDarkening {
+    fn from(properties: PostScriptHintProperties) -> Self {
+        Self {
+            no_stem_darkening: u32::from(properties.no_stem_darkening),
+            darkening_parameters: properties.darkening_parameters,
+        }
+    }
+}
+
+impl SofelStemDarkening {
+    fn parse(self) -> Result<PostScriptHintProperties, i32> {
+        Ok(PostScriptHintProperties {
+            no_stem_darkening: match self.no_stem_darkening {
+                0 => false,
+                1 => true,
+                _ => return Err(ERROR_INVALID_ARGUMENT),
+            },
+            darkening_parameters: self.darkening_parameters,
+        })
+    }
+}
+
+impl SofelHintProperties {
+    fn parse(self) -> Result<HintProperties, i32> {
+        let properties = HintProperties {
+            autofitter: self.autofitter.parse()?,
+            cff: self.cff.parse()?,
+            type1: self.type1.parse()?,
+            t1cid: self.t1cid.parse()?,
+            increase_x_height: self.increase_x_height,
+            fallback_script: (self.fallback_script != u32::MAX).then_some(self.fallback_script),
+            default_script: (self.default_script != u32::MAX).then_some(self.default_script),
+        };
+        properties.validate().map_err(|_| ERROR_INVALID_ARGUMENT)?;
+        Ok(properties)
+    }
+}
+
+/// `sofel_hint_properties_default`.
+///
+/// # Safety
+/// `output` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_hint_properties_default(output: *mut SofelHintProperties) -> i32 {
+    // SAFETY: The caller supplies a writable output pointer or NULL.
+    let Some(output) = (unsafe { w(output) }) else {
+        return ERROR_NULL;
+    };
+    let defaults = HintProperties::default();
+    *output = SofelHintProperties {
+        autofitter: defaults.autofitter.into(),
+        cff: defaults.cff.into(),
+        type1: defaults.type1.into(),
+        t1cid: defaults.t1cid.into(),
+        increase_x_height: defaults.increase_x_height,
+        fallback_script: u32::MAX,
+        default_script: u32::MAX,
+    };
+    OK
 }
 
 /// `sofel_autohint_cache_t`.
@@ -277,6 +359,7 @@ fn outline_error(e: OutlineError) -> i32 {
         OutlineError::InvalidCff => ERROR_INVALID_CFF,
         OutlineError::InvalidCharString => ERROR_INVALID_OUTLINE,
         OutlineError::AutoHintUnsupported => subset::ERROR_UNSUPPORTED,
+        OutlineError::InvalidHintProperties => ERROR_INVALID_ARGUMENT,
     }
 }
 
@@ -2525,7 +2608,7 @@ fn put_info(info: OutlineInfo, cbox: &mut [i32; 4], overlap: &mut u32) {
 enum OutlineLoad<'a> {
     Unhinted(Result<Scale, i32>),
     TrueTypeV35(u16, HintTarget, Option<&'a mut i32>),
-    WithHint(u16, HintMode, HintTarget, &'a mut i32),
+    WithHint(u16, HintMode, HintTarget, HintProperties, &'a mut i32),
 }
 
 fn outline_load(
@@ -2541,8 +2624,15 @@ fn outline_load(
     let outlines = outlines_at(font, location);
     let info = match load {
         OutlineLoad::Unhinted(scale) => outlines.load(GlyphId(glyph), scale?, &mut scratch.scratch),
-        OutlineLoad::WithHint(ppem, mode, target, advance) => outlines
-            .load_with_hint(GlyphId(glyph), ppem, mode, target, &mut scratch.scratch)
+        OutlineLoad::WithHint(ppem, mode, target, properties, advance) => outlines
+            .load_with_hint_properties(
+                GlyphId(glyph),
+                ppem,
+                mode,
+                target,
+                &mut scratch.scratch,
+                &properties,
+            )
             .map(|(info, width)| {
                 *advance = width;
                 info
@@ -2754,6 +2844,43 @@ pub unsafe extern "C" fn sofel_outline_load_with_hint(
     overlap: *mut u32,
     advance: *mut i32,
 ) -> i32 {
+    // SAFETY: The new entry point has the same pointer contract and accepts NULL properties.
+    unsafe {
+        sofel_outline_load_with_hint_properties(
+            font,
+            location,
+            glyph,
+            ppem,
+            mode,
+            target,
+            core::ptr::null(),
+            scratch,
+            cbox,
+            overlap,
+            advance,
+        )
+    }
+}
+
+/// `sofel_outline_load_with_hint_properties`.
+///
+/// # Safety
+/// The handles and output buffers follow [`sofel_outline_load_with_hint`];
+/// `properties` is NULL or readable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_outline_load_with_hint_properties(
+    font: *const SofelFont,
+    location: *const SofelLocation,
+    glyph: u32,
+    ppem: u16,
+    mode: u32,
+    target: u32,
+    properties: *const SofelHintProperties,
+    scratch: *mut SofelOutlineScratch,
+    cbox: *mut i32,
+    overlap: *mut u32,
+    advance: *mut i32,
+) -> i32 {
     let mode = match mode {
         0 => HintMode::None,
         1 => HintMode::NativeV35,
@@ -2769,16 +2896,49 @@ pub unsafe extern "C" fn sofel_outline_load_with_hint(
         let Some(advance) = w(advance) else {
             return ERROR_INVALID_ARGUMENT;
         };
+        let properties =
+            match r(properties).map_or(Ok(HintProperties::default()), |value| value.parse()) {
+                Ok(value) => value,
+                Err(code) => return code,
+            };
         status(outline_load(
             r(font),
             r(location),
             glyph,
-            OutlineLoad::WithHint(ppem, mode, target, advance),
+            OutlineLoad::WithHint(ppem, mode, target, properties, advance),
             w(scratch),
             ints::<4>(cbox),
             w(overlap),
         ))
     }
+}
+
+/// `sofel_autohint_cache_create_with_properties`.
+///
+/// # Safety
+/// `font` and `location` follow the cache creation contract; `properties` is NULL
+/// or a readable property value.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_autohint_cache_create_with_properties(
+    font: *const SofelFont,
+    location: *const SofelLocation,
+    properties: *const SofelHintProperties,
+) -> *mut SofelAutoHintCache {
+    // SAFETY: The caller supplies readable pointers or NULL.
+    let (font, location, properties) = unsafe { (r(font), r(location), r(properties)) };
+    let Some(font) = font else {
+        return core::ptr::null_mut();
+    };
+    let properties = match properties.map_or(Ok(HintProperties::default()), |value| value.parse()) {
+        Ok(properties) => properties,
+        Err(_) => return core::ptr::null_mut(),
+    };
+    let outlines = outlines_at(font, location);
+    let Ok(cache) = sofel_outline::AutoHintCache::new_with_properties(&outlines, &properties)
+    else {
+        return core::ptr::null_mut();
+    };
+    Box::into_raw(Box::new(SofelAutoHintCache { cache }))
 }
 
 /// `sofel_autohint_cache_create`.
@@ -2793,14 +2953,7 @@ pub unsafe extern "C" fn sofel_autohint_cache_create(
     location: *const SofelLocation,
 ) -> *mut SofelAutoHintCache {
     // SAFETY: the caller's conditions.
-    let (font, location) = unsafe { (r(font), r(location)) };
-    let Some(font) = font else {
-        return core::ptr::null_mut();
-    };
-    let outlines = outlines_at(font, location);
-    Box::into_raw(Box::new(SofelAutoHintCache {
-        cache: sofel_outline::AutoHintCache::new(&outlines),
-    }))
+    unsafe { sofel_autohint_cache_create_with_properties(font, location, core::ptr::null()) }
 }
 
 /// `sofel_autohint_cache_glyph_style`.
@@ -2840,6 +2993,62 @@ pub unsafe extern "C" fn sofel_autohint_cache_destroy(cache: *mut SofelAutoHintC
     }
 }
 
+/// `sofel_outline_load_auto_hinted_with_properties`.
+///
+/// # Safety
+/// All pointers follow the automatic hinting load contract. `properties` is
+/// NULL or a readable property value.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_outline_load_auto_hinted_with_properties(
+    font: *const SofelFont,
+    location: *const SofelLocation,
+    glyph: u32,
+    ppem: u16,
+    target: u32,
+    cache: *mut SofelAutoHintCache,
+    properties: *const SofelHintProperties,
+    scratch: *mut SofelOutlineScratch,
+    cbox: *mut i32,
+    overlap: *mut u32,
+    advance: *mut i32,
+) -> i32 {
+    let Some(target) = hint_target(target) else {
+        return ERROR_INVALID_ARGUMENT;
+    };
+    // SAFETY: The caller supplies readable and writable pointers of the declared sizes or NULL.
+    let (font, location, cache, properties, scratch, cbox, overlap, advance) = unsafe {
+        (
+            r(font),
+            r(location),
+            w(cache),
+            r(properties),
+            w(scratch),
+            ints::<4>(cbox),
+            w(overlap),
+            w(advance),
+        )
+    };
+    status((|| {
+        let (font, cache, scratch) = (some(font)?, some(cache)?, some(scratch)?);
+        let (cbox, overlap, advance) = (some(cbox)?, some(overlap)?, some(advance)?);
+        let properties = properties.map_or(Ok(HintProperties::default()), |value| value.parse())?;
+        let outlines = outlines_at(font, location);
+        let (info, width) = outlines
+            .load_auto_hinted_with_properties(
+                GlyphId(glyph),
+                ppem,
+                target,
+                &mut cache.cache,
+                &mut scratch.scratch,
+                &properties,
+            )
+            .map_err(outline_error)?;
+        *advance = width;
+        put_info(info, cbox, overlap);
+        Ok(())
+    })())
+}
+
 /// `sofel_outline_load_auto_hinted`.
 ///
 /// # Safety
@@ -2860,38 +3069,22 @@ pub unsafe extern "C" fn sofel_outline_load_auto_hinted(
     overlap: *mut u32,
     advance: *mut i32,
 ) -> i32 {
-    let Some(target) = hint_target(target) else {
-        return ERROR_INVALID_ARGUMENT;
-    };
     // SAFETY: the caller's conditions.
-    let (font, location, cache, scratch, cbox, overlap, advance) = unsafe {
-        (
-            r(font),
-            r(location),
-            w(cache),
-            w(scratch),
-            ints::<4>(cbox),
-            w(overlap),
-            w(advance),
+    unsafe {
+        sofel_outline_load_auto_hinted_with_properties(
+            font,
+            location,
+            glyph,
+            ppem,
+            target,
+            cache,
+            core::ptr::null(),
+            scratch,
+            cbox,
+            overlap,
+            advance,
         )
-    };
-    status((|| {
-        let (font, cache, scratch) = (some(font)?, some(cache)?, some(scratch)?);
-        let (cbox, overlap, advance) = (some(cbox)?, some(overlap)?, some(advance)?);
-        let outlines = outlines_at(font, location);
-        let (info, width) = outlines
-            .load_auto_hinted(
-                GlyphId(glyph),
-                ppem,
-                target,
-                &mut cache.cache,
-                &mut scratch.scratch,
-            )
-            .map_err(outline_error)?;
-        *advance = width;
-        put_info(info, cbox, overlap);
-        Ok(())
-    })())
+    }
 }
 
 /// `sofel_outline_render_harmony`.
@@ -3862,6 +4055,63 @@ pub unsafe extern "C" fn sofel_render_glyph(
     status(render_glyph(
         font, location, glyph, ppem, scratch, rasterizer, out,
     ))
+}
+
+/// `sofel_render_auto_hinted_glyph`.
+///
+/// # Safety
+/// The handles and output buffers follow [`sofel_render_glyph`]; `cache` is
+/// made for the same font and location, and `properties` is NULL or readable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_render_auto_hinted_glyph(
+    font: *const SofelFont,
+    location: *const SofelLocation,
+    glyph: u32,
+    ppem: u16,
+    cache: *mut SofelAutoHintCache,
+    properties: *const SofelHintProperties,
+    scratch: *mut SofelOutlineScratch,
+    rasterizer: *mut SofelRasterizer,
+    pixels: *mut u8,
+    capacity: usize,
+    len: *mut usize,
+    box_: *mut i32,
+) -> i32 {
+    // SAFETY: pointers follow the contract above.
+    let (font, location, cache, properties, scratch, rasterizer, pixels, len, b) = unsafe {
+        (
+            r(font),
+            r(location),
+            w(cache),
+            r(properties),
+            w(scratch),
+            w(rasterizer),
+            out_array(pixels, capacity),
+            w(len),
+            ints::<4>(box_),
+        )
+    };
+    let out = BitmapOut { pixels, len, b };
+    status((|| {
+        let (font, cache, scratch, rasterizer) =
+            (some(font)?, some(cache)?, some(scratch)?, some(rasterizer)?);
+        out.check()?;
+        let properties = properties.map_or(Ok(HintProperties::default()), |value| value.parse())?;
+        let bitmap = sofel_glyph_render::render_auto_hinted(
+            &outlines_at(font, location),
+            GlyphId(glyph),
+            ppem,
+            &mut cache.cache,
+            &properties,
+            &mut scratch.scratch,
+            &mut rasterizer.raster,
+        )
+        .map_err(|e| match e {
+            RenderError::Outline(e) => outline_error(e),
+            RenderError::Raster(e) => raster_error(e),
+        });
+        out.put(bitmap)
+    })())
 }
 
 fn image_out(image: &sofel_raster::BgraImage, out: BitmapOut<'_>) -> Status {

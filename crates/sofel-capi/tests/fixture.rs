@@ -51,6 +51,7 @@ fn outline_error(e: OutlineError) -> i32 {
         OutlineError::InvalidCff => -13,
         OutlineError::InvalidCharString => -8,
         OutlineError::AutoHintUnsupported => -18,
+        OutlineError::InvalidHintProperties => INVALID_ARGUMENT,
     }
 }
 
