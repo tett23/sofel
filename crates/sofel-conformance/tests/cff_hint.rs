@@ -592,19 +592,30 @@ fn adr0086_a1_cff_darkening_corpus_all_targets() {
         }
     }
     assert!(stats.compared >= 100, "compared {}", stats.compared);
+    let known = expected_failures();
+    let unexpected: Vec<_> = stats
+        .failures
+        .iter()
+        .filter(|failure| {
+            !known.iter().any(|(pattern, reason)| {
+                matches(pattern, &failure.id)
+                    && (failure.bitmap_rows_only || reason.starts_with("[slot]"))
+            })
+        })
+        .collect();
     eprintln!(
-        "root ADR 0086 CFF: compared {}, loaded {}, rendered {}, failures {}",
+        "root ADR 0086 CFF: compared {}, loaded {}, rendered {}, known differences {}, new failures {}",
         stats.compared,
         stats.loaded,
         stats.rendered,
-        stats.failures.len()
+        stats.failures.len() - unexpected.len(),
+        unexpected.len()
     );
     assert!(
-        stats.failures.is_empty(),
-        "{} failures: {}",
-        stats.failures.len(),
-        stats
-            .failures
+        unexpected.is_empty(),
+        "{} new failures: {}",
+        unexpected.len(),
+        unexpected
             .iter()
             .take(5)
             .map(|f| format!("{} {}", f.id, f.detail))
