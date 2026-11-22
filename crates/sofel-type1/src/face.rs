@@ -32,6 +32,7 @@ pub struct Type1Face<'a> {
     master_weights: Option<Vec<i32>>,
     attached: Option<AttachedMetrics<'a>>,
     native_stem_blues_empty: bool,
+    native_blue_values: Option<Vec<i32>>,
 }
 
 #[derive(Clone, Debug)]
@@ -58,12 +59,18 @@ impl<'a> Type1Face<'a> {
             master_weights,
             attached: None,
             native_stem_blues_empty: blue_zones_empty(source.private()),
+            native_blue_values: native_blue_values(source.private()),
         })
     }
 
     /// Whether the native single-stem path can ignore PostScript blue zones.
     pub fn native_stem_blues_empty(&self) -> bool {
         self.native_stem_blues_empty
+    }
+
+    /// BlueValues for the Adobe native hinter when the other blue arrays are empty.
+    pub fn native_blue_values(&self) -> Option<&[i32]> {
+        self.native_blue_values.as_deref()
     }
 
     /// Multiple Masters axis metadata, when the Type 1 source has it.
@@ -211,4 +218,37 @@ pub(crate) fn blue_zones_empty(data: &[u8]) -> bool {
         }
         true
     })
+}
+
+fn native_blue_values(data: &[u8]) -> Option<Vec<i32>> {
+    for name in [
+        b"/OtherBlues".as_slice(),
+        b"/FamilyBlues",
+        b"/FamilyOtherBlues",
+    ] {
+        let Some(at) = data.windows(name.len()).position(|window| window == name) else {
+            continue;
+        };
+        let start = at.checked_add(name.len())?;
+        let value = data.get(start..)?.trim_ascii_start();
+        let value = value.strip_prefix(b"[")?.trim_ascii_start();
+        if !value.starts_with(b"]") {
+            return None;
+        }
+    }
+    let name = b"/BlueValues";
+    let Some(at) = data.windows(name.len()).position(|window| window == name) else {
+        return Some(Vec::new());
+    };
+    let start = at.checked_add(name.len())?;
+    let value = data.get(start..)?.trim_ascii_start();
+    let value = value.strip_prefix(b"[")?;
+    let end = value.iter().position(|&byte| byte == b']')?;
+    let numbers = core::str::from_utf8(value.get(..end)?).ok()?;
+    let values = numbers
+        .split_ascii_whitespace()
+        .map(str::parse::<i32>)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    (values.len() <= 14 && values.len().is_multiple_of(2)).then_some(values)
 }

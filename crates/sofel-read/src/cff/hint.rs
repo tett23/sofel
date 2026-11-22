@@ -777,7 +777,15 @@ impl Type1HorizontalStemMap {
     /// Builds one map from the stems present before the path starts. Each pair
     /// holds its lower edge and width in signed 16.16 character coordinates.
     pub fn new(stems: &[(i32, i32)], scale: i32) -> Option<Self> {
+        Self::new_with_blues(stems, scale, &[])
+    }
+
+    /// Builds a Type 1 map with BlueValues in font units.
+    pub fn new_with_blues(stems: &[(i32, i32)], scale: i32, blue_values: &[i32]) -> Option<Self> {
         if stems.is_empty() || stems.len() > MAX_HINTS {
+            return None;
+        }
+        if blue_values.len() > 14 || !blue_values.len().is_multiple_of(2) {
             return None;
         }
         let mut hints = [StemHint::default(); MAX_HINTS];
@@ -787,7 +795,11 @@ impl Type1HorizontalStemMap {
             }
             *hint = StemHint::new(position, position.checked_add(width)?);
         }
-        let private = PrivateDict::default();
+        let mut private = PrivateDict::defaults();
+        private.blue_values.len = u8::try_from(blue_values.len()).ok()?;
+        for (slot, &value) in private.blue_values.values.iter_mut().zip(blue_values) {
+            *slot = i64::from(value) << 16;
+        }
         let blues = Blues::new(&private, scale);
         let mut stems = Stems {
             h: &mut hints,

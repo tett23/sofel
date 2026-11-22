@@ -29,8 +29,8 @@ pub fn draw_type1(
 
 /// Draw a Type 1 glyph at Adobe's native path scale and return its
 /// grid-fitted horizontal advance. Horizontal stems declared before the
-/// path, without blue zones, are supported for every load target. The caller
-/// supplies FreeType's 16.16 size scale.
+/// path are supported for every load target, including Type 1 BlueValues when
+/// the other blue arrays are empty. The caller supplies FreeType's 16.16 size scale.
 pub fn draw_type1_native(
     face: &Type1Face<'_>,
     glyph: usize,
@@ -52,11 +52,19 @@ pub fn draw_type1_native(
         &mut null_pen,
     );
     decode_program(face, &program, &mut scan, &mut Vec::new(), 0, false)?;
-    if scan.has_stems && (scan.unsupported_stem_map || !face.native_stem_blues_empty()) {
+    let blue_values = if scan.has_stems {
+        face.native_blue_values()
+            .ok_or(OutlineError::UnsupportedFormat)?
+    } else {
+        &[]
+    };
+    if scan.has_stems
+        && (scan.unsupported_stem_map || (scan.h_stems.is_empty() && !blue_values.is_empty()))
+    {
         return Err(OutlineError::UnsupportedFormat);
     }
     let mut state = State::new(scale, [65536, 0, 0, 65536, 0, 0], true, pen);
-    if scan.h_stems.len() > 1 {
+    if !scan.h_stems.is_empty() && (scan.h_stems.len() > 1 || !blue_values.is_empty()) {
         let stems = scan
             .h_stems
             .iter()
@@ -67,9 +75,10 @@ pub fn draw_type1_native(
                 ))
             })
             .collect::<Result<Vec<_>, OutlineError>>()?;
-        state.h_stem_map = Type1HorizontalStemMap::new(&stems, ps_native::path_scale(y))
-            .ok_or(OutlineError::UnsupportedFormat)
-            .map(Some)?;
+        state.h_stem_map =
+            Type1HorizontalStemMap::new_with_blues(&stems, ps_native::path_scale(y), blue_values)
+                .ok_or(OutlineError::UnsupportedFormat)
+                .map(Some)?;
     } else if let Some((position, width)) = scan.h_stem {
         state.h_stem_shift = ps_native::single_hstem_shift(position, width, y)
             .ok_or(OutlineError::UnsupportedFormat)?;

@@ -114,7 +114,7 @@ TrueType の単純グリフと複合グリフには、`Outlines::load_truetype_v
 
 CFF と CFF2 のフォントでは、`load_with_hint` のネイティブ指定は FreeType の Adobe engine のヒンタ（stem のヒントマップ、hintmask と cntrmask、blue zone、FamilyBlues、em box の合成ヒント。stem の太らせは FreeType の既定と同じく行わない）で輪郭点と送り幅を FreeType に合わせる。CFF2 は軸位置でヒンティングする（[ADR 0064](docs/adr/0064-freetype-hinting-and-render-modes.md)）。
 
-PFA・PFB の Type1 と CID キーの Type1 では、`draw_type1_native` と `draw_cid_native` が stem のない charstring を FreeType の Adobe 経路のスケールで描き、グリッドに合わせた水平アドバンスを返す。呼び出し側が 16.16 形式のサイズスケールとヒンティングターゲットを渡す。blue zone が空のとき、描画開始前に宣言した水平 stem は、単一なら（同じ stem の重複を含む）全ターゲットで画素境界に合わせ、異なる複数なら Adobe のヒントマップで y 座標を補正する。縦 stem だけなら x 座標を補正しない。CID の stem 付きグリフは FontMatrix が単位行列のときに限る。描画途中の stem の追加、blue zone、hint replacement は未対応エラーを返す（[ADR 0064](docs/adr/0064-freetype-hinting-and-render-modes.md)）。
+PFA・PFB の Type1 と CID キーの Type1 では、`draw_type1_native` と `draw_cid_native` が stem のない charstring を FreeType の Adobe 経路のスケールで描き、グリッドに合わせた水平アドバンスを返す。呼び出し側が 16.16 形式のサイズスケールとヒンティングターゲットを渡す。blue zone が空のとき、描画開始前に宣言した水平 stem は、単一なら（同じ stem の重複を含む）全ターゲットで画素境界に合わせ、異なる複数なら Adobe のヒントマップで y 座標を補正する。縦 stem だけなら x 座標を補正しない。Type1 の BlueValues はほかの blue 配列が空なら適用する。CID の stem 付きグリフは FontMatrix が単位行列のときに限る。描画途中の stem の追加、残りの blue zone、hint replacement は未対応エラーを返す（[ADR 0064](docs/adr/0064-freetype-hinting-and-render-modes.md)）。
 
 FreeTypeの合成操作には、`sofel-outline::Scratch` のスロット用の斜体と太字、`sofel-bitmap` の画素形式変換と太字を使う。ビットマップの太字では `embolden_bitmap_slot` が画像とスロットのメトリクス、配置を合わせて更新する。HarfBuzzに合わせた輪郭の命令は、glyfを `Scratch::hb_decompose`、CFFとCFF2を `HbExtents::cff_glyph_path` から得る。画像を含むカラーグリフの合成斜体は、`sofel-color::paint_recording_at_with_slant` が描画命令を変換で包む（[ADR 0063](docs/adr/0063-font-functions-and-synthesis.md)）。
 
