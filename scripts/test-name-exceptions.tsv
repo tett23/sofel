@@ -1,4 +1,5 @@
 # File path	Exact test name	Reason (root ADR 0099)
+crates/sofel-conformance/tests/subset_unfixed_preservation.rs	adr0022_unfixed_outlines_and_advances	root ADR 0022 の輪郭と送り幅の保存を検査するが、不変条件・受けいれ条件の節と条件番号がない。
 crates/sofel-capi/tests/variation.rs	adr0027_i03_location_changes_glyf_outline_and_box	root ADR 0027 に不変条件・受けいれ条件の節と条件番号がなく、機能別の既存名を維持する。
 crates/sofel-capi/tests/variation.rs	i01_location_owns_coordinates_after_font_handle_is_destroyed	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
 crates/sofel-capi/tests/variation.rs	i02_axis_inquiries_match_rust_view	root ADR 0027 の可変フォント機能を確かめる既存名だが、同 ADR に不変条件・受けいれ条件の節と条件番号がない。
