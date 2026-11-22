@@ -832,7 +832,7 @@ pub(crate) trait Ops {
 
 /// `cff2_cs_opset_t::process_op` over `cs_opset_t::process_op`.
 fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
-    if env.trace_drop_hints && matches!(op, BLENDCS | VSINDEXCS | DOTSECTION) {
+    if env.trace_drop_hints && matches!(op, VSINDEXCS | DOTSECTION) {
         env.trace_valid = false;
     }
     if env.trace_drop_hints
@@ -920,14 +920,25 @@ fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
             o.path(op, env);
             o.flush_args_and_op(op, env);
         }
-        BLENDCS => env.process_blend(),
+        BLENDCS => {
+            let run = env.literal_run.filter(|&(source, _, end, count)| {
+                source == env.ctx.source
+                    && end == env.ctx.off.saturating_sub(1)
+                    && count == env.args.len()
+            });
+            env.process_blend();
+            // A local, contiguous blend expression can be removed together
+            // with the stem that consumes its results.
+            env.literal_run =
+                run.map(|(source, start, _, _)| (source, start, env.ctx.off, env.args.len()));
+        }
         VSINDEXCS => {
             env.process_vsindex();
             env.clear_args();
         }
         _ => env.process_number(op),
     }
-    if !matches!(op, SHORTINT | 247..=254 | 32..=246 | FIXEDCS) {
+    if !matches!(op, SHORTINT | 247..=254 | 32..=246 | FIXEDCS | BLENDCS) {
         env.literal_run = None;
     }
 }

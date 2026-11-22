@@ -220,3 +220,21 @@ cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-context-stem-path-hb15.otf" "crates/sofel-subse
 "$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-context-mask-path-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-context-mask-path-hb15.otf" --gids=1,2 --no-hinting
 cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-context-mask-path-hb15.otf" "crates/sofel-subset/tests/data/cff2-context-mask-path-hb15.otf"
 ```
+
+## cff2-no-hint-blended-path-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_no_hinting_preserves_blended_paths_in_subroutines` が組む `bytes` である。CFF2 サブルーチンの `blend` を含む命令列に `NO_HINTING` を適用する。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-no-hint-blended-path-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-blended-path-hb15.otf" --gids=2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-blended-path-hb15.otf" "crates/sofel-subset/tests/data/cff2-no-hint-blended-path-hb15.otf"
+```
+
+## cff2-no-hint-blended-stem-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_no_hinting_removes_blended_stems_in_subroutines` が組む `bytes` である。CFF2 サブルーチンの `blend` を含む命令列に `NO_HINTING` を適用する。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-no-hint-blended-stem-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-blended-stem-hb15.otf" --gids=2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-blended-stem-hb15.otf" "crates/sofel-subset/tests/data/cff2-no-hint-blended-stem-hb15.otf"
+```

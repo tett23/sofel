@@ -815,3 +815,51 @@ fn cff2_contextual_hint_commands_keep_the_shared_path() {
         assert_eq!(out, expected, "{name}");
     }
 }
+
+#[test]
+fn cff2_no_hinting_preserves_blended_paths_in_subroutines() {
+    let mut programs = charstrings();
+    let mut global = programs[1].clone();
+    global.push(11);
+    programs[2] = charstring(&[Cs::I(-107), Cs::Op(29)]);
+    let bytes = font_with_programs(vec![global], Vec::new(), programs);
+    fixture_input::export("cff2-no-hint-blended-path-hb15.otf", &bytes).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let out = subset(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)).unwrap();
+    assert_eq!(
+        out,
+        include_bytes!("data/cff2-no-hint-blended-path-hb15.otf")
+    );
+}
+
+#[test]
+fn cff2_no_hinting_removes_blended_stems_in_subroutines() {
+    let mut programs = charstrings();
+    let global = charstring(&[
+        Cs::I(0),
+        Cs::I(10),
+        Cs::I(1),
+        Cs::I(2),
+        Cs::I(3),
+        Cs::I(4),
+        Cs::I(2),
+        Cs::Op(16),
+        Cs::Op(1),
+        Cs::I(0),
+        Cs::I(0),
+        Cs::Op(21),
+        Cs::I(10),
+        Cs::I(0),
+        Cs::Op(5),
+        Cs::Op(11),
+    ]);
+    programs[2] = charstring(&[Cs::I(-107), Cs::Op(29)]);
+    let bytes = font_with_programs(vec![global], Vec::new(), programs);
+    fixture_input::export("cff2-no-hint-blended-stem-hb15.otf", &bytes).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    let out = subset(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)).unwrap();
+    assert_eq!(
+        out,
+        include_bytes!("data/cff2-no-hint-blended-stem-hb15.otf")
+    );
+}
