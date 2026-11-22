@@ -426,7 +426,7 @@ fn adr0064_i1_latin_d_linked_stems_match_freetype() {
 }
 
 #[test]
-fn adr0064_i1_auto_varc_glyph_reports_unsupported_and_clears_scratch() {
+fn adr0064_i1_auto_varc_glyph_matches_freetype_and_replaces_scratch() {
     // FreeType never auto-hints a glyph that VARC covers (ftobjs.c).
     let path = paths::testdata().join("harfbuzz/test/api/fonts/varc-ac00-ac01.ttf");
     let data = std::fs::read(&path).unwrap();
@@ -448,13 +448,23 @@ fn adr0064_i1_auto_varc_glyph_reports_unsupported_and_clears_scratch() {
         )
         .unwrap();
     assert!(!scratch.points().is_empty());
-    assert_eq!(
-        outlines.load_with_hint(glyph, 16, HintMode::Auto, HintTarget::Normal, &mut scratch),
-        Err(OutlineError::AutoHintUnsupported)
-    );
-    assert!(scratch.points().is_empty());
-    assert!(scratch.point_tags().is_empty());
-    assert!(scratch.contour_ends().is_empty());
+    let (_, advance) = outlines
+        .load_with_hint(glyph, 16, HintMode::Auto, HintTarget::Normal, &mut scratch)
+        .unwrap();
+    let reference = Command::new(paths::ft_dump())
+        .args(["--hint-slot", "16", &glyph.0.to_string(), "auto", "normal"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(reference.status.success());
+    let mut actual = format!("advance {advance} 0\n");
+    for (point, tag) in scratch.points().iter().zip(scratch.point_tags()) {
+        writeln!(actual, "point {} {} {tag}", point.x, point.y).unwrap();
+    }
+    for end in scratch.contour_ends() {
+        writeln!(actual, "end {end}").unwrap();
+    }
+    assert_eq!(actual, String::from_utf8(reference.stdout).unwrap());
 }
 
 #[test]
