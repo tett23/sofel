@@ -912,10 +912,9 @@ fn cff2_no_hinting_rewrites_nested_calls_after_contextual_masks() {
             Cs::I(10),
             Cs::I(0),
             Cs::Op(5),
-            Cs::Op(11),
         ]);
         let bytes = font_with_programs(
-            vec![vec![11], vec![19, 1, 34, 29, 11], path],
+            vec![Vec::new(), vec![19, 1, 34, 29], path],
             Vec::new(),
             programs,
         );
@@ -934,6 +933,46 @@ fn cff2_no_hinting_rewrites_nested_calls_after_contextual_masks() {
         let font = Font::new(&bytes, 0).unwrap();
         let out = subset(&font, &glyphs(&[1, 2]).with_flags(Flags::NO_HINTING)).unwrap();
         assert_eq!(out, expected);
+    }
+}
+
+#[test]
+fn cff2_contextual_nested_call_keep_hints_matches_harfbuzz() {
+    for (reverse, name, expected) in [
+        (
+            false,
+            "cff2-context-call-keep-hb15.otf",
+            include_bytes!("data/cff2-context-call-keep-hb15.otf").as_slice(),
+        ),
+        (
+            true,
+            "cff2-context-call-keep-reverse-hb15.otf",
+            include_bytes!("data/cff2-context-call-keep-reverse-hb15.otf").as_slice(),
+        ),
+    ] {
+        let mut programs = charstrings();
+        programs[1] = charstring(&[Cs::I(0), Cs::I(10), Cs::Op(1), Cs::I(-106), Cs::Op(29)]);
+        programs[2] = charstring(&[Cs::I(-106), Cs::Op(29)]);
+        if reverse {
+            programs.swap(1, 2);
+        }
+        let path = charstring(&[
+            Cs::I(0),
+            Cs::I(0),
+            Cs::Op(21),
+            Cs::I(10),
+            Cs::I(0),
+            Cs::Op(5),
+        ]);
+        let bytes = font_with_programs(
+            vec![Vec::new(), vec![19, 1, 34, 29], path],
+            Vec::new(),
+            programs,
+        );
+        fixture_input::export(name, &bytes).unwrap();
+        let font = Font::new(&bytes, 0).unwrap();
+        let actual = subset(&font, &glyphs(&[1, 2])).unwrap();
+        assert_eq!(actual, expected, "{name}");
     }
 }
 

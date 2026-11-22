@@ -28,6 +28,8 @@ VARC の輪郭は、部品の表示条件、軸座標、変形を評価して指
 
 軸を指定しない CFF2 では、未使用の行を含む VariationStore と明示的な `vsindex` を固定版 HarfBuzz の出力に合わせて残す。`DESUBROUTINIZE` で使わない `vsindex` は省く。共有 global サブルーチンの local 呼び出しは Font DICT 0 の再採番で書く。このため元と輪郭が異なる場合も固定版と同じ出力を返し、存在しない local を呼ぶ出力になる場合は CFF2 の `Malformed` を返す（[ADR 0102](docs/adr/0102-cff2-pinned-harfbuzz-subroutine-semantics.md)）。
 
+ヒントを残す CFF2 の共有サブルーチンでは、呼び出しごとにマスク長が変わっても、最初に解析した call を再採番して固定版 HarfBuzz と同じバイト列にする。
+
 可変フォントの FreeType 互換メトリクスでは、横と縦の送り幅に指定位置の差分を加える。左と上のサイドベアリングは元のメトリクスを使う（[ADR 0078](docs/adr/0078-freetype-side-bearing-variation-callbacks.md)）。
 
 [ADR 0061](docs/adr/0061-subset-axis-instancing.md) の軸指定では、固定した軸を除き、残る軸の範囲と名前つきインスタンスを更新する。変化量表、レイアウト、色の参照と既定位置の値も同じ軸範囲で書き直す。MATHをコピーしたまま軸を指定するときも、GDEFの変化量の表を固定版HarfBuzzと同じバイト列にする。STATがある場合は、指定した軸範囲の外の軸値を除いて残す。avar版1がある場合は、既定位置に固定した軸の写像を除き、残る軸の写像を保つ。avar版1の全軸が-1→-1、0→0、1→1の3点だけの恒等写像なら、非既定位置への固定と範囲指定でも残る軸の写像を保つ。既定値の0を0以外に写す入力は `Unsupported` とする。VARC の部品が参照する軸の変更は、下記の VARC の条件に従う。
@@ -59,7 +61,7 @@ FeatureVariations版1.1以降のlookup条件も読み、軸の位置に合うloo
 `sofel-font::var` には、設計座標と正規化座標からの位置の構築、座標の正規化、ItemVariationStoreの差分の評価の核、軸と名前つきインスタンスの問い合わせ、FreeTypeのMMVarの読み取り、位置ごとのPostScript名を実装した。名前つきインスタンスに専用のPostScript名がない場合は、FreeTypeと同じ規則で名前を組み立てる。
 FreeTypeが合成する既定の名前つきスタイルは、名前が欠ける場合も件数と既定番号を再現する（[ADR 0036](docs/adr/0036-freetype-missing-default-named-style.md)）。
 C ABIには位置の作成、座標の取得、Variationの文字列変換、軸と名前つきインスタンスの問い合わせ、位置ごとのPostScript名を追加した。
-さらに、CFF2の `blend` は指定した位置の係数で評価し、輪郭とグリフの箱に反映する。Private DICTも位置ごとに読みなおす。C ABIの `sofel_cff2_blend_vector` は、既定成分と0の列を含む係数列を返す。
+さらに、CFF2の `blend` は指定した位置の係数で評価し、輪郭とグリフの箱に反映する。Private DICTも位置ごとに読みなおす。FreeType の輪郭読み込みでは、座標を指定しなければ変化量を加えず、Variation Store と `fvar` の軸数が違っても既定の輪郭を読む。座標を指定した場合は軸数の不一致をエラーにする（[ADR 0030](docs/adr/0030-variation-evaluation-corrections.md)）。C ABIの `sofel_cff2_blend_vector` は、既定成分と0の列を含む係数列を返す。
 さらに、メトリクス、基準線、輪郭、シェーピング、塗りの既存関数には位置の引数を追加した。
 C API の `sofel_scale_create_with_ppem` は、シェーピング用スケールに横と縦の ppem を指定する（[ADR 0052](docs/adr/0052-c-shaping-ppem.md)）。従来の `sofel_scale_create` と NULL のスケールでは両軸とも 0 になる。
 Rust の `Font::feature_tags` と C の `sofel_font_feature_tags` は、GSUB と GPOS の機能タグを表ごとに、レコード順と重複を保って部分取得する。C では容量 0 と NULL の配列で総数だけを取得できる（[ADR 0075](docs/adr/0075-layout-feature-tags.md)）。
@@ -212,7 +214,7 @@ HarfBuzzの `hb-subset` と同じオプションでサブセット化する（[A
 
 CFF2 の全軸を指定した値に固定すると、輪郭と横・縦のメトリクスに変化量を反映する。一部の軸だけを固定する場合と軸の範囲を狭める場合は、残る範囲に合わせて輪郭と Private DICT の変化量を書き直す。`--downgrade-cff2` を併用すると、固定した位置の CFF を書き出す。可変 COLR を併せ持つ場合は、同じ軸指定を色の描画にも適用する（[ADR 0061](docs/adr/0061-subset-axis-instancing.md)）。
 
-軸を固定しない CFF2 は `--desubroutinize` を指定するとサブセット化できる。指定しない場合は、残すグリフがサブルーチンを呼ばなければ未使用のサブルーチンを除き、呼ぶ場合は即値の番号で呼ぶ global/local のサブルーチンを必要な分だけ残して番号を詰める。`blend`、`vsindex` と VariationStore を残す。ヒントを保持する場合は `hintmask` と `cntrmask` のデータバイトを解釈器に従って読み飛ばす。`--no-hinting` では、ヒントが描画命令より前にあり、同じ charstring 内で先行する call がなく、引数が同じ charstring 内の連続した数値だけで、使用するサブルーチンがヒント除去後も空にならず、`blend`、`vsindex`、`dotsection` を含まない場合に限ってヒントを除く。描画を開始した後の `hintmask` と `cntrmask` も、引数が空ならマスクのデータとともに除く。サブルーチン先頭の stem に対しては、呼び出し直前に積んだ連続する数値の引数も除く。空のサブルーチンや、命令列全体がヒントと `return` の除去で空になるサブルーチンは、その呼び出しとともに除く。この除去で呼び出し元のサブルーチンも空になれば、その呼び出しも除く。同じサブルーチンのマスク長が呼び出しごとに異なるときも、ヒントを保持し、そのサブルーチン内に別の呼び出しがなければ元の命令列を保つ。ヒントを除くときは、長さによって解釈が変わる部分が数値のオペランドだけなら、最初の呼び出しで読んだマスク長を使う。
+軸を固定しない CFF2 は `--desubroutinize` を指定するとサブセット化できる。指定しない場合は、残すグリフがサブルーチンを呼ばなければ未使用のサブルーチンを除き、呼ぶ場合は即値の番号で呼ぶ global/local のサブルーチンを必要な分だけ残して番号を詰める。`blend`、`vsindex` と VariationStore を残す。ヒントを保持する場合は `hintmask` と `cntrmask` のデータバイトを解釈器に従って読み飛ばす。`--no-hinting` では、残すグリフとサブルーチンからヒント命令、マスク、関連する数値と `blend` の引数、`dotsection` を除く。描画開始後の stem と、引数が空のマスクも対象とする。引数が呼び出し元にあるときは、その引数も除く。除去後に空になるサブルーチンは、入れ子の呼び出しも含めて呼び出しごと除く。`vsindex` はヒントの位置に応じて移し、描画に必要なものを残す。同じサブルーチンのマスク長が呼び出しごとに異なるときも、ヒントを保持し、最初の解析で記録した call の位置から再採番する。ヒントを除くときも、最初の呼び出しで読んだマスク長と call の位置を使う。
 
 ```sh
 sofel-subset --font-file=Roboto.ttf --unicodes=41-5A -o out.ttf

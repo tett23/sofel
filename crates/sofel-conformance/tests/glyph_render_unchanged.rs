@@ -5,6 +5,10 @@
 //!
 //! The expected hashes come from this same file run against the code
 //! before the move (main at 50d02387, with `use sofel_cli::glyph;`).
+//! GRAY also includes the later CFF2 default-coordinate correction of root
+//! ADR 0030 / root ADR 0064: of these 120 fonts, only fuzz font
+//! clusterfuzz-testcase-hb-fuzzer-5662671558934528 changes. Its corrected
+//! output is independently compared with FreeType in cff_hint.rs.
 
 #![allow(
     clippy::unwrap_used,
@@ -144,7 +148,7 @@ fn adr0095_i3_color_glyphs_render_as_before_the_move() {
 /// Gray bitmaps and errors (empty glyphs, outlines that cannot be loaded,
 /// rasterizer errors) of the fuzzing fonts.
 #[test]
-fn adr0095_i3_gray_glyphs_and_errors_render_as_before_the_move() {
+fn adr0095_i3_gray_glyphs_and_errors_preserve_reviewed_output() {
     let dir = "harfbuzz/test/fuzzing/fonts";
     let mut fonts: Vec<String> = std::fs::read_dir(paths::testdata().join(dir))
         .unwrap()
@@ -182,5 +186,5 @@ fn adr0095_i3_type1_glyphs_render_as_before_the_move() {
 }
 
 const COLOR: (u64, usize, usize) = (0x5c44_1a1c_d90f_04fd, 1672, 392);
-const GRAY: (u64, usize, usize) = (0x856f_dd26_aacc_8839, 1136, 2);
+const GRAY: (u64, usize, usize) = (0x209e_db2b_96cb_dc63, 1136, 2);
 const TYPE1: u64 = 0x2ee4_18ea_91e2_1545;
