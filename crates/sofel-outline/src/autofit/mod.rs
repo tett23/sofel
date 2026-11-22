@@ -634,6 +634,11 @@ pub(super) fn load(
     if index >= cache.glyph_styles.len() || glyph.0 >= font.num_glyphs() {
         return fail(scratch, OutlineError::InvalidGlyphIndex);
     }
+    // ftobjs.c never invokes the automatic hinter for a tricky face,
+    // even with FT_LOAD_FORCE_AUTOHINT. The native driver loads it.
+    if matches!(outlines.format, Format::Glyf) && super::tt_policy::tricky(font) {
+        return outlines.load_truetype_v40(glyph, ppem, target, scratch);
+    }
     if !matches!(outlines.format, Format::Glyf | Format::Cff(_)) {
         // The outline loader gives the format's error.
         outlines.load(glyph, Scale::Unscaled, scratch)?;

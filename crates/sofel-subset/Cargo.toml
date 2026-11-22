@@ -13,5 +13,8 @@ sofel-write = { path = "../sofel-write" }
 sofel-unicode = { path = "../sofel-unicode" }
 sofel-geom = { path = "../sofel-geom" }
 
+[dev-dependencies]
+sofel-outline = { path = "../sofel-outline" }
+
 [lints]
 workspace = true

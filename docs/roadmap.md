@@ -34,9 +34,7 @@ Golem はフォントを開くときに GSUB と GPOS の機能タグをすべ�
 
 ### [ADR 0022](adr/0022-subsetting.md): サブセット化
 
-[ADR 0022](adr/0022-subsetting.md) は採択（未実装）である。可変フォントの読み取りは [ADR 0027](adr/0027-variable-fonts.md) で実装した。サブセット化では、名前レコードの上書きと VARC の部品参照の再採番まで実装した。軸の固定・範囲変更は [ADR 0061](adr/0061-subset-axis-instancing.md) に従って実装した。残る作業には、10段階目の CFF2 サブルーチンのヒント除去がある。Font DICT によって共有 global サブルーチンの書き換え結果が異なる場合の対応が残る。表ごとの対応範囲は[仕様書](specifications.md)に記す。
-
-- **CFF2 の固定版参照への一致（未実装）**：[ADR 0102](adr/0102-cff2-pinned-harfbuzz-subroutine-semantics.md) に従い、共有 global の local 呼び出しの再採番と、不正な参照出力の拒否を実装する。[ADR 0022](adr/0022-subsetting.md) の残件に含む。
+[ADR 0022](adr/0022-subsetting.md) は採択（未実装）である。可変フォントの読み取りは [ADR 0027](adr/0027-variable-fonts.md) で実装した。サブセット化では、名前レコードの上書きと VARC の部品参照の再採番まで実装した。軸の固定・範囲変更は [ADR 0061](adr/0061-subset-axis-instancing.md) に従って実装した。残る作業には、10段階目の CFF2 サブルーチンのヒント除去がある。表ごとの対応範囲は[仕様書](specifications.md)に記す。
 
 ### [ADR 0064](adr/0064-freetype-hinting-and-render-modes.md): ヒンティングの残り
 
@@ -49,7 +47,7 @@ Golem はフォントを開くときに GSUB と GPOS の機能タグをすべ�
 
 - **モジュールの設定**：`no-stem-darkening`、`darkening-parameters`、`increase-x-height`、`fallback-script`、`default-script` を FreeType の既定値に固定している。設定を受け取る API は無い。[ADR 0086](adr/0086-hinting-module-properties.md) で、ロード指定で受け取ると採択した（未実装）。
 - **`Outlines` 以外のフェイス**：Type1、CID、Type42、PFR、素の CFF のフェイスは自動ヒンティングできない。
-- **tricky フォントと SVG グリフ**：FreeType は tricky フォントを自動ヒンティングせず、SVG のグリフを先に読む。sofel はこの2つを判定しない。
+- **SVG グリフの読み込みの優先**：FreeType は自動ヒンティングより先に SVG のグリフを読む。sofel の輪郭のロードでは、この優先順位を判定しない。
 
 ### 監査の指摘と旧形式の照合
 
