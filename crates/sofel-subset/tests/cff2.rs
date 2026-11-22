@@ -1228,3 +1228,56 @@ fn cff2_no_hinting_removes_blend_operands_from_caller() {
         include_bytes!("data/cff2-hint-blend-operands-caller-hb15.otf")
     );
 }
+
+#[test]
+fn cff2_no_hinting_handles_dotsection_arguments() {
+    let mut programs = charstrings();
+    programs[2] = charstring(&[Cs::I(-107), Cs::Op(29)]);
+    let global = charstring(&[
+        Cs::I(20),
+        Cs::I(10),
+        Cs::Op(0x0c00),
+        Cs::I(0),
+        Cs::I(10),
+        Cs::Op(1),
+        Cs::I(0),
+        Cs::I(0),
+        Cs::Op(21),
+        Cs::I(10),
+        Cs::I(0),
+        Cs::Op(5),
+        Cs::Op(11),
+    ]);
+    let bytes = font_with_programs(vec![global], Vec::new(), programs);
+    fixture_input::export("cff2-dotsection-args-hb15.otf", &bytes).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    assert_eq!(
+        subset(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)).unwrap(),
+        include_bytes!("data/cff2-dotsection-args-hb15.otf")
+    );
+}
+
+#[test]
+fn cff2_no_hinting_handles_stems_after_moveto() {
+    let mut programs = charstrings();
+    programs[2] = charstring(&[Cs::I(-107), Cs::Op(29)]);
+    let global = charstring(&[
+        Cs::I(0),
+        Cs::I(0),
+        Cs::Op(21),
+        Cs::I(0),
+        Cs::I(10),
+        Cs::Op(1),
+        Cs::I(10),
+        Cs::I(0),
+        Cs::Op(5),
+        Cs::Op(11),
+    ]);
+    let bytes = font_with_programs(vec![global], Vec::new(), programs);
+    fixture_input::export("cff2-stem-after-moveto-hb15.otf", &bytes).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    assert_eq!(
+        subset(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)).unwrap(),
+        include_bytes!("data/cff2-stem-after-moveto-hb15.otf")
+    );
+}

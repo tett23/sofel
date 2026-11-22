@@ -396,17 +396,26 @@ impl<'a, 'c> Env<'a, 'c> {
         self.last_literal = Some((self.ctx.source, start, self.ctx.off));
     }
 
+    fn hint_prefix_start(&self, source: Source, end: usize) -> usize {
+        self.hint_trace
+            .iter()
+            .filter(|hint| hint.source == source && hint.end <= end)
+            .map(|hint| hint.end)
+            .max()
+            .unwrap_or(0)
+    }
+
     fn record_hint(&mut self, end: usize, mask: bool) {
         if !self.trace_drop_hints {
             return;
         }
         let independent_mask = mask && self.path_started && self.args.is_empty();
-        if (self.path_started && !independent_mask) || !self.args.len().is_multiple_of(2) {
+        if !self.args.len().is_multiple_of(2) {
             self.trace_valid = false;
         }
         // A stem consumes the entire argument stack. HarfBuzz marks every
-        // preceding parsed operator in this string, and every caller prefix
-        // before the active call, as hinting. This also covers arguments
+        // preceding parsed operator up to the previous hint in this string,
+        // and the same prefix before each active call, as hinting. This covers arguments
         // produced by a returned subroutine or a cross-string blend.
         if !independent_mask {
             let mut target = self.ctx.source;
@@ -420,7 +429,7 @@ impl<'a, 'c> Env<'a, 'c> {
                 if call.start != 0 {
                     self.hint_trace.push(HintTrace {
                         source: caller.source,
-                        start: 0,
+                        start: self.hint_prefix_start(caller.source, call.start),
                         end: call.start,
                         can_follow_call: false,
                         mask_at: None,
@@ -434,7 +443,7 @@ impl<'a, 'c> Env<'a, 'c> {
             start: if independent_mask {
                 self.ctx.off.saturating_sub(1)
             } else {
-                0
+                self.hint_prefix_start(self.ctx.source, self.ctx.off.saturating_sub(1))
             },
             end,
             can_follow_call: independent_mask,
@@ -833,9 +842,6 @@ fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
     match op {
         DOTSECTION => {
             if env.trace_drop_hints {
-                if !env.args.is_empty() {
-                    env.trace_valid = false;
-                }
                 env.hint_trace.push(HintTrace {
                     source: env.ctx.source,
                     start: env.ctx.off.saturating_sub(2),

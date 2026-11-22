@@ -393,3 +393,23 @@ cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-hint-args-return-hb15.otf" "crates/sofel-subset
 "$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-hint-blend-operands-caller-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-hint-blend-operands-caller-hb15.otf" --gids=2 --no-hinting
 cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-hint-blend-operands-caller-hb15.otf" "crates/sofel-subset/tests/data/cff2-hint-blend-operands-caller-hb15.otf"
 ```
+
+## cff2-dotsection-args-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_no_hinting_handles_dotsection_arguments` が組む `bytes` である。
+引数のある dotsection の後に stem を宣言するケースをヒントなしでサブセット化する。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-dotsection-args-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-dotsection-args-hb15.otf" --gids=2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-dotsection-args-hb15.otf" "crates/sofel-subset/tests/data/cff2-dotsection-args-hb15.otf"
+```
+
+## cff2-stem-after-moveto-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_no_hinting_handles_stems_after_moveto` が組む `bytes` である。
+moveto の後に stem を宣言するケースをヒントなしでサブセット化する。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-stem-after-moveto-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-stem-after-moveto-hb15.otf" --gids=2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-stem-after-moveto-hb15.otf" "crates/sofel-subset/tests/data/cff2-stem-after-moveto-hb15.otf"
+```
