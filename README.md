@@ -397,6 +397,8 @@ cargo +nightly fuzz run cmap -- -max_total_time=60
 
 ## License
 
+テストのために一から作った最小の入力と、それを固定版の HarfBuzz または FreeType に渡した参照出力は同梱する。フォント形式のファイルは `crates/*/tests/data/` または `crates/*/tests/support/` に置き、同じディレクトリの `README.md` にファイルごとの作り方を記録する。`sh scripts/check-fixtures.sh` と CI が置き場所と見出しを検査する（[ADR 0088](docs/adr/0088-synthetic-test-fixtures.md)）。
+
 MIT（[LICENSE](LICENSE)、[ADR 0002](docs/adr/0002-license-and-reuse.md)）。流用したコードの著作権表示は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) に載せる。
 
 Unicode Character Databaseから生成した表を含む `sofel-unicode` と `sofel-shape` は、Unicode License v3にも従う（`MIT AND Unicode-3.0`）。
