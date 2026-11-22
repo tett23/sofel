@@ -62,26 +62,88 @@ const SIGNATURES: &[[(u32,usize);3]] = &[
     [(0x122FEB0B, 0x00000350), (0x7F10919A, 0x000070A9), (0x7CD7E7B7, 0x0000025C)],
 ];
 
+// sfobjs.c's tt_face_get_name: Windows English, then Macintosh, then
+// Unicode; the last English record wins. Family names use ASCII, with
+// non-ASCII code units replaced by '?', rather than UTF-8 name lookup.
+fn ascii_name(font: &Font<'_>, id: u16) -> Option<alloc::vec::Vec<u8>> {
+    let mut apple_roman = None;
+    let mut apple_english = None;
+    let mut windows = None;
+    let mut unicode = None;
+    let mut english = false;
+    for record in (0..font.sfnt_name_count()).filter_map(|n| font.sfnt_name(n)) {
+        if record.name_id != id || record.string.is_empty() {
+            continue;
+        }
+        match record.platform_id {
+            0 | 2 => unicode = Some(record),
+            1 if record.language_id == 0 => apple_english = Some(record),
+            1 if record.encoding_id == 0 => apple_roman = Some(record),
+            3 if windows.is_none() || record.language_id & 0x3ff == 9 => {
+                if matches!(record.encoding_id, 0 | 1 | 10) {
+                    english = record.language_id & 0x3ff == 9;
+                    windows = Some(record);
+                }
+            }
+            _ => {}
+        }
+    }
+    let apple = apple_english.or(apple_roman);
+    let chosen = if windows.is_some() && (apple.is_none() || english) {
+        windows
+    } else {
+        apple.or(unicode)
+    }?;
+    let ascii = |code: u16| {
+        if (32..=127).contains(&code) {
+            u8::try_from(code).unwrap_or(b'?')
+        } else {
+            b'?'
+        }
+    };
+    Some(if chosen.platform_id == 1 {
+        chosen
+            .string
+            .iter()
+            .copied()
+            .take_while(|&v| v != 0)
+            .map(|v| ascii(u16::from(v)))
+            .collect()
+    } else {
+        chosen
+            .string
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&v| u16::from_be_bytes(v))
+            .take_while(|&v| v != 0)
+            .map(ascii)
+            .collect()
+    })
+}
+
 pub(super) fn tricky(font: &Font<'_>) -> bool {
     let wws = font
         .os2()
         .is_some_and(|table| table.fs_selection() & 256 != 0);
     let ids: &[u16] = if wws { &[16, 1] } else { &[21, 16, 1] };
-    for &id in ids {
-        let len = font.name_utf8(id, None, &mut []).total;
-        if len == 0 {
-            continue;
-        }
-        let mut family = alloc::vec![0;len.saturating_add(1)];
-        let written = font.name_utf8(id, None, &mut family).written;
-        if family
-            .get(..written)
-            .and_then(|b| core::str::from_utf8(b).ok())
-            .is_some_and(|name| FAMILIES.iter().any(|family| name.contains(family)))
+    if let Some(family) = ids.iter().find_map(|&id| ascii_name(font, id)) {
+        let name = if family
+            .get(..6)
+            .is_some_and(|s| s.iter().all(u8::is_ascii_uppercase))
+            && family.get(6) == Some(&b'+')
+            && family.len() > 7
+        {
+            family.get(7..).unwrap_or_default()
+        } else {
+            &family
+        };
+        if FAMILIES
+            .iter()
+            .any(|family| name.windows(family.len()).any(|s| s == family.as_bytes()))
         {
             return true;
         }
-        break;
     }
     let tags = [Tag::new(b"cvt "), Tag::new(b"fpgm"), Tag::new(b"prep")];
     let tables = tags.map(|t| font.table(t).unwrap_or_default());

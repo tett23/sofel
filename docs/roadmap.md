@@ -49,7 +49,7 @@ Golem はフォントを開くときに GSUB と GPOS の機能タグをすべ�
 
 - **モジュールの設定**：`no-stem-darkening`、`darkening-parameters`、`increase-x-height`、`fallback-script`、`default-script` を FreeType の既定値に固定している。設定を受け取る API は無い。[ADR 0086](adr/0086-hinting-module-properties.md) で、ロード指定で受け取ると採択した（未実装）。
 - **`Outlines` 以外のフェイス**：Type1、CID、Type42、PFR、素の CFF のフェイスは自動ヒンティングできない。
-- **tricky フォントと SVG グリフ**：FreeType は tricky フォントを自動ヒンティングせず、SVG のグリフを先に読む。sofel はこの2つを判定しない。
+- **SVG グリフの読み込みの優先**：FreeType は自動ヒンティングより先に SVG のグリフを読む。sofel の輪郭のロードでは、この優先順位を判定しない。
 
 ### 監査の指摘と旧形式の照合
 
