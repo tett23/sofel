@@ -59,6 +59,24 @@ fn adr0073_i1_rust_gallery_parity_faces() {
 }
 
 #[test]
+fn adr0090_i3_gallery_skips_legacy_corpus_rows() {
+    let root = std::env::temp_dir().join(format!("sofel-gallery-legacy-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("fonts")).unwrap();
+    std::fs::write(root.join("fonts/one.ttf"), b"OTTO").unwrap();
+    std::fs::write(
+        root.join("fonts.tsv"),
+        "source-serif\tsource-serif\t-\tfonts/one.ttf\t-\tlicense\toutline\n\
+         spleen-bdf\tspleen-archive\t-\tfonts/missing.bdf\t-\tlicense\tlegacy\n",
+    )
+    .unwrap();
+    let cases = inputs::cases(&root, &root.join("fonts.tsv"), &root, false).unwrap();
+    assert_eq!(cases.len(), 1);
+    assert_eq!(cases[0].id, "source-serif");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn adr0073_i1_rust_gallery_parity_composition_and_sheet() {
     let gray = pixels::parse(b"P5\n# left 0 top 1\n2 1\n255\n\x00\xff").unwrap();
     let ink = pixels::compose(&[
