@@ -32,28 +32,25 @@ cat >"$tmp/test" <<'EOF'
 #!/bin/sh
 set -eu
 [ "$*" = '--nocapture --test-threads=1' ] || exit 2
-lock() { while ! mkdir "$TEST_STATE/lock" 2>/dev/null; do sleep 0.01; done; }
-lock
-n=$(cat "$TEST_STATE/active")
-n=$((n + 1))
-echo "$n" >"$TEST_STATE/active"
-echo "$n" >>"$TEST_STATE/counts"
-rmdir "$TEST_STATE/lock"
+printf 'start %s\n' "$$" >>"$TEST_STATE/events"
 sleep 0.1
-lock
-n=$(cat "$TEST_STATE/active")
-echo "$((n - 1))" >"$TEST_STATE/active"
+printf 'end %s\n' "$$" >>"$TEST_STATE/events"
 basename "$0" >>"$TEST_STATE/done"
-rmdir "$TEST_STATE/lock"
 [ "${TEST_FAIL:-}" != "$(basename "$0")" ] || exit 1
 EOF
 chmod +x "$tmp/bin/cargo" "$tmp/test"
 for n in one two three; do cp "$tmp/test" "$tmp/artifacts with spaces/$n"; done
 export PATH="$tmp/bin:$PATH"
 reset_state() {
-  echo 0 >"$tmp/active"
-  : >"$tmp/counts"
+  : >"$tmp/events"
   : >"$tmp/done"
+}
+peak() {
+  awk '
+    $1 == "start" { active++; if (active > max) max = active; started++ }
+    $1 == "end" { active--; ended++; if (active < 0) bad = 1 }
+    END { if (bad || active != 0 || started != ended) exit 1; print max + 0 }
+  ' "$tmp/events"
 }
 fail() { echo "FAIL: $*" >&2; exit 1; }
 reset_state
@@ -61,10 +58,10 @@ sh "$root/scripts/test-conformance.sh" 2 || fail 'runner failed'
 printf 'doc\none\nthree\ntwo\n' >"$tmp/expected"
 sort "$tmp/done" >"$tmp/sorted"
 cmp "$tmp/expected" "$tmp/sorted" || fail 'ADR 0033 I1: artifacts or doc tests omitted/duplicated'
-[ "$(sort -nr "$tmp/counts" | head -1)" = 2 ] || fail 'ADR 0033 I3: not bounded at two'
+[ "$(peak)" = 2 ] || fail 'ADR 0033 I3: not bounded at two'
 reset_state
 sh "$root/scripts/test-conformance.sh" 1 || fail 'serial runner failed'
-[ "$(sort -nr "$tmp/counts" | head -1)" = 1 ] || fail 'ADR 0033 I3: serial limit'
+[ "$(peak)" = 1 ] || fail 'ADR 0033 I3: serial limit'
 reset_state
 TEST_NAMES=one sh "$root/scripts/test-conformance.sh" 2 || fail 'ADR 0033 I1: single artifact'
 printf 'one\ndoc\n' >"$tmp/expected"

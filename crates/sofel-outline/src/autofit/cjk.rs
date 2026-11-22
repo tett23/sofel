@@ -70,7 +70,12 @@ pub(super) struct CjkMetrics {
 }
 
 /// `af_cjk_metrics_init_blues`.
-fn init_blues(face: &Face<'_, '_, '_, '_>, metrics: &mut CjkMetrics, blue_stringset: usize) {
+fn init_blues(
+    face: &Face<'_, '_, '_, '_>,
+    metrics: &mut CjkMetrics,
+    style: usize,
+    blue_stringset: usize,
+) {
     let mut set = blue_stringset;
     while BLUE_STRINGSETS[set].string != BLUE_STRING_MAX {
         let bs = BLUE_STRINGSETS[set];
@@ -91,7 +96,7 @@ fn init_blues(face: &Face<'_, '_, '_, '_>, metrics: &mut CjkMetrics, blue_string
                 p = &p[1..];
                 continue;
             }
-            let (rest, num_idx, glyph_index) = next_cluster(face, p);
+            let (rest, num_idx, glyph_index) = next_cluster(face, style, p);
             p = rest;
             if num_idx > 1 {
                 continue;
@@ -171,7 +176,7 @@ pub(super) fn metrics_init(face: &Face<'_, '_, '_, '_>, style: usize, cjk: bool)
     if face.has_unicode() {
         let script = usize::from(STYLES[style].script);
         let mut axes = [(Vec::new(), 0, 0), (Vec::new(), 0, 0)];
-        init_widths(face, script, metrics.units_per_em, &mut axes);
+        init_widths(face, style, script, metrics.units_per_em, &mut axes);
         for (axis, (widths, threshold, standard)) in metrics.axis.iter_mut().zip(axes) {
             axis.widths = widths;
             axis.edge_distance_threshold = threshold;
@@ -181,10 +186,11 @@ pub(super) fn metrics_init(face: &Face<'_, '_, '_, '_>, style: usize, cjk: bool)
             init_blues(
                 face,
                 &mut metrics,
+                style,
                 usize::from(STYLES[style].blue_stringset),
             );
         }
-        metrics.digits_have_same_width = check_digits(face);
+        metrics.digits_have_same_width = check_digits(face, style);
     }
     metrics
 }

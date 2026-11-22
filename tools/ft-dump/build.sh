@@ -1,12 +1,15 @@
 #!/bin/sh
 # Build ft-dump against the FreeType source fetched by
-# scripts/fetch-testdata.sh (ADR 0008). Only a C compiler is needed:
-# the files are those listed in FreeType's docs/INSTALL.ANY.
+# scripts/fetch-testdata.sh (ADR 0008). The standard build needs a C
+# compiler; the files are those listed in FreeType's docs/INSTALL.ANY.
 #
 # Usage: tools/ft-dump/build.sh [FREETYPE_SOURCE [OUTPUT]]
 #   FREETYPE_SOURCE  default: target/testdata/freetype
 #   OUTPUT           default: target/ft-dump/ft-dump
-# A third argument --webfont-reference builds the table comparison tool
+# A third argument --harfbuzz builds the automatic hinter with the pinned
+# HarfBuzz source and requires a C++ compiler. SOFEL_HB_SRC overrides the
+# default target/testdata/harfbuzz source path.
+# --webfont-reference builds the table comparison tool
 # with WOFF2 enabled and requires Brotli decoder headers and library.
 # Use --brotli to keep ft-dump.c and enable WOFF2 decoding.
 # Use --filtered-lcd as the third argument for the filtered LCD reference.
@@ -19,13 +22,22 @@ root=$(cd "$here/../.." && pwd)
 src=${1:-$root/target/testdata/freetype}
 out=${2:-$root/target/ft-dump/ft-dump}
 cc=${CC:-cc}
+cxx=${CXX:-c++}
 driver=$here/ft-dump.c
-if [ "${3:-}" = "--webfont-reference" ]; then
+mode=${3:-}
+if [ "$mode" = "--harfbuzz" ]; then
+  hb_src=${SOFEL_HB_SRC:-$root/target/testdata/harfbuzz}/src
+  if [ ! -f "$hb_src/harfbuzz.cc" ]; then
+    echo "build.sh: no HarfBuzz source in $hb_src; run scripts/fetch-testdata.sh first" >&2
+    exit 1
+  fi
+  set -- -DFT_CONFIG_OPTION_USE_HARFBUZZ -I "$hb_src"
+elif [ "$mode" = "--webfont-reference" ]; then
   driver=$root/tools/webfont-reference/compare.c
   set -- -DFT_CONFIG_OPTION_USE_BROTLI -lbrotlidec
-elif [ "${3:-}" = "--brotli" ]; then
+elif [ "$mode" = "--brotli" ]; then
   set -- -DFT_CONFIG_OPTION_USE_BROTLI -lbrotlidec
-elif [ "${3:-}" = "--filtered-lcd" ]; then
+elif [ "$mode" = "--filtered-lcd" ]; then
   set -- -DFT_CONFIG_OPTION_SUBPIXEL_RENDERING
 else
   set --
@@ -72,10 +84,26 @@ if [ "$driver" = "$here/ft-dump.c" ]; then
     -c "$here/psrandom.c" -o "$extra"
 fi
 # shellcheck disable=SC2086 # $sources and $extra are paths without spaces
-"$cc" -O2 -w \
-  -DFT2_BUILD_LIBRARY \
-  '-DFT_CONFIG_MODULES_H=<ftmodule.h>' \
-  -I "$here" -I "$src/include" \
-  "$driver" $sources $extra $png_flags "$@" \
-  -o "$out"
+if [ "$mode" = "--harfbuzz" ]; then
+  hb_obj="$(dirname "$out")/harfbuzz.o"
+  "$cxx" -O2 -DNDEBUG -std=c++11 -ffp-contract=off \
+    -fno-exceptions -fno-rtti -fno-threadsafe-statics -w \
+    -I "$hb_src" -c "$hb_src/harfbuzz.cc" -o "$hb_obj"
+  # Compile FreeType and the driver as C, then link the HarfBuzz object
+  # with the C++ linker to include its runtime on each host.
+  # shellcheck disable=SC2086 # $sources and $extra are paths without spaces
+  "$cxx" -O2 -w -DFT2_BUILD_LIBRARY \
+    '-DFT_CONFIG_MODULES_H=<ftmodule.h>' \
+    -I "$here" -I "$src/include" "$@" -x c \
+    "$driver" $sources -x none $extra "$hb_obj" $png_flags \
+    -o "$out"
+else
+  # shellcheck disable=SC2086 # $sources and $extra are paths without spaces
+  "$cc" -O2 -w \
+    -DFT2_BUILD_LIBRARY \
+    '-DFT_CONFIG_MODULES_H=<ftmodule.h>' \
+    -I "$here" -I "$src/include" \
+    "$driver" $sources $extra $png_flags "$@" \
+    -o "$out"
+fi
 echo "$out"
