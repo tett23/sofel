@@ -499,6 +499,8 @@ flowchart BT
 
 [ADR 0022](adr/0022-subsetting.md) のとおり、出力はHarfBuzz 15.1.0の `hb-subset` とバイト単位で一致させる。実装は段階ごとに進め、まだ書けない表や設定は `SubsetError::Unsupported` とする（黙って捨てたり、違う形で書いたりしない）。
 
+軸を固定しないサブセット化では、`NOTDEF_OUTLINE` を指定して全グリフと偶数のグリフIDをそれぞれ選び、残ったグリフの輪郭と送り幅を元のフォントと比較する。可変フォントは既定・最小・最大の軸位置で比較する（`subset_unfixed_preservation`）。
+
 - `sofel-write` の `build_sfnt` は、HarfBuzzの面の組み立て（`hb-face-builder.cc`）と同じく、表のデータを長さの昇順（同じ長さはタグの昇順）に4バイトに揃えて並べ、表の記録をタグの順に書き、チェックサムと `checkSumAdjustment` を求める。sfntの版は `CFF ` か `CFF2` があれば `OTTO` とする。
 - `sofel-write` の `Serializer` は、HarfBuzzの `hb_serialize_context_t` と同じ規則でオブジェクトのグラフを組む。子を先に詰め、後に詰めたものほど前に置き、同じバイト列とリンクのオブジェクトをまとめる（統合の表は `BTreeMap`）。オフセットのあふれは `Packed::resolve` が報告する。
 - `sofel-write` の再配置（`Packed::repack`、`serialize_objects`）は、HarfBuzzの `hb-repacker.hh` と `src/graph/` を写したものである。最短距離による位相の整列（同点の扱いもHarfBuzzの二分ヒープと同じ）、32bitと24bitのオフセットの下の部分グラフの空間への分離、共有された子の複製、優先度の引き上げを、HarfBuzzと同じ繰り返しの上限（1回の呼び出しで最大の回数、全体で500回）で行う。GSUBとGPOSでは、PairPos（形式1と2）、MarkBasePos、LigatureSubstの部分表の分割と拡張のlookupへの昇格も行う。頂点の親や孤立させる部分グラフは、HarfBuzzの `hb_hashmap_t` と同じハッシュ（種を持たない乗算のハッシュ）と開番地法の表に入れ、その並びの順で辿る。`Plan::execute` は、表の直列化でオフセットがあふれたとき、`_hb_subset_repack` と同じく既定の設定（32回、拡張への昇格は解けないときだけ）で再配置する。解けなければ `SubsetError::OffsetOverflow` とする。`serialize_objects` は `hb_subset_serialize_or_fail` と同じく、呼び出し側が作ったオブジェクトとリンクの列（根を最後に置く）を20回、拡張への昇格ありで再配置して書く。HarfBuzzの `src/test-repacker.cc` と `src/graph/test-classdef-graph.cc` のテストを同じグラフと期待の値で写し、`hb-dump --repack` との突き合わせで出力がバイト単位で一致することを確かめる。
