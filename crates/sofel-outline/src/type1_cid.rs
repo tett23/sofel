@@ -130,7 +130,9 @@ fn decode_program<P: Pen>(
                 state.has_stems = true;
                 if op == 1 {
                     if let [position, width] = stack.as_slice() {
-                        if state.h_stem.is_none() && !state.emitted {
+                        if !state.emitted
+                            && (state.h_stem.is_none() || state.h_stem == Some((*position, *width)))
+                        {
                             state.h_stem = Some((*position, *width));
                         } else {
                             state.unsupported_stem_map = true;
