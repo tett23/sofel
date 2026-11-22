@@ -103,6 +103,38 @@ fn errors() {
     let _ = std::fs::remove_file(f);
 }
 
+#[test]
+fn adr0086_cli_hint_properties() {
+    let f = font_file("hint-properties");
+    let path = f.to_str().unwrap();
+    let (code, image, err) = run(&[
+        "--ppem",
+        "12",
+        "--glyph",
+        "1",
+        "--hint",
+        "auto",
+        "--hint-property",
+        "autofitter:increase-x-height=10",
+        path,
+    ]);
+    assert_eq!(code, 0, "{err}");
+    assert!(image.starts_with(b"P5\n"));
+    let (code, _, err) = run(&[
+        "--ppem",
+        "12",
+        "--glyph",
+        "1",
+        "--hint",
+        "auto",
+        "--hint-property",
+        "autofitter:darkening-parameters=2,0,1,0,1,0,1,0",
+        path,
+    ]);
+    assert_eq!(code, 2, "{err}");
+    let _ = std::fs::remove_file(f);
+}
+
 /// The square font of `font_file` with a 12-ppem strike of `depth` bits
 /// for glyph 1: a 3×2 image (small metrics, byte-aligned).
 fn bitmap_font(name: &str, depth: u8, pixels: &[u8]) -> PathBuf {

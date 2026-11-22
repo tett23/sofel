@@ -90,99 +90,77 @@ pub(super) fn true_type_orientation(points: &[Point], ends: &[usize]) -> Option<
 /// `FT_Vector_NormLen`: normalize to 16.16 and return the original length.
 /// Its integer Newton steps matter at sharp joins; dividing by
 /// `FT_Vector_Length` changes individual synthesized outline points.
-#[allow(clippy::arithmetic_side_effects)] // The pinned C implementation uses 32-bit wrapping arithmetic.
+#[allow(
+    clippy::arithmetic_side_effects,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss
+)] // The pinned C implementation uses 32-bit wrapping arithmetic.
 pub(crate) fn normalize(point: Point) -> (Point, i32) {
-    let sx = if point.x < 0 { -1i32 } else { 1 };
-    let sy = if point.y < 0 { -1i32 } else { 1 };
+    let sign_x = if point.x < 0 { -1i32 } else { 1 };
+    let sign_y = if point.y < 0 { -1i32 } else { 1 };
     let mut x = point.x.unsigned_abs();
     let mut y = point.y.unsigned_abs();
     if x == 0 {
         return (
             Point {
                 x: 0,
-                y: if y > 0 { sy * 0x10000 } else { 0 },
+                y: sign_y.wrapping_mul(i32::from(y > 0) * 0x10000),
             },
-            y.cast_signed(),
+            y as i32,
         );
     }
     if y == 0 {
         return (
             Point {
-                x: sx * 0x10000,
+                x: sign_x.wrapping_mul(0x10000),
                 y: 0,
             },
-            x.cast_signed(),
+            x as i32,
         );
     }
-    let mut l = if x > y {
-        x.wrapping_add(y >> 1)
-    } else {
-        y.wrapping_add(x >> 1)
-    };
-    let mut shift = i32::try_from(l.leading_zeros()).unwrap_or(0);
-    let estimate = 0xAAAA_AAAAu32 >> u32::try_from(shift).unwrap_or(0);
-    shift -= 15 + i32::from(l >= estimate);
+    let mut length = x.max(y).wrapping_add(x.min(y) >> 1);
+    let mut shift = i32::try_from(length.leading_zeros()).unwrap_or(0);
+    shift -= 15 + i32::from(length >= (0xAAAA_AAAAu32 >> shift));
     if shift > 0 {
-        x = x.wrapping_shl(shift.cast_unsigned());
-        y = y.wrapping_shl(shift.cast_unsigned());
-        l = if x > y {
-            x.wrapping_add(y >> 1)
-        } else {
-            y.wrapping_add(x >> 1)
-        };
+        x = x.wrapping_shl(shift as u32);
+        y = y.wrapping_shl(shift as u32);
+        length = x.max(y).wrapping_add(x.min(y) >> 1);
     } else {
         x >>= shift.unsigned_abs();
         y >>= shift.unsigned_abs();
-        l >>= shift.unsigned_abs();
+        length >>= shift.unsigned_abs();
     }
-    let mut z = 0x10000i32.wrapping_sub(l.cast_signed());
-    let mut u = x.wrapping_add(
-        ((x.cast_signed().wrapping_mul(z).wrapping_add(0x8000)) >> 16).cast_unsigned(),
-    );
-    let mut v = y.wrapping_add(
-        ((y.cast_signed().wrapping_mul(z).wrapping_add(0x8000)) >> 16).cast_unsigned(),
-    );
+    let mut adjustment = 0x10000i32.wrapping_sub(length as i32);
+    let mut u;
+    let mut v;
     loop {
-        z = (u
-            .wrapping_mul(u)
-            .wrapping_add(v.wrapping_mul(v))
-            .cast_signed()
-            .wrapping_neg()
-            .wrapping_add(0x10000))
-            >> 17;
-        u = u.wrapping_add(
-            ((u.cast_signed().wrapping_mul(z).wrapping_add(0x8000)) >> 16).cast_unsigned(),
-        );
-        v = v.wrapping_add(
-            ((v.cast_signed().wrapping_mul(z).wrapping_add(0x8000)) >> 16).cast_unsigned(),
-        );
-        if z <= 1 {
+        u = (x as i32).wrapping_add((x as i32).wrapping_mul(adjustment) >> 16) as u32;
+        v = (y as i32).wrapping_add((y as i32).wrapping_mul(adjustment) >> 16) as u32;
+        let squared = u.wrapping_mul(u).wrapping_add(v.wrapping_mul(v));
+        let mut step = (squared as i32).wrapping_neg() / 0x200;
+        step = step.wrapping_mul((0x10000i32.wrapping_add(adjustment)) >> 8) / 0x10000;
+        adjustment = adjustment.wrapping_add(step);
+        if step <= 0 {
             break;
         }
     }
     let normalized = Point {
-        x: sx.wrapping_mul(u.cast_signed()),
-        y: sy.wrapping_mul(v.cast_signed()),
+        x: sign_x.wrapping_mul(u as i32),
+        y: sign_y.wrapping_mul(v as i32),
     };
-    l = 0x10000u32.wrapping_add(
-        u.wrapping_mul(x)
-            .wrapping_add(v.wrapping_mul(y))
-            .cast_signed()
-            .wrapping_div(0x10000)
-            .cast_unsigned(),
-    );
+    length = 0x10000u32
+        .wrapping_add((u.wrapping_mul(x).wrapping_add(v.wrapping_mul(y)) as i32 / 0x10000) as u32);
     if shift > 0 {
-        l = l.wrapping_add(1u32.wrapping_shl(shift.saturating_sub(1).cast_unsigned()))
-            >> shift.cast_unsigned();
+        length = length.wrapping_add(1u32 << (shift - 1)) >> shift;
     } else {
-        l = l.wrapping_shl(shift.unsigned_abs());
+        length <<= shift.unsigned_abs();
     }
-    (normalized, l.cast_signed())
+    (normalized, length as i32)
 }
 
 /// Port of `FT_Outline_EmboldenXY` on FreeType's loaded point sequence.
 #[allow(clippy::arithmetic_side_effects, clippy::indexing_slicing)] // Bounds come from the validated outline loader.
-fn embolden_outline(
+pub(crate) fn embolden_outline(
     points: &mut [Point],
     ends: &[usize],
     x_strength: i32,

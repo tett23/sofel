@@ -1777,6 +1777,27 @@ int32_t sofel_outline_load_with_hint(const sofel_font_t *font, const sofel_locat
                                      sofel_outline_scratch_t *scratch, int32_t *cbox,
                                      uint32_t *overlap, int32_t *advance);
 
+/* Module properties supplied by value to each hinted load (ADR 0086).
+ * Set the defaults with sofel_hint_properties_default before changing fields.
+ * A script value of UINT32_MAX selects the FreeType default.
+ */
+typedef struct sofel_stem_darkening {
+  uint32_t no_stem_darkening;
+  int32_t darkening_parameters[8];
+} sofel_stem_darkening_t;
+
+typedef struct sofel_hint_properties {
+  sofel_stem_darkening_t autofitter;
+  sofel_stem_darkening_t cff;
+  sofel_stem_darkening_t type1;
+  sofel_stem_darkening_t t1cid;
+  uint32_t increase_x_height;
+  uint32_t fallback_script;
+  uint32_t default_script;
+} sofel_hint_properties_t;
+
+int32_t sofel_hint_properties_default(sofel_hint_properties_t *output);
+
 /*
  * The automatic hinter's state for one font at one location: the style of
  * each glyph and the metrics of each style (FreeType's
@@ -1791,6 +1812,9 @@ int32_t sofel_outline_load_with_hint(const sofel_font_t *font, const sofel_locat
 typedef struct sofel_autohint_cache sofel_autohint_cache_t;
 sofel_autohint_cache_t *sofel_autohint_cache_create(const sofel_font_t *font,
                                                     const sofel_location_t *location);
+sofel_autohint_cache_t *sofel_autohint_cache_create_with_properties(
+    const sofel_font_t *font, const sofel_location_t *location,
+    const sofel_hint_properties_t *properties);
 
 /*
  * The raw style word of a glyph: the style index in the low 13 bits, then
@@ -1829,6 +1853,11 @@ int32_t sofel_outline_load_auto_hinted(const sofel_font_t *font,
                                        sofel_autohint_cache_t *cache,
                                        sofel_outline_scratch_t *scratch, int32_t cbox[4],
                                        uint32_t *overlap, int32_t *advance);
+int32_t sofel_outline_load_auto_hinted_with_properties(
+    const sofel_font_t *font, const sofel_location_t *location, uint32_t glyph,
+    uint16_t ppem, uint32_t target, sofel_autohint_cache_t *cache,
+    const sofel_hint_properties_t *properties, sofel_outline_scratch_t *scratch,
+    int32_t cbox[4], uint32_t *overlap, int32_t *advance);
 
 /*
  * Sends the outline last loaded into `scratch` to the pen, after moving

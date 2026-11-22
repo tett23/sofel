@@ -66,6 +66,8 @@
 extern crate alloc;
 
 mod autofit;
+mod hint_properties;
+pub use hint_properties::{HintProperties, HintPropertyError, PostScriptHintProperties};
 mod hb_cff;
 mod pfr;
 pub use pfr::draw_pfr;
@@ -197,6 +199,8 @@ pub enum OutlineError {
     /// auto-hints a glyph that VARC covers, and only glyf and CFF
     /// outlines are read through [`Outlines`].
     AutoHintUnsupported,
+    /// The supplied module properties are invalid.
+    InvalidHintProperties,
 }
 
 impl fmt::Display for OutlineError {
@@ -209,6 +213,7 @@ impl fmt::Display for OutlineError {
             OutlineError::UnsupportedFormat => "no outline table",
             OutlineError::InvalidCff => "invalid CFF table",
             OutlineError::InvalidCharString => "invalid charstring",
+            OutlineError::InvalidHintProperties => "invalid hint properties",
             OutlineError::AutoHintUnsupported => {
                 "automatic hinting for this glyph is not implemented"
             }
@@ -675,7 +680,45 @@ impl<'data, 'loc, 'source> Outlines<'data, 'loc, 'source> {
         cache: &mut AutoHintCache,
         scratch: &mut Scratch,
     ) -> Result<(OutlineInfo, i32), OutlineError> {
-        autofit::load(self, glyph, ppem, target, cache, scratch)
+        autofit::load(
+            self,
+            glyph,
+            ppem,
+            target,
+            cache,
+            scratch,
+            &HintProperties::default(),
+        )
+    }
+
+    /// Loads with per-call automatic hinting module properties.
+    pub fn load_auto_hinted_with_properties(
+        &self,
+        glyph: GlyphId,
+        ppem: u16,
+        target: HintTarget,
+        cache: &mut AutoHintCache,
+        scratch: &mut Scratch,
+        properties: &HintProperties,
+    ) -> Result<(OutlineInfo, i32), OutlineError> {
+        properties
+            .validate()
+            .map_err(|_| OutlineError::InvalidHintProperties)?;
+        if properties.fallback_script.is_some() {
+            let mut configured = AutoHintCache::new_with_properties(self, properties)
+                .map_err(|_| OutlineError::InvalidHintProperties)?;
+            autofit::load(
+                self,
+                glyph,
+                ppem,
+                target,
+                &mut configured,
+                scratch,
+                properties,
+            )
+        } else {
+            autofit::load(self, glyph, ppem, target, cache, scratch, properties)
+        }
     }
 
     fn load_native_truetype(
