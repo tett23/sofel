@@ -292,6 +292,7 @@ pub(crate) struct Env<'a, 'c> {
     mask_trace: Vec<MaskTrace>,
     hint_trace: Vec<HintTrace>,
     literal_run: Option<(Source, usize, usize, usize)>,
+    vsindex_trace: Option<HintTrace>,
     path_started: bool,
     pub args: Vec<Arg>,
     arg_error: bool,
@@ -339,6 +340,7 @@ impl<'a, 'c> Env<'a, 'c> {
             mask_trace: Vec::new(),
             hint_trace: Vec::new(),
             literal_run: None,
+            vsindex_trace: None,
             path_started: false,
             args: Vec::new(),
             arg_error: false,
@@ -387,6 +389,11 @@ impl<'a, 'c> Env<'a, 'c> {
         &self.hint_trace
     }
 
+    pub(crate) fn hint_prefix(&self) -> Option<u32> {
+        (self.seen_vsindex && self.hint_trace.iter().any(|hint| !hint.can_follow_call))
+            .then_some(self.ivs)
+    }
+
     fn record_literal(&mut self, start: usize) {
         if !self.trace_calls {
             return;
@@ -408,6 +415,13 @@ impl<'a, 'c> Env<'a, 'c> {
             return;
         }
         let independent_mask = mask && self.path_started && self.args.is_empty();
+        if !independent_mask && self.seen_vsindex {
+            if let Some(prefix) = self.vsindex_trace {
+                self.hint_trace.push(prefix);
+            } else {
+                self.trace_valid = false;
+            }
+        }
         if (self.path_started && !independent_mask) || !self.args.len().is_multiple_of(2) {
             self.trace_valid = false;
         }
@@ -832,9 +846,6 @@ pub(crate) trait Ops {
 
 /// `cff2_cs_opset_t::process_op` over `cs_opset_t::process_op`.
 fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
-    if env.trace_drop_hints && matches!(op, BLENDCS | VSINDEXCS | DOTSECTION) {
-        env.trace_valid = false;
-    }
     if env.trace_drop_hints
         && matches!(
             op,
@@ -859,6 +870,21 @@ fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
         env.path_started = true;
     }
     match op {
+        DOTSECTION => {
+            if env.trace_drop_hints {
+                if !env.args.is_empty() {
+                    env.trace_valid = false;
+                }
+                env.hint_trace.push(HintTrace {
+                    source: env.ctx.source,
+                    start: env.ctx.off.saturating_sub(2),
+                    end: env.ctx.off,
+                    can_follow_call: true,
+                    mask_at: None,
+                });
+            }
+            env.clear_args();
+        }
         RETURN => env.return_from_subr(),
         ENDCHAR => {
             if env.trace_drop_hints && env.fetched_explicit {
@@ -920,14 +946,40 @@ fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
             o.path(op, env);
             o.flush_args_and_op(op, env);
         }
-        BLENDCS => env.process_blend(),
+        BLENDCS => {
+            let run = env.literal_run.filter(|&(source, _, end, count)| {
+                source == env.ctx.source
+                    && end == env.ctx.off.saturating_sub(1)
+                    && count == env.args.len()
+            });
+            env.process_blend();
+            // A local, contiguous blend expression can be removed together
+            // with the stem that consumes its results.
+            env.literal_run =
+                run.map(|(source, start, _, _)| (source, start, env.ctx.off, env.args.len()));
+        }
         VSINDEXCS => {
+            if env.trace_drop_hints {
+                env.vsindex_trace = env.literal_run.and_then(|(source, start, end, count)| {
+                    (source == env.ctx.source
+                        && end == env.ctx.off.saturating_sub(1)
+                        && count == 1
+                        && env.args.len() == 1)
+                        .then_some(HintTrace {
+                            source,
+                            start,
+                            end: env.ctx.off,
+                            can_follow_call: true,
+                            mask_at: None,
+                        })
+                });
+            }
             env.process_vsindex();
             env.clear_args();
         }
         _ => env.process_number(op),
     }
-    if !matches!(op, SHORTINT | 247..=254 | 32..=246 | FIXEDCS) {
+    if !matches!(op, SHORTINT | 247..=254 | 32..=246 | FIXEDCS | BLENDCS) {
         env.literal_run = None;
     }
 }

@@ -916,6 +916,14 @@ pub fn validate2(
         dict_checks(&mut r, d, base, DictKind::Font2);
         match FontDict::parse(d, v) {
             Ok(f) => {
+                // An explicit Private(size=0, offset=0) is an empty DICT.
+                // Only an absent Private operator is a missing DICT key.
+                let has_private = dict::DictTokens::new(d).any(|token| {
+                    matches!(token, Ok((_, dict::DictToken::Operator(dict::op::PRIVATE))))
+                });
+                if !has_private {
+                    r.emit(base, Kind::MissingPrivate { fd: i });
+                }
                 *slot = private(
                     &mut r,
                     data,
@@ -923,7 +931,7 @@ pub fn validate2(
                     f.private_offset,
                     v,
                     &blend,
-                    Some(i),
+                    None,
                 );
             }
             Err(e) => dict_error(&mut r, base, e),
