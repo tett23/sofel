@@ -290,7 +290,25 @@ fn load_cff_with_blend(
     let decoded = match &hinting {
         Some(h) => {
             let hint_work = s.cff_hints.get_or_insert_with(Default::default);
-            charstring::decode_hinted(data, &ctx, h, &mut s.cff, hint_work, &mut builder)
+            let first =
+                charstring::decode_hinted(data, &ctx, h, &mut s.cff, hint_work, &mut builder);
+            if first.is_ok() && h.is_darkened() && s.cff.winding_momentum() < 0 {
+                builder.points.clear();
+                builder.tags.clear();
+                builder.ends.clear();
+                builder.path_begun = false;
+                let reversed = h.with_reverse_winding();
+                charstring::decode_hinted(
+                    data,
+                    &ctx,
+                    &reversed,
+                    &mut s.cff,
+                    hint_work,
+                    &mut builder,
+                )
+            } else {
+                first
+            }
         }
         None => charstring::decode(data, &ctx, &mut s.cff, &mut builder),
     };

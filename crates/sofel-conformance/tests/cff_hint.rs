@@ -565,23 +565,30 @@ fn adr0086_a1_cff_darkening_corpus_all_targets() {
     let mut properties = HintProperties::default();
     properties.cff.no_stem_darkening = false;
     let mut stats = Stats::default();
+    let selected = if std::env::var_os("SOFEL_ADR0086_CFF_FULL").is_some() {
+        cases()
+    } else {
+        [
+            "extra-fonts/fonts/source-serif.otf",
+            "extra-fonts/fonts/stix-math.otf",
+            "harfbuzz/perf/fonts/NotoSansDuployan-Regular.otf",
+        ]
+        .into_iter()
+        .map(|path| Case {
+            path: path.into(),
+            face: 0,
+            variations: None,
+        })
+        .collect()
+    };
     for curve in [
         HintProperties::default().cff.darkening_parameters,
         [0, 500, 0, 500, 0, 500, 0, 500],
         [0, 0, 0, 0, 0, 0, 0, 0],
     ] {
         properties.cff.darkening_parameters = curve;
-        for path in [
-            "extra-fonts/fonts/source-serif.otf",
-            "extra-fonts/fonts/stix-math.otf",
-            "harfbuzz/perf/fonts/NotoSansDuployan-Regular.otf",
-        ] {
-            let case = Case {
-                path: path.into(),
-                face: 0,
-                variations: None,
-            };
-            compare_case(&case, &[9, 16], &mut stats, Some(&properties));
+        for case in &selected {
+            compare_case(case, &[9, 16], &mut stats, Some(&properties));
         }
     }
     assert!(stats.compared >= 100, "compared {}", stats.compared);

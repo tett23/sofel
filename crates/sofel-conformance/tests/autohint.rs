@@ -507,36 +507,44 @@ fn adr0086_i4_invalid_darkening_curves_are_rejected_by_both_engines() {
     let mut cache = AutoHintCache::new(&outlines);
     let mut scratch = Scratch::default();
     let glyph = font.nominal_glyph(u32::from('x')).unwrap();
-    for curve in [
-        [-1, 0, 1, 0, 1, 0, 1, 0],
-        [2, 0, 1, 0, 1, 0, 1, 0],
-        [0, 501, 1, 0, 1, 0, 1, 0],
-    ] {
-        let mut properties = sofel_outline::HintProperties::default();
-        properties.autofitter.darkening_parameters = curve;
-        let loaded = outlines.load_auto_hinted_with_properties(
-            glyph,
-            9,
-            HintTarget::Light,
-            &mut cache,
-            &mut scratch,
-            &properties,
-        );
-        assert!(matches!(loaded, Err(OutlineError::InvalidHintProperties)));
-        let csv = curve.map(|value| value.to_string()).join(",");
-        let output = Command::new(paths::ft_dump())
-            .args(["--auto-hint", "9", "9", "light"])
-            .arg(format!(
-                "--hint-property=autofitter:darkening-parameters={csv}"
-            ))
-            .arg(&path)
-            .output()
-            .unwrap();
-        assert_eq!(output.status.code(), Some(1));
-        assert_eq!(
-            String::from_utf8(output.stderr).unwrap(),
-            "ft-dump: auto hint error 6\n"
-        );
+    for module in ["autofitter", "cff", "type1", "t1cid"] {
+        for curve in [
+            [-1, 0, 1, 0, 1, 0, 1, 0],
+            [2, 0, 1, 0, 1, 0, 1, 0],
+            [0, 501, 1, 0, 1, 0, 1, 0],
+        ] {
+            let mut properties = sofel_outline::HintProperties::default();
+            let settings = match module {
+                "autofitter" => &mut properties.autofitter,
+                "cff" => &mut properties.cff,
+                "type1" => &mut properties.type1,
+                _ => &mut properties.t1cid,
+            };
+            settings.darkening_parameters = curve;
+            let loaded = outlines.load_auto_hinted_with_properties(
+                glyph,
+                9,
+                HintTarget::Light,
+                &mut cache,
+                &mut scratch,
+                &properties,
+            );
+            assert!(matches!(loaded, Err(OutlineError::InvalidHintProperties)));
+            let csv = curve.map(|value| value.to_string()).join(",");
+            let output = Command::new(paths::ft_dump())
+                .args(["--auto-hint", "9", "9", "light"])
+                .arg(format!(
+                    "--hint-property={module}:darkening-parameters={csv}"
+                ))
+                .arg(&path)
+                .output()
+                .unwrap();
+            assert_eq!(output.status.code(), Some(1));
+            assert_eq!(
+                String::from_utf8(output.stderr).unwrap(),
+                "ft-dump: auto hint error 6\n"
+            );
+        }
     }
 }
 

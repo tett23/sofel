@@ -273,6 +273,7 @@ pub struct Hinting {
     y_scale: i32,
     darken_x: i32,
     darken_y: i32,
+    reverse_winding: bool,
 }
 
 impl Hinting {
@@ -286,6 +287,7 @@ impl Hinting {
             y_scale,
             darken_x: 0,
             darken_y: 0,
+            reverse_winding: false,
         }
     }
 
@@ -324,7 +326,24 @@ impl Hinting {
             y_scale,
             darken_x,
             darken_y,
+            reverse_winding: false,
         }
+    }
+
+    /// Reverses the darkening offset direction for a clockwise CFF outline.
+    #[must_use]
+    pub fn with_reverse_winding(mut self) -> Hinting {
+        self.reverse_winding = true;
+        self
+    }
+
+    pub(crate) fn reverse_winding(&self) -> bool {
+        self.reverse_winding
+    }
+
+    /// Whether nonzero stem darkening requires a winding-order check.
+    pub fn is_darkened(&self) -> bool {
+        self.darken_x != 0 || self.darken_y != 0
     }
 
     pub(crate) fn darkening(&self) -> (i32, i32) {

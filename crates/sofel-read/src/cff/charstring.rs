@@ -305,6 +305,7 @@ pub struct Work {
     len: usize,
     storage: [i32; STORAGE_SIZE],
     stem_count: usize,
+    winding_momentum: i32,
     path: GlyphPath,
     random: u32,
     used_blend: bool,
@@ -323,6 +324,11 @@ impl Work {
     /// Number of horizontal and vertical stems seen in the last decode.
     pub fn hint_stem_count(&self) -> usize {
         self.stem_count
+    }
+
+    /// FreeType's accumulated contour winding momentum for the last decode.
+    pub fn winding_momentum(&self) -> i32 {
+        self.winding_momentum
     }
 
     /// The first operator of the last decode that is reserved or belongs
@@ -344,6 +350,7 @@ impl Default for Work {
             len: 0,
             storage: [0; STORAGE_SIZE],
             stem_count: 0,
+            winding_momentum: 0,
             path: GlyphPath::default(),
             random: 0,
             used_blend: false,
@@ -519,17 +526,33 @@ struct Run<'s, 'c, const S: usize, const N: usize> {
 type Step<T> = Result<T, CharStringErrorKind>;
 
 impl<const S: usize, const N: usize> Run<'_, '_, S, N> {
-    /// `cf2_glyphpath_computeOffset` with the default CCW winding.
-    fn darkening_offset(&self, from: (i32, i32), to: (i32, i32)) -> (i32, i32) {
-        let Some(hinting) = self.hinting else {
+    fn add_winding_momentum(&mut self, from: (i32, i32), to: (i32, i32)) {
+        let dx = to.0.wrapping_sub(from.0);
+        let dy = to.1.wrapping_sub(from.1);
+        let term_x = (from.0 >> 16).wrapping_mul(dy >> 16);
+        let term_y = (from.1 >> 16).wrapping_mul(dx >> 16);
+        self.work.winding_momentum = self
+            .work
+            .winding_momentum
+            .wrapping_add(term_x.wrapping_sub(term_y));
+    }
+
+    /// `cf2_glyphpath_computeOffset` and its winding momentum.
+    fn darkening_offset(&mut self, from: (i32, i32), to: (i32, i32)) -> (i32, i32) {
+        let Some(&hinting) = self.hinting else {
             return (0, 0);
         };
         let (x, y) = hinting.darkening();
         if x == 0 && y == 0 {
             return (0, 0);
         }
-        let dx = to.0.wrapping_sub(from.0);
-        let dy = to.1.wrapping_sub(from.1);
+        self.add_winding_momentum(from, to);
+        let mut dx = to.0.wrapping_sub(from.0);
+        let mut dy = to.1.wrapping_sub(from.1);
+        if hinting.reverse_winding() {
+            dx = dx.wrapping_neg();
+            dy = dy.wrapping_neg();
+        }
         let mx = |factor: i32| mul_fix(factor, x);
         let my = |factor: i32| mul_fix(factor, y);
         if dx >= 0 {
@@ -786,6 +809,9 @@ impl<const S: usize, const N: usize> Run<'_, '_, S, N> {
         let p0 = self.work.path.current;
         let first = self.darkening_offset(p0, c1);
         let last = self.darkening_offset(c2, to);
+        if self.hinting.is_some_and(Hinting::is_darkened) {
+            self.add_winding_momentum(c1, c2);
+        }
         let mut q0 = Self::offset_point(p0, first);
         let q1 = Self::offset_point(c1, first);
         let q2 = Self::offset_point(c2, last);
@@ -1116,6 +1142,7 @@ fn run_decode<const S: usize, const N: usize>(
     sink: &mut dyn PathSink,
 ) -> Result<Decoded, CharStringError> {
     work.random = ctx.random_seed;
+    work.winding_momentum = 0;
     work.used_blend = false;
     work.vsindex = ctx.vsindex;
     work.unknown = None;
