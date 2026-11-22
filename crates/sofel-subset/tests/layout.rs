@@ -12,6 +12,8 @@
 
 #[path = "../../sofel-read/tests/support/build.rs"]
 mod build;
+#[path = "support/fixture_input.rs"]
+mod fixture_input;
 
 use build::*;
 use sofel_font::Font;
@@ -976,14 +978,7 @@ fn copied_math_with_an_unchanged_variation_index_keeps_its_gdef_row() {
             (b"MATH", math),
         ]);
         let font = Font::new(&data, 0).unwrap();
-        let result = subset(&font, &input);
-        if inner == 2 {
-            assert!(
-                matches!(result, Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF"))
-            );
-            continue;
-        }
-        let out = result.unwrap();
+        let out = subset(&font, &input).unwrap();
         assert_eq!(out_table(&out, b"MATH"), out_table(&data, b"MATH"));
         let gdef = out_table(&out, b"GDEF").unwrap();
         let gdef = sofel_font::read::gdef::Gdef::new(&gdef).unwrap();
@@ -1145,12 +1140,8 @@ fn adr0022_copied_gpos_condition_checks_gdef_reference_without_device() {
         let input = chars("ABC").map_set(SetKind::NoSubsetTables, |set| {
             set.add(Tag::new(b"GPOS").to_u32());
         });
-        let out = subset(&Font::new(&data, 0).unwrap(), &input);
-        if index == u32::MAX {
-            assert_eq!(out_table(&out.unwrap(), b"GPOS").unwrap(), gpos);
-        } else {
-            assert!(matches!(out,Err(SubsetError::Unsupported{tag,..}) if tag==Tag::new(b"GDEF")));
-        }
+        let out = subset(&Font::new(&data, 0).unwrap(), &input).unwrap();
+        assert_eq!(out_table(&out, b"GPOS").unwrap(), gpos);
     }
 }
 
@@ -1186,14 +1177,8 @@ fn adr0022_copied_gsub_value_condition_checks_gdef_reference() {
             let input = chars("ABC").map_set(SetKind::NoSubsetTables, |set| {
                 set.add(Tag::new(b"GSUB").to_u32());
             });
-            let out = subset(&Font::new(&data, 0).unwrap(), &input);
-            if index == u32::MAX {
-                assert_eq!(out_table(&out.unwrap(), b"GSUB").unwrap(), gsub);
-            } else {
-                assert!(
-                    matches!(out, Err(SubsetError::Unsupported {tag,..}) if tag==Tag::new(b"GDEF"))
-                );
-            }
+            let out = subset(&Font::new(&data, 0).unwrap(), &input).unwrap();
+            assert_eq!(out_table(&out, b"GSUB").unwrap(), gsub);
         }
     }
 }
@@ -1288,15 +1273,25 @@ fn gdef_store_with_math_glyph_info_variation_index_follows_kept_glyphs() {
         vec![(6, 2, glyph_info)],
     );
     let data = font_with(vec![(b"GDEF", gdef), (b"MATH", math)]);
+    fixture_input::export("gdef-copied-math-glyph-info-hb15.otf", &data).unwrap();
     let font = Font::new(&data, 0).unwrap();
-    // The copied correction for glyph B would point beyond the two retained rows.
+    // Copying MATH retains both glyph corrections when selecting GDEF rows.
     let copy_math = chars("A").map_set(SetKind::NoSubsetTables, |set| {
         set.add(Tag::new(b"MATH").to_u32());
     });
-    assert!(matches!(
-        subset(&font, &copy_math),
-        Err(SubsetError::Unsupported { tag, .. }) if tag == Tag::new(b"GDEF")
-    ));
+    let copied = subset(&font, &copy_math).unwrap();
+    assert_eq!(
+        copied,
+        include_bytes!("data/gdef-copied-math-glyph-info-hb15.otf")
+    );
+    assert_eq!(out_table(&copied, b"MATH"), out_table(&data, b"MATH"));
+    let copied_gdef = out_table(&copied, b"GDEF").unwrap();
+    let copied_store = sofel_font::read::gdef::Gdef::new(&copied_gdef)
+        .unwrap()
+        .variation_store()
+        .unwrap()
+        .unwrap();
+    assert_eq!(copied_store.item_data(0).unwrap().item_count, 2);
     for (text, retained_index, item_count) in [("A", 1, 2), ("B", 0, 1)] {
         let out = subset(&font, &chars(text)).unwrap();
         let gdef = out_table(&out, b"GDEF").unwrap();
@@ -2436,4 +2431,101 @@ fn adr0022_wide_mark_positioning_keeps_marks_and_anchors() {
         };
         assert!(matrix[far(matrix, 3, 3)..].starts_with(&anchor));
     }
+}
+
+fn copied_gsub_condition_font() -> Vec<u8> {
+    let gsub = gsub_with_feature_condition(Buf::new().u16(2).i16(-7).u32(2).done());
+    font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[])),
+        (b"GSUB", gsub),
+    ])
+}
+
+fn copied_gpos_condition_font() -> Vec<u8> {
+    let template = gsub_with_feature_condition(Buf::new().u16(2).i16(-7).u32(2).done());
+    let fv_at = u32::from_be_bytes(template[10..14].try_into().unwrap()) as usize;
+    let position = vec![0, 1, 0, 8, 0, 4, 0, 12, 0, 1, 0, 1, 0, 1];
+    let mut gpos = gsubgpos(
+        0x10001,
+        script_list(vec![(b"DFLT", script(lang_sys(0xffff, &[0]), vec![]))]),
+        feature_list(&[(b"kern", &[0])]),
+        lookup_list(
+            vec![
+                lookup(1, 0, vec![position.clone()], None),
+                lookup(1, 0, vec![position], None),
+            ],
+            false,
+        ),
+    );
+    let offset = gpos.len() as u32;
+    gpos[10..14].copy_from_slice(&offset.to_be_bytes());
+    gpos.extend(&template[fv_at..]);
+    font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[])),
+        (b"GPOS", gpos),
+    ])
+}
+
+fn copied_math_font() -> Vec<u8> {
+    let device = Buf::new().u16(0).u16(2).u16(0x8000).done();
+    let constants = link(vec![0; 214], vec![(10, 2, device)]);
+    let math = link(
+        Buf::new().u32(0x0001_0000).u16(0).u16(0).u16(0).done(),
+        vec![(4, 2, constants)],
+    );
+    font_with(vec![
+        (b"GDEF", gdef_with_referenced_store(&[0])),
+        (b"MATH", math),
+    ])
+}
+
+#[test]
+fn copied_gdef_reference_inputs_for_harfbuzz() {
+    fixture_input::export(
+        "gdef-copied-gsub-condition-hb15.otf",
+        &copied_gsub_condition_font(),
+    )
+    .unwrap();
+    fixture_input::export("gdef-copied-math-hb15.otf", &copied_math_font()).unwrap();
+    fixture_input::export(
+        "gdef-copied-gpos-condition-hb15.otf",
+        &copied_gpos_condition_font(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn copied_gsub_condition_matches_harfbuzz() {
+    let bytes = copied_gsub_condition_font();
+    let input = chars("ABC").map_set(SetKind::NoSubsetTables, |set| {
+        set.add(Tag::new(b"GSUB").to_u32());
+    });
+    let actual = subset(&Font::new(&bytes, 0).unwrap(), &input).unwrap();
+    assert_eq!(
+        actual,
+        include_bytes!("data/gdef-copied-gsub-condition-hb15.otf")
+    );
+}
+
+#[test]
+fn copied_math_matches_harfbuzz() {
+    let bytes = copied_math_font();
+    let input = chars("A").map_set(SetKind::NoSubsetTables, |set| {
+        set.add(Tag::new(b"MATH").to_u32());
+    });
+    let actual = subset(&Font::new(&bytes, 0).unwrap(), &input).unwrap();
+    assert_eq!(actual, include_bytes!("data/gdef-copied-math-hb15.otf"));
+}
+
+#[test]
+fn copied_gpos_condition_matches_harfbuzz() {
+    let bytes = copied_gpos_condition_font();
+    let input = chars("ABC").map_set(SetKind::NoSubsetTables, |set| {
+        set.add(Tag::new(b"GPOS").to_u32());
+    });
+    let actual = subset(&Font::new(&bytes, 0).unwrap(), &input).unwrap();
+    assert_eq!(
+        actual,
+        include_bytes!("data/gdef-copied-gpos-condition-hb15.otf")
+    );
 }

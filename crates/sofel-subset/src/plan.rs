@@ -170,7 +170,6 @@ fn layout_unsupported(
     drop: &RangeSet,
     no_subset: &RangeSet,
     pinned: bool,
-    axis_change: bool,
 ) -> Result<(), SubsetError> {
     let kept = |t: &[u8; 4]| {
         let tag = Tag::new(t);
@@ -185,26 +184,18 @@ fn layout_unsupported(
             });
         }
     }
-    // Pinning every axis drops the GDEF variation store.
-    let retained = |t: &[u8; 4]| {
-        let tag = Tag::new(t);
-        font.table(tag).is_some() && !drop.contains(tag.to_u32())
-    };
-    let conditions_may_reference_store = [b"GSUB", b"GPOS"].into_iter().any(|name| {
-        retained(name)
-            && font.table(Tag::new(name)).is_some_and(|data| {
-                let table = layout::Gsubgpos::new(data, name == b"GSUB");
-                table.version() >= 0x0001_0001
-                    && sofel_font::read::be::u32_at(data, 10) != Some(0)
-                    && (table.feature_variations_view().is_none()
-                        || (!axis_change
-                            && no_subset.contains(Tag::new(name).to_u32())
-                            && !table.conditions_are_store_independent()))
-            })
-    });
     if !pinned
         && kept(b"GDEF").is_some_and(layout::gdef::has_var_store)
-        && conditions_may_reference_store
+        && [b"GSUB", b"GPOS"].into_iter().any(|name| {
+            let tag = Tag::new(name);
+            !drop.contains(tag.to_u32())
+                && font.table(tag).is_some_and(|data| {
+                    let table = layout::Gsubgpos::new(data, name == b"GSUB");
+                    table.version() >= 0x0001_0001
+                        && sofel_font::read::be::u32_at(data, 10) != Some(0)
+                        && table.feature_variations_view().is_none()
+                })
+        })
     {
         return Err(SubsetError::Unsupported {
             tag: Tag::new(b"GDEF"),
@@ -609,7 +600,7 @@ impl Plan {
         }
 
         let full_instance = pinned && !norm.normalized_coords.is_empty();
-        layout_unsupported(font, drop, no_subset, pinned, !norm.user.is_empty())?;
+        layout_unsupported(font, drop, no_subset, pinned)?;
         let colr_table = font.table(Tag::new(b"COLR"));
         let colr_kept = !drop.contains(Tag::new(b"COLR").to_u32())
             && !no_subset.contains(Tag::new(b"COLR").to_u32());
@@ -1040,6 +1031,8 @@ impl Plan {
                     (Tag::new(b"GSUB"), &p.layout.gsub),
                     (Tag::new(b"GPOS"), &p.layout.gpos),
                 ] {
+                    // Pinned HarfBuzz keeps copied table bytes but still collects
+                    // their condition references before compacting GDEF rows.
                     if tag_kept(&tag.0)
                         && let Some(data) = font.table(tag)
                     {
@@ -1054,6 +1047,8 @@ impl Plan {
                         }
                     }
                 }
+                // Copied MATH also contributes references, although HarfBuzz
+                // leaves its original indices unchanged in the copied table.
                 if math_has_var_format {
                     let Some(math_indices) = crate::tables::math::retained_variation_indices(
                         math_data,
@@ -1081,21 +1076,6 @@ impl Plan {
                     // With avar2, HarfBuzz's MATH references use the compact
                     // index map even when GDEF's rows are optimized afterward.
                     p.layout.math_var_map = map.clone();
-                }
-                if p.var.user().is_empty() && copied_math && !copied_gdef && math_has_var_format {
-                    // The non-instancing writer cannot rewrite references in
-                    // a copied MATH table when the GDEF rows are renumbered.
-                    let all = RangeSet::all();
-                    let all_indices =
-                        crate::tables::math::retained_variation_indices(math_data, &all, &all);
-                    if !all_indices.is_some_and(|indices| {
-                        indices.iter().all(|index| map.get(index) == Some(index))
-                    }) {
-                        return Err(SubsetError::Unsupported {
-                            tag: Tag::new(b"GDEF"),
-                            reason: "copied MATH needs unchanged GDEF variation indices",
-                        });
-                    }
                 }
                 if pinned {
                     p.layout.pinned_layout_deltas = p.pinned_deltas(

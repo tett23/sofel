@@ -12,7 +12,7 @@
 export HB_DUMP="$PWD/target/hb-dump/hb-dump"
 export SOFEL_FIXTURE_INPUTS=$(mktemp -d)
 export SOFEL_FIXTURE_OUTPUTS=$(mktemp -d)
-cargo test -p sofel-subset --test cff2 --test instance
+cargo test -p sofel-subset --test cff2 --test instance --test layout
 ```
 
 各節のコマンドは、再生成した参照出力を `SOFEL_FIXTURE_OUTPUTS` に置く。
@@ -430,4 +430,40 @@ cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-flat-vsindex-hb15.otf" "crates/sofel-subset/tes
 ```sh
 "$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-flat-vsindex-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-flat-vsindex-desubr-hb15.otf" --gids=1 --desubroutinize
 cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-flat-vsindex-desubr-hb15.otf" "crates/sofel-subset/tests/data/cff2-flat-vsindex-desubr-hb15.otf"
+```
+
+## gdef-copied-gsub-condition-hb15.otf
+
+`tests/layout.rs` の `copied_gdef_reference_inputs_for_harfbuzz` が組む入力である。GSUB の条件形式2が GDEF の変化量番号2を参照し、GSUB はコピーする。固定版は GSUB をそのまま残し、GDEF の使用行を詰める。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/gdef-copied-gsub-condition-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/gdef-copied-gsub-condition-hb15.otf" --unicodes=41,42,43 --no-subset-tables+=GSUB
+cmp "$SOFEL_FIXTURE_OUTPUTS/gdef-copied-gsub-condition-hb15.otf" "crates/sofel-subset/tests/data/gdef-copied-gsub-condition-hb15.otf"
+```
+
+## gdef-copied-gpos-condition-hb15.otf
+
+同じ条件形式2を GPOS に持たせ、GPOS をコピーする入力である。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/gdef-copied-gpos-condition-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/gdef-copied-gpos-condition-hb15.otf" --unicodes=41,42,43 --no-subset-tables+=GPOS
+cmp "$SOFEL_FIXTURE_OUTPUTS/gdef-copied-gpos-condition-hb15.otf" "crates/sofel-subset/tests/data/gdef-copied-gpos-condition-hb15.otf"
+```
+
+## gdef-copied-math-hb15.otf
+
+MATH の定数が GDEF の変化量番号2を参照し、MATH はコピーする入力である。固定版は MATH をそのまま残し、GDEF の使用行を詰める。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/gdef-copied-math-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/gdef-copied-math-hb15.otf" --unicodes=41 --no-subset-tables+=MATH
+cmp "$SOFEL_FIXTURE_OUTPUTS/gdef-copied-math-hb15.otf" "crates/sofel-subset/tests/data/gdef-copied-math-hb15.otf"
+```
+
+## gdef-copied-math-glyph-info-hb15.otf
+
+`tests/layout.rs` の `gdef_store_with_math_glyph_info_variation_index_follows_kept_glyphs` が組む入力である。MATH のグリフ情報に2つの変化量参照を置き、MATHをコピーして文字 A だけを残す。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/gdef-copied-math-glyph-info-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/gdef-copied-math-glyph-info-hb15.otf" --unicodes=41 --no-subset-tables+=MATH
+cmp "$SOFEL_FIXTURE_OUTPUTS/gdef-copied-math-glyph-info-hb15.otf" "crates/sofel-subset/tests/data/gdef-copied-math-glyph-info-hb15.otf"
 ```
