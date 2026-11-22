@@ -194,19 +194,29 @@ fn decode_program<P: Pen>(
             }
             1 | 3 => {
                 state.has_stems = true;
-                if op == 1 {
-                    if let [position, width] = stack.as_slice() {
+                if stack.len() >= 2 && stack.len().is_multiple_of(2) {
+                    if op == 1 {
                         if !state.emitted || (!state.native && !state.hint_groups.is_empty()) {
-                            state.h_stem.get_or_insert((*position, *width));
-                            if !state.h_stems.contains(&(*position, *width)) {
-                                state.h_stems.push((*position, *width));
+                            let mut edge = 0i32;
+                            for &[delta, width] in stack.as_chunks::<2>().0 {
+                                edge = edge
+                                    .checked_add(delta)
+                                    .ok_or(OutlineError::InvalidCharString)?;
+                                let stem = (edge, width);
+                                state.h_stem.get_or_insert(stem);
+                                if !state.h_stems.contains(&stem) {
+                                    state.h_stems.push(stem);
+                                }
+                                edge = edge
+                                    .checked_add(width)
+                                    .ok_or(OutlineError::InvalidCharString)?;
                             }
-                        } else {
-                            state.unsupported_stem_map = true;
+                        } else if !state.native {
+                            state.late_stem_pending = true;
                         }
-                    } else {
-                        state.unsupported_stem_map = true;
                     }
+                } else {
+                    state.unsupported_stem_map = true;
                 }
                 stack.clear();
             }
@@ -383,6 +393,7 @@ struct State<'a, P: Pen> {
     h_stem_shift: i64,
     h_stem_map: Option<Type1HorizontalStemMap>,
     unsupported_stem_map: bool,
+    late_stem_pending: bool,
 }
 
 impl<'a, P: Pen> State<'a, P> {
@@ -408,6 +419,7 @@ impl<'a, P: Pen> State<'a, P> {
             h_stem_shift: 0,
             h_stem_map: None,
             unsupported_stem_map: false,
+            late_stem_pending: false,
         }
     }
 
@@ -480,6 +492,9 @@ impl<'a, P: Pen> State<'a, P> {
     }
 
     fn move_by(&mut self, dx: i32, dy: i32) -> Result<(), OutlineError> {
+        if self.late_stem_pending {
+            self.unsupported_stem_map = true;
+        }
         self.close();
         self.x = self
             .x

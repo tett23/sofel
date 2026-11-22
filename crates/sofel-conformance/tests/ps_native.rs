@@ -257,6 +257,109 @@ fn adr0064_i1_native_cid_two_horizontal_stems_match_freetype() {
 }
 
 #[test]
+fn adr0064_i1_native_cid_multiple_pairs_in_one_hstem_match_freetype() {
+    let bytes = cid_sample(&[
+        139, 248, 136, 13, 239, 189, 239, 189, 1, 239, 239, 21, 239, 139, 5, 139, 239, 5, 39, 39,
+        5, 9, 14,
+    ]);
+    let path = std::env::temp_dir().join(format!(
+        "sofel-adr0064-cid-paired-hstems-{}.cid",
+        std::process::id()
+    ));
+    std::fs::write(&path, &bytes).unwrap();
+    let face = CidFace::parse(&bytes, 1024).unwrap();
+    let factor = Fixed(div_fix(16 * 64, i32::from(face.units_per_em())));
+    let mut commands = Vec::new();
+    let loaded = draw_cid_native(
+        &face,
+        0,
+        Scale::Scaled {
+            x: factor,
+            y: factor,
+        },
+        HintTarget::Mono,
+        &mut FnPen(|c| commands.push(c)),
+    );
+    let reference = std::process::Command::new(paths::ft_dump())
+        .args(["--hint-slot", "16", "0", "native", "mono"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(reference.status.success());
+    let (_, advance) = loaded.unwrap();
+    let mut points = Vec::new();
+    for command in commands {
+        match command {
+            Command::MoveTo(point) | Command::LineTo(point) => points.push(point),
+            Command::Close => {
+                if points.last() == points.first() {
+                    points.pop();
+                }
+            }
+            other => assert_eq!(other, Command::Close),
+        }
+    }
+    let mut actual = format!("advance {advance} 0\n");
+    for point in &points {
+        actual.push_str(&format!("point {} {} 1\n", point.x, point.y));
+    }
+    actual.push_str(&format!("end {}\n", points.len() - 1));
+    assert_eq!(actual, String::from_utf8(reference.stdout).unwrap());
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn adr0064_i1_native_cid_late_hstem_without_new_contour_matches_freetype() {
+    let bytes = cid_sample(&[
+        139, 248, 136, 13, 239, 239, 21, 239, 139, 5, 239, 189, 1, 139, 239, 5, 39, 139, 5, 9, 14,
+    ]);
+    let path = std::env::temp_dir().join(format!(
+        "sofel-adr0064-cid-late-hstem-{}.cid",
+        std::process::id()
+    ));
+    std::fs::write(&path, &bytes).unwrap();
+    let face = CidFace::parse(&bytes, 1024).unwrap();
+    let factor = Fixed(div_fix(16 * 64, i32::from(face.units_per_em())));
+    let mut commands = Vec::new();
+    let loaded = draw_cid_native(
+        &face,
+        0,
+        Scale::Scaled {
+            x: factor,
+            y: factor,
+        },
+        HintTarget::Mono,
+        &mut FnPen(|c| commands.push(c)),
+    );
+    let reference = std::process::Command::new(paths::ft_dump())
+        .args(["--hint-slot", "16", "0", "native", "mono"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(reference.status.success());
+    let (_, advance) = loaded.unwrap();
+    let mut points = Vec::new();
+    for command in commands {
+        match command {
+            Command::MoveTo(point) | Command::LineTo(point) => points.push(point),
+            Command::Close => {
+                if points.last() == points.first() {
+                    points.pop();
+                }
+            }
+            other => assert_eq!(other, Command::Close),
+        }
+    }
+    let mut actual = format!("advance {advance} 0\n");
+    for point in &points {
+        actual.push_str(&format!("point {} {} 1\n", point.x, point.y));
+    }
+    actual.push_str(&format!("end {}\n", points.len() - 1));
+    assert_eq!(actual, String::from_utf8(reference.stdout).unwrap());
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn adr0064_i1_native_cid_blue_values_capture_stem() {
     let program = &[
         139, 248, 136, 13, 169, 149, 1, 139, 169, 21, 239, 139, 5, 139, 239, 5, 39, 139, 5, 9, 14,
