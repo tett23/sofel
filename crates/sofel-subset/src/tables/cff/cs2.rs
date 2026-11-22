@@ -408,6 +408,11 @@ impl<'a, 'c> Env<'a, 'c> {
             return;
         }
         let independent_mask = mask && self.path_started && self.args.is_empty();
+        // Removing stems can require relocating a vsindex prefix to the glyph.
+        // Until that prefix is tracked, retain only path-only uses of vsindex.
+        if self.seen_vsindex && !independent_mask {
+            self.trace_valid = false;
+        }
         if (self.path_started && !independent_mask) || !self.args.len().is_multiple_of(2) {
             self.trace_valid = false;
         }
@@ -832,9 +837,6 @@ pub(crate) trait Ops {
 
 /// `cff2_cs_opset_t::process_op` over `cs_opset_t::process_op`.
 fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
-    if env.trace_drop_hints && matches!(op, BLENDCS | VSINDEXCS | DOTSECTION) {
-        env.trace_valid = false;
-    }
     if env.trace_drop_hints
         && matches!(
             op,
@@ -859,6 +861,21 @@ fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
         env.path_started = true;
     }
     match op {
+        DOTSECTION => {
+            if env.trace_drop_hints {
+                if !env.args.is_empty() {
+                    env.trace_valid = false;
+                }
+                env.hint_trace.push(HintTrace {
+                    source: env.ctx.source,
+                    start: env.ctx.off.saturating_sub(2),
+                    end: env.ctx.off,
+                    can_follow_call: true,
+                    mask_at: None,
+                });
+            }
+            env.clear_args();
+        }
         RETURN => env.return_from_subr(),
         ENDCHAR => {
             if env.trace_drop_hints && env.fetched_explicit {
@@ -920,14 +937,28 @@ fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
             o.path(op, env);
             o.flush_args_and_op(op, env);
         }
-        BLENDCS => env.process_blend(),
+        BLENDCS => {
+            let run = env.literal_run.filter(|&(source, _, end, count)| {
+                source == env.ctx.source
+                    && end == env.ctx.off.saturating_sub(1)
+                    && count == env.args.len()
+            });
+            env.process_blend();
+            // A local, contiguous blend expression can be removed together
+            // with the stem that consumes its results.
+            env.literal_run =
+                run.map(|(source, start, _, _)| (source, start, env.ctx.off, env.args.len()));
+        }
         VSINDEXCS => {
+            if env.trace_drop_hints && env.hint_trace.iter().any(|hint| !hint.can_follow_call) {
+                env.trace_valid = false;
+            }
             env.process_vsindex();
             env.clear_args();
         }
         _ => env.process_number(op),
     }
-    if !matches!(op, SHORTINT | 247..=254 | 32..=246 | FIXEDCS) {
+    if !matches!(op, SHORTINT | 247..=254 | 32..=246 | FIXEDCS | BLENDCS) {
         env.literal_run = None;
     }
 }

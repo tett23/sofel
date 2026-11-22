@@ -180,3 +180,97 @@ cmp "$SOFEL_FIXTURE_OUTPUTS/adr0061-avar-range-hb15.ttf" "crates/sofel-subset/te
 cmp "$SOFEL_FIXTURE_OUTPUTS/adr0061-avar-one-sided-hb15.ttf" "crates/sofel-subset/tests/data/adr0061-avar-one-sided-hb15.ttf"
 ```
 
+
+## cff2-mask-or-stem-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_shared_subroutine_with_conflicting_mask_lengths_retains_original_bytes` の `mask_or_stem` である。
+共有サブルーチンの `hintmask` に続くバイトを、一方のグリフはマスク、もう一方は `hstem` として読む。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-mask-or-stem-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-mask-or-stem-hb15.otf" --gids=1,2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-mask-or-stem-hb15.otf" "crates/sofel-subset/tests/data/cff2-mask-or-stem-hb15.otf"
+```
+
+## cff2-stem-or-mask-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_shared_subroutine_with_conflicting_mask_lengths_retains_original_bytes` の `stem_or_mask` である。
+共有サブルーチンの `hintmask` に続くバイトを、一方のグリフはマスク、もう一方は `hstem` として読む。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-stem-or-mask-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-stem-or-mask-hb15.otf" --gids=1,2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-stem-or-mask-hb15.otf" "crates/sofel-subset/tests/data/cff2-stem-or-mask-hb15.otf"
+```
+
+## cff2-context-stem-path-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_contextual_hint_commands_keep_the_shared_path` の `reverse == false` の `bytes` である。
+共有サブルーチンの `hintmask` に続くバイトを、一方のグリフはマスク、もう一方は `hstem` として読む。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-context-stem-path-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-context-stem-path-hb15.otf" --gids=1,2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-context-stem-path-hb15.otf" "crates/sofel-subset/tests/data/cff2-context-stem-path-hb15.otf"
+```
+
+## cff2-context-mask-path-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_contextual_hint_commands_keep_the_shared_path` の `reverse == true` の `bytes` である。
+共有サブルーチンの `hintmask` に続くバイトを、一方のグリフはマスク、もう一方は `hstem` として読む。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-context-mask-path-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-context-mask-path-hb15.otf" --gids=1,2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-context-mask-path-hb15.otf" "crates/sofel-subset/tests/data/cff2-context-mask-path-hb15.otf"
+```
+
+## cff2-no-hint-blended-path-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_no_hinting_preserves_blended_paths_in_subroutines` が組む `bytes` である。CFF2 サブルーチンの `blend` を含む命令列に `NO_HINTING` を適用する。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-no-hint-blended-path-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-blended-path-hb15.otf" --gids=2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-blended-path-hb15.otf" "crates/sofel-subset/tests/data/cff2-no-hint-blended-path-hb15.otf"
+```
+
+## cff2-no-hint-blended-stem-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_no_hinting_removes_blended_stems_in_subroutines` が組む `bytes` である。CFF2 サブルーチンの `blend` を含む命令列に `NO_HINTING` を適用する。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-no-hint-blended-stem-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-blended-stem-hb15.otf" --gids=2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-blended-stem-hb15.otf" "crates/sofel-subset/tests/data/cff2-no-hint-blended-stem-hb15.otf"
+```
+
+## cff2-no-hint-dotsection-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_no_hinting_removes_dotsection_before_and_after_paths` が組む `bytes` である。描画命令の前後に引数のない `dotsection` を置いた CFF2 サブルーチンに `NO_HINTING` を適用する。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-no-hint-dotsection-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-dotsection-hb15.otf" --gids=2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-dotsection-hb15.otf" "crates/sofel-subset/tests/data/cff2-no-hint-dotsection-hb15.otf"
+```
+
+## cff2-no-hint-context-call-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_no_hinting_rewrites_nested_calls_after_contextual_masks` の `reverse == false` が組む `bytes` である。マスク長が異なる二つの呼び出しと、そのサブルーチン内からの追加呼び出しを持つ。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-no-hint-context-call-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-context-call-hb15.otf" --gids=1,2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-context-call-hb15.otf" "crates/sofel-subset/tests/data/cff2-no-hint-context-call-hb15.otf"
+```
+
+## cff2-no-hint-context-call-reverse-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_no_hinting_rewrites_nested_calls_after_contextual_masks` の `reverse == true` が組む `bytes` である。マスク長が異なる二つの呼び出しと、そのサブルーチン内からの追加呼び出しを持つ。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-no-hint-context-call-reverse-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-context-call-reverse-hb15.otf" --gids=1,2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-context-call-reverse-hb15.otf" "crates/sofel-subset/tests/data/cff2-no-hint-context-call-reverse-hb15.otf"
+```
+
+## cff2-no-hint-vsindex-path-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_no_hinting_keeps_vsindex_for_blended_subroutine_paths` が組む `bytes` である。グリフに `vsindex`、サブルーチンの描画に `blend` があり、除去する stem はない。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-no-hint-vsindex-path-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-vsindex-path-hb15.otf" --gids=2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-vsindex-path-hb15.otf" "crates/sofel-subset/tests/data/cff2-no-hint-vsindex-path-hb15.otf"
+```

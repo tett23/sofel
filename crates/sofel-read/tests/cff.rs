@@ -1874,3 +1874,32 @@ fn context_is_send_sync() {
     assert_send_sync::<Context<'static>>();
     assert_send_sync::<sofel_read::cff::dict::NoBlend>();
 }
+
+#[test]
+fn validator_cff2_distinguishes_empty_and_missing_private_dict() {
+    let mut bytes = cff2(&Cff2Spec {
+        charstrings: vec![Vec::new()],
+        fds: vec![(Vec::new(), Vec::new())],
+        ..Default::default()
+    });
+    let view = Cff2::new(&bytes).unwrap();
+    let top = TopDict::parse(view.top_dict(), Version::Cff2).unwrap();
+    let fd_at = top.fd_array as usize;
+    let index = Index::new(&bytes[fd_at..], Version::Cff2).unwrap();
+    let dict_at = fd_at + index.data_offset();
+    // The builder writes two five-byte integers and the Private operator.
+    // Explicit size=0, offset=0 is an empty Private DICT, not a missing key.
+    bytes[dict_at + 6..dict_at + 10].fill(0);
+    let diagnostics = diags(|r| sofel_read::cff::validate2(&bytes, None, None, r));
+    assert!(
+        diagnostics.iter().all(|d| d.severity != Severity::Error),
+        "{diagnostics:?}"
+    );
+    bytes[dict_at + 10] = 0;
+    let diagnostics = diags(|r| sofel_read::cff::validate2(&bytes, None, None, r));
+    assert!(
+        diagnostics
+            .iter()
+            .any(|d| d.kind == Kind::MissingPrivate { fd: 0 })
+    );
+}
