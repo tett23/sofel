@@ -72,7 +72,6 @@ pub fn draw_cid_native(
     };
     if scan.has_stems
         && (scan.unsupported_stem_map
-            || matrix != [65536, 0, 0, 65536, 0, 0]
             || blue_zones.is_none()
             || (scan.h_stems.is_empty() && groups.is_empty() && has_blue_zones))
     {
@@ -299,15 +298,13 @@ fn decode_program<P: Pen>(
                     0 => stack.clear(), // dotsection
                     1 | 2 => {
                         state.has_stems = true;
-                        if !state.emitted {
-                            if let [p0, w0, p1, w1, p2, w2] = stack.as_slice() {
+                        if let [p0, w0, p1, w1, p2, w2] = stack.as_slice() {
+                            if escape == 2 && !state.ever_emitted {
                                 for (position, width) in [(*p0, *w0), (*p1, *w1), (*p2, *w2)] {
-                                    if escape == 2 && !state.h_stems.contains(&(position, width)) {
+                                    if !state.h_stems.contains(&(position, width)) {
                                         state.h_stems.push((position, width));
                                     }
                                 }
-                            } else {
-                                state.unsupported_stem_map = true;
                             }
                         } else {
                             state.unsupported_stem_map = true;
