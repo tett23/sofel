@@ -46,7 +46,8 @@ use std::process::Command;
 
 use sofel_conformance::{expect, paths, subset};
 use sofel_font::Font;
-use sofel_read::Tag;
+use sofel_read::sfnt::Sfnt;
+use sofel_read::{Diagnostic, Severity, Tag, validate};
 
 fn data() -> std::path::PathBuf {
     paths::testdata().join("harfbuzz/test/subset/data")
@@ -261,4 +262,69 @@ fn subsetting_agrees_with_harfbuzz() {
         "{}",
         expect::report(&problems, "expected-failures-subset-hb.txt")
     );
+}
+
+fn validation_errors(bytes: &[u8]) -> usize {
+    let sfnt = Sfnt::new(bytes).unwrap();
+    let mut errors = Vec::new();
+    validate::sfnt(&sfnt, &mut |diagnostic: Diagnostic| {
+        if diagnostic.severity == Severity::Error {
+            errors.push(());
+        }
+    });
+    errors.len()
+}
+
+#[test]
+fn adr0061_i1_upstream_fixture_exceptions_have_valid_outputs() {
+    let exe = paths::hb_dump();
+    paths::require(&exe, "hb-dump").unwrap();
+    paths::require(&data(), "HarfBuzz test data").unwrap();
+    let cases: Vec<_> = subset::all_cases(&data())
+        .unwrap()
+        .into_iter()
+        .filter(|case| {
+            case.suite == "glyf_partial_instancing_iup"
+                && case.instance == "wght=200:300:500,wdth=80:90"
+        })
+        .collect();
+    assert_eq!(cases.len(), 4);
+    let dir = std::env::temp_dir().join(format!(
+        "sofel-subset-upstream-fixtures-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let output = dir.join("out");
+    let mut checked = 0;
+    for case in &cases {
+        let fixture = std::fs::read(case.expected(&data())).unwrap();
+        for prepared in [false, true] {
+            let mut args = case.args().unwrap();
+            if prepared {
+                args.push("--preprocess".into());
+            }
+            let reference_args: Vec<_> = args
+                .iter()
+                .map(|arg| {
+                    arg.strip_prefix("--instance=")
+                        .map_or_else(|| arg.clone(), |range| format!("--variations={range}"))
+                })
+                .collect();
+            let reference = harfbuzz(&exe, &reference_args, &output).unwrap();
+            let actual = subset::run_sofel(&args).unwrap();
+            assert_eq!(actual, reference, "{} prepared={prepared}", case.id());
+            assert_ne!(
+                reference,
+                fixture,
+                "{} prepared={prepared}: saved fixture differs",
+                case.id()
+            );
+            assert_eq!(validation_errors(&actual), 0, "{}: sofel", case.id());
+            assert_eq!(validation_errors(&reference), 0, "{}: HarfBuzz", case.id());
+            assert_eq!(validation_errors(&fixture), 0, "{}: fixture", case.id());
+            checked += 1;
+        }
+    }
+    let _ = std::fs::remove_dir_all(dir);
+    assert_eq!(checked, 8);
 }
