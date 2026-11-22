@@ -2532,7 +2532,7 @@ static uint8_t *read_testdata(const char *path, size_t *len) {
 
 static void test_adr0085_i2_gsub_cache(void) {
   size_t size = 0;
-  uint8_t *data = read_testdata("extra-fonts/fonts/source-serif.otf", &size);
+  uint8_t *data = read_testdata("harfbuzz/perf/fonts/Roboto-Regular.ttf", &size);
   if (data == NULL) {
     CHECK(getenv("SOFEL_REQUIRE_TESTDATA") == NULL);
     return;
@@ -2545,8 +2545,8 @@ static void test_adr0085_i2_gsub_cache(void) {
     sofel_autohint_cache_t *gsub = sofel_autohint_cache_create_with_gsub(font, NULL);
     uint16_t cmap_style = 0, gsub_style = 0;
     CHECK(cmap != NULL && gsub != NULL);
-    CHECK(sofel_autohint_cache_glyph_style(cmap, 109, &cmap_style) == SOFEL_OK);
-    CHECK(sofel_autohint_cache_glyph_style(gsub, 109, &gsub_style) == SOFEL_OK);
+    CHECK(sofel_autohint_cache_glyph_style(cmap, 1108, &cmap_style) == SOFEL_OK);
+    CHECK(sofel_autohint_cache_glyph_style(gsub, 1108, &gsub_style) == SOFEL_OK);
     CHECK((cmap_style & 0x1FFF) == 86 && (gsub_style & 0x1FFF) == 57);
     sofel_autohint_cache_destroy(cmap);
     sofel_autohint_cache_destroy(gsub);
