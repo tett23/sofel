@@ -30,7 +30,7 @@ fn table(bytes: &[u8], tag: &[u8; 4]) -> (usize, usize, usize) {
     panic!("missing table");
 }
 
-fn with_triangle(mut bytes: Vec<u8>) -> Vec<u8> {
+fn with_glyf(mut bytes: Vec<u8>, glyph: &[u8]) -> Vec<u8> {
     let (glyf_record, glyf_offset, glyf_len) = table(&bytes, b"glyf");
     let (_, loca_offset, _) = table(&bytes, b"loca");
     let (_, head_offset, _) = table(&bytes, b"head");
@@ -42,21 +42,27 @@ fn with_triangle(mut bytes: Vec<u8>) -> Vec<u8> {
     }
     let new_offset = bytes.len();
     bytes.extend_from_within(glyf_offset..glyf_offset + glyf_len);
+    assert!(glyph.len().is_multiple_of(2));
+    bytes.extend_from_slice(glyph);
+    let total = glyf_len + glyph.len();
+    bytes[glyf_record + 8..glyf_record + 12]
+        .copy_from_slice(&u32::try_from(new_offset).unwrap().to_be_bytes());
+    bytes[glyf_record + 12..glyf_record + 16]
+        .copy_from_slice(&u32::try_from(total).unwrap().to_be_bytes());
+    for gid in 20..=28 {
+        let at = loca_offset + gid * 2;
+        bytes[at..at + 2].copy_from_slice(&u16::try_from(total / 2).unwrap().to_be_bytes());
+    }
+    bytes
+}
+
+fn with_triangle(bytes: Vec<u8>) -> Vec<u8> {
     // Three on-curve points, no instructions, and an even byte length for short loca.
     let triangle = [
         0, 1, 0, 0, 0, 0, 0, 100, 0, 100, 0, 2, 0, 0, 1, 1, 1, 0, 0, 0, 100, 255, 156, 0, 0, 0, 0,
         0, 100, 0,
     ];
-    assert_eq!(triangle.len(), 30);
-    bytes.extend_from_slice(&triangle);
-    bytes[glyf_record + 8..glyf_record + 12]
-        .copy_from_slice(&u32::try_from(new_offset).unwrap().to_be_bytes());
-    bytes[glyf_record + 12..glyf_record + 16].copy_from_slice(&72_u32.to_be_bytes());
-    for gid in 20..=28 {
-        let at = loca_offset + gid * 2;
-        bytes[at..at + 2].copy_from_slice(&36_u16.to_be_bytes());
-    }
-    bytes
+    with_glyf(bytes, &triangle)
 }
 
 fn reference(font: &std::path::Path, ppem: u16, engine: &str, target: &str, color: bool) -> String {
@@ -109,6 +115,24 @@ fn adr0064_i1_svg_slot_precedes_auto_and_native_outline() {
         assert_eq!(
             String::from_utf8(outline.stdout).unwrap(),
             format!("advance {outline_advance} 0\n")
+        );
+        let no_svg = Command::new(paths::ft_dump())
+            .args([
+                "--hint-slot",
+                "16",
+                "19",
+                engine,
+                "normal",
+                "--color",
+                "--no-svg",
+            ])
+            .arg(&font)
+            .output()
+            .unwrap();
+        assert!(no_svg.status.success());
+        assert_eq!(
+            String::from_utf8(no_svg.stdout).unwrap(),
+            format!("format 1869968492\nadvance {outline_advance} 0\n")
         );
     }
     let bytes = std::fs::read(&font).unwrap();
@@ -175,5 +199,40 @@ fn adr0064_i1_non_color_loads_triangle_instead_of_svg_for_all_targets() {
         assert!(svg.contains("format 1398163232\n"));
         assert!(svg.contains("svg-document 784 19 19 1024\n"));
     }
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn adr0064_i1_color_svg_loads_when_fallback_outline_is_broken() {
+    let original_path = paths::testdata().join("extra-fonts/fonts/color-svg.ttf");
+    let original = std::fs::read(&original_path).unwrap();
+    // One contour claims 1001 points, but this 20-byte glyf record has no flags.
+    let broken = [
+        0, 1, 0, 0, 0, 0, 0, 100, 0, 100, 3, 232, 0, 0, 0, 0, 0, 0, 0, 0,
+    ];
+    let bytes = with_glyf(original, &broken);
+    let path = std::env::temp_dir().join(format!("sofel-svg-broken-{}.ttf", std::process::id()));
+    std::fs::write(&path, bytes).unwrap();
+    let svg = reference(&path, 16, "auto", "normal", true);
+    assert_eq!(svg, reference(&original_path, 16, "auto", "normal", true));
+    let no_svg = Command::new(paths::ft_dump())
+        .args([
+            "--hint-slot",
+            "16",
+            "19",
+            "auto",
+            "normal",
+            "--color",
+            "--no-svg",
+        ])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert_eq!(no_svg.status.code(), Some(1));
+    assert!(
+        String::from_utf8(no_svg.stderr)
+            .unwrap()
+            .contains("hint slot error 20")
+    );
     std::fs::remove_file(path).unwrap();
 }
