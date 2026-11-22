@@ -22,7 +22,7 @@ fn command_line(command: Command) -> String {
 }
 
 #[test]
-fn inv1_stroke_reference_closed_contours() {
+fn adr0076_i1_stroke_reference_closed_contours() {
     let triangle = simple_glyph(
         &[&[Pt::On(0, 0), Pt::On(600, 0), Pt::On(200, 700)]],
         false,
@@ -111,7 +111,7 @@ fn inv1_stroke_reference_closed_contours() {
 }
 
 #[test]
-fn inv2_stroke_reuse_preserves_source() {
+fn adr0076_i2_stroke_reuse_preserves_source() {
     let glyph = simple_glyph(
         &[&[Pt::On(0, 0), Pt::On(600, 0), Pt::On(200, 700)]],
         false,
@@ -159,7 +159,7 @@ fn inv2_stroke_reuse_preserves_source() {
 }
 
 #[test]
-fn inv3_stroke_invalid_and_overflow_are_atomic() {
+fn adr0076_i3_stroke_invalid_and_overflow_are_atomic() {
     let glyph = simple_glyph(
         &[&[Pt::On(0, 0), Pt::On(600, 0), Pt::On(200, 700)]],
         false,
@@ -194,7 +194,7 @@ fn inv3_stroke_invalid_and_overflow_are_atomic() {
 }
 
 #[test]
-fn inv1_stroke_real_glyf_and_cff_commands_match_freetype() {
+fn adr0076_i1_stroke_real_glyf_and_cff_commands_match_freetype() {
     let exe = sofel_conformance::paths::ft_dump();
     sofel_conformance::paths::require(&exe, "ft-dump").unwrap();
     let testdata = sofel_conformance::paths::testdata();

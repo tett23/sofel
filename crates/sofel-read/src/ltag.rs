@@ -41,7 +41,7 @@ mod tests {
     use super::Ltag;
 
     #[test]
-    fn i2_last_range_must_end_within_the_table() {
+    fn adr0060_i2_last_range_must_end_within_the_table() {
         let data = [
             0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 20, 0, 2, 0, 22, 0, 2, b's', b'r', b'z', b'h',
         ];

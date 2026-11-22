@@ -6,7 +6,7 @@ use sofel_read::{
 };
 
 #[test]
-fn inv1_layout_sanitization() {
+fn adr0059_i1_layout_sanitization() {
     for (tag, header) in [(b"GSUB", 10u8), (b"GPOS", 10), (b"GDEF", 12)] {
         let tag = Tag::new(tag);
         assert_eq!(assess(tag, None), Admission::Absent);
@@ -34,7 +34,7 @@ fn layout(ty: u16, words: &[u16]) -> Vec<u8> {
 }
 
 #[test]
-fn inv1_pair_set_is_checked_but_device_offset_is_deferred() {
+fn adr0059_i1_pair_set_is_checked_but_device_offset_is_deferred() {
     let table = layout(2, &[1, 0, 0x10, 0, 1, 12, 1, 1, 0xffff]);
     let tag = Tag::new(b"GPOS");
     assert_eq!(assess(tag, Some(&table)), Admission::Accepted);
@@ -45,7 +45,7 @@ fn inv1_pair_set_is_checked_but_device_offset_is_deferred() {
 }
 
 #[test]
-fn inv1_context_class_def_must_fit() {
+fn adr0059_i1_context_class_def_must_fit() {
     let table = layout(5, &[2, 0, 0xffff, 0]);
     assert_eq!(
         assess(Tag::new(b"GSUB"), Some(&table)),
@@ -54,7 +54,7 @@ fn inv1_context_class_def_must_fit() {
 }
 
 #[test]
-fn inv1_unknown_lookup_does_not_read_subtable_format() {
+fn adr0059_i1_unknown_lookup_does_not_read_subtable_format() {
     for tag in [b"GSUB", b"GPOS"] {
         let table = layout(400, &[]);
         assert_eq!(assess(Tag::new(tag), Some(&table)), Admission::Accepted);
@@ -62,7 +62,7 @@ fn inv1_unknown_lookup_does_not_read_subtable_format() {
 }
 
 #[test]
-fn inv1_shared_lookup_consumes_budget_on_every_visit() {
+fn adr0059_i1_shared_lookup_consumes_budget_on_every_visit() {
     for (count, expected) in [(69u16, Admission::Accepted), (70, Admission::Discarded)] {
         let offset = count.saturating_mul(2).saturating_add(2);
         let words = [1, 0, 0, 0, 10, count]

@@ -139,7 +139,7 @@ fn hhea_fields() {
 }
 
 #[test]
-fn inv1_wide_metric_count() {
+fn adr0054_i1_wide_metric_count() {
     for count in [0, 65_536, 16_777_216, u32::MAX] {
         for tag in [b"HHEA", b"VHEA"] {
             let mut bytes = hhea(0);
@@ -161,7 +161,7 @@ fn inv1_wide_metric_count() {
 }
 
 #[test]
-fn inv2_truncated_wide_metric_count() {
+fn adr0054_i2_truncated_wide_metric_count() {
     for tag in [b"HHEA", b"VHEA"] {
         for suffix_len in 0..4 {
             let mut bytes = hhea(0);
@@ -182,7 +182,7 @@ fn inv2_truncated_wide_metric_count() {
 }
 
 #[test]
-fn inv3_narrow_metric_count() {
+fn adr0054_i3_narrow_metric_count() {
     for tag in [b"hhea", b"vhea"] {
         let mut bytes = hhea(0);
         bytes.truncate(34);

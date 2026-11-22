@@ -16,7 +16,7 @@ const TOOLS: [(&str, &str); 5] = [
 ];
 
 #[test]
-fn inv1_help_forms_and_inv2_examples() {
+fn adr0071_i1_i2_help_forms_and_examples() {
     let list = run(BIN, &[]);
     assert!(list.status.success() && list.stderr.is_empty());
     for arg in ["--help", "-h", "help"] {
@@ -40,7 +40,7 @@ fn inv1_help_forms_and_inv2_examples() {
 }
 
 #[test]
-fn inv3_command_parity() {
+fn adr0071_i3_command_parity() {
     for (name, binary) in TOOLS {
         for args in [&[][..], &["missing-example-font.ttf"][..]] {
             let mut unified = vec![name];
@@ -51,7 +51,7 @@ fn inv3_command_parity() {
 }
 
 #[test]
-fn inv4_unknown_command() {
+fn adr0071_i4_unknown_command() {
     for (args, bad) in [
         (&["renderer"][..], "renderer"),
         (&["help", "renderer"], "renderer"),
@@ -80,7 +80,7 @@ fn inv4_unknown_command() {
 mod build;
 
 #[test]
-fn inv3_generated_files_and_output() {
+fn adr0071_i3_generated_files_and_output() {
     use build::*;
     let dir = std::env::temp_dir().join(format!("sofel-parity-{}", std::process::id()));
     let unified = dir.join("unified");

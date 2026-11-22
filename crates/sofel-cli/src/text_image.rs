@@ -312,7 +312,7 @@ mod tests {
     use super::{blend, round_26_6};
 
     #[test]
-    fn adr0071_inv5_rounds_half_toward_positive() {
+    fn adr0071_i5_rounds_half_toward_positive() {
         assert_eq!(round_26_6(31), 0);
         assert_eq!(round_26_6(32), 1);
         assert_eq!(round_26_6(-32), 0);
@@ -320,7 +320,7 @@ mod tests {
     }
 
     #[test]
-    fn adr0071_inv5_source_over_coverage() {
+    fn adr0071_i5_source_over_coverage() {
         assert_eq!(blend(0, 0), 0);
         assert_eq!(blend(0, 255), 255);
         assert_eq!(blend(255, 128), 255);

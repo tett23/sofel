@@ -54,7 +54,7 @@ fn has_color(image: &Image) -> bool {
 
 #[test]
 #[ignore = "requires a generated gallery and renderer binaries"]
-fn i4_i5_published_color_cards_match_solo_and_shaped_glyphs() {
+fn adr0072_i4_i5_published_color_cards_match_solo_and_shaped_glyphs() {
     let output = PathBuf::from(std::env::var_os("SOFEL_GALLERY_OUTPUT").expect("output path"));
     let binaries =
         PathBuf::from(std::env::var_os("SOFEL_GALLERY_BINARIES").expect("binaries path"));
@@ -149,7 +149,7 @@ fn i4_i5_published_color_cards_match_solo_and_shaped_glyphs() {
 
 #[test]
 #[ignore = "requires a generated gallery and renderer binaries"]
-fn i1_i2_noto_color_emoji_pixels_and_published_cards() {
+fn adr0077_i1_i2_noto_color_emoji_pixels_and_published_cards() {
     let output = PathBuf::from(std::env::var_os("SOFEL_GALLERY_OUTPUT").expect("output path"));
     let binaries =
         PathBuf::from(std::env::var_os("SOFEL_GALLERY_BINARIES").expect("binaries path"));

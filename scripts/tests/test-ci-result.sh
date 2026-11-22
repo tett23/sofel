@@ -1,5 +1,5 @@
 #!/bin/sh
-# ADR 0032 I04/I06 and ADR 0034 I04.
+# ADR 0032 I4, I6, ADR 0034 I4.
 [ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"
 set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -10,7 +10,7 @@ export FUZZ_RESULT=skipped BENCH_RESULT=skipped CAPI_WASM_RESULT=skipped
 export GENERATORS_RESULT=skipped
 run
 for value in success failure cancelled ''; do
-  GENERATORS_RESULT=$value run >/dev/null 2>&1 && { echo "ADR0039 I02: accepted $value" >&2; exit 1; }
+  GENERATORS_RESULT=$value run >/dev/null 2>&1 && { echo "ADR 0039 I2: accepted $value" >&2; exit 1; }
 done
 DOCS_ONLY=false bash "$root/scripts/ci-result.sh" >/dev/null 2>&1 && exit 1
 export DOCS_ONLY=false GENERATORS_RESULT=success
@@ -18,7 +18,7 @@ export RUST_RESULT=success CONFORMANCE_RESULT=success WASM_RESULT=success
 export FUZZ_RESULT=success BENCH_RESULT=success CAPI_WASM_RESULT=success
 run
 for value in skipped failure cancelled ''; do
-  GENERATORS_RESULT=$value run >/dev/null 2>&1 && { echo "ADR0039 I01: accepted $value" >&2; exit 1; }
+  GENERATORS_RESULT=$value run >/dev/null 2>&1 && { echo "ADR 0039 I1: accepted $value" >&2; exit 1; }
 done
 for name in CHANGES_RESULT ADR_RESULT RUST_RESULT CONFORMANCE_RESULT WASM_RESULT FUZZ_RESULT BENCH_RESULT CAPI_WASM_RESULT; do
   old=${!name}
@@ -32,4 +32,4 @@ for value in cancelled skipped ''; do
   RUST_RESULT=$value bash "$root/scripts/ci-result.sh" >/dev/null 2>&1 && exit 1
 done
 DOCS_ONLY= bash "$root/scripts/ci-result.sh" >/dev/null 2>&1 && exit 1
-echo 'ok: ADR 0032 I04/I06 and ADR 0034 I04'
+echo 'ADR 0032 I4, I6, ADR 0034 I4: required job results'

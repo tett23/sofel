@@ -75,7 +75,7 @@ fn opens_fonts_and_collections() {
 }
 
 #[test]
-fn inv2_dfont_face_index() {
+fn adr0058_i2_dfont_face_index() {
     let mut second = sample_tables();
     for (tag, data) in &mut second {
         if *tag == b"maxp" {
@@ -305,7 +305,7 @@ fn wide_metrics_win() {
 }
 
 #[test]
-fn inv1_font_metrics() {
+fn adr0054_i1_font_metrics() {
     let wide_header = |count: u32| {
         let mut bytes = hhea(0);
         bytes.truncate(34);

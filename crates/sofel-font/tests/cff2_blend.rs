@@ -33,7 +33,7 @@ fn font_with_store(store: Option<Vec<u8>>) -> Vec<u8> {
 }
 
 #[test]
-fn adr0030_i06_cff2_preserves_zero_columns_and_order() {
+fn adr0030_i6_cff2_preserves_zero_columns_and_order() {
     let store = item_variation_store(
         1,
         &[vec![(0, 0x4000, 0x4000)], vec![(0, 0, 0)]],
@@ -70,7 +70,7 @@ fn adr0030_i06_cff2_preserves_zero_columns_and_order() {
 }
 
 #[test]
-fn adr0030_i06_cff2_distinguishes_empty_columns_from_errors() {
+fn adr0030_i6_cff2_distinguishes_empty_columns_from_errors() {
     let empty = item_variation_store(1, &[vec![(0, 0x4000, 0x4000)]], &[vec![]]);
     let bytes = font_with_store(Some(empty));
     let font = Font::new(&bytes, 0).unwrap();
@@ -137,7 +137,7 @@ fn adr0027_i04_private_dict_reparses_for_each_location() {
 }
 
 #[test]
-fn adr0030_i03_cff2_region_cache_requires_same_source() {
+fn adr0030_i3_cff2_region_cache_requires_same_source() {
     let store = item_variation_store(1, &[vec![(0, 0x4000, 0x4000)]], &[vec![0]]);
     let bytes = font_with_store(Some(store));
     let font = Font::new(&bytes, 0).unwrap();

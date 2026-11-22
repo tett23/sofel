@@ -48,7 +48,7 @@ fn pfr() -> Vec<u8> {
 }
 
 #[test]
-fn i1_font_driver_pfr_face_metrics_and_character_mapping() {
+fn adr0065_i1_font_driver_pfr_face_metrics_and_character_mapping() {
     let data = pfr();
     let face = Font::from_pfr(&data, 0).unwrap();
     assert_eq!(face.face_count(), 1);
@@ -60,7 +60,7 @@ fn i1_font_driver_pfr_face_metrics_and_character_mapping() {
 }
 
 #[test]
-fn i2_decode_bounds_pfr_rejects_truncated_sections_and_glyph_programs() {
+fn adr0065_i2_decode_bounds_pfr_rejects_truncated_sections_and_glyph_programs() {
     let data = pfr();
     for len in 0..data.len() {
         assert!(Font::from_pfr(&data[..len], 0).is_err(), "length {len}");
@@ -88,7 +88,7 @@ fn bitmap_font(program: &[u8]) -> Vec<u8> {
 }
 
 #[test]
-fn i2_decode_bounds_pfr_requires_outlines_or_strikes() {
+fn adr0065_i2_decode_bounds_pfr_requires_outlines_or_strikes() {
     let mut data = pfr();
     data[115] = 0;
     assert!(Font::from_pfr(&data, 0).is_err());

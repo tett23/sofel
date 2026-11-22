@@ -264,6 +264,9 @@ git config core.hooksPath .githooks
 ```
 
 設計判断は `docs/adr/` にADRとして記録する。
+ADR 番号を含むテスト名は、条件番号とその参照先を `sh scripts/check-test-names.sh` で検査する（[ADR 0089](docs/adr/0089-invariant-numbers-and-test-names.md)、[ADR 0099](docs/adr/0099-test-name-reference-exceptions.md)）。
+条件番号を決められない既存テストは [除外一覧](scripts/test-name-exceptions.tsv) にパス、テスト名、理由を記録し、名前の検査だけを除く。
+この検査は文書だけの変更でも CI で実行する。
 
 ツールチェーンは `rust-toolchain.toml` で固定している。テストは次のとおり走らせる。
 
@@ -396,6 +399,8 @@ cargo +nightly fuzz run cmap -- -max_total_time=60
 ```
 
 ## License
+
+テストのために一から作った最小の入力と、それを固定版の HarfBuzz または FreeType に渡した参照出力は同梱する。フォント形式のファイルは `crates/*/tests/data/` または `crates/*/tests/support/` に置き、同じディレクトリの `README.md` にファイルごとの作り方を記録する。`sh scripts/check-fixtures.sh` と CI が置き場所と見出しを検査する（[ADR 0088](docs/adr/0088-synthetic-test-fixtures.md)）。
 
 MIT（[LICENSE](LICENSE)、[ADR 0002](docs/adr/0002-license-and-reuse.md)）。流用したコードの著作権表示は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) に載せる。
 

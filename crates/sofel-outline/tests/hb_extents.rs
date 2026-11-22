@@ -355,7 +355,7 @@ fn adr0027_i04_cff2_blend_changes_harfbuzz_box() {
 }
 
 #[test]
-fn adr0030_i04_cff2_harfbuzz_default_evaluates_zero_peak() {
+fn adr0030_i4_cff2_harfbuzz_default_evaluates_zero_peak() {
     use Cs::*;
     let store = item_variation_store(1, &[vec![(0, 0, 0)]], &[vec![0]]);
     let glyph = charstring(&[

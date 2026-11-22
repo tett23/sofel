@@ -59,7 +59,7 @@ fn variable_color_font() -> Vec<u8> {
 }
 
 #[test]
-fn i05_variable_colr_cases_cover_each_axis_and_change_paint() {
+fn adr0031_i5_variable_colr_cases_cover_each_axis_and_change_paint() {
     let bytes = variable_color_font();
     let font = Font::new(&bytes, 0).unwrap();
     let fvar = Fvar::new(font.table(Tag::new(b"fvar")).unwrap()).unwrap();
@@ -96,7 +96,7 @@ fn i05_variable_colr_cases_cover_each_axis_and_change_paint() {
 }
 
 #[test]
-fn i06_variable_colr_cli_matches_reference() {
+fn adr0031_i6_variable_colr_cli_matches_reference() {
     let file =
         paths::testdata().join("harfbuzz/test/api/fonts/test_glyphs-glyf_colr_1_variable.ttf");
     let cases = variable_color_cases();
@@ -124,7 +124,7 @@ fn i06_variable_colr_cli_matches_reference() {
 
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
-fn i06_variable_colr_reference_matches_pinned_harfbuzz() {
+fn adr0031_i6_variable_colr_reference_matches_pinned_harfbuzz() {
     let exe = paths::hb_dump();
     paths::require(&exe, "hb-dump").unwrap();
     let file =
@@ -149,7 +149,7 @@ fn i06_variable_colr_reference_matches_pinned_harfbuzz() {
 }
 
 #[test]
-fn i05_cff_colr_paint_matches_harfbuzz() {
+fn adr0031_i5_cff_colr_paint_matches_harfbuzz() {
     let bytes = font("color-cff.otf");
     let font = Font::new(&bytes, 0).unwrap();
     let reference = include_str!("../../../conformance/extra-color-cff-paint-hb.txt");
@@ -171,7 +171,7 @@ fn i05_cff_colr_paint_matches_harfbuzz() {
 }
 
 #[test]
-fn i05_sbix_bitmap_matches_harfbuzz() {
+fn adr0031_i5_sbix_bitmap_matches_harfbuzz() {
     let bytes = font("color-sbix.ttf");
     let font = Font::new(&bytes, 0).unwrap();
     let color = include_str!("../../../conformance/extra-color-sbix-hb.txt");
@@ -201,7 +201,7 @@ fn i05_sbix_bitmap_matches_harfbuzz() {
 }
 
 #[test]
-fn i05_sbix_png_bytes_match_harfbuzz() {
+fn adr0031_i5_sbix_png_bytes_match_harfbuzz() {
     let bytes = font("color-sbix.ttf");
     let font = Font::new(&bytes, 0).unwrap();
     let reference = include_str!("../../../conformance/extra-color-sbix-png-hb.txt");
@@ -224,7 +224,7 @@ fn i05_sbix_png_bytes_match_harfbuzz() {
 
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
-fn i06_color_references_match_pinned_harfbuzz() {
+fn adr0031_i6_color_references_match_pinned_harfbuzz() {
     let exe = paths::hb_dump();
     paths::require(&exe, "hb-dump").unwrap();
     for (mode, file, reference) in [

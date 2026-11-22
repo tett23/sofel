@@ -91,7 +91,7 @@ fn compare<A: Arith, B: Eq + core::fmt::Debug>(
 }
 
 #[test]
-fn adr0029_i02_cached_and_live_generated_rows_match_bitwise() {
+fn adr0030_i2_cached_and_live_generated_rows_match_bitwise() {
     let mut generator = Generator(29);
     for case in 0..1000 {
         let axes = 1 + generator.below(8);

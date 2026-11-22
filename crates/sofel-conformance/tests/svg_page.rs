@@ -2,7 +2,7 @@
 use sofel_conformance::svg_page::{compare, observe};
 
 #[test]
-fn i2_svg_observations_preserve_page_geometry_and_paint_order() {
+fn adr0074_i2_svg_observations_preserve_page_geometry_and_paint_order() {
     let reference = r#"<svg width="12" height="15" viewBox="0 0 12 15"><g transform="rotate(10) scale(2)"><path fill="red"/><path fill="blue"/></g></svg>"#;
     let reordered_attrs = r#"<svg viewBox="0 0 12 15" height="15" width="12">
       <g transform="rotate(10) scale(2)"><path fill="red"></path><path fill="blue"/></g>
@@ -21,7 +21,7 @@ fn i2_svg_observations_preserve_page_geometry_and_paint_order() {
 }
 
 #[test]
-fn i2_svg_observations_positioned_glyphs_match_harfbuzz() {
+fn adr0074_i2_svg_observations_positioned_glyphs_match_harfbuzz() {
     for case in ["empty", "single", "translucent-overlap", "clipped-image"] {
         for name in ["page-size", "scene-tree"] {
             assert_eq!(observe(case, name), Ok(()), "{case}/{name}");
@@ -30,7 +30,7 @@ fn i2_svg_observations_positioned_glyphs_match_harfbuzz() {
 }
 
 #[test]
-fn i2_svg_observations_detect_swapped_overlap_and_changed_clip() {
+fn adr0074_i2_svg_observations_detect_swapped_overlap_and_changed_clip() {
     let overlap = include_str!("../../../conformance/svg-page/translucent-overlap.svg");
     let glyphs: Vec<_> = overlap
         .lines()

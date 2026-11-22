@@ -466,7 +466,7 @@ fn adr0027_i2_variable_corpus_normalization_samples() {
 mod variation_locations;
 
 #[test]
-fn adr0030_i01_unrounded_mvar_reference_at_corpus_positions() {
+fn adr0030_i1_unrounded_mvar_reference_at_corpus_positions() {
     use sofel_read::{mvar::Mvar, sfnt::FontFile};
     let mut values = 0;
     let mut fractional = 0;

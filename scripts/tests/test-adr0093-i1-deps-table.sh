@@ -91,7 +91,7 @@ sed -e 's/#.*//' -e 's/[[:space:]]*$//' "$deps" | grep -v '^$' | grep -v '^!' |
   sort >"$tmp/actual" || true
 
 if ! cmp -s "$tmp/expected" "$tmp/actual"; then
-  echo "FAIL: ADR 0093 I1: $deps differs from the ADR tables (< ADR, > deps.txt):" >&2
+  echo "ADR 0093 I1: $deps differs from the ADR tables (< ADR, > deps.txt):" >&2
   diff "$tmp/expected" "$tmp/actual" >&2 || true
   exit 1
 fi
@@ -100,13 +100,13 @@ fi
 if [ -z "${1:-}" ]; then
   grep -v '^sofel-shape sofel-geom$' "$deps" >"$tmp/dropped"
   if sh "$0" "$tmp/dropped" 2>/dev/null; then
-    echo "FAIL: ADR 0093 I1: a deps.txt without 'sofel-shape sofel-geom' was accepted" >&2
+    echo "ADR 0093 I1: a deps.txt without 'sofel-shape sofel-geom' was accepted" >&2
     exit 1
   fi
   { cat "$deps"; echo 'sofel-read sofel-geom'; } >"$tmp/added"
   if sh "$0" "$tmp/added" 2>/dev/null; then
-    echo "FAIL: ADR 0093 I1: a deps.txt with a pair no ADR allows was accepted" >&2
+    echo "ADR 0093 I1: a deps.txt with a pair no ADR allows was accepted" >&2
     exit 1
   fi
-  echo "ok: ADR 0093 I1: scripts/deps.txt equals the ADR tables"
+  echo "ADR 0093 I1: scripts/deps.txt equals the ADR tables"
 fi

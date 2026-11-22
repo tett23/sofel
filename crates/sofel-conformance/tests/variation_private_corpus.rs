@@ -35,7 +35,7 @@ fn corpus_paths(data: &Path) -> Vec<std::path::PathBuf> {
 }
 
 #[test]
-fn adr0030_i06_cff2_private_blend_matches_freetype_at_all_locations() {
+fn adr0030_i6_cff2_private_blend_matches_freetype_at_all_locations() {
     let data = paths::testdata();
     let exe = paths::ft_dump();
     paths::require(&exe, "ft-dump").unwrap();
