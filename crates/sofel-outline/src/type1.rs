@@ -29,8 +29,8 @@ pub fn draw_type1(
 
 /// Draw a Type 1 glyph at Adobe's native path scale and return its
 /// grid-fitted horizontal advance. Horizontal stems declared before the
-/// path are supported for every load target, including Type 1 BlueValues when
-/// the other blue arrays are empty. The caller supplies FreeType's 16.16 size scale.
+/// path are supported for every load target, including Type 1 blue-zone arrays.
+/// The caller supplies FreeType's 16.16 size scale.
 pub fn draw_type1_native(
     face: &Type1Face<'_>,
     glyph: usize,
@@ -52,19 +52,23 @@ pub fn draw_type1_native(
         &mut null_pen,
     );
     decode_program(face, &program, &mut scan, &mut Vec::new(), 0, false)?;
-    let blue_values = if scan.has_stems {
-        face.native_blue_values()
-            .ok_or(OutlineError::UnsupportedFormat)?
-    } else {
-        &[]
-    };
+    let blue_zones = face.native_blue_zones();
+    let has_blue_zones = blue_zones.is_some_and(|zones| {
+        !zones.blue_values.is_empty()
+            || !zones.other_blues.is_empty()
+            || !zones.family_blues.is_empty()
+            || !zones.family_other_blues.is_empty()
+    });
     if scan.has_stems
-        && (scan.unsupported_stem_map || (scan.h_stems.is_empty() && !blue_values.is_empty()))
+        && (scan.unsupported_stem_map
+            || blue_zones.is_none()
+            || (scan.h_stems.is_empty() && has_blue_zones))
     {
         return Err(OutlineError::UnsupportedFormat);
     }
     let mut state = State::new(scale, [65536, 0, 0, 65536, 0, 0], true, pen);
-    if !scan.h_stems.is_empty() && (scan.h_stems.len() > 1 || !blue_values.is_empty()) {
+    if !scan.h_stems.is_empty() && (scan.h_stems.len() > 1 || has_blue_zones) {
+        let blue_zones = blue_zones.ok_or(OutlineError::UnsupportedFormat)?;
         let stems = scan
             .h_stems
             .iter()
@@ -75,10 +79,16 @@ pub fn draw_type1_native(
                 ))
             })
             .collect::<Result<Vec<_>, OutlineError>>()?;
-        state.h_stem_map =
-            Type1HorizontalStemMap::new_with_blues(&stems, ps_native::path_scale(y), blue_values)
-                .ok_or(OutlineError::UnsupportedFormat)
-                .map(Some)?;
+        state.h_stem_map = Type1HorizontalStemMap::new_with_zones(
+            &stems,
+            ps_native::path_scale(y),
+            &blue_zones.blue_values,
+            &blue_zones.other_blues,
+            &blue_zones.family_blues,
+            &blue_zones.family_other_blues,
+        )
+        .ok_or(OutlineError::UnsupportedFormat)
+        .map(Some)?;
     } else if let Some((position, width)) = scan.h_stem {
         state.h_stem_shift = ps_native::single_hstem_shift(position, width, y)
             .ok_or(OutlineError::UnsupportedFormat)?;

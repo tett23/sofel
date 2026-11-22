@@ -777,15 +777,26 @@ impl Type1HorizontalStemMap {
     /// Builds one map from the stems present before the path starts. Each pair
     /// holds its lower edge and width in signed 16.16 character coordinates.
     pub fn new(stems: &[(i32, i32)], scale: i32) -> Option<Self> {
-        Self::new_with_blues(stems, scale, &[])
+        Self::new_with_zones(stems, scale, &[], &[], &[], &[])
     }
 
-    /// Builds a Type 1 map with BlueValues in font units.
-    pub fn new_with_blues(stems: &[(i32, i32)], scale: i32, blue_values: &[i32]) -> Option<Self> {
+    /// Builds a Type 1 map with its four blue arrays in font units.
+    pub fn new_with_zones(
+        stems: &[(i32, i32)],
+        scale: i32,
+        blue_values: &[i32],
+        other_blues: &[i32],
+        family_blues: &[i32],
+        family_other_blues: &[i32],
+    ) -> Option<Self> {
         if stems.is_empty() || stems.len() > MAX_HINTS {
             return None;
         }
-        if blue_values.len() > 14 || !blue_values.len().is_multiple_of(2) {
+        if [blue_values, other_blues, family_blues, family_other_blues]
+            .iter()
+            .zip([14, 10, 14, 10])
+            .any(|(values, limit)| values.len() > limit || !values.len().is_multiple_of(2))
+        {
             return None;
         }
         let mut hints = [StemHint::default(); MAX_HINTS];
@@ -796,10 +807,17 @@ impl Type1HorizontalStemMap {
             *hint = StemHint::new(position, position.checked_add(width)?);
         }
         let mut private = PrivateDict::defaults();
-        private.blue_values.len = u8::try_from(blue_values.len()).ok()?;
-        for (slot, &value) in private.blue_values.values.iter_mut().zip(blue_values) {
-            *slot = i64::from(value) << 16;
+        fn set<const N: usize>(out: &mut super::dict::Deltas<N>, values: &[i32]) -> Option<()> {
+            out.len = u8::try_from(values.len()).ok()?;
+            for (slot, &value) in out.values.iter_mut().zip(values) {
+                *slot = i64::from(value) << 16;
+            }
+            Some(())
         }
+        set(&mut private.blue_values, blue_values)?;
+        set(&mut private.other_blues, other_blues)?;
+        set(&mut private.family_blues, family_blues)?;
+        set(&mut private.family_other_blues, family_other_blues)?;
         let blues = Blues::new(&private, scale);
         let mut stems = Stems {
             h: &mut hints,

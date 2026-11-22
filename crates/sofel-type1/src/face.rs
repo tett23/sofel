@@ -32,7 +32,20 @@ pub struct Type1Face<'a> {
     master_weights: Option<Vec<i32>>,
     attached: Option<AttachedMetrics<'a>>,
     native_stem_blues_empty: bool,
-    native_blue_values: Option<Vec<i32>>,
+    native_blue_zones: Option<NativeBlueZones>,
+}
+
+/// The four Type 1 blue-zone arrays used by the Adobe native hinter.
+#[derive(Clone, Debug)]
+pub struct NativeBlueZones {
+    /// BlueValues in font units.
+    pub blue_values: Vec<i32>,
+    /// OtherBlues in font units.
+    pub other_blues: Vec<i32>,
+    /// FamilyBlues in font units.
+    pub family_blues: Vec<i32>,
+    /// FamilyOtherBlues in font units.
+    pub family_other_blues: Vec<i32>,
 }
 
 #[derive(Clone, Debug)]
@@ -59,7 +72,7 @@ impl<'a> Type1Face<'a> {
             master_weights,
             attached: None,
             native_stem_blues_empty: blue_zones_empty(source.private()),
-            native_blue_values: native_blue_values(source.private()),
+            native_blue_zones: native_blue_zones(source.private()),
         })
     }
 
@@ -68,9 +81,9 @@ impl<'a> Type1Face<'a> {
         self.native_stem_blues_empty
     }
 
-    /// BlueValues for the Adobe native hinter when the other blue arrays are empty.
-    pub fn native_blue_values(&self) -> Option<&[i32]> {
-        self.native_blue_values.as_deref()
+    /// Type 1 blue-zone arrays for the Adobe native hinter.
+    pub fn native_blue_zones(&self) -> Option<&NativeBlueZones> {
+        self.native_blue_zones.as_ref()
     }
 
     /// Multiple Masters axis metadata, when the Type 1 source has it.
@@ -220,23 +233,7 @@ pub(crate) fn blue_zones_empty(data: &[u8]) -> bool {
     })
 }
 
-fn native_blue_values(data: &[u8]) -> Option<Vec<i32>> {
-    for name in [
-        b"/OtherBlues".as_slice(),
-        b"/FamilyBlues",
-        b"/FamilyOtherBlues",
-    ] {
-        let Some(at) = data.windows(name.len()).position(|window| window == name) else {
-            continue;
-        };
-        let start = at.checked_add(name.len())?;
-        let value = data.get(start..)?.trim_ascii_start();
-        let value = value.strip_prefix(b"[")?.trim_ascii_start();
-        if !value.starts_with(b"]") {
-            return None;
-        }
-    }
-    let name = b"/BlueValues";
+fn parse_blue_array(data: &[u8], name: &[u8], limit: usize) -> Option<Vec<i32>> {
     let Some(at) = data.windows(name.len()).position(|window| window == name) else {
         return Some(Vec::new());
     };
@@ -250,5 +247,25 @@ fn native_blue_values(data: &[u8]) -> Option<Vec<i32>> {
         .map(str::parse::<i32>)
         .collect::<Result<Vec<_>, _>>()
         .ok()?;
-    (values.len() <= 14 && values.len().is_multiple_of(2)).then_some(values)
+    (values.len() <= limit && values.len().is_multiple_of(2)).then_some(values)
+}
+
+fn native_blue_zones(data: &[u8]) -> Option<NativeBlueZones> {
+    if [
+        b"/BlueScale".as_slice(),
+        b"/BlueShift",
+        b"/BlueFuzz",
+        b"/LanguageGroup",
+    ]
+    .iter()
+    .any(|name| data.windows(name.len()).any(|window| window == *name))
+    {
+        return None;
+    }
+    Some(NativeBlueZones {
+        blue_values: parse_blue_array(data, b"/BlueValues", 14)?,
+        other_blues: parse_blue_array(data, b"/OtherBlues", 10)?,
+        family_blues: parse_blue_array(data, b"/FamilyBlues", 14)?,
+        family_other_blues: parse_blue_array(data, b"/FamilyOtherBlues", 10)?,
+    })
 }
