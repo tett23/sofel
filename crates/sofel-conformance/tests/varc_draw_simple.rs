@@ -299,10 +299,9 @@ fn adr0064_i1_varc_slot_skips_failed_child_and_keeps_sibling() {
 
 #[test]
 fn adr0067_i3_missing_varc_record_terminates_without_contaminating_next_glyph() {
-    let bytes = std::fs::read(
-        paths::testdata().join("harfbuzz/test/api/fonts/varc-coverage-longer.ttf"),
-    )
-    .unwrap();
+    let bytes =
+        std::fs::read(paths::testdata().join("harfbuzz/test/api/fonts/varc-coverage-longer.ttf"))
+            .unwrap();
     let font = Font::new(&bytes, 0).unwrap();
     let varc = Varc::new(font.table(Tag::new(b"VARC")).unwrap()).unwrap();
     let glyph = (0..font.num_glyphs())
