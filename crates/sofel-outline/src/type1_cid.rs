@@ -81,30 +81,30 @@ pub fn draw_cid_native(
     let mut state = State::new(scale, matrix, true, pen);
     if !groups.is_empty() {
         let blue_zones = blue_zones.ok_or(OutlineError::UnsupportedFormat)?;
-        let maps = groups
-            .iter()
-            .map(|group| {
-                let stems: Vec<_> = group
-                    .iter()
-                    .map(|&(position, width)| (position.wrapping_shl(16), width.wrapping_shl(16)))
-                    .collect();
-                Type1HorizontalStemMap::new_with_zones(
-                    &stems,
-                    ps_native::path_scale(y),
-                    &blue_zones.blue_values,
-                    &blue_zones.other_blues,
-                    &blue_zones.family_blues,
-                    &blue_zones.family_other_blues,
-                    Type1BlueSettings {
-                        blue_scale: blue_zones.blue_scale,
-                        blue_shift: blue_zones.blue_shift,
-                        blue_fuzz: blue_zones.blue_fuzz,
-                        language_group: blue_zones.language_group,
-                    },
-                )
-                .ok_or(OutlineError::UnsupportedFormat)
-            })
-            .collect::<Result<Vec<_>, OutlineError>>()?;
+        let mut maps = Vec::new();
+        for group in &groups {
+            let stems: Vec<_> = group
+                .iter()
+                .map(|&(position, width)| (position.wrapping_shl(16), width.wrapping_shl(16)))
+                .collect();
+            let map = Type1HorizontalStemMap::new_with_zones_and_initial(
+                &stems,
+                ps_native::path_scale(y),
+                &blue_zones.blue_values,
+                &blue_zones.other_blues,
+                &blue_zones.family_blues,
+                &blue_zones.family_other_blues,
+                Type1BlueSettings {
+                    blue_scale: blue_zones.blue_scale,
+                    blue_shift: blue_zones.blue_shift,
+                    blue_fuzz: blue_zones.blue_fuzz,
+                    language_group: blue_zones.language_group,
+                },
+                has_blue_zones.then(|| maps.first()).flatten(),
+            )
+            .ok_or(OutlineError::UnsupportedFormat)?;
+            maps.push(map);
+        }
         state.h_stem_map = maps.first().copied();
         state.replacement_maps = maps.into_iter().skip(1).collect();
     } else if !scan.h_stems.is_empty() && (scan.h_stems.len() > 1 || has_blue_zones) {

@@ -822,6 +822,30 @@ impl Type1HorizontalStemMap {
         family_other_blues: &[i32],
         settings: Type1BlueSettings,
     ) -> Option<Self> {
+        Self::new_with_zones_and_initial(
+            stems,
+            scale,
+            blue_values,
+            other_blues,
+            family_blues,
+            family_other_blues,
+            settings,
+            None,
+        )
+    }
+
+    /// Builds a replacement map while preserving the first hint map's device positions.
+    #[allow(clippy::too_many_arguments)] // The four blue arrays keep FreeType's Private DICT fields distinct.
+    pub fn new_with_zones_and_initial(
+        stems: &[(i32, i32)],
+        scale: i32,
+        blue_values: &[i32],
+        other_blues: &[i32],
+        family_blues: &[i32],
+        family_other_blues: &[i32],
+        settings: Type1BlueSettings,
+        first: Option<&Type1HorizontalStemMap>,
+    ) -> Option<Self> {
         if stems.is_empty() || stems.len() > MAX_HINTS {
             return None;
         }
@@ -863,7 +887,7 @@ impl Type1HorizontalStemMap {
             blues: Some(&blues),
         };
         let mut map = HintMap::new(scale);
-        let mut initial = HintMap::new(scale);
+        let mut initial = first.map_or_else(|| HintMap::new(scale), |first| first.map);
         let mut mask = HintMask::default();
         build(&mut map, &mut initial, &mut stems, &mut mask, 0).ok()?;
         Some(Self { map })
