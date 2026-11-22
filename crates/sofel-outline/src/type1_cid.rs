@@ -3,7 +3,7 @@
 use alloc::vec::Vec;
 
 use sofel_font::CidFace;
-use sofel_font::read::cff::Type1HorizontalStemMap;
+use sofel_font::read::cff::{Type1BlueSettings, Type1HorizontalStemMap};
 use sofel_geom::{FnPen, Pen, Point, mul_fix};
 
 use crate::{CBox, HintTarget, OutlineError, OutlineInfo, Scale, ps_native};
@@ -34,8 +34,8 @@ pub fn draw_cid(
 }
 
 /// Draw a CID-keyed Type 1 glyph at Adobe's native path scale and return its
-/// grid-fitted horizontal advance. Horizontal stems declared before the path,
-/// without blue zones, are supported for every load target.
+/// grid-fitted horizontal advance. Horizontal stems declared before the path
+/// and Font DICT blue zones are supported for every load target.
 pub fn draw_cid_native(
     face: &CidFace,
     cid: usize,
@@ -56,23 +56,45 @@ pub fn draw_cid_native(
     let mut null_pen = FnPen(|_| {});
     let mut scan = State::new(Scale::Unscaled, matrix, false, &mut null_pen);
     decode_program(face, cid, &program, &mut scan, &mut Vec::new(), 0, false)?;
+    let blue_zones = face.native_blue_zones(cid);
+    let has_blue_zones = blue_zones.is_some_and(|zones| {
+        !zones.blue_values.is_empty()
+            || !zones.other_blues.is_empty()
+            || !zones.family_blues.is_empty()
+            || !zones.family_other_blues.is_empty()
+    });
     if scan.has_stems
         && (scan.unsupported_stem_map
             || matrix != [65536, 0, 0, 65536, 0, 0]
-            || !face.native_stem_blues_empty())
+            || blue_zones.is_none()
+            || (scan.h_stems.is_empty() && has_blue_zones))
     {
         return Err(OutlineError::UnsupportedFormat);
     }
     let mut state = State::new(scale, matrix, true, pen);
-    if scan.h_stems.len() > 1 {
+    if !scan.h_stems.is_empty() && (scan.h_stems.len() > 1 || has_blue_zones) {
+        let blue_zones = blue_zones.ok_or(OutlineError::UnsupportedFormat)?;
         let stems: Vec<_> = scan
             .h_stems
             .iter()
             .map(|&(position, width)| (position.wrapping_shl(16), width.wrapping_shl(16)))
             .collect();
-        state.h_stem_map = Type1HorizontalStemMap::new(&stems, ps_native::path_scale(y))
-            .ok_or(OutlineError::UnsupportedFormat)
-            .map(Some)?;
+        state.h_stem_map = Type1HorizontalStemMap::new_with_zones(
+            &stems,
+            ps_native::path_scale(y),
+            &blue_zones.blue_values,
+            &blue_zones.other_blues,
+            &blue_zones.family_blues,
+            &blue_zones.family_other_blues,
+            Type1BlueSettings {
+                blue_scale: blue_zones.blue_scale,
+                blue_shift: blue_zones.blue_shift,
+                blue_fuzz: blue_zones.blue_fuzz,
+                language_group: blue_zones.language_group,
+            },
+        )
+        .ok_or(OutlineError::UnsupportedFormat)
+        .map(Some)?;
     } else if let Some((position, width)) = scan.h_stem {
         state.h_stem_shift =
             ps_native::single_hstem_shift(i64::from(position) << 16, i64::from(width) << 16, y)

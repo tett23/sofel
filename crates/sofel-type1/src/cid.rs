@@ -18,6 +18,7 @@ pub struct CidFace {
     dicts: Vec<FontDict>,
     units_per_em: u16,
     native_stem_blues_empty: bool,
+    native_blue_zones: Vec<Option<crate::face::NativeBlueZones>>,
 }
 
 impl CidFace {
@@ -36,6 +37,32 @@ impl CidFace {
         if let Some(raw) = found.raw {
             data = raw.to_vec();
         }
+        let native_blue_zones = {
+            let marker = b"%ADOBeginFontDict";
+            let mut rest = found.header;
+            let mut zones = Vec::new();
+            while let Some(at) = rest
+                .windows(marker.len())
+                .position(|window| window == marker)
+            {
+                let Some(after) = rest.get(at.saturating_add(marker.len())..) else {
+                    break;
+                };
+                let end = after
+                    .windows(marker.len())
+                    .position(|window| window == marker)
+                    .unwrap_or(after.len());
+                let Some(dict) = after.get(..end) else {
+                    break;
+                };
+                zones.push(crate::face::native_blue_zones(dict));
+                let Some(next) = after.get(end..) else {
+                    break;
+                };
+                rest = next;
+            }
+            zones
+        };
         Ok(Self {
             data,
             cid_count: found.cid_count,
@@ -45,6 +72,7 @@ impl CidFace {
             dicts,
             units_per_em: found.units_per_em,
             native_stem_blues_empty: crate::face::blue_zones_empty(found.header),
+            native_blue_zones,
         })
     }
 
@@ -61,6 +89,17 @@ impl CidFace {
     /// Whether the native single-stem path can ignore PostScript blue zones.
     pub fn native_stem_blues_empty(&self) -> bool {
         self.native_stem_blues_empty
+    }
+
+    /// Blue-zone arrays and settings of the Font DICT selected by `cid`.
+    pub fn native_blue_zones(&self, cid: usize) -> Option<&crate::face::NativeBlueZones> {
+        if cid >= self.cid_count {
+            return None;
+        }
+        let entry = self.fd_bytes.checked_add(self.gd_bytes)?;
+        let map = self.cidmap_offset.checked_add(cid.checked_mul(entry)?)?;
+        let fd = read_be(self.data.get(map..map.checked_add(self.fd_bytes)?)?);
+        self.native_blue_zones.get(fd)?.as_ref()
     }
 
     /// Font DICT transform selected by the CID's FDBytes field.

@@ -28,6 +28,18 @@ end put\n%ADOEndFontDict\ndef\n"
     source
 }
 
+fn cid_sample_with_blue_values(program: &[u8]) -> Vec<u8> {
+    let mut source = cid_sample(program);
+    let old = b"/Private 1 dict begin /lenIV -1 def end";
+    let new = b"/Private 2 dict begin /lenIV -1 def /BlueValues [0 40] def end";
+    let at = source
+        .windows(old.len())
+        .position(|window| window == old)
+        .unwrap();
+    source.splice(at..at.saturating_add(old.len()), new.iter().copied());
+    source
+}
+
 #[test]
 fn adr0064_i1_native_cid_without_stems_matches_freetype() {
     let bytes = cid_sample(&[
@@ -242,6 +254,69 @@ fn adr0064_i1_native_cid_two_horizontal_stems_match_freetype() {
     assert!(reference.status.success());
     assert_eq!(actual, String::from_utf8(reference.stdout).unwrap());
     std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn adr0064_i1_native_cid_blue_values_capture_stem() {
+    let program = &[
+        139, 248, 136, 13, 169, 149, 1, 139, 169, 21, 239, 139, 5, 139, 239, 5, 39, 139, 5, 9, 14,
+    ];
+    let bytes = cid_sample_with_blue_values(program);
+    let path =
+        std::env::temp_dir().join(format!("sofel-adr0064-cid-blue-{}.cid", std::process::id()));
+    std::fs::write(&path, &bytes).unwrap();
+    let face = CidFace::parse(&bytes, 1024).unwrap();
+    let factor = Fixed(div_fix(16 * 64, i32::from(face.units_per_em())));
+    let mut commands = Vec::new();
+    let (_, advance) = draw_cid_native(
+        &face,
+        0,
+        Scale::Scaled {
+            x: factor,
+            y: factor,
+        },
+        HintTarget::Mono,
+        &mut FnPen(|command| commands.push(command)),
+    )
+    .unwrap();
+    let mut points = Vec::new();
+    for command in commands {
+        match command {
+            Command::MoveTo(point) | Command::LineTo(point) => points.push(point),
+            Command::Close => {
+                if points.last() == points.first() {
+                    points.pop();
+                }
+            }
+            other => assert_eq!(other, Command::Close),
+        }
+    }
+    let mut actual = format!("advance {advance} 0\n");
+    for point in &points {
+        actual.push_str(&format!("point {} {} 1\n", point.x, point.y));
+    }
+    actual.push_str(&format!("end {}\n", points.len() - 1));
+    let reference = std::process::Command::new(paths::ft_dump())
+        .args(["--hint-slot", "16", "0", "native", "mono"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(reference.status.success());
+    let plain_path = path.with_file_name(format!(
+        "sofel-adr0064-cid-no-blue-{}.cid",
+        std::process::id()
+    ));
+    std::fs::write(&plain_path, cid_sample(program)).unwrap();
+    let without_blue = std::process::Command::new(paths::ft_dump())
+        .args(["--hint-slot", "16", "0", "native", "mono"])
+        .arg(&plain_path)
+        .output()
+        .unwrap();
+    assert!(without_blue.status.success());
+    assert_ne!(reference.stdout, without_blue.stdout);
+    assert_eq!(actual, String::from_utf8(reference.stdout).unwrap());
+    std::fs::remove_file(path).unwrap();
+    std::fs::remove_file(plain_path).unwrap();
 }
 
 #[test]

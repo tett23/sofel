@@ -258,7 +258,7 @@ fn parse_blue_array(data: &[u8], name: &[u8], limit: usize) -> Option<Vec<i32>> 
     (values.len() <= limit && values.len().is_multiple_of(2)).then_some(values)
 }
 
-fn native_blue_zones(data: &[u8]) -> Option<NativeBlueZones> {
+pub(crate) fn native_blue_zones(data: &[u8]) -> Option<NativeBlueZones> {
     Some(NativeBlueZones {
         blue_values: parse_blue_array(data, b"/BlueValues", 14)?,
         other_blues: parse_blue_array(data, b"/OtherBlues", 10)?,
