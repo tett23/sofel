@@ -247,6 +247,7 @@ jobs:
       - name: Compare real legacy fonts with FreeType
         run: |
           sh tools/ft-dump/build.sh target/testdata/freetype "$RUNNER_TEMP/ft-dump-legacy"
+          SOFEL_FT_DUMP="$RUNNER_TEMP/ft-dump-legacy" cargo test --release -p sofel-conformance --test ps_native_corpus adr0064_i1_real_type1_corpus_matches_freetype
           if [ "$RUNNER_OS" = Linux ]; then
             sh tools/ft-dump/build.sh target/testdata/freetype "$RUNNER_TEMP/ft-dump-brotli" --brotli
             SOFEL_FT_DUMP="$RUNNER_TEMP/ft-dump-legacy" SOFEL_FT_BROTLI_DUMP="$RUNNER_TEMP/ft-dump-brotli" cargo test --release -p sofel-conformance --test legacy_faces

@@ -1,4 +1,5 @@
-//! Opt-in real PostScript corpus comparison for root ADR 0064 I1.
+//! Real PostScript corpus comparison for root ADR 0064 I1 and I2.
+//! Type 1 runs in CI; CID needs an explicitly licensed source before CI can fetch it.
 #![allow(
     clippy::arithmetic_side_effects,
     clippy::expect_used,
@@ -10,8 +11,8 @@ use std::path::Path;
 use std::process::Command as Process;
 
 use sofel_font::{CidFace, Type1Face, Type1Source};
-use sofel_geom::{Command, Fixed, FnPen, Point, div_fix};
-use sofel_outline::{HintTarget, OutlineInfo, Scale, draw_cid_native, draw_type1_native};
+use sofel_geom::{div_fix, Command, Fixed, FnPen, Point};
+use sofel_outline::{draw_cid_native, draw_type1_native, HintTarget, OutlineInfo, Scale};
 use sofel_raster::{FillRule, LcdMode, MonoOptions, Rasterizer, RenderOptions};
 
 fn shifted(command: Command, offset: Point, multiplier: i32) -> Command {
@@ -307,32 +308,37 @@ fn compare(path: &Path, kind: &str, bytes: &[u8]) -> (usize, usize, usize) {
     (checks, slot_failures, bitmap_failures)
 }
 
-#[test]
-fn adr0064_i1_real_ps_corpus_matches_freetype() {
-    let Some(root) = std::env::var_os("SOFEL_PS_NATIVE_CORPUS") else {
-        eprintln!("skip: SOFEL_PS_NATIVE_CORPUS is unset; 0 real corpus comparisons");
-        return;
-    };
-    let root = Path::new(&root);
-    let mut total = (0, 0, 0);
-    for (file, kind) in [("cmr10.pfb", "type1"), ("HangingS.cid", "cid")] {
-        let path = root.join(file);
-        let bytes = std::fs::read(&path).unwrap();
-        let counts = compare(&path, kind, &bytes);
-        eprintln!(
-            "{file}: {} slots, {} slot mismatches, {} bitmap mismatches",
-            counts.0, counts.1, counts.2
-        );
-        total.0 += counts.0;
-        total.1 += counts.1;
-        total.2 += counts.2;
-    }
+fn check_font(path: &Path, kind: &str) {
+    let bytes = std::fs::read(path).unwrap();
+    let counts = compare(path, kind, &bytes);
+    eprintln!(
+        "{}: {} slots, {} slot mismatches, {} bitmap mismatches",
+        path.display(),
+        counts.0,
+        counts.1,
+        counts.2
+    );
     assert_eq!(
-        (total.1, total.2),
+        (counts.1, counts.2),
         (0, 0),
         "{} slots; {} slot mismatches; {} bitmap mismatches",
-        total.0,
-        total.1,
-        total.2
+        counts.0,
+        counts.1,
+        counts.2
     );
+}
+
+#[test]
+fn adr0064_i1_real_type1_corpus_matches_freetype() {
+    let path = sofel_conformance::paths::testdata().join("extra-fonts/fonts/cmr10.pfb");
+    check_font(&path, "type1");
+}
+
+#[test]
+fn adr0064_i1_real_cid_corpus_matches_freetype_when_available() {
+    let Some(root) = std::env::var_os("SOFEL_PS_NATIVE_CORPUS") else {
+        eprintln!("skip: SOFEL_PS_NATIVE_CORPUS is unset; 0 real CID comparisons");
+        return;
+    };
+    check_font(&Path::new(&root).join("HangingS.cid"), "cid");
 }
