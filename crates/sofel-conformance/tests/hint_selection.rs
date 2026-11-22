@@ -755,3 +755,81 @@ fn adr0064_i1_reference_auto_style_distinguishes_cmap_and_fallback() {
         );
     }
 }
+
+#[test]
+fn adr0064_i1_cli_engine_selects_cff_native_and_none() {
+    use cff_build::{Cff1Spec, Cs, cff1, charstring, otto_font};
+    let glyphs = vec![
+        charstring(&[Cs::Op(14)]),
+        charstring(&[
+            Cs::I(0),
+            Cs::I(0),
+            Cs::Op(21),
+            Cs::I(500),
+            Cs::Op(6),
+            Cs::I(700),
+            Cs::Op(7),
+            Cs::Op(14),
+        ]),
+    ];
+    let bytes = otto_font(2, vec![(b"CFF ", cff1(&Cff1Spec::new(glyphs)))]);
+    let path =
+        std::env::temp_dir().join(format!("sofel-adr0064-cli-cff-{}.otf", std::process::id()));
+    std::fs::write(&path, bytes).unwrap();
+    for engine in ["native", "none"] {
+        for target in ["normal", "light", "mono", "lcd", "lcd-v"] {
+            let args = [
+                "--engine", engine, "--ppem", "16", "--glyph", "1", "--target", target,
+            ]
+            .into_iter()
+            .map(std::ffi::OsString::from)
+            .chain(core::iter::once(path.as_os_str().to_owned()))
+            .collect::<Vec<_>>();
+            let (mut actual, mut error) = (Vec::new(), Vec::new());
+            assert_eq!(
+                sofel_cli::hint::run(&args, &mut actual, &mut error),
+                0,
+                "{engine} {target}: {}",
+                String::from_utf8_lossy(&error)
+            );
+            let expected = Command::new(paths::ft_dump())
+                .args(["--hint-slot", "16", "1", engine, target])
+                .arg(&path)
+                .output()
+                .unwrap();
+            assert!(expected.status.success());
+            assert_eq!(actual, expected.stdout, "{engine} {target}");
+        }
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn adr0064_i1_cli_engine_selects_glyf_native_and_none() {
+    let path = paths::testdata().join("extra-fonts/fonts/caveat.ttf");
+    for engine in ["native", "none"] {
+        for target in ["normal", "light", "mono", "lcd", "lcd-v"] {
+            let args = [
+                "--engine", engine, "--ppem", "16", "--glyph", "1", "--target", target,
+            ]
+            .into_iter()
+            .map(std::ffi::OsString::from)
+            .chain(core::iter::once(path.as_os_str().to_owned()))
+            .collect::<Vec<_>>();
+            let (mut actual, mut error) = (Vec::new(), Vec::new());
+            assert_eq!(
+                sofel_cli::hint::run(&args, &mut actual, &mut error),
+                0,
+                "{engine} {target}: {}",
+                String::from_utf8_lossy(&error)
+            );
+            let expected = Command::new(paths::ft_dump())
+                .args(["--hint-slot", "16", "1", engine, target])
+                .arg(&path)
+                .output()
+                .unwrap();
+            assert!(expected.status.success());
+            assert_eq!(actual, expected.stdout, "{engine} {target}");
+        }
+    }
+}

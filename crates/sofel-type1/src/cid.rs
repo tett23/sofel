@@ -134,6 +134,20 @@ impl CidFace {
         decrypt_charstring(self.data.get(off1..off2)?, len_iv)
     }
 
+    /// Whether a valid CID has no charstring bytes in CIDMap.
+    pub fn glyph_is_empty(&self, cid: usize) -> Option<bool> {
+        if cid >= self.cid_count {
+            return None;
+        }
+        let entry = self.fd_bytes.checked_add(self.gd_bytes)?;
+        let map = self.cidmap_offset.checked_add(cid.checked_mul(entry)?)?;
+        let first = map.checked_add(self.fd_bytes)?;
+        let off1 = read_be(self.data.get(first..first.checked_add(self.gd_bytes)?)?);
+        let next = map.checked_add(entry)?.checked_add(self.fd_bytes)?;
+        let off2 = read_be(self.data.get(next..next.checked_add(self.gd_bytes)?)?);
+        (off1 <= off2 && off2 <= self.data.len()).then_some(off1 == off2)
+    }
+
     /// Decrypted Font DICT subroutine selected by a CID and local index.
     ///
     /// Allocates the decrypted subroutine (ADR 0094).

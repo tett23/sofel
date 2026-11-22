@@ -2090,3 +2090,119 @@ fn adr0064_i1_native_type1_fractional_coordinate_matches_freetype() {
     }
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn adr0064_i1_cli_type1_and_cid_slots_match_freetype() {
+    let program = [
+        139, 248, 136, 13, 239, 189, 1, 239, 239, 21, 239, 139, 5, 139, 239, 5, 39, 39, 5, 9, 14,
+    ];
+    let (pfa, _) = triangle::with_glyph_program(&program);
+    let cid = cid_sample(&program);
+    for (kind, bytes, glyph) in [("type1", pfa, "1"), ("cid", cid, "0")] {
+        let path = std::env::temp_dir().join(format!(
+            "sofel-adr0064-cli-{kind}-{}.{}",
+            std::process::id(),
+            if kind == "type1" { "pfa" } else { "cid" }
+        ));
+        std::fs::write(&path, &bytes).unwrap();
+        for engine in ["native", "none"] {
+            for (name, _) in [
+                ("normal", HintTarget::Normal),
+                ("light", HintTarget::Light),
+                ("mono", HintTarget::Mono),
+                ("lcd", HintTarget::Lcd),
+                ("lcd-v", HintTarget::VerticalLcd),
+            ] {
+                let args = [
+                    "--engine",
+                    engine,
+                    "--ppem",
+                    "16",
+                    "--glyph",
+                    glyph,
+                    "--target",
+                    name,
+                    path.to_str().unwrap(),
+                ]
+                .map(std::ffi::OsString::from);
+                let (mut actual, mut error) = (Vec::new(), Vec::new());
+                assert_eq!(
+                    sofel_cli::hint::run(&args, &mut actual, &mut error),
+                    0,
+                    "{kind} {name}: {}",
+                    String::from_utf8_lossy(&error)
+                );
+                let reference = std::process::Command::new(paths::ft_dump())
+                    .args(["--hint-slot", "16", glyph, engine, name])
+                    .arg(&path)
+                    .output()
+                    .unwrap();
+                assert!(reference.status.success());
+                assert_eq!(actual, reference.stdout, "{kind} {name}");
+            }
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+}
+
+#[test]
+fn adr0064_i1_native_empty_cid_with_leniv_matches_freetype() {
+    let mut bytes = cid_sample(&[]);
+    let old = b"/lenIV -1";
+    let new = b"/lenIV 4";
+    let at = bytes
+        .windows(old.len())
+        .position(|window| window == old)
+        .unwrap();
+    bytes.splice(at..at + old.len(), new.iter().copied());
+    let path = std::env::temp_dir().join(format!(
+        "sofel-adr0064-empty-cid-{}.cid",
+        std::process::id()
+    ));
+    std::fs::write(&path, &bytes).unwrap();
+    let face = CidFace::parse(&bytes, 1024).unwrap();
+    assert_eq!(face.glyph_is_empty(0), Some(true));
+    for name in ["normal", "light", "mono", "lcd", "lcd-v"] {
+        let mut commands = Vec::new();
+        let (_, advance) = draw_cid_native(
+            &face,
+            0,
+            Scale::Scaled {
+                x: Fixed(div_fix(16 * 64, i32::from(face.units_per_em()))),
+                y: Fixed(div_fix(16 * 64, i32::from(face.units_per_em()))),
+            },
+            HintTarget::Normal,
+            &mut FnPen(|command| commands.push(command)),
+        )
+        .unwrap();
+        assert!(commands.is_empty());
+        let actual = format!("advance {advance} 0\n");
+        let reference = std::process::Command::new(paths::ft_dump())
+            .args(["--hint-slot", "16", "0", "native", name])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(reference.status.success());
+        assert_eq!(actual.as_bytes(), reference.stdout, "{name}");
+        let args = [
+            "--engine", "none", "--ppem", "16", "--glyph", "0", "--target", name,
+            path.to_str().unwrap(),
+        ]
+        .map(std::ffi::OsString::from);
+        let (mut cli, mut error) = (Vec::new(), Vec::new());
+        assert_eq!(
+            sofel_cli::hint::run(&args, &mut cli, &mut error),
+            0,
+            "{}",
+            String::from_utf8_lossy(&error)
+        );
+        let unhinted = std::process::Command::new(paths::ft_dump())
+            .args(["--hint-slot", "16", "0", "none", name])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(unhinted.status.success());
+        assert_eq!(cli, unhinted.stdout, "{name}");
+    }
+    std::fs::remove_file(path).unwrap();
+}

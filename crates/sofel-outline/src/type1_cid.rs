@@ -46,6 +46,9 @@ pub fn draw_cid_native(
     let Scale::Scaled { x, y } = scale else {
         return Err(OutlineError::InvalidOutline);
     };
+    if face.glyph_is_empty(cid) == Some(true) {
+        return Ok((OutlineInfo::default(), 0));
+    }
     let program = face
         .glyph_program(cid)
         .ok_or(OutlineError::InvalidGlyphIndex)?;

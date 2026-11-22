@@ -78,6 +78,10 @@ pub fn draw_type1_native(
         let blue_zones = blue_zones.ok_or(OutlineError::UnsupportedFormat)?;
         let mut maps = Vec::new();
         for group in &groups {
+            if group.is_empty() {
+                maps.push(None);
+                continue;
+            }
             let stems = group
                 .iter()
                 .map(|&(position, width)| {
@@ -100,12 +104,14 @@ pub fn draw_type1_native(
                     blue_fuzz: blue_zones.blue_fuzz,
                     language_group: blue_zones.language_group,
                 },
-                has_blue_zones.then(|| maps.first()).flatten(),
+                has_blue_zones
+                    .then(|| maps.first().and_then(Option::as_ref))
+                    .flatten(),
             )
             .ok_or(OutlineError::UnsupportedFormat)?;
-            maps.push(map);
+            maps.push(Some(map));
         }
-        state.h_stem_map = maps.first().copied();
+        state.h_stem_map = maps.first().copied().flatten();
         state.replacement_maps = maps.into_iter().skip(1).collect();
     } else if !scan.h_stems.is_empty() && (scan.h_stems.len() > 1 || has_blue_zones) {
         let blue_zones = blue_zones.ok_or(OutlineError::UnsupportedFormat)?;
@@ -361,7 +367,7 @@ fn decode_program<P: Pen>(
                                 if let Some(map) =
                                     state.replacement_maps.get(state.replacement_index)
                                 {
-                                    state.h_stem_map = Some(*map);
+                                    state.h_stem_map = *map;
                                     state.replacement_index =
                                         state.replacement_index.saturating_add(1);
                                 }
@@ -542,7 +548,7 @@ struct State<'a, P: Pen> {
     h_stem: Option<(i64, i64)>,
     h_stems: Vec<(i64, i64)>,
     hint_groups: Vec<Vec<(i64, i64)>>,
-    replacement_maps: Vec<Type1HorizontalStemMap>,
+    replacement_maps: Vec<Option<Type1HorizontalStemMap>>,
     replacement_index: usize,
     h_stem_shift: i64,
     h_stem_map: Option<Type1HorizontalStemMap>,
