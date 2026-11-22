@@ -122,7 +122,7 @@ fn adr0100_i1_i2_real_bitmap_and_type1_advances() {
 
 #[test]
 fn adr0100_i1_i2_real_sfnt_fixed_strike_advances() -> Result<(), &'static str> {
-    for name in ["spleen-8x16.dfont", "color-noto-cbdt.ttf"] {
+    for name in ["spleen-8x16.dfont", "color-noto-cbdt.ttf", "color-sbix.ttf"] {
         let path = paths::testdata().join("extra-fonts/fonts").join(name);
         let bytes = std::fs::read(&path).unwrap();
         let data = FaceData::new(&bytes).unwrap();
@@ -185,7 +185,13 @@ fn adr0100_i1_i2_real_sfnt_fixed_strike_advances() -> Result<(), &'static str> {
         }
         assert_eq!(
             checked,
-            if name.ends_with(".dfont") { 1021 } else { 42 },
+            if name.ends_with(".dfont") {
+                1021
+            } else if name.ends_with("cbdt.ttf") {
+                42
+            } else {
+                19
+            },
             "{name}"
         );
     }

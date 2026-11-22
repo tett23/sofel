@@ -364,4 +364,45 @@ fn adr0100_i1_i6_c_sfnt_fixed_strike_metrics_and_pixels() {
         sofel_outline_scratch_destroy(scratch);
         sofel_rasterizer_destroy(raster);
     }
+
+    let hex = bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let wrapper = format!(
+        "%!PS-TrueTypeFont-1.0\n/FontType 42 def\n/Encoding StandardEncoding def\n/CharStrings 2 dict dup begin\n/.notdef 0 def\n/A 1 def\nend readonly def\n/sfnts [<{hex}>] def\n"
+    );
+    // SAFETY: wrapper bytes and error output are live and disjoint.
+    let face = unsafe { sofel_face_create(wrapper.as_ptr(), wrapper.len(), 0, &mut error) };
+    assert!(!face.is_null());
+    // SAFETY: face and output pointer are live.
+    let advance_status = unsafe { sofel_face_h_advance(face, 1, 16, 0, &mut advance) };
+    assert_eq!(advance_status, 0);
+    assert_eq!(advance, 256);
+    let scratch = sofel_outline_scratch_create();
+    let raster = sofel_rasterizer_create();
+    pixels.fill(0);
+    // SAFETY: all handles and output pointers are live and disjoint.
+    let status = unsafe {
+        sofel_face_render_glyph(
+            face,
+            1,
+            16,
+            0,
+            scratch,
+            raster,
+            pixels.as_mut_ptr(),
+            pixels.len(),
+            &mut len,
+            box_.as_mut_ptr(),
+        )
+    };
+    assert_eq!(status, 0);
+    assert_eq!(pixels, [255, 255, 255, 255, 0, 255]);
+    // SAFETY: each handle is destroyed once.
+    unsafe {
+        sofel_face_destroy(face);
+        sofel_outline_scratch_destroy(scratch);
+        sofel_rasterizer_destroy(raster);
+    }
 }
