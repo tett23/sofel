@@ -104,7 +104,7 @@ fn errors() {
 }
 
 #[test]
-fn adr0086_cli_hint_properties() {
+fn adr0086_i2_i4_cli_hint_properties() {
     let f = font_file("hint-properties");
     let path = f.to_str().unwrap();
     let (code, image, err) = run(&[
