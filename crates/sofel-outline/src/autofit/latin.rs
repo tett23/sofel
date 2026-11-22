@@ -108,6 +108,7 @@ pub(super) struct LatinMetrics {
 /// `af_latin_metrics_init_widths` (also used by the CJK writing system).
 pub(super) fn init_widths(
     face: &Face<'_, '_, '_, '_>,
+    style: usize,
     script: usize,
     units_per_em: i64,
     axes: &mut [(Vec<Width>, i64, i64); 2],
@@ -118,7 +119,7 @@ pub(super) fn init_widths(
         while p.first() == Some(&b' ') {
             p = &p[1..];
         }
-        let (rest, count, glyph) = next_cluster(face, p);
+        let (rest, count, glyph) = next_cluster(face, style, p);
         p = rest;
         if count > 1 {
             continue;
@@ -187,6 +188,7 @@ fn is_top_or_sub_top(flags: u32) -> bool {
 fn init_blues(
     face: &Face<'_, '_, '_, '_>,
     metrics: &mut LatinMetrics,
+    style: usize,
     blue_stringset: usize,
 ) -> bool {
     let flat_threshold = metrics.units_per_em / 14;
@@ -209,15 +211,20 @@ fn init_blues(
             while p.first() == Some(&b' ') {
                 p = &p[1..];
             }
-            let (rest, num_idx, glyph_index) = next_cluster(face, p);
+            let cluster = p;
+            let (rest, num_idx, glyph_index) = next_cluster(face, style, p);
             p = rest;
             if num_idx == 0 {
                 continue;
             }
             let mut best_y_extremum = if is_top { i64::MIN } else { i64::MAX };
             let mut best_round = false;
-            for _ in 0..num_idx {
-                let y_offset = 0;
+            for n in 0..num_idx {
+                let shaped = face
+                    .shaped_cluster(style, cluster)
+                    .and_then(|glyphs| glyphs.get(n as usize));
+                let glyph_index = shaped.map_or(glyph_index, |glyph| glyph.glyph);
+                let y_offset = shaped.map_or(0, |glyph| i64::from(glyph.y_offset));
                 if glyph_index == 0 {
                     continue;
                 }
@@ -551,12 +558,13 @@ pub(super) fn blue_string(offset: u16) -> &'static [u8] {
 }
 
 /// `af_latin_metrics_check_digits` (also used by CJK).
-pub(super) fn check_digits(face: &Face<'_, '_, '_, '_>) -> bool {
+pub(super) fn check_digits(face: &Face<'_, '_, '_, '_>, style: usize) -> bool {
     let mut started = false;
     let mut old_advance = 0;
     let mut p: &[u8] = b"0 1 2 3 4 5 6 7 8 9";
     while !p.is_empty() {
-        let (rest, num_idx, glyph_index) = next_cluster(face, p);
+        let cluster = p;
+        let (rest, num_idx, glyph_index) = next_cluster(face, style, p);
         p = rest;
         if num_idx > 1 {
             continue;
@@ -564,7 +572,13 @@ pub(super) fn check_digits(face: &Face<'_, '_, '_, '_>) -> bool {
         if glyph_index == 0 {
             continue;
         }
-        let advance = face.get_advance(glyph_index);
+        let advance = face
+            .shaped_cluster(style, cluster)
+            .and_then(|glyphs| glyphs.first())
+            .map_or_else(
+                || face.get_advance(glyph_index),
+                |glyph| i64::from(glyph.x_advance),
+            );
         if started {
             if advance != old_advance {
                 return false;
@@ -598,7 +612,7 @@ fn adjustment_lookup(codepoint: u32) -> u32 {
 
 /// `af_reverse_character_map_new` without HarfBuzz: the inverted cmap of
 /// the code points in the adjustment database, later entries winning.
-fn reverse_character_map(face: &Face<'_, '_, '_, '_>) -> Vec<(u32, u32)> {
+fn reverse_character_map(face: &Face<'_, '_, '_, '_>, style: usize) -> Vec<(u32, u32)> {
     let mut map: Vec<(u32, u32)> = Vec::new();
     for &(codepoint, _) in ADJUSTMENTS {
         let glyph = face.char_index(codepoint);
@@ -608,6 +622,15 @@ fn reverse_character_map(face: &Face<'_, '_, '_, '_>) -> Vec<(u32, u32)> {
         match map.binary_search_by_key(&glyph, |&(g, _)| g) {
             Ok(i) => map[i].1 = codepoint,
             Err(i) => map.insert(i, (glyph, codepoint)),
+        }
+    }
+    if let Some(data) = face.shaping {
+        for &(entry_style, glyph, codepoint) in &data.reverse {
+            if usize::from(entry_style) == style
+                && let Err(index) = map.binary_search_by_key(&glyph, |&(g, _)| g)
+            {
+                map.insert(index, (glyph, codepoint));
+            }
         }
     }
     map
@@ -624,7 +647,7 @@ pub(super) fn metrics_init(face: &Face<'_, '_, '_, '_>, style: usize) -> Option<
     if face.has_unicode() {
         let script = usize::from(STYLES[style].script);
         let mut axes = [(Vec::new(), 0, 0), (Vec::new(), 0, 0)];
-        init_widths(face, script, metrics.units_per_em, &mut axes);
+        init_widths(face, style, script, metrics.units_per_em, &mut axes);
         for (axis, (widths, threshold, standard)) in metrics.axis.iter_mut().zip(axes) {
             axis.widths = widths;
             axis.edge_distance_threshold = threshold;
@@ -634,13 +657,14 @@ pub(super) fn metrics_init(face: &Face<'_, '_, '_, '_>, style: usize) -> Option<
         if !init_blues(
             face,
             &mut metrics,
+            style,
             usize::from(STYLES[style].blue_stringset),
         ) {
             return None;
         }
-        metrics.digits_have_same_width = check_digits(face);
+        metrics.digits_have_same_width = check_digits(face, style);
     }
-    metrics.reverse_charmap = reverse_character_map(face);
+    metrics.reverse_charmap = reverse_character_map(face, style);
     Some(metrics)
 }
 

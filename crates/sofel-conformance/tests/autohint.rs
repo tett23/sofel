@@ -193,8 +193,14 @@ fn reference(
     variations: Option<&str>,
     (first, last): (u16, u16),
     target: &str,
+    use_gsub: bool,
 ) -> BTreeMap<(u16, u32), Vec<String>> {
-    let mut command = Command::new(paths::ft_dump());
+    let executable = if use_gsub {
+        paths::ft_dump_hb()
+    } else {
+        paths::ft_dump()
+    };
+    let mut command = Command::new(executable);
     command.args(["--auto-hint", &first.to_string(), &last.to_string(), target]);
     if let Some(v) = variations {
         command.arg(format!("--variations={v}"));
@@ -245,7 +251,7 @@ struct Failure {
     detail: String,
 }
 
-fn compare_font(relative: &str, variations: Option<&str>, stats: &mut Stats) {
+fn compare_font(relative: &str, variations: Option<&str>, use_gsub: bool, stats: &mut Stats) {
     let path = paths::testdata().join(relative);
     let data = std::fs::read(&path).unwrap();
     let font = Font::new(&data, 0).unwrap();
@@ -267,9 +273,13 @@ fn compare_font(relative: &str, variations: Option<&str>, stats: &mut Stats) {
     let mut scratch = Scratch::default();
     let mut raster = Rasterizer::new();
     for (name, target) in TARGETS {
-        let mut cache = AutoHintCache::new(&outlines);
+        let mut cache = if use_gsub {
+            sofel_cli::hint::gsub_cache(&outlines).unwrap()
+        } else {
+            AutoHintCache::new(&outlines)
+        };
         for &size in &sizes {
-            let expected = reference(&path, variations, (size, size), name);
+            let expected = reference(&path, variations, (size, size), name, use_gsub);
             for (&(ppem, gid), expected) in &expected {
                 stats.compared += 1;
                 let loaded =
@@ -344,7 +354,7 @@ fn adr0064_i1_i2_auto_hinted_slots_and_bitmaps_match_freetype() {
     };
     let mut stats = Stats::default();
     for (font, variations) in &fonts {
-        compare_font(font, variations.as_deref(), &mut stats);
+        compare_font(font, variations.as_deref(), false, &mut stats);
     }
     let expected = expected_failures();
     let unexpected: Vec<&Failure> = stats
@@ -391,6 +401,36 @@ fn adr0064_i1_i2_auto_hinted_slots_and_bitmaps_match_freetype() {
         unexpected.len()
     );
     assert!(stale.is_empty(), "expected failures that pass: {stale:?}");
+}
+
+#[test]
+fn adr0085_a1_gsub_hinted_slots_and_bitmaps_match_harfbuzz_freetype() {
+    let fonts: Vec<(String, Option<String>)> = match std::env::var("SOFEL_AUTOHINT_FONTS") {
+        Ok(list) => list
+            .split(':')
+            .map(|font| (font.to_owned(), None))
+            .collect(),
+        Err(_) => CORPUS
+            .iter()
+            .map(|(font, variation)| (font.to_string(), variation.map(str::to_string)))
+            .collect(),
+    };
+    let mut stats = Stats::default();
+    for (font, variation) in &fonts {
+        compare_font(font, variation.as_deref(), true, &mut stats);
+    }
+    eprintln!(
+        "adr0085: {} slots, {} loaded, {} rendered, {} mismatched",
+        stats.compared,
+        stats.loaded,
+        stats.rendered,
+        stats.failures.len()
+    );
+    for failure in stats.failures.iter().take(40) {
+        eprintln!("{} {}", failure.id, failure.detail);
+    }
+    assert!(stats.loaded > 0);
+    assert_eq!(stats.failures.len(), 0);
 }
 
 /// `conformance/expected-failures-autohint.txt`: `<id>  # <reason>`.
