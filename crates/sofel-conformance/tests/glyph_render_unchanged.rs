@@ -5,6 +5,11 @@
 //!
 //! The expected hashes come from this same file run against the code
 //! before the move (main at 50d02387, with `use sofel_cli::glyph;`).
+//! GRAY includes the later VARC slot loading of root ADR 0064: only
+//! cff2-varc-short-fdselect0-oob.otf changes among these 120 inputs.
+//! That malformed fuzz font lacks hmtx (FreeType rejects the face with
+//! Hmtx_Table_Missing); this snapshot covers the raw Rust font views.
+//! Valid VARC faces are compared with FreeType in cff_hint.rs.
 
 #![allow(
     clippy::unwrap_used,
@@ -144,7 +149,7 @@ fn adr0095_i3_color_glyphs_render_as_before_the_move() {
 /// Gray bitmaps and errors (empty glyphs, outlines that cannot be loaded,
 /// rasterizer errors) of the fuzzing fonts.
 #[test]
-fn adr0095_i3_gray_glyphs_and_errors_render_as_before_the_move() {
+fn adr0095_i3_gray_glyphs_and_errors_preserve_reviewed_output() {
     let dir = "harfbuzz/test/fuzzing/fonts";
     let mut fonts: Vec<String> = std::fs::read_dir(paths::testdata().join(dir))
         .unwrap()
@@ -182,5 +187,5 @@ fn adr0095_i3_type1_glyphs_render_as_before_the_move() {
 }
 
 const COLOR: (u64, usize, usize) = (0x5c44_1a1c_d90f_04fd, 1672, 392);
-const GRAY: (u64, usize, usize) = (0x856f_dd26_aacc_8839, 1136, 2);
+const GRAY: (u64, usize, usize) = (0x70c7_dd76_0cb0_f0f1, 1136, 2);
 const TYPE1: u64 = 0x2ee4_18ea_91e2_1545;
