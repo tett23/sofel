@@ -545,6 +545,8 @@ flowchart BT
 
 ## 固定サイズのビットマップフェイス
 
+旧形式の適合テストは、Spleen 2.3.0 の BDF、PCF、FON、WOFF、WOFF2、dfont と、Computer Modern の cmr10 PFB、PFM、AFM を `fonts.lock` と `conformance/fonts.tsv` から取得する。取得時はバイト数と SHA-256 を検査し、tar.gz からは一覧に書いた通常ファイルだけを展開する。`legacy_faces` は固定版 FreeType とフェイス数、文字対応、送り、ストライク、画像、輪郭、カーニング、Web フォントの復元表を照合する。Spleen FON の幅0のグリフ、cmr10 の Unicode 対応87件と Type1 charstring 49件、WOFF2 の `head.checkSumAdjustment` は、[root ADR 0065](adr/0065-legacy-faces-and-webfonts.md) の残る差として `conformance/expected-failures-legacy.txt` に記録する（[root ADR 0090](adr/0090-legacy-format-conformance-fonts.md)）。
+
 `Font::from_bitmap` は BDF、PCF、Windows FNT、FON の署名を識別し、指定した番号のフェイスを開く。
 フェイスから文字に対応するグリフ番号、ストライクのサイズ、グリフの送り幅と画像を取得する。
 `sofel-render` もこの形式判定とフェイス操作を使う（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。

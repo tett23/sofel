@@ -24,3 +24,9 @@ stix-license	https://raw.githubusercontent.com/stipub/stixfonts/bea1dc9a3cc2d8b5
 source-han-license	https://raw.githubusercontent.com/adobe-fonts/source-han-sans/6c709ca72d3d7c46ab42ebecc1a26e7d69595a37/LICENSE.txt	fcac737e761ec63dbfbdce11030a1780161920d80315edba9c8beff1c2bac5a2	4463	licenses/source-han-license.txt
 amstelvar-license	https://raw.githubusercontent.com/googlefonts/amstelvar-avar2/8727e9b81b944be8b9b9188a19ba9cf19b867d95/OFL.txt	04df29c2a08f5900737df1015c277cd91321785c00bdb9f66cbb2c03228d22d5	4493	licenses/amstelvar-license.txt
 color-license	https://raw.githubusercontent.com/googlefonts/color-fonts/e830e042b0e93fd5b0197a7fe9f0398f6d87f467/LICENSE	cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30	11358	licenses/color-license.txt
+spleen-archive	https://github.com/fcambus/spleen/releases/download/2.3.0/spleen-2.3.0.tar.gz	7b5729aaa8378e9987eccdb98c644180a875dcc22ee7258d8be3791238b87a02	693236	archives/spleen-2.3.0.tar.gz
+spleen-license	https://raw.githubusercontent.com/fcambus/spleen/2.3.0/LICENSE	f33fe8679d5b2abecc4f1313ce6c6bfa58262964de5f7bca146596a7318047af	1313	licenses/spleen-LICENSE
+cmr10-pfb	https://mirrors.ctan.org/fonts/amsfonts/pfb/cmr10.pfb	fdcede8794018df5f2b58f0905fb20a2b418ed8f67b73ee12445855dfbe5b1be	35752	fonts/cmr10.pfb
+cmr10-pfm	https://mirrors.ctan.org/fonts/amsfonts/pfb/cmr10.pfm	f953f9b5faebd47ca1422fcab7013f1c3f82e7c472381902befa2a6c98d6c2fe	1304	fonts/cmr10.pfm
+cmr10-afm	https://mirrors.ctan.org/fonts/amsfonts/afm/cmr10.afm	8df68c822c3217c67dee325d5f7d80c6b9e492293bca366db679a5b0b5e1825b	10162	fonts/cmr10.afm
+cmr10-license	https://mirrors.ctan.org/fonts/amsfonts/doc/OFL.txt	aa783fdd47e92743bafe79277ac4067d20339344dc5b64a09c2d0f869b2999dc	12520	licenses/cmr10-OFL.txt

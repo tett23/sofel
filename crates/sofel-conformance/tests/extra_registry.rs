@@ -34,7 +34,15 @@ fn i05_every_registered_font_has_a_role() {
         include_str!("../../../conformance/fonts.tsv"),
     )
     .unwrap();
-    assert_eq!(corpus.fonts.len(), 13);
+    assert_eq!(corpus.fonts.len(), 22);
+    assert_eq!(
+        corpus
+            .fonts
+            .iter()
+            .filter(|f| f.features.contains(&"legacy".to_string()))
+            .count(),
+        9
+    );
     assert!(corpus.fonts.iter().all(|f| !f.features.is_empty()));
     assert_eq!(
         corpus

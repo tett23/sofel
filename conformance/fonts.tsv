@@ -12,3 +12,12 @@ amstelvar	amstelvar	-	fonts/amstelvar.ttf	86386aa8d3daa442899b2cd6a76bb4e186002b
 color-cff	color-cff	-	fonts/color-cff.otf	57761c533abdfec9d0fa8f35a5633209bcc3bf7536011d6836e9c6f8038392c7	color-license	colr,cff,outline
 color-sbix	color-sbix	-	fonts/color-sbix.ttf	0fd0a23379b0e982db8bef5f9a50cf7960a6ee3504778a9a9c039bde4d2f573d	color-license	sbix,metrics
 color-svg	color-svg	-	fonts/color-svg.ttf	ab86aec653bdd9d412e2d6670ba9485fd56a4e89dcd3c034ae43abca921c7e25	color-license	svg
+spleen-bdf	spleen-archive	spleen-2.3.0/spleen-8x16.bdf	fonts/spleen-8x16.bdf	3be74111b39d48647a9a944528bd0bfaf0b926817cf85ff3746658c3f7532147	spleen-license	legacy
+spleen-pcf	spleen-archive	spleen-2.3.0/spleen-8x16.pcf	fonts/spleen-8x16.pcf	0ed52b461b6b9e529d92e72f359b9318a28d98b11bc7a65c03f810fe2620bfb3	spleen-license	legacy
+spleen-fon	spleen-archive	spleen-2.3.0/spleen-8x16.fon	fonts/spleen-8x16.fon	cebded9b92d844c17b931aa89db9e932a6ce8d0baa2687ad902c0a5aa88436f7	spleen-license	legacy
+spleen-woff	spleen-archive	spleen-2.3.0/spleen-8x16.woff	fonts/spleen-8x16.woff	e7f1d696df2e9a55d92b45068aa2dfddef9153a2daab0df782b7bac0b4c8a650	spleen-license	legacy
+spleen-woff2	spleen-archive	spleen-2.3.0/spleen-8x16.woff2	fonts/spleen-8x16.woff2	51d517f6a4832fa14614d233488eaf500888987eb440fe36528af0506021b739	spleen-license	legacy
+spleen-dfont	spleen-archive	spleen-2.3.0/spleen-8x16.dfont	fonts/spleen-8x16.dfont	90d99d9168b35273309a87a4ddb3e4e9ee3a9df565b0520ebe364a75e272be1f	spleen-license	legacy
+cmr10-pfb	cmr10-pfb	-	fonts/cmr10.pfb	fdcede8794018df5f2b58f0905fb20a2b418ed8f67b73ee12445855dfbe5b1be	cmr10-license	legacy
+cmr10-pfm	cmr10-pfm	-	fonts/cmr10.pfm	f953f9b5faebd47ca1422fcab7013f1c3f82e7c472381902befa2a6c98d6c2fe	cmr10-license	legacy
+cmr10-afm	cmr10-afm	-	fonts/cmr10.afm	8df68c822c3217c67dee325d5f7d80c6b9e492293bca366db679a5b0b5e1825b	cmr10-license	legacy

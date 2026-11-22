@@ -29,7 +29,7 @@ fn i01_all_locked_sources_and_licenses_are_present() {
         assert_eq!(actual, expected, "{}", path.display());
         count = count.saturating_add(1);
     }
-    assert_eq!(count, 24);
+    assert_eq!(count, 30);
 }
 
 #[test]
@@ -42,7 +42,11 @@ fn i05_every_face_opens_and_validates() {
     let root = paths::testdata().join("extra-fonts");
     let mut face_count = 0;
     let mut errors = Vec::new();
-    for entry in &corpus.fonts {
+    for entry in corpus
+        .fonts
+        .iter()
+        .filter(|entry| !entry.features.iter().any(|feature| feature == "legacy"))
+    {
         let path = root.join(&entry.path);
         let bytes = std::fs::read(&path)
             .unwrap_or_else(|e| panic!("{}: {e}; run scripts/fetch-fonts.sh", path.display()));
@@ -120,7 +124,11 @@ fn i05_math_color_bitmap_svg_and_avar2_views() {
     )
     .unwrap();
     let root = paths::testdata().join("extra-fonts");
-    for entry in &corpus.fonts {
+    for entry in corpus
+        .fonts
+        .iter()
+        .filter(|entry| !entry.features.iter().any(|feature| feature == "legacy"))
+    {
         let bytes = std::fs::read(root.join(&entry.path)).unwrap();
         let font = Font::new(&bytes, 0).unwrap();
         match entry.id.as_str() {

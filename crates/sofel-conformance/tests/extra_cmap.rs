@@ -33,7 +33,11 @@ fn i06_all_scalar_nominal_glyphs_match_harfbuzz() {
         .collect::<BTreeMap<_, _>>();
     let root = paths::testdata().join("extra-fonts");
     let mut faces = 0;
-    for entry in &corpus.fonts {
+    for entry in corpus
+        .fonts
+        .iter()
+        .filter(|entry| !entry.features.iter().any(|feature| feature == "legacy"))
+    {
         let path = root.join(&entry.path);
         let bytes = std::fs::read(&path)
             .unwrap_or_else(|e| panic!("{}: {e}; run scripts/fetch-fonts.sh", path.display()));

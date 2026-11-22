@@ -123,7 +123,11 @@ fn i05_sampled_outlines_match_freetype() {
     let mut scratch = Scratch::default();
     let mut compared = 0;
     let mut differences = Vec::new();
-    for entry in &corpus.fonts {
+    for entry in corpus
+        .fonts
+        .iter()
+        .filter(|entry| !entry.features.iter().any(|feature| feature == "legacy"))
+    {
         let bytes = std::fs::read(root.join(&entry.path)).unwrap();
         let (_, samples) = plan(&bytes, &entry.id, &required);
         let faces = parse(&snapshots[entry.id.as_str()]).unwrap();
@@ -186,7 +190,11 @@ fn i06_outline_reference_matches_pinned_freetype() {
     let exe = paths::ft_dump();
     paths::require(&exe, "ft-dump").unwrap();
     let root = paths::testdata().join("extra-fonts");
-    for entry in &corpus.fonts {
+    for entry in corpus
+        .fonts
+        .iter()
+        .filter(|entry| !entry.features.iter().any(|feature| feature == "legacy"))
+    {
         let path = root.join(&entry.path);
         let bytes = std::fs::read(&path).unwrap();
         let (plan, _) = plan(&bytes, &entry.id, &required);

@@ -141,8 +141,19 @@ fn i05_sampled_metrics_match_harfbuzz() {
     let mandatory = mandatory_glyphs();
     let mut results = Vec::new();
     let snapshots = snapshots();
-    assert_eq!(snapshots.len(), corpus.fonts.len());
-    for entry in &corpus.fonts {
+    assert_eq!(
+        snapshots.len(),
+        corpus
+            .fonts
+            .iter()
+            .filter(|entry| !entry.features.iter().any(|feature| feature == "legacy"))
+            .count()
+    );
+    for entry in corpus
+        .fonts
+        .iter()
+        .filter(|entry| !entry.features.iter().any(|feature| feature == "legacy"))
+    {
         let path = root.join(&entry.path);
         let bytes = std::fs::read(&path)
             .unwrap_or_else(|e| panic!("{}: {e}; run scripts/fetch-fonts.sh", path.display()));
@@ -183,7 +194,11 @@ fn i05_metric_reference_matches_pinned_harfbuzz() {
     let root = paths::testdata().join("extra-fonts");
     let mandatory = mandatory_glyphs();
     let snapshots = snapshots();
-    for entry in &corpus.fonts {
+    for entry in corpus
+        .fonts
+        .iter()
+        .filter(|entry| !entry.features.iter().any(|feature| feature == "legacy"))
+    {
         let path = root.join(&entry.path);
         let bytes = std::fs::read(&path).unwrap();
         let (plan, _) = plan_for(&bytes, &entry.id, &mandatory);

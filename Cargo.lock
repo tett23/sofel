@@ -106,6 +106,7 @@ dependencies = [
  "sofel-svg",
  "sofel-unicode",
  "sofel-vector",
+ "sofel-woff",
  "sofel-write",
 ]
 
