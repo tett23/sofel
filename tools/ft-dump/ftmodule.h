@@ -1,6 +1,8 @@
 /*
  * The FreeType modules compiled into ft-dump (ADR 0008). FreeType's own
- * list also registers the HVF driver, which needs Apple's libhvf.
+ * list also registers the HVF driver, which needs Apple's libhvf. Keep the
+ * OT-SVG renderer even without rendering hooks: FT_Load_Glyph presets SVG
+ * slots through that module after loading their documents.
  */
 
 FT_USE_MODULE( FT_Module_Class, autofit_module_class )
@@ -20,5 +22,6 @@ FT_USE_MODULE( FT_Module_Class, sfnt_module_class )
 FT_USE_MODULE( FT_Module_Class, otv_module_class )
 FT_USE_MODULE( FT_Renderer_Class, ft_smooth_renderer_class )
 FT_USE_MODULE( FT_Renderer_Class, ft_raster1_renderer_class )
+FT_USE_MODULE( FT_Renderer_Class, ft_svg_renderer_class )
 FT_USE_MODULE( FT_Renderer_Class, ft_sdf_renderer_class )
 FT_USE_MODULE( FT_Renderer_Class, ft_bitmap_sdf_renderer_class )
