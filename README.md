@@ -55,7 +55,7 @@ FeatureVariations版1.1以降のlookup条件も読み、軸の位置に合うloo
 `sofel-font::var` には、設計座標と正規化座標からの位置の構築、座標の正規化、ItemVariationStoreの差分の評価の核、軸と名前つきインスタンスの問い合わせ、FreeTypeのMMVarの読み取り、位置ごとのPostScript名を実装した。名前つきインスタンスに専用のPostScript名がない場合は、FreeTypeと同じ規則で名前を組み立てる。
 FreeTypeが合成する既定の名前つきスタイルは、名前が欠ける場合も件数と既定番号を再現する（[ADR 0036](docs/adr/0036-freetype-missing-default-named-style.md)）。
 C ABIには位置の作成、座標の取得、Variationの文字列変換、軸と名前つきインスタンスの問い合わせ、位置ごとのPostScript名を追加した。
-さらに、CFF2の `blend` は指定した位置の係数で評価し、輪郭とグリフの箱に反映する。Private DICTも位置ごとに読みなおす。C ABIの `sofel_cff2_blend_vector` は、既定成分と0の列を含む係数列を返す。
+さらに、CFF2の `blend` は指定した位置の係数で評価し、輪郭とグリフの箱に反映する。Private DICTも位置ごとに読みなおす。FreeType の輪郭読み込みでは、座標を指定しなければ変化量を加えず、Variation Store と `fvar` の軸数が違っても既定の輪郭を読む。座標を指定した場合は軸数の不一致をエラーにする（[ADR 0030](docs/adr/0030-variation-evaluation-corrections.md)）。C ABIの `sofel_cff2_blend_vector` は、既定成分と0の列を含む係数列を返す。
 さらに、メトリクス、基準線、輪郭、シェーピング、塗りの既存関数には位置の引数を追加した。
 C API の `sofel_scale_create_with_ppem` は、シェーピング用スケールに横と縦の ppem を指定する（[ADR 0052](docs/adr/0052-c-shaping-ppem.md)）。従来の `sofel_scale_create` と NULL のスケールでは両軸とも 0 になる。
 Rust の `Font::feature_tags` と C の `sofel_font_feature_tags` は、GSUB と GPOS の機能タグを表ごとに、レコード順と重複を保って部分取得する。C では容量 0 と NULL の配列で総数だけを取得できる（[ADR 0075](docs/adr/0075-layout-feature-tags.md)）。
