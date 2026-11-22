@@ -18,6 +18,18 @@
 
 #include <stdio.h>
 
+#undef SCRIPT
+#define SCRIPT( s, S, d, h, H, ss ) #s,
+static const char*  script_tags[] = {
+#include "afscript.h"
+};
+
+#undef COVERAGE
+#define COVERAGE( name, NAME, description, a, b, c, d ) { a, b, c, d },
+static const char  coverage_tags[][4] = {
+#include "afcover.h"
+};
+
 static void
 print_bytes( const char*  s,
              size_t       n )
@@ -87,13 +99,20 @@ main( void )
   for ( i = 0; af_script_classes[i]; i++ )
   {
     AF_ScriptClass  sc = af_script_classes[i];
+    const char*     tag = script_tags[i];
+
+    /* FreeType abbreviates ISO 15924 `Laoo` to `lao` in afscript.h. */
+    if ( strcmp( tag, "lao" ) == 0 )
+      tag = "laoo";
 
 
     printf( "    ScriptClass {\n        ranges: " );
     print_ranges( sc->script_uni_ranges );
     printf( ",\n        nonbase_ranges: " );
     print_ranges( sc->script_uni_nonbase_ranges );
-    printf( ",\n        top_to_bottom: %s,\n        standard: ",
+    printf( ",\n        tag: b\"%c%c%c%c\",\n        top_to_bottom: %s,\n        standard: ",
+            (char)( tag[0] - 'a' + 'A' ),
+            tag[1], tag[2], tag[3],
             sc->top_to_bottom_hinting ? "true" : "false" );
     print_bytes( sc->standard_charstring, strlen( sc->standard_charstring ) );
     printf( ",\n    },\n" );
@@ -109,12 +128,20 @@ main( void )
 
 
     printf( "    StyleClass { writing_system: WritingSystem::%s, script: %u,"
-            " blue_stringset: %u, default_coverage: %s },\n",
+            " blue_stringset: %u, coverage: %u, default_coverage: %s },\n",
             ws[st->writing_system],
             (unsigned)st->script,
             (unsigned)st->blue_stringset,
+            (unsigned)st->coverage,
             st->coverage == AF_COVERAGE_DEFAULT ? "true" : "false" );
   }
+  printf( "];\n\n" );
+
+  printf( "/// OpenType feature tags from `afcover.h`.\n" );
+  printf( "pub(super) const COVERAGE_TAGS: &[[u8; 4]] = &[\n" );
+  for ( i = 0; i < sizeof ( coverage_tags ) / sizeof ( coverage_tags[0] ); i++ )
+    printf( "    *b\"%c%c%c%c\",\n", coverage_tags[i][0],
+            coverage_tags[i][1], coverage_tags[i][2], coverage_tags[i][3] );
   printf( "];\n\n" );
 
   printf( "/// `AF_STYLE_NONE_DFLT`.\n" );

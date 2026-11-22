@@ -1,6 +1,6 @@
 # ADR 0085: HarfBuzz を使う構成の自動ヒンタを選べるようにする
 
-Status: accepted-pending
+Status: accepted
 
 ## 文脈
 

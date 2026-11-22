@@ -192,7 +192,7 @@ pub(crate) fn subst_coverage<'a>(s: &SubstSubtable<'a>) -> Coverage<'a> {
 }
 
 /// The coverage of a `GPOS` subtable's first glyph (`get_coverage`).
-fn pos_coverage<'a>(s: &PosSubtable<'a>) -> Coverage<'a> {
+pub(crate) fn pos_coverage<'a>(s: &PosSubtable<'a>) -> Coverage<'a> {
     match s {
         PosSubtable::Single { coverage, .. }
         | PosSubtable::SingleArray { coverage, .. }
