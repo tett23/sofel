@@ -7,7 +7,7 @@ mod triangle;
 use sofel_conformance::paths;
 use sofel_font::{CidFace, Type1Face, Type1Source};
 use sofel_geom::{Command, Fixed, FnPen, div_fix};
-use sofel_outline::{HintTarget, OutlineError, Scale, draw_cid_native, draw_type1_native};
+use sofel_outline::{HintTarget, Scale, draw_cid_native, draw_type1_native};
 
 fn cid_sample(program: &[u8]) -> Vec<u8> {
     let mut source = b"%!PS-Adobe-3.0 Resource-CIDFont\n\
@@ -799,33 +799,58 @@ fn adr0064_i1_native_type1_other_blues_capture_stem() {
 }
 
 #[test]
-fn adr0064_i1_native_type1_explicit_blue_scale_is_unsupported() {
-    let (pfa, _) = triangle::with_glyph_name_and_blues(
-        &[
-            139, 248, 136, 13, 169, 149, 1, 139, 169, 21, 239, 139, 5, 139, 239, 5, 39, 139, 5, 9,
-            14,
-        ],
-        "A",
-        "[0 40] def /BlueScale 0.05",
-    );
+fn adr0064_i1_native_type1_explicit_blue_scale_matches_freetype() {
+    let program = &[
+        139, 248, 136, 13, 247, 1, 144, 1, 139, 247, 1, 21, 239, 139, 5, 139, 239, 5, 39, 139, 5,
+        9, 14,
+    ];
+    let (pfa, _) =
+        triangle::with_glyph_name_and_blues(program, "A", "[109 114] def /BlueScale 0.08");
+    let path = std::env::temp_dir().join(format!(
+        "sofel-adr0064-type1-blue-scale-{}.pfa",
+        std::process::id()
+    ));
+    std::fs::write(&path, &pfa).unwrap();
     let source = Type1Source::parse_pfa(&pfa, 4096).unwrap();
     let face = Type1Face::new(&source).unwrap();
-    let factor = Fixed(div_fix(16 * 64, 1000));
+    let factor = Fixed(div_fix(50 * 64, 1000));
     let mut commands = Vec::new();
-    assert_eq!(
-        draw_type1_native(
-            &face,
-            1,
-            Scale::Scaled {
-                x: factor,
-                y: factor,
-            },
-            HintTarget::Mono,
-            &mut FnPen(|command| commands.push(command)),
-        ),
-        Err(OutlineError::UnsupportedFormat)
-    );
-    assert!(commands.is_empty());
+    let (_, advance) = draw_type1_native(
+        &face,
+        1,
+        Scale::Scaled {
+            x: factor,
+            y: factor,
+        },
+        HintTarget::Mono,
+        &mut FnPen(|command| commands.push(command)),
+    )
+    .unwrap();
+    let mut points = Vec::new();
+    for command in commands {
+        match command {
+            Command::MoveTo(point) | Command::LineTo(point) => points.push(point),
+            Command::Close => {
+                if points.last() == points.first() {
+                    points.pop();
+                }
+            }
+            other => assert_eq!(other, Command::Close),
+        }
+    }
+    let mut actual = format!("advance {advance} 0\n");
+    for point in &points {
+        actual.push_str(&format!("point {} {} 1\n", point.x, point.y));
+    }
+    actual.push_str(&format!("end {}\n", points.len() - 1));
+    let reference = std::process::Command::new(paths::ft_dump())
+        .args(["--hint-slot", "50", "1", "native", "mono"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(reference.status.success());
+    assert_eq!(actual, String::from_utf8(reference.stdout).unwrap());
+    std::fs::remove_file(path).unwrap();
 }
 
 #[test]

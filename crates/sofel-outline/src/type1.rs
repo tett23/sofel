@@ -5,7 +5,7 @@
 use alloc::vec::Vec;
 
 use sofel_font::Type1Face;
-use sofel_font::read::cff::Type1HorizontalStemMap;
+use sofel_font::read::cff::{Type1BlueSettings, Type1HorizontalStemMap};
 use sofel_geom::{FnPen, Pen, Point, mul_fix};
 
 use crate::{CBox, HintTarget, OutlineError, OutlineInfo, Scale, ps_native};
@@ -86,6 +86,12 @@ pub fn draw_type1_native(
             &blue_zones.other_blues,
             &blue_zones.family_blues,
             &blue_zones.family_other_blues,
+            Type1BlueSettings {
+                blue_scale: blue_zones.blue_scale,
+                blue_shift: blue_zones.blue_shift,
+                blue_fuzz: blue_zones.blue_fuzz,
+                language_group: blue_zones.language_group,
+            },
         )
         .ok_or(OutlineError::UnsupportedFormat)
         .map(Some)?;

@@ -767,17 +767,49 @@ pub(crate) fn build<const N: usize>(
     build_one(map, Some(initial), stems, mask, origin, false)
 }
 
-/// Adobe's piecewise y-coordinate map for Type 1 horizontal stems without blue zones.
+/// Adobe's piecewise y-coordinate map for Type 1 horizontal stems and blue zones.
 #[derive(Clone, Copy, Debug)]
 pub struct Type1HorizontalStemMap {
     map: HintMap<MAX_EDGES>,
+}
+
+/// Type 1 blue-zone scalar settings in FreeType's internal units.
+#[derive(Clone, Copy, Debug)]
+pub struct Type1BlueSettings {
+    /// BlueScale in 16.16 units times 1000.
+    pub blue_scale: i64,
+    /// BlueShift in font units.
+    pub blue_shift: i64,
+    /// BlueFuzz in font units.
+    pub blue_fuzz: i64,
+    /// LanguageGroup.
+    pub language_group: i32,
+}
+
+impl Default for Type1BlueSettings {
+    fn default() -> Self {
+        Self {
+            blue_scale: 2_596_864,
+            blue_shift: 7,
+            blue_fuzz: 1,
+            language_group: 0,
+        }
+    }
 }
 
 impl Type1HorizontalStemMap {
     /// Builds one map from the stems present before the path starts. Each pair
     /// holds its lower edge and width in signed 16.16 character coordinates.
     pub fn new(stems: &[(i32, i32)], scale: i32) -> Option<Self> {
-        Self::new_with_zones(stems, scale, &[], &[], &[], &[])
+        Self::new_with_zones(
+            stems,
+            scale,
+            &[],
+            &[],
+            &[],
+            &[],
+            Type1BlueSettings::default(),
+        )
     }
 
     /// Builds a Type 1 map with its four blue arrays in font units.
@@ -788,6 +820,7 @@ impl Type1HorizontalStemMap {
         other_blues: &[i32],
         family_blues: &[i32],
         family_other_blues: &[i32],
+        settings: Type1BlueSettings,
     ) -> Option<Self> {
         if stems.is_empty() || stems.len() > MAX_HINTS {
             return None;
@@ -807,6 +840,10 @@ impl Type1HorizontalStemMap {
             *hint = StemHint::new(position, position.checked_add(width)?);
         }
         let mut private = PrivateDict::defaults();
+        private.blue_scale = settings.blue_scale;
+        private.blue_shift = settings.blue_shift;
+        private.blue_fuzz = settings.blue_fuzz;
+        private.language_group = settings.language_group;
         fn set<const N: usize>(out: &mut super::dict::Deltas<N>, values: &[i32]) -> Option<()> {
             out.len = u8::try_from(values.len()).ok()?;
             for (slot, &value) in out.values.iter_mut().zip(values) {

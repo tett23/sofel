@@ -38,7 +38,7 @@ pub use data::{
 };
 pub use encoding::Encoding;
 pub use fdselect::FdSelect;
-pub use hint::{Hinting, Type1HorizontalStemMap};
+pub use hint::{Hinting, Type1BlueSettings, Type1HorizontalStemMap};
 pub use index::Index;
 
 use crate::be::{self, to_usize};

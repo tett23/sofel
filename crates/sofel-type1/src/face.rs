@@ -46,6 +46,14 @@ pub struct NativeBlueZones {
     pub family_blues: Vec<i32>,
     /// FamilyOtherBlues in font units.
     pub family_other_blues: Vec<i32>,
+    /// BlueScale in 16.16 units times 1000.
+    pub blue_scale: i64,
+    /// BlueShift in font units.
+    pub blue_shift: i64,
+    /// BlueFuzz in font units.
+    pub blue_fuzz: i64,
+    /// LanguageGroup.
+    pub language_group: i32,
 }
 
 #[derive(Clone, Debug)]
@@ -251,21 +259,75 @@ fn parse_blue_array(data: &[u8], name: &[u8], limit: usize) -> Option<Vec<i32>> 
 }
 
 fn native_blue_zones(data: &[u8]) -> Option<NativeBlueZones> {
-    if [
-        b"/BlueScale".as_slice(),
-        b"/BlueShift",
-        b"/BlueFuzz",
-        b"/LanguageGroup",
-    ]
-    .iter()
-    .any(|name| data.windows(name.len()).any(|window| window == *name))
-    {
-        return None;
-    }
     Some(NativeBlueZones {
         blue_values: parse_blue_array(data, b"/BlueValues", 14)?,
         other_blues: parse_blue_array(data, b"/OtherBlues", 10)?,
         family_blues: parse_blue_array(data, b"/FamilyBlues", 14)?,
         family_other_blues: parse_blue_array(data, b"/FamilyOtherBlues", 10)?,
+        blue_scale: parse_blue_scalar(data, b"/BlueScale", 2_596_864, 65_536_000)?,
+        blue_shift: parse_blue_scalar(data, b"/BlueShift", 7, 1)?,
+        blue_fuzz: parse_blue_scalar(data, b"/BlueFuzz", 1, 1)?,
+        language_group: i32::try_from(parse_blue_scalar(data, b"/LanguageGroup", 0, 1)?).ok()?,
     })
+}
+
+fn parse_blue_scalar(data: &[u8], name: &[u8], default: i64, multiplier: i64) -> Option<i64> {
+    let Some(at) = data.windows(name.len()).position(|window| window == name) else {
+        return Some(default);
+    };
+    let start = at.checked_add(name.len())?;
+    let value = data.get(start..)?.trim_ascii_start();
+    let end = value
+        .iter()
+        .position(|byte| !byte.is_ascii_digit() && !matches!(*byte, b'.' | b'-' | b'+'))
+        .unwrap_or(value.len());
+    let number = core::str::from_utf8(value.get(..end)?).ok()?;
+    let (negative, number) = if let Some(rest) = number.strip_prefix('-') {
+        (true, rest)
+    } else {
+        (false, number.strip_prefix('+').unwrap_or(number))
+    };
+    let (whole, fraction) = number.split_once('.').unwrap_or((number, ""));
+    if whole.is_empty() && fraction.is_empty() {
+        return None;
+    }
+    let whole = if whole.is_empty() {
+        0
+    } else {
+        whole.parse::<i128>().ok()?
+    };
+    let fractional = if fraction.is_empty() {
+        0
+    } else {
+        fraction.parse::<i128>().ok()?
+    };
+    let denominator = 10_i128.checked_pow(u32::try_from(fraction.len()).ok()?)?;
+    let numerator = whole.checked_mul(denominator)?.checked_add(fractional)?;
+    let scaled = numerator.checked_mul(i128::from(multiplier))?;
+    let rounded = scaled
+        .checked_add(denominator / 2)?
+        .checked_div(denominator)?;
+    i64::try_from(if negative {
+        rounded.checked_neg()?
+    } else {
+        rounded
+    })
+    .ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_blue_scalar;
+
+    #[test]
+    fn adr0064_i1_type1_blue_scale_fixed_values() {
+        assert_eq!(
+            parse_blue_scalar(b"/BlueScale 0.039625 def", b"/BlueScale", 0, 65_536_000),
+            Some(2_596_864)
+        );
+        assert_eq!(
+            parse_blue_scalar(b"/BlueScale 0.08 def", b"/BlueScale", 0, 65_536_000),
+            Some(5_242_880)
+        );
+    }
 }
