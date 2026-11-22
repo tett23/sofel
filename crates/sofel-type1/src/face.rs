@@ -8,6 +8,7 @@ use crate::charstrings::Charstrings;
 use crate::encoding::Encoding;
 use crate::metrics::{Metrics, parse_metrics};
 use crate::multiple_masters::MultipleMasters;
+use crate::noalloc::cid::{CidMatrix, parse_matrix};
 use crate::pfm::Pfm;
 use crate::source::Type1Source;
 
@@ -26,6 +27,8 @@ impl core::error::Error for FaceError {}
 /// One Type 1 face with its encoded character and glyph programs.
 #[derive(Clone, Debug)]
 pub struct Type1Face<'a> {
+    matrix: CidMatrix,
+    units_per_em: u16,
     encoding: Encoding<'a>,
     charstrings: Charstrings<'a>,
     multiple_masters: Option<MultipleMasters<'a>>,
@@ -73,7 +76,13 @@ impl<'a> Type1Face<'a> {
         let master_weights = multiple_masters
             .as_ref()
             .map(|mm| mm.default_weights().to_vec());
+        let (matrix, units_per_em) = parse_matrix(source.cleartext()).unwrap_or((
+            CidMatrix { xx: 65536, yx: 0, xy: 0, yy: 65536, dx: 0, dy: 0 },
+            None,
+        ));
         Ok(Self {
+            matrix,
+            units_per_em: units_per_em.unwrap_or(1000),
             encoding,
             charstrings,
             multiple_masters,
@@ -82,6 +91,16 @@ impl<'a> Type1Face<'a> {
             native_stem_blues_empty: blue_zones_empty(source.private()),
             native_blue_zones: native_blue_zones(source.private()),
         })
+    }
+
+    /// The normalized Type 1 FontMatrix applied after charstring decoding.
+    pub fn matrix(&self) -> CidMatrix {
+        self.matrix
+    }
+
+    /// Units per em derived from the Type 1 FontMatrix's vertical scale.
+    pub fn units_per_em(&self) -> u16 {
+        self.units_per_em
     }
 
     /// Whether the native single-stem path can ignore PostScript blue zones.
@@ -162,7 +181,12 @@ impl<'a> Type1Face<'a> {
     ///
     /// Allocates the decrypted charstring (ADR 0094); the operand stack is a fixed array (ADR 0098).
     pub fn glyph_metrics(&self, glyph: usize) -> Option<Metrics> {
-        parse_metrics(&self.glyph_program(glyph)?).ok()
+        let mut metrics = parse_metrics(&self.glyph_program(glyph)?).ok()?;
+        metrics.advance_x =
+            mul_fix(metrics.advance_x, self.matrix.xx).saturating_add(self.matrix.dx);
+        metrics.advance_y =
+            mul_fix(metrics.advance_y, self.matrix.yy).saturating_add(self.matrix.dy);
+        Some(metrics)
     }
 
     /// Attach AFM metrics to the face, replacing any previous AFM data.
@@ -212,6 +236,12 @@ impl<'a> Type1Face<'a> {
             None => (0, 0),
         }
     }
+}
+
+fn mul_fix(a: i32, b: i32) -> i32 {
+    let product = i64::from(a).saturating_mul(i64::from(b));
+    let rounded = product.saturating_add(0x8000).saturating_add(product >> 63) >> 16;
+    i32::try_from(rounded).unwrap_or(if rounded < 0 { i32::MIN } else { i32::MAX })
 }
 
 pub(crate) fn blue_zones_empty(data: &[u8]) -> bool {

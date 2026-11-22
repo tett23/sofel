@@ -28,6 +28,78 @@ end put\n%ADOEndFontDict\ndef\n"
     source
 }
 
+#[test]
+fn adr0064_i1_type1_nondefault_font_matrix_matches_freetype() {
+    let program = [
+        139, 248, 136, 13, 239, 189, 1, 239, 239, 21, 239, 139, 5, 139, 239, 5, 39, 139, 5, 9, 14,
+    ];
+    let (source, _) = triangle::with_glyph_program(&program);
+    let old = b"/FontMatrix [0.001 0 0 0.001 0 0]";
+    for (case, new) in [
+        b"/FontMatrix [0.002 0 0 0.002 0 0]".as_slice(),
+        b"/FontMatrix [0.002 0 0 0.001 0 0]".as_slice(),
+        b"/FontMatrix [0.001 0.0005 0 0.001 0 0]".as_slice(),
+        b"/FontMatrix [0.001 0 0.0005 0.001 0 0]".as_slice(),
+        b"/FontMatrix [0.001 0 0 0.001 0.05 0.02]".as_slice(),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut bytes = source.clone();
+        let at = bytes
+            .windows(old.len())
+            .position(|window| window == old)
+            .unwrap();
+        bytes.splice(at..at + old.len(), new.iter().copied());
+        let path = std::env::temp_dir().join(format!(
+            "sofel-adr0064-type1-matrix-{case}-{}.pfa",
+            std::process::id()
+        ));
+        std::fs::write(&path, &bytes).unwrap();
+        for ppem in [8, 16, 32] {
+            for engine in ["native", "none"] {
+                for target in ["normal", "light", "mono", "lcd", "lcd-v"] {
+                    let size = ppem.to_string();
+                    let reference = std::process::Command::new(paths::ft_dump())
+                        .args(["--hint-slot", &size, "1", engine, target])
+                        .arg(&path)
+                        .output()
+                        .unwrap();
+                    assert!(
+                        reference.status.success(),
+                        "FT case {case}, ppem {ppem}, engine {engine}, target {target}: {}",
+                        String::from_utf8_lossy(&reference.stderr)
+                    );
+                    let args = [
+                        "--engine",
+                        engine,
+                        "--ppem",
+                        &size,
+                        "--glyph",
+                        "1",
+                        "--target",
+                        target,
+                        path.to_str().unwrap(),
+                    ]
+                    .map(std::ffi::OsString::from);
+                    let (mut actual, mut error) = (Vec::new(), Vec::new());
+                    assert_eq!(
+                        sofel_cli::hint::run(&args, &mut actual, &mut error),
+                        0,
+                        "case {case}: {}",
+                        String::from_utf8_lossy(&error)
+                    );
+                    assert_eq!(
+                        actual, reference.stdout,
+                        "case {case}, ppem {ppem}, engine {engine}, target {target}"
+                    );
+                }
+            }
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+}
+
 fn cid_sample_with_blue_values(program: &[u8]) -> Vec<u8> {
     let mut source = cid_sample(program);
     let old = b"/Private 1 dict begin /lenIV -1 def end";

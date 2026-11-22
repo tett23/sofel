@@ -37,7 +37,10 @@ pub fn render_type1<'r>(
     ppem: u16,
     raster: &'r mut Rasterizer,
 ) -> Result<Bitmap<'r>, RenderError> {
-    let fixed = Fixed(div_fix(i32::from(ppem).saturating_mul(64), 1000));
+    let fixed = Fixed(div_fix(
+        i32::from(ppem).saturating_mul(64),
+        i32::from(face.units_per_em()),
+    ));
     raster.clear();
     sofel_outline::draw_type1(face, glyph, Scale::Scaled { x: fixed, y: fixed }, raster)
         .map_err(RenderError::Outline)?;

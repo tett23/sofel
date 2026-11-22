@@ -21,7 +21,15 @@ pub fn draw_type1(
     let program = face
         .glyph_program(glyph)
         .ok_or(OutlineError::InvalidGlyphIndex)?;
-    let mut state = State::new(scale, [65536, 0, 0, 65536, 0, 0], false, pen);
+    let matrix = face.matrix();
+    let mut state = State::new(
+        scale,
+        [
+            matrix.xx, matrix.yx, matrix.xy, matrix.yy, matrix.dx, matrix.dy,
+        ],
+        false,
+        pen,
+    );
     let mut stack = Vec::new();
     decode_program(face, &program, &mut state, &mut stack, 0, false)?;
     Ok(state.info())
@@ -69,7 +77,15 @@ pub fn draw_type1_native(
     if scan.has_stems && (scan.unsupported_stem_map || blue_zones.is_none()) {
         return Err(OutlineError::UnsupportedFormat);
     }
-    let mut state = State::new(scale, [65536, 0, 0, 65536, 0, 0], true, pen);
+    let matrix = face.matrix();
+    let mut state = State::new(
+        scale,
+        [
+            matrix.xx, matrix.yx, matrix.xy, matrix.yy, matrix.dx, matrix.dy,
+        ],
+        true,
+        pen,
+    );
     if !groups.is_empty() {
         let blue_zones = blue_zones.ok_or(OutlineError::UnsupportedFormat)?;
         let mut maps = Vec::new();
@@ -593,12 +609,19 @@ impl<'a, P: Pen> State<'a, P> {
         if self.native
             && let Scale::Scaled { x: sx, y: sy } = self.scale
         {
+            let px = ps_native::coordinate_fixed(x, sx);
+            let py = self.h_stem_map.map_or_else(
+                || ps_native::coordinate_fixed_shifted(y, sy, self.h_stem_shift),
+                |map| map.map(sofel_font::read::cff::ft::to_i32(y)) >> 10,
+            );
+            let [xx, yx, xy, yy, dx, dy] = self.matrix;
             let p = Point {
-                x: ps_native::coordinate_fixed(x, sx),
-                y: self.h_stem_map.map_or_else(
-                    || ps_native::coordinate_fixed_shifted(y, sy, self.h_stem_shift),
-                    |map| map.map(sofel_font::read::cff::ft::to_i32(y)) >> 10,
-                ),
+                x: mul_fix(px, xx)
+                    .saturating_add(mul_fix(py, xy))
+                    .saturating_add(dx),
+                y: mul_fix(px, yx)
+                    .saturating_add(mul_fix(py, yy))
+                    .saturating_add(dy),
             };
             self.update_box(p);
             return p;

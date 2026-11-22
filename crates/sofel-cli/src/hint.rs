@@ -276,7 +276,10 @@ fn postscript_hint(
         let _ = writeln!(err, "sofel hint: Type 1 face index out of range");
         return Some(1);
     }
-    let factor = Fixed(div_fix(i32::from(args.ppem).saturating_mul(64), 1000));
+    let factor = Fixed(div_fix(
+        i32::from(args.ppem).saturating_mul(64),
+        i32::from(face.units_per_em()),
+    ));
     let scale = Scale::Scaled {
         x: factor,
         y: factor,
