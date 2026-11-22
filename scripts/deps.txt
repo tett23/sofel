@@ -49,6 +49,8 @@ sofel-subset sofel-unicode
 # HarfBuzz's rounding in sofel_geom::float (ADR 0026)
 sofel-color sofel-geom
 sofel-subset sofel-geom
+# Outline comparison for the synthetic CFF2 reference fixtures (ADR 0102).
+!dev sofel-subset sofel-outline
 # The glyph rendering shared by the tools and the C ABI (ADR 0087,
 # ADR 0095)
 sofel-glyph-render sofel-font

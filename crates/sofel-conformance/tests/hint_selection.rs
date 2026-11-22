@@ -833,3 +833,91 @@ fn adr0064_i1_cli_engine_selects_glyf_native_and_none() {
         }
     }
 }
+
+#[test]
+fn adr0064_i1_tricky_family_selection_matches_freetype() {
+    use cff_build::name;
+    let base =
+        std::fs::read(paths::testdata().join("harfbuzz/perf/fonts/Roboto-Regular.ttf")).unwrap();
+    let utf16 = |s: &str| {
+        s.encode_utf16()
+            .flat_map(u16::to_be_bytes)
+            .collect::<Vec<_>>()
+    };
+    let tricky = utf16("MingLiU");
+    let ordinary = utf16("Ordinary");
+    let replaced = utf16("HuaTianKaiTi字");
+    let prefix = utf16("DLCABC+Ordinary");
+    let families = [
+        name(0, &[(3, 1, 0x409, 1, &tricky)], &[]),
+        name(0, &[(3, 1, 0x409, 1, &replaced)], &[]),
+        name(0, &[(3, 1, 0x409, 1, &prefix)], &[]),
+        name(
+            0,
+            &[(3, 1, 0x411, 1, &tricky), (1, 0, 0, 1, b"Ordinary")],
+            &[],
+        ),
+        name(
+            0,
+            &[(3, 1, 0x409, 1, &ordinary), (1, 0, 0, 1, b"MingLiU")],
+            &[],
+        ),
+    ];
+    for (case, names) in families.into_iter().enumerate() {
+        let mut data = base.clone();
+        let count = u16::from_be_bytes(data[4..6].try_into().unwrap());
+        let record = (0..usize::from(count))
+            .map(|i| 12 + i * 16)
+            .find(|&at| &data[at..at + 4] == b"name")
+            .unwrap();
+        while !data.len().is_multiple_of(4) {
+            data.push(0);
+        }
+        let offset = u32::try_from(data.len()).unwrap();
+        let len = u32::try_from(names.len()).unwrap();
+        data[record + 8..record + 12].copy_from_slice(&offset.to_be_bytes());
+        data[record + 12..record + 16].copy_from_slice(&len.to_be_bytes());
+        data.extend(names);
+        let path =
+            std::env::temp_dir().join(format!("sofel-tricky-{}-{case}.ttf", std::process::id()));
+        std::fs::write(&path, &data).unwrap();
+        let font = Font::new(&data, 0).unwrap();
+        let glyph = font.nominal_glyph(u32::from('a')).unwrap();
+        let outlines = Outlines::new(font.default_instance());
+        for (target_name, target) in [
+            ("normal", HintTarget::Normal),
+            ("light", HintTarget::Light),
+            ("mono", HintTarget::Mono),
+        ] {
+            let reference = Command::new(paths::ft_dump())
+                .args([
+                    "--hint-slot",
+                    "13",
+                    &glyph.0.to_string(),
+                    "auto",
+                    target_name,
+                ])
+                .arg(&path)
+                .output()
+                .unwrap();
+            assert!(reference.status.success());
+            let mut scratch = Scratch::default();
+            let (_, advance) = outlines
+                .load_with_hint(glyph, 13, HintMode::Auto, target, &mut scratch)
+                .unwrap();
+            let mut actual = format!("advance {advance} 0\n");
+            for (point, tag) in scratch.points().iter().zip(scratch.point_tags()) {
+                writeln!(actual, "point {} {} {tag}", point.x, point.y).unwrap();
+            }
+            for end in scratch.contour_ends() {
+                writeln!(actual, "end {end}").unwrap();
+            }
+            assert_eq!(
+                actual,
+                String::from_utf8(reference.stdout).unwrap(),
+                "case {case} {target_name}"
+            );
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+}

@@ -12,7 +12,7 @@
 export HB_DUMP="$PWD/target/hb-dump/hb-dump"
 export SOFEL_FIXTURE_INPUTS=$(mktemp -d)
 export SOFEL_FIXTURE_OUTPUTS=$(mktemp -d)
-cargo test -p sofel-subset --test cff2 --test instance
+cargo test -p sofel-subset --test cff2 --test cff2_shared_global --test instance
 ```
 
 各節のコマンドは、再生成した参照出力を `SOFEL_FIXTURE_OUTPUTS` に置く。
@@ -430,4 +430,85 @@ cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-flat-vsindex-hb15.otf" "crates/sofel-subset/tes
 ```sh
 "$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-flat-vsindex-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-flat-vsindex-desubr-hb15.otf" --gids=1 --desubroutinize
 cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-flat-vsindex-desubr-hb15.otf" "crates/sofel-subset/tests/data/cff2-flat-vsindex-desubr-hb15.otf"
+```
+
+## cff2-shared-global-hb15.otf
+
+`tests/cff2_shared_global.rs` の `adr0102_a1_export_reference_inputs` が組む入力で、Font DICT 0 と 1 の local 再採番が異なる。gid 1 と 2 を残すと、gid 2 の第2輪郭が元の `(20,10)` から `(30,10)` へ変わる。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-shared-global-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-shared-global-hb15.otf" --gids=1,2
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-shared-global-hb15.otf" "crates/sofel-subset/tests/data/cff2-shared-global-hb15.otf"
+```
+
+## cff2-shared-global-gid2-hb15.otf
+
+同じ入力の gid 2 だけを残した出力は、global から存在しない local を呼ぶ。検証器のエラーと sofel の `Malformed` を確かめるために置く。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-shared-global-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-shared-global-gid2-hb15.otf" --gids=2
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-shared-global-gid2-hb15.otf" "crates/sofel-subset/tests/data/cff2-shared-global-gid2-hb15.otf"
+```
+
+## cff2-shared-global-equal-hb15.otf
+
+両 Font DICT の local 再採番が同じ入力では、元の輪郭を保つ。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-shared-global-equal-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-shared-global-equal-hb15.otf" --gids=1,2
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-shared-global-equal-hb15.otf" "crates/sofel-subset/tests/data/cff2-shared-global-equal-hb15.otf"
+```
+
+## cff2-varstore-none-hb15.otf
+
+`tests/cff2_shared_global.rs` が組む、VariationStore の参照が0件の入力。未使用のデータ行と領域も残す。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-varstore-none-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-varstore-none-hb15.otf" --gids=1
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-varstore-none-hb15.otf" "crates/sofel-subset/tests/data/cff2-varstore-none-hb15.otf"
+```
+
+## cff2-varstore-partial-hb15.otf
+
+VariationStore の最初の行だけを描画の `blend` が使う入力で、明示的な `vsindex` も残す。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-varstore-partial-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-varstore-partial-hb15.otf" --gids=1
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-varstore-partial-hb15.otf" "crates/sofel-subset/tests/data/cff2-varstore-partial-hb15.otf"
+```
+
+## cff2-varstore-all-hb15.otf
+
+VariationStore の2行を別のグリフが使う入力。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-varstore-all-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-varstore-all-hb15.otf" --gids=1,2
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-varstore-all-hb15.otf" "crates/sofel-subset/tests/data/cff2-varstore-all-hb15.otf"
+```
+
+## cff2-varstore-unused-vsindex-hb15.otf
+
+明示的な `vsindex` を持つが、描画の `blend` を使わない入力。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-varstore-unused-vsindex-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-varstore-unused-vsindex-hb15.otf" --gids=1
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-varstore-unused-vsindex-hb15.otf" "crates/sofel-subset/tests/data/cff2-varstore-unused-vsindex-hb15.otf"
+```
+
+## cff2-varstore-partial-desubr-hb15.otf
+
+`partial` と同じ入力で `DESUBROUTINIZE` を指定する。描画の `blend` に必要な `vsindex` は残る。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-varstore-partial-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-varstore-partial-desubr-hb15.otf" --gids=1 --desubroutinize
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-varstore-partial-desubr-hb15.otf" "crates/sofel-subset/tests/data/cff2-varstore-partial-desubr-hb15.otf"
+```
+
+## cff2-varstore-unused-vsindex-desubr-hb15.otf
+
+`unused-vsindex` と同じ入力で `DESUBROUTINIZE` を指定する。使わない `vsindex` は省く。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-varstore-unused-vsindex-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-varstore-unused-vsindex-desubr-hb15.otf" --gids=1 --desubroutinize
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-varstore-unused-vsindex-desubr-hb15.otf" "crates/sofel-subset/tests/data/cff2-varstore-unused-vsindex-desubr-hb15.otf"
 ```
