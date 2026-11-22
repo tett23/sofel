@@ -239,7 +239,6 @@ pub(crate) struct CallTrace {
     pub start: usize,
     pub end: usize,
     pub target: Source,
-    caller_arguments: Option<(usize, usize)>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -291,8 +290,6 @@ pub(crate) struct Env<'a, 'c> {
     call_trace: Vec<CallTrace>,
     mask_trace: Vec<MaskTrace>,
     hint_trace: Vec<HintTrace>,
-    literal_run: Option<(Source, usize, usize, usize)>,
-    vsindex_trace: Option<HintTrace>,
     path_started: bool,
     pub args: Vec<Arg>,
     arg_error: bool,
@@ -339,8 +336,6 @@ impl<'a, 'c> Env<'a, 'c> {
             call_trace: Vec::new(),
             mask_trace: Vec::new(),
             hint_trace: Vec::new(),
-            literal_run: None,
-            vsindex_trace: None,
             path_started: false,
             args: Vec::new(),
             arg_error: false,
@@ -399,15 +394,15 @@ impl<'a, 'c> Env<'a, 'c> {
             return;
         }
         self.last_literal = Some((self.ctx.source, start, self.ctx.off));
-        if !self.trace_drop_hints {
-            return;
-        }
-        self.literal_run = match self.literal_run {
-            Some((source, first, end, count)) if source == self.ctx.source && end == start => {
-                Some((source, first, self.ctx.off, count.saturating_add(1)))
-            }
-            _ => Some((self.ctx.source, start, self.ctx.off, 1)),
-        };
+    }
+
+    fn hint_prefix_start(&self, source: Source, end: usize) -> usize {
+        self.hint_trace
+            .iter()
+            .filter(|hint| hint.source == source && hint.end <= end)
+            .map(|hint| hint.end)
+            .max()
+            .unwrap_or(0)
     }
 
     fn record_hint(&mut self, end: usize, mask: bool) {
@@ -415,60 +410,41 @@ impl<'a, 'c> Env<'a, 'c> {
             return;
         }
         let independent_mask = mask && self.path_started && self.args.is_empty();
-        if !independent_mask && self.seen_vsindex {
-            if let Some(prefix) = self.vsindex_trace {
-                self.hint_trace.push(prefix);
-            } else {
-                self.trace_valid = false;
-            }
-        }
-        if (self.path_started && !independent_mask) || !self.args.len().is_multiple_of(2) {
+        if !self.args.len().is_multiple_of(2) {
             self.trace_valid = false;
         }
-        let start = if self.args.is_empty() {
-            self.ctx.off.saturating_sub(1)
-        } else {
-            match self.literal_run {
-                Some((source, start, _, count))
-                    if source == self.ctx.source && count == self.args.len() =>
-                {
-                    start
-                }
-                _ if self.ctx.off == 1 => {
-                    // An initial stem can consume literals pushed before the call.
-                    let Some(call) = self
-                        .call_trace
-                        .last()
-                        .filter(|c| c.target == self.ctx.source)
-                    else {
-                        self.trace_valid = false;
-                        return;
-                    };
-                    let Some((start, _)) = call
-                        .caller_arguments
-                        .filter(|&(_, count)| count == self.args.len())
-                    else {
-                        self.trace_valid = false;
-                        return;
-                    };
+        // A stem consumes the entire argument stack. HarfBuzz marks every
+        // preceding parsed operator up to the previous hint in this string,
+        // and the same prefix before each active call, as hinting. This covers arguments
+        // produced by a returned subroutine or a cross-string blend.
+        if !independent_mask {
+            let mut target = self.ctx.source;
+            for caller in self.calls.iter().rev() {
+                let Some(call) = self.call_trace.iter().rev().find(|call| {
+                    call.source == caller.source && call.end == caller.off && call.target == target
+                }) else {
+                    self.trace_valid = false;
+                    return;
+                };
+                if call.start != 0 {
                     self.hint_trace.push(HintTrace {
-                        source: call.source,
-                        start,
+                        source: caller.source,
+                        start: self.hint_prefix_start(caller.source, call.start),
                         end: call.start,
                         can_follow_call: false,
                         mask_at: None,
                     });
-                    0
                 }
-                _ => {
-                    self.trace_valid = false;
-                    return;
-                }
+                target = caller.source;
             }
-        };
+        }
         self.hint_trace.push(HintTrace {
             source: self.ctx.source,
-            start,
+            start: if independent_mask {
+                self.ctx.off.saturating_sub(1)
+            } else {
+                self.hint_prefix_start(self.ctx.source, self.ctx.off.saturating_sub(1))
+            },
             end,
             can_follow_call: independent_mask,
             mask_at: mask.then_some(self.ctx.off.saturating_sub(1)),
@@ -606,12 +582,6 @@ impl<'a, 'c> Env<'a, 'c> {
                         start,
                         end: self.ctx.off,
                         target,
-                        caller_arguments: self.literal_run.and_then(
-                            |(owner, first, end, count)| {
-                                (owner == source && end == op_start && count > 1)
-                                    .then_some((first, count.saturating_sub(1)))
-                            },
-                        ),
                     });
                 }
                 _ => self.trace_valid = false,
@@ -874,9 +844,6 @@ fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
     match op {
         DOTSECTION => {
             if env.trace_drop_hints {
-                if !env.args.is_empty() {
-                    env.trace_valid = false;
-                }
                 env.hint_trace.push(HintTrace {
                     source: env.ctx.source,
                     start: env.ctx.off.saturating_sub(2),
@@ -948,42 +915,13 @@ fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
             o.path(op, env);
             o.flush_args_and_op(op, env);
         }
-        BLENDCS => {
-            let run = env.literal_run.filter(|&(source, _, end, count)| {
-                source == env.ctx.source
-                    && end == env.ctx.off.saturating_sub(1)
-                    && count == env.args.len()
-            });
-            env.process_blend();
-            // A local, contiguous blend expression can be removed together
-            // with the stem that consumes its results.
-            env.literal_run =
-                run.map(|(source, start, _, _)| (source, start, env.ctx.off, env.args.len()));
-        }
+        BLENDCS => env.process_blend(),
         VSINDEXCS => {
-            if env.trace_drop_hints {
-                env.vsindex_trace = env.literal_run.and_then(|(source, start, end, count)| {
-                    (source == env.ctx.source
-                        && end == env.ctx.off.saturating_sub(1)
-                        && count == 1
-                        && env.args.len() == 1)
-                        .then_some(HintTrace {
-                            source,
-                            start,
-                            end: env.ctx.off,
-                            can_follow_call: true,
-                            mask_at: None,
-                        })
-                });
-            }
             env.process_vsindex();
             o.vsindex(env);
             env.clear_args();
         }
         _ => env.process_number(op),
-    }
-    if !matches!(op, SHORTINT | 247..=254 | 32..=246 | FIXEDCS | BLENDCS) {
-        env.literal_run = None;
     }
 }
 

@@ -329,6 +329,91 @@ cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-vsindex-nonzero-hb15.otf" "crates/sofel-subset/
 cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-vsindex-caller-path-hb15.otf" "crates/sofel-subset/tests/data/cff2-vsindex-caller-path-hb15.otf"
 ```
 
+## cff2-hint-args-nested-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_no_hinting_removes_arguments_through_nested_calls` が組む `bytes` である。入れ子の呼び出しを介して stem 引数を渡すケースをヒントなしでサブセット化する。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-hint-args-nested-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-hint-args-nested-hb15.otf" --gids=2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-hint-args-nested-hb15.otf" "crates/sofel-subset/tests/data/cff2-hint-args-nested-hb15.otf"
+```
+
+## cff2-hint-args-blend-path-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_no_hinting_removes_forwarded_blends_but_keeps_path` が組む `bytes` である。global と local の呼び出しを介して blend の結果を渡し、描画命令を残すケースをヒントなしでサブセット化する。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-hint-args-blend-path-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-hint-args-blend-path-hb15.otf" --gids=2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-hint-args-blend-path-hb15.otf" "crates/sofel-subset/tests/data/cff2-hint-args-blend-path-hb15.otf"
+```
+
+## cff2-hint-args-leaf-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_no_hinting_removes_arguments_split_across_callers` が組む `bytes` である。leaf_args == true で、グリフと末端サブルーチンが引数を積むケースをヒントなしでサブセット化する。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-hint-args-leaf-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-hint-args-leaf-hb15.otf" --gids=2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-hint-args-leaf-hb15.otf" "crates/sofel-subset/tests/data/cff2-hint-args-leaf-hb15.otf"
+```
+
+## cff2-hint-args-middle-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_no_hinting_removes_arguments_split_across_callers` が組む `bytes` である。leaf_args == false で、グリフと中間サブルーチンが引数を積むケースをヒントなしでサブセット化する。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-hint-args-middle-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-hint-args-middle-hb15.otf" --gids=2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-hint-args-middle-hb15.otf" "crates/sofel-subset/tests/data/cff2-hint-args-middle-hb15.otf"
+```
+
+## cff2-hint-vsindex-caller-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_no_hinting_relocates_vsindex_argument_from_caller` が組む `bytes` である。グリフからサブルーチン先頭の vsindex へ引数を渡すケースをヒントなしでサブセット化する。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-hint-vsindex-caller-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-hint-vsindex-caller-hb15.otf" --gids=2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-hint-vsindex-caller-hb15.otf" "crates/sofel-subset/tests/data/cff2-hint-vsindex-caller-hb15.otf"
+```
+
+## cff2-hint-args-return-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_no_hinting_removes_hints_after_argument_return` が組む `bytes` である。
+サブルーチンの戻り値を stem 引数に使うケースをヒントなしでサブセット化する。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-hint-args-return-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-hint-args-return-hb15.otf" --gids=2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-hint-args-return-hb15.otf" "crates/sofel-subset/tests/data/cff2-hint-args-return-hb15.otf"
+```
+
+## cff2-hint-blend-operands-caller-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_no_hinting_removes_blend_operands_from_caller` が組む `bytes` である。
+呼び出し元の値を blend の引数として使い、その結果を stem に渡すケースをヒントなしでサブセット化する。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-hint-blend-operands-caller-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-hint-blend-operands-caller-hb15.otf" --gids=2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-hint-blend-operands-caller-hb15.otf" "crates/sofel-subset/tests/data/cff2-hint-blend-operands-caller-hb15.otf"
+```
+
+## cff2-dotsection-args-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_no_hinting_handles_dotsection_arguments` が組む `bytes` である。
+引数のある dotsection の後に stem を宣言するケースをヒントなしでサブセット化する。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-dotsection-args-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-dotsection-args-hb15.otf" --gids=2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-dotsection-args-hb15.otf" "crates/sofel-subset/tests/data/cff2-dotsection-args-hb15.otf"
+```
+
+## cff2-stem-after-moveto-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_no_hinting_handles_stems_after_moveto` が組む `bytes` である。
+moveto の後に stem を宣言するケースをヒントなしでサブセット化する。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-stem-after-moveto-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-stem-after-moveto-hb15.otf" --gids=2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-stem-after-moveto-hb15.otf" "crates/sofel-subset/tests/data/cff2-stem-after-moveto-hb15.otf"
+```
+
 ## cff2-flat-vsindex-hb15.otf
 
 入力は `tests/cff2_flat_vsindex.rs` の `cff2_flatten_preserves_explicit_vsindex_without_blend` が組む。軸を指定しない CFF2 で、サブルーチンを呼ばず、描画の `blend` も使わないが、明示的な `vsindex 0` を持つ。固定した HarfBuzz 15.1.0 の出力を比較する。
