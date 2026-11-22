@@ -8,7 +8,7 @@ use alloc::boxed::Box;
 
 use sofel_font::read::{GlyphId, device::Device};
 use sofel_font::{
-    GlyphExtents, GlyphScratch,
+    GlyphExtents, GlyphScratch, HbScale,
     var::{AdvanceCache, Instance},
 };
 
@@ -69,6 +69,16 @@ impl<'p> SubFont<'p> {
     /// Creates a shaping font using the Type 1 glyph names, metrics and attached
     /// AFM or PFM pairs. The supplied scale converts design units to positions.
     pub fn from_type1(scale: Scale, face: &'p sofel_font::Type1Face<'_>) -> Self {
+        let scale = Scale::new(
+            HbScale::new(
+                scale.scale.x_scale(),
+                scale.scale.y_scale(),
+                face.units_per_em(),
+            )
+            .with_ptem(scale.scale.ptem()),
+            scale.x_ppem,
+            scale.y_ppem,
+        );
         let mut font = Self::new(scale);
         font.set_nominal_glyph_func(move |cp| u32::try_from(face.unicode_glyph(cp)?).ok());
         font.set_h_advance_func(move |gid| {

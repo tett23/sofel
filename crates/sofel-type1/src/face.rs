@@ -77,7 +77,14 @@ impl<'a> Type1Face<'a> {
             .as_ref()
             .map(|mm| mm.default_weights().to_vec());
         let (matrix, units_per_em) = parse_matrix(source.cleartext()).unwrap_or((
-            CidMatrix { xx: 65536, yx: 0, xy: 0, yy: 65536, dx: 0, dy: 0 },
+            CidMatrix {
+                xx: 65536,
+                yx: 0,
+                xy: 0,
+                yy: 65536,
+                dx: 0,
+                dy: 0,
+            },
             None,
         ));
         Ok(Self {

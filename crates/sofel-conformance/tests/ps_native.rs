@@ -5,9 +5,12 @@
 mod triangle;
 
 use sofel_conformance::paths;
-use sofel_font::{CidFace, Type1Face, Type1Source};
+use sofel_font::{CidFace, Font, HbScale, Type1Face, Type1Source};
 use sofel_geom::{Command, Fixed, FnPen, div_fix};
 use sofel_outline::{HintTarget, Scale, draw_cid_native, draw_type1_native};
+use sofel_shape::{
+    Scale as ShapeScale, SegmentProperties, ShapePlan, SubFont, UnicodeBuffer, shape_with_subfont,
+};
 
 fn cid_sample(program: &[u8]) -> Vec<u8> {
     let mut source = b"%!PS-Adobe-3.0 Resource-CIDFont\n\
@@ -98,6 +101,189 @@ fn adr0064_i1_type1_nondefault_font_matrix_matches_freetype() {
         }
         std::fs::remove_file(path).unwrap();
     }
+}
+
+#[test]
+fn adr0065_i1_type1_nondefault_matrix_shaping_advance_matches_freetype() {
+    let (mut bytes, _) = triangle::sample();
+    let old = b"/FontMatrix [0.001 0 0 0.001 0 0]";
+    let new = b"/FontMatrix [0.002 0 0 0.002 0 0]";
+    let at = bytes
+        .windows(old.len())
+        .position(|window| window == old)
+        .unwrap();
+    bytes.splice(at..at + old.len(), new.iter().copied());
+    let path = std::env::temp_dir().join(format!(
+        "sofel-adr0065-type1-shape-matrix-{}.pfa",
+        std::process::id()
+    ));
+    std::fs::write(&path, &bytes).unwrap();
+    let source = Type1Source::parse_pfa(&bytes, 4096).unwrap();
+    let face = Type1Face::new(&source).unwrap();
+    let sfnt = Font::for_shaping(&[0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 0).unwrap();
+    let instance = sfnt.default_instance();
+    let mut input = UnicodeBuffer::new();
+    input.push_utf8(b"A", 0, None);
+    input.number_clusters();
+    let plan = ShapePlan::new(
+        instance,
+        SegmentProperties::default().guess(&input, None),
+        &[],
+    );
+    let subfont = SubFont::from_type1(
+        ShapeScale::new(HbScale::new(20 * 64, 20 * 64, 1000), 20, 20),
+        &face,
+    );
+    let shaped = shape_with_subfont(instance, &subfont, &plan, input);
+    let actual = shaped.glyph_positions().first().unwrap().x_advance;
+    let reference = std::process::Command::new(paths::ft_dump())
+        .args(["--hint-slot", "20", "1", "none", "normal"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(reference.status.success());
+    let expected = String::from_utf8(reference.stdout)
+        .unwrap()
+        .lines()
+        .next()
+        .unwrap()
+        .split_ascii_whitespace()
+        .nth(1)
+        .unwrap()
+        .parse::<i32>()
+        .unwrap();
+    assert_eq!(actual, expected);
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn adr0065_i1_type1_shear_extents_use_transformed_points() {
+    let program = [
+        139, 248, 136, 13, 239, 239, 21, 247, 92, 139, 5, 39, 247, 92, 5, 9, 14,
+    ];
+    let (mut bytes, _) = triangle::with_glyph_program(&program);
+    let old = b"/FontMatrix [0.001 0 0 0.001 0 0]";
+    let new = b"/FontMatrix [0.001 0 0.0005 0.001 0 0]";
+    let at = bytes
+        .windows(old.len())
+        .position(|window| window == old)
+        .unwrap();
+    bytes.splice(at..at + old.len(), new.iter().copied());
+    let path = std::env::temp_dir().join(format!(
+        "sofel-adr0065-type1-shear-extents-{}.pfa",
+        std::process::id()
+    ));
+    std::fs::write(&path, &bytes).unwrap();
+    let source = Type1Source::parse_pfa(&bytes, 4096).unwrap();
+    let face = Type1Face::new(&source).unwrap();
+    let scale = Fixed(div_fix(16 * 64, i32::from(face.units_per_em())));
+    let info = sofel_outline::draw_type1(
+        &face,
+        1,
+        Scale::Scaled { x: scale, y: scale },
+        &mut FnPen(|_| {}),
+    )
+    .unwrap();
+    let reference = std::process::Command::new(paths::ft_dump())
+        .args(["--hint-slot", "16", "1", "none", "normal"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(
+        reference.status.success(),
+        "{}",
+        String::from_utf8_lossy(&reference.stderr)
+    );
+    let points = String::from_utf8(reference.stdout)
+        .unwrap()
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split_ascii_whitespace();
+            (parts.next() == Some("point")).then(|| {
+                (
+                    parts.next().unwrap().parse::<i32>().unwrap(),
+                    parts.next().unwrap().parse::<i32>().unwrap(),
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(points.len(), 3);
+    assert_eq!(
+        (
+            info.cbox.x_min,
+            info.cbox.y_min,
+            info.cbox.x_max,
+            info.cbox.y_max
+        ),
+        (
+            points.iter().map(|point| point.0).min().unwrap(),
+            points.iter().map(|point| point.1).min().unwrap(),
+            points.iter().map(|point| point.0).max().unwrap(),
+            points.iter().map(|point| point.1).max().unwrap(),
+        )
+    );
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn adr0065_i1_type1_nondefault_matrix_attached_kerning_matches_freetype() {
+    let root = paths::testdata().join("extra-fonts/fonts");
+    let mut bytes = std::fs::read(root.join("cmr10.pfb")).unwrap();
+    let old = b"/FontMatrix [0.001 0 0 0.001 0 0 ";
+    let new = b"/FontMatrix [0.002 0 0 0.002 0 0 ";
+    let at = bytes
+        .windows(old.len())
+        .position(|window| window == old)
+        .unwrap();
+    bytes.splice(at..at + old.len(), new.iter().copied());
+    let path = std::env::temp_dir().join(format!(
+        "sofel-adr0065-type1-kerning-matrix-{}.pfb",
+        std::process::id()
+    ));
+    std::fs::write(&path, &bytes).unwrap();
+    let source = Type1Source::parse_pfb(&bytes, bytes.len().saturating_mul(8)).unwrap();
+    let mut face = Type1Face::new(&source).unwrap();
+    assert_eq!(face.units_per_em(), 500);
+    let afm_data = std::fs::read(root.join("cmr10.afm")).unwrap();
+    let pfm_data = std::fs::read(root.join("cmr10.pfm")).unwrap();
+    for suffix in ["afm", "pfm"] {
+        let attached = root.join(format!("cmr10.{suffix}"));
+        if suffix == "afm" {
+            face.attach_afm(&afm_data).unwrap();
+        } else {
+            face.attach_pfm(&pfm_data).unwrap();
+        }
+        let reference = std::process::Command::new(paths::ft_dump())
+            .args(["--legacy-kerning", path.to_str().unwrap()])
+            .arg(&attached)
+            .output()
+            .unwrap();
+        assert!(
+            reference.status.success(),
+            "{}",
+            String::from_utf8_lossy(&reference.stderr)
+        );
+        let pairs = String::from_utf8(reference.stdout)
+            .unwrap()
+            .lines()
+            .filter_map(|line| {
+                let mut fields = line.split_ascii_whitespace();
+                (fields.next() == Some("kern")).then(|| {
+                    (
+                        fields.next().unwrap().parse::<usize>().unwrap(),
+                        fields.next().unwrap().parse::<usize>().unwrap(),
+                        fields.next().unwrap().parse::<i32>().unwrap(),
+                        fields.next().unwrap().parse::<i32>().unwrap(),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(pairs.len(), 181);
+        for (left, right, x, y) in pairs {
+            assert_eq!(face.kerning(left, right), (x, y), "{suffix} {left} {right}");
+        }
+    }
+    std::fs::remove_file(path).unwrap();
 }
 
 fn cid_sample_with_blue_values(program: &[u8]) -> Vec<u8> {
