@@ -571,8 +571,6 @@ PE32 では `RT_FONT` の名前・言語ディレクトリを順にたどり、�
 
 送り幅とカーニングは、指定した 1 以上の ppem で 26.6 ピクセルに換算する。輪郭と画像は `sofel-glyph-render`、通常のシェーピングは `sofel-shape::shape_face` が扱う。既存の `Font` と形式別 API の単位は変えない（[ADR 0100](adr/0100-common-face-api.md)）。
 
-現在、sfnt と Type42 の埋め込みビットマップの固定ストライクは `Face::strike_count` にまだ列挙されない。共通入口でそのストライクを明示して画像と送り幅を得る操作は未実装である（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)、[ADR 0100](adr/0100-common-face-api.md)）。
-
 ## PFR フェイス
 
 `Font::from_pfr` は PFR の論理フェイス番号を受け取り、物理フォントの文字対応と送りを返す。

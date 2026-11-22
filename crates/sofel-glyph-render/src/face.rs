@@ -2,6 +2,7 @@
 
 use alloc::vec::Vec;
 
+use sofel_bitmap::{PixelMode, bitmap_layout, draw_bitmap, strikes};
 use sofel_font::{Face, FaceError, read::GlyphId};
 use sofel_outline::{Outlines, Scratch};
 use sofel_raster::{Bitmap, Rasterizer};
@@ -70,6 +71,20 @@ pub fn render_face(
     face.h_advance(glyph, ppem, strike)?;
     match face {
         Face::Sfnt(font) => {
+            if let Some(index) = bitmap_strike(face, ppem, strike, font.has_outlines())
+                && let Some(image) = sfnt_bitmap(font, glyph, index)?
+            {
+                return Ok(image);
+            }
+            if !font.has_outlines() {
+                return Ok(FaceImage {
+                    left: 0,
+                    top: 0,
+                    width: 0,
+                    rows: 0,
+                    pixels: Vec::new(),
+                });
+            }
             let outlines = Outlines::new(font.default_instance());
             Ok(render(&outlines, glyph, ppem, scratch, raster)?.into())
         }
@@ -91,6 +106,20 @@ pub fn render_face(
         Face::Type42(font) => {
             let embedded = font.embedded_glyph(glyph).ok_or(FaceError::InvalidGlyph)?;
             let inner = font.inner_font();
+            if let Some(index) = bitmap_strike(face, ppem, strike, inner.has_outlines())
+                && let Some(image) = sfnt_bitmap(&inner, embedded, index)?
+            {
+                return Ok(image);
+            }
+            if !inner.has_outlines() {
+                return Ok(FaceImage {
+                    left: 0,
+                    top: 0,
+                    width: 0,
+                    rows: 0,
+                    pixels: Vec::new(),
+                });
+            }
             let outlines = Outlines::new(inner.default_instance());
             Ok(render(&outlines, embedded, ppem, scratch, raster)?.into())
         }
@@ -143,6 +172,95 @@ pub fn render_face(
             )
         }
     }
+}
+
+fn bitmap_strike(face: Face<'_>, ppem: u16, strike: Option<u32>, outlines: bool) -> Option<u32> {
+    strike.or_else(|| {
+        (!outlines)
+            .then(|| {
+                (0..face.strike_count()).find(|&index| {
+                    face.strike(index).is_some_and(|(x, y)| {
+                        let ppem = u32::from(ppem);
+                        (x.saturating_add(32) / 64, y.saturating_add(32) / 64) == (ppem, ppem)
+                    })
+                })
+            })
+            .flatten()
+    })
+}
+
+fn sfnt_bitmap(
+    font: &sofel_font::Font<'_>,
+    glyph: GlyphId,
+    index: u32,
+) -> Result<Option<FaceImage>, FaceRenderError> {
+    let strike = strikes(font)
+        .nth(usize::try_from(index).map_err(|_| FaceError::Overflow)?)
+        .ok_or(FaceError::InvalidStrike)?;
+    let layout = match bitmap_layout(font, &strike, glyph.0) {
+        Ok(layout) => layout,
+        Err(sofel_bitmap::BitmapError::Missing) => return Ok(None),
+        Err(_) => return Err(FaceRenderError::Bitmap),
+    };
+    let byte_len = layout.len();
+    let pixel_count = usize::from(layout.width)
+        .checked_mul(usize::from(layout.rows))
+        .ok_or(FaceRenderError::Bitmap)?;
+    if byte_len > 67_108_864 || pixel_count > 67_108_864 {
+        return Err(FaceRenderError::Bitmap);
+    }
+    let mut raw = Vec::new();
+    raw.try_reserve_exact(byte_len)
+        .map_err(|_| FaceRenderError::Bitmap)?;
+    raw.resize(byte_len, 0);
+    let layout =
+        draw_bitmap(font, &strike, glyph.0, &mut raw).map_err(|_| FaceRenderError::Bitmap)?;
+    let pitch = usize::try_from(layout.pitch).map_err(|_| FaceRenderError::Bitmap)?;
+    let mut pixels = Vec::new();
+    pixels
+        .try_reserve_exact(pixel_count)
+        .map_err(|_| FaceRenderError::Bitmap)?;
+    for row in raw
+        .chunks_exact(pitch.max(1))
+        .take(usize::from(layout.rows))
+    {
+        for x in 0..usize::from(layout.width) {
+            let value = match layout.pixel_mode {
+                PixelMode::Mono => pixel_value(row, x, 1, 255),
+                PixelMode::Gray2 => pixel_value(row, x, 2, 85),
+                PixelMode::Gray4 => pixel_value(row, x, 4, 17),
+                PixelMode::Gray => row.get(x).copied(),
+                PixelMode::Bgra => row
+                    .get(
+                        x.checked_mul(4)
+                            .and_then(|at| at.checked_add(3))
+                            .ok_or(FaceRenderError::Bitmap)?,
+                    )
+                    .copied(),
+                PixelMode::Lcd | PixelMode::LcdV => return Err(FaceRenderError::Bitmap),
+            }
+            .ok_or(FaceRenderError::Bitmap)?;
+            pixels.push(value);
+        }
+    }
+    if pixels.len() != pixel_count {
+        return Err(FaceRenderError::Bitmap);
+    }
+    Ok(Some(FaceImage {
+        left: i32::from(layout.metrics.hori_bearing_x),
+        top: i32::from(layout.metrics.hori_bearing_y),
+        width: u32::from(layout.width),
+        rows: u32::from(layout.rows),
+        pixels,
+    }))
+}
+
+fn pixel_value(row: &[u8], x: usize, bits: usize, scale: u8) -> Option<u8> {
+    let bit = x.checked_mul(bits)?;
+    let byte = row.get(bit / 8).copied()?;
+    let shift = 8usize.checked_sub(bits)?.checked_sub(bit % 8)?;
+    let mask = u8::try_from((1u16 << bits).checked_sub(1)?).ok()?;
+    Some(((byte >> shift) & mask).saturating_mul(scale))
 }
 
 fn unpack_bitmap(

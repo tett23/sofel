@@ -287,3 +287,81 @@ fn adr0100_a1_real_legacy_c_and_cli_entries() {
         unsafe { sofel_face_destroy(face) };
     }
 }
+
+#[test]
+fn adr0100_i1_i6_c_sfnt_fixed_strike_metrics_and_pixels() {
+    let image = build::Buf::new()
+        .bytes(&[2, 3, 1, 2, 4])
+        .bytes(&[0xe0, 0xa0])
+        .done();
+    let sizes = [build::SizeSpec {
+        ppem_x: 16,
+        ppem_y: 16,
+        start_glyph: 1,
+        end_glyph: 1,
+        subtables: vec![(
+            1,
+            1,
+            build::index_offsets(1, 1, 4, &[0, u32::try_from(image.len()).unwrap()]),
+        )],
+        ..build::SizeSpec::default()
+    }];
+    let bytes = build::glyph_font_with(
+        &[Vec::new(), Vec::new()],
+        false,
+        false,
+        vec![
+            (b"EBLC", build::cblc(2, &sizes)),
+            (
+                b"EBDT",
+                build::Buf::new().u16(2).u16(0).bytes(&image).done(),
+            ),
+        ],
+    );
+    let mut error = 0;
+    // SAFETY: input and error are live and disjoint.
+    let face = unsafe { sofel_face_create(bytes.as_ptr(), bytes.len(), 0, &mut error) };
+    assert!(!face.is_null());
+    let mut count = 0;
+    // SAFETY: face and count output are live.
+    assert_eq!(unsafe { sofel_face_strike_count(face, &mut count) }, 0);
+    assert_eq!(count, 1);
+    let (mut x, mut y) = (0, 0);
+    // SAFETY: face and output pointers are live.
+    assert_eq!(unsafe { sofel_face_strike(face, 0, &mut x, &mut y) }, 0);
+    assert_eq!((x, y), (1024, 1024));
+    let mut advance = 0;
+    // SAFETY: face and output pointer are live.
+    let advance_status = unsafe { sofel_face_h_advance(face, 1, 16, 0, &mut advance) };
+    assert_eq!(advance_status, 0);
+    assert_eq!(advance, 256);
+    let scratch = sofel_outline_scratch_create();
+    let raster = sofel_rasterizer_create();
+    let mut pixels = [0u8; 6];
+    let mut len = 0;
+    let mut box_ = [0i32; 4];
+    // SAFETY: all handles and output pointers are live and disjoint.
+    let status = unsafe {
+        sofel_face_render_glyph(
+            face,
+            1,
+            16,
+            0,
+            scratch,
+            raster,
+            pixels.as_mut_ptr(),
+            pixels.len(),
+            &mut len,
+            box_.as_mut_ptr(),
+        )
+    };
+    assert_eq!(status, 0);
+    assert_eq!(len, 6);
+    assert_eq!(pixels, [255, 255, 255, 255, 0, 255]);
+    // SAFETY: each handle is destroyed once.
+    unsafe {
+        sofel_face_destroy(face);
+        sofel_outline_scratch_destroy(scratch);
+        sofel_rasterizer_destroy(raster);
+    }
+}

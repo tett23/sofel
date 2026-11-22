@@ -121,3 +121,57 @@ fn adr0100_i4_size_upem_and_conversion_boundaries() {
         assert!(opened.as_face().h_advance(GlyphId(0), ppem, None).is_err());
     }
 }
+
+#[test]
+fn adr0100_i1_i4_sfnt_fixed_strike_is_selected_exactly() {
+    let image = build::Buf::new()
+        .bytes(&[2, 3, 1, 2, 4])
+        .bytes(&[0xe0, 0xa0])
+        .done();
+    let sizes = [build::SizeSpec {
+        ppem_x: 16,
+        ppem_y: 16,
+        start_glyph: 1,
+        end_glyph: 1,
+        subtables: vec![(
+            1,
+            1,
+            build::index_offsets(1, 1, 4, &[0, u32::try_from(image.len()).unwrap()]),
+        )],
+        ..build::SizeSpec::default()
+    }];
+    let bytes = build::glyph_font_with(
+        &[Vec::new(), Vec::new()],
+        false,
+        false,
+        vec![
+            (b"EBLC", build::cblc(2, &sizes)),
+            (
+                b"EBDT",
+                build::Buf::new().u16(2).u16(0).bytes(&image).done(),
+            ),
+        ],
+    );
+    let data = FaceData::new(&bytes).unwrap();
+    let opened = data.open(0).unwrap();
+    let face = opened.as_face();
+    assert_eq!(face.strike_count(), 1);
+    assert_eq!(face.strike(0), Some((1024, 1024)));
+    assert_eq!(face.h_advance(GlyphId(1), 16, Some(0)), Ok(256));
+    assert!(face.h_advance(GlyphId(1), 15, Some(0)).is_err());
+    assert!(face.h_advance(GlyphId(1), 16, Some(1)).is_err());
+
+    let hex = bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let wrapper = format!(
+        "%!PS-TrueTypeFont-1.0\n/FontType 42 def\n/Encoding StandardEncoding def\n/CharStrings 2 dict dup begin\n/.notdef 0 def\n/A 1 def\nend readonly def\n/sfnts [<{hex}>] def\n"
+    );
+    let data = FaceData::new(wrapper.as_bytes()).unwrap();
+    let opened = data.open(0).unwrap();
+    let face = opened.as_face();
+    assert_eq!(face.strike_count(), 1);
+    assert_eq!(face.strike(0), Some((1024, 1024)));
+    assert_eq!(face.h_advance(GlyphId(1), 16, Some(0)), Ok(256));
+}

@@ -31,6 +31,11 @@ sofel-font sofel-type1
 sofel-font sofel-pfr
 sofel-font sofel-bitmapfont
 sofel-font sofel-geom
+# Root ADR 0100 opens compressed containers before selecting a face.
+sofel-font sofel-inflate
+sofel-font sofel-lzw
+sofel-font sofel-bzip2
+sofel-font sofel-woff
 sofel-shape sofel-font
 sofel-shape sofel-geom
 sofel-shape sofel-unicode
@@ -52,6 +57,7 @@ sofel-subset sofel-geom
 # The glyph rendering shared by the tools and the C ABI (ADR 0087,
 # ADR 0095)
 sofel-glyph-render sofel-font
+sofel-glyph-render sofel-bitmap
 sofel-glyph-render sofel-outline
 sofel-glyph-render sofel-raster
 sofel-glyph-render sofel-color

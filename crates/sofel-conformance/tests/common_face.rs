@@ -3,9 +3,13 @@
 
 use std::process::Command;
 
+use sofel_bitmap::strikes;
 use sofel_conformance::paths;
 use sofel_font::FaceData;
 use sofel_font::read::GlyphId;
+use sofel_glyph_render::render_face;
+use sofel_outline::Scratch;
+use sofel_raster::Rasterizer;
 
 #[test]
 fn adr0100_i1_i2_real_legacy_face_counts_and_unicode_maps() {
@@ -114,4 +118,76 @@ fn adr0100_i1_i2_real_bitmap_and_type1_advances() {
         }
         assert_eq!(checked, face.glyph_count(), "{name}");
     }
+}
+
+#[test]
+fn adr0100_i1_i2_real_sfnt_fixed_strike_advances() -> Result<(), &'static str> {
+    for name in ["spleen-8x16.dfont", "color-noto-cbdt.ttf"] {
+        let path = paths::testdata().join("extra-fonts/fonts").join(name);
+        let bytes = std::fs::read(&path).unwrap();
+        let data = FaceData::new(&bytes).unwrap();
+        let opened = data.open(0).unwrap();
+        let face = opened.as_face();
+        let font = match face {
+            sofel_font::Face::Sfnt(font) => font,
+            _ => return Err("sfnt expected"),
+        };
+        let sizes = strikes(font).collect::<Vec<_>>();
+        assert_eq!(
+            face.strike_count(),
+            u32::try_from(sizes.len()).unwrap(),
+            "{name}"
+        );
+        if name.ends_with("cbdt.ttf") {
+            let first = sizes.first().unwrap();
+            let mut scratch = Scratch::default();
+            let mut raster = Rasterizer::new();
+            let missing = render_face(
+                face,
+                GlyphId(0),
+                first.x_ppem,
+                Some(0),
+                &mut scratch,
+                &mut raster,
+            )
+            .unwrap();
+            assert_eq!((missing.width, missing.rows), (0, 0), "{name}");
+        }
+        let output = Command::new(paths::ft_dump())
+            .arg("--sbit")
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{name}");
+        let text = String::from_utf8(output.stdout).unwrap();
+        let mut index = None;
+        let mut checked = 0;
+        for line in text.lines() {
+            let fields = line.split_ascii_whitespace().collect::<Vec<_>>();
+            match fields.as_slice() {
+                ["size", raw] => index = Some(raw.parse::<u32>().unwrap()),
+                ["glyph", glyph, "0", _, _, _, _, _, _, advance, ..] => {
+                    let index = index.unwrap();
+                    let strike = sizes.get(usize::try_from(index).unwrap()).unwrap();
+                    let ppem = strike.x_ppem;
+                    if ppem != strike.y_ppem {
+                        continue;
+                    }
+                    assert_eq!(
+                        face.h_advance(GlyphId(glyph.parse().unwrap()), ppem, Some(index)),
+                        Ok(advance.parse::<i32>().unwrap()),
+                        "{name}: {line}"
+                    );
+                    checked += 1;
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(
+            checked,
+            if name.ends_with(".dfont") { 1021 } else { 42 },
+            "{name}"
+        );
+    }
+    Ok(())
 }
