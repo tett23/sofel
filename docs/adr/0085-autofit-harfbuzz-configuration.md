@@ -67,7 +67,7 @@ Golem は、この ADR の構成を使わない。
 
 - [tools/ft-dump/build.sh](../../tools/ft-dump/build.sh) の三つめの引数に `--harfbuzz` を足し、`FT_CONFIG_OPTION_USE_HARFBUZZ` を定義して、固定した HarfBuzz 15.1.0 を静的にリンクした ft-dump を作る。HarfBuzz は `harfbuzz.cc` を `$CXX` でコンパイルするので、この構成だけは C++ のコンパイラも要る。
 - グリフごとの style は、既存の `--auto-styles` を `--harfbuzz` の ft-dump で動かして比べる。
-- 適合テストは、この ft-dump と、sofel の「GSUB も使う」構成を比べる。比べる項目は、[ADR 0064](0064-freetype-hinting-and-render-modes.md) の不変条件1と2と同じである。
+- 適合テストは、この ft-dump と、sofel の「GSUB も使う」構成を比べる。比べる項目は、[ADR 0064](0064-freetype-hinting-and-render-modes.md) の不変条件 I1と2と同じである。
 
 ## 実装しないこと
 
