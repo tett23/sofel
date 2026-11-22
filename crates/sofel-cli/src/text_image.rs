@@ -2,12 +2,12 @@
 
 use std::io::Write;
 
-use sofel_font::{BareCffFace, Font, HbScale, Type1Face, read::GlyphId, var::Location};
+use sofel_font::{BareCffFace, Face, Font, HbScale, Type1Face, read::GlyphId, var::Location};
 use sofel_outline::{Outlines, Scratch};
 use sofel_raster::{Bitmap, Rasterizer};
 use sofel_shape::{
-    Feature, GlyphBuffer, Scale, SegmentProperties, ShapePlan, SubFont, UnicodeBuffer,
-    shape_with_extents, shape_with_subfont,
+    Feature, GlyphBuffer, Scale, SegmentProperties, ShapePlan, UnicodeBuffer, shape_face,
+    shape_with_extents,
 };
 
 use sofel_glyph_render as glyph;
@@ -43,12 +43,40 @@ fn copy_bitmap(bitmap: Bitmap<'_>) -> Result<RasterGlyph, String> {
     })
 }
 
+pub(crate) fn draw_common(
+    face: Face<'_>,
+    ppem: u16,
+    strike: Option<u32>,
+    text: &str,
+    features: &[Feature],
+    out: &mut dyn Write,
+) -> Result<(), String> {
+    let mut input = UnicodeBuffer::new();
+    input.push_utf8(text.as_bytes(), 0, None);
+    input.number_clusters();
+    let props = SegmentProperties::default().guess(&input, None);
+    let glyphs =
+        shape_face(face, ppem, strike, props, features, input).map_err(|e| e.to_string())?;
+    let mut scratch = Scratch::default();
+    let mut raster = Rasterizer::new();
+    draw_positions(&glyphs, out, |glyph| {
+        let bitmap = glyph::render_face(face, glyph, ppem, strike, &mut scratch, &mut raster)
+            .map_err(|e| format!("glyph {}: {e:?}", glyph.0))?;
+        Ok(RasterGlyph {
+            left: bitmap.left,
+            top: bitmap.top,
+            width: bitmap.width,
+            rows: bitmap.rows,
+            pixels: bitmap.pixels,
+        })
+    })
+}
+
 /// Shapes one line, renders each outline, then composites a PGM image.
 /// Positions remain in 26.6 units until each bitmap is placed.
 pub(crate) fn draw(
     font: &Font<'_>,
     location: &Location<'_>,
-    type42: Option<&sofel_font::type42::Type42Face<'_>>,
     ppem: u16,
     text: &str,
     features: &[Feature],
@@ -67,18 +95,11 @@ pub(crate) fn draw(
         u32::from(ppem),
     );
     let outlines = Outlines::new(instance);
-    let glyphs = if let Some(face) = type42 {
-        let mut subfont = SubFont::new(scale);
-        subfont
-            .set_nominal_glyph_func(|cp| face.embedded_glyph(face.nominal_glyph(cp)?).map(|g| g.0));
-        shape_with_subfont(instance, &subfont, &plan, input)
-    } else {
-        shape_with_extents(instance, &scale, &plan, input, &|g| {
-            instance
-                .glyf_extents(g)
-                .or_else(|| outlines.glyph_extents(g))
-        })
-    };
+    let glyphs = shape_with_extents(instance, &scale, &plan, input, &|g| {
+        instance
+            .glyf_extents(g)
+            .or_else(|| outlines.glyph_extents(g))
+    });
     let mut scratch = Scratch::default();
     let mut raster = Rasterizer::new();
     draw_positions(&glyphs, out, |glyph| {
@@ -96,38 +117,7 @@ pub(crate) fn draw_bare_cff(
     features: &[Feature],
     out: &mut dyn Write,
 ) -> Result<(), String> {
-    const EMPTY_SFNT: [u8; 12] = [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-    let font = Font::for_shaping(&EMPTY_SFNT, 0).map_err(|e| format!("shaping face: {e}"))?;
-    let instance = font.default_instance();
-    let mut input = UnicodeBuffer::new();
-    input.push_utf8(text.as_bytes(), 0, None);
-    input.number_clusters();
-    let props = SegmentProperties::default().guess(&input, None);
-    let plan = ShapePlan::new(instance, props, features);
-    let scale_value = i32::from(ppem).saturating_mul(64);
-    let scale = Scale::new(
-        HbScale::for_font(&font, scale_value, scale_value),
-        u32::from(ppem),
-        u32::from(ppem),
-    );
-    let upem = i32::try_from(face.cff().top_matrix().units_per_em)
-        .ok()
-        .filter(|upem| *upem > 0)
-        .ok_or("invalid CFF units per em")?;
-    let mut subfont = SubFont::new(scale);
-    subfont.set_nominal_glyph_func(|codepoint| face.nominal_glyph(codepoint).map(|glyph| glyph.0));
-    subfont.set_h_advance_func(|glyph| {
-        let advance = face.h_advance(GlyphId(glyph)).unwrap_or(0);
-        sofel_geom::mul_div(advance, scale_value, upem)
-    });
-    let glyphs = shape_with_subfont(instance, &subfont, &plan, input);
-    let mut scratch = Scratch::default();
-    let mut raster = Rasterizer::new();
-    draw_positions(&glyphs, out, |glyph| {
-        let bitmap = glyph::render_bare_cff(face, glyph, ppem, &mut scratch, &mut raster)
-            .map_err(|e| format!("glyph {}: {e}", glyph.0))?;
-        copy_bitmap(bitmap)
-    })
+    draw_common(Face::BareCff(face), ppem, None, text, features, out)
 }
 
 /// Shapes and draws one line of Type 1 PFA/PFB text.
@@ -138,29 +128,7 @@ pub(crate) fn draw_type1(
     features: &[Feature],
     out: &mut dyn Write,
 ) -> Result<(), String> {
-    const EMPTY_SFNT: [u8; 12] = [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-    let font = Font::for_shaping(&EMPTY_SFNT, 0).map_err(|e| format!("shaping face: {e}"))?;
-    let instance = font.default_instance();
-    let mut input = UnicodeBuffer::new();
-    input.push_utf8(text.as_bytes(), 0, None);
-    input.number_clusters();
-    let props = SegmentProperties::default().guess(&input, None);
-    let plan = ShapePlan::new(instance, props, features);
-    let scale_value = i32::from(ppem).saturating_mul(64);
-    let scale = Scale::new(
-        HbScale::for_font(&font, scale_value, scale_value),
-        u32::from(ppem),
-        u32::from(ppem),
-    );
-    let subfont = SubFont::from_type1(scale, face);
-    let glyphs = shape_with_subfont(instance, &subfont, &plan, input);
-    let mut raster = Rasterizer::new();
-    draw_positions(&glyphs, out, |glyph| {
-        let index = usize::try_from(glyph.0).map_err(|_| "glyph index overflow")?;
-        let bitmap = glyph::render_type1(face, index, ppem, &mut raster)
-            .map_err(|e| format!("glyph {}: {e}", glyph.0))?;
-        copy_bitmap(bitmap)
-    })
+    draw_common(Face::Type1(face), ppem, None, text, features, out)
 }
 
 fn draw_positions(

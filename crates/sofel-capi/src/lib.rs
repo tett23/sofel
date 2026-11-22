@@ -14,6 +14,7 @@
 #![allow(clippy::too_many_arguments)]
 
 mod color;
+mod face;
 mod gpu;
 mod layout_query;
 mod shape;
@@ -21,6 +22,7 @@ mod subset;
 mod variation;
 mod vector;
 
+pub use face::*;
 pub use variation::*;
 
 use core::ffi::{c_char, c_void};

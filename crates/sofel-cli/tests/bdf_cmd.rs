@@ -88,11 +88,27 @@ fn adr0065_i1_bdf_bounds_and_strike() {
 }
 
 #[test]
-fn adr0065_i1_bdf_selects_asymmetric_strike_by_height() {
+fn adr0100_i4_bdf_rejects_asymmetric_strike_size() {
     let data = BDF.replace("SIZE 8 72 72", "SIZE 8 96 72");
-    assert_eq!(
-        run_data(&data, &["--ppem", "8", "--glyph", "1"]),
-        run(&["--ppem", "8", "--glyph", "1"])
-    );
+    assert_eq!(run_data(&data, &["--ppem", "8", "--glyph", "1"]).0, 1);
     assert_eq!(run_data(&data, &["--ppem", "11", "--glyph", "1"]).0, 1);
+}
+
+#[test]
+fn adr0100_i5_bdf_text_uses_common_shape_and_bitmap() {
+    let path = std::env::temp_dir().join(format!("sofel-adr0100-bdf-{}.bdf", std::process::id()));
+    std::fs::write(&path, BDF).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_sofel"))
+        .args(["render", "--ppem", "8", "--text", "AA"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    std::fs::remove_file(path).unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stdout.starts_with(b"P5\n16 8\n255\n"));
 }

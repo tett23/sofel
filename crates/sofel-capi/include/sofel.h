@@ -4154,6 +4154,104 @@ typedef struct sofel_serialize_object
 int32_t sofel_serialize_objects(uint32_t tag, const sofel_serialize_object_t *objects,
                                 size_t count, sofel_bytes_t *out);
 
+/* -------------------------------------------------------- common faces */
+
+/* Owns the input bytes and optional Type 1 metrics (root ADR 0100). */
+typedef struct sofel_face sofel_face_t;
+#define SOFEL_METRICS_AFM 0
+#define SOFEL_METRICS_PFM 1
+/* UINT32_MAX selects no fixed strike. All returned metrics are signed 26.6 pixels. */
+
+/* Copies data and opens a numbered face. The caller may free data immediately.
+ * Rust: sofel_font::FaceData::new, sofel_font::FaceData::open, sofel_font::OpenedFace::as_face
+ */
+sofel_face_t *sofel_face_create(const uint8_t *data, size_t len,
+                                uint32_t index, int32_t *error);
+
+/* Frees an owned common face; accepts NULL.
+ * Rust: none
+ */
+void sofel_face_destroy(sofel_face_t *face);
+
+/* Counts logical faces in a source, including collections and FON resources.
+ * Rust: sofel_font::FaceData::face_count
+ */
+int32_t sofel_face_count(const uint8_t *data, size_t len, uint32_t *count);
+
+/* Number of glyphs including glyph zero.
+ * Rust: sofel_font::Face::glyph_count
+ */
+int32_t sofel_face_num_glyphs(const sofel_face_t *face, uint32_t *count);
+
+/* Unicode character mapping; SOFEL_ERROR_NOT_FOUND when unmapped.
+ * Rust: sofel_font::Face::nominal_glyph
+ */
+int32_t sofel_face_nominal_glyph(const sofel_face_t *face,
+                                 uint32_t codepoint, uint32_t *glyph);
+
+/* Number of exact fixed bitmap strikes.
+ * Rust: sofel_font::Face::strike_count
+ */
+int32_t sofel_face_strike_count(const sofel_face_t *face, uint32_t *count);
+
+/* The selected strike's horizontal and vertical ppem, both in 26.6.
+ * Rust: sofel_font::Face::strike
+ */
+int32_t sofel_face_strike(const sofel_face_t *face, uint32_t index,
+                          uint32_t *x_ppem_26_6, uint32_t *y_ppem_26_6);
+
+/* Horizontal advance at ppem and an optional exact strike.
+ * Rust: sofel_font::Face::h_advance
+ */
+int32_t sofel_face_h_advance(const sofel_face_t *face, uint32_t glyph,
+                             uint16_t ppem, uint32_t strike, int32_t *advance_26_6);
+
+/* Unfitted horizontal and vertical pair adjustment.
+ * Rust: sofel_font::Face::kerning
+ */
+int32_t sofel_face_kerning(const sofel_face_t *face, uint32_t left,
+                           uint32_t right, uint16_t ppem, uint32_t strike,
+                           int32_t *x_26_6, int32_t *y_26_6);
+
+/* Creates an independent Type 1 face with copied AFM or PFM attachment.
+ * Rust: sofel_font::OpenedFace::attach_afm, sofel_font::OpenedFace::attach_pfm
+ */
+sofel_face_t *sofel_face_with_metrics(const sofel_face_t *face,
+                                      const uint8_t *data, size_t len,
+                                      uint32_t format, int32_t *error);
+
+/* Draws an unhinted outline in 26.6 pixels; fixed-only faces fail.
+ * Rust: sofel_pfr::PfrFace::has_outlines
+ */
+int32_t sofel_face_outline_draw(const sofel_face_t *face, uint32_t glyph,
+                                uint16_t ppem, sofel_outline_scratch_t *scratch,
+                                sofel_move_to_func_t move_to,
+                                sofel_line_to_func_t line_to,
+                                sofel_quad_to_func_t quad_to,
+                                sofel_cubic_to_func_t cubic_to,
+                                sofel_close_func_t close, void *user,
+                                int32_t *cbox, uint32_t *overlap);
+
+/* Renders an outline or exact fixed strike to gray coverage. On short
+ * capacity, writes the needed length and leaves pixels unchanged.
+ * Rust: sofel_glyph_render::render_face, sofel_font::Face::bitmap
+ */
+int32_t sofel_face_render_glyph(const sofel_face_t *face, uint32_t glyph,
+                                uint16_t ppem, uint32_t strike,
+                                sofel_outline_scratch_t *scratch,
+                                sofel_rasterizer_t *rasterizer,
+                                uint8_t *pixels, size_t capacity,
+                                size_t *len, int32_t *box);
+
+/* Shapes a segment at 26.6 pixels; kern is enabled unless disabled by
+ * a feature. The caller owns the buffer and the feature array.
+ * Rust: sofel_shape::shape_face
+ */
+int32_t sofel_face_shape(const sofel_face_t *face, uint16_t ppem, uint32_t strike,
+                         const sofel_segment_t *segment,
+                         const sofel_feature_t *features, size_t n_features,
+                         sofel_buffer_t *buffer);
+
 #ifdef __cplusplus
 }
 #endif

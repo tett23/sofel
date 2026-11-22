@@ -104,6 +104,8 @@ CEF（Compact Embedded Font）は `BareCffFace::new` のフェイス番号 0 で
 
 PFR（Portable Font Resource）は、Rust API の `Font::from_pfr` でフェイス番号を指定して開く。文字対応と送り幅を取得し、輪郭または指定サイズの埋め込みビットマップを取り出せる。`sofel-render` は PFR を通常入力として開き、グリフ番号または文字から PGM に描く。`sofel-validate` は PFR のフェイス構造とグリフプログラムの範囲を検査し、破損したフィールドの位置を報告する。
 
+旧形式を含むフォントは、Rust の `FaceData::open` と `OpenedFace::as_face`、C の `sofel_face_create` から共通のフェイス操作で読める。グリフの送り幅とカーニングは指定した ppem における 26.6 ピクセルで返す。輪郭と画像は `sofel-glyph-render::render_face`、文字列は `sofel-shape::shape_face` で扱う（[root ADR 0100](docs/adr/0100-common-face-api.md)）。
+
 サブセットの Rust・C API では、プラットフォーム、エンコーディング、言語、名前 ID を指定して名前レコードを追加・置換できる。空文字列を指定するとそのレコードを削除する。
 
 シェーピングのフォント関数を差し替えるときは、`sofel-shape::SubFont` で親からの継承と問い合わせ別の上書きを指定する。子の送り、原点、グリフの箱、輪郭は親子のスケールを換算する。合成太字と斜体はシェーピングと輪郭に反映する。`sofel-shape` コマンドでは、`ot` と `fallback` のどちらでも `--font-slant`、`--font-bold`、`--font-grade` を指定できる（[ADR 0063](docs/adr/0063-font-functions-and-synthesis.md)）。

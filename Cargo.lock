@@ -115,10 +115,14 @@ name = "sofel-font"
 version = "0.0.0"
 dependencies = [
  "sofel-bitmapfont",
+ "sofel-bzip2",
  "sofel-geom",
+ "sofel-inflate",
+ "sofel-lzw",
  "sofel-pfr",
  "sofel-read",
  "sofel-type1",
+ "sofel-woff",
 ]
 
 [[package]]
@@ -129,6 +133,7 @@ version = "0.0.0"
 name = "sofel-glyph-render"
 version = "0.0.0"
 dependencies = [
+ "sofel-bitmap",
  "sofel-color",
  "sofel-font",
  "sofel-geom",

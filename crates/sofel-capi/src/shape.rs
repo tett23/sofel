@@ -18,6 +18,7 @@ use sofel_shape::{
     SerializeFormat, ShapePlan, Shaper, UnicodeBuffer,
 };
 
+use crate::face::{SofelFace, face_error, selected};
 use crate::{
     ERROR_BUFFER_CONTENT, ERROR_BUFFER_TOO_SMALL, ERROR_INVALID_ARGUMENT, ERROR_NOT_FOUND,
     ERROR_NULL, OK, SofelFont, SofelGlyphNames, SofelLocation, SofelScale, Status, out_array, r,
@@ -1138,6 +1139,40 @@ setting!(
 );
 
 // ------------------------------------------------------------ shaping
+
+/// `sofel_face_shape`.
+///
+/// # Safety
+/// `face` and `buffer` are live or NULL; `segment` is readable or NULL;
+/// `features` points to `n_features` readable entries or is NULL when empty.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sofel_face_shape(
+    face: *const SofelFace,
+    ppem: u16,
+    strike: u32,
+    segment: *const CSegment,
+    features: *const CFeature,
+    n_features: usize,
+    buffer: *mut SofelBuffer,
+) -> i32 {
+    // SAFETY: the caller's pointer conditions are checked by the helpers.
+    let (face, segment, features, buffer) =
+        unsafe { (r(face), r(segment), slice(features, n_features), w(buffer)) };
+    // SAFETY: the language pointer belongs to the live segment supplied by the caller.
+    let language = segment.and_then(|s| unsafe { r(s.language) });
+    status((|| {
+        let (face, segment, features, buffer) =
+            (some(face)?, some(segment)?, some(features)?, some(buffer)?);
+        let props = resolved_from_c(segment, language)?;
+        let features = features.iter().map(feature_from_c).collect::<Vec<_>>();
+        let input = take_unicode(buffer)?;
+        buffer.content = Content::Glyphs(face.opened(|f| {
+            sofel_shape::shape_face(f, ppem, selected(strike), props, &features, input)
+                .map_err(face_error)
+        })?);
+        Ok(())
+    })())
+}
 
 /// HarfBuzz's glyph box of a glyph in font units, from the best source
 /// the font has (`hb_ot_get_glyph_extents`).

@@ -340,9 +340,118 @@ impl<'a> PfrFace<'a> {
     pub fn glyph_count(&self) -> u32 {
         u32::from(self.glyphs) + 1
     }
+    /// Whether any selected physical glyph has an outline program offset.
+    pub fn has_outlines(&self) -> bool {
+        (0..usize::from(self.glyphs)).any(|index| {
+            self.record(index)
+                .is_ok_and(|(_, _, offset, _)| offset != 0)
+        })
+    }
     /// Coordinate units per em of the physical outlines.
     pub fn units_per_em(&self) -> u16 {
         self.units
+    }
+    /// Number of fixed bitmap strikes in the selected physical font.
+    pub fn strike_count(&self) -> u32 {
+        u32::try_from(strike_count(self.physical_extras).unwrap_or(0)).unwrap_or(u32::MAX)
+    }
+    /// Horizontal and vertical ppem of a strike, in 26.6 pixels.
+    pub fn strike(&self, index: u32) -> Option<(u32, u32)> {
+        let mut extras = self.physical_extras;
+        let mut current = 0u32;
+        for _ in 0..number(&mut extras, 1).ok()? {
+            let size = number(&mut extras, 1).ok()?;
+            let kind = number(&mut extras, 1).ok()?;
+            let mut item = take(&mut extras, size).ok()?;
+            if kind != 1 {
+                continue;
+            }
+            take(&mut item, 3).ok()?;
+            let flags = number(&mut item, 1).ok()?;
+            for _ in 0..number(&mut item, 1).ok()? {
+                let x = number(
+                    &mut item,
+                    1usize.saturating_add(usize::from(flags & 1 != 0)),
+                )
+                .ok()?;
+                let y = number(
+                    &mut item,
+                    1usize.saturating_add(usize::from(flags & 2 != 0)),
+                )
+                .ok()?;
+                take(
+                    &mut item,
+                    6usize
+                        .saturating_add(usize::from(flags & 4 != 0))
+                        .saturating_add(usize::from(flags & 8 != 0))
+                        .saturating_add(usize::from(flags & 16 != 0)),
+                )
+                .ok()?;
+                if current == index {
+                    return Some((
+                        u32::try_from(x).ok()?.checked_mul(64)?,
+                        u32::try_from(y).ok()?.checked_mul(64)?,
+                    ));
+                }
+                current = current.checked_add(1)?;
+            }
+        }
+        None
+    }
+    /// Unscaled horizontal adjustment of a glyph pair from physical extra item 4.
+    pub fn kerning(&self, left: GlyphId, right: GlyphId) -> Option<i32> {
+        if left >= self.glyph_count() || right >= self.glyph_count() {
+            return None;
+        }
+        if left == 0 || right == 0 {
+            return Some(0);
+        }
+        let left_code = self
+            .record(usize::try_from(left.checked_sub(1)?).ok()?)
+            .ok()?
+            .0;
+        let right_code = self
+            .record(usize::try_from(right.checked_sub(1)?).ok()?)
+            .ok()?
+            .0;
+        let mut extras = self.physical_extras;
+        if extras.is_empty() {
+            return Some(0);
+        }
+        for _ in 0..number(&mut extras, 1).ok()? {
+            let size = number(&mut extras, 1).ok()?;
+            let kind = number(&mut extras, 1).ok()?;
+            let mut item = take(&mut extras, size).ok()?;
+            if kind != 4 {
+                continue;
+            }
+            let count = number(&mut item, 1).ok()?;
+            let base = i32::from(signed16(&mut item).ok()?);
+            let flags = number(&mut item, 1).ok()?;
+            let char_width: usize = if flags & 1 != 0 { 2 } else { 1 };
+            let adjust_width: usize = if flags & 2 != 0 { 2 } else { 1 };
+            let row_width = char_width.checked_mul(2usize)?.checked_add(adjust_width)?;
+            let rows = take(&mut item, count.checked_mul(row_width)?).ok()?;
+            for row in rows.chunks_exact(row_width) {
+                let mut row = row;
+                let first = number(&mut row, char_width).ok()?;
+                let second = number(&mut row, char_width).ok()?;
+                let adjustment = if adjust_width == 2 {
+                    i32::from(signed16(&mut row).ok()?)
+                } else {
+                    i32::try_from(number(&mut row, 1).ok()?).ok()?
+                };
+                if (first, second)
+                    == (
+                        usize::try_from(left_code).ok()?,
+                        usize::try_from(right_code).ok()?,
+                    )
+                {
+                    return base.checked_add(adjustment);
+                }
+            }
+        }
+        Some(0)
     }
     /// Finds a character in the sorted physical character directory.
     pub fn nominal_glyph(&self, code: u32) -> Option<GlyphId> {

@@ -565,6 +565,14 @@ PE32 では `RT_FONT` の名前・言語ディレクトリを順にたどり、�
 
 `sofel-validate` は PCF の署名を素の CFF より先に判別し、フォントの構造を検査する。ディレクトリの件数、切り詰め、必須表の範囲、ビットマップオフセットが壊れている場合は該当フィールドのファイル内位置を `PCF ` の診断として返す。その他の表内部の構造不正は位置 0 を返す（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
 
+## 共通フェイス API
+
+`FaceData::new` は入力を保持して圧縮形式を展開し、`FaceData::open` は番号で `OpenedFace` を開く。`OpenedFace::as_face` の `Face` は、sfnt、素の CFF と CEF、Type1、CID、Type42、PFR、BDF、PCF、FNT、FON の文字対応、グリフ数、送り幅、ペアカーニング、固定ストライクを問い合わせる。
+
+送り幅とカーニングは、指定した 1 以上の ppem で 26.6 ピクセルに換算する。輪郭と画像は `sofel-glyph-render`、通常のシェーピングは `sofel-shape::shape_face` が扱う。既存の `Font` と形式別 API の単位は変えない（[ADR 0100](adr/0100-common-face-api.md)）。
+
+現在、sfnt と Type42 の埋め込みビットマップの固定ストライクは `Face::strike_count` にまだ列挙されない。共通入口でそのストライクを明示して画像と送り幅を得る操作は未実装である（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)、[ADR 0100](adr/0100-common-face-api.md)）。
+
 ## PFR フェイス
 
 `Font::from_pfr` は PFR の論理フェイス番号を受け取り、物理フォントの文字対応と送りを返す。
@@ -609,7 +617,7 @@ Windows ビットマップフォントの検証では、単独の FNT または 
 
 ## 素の CFF フェイスと CEF
 
-`sofel-font::Cff::from_bare` は sfnt に包まれていない CFF 1 をフェイス番号で開く。Name INDEX の位置で Top DICT を選び、CharStrings のグリフ数、charset のグリフ名、Encoding を既存の CFF ビューで問い合わせる。`BareCffFace` は Adobe Glyph List を使った Unicode の文字対応、8ビットの Encoding、グリフ名、charstring の送り幅を返す。`sofel-outline::draw_bare_cff` はそのグリフの輪郭をヒンティングなしで描く。`sofel-render` の通常ファイル入力は素の CFF 1 を判別し、`--glyph` または `--char` で輪郭を PGM に描く。`sofel render --text` は `SubFont` の文字対応と送り幅の関数を使って一行をシェーピングし、同じ輪郭で描く。`sofel-validate` は素の CFF 1 の全フェイスを検査し、破損位置を CFF 表からのオフセットで報告する。範囲外のフェイス番号、必須の INDEX や CharStrings の欠落を拒む。共通の `Font` 型への接続は未実装である（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+`sofel-font::Cff::from_bare` は sfnt に包まれていない CFF 1 をフェイス番号で開く。Name INDEX の位置で Top DICT を選び、CharStrings のグリフ数、charset のグリフ名、Encoding を既存の CFF ビューで問い合わせる。`BareCffFace` は Adobe Glyph List を使った Unicode の文字対応、8ビットの Encoding、グリフ名、charstring の送り幅を返す。`sofel-outline::draw_bare_cff` はそのグリフの輪郭をヒンティングなしで描く。`sofel-render` の通常ファイル入力は素の CFF 1 を判別し、`--glyph` または `--char` で輪郭を PGM に描く。`sofel render --text` は `SubFont` の文字対応と送り幅の関数を使って一行をシェーピングし、同じ輪郭で描く。`sofel-validate` は素の CFF 1 の全フェイスを検査し、破損位置を CFF 表からのオフセットで報告する。範囲外のフェイス番号、必須の INDEX や CharStrings の欠落を拒む。共通操作には `FaceData::open` から得た `OpenedFace::as_face` を使う（[ADR 0100](adr/0100-common-face-api.md)）。
 CID-keyed の素の CFF 1 と CEF では、フェイスのグリフ数は最大 CID に 1 を加えた値とする。送り幅と輪郭の問い合わせは CID を charset で CharStrings の索引に変換する。charset にない CID の問い合わせは失敗し、Unicode の文字対応は空になる。
 
 CEF（Compact Embedded Font）は `head` がなく `CFF ` 表を持つ `OTTO` ディレクトリから開く。

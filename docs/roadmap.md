@@ -52,6 +52,7 @@ Golem はフォントを開くときに GSUB と GPOS の機能タグをすべ�
 
 ### 監査の指摘と旧形式の照合
 
+- **旧形式の共通フェイス操作**（未実装）：[ADR 0065](adr/0065-legacy-faces-and-webfonts.md) と補足の [ADR 0100](adr/0100-common-face-api.md)。sfnt と Type42 の埋め込みビットマップの固定ストライクを共通入口で列挙・選択し、選んだ画像と送り幅を FreeType と照合する。実フォントと不足形式の合成入力について、Rust、C、CLI の輪郭、画像、送り幅、カーニング、シェーピングを全フェイス番号と全収録グリフで照合する。
 - **グリフを描くクレート**（未実装）：[ADR 0087](adr/0087-glyph-render-crate.md)。描画の関数を `sofel-glyph-render` に移し、`sofel-capi` から `sofel-cli` の依存を外す。
 
 ### シェーピング、フォントの検証と描画、照合の記録

@@ -52,6 +52,9 @@ pub fn render_type1<'r>(
 
 pub mod color_raster;
 mod colr_raster;
+mod face;
+
+pub use face::{FaceImage, FaceRenderError, render_face};
 
 use crate::color_raster::SvgImagePainter;
 
