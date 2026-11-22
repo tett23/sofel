@@ -92,7 +92,7 @@ if [ "$mode" = "--harfbuzz" ]; then
   # Compile FreeType and the driver as C, then link the HarfBuzz object
   # with the C++ linker to include its runtime on each host.
   # shellcheck disable=SC2086 # $sources and $extra are paths without spaces
-  "$cxx" -O2 -w -DFT2_BUILD_LIBRARY \
+  "$cxx" -O2 -w -DFT2_BUILD_LIBRARY -DSOFEL_FT_DUMP_SVG \
     '-DFT_CONFIG_MODULES_H=<ftmodule.h>' \
     -I "$here" -I "$src/include" "$@" -x c \
     "$driver" $sources -x none $extra "$hb_obj" $png_flags \
@@ -100,7 +100,7 @@ if [ "$mode" = "--harfbuzz" ]; then
 else
   # shellcheck disable=SC2086 # $sources and $extra are paths without spaces
   "$cc" -O2 -w \
-    -DFT2_BUILD_LIBRARY \
+    -DFT2_BUILD_LIBRARY -DSOFEL_FT_DUMP_SVG \
     '-DFT_CONFIG_MODULES_H=<ftmodule.h>' \
     -I "$here" -I "$src/include" \
     "$driver" $sources $extra $png_flags "$@" \
