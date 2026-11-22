@@ -373,9 +373,6 @@ fn parse_fnt(
             usize::from(u16_at(data, value_offset)?)
         };
         let pitch = usize::from(width).div_ceil(8);
-        if pitch == 0 {
-            return Err(WinFontError);
-        }
         let length = pitch.checked_mul(usize::from(height)).ok_or(WinFontError)?;
         let columns = data
             .get(offset..offset.checked_add(length).ok_or(WinFontError)?)

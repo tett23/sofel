@@ -545,11 +545,11 @@ flowchart BT
 
 ## 固定サイズのビットマップフェイス
 
-旧形式の適合テストは、Spleen 2.3.0 の BDF、PCF、FON、WOFF、WOFF2、dfont と、Computer Modern の cmr10 PFB、PFM、AFM を `fonts.lock` と `conformance/fonts.tsv` から取得する。取得時はバイト数と SHA-256 を検査し、tar.gz からは一覧に書いた通常ファイルだけを展開する。`legacy_faces` は固定版 FreeType とフェイス数、文字対応、送り、ストライク、画像、輪郭、カーニング、Web フォントの復元表を照合する。WOFF2 の表比較では `head.checkSumAdjustment` を [root ADR 0070](adr/0070-webfont-encoding.md) に従って除外し、復元 sfnt 全体のチェックサムを別に検査する。Spleen FON の幅0のグリフと cmr10 の Unicode 対応3件、Type1 charstring 49件は、[root ADR 0065](adr/0065-legacy-faces-and-webfonts.md) の残る差として `conformance/expected-failures-legacy.txt` に記録する（[root ADR 0090](adr/0090-legacy-format-conformance-fonts.md)）。
+旧形式の適合テストは、Spleen 2.3.0 の BDF、PCF、FON、WOFF、WOFF2、dfont と、Computer Modern の cmr10 PFB、PFM、AFM を `fonts.lock` と `conformance/fonts.tsv` から取得する。取得時はバイト数と SHA-256 を検査し、tar.gz からは一覧に書いた通常ファイルだけを展開する。`legacy_faces` は固定版 FreeType とフェイス数、文字対応、送り、ストライク、画像、輪郭、カーニング、Web フォントの復元表を照合する。WOFF2 の表比較では `head.checkSumAdjustment` を [root ADR 0070](adr/0070-webfont-encoding.md) に従って除外し、復元 sfnt 全体のチェックサムを別に検査する。Spleen FON の幅0のグリフ、cmr10 の Unicode 対応と Type1 の flex を含む輪郭は FreeType と一致し、`conformance/expected-failures-legacy.txt` に残る項目は無い（[root ADR 0065](adr/0065-legacy-faces-and-webfonts.md)、[root ADR 0090](adr/0090-legacy-format-conformance-fonts.md)）。
 
 `Font::from_bitmap` は BDF、PCF、Windows FNT、FON の署名を識別し、指定した番号のフェイスを開く。
 フェイスから文字に対応するグリフ番号、ストライクのサイズ、グリフの送り幅と画像を取得する。
-`sofel-render` もこの形式判定とフェイス操作を使う（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+`sofel-render` もこの形式判定とフェイス操作を使う（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。FNT の幅0のレコードはフェイスを開くときに受け付けるが、そのグリフの画像の取得では FreeType のグリフ読込エラーに合わせて `None` を返す。
 
 FON では NE または i386 PE32 のフォントリソースを読む。
 PE32 では `RT_FONT` の名前・言語ディレクトリを順にたどり、各データ項目にフェイス番号を付ける。

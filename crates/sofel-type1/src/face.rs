@@ -97,8 +97,17 @@ impl<'a> Type1Face<'a> {
 
     /// Unicode mapping synthesized from PostScript glyph names.
     pub fn unicode_glyph(&self, codepoint: u32) -> Option<usize> {
+        let freetype_alias = match codepoint {
+            0x02C9 => Some(b"macron".as_slice()),
+            0x0394 => Some(b"Delta".as_slice()),
+            0x03A9 => Some(b"Omega".as_slice()),
+            _ => None,
+        };
         (1..self.num_glyphs()).find(|&gid| {
-            self.glyph_name(gid).and_then(crate::type42::glyph_unicode) == Some(codepoint)
+            self.glyph_name(gid).is_some_and(|name| {
+                crate::type42::glyph_unicode(name) == Some(codepoint)
+                    || freetype_alias == Some(name)
+            })
         })
     }
 

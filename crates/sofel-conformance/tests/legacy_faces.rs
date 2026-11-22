@@ -181,7 +181,8 @@ fn adr0090_i3_bitmap_face_counts_and_full_cmaps() {
             let id = fields[1].parse::<u32>().unwrap();
             let value = fields[2].parse::<i32>().unwrap();
             assert_eq!(
-                face.glyph(GlyphId(id)).unwrap().advance * 64,
+                face.glyph(GlyphId(id))
+                    .map_or(0, |glyph| glyph.advance * 64),
                 value,
                 "{name}: advance {id}"
             );
@@ -204,19 +205,26 @@ fn adr0090_i3_bitmap_face_counts_and_full_cmaps() {
 
 #[test]
 fn adr0090_i3_bitmap_strike_pixels_match_freetype() {
-    for name in ["spleen-8x16.bdf", "spleen-8x16.pcf"] {
+    for name in ["spleen-8x16.bdf", "spleen-8x16.pcf", "spleen-8x16.fon"] {
         let path = font_path(name);
         let bytes = std::fs::read(&path).unwrap();
         let face = Font::from_bitmap(&bytes, 0).unwrap();
         let output = reference(&["--raster", "16", "--mono"], &path);
         let mut lines = output.lines().peekable();
         let mut compared = 0;
+        let mut failed_loads = 0;
         while let Some(line) = lines.next() {
             let Some(glyph) = line.strip_prefix("glyph ") else {
                 continue;
             };
             let id = glyph.parse::<u32>().unwrap();
             let header = lines.next().unwrap();
+            if header == "error 3" {
+                assert!(face.glyph(GlyphId(id)).is_none(), "{name}: glyph {id}");
+                compared += 1;
+                failed_loads += 1;
+                continue;
+            }
             let ours = face.glyph(GlyphId(id)).unwrap();
             let expected = format!(
                 "bitmap {} {} {} {}",
@@ -240,6 +248,11 @@ fn adr0090_i3_bitmap_strike_pixels_match_freetype() {
             compared += 1;
         }
         assert_eq!(compared, face.glyph_count(), "{name}");
+        assert_eq!(
+            failed_loads,
+            if name.ends_with(".fon") { 32 } else { 0 },
+            "{name}"
+        );
     }
 }
 
