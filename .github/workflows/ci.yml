@@ -330,7 +330,7 @@ jobs:
         run: sh scripts/measure-process-tree.sh sh scripts/test-conformance.sh 2
       - name: Check HarfBuzz-backed FreeType reference
         env:
-          SOFEL_FT_DUMP_HB: target/ft-dump/ft-dump-harfbuzz
+          SOFEL_FT_DUMP_HB: ${{ github.workspace }}/target/ft-dump/ft-dump-harfbuzz
         run: cargo test --release -p sofel-conformance --test hint_selection adr0085_a2_harfbuzz_reference_assigns_gsub_style
       # docs/adr/0021: the same hash as on wasm32 (the wasm job).
       - name: Hash CFF outlines natively
