@@ -202,25 +202,23 @@ fn decode_program<P: Pen>(
             1 | 3 => {
                 state.has_stems = true;
                 if stack.len() >= 2 && stack.len().is_multiple_of(2) {
-                    if !state.emitted || (!state.native && !state.hint_groups.is_empty()) {
-                        if op == 1 {
-                            let mut edge = 0i64;
-                            for &[delta, width] in stack.as_chunks::<2>().0 {
-                                edge = edge
-                                    .checked_add(delta)
-                                    .ok_or(OutlineError::InvalidCharString)?;
-                                let stem = (edge, width);
-                                state.h_stem.get_or_insert(stem);
-                                if !state.h_stems.contains(&stem) {
-                                    state.h_stems.push(stem);
-                                }
-                                edge = edge
-                                    .checked_add(width)
-                                    .ok_or(OutlineError::InvalidCharString)?;
+                    if op == 1
+                        && (!state.ever_emitted || (!state.native && !state.hint_groups.is_empty()))
+                    {
+                        let mut edge = 0i64;
+                        for &[delta, width] in stack.as_chunks::<2>().0 {
+                            edge = edge
+                                .checked_add(delta)
+                                .ok_or(OutlineError::InvalidCharString)?;
+                            let stem = (edge, width);
+                            state.h_stem.get_or_insert(stem);
+                            if !state.h_stems.contains(&stem) {
+                                state.h_stems.push(stem);
                             }
+                            edge = edge
+                                .checked_add(width)
+                                .ok_or(OutlineError::InvalidCharString)?;
                         }
-                    } else if !state.native {
-                        state.late_stem_pending = true;
                     }
                 } else {
                     state.unsupported_stem_map = true;
@@ -532,6 +530,7 @@ struct State<'a, P: Pen> {
     start: Option<(i64, i64)>,
     start_point: Option<Point>,
     emitted: bool,
+    ever_emitted: bool,
     box_: Option<CBox>,
     pending_pops: usize,
     has_stems: bool,
@@ -550,7 +549,6 @@ struct State<'a, P: Pen> {
     h_stem_shift: i64,
     h_stem_map: Option<Type1HorizontalStemMap>,
     unsupported_stem_map: bool,
-    late_stem_pending: bool,
     flex: Option<Flex>,
 }
 
@@ -571,6 +569,7 @@ impl<'a, P: Pen> State<'a, P> {
             start: None,
             start_point: None,
             emitted: false,
+            ever_emitted: false,
             box_: None,
             pending_pops: 0,
             has_stems: false,
@@ -586,7 +585,6 @@ impl<'a, P: Pen> State<'a, P> {
             h_stem_shift: 0,
             h_stem_map: None,
             unsupported_stem_map: false,
-            late_stem_pending: false,
             flex: None,
         }
     }
@@ -648,9 +646,6 @@ impl<'a, P: Pen> State<'a, P> {
     }
 
     fn move_by(&mut self, dx: i64, dy: i64) -> Result<(), OutlineError> {
-        if self.late_stem_pending {
-            self.unsupported_stem_map = true;
-        }
         if self.flex.is_none() {
             self.close();
         }
@@ -710,6 +705,7 @@ impl<'a, P: Pen> State<'a, P> {
             self.start_point = Some(p);
             self.pen.move_to(p);
             self.emitted = true;
+            self.ever_emitted = true;
         }
         Ok(())
     }
