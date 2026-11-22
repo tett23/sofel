@@ -39,6 +39,13 @@
  *                                         for every non-empty name)
  *   end
  *
+ * Usage: ft-dump --legacy-kerning FILE [AFM_OR_PFM]
+ *
+ * Emits every nonzero unscaled pair as `kern LEFT RIGHT X Y`, with glyph
+ * indices in the face. An omitted pair has zero kerning.
+ * Usage: ft-dump --legacy-tables FILE
+ * Emits every decoded sfnt table as `table TAG_HEX BYTES_HEX`.
+ *
  * Usage: ft-dump --advances [--named-instance=N] [--variations=TAG=value,...] FILE
  *
  * For each face, query every glyph's horizontal and vertical advance with
@@ -2037,6 +2044,88 @@ static int auto_style(const char *glyph, const char *path)
   return error ? 1 : 0;
 }
 
+static int legacy_kerning(const char *path, const char *attachment)
+{
+  FT_Library library;
+  FT_Face face;
+  FT_Byte *bytes = NULL;
+  FT_Long byte_count = 0;
+  FT_Error error;
+  FT_Long left, right;
+  int status = 1;
+
+  if (FT_Init_FreeType(&library)) return 1;
+  error = FT_New_Face(library, path, 0, &face);
+  if (error) goto done_library;
+  if (attachment) {
+    FT_Open_Args args;
+    bytes = read_font(attachment, &byte_count);
+    if (!bytes) goto done_face;
+    memset(&args, 0, sizeof(args));
+    args.flags = FT_OPEN_MEMORY;
+    args.memory_base = bytes;
+    args.memory_size = byte_count;
+    error = FT_Attach_Stream(face, &args);
+    if (error) goto done_face;
+  }
+  printf("num_glyphs %ld\n", (long)face->num_glyphs);
+  for (left = 0; left < face->num_glyphs; left++)
+    for (right = 0; right < face->num_glyphs; right++) {
+      FT_Vector pair;
+      error = FT_Get_Kerning(face, (FT_UInt)left, (FT_UInt)right,
+                             FT_KERNING_UNSCALED, &pair);
+      if (error) goto done_face;
+      if (pair.x || pair.y)
+        printf("kern %ld %ld %ld %ld\n", (long)left, (long)right,
+               (long)pair.x, (long)pair.y);
+    }
+  status = 0;
+done_face:
+  FT_Done_Face(face);
+done_library:
+  free(bytes);
+  FT_Done_FreeType(library);
+  if (status) fprintf(stderr, "ft-dump: legacy kerning error %d\n", error);
+  return status;
+}
+
+static int legacy_tables(const char *path)
+{
+  FT_Library library;
+  FT_Face face;
+  FT_ULong count = 0;
+  FT_UInt index;
+  FT_Error error;
+  int status = 1;
+  if (FT_Init_FreeType(&library)) return 1;
+  error = FT_New_Face(library, path, 0, &face);
+  if (error) goto done_library;
+  error = FT_Sfnt_Table_Info(face, 0, NULL, &count);
+  if (error) goto done_face;
+  for (index = 0; index < count; index++) {
+    FT_ULong tag = 0, length = 0;
+    FT_ULong at;
+    FT_Byte *data;
+    error = FT_Sfnt_Table_Info(face, index, &tag, &length);
+    if (error) goto done_face;
+    data = (FT_Byte *)malloc(length ? length : 1);
+    if (!data) goto done_face;
+    error = FT_Load_Sfnt_Table(face, tag, 0, data, &length);
+    if (error) { free(data); goto done_face; }
+    printf("table %08lx ", (unsigned long)tag);
+    for (at = 0; at < length; at++) printf("%02x", data[at]);
+    printf("\n");
+    free(data);
+  }
+  status = 0;
+done_face:
+  FT_Done_Face(face);
+done_library:
+  FT_Done_FreeType(library);
+  if (status) fprintf(stderr, "ft-dump: legacy tables error %d\n", error);
+  return status;
+}
+
 int main(int argc, char **argv)
 {
   FT_Library library;
@@ -2052,6 +2141,10 @@ int main(int argc, char **argv)
                     strcmp(argv[1], "--var-random") == 0))
     return dump_var_reference(argc, argv);
   if (argc >= 2 && !reference_options(&argc, argv)) return 2;
+  if ((argc == 3 || argc == 4) && !strcmp(argv[1], "--legacy-kerning"))
+    return legacy_kerning(argv[2], argc == 4 ? argv[3] : NULL);
+  if (argc == 3 && !strcmp(argv[1], "--legacy-tables"))
+    return legacy_tables(argv[2]);
   if (argc == 7 && !strcmp(argv[1], "--hint-slot"))
     return hint_slot(argv[2], argv[3], argv[4], argv[5], argv[6]);
   if (argc == 4 && !strcmp(argv[1], "--auto-style"))

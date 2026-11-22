@@ -125,6 +125,7 @@ impl Corpus {
                             | "svg"
                             | "metrics"
                             | "outline"
+                            | "legacy"
                     )
                 }) || feature_list.iter().collect::<BTreeSet<_>>().len() != feature_list.len()
                 {

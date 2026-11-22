@@ -92,7 +92,7 @@ while IFS="$tab" read -r id source member rel digest license features || [ -n "$
   case "$features" in ''|,*|*,|*,,*) fail "invalid features: $id";; esac
   old_ifs=$IFS; IFS=,
   for feature in $features; do
-    case "$feature" in shape|rtl|indic|use|variable|cff|cff2|math|ttc|cjk|vertical|avar2|colr|cbdt|sbix|svg|metrics|outline) :;; *) fail "unknown feature: $id/$feature";; esac
+    case "$feature" in shape|rtl|indic|use|variable|cff|cff2|math|ttc|cjk|vertical|avar2|colr|cbdt|sbix|svg|metrics|outline|legacy) :;; *) fail "unknown feature: $id/$feature";; esac
   done
   IFS=$old_ifs
   source_rel=$(awk -F '\t' -v id="$source" '$1==id { print $5 }' "$lock")
@@ -103,13 +103,25 @@ while IFS="$tab" read -r id source member rel digest license features || [ -n "$
   if [ "$member" = - ]; then
     [ "$rel" = "$source_rel" ] || fail "direct font path differs from source: $id"
   else
-    [ "$(unzip -Z1 "$dest/$source_rel" | grep -x -F "$member" | wc -l | tr -d ' ')" = 1 ] || fail "archive member not unique: $id"
-    mode=$(zipinfo -l "$dest/$source_rel" "$member" | awk 'NR == 1 { print substr($1,1,1) }')
+    archive=$dest/$source_rel
+    case "$source_rel" in
+      *.tar.gz)
+        [ "$(tar -tzf "$archive" | grep -x -F "$member" | wc -l | tr -d ' ')" = 1 ] || fail "archive member not unique: $id"
+        mode=$(tar -tvzf "$archive" "$member" | awk 'NR == 1 { print substr($1,1,1) }')
+        ;;
+      *)
+        [ "$(unzip -Z1 "$archive" | grep -x -F "$member" | wc -l | tr -d ' ')" = 1 ] || fail "archive member not unique: $id"
+        mode=$(zipinfo -l "$archive" "$member" | awk 'NR == 1 { print substr($1,1,1) }')
+        ;;
+    esac
     [ "$mode" = - ] || fail "archive member is not a regular file: $id"
     if [ ! -f "$dest/$rel" ] || [ -L "$dest/$rel" ] || [ "$(sha "$dest/$rel")" != "$digest" ]; then
       [ ! -L "$dest/$rel" ] || fail "symlink font: $id"
       rm -f "$dest/$rel"
-      unzip -p "$dest/$source_rel" "$member" > "$stage/$id" || fail "extract failed: $id"
+      case "$source_rel" in
+        *.tar.gz) tar -xOzf "$archive" "$member" > "$stage/$id" || fail "extract failed: $id";;
+        *) unzip -p "$archive" "$member" > "$stage/$id" || fail "extract failed: $id";;
+      esac
       [ "$(sha "$stage/$id")" = "$digest" ] || fail "extracted SHA-256 mismatch: $id"
       mkdir -p "$(dirname "$dest/$rel")"
       mv -f "$stage/$id" "$dest/$rel"
