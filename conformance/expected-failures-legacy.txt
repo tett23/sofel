@@ -1,7 +1,6 @@
 # root ADR 0090 I3: observed against FreeType 2.15.0.
 # A listed case turning green requires removal.
 spleen-fon/face-open # Root ADR 0065: FNT glyph width zero is rejected by winfnt parser.
-spleen-8x16.woff2/table/68656164 # Root ADR 0065: WOFF2 head.checkSumAdjustment differs from FreeType's reconstructed zero value.
 cmr10/outline/1 # Root ADR 0065: Type1 decoder returns InvalidCharString on this real glyph; implement its unsupported OtherSubr path.
 cmr10/outline/4 # Root ADR 0065: Type1 decoder returns InvalidCharString on this real glyph; implement its unsupported OtherSubr path.
 cmr10/outline/6 # Root ADR 0065: Type1 decoder returns InvalidCharString on this real glyph; implement its unsupported OtherSubr path.

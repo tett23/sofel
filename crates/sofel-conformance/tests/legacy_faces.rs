@@ -420,6 +420,9 @@ fn adr0090_i3_webfont_table_bytes_match_freetype() {
         } else {
             sofel_woff::decode_woff(&bytes, 1 << 20).unwrap()
         };
+        if name.ends_with(".woff2") {
+            assert_eq!(sofel_write::checksum(&decoded), 0xB1B0_AFBA, "{name}");
+        }
         let font = Font::new(&decoded, 0).unwrap();
         if name.ends_with(".woff2") && std::env::var_os("SOFEL_FT_BROTLI_DUMP").is_none() {
             continue;
@@ -448,11 +451,18 @@ fn adr0090_i3_webfont_table_bytes_match_freetype() {
             let raw = u32::from_str_radix(parts.next().unwrap(), 16).unwrap();
             let tag = Tag::new(&raw.to_be_bytes());
             let ours = font.table(tag).unwrap();
-            let actual = ours
+            let mut actual = ours
                 .iter()
                 .map(|byte| format!("{byte:02x}"))
-                .collect::<String>();
-            let expected = parts.next().unwrap();
+                .collect::<String>()
+                .into_bytes();
+            let mut expected = parts.next().unwrap().as_bytes().to_vec();
+            if name.ends_with(".woff2") && raw == u32::from_be_bytes(*b"head") {
+                // root ADR 0070 excludes this layout-dependent four-byte adjustment.
+                assert!(actual.len() >= 24 && expected.len() >= 24);
+                actual[16..24].fill(b'0');
+                expected[16..24].fill(b'0');
+            }
             results.push((format!("{name}/table/{raw:08x}"), expected == actual));
             compared += 1;
         }
