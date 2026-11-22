@@ -113,6 +113,15 @@ fn font_with_programs(
     lsubrs: Vec<Vec<u8>>,
     programs: Vec<Vec<u8>>,
 ) -> Vec<u8> {
+    font_with_programs_and_var_data(gsubrs, lsubrs, programs, &[vec![0, 1]])
+}
+
+fn font_with_programs_and_var_data(
+    gsubrs: Vec<Vec<u8>>,
+    lsubrs: Vec<Vec<u8>>,
+    programs: Vec<Vec<u8>>,
+    var_data: &[Vec<u16>],
+) -> Vec<u8> {
     let mut top = Vec::new();
     for r in [".001", "0", "0", ".001", "0", "0"] {
         top.extend(d_real(r));
@@ -121,7 +130,7 @@ fn font_with_programs(
     let vstore = item_variation_store(
         1,
         &[vec![(0, 16384, 16384)], vec![(-16384, -16384, 0)]],
-        &[vec![0, 1]],
+        var_data,
     );
     let t = cff2(&Cff2Spec {
         top,
@@ -945,23 +954,120 @@ fn cff2_no_hinting_keeps_vsindex_for_blended_subroutine_paths() {
 }
 
 #[test]
-fn cff2_vsindex_hint_prefix_relocation_remains_unsupported() {
-    for prefix_first in [false, true] {
-        let mut programs = charstrings();
-        let prefix = charstring(&[Cs::I(0), Cs::Op(15)]);
-        let stem = charstring(&[Cs::I(0), Cs::I(10), Cs::Op(1)]);
-        programs[2] = if prefix_first {
-            [prefix, stem, charstring(&[Cs::I(-107), Cs::Op(29)])].concat()
-        } else {
-            [stem, prefix, charstring(&[Cs::I(-107), Cs::Op(29)])].concat()
-        };
-        let mut global = programs[1].clone();
-        global.push(11);
-        let bytes = font_with_programs(vec![global], Vec::new(), programs);
+fn cff2_vsindex_hint_prefix_relocation_matches_harfbuzz() {
+    let cases: Vec<_> = [false, true]
+        .into_iter()
+        .map(|prefix_first| {
+            let mut programs = charstrings();
+            let prefix = charstring(&[Cs::I(0), Cs::Op(15)]);
+            let stem = charstring(&[Cs::I(0), Cs::I(10), Cs::Op(1)]);
+            programs[2] = if prefix_first {
+                [prefix, stem, charstring(&[Cs::I(-107), Cs::Op(29)])].concat()
+            } else {
+                [stem, prefix, charstring(&[Cs::I(-107), Cs::Op(29)])].concat()
+            };
+            let mut global = programs[1].clone();
+            global.push(11);
+            let bytes = font_with_programs(vec![global], Vec::new(), programs);
+            let (name, expected): (&str, &[u8]) = if prefix_first {
+                (
+                    "cff2-vsindex-before-stem-hb15.otf",
+                    include_bytes!("data/cff2-vsindex-before-stem-hb15.otf"),
+                )
+            } else {
+                (
+                    "cff2-vsindex-after-stem-hb15.otf",
+                    include_bytes!("data/cff2-vsindex-after-stem-hb15.otf"),
+                )
+            };
+            fixture_input::export(name, &bytes).unwrap();
+            (name, bytes, expected)
+        })
+        .collect();
+    for (_, bytes, expected) in cases {
         let font = Font::new(&bytes, 0).unwrap();
-        assert!(matches!(
-            subset(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)),
-            Err(sofel_subset::SubsetError::Unsupported { .. })
-        ));
+        assert_eq!(
+            subset(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)).unwrap(),
+            expected
+        );
     }
+}
+
+#[test]
+fn cff2_vsindex_in_subroutine_moves_prefix_to_glyph() {
+    let cases: Vec<_> = [false, true]
+        .into_iter()
+        .map(|keep_path| {
+            let mut programs = charstrings();
+            let mut global = charstring(&[Cs::I(0), Cs::Op(15), Cs::I(0), Cs::I(10), Cs::Op(1)]);
+            if keep_path {
+                global.extend_from_slice(&programs[1]);
+            }
+            global.push(11);
+            programs[2] = charstring(&[Cs::I(-107), Cs::Op(29)]);
+            let bytes = font_with_programs(vec![global], Vec::new(), programs);
+            let (name, expected): (&str, &[u8]) = if keep_path {
+                (
+                    "cff2-vsindex-subr-path-hb15.otf",
+                    include_bytes!("data/cff2-vsindex-subr-path-hb15.otf"),
+                )
+            } else {
+                (
+                    "cff2-vsindex-subr-empty-hb15.otf",
+                    include_bytes!("data/cff2-vsindex-subr-empty-hb15.otf"),
+                )
+            };
+            fixture_input::export(name, &bytes).unwrap();
+            (bytes, expected)
+        })
+        .collect();
+    for (bytes, expected) in cases {
+        let font = Font::new(&bytes, 0).unwrap();
+        assert_eq!(
+            subset(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)).unwrap(),
+            expected
+        );
+    }
+}
+
+#[test]
+fn cff2_nonzero_vsindex_prefix_matches_harfbuzz() {
+    let mut programs = charstrings();
+    let mut global = programs[1].clone();
+    global.push(11);
+    programs[2] = charstring(&[
+        Cs::I(1),
+        Cs::Op(15),
+        Cs::I(0),
+        Cs::I(10),
+        Cs::Op(1),
+        Cs::I(-107),
+        Cs::Op(29),
+    ]);
+    let bytes = font_with_programs_and_var_data(
+        vec![global],
+        Vec::new(),
+        programs,
+        &[vec![0, 1], vec![0, 1]],
+    );
+    fixture_input::export("cff2-vsindex-nonzero-hb15.otf", &bytes).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    assert_eq!(
+        subset(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)).unwrap(),
+        include_bytes!("data/cff2-vsindex-nonzero-hb15.otf")
+    );
+}
+
+#[test]
+fn cff2_path_only_vsindex_accepts_caller_argument() {
+    let mut programs = charstrings();
+    let global = [vec![15], programs[1].clone(), vec![11]].concat();
+    programs[2] = charstring(&[Cs::I(0), Cs::I(-107), Cs::Op(29)]);
+    let bytes = font_with_programs(vec![global], Vec::new(), programs);
+    fixture_input::export("cff2-vsindex-caller-path-hb15.otf", &bytes).unwrap();
+    let font = Font::new(&bytes, 0).unwrap();
+    assert_eq!(
+        subset(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)).unwrap(),
+        include_bytes!("data/cff2-vsindex-caller-path-hb15.otf")
+    );
 }

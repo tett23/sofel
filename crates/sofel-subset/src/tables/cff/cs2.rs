@@ -292,6 +292,7 @@ pub(crate) struct Env<'a, 'c> {
     mask_trace: Vec<MaskTrace>,
     hint_trace: Vec<HintTrace>,
     literal_run: Option<(Source, usize, usize, usize)>,
+    vsindex_trace: Option<HintTrace>,
     path_started: bool,
     pub args: Vec<Arg>,
     arg_error: bool,
@@ -339,6 +340,7 @@ impl<'a, 'c> Env<'a, 'c> {
             mask_trace: Vec::new(),
             hint_trace: Vec::new(),
             literal_run: None,
+            vsindex_trace: None,
             path_started: false,
             args: Vec::new(),
             arg_error: false,
@@ -387,6 +389,11 @@ impl<'a, 'c> Env<'a, 'c> {
         &self.hint_trace
     }
 
+    pub(crate) fn hint_prefix(&self) -> Option<u32> {
+        (self.seen_vsindex && self.hint_trace.iter().any(|hint| !hint.can_follow_call))
+            .then_some(self.ivs)
+    }
+
     fn record_literal(&mut self, start: usize) {
         if !self.trace_calls {
             return;
@@ -408,10 +415,12 @@ impl<'a, 'c> Env<'a, 'c> {
             return;
         }
         let independent_mask = mask && self.path_started && self.args.is_empty();
-        // Removing stems can require relocating a vsindex prefix to the glyph.
-        // Until that prefix is tracked, retain only path-only uses of vsindex.
-        if self.seen_vsindex && !independent_mask {
-            self.trace_valid = false;
+        if !independent_mask && self.seen_vsindex {
+            if let Some(prefix) = self.vsindex_trace {
+                self.hint_trace.push(prefix);
+            } else {
+                self.trace_valid = false;
+            }
         }
         if (self.path_started && !independent_mask) || !self.args.len().is_multiple_of(2) {
             self.trace_valid = false;
@@ -950,8 +959,20 @@ fn process_op<O: Ops>(o: &mut O, op: u32, env: &mut Env<'_, '_>) {
                 run.map(|(source, start, _, _)| (source, start, env.ctx.off, env.args.len()));
         }
         VSINDEXCS => {
-            if env.trace_drop_hints && env.hint_trace.iter().any(|hint| !hint.can_follow_call) {
-                env.trace_valid = false;
+            if env.trace_drop_hints {
+                env.vsindex_trace = env.literal_run.and_then(|(source, start, end, count)| {
+                    (source == env.ctx.source
+                        && end == env.ctx.off.saturating_sub(1)
+                        && count == 1
+                        && env.args.len() == 1)
+                        .then_some(HintTrace {
+                            source,
+                            start,
+                            end: env.ctx.off,
+                            can_follow_call: true,
+                            mask_at: None,
+                        })
+                });
             }
             env.process_vsindex();
             env.clear_args();

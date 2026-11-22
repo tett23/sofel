@@ -335,6 +335,7 @@ fn keep_subrs(
             fd,
             direct.into_values().collect::<Vec<_>>(),
             direct_drops.into_values().collect::<Vec<_>>(),
+            env.hint_prefix(),
         ));
     }
     // An unchanged program can keep both interpretations. Rewriting a call
@@ -358,14 +359,20 @@ fn keep_subrs(
         globals: Vec::new(),
         locals: vec![Vec::new(); fd_count],
     };
-    for (new, old, fd, sites, dropped) in glyph_sites {
-        *result.glyphs.get_mut(new as usize)? = rewrite_calls(
+    for (new, old, fd, sites, dropped, prefix) in glyph_sites {
+        let mut encoded = Vec::new();
+        if drop_hints && let Some(index) = prefix {
+            encode_int(&mut encoded, i32::try_from(index).ok()?);
+            encode_op(&mut encoded, cs2::VSINDEXCS);
+        }
+        encoded.extend(rewrite_calls(
             fonts.char_string(old),
             &sites,
             &dropped,
             &gmap,
             lmaps.get(fd)?,
-        )?;
+        )?);
+        *result.glyphs.get_mut(new as usize)? = encoded;
     }
     for old in global_used {
         let mut encoded = None;
