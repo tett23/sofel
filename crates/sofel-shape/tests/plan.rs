@@ -446,7 +446,7 @@ fn adr0046_i2_i4_plan_key_and_lookups_follow_condition_state() {
 }
 
 #[test]
-fn i1_aat_complex_shaper_uses_dumber_only_when_morx_is_selected() {
+fn adr0060_i1_aat_complex_shaper_uses_dumber_only_when_morx_is_selected() {
     // One valid chain with default flags and no substitutions.
     let morx: Vec<_> = [0x0002_0000u32, 1, 0, 16, 0, 0]
         .into_iter()

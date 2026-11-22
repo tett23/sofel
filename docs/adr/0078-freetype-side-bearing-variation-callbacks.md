@@ -107,8 +107,8 @@ target/ft-dump/ft-dump --metrics --variations=wght=1 /private/tmp/sofel-vvar-sid
 
 ## 不変条件
 
-1. I1: 有効なフォントとグリフおよび任意の位置について、`Instance::ft_left_side_bearing(glyph)` は同じフォントの既定位置での値と等しい。HVAR の LSB マップが非ゼロ差分を指しても等しい。
-2. I2: 有効な縦メトリクスを持つフォントとグリフおよび任意の位置について、`Instance::ft_top_side_bearing(glyph, y_max)` は同じ `y_max` を与えた既定位置での値と等しい。VVAR の TSB マップが非ゼロ差分を指しても等しい。
+- I1: 有効なフォントとグリフおよび任意の位置について、`Instance::ft_left_side_bearing(glyph)` は同じフォントの既定位置での値と等しい。HVAR の LSB マップが非ゼロ差分を指しても等しい。
+- I2: 有効な縦メトリクスを持つフォントとグリフおよび任意の位置について、`Instance::ft_top_side_bearing(glyph, y_max)` は同じ `y_max` を与えた既定位置での値と等しい。VVAR の TSB マップが非ゼロ差分を指しても等しい。
 
 | 境界 | LSB と TSB のマップ | 位置 | 期待値 |
 |---|---|---|---|

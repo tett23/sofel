@@ -555,7 +555,7 @@ fn adr0084_i6_rejects_an_offset_above_65535() {
 // Both: the gallery cards (A1).
 
 #[test]
-fn adr0083_adr0084_a1_derived_cards_are_registered() {
+fn adr0083_a1_adr0084_a1_derived_cards_are_registered() {
     let repo = repo();
     let samples = inputs::derived_cases(&repo);
     let ids: Vec<_> = samples

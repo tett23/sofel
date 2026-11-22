@@ -4,7 +4,7 @@ Status: accepted-pending
 
 ## 文脈
 
-[ADR 0065](0065-legacy-faces-and-webfonts.md) は、素の CFF、Type1、CID、Type42、PFR、BDF、PCF、FNT、FON、WOFF、WOFF2 を開き、文字対応、送り、カーニング、輪郭またはビットマップが FreeType と一致することを求める（[ADR 0065](0065-legacy-faces-and-webfonts.md) の不変条件1）。
+[ADR 0065](0065-legacy-faces-and-webfonts.md) は、素の CFF、Type1、CID、Type42、PFR、BDF、PCF、FNT、FON、WOFF、WOFF2 を開き、文字対応、送り、カーニング、輪郭またはビットマップが FreeType と一致することを求める（[ADR 0065](0065-legacy-faces-and-webfonts.md) の不変条件 I1）。
 同じ ADR のテスト設計は、「旧形式の実フォントは [ADR 0005](0005-conformance-tests.md) に従ってライセンスと取得元を決める」と書く。
 [ADR 0005](0005-conformance-tests.md) は、旧形式のフォントを、ライセンスを確かめたうえで固定の一覧に加える ADR を、その形式を実装する前に作るとしている。
 

@@ -12,7 +12,7 @@ use sofel_font::read::{Severity, Tag, validate};
 use sofel_font::read::{avar::Avar, colr::Colr, math::Math, sbix::Sbix, svg::Svg};
 
 #[test]
-fn i01_all_locked_sources_and_licenses_are_present() {
+fn adr0031_i1_all_locked_sources_and_licenses_are_present() {
     let root = paths::testdata().join("extra-fonts");
     let mut count: usize = 0;
     for line in include_str!("../../../fonts.lock")
@@ -33,7 +33,7 @@ fn i01_all_locked_sources_and_licenses_are_present() {
 }
 
 #[test]
-fn i05_every_face_opens_and_validates() {
+fn adr0031_i5_every_face_opens_and_validates() {
     let corpus = Corpus::parse(
         include_str!("../../../fonts.lock"),
         include_str!("../../../conformance/fonts.tsv"),
@@ -113,7 +113,7 @@ fn i05_every_face_opens_and_validates() {
 }
 
 #[test]
-fn i05_math_color_bitmap_svg_and_avar2_views() {
+fn adr0031_i5_math_color_bitmap_svg_and_avar2_views() {
     let corpus = Corpus::parse(
         include_str!("../../../fonts.lock"),
         include_str!("../../../conformance/fonts.tsv"),
@@ -168,7 +168,7 @@ fn i05_math_color_bitmap_svg_and_avar2_views() {
 }
 
 #[test]
-fn i05_existing_variable_colr_has_its_license_and_axes() {
+fn adr0031_i5_existing_variable_colr_has_its_license_and_axes() {
     let root = paths::testdata();
     let bytes =
         std::fs::read(root.join("harfbuzz/test/api/fonts/test_glyphs-glyf_colr_1_variable.ttf"))

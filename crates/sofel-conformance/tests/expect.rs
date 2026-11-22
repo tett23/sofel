@@ -12,7 +12,7 @@ fn parses_identifiers_and_comments() {
 }
 
 #[test]
-fn i2_i3_unlisted_failures_and_listed_passes_both_fail() {
+fn adr0044_i2_i3_unlisted_failures_and_listed_passes_both_fail() {
     let expected = parse("listed-fails\nlisted-passes\nnever-ran\n");
     let results = [
         ("passes", true),

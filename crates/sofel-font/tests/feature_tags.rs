@@ -36,7 +36,7 @@ fn font(gsub: Option<Vec<u8>>, gpos: Option<Vec<u8>>) -> Vec<u8> {
 }
 
 #[test]
-fn inv1_feature_tags_preserves_table_order_duplicates_and_page() {
+fn adr0075_i1_feature_tags_preserves_table_order_duplicates_and_page() {
     let bytes = font(
         Some(layout(&[b"kern", b"kern", b"vert"])),
         Some(layout(&[b"mark"])),
@@ -52,7 +52,7 @@ fn inv1_feature_tags_preserves_table_order_duplicates_and_page() {
 }
 
 #[test]
-fn inv1_feature_tags_empty_and_discarded_tables() {
+fn adr0075_i1_feature_tags_empty_and_discarded_tables() {
     let mut bad = layout(&[b"kern"]);
     bad.truncate(8);
     let bytes = font(Some(bad), Some(layout(&[b"mark"])));

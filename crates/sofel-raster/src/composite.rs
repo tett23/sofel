@@ -149,7 +149,7 @@ fn blend(src: [u8; 4], dst: [u8; 4], mode: CompositeMode, sqrt: impl Fn(f32) -> 
 mod tests {
     use super::*;
     #[test]
-    fn i2_translucent_composite_modes_match_harfbuzz() {
+    fn adr0066_i2_translucent_composite_modes_match_harfbuzz() {
         // hb-raster-image.cc::composite_pixel(0x80592106, 0xb3093492, mode).
         let expected = [
             [0, 0, 0, 0],

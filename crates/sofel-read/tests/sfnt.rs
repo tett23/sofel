@@ -122,7 +122,7 @@ fn font_files() {
 }
 
 #[test]
-fn inv1_dfont_faces() {
+fn adr0058_i1_dfont_faces() {
     let first = sfnt(&[(b"maxp", maxp05(3))]);
     let second = sfnt(&[(b"maxp", maxp05(4))]);
     let file = dfont(&[(b"sfnt", vec![(14116, first.clone()), (3, second.clone())])]);
@@ -153,7 +153,7 @@ fn inv1_dfont_faces() {
 }
 
 #[test]
-fn inv2_dfont_face_index() {
+fn adr0058_i2_dfont_face_index() {
     for count in [0, 1, 2] {
         let sfnt = sfnt(&[(b"maxp", maxp05(3))]);
         let file = if count == 0 {
@@ -170,7 +170,7 @@ fn inv2_dfont_face_index() {
 }
 
 #[test]
-fn inv3_dfont_bounds() {
+fn adr0058_i3_dfont_bounds() {
     let body = sfnt(&[(b"maxp", maxp05(3))]);
     let file = dfont(&[(b"sfnt", vec![(14116, body)])]);
     let FontFile::Dfont(faces) = FontFile::new(&file).unwrap() else {

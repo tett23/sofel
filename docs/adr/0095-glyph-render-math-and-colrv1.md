@@ -12,7 +12,7 @@ Status: superseded [{"part":"照合の基準（差しかえる場所）","by":["
 - そのモジュールは `f32` の `sqrt`、`atan2`、`floor`、`ceil` を使うが、`#![no_std]` ではこれらが使えない。
 
 `atan2` を自前の関数に置きかえると、扇形のグラデーションの画素が、いまと変わりうる。
-そのため、[ADR 0087](0087-glyph-render-crate.md) の I3（移す前と同じビットマップ）と、[ADR 0066](0066-color-glyph-pixels.md) の不変条件2（COLRv1の画素がHarfBuzzのラスタと全チャンネルで一致する）にも関わる。
+そのため、[ADR 0087](0087-glyph-render-crate.md) の I3（移す前と同じビットマップ）と、[ADR 0066](0066-color-glyph-pixels.md) の不変条件 I2（COLRv1の画素がHarfBuzzのラスタと全チャンネルで一致する）にも関わる。
 
 利用者は、自前の `atan2` を書く案を選んだ（2026-11-18）。
 どのプラットフォームでも同じ画素を出すためである。
@@ -44,7 +44,7 @@ Status: superseded [{"part":"照合の基準（差しかえる場所）","by":["
 
 ### 照合の基準（[ADR 0066](0066-color-glyph-pixels.md) の修正）
 
-- [ADR 0066](0066-color-glyph-pixels.md) の不変条件2の「HarfBuzz raster の BGRA」は、HarfBuzzが呼ぶ `atan2f` を `sofel_geom::float::atan2f` に差しかえてビルドした参照の出力とする。
+- [ADR 0066](0066-color-glyph-pixels.md) の不変条件 I2の「HarfBuzz raster の BGRA」は、HarfBuzzが呼ぶ `atan2f` を `sofel_geom::float::atan2f` に差しかえてビルドした参照の出力とする。
   - `tools/hb-dump/` のビルドで、libmの `atan2f` より先に、`sofel_geom::float::atan2f` をCの関数 `atan2f` として出す小さな静的ライブラリをリンクする。
   - `sqrtf` は差しかえない（正しく丸められるので同じ値になる）。
 - この差しかえにより、参照の画素とsofelの画素は、どのプラットフォームでも同じになる。
@@ -67,7 +67,7 @@ Status: superseded [{"part":"照合の基準（差しかえる場所）","by":["
 - I1: `sofel_geom::float::sqrtf` は、すべての `f32` で、IEEE 754 の正しく丸めた平方根と等しい（NaN、負の数、±0、無限大、非正規化数を含む）。
 - I2: `sofel_geom::float::atan2f` は、x86-64、aarch64、wasm32 で、同じ入力にビット単位で同じ値を返す。
 - I3: `sofel-glyph-render` の関数は、`atan2` を使わない入力（扇形のグラデーションを含まないグリフ）では、移す前と同じビットマップとエラーを返す。
-- I4: COLRv1 の画素は、`atan2f` を差しかえた参照の出力と、全チャンネルで一致する（[ADR 0066](0066-color-glyph-pixels.md) の不変条件2をこの参照で読む）。
+- I4: COLRv1 の画素は、`atan2f` を差しかえた参照の出力と、全チャンネルで一致する（[ADR 0066](0066-color-glyph-pixels.md) の不変条件 I2をこの参照で読む）。
 - I5: `sofel-glyph-render` は `#![no_std]` で、`wasm32-unknown-unknown` にビルドできる（[ADR 0087](0087-glyph-render-crate.md) I2）。
 
 | 入力 | 期待 | 不変条件 |

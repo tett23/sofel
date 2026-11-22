@@ -4,7 +4,7 @@ use sofel_geom::{Command, Fixed, FnPen};
 use sofel_outline::{Scratch, StrokeBorder, StrokeError, StrokeJoin, StrokeStyle};
 
 #[test]
-fn inv1_stroke_reference_empty_outline() {
+fn adr0076_i1_stroke_reference_empty_outline() {
     let scratch = Scratch::default();
     let mut commands = Vec::new();
     scratch
@@ -22,7 +22,7 @@ fn inv1_stroke_reference_empty_outline() {
 }
 
 #[test]
-fn inv3_stroke_failure_negative_radius_writes_nothing() {
+fn adr0076_i3_stroke_failure_negative_radius_writes_nothing() {
     let scratch = Scratch::default();
     let mut commands = Vec::new();
     let result = scratch.stroke(

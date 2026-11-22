@@ -1,5 +1,5 @@
 #!/bin/sh
-# ADR 0032 I01/I03 and ADR 0034 I01/I03: base and malformed-rule boundaries.
+# ADR 0032 I1, I3, ADR 0034 I1, I3: base and malformed-rule boundaries.
 [ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"
 set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -23,7 +23,7 @@ check() {
 printf 'readme\n' >README
 printf 'contributing\n' >CONTRIBUTING.md
 git add . && git commit -qm root-documents
-check true I01_readme_contributing "$original" HEAD
+check true 'ADR 0032 I1, ADR 0034 I1: readme_contributing' "$original" HEAD
 git reset -q --hard "$original"
 for invalid in \
   $'unknown\tdocs/\n' \
@@ -38,7 +38,7 @@ for invalid in \
   base=$(git rev-parse HEAD)
   printf 'change\n' >>docs/a.md
   git add . && git commit -qm document
-  check false I03_invalid_rules "$base" HEAD
+  check false 'ADR 0032 I3, ADR 0034 I3: invalid_rules' "$base" HEAD
   git reset -q --hard "$original"
 done
 git rm -q ci/documentation-only.rules
@@ -46,7 +46,7 @@ git commit -qm missing-rules
 base=$(git rev-parse HEAD)
 printf 'change\n' >>docs/a.md
 git add . && git commit -qm document
-check false I03_missing_rules "$base" HEAD
+check false 'ADR 0032 I3, ADR 0034 I3: missing_rules' "$base" HEAD
 git reset -q --hard "$original"
 git checkout -qb feature
 printf 'feature\n' >>docs/a.md
@@ -55,7 +55,7 @@ feature=$(git rev-parse HEAD)
 git checkout -qb advanced-base "$original"
 printf 'code\n' >code.rs
 git add . && git commit -qm advanced-base
-check true I01_pull_request_merge_base HEAD "$feature"
+check true 'ADR 0032 I1, ADR 0034 I1: pull_request_merge_base' HEAD "$feature"
 git checkout -q feature
 mkdir -p bin
 real_git=$(command -v git)
@@ -67,7 +67,7 @@ EOF
 chmod +x bin/git
 if CI_REPO_DIR="$tmp" CI_EVENT_NAME=pull_request CI_BASE_SHA="$original" CI_HEAD_SHA="$feature" \
   REAL_GIT="$real_git" PATH="$tmp/bin:$PATH" bash "$root/scripts/ci-docs-only.sh" >/dev/null 2>&1; then
-  echo 'I03_git_diff_failure: accepted failed diff' >&2
+  echo 'ADR 0032 I3, ADR 0034 I3: git diff failure accepted' >&2
   exit 1
 fi
-echo 'ok: ADR 0032 I01/I03 and ADR 0034 I01/I03 boundaries'
+echo 'ADR 0032 I1, I3, ADR 0034 I1, I3: boundaries'

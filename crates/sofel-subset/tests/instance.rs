@@ -283,7 +283,7 @@ fn i1_subset_instance_endpoint_pin_removes_outside_named_instance() {
 }
 
 #[test]
-fn i1_subset_instance_endpoint_pin_filters_stat_without_variation_data() {
+fn adr0061_i1_subset_instance_endpoint_pin_filters_stat_without_variation_data() {
     let data = font_with(vec![
         (b"fvar", fvar(&AXES)),
         (
@@ -313,7 +313,7 @@ fn i1_subset_instance_endpoint_pin_filters_stat_without_variation_data() {
 }
 
 #[test]
-fn i1_subset_instance_range_filters_stat_without_variation_data() {
+fn adr0061_i1_subset_instance_range_filters_stat_without_variation_data() {
     let data = font_with(vec![
         (b"fvar", fvar(&AXES)),
         (
@@ -346,7 +346,7 @@ fn i1_subset_instance_range_filters_stat_without_variation_data() {
 }
 
 #[test]
-fn i1_subset_instance_all_axes_pinned_filters_stat_without_variation_data() {
+fn adr0061_i1_subset_instance_all_axes_pinned_filters_stat_without_variation_data() {
     let data = font_with(vec![
         (b"fvar", fvar(&AXES)),
         (
@@ -375,7 +375,7 @@ fn i1_subset_instance_all_axes_pinned_filters_stat_without_variation_data() {
 }
 
 #[test]
-fn i1_subset_instance_default_pin_keeps_avar_and_filters_stat() {
+fn adr0061_i1_subset_instance_default_pin_keeps_avar_and_filters_stat() {
     let map = [(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)];
     let data = font_with(vec![
         (b"fvar", fvar(&AXES)),
@@ -404,7 +404,7 @@ fn i1_subset_instance_default_pin_keeps_avar_and_filters_stat() {
 }
 
 #[test]
-fn i1_subset_instance_nondefault_pin_with_identity_avar() {
+fn adr0061_i1_subset_instance_nondefault_pin_with_identity_avar() {
     let identity = [(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)];
     let data = font_with(vec![
         (b"fvar", fvar(&AXES)),
@@ -421,7 +421,7 @@ fn i1_subset_instance_nondefault_pin_with_identity_avar() {
 }
 
 #[test]
-fn i1_subset_instance_range_with_identity_avar() {
+fn adr0061_i1_subset_instance_range_with_identity_avar() {
     let identity = [(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)];
     let data = font_with(vec![
         (b"fvar", fvar(&AXES)),
@@ -444,7 +444,7 @@ fn i1_subset_instance_range_with_identity_avar() {
 }
 
 #[test]
-fn i1_subset_instance_one_sided_range_with_identity_avar() {
+fn adr0061_i1_subset_instance_one_sided_range_with_identity_avar() {
     let identity = [(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0)];
     let data = font_with(vec![
         (b"fvar", fvar(&AXES)),
@@ -557,7 +557,7 @@ fn i1_subset_instance_drops_names_of_removed_axes() {
 }
 
 #[test]
-fn i2_unknown_axis_preserves_previous_axis_range_and_output() {
+fn adr0061_i2_unknown_axis_preserves_previous_axis_range_and_output() {
     let data = font_with(vec![(b"fvar", fvar(&AXES))]);
     let font = Font::new(&data, 0).unwrap();
     let input = unicodes().with_all_axes_pinned_to_default(&font).unwrap();

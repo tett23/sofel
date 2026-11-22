@@ -6,7 +6,7 @@ use sofel_outline::{Outlines, Scale, Scratch};
 use sofel_vector::SvgPage;
 
 #[test]
-fn i1_vector_page_positioned_abc_matches_harfbuzz() {
+fn adr0068_i1_vector_page_positioned_abc_matches_harfbuzz() {
     let root = sofel_conformance::paths::testdata().join("harfbuzz/test");
     let bytes = std::fs::read(root.join("api/fonts/Roboto-Regular.abc.ttf")).unwrap();
     let font = Font::new(&bytes, 0).unwrap();
@@ -35,7 +35,7 @@ fn i1_vector_page_positioned_abc_matches_harfbuzz() {
 
 #[test]
 #[ignore = "requires Poppler; exercised by the Linux conformance job"]
-fn i1_vector_page_pdf_quadratics_match_harfbuzz_pixels() {
+fn adr0068_i1_vector_page_pdf_quadratics_match_harfbuzz_pixels() {
     use sofel_geom::CompositeMode;
     use sofel_vector::PdfPage;
     let root = sofel_conformance::paths::testdata().join("harfbuzz/test");
@@ -97,7 +97,7 @@ fn i1_vector_page_pdf_quadratics_match_harfbuzz_pixels() {
 
 #[test]
 #[ignore = "requires Poppler; exercised by the Linux conformance job"]
-fn i1_vector_page_pdf_paints_translucent_paths_in_order() {
+fn adr0068_i1_vector_page_pdf_paints_translucent_paths_in_order() {
     use sofel_geom::{CompositeMode, Pen};
     use sofel_vector::PdfPage;
     let white = Color::new(255, 255, 255, 255);

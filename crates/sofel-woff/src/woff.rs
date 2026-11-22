@@ -54,7 +54,7 @@ mod tests {
     use alloc::vec;
     use sofel_write::build_sfnt;
     #[test]
-    fn i2_store_only_strictly_shorter_compressed_tables() {
+    fn adr0070_i2_store_only_strictly_shorter_compressed_tables() {
         let mut seen = [false; 3];
         for len in 4..64usize {
             let original = vec![42; len];

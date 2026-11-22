@@ -67,4 +67,4 @@ if grep -q 'atan2f\.o$' "$tmp/args"; then
   fail "ADR 0097 I2: build.sh passed atan2f.o to the link for libm"
 fi
 
-echo "ok: ADR 0097 I1, I2 atan2f object"
+echo "ADR 0097 I1, I2: atan2f object"

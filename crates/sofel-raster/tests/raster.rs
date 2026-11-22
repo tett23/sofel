@@ -233,7 +233,7 @@ fn rasterizers_are_reusable() {
 }
 
 #[test]
-fn i2_render_mode_harmony_separates_horizontal_and_vertical_subpixels() {
+fn adr0064_i2_render_mode_harmony_separates_horizontal_and_vertical_subpixels() {
     use sofel_raster::LcdMode;
     let mut raster = Rasterizer::new();
     rect(&mut raster, 0, 0, 64, 64);
@@ -257,7 +257,7 @@ fn i2_render_mode_harmony_separates_horizontal_and_vertical_subpixels() {
 }
 
 #[test]
-fn i2_filtered_lcd_covers_a_pixel_in_both_orientations() {
+fn adr0064_i2_filtered_lcd_covers_a_pixel_in_both_orientations() {
     use sofel_raster::LcdMode;
     let mut raster = Rasterizer::new();
     rect(&mut raster, 0, 0, 64, 64);

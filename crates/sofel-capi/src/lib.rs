@@ -4444,7 +4444,7 @@ mod tests {
     }
 
     #[test]
-    fn inv2_axis_ppem_values() {
+    fn adr0052_i2_axis_ppem_values() {
         let data = test_build::sample_font();
         let mut error = 0;
         // SAFETY: the font bytes remain live until the handle is destroyed.

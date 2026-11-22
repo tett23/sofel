@@ -353,7 +353,7 @@ fn the_binary_runs() {
 }
 
 #[test]
-fn i1_gzip_input_uses_the_same_shaping_path_as_sfnt() {
+fn adr0065_i1_gzip_input_uses_the_same_shaping_path_as_sfnt() {
     let source = font_file("gzip-input", true);
     let bytes = std::fs::read(&source).unwrap();
     let length = u16::try_from(bytes.len()).unwrap();

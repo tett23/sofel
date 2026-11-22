@@ -119,7 +119,7 @@ cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-local-hb15.otf" "crates/sofel-subset/te
 
 ## adr0061-stat-endpoint-hb15.ttf
 
-入力は `tests/instance.rs` の `i1_subset_instance_endpoint_pin_filters_stat_without_variation_data` が組む `data` である。
+入力は `tests/instance.rs` の `adr0061_i1_subset_instance_endpoint_pin_filters_stat_without_variation_data` が組む `data` である。
 
 ```sh
 "$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/adr0061-stat-endpoint-hb15.ttf" --output-file="$SOFEL_FIXTURE_OUTPUTS/adr0061-stat-endpoint-hb15.ttf" --unicodes=41 --instance=wght=900
@@ -128,7 +128,7 @@ cmp "$SOFEL_FIXTURE_OUTPUTS/adr0061-stat-endpoint-hb15.ttf" "crates/sofel-subset
 
 ## adr0061-stat-range-hb15.ttf
 
-入力は `tests/instance.rs` の `i1_subset_instance_range_filters_stat_without_variation_data` が組む `data` である。
+入力は `tests/instance.rs` の `adr0061_i1_subset_instance_range_filters_stat_without_variation_data` が組む `data` である。
 
 ```sh
 "$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/adr0061-stat-range-hb15.ttf" --output-file="$SOFEL_FIXTURE_OUTPUTS/adr0061-stat-range-hb15.ttf" --unicodes=41 --instance=wght=300:400:500
@@ -137,7 +137,7 @@ cmp "$SOFEL_FIXTURE_OUTPUTS/adr0061-stat-range-hb15.ttf" "crates/sofel-subset/te
 
 ## adr0061-stat-all-hb15.ttf
 
-入力は `tests/instance.rs` の `i1_subset_instance_all_axes_pinned_filters_stat_without_variation_data` が組む `data` である。
+入力は `tests/instance.rs` の `adr0061_i1_subset_instance_all_axes_pinned_filters_stat_without_variation_data` が組む `data` である。
 
 ```sh
 "$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/adr0061-stat-all-hb15.ttf" --output-file="$SOFEL_FIXTURE_OUTPUTS/adr0061-stat-all-hb15.ttf" --unicodes=41 --instance=wght=900,wdth=drop
@@ -146,7 +146,7 @@ cmp "$SOFEL_FIXTURE_OUTPUTS/adr0061-stat-all-hb15.ttf" "crates/sofel-subset/test
 
 ## adr0061-stat-avar-hb15.ttf
 
-入力は `tests/instance.rs` の `i1_subset_instance_default_pin_keeps_avar_and_filters_stat` が組む `data` である。
+入力は `tests/instance.rs` の `adr0061_i1_subset_instance_default_pin_keeps_avar_and_filters_stat` が組む `data` である。
 
 ```sh
 "$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/adr0061-stat-avar-hb15.ttf" --output-file="$SOFEL_FIXTURE_OUTPUTS/adr0061-stat-avar-hb15.ttf" --unicodes=41 --instance=wdth=drop
@@ -155,7 +155,7 @@ cmp "$SOFEL_FIXTURE_OUTPUTS/adr0061-stat-avar-hb15.ttf" "crates/sofel-subset/tes
 
 ## adr0061-avar-pin-hb15.ttf
 
-入力は `tests/instance.rs` の `i1_subset_instance_nondefault_pin_with_identity_avar` が組む `data` である。
+入力は `tests/instance.rs` の `adr0061_i1_subset_instance_nondefault_pin_with_identity_avar` が組む `data` である。
 
 ```sh
 "$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/adr0061-avar-pin-hb15.ttf" --output-file="$SOFEL_FIXTURE_OUTPUTS/adr0061-avar-pin-hb15.ttf" --unicodes=41 --instance=wght=900
@@ -164,7 +164,7 @@ cmp "$SOFEL_FIXTURE_OUTPUTS/adr0061-avar-pin-hb15.ttf" "crates/sofel-subset/test
 
 ## adr0061-avar-range-hb15.ttf
 
-入力は `tests/instance.rs` の `i1_subset_instance_range_with_identity_avar` が組む `data` である。
+入力は `tests/instance.rs` の `adr0061_i1_subset_instance_range_with_identity_avar` が組む `data` である。
 
 ```sh
 "$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/adr0061-avar-range-hb15.ttf" --output-file="$SOFEL_FIXTURE_OUTPUTS/adr0061-avar-range-hb15.ttf" --unicodes=41 --instance=wght=300:400:500
@@ -173,7 +173,7 @@ cmp "$SOFEL_FIXTURE_OUTPUTS/adr0061-avar-range-hb15.ttf" "crates/sofel-subset/te
 
 ## adr0061-avar-one-sided-hb15.ttf
 
-入力は `tests/instance.rs` の `i1_subset_instance_one_sided_range_with_identity_avar` が組む `data` である。
+入力は `tests/instance.rs` の `adr0061_i1_subset_instance_one_sided_range_with_identity_avar` が組む `data` である。
 
 ```sh
 "$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/adr0061-avar-one-sided-hb15.ttf" --output-file="$SOFEL_FIXTURE_OUTPUTS/adr0061-avar-one-sided-hb15.ttf" --unicodes=41 --instance=wght=400:400:500

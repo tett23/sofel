@@ -66,7 +66,7 @@ printf '# allowed\na b\n!bin b\n' >"$tmp/bin.txt"
 sh "$script" "$tmp/ws" "$tmp/bin.txt" 2>/dev/null || fail "ADR 0081 I4: '!bin b' did not allow the binary"
 rm -r "$tmp/ws/b/src/bin"
 sh "$script" "$tmp/ws" "$tmp/allowed.txt" 2>/dev/null || fail "ADR 0081 I4: a library without binaries was rejected"
-echo "ok: ADR 0081 I4: binaries only in crates marked !bin"
+echo "ADR 0081 I4: binaries only in crates marked !bin"
 
 # ADR 0081 I2: crates marked `!no_std` must declare #![no_std].
 printf '# allowed\na b\n!no_std b\n' >"$tmp/nostd.txt"
@@ -75,7 +75,7 @@ if sh "$script" "$tmp/ws" "$tmp/nostd.txt" 2>/dev/null; then
 fi
 printf '#![no_std]\n#![forbid(unsafe_code)]\n' >"$tmp/ws/b/src/lib.rs"
 sh "$script" "$tmp/ws" "$tmp/nostd.txt" 2>/dev/null || fail "ADR 0081 I2: #![no_std] in lib.rs was not accepted"
-echo "ok: ADR 0081 I2: crates marked !no_std declare #![no_std]"
+echo "ADR 0081 I2: crates marked !no_std declare #![no_std]"
 
 # ADR 0003: library crates (marked `!no_std`) write #![forbid(unsafe_code)]
 # at their library root; the workspace lints alone are not enough.
@@ -99,7 +99,7 @@ crate b ''
 crate a ''
 sh "$script" "$tmp/ws" "$tmp/allowed.txt" 2>/dev/null ||
   fail "ADR 0093 I2: an allowed but unused dependency was rejected"
-echo "ok: ADR 0093 I2: check-deps.sh fails when deps.txt drops a used pair"
+echo "ADR 0093 I2: check-deps.sh fails when deps.txt drops a used pair"
 
 # ADR 0094 I1: crates marked `!no_alloc` have no `extern crate alloc` and
 # no `alloc::` paths anywhere in their src/.
@@ -121,7 +121,7 @@ printf '//! Allocation-free: nothing here uses the alloc crate.\npub type L = co
 sh "$script" "$tmp/ws" "$tmp/noalloc.txt" 2>/dev/null ||
   fail "ADR 0094 I1: core::alloc or a comment mentioning alloc was rejected"
 rm "$tmp/ws/b/src/m.rs"
-echo "ok: ADR 0094 I1: crates marked !no_alloc do not use alloc"
+echo "ADR 0094 I1: crates marked !no_alloc do not use alloc"
 
 # ADR 0098 I1, I2: a `!no_alloc_dir <crate> <dir>` directory exists, names
 # nothing that allocates, and reaches only core, itself and !no_alloc
@@ -176,7 +176,7 @@ if sh "$script" "$tmp/ws" "$tmp/noallocdir.txt" 2>/dev/null; then
   fail "ADR 0098 I1: a missing !no_alloc_dir directory was accepted"
 fi
 rm "$tmp/ws/b/src/cipher.rs"
-echo "ok: ADR 0098 I1, I2: !no_alloc_dir directories do not allocate"
+echo "ADR 0098 I1, I2: !no_alloc_dir directories do not allocate"
 
 # ADR 0087 I1: `!dev <crate> <dependency>` allows the dependency only as
 # a development dependency; normal and build dependencies still need a
@@ -199,7 +199,7 @@ printf '\n[build-dependencies]\nb = { path = "../b" }\n' >>"$tmp/ws/a/Cargo.toml
 if sh "$script" "$tmp/ws" "$tmp/dev.txt" 2>/dev/null; then
   fail "ADR 0087 I1: '!dev a b' allowed a build dependency"
 fi
-echo "ok: ADR 0087 I1: !dev allows only development dependencies"
+echo "ADR 0087 I1: !dev allows only development dependencies"
 
 # ADR 0087 I1: in the real workspace, the C ABI's normal dependencies do
 # not reach sofel-cli, even transitively, and putting sofel-cli back
@@ -217,4 +217,4 @@ if sh "$script" "$tmp/real" "$root/scripts/deps.txt" 2>"$tmp/real.err"; then
 fi
 grep -qF "sofel-capi depends on sofel-cli (normal)" "$tmp/real.err" ||
   fail "ADR 0087 I1: the check failed for another reason: $(cat "$tmp/real.err")"
-echo "ok: ADR 0087 I1: sofel-capi depends on sofel-cli only in its tests"
+echo "ADR 0087 I1: sofel-capi depends on sofel-cli only in its tests"

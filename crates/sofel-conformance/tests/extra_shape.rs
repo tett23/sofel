@@ -61,7 +61,7 @@ fn references() -> BTreeMap<&'static str, &'static str> {
 }
 
 #[test]
-fn i05_cases_have_feature_effect_and_fixed_references() {
+fn adr0031_i5_cases_have_feature_effect_and_fixed_references() {
     let corpus = Corpus::parse(
         include_str!("../../../fonts.lock"),
         include_str!("../../../conformance/fonts.tsv"),
@@ -139,7 +139,7 @@ fn i05_cases_have_feature_effect_and_fixed_references() {
 
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
-fn i05_reference_matches_pinned_harfbuzz() {
+fn adr0031_i5_reference_matches_pinned_harfbuzz() {
     let corpus = Corpus::parse(
         include_str!("../../../fonts.lock"),
         include_str!("../../../conformance/fonts.tsv"),
@@ -186,7 +186,7 @@ fn i05_reference_matches_pinned_harfbuzz() {
 }
 
 #[test]
-fn i06_shape_cases_match_harfbuzz() {
+fn adr0031_i6_shape_cases_match_harfbuzz() {
     let corpus = Corpus::parse(
         include_str!("../../../fonts.lock"),
         include_str!("../../../conformance/fonts.tsv"),

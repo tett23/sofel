@@ -8,7 +8,7 @@ fn append(hash: &mut u64, bytes: &[u8]) {
 }
 
 #[test]
-fn adr0030_i01_arithmetic_digest() {
+fn adr0030_i1_arithmetic_digest() {
     let mut hash = 0xcbf29ce484222325;
     for coord in [0, 1, 2048, 4096, 8191, 8192, 12288, 16383, 16384] {
         let hb = HbF32::fold_region_axis(1.0, coord, 0, 8192, 16384);

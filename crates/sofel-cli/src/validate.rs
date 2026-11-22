@@ -645,7 +645,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn inv4_structural_warnings_count_as_damage() {
+    fn adr0059_i4_structural_warnings_count_as_damage() {
         let mut summary = DamageSummary::default();
         for kind in [
             Kind::ReservedBitsSet { found: 0x20 },
@@ -665,7 +665,7 @@ mod tests {
     }
 
     #[test]
-    fn inv4_damage_summary_deduplicates_locations_and_reasons() {
+    fn adr0059_i4_damage_summary_deduplicates_locations_and_reasons() {
         let mut summary = DamageSummary::default();
         for kind in [
             Kind::UnknownFormat { found: 3 },
