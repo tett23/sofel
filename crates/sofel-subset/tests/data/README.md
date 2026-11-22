@@ -274,3 +274,57 @@ cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-context-call-reverse-hb15.otf" "crates/
 "$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-no-hint-vsindex-path-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-vsindex-path-hb15.otf" --gids=2 --no-hinting
 cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-vsindex-path-hb15.otf" "crates/sofel-subset/tests/data/cff2-no-hint-vsindex-path-hb15.otf"
 ```
+
+## cff2-vsindex-before-stem-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_vsindex_hint_prefix_relocation_matches_harfbuzz` の prefix_first == true のケースが組む `bytes` である。`vsindex` と stem を持つ CFF2 をヒントなしでサブセット化する。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-vsindex-before-stem-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-vsindex-before-stem-hb15.otf" --gids=2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-vsindex-before-stem-hb15.otf" "crates/sofel-subset/tests/data/cff2-vsindex-before-stem-hb15.otf"
+```
+
+## cff2-vsindex-after-stem-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_vsindex_hint_prefix_relocation_matches_harfbuzz` の prefix_first == false のケースが組む `bytes` である。`vsindex` と stem を持つ CFF2 をヒントなしでサブセット化する。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-vsindex-after-stem-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-vsindex-after-stem-hb15.otf" --gids=2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-vsindex-after-stem-hb15.otf" "crates/sofel-subset/tests/data/cff2-vsindex-after-stem-hb15.otf"
+```
+
+## cff2-vsindex-subr-path-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_vsindex_in_subroutine_moves_prefix_to_glyph` の keep_path == true のケースが組む `bytes` である。`vsindex` と stem を持つ CFF2 をヒントなしでサブセット化する。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-vsindex-subr-path-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-vsindex-subr-path-hb15.otf" --gids=2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-vsindex-subr-path-hb15.otf" "crates/sofel-subset/tests/data/cff2-vsindex-subr-path-hb15.otf"
+```
+
+## cff2-vsindex-subr-empty-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_vsindex_in_subroutine_moves_prefix_to_glyph` の keep_path == false のケースが組む `bytes` である。`vsindex` と stem を持つ CFF2 をヒントなしでサブセット化する。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-vsindex-subr-empty-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-vsindex-subr-empty-hb15.otf" --gids=2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-vsindex-subr-empty-hb15.otf" "crates/sofel-subset/tests/data/cff2-vsindex-subr-empty-hb15.otf"
+```
+
+## cff2-vsindex-nonzero-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_nonzero_vsindex_prefix_matches_harfbuzz` の vsindex が1 のケースが組む `bytes` である。`vsindex` と stem を持つ CFF2 をヒントなしでサブセット化する。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-vsindex-nonzero-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-vsindex-nonzero-hb15.otf" --gids=2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-vsindex-nonzero-hb15.otf" "crates/sofel-subset/tests/data/cff2-vsindex-nonzero-hb15.otf"
+```
+
+## cff2-vsindex-caller-path-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_path_only_vsindex_accepts_caller_argument` が組む `bytes` である。グリフが渡した引数をサブルーチンの `vsindex` が読み、stem を除かずに描画の `blend` に使う。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-vsindex-caller-path-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-vsindex-caller-path-hb15.otf" --gids=2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-vsindex-caller-path-hb15.otf" "crates/sofel-subset/tests/data/cff2-vsindex-caller-path-hb15.otf"
+```
