@@ -36,7 +36,7 @@ fn adr0064_i1_type1_multiple_hstems_leave_scratch_untouched() {
 }
 
 #[test]
-fn adr0064_i1_type1_blue_zone_stem_is_unsupported() {
+fn adr0064_i1_type1_blue_zone_stem_matches_freetype() {
     let (pfa, _) = fixture::with_glyph_name_and_blues(
         &[
             139, 248, 136, 13, 239, 239, 1, 239, 239, 21, 239, 139, 5, 139, 239, 5, 39, 139, 5,
@@ -55,31 +55,41 @@ fn adr0064_i1_type1_blue_zone_stem_is_unsupported() {
     let ppem = 16;
     let factor = Fixed(div_fix(ppem * 64, 1000));
     let mut commands = Vec::new();
-    assert_eq!(
-        draw_type1_native(
-            &face,
-            1,
-            Scale::Scaled {
-                x: factor,
-                y: factor
-            },
-            HintTarget::Light,
-            &mut FnPen(|c| commands.push(c))
-        ),
-        Err(OutlineError::UnsupportedFormat),
-    );
-    assert!(commands.is_empty());
+    let (_, advance) = draw_type1_native(
+        &face,
+        1,
+        Scale::Scaled {
+            x: factor,
+            y: factor,
+        },
+        HintTarget::Light,
+        &mut FnPen(|c| commands.push(c)),
+    )
+    .unwrap();
+    let mut points = Vec::new();
+    for command in commands {
+        match command {
+            Command::MoveTo(point) | Command::LineTo(point) => points.push(point),
+            Command::Close => {
+                if points.last() == points.first() {
+                    points.pop();
+                }
+            }
+            other => assert_eq!(other, Command::Close),
+        }
+    }
+    let mut actual = format!("advance {advance} 0\n");
+    for point in &points {
+        actual.push_str(&format!("point {} {} 1\n", point.x, point.y));
+    }
+    actual.push_str(&format!("end {}\n", points.len() - 1));
     let reference = std::process::Command::new(paths::ft_dump())
         .args(["--hint-slot", "16", "1", "native", "light"])
         .arg(&path)
         .output()
         .unwrap();
     assert!(reference.status.success());
-    assert!(
-        String::from_utf8(reference.stdout)
-            .unwrap()
-            .contains("point 102 153 1")
-    );
+    assert_eq!(actual, String::from_utf8(reference.stdout).unwrap());
     std::fs::remove_file(path).unwrap();
 }
 
