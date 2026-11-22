@@ -1,10 +1,236 @@
 //! Compare the loaded outline and advance before rendering (sofel ADR 0064 I1).
-#![allow(clippy::unwrap_used)]
+#![allow(clippy::unwrap_used, clippy::indexing_slicing)]
 
 use sofel_conformance::paths;
 use sofel_font::{Font, read::GlyphId};
 use sofel_outline::{HintMode, HintTarget, OutlineError, Outlines, Scratch};
 use std::{fmt::Write, process::Command};
+
+#[test]
+fn adr0085_a2_harfbuzz_reference_assigns_gsub_style() {
+    let styles = sofel_outline::AutoHintCache::style_specs();
+    assert_eq!(styles.len(), 87);
+    assert_eq!(styles[57].script, *b"Latn");
+    assert_eq!(styles[57].feature, None);
+    assert!(!styles[57].blue_strings.is_empty());
+    let path = paths::testdata().join("extra-fonts/fonts/source-serif.otf");
+    let hb_reference = paths::ft_dump_hb();
+    let default = Command::new(paths::ft_dump())
+        .args(["--auto-style", "109"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    let hb = Command::new(hb_reference)
+        .args(["--auto-style", "109"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(default.status.success());
+    assert!(hb.status.success());
+    assert_eq!(default.stdout, b"style 86\n");
+    assert_eq!(hb.stdout, b"style 57\n");
+}
+
+#[test]
+fn adr0085_i2_gsub_default_closure_assigns_unmapped_latin_glyph() {
+    let path = paths::testdata().join("extra-fonts/fonts/source-serif.otf");
+    let data = std::fs::read(path).unwrap();
+    let font = Font::new(&data, 0).unwrap();
+    let requests = sofel_outline::AutoHintCache::style_specs();
+    let requests: Vec<_> = requests
+        .iter()
+        .map(|style| sofel_shape::AutoHintStyleRequest {
+            index: style.index,
+            script: style.script,
+            ranges: style.ranges,
+            nonbase_ranges: style.nonbase_ranges,
+            feature: style.feature,
+            blue_strings: &style.blue_strings,
+            standard: style.standard,
+        })
+        .collect();
+    let styles = sofel_shape::auto_hint_gsub_styles(&font, &requests, 86, 86);
+    assert_eq!(styles[109], 57);
+}
+
+#[test]
+fn adr0085_i2_gsub_style_words_match_harfbuzz_reference() {
+    let reference = paths::ft_dump_hb();
+    for relative in [
+        "extra-fonts/fonts/source-serif.otf",
+        "harfbuzz/perf/fonts/Roboto-Regular.ttf",
+        "harfbuzz/perf/fonts/Amiri-Regular.ttf",
+        "extra-fonts/fonts/amstelvar.ttf",
+        "harfbuzz/perf/fonts/NotoSansDuployan-Regular.otf",
+        "extra-fonts/fonts/devanagari.ttf",
+        "extra-fonts/fonts/hebrew.ttf",
+        "extra-fonts/fonts/khmer.ttf",
+        "extra-fonts/fonts/myanmar.ttf",
+        "extra-fonts/fonts/arabic.ttf",
+        "extra-fonts/fonts/stix-math.otf",
+        "harfbuzz/test/api/fonts/Roboto-Regular.abcAE.ttf",
+        "harfbuzz/test/api/fonts/Mplus1p-Regular.660E.ttf",
+    ] {
+        let path = paths::testdata().join(relative);
+        let data = std::fs::read(&path).unwrap();
+        let font = Font::new(&data, 0).unwrap();
+        let specs = sofel_outline::AutoHintCache::style_specs();
+        let requests: Vec<_> = specs
+            .iter()
+            .map(|style| sofel_shape::AutoHintStyleRequest {
+                index: style.index,
+                script: style.script,
+                ranges: style.ranges,
+                nonbase_ranges: style.nonbase_ranges,
+                feature: style.feature,
+                blue_strings: &style.blue_strings,
+                standard: style.standard,
+            })
+            .collect();
+        let actual = sofel_shape::auto_hint_gsub_styles(&font, &requests, 86, 57);
+        let output = Command::new(&reference)
+            .arg("--auto-styles")
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let expected = String::from_utf8(output.stdout).unwrap();
+        let mut mismatches = std::collections::BTreeMap::new();
+        for (glyph, line) in expected.lines().enumerate() {
+            let style = line
+                .split_ascii_whitespace()
+                .last()
+                .unwrap()
+                .parse::<u16>()
+                .unwrap();
+            if actual[glyph] != style {
+                *mismatches.entry((actual[glyph], style)).or_insert(0usize) += 1;
+            }
+        }
+        assert!(mismatches.is_empty(), "{relative}: {mismatches:?}");
+    }
+}
+
+#[test]
+fn adr0085_i2_shaped_blue_zone_slot_matches_harfbuzz_reference() {
+    let path = paths::testdata().join("extra-fonts/fonts/source-serif.otf");
+    let data = std::fs::read(&path).unwrap();
+    let font = Font::new(&data, 0).unwrap();
+    let outlines = Outlines::new(font.default_instance());
+    let specs = sofel_outline::AutoHintCache::style_specs();
+    let requests: Vec<_> = specs
+        .iter()
+        .map(|style| sofel_shape::AutoHintStyleRequest {
+            index: style.index,
+            script: style.script,
+            ranges: style.ranges,
+            nonbase_ranges: style.nonbase_ranges,
+            feature: style.feature,
+            blue_strings: &style.blue_strings,
+            standard: style.standard,
+        })
+        .collect();
+    let (glyph_styles, clusters) = sofel_shape::auto_hint_shaping_data(
+        outlines.instance(),
+        &|glyph| outlines.glyph_extents(glyph),
+        &requests,
+        86,
+        86,
+    );
+    let reverse = sofel_shape::auto_hint_reverse_entries(
+        &font,
+        &requests,
+        &sofel_outline::AutoHintCache::adjustment_codepoints(),
+    );
+    assert!(reverse.contains(&(14, 1190, 291)));
+    assert!(reverse.contains(&(14, 1342, 944)));
+    assert!(
+        !reverse
+            .iter()
+            .any(|&(style, glyph, _)| style == 14 && glyph == 1452)
+    );
+    assert!(
+        reverse
+            .iter()
+            .any(|&(style, glyph, codepoint)| style == 14 && glyph == 1121 && codepoint == 105)
+    );
+    let data = sofel_outline::AutoHintShapingData {
+        glyph_styles,
+        reverse,
+        clusters: clusters
+            .into_iter()
+            .map(|cluster| sofel_outline::AutoHintShapedCluster {
+                style: cluster.style,
+                text: cluster.text,
+                glyphs: cluster
+                    .glyphs
+                    .into_iter()
+                    .map(|glyph| sofel_outline::AutoHintShapedGlyph {
+                        glyph: glyph.glyph,
+                        x_advance: glyph.x_advance,
+                        y_offset: glyph.y_offset,
+                    })
+                    .collect(),
+            })
+            .collect(),
+    };
+    let mut cache = sofel_outline::AutoHintCache::new(&outlines)
+        .with_shaping_data(data)
+        .unwrap();
+    let mut scratch = Scratch::default();
+    for (target_name, target) in [
+        ("normal", HintTarget::Normal),
+        ("light", HintTarget::Light),
+        ("mono", HintTarget::Mono),
+    ] {
+        for gid in [109, 547, 1121] {
+            let reference = Command::new(paths::ft_dump_hb())
+                .args(["--hint-slot", "14", &gid.to_string(), "auto", target_name])
+                .arg(&path)
+                .output()
+                .unwrap();
+            assert!(reference.status.success());
+            let (_, advance) = outlines
+                .load_auto_hinted(GlyphId(gid), 14, target, &mut cache, &mut scratch)
+                .unwrap();
+            let mut actual = format!("advance {advance} 0\n");
+            for (point, tag) in scratch.points().iter().zip(scratch.point_tags()) {
+                writeln!(actual, "point {} {} {tag}", point.x, point.y).unwrap();
+            }
+            for end in scratch.contour_ends() {
+                writeln!(actual, "end {end}").unwrap();
+            }
+            assert_eq!(actual.as_bytes(), reference.stdout, "{target_name} {gid}");
+        }
+    }
+}
+
+#[test]
+fn adr0085_i2_cli_gsub_load_matches_harfbuzz_reference() {
+    let path = paths::testdata().join("extra-fonts/fonts/source-serif.otf");
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let args = [
+        "--gsub", "--ppem", "14", "--glyph", "547", "--target", "normal",
+    ]
+    .into_iter()
+    .map(std::ffi::OsString::from)
+    .chain(core::iter::once(path.as_os_str().to_owned()))
+    .collect::<Vec<_>>();
+    assert_eq!(
+        sofel_cli::hint::run(&args, &mut stdout, &mut stderr),
+        0,
+        "{}",
+        String::from_utf8_lossy(&stderr)
+    );
+    let reference = Command::new(paths::ft_dump_hb())
+        .args(["--hint-slot", "14", "547", "auto", "normal"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(reference.status.success());
+    assert_eq!(stdout, reference.stdout);
+}
 
 #[path = "../../sofel-read/tests/support/build.rs"]
 mod cff_build;

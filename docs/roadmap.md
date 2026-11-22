@@ -46,7 +46,6 @@ Golem はフォントを開くときに GSUB と GPOS の機能タグをすべ�
 - **素の CFF のネイティブヒンティング**：素の CFF のフェイス（`load_bare_cff`）にはヒンティングつきのロードが無い。
 - **VARC のグリフのスロット**：FreeType は VARC が覆うグリフを、ヒンティングの指定に関わらず VARC からヒンティングなしで読む。`Outlines::load` と `load_with_hint` は CFF2 の charstring を読み、charstring の無いグリフでは失敗する。`conformance/expected-failures-cff-hint.txt` に該当を記録した。VARC の輪郭を点とタグのスロットに組む処理が要る（[ADR 0067](adr/0067-varc-components.md) と合わせて決める）。
 
-- **HarfBuzz を使う構成**：FreeType を `FT_CONFIG_OPTION_USE_HARFBUZZ` で組むと、GSUB の機能（小型大文字、上付きなど）から style を割り当て、`afadjust.c` の逆引きにも GSUB を使う。[ADR 0085](adr/0085-autofit-harfbuzz-configuration.md) で、この構成を選べるようにし、HarfBuzz を組んだ ft-dump と照合すると採択した（未実装）。
 - **モジュールの設定**：`no-stem-darkening`、`darkening-parameters`、`increase-x-height`、`fallback-script`、`default-script` を FreeType の既定値に固定している。設定を受け取る API は無い。[ADR 0086](adr/0086-hinting-module-properties.md) で、ロード指定で受け取ると採択した（未実装）。
 - **`Outlines` 以外のフェイス**：Type1、CID、Type42、PFR、素の CFF のフェイスは自動ヒンティングできない。
 - **tricky フォントと SVG グリフ**：FreeType は tricky フォントを自動ヒンティングせず、SVG のグリフを先に読む。sofel はこの2つを判定しない。

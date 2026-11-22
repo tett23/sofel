@@ -35,6 +35,7 @@ mod latin;
 #[rustfmt::skip]
 mod tables;
 
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use sofel_font::read::cmap::{Cmap, Subtable, TAG as CMAP_TAG};
@@ -67,6 +68,7 @@ pub(super) struct BlueStringRec {
 pub(super) struct ScriptClass {
     pub ranges: &'static [(u32, u32)],
     pub nonbase_ranges: &'static [(u32, u32)],
+    pub tag: &'static [u8; 4],
     pub top_to_bottom: bool,
     pub standard: &'static [u8],
 }
@@ -77,7 +79,61 @@ pub(super) struct StyleClass {
     pub writing_system: WritingSystem,
     pub script: u16,
     pub blue_stringset: u16,
+    pub coverage: u16,
     pub default_coverage: bool,
+}
+
+/// The script, feature and blue-zone strings an OpenType shaper needs to
+/// compute one FreeType automatic-hinter style's GSUB coverage.
+#[derive(Clone, Debug)]
+pub struct AutoHintStyleSpec {
+    /// Index into FreeType's ordered style table.
+    pub index: u16,
+    /// ISO 15924 script tag.
+    pub script: [u8; 4],
+    /// Unicode ranges used for cmap coverage.
+    pub ranges: &'static [(u32, u32)],
+    /// Unicode ranges marked as non-base glyphs.
+    pub nonbase_ranges: &'static [(u32, u32)],
+    /// OpenType feature tag, or `None` for a script's default style.
+    pub feature: Option<[u8; 4]>,
+    /// UTF-8 blue-zone strings from the pinned FreeType table.
+    pub blue_strings: Vec<&'static [u8]>,
+    /// UTF-8 standard-character candidates from the pinned FreeType table.
+    pub standard: &'static [u8],
+}
+
+/// A glyph shaped for an auto-hinter blue-zone or standard-character cluster.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AutoHintShapedGlyph {
+    /// The shaped glyph ID.
+    pub glyph: u32,
+    /// Horizontal advance in font units.
+    pub x_advance: i32,
+    /// Vertical offset in font units.
+    pub y_offset: i32,
+}
+
+/// A UTF-8 cluster shaped for one automatic-hinter style.
+#[derive(Clone, Debug)]
+pub struct AutoHintShapedCluster {
+    /// Index of the style this cluster belongs to.
+    pub style: u16,
+    /// UTF-8 source bytes without surrounding spaces.
+    pub text: Vec<u8>,
+    /// Glyphs in shaping order, empty if the style feature did not change IDs.
+    pub glyphs: Vec<AutoHintShapedGlyph>,
+}
+
+/// Results of GSUB analysis and shaping supplied by `sofel-shape`.
+#[derive(Clone, Debug)]
+pub struct AutoHintShapingData {
+    /// Style words, one per glyph, as FreeType's HarfBuzz-backed build assigns.
+    pub glyph_styles: Vec<u16>,
+    /// Shaped standard-character, blue-zone, and digit clusters.
+    pub clusters: Vec<AutoHintShapedCluster>,
+    /// Per-style inverse GSUB entries for the accent adjustment database.
+    pub reverse: Vec<(u16, u32, u32)>,
 }
 
 /// The load target as the scaler's `render_mode`.
@@ -134,9 +190,52 @@ pub struct AutoHintCache {
     italic: bool,
     fixed_width: bool,
     hints: GlyphHints,
+    shaping: Option<Arc<AutoHintShapingData>>,
 }
 
 impl AutoHintCache {
+    /// Codepoints consulted for accent adjustment in FreeType's database.
+    pub fn adjustment_codepoints() -> Vec<u32> {
+        tables::ADJUSTMENTS
+            .iter()
+            .map(|&(codepoint, _)| codepoint)
+            .collect()
+    }
+    /// Style requests in FreeType's assignment order for a shaper to
+    /// evaluate against the font's GSUB and GPOS tables.
+    pub fn style_specs() -> Vec<AutoHintStyleSpec> {
+        STYLES
+            .iter()
+            .enumerate()
+            .map(|(index, style)| {
+                let mut blue_strings = Vec::new();
+                let mut position = usize::from(style.blue_stringset);
+                while let Some(blue) = tables::BLUE_STRINGSETS.get(position) {
+                    if blue.string == tables::BLUE_STRING_MAX {
+                        break;
+                    }
+                    let bytes = tables::BLUE_STRINGS
+                        .get(usize::from(blue.string)..)
+                        .unwrap_or_default();
+                    let end = bytes.iter().position(|&byte| byte == 0).unwrap_or(0);
+                    blue_strings.push(&bytes[..end]);
+                    position += 1;
+                }
+                AutoHintStyleSpec {
+                    index: index as u16,
+                    script: *SCRIPTS[usize::from(style.script)].tag,
+                    ranges: SCRIPTS[usize::from(style.script)].ranges,
+                    nonbase_ranges: SCRIPTS[usize::from(style.script)].nonbase_ranges,
+                    feature: tables::COVERAGE_TAGS
+                        .get(usize::from(style.coverage))
+                        .copied(),
+                    blue_strings,
+                    standard: SCRIPTS[usize::from(style.script)].standard,
+                }
+            })
+            .collect()
+    }
+
     /// The cache for `outlines`: assigns every glyph to a style through
     /// the Unicode cmap, as FreeType's
     /// `af_face_globals_compute_style_coverage` does without HarfBuzz.
@@ -158,7 +257,19 @@ impl AutoHintCache {
             italic,
             fixed_width,
             hints: GlyphHints::default(),
+            shaping: None,
         }
+    }
+
+    /// Installs shaper results for the HarfBuzz-backed auto-hinter configuration.
+    /// Returns `None` when the supplied style array has the wrong length.
+    pub fn with_shaping_data(mut self, data: AutoHintShapingData) -> Option<Self> {
+        if data.glyph_styles.len() != self.glyph_styles.len() {
+            return None;
+        }
+        self.glyph_styles.clone_from(&data.glyph_styles);
+        self.shaping = Some(Arc::new(data));
+        Some(self)
     }
 
     /// The raw style word of `glyph` as FreeType's `glyph-to-script-map`
@@ -170,12 +281,18 @@ impl AutoHintCache {
             .get(usize::try_from(glyph.0).ok()?)
             .copied()
     }
+
+    /// The cmap-based style words for a shaper to extend with GSUB coverage.
+    pub fn glyph_styles(&self) -> &[u16] {
+        &self.glyph_styles
+    }
 }
 
 /// A font as the automatic hinter queries it (`FT_Face` with its Unicode
 /// charmap selected).
 struct Face<'o, 'd, 'l, 's> {
     outlines: &'o Outlines<'d, 'l, 's>,
+    shaping: Option<&'o AutoHintShapingData>,
     cmap: Option<Subtable<'d>>,
     num_glyphs: u32,
     units_per_em: i64,
@@ -263,10 +380,25 @@ impl<'o, 'd, 'l, 's> Face<'o, 'd, 'l, 's> {
         let font = outlines.font();
         Face {
             outlines,
+            shaping: None,
             cmap: unicode_subtable(font),
             num_glyphs: font.num_glyphs(),
             units_per_em: i64::from(font.units_per_em()),
         }
+    }
+
+    fn with_shaping(mut self, shaping: Option<&'o AutoHintShapingData>) -> Self {
+        self.shaping = shaping;
+        self
+    }
+
+    fn shaped_cluster(&self, style: usize, p: &[u8]) -> Option<&[AutoHintShapedGlyph]> {
+        let len = p.iter().position(|&byte| byte == b' ').unwrap_or(p.len());
+        self.shaping?
+            .clusters
+            .iter()
+            .find(|cluster| usize::from(cluster.style) == style && cluster.text == p[..len])
+            .map(|cluster| cluster.glyphs.as_slice())
     }
 
     /// Whether `FT_Select_Charmap(face, FT_ENCODING_UNICODE)` succeeds.
@@ -331,12 +463,24 @@ fn utf8_char(p: &[u8]) -> (u32, &[u8]) {
 /// skips spaces, reads one cluster up to the next space, and gives the
 /// rest, the number of glyphs (0 for a cluster of several characters) and
 /// the glyph of a single character.
-fn next_cluster<'p>(face: &Face<'_, '_, '_, '_>, mut p: &'p [u8]) -> (&'p [u8], u32, u32) {
+fn next_cluster<'p>(
+    face: &Face<'_, '_, '_, '_>,
+    style: usize,
+    mut p: &'p [u8],
+) -> (&'p [u8], u32, u32) {
     while p.first() == Some(&b' ') {
         p = &p[1..];
     }
     if p.is_empty() {
         return (p, 0, 0);
+    }
+    if let Some(glyphs) = face.shaped_cluster(style, p) {
+        let end = p.iter().position(|&byte| byte == b' ').unwrap_or(p.len());
+        return (
+            &p[end..],
+            u32::try_from(glyphs.len()).unwrap_or(u32::MAX),
+            glyphs.first().map_or(0, |glyph| glyph.glyph),
+        );
     }
     let (ch, mut rest) = utf8_char(p);
     let mut dummy = 0;
@@ -503,7 +647,8 @@ pub(super) fn load(
     {
         return fail(scratch, OutlineError::AutoHintUnsupported);
     }
-    let face = Face::new(outlines);
+    let shaping = cache.shaping.clone();
+    let face = Face::new(outlines).with_shaping(shaping.as_deref());
     let upem = face.units_per_em;
     let scale = div_fix(i64::from(ppem) << 6, upem);
     let scaler = Scaler {
