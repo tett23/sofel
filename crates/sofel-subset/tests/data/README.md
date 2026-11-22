@@ -247,3 +247,21 @@ cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-blended-stem-hb15.otf" "crates/sofel-su
 "$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-no-hint-dotsection-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-dotsection-hb15.otf" --gids=2 --no-hinting
 cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-dotsection-hb15.otf" "crates/sofel-subset/tests/data/cff2-no-hint-dotsection-hb15.otf"
 ```
+
+## cff2-no-hint-context-call-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_no_hinting_rewrites_nested_calls_after_contextual_masks` の `reverse == false` が組む `bytes` である。マスク長が異なる二つの呼び出しと、そのサブルーチン内からの追加呼び出しを持つ。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-no-hint-context-call-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-context-call-hb15.otf" --gids=1,2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-context-call-hb15.otf" "crates/sofel-subset/tests/data/cff2-no-hint-context-call-hb15.otf"
+```
+
+## cff2-no-hint-context-call-reverse-hb15.otf
+
+入力は `tests/cff2.rs` の `cff2_no_hinting_rewrites_nested_calls_after_contextual_masks` の `reverse == true` が組む `bytes` である。マスク長が異なる二つの呼び出しと、そのサブルーチン内からの追加呼び出しを持つ。
+
+```sh
+"$HB_DUMP" --subset --font-file="$SOFEL_FIXTURE_INPUTS/cff2-no-hint-context-call-reverse-hb15.otf" --output-file="$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-context-call-reverse-hb15.otf" --gids=1,2 --no-hinting
+cmp "$SOFEL_FIXTURE_OUTPUTS/cff2-no-hint-context-call-reverse-hb15.otf" "crates/sofel-subset/tests/data/cff2-no-hint-context-call-reverse-hb15.otf"
+```

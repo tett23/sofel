@@ -886,3 +886,44 @@ fn cff2_no_hinting_removes_dotsection_before_and_after_paths() {
     let out = subset(&font, &glyphs(&[2]).with_flags(Flags::NO_HINTING)).unwrap();
     assert_eq!(out, include_bytes!("data/cff2-no-hint-dotsection-hb15.otf"));
 }
+
+#[test]
+fn cff2_no_hinting_rewrites_nested_calls_after_contextual_masks() {
+    for reverse in [false, true] {
+        let mut programs = charstrings();
+        programs[1] = charstring(&[Cs::I(0), Cs::I(10), Cs::Op(1), Cs::I(-106), Cs::Op(29)]);
+        programs[2] = charstring(&[Cs::I(-106), Cs::Op(29)]);
+        if reverse {
+            programs.swap(1, 2);
+        }
+        let path = charstring(&[
+            Cs::I(0),
+            Cs::I(0),
+            Cs::Op(21),
+            Cs::I(10),
+            Cs::I(0),
+            Cs::Op(5),
+            Cs::Op(11),
+        ]);
+        let bytes = font_with_programs(
+            vec![vec![11], vec![19, 1, 34, 29, 11], path],
+            Vec::new(),
+            programs,
+        );
+        let (name, expected): (&str, &[u8]) = if reverse {
+            (
+                "cff2-no-hint-context-call-reverse-hb15.otf",
+                include_bytes!("data/cff2-no-hint-context-call-reverse-hb15.otf"),
+            )
+        } else {
+            (
+                "cff2-no-hint-context-call-hb15.otf",
+                include_bytes!("data/cff2-no-hint-context-call-hb15.otf"),
+            )
+        };
+        fixture_input::export(name, &bytes).unwrap();
+        let font = Font::new(&bytes, 0).unwrap();
+        let out = subset(&font, &glyphs(&[1, 2]).with_flags(Flags::NO_HINTING)).unwrap();
+        assert_eq!(out, expected);
+    }
+}

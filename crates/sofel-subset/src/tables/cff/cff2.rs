@@ -338,10 +338,13 @@ fn keep_subrs(
         ));
     }
     // An unchanged program can keep both interpretations. Rewriting a call
-    // could replace bytes consumed as mask data by another invocation.
-    if contextual_masks
-        .iter()
-        .any(|key| subr_sites.contains_key(key))
+    // could replace bytes consumed as mask data by another invocation. With
+    // hints removed, the first parsed interpretation supplies both the dropped
+    // masks and the surviving call sites.
+    if !drop_hints
+        && contextual_masks
+            .iter()
+            .any(|key| subr_sites.contains_key(key))
     {
         return None;
     }
