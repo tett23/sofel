@@ -549,7 +549,7 @@ flowchart BT
 
 `Font::from_bitmap` は BDF、PCF、Windows FNT、FON の署名を識別し、指定した番号のフェイスを開く。
 フェイスから文字に対応するグリフ番号、ストライクのサイズ、グリフの送り幅と画像を取得する。
-`sofel-render` もこの形式判定とフェイス操作を使う（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。
+`sofel-render` もこの形式判定とフェイス操作を使う（[ADR 0065](adr/0065-legacy-faces-and-webfonts.md)）。FNT の幅0のレコードはフェイスを開くときに受け付けるが、そのグリフの画像の取得では FreeType のグリフ読込エラーに合わせて `None` を返す。
 
 FON では NE または i386 PE32 のフォントリソースを読む。
 PE32 では `RT_FONT` の名前・言語ディレクトリを順にたどり、各データ項目にフェイス番号を付ける。
