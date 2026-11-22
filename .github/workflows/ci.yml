@@ -578,6 +578,8 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Check synthetic font fixtures
+        run: sh scripts/check-fixtures.sh
       - uses: tett23/adr-guard@ab55769152ed0f8a3465ee3435a2df43ab9d067f # v0.13.1
         with:
           base: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
