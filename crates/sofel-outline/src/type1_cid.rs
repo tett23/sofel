@@ -32,13 +32,14 @@ pub fn draw_cid(
     Ok(state.info())
 }
 
-/// Draw a stemless CID-keyed Type 1 glyph at Adobe's native path scale and
-/// return its grid-fitted horizontal advance.
+/// Draw a CID-keyed Type 1 glyph at Adobe's native path scale and return its
+/// grid-fitted horizontal advance. One horizontal stem without blue zones is
+/// supported for every load target.
 pub fn draw_cid_native(
     face: &CidFace,
     cid: usize,
     scale: Scale,
-    target: HintTarget,
+    _target: HintTarget,
     pen: &mut impl Pen,
 ) -> Result<(OutlineInfo, i32), OutlineError> {
     let Scale::Scaled { x, y } = scale else {
@@ -55,8 +56,7 @@ pub fn draw_cid_native(
     let mut scan = State::new(Scale::Unscaled, matrix, false, &mut null_pen);
     decode_program(face, cid, &program, &mut scan, &mut Vec::new(), 0, false)?;
     if scan.has_stems
-        && (target != HintTarget::Light
-            || scan.unsupported_stem_map
+        && (scan.unsupported_stem_map
             || scan.h_stem.is_none()
             || matrix != [65536, 0, 0, 65536, 0, 0]
             || !face.native_stem_blues_empty())

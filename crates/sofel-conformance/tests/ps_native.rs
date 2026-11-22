@@ -90,9 +90,10 @@ fn adr0064_i1_native_cid_without_stems_matches_freetype() {
 }
 
 #[test]
-fn adr0064_i1_native_cid_stems_are_unsupported() {
+fn adr0064_i1_native_cid_multiple_stems_are_unsupported() {
     let bytes = cid_sample(&[
-        139, 248, 136, 13, 239, 189, 1, 239, 239, 21, 239, 139, 5, 139, 239, 5, 39, 39, 5, 9, 14,
+        139, 248, 136, 13, 239, 189, 1, 239, 189, 1, 239, 239, 21, 239, 139, 5, 139, 239, 5, 39,
+        39, 5, 9, 14,
     ]);
     let face = CidFace::parse(&bytes, 1024).unwrap();
     let factor = Fixed(div_fix(16 * 64, i32::from(face.units_per_em())));
@@ -111,6 +112,69 @@ fn adr0064_i1_native_cid_stems_are_unsupported() {
         Err(OutlineError::UnsupportedFormat),
     );
     assert!(commands.is_empty());
+}
+
+#[test]
+fn adr0064_i1_native_cid_stems_match_freetype_all_targets() {
+    let bytes = cid_sample(&[
+        139, 248, 136, 13, 239, 189, 1, 239, 239, 21, 239, 139, 5, 139, 239, 5, 39, 39, 5, 9, 14,
+    ]);
+    let path = std::env::temp_dir().join(format!(
+        "sofel-adr0064-cid-stems-{}.cid",
+        std::process::id()
+    ));
+    std::fs::write(&path, &bytes).unwrap();
+    let face = CidFace::parse(&bytes, 1024).unwrap();
+    for (name, target) in [
+        ("normal", HintTarget::Normal),
+        ("light", HintTarget::Light),
+        ("mono", HintTarget::Mono),
+        ("lcd", HintTarget::Lcd),
+        ("lcd-v", HintTarget::VerticalLcd),
+    ] {
+        let factor = Fixed(div_fix(16 * 64, i32::from(face.units_per_em())));
+        let mut commands = Vec::new();
+        let (_, advance) = draw_cid_native(
+            &face,
+            0,
+            Scale::Scaled {
+                x: factor,
+                y: factor,
+            },
+            target,
+            &mut FnPen(|c| commands.push(c)),
+        )
+        .unwrap();
+        let mut points = Vec::new();
+        for command in commands {
+            match command {
+                Command::MoveTo(point) | Command::LineTo(point) => points.push(point),
+                Command::Close => {
+                    if points.last() == points.first() {
+                        points.pop();
+                    }
+                }
+                other => assert_eq!(other, Command::Close),
+            }
+        }
+        let mut actual = format!("advance {advance} 0\n");
+        for point in &points {
+            actual.push_str(&format!("point {} {} 1\n", point.x, point.y));
+        }
+        actual.push_str(&format!("end {}\n", points.len() - 1));
+        let reference = std::process::Command::new(paths::ft_dump())
+            .args(["--hint-slot", "16", "0", "native", name])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(reference.status.success());
+        assert_eq!(
+            actual,
+            String::from_utf8(reference.stdout).unwrap(),
+            "{name}"
+        );
+    }
+    std::fs::remove_file(path).unwrap();
 }
 
 #[test]
